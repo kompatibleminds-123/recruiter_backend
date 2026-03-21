@@ -1,0 +1,30 @@
+[
+  {
+    "label": "Zoheb Rahman",
+    "filePath": "C:\\Users\\dell\\Downloads\\Zoheb Rahman_CV.pdf",
+    "expected": {
+      "candidateName": "Zoheb Rahman",
+      "emailId": "",
+      "phoneNumber": "",
+      "currentCompany": "Rippling",
+      "currentDesignation": "Emerging Small Business - AE",
+      "totalExperience": "",
+      "averageTenurePerCompany": "",
+      "currentOrgTenure": ""
+    }
+  },
+  {
+    "label": "Syed Sirajuddin",
+    "filePath": "C:\\Users\\dell\\Downloads\\Syed Sirajuddin_CV.pdf",
+    "expected": {
+      "candidateName": "Syed Sirajuddin",
+      "emailId": "",
+      "phoneNumber": "",
+      "currentCompany": "OneOrigin",
+      "currentDesignation": "",
+      "totalExperience": "",
+      "averageTenurePerCompany": "",
+      "currentOrgTenure": ""
+    }
+  }
+]

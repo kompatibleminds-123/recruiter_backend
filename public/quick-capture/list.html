@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#102a43" />
+    <link rel="manifest" href="/quick-capture/manifest.json" />
+    <link rel="stylesheet" href="/quick-capture/style.css" />
+    <title>Saved Candidates</title>
+  </head>
+  <body>
+    <main class="app-shell">
+      <section class="hero-card compact">
+        <p class="eyebrow">Candidate Quick Capture</p>
+        <h1>Saved candidates</h1>
+        <p class="subcopy">Recent structured notes saved from the quick capture app.</p>
+        <div class="hero-actions">
+          <a class="secondary-link" href="/quick-capture/">Back to capture</a>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head">
+          <h2>Candidate cards</h2>
+          <button id="refreshButton" type="button" class="ghost-button">Refresh</button>
+        </div>
+        <p id="listStatus" class="status-message" role="status" aria-live="polite"></p>
+        <div id="candidateList" class="card-list"></div>
+      </section>
+    </main>
+
+    <script src="/quick-capture/list.js"></script>
+  </body>
+</html>

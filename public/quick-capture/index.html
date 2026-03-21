@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#102a43" />
+    <link rel="manifest" href="/quick-capture/manifest.json" />
+    <link rel="stylesheet" href="/quick-capture/style.css" />
+    <title>Candidate Quick Capture</title>
+  </head>
+  <body>
+    <main class="app-shell">
+      <section class="hero-card">
+        <p class="eyebrow">Candidate Quick Capture</p>
+        <h1>Capture recruiter notes fast.</h1>
+        <p class="subcopy">
+          Type or speak rough candidate notes. AI will structure them and save them instantly.
+        </p>
+        <div class="hero-actions">
+          <a class="secondary-link" href="/quick-capture/list.html">View saved candidates</a>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head">
+          <h2>Quick capture form</h2>
+        </div>
+        <div class="quick-form-grid">
+          <label class="field">
+            <span class="label">Candidate name</span>
+            <input id="candidateName" class="text-input" type="text" placeholder="Akhilesh" />
+          </label>
+          <label class="field">
+            <span class="label">Current company</span>
+            <input id="candidateCompany" class="text-input" type="text" placeholder="HighRadius" />
+          </label>
+          <label class="field">
+            <span class="label">Role</span>
+            <input id="candidateRole" class="text-input" type="text" placeholder="Enterprise Sales" />
+          </label>
+          <label class="field">
+            <span class="label">Experience</span>
+            <input id="candidateExperience" class="text-input" type="text" placeholder="6 years" />
+          </label>
+          <label class="field">
+            <span class="label">Current CTC</span>
+            <input id="candidateCurrentCtc" class="text-input" type="text" placeholder="12 LPA" />
+          </label>
+          <label class="field">
+            <span class="label">Expected CTC</span>
+            <input id="candidateExpectedCtc" class="text-input" type="text" placeholder="16 LPA" />
+          </label>
+          <label class="field">
+            <span class="label">Notice period</span>
+            <input id="candidateNoticePeriod" class="text-input" type="text" placeholder="30 days" />
+          </label>
+          <label class="field field-full">
+            <span class="label">Next action</span>
+            <input id="candidateNextAction" class="text-input" type="text" placeholder="Follow up next week" />
+          </label>
+        </div>
+
+        <label class="label" for="noteInput">Quick candidate note</label>
+        <textarea
+          id="noteInput"
+          class="note-input"
+          rows="8"
+          placeholder="Example: met Akhilesh ex HighRadius enterprise sales strong candidate current ctc 12 lpa expected 16 lpa follow up next week"
+        ></textarea>
+
+        <div class="actions">
+          <button id="micButton" type="button" class="ghost-button">Start voice input</button>
+          <button id="submitButton" type="button" class="primary-button">Parse and save</button>
+        </div>
+
+        <p id="statusMessage" class="status-message" role="status" aria-live="polite"></p>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head">
+          <h2>Structured JSON</h2>
+        </div>
+        <pre id="jsonOutput" class="json-output">No parsed data yet.</pre>
+      </section>
+    </main>
+
+    <script src="/quick-capture/script.js"></script>
+  </body>
+</html>

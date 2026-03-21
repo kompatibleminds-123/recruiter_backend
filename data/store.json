@@ -1,0 +1,653 @@
+{
+  "companies": [
+    {
+      "id": "c0a7d2c9-4ddb-4add-9d4a-24cdd1caba7c",
+      "name": "Kompatible Minds",
+      "createdAt": "2026-03-19T17:30:00.955Z"
+    }
+  ],
+  "users": [
+    {
+      "id": "492fe77a-562c-40a1-9294-79a58e8d0721",
+      "companyId": "c0a7d2c9-4ddb-4add-9d4a-24cdd1caba7c",
+      "companyName": "Kompatible Minds",
+      "name": "Ankit Garg",
+      "email": "ankit.garg@kompatibleminds.com",
+      "role": "admin",
+      "passwordHash": "c0ca4fe636c68085a5c368fd7207f71d:8d45251bae30f00ea52e22cbec4f4297791484ecffc8244e3acfe6d4941ba3b3d15246c11c831a6e23d0860ba8a599ffee3dd6877d206e6525181fcaa605632a",
+      "createdAt": "2026-03-19T17:30:01.047Z"
+    },
+    {
+      "id": "2718c290-c4fb-4912-964a-cf6ce38765ff",
+      "companyId": "c0a7d2c9-4ddb-4add-9d4a-24cdd1caba7c",
+      "companyName": "Kompatible Minds",
+      "name": "Anuja",
+      "email": "teamkompatible@gmail.com",
+      "role": "team",
+      "passwordHash": "f5dfb1eb0353bddfa2e06529ebd85f6c:a8c1cde9b7fa7a8c95c50447af748b09e4a70c94f60df8b275826e0893909969b75a7bb8af1634df091054da22ae0458bdc27765b15a41f434db03fb0564888e",
+      "createdAt": "2026-03-19T17:30:50.091Z"
+    },
+    {
+      "id": "1ec10ca7-d248-4ae6-9254-bda6da738691",
+      "companyId": "c0a7d2c9-4ddb-4add-9d4a-24cdd1caba7c",
+      "companyName": "Kompatible Minds",
+      "name": "Rasel",
+      "email": "rasel.mazumder@kompatibleminds.com",
+      "role": "team",
+      "passwordHash": "5ddbb7532f44df651e262e91aa1a7a0f:9b411e65d39d0bf599465323afb388c7545b72cfba9637f48e45e8be34dbbc68d1057bda3d4e289445e96a0bc64a3c40a77fa9642faffc542f5c3b77228623ae",
+      "createdAt": "2026-03-20T12:06:00.257Z"
+    }
+  ],
+  "sessions": [
+    {
+      "token": "78afde1b556f9c1b2d29c347a329962c9f1c29bfa970c7ef6f7c1531829c0028",
+      "userId": "2718c290-c4fb-4912-964a-cf6ce38765ff",
+      "companyId": "c0a7d2c9-4ddb-4add-9d4a-24cdd1caba7c",
+      "createdAt": "2026-03-19T17:52:48.998Z"
+    },
+    {
+      "token": "0793bc0ed7ce1c5f473d4ba74c3b3c01cf3b139e51fb036a16f2759da6dfbf5c",
+      "userId": "492fe77a-562c-40a1-9294-79a58e8d0721",
+      "companyId": "c0a7d2c9-4ddb-4add-9d4a-24cdd1caba7c",
+      "createdAt": "2026-03-20T12:05:27.189Z"
+    }
+  ],
+  "jobs": [
+    {
+      "id": "jd-1773986678282",
+      "companyId": "c0a7d2c9-4ddb-4add-9d4a-24cdd1caba7c",
+      "title": "AE - Attentive",
+      "jobDescription": "Company: Attentive.ai \nhttps://attentive.ai \nDesignation: Account Executive (AE) \nExperience: 2+ years as an AE   \nLocation – Remote \nTimings – US timings (4.30/5.30 PM – 1.30/2.30 AM) \nIf interested, please share CV at ankit.garg@kompatibleminds.com or apply at - Account Executive \n(AE) - Kompatible Minds | \nAbout - Leading provider of landscape and property management software powered by cutting-edge \nArtificial Intelligence (AI) using Aerial view analytics. Its software is designed to optimize workflows and \nhelp businesses scale up effortlessly in the outdoor services industry. \nIts software caters to landscaping, snow removal, paving maintenance, and facilities maintenance \nbusinesses, while another software product provides end-to-end solutions for all commercial landscape \nmaintenance and construction jobs through automated workflows. Trusted by top US and Canadian \nsales teams, it is proudly supported by renowned investors, including Sequoia Surge, InfoEdge Ventures, \nVertex Ventures, Tenacity Ventures & Insight Partner \nJob Description  \nThe ideal candidate is an energetic self-starter with the ability to identify influencers and key decision \nmakers within accounts and effectively engage with US based customers. The candidate will proactively \nnurture leads by responding to inbound interests and targeted outbound prospects, will qualify for leads \nbased on pre-set criteria and will set up meetings with qualified customers, and then take them to \nclosure.. \nResponsibilities  \n Develop and execute a sales strategy to identify and close new customers. \n Build and manage a sales pipeline, tracking leads and opportunities through each stage of the sales \nprocess. \n Develop and maintain relationships with key decision-makers in target accounts, using consultative \nselling techniques to understand their business needs and how our platform can help them achieve \ntheir goals. \n Negotiate and close deals with customers, ensuring that the terms of each deal are favorable for both \nthe customer and Attentive.ai \n Collaborate with our product and marketing teams to ensure that our offerings meet the needs of our \ncustomers and are well-positioned in the market. \n Maintain a strong understanding of our offering and the construction industry, and stay up-to-date on \nindustry trends and best practices. \nRequirements For The Role \n 2+ Years relevant experience in selling B2B software/SaaS products. \n  \nExperience in North American markets preferred \n Experience in SaaS AE roles will be preferred \n Excellent written and verbal communication skills, with fluent American English \n Ability to multitask, organize, and prioritize work",
+      "mustHaveSkills": "1.8+ years experience into B2B Saas sales as an AE",
+      "redFlags": "Current company experience not less than 1.5 years\nNo measurable achievement in CV",
+      "recruiterNotes": "",
+      "standardQuestions": "What are your products you pitch in the current company \nAny other major products you pitched in the previous organisations \nWhat are your sales quota and target achieved (any of monthly / quarterly / yearly and this period must be defined) \nWhat is your avg deal size in dollars \nHow many closures in numbers you did in the same duration",
+      "jdShortcuts": "{\n  \"/AEJD\": \"Hello Prateek,\\nGreetings !! \\n\\nThis is Nike Disoza from Kompatible Minds: A Talent Acquisition company.\\n\\nAs discussed earlier - We are currently looking for Account Executive to join Attentive.ai. \\n\\nAttentive.ai is your go-to partner for AI-based takeoffs, transforming how construction and field services professionals work.\\n\\nhttps://attentive.ai\\n\\nLocation - Remote\\n\\nPFA the indicative JD &  confirm your interest for the same if interested.\\n\\nYou can also apply via our website: https://kompatibleminds.com/job/account-executive-ae/\\n\\nThanks and regards,\\nNike Disoza\\nRecruitment Manager \\nKompatible Minds\\nLinkedIn ||9113067450\",\n  \"/AEL\": \"Hello \\nThis is Ankit Garg from Kompatible Minds. - A Talent Acquisition company \\nWe are currently looking for an Account Executive to join with one of our clients. If interested, please connect\"\n}",
+      "createdAt": "2026-03-20T06:04:38.321Z",
+      "updatedAt": "2026-03-20T06:38:44.802Z",
+      "updatedBy": "ankit.garg@kompatibleminds.com"
+    },
+    {
+      "id": "jd-1773988905415",
+      "companyId": "c0a7d2c9-4ddb-4add-9d4a-24cdd1caba7c",
+      "title": "Livlong: Area Manager - Corporate Sales",
+      "jobDescription": "Livlong 365 is a leading Health-Tech company dedicated to building a seamless and comprehensive\nhealthcare ecosystem. From Insurance to OPD Wellness to a robust Marketplace for top-rated\nDoctors and Specialists, we offer a full spectrum of healthcare solutions.\nOur services include doctor consultations, lab tests, health plans, OPD packages, home care,\nelderly care, medicines and more. Parallelly, we are into distribution of health & general insurance\nproducts across retail as well as corporate segments, with a strong presence across various\nchannels such as: Bancassurance, Agency, Corporate & VRM, Partnerships and Digital.\n\nRoles: \n1. Achieve / Exceed the sales targets assigned \n2 . Drive employee adoption for the health care  \nprograms in the corporates signed up with\nThe company\n3 . Deliver the results on product mix across OPD,  \nAHC & EAP categories\n4 . Identify and realize the new opportunities /  \nsegments\n5 . Build the relationships with potential partners  \nlike Insurance Brokers, TPA,  \netc., and engage with  \nthem to scale up business\n6.  Accountable for customer experience in the  \ncorporates engaged\n7 . Accountable for P&L at the customer level",
+      "mustHaveSkills": "Corporate Sales experience",
+      "redFlags": "Unstability in the career",
+      "recruiterNotes": "",
+      "standardQuestions": "How much experinec you carry in Corporate Sales for products like - Mediclaim, GMC, GPA, Health Insurance, Employee benefits, OPD plans etc. \nWhat is your major product you pitch",
+      "jdShortcuts": "{\n  \"/LIVAM\": \"Hello Shailesh\\n\\nGreetings !!\\n\\nAs discussed we are looking for the role of   Area Manager ( Corporate Sales )  for Livlong ( a health tech company) , a corporate business vertical promoted by IIFL ( India Infoline ) , a leading financial services company.\\n\\nWebsite          :  https://livlong.com/\\n\\nLinkedin          : https://www.linkedin.com/company/livlong365/\\n\\n Location         : Gurugram\\n\\nPlease find the attached JD .\\n\\nThanks and regards\"\n}",
+      "createdAt": "2026-03-20T06:41:45.428Z",
+      "updatedAt": "2026-03-20T09:26:56.882Z",
+      "updatedBy": "ankit.garg@kompatibleminds.com"
+    }
+  ],
+  "assessments": [
+    {
+      "id": "quick-note-0a8454e3-3527-4da1-94c4-cef479707fc1",
+      "generatedAt": "2026-03-21T11:59:46.335+00:00",
+      "questionMode": "basic",
+      "candidateName": "Ajay Chaturvedi",
+      "jdTitle": "AE - Attentive",
+      "clientName": "",
+      "pipelineStage": "",
+      "candidateStatus": "",
+      "followUpAt": "",
+      "interviewAt": "",
+      "callbackNotes": "",
+      "currentCompany": "",
+      "currentDesignation": "Lead Account Executive",
+      "totalExperience": "14 years 4 months",
+      "currentOrgTenure": "",
+      "emailId": "",
+      "phoneNumber": "",
+      "linkedinUrl": "https://www.linkedin.com/in/ajay-chaturvedi-86221a73/",
+      "highestEducation": "",
+      "experienceTimeline": "",
+      "jobDescription": "Company: Attentive.ai \nhttps://attentive.ai \nDesignation: Account Executive (AE) \nExperience: 2+ years as an AE   \nLocation – Remote \nTimings – US timings (4.30/5.30 PM – 1.30/2.30 AM) \nIf interested, please share CV at ankit.garg@kompatibleminds.com or apply at - Account Executive \n(AE) - Kompatible Minds | \nAbout - Leading provider of landscape and property management software powered by cutting-edge \nArtificial Intelligence (AI) using Aerial view analytics. Its software is designed to optimize workflows and \nhelp businesses scale up effortlessly in the outdoor services industry. \nIts software caters to landscaping, snow removal, paving maintenance, and facilities maintenance \nbusinesses, while another software product provides end-to-end solutions for all commercial landscape \nmaintenance and construction jobs through automated workflows. Trusted by top US and Canadian \nsales teams, it is proudly supported by renowned investors, including Sequoia Surge, InfoEdge Ventures, \nVertex Ventures, Tenacity Ventures & Insight Partner \nJob Description  \nThe ideal candidate is an energetic self-starter with the ability to identify influencers and key decision \nmakers within accounts and effectively engage with US based customers. The candidate will proactively \nnurture leads by responding to inbound interests and targeted outbound prospects, will qualify for leads \nbased on pre-set criteria and will set up meetings with qualified customers, and then take them to \nclosure.. \nResponsibilities  \n Develop and execute a sales strategy to identify and close new customers. \n Build and manage a sales pipeline, tracking leads and opportunities through each stage of the sales \nprocess. \n Develop and maintain relationships with key decision-makers in target accounts, using consultative \nselling techniques to understand their business needs and how our platform can help them achieve \ntheir goals. \n Negotiate and close deals with customers, ensuring that the terms of each deal are favorable for both \nthe customer and Attentive.ai \n Collaborate with our product and marketing teams to ensure that our offerings meet the needs of our \ncustomers and are well-positioned in the market. \n Maintain a strong understanding of our offering and the construction industry, and stay up-to-date on \nindustry trends and best practices. \nRequirements For The Role \n 2+ Years relevant experience in selling B2B software/SaaS products. \n  \nExperience in North American markets preferred \n Experience in SaaS AE roles will be preferred \n Excellent written and verbal communication skills, with fluent American English \n Ability to multitask, organize, and prioritize work",
+      "mustHaveSkills": "1.8+ years experience into B2B Saas sales as an AE",
+      "redFlags": "",
+      "jdShortcuts": "{\n  \"/AEJD\": \"Hello Prateek,\\nGreetings !! \\n\\nThis is Nike Disoza from Kompatible Minds: A Talent Acquisition company.\\n\\nAs discussed earlier - We are currently looking for Account Executive to join Attentive.ai. \\n\\nAttentive.ai is your go-to partner for AI-based takeoffs, transforming how construction and field services professionals work.\\n\\nhttps://attentive.ai\\n\\nLocation - Remote\\n\\nPFA the indicative JD &  confirm your interest for the same if interested.\\n\\nYou can also apply via our website: https://kompatibleminds.com/job/account-executive-ae/\\n\\nThanks and regards,\\nNike Disoza\\nRecruitment Manager \\nKompatible Minds\\nLinkedIn ||9113067450\",\n  \"/AEL\": \"Hello \\nThis is Ankit Garg from Kompatible Minds. - A Talent Acquisition company \\nWe are currently looking for an Account Executive to join with one of our clients. If interested, please connect\"\n}",
+      "standardQuestions": "What are your products you pitch in the current company \nAny other major products you pitched in the previous organisations \nWhat are your sales quota and target achieved (any of monthly / quarterly / yearly and this period must be defined) \nWhat is your avg deal size in dollars \nHow many closures in numbers you did in the same duration",
+      "recruiterNotes": "Lead Account Executive with 4 years 10 months in current role, total 14 years 4 months experience.",
+      "customPipelineStages": "",
+      "customCandidateStatuses": "",
+      "customHrCandidateStatuses": "",
+      "sections": {},
+      "result": {
+        "fitSummary": "",
+        "matchLevel": "",
+        "topStrengths": [],
+        "topRisks": [],
+        "questions": []
+      },
+      "answers": [],
+      "questionAnswerPairs": [],
+      "companyId": "c0a7d2c9-4ddb-4add-9d4a-24cdd1caba7c",
+      "recruiterId": "492fe77a-562c-40a1-9294-79a58e8d0721",
+      "recruiterName": "Ankit Garg",
+      "recruiterEmail": "ankit.garg@kompatibleminds.com",
+      "updatedAt": "2026-03-21T11:59:56.333Z"
+    },
+    {
+      "id": "assessment-1774008786951",
+      "candidateName": "Imran Khan",
+      "currentCompany": "Welleazy Healthtech Solution Private Limited",
+      "currentDesignation": "Manager- Corporate Sales-Delhi/NCR",
+      "currentOrgTenure": "2 years",
+      "emailId": "khan.imran0486@gmail.com",
+      "experienceTimeline": "Manager- Corporate Sales-Delhi/NCR | Welleazy Healthtech Solution Private Limited | July 2022 - Present | 3 years 8 months\nDeputy Manager-Corporate Sales-Delhi/NCR | QRG Super Speciality Hospital | June 2021 - July 2022 | 1 year 1 month\nBusiness Integrator-Corporate Sales-Delhi/NCR | CallHealth | June 2019 - June 2021 | 2 years\nManager-Corporate Sales-Delhi/NCR | Express Clinics Pvt Ltd | 11 Oct 2016 - June 2019 | 2 years 8 months\nTerritory Manager-Corporate Sales | Dr Lal Path Labs | Nov 2014 - 10 Oct 2016 | 1 year 11 months\nExecutive – Client Services | Quest Diagnostics | Sep 2011 - Nov 2014 | 3 years 2 months\nExecutive- Lab Operations | SRL Religare Diagnostics | June 2010 - Sept 2011 | 1 year 4 months",
+      "generatedAt": "2026-03-20T12:18:11.312Z",
+      "jdShortcuts": "{\n  \"/LIVAM\": \"Hello Shailesh\\n\\nGreetings !!\\n\\nAs discussed we are looking for the role of   Area Manager ( Corporate Sales )  for Livlong ( a health tech company) , a corporate business vertical promoted by IIFL ( India Infoline ) , a leading financial services company.\\n\\nWebsite          :  https://livlong.com/\\n\\nLinkedin          : https://www.linkedin.com/company/livlong365/\\n\\n Location         : Gurugram\\n\\nPlease find the attached JD .\\n\\nThanks and regards\"\n}",
+      "jdTitle": "Livlong: Area Manager - Corporate Sales",
+      "jobDescription": "Livlong 365 is a leading Health-Tech company dedicated to building a seamless and comprehensive\nhealthcare ecosystem. From Insurance to OPD Wellness to a robust Marketplace for top-rated\nDoctors and Specialists, we offer a full spectrum of healthcare solutions.\nOur services include doctor consultations, lab tests, health plans, OPD packages, home care,\nelderly care, medicines and more. Parallelly, we are into distribution of health & general insurance\nproducts across retail as well as corporate segments, with a strong presence across various\nchannels such as: Bancassurance, Agency, Corporate & VRM, Partnerships and Digital.\n\nRoles: \n1. Achieve / Exceed the sales targets assigned \n2 . Drive employee adoption for the health care  \nprograms in the corporates signed up with\nThe company\n3 . Deliver the results on product mix across OPD,  \nAHC & EAP categories\n4 . Identify and realize the new opportunities /  \nsegments\n5 . Build the relationships with potential partners  \nlike Insurance Brokers, TPA,  \netc., and engage with  \nthem to scale up business\n6.  Accountable for customer experience in the  \ncorporates engaged\n7 . Accountable for P&L at the customer level",
+      "linkedinUrl": "",
+      "mustHaveSkills": "Corporate Sales experience",
+      "pageTitle": "Syed Sirajuddin_CV.pdf",
+      "pageUrl": "",
+      "pdfFilename": "Syed Sirajuddin_CV.pdf",
+      "phoneNumber": "8826135544",
+      "questionMode": "combined",
+      "recruiterNotes": "",
+      "redFlags": "Unstability in the career",
+      "standardQuestions": "How much experinec you carry in Corporate Sales for products like - Mediclaim, GMC, GPA, Health Insurance, Employee benefits, OPD plans etc. \nWhat is your major product you pitch",
+      "totalExperience": "10 years",
+      "pipelineStage": "",
+      "candidateStatus": "",
+      "followUpAt": "",
+      "interviewAt": "",
+      "callbackNotes": "",
+      "status": "",
+      "customPipelineStages": "",
+      "customCandidateStatuses": "",
+      "customHrCandidateStatuses": "",
+      "sections": {
+        "standard": {
+          "context": {
+            "candidateName": "Ankit Garg",
+            "currentCompany": "",
+            "currentDesignation": "",
+            "currentOrgTenure": "1 years 2 months",
+            "emailId": "",
+            "experienceTimeline": "",
+            "generatedAt": "2026-03-20T12:14:13.243Z",
+            "jdShortcuts": "{\n  \"/AEJD\": \"Hello Prateek,\\nGreetings !! \\n\\nThis is Nike Disoza from Kompatible Minds: A Talent Acquisition company.\\n\\nAs discussed earlier - We are currently looking for Account Executive to join Attentive.ai. \\n\\nAttentive.ai is your go-to partner for AI-based takeoffs, transforming how construction and field services professionals work.\\n\\nhttps://attentive.ai\\n\\nLocation - Remote\\n\\nPFA the indicative JD &  confirm your interest for the same if interested.\\n\\nYou can also apply via our website: https://kompatibleminds.com/job/account-executive-ae/\\n\\nThanks and regards,\\nNike Disoza\\nRecruitment Manager \\nKompatible Minds\\nLinkedIn ||9113067450\",\n  \"/AEL\": \"Hello \\nThis is Ankit Garg from Kompatible Minds. - A Talent Acquisition company \\nWe are currently looking for an Account Executive to join with one of our clients. If interested, please connect\"\n}",
+            "jdTitle": "AE - Attentive",
+            "jobDescription": "Company: Attentive.ai \nhttps://attentive.ai \nDesignation: Account Executive (AE) \nExperience: 2+ years as an AE   \nLocation – Remote \nTimings – US timings (4.30/5.30 PM – 1.30/2.30 AM) \nIf interested, please share CV at ankit.garg@kompatibleminds.com or apply at - Account Executive \n(AE) - Kompatible Minds | \nAbout - Leading provider of landscape and property management software powered by cutting-edge \nArtificial Intelligence (AI) using Aerial view analytics. Its software is designed to optimize workflows and \nhelp businesses scale up effortlessly in the outdoor services industry. \nIts software caters to landscaping, snow removal, paving maintenance, and facilities maintenance \nbusinesses, while another software product provides end-to-end solutions for all commercial landscape \nmaintenance and construction jobs through automated workflows. Trusted by top US and Canadian \nsales teams, it is proudly supported by renowned investors, including Sequoia Surge, InfoEdge Ventures, \nVertex Ventures, Tenacity Ventures & Insight Partner \nJob Description  \nThe ideal candidate is an energetic self-starter with the ability to identify influencers and key decision \nmakers within accounts and effectively engage with US based customers. The candidate will proactively \nnurture leads by responding to inbound interests and targeted outbound prospects, will qualify for leads \nbased on pre-set criteria and will set up meetings with qualified customers, and then take them to \nclosure.. \nResponsibilities  \n Develop and execute a sales strategy to identify and close new customers. \n Build and manage a sales pipeline, tracking leads and opportunities through each stage of the sales \nprocess. \n Develop and maintain relationships with key decision-makers in target accounts, using consultative \nselling techniques to understand their business needs and how our platform can help them achieve \ntheir goals. \n Negotiate and close deals with customers, ensuring that the terms of each deal are favorable for both \nthe customer and Attentive.ai \n Collaborate with our product and marketing teams to ensure that our offerings meet the needs of our \ncustomers and are well-positioned in the market. \n Maintain a strong understanding of our offering and the construction industry, and stay up-to-date on \nindustry trends and best practices. \nRequirements For The Role \n 2+ Years relevant experience in selling B2B software/SaaS products. \n  \nExperience in North American markets preferred \n Experience in SaaS AE roles will be preferred \n Excellent written and verbal communication skills, with fluent American English \n Ability to multitask, organize, and prioritize work",
+            "linkedinUrl": "",
+            "mustHaveSkills": "1.8+ years experience into B2B Saas sales as an AE",
+            "pageTitle": "AE - Attentive",
+            "pageUrl": "",
+            "pdfFilename": "",
+            "phoneNumber": "",
+            "questionMode": "standard",
+            "recruiterNotes": "",
+            "redFlags": "Current company experience not less than 1.5 years\nNo measurable achievement in CV",
+            "standardQuestions": "What are your products you pitch in the current company \nAny other major products you pitched in the previous organisations \nWhat are your sales quota and target achieved (any of monthly / quarterly / yearly and this period must be defined) \nWhat is your avg deal size in dollars \nHow many closures in numbers you did in the same duration",
+            "totalExperience": "7 years 4 months"
+          },
+          "result": {
+            "fitSummary": "These are the standard recruiter questions defined for this JD.",
+            "mode": "standard",
+            "questions": [
+              {
+                "category": "standard",
+                "question": "What are your products you pitch in the current company",
+                "signal": "yellow",
+                "whatToListenFor": "Score the answer against your team benchmark.",
+                "why": "Core JD screening question defined by the lead recruiter."
+              },
+              {
+                "category": "standard",
+                "question": "Any other major products you pitched in the previous organisations",
+                "signal": "yellow",
+                "whatToListenFor": "Score the answer against your team benchmark.",
+                "why": "Core JD screening question defined by the lead recruiter."
+              },
+              {
+                "category": "standard",
+                "question": "What are your sales quota and target achieved (any of monthly / quarterly / yearly and this period must be defined)",
+                "signal": "yellow",
+                "whatToListenFor": "Score the answer against your team benchmark.",
+                "why": "Core JD screening question defined by the lead recruiter."
+              },
+              {
+                "category": "standard",
+                "question": "What is your avg deal size in dollars",
+                "signal": "yellow",
+                "whatToListenFor": "Score the answer against your team benchmark.",
+                "why": "Core JD screening question defined by the lead recruiter."
+              },
+              {
+                "category": "standard",
+                "question": "How many closures in numbers you did in the same duration",
+                "signal": "yellow",
+                "whatToListenFor": "Score the answer against your team benchmark.",
+                "why": "Core JD screening question defined by the lead recruiter."
+              },
+              {
+                "category": "standard",
+                "question": "Current CTC",
+                "signal": "yellow",
+                "whatToListenFor": "Score the answer against your team benchmark.",
+                "why": "Core JD screening question defined by the lead recruiter."
+              },
+              {
+                "category": "standard",
+                "question": "Expected CTC",
+                "signal": "yellow",
+                "whatToListenFor": "Score the answer against your team benchmark.",
+                "why": "Core JD screening question defined by the lead recruiter."
+              },
+              {
+                "category": "standard",
+                "question": "Notice Period",
+                "signal": "yellow",
+                "whatToListenFor": "Score the answer against your team benchmark.",
+                "why": "Core JD screening question defined by the lead recruiter."
+              },
+              {
+                "category": "standard",
+                "question": "Total Experience",
+                "signal": "yellow",
+                "whatToListenFor": "Score the answer against your team benchmark.",
+                "why": "Core JD screening question defined by the lead recruiter."
+              },
+              {
+                "category": "standard",
+                "question": "Tenure in Current Org.",
+                "signal": "yellow",
+                "whatToListenFor": "Score the answer against your team benchmark.",
+                "why": "Core JD screening question defined by the lead recruiter."
+              },
+              {
+                "category": "standard",
+                "question": "Reason of change",
+                "signal": "yellow",
+                "whatToListenFor": "Score the answer against your team benchmark.",
+                "why": "Core JD screening question defined by the lead recruiter."
+              },
+              {
+                "category": "standard",
+                "question": "Location",
+                "signal": "yellow",
+                "whatToListenFor": "Score the answer against your team benchmark.",
+                "why": "Core JD screening question defined by the lead recruiter."
+              }
+            ],
+            "topRisks": [],
+            "topStrengths": []
+          },
+          "answers": [
+            "HRMS and ATS",
+            "No",
+            "1 M USD and 700k usd (target)",
+            "100k USD",
+            "10",
+            "10 L",
+            "15 L",
+            "30 DAYS",
+            "10 years",
+            "2 years",
+            "Career growth",
+            "Chennai"
+          ],
+          "questionAnswerPairs": [
+            {
+              "category": "standard",
+              "question": "What are your products you pitch in the current company",
+              "why": "Core JD screening question defined by the lead recruiter.",
+              "whatToListenFor": "Score the answer against your team benchmark.",
+              "signal": "yellow",
+              "answer": "HRMS and ATS"
+            },
+            {
+              "category": "standard",
+              "question": "Any other major products you pitched in the previous organisations",
+              "why": "Core JD screening question defined by the lead recruiter.",
+              "whatToListenFor": "Score the answer against your team benchmark.",
+              "signal": "yellow",
+              "answer": "No"
+            },
+            {
+              "category": "standard",
+              "question": "What are your sales quota and target achieved (any of monthly / quarterly / yearly and this period must be defined)",
+              "why": "Core JD screening question defined by the lead recruiter.",
+              "whatToListenFor": "Score the answer against your team benchmark.",
+              "signal": "yellow",
+              "answer": "1 M USD and 700k usd (target)"
+            },
+            {
+              "category": "standard",
+              "question": "What is your avg deal size in dollars",
+              "why": "Core JD screening question defined by the lead recruiter.",
+              "whatToListenFor": "Score the answer against your team benchmark.",
+              "signal": "yellow",
+              "answer": "100k USD"
+            },
+            {
+              "category": "standard",
+              "question": "How many closures in numbers you did in the same duration",
+              "why": "Core JD screening question defined by the lead recruiter.",
+              "whatToListenFor": "Score the answer against your team benchmark.",
+              "signal": "yellow",
+              "answer": "10"
+            },
+            {
+              "category": "standard",
+              "question": "Current CTC",
+              "why": "Core JD screening question defined by the lead recruiter.",
+              "whatToListenFor": "Score the answer against your team benchmark.",
+              "signal": "yellow",
+              "answer": "10 L"
+            },
+            {
+              "category": "standard",
+              "question": "Expected CTC",
+              "why": "Core JD screening question defined by the lead recruiter.",
+              "whatToListenFor": "Score the answer against your team benchmark.",
+              "signal": "yellow",
+              "answer": "15 L"
+            },
+            {
+              "category": "standard",
+              "question": "Notice Period",
+              "why": "Core JD screening question defined by the lead recruiter.",
+              "whatToListenFor": "Score the answer against your team benchmark.",
+              "signal": "yellow",
+              "answer": "30 DAYS"
+            },
+            {
+              "category": "standard",
+              "question": "Total Experience",
+              "why": "Core JD screening question defined by the lead recruiter.",
+              "whatToListenFor": "Score the answer against your team benchmark.",
+              "signal": "yellow",
+              "answer": "10 years"
+            },
+            {
+              "category": "standard",
+              "question": "Tenure in Current Org.",
+              "why": "Core JD screening question defined by the lead recruiter.",
+              "whatToListenFor": "Score the answer against your team benchmark.",
+              "signal": "yellow",
+              "answer": "2 years"
+            },
+            {
+              "category": "standard",
+              "question": "Reason of change",
+              "why": "Core JD screening question defined by the lead recruiter.",
+              "whatToListenFor": "Score the answer against your team benchmark.",
+              "signal": "yellow",
+              "answer": "Career growth"
+            },
+            {
+              "category": "standard",
+              "question": "Location",
+              "why": "Core JD screening question defined by the lead recruiter.",
+              "whatToListenFor": "Score the answer against your team benchmark.",
+              "signal": "yellow",
+              "answer": "Chennai"
+            }
+          ]
+        },
+        "red_flag": {
+          "context": {
+            "candidateName": "Syed Sirajuddin",
+            "currentCompany": "OneOrigin",
+            "currentDesignation": "Enterprise Account Executive",
+            "currentOrgTenure": "2 years 10 months",
+            "emailId": "syedsirajuddin4051@gmail.com",
+            "experienceTimeline": "Enterprise Account Executive | OneOrigin | Apr 2023 - Present | 2 years 10 months\nSenior Business Development Specialist | InterviewBit (Scaler Academy) | Feb 2022 - Apr 2023 | 1 year 2 months\nProcess Specialist | Marketlytics Solutions | Jun 2019 - Jan 2022 | 2 years 7 months\nSenior Business Development Associate | IBEForuM India Pvt Ltd | May 2017 - Jun 2019 | 2 years 1 month",
+            "generatedAt": "2026-03-20T12:18:11.312Z",
+            "jdShortcuts": "{\n  \"/AEJD\": \"Hello Prateek,\\nGreetings !! \\n\\nThis is Nike Disoza from Kompatible Minds: A Talent Acquisition company.\\n\\nAs discussed earlier - We are currently looking for Account Executive to join Attentive.ai. \\n\\nAttentive.ai is your go-to partner for AI-based takeoffs, transforming how construction and field services professionals work.\\n\\nhttps://attentive.ai\\n\\nLocation - Remote\\n\\nPFA the indicative JD &  confirm your interest for the same if interested.\\n\\nYou can also apply via our website: https://kompatibleminds.com/job/account-executive-ae/\\n\\nThanks and regards,\\nNike Disoza\\nRecruitment Manager \\nKompatible Minds\\nLinkedIn ||9113067450\",\n  \"/AEL\": \"Hello \\nThis is Ankit Garg from Kompatible Minds. - A Talent Acquisition company \\nWe are currently looking for an Account Executive to join with one of our clients. If interested, please connect\"\n}",
+            "jdTitle": "AE - Attentive",
+            "jobDescription": "Company: Attentive.ai \nhttps://attentive.ai \nDesignation: Account Executive (AE) \nExperience: 2+ years as an AE   \nLocation – Remote \nTimings – US timings (4.30/5.30 PM – 1.30/2.30 AM) \nIf interested, please share CV at ankit.garg@kompatibleminds.com or apply at - Account Executive \n(AE) - Kompatible Minds | \nAbout - Leading provider of landscape and property management software powered by cutting-edge \nArtificial Intelligence (AI) using Aerial view analytics. Its software is designed to optimize workflows and \nhelp businesses scale up effortlessly in the outdoor services industry. \nIts software caters to landscaping, snow removal, paving maintenance, and facilities maintenance \nbusinesses, while another software product provides end-to-end solutions for all commercial landscape \nmaintenance and construction jobs through automated workflows. Trusted by top US and Canadian \nsales teams, it is proudly supported by renowned investors, including Sequoia Surge, InfoEdge Ventures, \nVertex Ventures, Tenacity Ventures & Insight Partner \nJob Description  \nThe ideal candidate is an energetic self-starter with the ability to identify influencers and key decision \nmakers within accounts and effectively engage with US based customers. The candidate will proactively \nnurture leads by responding to inbound interests and targeted outbound prospects, will qualify for leads \nbased on pre-set criteria and will set up meetings with qualified customers, and then take them to \nclosure.. \nResponsibilities  \n Develop and execute a sales strategy to identify and close new customers. \n Build and manage a sales pipeline, tracking leads and opportunities through each stage of the sales \nprocess. \n Develop and maintain relationships with key decision-makers in target accounts, using consultative \nselling techniques to understand their business needs and how our platform can help them achieve \ntheir goals. \n Negotiate and close deals with customers, ensuring that the terms of each deal are favorable for both \nthe customer and Attentive.ai \n Collaborate with our product and marketing teams to ensure that our offerings meet the needs of our \ncustomers and are well-positioned in the market. \n Maintain a strong understanding of our offering and the construction industry, and stay up-to-date on \nindustry trends and best practices. \nRequirements For The Role \n 2+ Years relevant experience in selling B2B software/SaaS products. \n  \nExperience in North American markets preferred \n Experience in SaaS AE roles will be preferred \n Excellent written and verbal communication skills, with fluent American English \n Ability to multitask, organize, and prioritize work",
+            "linkedinUrl": "linkedin.com/in/syed-sirajuddin-697146160",
+            "mustHaveSkills": "1.8+ years experience into B2B Saas sales as an AE",
+            "pageTitle": "Syed Sirajuddin_CV.pdf",
+            "pageUrl": "",
+            "pdfFilename": "Syed Sirajuddin_CV.pdf",
+            "phoneNumber": "+919731574051",
+            "questionMode": "red_flag",
+            "recruiterNotes": "",
+            "redFlags": "Current company experience not less than 1.5 years\nNo measurable achievement in CV",
+            "standardQuestions": "What are your products you pitch in the current company \nAny other major products you pitched in the previous organisations \nWhat are your sales quota and target achieved (any of monthly / quarterly / yearly and this period must be defined) \nWhat is your avg deal size in dollars \nHow many closures in numbers you did in the same duration",
+            "totalExperience": "8 years 8 months"
+          },
+          "result": {
+            "fitSummary": "The candidate has nearly 3 years as an Enterprise Account Executive at OneOrigin and prior B2B sales experience, but lacks explicit SaaS AE role details and North American market exposure. The CV does not show measurable sales achievements or specific SaaS product experience, which is critical for this SaaS AE role.",
+            "matchLevel": "weak",
+            "mode": "red_flag",
+            "questions": [
+              {
+                "category": "domain",
+                "question": "Could you explain your direct experience selling SaaS products, specifically in roles like your current Enterprise Account Executive position at OneOrigin?",
+                "signal": "red",
+                "whatToListenFor": "Specific SaaS product sales experience, sales cycle details, and customer engagement in a SaaS environment.",
+                "why": "The role requires 1.8+ years of B2B SaaS AE experience, which is not clearly demonstrated in the CV."
+              },
+              {
+                "category": "achievement",
+                "question": "Can you share measurable sales achievements or quota attainment details from your current role at OneOrigin or previous sales positions?",
+                "signal": "red",
+                "whatToListenFor": "Specific revenue numbers, quota attainment percentages, new client acquisition metrics, or pipeline growth statistics.",
+                "why": "The CV lacks quantifiable metrics or sales targets met to evidence strong sales performance."
+              }
+            ],
+            "topRisks": [
+              "No explicit SaaS AE experience mentioned",
+              "No measurable sales achievements provided in the CV"
+            ],
+            "topStrengths": [
+              "Experience in enterprise sales roles",
+              "Professional progression in business development",
+              "Current role involves account executive responsibilities"
+            ]
+          },
+          "answers": [
+            "NA.",
+            "Candidate mentioned that NA."
+          ],
+          "questionAnswerPairs": [
+            {
+              "category": "domain",
+              "question": "Could you explain your direct experience selling SaaS products, specifically in roles like your current Enterprise Account Executive position at OneOrigin?",
+              "why": "The role requires 1.8+ years of B2B SaaS AE experience, which is not clearly demonstrated in the CV.",
+              "whatToListenFor": "Specific SaaS product sales experience, sales cycle details, and customer engagement in a SaaS environment.",
+              "signal": "red",
+              "answer": "NA."
+            },
+            {
+              "category": "achievement",
+              "question": "Can you share measurable sales achievements or quota attainment details from your current role at OneOrigin or previous sales positions?",
+              "why": "The CV lacks quantifiable metrics or sales targets met to evidence strong sales performance.",
+              "whatToListenFor": "Specific revenue numbers, quota attainment percentages, new client acquisition metrics, or pipeline growth statistics.",
+              "signal": "red",
+              "answer": "Candidate mentioned that NA."
+            }
+          ]
+        }
+      },
+      "result": {
+        "fitSummary": "The candidate has nearly 3 years as an Enterprise Account Executive at OneOrigin and prior B2B sales experience, but lacks explicit SaaS AE role details and North American market exposure. The CV does not show measurable sales achievements or specific SaaS product experience, which is critical for this SaaS AE role.",
+        "matchLevel": "weak",
+        "mode": "red_flag",
+        "questions": [
+          {
+            "category": "domain",
+            "question": "Could you explain your direct experience selling SaaS products, specifically in roles like your current Enterprise Account Executive position at OneOrigin?",
+            "signal": "red",
+            "whatToListenFor": "Specific SaaS product sales experience, sales cycle details, and customer engagement in a SaaS environment.",
+            "why": "The role requires 1.8+ years of B2B SaaS AE experience, which is not clearly demonstrated in the CV."
+          },
+          {
+            "category": "achievement",
+            "question": "Can you share measurable sales achievements or quota attainment details from your current role at OneOrigin or previous sales positions?",
+            "signal": "red",
+            "whatToListenFor": "Specific revenue numbers, quota attainment percentages, new client acquisition metrics, or pipeline growth statistics.",
+            "why": "The CV lacks quantifiable metrics or sales targets met to evidence strong sales performance."
+          }
+        ],
+        "topRisks": [
+          "No explicit SaaS AE experience mentioned",
+          "No measurable sales achievements provided in the CV"
+        ],
+        "topStrengths": [
+          "Experience in enterprise sales roles",
+          "Professional progression in business development",
+          "Current role involves account executive responsibilities"
+        ]
+      },
+      "answers": [
+        "HRMS and ATS",
+        "No",
+        "1 M USD and 700k usd (target)",
+        "100k USD",
+        "10",
+        "10 L",
+        "15 L",
+        "30 DAYS",
+        "10 years",
+        "2 years",
+        "Career growth",
+        "Chennai",
+        "NA.",
+        "Candidate mentioned that NA."
+      ],
+      "questionAnswerPairs": [
+        {
+          "category": "standard",
+          "question": "What are your products you pitch in the current company",
+          "why": "Core JD screening question defined by the lead recruiter.",
+          "whatToListenFor": "Score the answer against your team benchmark.",
+          "signal": "yellow",
+          "answer": "HRMS and ATS",
+          "section": "standard"
+        },
+        {
+          "category": "standard",
+          "question": "Any other major products you pitched in the previous organisations",
+          "why": "Core JD screening question defined by the lead recruiter.",
+          "whatToListenFor": "Score the answer against your team benchmark.",
+          "signal": "yellow",
+          "answer": "No",
+          "section": "standard"
+        },
+        {
+          "category": "standard",
+          "question": "What are your sales quota and target achieved (any of monthly / quarterly / yearly and this period must be defined)",
+          "why": "Core JD screening question defined by the lead recruiter.",
+          "whatToListenFor": "Score the answer against your team benchmark.",
+          "signal": "yellow",
+          "answer": "1 M USD and 700k usd (target)",
+          "section": "standard"
+        },
+        {
+          "category": "standard",
+          "question": "What is your avg deal size in dollars",
+          "why": "Core JD screening question defined by the lead recruiter.",
+          "whatToListenFor": "Score the answer against your team benchmark.",
+          "signal": "yellow",
+          "answer": "100k USD",
+          "section": "standard"
+        },
+        {
+          "category": "standard",
+          "question": "How many closures in numbers you did in the same duration",
+          "why": "Core JD screening question defined by the lead recruiter.",
+          "whatToListenFor": "Score the answer against your team benchmark.",
+          "signal": "yellow",
+          "answer": "10",
+          "section": "standard"
+        },
+        {
+          "category": "standard",
+          "question": "Current CTC",
+          "why": "Core JD screening question defined by the lead recruiter.",
+          "whatToListenFor": "Score the answer against your team benchmark.",
+          "signal": "yellow",
+          "answer": "10 L",
+          "section": "standard"
+        },
+        {
+          "category": "standard",
+          "question": "Expected CTC",
+          "why": "Core JD screening question defined by the lead recruiter.",
+          "whatToListenFor": "Score the answer against your team benchmark.",
+          "signal": "yellow",
+          "answer": "15 L",
+          "section": "standard"
+        },
+        {
+          "category": "standard",
+          "question": "Notice Period",
+          "why": "Core JD screening question defined by the lead recruiter.",
+          "whatToListenFor": "Score the answer against your team benchmark.",
+          "signal": "yellow",
+          "answer": "30 DAYS",
+          "section": "standard"
+        },
+        {
+          "category": "standard",
+          "question": "Total Experience",
+          "why": "Core JD screening question defined by the lead recruiter.",
+          "whatToListenFor": "Score the answer against your team benchmark.",
+          "signal": "yellow",
+          "answer": "10 years",
+          "section": "standard"
+        },
+        {
+          "category": "standard",
+          "question": "Tenure in Current Org.",
+          "why": "Core JD screening question defined by the lead recruiter.",
+          "whatToListenFor": "Score the answer against your team benchmark.",
+          "signal": "yellow",
+          "answer": "2 years",
+          "section": "standard"
+        },
+        {
+          "category": "standard",
+          "question": "Reason of change",
+          "why": "Core JD screening question defined by the lead recruiter.",
+          "whatToListenFor": "Score the answer against your team benchmark.",
+          "signal": "yellow",
+          "answer": "Career growth",
+          "section": "standard"
+        },
+        {
+          "category": "standard",
+          "question": "Location",
+          "why": "Core JD screening question defined by the lead recruiter.",
+          "whatToListenFor": "Score the answer against your team benchmark.",
+          "signal": "yellow",
+          "answer": "Chennai",
+          "section": "standard"
+        },
+        {
+          "category": "domain",
+          "question": "Could you explain your direct experience selling SaaS products, specifically in roles like your current Enterprise Account Executive position at OneOrigin?",
+          "why": "The role requires 1.8+ years of B2B SaaS AE experience, which is not clearly demonstrated in the CV.",
+          "whatToListenFor": "Specific SaaS product sales experience, sales cycle details, and customer engagement in a SaaS environment.",
+          "signal": "red",
+          "answer": "NA.",
+          "section": "red_flag"
+        },
+        {
+          "category": "achievement",
+          "question": "Can you share measurable sales achievements or quota attainment details from your current role at OneOrigin or previous sales positions?",
+          "why": "The CV lacks quantifiable metrics or sales targets met to evidence strong sales performance.",
+          "whatToListenFor": "Specific revenue numbers, quota attainment percentages, new client acquisition metrics, or pipeline growth statistics.",
+          "signal": "red",
+          "answer": "Candidate mentioned that NA.",
+          "section": "red_flag"
+        }
+      ],
+      "companyId": "c0a7d2c9-4ddb-4add-9d4a-24cdd1caba7c",
+      "recruiterId": "492fe77a-562c-40a1-9294-79a58e8d0721",
+      "recruiterName": "Ankit Garg",
+      "recruiterEmail": "ankit.garg@kompatibleminds.com",
+      "updatedAt": "2026-03-20T17:39:45.714Z"
+    }
+  ]
+}

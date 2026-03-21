@@ -1,0 +1,9 @@
+{
+  "name": "Candidate Quick Capture",
+  "short_name": "Quick Capture",
+  "start_url": "/quick-capture/",
+  "display": "standalone",
+  "background_color": "#f4f7fb",
+  "theme_color": "#102a43",
+  "icons": []
+}
