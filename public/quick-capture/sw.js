@@ -1,4 +1,4 @@
-const CACHE_NAME = "candidate-quick-capture-v2";
+const CACHE_NAME = "candidate-quick-capture-v3";
 const APP_SHELL = [
   "/quick-capture/",
   "/quick-capture/index.html",
@@ -6,7 +6,9 @@ const APP_SHELL = [
   "/quick-capture/style.css",
   "/quick-capture/script.js",
   "/quick-capture/list.js",
-  "/quick-capture/manifest.json"
+  "/quick-capture/manifest.json",
+  "/quick-capture/icon-192.svg",
+  "/quick-capture/icon-512.svg"
 ];
 
 self.addEventListener("install", (event) => {

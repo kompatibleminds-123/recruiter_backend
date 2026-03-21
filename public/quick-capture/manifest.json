@@ -1,9 +1,26 @@
 {
-  "name": "Candidate Quick Capture",
+  "id": "/quick-capture/",
+  "name": "RecruitDesk AI Quick Capture",
   "short_name": "Quick Capture",
+  "description": "Mobile-first recruiter quick capture app for notes, voice, and structured candidate save.",
   "start_url": "/quick-capture/",
+  "scope": "/quick-capture/",
   "display": "standalone",
-  "background_color": "#f4f7fb",
+  "orientation": "portrait",
+  "background_color": "#eef4f7",
   "theme_color": "#102a43",
-  "icons": []
+  "icons": [
+    {
+      "src": "/quick-capture/icon-192.svg",
+      "sizes": "192x192",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/quick-capture/icon-512.svg",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
 }
