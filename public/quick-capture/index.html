@@ -10,20 +10,19 @@
   </head>
   <body>
     <main class="app-shell">
-      <section class="hero-card">
-        <p class="eyebrow">Candidate Quick Capture</p>
-        <h1>Capture recruiter notes fast.</h1>
-        <p class="subcopy">
-          Type or speak rough candidate notes. AI will structure them and save them instantly.
-        </p>
-        <div class="hero-actions">
-          <a class="secondary-link" href="/quick-capture/list.html">View saved candidates</a>
+      <section class="app-topbar">
+        <div class="app-topbar-copy">
+          <p class="eyebrow">RecruitDesk AI</p>
+          <h1>Quick Capture</h1>
+          <p class="subcopy">Capture recruiter notes in a mobile-first workflow and save them instantly.</p>
         </div>
+        <a class="secondary-link topbar-link" href="/quick-capture/list.html">Saved</a>
       </section>
 
       <section class="panel">
         <div class="panel-head">
-          <h2>Quick capture form</h2>
+          <h2>Candidate Details</h2>
+          <span class="panel-kicker">Structured input</span>
         </div>
         <div class="quick-form-grid">
           <label class="field">
@@ -60,15 +59,19 @@
           </label>
         </div>
 
+        <div class="panel-head panel-head-note">
+          <h2>Quick Note</h2>
+          <span class="panel-kicker">Free-form note</span>
+        </div>
         <label class="label" for="noteInput">Quick candidate note</label>
         <textarea
           id="noteInput"
           class="note-input"
-          rows="8"
+          rows="7"
           placeholder="Example: met Akhilesh ex HighRadius enterprise sales strong candidate current ctc 12 lpa expected 16 lpa follow up next week"
         ></textarea>
 
-        <div class="actions">
+        <div class="actions sticky-actions">
           <button id="micButton" type="button" class="ghost-button">Start voice input</button>
           <button id="submitButton" type="button" class="primary-button">Parse and save</button>
         </div>
