@@ -7,8 +7,8 @@ const APP_SHELL = [
   "/quick-capture/script.js",
   "/quick-capture/list.js",
   "/quick-capture/manifest.json",
-  "/quick-capture/icon-192.svg",
-  "/quick-capture/icon-512.svg"
+  "/quick-capture/icon-192.png",
+  "/quick-capture/icon-512.png"
 ];
 
 self.addEventListener("install", (event) => {
