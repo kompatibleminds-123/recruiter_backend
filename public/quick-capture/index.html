@@ -75,6 +75,10 @@
             <input id="candidateExperience" class="text-input" type="text" />
           </label>
           <label class="field">
+            <span class="label">Location</span>
+            <input id="candidateLocation" class="text-input" type="text" />
+          </label>
+          <label class="field">
             <span class="label">Current CTC</span>
             <input id="candidateCurrentCtc" class="text-input" type="text" />
           </label>
@@ -85,6 +89,18 @@
           <label class="field">
             <span class="label">Notice period</span>
             <input id="candidateNoticePeriod" class="text-input" type="text" />
+          </label>
+          <label class="field">
+            <span class="label">Phone</span>
+            <input id="candidatePhone" class="text-input" type="text" />
+          </label>
+          <label class="field">
+            <span class="label">Email</span>
+            <input id="candidateEmail" class="text-input" type="email" />
+          </label>
+          <label class="field field-full">
+            <span class="label">LinkedIn</span>
+            <input id="candidateLinkedin" class="text-input" type="text" />
           </label>
           <label class="field field-full">
             <span class="label">Next action</span>
@@ -106,7 +122,7 @@
         <div class="actions sticky-actions">
           <button id="micButton" type="button" class="ghost-button">Start voice input</button>
           <button id="parseButton" type="button" class="ghost-button">Parse for review</button>
-          <button id="saveButton" type="button" class="primary-button" disabled>Save candidate</button>
+          <button id="saveButton" type="button" class="primary-button" disabled hidden>Save candidate</button>
         </div>
 
         <p id="statusMessage" class="status-message" role="status" aria-live="polite"></p>

@@ -9,9 +9,13 @@ const candidateNameInput = document.getElementById("candidateName");
 const candidateCompanyInput = document.getElementById("candidateCompany");
 const candidateRoleInput = document.getElementById("candidateRole");
 const candidateExperienceInput = document.getElementById("candidateExperience");
+const candidateLocationInput = document.getElementById("candidateLocation");
 const candidateCurrentCtcInput = document.getElementById("candidateCurrentCtc");
 const candidateExpectedCtcInput = document.getElementById("candidateExpectedCtc");
 const candidateNoticePeriodInput = document.getElementById("candidateNoticePeriod");
+const candidatePhoneInput = document.getElementById("candidatePhone");
+const candidateEmailInput = document.getElementById("candidateEmail");
+const candidateLinkedinInput = document.getElementById("candidateLinkedin");
 const candidateNextActionInput = document.getElementById("candidateNextAction");
 const authLoggedOut = document.getElementById("authLoggedOut");
 const authLoggedIn = document.getElementById("authLoggedIn");
@@ -96,13 +100,20 @@ function renderAuthState(user) {
       : "";
   }
   if (parseButton) parseButton.disabled = !user;
-  if (saveButton) saveButton.disabled = !user || !latestParsedCandidateDraft;
+  if (saveButton) {
+    saveButton.disabled = !user || !latestParsedCandidateDraft;
+    saveButton.hidden = !latestParsedCandidateDraft;
+  }
   if (!user) {
     resetCurrentCandidateTracking();
   }
 }
 
 function renderJson(data) {
+  if (typeof data === "string") {
+    jsonOutput.textContent = data;
+    return;
+  }
   jsonOutput.textContent = JSON.stringify(data, null, 2);
 }
 
@@ -157,9 +168,13 @@ function populateFormFromParsedResult(data) {
   if (candidateCompanyInput) candidateCompanyInput.value = String(data.company || "").trim();
   if (candidateRoleInput) candidateRoleInput.value = String(data.role || "").trim();
   if (candidateExperienceInput) candidateExperienceInput.value = String(data.experience || "").trim();
+  if (candidateLocationInput) candidateLocationInput.value = String(data.location || "").trim();
   if (candidateCurrentCtcInput) candidateCurrentCtcInput.value = String(data.current_ctc || "").trim();
   if (candidateExpectedCtcInput) candidateExpectedCtcInput.value = String(data.expected_ctc || "").trim();
   if (candidateNoticePeriodInput) candidateNoticePeriodInput.value = String(data.notice_period || "").trim();
+  if (candidatePhoneInput) candidatePhoneInput.value = String(data.phone || "").trim();
+  if (candidateEmailInput) candidateEmailInput.value = String(data.email || "").trim();
+  if (candidateLinkedinInput) candidateLinkedinInput.value = String(data.linkedin || "").trim();
   if (candidateNextActionInput) candidateNextActionInput.value = String(data.next_action || "").trim();
   if (noteInput) noteInput.value = String(data.notes || "").trim();
 }
@@ -168,7 +183,39 @@ function setLatestParsedCandidateDraft(data) {
   latestParsedCandidateDraft = data && typeof data === "object" ? { ...data } : null;
   if (saveButton) {
     saveButton.disabled = !currentQuickCaptureUser || !latestParsedCandidateDraft;
+    saveButton.hidden = !latestParsedCandidateDraft;
   }
+}
+
+function buildCandidateFromReviewFields() {
+  const base = latestParsedCandidateDraft && typeof latestParsedCandidateDraft === "object" ? { ...latestParsedCandidateDraft } : {};
+  const notesValue = noteInput?.value.trim() || "";
+  return {
+    ...base,
+    id: currentCandidateRecordId || base.id || undefined,
+    created_at: currentCandidateCreatedAt || base.created_at || undefined,
+    source: base.source || "mobile_pwa",
+    name: candidateNameInput?.value.trim() || "",
+    company: candidateCompanyInput?.value.trim() || "",
+    role: candidateRoleInput?.value.trim() || "",
+    experience: candidateExperienceInput?.value.trim() || "",
+    location: candidateLocationInput?.value.trim() || "",
+    current_ctc: candidateCurrentCtcInput?.value.trim() || "",
+    expected_ctc: candidateExpectedCtcInput?.value.trim() || "",
+    notice_period: candidateNoticePeriodInput?.value.trim() || "",
+    phone: candidatePhoneInput?.value.trim() || "",
+    email: candidateEmailInput?.value.trim() || "",
+    linkedin: candidateLinkedinInput?.value.trim() || "",
+    next_action: candidateNextActionInput?.value.trim() || "",
+    notes: notesValue,
+    recruiter_id: currentQuickCaptureUser?.id || base.recruiter_id || "",
+    recruiter_name: currentQuickCaptureUser?.name || base.recruiter_name || ""
+  };
+}
+
+function refreshReviewPreview() {
+  if (!latestParsedCandidateDraft) return;
+  renderCandidateSummary(buildCandidateFromReviewFields());
 }
 
 function clearVoiceSilenceTimer() {
@@ -316,6 +363,8 @@ function resetCurrentCandidateTracking() {
   currentCandidateRecordId = "";
   currentCandidateCreatedAt = "";
   setLatestParsedCandidateDraft(null);
+  renderCandidateSummary(null);
+  renderJson("No parsed data yet.");
 }
 
 function buildQuickCapturePayload(noteText) {
@@ -359,8 +408,8 @@ async function parseNoteForReview() {
     });
     renderJson(payload.result);
     populateFormFromParsedResult(payload.result);
-    renderCandidateSummary(payload.result);
     setLatestParsedCandidateDraft(payload.result);
+    refreshReviewPreview();
     if (payload.duplicate && Array.isArray(payload.duplicateBy) && payload.duplicateBy.length) {
       setStatus(`Possible duplicate found by ${payload.duplicateBy.join(", ")}. Review the existing candidate before saving.`, "error");
     } else {
@@ -398,22 +447,15 @@ async function saveCandidateAfterReview() {
       },
       body: JSON.stringify({
         candidate: {
-          ...latestParsedCandidateDraft,
-          id: currentCandidateRecordId || latestParsedCandidateDraft.id || undefined,
-          created_at: currentCandidateCreatedAt || latestParsedCandidateDraft.created_at || undefined,
-          notes: noteInput?.value.trim() || latestParsedCandidateDraft.notes || "",
-          next_action: candidateNextActionInput?.value.trim() || latestParsedCandidateDraft.next_action || "",
-          recruiter_id: currentQuickCaptureUser?.id || latestParsedCandidateDraft.recruiter_id || "",
-          recruiter_name: currentQuickCaptureUser?.name || latestParsedCandidateDraft.recruiter_name || "",
-          source: latestParsedCandidateDraft.source || "mobile_pwa"
+          ...buildCandidateFromReviewFields()
         }
       })
     });
 
     renderJson(payload.result);
     populateFormFromParsedResult(payload.result);
-    renderCandidateSummary(payload.result);
     setLatestParsedCandidateDraft(payload.result);
+    refreshReviewPreview();
     if (payload.duplicate && Array.isArray(payload.duplicateBy) && payload.duplicateBy.length) {
       setStatus(`Existing candidate reused by ${payload.duplicateBy.join(", ")}.`, "error");
     } else if (currentCandidateRecordId) {
@@ -487,6 +529,25 @@ if (loginButton) {
 if (logoutButton) {
   logoutButton.addEventListener("click", handleLogout);
 }
+
+[
+  candidateNameInput,
+  candidateCompanyInput,
+  candidateRoleInput,
+  candidateExperienceInput,
+  candidateLocationInput,
+  candidateCurrentCtcInput,
+  candidateExpectedCtcInput,
+  candidateNoticePeriodInput,
+  candidatePhoneInput,
+  candidateEmailInput,
+  candidateLinkedinInput,
+  candidateNextActionInput,
+  noteInput
+].forEach((element) => {
+  if (!element) return;
+  element.addEventListener("input", refreshReviewPreview);
+});
 
 bootstrapAuthState().catch(() => {
   renderAuthState(null);

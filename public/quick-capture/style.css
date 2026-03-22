@@ -213,6 +213,8 @@ h2 {
 .sticky-actions {
   position: sticky;
   bottom: 10px;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   padding: 10px;
   border-radius: 20px;
   background: rgba(238, 244, 247, 0.92);
