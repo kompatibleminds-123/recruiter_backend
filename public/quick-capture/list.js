@@ -1,6 +1,11 @@
 const candidateList = document.getElementById("candidateList");
 const listStatus = document.getElementById("listStatus");
 const refreshButton = document.getElementById("refreshButton");
+const authLoggedOut = document.getElementById("authLoggedOut");
+const authLoggedIn = document.getElementById("authLoggedIn");
+const logoutButton = document.getElementById("logoutButton");
+const authSummary = document.getElementById("authSummary");
+const authStatus = document.getElementById("authStatus");
 
 function escapeHtml(value) {
   return String(value || "")
@@ -57,17 +62,37 @@ function renderCandidates(items) {
     .join("");
 }
 
+function renderAuthState(user) {
+  if (authLoggedOut) authLoggedOut.hidden = Boolean(user);
+  if (authLoggedIn) authLoggedIn.hidden = !user;
+  if (authSummary) {
+    authSummary.textContent = user
+      ? `${user.name} | ${user.role === "admin" ? "ADMIN" : "RECRUITER"} | ${user.companyName}`
+      : "";
+  }
+  refreshButton.disabled = !user;
+  if (!user) {
+    candidateList.innerHTML = '<div class="candidate-card"><p>Login required to view saved candidates.</p></div>';
+  }
+}
+
+function setAuthStatus(message, tone = "") {
+  if (!authStatus) return;
+  authStatus.textContent = message || "";
+  authStatus.className = `status-message${tone ? ` ${tone}` : ""}`;
+}
+
 async function loadCandidates() {
+  if (!getQuickCaptureAuthToken()) {
+    renderAuthState(null);
+    return;
+  }
   listStatus.textContent = "Loading candidates...";
   listStatus.className = "status-message";
   refreshButton.disabled = true;
 
   try {
-    const response = await fetch("/candidates");
-    const payload = await response.json();
-    if (!response.ok || !payload.ok) {
-      throw new Error(payload.error || "Failed to load candidates.");
-    }
+    const payload = await callQuickCaptureApi("/candidates", { method: "GET" });
     renderCandidates(Array.isArray(payload.result) ? payload.result : []);
     listStatus.textContent = `Loaded ${Array.isArray(payload.result) ? payload.result.length : 0} candidates.`;
   } catch (error) {
@@ -85,4 +110,24 @@ if ("serviceWorker" in navigator) {
 }
 
 refreshButton.addEventListener("click", loadCandidates);
-loadCandidates();
+
+if (logoutButton) {
+  logoutButton.addEventListener("click", () => {
+    logoutQuickCaptureUser();
+    renderAuthState(null);
+    setAuthStatus("Logged out.", "success");
+  });
+}
+
+getQuickCaptureCurrentUser()
+  .then((user) => {
+    renderAuthState(user);
+    if (user) {
+      setAuthStatus("Logged in.", "success");
+      return loadCandidates();
+    }
+    return null;
+  })
+  .catch(() => {
+    renderAuthState(null);
+  });

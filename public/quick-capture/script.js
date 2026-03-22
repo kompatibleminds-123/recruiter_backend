@@ -12,6 +12,14 @@ const candidateCurrentCtcInput = document.getElementById("candidateCurrentCtc");
 const candidateExpectedCtcInput = document.getElementById("candidateExpectedCtc");
 const candidateNoticePeriodInput = document.getElementById("candidateNoticePeriod");
 const candidateNextActionInput = document.getElementById("candidateNextAction");
+const authLoggedOut = document.getElementById("authLoggedOut");
+const authLoggedIn = document.getElementById("authLoggedIn");
+const authEmailInput = document.getElementById("authEmail");
+const authPasswordInput = document.getElementById("authPassword");
+const loginButton = document.getElementById("loginButton");
+const logoutButton = document.getElementById("logoutButton");
+const authStatus = document.getElementById("authStatus");
+const authSummary = document.getElementById("authSummary");
 
 let recognition = null;
 let isListening = false;
@@ -24,6 +32,7 @@ let voiceInterimText = "";
 let voiceCommittedChunks = new Set();
 let currentCandidateRecordId = "";
 let currentCandidateCreatedAt = "";
+let currentQuickCaptureUser = null;
 
 function normalizeVoiceChunk(value) {
   return String(value || "")
@@ -67,6 +76,29 @@ function mergeVoiceText(baseText, newChunk) {
 function setStatus(message, tone = "") {
   statusMessage.textContent = message || "";
   statusMessage.className = `status-message${tone ? ` ${tone}` : ""}`;
+}
+
+function setAuthStatus(message, tone = "") {
+  if (!authStatus) return;
+  authStatus.textContent = message || "";
+  authStatus.className = `status-message${tone ? ` ${tone}` : ""}`;
+}
+
+function renderAuthState(user) {
+  currentQuickCaptureUser = user || null;
+  if (authLoggedOut) authLoggedOut.hidden = Boolean(user);
+  if (authLoggedIn) authLoggedIn.hidden = !user;
+  if (authSummary) {
+    authSummary.textContent = user
+      ? `${user.name} | ${user.role === "admin" ? "ADMIN" : "RECRUITER"} | ${user.companyName}`
+      : "";
+  }
+  if (submitButton) {
+    submitButton.disabled = !user;
+  }
+  if (!user) {
+    resetCurrentCandidateTracking();
+  }
 }
 
 function renderJson(data) {
@@ -278,6 +310,10 @@ function resetCurrentCandidateTracking() {
 }
 
 async function submitNote() {
+  if (!currentQuickCaptureUser) {
+    setStatus("Login required first.", "error");
+    return;
+  }
   stopVoiceCapture();
   const noteText = buildNoteFromForm();
   if (!noteText) {
@@ -290,10 +326,12 @@ async function submitNote() {
   setStatus("Parsing and saving candidate note...");
 
   try {
+    const token = getQuickCaptureAuthToken();
     const response = await fetch("/parse-note", {
       method: "POST",
       headers: {
-        "Content-Type": "application/json"
+        "Content-Type": "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {})
       },
       body: JSON.stringify({
         id: currentCandidateRecordId || undefined,
@@ -301,7 +339,9 @@ async function submitNote() {
         noteText,
         source: "mobile_pwa",
         client_name: "",
-        jd_title: candidateRoleInput?.value.trim() || ""
+        jd_title: candidateRoleInput?.value.trim() || "",
+        recruiter_id: currentQuickCaptureUser?.id || "",
+        recruiter_name: currentQuickCaptureUser?.name || ""
       })
     });
 
@@ -347,3 +387,43 @@ micButton.addEventListener("click", () => {
 });
 
 submitButton.addEventListener("click", submitNote);
+
+async function handleLogin() {
+  setAuthStatus("");
+  try {
+    loginButton.disabled = true;
+    const user = await loginQuickCaptureUser(authEmailInput?.value, authPasswordInput?.value);
+    if (authPasswordInput) authPasswordInput.value = "";
+    renderAuthState(user);
+    setAuthStatus("Logged in.", "success");
+    setStatus("Quick capture is ready.", "success");
+  } catch (error) {
+    renderAuthState(null);
+    setAuthStatus(String(error?.message || error), "error");
+  } finally {
+    loginButton.disabled = false;
+  }
+}
+
+function handleLogout() {
+  logoutQuickCaptureUser();
+  renderAuthState(null);
+  setAuthStatus("Logged out.", "success");
+}
+
+async function bootstrapAuthState() {
+  const user = await getQuickCaptureCurrentUser();
+  renderAuthState(user);
+}
+
+if (loginButton) {
+  loginButton.addEventListener("click", handleLogin);
+}
+
+if (logoutButton) {
+  logoutButton.addEventListener("click", handleLogout);
+}
+
+bootstrapAuthState().catch(() => {
+  renderAuthState(null);
+});

@@ -10,6 +10,26 @@
   </head>
   <body>
     <main class="app-shell">
+      <section class="panel auth-panel">
+        <div class="panel-head">
+          <h2>PWA Login</h2>
+          <span class="panel-kicker">Backend account</span>
+        </div>
+        <div id="authLoggedOut">
+          <p class="subcopy">Login to view recruiter-scoped saved candidates.</p>
+          <div class="hero-actions">
+            <a class="secondary-link" href="/quick-capture/">Go to capture login</a>
+          </div>
+        </div>
+        <div id="authLoggedIn" hidden>
+          <div id="authSummary" class="auth-summary"></div>
+          <div class="actions">
+            <button id="logoutButton" type="button" class="ghost-button">Logout</button>
+          </div>
+        </div>
+        <p id="authStatus" class="status-message" role="status" aria-live="polite"></p>
+      </section>
+
       <section class="hero-card compact">
         <p class="eyebrow">Candidate Quick Capture</p>
         <h1>Saved candidates</h1>
@@ -29,6 +49,7 @@
       </section>
     </main>
 
+    <script src="/quick-capture/auth.js"></script>
     <script src="/quick-capture/list.js"></script>
   </body>
 </html>

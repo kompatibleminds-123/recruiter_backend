@@ -14,6 +14,35 @@
   </head>
   <body>
     <main class="app-shell">
+      <section class="panel auth-panel">
+        <div class="panel-head">
+          <h2>PWA Login</h2>
+          <span class="panel-kicker">Backend account</span>
+        </div>
+        <div id="authLoggedOut">
+          <div class="quick-form-grid">
+            <label class="field">
+              <span class="label">Email</span>
+              <input id="authEmail" class="text-input" type="email" autocomplete="username" />
+            </label>
+            <label class="field">
+              <span class="label">Password</span>
+              <input id="authPassword" class="text-input" type="password" autocomplete="current-password" />
+            </label>
+          </div>
+          <div class="actions">
+            <button id="loginButton" type="button" class="primary-button">Login</button>
+          </div>
+        </div>
+        <div id="authLoggedIn" hidden>
+          <div id="authSummary" class="auth-summary"></div>
+          <div class="actions">
+            <button id="logoutButton" type="button" class="ghost-button">Logout</button>
+          </div>
+        </div>
+        <p id="authStatus" class="status-message" role="status" aria-live="polite"></p>
+      </section>
+
       <section class="app-topbar">
         <div class="app-topbar-copy">
           <p class="eyebrow">RecruitDesk AI</p>
@@ -95,6 +124,7 @@
       </section>
     </main>
 
+    <script src="/quick-capture/auth.js"></script>
     <script src="/quick-capture/script.js"></script>
   </body>
 </html>
