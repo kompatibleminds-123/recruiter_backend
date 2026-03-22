@@ -89,6 +89,7 @@ function renderCandidateSummary(data) {
     ["Company", data?.company],
     ["Role", data?.role],
     ["Experience", data?.experience],
+    ["Location", data?.location],
     ["Skills", Array.isArray(data?.skills) ? data.skills.filter(Boolean).join(", ") : ""],
     ["Current CTC", data?.current_ctc],
     ["Expected CTC", data?.expected_ctc],

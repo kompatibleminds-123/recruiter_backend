@@ -38,6 +38,9 @@ function buildQuickCaptureSchema() {
       "role",
       "experience",
       "skills",
+      "phone",
+      "email",
+      "location",
       "current_ctc",
       "expected_ctc",
       "notice_period",
@@ -55,6 +58,9 @@ function buildQuickCaptureSchema() {
         items: { type: "string" },
         maxItems: 20
       },
+      phone: { type: ["string", "null"] },
+      email: { type: ["string", "null"] },
+      location: { type: ["string", "null"] },
       current_ctc: { type: ["string", "null"] },
       expected_ctc: { type: ["string", "null"] },
       notice_period: { type: ["string", "null"] },
@@ -120,13 +126,20 @@ async function callOpenAiJsonSchema({ apiKey, prompt, model, schemaName, schema 
 function buildFallbackStructuredNote(noteText, metadata = {}) {
   const raw = String(noteText || "").trim();
   const linkedin = String(metadata.linkedin || "").trim() || null;
+  const emailMatch = raw.match(/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/i);
+  const phoneMatch =
+    raw.match(/(?:\+?\d{1,3}[\s-]?)?(?:\(?\d{3,5}\)?[\s-]?)?\d{3,5}[\s-]?\d{4,6}\b/) ||
+    raw.match(/\b\d{10}\b/);
   const nameMatch = raw.match(/\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,3})\b/);
   const companyMatch =
     raw.match(/\b(?:ex|from|at)\s+([A-Z][A-Za-z0-9&.,'()\- ]{1,60})/i) ||
-    raw.match(/\b(?:company)\s*[:\-]?\s*([A-Z][A-Za-z0-9&.,'()\- ]{1,60})/i);
+    raw.match(/\b(?:company|organisation|organization)\s*[:\-]?\s*([A-Z][A-Za-z0-9&.,'()\- ]{1,60})/i);
   const roleMatch =
     raw.match(/\b(?:role|designation|title)\s*[:\-]?\s*([A-Za-z][A-Za-z0-9&.,'()\- /]{1,80})/i) ||
     raw.match(/\b([A-Za-z][A-Za-z0-9&.,'()\- /]{2,80}\b(?:sales|engineer|developer|manager|executive|consultant|recruiter|analyst|lead|director|specialist))\b/i);
+  const locationMatch =
+    raw.match(/\b(?:location|based in|located in|stays in|lives in)\s*[:\-]?\s*([A-Za-z][A-Za-z ,./()\-]{1,60})/i) ||
+    raw.match(/\b(Bangalore|Bengaluru|Mumbai|Pune|Delhi|Noida|Gurgaon|Gurugram|Hyderabad|Chennai|Kolkata|Ahmedabad|Jaipur|Remote)\b/i);
   const experienceMatch = raw.match(/\b\d+\s*(?:\+)?\s*(?:years?|yrs?)(?:\s+\d+\s*(?:months?|mos?))?\b/i);
   const currentCtcMatch = raw.match(/\b(?:current\s*ctc|ctc)\s*[:\-]?\s*([A-Za-z0-9.+\- ]{1,30}\b(?:lpa|lakhs?|lakh|cr|crore|k|pa)?)\b/i);
   const expectedCtcMatch = raw.match(/\bexpected\s*ctc\s*[:\-]?\s*([A-Za-z0-9.+\- ]{1,30}\b(?:lpa|lakhs?|lakh|cr|crore|k|pa)?)\b/i);
@@ -140,6 +153,9 @@ function buildFallbackStructuredNote(noteText, metadata = {}) {
     role: roleMatch?.[1]?.trim() || null,
     experience: experienceMatch?.[0]?.trim() || null,
     skills: [],
+    phone: phoneMatch?.[0]?.trim().replace(/\s+/g, " ") || null,
+    email: emailMatch?.[0]?.trim() || null,
+    location: locationMatch?.[1]?.trim() || locationMatch?.[0]?.trim() || null,
     current_ctc: currentCtcMatch?.[1]?.trim() || null,
     expected_ctc: expectedCtcMatch?.[1]?.trim() || null,
     notice_period: noticeMatch?.[1]?.trim() || null,
@@ -161,6 +177,9 @@ function buildParseNotePrompt(noteText) {
     "- role",
     "- experience",
     "- skills",
+    "- phone",
+    "- email",
+    "- location",
     "- current_ctc",
     "- expected_ctc",
     "- notice_period",
@@ -182,6 +201,9 @@ function buildParseNotePrompt(noteText) {
     '  "role": "",',
     '  "experience": "",',
     '  "skills": [],',
+    '  "phone": "",',
+    '  "email": "",',
+    '  "location": "",',
     '  "current_ctc": "",',
     '  "expected_ctc": "",',
     '  "notice_period": "",',
@@ -209,6 +231,9 @@ function normalizeCandidateRow(structured, rawNote, metadata = {}) {
     skills: Array.isArray(structured?.skills)
       ? structured.skills.map((item) => String(item || "").trim()).filter(Boolean)
       : [],
+    phone: structured?.phone == null ? null : String(structured.phone).trim() || null,
+    email: structured?.email == null ? null : String(structured.email).trim() || null,
+    location: structured?.location == null ? null : String(structured.location).trim() || null,
     current_ctc: structured?.current_ctc == null ? null : String(structured.current_ctc).trim() || null,
     expected_ctc: structured?.expected_ctc == null ? null : String(structured.expected_ctc).trim() || null,
     notice_period: structured?.notice_period == null ? null : String(structured.notice_period).trim() || null,
