@@ -210,6 +210,14 @@ h2 {
   flex-wrap: wrap;
 }
 
+.single-action {
+  grid-template-columns: 1fr;
+}
+
+.topbar-stack {
+  align-items: stretch;
+}
+
 .sticky-actions {
   position: sticky;
   bottom: 10px;

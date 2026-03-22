@@ -45,6 +45,7 @@ function buildQuickCaptureSchema() {
       "phone",
       "email",
       "location",
+      "highest_education",
       "current_ctc",
       "expected_ctc",
       "notice_period",
@@ -65,6 +66,7 @@ function buildQuickCaptureSchema() {
       phone: { type: ["string", "null"] },
       email: { type: ["string", "null"] },
       location: { type: ["string", "null"] },
+      highest_education: { type: ["string", "null"] },
       current_ctc: { type: ["string", "null"] },
       expected_ctc: { type: ["string", "null"] },
       notice_period: { type: ["string", "null"] },
@@ -144,6 +146,8 @@ function buildFallbackStructuredNote(noteText, metadata = {}) {
   const locationMatch =
     raw.match(/\b(?:location|based in|located in|stays in|lives in)\s*[:\-]?\s*([A-Za-z][A-Za-z ,./()\-]{1,60})/i) ||
     raw.match(/\b(Bangalore|Bengaluru|Mumbai|Pune|Delhi|Noida|Gurgaon|Gurugram|Hyderabad|Chennai|Kolkata|Ahmedabad|Jaipur|Remote)\b/i);
+  const highestEducationMatch =
+    raw.match(/\b(?:highest\s*(?:education|degree)|qualification)\s*[:\-]?\s*([A-Za-z0-9.,/&()\- ]{2,120})/i);
   const experienceMatch = raw.match(/\b\d+\s*(?:\+)?\s*(?:years?|yrs?)(?:\s+\d+\s*(?:months?|mos?))?\b/i);
   const currentCtcMatch = raw.match(/\b(?:current\s*ctc|ctc)\s*[:\-]?\s*([A-Za-z0-9.+\- ]{1,30}\b(?:lpa|lakhs?|lakh|cr|crore|k|pa)?)\b/i);
   const expectedCtcMatch = raw.match(/\bexpected\s*ctc\s*[:\-]?\s*([A-Za-z0-9.+\- ]{1,30}\b(?:lpa|lakhs?|lakh|cr|crore|k|pa)?)\b/i);
@@ -160,6 +164,7 @@ function buildFallbackStructuredNote(noteText, metadata = {}) {
     phone: phoneMatch?.[0]?.trim().replace(/\s+/g, " ") || null,
     email: emailMatch?.[0]?.trim() || null,
     location: locationMatch?.[1]?.trim() || locationMatch?.[0]?.trim() || null,
+    highest_education: highestEducationMatch?.[1]?.trim() || null,
     current_ctc: currentCtcMatch?.[1]?.trim() || null,
     expected_ctc: expectedCtcMatch?.[1]?.trim() || null,
     notice_period: noticeMatch?.[1]?.trim() || null,
@@ -184,6 +189,7 @@ function buildParseNotePrompt(noteText) {
     "- phone",
     "- email",
     "- location",
+    "- highest_education",
     "- current_ctc",
     "- expected_ctc",
     "- notice_period",
@@ -208,6 +214,7 @@ function buildParseNotePrompt(noteText) {
     '  "phone": "",',
     '  "email": "",',
     '  "location": "",',
+    '  "highest_education": "",',
     '  "current_ctc": "",',
     '  "expected_ctc": "",',
     '  "notice_period": "",',
@@ -238,6 +245,7 @@ function normalizeCandidateRow(structured, rawNote, metadata = {}) {
     phone: structured?.phone == null ? null : String(structured.phone).trim() || null,
     email: structured?.email == null ? null : String(structured.email).trim() || null,
     location: structured?.location == null ? null : String(structured.location).trim() || null,
+    highest_education: structured?.highest_education == null ? null : String(structured.highest_education).trim() || null,
     current_ctc: structured?.current_ctc == null ? null : String(structured.current_ctc).trim() || null,
     expected_ctc: structured?.expected_ctc == null ? null : String(structured.expected_ctc).trim() || null,
     notice_period: structured?.notice_period == null ? null : String(structured.notice_period).trim() || null,

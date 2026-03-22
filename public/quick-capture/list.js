@@ -1,11 +1,13 @@
 const candidateList = document.getElementById("candidateList");
 const listStatus = document.getElementById("listStatus");
 const refreshButton = document.getElementById("refreshButton");
+const searchInput = document.getElementById("searchInput");
 const authLoggedOut = document.getElementById("authLoggedOut");
 const authLoggedIn = document.getElementById("authLoggedIn");
 const logoutButton = document.getElementById("logoutButton");
 const authSummary = document.getElementById("authSummary");
 const authStatus = document.getElementById("authStatus");
+let allCandidates = [];
 
 function escapeHtml(value) {
   return String(value || "")
@@ -62,6 +64,33 @@ function renderCandidates(items) {
     .join("");
 }
 
+function applyCandidateSearch() {
+  const query = String(searchInput?.value || "").trim().toLowerCase();
+  if (!query) {
+    renderCandidates(allCandidates);
+    return;
+  }
+
+  const filtered = allCandidates.filter((candidate) => {
+    const haystack = [
+      candidate.name,
+      candidate.company,
+      candidate.role,
+      candidate.experience,
+      candidate.phone,
+      candidate.email,
+      candidate.linkedin,
+      candidate.notes,
+      candidate.next_action
+    ]
+      .map((value) => String(value || "").toLowerCase())
+      .join(" ");
+    return haystack.includes(query);
+  });
+
+  renderCandidates(filtered);
+}
+
 function renderAuthState(user) {
   if (authLoggedOut) authLoggedOut.hidden = Boolean(user);
   if (authLoggedIn) authLoggedIn.hidden = !user;
@@ -93,8 +122,9 @@ async function loadCandidates() {
 
   try {
     const payload = await callQuickCaptureApi("/candidates", { method: "GET" });
-    renderCandidates(Array.isArray(payload.result) ? payload.result : []);
-    listStatus.textContent = `Loaded ${Array.isArray(payload.result) ? payload.result.length : 0} candidates.`;
+    allCandidates = Array.isArray(payload.result) ? payload.result : [];
+    applyCandidateSearch();
+    listStatus.textContent = `Loaded ${allCandidates.length} candidates.`;
   } catch (error) {
     listStatus.textContent = String(error.message || error);
     listStatus.className = "status-message error";
@@ -110,6 +140,9 @@ if ("serviceWorker" in navigator) {
 }
 
 refreshButton.addEventListener("click", loadCandidates);
+if (searchInput) {
+  searchInput.addEventListener("input", applyCandidateSearch);
+}
 
 if (logoutButton) {
   logoutButton.addEventListener("click", () => {

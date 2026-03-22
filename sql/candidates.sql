@@ -11,6 +11,7 @@ create table if not exists public.candidates (
   phone text,
   email text,
   location text,
+  highest_education text,
   current_ctc text,
   expected_ctc text,
   notice_period text,

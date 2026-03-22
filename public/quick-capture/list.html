@@ -12,13 +12,13 @@
     <main class="app-shell">
       <section class="panel auth-panel">
         <div class="panel-head">
-          <h2>PWA Login</h2>
-          <span class="panel-kicker">Backend account</span>
+          <h2>Draft Notes</h2>
+          <span class="panel-kicker">Step 3</span>
         </div>
         <div id="authLoggedOut">
-          <p class="subcopy">Login to view recruiter-scoped saved candidates.</p>
+          <p class="subcopy">Login required to view recruiter-scoped saved candidates.</p>
           <div class="hero-actions">
-            <a class="secondary-link" href="/quick-capture/">Go to capture login</a>
+            <a class="secondary-link" href="/quick-capture/">Go to login</a>
           </div>
         </div>
         <div id="authLoggedIn" hidden>
@@ -30,12 +30,13 @@
         <p id="authStatus" class="status-message" role="status" aria-live="polite"></p>
       </section>
 
-      <section class="hero-card compact">
+      <section class="app-topbar">
         <p class="eyebrow">Candidate Quick Capture</p>
-        <h1>Saved candidates</h1>
-        <p class="subcopy">Recent structured notes saved from the quick capture app.</p>
+        <h1>Saved draft notes</h1>
+        <p class="subcopy">Search and review recruiter-scoped quick-capture notes without clutter.</p>
         <div class="hero-actions">
-          <a class="secondary-link" href="/quick-capture/">Back to capture</a>
+          <a class="secondary-link" href="/quick-capture/">Login</a>
+          <a class="secondary-link" href="/quick-capture/capture.html">Capture</a>
         </div>
       </section>
 
@@ -44,6 +45,10 @@
           <h2>Candidate cards</h2>
           <button id="refreshButton" type="button" class="ghost-button">Refresh</button>
         </div>
+        <label class="field field-full" for="searchInput">
+          <span class="label">Search drafts</span>
+          <input id="searchInput" class="text-input" type="search" placeholder="Search by candidate, company, role, phone, email..." />
+        </label>
         <p id="listStatus" class="status-message" role="status" aria-live="polite"></p>
         <div id="candidateList" class="card-list"></div>
       </section>

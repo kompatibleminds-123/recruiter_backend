@@ -10,14 +10,22 @@
     <link rel="manifest" href="/quick-capture/manifest.json" />
     <link rel="apple-touch-icon" href="/quick-capture/icon-192.png" />
     <link rel="stylesheet" href="/quick-capture/style.css" />
-    <title>Candidate Quick Capture</title>
+    <title>Quick Capture Login</title>
   </head>
   <body>
     <main class="app-shell">
+      <section class="app-topbar">
+        <div class="app-topbar-copy">
+          <p class="eyebrow">RecruitDesk AI</p>
+          <h1>Quick Capture Login</h1>
+          <p class="subcopy">Sign in first, then move to capture or drafts in a clean mobile flow.</p>
+        </div>
+      </section>
+
       <section class="panel auth-panel">
         <div class="panel-head">
-          <h2>PWA Login</h2>
-          <span class="panel-kicker">Backend account</span>
+          <h2>Backend Login</h2>
+          <span class="panel-kicker">Step 1</span>
         </div>
         <div id="authLoggedOut">
           <div class="quick-form-grid">
@@ -36,112 +44,38 @@
         </div>
         <div id="authLoggedIn" hidden>
           <div id="authSummary" class="auth-summary"></div>
-          <div class="actions">
+          <div class="actions single-action">
+            <a class="primary-button" href="/quick-capture/capture.html">Go to capture</a>
+            <a class="ghost-button" href="/quick-capture/list.html">Open drafts</a>
             <button id="logoutButton" type="button" class="ghost-button">Logout</button>
           </div>
         </div>
         <p id="authStatus" class="status-message" role="status" aria-live="polite"></p>
       </section>
 
-      <section class="app-topbar">
-        <div class="app-topbar-copy">
-          <p class="eyebrow">RecruitDesk AI</p>
-          <h1>Quick Capture</h1>
-          <p class="subcopy">Capture recruiter notes in a mobile-first workflow and save them instantly.</p>
-        </div>
-        <a class="secondary-link topbar-link" href="/quick-capture/list.html">Saved</a>
-      </section>
-
       <section class="panel">
         <div class="panel-head">
-          <h2>Candidate Details</h2>
-          <span class="panel-kicker">Structured input</span>
+          <h2>Next Steps</h2>
+          <span class="panel-kicker">Flow</span>
         </div>
-        <div class="quick-form-grid">
-          <label class="field">
-            <span class="label">Candidate name</span>
-            <input id="candidateName" class="text-input" type="text" />
-          </label>
-          <label class="field">
-            <span class="label">Current company</span>
-            <input id="candidateCompany" class="text-input" type="text" />
-          </label>
-          <label class="field">
-            <span class="label">Role</span>
-            <input id="candidateRole" class="text-input" type="text" />
-          </label>
-          <label class="field">
-            <span class="label">Experience</span>
-            <input id="candidateExperience" class="text-input" type="text" />
-          </label>
-          <label class="field">
-            <span class="label">Location</span>
-            <input id="candidateLocation" class="text-input" type="text" />
-          </label>
-          <label class="field">
-            <span class="label">Current CTC</span>
-            <input id="candidateCurrentCtc" class="text-input" type="text" />
-          </label>
-          <label class="field">
-            <span class="label">Expected CTC</span>
-            <input id="candidateExpectedCtc" class="text-input" type="text" />
-          </label>
-          <label class="field">
-            <span class="label">Notice period</span>
-            <input id="candidateNoticePeriod" class="text-input" type="text" />
-          </label>
-          <label class="field">
-            <span class="label">Phone</span>
-            <input id="candidatePhone" class="text-input" type="text" />
-          </label>
-          <label class="field">
-            <span class="label">Email</span>
-            <input id="candidateEmail" class="text-input" type="email" />
-          </label>
-          <label class="field field-full">
-            <span class="label">LinkedIn</span>
-            <input id="candidateLinkedin" class="text-input" type="text" />
-          </label>
-          <label class="field field-full">
-            <span class="label">Next action</span>
-            <input id="candidateNextAction" class="text-input" type="text" />
-          </label>
+        <div class="summary-grid">
+          <div class="summary-row">
+            <div class="summary-key">1</div>
+            <div class="summary-value">Login with the same backend account used in the extension.</div>
+          </div>
+          <div class="summary-row">
+            <div class="summary-key">2</div>
+            <div class="summary-value">Open Capture to parse notes, review fields, and save candidates.</div>
+          </div>
+          <div class="summary-row">
+            <div class="summary-key">3</div>
+            <div class="summary-value">Open Drafts to search recruiter-scoped saved quick-capture notes.</div>
+          </div>
         </div>
-
-        <div class="panel-head panel-head-note">
-          <h2>Quick Note</h2>
-          <span class="panel-kicker">Free-form note</span>
-        </div>
-        <label class="label" for="noteInput">Quick candidate note</label>
-        <textarea
-          id="noteInput"
-          class="note-input"
-          rows="7"
-        ></textarea>
-
-        <div class="actions sticky-actions">
-          <button id="micButton" type="button" class="ghost-button">Start voice input</button>
-          <button id="parseButton" type="button" class="ghost-button">Parse for review</button>
-          <button id="saveButton" type="button" class="primary-button" disabled hidden>Save candidate</button>
-        </div>
-
-        <p id="statusMessage" class="status-message" role="status" aria-live="polite"></p>
-      </section>
-
-      <section class="panel">
-        <div class="panel-head">
-          <h2>Captured Candidate Summary</h2>
-          <span class="panel-kicker">Review before save</span>
-        </div>
-        <div id="candidateSummary" class="candidate-summary empty">No captured data yet.</div>
-        <details class="raw-output-toggle">
-          <summary>Show raw data</summary>
-          <pre id="jsonOutput" class="json-output">No parsed data yet.</pre>
-        </details>
       </section>
     </main>
 
     <script src="/quick-capture/auth.js"></script>
-    <script src="/quick-capture/script.js"></script>
+    <script src="/quick-capture/login.js"></script>
   </body>
 </html>

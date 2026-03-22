@@ -17,15 +17,6 @@ const candidatePhoneInput = document.getElementById("candidatePhone");
 const candidateEmailInput = document.getElementById("candidateEmail");
 const candidateLinkedinInput = document.getElementById("candidateLinkedin");
 const candidateNextActionInput = document.getElementById("candidateNextAction");
-const authLoggedOut = document.getElementById("authLoggedOut");
-const authLoggedIn = document.getElementById("authLoggedIn");
-const authEmailInput = document.getElementById("authEmail");
-const authPasswordInput = document.getElementById("authPassword");
-const loginButton = document.getElementById("loginButton");
-const logoutButton = document.getElementById("logoutButton");
-const authStatus = document.getElementById("authStatus");
-const authSummary = document.getElementById("authSummary");
-
 let recognition = null;
 let isListening = false;
 let voiceSilenceTimer = null;
@@ -84,21 +75,8 @@ function setStatus(message, tone = "") {
   statusMessage.className = `status-message${tone ? ` ${tone}` : ""}`;
 }
 
-function setAuthStatus(message, tone = "") {
-  if (!authStatus) return;
-  authStatus.textContent = message || "";
-  authStatus.className = `status-message${tone ? ` ${tone}` : ""}`;
-}
-
 function renderAuthState(user) {
   currentQuickCaptureUser = user || null;
-  if (authLoggedOut) authLoggedOut.hidden = Boolean(user);
-  if (authLoggedIn) authLoggedIn.hidden = !user;
-  if (authSummary) {
-    authSummary.textContent = user
-      ? `${user.name} | ${user.role === "admin" ? "ADMIN" : "RECRUITER"} | ${user.companyName}`
-      : "";
-  }
   if (parseButton) parseButton.disabled = !user;
   if (saveButton) {
     saveButton.disabled = !user || !latestParsedCandidateDraft;
@@ -485,42 +463,14 @@ micButton.addEventListener("click", () => {
 parseButton.addEventListener("click", parseNoteForReview);
 saveButton.addEventListener("click", saveCandidateAfterReview);
 
-async function handleLogin() {
-  setAuthStatus("");
-  try {
-    loginButton.disabled = true;
-    const user = await loginQuickCaptureUser(authEmailInput?.value, authPasswordInput?.value);
-    if (authPasswordInput) authPasswordInput.value = "";
-    renderAuthState(user);
-    setLatestParsedCandidateDraft(null);
-    setAuthStatus("Logged in.", "success");
-    setStatus("Quick capture is ready.", "success");
-  } catch (error) {
-    renderAuthState(null);
-    setAuthStatus(String(error?.message || error), "error");
-  } finally {
-    loginButton.disabled = false;
-  }
-}
-
-function handleLogout() {
-  logoutQuickCaptureUser();
-  renderAuthState(null);
-  setLatestParsedCandidateDraft(null);
-  setAuthStatus("Logged out.", "success");
-}
-
 async function bootstrapAuthState() {
   const user = await getQuickCaptureCurrentUser();
   renderAuthState(user);
-}
-
-if (loginButton) {
-  loginButton.addEventListener("click", handleLogin);
-}
-
-if (logoutButton) {
-  logoutButton.addEventListener("click", handleLogout);
+  if (!user) {
+    window.location.href = "/quick-capture/";
+    return;
+  }
+  setStatus("Quick capture is ready.", "success");
 }
 
 [
@@ -544,4 +494,5 @@ if (logoutButton) {
 
 bootstrapAuthState().catch(() => {
   renderAuthState(null);
+  window.location.href = "/quick-capture/";
 });
