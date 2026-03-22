@@ -365,8 +365,28 @@ async function findDuplicateCandidate(candidate) {
 async function saveCandidate(candidate) {
   const { url, serviceRoleKey } = getSupabaseConfig();
   const candidateId = String(candidate?.id || "").trim();
-  const isUpdate = Boolean(candidateId);
   if (url && serviceRoleKey) {
+    let isUpdate = false;
+    if (candidateId) {
+      const checkResponse = await fetch(
+        `${url}/rest/v1/candidates?id=eq.${encodeURIComponent(candidateId)}&select=id&limit=1`,
+        {
+          headers: {
+            apikey: serviceRoleKey,
+            Authorization: `Bearer ${serviceRoleKey}`
+          }
+        }
+      );
+
+      if (!checkResponse.ok) {
+        const errorText = await checkResponse.text();
+        throw new Error(`Supabase existence check failed: ${checkResponse.status} ${errorText}`);
+      }
+
+      const existingRows = await checkResponse.json();
+      isUpdate = Array.isArray(existingRows) && existingRows.length > 0;
+    }
+
     const response = await fetch(
       isUpdate ? `${url}/rest/v1/candidates?id=eq.${encodeURIComponent(candidateId)}` : `${url}/rest/v1/candidates`,
       {

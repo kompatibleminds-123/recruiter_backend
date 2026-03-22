@@ -233,7 +233,7 @@ function armVoiceSilenceTimer() {
       manualVoiceStop = true;
       recognition.stop();
     }
-  }, 10000);
+  }, 7000);
 }
 
 function buildNoteFromForm() {
@@ -242,9 +242,13 @@ function buildNoteFromForm() {
     candidateCompanyInput?.value.trim() ? `company ${candidateCompanyInput.value.trim()}` : "",
     candidateRoleInput?.value.trim() ? `role ${candidateRoleInput.value.trim()}` : "",
     candidateExperienceInput?.value.trim() ? `experience ${candidateExperienceInput.value.trim()}` : "",
+    candidateLocationInput?.value.trim() ? `location ${candidateLocationInput.value.trim()}` : "",
     candidateCurrentCtcInput?.value.trim() ? `current ctc ${candidateCurrentCtcInput.value.trim()}` : "",
     candidateExpectedCtcInput?.value.trim() ? `expected ctc ${candidateExpectedCtcInput.value.trim()}` : "",
     candidateNoticePeriodInput?.value.trim() ? `notice period ${candidateNoticePeriodInput.value.trim()}` : "",
+    candidatePhoneInput?.value.trim() ? `phone ${candidatePhoneInput.value.trim()}` : "",
+    candidateEmailInput?.value.trim() ? `email ${candidateEmailInput.value.trim()}` : "",
+    candidateLinkedinInput?.value.trim() ? `linkedin ${candidateLinkedinInput.value.trim()}` : "",
     candidateNextActionInput?.value.trim() ? `next action ${candidateNextActionInput.value.trim()}` : "",
     noteInput.value.trim()
   ].filter(Boolean);
@@ -275,7 +279,7 @@ function buildRecognition() {
       voiceInterimText = "";
       voiceCommittedChunks = new Set();
     }
-    keepAliveUntil = Date.now() + 10000;
+    keepAliveUntil = Date.now() + 7000;
     armVoiceSilenceTimer();
     micButton.textContent = "Listening...";
     setStatus("Voice capture started.");
@@ -283,17 +287,6 @@ function buildRecognition() {
 
   instance.onend = () => {
     clearVoiceSilenceTimer();
-    if (!manualVoiceStop && Date.now() < keepAliveUntil) {
-      window.setTimeout(() => {
-        try {
-          instance.start();
-        } catch {
-          isListening = false;
-          micButton.textContent = "Start voice input";
-        }
-      }, 150);
-      return;
-    }
     isListening = false;
     manualVoiceStop = false;
     voiceSessionActive = false;
@@ -309,7 +302,7 @@ function buildRecognition() {
   };
 
   instance.onresult = (event) => {
-    keepAliveUntil = Date.now() + 10000;
+    keepAliveUntil = Date.now() + 7000;
     armVoiceSilenceTimer();
 
     let committedNewText = false;
@@ -318,7 +311,7 @@ function buildRecognition() {
     for (let i = event.resultIndex; i < event.results.length; i += 1) {
       const result = event.results[i];
       const transcript = (result[0]?.transcript || "").trim();
-      if (!transcript) continue;
+      if (!transcript || transcript.length < 3) continue;
 
       if (result.isFinal) {
         const chunkKey = transcript.toLowerCase().replace(/\s+/g, " ").trim();
@@ -485,7 +478,7 @@ micButton.addEventListener("click", () => {
     stopVoiceCapture();
     return;
   }
-  keepAliveUntil = Date.now() + 10000;
+  keepAliveUntil = Date.now() + 7000;
   recognition.start();
 });
 
