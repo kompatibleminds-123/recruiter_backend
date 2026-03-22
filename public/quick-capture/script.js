@@ -113,6 +113,19 @@ function renderCandidateSummary(data) {
     .join("")}</div>`;
 }
 
+function populateFormFromParsedResult(data) {
+  if (!data || typeof data !== "object") return;
+  if (candidateNameInput) candidateNameInput.value = String(data.name || "").trim();
+  if (candidateCompanyInput) candidateCompanyInput.value = String(data.company || "").trim();
+  if (candidateRoleInput) candidateRoleInput.value = String(data.role || "").trim();
+  if (candidateExperienceInput) candidateExperienceInput.value = String(data.experience || "").trim();
+  if (candidateCurrentCtcInput) candidateCurrentCtcInput.value = String(data.current_ctc || "").trim();
+  if (candidateExpectedCtcInput) candidateExpectedCtcInput.value = String(data.expected_ctc || "").trim();
+  if (candidateNoticePeriodInput) candidateNoticePeriodInput.value = String(data.notice_period || "").trim();
+  if (candidateNextActionInput) candidateNextActionInput.value = String(data.next_action || "").trim();
+  if (noteInput) noteInput.value = String(data.notes || "").trim();
+}
+
 function clearVoiceSilenceTimer() {
   if (voiceSilenceTimer) {
     window.clearTimeout(voiceSilenceTimer);
@@ -283,17 +296,9 @@ async function submitNote() {
     }
 
     renderJson(payload.result);
+    populateFormFromParsedResult(payload.result);
     renderCandidateSummary(payload.result);
-    setStatus("Candidate note parsed and saved successfully.", "success");
-    if (candidateNameInput) candidateNameInput.value = "";
-    if (candidateCompanyInput) candidateCompanyInput.value = "";
-    if (candidateRoleInput) candidateRoleInput.value = "";
-    if (candidateExperienceInput) candidateExperienceInput.value = "";
-    if (candidateCurrentCtcInput) candidateCurrentCtcInput.value = "";
-    if (candidateExpectedCtcInput) candidateExpectedCtcInput.value = "";
-    if (candidateNoticePeriodInput) candidateNoticePeriodInput.value = "";
-    if (candidateNextActionInput) candidateNextActionInput.value = "";
-    noteInput.value = "";
+    setStatus("Candidate saved. You can edit the fields or dictate a correction, then save again.", "success");
   } catch (error) {
     setStatus(String(error.message || error), "error");
   } finally {
