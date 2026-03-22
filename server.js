@@ -4,7 +4,17 @@ const fs = require("fs");
 const path = require("path");
 const { parseCandidatePayload } = require("./src/parser");
 const { callOpenAiQuestions, normalizeCandidateFileWithAi, normalizeCandidateWithAi } = require("./src/ai");
-const { deleteCandidate, findDuplicateCandidate, linkCandidateToAssessment, listCandidates, parseCandidateQuickNote, saveCandidate } = require("./src/quick-capture");
+const {
+  assignCandidate,
+  deleteCandidate,
+  findDuplicateCandidate,
+  linkCandidateToAssessment,
+  listCandidates,
+  listContactAttempts,
+  parseCandidateQuickNote,
+  saveCandidate,
+  saveContactAttempt
+} = require("./src/quick-capture");
 const {
   extractIncomingWhatsAppMessages,
   listWhatsappStructuredNotes,
@@ -734,6 +744,8 @@ const server = http.createServer(async (req, res) => {
         "/quick-capture",
         "/parse-note",
         "/candidates",
+        "/candidates/assign",
+        "/contact-attempts",
         "/webhook",
         "/whatsapp/notes",
         "/parse-candidate",
@@ -1021,6 +1033,59 @@ const server = http.createServer(async (req, res) => {
     try {
       const body = await readJsonBody(req);
       const result = await linkCandidateToAssessment(body.id, body.assessment_id || body.assessmentId);
+      sendJson(res, 200, { ok: true, result });
+    } catch (error) {
+      sendJson(res, 400, { ok: false, error: String(error.message || error) });
+    }
+    return;
+  }
+
+  if (req.method === "POST" && requestUrl.pathname === "/candidates/assign") {
+    try {
+      const actor = requireSessionUser(getBearerToken(req));
+      const body = await readJsonBody(req);
+      const result = await assignCandidate(body.id || body.candidateId, {
+        assigned_to_user_id: body.assigned_to_user_id || body.assignedToUserId,
+        assigned_to_name: body.assigned_to_name || body.assignedToName,
+        assigned_by_user_id: actor.id,
+        assigned_by_name: actor.name,
+        assigned_jd_id: body.assigned_jd_id || body.assignedJdId,
+        assigned_jd_title: body.assigned_jd_title || body.assignedJdTitle
+      });
+      sendJson(res, 200, { ok: true, result });
+    } catch (error) {
+      sendJson(res, 400, { ok: false, error: String(error.message || error) });
+    }
+    return;
+  }
+
+  if (req.method === "GET" && requestUrl.pathname === "/contact-attempts") {
+    try {
+      requireSessionUser(getBearerToken(req));
+      const result = await listContactAttempts(
+        String(requestUrl.searchParams.get("candidate_id") || requestUrl.searchParams.get("candidateId") || "").trim(),
+        Number(requestUrl.searchParams.get("limit") || 20)
+      );
+      sendJson(res, 200, { ok: true, result });
+    } catch (error) {
+      sendJson(res, 400, { ok: false, error: String(error.message || error) });
+    }
+    return;
+  }
+
+  if (req.method === "POST" && requestUrl.pathname === "/contact-attempts") {
+    try {
+      const actor = requireSessionUser(getBearerToken(req));
+      const body = await readJsonBody(req);
+      const result = await saveContactAttempt(body.candidate_id || body.candidateId, {
+        recruiter_id: actor.id,
+        recruiter_name: actor.name,
+        jd_id: body.jd_id || body.jdId,
+        jd_title: body.jd_title || body.jdTitle,
+        outcome: body.outcome,
+        notes: body.notes,
+        next_follow_up_at: body.next_follow_up_at || body.nextFollowUpAt
+      });
       sendJson(res, 200, { ok: true, result });
     } catch (error) {
       sendJson(res, 400, { ok: false, error: String(error.message || error) });

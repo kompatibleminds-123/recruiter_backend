@@ -10,16 +10,20 @@ function ensureLocalStore() {
     fs.mkdirSync(dir, { recursive: true });
   }
   if (!fs.existsSync(LOCAL_STORE_PATH)) {
-    fs.writeFileSync(LOCAL_STORE_PATH, JSON.stringify({ candidates: [] }, null, 2));
+    fs.writeFileSync(LOCAL_STORE_PATH, JSON.stringify({ candidates: [], contact_attempts: [] }, null, 2));
   }
 }
 
 function readLocalStore() {
   ensureLocalStore();
   try {
-    return JSON.parse(fs.readFileSync(LOCAL_STORE_PATH, "utf8"));
+    const parsed = JSON.parse(fs.readFileSync(LOCAL_STORE_PATH, "utf8"));
+    return {
+      candidates: Array.isArray(parsed?.candidates) ? parsed.candidates : [],
+      contact_attempts: Array.isArray(parsed?.contact_attempts) ? parsed.contact_attempts : []
+    };
   } catch {
-    return { candidates: [] };
+    return { candidates: [], contact_attempts: [] };
   }
 }
 
@@ -239,6 +243,17 @@ function normalizeCandidateRow(structured, rawNote, metadata = {}) {
     notice_period: structured?.notice_period == null ? null : String(structured.notice_period).trim() || null,
     notes: structured?.notes == null ? null : String(structured.notes).trim() || null,
     next_action: structured?.next_action == null ? null : String(structured.next_action).trim() || null,
+    assigned_to_user_id: String(metadata.assigned_to_user_id || "").trim() || null,
+    assigned_to_name: String(metadata.assigned_to_name || "").trim() || null,
+    assigned_by_user_id: String(metadata.assigned_by_user_id || "").trim() || null,
+    assigned_by_name: String(metadata.assigned_by_name || "").trim() || null,
+    assigned_jd_id: String(metadata.assigned_jd_id || "").trim() || null,
+    assigned_jd_title: String(metadata.assigned_jd_title || "").trim() || null,
+    assigned_at: String(metadata.assigned_at || "").trim() || null,
+    last_contact_outcome: String(metadata.last_contact_outcome || "").trim() || null,
+    last_contact_notes: String(metadata.last_contact_notes || "").trim() || null,
+    last_contact_at: String(metadata.last_contact_at || "").trim() || null,
+    next_follow_up_at: String(metadata.next_follow_up_at || "").trim() || null,
     linkedin:
       metadata.linkedin ||
       (structured?.linkedin == null ? null : String(structured.linkedin).trim() || null),
@@ -387,6 +402,48 @@ async function saveCandidate(candidate) {
   return candidate;
 }
 
+async function patchCandidate(candidateId, patch) {
+  const id = String(candidateId || "").trim();
+  if (!id) {
+    throw new Error("Missing candidate id.");
+  }
+
+  const payload = {
+    ...patch,
+    updated_at: new Date().toISOString()
+  };
+
+  const { url, serviceRoleKey } = getSupabaseConfig();
+  if (url && serviceRoleKey) {
+    const response = await fetch(`${url}/rest/v1/candidates?id=eq.${encodeURIComponent(id)}`, {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+        apikey: serviceRoleKey,
+        Authorization: `Bearer ${serviceRoleKey}`,
+        Prefer: "return=representation"
+      },
+      body: JSON.stringify(payload)
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Supabase update failed: ${response.status} ${errorText}`);
+    }
+
+    const rows = await response.json();
+    return rows?.[0] || { id, ...payload };
+  }
+
+  const store = readLocalStore();
+  store.candidates = Array.isArray(store.candidates) ? store.candidates : [];
+  store.candidates = store.candidates.map((item) =>
+    String(item?.id || "") === id ? { ...item, ...payload } : item
+  );
+  writeLocalStore(store);
+  return { id, ...payload };
+}
+
 async function listCandidates(limit = 100) {
   const { url, serviceRoleKey } = getSupabaseConfig();
   if (url && serviceRoleKey) {
@@ -460,43 +517,143 @@ async function linkCandidateToAssessment(candidateId, assessmentId) {
     assessment_id: linkedAssessmentId,
     updated_at: new Date().toISOString()
   };
+  return patchCandidate(id, payload);
+}
 
+async function assignCandidate(candidateId, assignment = {}) {
+  const id = String(candidateId || "").trim();
+  if (!id) {
+    throw new Error("Missing candidate id.");
+  }
+
+  const assignedToUserId = String(assignment.assigned_to_user_id || assignment.assignedToUserId || "").trim();
+  const assignedToName = String(assignment.assigned_to_name || assignment.assignedToName || "").trim();
+
+  if (!assignedToUserId || !assignedToName) {
+    throw new Error("Assigned recruiter is required.");
+  }
+
+  return patchCandidate(id, {
+    assigned_to_user_id: assignedToUserId,
+    assigned_to_name: assignedToName,
+    assigned_by_user_id: String(assignment.assigned_by_user_id || assignment.assignedByUserId || "").trim() || null,
+    assigned_by_name: String(assignment.assigned_by_name || assignment.assignedByName || "").trim() || null,
+    assigned_jd_id: String(assignment.assigned_jd_id || assignment.assignedJdId || "").trim() || null,
+    assigned_jd_title: String(assignment.assigned_jd_title || assignment.assignedJdTitle || "").trim() || null,
+    assigned_at: new Date().toISOString()
+  });
+}
+
+function normalizeContactAttemptRow(candidateId, payload = {}) {
+  const outcome = String(payload.outcome || "").trim();
+  if (!candidateId) {
+    throw new Error("Missing candidate id.");
+  }
+  if (!outcome) {
+    throw new Error("Contact outcome is required.");
+  }
+
+  return {
+    id: String(payload.id || "").trim() || crypto.randomUUID(),
+    candidate_id: candidateId,
+    recruiter_id: String(payload.recruiter_id || payload.recruiterId || "").trim() || null,
+    recruiter_name: String(payload.recruiter_name || payload.recruiterName || "").trim() || null,
+    jd_id: String(payload.jd_id || payload.jdId || "").trim() || null,
+    jd_title: String(payload.jd_title || payload.jdTitle || "").trim() || null,
+    outcome,
+    notes: String(payload.notes || "").trim() || null,
+    next_follow_up_at: String(payload.next_follow_up_at || payload.nextFollowUpAt || "").trim() || null,
+    created_at: new Date().toISOString()
+  };
+}
+
+async function saveContactAttempt(candidateId, payload = {}) {
+  const row = normalizeContactAttemptRow(String(candidateId || "").trim(), payload);
   const { url, serviceRoleKey } = getSupabaseConfig();
+
   if (url && serviceRoleKey) {
-    const response = await fetch(`${url}/rest/v1/candidates?id=eq.${encodeURIComponent(id)}`, {
-      method: "PATCH",
+    const response = await fetch(`${url}/rest/v1/contact_attempts`, {
+      method: "POST",
       headers: {
         "Content-Type": "application/json",
         apikey: serviceRoleKey,
         Authorization: `Bearer ${serviceRoleKey}`,
         Prefer: "return=representation"
       },
-      body: JSON.stringify(payload)
+      body: JSON.stringify(row)
     });
 
     if (!response.ok) {
       const errorText = await response.text();
-      throw new Error(`Supabase update failed: ${response.status} ${errorText}`);
+      throw new Error(`Supabase contact attempt save failed: ${response.status} ${errorText}`);
     }
 
     const rows = await response.json();
-    return rows?.[0] || { id, ...payload };
+    await patchCandidate(candidateId, {
+      last_contact_outcome: row.outcome,
+      last_contact_notes: row.notes,
+      last_contact_at: row.created_at,
+      next_follow_up_at: row.next_follow_up_at
+    });
+    return rows?.[0] || row;
   }
 
   const store = readLocalStore();
-  store.candidates = Array.isArray(store.candidates) ? store.candidates : [];
-  store.candidates = store.candidates.map((item) =>
-    String(item?.id || "") === id ? { ...item, ...payload } : item
-  );
+  store.contact_attempts = Array.isArray(store.contact_attempts) ? store.contact_attempts : [];
+  store.contact_attempts.unshift(row);
+  store.contact_attempts = store.contact_attempts.slice(0, 10000);
   writeLocalStore(store);
-  return { id, ...payload };
+  await patchCandidate(candidateId, {
+    last_contact_outcome: row.outcome,
+    last_contact_notes: row.notes,
+    last_contact_at: row.created_at,
+    next_follow_up_at: row.next_follow_up_at
+  });
+  return row;
+}
+
+async function listContactAttempts(candidateId, limit = 20) {
+  const id = String(candidateId || "").trim();
+  if (!id) {
+    throw new Error("Missing candidate id.");
+  }
+
+  const maxRows = Math.max(1, Number(limit) || 20);
+  const { url, serviceRoleKey } = getSupabaseConfig();
+  if (url && serviceRoleKey) {
+    const response = await fetch(
+      `${url}/rest/v1/contact_attempts?candidate_id=eq.${encodeURIComponent(id)}&select=*&order=created_at.desc&limit=${maxRows}`,
+      {
+        headers: {
+          apikey: serviceRoleKey,
+          Authorization: `Bearer ${serviceRoleKey}`
+        }
+      }
+    );
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Supabase contact attempt list failed: ${response.status} ${errorText}`);
+    }
+
+    return response.json();
+  }
+
+  const store = readLocalStore();
+  return (Array.isArray(store.contact_attempts) ? store.contact_attempts : [])
+    .filter((item) => String(item?.candidate_id || "") === id)
+    .slice(0, maxRows);
 }
 
 module.exports = {
+  assignCandidate,
   deleteCandidate,
   findDuplicateCandidate,
   linkCandidateToAssessment,
+  listContactAttempts,
   listCandidates,
   parseCandidateQuickNote,
+  patchCandidate,
+  saveContactAttempt,
   saveCandidate
 };
