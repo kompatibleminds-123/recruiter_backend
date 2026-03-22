@@ -14,10 +14,13 @@ const candidateNextActionInput = document.getElementById("candidateNextAction");
 
 let recognition = null;
 let isListening = false;
-let lastVoiceFinalTranscript = "";
 let voiceSilenceTimer = null;
 let keepAliveUntil = 0;
 let manualVoiceStop = false;
+let voiceSessionActive = false;
+let voiceBaseText = "";
+let voiceInterimText = "";
+let voiceCommittedChunks = new Set();
 
 function setStatus(message, tone = "") {
   statusMessage.textContent = message || "";
@@ -74,11 +77,17 @@ function buildRecognition() {
   instance.lang = "en-IN";
   instance.interimResults = true;
   instance.continuous = true;
+  instance.maxAlternatives = 3;
 
   instance.onstart = () => {
     isListening = true;
     manualVoiceStop = false;
-    lastVoiceFinalTranscript = "";
+    if (!voiceSessionActive) {
+      voiceSessionActive = true;
+      voiceBaseText = noteInput.value.trim();
+      voiceInterimText = "";
+      voiceCommittedChunks = new Set();
+    }
     keepAliveUntil = Date.now() + 10000;
     armVoiceSilenceTimer();
     micButton.textContent = "Listening...";
@@ -100,25 +109,46 @@ function buildRecognition() {
     }
     isListening = false;
     manualVoiceStop = false;
+    voiceSessionActive = false;
+    voiceBaseText = noteInput.value.trim();
+    voiceInterimText = "";
+    voiceCommittedChunks.clear();
     micButton.textContent = "Start voice input";
   };
 
   instance.onerror = (event) => {
+    voiceInterimText = "";
     setStatus(`Voice input error: ${event.error}`, "error");
   };
 
   instance.onresult = (event) => {
     keepAliveUntil = Date.now() + 10000;
     armVoiceSilenceTimer();
-    const finalTranscript = Array.from(event.results)
-      .filter((result) => result.isFinal)
-      .map((result) => result[0]?.transcript || "")
-      .join(" ")
-      .trim();
 
-    if (finalTranscript && finalTranscript !== lastVoiceFinalTranscript) {
-      noteInput.value = noteInput.value ? `${noteInput.value} ${finalTranscript}`.trim() : finalTranscript;
-      lastVoiceFinalTranscript = finalTranscript;
+    let committedNewText = false;
+    const interimChunks = [];
+
+    for (let i = event.resultIndex; i < event.results.length; i += 1) {
+      const result = event.results[i];
+      const transcript = (result[0]?.transcript || "").trim();
+      if (!transcript) continue;
+
+      if (result.isFinal) {
+        const chunkKey = transcript.toLowerCase().replace(/\s+/g, " ").trim();
+        if (!voiceCommittedChunks.has(chunkKey)) {
+          voiceCommittedChunks.add(chunkKey);
+          voiceBaseText = voiceBaseText ? `${voiceBaseText} ${transcript}`.trim() : transcript;
+          committedNewText = true;
+        }
+      } else {
+        interimChunks.push(transcript);
+      }
+    }
+
+    voiceInterimText = interimChunks.join(" ").trim();
+    noteInput.value = [voiceBaseText, voiceInterimText].filter(Boolean).join(" ").trim();
+
+    if (committedNewText) {
       setStatus("Voice note added to input.");
     }
   };
@@ -126,7 +156,24 @@ function buildRecognition() {
   return instance;
 }
 
+function stopVoiceCapture() {
+  if (!recognition) return;
+  manualVoiceStop = true;
+  keepAliveUntil = 0;
+  clearVoiceSilenceTimer();
+  voiceInterimText = "";
+  noteInput.value = voiceBaseText || noteInput.value.trim();
+  if (isListening) {
+    recognition.stop();
+  } else {
+    voiceSessionActive = false;
+    voiceCommittedChunks.clear();
+    micButton.textContent = "Start voice input";
+  }
+}
+
 async function submitNote() {
+  stopVoiceCapture();
   const noteText = buildNoteFromForm();
   if (!noteText) {
     setStatus("Please enter or dictate a candidate note first.", "error");
@@ -182,10 +229,7 @@ recognition = buildRecognition();
 micButton.addEventListener("click", () => {
   if (!recognition) return;
   if (isListening) {
-    manualVoiceStop = true;
-    keepAliveUntil = 0;
-    clearVoiceSilenceTimer();
-    recognition.stop();
+    stopVoiceCapture();
     return;
   }
   keepAliveUntil = Date.now() + 10000;
