@@ -4,7 +4,7 @@ const fs = require("fs");
 const path = require("path");
 const { parseCandidatePayload } = require("./src/parser");
 const { callOpenAiQuestions, normalizeCandidateFileWithAi, normalizeCandidateWithAi } = require("./src/ai");
-const { deleteCandidate, linkCandidateToAssessment, listCandidates, parseCandidateQuickNote, saveCandidate } = require("./src/quick-capture");
+const { deleteCandidate, findDuplicateCandidate, linkCandidateToAssessment, listCandidates, parseCandidateQuickNote, saveCandidate } = require("./src/quick-capture");
 const {
   extractIncomingWhatsAppMessages,
   listWhatsappStructuredNotes,
@@ -1047,6 +1047,16 @@ const server = http.createServer(async (req, res) => {
           source: String(body.source || "").trim() || null
         }
       });
+      const duplicate = await findDuplicateCandidate(parsed);
+      if (duplicate) {
+        sendJson(res, 200, {
+          ok: true,
+          duplicate: true,
+          duplicateBy: duplicate.matchBy,
+          result: duplicate.existing
+        });
+        return;
+      }
       const saved = await saveCandidate(parsed);
       sendJson(res, 200, { ok: true, result: saved });
     } catch (error) {

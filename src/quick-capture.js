@@ -268,6 +268,81 @@ function getSupabaseConfig() {
   return { url, serviceRoleKey };
 }
 
+function normalizePhoneForMatch(value) {
+  const digits = String(value || "").replace(/\D/g, "");
+  if (digits.length < 10) return "";
+  return digits.length > 10 ? digits.slice(-10) : digits;
+}
+
+function normalizeEmailForMatch(value) {
+  return String(value || "").trim().toLowerCase();
+}
+
+function normalizeLinkedinForMatch(value) {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/^https?:\/\//, "")
+    .replace(/^www\./, "")
+    .replace(/[?#].*$/, "")
+    .replace(/\/+$/, "");
+}
+
+function matchesDuplicateKey(left, right) {
+  if (!left || !right) return false;
+  return left === right;
+}
+
+function getDuplicateMatch(candidate, existing) {
+  const matchBy = [];
+  if (matchesDuplicateKey(normalizePhoneForMatch(candidate.phone), normalizePhoneForMatch(existing.phone))) {
+    matchBy.push("phone");
+  }
+  if (matchesDuplicateKey(normalizeEmailForMatch(candidate.email), normalizeEmailForMatch(existing.email))) {
+    matchBy.push("email");
+  }
+  if (matchesDuplicateKey(normalizeLinkedinForMatch(candidate.linkedin), normalizeLinkedinForMatch(existing.linkedin))) {
+    matchBy.push("linkedin");
+  }
+  return matchBy;
+}
+
+async function findDuplicateCandidate(candidate) {
+  const candidateId = String(candidate?.id || "").trim();
+  const phone = normalizePhoneForMatch(candidate?.phone);
+  const email = normalizeEmailForMatch(candidate?.email);
+  const linkedin = normalizeLinkedinForMatch(candidate?.linkedin);
+
+  if (!phone && !email && !linkedin) return null;
+
+  const { url, serviceRoleKey } = getSupabaseConfig();
+  if (url && serviceRoleKey) {
+    const response = await fetch(`${url}/rest/v1/candidates?select=*&order=created_at.desc&limit=2000`, {
+      headers: { apikey: serviceRoleKey, Authorization: `Bearer ${serviceRoleKey}` }
+    });
+    const rows = response.ok ? await response.json() : [];
+    for (const existing of rows) {
+      if (String(existing?.id || "").trim() === candidateId) continue;
+      const matchBy = getDuplicateMatch(candidate, existing);
+      if (matchBy.length) {
+        return { existing, matchBy };
+      }
+    }
+    return null;
+  }
+
+  const store = readLocalStore();
+  const candidates = Array.isArray(store.candidates) ? store.candidates : [];
+  for (const existing of candidates) {
+    if (String(existing?.id || "").trim() === candidateId) continue;
+    const matchBy = getDuplicateMatch(candidate, existing);
+    if (matchBy.length) {
+      return { existing, matchBy };
+    }
+  }
+  return null;
+}
+
 async function saveCandidate(candidate) {
   const { url, serviceRoleKey } = getSupabaseConfig();
   const candidateId = String(candidate?.id || "").trim();
@@ -419,6 +494,7 @@ async function linkCandidateToAssessment(candidateId, assessmentId) {
 
 module.exports = {
   deleteCandidate,
+  findDuplicateCandidate,
   linkCandidateToAssessment,
   listCandidates,
   parseCandidateQuickNote,

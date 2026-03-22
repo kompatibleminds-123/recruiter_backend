@@ -311,10 +311,14 @@ async function submitNote() {
     renderJson(payload.result);
     populateFormFromParsedResult(payload.result);
     renderCandidateSummary(payload.result);
-    setStatus(
-      wasUpdate ? "Candidate updated. You can keep editing and save again." : "Candidate saved. You can edit the fields or dictate a correction, then save again.",
-      "success"
-    );
+    if (payload.duplicate) {
+      setStatus(`Possible duplicate found by ${payload.duplicateBy.join(", ")}. Existing record opened instead of creating a new one.`, "error");
+    } else {
+      setStatus(
+        wasUpdate ? "Candidate updated. You can keep editing and save again." : "Candidate saved. You can edit the fields or dictate a correction, then save again.",
+        "success"
+      );
+    }
   } catch (error) {
     setStatus(String(error.message || error), "error");
   } finally {
