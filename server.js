@@ -1012,9 +1012,13 @@ const server = http.createServer(async (req, res) => {
   if (req.method === "GET" && requestUrl.pathname === "/candidates") {
     try {
       const sessionUser = getSessionUser(getBearerToken(req));
+      const listOptions = {
+        limit: Number(requestUrl.searchParams.get("limit") || 100),
+        q: String(requestUrl.searchParams.get("q") || "").trim()
+      };
       const result = sessionUser
-        ? await listCandidatesForUser(sessionUser, Number(requestUrl.searchParams.get("limit") || 100))
-        : await listCandidates(Number(requestUrl.searchParams.get("limit") || 100));
+        ? await listCandidatesForUser(sessionUser, listOptions)
+        : await listCandidates(listOptions);
       sendJson(res, 200, { ok: true, result });
     } catch (error) {
       sendJson(res, 400, { ok: false, error: String(error.message || error) });

@@ -468,11 +468,52 @@ async function patchCandidate(candidateId, patch) {
   return { id, ...payload };
 }
 
-async function listCandidates(limit = 100) {
+function normalizeListOptions(input) {
+  if (typeof input === "number") {
+    return {
+      limit: Math.max(1, Number(input) || 100),
+      q: ""
+    };
+  }
+  return {
+    limit: Math.max(1, Number(input?.limit) || 100),
+    q: String(input?.q || "").trim().toLowerCase()
+  };
+}
+
+function matchesCandidateSearch(candidate, query) {
+  const q = String(query || "").trim().toLowerCase();
+  if (!q) return true;
+  const haystack = [
+    candidate?.name,
+    candidate?.company,
+    candidate?.role,
+    candidate?.experience,
+    candidate?.phone,
+    candidate?.email,
+    candidate?.linkedin,
+    candidate?.location,
+    candidate?.client_name,
+    candidate?.jd_title,
+    candidate?.recruiter_name,
+    candidate?.assigned_to_name,
+    candidate?.notes,
+    candidate?.next_action,
+    candidate?.raw_note
+  ]
+    .filter(Boolean)
+    .join(" | ")
+    .toLowerCase();
+  return haystack.includes(q);
+}
+
+async function listCandidates(options = 100) {
+  const { limit, q } = normalizeListOptions(options);
   const { url, serviceRoleKey } = getSupabaseConfig();
   if (url && serviceRoleKey) {
+    const fetchLimit = q ? Math.max(limit, 2000) : limit;
     const response = await fetch(
-      `${url}/rest/v1/candidates?select=*&order=created_at.desc&limit=${Math.max(1, Number(limit) || 100)}`,
+      `${url}/rest/v1/candidates?select=*&order=created_at.desc&limit=${fetchLimit}`,
       {
         headers: {
           apikey: serviceRoleKey,
@@ -486,28 +527,31 @@ async function listCandidates(limit = 100) {
       throw new Error(`Supabase list failed: ${response.status} ${errorText}`);
     }
 
-    return response.json();
+    const rows = await response.json();
+    return rows.filter((item) => matchesCandidateSearch(item, q)).slice(0, limit);
   }
 
   const store = readLocalStore();
-  return (store.candidates || []).slice(0, Math.max(1, Number(limit) || 100));
+  return (store.candidates || []).filter((item) => matchesCandidateSearch(item, q)).slice(0, limit);
 }
 
-async function listCandidatesForUser(user, limit = 100) {
-  const maxRows = Math.max(1, Number(limit) || 100);
+async function listCandidatesForUser(user, options = 100) {
+  const { limit, q } = normalizeListOptions(options);
+  const maxRows = limit;
   if (!user?.id) {
-    return listCandidates(maxRows);
+    return listCandidates({ limit: maxRows, q });
   }
 
   if (user.role === "admin") {
-    return listCandidates(maxRows);
+    return listCandidates({ limit: maxRows, q });
   }
 
   const { url, serviceRoleKey } = getSupabaseConfig();
   if (url && serviceRoleKey) {
     const recruiterId = encodeURIComponent(String(user.id).trim());
+    const fetchLimit = q ? Math.max(maxRows, 2000) : maxRows;
     const response = await fetch(
-      `${url}/rest/v1/candidates?select=*&or=(recruiter_id.eq.${recruiterId},assigned_to_user_id.eq.${recruiterId})&order=created_at.desc&limit=${maxRows}`,
+      `${url}/rest/v1/candidates?select=*&or=(recruiter_id.eq.${recruiterId},assigned_to_user_id.eq.${recruiterId})&order=created_at.desc&limit=${fetchLimit}`,
       {
         headers: {
           apikey: serviceRoleKey,
@@ -521,12 +565,14 @@ async function listCandidatesForUser(user, limit = 100) {
       throw new Error(`Supabase filtered list failed: ${response.status} ${errorText}`);
     }
 
-    return response.json();
+    const rows = await response.json();
+    return rows.filter((item) => matchesCandidateSearch(item, q)).slice(0, maxRows);
   }
 
   const store = readLocalStore();
   return (store.candidates || [])
     .filter((item) => item?.recruiter_id === user.id || item?.assigned_to_user_id === user.id)
+    .filter((item) => matchesCandidateSearch(item, q))
     .slice(0, maxRows);
 }
 
