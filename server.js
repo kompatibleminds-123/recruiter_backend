@@ -31,6 +31,7 @@ const {
   getSessionUser,
   listCompaniesAndUsersSummary,
   listAssessments,
+  searchAssessments,
   listCompanyJobs,
   listCompanyUsers,
   login,
@@ -728,7 +729,7 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (req.method === "GET" && requestUrl.pathname === "/health") {
-    const authSummary = listCompaniesAndUsersSummary();
+    const authSummary = await listCompaniesAndUsersSummary();
     sendJson(res, 200, {
       ok: true,
       service: "recruiter-backend",
@@ -820,7 +821,7 @@ const server = http.createServer(async (req, res) => {
   if (req.method === "POST" && req.url === "/auth/bootstrap-admin") {
     try {
       const body = await readJsonBody(req);
-      const result = bootstrapAdmin({
+      const result = await bootstrapAdmin({
         companyName: String(body.companyName || "").trim(),
         adminName: String(body.adminName || "").trim(),
         email: String(body.email || "").trim(),
@@ -836,7 +837,7 @@ const server = http.createServer(async (req, res) => {
   if (req.method === "POST" && req.url === "/auth/login") {
     try {
       const body = await readJsonBody(req);
-      const result = login({
+      const result = await login({
         email: String(body.email || "").trim(),
         password: String(body.password || "")
       });
@@ -849,7 +850,7 @@ const server = http.createServer(async (req, res) => {
 
   if (req.method === "GET" && req.url === "/auth/me") {
     try {
-      const user = requireSessionUser(getBearerToken(req));
+      const user = await requireSessionUser(getBearerToken(req));
       sendJson(res, 200, { ok: true, result: { user } });
     } catch (error) {
       sendJson(res, 401, { ok: false, error: String(error.message || error) });
@@ -859,8 +860,8 @@ const server = http.createServer(async (req, res) => {
 
   if (req.method === "GET" && req.url === "/company/users") {
     try {
-      const user = requireSessionUser(getBearerToken(req));
-      const users = listCompanyUsers(user.companyId);
+      const user = await requireSessionUser(getBearerToken(req));
+      const users = await listCompanyUsers(user.companyId);
       sendJson(res, 200, { ok: true, result: { companyId: user.companyId, users } });
     } catch (error) {
       sendJson(res, 401, { ok: false, error: String(error.message || error) });
@@ -870,9 +871,9 @@ const server = http.createServer(async (req, res) => {
 
   if (req.method === "POST" && req.url === "/company/users") {
     try {
-      const actor = requireSessionUser(getBearerToken(req));
+      const actor = await requireSessionUser(getBearerToken(req));
       const body = await readJsonBody(req);
-      const createdUser = createUser({
+      const createdUser = await createUser({
         actorUserId: actor.id,
         companyId: actor.companyId,
         name: String(body.name || "").trim(),
@@ -889,9 +890,9 @@ const server = http.createServer(async (req, res) => {
 
   if (req.method === "DELETE" && req.url === "/company/users") {
     try {
-      const actor = requireSessionUser(getBearerToken(req));
+      const actor = await requireSessionUser(getBearerToken(req));
       const body = await readJsonBody(req);
-      const result = deleteUser({
+      const result = await deleteUser({
         actorUserId: actor.id,
         companyId: actor.companyId,
         userId: String(body.userId || "").trim()
@@ -905,9 +906,9 @@ const server = http.createServer(async (req, res) => {
 
   if (req.method === "POST" && req.url === "/company/users/password") {
     try {
-      const actor = requireSessionUser(getBearerToken(req));
+      const actor = await requireSessionUser(getBearerToken(req));
       const body = await readJsonBody(req);
-      const result = resetUserPassword({
+      const result = await resetUserPassword({
         actorUserId: actor.id,
         companyId: actor.companyId,
         userId: String(body.userId || "").trim(),
@@ -922,8 +923,8 @@ const server = http.createServer(async (req, res) => {
 
   if (req.method === "GET" && req.url === "/company/jds") {
     try {
-      const user = requireSessionUser(getBearerToken(req));
-      const jobs = listCompanyJobs(user.companyId);
+      const user = await requireSessionUser(getBearerToken(req));
+      const jobs = await listCompanyJobs(user.companyId);
       sendJson(res, 200, { ok: true, result: { jobs } });
     } catch (error) {
       sendJson(res, 401, { ok: false, error: String(error.message || error) });
@@ -933,9 +934,9 @@ const server = http.createServer(async (req, res) => {
 
   if (req.method === "POST" && req.url === "/company/jds") {
     try {
-      const actor = requireSessionUser(getBearerToken(req));
+      const actor = await requireSessionUser(getBearerToken(req));
       const body = await readJsonBody(req);
-      const job = saveCompanyJob({
+      const job = await saveCompanyJob({
         actorUserId: actor.id,
         companyId: actor.companyId,
         job: body.job || body
@@ -949,9 +950,9 @@ const server = http.createServer(async (req, res) => {
 
   if (req.method === "DELETE" && req.url === "/company/jds") {
     try {
-      const actor = requireSessionUser(getBearerToken(req));
+      const actor = await requireSessionUser(getBearerToken(req));
       const body = await readJsonBody(req);
-      const result = deleteCompanyJob({
+      const result = await deleteCompanyJob({
         actorUserId: actor.id,
         companyId: actor.companyId,
         jobId: String(body.jobId || "").trim()
@@ -965,8 +966,8 @@ const server = http.createServer(async (req, res) => {
 
   if (req.method === "GET" && req.url === "/company/assessments") {
     try {
-      const user = requireSessionUser(getBearerToken(req));
-      const assessments = listAssessments({
+      const user = await requireSessionUser(getBearerToken(req));
+      const assessments = await listAssessments({
         actorUserId: user.id,
         companyId: user.companyId
       });
@@ -977,11 +978,27 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (req.method === "GET" && requestUrl.pathname === "/company/assessments/search") {
+    try {
+      const user = await requireSessionUser(getBearerToken(req));
+      const assessments = await searchAssessments({
+        actorUserId: user.id,
+        companyId: user.companyId,
+        q: String(requestUrl.searchParams.get("q") || "").trim(),
+        limit: Number(requestUrl.searchParams.get("limit") || 25)
+      });
+      sendJson(res, 200, { ok: true, result: { assessments } });
+    } catch (error) {
+      sendJson(res, 401, { ok: false, error: String(error.message || error) });
+    }
+    return;
+  }
+
   if (req.method === "POST" && req.url === "/company/assessments") {
     try {
-      const actor = requireSessionUser(getBearerToken(req));
+      const actor = await requireSessionUser(getBearerToken(req));
       const body = await readJsonBody(req);
-      const assessment = saveAssessment({
+      const assessment = await saveAssessment({
         actorUserId: actor.id,
         companyId: actor.companyId,
         assessment: body.assessment || body
@@ -995,9 +1012,9 @@ const server = http.createServer(async (req, res) => {
 
   if (req.method === "DELETE" && req.url === "/company/assessments") {
     try {
-      const actor = requireSessionUser(getBearerToken(req));
+      const actor = await requireSessionUser(getBearerToken(req));
       const body = await readJsonBody(req);
-      const result = deleteAssessment({
+      const result = await deleteAssessment({
         actorUserId: actor.id,
         companyId: actor.companyId,
         assessmentId: String(body.assessmentId || "").trim()
@@ -1011,7 +1028,7 @@ const server = http.createServer(async (req, res) => {
 
   if (req.method === "GET" && requestUrl.pathname === "/candidates") {
     try {
-      const sessionUser = getSessionUser(getBearerToken(req));
+      const sessionUser = await getSessionUser(getBearerToken(req));
       const listOptions = {
         limit: Number(requestUrl.searchParams.get("limit") || 100),
         q: String(requestUrl.searchParams.get("q") || "").trim()
@@ -1028,7 +1045,7 @@ const server = http.createServer(async (req, res) => {
 
   if (req.method === "POST" && requestUrl.pathname === "/candidates") {
     try {
-      const actor = requireSessionUser(getBearerToken(req));
+      const actor = await requireSessionUser(getBearerToken(req));
       const body = await readJsonBody(req);
       const candidate = {
         ...(body.candidate || body || {}),
@@ -1078,7 +1095,7 @@ const server = http.createServer(async (req, res) => {
 
   if (req.method === "POST" && requestUrl.pathname === "/candidates/assign") {
     try {
-      const actor = requireSessionUser(getBearerToken(req));
+      const actor = await requireSessionUser(getBearerToken(req));
       const body = await readJsonBody(req);
       const result = await assignCandidate(body.id || body.candidateId, {
         assigned_to_user_id: body.assigned_to_user_id || body.assignedToUserId,
@@ -1097,7 +1114,7 @@ const server = http.createServer(async (req, res) => {
 
   if (req.method === "GET" && requestUrl.pathname === "/contact-attempts") {
     try {
-      requireSessionUser(getBearerToken(req));
+      await requireSessionUser(getBearerToken(req));
       const result = await listContactAttempts(
         String(requestUrl.searchParams.get("candidate_id") || requestUrl.searchParams.get("candidateId") || "").trim(),
         Number(requestUrl.searchParams.get("limit") || 20)
@@ -1111,7 +1128,7 @@ const server = http.createServer(async (req, res) => {
 
   if (req.method === "POST" && requestUrl.pathname === "/contact-attempts") {
     try {
-      const actor = requireSessionUser(getBearerToken(req));
+      const actor = await requireSessionUser(getBearerToken(req));
       const body = await readJsonBody(req);
       const result = await saveContactAttempt(body.candidate_id || body.candidateId, {
         recruiter_id: actor.id,
@@ -1132,7 +1149,7 @@ const server = http.createServer(async (req, res) => {
   if (req.method === "POST" && requestUrl.pathname === "/parse-note") {
     try {
       const body = await readJsonBody(req);
-      const sessionUser = getSessionUser(getBearerToken(req));
+      const sessionUser = await getSessionUser(getBearerToken(req));
       const noteText = String(body.text || body.noteText || body.note || "").trim();
       if (!noteText) {
         throw new Error("Missing note text.");

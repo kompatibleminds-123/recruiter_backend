@@ -14,7 +14,7 @@
       "name": "Ankit Garg",
       "email": "ankit.garg@kompatibleminds.com",
       "role": "admin",
-      "passwordHash": "c0ca4fe636c68085a5c368fd7207f71d:8d45251bae30f00ea52e22cbec4f4297791484ecffc8244e3acfe6d4941ba3b3d15246c11c831a6e23d0860ba8a599ffee3dd6877d206e6525181fcaa605632a",
+      "passwordHash": "471b7d2e5dadb477bdb3bd57f4645d33:ebde88d50ec69675400af0101ee7d086d157ddff07d5439b86b98c42e2e723b19c3b86bb201102dd6976c13005679c965d9fd49c7f76aede929ef7e7ae3ecad7",
       "createdAt": "2026-03-19T17:30:01.047Z"
     },
     {
@@ -44,12 +44,6 @@
       "userId": "2718c290-c4fb-4912-964a-cf6ce38765ff",
       "companyId": "c0a7d2c9-4ddb-4add-9d4a-24cdd1caba7c",
       "createdAt": "2026-03-19T17:52:48.998Z"
-    },
-    {
-      "token": "0793bc0ed7ce1c5f473d4ba74c3b3c01cf3b139e51fb036a16f2759da6dfbf5c",
-      "userId": "492fe77a-562c-40a1-9294-79a58e8d0721",
-      "companyId": "c0a7d2c9-4ddb-4add-9d4a-24cdd1caba7c",
-      "createdAt": "2026-03-20T12:05:27.189Z"
     }
   ],
   "jobs": [
