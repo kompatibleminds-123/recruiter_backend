@@ -1041,6 +1041,8 @@ const server = http.createServer(async (req, res) => {
         model: String(process.env.QUICK_CAPTURE_MODEL || "").trim() || "gpt-4.1-mini",
         noteText,
         metadata: {
+          id: String(body.id || body.candidateId || "").trim() || null,
+          created_at: String(body.created_at || body.createdAt || "").trim() || null,
           linkedin: String(body.linkedin || body.linkedinUrl || body.profileUrl || "").trim() || null,
           source: String(body.source || "").trim() || null
         }

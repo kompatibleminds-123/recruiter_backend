@@ -22,6 +22,8 @@ let voiceSessionActive = false;
 let voiceBaseText = "";
 let voiceInterimText = "";
 let voiceCommittedChunks = new Set();
+let currentCandidateRecordId = "";
+let currentCandidateCreatedAt = "";
 
 function normalizeVoiceChunk(value) {
   return String(value || "")
@@ -115,6 +117,8 @@ function renderCandidateSummary(data) {
 
 function populateFormFromParsedResult(data) {
   if (!data || typeof data !== "object") return;
+  currentCandidateRecordId = String(data.id || "").trim();
+  currentCandidateCreatedAt = String(data.created_at || "").trim();
   if (candidateNameInput) candidateNameInput.value = String(data.name || "").trim();
   if (candidateCompanyInput) candidateCompanyInput.value = String(data.company || "").trim();
   if (candidateRoleInput) candidateRoleInput.value = String(data.role || "").trim();
@@ -267,6 +271,11 @@ function stopVoiceCapture() {
   }
 }
 
+function resetCurrentCandidateTracking() {
+  currentCandidateRecordId = "";
+  currentCandidateCreatedAt = "";
+}
+
 async function submitNote() {
   stopVoiceCapture();
   const noteText = buildNoteFromForm();
@@ -274,6 +283,7 @@ async function submitNote() {
     setStatus("Please enter or dictate a candidate note first.", "error");
     return;
   }
+  const wasUpdate = Boolean(currentCandidateRecordId);
 
   submitButton.disabled = true;
   setStatus("Parsing and saving candidate note...");
@@ -285,6 +295,8 @@ async function submitNote() {
         "Content-Type": "application/json"
       },
       body: JSON.stringify({
+        id: currentCandidateRecordId || undefined,
+        created_at: currentCandidateCreatedAt || undefined,
         noteText,
         source: "mobile_pwa"
       })
@@ -298,7 +310,10 @@ async function submitNote() {
     renderJson(payload.result);
     populateFormFromParsedResult(payload.result);
     renderCandidateSummary(payload.result);
-    setStatus("Candidate saved. You can edit the fields or dictate a correction, then save again.", "success");
+    setStatus(
+      wasUpdate ? "Candidate updated. You can keep editing and save again." : "Candidate saved. You can edit the fields or dictate a correction, then save again.",
+      "success"
+    );
   } catch (error) {
     setStatus(String(error.message || error), "error");
   } finally {

@@ -200,7 +200,7 @@ function buildParseNotePrompt(noteText) {
 
 function normalizeCandidateRow(structured, rawNote, metadata = {}) {
   return {
-    id: crypto.randomUUID(),
+    id: String(metadata.id || "").trim() || crypto.randomUUID(),
     source: metadata.source == null ? null : String(metadata.source).trim() || null,
     name: structured?.name == null ? null : String(structured.name).trim() || null,
     company: structured?.company == null ? null : String(structured.company).trim() || null,
@@ -217,7 +217,8 @@ function normalizeCandidateRow(structured, rawNote, metadata = {}) {
     linkedin:
       metadata.linkedin ||
       (structured?.linkedin == null ? null : String(structured.linkedin).trim() || null),
-    created_at: new Date().toISOString(),
+    created_at: String(metadata.created_at || "").trim() || new Date().toISOString(),
+    updated_at: new Date().toISOString(),
     raw_note: String(rawNote || "").trim()
   };
 }
@@ -244,9 +245,13 @@ function getSupabaseConfig() {
 
 async function saveCandidate(candidate) {
   const { url, serviceRoleKey } = getSupabaseConfig();
+  const candidateId = String(candidate?.id || "").trim();
+  const isUpdate = Boolean(candidateId);
   if (url && serviceRoleKey) {
-    const response = await fetch(`${url}/rest/v1/candidates`, {
-      method: "POST",
+    const response = await fetch(
+      isUpdate ? `${url}/rest/v1/candidates?id=eq.${encodeURIComponent(candidateId)}` : `${url}/rest/v1/candidates`,
+      {
+      method: isUpdate ? "PATCH" : "POST",
       headers: {
         "Content-Type": "application/json",
         apikey: serviceRoleKey,
@@ -258,7 +263,7 @@ async function saveCandidate(candidate) {
 
     if (!response.ok) {
       const errorText = await response.text();
-      throw new Error(`Supabase insert failed: ${response.status} ${errorText}`);
+      throw new Error(`Supabase save failed: ${response.status} ${errorText}`);
     }
 
     const rows = await response.json();
@@ -267,7 +272,16 @@ async function saveCandidate(candidate) {
 
   const store = readLocalStore();
   store.candidates = Array.isArray(store.candidates) ? store.candidates : [];
-  store.candidates.unshift(candidate);
+  const existingIndex = store.candidates.findIndex((item) => String(item?.id || "") === candidateId);
+  if (candidateId && existingIndex >= 0) {
+    store.candidates[existingIndex] = {
+      ...store.candidates[existingIndex],
+      ...candidate,
+      updated_at: candidate.updated_at || new Date().toISOString()
+    };
+  } else {
+    store.candidates.unshift(candidate);
+  }
   store.candidates = store.candidates.slice(0, 5000);
   writeLocalStore(store);
   return candidate;
