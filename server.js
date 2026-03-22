@@ -1028,7 +1028,7 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  if (req.method === "POST" && req.url === "/parse-note") {
+  if (req.method === "POST" && requestUrl.pathname === "/parse-note") {
     try {
       const body = await readJsonBody(req);
       const noteText = String(body.text || body.noteText || body.note || "").trim();
@@ -1053,7 +1053,7 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  if (req.method === "POST" && req.url === "/parse-candidate") {
+  if (req.method === "POST" && requestUrl.pathname === "/parse-candidate") {
     try {
       const body = await readJsonBody(req);
       const parsed = await parseCandidatePayload(body);

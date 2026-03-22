@@ -22,6 +22,45 @@ let voiceBaseText = "";
 let voiceInterimText = "";
 let voiceCommittedChunks = new Set();
 
+function normalizeVoiceChunk(value) {
+  return String(value || "")
+    .toLowerCase()
+    .replace(/[^\w\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function mergeVoiceText(baseText, newChunk) {
+  const base = String(baseText || "").trim();
+  const chunk = String(newChunk || "").trim();
+  if (!chunk) return base;
+  if (!base) return chunk;
+
+  const normalizedBase = normalizeVoiceChunk(base);
+  const normalizedChunk = normalizeVoiceChunk(chunk);
+  if (!normalizedChunk) return base;
+  if (normalizedBase.endsWith(normalizedChunk) || normalizedBase.includes(` ${normalizedChunk} `)) {
+    return base;
+  }
+
+  const baseWords = base.split(/\s+/);
+  const chunkWords = chunk.split(/\s+/);
+  const normalizedBaseWords = baseWords.map(normalizeVoiceChunk);
+  const normalizedChunkWords = chunkWords.map(normalizeVoiceChunk);
+  const maxOverlap = Math.min(normalizedBaseWords.length, normalizedChunkWords.length);
+
+  for (let overlap = maxOverlap; overlap >= 3; overlap -= 1) {
+    const baseTail = normalizedBaseWords.slice(-overlap).join(" ");
+    const chunkHead = normalizedChunkWords.slice(0, overlap).join(" ");
+    if (baseTail && baseTail === chunkHead) {
+      const remainingWords = chunkWords.slice(overlap);
+      return remainingWords.length ? `${base} ${remainingWords.join(" ")}`.trim() : base;
+    }
+  }
+
+  return `${base} ${chunk}`.trim();
+}
+
 function setStatus(message, tone = "") {
   statusMessage.textContent = message || "";
   statusMessage.className = `status-message${tone ? ` ${tone}` : ""}`;
@@ -137,7 +176,7 @@ function buildRecognition() {
         const chunkKey = transcript.toLowerCase().replace(/\s+/g, " ").trim();
         if (!voiceCommittedChunks.has(chunkKey)) {
           voiceCommittedChunks.add(chunkKey);
-          voiceBaseText = voiceBaseText ? `${voiceBaseText} ${transcript}`.trim() : transcript;
+          voiceBaseText = mergeVoiceText(voiceBaseText, transcript);
           committedNewText = true;
         }
       } else {
@@ -146,7 +185,7 @@ function buildRecognition() {
     }
 
     voiceInterimText = interimChunks.join(" ").trim();
-    noteInput.value = [voiceBaseText, voiceInterimText].filter(Boolean).join(" ").trim();
+    noteInput.value = mergeVoiceText(voiceBaseText, voiceInterimText);
 
     if (committedNewText) {
       setStatus("Voice note added to input.");
