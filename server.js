@@ -1022,6 +1022,34 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (req.method === "POST" && requestUrl.pathname === "/candidates") {
+    try {
+      const actor = requireSessionUser(getBearerToken(req));
+      const body = await readJsonBody(req);
+      const candidate = {
+        ...(body.candidate || body || {}),
+        recruiter_id: actor.id,
+        recruiter_name: actor.name,
+        updated_at: new Date().toISOString()
+      };
+      const duplicate = await findDuplicateCandidate(candidate);
+      if (duplicate) {
+        sendJson(res, 200, {
+          ok: true,
+          duplicate: true,
+          duplicateBy: duplicate.matchBy,
+          result: duplicate.existing
+        });
+        return;
+      }
+      const result = await saveCandidate(candidate);
+      sendJson(res, 200, { ok: true, result });
+    } catch (error) {
+      sendJson(res, 400, { ok: false, error: String(error.message || error) });
+    }
+    return;
+  }
+
   if (req.method === "DELETE" && requestUrl.pathname === "/candidates") {
     try {
       const candidateId = String(requestUrl.searchParams.get("id") || "").trim();
@@ -1129,6 +1157,10 @@ const server = http.createServer(async (req, res) => {
           duplicateBy: duplicate.matchBy,
           result: duplicate.existing
         });
+        return;
+      }
+      if (body.preview === true || body.dry_run === true || body.dryRun === true) {
+        sendJson(res, 200, { ok: true, preview: true, result: parsed });
         return;
       }
       const saved = await saveCandidate(parsed);

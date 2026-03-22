@@ -1,6 +1,7 @@
 const noteInput = document.getElementById("noteInput");
 const micButton = document.getElementById("micButton");
-const submitButton = document.getElementById("submitButton");
+const parseButton = document.getElementById("parseButton");
+const saveButton = document.getElementById("saveButton");
 const statusMessage = document.getElementById("statusMessage");
 const jsonOutput = document.getElementById("jsonOutput");
 const candidateSummary = document.getElementById("candidateSummary");
@@ -33,6 +34,7 @@ let voiceCommittedChunks = new Set();
 let currentCandidateRecordId = "";
 let currentCandidateCreatedAt = "";
 let currentQuickCaptureUser = null;
+let latestParsedCandidateDraft = null;
 
 function normalizeVoiceChunk(value) {
   return String(value || "")
@@ -93,9 +95,8 @@ function renderAuthState(user) {
       ? `${user.name} | ${user.role === "admin" ? "ADMIN" : "RECRUITER"} | ${user.companyName}`
       : "";
   }
-  if (submitButton) {
-    submitButton.disabled = !user;
-  }
+  if (parseButton) parseButton.disabled = !user;
+  if (saveButton) saveButton.disabled = !user || !latestParsedCandidateDraft;
   if (!user) {
     resetCurrentCandidateTracking();
   }
@@ -161,6 +162,13 @@ function populateFormFromParsedResult(data) {
   if (candidateNoticePeriodInput) candidateNoticePeriodInput.value = String(data.notice_period || "").trim();
   if (candidateNextActionInput) candidateNextActionInput.value = String(data.next_action || "").trim();
   if (noteInput) noteInput.value = String(data.notes || "").trim();
+}
+
+function setLatestParsedCandidateDraft(data) {
+  latestParsedCandidateDraft = data && typeof data === "object" ? { ...data } : null;
+  if (saveButton) {
+    saveButton.disabled = !currentQuickCaptureUser || !latestParsedCandidateDraft;
+  }
 }
 
 function clearVoiceSilenceTimer() {
@@ -307,9 +315,23 @@ function stopVoiceCapture() {
 function resetCurrentCandidateTracking() {
   currentCandidateRecordId = "";
   currentCandidateCreatedAt = "";
+  setLatestParsedCandidateDraft(null);
 }
 
-async function submitNote() {
+function buildQuickCapturePayload(noteText) {
+  return {
+    id: currentCandidateRecordId || undefined,
+    created_at: currentCandidateCreatedAt || undefined,
+    noteText,
+    source: "mobile_pwa",
+    client_name: "",
+    jd_title: candidateRoleInput?.value.trim() || "",
+    recruiter_id: currentQuickCaptureUser?.id || "",
+    recruiter_name: currentQuickCaptureUser?.name || ""
+  };
+}
+
+async function parseNoteForReview() {
   if (!currentQuickCaptureUser) {
     setStatus("Login required first.", "error");
     return;
@@ -320,51 +342,90 @@ async function submitNote() {
     setStatus("Please enter or dictate a candidate note first.", "error");
     return;
   }
-  const wasUpdate = Boolean(currentCandidateRecordId);
-
-  submitButton.disabled = true;
-  setStatus("Parsing and saving candidate note...");
+  parseButton.disabled = true;
+  if (saveButton) saveButton.disabled = true;
+  setStatus("Parsing candidate note for review...");
 
   try {
-    const token = getQuickCaptureAuthToken();
-    const response = await fetch("/parse-note", {
+    const payload = await callQuickCaptureApi("/parse-note", {
       method: "POST",
       headers: {
-        "Content-Type": "application/json",
-        ...(token ? { Authorization: `Bearer ${token}` } : {})
+        "Content-Type": "application/json"
       },
       body: JSON.stringify({
-        id: currentCandidateRecordId || undefined,
-        created_at: currentCandidateCreatedAt || undefined,
-        noteText,
-        source: "mobile_pwa",
-        client_name: "",
-        jd_title: candidateRoleInput?.value.trim() || "",
-        recruiter_id: currentQuickCaptureUser?.id || "",
-        recruiter_name: currentQuickCaptureUser?.name || ""
+        ...buildQuickCapturePayload(noteText),
+        preview: true
       })
     });
-
-    const payload = await response.json();
-    if (!response.ok || !payload.ok) {
-      throw new Error(payload.error || "Failed to parse the note.");
+    renderJson(payload.result);
+    populateFormFromParsedResult(payload.result);
+    renderCandidateSummary(payload.result);
+    setLatestParsedCandidateDraft(payload.result);
+    if (payload.duplicate && Array.isArray(payload.duplicateBy) && payload.duplicateBy.length) {
+      setStatus(`Possible duplicate found by ${payload.duplicateBy.join(", ")}. Review the existing candidate before saving.`, "error");
+    } else {
+      setStatus("Candidate parsed. Review the summary, edit if needed, then save.", "success");
     }
+  } catch (error) {
+    setLatestParsedCandidateDraft(null);
+    setStatus(String(error.message || error), "error");
+  } finally {
+    parseButton.disabled = !currentQuickCaptureUser;
+    if (saveButton) saveButton.disabled = !currentQuickCaptureUser || !latestParsedCandidateDraft;
+  }
+}
+
+async function saveCandidateAfterReview() {
+  if (!currentQuickCaptureUser) {
+    setStatus("Login required first.", "error");
+    return;
+  }
+  if (!latestParsedCandidateDraft) {
+    setStatus("Parse the note for review before saving.", "error");
+    return;
+  }
+
+  stopVoiceCapture();
+  parseButton.disabled = true;
+  saveButton.disabled = true;
+  setStatus("Saving candidate...");
+
+  try {
+    const payload = await callQuickCaptureApi("/candidates", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        candidate: {
+          ...latestParsedCandidateDraft,
+          id: currentCandidateRecordId || latestParsedCandidateDraft.id || undefined,
+          created_at: currentCandidateCreatedAt || latestParsedCandidateDraft.created_at || undefined,
+          notes: noteInput?.value.trim() || latestParsedCandidateDraft.notes || "",
+          next_action: candidateNextActionInput?.value.trim() || latestParsedCandidateDraft.next_action || "",
+          recruiter_id: currentQuickCaptureUser?.id || latestParsedCandidateDraft.recruiter_id || "",
+          recruiter_name: currentQuickCaptureUser?.name || latestParsedCandidateDraft.recruiter_name || "",
+          source: latestParsedCandidateDraft.source || "mobile_pwa"
+        }
+      })
+    });
 
     renderJson(payload.result);
     populateFormFromParsedResult(payload.result);
     renderCandidateSummary(payload.result);
-    if (payload.duplicate) {
-      setStatus(`Possible duplicate found by ${payload.duplicateBy.join(", ")}. Existing record opened instead of creating a new one.`, "error");
+    setLatestParsedCandidateDraft(payload.result);
+    if (payload.duplicate && Array.isArray(payload.duplicateBy) && payload.duplicateBy.length) {
+      setStatus(`Existing candidate reused by ${payload.duplicateBy.join(", ")}.`, "error");
+    } else if (currentCandidateRecordId) {
+      setStatus("Candidate updated.", "success");
     } else {
-      setStatus(
-        wasUpdate ? "Candidate updated. You can keep editing and save again." : "Candidate saved. You can edit the fields or dictate a correction, then save again.",
-        "success"
-      );
+      setStatus("Candidate saved.", "success");
     }
   } catch (error) {
     setStatus(String(error.message || error), "error");
   } finally {
-    submitButton.disabled = false;
+    parseButton.disabled = !currentQuickCaptureUser;
+    saveButton.disabled = !currentQuickCaptureUser || !latestParsedCandidateDraft;
   }
 }
 
@@ -386,7 +447,8 @@ micButton.addEventListener("click", () => {
   recognition.start();
 });
 
-submitButton.addEventListener("click", submitNote);
+parseButton.addEventListener("click", parseNoteForReview);
+saveButton.addEventListener("click", saveCandidateAfterReview);
 
 async function handleLogin() {
   setAuthStatus("");
@@ -395,6 +457,7 @@ async function handleLogin() {
     const user = await loginQuickCaptureUser(authEmailInput?.value, authPasswordInput?.value);
     if (authPasswordInput) authPasswordInput.value = "";
     renderAuthState(user);
+    setLatestParsedCandidateDraft(null);
     setAuthStatus("Logged in.", "success");
     setStatus("Quick capture is ready.", "success");
   } catch (error) {
@@ -408,6 +471,7 @@ async function handleLogin() {
 function handleLogout() {
   logoutQuickCaptureUser();
   renderAuthState(null);
+  setLatestParsedCandidateDraft(null);
   setAuthStatus("Logged out.", "success");
 }
 
