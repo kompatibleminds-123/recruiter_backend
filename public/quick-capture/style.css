@@ -154,7 +154,8 @@ h2 {
 
 .text-input,
 .note-input,
-.json-output {
+.json-output,
+.candidate-summary {
   width: 100%;
   border: 1px solid var(--line);
   border-radius: 18px;
@@ -263,6 +264,48 @@ h2 {
   background: var(--surface-soft);
 }
 
+.candidate-summary {
+  padding: 14px;
+  background: var(--surface-soft);
+}
+
+.candidate-summary.empty {
+  color: var(--muted);
+}
+
+.summary-grid {
+  display: grid;
+  gap: 10px;
+}
+
+.summary-row {
+  display: grid;
+  grid-template-columns: 140px minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+}
+
+.summary-key {
+  color: var(--brand-strong);
+  font-weight: 700;
+}
+
+.summary-value {
+  color: var(--ink);
+  word-break: break-word;
+}
+
+.raw-output-toggle {
+  margin-top: 12px;
+}
+
+.raw-output-toggle summary {
+  cursor: pointer;
+  color: var(--muted);
+  font-weight: 700;
+  margin-bottom: 10px;
+}
+
 .card-list {
   display: grid;
   gap: 12px;
@@ -343,5 +386,10 @@ h2 {
 
   .actions {
     grid-template-columns: 1fr;
+  }
+
+  .summary-row {
+    grid-template-columns: 1fr;
+    gap: 4px;
   }
 }

@@ -3,6 +3,7 @@ const micButton = document.getElementById("micButton");
 const submitButton = document.getElementById("submitButton");
 const statusMessage = document.getElementById("statusMessage");
 const jsonOutput = document.getElementById("jsonOutput");
+const candidateSummary = document.getElementById("candidateSummary");
 const candidateNameInput = document.getElementById("candidateName");
 const candidateCompanyInput = document.getElementById("candidateCompany");
 const candidateRoleInput = document.getElementById("candidateRole");
@@ -68,6 +69,48 @@ function setStatus(message, tone = "") {
 
 function renderJson(data) {
   jsonOutput.textContent = JSON.stringify(data, null, 2);
+}
+
+function escapeHtml(value) {
+  return String(value || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/\"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function renderCandidateSummary(data) {
+  if (!candidateSummary) return;
+  const rows = [
+    ["Candidate", data?.name],
+    ["Company", data?.company],
+    ["Role", data?.role],
+    ["Experience", data?.experience],
+    ["Skills", Array.isArray(data?.skills) ? data.skills.filter(Boolean).join(", ") : ""],
+    ["Current CTC", data?.current_ctc],
+    ["Expected CTC", data?.expected_ctc],
+    ["Notice Period", data?.notice_period],
+    ["Next Action", data?.next_action],
+    ["Notes", data?.notes],
+    ["Phone", data?.phone],
+    ["Email", data?.email],
+    ["LinkedIn", data?.linkedin]
+  ].filter(([, value]) => String(value || "").trim());
+
+  if (!rows.length) {
+    candidateSummary.className = "candidate-summary empty";
+    candidateSummary.textContent = "No captured data yet.";
+    return;
+  }
+
+  candidateSummary.className = "candidate-summary";
+  candidateSummary.innerHTML = `<div class="summary-grid">${rows
+    .map(
+      ([label, value]) =>
+        `<div class="summary-row"><div class="summary-key">${escapeHtml(label)}</div><div class="summary-value">${escapeHtml(value)}</div></div>`
+    )
+    .join("")}</div>`;
 }
 
 function clearVoiceSilenceTimer() {
@@ -240,6 +283,7 @@ async function submitNote() {
     }
 
     renderJson(payload.result);
+    renderCandidateSummary(payload.result);
     setStatus("Candidate note parsed and saved successfully.", "success");
     if (candidateNameInput) candidateNameInput.value = "";
     if (candidateCompanyInput) candidateCompanyInput.value = "";
