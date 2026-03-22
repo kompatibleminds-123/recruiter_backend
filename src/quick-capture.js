@@ -243,6 +243,10 @@ function normalizeCandidateRow(structured, rawNote, metadata = {}) {
     notice_period: structured?.notice_period == null ? null : String(structured.notice_period).trim() || null,
     notes: structured?.notes == null ? null : String(structured.notes).trim() || null,
     next_action: structured?.next_action == null ? null : String(structured.next_action).trim() || null,
+    client_name: String(metadata.client_name || "").trim() || null,
+    jd_title: String(metadata.jd_title || "").trim() || null,
+    recruiter_id: String(metadata.recruiter_id || "").trim() || null,
+    recruiter_name: String(metadata.recruiter_name || "").trim() || null,
     assigned_to_user_id: String(metadata.assigned_to_user_id || "").trim() || null,
     assigned_to_name: String(metadata.assigned_to_name || "").trim() || null,
     assigned_by_user_id: String(metadata.assigned_by_user_id || "").trim() || null,
@@ -469,6 +473,43 @@ async function listCandidates(limit = 100) {
   return (store.candidates || []).slice(0, Math.max(1, Number(limit) || 100));
 }
 
+async function listCandidatesForUser(user, limit = 100) {
+  const maxRows = Math.max(1, Number(limit) || 100);
+  if (!user?.id) {
+    return listCandidates(maxRows);
+  }
+
+  if (user.role === "admin") {
+    return listCandidates(maxRows);
+  }
+
+  const { url, serviceRoleKey } = getSupabaseConfig();
+  if (url && serviceRoleKey) {
+    const recruiterId = encodeURIComponent(String(user.id).trim());
+    const response = await fetch(
+      `${url}/rest/v1/candidates?select=*&or=(recruiter_id.eq.${recruiterId},assigned_to_user_id.eq.${recruiterId})&order=created_at.desc&limit=${maxRows}`,
+      {
+        headers: {
+          apikey: serviceRoleKey,
+          Authorization: `Bearer ${serviceRoleKey}`
+        }
+      }
+    );
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Supabase filtered list failed: ${response.status} ${errorText}`);
+    }
+
+    return response.json();
+  }
+
+  const store = readLocalStore();
+  return (store.candidates || [])
+    .filter((item) => item?.recruiter_id === user.id || item?.assigned_to_user_id === user.id)
+    .slice(0, maxRows);
+}
+
 async function deleteCandidate(candidateId) {
   const id = String(candidateId || "").trim();
   if (!id) {
@@ -650,6 +691,7 @@ module.exports = {
   deleteCandidate,
   findDuplicateCandidate,
   linkCandidateToAssessment,
+  listCandidatesForUser,
   listContactAttempts,
   listCandidates,
   parseCandidateQuickNote,

@@ -299,7 +299,9 @@ async function submitNote() {
         id: currentCandidateRecordId || undefined,
         created_at: currentCandidateCreatedAt || undefined,
         noteText,
-        source: "mobile_pwa"
+        source: "mobile_pwa",
+        client_name: "",
+        jd_title: candidateRoleInput?.value.trim() || ""
       })
     });
 

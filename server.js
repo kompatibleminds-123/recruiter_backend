@@ -9,6 +9,7 @@ const {
   deleteCandidate,
   findDuplicateCandidate,
   linkCandidateToAssessment,
+  listCandidatesForUser,
   listCandidates,
   listContactAttempts,
   parseCandidateQuickNote,
@@ -1010,7 +1011,10 @@ const server = http.createServer(async (req, res) => {
 
   if (req.method === "GET" && requestUrl.pathname === "/candidates") {
     try {
-      const result = await listCandidates(Number(requestUrl.searchParams.get("limit") || 100));
+      const sessionUser = getSessionUser(getBearerToken(req));
+      const result = sessionUser
+        ? await listCandidatesForUser(sessionUser, Number(requestUrl.searchParams.get("limit") || 100))
+        : await listCandidates(Number(requestUrl.searchParams.get("limit") || 100));
       sendJson(res, 200, { ok: true, result });
     } catch (error) {
       sendJson(res, 400, { ok: false, error: String(error.message || error) });
@@ -1096,6 +1100,7 @@ const server = http.createServer(async (req, res) => {
   if (req.method === "POST" && requestUrl.pathname === "/parse-note") {
     try {
       const body = await readJsonBody(req);
+      const sessionUser = getSessionUser(getBearerToken(req));
       const noteText = String(body.text || body.noteText || body.note || "").trim();
       if (!noteText) {
         throw new Error("Missing note text.");
@@ -1109,7 +1114,11 @@ const server = http.createServer(async (req, res) => {
           id: String(body.id || body.candidateId || "").trim() || null,
           created_at: String(body.created_at || body.createdAt || "").trim() || null,
           linkedin: String(body.linkedin || body.linkedinUrl || body.profileUrl || "").trim() || null,
-          source: String(body.source || "").trim() || null
+          source: String(body.source || "").trim() || null,
+          client_name: String(body.client_name || body.clientName || "").trim() || null,
+          jd_title: String(body.jd_title || body.jdTitle || "").trim() || null,
+          recruiter_id: sessionUser?.id || String(body.recruiter_id || body.recruiterId || "").trim() || null,
+          recruiter_name: sessionUser?.name || String(body.recruiter_name || body.recruiterName || "").trim() || null
         }
       });
       const duplicate = await findDuplicateCandidate(parsed);
