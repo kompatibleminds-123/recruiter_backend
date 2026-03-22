@@ -17,8 +17,8 @@
       <section class="app-topbar">
         <div class="app-topbar-copy">
           <p class="eyebrow">RecruitDesk AI</p>
-          <h1>Quick Capture Login</h1>
-          <p class="subcopy">Sign in first, then move to capture or drafts in a clean mobile flow.</p>
+          <h1>Login, Then Capture</h1>
+          <p class="subcopy">Use the same backend account as the extension. First sign in, then open Capture or Drafts.</p>
         </div>
       </section>
 
@@ -28,13 +28,19 @@
           <span class="panel-kicker">Step 1</span>
         </div>
         <div id="authLoggedOut">
+          <div class="auth-callout">
+            <strong>Use the same login as the extension</strong>
+            <p>Admin can see all company notes. Recruiters only see their own or assigned notes.</p>
+          </div>
           <div class="quick-form-grid">
             <label class="field">
               <span class="label">Email</span>
+              <span class="helper-text">Use your backend work email</span>
               <input id="authEmail" class="text-input" type="email" autocomplete="username" />
             </label>
             <label class="field">
               <span class="label">Password</span>
+              <span class="helper-text">This is the same password used in the extension</span>
               <input id="authPassword" class="text-input" type="password" autocomplete="current-password" />
             </label>
           </div>
@@ -44,8 +50,12 @@
         </div>
         <div id="authLoggedIn" hidden>
           <div id="authSummary" class="auth-summary"></div>
+          <div class="auth-callout success-callout">
+            <strong>You are logged in</strong>
+            <p>Next, open Capture to parse and save notes, or open Drafts to search saved quick-capture records.</p>
+          </div>
           <div class="actions single-action">
-            <a class="primary-button" href="/quick-capture/capture.html">Go to capture</a>
+            <a class="primary-button" href="/quick-capture/capture.html">Open Capture</a>
             <a class="ghost-button" href="/quick-capture/list.html">Open drafts</a>
             <button id="logoutButton" type="button" class="ghost-button">Logout</button>
           </div>
@@ -61,11 +71,11 @@
         <div class="summary-grid">
           <div class="summary-row">
             <div class="summary-key">1</div>
-            <div class="summary-value">Login with the same backend account used in the extension.</div>
+            <div class="summary-value">Login with your backend account. This is the same email/password used in the extension.</div>
           </div>
           <div class="summary-row">
             <div class="summary-key">2</div>
-            <div class="summary-value">Open Capture to parse notes, review fields, and save candidates.</div>
+            <div class="summary-value">Open Capture to parse notes, review fields, and save candidates only after review.</div>
           </div>
           <div class="summary-row">
             <div class="summary-key">3</div>

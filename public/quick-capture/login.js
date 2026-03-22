@@ -30,13 +30,13 @@ async function handleLogin() {
     const user = await loginQuickCaptureUser(authEmailInput?.value, authPasswordInput?.value);
     if (authPasswordInput) authPasswordInput.value = "";
     renderAuthState(user);
-    setAuthStatus("Logged in. Redirecting to capture...", "success");
+    setAuthStatus("Login successful. Opening Capture...", "success");
     window.setTimeout(() => {
       window.location.href = "/quick-capture/capture.html";
     }, 350);
   } catch (error) {
     renderAuthState(null);
-    setAuthStatus(String(error?.message || error), "error");
+    setAuthStatus(`Login failed: ${String(error?.message || error)}`, "error");
   } finally {
     if (loginButton) loginButton.disabled = false;
   }
@@ -66,7 +66,7 @@ getQuickCaptureCurrentUser()
   .then((user) => {
     renderAuthState(user);
     if (user) {
-      setAuthStatus("Already logged in.", "success");
+      setAuthStatus("Already logged in. You can open Capture or Drafts below.", "success");
     }
   })
   .catch(() => {
