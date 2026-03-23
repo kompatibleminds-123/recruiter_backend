@@ -20,12 +20,14 @@ const candidateNextActionInput = document.getElementById("candidateNextAction");
 let recognition = null;
 let isListening = false;
 let voiceSilenceTimer = null;
+let voiceRestartTimer = null;
 let keepAliveUntil = 0;
 let manualVoiceStop = false;
 let voiceSessionActive = false;
 let voiceBaseText = "";
 let voiceInterimText = "";
 let voiceCommittedChunks = new Set();
+let voiceRequestedByUser = false;
 let currentCandidateRecordId = "";
 let currentCandidateCreatedAt = "";
 let currentQuickCaptureUser = null;
@@ -203,6 +205,13 @@ function clearVoiceSilenceTimer() {
   }
 }
 
+function clearVoiceRestartTimer() {
+  if (voiceRestartTimer) {
+    window.clearTimeout(voiceRestartTimer);
+    voiceRestartTimer = null;
+  }
+}
+
 function armVoiceSilenceTimer() {
   clearVoiceSilenceTimer();
   voiceSilenceTimer = window.setTimeout(() => {
@@ -212,6 +221,29 @@ function armVoiceSilenceTimer() {
       recognition.stop();
     }
   }, 7000);
+}
+
+function resetVoiceSessionState() {
+  voiceSessionActive = false;
+  voiceBaseText = noteInput.value.trim();
+  voiceInterimText = "";
+  voiceCommittedChunks.clear();
+  voiceRequestedByUser = false;
+}
+
+function scheduleVoiceRestart() {
+  clearVoiceRestartTimer();
+  if (!recognition || !voiceRequestedByUser) return;
+  if (Date.now() >= keepAliveUntil) return;
+  voiceRestartTimer = window.setTimeout(() => {
+    if (recognition && !isListening && voiceRequestedByUser && Date.now() < keepAliveUntil) {
+      try {
+        recognition.start();
+      } catch {
+        // Ignore restart errors from browser speech engines.
+      }
+    }
+  }, 220);
 }
 
 function buildNoteFromForm() {
@@ -250,6 +282,7 @@ function buildRecognition() {
 
   instance.onstart = () => {
     isListening = true;
+    clearVoiceRestartTimer();
     manualVoiceStop = false;
     if (!voiceSessionActive) {
       voiceSessionActive = true;
@@ -266,16 +299,25 @@ function buildRecognition() {
   instance.onend = () => {
     clearVoiceSilenceTimer();
     isListening = false;
-    manualVoiceStop = false;
-    voiceSessionActive = false;
-    voiceBaseText = noteInput.value.trim();
-    voiceInterimText = "";
-    voiceCommittedChunks.clear();
-    micButton.textContent = "Start voice input";
+    const shouldStayActive = voiceRequestedByUser && Date.now() < keepAliveUntil;
+    if (manualVoiceStop || !shouldStayActive) {
+      manualVoiceStop = false;
+      resetVoiceSessionState();
+      micButton.textContent = "Start voice input";
+      setStatus("Voice capture stopped.");
+      return;
+    }
+
+    micButton.textContent = "Listening...";
+    scheduleVoiceRestart();
   };
 
   instance.onerror = (event) => {
     voiceInterimText = "";
+    if (event?.error === "no-speech" && voiceRequestedByUser && Date.now() < keepAliveUntil) {
+      scheduleVoiceRestart();
+      return;
+    }
     setStatus(`Voice input error: ${event.error}`, "error");
   };
 
@@ -316,16 +358,17 @@ function buildRecognition() {
 
 function stopVoiceCapture() {
   if (!recognition) return;
+  voiceRequestedByUser = false;
   manualVoiceStop = true;
   keepAliveUntil = 0;
   clearVoiceSilenceTimer();
+  clearVoiceRestartTimer();
   voiceInterimText = "";
   noteInput.value = voiceBaseText || noteInput.value.trim();
   if (isListening) {
     recognition.stop();
   } else {
-    voiceSessionActive = false;
-    voiceCommittedChunks.clear();
+    resetVoiceSessionState();
     micButton.textContent = "Start voice input";
   }
 }
@@ -456,6 +499,7 @@ micButton.addEventListener("click", () => {
     stopVoiceCapture();
     return;
   }
+  voiceRequestedByUser = true;
   keepAliveUntil = Date.now() + 7000;
   recognition.start();
 });
