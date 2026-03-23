@@ -19,6 +19,13 @@ const candidatePhoneInput = document.getElementById("candidatePhone");
 const candidateEmailInput = document.getElementById("candidateEmail");
 const candidateLinkedinInput = document.getElementById("candidateLinkedin");
 const candidateNextActionInput = document.getElementById("candidateNextAction");
+const existingCandidateInput = document.getElementById("existingCandidateInput");
+const existingParseButton = document.getElementById("existingParseButton");
+const existingApplyRecruiterButton = document.getElementById("existingApplyRecruiterButton");
+const existingApplyUpdateButton = document.getElementById("existingApplyUpdateButton");
+const existingStatusMessage = document.getElementById("existingStatusMessage");
+const existingCandidateSummary = document.getElementById("existingCandidateSummary");
+const existingConflictSummary = document.getElementById("existingConflictSummary");
 let recognition = null;
 let isListening = false;
 let voiceSilenceTimer = null;
@@ -37,6 +44,9 @@ let latestParsedCandidateDraft = null;
 let latestIncomingParsedCandidate = null;
 let currentLoadedCandidateBaseline = null;
 let latestDraftConflicts = [];
+let latestExistingMatchedTarget = null;
+let latestExistingParsedResult = null;
+let latestExistingMergedResult = null;
 
 function normalizeVoiceChunk(value) {
   return String(value || "")
@@ -80,6 +90,12 @@ function mergeVoiceText(baseText, newChunk) {
 function setStatus(message, tone = "") {
   statusMessage.textContent = message || "";
   statusMessage.className = `status-message${tone ? ` ${tone}` : ""}`;
+}
+
+function setExistingStatus(message, tone = "") {
+  if (!existingStatusMessage) return;
+  existingStatusMessage.textContent = message || "";
+  existingStatusMessage.className = `status-message${tone ? ` ${tone}` : ""}`;
 }
 
 function renderAuthState(user) {
@@ -228,6 +244,625 @@ function renderConflictSummary(conflicts) {
         .join("")}
     </ul>
   `;
+}
+
+function renderExistingConflictSummary(conflicts) {
+  if (!existingConflictSummary) return;
+  const rows = Array.isArray(conflicts) ? conflicts : [];
+  existingConflictSummary.hidden = !rows.length;
+  if (!rows.length) {
+    existingConflictSummary.innerHTML = "";
+    return;
+  }
+  existingConflictSummary.innerHTML = `
+    <div class="conflict-title">Conflicts detected</div>
+    <ul class="conflict-list">
+      ${rows
+        .map(
+          (entry) =>
+            `<li><strong>${escapeHtml(formatConflictLabel(entry.key))}</strong>: existing "${escapeHtml(entry.from)}" -> new "${escapeHtml(entry.to)}"</li>`
+        )
+        .join("")}
+    </ul>
+  `;
+}
+
+function renderExistingCandidateSummary(data, matchedLabel = "") {
+  if (!existingCandidateSummary) return;
+  const rows = [
+    ["Matched", matchedLabel],
+    ["Candidate", data?.name],
+    ["Company", data?.company],
+    ["Role", data?.role],
+    ["Experience", data?.experience],
+    ["Location", data?.location],
+    ["Current CTC", data?.current_ctc],
+    ["Expected CTC", data?.expected_ctc],
+    ["Notice Period", data?.notice_period],
+    ["Highest education", data?.highest_education],
+    ["Next Action", data?.next_action],
+    ["Phone", data?.phone],
+    ["Email", data?.email],
+    ["LinkedIn", data?.linkedin]
+  ].filter(([, value]) => String(value || "").trim());
+
+  if (!rows.length) {
+    existingCandidateSummary.className = "candidate-summary empty";
+    existingCandidateSummary.textContent = "No existing-candidate parse yet.";
+    return;
+  }
+
+  existingCandidateSummary.className = "candidate-summary";
+  existingCandidateSummary.innerHTML = `<div class="summary-grid">${rows
+    .map(
+      ([label, value]) =>
+        `<div class="summary-row"><div class="summary-key">${escapeHtml(label)}</div><div class="summary-value">${escapeHtml(value)}</div></div>`
+    )
+      .join("")}</div>`;
+}
+
+function appendUniqueNote(existingValue, nextValue) {
+  return [String(existingValue || "").trim(), String(nextValue || "").trim()]
+    .filter(Boolean)
+    .filter((value, index, array) => array.findIndex((item) => item.toLowerCase() === value.toLowerCase()) === index)
+    .join("\n");
+}
+
+function normalizeLooseText(value) {
+  return String(value || "")
+    .toLowerCase()
+    .replace(/[^\w\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function extractCandidateLeadText(text) {
+  const raw = String(text || "").trim();
+  if (!raw) return "";
+  const stopWords = /\b(call|callback|follow|follow-up|followup|interview|current|expected|notice|location|company|role|aligned|reject|shortlisted|joined|duplicate|speak|talk|connect|will)\b/i;
+  const match = raw.match(stopWords);
+  if (!match || typeof match.index !== "number") return raw;
+  return raw.slice(0, match.index).trim().replace(/[,\-|]+$/, "").trim();
+}
+
+function normalizeExistingCandidateItem(item) {
+  return {
+    id: String(item?.id || "").trim(),
+    name: String(item?.name || "").trim(),
+    company: String(item?.company || "").trim(),
+    role: String(item?.role || "").trim(),
+    experience: String(item?.experience || "").trim(),
+    location: String(item?.location || "").trim(),
+    current_ctc: String(item?.current_ctc || "").trim(),
+    expected_ctc: String(item?.expected_ctc || "").trim(),
+    notice_period: String(item?.notice_period || "").trim(),
+    phone: String(item?.phone || "").trim(),
+    email: String(item?.email || "").trim(),
+    linkedin: String(item?.linkedin || "").trim(),
+    highest_education: String(item?.highest_education || "").trim(),
+    next_action: String(item?.next_action || "").trim(),
+    notes: String(item?.notes || "").trim(),
+    recruiterContextNotes: String(item?.recruiterContextNotes || "").trim(),
+    kind: "quick_capture"
+  };
+}
+
+function normalizeExistingAssessmentItem(item) {
+  return {
+    id: String(item?.id || "").trim(),
+    name: String(item?.candidateName || "").trim(),
+    company: String(item?.currentCompany || "").trim(),
+    role: String(item?.currentDesignation || "").trim(),
+    experience: String(item?.totalExperience || "").trim(),
+    location: String(item?.location || "").trim(),
+    current_ctc: String(item?.currentCtc || "").trim(),
+    expected_ctc: String(item?.expectedCtc || "").trim(),
+    notice_period: String(item?.noticePeriod || "").trim(),
+    phone: String(item?.phoneNumber || "").trim(),
+    email: String(item?.emailId || "").trim(),
+    linkedin: String(item?.linkedinUrl || "").trim(),
+    highest_education: String(item?.highestEducation || "").trim(),
+    next_action: "",
+    notes: String(item?.callbackNotes || "").trim(),
+    recruiterContextNotes: String(item?.recruiterContextNotes || "").trim(),
+    kind: "assessment"
+  };
+}
+
+function scoreNameMatch(targetName, noteText) {
+  const target = normalizeLooseText(targetName);
+  const note = normalizeLooseText(noteText);
+  if (!target) return 0;
+  if (note.includes(target)) return target.length + 100;
+  const parts = target.split(" ").filter(Boolean);
+  return parts.reduce((score, part) => (note.includes(part) ? score + part.length : score), 0);
+}
+
+async function findExistingCandidateTarget(noteText) {
+  const lead = extractCandidateLeadText(noteText);
+  if (!lead) return null;
+  const [candidatePayload, assessmentPayload] = await Promise.all([
+    callQuickCaptureApi(`/candidates?limit=200&q=${encodeURIComponent(lead)}`, { method: "GET" }).catch(() => ({ result: [] })),
+    callQuickCaptureApi(`/company/assessments/search?q=${encodeURIComponent(lead)}&limit=25`, { method: "GET" }).catch(() => ({ result: { assessments: [] } }))
+  ]);
+
+  const candidateMatches = (Array.isArray(candidatePayload?.result) ? candidatePayload.result : [])
+    .filter((item) => !item?.used_in_assessment)
+    .map((item) => ({ kind: "quick_capture", item, score: scoreNameMatch(item?.name, noteText) }));
+  const assessmentMatches = (Array.isArray(assessmentPayload?.result?.assessments) ? assessmentPayload.result.assessments : [])
+    .map((item) => ({ kind: "assessment", item, score: scoreNameMatch(item?.candidateName, noteText) + 5 }));
+
+  return [...assessmentMatches, ...candidateMatches]
+    .filter((entry) => entry.score > 0)
+    .sort((a, b) => b.score - a.score)[0] || null;
+}
+
+function parseFilterDateInput(value, endOfDay = false) {
+  const text = String(value || "").trim();
+  if (!text) return null;
+  const date = new Date(`${text}T${endOfDay ? "23:59:59" : "00:00:00"}`);
+  return Number.isFinite(date.getTime()) ? date : null;
+}
+
+function getNamedDateIsoFromText(text, options = {}) {
+  const raw = String(text || "").trim();
+  if (!raw) return "";
+  const lower = raw.toLowerCase();
+  const now = new Date();
+  const setTime = (date, hour = 11, minute = 0) => {
+    date.setHours(hour, minute, 0, 0);
+    return date.toISOString();
+  };
+
+  let hour = 11;
+  let minute = 0;
+  const timeMatch = lower.match(/\b(\d{1,2})(?:[:.](\d{1,2}))?\s*(am|pm)?\b/);
+  if (timeMatch) {
+    hour = Number(timeMatch[1]);
+    minute = Number(timeMatch[2] || 0);
+    const meridian = String(timeMatch[3] || "").toLowerCase();
+    if (meridian === "pm" && hour < 12) hour += 12;
+    if (meridian === "am" && hour === 12) hour = 0;
+  } else if (/\bevening\b/.test(lower)) {
+    hour = 18;
+  }
+
+  if (/\btomorrow\b/.test(lower)) {
+    const next = new Date();
+    next.setDate(next.getDate() + 1);
+    return setTime(next, hour, minute);
+  }
+
+  if (/\bday after tomorrow\b/.test(lower)) {
+    const next = new Date();
+    next.setDate(next.getDate() + 2);
+    return setTime(next, hour, minute);
+  }
+
+  const weekdayMap = { sunday: 0, sun: 0, monday: 1, mon: 1, tuesday: 2, tue: 2, tues: 2, wednesday: 3, wed: 3, thursday: 4, thu: 4, thurs: 4, friday: 5, fri: 5, saturday: 6, sat: 6 };
+  const weekdayThisWeek = lower.match(/\b(monday|mon|tuesday|tue|tues|wednesday|wed|thursday|thu|thurs|friday|fri|saturday|sat|sunday|sun)\s+this\s+week\b/);
+  if (weekdayThisWeek) {
+    const target = weekdayMap[weekdayThisWeek[1]];
+    const date = new Date();
+    let delta = target - date.getDay();
+    if (delta < 0) delta += 7;
+    date.setDate(date.getDate() + delta);
+    return setTime(date, hour, minute);
+  }
+
+  const weekdayMatch = lower.match(/\b(?:(next)\s+)?(monday|mon|tuesday|tue|tues|wednesday|wed|thursday|thu|thurs|friday|fri|saturday|sat|sunday|sun)\b/);
+  if (weekdayMatch) {
+    const target = weekdayMap[weekdayMatch[2]];
+    const date = new Date();
+    let delta = (target - date.getDay() + 7) % 7;
+    if (weekdayMatch[1] === "next" || delta === 0) delta += 7;
+    date.setDate(date.getDate() + delta);
+    return setTime(date, hour, minute);
+  }
+
+  const monthMap = { jan: 0, january: 0, feb: 1, february: 1, mar: 2, march: 2, apr: 3, april: 3, may: 4, jun: 5, june: 5, jul: 6, july: 6, aug: 7, august: 7, sep: 8, sept: 8, september: 8, oct: 9, october: 9, nov: 10, november: 10, dec: 11, december: 11 };
+  const dayMonthMatch = lower.match(/\b(\d{1,2})(?:st|nd|rd|th)?\s+(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t|tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)(?:\s+(\d{2,4}))?\b/);
+  if (dayMonthMatch) {
+    const day = Number(dayMonthMatch[1]);
+    const month = monthMap[dayMonthMatch[2]];
+    let year = Number(dayMonthMatch[3] || now.getFullYear());
+    if (year < 100) year += 2000;
+    return setTime(new Date(year, month, day), hour, minute);
+  }
+
+  const monthDayMatch = lower.match(/\b(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t|tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\s+(\d{1,2})(?:st|nd|rd|th)?(?:\s+(\d{2,4}))?\b/);
+  if (monthDayMatch) {
+    const month = monthMap[monthDayMatch[1]];
+    const day = Number(monthDayMatch[2]);
+    let year = Number(monthDayMatch[3] || now.getFullYear());
+    if (year < 100) year += 2000;
+    return setTime(new Date(year, month, day), hour, minute);
+  }
+
+  const slashDateMatch = lower.match(/\b(\d{1,2})[\/-](\d{1,2})(?:[\/-](\d{2,4}))?\b/);
+  if (slashDateMatch) {
+    const day = Number(slashDateMatch[1]);
+    const month = Number(slashDateMatch[2]) - 1;
+    let year = Number(slashDateMatch[3] || now.getFullYear());
+    if (year < 100) year += 2000;
+    return setTime(new Date(year, month, day), hour, minute);
+  }
+
+  if (options.baseDateIso) {
+    const base = new Date(options.baseDateIso);
+    if (Number.isFinite(base.getTime())) {
+      return setTime(base, hour, minute);
+    }
+  }
+
+  return "";
+}
+
+function inferExistingCandidateUpdate(text, options = {}) {
+  const raw = String(text || "").trim();
+  const lower = raw.toLowerCase();
+  if (!raw) return null;
+  const explicitAt = getNamedDateIsoFromText(raw, options);
+  const preferredKind = String(options.preferredKind || "").trim();
+  const followUpIntent = /(next call|callback|call back|call later|call me|call him|call her|call to|follow up|follow-up|followup|connect|speak|talk|will speak)/.test(lower);
+  const interviewIntent = /interview/.test(lower) && /(align|aligned|schedule|scheduled|change|changed|reschedule|rescheduled|move|moved|shift|shifted|update|updated)/.test(lower);
+
+  if (interviewIntent || /\bl1\b.*\balign/.test(lower) || /\bl2\b.*\balign/.test(lower)) {
+    return {
+      kind: "assessment",
+      candidateStatus: "Aligned for Interview",
+      pipelineStage: "Interview Scheduled",
+      interviewAt: explicitAt,
+      callbackNotes: raw
+    };
+  }
+
+  if ((/\bhr\b/.test(lower) && /\breject/.test(lower)) || /\bscreen(ing)?\s+reject/.test(lower)) {
+    return { kind: "assessment", candidateStatus: "Screening Reject", pipelineStage: "Rejected", callbackNotes: raw };
+  }
+  if (/interview/.test(lower) && /\breject/.test(lower)) {
+    return { kind: "assessment", candidateStatus: "Interview Reject", pipelineStage: "Rejected", callbackNotes: raw };
+  }
+  if (/\bduplicate\b/.test(lower)) {
+    return { kind: "assessment", candidateStatus: "Duplicate", pipelineStage: "Rejected", callbackNotes: raw };
+  }
+  if (/\bshortlisted\b/.test(lower)) {
+    return { kind: "assessment", candidateStatus: "Shortlisted", pipelineStage: "Shortlisted", callbackNotes: raw };
+  }
+  if (/\bjoined\b/.test(lower)) {
+    return { kind: "assessment", candidateStatus: "Joined", pipelineStage: "Joined", callbackNotes: raw };
+  }
+
+  if (followUpIntent || explicitAt) {
+    if (preferredKind === "assessment") {
+      return {
+        kind: "assessment",
+        candidateStatus: String(options.currentStatus || "").trim(),
+        pipelineStage: String(options.currentPipelineStage || "").trim(),
+        next_follow_up_at: explicitAt,
+        callbackNotes: raw
+      };
+    }
+    return {
+      kind: "quick_capture",
+      outcome: "call_back_later",
+      next_follow_up_at: explicitAt,
+      notes: raw
+    };
+  }
+  return null;
+}
+
+function buildExistingCandidateQuickCaptureSave(targetItem, merged, rawText) {
+  return {
+    ...targetItem,
+    id: targetItem.id,
+    source: targetItem.source || "mobile_pwa",
+    name: merged.name || targetItem.name || "",
+    company: merged.company || targetItem.company || "",
+    role: merged.role || targetItem.role || "",
+    experience: merged.experience || targetItem.experience || "",
+    skills: Array.isArray(targetItem.skills) ? targetItem.skills : [],
+    phone: merged.phone || targetItem.phone || "",
+    email: merged.email || targetItem.email || "",
+    location: merged.location || targetItem.location || "",
+    highest_education: merged.highest_education || targetItem.highest_education || "",
+    current_ctc: merged.current_ctc || targetItem.current_ctc || "",
+    expected_ctc: merged.expected_ctc || targetItem.expected_ctc || "",
+    notice_period: merged.notice_period || targetItem.notice_period || "",
+    next_action: merged.next_action || targetItem.next_action || "",
+    linkedin: merged.linkedin || targetItem.linkedin || "",
+    notes: appendUniqueNote(targetItem.notes, rawText),
+    raw_note: appendUniqueNote(targetItem.raw_note, rawText),
+    recruiter_id: currentQuickCaptureUser?.id || targetItem.recruiter_id || "",
+    recruiter_name: currentQuickCaptureUser?.name || targetItem.recruiter_name || "",
+    client_name: targetItem.client_name || "",
+    jd_title: targetItem.jd_title || "",
+    assigned_to_user_id: targetItem.assigned_to_user_id || "",
+    assigned_to_name: targetItem.assigned_to_name || "",
+    assigned_by_user_id: targetItem.assigned_by_user_id || "",
+    assigned_by_name: targetItem.assigned_by_name || "",
+    assigned_jd_id: targetItem.assigned_jd_id || "",
+    assigned_jd_title: targetItem.assigned_jd_title || "",
+    assigned_at: targetItem.assigned_at || "",
+    last_contact_outcome: targetItem.last_contact_outcome || "",
+    last_contact_notes: targetItem.last_contact_notes || "",
+    last_contact_at: targetItem.last_contact_at || "",
+    next_follow_up_at: targetItem.next_follow_up_at || "",
+    created_at: targetItem.created_at || undefined,
+    updated_at: new Date().toISOString()
+  };
+}
+
+function buildExistingAssessmentSave(targetItem, patch = {}, rawText = "") {
+  const mergedNotes = rawText ? appendUniqueNote(targetItem.recruiterNotes, rawText) : targetItem.recruiterNotes || "";
+  return {
+    ...targetItem,
+    id: targetItem.id,
+    recruiterNotes: patch.recruiterNotes != null ? patch.recruiterNotes : mergedNotes,
+    callbackNotes: patch.callbackNotes != null ? patch.callbackNotes : (targetItem.callbackNotes || ""),
+    candidateName: patch.candidateName != null ? patch.candidateName : targetItem.candidateName,
+    currentCompany: patch.currentCompany != null ? patch.currentCompany : targetItem.currentCompany,
+    currentDesignation: patch.currentDesignation != null ? patch.currentDesignation : targetItem.currentDesignation,
+    totalExperience: patch.totalExperience != null ? patch.totalExperience : targetItem.totalExperience,
+    location: patch.location != null ? patch.location : targetItem.location,
+    phoneNumber: patch.phoneNumber != null ? patch.phoneNumber : targetItem.phoneNumber,
+    emailId: patch.emailId != null ? patch.emailId : targetItem.emailId,
+    linkedinUrl: patch.linkedinUrl != null ? patch.linkedinUrl : targetItem.linkedinUrl,
+    highestEducation: patch.highestEducation != null ? patch.highestEducation : targetItem.highestEducation,
+    candidateStatus: patch.candidateStatus != null ? patch.candidateStatus : targetItem.candidateStatus,
+    pipelineStage: patch.pipelineStage != null ? patch.pipelineStage : targetItem.pipelineStage,
+    followUpAt: patch.followUpAt != null ? patch.followUpAt : targetItem.followUpAt,
+    interviewAt: patch.interviewAt != null ? patch.interviewAt : targetItem.interviewAt
+  };
+}
+
+function clearExistingCandidatePreview() {
+  latestExistingMatchedTarget = null;
+  latestExistingParsedResult = null;
+  latestExistingMergedResult = null;
+  renderExistingConflictSummary([]);
+  renderExistingCandidateSummary(null);
+}
+
+async function parseExistingRecruiterNote() {
+  if (!currentQuickCaptureUser) {
+    setExistingStatus("Login required first.", "error");
+    return;
+  }
+  const rawText = String(existingCandidateInput?.value || "").trim();
+  if (!rawText) {
+    setExistingStatus("Enter candidate name and recruiter note first.", "error");
+    return;
+  }
+
+  existingParseButton.disabled = true;
+  setExistingStatus("Finding candidate and parsing recruiter note...");
+
+  try {
+    const target = await findExistingCandidateTarget(rawText);
+    if (!target) {
+      clearExistingCandidatePreview();
+      setExistingStatus("No matching existing candidate found.", "error");
+      return;
+    }
+
+    latestExistingMatchedTarget = target;
+    const base =
+      target.kind === "assessment"
+        ? normalizeExistingAssessmentItem(target.item)
+        : normalizeExistingCandidateItem(target.item);
+
+    const payload = await callQuickCaptureApi("/parse-note", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        text: rawText,
+        preview: true,
+        id: base.id,
+        linkedin: base.linkedin,
+        source: target.kind === "assessment" ? "assessment_existing" : (target.item?.source || "mobile_pwa"),
+        jd_title: target.item?.jdTitle || target.item?.jd_title || target.item?.role || "",
+        recruiter_id: currentQuickCaptureUser?.id || "",
+        recruiter_name: currentQuickCaptureUser?.name || ""
+      })
+    });
+
+    latestExistingParsedResult = payload.result || null;
+    const { merged, conflicts } = buildCandidateMerge(base, payload.result || {}, rawText);
+    latestExistingMergedResult = merged;
+    renderExistingConflictSummary(conflicts || []);
+    renderExistingCandidateSummary(
+      merged,
+      `${target.kind === "assessment" ? "Assessment" : "Captured note"} | ${base.name || "candidate"}`
+    );
+    setExistingStatus("Recruiter note parsed. Review and apply.", "success");
+  } catch (error) {
+    clearExistingCandidatePreview();
+    setExistingStatus(String(error.message || error), "error");
+  } finally {
+    existingParseButton.disabled = false;
+  }
+}
+
+async function applyExistingRecruiterNote() {
+  if (!currentQuickCaptureUser) {
+    setExistingStatus("Login required first.", "error");
+    return;
+  }
+  const rawText = String(existingCandidateInput?.value || "").trim();
+  if (!latestExistingMatchedTarget || !latestExistingMergedResult || !rawText) {
+    setExistingStatus("Parse recruiter note first.", "error");
+    return;
+  }
+
+  existingApplyRecruiterButton.disabled = true;
+  setExistingStatus("Applying recruiter note...");
+
+  try {
+    const target = latestExistingMatchedTarget;
+    if (target.kind === "assessment") {
+      const existingAssessment = target.item || {};
+      const merged = latestExistingMergedResult || {};
+      const assessmentPayload = buildExistingAssessmentSave(
+        existingAssessment,
+        {
+          candidateName: merged.name || existingAssessment.candidateName || "",
+          currentCompany: merged.company || existingAssessment.currentCompany || "",
+          currentDesignation: merged.role || existingAssessment.currentDesignation || "",
+          totalExperience: merged.experience || existingAssessment.totalExperience || "",
+          location: merged.location || existingAssessment.location || "",
+          phoneNumber: merged.phone || existingAssessment.phoneNumber || "",
+          emailId: merged.email || existingAssessment.emailId || "",
+          linkedinUrl: merged.linkedin || existingAssessment.linkedinUrl || "",
+          highestEducation: merged.highest_education || existingAssessment.highestEducation || "",
+          recruiterNotes: appendUniqueNote(existingAssessment.recruiterNotes, rawText)
+        },
+        rawText
+      );
+      const payload = await callQuickCaptureApi("/company/assessments", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ assessment: assessmentPayload })
+      });
+      latestExistingMatchedTarget = { kind: "assessment", item: payload.result };
+      renderExistingCandidateSummary(
+        normalizeExistingAssessmentItem(payload.result),
+        `Assessment | ${payload.result?.candidateName || merged.name || "candidate"}`
+      );
+    } else {
+      const existingCandidate = target.item || {};
+      const candidatePayload = buildExistingCandidateQuickCaptureSave(existingCandidate, latestExistingMergedResult, rawText);
+      const payload = await callQuickCaptureApi("/candidates", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ candidate: candidatePayload })
+      });
+      const savedCandidate = payload.result || candidatePayload;
+      latestExistingMatchedTarget = { kind: "quick_capture", item: savedCandidate };
+      renderExistingCandidateSummary(
+        normalizeExistingCandidateItem(savedCandidate),
+        `Captured note | ${savedCandidate?.name || latestExistingMergedResult.name || "candidate"}`
+      );
+    }
+
+    renderExistingConflictSummary([]);
+    setExistingStatus("Recruiter note applied.", "success");
+  } catch (error) {
+    setExistingStatus(String(error.message || error), "error");
+  } finally {
+    existingApplyRecruiterButton.disabled = false;
+  }
+}
+
+async function applyExistingCandidateUpdate() {
+  if (!currentQuickCaptureUser) {
+    setExistingStatus("Login required first.", "error");
+    return;
+  }
+  const rawText = String(existingCandidateInput?.value || "").trim();
+  if (!rawText) {
+    setExistingStatus("Enter candidate name and update note first.", "error");
+    return;
+  }
+
+  existingApplyUpdateButton.disabled = true;
+  setExistingStatus("Applying candidate update...");
+
+  try {
+    const target = await findExistingCandidateTarget(rawText);
+    if (!target) {
+      clearExistingCandidatePreview();
+      setExistingStatus("No matching existing candidate found.", "error");
+      return;
+    }
+
+    const inferred = inferExistingCandidateUpdate(rawText, {
+      preferredKind: target.kind,
+      currentStatus: target.item?.candidateStatus || "",
+      currentPipelineStage: target.item?.pipelineStage || "",
+      baseDateIso:
+        target.kind === "assessment"
+          ? (target.item?.interviewAt || target.item?.followUpAt || "")
+          : (target.item?.next_follow_up_at || "")
+    });
+
+    if (!inferred) {
+      setExistingStatus("No status or timeline update detected in that note.", "error");
+      return;
+    }
+
+    if (target.kind === "assessment") {
+      const existingAssessment = target.item || {};
+      const assessmentPayload = buildExistingAssessmentSave(existingAssessment, {
+        candidateStatus:
+          inferred.candidateStatus != null ? inferred.candidateStatus : existingAssessment.candidateStatus,
+        pipelineStage:
+          inferred.pipelineStage != null ? inferred.pipelineStage : existingAssessment.pipelineStage,
+        followUpAt:
+          inferred.next_follow_up_at != null ? inferred.next_follow_up_at : existingAssessment.followUpAt,
+        interviewAt:
+          inferred.interviewAt != null ? inferred.interviewAt : existingAssessment.interviewAt,
+        callbackNotes: appendUniqueNote(existingAssessment.callbackNotes, rawText)
+      }, rawText);
+      const payload = await callQuickCaptureApi("/company/assessments", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ assessment: assessmentPayload })
+      });
+      latestExistingMatchedTarget = { kind: "assessment", item: payload.result };
+      renderExistingCandidateSummary(
+        {
+          ...normalizeExistingAssessmentItem(payload.result),
+          next_action: payload.result?.candidateStatus || ""
+        },
+        `Assessment | ${payload.result?.candidateName || "candidate"}`
+      );
+    } else {
+      const payload = await callQuickCaptureApi("/contact-attempts", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          candidate_id: target.item?.id,
+          outcome: inferred.outcome || "call_back_later",
+          notes: rawText,
+          next_follow_up_at: inferred.next_follow_up_at || ""
+        })
+      });
+      const candidatePatch = {
+        ...target.item,
+        last_contact_outcome: payload.result?.outcome || inferred.outcome || "call_back_later",
+        last_contact_notes: rawText,
+        last_contact_at: payload.result?.created_at || new Date().toISOString(),
+        next_follow_up_at: payload.result?.next_follow_up_at || inferred.next_follow_up_at || ""
+      };
+      latestExistingMatchedTarget = { kind: "quick_capture", item: candidatePatch };
+      renderExistingCandidateSummary(
+        {
+          ...normalizeExistingCandidateItem(candidatePatch),
+          next_action: candidatePatch.next_follow_up_at || candidatePatch.last_contact_outcome || ""
+        },
+        `Captured note | ${candidatePatch?.name || "candidate"}`
+      );
+    }
+
+    renderExistingConflictSummary([]);
+    setExistingStatus("Candidate update applied.", "success");
+  } catch (error) {
+    setExistingStatus(String(error.message || error), "error");
+  } finally {
+    existingApplyUpdateButton.disabled = false;
+  }
 }
 
 function populateFormFromParsedResult(data) {
@@ -658,6 +1293,9 @@ micButton.addEventListener("click", () => {
 
 parseButton.addEventListener("click", parseNoteForReview);
 saveButton.addEventListener("click", saveCandidateAfterReview);
+if (existingParseButton) existingParseButton.addEventListener("click", parseExistingRecruiterNote);
+if (existingApplyRecruiterButton) existingApplyRecruiterButton.addEventListener("click", applyExistingRecruiterNote);
+if (existingApplyUpdateButton) existingApplyUpdateButton.addEventListener("click", applyExistingCandidateUpdate);
 
 async function bootstrapAuthState() {
   const user = await getQuickCaptureCurrentUser();
@@ -702,6 +1340,15 @@ async function bootstrapAuthState() {
   if (!element) return;
   element.addEventListener("input", refreshReviewPreview);
 });
+
+if (existingCandidateInput) {
+  existingCandidateInput.addEventListener("input", () => {
+    latestExistingParsedResult = null;
+    latestExistingMergedResult = null;
+    renderExistingConflictSummary([]);
+    setExistingStatus("");
+  });
+}
 
 bootstrapAuthState().catch(() => {
   renderAuthState(null);

@@ -1060,6 +1060,13 @@ const server = http.createServer(async (req, res) => {
         recruiter_name: actor.name,
         updated_at: new Date().toISOString()
       };
+      delete candidate.recruiterContextNotes;
+      delete candidate.capturedCandidateNotes;
+      delete candidate.sourceValue;
+      if (candidate.highestEducation && !candidate.highest_education) {
+        candidate.highest_education = candidate.highestEducation;
+      }
+      delete candidate.highestEducation;
       const duplicate = await findDuplicateCandidate(candidate);
       if (duplicate) {
         sendJson(res, 200, {

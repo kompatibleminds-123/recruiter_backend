@@ -89,6 +89,21 @@
         <label class="label" for="noteInput">Quick candidate note</label>
         <textarea id="noteInput" class="note-input" rows="7"></textarea>
 
+        <div class="panel-head panel-head-note">
+          <h2>For Existing Candidates</h2>
+          <span class="panel-kicker">Global update</span>
+        </div>
+        <label class="label" for="existingCandidateInput">Candidate name + recruiter note / update</label>
+        <textarea id="existingCandidateInput" class="note-input" rows="5" placeholder="Nikhil current 15 L expected 25 L notice 15 days, or Ajay interview aligned on 27th March 5 PM."></textarea>
+        <div class="actions sticky-actions">
+          <button id="existingParseButton" type="button" class="ghost-button">Parse recruiter note</button>
+          <button id="existingApplyRecruiterButton" type="button" class="ghost-button">Apply recruiter note</button>
+          <button id="existingApplyUpdateButton" type="button" class="primary-button">Apply candidate update</button>
+        </div>
+        <p id="existingStatusMessage" class="status-message" role="status" aria-live="polite"></p>
+        <div id="existingConflictSummary" class="conflict-summary" hidden></div>
+        <div id="existingCandidateSummary" class="candidate-summary empty">No existing-candidate parse yet.</div>
+
         <div class="actions sticky-actions">
           <button id="micButton" type="button" class="ghost-button">Start voice input</button>
           <button id="parseButton" type="button" class="ghost-button">Parse for review</button>
