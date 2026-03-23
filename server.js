@@ -1070,6 +1070,17 @@ const server = http.createServer(async (req, res) => {
         candidate.highest_education = candidate.highestEducation;
       }
       delete candidate.highestEducation;
+      [
+        "id",
+        "assessment_id",
+        "assigned_to_user_id",
+        "assigned_by_user_id",
+        "assigned_jd_id"
+      ].forEach((key) => {
+        if (String(candidate[key] || "").trim() === "") {
+          delete candidate[key];
+        }
+      });
       const duplicate = await findDuplicateCandidate(candidate);
       if (duplicate) {
         sendJson(res, 200, {
