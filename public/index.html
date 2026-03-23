@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>RecruitDesk AI | Kompatible Minds</title>
+    <style>
+      :root {
+        --bg: #f4efe6;
+        --bg-soft: #fbf8f2;
+        --ink: #122230;
+        --muted: #5a6b79;
+        --brand: #0f766e;
+        --brand-strong: #115e59;
+        --line: rgba(18, 34, 48, 0.1);
+        --shadow: 0 24px 60px rgba(18, 34, 48, 0.12);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        font-family: "Segoe UI", system-ui, sans-serif;
+        color: var(--ink);
+        background:
+          radial-gradient(circle at top left, rgba(15, 118, 110, 0.14), transparent 28%),
+          linear-gradient(180deg, #f8f2e8 0%, var(--bg) 100%);
+        display: grid;
+        place-items: center;
+        padding: 24px;
+      }
+
+      .shell {
+        width: min(100%, 760px);
+        background: rgba(255, 255, 255, 0.9);
+        border: 1px solid var(--line);
+        border-radius: 32px;
+        box-shadow: var(--shadow);
+        padding: 40px 28px;
+        text-align: center;
+        backdrop-filter: blur(14px);
+      }
+
+      .eyebrow {
+        margin: 0 0 12px;
+        color: var(--brand);
+        font-size: 0.78rem;
+        font-weight: 800;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+      }
+
+      h1 {
+        margin: 0 0 12px;
+        font-size: clamp(2rem, 5vw, 3.4rem);
+        line-height: 1.02;
+        letter-spacing: -0.04em;
+      }
+
+      p {
+        margin: 0 auto;
+        max-width: 560px;
+        color: var(--muted);
+        font-size: 1rem;
+        line-height: 1.6;
+      }
+
+      .actions {
+        display: flex;
+        justify-content: center;
+        flex-wrap: wrap;
+        gap: 12px;
+        margin-top: 28px;
+      }
+
+      .btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 180px;
+        padding: 14px 20px;
+        border-radius: 999px;
+        border: 1px solid transparent;
+        font-weight: 700;
+        text-decoration: none;
+        transition: transform 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+      }
+
+      .btn:hover {
+        transform: translateY(-1px);
+      }
+
+      .btn-primary {
+        background: linear-gradient(135deg, var(--brand), var(--brand-strong));
+        color: #fff;
+        box-shadow: 0 14px 30px rgba(15, 118, 110, 0.22);
+      }
+
+      .btn-secondary {
+        background: var(--bg-soft);
+        color: var(--ink);
+        border-color: var(--line);
+      }
+
+      .footer-note {
+        margin-top: 20px;
+        font-size: 0.92rem;
+        color: var(--muted);
+      }
+    </style>
+  </head>
+  <body>
+    <main class="shell">
+      <p class="eyebrow">Kompatible Minds</p>
+      <h1>Welcome to RecruitDesk AI</h1>
+      <p>
+        RecruitDesk AI helps recruiter teams capture candidate notes, structure quick assessments,
+        and move faster across mobile and desktop workflows.
+      </p>
+      <div class="actions">
+        <a class="btn btn-primary" href="/quick-capture/">Open Quick Capture</a>
+        <a class="btn btn-secondary" href="/quick-capture/list.html">Open Draft Notes</a>
+      </div>
+      <p class="footer-note">Built by Kompatible Minds for recruiter workflow acceleration.</p>
+    </main>
+  </body>
+</html>

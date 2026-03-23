@@ -44,6 +44,7 @@ const {
 const PORT = Number(process.env.PORT || 8787);
 const WHATSAPP_VERIFY_TOKEN = String(process.env.WHATSAPP_VERIFY_TOKEN || "").trim();
 const QUICK_CAPTURE_PUBLIC_DIR = path.join(__dirname, "public", "quick-capture");
+const ROOT_PUBLIC_DIR = path.join(__dirname, "public");
 const MONTH_INDEX = {
   jan: 0,
   feb: 1,
@@ -97,7 +98,7 @@ function sendText(res, statusCode, body, contentType = "text/plain; charset=utf-
 }
 
 function serveStaticFile(res, filePath) {
-  if (!filePath.startsWith(QUICK_CAPTURE_PUBLIC_DIR)) {
+  if (!filePath.startsWith(QUICK_CAPTURE_PUBLIC_DIR) && !filePath.startsWith(ROOT_PUBLIC_DIR)) {
     sendText(res, 403, "Forbidden");
     return;
   }
@@ -712,6 +713,11 @@ const server = http.createServer(async (req, res) => {
 
   if (req.method === "OPTIONS") {
     sendJson(res, 200, { ok: true });
+    return;
+  }
+
+  if (req.method === "GET" && (requestUrl.pathname === "/" || requestUrl.pathname === "")) {
+    serveStaticFile(res, path.join(ROOT_PUBLIC_DIR, "index.html"));
     return;
   }
 
