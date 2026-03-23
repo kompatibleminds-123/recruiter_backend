@@ -1060,6 +1060,9 @@ const server = http.createServer(async (req, res) => {
         recruiter_name: actor.name,
         updated_at: new Date().toISOString()
       };
+      if (candidate.recruiterContextNotes && !candidate.recruiter_context_notes) {
+        candidate.recruiter_context_notes = candidate.recruiterContextNotes;
+      }
       delete candidate.recruiterContextNotes;
       delete candidate.capturedCandidateNotes;
       delete candidate.sourceValue;

@@ -342,7 +342,7 @@ function normalizeExistingCandidateItem(item) {
     highest_education: String(item?.highest_education || "").trim(),
     next_action: String(item?.next_action || "").trim(),
     notes: String(item?.notes || "").trim(),
-    recruiterContextNotes: String(item?.recruiterContextNotes || "").trim(),
+    recruiterContextNotes: String(item?.recruiterContextNotes || item?.recruiter_context_notes || "").trim(),
     kind: "quick_capture"
   };
 }

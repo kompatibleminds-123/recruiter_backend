@@ -16,6 +16,7 @@ create table if not exists public.candidates (
   expected_ctc text,
   notice_period text,
   notes text,
+  recruiter_context_notes text,
   next_action text,
   client_name text,
   jd_title text,
