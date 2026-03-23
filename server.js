@@ -174,6 +174,75 @@ function sanitizeGapRows(gaps) {
     .filter((item) => item.from || item.to || item.duration || item.note);
 }
 
+function sanitizeCandidateSavePayload(rawCandidate, actor) {
+  const candidate = {
+    ...(rawCandidate && typeof rawCandidate === "object" ? rawCandidate : {}),
+    recruiter_id: actor.id,
+    recruiter_name: actor.name,
+    updated_at: new Date().toISOString()
+  };
+
+  if (candidate.recruiterContextNotes && !candidate.recruiter_context_notes) {
+    candidate.recruiter_context_notes = candidate.recruiterContextNotes;
+  }
+  if (candidate.highestEducation && !candidate.highest_education) {
+    candidate.highest_education = candidate.highestEducation;
+  }
+  if (candidate.sourceValue && !candidate.source) {
+    candidate.source = candidate.sourceValue;
+  }
+
+  [
+    "recruiterContextNotes",
+    "capturedCandidateNotes",
+    "sourceValue",
+    "highestEducation"
+  ].forEach((key) => {
+    delete candidate[key];
+  });
+
+  [
+    "id",
+    "assessment_id",
+    "assigned_to_user_id",
+    "assigned_by_user_id",
+    "assigned_jd_id"
+  ].forEach((key) => {
+    if (String(candidate[key] || "").trim() === "") {
+      delete candidate[key];
+    }
+  });
+
+  [
+    "assigned_at",
+    "last_contact_at",
+    "next_follow_up_at",
+    "created_at",
+    "updated_at"
+  ].forEach((key) => {
+    if (String(candidate[key] || "").trim() === "") {
+      delete candidate[key];
+    }
+  });
+
+  if (Array.isArray(candidate.skills)) {
+    candidate.skills = candidate.skills.map((item) => String(item || "").trim()).filter(Boolean);
+    if (!candidate.skills.length) {
+      delete candidate.skills;
+    }
+  } else if (candidate.skills == null || String(candidate.skills || "").trim() === "") {
+    delete candidate.skills;
+  }
+
+  Object.keys(candidate).forEach((key) => {
+    if (candidate[key] == null) {
+      delete candidate[key];
+    }
+  });
+
+  return candidate;
+}
+
 function scoreTimelineRows(timeline) {
   return (timeline || []).reduce((score, item) => {
     let rowScore = 0;
@@ -1054,44 +1123,7 @@ const server = http.createServer(async (req, res) => {
     try {
       const actor = await requireSessionUser(getBearerToken(req));
       const body = await readJsonBody(req);
-      const candidate = {
-        ...(body.candidate || body || {}),
-        recruiter_id: actor.id,
-        recruiter_name: actor.name,
-        updated_at: new Date().toISOString()
-      };
-      if (candidate.recruiterContextNotes && !candidate.recruiter_context_notes) {
-        candidate.recruiter_context_notes = candidate.recruiterContextNotes;
-      }
-      delete candidate.recruiterContextNotes;
-      delete candidate.capturedCandidateNotes;
-      delete candidate.sourceValue;
-      if (candidate.highestEducation && !candidate.highest_education) {
-        candidate.highest_education = candidate.highestEducation;
-      }
-      delete candidate.highestEducation;
-      [
-        "id",
-        "assessment_id",
-        "assigned_to_user_id",
-        "assigned_by_user_id",
-        "assigned_jd_id"
-      ].forEach((key) => {
-        if (String(candidate[key] || "").trim() === "") {
-          delete candidate[key];
-        }
-      });
-      [
-        "assigned_at",
-        "last_contact_at",
-        "next_follow_up_at",
-        "created_at",
-        "updated_at"
-      ].forEach((key) => {
-        if (String(candidate[key] || "").trim() === "") {
-          delete candidate[key];
-        }
-      });
+      const candidate = sanitizeCandidateSavePayload(body.candidate || body || {}, actor);
       const duplicate = await findDuplicateCandidate(candidate);
       if (duplicate) {
         sendJson(res, 200, {
