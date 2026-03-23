@@ -5,6 +5,8 @@ const saveButton = document.getElementById("saveButton");
 const statusMessage = document.getElementById("statusMessage");
 const jsonOutput = document.getElementById("jsonOutput");
 const candidateSummary = document.getElementById("candidateSummary");
+const conflictSummary = document.getElementById("conflictSummary");
+const mergeContext = document.getElementById("mergeContext");
 const candidateNameInput = document.getElementById("candidateName");
 const candidateCompanyInput = document.getElementById("candidateCompany");
 const candidateRoleInput = document.getElementById("candidateRole");
@@ -32,6 +34,9 @@ let currentCandidateRecordId = "";
 let currentCandidateCreatedAt = "";
 let currentQuickCaptureUser = null;
 let latestParsedCandidateDraft = null;
+let latestIncomingParsedCandidate = null;
+let currentLoadedCandidateBaseline = null;
+let latestDraftConflicts = [];
 
 function normalizeVoiceChunk(value) {
   return String(value || "")
@@ -97,6 +102,10 @@ function renderJson(data) {
   jsonOutput.textContent = JSON.stringify(data, null, 2);
 }
 
+function normalizeCandidateValue(value) {
+  return String(value || "").trim();
+}
+
 function escapeHtml(value) {
   return String(value || "")
     .replace(/&/g, "&amp;")
@@ -140,6 +149,87 @@ function renderCandidateSummary(data) {
     .join("")}</div>`;
 }
 
+function buildCandidateMerge(base, incoming, latestNoteText = "") {
+  const keys = [
+    "name",
+    "company",
+    "role",
+    "experience",
+    "location",
+    "current_ctc",
+    "expected_ctc",
+    "notice_period",
+    "phone",
+    "email",
+    "linkedin",
+    "highest_education",
+    "next_action"
+  ];
+  const merged = { ...(base || {}), ...(incoming || {}) };
+  const conflicts = [];
+
+  for (const key of keys) {
+    const baseValue = normalizeCandidateValue(base?.[key]);
+    const incomingValue = normalizeCandidateValue(incoming?.[key]);
+    merged[key] = incomingValue || baseValue || "";
+    if (baseValue && incomingValue && baseValue.toLowerCase() !== incomingValue.toLowerCase()) {
+      conflicts.push({ key, from: baseValue, to: incomingValue });
+    }
+  }
+
+  const existingNotes = normalizeCandidateValue(base?.notes);
+  const incomingNotes = normalizeCandidateValue(incoming?.notes);
+  const freshNote = normalizeCandidateValue(latestNoteText);
+  merged.notes = [existingNotes, freshNote, incomingNotes]
+    .filter(Boolean)
+    .filter((value, index, array) => array.findIndex((item) => item.toLowerCase() === value.toLowerCase()) === index)
+    .join("\n");
+  merged.id = normalizeCandidateValue(base?.id || incoming?.id);
+  merged.created_at = normalizeCandidateValue(base?.created_at || incoming?.created_at);
+  merged.source = normalizeCandidateValue(base?.source || incoming?.source || "mobile_pwa");
+  return { merged, conflicts };
+}
+
+function formatConflictLabel(key) {
+  const labels = {
+    name: "Candidate",
+    company: "Company",
+    role: "Role",
+    experience: "Experience",
+    location: "Location",
+    current_ctc: "Current CTC",
+    expected_ctc: "Expected CTC",
+    notice_period: "Notice period",
+    phone: "Phone",
+    email: "Email",
+    linkedin: "LinkedIn",
+    highest_education: "Highest education",
+    next_action: "Next action"
+  };
+  return labels[key] || key;
+}
+
+function renderConflictSummary(conflicts) {
+  if (!conflictSummary) return;
+  const rows = Array.isArray(conflicts) ? conflicts : [];
+  conflictSummary.hidden = !rows.length;
+  if (!rows.length) {
+    conflictSummary.innerHTML = "";
+    return;
+  }
+  conflictSummary.innerHTML = `
+    <div class="conflict-title">Conflicts detected</div>
+    <ul class="conflict-list">
+      ${rows
+        .map(
+          (entry) =>
+            `<li><strong>${escapeHtml(formatConflictLabel(entry.key))}</strong>: existing "${escapeHtml(entry.from)}" -> new "${escapeHtml(entry.to)}"</li>`
+        )
+        .join("")}
+    </ul>
+  `;
+}
+
 function populateFormFromParsedResult(data) {
   if (!data || typeof data !== "object") return;
   currentCandidateRecordId = String(data.id || "").trim();
@@ -156,7 +246,6 @@ function populateFormFromParsedResult(data) {
   if (candidateEmailInput) candidateEmailInput.value = String(data.email || "").trim();
   if (candidateLinkedinInput) candidateLinkedinInput.value = String(data.linkedin || "").trim();
   if (candidateNextActionInput) candidateNextActionInput.value = String(data.next_action || "").trim();
-  if (noteInput) noteInput.value = String(data.notes || "").trim();
 }
 
 function setLatestParsedCandidateDraft(data) {
@@ -167,9 +256,29 @@ function setLatestParsedCandidateDraft(data) {
   }
 }
 
+function loadCandidateIntoCapture(candidate) {
+  const item = candidate && typeof candidate === "object" ? { ...candidate } : null;
+  currentLoadedCandidateBaseline = item;
+  currentCandidateRecordId = String(item?.id || "").trim();
+  currentCandidateCreatedAt = String(item?.created_at || "").trim();
+  latestIncomingParsedCandidate = null;
+  latestDraftConflicts = [];
+  renderConflictSummary([]);
+  if (mergeContext) {
+    mergeContext.hidden = !item;
+    mergeContext.textContent = item ? `Updating existing draft: ${item.name || "candidate"}${item.assigned_to_name ? ` | Assigned to ${item.assigned_to_name}` : ""}` : "";
+  }
+  if (!item) return;
+  populateFormFromParsedResult(item);
+  if (noteInput) noteInput.value = "";
+  setLatestParsedCandidateDraft(item);
+  renderCandidateSummary(item);
+  renderJson(item);
+}
+
 function buildCandidateFromReviewFields() {
   const base = latestParsedCandidateDraft && typeof latestParsedCandidateDraft === "object" ? { ...latestParsedCandidateDraft } : {};
-  const notesValue = noteInput?.value.trim() || "";
+  const notesValue = base.notes || noteInput?.value.trim() || "";
   return {
     ...base,
     id: currentCandidateRecordId || base.id || undefined,
@@ -376,7 +485,15 @@ function stopVoiceCapture() {
 function resetCurrentCandidateTracking() {
   currentCandidateRecordId = "";
   currentCandidateCreatedAt = "";
+  currentLoadedCandidateBaseline = null;
+  latestIncomingParsedCandidate = null;
+  latestDraftConflicts = [];
   setLatestParsedCandidateDraft(null);
+  renderConflictSummary([]);
+  if (mergeContext) {
+    mergeContext.hidden = true;
+    mergeContext.textContent = "";
+  }
   renderCandidateSummary(null);
   renderJson("No parsed data yet.");
 }
@@ -420,16 +537,31 @@ async function parseNoteForReview() {
         preview: true
       })
     });
-    renderJson(payload.result);
-    populateFormFromParsedResult(payload.result);
-    setLatestParsedCandidateDraft(payload.result);
+    latestIncomingParsedCandidate = payload.result || null;
+    const mergeResult =
+      currentLoadedCandidateBaseline
+        ? buildCandidateMerge(currentLoadedCandidateBaseline, payload.result, noteInput?.value.trim() || "")
+        : { merged: payload.result, conflicts: [] };
+    latestDraftConflicts = mergeResult.conflicts || [];
+    renderJson({
+      merged: mergeResult.merged,
+      parsed_note: payload.result,
+      conflicts: latestDraftConflicts
+    });
+    populateFormFromParsedResult(mergeResult.merged);
+    setLatestParsedCandidateDraft(mergeResult.merged);
+    renderConflictSummary(latestDraftConflicts);
     refreshReviewPreview();
-    if (payload.duplicate && Array.isArray(payload.duplicateBy) && payload.duplicateBy.length) {
-      setStatus(`Possible duplicate found by ${payload.duplicateBy.join(", ")}. Review the existing candidate before saving.`, "error");
+    if (latestDraftConflicts.length) {
+      const labels = latestDraftConflicts.map((entry) => formatConflictLabel(entry.key)).join(", ");
+      setStatus(`Parsed with conflicts in: ${labels}. Review before saving.`, "error");
     } else {
-      setStatus("Candidate parsed. Review the summary, edit if needed, then save.", "success");
+      setStatus("Candidate parsed and merged. Review the summary, edit if needed, then save.", "success");
     }
   } catch (error) {
+    latestIncomingParsedCandidate = null;
+    latestDraftConflicts = [];
+    renderConflictSummary([]);
     setLatestParsedCandidateDraft(null);
     setStatus(String(error.message || error), "error");
   } finally {
@@ -462,6 +594,17 @@ async function saveCandidateAfterReview() {
   setStatus("Saving candidate...");
 
   try {
+    const wasExistingRecord = Boolean(currentCandidateRecordId);
+    if (latestDraftConflicts.length) {
+      const conflictText = latestDraftConflicts
+        .map((entry) => `${formatConflictLabel(entry.key)}: "${entry.from}" -> "${entry.to}"`)
+        .join("\n");
+      const confirmed = window.confirm(`These values conflict with the existing draft:\n\n${conflictText}\n\nSave merged candidate anyway?`);
+      if (!confirmed) {
+        setStatus("Save cancelled. Review conflicts first.", "error");
+        return;
+      }
+    }
     const payload = await callQuickCaptureApi("/candidates", {
       method: "POST",
       headers: {
@@ -475,12 +618,13 @@ async function saveCandidateAfterReview() {
     });
 
     renderJson(payload.result);
-    populateFormFromParsedResult(payload.result);
+    loadCandidateIntoCapture(payload.result);
     setLatestParsedCandidateDraft(payload.result);
     refreshReviewPreview();
-    if (payload.duplicate && Array.isArray(payload.duplicateBy) && payload.duplicateBy.length) {
-      setStatus(`Existing candidate reused by ${payload.duplicateBy.join(", ")}.`, "error");
-    } else if (currentCandidateRecordId) {
+    latestDraftConflicts = [];
+    renderConflictSummary([]);
+    if (noteInput) noteInput.value = "";
+    if (wasExistingRecord) {
       setStatus("Candidate updated.", "success");
     } else {
       setStatus("Candidate saved.", "success");
@@ -521,6 +665,21 @@ async function bootstrapAuthState() {
   if (!user) {
     window.location.href = "/quick-capture/";
     return;
+  }
+  const candidateId = new URLSearchParams(window.location.search).get("candidateId");
+  if (candidateId) {
+    try {
+      const payload = await callQuickCaptureApi(`/candidates?id=${encodeURIComponent(candidateId)}&limit=1`, { method: "GET" });
+      const item = Array.isArray(payload.result) ? payload.result[0] : null;
+      if (item) {
+        loadCandidateIntoCapture(item);
+        setStatus(`Loaded existing draft for ${item.name || "candidate"}. Add your new note, then parse for review.`, "success");
+        return;
+      }
+    } catch (error) {
+      setStatus(String(error.message || error), "error");
+      return;
+    }
   }
   setStatus("Quick capture is ready.", "success");
 }

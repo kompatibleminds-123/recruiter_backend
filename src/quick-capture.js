@@ -515,8 +515,15 @@ function matchesCandidateSearch(candidate, query) {
   return haystack.includes(q);
 }
 
+function matchesCandidateId(candidate, rawId) {
+  const id = String(rawId || "").trim();
+  if (!id) return true;
+  return String(candidate?.id || "").trim() === id;
+}
+
 async function listCandidates(options = 100) {
   const { limit, q } = normalizeListOptions(options);
+  const id = String(options?.id || "").trim();
   const { url, serviceRoleKey } = getSupabaseConfig();
   if (url && serviceRoleKey) {
     const fetchLimit = q ? Math.max(limit, 2000) : limit;
@@ -536,22 +543,23 @@ async function listCandidates(options = 100) {
     }
 
     const rows = await response.json();
-    return rows.filter((item) => matchesCandidateSearch(item, q)).slice(0, limit);
+    return rows.filter((item) => matchesCandidateId(item, id)).filter((item) => matchesCandidateSearch(item, q)).slice(0, limit);
   }
 
   const store = readLocalStore();
-  return (store.candidates || []).filter((item) => matchesCandidateSearch(item, q)).slice(0, limit);
+  return (store.candidates || []).filter((item) => matchesCandidateId(item, id)).filter((item) => matchesCandidateSearch(item, q)).slice(0, limit);
 }
 
 async function listCandidatesForUser(user, options = 100) {
   const { limit, q } = normalizeListOptions(options);
+  const id = String(options?.id || "").trim();
   const maxRows = limit;
   if (!user?.id) {
-    return listCandidates({ limit: maxRows, q });
+    return listCandidates({ limit: maxRows, q, id });
   }
 
   if (user.role === "admin") {
-    return listCandidates({ limit: maxRows, q });
+    return listCandidates({ limit: maxRows, q, id });
   }
 
   const { url, serviceRoleKey } = getSupabaseConfig();
@@ -574,12 +582,13 @@ async function listCandidatesForUser(user, options = 100) {
     }
 
     const rows = await response.json();
-    return rows.filter((item) => matchesCandidateSearch(item, q)).slice(0, maxRows);
+    return rows.filter((item) => matchesCandidateId(item, id)).filter((item) => matchesCandidateSearch(item, q)).slice(0, maxRows);
   }
 
   const store = readLocalStore();
   return (store.candidates || [])
     .filter((item) => item?.recruiter_id === user.id || item?.assigned_to_user_id === user.id)
+    .filter((item) => matchesCandidateId(item, id))
     .filter((item) => matchesCandidateSearch(item, q))
     .slice(0, maxRows);
 }

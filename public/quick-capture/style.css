@@ -331,6 +331,37 @@ h2 {
   background: var(--surface-soft);
 }
 
+.conflict-summary {
+  margin: 0 0 12px;
+  padding: 14px;
+  border: 1px solid rgba(180, 35, 24, 0.18);
+  border-radius: 18px;
+  background: rgba(180, 35, 24, 0.06);
+}
+
+.conflict-title {
+  margin: 0 0 8px;
+  color: var(--danger);
+  font-weight: 800;
+}
+
+.conflict-list {
+  margin: 0;
+  padding-left: 18px;
+  color: var(--ink);
+}
+
+.conflict-list li + li {
+  margin-top: 6px;
+}
+
+.card-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+}
+
 .candidate-summary.empty {
   color: var(--muted);
 }

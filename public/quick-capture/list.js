@@ -58,6 +58,9 @@ function renderCandidates(items) {
             <div><strong>Next Action:</strong> ${escapeHtml(candidate.next_action || "-")}</div>
             <div><strong>Added:</strong> ${escapeHtml(formatDate(candidate.created_at))}</div>
           </div>
+          <div class="card-actions">
+            <a class="secondary-link" href="/quick-capture/capture.html?candidateId=${encodeURIComponent(candidate.id || "")}">Update note</a>
+          </div>
         </article>
       `;
     })

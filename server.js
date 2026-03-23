@@ -1037,7 +1037,8 @@ const server = http.createServer(async (req, res) => {
       const sessionUser = await getSessionUser(getBearerToken(req));
       const listOptions = {
         limit: Number(requestUrl.searchParams.get("limit") || 100),
-        q: String(requestUrl.searchParams.get("q") || "").trim()
+        q: String(requestUrl.searchParams.get("q") || "").trim(),
+        id: String(requestUrl.searchParams.get("id") || "").trim()
       };
       const result = sessionUser
         ? await listCandidatesForUser(sessionUser, listOptions)
@@ -1176,6 +1177,10 @@ const server = http.createServer(async (req, res) => {
           recruiter_name: sessionUser?.name || String(body.recruiter_name || body.recruiterName || "").trim() || null
         }
       });
+      if (body.preview === true || body.dry_run === true || body.dryRun === true) {
+        sendJson(res, 200, { ok: true, preview: true, result: parsed });
+        return;
+      }
       const duplicate = await findDuplicateCandidate(parsed);
       if (duplicate) {
         sendJson(res, 200, {
@@ -1184,10 +1189,6 @@ const server = http.createServer(async (req, res) => {
           duplicateBy: duplicate.matchBy,
           result: duplicate.existing
         });
-        return;
-      }
-      if (body.preview === true || body.dry_run === true || body.dryRun === true) {
-        sendJson(res, 200, { ok: true, preview: true, result: parsed });
         return;
       }
       const saved = await saveCandidate(parsed);
