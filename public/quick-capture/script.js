@@ -439,6 +439,14 @@ async function parseNoteForReview() {
 }
 
 async function saveCandidateAfterReview() {
+  const liveUser = await getQuickCaptureCurrentUser();
+  if (!liveUser) {
+    renderAuthState(null);
+    setStatus("Session expired. Please login again.", "error");
+    window.location.href = "/quick-capture/";
+    return;
+  }
+  renderAuthState(liveUser);
   if (!currentQuickCaptureUser) {
     setStatus("Login required first.", "error");
     return;

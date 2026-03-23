@@ -112,7 +112,8 @@ function setAuthStatus(message, tone = "") {
 }
 
 async function loadCandidates() {
-  if (!getQuickCaptureAuthToken()) {
+  const token = getQuickCaptureAuthToken();
+  if (!token) {
     renderAuthState(null);
     return;
   }
@@ -121,6 +122,14 @@ async function loadCandidates() {
   refreshButton.disabled = true;
 
   try {
+    const user = await getQuickCaptureCurrentUser();
+    if (!user) {
+      renderAuthState(null);
+      setAuthStatus("Session expired. Please login again.", "error");
+      candidateList.innerHTML = '<div class="candidate-card"><p>Session expired. Please login again.</p></div>';
+      return;
+    }
+    renderAuthState(user);
     const payload = await callQuickCaptureApi("/candidates", { method: "GET" });
     allCandidates = Array.isArray(payload.result) ? payload.result : [];
     applyCandidateSearch();

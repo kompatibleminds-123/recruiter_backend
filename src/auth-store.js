@@ -202,9 +202,9 @@ async function login({ email, password }) {
   if (!user || !verifyPassword(password, user.passwordHash || user.password_hash)) throw new Error("Invalid email or password.");
   const sessionUser = sanitizeUser(user); const token = crypto.randomBytes(32).toString("hex");
   if (!cfg().on) {
-    const store = readStore(); store.sessions = (store.sessions || []).filter((s) => s.userId !== sessionUser.id); store.sessions.push({ token, userId: sessionUser.id, companyId: sessionUser.companyId, createdAt: new Date().toISOString() }); writeStore(store);
+    const store = readStore(); store.sessions = (store.sessions || []).filter((s) => s.token !== token); store.sessions.push({ token, userId: sessionUser.id, companyId: sessionUser.companyId, createdAt: new Date().toISOString() }); writeStore(store);
   } else {
-    await sbDel("sessions", `user_id=eq.${enc(sessionUser.id)}`); await sbIns("sessions", [{ token, user_id: sessionUser.id, company_id: sessionUser.companyId, created_at: new Date().toISOString() }], { conflict: "token", upsert: true });
+    await sbIns("sessions", [{ token, user_id: sessionUser.id, company_id: sessionUser.companyId, created_at: new Date().toISOString() }], { conflict: "token", upsert: true });
   }
   return { token, user: sessionUser };
 }
