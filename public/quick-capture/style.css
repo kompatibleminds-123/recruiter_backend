@@ -224,6 +224,10 @@ h2 {
   resize: vertical;
 }
 
+.compact-note-input {
+  min-height: 132px;
+}
+
 .text-input:focus,
 .note-input:focus {
   outline: 2px solid rgba(15, 118, 110, 0.16);

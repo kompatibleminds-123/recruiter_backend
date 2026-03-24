@@ -3,7 +3,7 @@
   "name": "RecruitDesk AI Quick Capture",
   "short_name": "Quick Capture",
   "description": "Mobile-first recruiter quick capture app for notes, voice, and structured candidate save.",
-  "start_url": "/quick-capture/",
+  "start_url": "/quick-capture/capture.html",
   "scope": "/quick-capture/",
   "display": "standalone",
   "orientation": "portrait",

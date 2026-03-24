@@ -2,6 +2,7 @@ const CACHE_NAME = "candidate-quick-capture-v4";
 const APP_SHELL = [
   "/quick-capture/",
   "/quick-capture/index.html",
+  "/quick-capture/capture.html",
   "/quick-capture/list.html",
   "/quick-capture/style.css",
   "/quick-capture/script.js",
@@ -37,6 +38,7 @@ self.addEventListener("fetch", (event) => {
   const isDynamicAppShellAsset =
     requestUrl.pathname === "/quick-capture/" ||
     requestUrl.pathname === "/quick-capture/index.html" ||
+    requestUrl.pathname === "/quick-capture/capture.html" ||
     requestUrl.pathname === "/quick-capture/list.html" ||
     requestUrl.pathname === "/quick-capture/script.js" ||
     requestUrl.pathname === "/quick-capture/list.js" ||
