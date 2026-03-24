@@ -40,6 +40,35 @@ body {
   padding: max(16px, env(safe-area-inset-top)) 14px calc(110px + env(safe-area-inset-bottom));
 }
 
+.capture-tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.capture-tab {
+  min-height: 52px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.92);
+  color: var(--ink);
+  font: inherit;
+  font-weight: 800;
+  cursor: pointer;
+  box-shadow: var(--shadow-soft);
+}
+
+.capture-tab.active {
+  background: linear-gradient(135deg, var(--brand), var(--brand-strong));
+  color: #fff;
+  border-color: transparent;
+}
+
+.capture-panel[hidden] {
+  display: none;
+}
+
 .app-topbar,
 .panel,
 .candidate-card {

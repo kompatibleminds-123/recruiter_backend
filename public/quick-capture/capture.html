@@ -26,7 +26,12 @@
         </div>
       </section>
 
-      <section class="panel">
+      <div class="capture-tabs" role="tablist" aria-label="Candidate workflow">
+        <button id="existingCandidateTab" class="capture-tab active" type="button" aria-selected="true">Existing candidate</button>
+        <button id="newCandidateTab" class="capture-tab" type="button" aria-selected="false">New candidate</button>
+      </div>
+
+      <section id="existingCandidatePanel" class="panel">
         <div class="panel-head">
           <h2>For Existing Candidates</h2>
           <span class="panel-kicker">Global update</span>
@@ -37,7 +42,7 @@
         <div class="actions single-action">
           <button id="existingMicButton" type="button" class="ghost-button">Start voice input for existing candidate</button>
         </div>
-        <div class="actions sticky-actions">
+        <div class="actions">
           <button id="existingParseButton" type="button" class="ghost-button">Parse recruiter note</button>
           <button id="existingApplyRecruiterButton" type="button" class="primary-button">Apply recruiter note</button>
           <button id="existingApplyUpdateButton" type="button" class="primary-button">Apply candidate update</button>
@@ -47,7 +52,7 @@
         <div id="existingCandidateSummary" class="candidate-summary empty">No existing-candidate parse yet.</div>
       </section>
 
-      <section class="panel">
+      <section id="newCandidatePanel" class="panel capture-panel" hidden>
         <div class="panel-head">
           <h2>For New Candidates</h2>
           <span class="panel-kicker">Structured input</span>

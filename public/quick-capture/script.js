@@ -21,6 +21,10 @@ const candidateEmailInput = document.getElementById("candidateEmail");
 const candidateLinkedinInput = document.getElementById("candidateLinkedin");
 const candidateNextActionInput = document.getElementById("candidateNextAction");
 const existingCandidateInput = document.getElementById("existingCandidateInput");
+const existingCandidateTab = document.getElementById("existingCandidateTab");
+const newCandidateTab = document.getElementById("newCandidateTab");
+const existingCandidatePanel = document.getElementById("existingCandidatePanel");
+const newCandidatePanel = document.getElementById("newCandidatePanel");
 const existingParseButton = document.getElementById("existingParseButton");
 const existingApplyRecruiterButton = document.getElementById("existingApplyRecruiterButton");
 const existingApplyUpdateButton = document.getElementById("existingApplyUpdateButton");
@@ -51,6 +55,20 @@ let latestDraftConflicts = [];
 let latestExistingMatchedTarget = null;
 let latestExistingParsedResult = null;
 let latestExistingMergedResult = null;
+
+function setCaptureTab(mode) {
+  const showExisting = mode === "existing";
+  if (existingCandidatePanel) existingCandidatePanel.hidden = !showExisting;
+  if (newCandidatePanel) newCandidatePanel.hidden = showExisting;
+  if (existingCandidateTab) {
+    existingCandidateTab.classList.toggle("active", showExisting);
+    existingCandidateTab.setAttribute("aria-selected", showExisting ? "true" : "false");
+  }
+  if (newCandidateTab) {
+    newCandidateTab.classList.toggle("active", !showExisting);
+    newCandidateTab.setAttribute("aria-selected", !showExisting ? "true" : "false");
+  }
+}
 
 function normalizeVoiceChunk(value) {
   return String(value || "")
@@ -1329,6 +1347,12 @@ saveButton.addEventListener("click", saveCandidateAfterReview);
 if (existingParseButton) existingParseButton.addEventListener("click", parseExistingRecruiterNote);
 if (existingApplyRecruiterButton) existingApplyRecruiterButton.addEventListener("click", applyExistingRecruiterNote);
 if (existingApplyUpdateButton) existingApplyUpdateButton.addEventListener("click", applyExistingCandidateUpdate);
+if (existingCandidateTab) {
+  existingCandidateTab.addEventListener("click", () => setCaptureTab("existing"));
+}
+if (newCandidateTab) {
+  newCandidateTab.addEventListener("click", () => setCaptureTab("new"));
+}
 
 async function bootstrapAuthState() {
   const user = await getQuickCaptureCurrentUser();
@@ -1387,3 +1411,5 @@ bootstrapAuthState().catch(() => {
   renderAuthState(null);
   window.location.href = "/quick-capture/";
 });
+
+setCaptureTab("existing");
