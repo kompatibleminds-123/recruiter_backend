@@ -33,9 +33,13 @@
         </div>
         <label class="label" for="existingCandidateInput">Candidate name + recruiter note / update</label>
         <textarea id="existingCandidateInput" class="note-input compact-note-input" rows="5" placeholder="Nikhil current 15 L expected 25 L notice 15 days, or Ajay interview aligned on 27th March 5 PM."></textarea>
+        <div class="helper-text">Use voice or typing here for recruiter-note merge and candidate status/date updates.</div>
+        <div class="actions single-action">
+          <button id="existingMicButton" type="button" class="ghost-button">Start voice input for existing candidate</button>
+        </div>
         <div class="actions sticky-actions">
           <button id="existingParseButton" type="button" class="ghost-button">Parse recruiter note</button>
-          <button id="existingApplyRecruiterButton" type="button" class="ghost-button">Apply recruiter note</button>
+          <button id="existingApplyRecruiterButton" type="button" class="primary-button">Apply recruiter note</button>
           <button id="existingApplyUpdateButton" type="button" class="primary-button">Apply candidate update</button>
         </div>
         <p id="existingStatusMessage" class="status-message" role="status" aria-live="polite"></p>
@@ -45,9 +49,10 @@
 
       <section class="panel">
         <div class="panel-head">
-          <h2>Candidate Details</h2>
+          <h2>For New Candidates</h2>
           <span class="panel-kicker">Structured input</span>
         </div>
+        <div class="helper-text">Use this section for a fresh candidate note that is not yet in your saved drafts or assessments.</div>
         <div class="quick-form-grid">
           <label class="field">
             <span class="label">Candidate name</span>

@@ -1,5 +1,6 @@
 const noteInput = document.getElementById("noteInput");
 const micButton = document.getElementById("micButton");
+const existingMicButton = document.getElementById("existingMicButton");
 const parseButton = document.getElementById("parseButton");
 const saveButton = document.getElementById("saveButton");
 const statusMessage = document.getElementById("statusMessage");
@@ -37,6 +38,9 @@ let voiceBaseText = "";
 let voiceInterimText = "";
 let voiceCommittedChunks = new Set();
 let voiceRequestedByUser = false;
+let voiceTargetInput = null;
+let voiceTargetButton = null;
+let voiceTargetStatusSetter = setStatus;
 let currentCandidateRecordId = "";
 let currentCandidateCreatedAt = "";
 let currentQuickCaptureUser = null;
@@ -969,10 +973,13 @@ function armVoiceSilenceTimer() {
 
 function resetVoiceSessionState() {
   voiceSessionActive = false;
-  voiceBaseText = noteInput.value.trim();
+  voiceBaseText = String(voiceTargetInput?.value || "").trim();
   voiceInterimText = "";
   voiceCommittedChunks.clear();
   voiceRequestedByUser = false;
+  voiceTargetInput = null;
+  voiceTargetButton = null;
+  voiceTargetStatusSetter = setStatus;
 }
 
 function scheduleVoiceRestart() {
@@ -1015,6 +1022,10 @@ function buildRecognition() {
   if (!SpeechRecognition) {
     micButton.disabled = true;
     micButton.textContent = "Voice not supported";
+    if (existingMicButton) {
+      existingMicButton.disabled = true;
+      existingMicButton.textContent = "Voice not supported";
+    }
     return null;
   }
 
@@ -1030,14 +1041,14 @@ function buildRecognition() {
     manualVoiceStop = false;
     if (!voiceSessionActive) {
       voiceSessionActive = true;
-      voiceBaseText = noteInput.value.trim();
+      voiceBaseText = String(voiceTargetInput?.value || "").trim();
       voiceInterimText = "";
       voiceCommittedChunks = new Set();
     }
     keepAliveUntil = Date.now() + 7000;
     armVoiceSilenceTimer();
-    micButton.textContent = "Listening...";
-    setStatus("Voice capture started.");
+    if (voiceTargetButton) voiceTargetButton.textContent = "Listening...";
+    voiceTargetStatusSetter("Voice capture started.");
   };
 
   instance.onend = () => {
@@ -1047,12 +1058,14 @@ function buildRecognition() {
     if (manualVoiceStop || !shouldStayActive) {
       manualVoiceStop = false;
       resetVoiceSessionState();
-      micButton.textContent = "Start voice input";
+      if (micButton) micButton.textContent = "Start voice input";
+      if (existingMicButton) existingMicButton.textContent = "Start voice input";
       setStatus("Voice capture stopped.");
+      setExistingStatus("Voice capture stopped.");
       return;
     }
 
-    micButton.textContent = "Listening...";
+    if (voiceTargetButton) voiceTargetButton.textContent = "Listening...";
     scheduleVoiceRestart();
   };
 
@@ -1062,7 +1075,7 @@ function buildRecognition() {
       scheduleVoiceRestart();
       return;
     }
-    setStatus(`Voice input error: ${event.error}`, "error");
+    voiceTargetStatusSetter(`Voice input error: ${event.error}`, "error");
   };
 
   instance.onresult = (event) => {
@@ -1090,10 +1103,12 @@ function buildRecognition() {
     }
 
     voiceInterimText = interimChunks.join(" ").trim();
-    noteInput.value = mergeVoiceText(voiceBaseText, voiceInterimText);
+    if (voiceTargetInput) {
+      voiceTargetInput.value = mergeVoiceText(voiceBaseText, voiceInterimText);
+    }
 
     if (committedNewText) {
-      setStatus("Voice note added to input.");
+      voiceTargetStatusSetter("Voice note added to input.");
     }
   };
 
@@ -1108,13 +1123,33 @@ function stopVoiceCapture() {
   clearVoiceSilenceTimer();
   clearVoiceRestartTimer();
   voiceInterimText = "";
-  noteInput.value = voiceBaseText || noteInput.value.trim();
+  if (voiceTargetInput) {
+    voiceTargetInput.value = voiceBaseText || String(voiceTargetInput.value || "").trim();
+  }
   if (isListening) {
     recognition.stop();
   } else {
     resetVoiceSessionState();
-    micButton.textContent = "Start voice input";
+    if (micButton) micButton.textContent = "Start voice input";
+    if (existingMicButton) existingMicButton.textContent = "Start voice input";
   }
+}
+
+function startVoiceCapture(targetInput, targetButton, statusSetter) {
+  if (!recognition || !targetInput || !targetButton) return;
+  if (isListening) {
+    const sameTarget = voiceTargetInput === targetInput;
+    stopVoiceCapture();
+    if (sameTarget) return;
+  }
+  if (micButton) micButton.textContent = "Start voice input";
+  if (existingMicButton) existingMicButton.textContent = "Start voice input";
+  voiceTargetInput = targetInput;
+  voiceTargetButton = targetButton;
+  voiceTargetStatusSetter = statusSetter || setStatus;
+  voiceRequestedByUser = true;
+  keepAliveUntil = Date.now() + 7000;
+  recognition.start();
 }
 
 function resetCurrentCandidateTracking() {
@@ -1281,15 +1316,13 @@ if ("serviceWorker" in navigator) {
 recognition = buildRecognition();
 
 micButton.addEventListener("click", () => {
-  if (!recognition) return;
-  if (isListening) {
-    stopVoiceCapture();
-    return;
-  }
-  voiceRequestedByUser = true;
-  keepAliveUntil = Date.now() + 7000;
-  recognition.start();
+  startVoiceCapture(noteInput, micButton, setStatus);
 });
+if (existingMicButton) {
+  existingMicButton.addEventListener("click", () => {
+    startVoiceCapture(existingCandidateInput, existingMicButton, setExistingStatus);
+  });
+}
 
 parseButton.addEventListener("click", parseNoteForReview);
 saveButton.addEventListener("click", saveCandidateAfterReview);
