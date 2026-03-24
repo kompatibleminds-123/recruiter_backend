@@ -175,35 +175,48 @@ function sanitizeGapRows(gaps) {
 }
 
 function sanitizeCandidateSavePayload(rawCandidate, actor) {
+  const input = rawCandidate && typeof rawCandidate === "object" ? rawCandidate : {};
   const candidate = {
-    ...(rawCandidate && typeof rawCandidate === "object" ? rawCandidate : {}),
+    id: String(input.id || "").trim() || undefined,
+    source: String(input.source || input.sourceValue || "").trim() || undefined,
+    name: String(input.name || "").trim() || undefined,
+    company: String(input.company || "").trim() || undefined,
+    role: String(input.role || "").trim() || undefined,
+    experience: String(input.experience || "").trim() || undefined,
+    skills: Array.isArray(input.skills) ? input.skills : undefined,
+    phone: String(input.phone || "").trim() || undefined,
+    email: String(input.email || "").trim() || undefined,
+    location: String(input.location || "").trim() || undefined,
+    highest_education: String(input.highest_education || input.highestEducation || "").trim() || undefined,
+    current_ctc: String(input.current_ctc || "").trim() || undefined,
+    expected_ctc: String(input.expected_ctc || "").trim() || undefined,
+    notice_period: String(input.notice_period || "").trim() || undefined,
+    notes: String(input.notes || "").trim() || undefined,
+    recruiter_context_notes: String(input.recruiter_context_notes || input.recruiterContextNotes || "").trim() || undefined,
+    other_pointers: String(input.other_pointers || input.otherPointers || "").trim() || undefined,
+    next_action: String(input.next_action || "").trim() || undefined,
+    linkedin: String(input.linkedin || "").trim() || undefined,
+    client_name: String(input.client_name || "").trim() || undefined,
+    jd_title: String(input.jd_title || "").trim() || undefined,
     recruiter_id: actor.id,
     recruiter_name: actor.name,
-    updated_at: new Date().toISOString()
+    assigned_to_user_id: String(input.assigned_to_user_id || "").trim() || undefined,
+    assigned_to_name: String(input.assigned_to_name || "").trim() || undefined,
+    assigned_by_user_id: String(input.assigned_by_user_id || "").trim() || undefined,
+    assigned_by_name: String(input.assigned_by_name || "").trim() || undefined,
+    assigned_jd_id: String(input.assigned_jd_id || "").trim() || undefined,
+    assigned_jd_title: String(input.assigned_jd_title || "").trim() || undefined,
+    assigned_at: String(input.assigned_at || "").trim() || undefined,
+    last_contact_outcome: String(input.last_contact_outcome || "").trim() || undefined,
+    last_contact_notes: String(input.last_contact_notes || "").trim() || undefined,
+    last_contact_at: String(input.last_contact_at || "").trim() || undefined,
+    next_follow_up_at: String(input.next_follow_up_at || "").trim() || undefined,
+    used_in_assessment: input.used_in_assessment === true,
+    assessment_id: String(input.assessment_id || "").trim() || undefined,
+    created_at: String(input.created_at || "").trim() || undefined,
+    updated_at: new Date().toISOString(),
+    raw_note: String(input.raw_note || "").trim() || undefined
   };
-
-  if (candidate.recruiterContextNotes && !candidate.recruiter_context_notes) {
-    candidate.recruiter_context_notes = candidate.recruiterContextNotes;
-  }
-  if (candidate.otherPointers && !candidate.other_pointers) {
-    candidate.other_pointers = candidate.otherPointers;
-  }
-  if (candidate.highestEducation && !candidate.highest_education) {
-    candidate.highest_education = candidate.highestEducation;
-  }
-  if (candidate.sourceValue && !candidate.source) {
-    candidate.source = candidate.sourceValue;
-  }
-
-  [
-    "recruiterContextNotes",
-    "otherPointers",
-    "capturedCandidateNotes",
-    "sourceValue",
-    "highestEducation"
-  ].forEach((key) => {
-    delete candidate[key];
-  });
 
   [
     "id",
