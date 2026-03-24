@@ -251,6 +251,7 @@ function normalizeCandidateRow(structured, rawNote, metadata = {}) {
     notice_period: structured?.notice_period == null ? null : String(structured.notice_period).trim() || null,
     notes: structured?.notes == null ? null : String(structured.notes).trim() || null,
     recruiter_context_notes: String(metadata.recruiter_context_notes || metadata.recruiterContextNotes || "").trim() || null,
+    other_pointers: String(metadata.other_pointers || metadata.otherPointers || "").trim() || null,
     next_action: structured?.next_action == null ? null : String(structured.next_action).trim() || null,
     client_name: String(metadata.client_name || "").trim() || null,
     jd_title: String(metadata.jd_title || "").trim() || null,
@@ -508,6 +509,7 @@ function matchesCandidateSearch(candidate, query) {
     candidate?.assigned_to_name,
     candidate?.notes,
     candidate?.recruiter_context_notes,
+    candidate?.other_pointers,
     candidate?.next_action,
     candidate?.raw_note
   ]

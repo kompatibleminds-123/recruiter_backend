@@ -185,6 +185,9 @@ function sanitizeCandidateSavePayload(rawCandidate, actor) {
   if (candidate.recruiterContextNotes && !candidate.recruiter_context_notes) {
     candidate.recruiter_context_notes = candidate.recruiterContextNotes;
   }
+  if (candidate.otherPointers && !candidate.other_pointers) {
+    candidate.other_pointers = candidate.otherPointers;
+  }
   if (candidate.highestEducation && !candidate.highest_education) {
     candidate.highest_education = candidate.highestEducation;
   }
@@ -194,6 +197,7 @@ function sanitizeCandidateSavePayload(rawCandidate, actor) {
 
   [
     "recruiterContextNotes",
+    "otherPointers",
     "capturedCandidateNotes",
     "sourceValue",
     "highestEducation"

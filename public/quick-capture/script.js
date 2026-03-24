@@ -20,6 +20,8 @@ const candidatePhoneInput = document.getElementById("candidatePhone");
 const candidateEmailInput = document.getElementById("candidateEmail");
 const candidateLinkedinInput = document.getElementById("candidateLinkedin");
 const candidateNextActionInput = document.getElementById("candidateNextAction");
+const newCandidateCvButton = document.getElementById("newCandidateCvButton");
+const newCandidateCvFile = document.getElementById("newCandidateCvFile");
 const existingCandidateInput = document.getElementById("existingCandidateInput");
 const existingCandidateTab = document.getElementById("existingCandidateTab");
 const newCandidateTab = document.getElementById("newCandidateTab");
@@ -48,6 +50,7 @@ let voiceTargetStatusSetter = setStatus;
 let currentCandidateRecordId = "";
 let currentCandidateCreatedAt = "";
 let currentQuickCaptureUser = null;
+let currentNewCandidateSource = "mobile_pwa";
 let latestParsedCandidateDraft = null;
 let latestIncomingParsedCandidate = null;
 let currentLoadedCandidateBaseline = null;
@@ -118,6 +121,70 @@ function setExistingStatus(message, tone = "") {
   if (!existingStatusMessage) return;
   existingStatusMessage.textContent = message || "";
   existingStatusMessage.className = `status-message${tone ? ` ${tone}` : ""}`;
+}
+
+function arrayBufferToBase64(buffer) {
+  let binary = "";
+  const bytes = new Uint8Array(buffer);
+  const chunkSize = 0x8000;
+  for (let index = 0; index < bytes.length; index += chunkSize) {
+    const chunk = bytes.subarray(index, index + chunkSize);
+    binary += String.fromCharCode(...chunk);
+  }
+  return window.btoa(binary);
+}
+
+function isAllowedCvCaptureFile(file) {
+  if (!file) return false;
+  const allowedTypes = new Set([
+    "application/pdf",
+    "application/msword",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "application/rtf",
+    "text/rtf",
+    "text/plain",
+    ""
+  ]);
+  const allowedExtensions = [".pdf", ".doc", ".docx", ".rtf", ".txt"];
+  const lowerName = String(file.name || "").toLowerCase();
+  return allowedTypes.has(file.type) || allowedExtensions.some((ext) => lowerName.endsWith(ext));
+}
+
+function buildCvCaptureNoteFromParsedResult(result, filename = "") {
+  const candidateName = String(result?.candidateName || "").trim();
+  const company = String(result?.currentCompany || "").trim();
+  const role = String(result?.currentDesignation || "").trim();
+  const totalExperience = String(result?.totalExperience || "").trim();
+  const phone = String(result?.phoneNumber || "").trim();
+  const email = String(result?.emailId || "").trim();
+  const linkedin = String(result?.linkedinUrl || "").trim();
+  const highestEducation = String(result?.highestEducation || "").trim();
+  const timelineText = Array.isArray(result?.timeline)
+    ? result.timeline
+        .slice(0, 6)
+        .map((item) => {
+          const timelineRole = String(item?.title || "").trim();
+          const timelineCompany = String(item?.company || "").trim();
+          const timelineDates = [String(item?.start || "").trim(), String(item?.end || "").trim()].filter(Boolean).join(" - ");
+          return [timelineRole && timelineCompany ? `${timelineRole} at ${timelineCompany}` : timelineRole || timelineCompany, timelineDates].filter(Boolean).join(" | ");
+        })
+        .filter(Boolean)
+        .join("; ")
+    : "";
+
+  return [
+    candidateName,
+    role && company ? `${role} at ${company}` : role || company,
+    totalExperience ? `Total experience: ${totalExperience}` : "",
+    highestEducation ? `Highest education: ${highestEducation}` : "",
+    phone ? `Phone: ${phone}` : "",
+    email ? `Email: ${email}` : "",
+    linkedin ? `LinkedIn: ${linkedin}` : "",
+    timelineText ? `Experience timeline: ${timelineText}` : "",
+    filename ? `CV: ${filename}` : ""
+  ]
+    .filter(Boolean)
+    .join(". ");
 }
 
 function renderAuthState(user) {
@@ -408,15 +475,38 @@ async function findExistingCandidateTarget(noteText) {
     callQuickCaptureApi(`/company/assessments/search?q=${encodeURIComponent(lead)}&limit=25`, { method: "GET" }).catch(() => ({ result: { assessments: [] } }))
   ]);
 
-  const candidateMatches = (Array.isArray(candidatePayload?.result) ? candidatePayload.result : [])
-    .filter((item) => !item?.used_in_assessment)
-    .map((item) => ({ kind: "quick_capture", item, score: scoreNameMatch(item?.name, noteText) }));
-  const assessmentMatches = (Array.isArray(assessmentPayload?.result?.assessments) ? assessmentPayload.result.assessments : [])
-    .map((item) => ({ kind: "assessment", item, score: scoreNameMatch(item?.candidateName, noteText) + 5 }));
+  const buildMatches = (candidateRows, assessmentRows) => {
+    const candidateMatches = (Array.isArray(candidateRows) ? candidateRows : [])
+      .filter((item) => !item?.used_in_assessment)
+      .map((item) => ({ kind: "quick_capture", item, score: scoreNameMatch(item?.name, noteText) }));
+    const assessmentMatches = (Array.isArray(assessmentRows) ? assessmentRows : [])
+      .map((item) => ({ kind: "assessment", item, score: scoreNameMatch(item?.candidateName, noteText) + 5 }));
 
-  return [...assessmentMatches, ...candidateMatches]
-    .filter((entry) => entry.score > 0)
-    .sort((a, b) => b.score - a.score)[0] || null;
+    return [...assessmentMatches, ...candidateMatches]
+      .filter((entry) => entry.score > 0)
+      .sort((a, b) => b.score - a.score);
+  };
+
+  let matches = buildMatches(
+    Array.isArray(candidatePayload?.result) ? candidatePayload.result : [],
+    Array.isArray(assessmentPayload?.result?.assessments) ? assessmentPayload.result.assessments : []
+  );
+
+  if (matches.length) {
+    return matches[0];
+  }
+
+  const [allCandidatePayload, allAssessmentPayload] = await Promise.all([
+    callQuickCaptureApi("/candidates?limit=1000", { method: "GET" }).catch(() => ({ result: [] })),
+    callQuickCaptureApi("/company/assessments", { method: "GET" }).catch(() => ({ result: { assessments: [] } }))
+  ]);
+
+  matches = buildMatches(
+    Array.isArray(allCandidatePayload?.result) ? allCandidatePayload.result : [],
+    Array.isArray(allAssessmentPayload?.result?.assessments) ? allAssessmentPayload.result.assessments : []
+  );
+
+  return matches[0] || null;
 }
 
 function parseFilterDateInput(value, endOfDay = false) {
@@ -928,6 +1018,7 @@ function loadCandidateIntoCapture(candidate) {
   if (!item) return;
   populateFormFromParsedResult(item);
   if (noteInput) noteInput.value = "";
+  currentNewCandidateSource = String(item?.source || "").trim() || "mobile_pwa";
   setLatestParsedCandidateDraft(item);
   renderCandidateSummary(item);
   renderJson(item);
@@ -940,7 +1031,7 @@ function buildCandidateFromReviewFields() {
     ...base,
     id: currentCandidateRecordId || base.id || undefined,
     created_at: currentCandidateCreatedAt || base.created_at || undefined,
-    source: base.source || "mobile_pwa",
+    source: base.source || currentNewCandidateSource || "mobile_pwa",
     name: candidateNameInput?.value.trim() || "",
     company: candidateCompanyInput?.value.trim() || "",
     role: candidateRoleInput?.value.trim() || "",
@@ -1176,6 +1267,7 @@ function resetCurrentCandidateTracking() {
   currentLoadedCandidateBaseline = null;
   latestIncomingParsedCandidate = null;
   latestDraftConflicts = [];
+  currentNewCandidateSource = "mobile_pwa";
   setLatestParsedCandidateDraft(null);
   renderConflictSummary([]);
   if (mergeContext) {
@@ -1191,12 +1283,53 @@ function buildQuickCapturePayload(noteText) {
     id: currentCandidateRecordId || undefined,
     created_at: currentCandidateCreatedAt || undefined,
     noteText,
-    source: "mobile_pwa",
+    source: currentNewCandidateSource || "mobile_pwa",
     client_name: "",
     jd_title: candidateRoleInput?.value.trim() || "",
     recruiter_id: currentQuickCaptureUser?.id || "",
     recruiter_name: currentQuickCaptureUser?.name || ""
   };
+}
+
+async function captureNewCandidateFromCvFile(file) {
+  if (!currentQuickCaptureUser) {
+    setStatus("Login required first.", "error");
+    return;
+  }
+  if (!isAllowedCvCaptureFile(file)) {
+    throw new Error("Please choose a PDF, Word, RTF, or TXT CV file.");
+  }
+  stopVoiceCapture();
+  const buffer = await file.arrayBuffer();
+  const payload = await callQuickCaptureApi("/parse-candidate", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      sourceType: "cv",
+      file: {
+        filename: file.name,
+        mimeType: file.type || "application/octet-stream",
+        fileData: arrayBufferToBase64(buffer)
+      }
+    })
+  });
+
+  const result = payload.result || {};
+  const generatedNote = buildCvCaptureNoteFromParsedResult(result, file.name);
+  currentNewCandidateSource = "mobile_cv";
+  latestIncomingParsedCandidate = null;
+  latestDraftConflicts = [];
+  renderConflictSummary([]);
+  setLatestParsedCandidateDraft(null);
+  renderCandidateSummary(null);
+  renderJson({
+    source: "mobile_cv",
+    cv_parsed: result,
+    generated_note: generatedNote
+  });
+  if (noteInput) noteInput.value = generatedNote;
 }
 
 async function parseNoteForReview() {
@@ -1352,6 +1485,27 @@ if (existingCandidateTab) {
 }
 if (newCandidateTab) {
   newCandidateTab.addEventListener("click", () => setCaptureTab("new"));
+}
+if (newCandidateCvButton) {
+  newCandidateCvButton.addEventListener("click", () => {
+    newCandidateCvFile?.click();
+  });
+}
+if (newCandidateCvFile) {
+  newCandidateCvFile.addEventListener("change", async (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    setCaptureTab("new");
+    setStatus("Parsing CV into a captured note...");
+    try {
+      await captureNewCandidateFromCvFile(file);
+      setStatus("CV converted into a captured note. Review or edit the note, then parse for review.", "success");
+    } catch (error) {
+      setStatus(String(error.message || error), "error");
+    } finally {
+      event.target.value = "";
+    }
+  });
 }
 
 async function bootstrapAuthState() {
