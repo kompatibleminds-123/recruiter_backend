@@ -334,10 +334,10 @@ function parseMonthYear(text, allowPresent = false) {
     return { year: now.getFullYear(), month: now.getMonth() };
   }
 
-  const monthNameMatch = value.match(/\b(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*[\s,'/-]*((\d{2})|(\d{4}))/i);
+  const monthNameMatch = value.match(/\b(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*[\s,'/-]*((\d{4})|(\d{2}))/i);
   if (monthNameMatch) {
     const month = MONTH_INDEX[String(monthNameMatch[1] || "").toLowerCase()];
-    const year = monthNameMatch[3] ? 2000 + Number(monthNameMatch[3]) : Number(monthNameMatch[4] || monthNameMatch[2]);
+    const year = monthNameMatch[4] ? 2000 + Number(monthNameMatch[4]) : Number(monthNameMatch[3] || monthNameMatch[2]);
     if (Number.isInteger(month) && Number.isInteger(year)) {
       return { year, month };
     }
@@ -553,6 +553,12 @@ function getCvCareerTimeline(timeline) {
   return (timeline || []).filter((item) => !shouldExcludeCvTimelineRowFromMetrics(item));
 }
 
+function getCvMetricTimeline(timeline) {
+  const careerTimeline = getCvCareerTimeline(timeline);
+  const datedRows = careerTimeline.filter((item) => String(item?.start || "").trim() && String(item?.end || "").trim());
+  return datedRows.length ? datedRows : careerTimeline;
+}
+
 function pickTimelineForCv(normalizedTimeline, fallbackTimeline) {
   const aiCount = normalizedTimeline.length;
   const fallbackCount = fallbackTimeline.length;
@@ -757,7 +763,7 @@ function buildCandidateParseResponse(baseResult, normalizedResult, parseMeta = {
     normalizedResult?.currentDesignation,
     baseResult?.currentDesignation
   );
-  const metricTimeline = sourceType === "cv" ? cvCareerTimeline : finalTimeline;
+  const metricTimeline = sourceType === "cv" ? getCvMetricTimeline(finalTimeline) : finalTimeline;
   const computedTotalExperience = calculateTotalExperienceFromTimeline(metricTimeline);
   const averageTenurePerCompany = calculateAverageTenurePerCompany(metricTimeline);
   const computedCurrentOrgTenure = calculateCurrentOrgTenure(metricTimeline, currentCompany);
@@ -843,7 +849,7 @@ function buildCandidateParseResponse(baseResult, normalizedResult, parseMeta = {
       highestEducation,
       sourceType: String(baseResult?.sourceType || "").trim(),
     filename: String(baseResult?.filename || "").trim(),
-    timeline: finalTimeline,
+    timeline: sourceType === "cv" ? cvCareerTimeline : finalTimeline,
     gaps: normalizedGaps.length ? normalizedGaps : fallbackGaps,
     averageTenurePerCompany: finalAverageTenure,
     currentOrgTenure: finalCurrentOrgTenure,
