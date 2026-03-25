@@ -21,6 +21,8 @@ function sanitizeText(value) {
   return String(value || "")
     .replace(/\r/g, "\n")
     .replace(/\u00a0/g, " ")
+    .replace(/[–—−]/g, "-")
+    .replace(/\s\?\s/g, " - ")
     .replace(/[ \t]+/g, " ")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
@@ -67,6 +69,12 @@ function parseDateRange(text) {
   }
 
   return { start, end, isCurrent };
+}
+
+function normalizeDateSeparatorText(value) {
+  return String(value || "")
+    .replace(/[–—−]/g, "-")
+    .replace(/\s\?\s/g, " - ");
 }
 
 function monthIndex(value) {
@@ -343,7 +351,13 @@ function extractTimeline(lines, rawText, structuredExperienceText) {
         isCurrent: entry.isCurrent
       };
     })
-    .filter((entry) => entry.company && entry.start)
+    .filter((entry) => entry.start)
+    .filter((entry) => {
+      const company = String(entry.company || "").trim();
+      const title = String(entry.title || "").trim();
+      if (!company && !title) return false;
+      return true;
+    })
     .sort((a, b) => (b.startIndex || 0) - (a.startIndex || 0));
 
   const gaps = [];
@@ -448,13 +462,14 @@ async function parseCandidatePayload(payload) {
   const rawText = sanitizeText(payload?.rawText || payload?.pageText || payload?.text || extractedFileText || "");
   const experienceText = extractExperienceSection(rawText);
   const structuredExperienceText = sanitizeText(payload?.structuredExperience || "");
+  const rawLines = splitLines(rawText);
   const lines = splitLines(experienceText);
 
   if (!rawText && !structuredExperienceText) {
     throw new Error("Provide candidate text, page text, or structured experience to parse.");
   }
 
-  const candidateName = extractCandidateName(lines, rawText, payload?.candidateName);
+  const candidateName = extractCandidateName(rawLines, rawText, payload?.candidateName);
   const totalExperience = extractTotalExperience(lines, rawText, payload?.totalExperience);
   const parsed = extractTimeline(lines, experienceText, structuredExperienceText);
   const currentRole = extractCurrentRoleFromTimeline(parsed.timeline);

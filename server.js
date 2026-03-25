@@ -495,6 +495,64 @@ function getCurrentRoleFromTimeline(timeline) {
   );
 }
 
+function normalizeTimelineIdentity(value) {
+  return String(value || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+function isPresentLikeEnd(value) {
+  return /^(present|current|till date|to date)$/i.test(String(value || "").trim());
+}
+
+function shouldPreferFallbackTimelineForCv(normalizedTimeline, fallbackTimeline) {
+  const aiCurrent = getCurrentRoleFromTimeline(normalizedTimeline);
+  const fallbackCurrent = getCurrentRoleFromTimeline(fallbackTimeline);
+  if (!aiCurrent || !fallbackCurrent) return false;
+
+  const aiCompany = normalizeTimelineIdentity(aiCurrent.company);
+  const fallbackCompany = normalizeTimelineIdentity(fallbackCurrent.company);
+  const aiTitle = normalizeTimelineIdentity(aiCurrent.title);
+  const fallbackTitle = normalizeTimelineIdentity(fallbackCurrent.title);
+
+  const aiStart = monthIndex(parseMonthYear(aiCurrent.start));
+  const fallbackStart = monthIndex(parseMonthYear(fallbackCurrent.start));
+  const aiEndPresent = isPresentLikeEnd(aiCurrent.end);
+  const fallbackEndPresent = isPresentLikeEnd(fallbackCurrent.end);
+
+  if (aiCompany && fallbackCompany && aiCompany !== fallbackCompany && fallbackStart !== null && aiStart !== null && fallbackStart > aiStart) {
+    return true;
+  }
+
+  if (aiEndPresent && !fallbackEndPresent && aiCompany && fallbackCompany && aiCompany === fallbackCompany && aiTitle === fallbackTitle) {
+    return true;
+  }
+
+  return false;
+}
+
+function shouldExcludeCvTimelineRowFromMetrics(item) {
+  const roleText = String(item?.title || item?.designation || "").trim().toLowerCase();
+  const companyText = String(item?.company || "").trim().toLowerCase();
+  const combined = `${roleText} ${companyText}`.trim();
+  if (!combined) return false;
+
+  return [
+    /\bintern(ship)?\b/,
+    /\bself[-\s]?employed\b/,
+    /\bpart[-\s]?time\b/,
+    /\bapprentice(ship)?\b/,
+    /\bcareer\s+break\b/,
+    /\bcareer\s+gap\b/,
+    /\bfreelanc(?:e|er|ing)\b/
+  ].some((pattern) => pattern.test(combined));
+}
+
+function getCvCareerTimeline(timeline) {
+  return (timeline || []).filter((item) => !shouldExcludeCvTimelineRowFromMetrics(item));
+}
+
 function pickTimelineForCv(normalizedTimeline, fallbackTimeline) {
   const aiCount = normalizedTimeline.length;
   const fallbackCount = fallbackTimeline.length;
@@ -523,6 +581,10 @@ function pickTimelineForCv(normalizedTimeline, fallbackTimeline) {
 
   if (fallbackScore > aiScore + 4) {
     return { timeline: fallbackTimeline, source: "fallback", reason: "fallback_better_scored" };
+  }
+
+  if (shouldPreferFallbackTimelineForCv(normalizedTimeline, fallbackTimeline)) {
+    return { timeline: fallbackTimeline, source: "fallback", reason: "fallback_current_role_more_consistent" };
   }
 
   return { timeline: normalizedTimeline, source: "ai", reason: "ai_primary" };
@@ -682,7 +744,8 @@ function buildCandidateParseResponse(baseResult, normalizedResult, parseMeta = {
           }
           : { timeline: fallbackTimeline, source: "fallback", reason: "best_score" };
   const finalTimeline = timelineChoice.timeline;
-  const currentRole = getCurrentRoleFromTimeline(finalTimeline);
+  const cvCareerTimeline = sourceType === "cv" ? getCvCareerTimeline(finalTimeline) : finalTimeline;
+  const currentRole = getCurrentRoleFromTimeline(cvCareerTimeline);
   const currentCompany = choosePreferredScalar(
     currentRole?.company,
     normalizedResult?.currentCompany,
@@ -694,9 +757,10 @@ function buildCandidateParseResponse(baseResult, normalizedResult, parseMeta = {
     normalizedResult?.currentDesignation,
     baseResult?.currentDesignation
   );
-  const computedTotalExperience = calculateTotalExperienceFromTimeline(finalTimeline);
-  const averageTenurePerCompany = calculateAverageTenurePerCompany(finalTimeline);
-  const computedCurrentOrgTenure = calculateCurrentOrgTenure(finalTimeline, currentCompany);
+  const metricTimeline = sourceType === "cv" ? cvCareerTimeline : finalTimeline;
+  const computedTotalExperience = calculateTotalExperienceFromTimeline(metricTimeline);
+  const averageTenurePerCompany = calculateAverageTenurePerCompany(metricTimeline);
+  const computedCurrentOrgTenure = calculateCurrentOrgTenure(metricTimeline, currentCompany);
   const aiTotalExperience = String(normalizedResult?.totalExperience || "").trim();
   const aiCurrentOrgTenure = String(normalizedResult?.currentOrgTenure || "").trim();
   const candidateTotalExperience =
@@ -728,6 +792,7 @@ function buildCandidateParseResponse(baseResult, normalizedResult, parseMeta = {
     fallbackTimelineCount: fallbackTimeline.length,
     finalTimelineSource: timelineChoice.source,
     finalTimelineReason: timelineChoice.reason,
+    excludedMetricTimelineCount: Math.max(0, finalTimeline.length - metricTimeline.length),
     currentCompanySource: normalizedResult?.currentCompany ? "ai" : (baseResult?.currentCompany ? "fallback" : "none"),
     totalExperienceSource:
       candidateTotalExperience && candidateTotalExperience === aiTotalExperience ? "ai" : (candidateTotalExperience ? "timeline" : "none"),
