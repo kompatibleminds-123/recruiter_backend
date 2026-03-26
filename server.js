@@ -361,6 +361,12 @@ function parseMonthYear(text, allowPresent = false) {
     }
   }
 
+  const yearOnlyMatch = value.match(/\b(19\d{2}|20\d{2})\b/);
+  if (yearOnlyMatch) {
+    const year = Number(yearOnlyMatch[1]);
+    return { year, month: allowPresent ? 11 : 0 };
+  }
+
   return null;
 }
 
@@ -553,10 +559,72 @@ function getCvCareerTimeline(timeline) {
   return (timeline || []).filter((item) => !shouldExcludeCvTimelineRowFromMetrics(item));
 }
 
-function getCvMetricTimeline(timeline) {
+function dedupeTimelineRows(timeline) {
+  const seen = new Set();
+  return (timeline || []).filter((item) => {
+    const key = [
+      normalizeTimelineIdentity(item?.company),
+      normalizeTimelineIdentity(item?.title),
+      String(item?.start || "").trim().toLowerCase(),
+      String(item?.end || "").trim().toLowerCase(),
+      String(item?.duration || "").trim().toLowerCase()
+    ].join("|");
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function getCvCompanyCoverageSupplements(primaryTimeline, fallbackTimeline) {
+  const primaryRows = getCvCareerTimeline(primaryTimeline).filter((item) => item?.company);
+  const fallbackRows = getCvCareerTimeline(fallbackTimeline).filter((item) => item?.company);
+  if (!primaryRows.length || !fallbackRows.length) return [];
+
+  const supplements = [];
+  for (const fallbackRow of fallbackRows) {
+    const fallbackCompany = normalizeTimelineIdentity(fallbackRow.company);
+    if (!fallbackCompany) continue;
+
+    const sameCompanyPrimaryRows = primaryRows.filter(
+      (item) => normalizeTimelineIdentity(item.company) === fallbackCompany
+    );
+    if (!sameCompanyPrimaryRows.length) continue;
+
+    const fallbackStart = monthIndex(parseMonthYear(fallbackRow.start));
+    const fallbackEnd = monthIndex(parseMonthYear(fallbackRow.end, true));
+    if (fallbackStart == null || fallbackEnd == null || fallbackEnd < fallbackStart) continue;
+
+    const overlapsCompanyCoverage = sameCompanyPrimaryRows.some((item) => {
+      const start = monthIndex(parseMonthYear(item.start));
+      const end = monthIndex(parseMonthYear(item.end, true));
+      if (start == null || end == null || end < start) return false;
+      return fallbackStart <= end + 1 && fallbackEnd >= start - 1;
+    });
+    if (!overlapsCompanyCoverage) continue;
+
+    const earliestPrimaryStart = Math.min(
+      ...sameCompanyPrimaryRows
+        .map((item) => monthIndex(parseMonthYear(item.start)))
+        .filter((value) => value != null)
+    );
+
+    if (fallbackStart < earliestPrimaryStart) {
+      supplements.push(fallbackRow);
+    }
+  }
+
+  return dedupeTimelineRows(supplements);
+}
+
+function getCvMetricTimeline(timeline, fallbackTimeline = []) {
   const careerTimeline = getCvCareerTimeline(timeline);
   const datedRows = careerTimeline.filter((item) => String(item?.start || "").trim() && String(item?.end || "").trim());
-  return datedRows.length ? datedRows : careerTimeline;
+  const primaryRows = datedRows.length ? datedRows : careerTimeline;
+  const supplementedRows = dedupeTimelineRows([
+    ...primaryRows,
+    ...getCvCompanyCoverageSupplements(primaryRows, fallbackTimeline)
+  ]);
+  return sortTimelineByRecency(supplementedRows);
 }
 
 function pickTimelineForCv(normalizedTimeline, fallbackTimeline) {
@@ -763,7 +831,7 @@ function buildCandidateParseResponse(baseResult, normalizedResult, parseMeta = {
     normalizedResult?.currentDesignation,
     baseResult?.currentDesignation
   );
-  const metricTimeline = sourceType === "cv" ? getCvMetricTimeline(finalTimeline) : finalTimeline;
+  const metricTimeline = sourceType === "cv" ? getCvMetricTimeline(finalTimeline, fallbackTimeline) : finalTimeline;
   const computedTotalExperience = calculateTotalExperienceFromTimeline(metricTimeline);
   const averageTenurePerCompany = calculateAverageTenurePerCompany(metricTimeline);
   const computedCurrentOrgTenure = calculateCurrentOrgTenure(metricTimeline, currentCompany);
@@ -1377,26 +1445,26 @@ const server = http.createServer(async (req, res) => {
           body.file?.fileData &&
           supportsOpenAiFileParse(body.file);
 
-        const shouldUsePrimaryFileAiForCv = canUseFileAi;
+        const shouldUsePrimaryFileAiForCv = canUseFileAi && !parsed.rawText;
 
-        if (shouldUsePrimaryFileAiForCv) {
-          aiParseMode = "deep_file_ai_primary";
-          aiParseReason = "Direct file-based AI parsing was used as the primary CV parsing path.";
-          normalized = await normalizeCandidateFileWithAi({
-            apiKey,
-            model: String(body.model || "").trim(),
-            uploadedFile: body.file,
-            sourceType: parsed.sourceType,
-            filename: parsed.filename,
-            fallbackFields
-          });
-        } else if (parsed.rawText) {
+        if (parsed.rawText) {
           aiParseMode = "fast_text_ai";
           aiParseReason = "Fast text-based AI normalization was used first.";
           normalized = await normalizeCandidateWithAi({
             apiKey,
             model: String(body.model || "").trim(),
             rawText: parsed.rawText,
+            sourceType: parsed.sourceType,
+            filename: parsed.filename,
+            fallbackFields
+          });
+        } else if (shouldUsePrimaryFileAiForCv) {
+          aiParseMode = "deep_file_ai_primary";
+          aiParseReason = "Direct file-based AI parsing was used because no usable raw CV text was available.";
+          normalized = await normalizeCandidateFileWithAi({
+            apiKey,
+            model: String(body.model || "").trim(),
+            uploadedFile: body.file,
             sourceType: parsed.sourceType,
             filename: parsed.filename,
             fallbackFields
@@ -1437,6 +1505,27 @@ const server = http.createServer(async (req, res) => {
         aiParseReason
       });
       sendJson(res, 200, { ok: true, result });
+    } catch (error) {
+      sendJson(res, 400, { ok: false, error: String(error.message || error) });
+    }
+    return;
+  }
+
+  if (req.method === "POST" && requestUrl.pathname === "/extract-document-text") {
+    try {
+      await requireSessionUser(getBearerToken(req));
+      const body = await readJsonBody(req);
+      const parsed = await parseCandidatePayload({
+        ...body,
+        sourceType: body?.sourceType || "jd_upload"
+      });
+      sendJson(res, 200, {
+        ok: true,
+        result: {
+          filename: parsed.filename || "",
+          rawText: parsed.rawText || ""
+        }
+      });
     } catch (error) {
       sendJson(res, 400, { ok: false, error: String(error.message || error) });
     }

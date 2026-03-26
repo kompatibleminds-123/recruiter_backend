@@ -21,7 +21,7 @@ function sanitizeText(value) {
   return String(value || "")
     .replace(/\r/g, "\n")
     .replace(/\u00a0/g, " ")
-    .replace(/[–—−]/g, "-")
+    .replace(/[\u2013\u2014\u2212]/g, "-")
     .replace(/\s\?\s/g, " - ")
     .replace(/[ \t]+/g, " ")
     .replace(/\n{3,}/g, "\n\n")
@@ -50,7 +50,7 @@ function stripRtf(rtf) {
 }
 
 function parseDateRange(text) {
-  const normalized = String(text || "").replace(/[–—]/g, "-");
+  const normalized = String(text || "").replace(/[\u2013\u2014\u2212]/g, "-");
   const matches = Array.from(
     normalized.matchAll(/\b(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*[\s,-]+(?:'(\d{2})|(\d{4}))/ig)
   ).map((match) => ({
@@ -58,9 +58,17 @@ function parseDateRange(text) {
     year: match[2] ? 2000 + Number(match[2]) : Number(match[3])
   }));
 
-  const start = matches[0] || null;
+  let start = matches[0] || null;
   let end = matches[1] || null;
   let isCurrent = false;
+
+  const yearOnlyMatches = Array.from(normalized.matchAll(/\b(19\d{2}|20\d{2})\b/g)).map((match) => Number(match[1]));
+  if (!start && yearOnlyMatches.length >= 1) {
+    start = { year: yearOnlyMatches[0], month: 0 };
+  }
+  if (!end && yearOnlyMatches.length >= 2) {
+    end = { year: yearOnlyMatches[1], month: 11 };
+  }
 
   if (/\bpresent\b|\bcurrent\b|\btill date\b/i.test(normalized)) {
     isCurrent = true;
@@ -73,7 +81,7 @@ function parseDateRange(text) {
 
 function normalizeDateSeparatorText(value) {
   return String(value || "")
-    .replace(/[–—−]/g, "-")
+    .replace(/[\u2013\u2014\u2212]/g, "-")
     .replace(/\s\?\s/g, " - ");
 }
 
@@ -195,7 +203,7 @@ function isNoiseLine(line) {
 
 function looksLikeExperienceDate(line) {
   return /\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*[\s,-]+(?:'\d{2}|\d{4})\b/i.test(line) &&
-    (/\bpresent\b|\bcurrent\b|\btill date\b/i.test(line) || /[-–—]/.test(line) || /\b\d+\s+(?:yr|yrs|year|years|mo|mos|month|months)\b/i.test(line));
+    (/\bpresent\b|\bcurrent\b|\btill date\b/i.test(line) || /[-\u2013\u2014\u2212]/.test(line) || /\b\d+\s+(?:yr|yrs|year|years|mo|mos|month|months)\b/i.test(line));
 }
 
 function cleanCompanyLine(line) {
@@ -322,7 +330,8 @@ function extractTimeline(lines, rawText, structuredExperienceText) {
     }
 
     const dates = lines[i];
-    if (!looksLikeExperienceDate(dates)) continue;
+    const looksLikeYearOnlyDate = /\b(?:19|20)\d{2}\s*[-\u2013\u2014\u2212]\s*(?:present|current|till date|(?:19|20)\d{2})\b/i.test(dates);
+    if (!looksLikeExperienceDate(dates) && !looksLikeYearOnlyDate) continue;
 
     const context = lines.slice(Math.max(0, i - 4), i).reverse();
     const { title, company } = parseTitleAndCompany(context);
