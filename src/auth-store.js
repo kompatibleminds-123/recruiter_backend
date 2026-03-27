@@ -108,6 +108,7 @@ function sanitizeAssessment(item) {
     customPipelineStages: item.customPipelineStages ?? item.custom_pipeline_stages ?? p.customPipelineStages ?? "",
     customCandidateStatuses: item.customCandidateStatuses ?? item.custom_candidate_statuses ?? p.customCandidateStatuses ?? "",
     customHrCandidateStatuses: item.customHrCandidateStatuses ?? item.custom_hr_candidate_statuses ?? p.customHrCandidateStatuses ?? "",
+    interviewAttempts: item.interviewAttempts ?? p.interviewAttempts ?? [],
     pageTitle: item.pageTitle ?? item.page_title ?? p.pageTitle ?? "",
     pageUrl: item.pageUrl ?? item.page_url ?? p.pageUrl ?? "",
     pdfFilename: item.pdfFilename ?? item.pdf_filename ?? p.pdfFilename ?? ""
