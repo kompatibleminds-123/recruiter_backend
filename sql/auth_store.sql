@@ -73,6 +73,8 @@ create table if not exists public.assessments (
   candidate_status text,
   follow_up_at text,
   interview_at text,
+  offer_amount text,
+  offer_doj text,
   status text,
   custom_pipeline_stages text,
   custom_candidate_statuses text,
