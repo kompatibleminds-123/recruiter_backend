@@ -58,6 +58,7 @@ let latestDraftConflicts = [];
 let latestExistingMatchedTarget = null;
 let latestExistingParsedResult = null;
 let latestExistingMergedResult = null;
+const VOICE_SILENCE_STOP_MS = 5000;
 
 function setCaptureTab(mode) {
   const showExisting = mode === "existing";
@@ -71,6 +72,32 @@ function setCaptureTab(mode) {
     newCandidateTab.classList.toggle("active", !showExisting);
     newCandidateTab.setAttribute("aria-selected", !showExisting ? "true" : "false");
   }
+}
+
+function clearNewCandidateForm() {
+  [
+    candidateNameInput,
+    candidateCompanyInput,
+    candidateRoleInput,
+    candidateExperienceInput,
+    candidateLocationInput,
+    candidateCurrentCtcInput,
+    candidateExpectedCtcInput,
+    candidateNoticePeriodInput,
+    candidatePhoneInput,
+    candidateEmailInput,
+    candidateLinkedinInput,
+    candidateNextActionInput,
+    noteInput
+  ].forEach((input) => {
+    if (input) input.value = "";
+  });
+}
+
+function clearExistingCandidateComposer() {
+  stopVoiceCapture();
+  if (existingCandidateInput) existingCandidateInput.value = "";
+  clearExistingCandidatePreview();
 }
 
 function normalizeVoiceChunk(value) {
@@ -90,7 +117,12 @@ function mergeVoiceText(baseText, newChunk) {
   const normalizedBase = normalizeVoiceChunk(base);
   const normalizedChunk = normalizeVoiceChunk(chunk);
   if (!normalizedChunk) return base;
-  if (normalizedBase.endsWith(normalizedChunk) || normalizedBase.includes(` ${normalizedChunk} `)) {
+  if (
+    normalizedBase === normalizedChunk ||
+    normalizedBase.endsWith(normalizedChunk) ||
+    normalizedBase.includes(` ${normalizedChunk} `) ||
+    normalizedBase.includes(normalizedChunk)
+  ) {
     return base;
   }
 
@@ -110,6 +142,25 @@ function mergeVoiceText(baseText, newChunk) {
   }
 
   return `${base} ${chunk}`.trim();
+}
+
+function inferLatestExistingCandidateUpdate(text, options = {}) {
+  const lines = String(text || "")
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  if (!lines.length) return null;
+  for (let index = lines.length - 1; index >= 0; index -= 1) {
+    const inferred = inferExistingCandidateUpdate(lines[index], options);
+    if (inferred) {
+      return {
+        ...inferred,
+        notes: String(text || "").trim(),
+        callbackNotes: String(text || "").trim()
+      };
+    }
+  }
+  return inferExistingCandidateUpdate(String(text || "").trim(), options);
 }
 
 function setStatus(message, tone = "") {
@@ -616,33 +667,64 @@ function inferExistingCandidateUpdate(text, options = {}) {
   if (!raw) return null;
   const explicitAt = getNamedDateIsoFromText(raw, options);
   const preferredKind = String(options.preferredKind || "").trim();
-  const followUpIntent = /(next call|callback|call back|call later|call me|call him|call her|call to|follow up|follow-up|followup|connect|speak|talk|will speak)/.test(lower);
-  const interviewIntent = /interview/.test(lower) && /(align|aligned|schedule|scheduled|change|changed|reschedule|rescheduled|move|moved|shift|shifted|update|updated)/.test(lower);
+  const hasInterviewRoundMarker = /\b(l1|l2|l3|l4|hr|final)\b/.test(lower);
+  const hasScreeningCallMarker = /\bscreening call\b/.test(lower);
+  const followUpIntent = /(next call|callback|call back|call later|call me|call him|call her|call to|follow up|follow-up|followup|connect|speak|talk|will speak|call next|aligned)/.test(lower);
+  const interviewIntent =
+    /interview/.test(lower) &&
+    /(align|aligned|schedule|scheduled|change|changed|reschedule|rescheduled|move|moved|shift|shifted|update|updated)/.test(lower);
+  const detectAlignedStatus = () => {
+    if (/\bscreening call\b/.test(lower)) return "Screening call aligned";
+    if (/\bl1\b/.test(lower)) return "L1 aligned";
+    if (/\bl2\b/.test(lower)) return "L2 aligned";
+    if (/\bl3\b/.test(lower)) return "L3 aligned";
+    if (/\bhr\b/.test(lower) || /\bfinal\b/.test(lower)) return "HR interview aligned";
+    return "L1 aligned";
+  };
 
-  if (interviewIntent || /\bl1\b.*\balign/.test(lower) || /\bl2\b.*\balign/.test(lower)) {
+  if ((/\boffer(ed|ing)?\b/.test(lower) && /\b(drop|dropout|drop out|dropped|reject)\b/.test(lower)) || ((hasInterviewRoundMarker || /interview/.test(lower)) && /\b(drop|dropout|drop out|dropped)\b/.test(lower))) {
+    return { kind: "assessment", candidateStatus: "Dropped", pipelineStage: "Rejected", callbackNotes: raw };
+  }
+
+  if (interviewIntent || ((hasInterviewRoundMarker || hasScreeningCallMarker) && /\b(align|aligned|schedule|scheduled|change|changed|reschedule|rescheduled|move|moved|shift|shifted)\b/.test(lower))) {
     return {
       kind: "assessment",
-      candidateStatus: "Aligned for Interview",
+      candidateStatus: detectAlignedStatus(),
       pipelineStage: "Interview Scheduled",
       interviewAt: explicitAt,
       callbackNotes: raw
     };
   }
 
-  if ((/\bhr\b/.test(lower) && /\breject/.test(lower)) || /\bscreen(ing)?\s+reject/.test(lower)) {
+  if (/\bcv shared\b/.test(lower)) {
+    return { kind: "assessment", candidateStatus: "CV Shared", pipelineStage: "Submitted", callbackNotes: raw };
+  }
+  if (/\bdid\s*not\s*attend\b/.test(lower) || /\bdidn'?t\s*attend\b/.test(lower) || /\bnot\s*attend(?:ed)?\b/.test(lower)) {
+    return { kind: "assessment", candidateStatus: "Did not attend", pipelineStage: "Rejected", callbackNotes: raw };
+  }
+  if ((/\bhr\b/.test(lower) && /\breject/.test(lower)) || /\bscreen(ing)?\s+reject/.test(lower) || /\brecruiter screening reject\b/.test(lower) || /\bsr\b/.test(lower)) {
     return { kind: "assessment", candidateStatus: "Screening Reject", pipelineStage: "Rejected", callbackNotes: raw };
   }
-  if (/interview/.test(lower) && /\breject/.test(lower)) {
+  if (((hasInterviewRoundMarker || /interview/.test(lower)) && /\breject(?:ed)?\b/.test(lower))) {
     return { kind: "assessment", candidateStatus: "Interview Reject", pipelineStage: "Rejected", callbackNotes: raw };
   }
-  if (/\bduplicate\b/.test(lower)) {
+  if (/\bduplicate\b/.test(lower) || /\bdup\b/.test(lower)) {
     return { kind: "assessment", candidateStatus: "Duplicate", pipelineStage: "Rejected", callbackNotes: raw };
   }
-  if (/\bshortlisted\b/.test(lower)) {
+  if (/\bshortlisted\b/.test(lower) || /\bshortlist\b/.test(lower)) {
     return { kind: "assessment", candidateStatus: "Shortlisted", pipelineStage: "Shortlisted", callbackNotes: raw };
   }
-  if (/\bjoined\b/.test(lower)) {
+  if (/\bjoined\b/.test(lower) || /\bjoin(?:ed|ing)\b/.test(lower)) {
     return { kind: "assessment", candidateStatus: "Joined", pipelineStage: "Joined", callbackNotes: raw };
+  }
+  if (/\b(feedback awaited|feedback|awaiting feedback)\b/.test(lower)) {
+    return { kind: "assessment", candidateStatus: "Feedback Awaited", pipelineStage: "On Hold", callbackNotes: raw };
+  }
+  if (/\bhold\b/.test(lower) || /\b(l1|l2|l3|l4|screening)\s+hold\b/.test(lower)) {
+    return { kind: "assessment", candidateStatus: "Hold", pipelineStage: "On Hold", callbackNotes: raw };
+  }
+  if (/\boffer(ed|ing)?\b/.test(lower)) {
+    return { kind: "assessment", candidateStatus: "Offered", pipelineStage: "Offer Extended", callbackNotes: raw };
   }
 
   if (followUpIntent || explicitAt) {
@@ -662,10 +744,43 @@ function inferExistingCandidateUpdate(text, options = {}) {
       notes: raw
     };
   }
+
+  if (/\bnot responding\b|\bno response\b|\bnot received\b|\bnr\b|\bno answer\b/.test(lower)) {
+    return { kind: "quick_capture", outcome: "no_answer", next_follow_up_at: "", notes: raw };
+  }
+  if (/\bcall busy\b|\bbusy\b/.test(lower)) {
+    return { kind: "quick_capture", outcome: "busy", next_follow_up_at: "", notes: raw };
+  }
+  if (/\bswitch(?:ed)?\s*off\b/.test(lower)) {
+    return { kind: "quick_capture", outcome: "switch_off", next_follow_up_at: "", notes: raw };
+  }
+  if (/\bdisconnected\b|\bdisconnecting\b/.test(lower)) {
+    return { kind: "quick_capture", outcome: "disconnecting", next_follow_up_at: "", notes: raw };
+  }
+  if (/\bcall not reachable\b|\bnot reachable\b/.test(lower)) {
+    return { kind: "quick_capture", outcome: "not_reachable", next_follow_up_at: "", notes: raw };
+  }
+  if (/\bni\b|\bnot interested\b/.test(lower)) {
+    return { kind: "quick_capture", outcome: "not_interested_current_role", next_follow_up_at: "", notes: raw };
+  }
+  if (/\bscreen(ing)? reject\b|\brecruiter screening reject\b|\bsr\b/.test(lower)) {
+    return { kind: "quick_capture", outcome: "not_suitable_current_role", next_follow_up_at: "", notes: raw };
+  }
+  if (/\brevisit\b/.test(lower)) {
+    return { kind: "quick_capture", outcome: "revisit_for_other_role", next_follow_up_at: "", notes: raw };
+  }
+  if (/\binterested\b/.test(lower)) {
+    return { kind: "quick_capture", outcome: "interested", next_follow_up_at: "", notes: raw };
+  }
+  if (/\bhold by recruiter\b|\bhigh notice\b|\bhigh ctc\b|\bhold\b/.test(lower)) {
+    return { kind: "quick_capture", outcome: "hold_by_recruiter", next_follow_up_at: "", notes: raw };
+  }
   return null;
 }
 
 function buildExistingCandidateQuickCaptureSave(targetItem, merged, rawText) {
+  const recruiterText = appendUniqueNote(targetItem.recruiterContextNotes || targetItem.recruiter_context_notes || "", rawText);
+  const otherPointersText = appendUniqueNote(targetItem.otherPointers || targetItem.other_pointers || "", rawText);
   return {
     ...targetItem,
     id: targetItem.id,
@@ -686,6 +801,8 @@ function buildExistingCandidateQuickCaptureSave(targetItem, merged, rawText) {
     linkedin: merged.linkedin || targetItem.linkedin || "",
     notes: appendUniqueNote(targetItem.notes, rawText),
     raw_note: appendUniqueNote(targetItem.raw_note, rawText),
+    recruiter_context_notes: recruiterText,
+    other_pointers: otherPointersText,
     recruiter_id: currentQuickCaptureUser?.id || targetItem.recruiter_id || "",
     recruiter_name: currentQuickCaptureUser?.name || targetItem.recruiter_name || "",
     client_name: targetItem.client_name || "",
@@ -708,10 +825,14 @@ function buildExistingCandidateQuickCaptureSave(targetItem, merged, rawText) {
 
 function buildExistingAssessmentSave(targetItem, patch = {}, rawText = "") {
   const mergedNotes = rawText ? appendUniqueNote(targetItem.recruiterNotes, rawText) : targetItem.recruiterNotes || "";
+  const mergedRecruiterContextNotes = rawText ? appendUniqueNote(targetItem.recruiterContextNotes, rawText) : targetItem.recruiterContextNotes || "";
+  const mergedOtherPointers = rawText ? appendUniqueNote(targetItem.otherPointers, rawText) : targetItem.otherPointers || "";
   return {
     ...targetItem,
     id: targetItem.id,
     recruiterNotes: patch.recruiterNotes != null ? patch.recruiterNotes : mergedNotes,
+    recruiterContextNotes: patch.recruiterContextNotes != null ? patch.recruiterContextNotes : mergedRecruiterContextNotes,
+    otherPointers: patch.otherPointers != null ? patch.otherPointers : mergedOtherPointers,
     callbackNotes: patch.callbackNotes != null ? patch.callbackNotes : (targetItem.callbackNotes || ""),
     candidateName: patch.candidateName != null ? patch.candidateName : targetItem.candidateName,
     currentCompany: patch.currentCompany != null ? patch.currentCompany : targetItem.currentCompany,
@@ -866,6 +987,7 @@ async function applyExistingRecruiterNote() {
 
     renderExistingConflictSummary([]);
     setExistingStatus("Recruiter note applied.", "success");
+    clearExistingCandidateComposer();
   } catch (error) {
     setExistingStatus(String(error.message || error), "error");
   } finally {
@@ -895,7 +1017,7 @@ async function applyExistingCandidateUpdate() {
       return;
     }
 
-    const inferred = inferExistingCandidateUpdate(rawText, {
+    const inferred = inferLatestExistingCandidateUpdate(rawText, {
       preferredKind: target.kind,
       currentStatus: target.item?.candidateStatus || "",
       currentPipelineStage: target.item?.pipelineStage || "",
@@ -970,6 +1092,7 @@ async function applyExistingCandidateUpdate() {
 
     renderExistingConflictSummary([]);
     setExistingStatus("Candidate update applied.", "success");
+    clearExistingCandidateComposer();
   } catch (error) {
     setExistingStatus(String(error.message || error), "error");
   } finally {
@@ -1077,7 +1200,7 @@ function armVoiceSilenceTimer() {
       manualVoiceStop = true;
       recognition.stop();
     }
-  }, 7000);
+  }, VOICE_SILENCE_STOP_MS);
 }
 
 function resetVoiceSessionState() {
@@ -1154,7 +1277,7 @@ function buildRecognition() {
       voiceInterimText = "";
       voiceCommittedChunks = new Set();
     }
-    keepAliveUntil = Date.now() + 7000;
+    keepAliveUntil = Date.now() + VOICE_SILENCE_STOP_MS;
     armVoiceSilenceTimer();
     if (voiceTargetButton) voiceTargetButton.textContent = "Listening...";
     voiceTargetStatusSetter("Voice capture started.");
@@ -1188,7 +1311,7 @@ function buildRecognition() {
   };
 
   instance.onresult = (event) => {
-    keepAliveUntil = Date.now() + 7000;
+    keepAliveUntil = Date.now() + VOICE_SILENCE_STOP_MS;
     armVoiceSilenceTimer();
 
     let committedNewText = false;
@@ -1257,7 +1380,7 @@ function startVoiceCapture(targetInput, targetButton, statusSetter) {
   voiceTargetButton = targetButton;
   voiceTargetStatusSetter = statusSetter || setStatus;
   voiceRequestedByUser = true;
-  keepAliveUntil = Date.now() + 7000;
+  keepAliveUntil = Date.now() + VOICE_SILENCE_STOP_MS;
   recognition.start();
 }
 
@@ -1439,12 +1562,16 @@ async function saveCandidateAfterReview() {
     });
 
     renderJson(payload.result);
-    loadCandidateIntoCapture(payload.result);
-    setLatestParsedCandidateDraft(payload.result);
-    refreshReviewPreview();
     latestDraftConflicts = [];
     renderConflictSummary([]);
-    if (noteInput) noteInput.value = "";
+    clearNewCandidateForm();
+    resetCurrentCandidateTracking();
+    latestIncomingParsedCandidate = null;
+    latestDraftConflicts = [];
+    renderConflictSummary([]);
+    renderCandidateSummary(null);
+    renderJson("No parsed output yet.");
+    setLatestParsedCandidateDraft(null);
     if (wasExistingRecord) {
       setStatus("Candidate updated.", "success");
     } else {
