@@ -57,6 +57,37 @@ function sanitizeJob(job) {
   const p = job.payload && typeof job.payload === "object" ? job.payload : {};
   return { ...p, id: job.id, companyId: job.companyId ?? job.company_id ?? p.companyId ?? null, title: job.title ?? p.title ?? "", clientName: job.clientName ?? job.client_name ?? p.clientName ?? "", jobDescription: job.jobDescription ?? job.job_description ?? p.jobDescription ?? "", mustHaveSkills: job.mustHaveSkills ?? job.must_have_skills ?? p.mustHaveSkills ?? "", redFlags: job.redFlags ?? job.red_flags ?? p.redFlags ?? "", recruiterNotes: job.recruiterNotes ?? job.recruiter_notes ?? p.recruiterNotes ?? "", standardQuestions: job.standardQuestions ?? job.standard_questions ?? p.standardQuestions ?? "", jdShortcuts: job.jdShortcuts ?? job.jd_shortcuts ?? p.jdShortcuts ?? "", createdAt: job.createdAt ?? job.created_at ?? p.createdAt ?? null, updatedAt: job.updatedAt ?? job.updated_at ?? p.updatedAt ?? null, updatedBy: job.updatedBy ?? job.updated_by ?? p.updatedBy ?? null };
 }
+const SHARED_EXPORT_PRESET_ROW_ID = "__shared_export_presets__";
+const SHARED_EXPORT_PRESET_ROW_TITLE = "__shared_export_presets__";
+const MAX_SHARED_CUSTOM_EXPORT_PRESETS = 10;
+function isSharedExportPresetRow(job) {
+  return String(job?.id || "").trim() === SHARED_EXPORT_PRESET_ROW_ID || String(job?.title || "").trim() === SHARED_EXPORT_PRESET_ROW_TITLE;
+}
+function sanitizeSharedExportPresetSettings(raw) {
+  const source = raw && typeof raw === "object" ? raw : {};
+  const rawLabels = source.exportPresetLabels && typeof source.exportPresetLabels === "object" ? source.exportPresetLabels : {};
+  const rawCustomPresets = Array.isArray(source.customExportPresets) ? source.customExportPresets : [];
+  return {
+    exportPresetLabels: {
+      compact_recruiter: String(rawLabels.compact_recruiter || "").trim(),
+      client_tracker: String(rawLabels.client_tracker || "").trim(),
+      client_submission: String(rawLabels.client_submission || "").trim(),
+      screening_focus: String(rawLabels.screening_focus || "").trim(),
+      custom_template: String(rawLabels.custom_template || "").trim()
+    },
+    customExportPresets: rawCustomPresets
+      .map((item, index) => ({
+        id: String(item?.id || `custom_preset_${index + 1}`).trim(),
+        label: String(item?.label || item?.id || `Custom preset ${index + 1}`).trim(),
+        columns: String(item?.columns || "").trim()
+      }))
+      .filter((item) => item.id && item.label && item.columns)
+      .slice(0, MAX_SHARED_CUSTOM_EXPORT_PRESETS),
+    customExportColumns: String(source.customExportColumns || "").trim(),
+    updatedAt: String(source.updatedAt || "").trim(),
+    updatedBy: String(source.updatedBy || "").trim()
+  };
+}
 function sanitizeAssessment(item) {
   if (!item) return null;
   const p = item.payload && typeof item.payload === "object" ? item.payload : {};
@@ -276,8 +307,8 @@ async function listCompanyUsers(companyId) {
   await ensureSeeded(); return (await sbSel("users", `select=*&company_id=eq.${enc(companyId)}&order=created_at.asc`)).map(sanitizeUser);
 }
 async function listCompanyJobs(companyId) {
-  if (!cfg().on) return (readStore().jobs || []).filter((j) => j.companyId === companyId).sort((a, b) => String(b.updatedAt || "").localeCompare(String(a.updatedAt || ""))).map(sanitizeJob);
-  await ensureSeeded(); return (await sbSel("company_jobs", `select=*&company_id=eq.${enc(companyId)}&order=updated_at.desc`)).map(sanitizeJob);
+  if (!cfg().on) return (readStore().jobs || []).filter((j) => j.companyId === companyId && !isSharedExportPresetRow(j)).sort((a, b) => String(b.updatedAt || "").localeCompare(String(a.updatedAt || ""))).map(sanitizeJob);
+  await ensureSeeded(); return (await sbSel("company_jobs", `select=*&company_id=eq.${enc(companyId)}&order=updated_at.desc`)).filter((row) => !isSharedExportPresetRow(row)).map(sanitizeJob);
 }
 async function saveCompanyJob({ actorUserId, companyId, job }) {
   if (!actorUserId || !companyId || !job?.title || !job?.jobDescription) throw new Error("actorUserId, companyId, job title, and job description are required.");
@@ -289,6 +320,72 @@ async function saveCompanyJob({ actorUserId, companyId, job }) {
     if (ix >= 0) store.jobs[ix] = next; else store.jobs.push(next); writeStore(store); return sanitizeJob(next);
   }
   const now = new Date().toISOString(); const rows = await sbIns("company_jobs", [jobRow({ ...job, id: persistedJobId(job.id), companyId, updatedBy: actor.email, createdAt: job.createdAt || now, updatedAt: now })], { conflict: "id", upsert: true }); return sanitizeJob(rows[0]);
+}
+async function getCompanySharedExportPresets(companyId) {
+  if (!companyId) throw new Error("companyId is required.");
+  if (!cfg().on) {
+    const row = (readStore().jobs || []).find((j) => j.companyId === companyId && isSharedExportPresetRow(j));
+    return sanitizeSharedExportPresetSettings(row?.payload || row || {});
+  }
+  await ensureSeeded();
+  const rows = await sbSel("company_jobs", `select=*&company_id=eq.${enc(companyId)}&id=eq.${enc(SHARED_EXPORT_PRESET_ROW_ID)}&limit=1`);
+  return sanitizeSharedExportPresetSettings(rows?.[0]?.payload || rows?.[0] || {});
+}
+async function saveCompanySharedExportPresets({ actorUserId, companyId, settings }) {
+  if (!actorUserId || !companyId) throw new Error("actorUserId and companyId are required.");
+  const actor = sanitizeUser(await getUserById(actorUserId, companyId));
+  if (!actor) throw new Error("Authenticated recruiter not found for this company.");
+  const sanitized = sanitizeSharedExportPresetSettings(settings);
+  const now = new Date().toISOString();
+  const payload = {
+    ...sanitized,
+    id: SHARED_EXPORT_PRESET_ROW_ID,
+    title: SHARED_EXPORT_PRESET_ROW_TITLE,
+    companyId,
+    updatedAt: now,
+    updatedBy: actor.email
+  };
+  if (!cfg().on) {
+    const store = readStore();
+    store.jobs = Array.isArray(store.jobs) ? store.jobs : [];
+    const ix = store.jobs.findIndex((j) => j.companyId === companyId && isSharedExportPresetRow(j));
+    const next = {
+      id: SHARED_EXPORT_PRESET_ROW_ID,
+      companyId,
+      title: SHARED_EXPORT_PRESET_ROW_TITLE,
+      clientName: "__system__",
+      jobDescription: "Shared export presets",
+      mustHaveSkills: "",
+      redFlags: "",
+      recruiterNotes: "",
+      standardQuestions: "",
+      jdShortcuts: "",
+      createdAt: ix >= 0 ? store.jobs[ix].createdAt : now,
+      updatedAt: now,
+      updatedBy: actor.email,
+      payload
+    };
+    if (ix >= 0) store.jobs[ix] = next; else store.jobs.push(next);
+    writeStore(store);
+    return sanitizeSharedExportPresetSettings(next.payload);
+  }
+  const rows = await sbIns("company_jobs", [{
+    id: SHARED_EXPORT_PRESET_ROW_ID,
+    company_id: companyId,
+    title: SHARED_EXPORT_PRESET_ROW_TITLE,
+    client_name: "__system__",
+    job_description: "Shared export presets",
+    must_have_skills: "",
+    red_flags: "",
+    recruiter_notes: "",
+    standard_questions: "",
+    jd_shortcuts: "",
+    created_at: now,
+    updated_at: now,
+    updated_by: actor.email,
+    payload
+  }], { conflict: "id", upsert: true });
+  return sanitizeSharedExportPresetSettings(rows?.[0]?.payload || payload);
 }
 async function deleteCompanyJob({ actorUserId, companyId, jobId }) {
   const actor = sanitizeUser(await getUserById(actorUserId, companyId));
@@ -359,4 +456,4 @@ async function deleteAssessment({ actorUserId, companyId, assessmentId }) {
   return { deleted: true, assessmentId };
 }
 
-module.exports = { bootstrapAdmin, createUser, deleteUser, deleteAssessment, deleteCompanyJob, getSessionUser, listCompaniesAndUsersSummary, listAssessments, listCompanyJobs, listCompanyUsers, login, requireSessionUser, resetUserPassword, searchAssessments, saveAssessment, saveCompanyJob };
+module.exports = { bootstrapAdmin, createUser, deleteUser, deleteAssessment, deleteCompanyJob, getCompanySharedExportPresets, getSessionUser, listCompaniesAndUsersSummary, listAssessments, listCompanyJobs, listCompanyUsers, login, requireSessionUser, resetUserPassword, saveCompanySharedExportPresets, searchAssessments, saveAssessment, saveCompanyJob };

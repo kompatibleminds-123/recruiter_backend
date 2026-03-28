@@ -29,6 +29,7 @@ const {
   deleteAssessment,
   deleteCompanyJob,
   getSessionUser,
+  getCompanySharedExportPresets,
   listCompaniesAndUsersSummary,
   listAssessments,
   searchAssessments,
@@ -38,7 +39,8 @@ const {
   requireSessionUser,
   resetUserPassword,
   saveAssessment,
-  saveCompanyJob
+  saveCompanyJob,
+  saveCompanySharedExportPresets
 } = require("./src/auth-store");
 
 const PORT = Number(process.env.PORT || 8787);
@@ -843,7 +845,7 @@ function buildCandidateParseResponse(baseResult, normalizedResult, parseMeta = {
       : choosePreferredScalar(computedTotalExperience, aiTotalExperience);
   const candidateCurrentOrgTenure =
     sourceType === "cv"
-      ? choosePreferredScalar(computedCurrentOrgTenure, aiCurrentOrgTenure)
+      ? (String(computedCurrentOrgTenure || "").trim() || choosePreferredScalar("", aiCurrentOrgTenure))
       : choosePreferredScalar(computedCurrentOrgTenure, aiCurrentOrgTenure);
   const emailId = choosePreferredScalar(normalizedResult?.emailId, baseResult?.emailId, isValidEmail);
   const phoneNumber = choosePreferredScalar(
@@ -1159,6 +1161,33 @@ const server = http.createServer(async (req, res) => {
       sendJson(res, 200, { ok: true, result: { jobs } });
     } catch (error) {
       sendJson(res, 401, { ok: false, error: String(error.message || error) });
+    }
+    return;
+  }
+
+  if (req.method === "GET" && req.url === "/company/shared-export-presets") {
+    try {
+      const user = await requireSessionUser(getBearerToken(req));
+      const settings = await getCompanySharedExportPresets(user.companyId);
+      sendJson(res, 200, { ok: true, result: settings });
+    } catch (error) {
+      sendJson(res, 401, { ok: false, error: String(error.message || error) });
+    }
+    return;
+  }
+
+  if (req.method === "POST" && req.url === "/company/shared-export-presets") {
+    try {
+      const actor = await requireSessionUser(getBearerToken(req));
+      const body = await readJsonBody(req);
+      const settings = await saveCompanySharedExportPresets({
+        actorUserId: actor.id,
+        companyId: actor.companyId,
+        settings: body.settings || body
+      });
+      sendJson(res, 200, { ok: true, result: settings });
+    } catch (error) {
+      sendJson(res, 400, { ok: false, error: String(error.message || error) });
     }
     return;
   }
