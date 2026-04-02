@@ -10,6 +10,7 @@ This is the first backend service for `Recruiter Speed Desk`.
 - exposes `GET /auth/me`
 - exposes `GET /company/users`
 - exposes `POST /company/users`
+- exposes `GET /company/privacy/export`
 - exposes `POST /parse-candidate`
 - exposes `GET /webhook`
 - exposes `POST /webhook`
@@ -247,19 +248,24 @@ Optional:
 QUICK_CAPTURE_MODEL=gpt-4.1-mini
 SUPABASE_URL=...
 SUPABASE_SERVICE_ROLE_KEY=...
+ALLOWED_ORIGINS=https://your-app.example.com
 ```
 
-### Supabase table
+### Supabase tables
 
 Run this SQL in Supabase:
 
 ```sql
 \i sql/candidates.sql
+\i sql/contact_attempts.sql
+\i sql/privacy_hardening.sql
 ```
 
 Or paste the contents of:
 
 - `C:\Users\dell\Desktop\Codex\recruiter-backend\sql\candidates.sql`
+- `C:\Users\dell\Desktop\Codex\recruiter-backend\sql\contact_attempts.sql`
+- `C:\Users\dell\Desktop\Codex\recruiter-backend\sql\privacy_hardening.sql`
 
 ### Run locally
 
@@ -298,6 +304,21 @@ Then open:
 Supabase/Postgres schema example:
 
 - [whatsapp_notes.sql](/C:/Users/dell/Desktop/Codex/recruiter-backend/sql/whatsapp_notes.sql)
+
+## Initial privacy posture
+
+This backend now supports an initial customer-ready privacy posture for small agency deployments:
+
+- company-scoped access for users, jobs, assessments, candidates, and contact attempts
+- password hashing for recruiter accounts
+- restricted CORS via `ALLOWED_ORIGINS`
+- basic security headers on API/static responses
+- admin-only company export endpoint: `GET /company/privacy/export`
+
+Reference docs:
+
+- [SECURITY.md](/C:/Users/dell/Desktop/Codex/recruiter-backend/SECURITY.md)
+- [PRIVACY.md](/C:/Users/dell/Desktop/Codex/recruiter-backend/PRIVACY.md)
 
 ## Important current limitation
 

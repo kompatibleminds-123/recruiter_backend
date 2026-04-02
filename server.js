@@ -7,6 +7,7 @@ const { callOpenAiQuestions, normalizeCandidateFileWithAi, normalizeCandidateWit
 const {
   assignCandidate,
   deleteCandidate,
+  exportCompanyQuickCaptureData,
   findDuplicateCandidate,
   linkCandidateToAssessment,
   listCandidatesForUser,
@@ -76,47 +77,87 @@ const STATIC_MIME_TYPES = {
   ".ico": "image/x-icon"
 };
 
-function sendJson(res, statusCode, payload) {
+function getAllowedOrigins() {
+  const defaults = [
+    "http://localhost:8787",
+    "http://127.0.0.1:8787",
+    "https://recruiter-backend-yvex.onrender.com"
+  ];
+  const extra = String(process.env.ALLOWED_ORIGINS || "")
+    .split(",")
+    .map((item) => String(item || "").trim())
+    .filter(Boolean);
+  return new Set([...defaults, ...extra]);
+}
+
+function buildResponseHeaders(req, extras = {}) {
+  const origin = String(req?.headers?.origin || "").trim();
+  const headers = {
+    "X-Content-Type-Options": "nosniff",
+    "Referrer-Policy": "no-referrer",
+    "Cache-Control": "no-store",
+    ...extras
+  };
+  if (origin && getAllowedOrigins().has(origin)) {
+    headers["Access-Control-Allow-Origin"] = origin;
+    headers["Vary"] = "Origin";
+  }
+  headers["Access-Control-Allow-Methods"] = "GET,POST,DELETE,OPTIONS";
+  headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization";
+  return headers;
+}
+
+function sendJson(arg1, arg2, arg3, arg4) {
+  const hasExplicitReq = arguments.length >= 4;
+  const req = hasExplicitReq ? arg1 : null;
+  const res = hasExplicitReq ? arg2 : arg1;
+  const statusCode = hasExplicitReq ? arg3 : arg2;
+  const payload = hasExplicitReq ? arg4 : arg3;
   const body = JSON.stringify(payload, null, 2);
-  res.writeHead(statusCode, {
+  res.writeHead(statusCode, buildResponseHeaders(req, {
     "Content-Type": "application/json; charset=utf-8",
-    "Access-Control-Allow-Origin": "*",
-    "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type, Authorization",
     "Content-Length": Buffer.byteLength(body)
-  });
+  }));
   res.end(body);
 }
 
-function sendText(res, statusCode, body, contentType = "text/plain; charset=utf-8") {
-  res.writeHead(statusCode, {
+function sendText(arg1, arg2, arg3, arg4, arg5 = "text/plain; charset=utf-8") {
+  const hasExplicitReq = arguments.length >= 4;
+  const req = hasExplicitReq ? arg1 : null;
+  const res = hasExplicitReq ? arg2 : arg1;
+  const statusCode = hasExplicitReq ? arg3 : arg2;
+  const body = hasExplicitReq ? arg4 : arg3;
+  const contentType = hasExplicitReq ? arg5 : arg4 || "text/plain; charset=utf-8";
+  res.writeHead(statusCode, buildResponseHeaders(req, {
     "Content-Type": contentType,
-    "Access-Control-Allow-Origin": "*",
-    "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type, Authorization",
     "Content-Length": Buffer.byteLength(body)
-  });
+  }));
   res.end(body);
 }
 
-function serveStaticFile(res, filePath) {
+function serveStaticFile(arg1, arg2, arg3) {
+  const hasExplicitReq = arguments.length >= 3;
+  const req = hasExplicitReq ? arg1 : null;
+  const res = hasExplicitReq ? arg2 : arg1;
+  const filePath = hasExplicitReq ? arg3 : arg2;
   if (!filePath.startsWith(QUICK_CAPTURE_PUBLIC_DIR) && !filePath.startsWith(ROOT_PUBLIC_DIR)) {
-    sendText(res, 403, "Forbidden");
+    sendText(req, res, 403, "Forbidden");
     return;
   }
 
   if (!fs.existsSync(filePath) || !fs.statSync(filePath).isFile()) {
-    sendText(res, 404, "Not Found");
+    sendText(req, res, 404, "Not Found");
     return;
   }
 
   const ext = path.extname(filePath).toLowerCase();
   const contentType = STATIC_MIME_TYPES[ext] || "application/octet-stream";
   const body = fs.readFileSync(filePath);
-  res.writeHead(200, {
+  res.writeHead(200, buildResponseHeaders(req, {
     "Content-Type": contentType,
-    "Content-Length": body.length
-  });
+    "Content-Length": body.length,
+    "Cache-Control": contentType.startsWith("image/") ? "public, max-age=86400" : "no-store"
+  }));
   res.end(body);
 }
 
@@ -151,6 +192,18 @@ function getBearerToken(req) {
   return match?.[1]?.trim() || "";
 }
 
+async function ensureCandidateVisibleToActor(actor, candidateId) {
+  const id = String(candidateId || "").trim();
+  if (!id) {
+    throw new Error("Missing candidate id.");
+  }
+  const matches = await listCandidatesForUser(actor, { id, limit: 1 });
+  if (!Array.isArray(matches) || !matches.length) {
+    throw new Error("Candidate not found or not allowed.");
+  }
+  return matches[0];
+}
+
 function sanitizeTimelineRows(timeline) {
   if (!Array.isArray(timeline)) return [];
   return timeline
@@ -180,6 +233,7 @@ function sanitizeCandidateSavePayload(rawCandidate, actor) {
   const input = rawCandidate && typeof rawCandidate === "object" ? rawCandidate : {};
   const candidate = {
     id: String(input.id || "").trim() || undefined,
+    company_id: String(actor.companyId || "").trim() || undefined,
     source: String(input.source || input.sourceValue || "").trim() || undefined,
     name: String(input.name || "").trim() || undefined,
     company: String(input.company || "").trim() || undefined,
@@ -939,7 +993,8 @@ const server = http.createServer(async (req, res) => {
   const requestUrl = new URL(req.url, `http://${req.headers.host || "localhost"}`);
 
   if (req.method === "OPTIONS") {
-    sendJson(res, 200, { ok: true });
+    res.writeHead(204, buildResponseHeaders(req, { "Content-Length": 0 }));
+    res.end();
     return;
   }
 
@@ -1238,6 +1293,36 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (req.method === "GET" && requestUrl.pathname === "/company/privacy/export") {
+    try {
+      const user = await requireSessionUser(getBearerToken(req));
+      if (user.role !== "admin") {
+        throw new Error("Only an admin can export company data.");
+      }
+      const [users, jobs, assessments, quickCapture] = await Promise.all([
+        listCompanyUsers(user.companyId),
+        listCompanyJobs(user.companyId),
+        listAssessments({ actorUserId: user.id, companyId: user.companyId }),
+        exportCompanyQuickCaptureData(user.companyId)
+      ]);
+      sendJson(res, 200, {
+        ok: true,
+        result: {
+          exportedAt: new Date().toISOString(),
+          companyId: user.companyId,
+          users,
+          jobs,
+          assessments,
+          candidates: quickCapture.candidates,
+          contactAttempts: quickCapture.contactAttempts
+        }
+      });
+    } catch (error) {
+      sendJson(res, 400, { ok: false, error: String(error.message || error) });
+    }
+    return;
+  }
+
   if (req.method === "GET" && requestUrl.pathname === "/company/assessments/search") {
     try {
       const user = await requireSessionUser(getBearerToken(req));
@@ -1288,15 +1373,13 @@ const server = http.createServer(async (req, res) => {
 
   if (req.method === "GET" && requestUrl.pathname === "/candidates") {
     try {
-      const sessionUser = await getSessionUser(getBearerToken(req));
+      const sessionUser = await requireSessionUser(getBearerToken(req));
       const listOptions = {
         limit: Number(requestUrl.searchParams.get("limit") || 100),
         q: String(requestUrl.searchParams.get("q") || "").trim(),
         id: String(requestUrl.searchParams.get("id") || "").trim()
       };
-      const result = sessionUser
-        ? await listCandidatesForUser(sessionUser, listOptions)
-        : await listCandidates(listOptions);
+      const result = await listCandidatesForUser(sessionUser, listOptions);
       sendJson(res, 200, { ok: true, result });
     } catch (error) {
       sendJson(res, 400, { ok: false, error: String(error.message || error) });
@@ -1309,7 +1392,7 @@ const server = http.createServer(async (req, res) => {
       const actor = await requireSessionUser(getBearerToken(req));
       const body = await readJsonBody(req);
       const candidate = sanitizeCandidateSavePayload(body.candidate || body || {}, actor);
-      const duplicate = await findDuplicateCandidate(candidate);
+      const duplicate = await findDuplicateCandidate(candidate, { companyId: actor.companyId });
       if (duplicate) {
         sendJson(res, 200, {
           ok: true,
@@ -1319,7 +1402,7 @@ const server = http.createServer(async (req, res) => {
         });
         return;
       }
-      const result = await saveCandidate(candidate);
+      const result = await saveCandidate(candidate, { companyId: actor.companyId });
       sendJson(res, 200, { ok: true, result });
     } catch (error) {
       sendJson(res, 400, { ok: false, error: String(error.message || error) });
@@ -1329,8 +1412,10 @@ const server = http.createServer(async (req, res) => {
 
   if (req.method === "DELETE" && requestUrl.pathname === "/candidates") {
     try {
+      const actor = await requireSessionUser(getBearerToken(req));
       const candidateId = String(requestUrl.searchParams.get("id") || "").trim();
-      const result = await deleteCandidate(candidateId);
+      await ensureCandidateVisibleToActor(actor, candidateId);
+      const result = await deleteCandidate(candidateId, { companyId: actor.companyId });
       sendJson(res, 200, { ok: true, result });
     } catch (error) {
       sendJson(res, 400, { ok: false, error: String(error.message || error) });
@@ -1340,8 +1425,10 @@ const server = http.createServer(async (req, res) => {
 
   if (req.method === "POST" && requestUrl.pathname === "/candidates/link-assessment") {
     try {
+      const actor = await requireSessionUser(getBearerToken(req));
       const body = await readJsonBody(req);
-      const result = await linkCandidateToAssessment(body.id, body.assessment_id || body.assessmentId);
+      await ensureCandidateVisibleToActor(actor, body.id);
+      const result = await linkCandidateToAssessment(body.id, body.assessment_id || body.assessmentId, { companyId: actor.companyId });
       sendJson(res, 200, { ok: true, result });
     } catch (error) {
       sendJson(res, 400, { ok: false, error: String(error.message || error) });
@@ -1352,7 +1439,11 @@ const server = http.createServer(async (req, res) => {
   if (req.method === "POST" && requestUrl.pathname === "/candidates/assign") {
     try {
       const actor = await requireSessionUser(getBearerToken(req));
+      if (actor.role !== "admin") {
+        throw new Error("Only an admin can assign candidates.");
+      }
       const body = await readJsonBody(req);
+      await ensureCandidateVisibleToActor(actor, body.id || body.candidateId);
       const result = await assignCandidate(body.id || body.candidateId, {
         assigned_to_user_id: body.assigned_to_user_id || body.assignedToUserId,
         assigned_to_name: body.assigned_to_name || body.assignedToName,
@@ -1360,7 +1451,7 @@ const server = http.createServer(async (req, res) => {
         assigned_by_name: actor.name,
         assigned_jd_id: body.assigned_jd_id || body.assignedJdId,
         assigned_jd_title: body.assigned_jd_title || body.assignedJdTitle
-      });
+      }, { companyId: actor.companyId });
       sendJson(res, 200, { ok: true, result });
     } catch (error) {
       sendJson(res, 400, { ok: false, error: String(error.message || error) });
@@ -1370,10 +1461,13 @@ const server = http.createServer(async (req, res) => {
 
   if (req.method === "GET" && requestUrl.pathname === "/contact-attempts") {
     try {
-      await requireSessionUser(getBearerToken(req));
+      const actor = await requireSessionUser(getBearerToken(req));
+      const candidateId = String(requestUrl.searchParams.get("candidate_id") || requestUrl.searchParams.get("candidateId") || "").trim();
+      await ensureCandidateVisibleToActor(actor, candidateId);
       const result = await listContactAttempts(
-        String(requestUrl.searchParams.get("candidate_id") || requestUrl.searchParams.get("candidateId") || "").trim(),
-        Number(requestUrl.searchParams.get("limit") || 20)
+        candidateId,
+        Number(requestUrl.searchParams.get("limit") || 20),
+        { companyId: actor.companyId }
       );
       sendJson(res, 200, { ok: true, result });
     } catch (error) {
@@ -1386,6 +1480,7 @@ const server = http.createServer(async (req, res) => {
     try {
       const actor = await requireSessionUser(getBearerToken(req));
       const body = await readJsonBody(req);
+      await ensureCandidateVisibleToActor(actor, body.candidate_id || body.candidateId);
       const result = await saveContactAttempt(body.candidate_id || body.candidateId, {
         recruiter_id: actor.id,
         recruiter_name: actor.name,
@@ -1394,7 +1489,7 @@ const server = http.createServer(async (req, res) => {
         outcome: body.outcome,
         notes: body.notes,
         next_follow_up_at: body.next_follow_up_at || body.nextFollowUpAt
-      });
+      }, { companyId: actor.companyId });
       sendJson(res, 200, { ok: true, result });
     } catch (error) {
       sendJson(res, 400, { ok: false, error: String(error.message || error) });
@@ -1405,7 +1500,7 @@ const server = http.createServer(async (req, res) => {
   if (req.method === "POST" && requestUrl.pathname === "/parse-note") {
     try {
       const body = await readJsonBody(req);
-      const sessionUser = await getSessionUser(getBearerToken(req));
+      const sessionUser = await requireSessionUser(getBearerToken(req));
       const noteText = String(body.text || body.noteText || body.note || "").trim();
       if (!noteText) {
         throw new Error("Missing note text.");
@@ -1420,6 +1515,7 @@ const server = http.createServer(async (req, res) => {
           created_at: String(body.created_at || body.createdAt || "").trim() || null,
           linkedin: String(body.linkedin || body.linkedinUrl || body.profileUrl || "").trim() || null,
           source: String(body.source || "").trim() || null,
+          company_id: sessionUser.companyId || null,
           client_name: String(body.client_name || body.clientName || "").trim() || null,
           jd_title: String(body.jd_title || body.jdTitle || "").trim() || null,
           recruiter_id: sessionUser?.id || String(body.recruiter_id || body.recruiterId || "").trim() || null,
@@ -1430,7 +1526,7 @@ const server = http.createServer(async (req, res) => {
         sendJson(res, 200, { ok: true, preview: true, result: parsed });
         return;
       }
-      const duplicate = await findDuplicateCandidate(parsed);
+      const duplicate = await findDuplicateCandidate(parsed, { companyId: sessionUser.companyId });
       if (duplicate) {
         sendJson(res, 200, {
           ok: true,
@@ -1440,7 +1536,7 @@ const server = http.createServer(async (req, res) => {
         });
         return;
       }
-      const saved = await saveCandidate(parsed);
+      const saved = await saveCandidate(parsed, { companyId: sessionUser.companyId });
       sendJson(res, 200, { ok: true, result: saved });
     } catch (error) {
       sendJson(res, 400, { ok: false, error: String(error.message || error) });

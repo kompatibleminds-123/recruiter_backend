@@ -32,6 +32,18 @@ function writeLocalStore(store) {
   fs.writeFileSync(LOCAL_STORE_PATH, JSON.stringify(store, null, 2));
 }
 
+function normalizeCompanyId(value) {
+  return String(value || "").trim();
+}
+
+function getCandidateCompanyId(candidate) {
+  return normalizeCompanyId(candidate?.company_id || candidate?.companyId);
+}
+
+function getContactAttemptCompanyId(item) {
+  return normalizeCompanyId(item?.company_id || item?.companyId);
+}
+
 function buildQuickCaptureSchema() {
   return {
     type: "object",
@@ -234,6 +246,7 @@ function buildParseNotePrompt(noteText) {
 function normalizeCandidateRow(structured, rawNote, metadata = {}) {
   return {
     id: String(metadata.id || "").trim() || crypto.randomUUID(),
+    company_id: normalizeCompanyId(metadata.company_id || metadata.companyId) || null,
     source: metadata.source == null ? null : String(metadata.source).trim() || null,
     name: structured?.name == null ? null : String(structured.name).trim() || null,
     company: structured?.company == null ? null : String(structured.company).trim() || null,
@@ -336,8 +349,9 @@ function getDuplicateMatch(candidate, existing) {
   return matchBy;
 }
 
-async function findDuplicateCandidate(candidate) {
+async function findDuplicateCandidate(candidate, options = {}) {
   const candidateId = String(candidate?.id || "").trim();
+  const companyId = normalizeCompanyId(options.companyId || candidate?.company_id || candidate?.companyId);
   const phone = normalizePhoneForMatch(candidate?.phone);
   const email = normalizeEmailForMatch(candidate?.email);
   const linkedin = normalizeLinkedinForMatch(candidate?.linkedin);
@@ -346,7 +360,11 @@ async function findDuplicateCandidate(candidate) {
 
   const { url, serviceRoleKey } = getSupabaseConfig();
   if (url && serviceRoleKey) {
-    const response = await fetch(`${url}/rest/v1/candidates?select=*&order=created_at.desc&limit=2000`, {
+    const filters = ["select=*", "order=created_at.desc", "limit=2000"];
+    if (companyId) {
+      filters.push(`company_id=eq.${encodeURIComponent(companyId)}`);
+    }
+    const response = await fetch(`${url}/rest/v1/candidates?${filters.join("&")}`, {
       headers: { apikey: serviceRoleKey, Authorization: `Bearer ${serviceRoleKey}` }
     });
     const rows = response.ok ? await response.json() : [];
@@ -361,7 +379,10 @@ async function findDuplicateCandidate(candidate) {
   }
 
   const store = readLocalStore();
-  const candidates = Array.isArray(store.candidates) ? store.candidates : [];
+  const candidates = (Array.isArray(store.candidates) ? store.candidates : []).filter((item) => {
+    if (!companyId) return true;
+    return getCandidateCompanyId(item) === companyId;
+  });
   for (const existing of candidates) {
     if (String(existing?.id || "").trim() === candidateId) continue;
     const matchBy = getDuplicateMatch(candidate, existing);
@@ -372,14 +393,23 @@ async function findDuplicateCandidate(candidate) {
   return null;
 }
 
-async function saveCandidate(candidate) {
+async function saveCandidate(candidate, options = {}) {
   const { url, serviceRoleKey } = getSupabaseConfig();
   const candidateId = String(candidate?.id || "").trim();
+  const companyId = normalizeCompanyId(options.companyId || candidate?.company_id || candidate?.companyId);
+  const nextCandidate = {
+    ...candidate,
+    company_id: companyId || null
+  };
   if (url && serviceRoleKey) {
     let isUpdate = false;
     if (candidateId) {
+      const filters = [`id=eq.${encodeURIComponent(candidateId)}`, "select=id", "limit=1"];
+      if (companyId) {
+        filters.unshift(`company_id=eq.${encodeURIComponent(companyId)}`);
+      }
       const checkResponse = await fetch(
-        `${url}/rest/v1/candidates?id=eq.${encodeURIComponent(candidateId)}&select=id&limit=1`,
+        `${url}/rest/v1/candidates?${filters.join("&")}`,
         {
           headers: {
             apikey: serviceRoleKey,
@@ -398,7 +428,9 @@ async function saveCandidate(candidate) {
     }
 
     const response = await fetch(
-      isUpdate ? `${url}/rest/v1/candidates?id=eq.${encodeURIComponent(candidateId)}` : `${url}/rest/v1/candidates`,
+      isUpdate
+        ? `${url}/rest/v1/candidates?id=eq.${encodeURIComponent(candidateId)}${companyId ? `&company_id=eq.${encodeURIComponent(companyId)}` : ""}`
+        : `${url}/rest/v1/candidates`,
       {
       method: isUpdate ? "PATCH" : "POST",
       headers: {
@@ -407,7 +439,7 @@ async function saveCandidate(candidate) {
         Authorization: `Bearer ${serviceRoleKey}`,
         Prefer: "return=representation"
       },
-      body: JSON.stringify(candidate)
+      body: JSON.stringify(nextCandidate)
     });
 
     if (!response.ok) {
@@ -416,28 +448,31 @@ async function saveCandidate(candidate) {
     }
 
     const rows = await response.json();
-    return rows?.[0] || candidate;
+    return rows?.[0] || nextCandidate;
   }
 
   const store = readLocalStore();
   store.candidates = Array.isArray(store.candidates) ? store.candidates : [];
-  const existingIndex = store.candidates.findIndex((item) => String(item?.id || "") === candidateId);
+  const existingIndex = store.candidates.findIndex(
+    (item) => String(item?.id || "") === candidateId && (!companyId || getCandidateCompanyId(item) === companyId)
+  );
   if (candidateId && existingIndex >= 0) {
     store.candidates[existingIndex] = {
       ...store.candidates[existingIndex],
-      ...candidate,
-      updated_at: candidate.updated_at || new Date().toISOString()
+      ...nextCandidate,
+      updated_at: nextCandidate.updated_at || new Date().toISOString()
     };
   } else {
-    store.candidates.unshift(candidate);
+    store.candidates.unshift(nextCandidate);
   }
   store.candidates = store.candidates.slice(0, 5000);
   writeLocalStore(store);
-  return candidate;
+  return nextCandidate;
 }
 
-async function patchCandidate(candidateId, patch) {
+async function patchCandidate(candidateId, patch, options = {}) {
   const id = String(candidateId || "").trim();
+  const companyId = normalizeCompanyId(options.companyId || patch?.company_id || patch?.companyId);
   if (!id) {
     throw new Error("Missing candidate id.");
   }
@@ -449,7 +484,9 @@ async function patchCandidate(candidateId, patch) {
 
   const { url, serviceRoleKey } = getSupabaseConfig();
   if (url && serviceRoleKey) {
-    const response = await fetch(`${url}/rest/v1/candidates?id=eq.${encodeURIComponent(id)}`, {
+    const response = await fetch(
+      `${url}/rest/v1/candidates?id=eq.${encodeURIComponent(id)}${companyId ? `&company_id=eq.${encodeURIComponent(companyId)}` : ""}`,
+      {
       method: "PATCH",
       headers: {
         "Content-Type": "application/json",
@@ -472,7 +509,7 @@ async function patchCandidate(candidateId, patch) {
   const store = readLocalStore();
   store.candidates = Array.isArray(store.candidates) ? store.candidates : [];
   store.candidates = store.candidates.map((item) =>
-    String(item?.id || "") === id ? { ...item, ...payload } : item
+    String(item?.id || "") === id && (!companyId || getCandidateCompanyId(item) === companyId) ? { ...item, ...payload } : item
   );
   writeLocalStore(store);
   return { id, ...payload };
@@ -482,12 +519,14 @@ function normalizeListOptions(input) {
   if (typeof input === "number") {
     return {
       limit: Math.max(1, Number(input) || 100),
-      q: ""
+      q: "",
+      companyId: ""
     };
   }
   return {
     limit: Math.max(1, Number(input?.limit) || 100),
-    q: String(input?.q || "").trim().toLowerCase()
+    q: String(input?.q || "").trim().toLowerCase(),
+    companyId: normalizeCompanyId(input?.companyId || input?.company_id)
   };
 }
 
@@ -526,13 +565,17 @@ function matchesCandidateId(candidate, rawId) {
 }
 
 async function listCandidates(options = 100) {
-  const { limit, q } = normalizeListOptions(options);
+  const { limit, q, companyId } = normalizeListOptions(options);
   const id = String(options?.id || "").trim();
   const { url, serviceRoleKey } = getSupabaseConfig();
   if (url && serviceRoleKey) {
     const fetchLimit = q ? Math.max(limit, 2000) : limit;
+    const filters = ["select=*", "order=created_at.desc", `limit=${fetchLimit}`];
+    if (companyId) {
+      filters.push(`company_id=eq.${encodeURIComponent(companyId)}`);
+    }
     const response = await fetch(
-      `${url}/rest/v1/candidates?select=*&order=created_at.desc&limit=${fetchLimit}`,
+      `${url}/rest/v1/candidates?${filters.join("&")}`,
       {
         headers: {
           apikey: serviceRoleKey,
@@ -551,7 +594,11 @@ async function listCandidates(options = 100) {
   }
 
   const store = readLocalStore();
-  return (store.candidates || []).filter((item) => matchesCandidateId(item, id)).filter((item) => matchesCandidateSearch(item, q)).slice(0, limit);
+  return (store.candidates || [])
+    .filter((item) => !companyId || getCandidateCompanyId(item) === companyId)
+    .filter((item) => matchesCandidateId(item, id))
+    .filter((item) => matchesCandidateSearch(item, q))
+    .slice(0, limit);
 }
 
 async function listCandidatesForUser(user, options = 100) {
@@ -559,19 +606,20 @@ async function listCandidatesForUser(user, options = 100) {
   const id = String(options?.id || "").trim();
   const maxRows = limit;
   if (!user?.id) {
-    return listCandidates({ limit: maxRows, q, id });
+    return listCandidates({ limit: maxRows, q, id, companyId: normalizeCompanyId(user?.companyId) });
   }
 
   if (user.role === "admin") {
-    return listCandidates({ limit: maxRows, q, id });
+    return listCandidates({ limit: maxRows, q, id, companyId: normalizeCompanyId(user.companyId) });
   }
 
   const { url, serviceRoleKey } = getSupabaseConfig();
+  const companyId = normalizeCompanyId(user.companyId);
   if (url && serviceRoleKey) {
     const recruiterId = encodeURIComponent(String(user.id).trim());
     const fetchLimit = q ? Math.max(maxRows, 2000) : maxRows;
     const response = await fetch(
-      `${url}/rest/v1/candidates?select=*&or=(recruiter_id.eq.${recruiterId},assigned_to_user_id.eq.${recruiterId})&order=created_at.desc&limit=${fetchLimit}`,
+      `${url}/rest/v1/candidates?select=*&company_id=eq.${encodeURIComponent(companyId)}&or=(recruiter_id.eq.${recruiterId},assigned_to_user_id.eq.${recruiterId})&order=created_at.desc&limit=${fetchLimit}`,
       {
         headers: {
           apikey: serviceRoleKey,
@@ -591,21 +639,25 @@ async function listCandidatesForUser(user, options = 100) {
 
   const store = readLocalStore();
   return (store.candidates || [])
+    .filter((item) => !companyId || getCandidateCompanyId(item) === companyId)
     .filter((item) => item?.recruiter_id === user.id || item?.assigned_to_user_id === user.id)
     .filter((item) => matchesCandidateId(item, id))
     .filter((item) => matchesCandidateSearch(item, q))
     .slice(0, maxRows);
 }
 
-async function deleteCandidate(candidateId) {
+async function deleteCandidate(candidateId, options = {}) {
   const id = String(candidateId || "").trim();
+  const companyId = normalizeCompanyId(options.companyId);
   if (!id) {
     throw new Error("Missing candidate id.");
   }
 
   const { url, serviceRoleKey } = getSupabaseConfig();
   if (url && serviceRoleKey) {
-    const response = await fetch(`${url}/rest/v1/candidates?id=eq.${encodeURIComponent(id)}`, {
+    const response = await fetch(
+      `${url}/rest/v1/candidates?id=eq.${encodeURIComponent(id)}${companyId ? `&company_id=eq.${encodeURIComponent(companyId)}` : ""}`,
+      {
       method: "DELETE",
       headers: {
         apikey: serviceRoleKey,
@@ -624,13 +676,15 @@ async function deleteCandidate(candidateId) {
 
   const store = readLocalStore();
   store.candidates = Array.isArray(store.candidates) ? store.candidates : [];
-  const nextCandidates = store.candidates.filter((item) => String(item?.id || "") !== id);
+  const nextCandidates = store.candidates.filter(
+    (item) => !(String(item?.id || "") === id && (!companyId || getCandidateCompanyId(item) === companyId))
+  );
   store.candidates = nextCandidates;
   writeLocalStore(store);
   return { id };
 }
 
-async function linkCandidateToAssessment(candidateId, assessmentId) {
+async function linkCandidateToAssessment(candidateId, assessmentId, options = {}) {
   const id = String(candidateId || "").trim();
   const linkedAssessmentId = String(assessmentId || "").trim();
   if (!id) {
@@ -645,10 +699,10 @@ async function linkCandidateToAssessment(candidateId, assessmentId) {
     assessment_id: linkedAssessmentId,
     updated_at: new Date().toISOString()
   };
-  return patchCandidate(id, payload);
+  return patchCandidate(id, payload, options);
 }
 
-async function assignCandidate(candidateId, assignment = {}) {
+async function assignCandidate(candidateId, assignment = {}, options = {}) {
   const id = String(candidateId || "").trim();
   if (!id) {
     throw new Error("Missing candidate id.");
@@ -669,11 +723,12 @@ async function assignCandidate(candidateId, assignment = {}) {
     assigned_jd_id: String(assignment.assigned_jd_id || assignment.assignedJdId || "").trim() || null,
     assigned_jd_title: String(assignment.assigned_jd_title || assignment.assignedJdTitle || "").trim() || null,
     assigned_at: new Date().toISOString()
-  });
+  }, options);
 }
 
 function normalizeContactAttemptRow(candidateId, payload = {}) {
   const outcome = String(payload.outcome || "").trim();
+  const companyId = normalizeCompanyId(payload.company_id || payload.companyId);
   if (!candidateId) {
     throw new Error("Missing candidate id.");
   }
@@ -684,6 +739,7 @@ function normalizeContactAttemptRow(candidateId, payload = {}) {
   return {
     id: String(payload.id || "").trim() || crypto.randomUUID(),
     candidate_id: candidateId,
+    company_id: companyId || null,
     recruiter_id: String(payload.recruiter_id || payload.recruiterId || "").trim() || null,
     recruiter_name: String(payload.recruiter_name || payload.recruiterName || "").trim() || null,
     jd_id: String(payload.jd_id || payload.jdId || "").trim() || null,
@@ -695,8 +751,11 @@ function normalizeContactAttemptRow(candidateId, payload = {}) {
   };
 }
 
-async function saveContactAttempt(candidateId, payload = {}) {
-  const row = normalizeContactAttemptRow(String(candidateId || "").trim(), payload);
+async function saveContactAttempt(candidateId, payload = {}, options = {}) {
+  const row = normalizeContactAttemptRow(String(candidateId || "").trim(), {
+    ...payload,
+    company_id: options.companyId || payload.company_id || payload.companyId
+  });
   const { url, serviceRoleKey } = getSupabaseConfig();
 
   if (url && serviceRoleKey) {
@@ -722,7 +781,7 @@ async function saveContactAttempt(candidateId, payload = {}) {
       last_contact_notes: row.notes,
       last_contact_at: row.created_at,
       next_follow_up_at: row.next_follow_up_at
-    });
+    }, { companyId: row.company_id });
     return rows?.[0] || row;
   }
 
@@ -736,12 +795,13 @@ async function saveContactAttempt(candidateId, payload = {}) {
     last_contact_notes: row.notes,
     last_contact_at: row.created_at,
     next_follow_up_at: row.next_follow_up_at
-  });
+  }, { companyId: row.company_id });
   return row;
 }
 
-async function listContactAttempts(candidateId, limit = 20) {
+async function listContactAttempts(candidateId, limit = 20, options = {}) {
   const id = String(candidateId || "").trim();
+  const companyId = normalizeCompanyId(options.companyId);
   if (!id) {
     throw new Error("Missing candidate id.");
   }
@@ -750,7 +810,7 @@ async function listContactAttempts(candidateId, limit = 20) {
   const { url, serviceRoleKey } = getSupabaseConfig();
   if (url && serviceRoleKey) {
     const response = await fetch(
-      `${url}/rest/v1/contact_attempts?candidate_id=eq.${encodeURIComponent(id)}&select=*&order=created_at.desc&limit=${maxRows}`,
+      `${url}/rest/v1/contact_attempts?candidate_id=eq.${encodeURIComponent(id)}${companyId ? `&company_id=eq.${encodeURIComponent(companyId)}` : ""}&select=*&order=created_at.desc&limit=${maxRows}`,
       {
         headers: {
           apikey: serviceRoleKey,
@@ -769,13 +829,55 @@ async function listContactAttempts(candidateId, limit = 20) {
 
   const store = readLocalStore();
   return (Array.isArray(store.contact_attempts) ? store.contact_attempts : [])
+    .filter((item) => !companyId || getContactAttemptCompanyId(item) === companyId)
     .filter((item) => String(item?.candidate_id || "") === id)
     .slice(0, maxRows);
+}
+
+async function exportCompanyQuickCaptureData(companyId) {
+  const scopedCompanyId = normalizeCompanyId(companyId);
+  if (!scopedCompanyId) {
+    throw new Error("Missing company id.");
+  }
+
+  const candidates = await listCandidates({ limit: 5000, companyId: scopedCompanyId });
+  const { url, serviceRoleKey } = getSupabaseConfig();
+
+  if (url && serviceRoleKey) {
+    const response = await fetch(
+      `${url}/rest/v1/contact_attempts?company_id=eq.${encodeURIComponent(scopedCompanyId)}&select=*&order=created_at.desc&limit=10000`,
+      {
+        headers: {
+          apikey: serviceRoleKey,
+          Authorization: `Bearer ${serviceRoleKey}`
+        }
+      }
+    );
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Supabase contact attempt export failed: ${response.status} ${errorText}`);
+    }
+
+    return {
+      candidates,
+      contactAttempts: await response.json()
+    };
+  }
+
+  const store = readLocalStore();
+  return {
+    candidates,
+    contactAttempts: (Array.isArray(store.contact_attempts) ? store.contact_attempts : []).filter(
+      (item) => getContactAttemptCompanyId(item) === scopedCompanyId
+    )
+  };
 }
 
 module.exports = {
   assignCandidate,
   deleteCandidate,
+  exportCompanyQuickCaptureData,
   findDuplicateCandidate,
   linkCandidateToAssessment,
   listCandidatesForUser,
