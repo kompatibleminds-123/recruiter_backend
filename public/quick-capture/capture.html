@@ -36,15 +36,22 @@
           <h2>For Existing Candidates</h2>
           <span class="panel-kicker">Update saved candidate</span>
         </div>
-        <label class="label" for="existingCandidateInput">Candidate name + note / status update</label>
-        <textarea id="existingCandidateInput" class="note-input compact-note-input" rows="5" placeholder="Nikhil current 15 L expected 25 L notice 15 days, or Ajay interview aligned on 27th March 5 PM."></textarea>
+        <label class="label" for="existingRecruiterNoteInput">Recruiter note (for parse + save note)</label>
+        <textarea id="existingRecruiterNoteInput" class="note-input compact-note-input" rows="5" placeholder="Nikhil current 15 L expected 25 L notice 15 days, interested for role."></textarea>
         <div class="helper-text">
-          Use one box for both flows.
-          `Parse note` previews and merges recruiter-note style info.
-          `Apply status update` saves the last-line status/timeline update directly.
+          `Parse note` previews and merges recruiter-note style info for both captured notes and assessments.
+          `Save note` appends to existing recruiter notes and updates parsed fields such as current CTC, expected CTC, and notice period when different.
         </div>
         <div class="actions single-action">
           <button id="existingMicButton" type="button" class="ghost-button">Start voice input for existing candidate</button>
+        </div>
+        <label class="label" for="existingStatusUpdateInput">Status update (assessment or captured note)</label>
+        <textarea id="existingStatusUpdateInput" class="note-input compact-note-input" rows="4" placeholder="Ajay interview aligned on 27th March 5 PM, or Nikhil call back tomorrow 11 AM."></textarea>
+        <div class="actions single-action">
+          <button id="existingStatusMicButton" type="button" class="ghost-button">Start voice input for status update</button>
+        </div>
+        <div class="helper-text">
+          `Apply status update` only applies status/timeline updates and does not append recruiter notes.
         </div>
         <div class="actions">
           <button id="existingParseButton" type="button" class="ghost-button">Preview recruiter note</button>
@@ -58,8 +65,17 @@
 
       <section id="newCandidatePanel" class="panel capture-panel" hidden>
         <div class="panel-head">
-          <h2>For New Candidates</h2>
-          <span class="panel-kicker">Structured input</span>
+          <div>
+            <h2>For New Candidates</h2>
+            <span class="panel-kicker">Structured input</span>
+          </div>
+          <div class="field">
+            <label class="label" for="voiceLanguageSelect">Voice language</label>
+            <select id="voiceLanguageSelect" class="text-input">
+              <option value="en-IN" selected>English (India)</option>
+              <option value="en-US">English (US)</option>
+            </select>
+          </div>
         </div>
         <div class="helper-text">Use this section for a fresh candidate note or CV that is not yet in your saved drafts or assessments.</div>
         <div class="actions single-action">

@@ -22,7 +22,8 @@ const candidateLinkedinInput = document.getElementById("candidateLinkedin");
 const candidateNextActionInput = document.getElementById("candidateNextAction");
 const newCandidateCvButton = document.getElementById("newCandidateCvButton");
 const newCandidateCvFile = document.getElementById("newCandidateCvFile");
-const existingCandidateInput = document.getElementById("existingCandidateInput");
+const existingRecruiterNoteInput = document.getElementById("existingRecruiterNoteInput");
+const existingStatusUpdateInput = document.getElementById("existingStatusUpdateInput");
 const existingCandidateTab = document.getElementById("existingCandidateTab");
 const newCandidateTab = document.getElementById("newCandidateTab");
 const existingCandidatePanel = document.getElementById("existingCandidatePanel");
@@ -30,8 +31,10 @@ const newCandidatePanel = document.getElementById("newCandidatePanel");
 const existingParseButton = document.getElementById("existingParseButton");
 const existingApplyRecruiterButton = document.getElementById("existingApplyRecruiterButton");
 const existingApplyUpdateButton = document.getElementById("existingApplyUpdateButton");
+const existingStatusMicButton = document.getElementById("existingStatusMicButton");
 const existingStatusMessage = document.getElementById("existingStatusMessage");
 const existingCandidateSummary = document.getElementById("existingCandidateSummary");
+const voiceLanguageSelect = document.getElementById("voiceLanguageSelect");
 const existingConflictSummary = document.getElementById("existingConflictSummary");
 let recognition = null;
 let isListening = false;
@@ -59,6 +62,29 @@ let latestExistingMatchedTarget = null;
 let latestExistingParsedResult = null;
 let latestExistingMergedResult = null;
 const VOICE_SILENCE_STOP_MS = 5000;
+let voiceLanguage = "en-IN";
+
+function applyVoiceLanguage(recognitionInstance) {
+  if (!recognitionInstance) return;
+  try {
+    recognitionInstance.lang = voiceLanguage;
+  } catch {
+    // Ignore invalid language updates from browser engines.
+  }
+}
+
+function tryCloseQuickCaptureWindow() {
+  try {
+    const isStandalone =
+      (window.matchMedia && window.matchMedia("(display-mode: standalone)").matches) ||
+      window.navigator.standalone;
+    if (isStandalone) {
+      window.close();
+    }
+  } catch {
+    // Best-effort close only in supported PWA environments.
+  }
+}
 
 function setCaptureTab(mode) {
   const showExisting = mode === "existing";
@@ -96,7 +122,8 @@ function clearNewCandidateForm() {
 
 function clearExistingCandidateComposer() {
   stopVoiceCapture();
-  if (existingCandidateInput) existingCandidateInput.value = "";
+  if (existingRecruiterNoteInput) existingRecruiterNoteInput.value = "";
+  if (existingStatusUpdateInput) existingStatusUpdateInput.value = "";
   clearExistingCandidatePreview();
 }
 
@@ -863,7 +890,7 @@ async function parseExistingRecruiterNote() {
     setExistingStatus("Login required first.", "error");
     return;
   }
-  const rawText = String(existingCandidateInput?.value || "").trim();
+  const rawText = String(existingRecruiterNoteInput?.value || "").trim();
   if (!rawText) {
     setExistingStatus("Enter candidate name and recruiter note first.", "error");
     return;
@@ -925,7 +952,7 @@ async function applyExistingRecruiterNote() {
     setExistingStatus("Login required first.", "error");
     return;
   }
-  const rawText = String(existingCandidateInput?.value || "").trim();
+  const rawText = String(existingRecruiterNoteInput?.value || "").trim();
   if (!latestExistingMatchedTarget || !latestExistingMergedResult || !rawText) {
     setExistingStatus("Parse recruiter note first.", "error");
     return;
@@ -953,7 +980,7 @@ async function applyExistingRecruiterNote() {
           highestEducation: merged.highest_education || existingAssessment.highestEducation || "",
           recruiterNotes: appendUniqueNote(existingAssessment.recruiterNotes, rawText)
         },
-        rawText
+        ""
       );
       const payload = await callQuickCaptureApi("/company/assessments", {
         method: "POST",
@@ -969,7 +996,32 @@ async function applyExistingRecruiterNote() {
       );
     } else {
       const existingCandidate = target.item || {};
-      const candidatePayload = buildExistingCandidateQuickCaptureSave(existingCandidate, latestExistingMergedResult, rawText);
+      const merged = latestExistingMergedResult || {};
+      const candidatePayload = {
+        ...existingCandidate,
+        id: existingCandidate.id,
+        source: existingCandidate.source || "mobile_pwa",
+        name: merged.name || existingCandidate.name || "",
+        company: merged.company || existingCandidate.company || "",
+        role: merged.role || existingCandidate.role || "",
+        experience: merged.experience || existingCandidate.experience || "",
+        phone: merged.phone || existingCandidate.phone || "",
+        email: merged.email || existingCandidate.email || "",
+        location: merged.location || existingCandidate.location || "",
+        highest_education: merged.highest_education || existingCandidate.highest_education || "",
+        current_ctc: merged.current_ctc || existingCandidate.current_ctc || "",
+        expected_ctc: merged.expected_ctc || existingCandidate.expected_ctc || "",
+        notice_period: merged.notice_period || existingCandidate.notice_period || "",
+        next_action: merged.next_action || existingCandidate.next_action || "",
+        linkedin: merged.linkedin || existingCandidate.linkedin || "",
+        notes: appendUniqueNote(existingCandidate.notes, rawText),
+        raw_note: appendUniqueNote(existingCandidate.raw_note, rawText),
+        recruiter_context_notes: existingCandidate.recruiter_context_notes || "",
+        other_pointers: existingCandidate.other_pointers || "",
+        recruiter_id: currentQuickCaptureUser?.id || existingCandidate.recruiter_id || "",
+        recruiter_name: currentQuickCaptureUser?.name || existingCandidate.recruiter_name || "",
+        updated_at: new Date().toISOString()
+      };
       const payload = await callQuickCaptureApi("/candidates", {
         method: "POST",
         headers: {
@@ -1000,7 +1052,7 @@ async function applyExistingCandidateUpdate() {
     setExistingStatus("Login required first.", "error");
     return;
   }
-  const rawText = String(existingCandidateInput?.value || "").trim();
+  const rawText = String(existingStatusUpdateInput?.value || "").trim();
   if (!rawText) {
     setExistingStatus("Enter candidate name and update note first.", "error");
     return;
@@ -1042,9 +1094,8 @@ async function applyExistingCandidateUpdate() {
         followUpAt:
           inferred.next_follow_up_at != null ? inferred.next_follow_up_at : existingAssessment.followUpAt,
         interviewAt:
-          inferred.interviewAt != null ? inferred.interviewAt : existingAssessment.interviewAt,
-        callbackNotes: appendUniqueNote(existingAssessment.callbackNotes, rawText)
-      }, rawText);
+          inferred.interviewAt != null ? inferred.interviewAt : existingAssessment.interviewAt
+      }, "");
       const payload = await callQuickCaptureApi("/company/assessments", {
         method: "POST",
         headers: {
@@ -1069,14 +1120,13 @@ async function applyExistingCandidateUpdate() {
         body: JSON.stringify({
           candidate_id: target.item?.id,
           outcome: inferred.outcome || "call_back_later",
-          notes: rawText,
+          notes: "",
           next_follow_up_at: inferred.next_follow_up_at || ""
         })
       });
       const candidatePatch = {
         ...target.item,
         last_contact_outcome: payload.result?.outcome || inferred.outcome || "call_back_later",
-        last_contact_notes: rawText,
         last_contact_at: payload.result?.created_at || new Date().toISOString(),
         next_follow_up_at: payload.result?.next_follow_up_at || inferred.next_follow_up_at || ""
       };
@@ -1200,6 +1250,7 @@ function armVoiceSilenceTimer() {
       manualVoiceStop = true;
       recognition.stop();
     }
+    tryCloseQuickCaptureWindow();
   }, VOICE_SILENCE_STOP_MS);
 }
 
@@ -1258,11 +1309,15 @@ function buildRecognition() {
       existingMicButton.disabled = true;
       existingMicButton.textContent = "Voice not supported";
     }
+      if (existingStatusMicButton) {
+        existingStatusMicButton.disabled = true;
+        existingStatusMicButton.textContent = "Voice not supported";
+      }
     return null;
   }
 
   const instance = new SpeechRecognition();
-  instance.lang = "en-IN";
+  applyVoiceLanguage(instance);
   instance.interimResults = true;
   instance.continuous = true;
   instance.maxAlternatives = 3;
@@ -1292,6 +1347,7 @@ function buildRecognition() {
       resetVoiceSessionState();
       if (micButton) micButton.textContent = "Start voice input";
       if (existingMicButton) existingMicButton.textContent = "Start voice input";
+        if (existingStatusMicButton) existingStatusMicButton.textContent = "Start voice input for status update";
       setStatus("Voice capture stopped.");
       setExistingStatus("Voice capture stopped.");
       return;
@@ -1337,6 +1393,10 @@ function buildRecognition() {
     voiceInterimText = interimChunks.join(" ").trim();
     if (voiceTargetInput) {
       voiceTargetInput.value = mergeVoiceText(voiceBaseText, voiceInterimText);
+      voiceTargetInput.classList.add("voice-highlight");
+      window.setTimeout(() => {
+        voiceTargetInput.classList.remove("voice-highlight");
+      }, 700);
     }
 
     if (committedNewText) {
@@ -1364,6 +1424,7 @@ function stopVoiceCapture() {
     resetVoiceSessionState();
     if (micButton) micButton.textContent = "Start voice input";
     if (existingMicButton) existingMicButton.textContent = "Start voice input";
+    if (existingStatusMicButton) existingStatusMicButton.textContent = "Start voice input for status update";
   }
 }
 
@@ -1376,6 +1437,7 @@ function startVoiceCapture(targetInput, targetButton, statusSetter) {
   }
   if (micButton) micButton.textContent = "Start voice input";
   if (existingMicButton) existingMicButton.textContent = "Start voice input";
+  if (existingStatusMicButton) existingStatusMicButton.textContent = "Start voice input for status update";
   voiceTargetInput = targetInput;
   voiceTargetButton = targetButton;
   voiceTargetStatusSetter = statusSetter || setStatus;
@@ -1593,12 +1655,34 @@ if ("serviceWorker" in navigator) {
 
 recognition = buildRecognition();
 
+if (voiceLanguageSelect) {
+  voiceLanguageSelect.addEventListener("change", () => {
+    const next = String(voiceLanguageSelect.value || "").trim() || "en-IN";
+    voiceLanguage = next;
+    applyVoiceLanguage(recognition);
+    if (isListening && recognition) {
+      try {
+        manualVoiceStop = false;
+        recognition.stop();
+        recognition.start();
+      } catch {
+        // Best-effort restart.
+      }
+    }
+  });
+}
+
 micButton.addEventListener("click", () => {
   startVoiceCapture(noteInput, micButton, setStatus);
 });
 if (existingMicButton) {
   existingMicButton.addEventListener("click", () => {
-    startVoiceCapture(existingCandidateInput, existingMicButton, setExistingStatus);
+    startVoiceCapture(existingRecruiterNoteInput, existingMicButton, setExistingStatus);
+  });
+}
+if (existingStatusMicButton) {
+  existingStatusMicButton.addEventListener("click", () => {
+    startVoiceCapture(existingStatusUpdateInput, existingStatusMicButton, setExistingStatus);
   });
 }
 
@@ -1679,8 +1763,16 @@ async function bootstrapAuthState() {
   element.addEventListener("input", refreshReviewPreview);
 });
 
-if (existingCandidateInput) {
-  existingCandidateInput.addEventListener("input", () => {
+if (existingRecruiterNoteInput) {
+  existingRecruiterNoteInput.addEventListener("input", () => {
+    latestExistingParsedResult = null;
+    latestExistingMergedResult = null;
+    renderExistingConflictSummary([]);
+    setExistingStatus("");
+  });
+}
+if (existingStatusUpdateInput) {
+  existingStatusUpdateInput.addEventListener("input", () => {
     latestExistingParsedResult = null;
     latestExistingMergedResult = null;
     renderExistingConflictSummary([]);
