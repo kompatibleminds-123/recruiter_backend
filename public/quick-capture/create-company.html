@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#102a43" />
+    <link rel="stylesheet" href="/quick-capture/style.css" />
+    <title>Create company | RecruitDesk</title>
+  </head>
+  <body>
+    <main class="app-shell">
+      <section class="app-topbar">
+        <div class="app-topbar-copy">
+          <p class="eyebrow">RecruitDesk AI</p>
+          <h1>Create new company</h1>
+          <p class="subcopy">
+            Log in with an email allowed in <code>PLATFORM_COMPANY_CREATOR_EMAILS</code>, then create a new company and its first admin. This is a backend action (same API as PowerShell).
+          </p>
+        </div>
+        <div class="hero-actions topbar-stack">
+          <a class="secondary-link topbar-link" href="/quick-capture/">Login home</a>
+        </div>
+      </section>
+
+      <section id="loginPanel" class="panel">
+        <div class="panel-head">
+          <h2>Step 1 — Login</h2>
+          <span class="panel-kicker">Trusted account</span>
+        </div>
+        <div class="quick-form-grid">
+          <label class="field">
+            <span class="label">Email</span>
+            <input id="authEmail" class="text-input" type="email" autocomplete="username" />
+          </label>
+          <label class="field">
+            <span class="label">Password</span>
+            <input id="authPassword" class="text-input" type="password" autocomplete="current-password" />
+          </label>
+        </div>
+        <div class="actions">
+          <button id="loginButton" type="button" class="primary-button">Login</button>
+        </div>
+        <p id="loginStatus" class="status-message" role="status"></p>
+      </section>
+
+      <section id="createPanel" class="panel" hidden>
+        <div class="panel-head">
+          <h2>Step 2 — New company + admin</h2>
+          <span class="panel-kicker">Onboard</span>
+        </div>
+        <p id="loggedInSummary" class="auth-summary"></p>
+        <div class="helper-text">
+          The new admin email must be a new email (not already in the system). Optional: use platform secret if your server is configured with <code>PLATFORM_CREATE_COMPANY_SECRET</code>.
+        </div>
+        <div class="quick-form-grid">
+          <label class="field">
+            <span class="label">Company name</span>
+            <input id="companyName" class="text-input" type="text" />
+          </label>
+          <label class="field">
+            <span class="label">New admin full name</span>
+            <input id="adminName" class="text-input" type="text" />
+          </label>
+          <label class="field">
+            <span class="label">New admin email</span>
+            <input id="newAdminEmail" class="text-input" type="email" autocomplete="off" />
+          </label>
+          <label class="field">
+            <span class="label">New admin password</span>
+            <input id="newAdminPassword" class="text-input" type="password" autocomplete="new-password" />
+          </label>
+          <label class="field field-full">
+            <span class="label">Platform secret (optional)</span>
+            <input id="platformSecret" class="text-input" type="password" autocomplete="off" placeholder="Leave empty if using creator-email list only" />
+          </label>
+        </div>
+        <div class="actions">
+          <button id="createButton" type="button" class="primary-button">Create company</button>
+          <button id="logoutButton" type="button" class="ghost-button">Logout</button>
+        </div>
+        <p id="createStatus" class="status-message" role="status"></p>
+      </section>
+    </main>
+
+    <script src="/quick-capture/auth.js"></script>
+    <script src="/quick-capture/create-company.js"></script>
+  </body>
+</html>

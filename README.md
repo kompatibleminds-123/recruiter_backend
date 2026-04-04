@@ -6,6 +6,7 @@ This is the first backend service for `Recruiter Speed Desk`.
 
 - exposes `GET /health`
 - exposes `POST /auth/bootstrap-admin`
+- exposes `POST /platform/companies`
 - exposes `POST /auth/login`
 - exposes `GET /auth/me`
 - exposes `GET /company/users`
@@ -60,6 +61,47 @@ Example request:
   "companyName": "Kompatible Minds",
   "adminName": "Nike Disoza",
   "email": "nike@kompatibleminds.com",
+  "password": "choose-a-strong-password"
+}
+```
+
+### `POST /platform/companies`
+
+Creates an additional company plus its admin account after initial bootstrap.
+
+This route is intentionally restricted. Allow it in one of these ways:
+
+- set `PLATFORM_COMPANY_CREATOR_EMAILS` in Render to a comma-separated list of trusted emails
+- set `PLATFORM_COMPANY_CREATOR_PASSWORD` in Render so those emails can use platform login without belonging to an existing company
+- or set `PLATFORM_CREATE_COMPANY_SECRET` in Render and pass that secret in the request body as `platformSecret`
+
+### `POST /platform/login`
+
+Logs in a platform creator account that is independent of any existing company membership.
+
+Required Render env vars:
+
+```text
+PLATFORM_COMPANY_CREATOR_EMAILS=owner1@example.com,owner2@example.com
+PLATFORM_COMPANY_CREATOR_PASSWORD=choose-a-strong-platform-password
+```
+
+Example request:
+
+```json
+{
+  "email": "owner1@example.com",
+  "password": "choose-a-strong-platform-password"
+}
+```
+
+Example request:
+
+```json
+{
+  "companyName": "Second Agency",
+  "adminName": "Agency Owner",
+  "email": "owner@secondagency.com",
   "password": "choose-a-strong-password"
 }
 ```

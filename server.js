@@ -25,18 +25,22 @@ const {
 } = require("./src/whatsapp-notes");
 const {
   bootstrapAdmin,
+  createCompanyWithAdmin,
   createUser,
   deleteUser,
   deleteAssessment,
   deleteCompanyJob,
   getSessionUser,
+  getPlatformSessionUser,
   getCompanySharedExportPresets,
   listCompaniesAndUsersSummary,
   listAssessments,
   searchAssessments,
   listCompanyJobs,
   listCompanyUsers,
+  loginPlatformCreator,
   login,
+  requirePlatformSessionUser,
   requireSessionUser,
   resetUserPassword,
   saveAssessment,
@@ -190,6 +194,12 @@ function getBearerToken(req) {
   const header = String(req.headers.authorization || "");
   const match = header.match(/^Bearer\s+(.+)$/i);
   return match?.[1]?.trim() || "";
+}
+
+function getPlatformCreateCompanySecret(req, body = {}) {
+  const header = String(req.headers["x-platform-secret"] || req.headers["X-Platform-Secret"] || "").trim();
+  if (header) return header;
+  return String(body.platformSecret || body.platform_secret || "").trim();
 }
 
 async function ensureCandidateVisibleToActor(actor, candidateId) {
@@ -1025,6 +1035,9 @@ const server = http.createServer(async (req, res) => {
       routes: [
         "/health",
         "/auth/bootstrap-admin",
+        "/platform/login",
+        "/platform/me",
+        "/platform/companies",
         "/auth/login",
         "/auth/me",
         "/company/users",
@@ -1041,7 +1054,13 @@ const server = http.createServer(async (req, res) => {
         "/parse-candidate",
         "/generate-questions"
       ],
-      auth: authSummary
+      auth: {
+        ...authSummary,
+        platformLoginConfigured: Boolean(
+          String(process.env.PLATFORM_COMPANY_CREATOR_EMAILS || "").trim() &&
+          String(process.env.PLATFORM_COMPANY_CREATOR_PASSWORD || "").trim()
+        )
+      }
     });
     return;
   }
@@ -1118,6 +1137,72 @@ const server = http.createServer(async (req, res) => {
       sendJson(res, 200, { ok: true, result });
     } catch (error) {
       sendJson(res, 400, { ok: false, error: String(error.message || error) });
+    }
+    return;
+  }
+
+  if (req.method === "POST" && (requestUrl.pathname === "/platform/login" || req.url === "/platform/login")) {
+    try {
+      const body = await readJsonBody(req);
+      const result = await loginPlatformCreator({
+        email: String(body.email || "").trim(),
+        password: String(body.password || "")
+      });
+      sendJson(res, 200, { ok: true, result });
+    } catch (error) {
+      sendJson(res, 400, { ok: false, error: String(error.message || error) });
+    }
+    return;
+  }
+
+  if (req.method === "GET" && (requestUrl.pathname === "/platform/me" || req.url === "/platform/me")) {
+    try {
+      const user = await requirePlatformSessionUser(getBearerToken(req));
+      sendJson(res, 200, { ok: true, result: { user } });
+    } catch (error) {
+      sendJson(res, 401, { ok: false, error: String(error.message || error) });
+    }
+    return;
+  }
+
+  if (req.method === "POST" && (requestUrl.pathname === "/platform/companies" || req.url === "/platform/companies")) {
+    try {
+      const body = await readJsonBody(req);
+      const platformSecret = getPlatformCreateCompanySecret(req, body);
+      let platformActor = null;
+      let platformSessionActor = null;
+      try {
+        platformActor = await requireSessionUser(getBearerToken(req));
+      } catch {
+        platformActor = null;
+      }
+      try {
+        platformSessionActor = await getPlatformSessionUser(getBearerToken(req));
+      } catch {
+        platformSessionActor = null;
+      }
+      const result = await createCompanyWithAdmin({
+        companyName: String(body.companyName || "").trim(),
+        adminName: String(body.adminName || "").trim(),
+        email: String(body.email || "").trim(),
+        password: String(body.password || ""),
+        platformSecret,
+        actor: platformActor,
+        platformActor: platformSessionActor
+      });
+      sendJson(res, 200, { ok: true, result });
+    } catch (error) {
+      const message = String(error.message || error);
+      let status = 400;
+      if (/Login required/i.test(message)) status = 401;
+      else if (
+        /Company creation is locked|not in PLATFORM_COMPANY_CREATOR_EMAILS|Invalid or missing platform secret|Not allowed to create companies/i.test(
+          message
+        )
+      ) {
+        status = 403;
+      }
+      sendJson(res, status, { ok: false, error: message });
     }
     return;
   }

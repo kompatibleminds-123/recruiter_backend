@@ -24,6 +24,128 @@ function verifyPassword(password, passwordHash) {
   const compareHash = crypto.pbkdf2Sync(String(password || ""), salt, 100000, 64, "sha512").toString("hex");
   return crypto.timingSafeEqual(Buffer.from(storedHash, "hex"), Buffer.from(compareHash, "hex"));
 }
+function timingSafeEqualString(a, b) {
+  const x = Buffer.from(String(a || ""), "utf8");
+  const y = Buffer.from(String(b || ""), "utf8");
+  if (x.length !== y.length) return false;
+  return crypto.timingSafeEqual(x, y);
+}
+function getPlatformCompanyCreatorEmails() {
+  return String(process.env.PLATFORM_COMPANY_CREATOR_EMAILS || "")
+    .split(",")
+    .map((item) => normalizeEmail(item))
+    .filter(Boolean);
+}
+function getPlatformCreatorPassword() {
+  return String(process.env.PLATFORM_COMPANY_CREATOR_PASSWORD || "").trim();
+}
+function getPlatformSessionSecret() {
+  return (
+    String(process.env.PLATFORM_SESSION_SECRET || "").trim() ||
+    String(process.env.PLATFORM_CREATE_COMPANY_SECRET || "").trim() ||
+    "platform-company-session-secret"
+  );
+}
+function createSignedPlatformToken(payload) {
+  const encoded = Buffer.from(JSON.stringify(payload), "utf8").toString("base64url");
+  const signature = crypto
+    .createHmac("sha256", getPlatformSessionSecret())
+    .update(encoded)
+    .digest("base64url");
+  return `${encoded}.${signature}`;
+}
+function readSignedPlatformToken(token) {
+  const raw = String(token || "").trim();
+  if (!raw) return null;
+  const [encoded, signature] = raw.split(".");
+  if (!encoded || !signature) return null;
+  const expected = crypto
+    .createHmac("sha256", getPlatformSessionSecret())
+    .update(encoded)
+    .digest("base64url");
+  if (!timingSafeEqualString(signature, expected)) return null;
+  try {
+    const payload = JSON.parse(Buffer.from(encoded, "base64url").toString("utf8"));
+    if (!payload?.email || payload?.type !== "platform_creator") return null;
+    if (payload.expiresAt && Date.now() > Number(payload.expiresAt)) return null;
+    return payload;
+  } catch {
+    return null;
+  }
+}
+async function loginPlatformCreator({ email, password }) {
+  const allowedEmails = getPlatformCompanyCreatorEmails();
+  const normalizedEmail = normalizeEmail(email);
+  const configuredPassword = getPlatformCreatorPassword();
+  if (!allowedEmails.length || !configuredPassword) {
+    throw new Error(
+      "Platform creator login is not configured. Set PLATFORM_COMPANY_CREATOR_EMAILS and PLATFORM_COMPANY_CREATOR_PASSWORD in Render."
+    );
+  }
+  if (!allowedEmails.includes(normalizedEmail) || !timingSafeEqualString(password, configuredPassword)) {
+    throw new Error("Invalid platform creator email or password.");
+  }
+  const payload = {
+    type: "platform_creator",
+    email: normalizedEmail,
+    name: normalizedEmail,
+    expiresAt: Date.now() + 1000 * 60 * 60 * 12
+  };
+  return {
+    token: createSignedPlatformToken(payload),
+    user: {
+      type: "platform_creator",
+      email: normalizedEmail,
+      name: normalizedEmail
+    }
+  };
+}
+async function getPlatformSessionUser(token) {
+  const payload = readSignedPlatformToken(token);
+  if (!payload) return null;
+  return {
+    type: "platform_creator",
+    email: normalizeEmail(payload.email),
+    name: payload.name || normalizeEmail(payload.email)
+  };
+}
+async function requirePlatformSessionUser(token) {
+  const user = await getPlatformSessionUser(token);
+  if (!user) throw new Error("Invalid or missing platform session.");
+  return user;
+}
+function assertCanCreatePlatformCompany(platformSecret, actor, platformActor) {
+  const secret = String(process.env.PLATFORM_CREATE_COMPANY_SECRET || "").trim();
+  const provided = String(platformSecret || "").trim();
+  const secretOk = Boolean(secret) && timingSafeEqualString(secret, provided);
+
+  const allow = getPlatformCompanyCreatorEmails();
+  const sessionUser = actor ? sanitizeUser(actor) : null;
+  const platformSessionUser = platformActor || null;
+  const actorEmailAllowed = Boolean(sessionUser?.email) && allow.includes(normalizeEmail(sessionUser.email));
+  const platformEmailAllowed =
+    Boolean(platformSessionUser?.email) && allow.includes(normalizeEmail(platformSessionUser.email));
+
+  if (secretOk) return;
+  if (actorEmailAllowed) return;
+  if (platformEmailAllowed) return;
+
+  if (!secret && !allow.length) {
+    throw new Error(
+      "Company creation is locked: set PLATFORM_COMPANY_CREATOR_EMAILS and PLATFORM_COMPANY_CREATOR_PASSWORD for platform login, and/or set PLATFORM_CREATE_COMPANY_SECRET."
+    );
+  }
+  if (!secret && allow.length && !sessionUser?.email && !platformSessionUser?.email) {
+    throw new Error("Login required: use a company account or platform creator login for an email listed in PLATFORM_COMPANY_CREATOR_EMAILS.");
+  }
+  if (!secret && allow.length && !actorEmailAllowed && !platformEmailAllowed) {
+    throw new Error("Your account is not in PLATFORM_COMPANY_CREATOR_EMAILS.");
+  }
+  if (secret && !secretOk && !actorEmailAllowed && !platformEmailAllowed) {
+    throw new Error("Invalid or missing platform secret, or your account is not in PLATFORM_COMPANY_CREATOR_EMAILS.");
+  }
+  throw new Error("Not allowed to create companies.");
+}
 function cfg() {
   const url = String(process.env.SUPABASE_URL || "").trim().replace(/\/+$/, "");
   const key = String(process.env.SUPABASE_SERVICE_ROLE_KEY || "").trim();
@@ -236,6 +358,46 @@ async function bootstrapAdmin({ companyName, adminName, email, password }) {
   if (rows.length) throw new Error("Bootstrap is already completed. Use login or admin user creation instead.");
   const company = { id: crypto.randomUUID(), name: String(companyName).trim(), created_at: new Date().toISOString() };
   const user = { id: crypto.randomUUID(), company_id: company.id, company_name: company.name, name: String(adminName).trim(), email: e, role: "admin", password_hash: hashPassword(password), created_at: new Date().toISOString() };
+  await sbIns("companies", [company], { conflict: "id", upsert: true });
+  const inserted = await sbIns("users", [user], { conflict: "id", upsert: true });
+  return { company: { id: company.id, name: company.name, createdAt: company.created_at }, user: sanitizeUser(inserted[0] || user) };
+}
+async function createCompanyWithAdmin({ companyName, adminName, email, password, platformSecret, actor, platformActor }) {
+  assertCanCreatePlatformCompany(platformSecret, actor, platformActor);
+  const e = normalizeEmail(email);
+  if (!companyName || !adminName || !e || !password) throw new Error("companyName, adminName, email, and password are required.");
+  if (await getUserByEmail(e)) throw new Error("A user with this email already exists.");
+  if (!cfg().on) {
+    const store = readStore();
+    const companyId = crypto.randomUUID();
+    const company = { id: companyId, name: String(companyName).trim(), createdAt: new Date().toISOString() };
+    const user = {
+      id: crypto.randomUUID(),
+      companyId,
+      companyName: company.name,
+      name: String(adminName).trim(),
+      email: e,
+      role: "admin",
+      passwordHash: hashPassword(password),
+      createdAt: new Date().toISOString()
+    };
+    store.companies.push(company);
+    store.users.push(user);
+    writeStore(store);
+    return { company, user: sanitizeUser(user) };
+  }
+  await ensureSeeded();
+  const company = { id: crypto.randomUUID(), name: String(companyName).trim(), created_at: new Date().toISOString() };
+  const user = {
+    id: crypto.randomUUID(),
+    company_id: company.id,
+    company_name: company.name,
+    name: String(adminName).trim(),
+    email: e,
+    role: "admin",
+    password_hash: hashPassword(password),
+    created_at: new Date().toISOString()
+  };
   await sbIns("companies", [company], { conflict: "id", upsert: true });
   const inserted = await sbIns("users", [user], { conflict: "id", upsert: true });
   return { company: { id: company.id, name: company.name, createdAt: company.created_at }, user: sanitizeUser(inserted[0] || user) };
@@ -458,4 +620,27 @@ async function deleteAssessment({ actorUserId, companyId, assessmentId }) {
   return { deleted: true, assessmentId };
 }
 
-module.exports = { bootstrapAdmin, createUser, deleteUser, deleteAssessment, deleteCompanyJob, getCompanySharedExportPresets, getSessionUser, listCompaniesAndUsersSummary, listAssessments, listCompanyJobs, listCompanyUsers, login, requireSessionUser, resetUserPassword, saveCompanySharedExportPresets, searchAssessments, saveAssessment, saveCompanyJob };
+module.exports = {
+  bootstrapAdmin,
+  getPlatformSessionUser,
+  createCompanyWithAdmin,
+  createUser,
+  deleteUser,
+  deleteAssessment,
+  deleteCompanyJob,
+  getCompanySharedExportPresets,
+  getSessionUser,
+  listCompaniesAndUsersSummary,
+  listAssessments,
+  listCompanyJobs,
+  listCompanyUsers,
+  loginPlatformCreator,
+  login,
+  requirePlatformSessionUser,
+  requireSessionUser,
+  resetUserPassword,
+  saveCompanySharedExportPresets,
+  searchAssessments,
+  saveAssessment,
+  saveCompanyJob
+};
