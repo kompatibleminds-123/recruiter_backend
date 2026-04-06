@@ -347,25 +347,34 @@ async function ingestApplicantSubmission(body, req) {
     throw new Error("Invalid applicant intake secret.");
   }
 
-  if (!payload.file?.fileData) {
-    throw new Error("CV file is required.");
-  }
-
-  const storedFile = await storeUploadedFile(payload.file, {
-    objectPrefix: `applicants/${payload.companyId}/${payload.jdTitle || payload.jobId || "general"}`
-  });
-
-  const parsed = await parseCandidatePayload({
-    sourceType: "cv",
-    file: payload.file,
+  let storedFile = null;
+  let parsed = {
     candidateName: payload.candidateName,
-    totalExperience: payload.totalExperience
-  });
+    totalExperience: payload.totalExperience,
+    currentCompany: payload.currentCompany,
+    currentDesignation: payload.currentDesignation,
+    emailId: payload.email,
+    phoneNumber: payload.phone,
+    timeline: []
+  };
+
+  if (payload.file?.fileData) {
+    storedFile = await storeUploadedFile(payload.file, {
+      objectPrefix: `applicants/${payload.companyId}/${payload.jdTitle || payload.jobId || "general"}`
+    });
+
+    parsed = await parseCandidatePayload({
+      sourceType: "cv",
+      file: payload.file,
+      candidateName: payload.candidateName,
+      totalExperience: payload.totalExperience
+    });
+  }
 
   const apiKey = String(process.env.OPENAI_API_KEY || "").trim();
   let normalized = null;
-  let parseStatus = "parsed";
-  if (apiKey && payload.parseWithAi) {
+  let parseStatus = payload.file?.fileData ? "parsed" : "submitted_without_cv";
+  if (payload.file?.fileData && apiKey && payload.parseWithAi) {
     try {
       normalized = await normalizeCandidateFileWithAi({
         apiKey,
@@ -396,12 +405,12 @@ async function ingestApplicantSubmission(body, req) {
     parseStatus,
     sourcePlatform: payload.sourcePlatform,
     sourceLabel: payload.sourceLabel,
-    fileProvider: storedFile.provider,
-    fileKey: storedFile.key,
-    fileUrl: storedFile.url,
-    filename: storedFile.filename,
-    mimeType: storedFile.mimeType,
-    sizeBytes: storedFile.sizeBytes,
+    fileProvider: storedFile?.provider || "",
+    fileKey: storedFile?.key || "",
+    fileUrl: storedFile?.url || "",
+    filename: storedFile?.filename || "",
+    mimeType: storedFile?.mimeType || "",
+    sizeBytes: storedFile?.sizeBytes || 0,
     jobId: payload.jobId,
     jobPageUrl: payload.jobPageUrl,
     screeningAnswers: payload.screeningAnswers,
