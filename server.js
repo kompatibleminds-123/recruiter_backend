@@ -4,6 +4,7 @@ const fs = require("fs");
 const path = require("path");
 const { parseCandidatePayload } = require("./src/parser");
 const { callOpenAiQuestions, normalizeCandidateFileWithAi, normalizeCandidateWithAi } = require("./src/ai");
+const { storeUploadedFile } = require("./src/storage");
 const {
   assignCandidate,
   deleteCandidate,
@@ -80,6 +81,8 @@ const STATIC_MIME_TYPES = {
   ".webp": "image/webp",
   ".ico": "image/x-icon"
 };
+
+const APPLICANT_METADATA_PREFIX = "[APPLICANT_META]";
 
 function getAllowedOrigins() {
   const defaults = [
@@ -196,10 +199,129 @@ function getBearerToken(req) {
   return match?.[1]?.trim() || "";
 }
 
+function encodeApplicantMetadata(metadata = {}) {
+  return `${APPLICANT_METADATA_PREFIX}${JSON.stringify(metadata || {})}`;
+}
+
+function decodeApplicantMetadata(candidate = {}) {
+  const raw = String(candidate?.raw_note || "").trim();
+  if (!raw.startsWith(APPLICANT_METADATA_PREFIX)) return {};
+  try {
+    return JSON.parse(raw.slice(APPLICANT_METADATA_PREFIX.length));
+  } catch {
+    return {};
+  }
+}
+
+function summarizeApplicantNotes(payload = {}) {
+  return [
+    payload?.sourcePlatform ? `Source: ${payload.sourcePlatform}` : "",
+    payload?.jobPageUrl ? `Apply URL: ${payload.jobPageUrl}` : "",
+    payload?.screeningAnswers ? `Screening: ${payload.screeningAnswers}` : ""
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
+function mergeApplicantCandidateFields(parsed = {}, normalized = {}, payload = {}) {
+  const timeline = Array.isArray(normalized?.timeline) ? normalized.timeline : Array.isArray(parsed?.timeline) ? parsed.timeline : [];
+  return {
+    name: parsed?.candidateName || payload?.candidateName || payload?.name || "",
+    company: normalized?.currentCompany || payload?.currentCompany || payload?.company || "",
+    role: normalized?.currentDesignation || payload?.currentDesignation || payload?.role || payload?.jobTitle || "",
+    experience: normalized?.totalExperience || parsed?.totalExperience || payload?.totalExperience || payload?.experience || "",
+    skills: Array.isArray(payload?.skills) ? payload.skills : [],
+    phone: normalized?.phoneNumber || payload?.phoneNumber || payload?.phone || "",
+    email: normalized?.emailId || payload?.emailId || payload?.email || "",
+    location: payload?.location || "",
+    highest_education: normalized?.highestEducation || payload?.highestEducation || "",
+    current_ctc: payload?.currentCtc || payload?.current_ctc || "",
+    expected_ctc: payload?.expectedCtc || payload?.expected_ctc || "",
+    notice_period: payload?.noticePeriod || payload?.notice_period || "",
+    notes: summarizeApplicantNotes(payload),
+    next_action: payload?.nextAction || "Review applicant",
+    linkedin: normalized?.linkedinUrl || payload?.linkedinUrl || payload?.linkedin || "",
+    timeline
+  };
+}
+
+function normalizeApplicantBody(body = {}) {
+  const input = body && typeof body === "object" ? body : {};
+  return {
+    companyId: String(input.companyId || input.company_id || "").trim(),
+    clientName: String(input.clientName || input.client_name || "").trim(),
+    jdTitle: String(input.jdTitle || input.jd_title || input.jobTitle || "").trim(),
+    jobId: String(input.jobId || input.job_id || "").trim(),
+    sourcePlatform: String(input.sourcePlatform || input.source_platform || input.source || "website").trim(),
+    sourceLabel: String(input.sourceLabel || input.source_label || "").trim(),
+    jobPageUrl: String(input.jobPageUrl || input.job_page_url || input.applyUrl || "").trim(),
+    candidateName: String(input.candidateName || input.name || "").trim(),
+    currentCompany: String(input.currentCompany || input.company || "").trim(),
+    currentDesignation: String(input.currentDesignation || input.role || "").trim(),
+    totalExperience: String(input.totalExperience || input.experience || "").trim(),
+    email: String(input.email || input.emailId || "").trim(),
+    phone: String(input.phone || input.phoneNumber || "").trim(),
+    location: String(input.location || "").trim(),
+    currentCtc: String(input.currentCtc || input.current_ctc || "").trim(),
+    expectedCtc: String(input.expectedCtc || input.expected_ctc || "").trim(),
+    noticePeriod: String(input.noticePeriod || input.notice_period || "").trim(),
+    linkedinUrl: String(input.linkedinUrl || input.linkedin || "").trim(),
+    highestEducation: String(input.highestEducation || input.highest_education || "").trim(),
+    screeningAnswers: String(input.screeningAnswers || input.screening_answers || "").trim(),
+    recruiterName: String(input.recruiterName || input.recruiter_name || "Website Apply").trim(),
+    file: input.file || null,
+    parseWithAi: input.parseWithAi !== false,
+    model: String(input.model || "").trim(),
+    skills: Array.isArray(input.skills) ? input.skills : []
+  };
+}
+
+function sanitizeApplicantCandidate(candidate = {}) {
+  const meta = decodeApplicantMetadata(candidate);
+  return {
+    id: String(candidate?.id || "").trim(),
+    candidateName: String(candidate?.name || "").trim(),
+    role: String(candidate?.role || "").trim(),
+    currentCompany: String(candidate?.company || "").trim(),
+    totalExperience: String(candidate?.experience || "").trim(),
+    location: String(candidate?.location || "").trim(),
+    email: String(candidate?.email || "").trim(),
+    phone: String(candidate?.phone || "").trim(),
+    clientName: String(candidate?.client_name || "").trim(),
+    jdTitle: String(candidate?.jd_title || candidate?.assigned_jd_title || "").trim(),
+    recruiterName: String(candidate?.recruiter_name || "").trim(),
+    assignedToName: String(candidate?.assigned_to_name || "").trim(),
+    parseStatus: String(meta.parseStatus || "").trim(),
+    cvUrl: String(meta.fileUrl || "").trim(),
+    cvFilename: String(meta.filename || "").trim(),
+    sourcePlatform: String(meta.sourcePlatform || "").trim(),
+    sourceLabel: String(meta.sourceLabel || "").trim(),
+    jobPageUrl: String(meta.jobPageUrl || "").trim(),
+    screeningAnswers: String(meta.screeningAnswers || "").trim(),
+    createdAt: String(candidate?.created_at || "").trim(),
+    updatedAt: String(candidate?.updated_at || "").trim(),
+    usedInAssessment: Boolean(candidate?.used_in_assessment),
+    applicantState: String(meta.applicantState || "").trim() || (candidate?.used_in_assessment ? "converted" : "new")
+  };
+}
+
+async function listApplicantsForUser(user, options = {}) {
+  const rows = await listCandidatesForUser(user, { limit: Number(options.limit || 500), q: String(options.q || "").trim() });
+  return rows
+    .filter((candidate) => String(candidate?.source || "").trim() === "website_apply")
+    .map(sanitizeApplicantCandidate);
+}
+
 function getPlatformCreateCompanySecret(req, body = {}) {
   const header = String(req.headers["x-platform-secret"] || req.headers["X-Platform-Secret"] || "").trim();
   if (header) return header;
   return String(body.platformSecret || body.platform_secret || "").trim();
+}
+
+function getApplicantIntakeSecret(req, body = {}) {
+  const header = String(req.headers["x-applicant-intake-secret"] || "").trim();
+  if (header) return header;
+  return String(body.intakeSecret || body.intake_secret || "").trim();
 }
 
 async function ensureCandidateVisibleToActor(actor, candidateId) {
@@ -212,6 +334,111 @@ async function ensureCandidateVisibleToActor(actor, candidateId) {
     throw new Error("Candidate not found or not allowed.");
   }
   return matches[0];
+}
+
+async function ingestApplicantSubmission(body, req) {
+  const payload = normalizeApplicantBody(body);
+  if (!payload.companyId) {
+    throw new Error("companyId is required.");
+  }
+
+  const configuredSecret = String(process.env.APPLICANT_INTAKE_SECRET || "").trim();
+  if (configuredSecret && getApplicantIntakeSecret(req, body) !== configuredSecret) {
+    throw new Error("Invalid applicant intake secret.");
+  }
+
+  if (!payload.file?.fileData) {
+    throw new Error("CV file is required.");
+  }
+
+  const storedFile = await storeUploadedFile(payload.file, {
+    objectPrefix: `applicants/${payload.companyId}/${payload.jdTitle || payload.jobId || "general"}`
+  });
+
+  const parsed = await parseCandidatePayload({
+    sourceType: "cv",
+    file: payload.file,
+    candidateName: payload.candidateName,
+    totalExperience: payload.totalExperience
+  });
+
+  const apiKey = String(process.env.OPENAI_API_KEY || "").trim();
+  let normalized = null;
+  let parseStatus = "parsed";
+  if (apiKey && payload.parseWithAi) {
+    try {
+      normalized = await normalizeCandidateFileWithAi({
+        apiKey,
+        model: payload.model,
+        uploadedFile: payload.file,
+        sourceType: "cv",
+        filename: parsed.filename,
+        fallbackFields: {
+          candidateName: parsed.candidateName,
+          totalExperience: parsed.totalExperience,
+          currentCompany: parsed.currentCompany,
+          currentDesignation: parsed.currentDesignation,
+          emailId: parsed.emailId,
+          phoneNumber: parsed.phoneNumber,
+          timeline: parsed.timeline,
+          gaps: parsed.gaps
+        }
+      });
+      parseStatus = "parsed_with_ai";
+    } catch (error) {
+      parseStatus = `parsed_fallback:${String(error?.message || error)}`;
+    }
+  }
+
+  const merged = mergeApplicantCandidateFields(parsed, normalized, payload);
+  const metadata = {
+    type: "website_apply",
+    parseStatus,
+    sourcePlatform: payload.sourcePlatform,
+    sourceLabel: payload.sourceLabel,
+    fileProvider: storedFile.provider,
+    fileKey: storedFile.key,
+    fileUrl: storedFile.url,
+    filename: storedFile.filename,
+    mimeType: storedFile.mimeType,
+    sizeBytes: storedFile.sizeBytes,
+    jobId: payload.jobId,
+    jobPageUrl: payload.jobPageUrl,
+    screeningAnswers: payload.screeningAnswers,
+    applicantState: "new"
+  };
+
+  const candidate = await saveCandidate(
+    {
+      id: "",
+      company_id: payload.companyId,
+      source: "website_apply",
+      name: merged.name,
+      company: merged.company,
+      role: merged.role,
+      experience: merged.experience,
+      skills: merged.skills,
+      phone: merged.phone,
+      email: merged.email,
+      location: merged.location,
+      highest_education: merged.highest_education,
+      current_ctc: merged.current_ctc,
+      expected_ctc: merged.expected_ctc,
+      notice_period: merged.notice_period,
+      notes: merged.notes,
+      recruiter_context_notes: payload.screeningAnswers || null,
+      other_pointers: normalized?.timeline?.length ? `Timeline entries: ${normalized.timeline.length}` : null,
+      next_action: merged.next_action,
+      client_name: payload.clientName || null,
+      jd_title: payload.jdTitle || null,
+      recruiter_name: payload.recruiterName || "Website Apply",
+      linkedin: merged.linkedin || null,
+      raw_note: encodeApplicantMetadata(metadata)
+    },
+    { companyId: payload.companyId }
+  );
+
+  return sanitizeApplicantCandidate(candidate);
 }
 
 function sanitizeTimelineRows(timeline) {
@@ -2459,6 +2686,29 @@ const server = http.createServer(async (req, res) => {
           summary
         }
       });
+    } catch (error) {
+      sendJson(res, 400, { ok: false, error: String(error.message || error) });
+    }
+    return;
+  }
+
+  if (req.method === "GET" && requestUrl.pathname === "/company/applicants") {
+    try {
+      const user = await requireSessionUser(getBearerToken(req));
+      const q = String(requestUrl.searchParams.get("q") || "").trim();
+      const items = await listApplicantsForUser(user, { q, limit: 500 });
+      sendJson(res, 200, { ok: true, result: { total: items.length, items } });
+    } catch (error) {
+      sendJson(res, 400, { ok: false, error: String(error.message || error) });
+    }
+    return;
+  }
+
+  if (req.method === "POST" && requestUrl.pathname === "/public/applicants/intake") {
+    try {
+      const body = await readJsonBody(req);
+      const result = await ingestApplicantSubmission(body, req);
+      sendJson(res, 200, { ok: true, result });
     } catch (error) {
       sendJson(res, 400, { ok: false, error: String(error.message || error) });
     }
