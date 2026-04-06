@@ -483,7 +483,7 @@ function toDashboardBreakdownMap(itemsMap) {
     .sort((a, b) => a.label.localeCompare(b.label));
 }
 
-function buildDashboardSummary({ candidates = [], assessments = [], jobs = [], dateFrom = "", dateTo = "" }) {
+function buildDashboardSummary({ candidates = [], assessments = [], jobs = [], dateFrom = "", dateTo = "", clientFilter = "", recruiterFilter = "" }) {
   const overall = createDashboardBucket();
   const byClient = new Map();
   const byOwnerRecruiter = new Map();
@@ -497,7 +497,9 @@ function buildDashboardSummary({ candidates = [], assessments = [], jobs = [], d
   for (const candidate of Array.isArray(candidates) ? candidates : []) {
     const linkedAssessment = assessmentsById.get(String(candidate?.assessment_id || candidate?.assessmentId || "").trim()) || null;
     const clientLabel = getClientLabel(candidate, linkedAssessment || {});
+    if (clientFilter && clientLabel !== clientFilter) continue;
     const ownerRecruiterLabel = getOwnerRecruiterLabel(candidate, linkedAssessment || {});
+    if (recruiterFilter && ownerRecruiterLabel !== recruiterFilter) continue;
     const positionLabel = getPositionLabel(candidate, linkedAssessment || {}, knownJdTitles);
     const dateRange = { from: dateFrom, to: dateTo };
     const contributes = addCandidateMetrics(overall, candidate, linkedAssessment, dateRange);
@@ -538,7 +540,9 @@ function buildDashboardSummary({ candidates = [], assessments = [], jobs = [], d
     dateRange: {
       from: String(dateFrom || "").trim(),
       to: String(dateTo || "").trim()
-    }
+    },
+    clientFilter: String(clientFilter || "").trim(),
+    recruiterFilter: String(recruiterFilter || "").trim()
   };
 }
 
@@ -2040,18 +2044,28 @@ const server = http.createServer(async (req, res) => {
       const user = await requireSessionUser(getBearerToken(req));
       const dateFrom = String(requestUrl.searchParams.get("dateFrom") || "").trim();
       const dateTo = String(requestUrl.searchParams.get("dateTo") || "").trim();
+      const clientFilter = String(requestUrl.searchParams.get("clientLabel") || "").trim();
+      const recruiterFilter = String(requestUrl.searchParams.get("recruiterLabel") || "").trim();
       const [candidates, assessments, jobs] = await Promise.all([
         listCandidatesForUser(user, { limit: 5000 }),
         listAssessments({ actorUserId: user.id, companyId: user.companyId }),
         listCompanyJobs(user.companyId)
       ]);
-      const summary = buildDashboardSummary({ candidates, assessments, jobs, dateFrom, dateTo });
+      const summary = buildDashboardSummary({ candidates, assessments, jobs, dateFrom, dateTo, clientFilter, recruiterFilter });
+      const availableClients = Array.from(
+        new Set((Array.isArray(candidates) ? candidates : []).map((candidate) => getClientLabel(candidate, {})).filter(Boolean))
+      ).sort((a, b) => a.localeCompare(b));
+      const availableRecruiters = Array.from(
+        new Set((Array.isArray(candidates) ? candidates : []).map((candidate) => getOwnerRecruiterLabel(candidate, {})).filter(Boolean))
+      ).sort((a, b) => a.localeCompare(b));
       sendJson(res, 200, {
         ok: true,
         result: {
           role: user.role,
           recruiterName: user.name,
           companyName: user.companyName,
+          availableClients,
+          availableRecruiters,
           summary
         }
       });
@@ -2068,15 +2082,21 @@ const server = http.createServer(async (req, res) => {
       const filters = parseNaturalLanguageCandidateQuery(query);
       const queryDateFrom = String(requestUrl.searchParams.get("dateFrom") || "").trim();
       const queryDateTo = String(requestUrl.searchParams.get("dateTo") || "").trim();
+      const clientFilter = String(requestUrl.searchParams.get("clientLabel") || "").trim();
+      const recruiterFilter = String(requestUrl.searchParams.get("recruiterLabel") || "").trim();
       if (queryDateFrom && !filters.dateFrom) filters.dateFrom = queryDateFrom;
       if (queryDateTo && !filters.dateTo) filters.dateTo = queryDateTo;
+      if (clientFilter && !filters.client) filters.client = clientFilter;
       const [candidates, assessments, jobs] = await Promise.all([
         listCandidatesForUser(user, { limit: 5000 }),
         listAssessments({ actorUserId: user.id, companyId: user.companyId }),
         listCompanyJobs(user.companyId)
       ]);
       const universe = buildCandidateSearchUniverse(candidates, assessments, jobs);
-      const matches = universe.filter((item) => candidateMatchesNaturalFilter(item, filters)).slice(0, 200);
+      const matches = universe
+        .filter((item) => !recruiterFilter || String(item.ownerRecruiter || "").trim() === recruiterFilter)
+        .filter((item) => candidateMatchesNaturalFilter(item, filters))
+        .slice(0, 200);
       sendJson(res, 200, {
         ok: true,
         result: {
@@ -2099,6 +2119,8 @@ const server = http.createServer(async (req, res) => {
       const groupType = String(requestUrl.searchParams.get("groupType") || "").trim();
       const dateFrom = String(requestUrl.searchParams.get("dateFrom") || "").trim();
       const dateTo = String(requestUrl.searchParams.get("dateTo") || "").trim();
+      const clientFilter = String(requestUrl.searchParams.get("clientFilter") || "").trim();
+      const recruiterFilter = String(requestUrl.searchParams.get("recruiterFilter") || "").trim();
       const params = {
         clientLabel: String(requestUrl.searchParams.get("clientLabel") || "").trim(),
         recruiterLabel: String(requestUrl.searchParams.get("recruiterLabel") || "").trim(),
@@ -2112,6 +2134,8 @@ const server = http.createServer(async (req, res) => {
       const universe = buildCandidateSearchUniverse(candidates, assessments, jobs);
       const items = universe
         .filter((item) => item.sourceType !== "assessment_only")
+        .filter((item) => !clientFilter || String(item.clientName || "").trim() === clientFilter)
+        .filter((item) => !recruiterFilter || String(item.ownerRecruiter || "").trim() === recruiterFilter)
         .filter((item) => itemMatchesDashboardGroup(item, groupType, params))
         .filter((item) => itemMatchesDashboardMetric(item, metric, dateFrom, dateTo))
         .slice(0, 300);
