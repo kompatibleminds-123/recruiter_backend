@@ -428,6 +428,34 @@ function getRelativeDayRange(days = 0) {
   };
 }
 
+function getRelativeNamedDayRange(dayOffset = 0) {
+  const start = new Date();
+  start.setHours(0, 0, 0, 0);
+  start.setDate(start.getDate() + dayOffset);
+  const end = new Date(start);
+  end.setHours(23, 59, 59, 999);
+  return {
+    from: start.toISOString().slice(0, 10),
+    to: end.toISOString().slice(0, 10)
+  };
+}
+
+function getCurrentWeekRange() {
+  const now = new Date();
+  const start = new Date(now);
+  const day = start.getDay();
+  const diffToMonday = day === 0 ? -6 : 1 - day;
+  start.setDate(start.getDate() + diffToMonday);
+  start.setHours(0, 0, 0, 0);
+  const end = new Date(start);
+  end.setDate(start.getDate() + 6);
+  end.setHours(23, 59, 59, 999);
+  return {
+    from: start.toISOString().slice(0, 10),
+    to: end.toISOString().slice(0, 10)
+  };
+}
+
 function parseFreeformDateText(raw) {
   const text = String(raw || "").trim().replace(/\.$/, "");
   if (!text) return "";
@@ -557,13 +585,34 @@ function parseNaturalLanguageCandidateQuery(rawQuery) {
   const noticeMatch = lower.match(/\b(?:notice\s+period\s+under|notice\s+under|notice period of)\s+(\d+(?:\.\d+)?)\s*(days?|months?)\b/i);
   const skillMatch = lower.match(/\b(?:with skills?|skills?|having)\s+([a-z0-9,+/&\s-]+?)(?:\bwith\b|\bbased\b|\bfor\b|$)/i);
   const currentCompanyMatch = lower.match(/\b(?:from current company|from|in current company|currently at)\s+([a-z0-9][a-z0-9\s&.-]+?)(?:\bwith\b|\bbased\b|$)/i);
+  const interviewIntent = /\b(?:aligned|interview(?:s)?|scheduled)\b/i.test(lower);
+  const recruiterScopeMe = /\b(?:i|me|my)\s+(?:sourced|captured|shared|converted)\b/i.test(lower) || /\bthat i (?:sourced|captured|shared|converted)\b/i.test(lower);
+  const sourcedIntent = /\b(?:sourced|captured)\b/i.test(lower);
+  const convertedIntent = /\b(?:shared|converted|cv shared|assessment)\b/i.test(lower);
+  const targetLabelMatch = lower.match(/\b(?:for|in)\s+([a-z0-9][a-z0-9\s&.-]+?)(?:\s+across roles|\s+this week|\s+tomorrow|\s+today|\s+last month|\s+this month|\s+from\s|\s+with\s|$)/i);
   const statusTerms = [];
+  const detailedStatusTerms = [];
   if (/\bshortlisted\b/i.test(lower)) statusTerms.push("shortlisted");
   if (/\boffered\b|\boffer\b/i.test(lower)) statusTerms.push("offered");
   if (/\bjoined\b/i.test(lower)) statusTerms.push("joined");
   if (/\breject(?:ed)?\b/i.test(lower)) statusTerms.push("rejected");
   if (/\bduplicate\b/i.test(lower)) statusTerms.push("duplicate");
   if (/\bdropped\b|\bdid not attend\b/i.test(lower)) statusTerms.push("dropped");
+  if (/\bscreening reject\b/i.test(lower)) detailedStatusTerms.push("screening reject");
+  if (/\binterview reject\b/i.test(lower)) detailedStatusTerms.push("interview reject");
+  if (/\bhold\b/i.test(lower)) detailedStatusTerms.push("hold");
+  if (/\bdid not attend\b/i.test(lower)) detailedStatusTerms.push("did not attend");
+  if (/\bunder process\b/i.test(lower)) detailedStatusTerms.push("under process");
+  if (/\baligned\b|\binterview aligned\b|\bl1 aligned\b|\bl2 aligned\b|\bl3 aligned\b|\bhr interview aligned\b/i.test(lower)) detailedStatusTerms.push("aligned");
+  if (/\bnot received\b|\bno response\b|\bnot responding\b|\bno answer\b|\bnr\b/i.test(lower)) detailedStatusTerms.push("not received");
+  if (/\bnot reachable\b/i.test(lower)) detailedStatusTerms.push("not reachable");
+  if (/\bbusy\b|\bcall busy\b/i.test(lower)) detailedStatusTerms.push("busy");
+  if (/\bswitch off\b|\bswitched off\b/i.test(lower)) detailedStatusTerms.push("switch off");
+  if (/\bdisconnected\b/i.test(lower)) detailedStatusTerms.push("disconnected");
+  if (/\bcall back later\b|\bcall later\b/i.test(lower)) detailedStatusTerms.push("call later");
+  if (/\binterested\b/i.test(lower)) detailedStatusTerms.push("interested");
+  if (/\bnot interested\b/i.test(lower)) detailedStatusTerms.push("not interested");
+  if (/\brevisit for other role\b/i.test(lower)) detailedStatusTerms.push("revisit for other role");
   const explicitRangeMatch =
     lower.match(/\bfrom\s+([a-z0-9,/\- ]+?)\s+to\s+([a-z0-9,/\- ]+?)(?:\bwith\b|\bfor\b|$)/i) ||
     lower.match(/\bbetween\s+([a-z0-9,/\- ]+?)\s+and\s+([a-z0-9,/\- ]+?)(?:\bwith\b|\bfor\b|$)/i);
@@ -572,6 +621,14 @@ function parseNaturalLanguageCandidateQuery(rawQuery) {
   let dateTo = "";
   if (/\blast month\b/i.test(lower)) {
     const range = getRelativeMonthRange(-1);
+    dateFrom = range.from;
+    dateTo = range.to;
+  } else if (/\bthis week\b/i.test(lower)) {
+    const range = getCurrentWeekRange();
+    dateFrom = range.from;
+    dateTo = range.to;
+  } else if (/\btomorrow\b/i.test(lower)) {
+    const range = getRelativeNamedDayRange(1);
     dateFrom = range.from;
     dateTo = range.to;
   } else if (/\bthis month\b/i.test(lower)) {
@@ -596,6 +653,8 @@ function parseNaturalLanguageCandidateQuery(rawQuery) {
   let dateField = "";
   if (/\bshared\b|\bconverted\b|\bassessment\b|\bcv shared\b/i.test(lower)) {
     dateField = "shared";
+  } else if (interviewIntent) {
+    dateField = "interview";
   } else if (/\bcaptured\b|\bsourced\b|\badded\b|\bcreated\b/i.test(lower)) {
     dateField = "captured";
   }
@@ -617,6 +676,10 @@ function parseNaturalLanguageCandidateQuery(rawQuery) {
     .replace(/\bfrom\b.*$/i, "")
     .replace(/\bcurrent\s+ctc\s+under\b.*$/i, "")
     .replace(/\bctc\s+under\b.*$/i, "")
+    .replace(/\baligned\b.*$/i, "")
+    .replace(/\binterviews?\b.*$/i, "")
+    .replace(/\bfor\s+[a-z0-9][a-z0-9\s&.-]+$/i, "")
+    .replace(/\bin\s+[a-z0-9][a-z0-9\s&.-]+$/i, "")
     .trim();
   roleText = roleText.replace(/\bcandidates?\b/gi, "").trim();
   return {
@@ -636,7 +699,13 @@ function parseNaturalLanguageCandidateQuery(rawQuery) {
       : [],
     currentCompany: currentCompanyMatch ? String(currentCompanyMatch[1] || "").trim() : "",
     statuses: statusTerms,
+    detailedStatuses: detailedStatusTerms,
     client: clientMatch ? String(clientMatch[1] || "").trim() : "",
+    targetLabel: targetLabelMatch ? String(targetLabelMatch[1] || "").trim() : "",
+    interviewScheduled: interviewIntent,
+    recruiterScope: recruiterScopeMe ? "me" : "",
+    recruiterField: sourcedIntent ? "sourced" : convertedIntent ? "owner" : "",
+    sourceTypeFilter: convertedIntent ? "converted" : sourcedIntent ? "captured" : "",
     dateFrom,
     dateTo,
     dateField
@@ -671,6 +740,7 @@ function buildCandidateSearchUniverse(candidates = [], assessments = [], jobs = 
       candidateStatus: String(linkedAssessment?.candidateStatus || "").trim(),
       pipelineStage: String(linkedAssessment?.pipelineStage || "").trim(),
       workflowStatus: String(linkedAssessment?.status || candidate?.status || "").trim(),
+      attemptStatus: String(candidate?.last_contact_outcome || "").trim(),
       interviewAt: normalizeDateOutput(linkedAssessment?.interviewAt || linkedAssessment?.interview_at || ""),
       followUpAt: normalizeDateOutput(linkedAssessment?.followUpAt || linkedAssessment?.follow_up_at || candidate?.next_follow_up_at || ""),
       offerDoj: normalizeDateOutput(linkedAssessment?.offerDoj || linkedAssessment?.offer_doj || ""),
@@ -706,6 +776,7 @@ function buildCandidateSearchUniverse(candidates = [], assessments = [], jobs = 
       candidateStatus: String(assessment?.candidateStatus || "").trim(),
       pipelineStage: String(assessment?.pipelineStage || "").trim(),
       workflowStatus: String(assessment?.status || "").trim(),
+      attemptStatus: "",
       interviewAt: normalizeDateOutput(assessment?.interviewAt || assessment?.interview_at || ""),
       followUpAt: normalizeDateOutput(assessment?.followUpAt || assessment?.follow_up_at || ""),
       offerDoj: normalizeDateOutput(assessment?.offerDoj || assessment?.offer_doj || ""),
@@ -722,7 +793,7 @@ function buildCandidateSearchUniverse(candidates = [], assessments = [], jobs = 
   return universe;
 }
 
-function candidateMatchesNaturalFilter(item, filters) {
+function candidateMatchesNaturalFilter(item, filters, actor = null) {
   if (!item) return false;
   if (filters.role) {
     const roleHay = `${item.role} ${item.position} ${item.company} ${item.clientName}`.toLowerCase();
@@ -741,6 +812,10 @@ function candidateMatchesNaturalFilter(item, filters) {
   }
   if (filters.client) {
     if (!String(item.clientName || "").toLowerCase().includes(filters.client.toLowerCase())) return false;
+  }
+  if (filters.targetLabel) {
+    const targetHay = `${item.clientName || ""} ${item.position || ""}`.toLowerCase();
+    if (!targetHay.includes(String(filters.targetLabel || "").toLowerCase())) return false;
   }
   if (filters.minExperienceYears != null) {
     const years = parseExperienceToYears(item.totalExperience);
@@ -773,10 +848,50 @@ function candidateMatchesNaturalFilter(item, filters) {
     const lifecycleBucket = getAssessmentLifecycleBucket(item);
     if (!filters.statuses.includes(lifecycleBucket)) return false;
   }
+  if (Array.isArray(filters.detailedStatuses) && filters.detailedStatuses.length) {
+    const detailedHay = normalizeDashboardText(
+      [
+        item.candidateStatus || "",
+        item.pipelineStage || "",
+        item.workflowStatus || "",
+        item.attemptStatus || ""
+      ].join(" ")
+    );
+    const detailedMatches = filters.detailedStatuses.every((statusTerm) => {
+      const term = normalizeDashboardText(statusTerm);
+      if (term === "aligned") return /\balign|interview scheduled|interview\b/.test(detailedHay) || Boolean(item.interviewAt);
+      if (term === "not received") return /\bnot received|no response|not responding|no answer|nr\b/.test(detailedHay);
+      if (term === "call later") return /\bcall back later|call later\b/.test(detailedHay);
+      if (term === "switch off") return /\bswitch off|switched off\b/.test(detailedHay);
+      if (term === "under process") return getAssessmentLifecycleBucket(item) === "under_process";
+      return detailedHay.includes(term);
+    });
+    if (!detailedMatches) return false;
+  }
+  if (filters.interviewScheduled) {
+    const statusHay = `${item.candidateStatus || ""} ${item.pipelineStage || ""} ${item.workflowStatus || ""}`.toLowerCase();
+    if (!item.interviewAt && !/\balign|interview\b/.test(statusHay)) return false;
+  }
+  if (filters.recruiterScope === "me" && actor) {
+    const actorName = String(actor.name || "").trim().toLowerCase();
+    const recruiterValue =
+      filters.recruiterField === "sourced"
+        ? String(item.sourcedRecruiter || "").trim().toLowerCase()
+        : String(item.ownerRecruiter || item.recruiterName || "").trim().toLowerCase();
+    if (!actorName || recruiterValue !== actorName) return false;
+  }
+  if (filters.sourceTypeFilter === "converted") {
+    if (item.sourceType === "captured_note" || !item.sharedAt) return false;
+  }
+  if (filters.sourceTypeFilter === "captured") {
+    if (!item.createdAt) return false;
+  }
   if (filters.dateFrom || filters.dateTo) {
     const valuesToCheck =
       filters.dateField === "shared"
         ? [item.sharedAt]
+        : filters.dateField === "interview"
+          ? [item.interviewAt]
         : filters.dateField === "captured"
           ? [item.createdAt]
           : [item.sharedAt, item.createdAt];
@@ -2295,7 +2410,7 @@ const server = http.createServer(async (req, res) => {
       const universe = buildCandidateSearchUniverse(candidates, assessments, jobs);
       const matches = universe
         .filter((item) => !recruiterFilter || String(item.ownerRecruiter || "").trim() === recruiterFilter)
-        .filter((item) => candidateMatchesNaturalFilter(item, filters))
+        .filter((item) => candidateMatchesNaturalFilter(item, filters, user))
         .slice(0, 200);
       sendJson(res, 200, {
         ok: true,
