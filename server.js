@@ -732,6 +732,97 @@ function candidateMatchesNaturalFilter(item, filters) {
   return true;
 }
 
+function parseSkillListFromText(text) {
+  return String(text || "")
+    .split(/\n|,|\/|;|\|| and /i)
+    .map((item) => String(item || "").trim())
+    .filter((item) => item && item.length >= 2)
+    .slice(0, 20);
+}
+
+function parseJdMatchPayload(raw = {}) {
+  const input = raw && typeof raw === "object" ? raw : {};
+  const jdTitle = String(input.jdTitle || input.title || "").trim();
+  const mustHaveSkills = String(input.mustHaveSkills || "").trim();
+  const jobDescription = String(input.jobDescription || input.jdText || input.text || "").trim();
+  const combined = [jdTitle, mustHaveSkills, jobDescription].filter(Boolean).join("\n");
+  const expMatch = combined.match(/(\d+(?:\.\d+)?)\s*\+?\s*years?/i);
+  const locationMatch = combined.match(/\b(?:location|based in|based out of|work location)\s*[:\-]?\s*([A-Za-z][A-Za-z\s,/-]{1,60})/i);
+  const skills = parseSkillListFromText(mustHaveSkills || jobDescription);
+  return {
+    jdTitle,
+    mustHaveSkills,
+    jobDescription,
+    minExperienceYears: expMatch ? Number(expMatch[1]) : null,
+    location: locationMatch ? String(locationMatch[1] || "").trim() : "",
+    skills
+  };
+}
+
+function scoreCandidateAgainstJd(item, jd) {
+  let score = 0;
+  const reasons = [];
+  const roleHay = `${item.role || ""} ${item.position || ""}`.toLowerCase();
+  const companyHay = `${item.company || ""}`.toLowerCase();
+  if (jd.jdTitle) {
+    const titleWords = jd.jdTitle.toLowerCase().split(/\s+/).filter((part) => part.length >= 3);
+    const titleMatches = titleWords.filter((part) => roleHay.includes(part));
+    if (titleMatches.length) {
+      score += Math.min(35, titleMatches.length * 10);
+      reasons.push(`role aligns with ${jd.jdTitle}`);
+    }
+  }
+  if (jd.minExperienceYears != null) {
+    const years = parseExperienceToYears(item.totalExperience);
+    if (years != null && years >= jd.minExperienceYears) {
+      score += 20;
+      reasons.push(`${years}+ years experience`);
+    }
+  }
+  if (jd.location && String(item.location || "").toLowerCase().includes(jd.location.toLowerCase())) {
+    score += 10;
+    reasons.push(`location fits ${jd.location}`);
+  }
+  if (Array.isArray(jd.skills) && jd.skills.length) {
+    const hay = `${item.role || ""} ${item.position || ""} ${companyHay} ${(item.skills || []).join(" ")}`.toLowerCase();
+    const matchedSkills = jd.skills.filter((skill) => hay.includes(String(skill || "").toLowerCase()));
+    if (matchedSkills.length) {
+      score += Math.min(30, matchedSkills.length * 6);
+      reasons.push(`skills matched: ${matchedSkills.slice(0, 4).join(", ")}`);
+    }
+  }
+  const lifecycleBucket = getAssessmentLifecycleBucket(item);
+  if (["shortlisted", "offered", "joined", "under_process"].includes(lifecycleBucket)) {
+    score += 8;
+    reasons.push(`status is ${lifecycleBucket.replace(/_/g, " ")}`);
+  }
+  return {
+    score,
+    reasons
+  };
+}
+
+function matchCandidatesToJd(universe = [], jdPayload = {}) {
+  const jd = parseJdMatchPayload(jdPayload);
+  const items = (universe || [])
+    .map((item) => {
+      const scored = scoreCandidateAgainstJd(item, jd);
+      return {
+        ...item,
+        matchScore: scored.score,
+        matchReasons: scored.reasons
+      };
+    })
+    .filter((item) => item.matchScore > 0)
+    .sort((a, b) => b.matchScore - a.matchScore || a.candidateName.localeCompare(b.candidateName))
+    .slice(0, 200);
+  return {
+    jd,
+    total: items.length,
+    items
+  };
+}
+
 function sanitizeCandidateSavePayload(rawCandidate, actor) {
   const input = rawCandidate && typeof rawCandidate === "object" ? rawCandidate : {};
   const candidate = {
@@ -1921,6 +2012,26 @@ const server = http.createServer(async (req, res) => {
           total: matches.length,
           items: matches
         }
+      });
+    } catch (error) {
+      sendJson(res, 400, { ok: false, error: String(error.message || error) });
+    }
+    return;
+  }
+
+  if (req.method === "POST" && requestUrl.pathname === "/company/candidates/search-jd-match") {
+    try {
+      const user = await requireSessionUser(getBearerToken(req));
+      const body = await readJson(req);
+      const [candidates, assessments] = await Promise.all([
+        listCandidatesForUser(user, { limit: 5000 }),
+        listAssessments({ actorUserId: user.id, companyId: user.companyId })
+      ]);
+      const universe = buildCandidateSearchUniverse(candidates, assessments);
+      const result = matchCandidatesToJd(universe, body || {});
+      sendJson(res, 200, {
+        ok: true,
+        result
       });
     } catch (error) {
       sendJson(res, 400, { ok: false, error: String(error.message || error) });
