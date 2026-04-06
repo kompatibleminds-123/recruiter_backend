@@ -2111,6 +2111,7 @@ const server = http.createServer(async (req, res) => {
       ]);
       const universe = buildCandidateSearchUniverse(candidates, assessments, jobs);
       const items = universe
+        .filter((item) => item.sourceType !== "assessment_only")
         .filter((item) => itemMatchesDashboardGroup(item, groupType, params))
         .filter((item) => itemMatchesDashboardMetric(item, metric, dateFrom, dateTo))
         .slice(0, 300);
