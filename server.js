@@ -239,6 +239,248 @@ function sanitizeGapRows(gaps) {
     .filter((item) => item.from || item.to || item.duration || item.note);
 }
 
+const DASHBOARD_REJECTED_STATUSES = new Set(["screening reject", "interview reject"]);
+const DASHBOARD_DROPPED_STATUSES = new Set(["did not attend", "dropped"]);
+const DASHBOARD_FINAL_OUTCOMES = new Set([
+  "offered",
+  "hold",
+  "did not attend",
+  "dropped",
+  "screening reject",
+  "interview reject",
+  "duplicate",
+  "joined"
+]);
+
+function normalizeDashboardText(value) {
+  return String(value || "").trim().toLowerCase();
+}
+
+function parseAmountToLpa(value) {
+  const text = normalizeDashboardText(value).replace(/[, ]+/g, " ");
+  if (!text) return null;
+  const numMatch = text.match(/(\d+(?:\.\d+)?)/);
+  if (!numMatch) return null;
+  const amount = Number(numMatch[1]);
+  if (!Number.isFinite(amount)) return null;
+  if (/\bcr|crore\b/.test(text)) return amount * 100;
+  if (/\blpa|lac|lakh|lakhs\b/.test(text)) return amount;
+  if (/\bk\b/.test(text)) return amount / 100;
+  if (/\bpa\b/.test(text)) return amount / 100000;
+  if (amount > 1000000) return amount / 100000;
+  return amount;
+}
+
+function parseExperienceToYears(value) {
+  const text = normalizeDashboardText(value);
+  if (!text) return null;
+  const yearMatch = text.match(/(\d+(?:\.\d+)?)\s*(?:years?|yrs?)/);
+  const monthMatch = text.match(/(\d+(?:\.\d+)?)\s*(?:months?|mos?)/);
+  if (!yearMatch && !monthMatch) return null;
+  const years = yearMatch ? Number(yearMatch[1]) : 0;
+  const months = monthMatch ? Number(monthMatch[1]) : 0;
+  return years + months / 12;
+}
+
+function getAssessmentLifecycleBucket(item) {
+  const status = normalizeDashboardText(item?.candidateStatus || item?.candidate_status || item?.status || "");
+  const pipeline = normalizeDashboardText(item?.pipelineStage || item?.pipeline_stage || "");
+  const combined = `${status} ${pipeline}`.trim();
+  if (combined.includes("duplicate")) return "duplicate";
+  if (combined.includes("joined")) return "joined";
+  if (combined.includes("offer") || status === "offered") return "offered";
+  if (combined.includes("shortlist")) return "shortlisted";
+  if (DASHBOARD_REJECTED_STATUSES.has(status)) return "rejected";
+  if (DASHBOARD_DROPPED_STATUSES.has(status)) return "dropped";
+  if (status === "hold" || combined.includes("on hold")) return "hold";
+  return "under_process";
+}
+
+function getClientLabel(candidate = {}, assessment = {}) {
+  return (
+    String(candidate.client_name || candidate.clientName || "").trim() ||
+    String(assessment.clientName || assessment.client_name || "").trim() ||
+    "Unassigned"
+  );
+}
+
+function getRecruiterLabel(candidate = {}, assessment = {}) {
+  return (
+    String(candidate.recruiter_name || candidate.recruiterName || "").trim() ||
+    String(assessment.recruiterName || assessment.recruiter_name || "").trim() ||
+    "Unassigned"
+  );
+}
+
+function createDashboardBucket() {
+  return {
+    sourced: 0,
+    converted: 0,
+    under_interview_process: 0,
+    rejected: 0,
+    duplicate: 0,
+    dropped: 0,
+    shortlisted: 0,
+    offered: 0,
+    joined: 0
+  };
+}
+
+function incrementDashboardMetric(target, metric) {
+  target[metric] = Number(target[metric] || 0) + 1;
+}
+
+function addCandidateMetrics(target, candidate, linkedAssessment) {
+  incrementDashboardMetric(target, "sourced");
+  if (!candidate?.used_in_assessment) return;
+  incrementDashboardMetric(target, "converted");
+  const bucket = getAssessmentLifecycleBucket(linkedAssessment || {});
+  if (bucket === "under_process") incrementDashboardMetric(target, "under_interview_process");
+  if (bucket === "rejected") incrementDashboardMetric(target, "rejected");
+  if (bucket === "duplicate") incrementDashboardMetric(target, "duplicate");
+  if (bucket === "dropped") incrementDashboardMetric(target, "dropped");
+  if (bucket === "shortlisted") incrementDashboardMetric(target, "shortlisted");
+  if (bucket === "offered") incrementDashboardMetric(target, "offered");
+  if (bucket === "joined") incrementDashboardMetric(target, "joined");
+}
+
+function toDashboardBreakdownMap(itemsMap) {
+  return Array.from(itemsMap.entries())
+    .map(([label, metrics]) => ({ label, metrics }))
+    .sort((a, b) => a.label.localeCompare(b.label));
+}
+
+function buildDashboardSummary({ candidates = [], assessments = [] }) {
+  const overall = createDashboardBucket();
+  const byClient = new Map();
+  const byRecruiter = new Map();
+  const assessmentsById = new Map(
+    (Array.isArray(assessments) ? assessments : []).map((item) => [String(item?.id || "").trim(), item])
+  );
+
+  for (const candidate of Array.isArray(candidates) ? candidates : []) {
+    const linkedAssessment = assessmentsById.get(String(candidate?.assessment_id || candidate?.assessmentId || "").trim()) || null;
+    const clientLabel = getClientLabel(candidate, linkedAssessment || {});
+    const recruiterLabel = getRecruiterLabel(candidate, linkedAssessment || {});
+    if (!byClient.has(clientLabel)) byClient.set(clientLabel, createDashboardBucket());
+    if (!byRecruiter.has(recruiterLabel)) byRecruiter.set(recruiterLabel, createDashboardBucket());
+    addCandidateMetrics(overall, candidate, linkedAssessment);
+    addCandidateMetrics(byClient.get(clientLabel), candidate, linkedAssessment);
+    addCandidateMetrics(byRecruiter.get(recruiterLabel), candidate, linkedAssessment);
+  }
+
+  return {
+    overall,
+    byClient: toDashboardBreakdownMap(byClient),
+    byRecruiter: toDashboardBreakdownMap(byRecruiter)
+  };
+}
+
+function parseNaturalLanguageCandidateQuery(rawQuery) {
+  const query = String(rawQuery || "").trim();
+  const lower = query.toLowerCase();
+  const minExperienceMatch = lower.match(/(\d+(?:\.\d+)?)\s*\+?\s*years?/);
+  const locationMatch = lower.match(/\b(?:based out of|based in|from|located in)\s+([a-z][a-z\s]+?)(?:\bwith\b|$)/i);
+  const ctcUnderMatch = lower.match(/\b(?:current\s+ctc\s+under|ctc\s+under|under)\s+(\d+(?:\.\d+)?)\s*(l|lpa|lakhs?|lac|cr|crore|k)?\b/i);
+  const clientMatch = lower.match(/\b(?:for client|for)\s+([a-z0-9][a-z0-9\s&.-]+)$/i);
+  let roleText = query
+    .replace(/\bget me\b/i, "")
+    .replace(/\bshow me\b/i, "")
+    .replace(/\bwith\s+\d+(?:\.\d+)?\s*\+?\s*years?.*$/i, "")
+    .replace(/\bbased out of\b.*$/i, "")
+    .replace(/\bbased in\b.*$/i, "")
+    .replace(/\bfrom\b.*$/i, "")
+    .replace(/\bcurrent\s+ctc\s+under\b.*$/i, "")
+    .replace(/\bctc\s+under\b.*$/i, "")
+    .trim();
+  roleText = roleText.replace(/\bcandidates?\b/gi, "").trim();
+  return {
+    raw: query,
+    role: roleText,
+    minExperienceYears: minExperienceMatch ? Number(minExperienceMatch[1]) : null,
+    location: locationMatch ? String(locationMatch[1] || "").trim() : "",
+    maxCurrentCtcLpa: ctcUnderMatch ? parseAmountToLpa(`${ctcUnderMatch[1]} ${ctcUnderMatch[2] || "lpa"}`) : null,
+    client: clientMatch ? String(clientMatch[1] || "").trim() : ""
+  };
+}
+
+function buildCandidateSearchUniverse(candidates = [], assessments = []) {
+  const assessmentsById = new Map((assessments || []).map((item) => [String(item?.id || "").trim(), item]));
+  const universe = [];
+  const seenAssessmentIds = new Set();
+
+  for (const candidate of candidates || []) {
+    const linkedAssessment = assessmentsById.get(String(candidate?.assessment_id || "").trim()) || null;
+    if (linkedAssessment?.id) seenAssessmentIds.add(String(linkedAssessment.id));
+    universe.push({
+      id: String(candidate?.id || linkedAssessment?.id || "").trim(),
+      candidateName: String(candidate?.name || linkedAssessment?.candidateName || "").trim(),
+      role: String(candidate?.role || linkedAssessment?.currentDesignation || "").trim(),
+      company: String(candidate?.company || linkedAssessment?.currentCompany || "").trim(),
+      totalExperience: String(candidate?.experience || linkedAssessment?.totalExperience || "").trim(),
+      location: String(candidate?.location || linkedAssessment?.location || "").trim(),
+      currentCtc: String(candidate?.current_ctc || linkedAssessment?.currentCtc || "").trim(),
+      clientName: getClientLabel(candidate, linkedAssessment || {}),
+      recruiterName: getRecruiterLabel(candidate, linkedAssessment || {}),
+      candidateStatus: String(linkedAssessment?.candidateStatus || "").trim(),
+      pipelineStage: String(linkedAssessment?.pipelineStage || "").trim(),
+      sourceType: candidate?.used_in_assessment ? "captured_and_converted" : "captured_note",
+      raw: {
+        candidate,
+        assessment: linkedAssessment
+      }
+    });
+  }
+
+  for (const assessment of assessments || []) {
+    const assessmentId = String(assessment?.id || "").trim();
+    if (!assessmentId || seenAssessmentIds.has(assessmentId)) continue;
+    universe.push({
+      id: assessmentId,
+      candidateName: String(assessment?.candidateName || "").trim(),
+      role: String(assessment?.currentDesignation || "").trim(),
+      company: String(assessment?.currentCompany || "").trim(),
+      totalExperience: String(assessment?.totalExperience || "").trim(),
+      location: String(assessment?.location || "").trim(),
+      currentCtc: String(assessment?.currentCtc || "").trim(),
+      clientName: getClientLabel({}, assessment),
+      recruiterName: getRecruiterLabel({}, assessment),
+      candidateStatus: String(assessment?.candidateStatus || "").trim(),
+      pipelineStage: String(assessment?.pipelineStage || "").trim(),
+      sourceType: "assessment_only",
+      raw: {
+        candidate: null,
+        assessment
+      }
+    });
+  }
+
+  return universe;
+}
+
+function candidateMatchesNaturalFilter(item, filters) {
+  if (!item) return false;
+  if (filters.role) {
+    const roleHay = `${item.role} ${item.company}`.toLowerCase();
+    if (!roleHay.includes(filters.role.toLowerCase())) return false;
+  }
+  if (filters.location) {
+    if (!String(item.location || "").toLowerCase().includes(filters.location.toLowerCase())) return false;
+  }
+  if (filters.client) {
+    if (!String(item.clientName || "").toLowerCase().includes(filters.client.toLowerCase())) return false;
+  }
+  if (filters.minExperienceYears != null) {
+    const years = parseExperienceToYears(item.totalExperience);
+    if (years == null || years < filters.minExperienceYears) return false;
+  }
+  if (filters.maxCurrentCtcLpa != null) {
+    const currentCtc = parseAmountToLpa(item.currentCtc);
+    if (currentCtc == null || currentCtc > filters.maxCurrentCtcLpa) return false;
+  }
+  return true;
+}
+
 function sanitizeCandidateSavePayload(rawCandidate, actor) {
   const input = rawCandidate && typeof rawCandidate === "object" ? rawCandidate : {};
   const candidate = {
@@ -1044,6 +1286,8 @@ const server = http.createServer(async (req, res) => {
         "/company/users/password",
         "/company/jds",
         "/company/assessments",
+        "/company/dashboard",
+        "/company/candidates/search-natural",
         "/quick-capture",
         "/parse-note",
         "/candidates",
@@ -1374,6 +1618,55 @@ const server = http.createServer(async (req, res) => {
       sendJson(res, 200, { ok: true, result: { assessments } });
     } catch (error) {
       sendJson(res, 401, { ok: false, error: String(error.message || error) });
+    }
+    return;
+  }
+
+  if (req.method === "GET" && requestUrl.pathname === "/company/dashboard") {
+    try {
+      const user = await requireSessionUser(getBearerToken(req));
+      const [candidates, assessments] = await Promise.all([
+        listCandidatesForUser(user, { limit: 5000 }),
+        listAssessments({ actorUserId: user.id, companyId: user.companyId })
+      ]);
+      const summary = buildDashboardSummary({ candidates, assessments });
+      sendJson(res, 200, {
+        ok: true,
+        result: {
+          role: user.role,
+          recruiterName: user.name,
+          companyName: user.companyName,
+          summary
+        }
+      });
+    } catch (error) {
+      sendJson(res, 400, { ok: false, error: String(error.message || error) });
+    }
+    return;
+  }
+
+  if (req.method === "GET" && requestUrl.pathname === "/company/candidates/search-natural") {
+    try {
+      const user = await requireSessionUser(getBearerToken(req));
+      const query = String(requestUrl.searchParams.get("q") || "").trim();
+      const filters = parseNaturalLanguageCandidateQuery(query);
+      const [candidates, assessments] = await Promise.all([
+        listCandidatesForUser(user, { limit: 5000 }),
+        listAssessments({ actorUserId: user.id, companyId: user.companyId })
+      ]);
+      const universe = buildCandidateSearchUniverse(candidates, assessments);
+      const matches = universe.filter((item) => candidateMatchesNaturalFilter(item, filters)).slice(0, 200);
+      sendJson(res, 200, {
+        ok: true,
+        result: {
+          query,
+          filters,
+          total: matches.length,
+          items: matches
+        }
+      });
+    } catch (error) {
+      sendJson(res, 400, { ok: false, error: String(error.message || error) });
     }
     return;
   }
