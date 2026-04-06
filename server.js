@@ -725,8 +725,16 @@ function buildCandidateSearchUniverse(candidates = [], assessments = [], jobs = 
 function candidateMatchesNaturalFilter(item, filters) {
   if (!item) return false;
   if (filters.role) {
-    const roleHay = `${item.role} ${item.company}`.toLowerCase();
-    if (!roleHay.includes(filters.role.toLowerCase())) return false;
+    const roleHay = `${item.role} ${item.position} ${item.company} ${item.clientName}`.toLowerCase();
+    const roleTokens = String(filters.role || "")
+      .toLowerCase()
+      .split(/\s+/)
+      .map((part) => part.trim())
+      .filter((part) => part.length >= 2 && !["me", "get", "show", "all"].includes(part));
+    if (roleTokens.length) {
+      const matchedTokens = roleTokens.filter((token) => roleHay.includes(token));
+      if (!matchedTokens.length) return false;
+    }
   }
   if (filters.location) {
     if (!String(item.location || "").toLowerCase().includes(filters.location.toLowerCase())) return false;
@@ -758,7 +766,7 @@ function candidateMatchesNaturalFilter(item, filters) {
     if (!String(item.company || "").toLowerCase().includes(filters.currentCompany.toLowerCase())) return false;
   }
   if (Array.isArray(filters.skills) && filters.skills.length) {
-    const hay = `${item.role} ${item.company} ${(item.skills || []).join(" ")}`.toLowerCase();
+    const hay = `${item.role} ${item.position} ${item.company} ${(item.skills || []).join(" ")}`.toLowerCase();
     if (!filters.skills.every((skill) => hay.includes(String(skill || "").toLowerCase()))) return false;
   }
   if (Array.isArray(filters.statuses) && filters.statuses.length) {
@@ -2166,7 +2174,7 @@ const server = http.createServer(async (req, res) => {
   if (req.method === "POST" && requestUrl.pathname === "/company/candidates/search-jd-match") {
     try {
       const user = await requireSessionUser(getBearerToken(req));
-      const body = await readJson(req);
+      const body = await readJsonBody(req);
       const [candidates, assessments, jobs] = await Promise.all([
         listCandidatesForUser(user, { limit: 5000 }),
         listAssessments({ actorUserId: user.id, companyId: user.companyId }),
