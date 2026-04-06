@@ -639,10 +639,11 @@ function parseNaturalLanguageCandidateQuery(rawQuery) {
   };
 }
 
-function buildCandidateSearchUniverse(candidates = [], assessments = []) {
+function buildCandidateSearchUniverse(candidates = [], assessments = [], jobs = []) {
   const assessmentsById = new Map((assessments || []).map((item) => [String(item?.id || "").trim(), item]));
   const universe = [];
   const seenAssessmentIds = new Set();
+  const knownJdTitles = buildKnownJdTitleSet(jobs);
 
   for (const candidate of candidates || []) {
     const linkedAssessment = assessmentsById.get(String(candidate?.assessment_id || "").trim()) || null;
@@ -651,7 +652,7 @@ function buildCandidateSearchUniverse(candidates = [], assessments = []) {
       id: String(candidate?.id || linkedAssessment?.id || "").trim(),
       candidateName: String(candidate?.name || linkedAssessment?.candidateName || "").trim(),
       role: String(candidate?.role || linkedAssessment?.currentDesignation || "").trim(),
-      position: getPositionLabel(candidate, linkedAssessment || {}),
+      position: getPositionLabel(candidate, linkedAssessment || {}, knownJdTitles),
       company: String(candidate?.company || linkedAssessment?.currentCompany || "").trim(),
       totalExperience: String(candidate?.experience || linkedAssessment?.totalExperience || "").trim(),
       location: String(candidate?.location || linkedAssessment?.location || "").trim(),
@@ -661,6 +662,8 @@ function buildCandidateSearchUniverse(candidates = [], assessments = []) {
       skills: Array.isArray(candidate?.skills) ? candidate.skills : [],
       clientName: getClientLabel(candidate, linkedAssessment || {}),
       recruiterName: getRecruiterLabel(candidate, linkedAssessment || {}),
+      sourcedRecruiter: getRecruiterLabel(candidate, linkedAssessment || {}),
+      ownerRecruiter: getOwnerRecruiterLabel(candidate, linkedAssessment || {}),
       candidateStatus: String(linkedAssessment?.candidateStatus || "").trim(),
       pipelineStage: String(linkedAssessment?.pipelineStage || "").trim(),
       createdAt: normalizeDateOutput(getCandidateCreatedAt(candidate)),
@@ -680,7 +683,7 @@ function buildCandidateSearchUniverse(candidates = [], assessments = []) {
       id: assessmentId,
       candidateName: String(assessment?.candidateName || "").trim(),
       role: String(assessment?.currentDesignation || "").trim(),
-      position: getPositionLabel({}, assessment),
+      position: getPositionLabel({}, assessment, knownJdTitles),
       company: String(assessment?.currentCompany || "").trim(),
       totalExperience: String(assessment?.totalExperience || "").trim(),
       location: String(assessment?.location || "").trim(),
@@ -690,6 +693,8 @@ function buildCandidateSearchUniverse(candidates = [], assessments = []) {
       skills: [],
       clientName: getClientLabel({}, assessment),
       recruiterName: getRecruiterLabel({}, assessment),
+      sourcedRecruiter: getRecruiterLabel({}, assessment),
+      ownerRecruiter: getOwnerRecruiterLabel({}, assessment),
       candidateStatus: String(assessment?.candidateStatus || "").trim(),
       pipelineStage: String(assessment?.pipelineStage || "").trim(),
       createdAt: "",
@@ -758,6 +763,44 @@ function candidateMatchesNaturalFilter(item, filters) {
     if (!valuesToCheck.some((value) => isDateWithinRange(value, filters.dateFrom, filters.dateTo))) return false;
   }
   return true;
+}
+
+function itemMatchesDashboardMetric(item, metric, dateFrom = "", dateTo = "") {
+  const bucket = getAssessmentLifecycleBucket(item);
+  if (metric === "sourced") {
+    return isDateWithinRange(item.createdAt, dateFrom, dateTo);
+  }
+  if (metric === "converted") {
+    return isDateWithinRange(item.sharedAt, dateFrom, dateTo) && item.sourceType !== "captured_note";
+  }
+  if (!isDateWithinRange(item.sharedAt, dateFrom, dateTo)) return false;
+  if (metric === "under_interview_process") return bucket === "under_process";
+  if (metric === "rejected") return bucket === "rejected";
+  if (metric === "duplicate") return bucket === "duplicate";
+  if (metric === "dropped") return bucket === "dropped";
+  if (metric === "shortlisted") return bucket === "shortlisted";
+  if (metric === "offered") return bucket === "offered";
+  if (metric === "joined") return bucket === "joined";
+  return false;
+}
+
+function itemMatchesDashboardGroup(item, groupType, params = {}) {
+  const clientLabel = String(params.clientLabel || "").trim();
+  const recruiterLabel = String(params.recruiterLabel || "").trim();
+  const positionLabel = String(params.positionLabel || "").trim();
+  if (groupType === "ownerRecruiter") return String(item.ownerRecruiter || "").trim() === recruiterLabel;
+  if (groupType === "client") return String(item.clientName || "").trim() === clientLabel;
+  if (groupType === "clientPosition") {
+    return String(item.clientName || "").trim() === clientLabel && String(item.position || "").trim() === positionLabel;
+  }
+  if (groupType === "clientPositionOwner") {
+    return (
+      String(item.clientName || "").trim() === clientLabel &&
+      String(item.position || "").trim() === positionLabel &&
+      String(item.ownerRecruiter || "").trim() === recruiterLabel
+    );
+  }
+  return false;
 }
 
 function parseSkillListFromText(text) {
@@ -2027,11 +2070,12 @@ const server = http.createServer(async (req, res) => {
       const queryDateTo = String(requestUrl.searchParams.get("dateTo") || "").trim();
       if (queryDateFrom && !filters.dateFrom) filters.dateFrom = queryDateFrom;
       if (queryDateTo && !filters.dateTo) filters.dateTo = queryDateTo;
-      const [candidates, assessments] = await Promise.all([
+      const [candidates, assessments, jobs] = await Promise.all([
         listCandidatesForUser(user, { limit: 5000 }),
-        listAssessments({ actorUserId: user.id, companyId: user.companyId })
+        listAssessments({ actorUserId: user.id, companyId: user.companyId }),
+        listCompanyJobs(user.companyId)
       ]);
-      const universe = buildCandidateSearchUniverse(candidates, assessments);
+      const universe = buildCandidateSearchUniverse(candidates, assessments, jobs);
       const matches = universe.filter((item) => candidateMatchesNaturalFilter(item, filters)).slice(0, 200);
       sendJson(res, 200, {
         ok: true,
@@ -2048,15 +2092,54 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (req.method === "GET" && requestUrl.pathname === "/company/dashboard/drilldown") {
+    try {
+      const user = await requireSessionUser(getBearerToken(req));
+      const metric = String(requestUrl.searchParams.get("metric") || "").trim();
+      const groupType = String(requestUrl.searchParams.get("groupType") || "").trim();
+      const dateFrom = String(requestUrl.searchParams.get("dateFrom") || "").trim();
+      const dateTo = String(requestUrl.searchParams.get("dateTo") || "").trim();
+      const params = {
+        clientLabel: String(requestUrl.searchParams.get("clientLabel") || "").trim(),
+        recruiterLabel: String(requestUrl.searchParams.get("recruiterLabel") || "").trim(),
+        positionLabel: String(requestUrl.searchParams.get("positionLabel") || "").trim()
+      };
+      const [candidates, assessments, jobs] = await Promise.all([
+        listCandidatesForUser(user, { limit: 5000 }),
+        listAssessments({ actorUserId: user.id, companyId: user.companyId }),
+        listCompanyJobs(user.companyId)
+      ]);
+      const universe = buildCandidateSearchUniverse(candidates, assessments, jobs);
+      const items = universe
+        .filter((item) => itemMatchesDashboardGroup(item, groupType, params))
+        .filter((item) => itemMatchesDashboardMetric(item, metric, dateFrom, dateTo))
+        .slice(0, 300);
+      sendJson(res, 200, {
+        ok: true,
+        result: {
+          metric,
+          groupType,
+          params,
+          total: items.length,
+          items
+        }
+      });
+    } catch (error) {
+      sendJson(res, 400, { ok: false, error: String(error.message || error) });
+    }
+    return;
+  }
+
   if (req.method === "POST" && requestUrl.pathname === "/company/candidates/search-jd-match") {
     try {
       const user = await requireSessionUser(getBearerToken(req));
       const body = await readJson(req);
-      const [candidates, assessments] = await Promise.all([
+      const [candidates, assessments, jobs] = await Promise.all([
         listCandidatesForUser(user, { limit: 5000 }),
-        listAssessments({ actorUserId: user.id, companyId: user.companyId })
+        listAssessments({ actorUserId: user.id, companyId: user.companyId }),
+        listCompanyJobs(user.companyId)
       ]);
-      const universe = buildCandidateSearchUniverse(candidates, assessments);
+      const universe = buildCandidateSearchUniverse(candidates, assessments, jobs);
       const result = matchCandidatesToJd(universe, body || {});
       sendJson(res, 200, {
         ok: true,
