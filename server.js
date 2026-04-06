@@ -333,15 +333,25 @@ function getOwnerRecruiterLabel(candidate = {}, assessment = {}) {
   );
 }
 
-function getPositionLabel(candidate = {}, assessment = {}) {
-  return (
-    String(candidate.assigned_jd_title || candidate.assignedJdTitle || "").trim() ||
-    String(candidate.jd_title || candidate.jdTitle || "").trim() ||
-    String(assessment.jdTitle || assessment.jd_title || "").trim() ||
-    String(candidate.role || "").trim() ||
-    String(assessment.currentDesignation || assessment.current_designation || "").trim() ||
-    "Unspecified role"
+function buildKnownJdTitleSet(jobs = []) {
+  return new Set(
+    (Array.isArray(jobs) ? jobs : [])
+      .map((job) => String(job?.title || job?.jdTitle || job?.jd_title || "").trim().toLowerCase())
+      .filter(Boolean)
   );
+}
+
+function getPositionLabel(candidate = {}, assessment = {}, knownJdTitles = null) {
+  const candidates = [
+    String(candidate.assigned_jd_title || candidate.assignedJdTitle || "").trim(),
+    String(candidate.jd_title || candidate.jdTitle || "").trim(),
+    String(assessment.jdTitle || assessment.jd_title || "").trim()
+  ].filter(Boolean);
+  if (knownJdTitles instanceof Set && knownJdTitles.size) {
+    const matched = candidates.find((value) => knownJdTitles.has(value.toLowerCase()));
+    return matched || "";
+  }
+  return "";
 }
 
 function parseIsoDateValue(value) {
@@ -473,13 +483,13 @@ function toDashboardBreakdownMap(itemsMap) {
     .sort((a, b) => a.label.localeCompare(b.label));
 }
 
-function buildDashboardSummary({ candidates = [], assessments = [], dateFrom = "", dateTo = "" }) {
+function buildDashboardSummary({ candidates = [], assessments = [], jobs = [], dateFrom = "", dateTo = "" }) {
   const overall = createDashboardBucket();
   const byClient = new Map();
-  const bySourcedRecruiter = new Map();
   const byOwnerRecruiter = new Map();
   const byClientRecruiter = new Map();
   const byClientPosition = new Map();
+  const knownJdTitles = buildKnownJdTitleSet(jobs);
   const assessmentsById = new Map(
     (Array.isArray(assessments) ? assessments : []).map((item) => [String(item?.id || "").trim(), item])
   );
@@ -487,34 +497,37 @@ function buildDashboardSummary({ candidates = [], assessments = [], dateFrom = "
   for (const candidate of Array.isArray(candidates) ? candidates : []) {
     const linkedAssessment = assessmentsById.get(String(candidate?.assessment_id || candidate?.assessmentId || "").trim()) || null;
     const clientLabel = getClientLabel(candidate, linkedAssessment || {});
-    const sourcedRecruiterLabel = getRecruiterLabel(candidate, linkedAssessment || {});
     const ownerRecruiterLabel = getOwnerRecruiterLabel(candidate, linkedAssessment || {});
-    const positionLabel = getPositionLabel(candidate, linkedAssessment || {});
-    const matrixKey = `${clientLabel}|||${ownerRecruiterLabel}`;
-    const clientPositionKey = `${clientLabel}|||${positionLabel}`;
+    const positionLabel = getPositionLabel(candidate, linkedAssessment || {}, knownJdTitles);
     const dateRange = { from: dateFrom, to: dateTo };
     const contributes = addCandidateMetrics(overall, candidate, linkedAssessment, dateRange);
     if (!contributes) continue;
     if (!byClient.has(clientLabel)) byClient.set(clientLabel, createDashboardBucket());
-    if (!bySourcedRecruiter.has(sourcedRecruiterLabel)) bySourcedRecruiter.set(sourcedRecruiterLabel, createDashboardBucket());
     if (!byOwnerRecruiter.has(ownerRecruiterLabel)) byOwnerRecruiter.set(ownerRecruiterLabel, createDashboardBucket());
-    if (!byClientRecruiter.has(matrixKey)) {
-      byClientRecruiter.set(matrixKey, { clientLabel, recruiterLabel: ownerRecruiterLabel, metrics: createDashboardBucket() });
-    }
-    if (!byClientPosition.has(clientPositionKey)) {
-      byClientPosition.set(clientPositionKey, { clientLabel, positionLabel, metrics: createDashboardBucket() });
-    }
     addCandidateMetrics(byClient.get(clientLabel), candidate, linkedAssessment, dateRange);
-    addCandidateMetrics(bySourcedRecruiter.get(sourcedRecruiterLabel), candidate, linkedAssessment, dateRange);
     addCandidateMetrics(byOwnerRecruiter.get(ownerRecruiterLabel), candidate, linkedAssessment, dateRange);
-    addCandidateMetrics(byClientRecruiter.get(matrixKey).metrics, candidate, linkedAssessment, dateRange);
-    addCandidateMetrics(byClientPosition.get(clientPositionKey).metrics, candidate, linkedAssessment, dateRange);
+    if (positionLabel) {
+      const matrixKey = `${clientLabel}|||${positionLabel}|||${ownerRecruiterLabel}`;
+      const clientPositionKey = `${clientLabel}|||${positionLabel}`;
+      if (!byClientRecruiter.has(matrixKey)) {
+        byClientRecruiter.set(matrixKey, {
+          clientLabel,
+          positionLabel,
+          recruiterLabel: ownerRecruiterLabel,
+          metrics: createDashboardBucket()
+        });
+      }
+      if (!byClientPosition.has(clientPositionKey)) {
+        byClientPosition.set(clientPositionKey, { clientLabel, positionLabel, metrics: createDashboardBucket() });
+      }
+      addCandidateMetrics(byClientRecruiter.get(matrixKey).metrics, candidate, linkedAssessment, dateRange);
+      addCandidateMetrics(byClientPosition.get(clientPositionKey).metrics, candidate, linkedAssessment, dateRange);
+    }
   }
 
   return {
     overall,
     byClient: toDashboardBreakdownMap(byClient),
-    bySourcedRecruiter: toDashboardBreakdownMap(bySourcedRecruiter),
     byOwnerRecruiter: toDashboardBreakdownMap(byOwnerRecruiter),
     byClientPosition: Array.from(byClientPosition.values()).sort((a, b) =>
       `${a.clientLabel} ${a.positionLabel}`.localeCompare(`${b.clientLabel} ${b.positionLabel}`)
@@ -1984,11 +1997,12 @@ const server = http.createServer(async (req, res) => {
       const user = await requireSessionUser(getBearerToken(req));
       const dateFrom = String(requestUrl.searchParams.get("dateFrom") || "").trim();
       const dateTo = String(requestUrl.searchParams.get("dateTo") || "").trim();
-      const [candidates, assessments] = await Promise.all([
+      const [candidates, assessments, jobs] = await Promise.all([
         listCandidatesForUser(user, { limit: 5000 }),
-        listAssessments({ actorUserId: user.id, companyId: user.companyId })
+        listAssessments({ actorUserId: user.id, companyId: user.companyId }),
+        listCompanyJobs(user.companyId)
       ]);
-      const summary = buildDashboardSummary({ candidates, assessments, dateFrom, dateTo });
+      const summary = buildDashboardSummary({ candidates, assessments, jobs, dateFrom, dateTo });
       sendJson(res, 200, {
         ok: true,
         result: {
