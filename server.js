@@ -324,9 +324,19 @@ function getRecruiterLabel(candidate = {}, assessment = {}) {
   );
 }
 
+function getOwnerRecruiterLabel(candidate = {}, assessment = {}) {
+  return (
+    String(candidate.assigned_to_name || candidate.assignedToName || "").trim() ||
+    String(candidate.recruiter_name || candidate.recruiterName || "").trim() ||
+    String(assessment.recruiterName || assessment.recruiter_name || "").trim() ||
+    "Unassigned"
+  );
+}
+
 function getPositionLabel(candidate = {}, assessment = {}) {
   return (
-    String(candidate.jd_title || candidate.jdTitle || candidate.assigned_jd_title || "").trim() ||
+    String(candidate.assigned_jd_title || candidate.assignedJdTitle || "").trim() ||
+    String(candidate.jd_title || candidate.jdTitle || "").trim() ||
     String(assessment.jdTitle || assessment.jd_title || "").trim() ||
     String(candidate.role || "").trim() ||
     String(assessment.currentDesignation || assessment.current_designation || "").trim() ||
@@ -466,7 +476,8 @@ function toDashboardBreakdownMap(itemsMap) {
 function buildDashboardSummary({ candidates = [], assessments = [], dateFrom = "", dateTo = "" }) {
   const overall = createDashboardBucket();
   const byClient = new Map();
-  const byRecruiter = new Map();
+  const bySourcedRecruiter = new Map();
+  const byOwnerRecruiter = new Map();
   const byClientRecruiter = new Map();
   const byClientPosition = new Map();
   const assessmentsById = new Map(
@@ -476,23 +487,26 @@ function buildDashboardSummary({ candidates = [], assessments = [], dateFrom = "
   for (const candidate of Array.isArray(candidates) ? candidates : []) {
     const linkedAssessment = assessmentsById.get(String(candidate?.assessment_id || candidate?.assessmentId || "").trim()) || null;
     const clientLabel = getClientLabel(candidate, linkedAssessment || {});
-    const recruiterLabel = getRecruiterLabel(candidate, linkedAssessment || {});
+    const sourcedRecruiterLabel = getRecruiterLabel(candidate, linkedAssessment || {});
+    const ownerRecruiterLabel = getOwnerRecruiterLabel(candidate, linkedAssessment || {});
     const positionLabel = getPositionLabel(candidate, linkedAssessment || {});
-    const matrixKey = `${clientLabel}|||${recruiterLabel}`;
+    const matrixKey = `${clientLabel}|||${ownerRecruiterLabel}`;
     const clientPositionKey = `${clientLabel}|||${positionLabel}`;
     const dateRange = { from: dateFrom, to: dateTo };
     const contributes = addCandidateMetrics(overall, candidate, linkedAssessment, dateRange);
     if (!contributes) continue;
     if (!byClient.has(clientLabel)) byClient.set(clientLabel, createDashboardBucket());
-    if (!byRecruiter.has(recruiterLabel)) byRecruiter.set(recruiterLabel, createDashboardBucket());
+    if (!bySourcedRecruiter.has(sourcedRecruiterLabel)) bySourcedRecruiter.set(sourcedRecruiterLabel, createDashboardBucket());
+    if (!byOwnerRecruiter.has(ownerRecruiterLabel)) byOwnerRecruiter.set(ownerRecruiterLabel, createDashboardBucket());
     if (!byClientRecruiter.has(matrixKey)) {
-      byClientRecruiter.set(matrixKey, { clientLabel, recruiterLabel, metrics: createDashboardBucket() });
+      byClientRecruiter.set(matrixKey, { clientLabel, recruiterLabel: ownerRecruiterLabel, metrics: createDashboardBucket() });
     }
     if (!byClientPosition.has(clientPositionKey)) {
       byClientPosition.set(clientPositionKey, { clientLabel, positionLabel, metrics: createDashboardBucket() });
     }
     addCandidateMetrics(byClient.get(clientLabel), candidate, linkedAssessment, dateRange);
-    addCandidateMetrics(byRecruiter.get(recruiterLabel), candidate, linkedAssessment, dateRange);
+    addCandidateMetrics(bySourcedRecruiter.get(sourcedRecruiterLabel), candidate, linkedAssessment, dateRange);
+    addCandidateMetrics(byOwnerRecruiter.get(ownerRecruiterLabel), candidate, linkedAssessment, dateRange);
     addCandidateMetrics(byClientRecruiter.get(matrixKey).metrics, candidate, linkedAssessment, dateRange);
     addCandidateMetrics(byClientPosition.get(clientPositionKey).metrics, candidate, linkedAssessment, dateRange);
   }
@@ -500,7 +514,8 @@ function buildDashboardSummary({ candidates = [], assessments = [], dateFrom = "
   return {
     overall,
     byClient: toDashboardBreakdownMap(byClient),
-    byRecruiter: toDashboardBreakdownMap(byRecruiter),
+    bySourcedRecruiter: toDashboardBreakdownMap(bySourcedRecruiter),
+    byOwnerRecruiter: toDashboardBreakdownMap(byOwnerRecruiter),
     byClientPosition: Array.from(byClientPosition.values()).sort((a, b) =>
       `${a.clientLabel} ${a.positionLabel}`.localeCompare(`${b.clientLabel} ${b.positionLabel}`)
     ),
