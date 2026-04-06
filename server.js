@@ -282,6 +282,18 @@ function parseExperienceToYears(value) {
   return years + months / 12;
 }
 
+function parseNoticePeriodToDays(value) {
+  const text = normalizeDashboardText(value);
+  if (!text) return null;
+  const dayMatch = text.match(/(\d+)\s*days?/);
+  if (dayMatch) return Number(dayMatch[1]);
+  const monthMatch = text.match(/(\d+(?:\.\d+)?)\s*months?/);
+  if (monthMatch) return Math.round(Number(monthMatch[1]) * 30);
+  if (text.includes("immediate")) return 0;
+  if (text.includes("serving")) return 30;
+  return null;
+}
+
 function getAssessmentLifecycleBucket(item) {
   const status = normalizeDashboardText(item?.candidateStatus || item?.candidate_status || item?.status || "");
   const pipeline = normalizeDashboardText(item?.pipelineStage || item?.pipeline_stage || "");
@@ -312,6 +324,98 @@ function getRecruiterLabel(candidate = {}, assessment = {}) {
   );
 }
 
+function getPositionLabel(candidate = {}, assessment = {}) {
+  return (
+    String(candidate.jd_title || candidate.jdTitle || candidate.assigned_jd_title || "").trim() ||
+    String(assessment.jdTitle || assessment.jd_title || "").trim() ||
+    String(candidate.role || "").trim() ||
+    String(assessment.currentDesignation || assessment.current_designation || "").trim() ||
+    "Unspecified role"
+  );
+}
+
+function parseIsoDateValue(value) {
+  const text = String(value || "").trim();
+  if (!text) return null;
+  const stamp = new Date(text).getTime();
+  if (!Number.isFinite(stamp)) return null;
+  return new Date(stamp);
+}
+
+function parseDateInput(value, endOfDay = false) {
+  const text = String(value || "").trim();
+  if (!text) return null;
+  const date = new Date(`${text}T${endOfDay ? "23:59:59" : "00:00:00"}`);
+  return Number.isFinite(date.getTime()) ? date : null;
+}
+
+function isDateWithinRange(value, fromValue, toValue) {
+  if (!fromValue && !toValue) return true;
+  const date = parseIsoDateValue(value);
+  if (!date) return false;
+  const from = parseDateInput(fromValue, false);
+  const to = parseDateInput(toValue, true);
+  if (from && date < from) return false;
+  if (to && date > to) return false;
+  return true;
+}
+
+function getCandidateCreatedAt(candidate = {}) {
+  return String(candidate.created_at || candidate.createdAt || "").trim();
+}
+
+function getCandidateConvertedAt(candidate = {}, assessment = {}) {
+  return String(
+    assessment.generatedAt ||
+      assessment.generated_at ||
+      assessment.created_at ||
+      assessment.createdAt ||
+      assessment.updatedAt ||
+      assessment.updated_at ||
+      candidate.updated_at ||
+      candidate.updatedAt ||
+      candidate.created_at ||
+      candidate.createdAt ||
+      ""
+  ).trim();
+}
+
+function normalizeDateOutput(value) {
+  const parsed = parseIsoDateValue(value);
+  return parsed ? parsed.toISOString() : "";
+}
+
+function getRelativeMonthRange(monthOffset = 0) {
+  const now = new Date();
+  const start = new Date(now.getFullYear(), now.getMonth() + monthOffset, 1);
+  const end = new Date(now.getFullYear(), now.getMonth() + monthOffset + 1, 0, 23, 59, 59, 999);
+  return {
+    from: start.toISOString().slice(0, 10),
+    to: end.toISOString().slice(0, 10)
+  };
+}
+
+function getRelativeDayRange(days = 0) {
+  const now = new Date();
+  const start = new Date(now);
+  start.setHours(0, 0, 0, 0);
+  start.setDate(start.getDate() - Math.max(0, days - 1));
+  const end = new Date(now);
+  end.setHours(23, 59, 59, 999);
+  return {
+    from: start.toISOString().slice(0, 10),
+    to: end.toISOString().slice(0, 10)
+  };
+}
+
+function parseFreeformDateText(raw) {
+  const text = String(raw || "").trim().replace(/\.$/, "");
+  if (!text) return "";
+  const parsed = new Date(text);
+  if (!Number.isFinite(parsed.getTime())) return "";
+  return parsed.toISOString().slice(0, 10);
+}
+
 function createDashboardBucket() {
   return {
     sourced: 0,
@@ -330,10 +434,18 @@ function incrementDashboardMetric(target, metric) {
   target[metric] = Number(target[metric] || 0) + 1;
 }
 
-function addCandidateMetrics(target, candidate, linkedAssessment) {
-  incrementDashboardMetric(target, "sourced");
-  if (!candidate?.used_in_assessment) return;
+function addCandidateMetrics(target, candidate, linkedAssessment, dateRange = {}) {
+  let changed = false;
+  const createdAt = getCandidateCreatedAt(candidate);
+  if (isDateWithinRange(createdAt, dateRange.from, dateRange.to)) {
+    incrementDashboardMetric(target, "sourced");
+    changed = true;
+  }
+  if (!candidate?.used_in_assessment) return changed;
+  const convertedAt = getCandidateConvertedAt(candidate, linkedAssessment || {});
+  if (!isDateWithinRange(convertedAt, dateRange.from, dateRange.to)) return changed;
   incrementDashboardMetric(target, "converted");
+  changed = true;
   const bucket = getAssessmentLifecycleBucket(linkedAssessment || {});
   if (bucket === "under_process") incrementDashboardMetric(target, "under_interview_process");
   if (bucket === "rejected") incrementDashboardMetric(target, "rejected");
@@ -342,6 +454,7 @@ function addCandidateMetrics(target, candidate, linkedAssessment) {
   if (bucket === "shortlisted") incrementDashboardMetric(target, "shortlisted");
   if (bucket === "offered") incrementDashboardMetric(target, "offered");
   if (bucket === "joined") incrementDashboardMetric(target, "joined");
+  return changed;
 }
 
 function toDashboardBreakdownMap(itemsMap) {
@@ -350,10 +463,12 @@ function toDashboardBreakdownMap(itemsMap) {
     .sort((a, b) => a.label.localeCompare(b.label));
 }
 
-function buildDashboardSummary({ candidates = [], assessments = [] }) {
+function buildDashboardSummary({ candidates = [], assessments = [], dateFrom = "", dateTo = "" }) {
   const overall = createDashboardBucket();
   const byClient = new Map();
   const byRecruiter = new Map();
+  const byClientRecruiter = new Map();
+  const byClientPosition = new Map();
   const assessmentsById = new Map(
     (Array.isArray(assessments) ? assessments : []).map((item) => [String(item?.id || "").trim(), item])
   );
@@ -362,17 +477,40 @@ function buildDashboardSummary({ candidates = [], assessments = [] }) {
     const linkedAssessment = assessmentsById.get(String(candidate?.assessment_id || candidate?.assessmentId || "").trim()) || null;
     const clientLabel = getClientLabel(candidate, linkedAssessment || {});
     const recruiterLabel = getRecruiterLabel(candidate, linkedAssessment || {});
+    const positionLabel = getPositionLabel(candidate, linkedAssessment || {});
+    const matrixKey = `${clientLabel}|||${recruiterLabel}`;
+    const clientPositionKey = `${clientLabel}|||${positionLabel}`;
+    const dateRange = { from: dateFrom, to: dateTo };
+    const contributes = addCandidateMetrics(overall, candidate, linkedAssessment, dateRange);
+    if (!contributes) continue;
     if (!byClient.has(clientLabel)) byClient.set(clientLabel, createDashboardBucket());
     if (!byRecruiter.has(recruiterLabel)) byRecruiter.set(recruiterLabel, createDashboardBucket());
-    addCandidateMetrics(overall, candidate, linkedAssessment);
-    addCandidateMetrics(byClient.get(clientLabel), candidate, linkedAssessment);
-    addCandidateMetrics(byRecruiter.get(recruiterLabel), candidate, linkedAssessment);
+    if (!byClientRecruiter.has(matrixKey)) {
+      byClientRecruiter.set(matrixKey, { clientLabel, recruiterLabel, metrics: createDashboardBucket() });
+    }
+    if (!byClientPosition.has(clientPositionKey)) {
+      byClientPosition.set(clientPositionKey, { clientLabel, positionLabel, metrics: createDashboardBucket() });
+    }
+    addCandidateMetrics(byClient.get(clientLabel), candidate, linkedAssessment, dateRange);
+    addCandidateMetrics(byRecruiter.get(recruiterLabel), candidate, linkedAssessment, dateRange);
+    addCandidateMetrics(byClientRecruiter.get(matrixKey).metrics, candidate, linkedAssessment, dateRange);
+    addCandidateMetrics(byClientPosition.get(clientPositionKey).metrics, candidate, linkedAssessment, dateRange);
   }
 
   return {
     overall,
     byClient: toDashboardBreakdownMap(byClient),
-    byRecruiter: toDashboardBreakdownMap(byRecruiter)
+    byRecruiter: toDashboardBreakdownMap(byRecruiter),
+    byClientPosition: Array.from(byClientPosition.values()).sort((a, b) =>
+      `${a.clientLabel} ${a.positionLabel}`.localeCompare(`${b.clientLabel} ${b.positionLabel}`)
+    ),
+    byClientRecruiter: Array.from(byClientRecruiter.values()).sort((a, b) =>
+      `${a.clientLabel} ${a.recruiterLabel}`.localeCompare(`${b.clientLabel} ${b.recruiterLabel}`)
+    ),
+    dateRange: {
+      from: String(dateFrom || "").trim(),
+      to: String(dateTo || "").trim()
+    }
   };
 }
 
@@ -380,12 +518,67 @@ function parseNaturalLanguageCandidateQuery(rawQuery) {
   const query = String(rawQuery || "").trim();
   const lower = query.toLowerCase();
   const minExperienceMatch = lower.match(/(\d+(?:\.\d+)?)\s*\+?\s*years?/);
+  const maxExperienceMatch = lower.match(/\b(?:under|less than|max)\s+(\d+(?:\.\d+)?)\s*years?/);
   const locationMatch = lower.match(/\b(?:based out of|based in|from|located in)\s+([a-z][a-z\s]+?)(?:\bwith\b|$)/i);
-  const ctcUnderMatch = lower.match(/\b(?:current\s+ctc\s+under|ctc\s+under|under)\s+(\d+(?:\.\d+)?)\s*(l|lpa|lakhs?|lac|cr|crore|k)?\b/i);
+  const ctcUnderMatch = lower.match(/\b(?:current\s+ctc\s+under|ctc\s+under)\s+(\d+(?:\.\d+)?)\s*(l|lpa|lakhs?|lac|cr|crore|k)?\b/i);
+  const expectedCtcUnderMatch = lower.match(/\b(?:expected\s+ctc\s+under)\s+(\d+(?:\.\d+)?)\s*(l|lpa|lakhs?|lac|cr|crore|k)?\b/i);
+  const noticeMatch = lower.match(/\b(?:notice\s+period\s+under|notice\s+under|notice period of)\s+(\d+(?:\.\d+)?)\s*(days?|months?)\b/i);
+  const skillMatch = lower.match(/\b(?:with skills?|skills?|having)\s+([a-z0-9,+/&\s-]+?)(?:\bwith\b|\bbased\b|\bfor\b|$)/i);
+  const currentCompanyMatch = lower.match(/\b(?:from current company|from|in current company|currently at)\s+([a-z0-9][a-z0-9\s&.-]+?)(?:\bwith\b|\bbased\b|$)/i);
+  const statusTerms = [];
+  if (/\bshortlisted\b/i.test(lower)) statusTerms.push("shortlisted");
+  if (/\boffered\b|\boffer\b/i.test(lower)) statusTerms.push("offered");
+  if (/\bjoined\b/i.test(lower)) statusTerms.push("joined");
+  if (/\breject(?:ed)?\b/i.test(lower)) statusTerms.push("rejected");
+  if (/\bduplicate\b/i.test(lower)) statusTerms.push("duplicate");
+  if (/\bdropped\b|\bdid not attend\b/i.test(lower)) statusTerms.push("dropped");
+  const explicitRangeMatch =
+    lower.match(/\bfrom\s+([a-z0-9,/\- ]+?)\s+to\s+([a-z0-9,/\- ]+?)(?:\bwith\b|\bfor\b|$)/i) ||
+    lower.match(/\bbetween\s+([a-z0-9,/\- ]+?)\s+and\s+([a-z0-9,/\- ]+?)(?:\bwith\b|\bfor\b|$)/i);
   const clientMatch = lower.match(/\b(?:for client|for)\s+([a-z0-9][a-z0-9\s&.-]+)$/i);
+  let dateFrom = "";
+  let dateTo = "";
+  if (/\blast month\b/i.test(lower)) {
+    const range = getRelativeMonthRange(-1);
+    dateFrom = range.from;
+    dateTo = range.to;
+  } else if (/\bthis month\b/i.test(lower)) {
+    const range = getRelativeMonthRange(0);
+    dateFrom = range.from;
+    dateTo = range.to;
+  } else {
+    const lastDaysMatch = lower.match(/\blast\s+(\d+)\s+days\b/i);
+    if (lastDaysMatch) {
+      const range = getRelativeDayRange(Number(lastDaysMatch[1]) || 0);
+      dateFrom = range.from;
+      dateTo = range.to;
+    } else if (/\btoday\b/i.test(lower)) {
+      const range = getRelativeDayRange(1);
+      dateFrom = range.from;
+      dateTo = range.to;
+    } else if (explicitRangeMatch) {
+      dateFrom = parseFreeformDateText(explicitRangeMatch[1]);
+      dateTo = parseFreeformDateText(explicitRangeMatch[2]);
+    }
+  }
+  let dateField = "";
+  if (/\bshared\b|\bconverted\b|\bassessment\b|\bcv shared\b/i.test(lower)) {
+    dateField = "shared";
+  } else if (/\bcaptured\b|\bsourced\b|\badded\b|\bcreated\b/i.test(lower)) {
+    dateField = "captured";
+  }
   let roleText = query
     .replace(/\bget me\b/i, "")
     .replace(/\bshow me\b/i, "")
+    .replace(/\ball candidates?\b/i, "")
+    .replace(/\bshared\b.*$/i, "")
+    .replace(/\bcaptured\b.*$/i, "")
+    .replace(/\bsourced\b.*$/i, "")
+    .replace(/\bthis month\b.*$/i, "")
+    .replace(/\blast month\b.*$/i, "")
+    .replace(/\blast\s+\d+\s+days\b.*$/i, "")
+    .replace(/\bfrom\s+[a-z0-9,/\- ]+\s+to\s+[a-z0-9,/\- ]+.*$/i, "")
+    .replace(/\bbetween\s+[a-z0-9,/\- ]+\s+and\s+[a-z0-9,/\- ]+.*$/i, "")
     .replace(/\bwith\s+\d+(?:\.\d+)?\s*\+?\s*years?.*$/i, "")
     .replace(/\bbased out of\b.*$/i, "")
     .replace(/\bbased in\b.*$/i, "")
@@ -398,9 +591,23 @@ function parseNaturalLanguageCandidateQuery(rawQuery) {
     raw: query,
     role: roleText,
     minExperienceYears: minExperienceMatch ? Number(minExperienceMatch[1]) : null,
+    maxExperienceYears: maxExperienceMatch ? Number(maxExperienceMatch[1]) : null,
     location: locationMatch ? String(locationMatch[1] || "").trim() : "",
     maxCurrentCtcLpa: ctcUnderMatch ? parseAmountToLpa(`${ctcUnderMatch[1]} ${ctcUnderMatch[2] || "lpa"}`) : null,
-    client: clientMatch ? String(clientMatch[1] || "").trim() : ""
+    maxExpectedCtcLpa: expectedCtcUnderMatch ? parseAmountToLpa(`${expectedCtcUnderMatch[1]} ${expectedCtcUnderMatch[2] || "lpa"}`) : null,
+    maxNoticeDays: noticeMatch ? parseNoticePeriodToDays(`${noticeMatch[1]} ${noticeMatch[2]}`) : null,
+    skills: skillMatch
+      ? String(skillMatch[1] || "")
+          .split(/,| and |\/|&/i)
+          .map((item) => String(item || "").trim())
+          .filter(Boolean)
+      : [],
+    currentCompany: currentCompanyMatch ? String(currentCompanyMatch[1] || "").trim() : "",
+    statuses: statusTerms,
+    client: clientMatch ? String(clientMatch[1] || "").trim() : "",
+    dateFrom,
+    dateTo,
+    dateField
   };
 }
 
@@ -416,14 +623,20 @@ function buildCandidateSearchUniverse(candidates = [], assessments = []) {
       id: String(candidate?.id || linkedAssessment?.id || "").trim(),
       candidateName: String(candidate?.name || linkedAssessment?.candidateName || "").trim(),
       role: String(candidate?.role || linkedAssessment?.currentDesignation || "").trim(),
+      position: getPositionLabel(candidate, linkedAssessment || {}),
       company: String(candidate?.company || linkedAssessment?.currentCompany || "").trim(),
       totalExperience: String(candidate?.experience || linkedAssessment?.totalExperience || "").trim(),
       location: String(candidate?.location || linkedAssessment?.location || "").trim(),
       currentCtc: String(candidate?.current_ctc || linkedAssessment?.currentCtc || "").trim(),
+      expectedCtc: String(candidate?.expected_ctc || linkedAssessment?.expectedCtc || "").trim(),
+      noticePeriod: String(candidate?.notice_period || linkedAssessment?.noticePeriod || "").trim(),
+      skills: Array.isArray(candidate?.skills) ? candidate.skills : [],
       clientName: getClientLabel(candidate, linkedAssessment || {}),
       recruiterName: getRecruiterLabel(candidate, linkedAssessment || {}),
       candidateStatus: String(linkedAssessment?.candidateStatus || "").trim(),
       pipelineStage: String(linkedAssessment?.pipelineStage || "").trim(),
+      createdAt: normalizeDateOutput(getCandidateCreatedAt(candidate)),
+      sharedAt: normalizeDateOutput(getCandidateConvertedAt(candidate, linkedAssessment || {})),
       sourceType: candidate?.used_in_assessment ? "captured_and_converted" : "captured_note",
       raw: {
         candidate,
@@ -439,14 +652,20 @@ function buildCandidateSearchUniverse(candidates = [], assessments = []) {
       id: assessmentId,
       candidateName: String(assessment?.candidateName || "").trim(),
       role: String(assessment?.currentDesignation || "").trim(),
+      position: getPositionLabel({}, assessment),
       company: String(assessment?.currentCompany || "").trim(),
       totalExperience: String(assessment?.totalExperience || "").trim(),
       location: String(assessment?.location || "").trim(),
       currentCtc: String(assessment?.currentCtc || "").trim(),
+      expectedCtc: String(assessment?.expectedCtc || "").trim(),
+      noticePeriod: String(assessment?.noticePeriod || "").trim(),
+      skills: [],
       clientName: getClientLabel({}, assessment),
       recruiterName: getRecruiterLabel({}, assessment),
       candidateStatus: String(assessment?.candidateStatus || "").trim(),
       pipelineStage: String(assessment?.pipelineStage || "").trim(),
+      createdAt: "",
+      sharedAt: normalizeDateOutput(getCandidateConvertedAt({}, assessment)),
       sourceType: "assessment_only",
       raw: {
         candidate: null,
@@ -474,9 +693,41 @@ function candidateMatchesNaturalFilter(item, filters) {
     const years = parseExperienceToYears(item.totalExperience);
     if (years == null || years < filters.minExperienceYears) return false;
   }
+  if (filters.maxExperienceYears != null) {
+    const years = parseExperienceToYears(item.totalExperience);
+    if (years == null || years > filters.maxExperienceYears) return false;
+  }
   if (filters.maxCurrentCtcLpa != null) {
     const currentCtc = parseAmountToLpa(item.currentCtc);
     if (currentCtc == null || currentCtc > filters.maxCurrentCtcLpa) return false;
+  }
+  if (filters.maxExpectedCtcLpa != null) {
+    const expectedCtc = parseAmountToLpa(item.expectedCtc);
+    if (expectedCtc == null || expectedCtc > filters.maxExpectedCtcLpa) return false;
+  }
+  if (filters.maxNoticeDays != null) {
+    const noticeDays = parseNoticePeriodToDays(item.noticePeriod);
+    if (noticeDays == null || noticeDays > filters.maxNoticeDays) return false;
+  }
+  if (filters.currentCompany) {
+    if (!String(item.company || "").toLowerCase().includes(filters.currentCompany.toLowerCase())) return false;
+  }
+  if (Array.isArray(filters.skills) && filters.skills.length) {
+    const hay = `${item.role} ${item.company} ${(item.skills || []).join(" ")}`.toLowerCase();
+    if (!filters.skills.every((skill) => hay.includes(String(skill || "").toLowerCase()))) return false;
+  }
+  if (Array.isArray(filters.statuses) && filters.statuses.length) {
+    const lifecycleBucket = getAssessmentLifecycleBucket(item);
+    if (!filters.statuses.includes(lifecycleBucket)) return false;
+  }
+  if (filters.dateFrom || filters.dateTo) {
+    const valuesToCheck =
+      filters.dateField === "shared"
+        ? [item.sharedAt]
+        : filters.dateField === "captured"
+          ? [item.createdAt]
+          : [item.sharedAt, item.createdAt];
+    if (!valuesToCheck.some((value) => isDateWithinRange(value, filters.dateFrom, filters.dateTo))) return false;
   }
   return true;
 }
@@ -1625,11 +1876,13 @@ const server = http.createServer(async (req, res) => {
   if (req.method === "GET" && requestUrl.pathname === "/company/dashboard") {
     try {
       const user = await requireSessionUser(getBearerToken(req));
+      const dateFrom = String(requestUrl.searchParams.get("dateFrom") || "").trim();
+      const dateTo = String(requestUrl.searchParams.get("dateTo") || "").trim();
       const [candidates, assessments] = await Promise.all([
         listCandidatesForUser(user, { limit: 5000 }),
         listAssessments({ actorUserId: user.id, companyId: user.companyId })
       ]);
-      const summary = buildDashboardSummary({ candidates, assessments });
+      const summary = buildDashboardSummary({ candidates, assessments, dateFrom, dateTo });
       sendJson(res, 200, {
         ok: true,
         result: {
@@ -1650,6 +1903,10 @@ const server = http.createServer(async (req, res) => {
       const user = await requireSessionUser(getBearerToken(req));
       const query = String(requestUrl.searchParams.get("q") || "").trim();
       const filters = parseNaturalLanguageCandidateQuery(query);
+      const queryDateFrom = String(requestUrl.searchParams.get("dateFrom") || "").trim();
+      const queryDateTo = String(requestUrl.searchParams.get("dateTo") || "").trim();
+      if (queryDateFrom && !filters.dateFrom) filters.dateFrom = queryDateFrom;
+      if (queryDateTo && !filters.dateTo) filters.dateTo = queryDateTo;
       const [candidates, assessments] = await Promise.all([
         listCandidatesForUser(user, { limit: 5000 }),
         listAssessments({ actorUserId: user.id, companyId: user.companyId })
