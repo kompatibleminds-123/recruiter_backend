@@ -456,6 +456,18 @@ function getCurrentWeekRange() {
   };
 }
 
+function getNamedMonthRange(monthName, year = new Date().getFullYear()) {
+  const names = ["january", "february", "march", "april", "may", "june", "july", "august", "september", "october", "november", "december"];
+  const monthIndex = names.indexOf(String(monthName || "").trim().toLowerCase());
+  if (monthIndex < 0) return { from: "", to: "" };
+  const start = new Date(year, monthIndex, 1);
+  const end = new Date(year, monthIndex + 1, 0, 23, 59, 59, 999);
+  return {
+    from: start.toISOString().slice(0, 10),
+    to: end.toISOString().slice(0, 10)
+  };
+}
+
 function parseFreeformDateText(raw) {
   const text = String(raw || "").trim().replace(/\.$/, "");
   if (!text) return "";
@@ -585,6 +597,9 @@ function parseNaturalLanguageCandidateQuery(rawQuery) {
   const noticeMatch = lower.match(/\b(?:notice\s+period\s+under|notice\s+under|notice period of)\s+(\d+(?:\.\d+)?)\s*(days?|months?)\b/i);
   const skillMatch = lower.match(/\b(?:with skills?|skills?|having)\s+([a-z0-9,+/&\s-]+?)(?:\bwith\b|\bbased\b|\bfor\b|$)/i);
   const currentCompanyMatch = lower.match(/\b(?:from current company|from|in current company|currently at)\s+([a-z0-9][a-z0-9\s&.-]+?)(?:\bwith\b|\bbased\b|$)/i);
+  const locationListMatch =
+    lower.match(/\b(?:in|from|based in|based out of|located in)\s+([a-z][a-z\s]+(?:\s+(?:or|and)\s+[a-z][a-z\s]+)+)\b/i) ||
+    null;
   const interviewIntent = /\b(?:aligned|interview(?:s)?|scheduled)\b/i.test(lower);
   const recruiterScopeMe = /\b(?:i|me|my)\s+(?:sourced|captured|shared|converted)\b/i.test(lower) || /\bthat i (?:sourced|captured|shared|converted)\b/i.test(lower);
   const sourcedIntent = /\b(?:sourced|captured)\b/i.test(lower);
@@ -616,6 +631,7 @@ function parseNaturalLanguageCandidateQuery(rawQuery) {
   const explicitRangeMatch =
     lower.match(/\bfrom\s+([a-z0-9,/\- ]+?)\s+to\s+([a-z0-9,/\- ]+?)(?:\bwith\b|\bfor\b|$)/i) ||
     lower.match(/\bbetween\s+([a-z0-9,/\- ]+?)\s+and\s+([a-z0-9,/\- ]+?)(?:\bwith\b|\bfor\b|$)/i);
+  const monthOnlyMatch = lower.match(/\bin\s+(january|february|march|april|may|june|july|august|september|october|november|december)\b/i);
   const clientMatch = lower.match(/\b(?:for client|for)\s+([a-z0-9][a-z0-9\s&.-]+)$/i);
   let dateFrom = "";
   let dateTo = "";
@@ -633,6 +649,10 @@ function parseNaturalLanguageCandidateQuery(rawQuery) {
     dateTo = range.to;
   } else if (/\bthis month\b/i.test(lower)) {
     const range = getRelativeMonthRange(0);
+    dateFrom = range.from;
+    dateTo = range.to;
+  } else if (monthOnlyMatch) {
+    const range = getNamedMonthRange(monthOnlyMatch[1]);
     dateFrom = range.from;
     dateTo = range.to;
   } else {
@@ -653,6 +673,8 @@ function parseNaturalLanguageCandidateQuery(rawQuery) {
   let dateField = "";
   if (/\bshared\b|\bconverted\b|\bassessment\b|\bcv shared\b/i.test(lower)) {
     dateField = "shared";
+  } else if (/\bjoined\b|\bjoining(?:s)?\b/i.test(lower)) {
+    dateField = "joined";
   } else if (interviewIntent) {
     dateField = "interview";
   } else if (/\bcaptured\b|\bsourced\b|\badded\b|\bcreated\b/i.test(lower)) {
@@ -667,12 +689,14 @@ function parseNaturalLanguageCandidateQuery(rawQuery) {
     .replace(/\bsourced\b.*$/i, "")
     .replace(/\bthis month\b.*$/i, "")
     .replace(/\blast month\b.*$/i, "")
+    .replace(/\bin\s+(january|february|march|april|may|june|july|august|september|october|november|december)\b.*$/i, "")
     .replace(/\blast\s+\d+\s+days\b.*$/i, "")
     .replace(/\bfrom\s+[a-z0-9,/\- ]+\s+to\s+[a-z0-9,/\- ]+.*$/i, "")
     .replace(/\bbetween\s+[a-z0-9,/\- ]+\s+and\s+[a-z0-9,/\- ]+.*$/i, "")
     .replace(/\bwith\s+\d+(?:\.\d+)?\s*\+?\s*years?.*$/i, "")
     .replace(/\bbased out of\b.*$/i, "")
     .replace(/\bbased in\b.*$/i, "")
+    .replace(/\bin\s+[a-z][a-z\s]+(?:\s+(?:or|and)\s+[a-z][a-z\s]+)+.*$/i, "")
     .replace(/\bfrom\b.*$/i, "")
     .replace(/\bcurrent\s+ctc\s+under\b.*$/i, "")
     .replace(/\bctc\s+under\b.*$/i, "")
@@ -682,12 +706,29 @@ function parseNaturalLanguageCandidateQuery(rawQuery) {
     .replace(/\bin\s+[a-z0-9][a-z0-9\s&.-]+$/i, "")
     .trim();
   roleText = roleText.replace(/\bcandidates?\b/gi, "").trim();
+  roleText = roleText.replace(/\bprofile\b/gi, "").trim();
+  const locations = locationListMatch
+    ? String(locationListMatch[1] || "")
+        .split(/\s+(?:or|and)\s+/i)
+        .map((item) => String(item || "").trim())
+        .filter(Boolean)
+    : [];
+  let derivedLocation = locationMatch ? String(locationMatch[1] || "").trim() : "";
+  if (!derivedLocation && !locations.length) {
+    const trailingLocationMatch = roleText.match(/\b([a-z][a-z\s]{2,})$/i);
+    if (trailingLocationMatch && roleText.split(/\s+/).length >= 2) {
+      derivedLocation = String(trailingLocationMatch[1] || "").trim();
+      roleText = roleText.slice(0, roleText.length - derivedLocation.length).trim();
+    }
+  }
   return {
     raw: query,
     role: roleText,
+    roleFamilies: detectRoleFamilies(roleText),
     minExperienceYears: minExperienceMatch ? Number(minExperienceMatch[1]) : null,
     maxExperienceYears: maxExperienceMatch ? Number(maxExperienceMatch[1]) : null,
-    location: locationMatch ? String(locationMatch[1] || "").trim() : "",
+    location: derivedLocation,
+    locations,
     maxCurrentCtcLpa: ctcUnderMatch ? parseAmountToLpa(`${ctcUnderMatch[1]} ${ctcUnderMatch[2] || "lpa"}`) : null,
     maxExpectedCtcLpa: expectedCtcUnderMatch ? parseAmountToLpa(`${expectedCtcUnderMatch[1]} ${expectedCtcUnderMatch[2] || "lpa"}`) : null,
     maxNoticeDays: noticeMatch ? parseNoticePeriodToDays(`${noticeMatch[1]} ${noticeMatch[2]}`) : null,
@@ -796,19 +837,29 @@ function buildCandidateSearchUniverse(candidates = [], assessments = [], jobs = 
 function candidateMatchesNaturalFilter(item, filters, actor = null) {
   if (!item) return false;
   if (filters.role) {
-    const roleHay = `${item.role} ${item.position} ${item.company} ${item.clientName}`.toLowerCase();
+    const roleHay = `${item.role} ${(item.skills || []).join(" ")}`.toLowerCase();
     const roleTokens = String(filters.role || "")
       .toLowerCase()
       .split(/\s+/)
       .map((part) => part.trim())
-      .filter((part) => part.length >= 2 && !["me", "get", "show", "all"].includes(part));
+      .filter((part) => part.length >= 2 && !["me", "get", "show", "all", "profile"].includes(part));
     if (roleTokens.length) {
       const matchedTokens = roleTokens.filter((token) => roleHay.includes(token));
       if (!matchedTokens.length) return false;
     }
   }
+  if (Array.isArray(filters.roleFamilies) && filters.roleFamilies.length) {
+    const candidateRoleFamilies = detectRoleFamilies(String(item.role || ""));
+    if (!candidateRoleFamilies.length || !filters.roleFamilies.some((family) => candidateRoleFamilies.includes(family))) {
+      return false;
+    }
+  }
   if (filters.location) {
     if (!String(item.location || "").toLowerCase().includes(filters.location.toLowerCase())) return false;
+  }
+  if (Array.isArray(filters.locations) && filters.locations.length) {
+    const itemLocation = String(item.location || "").toLowerCase();
+    if (!filters.locations.some((location) => itemLocation.includes(String(location || "").toLowerCase()))) return false;
   }
   if (filters.client) {
     if (!String(item.clientName || "").toLowerCase().includes(filters.client.toLowerCase())) return false;
@@ -890,6 +941,8 @@ function candidateMatchesNaturalFilter(item, filters, actor = null) {
     const valuesToCheck =
       filters.dateField === "shared"
         ? [item.sharedAt]
+        : filters.dateField === "joined"
+          ? [item.offerDoj]
         : filters.dateField === "interview"
           ? [item.interviewAt]
         : filters.dateField === "captured"
