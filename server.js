@@ -831,65 +831,242 @@ function parseSkillListFromText(text) {
     .slice(0, 20);
 }
 
+const JD_ROLE_STOPWORDS = new Set([
+  "developer",
+  "engineer",
+  "executive",
+  "manager",
+  "lead",
+  "leader",
+  "head",
+  "senior",
+  "junior",
+  "associate",
+  "specialist",
+  "analyst",
+  "consultant",
+  "officer",
+  "intern",
+  "principal"
+]);
+
+const ROLE_FAMILY_KEYWORDS = {
+  tech: ["developer", "engineer", "backend", "frontend", "fullstack", "nodejs", "node", "react", "angular", "java", "python", "devops", "sre", "cloud", "software", "qa", "testing", "automation"],
+  sales: ["sales", "business development", "bd", "account executive", "account manager", "inside sales", "field sales", "relationship manager"],
+  recruitment: ["recruiter", "talent", "sourcing", "headhunter", "hr recruiter"],
+  marketing: ["marketing", "growth", "seo", "performance marketing", "brand"],
+  product: ["product manager", "product owner", "product"],
+  finance: ["finance", "accounting", "accounts", "fp&a", "audit"],
+  operations: ["operations", "ops", "supply chain", "logistics"],
+  hr: ["human resources", "hrbp", "hr", "people ops"]
+};
+
+function normalizeJdSearchToken(value) {
+  return String(value || "")
+    .toLowerCase()
+    .replace(/node\.?js/g, "nodejs")
+    .replace(/\bnode js\b/g, "nodejs")
+    .replace(/\bnode\b/g, "nodejs")
+    .replace(/java\s*script/g, "javascript")
+    .replace(/\baccount\s+executive\b/g, "account executive")
+    .replace(/\bbusiness\s+development\b/g, "business development")
+    .replace(/[\W_]+/g, " ")
+    .trim();
+}
+
+function buildNormalizedTokenSet(text) {
+  return new Set(
+    normalizeJdSearchToken(text)
+      .split(/\s+/)
+      .map((part) => part.trim())
+      .filter((part) => part.length >= 2)
+  );
+}
+
+function extractMandatoryRoleTokens(text) {
+  const normalized = normalizeJdSearchToken(text);
+  return Array.from(buildNormalizedTokenSet(normalized)).filter((token) => token.length >= 3 && !JD_ROLE_STOPWORDS.has(token));
+}
+
+function detectRoleFamilies(text) {
+  const hay = normalizeJdSearchToken(text);
+  return Object.entries(ROLE_FAMILY_KEYWORDS)
+    .filter(([, keywords]) => keywords.some((keyword) => hay.includes(normalizeJdSearchToken(keyword))))
+    .map(([family]) => family);
+}
+
+function parseJdCompensationRange(text) {
+  const lower = normalizeDashboardText(text);
+  if (!lower) return { minLpa: null, maxLpa: null };
+  const betweenMatch = lower.match(/\b(\d+(?:\.\d+)?)\s*-\s*(\d+(?:\.\d+)?)\s*(l|lpa|lakhs?|lac|cr|crore|k)\b/i);
+  if (betweenMatch) {
+    return {
+      minLpa: parseAmountToLpa(`${betweenMatch[1]} ${betweenMatch[3]}`),
+      maxLpa: parseAmountToLpa(`${betweenMatch[2]} ${betweenMatch[3]}`)
+    };
+  }
+  const underMatch = lower.match(/\b(?:upto|up to|under|max(?:imum)?(?: ctc)?(?: budget)?(?: is)?|budget(?: is)?)\s*(\d+(?:\.\d+)?)\s*(l|lpa|lakhs?|lac|cr|crore|k)\b/i);
+  if (underMatch) {
+    return {
+      minLpa: null,
+      maxLpa: parseAmountToLpa(`${underMatch[1]} ${underMatch[2]}`)
+    };
+  }
+  const aboveMatch = lower.match(/\b(?:above|minimum|at least|min(?:imum)?(?: ctc)?(?: budget)?(?: is)?)\s*(\d+(?:\.\d+)?)\s*(l|lpa|lakhs?|lac|cr|crore|k)\b/i);
+  if (aboveMatch) {
+    return {
+      minLpa: parseAmountToLpa(`${aboveMatch[1]} ${aboveMatch[2]}`),
+      maxLpa: null
+    };
+  }
+  return { minLpa: null, maxLpa: null };
+}
+
+function matchesCompensationRange(item, jd) {
+  if (jd.minCtcLpa == null && jd.maxCtcLpa == null) return true;
+  const values = [parseAmountToLpa(item.currentCtc), parseAmountToLpa(item.expectedCtc)].filter((value) => value != null);
+  if (!values.length) return false;
+  return values.some((value) => (jd.minCtcLpa == null || value >= jd.minCtcLpa) && (jd.maxCtcLpa == null || value <= jd.maxCtcLpa));
+}
+
+function getBestCompensationMatch(item, jd) {
+  const values = [parseAmountToLpa(item.currentCtc), parseAmountToLpa(item.expectedCtc)].filter((value) => value != null);
+  if (!values.length) return null;
+  const target = jd.maxCtcLpa ?? jd.minCtcLpa;
+  if (target == null) return values[0];
+  return values.reduce((best, value) => (Math.abs(value - target) < Math.abs(best - target) ? value : best), values[0]);
+}
+
 function parseJdMatchPayload(raw = {}) {
   const input = raw && typeof raw === "object" ? raw : {};
-  const jdTitle = String(input.jdTitle || input.title || "").trim();
+  const explicitTitle = String(input.jdTitle || input.title || "").trim();
   const mustHaveSkills = String(input.mustHaveSkills || "").trim();
   const jobDescription = String(input.jobDescription || input.jdText || input.text || "").trim();
+  const inferredTitle = !explicitTitle && jobDescription && jobDescription.length <= 80 && !/[\n,:;]/.test(jobDescription)
+    ? jobDescription
+    : "";
+  const jdTitle = explicitTitle || inferredTitle;
   const combined = [jdTitle, mustHaveSkills, jobDescription].filter(Boolean).join("\n");
   const expMatch = combined.match(/(\d+(?:\.\d+)?)\s*\+?\s*years?/i);
   const locationMatch = combined.match(/\b(?:location|based in|based out of|work location)\s*[:\-]?\s*([A-Za-z][A-Za-z\s,/-]{1,60})/i);
-  const skills = parseSkillListFromText(mustHaveSkills || jobDescription);
+  const mustHaveSkillList = parseSkillListFromText(mustHaveSkills);
+  const skills = Array.from(new Set([...(mustHaveSkillList || []), ...parseSkillListFromText(jobDescription)]));
+  const noticeMatch = combined.match(/\b(?:notice(?: period)?(?: up to| under| max)?|join(?:ing)? in)\s+(\d+(?:\.\d+)?)\s*(days?|months?)\b/i);
+  const ctcRange = parseJdCompensationRange(combined);
   return {
     jdTitle,
     mustHaveSkills,
     jobDescription,
     minExperienceYears: expMatch ? Number(expMatch[1]) : null,
     location: locationMatch ? String(locationMatch[1] || "").trim() : "",
-    skills
+    skills,
+    mustHaveSkillList,
+    mandatoryRoleTokens: extractMandatoryRoleTokens(jdTitle),
+    roleFamilies: detectRoleFamilies(jdTitle),
+    minCtcLpa: ctcRange.minLpa,
+    maxCtcLpa: ctcRange.maxLpa,
+    maxNoticeDays: noticeMatch ? parseNoticePeriodToDays(`${noticeMatch[1]} ${noticeMatch[2]}`) : null
   };
 }
 
 function scoreCandidateAgainstJd(item, jd) {
   let score = 0;
   const reasons = [];
-  const roleHay = `${item.role || ""} ${item.position || ""}`.toLowerCase();
+  let hasCoreMatch = false;
+  let hasRoleMatch = false;
+  const roleHay = normalizeJdSearchToken(`${item.role || ""} ${item.position || ""}`);
   const companyHay = `${item.company || ""}`.toLowerCase();
-  if (jd.jdTitle) {
-    const titleWords = jd.jdTitle.toLowerCase().split(/\s+/).filter((part) => part.length >= 3);
-    const titleMatches = titleWords.filter((part) => roleHay.includes(part));
-    if (titleMatches.length) {
-      score += Math.min(35, titleMatches.length * 10);
-      reasons.push(`role aligns with ${jd.jdTitle}`);
+  const skillHay = normalizeJdSearchToken(`${item.role || ""} ${item.position || ""} ${companyHay} ${(item.skills || []).join(" ")}`);
+  const candidateFamilies = detectRoleFamilies(`${item.role || ""} ${item.position || ""}`);
+  if (jd.roleFamilies.length && candidateFamilies.length && !jd.roleFamilies.some((family) => candidateFamilies.includes(family))) {
+    return { score: 0, reasons: [], hasCoreMatch: false, hasRoleMatch: false, noticeDays: parseNoticePeriodToDays(item.noticePeriod) };
+  }
+  if (Array.isArray(jd.mandatoryRoleTokens) && jd.mandatoryRoleTokens.length) {
+    const matchedMandatory = jd.mandatoryRoleTokens.filter((token) => roleHay.includes(token) || skillHay.includes(token));
+    if (!matchedMandatory.length) {
+      return { score: 0, reasons: [], hasCoreMatch: false, hasRoleMatch: false, noticeDays: parseNoticePeriodToDays(item.noticePeriod) };
     }
   }
-  if (jd.minExperienceYears != null) {
+  if (jd.jdTitle) {
+    const normalizedTitle = normalizeJdSearchToken(jd.jdTitle);
+    const titleWords = Array.from(buildNormalizedTokenSet(normalizedTitle)).filter((part) => part.length >= 3);
+    const titleMatches = titleWords.filter((part) => roleHay.includes(part));
+    if (normalizedTitle && roleHay.includes(normalizedTitle)) {
+      score += 55;
+      reasons.push(`role strongly aligns with ${jd.jdTitle}`);
+      hasCoreMatch = true;
+      hasRoleMatch = true;
+    } else if (titleMatches.length >= Math.max(1, Math.ceil(titleWords.length / 2))) {
+      score += Math.min(45, titleMatches.length * 14);
+      reasons.push(`role aligns with ${jd.jdTitle}`);
+      hasCoreMatch = true;
+      hasRoleMatch = true;
+    } else if (titleMatches.length) {
+      score += Math.min(18, titleMatches.length * 6);
+      reasons.push(`partial role overlap with ${jd.jdTitle}`);
+      hasCoreMatch = true;
+      hasRoleMatch = true;
+    }
+  }
+  if (hasRoleMatch && jd.minExperienceYears != null) {
     const years = parseExperienceToYears(item.totalExperience);
     if (years != null && years >= jd.minExperienceYears) {
-      score += 20;
+      score += 12;
       reasons.push(`${years}+ years experience`);
     }
   }
+  const mustHaveMatches = Array.isArray(jd.mustHaveSkillList) && jd.mustHaveSkillList.length
+    ? jd.mustHaveSkillList.filter((skill) => skillHay.includes(normalizeJdSearchToken(skill)))
+    : [];
+  if (mustHaveMatches.length) {
+    score += Math.min(30, mustHaveMatches.length * 12);
+    reasons.push(`must-have skills matched: ${mustHaveMatches.slice(0, 4).join(", ")}`);
+    hasCoreMatch = true;
+  }
   if (jd.location && String(item.location || "").toLowerCase().includes(jd.location.toLowerCase())) {
-    score += 10;
+    score += hasRoleMatch ? 10 : 6;
     reasons.push(`location fits ${jd.location}`);
+    hasCoreMatch = true;
   }
   if (Array.isArray(jd.skills) && jd.skills.length) {
-    const hay = `${item.role || ""} ${item.position || ""} ${companyHay} ${(item.skills || []).join(" ")}`.toLowerCase();
-    const matchedSkills = jd.skills.filter((skill) => hay.includes(String(skill || "").toLowerCase()));
+    const matchedSkills = jd.skills.filter((skill) => skillHay.includes(normalizeJdSearchToken(skill)));
     if (matchedSkills.length) {
-      score += Math.min(30, matchedSkills.length * 6);
+      score += Math.min(20, matchedSkills.length * 6);
       reasons.push(`skills matched: ${matchedSkills.slice(0, 4).join(", ")}`);
+      hasCoreMatch = true;
     }
   }
+  if (!matchesCompensationRange(item, jd)) {
+    return { score: 0, reasons: [], hasCoreMatch: false, hasRoleMatch, noticeDays: parseNoticePeriodToDays(item.noticePeriod) };
+  }
+  if (jd.minCtcLpa != null || jd.maxCtcLpa != null) {
+    const bestCtc = getBestCompensationMatch(item, jd);
+    if (bestCtc != null) {
+      score += 16;
+      reasons.push(`CTC fits ${jd.minCtcLpa != null ? `${jd.minCtcLpa} - ` : "up to "}${jd.maxCtcLpa != null ? `${jd.maxCtcLpa}` : ""} LPA`.replace(" -  LPA", " LPA"));
+      hasCoreMatch = true;
+    }
+  }
+  const noticeDays = parseNoticePeriodToDays(item.noticePeriod);
+  if (jd.maxNoticeDays != null) {
+    if (noticeDays == null || noticeDays > jd.maxNoticeDays) {
+      return { score: 0, reasons: [], hasCoreMatch: false, hasRoleMatch, noticeDays };
+    }
+    score += 10;
+    reasons.push(`notice fits within ${jd.maxNoticeDays} days`);
+    hasCoreMatch = true;
+  }
   const lifecycleBucket = getAssessmentLifecycleBucket(item);
-  if (["shortlisted", "offered", "joined", "under_process"].includes(lifecycleBucket)) {
-    score += 8;
+  if (hasCoreMatch && ["shortlisted", "offered", "joined", "under_process"].includes(lifecycleBucket)) {
+    score += 5;
     reasons.push(`status is ${lifecycleBucket.replace(/_/g, " ")}`);
   }
   return {
     score,
-    reasons
+    reasons,
+    hasCoreMatch,
+    hasRoleMatch,
+    noticeDays
   };
 }
 
@@ -901,11 +1078,18 @@ function matchCandidatesToJd(universe = [], jdPayload = {}) {
       return {
         ...item,
         matchScore: scored.score,
-        matchReasons: scored.reasons
+        matchReasons: scored.reasons,
+        hasCoreMatch: scored.hasCoreMatch,
+        hasRoleMatch: scored.hasRoleMatch,
+        noticeDays: scored.noticeDays
       };
     })
-    .filter((item) => item.matchScore > 0)
-    .sort((a, b) => b.matchScore - a.matchScore || a.candidateName.localeCompare(b.candidateName))
+    .filter((item) => item.matchScore > 0 && item.hasCoreMatch && item.hasRoleMatch)
+    .sort((a, b) =>
+      b.matchScore - a.matchScore ||
+      (a.noticeDays ?? Number.MAX_SAFE_INTEGER) - (b.noticeDays ?? Number.MAX_SAFE_INTEGER) ||
+      a.candidateName.localeCompare(b.candidateName)
+    )
     .slice(0, 200);
   return {
     jd,
