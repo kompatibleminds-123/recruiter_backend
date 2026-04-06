@@ -589,6 +589,7 @@ function buildDashboardSummary({ candidates = [], assessments = [], jobs = [], d
 function parseNaturalLanguageCandidateQuery(rawQuery) {
   const query = String(rawQuery || "").trim();
   const lower = query.toLowerCase();
+  const upcomingJoiningsIntent = /\bupcoming\s+joining(?:s)?\b/i.test(lower);
   const minExperienceMatch = lower.match(/(\d+(?:\.\d+)?)\s*\+?\s*years?/);
   const maxExperienceMatch = lower.match(/\b(?:under|less than|max)\s+(\d+(?:\.\d+)?)\s*years?/);
   const locationMatch = lower.match(/\b(?:based out of|based in|from|located in)\s+([a-z][a-z\s]+?)(?:\bwith\b|$)/i);
@@ -604,6 +605,7 @@ function parseNaturalLanguageCandidateQuery(rawQuery) {
   const recruiterScopeMe = /\b(?:i|me|my)\s+(?:sourced|captured|shared|converted)\b/i.test(lower) || /\bthat i (?:sourced|captured|shared|converted)\b/i.test(lower);
   const sourcedIntent = /\b(?:sourced|captured)\b/i.test(lower);
   const convertedIntent = /\b(?:shared|converted|cv shared|assessment)\b/i.test(lower);
+  const recruiterNameMatch = lower.match(/\bby\s+([a-z][a-z\s.-]+?)(?:\s+for\b|\s+in\b|\s+this\b|\s+last\b|\s+today\b|\s+tomorrow\b|$)/i);
   const targetLabelMatch = lower.match(/\b(?:for|in)\s+([a-z0-9][a-z0-9\s&.-]+?)(?:\s+across roles|\s+this week|\s+tomorrow|\s+today|\s+last month|\s+this month|\s+from\s|\s+with\s|$)/i);
   const statusTerms = [];
   const detailedStatusTerms = [];
@@ -670,10 +672,14 @@ function parseNaturalLanguageCandidateQuery(rawQuery) {
       dateTo = parseFreeformDateText(explicitRangeMatch[2]);
     }
   }
+  if (upcomingJoiningsIntent && !dateFrom) {
+    const range = getRelativeNamedDayRange(0);
+    dateFrom = range.from;
+  }
   let dateField = "";
   if (/\bshared\b|\bconverted\b|\bassessment\b|\bcv shared\b/i.test(lower)) {
     dateField = "shared";
-  } else if (/\bjoined\b|\bjoining(?:s)?\b/i.test(lower)) {
+  } else if (/\bjoined\b|\bjoining(?:s)?\b/i.test(lower) || upcomingJoiningsIntent) {
     dateField = "joined";
   } else if (interviewIntent) {
     dateField = "interview";
@@ -702,6 +708,7 @@ function parseNaturalLanguageCandidateQuery(rawQuery) {
     .replace(/\bctc\s+under\b.*$/i, "")
     .replace(/\baligned\b.*$/i, "")
     .replace(/\binterviews?\b.*$/i, "")
+    .replace(/\bby\s+[a-z][a-z\s.-]+$/i, "")
     .replace(/\bfor\s+[a-z0-9][a-z0-9\s&.-]+$/i, "")
     .replace(/\bin\s+[a-z0-9][a-z0-9\s&.-]+$/i, "")
     .trim();
@@ -744,7 +751,9 @@ function parseNaturalLanguageCandidateQuery(rawQuery) {
     client: clientMatch ? String(clientMatch[1] || "").trim() : "",
     targetLabel: targetLabelMatch ? String(targetLabelMatch[1] || "").trim() : "",
     interviewScheduled: interviewIntent,
+    upcomingJoinings: upcomingJoiningsIntent,
     recruiterScope: recruiterScopeMe ? "me" : "",
+    recruiterName: recruiterNameMatch ? String(recruiterNameMatch[1] || "").trim() : "",
     recruiterField: sourcedIntent ? "sourced" : convertedIntent ? "owner" : "",
     sourceTypeFilter: convertedIntent ? "converted" : sourcedIntent ? "captured" : "",
     dateFrom,
@@ -923,6 +932,11 @@ function candidateMatchesNaturalFilter(item, filters, actor = null) {
     const statusHay = `${item.candidateStatus || ""} ${item.pipelineStage || ""} ${item.workflowStatus || ""}`.toLowerCase();
     if (!item.interviewAt && !/\balign|interview\b/.test(statusHay)) return false;
   }
+  if (filters.upcomingJoinings) {
+    const lifecycleBucket = getAssessmentLifecycleBucket(item);
+    if (!["offered", "joined"].includes(lifecycleBucket)) return false;
+    if (!item.offerDoj) return false;
+  }
   if (filters.recruiterScope === "me" && actor) {
     const actorName = String(actor.name || "").trim().toLowerCase();
     const recruiterValue =
@@ -930,6 +944,14 @@ function candidateMatchesNaturalFilter(item, filters, actor = null) {
         ? String(item.sourcedRecruiter || "").trim().toLowerCase()
         : String(item.ownerRecruiter || item.recruiterName || "").trim().toLowerCase();
     if (!actorName || recruiterValue !== actorName) return false;
+  }
+  if (filters.recruiterName) {
+    const recruiterNeedle = String(filters.recruiterName || "").trim().toLowerCase();
+    const recruiterValue =
+      filters.recruiterField === "sourced"
+        ? String(item.sourcedRecruiter || "").trim().toLowerCase()
+        : String(item.ownerRecruiter || item.recruiterName || "").trim().toLowerCase();
+    if (!recruiterValue.includes(recruiterNeedle)) return false;
   }
   if (filters.sourceTypeFilter === "converted") {
     if (item.sourceType === "captured_note" || !item.sharedAt) return false;
