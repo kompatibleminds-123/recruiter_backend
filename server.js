@@ -2339,6 +2339,30 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (req.method === "GET" && requestUrl.pathname.startsWith("/public/jobs/")) {
+    try {
+      const jobId = String(requestUrl.pathname.replace(/^\/public\/jobs\//, "").replace(/\/+$/, "")).trim();
+      if (!jobId) throw new Error("Job not found.");
+      const job = await getPublicCompanyJob(jobId);
+      sendJson(res, 200, {
+        ok: true,
+        result: {
+          id: job.id,
+          companyId: job.companyId,
+          title: job.title || "",
+          clientName: job.clientName || "",
+          jobDescription: job.jobDescription || "",
+          mustHaveSkills: job.mustHaveSkills || "",
+          redFlags: job.redFlags || "",
+          standardQuestions: job.standardQuestions || ""
+        }
+      });
+    } catch (error) {
+      sendJson(res, 404, { ok: false, error: String(error.message || error) });
+    }
+    return;
+  }
+
   if (req.method === "GET" && requestUrl.pathname.startsWith("/public/")) {
     const assetPath = requestUrl.pathname.replace(/^\/public\//, "");
     const safeRelativePath = path.normalize(assetPath).replace(/^(\.\.(\/|\\|$))+/, "");
@@ -2835,30 +2859,6 @@ const server = http.createServer(async (req, res) => {
       sendJson(res, 200, { ok: true, result });
     } catch (error) {
       sendJson(res, 400, { ok: false, error: String(error.message || error) });
-    }
-    return;
-  }
-
-  if (req.method === "GET" && requestUrl.pathname.startsWith("/public/jobs/")) {
-    try {
-      const jobId = String(requestUrl.pathname.replace(/^\/public\/jobs\//, "").replace(/\/+$/, "")).trim();
-      if (!jobId) throw new Error("Job not found.");
-      const job = await getPublicCompanyJob(jobId);
-      sendJson(res, 200, {
-        ok: true,
-        result: {
-          id: job.id,
-          companyId: job.companyId,
-          title: job.title || "",
-          clientName: job.clientName || "",
-          jobDescription: job.jobDescription || "",
-          mustHaveSkills: job.mustHaveSkills || "",
-          redFlags: job.redFlags || "",
-          standardQuestions: job.standardQuestions || ""
-        }
-      });
-    } catch (error) {
-      sendJson(res, 404, { ok: false, error: String(error.message || error) });
     }
     return;
   }
