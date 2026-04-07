@@ -336,6 +336,19 @@ async function ensureCandidateVisibleToActor(actor, candidateId) {
   return matches[0];
 }
 
+async function ensureCompanyCandidateExists(companyId, candidateId) {
+  const id = String(candidateId || "").trim();
+  const scopedCompanyId = String(companyId || "").trim();
+  if (!id) {
+    throw new Error("Missing candidate id.");
+  }
+  const matches = await listCandidates({ id, limit: 1, companyId: scopedCompanyId });
+  if (!Array.isArray(matches) || !matches.length) {
+    throw new Error("Candidate not found in this company.");
+  }
+  return matches[0];
+}
+
 async function ingestApplicantSubmission(body, req) {
   const payload = normalizeApplicantBody(body);
   if (!payload.companyId) {
@@ -2707,6 +2720,61 @@ const server = http.createServer(async (req, res) => {
       const q = String(requestUrl.searchParams.get("q") || "").trim();
       const items = await listApplicantsForUser(user, { q, limit: 500 });
       sendJson(res, 200, { ok: true, result: { total: items.length, items } });
+    } catch (error) {
+      sendJson(res, 400, { ok: false, error: String(error.message || error) });
+    }
+    return;
+  }
+
+  if (req.method === "DELETE" && requestUrl.pathname === "/company/applicants") {
+    try {
+      const actor = await requireSessionUser(getBearerToken(req));
+      if (actor.role !== "admin") {
+        throw new Error("Only an admin can remove applicants.");
+      }
+      const candidateId = String(requestUrl.searchParams.get("id") || "").trim();
+      await ensureCompanyCandidateExists(actor.companyId, candidateId);
+      const result = await deleteCandidate(candidateId, { companyId: actor.companyId });
+      sendJson(res, 200, { ok: true, result });
+    } catch (error) {
+      sendJson(res, 400, { ok: false, error: String(error.message || error) });
+    }
+    return;
+  }
+
+  if (req.method === "POST" && requestUrl.pathname === "/company/applicants/link-assessment") {
+    try {
+      const actor = await requireSessionUser(getBearerToken(req));
+      if (actor.role !== "admin") {
+        throw new Error("Only an admin can convert applicants.");
+      }
+      const body = await readJsonBody(req);
+      await ensureCompanyCandidateExists(actor.companyId, body.id || body.candidateId);
+      const result = await linkCandidateToAssessment(body.id || body.candidateId, body.assessment_id || body.assessmentId, { companyId: actor.companyId });
+      sendJson(res, 200, { ok: true, result });
+    } catch (error) {
+      sendJson(res, 400, { ok: false, error: String(error.message || error) });
+    }
+    return;
+  }
+
+  if (req.method === "POST" && requestUrl.pathname === "/company/applicants/assign") {
+    try {
+      const actor = await requireSessionUser(getBearerToken(req));
+      if (actor.role !== "admin") {
+        throw new Error("Only an admin can assign applicants.");
+      }
+      const body = await readJsonBody(req);
+      await ensureCompanyCandidateExists(actor.companyId, body.id || body.candidateId);
+      const result = await assignCandidate(body.id || body.candidateId, {
+        assigned_to_user_id: body.assigned_to_user_id || body.assignedToUserId,
+        assigned_to_name: body.assigned_to_name || body.assignedToName,
+        assigned_by_user_id: actor.id,
+        assigned_by_name: actor.name,
+        assigned_jd_id: body.assigned_jd_id || body.assignedJdId,
+        assigned_jd_title: body.assigned_jd_title || body.assignedJdTitle
+      }, { companyId: actor.companyId });
+      sendJson(res, 200, { ok: true, result });
     } catch (error) {
       sendJson(res, 400, { ok: false, error: String(error.message || error) });
     }
