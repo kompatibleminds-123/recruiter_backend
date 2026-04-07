@@ -81,27 +81,6 @@
       .trim();
   }
 
-  function splitJobSections(text) {
-    const normalized = normalizeJobText(text);
-    if (!normalized) return [];
-    const headingRegex = /(Key Responsibilities|Responsibilities|Requirements|Key Requirements|Preferred Profile|Preferred|KPIs \/ Success Metrics|KPIs|Success Metrics|Location|Job Title)\s*:?/gi;
-    const matches = [...normalized.matchAll(headingRegex)];
-    if (!matches.length) {
-      return [{ heading: "Role Overview", body: normalized }];
-    }
-    const sections = [];
-    for (let i = 0; i < matches.length; i += 1) {
-      const current = matches[i];
-      const next = matches[i + 1];
-      const heading = String(current[1] || "").trim();
-      const start = current.index + current[0].length;
-      const end = next ? next.index : normalized.length;
-      const body = normalized.slice(start, end).trim();
-      sections.push({ heading, body });
-    }
-    return sections.filter((section) => section.body);
-  }
-
   function bodyToListItems(body) {
     return String(body || "")
       .split(/\n|(?=\s-\s)|(?=\d+\.\s)/g)
@@ -109,10 +88,55 @@
       .filter(Boolean);
   }
 
+  function extractSection(text, labels) {
+    const normalized = normalizeJobText(text);
+    if (!normalized) return "";
+    const escaped = labels.map((label) => label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+    const pattern = new RegExp(`(?:^|\\n)(${escaped.join("|")})\\s*:?`, "i");
+    const match = pattern.exec(normalized);
+    if (!match) return "";
+    const start = match.index + match[0].length;
+    const remainder = normalized.slice(start);
+    const nextHeadingPattern = /\n(?:About Company|Role Description|Responsibilities|Key Responsibilities|Requirements|Key Requirements|Preferred Profile|Skillsets Needed|Skills|Location|Other Details|KPIs(?: \/ Success Metrics)?|Success Metrics)\s*:?/i;
+    const nextMatch = nextHeadingPattern.exec(remainder);
+    return (nextMatch ? remainder.slice(0, nextMatch.index) : remainder).trim();
+  }
+
+  function extractLocation(text) {
+    const normalized = normalizeJobText(text);
+    const match = normalized.match(/Location\s*:?\s*([^\n]+)/i);
+    return match ? String(match[1] || "").trim() : "";
+  }
+
+  function buildStructuredSections(job) {
+    const description = normalizeJobText(job.jobDescription || "");
+    const aboutCompany = extractSection(description, ["About Company"]) || (job.clientName ? `Hiring for ${job.clientName}.` : "");
+    const roleDescription =
+      extractSection(description, ["Role Description", "Responsibilities", "Key Responsibilities"]) ||
+      description;
+    const skillsetsNeeded =
+      String(job.mustHaveSkills || "").trim() ||
+      extractSection(description, ["Skillsets Needed", "Skills", "Requirements", "Key Requirements", "Preferred Profile"]);
+    const location = extractLocation(description);
+    const otherDetails = [
+      extractSection(description, ["Other Details", "KPIs / Success Metrics", "KPIs", "Success Metrics"]),
+      String(job.redFlags || "").trim() ? `Red flags: ${String(job.redFlags || "").trim()}` : "",
+      String(job.standardQuestions || "").trim() ? `Screening focus: ${String(job.standardQuestions || "").trim()}` : ""
+    ].filter(Boolean).join("\n");
+
+    return [
+      { heading: "About Company", body: aboutCompany },
+      { heading: "Requirement / Role Description", body: roleDescription },
+      { heading: "Skillsets Needed", body: skillsetsNeeded },
+      { heading: "Location", body: location },
+      { heading: "Other Details", body: otherDetails }
+    ].filter((section) => String(section.body || "").trim());
+  }
+
   function renderJobDescription(job) {
     const node = $("jobDescription");
     if (!node) return;
-    const sections = splitJobSections(job.jobDescription || "");
+    const sections = buildStructuredSections(job);
     if (!sections.length) {
       node.textContent = "Complete the form below to apply.";
       return;
