@@ -223,6 +223,30 @@ function getBearerTokenFromRequest(req, requestUrl = null) {
   return queryToken;
 }
 
+function inferStoredFileRefFromUrl(actor, requestUrl) {
+  const fileUrl = String(requestUrl?.searchParams?.get("cv_url") || "").trim();
+  const filename = String(requestUrl?.searchParams?.get("cv_filename") || "").trim();
+  if (!fileUrl) {
+    return null;
+  }
+  try {
+    const parsed = new URL(fileUrl);
+    const pathname = decodeURIComponent(parsed.pathname || "").replace(/^\/+/, "");
+    if (!pathname || !pathname.includes(String(actor.companyId || "").trim())) {
+      return null;
+    }
+    return {
+      provider: "s3",
+      key: pathname,
+      url: fileUrl,
+      filename,
+      mimeType: "application/octet-stream"
+    };
+  } catch {
+    return null;
+  }
+}
+
 function encodeApplicantMetadata(metadata = {}) {
   return `${APPLICANT_METADATA_PREFIX}${JSON.stringify(metadata || {})}`;
 }
@@ -2822,21 +2846,23 @@ const server = http.createServer(async (req, res) => {
     try {
       const actor = await requireSessionUser(getBearerTokenFromRequest(req, requestUrl));
       const candidateId = String(requestUrl.pathname.replace(/^\/company\/candidates\//, "").replace(/\/cv$/, "")).trim();
-      const candidate = (await listCandidatesForUser(actor, { id: candidateId, limit: 1 }))[0];
-      if (!candidate) {
-        throw new Error("Candidate not found in this company.");
-      }
-      const meta = decodeApplicantMetadata(candidate);
-      if (!meta.fileProvider || (!meta.fileKey && !meta.fileUrl)) {
+      const candidate = (await listCandidatesForUser(actor, { id: candidateId, limit: 1 }))[0] || null;
+      const meta = candidate ? decodeApplicantMetadata(candidate) : {};
+      const fallbackFileRef = inferStoredFileRefFromUrl(actor, requestUrl);
+      const fileRef = (meta.fileProvider || meta.fileKey || meta.fileUrl)
+        ? {
+            provider: meta.fileProvider,
+            key: meta.fileKey,
+            url: meta.fileUrl,
+            filename: meta.filename,
+            mimeType: meta.mimeType
+          }
+        : fallbackFileRef;
+      if (!fileRef || (!fileRef.key && !fileRef.url)) {
+        if (!candidate) throw new Error("Candidate not found in this company.");
         throw new Error("CV file not available for this candidate.");
       }
-      const file = await loadStoredFile({
-        provider: meta.fileProvider,
-        key: meta.fileKey,
-        url: meta.fileUrl,
-        filename: meta.filename,
-        mimeType: meta.mimeType
-      });
+      const file = await loadStoredFile(fileRef);
       const downloadName = String(file.filename || "resume.pdf").replace(/"/g, "");
       sendBuffer(req, res, 200, file.buffer, {
         "Content-Type": String(file.mimeType || "application/octet-stream").trim(),
