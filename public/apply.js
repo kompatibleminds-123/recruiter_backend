@@ -54,13 +54,84 @@
 
   function renderJob(job) {
     $("jobTitle").textContent = job.title || "Apply";
-    $("jobDescription").textContent = job.jobDescription || "Complete the form below to apply.";
+    renderJobDescription(job);
     const meta = $("jobMeta");
     if (!meta) return;
     const chips = [];
     if (job.clientName) chips.push(`Client: ${job.clientName}`);
     if (job.mustHaveSkills) chips.push(`Must have: ${job.mustHaveSkills}`);
     meta.innerHTML = chips.map((item) => `<span class="chip">${item}</span>`).join("");
+  }
+
+  function escapeHtml(value) {
+    return String(value || "")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;");
+  }
+
+  function normalizeJobText(text) {
+    return String(text || "")
+      .replace(/\r/g, "\n")
+      .replace(/[□•▪◦]/g, "\n- ")
+      .replace(/\s{2,}/g, " ")
+      .replace(/\n{3,}/g, "\n\n")
+      .trim();
+  }
+
+  function splitJobSections(text) {
+    const normalized = normalizeJobText(text);
+    if (!normalized) return [];
+    const headingRegex = /(Key Responsibilities|Responsibilities|Requirements|Key Requirements|Preferred Profile|Preferred|KPIs \/ Success Metrics|KPIs|Success Metrics|Location|Job Title)\s*:?/gi;
+    const matches = [...normalized.matchAll(headingRegex)];
+    if (!matches.length) {
+      return [{ heading: "Role Overview", body: normalized }];
+    }
+    const sections = [];
+    for (let i = 0; i < matches.length; i += 1) {
+      const current = matches[i];
+      const next = matches[i + 1];
+      const heading = String(current[1] || "").trim();
+      const start = current.index + current[0].length;
+      const end = next ? next.index : normalized.length;
+      const body = normalized.slice(start, end).trim();
+      sections.push({ heading, body });
+    }
+    return sections.filter((section) => section.body);
+  }
+
+  function bodyToListItems(body) {
+    return String(body || "")
+      .split(/\n|(?=\s-\s)|(?=\d+\.\s)/g)
+      .map((item) => item.replace(/^\s*-\s*/, "").trim())
+      .filter(Boolean);
+  }
+
+  function renderJobDescription(job) {
+    const node = $("jobDescription");
+    if (!node) return;
+    const sections = splitJobSections(job.jobDescription || "");
+    if (!sections.length) {
+      node.textContent = "Complete the form below to apply.";
+      return;
+    }
+    node.innerHTML = `
+      <div class="job-copy">
+        ${sections.map((section) => {
+          const items = bodyToListItems(section.body);
+          return `
+            <section class="job-copy-section">
+              <h3>${escapeHtml(section.heading)}</h3>
+              ${items.length > 1
+                ? `<ul>${items.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>`
+                : `<p>${escapeHtml(section.body)}</p>`}
+            </section>
+          `;
+        }).join("")}
+      </div>
+    `;
   }
 
   async function init() {
