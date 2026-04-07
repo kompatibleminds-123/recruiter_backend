@@ -31,6 +31,7 @@ const {
   deleteUser,
   deleteAssessment,
   deleteCompanyJob,
+  getCompanyApplicantIntakeSecret,
   getSessionUser,
   getPlatformSessionUser,
   getCompanySharedExportPresets,
@@ -46,7 +47,8 @@ const {
   resetUserPassword,
   saveAssessment,
   saveCompanyJob,
-  saveCompanySharedExportPresets
+  saveCompanySharedExportPresets,
+  setCompanyApplicantIntakeSecret
 } = require("./src/auth-store");
 
 const PORT = Number(process.env.PORT || 8787);
@@ -355,8 +357,10 @@ async function ingestApplicantSubmission(body, req) {
     throw new Error("companyId is required.");
   }
 
-  const configuredSecret = String(process.env.APPLICANT_INTAKE_SECRET || "").trim();
-  if (configuredSecret && getApplicantIntakeSecret(req, body) !== configuredSecret) {
+  const providedSecret = getApplicantIntakeSecret(req, body);
+  const configuredSecretInfo = await getCompanyApplicantIntakeSecret(payload.companyId);
+  const configuredSecret = String(configuredSecretInfo?.applicantIntakeSecret || "").trim();
+  if (configuredSecret && providedSecret !== configuredSecret) {
     throw new Error("Invalid applicant intake secret.");
   }
 
@@ -2720,6 +2724,33 @@ const server = http.createServer(async (req, res) => {
       const q = String(requestUrl.searchParams.get("q") || "").trim();
       const items = await listApplicantsForUser(user, { q, limit: 500 });
       sendJson(res, 200, { ok: true, result: { total: items.length, items } });
+    } catch (error) {
+      sendJson(res, 400, { ok: false, error: String(error.message || error) });
+    }
+    return;
+  }
+
+  if (req.method === "GET" && requestUrl.pathname === "/company/applicant-intake-secret") {
+    try {
+      const actor = await requireSessionUser(getBearerToken(req));
+      const result = await getCompanyApplicantIntakeSecret(actor.companyId);
+      sendJson(res, 200, { ok: true, result });
+    } catch (error) {
+      sendJson(res, 400, { ok: false, error: String(error.message || error) });
+    }
+    return;
+  }
+
+  if (req.method === "POST" && requestUrl.pathname === "/company/applicant-intake-secret") {
+    try {
+      const actor = await requireSessionUser(getBearerToken(req));
+      const body = await readJsonBody(req);
+      const result = await setCompanyApplicantIntakeSecret({
+        actorUserId: actor.id,
+        companyId: actor.companyId,
+        applicantIntakeSecret: body.applicantIntakeSecret || body.applicant_intake_secret || body.secret
+      });
+      sendJson(res, 200, { ok: true, result });
     } catch (error) {
       sendJson(res, 400, { ok: false, error: String(error.message || error) });
     }

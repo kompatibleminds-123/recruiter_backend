@@ -14,6 +14,15 @@ function ensureStore() {
 function readStore() { ensureStore(); return JSON.parse(fs.readFileSync(STORE_PATH, "utf8")); }
 function writeStore(store) { ensureStore(); fs.writeFileSync(STORE_PATH, JSON.stringify(store, null, 2), "utf8"); }
 function normalizeEmail(email) { return String(email || "").trim().toLowerCase(); }
+function buildApplicantIntakeSecret(companyName = "") {
+  const slug = String(companyName || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .slice(0, 24) || "company";
+  return `${slug}_intake_${crypto.randomBytes(12).toString("hex")}`;
+}
 function hashPassword(password, salt = crypto.randomBytes(16).toString("hex")) {
   const hash = crypto.pbkdf2Sync(String(password || ""), salt, 100000, 64, "sha512").toString("hex");
   return `${salt}:${hash}`;
@@ -173,6 +182,15 @@ const sbDel = (t, f) => sb("DELETE", `/rest/v1/${t}?${f}`, null, { Prefer: "retu
 function sanitizeUser(user) {
   if (!user) return null;
   return { id: user.id, companyId: user.companyId ?? user.company_id ?? null, companyName: user.companyName ?? user.company_name ?? null, name: user.name, email: user.email, role: user.role, createdAt: user.createdAt ?? user.created_at ?? null };
+}
+function sanitizeCompany(company) {
+  if (!company) return null;
+  return {
+    id: company.id,
+    name: company.name || "",
+    createdAt: company.createdAt ?? company.created_at ?? null,
+    applicantIntakeSecret: company.applicantIntakeSecret ?? company.applicant_intake_secret ?? ""
+  };
 }
 function sanitizeJob(job) {
   if (!job) return null;
@@ -349,18 +367,45 @@ async function bootstrapAdmin({ companyName, adminName, email, password }) {
     const store = readStore();
     if (store.users.length) throw new Error("Bootstrap is already completed. Use login or admin user creation instead.");
     const companyId = crypto.randomUUID();
-    const company = { id: companyId, name: String(companyName).trim(), createdAt: new Date().toISOString() };
+    const company = {
+      id: companyId,
+      name: String(companyName).trim(),
+      createdAt: new Date().toISOString(),
+      applicantIntakeSecret: buildApplicantIntakeSecret(companyName)
+    };
     const user = { id: crypto.randomUUID(), companyId, companyName: company.name, name: String(adminName).trim(), email: e, role: "admin", passwordHash: hashPassword(password), createdAt: new Date().toISOString() };
     store.companies.push(company); store.users.push(user); writeStore(store); return { company, user: sanitizeUser(user) };
   }
   await ensureSeeded();
   const rows = await sbSel("users", "select=id&limit=1");
   if (rows.length) throw new Error("Bootstrap is already completed. Use login or admin user creation instead.");
-  const company = { id: crypto.randomUUID(), name: String(companyName).trim(), created_at: new Date().toISOString() };
+  const company = {
+    id: crypto.randomUUID(),
+    name: String(companyName).trim(),
+    created_at: new Date().toISOString(),
+    applicant_intake_secret: buildApplicantIntakeSecret(companyName)
+  };
   const user = { id: crypto.randomUUID(), company_id: company.id, company_name: company.name, name: String(adminName).trim(), email: e, role: "admin", password_hash: hashPassword(password), created_at: new Date().toISOString() };
-  await sbIns("companies", [company], { conflict: "id", upsert: true });
+  try {
+    await sbIns("companies", [company], { conflict: "id", upsert: true });
+  } catch (error) {
+    const message = String(error?.message || error);
+    if (/applicant_intake_secret/i.test(message)) {
+      await sbIns("companies", [{ id: company.id, name: company.name, created_at: company.created_at }], { conflict: "id", upsert: true });
+    } else {
+      throw error;
+    }
+  }
   const inserted = await sbIns("users", [user], { conflict: "id", upsert: true });
-  return { company: { id: company.id, name: company.name, createdAt: company.created_at }, user: sanitizeUser(inserted[0] || user) };
+  return {
+    company: {
+      id: company.id,
+      name: company.name,
+      createdAt: company.created_at,
+      applicantIntakeSecret: company.applicant_intake_secret || String(process.env.APPLICANT_INTAKE_SECRET || "").trim()
+    },
+    user: sanitizeUser(inserted[0] || user)
+  };
 }
 async function createCompanyWithAdmin({ companyName, adminName, email, password, platformSecret, actor, platformActor }) {
   assertCanCreatePlatformCompany(platformSecret, actor, platformActor);
@@ -370,7 +415,12 @@ async function createCompanyWithAdmin({ companyName, adminName, email, password,
   if (!cfg().on) {
     const store = readStore();
     const companyId = crypto.randomUUID();
-    const company = { id: companyId, name: String(companyName).trim(), createdAt: new Date().toISOString() };
+    const company = {
+      id: companyId,
+      name: String(companyName).trim(),
+      createdAt: new Date().toISOString(),
+      applicantIntakeSecret: buildApplicantIntakeSecret(companyName)
+    };
     const user = {
       id: crypto.randomUUID(),
       companyId,
@@ -387,7 +437,12 @@ async function createCompanyWithAdmin({ companyName, adminName, email, password,
     return { company, user: sanitizeUser(user) };
   }
   await ensureSeeded();
-  const company = { id: crypto.randomUUID(), name: String(companyName).trim(), created_at: new Date().toISOString() };
+  const company = {
+    id: crypto.randomUUID(),
+    name: String(companyName).trim(),
+    created_at: new Date().toISOString(),
+    applicant_intake_secret: buildApplicantIntakeSecret(companyName)
+  };
   const user = {
     id: crypto.randomUUID(),
     company_id: company.id,
@@ -398,9 +453,26 @@ async function createCompanyWithAdmin({ companyName, adminName, email, password,
     password_hash: hashPassword(password),
     created_at: new Date().toISOString()
   };
-  await sbIns("companies", [company], { conflict: "id", upsert: true });
+  try {
+    await sbIns("companies", [company], { conflict: "id", upsert: true });
+  } catch (error) {
+    const message = String(error?.message || error);
+    if (/applicant_intake_secret/i.test(message)) {
+      await sbIns("companies", [{ id: company.id, name: company.name, created_at: company.created_at }], { conflict: "id", upsert: true });
+    } else {
+      throw error;
+    }
+  }
   const inserted = await sbIns("users", [user], { conflict: "id", upsert: true });
-  return { company: { id: company.id, name: company.name, createdAt: company.created_at }, user: sanitizeUser(inserted[0] || user) };
+  return {
+    company: {
+      id: company.id,
+      name: company.name,
+      createdAt: company.created_at,
+      applicantIntakeSecret: company.applicant_intake_secret || String(process.env.APPLICANT_INTAKE_SECRET || "").trim()
+    },
+    user: sanitizeUser(inserted[0] || user)
+  };
 }
 async function createUser({ actorUserId, companyId, name, email, password, role }) {
   const e = normalizeEmail(email), r = role === "admin" ? "admin" : "team";
@@ -417,6 +489,72 @@ async function createUser({ actorUserId, companyId, name, email, password, role 
   const company = companies[0]; if (!company) throw new Error("Company not found.");
   const rows = await sbIns("users", [{ id: crypto.randomUUID(), company_id: companyId, company_name: company.name, name: String(name).trim(), email: e, role: r, password_hash: hashPassword(password), created_at: new Date().toISOString() }], { conflict: "id", upsert: true });
   return sanitizeUser(rows[0]);
+}
+async function getCompanyApplicantIntakeSecret(companyId) {
+  const id = String(companyId || "").trim();
+  if (!id) throw new Error("companyId is required.");
+  if (!cfg().on) {
+    const company = sanitizeCompany(readStore().companies.find((item) => String(item?.id || "").trim() === id));
+    if (!company) throw new Error("Company not found.");
+    const secret = String(company.applicantIntakeSecret || "").trim();
+    return {
+      company,
+      applicantIntakeSecret: secret || String(process.env.APPLICANT_INTAKE_SECRET || "").trim(),
+      source: secret ? "company" : "global_fallback"
+    };
+  }
+  await ensureSeeded();
+  try {
+    const rows = await sbSel("companies", `select=id,name,created_at,applicant_intake_secret&id=eq.${enc(id)}&limit=1`);
+    const company = sanitizeCompany(rows?.[0]);
+    if (!company) throw new Error("Company not found.");
+    const secret = String(company.applicantIntakeSecret || "").trim();
+    return {
+      company,
+      applicantIntakeSecret: secret || String(process.env.APPLICANT_INTAKE_SECRET || "").trim(),
+      source: secret ? "company" : "global_fallback"
+    };
+  } catch (error) {
+    const message = String(error?.message || error);
+    if (/applicant_intake_secret/i.test(message)) {
+      const rows = await sbSel("companies", `select=id,name,created_at&id=eq.${enc(id)}&limit=1`);
+      const company = sanitizeCompany(rows?.[0]);
+      if (!company) throw new Error("Company not found.");
+      return {
+        company,
+        applicantIntakeSecret: String(process.env.APPLICANT_INTAKE_SECRET || "").trim(),
+        source: "global_fallback"
+      };
+    }
+    throw error;
+  }
+}
+async function setCompanyApplicantIntakeSecret({ actorUserId, companyId, applicantIntakeSecret }) {
+  const actor = sanitizeUser(await getUserById(actorUserId, companyId));
+  if (!actor || actor.role !== "admin") throw new Error("Only an admin for this company can manage applicant intake secrets.");
+  const secret = String(applicantIntakeSecret || "").trim() || buildApplicantIntakeSecret(actor.companyName || "company");
+  if (!cfg().on) {
+    const store = readStore();
+    const company = store.companies.find((item) => String(item?.id || "").trim() === String(companyId || "").trim());
+    if (!company) throw new Error("Company not found.");
+    company.applicantIntakeSecret = secret;
+    writeStore(store);
+    return {
+      company: sanitizeCompany(company),
+      applicantIntakeSecret: secret,
+      source: "company"
+    };
+  }
+  try {
+    await sbPatch("companies", `id=eq.${enc(companyId)}`, { applicant_intake_secret: secret });
+  } catch (error) {
+    const message = String(error?.message || error);
+    if (/applicant_intake_secret/i.test(message)) {
+      throw new Error("Company applicant intake secret column is missing. Add applicant_intake_secret to the companies table first.");
+    }
+    throw error;
+  }
+  return getCompanyApplicantIntakeSecret(companyId);
 }
 async function deleteUser({ actorUserId, companyId, userId }) {
   const actor = sanitizeUser(await getUserById(actorUserId, companyId));
@@ -628,6 +766,7 @@ module.exports = {
   deleteUser,
   deleteAssessment,
   deleteCompanyJob,
+  getCompanyApplicantIntakeSecret,
   getCompanySharedExportPresets,
   getSessionUser,
   listCompaniesAndUsersSummary,
@@ -640,6 +779,7 @@ module.exports = {
   requireSessionUser,
   resetUserPassword,
   saveCompanySharedExportPresets,
+  setCompanyApplicantIntakeSecret,
   searchAssessments,
   saveAssessment,
   saveCompanyJob
