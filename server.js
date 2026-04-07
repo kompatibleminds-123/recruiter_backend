@@ -2379,6 +2379,11 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (req.method === "GET" && (requestUrl.pathname === "/portal" || requestUrl.pathname === "/portal/")) {
+    serveStaticFile(res, path.join(ROOT_PUBLIC_DIR, "portal", "index.html"));
+    return;
+  }
+
   if (req.method === "GET" && (requestUrl.pathname === "/apply" || requestUrl.pathname === "/apply/")) {
     serveStaticFile(res, path.join(ROOT_PUBLIC_DIR, "apply.html"));
     return;
@@ -2393,6 +2398,14 @@ const server = http.createServer(async (req, res) => {
     const assetPath = requestUrl.pathname.replace(/^\/quick-capture\//, "");
     const safeRelativePath = path.normalize(assetPath).replace(/^(\.\.(\/|\\|$))+/, "");
     const resolvedPath = path.join(QUICK_CAPTURE_PUBLIC_DIR, safeRelativePath);
+    serveStaticFile(res, resolvedPath);
+    return;
+  }
+
+  if (req.method === "GET" && requestUrl.pathname.startsWith("/portal/")) {
+    const assetPath = requestUrl.pathname.replace(/^\/portal\//, "");
+    const safeRelativePath = path.normalize(assetPath).replace(/^(\.\.(\/|\\|$))+/, "");
+    const resolvedPath = path.join(ROOT_PUBLIC_DIR, "portal", safeRelativePath);
     serveStaticFile(res, resolvedPath);
     return;
   }

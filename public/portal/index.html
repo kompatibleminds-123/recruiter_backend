@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>RecruitDesk Portal</title>
+    <link rel="stylesheet" href="/portal/styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar">
+        <div class="brand">
+          <div class="brand-kicker">RecruitDesk</div>
+          <h1>Portal</h1>
+        </div>
+        <nav class="nav">
+          <button class="nav-btn active" data-view="dashboard">Dashboard</button>
+          <button class="nav-btn" data-view="applicants">Applied Candidates</button>
+          <button class="nav-btn" data-view="captured">Captured Notes</button>
+          <button class="nav-btn" data-view="intake">Admin Intake Settings</button>
+          <button class="nav-btn" data-view="jobs">Jobs</button>
+        </nav>
+        <div class="sidebar-footer">
+          <div id="currentUserSummary" class="muted">Not logged in</div>
+          <button id="logoutBtn" class="ghost-btn" hidden>Logout</button>
+        </div>
+      </aside>
+
+      <main class="content">
+        <section id="loginView" class="panel auth-panel">
+          <div class="section-kicker">Company Login</div>
+          <h2>Open your RecruitDesk workspace</h2>
+          <p class="muted">Use your existing company admin or recruiter credentials.</p>
+          <form id="loginForm" class="grid two-col">
+            <div class="full">
+              <label for="email">Email</label>
+              <input id="email" type="email" required />
+            </div>
+            <div class="full">
+              <label for="password">Password</label>
+              <input id="password" type="password" required />
+            </div>
+            <div class="full actions-row">
+              <button type="submit">Login</button>
+            </div>
+          </form>
+          <div id="authStatus" class="status"></div>
+        </section>
+
+        <section id="workspaceView" hidden>
+          <header class="workspace-header">
+            <div>
+              <div class="section-kicker" id="companyKicker">Company Workspace</div>
+              <h2 id="workspaceTitle">RecruitDesk Portal</h2>
+            </div>
+            <div id="workspaceStatus" class="status inline"></div>
+          </header>
+
+          <section id="dashboardView" class="view-panel">
+            <div class="panel">
+              <div class="section-kicker">Overview</div>
+              <h3>Pipeline Snapshot</h3>
+              <div id="dashboardMetrics" class="metric-grid"></div>
+            </div>
+            <div class="panel">
+              <div class="section-kicker">Shared Workflow</div>
+              <h3>Current Direction</h3>
+              <p class="muted">This SaaS surface is the new team workspace for dashboard, applicants, intake settings, and shared captured-notes flow.</p>
+            </div>
+          </section>
+
+          <section id="applicantsView" class="view-panel" hidden>
+            <div class="panel">
+              <div class="section-kicker">Admin Inbox</div>
+              <h3>Applied Candidates</h3>
+              <div id="applicantsStatus" class="status"></div>
+              <div id="applicantsList" class="stack"></div>
+            </div>
+          </section>
+
+          <section id="capturedView" class="view-panel" hidden>
+            <div class="panel">
+              <div class="section-kicker">Shared Workflow</div>
+              <h3>Captured Notes</h3>
+              <div id="capturedStatus" class="status"></div>
+              <div id="capturedList" class="stack"></div>
+            </div>
+          </section>
+
+          <section id="intakeView" class="view-panel" hidden>
+            <div class="panel">
+              <div class="section-kicker">Company Intake</div>
+              <h3>Admin Intake Settings</h3>
+              <div id="intakeStatus" class="status"></div>
+              <div class="grid two-col">
+                <div>
+                  <label>Company ID</label>
+                  <textarea id="companyIdField" readonly></textarea>
+                </div>
+                <div>
+                  <label>Applicant Intake Secret</label>
+                  <textarea id="intakeSecretField" readonly></textarea>
+                </div>
+                <div class="full">
+                  <label>API URL</label>
+                  <textarea id="apiUrlField" readonly></textarea>
+                </div>
+                <div class="full actions-row">
+                  <button id="copyCompanyIdBtn" type="button">Copy Company ID</button>
+                  <button id="copySecretBtn" type="button">Copy Secret</button>
+                  <button id="copyApiBtn" type="button">Copy API URL</button>
+                </div>
+              </div>
+            </div>
+
+            <div class="panel">
+              <div class="section-kicker">Recommended</div>
+              <h3>RecruitDesk Apply Link</h3>
+              <div class="grid two-col">
+                <div class="full">
+                  <label for="hostedJobSelect">Select JD / role</label>
+                  <select id="hostedJobSelect">
+                    <option value="">Select JD / role</option>
+                  </select>
+                </div>
+                <div class="full">
+                  <label>Hosted Apply Link</label>
+                  <textarea id="hostedApplyField" readonly></textarea>
+                </div>
+                <div class="full actions-row">
+                  <button id="copyHostedApplyBtn" type="button">Copy Apply Link</button>
+                </div>
+              </div>
+            </div>
+
+            <div class="panel">
+              <div class="section-kicker">WordPress</div>
+              <h3>WordPress Website</h3>
+              <p class="muted">Use this if the agency has a WordPress form and only needs details intake.</p>
+              <textarea id="wordpressSnippetField" readonly class="code-box"></textarea>
+              <div class="actions-row">
+                <button id="copyWordpressBtn" type="button">Copy WordPress Snippet</button>
+              </div>
+            </div>
+
+            <div class="panel">
+              <div class="section-kicker">Google Sheet</div>
+              <h3>Google Sheet Row Watcher</h3>
+              <p class="muted">Use this if candidate rows are landing in a Google Sheet. Add a <code>recruitdesk_synced</code> column and run this from Apps Script with a time-driven trigger.</p>
+              <textarea id="googleScriptField" readonly class="code-box"></textarea>
+              <div class="actions-row">
+                <button id="copyGoogleScriptBtn" type="button">Copy Google Script</button>
+              </div>
+            </div>
+          </section>
+
+          <section id="jobsView" class="view-panel" hidden>
+            <div class="panel">
+              <div class="section-kicker">Company JDs</div>
+              <h3>Jobs</h3>
+              <div id="jobsStatus" class="status"></div>
+              <div id="jobsList" class="stack"></div>
+            </div>
+          </section>
+        </section>
+      </main>
+    </div>
+
+    <div id="assignModal" class="overlay" hidden>
+      <div class="overlay-card">
+        <h3>Assign Applicant</h3>
+        <p class="muted" id="assignModalSummary">Choose recruiter and JD.</p>
+        <div class="grid">
+          <div>
+            <label for="assignRecruiter">Recruiter</label>
+            <select id="assignRecruiter">
+              <option value="">Select recruiter</option>
+            </select>
+          </div>
+          <div>
+            <label for="assignJd">JD / role</label>
+            <select id="assignJd">
+              <option value="">Select JD / role</option>
+            </select>
+          </div>
+        </div>
+        <div id="assignStatus" class="status"></div>
+        <div class="actions-row" style="margin-top:14px;">
+          <button id="assignSubmitBtn" type="button">Save assignment</button>
+          <button id="assignCancelBtn" type="button" class="ghost-btn">Cancel</button>
+        </div>
+      </div>
+    </div>
+
+    <script src="/portal/app.js"></script>
+  </body>
+</html>
