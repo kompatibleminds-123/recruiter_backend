@@ -12,6 +12,37 @@ const navItems = [
   { to: "/jobs", label: "Jobs" }
 ];
 
+const DEFAULT_PIPELINE_STAGE_OPTIONS = [
+  "HR screening",
+  "Recruiter screening",
+  "Shortlisted",
+  "Submitted",
+  "Interview Scheduled",
+  "Offer Extended",
+  "Joined",
+  "On Hold",
+  "Rejected"
+];
+
+const DEFAULT_STATUS_OPTIONS = [
+  "CV Shared",
+  "Screening call aligned",
+  "L1 aligned",
+  "L2 aligned",
+  "L3 aligned",
+  "HR interview aligned",
+  "Offered",
+  "Feedback Awaited",
+  "Hold",
+  "Did not attend",
+  "Dropped",
+  "Screening Reject",
+  "Interview Reject",
+  "Duplicate",
+  "Shortlisted",
+  "Joined"
+];
+
 function api(path, token, method = "GET", body = null) {
   const headers = { "Content-Type": "application/json" };
   if (token) headers.Authorization = `Bearer ${token}`;
@@ -58,6 +89,49 @@ function toDateInputValue(value) {
   return local.toISOString().slice(0, 16);
 }
 
+function isInterviewAlignedStatus(status) {
+  const value = String(status || "").trim().toLowerCase();
+  return [
+    "screening call aligned",
+    "l1 aligned",
+    "l2 aligned",
+    "l3 aligned",
+    "hr interview aligned"
+  ].includes(value);
+}
+
+function mapAssessmentStatusToPipelineStage(status) {
+  const value = String(status || "").trim().toLowerCase();
+  if (!value) return "";
+  if (value === "cv shared") return "Submitted";
+  if (isInterviewAlignedStatus(value)) return "Interview Scheduled";
+  if (value === "offered") return "Offer Extended";
+  if (value === "feedback awaited" || value === "hold") return "On Hold";
+  if (value === "screening reject" || value === "interview reject" || value === "duplicate" || value === "dropped") return "Rejected";
+  if (value === "shortlisted") return "Shortlisted";
+  if (value === "joined") return "Joined";
+  return "";
+}
+
+function buildAssessmentStatusCalendarNote(statusValue, atLocalValue) {
+  const status = String(statusValue || "").trim().toLowerCase();
+  const statusLabel = String(statusValue || "").trim();
+  const label = atLocalValue ? new Date(atLocalValue).toLocaleString() : "";
+  if (isInterviewAlignedStatus(status)) return label ? `${statusLabel} on ${label}.` : statusLabel;
+  if (status === "offered") return label ? `Offered. LWD / DOJ on ${label}.` : "Offered.";
+  if (status === "cv shared") return "CV Shared.";
+  if (status === "did not attend") return "Did not attend.";
+  if (status === "screening reject") return "Screening reject.";
+  if (status === "interview reject") return "Interview reject.";
+  if (status === "duplicate") return "Duplicate.";
+  if (status === "shortlisted") return "Shortlisted.";
+  if (status === "joined") return "Joined.";
+  if (status === "dropped") return "Dropped.";
+  if (status === "feedback awaited") return "Feedback awaited.";
+  if (status === "hold") return "Hold.";
+  return statusLabel;
+}
+
 function normalizedAssessmentState(assessment, candidate) {
   const pipeline = String(assessment?.pipelineStage || candidate?.pipeline_stage || "").trim();
   const status = String(assessment?.candidateStatus || candidate?.candidate_status || "").trim();
@@ -68,7 +142,8 @@ function normalizedAssessmentState(assessment, candidate) {
     status,
     followUp,
     interviewAt,
-    summary: [pipeline, status].filter(Boolean).join(" | ")
+    summary: [pipeline, status].filter(Boolean).join(" | "),
+    note: buildAssessmentStatusCalendarNote(status, interviewAt || followUp)
   };
 }
 
@@ -549,6 +624,7 @@ function PortalApp({ token, onLogout }) {
                           <h3>{item.name || "Candidate"} | {item.jd_title || item.role || "Untitled role"}</h3>
                           <p className="muted">{[item.company || "", item.source ? `Source: ${item.source}` : "", item.assigned_to_name ? `Assigned: ${item.assigned_to_name}` : ""].filter(Boolean).join(" | ")}</p>
                           {statusState.summary ? <div className="status-line">{statusState.summary}</div> : null}
+                          {statusState.note ? <div className="status-note">{statusState.note}</div> : null}
                           <div className="chip-row">
                             {statusState.followUp ? <span className="chip">Follow-up: {new Date(statusState.followUp).toLocaleString()}</span> : null}
                             {statusState.interviewAt ? <span className="chip">Interview: {new Date(statusState.interviewAt).toLocaleString()}</span> : null}
@@ -579,8 +655,20 @@ function PortalApp({ token, onLogout }) {
                   <label key={name}><span>{label}</span><input type={type || "text"} value={interviewForm[name]} onChange={(e) => setInterviewForm((c) => ({ ...c, [name]: e.target.value }))} /></label>
                 ))}
                 <label className="full"><span>JD / role</span><input value={interviewForm.jdTitle} onChange={(e) => setInterviewForm((c) => ({ ...c, jdTitle: e.target.value }))} /></label>
-                <label><span>Pipeline stage</span><input value={interviewForm.pipelineStage} onChange={(e) => setInterviewForm((c) => ({ ...c, pipelineStage: e.target.value }))} /></label>
-                <label><span>Candidate status</span><input value={interviewForm.candidateStatus} onChange={(e) => setInterviewForm((c) => ({ ...c, candidateStatus: e.target.value }))} /></label>
+                <label>
+                  <span>Pipeline stage</span>
+                  <select value={interviewForm.pipelineStage} onChange={(e) => setInterviewForm((c) => ({ ...c, pipelineStage: e.target.value }))}>
+                    <option value="">Select pipeline stage</option>
+                    {DEFAULT_PIPELINE_STAGE_OPTIONS.map((item) => <option key={item} value={item}>{item}</option>)}
+                  </select>
+                </label>
+                <label>
+                  <span>Candidate status</span>
+                  <select value={interviewForm.candidateStatus} onChange={(e) => setInterviewForm((c) => ({ ...c, candidateStatus: e.target.value, pipelineStage: mapAssessmentStatusToPipelineStage(e.target.value) || c.pipelineStage }))}>
+                    <option value="">Select candidate status</option>
+                    {DEFAULT_STATUS_OPTIONS.map((item) => <option key={item} value={item}>{item}</option>)}
+                  </select>
+                </label>
                 <label><span>Next follow-up</span><input type="datetime-local" value={interviewForm.followUpAt} onChange={(e) => setInterviewForm((c) => ({ ...c, followUpAt: e.target.value }))} /></label>
                 <label><span>Interview date</span><input type="datetime-local" value={interviewForm.interviewAt} onChange={(e) => setInterviewForm((c) => ({ ...c, interviewAt: e.target.value }))} /></label>
                 <label className="full"><span>Recruiter notes</span><textarea value={interviewForm.recruiterNotes} onChange={(e) => setInterviewForm((c) => ({ ...c, recruiterNotes: e.target.value }))} /></label>
