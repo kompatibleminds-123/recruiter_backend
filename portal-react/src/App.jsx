@@ -7,6 +7,7 @@ const navItems = [
   { to: "/dashboard", label: "Dashboard" },
   { to: "/applicants", label: "Applied Candidates" },
   { to: "/captured-notes", label: "Captured Notes" },
+  { to: "/assessments", label: "Assessments" },
   { to: "/interview", label: "Interview Panel" },
   { to: "/intake-settings", label: "Admin Intake Settings" },
   { to: "/jobs", label: "Jobs" }
@@ -515,6 +516,90 @@ function PortalApp({ token, onLogout }) {
     setStatus("intake", "Applicant intake secret rotated.", "ok");
   }
 
+  function buildJourneyText(assessment) {
+    const lines = [
+      assessment?.candidateName || "Candidate",
+      assessment?.jdTitle ? `JD: ${assessment.jdTitle}` : "",
+      assessment?.pipelineStage ? `Pipeline: ${assessment.pipelineStage}` : "",
+      assessment?.candidateStatus ? `Status: ${assessment.candidateStatus}` : "",
+      assessment?.followUpAt ? `Follow-up: ${new Date(assessment.followUpAt).toLocaleString()}` : "",
+      assessment?.interviewAt ? `Interview: ${new Date(assessment.interviewAt).toLocaleString()}` : "",
+      assessment?.callbackNotes ? `Notes: ${assessment.callbackNotes}` : ""
+    ].filter(Boolean);
+    return lines.join("\n");
+  }
+
+  async function updateAssessmentStatus(assessment) {
+    const nextStatus = window.prompt(
+      `Update status for ${assessment?.candidateName || "candidate"}.\n\nUse one of:\n${DEFAULT_STATUS_OPTIONS.join(", ")}`,
+      String(assessment?.candidateStatus || "")
+    );
+    if (!nextStatus || !String(nextStatus).trim()) return;
+    const candidateStatus = String(nextStatus).trim();
+    const pipelineStage = mapAssessmentStatusToPipelineStage(candidateStatus) || assessment?.pipelineStage || "";
+    const callbackNotes = [assessment?.callbackNotes || "", buildAssessmentStatusCalendarNote(candidateStatus, assessment?.interviewAt || assessment?.followUpAt || "")]
+      .filter(Boolean)
+      .join("\n")
+      .trim();
+    await api("/company/assessments", token, "POST", {
+      assessment: {
+        ...assessment,
+        candidateStatus,
+        pipelineStage,
+        callbackNotes,
+        generatedAt: assessment?.generatedAt || new Date().toISOString()
+      }
+    });
+    await loadWorkspace();
+    setStatus("assessments", `Updated status for ${assessment?.candidateName || "candidate"}.`, "ok");
+  }
+
+  async function deleteAssessmentItem(assessment) {
+    if (!window.confirm(`Delete assessment for ${assessment?.candidateName || "candidate"}?`)) return;
+    await api("/company/assessments", token, "DELETE", { assessmentId: assessment?.id });
+    await loadWorkspace();
+    setStatus("assessments", "Assessment deleted.", "ok");
+  }
+
+  function reuseAssessmentAsNew(assessment) {
+    setInterviewMeta({ candidateId: "", assessmentId: "" });
+    setInterviewForm({
+      candidateName: assessment?.candidateName || "",
+      phoneNumber: assessment?.phoneNumber || "",
+      emailId: assessment?.emailId || "",
+      location: assessment?.location || "",
+      currentCompany: assessment?.currentCompany || "",
+      currentDesignation: assessment?.currentDesignation || "",
+      totalExperience: assessment?.totalExperience || "",
+      clientName: assessment?.clientName || "",
+      jdTitle: assessment?.jdTitle || "",
+      pipelineStage: assessment?.pipelineStage || "Under Interview Process",
+      candidateStatus: assessment?.candidateStatus || "Screening in progress",
+      followUpAt: toDateInputValue(assessment?.followUpAt),
+      interviewAt: toDateInputValue(assessment?.interviewAt),
+      recruiterNotes: assessment?.recruiterNotes || "",
+      callbackNotes: assessment?.callbackNotes || ""
+    });
+    navigate("/interview");
+    setStatus("interview", `Loaded ${assessment?.candidateName || "candidate"} as reusable draft.`, "ok");
+  }
+
+  async function openAssessmentJourney(assessment) {
+    const text = buildJourneyText(assessment);
+    await copyText(text);
+    window.alert(text);
+    setStatus("assessments", "Journey copied.", "ok");
+  }
+
+  function openAssessmentWhatsapp(assessment) {
+    const phone = String(assessment?.phoneNumber || "").replace(/[^\d]/g, "");
+    if (!phone) {
+      setStatus("assessments", "No phone number available for WhatsApp.", "error");
+      return;
+    }
+    window.open(`https://wa.me/${phone}`, "_blank", "noopener,noreferrer");
+  }
+
   const companyId = String(state.user?.companyId || state.intake?.company?.id || "").trim();
   const secret = String(state.intake?.applicantIntakeSecret || "").trim();
   const apiUrl = `${window.location.origin}/public/applicants/intake`;
@@ -642,6 +727,38 @@ function PortalApp({ token, onLogout }) {
                     </article>
                   );
                 })}
+              </div>
+            </Section>
+          } />
+
+          <Route path="/assessments" element={
+            <Section kicker="Structured Workflow" title="Assessments">
+              {statuses.assessments ? <div className={`status ${statuses.assessmentsKind || ""}`}>{statuses.assessments}</div> : null}
+              <div className="stack-list">
+                {!state.assessments.length ? <div className="empty-state">No assessments saved yet.</div> : state.assessments.map((item) => (
+                  <article className="item-card compact-card" key={item.id}>
+                    <div className="item-card__top">
+                      <div>
+                        <h3>{item.candidateName || "Candidate"} | {item.jdTitle || "Untitled role"}</h3>
+                        <p className="muted">{[item.pipelineStage || "", item.candidateStatus || ""].filter(Boolean).join(" | ")}</p>
+                        <div className="status-note">
+                          {[
+                            item.currentCompany || "",
+                            item.interviewAt ? `Interview ${new Date(item.interviewAt).toLocaleString()}` : "",
+                            item.updatedAt ? `Updated ${new Date(item.updatedAt).toLocaleString()}` : ""
+                          ].filter(Boolean).join(" | ")}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="button-row">
+                      <button onClick={() => void updateAssessmentStatus(item)}>Update status</button>
+                      <button onClick={() => void openAssessmentJourney(item)}>Journey</button>
+                      <button onClick={() => openAssessmentWhatsapp(item)}>WhatsApp</button>
+                      <button onClick={() => reuseAssessmentAsNew(item)}>Reuse as new</button>
+                      <button className="ghost-btn" onClick={() => void deleteAssessmentItem(item)}>Delete</button>
+                    </div>
+                  </article>
+                ))}
               </div>
             </Section>
           } />
