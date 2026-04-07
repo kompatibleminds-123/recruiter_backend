@@ -2733,7 +2733,6 @@ const server = http.createServer(async (req, res) => {
         throw new Error("Only an admin can remove applicants.");
       }
       const candidateId = String(requestUrl.searchParams.get("id") || "").trim();
-      await ensureCompanyCandidateExists(actor.companyId, candidateId);
       const result = await deleteCandidate(candidateId, { companyId: actor.companyId });
       sendJson(res, 200, { ok: true, result });
     } catch (error) {
@@ -2749,7 +2748,6 @@ const server = http.createServer(async (req, res) => {
         throw new Error("Only an admin can convert applicants.");
       }
       const body = await readJsonBody(req);
-      await ensureCompanyCandidateExists(actor.companyId, body.id || body.candidateId);
       const result = await linkCandidateToAssessment(body.id || body.candidateId, body.assessment_id || body.assessmentId, { companyId: actor.companyId });
       sendJson(res, 200, { ok: true, result });
     } catch (error) {
@@ -2765,7 +2763,6 @@ const server = http.createServer(async (req, res) => {
         throw new Error("Only an admin can assign applicants.");
       }
       const body = await readJsonBody(req);
-      await ensureCompanyCandidateExists(actor.companyId, body.id || body.candidateId);
       const result = await assignCandidate(body.id || body.candidateId, {
         assigned_to_user_id: body.assigned_to_user_id || body.assignedToUserId,
         assigned_to_name: body.assigned_to_name || body.assignedToName,
