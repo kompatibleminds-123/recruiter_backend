@@ -71,6 +71,13 @@ button,
   cursor: pointer;
 }
 
+.nav-btn:disabled,
+button:disabled,
+.ghost-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
 .nav-btn.active,
 button {
   background: var(--brand);
@@ -260,6 +267,10 @@ code {
   place-items: center;
   padding: 24px;
   z-index: 40;
+}
+
+.overlay[hidden] {
+  display: none !important;
 }
 
 .overlay-card {

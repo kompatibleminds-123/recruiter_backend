@@ -17,6 +17,7 @@
           <button class="nav-btn active" data-view="dashboard">Dashboard</button>
           <button class="nav-btn" data-view="applicants">Applied Candidates</button>
           <button class="nav-btn" data-view="captured">Captured Notes</button>
+          <button class="nav-btn" data-view="interview">Interview Panel</button>
           <button class="nav-btn" data-view="intake">Admin Intake Settings</button>
           <button class="nav-btn" data-view="jobs">Jobs</button>
         </nav>
@@ -84,6 +85,81 @@
               <h3>Captured Notes</h3>
               <div id="capturedStatus" class="status"></div>
               <div id="capturedList" class="stack"></div>
+            </div>
+          </section>
+
+          <section id="interviewView" class="view-panel" hidden>
+            <div class="panel">
+              <div class="section-kicker">Recruiter Workflow</div>
+              <h3>Interview Panel</h3>
+              <p class="muted">Use this for assigned applicants and sourced candidates. Save clean recruiter context here before deeper assessment steps.</p>
+              <div id="interviewStatus" class="status"></div>
+              <form id="interviewForm" class="grid two-col">
+                <div>
+                  <label for="interviewCandidateName">Candidate name</label>
+                  <input id="interviewCandidateName" />
+                </div>
+                <div>
+                  <label for="interviewPhone">Phone</label>
+                  <input id="interviewPhone" />
+                </div>
+                <div>
+                  <label for="interviewEmail">Email</label>
+                  <input id="interviewEmail" type="email" />
+                </div>
+                <div>
+                  <label for="interviewLocation">Location</label>
+                  <input id="interviewLocation" />
+                </div>
+                <div>
+                  <label for="interviewCurrentCompany">Current company</label>
+                  <input id="interviewCurrentCompany" />
+                </div>
+                <div>
+                  <label for="interviewCurrentDesignation">Current designation</label>
+                  <input id="interviewCurrentDesignation" />
+                </div>
+                <div>
+                  <label for="interviewTotalExperience">Total experience</label>
+                  <input id="interviewTotalExperience" />
+                </div>
+                <div>
+                  <label for="interviewClientName">Client name</label>
+                  <input id="interviewClientName" />
+                </div>
+                <div class="full">
+                  <label for="interviewJdTitle">JD / role</label>
+                  <input id="interviewJdTitle" />
+                </div>
+                <div>
+                  <label for="interviewPipelineStage">Pipeline stage</label>
+                  <input id="interviewPipelineStage" placeholder="Under Interview Process" />
+                </div>
+                <div>
+                  <label for="interviewCandidateStatus">Candidate status</label>
+                  <input id="interviewCandidateStatus" placeholder="Screening in progress" />
+                </div>
+                <div>
+                  <label for="interviewFollowUpAt">Next follow-up</label>
+                  <input id="interviewFollowUpAt" type="datetime-local" />
+                </div>
+                <div>
+                  <label for="interviewAt">Interview date</label>
+                  <input id="interviewAt" type="datetime-local" />
+                </div>
+                <div class="full">
+                  <label for="interviewRecruiterNotes">Recruiter notes</label>
+                  <textarea id="interviewRecruiterNotes" placeholder="Short recruiter context, fit notes, salary, concerns, sourcing notes."></textarea>
+                </div>
+                <div class="full">
+                  <label for="interviewCallbackNotes">Callback / update notes</label>
+                  <textarea id="interviewCallbackNotes" placeholder="Call summary, next steps, interview updates."></textarea>
+                </div>
+                <div class="full actions-row">
+                  <button id="saveInterviewAssessmentBtn" type="submit">Save assessment</button>
+                  <button id="clearInterviewFormBtn" type="button" class="ghost-btn">Clear</button>
+                </div>
+              </form>
             </div>
           </section>
 

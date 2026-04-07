@@ -5,10 +5,13 @@
     dashboard: null,
     applicants: [],
     candidates: [],
+    assessments: [],
     users: [],
     intake: null,
     jobs: [],
-    pendingApplicantId: ""
+    pendingApplicantId: "",
+    currentInterviewCandidateId: "",
+    currentInterviewAssessmentId: ""
   };
 
   const $ = (id) => document.getElementById(id);
@@ -67,7 +70,7 @@
   }
 
   function switchView(view) {
-    ["dashboard", "applicants", "captured", "intake", "jobs"].forEach((name) => {
+    ["dashboard", "applicants", "captured", "interview", "intake", "jobs"].forEach((name) => {
       const panel = $(`${name}View`);
       const btn = document.querySelector(`.nav-btn[data-view="${name}"]`);
       if (panel) panel.hidden = name !== view;
@@ -80,6 +83,9 @@
     $("loginView").hidden = loggedIn;
     $("workspaceView").hidden = !loggedIn;
     $("logoutBtn").hidden = !loggedIn;
+    document.querySelectorAll(".nav-btn").forEach((button) => {
+      button.disabled = !loggedIn;
+    });
     $("currentUserSummary").textContent = loggedIn
       ? `${state.user.name} | ${state.user.role} | ${state.user.companyName || "Company"}`
       : "Not logged in";
@@ -155,6 +161,9 @@
             item.source ? `Source: ${item.source}` : ""
           ].filter(Boolean).join(" | ")}
         </div>
+        <div class="item-actions">
+          <button class="mini-btn captured-review" type="button" data-id="${item.id}">Review in Interview Panel</button>
+        </div>
       </div>
     `).join("");
   }
@@ -198,6 +207,78 @@
         </div>
       </div>
     `).join("");
+  }
+
+  function setInterviewFields(candidate = {}, assessment = null) {
+    state.currentInterviewCandidateId = String(candidate?.id || "").trim();
+    state.currentInterviewAssessmentId = String(assessment?.id || "").trim();
+    $("interviewCandidateName").value = assessment?.candidateName || candidate?.name || "";
+    $("interviewPhone").value = assessment?.phoneNumber || candidate?.phone || "";
+    $("interviewEmail").value = assessment?.emailId || candidate?.email || "";
+    $("interviewLocation").value = assessment?.location || candidate?.location || "";
+    $("interviewCurrentCompany").value = assessment?.currentCompany || candidate?.company || "";
+    $("interviewCurrentDesignation").value = assessment?.currentDesignation || candidate?.role || "";
+    $("interviewTotalExperience").value = assessment?.totalExperience || candidate?.experience || "";
+    $("interviewClientName").value = assessment?.clientName || candidate?.client_name || "";
+    $("interviewJdTitle").value = assessment?.jdTitle || candidate?.jd_title || "";
+    $("interviewPipelineStage").value = assessment?.pipelineStage || "Under Interview Process";
+    $("interviewCandidateStatus").value = assessment?.candidateStatus || "Screening in progress";
+    $("interviewFollowUpAt").value = assessment?.followUpAt || "";
+    $("interviewAt").value = assessment?.interviewAt || "";
+    $("interviewRecruiterNotes").value = assessment?.recruiterNotes || candidate?.notes || "";
+    $("interviewCallbackNotes").value = assessment?.callbackNotes || "";
+  }
+
+  function clearInterviewForm() {
+    state.currentInterviewCandidateId = "";
+    state.currentInterviewAssessmentId = "";
+    $("interviewForm").reset();
+    setStatus("interviewStatus", "");
+  }
+
+  function openInterviewForCandidate(candidateId) {
+    const candidate = (state.candidates || []).find((item) => String(item.id) === String(candidateId));
+    if (!candidate) {
+      setStatus("capturedStatus", "Candidate not found for interview panel.", "error");
+      return;
+    }
+    const matchedAssessment = (state.assessments || []).find((item) => String(item.candidateName || "").trim().toLowerCase() === String(candidate.name || "").trim().toLowerCase());
+    setInterviewFields(candidate, matchedAssessment || null);
+    switchView("interview");
+    setStatus("interviewStatus", `Loaded ${candidate.name || "candidate"} into Interview Panel.`, "ok");
+  }
+
+  async function saveInterviewAssessment(event) {
+    event.preventDefault();
+    try {
+      const assessment = {
+        id: state.currentInterviewAssessmentId || `assessment-${Date.now()}`,
+        candidateName: $("interviewCandidateName").value.trim(),
+        phoneNumber: $("interviewPhone").value.trim(),
+        emailId: $("interviewEmail").value.trim(),
+        location: $("interviewLocation").value.trim(),
+        currentCompany: $("interviewCurrentCompany").value.trim(),
+        currentDesignation: $("interviewCurrentDesignation").value.trim(),
+        totalExperience: $("interviewTotalExperience").value.trim(),
+        clientName: $("interviewClientName").value.trim(),
+        jdTitle: $("interviewJdTitle").value.trim(),
+        pipelineStage: $("interviewPipelineStage").value.trim(),
+        candidateStatus: $("interviewCandidateStatus").value.trim(),
+        followUpAt: $("interviewFollowUpAt").value,
+        interviewAt: $("interviewAt").value,
+        recruiterNotes: $("interviewRecruiterNotes").value.trim(),
+        callbackNotes: $("interviewCallbackNotes").value.trim(),
+        questionMode: "basic",
+        generatedAt: new Date().toISOString()
+      };
+      setStatus("interviewStatus", "Saving assessment...");
+      const saved = await api("/company/assessments", "POST", { assessment });
+      state.currentInterviewAssessmentId = String(saved?.id || assessment.id || "").trim();
+      await loadWorkspace();
+      setStatus("interviewStatus", "Assessment saved.", "ok");
+    } catch (error) {
+      setStatus("interviewStatus", String(error?.message || error), "error");
+    }
   }
 
   function fillAssignOptions(applicant) {
@@ -286,14 +367,15 @@
   }
 
   async function loadWorkspace() {
-    const [userResult, dashboardResult, applicantsResult, intakeResult, jobsResult, usersResult, candidatesResult] = await Promise.all([
+    const [userResult, dashboardResult, applicantsResult, intakeResult, jobsResult, usersResult, candidatesResult, assessmentsResult] = await Promise.all([
       api("/auth/me"),
       api("/company/dashboard"),
       api("/company/applicants").catch(() => ({ items: [] })),
       api("/company/applicant-intake-secret").catch(() => null),
       api("/company/jds").catch(() => ({ jobs: [] })),
       api("/company/users").catch(() => ({ users: [] })),
-      api("/candidates").catch(() => [])
+      api("/candidates").catch(() => []),
+      api("/company/assessments").catch(() => ({ assessments: [] }))
     ]);
     state.user = userResult.user || userResult;
     state.dashboard = dashboardResult || {};
@@ -302,6 +384,7 @@
     state.jobs = jobsResult.jobs || [];
     state.users = usersResult.users || [];
     state.candidates = Array.isArray(candidatesResult) ? candidatesResult : [];
+    state.assessments = assessmentsResult.assessments || [];
     renderAuthState();
     renderDashboard();
     renderApplicants();
@@ -334,10 +417,13 @@
     state.dashboard = null;
     state.applicants = [];
     state.candidates = [];
+    state.assessments = [];
     state.users = [];
     state.intake = null;
     state.jobs = [];
     state.pendingApplicantId = "";
+    closeAssignModal();
+    clearInterviewForm();
     localStorage.removeItem("recruitdesk_portal_token");
     renderAuthState();
     switchView("dashboard");
@@ -358,6 +444,8 @@
   $("copyGoogleScriptBtn").addEventListener("click", () => copyText($("googleScriptField").value, "intakeStatus", "Google Sheet script copied."));
   $("assignSubmitBtn").addEventListener("click", assignApplicant);
   $("assignCancelBtn").addEventListener("click", closeAssignModal);
+  $("interviewForm").addEventListener("submit", saveInterviewAssessment);
+  $("clearInterviewFormBtn").addEventListener("click", clearInterviewForm);
   $("applicantsList").addEventListener("click", (event) => {
     const openCvBtn = event.target.closest(".applicant-open-cv");
     if (openCvBtn) {
@@ -375,10 +463,17 @@
       if (confirmed) void removeApplicant(removeBtn.dataset.id);
     }
   });
+  $("capturedList").addEventListener("click", (event) => {
+    const reviewBtn = event.target.closest(".captured-review");
+    if (reviewBtn) {
+      openInterviewForCandidate(reviewBtn.dataset.id);
+    }
+  });
   $("assignModal").addEventListener("click", (event) => {
     if (event.target === $("assignModal")) closeAssignModal();
   });
 
+  closeAssignModal();
   renderAuthState();
   switchView("dashboard");
 
