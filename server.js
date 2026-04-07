@@ -14,6 +14,7 @@ const {
   listCandidatesForUser,
   listCandidates,
   listContactAttempts,
+  patchCandidate,
   parseCandidateQuickNote,
   saveCandidate,
   saveContactAttempt
@@ -3197,6 +3198,36 @@ const server = http.createServer(async (req, res) => {
         id: String(requestUrl.searchParams.get("id") || "").trim()
       };
       const result = await listCandidatesForUser(sessionUser, listOptions);
+      sendJson(res, 200, { ok: true, result });
+    } catch (error) {
+      sendJson(res, 400, { ok: false, error: String(error.message || error) });
+    }
+    return;
+  }
+
+  if (req.method === "PATCH" && /^\/company\/candidates\/[^/]+$/.test(requestUrl.pathname)) {
+    try {
+      const actor = await requireSessionUser(getBearerToken(req));
+      const candidateId = String(requestUrl.pathname.replace(/^\/company\/candidates\//, "")).trim();
+      await ensureCandidateVisibleToActor(actor, candidateId);
+      const body = await readJsonBody(req);
+      const input = body.patch || body || {};
+      const patch = {
+        notes: String(input.notes || "").trim() || undefined,
+        recruiter_context_notes: String(input.recruiter_context_notes || input.recruiterContextNotes || "").trim() || undefined,
+        other_pointers: String(input.other_pointers || input.otherPointers || "").trim() || undefined,
+        callback_notes: String(input.callback_notes || input.callbackNotes || "").trim() || undefined,
+        pipeline_stage: String(input.pipeline_stage || input.pipelineStage || "").trim() || undefined,
+        candidate_status: String(input.candidate_status || input.candidateStatus || "").trim() || undefined,
+        next_follow_up_at: String(input.next_follow_up_at || input.nextFollowUpAt || "").trim() || undefined,
+        jd_title: String(input.jd_title || input.jdTitle || "").trim() || undefined,
+        client_name: String(input.client_name || input.clientName || "").trim() || undefined,
+        assigned_to_user_id: String(input.assigned_to_user_id || input.assignedToUserId || "").trim() || undefined,
+        assigned_to_name: String(input.assigned_to_name || input.assignedToName || "").trim() || undefined,
+        assigned_jd_title: String(input.assigned_jd_title || input.assignedJdTitle || "").trim() || undefined
+      };
+      Object.keys(patch).forEach((key) => patch[key] === undefined && delete patch[key]);
+      const result = await patchCandidate(candidateId, patch, { companyId: actor.companyId });
       sendJson(res, 200, { ok: true, result });
     } catch (error) {
       sendJson(res, 400, { ok: false, error: String(error.message || error) });
