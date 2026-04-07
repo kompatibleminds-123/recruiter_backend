@@ -2822,7 +2822,6 @@ const server = http.createServer(async (req, res) => {
     try {
       const actor = await requireSessionUser(getBearerTokenFromRequest(req, requestUrl));
       const candidateId = String(requestUrl.pathname.replace(/^\/company\/candidates\//, "").replace(/\/cv$/, "")).trim();
-      await ensureCandidateVisibleToActor(actor, candidateId);
       const candidate = await getVisibleCandidateForActor(actor, candidateId);
       const meta = decodeApplicantMetadata(candidate);
       if (!meta.fileProvider || (!meta.fileKey && !meta.fileUrl)) {
