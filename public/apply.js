@@ -1,6 +1,18 @@
 (function () {
   const $ = (id) => document.getElementById(id);
 
+  async function readJsonSafely(response) {
+    const text = await response.text();
+    try {
+      return text ? JSON.parse(text) : null;
+    } catch (_error) {
+      return {
+        ok: false,
+        error: text || `HTTP ${response.status}`
+      };
+    }
+  }
+
   function setStatus(message, kind) {
     const node = $("applyStatus");
     if (!node) return;
@@ -33,9 +45,9 @@
 
   async function loadJob(jobId) {
     const response = await fetch(`/public/jobs/${encodeURIComponent(jobId)}`);
-    const data = await response.json();
+    const data = await readJsonSafely(response);
     if (!response.ok || !data?.ok) {
-      throw new Error(data?.error || "Could not load this job.");
+      throw new Error(data?.error || "Could not load this job. This link may be stale or the JD is not published in backend.");
     }
     return data.result || {};
   }
@@ -102,7 +114,7 @@
           },
           body: JSON.stringify(payload)
         });
-        const data = await response.json();
+        const data = await readJsonSafely(response);
         if (!response.ok || !data?.ok) {
           throw new Error(data?.error || "Application failed.");
         }
@@ -118,4 +130,3 @@
 
   init().catch((error) => setStatus(String(error?.message || error), "error"));
 })();
-
