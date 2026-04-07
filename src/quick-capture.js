@@ -401,6 +401,9 @@ async function saveCandidate(candidate, options = {}) {
     ...candidate,
     company_id: companyId || null
   };
+  if (!candidateId) {
+    delete nextCandidate.id;
+  }
   if (url && serviceRoleKey) {
     let isUpdate = false;
     if (candidateId) {
