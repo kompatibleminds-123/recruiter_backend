@@ -216,6 +216,13 @@ function getBearerToken(req) {
   return match?.[1]?.trim() || "";
 }
 
+function getBearerTokenFromRequest(req, requestUrl = null) {
+  const headerToken = getBearerToken(req);
+  if (headerToken) return headerToken;
+  const queryToken = String(requestUrl?.searchParams?.get("access_token") || "").trim();
+  return queryToken;
+}
+
 function encodeApplicantMetadata(metadata = {}) {
   return `${APPLICANT_METADATA_PREFIX}${JSON.stringify(metadata || {})}`;
 }
@@ -2813,7 +2820,7 @@ const server = http.createServer(async (req, res) => {
 
   if (req.method === "GET" && /^\/company\/candidates\/[^/]+\/cv$/.test(requestUrl.pathname)) {
     try {
-      const actor = await requireSessionUser(getBearerToken(req));
+      const actor = await requireSessionUser(getBearerTokenFromRequest(req, requestUrl));
       const candidateId = String(requestUrl.pathname.replace(/^\/company\/candidates\//, "").replace(/\/cv$/, "")).trim();
       await ensureCandidateVisibleToActor(actor, candidateId);
       const candidate = await getVisibleCandidateForActor(actor, candidateId);
