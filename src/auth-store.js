@@ -612,6 +612,20 @@ async function listCompanyJobs(companyId) {
   if (!cfg().on) return (readStore().jobs || []).filter((j) => j.companyId === companyId && !isSharedExportPresetRow(j)).sort((a, b) => String(b.updatedAt || "").localeCompare(String(a.updatedAt || ""))).map(sanitizeJob);
   await ensureSeeded(); return (await sbSel("company_jobs", `select=*&company_id=eq.${enc(companyId)}&order=updated_at.desc`)).filter((row) => !isSharedExportPresetRow(row)).map(sanitizeJob);
 }
+async function getPublicCompanyJob(jobId) {
+  const id = String(jobId || "").trim();
+  if (!id) throw new Error("jobId is required.");
+  if (!cfg().on) {
+    const job = sanitizeJob((readStore().jobs || []).find((j) => String(j?.id || "").trim() === id && !isSharedExportPresetRow(j)));
+    if (!job) throw new Error("Job not found.");
+    return job;
+  }
+  await ensureSeeded();
+  const rows = await sbSel("company_jobs", `select=*&id=eq.${enc(id)}&limit=1`);
+  const job = sanitizeJob((rows || []).find((row) => !isSharedExportPresetRow(row)));
+  if (!job) throw new Error("Job not found.");
+  return job;
+}
 async function saveCompanyJob({ actorUserId, companyId, job }) {
   if (!actorUserId || !companyId || !job?.title || !job?.jobDescription) throw new Error("actorUserId, companyId, job title, and job description are required.");
   const actor = sanitizeUser(await getUserById(actorUserId, companyId));
@@ -768,6 +782,7 @@ module.exports = {
   deleteCompanyJob,
   getCompanyApplicantIntakeSecret,
   getCompanySharedExportPresets,
+  getPublicCompanyJob,
   getSessionUser,
   listCompaniesAndUsersSummary,
   listAssessments,

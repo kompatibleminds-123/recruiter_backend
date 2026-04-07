@@ -35,6 +35,7 @@ const {
   getSessionUser,
   getPlatformSessionUser,
   getCompanySharedExportPresets,
+  getPublicCompanyJob,
   listCompaniesAndUsersSummary,
   listAssessments,
   searchAssessments,
@@ -2320,10 +2321,28 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (req.method === "GET" && (requestUrl.pathname === "/apply" || requestUrl.pathname === "/apply/")) {
+    serveStaticFile(res, path.join(ROOT_PUBLIC_DIR, "apply.html"));
+    return;
+  }
+
+  if (req.method === "GET" && requestUrl.pathname.startsWith("/apply/")) {
+    serveStaticFile(res, path.join(ROOT_PUBLIC_DIR, "apply.html"));
+    return;
+  }
+
   if (req.method === "GET" && requestUrl.pathname.startsWith("/quick-capture/")) {
     const assetPath = requestUrl.pathname.replace(/^\/quick-capture\//, "");
     const safeRelativePath = path.normalize(assetPath).replace(/^(\.\.(\/|\\|$))+/, "");
     const resolvedPath = path.join(QUICK_CAPTURE_PUBLIC_DIR, safeRelativePath);
+    serveStaticFile(res, resolvedPath);
+    return;
+  }
+
+  if (req.method === "GET" && requestUrl.pathname.startsWith("/public/")) {
+    const assetPath = requestUrl.pathname.replace(/^\/public\//, "");
+    const safeRelativePath = path.normalize(assetPath).replace(/^(\.\.(\/|\\|$))+/, "");
+    const resolvedPath = path.join(ROOT_PUBLIC_DIR, safeRelativePath);
     serveStaticFile(res, resolvedPath);
     return;
   }
@@ -2813,6 +2832,60 @@ const server = http.createServer(async (req, res) => {
     try {
       const body = await readJsonBody(req);
       const result = await ingestApplicantSubmission(body, req);
+      sendJson(res, 200, { ok: true, result });
+    } catch (error) {
+      sendJson(res, 400, { ok: false, error: String(error.message || error) });
+    }
+    return;
+  }
+
+  if (req.method === "GET" && requestUrl.pathname.startsWith("/public/jobs/")) {
+    try {
+      const jobId = String(requestUrl.pathname.replace(/^\/public\/jobs\//, "").replace(/\/+$/, "")).trim();
+      if (!jobId) throw new Error("Job not found.");
+      const job = await getPublicCompanyJob(jobId);
+      sendJson(res, 200, {
+        ok: true,
+        result: {
+          id: job.id,
+          companyId: job.companyId,
+          title: job.title || "",
+          clientName: job.clientName || "",
+          jobDescription: job.jobDescription || "",
+          mustHaveSkills: job.mustHaveSkills || "",
+          redFlags: job.redFlags || "",
+          standardQuestions: job.standardQuestions || ""
+        }
+      });
+    } catch (error) {
+      sendJson(res, 404, { ok: false, error: String(error.message || error) });
+    }
+    return;
+  }
+
+  if (req.method === "POST" && /\/public\/jobs\/[^/]+\/apply$/.test(requestUrl.pathname)) {
+    try {
+      const jobId = String(requestUrl.pathname.replace(/^\/public\/jobs\//, "").replace(/\/apply$/, "").replace(/\/+$/, "")).trim();
+      if (!jobId) throw new Error("Job not found.");
+      const job = await getPublicCompanyJob(jobId);
+      const body = await readJsonBody(req);
+      const payload = {
+        ...(body || {}),
+        companyId: job.companyId,
+        jdTitle: String(body?.jdTitle || job.title || "").trim(),
+        clientName: String(body?.clientName || job.clientName || "").trim(),
+        jobId: job.id,
+        sourcePlatform: String(body?.sourcePlatform || "hosted_apply").trim(),
+        sourceLabel: String(body?.sourceLabel || "RecruitDesk Apply Link").trim(),
+        parseWithAi: body?.parseWithAi !== false
+      };
+      const result = await ingestApplicantSubmission(payload, {
+        ...req,
+        headers: {
+          ...(req.headers || {}),
+          "x-applicant-intake-secret": String((await getCompanyApplicantIntakeSecret(job.companyId))?.applicantIntakeSecret || "")
+        }
+      });
       sendJson(res, 200, { ok: true, result });
     } catch (error) {
       sendJson(res, 400, { ok: false, error: String(error.message || error) });
