@@ -2822,7 +2822,10 @@ const server = http.createServer(async (req, res) => {
     try {
       const actor = await requireSessionUser(getBearerTokenFromRequest(req, requestUrl));
       const candidateId = String(requestUrl.pathname.replace(/^\/company\/candidates\//, "").replace(/\/cv$/, "")).trim();
-      const candidate = await getVisibleCandidateForActor(actor, candidateId);
+      const candidate = (await listCandidatesForUser(actor, { id: candidateId, limit: 1 }))[0];
+      if (!candidate) {
+        throw new Error("Candidate not found in this company.");
+      }
       const meta = decodeApplicantMetadata(candidate);
       if (!meta.fileProvider || (!meta.fileKey && !meta.fileUrl)) {
         throw new Error("CV file not available for this candidate.");
