@@ -4,7 +4,7 @@ const fs = require("fs");
 const path = require("path");
 const { parseCandidatePayload } = require("./src/parser");
 const { callOpenAiQuestions, normalizeCandidateFileWithAi, normalizeCandidateWithAi } = require("./src/ai");
-const { storeUploadedFile } = require("./src/storage");
+const { storeUploadedFile, loadStoredFile } = require("./src/storage");
 const {
   assignCandidate,
   deleteCandidate,
@@ -143,6 +143,20 @@ function sendText(arg1, arg2, arg3, arg4, arg5 = "text/plain; charset=utf-8") {
     "Content-Length": Buffer.byteLength(body)
   }));
   res.end(body);
+}
+
+function sendBuffer(arg1, arg2, arg3, arg4, arg5 = {}) {
+  const hasExplicitReq = arguments.length >= 4;
+  const req = hasExplicitReq ? arg1 : null;
+  const res = hasExplicitReq ? arg2 : arg1;
+  const statusCode = hasExplicitReq ? arg3 : arg2;
+  const buffer = hasExplicitReq ? arg4 : arg3;
+  const extras = hasExplicitReq ? arg5 : arg4 || {};
+  res.writeHead(statusCode, buildResponseHeaders(req, {
+    "Content-Length": buffer.length,
+    ...extras
+  }));
+  res.end(buffer);
 }
 
 function serveStaticFile(arg1, arg2, arg3) {
@@ -337,6 +351,19 @@ async function ensureCandidateVisibleToActor(actor, candidateId) {
     throw new Error("Candidate not found or not allowed.");
   }
   return matches[0];
+}
+
+async function getVisibleCandidateForActor(actor, candidateId) {
+  const id = String(candidateId || "").trim();
+  if (!id) {
+    throw new Error("Candidate not found.");
+  }
+  const matches = await listCandidates({ id, limit: 1, companyId: actor.companyId });
+  const candidate = Array.isArray(matches) ? matches[0] : null;
+  if (!candidate) {
+    throw new Error("Candidate not found in this company.");
+  }
+  return candidate;
 }
 
 async function ensureCompanyCandidateExists(companyId, candidateId) {
@@ -2778,6 +2805,34 @@ const server = http.createServer(async (req, res) => {
       const actor = await requireSessionUser(getBearerToken(req));
       const result = await getCompanyApplicantIntakeSecret(actor.companyId);
       sendJson(res, 200, { ok: true, result });
+    } catch (error) {
+      sendJson(res, 400, { ok: false, error: String(error.message || error) });
+    }
+    return;
+  }
+
+  if (req.method === "GET" && /^\/company\/candidates\/[^/]+\/cv$/.test(requestUrl.pathname)) {
+    try {
+      const actor = await requireSessionUser(getBearerToken(req));
+      const candidateId = String(requestUrl.pathname.replace(/^\/company\/candidates\//, "").replace(/\/cv$/, "")).trim();
+      await ensureCandidateVisibleToActor(actor, candidateId);
+      const candidate = await getVisibleCandidateForActor(actor, candidateId);
+      const meta = decodeApplicantMetadata(candidate);
+      if (!meta.fileProvider || (!meta.fileKey && !meta.fileUrl)) {
+        throw new Error("CV file not available for this candidate.");
+      }
+      const file = await loadStoredFile({
+        provider: meta.fileProvider,
+        key: meta.fileKey,
+        url: meta.fileUrl,
+        filename: meta.filename,
+        mimeType: meta.mimeType
+      });
+      const downloadName = String(file.filename || "resume.pdf").replace(/"/g, "");
+      sendBuffer(req, res, 200, file.buffer, {
+        "Content-Type": String(file.mimeType || "application/octet-stream").trim(),
+        "Content-Disposition": `inline; filename="${downloadName}"`
+      });
     } catch (error) {
       sendJson(res, 400, { ok: false, error: String(error.message || error) });
     }

@@ -1,7 +1,7 @@
 const crypto = require("crypto");
 const fs = require("fs");
 const path = require("path");
-const { S3Client, PutObjectCommand } = require("@aws-sdk/client-s3");
+const { S3Client, PutObjectCommand, GetObjectCommand } = require("@aws-sdk/client-s3");
 
 const LOCAL_UPLOAD_DIR = path.join(__dirname, "..", "data", "uploads");
 
@@ -86,6 +86,55 @@ async function storeUploadedFile(file, options = {}) {
   };
 }
 
+async function streamToBuffer(stream) {
+  const chunks = [];
+  for await (const chunk of stream) {
+    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+  }
+  return Buffer.concat(chunks);
+}
+
+async function loadStoredFile(fileRef = {}) {
+  const provider = String(fileRef.provider || "").trim();
+  const filename = sanitizeFilename(fileRef.filename || "resume.bin");
+  const mimeType = String(fileRef.mimeType || "application/octet-stream").trim();
+  const key = String(fileRef.key || "").trim();
+  const url = String(fileRef.url || "").trim();
+  const config = getS3Config();
+
+  if (provider === "s3") {
+    if (!config.bucket || !config.region || !config.accessKeyId || !config.secretAccessKey || !key) {
+      throw new Error("S3 file configuration is incomplete.");
+    }
+    const client = createS3Client(config);
+    const response = await client.send(
+      new GetObjectCommand({
+        Bucket: config.bucket,
+        Key: key
+      })
+    );
+    const buffer = await streamToBuffer(response.Body);
+    return {
+      buffer,
+      filename,
+      mimeType: String(response.ContentType || mimeType || "application/octet-stream").trim()
+    };
+  }
+
+  const localPath = url && fs.existsSync(url)
+    ? url
+    : (key ? path.join(LOCAL_UPLOAD_DIR, path.basename(key)) : "");
+  if (!localPath || !fs.existsSync(localPath)) {
+    throw new Error("Stored file not found.");
+  }
+  return {
+    buffer: fs.readFileSync(localPath),
+    filename,
+    mimeType
+  };
+}
+
 module.exports = {
-  storeUploadedFile
+  storeUploadedFile,
+  loadStoredFile
 };
