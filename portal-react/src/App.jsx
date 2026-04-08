@@ -45,6 +45,26 @@ const DEFAULT_STATUS_OPTIONS = [
   "Joined"
 ];
 
+const DASHBOARD_METRIC_COLUMNS = [
+  ["sourced", "Sourced"],
+  ["converted", "Converted"],
+  ["under_interview_process", "Under Interview Process"],
+  ["rejected", "Rejected"],
+  ["duplicate", "Duplicate"],
+  ["dropped", "Dropped"],
+  ["shortlisted", "Shortlisted"],
+  ["offered", "Offered"],
+  ["joined", "Joined"]
+];
+
+const DASHBOARD_METRIC_TILES = [
+  ["sourced", "Sourced"],
+  ["converted", "Converted"],
+  ["under_interview_process", "Under Interview"],
+  ["offered", "Offered"],
+  ["joined", "Joined"]
+];
+
 function normalizeShortcutKey(raw) {
   const value = String(raw || "").trim();
   if (!value) return "";
@@ -693,7 +713,7 @@ function AssessmentStatusModal({ open, assessment, onClose, onSave }) {
   );
 }
 
-function DrilldownModal({ open, title, items, onClose }) {
+function DrilldownModal({ open, title, items, onClose, onOpenCv, onOpenDraft, onOpenAssessment }) {
   if (!open) return null;
   return (
     <div className="overlay" onClick={onClose}>
@@ -708,6 +728,11 @@ function DrilldownModal({ open, title, items, onClose }) {
                   <h3>{item.name || item.candidateName || "Candidate"} | {item.position || item.jdTitle || item.role || "Untitled role"}</h3>
                   <p className="muted">{[item.company || item.currentCompany || "", item.clientName ? `Client: ${item.clientName}` : "", item.ownerRecruiter ? `Recruiter: ${item.ownerRecruiter}` : "", item.source ? `Source: ${item.source}` : ""].filter(Boolean).join(" | ")}</p>
                   <div className="candidate-snippet">{[item.pipelineStage ? `Pipeline: ${item.pipelineStage}` : "", item.candidateStatus ? `Status: ${item.candidateStatus}` : "", item.followUpAt ? `Follow-up: ${new Date(item.followUpAt).toLocaleString()}` : "", item.interviewAt ? `Interview: ${new Date(item.interviewAt).toLocaleString()}` : ""].filter(Boolean).join("\n")}</div>
+                  <div className="button-row">
+                    {(item.raw?.candidate?.id || item.id) && (item.raw?.candidate?.cv_filename || item.raw?.candidate?.cv_url) ? <button onClick={() => onOpenCv(item.raw?.candidate?.id || item.id)}>Open CV</button> : null}
+                    {item.raw?.candidate?.id ? <button onClick={() => onOpenDraft(item.raw.candidate.id)}>Open draft</button> : null}
+                    {item.raw?.assessment || item.sourceType === "assessment_only" ? <button onClick={() => onOpenAssessment(item.raw?.assessment || item)}>Open assessment</button> : null}
+                  </div>
                 </div>
               </div>
             </article>
@@ -1368,6 +1393,8 @@ function PortalApp({ token, onLogout }) {
   const apiUrl = `${window.location.origin}/public/applicants/intake`;
   const jdShortcutEntries = Object.entries(parseShortcutMap(jobDraft.jdShortcuts));
   const jdScreeningQuestions = parseQuestionList(jobDraft.standardQuestions);
+  const clientPositionRows = state.dashboard?.summary?.byClientPosition || [];
+  const recruiterPositionRows = state.dashboard?.summary?.byClientRecruiter || [];
 
   return (
     <div className="app-shell">
@@ -1412,7 +1439,7 @@ function PortalApp({ token, onLogout }) {
                 </div>
                 <p className="muted">Under Interview Process excludes shortlisted, offered, hold, did not attend, dropped, screening reject, interview reject, duplicate, and joined.</p>
                 <div className="metric-grid">
-                  {[["sourced","Sourced"],["converted","Converted"],["under_interview_process","Under Interview Process"],["rejected","Rejected"],["duplicate","Duplicate"],["dropped","Dropped"],["shortlisted","Shortlisted"],["offered","Offered"],["joined","Joined"]].map(([key, label]) => (
+                  {DASHBOARD_METRIC_COLUMNS.map(([key, label]) => (
                     <button key={key} className="metric-card metric-card--button" onClick={() => void openDashboardDrilldown({ title: `${label} candidates`, metric: key, groupType: "all" })}>
                       <div className="metric-label">{label}</div>
                       <div className="metric-value">{state.dashboard?.summary?.overall?.[key] || 0}</div>
@@ -1424,44 +1451,108 @@ function PortalApp({ token, onLogout }) {
                 <Section kicker="Breakdown" title="Client Breakdown">
                   <div className="stack-list">
                     {!(state.dashboard?.summary?.byClient || []).length ? <div className="empty-state">No client breakdown available.</div> : (state.dashboard.summary.byClient || []).map((group) => (
-                      <article className="item-card" key={group.label}>
-                        <div className="item-card__top">
+                      <details className="dashboard-group" key={group.label} open>
+                        <summary className="dashboard-group__summary">
                           <div>
                             <h3>{group.label}</h3>
                             <p className="muted">{`${group.metrics?.sourced || 0} sourced | ${group.metrics?.converted || 0} converted | ${group.metrics?.under_interview_process || 0} under interview`}</p>
                           </div>
-                        </div>
+                        </summary>
                         <div className="metric-grid metric-grid--tight">
-                          {[["sourced","Sourced"],["converted","Converted"],["under_interview_process","Under Interview"],["offered","Offered"],["joined","Joined"]].map(([key, label]) => (
+                          {DASHBOARD_METRIC_TILES.map(([key, label]) => (
                             <button key={key} className="metric-card metric-card--button compact-metric" onClick={() => void openDashboardDrilldown({ title: `${group.label} | ${label}`, metric: key, groupType: "client", params: { clientLabel: group.label } })}>
                               <div className="metric-label">{label}</div>
                               <div className="metric-value">{group.metrics?.[key] || 0}</div>
                             </button>
                           ))}
                         </div>
-                      </article>
+                        <div className="table-wrap">
+                          <table className="dashboard-table">
+                            <thead>
+                              <tr>
+                                <th>Position</th>
+                                {DASHBOARD_METRIC_COLUMNS.map(([, label]) => <th key={label}>{label}</th>)}
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {clientPositionRows.filter((row) => row.clientLabel === group.label).map((row) => (
+                                <tr key={`${row.clientLabel}-${row.positionLabel}`}>
+                                  <td>{row.positionLabel}</td>
+                                  {DASHBOARD_METRIC_COLUMNS.map(([key, label]) => (
+                                    <td key={key}>
+                                      <button className="table-metric-btn" onClick={() => void openDashboardDrilldown({ title: `${group.label} | ${row.positionLabel} | ${label}`, metric: key, groupType: "position", params: { clientLabel: group.label, positionLabel: row.positionLabel } })}>
+                                        {row.metrics?.[key] || 0}
+                                      </button>
+                                    </td>
+                                  ))}
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </details>
                     ))}
                   </div>
                 </Section>
                 <Section kicker="Breakdown" title="Recruiter Breakdown">
                   <div className="stack-list">
                     {!(state.dashboard?.summary?.byOwnerRecruiter || []).length ? <div className="empty-state">No recruiter breakdown available.</div> : (state.dashboard.summary.byOwnerRecruiter || []).map((group) => (
-                      <article className="item-card" key={group.label}>
-                        <div className="item-card__top">
+                      <details className="dashboard-group" key={group.label}>
+                        <summary className="dashboard-group__summary">
                           <div>
                             <h3>{group.label}</h3>
                             <p className="muted">{`${group.metrics?.sourced || 0} sourced | ${group.metrics?.converted || 0} converted | ${group.metrics?.under_interview_process || 0} under interview`}</p>
                           </div>
-                        </div>
+                        </summary>
                         <div className="metric-grid metric-grid--tight">
-                          {[["sourced","Sourced"],["converted","Converted"],["under_interview_process","Under Interview"],["offered","Offered"],["joined","Joined"]].map(([key, label]) => (
+                          {DASHBOARD_METRIC_TILES.map(([key, label]) => (
                             <button key={key} className="metric-card metric-card--button compact-metric" onClick={() => void openDashboardDrilldown({ title: `${group.label} | ${label}`, metric: key, groupType: "recruiter", params: { recruiterLabel: group.label } })}>
                               <div className="metric-label">{label}</div>
                               <div className="metric-value">{group.metrics?.[key] || 0}</div>
                             </button>
                           ))}
                         </div>
-                      </article>
+                        <div className="stack-list compact dashboard-nested-list">
+                          {Object.entries(
+                            recruiterPositionRows
+                              .filter((row) => row.recruiterLabel === group.label)
+                              .reduce((acc, row) => {
+                                const key = row.clientLabel || "Unassigned";
+                                acc[key] = acc[key] || [];
+                                acc[key].push(row);
+                                return acc;
+                              }, {})
+                          ).map(([clientLabel, rows]) => (
+                            <div className="nested-block" key={`${group.label}-${clientLabel}`}>
+                              <div className="nested-block__title">{clientLabel}</div>
+                              <div className="table-wrap">
+                                <table className="dashboard-table">
+                                  <thead>
+                                    <tr>
+                                      <th>Position</th>
+                                      {DASHBOARD_METRIC_COLUMNS.map(([, label]) => <th key={label}>{label}</th>)}
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {rows.map((row) => (
+                                      <tr key={`${row.recruiterLabel}-${row.clientLabel}-${row.positionLabel}`}>
+                                        <td>{row.positionLabel}</td>
+                                        {DASHBOARD_METRIC_COLUMNS.map(([key, label]) => (
+                                          <td key={key}>
+                                            <button className="table-metric-btn" onClick={() => void openDashboardDrilldown({ title: `${group.label} | ${row.clientLabel} | ${row.positionLabel} | ${label}`, metric: key, groupType: "recruiter_position", params: { recruiterLabel: group.label, clientLabel: row.clientLabel, positionLabel: row.positionLabel } })}>
+                                              {row.metrics?.[key] || 0}
+                                            </button>
+                                          </td>
+                                        ))}
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </details>
                     ))}
                   </div>
                 </Section>
@@ -1836,7 +1927,15 @@ function PortalApp({ token, onLogout }) {
       />
       <AttemptsModal open={Boolean(attemptsCandidateId)} candidate={attemptsCandidate} attempts={attempts} onClose={() => setAttemptsCandidateId("")} onRefresh={refreshAttempts} onSave={saveAttempt} />
       <AssessmentStatusModal open={Boolean(assessmentStatusId)} assessment={assessmentStatusItem} onClose={() => setAssessmentStatusId("")} onSave={(payload) => saveAssessmentStatusUpdate(assessmentStatusItem, payload)} />
-      <DrilldownModal open={drilldownState.open} title={drilldownState.title} items={drilldownState.items} onClose={() => setDrilldownState({ open: false, title: "", items: [] })} />
+      <DrilldownModal
+        open={drilldownState.open}
+        title={drilldownState.title}
+        items={drilldownState.items}
+        onClose={() => setDrilldownState({ open: false, title: "", items: [] })}
+        onOpenCv={(candidateId) => void openCv(candidateId)}
+        onOpenDraft={(candidateId) => { setDrilldownState({ open: false, title: "", items: [] }); loadCandidateIntoInterview(candidateId); }}
+        onOpenAssessment={(assessment) => { setDrilldownState({ open: false, title: "", items: [] }); reuseAssessmentAsNew(assessment); }}
+      />
     </div>
   );
 }

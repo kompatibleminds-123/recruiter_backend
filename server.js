@@ -1311,12 +1311,13 @@ function itemMatchesDashboardGroup(item, groupType, params = {}) {
   const clientLabel = String(params.clientLabel || "").trim();
   const recruiterLabel = String(params.recruiterLabel || "").trim();
   const positionLabel = String(params.positionLabel || "").trim();
-  if (groupType === "ownerRecruiter") return String(item.ownerRecruiter || "").trim() === recruiterLabel;
+  if (!groupType || groupType === "all") return true;
+  if (groupType === "ownerRecruiter" || groupType === "recruiter") return String(item.ownerRecruiter || "").trim() === recruiterLabel;
   if (groupType === "client") return String(item.clientName || "").trim() === clientLabel;
-  if (groupType === "clientPosition") {
+  if (groupType === "clientPosition" || groupType === "position") {
     return String(item.clientName || "").trim() === clientLabel && String(item.position || "").trim() === positionLabel;
   }
-  if (groupType === "clientPositionOwner") {
+  if (groupType === "clientPositionOwner" || groupType === "recruiter_position") {
     return (
       String(item.clientName || "").trim() === clientLabel &&
       String(item.position || "").trim() === positionLabel &&
