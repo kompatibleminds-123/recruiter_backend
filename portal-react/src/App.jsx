@@ -390,6 +390,115 @@ function inferAttemptOutcomeAndFollowUp(text) {
   return { outcome: "", followUpAt: "", candidateStatus: "" };
 }
 
+function isAssessmentStatusLine(line) {
+  const value = String(line || "").trim().toLowerCase();
+  if (!value) return false;
+  return [
+    "cv shared",
+    "screening call aligned",
+    "l1 aligned",
+    "l2 aligned",
+    "l3 aligned",
+    "hr interview aligned",
+    "feedback awaited",
+    "hold",
+    "did not attend",
+    "dropped",
+    "duplicate",
+    "screening reject",
+    "interview reject",
+    "shortlisted",
+    "joined",
+    "offered"
+  ].some((item) => value.includes(item));
+}
+
+function inferAssessmentStatusAndSchedule(text, baseDate = new Date()) {
+  const value = String(text || "").trim().toLowerCase();
+  if (!value) return { candidateStatus: "", atValue: "", offerAmount: "", expectedDoj: "", dateOfJoining: "" };
+
+  const hasOffer = /\boffer\b|\boffered\b/.test(value);
+  const hasDropped = /\bdropout\b|\bdropped\b|\bbackout\b/.test(value);
+  const hasReject = /\breject\b|\brejected\b/.test(value);
+  const hasScreening = /\bscreening\b/.test(value);
+  const hasHr = /\bhr\b/.test(value);
+  const hasL2 = /\bl2\b/.test(value);
+  const hasL1 = /\bl1\b/.test(value);
+  const hasScreeningCall = /\bscreening\b/.test(value);
+  const hasFeedback = /\bfeedback\b/.test(value);
+  const hasHold = /\bon hold\b|\bhold\b|\bhigh notice\b|\bhigh ctc\b|\bout of budget\b/.test(value);
+  const hasDNA = /\bdid not join\b|\bdid not attend\b/.test(value);
+  const hasDuplicate = /\bduplicate\b/.test(value);
+  const hasShortlisted = /\bshortlisted\b|\bselected\b/.test(value);
+  const hasJoined = /\bjoined\b/.test(value);
+
+  let candidateStatus = "";
+  if (hasOffer && hasDropped) candidateStatus = "Dropped";
+  else if (hasScreening && (hasReject || /\bsr\b/.test(value))) candidateStatus = "Screening Reject";
+  else if (hasDNA) candidateStatus = "Did not attend";
+  else if (hasDropped) candidateStatus = "Dropped";
+  else if (hasDuplicate) candidateStatus = "Duplicate";
+  else if (hasJoined) candidateStatus = "Joined";
+  else if (hasShortlisted) candidateStatus = "Shortlisted";
+  else if (hasOffer) candidateStatus = "Offered";
+  else if (hasFeedback) candidateStatus = "Feedback Awaited";
+  else if (hasHold) candidateStatus = "Hold";
+  else if (hasHr) candidateStatus = "HR interview aligned";
+  else if (hasL2) candidateStatus = "L2 aligned";
+  else if (hasL1) candidateStatus = "L1 aligned";
+  else if (hasScreeningCall) candidateStatus = "Screening call aligned";
+  else if (hasReject) candidateStatus = "Interview Reject";
+
+  const shouldTrackDate = Boolean(candidateStatus) && (
+    isInterviewAlignedStatus(candidateStatus) ||
+    ["offered", "joined"].includes(candidateStatus.toLowerCase())
+  );
+
+  const parsedAt = shouldTrackDate ? parseNaturalFollowUpDate(value, baseDate) : "";
+  const defaultAt = shouldTrackDate && !parsedAt ? toDateInputValue(baseDate) : "";
+
+  const extractAmount = () => {
+    const match = value.match(/(\d+(?:\.\d+)?)\s*l\b/);
+    return match ? `${match[1]} L` : "";
+  };
+
+  return {
+    candidateStatus,
+    atValue: parsedAt || defaultAt,
+    offerAmount: candidateStatus === "Offered" ? extractAmount() : "",
+    expectedDoj: candidateStatus === "Offered" ? (parsedAt || defaultAt) : "",
+    dateOfJoining: candidateStatus === "Joined" ? (parsedAt || defaultAt) : ""
+  };
+}
+
+function buildAssessmentStatusNoteLine(statusValue, atValue = "", extra = {}) {
+  const status = String(statusValue || "").trim();
+  const lowered = status.toLowerCase();
+  if (!status) return "";
+  if (lowered === "offered") {
+    const bits = ["Offered"];
+    if (extra.offerAmount) bits.push(`Offer amount ${extra.offerAmount}`);
+    if (atValue) bits.push(`Expected DOJ ${formatAssessmentStatusCalendarNoteDate(atValue)}`);
+    return `${bits.join(" | ")}.`;
+  }
+  if (lowered === "joined") {
+    return atValue ? `Joined on ${formatAssessmentStatusCalendarNoteDate(atValue)}.` : "Joined.";
+  }
+  return buildAssessmentStatusCalendarNote(status, atValue);
+}
+
+function syncAssessmentNotesWithStatus(currentNotes, statusValue, atValue = "", extra = {}) {
+  const lines = String(currentNotes || "").split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  const nextLine = buildAssessmentStatusNoteLine(statusValue, atValue, extra).trim();
+  if (!nextLine) return lines.join("\n");
+  if (lines.length && isAssessmentStatusLine(lines[lines.length - 1])) {
+    lines[lines.length - 1] = nextLine;
+  } else {
+    lines.push(nextLine);
+  }
+  return lines.join("\n");
+}
+
 function formatReadableUpdateText(rawText) {
   const raw = String(rawText || "").trim();
   if (!raw) return "";
@@ -1377,6 +1486,9 @@ function AssessmentStatusModal({ open, assessment, onClose, onSave }) {
   const [candidateStatus, setCandidateStatus] = useState("");
   const [atValue, setAtValue] = useState("");
   const [notes, setNotes] = useState("");
+  const [offerAmount, setOfferAmount] = useState("");
+  const [expectedDoj, setExpectedDoj] = useState("");
+  const [dateOfJoining, setDateOfJoining] = useState("");
   const [status, setStatus] = useState("");
 
   useEffect(() => {
@@ -1384,12 +1496,31 @@ function AssessmentStatusModal({ open, assessment, onClose, onSave }) {
     setCandidateStatus(String(assessment.candidateStatus || "").trim());
     setAtValue(toDateInputValue(assessment.interviewAt || assessment.followUpAt || ""));
     setNotes(String(assessment.callbackNotes || "").trim());
+    setOfferAmount(String(assessment.offerAmount || "").trim());
+    setExpectedDoj(toDateInputValue(assessment.expectedDoj || assessment.followUpAt || ""));
+    setDateOfJoining(toDateInputValue(assessment.dateOfJoining || assessment.followUpAt || ""));
     setStatus("");
   }, [open, assessment]);
 
+  useEffect(() => {
+    const lastLine = extractLastMeaningfulLine(notes);
+    const parsed = inferAssessmentStatusAndSchedule(lastLine);
+    if (parsed.candidateStatus && parsed.candidateStatus !== candidateStatus) {
+      setCandidateStatus(parsed.candidateStatus);
+    }
+    if (parsed.atValue) {
+      if (parsed.candidateStatus === "Offered" && parsed.atValue !== expectedDoj) setExpectedDoj(parsed.atValue);
+      else if (parsed.candidateStatus === "Joined" && parsed.atValue !== dateOfJoining) setDateOfJoining(parsed.atValue);
+      else if (parsed.atValue !== atValue) setAtValue(parsed.atValue);
+    }
+    if (parsed.offerAmount && parsed.offerAmount !== offerAmount) setOfferAmount(parsed.offerAmount);
+  }, [notes]);
+
   if (!open || !assessment) return null;
 
-  const shouldShowCalendar = isInterviewAlignedStatus(candidateStatus) || String(candidateStatus || "").trim().toLowerCase() === "offered";
+  const normalizedStatus = String(candidateStatus || "").trim().toLowerCase();
+  const shouldShowCalendar = isInterviewAlignedStatus(candidateStatus) || normalizedStatus === "offered" || normalizedStatus === "joined";
+  const effectiveAtValue = normalizedStatus === "offered" ? expectedDoj : normalizedStatus === "joined" ? dateOfJoining : atValue;
 
   return (
     <div className="overlay" onClick={onClose}>
@@ -1398,19 +1529,46 @@ function AssessmentStatusModal({ open, assessment, onClose, onSave }) {
         <p className="muted">{assessment.candidateName || "Candidate"} | {assessment.jdTitle || "Untitled role"}</p>
         <label>
           <span>Status</span>
-          <select value={candidateStatus} onChange={(e) => setCandidateStatus(e.target.value)}>
+          <select value={candidateStatus} onChange={(e) => {
+            const selected = e.target.value;
+            setCandidateStatus(selected);
+            const nextDate = selected.toLowerCase() === "offered" ? expectedDoj : selected.toLowerCase() === "joined" ? dateOfJoining : atValue;
+            setNotes((current) => syncAssessmentNotesWithStatus(current, selected, nextDate, { offerAmount }));
+          }}>
             <option value="">Select status</option>
             {DEFAULT_STATUS_OPTIONS.map((item) => <option key={item} value={item}>{item}</option>)}
           </select>
         </label>
         <label>
-          <span>{String(candidateStatus || "").trim().toLowerCase() === "offered" ? "LWD / DOJ" : "Interview / status date"}</span>
-          <input type="datetime-local" value={atValue} onChange={(e) => setAtValue(e.target.value)} disabled={!shouldShowCalendar} />
+          <span>{normalizedStatus === "offered" ? "Expected DOJ" : normalizedStatus === "joined" ? "Date of joining" : "Interview / status date"}</span>
+          <input
+            type="datetime-local"
+            value={effectiveAtValue}
+            onChange={(e) => {
+              const nextValue = e.target.value;
+              if (normalizedStatus === "offered") setExpectedDoj(nextValue);
+              else if (normalizedStatus === "joined") setDateOfJoining(nextValue);
+              else setAtValue(nextValue);
+              setNotes((current) => syncAssessmentNotesWithStatus(current, candidateStatus, nextValue, { offerAmount }));
+            }}
+            disabled={!shouldShowCalendar}
+          />
         </label>
+        {normalizedStatus === "offered" ? (
+          <label>
+            <span>Offer amount</span>
+            <input value={offerAmount} onChange={(e) => {
+              const nextValue = e.target.value;
+              setOfferAmount(nextValue);
+              setNotes((current) => syncAssessmentNotesWithStatus(current, candidateStatus, expectedDoj || atValue, { offerAmount: nextValue }));
+            }} placeholder="25 L" />
+          </label>
+        ) : null}
         <label>
           <span>Notes</span>
           <textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="L1 aligned tomorrow 5 PM, screening reject, CV shared, etc." />
         </label>
+        <p className="muted">Last line in notes is the final source of truth for current status.</p>
         {status ? <div className="status">{status}</div> : null}
         <div className="button-row">
           <button onClick={async () => {
@@ -1418,9 +1576,20 @@ function AssessmentStatusModal({ open, assessment, onClose, onSave }) {
               setStatus("Select a status first.");
               return;
             }
+            if (normalizedStatus === "offered" && !offerAmount) {
+              setStatus("Add offer amount before saving.");
+              return;
+            }
             setStatus("Saving status update...");
             try {
-              await onSave({ candidateStatus, atValue, notes });
+              await onSave({
+                candidateStatus,
+                atValue: effectiveAtValue,
+                notes,
+                offerAmount,
+                expectedDoj,
+                dateOfJoining
+              });
             } catch (error) {
               setStatus(String(error?.message || error));
             }
@@ -2019,10 +2188,68 @@ function PortalApp({ token, onLogout }) {
     setStatus("interview", `Opened saved assessment for ${assessment?.candidateName || "candidate"}.`, "ok");
   }
 
+  async function createAssessmentFromCandidate(candidateId) {
+    const candidate = (state.candidates || []).find((item) => String(item.id) === String(candidateId));
+    if (!candidate) {
+      setStatus("captured", "Candidate not found for assessment conversion.", "error");
+      return;
+    }
+    const matched = (state.assessments || []).find((item) =>
+      String(item.candidateId || "") === String(candidate.id || "") ||
+      String(item.candidateName || "").trim().toLowerCase() === String(candidate.name || "").trim().toLowerCase()
+    );
+    if (matched) {
+      openSavedAssessment(matched);
+      return;
+    }
+
+    const assessment = {
+      id: `assessment-${Date.now()}`,
+      candidateId: String(candidate.id || ""),
+      candidateName: candidate.name || "",
+      phoneNumber: candidate.phone || "",
+      emailId: candidate.email || "",
+      location: candidate.location || "",
+      currentCtc: candidate.current_ctc || "",
+      expectedCtc: candidate.expected_ctc || "",
+      noticePeriod: candidate.notice_period || "",
+      offerInHand: candidate.offer_in_hand || "",
+      currentCompany: candidate.company || "",
+      currentDesignation: candidate.role || "",
+      totalExperience: candidate.experience || "",
+      currentOrgTenure: candidate.current_org_tenure || "",
+      reasonForChange: candidate.reason_of_change || "",
+      clientName: candidate.client_name || "",
+      jdTitle: candidate.jd_title || "",
+      pipelineStage: "Submitted",
+      candidateStatus: "CV Shared",
+      followUpAt: "",
+      interviewAt: "",
+      recruiterNotes: candidate.recruiter_context_notes || "",
+      callbackNotes: candidate.last_contact_notes || "CV Shared.",
+      otherPointers: candidate.other_pointers || "",
+      questionMode: "basic",
+      generatedAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+
+    setStatus("captured", "Converting draft into assessment...");
+    await api("/company/assessments", token, "POST", { assessment });
+    await loadWorkspace();
+    navigate("/assessments");
+    setStatus("assessments", `Converted ${candidate.name || "candidate"} into assessment.`, "ok");
+  }
+
   async function saveAssessment() {
+    const normalizedInitialStatus = String(interviewForm.candidateStatus || "").trim().toLowerCase();
+    const initialStatus = !normalizedInitialStatus || normalizedInitialStatus === "screening in progress"
+      ? "CV Shared"
+      : interviewForm.candidateStatus;
     const assessment = {
       id: interviewMeta.assessmentId || `assessment-${Date.now()}`,
       ...interviewForm,
+      candidateStatus: initialStatus,
+      pipelineStage: mapAssessmentStatusToPipelineStage(initialStatus) || interviewForm.pipelineStage || "Submitted",
       questionMode: "basic",
       generatedAt: new Date().toISOString()
     };
@@ -2426,22 +2653,31 @@ function PortalApp({ token, onLogout }) {
   }
 
   async function saveAssessmentStatusUpdate(assessment, payload) {
-    const nextStatus = String(payload?.candidateStatus || "").trim();
+    const lastLine = extractLastMeaningfulLine(payload?.notes || "");
+    const inferred = inferAssessmentStatusAndSchedule(lastLine);
+    const nextStatus = String(inferred.candidateStatus || payload?.candidateStatus || "").trim();
     if (!nextStatus) throw new Error("Select a status first.");
     const nextStatusLower = nextStatus.toLowerCase();
-    const shouldKeepCalendar = isInterviewAlignedStatus(nextStatus);
-    const atIso = shouldKeepCalendar || nextStatusLower === "offered"
-      ? (payload?.atValue ? new Date(payload.atValue).toISOString() : "")
+    const isInterviewStatus = isInterviewAlignedStatus(nextStatus);
+    const isOffered = nextStatusLower === "offered";
+    const isJoined = nextStatusLower === "joined";
+    const effectiveAtValue = isOffered
+      ? (payload?.expectedDoj || inferred.expectedDoj || payload?.atValue || "")
+      : isJoined
+        ? (payload?.dateOfJoining || inferred.dateOfJoining || payload?.atValue || "")
+        : (inferred.atValue || payload?.atValue || "");
+    const atIso = (isInterviewStatus || isOffered || isJoined) && effectiveAtValue
+      ? new Date(effectiveAtValue).toISOString()
       : "";
     const readableNotes = formatReadableUpdateText(payload?.notes || "");
     const confirmMessage = buildDetectedUpdateConfirmation({
       candidateName: assessment?.candidateName || "",
       status: nextStatus,
-      interviewAt: shouldKeepCalendar ? atIso : "",
-      followUpAt: "",
+      interviewAt: isInterviewStatus ? atIso : "",
+      followUpAt: !isInterviewStatus && (isOffered || isJoined) ? atIso : "",
       notes: [
         readableNotes,
-        buildAssessmentStatusCalendarNote(nextStatus, atIso)
+        buildAssessmentStatusNoteLine(nextStatus, atIso, { offerAmount: payload?.offerAmount })
       ].filter(Boolean).join("\n")
     });
     if (!window.confirm(confirmMessage)) return;
@@ -2452,12 +2688,16 @@ function PortalApp({ token, onLogout }) {
       pipelineStage: mapAssessmentStatusToPipelineStage(nextStatus) || assessment?.pipelineStage || "",
       callbackNotes: appendReadableUpdateNote(
         assessment?.callbackNotes || "",
-        [readableNotes, buildAssessmentStatusCalendarNote(nextStatus, atIso)].filter(Boolean).join("\n")
+        [readableNotes, buildAssessmentStatusNoteLine(nextStatus, atIso, { offerAmount: payload?.offerAmount })].filter(Boolean).join("\n")
       ),
-      interviewAttempts: Array.isArray(assessment?.interviewAttempts) ? [...assessment.interviewAttempts] : []
+      interviewAttempts: Array.isArray(assessment?.interviewAttempts) ? [...assessment.interviewAttempts] : [],
+      offerAmount: isOffered ? String(payload?.offerAmount || inferred.offerAmount || "").trim() : (assessment?.offerAmount || ""),
+      expectedDoj: isOffered ? atIso : (assessment?.expectedDoj || ""),
+      dateOfJoining: isJoined ? atIso : (assessment?.dateOfJoining || ""),
+      updatedAt: new Date().toISOString()
     };
 
-    if (isInterviewAlignedStatus(nextStatus)) {
+    if (isInterviewStatus) {
       nextAssessment.interviewAttempts.push({
         round: deriveInterviewRoundFromStatus(nextStatus) || "Interview",
         outcome: "Scheduled",
@@ -2483,8 +2723,8 @@ function PortalApp({ token, onLogout }) {
       });
     }
 
-    nextAssessment.interviewAt = shouldKeepCalendar ? (atIso || assessment?.interviewAt || "") : "";
-    nextAssessment.followUpAt = "";
+    nextAssessment.interviewAt = isInterviewStatus ? (atIso || assessment?.interviewAt || "") : "";
+    nextAssessment.followUpAt = !isInterviewStatus && (isOffered || isJoined) ? atIso : "";
 
     await api("/company/assessments", token, "POST", {
       assessment: {
@@ -3030,7 +3270,7 @@ function PortalApp({ token, onLogout }) {
                         <button onClick={() => setAssignCandidateId(item.id)}>Assign</button>
                         <button onClick={() => setNotesCandidateId(item.id)}>Recruiter note</button>
                         <button onClick={() => void openAttempts(item.id)}>Attempts</button>
-                        <button onClick={() => loadCandidateIntoInterview(item.id)}>Create assessment</button>
+                        <button onClick={() => void createAssessmentFromCandidate(item.id)}>Create assessment</button>
                         <button className="ghost-btn" onClick={() => void hideCapturedCandidate(item.id)}>Hide from list</button>
                         <button className="ghost-btn" onClick={() => void api(`/candidates?id=${encodeURIComponent(item.id)}`, token, "DELETE").then(loadWorkspace).then(() => setStatus("captured", "Candidate deleted.", "ok")).catch((error) => setStatus("captured", String(error?.message || error), "error"))}>Delete</button>
                       </div>
@@ -3295,13 +3535,32 @@ function PortalApp({ token, onLogout }) {
                       </select>
                     </label>
                     <label>
-                      <span>Selected preset label</span>
-                      <input disabled={!isSettingsAdmin} value={selectedPresetLabel} onChange={(e) => updateSelectedPresetLabel(e.target.value)} />
+                      <span>{isSettingsAdmin ? "Editable preset label" : "Selected preset label"}</span>
+                      <input
+                        disabled={!isSettingsAdmin}
+                        value={selectedPresetLabel}
+                        onChange={(e) => updateSelectedPresetLabel(e.target.value)}
+                        placeholder="Attentive tracker"
+                        spellCheck={false}
+                      />
                     </label>
                     <label className="full">
-                      <span>Selected preset columns</span>
-                      <textarea disabled={!isSettingsAdmin} value={selectedPresetColumns} onChange={(e) => updateSelectedPresetColumns(e.target.value)} />
+                      <span>{isSettingsAdmin ? "Editable preset columns" : "Selected preset columns"}</span>
+                      <textarea
+                        className="preset-editor"
+                        disabled={!isSettingsAdmin}
+                        value={selectedPresetColumns}
+                        onChange={(e) => updateSelectedPresetColumns(e.target.value)}
+                        placeholder={"S.No.|s_no\nName|name\nStatus|assessment_status"}
+                        rows={10}
+                        spellCheck={false}
+                      />
                     </label>
+                    <p className="muted full">
+                      {isSettingsAdmin
+                        ? "Edit one column per line in Header|field format, then click Save shared settings to apply changes for everyone."
+                        : "This preset is managed by your admin. Each line follows Header|field format."}
+                    </p>
                     <label className="full">
                       <span>WhatsApp template</span>
                       <textarea disabled={!isSettingsAdmin} value={copySettings.whatsappTemplate} onChange={(e) => setCopySettings((current) => ({ ...current, whatsappTemplate: e.target.value }))} />
