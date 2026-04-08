@@ -746,6 +746,8 @@ function DrilldownModal({ open, title, items, onClose, onOpenCv, onOpenDraft, on
   );
 }
 
+const DASHBOARD_FILTER_STORAGE_KEY = "recruitdesk_portal_dashboard_filters_v1";
+
 function PortalApp({ token, onLogout }) {
   const navigate = useNavigate();
   const [state, setState] = useState({
@@ -761,7 +763,22 @@ function PortalApp({ token, onLogout }) {
   const [statuses, setStatuses] = useState({});
   const [assignApplicantId, setAssignApplicantId] = useState("");
   const [hostedJobId, setHostedJobId] = useState("");
-  const [dashboardFilters, setDashboardFilters] = useState({ dateFrom: "", dateTo: "", clientLabel: "", recruiterLabel: "", quickRange: "all" });
+  const [dashboardFilters, setDashboardFilters] = useState(() => {
+    try {
+      const raw = window.localStorage.getItem(DASHBOARD_FILTER_STORAGE_KEY);
+      if (!raw) return { dateFrom: "", dateTo: "", clientLabel: "", recruiterLabel: "", quickRange: "all" };
+      const parsed = JSON.parse(raw);
+      return {
+        dateFrom: String(parsed?.dateFrom || ""),
+        dateTo: String(parsed?.dateTo || ""),
+        clientLabel: String(parsed?.clientLabel || ""),
+        recruiterLabel: String(parsed?.recruiterLabel || ""),
+        quickRange: String(parsed?.quickRange || "all")
+      };
+    } catch {
+      return { dateFrom: "", dateTo: "", clientLabel: "", recruiterLabel: "", quickRange: "all" };
+    }
+  });
   const [candidateFilters, setCandidateFilters] = useState({ q: "", source: "all", assignment: "all" });
   const [candidateSearchMode, setCandidateSearchMode] = useState("all");
   const [candidateSearchText, setCandidateSearchText] = useState("");
@@ -858,6 +875,14 @@ function PortalApp({ token, onLogout }) {
   useEffect(() => {
     void loadWorkspace().catch((error) => setStatus("workspace", String(error?.message || error), "error"));
   }, [token]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(DASHBOARD_FILTER_STORAGE_KEY, JSON.stringify(dashboardFilters));
+    } catch {
+      // Ignore local storage errors in restricted browsers.
+    }
+  }, [dashboardFilters]);
 
   const capturedSources = useMemo(() => Array.from(new Set((state.candidates || []).map((item) => String(item.source || "").trim()).filter(Boolean))), [state.candidates]);
   const candidateUniverse = useMemo(() => candidateSearchMode === "all" ? (state.candidates || []) : (candidateSearchResults || []), [candidateSearchMode, state.candidates, candidateSearchResults]);
@@ -988,6 +1013,43 @@ function PortalApp({ token, onLogout }) {
     });
     navigate("/interview");
     setStatus("interview", `Loaded ${candidate.name || "candidate"} into Interview Panel.`, "ok");
+  }
+
+  function openSavedAssessment(assessment) {
+    const matchedCandidate = (state.candidates || []).find((item) => {
+      if (assessment?.candidateId && String(item.id) === String(assessment.candidateId)) return true;
+      return String(item.name || "").trim().toLowerCase() === String(assessment?.candidateName || "").trim().toLowerCase();
+    });
+    setInterviewMeta({
+      candidateId: String(matchedCandidate?.id || assessment?.candidateId || ""),
+      assessmentId: String(assessment?.id || "")
+    });
+    setInterviewForm({
+      candidateName: assessment?.candidateName || "",
+      phoneNumber: assessment?.phoneNumber || matchedCandidate?.phone || "",
+      emailId: assessment?.emailId || matchedCandidate?.email || "",
+      location: assessment?.location || matchedCandidate?.location || "",
+      currentCtc: assessment?.currentCtc || matchedCandidate?.current_ctc || "",
+      expectedCtc: assessment?.expectedCtc || matchedCandidate?.expected_ctc || "",
+      noticePeriod: assessment?.noticePeriod || matchedCandidate?.notice_period || "",
+      offerInHand: assessment?.offerInHand || "",
+      currentCompany: assessment?.currentCompany || matchedCandidate?.company || "",
+      currentDesignation: assessment?.currentDesignation || matchedCandidate?.role || "",
+      totalExperience: assessment?.totalExperience || matchedCandidate?.experience || "",
+      currentOrgTenure: assessment?.currentOrgTenure || matchedCandidate?.current_org_tenure || "",
+      reasonForChange: assessment?.reasonForChange || "",
+      clientName: assessment?.clientName || matchedCandidate?.client_name || "",
+      jdTitle: assessment?.jdTitle || matchedCandidate?.jd_title || "",
+      pipelineStage: assessment?.pipelineStage || "Under Interview Process",
+      candidateStatus: assessment?.candidateStatus || "Screening in progress",
+      followUpAt: toDateInputValue(assessment?.followUpAt),
+      interviewAt: toDateInputValue(assessment?.interviewAt),
+      recruiterNotes: assessment?.recruiterNotes || matchedCandidate?.recruiter_context_notes || "",
+      callbackNotes: assessment?.callbackNotes || matchedCandidate?.callback_notes || "",
+      otherPointers: assessment?.otherPointers || matchedCandidate?.other_pointers || ""
+    });
+    navigate("/interview");
+    setStatus("interview", `Opened saved assessment for ${assessment?.candidateName || "candidate"}.`, "ok");
   }
 
   async function saveAssessment() {
@@ -1466,6 +1528,20 @@ function PortalApp({ token, onLogout }) {
                             </button>
                           ))}
                         </div>
+                        <div className="chip-row dashboard-position-chip-row">
+                          {clientPositionRows.filter((row) => row.clientLabel === group.label).map((row) => (
+                            <button
+                              key={`${row.clientLabel}-${row.positionLabel}-chip`}
+                              className="dashboard-position-chip"
+                              onClick={() => void openDashboardDrilldown({ title: `${group.label} | ${row.positionLabel}`, metric: "sourced", groupType: "position", params: { clientLabel: group.label, positionLabel: row.positionLabel } })}
+                            >
+                              <span className="dashboard-position-chip__title">{row.positionLabel}</span>
+                              <span className="dashboard-position-chip__meta">
+                                {`${row.metrics?.sourced || 0} sourced | ${row.metrics?.converted || 0} converted | ${row.metrics?.under_interview_process || 0} under interview`}
+                              </span>
+                            </button>
+                          ))}
+                        </div>
                         <div className="table-wrap">
                           <table className="dashboard-table">
                             <thead>
@@ -1934,7 +2010,7 @@ function PortalApp({ token, onLogout }) {
         onClose={() => setDrilldownState({ open: false, title: "", items: [] })}
         onOpenCv={(candidateId) => void openCv(candidateId)}
         onOpenDraft={(candidateId) => { setDrilldownState({ open: false, title: "", items: [] }); loadCandidateIntoInterview(candidateId); }}
-        onOpenAssessment={(assessment) => { setDrilldownState({ open: false, title: "", items: [] }); reuseAssessmentAsNew(assessment); }}
+        onOpenAssessment={(assessment) => { setDrilldownState({ open: false, title: "", items: [] }); openSavedAssessment(assessment); }}
       />
     </div>
   );
