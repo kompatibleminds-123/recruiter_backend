@@ -184,6 +184,10 @@ function extractLastMeaningfulLine(text) {
 function parseNaturalFollowUpDate(text, baseDate = new Date()) {
   const value = String(text || "").toLowerCase();
   if (!value) return "";
+  const hasRelativeDate = /\btomorrow\b|\bday after tomorrow\b|\bnext week\b|\bthis week\b|\b1st week\b|\b2nd week\b|\byesterday\b/.test(value);
+  const hasExplicitDate = /\b(\d{1,2})(?:st|nd|rd|th)?\s+(jan|january|feb|february|mar|march|apr|april|may|jun|june|jul|july|aug|august|sep|sept|september|oct|october|nov|november|dec|december)\b/.test(value);
+  const hasTime = /\b(\d{1,2})(?::(\d{2}))?\s*(am|pm)\b|\bmorning\b|\bevening\b/.test(value);
+  if (!hasRelativeDate && !hasExplicitDate) return "";
   const result = new Date(baseDate);
   result.setSeconds(0, 0);
 
@@ -217,7 +221,7 @@ function parseNaturalFollowUpDate(text, baseDate = new Date()) {
     result.setHours(10, 0, 0, 0);
   } else if (/\bevening\b/.test(value)) {
     result.setHours(17, 0, 0, 0);
-  } else {
+  } else if (hasTime) {
     result.setHours(17, 0, 0, 0);
   }
 
@@ -341,7 +345,7 @@ function buildRecruiterMerge(item, parsed, rawNote = "") {
     }
   }
   merged.notes_append = String(rawNote || "").trim();
-  return { base, incoming, merged, overwritten };
+  return { base, incoming, fallbacks, merged, overwritten };
 }
 
 function formatRecruiterOverwriteLabel(key) {
@@ -672,21 +676,28 @@ function NotesModal({ open, candidate, onClose, onPatch, onParse }) {
                 const confirmed = window.confirm(`These fields will be overwritten:\n\n${message}\n\nDo you want to apply this recruiter note?`);
                 if (!confirmed) return;
               }
+              const extractedFieldPatch = {};
+              [
+                "company",
+                "role",
+                "experience",
+                "location",
+                "current_ctc",
+                "expected_ctc",
+                "notice_period",
+                "offer_in_hand",
+                "phone",
+                "email",
+                "linkedin",
+                "highest_education"
+              ].forEach((key) => {
+                const value = mergedPatch?.incoming?.[key] || mergedPatch?.fallbacks?.[key] || "";
+                if (String(value || "").trim()) extractedFieldPatch[key] = value;
+              });
               const patch = {
                 recruiter_context_notes: normalizeRecruiterNotesBody(rawRecruiterNote || recruiterNote),
                 other_pointers: normalizeOtherPointersBody(otherPointers),
-                company: mergedPatch?.merged?.company || undefined,
-                role: mergedPatch?.merged?.role || undefined,
-                experience: mergedPatch?.merged?.experience || undefined,
-                location: mergedPatch?.merged?.location || undefined,
-                current_ctc: mergedPatch?.merged?.current_ctc || undefined,
-                expected_ctc: mergedPatch?.merged?.expected_ctc || undefined,
-                notice_period: mergedPatch?.merged?.notice_period || undefined,
-                offer_in_hand: mergedPatch?.merged?.offer_in_hand || undefined,
-                phone: mergedPatch?.merged?.phone || undefined,
-                email: mergedPatch?.merged?.email || undefined,
-                linkedin: mergedPatch?.merged?.linkedin || undefined,
-                highest_education: mergedPatch?.merged?.highest_education || undefined
+                ...extractedFieldPatch
               };
               await onPatch(patch, "Recruiter note applied.");
               setStatus("Recruiter note applied.");
@@ -746,7 +757,7 @@ function AttemptsModal({ open, candidate, attempts, onClose, onRefresh, onSave }
   useEffect(() => {
     const parsed = inferAttemptOutcomeAndFollowUp(extractLastMeaningfulLine(notes));
     if (parsed.outcome && parsed.outcome !== outcome) setOutcome(parsed.outcome);
-    if (parsed.followUpAt && !nextFollowUpAt) setNextFollowUpAt(parsed.followUpAt);
+    if (parsed.followUpAt) setNextFollowUpAt(parsed.followUpAt);
   }, [notes]);
 
   if (!open || !candidate) return null;
