@@ -220,9 +220,10 @@ function parseNaturalFollowUpDate(text, baseDate = new Date()) {
   const value = String(text || "").toLowerCase();
   if (!value) return "";
   const hasRelativeDate = /\btoday\b|\btomorrow\b|\bday after tomorrow\b|\bnext week\b|\bthis week\b|\b1st week\b|\b2nd week\b|\byesterday\b/.test(value);
+  const hasWeekday = /\b(?:this|next)?\s*(monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/.test(value);
   const hasExplicitDate = /\b(\d{1,2})(?:st|nd|rd|th)?\s+(jan|january|feb|february|mar|march|apr|april|may|jun|june|jul|july|aug|august|sep|sept|september|oct|october|nov|november|dec|december)\b/.test(value);
   const hasTime = /\b(\d{1,2})(?::(\d{2}))?\s*(am|pm)\b|\bmorning\b|\bevening\b/.test(value);
-  if (!hasRelativeDate && !hasExplicitDate && !hasTime) return "";
+  if (!hasRelativeDate && !hasWeekday && !hasExplicitDate && !hasTime) return "";
   const result = new Date(baseDate);
   result.setSeconds(0, 0);
 
@@ -233,6 +234,30 @@ function parseNaturalFollowUpDate(text, baseDate = new Date()) {
   else if (/\b1st week\b/.test(value)) result.setDate(result.getDate() + 7);
   else if (/\b2nd week\b/.test(value)) result.setDate(result.getDate() + 14);
   else if (/\byesterday\b/.test(value)) result.setDate(result.getDate() - 1);
+
+  const weekdayMatch = value.match(/\b(?:(this|next)\s+)?(monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/);
+  if (weekdayMatch) {
+    const modifier = String(weekdayMatch[1] || "").trim();
+    const weekdayName = weekdayMatch[2];
+    const weekdayMap = {
+      sunday: 0,
+      monday: 1,
+      tuesday: 2,
+      wednesday: 3,
+      thursday: 4,
+      friday: 5,
+      saturday: 6
+    };
+    const targetDay = weekdayMap[weekdayName];
+    const currentDay = result.getDay();
+    let diff = targetDay - currentDay;
+    if (modifier === "next") {
+      diff = diff <= 0 ? diff + 7 : diff + 7;
+    } else {
+      diff = diff < 0 ? diff + 7 : diff;
+    }
+    result.setDate(result.getDate() + diff);
+  }
 
   const dateMatch = value.match(/\b(\d{1,2})(?:st|nd|rd|th)?\s+(jan|january|feb|february|mar|march|apr|april|may|jun|june|jul|july|aug|august|sep|sept|september|oct|october|nov|november|dec|december)\b/);
   if (dateMatch) {
@@ -271,7 +296,7 @@ function inferAttemptOutcomeAndFollowUp(text) {
   if (/\brevisit\b/.test(value)) return { outcome: "Revisit for other role", followUpAt: "", candidateStatus: "Revisit for other role" };
   if (/\bhold\b|\bon hold\b|\bhigh ctc\b|\bhigh notice\b|\bhigh np\b|\bout of budget\b/.test(value)) return { outcome: "Hold by recruiter", followUpAt: "", candidateStatus: "Hold" };
   if (/\binterested\b/.test(value)) return { outcome: "Interested", followUpAt: "", candidateStatus: "Interested" };
-  if (/\bcall later\b|\bcall next\b|\bnext call\b|\bfollow up\b|\bcall tomorrow\b|\bcall today\b|\bcall day after tomorrow\b|\bcall next week\b|\bcall this week\b|\bcall on\b|\bcall at\b/.test(value)) return { outcome: "Call later", followUpAt: parseNaturalFollowUpDate(value), candidateStatus: "Follow-up" };
+  if (/\bcall later\b|\bcall next\b|\bnext call\b|\bfollow up\b|\bcall tomorrow\b|\bcall today\b|\bcall day after tomorrow\b|\bcall next week\b|\bcall this week\b|\bcall on\b|\bcall at\b|\bcall (monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b|\bcall this (monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b|\bcall next (monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/.test(value)) return { outcome: "Call later", followUpAt: parseNaturalFollowUpDate(value), candidateStatus: "Follow-up" };
   if (/\bnot reachable\b|\bnot able to connect\b/.test(value)) return { outcome: "Not reachable", followUpAt: "", candidateStatus: "" };
   if (/\bswitch off\b|\bswitched off\b/.test(value)) return { outcome: "Switch Off", followUpAt: "", candidateStatus: "" };
   if (/\bdisconnected\b|\bdisconnecting\b|\bcutting the call\b|\bcall cut\b/.test(value)) return { outcome: "Disconnected", followUpAt: "", candidateStatus: "" };
@@ -329,7 +354,7 @@ function appendReadableUpdateNote(existingText, incomingText) {
 
 function normalizeRecruiterMergeBase(item) {
   const source = item || {};
-  return {
+  const base = {
     name: String(source.name || source.candidateName || "").trim(),
     company: String(source.company || source.currentCompany || "").trim(),
     role: String(source.role || source.currentDesignation || "").trim(),
@@ -345,6 +370,16 @@ function normalizeRecruiterMergeBase(item) {
     highest_education: String(source.highest_education || source.highestEducation || "").trim(),
     next_action: ""
   };
+  const savedRecruiterNote = String(source.recruiter_context_notes || source.recruiterContextNotes || "").trim();
+  if (!savedRecruiterNote) return base;
+  const savedFallbacks = extractRecruiterNoteFieldFallbacks(savedRecruiterNote);
+  const savedMentionedKeys = detectRecruiterMentionedKeys(savedRecruiterNote);
+  Object.keys(savedFallbacks).forEach((key) => {
+    if (savedMentionedKeys.has(key) && String(savedFallbacks[key] || "").trim()) {
+      base[key] = String(savedFallbacks[key] || "").trim();
+    }
+  });
+  return base;
 }
 
 function extractRecruiterNoteFieldFallbacks(rawNote = "") {
