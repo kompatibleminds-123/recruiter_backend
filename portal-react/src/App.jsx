@@ -65,6 +65,20 @@ const DASHBOARD_METRIC_TILES = [
   ["joined", "Joined"]
 ];
 
+function isTerminalStatus(status) {
+  return [
+    "shortlisted",
+    "offered",
+    "hold",
+    "did not attend",
+    "dropped",
+    "screening reject",
+    "interview reject",
+    "duplicate",
+    "joined"
+  ].includes(String(status || "").trim().toLowerCase());
+}
+
 function normalizeShortcutKey(raw) {
   const value = String(raw || "").trim();
   if (!value) return "";
@@ -453,7 +467,32 @@ function LoginScreen({ onLogin, busy, error }) {
   );
 }
 
-function AssignModal({ open, applicant, users, jobs, onClose, onSave }) {
+function MultiSelectChipFilter({ label, options, selected, onToggle }) {
+  return (
+    <div className="filter-block">
+      <div className="info-label">{label}</div>
+      <div className="chip-row">
+        <button
+          className={`chip chip-toggle${!selected.length ? " active" : ""}`}
+          onClick={() => onToggle("__all__")}
+        >
+          All
+        </button>
+        {options.map((option) => (
+          <button
+            key={option}
+            className={`chip chip-toggle${selected.includes(option) ? " active" : ""}`}
+            onClick={() => onToggle(option)}
+          >
+            {option}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function AssignModal({ open, applicant, users, jobs, onClose, onSave, title = "Assign Applicant", description = "Assign this record to a recruiter and JD.", nameKey = "candidateName" }) {
   const [recruiterId, setRecruiterId] = useState("");
   const [jdTitle, setJdTitle] = useState("");
   const [status, setStatus] = useState("");
@@ -470,8 +509,8 @@ function AssignModal({ open, applicant, users, jobs, onClose, onSave }) {
   return (
     <div className="overlay" onClick={onClose}>
       <div className="overlay-card" onClick={(e) => e.stopPropagation()}>
-        <h3>Assign Applicant</h3>
-        <p className="muted">Assign {applicant?.candidateName || "this applicant"} to a recruiter and JD.</p>
+        <h3>{title}</h3>
+        <p className="muted">{description.replace("{name}", applicant?.[nameKey] || applicant?.name || "this candidate")}</p>
         <label><span>Recruiter</span><select value={recruiterId} onChange={(e) => setRecruiterId(e.target.value)}><option value="">Select recruiter</option>{users.map((user) => <option key={user.id} value={user.id}>{user.name} | {user.email}</option>)}</select></label>
         <label><span>JD / role</span><select value={jdTitle} onChange={(e) => setJdTitle(e.target.value)}><option value="">Select JD / role</option>{jobs.map((job) => <option key={job.id} value={job.title}>{job.title}</option>)}</select></label>
         {status ? <div className="status">{status}</div> : null}
@@ -526,7 +565,6 @@ function NotesModal({ open, candidate, onClose, onPatch, onParse }) {
               setConflicts(merge.overwritten || []);
               setParsedSummary(merge.merged || null);
               setRecruiterNote(normalizeRecruiterNotesBody(rawRecruiterNote));
-              setOtherPointers(normalizeOtherPointersBody(rawRecruiterNote));
               setStatus(
                 merge.overwritten?.length
                   ? `Recruiter note parsed. Conflicts found in ${merge.overwritten.map((entry) => formatRecruiterOverwriteLabel(entry.key)).join(", ")}.`
@@ -545,7 +583,7 @@ function NotesModal({ open, candidate, onClose, onPatch, onParse }) {
               }
               const patch = {
                 recruiter_context_notes: normalizeRecruiterNotesBody(rawRecruiterNote || recruiterNote),
-                other_pointers: normalizeOtherPointersBody(rawRecruiterNote || otherPointers),
+                other_pointers: normalizeOtherPointersBody(otherPointers),
                 company: mergedPatch?.merged?.company || undefined,
                 role: mergedPatch?.merged?.role || undefined,
                 experience: mergedPatch?.merged?.experience || undefined,
@@ -762,6 +800,7 @@ function PortalApp({ token, onLogout }) {
   });
   const [statuses, setStatuses] = useState({});
   const [assignApplicantId, setAssignApplicantId] = useState("");
+  const [assignCandidateId, setAssignCandidateId] = useState("");
   const [hostedJobId, setHostedJobId] = useState("");
   const [dashboardFilters, setDashboardFilters] = useState(() => {
     try {
@@ -779,7 +818,18 @@ function PortalApp({ token, onLogout }) {
       return { dateFrom: "", dateTo: "", clientLabel: "", recruiterLabel: "", quickRange: "all" };
     }
   });
-  const [candidateFilters, setCandidateFilters] = useState({ q: "", source: "all", assignment: "all" });
+  const [candidateFilters, setCandidateFilters] = useState({
+    q: "",
+    dateFrom: "",
+    dateTo: "",
+    clients: [],
+    jds: [],
+    lanes: [],
+    assignments: [],
+    sources: [],
+    outcomes: [],
+    activeStates: ["active"]
+  });
   const [candidateSearchMode, setCandidateSearchMode] = useState("all");
   const [candidateSearchText, setCandidateSearchText] = useState("");
   const [candidateSearchResults, setCandidateSearchResults] = useState([]);
@@ -831,6 +881,7 @@ function PortalApp({ token, onLogout }) {
   });
 
   const assignApplicant = (state.applicants || []).find((item) => String(item.id) === String(assignApplicantId)) || null;
+  const assignCandidate = (state.candidates || []).find((item) => String(item.id) === String(assignCandidateId)) || null;
   const notesCandidate = (state.candidates || []).find((item) => String(item.id) === String(notesCandidateId)) || null;
   const attemptsCandidate = (state.candidates || []).find((item) => String(item.id) === String(attemptsCandidateId)) || null;
   const assessmentStatusItem = (state.assessments || []).find((item) => String(item.id) === String(assessmentStatusId)) || null;
@@ -885,6 +936,14 @@ function PortalApp({ token, onLogout }) {
     }
   }, [dashboardFilters]);
 
+  const capturedAssessmentMap = useMemo(() => {
+    const map = new Map();
+    for (const item of state.assessments || []) {
+      const key = String(item.candidateName || "").trim().toLowerCase();
+      if (key && !map.has(key)) map.set(key, item);
+    }
+    return map;
+  }, [state.assessments]);
   const capturedSources = useMemo(() => Array.from(new Set((state.candidates || []).map((item) => String(item.source || "").trim()).filter(Boolean))), [state.candidates]);
   const candidateUniverse = useMemo(() => candidateSearchMode === "all" ? (state.candidates || []) : (candidateSearchResults || []), [candidateSearchMode, state.candidates, candidateSearchResults]);
   const pagedCandidates = useMemo(() => {
@@ -893,17 +952,50 @@ function PortalApp({ token, onLogout }) {
   }, [candidateUniverse, candidatePage]);
   const totalCandidatePages = Math.max(1, Math.ceil((candidateUniverse.length || 0) / 10));
 
+  const capturedCandidateOptions = useMemo(() => {
+    const meta = { clients: new Set(), jds: new Set(), sources: new Set(), outcomes: new Set() };
+    for (const item of state.candidates || []) {
+      const matchedAssessment = capturedAssessmentMap.get(String(item.name || "").trim().toLowerCase());
+      const sourceValue = String(item.source || "").trim();
+      const isInboundApplicant = sourceValue === "website_apply" || sourceValue === "hosted_apply";
+      const isAssignedInbound = Boolean(item.assigned_to_name || item.assigned_to_user_id);
+      if (isInboundApplicant && !isAssignedInbound) continue;
+      const clientValue = String(item.client_name || matchedAssessment?.clientName || "Unassigned").trim();
+      const jdValue = String(item.jd_title || matchedAssessment?.jdTitle || item.role || "").trim();
+      const outcomeValue = String(matchedAssessment?.candidateStatus || item.candidate_status || "No outcome").trim();
+      if (clientValue) meta.clients.add(clientValue);
+      if (jdValue) meta.jds.add(jdValue);
+      if (sourceValue) meta.sources.add(sourceValue);
+      if (outcomeValue) meta.outcomes.add(outcomeValue);
+    }
+    return {
+      clients: Array.from(meta.clients).sort(),
+      jds: Array.from(meta.jds).sort(),
+      sources: Array.from(meta.sources).sort(),
+      outcomes: Array.from(meta.outcomes).sort()
+    };
+  }, [capturedAssessmentMap, state.candidates]);
+
   const capturedCandidates = useMemo(() => {
     return (state.candidates || []).filter((item) => {
+      const matchedAssessment = capturedAssessmentMap.get(String(item.name || "").trim().toLowerCase());
       const sourceValue = String(item.source || "").trim();
       const isInboundApplicant = sourceValue === "website_apply" || sourceValue === "hosted_apply";
       const isAssignedInbound = Boolean(item.assigned_to_name || item.assigned_to_user_id);
       if (isInboundApplicant && !isAssignedInbound) return false;
+      const clientValue = String(item.client_name || matchedAssessment?.clientName || "Unassigned").trim();
+      const jdValue = String(item.jd_title || matchedAssessment?.jdTitle || item.role || "").trim();
+      const laneValue = matchedAssessment || item.used_in_assessment ? "converted" : "captured";
+      const assignmentValue = item.assigned_to_name || item.assigned_to_user_id ? "assigned" : "unassigned";
+      const outcomeValue = String(matchedAssessment?.candidateStatus || item.candidate_status || "No outcome").trim();
+      const activeValue = isTerminalStatus(outcomeValue) ? "inactive" : "active";
+      const createdAtValue = item.created_at ? String(item.created_at).slice(0, 10) : "";
       const hay = [
         item.name,
         item.company,
         item.role,
         item.jd_title,
+        item.client_name,
         item.assigned_to_name,
         item.source,
         item.notes,
@@ -911,11 +1003,18 @@ function PortalApp({ token, onLogout }) {
         item.other_pointers
       ].join(" ").toLowerCase();
       const queryOk = !candidateFilters.q.trim() || hay.includes(candidateFilters.q.trim().toLowerCase());
-      const sourceOk = candidateFilters.source === "all" || sourceValue === candidateFilters.source;
-      const assignmentOk = candidateFilters.assignment === "all" || (candidateFilters.assignment === "assigned" ? Boolean(item.assigned_to_name) : !item.assigned_to_name);
-      return queryOk && sourceOk && assignmentOk;
+      const dateFromOk = !candidateFilters.dateFrom || (createdAtValue && createdAtValue >= candidateFilters.dateFrom);
+      const dateToOk = !candidateFilters.dateTo || (createdAtValue && createdAtValue <= candidateFilters.dateTo);
+      const clientOk = !candidateFilters.clients.length || candidateFilters.clients.includes(clientValue);
+      const jdOk = !candidateFilters.jds.length || candidateFilters.jds.includes(jdValue);
+      const laneOk = !candidateFilters.lanes.length || candidateFilters.lanes.includes(laneValue);
+      const assignmentOk = !candidateFilters.assignments.length || candidateFilters.assignments.includes(assignmentValue);
+      const sourceOk = !candidateFilters.sources.length || candidateFilters.sources.includes(sourceValue);
+      const outcomeOk = !candidateFilters.outcomes.length || candidateFilters.outcomes.includes(outcomeValue);
+      const activeOk = !candidateFilters.activeStates.length || candidateFilters.activeStates.includes(activeValue);
+      return queryOk && dateFromOk && dateToOk && clientOk && jdOk && laneOk && assignmentOk && sourceOk && outcomeOk && activeOk;
     });
-  }, [candidateFilters, state.candidates]);
+  }, [candidateFilters, capturedAssessmentMap, state.candidates]);
 
   async function openCv(applicantId) {
     const applicant = (state.applicants || []).find((item) => String(item.id) === String(applicantId));
@@ -944,6 +1043,16 @@ function PortalApp({ token, onLogout }) {
     setAssignApplicantId("");
     await loadWorkspace();
     setStatus("workspace", "Applicant assigned into recruiter workflow.", "ok");
+  }
+
+  async function saveCapturedAssignment({ recruiterId, jdTitle }) {
+    const recruiter = (state.users || []).find((user) => String(user.id) === String(recruiterId));
+    await patchCandidate(assignCandidateId, {
+      assigned_to_user_id: recruiterId,
+      assigned_to_name: recruiter?.name || "",
+      jd_title: jdTitle
+    }, "Draft assigned to recruiter.");
+    setAssignCandidateId("");
   }
 
   async function patchCandidate(candidateId, patch, okMessage) {
@@ -1891,21 +2000,28 @@ function PortalApp({ token, onLogout }) {
           <Route path="/captured-notes" element={
             <Section kicker="Shared Workflow" title="Captured Notes">
               {statuses.captured ? <div className={`status ${statuses.capturedKind || ""}`}>{statuses.captured}</div> : null}
-              <div className="toolbar">
-                <input placeholder="Search candidate, company, JD, recruiter" value={candidateFilters.q} onChange={(e) => setCandidateFilters((c) => ({ ...c, q: e.target.value }))} />
-                <select value={candidateFilters.source} onChange={(e) => setCandidateFilters((c) => ({ ...c, source: e.target.value }))}>
-                  <option value="all">All sources</option>
-                  {capturedSources.map((item) => <option key={item} value={item}>{item}</option>)}
-                </select>
-                <select value={candidateFilters.assignment} onChange={(e) => setCandidateFilters((c) => ({ ...c, assignment: e.target.value }))}>
-                  <option value="all">All assignments</option>
-                  <option value="assigned">Assigned</option>
-                  <option value="unassigned">Unassigned</option>
-                </select>
+              <div className="form-grid three-col">
+                <label className="full"><span>Search</span><input placeholder="Search candidate, company, phone, email, LinkedIn..." value={candidateFilters.q} onChange={(e) => setCandidateFilters((c) => ({ ...c, q: e.target.value }))} /></label>
+                <label><span>Date from</span><input type="date" value={candidateFilters.dateFrom} onChange={(e) => setCandidateFilters((c) => ({ ...c, dateFrom: e.target.value }))} /></label>
+                <label><span>Date to</span><input type="date" value={candidateFilters.dateTo} onChange={(e) => setCandidateFilters((c) => ({ ...c, dateTo: e.target.value }))} /></label>
+              </div>
+              <div className="metric-grid metric-grid--tight">
+                <div className="metric-card compact-metric"><div className="metric-label">Today</div><div className="metric-value">{capturedCandidates.filter((item) => String(item.created_at || "").slice(0, 10) === new Date().toISOString().slice(0, 10)).length}</div></div>
+                <div className="metric-card compact-metric"><div className="metric-label">Active</div><div className="metric-value">{capturedCandidates.filter((item) => !isTerminalStatus((capturedAssessmentMap.get(String(item.name || "").trim().toLowerCase())?.candidateStatus || item.candidate_status || ""))).length}</div></div>
+                <div className="metric-card compact-metric"><div className="metric-label">Converted</div><div className="metric-value">{capturedCandidates.filter((item) => capturedAssessmentMap.has(String(item.name || "").trim().toLowerCase()) || item.used_in_assessment).length}</div></div>
+              </div>
+              <div className="captured-filter-grid">
+                <MultiSelectChipFilter label="Clients" options={capturedCandidateOptions.clients} selected={candidateFilters.clients} onToggle={(value) => setCandidateFilters((current) => ({ ...current, clients: value === "__all__" ? [] : current.clients.includes(value) ? current.clients.filter((item) => item !== value) : [...current.clients, value] }))} />
+                <MultiSelectChipFilter label="JD / Role" options={capturedCandidateOptions.jds} selected={candidateFilters.jds} onToggle={(value) => setCandidateFilters((current) => ({ ...current, jds: value === "__all__" ? [] : current.jds.includes(value) ? current.jds.filter((item) => item !== value) : [...current.jds, value] }))} />
+                <MultiSelectChipFilter label="Lane" options={["captured", "converted"]} selected={candidateFilters.lanes} onToggle={(value) => setCandidateFilters((current) => ({ ...current, lanes: value === "__all__" ? [] : current.lanes.includes(value) ? current.lanes.filter((item) => item !== value) : [...current.lanes, value] }))} />
+                <MultiSelectChipFilter label="Assignment" options={["assigned", "unassigned"]} selected={candidateFilters.assignments} onToggle={(value) => setCandidateFilters((current) => ({ ...current, assignments: value === "__all__" ? [] : current.assignments.includes(value) ? current.assignments.filter((item) => item !== value) : [...current.assignments, value] }))} />
+                <MultiSelectChipFilter label="Sources" options={capturedCandidateOptions.sources} selected={candidateFilters.sources} onToggle={(value) => setCandidateFilters((current) => ({ ...current, sources: value === "__all__" ? [] : current.sources.includes(value) ? current.sources.filter((item) => item !== value) : [...current.sources, value] }))} />
+                <MultiSelectChipFilter label="Outcomes" options={capturedCandidateOptions.outcomes} selected={candidateFilters.outcomes} onToggle={(value) => setCandidateFilters((current) => ({ ...current, outcomes: value === "__all__" ? [] : current.outcomes.includes(value) ? current.outcomes.filter((item) => item !== value) : [...current.outcomes, value] }))} />
+                <MultiSelectChipFilter label="State" options={["active", "inactive"]} selected={candidateFilters.activeStates} onToggle={(value) => setCandidateFilters((current) => ({ ...current, activeStates: value === "__all__" ? [] : current.activeStates.includes(value) ? current.activeStates.filter((item) => item !== value) : [...current.activeStates, value] }))} />
               </div>
               <div className="stack-list">
                 {!capturedCandidates.length ? <div className="empty-state">No captured notes or recruiter-owned candidates yet.</div> : capturedCandidates.map((item) => {
-                  const matchedAssessment = (state.assessments || []).find((assessment) => String(assessment.candidateName || "").trim().toLowerCase() === String(item.name || "").trim().toLowerCase());
+                  const matchedAssessment = capturedAssessmentMap.get(String(item.name || "").trim().toLowerCase());
                   const statusState = normalizedAssessmentState(matchedAssessment, item);
                   return (
                     <article className="item-card compact-card" key={item.id}>
@@ -1923,6 +2039,7 @@ function PortalApp({ token, onLogout }) {
                       </div>
                       <div className="button-row">
                         <button onClick={() => loadCandidateIntoInterview(item.id)}>Open draft</button>
+                        <button onClick={() => setAssignCandidateId(item.id)}>Assign</button>
                         <button onClick={() => setNotesCandidateId(item.id)}>Recruiter note</button>
                         <button onClick={() => void openAttempts(item.id)}>Attempts</button>
                         <button onClick={() => loadCandidateIntoInterview(item.id)}>Create assessment</button>
@@ -2173,6 +2290,17 @@ function PortalApp({ token, onLogout }) {
       </main>
 
       <AssignModal open={Boolean(assignApplicantId)} applicant={assignApplicant} users={state.users} jobs={state.jobs} onClose={() => setAssignApplicantId("")} onSave={saveApplicantAssignment} />
+      <AssignModal
+        open={Boolean(assignCandidateId)}
+        applicant={assignCandidate}
+        users={state.users}
+        jobs={state.jobs}
+        onClose={() => setAssignCandidateId("")}
+        onSave={saveCapturedAssignment}
+        title="Assign Draft"
+        description="Assign {name} to a recruiter and JD."
+        nameKey="name"
+      />
       <NotesModal
         open={Boolean(notesCandidateId)}
         candidate={notesCandidate}
