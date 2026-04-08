@@ -44,6 +44,34 @@ const DEFAULT_STATUS_OPTIONS = [
   "Joined"
 ];
 
+function normalizeShortcutKey(raw) {
+  const value = String(raw || "").trim();
+  if (!value) return "";
+  return value.startsWith("/") ? value : `/${value.replace(/^\/+/, "")}`;
+}
+
+function parseShortcutMap(value) {
+  if (!String(value || "").trim()) return {};
+  try {
+    const parsed = JSON.parse(String(value || ""));
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+    return parsed;
+  } catch {
+    return {};
+  }
+}
+
+function stringifyShortcutMap(value) {
+  return JSON.stringify(value || {}, null, 2);
+}
+
+function parseQuestionList(value) {
+  return String(value || "")
+    .split(/\r?\n/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
 function api(path, token, method = "GET", body = null) {
   const headers = { "Content-Type": "application/json" };
   if (token) headers.Authorization = `Bearer ${token}`;
@@ -314,6 +342,8 @@ function PortalApp({ token, onLogout }) {
   const [attemptsCandidateId, setAttemptsCandidateId] = useState("");
   const [attempts, setAttempts] = useState([]);
   const [selectedJobId, setSelectedJobId] = useState("");
+  const [jobShortcutKey, setJobShortcutKey] = useState("");
+  const [jobShortcutValue, setJobShortcutValue] = useState("");
   const [jobDraft, setJobDraft] = useState({
     id: "",
     title: "",
@@ -331,9 +361,15 @@ function PortalApp({ token, onLogout }) {
     phoneNumber: "",
     emailId: "",
     location: "",
+    currentCtc: "",
+    expectedCtc: "",
+    noticePeriod: "",
+    offerInHand: "",
     currentCompany: "",
     currentDesignation: "",
     totalExperience: "",
+    currentOrgTenure: "",
+    reasonForChange: "",
     clientName: "",
     jdTitle: "",
     pipelineStage: "Under Interview Process",
@@ -341,7 +377,8 @@ function PortalApp({ token, onLogout }) {
     followUpAt: "",
     interviewAt: "",
     recruiterNotes: "",
-    callbackNotes: ""
+    callbackNotes: "",
+    otherPointers: ""
   });
 
   const assignApplicant = (state.applicants || []).find((item) => String(item.id) === String(assignApplicantId)) || null;
@@ -482,9 +519,15 @@ function PortalApp({ token, onLogout }) {
       phoneNumber: matched?.phoneNumber || candidate?.phone || "",
       emailId: matched?.emailId || candidate?.email || "",
       location: matched?.location || candidate?.location || "",
+      currentCtc: matched?.currentCtc || candidate?.current_ctc || "",
+      expectedCtc: matched?.expectedCtc || candidate?.expected_ctc || "",
+      noticePeriod: matched?.noticePeriod || candidate?.notice_period || "",
+      offerInHand: matched?.offerInHand || "",
       currentCompany: matched?.currentCompany || candidate?.company || "",
       currentDesignation: matched?.currentDesignation || candidate?.role || "",
       totalExperience: matched?.totalExperience || candidate?.experience || "",
+      currentOrgTenure: matched?.currentOrgTenure || candidate?.current_org_tenure || "",
+      reasonForChange: matched?.reasonForChange || "",
       clientName: matched?.clientName || candidate?.client_name || "",
       jdTitle: matched?.jdTitle || candidate?.jd_title || "",
       pipelineStage: matched?.pipelineStage || candidate?.pipeline_stage || "Under Interview Process",
@@ -492,7 +535,8 @@ function PortalApp({ token, onLogout }) {
       followUpAt: toDateInputValue(matched?.followUpAt || candidate?.next_follow_up_at),
       interviewAt: toDateInputValue(matched?.interviewAt),
       recruiterNotes: matched?.recruiterNotes || candidate?.recruiter_context_notes || "",
-      callbackNotes: matched?.callbackNotes || candidate?.callback_notes || ""
+      callbackNotes: matched?.callbackNotes || candidate?.callback_notes || "",
+      otherPointers: matched?.otherPointers || candidate?.other_pointers || ""
     });
     navigate("/interview");
     setStatus("interview", `Loaded ${candidate.name || "candidate"} into Interview Panel.`, "ok");
@@ -511,6 +555,7 @@ function PortalApp({ token, onLogout }) {
       await patchCandidate(interviewMeta.candidateId, {
         recruiter_context_notes: interviewForm.recruiterNotes,
         callback_notes: interviewForm.callbackNotes,
+        other_pointers: interviewForm.otherPointers,
         pipeline_stage: interviewForm.pipelineStage,
         candidate_status: interviewForm.candidateStatus,
         next_follow_up_at: interviewForm.followUpAt
@@ -557,6 +602,8 @@ function PortalApp({ token, onLogout }) {
       standardQuestions: String(job.standardQuestions || ""),
       jdShortcuts: String(job.jdShortcuts || "")
     });
+    setJobShortcutKey("");
+    setJobShortcutValue("");
   }
 
   async function saveJobDraft() {
@@ -616,6 +663,38 @@ function PortalApp({ token, onLogout }) {
       title: current.title || String(file.name || "").replace(/\.[^.]+$/, "").replace(/[-_]+/g, " ")
     }));
     setStatus("jobs", "JD text uploaded into editor.", "ok");
+  }
+
+  function saveShortcutDraft() {
+    const key = normalizeShortcutKey(jobShortcutKey);
+    const value = String(jobShortcutValue || "").trim();
+    if (!key || !value) {
+      setStatus("jobs", "Add both shortcut key and template.", "error");
+      return;
+    }
+    const parsed = parseShortcutMap(jobDraft.jdShortcuts);
+    parsed[key] = value;
+    setJobDraft((current) => ({ ...current, jdShortcuts: stringifyShortcutMap(parsed) }));
+    setJobShortcutKey("");
+    setJobShortcutValue("");
+    setStatus("jobs", `Saved shortcut ${key}.`, "ok");
+  }
+
+  function editShortcutDraft(key) {
+    const parsed = parseShortcutMap(jobDraft.jdShortcuts);
+    setJobShortcutKey(key);
+    setJobShortcutValue(String(parsed[key] || ""));
+  }
+
+  function deleteShortcutDraft(key) {
+    const parsed = parseShortcutMap(jobDraft.jdShortcuts);
+    delete parsed[key];
+    setJobDraft((current) => ({ ...current, jdShortcuts: stringifyShortcutMap(parsed) }));
+    if (normalizeShortcutKey(jobShortcutKey) === key) {
+      setJobShortcutKey("");
+      setJobShortcutValue("");
+    }
+    setStatus("jobs", `Removed shortcut ${key}.`, "ok");
   }
 
   function copyInterviewResult() {
@@ -710,9 +789,15 @@ function PortalApp({ token, onLogout }) {
       phoneNumber: assessment?.phoneNumber || "",
       emailId: assessment?.emailId || "",
       location: assessment?.location || "",
+      currentCtc: assessment?.currentCtc || "",
+      expectedCtc: assessment?.expectedCtc || "",
+      noticePeriod: assessment?.noticePeriod || "",
+      offerInHand: assessment?.offerInHand || "",
       currentCompany: assessment?.currentCompany || "",
       currentDesignation: assessment?.currentDesignation || "",
       totalExperience: assessment?.totalExperience || "",
+      currentOrgTenure: assessment?.currentOrgTenure || "",
+      reasonForChange: assessment?.reasonForChange || "",
       clientName: assessment?.clientName || "",
       jdTitle: assessment?.jdTitle || "",
       pipelineStage: assessment?.pipelineStage || "Under Interview Process",
@@ -720,7 +805,8 @@ function PortalApp({ token, onLogout }) {
       followUpAt: toDateInputValue(assessment?.followUpAt),
       interviewAt: toDateInputValue(assessment?.interviewAt),
       recruiterNotes: assessment?.recruiterNotes || "",
-      callbackNotes: assessment?.callbackNotes || ""
+      callbackNotes: assessment?.callbackNotes || "",
+      otherPointers: assessment?.otherPointers || ""
     });
     navigate("/interview");
     setStatus("interview", `Loaded ${assessment?.candidateName || "candidate"} as reusable draft.`, "ok");
@@ -745,6 +831,8 @@ function PortalApp({ token, onLogout }) {
   const companyId = String(state.user?.companyId || state.intake?.company?.id || "").trim();
   const secret = String(state.intake?.applicantIntakeSecret || "").trim();
   const apiUrl = `${window.location.origin}/public/applicants/intake`;
+  const jdShortcutEntries = Object.entries(parseShortcutMap(jobDraft.jdShortcuts));
+  const jdScreeningQuestions = parseQuestionList(jobDraft.standardQuestions);
 
   return (
     <div className="app-shell">
@@ -941,16 +1029,47 @@ function PortalApp({ token, onLogout }) {
                   <label className="full"><span>JD / role</span><input value={interviewForm.jdTitle} onChange={(e) => setInterviewForm((c) => ({ ...c, jdTitle: e.target.value }))} /></label>
                   <label className="full"><span>Captured notes</span><textarea value={interviewForm.callbackNotes} onChange={(e) => setInterviewForm((c) => ({ ...c, callbackNotes: e.target.value }))} /></label>
                   <label className="full"><span>Recruiter notes</span><textarea value={interviewForm.recruiterNotes} onChange={(e) => setInterviewForm((c) => ({ ...c, recruiterNotes: e.target.value }))} /></label>
-                  <label className="full"><span>Other pointers</span><textarea value={interviewForm.callbackNotes} onChange={(e) => setInterviewForm((c) => ({ ...c, callbackNotes: e.target.value }))} /></label>
+                  <label className="full"><span>Other pointers</span><textarea value={interviewForm.otherPointers} onChange={(e) => setInterviewForm((c) => ({ ...c, otherPointers: e.target.value }))} /></label>
                 </form>
               </Section>
 
               <Section kicker="Runbook" title="Interview Runbook">
-                <div className="form-grid two-col">
-                  <label className="full"><span>Screening questions</span><textarea value={jobDraft.standardQuestions || ""} onChange={() => {}} readOnly /></label>
-                  <label className="full"><span>JD shortcuts</span><textarea value={jobDraft.jdShortcuts || ""} onChange={() => {}} readOnly /></label>
-                  <label><span>Next follow-up</span><input type="datetime-local" value={interviewForm.followUpAt} onChange={(e) => setInterviewForm((c) => ({ ...c, followUpAt: e.target.value }))} /></label>
-                  <label><span>Interview date</span><input type="datetime-local" value={interviewForm.interviewAt} onChange={(e) => setInterviewForm((c) => ({ ...c, interviewAt: e.target.value }))} /></label>
+                <div className="runbook-layout">
+                  <div className="runbook-block">
+                    <div className="info-label">JD-defined screening questions</div>
+                    {jdScreeningQuestions.length ? (
+                      <div className="question-stack">
+                        {jdScreeningQuestions.map((question, index) => (
+                          <div className="question-card" key={`${index}-${question}`}>
+                            <div className="question-index">Q{index + 1}</div>
+                            <div>{question}</div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : <div className="empty-state">No JD screening questions added yet.</div>}
+                  </div>
+
+                  <div className="runbook-block">
+                    <div className="info-label">Recruiter screening block</div>
+                    <div className="form-grid two-col">
+                      <label><span>Current CTC</span><input value={interviewForm.currentCtc} onChange={(e) => setInterviewForm((c) => ({ ...c, currentCtc: e.target.value }))} /></label>
+                      <label><span>Expected CTC</span><input value={interviewForm.expectedCtc} onChange={(e) => setInterviewForm((c) => ({ ...c, expectedCtc: e.target.value }))} /></label>
+                      <label><span>Notice period</span><input value={interviewForm.noticePeriod} onChange={(e) => setInterviewForm((c) => ({ ...c, noticePeriod: e.target.value }))} /></label>
+                      <label><span>Offer in hand / DOJ / LWD</span><input value={interviewForm.offerInHand} onChange={(e) => setInterviewForm((c) => ({ ...c, offerInHand: e.target.value }))} /></label>
+                      <label><span>Total experience</span><input value={interviewForm.totalExperience} onChange={(e) => setInterviewForm((c) => ({ ...c, totalExperience: e.target.value }))} /></label>
+                      <label><span>Tenure in current org</span><input value={interviewForm.currentOrgTenure} onChange={(e) => setInterviewForm((c) => ({ ...c, currentOrgTenure: e.target.value }))} /></label>
+                      <label><span>Reason of change</span><textarea value={interviewForm.reasonForChange} onChange={(e) => setInterviewForm((c) => ({ ...c, reasonForChange: e.target.value }))} /></label>
+                      <label><span>Location</span><input value={interviewForm.location} onChange={(e) => setInterviewForm((c) => ({ ...c, location: e.target.value }))} /></label>
+                    </div>
+                  </div>
+
+                  <div className="runbook-block">
+                    <div className="info-label">Planning</div>
+                    <div className="form-grid two-col">
+                      <label><span>Next follow-up</span><input type="datetime-local" value={interviewForm.followUpAt} onChange={(e) => setInterviewForm((c) => ({ ...c, followUpAt: e.target.value }))} /></label>
+                      <label><span>Interview date</span><input type="datetime-local" value={interviewForm.interviewAt} onChange={(e) => setInterviewForm((c) => ({ ...c, interviewAt: e.target.value }))} /></label>
+                    </div>
+                  </div>
                 </div>
               </Section>
 
@@ -1031,8 +1150,44 @@ function PortalApp({ token, onLogout }) {
                   <label className="full"><span>Must-have skills</span><textarea value={jobDraft.mustHaveSkills} onChange={(e) => setJobDraft((c) => ({ ...c, mustHaveSkills: e.target.value }))} /></label>
                   <label className="full"><span>Red flags</span><textarea value={jobDraft.redFlags} onChange={(e) => setJobDraft((c) => ({ ...c, redFlags: e.target.value }))} /></label>
                   <label className="full"><span>Standard screening questions</span><textarea value={jobDraft.standardQuestions} onChange={(e) => setJobDraft((c) => ({ ...c, standardQuestions: e.target.value }))} /></label>
-                  <label className="full"><span>JD shortcuts</span><textarea value={jobDraft.jdShortcuts} onChange={(e) => setJobDraft((c) => ({ ...c, jdShortcuts: e.target.value }))} /></label>
                   <label className="full"><span>Recruiter notes</span><textarea value={jobDraft.recruiterNotes} onChange={(e) => setJobDraft((c) => ({ ...c, recruiterNotes: e.target.value }))} /></label>
+                </div>
+
+                <div className="shortcut-builder">
+                  <div className="shortcut-builder__head">
+                    <div>
+                      <div className="info-label">JD shortcuts</div>
+                      <div className="muted">These save in backend JD records and are meant to be reused by extension templates too.</div>
+                    </div>
+                  </div>
+                  <div className="form-grid two-col">
+                    <label>
+                      <span>Shortcut key</span>
+                      <input placeholder="/intro" value={jobShortcutKey} onChange={(e) => setJobShortcutKey(e.target.value)} />
+                    </label>
+                    <label>
+                      <span>Shortcut text / template</span>
+                      <textarea value={jobShortcutValue} onChange={(e) => setJobShortcutValue(e.target.value)} />
+                    </label>
+                  </div>
+                  <div className="button-row">
+                    <button onClick={() => saveShortcutDraft()}>{jobShortcutKey ? "Update shortcut" : "Add shortcut"}</button>
+                  </div>
+                  <div className="shortcut-note">Saved format stays extension-compatible in backend. Recruiters only see this simplified editor.</div>
+                  <div className="stack-list compact">
+                    {jdShortcutEntries.length ? jdShortcutEntries.map(([key, value]) => (
+                      <article className="item-card compact-card" key={key}>
+                        <div className="item-card__top compact-top">
+                          <strong>{key}</strong>
+                          <div className="button-row tight">
+                            <button className="ghost-btn" onClick={() => editShortcutDraft(key)}>Edit</button>
+                            <button className="ghost-btn" onClick={() => deleteShortcutDraft(key)}>Delete</button>
+                          </div>
+                        </div>
+                        <div className="candidate-snippet no-top-border">{String(value || "")}</div>
+                      </article>
+                    )) : <div className="empty-state">No JD shortcuts yet.</div>}
+                  </div>
                 </div>
               </Section>
             </div>
