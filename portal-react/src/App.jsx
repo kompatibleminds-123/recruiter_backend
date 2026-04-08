@@ -5,6 +5,7 @@ const TOKEN_KEY = "recruitdesk_portal_token";
 
 const navItems = [
   { to: "/dashboard", label: "Dashboard" },
+  { to: "/candidates", label: "Candidates" },
   { to: "/applicants", label: "Applied Candidates" },
   { to: "/captured-notes", label: "Captured Notes" },
   { to: "/assessments", label: "Assessments" },
@@ -692,6 +693,34 @@ function AssessmentStatusModal({ open, assessment, onClose, onSave }) {
   );
 }
 
+function DrilldownModal({ open, title, items, onClose }) {
+  if (!open) return null;
+  return (
+    <div className="overlay" onClick={onClose}>
+      <div className="overlay-card overlay-card--wide" onClick={(e) => e.stopPropagation()}>
+        <h3>{title}</h3>
+        <p className="muted">{items.length} candidate(s)</p>
+        <div className="stack-list compact">
+          {!items.length ? <div className="empty-state">No matching candidates found.</div> : items.map((item, index) => (
+            <article className="item-card compact-card" key={`${item.id || item.assessmentId || index}`}>
+              <div className="item-card__top">
+                <div>
+                  <h3>{item.name || item.candidateName || "Candidate"} | {item.position || item.jdTitle || item.role || "Untitled role"}</h3>
+                  <p className="muted">{[item.company || item.currentCompany || "", item.clientName ? `Client: ${item.clientName}` : "", item.ownerRecruiter ? `Recruiter: ${item.ownerRecruiter}` : "", item.source ? `Source: ${item.source}` : ""].filter(Boolean).join(" | ")}</p>
+                  <div className="candidate-snippet">{[item.pipelineStage ? `Pipeline: ${item.pipelineStage}` : "", item.candidateStatus ? `Status: ${item.candidateStatus}` : "", item.followUpAt ? `Follow-up: ${new Date(item.followUpAt).toLocaleString()}` : "", item.interviewAt ? `Interview: ${new Date(item.interviewAt).toLocaleString()}` : ""].filter(Boolean).join("\n")}</div>
+                </div>
+              </div>
+            </article>
+          ))}
+        </div>
+        <div className="button-row">
+          <button className="ghost-btn" onClick={onClose}>Close</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function PortalApp({ token, onLogout }) {
   const navigate = useNavigate();
   const [state, setState] = useState({
@@ -707,10 +736,16 @@ function PortalApp({ token, onLogout }) {
   const [statuses, setStatuses] = useState({});
   const [assignApplicantId, setAssignApplicantId] = useState("");
   const [hostedJobId, setHostedJobId] = useState("");
+  const [dashboardFilters, setDashboardFilters] = useState({ dateFrom: "", dateTo: "", clientLabel: "", recruiterLabel: "", quickRange: "all" });
   const [candidateFilters, setCandidateFilters] = useState({ q: "", source: "all", assignment: "all" });
+  const [candidateSearchMode, setCandidateSearchMode] = useState("all");
+  const [candidateSearchText, setCandidateSearchText] = useState("");
+  const [candidateSearchResults, setCandidateSearchResults] = useState([]);
+  const [candidatePage, setCandidatePage] = useState(1);
   const [notesCandidateId, setNotesCandidateId] = useState("");
   const [attemptsCandidateId, setAttemptsCandidateId] = useState("");
   const [assessmentStatusId, setAssessmentStatusId] = useState("");
+  const [drilldownState, setDrilldownState] = useState({ open: false, title: "", items: [] });
   const [attempts, setAttempts] = useState([]);
   const [selectedJobId, setSelectedJobId] = useState("");
   const [jobShortcutKey, setJobShortcutKey] = useState("");
@@ -761,6 +796,16 @@ function PortalApp({ token, onLogout }) {
     setStatuses((current) => ({ ...current, [key]: message, [`${key}Kind`]: kind }));
   }
 
+  async function loadDashboardSummary(filters = dashboardFilters) {
+    const params = new URLSearchParams();
+    if (filters.dateFrom) params.set("dateFrom", filters.dateFrom);
+    if (filters.dateTo) params.set("dateTo", filters.dateTo);
+    if (filters.clientLabel) params.set("clientLabel", filters.clientLabel);
+    if (filters.recruiterLabel) params.set("recruiterLabel", filters.recruiterLabel);
+    const dashboardResult = await api(`/company/dashboard${params.toString() ? `?${params.toString()}` : ""}`, token);
+    setState((current) => ({ ...current, dashboard: dashboardResult || {} }));
+  }
+
   async function loadWorkspace() {
     const [userResult, dashboardResult, applicantsResult, intakeResult, jobsResult, usersResult, candidatesResult, assessmentsResult] = await Promise.all([
       api("/auth/me", token),
@@ -790,6 +835,12 @@ function PortalApp({ token, onLogout }) {
   }, [token]);
 
   const capturedSources = useMemo(() => Array.from(new Set((state.candidates || []).map((item) => String(item.source || "").trim()).filter(Boolean))), [state.candidates]);
+  const candidateUniverse = useMemo(() => candidateSearchMode === "all" ? (state.candidates || []) : (candidateSearchResults || []), [candidateSearchMode, state.candidates, candidateSearchResults]);
+  const pagedCandidates = useMemo(() => {
+    const start = (candidatePage - 1) * 10;
+    return candidateUniverse.slice(start, start + 10);
+  }, [candidateUniverse, candidatePage]);
+  const totalCandidatePages = Math.max(1, Math.ceil((candidateUniverse.length || 0) / 10));
 
   const capturedCandidates = useMemo(() => {
     return (state.candidates || []).filter((item) => {
@@ -1058,6 +1109,71 @@ function PortalApp({ token, onLogout }) {
     setJobShortcutValue(String(parsed[key] || ""));
   }
 
+  function applyDashboardQuickRange(value) {
+    const today = new Date();
+    const toDate = today.toISOString().slice(0, 10);
+    let dateFrom = "";
+    if (value === "last_7_days") {
+      const from = new Date();
+      from.setDate(from.getDate() - 6);
+      dateFrom = from.toISOString().slice(0, 10);
+    } else if (value === "this_month") {
+      const from = new Date(today.getFullYear(), today.getMonth(), 1);
+      dateFrom = from.toISOString().slice(0, 10);
+    }
+    setDashboardFilters((current) => ({ ...current, quickRange: value, dateFrom, dateTo: value === "all" ? "" : toDate }));
+  }
+
+  async function applyDashboardFilters() {
+    setStatus("workspace", "Refreshing dashboard...");
+    await loadDashboardSummary(dashboardFilters);
+    setStatus("workspace", "Dashboard refreshed.", "ok");
+  }
+
+  async function openDashboardDrilldown({ title, metric, groupType, params = {} }) {
+    const query = new URLSearchParams({
+      metric,
+      groupType,
+      dateFrom: dashboardFilters.dateFrom || "",
+      dateTo: dashboardFilters.dateTo || "",
+      clientFilter: dashboardFilters.clientLabel || "",
+      recruiterFilter: dashboardFilters.recruiterLabel || "",
+      clientLabel: params.clientLabel || "",
+      recruiterLabel: params.recruiterLabel || "",
+      positionLabel: params.positionLabel || ""
+    });
+    const result = await api(`/company/dashboard/drilldown?${query.toString()}`, token);
+    setDrilldownState({
+      open: true,
+      title,
+      items: result.items || []
+    });
+  }
+
+  async function runCandidateSearch() {
+    if (!candidateSearchText.trim()) {
+      setCandidateSearchMode("all");
+      setCandidateSearchResults([]);
+      setCandidatePage(1);
+      setStatus("workspace", "Showing all uploaded candidates.", "ok");
+      return;
+    }
+    if (candidateSearchMode === "jd_match") {
+      const result = await api("/company/candidates/search-jd-match", token, "POST", {
+        jdText: candidateSearchText,
+        jdTitle: candidateSearchText
+      });
+      setCandidateSearchResults(result.items || []);
+      setCandidatePage(1);
+      setStatus("workspace", `JD match returned ${result.items?.length || 0} candidates.`, "ok");
+      return;
+    }
+    const result = await api(`/company/candidates/search-natural?q=${encodeURIComponent(candidateSearchText)}`, token);
+    setCandidateSearchResults(result.items || []);
+    setCandidatePage(1);
+    setStatus("workspace", `AI search returned ${result.items?.length || 0} candidates.`, "ok");
+  }
+
   function deleteShortcutDraft(key) {
     const parsed = parseShortcutMap(jobDraft.jdShortcuts);
     delete parsed[key];
@@ -1285,16 +1401,104 @@ function PortalApp({ token, onLogout }) {
         <Routes>
           <Route path="/dashboard" element={
             <div className="page-grid">
-              <Section kicker="Overview" title="Pipeline Snapshot">
+              <Section kicker="Performance" title="Recruitment Dashboard">
+                <div className="form-grid three-col">
+                  <label><span>Date from</span><input type="date" value={dashboardFilters.dateFrom} onChange={(e) => setDashboardFilters((c) => ({ ...c, dateFrom: e.target.value, quickRange: "custom" }))} /></label>
+                  <label><span>Date to</span><input type="date" value={dashboardFilters.dateTo} onChange={(e) => setDashboardFilters((c) => ({ ...c, dateTo: e.target.value, quickRange: "custom" }))} /></label>
+                  <label><span>Client</span><select value={dashboardFilters.clientLabel} onChange={(e) => setDashboardFilters((c) => ({ ...c, clientLabel: e.target.value }))}><option value="">All clients</option>{(state.dashboard?.availableClients || []).map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
+                  <label><span>Recruiter</span><select value={dashboardFilters.recruiterLabel} onChange={(e) => setDashboardFilters((c) => ({ ...c, recruiterLabel: e.target.value }))}><option value="">All recruiters</option>{(state.dashboard?.availableRecruiters || []).map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
+                  <label><span>Quick range</span><select value={dashboardFilters.quickRange} onChange={(e) => applyDashboardQuickRange(e.target.value)}><option value="all">All time</option><option value="last_7_days">Last 7 days</option><option value="this_month">This month</option><option value="custom">Custom</option></select></label>
+                  <div className="button-row align-end"><button onClick={() => void applyDashboardFilters()}>Apply dates</button></div>
+                </div>
+                <p className="muted">Under Interview Process excludes shortlisted, offered, hold, did not attend, dropped, screening reject, interview reject, duplicate, and joined.</p>
                 <div className="metric-grid">
-                  <div className="metric-card"><div className="metric-label">Sourced</div><div className="metric-value">{state.dashboard?.summary?.sourcedCount || 0}</div></div>
-                  <div className="metric-card"><div className="metric-label">Converted</div><div className="metric-value">{state.dashboard?.summary?.convertedCount || 0}</div></div>
-                  <div className="metric-card"><div className="metric-label">Applicants</div><div className="metric-value">{state.applicants.length}</div></div>
-                  <div className="metric-card"><div className="metric-label">Joined</div><div className="metric-value">{state.dashboard?.summary?.joinedCount || 0}</div></div>
+                  {[["sourced","Sourced"],["converted","Converted"],["under_interview_process","Under Interview Process"],["rejected","Rejected"],["duplicate","Duplicate"],["dropped","Dropped"],["shortlisted","Shortlisted"],["offered","Offered"],["joined","Joined"]].map(([key, label]) => (
+                    <button key={key} className="metric-card metric-card--button" onClick={() => void openDashboardDrilldown({ title: `${label} candidates`, metric: key, groupType: "all" })}>
+                      <div className="metric-label">{label}</div>
+                      <div className="metric-value">{state.dashboard?.summary?.overall?.[key] || 0}</div>
+                    </button>
+                  ))}
                 </div>
               </Section>
-              <Section kicker="Direction" title="Shared Team Workspace">
-                <p className="muted">Inbound applicants stay in Applied Candidates. Recruiter-managed work happens in Captured Notes and Interview Panel.</p>
+              <div className="two-pane-grid">
+                <Section kicker="Breakdown" title="Client Breakdown">
+                  <div className="stack-list">
+                    {!(state.dashboard?.summary?.byClient || []).length ? <div className="empty-state">No client breakdown available.</div> : (state.dashboard.summary.byClient || []).map((group) => (
+                      <article className="item-card" key={group.label}>
+                        <div className="item-card__top">
+                          <div>
+                            <h3>{group.label}</h3>
+                            <p className="muted">{`${group.metrics?.sourced || 0} sourced | ${group.metrics?.converted || 0} converted | ${group.metrics?.under_interview_process || 0} under interview`}</p>
+                          </div>
+                        </div>
+                        <div className="metric-grid metric-grid--tight">
+                          {[["sourced","Sourced"],["converted","Converted"],["under_interview_process","Under Interview"],["offered","Offered"],["joined","Joined"]].map(([key, label]) => (
+                            <button key={key} className="metric-card metric-card--button compact-metric" onClick={() => void openDashboardDrilldown({ title: `${group.label} | ${label}`, metric: key, groupType: "client", params: { clientLabel: group.label } })}>
+                              <div className="metric-label">{label}</div>
+                              <div className="metric-value">{group.metrics?.[key] || 0}</div>
+                            </button>
+                          ))}
+                        </div>
+                      </article>
+                    ))}
+                  </div>
+                </Section>
+                <Section kicker="Breakdown" title="Recruiter Breakdown">
+                  <div className="stack-list">
+                    {!(state.dashboard?.summary?.byOwnerRecruiter || []).length ? <div className="empty-state">No recruiter breakdown available.</div> : (state.dashboard.summary.byOwnerRecruiter || []).map((group) => (
+                      <article className="item-card" key={group.label}>
+                        <div className="item-card__top">
+                          <div>
+                            <h3>{group.label}</h3>
+                            <p className="muted">{`${group.metrics?.sourced || 0} sourced | ${group.metrics?.converted || 0} converted | ${group.metrics?.under_interview_process || 0} under interview`}</p>
+                          </div>
+                        </div>
+                        <div className="metric-grid metric-grid--tight">
+                          {[["sourced","Sourced"],["converted","Converted"],["under_interview_process","Under Interview"],["offered","Offered"],["joined","Joined"]].map(([key, label]) => (
+                            <button key={key} className="metric-card metric-card--button compact-metric" onClick={() => void openDashboardDrilldown({ title: `${group.label} | ${label}`, metric: key, groupType: "recruiter", params: { recruiterLabel: group.label } })}>
+                              <div className="metric-label">{label}</div>
+                              <div className="metric-value">{group.metrics?.[key] || 0}</div>
+                            </button>
+                          ))}
+                        </div>
+                      </article>
+                    ))}
+                  </div>
+                </Section>
+              </div>
+            </div>
+          } />
+
+          <Route path="/candidates" element={
+            <div className="page-grid">
+              <Section kicker="Candidate Universe" title="Candidates">
+                <div className="toolbar">
+                  <select value={candidateSearchMode} onChange={(e) => { setCandidateSearchMode(e.target.value); setCandidatePage(1); }}>
+                    <option value="all">All candidates</option>
+                    <option value="ai_search">AI Search</option>
+                    <option value="jd_match">Map to JD</option>
+                  </select>
+                  <input placeholder={candidateSearchMode === "jd_match" ? "Paste JD title or requirement text" : "Search role, skill, company, location"} value={candidateSearchText} onChange={(e) => setCandidateSearchText(e.target.value)} />
+                  <button onClick={() => void runCandidateSearch()}>{candidateSearchMode === "all" ? "Refresh" : "Run"}</button>
+                </div>
+                <div className="stack-list">
+                  {!pagedCandidates.length ? <div className="empty-state">No candidates found for this view.</div> : pagedCandidates.map((item) => (
+                    <article className="item-card compact-card" key={item.id || item.assessmentId}>
+                      <div className="item-card__top">
+                        <div>
+                          <h3>{item.name || item.candidateName || "Candidate"} | {item.role || item.currentDesignation || item.jdTitle || "Untitled role"}</h3>
+                          <p className="muted">{[item.company || item.currentCompany || "", item.location || "", item.ownerRecruiter ? `Recruiter: ${item.ownerRecruiter}` : "", item.source ? `Source: ${item.source}` : ""].filter(Boolean).join(" | ")}</p>
+                          <div className="candidate-snippet">{[item.experience || item.totalExperience || "", item.current_ctc || item.currentCtc ? `Current CTC: ${item.current_ctc || item.currentCtc}` : "", item.expected_ctc || item.expectedCtc ? `Expected CTC: ${item.expected_ctc || item.expectedCtc}` : "", item.notice_period || item.noticePeriod ? `Notice: ${item.notice_period || item.noticePeriod}` : ""].filter(Boolean).join("\n")}</div>
+                        </div>
+                      </div>
+                    </article>
+                  ))}
+                </div>
+                <div className="button-row">
+                  <button className="ghost-btn" disabled={candidatePage <= 1} onClick={() => setCandidatePage((page) => Math.max(1, page - 1))}>Previous</button>
+                  <div className="muted">Page {candidatePage} of {totalCandidatePages}</div>
+                  <button className="ghost-btn" disabled={candidatePage >= totalCandidatePages} onClick={() => setCandidatePage((page) => Math.min(totalCandidatePages, page + 1))}>Next</button>
+                </div>
               </Section>
             </div>
           } />
@@ -1632,6 +1836,7 @@ function PortalApp({ token, onLogout }) {
       />
       <AttemptsModal open={Boolean(attemptsCandidateId)} candidate={attemptsCandidate} attempts={attempts} onClose={() => setAttemptsCandidateId("")} onRefresh={refreshAttempts} onSave={saveAttempt} />
       <AssessmentStatusModal open={Boolean(assessmentStatusId)} assessment={assessmentStatusItem} onClose={() => setAssessmentStatusId("")} onSave={(payload) => saveAssessmentStatusUpdate(assessmentStatusItem, payload)} />
+      <DrilldownModal open={drilldownState.open} title={drilldownState.title} items={drilldownState.items} onClose={() => setDrilldownState({ open: false, title: "", items: [] })} />
     </div>
   );
 }
