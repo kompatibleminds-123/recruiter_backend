@@ -139,13 +139,15 @@ function polishStructuredBulletSentence(line) {
 function getRecruiterNoteLineKey(line) {
   const lower = String(line || "").toLowerCase().trim();
   if (!lower) return "";
-  if (lower.startsWith("expected ctc") || /^expected\b/.test(lower)) return "expected_ctc";
+  if (lower.startsWith("expected ctc") || lower.startsWith("expectation") || /^expected\b/.test(lower)) return "expected_ctc";
   if (lower.startsWith("current ctc") || /^current\b/.test(lower)) return "current_ctc";
   if (lower.startsWith("notice period")) return "notice_period";
   if (lower.startsWith("official notice period")) return "official_notice_period";
   if (lower.startsWith("lwd")) return "notice_period";
   if (lower.startsWith("last working day")) return "notice_period";
+  if (lower.includes("serving notice") && lower.includes("lwd")) return "notice_period";
   if (lower.startsWith("offer in hand")) return "offer_in_hand";
+  if (lower.includes("holds an offer") || lower.includes("holds offer") || lower.includes("got an offer") || lower.includes("offer of")) return "offer_in_hand";
   if (lower.startsWith("location")) return "location";
   if (lower.startsWith("working model")) return "working_model";
   if (lower.startsWith("shift")) return "shift";
@@ -222,6 +224,7 @@ function normalizeOtherPointersBody(rawText) {
     .map(polishStructuredBulletSentence)
     .filter(Boolean)
     .filter((line, index, array) => array.findIndex((item) => item.toLowerCase() === line.toLowerCase()) === index)
+    .map((line) => `• ${line.replace(/^•\s*/, "")}`)
     .join("\n");
 }
 
@@ -416,13 +419,6 @@ function normalizeRecruiterMergeBase(item) {
 function extractRecruiterNoteFieldFallbacks(rawNote = "") {
   const text = String(rawNote || "").trim();
   if (!text) return { current_ctc: "", expected_ctc: "", notice_period: "", offer_in_hand: "" };
-  const findValue = (patterns) => {
-    for (const pattern of patterns) {
-      const match = text.match(pattern);
-      if (match?.[1]) return String(match[1]).trim();
-    }
-    return "";
-  };
   const findLineValue = (patterns) => {
     const lines = text.split(/\r?\n/).map((line) => String(line || "").trim()).filter(Boolean);
     for (const line of lines) {
@@ -437,12 +433,18 @@ function extractRecruiterNoteFieldFallbacks(rawNote = "") {
     current_ctc: findLineValue([
       /^\s*current\s*ctc(?:\s*is|:)?\s*([^\n,;.]+)/i,
       /^\s*current\s*ctc\s*-\s*([^\n,;.]+)/i,
-      /^\s*current\s*[-:]\s*([^\n,;.]+)/i
+      /^\s*current\s*[-:]\s*([^\n,;.]+)/i,
+      /\bcurrent\s*ctc\s*is\s*([^\n,;.]+)/i,
+      /\bcurrent\s*ctc\s*(?:as|=)\s*([^\n,;.]+)/i
     ]),
     expected_ctc: findLineValue([
       /^\s*expected\s*ctc(?:\s*is|:)?\s*([^\n,;.]+)/i,
       /^\s*expected\s*ctc\s*-\s*([^\n,;.]+)/i,
-      /^\s*expected\s*[-:]\s*([^\n,;.]+)/i
+      /^\s*expected\s*[-:]\s*([^\n,;.]+)/i,
+      /^\s*expectation(?:\s*is|:)?\s*([^\n,;.]+)/i,
+      /^\s*expectation\s*-\s*([^\n,;.]+)/i,
+      /\bexpected\s*ctc\s*is\s*([^\n,;.]+)/i,
+      /\bexpectation\s*(?:is|as|=)\s*([^\n,;.]+)/i
     ]),
     notice_period: findLineValue([
       /^\s*notice\s*period(?:\s*is|:)?\s*([^\n]+)/i,
@@ -451,12 +453,17 @@ function extractRecruiterNoteFieldFallbacks(rawNote = "") {
       /^\s*np(?:\s*is|:)?\s*([^\n]+)/i,
       /^\s*lwd(?:\s*is|:)?\s*([^\n]+)/i,
       /^\s*lwd\s*-\s*([^\n]+)/i,
-      /^\s*last\s*working\s*day(?:\s*is|:)?\s*([^\n]+)/i
+      /^\s*last\s*working\s*day(?:\s*is|:)?\s*([^\n]+)/i,
+      /\blwd\s*(?:as|is|=)\s*([^\n]+)/i,
+      /\bserving\s*notice.*?\blwd\s*(?:as|is|=)?\s*([^\n]+)/i
     ]),
     offer_in_hand: findLineValue([
       /^\s*offer\s*in\s*hand(?:\s*is|:)?\s*([^\n]+)/i,
       /^\s*offer\s*in\s*hand\s*-\s*([^\n]+)/i,
-      /^\s*offers?\s*in\s*hand(?:\s*is|:)?\s*([^\n]+)/i
+      /^\s*offers?\s*in\s*hand(?:\s*is|:)?\s*([^\n]+)/i,
+      /\bholds?\s+an?\s+offer\s+of\s*([^\n,;.]+)/i,
+      /\bgot\s+an?\s+offer\s+of\s*([^\n,;.]+)/i,
+      /\boffer\s+of\s*([^\n,;.]+)/i
     ])
   };
 }
@@ -469,9 +476,9 @@ function detectRecruiterMentionedKeys(rawNote = "") {
   const mentioned = new Set();
   lines.forEach((line) => {
     if (/^current\s*ctc\b|^current\s*[-:]/i.test(line)) mentioned.add("current_ctc");
-    if (/^expected\s*ctc\b|^expected\s*[-:]/i.test(line)) mentioned.add("expected_ctc");
-    if (/^notice\s*period\b|^np\b|^lwd\b|^last\s*working\s*day\b/i.test(line)) mentioned.add("notice_period");
-    if (/^offer\s*in\s*hand\b|^offers?\s*in\s*hand\b/i.test(line)) mentioned.add("offer_in_hand");
+    if (/^expected\s*ctc\b|^expected\s*[-:]|^expectation\b/i.test(line)) mentioned.add("expected_ctc");
+    if (/^notice\s*period\b|^np\b|^lwd\b|^last\s*working\s*day\b|\bserving\s*notice\b.*\blwd\b/i.test(line)) mentioned.add("notice_period");
+    if (/^offer\s*in\s*hand\b|^offers?\s*in\s*hand\b|\bholds?\s+an?\s+offer\b|\bgot\s+an?\s+offer\b|\boffer\s+of\b/i.test(line)) mentioned.add("offer_in_hand");
     if (/^location\b/i.test(line)) mentioned.add("location");
     if (/^communication\b/i.test(line)) mentioned.add("communication");
     if (/^working\s*model\b/i.test(line)) mentioned.add("working_model");
@@ -953,6 +960,53 @@ function NotesModal({ open, candidate, onClose, onPatch, onParse }) {
 
   if (!open || !candidate) return null;
 
+  const saveNotesOnly = async () => {
+    setStatus("Saving notes...");
+    try {
+      const canonicalRecruiterNotes = buildCanonicalRecruiterNotes(
+        candidate?.recruiter_context_notes || "",
+        recruiterNote,
+        normalizeRecruiterMergeBase(candidate)
+      );
+      await onPatch({
+        recruiter_context_notes: canonicalRecruiterNotes,
+        other_pointers: normalizeOtherPointersBody(otherPointers)
+      }, "Notes updated.");
+      onClose();
+    } catch (error) {
+      setStatus(String(error?.message || error));
+    }
+  };
+
+  const applyAndSave = async () => {
+    try {
+      if (!mergedPatch) {
+        setStatus("Parse recruiter note first.");
+        return;
+      }
+      if (mergedPatch.overwritten?.length) {
+        const message = mergedPatch.overwritten.map((entry) => `${formatRecruiterOverwriteLabel(entry.key)}: "${entry.from}" -> "${entry.to}"`).join("\n");
+        const confirmed = window.confirm(`These fields will be overwritten:\n\n${message}\n\nDo you want to apply and save this recruiter note?`);
+        if (!confirmed) return;
+      }
+      const extractedFieldPatch = buildRecruiterFieldPatchFromMerge(mergedPatch);
+      const canonicalRecruiterNotes = buildCanonicalRecruiterNotes(
+        candidate?.recruiter_context_notes || "",
+        recruiterNote,
+        mergedPatch?.merged || normalizeRecruiterMergeBase(candidate)
+      );
+      await onPatch({
+        recruiter_context_notes: canonicalRecruiterNotes,
+        other_pointers: normalizeOtherPointersBody(otherPointers),
+        ...extractedFieldPatch
+      }, "Recruiter note applied and saved.");
+      setStatus("Recruiter note applied and saved.");
+      onClose();
+    } catch (error) {
+      setStatus(String(error?.message || error));
+    }
+  };
+
   return (
     <div className="overlay" onClick={onClose}>
       <div className="overlay-card" onClick={(e) => e.stopPropagation()}>
@@ -982,31 +1036,7 @@ function NotesModal({ open, candidate, onClose, onPatch, onParse }) {
               setStatus(String(error?.message || error));
             }
           }}>Parse recruiter note</button>
-          <button className="ghost-btn" onClick={async () => {
-            try {
-              if (mergedPatch?.overwritten?.length) {
-                const message = mergedPatch.overwritten.map((entry) => `${formatRecruiterOverwriteLabel(entry.key)}: "${entry.from}" -> "${entry.to}"`).join("\n");
-                const confirmed = window.confirm(`These fields will be overwritten:\n\n${message}\n\nDo you want to apply this recruiter note?`);
-                if (!confirmed) return;
-              }
-              const extractedFieldPatch = buildRecruiterFieldPatchFromMerge(mergedPatch);
-              const canonicalRecruiterNotes = buildCanonicalRecruiterNotes(
-                candidate?.recruiter_context_notes || "",
-                recruiterNote,
-                mergedPatch?.merged || normalizeRecruiterMergeBase(candidate)
-              );
-              const patch = {
-                recruiter_context_notes: canonicalRecruiterNotes,
-                other_pointers: normalizeOtherPointersBody(otherPointers),
-                ...extractedFieldPatch
-              };
-              await onPatch(patch, "Recruiter note applied.");
-              setStatus("Recruiter note applied.");
-              onClose();
-            } catch (error) {
-              setStatus(String(error?.message || error));
-            }
-          }}>Apply parsed note</button>
+          <button className="ghost-btn" onClick={applyAndSave}>Apply and save</button>
         </div>
         {parsedSummary ? (
           <div className="parsed-summary">
@@ -1033,25 +1063,7 @@ function NotesModal({ open, candidate, onClose, onPatch, onParse }) {
         <label><span>Other pointers</span><textarea value={otherPointers} onChange={(e) => setOtherPointers(e.target.value)} /></label>
         {status ? <div className="status">{status}</div> : null}
         <div className="button-row">
-          <button onClick={async () => {
-            setStatus("Saving notes...");
-            try {
-              const canonicalRecruiterNotes = buildCanonicalRecruiterNotes(
-                candidate?.recruiter_context_notes || "",
-                recruiterNote,
-                mergedPatch?.merged || normalizeRecruiterMergeBase(candidate)
-              );
-              const patch = {
-                recruiter_context_notes: canonicalRecruiterNotes,
-                other_pointers: normalizeOtherPointersBody(otherPointers),
-                ...(mergedPatch ? buildRecruiterFieldPatchFromMerge(mergedPatch) : {})
-              };
-              await onPatch(patch, mergedPatch ? "Recruiter note merged and saved." : "Recruiter note updated.");
-              onClose();
-            } catch (error) {
-              setStatus(String(error?.message || error));
-            }
-          }}>{mergedPatch ? "Save merged note" : "Save notes"}</button>
+          <button onClick={saveNotesOnly}>Save notes only</button>
           <button className="ghost-btn" onClick={onClose}>Cancel</button>
         </div>
       </div>
@@ -1214,6 +1226,33 @@ function AssessmentStatusModal({ open, assessment, onClose, onSave }) {
   );
 }
 
+function NewDraftModal({ open, form, onChange, onClose, onSave }) {
+  if (!open) return null;
+  return (
+    <div className="overlay" onClick={onClose}>
+      <div className="overlay-card" onClick={(e) => e.stopPropagation()}>
+        <h3>Create Draft</h3>
+        <p className="muted">Add minimal details to create a draft without parsing.</p>
+        <div className="form-grid two-col">
+          <label><span>Name</span><input value={form.name} onChange={(e) => onChange("name", e.target.value)} /></label>
+          <label><span>Phone</span><input value={form.phone} onChange={(e) => onChange("phone", e.target.value)} /></label>
+          <label><span>Email</span><input value={form.email} onChange={(e) => onChange("email", e.target.value)} /></label>
+          <label><span>Company</span><input value={form.company} onChange={(e) => onChange("company", e.target.value)} /></label>
+          <label><span>Role</span><input value={form.role} onChange={(e) => onChange("role", e.target.value)} /></label>
+          <label><span>Location</span><input value={form.location} onChange={(e) => onChange("location", e.target.value)} /></label>
+          <label><span>JD / Role</span><input value={form.jd_title} onChange={(e) => onChange("jd_title", e.target.value)} /></label>
+          <label><span>Client</span><input value={form.client_name} onChange={(e) => onChange("client_name", e.target.value)} /></label>
+          <label className="full"><span>Notes</span><textarea value={form.notes} onChange={(e) => onChange("notes", e.target.value)} /></label>
+        </div>
+        <div className="button-row">
+          <button onClick={onSave}>Save draft</button>
+          <button className="ghost-btn" onClick={onClose}>Cancel</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function DrilldownModal({ open, title, items, onClose, onOpenCv, onOpenDraft, onOpenAssessment }) {
   if (!open) return null;
   return (
@@ -1305,6 +1344,18 @@ function PortalApp({ token, onLogout }) {
     } catch {
       return DEFAULT_COPY_SETTINGS;
     }
+  });
+  const [newDraftOpen, setNewDraftOpen] = useState(false);
+  const [newDraftForm, setNewDraftForm] = useState({
+    name: "",
+    phone: "",
+    email: "",
+    company: "",
+    role: "",
+    location: "",
+    jd_title: "",
+    client_name: "",
+    notes: ""
   });
   const [notesCandidateId, setNotesCandidateId] = useState("");
   const [attemptsCandidateId, setAttemptsCandidateId] = useState("");
@@ -1471,6 +1522,7 @@ function PortalApp({ token, onLogout }) {
       const activeValue = isTerminalStatus(outcomeValue) ? "inactive" : "active";
       const createdAtValue = item.created_at ? String(item.created_at).slice(0, 10) : "";
       const hiddenOutcome = ["not interested", "screening reject", "revisit for other role"].includes(String(outcomeValue || "").trim().toLowerCase());
+      const manuallyHidden = item.hidden_from_captured === true;
       const hay = [
         item.name,
         item.company,
@@ -1493,7 +1545,7 @@ function PortalApp({ token, onLogout }) {
       const sourceOk = !candidateFilters.sources.length || candidateFilters.sources.includes(sourceValue);
       const outcomeOk = !candidateFilters.outcomes.length || candidateFilters.outcomes.includes(outcomeValue);
       const activeOk = !candidateFilters.activeStates.length || candidateFilters.activeStates.includes(activeValue);
-      return !hiddenOutcome && queryOk && dateFromOk && dateToOk && clientOk && jdOk && laneOk && assignmentOk && sourceOk && outcomeOk && activeOk;
+      return !manuallyHidden && !hiddenOutcome && queryOk && dateFromOk && dateToOk && clientOk && jdOk && laneOk && assignmentOk && sourceOk && outcomeOk && activeOk;
     });
   }, [candidateFilters, capturedAssessmentMap, state.candidates]);
 
@@ -1540,6 +1592,35 @@ function PortalApp({ token, onLogout }) {
     await api(`/company/candidates/${encodeURIComponent(candidateId)}`, token, "PATCH", { patch });
     await loadWorkspace();
     setStatus("captured", okMessage, "ok");
+  }
+
+  async function hideCapturedCandidate(candidateId) {
+    await patchCandidate(candidateId, { hidden_from_captured: true }, "Candidate hidden from captured notes.");
+  }
+
+  async function createManualDraft() {
+    const payload = {
+      ...newDraftForm,
+      source: "manual_draft",
+      recruiter_context_notes: "",
+      other_pointers: "",
+      hidden_from_captured: false
+    };
+    await api("/candidates", token, "POST", { candidate: payload });
+    await loadWorkspace();
+    setNewDraftOpen(false);
+    setNewDraftForm({
+      name: "",
+      phone: "",
+      email: "",
+      company: "",
+      role: "",
+      location: "",
+      jd_title: "",
+      client_name: "",
+      notes: ""
+    });
+    setStatus("captured", "Manual draft created.", "ok");
   }
 
   async function completeAgendaFollowUp(candidate) {
@@ -2518,6 +2599,9 @@ function PortalApp({ token, onLogout }) {
           <Route path="/captured-notes" element={
             <Section kicker="Shared Workflow" title="Captured Notes">
               {statuses.captured ? <div className={`status ${statuses.capturedKind || ""}`}>{statuses.captured}</div> : null}
+              <div className="button-row">
+                <button onClick={() => setNewDraftOpen(true)}>New Draft</button>
+              </div>
               <div className="form-grid three-col">
                 <label className="full"><span>Search</span><input placeholder="Search candidate, company, phone, email, LinkedIn..." value={candidateFilters.q} onChange={(e) => setCandidateFilters((c) => ({ ...c, q: e.target.value }))} /></label>
                 <label><span>Date from</span><input type="date" value={candidateFilters.dateFrom} onChange={(e) => setCandidateFilters((c) => ({ ...c, dateFrom: e.target.value }))} /></label>
@@ -2566,6 +2650,7 @@ function PortalApp({ token, onLogout }) {
                         <button onClick={() => setNotesCandidateId(item.id)}>Recruiter note</button>
                         <button onClick={() => void openAttempts(item.id)}>Attempts</button>
                         <button onClick={() => loadCandidateIntoInterview(item.id)}>Create assessment</button>
+                        <button className="ghost-btn" onClick={() => void hideCapturedCandidate(item.id)}>Hide from list</button>
                         <button className="ghost-btn" onClick={() => void api(`/candidates?id=${encodeURIComponent(item.id)}`, token, "DELETE").then(loadWorkspace).then(() => setStatus("captured", "Candidate deleted.", "ok")).catch((error) => setStatus("captured", String(error?.message || error), "error"))}>Delete</button>
                       </div>
                       <div className="candidate-snippet">{[item.notes, item.recruiter_context_notes, item.other_pointers].filter(Boolean).join("\n\n") || "No recruiter note or pointers yet."}</div>
@@ -2868,6 +2953,13 @@ function PortalApp({ token, onLogout }) {
           jd_title: notesCandidate?.jd_title || "",
           preview: true
         })}
+      />
+      <NewDraftModal
+        open={newDraftOpen}
+        form={newDraftForm}
+        onChange={(key, value) => setNewDraftForm((current) => ({ ...current, [key]: value }))}
+        onClose={() => setNewDraftOpen(false)}
+        onSave={() => void createManualDraft()}
       />
       <AttemptsModal open={Boolean(attemptsCandidateId)} candidate={attemptsCandidate} attempts={attempts} onClose={() => setAttemptsCandidateId("")} onRefresh={refreshAttempts} onSave={saveAttempt} />
       <AssessmentStatusModal open={Boolean(assessmentStatusId)} assessment={assessmentStatusItem} onClose={() => setAssessmentStatusId("")} onSave={(payload) => saveAssessmentStatusUpdate(assessmentStatusItem, payload)} />
