@@ -140,6 +140,7 @@ textarea { min-height: 92px; resize: vertical; }
   color: #31415f;
   font-size: 0.92rem;
   line-height: 1.55;
+  white-space: pre-line;
 }
 .info-grid {
   display: grid;
@@ -276,6 +277,23 @@ textarea { min-height: 92px; resize: vertical; }
 }
 .button-row.tight {
   margin-top: 0;
+}
+.parsed-summary {
+  display: grid;
+  gap: 0.75rem;
+}
+.conflict-box {
+  border: 1px solid #f1d3c6;
+  background: #fff6f1;
+  color: #7a3d26;
+  border-radius: 16px;
+  padding: 0.9rem 1rem;
+}
+.conflict-box ul {
+  margin: 0.55rem 0 0;
+  padding-left: 1.1rem;
+  display: grid;
+  gap: 0.35rem;
 }
 
 @media (max-width: 960px) {

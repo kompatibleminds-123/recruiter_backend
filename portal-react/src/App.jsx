@@ -72,6 +72,198 @@ function parseQuestionList(value) {
     .filter(Boolean);
 }
 
+function splitStructuredDraftLines(rawText) {
+  return String(rawText || "")
+    .replace(/\r/g, "")
+    .split(/\n+/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+}
+
+function toSentenceCasePreservingContent(text) {
+  const value = String(text || "").trim();
+  if (!value) return "";
+  return value.charAt(0).toUpperCase() + value.slice(1);
+}
+
+function polishStructuredBulletSentence(line) {
+  const text = String(line || "").trim().replace(/\s+/g, " ");
+  if (!text) return "";
+  const sentence = toSentenceCasePreservingContent(text);
+  return /[.!?]$/.test(sentence) ? sentence : `${sentence}.`;
+}
+
+function normalizeRecruiterNotesBody(rawText) {
+  const normalizedLines = splitStructuredDraftLines(rawText)
+    .map((line) => String(line || "").replace(/^[\-\*]\s*/, "").trim())
+    .map((line) => line.replace(/^recruiter notes\s*:?\s*/i, "").trim())
+    .map((line) => line.replace(/^[.:;-]+/, "").trim())
+    .map(polishStructuredBulletSentence)
+    .filter(Boolean);
+
+  const getLineKey = (line) => {
+    const lower = String(line || "").toLowerCase().trim();
+    if (!lower) return "";
+    if (lower.startsWith("expected ctc")) return "expected_ctc";
+    if (lower.startsWith("current ctc")) return "current_ctc";
+    if (lower.startsWith("notice period")) return "notice_period";
+    if (lower.startsWith("official notice period")) return "official_notice_period";
+    if (lower.startsWith("location")) return "location";
+    if (lower.startsWith("working model")) return "working_model";
+    if (lower.startsWith("shift")) return "shift";
+    if (lower.startsWith("relocation")) return "relocation";
+    if (lower.startsWith("communication")) return "communication";
+    return `free:${lower}`;
+  };
+
+  const orderedKeys = [];
+  const valuesByKey = new Map();
+  normalizedLines.forEach((line) => {
+    const key = getLineKey(line);
+    if (!orderedKeys.includes(key)) orderedKeys.push(key);
+    valuesByKey.set(key, line);
+  });
+
+  return orderedKeys.map((key) => valuesByKey.get(key) || "").filter(Boolean).join("\n");
+}
+
+function normalizeOtherPointersBody(rawText) {
+  const prepared = String(rawText || "")
+    .replace(/\bother pointers\s*:?\s*/gi, "\n")
+    .replace(/\.\s+(?=[A-Z])/g, ".\n");
+
+  return splitStructuredDraftLines(prepared)
+    .map((line) => String(line || "").replace(/^[\-\*]\s*/, "").trim())
+    .map((line) => line.replace(/^[.:;-]+/, "").trim())
+    .map(polishStructuredBulletSentence)
+    .filter(Boolean)
+    .filter((line, index, array) => array.findIndex((item) => item.toLowerCase() === line.toLowerCase()) === index)
+    .join("\n");
+}
+
+function formatReadableUpdateText(rawText) {
+  const raw = String(rawText || "").trim();
+  if (!raw) return "";
+  const lines = raw
+    .split(/\r?\n+/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  if (!lines.length) return "";
+
+  return lines
+    .map((line) => {
+      let text = String(line || "")
+        .replace(/\s+/g, " ")
+        .replace(/\s*,\s*(call(?:\s+next|\s+later|\s+back)?|callback|follow[\s-]*up|connect|speak|talk|revert|check)\b/gi, ". $1")
+        .replace(/\s*,\s*(candidate|he|she)\b/gi, ". $1")
+        .trim();
+      if (!text) return "";
+      text = text
+        .replace(/\bhe was busy\b/i, "Candidate was busy")
+        .replace(/\bshe was busy\b/i, "Candidate was busy")
+        .replace(/\bbusy,\s*call\b/i, "Candidate was busy. Call")
+        .replace(/\bcall next on\b/i, "Follow up on")
+        .replace(/\bcall on\b/i, "Follow up on")
+        .replace(/\bcall next\b/i, "Follow up next")
+        .replace(/\bcallback on\b/i, "Follow up on")
+        .replace(/\bfollowup\b/gi, "follow up");
+      text = toSentenceCasePreservingContent(text);
+      if (!/[.!?]$/.test(text)) text = `${text}.`;
+      return text;
+    })
+    .filter(Boolean)
+    .join("\n");
+}
+
+function appendReadableUpdateNote(existingText, incomingText) {
+  const existing = String(existingText || "").trim();
+  const formattedIncoming = formatReadableUpdateText(incomingText);
+  if (!formattedIncoming) return existing;
+  const existingLines = existing.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  const incomingLines = formattedIncoming.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  const merged = [...existingLines];
+  incomingLines.forEach((line) => {
+    if (!merged.some((existingLine) => existingLine.toLowerCase() === line.toLowerCase())) merged.push(line);
+  });
+  return merged.join("\n");
+}
+
+function normalizeRecruiterMergeBase(item) {
+  const source = item || {};
+  return {
+    name: String(source.name || source.candidateName || "").trim(),
+    company: String(source.company || source.currentCompany || "").trim(),
+    role: String(source.role || source.currentDesignation || "").trim(),
+    experience: String(source.experience || source.totalExperience || "").trim(),
+    location: String(source.location || "").trim(),
+    current_ctc: String(source.current_ctc || source.currentCtc || "").trim(),
+    expected_ctc: String(source.expected_ctc || source.expectedCtc || "").trim(),
+    notice_period: String(source.notice_period || source.noticePeriod || "").trim(),
+    offer_in_hand: String(source.offer_in_hand || source.offerInHand || "").trim(),
+    phone: String(source.phone || source.phoneNumber || "").trim(),
+    email: String(source.email || source.emailId || "").trim(),
+    linkedin: String(source.linkedin || source.linkedinUrl || "").trim(),
+    highest_education: String(source.highest_education || source.highestEducation || "").trim(),
+    next_action: ""
+  };
+}
+
+function extractRecruiterNoteFieldFallbacks(rawNote = "") {
+  const text = String(rawNote || "").trim();
+  if (!text) return { current_ctc: "", expected_ctc: "", notice_period: "", offer_in_hand: "" };
+  const findValue = (patterns) => {
+    for (const pattern of patterns) {
+      const match = text.match(pattern);
+      if (match?.[1]) return String(match[1]).trim();
+    }
+    return "";
+  };
+  const offerLine = text.split(/\r?\n/).map((line) => String(line || "").trim()).find((line) => /\boffer\b|\bdoj\b|\blwd\b|\blast\s*working\s*day\b/i.test(line));
+  return {
+    current_ctc: findValue([/\bcurrent\s*ctc(?:\s*is|:)?\s*([^\n,;.]+)/i, /\bcurrent\s*ctc\s*-\s*([^\n,;.]+)/i, /\bcurrent\s*[-:]\s*([^\n,;.]+)/i]),
+    expected_ctc: findValue([/\bexpected\s*ctc(?:\s*is|:)?\s*([^\n,;.]+)/i, /\bexpected\s*ctc\s*-\s*([^\n,;.]+)/i, /\bexpected\s*[-:]\s*([^\n,;.]+)/i]),
+    notice_period: findValue([/\bnotice\s*period(?:\s*is|:)?\s*([^\n,;.]+)/i, /\bnotice\s*period\s*-\s*([^\n,;.]+)/i, /\bnotice\s*[-:]\s*([^\n,;.]+)/i, /\bnp(?:\s*is|:)?\s*([^\n,;.]+)/i]),
+    offer_in_hand: findValue([/\boffer\s*in\s*hand(?:\s*is|:)?\s*([^\n]+)/i, /\boffers?\s*in\s*hand(?:\s*is|:)?\s*([^\n]+)/i]) || (offerLine ? offerLine : "")
+  };
+}
+
+function buildRecruiterMerge(item, parsed, rawNote = "") {
+  const base = normalizeRecruiterMergeBase(item);
+  const incoming = normalizeRecruiterMergeBase(parsed);
+  const fallbacks = extractRecruiterNoteFieldFallbacks(rawNote);
+  const merged = {};
+  const overwritten = [];
+  for (const key of Object.keys(base)) {
+    const nextIncoming = incoming[key] || fallbacks[key] || "";
+    merged[key] = nextIncoming || base[key] || "";
+    if (nextIncoming && base[key] && nextIncoming.toLowerCase() !== base[key].toLowerCase()) {
+      overwritten.push({ key, from: base[key], to: nextIncoming });
+    }
+  }
+  merged.notes_append = String(rawNote || "").trim();
+  return { base, incoming, merged, overwritten };
+}
+
+function formatRecruiterOverwriteLabel(key) {
+  const labels = {
+    name: "Candidate",
+    company: "Company",
+    role: "Role",
+    experience: "Experience",
+    location: "Location",
+    current_ctc: "Current CTC",
+    expected_ctc: "Expected CTC",
+    notice_period: "Notice period",
+    offer_in_hand: "Offer in hand / DOJ / LWD",
+    phone: "Phone",
+    email: "Email",
+    linkedin: "LinkedIn",
+    highest_education: "Highest education",
+    next_action: "Next action"
+  };
+  return labels[key] || key;
+}
+
 function api(path, token, method = "GET", body = null) {
   const headers = { "Content-Type": "application/json" };
   if (token) headers.Authorization = `Bearer ${token}`;
@@ -142,10 +334,44 @@ function mapAssessmentStatusToPipelineStage(status) {
   return "";
 }
 
+function deriveInterviewRoundFromStatus(status) {
+  const value = String(status || "").trim().toLowerCase();
+  if (value === "screening call aligned") return "Screening call";
+  if (value === "l1 aligned") return "L1";
+  if (value === "l2 aligned") return "L2";
+  if (value === "l3 aligned") return "L3";
+  if (value === "hr interview aligned") return "HR";
+  if (value === "did not attend") return "Interview";
+  return "";
+}
+
+function buildDetectedUpdateConfirmation({ candidateName = "", status = "", outcome = "", interviewAt = "", followUpAt = "", notes = "" }) {
+  const lines = [];
+  if (candidateName) lines.push(`Candidate: ${candidateName}`);
+  if (status) lines.push(`Status: ${status}`);
+  if (outcome) lines.push(`Outcome: ${outcome}`);
+  if (interviewAt) lines.push(`Interview: ${new Date(interviewAt).toLocaleString()}`);
+  if (followUpAt) lines.push(`Follow-up: ${new Date(followUpAt).toLocaleString()}`);
+  if (notes) lines.push(`Notes: ${notes}`);
+  return `Detected update:\n${lines.join("\n")}\n\nApply this update?`;
+}
+
+function formatAssessmentStatusCalendarNoteDate(value) {
+  const date = value instanceof Date ? value : new Date(value);
+  if (!Number.isFinite(date.getTime())) return "";
+  return date.toLocaleString("en-US", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit"
+  });
+}
+
 function buildAssessmentStatusCalendarNote(statusValue, atLocalValue) {
   const status = String(statusValue || "").trim().toLowerCase();
   const statusLabel = String(statusValue || "").trim();
-  const label = atLocalValue ? new Date(atLocalValue).toLocaleString() : "";
+  const label = atLocalValue ? formatAssessmentStatusCalendarNoteDate(atLocalValue) : "";
   if (isInterviewAlignedStatus(status)) return label ? `${statusLabel} on ${label}.` : statusLabel;
   if (status === "offered") return label ? `Offered. LWD / DOJ on ${label}.` : "Offered.";
   if (status === "cv shared") return "CV Shared.";
@@ -237,15 +463,23 @@ function AssignModal({ open, applicant, users, jobs, onClose, onSave }) {
   );
 }
 
-function NotesModal({ open, candidate, onClose, onSave }) {
+function NotesModal({ open, candidate, onClose, onPatch, onParse }) {
   const [recruiterNote, setRecruiterNote] = useState("");
   const [otherPointers, setOtherPointers] = useState("");
+  const [rawRecruiterNote, setRawRecruiterNote] = useState("");
+  const [parsedSummary, setParsedSummary] = useState(null);
+  const [conflicts, setConflicts] = useState([]);
+  const [mergedPatch, setMergedPatch] = useState(null);
   const [status, setStatus] = useState("");
 
   useEffect(() => {
     if (!open || !candidate) return;
     setRecruiterNote(String(candidate.recruiter_context_notes || ""));
     setOtherPointers(String(candidate.other_pointers || ""));
+    setRawRecruiterNote("");
+    setParsedSummary(null);
+    setConflicts([]);
+    setMergedPatch(null);
     setStatus("");
   }, [open, candidate]);
 
@@ -256,11 +490,88 @@ function NotesModal({ open, candidate, onClose, onSave }) {
       <div className="overlay-card" onClick={(e) => e.stopPropagation()}>
         <h3>Recruiter Note</h3>
         <p className="muted">{candidate.name || "Candidate"} | {candidate.jd_title || candidate.role || "No role set"}</p>
+        <label><span>Raw recruiter note</span><textarea value={rawRecruiterNote} onChange={(e) => setRawRecruiterNote(e.target.value)} placeholder="Paste the discussion note here, then parse it before applying." /></label>
+        <div className="button-row">
+          <button onClick={async () => {
+            if (!String(rawRecruiterNote || "").trim()) {
+              setStatus("Type recruiter note first.");
+              return;
+            }
+            setStatus("Parsing recruiter note...");
+            try {
+              const parsed = await onParse(rawRecruiterNote);
+              const merge = buildRecruiterMerge(candidate, parsed || {}, rawRecruiterNote);
+              setMergedPatch(merge);
+              setConflicts(merge.overwritten || []);
+              setParsedSummary(merge.merged || null);
+              setRecruiterNote(normalizeRecruiterNotesBody(rawRecruiterNote));
+              setOtherPointers(normalizeOtherPointersBody(rawRecruiterNote));
+              setStatus(
+                merge.overwritten?.length
+                  ? `Recruiter note parsed. Conflicts found in ${merge.overwritten.map((entry) => formatRecruiterOverwriteLabel(entry.key)).join(", ")}.`
+                  : "Recruiter note parsed. Review and apply."
+              );
+            } catch (error) {
+              setStatus(String(error?.message || error));
+            }
+          }}>Parse recruiter note</button>
+          <button className="ghost-btn" onClick={async () => {
+            try {
+              if (mergedPatch?.overwritten?.length) {
+                const message = mergedPatch.overwritten.map((entry) => `${formatRecruiterOverwriteLabel(entry.key)}: "${entry.from}" -> "${entry.to}"`).join("\n");
+                const confirmed = window.confirm(`These fields will be overwritten:\n\n${message}\n\nDo you want to apply this recruiter note?`);
+                if (!confirmed) return;
+              }
+              const patch = {
+                recruiter_context_notes: normalizeRecruiterNotesBody(rawRecruiterNote || recruiterNote),
+                other_pointers: normalizeOtherPointersBody(rawRecruiterNote || otherPointers),
+                company: mergedPatch?.merged?.company || undefined,
+                role: mergedPatch?.merged?.role || undefined,
+                experience: mergedPatch?.merged?.experience || undefined,
+                location: mergedPatch?.merged?.location || undefined,
+                current_ctc: mergedPatch?.merged?.current_ctc || undefined,
+                expected_ctc: mergedPatch?.merged?.expected_ctc || undefined,
+                notice_period: mergedPatch?.merged?.notice_period || undefined,
+                offer_in_hand: mergedPatch?.merged?.offer_in_hand || undefined,
+                phone: mergedPatch?.merged?.phone || undefined,
+                email: mergedPatch?.merged?.email || undefined,
+                linkedin: mergedPatch?.merged?.linkedin || undefined,
+                highest_education: mergedPatch?.merged?.highest_education || undefined
+              };
+              await onPatch(patch, "Recruiter note applied.");
+              setStatus("Recruiter note applied.");
+              onClose();
+            } catch (error) {
+              setStatus(String(error?.message || error));
+            }
+          }}>Apply parsed note</button>
+        </div>
+        {parsedSummary ? (
+          <div className="parsed-summary">
+            <div className="info-label">Parsed summary</div>
+            <div className="info-grid">
+              {[["Candidate", parsedSummary.name],["Company", parsedSummary.company],["Role", parsedSummary.role],["Experience", parsedSummary.experience],["Location", parsedSummary.location],["Current CTC", parsedSummary.current_ctc],["Expected CTC", parsedSummary.expected_ctc],["Notice period", parsedSummary.notice_period],["Offer in hand", parsedSummary.offer_in_hand],["Phone", parsedSummary.phone],["Email", parsedSummary.email],["LinkedIn", parsedSummary.linkedin],["Highest education", parsedSummary.highest_education]].map(([label, value]) => value ? (
+                <div className="info-card" key={label}>
+                  <div className="info-label">{label}</div>
+                  <div className="info-value">{value}</div>
+                </div>
+              ) : null)}
+            </div>
+          </div>
+        ) : null}
+        {conflicts.length ? (
+          <div className="conflict-box">
+            <div className="info-label">Conflicts detected</div>
+            <ul>
+              {conflicts.map((entry) => <li key={`${entry.key}-${entry.from}-${entry.to}`}><strong>{formatRecruiterOverwriteLabel(entry.key)}</strong>{`: existing "${entry.from}" to new "${entry.to}"`}</li>)}
+            </ul>
+          </div>
+        ) : null}
         <label><span>Recruiter note</span><textarea value={recruiterNote} onChange={(e) => setRecruiterNote(e.target.value)} /></label>
         <label><span>Other pointers</span><textarea value={otherPointers} onChange={(e) => setOtherPointers(e.target.value)} /></label>
         {status ? <div className="status">{status}</div> : null}
         <div className="button-row">
-          <button onClick={async () => { setStatus("Saving notes..."); try { await onSave({ recruiter_context_notes: recruiterNote, other_pointers: otherPointers }); } catch (error) { setStatus(String(error?.message || error)); } }}>Save notes</button>
+          <button onClick={async () => { setStatus("Saving notes..."); try { await onPatch({ recruiter_context_notes: normalizeRecruiterNotesBody(recruiterNote), other_pointers: normalizeOtherPointersBody(otherPointers) }, "Recruiter note updated."); onClose(); } catch (error) { setStatus(String(error?.message || error)); } }}>Save notes</button>
           <button className="ghost-btn" onClick={onClose}>Cancel</button>
         </div>
       </div>
@@ -322,6 +633,65 @@ function AttemptsModal({ open, candidate, attempts, onClose, onRefresh, onSave }
   );
 }
 
+function AssessmentStatusModal({ open, assessment, onClose, onSave }) {
+  const [candidateStatus, setCandidateStatus] = useState("");
+  const [atValue, setAtValue] = useState("");
+  const [notes, setNotes] = useState("");
+  const [status, setStatus] = useState("");
+
+  useEffect(() => {
+    if (!open || !assessment) return;
+    setCandidateStatus(String(assessment.candidateStatus || "").trim());
+    setAtValue(toDateInputValue(assessment.interviewAt || assessment.followUpAt || ""));
+    setNotes(String(assessment.callbackNotes || "").trim());
+    setStatus("");
+  }, [open, assessment]);
+
+  if (!open || !assessment) return null;
+
+  const shouldShowCalendar = isInterviewAlignedStatus(candidateStatus) || String(candidateStatus || "").trim().toLowerCase() === "offered";
+
+  return (
+    <div className="overlay" onClick={onClose}>
+      <div className="overlay-card" onClick={(e) => e.stopPropagation()}>
+        <h3>Update assessment status</h3>
+        <p className="muted">{assessment.candidateName || "Candidate"} | {assessment.jdTitle || "Untitled role"}</p>
+        <label>
+          <span>Status</span>
+          <select value={candidateStatus} onChange={(e) => setCandidateStatus(e.target.value)}>
+            <option value="">Select status</option>
+            {DEFAULT_STATUS_OPTIONS.map((item) => <option key={item} value={item}>{item}</option>)}
+          </select>
+        </label>
+        <label>
+          <span>{String(candidateStatus || "").trim().toLowerCase() === "offered" ? "LWD / DOJ" : "Interview / status date"}</span>
+          <input type="datetime-local" value={atValue} onChange={(e) => setAtValue(e.target.value)} disabled={!shouldShowCalendar} />
+        </label>
+        <label>
+          <span>Notes</span>
+          <textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="L1 aligned tomorrow 5 PM, screening reject, CV shared, etc." />
+        </label>
+        {status ? <div className="status">{status}</div> : null}
+        <div className="button-row">
+          <button onClick={async () => {
+            if (!candidateStatus) {
+              setStatus("Select a status first.");
+              return;
+            }
+            setStatus("Saving status update...");
+            try {
+              await onSave({ candidateStatus, atValue, notes });
+            } catch (error) {
+              setStatus(String(error?.message || error));
+            }
+          }}>Save update</button>
+          <button className="ghost-btn" onClick={onClose}>Cancel</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function PortalApp({ token, onLogout }) {
   const navigate = useNavigate();
   const [state, setState] = useState({
@@ -340,6 +710,7 @@ function PortalApp({ token, onLogout }) {
   const [candidateFilters, setCandidateFilters] = useState({ q: "", source: "all", assignment: "all" });
   const [notesCandidateId, setNotesCandidateId] = useState("");
   const [attemptsCandidateId, setAttemptsCandidateId] = useState("");
+  const [assessmentStatusId, setAssessmentStatusId] = useState("");
   const [attempts, setAttempts] = useState([]);
   const [selectedJobId, setSelectedJobId] = useState("");
   const [jobShortcutKey, setJobShortcutKey] = useState("");
@@ -384,6 +755,7 @@ function PortalApp({ token, onLogout }) {
   const assignApplicant = (state.applicants || []).find((item) => String(item.id) === String(assignApplicantId)) || null;
   const notesCandidate = (state.candidates || []).find((item) => String(item.id) === String(notesCandidateId)) || null;
   const attemptsCandidate = (state.candidates || []).find((item) => String(item.id) === String(attemptsCandidateId)) || null;
+  const assessmentStatusItem = (state.assessments || []).find((item) => String(item.id) === String(assessmentStatusId)) || null;
 
   function setStatus(key, message, kind = "") {
     setStatuses((current) => ({ ...current, [key]: message, [`${key}Kind`]: kind }));
@@ -750,28 +1122,75 @@ function PortalApp({ token, onLogout }) {
     return lines.join("\n");
   }
 
-  async function updateAssessmentStatus(assessment) {
-    const nextStatus = window.prompt(
-      `Update status for ${assessment?.candidateName || "candidate"}.\n\nUse one of:\n${DEFAULT_STATUS_OPTIONS.join(", ")}`,
-      String(assessment?.candidateStatus || "")
-    );
-    if (!nextStatus || !String(nextStatus).trim()) return;
-    const candidateStatus = String(nextStatus).trim();
-    const pipelineStage = mapAssessmentStatusToPipelineStage(candidateStatus) || assessment?.pipelineStage || "";
-    const callbackNotes = [assessment?.callbackNotes || "", buildAssessmentStatusCalendarNote(candidateStatus, assessment?.interviewAt || assessment?.followUpAt || "")]
-      .filter(Boolean)
-      .join("\n")
-      .trim();
+  async function saveAssessmentStatusUpdate(assessment, payload) {
+    const nextStatus = String(payload?.candidateStatus || "").trim();
+    if (!nextStatus) throw new Error("Select a status first.");
+    const nextStatusLower = nextStatus.toLowerCase();
+    const shouldKeepCalendar = isInterviewAlignedStatus(nextStatus);
+    const atIso = shouldKeepCalendar || nextStatusLower === "offered"
+      ? (payload?.atValue ? new Date(payload.atValue).toISOString() : "")
+      : "";
+    const readableNotes = formatReadableUpdateText(payload?.notes || "");
+    const confirmMessage = buildDetectedUpdateConfirmation({
+      candidateName: assessment?.candidateName || "",
+      status: nextStatus,
+      interviewAt: shouldKeepCalendar ? atIso : "",
+      followUpAt: "",
+      notes: [
+        readableNotes,
+        buildAssessmentStatusCalendarNote(nextStatus, atIso)
+      ].filter(Boolean).join("\n")
+    });
+    if (!window.confirm(confirmMessage)) return;
+
+    const nextAssessment = {
+      ...assessment,
+      candidateStatus: nextStatus,
+      pipelineStage: mapAssessmentStatusToPipelineStage(nextStatus) || assessment?.pipelineStage || "",
+      callbackNotes: appendReadableUpdateNote(
+        assessment?.callbackNotes || "",
+        [readableNotes, buildAssessmentStatusCalendarNote(nextStatus, atIso)].filter(Boolean).join("\n")
+      ),
+      interviewAttempts: Array.isArray(assessment?.interviewAttempts) ? [...assessment.interviewAttempts] : []
+    };
+
+    if (isInterviewAlignedStatus(nextStatus)) {
+      nextAssessment.interviewAttempts.push({
+        round: deriveInterviewRoundFromStatus(nextStatus) || "Interview",
+        outcome: "Scheduled",
+        at: atIso || new Date().toISOString(),
+        notes: readableNotes || nextStatus,
+        createdAt: new Date().toISOString()
+      });
+    } else if (nextStatusLower === "did not attend") {
+      nextAssessment.interviewAttempts.push({
+        round: deriveInterviewRoundFromStatus(nextStatus) || "Interview",
+        outcome: "Did not attend",
+        at: new Date().toISOString(),
+        notes: readableNotes || nextStatus,
+        createdAt: new Date().toISOString()
+      });
+    } else if (nextStatusLower === "interview reject") {
+      nextAssessment.interviewAttempts.push({
+        round: "Interview",
+        outcome: "Rejected",
+        at: new Date().toISOString(),
+        notes: readableNotes || nextStatus,
+        createdAt: new Date().toISOString()
+      });
+    }
+
+    nextAssessment.interviewAt = shouldKeepCalendar ? (atIso || assessment?.interviewAt || "") : "";
+    nextAssessment.followUpAt = "";
+
     await api("/company/assessments", token, "POST", {
       assessment: {
-        ...assessment,
-        candidateStatus,
-        pipelineStage,
-        callbackNotes,
+        ...nextAssessment,
         generatedAt: assessment?.generatedAt || new Date().toISOString()
       }
     });
     await loadWorkspace();
+    setAssessmentStatusId("");
     setStatus("assessments", `Updated status for ${assessment?.candidateName || "candidate"}.`, "ok");
   }
 
@@ -953,7 +1372,7 @@ function PortalApp({ token, onLogout }) {
                         <button onClick={() => loadCandidateIntoInterview(item.id)}>Create assessment</button>
                         <button className="ghost-btn" onClick={() => void api(`/candidates?id=${encodeURIComponent(item.id)}`, token, "DELETE").then(loadWorkspace).then(() => setStatus("captured", "Candidate deleted.", "ok")).catch((error) => setStatus("captured", String(error?.message || error), "error"))}>Delete</button>
                       </div>
-                      <div className="candidate-snippet">{[item.notes, item.recruiter_context_notes, item.other_pointers].filter(Boolean).join(" | ") || "No recruiter note or pointers yet."}</div>
+                      <div className="candidate-snippet">{[item.notes, item.recruiter_context_notes, item.other_pointers].filter(Boolean).join("\n\n") || "No recruiter note or pointers yet."}</div>
                     </article>
                   );
                 })}
@@ -981,7 +1400,7 @@ function PortalApp({ token, onLogout }) {
                       </div>
                     </div>
                     <div className="button-row">
-                      <button onClick={() => void updateAssessmentStatus(item)}>Update status</button>
+                      <button onClick={() => setAssessmentStatusId(item.id)}>Update status</button>
                       <button onClick={() => void openAssessmentJourney(item)}>Journey</button>
                       <button onClick={() => openAssessmentWhatsapp(item)}>WhatsApp</button>
                       <button onClick={() => reuseAssessmentAsNew(item)}>Reuse as new</button>
@@ -1006,7 +1425,7 @@ function PortalApp({ token, onLogout }) {
                   <button onClick={() => void saveAssessment()}>Create assessment</button>
                   <button onClick={() => sendInterviewToSheets()}>Send to sheets</button>
                   <button onClick={() => exportInterviewAll()}>Export all</button>
-                  <button className="ghost-btn" onClick={() => { setInterviewMeta({ candidateId: "", assessmentId: "" }); setInterviewForm({ candidateName: "", phoneNumber: "", emailId: "", location: "", currentCompany: "", currentDesignation: "", totalExperience: "", clientName: "", jdTitle: "", pipelineStage: "Under Interview Process", candidateStatus: "Screening in progress", followUpAt: "", interviewAt: "", recruiterNotes: "", callbackNotes: "" }); setStatus("interview", ""); }}>Clear draft</button>
+                  <button className="ghost-btn" onClick={() => { setInterviewMeta({ candidateId: "", assessmentId: "" }); setInterviewForm({ candidateName: "", phoneNumber: "", emailId: "", location: "", currentCtc: "", expectedCtc: "", noticePeriod: "", offerInHand: "", currentCompany: "", currentDesignation: "", totalExperience: "", currentOrgTenure: "", reasonForChange: "", clientName: "", jdTitle: "", pipelineStage: "Under Interview Process", candidateStatus: "Screening in progress", followUpAt: "", interviewAt: "", recruiterNotes: "", callbackNotes: "", otherPointers: "" }); setStatus("interview", ""); }}>Clear draft</button>
                 </div>
               </Section>
 
@@ -1198,8 +1617,21 @@ function PortalApp({ token, onLogout }) {
       </main>
 
       <AssignModal open={Boolean(assignApplicantId)} applicant={assignApplicant} users={state.users} jobs={state.jobs} onClose={() => setAssignApplicantId("")} onSave={saveApplicantAssignment} />
-      <NotesModal open={Boolean(notesCandidateId)} candidate={notesCandidate} onClose={() => setNotesCandidateId("")} onSave={async (patch) => { await patchCandidate(notesCandidateId, patch, "Recruiter note updated."); setNotesCandidateId(""); }} />
+      <NotesModal
+        open={Boolean(notesCandidateId)}
+        candidate={notesCandidate}
+        onClose={() => setNotesCandidateId("")}
+        onPatch={async (patch, message) => { await patchCandidate(notesCandidateId, patch, message || "Recruiter note updated."); setNotesCandidateId(""); }}
+        onParse={async (rawText) => api("/parse-note", token, "POST", {
+          note: rawText,
+          source: "portal_manual",
+          client_name: notesCandidate?.client_name || "",
+          jd_title: notesCandidate?.jd_title || "",
+          preview: true
+        })}
+      />
       <AttemptsModal open={Boolean(attemptsCandidateId)} candidate={attemptsCandidate} attempts={attempts} onClose={() => setAttemptsCandidateId("")} onRefresh={refreshAttempts} onSave={saveAttempt} />
+      <AssessmentStatusModal open={Boolean(assessmentStatusId)} assessment={assessmentStatusItem} onClose={() => setAssessmentStatusId("")} onSave={(payload) => saveAssessmentStatusUpdate(assessmentStatusItem, payload)} />
     </div>
   );
 }
