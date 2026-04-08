@@ -839,6 +839,19 @@ function fillCandidateTemplate(template, candidate) {
   return String(template || "").replace(/\{\{\s*([a-z_]+)\s*\}\}/gi, (_, key) => String(map[key] || ""));
 }
 
+function fileToBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = String(reader.result || "");
+      const base64 = result.includes(",") ? result.split(",").pop() : result;
+      resolve(base64 || "");
+    };
+    reader.onerror = () => reject(reader.error || new Error("Failed to read file."));
+    reader.readAsDataURL(file);
+  });
+}
+
 function formatDateForCopy(value) {
   if (!value) return "";
   const date = new Date(value);
@@ -1862,7 +1875,10 @@ function PortalApp({ token, onLogout }) {
     interviewAt: "",
     recruiterNotes: "",
     callbackNotes: "",
-    otherPointers: ""
+    otherPointers: "",
+    jdScreeningAnswers: {},
+    cvAnalysis: null,
+    cvAnalysisApplied: false
   });
 
   const assignApplicant = (state.applicants || []).find((item) => String(item.id) === String(assignApplicantId)) || null;
@@ -2208,8 +2224,11 @@ function PortalApp({ token, onLogout }) {
       followUpAt: toDateInputValue(matched?.followUpAt || candidate?.next_follow_up_at),
       interviewAt: toDateInputValue(matched?.interviewAt),
       recruiterNotes: matched?.recruiterNotes || candidate?.recruiter_context_notes || "",
-      callbackNotes: matched?.callbackNotes || candidate?.last_contact_notes || "",
+      callbackNotes: matched?.callbackNotes || candidate?.notes || "",
       otherPointers: matched?.otherPointers || candidate?.other_pointers || "",
+      jdScreeningAnswers: matched?.jdScreeningAnswers || {},
+      cvAnalysis: matched?.cvAnalysis || null,
+      cvAnalysisApplied: Boolean(matched?.cvAnalysisApplied),
       statusHistory: Array.isArray(matched?.statusHistory) ? matched.statusHistory : []
     });
     navigate("/interview");
@@ -2246,8 +2265,11 @@ function PortalApp({ token, onLogout }) {
       followUpAt: toDateInputValue(assessment?.followUpAt),
       interviewAt: toDateInputValue(assessment?.interviewAt),
       recruiterNotes: assessment?.recruiterNotes || matchedCandidate?.recruiter_context_notes || "",
-      callbackNotes: assessment?.callbackNotes || matchedCandidate?.last_contact_notes || "",
+      callbackNotes: assessment?.callbackNotes || matchedCandidate?.notes || "",
       otherPointers: assessment?.otherPointers || matchedCandidate?.other_pointers || "",
+      jdScreeningAnswers: assessment?.jdScreeningAnswers || {},
+      cvAnalysis: assessment?.cvAnalysis || null,
+      cvAnalysisApplied: Boolean(assessment?.cvAnalysisApplied),
       statusHistory: Array.isArray(assessment?.statusHistory) ? assessment.statusHistory : []
     });
     navigate("/interview");
@@ -2292,8 +2314,11 @@ function PortalApp({ token, onLogout }) {
       followUpAt: "",
       interviewAt: "",
       recruiterNotes: candidate.recruiter_context_notes || "",
-      callbackNotes: candidate.last_contact_notes || "CV Shared.",
+      callbackNotes: candidate.notes || "CV Shared.",
       otherPointers: candidate.other_pointers || "",
+      jdScreeningAnswers: {},
+      cvAnalysis: null,
+      cvAnalysisApplied: false,
       statusHistory: [{
         status: "CV Shared",
         at: new Date().toISOString(),
@@ -2345,6 +2370,71 @@ function PortalApp({ token, onLogout }) {
       await loadWorkspace();
       setStatus("interview", "Assessment saved.", "ok");
     }
+  }
+
+  async function parseInterviewCvFile(file) {
+    if (!file) return;
+    setStatus("interview", "Uploading CV for analysis...");
+    try {
+      const fileData = await fileToBase64(file);
+      const parsed = await api("/parse-candidate", token, "POST", {
+        sourceType: "cv",
+        candidateName: interviewForm.candidateName,
+        totalExperience: interviewForm.totalExperience,
+        normalizeWithAi: true,
+        file: {
+          filename: file.name,
+          mimeType: file.type || "application/octet-stream",
+          fileData
+        }
+      });
+      const result = parsed?.result || parsed || {};
+      setInterviewForm((current) => ({
+        ...current,
+        cvAnalysis: {
+          exactTotalExperience: result.totalExperience || "",
+          currentCompany: result.currentCompany || "",
+          currentDesignation: result.currentDesignation || "",
+          currentOrgTenure: result.currentOrgTenure || "",
+          highestEducation: result.highestEducation || "",
+          contradictions: [
+            current.currentCompany && result.currentCompany && String(current.currentCompany).trim().toLowerCase() !== String(result.currentCompany).trim().toLowerCase()
+              ? `Current company: existing "${current.currentCompany}" vs CV "${result.currentCompany}"`
+              : "",
+            current.currentDesignation && result.currentDesignation && String(current.currentDesignation).trim().toLowerCase() !== String(result.currentDesignation).trim().toLowerCase()
+              ? `Current designation: existing "${current.currentDesignation}" vs CV "${result.currentDesignation}"`
+              : "",
+            current.totalExperience && result.totalExperience && String(current.totalExperience).trim().toLowerCase() !== String(result.totalExperience).trim().toLowerCase()
+              ? `Total experience: existing "${current.totalExperience}" vs CV "${result.totalExperience}"`
+              : "",
+            current.currentOrgTenure && result.currentOrgTenure && String(current.currentOrgTenure).trim().toLowerCase() !== String(result.currentOrgTenure).trim().toLowerCase()
+              ? `Tenure in current org: existing "${current.currentOrgTenure}" vs CV "${result.currentOrgTenure}"`
+              : ""
+          ].filter(Boolean)
+        },
+        cvAnalysisApplied: false
+      }));
+      setStatus("interview", "CV parsed. Review contradictions before applying.", "ok");
+    } catch (error) {
+      setStatus("interview", String(error?.message || error), "error");
+    }
+  }
+
+  function applyCvAnalysisToDraft() {
+    const analysis = interviewForm.cvAnalysis;
+    if (!analysis) {
+      setStatus("interview", "No CV analysis available yet.", "error");
+      return;
+    }
+    setInterviewForm((current) => ({
+      ...current,
+      totalExperience: analysis.exactTotalExperience || current.totalExperience,
+      currentCompany: analysis.currentCompany || current.currentCompany,
+      currentDesignation: analysis.currentDesignation || current.currentDesignation,
+      currentOrgTenure: analysis.currentOrgTenure || current.currentOrgTenure,
+      cvAnalysisApplied: true
+    }));
+    setStatus("interview", "Applied CV analysis values to draft.", "ok");
   }
 
   async function rotateSecret() {
@@ -2871,7 +2961,10 @@ function PortalApp({ token, onLogout }) {
       interviewAt: toDateInputValue(assessment?.interviewAt),
       recruiterNotes: assessment?.recruiterNotes || "",
       callbackNotes: assessment?.callbackNotes || "",
-      otherPointers: assessment?.otherPointers || ""
+      otherPointers: assessment?.otherPointers || "",
+      jdScreeningAnswers: assessment?.jdScreeningAnswers || {},
+      cvAnalysis: assessment?.cvAnalysis || null,
+      cvAnalysisApplied: Boolean(assessment?.cvAnalysisApplied)
     });
     navigate("/interview");
     setStatus("interview", `Loaded ${assessment?.candidateName || "candidate"} as reusable draft.`, "ok");
@@ -2905,6 +2998,8 @@ function PortalApp({ token, onLogout }) {
   const apiUrl = `${window.location.origin}/public/applicants/intake`;
   const jdShortcutEntries = Object.entries(parseShortcutMap(jobDraft.jdShortcuts));
   const jdScreeningQuestions = parseQuestionList(jobDraft.standardQuestions);
+  const interviewSelectedJob = (state.jobs || []).find((job) => String(job.title || "").trim() === String(interviewForm.jdTitle || "").trim()) || null;
+  const interviewScreeningQuestions = parseQuestionList(interviewSelectedJob?.standardQuestions || "");
   const clientPositionRows = state.dashboard?.summary?.byClientPosition || [];
   const recruiterPositionRows = state.dashboard?.summary?.byClientRecruiter || [];
   const todayStart = new Date();
@@ -3421,7 +3516,7 @@ function PortalApp({ token, onLogout }) {
                   <button onClick={() => void saveAssessment()}>Create assessment</button>
                   <button onClick={() => sendInterviewToSheets()}>Send to sheets</button>
                   <button onClick={() => exportInterviewAll()}>Export all</button>
-                  <button className="ghost-btn" onClick={() => { setInterviewMeta({ candidateId: "", assessmentId: "" }); setInterviewForm({ candidateName: "", phoneNumber: "", emailId: "", location: "", currentCtc: "", expectedCtc: "", noticePeriod: "", offerInHand: "", currentCompany: "", currentDesignation: "", totalExperience: "", currentOrgTenure: "", reasonForChange: "", clientName: "", jdTitle: "", pipelineStage: "Under Interview Process", candidateStatus: "Screening in progress", followUpAt: "", interviewAt: "", recruiterNotes: "", callbackNotes: "", otherPointers: "" }); setStatus("interview", ""); }}>Clear draft</button>
+                  <button className="ghost-btn" onClick={() => { setInterviewMeta({ candidateId: "", assessmentId: "" }); setInterviewForm({ candidateName: "", phoneNumber: "", emailId: "", location: "", currentCtc: "", expectedCtc: "", noticePeriod: "", offerInHand: "", currentCompany: "", currentDesignation: "", totalExperience: "", currentOrgTenure: "", reasonForChange: "", clientName: "", jdTitle: "", pipelineStage: "Under Interview Process", candidateStatus: "Screening in progress", followUpAt: "", interviewAt: "", recruiterNotes: "", callbackNotes: "", otherPointers: "", jdScreeningAnswers: {}, cvAnalysis: null, cvAnalysisApplied: false, statusHistory: [] }); setStatus("interview", ""); }}>Clear draft</button>
                 </div>
               </Section>
 
@@ -3438,10 +3533,26 @@ function PortalApp({ token, onLogout }) {
 
               <Section kicker="Recruiter Inputs" title="Draft Notes">
                 <form className="form-grid two-col" onSubmit={(e) => { e.preventDefault(); }}>
-                  {[["candidateName", "Candidate name"], ["phoneNumber", "Phone"], ["emailId", "Email", "email"], ["location", "Location"], ["currentCompany", "Current company"], ["currentDesignation", "Current designation"], ["totalExperience", "Total experience"], ["clientName", "Client name"]].map(([name, label, type]) => (
+                  {[["candidateName", "Candidate name"], ["phoneNumber", "Phone"], ["emailId", "Email", "email"], ["location", "Location"], ["currentCompany", "Current company"], ["currentDesignation", "Current designation"], ["totalExperience", "Total experience"]].map(([name, label, type]) => (
                     <label key={name}><span>{label}</span><input type={type || "text"} value={interviewForm[name]} onChange={(e) => setInterviewForm((c) => ({ ...c, [name]: e.target.value }))} /></label>
                   ))}
-                  <label className="full"><span>JD / role</span><input value={interviewForm.jdTitle} onChange={(e) => setInterviewForm((c) => ({ ...c, jdTitle: e.target.value }))} /></label>
+                  <label>
+                    <span>JD / role</span>
+                    <select value={interviewForm.jdTitle} onChange={(e) => {
+                      const selectedTitle = e.target.value;
+                      const matchedJob = (state.jobs || []).find((job) => String(job.title || "") === String(selectedTitle)) || null;
+                      setInterviewForm((current) => ({
+                        ...current,
+                        jdTitle: selectedTitle,
+                        clientName: matchedJob?.clientName || current.clientName,
+                        jdScreeningAnswers: current.jdTitle === selectedTitle ? current.jdScreeningAnswers : {}
+                      }));
+                    }}>
+                      <option value="">Select JD / role</option>
+                      {(state.jobs || []).map((job) => <option key={job.id} value={job.title}>{job.title}</option>)}
+                    </select>
+                  </label>
+                  <label><span>Client name</span><input value={interviewForm.clientName} readOnly /></label>
                   <label className="full"><span>Captured notes</span><textarea value={interviewForm.callbackNotes} onChange={(e) => setInterviewForm((c) => ({ ...c, callbackNotes: e.target.value }))} /></label>
                   <label className="full"><span>Recruiter notes</span><textarea value={interviewForm.recruiterNotes} onChange={(e) => setInterviewForm((c) => ({ ...c, recruiterNotes: e.target.value }))} /></label>
                   <label className="full"><span>Other pointers</span><textarea value={interviewForm.otherPointers} onChange={(e) => setInterviewForm((c) => ({ ...c, otherPointers: e.target.value }))} /></label>
@@ -3452,12 +3563,23 @@ function PortalApp({ token, onLogout }) {
                 <div className="runbook-layout">
                   <div className="runbook-block">
                     <div className="info-label">JD-defined screening questions</div>
-                    {jdScreeningQuestions.length ? (
+                    {interviewScreeningQuestions.length ? (
                       <div className="question-stack">
-                        {jdScreeningQuestions.map((question, index) => (
+                        {interviewScreeningQuestions.map((question, index) => (
                           <div className="question-card" key={`${index}-${question}`}>
                             <div className="question-index">Q{index + 1}</div>
                             <div>{question}</div>
+                            <textarea
+                              value={interviewForm.jdScreeningAnswers?.[question] || ""}
+                              onChange={(e) => setInterviewForm((current) => ({
+                                ...current,
+                                jdScreeningAnswers: {
+                                  ...(current.jdScreeningAnswers || {}),
+                                  [question]: e.target.value
+                                }
+                              }))}
+                              placeholder="Write candidate answer here"
+                            />
                           </div>
                         ))}
                       </div>
@@ -3478,20 +3600,36 @@ function PortalApp({ token, onLogout }) {
                     </div>
                   </div>
 
-                  <div className="runbook-block">
-                    <div className="info-label">Planning</div>
-                    <div className="form-grid two-col">
-                      <label><span>Next follow-up</span><input type="datetime-local" value={interviewForm.followUpAt} onChange={(e) => setInterviewForm((c) => ({ ...c, followUpAt: e.target.value }))} /></label>
-                      <label><span>Interview date</span><input type="datetime-local" value={interviewForm.interviewAt} onChange={(e) => setInterviewForm((c) => ({ ...c, interviewAt: e.target.value }))} /></label>
-                    </div>
-                  </div>
                 </div>
               </Section>
 
               <Section kicker="CV Analysis" title="CV Parsing Verification">
                 <div className="cv-analysis-box">
-                  <div className="info-label">Current analysis view</div>
-                  <div className="muted">CV analysis block is ready. Next pass we will connect parsed CV sections, extracted skills, tenure checks, and JD match verification exactly from extension logic.</div>
+                  <div className="button-row">
+                    <label className="ghost-btn">
+                      <input type="file" accept=".pdf,.doc,.docx" hidden onChange={(e) => void parseInterviewCvFile(e.target.files?.[0] || null)} />
+                      Upload CV
+                    </label>
+                    {interviewForm.cvAnalysis ? <button onClick={() => applyCvAnalysisToDraft()}>Apply CV analysis to draft</button> : null}
+                  </div>
+                  {interviewForm.cvAnalysis ? (
+                    <div className="info-grid">
+                      {[["Exact total experience", interviewForm.cvAnalysis.exactTotalExperience],["Tenure in current org", interviewForm.cvAnalysis.currentOrgTenure],["Current company", interviewForm.cvAnalysis.currentCompany],["Current designation", interviewForm.cvAnalysis.currentDesignation]].map(([label, value]) => (
+                        <div className="info-card" key={label}>
+                          <div className="info-label">{label}</div>
+                          <div className="info-value">{value || "-"}</div>
+                        </div>
+                      ))}
+                      <div className="info-card full">
+                        <div className="info-label">Contradictions</div>
+                        <div className="info-value">
+                          {interviewForm.cvAnalysis.contradictions?.length
+                            ? interviewForm.cvAnalysis.contradictions.join("\n")
+                            : "No contradictions detected."}
+                        </div>
+                      </div>
+                    </div>
+                  ) : <div className="muted">Upload CV when you want to verify and apply parsed values before sharing the candidate.</div>}
                 </div>
               </Section>
             </div>
