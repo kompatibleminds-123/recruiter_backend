@@ -143,6 +143,9 @@ function normalizeRecruiterNotesBody(rawText) {
     if (lower.startsWith("current ctc")) return "current_ctc";
     if (lower.startsWith("notice period")) return "notice_period";
     if (lower.startsWith("official notice period")) return "official_notice_period";
+    if (lower.startsWith("lwd")) return "notice_period";
+    if (lower.startsWith("last working day")) return "notice_period";
+    if (lower.startsWith("offer in hand")) return "offer_in_hand";
     if (lower.startsWith("location")) return "location";
     if (lower.startsWith("working model")) return "working_model";
     if (lower.startsWith("shift")) return "shift";
@@ -354,12 +357,41 @@ function extractRecruiterNoteFieldFallbacks(rawNote = "") {
     }
     return "";
   };
-  const offerLine = text.split(/\r?\n/).map((line) => String(line || "").trim()).find((line) => /\boffer\b|\bdoj\b|\blwd\b|\blast\s*working\s*day\b/i.test(line));
+  const findLineValue = (patterns) => {
+    const lines = text.split(/\r?\n/).map((line) => String(line || "").trim()).filter(Boolean);
+    for (const line of lines) {
+      for (const pattern of patterns) {
+        const match = line.match(pattern);
+        if (match?.[1]) return String(match[1]).trim();
+      }
+    }
+    return "";
+  };
   return {
-    current_ctc: findValue([/\bcurrent\s*ctc(?:\s*is|:)?\s*([^\n,;.]+)/i, /\bcurrent\s*ctc\s*-\s*([^\n,;.]+)/i, /\bcurrent\s*[-:]\s*([^\n,;.]+)/i]),
-    expected_ctc: findValue([/\bexpected\s*ctc(?:\s*is|:)?\s*([^\n,;.]+)/i, /\bexpected\s*ctc\s*-\s*([^\n,;.]+)/i, /\bexpected\s*[-:]\s*([^\n,;.]+)/i]),
-    notice_period: findValue([/\bnotice\s*period(?:\s*is|:)?\s*([^\n,;.]+)/i, /\bnotice\s*period\s*-\s*([^\n,;.]+)/i, /\bnotice\s*[-:]\s*([^\n,;.]+)/i, /\bnp(?:\s*is|:)?\s*([^\n,;.]+)/i]),
-    offer_in_hand: findValue([/\boffer\s*in\s*hand(?:\s*is|:)?\s*([^\n]+)/i, /\boffers?\s*in\s*hand(?:\s*is|:)?\s*([^\n]+)/i]) || (offerLine ? offerLine : "")
+    current_ctc: findLineValue([
+      /^\s*current\s*ctc(?:\s*is|:)?\s*([^\n,;.]+)/i,
+      /^\s*current\s*ctc\s*-\s*([^\n,;.]+)/i,
+      /^\s*current\s*[-:]\s*([^\n,;.]+)/i
+    ]),
+    expected_ctc: findLineValue([
+      /^\s*expected\s*ctc(?:\s*is|:)?\s*([^\n,;.]+)/i,
+      /^\s*expected\s*ctc\s*-\s*([^\n,;.]+)/i,
+      /^\s*expected\s*[-:]\s*([^\n,;.]+)/i
+    ]),
+    notice_period: findLineValue([
+      /^\s*notice\s*period(?:\s*is|:)?\s*([^\n]+)/i,
+      /^\s*notice\s*period\s*-\s*([^\n]+)/i,
+      /^\s*notice\s*[-:]\s*([^\n]+)/i,
+      /^\s*np(?:\s*is|:)?\s*([^\n]+)/i,
+      /^\s*lwd(?:\s*is|:)?\s*([^\n]+)/i,
+      /^\s*lwd\s*-\s*([^\n]+)/i,
+      /^\s*last\s*working\s*day(?:\s*is|:)?\s*([^\n]+)/i
+    ]),
+    offer_in_hand: findLineValue([
+      /^\s*offer\s*in\s*hand(?:\s*is|:)?\s*([^\n]+)/i,
+      /^\s*offer\s*in\s*hand\s*-\s*([^\n]+)/i,
+      /^\s*offers?\s*in\s*hand(?:\s*is|:)?\s*([^\n]+)/i
+    ])
   };
 }
 
