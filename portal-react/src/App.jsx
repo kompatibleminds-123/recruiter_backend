@@ -1427,17 +1427,22 @@ function NewDraftModal({ open, form, users, jobs, currentUser, onChange, onClose
           <label><span>Name</span><input value={form.name} onChange={(e) => onChange("name", e.target.value)} /></label>
           <label><span>Phone</span><input value={form.phone} onChange={(e) => onChange("phone", e.target.value)} /></label>
           <label><span>Email</span><input value={form.email} onChange={(e) => onChange("email", e.target.value)} /></label>
-          <label><span>Company</span><input value={form.company} onChange={(e) => onChange("company", e.target.value)} /></label>
-          <label><span>Role</span><input value={form.role} onChange={(e) => onChange("role", e.target.value)} /></label>
+          <label><span>LinkedIn</span><input value={form.linkedin} onChange={(e) => onChange("linkedin", e.target.value)} /></label>
+          <label><span>Current Company</span><input value={form.company} onChange={(e) => onChange("company", e.target.value)} /></label>
           <label><span>Location</span><input value={form.location} onChange={(e) => onChange("location", e.target.value)} /></label>
           <label>
             <span>JD / Role</span>
-            <select value={form.jd_title} onChange={(e) => onChange("jd_title", e.target.value)}>
+            <select value={form.jd_title} onChange={(e) => {
+              const selectedTitle = e.target.value;
+              const matchedJob = (jobs || []).find((job) => String(job.title || "") === String(selectedTitle));
+              onChange("jd_title", selectedTitle);
+              onChange("client_name", matchedJob?.clientName || "");
+            }}>
               <option value="">Select JD / role</option>
               {(jobs || []).map((job) => <option key={job.id} value={job.title}>{job.title}</option>)}
             </select>
           </label>
-          <label><span>Client</span><input value={form.client_name} onChange={(e) => onChange("client_name", e.target.value)} /></label>
+          <label><span>Client</span><input value={form.client_name} readOnly /></label>
           <label className="full"><span>Notes</span><textarea value={form.notes} onChange={(e) => onChange("notes", e.target.value)} /></label>
         </div>
         <div className="button-row">
@@ -1523,7 +1528,8 @@ function PortalApp({ token, onLogout }) {
     clients: [],
     jds: [],
     lanes: [],
-    assignments: [],
+    assignedTo: [],
+    capturedBy: [],
     sources: [],
     outcomes: [],
     activeStates: ["active"]
@@ -1548,8 +1554,8 @@ function PortalApp({ token, onLogout }) {
     name: "",
     phone: "",
     email: "",
+    linkedin: "",
     company: "",
-    role: "",
     location: "",
     jd_title: "",
     client_name: "",
@@ -1686,10 +1692,12 @@ function PortalApp({ token, onLogout }) {
   const totalCandidatePages = Math.max(1, Math.ceil((candidateUniverse.length || 0) / 10));
 
   const capturedCandidateOptions = useMemo(() => {
-    const meta = { clients: new Set(), jds: new Set(), sources: new Set(), outcomes: new Set() };
+    const meta = { clients: new Set(), jds: new Set(), sources: new Set(), outcomes: new Set(), assignedTo: new Set(), capturedBy: new Set() };
     const allowedJds = new Set([
       ...(state.jobs || []).map((job) => String(job.title || "").trim()).filter(Boolean)
     ]);
+    const currentUserName = String(state.user?.name || "").trim();
+    const isAdmin = String(state.user?.role || "").toLowerCase() === "admin";
     for (const item of state.candidates || []) {
       const matchedAssessment = capturedAssessmentMap.get(String(item.name || "").trim().toLowerCase());
       const sourceValue = String(item.source || "").trim();
@@ -1698,18 +1706,26 @@ function PortalApp({ token, onLogout }) {
       const clientValue = String(item.client_name || matchedAssessment?.clientName || "Unassigned").trim();
       const jdValue = String(item.jd_title || matchedAssessment?.jdTitle || item.role || "").trim();
       const outcomeValue = getCapturedOutcome(item, matchedAssessment);
+      const assignedToValue = String(item.assigned_to_name || "Unassigned").trim();
+      const capturedByValue = String(item.recruiter_name || item.assigned_by_name || "Unknown").trim();
       if (clientValue) meta.clients.add(clientValue);
       if (jdValue && allowedJds.has(jdValue)) meta.jds.add(jdValue);
       if (sourceValue) meta.sources.add(sourceValue);
       if (outcomeValue) meta.outcomes.add(outcomeValue);
+      if (assignedToValue) meta.assignedTo.add(assignedToValue);
+      if (capturedByValue && (isAdmin || capturedByValue === currentUserName || String(capturedByValue).toLowerCase() === "admin")) {
+        meta.capturedBy.add(capturedByValue);
+      }
     }
     return {
       clients: Array.from(meta.clients).sort(),
       jds: Array.from(meta.jds).sort(),
       sources: Array.from(meta.sources).sort(),
-      outcomes: Array.from(meta.outcomes).sort()
+      outcomes: Array.from(meta.outcomes).sort(),
+      assignedTo: Array.from(meta.assignedTo).sort(),
+      capturedBy: Array.from(meta.capturedBy).sort()
     };
-  }, [capturedAssessmentMap, state.candidates, state.jobs]);
+  }, [capturedAssessmentMap, state.candidates, state.jobs, state.user]);
 
   const capturedCandidates = useMemo(() => {
     return (state.candidates || []).filter((item) => {
@@ -1720,12 +1736,14 @@ function PortalApp({ token, onLogout }) {
       const clientValue = String(item.client_name || matchedAssessment?.clientName || "Unassigned").trim();
       const jdValue = String(item.jd_title || matchedAssessment?.jdTitle || item.role || "").trim();
       const laneValue = matchedAssessment || item.used_in_assessment ? "converted" : "captured";
-      const assignmentValue = item.assigned_to_name || item.assigned_to_user_id ? "assigned" : "unassigned";
+      const assignedToValue = String(item.assigned_to_name || "Unassigned").trim();
+      const capturedByValue = String(item.recruiter_name || item.assigned_by_name || "Unknown").trim();
       const outcomeValue = getCapturedOutcome(item, matchedAssessment);
       const activeValue = isTerminalStatus(outcomeValue) ? "inactive" : "active";
       const createdAtValue = item.created_at ? String(item.created_at).slice(0, 10) : "";
       const hiddenOutcome = ["not interested", "screening reject", "revisit for other role"].includes(String(outcomeValue || "").trim().toLowerCase());
       const manuallyHidden = item.hidden_from_captured === true;
+      const nameHay = [item.name].join(" ").toLowerCase();
       const hay = [
         item.name,
         item.company,
@@ -1745,12 +1763,13 @@ function PortalApp({ token, onLogout }) {
       const clientOk = !candidateFilters.clients.length || candidateFilters.clients.includes(clientValue);
       const jdOk = !candidateFilters.jds.length || candidateFilters.jds.includes(jdValue);
       const laneOk = !candidateFilters.lanes.length || candidateFilters.lanes.includes(laneValue);
-      const assignmentOk = !candidateFilters.assignments.length || candidateFilters.assignments.includes(assignmentValue);
+      const assignedToOk = !candidateFilters.assignedTo.length || candidateFilters.assignedTo.includes(assignedToValue);
+      const capturedByOk = !candidateFilters.capturedBy.length || candidateFilters.capturedBy.includes(capturedByValue);
       const sourceOk = !candidateFilters.sources.length || candidateFilters.sources.includes(sourceValue);
       const outcomeOk = !candidateFilters.outcomes.length || candidateFilters.outcomes.includes(outcomeValue);
       const activeOk = !candidateFilters.activeStates.length || candidateFilters.activeStates.includes(activeValue);
-      const hiddenBlocked = manuallyHidden && !queryOk;
-      return !hiddenBlocked && !hiddenOutcome && queryOk && dateFromOk && dateToOk && clientOk && jdOk && laneOk && assignmentOk && sourceOk && outcomeOk && activeOk;
+      const hiddenBlocked = manuallyHidden && !(queryText && nameHay.includes(queryText));
+      return !hiddenBlocked && !hiddenOutcome && queryOk && dateFromOk && dateToOk && clientOk && jdOk && laneOk && assignedToOk && capturedByOk && sourceOk && outcomeOk && activeOk;
     });
   }, [candidateFilters, capturedAssessmentMap, state.candidates]);
 
@@ -1814,6 +1833,7 @@ function PortalApp({ token, onLogout }) {
       recruiter_context_notes: "",
       other_pointers: "",
       hidden_from_captured: false,
+      linkedin: newDraftForm.linkedin || "",
       assigned_to_user_id: assignedRecruiter?.id || "",
       assigned_to_name: assignedRecruiter?.name || ""
     };
@@ -1825,8 +1845,8 @@ function PortalApp({ token, onLogout }) {
       name: "",
       phone: "",
       email: "",
+      linkedin: "",
       company: "",
-      role: "",
       location: "",
       jd_title: "",
       client_name: "",
@@ -2874,7 +2894,7 @@ function PortalApp({ token, onLogout }) {
                 <button onClick={() => setNewDraftOpen(true)}>New Draft</button>
               </div>
               <div className="form-grid three-col">
-                <label className="full"><span>Search</span><input placeholder="Search candidate, company, phone, email, LinkedIn..." value={candidateFilters.q} onChange={(e) => setCandidateFilters((c) => ({ ...c, q: e.target.value }))} /></label>
+                <label className="full"><span>Search</span><input placeholder="Search candidate name, company, phone, email, LinkedIn..." value={candidateFilters.q} onChange={(e) => setCandidateFilters((c) => ({ ...c, q: e.target.value }))} /></label>
                 <label><span>Date from</span><input type="date" value={candidateFilters.dateFrom} onChange={(e) => setCandidateFilters((c) => ({ ...c, dateFrom: e.target.value }))} /></label>
                 <label><span>Date to</span><input type="date" value={candidateFilters.dateTo} onChange={(e) => setCandidateFilters((c) => ({ ...c, dateTo: e.target.value }))} /></label>
               </div>
@@ -2887,8 +2907,9 @@ function PortalApp({ token, onLogout }) {
                   <MultiSelectDropdown label="Clients" options={capturedCandidateOptions.clients} selected={candidateFilters.clients} onToggle={(value) => setCandidateFilters((current) => ({ ...current, clients: value === "__all__" ? [] : current.clients.includes(value) ? current.clients.filter((item) => item !== value) : [...current.clients, value] }))} />
                   <MultiSelectDropdown label="JD / Role" options={capturedCandidateOptions.jds} selected={candidateFilters.jds} onToggle={(value) => setCandidateFilters((current) => ({ ...current, jds: value === "__all__" ? [] : current.jds.includes(value) ? current.jds.filter((item) => item !== value) : [...current.jds, value] }))} />
                   <MultiSelectDropdown label="Lane" options={["captured", "converted"]} selected={candidateFilters.lanes} onToggle={(value) => setCandidateFilters((current) => ({ ...current, lanes: value === "__all__" ? [] : current.lanes.includes(value) ? current.lanes.filter((item) => item !== value) : [...current.lanes, value] }))} />
-                <MultiSelectDropdown label="Assignment" options={["assigned", "unassigned"]} selected={candidateFilters.assignments} onToggle={(value) => setCandidateFilters((current) => ({ ...current, assignments: value === "__all__" ? [] : current.assignments.includes(value) ? current.assignments.filter((item) => item !== value) : [...current.assignments, value] }))} />
-                <MultiSelectDropdown label="Sources" options={capturedCandidateOptions.sources} selected={candidateFilters.sources} onToggle={(value) => setCandidateFilters((current) => ({ ...current, sources: value === "__all__" ? [] : current.sources.includes(value) ? current.sources.filter((item) => item !== value) : [...current.sources, value] }))} />
+                  {String(state.user?.role || "").toLowerCase() === "admin" ? <MultiSelectDropdown label="Assigned to" options={capturedCandidateOptions.assignedTo} selected={candidateFilters.assignedTo} onToggle={(value) => setCandidateFilters((current) => ({ ...current, assignedTo: value === "__all__" ? [] : current.assignedTo.includes(value) ? current.assignedTo.filter((item) => item !== value) : [...current.assignedTo, value] }))} /> : null}
+                  <MultiSelectDropdown label="Captured by" options={capturedCandidateOptions.capturedBy} selected={candidateFilters.capturedBy} onToggle={(value) => setCandidateFilters((current) => ({ ...current, capturedBy: value === "__all__" ? [] : current.capturedBy.includes(value) ? current.capturedBy.filter((item) => item !== value) : [...current.capturedBy, value] }))} />
+                  <MultiSelectDropdown label="Sources" options={capturedCandidateOptions.sources} selected={candidateFilters.sources} onToggle={(value) => setCandidateFilters((current) => ({ ...current, sources: value === "__all__" ? [] : current.sources.includes(value) ? current.sources.filter((item) => item !== value) : [...current.sources, value] }))} />
                   <MultiSelectDropdown label="Outcomes" options={capturedCandidateOptions.outcomes} selected={candidateFilters.outcomes} onToggle={(value) => setCandidateFilters((current) => ({ ...current, outcomes: value === "__all__" ? [] : current.outcomes.includes(value) ? current.outcomes.filter((item) => item !== value) : [...current.outcomes, value] }))} />
                   <MultiSelectDropdown label="State" options={["active", "inactive"]} selected={candidateFilters.activeStates} onToggle={(value) => setCandidateFilters((current) => ({ ...current, activeStates: value === "__all__" ? [] : current.activeStates.includes(value) ? current.activeStates.filter((item) => item !== value) : [...current.activeStates, value] }))} />
                 </div>
@@ -2924,7 +2945,7 @@ function PortalApp({ token, onLogout }) {
                         <button className="ghost-btn" onClick={() => void hideCapturedCandidate(item.id)}>Hide from list</button>
                         <button className="ghost-btn" onClick={() => void api(`/candidates?id=${encodeURIComponent(item.id)}`, token, "DELETE").then(loadWorkspace).then(() => setStatus("captured", "Candidate deleted.", "ok")).catch((error) => setStatus("captured", String(error?.message || error), "error"))}>Delete</button>
                       </div>
-                      <div className="candidate-snippet">{[item.notes, item.recruiter_context_notes, item.other_pointers].filter(Boolean).join("\n\n") || "No recruiter note or pointers yet."}</div>
+                      <div className="candidate-snippet">{[item.notes ? `Initial notes:\n${item.notes}` : "", item.recruiter_context_notes, item.other_pointers].filter(Boolean).join("\n\n") || "No recruiter note or pointers yet."}</div>
                     </article>
                   );
                 })}
