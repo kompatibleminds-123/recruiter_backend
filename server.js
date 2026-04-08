@@ -3230,13 +3230,17 @@ const server = http.createServer(async (req, res) => {
         email: String(input.email || input.emailId || "").trim() || undefined,
         linkedin: String(input.linkedin || input.linkedinUrl || "").trim() || undefined,
         highest_education: String(input.highest_education || input.highestEducation || "").trim() || undefined,
+        last_contact_outcome: String(input.last_contact_outcome || input.lastContactOutcome || "").trim() || undefined,
+        last_contact_notes: String(input.last_contact_notes || input.lastContactNotes || "").trim() || undefined,
+        last_contact_at: String(input.last_contact_at || input.lastContactAt || "").trim() || undefined,
         next_follow_up_at: String(input.next_follow_up_at || input.nextFollowUpAt || "").trim() || undefined,
         hidden_from_captured: input.hidden_from_captured === true ? true : input.hidden_from_captured === false ? false : undefined,
         jd_title: String(input.jd_title || input.jdTitle || "").trim() || undefined,
         client_name: String(input.client_name || input.clientName || "").trim() || undefined,
         assigned_to_user_id: String(input.assigned_to_user_id || input.assignedToUserId || "").trim() || undefined,
         assigned_to_name: String(input.assigned_to_name || input.assignedToName || "").trim() || undefined,
-        assigned_jd_title: String(input.assigned_jd_title || input.assignedJdTitle || "").trim() || undefined
+        assigned_jd_title: String(input.assigned_jd_title || input.assignedJdTitle || "").trim() || undefined,
+        raw_note: String(input.raw_note || input.rawNote || "").trim() || undefined
       };
       Object.keys(patch).forEach((key) => patch[key] === undefined && delete patch[key]);
       const result = await patchCandidate(candidateId, patch, { companyId: actor.companyId });
@@ -3350,6 +3354,99 @@ const server = http.createServer(async (req, res) => {
         next_follow_up_at: body.next_follow_up_at || body.nextFollowUpAt
       }, { companyId: actor.companyId });
       sendJson(res, 200, { ok: true, result });
+    } catch (error) {
+      sendJson(res, 400, { ok: false, error: String(error.message || error) });
+    }
+    return;
+  }
+
+  if (req.method === "POST" && /^\/company\/candidates\/[^/]+\/interview-cv$/.test(requestUrl.pathname)) {
+    try {
+      const actor = await requireSessionUser(getBearerToken(req));
+      const candidateId = String(requestUrl.pathname.replace(/^\/company\/candidates\//, "").replace(/\/interview-cv$/, "")).trim();
+      const body = await readJsonBody(req);
+      const uploadedFile = body.file || null;
+      if (!candidateId) throw new Error("Candidate not found.");
+      if (!uploadedFile?.fileData) throw new Error("Missing CV file.");
+      const candidate = (await listCandidatesForUser(actor, { id: candidateId, limit: 1 }))[0] || null;
+      if (!candidate) throw new Error("Candidate not found in this company.");
+
+      const storedFile = await storeUploadedFile(uploadedFile, {
+        filename: uploadedFile.filename,
+        objectPrefix: `candidates/${actor.companyId}/${candidateId}`
+      });
+
+      const parsed = await parseCandidatePayload({
+        sourceType: "cv",
+        candidateName: body.candidateName || candidate.name || "",
+        totalExperience: body.totalExperience || candidate.experience || "",
+        file: uploadedFile
+      });
+
+      const apiKey = body.apiKey || process.env.OPENAI_API_KEY || "";
+      let normalized = null;
+      let aiParseMode = "fallback_only";
+      let aiParseReason = "AI normalization was not used.";
+
+      if (apiKey && body.normalizeWithAi !== false) {
+        const fallbackFields = {
+          candidateName: parsed.candidateName,
+          totalExperience: parsed.totalExperience,
+          currentCompany: parsed.currentCompany,
+          currentDesignation: parsed.currentDesignation,
+          emailId: parsed.emailId,
+          phoneNumber: parsed.phoneNumber,
+          timeline: parsed.timeline,
+          gaps: parsed.gaps
+        };
+
+        const canUseFileAi = uploadedFile?.fileData && supportsOpenAiFileParse(uploadedFile);
+        if (canUseFileAi) {
+          aiParseMode = "deep_file_ai";
+          aiParseReason = "Direct file-based AI parsing was used for interview-panel CV upload.";
+          normalized = await normalizeCandidateFileWithAi({
+            apiKey,
+            model: String(body.model || "").trim(),
+            uploadedFile,
+            sourceType: parsed.sourceType,
+            filename: parsed.filename,
+            fallbackFields
+          });
+        }
+      }
+
+      const result = buildCandidateParseResponse(parsed, normalized, {
+        aiParseMode,
+        aiParseReason
+      });
+
+      const existingMeta = decodeApplicantMetadata(candidate);
+      const nextMeta = {
+        ...(existingMeta || {}),
+        filename: storedFile?.filename || existingMeta.filename || "",
+        mimeType: storedFile?.mimeType || existingMeta.mimeType || "",
+        fileProvider: storedFile?.provider || existingMeta.fileProvider || "",
+        fileKey: storedFile?.key || existingMeta.fileKey || "",
+        fileUrl: storedFile?.url || existingMeta.fileUrl || ""
+      };
+
+      await patchCandidate(candidateId, {
+        raw_note: encodeApplicantMetadata(nextMeta)
+      }, { companyId: actor.companyId });
+
+      sendJson(res, 200, {
+        ok: true,
+        result: {
+          ...result,
+          storedFile: {
+            provider: storedFile?.provider || "",
+            key: storedFile?.key || "",
+            url: storedFile?.url || "",
+            filename: storedFile?.filename || "",
+            mimeType: storedFile?.mimeType || ""
+          }
+        }
+      });
     } catch (error) {
       sendJson(res, 400, { ok: false, error: String(error.message || error) });
     }

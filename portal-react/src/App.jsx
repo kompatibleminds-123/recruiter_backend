@@ -2436,8 +2436,7 @@ function PortalApp({ token, onLogout }) {
     setStatus("interview", "Uploading CV for analysis...");
     try {
       const fileData = await fileToBase64(file);
-      const parsed = await api("/parse-candidate", token, "POST", {
-        sourceType: "cv",
+      const payload = {
         candidateName: interviewForm.candidateName,
         totalExperience: interviewForm.totalExperience,
         normalizeWithAi: true,
@@ -2446,7 +2445,13 @@ function PortalApp({ token, onLogout }) {
           mimeType: file.type || "application/octet-stream",
           fileData
         }
-      });
+      };
+      const parsed = interviewMeta.candidateId
+        ? await api(`/company/candidates/${encodeURIComponent(interviewMeta.candidateId)}/interview-cv`, token, "POST", payload)
+        : await api("/parse-candidate", token, "POST", {
+            sourceType: "cv",
+            ...payload
+          });
       const result = parsed?.result || parsed || {};
       setInterviewForm((current) => ({
         ...current,
@@ -2456,6 +2461,7 @@ function PortalApp({ token, onLogout }) {
           currentDesignation: result.currentDesignation || "",
           currentOrgTenure: result.currentOrgTenure || "",
           highestEducation: result.highestEducation || "",
+          storedFile: result.storedFile || current.cvAnalysis?.storedFile || null,
           contradictions: [
             current.currentCompany && result.currentCompany && String(current.currentCompany).trim().toLowerCase() !== String(result.currentCompany).trim().toLowerCase()
               ? `Current company: existing "${current.currentCompany}" vs CV "${result.currentCompany}"`
@@ -2473,7 +2479,13 @@ function PortalApp({ token, onLogout }) {
         },
         cvAnalysisApplied: false
       }));
-      setStatus("interview", "CV parsed. Review contradictions before applying.", "ok");
+      setStatus(
+        "interview",
+        interviewMeta.candidateId
+          ? "CV uploaded to storage and parsed. Review contradictions before applying."
+          : "CV parsed. Review contradictions before applying.",
+        "ok"
+      );
     } catch (error) {
       setStatus("interview", String(error?.message || error), "error");
     }
@@ -2872,7 +2884,6 @@ function PortalApp({ token, onLogout }) {
     const header = [
       assessment?.candidateName || "Candidate",
       assessment?.jdTitle ? `JD: ${assessment.jdTitle}` : "",
-      assessment?.pipelineStage ? `Pipeline: ${assessment.pipelineStage}` : "",
       assessment?.candidateStatus ? `Current status: ${assessment.candidateStatus}` : ""
     ].filter(Boolean);
     const timeline = buildAssessmentJourneyEntries(assessment, contactAttempts, candidate)
@@ -3533,8 +3544,18 @@ function PortalApp({ token, onLogout }) {
           <Route path="/assessments" element={
             <Section kicker="Structured Workflow" title="Assessments">
               {statuses.assessments ? <div className={`status ${statuses.assessmentsKind || ""}`}>{statuses.assessments}</div> : null}
+              <div className="form-grid three-col">
+                <label className="full"><span>Search</span><input placeholder="Search by candidate, phone, email, JD..." value={assessmentFilters.q} onChange={(e) => setAssessmentFilters((current) => ({ ...current, q: e.target.value }))} /></label>
+                <label><span>Date from</span><input type="date" value={assessmentFilters.dateFrom} onChange={(e) => setAssessmentFilters((current) => ({ ...current, dateFrom: e.target.value }))} /></label>
+                <label><span>Date to</span><input type="date" value={assessmentFilters.dateTo} onChange={(e) => setAssessmentFilters((current) => ({ ...current, dateTo: e.target.value }))} /></label>
+              </div>
+              <div className="captured-filter-grid">
+                <MultiSelectDropdown label="Clients" options={assessmentOptions.clients} selected={assessmentFilters.clients} onToggle={(value) => setAssessmentFilters((current) => ({ ...current, clients: value === "__all__" ? [] : current.clients.includes(value) ? current.clients.filter((item) => item !== value) : [...current.clients, value] }))} />
+                <MultiSelectDropdown label="JD / Role" options={assessmentOptions.jds} selected={assessmentFilters.jds} onToggle={(value) => setAssessmentFilters((current) => ({ ...current, jds: value === "__all__" ? [] : current.jds.includes(value) ? current.jds.filter((item) => item !== value) : [...current.jds, value] }))} />
+                <MultiSelectDropdown label="Recruiters" options={assessmentOptions.recruiters} selected={assessmentFilters.recruiters} onToggle={(value) => setAssessmentFilters((current) => ({ ...current, recruiters: value === "__all__" ? [] : current.recruiters.includes(value) ? current.recruiters.filter((item) => item !== value) : [...current.recruiters, value] }))} />
+              </div>
               <div className="stack-list">
-                {!state.assessments.length ? <div className="empty-state">No assessments saved yet.</div> : state.assessments.map((item) => (
+                {!filteredAssessments.length ? <div className="empty-state">No assessments saved yet.</div> : filteredAssessments.map((item) => (
                   <article className="item-card compact-card" key={item.id}>
                     <div className="item-card__top">
                       <div>
