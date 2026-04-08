@@ -437,6 +437,13 @@ function appendReadableUpdateNote(existingText, incomingText) {
   return merged.join("\n");
 }
 
+function formatAttemptLinesWithTimestamp(text, atValue) {
+  const lines = String(text || "").split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  if (!lines.length) return "";
+  const stamp = atValue ? new Date(atValue).toLocaleString() : "";
+  return lines.map((line) => `${stamp ? `[${stamp}] ` : ""}${line}`).join("\n");
+}
+
 function normalizeRecruiterMergeBase(item) {
   const source = item || {};
   const base = {
@@ -1301,7 +1308,7 @@ function AttemptsModal({ open, candidate, attempts, onClose, onRefresh, onSave }
                     <span className="muted">{candidate?.last_contact_at ? new Date(candidate.last_contact_at).toLocaleString() : ""}</span>
                   </div>
                   <p className="muted">{candidate?.last_contact_outcome || "No outcome"}</p>
-                  {candidate?.last_contact_notes ? <p className="muted">{candidate.last_contact_notes}</p> : null}
+                  {candidate?.last_contact_notes ? <div className="candidate-snippet">{formatAttemptLinesWithTimestamp(candidate.last_contact_notes, candidate.last_contact_at)}</div> : null}
                   {candidate?.next_follow_up_at ? <div className="chip-row"><span className="chip">Next follow-up: {new Date(candidate.next_follow_up_at).toLocaleString()}</span></div> : null}
                 </article>
               ) : null}
@@ -1311,7 +1318,7 @@ function AttemptsModal({ open, candidate, attempts, onClose, onRefresh, onSave }
                     <strong>{item.outcome || "Attempt"}</strong>
                     <span className="muted">{item.created_at ? new Date(item.created_at).toLocaleString() : ""}</span>
                   </div>
-                  <p className="muted">{item.notes || "No notes"}</p>
+                  <div className="candidate-snippet">{formatAttemptLinesWithTimestamp(item.notes || "No notes", item.created_at)}</div>
                   {item.next_follow_up_at ? <div className="chip-row"><span className="chip">Next follow-up: {new Date(item.next_follow_up_at).toLocaleString()}</span></div> : null}
                 </article>
               ))}
@@ -1717,6 +1724,18 @@ function PortalApp({ token, onLogout }) {
     ]);
     const currentUserName = String(state.user?.name || "").trim();
     const isAdmin = String(state.user?.role || "").toLowerCase() === "admin";
+    if (isAdmin) {
+      (state.users || []).forEach((user) => {
+        const label = String(user?.name || "").trim();
+        if (label) meta.capturedBy.add(label);
+      });
+    } else {
+      if (currentUserName) meta.capturedBy.add(currentUserName);
+      const adminUser = (state.users || []).find((user) => String(user?.role || "").toLowerCase() === "admin");
+      const adminName = String(adminUser?.name || "").trim();
+      if (adminName) meta.capturedBy.add(adminName);
+      meta.capturedBy.add("RecruitDesk AI");
+    }
     for (const item of state.candidates || []) {
       const matchedAssessment = capturedAssessmentMap.get(String(item.name || "").trim().toLowerCase());
       const sourceValue = String(item.source || "").trim();
@@ -1732,7 +1751,7 @@ function PortalApp({ token, onLogout }) {
       if (sourceValue) meta.sources.add(sourceValue);
       if (outcomeValue) meta.outcomes.add(outcomeValue);
       if (assignedToValue) meta.assignedTo.add(assignedToValue);
-      if (capturedByValue && (isAdmin || capturedByValue === currentUserName || String(capturedByValue).toLowerCase() === "admin")) {
+      if (capturedByValue && (isAdmin || capturedByValue === currentUserName || String(capturedByValue).toLowerCase() === "admin" || capturedByValue === "RecruitDesk AI")) {
         meta.capturedBy.add(capturedByValue);
       }
     }
@@ -1787,10 +1806,12 @@ function PortalApp({ token, onLogout }) {
       const sourceOk = !candidateFilters.sources.length || candidateFilters.sources.includes(sourceValue);
       const outcomeOk = !candidateFilters.outcomes.length || candidateFilters.outcomes.includes(outcomeValue);
       const activeOk = !candidateFilters.activeStates.length || candidateFilters.activeStates.includes(activeValue);
-      const hiddenBlocked = manuallyHidden && !(queryText && nameHay.includes(queryText));
-      return !hiddenBlocked && !hiddenOutcome && queryOk && dateFromOk && dateToOk && clientOk && jdOk && laneOk && assignedToOk && capturedByOk && sourceOk && outcomeOk && activeOk;
+      const searchNameMatch = Boolean(queryText && nameHay.includes(queryText));
+      const hiddenBlocked = manuallyHidden && !searchNameMatch;
+      const hiddenOutcomeBlocked = hiddenOutcome && !searchNameMatch;
+      return !hiddenBlocked && !hiddenOutcomeBlocked && queryOk && dateFromOk && dateToOk && clientOk && jdOk && laneOk && assignedToOk && capturedByOk && sourceOk && outcomeOk && activeOk;
     });
-  }, [candidateFilters, capturedAssessmentMap, state.candidates]);
+  }, [candidateFilters, capturedAssessmentMap, state.candidates, state.users, state.user]);
 
   async function openCv(applicantId) {
     const applicant = (state.applicants || []).find((item) => String(item.id) === String(applicantId));
@@ -1901,7 +1922,11 @@ function PortalApp({ token, onLogout }) {
       notes: patch.notes,
       next_follow_up_at: patch.next_follow_up_at
     });
-    const candidatePatch = {};
+    const candidatePatch = {
+      last_contact_outcome: patch.outcome || "",
+      last_contact_notes: String(patch.notes || "").trim(),
+      last_contact_at: new Date().toISOString()
+    };
     if (patch.next_follow_up_at) {
       candidatePatch.next_follow_up_at = new Date(patch.next_follow_up_at).toISOString();
     } else if (patch.outcome && patch.outcome !== "Call later" && patch.outcome !== "Switch Off") {
