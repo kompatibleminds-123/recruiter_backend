@@ -489,6 +489,14 @@ function buildAssessmentStatusNoteLine(statusValue, atValue = "", extra = {}) {
 
 function buildAssessmentJourneyEntries(assessment, contactAttempts = [], candidate = null) {
   const entries = [];
+  const capturedAt = candidate?.created_at || candidate?.createdAt || "";
+  const capturedNotes = String(candidate?.notes || "").trim();
+  if (capturedAt && capturedNotes) {
+    entries.push({
+      at: capturedAt,
+      text: `Captured profile | ${capturedNotes.split(/\r?\n/).map((line) => line.trim()).filter(Boolean).join(" | ")}`
+    });
+  }
   (contactAttempts || []).forEach((item) => {
     const when = item?.created_at || item?.at || "";
     if (!when) return;
