@@ -469,6 +469,28 @@ function buildRecruiterMerge(item, parsed, rawNote = "") {
   return { base, incoming, fallbacks, merged, overwritten, mentionedKeys: Array.from(mentionedKeys) };
 }
 
+function buildRecruiterFieldPatchFromMerge(mergedPatch) {
+  const extractedFieldPatch = {};
+  [
+    "company",
+    "role",
+    "experience",
+    "location",
+    "current_ctc",
+    "expected_ctc",
+    "notice_period",
+    "offer_in_hand",
+    "phone",
+    "email",
+    "linkedin",
+    "highest_education"
+  ].forEach((key) => {
+    const value = mergedPatch?.incoming?.[key] || mergedPatch?.fallbacks?.[key] || "";
+    if (String(value || "").trim()) extractedFieldPatch[key] = value;
+  });
+  return extractedFieldPatch;
+}
+
 function formatRecruiterOverwriteLabel(key) {
   const labels = {
     name: "Candidate",
@@ -797,24 +819,7 @@ function NotesModal({ open, candidate, onClose, onPatch, onParse }) {
                 const confirmed = window.confirm(`These fields will be overwritten:\n\n${message}\n\nDo you want to apply this recruiter note?`);
                 if (!confirmed) return;
               }
-              const extractedFieldPatch = {};
-              [
-                "company",
-                "role",
-                "experience",
-                "location",
-                "current_ctc",
-                "expected_ctc",
-                "notice_period",
-                "offer_in_hand",
-                "phone",
-                "email",
-                "linkedin",
-                "highest_education"
-              ].forEach((key) => {
-                const value = mergedPatch?.incoming?.[key] || mergedPatch?.fallbacks?.[key] || "";
-                if (String(value || "").trim()) extractedFieldPatch[key] = value;
-              });
+              const extractedFieldPatch = buildRecruiterFieldPatchFromMerge(mergedPatch);
               const patch = {
                 recruiter_context_notes: mergeRecruiterNotes(recruiterNote, rawRecruiterNote || recruiterNote),
                 other_pointers: normalizeOtherPointersBody(otherPointers),
@@ -853,7 +858,20 @@ function NotesModal({ open, candidate, onClose, onPatch, onParse }) {
         <label><span>Other pointers</span><textarea value={otherPointers} onChange={(e) => setOtherPointers(e.target.value)} /></label>
         {status ? <div className="status">{status}</div> : null}
         <div className="button-row">
-          <button onClick={async () => { setStatus("Saving notes..."); try { await onPatch({ recruiter_context_notes: mergeRecruiterNotes(candidate?.recruiter_context_notes || "", recruiterNote), other_pointers: normalizeOtherPointersBody(otherPointers) }, "Recruiter note updated."); onClose(); } catch (error) { setStatus(String(error?.message || error)); } }}>Save notes</button>
+          <button onClick={async () => {
+            setStatus("Saving notes...");
+            try {
+              const patch = {
+                recruiter_context_notes: mergeRecruiterNotes(candidate?.recruiter_context_notes || "", recruiterNote),
+                other_pointers: normalizeOtherPointersBody(otherPointers),
+                ...(mergedPatch ? buildRecruiterFieldPatchFromMerge(mergedPatch) : {})
+              };
+              await onPatch(patch, mergedPatch ? "Recruiter note merged and saved." : "Recruiter note updated.");
+              onClose();
+            } catch (error) {
+              setStatus(String(error?.message || error));
+            }
+          }}>{mergedPatch ? "Save merged note" : "Save notes"}</button>
           <button className="ghost-btn" onClick={onClose}>Cancel</button>
         </div>
       </div>
