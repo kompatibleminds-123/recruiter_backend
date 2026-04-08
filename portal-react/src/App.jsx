@@ -128,6 +128,62 @@ function polishStructuredBulletSentence(line) {
   return /[.!?]$/.test(sentence) ? sentence : `${sentence}.`;
 }
 
+function getRecruiterNoteLineKey(line) {
+  const lower = String(line || "").toLowerCase().trim();
+  if (!lower) return "";
+  if (lower.startsWith("expected ctc") || /^expected\b/.test(lower)) return "expected_ctc";
+  if (lower.startsWith("current ctc") || /^current\b/.test(lower)) return "current_ctc";
+  if (lower.startsWith("notice period")) return "notice_period";
+  if (lower.startsWith("official notice period")) return "official_notice_period";
+  if (lower.startsWith("lwd")) return "notice_period";
+  if (lower.startsWith("last working day")) return "notice_period";
+  if (lower.startsWith("offer in hand")) return "offer_in_hand";
+  if (lower.startsWith("location")) return "location";
+  if (lower.startsWith("working model")) return "working_model";
+  if (lower.startsWith("shift")) return "shift";
+  if (lower.startsWith("relocation")) return "relocation";
+  if (lower.startsWith("communication")) return "communication";
+  return `free:${lower}`;
+}
+
+function extractFreeRecruiterLines(text) {
+  return normalizeRecruiterNotesBody(text)
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .filter((line) => getRecruiterNoteLineKey(line).startsWith("free:"));
+}
+
+function buildCanonicalRecruiterNotes(baseText, currentText, mergedValues = {}) {
+  const lines = [];
+  const pushStructured = (label, value) => {
+    const clean = String(value || "").trim();
+    if (!clean) return;
+    lines.push(`${label} - ${clean}`);
+  };
+
+  pushStructured("Current CTC", mergedValues.current_ctc);
+  pushStructured("Expected CTC", mergedValues.expected_ctc);
+
+  const noticeValue = String(mergedValues.notice_period || "").trim();
+  if (noticeValue) {
+    const useLwdLabel = /\b(day|date|april|may|june|july|aug|august|sep|sept|oct|nov|dec|jan|feb|mar|\d{1,2}(?:st|nd|rd|th)?)\b/i.test(noticeValue);
+    lines.push(`${useLwdLabel ? "LWD" : "Notice period"} - ${noticeValue}`);
+  }
+
+  pushStructured("Offer in hand", mergedValues.offer_in_hand);
+  pushStructured("Location", mergedValues.location);
+
+  const freeLines = [...extractFreeRecruiterLines(baseText), ...extractFreeRecruiterLines(currentText)];
+  freeLines.forEach((line) => {
+    if (!lines.some((existing) => existing.toLowerCase() === line.toLowerCase())) {
+      lines.push(line);
+    }
+  });
+
+  return lines.join("\n");
+}
+
 function normalizeRecruiterNotesBody(rawText) {
   const normalizedLines = splitStructuredDraftLines(rawText)
     .map((line) => String(line || "").replace(/^[\-\*]\s*/, "").trim())
@@ -136,28 +192,10 @@ function normalizeRecruiterNotesBody(rawText) {
     .map(polishStructuredBulletSentence)
     .filter(Boolean);
 
-  const getLineKey = (line) => {
-    const lower = String(line || "").toLowerCase().trim();
-    if (!lower) return "";
-    if (lower.startsWith("expected ctc")) return "expected_ctc";
-    if (lower.startsWith("current ctc")) return "current_ctc";
-    if (lower.startsWith("notice period")) return "notice_period";
-    if (lower.startsWith("official notice period")) return "official_notice_period";
-    if (lower.startsWith("lwd")) return "notice_period";
-    if (lower.startsWith("last working day")) return "notice_period";
-    if (lower.startsWith("offer in hand")) return "offer_in_hand";
-    if (lower.startsWith("location")) return "location";
-    if (lower.startsWith("working model")) return "working_model";
-    if (lower.startsWith("shift")) return "shift";
-    if (lower.startsWith("relocation")) return "relocation";
-    if (lower.startsWith("communication")) return "communication";
-    return `free:${lower}`;
-  };
-
   const orderedKeys = [];
   const valuesByKey = new Map();
   normalizedLines.forEach((line) => {
-    const key = getLineKey(line);
+    const key = getRecruiterNoteLineKey(line);
     if (!orderedKeys.includes(key)) orderedKeys.push(key);
     valuesByKey.set(key, line);
   });
@@ -188,23 +226,8 @@ function mergeRecruiterNotes(existingText, incomingText) {
   const incomingLines = incoming.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
   const keyed = new Map();
   const order = [];
-  const getLineKey = (line) => {
-    const lower = String(line || "").toLowerCase().trim();
-    if (!lower) return "";
-    if (lower.startsWith("expected ctc")) return "expected_ctc";
-    if (lower.startsWith("current ctc")) return "current_ctc";
-    if (lower.startsWith("notice period")) return "notice_period";
-    if (lower.startsWith("official notice period")) return "official_notice_period";
-    if (lower.startsWith("location")) return "location";
-    if (lower.startsWith("working model")) return "working_model";
-    if (lower.startsWith("shift")) return "shift";
-    if (lower.startsWith("relocation")) return "relocation";
-    if (lower.startsWith("communication")) return "communication";
-    if (lower.startsWith("offer in hand")) return "offer_in_hand";
-    return `free:${lower}`;
-  };
   [...existingLines, ...incomingLines].forEach((line) => {
-    const key = getLineKey(line);
+    const key = getRecruiterNoteLineKey(line);
     if (!order.includes(key)) order.push(key);
     keyed.set(key, line);
   });
@@ -820,8 +843,13 @@ function NotesModal({ open, candidate, onClose, onPatch, onParse }) {
                 if (!confirmed) return;
               }
               const extractedFieldPatch = buildRecruiterFieldPatchFromMerge(mergedPatch);
+              const canonicalRecruiterNotes = buildCanonicalRecruiterNotes(
+                candidate?.recruiter_context_notes || "",
+                recruiterNote,
+                mergedPatch?.merged || normalizeRecruiterMergeBase(candidate)
+              );
               const patch = {
-                recruiter_context_notes: mergeRecruiterNotes(recruiterNote, rawRecruiterNote || recruiterNote),
+                recruiter_context_notes: canonicalRecruiterNotes,
                 other_pointers: normalizeOtherPointersBody(otherPointers),
                 ...extractedFieldPatch
               };
@@ -861,8 +889,13 @@ function NotesModal({ open, candidate, onClose, onPatch, onParse }) {
           <button onClick={async () => {
             setStatus("Saving notes...");
             try {
+              const canonicalRecruiterNotes = buildCanonicalRecruiterNotes(
+                candidate?.recruiter_context_notes || "",
+                recruiterNote,
+                mergedPatch?.merged || normalizeRecruiterMergeBase(candidate)
+              );
               const patch = {
-                recruiter_context_notes: mergeRecruiterNotes(candidate?.recruiter_context_notes || "", recruiterNote),
+                recruiter_context_notes: canonicalRecruiterNotes,
                 other_pointers: normalizeOtherPointersBody(otherPointers),
                 ...(mergedPatch ? buildRecruiterFieldPatchFromMerge(mergedPatch) : {})
               };
