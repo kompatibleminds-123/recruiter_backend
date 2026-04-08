@@ -187,8 +187,8 @@ function parseNaturalFollowUpDate(text, baseDate = new Date()) {
   const result = new Date(baseDate);
   result.setSeconds(0, 0);
 
-  if (/\btomorrow\b/.test(value)) result.setDate(result.getDate() + 1);
-  else if (/\bday after tomorrow\b/.test(value)) result.setDate(result.getDate() + 2);
+  if (/\bday after tomorrow\b/.test(value)) result.setDate(result.getDate() + 2);
+  else if (/\btomorrow\b/.test(value)) result.setDate(result.getDate() + 1);
   else if (/\bnext week\b/.test(value)) result.setDate(result.getDate() + 7);
   else if (/\bthis week\b/.test(value)) result.setDate(result.getDate() + 3);
   else if (/\b1st week\b/.test(value)) result.setDate(result.getDate() + 7);
@@ -221,24 +221,24 @@ function parseNaturalFollowUpDate(text, baseDate = new Date()) {
     result.setHours(17, 0, 0, 0);
   }
 
-  return result.toISOString().slice(0, 16);
+  return toDateInputValue(result);
 }
 
 function inferAttemptOutcomeAndFollowUp(text) {
   const value = String(text || "").toLowerCase();
-  if (!value) return { outcome: "Called", followUpAt: "", candidateStatus: "" };
+  if (!value) return { outcome: "", followUpAt: "", candidateStatus: "" };
   if (/\breject\b|\brejected\b|\bscreening reject\b|\bsr\b|\bpoor communication\b|\bbad communication\b/.test(value)) return { outcome: "Screening reject", followUpAt: "", candidateStatus: "Screening Reject" };
   if (/\bnot interested\b/.test(value)) return { outcome: "Not interested", followUpAt: "", candidateStatus: "Not interested" };
   if (/\brevisit\b/.test(value)) return { outcome: "Revisit for other role", followUpAt: "", candidateStatus: "Revisit for other role" };
   if (/\bhold\b|\bon hold\b|\bhigh ctc\b|\bhigh notice\b|\bhigh np\b|\bout of budget\b/.test(value)) return { outcome: "Hold by recruiter", followUpAt: "", candidateStatus: "Hold" };
   if (/\binterested\b/.test(value)) return { outcome: "Interested", followUpAt: "", candidateStatus: "Interested" };
-  if (/\bcall later\b|\bcall next\b|\bnext call\b|\bfollow up\b/.test(value)) return { outcome: "Call later", followUpAt: parseNaturalFollowUpDate(value), candidateStatus: "Follow-up" };
+  if (/\bcall later\b|\bcall next\b|\bnext call\b|\bfollow up\b|\bcall tomorrow\b|\bcall today\b|\bcall day after tomorrow\b|\bcall next week\b|\bcall this week\b|\bcall on\b/.test(value)) return { outcome: "Call later", followUpAt: parseNaturalFollowUpDate(value), candidateStatus: "Follow-up" };
   if (/\bnot reachable\b|\bnot able to connect\b/.test(value)) return { outcome: "Not reachable", followUpAt: "", candidateStatus: "" };
   if (/\bswitch off\b|\bswitched off\b/.test(value)) return { outcome: "Switch Off", followUpAt: "", candidateStatus: "" };
   if (/\bdisconnected\b|\bdisconnecting\b|\bcutting the call\b|\bcall cut\b/.test(value)) return { outcome: "Disconnected", followUpAt: "", candidateStatus: "" };
   if (/\bbusy\b/.test(value)) return { outcome: "Busy", followUpAt: "", candidateStatus: "" };
   if (/\bno response\b|\bnot responding\b|\bnr\b|\bdid not pick up\b/.test(value)) return { outcome: "Not responding", followUpAt: "", candidateStatus: "" };
-  return { outcome: "Called", followUpAt: "", candidateStatus: "" };
+  return { outcome: "", followUpAt: "", candidateStatus: "" };
 }
 
 function formatReadableUpdateText(rawText) {
@@ -730,14 +730,14 @@ function NotesModal({ open, candidate, onClose, onPatch, onParse }) {
 }
 
 function AttemptsModal({ open, candidate, attempts, onClose, onRefresh, onSave }) {
-  const [outcome, setOutcome] = useState("Called");
+  const [outcome, setOutcome] = useState("");
   const [notes, setNotes] = useState("");
   const [nextFollowUpAt, setNextFollowUpAt] = useState("");
   const [status, setStatus] = useState("");
 
   useEffect(() => {
     if (!open) return;
-    setOutcome("Called");
+    setOutcome("");
     setNotes("");
     setNextFollowUpAt("");
     setStatus("");
@@ -778,11 +778,12 @@ function AttemptsModal({ open, candidate, attempts, onClose, onRefresh, onSave }
               const selected = e.target.value;
               setOutcome(selected);
               setNotes((current) => {
+                if (!selected) return current;
                 const line = extractLastMeaningfulLine(current);
                 const nextLine = line.toLowerCase() === selected.toLowerCase() ? line : selected;
                 return String(current || "").trim() ? `${String(current || "").trim()}\n${nextLine}` : nextLine;
               });
-            }}><option>Called</option><option>Not responding</option><option>Busy</option><option>Switch Off</option><option>Disconnected</option><option>Not reachable</option><option>Call later</option><option>Interested</option><option>Hold by recruiter</option><option>Not interested</option><option>Screening reject</option><option>Revisit for other role</option><option>Interview aligned</option></select></label>
+            }}><option value="">Select outcome</option><option>Not responding</option><option>Busy</option><option>Switch Off</option><option>Disconnected</option><option>Not reachable</option><option>Call later</option><option>Interested</option><option>Hold by recruiter</option><option>Not interested</option><option>Screening reject</option><option>Revisit for other role</option><option>Interview aligned</option></select></label>
             <label><span>Notes</span><textarea value={notes} onChange={(e) => setNotes(e.target.value)} /></label>
             <label><span>Next follow-up</span><input type="datetime-local" value={nextFollowUpAt} onChange={(e) => setNextFollowUpAt(e.target.value)} /></label>
             {status ? <div className="status">{status}</div> : null}
@@ -1079,18 +1080,13 @@ function PortalApp({ token, onLogout }) {
   const capturedCandidateOptions = useMemo(() => {
     const meta = { clients: new Set(), jds: new Set(), sources: new Set(), outcomes: new Set() };
     const allowedJds = new Set([
-      ...(state.jobs || []).map((job) => String(job.title || "").trim()).filter(Boolean),
-      ...(state.candidates || [])
-        .filter((item) => ["website_apply", "hosted_apply"].includes(String(item.source || "").trim()))
-        .map((item) => String(item.jd_title || "").trim())
-        .filter(Boolean)
+      ...(state.jobs || []).map((job) => String(job.title || "").trim()).filter(Boolean)
     ]);
     for (const item of state.candidates || []) {
       const matchedAssessment = capturedAssessmentMap.get(String(item.name || "").trim().toLowerCase());
       const sourceValue = String(item.source || "").trim();
       const isInboundApplicant = sourceValue === "website_apply" || sourceValue === "hosted_apply";
-      const isAssignedInbound = Boolean(item.assigned_to_name || item.assigned_to_user_id);
-      if (isInboundApplicant && !isAssignedInbound) continue;
+      if (isInboundApplicant) continue;
       const clientValue = String(item.client_name || matchedAssessment?.clientName || "Unassigned").trim();
       const jdValue = String(item.jd_title || matchedAssessment?.jdTitle || item.role || "").trim();
       const outcomeValue = String(matchedAssessment?.candidateStatus || item.candidate_status || "No outcome").trim();
@@ -1112,8 +1108,7 @@ function PortalApp({ token, onLogout }) {
       const matchedAssessment = capturedAssessmentMap.get(String(item.name || "").trim().toLowerCase());
       const sourceValue = String(item.source || "").trim();
       const isInboundApplicant = sourceValue === "website_apply" || sourceValue === "hosted_apply";
-      const isAssignedInbound = Boolean(item.assigned_to_name || item.assigned_to_user_id);
-      if (isInboundApplicant && !isAssignedInbound) return false;
+      if (isInboundApplicant) return false;
       const clientValue = String(item.client_name || matchedAssessment?.clientName || "Unassigned").trim();
       const jdValue = String(item.jd_title || matchedAssessment?.jdTitle || item.role || "").trim();
       const laneValue = matchedAssessment || item.used_in_assessment ? "converted" : "captured";

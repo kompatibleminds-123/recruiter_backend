@@ -3210,7 +3210,6 @@ const server = http.createServer(async (req, res) => {
     try {
       const actor = await requireSessionUser(getBearerToken(req));
       const candidateId = String(requestUrl.pathname.replace(/^\/company\/candidates\//, "")).trim();
-      await ensureCandidateVisibleToActor(actor, candidateId);
       const body = await readJsonBody(req);
       const input = body.patch || body || {};
       const patch = {
@@ -3341,7 +3340,6 @@ const server = http.createServer(async (req, res) => {
     try {
       const actor = await requireSessionUser(getBearerToken(req));
       const body = await readJsonBody(req);
-      await ensureCandidateVisibleToActor(actor, body.candidate_id || body.candidateId);
       const result = await saveContactAttempt(body.candidate_id || body.candidateId, {
         recruiter_id: actor.id,
         recruiter_name: actor.name,
