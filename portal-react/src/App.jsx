@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { NavLink, Navigate, Route, Routes, useNavigate } from "react-router-dom";
 
 const TOKEN_KEY = "recruitdesk_portal_token";
+const COPY_SETTINGS_STORAGE_KEY = "recruitdesk_portal_copy_settings_v1";
 
 const navItems = [
   { to: "/dashboard", label: "Dashboard" },
@@ -11,8 +12,15 @@ const navItems = [
   { to: "/assessments", label: "Assessments" },
   { to: "/interview", label: "Interview Panel" },
   { to: "/intake-settings", label: "Admin Intake Settings" },
-  { to: "/jobs", label: "Jobs" }
+  { to: "/jobs", label: "Jobs" },
+  { to: "/settings", label: "Settings" }
 ];
+
+const DEFAULT_COPY_SETTINGS = {
+  excelPreset: "standard",
+  whatsappTemplate: "Candidate: {{name}}\nRole: {{jd_title}}\nCompany: {{company}}\nOutcome: {{outcome}}\nRecruiter note: {{recruiter_notes}}",
+  emailTemplate: "Candidate: {{name}}\nRole: {{jd_title}}\nCompany: {{company}}\nOutcome: {{outcome}}\nLocation: {{location}}\nNotes: {{recruiter_notes}}"
+};
 
 const DEFAULT_PIPELINE_STAGE_OPTIONS = [
   "HR screening",
@@ -560,6 +568,28 @@ function copyText(value) {
   return navigator.clipboard.writeText(String(value || ""));
 }
 
+function getCapturedOutcome(candidate, assessment) {
+  const isConverted = Boolean(assessment || candidate?.used_in_assessment);
+  if (isConverted) return String(assessment?.candidateStatus || "No outcome").trim();
+  return String(candidate?.last_contact_outcome || "No outcome").trim();
+}
+
+function fillCandidateTemplate(template, candidate) {
+  const source = candidate || {};
+  const map = {
+    name: source.name || "",
+    jd_title: source.jd_title || source.role || "",
+    company: source.company || "",
+    outcome: source.outcome || "",
+    recruiter_notes: source.recruiter_context_notes || source.notes || "",
+    location: source.location || "",
+    phone: source.phone || "",
+    email: source.email || "",
+    source: source.source || ""
+  };
+  return String(template || "").replace(/\{\{\s*([a-z_]+)\s*\}\}/gi, (_, key) => String(map[key] || ""));
+}
+
 function getApplyLink(jobId) {
   return jobId ? `${window.location.origin}/apply/${encodeURIComponent(jobId)}` : "";
 }
@@ -970,7 +1000,7 @@ function AttemptsModal({ open, candidate, attempts, onClose, onRefresh, onSave }
                 const nextLine = line.toLowerCase() === selected.toLowerCase() ? line : selected;
                 return String(current || "").trim() ? `${String(current || "").trim()}\n${nextLine}` : nextLine;
               });
-            }}><option value="">Select outcome</option><option>Not responding</option><option>Busy</option><option>Switch Off</option><option>Disconnected</option><option>Not reachable</option><option>Call later</option><option>Interested</option><option>Hold by recruiter</option><option>Not interested</option><option>Screening reject</option><option>Revisit for other role</option><option>Interview aligned</option></select></label>
+              }}><option value="">Select outcome</option><option>Not responding</option><option>Busy</option><option>Switch Off</option><option>Disconnected</option><option>Not reachable</option><option>Call later</option><option>Interested</option><option>Hold by recruiter</option><option>Not interested</option><option>Screening reject</option><option>Revisit for other role</option></select></label>
             <label><span>Notes</span><textarea value={notes} onChange={(e) => setNotes(e.target.value)} /></label>
             <label><span>Next follow-up</span><input type="datetime-local" value={nextFollowUpAt} onChange={(e) => setNextFollowUpAt(e.target.value)} /></label>
             {status ? <div className="status">{status}</div> : null}
@@ -1151,6 +1181,14 @@ function PortalApp({ token, onLogout }) {
   const [candidateSearchResults, setCandidateSearchResults] = useState([]);
   const [candidatePage, setCandidatePage] = useState(1);
   const [agendaRange, setAgendaRange] = useState("today");
+  const [copySettings, setCopySettings] = useState(() => {
+    try {
+      const saved = window.localStorage.getItem(COPY_SETTINGS_STORAGE_KEY);
+      return saved ? { ...DEFAULT_COPY_SETTINGS, ...JSON.parse(saved) } : DEFAULT_COPY_SETTINGS;
+    } catch {
+      return DEFAULT_COPY_SETTINGS;
+    }
+  });
   const [notesCandidateId, setNotesCandidateId] = useState("");
   const [attemptsCandidateId, setAttemptsCandidateId] = useState("");
   const [assessmentStatusId, setAssessmentStatusId] = useState("");
@@ -1252,6 +1290,14 @@ function PortalApp({ token, onLogout }) {
     }
   }, [dashboardFilters]);
 
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(COPY_SETTINGS_STORAGE_KEY, JSON.stringify(copySettings));
+    } catch {
+      // Ignore local storage errors in restricted browsers.
+    }
+  }, [copySettings]);
+
   const capturedAssessmentMap = useMemo(() => {
     const map = new Map();
     for (const item of state.assessments || []) {
@@ -1280,7 +1326,7 @@ function PortalApp({ token, onLogout }) {
       if (isInboundApplicant) continue;
       const clientValue = String(item.client_name || matchedAssessment?.clientName || "Unassigned").trim();
       const jdValue = String(item.jd_title || matchedAssessment?.jdTitle || item.role || "").trim();
-      const outcomeValue = String(matchedAssessment?.candidateStatus || item.candidate_status || "No outcome").trim();
+      const outcomeValue = getCapturedOutcome(item, matchedAssessment);
       if (clientValue) meta.clients.add(clientValue);
       if (jdValue && allowedJds.has(jdValue)) meta.jds.add(jdValue);
       if (sourceValue) meta.sources.add(sourceValue);
@@ -1304,9 +1350,10 @@ function PortalApp({ token, onLogout }) {
       const jdValue = String(item.jd_title || matchedAssessment?.jdTitle || item.role || "").trim();
       const laneValue = matchedAssessment || item.used_in_assessment ? "converted" : "captured";
       const assignmentValue = item.assigned_to_name || item.assigned_to_user_id ? "assigned" : "unassigned";
-      const outcomeValue = String(matchedAssessment?.candidateStatus || item.candidate_status || "No outcome").trim();
+      const outcomeValue = getCapturedOutcome(item, matchedAssessment);
       const activeValue = isTerminalStatus(outcomeValue) ? "inactive" : "active";
       const createdAtValue = item.created_at ? String(item.created_at).slice(0, 10) : "";
+      const hiddenOutcome = ["not interested", "screening reject", "revisit for other role"].includes(String(outcomeValue || "").trim().toLowerCase());
       const hay = [
         item.name,
         item.company,
@@ -1329,7 +1376,7 @@ function PortalApp({ token, onLogout }) {
       const sourceOk = !candidateFilters.sources.length || candidateFilters.sources.includes(sourceValue);
       const outcomeOk = !candidateFilters.outcomes.length || candidateFilters.outcomes.includes(outcomeValue);
       const activeOk = !candidateFilters.activeStates.length || candidateFilters.activeStates.includes(activeValue);
-      return queryOk && dateFromOk && dateToOk && clientOk && jdOk && laneOk && assignmentOk && sourceOk && outcomeOk && activeOk;
+      return !hiddenOutcome && queryOk && dateFromOk && dateToOk && clientOk && jdOk && laneOk && assignmentOk && sourceOk && outcomeOk && activeOk;
     });
   }, [candidateFilters, capturedAssessmentMap, state.candidates]);
 
@@ -1702,6 +1749,57 @@ function PortalApp({ token, onLogout }) {
     setCandidateSearchResults(result.items || []);
     setCandidatePage(1);
     setStatus("workspace", `AI search returned ${result.items?.length || 0} candidates.`, "ok");
+  }
+
+  function buildCapturedCopyRows() {
+    return capturedCandidates.map((item) => {
+      const matchedAssessment = capturedAssessmentMap.get(String(item.name || "").trim().toLowerCase());
+      return {
+        ...item,
+        outcome: getCapturedOutcome(item, matchedAssessment)
+      };
+    });
+  }
+
+  async function copyCapturedExcel() {
+    const rows = buildCapturedCopyRows();
+    const headersByPreset = {
+      standard: ["Name", "JD", "Company", "Location", "Source", "Outcome", "Recruiter note"],
+      compact: ["Name", "JD", "Outcome"],
+      client_share: ["Name", "JD", "Company", "Location", "Recruiter note"]
+    };
+    const headers = headersByPreset[copySettings.excelPreset] || headersByPreset.standard;
+    const lines = [
+      headers.join("\t"),
+      ...rows.map((item) => headers.map((header) => {
+        const map = {
+          Name: item.name || "",
+          JD: item.jd_title || item.role || "",
+          Company: item.company || "",
+          Location: item.location || "",
+          Source: item.source || "",
+          Outcome: item.outcome || "",
+          "Recruiter note": item.recruiter_context_notes || item.notes || ""
+        };
+        return String(map[header] || "").replace(/\t/g, " ").replace(/\r?\n/g, " ");
+      }).join("\t"))
+    ].join("\n");
+    await copyText(lines);
+    setStatus("captured", "Filtered candidates copied in Excel format.", "ok");
+  }
+
+  async function copyCapturedWhatsapp() {
+    const rows = buildCapturedCopyRows();
+    const text = rows.map((item) => fillCandidateTemplate(copySettings.whatsappTemplate, item)).filter(Boolean).join("\n\n");
+    await copyText(text);
+    setStatus("captured", "Filtered candidates copied in WhatsApp format.", "ok");
+  }
+
+  async function copyCapturedEmail() {
+    const rows = buildCapturedCopyRows();
+    const text = rows.map((item) => fillCandidateTemplate(copySettings.emailTemplate, item)).filter(Boolean).join("\n\n");
+    await copyText(text);
+    setStatus("captured", "Filtered candidates copied in email format.", "ok");
   }
 
   function deleteShortcutDraft(key) {
@@ -2332,16 +2430,21 @@ function PortalApp({ token, onLogout }) {
                 <div className="metric-card compact-metric"><div className="metric-label">Active</div><div className="metric-value">{capturedCandidates.filter((item) => !isTerminalStatus((capturedAssessmentMap.get(String(item.name || "").trim().toLowerCase())?.candidateStatus || item.candidate_status || ""))).length}</div></div>
                 <div className="metric-card compact-metric"><div className="metric-label">Converted</div><div className="metric-value">{capturedCandidates.filter((item) => capturedAssessmentMap.has(String(item.name || "").trim().toLowerCase()) || item.used_in_assessment).length}</div></div>
               </div>
-              <div className="captured-filter-grid">
-                <MultiSelectDropdown label="Clients" options={capturedCandidateOptions.clients} selected={candidateFilters.clients} onToggle={(value) => setCandidateFilters((current) => ({ ...current, clients: value === "__all__" ? [] : current.clients.includes(value) ? current.clients.filter((item) => item !== value) : [...current.clients, value] }))} />
-                <MultiSelectDropdown label="JD / Role" options={capturedCandidateOptions.jds} selected={candidateFilters.jds} onToggle={(value) => setCandidateFilters((current) => ({ ...current, jds: value === "__all__" ? [] : current.jds.includes(value) ? current.jds.filter((item) => item !== value) : [...current.jds, value] }))} />
-                <MultiSelectDropdown label="Lane" options={["captured", "converted"]} selected={candidateFilters.lanes} onToggle={(value) => setCandidateFilters((current) => ({ ...current, lanes: value === "__all__" ? [] : current.lanes.includes(value) ? current.lanes.filter((item) => item !== value) : [...current.lanes, value] }))} />
+                <div className="captured-filter-grid">
+                  <MultiSelectDropdown label="Clients" options={capturedCandidateOptions.clients} selected={candidateFilters.clients} onToggle={(value) => setCandidateFilters((current) => ({ ...current, clients: value === "__all__" ? [] : current.clients.includes(value) ? current.clients.filter((item) => item !== value) : [...current.clients, value] }))} />
+                  <MultiSelectDropdown label="JD / Role" options={capturedCandidateOptions.jds} selected={candidateFilters.jds} onToggle={(value) => setCandidateFilters((current) => ({ ...current, jds: value === "__all__" ? [] : current.jds.includes(value) ? current.jds.filter((item) => item !== value) : [...current.jds, value] }))} />
+                  <MultiSelectDropdown label="Lane" options={["captured", "converted"]} selected={candidateFilters.lanes} onToggle={(value) => setCandidateFilters((current) => ({ ...current, lanes: value === "__all__" ? [] : current.lanes.includes(value) ? current.lanes.filter((item) => item !== value) : [...current.lanes, value] }))} />
                 <MultiSelectDropdown label="Assignment" options={["assigned", "unassigned"]} selected={candidateFilters.assignments} onToggle={(value) => setCandidateFilters((current) => ({ ...current, assignments: value === "__all__" ? [] : current.assignments.includes(value) ? current.assignments.filter((item) => item !== value) : [...current.assignments, value] }))} />
                 <MultiSelectDropdown label="Sources" options={capturedCandidateOptions.sources} selected={candidateFilters.sources} onToggle={(value) => setCandidateFilters((current) => ({ ...current, sources: value === "__all__" ? [] : current.sources.includes(value) ? current.sources.filter((item) => item !== value) : [...current.sources, value] }))} />
-                <MultiSelectDropdown label="Outcomes" options={capturedCandidateOptions.outcomes} selected={candidateFilters.outcomes} onToggle={(value) => setCandidateFilters((current) => ({ ...current, outcomes: value === "__all__" ? [] : current.outcomes.includes(value) ? current.outcomes.filter((item) => item !== value) : [...current.outcomes, value] }))} />
-                <MultiSelectDropdown label="State" options={["active", "inactive"]} selected={candidateFilters.activeStates} onToggle={(value) => setCandidateFilters((current) => ({ ...current, activeStates: value === "__all__" ? [] : current.activeStates.includes(value) ? current.activeStates.filter((item) => item !== value) : [...current.activeStates, value] }))} />
-              </div>
-              <div className="stack-list">
+                  <MultiSelectDropdown label="Outcomes" options={capturedCandidateOptions.outcomes} selected={candidateFilters.outcomes} onToggle={(value) => setCandidateFilters((current) => ({ ...current, outcomes: value === "__all__" ? [] : current.outcomes.includes(value) ? current.outcomes.filter((item) => item !== value) : [...current.outcomes, value] }))} />
+                  <MultiSelectDropdown label="State" options={["active", "inactive"]} selected={candidateFilters.activeStates} onToggle={(value) => setCandidateFilters((current) => ({ ...current, activeStates: value === "__all__" ? [] : current.activeStates.includes(value) ? current.activeStates.filter((item) => item !== value) : [...current.activeStates, value] }))} />
+                </div>
+                <div className="button-row">
+                  <button onClick={() => void copyCapturedExcel()}>Copy Excel</button>
+                  <button onClick={() => void copyCapturedWhatsapp()}>Copy WhatsApp</button>
+                  <button onClick={() => void copyCapturedEmail()}>Copy Email</button>
+                </div>
+                <div className="stack-list">
                 {!capturedCandidates.length ? <div className="empty-state">No captured notes or recruiter-owned candidates yet.</div> : capturedCandidates.map((item) => {
                   const matchedAssessment = capturedAssessmentMap.get(String(item.name || "").trim().toLowerCase());
                   const statusState = normalizedAssessmentState(matchedAssessment, item);
@@ -2530,9 +2633,9 @@ function PortalApp({ token, onLogout }) {
             </div>
           } />
 
-          <Route path="/jobs" element={
-            <div className="page-grid">
-              <Section kicker="Company JDs" title="Jobs">
+            <Route path="/jobs" element={
+              <div className="page-grid">
+                <Section kicker="Company JDs" title="Jobs">
                 {statuses.jobs ? <div className={`status ${statuses.jobsKind || ""}`}>{statuses.jobs}</div> : null}
                 <div className="form-grid">
                   <label>
@@ -2603,12 +2706,42 @@ function PortalApp({ token, onLogout }) {
                     )) : <div className="empty-state">No JD shortcuts yet.</div>}
                   </div>
                 </div>
-              </Section>
-            </div>
-          } />
+                </Section>
+              </div>
+            } />
 
-          <Route path="*" element={<Navigate to="/dashboard" replace />} />
-        </Routes>
+            <Route path="/settings" element={
+              <div className="page-grid">
+                <Section kicker="Copy Presets" title="Settings">
+                  <p className="muted">Set Excel preset and default WhatsApp / email formats for filtered captured notes.</p>
+                  <div className="form-grid">
+                    <label>
+                      <span>Excel preset</span>
+                      <select value={copySettings.excelPreset} onChange={(e) => setCopySettings((current) => ({ ...current, excelPreset: e.target.value }))}>
+                        <option value="standard">Standard</option>
+                        <option value="compact">Compact</option>
+                        <option value="client_share">Client share</option>
+                      </select>
+                    </label>
+                    <label className="full">
+                      <span>WhatsApp template</span>
+                      <textarea value={copySettings.whatsappTemplate} onChange={(e) => setCopySettings((current) => ({ ...current, whatsappTemplate: e.target.value }))} />
+                    </label>
+                    <label className="full">
+                      <span>Email template</span>
+                      <textarea value={copySettings.emailTemplate} onChange={(e) => setCopySettings((current) => ({ ...current, emailTemplate: e.target.value }))} />
+                    </label>
+                  </div>
+                  <p className="muted">Available placeholders: {`{{name}} {{jd_title}} {{company}} {{outcome}} {{recruiter_notes}} {{location}} {{phone}} {{email}} {{source}}`}</p>
+                  <div className="button-row">
+                    <button onClick={() => setCopySettings(DEFAULT_COPY_SETTINGS)}>Reset defaults</button>
+                  </div>
+                </Section>
+              </div>
+            } />
+
+            <Route path="*" element={<Navigate to="/dashboard" replace />} />
+          </Routes>
       </main>
 
       <AssignModal open={Boolean(assignApplicantId)} applicant={assignApplicant} users={state.users} jobs={state.jobs} onClose={() => setAssignApplicantId("")} onSave={saveApplicantAssignment} />
