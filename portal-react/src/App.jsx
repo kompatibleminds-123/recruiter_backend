@@ -176,6 +176,71 @@ function normalizeOtherPointersBody(rawText) {
     .join("\n");
 }
 
+function extractLastMeaningfulLine(text) {
+  const lines = String(text || "").split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  return lines.length ? lines[lines.length - 1] : "";
+}
+
+function parseNaturalFollowUpDate(text, baseDate = new Date()) {
+  const value = String(text || "").toLowerCase();
+  if (!value) return "";
+  const result = new Date(baseDate);
+  result.setSeconds(0, 0);
+
+  if (/\btomorrow\b/.test(value)) result.setDate(result.getDate() + 1);
+  else if (/\bday after tomorrow\b/.test(value)) result.setDate(result.getDate() + 2);
+  else if (/\bnext week\b/.test(value)) result.setDate(result.getDate() + 7);
+  else if (/\bthis week\b/.test(value)) result.setDate(result.getDate() + 3);
+  else if (/\b1st week\b/.test(value)) result.setDate(result.getDate() + 7);
+  else if (/\b2nd week\b/.test(value)) result.setDate(result.getDate() + 14);
+  else if (/\byesterday\b/.test(value)) result.setDate(result.getDate() - 1);
+
+  const dateMatch = value.match(/\b(\d{1,2})(?:st|nd|rd|th)?\s+(jan|january|feb|february|mar|march|apr|april|may|jun|june|jul|july|aug|august|sep|sept|september|oct|october|nov|november|dec|december)\b/);
+  if (dateMatch) {
+    const day = Number(dateMatch[1]);
+    const monthMap = {
+      jan: 0, january: 0, feb: 1, february: 1, mar: 2, march: 2, apr: 3, april: 3, may: 4,
+      jun: 5, june: 5, jul: 6, july: 6, aug: 7, august: 7, sep: 8, sept: 8, september: 8,
+      oct: 9, october: 9, nov: 10, november: 10, dec: 11, december: 11
+    };
+    result.setMonth(monthMap[dateMatch[2]]);
+    result.setDate(day);
+  }
+
+  const timeMatch = value.match(/\b(\d{1,2})(?::(\d{2}))?\s*(am|pm)\b/);
+  if (timeMatch) {
+    let hours = Number(timeMatch[1]) % 12;
+    const minutes = Number(timeMatch[2] || 0);
+    if (timeMatch[3] === "pm") hours += 12;
+    result.setHours(hours, minutes, 0, 0);
+  } else if (/\bmorning\b/.test(value)) {
+    result.setHours(10, 0, 0, 0);
+  } else if (/\bevening\b/.test(value)) {
+    result.setHours(17, 0, 0, 0);
+  } else {
+    result.setHours(17, 0, 0, 0);
+  }
+
+  return result.toISOString().slice(0, 16);
+}
+
+function inferAttemptOutcomeAndFollowUp(text) {
+  const value = String(text || "").toLowerCase();
+  if (!value) return { outcome: "Called", followUpAt: "", candidateStatus: "" };
+  if (/\breject\b|\brejected\b|\bscreening reject\b|\bsr\b|\bpoor communication\b|\bbad communication\b/.test(value)) return { outcome: "Screening reject", followUpAt: "", candidateStatus: "Screening Reject" };
+  if (/\bnot interested\b/.test(value)) return { outcome: "Not interested", followUpAt: "", candidateStatus: "Not interested" };
+  if (/\brevisit\b/.test(value)) return { outcome: "Revisit for other role", followUpAt: "", candidateStatus: "Revisit for other role" };
+  if (/\bhold\b|\bon hold\b|\bhigh ctc\b|\bhigh notice\b|\bhigh np\b|\bout of budget\b/.test(value)) return { outcome: "Hold by recruiter", followUpAt: "", candidateStatus: "Hold" };
+  if (/\binterested\b/.test(value)) return { outcome: "Interested", followUpAt: "", candidateStatus: "Interested" };
+  if (/\bcall later\b|\bcall next\b|\bnext call\b|\bfollow up\b/.test(value)) return { outcome: "Call later", followUpAt: parseNaturalFollowUpDate(value), candidateStatus: "Follow-up" };
+  if (/\bnot reachable\b|\bnot able to connect\b/.test(value)) return { outcome: "Not reachable", followUpAt: "", candidateStatus: "" };
+  if (/\bswitch off\b|\bswitched off\b/.test(value)) return { outcome: "Switch Off", followUpAt: "", candidateStatus: "" };
+  if (/\bdisconnected\b|\bdisconnecting\b|\bcutting the call\b|\bcall cut\b/.test(value)) return { outcome: "Disconnected", followUpAt: "", candidateStatus: "" };
+  if (/\bbusy\b/.test(value)) return { outcome: "Busy", followUpAt: "", candidateStatus: "" };
+  if (/\bno response\b|\bnot responding\b|\bnr\b|\bdid not pick up\b/.test(value)) return { outcome: "Not responding", followUpAt: "", candidateStatus: "" };
+  return { outcome: "Called", followUpAt: "", candidateStatus: "" };
+}
+
 function formatReadableUpdateText(rawText) {
   const raw = String(rawText || "").trim();
   if (!raw) return "";
@@ -492,6 +557,32 @@ function MultiSelectChipFilter({ label, options, selected, onToggle }) {
   );
 }
 
+function MultiSelectDropdown({ label, options, selected, onToggle }) {
+  const summary = !selected.length ? `All ${label.toLowerCase()}` : `${selected.length} selected`;
+  return (
+    <details className="filter-dropdown">
+      <summary className="filter-dropdown__summary">
+        <span>{label}</span>
+        <span className="muted">{summary}</span>
+      </summary>
+      <div className="filter-dropdown__body">
+        <div className="chip-row">
+          <button className={`chip chip-toggle${!selected.length ? " active" : ""}`} onClick={() => onToggle("__all__")}>All</button>
+          {options.map((option) => (
+            <button
+              key={option}
+              className={`chip chip-toggle${selected.includes(option) ? " active" : ""}`}
+              onClick={() => onToggle(option)}
+            >
+              {option}
+            </button>
+          ))}
+        </div>
+      </div>
+    </details>
+  );
+}
+
 function AssignModal({ open, applicant, users, jobs, onClose, onSave, title = "Assign Applicant", description = "Assign this record to a recruiter and JD.", nameKey = "candidateName" }) {
   const [recruiterId, setRecruiterId] = useState("");
   const [jdTitle, setJdTitle] = useState("");
@@ -652,6 +743,12 @@ function AttemptsModal({ open, candidate, attempts, onClose, onRefresh, onSave }
     setStatus("");
   }, [open]);
 
+  useEffect(() => {
+    const parsed = inferAttemptOutcomeAndFollowUp(extractLastMeaningfulLine(notes));
+    if (parsed.outcome && parsed.outcome !== outcome) setOutcome(parsed.outcome);
+    if (parsed.followUpAt && !nextFollowUpAt) setNextFollowUpAt(parsed.followUpAt);
+  }, [notes]);
+
   if (!open || !candidate) return null;
 
   return (
@@ -677,12 +774,39 @@ function AttemptsModal({ open, candidate, attempts, onClose, onRefresh, onSave }
           </div>
           <div className="attempt-form">
             <h4>Log attempt</h4>
-            <label><span>Outcome</span><select value={outcome} onChange={(e) => setOutcome(e.target.value)}><option>Called</option><option>Connected</option><option>No answer</option><option>Wrong number</option><option>Not interested</option><option>Follow-up needed</option><option>Interview aligned</option></select></label>
+            <label><span>Outcome</span><select value={outcome} onChange={(e) => {
+              const selected = e.target.value;
+              setOutcome(selected);
+              setNotes((current) => {
+                const line = extractLastMeaningfulLine(current);
+                const nextLine = line.toLowerCase() === selected.toLowerCase() ? line : selected;
+                return String(current || "").trim() ? `${String(current || "").trim()}\n${nextLine}` : nextLine;
+              });
+            }}><option>Called</option><option>Not responding</option><option>Busy</option><option>Switch Off</option><option>Disconnected</option><option>Not reachable</option><option>Call later</option><option>Interested</option><option>Hold by recruiter</option><option>Not interested</option><option>Screening reject</option><option>Revisit for other role</option><option>Interview aligned</option></select></label>
             <label><span>Notes</span><textarea value={notes} onChange={(e) => setNotes(e.target.value)} /></label>
             <label><span>Next follow-up</span><input type="datetime-local" value={nextFollowUpAt} onChange={(e) => setNextFollowUpAt(e.target.value)} /></label>
             {status ? <div className="status">{status}</div> : null}
             <div className="button-row">
-              <button onClick={async () => { setStatus("Saving attempt..."); try { await onSave({ outcome, notes, next_follow_up_at: nextFollowUpAt }); setStatus("Attempt saved."); setNotes(""); setNextFollowUpAt(""); await onRefresh(); } catch (error) { setStatus(String(error?.message || error)); } }}>Save attempt</button>
+              <button onClick={async () => {
+                setStatus("Saving attempt...");
+                try {
+                  const lastLine = extractLastMeaningfulLine(notes);
+                  const parsed = inferAttemptOutcomeAndFollowUp(lastLine);
+                  await onSave({
+                    outcome: parsed.outcome || outcome,
+                    notes,
+                    next_follow_up_at: nextFollowUpAt || parsed.followUpAt,
+                    derived_status: parsed.candidateStatus,
+                    final_line: lastLine
+                  });
+                  setStatus("Attempt saved.");
+                  setNotes("");
+                  setNextFollowUpAt("");
+                  await onRefresh();
+                } catch (error) {
+                  setStatus(String(error?.message || error));
+                }
+              }}>Save attempt</button>
               <button className="ghost-btn" onClick={onClose}>Close</button>
             </div>
           </div>
@@ -954,6 +1078,13 @@ function PortalApp({ token, onLogout }) {
 
   const capturedCandidateOptions = useMemo(() => {
     const meta = { clients: new Set(), jds: new Set(), sources: new Set(), outcomes: new Set() };
+    const allowedJds = new Set([
+      ...(state.jobs || []).map((job) => String(job.title || "").trim()).filter(Boolean),
+      ...(state.candidates || [])
+        .filter((item) => ["website_apply", "hosted_apply"].includes(String(item.source || "").trim()))
+        .map((item) => String(item.jd_title || "").trim())
+        .filter(Boolean)
+    ]);
     for (const item of state.candidates || []) {
       const matchedAssessment = capturedAssessmentMap.get(String(item.name || "").trim().toLowerCase());
       const sourceValue = String(item.source || "").trim();
@@ -964,7 +1095,7 @@ function PortalApp({ token, onLogout }) {
       const jdValue = String(item.jd_title || matchedAssessment?.jdTitle || item.role || "").trim();
       const outcomeValue = String(matchedAssessment?.candidateStatus || item.candidate_status || "No outcome").trim();
       if (clientValue) meta.clients.add(clientValue);
-      if (jdValue) meta.jds.add(jdValue);
+      if (jdValue && allowedJds.has(jdValue)) meta.jds.add(jdValue);
       if (sourceValue) meta.sources.add(sourceValue);
       if (outcomeValue) meta.outcomes.add(outcomeValue);
     }
@@ -974,7 +1105,7 @@ function PortalApp({ token, onLogout }) {
       sources: Array.from(meta.sources).sort(),
       outcomes: Array.from(meta.outcomes).sort()
     };
-  }, [capturedAssessmentMap, state.candidates]);
+  }, [capturedAssessmentMap, state.candidates, state.jobs]);
 
   const capturedCandidates = useMemo(() => {
     return (state.candidates || []).filter((item) => {
@@ -1092,6 +1223,18 @@ function PortalApp({ token, onLogout }) {
       notes: patch.notes,
       next_follow_up_at: patch.next_follow_up_at
     });
+    const candidate = (state.candidates || []).find((item) => String(item.id) === String(attemptsCandidateId));
+    const notesWithFinal = appendReadableUpdateNote(candidate?.callback_notes || "", patch.final_line || patch.notes);
+    const candidatePatch = {
+      callback_notes: notesWithFinal
+    };
+    if (patch.next_follow_up_at) {
+      candidatePatch.next_follow_up_at = new Date(patch.next_follow_up_at).toISOString();
+    }
+    if (patch.derived_status) {
+      candidatePatch.candidate_status = patch.derived_status;
+    }
+    await patchCandidate(attemptsCandidateId, candidatePatch, "Attempt logged.");
     setStatus("captured", "Attempt logged.", "ok");
   }
 
@@ -2011,13 +2154,13 @@ function PortalApp({ token, onLogout }) {
                 <div className="metric-card compact-metric"><div className="metric-label">Converted</div><div className="metric-value">{capturedCandidates.filter((item) => capturedAssessmentMap.has(String(item.name || "").trim().toLowerCase()) || item.used_in_assessment).length}</div></div>
               </div>
               <div className="captured-filter-grid">
-                <MultiSelectChipFilter label="Clients" options={capturedCandidateOptions.clients} selected={candidateFilters.clients} onToggle={(value) => setCandidateFilters((current) => ({ ...current, clients: value === "__all__" ? [] : current.clients.includes(value) ? current.clients.filter((item) => item !== value) : [...current.clients, value] }))} />
-                <MultiSelectChipFilter label="JD / Role" options={capturedCandidateOptions.jds} selected={candidateFilters.jds} onToggle={(value) => setCandidateFilters((current) => ({ ...current, jds: value === "__all__" ? [] : current.jds.includes(value) ? current.jds.filter((item) => item !== value) : [...current.jds, value] }))} />
-                <MultiSelectChipFilter label="Lane" options={["captured", "converted"]} selected={candidateFilters.lanes} onToggle={(value) => setCandidateFilters((current) => ({ ...current, lanes: value === "__all__" ? [] : current.lanes.includes(value) ? current.lanes.filter((item) => item !== value) : [...current.lanes, value] }))} />
-                <MultiSelectChipFilter label="Assignment" options={["assigned", "unassigned"]} selected={candidateFilters.assignments} onToggle={(value) => setCandidateFilters((current) => ({ ...current, assignments: value === "__all__" ? [] : current.assignments.includes(value) ? current.assignments.filter((item) => item !== value) : [...current.assignments, value] }))} />
-                <MultiSelectChipFilter label="Sources" options={capturedCandidateOptions.sources} selected={candidateFilters.sources} onToggle={(value) => setCandidateFilters((current) => ({ ...current, sources: value === "__all__" ? [] : current.sources.includes(value) ? current.sources.filter((item) => item !== value) : [...current.sources, value] }))} />
-                <MultiSelectChipFilter label="Outcomes" options={capturedCandidateOptions.outcomes} selected={candidateFilters.outcomes} onToggle={(value) => setCandidateFilters((current) => ({ ...current, outcomes: value === "__all__" ? [] : current.outcomes.includes(value) ? current.outcomes.filter((item) => item !== value) : [...current.outcomes, value] }))} />
-                <MultiSelectChipFilter label="State" options={["active", "inactive"]} selected={candidateFilters.activeStates} onToggle={(value) => setCandidateFilters((current) => ({ ...current, activeStates: value === "__all__" ? [] : current.activeStates.includes(value) ? current.activeStates.filter((item) => item !== value) : [...current.activeStates, value] }))} />
+                <MultiSelectDropdown label="Clients" options={capturedCandidateOptions.clients} selected={candidateFilters.clients} onToggle={(value) => setCandidateFilters((current) => ({ ...current, clients: value === "__all__" ? [] : current.clients.includes(value) ? current.clients.filter((item) => item !== value) : [...current.clients, value] }))} />
+                <MultiSelectDropdown label="JD / Role" options={capturedCandidateOptions.jds} selected={candidateFilters.jds} onToggle={(value) => setCandidateFilters((current) => ({ ...current, jds: value === "__all__" ? [] : current.jds.includes(value) ? current.jds.filter((item) => item !== value) : [...current.jds, value] }))} />
+                <MultiSelectDropdown label="Lane" options={["captured", "converted"]} selected={candidateFilters.lanes} onToggle={(value) => setCandidateFilters((current) => ({ ...current, lanes: value === "__all__" ? [] : current.lanes.includes(value) ? current.lanes.filter((item) => item !== value) : [...current.lanes, value] }))} />
+                <MultiSelectDropdown label="Assignment" options={["assigned", "unassigned"]} selected={candidateFilters.assignments} onToggle={(value) => setCandidateFilters((current) => ({ ...current, assignments: value === "__all__" ? [] : current.assignments.includes(value) ? current.assignments.filter((item) => item !== value) : [...current.assignments, value] }))} />
+                <MultiSelectDropdown label="Sources" options={capturedCandidateOptions.sources} selected={candidateFilters.sources} onToggle={(value) => setCandidateFilters((current) => ({ ...current, sources: value === "__all__" ? [] : current.sources.includes(value) ? current.sources.filter((item) => item !== value) : [...current.sources, value] }))} />
+                <MultiSelectDropdown label="Outcomes" options={capturedCandidateOptions.outcomes} selected={candidateFilters.outcomes} onToggle={(value) => setCandidateFilters((current) => ({ ...current, outcomes: value === "__all__" ? [] : current.outcomes.includes(value) ? current.outcomes.filter((item) => item !== value) : [...current.outcomes, value] }))} />
+                <MultiSelectDropdown label="State" options={["active", "inactive"]} selected={candidateFilters.activeStates} onToggle={(value) => setCandidateFilters((current) => ({ ...current, activeStates: value === "__all__" ? [] : current.activeStates.includes(value) ? current.activeStates.filter((item) => item !== value) : [...current.activeStates, value] }))} />
               </div>
               <div className="stack-list">
                 {!capturedCandidates.length ? <div className="empty-state">No captured notes or recruiter-owned candidates yet.</div> : capturedCandidates.map((item) => {

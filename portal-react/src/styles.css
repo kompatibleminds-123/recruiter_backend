@@ -216,10 +216,33 @@ textarea { min-height: 92px; resize: vertical; }
   display: grid;
   gap: 0.85rem;
   margin: 1rem 0;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
 }
 .filter-block {
   display: grid;
   gap: 0.45rem;
+}
+.filter-dropdown {
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: var(--panel-strong);
+  overflow: hidden;
+}
+.filter-dropdown__summary {
+  list-style: none;
+  cursor: pointer;
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: center;
+  padding: 0.8rem 0.95rem;
+  font-weight: 700;
+}
+.filter-dropdown__summary::-webkit-details-marker {
+  display: none;
+}
+.filter-dropdown__body {
+  padding: 0 0.95rem 0.95rem;
 }
 .status-line {
   margin: 0.35rem 0 0.45rem;
