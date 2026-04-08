@@ -487,6 +487,70 @@ function buildAssessmentStatusNoteLine(statusValue, atValue = "", extra = {}) {
   return buildAssessmentStatusCalendarNote(status, atValue);
 }
 
+function buildAssessmentJourneyEntries(assessment, contactAttempts = [], candidate = null) {
+  const entries = [];
+  (contactAttempts || []).forEach((item) => {
+    const when = item?.created_at || item?.at || "";
+    if (!when) return;
+    const noteLines = String(item?.notes || "")
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .join(" | ");
+    entries.push({
+      at: when,
+      text: `Captured note | ${item?.outcome || "Attempt"}${noteLines ? ` | ${noteLines}` : ""}`
+    });
+  });
+
+  const latestAttemptMissing = candidate?.last_contact_at && !(contactAttempts || []).some((item) => String(item?.created_at || "") === String(candidate.last_contact_at || ""));
+  if (latestAttemptMissing) {
+    const noteLines = String(candidate?.last_contact_notes || "")
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .join(" | ");
+    entries.push({
+      at: candidate.last_contact_at,
+      text: `Captured note | ${candidate?.last_contact_outcome || "Attempt"}${noteLines ? ` | ${noteLines}` : ""}`
+    });
+  }
+
+  if (assessment?.generatedAt) {
+    entries.push({
+      at: assessment.generatedAt,
+      text: `Assessment created | ${assessment?.candidateStatus || "CV Shared"}`
+    });
+  }
+
+  const statusHistory = Array.isArray(assessment?.statusHistory) ? assessment.statusHistory : [];
+  statusHistory.forEach((item) => {
+    if (!item?.at) return;
+    const bits = [item?.status || "Status update"];
+    if (item?.notes) bits.push(item.notes);
+    if (item?.offerAmount) bits.push(`Offer amount ${item.offerAmount}`);
+    if (item?.atLabel) bits.push(item.atLabel);
+    entries.push({
+      at: item.at,
+      text: `Assessment | ${bits.filter(Boolean).join(" | ")}`
+    });
+  });
+
+  const interviewAttempts = Array.isArray(assessment?.interviewAttempts) ? assessment.interviewAttempts : [];
+  interviewAttempts.forEach((item) => {
+    const when = item?.at || item?.createdAt || "";
+    if (!when) return;
+    entries.push({
+      at: when,
+      text: `Assessment movement | ${[item?.round, item?.outcome, item?.notes].filter(Boolean).join(" | ")}`
+    });
+  });
+
+  return entries
+    .filter((item) => item.at && item.text)
+    .sort((a, b) => new Date(a.at) - new Date(b.at));
+}
+
 function syncAssessmentNotesWithStatus(currentNotes, statusValue, atValue = "", extra = {}) {
   const lines = String(currentNotes || "").split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
   const nextLine = buildAssessmentStatusNoteLine(statusValue, atValue, extra).trim();
@@ -2145,7 +2209,8 @@ function PortalApp({ token, onLogout }) {
       interviewAt: toDateInputValue(matched?.interviewAt),
       recruiterNotes: matched?.recruiterNotes || candidate?.recruiter_context_notes || "",
       callbackNotes: matched?.callbackNotes || candidate?.last_contact_notes || "",
-      otherPointers: matched?.otherPointers || candidate?.other_pointers || ""
+      otherPointers: matched?.otherPointers || candidate?.other_pointers || "",
+      statusHistory: Array.isArray(matched?.statusHistory) ? matched.statusHistory : []
     });
     navigate("/interview");
     setStatus("interview", `Loaded ${candidate.name || "candidate"} into Interview Panel.`, "ok");
@@ -2182,7 +2247,8 @@ function PortalApp({ token, onLogout }) {
       interviewAt: toDateInputValue(assessment?.interviewAt),
       recruiterNotes: assessment?.recruiterNotes || matchedCandidate?.recruiter_context_notes || "",
       callbackNotes: assessment?.callbackNotes || matchedCandidate?.last_contact_notes || "",
-      otherPointers: assessment?.otherPointers || matchedCandidate?.other_pointers || ""
+      otherPointers: assessment?.otherPointers || matchedCandidate?.other_pointers || "",
+      statusHistory: Array.isArray(assessment?.statusHistory) ? assessment.statusHistory : []
     });
     navigate("/interview");
     setStatus("interview", `Opened saved assessment for ${assessment?.candidateName || "candidate"}.`, "ok");
@@ -2228,6 +2294,12 @@ function PortalApp({ token, onLogout }) {
       recruiterNotes: candidate.recruiter_context_notes || "",
       callbackNotes: candidate.last_contact_notes || "CV Shared.",
       otherPointers: candidate.other_pointers || "",
+      statusHistory: [{
+        status: "CV Shared",
+        at: new Date().toISOString(),
+        notes: "Draft converted into assessment.",
+        atLabel: ""
+      }],
       questionMode: "basic",
       generatedAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()
@@ -2250,6 +2322,14 @@ function PortalApp({ token, onLogout }) {
       ...interviewForm,
       candidateStatus: initialStatus,
       pipelineStage: mapAssessmentStatusToPipelineStage(initialStatus) || interviewForm.pipelineStage || "Submitted",
+      statusHistory: Array.isArray(interviewForm.statusHistory) && interviewForm.statusHistory.length
+        ? interviewForm.statusHistory
+        : [{
+            status: initialStatus,
+            at: new Date().toISOString(),
+            notes: "Assessment created.",
+            atLabel: ""
+          }],
       questionMode: "basic",
       generatedAt: new Date().toISOString()
     };
@@ -2639,17 +2719,16 @@ function PortalApp({ token, onLogout }) {
     URL.revokeObjectURL(url);
   }
 
-  function buildJourneyText(assessment) {
-    const lines = [
+  function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
+    const header = [
       assessment?.candidateName || "Candidate",
       assessment?.jdTitle ? `JD: ${assessment.jdTitle}` : "",
       assessment?.pipelineStage ? `Pipeline: ${assessment.pipelineStage}` : "",
-      assessment?.candidateStatus ? `Status: ${assessment.candidateStatus}` : "",
-      assessment?.followUpAt ? `Follow-up: ${new Date(assessment.followUpAt).toLocaleString()}` : "",
-      assessment?.interviewAt ? `Interview: ${new Date(assessment.interviewAt).toLocaleString()}` : "",
-      assessment?.callbackNotes ? `Notes: ${assessment.callbackNotes}` : ""
+      assessment?.candidateStatus ? `Current status: ${assessment.candidateStatus}` : ""
     ].filter(Boolean);
-    return lines.join("\n");
+    const timeline = buildAssessmentJourneyEntries(assessment, contactAttempts, candidate)
+      .map((item) => `${new Date(item.at).toLocaleString()} | ${item.text}`);
+    return [...header, "", "Journey:", ...timeline].filter(Boolean).join("\n");
   }
 
   async function saveAssessmentStatusUpdate(assessment, payload) {
@@ -2691,11 +2770,19 @@ function PortalApp({ token, onLogout }) {
         [readableNotes, buildAssessmentStatusNoteLine(nextStatus, atIso, { offerAmount: payload?.offerAmount })].filter(Boolean).join("\n")
       ),
       interviewAttempts: Array.isArray(assessment?.interviewAttempts) ? [...assessment.interviewAttempts] : [],
+      statusHistory: Array.isArray(assessment?.statusHistory) ? [...assessment.statusHistory] : [],
       offerAmount: isOffered ? String(payload?.offerAmount || inferred.offerAmount || "").trim() : (assessment?.offerAmount || ""),
       expectedDoj: isOffered ? atIso : (assessment?.expectedDoj || ""),
       dateOfJoining: isJoined ? atIso : (assessment?.dateOfJoining || ""),
       updatedAt: new Date().toISOString()
     };
+    nextAssessment.statusHistory.push({
+      status: nextStatus,
+      at: atIso || new Date().toISOString(),
+      notes: readableNotes || "",
+      offerAmount: isOffered ? String(payload?.offerAmount || inferred.offerAmount || "").trim() : "",
+      atLabel: buildAssessmentStatusNoteLine(nextStatus, atIso, { offerAmount: payload?.offerAmount })
+    });
 
     if (isInterviewStatus) {
       nextAssessment.interviewAttempts.push({
@@ -2791,7 +2878,14 @@ function PortalApp({ token, onLogout }) {
   }
 
   async function openAssessmentJourney(assessment) {
-    const text = buildJourneyText(assessment);
+    const candidate = (state.candidates || []).find((item) => {
+      if (assessment?.candidateId && String(item.id) === String(assessment.candidateId)) return true;
+      return String(item.name || "").trim().toLowerCase() === String(assessment?.candidateName || "").trim().toLowerCase();
+    }) || null;
+    const contactAttempts = candidate?.id
+      ? await api(`/contact-attempts?candidate_id=${encodeURIComponent(candidate.id)}&limit=100`, token).catch(() => [])
+      : [];
+    const text = buildJourneyText(assessment, Array.isArray(contactAttempts) ? contactAttempts : [], candidate);
     await copyText(text);
     window.alert(text);
     setStatus("assessments", "Journey copied.", "ok");
