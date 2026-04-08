@@ -489,14 +489,6 @@ function buildAssessmentStatusNoteLine(statusValue, atValue = "", extra = {}) {
 
 function buildAssessmentJourneyEntries(assessment, contactAttempts = [], candidate = null) {
   const entries = [];
-  const capturedAt = candidate?.created_at || candidate?.createdAt || "";
-  const capturedNotes = String(candidate?.notes || "").trim();
-  if (capturedAt && capturedNotes) {
-    entries.push({
-      at: capturedAt,
-      text: `Captured profile | ${capturedNotes.split(/\r?\n/).map((line) => line.trim()).filter(Boolean).join(" | ")}`
-    });
-  }
   (contactAttempts || []).forEach((item) => {
     const when = item?.created_at || item?.at || "";
     if (!when) return;
@@ -1980,6 +1972,15 @@ function PortalApp({ token, onLogout }) {
     const clients = new Set();
     const jds = new Set();
     const recruiters = new Set();
+    const isAdmin = String(state.user?.role || "").toLowerCase() === "admin";
+    const currentUserName = String(state.user?.name || "").trim();
+    const adminNames = (state.users || [])
+      .filter((item) => String(item?.role || "").toLowerCase() === "admin")
+      .map((item) => String(item?.name || "").trim())
+      .filter(Boolean);
+    const allowedRecruiterNames = isAdmin
+      ? (state.users || []).map((item) => String(item?.name || "").trim()).filter(Boolean)
+      : Array.from(new Set([currentUserName, ...adminNames, "RecruitDesk AI"].filter(Boolean)));
     (state.assessments || []).forEach((item) => {
       const matchedCandidate = (state.candidates || []).find((candidate) =>
         (item?.candidateId && String(candidate.id) === String(item.candidateId)) ||
@@ -1992,12 +1993,13 @@ function PortalApp({ token, onLogout }) {
       if (jdValue) jds.add(jdValue);
       if (recruiterValue) recruiters.add(recruiterValue);
     });
+    allowedRecruiterNames.forEach((name) => recruiters.add(name));
     return {
       clients: Array.from(clients).sort((a, b) => a.localeCompare(b)),
       jds: Array.from(jds).sort((a, b) => a.localeCompare(b)),
       recruiters: Array.from(recruiters).sort((a, b) => a.localeCompare(b))
     };
-  }, [state.assessments, state.candidates]);
+  }, [state.assessments, state.candidates, state.user, state.users]);
 
   const filteredAssessments = useMemo(() => {
     const query = String(assessmentFilters.q || "").trim().toLowerCase();
