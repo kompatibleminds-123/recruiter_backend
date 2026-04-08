@@ -135,8 +135,10 @@ textarea { min-height: 92px; resize: vertical; }
   padding: 0.85rem 0.95rem;
   text-align: left;
   color: var(--text);
-  display: grid;
-  gap: 0.16rem;
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: flex-start;
 }
 .agenda-item:hover {
   border-color: #d2ddf4;
@@ -178,6 +180,9 @@ textarea { min-height: 92px; resize: vertical; }
 @media (max-width: 900px) {
   .agenda-header {
     align-items: stretch;
+    flex-direction: column;
+  }
+  .agenda-item {
     flex-direction: column;
   }
 }

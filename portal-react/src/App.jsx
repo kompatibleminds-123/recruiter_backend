@@ -952,6 +952,17 @@ function PortalApp({ token, onLogout }) {
     setStatus("captured", okMessage, "ok");
   }
 
+  async function completeAgendaFollowUp(candidate) {
+    await patchCandidate(candidate.id, {
+      next_follow_up_at: "",
+      callback_notes: appendReadableUpdateNote(
+        candidate?.callback_notes || "",
+        `Follow-up completed from Today's Agenda on ${new Date().toLocaleString()}.`
+      )
+    }, "Follow-up marked done.");
+    setStatus("workspace", `Marked follow-up done for ${candidate?.name || "candidate"}.`, "ok");
+  }
+
   async function openAttempts(candidateId) {
     setAttemptsCandidateId(candidateId);
     const result = await api(`/contact-attempts?candidate_id=${encodeURIComponent(candidateId)}&limit=20`, token).catch(() => []);
@@ -1405,6 +1416,22 @@ function PortalApp({ token, onLogout }) {
     setStatus("assessments", "Assessment deleted.", "ok");
   }
 
+  async function completeAgendaInterview(assessment) {
+    await saveAssessmentStatusUpdate(assessment, {
+      candidateStatus: "Feedback Awaited",
+      atValue: "",
+      notes: "Interview completed from Today's Agenda."
+    });
+  }
+
+  async function completeAgendaJoining(assessment) {
+    await saveAssessmentStatusUpdate(assessment, {
+      candidateStatus: "Joined",
+      atValue: "",
+      notes: "Marked complete from Today's Agenda."
+    });
+  }
+
   function reuseAssessmentAsNew(assessment) {
     setInterviewMeta({ candidateId: "", assessmentId: "" });
     setInterviewForm({
@@ -1498,6 +1525,7 @@ function PortalApp({ token, onLogout }) {
       title: item.name || "Candidate",
       subtitle: item.jd_title || item.role || "Untitled role",
       when: item.next_follow_up_at,
+      raw: item,
       action: () => loadCandidateIntoInterview(item.id)
     })),
     ...todaysInterviews.map((item) => ({
@@ -1506,6 +1534,7 @@ function PortalApp({ token, onLogout }) {
       title: item.candidateName || "Candidate",
       subtitle: item.jdTitle || "Untitled role",
       when: item.interviewAt,
+      raw: item,
       action: () => openSavedAssessment(item)
     }))
   ]
@@ -1575,11 +1604,17 @@ function PortalApp({ token, onLogout }) {
                       <h3>Overdue follow-ups</h3>
                       <div className="stack-list compact">
                         {overdueFollowUps.slice(0, 5).map((item) => (
-                          <button key={`overdue-${item.id}`} className="agenda-item" onClick={() => loadCandidateIntoInterview(item.id)}>
-                            <span className="agenda-item__title">{item.name || "Candidate"}</span>
-                            <span className="agenda-item__subtitle">{item.jd_title || item.role || "Untitled role"}</span>
-                            <span className="agenda-item__time">{`Call follow-up | ${new Date(item.next_follow_up_at).toLocaleString()}`}</span>
-                          </button>
+                          <article key={`overdue-${item.id}`} className="agenda-item">
+                            <div>
+                              <span className="agenda-item__title">{item.name || "Candidate"}</span>
+                              <span className="agenda-item__subtitle">{item.jd_title || item.role || "Untitled role"}</span>
+                              <span className="agenda-item__time">{`Call follow-up | ${new Date(item.next_follow_up_at).toLocaleString()}`}</span>
+                            </div>
+                            <div className="button-row tight">
+                              <button onClick={() => loadCandidateIntoInterview(item.id)}>Update</button>
+                              <button className="ghost-btn" onClick={() => void completeAgendaFollowUp(item)}>Done</button>
+                            </div>
+                          </article>
                         ))}
                       </div>
                     </div>
@@ -1589,12 +1624,25 @@ function PortalApp({ token, onLogout }) {
                       <h3>Scheduled follow-ups and interviews</h3>
                       <div className="stack-list compact">
                         {todaysAgendaItems.map((item) => (
-                          <button key={item.key} className="agenda-item" onClick={item.action}>
-                            <span className="agenda-item__type">{item.type}</span>
-                            <span className="agenda-item__title">{item.title}</span>
-                            <span className="agenda-item__subtitle">{item.subtitle}</span>
-                            <span className="agenda-item__time">{new Date(item.when).toLocaleString()}</span>
-                          </button>
+                          <article key={item.key} className="agenda-item">
+                            <div>
+                              <span className="agenda-item__type">{item.type}</span>
+                              <span className="agenda-item__title">{item.title}</span>
+                              <span className="agenda-item__subtitle">{item.subtitle}</span>
+                              <span className="agenda-item__time">{new Date(item.when).toLocaleString()}</span>
+                            </div>
+                            <div className="button-row tight">
+                              <button onClick={item.action}>Update</button>
+                              <button
+                                className="ghost-btn"
+                                onClick={() => void (item.type === "Follow-up"
+                                  ? completeAgendaFollowUp(item.raw)
+                                  : completeAgendaInterview(item.raw))}
+                              >
+                                Done
+                              </button>
+                            </div>
+                          </article>
                         ))}
                       </div>
                     </div>
@@ -1604,11 +1652,17 @@ function PortalApp({ token, onLogout }) {
                       <h3>Upcoming joinings</h3>
                       <div className="stack-list compact">
                         {upcomingJoinings.slice(0, 5).map((item) => (
-                          <button key={`joining-${item.id}`} className="agenda-item" onClick={() => openSavedAssessment(item)}>
-                            <span className="agenda-item__title">{item.candidateName || "Candidate"}</span>
-                            <span className="agenda-item__subtitle">{item.jdTitle || "Untitled role"}</span>
-                            <span className="agenda-item__time">{`Upcoming joining | ${new Date(item.followUpAt || item.interviewAt).toLocaleString()} | ${item.candidateStatus || "Offered"}`}</span>
-                          </button>
+                          <article key={`joining-${item.id}`} className="agenda-item">
+                            <div>
+                              <span className="agenda-item__title">{item.candidateName || "Candidate"}</span>
+                              <span className="agenda-item__subtitle">{item.jdTitle || "Untitled role"}</span>
+                              <span className="agenda-item__time">{`Upcoming joining | ${new Date(item.followUpAt || item.interviewAt).toLocaleString()} | ${item.candidateStatus || "Offered"}`}</span>
+                            </div>
+                            <div className="button-row tight">
+                              <button onClick={() => openSavedAssessment(item)}>Update</button>
+                              <button className="ghost-btn" onClick={() => void completeAgendaJoining(item)}>Mark complete</button>
+                            </div>
+                          </article>
                         ))}
                       </div>
                     </div>
