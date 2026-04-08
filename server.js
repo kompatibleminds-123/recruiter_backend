@@ -3223,7 +3223,6 @@ const server = http.createServer(async (req, res) => {
         current_ctc: String(input.current_ctc || input.currentCtc || "").trim() || undefined,
         expected_ctc: String(input.expected_ctc || input.expectedCtc || "").trim() || undefined,
         notice_period: String(input.notice_period || input.noticePeriod || "").trim() || undefined,
-        offer_in_hand: String(input.offer_in_hand || input.offerInHand || "").trim() || undefined,
         phone: String(input.phone || input.phoneNumber || "").trim() || undefined,
         email: String(input.email || input.emailId || "").trim() || undefined,
         linkedin: String(input.linkedin || input.linkedinUrl || "").trim() || undefined,
