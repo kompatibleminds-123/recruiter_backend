@@ -784,6 +784,7 @@ function PortalApp({ token, onLogout }) {
   const [candidateSearchText, setCandidateSearchText] = useState("");
   const [candidateSearchResults, setCandidateSearchResults] = useState([]);
   const [candidatePage, setCandidatePage] = useState(1);
+  const [agendaRange, setAgendaRange] = useState("today");
   const [notesCandidateId, setNotesCandidateId] = useState("");
   const [attemptsCandidateId, setAttemptsCandidateId] = useState("");
   const [assessmentStatusId, setAssessmentStatusId] = useState("");
@@ -1459,15 +1460,35 @@ function PortalApp({ token, onLogout }) {
   const recruiterPositionRows = state.dashboard?.summary?.byClientRecruiter || [];
   const todayStart = new Date();
   todayStart.setHours(0, 0, 0, 0);
-  const todayEnd = new Date(todayStart);
-  todayEnd.setDate(todayEnd.getDate() + 1);
+  const tomorrowStart = new Date(todayStart);
+  tomorrowStart.setDate(tomorrowStart.getDate() + 1);
+  const dayAfterTomorrowStart = new Date(todayStart);
+  dayAfterTomorrowStart.setDate(dayAfterTomorrowStart.getDate() + 2);
+  const nextWeekEnd = new Date(todayStart);
+  nextWeekEnd.setDate(nextWeekEnd.getDate() + 7);
+  const agendaWindowStart = agendaRange === "tomorrow" ? tomorrowStart : todayStart;
+  const agendaWindowEnd = agendaRange === "today"
+    ? tomorrowStart
+    : agendaRange === "tomorrow"
+      ? dayAfterTomorrowStart
+      : nextWeekEnd;
+  const overdueFollowUps = (state.candidates || []).filter((item) => {
+    const value = item?.next_follow_up_at ? new Date(item.next_follow_up_at) : null;
+    return value && value < todayStart;
+  });
   const todaysFollowUps = (state.candidates || []).filter((item) => {
     const value = item?.next_follow_up_at ? new Date(item.next_follow_up_at) : null;
-    return value && value >= todayStart && value < todayEnd;
+    return value && value >= agendaWindowStart && value < agendaWindowEnd;
   });
   const todaysInterviews = (state.assessments || []).filter((item) => {
     const value = item?.interviewAt ? new Date(item.interviewAt) : null;
-    return value && value >= todayStart && value < todayEnd;
+    return value && value >= agendaWindowStart && value < agendaWindowEnd;
+  });
+  const upcomingJoinings = (state.assessments || []).filter((item) => {
+    const status = String(item?.candidateStatus || "").trim().toLowerCase();
+    if (!status || (status !== "offered" && status !== "joined")) return false;
+    const value = item?.followUpAt ? new Date(item.followUpAt) : item?.interviewAt ? new Date(item.interviewAt) : null;
+    return value && value >= agendaWindowStart && value < nextWeekEnd;
   });
   const pendingAssignments = (state.applicants || []).length;
   const todaysAgendaItems = [
@@ -1524,31 +1545,80 @@ function PortalApp({ token, onLogout }) {
           <Route path="/dashboard" element={
             <div className="page-grid">
               <Section kicker="Today" title="Today's Agenda">
+                <div className="agenda-header">
+                  <p className="muted">
+                    {`${agendaRange === "today" ? "Today" : agendaRange === "tomorrow" ? "Tomorrow" : "Next 7 days"}: ${overdueFollowUps.length} overdue | ${todaysFollowUps.length} follow-up(s) | ${todaysInterviews.length} interview(s) | ${upcomingJoinings.length} joining(s)`}
+                  </p>
+                  <select value={agendaRange} onChange={(e) => setAgendaRange(e.target.value)}>
+                    <option value="today">Today</option>
+                    <option value="tomorrow">Tomorrow</option>
+                    <option value="next_7_days">Next 7 days</option>
+                  </select>
+                </div>
                 <div className="agenda-summary-grid">
                   <div className="metric-card compact-metric">
-                    <div className="metric-label">Follow-ups due today</div>
-                    <div className="metric-value">{todaysFollowUps.length}</div>
+                    <div className="metric-label">Overdue follow-ups</div>
+                    <div className="metric-value">{overdueFollowUps.length}</div>
                   </div>
                   <div className="metric-card compact-metric">
-                    <div className="metric-label">Interviews today</div>
+                    <div className="metric-label">Scheduled interviews</div>
                     <div className="metric-value">{todaysInterviews.length}</div>
                   </div>
                   <div className="metric-card compact-metric">
-                    <div className="metric-label">Pending applicants</div>
-                    <div className="metric-value">{pendingAssignments}</div>
+                    <div className="metric-label">Upcoming joinings</div>
+                    <div className="metric-value">{upcomingJoinings.length}</div>
                   </div>
                 </div>
                 <div className="stack-list compact">
-                  {!todaysAgendaItems.length ? (
-                    <div className="empty-state">No scheduled follow-ups or interviews for today yet.</div>
-                  ) : todaysAgendaItems.map((item) => (
-                    <button key={item.key} className="agenda-item" onClick={item.action}>
-                      <span className="agenda-item__type">{item.type}</span>
-                      <span className="agenda-item__title">{item.title}</span>
-                      <span className="agenda-item__subtitle">{item.subtitle}</span>
-                      <span className="agenda-item__time">{new Date(item.when).toLocaleString()}</span>
-                    </button>
-                  ))}
+                  {!!overdueFollowUps.length && (
+                    <div className="agenda-block agenda-block--overdue">
+                      <h3>Overdue follow-ups</h3>
+                      <div className="stack-list compact">
+                        {overdueFollowUps.slice(0, 5).map((item) => (
+                          <button key={`overdue-${item.id}`} className="agenda-item" onClick={() => loadCandidateIntoInterview(item.id)}>
+                            <span className="agenda-item__title">{item.name || "Candidate"}</span>
+                            <span className="agenda-item__subtitle">{item.jd_title || item.role || "Untitled role"}</span>
+                            <span className="agenda-item__time">{`Call follow-up | ${new Date(item.next_follow_up_at).toLocaleString()}`}</span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  {!!todaysAgendaItems.length && (
+                    <div className="agenda-block">
+                      <h3>Scheduled follow-ups and interviews</h3>
+                      <div className="stack-list compact">
+                        {todaysAgendaItems.map((item) => (
+                          <button key={item.key} className="agenda-item" onClick={item.action}>
+                            <span className="agenda-item__type">{item.type}</span>
+                            <span className="agenda-item__title">{item.title}</span>
+                            <span className="agenda-item__subtitle">{item.subtitle}</span>
+                            <span className="agenda-item__time">{new Date(item.when).toLocaleString()}</span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  {!!upcomingJoinings.length && (
+                    <div className="agenda-block agenda-block--joining">
+                      <h3>Upcoming joinings</h3>
+                      <div className="stack-list compact">
+                        {upcomingJoinings.slice(0, 5).map((item) => (
+                          <button key={`joining-${item.id}`} className="agenda-item" onClick={() => openSavedAssessment(item)}>
+                            <span className="agenda-item__title">{item.candidateName || "Candidate"}</span>
+                            <span className="agenda-item__subtitle">{item.jdTitle || "Untitled role"}</span>
+                            <span className="agenda-item__time">{`Upcoming joining | ${new Date(item.followUpAt || item.interviewAt).toLocaleString()} | ${item.candidateStatus || "Offered"}`}</span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  {!overdueFollowUps.length && !todaysAgendaItems.length && !upcomingJoinings.length ? (
+                    <div className="empty-state">No scheduled follow-ups, interviews, or joinings for this range yet.</div>
+                  ) : null}
+                  {!!pendingAssignments && (
+                    <div className="muted">{`${pendingAssignments} pending applicant(s) are waiting in Applied Candidates.`}</div>
+                  )}
                 </div>
               </Section>
               <Section kicker="Performance" title="Recruitment Dashboard">
@@ -1570,11 +1640,11 @@ function PortalApp({ token, onLogout }) {
                   ))}
                 </div>
               </Section>
-              <div className="two-pane-grid">
+              <div className="dashboard-breakdown-stack">
                 <Section kicker="Breakdown" title="Client Breakdown">
                   <div className="stack-list">
                     {!(state.dashboard?.summary?.byClient || []).length ? <div className="empty-state">No client breakdown available.</div> : (state.dashboard.summary.byClient || []).map((group) => (
-                      <details className="dashboard-group" key={group.label} open>
+                      <details className="dashboard-group" key={group.label}>
                         <summary className="dashboard-group__summary">
                           <div>
                             <h3>{group.label}</h3>
