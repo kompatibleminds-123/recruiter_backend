@@ -25,6 +25,13 @@ const DEFAULT_COPY_SETTINGS = {
     client_submission: "Client submission",
     screening_focus: "Screening focus"
   },
+  exportPresetColumns: {
+    compact_recruiter: "S.No.|s_no\nName|name\nPh|phone\nEmail|email\nCurrent Company|current_company\nCurrent Designation|current_designation\nTotal Experience|total_experience\nTenure in current company|current_org_tenure\nLocation|location\nReason of change|reason_of_change\nStatus|status\nCurrent CTC|current_ctc\nExpected CTC|expected_ctc\nNotice Period|notice_period\nOther Standard Questions|other_standard_questions\nRemarks|remarks\nLinkedIn|linkedin",
+    client_tracker: "Client Name|client_name\nTarget Role / Open Position|jd_title\nKey Skills Required|key_skills_required\nRecruiter Name|recruiter_name\nDate Added|date_added\nCandidate Name|name\nStatus|status\nContact No.|phone\nEmail ID|email\nLocation|location\nCurrent Company|current_company\nCurrent Designation|current_designation\nDomain / Industry|domain_industry\nWork Exp (Total years/months)|total_experience\nHighest Education|highest_education\nCurrent CTC|current_ctc\nExpected CTC|expected_ctc\nNotice Period|notice_period\nRemarks / Notes|remarks\nLinkedIn Profile Link (Optional)|linkedin",
+    attentive_tracker: "S.No.|s_no\nName|name\nStatus|assessment_status\nPh|phone\nEmail|email\nLocation|location\nCurrent Company|current_company\nCurrent Designation|current_designation\nWork Experience|total_experience\nHighest Education|highest_education\nCurrent CTC|current_ctc\nExpected CTC|expected_ctc\nNotice Period|notice_period\nInsights|combined_assessment_insights\nLinkedIn|linkedin",
+    client_submission: "S.No.|s_no\nName|name\nPh|phone\nEmail|email\nCurrent Company|current_company\nCurrent Designation|current_designation\nTotal Experience|total_experience\nStrong Points|other_pointers\nRemarks|remarks",
+    screening_focus: "S.No.|s_no\nName|name\nCurrent CTC|current_ctc\nExpected CTC|expected_ctc\nNotice Period|notice_period\nScreening Answers|other_standard_questions\nRemarks|remarks"
+  },
   customExportPresets: [],
   whatsappTemplate: "{{index}}. {{name}}\nRole: {{jd_title}}\nCompany: {{company}}\nOutcome: {{outcome}}\nRecruiter note: {{recruiter_notes}}",
   emailTemplate: "{{index}}. {{name}}\nCompany: {{company}}\nRole: {{jd_title}}\nLocation: {{location}}\nOutcome: {{outcome}}\nEmail: {{email}}\nPhone: {{phone}}\nNotes: {{recruiter_notes}}"
@@ -703,8 +710,14 @@ function getCapturedExportFieldValue(item = {}, field = "") {
     case "linkedin": return item.linkedin || "";
     case "client_name": return item.client_name || "";
     case "jd_title": return item.jd_title || item.role || "";
+    case "target_role_open_position": return item.jd_title || item.role || "";
+    case "key_skills_required": return Array.isArray(item.skills) ? item.skills.join(", ") : String(item.skills || "");
     case "recruiter_name": return item.assigned_to_name || item.recruiter_name || "";
     case "date_added": return item.created_at ? String(item.created_at).slice(0, 10) : "";
+    case "domain_industry": return item.domain_industry || "";
+    case "current_org_tenure": return item.current_org_tenure || "";
+    case "reason_of_change": return item.reason_of_change || "";
+    case "other_pointers": return item.other_pointers || "";
     case "other_standard_questions": return item.other_standard_questions || item.last_contact_notes || "";
     case "remarks": return item.recruiter_context_notes || item.notes || "";
     default: return item[key] || "";
@@ -719,6 +732,14 @@ function buildCapturedExcelRows(items, preset, settings = DEFAULT_COPY_SETTINGS)
   const customPreset = (settings?.customExportPresets || []).find((item) => String(item.id || "") === String(preset || ""));
   if (customPreset) {
     const columns = parsePresetColumns(customPreset.columns);
+    return {
+      headers: columns.map((item) => item.header),
+      rows: normalized.map((item) => columns.map((column) => getCapturedExportFieldValue(item, column.field)))
+    };
+  }
+  const builtInColumns = String(settings?.exportPresetColumns?.[preset] || DEFAULT_COPY_SETTINGS.exportPresetColumns?.[preset] || "").trim();
+  if (builtInColumns) {
+    const columns = parsePresetColumns(builtInColumns);
     return {
       headers: columns.map((item) => item.header),
       rows: normalized.map((item) => columns.map((column) => getCapturedExportFieldValue(item, column.field)))
@@ -1125,40 +1146,19 @@ function NotesModal({ open, candidate, onClose, onPatch, onParse }) {
 
   const effectiveRawRecruiterNote = buildStructuredRecruiterRawNote(rawRecruiterSections, "");
 
-  const saveNotesOnly = async () => {
-    setStatus("Saving notes...");
+  const saveAll = async () => {
     try {
-      const canonicalRecruiterNotes = buildCanonicalRecruiterNotes(
-        candidate?.recruiter_context_notes || "",
-        recruiterNote,
-        normalizeRecruiterMergeBase(candidate)
-      );
-      await onPatch({
-        recruiter_context_notes: canonicalRecruiterNotes,
-        other_pointers: normalizeOtherPointersBody(otherPointers)
-      }, "Notes updated.");
-      onClose();
-    } catch (error) {
-      setStatus(String(error?.message || error));
-    }
-  };
-
-  const applyAndSave = async () => {
-    try {
-      if (!mergedPatch) {
-        setStatus("Parse recruiter note first.");
-        return;
-      }
-      if (mergedPatch.overwritten?.length) {
-        const message = mergedPatch.overwritten.map((entry) => `${formatRecruiterOverwriteLabel(entry.key)}: "${entry.from}" -> "${entry.to}"`).join("\n");
+      const mergeForSave = mergedPatch || { merged: normalizeRecruiterMergeBase(candidate), overwritten: [] };
+      if (mergeForSave.overwritten?.length) {
+        const message = mergeForSave.overwritten.map((entry) => `${formatRecruiterOverwriteLabel(entry.key)}: "${entry.from}" -> "${entry.to}"`).join("\n");
         const confirmed = window.confirm(`These fields will be overwritten:\n\n${message}\n\nDo you want to apply and save this recruiter note?`);
         if (!confirmed) return;
       }
-      const extractedFieldPatch = buildRecruiterFieldPatchFromMerge(mergedPatch);
+      const extractedFieldPatch = buildRecruiterFieldPatchFromMerge(mergeForSave);
       const canonicalRecruiterNotes = buildCanonicalRecruiterNotes(
         candidate?.recruiter_context_notes || "",
         recruiterNote,
-        mergedPatch?.merged || normalizeRecruiterMergeBase(candidate)
+        mergeForSave?.merged || normalizeRecruiterMergeBase(candidate)
       );
       await onPatch({
         recruiter_context_notes: canonicalRecruiterNotes,
@@ -1184,6 +1184,7 @@ function NotesModal({ open, candidate, onClose, onPatch, onParse }) {
           <label><span>If serving, offer amount</span><input value={rawRecruiterSections.offer_in_hand} onChange={(e) => setRawRecruiterSections((current) => ({ ...current, offer_in_hand: e.target.value }))} placeholder="Offer amount / in hand offer" /></label>
           <label className="full"><span>LWD or DOJ</span><input value={rawRecruiterSections.lwd_or_doj} onChange={(e) => setRawRecruiterSections((current) => ({ ...current, lwd_or_doj: e.target.value }))} placeholder="8th June / 1st July / DOJ if offered" /></label>
         </div>
+        <label><span>Other pointers</span><textarea value={otherPointers} onChange={(e) => setOtherPointers(e.target.value)} /></label>
         <div className="button-row">
           <button onClick={async () => {
             if (!String(effectiveRawRecruiterNote || "").trim()) {
@@ -1216,7 +1217,7 @@ function NotesModal({ open, candidate, onClose, onPatch, onParse }) {
               setStatus(String(error?.message || error));
             }
           }}>Parse recruiter note</button>
-          <button className="ghost-btn" onClick={applyAndSave}>Apply and save</button>
+          <button className="ghost-btn" onClick={saveAll}>Save all</button>
         </div>
         {parsedSummary ? (
           <div className="parsed-summary">
@@ -1240,10 +1241,9 @@ function NotesModal({ open, candidate, onClose, onPatch, onParse }) {
           </div>
         ) : null}
         <label><span>Recruiter note</span><textarea value={recruiterNote} onChange={(e) => setRecruiterNote(e.target.value)} /></label>
-        <label><span>Other pointers</span><textarea value={otherPointers} onChange={(e) => setOtherPointers(e.target.value)} /></label>
         {status ? <div className="status">{status}</div> : null}
         <div className="button-row">
-          <button onClick={saveNotesOnly}>Save notes only</button>
+          <button onClick={saveAll}>Save all</button>
           <button className="ghost-btn" onClick={onClose}>Cancel</button>
         </div>
       </div>
@@ -1258,12 +1258,20 @@ function AttemptsModal({ open, candidate, attempts, onClose, onRefresh, onSave }
   const [status, setStatus] = useState("");
 
   useEffect(() => {
-    if (!open) return;
-    setOutcome("");
-    setNotes("");
-    setNextFollowUpAt("");
+    if (!open || !candidate) return;
+    setOutcome(String(candidate.last_contact_outcome || "").trim());
+    setNotes(String(candidate.last_contact_notes || "").trim());
+    if (candidate.next_follow_up_at) {
+      const followUp = new Date(candidate.next_follow_up_at);
+      const localValue = Number.isNaN(followUp.getTime())
+        ? ""
+        : new Date(followUp.getTime() - followUp.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+      setNextFollowUpAt(localValue);
+    } else {
+      setNextFollowUpAt("");
+    }
     setStatus("");
-  }, [open]);
+  }, [open, candidate]);
 
     useEffect(() => {
       const parsed = inferAttemptOutcomeAndFollowUp(extractLastMeaningfulLine(notes));
@@ -1283,9 +1291,20 @@ function AttemptsModal({ open, candidate, attempts, onClose, onRefresh, onSave }
         <h3>Attempts</h3>
         <p className="muted">{candidate.name || "Candidate"} | {candidate.jd_title || candidate.role || "No role set"}</p>
         <div className="attempt-grid">
-          <div className="attempt-history">
+        <div className="attempt-history">
             <h4>History</h4>
             <div className="stack-list compact">
+              {candidate?.last_contact_outcome || candidate?.last_contact_notes || candidate?.next_follow_up_at ? (
+                <article className="item-card compact-card">
+                  <div className="item-card__top compact-top">
+                    <strong>Latest saved status</strong>
+                    <span className="muted">{candidate?.last_contact_at ? new Date(candidate.last_contact_at).toLocaleString() : ""}</span>
+                  </div>
+                  <p className="muted">{candidate?.last_contact_outcome || "No outcome"}</p>
+                  {candidate?.last_contact_notes ? <p className="muted">{candidate.last_contact_notes}</p> : null}
+                  {candidate?.next_follow_up_at ? <div className="chip-row"><span className="chip">Next follow-up: {new Date(candidate.next_follow_up_at).toLocaleString()}</span></div> : null}
+                </article>
+              ) : null}
               {!attempts.length ? <div className="empty-state">No attempts logged yet.</div> : attempts.map((item) => (
                 <article key={item.id || `${item.created_at}-${item.outcome}`} className="item-card compact-card">
                   <div className="item-card__top compact-top">
@@ -2272,6 +2291,51 @@ function PortalApp({ token, onLogout }) {
     }));
   }
 
+  const selectedCustomPreset = (copySettings.customExportPresets || []).find((preset) => String(preset.id) === String(copySettings.excelPreset));
+  const selectedBuiltInPresetId = selectedCustomPreset ? "" : String(copySettings.excelPreset || "");
+  const selectedPresetLabel = selectedCustomPreset
+    ? selectedCustomPreset.label
+    : (copySettings.exportPresetLabels?.[selectedBuiltInPresetId] || DEFAULT_COPY_SETTINGS.exportPresetLabels?.[selectedBuiltInPresetId] || "");
+  const selectedPresetColumns = selectedCustomPreset
+    ? selectedCustomPreset.columns
+    : (copySettings.exportPresetColumns?.[selectedBuiltInPresetId] || DEFAULT_COPY_SETTINGS.exportPresetColumns?.[selectedBuiltInPresetId] || "");
+
+  function updateSelectedPresetLabel(value) {
+    if (selectedCustomPreset) {
+      setCopySettings((current) => ({
+        ...current,
+        customExportPresets: (current.customExportPresets || []).map((preset) => String(preset.id) === String(selectedCustomPreset.id) ? { ...preset, label: value } : preset)
+      }));
+      return;
+    }
+    if (!selectedBuiltInPresetId) return;
+    setCopySettings((current) => ({
+      ...current,
+      exportPresetLabels: {
+        ...(current.exportPresetLabels || {}),
+        [selectedBuiltInPresetId]: value
+      }
+    }));
+  }
+
+  function updateSelectedPresetColumns(value) {
+    if (selectedCustomPreset) {
+      setCopySettings((current) => ({
+        ...current,
+        customExportPresets: (current.customExportPresets || []).map((preset) => String(preset.id) === String(selectedCustomPreset.id) ? { ...preset, columns: value } : preset)
+      }));
+      return;
+    }
+    if (!selectedBuiltInPresetId) return;
+    setCopySettings((current) => ({
+      ...current,
+      exportPresetColumns: {
+        ...(current.exportPresetColumns || {}),
+        [selectedBuiltInPresetId]: value
+      }
+    }));
+  }
+
   function deleteShortcutDraft(key) {
     const parsed = parseShortcutMap(jobDraft.jdShortcuts);
     delete parsed[key];
@@ -3206,8 +3270,12 @@ function PortalApp({ token, onLogout }) {
                       </select>
                     </label>
                     <label>
-                      <span>Attentive preset label</span>
-                      <input disabled={!isSettingsAdmin} value={copySettings.exportPresetLabels?.attentive_tracker || ""} onChange={(e) => setCopySettings((current) => ({ ...current, exportPresetLabels: { ...(current.exportPresetLabels || {}), attentive_tracker: e.target.value } }))} />
+                      <span>Selected preset label</span>
+                      <input disabled={!isSettingsAdmin} value={selectedPresetLabel} onChange={(e) => updateSelectedPresetLabel(e.target.value)} />
+                    </label>
+                    <label className="full">
+                      <span>Selected preset columns</span>
+                      <textarea disabled={!isSettingsAdmin} value={selectedPresetColumns} onChange={(e) => updateSelectedPresetColumns(e.target.value)} />
                     </label>
                     <label className="full">
                       <span>WhatsApp template</span>
