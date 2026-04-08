@@ -228,6 +228,46 @@ function normalizeOtherPointersBody(rawText) {
     .join("\n");
 }
 
+function buildStructuredRecruiterRawNote(sections = {}, extraText = "") {
+  const lines = [];
+  const pushLine = (label, value) => {
+    const clean = String(value || "").trim();
+    if (!clean) return;
+    lines.push(`${label} - ${clean}`);
+  };
+  pushLine("Current CTC", sections.current_ctc);
+  pushLine("Expected CTC", sections.expected_ctc);
+  pushLine("Notice period", sections.notice_period);
+  pushLine("Offer in hand", sections.offer_in_hand);
+  pushLine("LWD / DOJ", sections.lwd_or_doj);
+  const extra = splitStructuredDraftLines(extraText).join("\n");
+  return [...lines, extra].filter(Boolean).join("\n");
+}
+
+function buildStructuredRecruiterSectionOverrides(sections = {}) {
+  const normalizeSectionValue = (value) => {
+    const clean = String(value || "").trim();
+    if (!clean) return "";
+    const lowered = clean.toLowerCase();
+    if (["0", "-", "--", "na", "n/a", "nil", "none", "same", "same as existing", "unchanged"].includes(lowered)) {
+      return "";
+    }
+    return clean;
+  };
+  const direct = {};
+  const currentCtc = normalizeSectionValue(sections.current_ctc);
+  const expectedCtc = normalizeSectionValue(sections.expected_ctc);
+  const noticePeriod = normalizeSectionValue(sections.notice_period);
+  const offerInHand = normalizeSectionValue(sections.offer_in_hand);
+  const lwdOrDoj = normalizeSectionValue(sections.lwd_or_doj);
+  if (currentCtc) direct.current_ctc = currentCtc;
+  if (expectedCtc) direct.expected_ctc = expectedCtc;
+  if (noticePeriod) direct.notice_period = noticePeriod;
+  if (offerInHand) direct.offer_in_hand = offerInHand;
+  if (lwdOrDoj) direct.notice_period = lwdOrDoj;
+  return direct;
+}
+
 function mergeRecruiterNotes(existingText, incomingText) {
   const existing = normalizeRecruiterNotesBody(existingText);
   const incoming = normalizeRecruiterNotesBody(incomingText);
@@ -942,6 +982,13 @@ function NotesModal({ open, candidate, onClose, onPatch, onParse }) {
   const [recruiterNote, setRecruiterNote] = useState("");
   const [otherPointers, setOtherPointers] = useState("");
   const [rawRecruiterNote, setRawRecruiterNote] = useState("");
+  const [rawRecruiterSections, setRawRecruiterSections] = useState({
+    current_ctc: "",
+    expected_ctc: "",
+    notice_period: "",
+    offer_in_hand: "",
+    lwd_or_doj: ""
+  });
   const [parsedSummary, setParsedSummary] = useState(null);
   const [conflicts, setConflicts] = useState([]);
   const [mergedPatch, setMergedPatch] = useState(null);
@@ -949,16 +996,26 @@ function NotesModal({ open, candidate, onClose, onPatch, onParse }) {
 
   useEffect(() => {
     if (!open || !candidate) return;
+    const base = normalizeRecruiterMergeBase(candidate);
     setRecruiterNote(String(candidate.recruiter_context_notes || ""));
     setOtherPointers(String(candidate.other_pointers || ""));
     setRawRecruiterNote("");
-    setParsedSummary(normalizeRecruiterMergeBase(candidate));
+    setRawRecruiterSections({
+      current_ctc: String(base.current_ctc || ""),
+      expected_ctc: String(base.expected_ctc || ""),
+      notice_period: /\b(day|date|april|may|june|july|aug|august|sep|sept|oct|nov|dec|jan|feb|mar|\d{1,2}(?:st|nd|rd|th)?)\b/i.test(String(base.notice_period || "")) ? "" : String(base.notice_period || ""),
+      offer_in_hand: String(base.offer_in_hand || ""),
+      lwd_or_doj: /\b(day|date|april|may|june|july|aug|august|sep|sept|oct|nov|dec|jan|feb|mar|\d{1,2}(?:st|nd|rd|th)?)\b/i.test(String(base.notice_period || "")) ? String(base.notice_period || "") : ""
+    });
+    setParsedSummary(base);
     setConflicts([]);
     setMergedPatch(null);
     setStatus("");
   }, [open, candidate]);
 
   if (!open || !candidate) return null;
+
+  const effectiveRawRecruiterNote = buildStructuredRecruiterRawNote(rawRecruiterSections, rawRecruiterNote);
 
   const saveNotesOnly = async () => {
     setStatus("Saving notes...");
@@ -1012,21 +1069,37 @@ function NotesModal({ open, candidate, onClose, onPatch, onParse }) {
       <div className="overlay-card" onClick={(e) => e.stopPropagation()}>
         <h3>Recruiter Note</h3>
         <p className="muted">{candidate.name || "Candidate"} | {candidate.jd_title || candidate.role || "No role set"}</p>
-        <label><span>Raw recruiter note</span><textarea value={rawRecruiterNote} onChange={(e) => setRawRecruiterNote(e.target.value)} placeholder="Paste the discussion note here, then parse it before applying." /></label>
+        <div className="form-grid two-col">
+          <label><span>Current CTC</span><input value={rawRecruiterSections.current_ctc} onChange={(e) => setRawRecruiterSections((current) => ({ ...current, current_ctc: e.target.value }))} placeholder="Recruiter can type in any style here" /></label>
+          <label><span>Expected CTC</span><input value={rawRecruiterSections.expected_ctc} onChange={(e) => setRawRecruiterSections((current) => ({ ...current, expected_ctc: e.target.value }))} placeholder="Expected / expectation" /></label>
+          <label><span>Notice period</span><input value={rawRecruiterSections.notice_period} onChange={(e) => setRawRecruiterSections((current) => ({ ...current, notice_period: e.target.value }))} placeholder="15 days / immediate / 30 days" /></label>
+          <label><span>If serving, offer amount</span><input value={rawRecruiterSections.offer_in_hand} onChange={(e) => setRawRecruiterSections((current) => ({ ...current, offer_in_hand: e.target.value }))} placeholder="Offer amount / in hand offer" /></label>
+          <label className="full"><span>LWD or DOJ</span><input value={rawRecruiterSections.lwd_or_doj} onChange={(e) => setRawRecruiterSections((current) => ({ ...current, lwd_or_doj: e.target.value }))} placeholder="8th June / 1st July / DOJ if offered" /></label>
+        </div>
+        <label><span>Additional raw recruiter note</span><textarea value={rawRecruiterNote} onChange={(e) => setRawRecruiterNote(e.target.value)} placeholder="Optional extra discussion notes. These will be added below the fixed sections before parsing." /></label>
         <div className="button-row">
           <button onClick={async () => {
-            if (!String(rawRecruiterNote || "").trim()) {
+            if (!String(effectiveRawRecruiterNote || "").trim()) {
               setStatus("Type recruiter note first.");
               return;
             }
             setStatus("Parsing recruiter note...");
             try {
-              const parsed = await onParse(rawRecruiterNote);
-              const merge = buildRecruiterMerge(candidate, parsed || {}, rawRecruiterNote);
-              setMergedPatch(merge);
+              const parsed = await onParse(effectiveRawRecruiterNote);
+              const structuredOverrides = buildStructuredRecruiterSectionOverrides(rawRecruiterSections);
+              const merge = buildRecruiterMerge(
+                candidate,
+                { ...(parsed || {}), ...structuredOverrides },
+                effectiveRawRecruiterNote
+              );
+              const mergedWithStructuredPriority = {
+                ...(merge.merged || {}),
+                ...structuredOverrides
+              };
+              setMergedPatch({ ...merge, merged: mergedWithStructuredPriority });
               setConflicts(merge.overwritten || []);
-              setParsedSummary(merge.merged || null);
-              setRecruiterNote(normalizeRecruiterNotesBody(rawRecruiterNote));
+              setParsedSummary(mergedWithStructuredPriority || null);
+              setRecruiterNote(normalizeRecruiterNotesBody(effectiveRawRecruiterNote));
               setStatus(
                 merge.overwritten?.length
                   ? `Recruiter note parsed. Conflicts found in ${merge.overwritten.map((entry) => formatRecruiterOverwriteLabel(entry.key)).join(", ")}.`
@@ -1226,21 +1299,37 @@ function AssessmentStatusModal({ open, assessment, onClose, onSave }) {
   );
 }
 
-function NewDraftModal({ open, form, onChange, onClose, onSave }) {
+function NewDraftModal({ open, form, users, jobs, currentUser, onChange, onClose, onSave }) {
   if (!open) return null;
+  const isAdmin = String(currentUser?.role || "").toLowerCase() === "admin";
   return (
     <div className="overlay" onClick={onClose}>
       <div className="overlay-card" onClick={(e) => e.stopPropagation()}>
         <h3>Create Draft</h3>
         <p className="muted">Add minimal details to create a draft without parsing.</p>
         <div className="form-grid two-col">
+          {isAdmin ? (
+            <label>
+              <span>Assign recruiter</span>
+              <select value={form.assigned_to_user_id} onChange={(e) => onChange("assigned_to_user_id", e.target.value)}>
+                <option value="">Select recruiter</option>
+                {(users || []).map((user) => <option key={user.id} value={user.id}>{user.name} | {user.email}</option>)}
+              </select>
+            </label>
+          ) : null}
           <label><span>Name</span><input value={form.name} onChange={(e) => onChange("name", e.target.value)} /></label>
           <label><span>Phone</span><input value={form.phone} onChange={(e) => onChange("phone", e.target.value)} /></label>
           <label><span>Email</span><input value={form.email} onChange={(e) => onChange("email", e.target.value)} /></label>
           <label><span>Company</span><input value={form.company} onChange={(e) => onChange("company", e.target.value)} /></label>
           <label><span>Role</span><input value={form.role} onChange={(e) => onChange("role", e.target.value)} /></label>
           <label><span>Location</span><input value={form.location} onChange={(e) => onChange("location", e.target.value)} /></label>
-          <label><span>JD / Role</span><input value={form.jd_title} onChange={(e) => onChange("jd_title", e.target.value)} /></label>
+          <label>
+            <span>JD / Role</span>
+            <select value={form.jd_title} onChange={(e) => onChange("jd_title", e.target.value)}>
+              <option value="">Select JD / role</option>
+              {(jobs || []).map((job) => <option key={job.id} value={job.title}>{job.title}</option>)}
+            </select>
+          </label>
           <label><span>Client</span><input value={form.client_name} onChange={(e) => onChange("client_name", e.target.value)} /></label>
           <label className="full"><span>Notes</span><textarea value={form.notes} onChange={(e) => onChange("notes", e.target.value)} /></label>
         </div>
@@ -1347,6 +1436,7 @@ function PortalApp({ token, onLogout }) {
   });
   const [newDraftOpen, setNewDraftOpen] = useState(false);
   const [newDraftForm, setNewDraftForm] = useState({
+    assigned_to_user_id: "",
     name: "",
     phone: "",
     email: "",
@@ -1599,17 +1689,24 @@ function PortalApp({ token, onLogout }) {
   }
 
   async function createManualDraft() {
+    const isAdmin = String(state.user?.role || "").toLowerCase() === "admin";
+    const assignedRecruiter = isAdmin
+      ? (state.users || []).find((user) => String(user.id) === String(newDraftForm.assigned_to_user_id))
+      : state.user;
     const payload = {
       ...newDraftForm,
       source: "manual_draft",
       recruiter_context_notes: "",
       other_pointers: "",
-      hidden_from_captured: false
+      hidden_from_captured: false,
+      assigned_to_user_id: assignedRecruiter?.id || "",
+      assigned_to_name: assignedRecruiter?.name || ""
     };
     await api("/candidates", token, "POST", { candidate: payload });
     await loadWorkspace();
     setNewDraftOpen(false);
     setNewDraftForm({
+      assigned_to_user_id: "",
       name: "",
       phone: "",
       email: "",
@@ -2957,6 +3054,9 @@ function PortalApp({ token, onLogout }) {
       <NewDraftModal
         open={newDraftOpen}
         form={newDraftForm}
+        users={state.users}
+        jobs={state.jobs}
+        currentUser={state.user}
         onChange={(key, value) => setNewDraftForm((current) => ({ ...current, [key]: value }))}
         onClose={() => setNewDraftOpen(false)}
         onSave={() => void createManualDraft()}
