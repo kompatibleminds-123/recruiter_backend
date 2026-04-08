@@ -176,6 +176,38 @@ function normalizeOtherPointersBody(rawText) {
     .join("\n");
 }
 
+function mergeRecruiterNotes(existingText, incomingText) {
+  const existing = normalizeRecruiterNotesBody(existingText);
+  const incoming = normalizeRecruiterNotesBody(incomingText);
+  if (!existing) return incoming;
+  if (!incoming) return existing;
+  const existingLines = existing.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  const incomingLines = incoming.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  const keyed = new Map();
+  const order = [];
+  const getLineKey = (line) => {
+    const lower = String(line || "").toLowerCase().trim();
+    if (!lower) return "";
+    if (lower.startsWith("expected ctc")) return "expected_ctc";
+    if (lower.startsWith("current ctc")) return "current_ctc";
+    if (lower.startsWith("notice period")) return "notice_period";
+    if (lower.startsWith("official notice period")) return "official_notice_period";
+    if (lower.startsWith("location")) return "location";
+    if (lower.startsWith("working model")) return "working_model";
+    if (lower.startsWith("shift")) return "shift";
+    if (lower.startsWith("relocation")) return "relocation";
+    if (lower.startsWith("communication")) return "communication";
+    if (lower.startsWith("offer in hand")) return "offer_in_hand";
+    return `free:${lower}`;
+  };
+  [...existingLines, ...incomingLines].forEach((line) => {
+    const key = getLineKey(line);
+    if (!order.includes(key)) order.push(key);
+    keyed.set(key, line);
+  });
+  return order.map((key) => keyed.get(key) || "").filter(Boolean).join("\n");
+}
+
 function extractLastMeaningfulLine(text) {
   const lines = String(text || "").split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
   return lines.length ? lines[lines.length - 1] : "";
@@ -184,10 +216,10 @@ function extractLastMeaningfulLine(text) {
 function parseNaturalFollowUpDate(text, baseDate = new Date()) {
   const value = String(text || "").toLowerCase();
   if (!value) return "";
-  const hasRelativeDate = /\btomorrow\b|\bday after tomorrow\b|\bnext week\b|\bthis week\b|\b1st week\b|\b2nd week\b|\byesterday\b/.test(value);
+  const hasRelativeDate = /\btoday\b|\btomorrow\b|\bday after tomorrow\b|\bnext week\b|\bthis week\b|\b1st week\b|\b2nd week\b|\byesterday\b/.test(value);
   const hasExplicitDate = /\b(\d{1,2})(?:st|nd|rd|th)?\s+(jan|january|feb|february|mar|march|apr|april|may|jun|june|jul|july|aug|august|sep|sept|september|oct|october|nov|november|dec|december)\b/.test(value);
   const hasTime = /\b(\d{1,2})(?::(\d{2}))?\s*(am|pm)\b|\bmorning\b|\bevening\b/.test(value);
-  if (!hasRelativeDate && !hasExplicitDate) return "";
+  if (!hasRelativeDate && !hasExplicitDate && !hasTime) return "";
   const result = new Date(baseDate);
   result.setSeconds(0, 0);
 
@@ -236,7 +268,7 @@ function inferAttemptOutcomeAndFollowUp(text) {
   if (/\brevisit\b/.test(value)) return { outcome: "Revisit for other role", followUpAt: "", candidateStatus: "Revisit for other role" };
   if (/\bhold\b|\bon hold\b|\bhigh ctc\b|\bhigh notice\b|\bhigh np\b|\bout of budget\b/.test(value)) return { outcome: "Hold by recruiter", followUpAt: "", candidateStatus: "Hold" };
   if (/\binterested\b/.test(value)) return { outcome: "Interested", followUpAt: "", candidateStatus: "Interested" };
-  if (/\bcall later\b|\bcall next\b|\bnext call\b|\bfollow up\b|\bcall tomorrow\b|\bcall today\b|\bcall day after tomorrow\b|\bcall next week\b|\bcall this week\b|\bcall on\b/.test(value)) return { outcome: "Call later", followUpAt: parseNaturalFollowUpDate(value), candidateStatus: "Follow-up" };
+  if (/\bcall later\b|\bcall next\b|\bnext call\b|\bfollow up\b|\bcall tomorrow\b|\bcall today\b|\bcall day after tomorrow\b|\bcall next week\b|\bcall this week\b|\bcall on\b|\bcall at\b/.test(value)) return { outcome: "Call later", followUpAt: parseNaturalFollowUpDate(value), candidateStatus: "Follow-up" };
   if (/\bnot reachable\b|\bnot able to connect\b/.test(value)) return { outcome: "Not reachable", followUpAt: "", candidateStatus: "" };
   if (/\bswitch off\b|\bswitched off\b/.test(value)) return { outcome: "Switch Off", followUpAt: "", candidateStatus: "" };
   if (/\bdisconnected\b|\bdisconnecting\b|\bcutting the call\b|\bcall cut\b/.test(value)) return { outcome: "Disconnected", followUpAt: "", candidateStatus: "" };
@@ -695,7 +727,7 @@ function NotesModal({ open, candidate, onClose, onPatch, onParse }) {
                 if (String(value || "").trim()) extractedFieldPatch[key] = value;
               });
               const patch = {
-                recruiter_context_notes: normalizeRecruiterNotesBody(rawRecruiterNote || recruiterNote),
+                recruiter_context_notes: mergeRecruiterNotes(recruiterNote, rawRecruiterNote || recruiterNote),
                 other_pointers: normalizeOtherPointersBody(otherPointers),
                 ...extractedFieldPatch
               };
@@ -732,7 +764,7 @@ function NotesModal({ open, candidate, onClose, onPatch, onParse }) {
         <label><span>Other pointers</span><textarea value={otherPointers} onChange={(e) => setOtherPointers(e.target.value)} /></label>
         {status ? <div className="status">{status}</div> : null}
         <div className="button-row">
-          <button onClick={async () => { setStatus("Saving notes..."); try { await onPatch({ recruiter_context_notes: normalizeRecruiterNotesBody(recruiterNote), other_pointers: normalizeOtherPointersBody(otherPointers) }, "Recruiter note updated."); onClose(); } catch (error) { setStatus(String(error?.message || error)); } }}>Save notes</button>
+          <button onClick={async () => { setStatus("Saving notes..."); try { await onPatch({ recruiter_context_notes: mergeRecruiterNotes(candidate?.recruiter_context_notes || "", recruiterNote), other_pointers: normalizeOtherPointersBody(otherPointers) }, "Recruiter note updated."); onClose(); } catch (error) { setStatus(String(error?.message || error)); } }}>Save notes</button>
           <button className="ghost-btn" onClick={onClose}>Cancel</button>
         </div>
       </div>
