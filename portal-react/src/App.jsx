@@ -1457,6 +1457,39 @@ function PortalApp({ token, onLogout }) {
   const jdScreeningQuestions = parseQuestionList(jobDraft.standardQuestions);
   const clientPositionRows = state.dashboard?.summary?.byClientPosition || [];
   const recruiterPositionRows = state.dashboard?.summary?.byClientRecruiter || [];
+  const todayStart = new Date();
+  todayStart.setHours(0, 0, 0, 0);
+  const todayEnd = new Date(todayStart);
+  todayEnd.setDate(todayEnd.getDate() + 1);
+  const todaysFollowUps = (state.candidates || []).filter((item) => {
+    const value = item?.next_follow_up_at ? new Date(item.next_follow_up_at) : null;
+    return value && value >= todayStart && value < todayEnd;
+  });
+  const todaysInterviews = (state.assessments || []).filter((item) => {
+    const value = item?.interviewAt ? new Date(item.interviewAt) : null;
+    return value && value >= todayStart && value < todayEnd;
+  });
+  const pendingAssignments = (state.applicants || []).length;
+  const todaysAgendaItems = [
+    ...todaysFollowUps.map((item) => ({
+      key: `followup-${item.id}`,
+      type: "Follow-up",
+      title: item.name || "Candidate",
+      subtitle: item.jd_title || item.role || "Untitled role",
+      when: item.next_follow_up_at,
+      action: () => loadCandidateIntoInterview(item.id)
+    })),
+    ...todaysInterviews.map((item) => ({
+      key: `interview-${item.id}`,
+      type: "Interview",
+      title: item.candidateName || "Candidate",
+      subtitle: item.jdTitle || "Untitled role",
+      when: item.interviewAt,
+      action: () => openSavedAssessment(item)
+    }))
+  ]
+    .sort((a, b) => new Date(a.when) - new Date(b.when))
+    .slice(0, 8);
 
   return (
     <div className="app-shell">
@@ -1490,6 +1523,34 @@ function PortalApp({ token, onLogout }) {
         <Routes>
           <Route path="/dashboard" element={
             <div className="page-grid">
+              <Section kicker="Today" title="Today's Agenda">
+                <div className="agenda-summary-grid">
+                  <div className="metric-card compact-metric">
+                    <div className="metric-label">Follow-ups due today</div>
+                    <div className="metric-value">{todaysFollowUps.length}</div>
+                  </div>
+                  <div className="metric-card compact-metric">
+                    <div className="metric-label">Interviews today</div>
+                    <div className="metric-value">{todaysInterviews.length}</div>
+                  </div>
+                  <div className="metric-card compact-metric">
+                    <div className="metric-label">Pending applicants</div>
+                    <div className="metric-value">{pendingAssignments}</div>
+                  </div>
+                </div>
+                <div className="stack-list compact">
+                  {!todaysAgendaItems.length ? (
+                    <div className="empty-state">No scheduled follow-ups or interviews for today yet.</div>
+                  ) : todaysAgendaItems.map((item) => (
+                    <button key={item.key} className="agenda-item" onClick={item.action}>
+                      <span className="agenda-item__type">{item.type}</span>
+                      <span className="agenda-item__title">{item.title}</span>
+                      <span className="agenda-item__subtitle">{item.subtitle}</span>
+                      <span className="agenda-item__time">{new Date(item.when).toLocaleString()}</span>
+                    </button>
+                  ))}
+                </div>
+              </Section>
               <Section kicker="Performance" title="Recruitment Dashboard">
                 <div className="form-grid three-col">
                   <label><span>Date from</span><input type="date" value={dashboardFilters.dateFrom} onChange={(e) => setDashboardFilters((c) => ({ ...c, dateFrom: e.target.value, quickRange: "custom" }))} /></label>
