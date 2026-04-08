@@ -211,10 +211,14 @@ function sanitizeSharedExportPresetSettings(raw) {
     exportPresetLabels: {
       compact_recruiter: String(rawLabels.compact_recruiter || "").trim(),
       client_tracker: String(rawLabels.client_tracker || "").trim(),
+      attentive_tracker: String(rawLabels.attentive_tracker || "").trim(),
       client_submission: String(rawLabels.client_submission || "").trim(),
       screening_focus: String(rawLabels.screening_focus || "").trim(),
       custom_template: String(rawLabels.custom_template || "").trim()
     },
+    excelPreset: String(source.excelPreset || source.excel_preset || "").trim(),
+    whatsappTemplate: String(source.whatsappTemplate || source.whatsapp_template || "").trim(),
+    emailTemplate: String(source.emailTemplate || source.email_template || "").trim(),
     customExportPresets: rawCustomPresets
       .map((item, index) => ({
         id: String(item?.id || `custom_preset_${index + 1}`).trim(),

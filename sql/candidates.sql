@@ -15,6 +15,7 @@ create table if not exists public.candidates (
   current_ctc text,
   expected_ctc text,
   notice_period text,
+  lwd_or_doj text,
   notes text,
   recruiter_context_notes text,
   next_action text,
@@ -36,6 +37,7 @@ create table if not exists public.candidates (
   last_contact_notes text,
   last_contact_at timestamptz,
   next_follow_up_at timestamptz,
+  hidden_from_captured boolean not null default false,
   raw_note text,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
