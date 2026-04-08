@@ -313,6 +313,18 @@ function PortalApp({ token, onLogout }) {
   const [notesCandidateId, setNotesCandidateId] = useState("");
   const [attemptsCandidateId, setAttemptsCandidateId] = useState("");
   const [attempts, setAttempts] = useState([]);
+  const [selectedJobId, setSelectedJobId] = useState("");
+  const [jobDraft, setJobDraft] = useState({
+    id: "",
+    title: "",
+    clientName: "",
+    jobDescription: "",
+    mustHaveSkills: "",
+    redFlags: "",
+    recruiterNotes: "",
+    standardQuestions: "",
+    jdShortcuts: ""
+  });
   const [interviewMeta, setInterviewMeta] = useState({ candidateId: "", assessmentId: "" });
   const [interviewForm, setInterviewForm] = useState({
     candidateName: "",
@@ -514,6 +526,136 @@ function PortalApp({ token, onLogout }) {
     await api("/company/applicant-intake-secret", token, "POST", {});
     await loadWorkspace();
     setStatus("intake", "Applicant intake secret rotated.", "ok");
+  }
+
+  function loadJobIntoDraft(jobId) {
+    const job = (state.jobs || []).find((item) => String(item.id) === String(jobId));
+    if (!job) {
+      setSelectedJobId("");
+      setJobDraft({
+        id: "",
+        title: "",
+        clientName: "",
+        jobDescription: "",
+        mustHaveSkills: "",
+        redFlags: "",
+        recruiterNotes: "",
+        standardQuestions: "",
+        jdShortcuts: ""
+      });
+      return;
+    }
+    setSelectedJobId(String(job.id || ""));
+    setJobDraft({
+      id: String(job.id || ""),
+      title: String(job.title || ""),
+      clientName: String(job.clientName || ""),
+      jobDescription: String(job.jobDescription || ""),
+      mustHaveSkills: String(job.mustHaveSkills || ""),
+      redFlags: String(job.redFlags || ""),
+      recruiterNotes: String(job.recruiterNotes || ""),
+      standardQuestions: String(job.standardQuestions || ""),
+      jdShortcuts: String(job.jdShortcuts || "")
+    });
+  }
+
+  async function saveJobDraft() {
+    setStatus("jobs", "Saving JD...");
+    const result = await api("/company/jds", token, "POST", { job: jobDraft });
+    await loadWorkspace();
+    setSelectedJobId(String(result?.id || jobDraft.id || ""));
+    setStatus("jobs", "JD saved.", "ok");
+  }
+
+  function downloadJobDraft() {
+    const blob = new Blob([jobDraft.jobDescription || ""], { type: "text/plain;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `${(jobDraft.title || "jd").replace(/[^\w\-]+/g, "-")}.txt`;
+    link.click();
+    URL.revokeObjectURL(url);
+  }
+
+  function applySelectedJobToInterview() {
+    setInterviewForm((current) => ({
+      ...current,
+      jdTitle: jobDraft.title || current.jdTitle,
+      clientName: jobDraft.clientName || current.clientName
+    }));
+    navigate("/interview");
+    setStatus("interview", `Applied JD setup for ${jobDraft.title || "selected role"} into Interview Panel.`, "ok");
+  }
+
+  function generateJdFromText() {
+    const text = String(jobDraft.jobDescription || "").trim();
+    if (!text) {
+      setStatus("jobs", "Paste role text first.", "error");
+      return;
+    }
+    const lines = text.split(/\r?\n/).map((item) => item.trim()).filter(Boolean);
+    const title = jobDraft.title || lines[0] || "";
+    const skills = (text.match(/\b(Java|Python|React|Node|Sales|Recruitment|HR|SQL|Excel|Flutter|Real Estate)\b/gi) || [])
+      .filter((value, index, array) => array.findIndex((item) => item.toLowerCase() === value.toLowerCase()) === index)
+      .join(", ");
+    setJobDraft((current) => ({
+      ...current,
+      title,
+      mustHaveSkills: current.mustHaveSkills || skills,
+      recruiterNotes: current.recruiterNotes || `Generated from text on ${new Date().toLocaleString()}`
+    }));
+    setStatus("jobs", "Generated JD fields from text.", "ok");
+  }
+
+  async function handleJdUpload(file) {
+    if (!file) return;
+    const text = await file.text();
+    setJobDraft((current) => ({
+      ...current,
+      jobDescription: text,
+      title: current.title || String(file.name || "").replace(/\.[^.]+$/, "").replace(/[-_]+/g, " ")
+    }));
+    setStatus("jobs", "JD text uploaded into editor.", "ok");
+  }
+
+  function copyInterviewResult() {
+    const text = [
+      interviewForm.candidateName,
+      interviewForm.jdTitle ? `JD: ${interviewForm.jdTitle}` : "",
+      interviewForm.clientName ? `Client: ${interviewForm.clientName}` : "",
+      interviewForm.recruiterNotes ? `Recruiter notes: ${interviewForm.recruiterNotes}` : "",
+      interviewForm.callbackNotes ? `Callback notes: ${interviewForm.callbackNotes}` : ""
+    ].filter(Boolean).join("\n");
+    return copyText(text).then(() => setStatus("interview", "Interview result copied.", "ok"));
+  }
+
+  function copyInterviewEmail() {
+    const text = `Candidate: ${interviewForm.candidateName}\nRole: ${interviewForm.jdTitle}\nLocation: ${interviewForm.location}\nNotes: ${interviewForm.callbackNotes}`;
+    return copyText(text).then(() => setStatus("interview", "Email summary copied.", "ok"));
+  }
+
+  function copyInterviewWhatsapp() {
+    const phone = String(interviewForm.phoneNumber || "").replace(/[^\d]/g, "");
+    if (!phone) {
+      setStatus("interview", "No phone number available.", "error");
+      return;
+    }
+    window.open(`https://wa.me/${phone}`, "_blank", "noopener,noreferrer");
+  }
+
+  function sendInterviewToSheets() {
+    setStatus("interview", "Sent to Sheets wiring will be connected next.", "ok");
+  }
+
+  function exportInterviewAll() {
+    const text = JSON.stringify(interviewForm, null, 2);
+    const blob = new Blob([text], { type: "application/json;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `${(interviewForm.candidateName || "interview-draft").replace(/[^\w\-]+/g, "-")}.json`;
+    link.click();
+    URL.revokeObjectURL(url);
   }
 
   function buildJourneyText(assessment) {
@@ -764,38 +906,61 @@ function PortalApp({ token, onLogout }) {
           } />
 
           <Route path="/interview" element={
-            <Section kicker="Recruiter Workflow" title="Interview Panel">
-              <p className="muted">Use this for recruiter notes, callback updates, status progression, and formal assessment save.</p>
-              {statuses.interview ? <div className={`status ${statuses.interviewKind || ""}`}>{statuses.interview}</div> : null}
-              <form className="form-grid two-col" onSubmit={(e) => { e.preventDefault(); void saveAssessment(); }}>
-                {[["candidateName", "Candidate name"], ["phoneNumber", "Phone"], ["emailId", "Email", "email"], ["location", "Location"], ["currentCompany", "Current company"], ["currentDesignation", "Current designation"], ["totalExperience", "Total experience"], ["clientName", "Client name"]].map(([name, label, type]) => (
-                  <label key={name}><span>{label}</span><input type={type || "text"} value={interviewForm[name]} onChange={(e) => setInterviewForm((c) => ({ ...c, [name]: e.target.value }))} /></label>
-                ))}
-                <label className="full"><span>JD / role</span><input value={interviewForm.jdTitle} onChange={(e) => setInterviewForm((c) => ({ ...c, jdTitle: e.target.value }))} /></label>
-                <label>
-                  <span>Pipeline stage</span>
-                  <select value={interviewForm.pipelineStage} onChange={(e) => setInterviewForm((c) => ({ ...c, pipelineStage: e.target.value }))}>
-                    <option value="">Select pipeline stage</option>
-                    {DEFAULT_PIPELINE_STAGE_OPTIONS.map((item) => <option key={item} value={item}>{item}</option>)}
-                  </select>
-                </label>
-                <label>
-                  <span>Candidate status</span>
-                  <select value={interviewForm.candidateStatus} onChange={(e) => setInterviewForm((c) => ({ ...c, candidateStatus: e.target.value, pipelineStage: mapAssessmentStatusToPipelineStage(e.target.value) || c.pipelineStage }))}>
-                    <option value="">Select candidate status</option>
-                    {DEFAULT_STATUS_OPTIONS.map((item) => <option key={item} value={item}>{item}</option>)}
-                  </select>
-                </label>
-                <label><span>Next follow-up</span><input type="datetime-local" value={interviewForm.followUpAt} onChange={(e) => setInterviewForm((c) => ({ ...c, followUpAt: e.target.value }))} /></label>
-                <label><span>Interview date</span><input type="datetime-local" value={interviewForm.interviewAt} onChange={(e) => setInterviewForm((c) => ({ ...c, interviewAt: e.target.value }))} /></label>
-                <label className="full"><span>Recruiter notes</span><textarea value={interviewForm.recruiterNotes} onChange={(e) => setInterviewForm((c) => ({ ...c, recruiterNotes: e.target.value }))} /></label>
-                <label className="full"><span>Callback / update notes</span><textarea value={interviewForm.callbackNotes} onChange={(e) => setInterviewForm((c) => ({ ...c, callbackNotes: e.target.value }))} /></label>
-                <div className="full button-row">
-                  <button type="submit">Save assessment</button>
-                  <button type="button" className="ghost-btn" onClick={() => { setInterviewMeta({ candidateId: "", assessmentId: "" }); setInterviewForm({ candidateName: "", phoneNumber: "", emailId: "", location: "", currentCompany: "", currentDesignation: "", totalExperience: "", clientName: "", jdTitle: "", pipelineStage: "Under Interview Process", candidateStatus: "Screening in progress", followUpAt: "", interviewAt: "", recruiterNotes: "", callbackNotes: "" }); setStatus("interview", ""); }}>Clear</button>
+            <div className="page-grid">
+              <Section kicker="Recruiter Workspace" title="Interview Panel">
+                <p className="muted">This panel is for captured information, recruiter notes, runbook, CV analysis, and output actions. Assessment status and pipeline updates stay in the Assessments lane to avoid confusion.</p>
+                {statuses.interview ? <div className={`status ${statuses.interviewKind || ""}`}>{statuses.interview}</div> : null}
+                <div className="button-row">
+                  <button onClick={() => void copyInterviewResult()}>Copy result</button>
+                  <button onClick={() => copyInterviewWhatsapp()}>Copy WhatsApp</button>
+                  <button onClick={() => void copyInterviewEmail()}>Copy email</button>
+                  <button onClick={() => setStatus("interview", "Notes live in the draft editor below.", "ok")}>Save notes</button>
+                  <button onClick={() => void saveAssessment()}>Create assessment</button>
+                  <button onClick={() => sendInterviewToSheets()}>Send to sheets</button>
+                  <button onClick={() => exportInterviewAll()}>Export all</button>
+                  <button className="ghost-btn" onClick={() => { setInterviewMeta({ candidateId: "", assessmentId: "" }); setInterviewForm({ candidateName: "", phoneNumber: "", emailId: "", location: "", currentCompany: "", currentDesignation: "", totalExperience: "", clientName: "", jdTitle: "", pipelineStage: "Under Interview Process", candidateStatus: "Screening in progress", followUpAt: "", interviewAt: "", recruiterNotes: "", callbackNotes: "" }); setStatus("interview", ""); }}>Clear draft</button>
                 </div>
-              </form>
-            </Section>
+              </Section>
+
+              <Section kicker="Captured Information" title="Candidate Context">
+                <div className="info-grid">
+                  {[["Candidate", interviewForm.candidateName],["Phone", interviewForm.phoneNumber],["Email", interviewForm.emailId],["Location", interviewForm.location],["Current company", interviewForm.currentCompany],["Current designation", interviewForm.currentDesignation],["Experience", interviewForm.totalExperience],["Client", interviewForm.clientName],["JD / role", interviewForm.jdTitle]].map(([label, value]) => (
+                    <div className="info-card" key={label}>
+                      <div className="info-label">{label}</div>
+                      <div className="info-value">{value || "-"}</div>
+                    </div>
+                  ))}
+                </div>
+              </Section>
+
+              <Section kicker="Recruiter Inputs" title="Draft Notes">
+                <form className="form-grid two-col" onSubmit={(e) => { e.preventDefault(); }}>
+                  {[["candidateName", "Candidate name"], ["phoneNumber", "Phone"], ["emailId", "Email", "email"], ["location", "Location"], ["currentCompany", "Current company"], ["currentDesignation", "Current designation"], ["totalExperience", "Total experience"], ["clientName", "Client name"]].map(([name, label, type]) => (
+                    <label key={name}><span>{label}</span><input type={type || "text"} value={interviewForm[name]} onChange={(e) => setInterviewForm((c) => ({ ...c, [name]: e.target.value }))} /></label>
+                  ))}
+                  <label className="full"><span>JD / role</span><input value={interviewForm.jdTitle} onChange={(e) => setInterviewForm((c) => ({ ...c, jdTitle: e.target.value }))} /></label>
+                  <label className="full"><span>Captured notes</span><textarea value={interviewForm.callbackNotes} onChange={(e) => setInterviewForm((c) => ({ ...c, callbackNotes: e.target.value }))} /></label>
+                  <label className="full"><span>Recruiter notes</span><textarea value={interviewForm.recruiterNotes} onChange={(e) => setInterviewForm((c) => ({ ...c, recruiterNotes: e.target.value }))} /></label>
+                  <label className="full"><span>Other pointers</span><textarea value={interviewForm.callbackNotes} onChange={(e) => setInterviewForm((c) => ({ ...c, callbackNotes: e.target.value }))} /></label>
+                </form>
+              </Section>
+
+              <Section kicker="Runbook" title="Interview Runbook">
+                <div className="form-grid two-col">
+                  <label className="full"><span>Screening questions</span><textarea value={jobDraft.standardQuestions || ""} onChange={() => {}} readOnly /></label>
+                  <label className="full"><span>JD shortcuts</span><textarea value={jobDraft.jdShortcuts || ""} onChange={() => {}} readOnly /></label>
+                  <label><span>Next follow-up</span><input type="datetime-local" value={interviewForm.followUpAt} onChange={(e) => setInterviewForm((c) => ({ ...c, followUpAt: e.target.value }))} /></label>
+                  <label><span>Interview date</span><input type="datetime-local" value={interviewForm.interviewAt} onChange={(e) => setInterviewForm((c) => ({ ...c, interviewAt: e.target.value }))} /></label>
+                </div>
+              </Section>
+
+              <Section kicker="CV Analysis" title="CV Parsing Verification">
+                <div className="cv-analysis-box">
+                  <div className="info-label">Current analysis view</div>
+                  <div className="muted">CV analysis block is ready. Next pass we will connect parsed CV sections, extracted skills, tenure checks, and JD match verification exactly from extension logic.</div>
+                </div>
+              </Section>
+            </div>
           } />
 
           <Route path="/intake-settings" element={
@@ -833,17 +998,44 @@ function PortalApp({ token, onLogout }) {
           } />
 
           <Route path="/jobs" element={
-            <Section kicker="Company JDs" title="Jobs">
-              <div className="stack-list">
-                {!state.jobs.length ? <div className="empty-state">No jobs saved in backend yet.</div> : state.jobs.map((job) => (
-                  <article className="item-card" key={job.id}>
-                    <h3>{job.title || "Untitled JD"}</h3>
-                    <p className="muted">{job.clientName ? `Client: ${job.clientName}` : "No client set"}{job.location ? ` | Location: ${job.location}` : ""}</p>
-                    <div className="chip-row"><span className="chip">{job.id}</span></div>
-                  </article>
-                ))}
-              </div>
-            </Section>
+            <div className="page-grid">
+              <Section kicker="Company JDs" title="Jobs">
+                {statuses.jobs ? <div className={`status ${statuses.jobsKind || ""}`}>{statuses.jobs}</div> : null}
+                <div className="form-grid">
+                  <label>
+                    <span>Existing jobs</span>
+                    <select value={selectedJobId} onChange={(e) => loadJobIntoDraft(e.target.value)}>
+                      <option value="">Select JD</option>
+                      {state.jobs.map((job) => <option key={job.id} value={job.id}>{job.title || "Untitled JD"}</option>)}
+                    </select>
+                  </label>
+                </div>
+              </Section>
+
+              <Section kicker="JD Setup" title="JD Workspace">
+                <div className="button-row">
+                  <label className="file-btn">
+                    Upload JD
+                    <input type="file" accept=".txt,.md,.doc,.docx,.pdf" hidden onChange={(e) => { const file = e.target.files?.[0]; if (file) void handleJdUpload(file); }} />
+                  </label>
+                  <button onClick={() => applySelectedJobToInterview()}>Apply generated JD</button>
+                  <button onClick={() => generateJdFromText()}>Generate JD from text</button>
+                  <button onClick={() => downloadJobDraft()}>Download JD</button>
+                  <button onClick={() => void saveJobDraft()}>Save JD</button>
+                </div>
+
+                <div className="form-grid two-col">
+                  <label><span>Job title</span><input value={jobDraft.title} onChange={(e) => setJobDraft((c) => ({ ...c, title: e.target.value }))} /></label>
+                  <label><span>Client</span><input value={jobDraft.clientName} onChange={(e) => setJobDraft((c) => ({ ...c, clientName: e.target.value }))} /></label>
+                  <label className="full"><span>Job description</span><textarea className="jd-editor" value={jobDraft.jobDescription} onChange={(e) => setJobDraft((c) => ({ ...c, jobDescription: e.target.value }))} /></label>
+                  <label className="full"><span>Must-have skills</span><textarea value={jobDraft.mustHaveSkills} onChange={(e) => setJobDraft((c) => ({ ...c, mustHaveSkills: e.target.value }))} /></label>
+                  <label className="full"><span>Red flags</span><textarea value={jobDraft.redFlags} onChange={(e) => setJobDraft((c) => ({ ...c, redFlags: e.target.value }))} /></label>
+                  <label className="full"><span>Standard screening questions</span><textarea value={jobDraft.standardQuestions} onChange={(e) => setJobDraft((c) => ({ ...c, standardQuestions: e.target.value }))} /></label>
+                  <label className="full"><span>JD shortcuts</span><textarea value={jobDraft.jdShortcuts} onChange={(e) => setJobDraft((c) => ({ ...c, jdShortcuts: e.target.value }))} /></label>
+                  <label className="full"><span>Recruiter notes</span><textarea value={jobDraft.recruiterNotes} onChange={(e) => setJobDraft((c) => ({ ...c, recruiterNotes: e.target.value }))} /></label>
+                </div>
+              </Section>
+            </div>
           } />
 
           <Route path="*" element={<Navigate to="/dashboard" replace />} />
