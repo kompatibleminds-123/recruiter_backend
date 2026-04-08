@@ -1878,6 +1878,7 @@ function PortalApp({ token, onLogout }) {
     expectedCtc: "",
     noticePeriod: "",
     offerInHand: "",
+    lwdOrDoj: "",
     currentCompany: "",
     currentDesignation: "",
     totalExperience: "",
@@ -2270,6 +2271,7 @@ function PortalApp({ token, onLogout }) {
       candidateId: String(candidate.id || ""),
       assessmentId: String(matched?.id || "")
     });
+    const parsedRecruiterBase = normalizeRecruiterMergeBase(candidate);
     setInterviewForm({
       candidateName: matched?.candidateName || candidate?.name || "",
       phoneNumber: matched?.phoneNumber || candidate?.phone || "",
@@ -2277,8 +2279,9 @@ function PortalApp({ token, onLogout }) {
       location: matched?.location || candidate?.location || "",
       currentCtc: matched?.currentCtc || candidate?.current_ctc || "",
       expectedCtc: matched?.expectedCtc || candidate?.expected_ctc || "",
-      noticePeriod: matched?.noticePeriod || candidate?.notice_period || "",
-      offerInHand: matched?.offerInHand || "",
+      noticePeriod: matched?.noticePeriod || candidate?.notice_period || parsedRecruiterBase.notice_period || "",
+      offerInHand: matched?.offerInHand || parsedRecruiterBase.offer_in_hand || "",
+      lwdOrDoj: matched?.lwdOrDoj || candidate?.lwd_or_doj || parsedRecruiterBase.lwd_or_doj || "",
       currentCompany: matched?.currentCompany || candidate?.company || "",
       currentDesignation: matched?.currentDesignation || candidate?.role || "",
       totalExperience: matched?.totalExperience || candidate?.experience || "",
@@ -2291,7 +2294,7 @@ function PortalApp({ token, onLogout }) {
       followUpAt: toDateInputValue(matched?.followUpAt || candidate?.next_follow_up_at),
       interviewAt: toDateInputValue(matched?.interviewAt),
       recruiterNotes: matched?.recruiterNotes || candidate?.recruiter_context_notes || "",
-      callbackNotes: matched?.callbackNotes || candidate?.notes || "",
+      callbackNotes: candidate?.notes || "",
       otherPointers: matched?.otherPointers || candidate?.other_pointers || "",
       jdScreeningAnswers: matched?.jdScreeningAnswers || {},
       cvAnalysis: matched?.cvAnalysis || null,
@@ -2311,6 +2314,7 @@ function PortalApp({ token, onLogout }) {
       candidateId: String(matchedCandidate?.id || assessment?.candidateId || ""),
       assessmentId: String(assessment?.id || "")
     });
+    const parsedRecruiterBase = normalizeRecruiterMergeBase(matchedCandidate || assessment || {});
     setInterviewForm({
       candidateName: assessment?.candidateName || "",
       phoneNumber: assessment?.phoneNumber || matchedCandidate?.phone || "",
@@ -2318,8 +2322,9 @@ function PortalApp({ token, onLogout }) {
       location: assessment?.location || matchedCandidate?.location || "",
       currentCtc: assessment?.currentCtc || matchedCandidate?.current_ctc || "",
       expectedCtc: assessment?.expectedCtc || matchedCandidate?.expected_ctc || "",
-      noticePeriod: assessment?.noticePeriod || matchedCandidate?.notice_period || "",
-      offerInHand: assessment?.offerInHand || "",
+      noticePeriod: assessment?.noticePeriod || matchedCandidate?.notice_period || parsedRecruiterBase.notice_period || "",
+      offerInHand: assessment?.offerInHand || parsedRecruiterBase.offer_in_hand || "",
+      lwdOrDoj: assessment?.lwdOrDoj || matchedCandidate?.lwd_or_doj || parsedRecruiterBase.lwd_or_doj || "",
       currentCompany: assessment?.currentCompany || matchedCandidate?.company || "",
       currentDesignation: assessment?.currentDesignation || matchedCandidate?.role || "",
       totalExperience: assessment?.totalExperience || matchedCandidate?.experience || "",
@@ -2332,7 +2337,7 @@ function PortalApp({ token, onLogout }) {
       followUpAt: toDateInputValue(assessment?.followUpAt),
       interviewAt: toDateInputValue(assessment?.interviewAt),
       recruiterNotes: assessment?.recruiterNotes || matchedCandidate?.recruiter_context_notes || "",
-      callbackNotes: assessment?.callbackNotes || matchedCandidate?.notes || "",
+      callbackNotes: matchedCandidate?.notes || "",
       otherPointers: assessment?.otherPointers || matchedCandidate?.other_pointers || "",
       jdScreeningAnswers: assessment?.jdScreeningAnswers || {},
       cvAnalysis: assessment?.cvAnalysis || null,
@@ -2369,6 +2374,7 @@ function PortalApp({ token, onLogout }) {
       expectedCtc: candidate.expected_ctc || "",
       noticePeriod: candidate.notice_period || "",
       offerInHand: candidate.offer_in_hand || "",
+      lwdOrDoj: candidate.lwd_or_doj || "",
       currentCompany: candidate.company || "",
       currentDesignation: candidate.role || "",
       totalExperience: candidate.experience || "",
@@ -2381,7 +2387,7 @@ function PortalApp({ token, onLogout }) {
       followUpAt: "",
       interviewAt: "",
       recruiterNotes: candidate.recruiter_context_notes || "",
-      callbackNotes: candidate.notes || "CV Shared.",
+      callbackNotes: candidate.notes || "",
       otherPointers: candidate.other_pointers || "",
       jdScreeningAnswers: {},
       cvAnalysis: null,
@@ -2431,6 +2437,7 @@ function PortalApp({ token, onLogout }) {
       await patchCandidate(interviewMeta.candidateId, {
         recruiter_context_notes: interviewForm.recruiterNotes,
         other_pointers: interviewForm.otherPointers,
+        lwd_or_doj: interviewForm.lwdOrDoj,
         next_follow_up_at: interviewForm.followUpAt
       }, "Assessment saved and candidate state updated.");
     } else {
@@ -3604,7 +3611,7 @@ function PortalApp({ token, onLogout }) {
                   <button onClick={() => void saveAssessment()}>Create assessment</button>
                   <button onClick={() => sendInterviewToSheets()}>Send to sheets</button>
                   <button onClick={() => exportInterviewAll()}>Export all</button>
-                  <button className="ghost-btn" onClick={() => { setInterviewMeta({ candidateId: "", assessmentId: "" }); setInterviewForm({ candidateName: "", phoneNumber: "", emailId: "", location: "", currentCtc: "", expectedCtc: "", noticePeriod: "", offerInHand: "", currentCompany: "", currentDesignation: "", totalExperience: "", currentOrgTenure: "", reasonForChange: "", clientName: "", jdTitle: "", pipelineStage: "Under Interview Process", candidateStatus: "Screening in progress", followUpAt: "", interviewAt: "", recruiterNotes: "", callbackNotes: "", otherPointers: "", jdScreeningAnswers: {}, cvAnalysis: null, cvAnalysisApplied: false, statusHistory: [] }); setStatus("interview", ""); }}>Clear draft</button>
+                  <button className="ghost-btn" onClick={() => { setInterviewMeta({ candidateId: "", assessmentId: "" }); setInterviewForm({ candidateName: "", phoneNumber: "", emailId: "", location: "", currentCtc: "", expectedCtc: "", noticePeriod: "", offerInHand: "", lwdOrDoj: "", currentCompany: "", currentDesignation: "", totalExperience: "", currentOrgTenure: "", reasonForChange: "", clientName: "", jdTitle: "", pipelineStage: "Under Interview Process", candidateStatus: "Screening in progress", followUpAt: "", interviewAt: "", recruiterNotes: "", callbackNotes: "", otherPointers: "", jdScreeningAnswers: {}, cvAnalysis: null, cvAnalysisApplied: false, statusHistory: [] }); setStatus("interview", ""); }}>Clear draft</button>
                 </div>
               </Section>
 
@@ -3655,9 +3662,12 @@ function PortalApp({ token, onLogout }) {
                       <div className="question-stack">
                         {interviewScreeningQuestions.map((question, index) => (
                           <div className="question-card" key={`${index}-${question}`}>
-                            <div className="question-index">Q{index + 1}</div>
-                            <div>{question}</div>
+                            <div className="question-card__head">
+                              <div className="question-index">Q{index + 1}</div>
+                              <div className="question-text">{question}</div>
+                            </div>
                             <textarea
+                              className="question-answer"
                               value={interviewForm.jdScreeningAnswers?.[question] || ""}
                               onChange={(e) => setInterviewForm((current) => ({
                                 ...current,
@@ -3680,7 +3690,8 @@ function PortalApp({ token, onLogout }) {
                       <label><span>Current CTC</span><input value={interviewForm.currentCtc} onChange={(e) => setInterviewForm((c) => ({ ...c, currentCtc: e.target.value }))} /></label>
                       <label><span>Expected CTC</span><input value={interviewForm.expectedCtc} onChange={(e) => setInterviewForm((c) => ({ ...c, expectedCtc: e.target.value }))} /></label>
                       <label><span>Notice period</span><input value={interviewForm.noticePeriod} onChange={(e) => setInterviewForm((c) => ({ ...c, noticePeriod: e.target.value }))} /></label>
-                      <label><span>Offer in hand / DOJ / LWD</span><input value={interviewForm.offerInHand} onChange={(e) => setInterviewForm((c) => ({ ...c, offerInHand: e.target.value }))} /></label>
+                      <label><span>Offer in hand</span><input value={interviewForm.offerInHand} onChange={(e) => setInterviewForm((c) => ({ ...c, offerInHand: e.target.value }))} /></label>
+                      <label><span>LWD / DOJ</span><input value={interviewForm.lwdOrDoj} onChange={(e) => setInterviewForm((c) => ({ ...c, lwdOrDoj: e.target.value }))} /></label>
                       <label><span>Total experience</span><input value={interviewForm.totalExperience} onChange={(e) => setInterviewForm((c) => ({ ...c, totalExperience: e.target.value }))} /></label>
                       <label><span>Tenure in current org</span><input value={interviewForm.currentOrgTenure} onChange={(e) => setInterviewForm((c) => ({ ...c, currentOrgTenure: e.target.value }))} /></label>
                       <label><span>Reason of change</span><textarea value={interviewForm.reasonForChange} onChange={(e) => setInterviewForm((c) => ({ ...c, reasonForChange: e.target.value }))} /></label>
@@ -3693,6 +3704,7 @@ function PortalApp({ token, onLogout }) {
 
               <Section kicker="CV Analysis" title="CV Parsing Verification">
                 <div className="cv-analysis-box">
+                  <p className="muted">Upload CV here when you want to share the candidate later. The file will be stored, parsed, and compared against the current draft before you apply any changes.</p>
                   <div className="button-row">
                     <label className="ghost-btn">
                       <input type="file" accept=".pdf,.doc,.docx" hidden onChange={(e) => void parseInterviewCvFile(e.target.files?.[0] || null)} />
