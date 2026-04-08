@@ -3535,6 +3535,8 @@ function PortalApp({ token, onLogout }) {
                     </div>
                     <div className="button-row">
                       <button onClick={() => loadApplicantIntoInterview(item.id)}>Open draft</button>
+                      <button onClick={() => setNotesCandidateId(item.id)}>Recruiter note</button>
+                      <button onClick={() => void openAttempts(item.id)}>Attempts</button>
                       {item.cvFilename ? <button onClick={() => void openCv(item.id)}>Open CV</button> : null}
                       {state.user?.role === "admin" ? <button onClick={() => setAssignApplicantId(item.id)}>Assign</button> : null}
                       {state.user?.role === "admin" ? <button className="ghost-btn" onClick={() => void removeApplicant(item.id)}>Remove</button> : null}
