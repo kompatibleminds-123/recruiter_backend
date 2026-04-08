@@ -17,9 +17,9 @@ const navItems = [
 ];
 
 const DEFAULT_COPY_SETTINGS = {
-  excelPreset: "standard",
-  whatsappTemplate: "Candidate: {{name}}\nRole: {{jd_title}}\nCompany: {{company}}\nOutcome: {{outcome}}\nRecruiter note: {{recruiter_notes}}",
-  emailTemplate: "Candidate: {{name}}\nRole: {{jd_title}}\nCompany: {{company}}\nOutcome: {{outcome}}\nLocation: {{location}}\nNotes: {{recruiter_notes}}"
+  excelPreset: "compact_recruiter",
+  whatsappTemplate: "{{index}}. {{name}}\nRole: {{jd_title}}\nCompany: {{company}}\nOutcome: {{outcome}}\nRecruiter note: {{recruiter_notes}}",
+  emailTemplate: "{{index}}. {{name}}\nCompany: {{company}}\nRole: {{jd_title}}\nLocation: {{location}}\nOutcome: {{outcome}}\nEmail: {{email}}\nPhone: {{phone}}\nNotes: {{recruiter_notes}}"
 };
 
 const DEFAULT_PIPELINE_STAGE_OPTIONS = [
@@ -577,6 +577,7 @@ function getCapturedOutcome(candidate, assessment) {
 function fillCandidateTemplate(template, candidate) {
   const source = candidate || {};
   const map = {
+    index: source.index || "",
     name: source.name || "",
     jd_title: source.jd_title || source.role || "",
     company: source.company || "",
@@ -585,9 +586,125 @@ function fillCandidateTemplate(template, candidate) {
     location: source.location || "",
     phone: source.phone || "",
     email: source.email || "",
-    source: source.source || ""
+    source: source.source || "",
+    follow_up_at: source.follow_up_at || ""
   };
   return String(template || "").replace(/\{\{\s*([a-z_]+)\s*\}\}/gi, (_, key) => String(map[key] || ""));
+}
+
+function formatDateForCopy(value) {
+  if (!value) return "";
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? "" : date.toLocaleString();
+}
+
+function buildCapturedExcelRows(items, preset) {
+  const normalized = (items || []).map((item, index) => ({
+    index: index + 1,
+    ...item
+  }));
+  switch (preset) {
+    case "client_tracker":
+    case "attentive_tracker":
+      return {
+        headers: [
+          "Client Name",
+          "Target Role / Open Position",
+          "Key Skills Required",
+          "Recruiter Name",
+          "Date Added",
+          "Candidate Name",
+          "Status",
+          "Contact No.",
+          "Email ID",
+          "Location",
+          "Current Company",
+          "Current Designation",
+          "Domain / Industry",
+          "Work Exp (Total years/months)",
+          "Highest Education",
+          "Current CTC",
+          "Expected CTC",
+          "Notice Period",
+          "Remarks / Notes",
+          "LinkedIn Profile Link (Optional)"
+        ],
+        rows: normalized.map((item) => [
+          item.client_name || "",
+          item.jd_title || item.role || "",
+          Array.isArray(item.skills) ? item.skills.join(", ") : "",
+          item.assigned_to_name || item.recruiter_name || "",
+          item.created_at ? String(item.created_at).slice(0, 10) : "",
+          item.name || "",
+          item.outcome || "",
+          item.phone || "",
+          item.email || "",
+          item.location || "",
+          item.company || "",
+          item.role || "",
+          "",
+          item.experience || "",
+          item.highest_education || "",
+          item.current_ctc || "",
+          item.expected_ctc || "",
+          item.notice_period || "",
+          item.recruiter_context_notes || item.notes || "",
+          item.linkedin || ""
+        ])
+      };
+    case "client_submission":
+      return {
+        headers: ["S.No.", "Name", "Ph", "Email", "Current Company", "Current Designation", "Total Experience", "Strong Points", "Remarks"],
+        rows: normalized.map((item) => [
+          String(item.index),
+          item.name || "",
+          item.phone || "",
+          item.email || "",
+          item.company || "",
+          item.role || "",
+          item.experience || "",
+          item.other_pointers || "",
+          item.recruiter_context_notes || item.notes || ""
+        ])
+      };
+    case "screening_focus":
+      return {
+        headers: ["S.No.", "Name", "Current CTC", "Expected CTC", "Notice Period", "Screening Answers", "Remarks"],
+        rows: normalized.map((item) => [
+          String(item.index),
+          item.name || "",
+          item.current_ctc || "",
+          item.expected_ctc || "",
+          item.notice_period || "",
+          item.last_contact_notes || "",
+          item.recruiter_context_notes || item.notes || ""
+        ])
+      };
+    case "compact_recruiter":
+    default:
+      return {
+        headers: ["S.No.", "Name", "Ph", "Email", "Current Company", "Current Designation", "Total Experience", "Tenure in current company", "Location", "Reason of change", "Status", "Current CTC", "Expected CTC", "Notice Period", "Other Standard Questions", "Remarks", "LinkedIn"],
+        rows: normalized.map((item) => [
+          String(item.index),
+          item.name || "",
+          item.phone || "",
+          item.email || "",
+          item.company || "",
+          item.role || "",
+          item.experience || "",
+          "",
+          item.location || "",
+          "",
+          item.outcome || "",
+          item.current_ctc || "",
+          item.expected_ctc || "",
+          item.notice_period || "",
+          item.last_contact_notes || "",
+          item.recruiter_context_notes || item.notes || "",
+          item.linkedin || ""
+        ])
+      };
+  }
 }
 
 function getApplyLink(jobId) {
@@ -1763,41 +1880,22 @@ function PortalApp({ token, onLogout }) {
 
   async function copyCapturedExcel() {
     const rows = buildCapturedCopyRows();
-    const headersByPreset = {
-      standard: ["Name", "JD", "Company", "Location", "Source", "Outcome", "Recruiter note"],
-      compact: ["Name", "JD", "Outcome"],
-      client_share: ["Name", "JD", "Company", "Location", "Recruiter note"]
-    };
-    const headers = headersByPreset[copySettings.excelPreset] || headersByPreset.standard;
-    const lines = [
-      headers.join("\t"),
-      ...rows.map((item) => headers.map((header) => {
-        const map = {
-          Name: item.name || "",
-          JD: item.jd_title || item.role || "",
-          Company: item.company || "",
-          Location: item.location || "",
-          Source: item.source || "",
-          Outcome: item.outcome || "",
-          "Recruiter note": item.recruiter_context_notes || item.notes || ""
-        };
-        return String(map[header] || "").replace(/\t/g, " ").replace(/\r?\n/g, " ");
-      }).join("\t"))
-    ].join("\n");
+    const preset = buildCapturedExcelRows(rows, copySettings.excelPreset);
+    const lines = [preset.headers.join("\t"), ...preset.rows.map((row) => row.map((cell) => String(cell || "").replace(/\t/g, " ").replace(/\r?\n/g, " ")).join("\t"))].join("\n");
     await copyText(lines);
     setStatus("captured", "Filtered candidates copied in Excel format.", "ok");
   }
 
   async function copyCapturedWhatsapp() {
     const rows = buildCapturedCopyRows();
-    const text = rows.map((item) => fillCandidateTemplate(copySettings.whatsappTemplate, item)).filter(Boolean).join("\n\n");
+    const text = rows.map((item, index) => fillCandidateTemplate(copySettings.whatsappTemplate, { ...item, index: index + 1, follow_up_at: formatDateForCopy(item.next_follow_up_at) })).filter(Boolean).join("\n\n");
     await copyText(text);
     setStatus("captured", "Filtered candidates copied in WhatsApp format.", "ok");
   }
 
   async function copyCapturedEmail() {
     const rows = buildCapturedCopyRows();
-    const text = rows.map((item) => fillCandidateTemplate(copySettings.emailTemplate, item)).filter(Boolean).join("\n\n");
+    const text = rows.map((item, index) => fillCandidateTemplate(copySettings.emailTemplate, { ...item, index: index + 1, follow_up_at: formatDateForCopy(item.next_follow_up_at) })).filter(Boolean).join("\n\n");
     await copyText(text);
     setStatus("captured", "Filtered candidates copied in email format.", "ok");
   }
@@ -2718,9 +2816,11 @@ function PortalApp({ token, onLogout }) {
                     <label>
                       <span>Excel preset</span>
                       <select value={copySettings.excelPreset} onChange={(e) => setCopySettings((current) => ({ ...current, excelPreset: e.target.value }))}>
-                        <option value="standard">Standard</option>
-                        <option value="compact">Compact</option>
-                        <option value="client_share">Client share</option>
+                        <option value="compact_recruiter">Compact recruiter</option>
+                        <option value="client_tracker">Client tracker</option>
+                        <option value="attentive_tracker">Attentive tracker</option>
+                        <option value="client_submission">Client submission</option>
+                        <option value="screening_focus">Screening focus</option>
                       </select>
                     </label>
                     <label className="full">
@@ -2732,7 +2832,7 @@ function PortalApp({ token, onLogout }) {
                       <textarea value={copySettings.emailTemplate} onChange={(e) => setCopySettings((current) => ({ ...current, emailTemplate: e.target.value }))} />
                     </label>
                   </div>
-                  <p className="muted">Available placeholders: {`{{name}} {{jd_title}} {{company}} {{outcome}} {{recruiter_notes}} {{location}} {{phone}} {{email}} {{source}}`}</p>
+                  <p className="muted">Available placeholders: {`{{index}} {{name}} {{jd_title}} {{company}} {{outcome}} {{recruiter_notes}} {{location}} {{phone}} {{email}} {{source}} {{follow_up_at}}`}</p>
                   <div className="button-row">
                     <button onClick={() => setCopySettings(DEFAULT_COPY_SETTINGS)}>Reset defaults</button>
                   </div>
