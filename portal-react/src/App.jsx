@@ -1806,6 +1806,14 @@ function PortalApp({ token, onLogout }) {
     outcomes: [],
     activeStates: ["active"]
   });
+  const [assessmentFilters, setAssessmentFilters] = useState({
+    q: "",
+    dateFrom: "",
+    dateTo: "",
+    clients: [],
+    jds: [],
+    recruiters: []
+  });
   const [candidateSearchMode, setCandidateSearchMode] = useState("all");
   const [candidateSearchText, setCandidateSearchText] = useState("");
   const [candidateSearchResults, setCandidateSearchResults] = useState([]);
@@ -1959,6 +1967,57 @@ function PortalApp({ token, onLogout }) {
     return map;
   }, [state.assessments]);
   const capturedSources = useMemo(() => Array.from(new Set((state.candidates || []).map((item) => String(item.source || "").trim()).filter(Boolean))), [state.candidates]);
+  const assessmentOptions = useMemo(() => {
+    const clients = new Set();
+    const jds = new Set();
+    const recruiters = new Set();
+    (state.assessments || []).forEach((item) => {
+      const matchedCandidate = (state.candidates || []).find((candidate) =>
+        (item?.candidateId && String(candidate.id) === String(item.candidateId)) ||
+        String(candidate.name || "").trim().toLowerCase() === String(item?.candidateName || "").trim().toLowerCase()
+      );
+      const clientValue = String(item?.clientName || matchedCandidate?.client_name || "").trim();
+      const jdValue = String(item?.jdTitle || matchedCandidate?.jd_title || "").trim();
+      const recruiterValue = String(item?.recruiterName || matchedCandidate?.assigned_to_name || matchedCandidate?.recruiter_name || "").trim();
+      if (clientValue) clients.add(clientValue);
+      if (jdValue) jds.add(jdValue);
+      if (recruiterValue) recruiters.add(recruiterValue);
+    });
+    return {
+      clients: Array.from(clients).sort((a, b) => a.localeCompare(b)),
+      jds: Array.from(jds).sort((a, b) => a.localeCompare(b)),
+      recruiters: Array.from(recruiters).sort((a, b) => a.localeCompare(b))
+    };
+  }, [state.assessments, state.candidates]);
+
+  const filteredAssessments = useMemo(() => {
+    const query = String(assessmentFilters.q || "").trim().toLowerCase();
+    return (state.assessments || []).filter((item) => {
+      const matchedCandidate = (state.candidates || []).find((candidate) =>
+        (item?.candidateId && String(candidate.id) === String(item.candidateId)) ||
+        String(candidate.name || "").trim().toLowerCase() === String(item?.candidateName || "").trim().toLowerCase()
+      );
+      const clientValue = String(item?.clientName || matchedCandidate?.client_name || "").trim();
+      const jdValue = String(item?.jdTitle || matchedCandidate?.jd_title || "").trim();
+      const recruiterValue = String(item?.recruiterName || matchedCandidate?.assigned_to_name || matchedCandidate?.recruiter_name || "").trim();
+      const createdDate = String(item?.generatedAt || item?.updatedAt || "").slice(0, 10);
+      const hay = [
+        item?.candidateName,
+        item?.phoneNumber,
+        item?.emailId,
+        jdValue,
+        clientValue,
+        recruiterValue
+      ].join(" ").toLowerCase();
+      if (query && !hay.includes(query)) return false;
+      if (assessmentFilters.dateFrom && createdDate && createdDate < assessmentFilters.dateFrom) return false;
+      if (assessmentFilters.dateTo && createdDate && createdDate > assessmentFilters.dateTo) return false;
+      if (assessmentFilters.clients.length && !assessmentFilters.clients.includes(clientValue)) return false;
+      if (assessmentFilters.jds.length && !assessmentFilters.jds.includes(jdValue)) return false;
+      if (assessmentFilters.recruiters.length && !assessmentFilters.recruiters.includes(recruiterValue)) return false;
+      return true;
+    });
+  }, [state.assessments, state.candidates, assessmentFilters]);
   const candidateUniverse = useMemo(() => candidateSearchMode === "all" ? (state.candidates || []) : (candidateSearchResults || []), [candidateSearchMode, state.candidates, candidateSearchResults]);
   const pagedCandidates = useMemo(() => {
     const start = (candidatePage - 1) * 10;
