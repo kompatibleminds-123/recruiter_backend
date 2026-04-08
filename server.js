@@ -3216,7 +3216,6 @@ const server = http.createServer(async (req, res) => {
         notes: String(input.notes || "").trim() || undefined,
         recruiter_context_notes: String(input.recruiter_context_notes || input.recruiterContextNotes || "").trim() || undefined,
         other_pointers: String(input.other_pointers || input.otherPointers || "").trim() || undefined,
-        callback_notes: String(input.callback_notes || input.callbackNotes || "").trim() || undefined,
         company: String(input.company || input.currentCompany || "").trim() || undefined,
         role: String(input.role || input.currentDesignation || "").trim() || undefined,
         experience: String(input.experience || input.totalExperience || "").trim() || undefined,

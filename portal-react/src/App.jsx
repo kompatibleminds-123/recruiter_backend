@@ -395,21 +395,43 @@ function extractRecruiterNoteFieldFallbacks(rawNote = "") {
   };
 }
 
+function detectRecruiterMentionedKeys(rawNote = "") {
+  const lines = String(rawNote || "")
+    .split(/\r?\n/)
+    .map((line) => String(line || "").trim().toLowerCase())
+    .filter(Boolean);
+  const mentioned = new Set();
+  lines.forEach((line) => {
+    if (/^current\s*ctc\b|^current\s*[-:]/i.test(line)) mentioned.add("current_ctc");
+    if (/^expected\s*ctc\b|^expected\s*[-:]/i.test(line)) mentioned.add("expected_ctc");
+    if (/^notice\s*period\b|^np\b|^lwd\b|^last\s*working\s*day\b/i.test(line)) mentioned.add("notice_period");
+    if (/^offer\s*in\s*hand\b|^offers?\s*in\s*hand\b/i.test(line)) mentioned.add("offer_in_hand");
+    if (/^location\b/i.test(line)) mentioned.add("location");
+    if (/^communication\b/i.test(line)) mentioned.add("communication");
+    if (/^working\s*model\b/i.test(line)) mentioned.add("working_model");
+    if (/^shift\b/i.test(line)) mentioned.add("shift");
+    if (/^relocation\b/i.test(line)) mentioned.add("relocation");
+  });
+  return mentioned;
+}
+
 function buildRecruiterMerge(item, parsed, rawNote = "") {
   const base = normalizeRecruiterMergeBase(item);
   const incoming = normalizeRecruiterMergeBase(parsed);
   const fallbacks = extractRecruiterNoteFieldFallbacks(rawNote);
+  const mentionedKeys = detectRecruiterMentionedKeys(rawNote);
   const merged = {};
   const overwritten = [];
   for (const key of Object.keys(base)) {
-    const nextIncoming = incoming[key] || fallbacks[key] || "";
+    const explicitIncoming = fallbacks[key] || (mentionedKeys.has(key) ? incoming[key] || "" : "");
+    const nextIncoming = explicitIncoming || "";
     merged[key] = nextIncoming || base[key] || "";
     if (nextIncoming && base[key] && nextIncoming.toLowerCase() !== base[key].toLowerCase()) {
       overwritten.push({ key, from: base[key], to: nextIncoming });
     }
   }
   merged.notes_append = String(rawNote || "").trim();
-  return { base, incoming, fallbacks, merged, overwritten };
+  return { base, incoming, fallbacks, merged, overwritten, mentionedKeys: Array.from(mentionedKeys) };
 }
 
 function formatRecruiterOverwriteLabel(key) {
@@ -696,7 +718,7 @@ function NotesModal({ open, candidate, onClose, onPatch, onParse }) {
     setRecruiterNote(String(candidate.recruiter_context_notes || ""));
     setOtherPointers(String(candidate.other_pointers || ""));
     setRawRecruiterNote("");
-    setParsedSummary(null);
+    setParsedSummary(normalizeRecruiterMergeBase(candidate));
     setConflicts([]);
     setMergedPatch(null);
     setStatus("");
@@ -818,11 +840,15 @@ function AttemptsModal({ open, candidate, attempts, onClose, onRefresh, onSave }
     setStatus("");
   }, [open]);
 
-  useEffect(() => {
-    const parsed = inferAttemptOutcomeAndFollowUp(extractLastMeaningfulLine(notes));
-    if (parsed.outcome && parsed.outcome !== outcome) setOutcome(parsed.outcome);
-    if (parsed.followUpAt) setNextFollowUpAt(parsed.followUpAt);
-  }, [notes]);
+    useEffect(() => {
+      const parsed = inferAttemptOutcomeAndFollowUp(extractLastMeaningfulLine(notes));
+      if (parsed.outcome && parsed.outcome !== outcome) setOutcome(parsed.outcome);
+      if (parsed.followUpAt) {
+        setNextFollowUpAt(parsed.followUpAt);
+      } else if (parsed.outcome && parsed.outcome !== "Call later" && parsed.outcome !== "Switch Off") {
+        setNextFollowUpAt("");
+      }
+    }, [notes]);
 
   if (!open || !candidate) return null;
 
@@ -863,18 +889,22 @@ function AttemptsModal({ open, candidate, attempts, onClose, onRefresh, onSave }
             <label><span>Next follow-up</span><input type="datetime-local" value={nextFollowUpAt} onChange={(e) => setNextFollowUpAt(e.target.value)} /></label>
             {status ? <div className="status">{status}</div> : null}
             <div className="button-row">
-              <button onClick={async () => {
-                setStatus("Saving attempt...");
-                try {
-                  const lastLine = extractLastMeaningfulLine(notes);
-                  const parsed = inferAttemptOutcomeAndFollowUp(lastLine);
-                  await onSave({
-                    outcome: parsed.outcome || outcome,
-                    notes,
-                    next_follow_up_at: nextFollowUpAt || parsed.followUpAt,
-                    derived_status: parsed.candidateStatus,
-                    final_line: lastLine
-                  });
+                <button onClick={async () => {
+                  setStatus("Saving attempt...");
+                  try {
+                    const lastLine = extractLastMeaningfulLine(notes);
+                    const parsed = inferAttemptOutcomeAndFollowUp(lastLine);
+                    const finalOutcome = parsed.outcome || outcome;
+                    const finalFollowUpAt =
+                      parsed.followUpAt ||
+                      ((finalOutcome === "Call later" || finalOutcome === "Switch Off") ? nextFollowUpAt : "");
+                    await onSave({
+                      outcome: finalOutcome,
+                      notes,
+                      next_follow_up_at: finalFollowUpAt,
+                      derived_status: parsed.candidateStatus,
+                      final_line: lastLine
+                    });
                   setStatus("Attempt saved.");
                   setNotes("");
                   setNextFollowUpAt("");
@@ -1265,10 +1295,7 @@ function PortalApp({ token, onLogout }) {
   async function completeAgendaFollowUp(candidate) {
     await patchCandidate(candidate.id, {
       next_follow_up_at: "",
-      callback_notes: appendReadableUpdateNote(
-        candidate?.callback_notes || "",
-        `Follow-up completed from Today's Agenda on ${new Date().toLocaleString()}.`
-      )
+      candidate_status: candidate?.candidate_status || "Follow-up completed"
     }, "Follow-up marked done.");
     setStatus("workspace", `Marked follow-up done for ${candidate?.name || "candidate"}.`, "ok");
   }
@@ -1293,18 +1320,21 @@ function PortalApp({ token, onLogout }) {
       notes: patch.notes,
       next_follow_up_at: patch.next_follow_up_at
     });
-    const candidate = (state.candidates || []).find((item) => String(item.id) === String(attemptsCandidateId));
-    const notesWithFinal = appendReadableUpdateNote(candidate?.callback_notes || "", patch.final_line || patch.notes);
-    const candidatePatch = {
-      callback_notes: notesWithFinal
-    };
+    const candidatePatch = {};
     if (patch.next_follow_up_at) {
       candidatePatch.next_follow_up_at = new Date(patch.next_follow_up_at).toISOString();
+    } else if (patch.outcome && patch.outcome !== "Call later" && patch.outcome !== "Switch Off") {
+      candidatePatch.next_follow_up_at = "";
     }
     if (patch.derived_status) {
       candidatePatch.candidate_status = patch.derived_status;
     }
-    await patchCandidate(attemptsCandidateId, candidatePatch, "Attempt logged.");
+    if (Object.keys(candidatePatch).length) {
+      await patchCandidate(attemptsCandidateId, candidatePatch, "Attempt logged.");
+    } else {
+      await loadWorkspace();
+      setStatus("captured", "Attempt logged.", "ok");
+    }
     setStatus("captured", "Attempt logged.", "ok");
   }
 
@@ -1342,7 +1372,7 @@ function PortalApp({ token, onLogout }) {
       followUpAt: toDateInputValue(matched?.followUpAt || candidate?.next_follow_up_at),
       interviewAt: toDateInputValue(matched?.interviewAt),
       recruiterNotes: matched?.recruiterNotes || candidate?.recruiter_context_notes || "",
-      callbackNotes: matched?.callbackNotes || candidate?.callback_notes || "",
+      callbackNotes: matched?.callbackNotes || candidate?.last_contact_notes || "",
       otherPointers: matched?.otherPointers || candidate?.other_pointers || ""
     });
     navigate("/interview");
@@ -1379,7 +1409,7 @@ function PortalApp({ token, onLogout }) {
       followUpAt: toDateInputValue(assessment?.followUpAt),
       interviewAt: toDateInputValue(assessment?.interviewAt),
       recruiterNotes: assessment?.recruiterNotes || matchedCandidate?.recruiter_context_notes || "",
-      callbackNotes: assessment?.callbackNotes || matchedCandidate?.callback_notes || "",
+      callbackNotes: assessment?.callbackNotes || matchedCandidate?.last_contact_notes || "",
       otherPointers: assessment?.otherPointers || matchedCandidate?.other_pointers || ""
     });
     navigate("/interview");
@@ -1398,7 +1428,6 @@ function PortalApp({ token, onLogout }) {
     if (interviewMeta.candidateId) {
       await patchCandidate(interviewMeta.candidateId, {
         recruiter_context_notes: interviewForm.recruiterNotes,
-        callback_notes: interviewForm.callbackNotes,
         other_pointers: interviewForm.otherPointers,
         pipeline_stage: interviewForm.pipelineStage,
         candidate_status: interviewForm.candidateStatus,
