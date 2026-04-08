@@ -1091,7 +1091,6 @@ function AssignModal({ open, applicant, users, jobs, onClose, onSave, title = "A
 function NotesModal({ open, candidate, onClose, onPatch, onParse }) {
   const [recruiterNote, setRecruiterNote] = useState("");
   const [otherPointers, setOtherPointers] = useState("");
-  const [rawRecruiterNote, setRawRecruiterNote] = useState("");
   const [rawRecruiterSections, setRawRecruiterSections] = useState({
     current_ctc: "",
     expected_ctc: "",
@@ -1109,7 +1108,6 @@ function NotesModal({ open, candidate, onClose, onPatch, onParse }) {
     const base = normalizeRecruiterMergeBase(candidate);
     setRecruiterNote(String(candidate.recruiter_context_notes || ""));
     setOtherPointers(String(candidate.other_pointers || ""));
-    setRawRecruiterNote("");
     setRawRecruiterSections({
       current_ctc: String(base.current_ctc || ""),
       expected_ctc: String(base.expected_ctc || ""),
@@ -1125,7 +1123,7 @@ function NotesModal({ open, candidate, onClose, onPatch, onParse }) {
 
   if (!open || !candidate) return null;
 
-  const effectiveRawRecruiterNote = buildStructuredRecruiterRawNote(rawRecruiterSections, rawRecruiterNote);
+  const effectiveRawRecruiterNote = buildStructuredRecruiterRawNote(rawRecruiterSections, "");
 
   const saveNotesOnly = async () => {
     setStatus("Saving notes...");
@@ -1186,7 +1184,6 @@ function NotesModal({ open, candidate, onClose, onPatch, onParse }) {
           <label><span>If serving, offer amount</span><input value={rawRecruiterSections.offer_in_hand} onChange={(e) => setRawRecruiterSections((current) => ({ ...current, offer_in_hand: e.target.value }))} placeholder="Offer amount / in hand offer" /></label>
           <label className="full"><span>LWD or DOJ</span><input value={rawRecruiterSections.lwd_or_doj} onChange={(e) => setRawRecruiterSections((current) => ({ ...current, lwd_or_doj: e.target.value }))} placeholder="8th June / 1st July / DOJ if offered" /></label>
         </div>
-        <label><span>Additional raw recruiter note</span><textarea value={rawRecruiterNote} onChange={(e) => setRawRecruiterNote(e.target.value)} placeholder="Optional extra discussion notes. These will be added below the fixed sections before parsing." /></label>
         <div className="button-row">
           <button onClick={async () => {
             if (!String(effectiveRawRecruiterNote || "").trim()) {
@@ -1608,6 +1605,7 @@ function PortalApp({ token, onLogout }) {
   const notesCandidate = (state.candidates || []).find((item) => String(item.id) === String(notesCandidateId)) || null;
   const attemptsCandidate = (state.candidates || []).find((item) => String(item.id) === String(attemptsCandidateId)) || null;
   const assessmentStatusItem = (state.assessments || []).find((item) => String(item.id) === String(assessmentStatusId)) || null;
+  const isSettingsAdmin = String(state.user?.role || "").toLowerCase() === "admin";
 
   function setStatus(key, message, kind = "") {
     setStatuses((current) => ({ ...current, [key]: message, [`${key}Kind`]: kind }));
@@ -1740,7 +1738,8 @@ function PortalApp({ token, onLogout }) {
         item.recruiter_context_notes,
         item.other_pointers
       ].join(" ").toLowerCase();
-      const queryOk = !candidateFilters.q.trim() || hay.includes(candidateFilters.q.trim().toLowerCase());
+      const queryText = candidateFilters.q.trim().toLowerCase();
+      const queryOk = !queryText || hay.includes(queryText);
       const dateFromOk = !candidateFilters.dateFrom || (createdAtValue && createdAtValue >= candidateFilters.dateFrom);
       const dateToOk = !candidateFilters.dateTo || (createdAtValue && createdAtValue <= candidateFilters.dateTo);
       const clientOk = !candidateFilters.clients.length || candidateFilters.clients.includes(clientValue);
@@ -1750,7 +1749,8 @@ function PortalApp({ token, onLogout }) {
       const sourceOk = !candidateFilters.sources.length || candidateFilters.sources.includes(sourceValue);
       const outcomeOk = !candidateFilters.outcomes.length || candidateFilters.outcomes.includes(outcomeValue);
       const activeOk = !candidateFilters.activeStates.length || candidateFilters.activeStates.includes(activeValue);
-      return !manuallyHidden && !hiddenOutcome && queryOk && dateFromOk && dateToOk && clientOk && jdOk && laneOk && assignmentOk && sourceOk && outcomeOk && activeOk;
+      const hiddenBlocked = manuallyHidden && !queryOk;
+      return !hiddenBlocked && !hiddenOutcome && queryOk && dateFromOk && dateToOk && clientOk && jdOk && laneOk && assignmentOk && sourceOk && outcomeOk && activeOk;
     });
   }, [candidateFilters, capturedAssessmentMap, state.candidates]);
 
@@ -2204,6 +2204,10 @@ function PortalApp({ token, onLogout }) {
   }
 
   async function saveSharedCopySettings() {
+    if (!isSettingsAdmin) {
+      setStatus("settings", "Only admin can save shared settings.", "error");
+      return;
+    }
     const payload = {
       ...copySettings,
       exportPresetLabels: copySettings.exportPresetLabels || DEFAULT_COPY_SETTINGS.exportPresetLabels,
@@ -2215,6 +2219,10 @@ function PortalApp({ token, onLogout }) {
   }
 
   function addCustomPreset() {
+    if (!isSettingsAdmin) {
+      setStatus("settings", "Only admin can add shared presets.", "error");
+      return;
+    }
     const label = String(newPresetDraft.label || "").trim();
     const columns = String(newPresetDraft.columns || "").trim();
     if (!label || !columns) {
@@ -2234,6 +2242,10 @@ function PortalApp({ token, onLogout }) {
   }
 
   function removeCustomPreset(id) {
+    if (!isSettingsAdmin) {
+      setStatus("settings", "Only admin can remove shared presets.", "error");
+      return;
+    }
     setCopySettings((current) => ({
       ...current,
       customExportPresets: (current.customExportPresets || []).filter((item) => String(item.id) !== String(id))
@@ -3156,6 +3168,7 @@ function PortalApp({ token, onLogout }) {
               <div className="page-grid">
                 <Section kicker="Copy Presets" title="Settings">
                   <p className="muted">Set shared Excel preset and default WhatsApp / email formats for filtered captured notes. These settings can be shared across recruiters.</p>
+                  {!isSettingsAdmin ? <p className="muted">You can use shared presets here. Only admin can create, edit, or save shared preset settings.</p> : null}
                   {statuses.settings ? <div className={`status ${statuses.settingsKind || ""}`}>{statuses.settings}</div> : null}
                   <div className="form-grid">
                     <label>
@@ -3173,23 +3186,23 @@ function PortalApp({ token, onLogout }) {
                     </label>
                     <label>
                       <span>Attentive preset label</span>
-                      <input value={copySettings.exportPresetLabels?.attentive_tracker || ""} onChange={(e) => setCopySettings((current) => ({ ...current, exportPresetLabels: { ...(current.exportPresetLabels || {}), attentive_tracker: e.target.value } }))} />
+                      <input disabled={!isSettingsAdmin} value={copySettings.exportPresetLabels?.attentive_tracker || ""} onChange={(e) => setCopySettings((current) => ({ ...current, exportPresetLabels: { ...(current.exportPresetLabels || {}), attentive_tracker: e.target.value } }))} />
                     </label>
                     <label className="full">
                       <span>WhatsApp template</span>
-                      <textarea value={copySettings.whatsappTemplate} onChange={(e) => setCopySettings((current) => ({ ...current, whatsappTemplate: e.target.value }))} />
+                      <textarea disabled={!isSettingsAdmin} value={copySettings.whatsappTemplate} onChange={(e) => setCopySettings((current) => ({ ...current, whatsappTemplate: e.target.value }))} />
                     </label>
                     <label className="full">
                       <span>Email template</span>
-                      <textarea value={copySettings.emailTemplate} onChange={(e) => setCopySettings((current) => ({ ...current, emailTemplate: e.target.value }))} />
+                      <textarea disabled={!isSettingsAdmin} value={copySettings.emailTemplate} onChange={(e) => setCopySettings((current) => ({ ...current, emailTemplate: e.target.value }))} />
                     </label>
-                    <label><span>New preset label</span><input value={newPresetDraft.label} onChange={(e) => setNewPresetDraft((current) => ({ ...current, label: e.target.value }))} placeholder="Client shortlisting sheet" /></label>
-                    <label className="full"><span>New preset columns</span><textarea value={newPresetDraft.columns} onChange={(e) => setNewPresetDraft((current) => ({ ...current, columns: e.target.value }))} placeholder={"S.No.|s_no\nName|name\nStatus|assessment_status"} /></label>
+                    <label><span>New preset label</span><input disabled={!isSettingsAdmin} value={newPresetDraft.label} onChange={(e) => setNewPresetDraft((current) => ({ ...current, label: e.target.value }))} placeholder="Client shortlisting sheet" /></label>
+                    <label className="full"><span>New preset columns</span><textarea disabled={!isSettingsAdmin} value={newPresetDraft.columns} onChange={(e) => setNewPresetDraft((current) => ({ ...current, columns: e.target.value }))} placeholder={"S.No.|s_no\nName|name\nStatus|assessment_status"} /></label>
                   </div>
                   <p className="muted">Available placeholders: {`{{index}} {{name}} {{jd_title}} {{company}} {{outcome}} {{recruiter_notes}} {{location}} {{phone}} {{email}} {{source}} {{follow_up_at}}`}</p>
-                  <div className="button-row">
+                  {isSettingsAdmin ? <div className="button-row">
                     <button className="ghost-btn" onClick={addCustomPreset}>Add custom preset</button>
-                  </div>
+                  </div> : null}
                   <div className="stack-list compact">
                     {(copySettings.customExportPresets || []).map((preset) => (
                       <article className="item-card compact-card" key={preset.id}>
@@ -3198,16 +3211,16 @@ function PortalApp({ token, onLogout }) {
                             <h3>{preset.label}</h3>
                             <div className="candidate-snippet">{preset.columns}</div>
                           </div>
-                          <div className="button-row">
+                          {isSettingsAdmin ? <div className="button-row">
                             <button className="ghost-btn" onClick={() => removeCustomPreset(preset.id)}>Remove</button>
-                          </div>
+                          </div> : null}
                         </div>
                       </article>
                     ))}
                   </div>
                   <div className="button-row">
                     <button onClick={() => setCopySettings(DEFAULT_COPY_SETTINGS)}>Reset defaults</button>
-                    <button onClick={() => void saveSharedCopySettings()}>Save shared settings</button>
+                    {isSettingsAdmin ? <button onClick={() => void saveSharedCopySettings()}>Save shared settings</button> : null}
                   </div>
                 </Section>
               </div>
