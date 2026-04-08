@@ -1294,8 +1294,7 @@ function PortalApp({ token, onLogout }) {
 
   async function completeAgendaFollowUp(candidate) {
     await patchCandidate(candidate.id, {
-      next_follow_up_at: "",
-      candidate_status: candidate?.candidate_status || "Follow-up completed"
+      next_follow_up_at: ""
     }, "Follow-up marked done.");
     setStatus("workspace", `Marked follow-up done for ${candidate?.name || "candidate"}.`, "ok");
   }
@@ -1325,9 +1324,6 @@ function PortalApp({ token, onLogout }) {
       candidatePatch.next_follow_up_at = new Date(patch.next_follow_up_at).toISOString();
     } else if (patch.outcome && patch.outcome !== "Call later" && patch.outcome !== "Switch Off") {
       candidatePatch.next_follow_up_at = "";
-    }
-    if (patch.derived_status) {
-      candidatePatch.candidate_status = patch.derived_status;
     }
     if (Object.keys(candidatePatch).length) {
       await patchCandidate(attemptsCandidateId, candidatePatch, "Attempt logged.");
@@ -1429,8 +1425,6 @@ function PortalApp({ token, onLogout }) {
       await patchCandidate(interviewMeta.candidateId, {
         recruiter_context_notes: interviewForm.recruiterNotes,
         other_pointers: interviewForm.otherPointers,
-        pipeline_stage: interviewForm.pipelineStage,
-        candidate_status: interviewForm.candidateStatus,
         next_follow_up_at: interviewForm.followUpAt
       }, "Assessment saved and candidate state updated.");
     } else {

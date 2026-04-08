@@ -3228,8 +3228,6 @@ const server = http.createServer(async (req, res) => {
         email: String(input.email || input.emailId || "").trim() || undefined,
         linkedin: String(input.linkedin || input.linkedinUrl || "").trim() || undefined,
         highest_education: String(input.highest_education || input.highestEducation || "").trim() || undefined,
-        pipeline_stage: String(input.pipeline_stage || input.pipelineStage || "").trim() || undefined,
-        candidate_status: String(input.candidate_status || input.candidateStatus || "").trim() || undefined,
         next_follow_up_at: String(input.next_follow_up_at || input.nextFollowUpAt || "").trim() || undefined,
         jd_title: String(input.jd_title || input.jdTitle || "").trim() || undefined,
         client_name: String(input.client_name || input.clientName || "").trim() || undefined,
