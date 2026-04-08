@@ -1980,7 +1980,7 @@ function PortalApp({ token, onLogout }) {
       .filter(Boolean);
     const allowedRecruiterNames = isAdmin
       ? (state.users || []).map((item) => String(item?.name || "").trim()).filter(Boolean)
-      : Array.from(new Set([currentUserName, ...adminNames, "RecruitDesk AI"].filter(Boolean)));
+      : Array.from(new Set([currentUserName, ...adminNames].filter(Boolean)));
     (state.assessments || []).forEach((item) => {
       const matchedCandidate = (state.candidates || []).find((candidate) =>
         (item?.candidateId && String(candidate.id) === String(item.candidateId)) ||
@@ -2053,7 +2053,6 @@ function PortalApp({ token, onLogout }) {
       const adminUser = (state.users || []).find((user) => String(user?.role || "").toLowerCase() === "admin");
       const adminName = String(adminUser?.name || "").trim();
       if (adminName) meta.capturedBy.add(adminName);
-      meta.capturedBy.add("RecruitDesk AI");
     }
     for (const item of state.candidates || []) {
       const matchedAssessment = capturedAssessmentMap.get(String(item.name || "").trim().toLowerCase());
@@ -2070,7 +2069,7 @@ function PortalApp({ token, onLogout }) {
       if (sourceValue) meta.sources.add(sourceValue);
       if (outcomeValue) meta.outcomes.add(outcomeValue);
       if (assignedToValue) meta.assignedTo.add(assignedToValue);
-      if (capturedByValue && (isAdmin || capturedByValue === currentUserName || String(capturedByValue).toLowerCase() === "admin" || capturedByValue === "RecruitDesk AI")) {
+      if (capturedByValue && (isAdmin || capturedByValue === currentUserName || String(capturedByValue).toLowerCase() === "admin")) {
         meta.capturedBy.add(capturedByValue);
       }
     }
@@ -2132,6 +2131,16 @@ function PortalApp({ token, onLogout }) {
     });
   }, [candidateFilters, capturedAssessmentMap, state.candidates, state.users, state.user]);
 
+  const filteredApplicants = useMemo(() => {
+    const isAdmin = String(state.user?.role || "").toLowerCase() === "admin";
+    const currentUserName = String(state.user?.name || "").trim().toLowerCase();
+    return (state.applicants || []).filter((item) => {
+      if (isAdmin) return true;
+      const assignedName = String(item.assignedToName || item.assigned_to_name || "").trim().toLowerCase();
+      return Boolean(assignedName && assignedName === currentUserName);
+    });
+  }, [state.applicants, state.user]);
+
   async function openCv(applicantId) {
     const applicant = (state.applicants || []).find((item) => String(item.id) === String(applicantId));
     if (!applicant) {
@@ -2159,6 +2168,48 @@ function PortalApp({ token, onLogout }) {
     setAssignApplicantId("");
     await loadWorkspace();
     setStatus("workspace", "Applicant assigned into recruiter workflow.", "ok");
+  }
+
+  function loadApplicantIntoInterview(applicantId) {
+    const applicant = (state.applicants || []).find((item) => String(item.id) === String(applicantId));
+    if (!applicant) {
+      setStatus("applicants", "Applicant not found for draft view.", "error");
+      return;
+    }
+    setInterviewMeta({
+      candidateId: String(applicant.id || ""),
+      assessmentId: ""
+    });
+    setInterviewForm({
+      candidateName: applicant.candidateName || "",
+      phoneNumber: applicant.phone || "",
+      emailId: applicant.email || "",
+      location: applicant.location || "",
+      currentCtc: applicant.currentCtc || "",
+      expectedCtc: applicant.expectedCtc || "",
+      noticePeriod: applicant.noticePeriod || "",
+      offerInHand: applicant.offerInHand || "",
+      lwdOrDoj: applicant.lwdOrDoj || "",
+      currentCompany: applicant.currentCompany || "",
+      currentDesignation: applicant.currentDesignation || "",
+      totalExperience: applicant.totalExperience || "",
+      currentOrgTenure: applicant.currentOrgTenure || "",
+      reasonForChange: applicant.reasonForChange || "",
+      clientName: applicant.clientName || "",
+      jdTitle: applicant.jdTitle || "",
+      pipelineStage: "Submitted",
+      candidateStatus: applicant.parseStatus || "Applied",
+      followUpAt: "",
+      interviewAt: "",
+      recruiterNotes: "",
+      callbackNotes: applicant.screeningAnswers || "",
+      otherPointers: "",
+      jdScreeningAnswers: {},
+      cvAnalysis: null,
+      cvAnalysisApplied: false
+    });
+    navigate("/interview");
+    setStatus("interview", `Loaded ${applicant.candidateName || "applicant"} into Interview Panel.`, "ok");
   }
 
   async function saveCapturedAssignment({ recruiterId, jdTitle }) {
@@ -3463,15 +3514,16 @@ function PortalApp({ token, onLogout }) {
             <Section kicker="Admin Inbox" title="Applied Candidates">
               {statuses.applicants ? <div className={`status ${statuses.applicantsKind || ""}`}>{statuses.applicants}</div> : null}
               <div className="stack-list">
-                {!state.applicants.length ? <div className="empty-state">No applied candidates right now.</div> : state.applicants.map((item) => (
-                  <article className="item-card" key={item.id}>
+                {!filteredApplicants.length ? <div className="empty-state">No applied candidates right now.</div> : filteredApplicants.map((item) => (
+                  <article className="item-card compact-card" key={item.id}>
                     <div className="item-card__top">
                       <div>
-                        <h3>{item.candidateName || "Applicant"}</h3>
+                        <h3>{item.candidateName || "Applicant"} | {item.jdTitle || "Untitled role"}</h3>
                         <p className="muted">{[
                           item.clientName ? `Client: ${item.clientName}` : "",
                           item.jdTitle ? `JD: ${item.jdTitle}` : "",
                           item.sourcePlatform ? `Source: ${item.sourcePlatform}` : "",
+                          item.assignedToName ? `Assigned: ${item.assignedToName}` : "",
                           item.parseStatus ? `Parse: ${item.parseStatus}` : ""
                         ].filter(Boolean).join(" | ")}</p>
                       </div>
@@ -3482,10 +3534,15 @@ function PortalApp({ token, onLogout }) {
                       </div>
                     </div>
                     <div className="button-row">
+                      <button onClick={() => loadApplicantIntoInterview(item.id)}>Open draft</button>
                       {item.cvFilename ? <button onClick={() => void openCv(item.id)}>Open CV</button> : null}
                       {state.user?.role === "admin" ? <button onClick={() => setAssignApplicantId(item.id)}>Assign</button> : null}
                       {state.user?.role === "admin" ? <button className="ghost-btn" onClick={() => void removeApplicant(item.id)}>Remove</button> : null}
                     </div>
+                    <div className="candidate-snippet">{[
+                      item.screeningAnswers ? `Screening answers:\n${item.screeningAnswers}` : "",
+                      item.currentCompany || item.currentDesignation ? [item.currentCompany, item.currentDesignation].filter(Boolean).join(" | ") : ""
+                    ].filter(Boolean).join("\n\n") || "No extra notes yet."}</div>
                   </article>
                 ))}
               </div>
@@ -3732,6 +3789,20 @@ function PortalApp({ token, onLogout }) {
                       </div>
                     </div>
                   ) : <div className="muted">Upload CV when you want to verify and apply parsed values before sharing the candidate.</div>}
+                </div>
+              </Section>
+
+              <Section kicker="Step 5" title="Final Excel Output">
+                <p className="muted">Save the assessment and export recruiter-sheet format.</p>
+                <div className="button-row">
+                  <button onClick={() => void copyInterviewResult()}>Copy result</button>
+                  <button onClick={() => copyInterviewWhatsapp()}>Copy WhatsApp</button>
+                  <button onClick={() => void copyInterviewEmail()}>Copy Email</button>
+                  <button onClick={() => setStatus("interview", "Notes live in the draft editor above.", "ok")}>Save notes</button>
+                  <button onClick={() => void saveAssessment()}>Create assessment</button>
+                  <button onClick={() => sendInterviewToSheets()}>Send to Sheets</button>
+                  <button onClick={() => exportInterviewAll()}>Export all</button>
+                  <button className="ghost-btn" onClick={() => { setInterviewMeta({ candidateId: "", assessmentId: "" }); setInterviewForm({ candidateName: "", phoneNumber: "", emailId: "", location: "", currentCtc: "", expectedCtc: "", noticePeriod: "", offerInHand: "", lwdOrDoj: "", currentCompany: "", currentDesignation: "", totalExperience: "", currentOrgTenure: "", reasonForChange: "", clientName: "", jdTitle: "", pipelineStage: "Under Interview Process", candidateStatus: "Screening in progress", followUpAt: "", interviewAt: "", recruiterNotes: "", callbackNotes: "", otherPointers: "", jdScreeningAnswers: {}, cvAnalysis: null, cvAnalysisApplied: false, statusHistory: [] }); setStatus("interview", ""); }}>Clear draft</button>
                 </div>
               </Section>
             </div>
