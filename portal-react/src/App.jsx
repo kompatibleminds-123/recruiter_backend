@@ -2051,7 +2051,7 @@ function PortalApp({ token, onLogout }) {
       offer_in_hand: String(base.offer_in_hand || ""),
       lwd_or_doj: String(base.lwd_or_doj || "")
     });
-    setQuickUpdateText(String(quickUpdateCandidate.recruiter_context_notes || ""));
+    setQuickUpdateText(String(quickUpdateCandidate.other_pointers || ""));
     setQuickUpdateStatusText(String(quickUpdateCandidate.last_contact_notes || ""));
   }, [quickUpdateCandidate]);
 
@@ -2471,7 +2471,7 @@ function PortalApp({ token, onLogout }) {
       setStatus("quickUpdate", "Select an existing candidate first.", "error");
       return;
     }
-    const effectiveRawRecruiterNote = buildStructuredRecruiterRawNote(quickUpdateRecruiterSections, quickUpdateText);
+    const effectiveRawRecruiterNote = buildStructuredRecruiterRawNote(quickUpdateRecruiterSections, "");
     if (!String(effectiveRawRecruiterNote || "").trim()) {
       setStatus("quickUpdate", "Type the recruiter update note first.", "error");
       return;
@@ -2511,7 +2511,7 @@ function PortalApp({ token, onLogout }) {
       setStatus("quickUpdate", "Select an existing candidate first.", "error");
       return;
     }
-    const effectiveRawRecruiterNote = buildStructuredRecruiterRawNote(quickUpdateRecruiterSections, quickUpdateText);
+    const effectiveRawRecruiterNote = buildStructuredRecruiterRawNote(quickUpdateRecruiterSections, "");
     const mergeForSave = quickUpdateMergedPatch || buildRecruiterMerge(quickUpdateCandidate, buildStructuredRecruiterSectionOverrides(quickUpdateRecruiterSections), effectiveRawRecruiterNote);
     if (mergeForSave.overwritten?.length) {
       const message = mergeForSave.overwritten.map((entry) => `${formatRecruiterOverwriteLabel(entry.key)}: "${entry.from}" -> "${entry.to}"`).join("\n");
@@ -2527,6 +2527,7 @@ function PortalApp({ token, onLogout }) {
       );
       await patchCandidateQuiet(quickUpdateCandidate.id, {
         recruiter_context_notes: canonicalRecruiterNotes,
+        other_pointers: normalizeOtherPointersBody(quickUpdateText),
         ...extractedFieldPatch
       });
       setQuickUpdateMergedPatch(null);
@@ -2556,7 +2557,7 @@ function PortalApp({ token, onLogout }) {
     }
     try {
       const merged = mergeForSave.merged || normalizeRecruiterMergeBase(quickUpdateCandidate);
-      const effectiveRawRecruiterNote = buildStructuredRecruiterRawNote(quickUpdateRecruiterSections, quickUpdateText);
+      const effectiveRawRecruiterNote = buildStructuredRecruiterRawNote(quickUpdateRecruiterSections, "");
       const extractedFieldPatch = buildRecruiterFieldPatchFromMerge(mergeForSave);
       const canonicalRecruiterNotes = buildCanonicalRecruiterNotes(
         quickUpdateCandidate?.recruiter_context_notes || "",
@@ -2565,6 +2566,7 @@ function PortalApp({ token, onLogout }) {
       );
       await patchCandidateQuiet(quickUpdateCandidate.id, {
         recruiter_context_notes: canonicalRecruiterNotes,
+        other_pointers: normalizeOtherPointersBody(quickUpdateText),
         ...extractedFieldPatch
       });
       const nextAssessment = {
@@ -2583,6 +2585,7 @@ function PortalApp({ token, onLogout }) {
         totalExperience: merged.experience || quickUpdateLinkedAssessment.totalExperience || quickUpdateCandidate.experience || "",
         highestEducation: merged.highest_education || quickUpdateLinkedAssessment.highestEducation || quickUpdateCandidate.highest_education || "",
         recruiterNotes: canonicalRecruiterNotes,
+        otherPointers: normalizeOtherPointersBody(quickUpdateText),
         updatedAt: new Date().toISOString()
       };
       await api("/company/assessments", token, "POST", { assessment: nextAssessment });
@@ -4275,11 +4278,11 @@ function PortalApp({ token, onLogout }) {
                         <label className="full"><span>LWD / DOJ</span><input value={quickUpdateRecruiterSections.lwd_or_doj} onChange={(e) => setQuickUpdateRecruiterSections((current) => ({ ...current, lwd_or_doj: e.target.value }))} placeholder="8th June / 1st July" /></label>
                       </div>
                       <label className="full">
-                        <span>Additional recruiter note</span>
+                        <span>Other pointers</span>
                         <textarea
                           value={quickUpdateText}
                           onChange={(e) => setQuickUpdateText(e.target.value)}
-                          placeholder="Optional free text that should stay in recruiter notes."
+                          placeholder="Good communication. Okay with remote setup."
                         />
                       </label>
                       <label className="full">
