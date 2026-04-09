@@ -141,6 +141,43 @@ const DASHBOARD_METRIC_TILES = [
   ["joined", "Joined"]
 ];
 
+class PortalErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false, errorMessage: "" };
+  }
+
+  static getDerivedStateFromError(error) {
+    return {
+      hasError: true,
+      errorMessage: String(error?.message || error || "Portal crashed.")
+    };
+  }
+
+  componentDidCatch(error) {
+    console.error("Portal render error", error);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="app-shell">
+          <main className="content">
+            <Section kicker="Portal Error" title="Screen crashed">
+              <p className="muted">Portal blank screen avoid karne ke liye fallback dikhaya gaya hai. Page refresh karke ya latest deploy ke baad dubara try karo.</p>
+              <div className="status error">{this.state.errorMessage || "Unknown portal error."}</div>
+              <div className="button-row">
+                <button onClick={() => window.location.reload()}>Reload portal</button>
+              </div>
+            </Section>
+          </main>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 function isTerminalStatus(status) {
   return [
     "shortlisted",
@@ -5589,5 +5626,9 @@ export default function App() {
   }
 
   if (!token) return <LoginScreen onLogin={login} busy={busy} error={error} />;
-  return <PortalApp token={token} onLogout={logout} />;
+  return (
+    <PortalErrorBoundary>
+      <PortalApp token={token} onLogout={logout} />
+    </PortalErrorBoundary>
+  );
 }
