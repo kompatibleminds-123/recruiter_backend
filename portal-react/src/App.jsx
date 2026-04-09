@@ -3084,6 +3084,16 @@ function PortalApp({ token, onLogout }) {
     }
   }
 
+  function handleInterviewCvSelection(event) {
+    const file = event?.target?.files?.[0] || null;
+    if (!file) {
+      setStatus("interview", "No CV selected.", "error");
+      return;
+    }
+    void parseInterviewCvFile(file);
+    event.target.value = "";
+  }
+
   function applyCvAnalysisToDraft() {
     const analysis = interviewForm.cvAnalysis;
     if (!analysis) {
@@ -4523,10 +4533,15 @@ function PortalApp({ token, onLogout }) {
                     <div className="cv-upload-card__copy">
                       <div className="info-label">Upload CV</div>
                       <div className="muted">Upload once, save to storage, reuse the cached parse later, and only apply contradictions when you are ready.</div>
+                      <div className="muted">
+                        {interviewMeta.candidateId
+                          ? "Candidate-linked upload is active. This CV should store against the current candidate."
+                          : "Open a real candidate draft first if you want this CV stored in S3 for later sharing."}
+                      </div>
                     </div>
                     <div className="button-row">
-                      <label className="ghost-btn">
-                        <input type="file" accept=".pdf,.doc,.docx" hidden onChange={(e) => void parseInterviewCvFile(e.target.files?.[0] || null)} />
+                      <label className="file-btn">
+                        <input type="file" accept=".pdf,.doc,.docx" hidden onClick={(e) => { e.target.value = ""; }} onChange={handleInterviewCvSelection} />
                         Upload CV
                       </label>
                       {interviewForm.cvAnalysis ? <button onClick={() => applyCvAnalysisToDraft()}>Apply CV analysis to draft</button> : null}
