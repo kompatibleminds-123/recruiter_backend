@@ -4278,9 +4278,11 @@ function PortalApp({ token, onLogout }) {
     : agendaRange === "tomorrow"
       ? dayAfterTomorrowStart
       : nextWeekEnd;
+  const oneDayAgoStart = new Date(todayStart);
+  oneDayAgoStart.setDate(oneDayAgoStart.getDate() - 1);
   const overdueFollowUps = (state.candidates || []).filter((item) => {
     const value = item?.next_follow_up_at ? new Date(item.next_follow_up_at) : null;
-    return value && value < todayStart;
+    return value && value >= oneDayAgoStart && value < todayStart;
   });
   const todaysFollowUps = (state.candidates || []).filter((item) => {
     const value = item?.next_follow_up_at ? new Date(item.next_follow_up_at) : null;
@@ -4297,8 +4299,9 @@ function PortalApp({ token, onLogout }) {
     return value && value >= agendaWindowStart && value < nextWeekEnd;
   });
   const pendingAssignments = (state.applicants || []).length;
-  const todaysAgendaItems = [
-    ...todaysFollowUps.map((item) => ({
+  const pendingNotes = (state.candidates || []).filter((item) => !String(item.assessment_id || "").trim()).length;
+  const scheduledFollowUpItems = todaysFollowUps
+    .map((item) => ({
       key: `followup-${item.id}`,
       type: "Follow-up",
       title: item.name || "Candidate",
@@ -4306,8 +4309,11 @@ function PortalApp({ token, onLogout }) {
       when: item.next_follow_up_at,
       raw: item,
       action: () => loadCandidateIntoInterview(item.id)
-    })),
-    ...todaysInterviews.map((item) => ({
+    }))
+    .sort((a, b) => new Date(a.when) - new Date(b.when))
+    .slice(0, 5);
+  const scheduledInterviewItems = todaysInterviews
+    .map((item) => ({
       key: `interview-${item.id}`,
       type: "Interview",
       title: item.candidateName || "Candidate",
@@ -4316,9 +4322,8 @@ function PortalApp({ token, onLogout }) {
       raw: item,
       action: () => openSavedAssessment(item)
     }))
-  ]
     .sort((a, b) => new Date(a.when) - new Date(b.when))
-    .slice(0, 8);
+    .slice(0, 5);
 
   return (
     <div className="app-shell">
@@ -4369,12 +4374,20 @@ function PortalApp({ token, onLogout }) {
                     <div className="metric-value">{overdueFollowUps.length}</div>
                   </div>
                   <div className="metric-card compact-metric">
+                    <div className="metric-label">Pending notes</div>
+                    <div className="metric-value">{pendingNotes}</div>
+                  </div>
+                  <div className="metric-card compact-metric">
                     <div className="metric-label">Scheduled interviews</div>
                     <div className="metric-value">{todaysInterviews.length}</div>
                   </div>
                   <div className="metric-card compact-metric">
                     <div className="metric-label">Upcoming joinings</div>
                     <div className="metric-value">{upcomingJoinings.length}</div>
+                  </div>
+                  <div className="metric-card compact-metric">
+                    <div className="metric-label">Pending applicants</div>
+                    <div className="metric-value">{pendingAssignments}</div>
                   </div>
                 </div>
                 <div className="stack-list compact">
@@ -4398,11 +4411,14 @@ function PortalApp({ token, onLogout }) {
                       </div>
                     </div>
                   )}
-                  {!!todaysAgendaItems.length && (
+                  {!!(scheduledFollowUpItems.length || scheduledInterviewItems.length) && (
                     <div className="agenda-block">
                       <h3>Scheduled follow-ups and interviews</h3>
-                      <div className="stack-list compact">
-                        {todaysAgendaItems.map((item) => (
+                      <div className="agenda-split-grid">
+                        <div className="agenda-subblock">
+                          <h4>Follow-ups</h4>
+                          <div className="stack-list compact">
+                        {scheduledFollowUpItems.map((item) => (
                           <article key={item.key} className="agenda-item">
                             <div>
                               <span className="agenda-item__type">{item.type}</span>
@@ -4412,17 +4428,33 @@ function PortalApp({ token, onLogout }) {
                             </div>
                             <div className="button-row tight">
                               <button onClick={item.action}>Update</button>
-                              <button
-                                className="ghost-btn"
-                                onClick={() => void (item.type === "Follow-up"
-                                  ? completeAgendaFollowUp(item.raw)
-                                  : completeAgendaInterview(item.raw))}
-                              >
-                                Done
-                              </button>
+                              <button className="ghost-btn" onClick={() => void completeAgendaFollowUp(item.raw)}>Done</button>
                             </div>
                           </article>
                         ))}
+                        {!scheduledFollowUpItems.length ? <div className="empty-state compact-empty">No follow-ups in this range.</div> : null}
+                          </div>
+                        </div>
+                        <div className="agenda-subblock">
+                          <h4>Interviews</h4>
+                          <div className="stack-list compact">
+                        {scheduledInterviewItems.map((item) => (
+                          <article key={item.key} className="agenda-item">
+                            <div>
+                              <span className="agenda-item__type">{item.type}</span>
+                              <span className="agenda-item__title">{item.title}</span>
+                              <span className="agenda-item__subtitle">{item.subtitle}</span>
+                              <span className="agenda-item__time">{new Date(item.when).toLocaleString()}</span>
+                            </div>
+                            <div className="button-row tight">
+                              <button onClick={item.action}>Update</button>
+                              <button className="ghost-btn" onClick={() => void completeAgendaInterview(item.raw)}>Done</button>
+                            </div>
+                          </article>
+                        ))}
+                        {!scheduledInterviewItems.length ? <div className="empty-state compact-empty">No interviews in this range.</div> : null}
+                          </div>
+                        </div>
                       </div>
                     </div>
                   )}
@@ -4449,9 +4481,6 @@ function PortalApp({ token, onLogout }) {
                   {!overdueFollowUps.length && !todaysAgendaItems.length && !upcomingJoinings.length ? (
                     <div className="empty-state">No scheduled follow-ups, interviews, or joinings for this range yet.</div>
                   ) : null}
-                  {!!pendingAssignments && (
-                    <div className="muted">{`${pendingAssignments} pending applicant(s) are waiting in Applied Candidates.`}</div>
-                  )}
                 </div>
               </Section>
               <Section kicker="Performance" title="Recruitment Dashboard">
@@ -4464,7 +4493,7 @@ function PortalApp({ token, onLogout }) {
                   <div className="button-row align-end"><button onClick={() => void applyDashboardFilters()}>Apply dates</button></div>
                 </div>
                 <p className="muted">Under Interview Process excludes shortlisted, offered, hold, did not attend, dropped, screening reject, interview reject, duplicate, and joined.</p>
-                <div className="metric-grid">
+                <div className="metric-grid dashboard-metric-grid">
                   {DASHBOARD_METRIC_COLUMNS.map(([key, label]) => (
                     <button key={key} className="metric-card metric-card--button" onClick={() => void openDashboardDrilldown({ title: `${label} candidates`, metric: key, groupType: "all" })}>
                       <div className="metric-label">{label}</div>
