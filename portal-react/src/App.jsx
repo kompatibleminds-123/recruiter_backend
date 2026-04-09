@@ -3297,7 +3297,11 @@ function PortalApp({ token, onLogout }) {
     };
 
     setStatus("captured", "Converting draft into assessment...");
-    await api("/company/assessments", token, "POST", { assessment });
+    const savedAssessment = await api("/company/assessments", token, "POST", { assessment });
+    await api("/candidates/link-assessment", token, "POST", {
+      id: candidate.id,
+      assessmentId: savedAssessment?.id || assessment.id
+    }).catch(() => null);
     await loadWorkspace();
     navigate("/assessments");
     setStatus("assessments", `Converted ${candidate.name || "candidate"} into assessment.`, "ok");
@@ -3325,8 +3329,12 @@ function PortalApp({ token, onLogout }) {
       generatedAt: new Date().toISOString()
     };
     setStatus("interview", "Saving assessment...");
-    await api("/company/assessments", token, "POST", { assessment });
+    const savedAssessment = await api("/company/assessments", token, "POST", { assessment });
     if (interviewMeta.candidateId) {
+      await api("/candidates/link-assessment", token, "POST", {
+        id: interviewMeta.candidateId,
+        assessmentId: savedAssessment?.id || assessment.id
+      }).catch(() => null);
       await patchCandidateQuiet(interviewMeta.candidateId, {
         name: interviewForm.candidateName,
         phone: interviewForm.phoneNumber,
@@ -5185,7 +5193,6 @@ function PortalApp({ token, onLogout }) {
                   <button onClick={() => void copyInterviewResult()}>Copy result</button>
                   <button onClick={() => copyInterviewWhatsapp()}>Copy WhatsApp</button>
                   <button onClick={() => void copyInterviewEmail()}>Copy Email</button>
-                  <button onClick={() => setStatus("interview", "Notes live in the draft editor above.", "ok")}>Save notes</button>
                   <button onClick={() => void saveAssessment()}>{interviewMeta.assessmentId ? "Save assessment" : "Create assessment"}</button>
                   <button onClick={() => sendInterviewToSheets()}>Send to Sheets</button>
                   <button onClick={() => exportInterviewAll()}>Export all</button>
