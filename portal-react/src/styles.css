@@ -623,3 +623,11 @@ textarea { min-height: 92px; resize: vertical; }
   .form-grid.two-col, .form-grid.three-col { grid-template-columns: 1fr; }
   .cv-upload-card { align-items: stretch; }
 }
+.client-share-preview {
+  min-height: 320px;
+  padding: 16px;
+  border: 1px solid var(--line, #d8dee8);
+  border-radius: 18px;
+  background: #fff;
+  overflow: auto;
+}

@@ -930,6 +930,34 @@ function copyText(value) {
   return navigator.clipboard.writeText(String(value || ""));
 }
 
+async function copyHtmlAndText(htmlValue, textValue) {
+  const html = String(htmlValue || "");
+  const text = String(textValue || "");
+  if (navigator.clipboard?.write && typeof ClipboardItem !== "undefined") {
+    try {
+      await navigator.clipboard.write([
+        new ClipboardItem({
+          "text/html": new Blob([html], { type: "text/html" }),
+          "text/plain": new Blob([text], { type: "text/plain" })
+        })
+      ]);
+      return;
+    } catch (error) {
+      console.warn("Falling back to plain-text clipboard copy.", error);
+    }
+  }
+  await copyText(text);
+}
+
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/\"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
 function getCapturedOutcome(candidate, assessment) {
   const isConverted = Boolean(assessment || candidate?.used_in_assessment);
   if (isConverted) return String(assessment?.candidateStatus || "No outcome").trim();
@@ -3727,6 +3755,15 @@ function PortalApp({ token, onLogout }) {
     return selectedAssessmentRows;
   }
 
+  function getClientSharePresetColumns() {
+    const customPreset = (copySettings.customExportPresets || []).find((preset) => String(preset.id) === String(clientShareDraft.presetId));
+    const columnsText = customPreset?.columns
+      || copySettings.exportPresetColumns?.[clientShareDraft.presetId]
+      || DEFAULT_COPY_SETTINGS.exportPresetColumns?.[clientShareDraft.presetId]
+      || "";
+    return parsePresetColumns(columnsText);
+  }
+
   function buildClientShareBody() {
     const hrName = String(clientShareDraft.hrName || "").trim();
     const clientLabel = String(clientShareDraft.clientLabel || "").trim();
@@ -3734,19 +3771,17 @@ function PortalApp({ token, onLogout }) {
     const recruiterName = String(state.user?.name || "Recruiter").trim();
     const companyName = String(state.user?.companyName || state.user?.company_name || "RecruitDesk").trim();
     const roleLine = [targetRole, clientLabel].filter(Boolean).join(" for ");
-    const profileLines = getClientShareRows().flatMap((item, index) => ([
-      `${index + 1}. ${item.name || "Candidate"}`,
-      `Current company: ${item.current_company || "-"}`,
-      `Current designation: ${item.current_designation || "-"}`,
-      `Experience: ${item.total_experience || "-"}`,
-      `Current CTC: ${item.current_ctc || "-"}`,
-      `Expected CTC: ${item.expected_ctc || "-"}`,
-      `Notice period: ${item.notice_period || "-"}`,
-      `Insights: ${item.combined_assessment_insights || "-"}`,
-      `LinkedIn: ${item.linkedin || "-"}`,
-      `CV Link: ${clientShareCvLinks[item.candidate_id] || "Generating secure CV link..."}`,
-      ""
-    ]));
+    const presetColumns = getClientSharePresetColumns();
+    const rows = getClientShareRows();
+    const profileLines = rows.flatMap((item, index) => {
+      const cells = presetColumns.map((column) => `${column.header}: ${getCapturedExportFieldValue({ index: index + 1, ...item }, column.field) || "-"}`);
+      return [
+        `${index + 1}. ${item.name || "Candidate"}`,
+        ...cells,
+        `CV Link: ${clientShareCvLinks[item.candidate_id] || "Generating secure CV link..."}`,
+        ""
+      ];
+    });
     return [
       `Hello ${hrName || "Team"},`,
       "",
@@ -3762,13 +3797,56 @@ function PortalApp({ token, onLogout }) {
     ].filter((line, index, array) => line || (index > 0 && array[index - 1] !== "")).join("\n");
   }
 
+  function buildClientShareHtml() {
+    const hrName = String(clientShareDraft.hrName || "").trim();
+    const clientLabel = String(clientShareDraft.clientLabel || "").trim();
+    const targetRole = String(clientShareDraft.targetRole || "").trim();
+    const recruiterName = String(state.user?.name || "Recruiter").trim();
+    const companyName = String(state.user?.companyName || state.user?.company_name || "RecruitDesk").trim();
+    const roleLine = [targetRole, clientLabel].filter(Boolean).join(" for ");
+    const rows = getClientShareRows();
+    const presetColumns = getClientSharePresetColumns();
+    const tableHeaders = presetColumns.map((column) => `<th style="border:1px solid #d8dee8;padding:10px 12px;background:#f6f8fb;text-align:left;font-size:13px;">${escapeHtml(column.header)}</th>`).join("");
+    const tableRows = rows.map((item, index) => {
+      const cells = presetColumns.map((column) => {
+        const value = getCapturedExportFieldValue({ index: index + 1, ...item }, column.field) || "-";
+        return `<td style="border:1px solid #d8dee8;padding:10px 12px;vertical-align:top;font-size:13px;line-height:1.45;">${escapeHtml(value).replace(/\n/g, "<br/>")}</td>`;
+      }).join("");
+      const cvLink = clientShareCvLinks[item.candidate_id];
+      const cvCell = cvLink
+        ? `<a href="${escapeHtml(cvLink)}" style="color:#0b57d0;text-decoration:none;">Open CV</a>`
+        : "Generating secure CV link...";
+      return `<tr>${cells}<td style="border:1px solid #d8dee8;padding:10px 12px;vertical-align:top;font-size:13px;line-height:1.45;">${cvCell}</td></tr>`;
+    }).join("");
+    const extraMessage = String(clientShareDraft.extraMessage || "").trim();
+    return `
+      <div style="font-family:Arial, sans-serif;color:#1f2a44;line-height:1.6;">
+        <p>Hello ${escapeHtml(hrName || "Team")},</p>
+        <p>Greetings !!</p>
+        <p>This is ${escapeHtml(recruiterName)} from ${escapeHtml(companyName)}.<br/>
+        PFA the profiles${roleLine ? ` for ${escapeHtml(roleLine)}` : ""}.<br/>
+        Kindly review and share your feedback.</p>
+        <p>${rows.length} selected profile(s) are listed below.</p>
+        <table style="border-collapse:collapse;width:100%;margin-top:12px;">
+          <thead>
+            <tr>${tableHeaders}<th style="border:1px solid #d8dee8;padding:10px 12px;background:#f6f8fb;text-align:left;font-size:13px;">CV Link</th></tr>
+          </thead>
+          <tbody>
+            ${tableRows}
+          </tbody>
+        </table>
+        ${extraMessage ? `<p style="margin-top:16px;">${escapeHtml(extraMessage).replace(/\n/g, "<br/>")}</p>` : ""}
+      </div>
+    `.trim();
+  }
+
   async function copyClientShareEmailDraft() {
     if (!getClientShareRows().length) {
       setStatus("clientShare", "Select assessment profiles first from the Assessments tab.", "error");
       return;
     }
-    await copyText(buildClientShareBody());
-    setStatus("clientShare", "Client email draft copied.", "ok");
+    await copyHtmlAndText(buildClientShareHtml(), buildClientShareBody());
+    setStatus("clientShare", "Client email draft copied in table format.", "ok");
   }
 
   function toggleAssessmentSelection(assessmentId) {
@@ -4868,7 +4946,7 @@ function PortalApp({ token, onLogout }) {
                   <label className="full"><span>Extra message</span><textarea value={clientShareDraft.extraMessage} onChange={(e) => setClientShareDraft((current) => ({ ...current, extraMessage: e.target.value }))} placeholder="Optional note for the client." /></label>
                   <label className="full">
                     <span>Email preview</span>
-                    <textarea value={buildClientShareBody()} readOnly />
+                    <div className="client-share-preview" dangerouslySetInnerHTML={{ __html: buildClientShareHtml() }} />
                   </label>
                 </div>
                 {!selectedAssessmentRows.length ? <div className="empty-state">No assessment selected yet. Go to Assessments and tick `Select for client share` on the profiles you want to send.</div> : null}
