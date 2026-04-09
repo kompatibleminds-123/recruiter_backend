@@ -1113,19 +1113,25 @@ function buildCandidateSearchUniverse(candidates = [], assessments = [], jobs = 
   const knownJdTitles = buildKnownJdTitleSet(jobs);
 
   for (const candidate of candidates || []) {
+    const candidateMeta = decodeApplicantMetadata(candidate);
+    const cachedCvResult = candidateMeta?.cvAnalysisCache?.result && typeof candidateMeta.cvAnalysisCache.result === "object"
+      ? candidateMeta.cvAnalysisCache.result
+      : {};
     const linkedAssessment = assessmentsById.get(String(candidate?.assessment_id || "").trim()) || null;
     if (linkedAssessment?.id) seenAssessmentIds.add(String(linkedAssessment.id));
     universe.push({
       id: String(candidate?.id || linkedAssessment?.id || "").trim(),
       candidateName: String(candidate?.name || linkedAssessment?.candidateName || "").trim(),
-      role: String(candidate?.role || linkedAssessment?.currentDesignation || "").trim(),
+      role: String(candidate?.role || linkedAssessment?.currentDesignation || cachedCvResult?.currentDesignation || "").trim(),
       position: getPositionLabel(candidate, linkedAssessment || {}, knownJdTitles),
-      company: String(candidate?.company || linkedAssessment?.currentCompany || "").trim(),
-      totalExperience: String(candidate?.experience || linkedAssessment?.totalExperience || "").trim(),
+      company: String(candidate?.company || linkedAssessment?.currentCompany || cachedCvResult?.currentCompany || "").trim(),
+      totalExperience: String(candidate?.experience || linkedAssessment?.totalExperience || cachedCvResult?.exactTotalExperience || "").trim(),
       location: String(candidate?.location || linkedAssessment?.location || "").trim(),
       currentCtc: String(candidate?.current_ctc || linkedAssessment?.currentCtc || "").trim(),
       expectedCtc: String(candidate?.expected_ctc || linkedAssessment?.expectedCtc || "").trim(),
       noticePeriod: String(candidate?.notice_period || linkedAssessment?.noticePeriod || "").trim(),
+      currentOrgTenure: String(linkedAssessment?.currentOrgTenure || cachedCvResult?.currentOrgTenure || "").trim(),
+      highestEducation: String(candidate?.highest_education || linkedAssessment?.highestEducation || cachedCvResult?.highestEducation || "").trim(),
       skills: Array.isArray(candidate?.skills) ? candidate.skills : [],
       clientName: getClientLabel(candidate, linkedAssessment || {}),
       recruiterName: getRecruiterLabel(candidate, linkedAssessment || {}),
@@ -1141,9 +1147,19 @@ function buildCandidateSearchUniverse(candidates = [], assessments = [], jobs = 
       createdAt: normalizeDateOutput(getCandidateCreatedAt(candidate)),
       sharedAt: normalizeDateOutput(getCandidateConvertedAt(candidate, linkedAssessment || {})),
       sourceType: candidate?.used_in_assessment ? "captured_and_converted" : "captured_note",
+      hiddenCvText: JSON.stringify(cachedCvResult || {}),
+      notesText: [
+        candidate?.notes || "",
+        candidate?.recruiter_context_notes || "",
+        candidate?.other_pointers || "",
+        linkedAssessment?.recruiterNotes || "",
+        linkedAssessment?.otherPointers || "",
+        linkedAssessment?.callbackNotes || ""
+      ].filter(Boolean).join("\n"),
       raw: {
         candidate,
-        assessment: linkedAssessment
+        assessment: linkedAssessment,
+        metadata: candidateMeta
       }
     });
   }
@@ -1162,6 +1178,8 @@ function buildCandidateSearchUniverse(candidates = [], assessments = [], jobs = 
       currentCtc: String(assessment?.currentCtc || "").trim(),
       expectedCtc: String(assessment?.expectedCtc || "").trim(),
       noticePeriod: String(assessment?.noticePeriod || "").trim(),
+      currentOrgTenure: String(assessment?.currentOrgTenure || "").trim(),
+      highestEducation: String(assessment?.highestEducation || "").trim(),
       skills: [],
       clientName: getClientLabel({}, assessment),
       recruiterName: getRecruiterLabel({}, assessment),
@@ -1177,6 +1195,12 @@ function buildCandidateSearchUniverse(candidates = [], assessments = [], jobs = 
       createdAt: "",
       sharedAt: normalizeDateOutput(getCandidateConvertedAt({}, assessment)),
       sourceType: "assessment_only",
+      hiddenCvText: "",
+      notesText: [
+        assessment?.recruiterNotes || "",
+        assessment?.otherPointers || "",
+        assessment?.callbackNotes || ""
+      ].filter(Boolean).join("\n"),
       raw: {
         candidate: null,
         assessment
@@ -1190,7 +1214,7 @@ function buildCandidateSearchUniverse(candidates = [], assessments = [], jobs = 
 function candidateMatchesNaturalFilter(item, filters, actor = null) {
   if (!item) return false;
   if (filters.role) {
-    const roleHay = `${item.role} ${(item.skills || []).join(" ")}`.toLowerCase();
+    const roleHay = `${item.role} ${item.position || ""} ${(item.skills || []).join(" ")} ${item.hiddenCvText || ""} ${item.notesText || ""}`.toLowerCase();
     const roleTokens = String(filters.role || "")
       .toLowerCase()
       .split(/\s+/)
@@ -1242,10 +1266,11 @@ function candidateMatchesNaturalFilter(item, filters, actor = null) {
     if (noticeDays == null || noticeDays > filters.maxNoticeDays) return false;
   }
   if (filters.currentCompany) {
-    if (!String(item.company || "").toLowerCase().includes(filters.currentCompany.toLowerCase())) return false;
+    const companyHay = `${item.company || ""} ${item.hiddenCvText || ""}`.toLowerCase();
+    if (!companyHay.includes(filters.currentCompany.toLowerCase())) return false;
   }
   if (Array.isArray(filters.skills) && filters.skills.length) {
-    const hay = `${item.role} ${item.position} ${item.company} ${(item.skills || []).join(" ")}`.toLowerCase();
+    const hay = `${item.role} ${item.position} ${item.company} ${(item.skills || []).join(" ")} ${item.hiddenCvText || ""} ${item.notesText || ""}`.toLowerCase();
     if (!filters.skills.every((skill) => hay.includes(String(skill || "").toLowerCase()))) return false;
   }
   if (Array.isArray(filters.statuses) && filters.statuses.length) {
@@ -1509,9 +1534,9 @@ function scoreCandidateAgainstJd(item, jd) {
   const reasons = [];
   let hasCoreMatch = false;
   let hasRoleMatch = false;
-  const roleHay = normalizeJdSearchToken(`${item.role || ""} ${item.position || ""}`);
+  const roleHay = normalizeJdSearchToken(`${item.role || ""} ${item.position || ""} ${item.hiddenCvText || ""}`);
   const companyHay = `${item.company || ""}`.toLowerCase();
-  const skillHay = normalizeJdSearchToken(`${item.role || ""} ${item.position || ""} ${companyHay} ${(item.skills || []).join(" ")}`);
+  const skillHay = normalizeJdSearchToken(`${item.role || ""} ${item.position || ""} ${companyHay} ${(item.skills || []).join(" ")} ${item.hiddenCvText || ""} ${item.notesText || ""}`);
   const candidateFamilies = detectRoleFamilies(`${item.role || ""} ${item.position || ""}`);
   if (jd.roleFamilies.length && candidateFamilies.length && !jd.roleFamilies.some((family) => candidateFamilies.includes(family))) {
     return { score: 0, reasons: [], hasCoreMatch: false, hasRoleMatch: false, noticeDays: parseNoticePeriodToDays(item.noticePeriod) };

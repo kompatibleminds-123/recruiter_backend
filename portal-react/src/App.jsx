@@ -2210,7 +2210,41 @@ function PortalApp({ token, onLogout }) {
       follow_up_at: formatDateForCopy(item.followUpAt || item.interviewAt || "")
     }));
   }, [filteredAssessments]);
-  const candidateUniverse = useMemo(() => candidateSearchMode === "all" ? (state.candidates || []) : (candidateSearchResults || []), [candidateSearchMode, state.candidates, candidateSearchResults]);
+  const candidateUniverseAll = useMemo(() => {
+    const linkedAssessmentIds = new Set((state.candidates || []).map((item) => String(item.assessment_id || "").trim()).filter(Boolean));
+    const candidateNames = new Set((state.candidates || []).map((item) => String(item.name || "").trim().toLowerCase()).filter(Boolean));
+    const assessmentOnlyItems = (state.assessments || [])
+      .filter((item) => {
+        const assessmentId = String(item.id || "").trim();
+        if (assessmentId && linkedAssessmentIds.has(assessmentId)) return false;
+        const nameKey = String(item.candidateName || "").trim().toLowerCase();
+        return !nameKey || !candidateNames.has(nameKey);
+      })
+      .map((item) => ({
+        id: item.id,
+        assessmentId: item.id,
+        name: item.candidateName || "",
+        role: item.currentDesignation || "",
+        company: item.currentCompany || "",
+        experience: item.totalExperience || "",
+        totalExperience: item.totalExperience || "",
+        current_ctc: item.currentCtc || "",
+        expected_ctc: item.expectedCtc || "",
+        notice_period: item.noticePeriod || "",
+        highest_education: item.highestEducation || "",
+        linkedin: item.linkedinUrl || "",
+        location: item.location || "",
+        client_name: item.clientName || "",
+        jd_title: item.jdTitle || "",
+        assigned_to_name: item.recruiterName || "",
+        source: "assessment_only",
+        notes: item.callbackNotes || "",
+        recruiter_context_notes: item.recruiterNotes || "",
+        other_pointers: item.otherPointers || ""
+      }));
+    return [...(state.candidates || []), ...assessmentOnlyItems];
+  }, [state.assessments, state.candidates]);
+  const candidateUniverse = useMemo(() => candidateSearchMode === "all" ? candidateUniverseAll : (candidateSearchResults || []), [candidateSearchMode, candidateUniverseAll, candidateSearchResults]);
   const pagedCandidates = useMemo(() => {
     const start = (candidatePage - 1) * 10;
     return candidateUniverse.slice(start, start + 10);
@@ -3423,6 +3457,77 @@ function PortalApp({ token, onLogout }) {
     setStatus("assessments", "Filtered assessments copied in email format.", "ok");
   }
 
+  function buildCandidateUniverseCopyRows() {
+    return candidateUniverse.map((item, index) => ({
+      index: index + 1,
+      s_no: index + 1,
+      name: item.name || item.candidateName || "",
+      phone: item.phone || item.phoneNumber || "",
+      email: item.email || item.emailId || "",
+      location: item.location || "",
+      company: item.company || item.currentCompany || "",
+      current_company: item.company || item.currentCompany || "",
+      role: item.role || item.currentDesignation || item.jdTitle || "",
+      current_designation: item.role || item.currentDesignation || "",
+      total_experience: item.experience || item.totalExperience || "",
+      highest_education: item.highest_education || item.highestEducation || "",
+      current_ctc: item.current_ctc || item.currentCtc || "",
+      expected_ctc: item.expected_ctc || item.expectedCtc || "",
+      notice_period: item.notice_period || item.noticePeriod || "",
+      recruiter_context_notes: item.recruiter_context_notes || item.recruiterNotes || "",
+      other_pointers: item.other_pointers || item.otherPointers || "",
+      notes: item.notes || item.callbackNotes || "",
+      other_standard_questions: item.notes || item.callbackNotes || "",
+      combined_assessment_insights: buildCombinedAssessmentInsightsForExport({
+        recruiter_context_notes: item.recruiter_context_notes || item.recruiterNotes || "",
+        other_pointers: item.other_pointers || item.otherPointers || "",
+        other_standard_questions: item.notes || item.callbackNotes || ""
+      }),
+      linkedin: item.linkedin || item.linkedinUrl || "",
+      jd_title: item.jd_title || item.jdTitle || "",
+      client_name: item.client_name || item.clientName || "",
+      outcome: item.candidate_status || item.candidateStatus || item.last_contact_outcome || "",
+      assessment_status: item.candidate_status || item.candidateStatus || item.last_contact_outcome || "",
+      follow_up_at: formatDateForCopy(item.next_follow_up_at || item.followUpAt || item.interviewAt || "")
+    }));
+  }
+
+  async function copyCandidatesExcel() {
+    const rows = buildCandidateUniverseCopyRows();
+    const preset = buildCapturedExcelRows(rows, copySettings.excelPreset, copySettings);
+    const lines = [preset.headers.join("\t"), ...preset.rows.map((row) => row.map((cell) => String(cell || "").replace(/\t/g, " ").replace(/\r?\n/g, " ")).join("\t"))].join("\n");
+    await copyText(lines);
+    setStatus("workspace", "Candidate search results copied in Excel format.", "ok");
+  }
+
+  async function copyCandidatesWhatsapp() {
+    const rows = buildCandidateUniverseCopyRows();
+    const text = rows.map((item, index) => fillCandidateTemplate(copySettings.whatsappTemplate, { ...item, index: index + 1 })).filter(Boolean).join("\n\n");
+    await copyText(text);
+    setStatus("workspace", "Candidate search results copied in WhatsApp format.", "ok");
+  }
+
+  async function copyCandidatesEmail() {
+    const rows = buildCandidateUniverseCopyRows();
+    const text = rows.map((item, index) => fillCandidateTemplate(copySettings.emailTemplate, { ...item, index: index + 1 })).filter(Boolean).join("\n\n");
+    await copyText(text);
+    setStatus("workspace", "Candidate search results copied in email format.", "ok");
+  }
+
+  function downloadCandidatesExcel() {
+    const rows = buildCandidateUniverseCopyRows();
+    const preset = buildCapturedExcelRows(rows, copySettings.excelPreset, copySettings);
+    const text = [preset.headers.join("\t"), ...preset.rows.map((row) => row.map((cell) => String(cell || "").replace(/\t/g, " ").replace(/\r?\n/g, " ")).join("\t"))].join("\n");
+    const blob = new Blob([text], { type: "text/tab-separated-values;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `candidate-search-${new Date().toISOString().slice(0, 10)}.tsv`;
+    link.click();
+    URL.revokeObjectURL(url);
+    setStatus("workspace", "Candidate search results downloaded.", "ok");
+  }
+
   async function saveSharedCopySettings() {
     if (!isSettingsAdmin) {
       setStatus("settings", "Only admin can save shared settings.", "error");
@@ -4099,6 +4204,7 @@ function PortalApp({ token, onLogout }) {
           <Route path="/candidates" element={
             <div className="page-grid">
               <Section kicker="Candidate Universe" title="Candidates">
+                <p className="muted">This view can surface captured, applied, and assessment-linked candidates together. Candidates without CV uploads still remain searchable through saved structured fields, recruiter notes, attempts, and assessment data. Hidden CV metadata is used only by search and not shown in the UI.</p>
                 <div className="toolbar">
                   <select value={candidateSearchMode} onChange={(e) => { setCandidateSearchMode(e.target.value); setCandidatePage(1); }}>
                     <option value="all">All candidates</option>
@@ -4107,6 +4213,12 @@ function PortalApp({ token, onLogout }) {
                   </select>
                   <input placeholder={candidateSearchMode === "jd_match" ? "Paste JD title or requirement text" : "Search role, skill, company, location"} value={candidateSearchText} onChange={(e) => setCandidateSearchText(e.target.value)} />
                   <button onClick={() => void runCandidateSearch()}>{candidateSearchMode === "all" ? "Refresh" : "Run"}</button>
+                </div>
+                <div className="button-row">
+                  <button onClick={() => void copyCandidatesExcel()}>Copy Excel</button>
+                  <button onClick={() => void copyCandidatesWhatsapp()}>Copy WhatsApp</button>
+                  <button onClick={() => void copyCandidatesEmail()}>Copy Email</button>
+                  <button className="ghost-btn" onClick={() => downloadCandidatesExcel()}>Download results</button>
                 </div>
                 <div className="stack-list">
                   {!pagedCandidates.length ? <div className="empty-state">No candidates found for this view.</div> : pagedCandidates.map((item) => (
