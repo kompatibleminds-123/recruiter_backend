@@ -1656,7 +1656,8 @@ function scoreCandidateAgainstJd(item, jd) {
       else if (budgetDistance <= 2) budgetScore = 8;
       else if (budgetDistance <= 4) budgetScore = 6;
       else budgetScore = 4;
-      reasons.push(`CTC fit: near ${jd.minCtcLpa != null ? `${jd.minCtcLpa} - ` : "up to "}${jd.maxCtcLpa != null ? `${jd.maxCtcLpa}` : ""} LPA`.replace(" -  LPA", " LPA")}`);
+      const ctcLabel = `${jd.minCtcLpa != null ? `${jd.minCtcLpa} - ` : "up to "}${jd.maxCtcLpa != null ? `${jd.maxCtcLpa}` : ""} LPA`.replace(" -  LPA", " LPA");
+      reasons.push(`CTC fit: near ${ctcLabel}`);
       hasCoreMatch = true;
     }
   }

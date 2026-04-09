@@ -38,6 +38,15 @@ const DEFAULT_COPY_SETTINGS = {
   emailTemplate: "{{index}}. {{name}}\nCompany: {{company}}\nRole: {{jd_title}}\nLocation: {{location}}\nOutcome: {{outcome}}\nEmail: {{email}}\nPhone: {{phone}}\nNotes: {{recruiter_notes}}"
 };
 
+const AI_SEARCH_EXAMPLE_PROMPTS = [
+  "AE in Bangalore",
+  "Head of Sales",
+  "shared last month",
+  "offered Mumbai sales candidates under 18 L",
+  "SaaS sales profiles with notice under 30 days",
+  "profiles sourced by Ankit this week"
+];
+
 const PORTAL_APPLICANT_METADATA_PREFIX = "[APPLICANT_META]";
 
 const DEFAULT_PIPELINE_STAGE_OPTIONS = [
@@ -4278,6 +4287,26 @@ function PortalApp({ token, onLogout }) {
             <div className="page-grid">
               <Section kicker="Candidate Universe" title="Candidates">
                 <p className="muted">This view can surface captured, applied, and assessment-linked candidates together. Candidates without CV uploads still remain searchable through saved structured fields, recruiter notes, attempts, and assessment data. Hidden CV metadata is used only by search and not shown in the UI.</p>
+                {candidateSearchMode === "ai_search" ? (
+                  <div className="item-card compact-card">
+                    <h3>AI candidate search</h3>
+                    <p className="muted">Try prompts like `show me all candidates shared in last month` or `get me offered Mumbai sales candidates under 18 L`.</p>
+                    <div className="button-row">
+                      {AI_SEARCH_EXAMPLE_PROMPTS.map((prompt) => (
+                        <button
+                          key={prompt}
+                          className="ghost-btn"
+                          onClick={() => {
+                            setCandidateSearchText(prompt);
+                            setCandidatePage(1);
+                          }}
+                        >
+                          {prompt}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
                 <div className="toolbar">
                   <select value={candidateSearchMode} onChange={(e) => { setCandidateSearchMode(e.target.value); setCandidatePage(1); }}>
                     <option value="all">All candidates</option>
@@ -4315,9 +4344,9 @@ function PortalApp({ token, onLogout }) {
                       ) : null}
                     </>
                   ) : (
-                    <input placeholder="Search role, skill, company, location" value={candidateSearchText} onChange={(e) => setCandidateSearchText(e.target.value)} />
+                    <input placeholder={candidateSearchMode === "ai_search" ? "Get me Account Executives with 4+ years of experience based out of Mumbai with current CTC under 20 L" : "Search role, skill, company, location"} value={candidateSearchText} onChange={(e) => setCandidateSearchText(e.target.value)} />
                   )}
-                  <button onClick={() => void runCandidateSearch()}>{candidateSearchMode === "all" ? "Refresh" : "Run"}</button>
+                  <button onClick={() => void runCandidateSearch()}>{candidateSearchMode === "all" ? "Refresh" : candidateSearchMode === "ai_search" ? "Run AI Search" : "Run"}</button>
                 </div>
                 <div className="button-row">
                   <button onClick={() => void copyCandidatesExcel()}>Copy Excel</button>
