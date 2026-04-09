@@ -3078,10 +3078,10 @@ function PortalApp({ token, onLogout }) {
       setStatus(
         "interview",
         result.cached
-          ? "Loaded cached CV analysis from stored CV."
+          ? "Loaded cached CV data from the stored upload."
           : interviewMeta.candidateId
-            ? "CV uploaded to storage and parsed. Review contradictions before applying."
-            : "CV parsed. Review contradictions before applying.",
+            ? "CV uploaded to storage and parsed. Parsed data is saved for search and later sharing."
+            : "CV parsed and saved in hidden metadata for later search use.",
         "ok"
       );
     } catch (error) {
@@ -4520,14 +4520,14 @@ function PortalApp({ token, onLogout }) {
                 </div>
               </Section>
 
-              <Section kicker="CV Analysis" title="CV Parsing Verification">
+              <Section kicker="CV Upload" title="Candidate CV Storage">
                 <div className="cv-analysis-box">
                   {statuses.interview ? <div className={`status ${statuses.interviewKind || ""}`}>{statuses.interview}</div> : null}
-                  <p className="muted">Upload CV here when you want to share the candidate later. The file will be stored, parsed, and compared against the current draft before you apply any changes.</p>
+                  <p className="muted">Upload CV here when you want to keep it ready for later sharing. The file will be stored, parsed once, and the parsed metadata will stay hidden in the backend for AI search and future client-sharing flows.</p>
                   <div className="cv-upload-card">
                     <div className="cv-upload-card__copy">
                       <div className="info-label">Upload CV</div>
-                      <div className="muted">Upload once, save to storage, reuse the cached parse later, and only apply contradictions when you are ready.</div>
+                      <div className="muted">Upload once, save to storage, and reuse the cached parse later without repeated AI calls.</div>
                       <div className="muted">
                         {interviewMeta.candidateId
                           ? "Candidate-linked upload is active. This CV should store against the current candidate."
@@ -4539,7 +4539,6 @@ function PortalApp({ token, onLogout }) {
                         <input type="file" accept=".pdf,.doc,.docx" hidden onClick={(e) => { e.target.value = ""; }} onChange={handleInterviewCvSelection} />
                         Upload CV
                       </label>
-                      {interviewForm.cvAnalysis ? <button onClick={() => applyCvAnalysisToDraft()}>Apply CV analysis to draft</button> : null}
                     </div>
                   </div>
                   {interviewForm.cvAnalysis?.storedFile ? (
@@ -4551,28 +4550,14 @@ function PortalApp({ token, onLogout }) {
                     </div>
                   ) : null}
                   {interviewForm.cvAnalysis ? (
-                    <div className="info-grid">
-                      {[["Exact total experience", interviewForm.cvAnalysis.exactTotalExperience],["Tenure in current org", interviewForm.cvAnalysis.currentOrgTenure],["Current company", interviewForm.cvAnalysis.currentCompany],["Current designation", interviewForm.cvAnalysis.currentDesignation],["Highest education", interviewForm.cvAnalysis.highestEducation]].map(([label, value]) => (
-                        <div className="info-card" key={label}>
-                          <div className="info-label">{label}</div>
-                          <div className="info-value">{value || "-"}</div>
-                        </div>
-                      ))}
-                      <div className="info-card full">
-                        <div className="info-label">Conflicting info</div>
-                        <div className="info-value">
-                          {interviewForm.cvAnalysis.contradictions?.length ? (
-                            <ul className="conflict-list">
-                              {interviewForm.cvAnalysis.contradictions.map((item) => <li key={item}>{item}</li>)}
-                            </ul>
-                          ) : "No contradictions detected."}
-                        </div>
-                      </div>
+                    <div className="empty-state compact-empty">
+                      <div className="empty-state__title">CV metadata saved</div>
+                      <div className="muted">Parsed CV information is stored in candidate metadata for AI Search and later sharing workflows. It is intentionally hidden from the recruiter-facing panel.</div>
                     </div>
                   ) : (
                     <div className="empty-state compact-empty">
-                      <div className="empty-state__title">No CV parsed yet</div>
-                      <div className="muted">Upload CV when you want to verify and apply parsed values before sharing the candidate onward.</div>
+                      <div className="empty-state__title">No CV uploaded yet</div>
+                      <div className="muted">Upload a CV when you want to save it in storage and keep its parsed metadata ready for future search and client sharing.</div>
                     </div>
                   )}
                 </div>
