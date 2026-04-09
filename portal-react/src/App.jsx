@@ -38,6 +38,8 @@ const DEFAULT_COPY_SETTINGS = {
   emailTemplate: "{{index}}. {{name}}\nCompany: {{company}}\nRole: {{jd_title}}\nLocation: {{location}}\nOutcome: {{outcome}}\nEmail: {{email}}\nPhone: {{phone}}\nNotes: {{recruiter_notes}}"
 };
 
+const PORTAL_APPLICANT_METADATA_PREFIX = "[APPLICANT_META]";
+
 const DEFAULT_PIPELINE_STAGE_OPTIONS = [
   "HR screening",
   "Recruiter screening",
@@ -142,6 +144,48 @@ function parseQuestionList(value) {
     .split(/\r?\n/)
     .map((item) => item.trim())
     .filter(Boolean);
+}
+
+function decodePortalApplicantMetadata(item = {}) {
+  const raw = String(item?.raw_note || "").trim();
+  if (!raw.startsWith(PORTAL_APPLICANT_METADATA_PREFIX)) return {};
+  try {
+    return JSON.parse(raw.slice(PORTAL_APPLICANT_METADATA_PREFIX.length));
+  } catch {
+    return {};
+  }
+}
+
+function buildInterviewCvAnalysis(baseForm = {}, result = {}, storedFile = null) {
+  return {
+    exactTotalExperience: result.totalExperience || "",
+    currentCompany: result.currentCompany || "",
+    currentDesignation: result.currentDesignation || "",
+    currentOrgTenure: result.currentOrgTenure || "",
+    highestEducation: result.highestEducation || "",
+    storedFile: storedFile || result.storedFile || null,
+    cached: Boolean(result.cached),
+    contradictions: [
+      baseForm.currentCompany && result.currentCompany && String(baseForm.currentCompany).trim().toLowerCase() !== String(result.currentCompany).trim().toLowerCase()
+        ? `Current company: existing "${baseForm.currentCompany}" vs CV "${result.currentCompany}"`
+        : "",
+      baseForm.currentDesignation && result.currentDesignation && String(baseForm.currentDesignation).trim().toLowerCase() !== String(result.currentDesignation).trim().toLowerCase()
+        ? `Current designation: existing "${baseForm.currentDesignation}" vs CV "${result.currentDesignation}"`
+        : "",
+      baseForm.totalExperience && result.totalExperience && String(baseForm.totalExperience).trim().toLowerCase() !== String(result.totalExperience).trim().toLowerCase()
+        ? `Total experience: existing "${baseForm.totalExperience}" vs CV "${result.totalExperience}"`
+        : "",
+      baseForm.currentOrgTenure && result.currentOrgTenure && String(baseForm.currentOrgTenure).trim().toLowerCase() !== String(result.currentOrgTenure).trim().toLowerCase()
+        ? `Tenure in current org: existing "${baseForm.currentOrgTenure}" vs CV "${result.currentOrgTenure}"`
+        : ""
+    ].filter(Boolean)
+  };
+}
+
+function getInterviewCvStoredFileLabel(analysis = null) {
+  const stored = analysis?.storedFile || null;
+  if (!stored) return "";
+  return String(stored.filename || stored.key || stored.url || "").trim();
 }
 
 function splitStructuredDraftLines(rawText) {
@@ -2765,6 +2809,15 @@ function PortalApp({ token, onLogout }) {
       assessmentId: String(matched?.id || "")
     });
     const parsedRecruiterBase = normalizeRecruiterMergeBase(candidate);
+    const cvMeta = decodePortalApplicantMetadata(candidate);
+    const candidateCvAnalysis = cvMeta?.cvAnalysisCache?.result
+      ? buildInterviewCvAnalysis({
+          currentCompany: matched?.currentCompany || candidate?.company || "",
+          currentDesignation: matched?.currentDesignation || candidate?.role || "",
+          totalExperience: matched?.totalExperience || candidate?.experience || "",
+          currentOrgTenure: matched?.currentOrgTenure || candidate?.current_org_tenure || ""
+        }, cvMeta.cvAnalysisCache.result, cvMeta.cvAnalysisCache.storedFile || null)
+      : null;
     setInterviewForm({
       candidateName: matched?.candidateName || candidate?.name || "",
       phoneNumber: matched?.phoneNumber || candidate?.phone || "",
@@ -2790,7 +2843,7 @@ function PortalApp({ token, onLogout }) {
       callbackNotes: candidate?.notes || "",
       otherPointers: matched?.otherPointers || candidate?.other_pointers || "",
       jdScreeningAnswers: matched?.jdScreeningAnswers || {},
-      cvAnalysis: matched?.cvAnalysis || null,
+      cvAnalysis: matched?.cvAnalysis || candidateCvAnalysis || null,
       cvAnalysisApplied: Boolean(matched?.cvAnalysisApplied),
       statusHistory: Array.isArray(matched?.statusHistory) ? matched.statusHistory : []
     });
@@ -2808,6 +2861,15 @@ function PortalApp({ token, onLogout }) {
       assessmentId: String(assessment?.id || "")
     });
     const parsedRecruiterBase = normalizeRecruiterMergeBase(matchedCandidate || assessment || {});
+    const cvMeta = decodePortalApplicantMetadata(matchedCandidate || {});
+    const candidateCvAnalysis = cvMeta?.cvAnalysisCache?.result
+      ? buildInterviewCvAnalysis({
+          currentCompany: assessment?.currentCompany || matchedCandidate?.company || "",
+          currentDesignation: assessment?.currentDesignation || matchedCandidate?.role || "",
+          totalExperience: assessment?.totalExperience || matchedCandidate?.experience || "",
+          currentOrgTenure: assessment?.currentOrgTenure || matchedCandidate?.current_org_tenure || ""
+        }, cvMeta.cvAnalysisCache.result, cvMeta.cvAnalysisCache.storedFile || null)
+      : null;
     setInterviewForm({
       candidateName: assessment?.candidateName || "",
       phoneNumber: assessment?.phoneNumber || matchedCandidate?.phone || "",
@@ -2833,7 +2895,7 @@ function PortalApp({ token, onLogout }) {
       callbackNotes: matchedCandidate?.notes || "",
       otherPointers: assessment?.otherPointers || matchedCandidate?.other_pointers || "",
       jdScreeningAnswers: assessment?.jdScreeningAnswers || {},
-      cvAnalysis: assessment?.cvAnalysis || null,
+      cvAnalysis: assessment?.cvAnalysis || candidateCvAnalysis || null,
       cvAnalysisApplied: Boolean(assessment?.cvAnalysisApplied),
       statusHistory: Array.isArray(assessment?.statusHistory) ? assessment.statusHistory : []
     });
@@ -2856,6 +2918,15 @@ function PortalApp({ token, onLogout }) {
       return;
     }
 
+    const cvMeta = decodePortalApplicantMetadata(candidate);
+    const candidateCvAnalysis = cvMeta?.cvAnalysisCache?.result
+      ? buildInterviewCvAnalysis({
+          currentCompany: candidate.company || "",
+          currentDesignation: candidate.role || "",
+          totalExperience: candidate.experience || "",
+          currentOrgTenure: candidate.current_org_tenure || ""
+        }, cvMeta.cvAnalysisCache.result, cvMeta.cvAnalysisCache.storedFile || null)
+      : null;
     const assessment = {
       id: `assessment-${Date.now()}`,
       candidateId: String(candidate.id || ""),
@@ -2883,7 +2954,7 @@ function PortalApp({ token, onLogout }) {
       callbackNotes: candidate.notes || "",
       otherPointers: candidate.other_pointers || "",
       jdScreeningAnswers: {},
-      cvAnalysis: null,
+      cvAnalysis: candidateCvAnalysis,
       cvAnalysisApplied: false,
       statusHistory: [{
         status: "CV Shared",
@@ -2976,35 +3047,16 @@ function PortalApp({ token, onLogout }) {
       const result = parsed?.result || parsed || {};
       setInterviewForm((current) => ({
         ...current,
-        cvAnalysis: {
-          exactTotalExperience: result.totalExperience || "",
-          currentCompany: result.currentCompany || "",
-          currentDesignation: result.currentDesignation || "",
-          currentOrgTenure: result.currentOrgTenure || "",
-          highestEducation: result.highestEducation || "",
-          storedFile: result.storedFile || current.cvAnalysis?.storedFile || null,
-          contradictions: [
-            current.currentCompany && result.currentCompany && String(current.currentCompany).trim().toLowerCase() !== String(result.currentCompany).trim().toLowerCase()
-              ? `Current company: existing "${current.currentCompany}" vs CV "${result.currentCompany}"`
-              : "",
-            current.currentDesignation && result.currentDesignation && String(current.currentDesignation).trim().toLowerCase() !== String(result.currentDesignation).trim().toLowerCase()
-              ? `Current designation: existing "${current.currentDesignation}" vs CV "${result.currentDesignation}"`
-              : "",
-            current.totalExperience && result.totalExperience && String(current.totalExperience).trim().toLowerCase() !== String(result.totalExperience).trim().toLowerCase()
-              ? `Total experience: existing "${current.totalExperience}" vs CV "${result.totalExperience}"`
-              : "",
-            current.currentOrgTenure && result.currentOrgTenure && String(current.currentOrgTenure).trim().toLowerCase() !== String(result.currentOrgTenure).trim().toLowerCase()
-              ? `Tenure in current org: existing "${current.currentOrgTenure}" vs CV "${result.currentOrgTenure}"`
-              : ""
-          ].filter(Boolean)
-        },
+        cvAnalysis: buildInterviewCvAnalysis(current, result, result.storedFile || current.cvAnalysis?.storedFile || null),
         cvAnalysisApplied: false
       }));
       setStatus(
         "interview",
-        interviewMeta.candidateId
-          ? "CV uploaded to storage and parsed. Review contradictions before applying."
-          : "CV parsed. Review contradictions before applying.",
+        result.cached
+          ? "Loaded cached CV analysis from stored CV."
+          : interviewMeta.candidateId
+            ? "CV uploaded to storage and parsed. Review contradictions before applying."
+            : "CV parsed. Review contradictions before applying.",
         "ok"
       );
     } catch (error) {
@@ -4447,31 +4499,50 @@ function PortalApp({ token, onLogout }) {
               <Section kicker="CV Analysis" title="CV Parsing Verification">
                 <div className="cv-analysis-box">
                   <p className="muted">Upload CV here when you want to share the candidate later. The file will be stored, parsed, and compared against the current draft before you apply any changes.</p>
-                  <div className="button-row">
-                    <label className="ghost-btn">
-                      <input type="file" accept=".pdf,.doc,.docx" hidden onChange={(e) => void parseInterviewCvFile(e.target.files?.[0] || null)} />
-                      Upload CV
-                    </label>
-                    {interviewForm.cvAnalysis ? <button onClick={() => applyCvAnalysisToDraft()}>Apply CV analysis to draft</button> : null}
+                  <div className="cv-upload-card">
+                    <div className="cv-upload-card__copy">
+                      <div className="info-label">Upload CV</div>
+                      <div className="muted">Upload once, save to storage, reuse the cached parse later, and only apply contradictions when you are ready.</div>
+                    </div>
+                    <div className="button-row">
+                      <label className="ghost-btn">
+                        <input type="file" accept=".pdf,.doc,.docx" hidden onChange={(e) => void parseInterviewCvFile(e.target.files?.[0] || null)} />
+                        Upload CV
+                      </label>
+                      {interviewForm.cvAnalysis ? <button onClick={() => applyCvAnalysisToDraft()}>Apply CV analysis to draft</button> : null}
+                    </div>
                   </div>
+                  {interviewForm.cvAnalysis?.storedFile ? (
+                    <div className="cv-analysis-meta">
+                      <span className="status-note">{interviewForm.cvAnalysis.cached ? "Using cached parse" : "Parsed from uploaded CV"}</span>
+                      <span className="status-note">{getInterviewCvStoredFileLabel(interviewForm.cvAnalysis)}</span>
+                    </div>
+                  ) : null}
                   {interviewForm.cvAnalysis ? (
                     <div className="info-grid">
-                      {[["Exact total experience", interviewForm.cvAnalysis.exactTotalExperience],["Tenure in current org", interviewForm.cvAnalysis.currentOrgTenure],["Current company", interviewForm.cvAnalysis.currentCompany],["Current designation", interviewForm.cvAnalysis.currentDesignation]].map(([label, value]) => (
+                      {[["Exact total experience", interviewForm.cvAnalysis.exactTotalExperience],["Tenure in current org", interviewForm.cvAnalysis.currentOrgTenure],["Current company", interviewForm.cvAnalysis.currentCompany],["Current designation", interviewForm.cvAnalysis.currentDesignation],["Highest education", interviewForm.cvAnalysis.highestEducation]].map(([label, value]) => (
                         <div className="info-card" key={label}>
                           <div className="info-label">{label}</div>
                           <div className="info-value">{value || "-"}</div>
                         </div>
                       ))}
                       <div className="info-card full">
-                        <div className="info-label">Contradictions</div>
+                        <div className="info-label">Conflicting info</div>
                         <div className="info-value">
-                          {interviewForm.cvAnalysis.contradictions?.length
-                            ? interviewForm.cvAnalysis.contradictions.join("\n")
-                            : "No contradictions detected."}
+                          {interviewForm.cvAnalysis.contradictions?.length ? (
+                            <ul className="conflict-list">
+                              {interviewForm.cvAnalysis.contradictions.map((item) => <li key={item}>{item}</li>)}
+                            </ul>
+                          ) : "No contradictions detected."}
                         </div>
                       </div>
                     </div>
-                  ) : <div className="muted">Upload CV when you want to verify and apply parsed values before sharing the candidate.</div>}
+                  ) : (
+                    <div className="empty-state compact-empty">
+                      <div className="empty-state__title">No CV parsed yet</div>
+                      <div className="muted">Upload CV when you want to verify and apply parsed values before sharing the candidate onward.</div>
+                    </div>
+                  )}
                 </div>
               </Section>
 

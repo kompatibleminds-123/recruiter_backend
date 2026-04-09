@@ -534,6 +534,42 @@ textarea { min-height: 92px; resize: vertical; }
   display: grid;
   gap: 0.9rem;
 }
+.cv-upload-card {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  padding: 1rem 1.1rem;
+  border: 1px solid rgba(217, 222, 232, 0.9);
+  border-radius: 18px;
+  background: #f9fbff;
+}
+.cv-upload-card__copy {
+  display: grid;
+  gap: 0.35rem;
+}
+.cv-analysis-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+}
+.conflict-list {
+  margin: 0;
+  padding-left: 1.1rem;
+  display: grid;
+  gap: 0.35rem;
+}
+.compact-empty {
+  border: 1px dashed rgba(217, 222, 232, 0.9);
+  border-radius: 18px;
+  padding: 1rem 1.1rem;
+  background: #fafcff;
+}
+.empty-state__title {
+  font-weight: 700;
+  color: var(--ink);
+  margin-bottom: 0.35rem;
+}
 .cv-analysis-box .info-grid {
   margin-top: 0.25rem;
 }
@@ -563,4 +599,5 @@ textarea { min-height: 92px; resize: vertical; }
   .sidebar { border-right: 0; border-bottom: 1px solid rgba(217, 222, 232, 0.8); }
   .workspace-header, .item-card__top, .attempt-grid, .two-pane-grid { display: grid; }
   .form-grid.two-col, .form-grid.three-col { grid-template-columns: 1fr; }
+  .cv-upload-card { align-items: stretch; }
 }

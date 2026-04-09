@@ -2,6 +2,7 @@ const http = require("http");
 const { URL } = require("url");
 const fs = require("fs");
 const path = require("path");
+const crypto = require("crypto");
 const { parseCandidatePayload } = require("./src/parser");
 const { callOpenAiQuestions, normalizeCandidateFileWithAi, normalizeCandidateWithAi } = require("./src/ai");
 const { storeUploadedFile, loadStoredFile } = require("./src/storage");
@@ -262,6 +263,12 @@ function decodeApplicantMetadata(candidate = {}) {
   }
 }
 
+function buildUploadedFileFingerprint(file = {}) {
+  const fileData = String(file?.fileData || "").trim();
+  if (!fileData) return "";
+  return crypto.createHash("sha1").update(fileData).digest("hex");
+}
+
 function summarizeApplicantNotes(payload = {}) {
   return [
     payload?.sourcePlatform ? `Source: ${payload.sourcePlatform}` : "",
@@ -357,7 +364,10 @@ function sanitizeApplicantCandidate(candidate = {}) {
 async function listApplicantsForUser(user, options = {}) {
   const rows = await listCandidatesForUser(user, { limit: Number(options.limit || 500), q: String(options.q || "").trim() });
   return rows
-    .filter((candidate) => String(candidate?.source || "").trim() === "website_apply")
+    .filter((candidate) => {
+      const source = String(candidate?.source || "").trim();
+      return source === "website_apply" || source === "hosted_apply";
+    })
     .map(sanitizeApplicantCandidate);
 }
 
@@ -422,6 +432,23 @@ async function ingestApplicantSubmission(body, req) {
   const configuredSecret = String(configuredSecretInfo?.applicantIntakeSecret || "").trim();
   if (configuredSecret && providedSecret !== configuredSecret) {
     throw new Error("Invalid applicant intake secret.");
+  }
+
+  let matchedJob = null;
+  if (payload.jobId) {
+    try {
+      matchedJob = await getPublicCompanyJob(payload.jobId);
+    } catch {
+      matchedJob = null;
+    }
+  }
+  if (!matchedJob && payload.companyId && payload.jdTitle) {
+    try {
+      const jobs = await listCompanyJobs(payload.companyId);
+      matchedJob = (jobs || []).find((item) => String(item?.title || "").trim().toLowerCase() === String(payload.jdTitle || "").trim().toLowerCase()) || null;
+    } catch {
+      matchedJob = null;
+    }
   }
 
   let storedFile = null;
@@ -518,6 +545,10 @@ async function ingestApplicantSubmission(body, req) {
       client_name: payload.clientName || null,
       jd_title: payload.jdTitle || null,
       recruiter_name: payload.recruiterName || "Website Apply",
+      assigned_to_user_id: matchedJob?.ownerRecruiterId || null,
+      assigned_to_name: matchedJob?.ownerRecruiterName || null,
+      assigned_jd_id: matchedJob?.id || null,
+      assigned_jd_title: matchedJob?.title || payload.jdTitle || null,
       linkedin: merged.linkedin || null,
       raw_note: encodeApplicantMetadata(metadata)
     },
@@ -3372,6 +3403,35 @@ const server = http.createServer(async (req, res) => {
       const candidate = (await listCandidatesForUser(actor, { id: candidateId, limit: 1 }))[0] || null;
       if (!candidate) throw new Error("Candidate not found in this company.");
 
+      const existingMeta = decodeApplicantMetadata(candidate);
+      const fileFingerprint = buildUploadedFileFingerprint(uploadedFile);
+      const cachedCvAnalysis = existingMeta?.cvAnalysisCache && typeof existingMeta.cvAnalysisCache === "object"
+        ? existingMeta.cvAnalysisCache
+        : null;
+
+      if (
+        fileFingerprint &&
+        cachedCvAnalysis &&
+        String(cachedCvAnalysis.fingerprint || "").trim() === fileFingerprint &&
+        cachedCvAnalysis.result
+      ) {
+        sendJson(res, 200, {
+          ok: true,
+          result: {
+            ...cachedCvAnalysis.result,
+            cached: true,
+            storedFile: cachedCvAnalysis.storedFile || {
+              provider: existingMeta.fileProvider || "",
+              key: existingMeta.fileKey || "",
+              url: existingMeta.fileUrl || "",
+              filename: existingMeta.filename || "",
+              mimeType: existingMeta.mimeType || ""
+            }
+          }
+        });
+        return;
+      }
+
       const storedFile = await storeUploadedFile(uploadedFile, {
         filename: uploadedFile.filename,
         objectPrefix: `candidates/${actor.companyId}/${candidateId}`
@@ -3421,14 +3481,25 @@ const server = http.createServer(async (req, res) => {
         aiParseReason
       });
 
-      const existingMeta = decodeApplicantMetadata(candidate);
       const nextMeta = {
         ...(existingMeta || {}),
         filename: storedFile?.filename || existingMeta.filename || "",
         mimeType: storedFile?.mimeType || existingMeta.mimeType || "",
         fileProvider: storedFile?.provider || existingMeta.fileProvider || "",
         fileKey: storedFile?.key || existingMeta.fileKey || "",
-        fileUrl: storedFile?.url || existingMeta.fileUrl || ""
+        fileUrl: storedFile?.url || existingMeta.fileUrl || "",
+        cvAnalysisCache: {
+          fingerprint: fileFingerprint,
+          storedAt: new Date().toISOString(),
+          storedFile: {
+            provider: storedFile?.provider || "",
+            key: storedFile?.key || "",
+            url: storedFile?.url || "",
+            filename: storedFile?.filename || "",
+            mimeType: storedFile?.mimeType || ""
+          },
+          result
+        }
       };
 
       await patchCandidate(candidateId, {
