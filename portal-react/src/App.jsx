@@ -2301,7 +2301,13 @@ function PortalApp({ token, onLogout }) {
         if (sameAssessment) return true;
         const sameName = String(candidate.name || "").trim().toLowerCase() === String(item.candidateName || "").trim().toLowerCase();
         const sameJd = String(candidate.jd_title || "").trim().toLowerCase() === String(item.jdTitle || "").trim().toLowerCase();
-        return sameName && (!String(item.jdTitle || "").trim() || sameJd);
+        const sameCompany = String(candidate.company || "").trim().toLowerCase() === String(item.currentCompany || "").trim().toLowerCase();
+        const sameRole = String(candidate.role || "").trim().toLowerCase() === String(item.currentDesignation || "").trim().toLowerCase();
+        return sameName && (
+          (!String(item.jdTitle || "").trim() || sameJd) ||
+          (sameCompany && sameRole) ||
+          sameCompany
+        );
       }) || null;
       map.set(String(item.id || ""), match);
     });
@@ -3827,8 +3833,10 @@ function PortalApp({ token, onLogout }) {
     const rows = getClientShareRows();
     const profileLines = rows.flatMap((item, index) => {
       const cells = presetColumns.map((column) => `${column.header}: ${getCapturedExportFieldValue({ index: index + 1, ...item }, column.field) || "-"}`);
-      const cvLinkText = clientShareCvLinks[item.candidate_id]
-        || (clientShareCvLinkState[item.candidate_id] === "missing" ? "CV link not available yet" : "Generating secure CV link...");
+      const cvLinkText = !item.candidate_id
+        ? "Linked candidate not found for this assessment"
+        : clientShareCvLinks[item.candidate_id]
+          || (clientShareCvLinkState[item.candidate_id] === "missing" ? "CV link not available yet" : "Generating secure CV link...");
       return [
         `${index + 1}. ${item.name || "Candidate"}`,
         ...cells,
@@ -3869,7 +3877,9 @@ function PortalApp({ token, onLogout }) {
       const cvLink = clientShareCvLinks[item.candidate_id];
       const cvCell = cvLink
         ? `<a href="${escapeHtml(cvLink)}" style="color:#0b57d0;text-decoration:none;">Open CV</a>`
-        : (clientShareCvLinkState[item.candidate_id] === "missing" ? "CV link not available yet" : "Generating secure CV link...");
+        : (!item.candidate_id
+          ? "Linked candidate not found"
+          : (clientShareCvLinkState[item.candidate_id] === "missing" ? "CV link not available yet" : "Generating secure CV link..."));
       return `<tr>${cells}<td style="border:1px solid #d8dee8;padding:10px 12px;vertical-align:top;font-size:13px;line-height:1.45;">${cvCell}</td></tr>`;
     }).join("");
     const extraMessage = String(clientShareDraft.extraMessage || "").trim();
