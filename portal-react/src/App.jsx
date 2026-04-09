@@ -1932,7 +1932,6 @@ function PortalApp({ token, onLogout }) {
   const [candidateJdText, setCandidateJdText] = useState("");
   const [candidateJdFilename, setCandidateJdFilename] = useState("");
   const [clientShareDraft, setClientShareDraft] = useState({
-    sourceKey: "assessments",
     hrName: "",
     recipientEmail: "",
     clientLabel: "",
@@ -1940,6 +1939,8 @@ function PortalApp({ token, onLogout }) {
     presetId: "client_submission",
     extraMessage: ""
   });
+  const [selectedAssessmentIds, setSelectedAssessmentIds] = useState([]);
+  const [clientShareExtraFiles, setClientShareExtraFiles] = useState([]);
   const [agendaRange, setAgendaRange] = useState("today");
   const [copySettings, setCopySettings] = useState(() => {
     try {
@@ -2245,6 +2246,10 @@ function PortalApp({ token, onLogout }) {
       follow_up_at: formatDateForCopy(item.followUpAt || item.interviewAt || "")
     }));
   }, [filteredAssessments]);
+  const selectedAssessmentRows = useMemo(() => {
+    const selected = normalizedAssessmentCopyRows.filter((item) => selectedAssessmentIds.includes(String(item.id || item.assessmentId || "")));
+    return selected.length ? selected : normalizedAssessmentCopyRows;
+  }, [normalizedAssessmentCopyRows, selectedAssessmentIds]);
   const candidateUniverseAll = useMemo(() => {
     const linkedAssessmentIds = new Set((state.candidates || []).map((item) => String(item.assessment_id || "").trim()).filter(Boolean));
     const candidateNames = new Set((state.candidates || []).map((item) => String(item.name || "").trim().toLowerCase()).filter(Boolean));
@@ -3621,9 +3626,7 @@ function PortalApp({ token, onLogout }) {
   }
 
   function getClientShareRows() {
-    if (clientShareDraft.sourceKey === "candidates") return buildCandidateUniverseCopyRows();
-    if (clientShareDraft.sourceKey === "applicants") return buildApplicantCopyRows();
-    return normalizedAssessmentCopyRows;
+    return selectedAssessmentRows;
   }
 
   function buildClientShareBody() {
@@ -3641,6 +3644,7 @@ function PortalApp({ token, onLogout }) {
       `This is ${recruiterName} from ${companyName}.`,
       `PFA the profiles${roleLine ? ` for ${roleLine}` : ""}.`,
       "Kindly review and share your feedback.",
+      `${getClientShareRows().length} profile(s) are included in the attached sheet.`,
       "",
       String(clientShareDraft.extraMessage || "").trim()
     ].filter((line, index, array) => line || (index > 0 && array[index - 1] !== "")).join("\n");
@@ -3673,6 +3677,18 @@ function PortalApp({ token, onLogout }) {
     downloadClientShareAttachment();
     window.open(`mailto:${encodeURIComponent(recipient)}?subject=${subject}&body=${body}`, "_blank", "noopener,noreferrer");
     setStatus("clientShare", "Email draft opened and attachment sheet downloaded.", "ok");
+  }
+
+  function toggleAssessmentSelection(assessmentId) {
+    const id = String(assessmentId || "");
+    if (!id) return;
+    setSelectedAssessmentIds((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id]);
+  }
+
+  function handleClientShareExtraUploads(event) {
+    const files = Array.from(event?.target?.files || []);
+    setClientShareExtraFiles(files);
+    if (event?.target) event.target.value = "";
   }
 
   async function saveSharedCopySettings() {
@@ -4605,6 +4621,10 @@ function PortalApp({ token, onLogout }) {
                 {!filteredAssessments.length ? <div className="empty-state">No assessments saved yet.</div> : filteredAssessments.map((item) => (
                   <article className="item-card compact-card" key={item.id}>
                     <div className="item-card__top">
+                      <label className="checkbox-row">
+                        <input type="checkbox" checked={selectedAssessmentIds.includes(String(item.id))} onChange={() => toggleAssessmentSelection(item.id)} />
+                        <span>Select for client share</span>
+                      </label>
                       <div>
                         <h3>{item.candidateName || "Candidate"} | {item.jdTitle || "Untitled role"}</h3>
                         <p className="muted">{[item.pipelineStage || "", item.candidateStatus || ""].filter(Boolean).join(" | ")}</p>
@@ -4755,16 +4775,12 @@ function PortalApp({ token, onLogout }) {
           <Route path="/client-share" element={
             <div className="page-grid">
               <Section kicker="Client Submission" title="Direct Share with Client">
-                <p className="muted">Prepare a clean email draft for the client, download the attachment sheet in the selected preset, and share profiles directly from the portal.</p>
+                <p className="muted">Prepare a clean email draft for the client using selected assessments only. Download the attachment sheet in the selected preset, and optionally keep extra files ready for the mail.</p>
                 {statuses.clientShare ? <div className={`status ${statuses.clientShareKind || ""}`}>{statuses.clientShare}</div> : null}
                 <div className="form-grid two-col">
                   <label>
-                    <span>Source list</span>
-                    <select value={clientShareDraft.sourceKey} onChange={(e) => setClientShareDraft((current) => ({ ...current, sourceKey: e.target.value }))}>
-                      <option value="assessments">Assessments ({normalizedAssessmentCopyRows.length})</option>
-                      <option value="applicants">Applied Candidates ({visibleApplicants.length})</option>
-                      <option value="candidates">Candidates search results ({candidateUniverse.length})</option>
-                    </select>
+                    <span>Selected profiles</span>
+                    <input value={`${selectedAssessmentRows.length} assessment profile(s)`} readOnly />
                   </label>
                   <label>
                     <span>Attachment preset</span>
@@ -4783,12 +4799,27 @@ function PortalApp({ token, onLogout }) {
                   <label><span>Recipient email</span><input type="email" value={clientShareDraft.recipientEmail} onChange={(e) => setClientShareDraft((current) => ({ ...current, recipientEmail: e.target.value }))} placeholder="hr@client.com" /></label>
                   <label><span>Client</span><input value={clientShareDraft.clientLabel} onChange={(e) => setClientShareDraft((current) => ({ ...current, clientLabel: e.target.value }))} placeholder="Attentive" /></label>
                   <label><span>Role / requirement</span><input value={clientShareDraft.targetRole} onChange={(e) => setClientShareDraft((current) => ({ ...current, targetRole: e.target.value }))} placeholder="AE / Account Executive" /></label>
+                  <label className="full">
+                    <span>Selected preset columns</span>
+                    <textarea value={(copySettings.customExportPresets || []).find((preset) => String(preset.id) === String(clientShareDraft.presetId))?.columns || copySettings.exportPresetColumns?.[clientShareDraft.presetId] || DEFAULT_COPY_SETTINGS.exportPresetColumns?.[clientShareDraft.presetId] || ""} readOnly />
+                  </label>
+                  <label className="full">
+                    <span>Extra upload (optional)</span>
+                    <div className="button-row">
+                      <label className="file-btn">
+                        <input type="file" multiple hidden onClick={(e) => { e.target.value = ""; }} onChange={handleClientShareExtraUploads} />
+                        Upload additional file(s)
+                      </label>
+                      {clientShareExtraFiles.length ? <span className="status-note">{clientShareExtraFiles.map((file) => file.name).join(", ")}</span> : <span className="muted">No extra file selected.</span>}
+                    </div>
+                  </label>
                   <label className="full"><span>Extra message</span><textarea value={clientShareDraft.extraMessage} onChange={(e) => setClientShareDraft((current) => ({ ...current, extraMessage: e.target.value }))} placeholder="Optional note for the client." /></label>
                   <label className="full">
                     <span>Email preview</span>
                     <textarea value={buildClientShareBody()} readOnly />
                   </label>
                 </div>
+                <p className="muted">Current browser-safe flow: selected profiles go into the downloaded attachment sheet, and the email draft opens in your mail client. True email attachments for CVs and extra files will need a backend mail-sending step next.</p>
                 <div className="button-row">
                   <button onClick={() => void copyClientShareEmailDraft()}>Copy email draft</button>
                   <button onClick={() => downloadClientShareAttachment()}>Download attachment</button>
