@@ -3432,8 +3432,7 @@ const server = http.createServer(async (req, res) => {
       const actor = await requireSessionUser(getBearerToken(req));
       const candidateId = String(requestUrl.pathname.replace(/^\/company\/candidates\//, "").replace(/\/share-cv-link$/, "")).trim();
       const candidate = (await listCandidatesForUser(actor, { id: candidateId, limit: 1 }))[0] || null;
-      if (!candidate) throw new Error("Candidate not found in this company.");
-      const meta = decodeApplicantMetadata(candidate);
+      const meta = candidate ? decodeApplicantMetadata(candidate) : {};
       const cachedStoredFile = meta?.cvAnalysisCache?.storedFile && typeof meta.cvAnalysisCache.storedFile === "object"
         ? meta.cvAnalysisCache.storedFile
         : null;
@@ -3450,8 +3449,8 @@ const server = http.createServer(async (req, res) => {
       const token = createSignedCvShareToken({
         type: "shared_cv",
         companyId: actor.companyId,
-        candidateId: String(candidate.id || "").trim(),
-        candidateName: String(candidate.name || "").trim(),
+        candidateId: String(candidate?.id || candidateId || "").trim(),
+        candidateName: String(candidate?.name || requestUrl.searchParams.get("candidate_name") || "").trim(),
         fileProvider,
         fileKey,
         fileUrl,

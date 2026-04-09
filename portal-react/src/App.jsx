@@ -2502,7 +2502,6 @@ function PortalApp({ token, onLogout }) {
       .map((item, index) => ({ ...item, index: index + 1 }))
   ), [normalizedAssessmentCopyRows, selectedAssessmentIds]);
   useEffect(() => {
-    let cancelled = false;
     async function loadCvLinks() {
       if (!token || !selectedAssessmentRows.length) return;
       const rowsNeedingLinks = selectedAssessmentRows.filter((item) => item.candidate_id && !clientShareCvLinkState[item.candidate_id]);
@@ -2519,13 +2518,13 @@ function PortalApp({ token, onLogout }) {
           const params = new URLSearchParams();
           if (item.cv_url) params.set("cv_url", String(item.cv_url));
           if (item.cv_filename) params.set("cv_filename", String(item.cv_filename));
+          if (item.name) params.set("candidate_name", String(item.name));
           const result = await api(`/company/candidates/${encodeURIComponent(item.candidate_id)}/share-cv-link${params.toString() ? `?${params.toString()}` : ""}`, token);
           return [item.candidate_id, result.url, "ready"];
         } catch {
           return [item.candidate_id, "", "missing"];
         }
-      }));
-      if (cancelled) return;
+        }));
       setClientShareCvLinks((current) => {
         const next = { ...current };
         entries.forEach(([candidateId, url]) => {
@@ -2542,9 +2541,6 @@ function PortalApp({ token, onLogout }) {
       });
     }
     void loadCvLinks();
-    return () => {
-      cancelled = true;
-    };
   }, [selectedAssessmentRows, token]);
   const candidateUniverseAll = useMemo(() => {
     const linkedAssessmentIds = new Set((state.candidates || []).map((item) => String(item.assessment_id || "").trim()).filter(Boolean));
