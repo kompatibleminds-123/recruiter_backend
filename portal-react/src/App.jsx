@@ -69,6 +69,19 @@ const DEFAULT_STATUS_OPTIONS = [
   "Joined"
 ];
 
+const APPLIED_OUTCOME_FILTER_ORDER = [
+  "Aligned for Interview",
+  "CV Shared",
+  "Dropped",
+  "L1 aligned",
+  "L2 aligned",
+  "No outcome",
+  "Not interested",
+  "Offered",
+  "call_back_later",
+  "revisit_for_other_role"
+];
+
 const DASHBOARD_METRIC_COLUMNS = [
   ["sourced", "Sourced"],
   ["converted", "Converted"],
@@ -828,9 +841,16 @@ function getApplicantOutcome(applicant) {
 }
 
 function getApplicantWorkflowOutcome(applicant, linkedCandidate = null) {
+  const assessmentStatus = String(linkedCandidate?.candidate_status || applicant?.candidateStatus || "").trim();
+  if (assessmentStatus) {
+    if (/^screening call aligned$/i.test(assessmentStatus)) return "Aligned for Interview";
+    return assessmentStatus;
+  }
   const candidateOutcome = String(linkedCandidate?.last_contact_outcome || "").trim();
-  if (candidateOutcome) return candidateOutcome;
-  return "No outcome";
+  if (!candidateOutcome) return "No outcome";
+  if (/^call later$/i.test(candidateOutcome)) return "call_back_later";
+  if (/^revisit for other role$/i.test(candidateOutcome)) return "revisit_for_other_role";
+  return candidateOutcome;
 }
 
 function fillCandidateTemplate(template, candidate) {
@@ -1852,6 +1872,14 @@ function PortalApp({ token, onLogout }) {
   const [quickUpdateCandidateQuery, setQuickUpdateCandidateQuery] = useState("");
   const [quickUpdateCandidateId, setQuickUpdateCandidateId] = useState("");
   const [quickUpdateText, setQuickUpdateText] = useState("");
+  const [quickUpdateStatusText, setQuickUpdateStatusText] = useState("");
+  const [quickUpdateRecruiterSections, setQuickUpdateRecruiterSections] = useState({
+    current_ctc: "",
+    expected_ctc: "",
+    notice_period: "",
+    offer_in_hand: "",
+    lwd_or_doj: ""
+  });
   const [quickUpdateParsedSummary, setQuickUpdateParsedSummary] = useState(null);
   const [quickUpdateConflicts, setQuickUpdateConflicts] = useState([]);
   const [quickUpdateMergedPatch, setQuickUpdateMergedPatch] = useState(null);
@@ -1880,6 +1908,8 @@ function PortalApp({ token, onLogout }) {
     id: "",
     title: "",
     clientName: "",
+    ownerRecruiterId: "",
+    ownerRecruiterName: "",
     jobDescription: "",
     mustHaveSkills: "",
     redFlags: "",
@@ -1998,7 +2028,32 @@ function PortalApp({ token, onLogout }) {
     setQuickUpdateParsedSummary(null);
     setQuickUpdateConflicts([]);
     setQuickUpdateMergedPatch(null);
-  }, [quickUpdateCandidateId, quickUpdateText]);
+  }, [quickUpdateCandidateId, quickUpdateText, quickUpdateStatusText]);
+
+  useEffect(() => {
+    if (!quickUpdateCandidate) {
+      setQuickUpdateRecruiterSections({
+        current_ctc: "",
+        expected_ctc: "",
+        notice_period: "",
+        offer_in_hand: "",
+        lwd_or_doj: ""
+      });
+      setQuickUpdateText("");
+      setQuickUpdateStatusText("");
+      return;
+    }
+    const base = normalizeRecruiterMergeBase(quickUpdateCandidate);
+    setQuickUpdateRecruiterSections({
+      current_ctc: String(base.current_ctc || ""),
+      expected_ctc: String(base.expected_ctc || ""),
+      notice_period: String(base.notice_period || ""),
+      offer_in_hand: String(base.offer_in_hand || ""),
+      lwd_or_doj: String(base.lwd_or_doj || "")
+    });
+    setQuickUpdateText(String(quickUpdateCandidate.recruiter_context_notes || ""));
+    setQuickUpdateStatusText(String(quickUpdateCandidate.last_contact_notes || ""));
+  }, [quickUpdateCandidate]);
 
   const capturedAssessmentMap = useMemo(() => {
     const map = new Map();
@@ -2259,7 +2314,9 @@ function PortalApp({ token, onLogout }) {
       clients: Array.from(clients).sort((a, b) => a.localeCompare(b)),
       jds: Array.from(jds).sort((a, b) => a.localeCompare(b)),
       assignedTo: Array.from(assignedTo).sort((a, b) => a.localeCompare(b)),
-      outcomes: Array.from(outcomes).sort((a, b) => a.localeCompare(b))
+      outcomes: APPLIED_OUTCOME_FILTER_ORDER.filter((item) => outcomes.has(item)).concat(
+        Array.from(outcomes).filter((item) => !APPLIED_OUTCOME_FILTER_ORDER.includes(item)).sort((a, b) => a.localeCompare(b))
+      )
     };
   }, [filteredApplicants, applicantCandidateMap, state.user, state.users]);
 
@@ -2414,22 +2471,28 @@ function PortalApp({ token, onLogout }) {
       setStatus("quickUpdate", "Select an existing candidate first.", "error");
       return;
     }
-    if (!String(quickUpdateText || "").trim()) {
+    const effectiveRawRecruiterNote = buildStructuredRecruiterRawNote(quickUpdateRecruiterSections, quickUpdateText);
+    if (!String(effectiveRawRecruiterNote || "").trim()) {
       setStatus("quickUpdate", "Type the recruiter update note first.", "error");
       return;
     }
     setStatus("quickUpdate", "Parsing recruiter update...");
     try {
       const parsed = await api("/parse-note", token, "POST", {
-        note: quickUpdateText,
+        note: effectiveRawRecruiterNote,
         source: "portal_manual",
         client_name: quickUpdateCandidate?.client_name || "",
         jd_title: quickUpdateCandidate?.jd_title || "",
         preview: true
       });
-      const merge = buildRecruiterMerge(quickUpdateCandidate, parsed || {}, quickUpdateText);
-      setQuickUpdateMergedPatch(merge);
-      setQuickUpdateParsedSummary(merge.merged || null);
+      const structuredOverrides = buildStructuredRecruiterSectionOverrides(quickUpdateRecruiterSections);
+      const merge = buildRecruiterMerge(quickUpdateCandidate, { ...(parsed || {}), ...structuredOverrides }, effectiveRawRecruiterNote);
+      const mergedWithStructuredPriority = {
+        ...(merge.merged || {}),
+        ...structuredOverrides
+      };
+      setQuickUpdateMergedPatch({ ...merge, merged: mergedWithStructuredPriority });
+      setQuickUpdateParsedSummary(mergedWithStructuredPriority || null);
       setQuickUpdateConflicts(merge.overwritten || []);
       setStatus(
         "quickUpdate",
@@ -2448,7 +2511,8 @@ function PortalApp({ token, onLogout }) {
       setStatus("quickUpdate", "Select an existing candidate first.", "error");
       return;
     }
-    const mergeForSave = quickUpdateMergedPatch || buildRecruiterMerge(quickUpdateCandidate, {}, quickUpdateText);
+    const effectiveRawRecruiterNote = buildStructuredRecruiterRawNote(quickUpdateRecruiterSections, quickUpdateText);
+    const mergeForSave = quickUpdateMergedPatch || buildRecruiterMerge(quickUpdateCandidate, buildStructuredRecruiterSectionOverrides(quickUpdateRecruiterSections), effectiveRawRecruiterNote);
     if (mergeForSave.overwritten?.length) {
       const message = mergeForSave.overwritten.map((entry) => `${formatRecruiterOverwriteLabel(entry.key)}: "${entry.from}" -> "${entry.to}"`).join("\n");
       const confirmed = window.confirm(`These fields will be overwritten:\n\n${message}\n\nApply recruiter note update?`);
@@ -2458,7 +2522,7 @@ function PortalApp({ token, onLogout }) {
       const extractedFieldPatch = buildRecruiterFieldPatchFromMerge(mergeForSave);
       const canonicalRecruiterNotes = buildCanonicalRecruiterNotes(
         quickUpdateCandidate?.recruiter_context_notes || "",
-        quickUpdateText,
+        effectiveRawRecruiterNote,
         mergeForSave?.merged || normalizeRecruiterMergeBase(quickUpdateCandidate)
       );
       await patchCandidateQuiet(quickUpdateCandidate.id, {
@@ -2492,10 +2556,11 @@ function PortalApp({ token, onLogout }) {
     }
     try {
       const merged = mergeForSave.merged || normalizeRecruiterMergeBase(quickUpdateCandidate);
+      const effectiveRawRecruiterNote = buildStructuredRecruiterRawNote(quickUpdateRecruiterSections, quickUpdateText);
       const extractedFieldPatch = buildRecruiterFieldPatchFromMerge(mergeForSave);
       const canonicalRecruiterNotes = buildCanonicalRecruiterNotes(
         quickUpdateCandidate?.recruiter_context_notes || "",
-        quickUpdateText,
+        effectiveRawRecruiterNote,
         merged
       );
       await patchCandidateQuiet(quickUpdateCandidate.id, {
@@ -2537,7 +2602,7 @@ function PortalApp({ token, onLogout }) {
       setStatus("quickUpdate", "Select an existing candidate first.", "error");
       return;
     }
-    const finalLine = extractLastMeaningfulLine(quickUpdateText);
+    const finalLine = extractLastMeaningfulLine(quickUpdateStatusText);
     if (!finalLine) {
       setStatus("quickUpdate", "Type the quick update note first.", "error");
       return;
@@ -2565,7 +2630,7 @@ function PortalApp({ token, onLogout }) {
         candidatePatch.next_follow_up_at = "";
       }
       await patchCandidateQuiet(quickUpdateCandidate.id, candidatePatch);
-      setQuickUpdateText("");
+      setQuickUpdateStatusText("");
       setStatus("quickUpdate", `Quick update applied for ${quickUpdateCandidate.name || "candidate"}.`, "ok");
     } catch (error) {
       setStatus("quickUpdate", String(error?.message || error), "error");
@@ -2577,7 +2642,7 @@ function PortalApp({ token, onLogout }) {
       setStatus("quickUpdate", "This candidate does not have a linked assessment yet.", "error");
       return;
     }
-    const lastLine = extractLastMeaningfulLine(quickUpdateText);
+    const lastLine = extractLastMeaningfulLine(quickUpdateStatusText);
     if (!lastLine) {
       setStatus("quickUpdate", "Type the status note first.", "error");
       return;
@@ -2596,7 +2661,7 @@ function PortalApp({ token, onLogout }) {
         expectedDoj: inferred.expectedDoj || "",
         dateOfJoining: inferred.dateOfJoining || ""
       });
-      setQuickUpdateText("");
+      setQuickUpdateStatusText("");
       setStatus("quickUpdate", `Assessment status updated to ${inferred.candidateStatus}.`, "ok");
     } catch (error) {
       setStatus("quickUpdate", String(error?.message || error), "error");
@@ -2976,6 +3041,8 @@ function PortalApp({ token, onLogout }) {
         id: "",
         title: "",
         clientName: "",
+        ownerRecruiterId: "",
+        ownerRecruiterName: "",
         jobDescription: "",
         mustHaveSkills: "",
         redFlags: "",
@@ -2990,6 +3057,8 @@ function PortalApp({ token, onLogout }) {
       id: String(job.id || ""),
       title: String(job.title || ""),
       clientName: String(job.clientName || ""),
+      ownerRecruiterId: String(job.ownerRecruiterId || ""),
+      ownerRecruiterName: String(job.ownerRecruiterName || ""),
       jobDescription: String(job.jobDescription || ""),
       mustHaveSkills: String(job.mustHaveSkills || ""),
       redFlags: String(job.redFlags || ""),
@@ -4008,6 +4077,7 @@ function PortalApp({ token, onLogout }) {
                           item.assignedToName ? `Assigned: ${item.assignedToName}` : "",
                           item.parseStatus ? `Parse: ${item.parseStatus}` : ""
                         ].filter(Boolean).join(" | ")}</p>
+                        {item.assignedToName ? <div className="status-note">{`Already assigned to ${item.assignedToName}`}</div> : null}
                       </div>
                       <div className="chip-row">
                         {item.cvFilename ? <span className="chip">CV: {item.cvFilename}</span> : null}
@@ -4467,6 +4537,25 @@ function PortalApp({ token, onLogout }) {
                 <div className="form-grid two-col">
                   <label><span>Job title</span><input value={jobDraft.title} onChange={(e) => setJobDraft((c) => ({ ...c, title: e.target.value }))} /></label>
                   <label><span>Client</span><input value={jobDraft.clientName} onChange={(e) => setJobDraft((c) => ({ ...c, clientName: e.target.value }))} /></label>
+                  <label>
+                    <span>Owner recruiter</span>
+                    <select
+                      value={jobDraft.ownerRecruiterId}
+                      onChange={(e) => {
+                        const selectedId = e.target.value;
+                        const selectedUser = (state.users || []).find((user) => String(user.id) === String(selectedId)) || null;
+                        setJobDraft((c) => ({
+                          ...c,
+                          ownerRecruiterId: selectedId,
+                          ownerRecruiterName: selectedUser?.name || ""
+                        }));
+                      }}
+                    >
+                      <option value="">Unassigned</option>
+                      {(state.users || []).map((user) => <option key={user.id} value={user.id}>{user.name} | {user.email}</option>)}
+                    </select>
+                  </label>
+                  <label><span>Owner recruiter name</span><input value={jobDraft.ownerRecruiterName} readOnly /></label>
                   <label className="full"><span>Job description</span><textarea className="jd-editor" value={jobDraft.jobDescription} onChange={(e) => setJobDraft((c) => ({ ...c, jobDescription: e.target.value }))} /></label>
                   <label className="full"><span>Must-have skills</span><textarea value={jobDraft.mustHaveSkills} onChange={(e) => setJobDraft((c) => ({ ...c, mustHaveSkills: e.target.value }))} /></label>
                   <label className="full"><span>Red flags</span><textarea value={jobDraft.redFlags} onChange={(e) => setJobDraft((c) => ({ ...c, redFlags: e.target.value }))} /></label>
