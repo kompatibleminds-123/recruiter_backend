@@ -1936,7 +1936,8 @@ function PortalApp({ token, onLogout }) {
     expected_ctc: "",
     notice_period: "",
     offer_in_hand: "",
-    lwd_or_doj: ""
+    lwd_or_doj: "",
+    tags: ""
   });
   const [quickUpdateParsedSummary, setQuickUpdateParsedSummary] = useState(null);
   const [quickUpdateConflicts, setQuickUpdateConflicts] = useState([]);
@@ -2096,7 +2097,8 @@ function PortalApp({ token, onLogout }) {
         expected_ctc: "",
         notice_period: "",
         offer_in_hand: "",
-        lwd_or_doj: ""
+        lwd_or_doj: "",
+        tags: ""
       });
       setQuickUpdateText("");
       setQuickUpdateStatusText("");
@@ -2108,7 +2110,8 @@ function PortalApp({ token, onLogout }) {
       expected_ctc: String(base.expected_ctc || ""),
       notice_period: String(base.notice_period || ""),
       offer_in_hand: String(base.offer_in_hand || ""),
-      lwd_or_doj: String(base.lwd_or_doj || "")
+      lwd_or_doj: String(base.lwd_or_doj || ""),
+      tags: Array.isArray(quickUpdateCandidate.skills) ? quickUpdateCandidate.skills.join(", ") : ""
     });
     setQuickUpdateText(String(quickUpdateCandidate.other_pointers || ""));
     setQuickUpdateStatusText(String(quickUpdateCandidate.last_contact_notes || ""));
@@ -2630,6 +2633,10 @@ function PortalApp({ token, onLogout }) {
     }
     try {
       const extractedFieldPatch = buildRecruiterFieldPatchFromMerge(mergeForSave);
+      const parsedSkills = String(quickUpdateRecruiterSections.tags || "")
+        .split(/\r?\n|,|\||;/)
+        .map((item) => String(item || "").trim())
+        .filter(Boolean);
       const canonicalRecruiterNotes = buildCanonicalRecruiterNotes(
         quickUpdateCandidate?.recruiter_context_notes || "",
         effectiveRawRecruiterNote,
@@ -2638,6 +2645,7 @@ function PortalApp({ token, onLogout }) {
       await patchCandidateQuiet(quickUpdateCandidate.id, {
         recruiter_context_notes: canonicalRecruiterNotes,
         other_pointers: normalizeOtherPointersBody(quickUpdateText),
+        skills: parsedSkills,
         ...extractedFieldPatch
       });
       setQuickUpdateMergedPatch(null);
@@ -2669,6 +2677,10 @@ function PortalApp({ token, onLogout }) {
       const merged = mergeForSave.merged || normalizeRecruiterMergeBase(quickUpdateCandidate);
       const effectiveRawRecruiterNote = buildStructuredRecruiterRawNote(quickUpdateRecruiterSections, "");
       const extractedFieldPatch = buildRecruiterFieldPatchFromMerge(mergeForSave);
+      const parsedSkills = String(quickUpdateRecruiterSections.tags || "")
+        .split(/\r?\n|,|\||;/)
+        .map((item) => String(item || "").trim())
+        .filter(Boolean);
       const canonicalRecruiterNotes = buildCanonicalRecruiterNotes(
         quickUpdateCandidate?.recruiter_context_notes || "",
         effectiveRawRecruiterNote,
@@ -2677,6 +2689,7 @@ function PortalApp({ token, onLogout }) {
       await patchCandidateQuiet(quickUpdateCandidate.id, {
         recruiter_context_notes: canonicalRecruiterNotes,
         other_pointers: normalizeOtherPointersBody(quickUpdateText),
+        skills: parsedSkills,
         ...extractedFieldPatch
       });
       const nextAssessment = {
@@ -2694,6 +2707,7 @@ function PortalApp({ token, onLogout }) {
         currentDesignation: merged.role || quickUpdateLinkedAssessment.currentDesignation || quickUpdateCandidate.role || "",
         totalExperience: merged.experience || quickUpdateLinkedAssessment.totalExperience || quickUpdateCandidate.experience || "",
         highestEducation: merged.highest_education || quickUpdateLinkedAssessment.highestEducation || quickUpdateCandidate.highest_education || "",
+        skills: parsedSkills,
         recruiterNotes: canonicalRecruiterNotes,
         otherPointers: normalizeOtherPointersBody(quickUpdateText),
         updatedAt: new Date().toISOString()
@@ -4490,6 +4504,7 @@ function PortalApp({ token, onLogout }) {
                         <label><span>Notice period</span><input value={quickUpdateRecruiterSections.notice_period} onChange={(e) => setQuickUpdateRecruiterSections((current) => ({ ...current, notice_period: e.target.value }))} placeholder="30 days / serving notice" /></label>
                         <label><span>If serving, offer amount</span><input value={quickUpdateRecruiterSections.offer_in_hand} onChange={(e) => setQuickUpdateRecruiterSections((current) => ({ ...current, offer_in_hand: e.target.value }))} placeholder="Offer in hand 25 L" /></label>
                         <label className="full"><span>LWD / DOJ</span><input value={quickUpdateRecruiterSections.lwd_or_doj} onChange={(e) => setQuickUpdateRecruiterSections((current) => ({ ...current, lwd_or_doj: e.target.value }))} placeholder="8th June / 1st July" /></label>
+                        <label className="full"><span>Tags / searchable keywords</span><textarea value={quickUpdateRecruiterSections.tags} onChange={(e) => setQuickUpdateRecruiterSections((current) => ({ ...current, tags: e.target.value }))} placeholder="B2B corporate sales, SaaS, enterprise sales, node dev, react + java" /></label>
                       </div>
                       <label className="full">
                         <span>Other pointers</span>
