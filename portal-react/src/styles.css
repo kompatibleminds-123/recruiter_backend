@@ -194,6 +194,7 @@ textarea { min-height: 92px; resize: vertical; }
 }
 .item-card { border: 1px solid var(--border); background: var(--panel-strong); border-radius: 18px; padding: 0.95rem 1rem; }
 .compact-card { padding: 0.85rem 0.95rem; }
+.selected-card { border-color: #c18a26; box-shadow: 0 0 0 1px rgba(193, 138, 38, 0.2); }
 .item-card__top { display: flex; justify-content: space-between; gap: 1rem; }
 .compact-top { align-items: center; }
 .item-card h3 { margin: 0 0 0.22rem; font-size: 1.1rem; line-height: 1.3; }

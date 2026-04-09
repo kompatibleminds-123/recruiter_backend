@@ -3215,6 +3215,7 @@ const server = http.createServer(async (req, res) => {
       const body = await readJsonBody(req);
       const input = body.patch || body || {};
       const patch = {
+        name: String(input.name || input.candidateName || "").trim() || undefined,
         notes: String(input.notes || "").trim() || undefined,
         recruiter_context_notes: String(input.recruiter_context_notes || input.recruiterContextNotes || "").trim() || undefined,
         other_pointers: String(input.other_pointers || input.otherPointers || "").trim() || undefined,

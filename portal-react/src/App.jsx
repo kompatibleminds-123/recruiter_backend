@@ -10,6 +10,7 @@ const navItems = [
   { to: "/applicants", label: "Applied Candidates" },
   { to: "/captured-notes", label: "Captured Notes" },
   { to: "/assessments", label: "Assessments" },
+  { to: "/quick-update", label: "Quick Update" },
   { to: "/interview", label: "Interview Panel" },
   { to: "/intake-settings", label: "Admin Intake Settings" },
   { to: "/jobs", label: "Jobs" },
@@ -819,6 +820,11 @@ function getCapturedOutcome(candidate, assessment) {
   const isConverted = Boolean(assessment || candidate?.used_in_assessment);
   if (isConverted) return String(assessment?.candidateStatus || "No outcome").trim();
   return String(candidate?.last_contact_outcome || "No outcome").trim();
+}
+
+function getApplicantOutcome(applicant) {
+  if (String(applicant?.assignedToName || applicant?.assigned_to_name || "").trim()) return "Assigned";
+  return String(applicant?.parseStatus || applicant?.parse_status || "Applied").trim();
 }
 
 function fillCandidateTemplate(template, candidate) {
@@ -1744,7 +1750,7 @@ function DrilldownModal({ open, title, items, onClose, onOpenCv, onOpenDraft, on
                   <div className="button-row">
                     {(item.raw?.candidate?.id || item.id) && (item.raw?.candidate?.cv_filename || item.raw?.candidate?.cv_url) ? <button onClick={() => onOpenCv(item.raw?.candidate?.id || item.id)}>Open CV</button> : null}
                     {item.raw?.candidate?.id ? <button onClick={() => onOpenDraft(item.raw.candidate.id)}>Open draft</button> : null}
-                    {item.raw?.assessment || item.sourceType === "assessment_only" ? <button onClick={() => onOpenAssessment(item.raw?.assessment || item)}>Open assessment</button> : null}
+                    {item.raw?.assessment || item.sourceType === "assessment_only" ? <button onClick={() => onOpenAssessment(item.raw?.assessment || item)}>Edit assessment</button> : null}
                   </div>
                 </div>
               </div>
@@ -1806,6 +1812,15 @@ function PortalApp({ token, onLogout }) {
     outcomes: [],
     activeStates: ["active"]
   });
+  const [applicantFilters, setApplicantFilters] = useState({
+    q: "",
+    dateFrom: "",
+    dateTo: "",
+    clients: [],
+    jds: [],
+    assignedTo: [],
+    outcomes: []
+  });
   const [assessmentFilters, setAssessmentFilters] = useState({
     q: "",
     dateFrom: "",
@@ -1828,6 +1843,12 @@ function PortalApp({ token, onLogout }) {
     }
   });
   const [newPresetDraft, setNewPresetDraft] = useState({ label: "", columns: "" });
+  const [quickUpdateCandidateQuery, setQuickUpdateCandidateQuery] = useState("");
+  const [quickUpdateCandidateId, setQuickUpdateCandidateId] = useState("");
+  const [quickUpdateText, setQuickUpdateText] = useState("");
+  const [quickUpdateParsedSummary, setQuickUpdateParsedSummary] = useState(null);
+  const [quickUpdateConflicts, setQuickUpdateConflicts] = useState([]);
+  const [quickUpdateMergedPatch, setQuickUpdateMergedPatch] = useState(null);
   const [newDraftOpen, setNewDraftOpen] = useState(false);
   const [newDraftForm, setNewDraftForm] = useState({
     assigned_to_user_id: "",
@@ -1895,6 +1916,7 @@ function PortalApp({ token, onLogout }) {
   const notesCandidate = (state.candidates || []).find((item) => String(item.id) === String(notesCandidateId)) || null;
   const attemptsCandidate = (state.candidates || []).find((item) => String(item.id) === String(attemptsCandidateId)) || null;
   const assessmentStatusItem = (state.assessments || []).find((item) => String(item.id) === String(assessmentStatusId)) || null;
+  const quickUpdateCandidate = (state.candidates || []).find((item) => String(item.id) === String(quickUpdateCandidateId)) || null;
   const isSettingsAdmin = String(state.user?.role || "").toLowerCase() === "admin";
 
   function setStatus(key, message, kind = "") {
@@ -1958,6 +1980,12 @@ function PortalApp({ token, onLogout }) {
       // Ignore local storage errors in restricted browsers.
     }
   }, [copySettings]);
+
+  useEffect(() => {
+    setQuickUpdateParsedSummary(null);
+    setQuickUpdateConflicts([]);
+    setQuickUpdateMergedPatch(null);
+  }, [quickUpdateCandidateId, quickUpdateText]);
 
   const capturedAssessmentMap = useMemo(() => {
     const map = new Map();
@@ -2029,6 +2057,41 @@ function PortalApp({ token, onLogout }) {
       return true;
     });
   }, [state.assessments, state.candidates, assessmentFilters]);
+
+  const normalizedAssessmentCopyRows = useMemo(() => {
+    return filteredAssessments.map((item, index) => ({
+      index: index + 1,
+      s_no: index + 1,
+      name: item.candidateName || "",
+      phone: item.phoneNumber || "",
+      email: item.emailId || "",
+      location: item.location || "",
+      company: item.currentCompany || "",
+      current_company: item.currentCompany || "",
+      role: item.currentDesignation || "",
+      current_designation: item.currentDesignation || "",
+      total_experience: item.totalExperience || "",
+      highest_education: item.highestEducation || "",
+      current_ctc: item.currentCtc || "",
+      expected_ctc: item.expectedCtc || "",
+      notice_period: item.noticePeriod || "",
+      recruiter_context_notes: item.recruiterNotes || "",
+      other_pointers: item.otherPointers || "",
+      notes: item.recruiterNotes || item.callbackNotes || "",
+      other_standard_questions: item.callbackNotes || "",
+      combined_assessment_insights: buildCombinedAssessmentInsightsForExport({
+        recruiter_context_notes: item.recruiterNotes || "",
+        other_pointers: item.otherPointers || "",
+        other_standard_questions: item.callbackNotes || ""
+      }),
+      linkedin: item.linkedinUrl || "",
+      jd_title: item.jdTitle || "",
+      client_name: item.clientName || "",
+      outcome: item.candidateStatus || "",
+      assessment_status: item.candidateStatus || "",
+      follow_up_at: formatDateForCopy(item.followUpAt || item.interviewAt || "")
+    }));
+  }, [filteredAssessments]);
   const candidateUniverse = useMemo(() => candidateSearchMode === "all" ? (state.candidates || []) : (candidateSearchResults || []), [candidateSearchMode, state.candidates, candidateSearchResults]);
   const pagedCandidates = useMemo(() => {
     const start = (candidatePage - 1) * 10;
@@ -2141,6 +2204,78 @@ function PortalApp({ token, onLogout }) {
     });
   }, [state.applicants, state.user]);
 
+  const applicantOptions = useMemo(() => {
+    const clients = new Set();
+    const jds = new Set();
+    const assignedTo = new Set();
+    const outcomes = new Set();
+    filteredApplicants.forEach((item) => {
+      const clientValue = String(item.clientName || item.client_name || "Unassigned").trim();
+      const jdValue = String(item.jdTitle || item.jd_title || "").trim();
+      const assignedValue = String(item.assignedToName || item.assigned_to_name || "Unassigned").trim();
+      const outcomeValue = getApplicantOutcome(item);
+      if (clientValue) clients.add(clientValue);
+      if (jdValue) jds.add(jdValue);
+      if (assignedValue) assignedTo.add(assignedValue);
+      if (outcomeValue) outcomes.add(outcomeValue);
+    });
+    return {
+      clients: Array.from(clients).sort((a, b) => a.localeCompare(b)),
+      jds: Array.from(jds).sort((a, b) => a.localeCompare(b)),
+      assignedTo: Array.from(assignedTo).sort((a, b) => a.localeCompare(b)),
+      outcomes: Array.from(outcomes).sort((a, b) => a.localeCompare(b))
+    };
+  }, [filteredApplicants]);
+
+  const visibleApplicants = useMemo(() => {
+    const query = String(applicantFilters.q || "").trim().toLowerCase();
+    return filteredApplicants.filter((item) => {
+      const clientValue = String(item.clientName || item.client_name || "Unassigned").trim();
+      const jdValue = String(item.jdTitle || item.jd_title || "").trim();
+      const assignedValue = String(item.assignedToName || item.assigned_to_name || "Unassigned").trim();
+      const outcomeValue = getApplicantOutcome(item);
+      const createdDate = String(item.createdAt || item.created_at || "").slice(0, 10);
+      const hay = [
+        item.candidateName,
+        item.phone,
+        item.email,
+        jdValue,
+        clientValue,
+        assignedValue,
+        item.currentCompany,
+        item.currentDesignation
+      ].join(" ").toLowerCase();
+      if (query && !hay.includes(query)) return false;
+      if (applicantFilters.dateFrom && createdDate && createdDate < applicantFilters.dateFrom) return false;
+      if (applicantFilters.dateTo && createdDate && createdDate > applicantFilters.dateTo) return false;
+      if (applicantFilters.clients.length && !applicantFilters.clients.includes(clientValue)) return false;
+      if (applicantFilters.jds.length && !applicantFilters.jds.includes(jdValue)) return false;
+      if (applicantFilters.assignedTo.length && !applicantFilters.assignedTo.includes(assignedValue)) return false;
+      if (applicantFilters.outcomes.length && !applicantFilters.outcomes.includes(outcomeValue)) return false;
+      return true;
+    });
+  }, [filteredApplicants, applicantFilters]);
+
+  const quickUpdateMatches = useMemo(() => {
+    const query = String(quickUpdateCandidateQuery || "").trim().toLowerCase();
+    if (!query) return [];
+    return (state.candidates || [])
+      .filter((item) => {
+        const hay = [
+          item.name,
+          item.phone,
+          item.email,
+          item.company,
+          item.role,
+          item.jd_title,
+          item.client_name,
+          item.linkedin
+        ].join(" ").toLowerCase();
+        return hay.includes(query);
+      })
+      .slice(0, 10);
+  }, [quickUpdateCandidateQuery, state.candidates]);
+
   async function openCv(applicantId) {
     const applicant = (state.applicants || []).find((item) => String(item.id) === String(applicantId));
     if (!applicant) {
@@ -2228,8 +2363,119 @@ function PortalApp({ token, onLogout }) {
     setStatus("captured", okMessage, "ok");
   }
 
+  async function patchCandidateQuiet(candidateId, patch) {
+    await api(`/company/candidates/${encodeURIComponent(candidateId)}`, token, "PATCH", { patch });
+    await loadWorkspace();
+  }
+
   async function hideCapturedCandidate(candidateId) {
     await patchCandidate(candidateId, { hidden_from_captured: true }, "Candidate hidden from captured notes.");
+  }
+
+  async function parseQuickUpdateRecruiterNote() {
+    if (!quickUpdateCandidate) {
+      setStatus("quickUpdate", "Select an existing candidate first.", "error");
+      return;
+    }
+    if (!String(quickUpdateText || "").trim()) {
+      setStatus("quickUpdate", "Type the recruiter update note first.", "error");
+      return;
+    }
+    setStatus("quickUpdate", "Parsing recruiter update...");
+    try {
+      const parsed = await api("/parse-note", token, "POST", {
+        note: quickUpdateText,
+        source: "portal_manual",
+        client_name: quickUpdateCandidate?.client_name || "",
+        jd_title: quickUpdateCandidate?.jd_title || "",
+        preview: true
+      });
+      const merge = buildRecruiterMerge(quickUpdateCandidate, parsed || {}, quickUpdateText);
+      setQuickUpdateMergedPatch(merge);
+      setQuickUpdateParsedSummary(merge.merged || null);
+      setQuickUpdateConflicts(merge.overwritten || []);
+      setStatus(
+        "quickUpdate",
+        merge.overwritten?.length
+          ? `Parsed update. Conflicts found in ${merge.overwritten.map((entry) => formatRecruiterOverwriteLabel(entry.key)).join(", ")}.`
+          : "Parsed recruiter update. Review and apply.",
+        "ok"
+      );
+    } catch (error) {
+      setStatus("quickUpdate", String(error?.message || error), "error");
+    }
+  }
+
+  async function applyQuickUpdateRecruiterNote() {
+    if (!quickUpdateCandidate) {
+      setStatus("quickUpdate", "Select an existing candidate first.", "error");
+      return;
+    }
+    const mergeForSave = quickUpdateMergedPatch || buildRecruiterMerge(quickUpdateCandidate, {}, quickUpdateText);
+    if (mergeForSave.overwritten?.length) {
+      const message = mergeForSave.overwritten.map((entry) => `${formatRecruiterOverwriteLabel(entry.key)}: "${entry.from}" -> "${entry.to}"`).join("\n");
+      const confirmed = window.confirm(`These fields will be overwritten:\n\n${message}\n\nApply recruiter note update?`);
+      if (!confirmed) return;
+    }
+    try {
+      const extractedFieldPatch = buildRecruiterFieldPatchFromMerge(mergeForSave);
+      const canonicalRecruiterNotes = buildCanonicalRecruiterNotes(
+        quickUpdateCandidate?.recruiter_context_notes || "",
+        quickUpdateText,
+        mergeForSave?.merged || normalizeRecruiterMergeBase(quickUpdateCandidate)
+      );
+      await patchCandidateQuiet(quickUpdateCandidate.id, {
+        recruiter_context_notes: canonicalRecruiterNotes,
+        ...extractedFieldPatch
+      });
+      setQuickUpdateMergedPatch(null);
+      setQuickUpdateConflicts([]);
+      setQuickUpdateParsedSummary(null);
+      setQuickUpdateText("");
+      setStatus("quickUpdate", "Recruiter note merged into existing candidate.", "ok");
+    } catch (error) {
+      setStatus("quickUpdate", String(error?.message || error), "error");
+    }
+  }
+
+  async function applyQuickCandidateUpdate() {
+    if (!quickUpdateCandidate) {
+      setStatus("quickUpdate", "Select an existing candidate first.", "error");
+      return;
+    }
+    const finalLine = extractLastMeaningfulLine(quickUpdateText);
+    if (!finalLine) {
+      setStatus("quickUpdate", "Type the quick update note first.", "error");
+      return;
+    }
+    const inferred = inferAttemptOutcomeAndFollowUp(finalLine);
+    if (!inferred?.outcome) {
+      setStatus("quickUpdate", "Could not understand the update from the last line.", "error");
+      return;
+    }
+    try {
+      await api("/contact-attempts", token, "POST", {
+        candidateId: quickUpdateCandidate.id,
+        outcome: inferred.outcome,
+        notes: finalLine,
+        next_follow_up_at: inferred.followUpAt || ""
+      });
+      const candidatePatch = {
+        last_contact_outcome: inferred.outcome || "",
+        last_contact_notes: finalLine,
+        last_contact_at: new Date().toISOString()
+      };
+      if (inferred.followUpAt) {
+        candidatePatch.next_follow_up_at = new Date(inferred.followUpAt).toISOString();
+      } else if (inferred.outcome !== "Call later" && inferred.outcome !== "Switch Off") {
+        candidatePatch.next_follow_up_at = "";
+      }
+      await patchCandidateQuiet(quickUpdateCandidate.id, candidatePatch);
+      setQuickUpdateText("");
+      setStatus("quickUpdate", `Quick update applied for ${quickUpdateCandidate.name || "candidate"}.`, "ok");
+    } catch (error) {
+      setStatus("quickUpdate", String(error?.message || error), "error");
+    }
   }
 
   async function createManualDraft() {
@@ -2488,12 +2734,25 @@ function PortalApp({ token, onLogout }) {
     setStatus("interview", "Saving assessment...");
     await api("/company/assessments", token, "POST", { assessment });
     if (interviewMeta.candidateId) {
-      await patchCandidate(interviewMeta.candidateId, {
+      await patchCandidateQuiet(interviewMeta.candidateId, {
+        name: interviewForm.candidateName,
+        phone: interviewForm.phoneNumber,
+        email: interviewForm.emailId,
+        location: interviewForm.location,
+        company: interviewForm.currentCompany,
+        role: interviewForm.currentDesignation,
+        experience: interviewForm.totalExperience,
+        current_ctc: interviewForm.currentCtc,
+        expected_ctc: interviewForm.expectedCtc,
+        notice_period: interviewForm.noticePeriod,
         recruiter_context_notes: interviewForm.recruiterNotes,
         other_pointers: interviewForm.otherPointers,
         lwd_or_doj: interviewForm.lwdOrDoj,
+        jd_title: interviewForm.jdTitle,
+        client_name: interviewForm.clientName,
         next_follow_up_at: interviewForm.followUpAt
-      }, "Assessment saved and candidate state updated.");
+      });
+      setStatus("interview", "Assessment saved and candidate details updated.", "ok");
     } else {
       await loadWorkspace();
       setStatus("interview", "Assessment saved.", "ok");
@@ -2802,6 +3061,82 @@ function PortalApp({ token, onLogout }) {
     const text = rows.map((item, index) => fillCandidateTemplate(copySettings.emailTemplate, { ...item, index: index + 1, follow_up_at: formatDateForCopy(item.next_follow_up_at) })).filter(Boolean).join("\n\n");
     await copyText(text);
     setStatus("captured", "Filtered candidates copied in email format.", "ok");
+  }
+
+  function buildApplicantCopyRows() {
+    return visibleApplicants.map((item, index) => ({
+      index: index + 1,
+      s_no: index + 1,
+      name: item.candidateName || "",
+      phone: item.phone || "",
+      email: item.email || "",
+      location: item.location || "",
+      company: item.currentCompany || "",
+      current_company: item.currentCompany || "",
+      role: item.currentDesignation || item.jdTitle || "",
+      current_designation: item.currentDesignation || "",
+      total_experience: item.totalExperience || "",
+      highest_education: item.highestEducation || "",
+      current_ctc: item.currentCtc || "",
+      expected_ctc: item.expectedCtc || "",
+      notice_period: item.noticePeriod || "",
+      recruiter_context_notes: item.screeningAnswers || "",
+      other_pointers: "",
+      notes: item.screeningAnswers || "",
+      other_standard_questions: item.screeningAnswers || "",
+      combined_assessment_insights: buildCombinedAssessmentInsightsForExport({
+        recruiter_context_notes: item.screeningAnswers || "",
+        other_pointers: "",
+        other_standard_questions: item.screeningAnswers || ""
+      }),
+      linkedin: item.linkedin || "",
+      jd_title: item.jdTitle || "",
+      client_name: item.clientName || "",
+      outcome: getApplicantOutcome(item),
+      assessment_status: getApplicantOutcome(item),
+      follow_up_at: ""
+    }));
+  }
+
+  async function copyApplicantsExcel() {
+    const rows = buildApplicantCopyRows();
+    const preset = buildCapturedExcelRows(rows, copySettings.excelPreset, copySettings);
+    const lines = [preset.headers.join("\t"), ...preset.rows.map((row) => row.map((cell) => String(cell || "").replace(/\t/g, " ").replace(/\r?\n/g, " ")).join("\t"))].join("\n");
+    await copyText(lines);
+    setStatus("applicants", "Filtered applied candidates copied in Excel format.", "ok");
+  }
+
+  async function copyApplicantsWhatsapp() {
+    const rows = buildApplicantCopyRows();
+    const text = rows.map((item, index) => fillCandidateTemplate(copySettings.whatsappTemplate, { ...item, index: index + 1 })).filter(Boolean).join("\n\n");
+    await copyText(text);
+    setStatus("applicants", "Filtered applied candidates copied in WhatsApp format.", "ok");
+  }
+
+  async function copyApplicantsEmail() {
+    const rows = buildApplicantCopyRows();
+    const text = rows.map((item, index) => fillCandidateTemplate(copySettings.emailTemplate, { ...item, index: index + 1 })).filter(Boolean).join("\n\n");
+    await copyText(text);
+    setStatus("applicants", "Filtered applied candidates copied in email format.", "ok");
+  }
+
+  async function copyAssessmentsExcel() {
+    const preset = buildCapturedExcelRows(normalizedAssessmentCopyRows, copySettings.excelPreset, copySettings);
+    const lines = [preset.headers.join("\t"), ...preset.rows.map((row) => row.map((cell) => String(cell || "").replace(/\t/g, " ").replace(/\r?\n/g, " ")).join("\t"))].join("\n");
+    await copyText(lines);
+    setStatus("assessments", "Filtered assessments copied in Excel format.", "ok");
+  }
+
+  async function copyAssessmentsWhatsapp() {
+    const text = normalizedAssessmentCopyRows.map((item, index) => fillCandidateTemplate(copySettings.whatsappTemplate, { ...item, index: index + 1 })).filter(Boolean).join("\n\n");
+    await copyText(text);
+    setStatus("assessments", "Filtered assessments copied in WhatsApp format.", "ok");
+  }
+
+  async function copyAssessmentsEmail() {
+    const text = normalizedAssessmentCopyRows.map((item, index) => fillCandidateTemplate(copySettings.emailTemplate, { ...item, index: index + 1 })).filter(Boolean).join("\n\n");
+    await copyText(text);
+    setStatus("assessments", "Filtered assessments copied in email format.", "ok");
   }
 
   async function saveSharedCopySettings() {
@@ -3648,6 +3983,7 @@ function PortalApp({ token, onLogout }) {
                       </div>
                     </div>
                     <div className="button-row">
+                      <button onClick={() => openSavedAssessment(item)}>Edit assessment</button>
                       <button onClick={() => setAssessmentStatusId(item.id)}>Update status</button>
                       <button onClick={() => void openAssessmentJourney(item)}>Journey</button>
                       <button onClick={() => openAssessmentWhatsapp(item)}>WhatsApp</button>
@@ -3660,6 +3996,98 @@ function PortalApp({ token, onLogout }) {
             </Section>
           } />
 
+          <Route path="/quick-update" element={
+            <div className="page-grid">
+              <Section kicker="Fast Lane" title="Quick Update">
+                <p className="muted">Use this for already saved candidates when details change later. Pick the candidate once, then either merge recruiter details or apply a quick status/timeline update.</p>
+                {statuses.quickUpdate ? <div className={`status ${statuses.quickUpdateKind || ""}`}>{statuses.quickUpdate}</div> : null}
+                <div className="form-grid">
+                  <label className="full">
+                    <span>Search existing candidate</span>
+                    <input
+                      placeholder="Type candidate name, phone, email, LinkedIn, JD..."
+                      value={quickUpdateCandidateQuery}
+                      onChange={(e) => setQuickUpdateCandidateQuery(e.target.value)}
+                    />
+                  </label>
+                </div>
+                <div className="stack-list compact">
+                  {!quickUpdateCandidateQuery.trim()
+                    ? <div className="empty-state">Search by name or phone to pick an existing candidate.</div>
+                    : quickUpdateMatches.map((item) => (
+                      <article className={`item-card compact-card${String(quickUpdateCandidateId) === String(item.id) ? " selected-card" : ""}`} key={item.id}>
+                        <div className="item-card__top">
+                          <div>
+                            <h3>{item.name || "Candidate"} | {item.jd_title || item.role || "Untitled role"}</h3>
+                            <p className="muted">{[item.company || "", item.client_name ? `Client: ${item.client_name}` : "", item.phone || "", item.email || ""].filter(Boolean).join(" | ")}</p>
+                          </div>
+                          <div className="button-row">
+                            <button className={String(quickUpdateCandidateId) === String(item.id) ? "" : "ghost-btn"} onClick={() => setQuickUpdateCandidateId(String(item.id))}>
+                              {String(quickUpdateCandidateId) === String(item.id) ? "Selected" : "Select"}
+                            </button>
+                          </div>
+                        </div>
+                      </article>
+                    ))}
+                </div>
+              </Section>
+
+              <Section kicker="Existing Candidate" title="Update Workspace">
+                {!quickUpdateCandidate ? (
+                  <div className="empty-state">Select a candidate above to start a quick update.</div>
+                ) : (
+                  <>
+                    <div className="info-grid">
+                      {[["Candidate", quickUpdateCandidate.name],["Phone", quickUpdateCandidate.phone],["Email", quickUpdateCandidate.email],["Client", quickUpdateCandidate.client_name],["JD / role", quickUpdateCandidate.jd_title || quickUpdateCandidate.role],["Current outcome", quickUpdateCandidate.last_contact_outcome || "-"]].map(([label, value]) => (
+                        <div className="info-card" key={label}>
+                          <div className="info-label">{label}</div>
+                          <div className="info-value">{value || "-"}</div>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="form-grid">
+                      <label className="full">
+                        <span>Update note</span>
+                        <textarea
+                          value={quickUpdateText}
+                          onChange={(e) => setQuickUpdateText(e.target.value)}
+                          placeholder="Nikhil current 15 L expected 25 L notice 15 days. Or: call tomorrow at 7 PM."
+                        />
+                      </label>
+                    </div>
+                    <p className="muted">For status updates, the last line is the source of truth. For recruiter-detail changes, use Parse recruiter note first, then apply it.</p>
+                    <div className="button-row">
+                      <button onClick={() => void parseQuickUpdateRecruiterNote()}>Parse recruiter note</button>
+                      <button onClick={() => void applyQuickUpdateRecruiterNote()}>Apply recruiter note</button>
+                      <button onClick={() => void applyQuickCandidateUpdate()}>Apply candidate update</button>
+                    </div>
+                    {quickUpdateParsedSummary ? (
+                      <div className="parsed-summary">
+                        <div className="info-label">Parsed summary</div>
+                        <div className="info-grid">
+                          {[["Company", quickUpdateParsedSummary.company],["Role", quickUpdateParsedSummary.role],["Location", quickUpdateParsedSummary.location],["Current CTC", quickUpdateParsedSummary.current_ctc],["Expected CTC", quickUpdateParsedSummary.expected_ctc],["Notice period", quickUpdateParsedSummary.notice_period],["LWD / DOJ", quickUpdateParsedSummary.lwd_or_doj],["Offer in hand", quickUpdateParsedSummary.offer_in_hand]].map(([label, value]) => value ? (
+                            <div className="info-card" key={label}>
+                              <div className="info-label">{label}</div>
+                              <div className="info-value">{value}</div>
+                            </div>
+                          ) : null)}
+                        </div>
+                      </div>
+                    ) : null}
+                    {quickUpdateConflicts.length ? (
+                      <div className="conflict-box">
+                        <div className="info-label">Conflicts detected</div>
+                        <ul>
+                          {quickUpdateConflicts.map((entry) => <li key={`${entry.key}-${entry.from}-${entry.to}`}><strong>{formatRecruiterOverwriteLabel(entry.key)}</strong>{`: existing "${entry.from}" to new "${entry.to}"`}</li>)}
+                        </ul>
+                      </div>
+                    ) : null}
+                  </>
+                )}
+              </Section>
+            </div>
+          } />
+
           <Route path="/interview" element={
             <div className="page-grid">
               <Section kicker="Recruiter Workspace" title="Interview Panel">
@@ -3670,7 +4098,7 @@ function PortalApp({ token, onLogout }) {
                   <button onClick={() => copyInterviewWhatsapp()}>Copy WhatsApp</button>
                   <button onClick={() => void copyInterviewEmail()}>Copy email</button>
                   <button onClick={() => setStatus("interview", "Notes live in the draft editor below.", "ok")}>Save notes</button>
-                  <button onClick={() => void saveAssessment()}>Create assessment</button>
+                  <button onClick={() => void saveAssessment()}>{interviewMeta.assessmentId ? "Save assessment" : "Create assessment"}</button>
                   <button onClick={() => sendInterviewToSheets()}>Send to sheets</button>
                   <button onClick={() => exportInterviewAll()}>Export all</button>
                   <button className="ghost-btn" onClick={() => { setInterviewMeta({ candidateId: "", assessmentId: "" }); setInterviewForm({ candidateName: "", phoneNumber: "", emailId: "", location: "", currentCtc: "", expectedCtc: "", noticePeriod: "", offerInHand: "", lwdOrDoj: "", currentCompany: "", currentDesignation: "", totalExperience: "", currentOrgTenure: "", reasonForChange: "", clientName: "", jdTitle: "", pipelineStage: "Under Interview Process", candidateStatus: "Screening in progress", followUpAt: "", interviewAt: "", recruiterNotes: "", callbackNotes: "", otherPointers: "", jdScreeningAnswers: {}, cvAnalysis: null, cvAnalysisApplied: false, statusHistory: [] }); setStatus("interview", ""); }}>Clear draft</button>
@@ -3802,7 +4230,7 @@ function PortalApp({ token, onLogout }) {
                   <button onClick={() => copyInterviewWhatsapp()}>Copy WhatsApp</button>
                   <button onClick={() => void copyInterviewEmail()}>Copy Email</button>
                   <button onClick={() => setStatus("interview", "Notes live in the draft editor above.", "ok")}>Save notes</button>
-                  <button onClick={() => void saveAssessment()}>Create assessment</button>
+                  <button onClick={() => void saveAssessment()}>{interviewMeta.assessmentId ? "Save assessment" : "Create assessment"}</button>
                   <button onClick={() => sendInterviewToSheets()}>Send to Sheets</button>
                   <button onClick={() => exportInterviewAll()}>Export all</button>
                   <button className="ghost-btn" onClick={() => { setInterviewMeta({ candidateId: "", assessmentId: "" }); setInterviewForm({ candidateName: "", phoneNumber: "", emailId: "", location: "", currentCtc: "", expectedCtc: "", noticePeriod: "", offerInHand: "", lwdOrDoj: "", currentCompany: "", currentDesignation: "", totalExperience: "", currentOrgTenure: "", reasonForChange: "", clientName: "", jdTitle: "", pipelineStage: "Under Interview Process", candidateStatus: "Screening in progress", followUpAt: "", interviewAt: "", recruiterNotes: "", callbackNotes: "", otherPointers: "", jdScreeningAnswers: {}, cvAnalysis: null, cvAnalysisApplied: false, statusHistory: [] }); setStatus("interview", ""); }}>Clear draft</button>
