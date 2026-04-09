@@ -1123,6 +1123,37 @@ function buildNaturalSearchFallbackTokens(rawQuery = "") {
     );
 }
 
+function splitBooleanTerms(raw = "") {
+  const matches = String(raw || "").match(/"[^"]+"|\S+/g) || [];
+  return matches
+    .map((part) => String(part || "").trim().replace(/^"|"$/g, ""))
+    .filter(Boolean);
+}
+
+function parseBooleanSearchQuery(rawQuery = "") {
+  const query = String(rawQuery || "").trim();
+  if (!query) return [];
+  const compact = query.replace(/[()]/g, " ").replace(/\s+/g, " ").trim();
+  if (!compact) return [];
+  if (/\bAND\b|\bOR\b/i.test(compact)) {
+    return compact
+      .split(/\bAND\b/i)
+      .map((group) => splitBooleanTerms(group.split(/\bOR\b/i).join(" ")))
+      .map((group) => group.filter(Boolean))
+      .filter((group) => group.length);
+  }
+  return splitBooleanTerms(compact).map((term) => [term]);
+}
+
+function candidateMatchesBooleanQuery(item, rawQuery = "") {
+  const groups = parseBooleanSearchQuery(rawQuery);
+  if (!groups.length) return true;
+  const hay = buildCandidateSearchHay(item);
+  return groups.every((group) =>
+    group.some((term) => hay.includes(normalizeDashboardText(term)))
+  );
+}
+
 function buildCandidateSearchHay(item = {}) {
   return normalizeDashboardText([
     item.candidateName || "",
@@ -3148,6 +3179,7 @@ const server = http.createServer(async (req, res) => {
     try {
       const user = await requireSessionUser(getBearerToken(req));
       const query = String(requestUrl.searchParams.get("q") || "").trim();
+      const queryMode = String(requestUrl.searchParams.get("mode") || "natural").trim().toLowerCase();
       const filters = parseNaturalLanguageCandidateQuery(query);
       const queryDateFrom = String(requestUrl.searchParams.get("dateFrom") || "").trim();
       const queryDateTo = String(requestUrl.searchParams.get("dateTo") || "").trim();
@@ -3162,11 +3194,19 @@ const server = http.createServer(async (req, res) => {
         listCompanyJobs(user.companyId)
       ]);
       const universe = buildCandidateSearchUniverse(candidates, assessments, jobs);
-      let matches = universe
-        .filter((item) => !recruiterFilter || String(item.ownerRecruiter || "").trim() === recruiterFilter)
-        .filter((item) => candidateMatchesNaturalFilter(item, filters, user))
-        .slice(0, 200);
-      if (!matches.length && query) {
+      let matches = [];
+      if (queryMode === "boolean") {
+        matches = universe
+          .filter((item) => !recruiterFilter || String(item.ownerRecruiter || "").trim() === recruiterFilter)
+          .filter((item) => candidateMatchesBooleanQuery(item, query))
+          .slice(0, 200);
+      } else {
+        matches = universe
+          .filter((item) => !recruiterFilter || String(item.ownerRecruiter || "").trim() === recruiterFilter)
+          .filter((item) => candidateMatchesNaturalFilter(item, filters, user))
+          .slice(0, 200);
+      }
+      if (!matches.length && query && queryMode !== "boolean") {
         const fallbackTokens = buildNaturalSearchFallbackTokens(query);
         const relaxedFilters = {
           ...filters,
@@ -3190,6 +3230,7 @@ const server = http.createServer(async (req, res) => {
         ok: true,
         result: {
           query,
+          queryMode,
           filters,
           total: matches.length,
           items: matches

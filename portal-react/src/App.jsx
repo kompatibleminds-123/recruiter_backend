@@ -48,6 +48,13 @@ const AI_SEARCH_EXAMPLE_PROMPTS = [
   "profiles sourced by Ankit this week"
 ];
 
+const BOOLEAN_SEARCH_EXAMPLE_PROMPTS = [
+  "loan AND sales",
+  '"business development" AND saas',
+  '(sales OR "business development") AND loan',
+  'mumbai AND "account executive"'
+];
+
 const PORTAL_APPLICANT_METADATA_PREFIX = "[APPLICANT_META]";
 
 const DEFAULT_PIPELINE_STAGE_OPTIONS = [
@@ -1925,6 +1932,7 @@ function PortalApp({ token, onLogout }) {
   });
   const [candidateSearchMode, setCandidateSearchMode] = useState("all");
   const [candidateSearchText, setCandidateSearchText] = useState("");
+  const [candidateAiQueryMode, setCandidateAiQueryMode] = useState("natural");
   const [candidateSearchResults, setCandidateSearchResults] = useState([]);
   const [candidatePage, setCandidatePage] = useState(1);
   const [candidateJdSource, setCandidateJdSource] = useState("saved");
@@ -3410,10 +3418,10 @@ function PortalApp({ token, onLogout }) {
       setStatus("workspace", `JD match returned ${result.items?.length || 0} candidates.`, "ok");
       return;
     }
-    const result = await api(`/company/candidates/search-natural?q=${encodeURIComponent(candidateSearchText)}`, token);
+    const result = await api(`/company/candidates/search-natural?q=${encodeURIComponent(candidateSearchText)}&mode=${encodeURIComponent(candidateAiQueryMode)}`, token);
     setCandidateSearchResults(result.items || []);
     setCandidatePage(1);
-    setStatus("workspace", `AI search returned ${result.items?.length || 0} candidates.`, "ok");
+    setStatus("workspace", `${candidateAiQueryMode === "boolean" ? "Boolean search" : "AI search"} returned ${result.items?.length || 0} candidates.`, "ok");
   }
 
   async function handleCandidateJdUpload(file) {
@@ -4356,9 +4364,13 @@ function PortalApp({ token, onLogout }) {
                 {candidateSearchMode === "ai_search" ? (
                   <div className="item-card compact-card">
                     <h3>AI candidate search</h3>
-                    <p className="muted">Try prompts like `show me all candidates shared in last month` or `get me offered Mumbai sales candidates under 18 L`.</p>
+                    <p className="muted">{candidateAiQueryMode === "boolean" ? "Use exact keywords with AND / OR and quoted phrases, similar to Naukri boolean search." : "Try prompts like `show me all candidates shared in last month` or `get me offered Mumbai sales candidates under 18 L`."}</p>
                     <div className="button-row">
-                      {AI_SEARCH_EXAMPLE_PROMPTS.map((prompt) => (
+                      <button className={candidateAiQueryMode === "natural" ? "" : "ghost-btn"} onClick={() => setCandidateAiQueryMode("natural")}>Natural</button>
+                      <button className={candidateAiQueryMode === "boolean" ? "" : "ghost-btn"} onClick={() => setCandidateAiQueryMode("boolean")}>Boolean</button>
+                    </div>
+                    <div className="button-row">
+                      {(candidateAiQueryMode === "boolean" ? BOOLEAN_SEARCH_EXAMPLE_PROMPTS : AI_SEARCH_EXAMPLE_PROMPTS).map((prompt) => (
                         <button
                           key={prompt}
                           className="ghost-btn"
@@ -4409,10 +4421,10 @@ function PortalApp({ token, onLogout }) {
                         </div>
                       ) : null}
                     </>
-                  ) : (
-                    <input placeholder={candidateSearchMode === "ai_search" ? "Get me Account Executives with 4+ years of experience based out of Mumbai with current CTC under 20 L" : "Search role, skill, company, location"} value={candidateSearchText} onChange={(e) => setCandidateSearchText(e.target.value)} />
+                      ) : (
+                    <input placeholder={candidateSearchMode === "ai_search" ? (candidateAiQueryMode === "boolean" ? '(sales OR "business development") AND loan' : "Get me Account Executives with 4+ years of experience based out of Mumbai with current CTC under 20 L") : "Search role, skill, company, location"} value={candidateSearchText} onChange={(e) => setCandidateSearchText(e.target.value)} />
                   )}
-                  <button onClick={() => void runCandidateSearch()}>{candidateSearchMode === "all" ? "Refresh" : candidateSearchMode === "ai_search" ? "Run AI Search" : "Run"}</button>
+                  <button onClick={() => void runCandidateSearch()}>{candidateSearchMode === "all" ? "Refresh" : candidateSearchMode === "ai_search" ? (candidateAiQueryMode === "boolean" ? "Run Boolean Search" : "Run AI Search") : "Run"}</button>
                 </div>
                 <div className="button-row">
                   <button onClick={() => void copyCandidatesExcel()}>Copy Excel</button>
