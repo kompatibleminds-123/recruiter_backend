@@ -10,6 +10,7 @@ const navItems = [
   { to: "/applicants", label: "Applied Candidates" },
   { to: "/captured-notes", label: "Captured Notes" },
   { to: "/assessments", label: "Assessments" },
+  { to: "/client-share", label: "Direct Share" },
   { to: "/quick-update", label: "Quick Update" },
   { to: "/interview", label: "Interview Panel" },
   { to: "/intake-settings", label: "Admin Intake Settings" },
@@ -1930,6 +1931,15 @@ function PortalApp({ token, onLogout }) {
   const [candidateJdJobId, setCandidateJdJobId] = useState("");
   const [candidateJdText, setCandidateJdText] = useState("");
   const [candidateJdFilename, setCandidateJdFilename] = useState("");
+  const [clientShareDraft, setClientShareDraft] = useState({
+    sourceKey: "assessments",
+    hrName: "",
+    recipientEmail: "",
+    clientLabel: "",
+    targetRole: "",
+    presetId: "client_submission",
+    extraMessage: ""
+  });
   const [agendaRange, setAgendaRange] = useState("today");
   const [copySettings, setCopySettings] = useState(() => {
     try {
@@ -3610,6 +3620,61 @@ function PortalApp({ token, onLogout }) {
     setStatus("workspace", "Candidate search results downloaded.", "ok");
   }
 
+  function getClientShareRows() {
+    if (clientShareDraft.sourceKey === "candidates") return buildCandidateUniverseCopyRows();
+    if (clientShareDraft.sourceKey === "applicants") return buildApplicantCopyRows();
+    return normalizedAssessmentCopyRows;
+  }
+
+  function buildClientShareBody() {
+    const hrName = String(clientShareDraft.hrName || "").trim();
+    const clientLabel = String(clientShareDraft.clientLabel || "").trim();
+    const targetRole = String(clientShareDraft.targetRole || "").trim();
+    const recruiterName = String(state.user?.name || "Recruiter").trim();
+    const companyName = String(state.user?.companyName || state.user?.company_name || "RecruitDesk").trim();
+    const roleLine = [targetRole, clientLabel].filter(Boolean).join(" for ");
+    return [
+      `Hello ${hrName || "Team"},`,
+      "",
+      "Greetings !!",
+      "",
+      `This is ${recruiterName} from ${companyName}.`,
+      `PFA the profiles${roleLine ? ` for ${roleLine}` : ""}.`,
+      "Kindly review and share your feedback.",
+      "",
+      String(clientShareDraft.extraMessage || "").trim()
+    ].filter((line, index, array) => line || (index > 0 && array[index - 1] !== "")).join("\n");
+  }
+
+  function downloadClientShareAttachment() {
+    const rows = getClientShareRows();
+    const preset = buildCapturedExcelRows(rows, clientShareDraft.presetId || copySettings.excelPreset, copySettings);
+    const text = [preset.headers.join("\t"), ...preset.rows.map((row) => row.map((cell) => String(cell || "").replace(/\t/g, " ").replace(/\r?\n/g, " ")).join("\t"))].join("\n");
+    const blob = new Blob([text], { type: "text/tab-separated-values;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `${(clientShareDraft.clientLabel || clientShareDraft.targetRole || "client-share").replace(/[^\w\-]+/g, "-")}.tsv`;
+    link.click();
+    URL.revokeObjectURL(url);
+    setStatus("clientShare", "Attachment sheet downloaded.", "ok");
+  }
+
+  async function copyClientShareEmailDraft() {
+    await copyText(buildClientShareBody());
+    setStatus("clientShare", "Client email draft copied.", "ok");
+  }
+
+  function shareClientProfiles() {
+    const recipient = String(clientShareDraft.recipientEmail || "").trim();
+    const subjectTarget = [clientShareDraft.targetRole, clientShareDraft.clientLabel].filter(Boolean).join(" | ");
+    const subject = encodeURIComponent(`Profiles for review${subjectTarget ? ` - ${subjectTarget}` : ""}`);
+    const body = encodeURIComponent(buildClientShareBody());
+    downloadClientShareAttachment();
+    window.open(`mailto:${encodeURIComponent(recipient)}?subject=${subject}&body=${body}`, "_blank", "noopener,noreferrer");
+    setStatus("clientShare", "Email draft opened and attachment sheet downloaded.", "ok");
+  }
+
   async function saveSharedCopySettings() {
     if (!isSettingsAdmin) {
       setStatus("settings", "Only admin can save shared settings.", "error");
@@ -4683,6 +4748,52 @@ function PortalApp({ token, onLogout }) {
                     ) : null}
                   </>
                 )}
+              </Section>
+            </div>
+          } />
+
+          <Route path="/client-share" element={
+            <div className="page-grid">
+              <Section kicker="Client Submission" title="Direct Share with Client">
+                <p className="muted">Prepare a clean email draft for the client, download the attachment sheet in the selected preset, and share profiles directly from the portal.</p>
+                {statuses.clientShare ? <div className={`status ${statuses.clientShareKind || ""}`}>{statuses.clientShare}</div> : null}
+                <div className="form-grid two-col">
+                  <label>
+                    <span>Source list</span>
+                    <select value={clientShareDraft.sourceKey} onChange={(e) => setClientShareDraft((current) => ({ ...current, sourceKey: e.target.value }))}>
+                      <option value="assessments">Assessments ({normalizedAssessmentCopyRows.length})</option>
+                      <option value="applicants">Applied Candidates ({visibleApplicants.length})</option>
+                      <option value="candidates">Candidates search results ({candidateUniverse.length})</option>
+                    </select>
+                  </label>
+                  <label>
+                    <span>Attachment preset</span>
+                    <select value={clientShareDraft.presetId} onChange={(e) => setClientShareDraft((current) => ({ ...current, presetId: e.target.value }))}>
+                      <option value="compact_recruiter">{copySettings.exportPresetLabels?.compact_recruiter || "Compact recruiter"}</option>
+                      <option value="client_tracker">{copySettings.exportPresetLabels?.client_tracker || "Client tracker"}</option>
+                      <option value="attentive_tracker">{copySettings.exportPresetLabels?.attentive_tracker || "Attentive tracker"}</option>
+                      <option value="client_submission">{copySettings.exportPresetLabels?.client_submission || "Client submission"}</option>
+                      <option value="screening_focus">{copySettings.exportPresetLabels?.screening_focus || "Screening focus"}</option>
+                      {(copySettings.customExportPresets || []).map((preset) => (
+                        <option key={preset.id} value={preset.id}>{preset.label}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <label><span>HR name</span><input value={clientShareDraft.hrName} onChange={(e) => setClientShareDraft((current) => ({ ...current, hrName: e.target.value }))} placeholder="Attentive HR Team" /></label>
+                  <label><span>Recipient email</span><input type="email" value={clientShareDraft.recipientEmail} onChange={(e) => setClientShareDraft((current) => ({ ...current, recipientEmail: e.target.value }))} placeholder="hr@client.com" /></label>
+                  <label><span>Client</span><input value={clientShareDraft.clientLabel} onChange={(e) => setClientShareDraft((current) => ({ ...current, clientLabel: e.target.value }))} placeholder="Attentive" /></label>
+                  <label><span>Role / requirement</span><input value={clientShareDraft.targetRole} onChange={(e) => setClientShareDraft((current) => ({ ...current, targetRole: e.target.value }))} placeholder="AE / Account Executive" /></label>
+                  <label className="full"><span>Extra message</span><textarea value={clientShareDraft.extraMessage} onChange={(e) => setClientShareDraft((current) => ({ ...current, extraMessage: e.target.value }))} placeholder="Optional note for the client." /></label>
+                  <label className="full">
+                    <span>Email preview</span>
+                    <textarea value={buildClientShareBody()} readOnly />
+                  </label>
+                </div>
+                <div className="button-row">
+                  <button onClick={() => void copyClientShareEmailDraft()}>Copy email draft</button>
+                  <button onClick={() => downloadClientShareAttachment()}>Download attachment</button>
+                  <button onClick={() => shareClientProfiles()}>Share</button>
+                </div>
               </Section>
             </div>
           } />
