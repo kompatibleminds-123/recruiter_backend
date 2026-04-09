@@ -1799,7 +1799,7 @@ function PortalApp({ token, onLogout }) {
     dateTo: "",
     clients: [],
     jds: [],
-    lanes: [],
+    lanes: ["captured"],
     assignedTo: [],
     capturedBy: [],
     sources: [],
@@ -2286,15 +2286,16 @@ function PortalApp({ token, onLogout }) {
   }
 
   async function saveAttempt(patch) {
+    const finalLine = String(patch.final_line || extractLastMeaningfulLine(patch.notes || "")).trim();
     await api("/contact-attempts", token, "POST", {
       candidateId: attemptsCandidateId,
       outcome: patch.outcome,
-      notes: patch.notes,
+      notes: finalLine || String(patch.notes || "").trim(),
       next_follow_up_at: patch.next_follow_up_at
     });
     const candidatePatch = {
       last_contact_outcome: patch.outcome || "",
-      last_contact_notes: String(patch.notes || "").trim(),
+      last_contact_notes: finalLine || String(patch.notes || "").trim(),
       last_contact_at: new Date().toISOString()
     };
     if (patch.next_follow_up_at) {
