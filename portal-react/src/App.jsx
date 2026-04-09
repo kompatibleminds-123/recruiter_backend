@@ -4431,17 +4431,6 @@ function PortalApp({ token, onLogout }) {
             <div className="page-grid">
               <Section kicker="Recruiter Workspace" title="Interview Panel">
                 <p className="muted">This panel is for captured information, recruiter notes, runbook, CV analysis, and output actions. Assessment status and pipeline updates stay in the Assessments lane to avoid confusion.</p>
-                {statuses.interview ? <div className={`status ${statuses.interviewKind || ""}`}>{statuses.interview}</div> : null}
-                <div className="button-row">
-                  <button onClick={() => void copyInterviewResult()}>Copy result</button>
-                  <button onClick={() => copyInterviewWhatsapp()}>Copy WhatsApp</button>
-                  <button onClick={() => void copyInterviewEmail()}>Copy email</button>
-                  <button onClick={() => setStatus("interview", "Notes live in the draft editor below.", "ok")}>Save notes</button>
-                  <button onClick={() => void saveAssessment()}>{interviewMeta.assessmentId ? "Save assessment" : "Create assessment"}</button>
-                  <button onClick={() => sendInterviewToSheets()}>Send to sheets</button>
-                  <button onClick={() => exportInterviewAll()}>Export all</button>
-                  <button className="ghost-btn" onClick={() => { setInterviewMeta({ candidateId: "", assessmentId: "" }); setInterviewForm({ candidateName: "", phoneNumber: "", emailId: "", location: "", currentCtc: "", expectedCtc: "", noticePeriod: "", offerInHand: "", lwdOrDoj: "", currentCompany: "", currentDesignation: "", totalExperience: "", currentOrgTenure: "", reasonForChange: "", clientName: "", jdTitle: "", pipelineStage: "Under Interview Process", candidateStatus: "Screening in progress", followUpAt: "", interviewAt: "", recruiterNotes: "", callbackNotes: "", otherPointers: "", jdScreeningAnswers: {}, cvAnalysis: null, cvAnalysisApplied: false, statusHistory: [] }); setStatus("interview", ""); }}>Clear draft</button>
-                </div>
               </Section>
 
               <Section kicker="Captured Information" title="Candidate Context">
@@ -4533,6 +4522,7 @@ function PortalApp({ token, onLogout }) {
 
               <Section kicker="CV Analysis" title="CV Parsing Verification">
                 <div className="cv-analysis-box">
+                  {statuses.interview ? <div className={`status ${statuses.interviewKind || ""}`}>{statuses.interview}</div> : null}
                   <p className="muted">Upload CV here when you want to share the candidate later. The file will be stored, parsed, and compared against the current draft before you apply any changes.</p>
                   <div className="cv-upload-card">
                     <div className="cv-upload-card__copy">
@@ -4590,6 +4580,7 @@ function PortalApp({ token, onLogout }) {
 
               <Section kicker="Step 5" title="Final Excel Output">
                 <p className="muted">Save the assessment and export recruiter-sheet format.</p>
+                {statuses.interview ? <div className={`status ${statuses.interviewKind || ""}`}>{statuses.interview}</div> : null}
                 <div className="button-row">
                   <button onClick={() => void copyInterviewResult()}>Copy result</button>
                   <button onClick={() => copyInterviewWhatsapp()}>Copy WhatsApp</button>
