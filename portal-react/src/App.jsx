@@ -1940,7 +1940,6 @@ function PortalApp({ token, onLogout }) {
     extraMessage: ""
   });
   const [selectedAssessmentIds, setSelectedAssessmentIds] = useState([]);
-  const [clientShareExtraFiles, setClientShareExtraFiles] = useState([]);
   const [agendaRange, setAgendaRange] = useState("today");
   const [copySettings, setCopySettings] = useState(() => {
     try {
@@ -2246,10 +2245,9 @@ function PortalApp({ token, onLogout }) {
       follow_up_at: formatDateForCopy(item.followUpAt || item.interviewAt || "")
     }));
   }, [filteredAssessments]);
-  const selectedAssessmentRows = useMemo(() => {
-    const selected = normalizedAssessmentCopyRows.filter((item) => selectedAssessmentIds.includes(String(item.id || item.assessmentId || "")));
-    return selected.length ? selected : normalizedAssessmentCopyRows;
-  }, [normalizedAssessmentCopyRows, selectedAssessmentIds]);
+  const selectedAssessmentRows = useMemo(() => (
+    normalizedAssessmentCopyRows.filter((item) => selectedAssessmentIds.includes(String(item.id || item.assessmentId || "")))
+  ), [normalizedAssessmentCopyRows, selectedAssessmentIds]);
   const candidateUniverseAll = useMemo(() => {
     const linkedAssessmentIds = new Set((state.candidates || []).map((item) => String(item.assessment_id || "").trim()).filter(Boolean));
     const candidateNames = new Set((state.candidates || []).map((item) => String(item.name || "").trim().toLowerCase()).filter(Boolean));
@@ -3636,6 +3634,18 @@ function PortalApp({ token, onLogout }) {
     const recruiterName = String(state.user?.name || "Recruiter").trim();
     const companyName = String(state.user?.companyName || state.user?.company_name || "RecruitDesk").trim();
     const roleLine = [targetRole, clientLabel].filter(Boolean).join(" for ");
+    const profileLines = getClientShareRows().flatMap((item, index) => ([
+      `${index + 1}. ${item.name || "Candidate"}`,
+      `Current company: ${item.current_company || "-"}`,
+      `Current designation: ${item.current_designation || "-"}`,
+      `Experience: ${item.total_experience || "-"}`,
+      `Current CTC: ${item.current_ctc || "-"}`,
+      `Expected CTC: ${item.expected_ctc || "-"}`,
+      `Notice period: ${item.notice_period || "-"}`,
+      `Insights: ${item.combined_assessment_insights || "-"}`,
+      `LinkedIn: ${item.linkedin || "-"}`,
+      ""
+    ]));
     return [
       `Hello ${hrName || "Team"},`,
       "",
@@ -3644,51 +3654,26 @@ function PortalApp({ token, onLogout }) {
       `This is ${recruiterName} from ${companyName}.`,
       `PFA the profiles${roleLine ? ` for ${roleLine}` : ""}.`,
       "Kindly review and share your feedback.",
-      `${getClientShareRows().length} profile(s) are included in the attached sheet.`,
+      `${getClientShareRows().length} selected profile(s) are listed below.`,
       "",
+      ...profileLines,
       String(clientShareDraft.extraMessage || "").trim()
     ].filter((line, index, array) => line || (index > 0 && array[index - 1] !== "")).join("\n");
   }
 
-  function downloadClientShareAttachment() {
-    const rows = getClientShareRows();
-    const preset = buildCapturedExcelRows(rows, clientShareDraft.presetId || copySettings.excelPreset, copySettings);
-    const text = [preset.headers.join("\t"), ...preset.rows.map((row) => row.map((cell) => String(cell || "").replace(/\t/g, " ").replace(/\r?\n/g, " ")).join("\t"))].join("\n");
-    const blob = new Blob([text], { type: "text/tab-separated-values;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = `${(clientShareDraft.clientLabel || clientShareDraft.targetRole || "client-share").replace(/[^\w\-]+/g, "-")}.tsv`;
-    link.click();
-    URL.revokeObjectURL(url);
-    setStatus("clientShare", "Attachment sheet downloaded.", "ok");
-  }
-
   async function copyClientShareEmailDraft() {
+    if (!getClientShareRows().length) {
+      setStatus("clientShare", "Select assessment profiles first from the Assessments tab.", "error");
+      return;
+    }
     await copyText(buildClientShareBody());
     setStatus("clientShare", "Client email draft copied.", "ok");
-  }
-
-  function shareClientProfiles() {
-    const recipient = String(clientShareDraft.recipientEmail || "").trim();
-    const subjectTarget = [clientShareDraft.targetRole, clientShareDraft.clientLabel].filter(Boolean).join(" | ");
-    const subject = encodeURIComponent(`Profiles for review${subjectTarget ? ` - ${subjectTarget}` : ""}`);
-    const body = encodeURIComponent(buildClientShareBody());
-    downloadClientShareAttachment();
-    window.open(`mailto:${encodeURIComponent(recipient)}?subject=${subject}&body=${body}`, "_blank", "noopener,noreferrer");
-    setStatus("clientShare", "Email draft opened and attachment sheet downloaded.", "ok");
   }
 
   function toggleAssessmentSelection(assessmentId) {
     const id = String(assessmentId || "");
     if (!id) return;
     setSelectedAssessmentIds((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id]);
-  }
-
-  function handleClientShareExtraUploads(event) {
-    const files = Array.from(event?.target?.files || []);
-    setClientShareExtraFiles(files);
-    if (event?.target) event.target.value = "";
   }
 
   async function saveSharedCopySettings() {
@@ -4617,6 +4602,7 @@ function PortalApp({ token, onLogout }) {
                 <button onClick={() => void copyAssessmentsWhatsapp()}>Copy WhatsApp</button>
                 <button onClick={() => void copyAssessmentsEmail()}>Copy Email</button>
               </div>
+              <div className="status-note">Selected for client share: {selectedAssessmentIds.length}</div>
               <div className="stack-list">
                 {!filteredAssessments.length ? <div className="empty-state">No assessments saved yet.</div> : filteredAssessments.map((item) => (
                   <article className="item-card compact-card" key={item.id}>
@@ -4775,7 +4761,7 @@ function PortalApp({ token, onLogout }) {
           <Route path="/client-share" element={
             <div className="page-grid">
               <Section kicker="Client Submission" title="Direct Share with Client">
-                <p className="muted">Prepare a clean email draft for the client using selected assessments only. Download the attachment sheet in the selected preset, and optionally keep extra files ready for the mail.</p>
+                <p className="muted">Prepare a clean email draft for the client using selected assessments only. Select profiles in the Assessments tab first, then copy this draft into your email client.</p>
                 {statuses.clientShare ? <div className={`status ${statuses.clientShareKind || ""}`}>{statuses.clientShare}</div> : null}
                 <div className="form-grid two-col">
                   <label>
@@ -4803,27 +4789,16 @@ function PortalApp({ token, onLogout }) {
                     <span>Selected preset columns</span>
                     <textarea value={(copySettings.customExportPresets || []).find((preset) => String(preset.id) === String(clientShareDraft.presetId))?.columns || copySettings.exportPresetColumns?.[clientShareDraft.presetId] || DEFAULT_COPY_SETTINGS.exportPresetColumns?.[clientShareDraft.presetId] || ""} readOnly />
                   </label>
-                  <label className="full">
-                    <span>Extra upload (optional)</span>
-                    <div className="button-row">
-                      <label className="file-btn">
-                        <input type="file" multiple hidden onClick={(e) => { e.target.value = ""; }} onChange={handleClientShareExtraUploads} />
-                        Upload additional file(s)
-                      </label>
-                      {clientShareExtraFiles.length ? <span className="status-note">{clientShareExtraFiles.map((file) => file.name).join(", ")}</span> : <span className="muted">No extra file selected.</span>}
-                    </div>
-                  </label>
                   <label className="full"><span>Extra message</span><textarea value={clientShareDraft.extraMessage} onChange={(e) => setClientShareDraft((current) => ({ ...current, extraMessage: e.target.value }))} placeholder="Optional note for the client." /></label>
                   <label className="full">
                     <span>Email preview</span>
                     <textarea value={buildClientShareBody()} readOnly />
                   </label>
                 </div>
-                <p className="muted">Current browser-safe flow: selected profiles go into the downloaded attachment sheet, and the email draft opens in your mail client. True email attachments for CVs and extra files will need a backend mail-sending step next.</p>
+                {!selectedAssessmentRows.length ? <div className="empty-state">No assessment selected yet. Go to Assessments and tick `Select for client share` on the profiles you want to send.</div> : null}
+                <p className="muted">Current flow: copy the email draft from here, then paste it into Zoho/Gmail/Outlook and attach CVs manually.</p>
                 <div className="button-row">
                   <button onClick={() => void copyClientShareEmailDraft()}>Copy email draft</button>
-                  <button onClick={() => downloadClientShareAttachment()}>Download attachment</button>
-                  <button onClick={() => shareClientProfiles()}>Share</button>
                 </div>
               </Section>
             </div>
