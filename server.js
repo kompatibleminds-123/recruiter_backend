@@ -1538,13 +1538,20 @@ function scoreCandidateAgainstJd(item, jd) {
   const companyHay = `${item.company || ""}`.toLowerCase();
   const skillHay = normalizeJdSearchToken(`${item.role || ""} ${item.position || ""} ${companyHay} ${(item.skills || []).join(" ")} ${item.hiddenCvText || ""} ${item.notesText || ""}`);
   const candidateFamilies = detectRoleFamilies(`${item.role || ""} ${item.position || ""}`);
+  let roleAlignmentScore = 0;
+  let skillsMatchScore = 0;
+  let locationScore = 0;
+  let noticeScore = 0;
+  let budgetScore = 0;
+  let budgetDistance = Number.MAX_SAFE_INTEGER;
+  let matchedSkillLabels = [];
   if (jd.roleFamilies.length && candidateFamilies.length && !jd.roleFamilies.some((family) => candidateFamilies.includes(family))) {
-    return { score: 0, reasons: [], hasCoreMatch: false, hasRoleMatch: false, noticeDays: parseNoticePeriodToDays(item.noticePeriod) };
+    return { score: 0, reasons: [], hasCoreMatch: false, hasRoleMatch: false, noticeDays: parseNoticePeriodToDays(item.noticePeriod), roleAlignmentScore: 0, skillsMatchScore: 0, locationScore: 0, noticeScore: 0, budgetScore: 0, budgetDistance };
   }
   if (Array.isArray(jd.mandatoryRoleTokens) && jd.mandatoryRoleTokens.length) {
     const matchedMandatory = jd.mandatoryRoleTokens.filter((token) => roleHay.includes(token) || skillHay.includes(token));
     if (!matchedMandatory.length) {
-      return { score: 0, reasons: [], hasCoreMatch: false, hasRoleMatch: false, noticeDays: parseNoticePeriodToDays(item.noticePeriod) };
+      return { score: 0, reasons: [], hasCoreMatch: false, hasRoleMatch: false, noticeDays: parseNoticePeriodToDays(item.noticePeriod), roleAlignmentScore: 0, skillsMatchScore: 0, locationScore: 0, noticeScore: 0, budgetScore: 0, budgetDistance };
     }
   }
   if (jd.jdTitle) {
@@ -1552,81 +1559,95 @@ function scoreCandidateAgainstJd(item, jd) {
     const titleWords = Array.from(buildNormalizedTokenSet(normalizedTitle)).filter((part) => part.length >= 3);
     const titleMatches = titleWords.filter((part) => roleHay.includes(part));
     if (normalizedTitle && roleHay.includes(normalizedTitle)) {
-      score += 55;
-      reasons.push(`role strongly aligns with ${jd.jdTitle}`);
+      roleAlignmentScore = 25;
+      reasons.push(`Role fit: strong alignment with ${jd.jdTitle}`);
       hasCoreMatch = true;
       hasRoleMatch = true;
     } else if (titleMatches.length >= Math.max(1, Math.ceil(titleWords.length / 2))) {
-      score += Math.min(45, titleMatches.length * 14);
-      reasons.push(`role aligns with ${jd.jdTitle}`);
+      roleAlignmentScore = 18;
+      reasons.push(`Role fit: aligns with ${jd.jdTitle}`);
       hasCoreMatch = true;
       hasRoleMatch = true;
     } else if (titleMatches.length) {
-      score += Math.min(18, titleMatches.length * 6);
-      reasons.push(`partial role overlap with ${jd.jdTitle}`);
+      roleAlignmentScore = 10;
+      reasons.push(`Role fit: partial overlap with ${jd.jdTitle}`);
       hasCoreMatch = true;
       hasRoleMatch = true;
-    }
-  }
-  if (hasRoleMatch && jd.minExperienceYears != null) {
-    const years = parseExperienceToYears(item.totalExperience);
-    if (years != null && years >= jd.minExperienceYears) {
-      score += 12;
-      reasons.push(`${years}+ years experience`);
     }
   }
   const mustHaveMatches = Array.isArray(jd.mustHaveSkillList) && jd.mustHaveSkillList.length
     ? jd.mustHaveSkillList.filter((skill) => skillHay.includes(normalizeJdSearchToken(skill)))
     : [];
-  if (mustHaveMatches.length) {
-    score += Math.min(30, mustHaveMatches.length * 12);
-    reasons.push(`must-have skills matched: ${mustHaveMatches.slice(0, 4).join(", ")}`);
+  const matchedSkills = Array.isArray(jd.skills) && jd.skills.length
+    ? jd.skills.filter((skill) => skillHay.includes(normalizeJdSearchToken(skill)))
+    : [];
+  matchedSkillLabels = Array.from(new Set([...(mustHaveMatches || []), ...(matchedSkills || [])]));
+  if (Array.isArray(jd.skills) && jd.skills.length) {
+    const denominator = Math.max(jd.mustHaveSkillList?.length || 0, jd.skills.length, 1);
+    const ratio = matchedSkillLabels.length / denominator;
+    skillsMatchScore = Math.min(40, Math.max(mustHaveMatches.length ? 20 : 0, Math.round(ratio * 40)));
+    if (matchedSkillLabels.length) {
+      reasons.push(`Skills matched: ${matchedSkillLabels.slice(0, 6).join(", ")}`);
+      hasCoreMatch = true;
+    }
+  } else if (mustHaveMatches.length) {
+    skillsMatchScore = Math.min(40, Math.max(20, mustHaveMatches.length * 10));
+    reasons.push(`Skills matched: ${mustHaveMatches.slice(0, 6).join(", ")}`);
     hasCoreMatch = true;
   }
   if (jd.location && String(item.location || "").toLowerCase().includes(jd.location.toLowerCase())) {
-    score += hasRoleMatch ? 10 : 6;
-    reasons.push(`location fits ${jd.location}`);
+    locationScore = 10;
+    reasons.push(`Location fit: ${item.location || "-"} matches ${jd.location}`);
     hasCoreMatch = true;
   }
-  if (Array.isArray(jd.skills) && jd.skills.length) {
-    const matchedSkills = jd.skills.filter((skill) => skillHay.includes(normalizeJdSearchToken(skill)));
-    if (matchedSkills.length) {
-      score += Math.min(20, matchedSkills.length * 6);
-      reasons.push(`skills matched: ${matchedSkills.slice(0, 4).join(", ")}`);
-      hasCoreMatch = true;
-    }
-  }
   if (!matchesCompensationRange(item, jd)) {
-    return { score: 0, reasons: [], hasCoreMatch: false, hasRoleMatch, noticeDays: parseNoticePeriodToDays(item.noticePeriod) };
+    return { score: 0, reasons: [], hasCoreMatch: false, hasRoleMatch, noticeDays: parseNoticePeriodToDays(item.noticePeriod), roleAlignmentScore, skillsMatchScore, locationScore, noticeScore: 0, budgetScore: 0, budgetDistance };
   }
   if (jd.minCtcLpa != null || jd.maxCtcLpa != null) {
     const bestCtc = getBestCompensationMatch(item, jd);
     if (bestCtc != null) {
-      score += 16;
-      reasons.push(`CTC fits ${jd.minCtcLpa != null ? `${jd.minCtcLpa} - ` : "up to "}${jd.maxCtcLpa != null ? `${jd.maxCtcLpa}` : ""} LPA`.replace(" -  LPA", " LPA"));
+      const target = jd.maxCtcLpa ?? jd.minCtcLpa ?? bestCtc;
+      budgetDistance = Math.abs(bestCtc - target);
+      if (budgetDistance <= 1) budgetScore = 10;
+      else if (budgetDistance <= 2) budgetScore = 8;
+      else if (budgetDistance <= 4) budgetScore = 6;
+      else budgetScore = 4;
+      reasons.push(`CTC fit: near ${jd.minCtcLpa != null ? `${jd.minCtcLpa} - ` : "up to "}${jd.maxCtcLpa != null ? `${jd.maxCtcLpa}` : ""} LPA`.replace(" -  LPA", " LPA")}`);
       hasCoreMatch = true;
     }
   }
   const noticeDays = parseNoticePeriodToDays(item.noticePeriod);
   if (jd.maxNoticeDays != null) {
     if (noticeDays == null || noticeDays > jd.maxNoticeDays) {
-      return { score: 0, reasons: [], hasCoreMatch: false, hasRoleMatch, noticeDays };
+      return { score: 0, reasons: [], hasCoreMatch: false, hasRoleMatch, noticeDays, roleAlignmentScore, skillsMatchScore, locationScore, noticeScore: 0, budgetScore, budgetDistance };
     }
-    score += 10;
-    reasons.push(`notice fits within ${jd.maxNoticeDays} days`);
+    if (noticeDays <= Math.min(15, jd.maxNoticeDays)) noticeScore = 15;
+    else if (noticeDays <= Math.min(30, jd.maxNoticeDays)) noticeScore = 12;
+    else if (noticeDays <= Math.min(60, jd.maxNoticeDays)) noticeScore = 8;
+    else noticeScore = 4;
+    reasons.push(`Notice fit: ${noticeDays} day${noticeDays === 1 ? "" : "s"}`);
     hasCoreMatch = true;
+  } else if (noticeDays != null) {
+    if (noticeDays <= 15) noticeScore = 15;
+    else if (noticeDays <= 30) noticeScore = 12;
+    else if (noticeDays <= 60) noticeScore = 8;
+    else if (noticeDays <= 90) noticeScore = 4;
+    if (noticeScore) reasons.push(`Notice fit: ${noticeDays} day${noticeDays === 1 ? "" : "s"}`);
   }
-  const lifecycleBucket = getAssessmentLifecycleBucket(item);
-  if (hasCoreMatch && ["shortlisted", "offered", "joined", "under_process"].includes(lifecycleBucket)) {
-    score += 5;
-    reasons.push(`status is ${lifecycleBucket.replace(/_/g, " ")}`);
-  }
+  score = skillsMatchScore + roleAlignmentScore + locationScore + noticeScore + budgetScore;
   return {
     score,
     reasons,
     hasCoreMatch,
     hasRoleMatch,
-    noticeDays
+    noticeDays,
+    roleAlignmentScore,
+    skillsMatchScore,
+    locationScore,
+    noticeScore,
+    budgetScore,
+    budgetDistance,
+    matchedSkills: matchedSkillLabels
   };
 }
 
@@ -1641,13 +1662,22 @@ function matchCandidatesToJd(universe = [], jdPayload = {}) {
         matchReasons: scored.reasons,
         hasCoreMatch: scored.hasCoreMatch,
         hasRoleMatch: scored.hasRoleMatch,
-        noticeDays: scored.noticeDays
+        noticeDays: scored.noticeDays,
+        roleAlignmentScore: scored.roleAlignmentScore,
+        skillsMatchScore: scored.skillsMatchScore,
+        locationScore: scored.locationScore,
+        noticeScore: scored.noticeScore,
+        budgetScore: scored.budgetScore,
+        budgetDistance: scored.budgetDistance,
+        matchedSkills: scored.matchedSkills || []
       };
     })
     .filter((item) => item.matchScore > 0 && item.hasCoreMatch && item.hasRoleMatch)
     .sort((a, b) =>
       b.matchScore - a.matchScore ||
       (a.noticeDays ?? Number.MAX_SAFE_INTEGER) - (b.noticeDays ?? Number.MAX_SAFE_INTEGER) ||
+      (a.budgetDistance ?? Number.MAX_SAFE_INTEGER) - (b.budgetDistance ?? Number.MAX_SAFE_INTEGER) ||
+      b.roleAlignmentScore - a.roleAlignmentScore ||
       a.candidateName.localeCompare(b.candidateName)
     )
     .slice(0, 200);

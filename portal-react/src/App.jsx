@@ -1917,6 +1917,10 @@ function PortalApp({ token, onLogout }) {
   const [candidateSearchText, setCandidateSearchText] = useState("");
   const [candidateSearchResults, setCandidateSearchResults] = useState([]);
   const [candidatePage, setCandidatePage] = useState(1);
+  const [candidateJdSource, setCandidateJdSource] = useState("saved");
+  const [candidateJdJobId, setCandidateJdJobId] = useState("");
+  const [candidateJdText, setCandidateJdText] = useState("");
+  const [candidateJdFilename, setCandidateJdFilename] = useState("");
   const [agendaRange, setAgendaRange] = useState("today");
   const [copySettings, setCopySettings] = useState(() => {
     try {
@@ -3346,17 +3350,39 @@ function PortalApp({ token, onLogout }) {
 
   async function runCandidateSearch() {
     if (!candidateSearchText.trim()) {
-      setCandidateSearchMode("all");
-      setCandidateSearchResults([]);
-      setCandidatePage(1);
-      setStatus("workspace", "Showing all uploaded candidates.", "ok");
-      return;
+      if (candidateSearchMode !== "jd_match") {
+        setCandidateSearchMode("all");
+        setCandidateSearchResults([]);
+        setCandidatePage(1);
+        setStatus("workspace", "Showing all uploaded candidates.", "ok");
+        return;
+      }
     }
     if (candidateSearchMode === "jd_match") {
-      const result = await api("/company/candidates/search-jd-match", token, "POST", {
-        jdText: candidateSearchText,
-        jdTitle: candidateSearchText
-      });
+      let payload = {};
+      if (candidateJdSource === "saved") {
+        const selectedJob = (state.jobs || []).find((job) => String(job.id || "") === String(candidateJdJobId)) || null;
+        if (!selectedJob) {
+          setStatus("workspace", "Select a saved JD first.", "error");
+          return;
+        }
+        payload = {
+          jdTitle: selectedJob.title || "",
+          mustHaveSkills: selectedJob.mustHaveSkills || "",
+          jobDescription: selectedJob.jobDescription || ""
+        };
+      } else {
+        const effectiveText = String(candidateJdText || candidateSearchText || "").trim();
+        if (!effectiveText) {
+          setStatus("workspace", candidateJdSource === "upload" ? "Upload a JD first." : "Paste JD text first.", "error");
+          return;
+        }
+        payload = {
+          jdText: effectiveText,
+          jdTitle: effectiveText.split(/\r?\n/).map((line) => line.trim()).filter(Boolean)[0] || ""
+        };
+      }
+      const result = await api("/company/candidates/search-jd-match", token, "POST", payload);
       setCandidateSearchResults(result.items || []);
       setCandidatePage(1);
       setStatus("workspace", `JD match returned ${result.items?.length || 0} candidates.`, "ok");
@@ -3366,6 +3392,24 @@ function PortalApp({ token, onLogout }) {
     setCandidateSearchResults(result.items || []);
     setCandidatePage(1);
     setStatus("workspace", `AI search returned ${result.items?.length || 0} candidates.`, "ok");
+  }
+
+  async function handleCandidateJdUpload(file) {
+    if (!file) return;
+    const fileData = await fileToBase64(file);
+    const result = await api("/extract-document-text", token, "POST", {
+      sourceType: "jd_upload",
+      file: {
+        filename: file.name,
+        mimeType: file.type || "application/octet-stream",
+        fileData
+      }
+    });
+    const rawText = String(result?.result?.rawText || "").trim();
+    setCandidateJdText(rawText);
+    setCandidateSearchText(rawText);
+    setCandidateJdFilename(String(result?.result?.filename || file.name || ""));
+    setStatus("workspace", "JD uploaded and extracted. Run match to rank candidates.", "ok");
   }
 
   function buildCapturedCopyRows() {
@@ -4240,7 +4284,39 @@ function PortalApp({ token, onLogout }) {
                     <option value="ai_search">AI Search</option>
                     <option value="jd_match">Map to JD</option>
                   </select>
-                  <input placeholder={candidateSearchMode === "jd_match" ? "Paste JD title or requirement text" : "Search role, skill, company, location"} value={candidateSearchText} onChange={(e) => setCandidateSearchText(e.target.value)} />
+                  {candidateSearchMode === "jd_match" ? (
+                    <>
+                      <select value={candidateJdSource} onChange={(e) => setCandidateJdSource(e.target.value)}>
+                        <option value="saved">Use saved JD</option>
+                        <option value="upload">Upload JD</option>
+                        <option value="text">Paste JD text</option>
+                      </select>
+                      {candidateJdSource === "saved" ? (
+                        <select value={candidateJdJobId} onChange={(e) => setCandidateJdJobId(e.target.value)}>
+                          <option value="">Select saved JD</option>
+                          {(state.jobs || []).map((job) => <option key={job.id} value={job.id}>{job.title}</option>)}
+                        </select>
+                      ) : (
+                        <textarea
+                          className="jd-editor"
+                          placeholder={candidateJdSource === "upload" ? "Upload a JD file, then review or refine the extracted text here." : "Paste JD title, skills, budget, notice period, and location here."}
+                          value={candidateJdText}
+                          onChange={(e) => { setCandidateJdText(e.target.value); setCandidateSearchText(e.target.value); }}
+                        />
+                      )}
+                      {candidateJdSource === "upload" ? (
+                        <div className="button-row">
+                          <label className="file-btn">
+                            <input type="file" accept=".txt,.md,.doc,.docx,.pdf" hidden onClick={(e) => { e.target.value = ""; }} onChange={(e) => { const file = e.target.files?.[0]; if (file) void handleCandidateJdUpload(file); }} />
+                            Upload JD
+                          </label>
+                          {candidateJdFilename ? <span className="status-note">{candidateJdFilename}</span> : null}
+                        </div>
+                      ) : null}
+                    </>
+                  ) : (
+                    <input placeholder="Search role, skill, company, location" value={candidateSearchText} onChange={(e) => setCandidateSearchText(e.target.value)} />
+                  )}
                   <button onClick={() => void runCandidateSearch()}>{candidateSearchMode === "all" ? "Refresh" : "Run"}</button>
                 </div>
                 <div className="button-row">
@@ -4256,6 +4332,19 @@ function PortalApp({ token, onLogout }) {
                         <div>
                           <h3>{item.name || item.candidateName || "Candidate"} | {item.role || item.currentDesignation || item.jdTitle || "Untitled role"}</h3>
                           <p className="muted">{[item.company || item.currentCompany || "", item.location || "", item.ownerRecruiter ? `Recruiter: ${item.ownerRecruiter}` : "", item.source ? `Source: ${item.source}` : ""].filter(Boolean).join(" | ")}</p>
+                          {candidateSearchMode === "jd_match" ? (
+                            <div className="candidate-snippet">
+                              {[
+                                `Match score: ${item.matchScore || 0}`,
+                                `Skills matched: ${item.matchedSkills?.length ? item.matchedSkills.join(", ") : "No strong skill overlap detected"}`,
+                                `Role fit: ${item.roleAlignmentScore || 0}/25`,
+                                `Location fit: ${item.locationScore || 0}/10`,
+                                `Notice: ${item.noticeScore || 0}/15${item.noticeDays != null ? ` (${item.noticeDays} days)` : ""}`,
+                                `CTC fit: ${item.budgetScore || 0}/10`,
+                                ...(Array.isArray(item.matchReasons) ? item.matchReasons.map((reason) => `Why matched: ${reason}`) : [])
+                              ].filter(Boolean).join("\n")}
+                            </div>
+                          ) : null}
                           <div className="candidate-snippet">{[item.experience || item.totalExperience || "", item.current_ctc || item.currentCtc ? `Current CTC: ${item.current_ctc || item.currentCtc}` : "", item.expected_ctc || item.expectedCtc ? `Expected CTC: ${item.expected_ctc || item.expectedCtc}` : "", item.notice_period || item.noticePeriod ? `Notice: ${item.notice_period || item.noticePeriod}` : ""].filter(Boolean).join("\n")}</div>
                         </div>
                       </div>
