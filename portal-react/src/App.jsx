@@ -1797,6 +1797,14 @@ function NewDraftModal({ open, form, users, jobs, currentUser, onChange, onClose
             </select>
           </label>
           <label><span>Client</span><input value={form.client_name} readOnly /></label>
+          <label className="full">
+            <span>Tags / searchable keywords</span>
+            <textarea
+              value={form.tags}
+              onChange={(e) => onChange("tags", e.target.value)}
+              placeholder="B2B corporate sales, SaaS, enterprise sales, node dev, full stack, react + java"
+            />
+          </label>
           <label className="full"><span>Notes</span><textarea value={form.notes} onChange={(e) => onChange("notes", e.target.value)} /></label>
         </div>
         <div className="button-row">
@@ -1944,6 +1952,7 @@ function PortalApp({ token, onLogout }) {
     location: "",
     jd_title: "",
     client_name: "",
+    tags: "",
     notes: ""
   });
   const [notesCandidateId, setNotesCandidateId] = useState("");
@@ -2777,12 +2786,17 @@ function PortalApp({ token, onLogout }) {
     const assignedRecruiter = isAdmin
       ? (state.users || []).find((user) => String(user.id) === String(newDraftForm.assigned_to_user_id))
       : state.user;
+    const parsedSkills = String(newDraftForm.tags || "")
+      .split(/\r?\n|,|\||;/)
+      .map((item) => String(item || "").trim())
+      .filter(Boolean);
     const payload = {
       ...newDraftForm,
       source: "manual_draft",
       recruiter_context_notes: "",
       other_pointers: "",
       hidden_from_captured: false,
+      skills: parsedSkills,
       linkedin: newDraftForm.linkedin || "",
       assigned_to_user_id: assignedRecruiter?.id || "",
       assigned_to_name: assignedRecruiter?.name || ""
@@ -2800,6 +2814,7 @@ function PortalApp({ token, onLogout }) {
       location: "",
       jd_title: "",
       client_name: "",
+      tags: "",
       notes: ""
     });
     setStatus("captured", "Manual draft created.", "ok");
