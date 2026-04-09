@@ -2440,11 +2440,14 @@ function PortalApp({ token, onLogout }) {
       setStatus("interview", "Save or open a real candidate draft before opening the stored CV.", "error");
       return;
     }
-    if (!interviewForm.cvAnalysis?.storedFile) {
+    const storedFile = interviewForm.cvAnalysis?.storedFile || null;
+    if (!storedFile) {
       setStatus("interview", "No uploaded CV available yet.", "error");
       return;
     }
     const params = new URLSearchParams({ access_token: token });
+    if (storedFile.url) params.set("cv_url", String(storedFile.url));
+    if (storedFile.filename) params.set("cv_filename", String(storedFile.filename));
     window.open(`/company/candidates/${encodeURIComponent(interviewMeta.candidateId)}/cv?${params.toString()}`, "_blank", "noopener,noreferrer");
     setStatus("interview", "Opening uploaded CV...", "ok");
   }
