@@ -4679,12 +4679,14 @@ function PortalApp({ token, onLogout }) {
               <div className="status-note">Selected for client share: {selectedAssessmentIds.length}</div>
               <div className="stack-list">
                 {!filteredAssessments.length ? <div className="empty-state">No assessments saved yet.</div> : filteredAssessments.map((item) => (
-                  <article className="item-card compact-card" key={item.id}>
-                    <div className="item-card__top">
-                      <label className="checkbox-row">
+                  <article className={`item-card compact-card ${selectedAssessmentIds.includes(String(item.id)) ? "selected-card" : ""}`} key={item.id}>
+                    <div className="assessment-select-row">
+                      <label className="checkbox-pill">
                         <input type="checkbox" checked={selectedAssessmentIds.includes(String(item.id))} onChange={() => toggleAssessmentSelection(item.id)} />
                         <span>Select for client share</span>
                       </label>
+                    </div>
+                    <div className="item-card__top">
                       <div>
                         <h3>{item.candidateName || "Candidate"} | {item.jdTitle || "Untitled role"}</h3>
                         <p className="muted">{[item.pipelineStage || "", item.candidateStatus || ""].filter(Boolean).join(" | ")}</p>

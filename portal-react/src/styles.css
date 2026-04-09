@@ -262,6 +262,28 @@ textarea { min-height: 92px; resize: vertical; }
   font-size: 0.9rem;
   line-height: 1.45;
 }
+.assessment-select-row {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 0.5rem;
+}
+.checkbox-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.45rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: #f7f9fd;
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: var(--text);
+}
+.checkbox-pill input {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+}
 .candidate-snippet {
   margin-top: 0.85rem;
   padding-top: 0.85rem;
