@@ -207,6 +207,17 @@ function decodePortalApplicantMetadata(item = {}) {
   }
 }
 
+function candidateHasStoredCv(item = {}) {
+  const meta = decodePortalApplicantMetadata(item);
+  return Boolean(meta?.fileProvider || meta?.fileKey || meta?.fileUrl || meta?.cvAnalysisCache?.storedFile?.key || meta?.cvAnalysisCache?.storedFile?.url);
+}
+
+function buildVisibleTagList(item = {}) {
+  const explicit = Array.isArray(item.skills) ? item.skills : [];
+  const inferred = Array.isArray(item.inferredTags) ? item.inferredTags : [];
+  return Array.from(new Set([...explicit, ...inferred].map((tag) => String(tag || "").trim()).filter(Boolean)));
+}
+
 function buildInterviewCvAnalysis(baseForm = {}, result = {}, storedFile = null) {
   return {
     exactTotalExperience: result.totalExperience || "",
@@ -2296,19 +2307,34 @@ function PortalApp({ token, onLogout }) {
   const assessmentLinkedCandidateMap = useMemo(() => {
     const map = new Map();
     filteredAssessments.forEach((item) => {
-      const match = (state.candidates || []).find((candidate) => {
-        const sameAssessment = String(candidate.assessment_id || "").trim() === String(item.id || "").trim();
-        if (sameAssessment) return true;
-        const sameName = String(candidate.name || "").trim().toLowerCase() === String(item.candidateName || "").trim().toLowerCase();
-        const sameJd = String(candidate.jd_title || "").trim().toLowerCase() === String(item.jdTitle || "").trim().toLowerCase();
-        const sameCompany = String(candidate.company || "").trim().toLowerCase() === String(item.currentCompany || "").trim().toLowerCase();
-        const sameRole = String(candidate.role || "").trim().toLowerCase() === String(item.currentDesignation || "").trim().toLowerCase();
-        return sameName && (
-          (!String(item.jdTitle || "").trim() || sameJd) ||
-          (sameCompany && sameRole) ||
-          sameCompany
-        );
-      }) || null;
+      const match = (state.candidates || [])
+        .filter((candidate) => {
+          const exactCandidateId = String(item.candidateId || "").trim();
+          if (exactCandidateId && String(candidate.id || "").trim() === exactCandidateId) return true;
+          const sameAssessment = String(candidate.assessment_id || "").trim() === String(item.id || "").trim();
+          if (sameAssessment) return true;
+          const sameName = String(candidate.name || "").trim().toLowerCase() === String(item.candidateName || "").trim().toLowerCase();
+          const sameJd = String(candidate.jd_title || "").trim().toLowerCase() === String(item.jdTitle || "").trim().toLowerCase();
+          const sameCompany = String(candidate.company || "").trim().toLowerCase() === String(item.currentCompany || "").trim().toLowerCase();
+          const sameRole = String(candidate.role || "").trim().toLowerCase() === String(item.currentDesignation || "").trim().toLowerCase();
+          return sameName && (
+            (!String(item.jdTitle || "").trim() || sameJd) ||
+            (sameCompany && sameRole) ||
+            sameCompany
+          );
+        })
+        .sort((a, b) => {
+          const aExact = String(a.id || "").trim() === String(item.candidateId || "").trim() ? 1 : 0;
+          const bExact = String(b.id || "").trim() === String(item.candidateId || "").trim() ? 1 : 0;
+          if (bExact !== aExact) return bExact - aExact;
+          const aAssessment = String(a.assessment_id || "").trim() === String(item.id || "").trim() ? 1 : 0;
+          const bAssessment = String(b.assessment_id || "").trim() === String(item.id || "").trim() ? 1 : 0;
+          if (bAssessment !== aAssessment) return bAssessment - aAssessment;
+          const aCv = candidateHasStoredCv(a) ? 1 : 0;
+          const bCv = candidateHasStoredCv(b) ? 1 : 0;
+          if (bCv !== aCv) return bCv - aCv;
+          return 0;
+        })[0] || null;
       map.set(String(item.id || ""), match);
     });
     return map;
@@ -4714,6 +4740,11 @@ function PortalApp({ token, onLogout }) {
                           <h3>{item.name || item.candidateName || "Candidate"} | {item.role || item.currentDesignation || item.jdTitle || "Untitled role"}</h3>
                           <p className="muted">{[item.company || item.currentCompany || "", item.location || "", item.ownerRecruiter ? `Recruiter: ${item.ownerRecruiter}` : "", item.source ? `Source: ${item.source}` : ""].filter(Boolean).join(" | ")}</p>
                           <div className="candidate-snippet">{[item.experience || item.totalExperience || "", item.current_ctc || item.currentCtc ? `Current CTC: ${item.current_ctc || item.currentCtc}` : "", item.expected_ctc || item.expectedCtc ? `Expected CTC: ${item.expected_ctc || item.expectedCtc}` : "", item.notice_period || item.noticePeriod ? `Notice: ${item.notice_period || item.noticePeriod}` : ""].filter(Boolean).join("\n")}</div>
+                          {buildVisibleTagList(item).length ? (
+                            <div className="chip-row">
+                              {buildVisibleTagList(item).slice(0, 8).map((tag) => <span key={tag} className="chip">{tag}</span>)}
+                            </div>
+                          ) : null}
                         </div>
                       </div>
                     </article>
