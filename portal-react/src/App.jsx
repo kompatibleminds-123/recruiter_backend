@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { NavLink, Navigate, Route, Routes, useNavigate } from "react-router-dom";
+import { NavLink, Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 
 const TOKEN_KEY = "recruitdesk_portal_token";
 const COPY_SETTINGS_STORAGE_KEY = "recruitdesk_portal_copy_settings_v1";
@@ -172,6 +172,45 @@ class PortalErrorBoundary extends React.Component {
             </Section>
           </main>
         </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+class RouteErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false, errorMessage: "" };
+  }
+
+  static getDerivedStateFromError(error) {
+    return {
+      hasError: true,
+      errorMessage: String(error?.message || error || "Page crashed.")
+    };
+  }
+
+  componentDidCatch(error) {
+    console.error("Portal route render error", error);
+  }
+
+  componentDidUpdate(prevProps) {
+    if (prevProps.routeKey !== this.props.routeKey && this.state.hasError) {
+      this.setState({ hasError: false, errorMessage: "" });
+    }
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <Section kicker="Page Error" title="This page crashed">
+          <p className="muted">Portal baaki pages ke saath working rehna chahiye. Kisi aur tab par ja sakte ho, aur is page ko baad me retry kar sakte ho.</p>
+          <div className="status error">{this.state.errorMessage || "Unknown page error."}</div>
+          <div className="button-row">
+            <button onClick={() => window.location.reload()}>Reload portal</button>
+          </div>
+        </Section>
       );
     }
     return this.props.children;
@@ -1999,6 +2038,7 @@ function DrilldownModal({ open, title, items, onClose, onOpenCv, onOpenDraft, on
 const DASHBOARD_FILTER_STORAGE_KEY = "recruitdesk_portal_dashboard_filters_v1";
 
 function PortalApp({ token, onLogout }) {
+  const location = useLocation();
   const navigate = useNavigate();
   const [state, setState] = useState({
     user: null,
@@ -4469,6 +4509,7 @@ function PortalApp({ token, onLogout }) {
           {statuses.workspace ? <div className={`status inline ${statuses.workspaceKind || ""}`}>{statuses.workspace}</div> : null}
         </header>
 
+        <RouteErrorBoundary routeKey={location.pathname}>
         <Routes>
           <Route path="/dashboard" element={
             <div className="page-grid">
@@ -5547,8 +5588,9 @@ function PortalApp({ token, onLogout }) {
               </div>
             } />
 
-            <Route path="*" element={<Navigate to="/dashboard" replace />} />
+          <Route path="*" element={<Navigate to="/dashboard" replace />} />
           </Routes>
+        </RouteErrorBoundary>
       </main>
 
       <AssignModal open={Boolean(assignApplicantId)} applicant={assignApplicant} users={state.users} jobs={state.jobs} onClose={() => setAssignApplicantId("")} onSave={saveApplicantAssignment} />
