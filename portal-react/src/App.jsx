@@ -4593,7 +4593,7 @@ function PortalApp({ token, onLogout }) {
                       </div>
                     </div>
                   )}
-                  {!overdueFollowUps.length && !todaysAgendaItems.length && !upcomingJoinings.length ? (
+                  {!overdueFollowUps.length && !scheduledFollowUpItems.length && !scheduledInterviewItems.length && !upcomingJoinings.length ? (
                     <div className="empty-state">No scheduled follow-ups, interviews, or joinings for this range yet.</div>
                   ) : null}
                 </div>
