@@ -3050,6 +3050,8 @@ function PortalApp({ token, onLogout }) {
       const fileData = await fileToBase64(file);
       const payload = {
         candidateName: interviewForm.candidateName,
+        emailId: interviewForm.emailId,
+        phoneNumber: interviewForm.phoneNumber,
         totalExperience: interviewForm.totalExperience,
         normalizeWithAi: true,
         file: {

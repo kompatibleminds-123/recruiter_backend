@@ -3400,7 +3400,22 @@ const server = http.createServer(async (req, res) => {
       const uploadedFile = body.file || null;
       if (!candidateId) throw new Error("Candidate not found.");
       if (!uploadedFile?.fileData) throw new Error("Missing CV file.");
-      const candidate = (await listCandidatesForUser(actor, { id: candidateId, limit: 1 }))[0] || null;
+      let candidate = (await listCandidatesForUser(actor, { id: candidateId, limit: 1 }))[0] || null;
+      if (!candidate) {
+        const bodyName = String(body.candidateName || "").trim().toLowerCase();
+        const bodyEmail = String(body.emailId || body.email || "").trim().toLowerCase();
+        const bodyPhone = String(body.phoneNumber || body.phone || "").replace(/[^\d]/g, "");
+        const candidatePool = await listCandidatesForUser(actor, { limit: 500 });
+        candidate = candidatePool.find((item) => {
+          const itemName = String(item?.name || "").trim().toLowerCase();
+          const itemEmail = String(item?.email || "").trim().toLowerCase();
+          const itemPhone = String(item?.phone || "").replace(/[^\d]/g, "");
+          if (bodyEmail && itemEmail && bodyEmail === itemEmail) return true;
+          if (bodyPhone && itemPhone && bodyPhone === itemPhone) return true;
+          if (bodyName && itemName && bodyName === itemName) return true;
+          return false;
+        }) || null;
+      }
       if (!candidate) throw new Error("Candidate not found in this company.");
 
       const existingMeta = decodeApplicantMetadata(candidate);
@@ -3434,7 +3449,7 @@ const server = http.createServer(async (req, res) => {
 
       const storedFile = await storeUploadedFile(uploadedFile, {
         filename: uploadedFile.filename,
-        objectPrefix: `candidates/${actor.companyId}/${candidateId}`
+        objectPrefix: `candidates/${actor.companyId}/${candidate.id}`
       });
 
       const parsed = await parseCandidatePayload({
@@ -3502,7 +3517,7 @@ const server = http.createServer(async (req, res) => {
         }
       };
 
-      await patchCandidate(candidateId, {
+      await patchCandidate(candidate.id, {
         raw_note: encodeApplicantMetadata(nextMeta)
       }, { companyId: actor.companyId });
 
