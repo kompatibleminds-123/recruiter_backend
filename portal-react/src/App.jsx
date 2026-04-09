@@ -1957,6 +1957,7 @@ function PortalApp({ token, onLogout }) {
     extraMessage: ""
   });
   const [selectedAssessmentIds, setSelectedAssessmentIds] = useState([]);
+  const [clientShareCvLinks, setClientShareCvLinks] = useState({});
   const [agendaRange, setAgendaRange] = useState("today");
   const [copySettings, setCopySettings] = useState(() => {
     try {
@@ -2228,8 +2229,24 @@ function PortalApp({ token, onLogout }) {
     });
   }, [state.assessments, state.candidates, assessmentFilters]);
 
+  const assessmentLinkedCandidateMap = useMemo(() => {
+    const map = new Map();
+    filteredAssessments.forEach((item) => {
+      const match = (state.candidates || []).find((candidate) => {
+        const sameAssessment = String(candidate.assessment_id || "").trim() === String(item.id || "").trim();
+        if (sameAssessment) return true;
+        const sameName = String(candidate.name || "").trim().toLowerCase() === String(item.candidateName || "").trim().toLowerCase();
+        const sameJd = String(candidate.jd_title || "").trim().toLowerCase() === String(item.jdTitle || "").trim().toLowerCase();
+        return sameName && (!String(item.jdTitle || "").trim() || sameJd);
+      }) || null;
+      map.set(String(item.id || ""), match);
+    });
+    return map;
+  }, [filteredAssessments, state.candidates]);
+
   const normalizedAssessmentCopyRows = useMemo(() => {
     return filteredAssessments.map((item, index) => ({
+      id: item.id || "",
       index: index + 1,
       s_no: index + 1,
       name: item.candidateName || "",
@@ -2259,12 +2276,43 @@ function PortalApp({ token, onLogout }) {
       client_name: item.clientName || "",
       outcome: item.candidateStatus || "",
       assessment_status: item.candidateStatus || "",
-      follow_up_at: formatDateForCopy(item.followUpAt || item.interviewAt || "")
+      follow_up_at: formatDateForCopy(item.followUpAt || item.interviewAt || ""),
+      candidate_id: assessmentLinkedCandidateMap.get(String(item.id || ""))?.id || "",
+      cv_url: assessmentLinkedCandidateMap.get(String(item.id || ""))?.cv_url || "",
+      cv_filename: assessmentLinkedCandidateMap.get(String(item.id || ""))?.cv_filename || ""
     }));
-  }, [filteredAssessments]);
+  }, [assessmentLinkedCandidateMap, filteredAssessments]);
   const selectedAssessmentRows = useMemo(() => (
     normalizedAssessmentCopyRows.filter((item) => selectedAssessmentIds.includes(String(item.id || item.assessmentId || "")))
   ), [normalizedAssessmentCopyRows, selectedAssessmentIds]);
+  useEffect(() => {
+    let cancelled = false;
+    async function loadCvLinks() {
+      if (!token || !selectedAssessmentRows.length) return;
+      const rowsNeedingLinks = selectedAssessmentRows.filter((item) => item.candidate_id && !clientShareCvLinks[item.candidate_id]);
+      if (!rowsNeedingLinks.length) return;
+      const entries = await Promise.all(rowsNeedingLinks.map(async (item) => {
+        try {
+          const result = await api(`/company/candidates/${encodeURIComponent(item.candidate_id)}/share-cv-link`, token);
+          return [item.candidate_id, result.url];
+        } catch {
+          return [item.candidate_id, ""];
+        }
+      }));
+      if (cancelled) return;
+      setClientShareCvLinks((current) => {
+        const next = { ...current };
+        entries.forEach(([candidateId, url]) => {
+          if (candidateId && url) next[candidateId] = url;
+        });
+        return next;
+      });
+    }
+    void loadCvLinks();
+    return () => {
+      cancelled = true;
+    };
+  }, [clientShareCvLinks, selectedAssessmentRows, token]);
   const candidateUniverseAll = useMemo(() => {
     const linkedAssessmentIds = new Set((state.candidates || []).map((item) => String(item.assessment_id || "").trim()).filter(Boolean));
     const candidateNames = new Set((state.candidates || []).map((item) => String(item.name || "").trim().toLowerCase()).filter(Boolean));
@@ -3662,6 +3710,7 @@ function PortalApp({ token, onLogout }) {
       `Notice period: ${item.notice_period || "-"}`,
       `Insights: ${item.combined_assessment_insights || "-"}`,
       `LinkedIn: ${item.linkedin || "-"}`,
+      `CV Link: ${clientShareCvLinks[item.candidate_id] || "Generating secure CV link..."}`,
       ""
     ]));
     return [

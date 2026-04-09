@@ -119,6 +119,49 @@ function buildResponseHeaders(req, extras = {}) {
   return headers;
 }
 
+function getCvShareSecret() {
+  return (
+    String(process.env.CV_SHARE_SECRET || "").trim() ||
+    String(process.env.PLATFORM_SESSION_SECRET || "").trim() ||
+    "recruitdesk-cv-share-secret"
+  );
+}
+
+function createSignedCvShareToken(payload) {
+  const encoded = Buffer.from(JSON.stringify(payload), "utf8").toString("base64url");
+  const signature = crypto
+    .createHmac("sha256", getCvShareSecret())
+    .update(encoded)
+    .digest("base64url");
+  return `${encoded}.${signature}`;
+}
+
+function readSignedCvShareToken(token) {
+  const raw = String(token || "").trim();
+  if (!raw) return null;
+  const [encoded, signature] = raw.split(".");
+  if (!encoded || !signature) return null;
+  const expected = crypto
+    .createHmac("sha256", getCvShareSecret())
+    .update(encoded)
+    .digest("base64url");
+  if (!timingSafeEqualString(signature, expected)) return null;
+  try {
+    const payload = JSON.parse(Buffer.from(encoded, "base64url").toString("utf8"));
+    if (payload?.type !== "shared_cv") return null;
+    if (payload.expiresAt && Date.now() > Number(payload.expiresAt)) return null;
+    return payload;
+  } catch {
+    return null;
+  }
+}
+
+function getRequestBaseUrl(req) {
+  const proto = String(req.headers["x-forwarded-proto"] || "").trim() || "http";
+  const host = String(req.headers.host || "").trim();
+  return host ? `${proto}://${host}` : "";
+}
+
 function sendJson(arg1, arg2, arg3, arg4) {
   const hasExplicitReq = arguments.length >= 4;
   const req = hasExplicitReq ? arg1 : null;
@@ -3200,6 +3243,30 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (req.method === "GET" && requestUrl.pathname === "/shared/cv") {
+    try {
+      const token = String(requestUrl.searchParams.get("token") || "").trim();
+      const payload = readSignedCvShareToken(token);
+      if (!payload) throw new Error("Invalid or expired CV share link.");
+      const file = await loadStoredFile({
+        provider: payload.fileProvider,
+        key: payload.fileKey,
+        url: payload.fileUrl,
+        filename: payload.filename,
+        mimeType: payload.mimeType
+      });
+      const downloadName = String(file.filename || payload.filename || "resume.pdf").replace(/"/g, "");
+      sendBuffer(req, res, 200, file.buffer, {
+        "Content-Type": String(file.mimeType || payload.mimeType || "application/octet-stream").trim(),
+        "Content-Disposition": `inline; filename="${downloadName}"`,
+        "Cache-Control": "private, max-age=300"
+      });
+    } catch (error) {
+      sendJson(req, res, 400, { ok: false, error: String(error.message || error) });
+    }
+    return;
+  }
+
   if (req.method === "POST" && requestUrl.pathname === "/company/applicant-intake-secret") {
     try {
       const actor = await requireSessionUser(getBearerToken(req));
@@ -3264,6 +3331,44 @@ const server = http.createServer(async (req, res) => {
       sendJson(res, 200, { ok: true, result });
     } catch (error) {
       sendJson(res, 400, { ok: false, error: String(error.message || error) });
+    }
+    return;
+  }
+
+  if (req.method === "GET" && /^\/company\/candidates\/[^/]+\/share-cv-link$/.test(requestUrl.pathname)) {
+    try {
+      const actor = await requireSessionUser(getBearerToken(req));
+      const candidateId = String(requestUrl.pathname.replace(/^\/company\/candidates\//, "").replace(/\/share-cv-link$/, "")).trim();
+      const candidate = (await listCandidatesForUser(actor, { id: candidateId, limit: 1 }))[0] || null;
+      if (!candidate) throw new Error("Candidate not found in this company.");
+      const meta = decodeApplicantMetadata(candidate);
+      if (!meta.fileProvider && !meta.fileKey && !meta.fileUrl) {
+        throw new Error("CV file not available for this candidate.");
+      }
+      const expiresAt = Date.now() + 1000 * 60 * 60 * 24 * 7;
+      const token = createSignedCvShareToken({
+        type: "shared_cv",
+        companyId: actor.companyId,
+        candidateId: String(candidate.id || "").trim(),
+        candidateName: String(candidate.name || "").trim(),
+        fileProvider: meta.fileProvider || "",
+        fileKey: meta.fileKey || "",
+        fileUrl: meta.fileUrl || "",
+        filename: meta.filename || "resume.pdf",
+        mimeType: meta.mimeType || "application/octet-stream",
+        expiresAt
+      });
+      const baseUrl = getRequestBaseUrl(req);
+      sendJson(req, res, 200, {
+        ok: true,
+        result: {
+          token,
+          expiresAt: new Date(expiresAt).toISOString(),
+          url: `${baseUrl}/shared/cv?token=${encodeURIComponent(token)}`
+        }
+      });
+    } catch (error) {
+      sendJson(req, res, 400, { ok: false, error: String(error.message || error) });
     }
     return;
   }
