@@ -2021,6 +2021,7 @@ function PortalApp({ token, onLogout }) {
   });
   const [selectedAssessmentIds, setSelectedAssessmentIds] = useState([]);
   const [clientShareCvLinks, setClientShareCvLinks] = useState({});
+  const [clientShareCvLinkState, setClientShareCvLinkState] = useState({});
   const [agendaRange, setAgendaRange] = useState("today");
   const [copySettings, setCopySettings] = useState(() => {
     try {
@@ -2346,20 +2347,29 @@ function PortalApp({ token, onLogout }) {
     }));
   }, [assessmentLinkedCandidateMap, filteredAssessments]);
   const selectedAssessmentRows = useMemo(() => (
-    normalizedAssessmentCopyRows.filter((item) => selectedAssessmentIds.includes(String(item.id || item.assessmentId || "")))
+    normalizedAssessmentCopyRows
+      .filter((item) => selectedAssessmentIds.includes(String(item.id || item.assessmentId || "")))
+      .map((item, index) => ({ ...item, index: index + 1 }))
   ), [normalizedAssessmentCopyRows, selectedAssessmentIds]);
   useEffect(() => {
     let cancelled = false;
     async function loadCvLinks() {
       if (!token || !selectedAssessmentRows.length) return;
-      const rowsNeedingLinks = selectedAssessmentRows.filter((item) => item.candidate_id && !clientShareCvLinks[item.candidate_id]);
+      const rowsNeedingLinks = selectedAssessmentRows.filter((item) => item.candidate_id && !clientShareCvLinkState[item.candidate_id]);
       if (!rowsNeedingLinks.length) return;
+      setClientShareCvLinkState((current) => {
+        const next = { ...current };
+        rowsNeedingLinks.forEach((item) => {
+          if (item.candidate_id) next[item.candidate_id] = "loading";
+        });
+        return next;
+      });
       const entries = await Promise.all(rowsNeedingLinks.map(async (item) => {
         try {
           const result = await api(`/company/candidates/${encodeURIComponent(item.candidate_id)}/share-cv-link`, token);
-          return [item.candidate_id, result.url];
+          return [item.candidate_id, result.url, "ready"];
         } catch {
-          return [item.candidate_id, ""];
+          return [item.candidate_id, "", "missing"];
         }
       }));
       if (cancelled) return;
@@ -2370,12 +2380,19 @@ function PortalApp({ token, onLogout }) {
         });
         return next;
       });
+      setClientShareCvLinkState((current) => {
+        const next = { ...current };
+        entries.forEach(([candidateId, _url, state]) => {
+          if (candidateId) next[candidateId] = state;
+        });
+        return next;
+      });
     }
     void loadCvLinks();
     return () => {
       cancelled = true;
     };
-  }, [clientShareCvLinks, selectedAssessmentRows, token]);
+  }, [clientShareCvLinkState, selectedAssessmentRows, token]);
   const candidateUniverseAll = useMemo(() => {
     const linkedAssessmentIds = new Set((state.candidates || []).map((item) => String(item.assessment_id || "").trim()).filter(Boolean));
     const candidateNames = new Set((state.candidates || []).map((item) => String(item.name || "").trim().toLowerCase()).filter(Boolean));
@@ -3810,10 +3827,12 @@ function PortalApp({ token, onLogout }) {
     const rows = getClientShareRows();
     const profileLines = rows.flatMap((item, index) => {
       const cells = presetColumns.map((column) => `${column.header}: ${getCapturedExportFieldValue({ index: index + 1, ...item }, column.field) || "-"}`);
+      const cvLinkText = clientShareCvLinks[item.candidate_id]
+        || (clientShareCvLinkState[item.candidate_id] === "missing" ? "CV link not available yet" : "Generating secure CV link...");
       return [
         `${index + 1}. ${item.name || "Candidate"}`,
         ...cells,
-        `CV Link: ${clientShareCvLinks[item.candidate_id] || "Generating secure CV link..."}`,
+        `CV Link: ${cvLinkText}`,
         ""
       ];
     });
@@ -3850,7 +3869,7 @@ function PortalApp({ token, onLogout }) {
       const cvLink = clientShareCvLinks[item.candidate_id];
       const cvCell = cvLink
         ? `<a href="${escapeHtml(cvLink)}" style="color:#0b57d0;text-decoration:none;">Open CV</a>`
-        : "Generating secure CV link...";
+        : (clientShareCvLinkState[item.candidate_id] === "missing" ? "CV link not available yet" : "Generating secure CV link...");
       return `<tr>${cells}<td style="border:1px solid #d8dee8;padding:10px 12px;vertical-align:top;font-size:13px;line-height:1.45;">${cvCell}</td></tr>`;
     }).join("");
     const extraMessage = String(clientShareDraft.extraMessage || "").trim();
