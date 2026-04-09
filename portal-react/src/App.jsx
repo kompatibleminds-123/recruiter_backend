@@ -827,6 +827,12 @@ function getApplicantOutcome(applicant) {
   return String(applicant?.parseStatus || applicant?.parse_status || "Applied").trim();
 }
 
+function getApplicantWorkflowOutcome(applicant, linkedCandidate = null) {
+  const candidateOutcome = String(linkedCandidate?.last_contact_outcome || "").trim();
+  if (candidateOutcome) return candidateOutcome;
+  return "No outcome";
+}
+
 function fillCandidateTemplate(template, candidate) {
   const source = candidate || {};
   const map = {
@@ -1917,6 +1923,13 @@ function PortalApp({ token, onLogout }) {
   const attemptsCandidate = (state.candidates || []).find((item) => String(item.id) === String(attemptsCandidateId)) || null;
   const assessmentStatusItem = (state.assessments || []).find((item) => String(item.id) === String(assessmentStatusId)) || null;
   const quickUpdateCandidate = (state.candidates || []).find((item) => String(item.id) === String(quickUpdateCandidateId)) || null;
+  const quickUpdateLinkedAssessment = useMemo(() => {
+    if (!quickUpdateCandidate) return null;
+    return (state.assessments || []).find((item) => {
+      if (item?.candidateId && String(item.candidateId) === String(quickUpdateCandidate.id)) return true;
+      return String(item?.candidateName || "").trim().toLowerCase() === String(quickUpdateCandidate?.name || "").trim().toLowerCase();
+    }) || null;
+  }, [quickUpdateCandidate, state.assessments]);
   const isSettingsAdmin = String(state.user?.role || "").toLowerCase() === "admin";
 
   function setStatus(key, message, kind = "") {
@@ -2204,19 +2217,42 @@ function PortalApp({ token, onLogout }) {
     });
   }, [state.applicants, state.user]);
 
+  const applicantCandidateMap = useMemo(() => {
+    const map = new Map();
+    filteredApplicants.forEach((item) => {
+      const match = (state.candidates || []).find((candidate) => {
+        if (String(candidate.id || "").trim() && String(candidate.id) === String(item.id)) return true;
+        const sameName = String(candidate.name || "").trim().toLowerCase() === String(item.candidateName || "").trim().toLowerCase();
+        const sameJd = String(candidate.jd_title || "").trim().toLowerCase() === String(item.jdTitle || "").trim().toLowerCase();
+        return sameName && (!String(item.jdTitle || "").trim() || sameJd);
+      }) || null;
+      map.set(String(item.id), match);
+    });
+    return map;
+  }, [filteredApplicants, state.candidates]);
+
   const applicantOptions = useMemo(() => {
     const clients = new Set();
     const jds = new Set();
     const assignedTo = new Set();
     const outcomes = new Set();
+    const isAdmin = String(state.user?.role || "").toLowerCase() === "admin";
+    if (isAdmin) {
+      (state.users || []).forEach((user) => {
+        const name = String(user?.name || "").trim();
+        if (name) assignedTo.add(name);
+      });
+      assignedTo.add("Unassigned");
+    }
     filteredApplicants.forEach((item) => {
+      const linkedCandidate = applicantCandidateMap.get(String(item.id)) || null;
       const clientValue = String(item.clientName || item.client_name || "Unassigned").trim();
       const jdValue = String(item.jdTitle || item.jd_title || "").trim();
       const assignedValue = String(item.assignedToName || item.assigned_to_name || "Unassigned").trim();
-      const outcomeValue = getApplicantOutcome(item);
+      const outcomeValue = getApplicantWorkflowOutcome(item, linkedCandidate);
       if (clientValue) clients.add(clientValue);
       if (jdValue) jds.add(jdValue);
-      if (assignedValue) assignedTo.add(assignedValue);
+      if (!isAdmin && assignedValue) assignedTo.add(assignedValue);
       if (outcomeValue) outcomes.add(outcomeValue);
     });
     return {
@@ -2225,15 +2261,16 @@ function PortalApp({ token, onLogout }) {
       assignedTo: Array.from(assignedTo).sort((a, b) => a.localeCompare(b)),
       outcomes: Array.from(outcomes).sort((a, b) => a.localeCompare(b))
     };
-  }, [filteredApplicants]);
+  }, [filteredApplicants, applicantCandidateMap, state.user, state.users]);
 
   const visibleApplicants = useMemo(() => {
     const query = String(applicantFilters.q || "").trim().toLowerCase();
     return filteredApplicants.filter((item) => {
+      const linkedCandidate = applicantCandidateMap.get(String(item.id)) || null;
       const clientValue = String(item.clientName || item.client_name || "Unassigned").trim();
       const jdValue = String(item.jdTitle || item.jd_title || "").trim();
       const assignedValue = String(item.assignedToName || item.assigned_to_name || "Unassigned").trim();
-      const outcomeValue = getApplicantOutcome(item);
+      const outcomeValue = getApplicantWorkflowOutcome(item, linkedCandidate);
       const createdDate = String(item.createdAt || item.created_at || "").slice(0, 10);
       const hay = [
         item.candidateName,
@@ -2254,7 +2291,7 @@ function PortalApp({ token, onLogout }) {
       if (applicantFilters.outcomes.length && !applicantFilters.outcomes.includes(outcomeValue)) return false;
       return true;
     });
-  }, [filteredApplicants, applicantFilters]);
+  }, [filteredApplicants, applicantFilters, applicantCandidateMap]);
 
   const quickUpdateMatches = useMemo(() => {
     const query = String(quickUpdateCandidateQuery || "").trim().toLowerCase();
@@ -2438,6 +2475,63 @@ function PortalApp({ token, onLogout }) {
     }
   }
 
+  async function applyQuickUpdateAssessmentDetails() {
+    if (!quickUpdateCandidate || !quickUpdateLinkedAssessment) {
+      setStatus("quickUpdate", "This candidate does not have a linked assessment yet.", "error");
+      return;
+    }
+    const mergeForSave = quickUpdateMergedPatch;
+    if (!mergeForSave) {
+      setStatus("quickUpdate", "Parse recruiter note first, then apply assessment details.", "error");
+      return;
+    }
+    if (mergeForSave.overwritten?.length) {
+      const message = mergeForSave.overwritten.map((entry) => `${formatRecruiterOverwriteLabel(entry.key)}: "${entry.from}" -> "${entry.to}"`).join("\n");
+      const confirmed = window.confirm(`These fields will be overwritten in candidate + assessment:\n\n${message}\n\nApply assessment detail update?`);
+      if (!confirmed) return;
+    }
+    try {
+      const merged = mergeForSave.merged || normalizeRecruiterMergeBase(quickUpdateCandidate);
+      const extractedFieldPatch = buildRecruiterFieldPatchFromMerge(mergeForSave);
+      const canonicalRecruiterNotes = buildCanonicalRecruiterNotes(
+        quickUpdateCandidate?.recruiter_context_notes || "",
+        quickUpdateText,
+        merged
+      );
+      await patchCandidateQuiet(quickUpdateCandidate.id, {
+        recruiter_context_notes: canonicalRecruiterNotes,
+        ...extractedFieldPatch
+      });
+      const nextAssessment = {
+        ...quickUpdateLinkedAssessment,
+        candidateName: merged.name || quickUpdateLinkedAssessment.candidateName || quickUpdateCandidate.name || "",
+        phoneNumber: merged.phone || quickUpdateLinkedAssessment.phoneNumber || quickUpdateCandidate.phone || "",
+        emailId: merged.email || quickUpdateLinkedAssessment.emailId || quickUpdateCandidate.email || "",
+        location: merged.location || quickUpdateLinkedAssessment.location || quickUpdateCandidate.location || "",
+        currentCtc: merged.current_ctc || quickUpdateLinkedAssessment.currentCtc || quickUpdateCandidate.current_ctc || "",
+        expectedCtc: merged.expected_ctc || quickUpdateLinkedAssessment.expectedCtc || quickUpdateCandidate.expected_ctc || "",
+        noticePeriod: merged.notice_period || quickUpdateLinkedAssessment.noticePeriod || quickUpdateCandidate.notice_period || "",
+        offerInHand: merged.offer_in_hand || quickUpdateLinkedAssessment.offerInHand || "",
+        lwdOrDoj: merged.lwd_or_doj || quickUpdateLinkedAssessment.lwdOrDoj || quickUpdateCandidate.lwd_or_doj || "",
+        currentCompany: merged.company || quickUpdateLinkedAssessment.currentCompany || quickUpdateCandidate.company || "",
+        currentDesignation: merged.role || quickUpdateLinkedAssessment.currentDesignation || quickUpdateCandidate.role || "",
+        totalExperience: merged.experience || quickUpdateLinkedAssessment.totalExperience || quickUpdateCandidate.experience || "",
+        highestEducation: merged.highest_education || quickUpdateLinkedAssessment.highestEducation || quickUpdateCandidate.highest_education || "",
+        recruiterNotes: canonicalRecruiterNotes,
+        updatedAt: new Date().toISOString()
+      };
+      await api("/company/assessments", token, "POST", { assessment: nextAssessment });
+      await loadWorkspace();
+      setQuickUpdateMergedPatch(null);
+      setQuickUpdateConflicts([]);
+      setQuickUpdateParsedSummary(null);
+      setQuickUpdateText("");
+      setStatus("quickUpdate", "Assessment details synced with recruiter note update.", "ok");
+    } catch (error) {
+      setStatus("quickUpdate", String(error?.message || error), "error");
+    }
+  }
+
   async function applyQuickCandidateUpdate() {
     if (!quickUpdateCandidate) {
       setStatus("quickUpdate", "Select an existing candidate first.", "error");
@@ -2473,6 +2567,37 @@ function PortalApp({ token, onLogout }) {
       await patchCandidateQuiet(quickUpdateCandidate.id, candidatePatch);
       setQuickUpdateText("");
       setStatus("quickUpdate", `Quick update applied for ${quickUpdateCandidate.name || "candidate"}.`, "ok");
+    } catch (error) {
+      setStatus("quickUpdate", String(error?.message || error), "error");
+    }
+  }
+
+  async function applyQuickAssessmentStatusUpdate() {
+    if (!quickUpdateLinkedAssessment) {
+      setStatus("quickUpdate", "This candidate does not have a linked assessment yet.", "error");
+      return;
+    }
+    const lastLine = extractLastMeaningfulLine(quickUpdateText);
+    if (!lastLine) {
+      setStatus("quickUpdate", "Type the status note first.", "error");
+      return;
+    }
+    const inferred = inferAssessmentStatusAndSchedule(lastLine);
+    if (!inferred?.candidateStatus) {
+      setStatus("quickUpdate", "Could not map assessment status from the last line.", "error");
+      return;
+    }
+    try {
+      await saveAssessmentStatusUpdate(quickUpdateLinkedAssessment, {
+        candidateStatus: inferred.candidateStatus,
+        atValue: inferred.atValue || "",
+        notes: lastLine,
+        offerAmount: inferred.offerAmount || "",
+        expectedDoj: inferred.expectedDoj || "",
+        dateOfJoining: inferred.dateOfJoining || ""
+      });
+      setQuickUpdateText("");
+      setStatus("quickUpdate", `Assessment status updated to ${inferred.candidateStatus}.`, "ok");
     } catch (error) {
       setStatus("quickUpdate", String(error?.message || error), "error");
     }
@@ -3862,7 +3987,7 @@ function PortalApp({ token, onLogout }) {
               <div className="captured-filter-grid">
                 <MultiSelectDropdown label="Clients" options={applicantOptions.clients} selected={applicantFilters.clients} onToggle={(value) => setApplicantFilters((current) => ({ ...current, clients: value === "__all__" ? [] : current.clients.includes(value) ? current.clients.filter((item) => item !== value) : [...current.clients, value] }))} />
                 <MultiSelectDropdown label="JD / Role" options={applicantOptions.jds} selected={applicantFilters.jds} onToggle={(value) => setApplicantFilters((current) => ({ ...current, jds: value === "__all__" ? [] : current.jds.includes(value) ? current.jds.filter((item) => item !== value) : [...current.jds, value] }))} />
-                <MultiSelectDropdown label="Assigned to" options={applicantOptions.assignedTo} selected={applicantFilters.assignedTo} onToggle={(value) => setApplicantFilters((current) => ({ ...current, assignedTo: value === "__all__" ? [] : current.assignedTo.includes(value) ? current.assignedTo.filter((item) => item !== value) : [...current.assignedTo, value] }))} />
+                {String(state.user?.role || "").toLowerCase() === "admin" ? <MultiSelectDropdown label="Assigned to" options={applicantOptions.assignedTo} selected={applicantFilters.assignedTo} onToggle={(value) => setApplicantFilters((current) => ({ ...current, assignedTo: value === "__all__" ? [] : current.assignedTo.includes(value) ? current.assignedTo.filter((item) => item !== value) : [...current.assignedTo, value] }))} /> : null}
                 <MultiSelectDropdown label="Outcome" options={applicantOptions.outcomes} selected={applicantFilters.outcomes} onToggle={(value) => setApplicantFilters((current) => ({ ...current, outcomes: value === "__all__" ? [] : current.outcomes.includes(value) ? current.outcomes.filter((item) => item !== value) : [...current.outcomes, value] }))} />
               </div>
               <div className="button-row">
@@ -4064,7 +4189,7 @@ function PortalApp({ token, onLogout }) {
                 ) : (
                   <>
                     <div className="info-grid">
-                      {[["Candidate", quickUpdateCandidate.name],["Phone", quickUpdateCandidate.phone],["Email", quickUpdateCandidate.email],["Client", quickUpdateCandidate.client_name],["JD / role", quickUpdateCandidate.jd_title || quickUpdateCandidate.role],["Current outcome", quickUpdateCandidate.last_contact_outcome || "-"]].map(([label, value]) => (
+                      {[["Candidate", quickUpdateCandidate.name],["Phone", quickUpdateCandidate.phone],["Email", quickUpdateCandidate.email],["Client", quickUpdateCandidate.client_name],["JD / role", quickUpdateCandidate.jd_title || quickUpdateCandidate.role],["Current outcome", quickUpdateCandidate.last_contact_outcome || "-"],["Linked assessment", quickUpdateLinkedAssessment ? `${quickUpdateLinkedAssessment.jdTitle || "Assessment"} | ${quickUpdateLinkedAssessment.candidateStatus || "Saved"}` : "No"]].map(([label, value]) => (
                         <div className="info-card" key={label}>
                           <div className="info-label">{label}</div>
                           <div className="info-value">{value || "-"}</div>
@@ -4081,11 +4206,24 @@ function PortalApp({ token, onLogout }) {
                         />
                       </label>
                     </div>
-                    <p className="muted">For status updates, the last line is the source of truth. For recruiter-detail changes, use Parse recruiter note first, then apply it.</p>
+                    <p className="muted">
+                      {quickUpdateLinkedAssessment
+                        ? "This candidate is already in Assessments. Use recruiter note parsing to sync changed details, or use the last line to update assessment status."
+                        : "For status updates, the last line is the source of truth. For recruiter-detail changes, use Parse recruiter note first, then apply it."}
+                    </p>
                     <div className="button-row">
                       <button onClick={() => void parseQuickUpdateRecruiterNote()}>Parse recruiter note</button>
-                      <button onClick={() => void applyQuickUpdateRecruiterNote()}>Apply recruiter note</button>
-                      <button onClick={() => void applyQuickCandidateUpdate()}>Apply candidate update</button>
+                      {quickUpdateLinkedAssessment ? (
+                        <>
+                          <button onClick={() => void applyQuickUpdateAssessmentDetails()}>Update assessment details</button>
+                          <button onClick={() => void applyQuickAssessmentStatusUpdate()}>Update status</button>
+                        </>
+                      ) : (
+                        <>
+                          <button onClick={() => void applyQuickUpdateRecruiterNote()}>Apply recruiter note</button>
+                          <button onClick={() => void applyQuickCandidateUpdate()}>Apply candidate update</button>
+                        </>
+                      )}
                     </div>
                     {quickUpdateParsedSummary ? (
                       <div className="parsed-summary">
