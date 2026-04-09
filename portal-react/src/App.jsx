@@ -3849,8 +3849,29 @@ function PortalApp({ token, onLogout }) {
           <Route path="/applicants" element={
             <Section kicker="Admin Inbox" title="Applied Candidates">
               {statuses.applicants ? <div className={`status ${statuses.applicantsKind || ""}`}>{statuses.applicants}</div> : null}
+              <div className="form-grid three-col">
+                <label className="full"><span>Search</span><input placeholder="Search by candidate, phone, email, JD..." value={applicantFilters.q} onChange={(e) => setApplicantFilters((current) => ({ ...current, q: e.target.value }))} /></label>
+                <label><span>Date from</span><input type="date" value={applicantFilters.dateFrom} onChange={(e) => setApplicantFilters((current) => ({ ...current, dateFrom: e.target.value }))} /></label>
+                <label><span>Date to</span><input type="date" value={applicantFilters.dateTo} onChange={(e) => setApplicantFilters((current) => ({ ...current, dateTo: e.target.value }))} /></label>
+              </div>
+              <div className="metric-grid metric-grid--tight">
+                <div className="metric-card compact-metric"><div className="metric-label">Applied today</div><div className="metric-value">{visibleApplicants.filter((item) => String(item.createdAt || item.created_at || "").slice(0, 10) === new Date().toISOString().slice(0, 10)).length}</div></div>
+                <div className="metric-card compact-metric"><div className="metric-label">Assigned</div><div className="metric-value">{visibleApplicants.filter((item) => String(item.assignedToName || item.assigned_to_name || "").trim()).length}</div></div>
+                <div className="metric-card compact-metric"><div className="metric-label">Total visible</div><div className="metric-value">{visibleApplicants.length}</div></div>
+              </div>
+              <div className="captured-filter-grid">
+                <MultiSelectDropdown label="Clients" options={applicantOptions.clients} selected={applicantFilters.clients} onToggle={(value) => setApplicantFilters((current) => ({ ...current, clients: value === "__all__" ? [] : current.clients.includes(value) ? current.clients.filter((item) => item !== value) : [...current.clients, value] }))} />
+                <MultiSelectDropdown label="JD / Role" options={applicantOptions.jds} selected={applicantFilters.jds} onToggle={(value) => setApplicantFilters((current) => ({ ...current, jds: value === "__all__" ? [] : current.jds.includes(value) ? current.jds.filter((item) => item !== value) : [...current.jds, value] }))} />
+                <MultiSelectDropdown label="Assigned to" options={applicantOptions.assignedTo} selected={applicantFilters.assignedTo} onToggle={(value) => setApplicantFilters((current) => ({ ...current, assignedTo: value === "__all__" ? [] : current.assignedTo.includes(value) ? current.assignedTo.filter((item) => item !== value) : [...current.assignedTo, value] }))} />
+                <MultiSelectDropdown label="Outcome" options={applicantOptions.outcomes} selected={applicantFilters.outcomes} onToggle={(value) => setApplicantFilters((current) => ({ ...current, outcomes: value === "__all__" ? [] : current.outcomes.includes(value) ? current.outcomes.filter((item) => item !== value) : [...current.outcomes, value] }))} />
+              </div>
+              <div className="button-row">
+                <button onClick={() => void copyApplicantsExcel()}>Copy Excel</button>
+                <button onClick={() => void copyApplicantsWhatsapp()}>Copy WhatsApp</button>
+                <button onClick={() => void copyApplicantsEmail()}>Copy Email</button>
+              </div>
               <div className="stack-list">
-                {!filteredApplicants.length ? <div className="empty-state">No applied candidates right now.</div> : filteredApplicants.map((item) => (
+                {!visibleApplicants.length ? <div className="empty-state">No applied candidates right now.</div> : visibleApplicants.map((item) => (
                   <article className="item-card compact-card" key={item.id}>
                     <div className="item-card__top">
                       <div>
@@ -3965,6 +3986,11 @@ function PortalApp({ token, onLogout }) {
                 <MultiSelectDropdown label="Clients" options={assessmentOptions.clients} selected={assessmentFilters.clients} onToggle={(value) => setAssessmentFilters((current) => ({ ...current, clients: value === "__all__" ? [] : current.clients.includes(value) ? current.clients.filter((item) => item !== value) : [...current.clients, value] }))} />
                 <MultiSelectDropdown label="JD / Role" options={assessmentOptions.jds} selected={assessmentFilters.jds} onToggle={(value) => setAssessmentFilters((current) => ({ ...current, jds: value === "__all__" ? [] : current.jds.includes(value) ? current.jds.filter((item) => item !== value) : [...current.jds, value] }))} />
                 <MultiSelectDropdown label="Recruiters" options={assessmentOptions.recruiters} selected={assessmentFilters.recruiters} onToggle={(value) => setAssessmentFilters((current) => ({ ...current, recruiters: value === "__all__" ? [] : current.recruiters.includes(value) ? current.recruiters.filter((item) => item !== value) : [...current.recruiters, value] }))} />
+              </div>
+              <div className="button-row">
+                <button onClick={() => void copyAssessmentsExcel()}>Copy Excel</button>
+                <button onClick={() => void copyAssessmentsWhatsapp()}>Copy WhatsApp</button>
+                <button onClick={() => void copyAssessmentsEmail()}>Copy Email</button>
               </div>
               <div className="stack-list">
                 {!filteredAssessments.length ? <div className="empty-state">No assessments saved yet.</div> : filteredAssessments.map((item) => (
