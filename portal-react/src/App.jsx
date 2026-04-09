@@ -1940,6 +1940,9 @@ function PortalApp({ token, onLogout }) {
     maxExperience: "",
     location: "",
     currentCompany: "",
+    client: "",
+    maxCurrentCtc: "",
+    maxExpectedCtc: "",
     qualification: "",
     maxNoticeDays: "",
     recruiter: "",
@@ -2299,13 +2302,17 @@ function PortalApp({ token, onLogout }) {
   const candidateSearchOptions = useMemo(() => {
     const recruiters = new Set();
     const genders = new Set();
+    const clients = new Set();
     candidateUniverseAll.forEach((item) => {
       const recruiter = String(item.assigned_to_name || item.ownerRecruiter || item.recruiterName || "").trim();
       const gender = String(item.gender || "").trim();
+      const client = String(item.client_name || item.clientName || "").trim();
       if (recruiter) recruiters.add(recruiter);
       if (gender) genders.add(gender);
+      if (client) clients.add(client);
     });
     return {
+      clients: Array.from(clients).sort(),
       recruiters: Array.from(recruiters).sort(),
       genders: Array.from(genders).sort()
     };
@@ -2320,15 +2327,21 @@ function PortalApp({ token, onLogout }) {
       const minYears = Number(candidateStructuredFilters.minExperience || "");
       const maxYears = Number(candidateStructuredFilters.maxExperience || "");
       const noticeDays = parseNoticePeriodToDays(item.notice_period || item.noticePeriod || "");
+      const currentCtc = parseAmountToLpa(item.current_ctc || item.currentCtc || "");
+      const expectedCtc = parseAmountToLpa(item.expected_ctc || item.expectedCtc || "");
       const locationHay = String(item.location || "").toLowerCase();
       const companyHay = String(item.company || item.currentCompany || "").toLowerCase();
       const educationHay = String(item.highest_education || item.highestEducation || "").toLowerCase();
+      const clientValue = String(item.client_name || item.clientName || "").trim();
       const recruiterValue = String(item.assigned_to_name || item.ownerRecruiter || item.recruiterName || "").trim();
       const genderValue = String(item.gender || "").trim();
       if (candidateStructuredFilters.minExperience && (years == null || years < minYears)) return false;
       if (candidateStructuredFilters.maxExperience && (years == null || years > maxYears)) return false;
       if (candidateStructuredFilters.location && !locationHay.includes(String(candidateStructuredFilters.location).trim().toLowerCase())) return false;
       if (candidateStructuredFilters.currentCompany && !companyHay.includes(String(candidateStructuredFilters.currentCompany).trim().toLowerCase())) return false;
+      if (candidateStructuredFilters.client && clientValue !== candidateStructuredFilters.client) return false;
+      if (candidateStructuredFilters.maxCurrentCtc && (currentCtc == null || currentCtc > Number(candidateStructuredFilters.maxCurrentCtc))) return false;
+      if (candidateStructuredFilters.maxExpectedCtc && (expectedCtc == null || expectedCtc > Number(candidateStructuredFilters.maxExpectedCtc))) return false;
       if (candidateStructuredFilters.qualification && !educationHay.includes(String(candidateStructuredFilters.qualification).trim().toLowerCase())) return false;
       if (candidateStructuredFilters.maxNoticeDays && (noticeDays == null || noticeDays > Number(candidateStructuredFilters.maxNoticeDays))) return false;
       if (candidateStructuredFilters.recruiter && recruiterValue !== candidateStructuredFilters.recruiter) return false;
@@ -4373,6 +4386,9 @@ function PortalApp({ token, onLogout }) {
                     <label><span>Max experience</span><input type="number" min="0" value={candidateStructuredFilters.maxExperience} onChange={(e) => setCandidateStructuredFilters((current) => ({ ...current, maxExperience: e.target.value }))} placeholder="10" /></label>
                     <label><span>Location</span><input value={candidateStructuredFilters.location} onChange={(e) => setCandidateStructuredFilters((current) => ({ ...current, location: e.target.value }))} placeholder="Mumbai" /></label>
                     <label><span>Current company</span><input value={candidateStructuredFilters.currentCompany} onChange={(e) => setCandidateStructuredFilters((current) => ({ ...current, currentCompany: e.target.value }))} placeholder="Infosys" /></label>
+                    <label><span>Client</span><select value={candidateStructuredFilters.client} onChange={(e) => setCandidateStructuredFilters((current) => ({ ...current, client: e.target.value }))}><option value="">All clients</option>{candidateSearchOptions.clients.map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
+                    <label><span>Current CTC under</span><input type="number" min="0" value={candidateStructuredFilters.maxCurrentCtc} onChange={(e) => setCandidateStructuredFilters((current) => ({ ...current, maxCurrentCtc: e.target.value }))} placeholder="20" /></label>
+                    <label><span>Expected CTC under</span><input type="number" min="0" value={candidateStructuredFilters.maxExpectedCtc} onChange={(e) => setCandidateStructuredFilters((current) => ({ ...current, maxExpectedCtc: e.target.value }))} placeholder="25" /></label>
                     <label><span>Qualification</span><input value={candidateStructuredFilters.qualification} onChange={(e) => setCandidateStructuredFilters((current) => ({ ...current, qualification: e.target.value }))} placeholder="B.Tech / MBA" /></label>
                     <label><span>Notice under (days)</span><input type="number" min="0" value={candidateStructuredFilters.maxNoticeDays} onChange={(e) => setCandidateStructuredFilters((current) => ({ ...current, maxNoticeDays: e.target.value }))} placeholder="30" /></label>
                     <label><span>Recruiter</span><select value={candidateStructuredFilters.recruiter} onChange={(e) => setCandidateStructuredFilters((current) => ({ ...current, recruiter: e.target.value }))}><option value="">All recruiters</option>{candidateSearchOptions.recruiters.map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
