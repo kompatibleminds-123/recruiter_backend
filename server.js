@@ -1154,6 +1154,17 @@ function candidateMatchesBooleanQuery(item, rawQuery = "") {
   );
 }
 
+function candidateMatchesLooseNaturalTokens(item, rawQuery = "") {
+  const tokens = buildNaturalSearchFallbackTokens(rawQuery);
+  if (!tokens.length) return true;
+  const hay = buildCandidateSearchHay(item);
+  const matchedCount = tokens.filter((token) => hay.includes(normalizeDashboardText(token))).length;
+  if (!matchedCount) return false;
+  if (tokens.length === 1) return matchedCount >= 1;
+  if (tokens.length === 2) return matchedCount >= 1;
+  return matchedCount >= Math.max(2, Math.ceil(tokens.length * 0.5));
+}
+
 function buildCandidateSearchHay(item = {}) {
   return normalizeDashboardText([
     item.candidateName || "",
@@ -3225,6 +3236,13 @@ const server = http.createServer(async (req, res) => {
             return fallbackTokens.every((token) => hay.includes(normalizeDashboardText(token)));
           })
           .slice(0, 200);
+        if (!matches.length) {
+          matches = universe
+            .filter((item) => !recruiterFilter || String(item.ownerRecruiter || "").trim() === recruiterFilter)
+            .filter((item) => candidateMatchesNaturalFilter(item, relaxedFilters, user))
+            .filter((item) => candidateMatchesLooseNaturalTokens(item, query))
+            .slice(0, 200);
+        }
       }
       sendJson(res, 200, {
         ok: true,
