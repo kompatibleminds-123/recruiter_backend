@@ -4685,12 +4685,6 @@ function PortalApp({ token, onLogout }) {
                           <div>
                             <h3>{group.label}</h3>
                             <p className="muted">{`${group.metrics?.sourced || 0} sourced | ${group.metrics?.converted || 0} converted | ${group.metrics?.under_interview_process || 0} under interview`}</p>
-                            <p className="muted">
-                              {`Sourcing: ${group.ownership?.assignedSourcing || 0} assigned | ${group.ownership?.selfSourced || 0} self sourced`}
-                            </p>
-                            <p className="muted">
-                              {`Applicants: ${group.ownership?.assignedApplicants || 0} assigned/direct`}
-                            </p>
                           </div>
                         </summary>
                         <div className="metric-grid metric-grid--tight">
@@ -4751,6 +4745,12 @@ function PortalApp({ token, onLogout }) {
                           <div>
                             <h3>{group.label}</h3>
                             <p className="muted">{`${group.metrics?.sourced || 0} sourced | ${group.metrics?.converted || 0} converted | ${group.metrics?.under_interview_process || 0} under interview`}</p>
+                            <p className="muted">
+                              {`Sourcing: ${group.ownership?.assignedSourcing || 0} assigned | ${group.ownership?.selfSourced || 0} self sourced`}
+                            </p>
+                            <p className="muted">
+                              {`Applicants: ${group.ownership?.assignedApplicants || 0} assigned/direct`}
+                            </p>
                           </div>
                         </summary>
                         <div className="metric-grid metric-grid--tight">
