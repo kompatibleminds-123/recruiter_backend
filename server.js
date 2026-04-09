@@ -1057,7 +1057,7 @@ function parseNaturalLanguageCandidateQuery(rawQuery) {
     .replace(/\bin\s+[a-z0-9][a-z0-9\s&.-]+$/i, "")
     .trim();
   roleText = roleText.replace(/\bcandidates?\b/gi, "").trim();
-  roleText = roleText.replace(/\bprofile\b/gi, "").trim();
+  roleText = roleText.replace(/\bprofiles?\b/gi, "").trim();
   const locations = locationListMatch
     ? String(locationListMatch[1] || "")
         .split(/\s+(?:or|and)\s+/i)
@@ -1104,6 +1104,50 @@ function parseNaturalLanguageCandidateQuery(rawQuery) {
     dateTo,
     dateField
   };
+}
+
+function buildNaturalSearchFallbackTokens(rawQuery = "") {
+  return String(rawQuery || "")
+    .toLowerCase()
+    .replace(/[^\w\s+&/-]+/g, " ")
+    .split(/\s+/)
+    .map((part) => part.trim())
+    .filter((part) =>
+      part &&
+      part.length >= 2 &&
+      ![
+        "get", "me", "show", "all", "profiles", "profile", "candidate", "candidates",
+        "in", "for", "by", "with", "this", "that", "from", "the", "and", "or",
+        "week", "month", "today", "tomorrow", "last", "next"
+      ].includes(part)
+    );
+}
+
+function buildCandidateSearchHay(item = {}) {
+  return normalizeDashboardText([
+    item.candidateName || "",
+    item.role || "",
+    item.position || "",
+    item.company || "",
+    item.location || "",
+    item.clientName || "",
+    item.recruiterName || "",
+    item.sourcedRecruiter || "",
+    item.ownerRecruiter || "",
+    item.currentCtc || "",
+    item.expectedCtc || "",
+    item.noticePeriod || "",
+    item.totalExperience || "",
+    item.currentOrgTenure || "",
+    item.highestEducation || "",
+    Array.isArray(item.skills) ? item.skills.join(" ") : "",
+    item.hiddenCvText || "",
+    item.notesText || "",
+    item.candidateStatus || "",
+    item.pipelineStage || "",
+    item.workflowStatus || "",
+    item.attemptStatus || ""
+  ].join(" "));
 }
 
 function buildCandidateSearchUniverse(candidates = [], assessments = [], jobs = []) {
@@ -3117,10 +3161,30 @@ const server = http.createServer(async (req, res) => {
         listCompanyJobs(user.companyId)
       ]);
       const universe = buildCandidateSearchUniverse(candidates, assessments, jobs);
-      const matches = universe
+      let matches = universe
         .filter((item) => !recruiterFilter || String(item.ownerRecruiter || "").trim() === recruiterFilter)
         .filter((item) => candidateMatchesNaturalFilter(item, filters, user))
         .slice(0, 200);
+      if (!matches.length && query) {
+        const fallbackTokens = buildNaturalSearchFallbackTokens(query);
+        const relaxedFilters = {
+          ...filters,
+          role: "",
+          roleFamilies: [],
+          targetLabel: "",
+          currentCompany: "",
+          skills: []
+        };
+        matches = universe
+          .filter((item) => !recruiterFilter || String(item.ownerRecruiter || "").trim() === recruiterFilter)
+          .filter((item) => candidateMatchesNaturalFilter(item, relaxedFilters, user))
+          .filter((item) => {
+            if (!fallbackTokens.length) return true;
+            const hay = buildCandidateSearchHay(item);
+            return fallbackTokens.every((token) => hay.includes(normalizeDashboardText(token)));
+          })
+          .slice(0, 200);
+      }
       sendJson(res, 200, {
         ok: true,
         result: {
