@@ -425,6 +425,7 @@ async function normalizeCandidateFileWithAi({ apiKey, model, uploadedFile, sourc
 }
 
 module.exports = {
+  callOpenAiJsonSchema,
   callOpenAiQuestions,
   normalizeCandidateWithAi,
   normalizeCandidateFileWithAi

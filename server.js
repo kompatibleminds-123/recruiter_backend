@@ -4,7 +4,7 @@ const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
 const { parseCandidatePayload } = require("./src/parser");
-const { callOpenAiQuestions, normalizeCandidateFileWithAi, normalizeCandidateWithAi } = require("./src/ai");
+const { callOpenAiJsonSchema, callOpenAiQuestions, normalizeCandidateFileWithAi, normalizeCandidateWithAi } = require("./src/ai");
 const { storeUploadedFile, loadStoredFile } = require("./src/storage");
 const {
   assignCandidate,
@@ -936,12 +936,12 @@ function parseNaturalLanguageCandidateQuery(rawQuery) {
   const upcomingJoiningsIntent = /\bupcoming\s+joining(?:s)?\b/i.test(lower);
   const minExperienceMatch = lower.match(/(\d+(?:\.\d+)?)\s*\+?\s*years?/);
   const maxExperienceMatch = lower.match(/\b(?:under|less than|max)\s+(\d+(?:\.\d+)?)\s*years?/);
-  const locationMatch = lower.match(/\b(?:based out of|based in|from|located in)\s+([a-z][a-z\s]+?)(?:\bwith\b|$)/i);
-  const ctcUnderMatch = lower.match(/\b(?:current\s+ctc\s+under|ctc\s+under)\s+(\d+(?:\.\d+)?)\s*(l|lpa|lakhs?|lac|cr|crore|k)?\b/i);
+  const locationMatch = lower.match(/\b(?:based out of|based in|located in|in)\s+([a-z][a-z\s]+?)(?:\s+\bwith\b|\s+\bunder\b|\s+\bbelow\b|\s+\bfor\b|$)/i);
+  const ctcUnderMatch = lower.match(/\b(?:current\s+ctc\s+under|ctc\s+under|under|below)\s+(\d+(?:\.\d+)?)\s*(l|lpa|lakhs?|lac|cr|crore|k)?\b/i);
   const expectedCtcUnderMatch = lower.match(/\b(?:expected\s+ctc\s+under)\s+(\d+(?:\.\d+)?)\s*(l|lpa|lakhs?|lac|cr|crore|k)?\b/i);
   const noticeMatch = lower.match(/\b(?:notice\s+period\s+under|notice\s+under|notice period of)\s+(\d+(?:\.\d+)?)\s*(days?|months?)\b/i);
   const skillMatch = lower.match(/\b(?:with skills?|skills?|having)\s+([a-z0-9,+/&\s-]+?)(?:\bwith\b|\bbased\b|\bfor\b|$)/i);
-  const currentCompanyMatch = lower.match(/\b(?:from current company|from|in current company|currently at)\s+([a-z0-9][a-z0-9\s&.-]+?)(?:\bwith\b|\bbased\b|$)/i);
+  const currentCompanyMatch = lower.match(/\b(?:from current company|in current company|currently at)\s+([a-z0-9][a-z0-9\s&.-]+?)(?:\bwith\b|\bbased\b|$)/i);
   const locationListMatch =
     lower.match(/\b(?:in|from|based in|based out of|located in)\s+([a-z][a-z\s]+(?:\s+(?:or|and)\s+[a-z][a-z\s]+)+)\b/i) ||
     null;
@@ -950,7 +950,7 @@ function parseNaturalLanguageCandidateQuery(rawQuery) {
   const sourcedIntent = /\b(?:sourced|captured)\b/i.test(lower);
   const convertedIntent = /\b(?:shared|converted|cv shared|assessment)\b/i.test(lower);
   const recruiterNameMatch = lower.match(/\bby\s+([a-z][a-z\s.-]+?)(?:\s+for\b|\s+in\b|\s+this\b|\s+last\b|\s+today\b|\s+tomorrow\b|$)/i);
-  const targetLabelMatch = lower.match(/\b(?:for|in)\s+([a-z0-9][a-z0-9\s&.-]+?)(?:\s+across roles|\s+this week|\s+tomorrow|\s+today|\s+last month|\s+this month|\s+from\s|\s+with\s|$)/i);
+  const targetLabelMatch = lower.match(/\bfor\s+([a-z0-9][a-z0-9\s&.-]+?)(?:\s+across roles|\s+this week|\s+tomorrow|\s+today|\s+last month|\s+this month|\s+from\s|\s+with\s|\s+under\b|$)/i);
   const statusTerms = [];
   const detailedStatusTerms = [];
   if (/\bshortlisted\b/i.test(lower)) statusTerms.push("shortlisted");
@@ -1106,6 +1106,118 @@ function parseNaturalLanguageCandidateQuery(rawQuery) {
   };
 }
 
+function buildCandidateSearchInterpretationSchema() {
+  return {
+    type: "object",
+    additionalProperties: false,
+    required: [
+      "role",
+      "skills",
+      "locations",
+      "maxCurrentCtcLpa",
+      "maxExpectedCtcLpa",
+      "maxNoticeDays",
+      "statuses",
+      "detailedStatuses",
+      "client",
+      "recruiterName",
+      "recruiterScope",
+      "recruiterField",
+      "sourceTypeFilter",
+      "dateFrom",
+      "dateTo",
+      "dateField",
+      "currentCompany"
+    ],
+    properties: {
+      role: { type: "string" },
+      skills: { type: "array", items: { type: "string" }, maxItems: 12 },
+      locations: { type: "array", items: { type: "string" }, maxItems: 8 },
+      maxCurrentCtcLpa: { type: ["number", "null"] },
+      maxExpectedCtcLpa: { type: ["number", "null"] },
+      maxNoticeDays: { type: ["number", "null"] },
+      statuses: { type: "array", items: { type: "string" }, maxItems: 8 },
+      detailedStatuses: { type: "array", items: { type: "string" }, maxItems: 12 },
+      client: { type: "string" },
+      recruiterName: { type: "string" },
+      recruiterScope: { type: "string", enum: ["", "me"] },
+      recruiterField: { type: "string", enum: ["", "sourced", "owner"] },
+      sourceTypeFilter: { type: "string", enum: ["", "captured", "converted", "applied", "assessment"] },
+      dateFrom: { type: "string" },
+      dateTo: { type: "string" },
+      dateField: { type: "string", enum: ["", "captured", "shared", "interview", "joined"] },
+      currentCompany: { type: "string" }
+    }
+  };
+}
+
+async function interpretCandidateSearchQueryWithAi({ apiKey, query, actor }) {
+  const prompt = [
+    "You convert recruiter search statements into deterministic candidate-search filters.",
+    "Return compact JSON only.",
+    "",
+    "RULES",
+    "1. Convert free text into structured filters for candidate search.",
+    "2. If the recruiter asks for captured notes candidates, sourceTypeFilter = captured.",
+    "3. If they ask for applied candidates, sourceTypeFilter = applied.",
+    "4. If they ask for assessments or shared candidates, sourceTypeFilter = converted or assessment depending on intent.",
+    "5. Extract role keywords into role and/or skills.",
+    "6. Extract locations exactly as mentioned.",
+    "7. Convert 'under 20 L' like phrases into maxCurrentCtcLpa when no expected CTC is specified.",
+    "8. Convert notice constraints into maxNoticeDays.",
+    "9. If they mention a recruiter name, set recruiterName.",
+    "10. If they mean 'profiles sourced by X', recruiterField = sourced.",
+    "11. If they mean 'profiles under X' or assigned/owned by X, recruiterField = owner.",
+    "12. If they ask for 'my' profiles, recruiterScope = me.",
+    "13. Keep arrays empty and strings blank if not specified.",
+    `14. Current recruiter is "${String(actor?.name || "").trim()}".`,
+    "",
+    "Allowed lifecycle statuses:",
+    "shortlisted, offered, joined, rejected, duplicate, dropped",
+    "Allowed detailed statuses:",
+    "screening reject, interview reject, hold, did not attend, under process, aligned, not received, not reachable, busy, switch off, disconnected, call later, interested, not interested, revisit for other role",
+    "",
+    `Query: ${String(query || "").trim()}`
+  ].join("\n");
+
+  const result = await callOpenAiJsonSchema({
+    apiKey,
+    prompt,
+    model: "gpt-4.1-mini",
+    schemaName: "candidate_search_interpretation",
+    schema: buildCandidateSearchInterpretationSchema()
+  });
+
+  return {
+    raw: String(query || "").trim(),
+    role: String(result?.role || "").trim(),
+    roleFamilies: detectRoleFamilies(String(result?.role || "").trim()),
+    minExperienceYears: null,
+    maxExperienceYears: null,
+    location: Array.isArray(result?.locations) && result.locations.length ? String(result.locations[0] || "").trim() : "",
+    locations: Array.isArray(result?.locations) ? result.locations.map((item) => String(item || "").trim()).filter(Boolean) : [],
+    maxCurrentCtcLpa: typeof result?.maxCurrentCtcLpa === "number" ? result.maxCurrentCtcLpa : null,
+    maxExpectedCtcLpa: typeof result?.maxExpectedCtcLpa === "number" ? result.maxExpectedCtcLpa : null,
+    maxNoticeDays: typeof result?.maxNoticeDays === "number" ? result.maxNoticeDays : null,
+    skills: Array.isArray(result?.skills) ? result.skills.map((item) => String(item || "").trim()).filter(Boolean) : [],
+    currentCompany: String(result?.currentCompany || "").trim(),
+    statuses: Array.isArray(result?.statuses) ? result.statuses.map((item) => normalizeDashboardText(item)).filter(Boolean) : [],
+    detailedStatuses: Array.isArray(result?.detailedStatuses) ? result.detailedStatuses.map((item) => String(item || "").trim()).filter(Boolean) : [],
+    client: String(result?.client || "").trim(),
+    targetLabel: "",
+    interviewScheduled: false,
+    upcomingJoinings: false,
+    recruiterScope: String(result?.recruiterScope || "").trim(),
+    recruiterName: String(result?.recruiterName || "").trim(),
+    recruiterField: String(result?.recruiterField || "").trim(),
+    sourceTypeFilter: String(result?.sourceTypeFilter || "").trim(),
+    dateFrom: String(result?.dateFrom || "").trim(),
+    dateTo: String(result?.dateTo || "").trim(),
+    dateField: String(result?.dateField || "").trim(),
+    interpretedByAi: true
+  };
+}
+
 function buildNaturalSearchFallbackTokens(rawQuery = "") {
   return String(rawQuery || "")
     .toLowerCase()
@@ -1200,6 +1312,7 @@ function buildCandidateSearchUniverse(candidates = [], assessments = [], jobs = 
 
   for (const candidate of candidates || []) {
     const candidateMeta = decodeApplicantMetadata(candidate);
+    const candidateSource = normalizeDashboardText(candidate?.source || candidateMeta?.sourcePlatform || "");
     const cachedCvResult = candidateMeta?.cvAnalysisCache?.result && typeof candidateMeta.cvAnalysisCache.result === "object"
       ? candidateMeta.cvAnalysisCache.result
       : {};
@@ -1232,7 +1345,11 @@ function buildCandidateSearchUniverse(candidates = [], assessments = [], jobs = 
       offerDoj: normalizeDateOutput(linkedAssessment?.offerDoj || linkedAssessment?.offer_doj || ""),
       createdAt: normalizeDateOutput(getCandidateCreatedAt(candidate)),
       sharedAt: normalizeDateOutput(getCandidateConvertedAt(candidate, linkedAssessment || {})),
-      sourceType: candidate?.used_in_assessment ? "captured_and_converted" : "captured_note",
+      sourceType: candidate?.used_in_assessment
+        ? "captured_and_converted"
+        : (candidateSource === "website_apply" || candidateSource === "hosted_apply" || candidateSource === "google_sheet"
+          ? "applied"
+          : "captured_note"),
       hiddenCvText: JSON.stringify(cachedCvResult || {}),
       notesText: [
         candidate?.notes || "",
@@ -1412,7 +1529,13 @@ function candidateMatchesNaturalFilter(item, filters, actor = null) {
     if (item.sourceType === "captured_note" || !item.sharedAt) return false;
   }
   if (filters.sourceTypeFilter === "captured") {
-    if (!item.createdAt) return false;
+    if (item.sourceType !== "captured_note") return false;
+  }
+  if (filters.sourceTypeFilter === "applied") {
+    if (item.sourceType !== "applied") return false;
+  }
+  if (filters.sourceTypeFilter === "assessment") {
+    if (item.sourceType !== "assessment_only" && item.sourceType !== "captured_and_converted") return false;
   }
   if (filters.dateFrom || filters.dateTo) {
     const valuesToCheck =
@@ -3191,7 +3314,17 @@ const server = http.createServer(async (req, res) => {
       const user = await requireSessionUser(getBearerToken(req));
       const query = String(requestUrl.searchParams.get("q") || "").trim();
       const queryMode = String(requestUrl.searchParams.get("mode") || "natural").trim().toLowerCase();
-      const filters = parseNaturalLanguageCandidateQuery(query);
+      let filters = parseNaturalLanguageCandidateQuery(query);
+      if (query && queryMode === "ai") {
+        const apiKey = String(process.env.OPENAI_API_KEY || "").trim();
+        if (apiKey) {
+          try {
+            filters = await interpretCandidateSearchQueryWithAi({ apiKey, query, actor: user });
+          } catch (error) {
+            console.warn("AI query interpretation failed, falling back to heuristic parser:", error?.message || error);
+          }
+        }
+      }
       const queryDateFrom = String(requestUrl.searchParams.get("dateFrom") || "").trim();
       const queryDateTo = String(requestUrl.searchParams.get("dateTo") || "").trim();
       const clientFilter = String(requestUrl.searchParams.get("clientLabel") || "").trim();

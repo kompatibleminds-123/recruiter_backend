@@ -1935,10 +1935,16 @@ function PortalApp({ token, onLogout }) {
   const [candidateAiQueryMode, setCandidateAiQueryMode] = useState("natural");
   const [candidateSearchResults, setCandidateSearchResults] = useState([]);
   const [candidatePage, setCandidatePage] = useState(1);
-  const [candidateJdSource, setCandidateJdSource] = useState("saved");
-  const [candidateJdJobId, setCandidateJdJobId] = useState("");
-  const [candidateJdText, setCandidateJdText] = useState("");
-  const [candidateJdFilename, setCandidateJdFilename] = useState("");
+  const [candidateStructuredFilters, setCandidateStructuredFilters] = useState({
+    minExperience: "",
+    maxExperience: "",
+    location: "",
+    currentCompany: "",
+    qualification: "",
+    maxNoticeDays: "",
+    recruiter: "",
+    gender: ""
+  });
   const [clientShareDraft, setClientShareDraft] = useState({
     hrName: "",
     recipientEmail: "",
@@ -2290,7 +2296,46 @@ function PortalApp({ token, onLogout }) {
       }));
     return [...(state.candidates || []), ...assessmentOnlyItems];
   }, [state.assessments, state.candidates]);
-  const candidateUniverse = useMemo(() => candidateSearchMode === "all" ? candidateUniverseAll : (candidateSearchResults || []), [candidateSearchMode, candidateUniverseAll, candidateSearchResults]);
+  const candidateSearchOptions = useMemo(() => {
+    const recruiters = new Set();
+    const genders = new Set();
+    candidateUniverseAll.forEach((item) => {
+      const recruiter = String(item.assigned_to_name || item.ownerRecruiter || item.recruiterName || "").trim();
+      const gender = String(item.gender || "").trim();
+      if (recruiter) recruiters.add(recruiter);
+      if (gender) genders.add(gender);
+    });
+    return {
+      recruiters: Array.from(recruiters).sort(),
+      genders: Array.from(genders).sort()
+    };
+  }, [candidateUniverseAll]);
+  const candidateBaseUniverse = useMemo(() => {
+    if (candidateSearchMode === "all" || !String(candidateSearchText || "").trim()) return candidateUniverseAll;
+    return candidateSearchResults || [];
+  }, [candidateSearchMode, candidateSearchResults, candidateSearchText, candidateUniverseAll]);
+  const candidateUniverse = useMemo(() => {
+    return candidateBaseUniverse.filter((item) => {
+      const years = parseExperienceToYears(item.experience || item.totalExperience || "");
+      const minYears = Number(candidateStructuredFilters.minExperience || "");
+      const maxYears = Number(candidateStructuredFilters.maxExperience || "");
+      const noticeDays = parseNoticePeriodToDays(item.notice_period || item.noticePeriod || "");
+      const locationHay = String(item.location || "").toLowerCase();
+      const companyHay = String(item.company || item.currentCompany || "").toLowerCase();
+      const educationHay = String(item.highest_education || item.highestEducation || "").toLowerCase();
+      const recruiterValue = String(item.assigned_to_name || item.ownerRecruiter || item.recruiterName || "").trim();
+      const genderValue = String(item.gender || "").trim();
+      if (candidateStructuredFilters.minExperience && (years == null || years < minYears)) return false;
+      if (candidateStructuredFilters.maxExperience && (years == null || years > maxYears)) return false;
+      if (candidateStructuredFilters.location && !locationHay.includes(String(candidateStructuredFilters.location).trim().toLowerCase())) return false;
+      if (candidateStructuredFilters.currentCompany && !companyHay.includes(String(candidateStructuredFilters.currentCompany).trim().toLowerCase())) return false;
+      if (candidateStructuredFilters.qualification && !educationHay.includes(String(candidateStructuredFilters.qualification).trim().toLowerCase())) return false;
+      if (candidateStructuredFilters.maxNoticeDays && (noticeDays == null || noticeDays > Number(candidateStructuredFilters.maxNoticeDays))) return false;
+      if (candidateStructuredFilters.recruiter && recruiterValue !== candidateStructuredFilters.recruiter) return false;
+      if (candidateStructuredFilters.gender && genderValue !== candidateStructuredFilters.gender) return false;
+      return true;
+    });
+  }, [candidateBaseUniverse, candidateStructuredFilters]);
   const pagedCandidates = useMemo(() => {
     const start = (candidatePage - 1) * 10;
     return candidateUniverse.slice(start, start + 10);
@@ -3380,66 +3425,18 @@ function PortalApp({ token, onLogout }) {
 
   async function runCandidateSearch() {
     if (!candidateSearchText.trim()) {
-      if (candidateSearchMode !== "jd_match") {
-        setCandidateSearchMode("all");
-        setCandidateSearchResults([]);
-        setCandidatePage(1);
-        setStatus("workspace", "Showing all uploaded candidates.", "ok");
-        return;
-      }
-    }
-    if (candidateSearchMode === "jd_match") {
-      let payload = {};
-      if (candidateJdSource === "saved") {
-        const selectedJob = (state.jobs || []).find((job) => String(job.id || "") === String(candidateJdJobId)) || null;
-        if (!selectedJob) {
-          setStatus("workspace", "Select a saved JD first.", "error");
-          return;
-        }
-        payload = {
-          jdTitle: selectedJob.title || "",
-          mustHaveSkills: selectedJob.mustHaveSkills || "",
-          jobDescription: selectedJob.jobDescription || ""
-        };
-      } else {
-        const effectiveText = String(candidateJdText || candidateSearchText || "").trim();
-        if (!effectiveText) {
-          setStatus("workspace", candidateJdSource === "upload" ? "Upload a JD first." : "Paste JD text first.", "error");
-          return;
-        }
-        payload = {
-          jdText: effectiveText,
-          jdTitle: effectiveText.split(/\r?\n/).map((line) => line.trim()).filter(Boolean)[0] || ""
-        };
-      }
-      const result = await api("/company/candidates/search-jd-match", token, "POST", payload);
-      setCandidateSearchResults(result.items || []);
+      setCandidateSearchMode("all");
+      setCandidateSearchResults([]);
       setCandidatePage(1);
-      setStatus("workspace", `JD match returned ${result.items?.length || 0} candidates.`, "ok");
+      setStatus("workspace", "Showing candidates using structured filters.", "ok");
       return;
     }
-    const result = await api(`/company/candidates/search-natural?q=${encodeURIComponent(candidateSearchText)}&mode=${encodeURIComponent(candidateAiQueryMode)}`, token);
+    const mode = candidateAiQueryMode === "natural" ? "ai" : "boolean";
+    const result = await api(`/company/candidates/search-natural?q=${encodeURIComponent(candidateSearchText)}&mode=${encodeURIComponent(mode)}`, token);
     setCandidateSearchResults(result.items || []);
+    setCandidateSearchMode("search");
     setCandidatePage(1);
-    setStatus("workspace", `${candidateAiQueryMode === "boolean" ? "Boolean search" : "AI search"} returned ${result.items?.length || 0} candidates.`, "ok");
-  }
-
-  async function handleCandidateJdUpload(file) {
-    if (!file) return;
-    const fileData = await fileToBase64(file);
-    const result = await api("/extract-document-text", token, "POST", {
-      sourceType: "jd_upload",
-      file: {
-        filename: file.name,
-        mimeType: file.type || "application/octet-stream",
-        fileData
-      }
-    });
-    const rawText = String(result?.result?.rawText || "").trim();
-    setCandidateJdText(rawText);
-    setCandidateSearchText(rawText);
-    setCandidateJdFilename(String(result?.result?.filename || file.name || ""));
-    setStatus("workspace", "JD uploaded and extracted. Run match to rank candidates.", "ok");
+    setStatus("workspace", `${candidateAiQueryMode === "boolean" ? "Boolean search" : "AI-interpreted search"} returned ${result.items?.length || 0} candidates.`, "ok");
   }
 
   function buildCapturedCopyRows() {
@@ -4361,70 +4358,49 @@ function PortalApp({ token, onLogout }) {
             <div className="page-grid">
               <Section kicker="Candidate Universe" title="Candidates">
                 <p className="muted">This view can surface captured, applied, and assessment-linked candidates together. Candidates without CV uploads still remain searchable through saved structured fields, recruiter notes, attempts, and assessment data. Hidden CV metadata is used only by search and not shown in the UI.</p>
-                {candidateSearchMode === "ai_search" ? (
-                  <div className="item-card compact-card">
-                    <h3>AI candidate search</h3>
-                    <p className="muted">{candidateAiQueryMode === "boolean" ? "Use exact keywords with AND / OR and quoted phrases, similar to Naukri boolean search." : "Try prompts like `show me all candidates shared in last month` or `get me offered Mumbai sales candidates under 18 L`."}</p>
-                    <div className="button-row">
-                      <button className={candidateAiQueryMode === "natural" ? "" : "ghost-btn"} onClick={() => setCandidateAiQueryMode("natural")}>Natural</button>
-                      <button className={candidateAiQueryMode === "boolean" ? "" : "ghost-btn"} onClick={() => setCandidateAiQueryMode("boolean")}>Boolean</button>
-                    </div>
-                    <div className="button-row">
-                      {(candidateAiQueryMode === "boolean" ? BOOLEAN_SEARCH_EXAMPLE_PROMPTS : AI_SEARCH_EXAMPLE_PROMPTS).map((prompt) => (
-                        <button
-                          key={prompt}
-                          className="ghost-btn"
-                          onClick={() => {
-                            setCandidateSearchText(prompt);
-                            setCandidatePage(1);
-                          }}
-                        >
-                          {prompt}
-                        </button>
-                      ))}
-                    </div>
+                <div className="item-card compact-card">
+                  <h3>Search mode</h3>
+                  <p className="muted">Use Boolean for exact keyword retrieval. Use Natural when you want AI to interpret the statement and convert it into deterministic filters.</p>
+                  <div className="button-row">
+                    <button className={candidateAiQueryMode === "boolean" ? "" : "ghost-btn"} onClick={() => setCandidateAiQueryMode("boolean")}>Boolean</button>
+                    <button className={candidateAiQueryMode === "natural" ? "" : "ghost-btn"} onClick={() => setCandidateAiQueryMode("natural")}>Natural</button>
                   </div>
-                ) : null}
+                </div>
+                <div className="item-card compact-card">
+                  <h3>Structured filters</h3>
+                  <div className="form-grid three-col">
+                    <label><span>Min experience</span><input type="number" min="0" value={candidateStructuredFilters.minExperience} onChange={(e) => setCandidateStructuredFilters((current) => ({ ...current, minExperience: e.target.value }))} placeholder="2" /></label>
+                    <label><span>Max experience</span><input type="number" min="0" value={candidateStructuredFilters.maxExperience} onChange={(e) => setCandidateStructuredFilters((current) => ({ ...current, maxExperience: e.target.value }))} placeholder="10" /></label>
+                    <label><span>Location</span><input value={candidateStructuredFilters.location} onChange={(e) => setCandidateStructuredFilters((current) => ({ ...current, location: e.target.value }))} placeholder="Mumbai" /></label>
+                    <label><span>Current company</span><input value={candidateStructuredFilters.currentCompany} onChange={(e) => setCandidateStructuredFilters((current) => ({ ...current, currentCompany: e.target.value }))} placeholder="Infosys" /></label>
+                    <label><span>Qualification</span><input value={candidateStructuredFilters.qualification} onChange={(e) => setCandidateStructuredFilters((current) => ({ ...current, qualification: e.target.value }))} placeholder="B.Tech / MBA" /></label>
+                    <label><span>Notice under (days)</span><input type="number" min="0" value={candidateStructuredFilters.maxNoticeDays} onChange={(e) => setCandidateStructuredFilters((current) => ({ ...current, maxNoticeDays: e.target.value }))} placeholder="30" /></label>
+                    <label><span>Recruiter</span><select value={candidateStructuredFilters.recruiter} onChange={(e) => setCandidateStructuredFilters((current) => ({ ...current, recruiter: e.target.value }))}><option value="">All recruiters</option>{candidateSearchOptions.recruiters.map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
+                    <label><span>Gender</span><select value={candidateStructuredFilters.gender} onChange={(e) => setCandidateStructuredFilters((current) => ({ ...current, gender: e.target.value }))}><option value="">All genders</option>{candidateSearchOptions.genders.map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
+                  </div>
+                </div>
+                <div className="item-card compact-card">
+                  <h3>Search examples</h3>
+                  <p className="muted">{candidateAiQueryMode === "boolean" ? "Use exact keywords with AND / OR and quoted phrases, similar to Naukri boolean search." : "Write the recruiter query naturally. AI will interpret the statement into structured search filters, then retrieval will run deterministically on saved fields, recruiter notes, other pointers, attempts, tags, and hidden CV metadata."}</p>
+                  <div className="button-row">
+                    {(candidateAiQueryMode === "boolean" ? BOOLEAN_SEARCH_EXAMPLE_PROMPTS : AI_SEARCH_EXAMPLE_PROMPTS).map((prompt) => (
+                      <button
+                        key={prompt}
+                        className="ghost-btn"
+                        onClick={() => {
+                          setCandidateSearchText(prompt);
+                          setCandidatePage(1);
+                        }}
+                      >
+                        {prompt}
+                      </button>
+                    ))}
+                  </div>
+                </div>
                 <div className="toolbar">
-                  <select value={candidateSearchMode} onChange={(e) => { setCandidateSearchMode(e.target.value); setCandidatePage(1); }}>
-                    <option value="all">All candidates</option>
-                    <option value="ai_search">AI Search</option>
-                    <option value="jd_match">Map to JD</option>
-                  </select>
-                  {candidateSearchMode === "jd_match" ? (
-                    <>
-                      <select value={candidateJdSource} onChange={(e) => setCandidateJdSource(e.target.value)}>
-                        <option value="saved">Use saved JD</option>
-                        <option value="upload">Upload JD</option>
-                        <option value="text">Paste JD text</option>
-                      </select>
-                      {candidateJdSource === "saved" ? (
-                        <select value={candidateJdJobId} onChange={(e) => setCandidateJdJobId(e.target.value)}>
-                          <option value="">Select saved JD</option>
-                          {(state.jobs || []).map((job) => <option key={job.id} value={job.id}>{job.title}</option>)}
-                        </select>
-                      ) : (
-                        <textarea
-                          className="jd-editor"
-                          placeholder={candidateJdSource === "upload" ? "Upload a JD file, then review or refine the extracted text here." : "Paste JD title, skills, budget, notice period, and location here."}
-                          value={candidateJdText}
-                          onChange={(e) => { setCandidateJdText(e.target.value); setCandidateSearchText(e.target.value); }}
-                        />
-                      )}
-                      {candidateJdSource === "upload" ? (
-                        <div className="button-row">
-                          <label className="file-btn">
-                            <input type="file" accept=".txt,.md,.doc,.docx,.pdf" hidden onClick={(e) => { e.target.value = ""; }} onChange={(e) => { const file = e.target.files?.[0]; if (file) void handleCandidateJdUpload(file); }} />
-                            Upload JD
-                          </label>
-                          {candidateJdFilename ? <span className="status-note">{candidateJdFilename}</span> : null}
-                        </div>
-                      ) : null}
-                    </>
-                      ) : (
-                    <input placeholder={candidateSearchMode === "ai_search" ? (candidateAiQueryMode === "boolean" ? '(sales OR "business development") AND loan' : "Get me Account Executives with 4+ years of experience based out of Mumbai with current CTC under 20 L") : "Search role, skill, company, location"} value={candidateSearchText} onChange={(e) => setCandidateSearchText(e.target.value)} />
-                  )}
-                  <button onClick={() => void runCandidateSearch()}>{candidateSearchMode === "all" ? "Refresh" : candidateSearchMode === "ai_search" ? (candidateAiQueryMode === "boolean" ? "Run Boolean Search" : "Run AI Search") : "Run"}</button>
+                  <input placeholder={candidateAiQueryMode === "boolean" ? '(sales OR "business development") AND loan' : "Get me Account Executives with 4+ years of experience based out of Mumbai with current CTC under 20 L"} value={candidateSearchText} onChange={(e) => setCandidateSearchText(e.target.value)} />
+                  <button onClick={() => void runCandidateSearch()}>{candidateAiQueryMode === "boolean" ? "Run Boolean Search" : "Run AI Search"}</button>
+                  <button className="ghost-btn" onClick={() => { setCandidateSearchText(""); setCandidateSearchResults([]); setCandidateSearchMode("all"); setCandidatePage(1); }}>Reset search</button>
                 </div>
                 <div className="button-row">
                   <button onClick={() => void copyCandidatesExcel()}>Copy Excel</button>
@@ -4439,19 +4415,6 @@ function PortalApp({ token, onLogout }) {
                         <div>
                           <h3>{item.name || item.candidateName || "Candidate"} | {item.role || item.currentDesignation || item.jdTitle || "Untitled role"}</h3>
                           <p className="muted">{[item.company || item.currentCompany || "", item.location || "", item.ownerRecruiter ? `Recruiter: ${item.ownerRecruiter}` : "", item.source ? `Source: ${item.source}` : ""].filter(Boolean).join(" | ")}</p>
-                          {candidateSearchMode === "jd_match" ? (
-                            <div className="candidate-snippet">
-                              {[
-                                `Match score: ${item.matchScore || 0}`,
-                                `Skills matched: ${item.matchedSkills?.length ? item.matchedSkills.join(", ") : "No strong skill overlap detected"}`,
-                                `Role fit: ${item.roleAlignmentScore || 0}/25`,
-                                `Location fit: ${item.locationScore || 0}/10`,
-                                `Notice: ${item.noticeScore || 0}/15${item.noticeDays != null ? ` (${item.noticeDays} days)` : ""}`,
-                                `CTC fit: ${item.budgetScore || 0}/10`,
-                                ...(Array.isArray(item.matchReasons) ? item.matchReasons.map((reason) => `Why matched: ${reason}`) : [])
-                              ].filter(Boolean).join("\n")}
-                            </div>
-                          ) : null}
                           <div className="candidate-snippet">{[item.experience || item.totalExperience || "", item.current_ctc || item.currentCtc ? `Current CTC: ${item.current_ctc || item.currentCtc}` : "", item.expected_ctc || item.expectedCtc ? `Expected CTC: ${item.expected_ctc || item.expectedCtc}` : "", item.notice_period || item.noticePeriod ? `Notice: ${item.notice_period || item.noticePeriod}` : ""].filter(Boolean).join("\n")}</div>
                         </div>
                       </div>
