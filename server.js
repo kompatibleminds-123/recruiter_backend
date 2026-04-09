@@ -1285,6 +1285,26 @@ function splitBooleanTerms(raw = "") {
     .filter(Boolean);
 }
 
+const BOOLEAN_TERM_SYNONYMS = {
+  saas: ["saas", "\"software as a service\"", "software"],
+  sales: ["sales", "\"business development\"", "\"account executive\"", "\"account manager\"", "\"enterprise sales\"", "\"corporate sales\""],
+  b2b: ["b2b", "\"enterprise sales\"", "\"corporate sales\"", "\"business development\""],
+  ae: ["ae", "\"account executive\"", "\"account manager\""],
+  hr: ["hr", "\"human resources\"", "\"talent acquisition\""],
+  node: ["node", "nodejs", "\"node js\"", "\"node.js\""],
+  react: ["react", "reactjs", "\"react js\"", "\"react.js\""],
+  frontend: ["frontend", "\"front end\"", "\"front-end\""],
+  backend: ["backend", "\"back end\"", "\"back-end\""],
+  devops: ["devops", "\"dev ops\"", "\"dev ops engineer\""]
+};
+
+function expandBooleanTerm(term = "") {
+  const normalized = normalizeDashboardText(term);
+  const synonyms = BOOLEAN_TERM_SYNONYMS[normalized];
+  if (!synonyms) return [normalized].filter(Boolean);
+  return Array.from(new Set([normalized, ...synonyms.map((item) => normalizeDashboardText(item))].filter(Boolean)));
+}
+
 function parseBooleanSearchQuery(rawQuery = "") {
   const query = String(rawQuery || "").trim();
   if (!query) return [];
@@ -1305,7 +1325,7 @@ function candidateMatchesBooleanQuery(item, rawQuery = "") {
   if (!groups.length) return true;
   const hay = buildCandidateSearchHay(item);
   return groups.every((group) =>
-    group.some((term) => hay.includes(normalizeDashboardText(term)))
+    group.some((term) => expandBooleanTerm(term).some((variant) => hay.includes(variant)))
   );
 }
 

@@ -2001,6 +2001,7 @@ function PortalApp({ token, onLogout }) {
     minExperience: "",
     maxExperience: "",
     location: "",
+    keySkills: "",
     currentCompany: "",
     client: "",
     maxCurrentCtc: "",
@@ -2442,12 +2443,28 @@ function PortalApp({ token, onLogout }) {
       const locationHay = String(item.location || "").toLowerCase();
       const companyHay = String(item.company || item.currentCompany || "").toLowerCase();
       const educationHay = String(item.highest_education || item.highestEducation || "").toLowerCase();
+      const skillsHay = [
+        item.role || item.currentDesignation || "",
+        item.position || item.jdTitle || "",
+        Array.isArray(item.skills) ? item.skills.join(" ") : "",
+        item.notesText || "",
+        item.hiddenCvText || "",
+        item.other_pointers || "",
+        item.recruiter_context_notes || ""
+      ].join(" ").toLowerCase();
       const clientValue = String(item.client_name || item.clientName || "").trim();
       const recruiterValue = String(item.assigned_to_name || item.ownerRecruiter || item.recruiterName || "").trim();
       const genderValue = String(item.gender || "").trim();
       if (candidateStructuredFilters.minExperience && (years == null || years < minYears)) return false;
       if (candidateStructuredFilters.maxExperience && (years == null || years > maxYears)) return false;
       if (candidateStructuredFilters.location && !locationHay.includes(String(candidateStructuredFilters.location).trim().toLowerCase())) return false;
+      if (candidateStructuredFilters.keySkills) {
+        const requiredSkills = String(candidateStructuredFilters.keySkills)
+          .split(/[,\n]/)
+          .map((part) => part.trim().toLowerCase())
+          .filter(Boolean);
+        if (requiredSkills.length && !requiredSkills.every((term) => skillsHay.includes(term))) return false;
+      }
       if (candidateStructuredFilters.currentCompany && !companyHay.includes(String(candidateStructuredFilters.currentCompany).trim().toLowerCase())) return false;
       if (candidateStructuredFilters.client && clientValue !== candidateStructuredFilters.client) return false;
       if (candidateStructuredFilters.maxCurrentCtc && (currentCtc == null || currentCtc > Number(candidateStructuredFilters.maxCurrentCtc))) return false;
@@ -3559,6 +3576,23 @@ function PortalApp({ token, onLogout }) {
     setCandidateSearchResults(result.items || []);
     setCandidateSearchMode("search");
     setCandidatePage(1);
+    if (candidateAiQueryMode === "natural" && result.filters) {
+      setCandidateStructuredFilters((current) => ({
+        ...current,
+        minExperience: result.filters.minExperienceYears != null ? String(result.filters.minExperienceYears) : current.minExperience,
+        maxExperience: result.filters.maxExperienceYears != null ? String(result.filters.maxExperienceYears) : current.maxExperience,
+        location: result.filters.location || (Array.isArray(result.filters.locations) ? result.filters.locations[0] || "" : "") || current.location,
+        keySkills: Array.isArray(result.filters.skills) && result.filters.skills.length ? result.filters.skills.join(", ") : current.keySkills,
+        currentCompany: result.filters.currentCompany || current.currentCompany,
+        client: result.filters.client || current.client,
+        maxCurrentCtc: result.filters.maxCurrentCtcLpa != null ? String(result.filters.maxCurrentCtcLpa) : current.maxCurrentCtc,
+        maxExpectedCtc: result.filters.maxExpectedCtcLpa != null ? String(result.filters.maxExpectedCtcLpa) : current.maxExpectedCtc,
+        qualification: result.filters.qualification || current.qualification,
+        maxNoticeDays: result.filters.maxNoticeDays != null ? String(result.filters.maxNoticeDays) : current.maxNoticeDays,
+        recruiter: result.filters.recruiterName || current.recruiter,
+        gender: result.filters.gender || current.gender
+      }));
+    }
     setStatus("workspace", `${candidateAiQueryMode === "boolean" ? "Boolean search" : "AI-interpreted search"} returned ${result.items?.length || 0} candidates.`, "ok");
   }
 
@@ -4540,12 +4574,37 @@ function PortalApp({ token, onLogout }) {
                     <button className={candidateAiQueryMode === "natural" ? "" : "ghost-btn"} onClick={() => setCandidateAiQueryMode("natural")}>Natural</button>
                   </div>
                 </div>
+                <div className="toolbar">
+                  <input placeholder={candidateAiQueryMode === "boolean" ? '(sales OR "business development") AND saas' : "Get me Account Executives with 4+ years of experience based out of Mumbai with current CTC under 20 L"} value={candidateSearchText} onChange={(e) => setCandidateSearchText(e.target.value)} />
+                  <button onClick={() => void runCandidateSearch()}>{candidateAiQueryMode === "boolean" ? "Run Boolean Search" : "Run AI Search"}</button>
+                  <button className="ghost-btn" onClick={() => {
+                    setCandidateSearchText("");
+                    setCandidateSearchResults([]);
+                    setCandidateSearchMode("all");
+                    setCandidatePage(1);
+                    setCandidateStructuredFilters({
+                      minExperience: "",
+                      maxExperience: "",
+                      location: "",
+                      keySkills: "",
+                      currentCompany: "",
+                      client: "",
+                      maxCurrentCtc: "",
+                      maxExpectedCtc: "",
+                      qualification: "",
+                      maxNoticeDays: "",
+                      recruiter: "",
+                      gender: ""
+                    });
+                  }}>Reset search</button>
+                </div>
                 <div className="item-card compact-card">
                   <h3>Structured filters</h3>
                   <div className="form-grid three-col">
                     <label><span>Min experience</span><input type="number" min="0" value={candidateStructuredFilters.minExperience} onChange={(e) => setCandidateStructuredFilters((current) => ({ ...current, minExperience: e.target.value }))} placeholder="2" /></label>
                     <label><span>Max experience</span><input type="number" min="0" value={candidateStructuredFilters.maxExperience} onChange={(e) => setCandidateStructuredFilters((current) => ({ ...current, maxExperience: e.target.value }))} placeholder="10" /></label>
                     <label><span>Location</span><input value={candidateStructuredFilters.location} onChange={(e) => setCandidateStructuredFilters((current) => ({ ...current, location: e.target.value }))} placeholder="Mumbai" /></label>
+                    <label><span>Key skills</span><input value={candidateStructuredFilters.keySkills} onChange={(e) => setCandidateStructuredFilters((current) => ({ ...current, keySkills: e.target.value }))} placeholder="SaaS, sales, B2B" /></label>
                     <label><span>Current company</span><input value={candidateStructuredFilters.currentCompany} onChange={(e) => setCandidateStructuredFilters((current) => ({ ...current, currentCompany: e.target.value }))} placeholder="Infosys" /></label>
                     <label><span>Client</span><select value={candidateStructuredFilters.client} onChange={(e) => setCandidateStructuredFilters((current) => ({ ...current, client: e.target.value }))}><option value="">All clients</option>{candidateSearchOptions.clients.map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
                     <label><span>Current CTC under</span><input type="number" min="0" value={candidateStructuredFilters.maxCurrentCtc} onChange={(e) => setCandidateStructuredFilters((current) => ({ ...current, maxCurrentCtc: e.target.value }))} placeholder="20" /></label>
@@ -4573,11 +4632,6 @@ function PortalApp({ token, onLogout }) {
                       </button>
                     ))}
                   </div>
-                </div>
-                <div className="toolbar">
-                  <input placeholder={candidateAiQueryMode === "boolean" ? '(sales OR "business development") AND loan' : "Get me Account Executives with 4+ years of experience based out of Mumbai with current CTC under 20 L"} value={candidateSearchText} onChange={(e) => setCandidateSearchText(e.target.value)} />
-                  <button onClick={() => void runCandidateSearch()}>{candidateAiQueryMode === "boolean" ? "Run Boolean Search" : "Run AI Search"}</button>
-                  <button className="ghost-btn" onClick={() => { setCandidateSearchText(""); setCandidateSearchResults([]); setCandidateSearchMode("all"); setCandidatePage(1); }}>Reset search</button>
                 </div>
                 <div className="button-row">
                   <button onClick={() => void copyCandidatesExcel()}>Copy Excel</button>
