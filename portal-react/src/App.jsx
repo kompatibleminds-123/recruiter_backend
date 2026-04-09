@@ -4,18 +4,38 @@ import { NavLink, Navigate, Route, Routes, useNavigate } from "react-router-dom"
 const TOKEN_KEY = "recruitdesk_portal_token";
 const COPY_SETTINGS_STORAGE_KEY = "recruitdesk_portal_copy_settings_v1";
 
-const navItems = [
-  { to: "/dashboard", label: "Dashboard" },
-  { to: "/candidates", label: "Candidates" },
-  { to: "/applicants", label: "Applied Candidates" },
-  { to: "/captured-notes", label: "Captured Notes" },
-  { to: "/assessments", label: "Assessments" },
-  { to: "/client-share", label: "Direct Share" },
-  { to: "/quick-update", label: "Quick Update" },
-  { to: "/interview", label: "Interview Panel" },
-  { to: "/intake-settings", label: "Admin Intake Settings" },
-  { to: "/jobs", label: "Jobs" },
-  { to: "/settings", label: "Settings" }
+const navSections = [
+  {
+    label: "Core",
+    items: [
+      { to: "/dashboard", label: "Dashboard" },
+      { to: "/quick-update", label: "Quick Update" },
+      { to: "/jobs", label: "Jobs" }
+    ]
+  },
+  {
+    label: "Sourcing",
+    items: [
+      { to: "/captured-notes", label: "Captured Notes" },
+      { to: "/applicants", label: "Applied Candidates" }
+    ]
+  },
+  {
+    label: "Pipeline",
+    items: [
+      { to: "/interview", label: "Interview Panel" },
+      { to: "/assessments", label: "Assessments" },
+      { to: "/client-share", label: "Direct Share" }
+    ]
+  },
+  {
+    label: "Admin",
+    items: [
+      { to: "/intake-settings", label: "Job Apply Link" },
+      { to: "/settings", label: "Preset Settings" },
+      { to: "/candidates", label: "Database" }
+    ]
+  }
 ];
 
 const DEFAULT_COPY_SETTINGS = {
@@ -4359,10 +4379,17 @@ function PortalApp({ token, onLogout }) {
           <h1>Portal</h1>
         </div>
         <nav className="nav">
-          {navItems.map((item) => (
-            <NavLink key={item.to} to={item.to} className={({ isActive }) => `nav-btn${isActive ? " active" : ""}`}>
-              {item.label}
-            </NavLink>
+          {navSections.map((section) => (
+            <div key={section.label} className="nav-section">
+              <div className="nav-section__label">{section.label}</div>
+              <div className="nav-section__items">
+                {section.items.map((item) => (
+                  <NavLink key={item.to} to={item.to} className={({ isActive }) => `nav-btn${isActive ? " active" : ""}`}>
+                    {item.label}
+                  </NavLink>
+                ))}
+              </div>
+            </div>
           ))}
         </nav>
         <div className="sidebar-footer">
@@ -4657,7 +4684,7 @@ function PortalApp({ token, onLogout }) {
 
           <Route path="/candidates" element={
             <div className="page-grid">
-              <Section kicker="Candidate Universe" title="Candidates">
+              <Section kicker="Candidate Universe" title="Database">
                 <p className="muted">This view can surface captured, applied, and assessment-linked candidates together. Candidates without CV uploads still remain searchable through saved structured fields, recruiter notes, attempts, and assessment data. Hidden CV metadata is used only by search and not shown in the UI.</p>
                 <div className="item-card compact-card">
                   <h3>Search mode</h3>
@@ -5264,34 +5291,14 @@ function PortalApp({ token, onLogout }) {
 
           <Route path="/intake-settings" element={
             <div className="page-grid">
-              <Section kicker="Company Intake" title="Admin Intake Settings">
+              <Section kicker="Apply Link" title="Job Apply Link">
                 {statuses.intake ? <div className={`status ${statuses.intakeKind || ""}`}>{statuses.intake}</div> : null}
-                <div className="form-grid two-col">
-                  <label><span>Company ID</span><textarea readOnly value={companyId} /></label>
-                  <label><span>Applicant Intake Secret</span><textarea readOnly value={secret} /></label>
-                  <label className="full"><span>API URL</span><textarea readOnly value={apiUrl} /></label>
-                  <div className="full button-row">
-                    <button onClick={() => void copyText(companyId).then(() => setStatus("intake", "Company ID copied.", "ok"))}>Copy Company ID</button>
-                    <button onClick={() => void copyText(secret).then(() => setStatus("intake", "Intake secret copied.", "ok"))}>Copy Secret</button>
-                    <button onClick={() => void copyText(apiUrl).then(() => setStatus("intake", "API URL copied.", "ok"))}>Copy API URL</button>
-                    <button className="ghost-btn" onClick={() => void rotateSecret()}>Rotate Secret</button>
-                  </div>
-                </div>
-              </Section>
-              <Section kicker="Recommended" title="RecruitDesk Apply Link">
+                <p className="muted">Use this hosted apply link for each JD so candidates land directly into the RecruitDesk workflow.</p>
                 <div className="form-grid">
                   <label><span>Select JD / role</span><select value={hostedJobId} onChange={(e) => setHostedJobId(e.target.value)}><option value="">Select JD / role</option>{state.jobs.map((job) => <option key={job.id} value={job.id}>{job.title}</option>)}</select></label>
                   <label><span>Hosted Apply Link</span><textarea readOnly value={getApplyLink(hostedJobId)} /></label>
                   <div className="button-row"><button onClick={() => void copyText(getApplyLink(hostedJobId)).then(() => setStatus("intake", "Hosted apply link copied.", "ok"))}>Copy Apply Link</button></div>
                 </div>
-              </Section>
-              <Section kicker="WordPress" title="WordPress Website">
-                <p className="muted">Use this if the agency has a WordPress form and only needs details intake.</p>
-                <textarea className="code-box" readOnly value={buildWordpressSnippet(companyId, secret, apiUrl)} />
-              </Section>
-              <Section kicker="Google Sheet" title="Google Sheet Row Watcher">
-                <p className="muted">Use this if candidate rows are landing in a Google Sheet. Add a <code>recruitdesk_synced</code> column and run it on a time-driven trigger.</p>
-                <textarea className="code-box" readOnly value={buildGoogleScript(companyId, secret, apiUrl)} />
               </Section>
             </div>
           } />
@@ -5394,7 +5401,7 @@ function PortalApp({ token, onLogout }) {
 
             <Route path="/settings" element={
               <div className="page-grid">
-                <Section kicker="Copy Presets" title="Settings">
+                <Section kicker="Copy Presets" title="Preset Settings">
                   <p className="muted">Set shared Excel preset and default WhatsApp / email formats for filtered captured notes. These settings can be shared across recruiters.</p>
                   {!isSettingsAdmin ? <p className="muted">You can use shared presets here. Only admin can create, edit, or save shared preset settings.</p> : null}
                   {statuses.settings ? <div className={`status ${statuses.settingsKind || ""}`}>{statuses.settings}</div> : null}

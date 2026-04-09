@@ -85,7 +85,17 @@ textarea { min-height: 92px; resize: vertical; }
   font-weight: 700;
   color: var(--accent);
 }
-.nav { display: grid; gap: 0.65rem; }
+.nav { display: grid; gap: 0.85rem; }
+.nav-section { display: grid; gap: 0.45rem; }
+.nav-section__label {
+  padding: 0 0.2rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: var(--muted);
+}
+.nav-section__items { display: grid; gap: 0.55rem; }
 .nav-btn {
   text-decoration: none;
   display: block;
