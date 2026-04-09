@@ -4267,19 +4267,34 @@ function PortalApp({ token, onLogout }) {
                       ))}
                     </div>
                     <div className="form-grid">
+                      <div className="form-grid two-col">
+                        <label><span>Current CTC</span><input value={quickUpdateRecruiterSections.current_ctc} onChange={(e) => setQuickUpdateRecruiterSections((current) => ({ ...current, current_ctc: e.target.value }))} placeholder="Got a hike, now 20 L" /></label>
+                        <label><span>Expected CTC</span><input value={quickUpdateRecruiterSections.expected_ctc} onChange={(e) => setQuickUpdateRecruiterSections((current) => ({ ...current, expected_ctc: e.target.value }))} placeholder="Looking for 27 L" /></label>
+                        <label><span>Notice period</span><input value={quickUpdateRecruiterSections.notice_period} onChange={(e) => setQuickUpdateRecruiterSections((current) => ({ ...current, notice_period: e.target.value }))} placeholder="30 days / serving notice" /></label>
+                        <label><span>If serving, offer amount</span><input value={quickUpdateRecruiterSections.offer_in_hand} onChange={(e) => setQuickUpdateRecruiterSections((current) => ({ ...current, offer_in_hand: e.target.value }))} placeholder="Offer in hand 25 L" /></label>
+                        <label className="full"><span>LWD / DOJ</span><input value={quickUpdateRecruiterSections.lwd_or_doj} onChange={(e) => setQuickUpdateRecruiterSections((current) => ({ ...current, lwd_or_doj: e.target.value }))} placeholder="8th June / 1st July" /></label>
+                      </div>
                       <label className="full">
-                        <span>Update note</span>
+                        <span>Additional recruiter note</span>
                         <textarea
                           value={quickUpdateText}
                           onChange={(e) => setQuickUpdateText(e.target.value)}
-                          placeholder="Nikhil current 15 L expected 25 L notice 15 days. Or: call tomorrow at 7 PM."
+                          placeholder="Optional free text that should stay in recruiter notes."
+                        />
+                      </label>
+                      <label className="full">
+                        <span>Status update note</span>
+                        <textarea
+                          value={quickUpdateStatusText}
+                          onChange={(e) => setQuickUpdateStatusText(e.target.value)}
+                          placeholder="Call tomorrow at 7 PM, or L2 tomorrow 12 PM."
                         />
                       </label>
                     </div>
                     <p className="muted">
                       {quickUpdateLinkedAssessment
-                        ? "This candidate is already in Assessments. Use recruiter note parsing to sync changed details, or use the last line to update assessment status."
-                        : "For status updates, the last line is the source of truth. For recruiter-detail changes, use Parse recruiter note first, then apply it."}
+                        ? "This candidate is already in Assessments. Use the fixed recruiter-note boxes to sync changed details, and use the last line of the status update box to update assessment status."
+                        : "For captured or applied candidates, use the fixed recruiter-note boxes for detail changes and the last line of the status update box for log-attempt movement."}
                     </p>
                     <div className="button-row">
                       <button onClick={() => void parseQuickUpdateRecruiterNote()}>Parse recruiter note</button>
