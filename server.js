@@ -3345,7 +3345,7 @@ const server = http.createServer(async (req, res) => {
       if (!meta.fileProvider && !meta.fileKey && !meta.fileUrl) {
         throw new Error("CV file not available for this candidate.");
       }
-      const expiresAt = Date.now() + 1000 * 60 * 60 * 24 * 7;
+      const expiresAt = Date.now() + 1000 * 60 * 60 * 24 * 45;
       const token = createSignedCvShareToken({
         type: "shared_cv",
         companyId: actor.companyId,

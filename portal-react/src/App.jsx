@@ -141,6 +141,40 @@ function normalizeShortcutKey(raw) {
   return value.startsWith("/") ? value : `/${value.replace(/^\/+/, "")}`;
 }
 
+function parseAmountToLpa(value) {
+  const raw = String(value || "").trim().toLowerCase();
+  if (!raw) return null;
+  const match = raw.match(/(\d+(?:\.\d+)?)/);
+  if (!match) return null;
+  const amount = Number(match[1]);
+  if (!Number.isFinite(amount)) return null;
+  if (/\bcr|crore\b/.test(raw)) return amount * 100;
+  if (/\bk\b/.test(raw) && !/\bl|lpa|lakh|lac\b/.test(raw)) return amount / 100;
+  return amount;
+}
+
+function parseExperienceToYears(value) {
+  const raw = String(value || "").trim().toLowerCase();
+  if (!raw) return null;
+  const yearsMatch = raw.match(/(\d+(?:\.\d+)?)\s*years?/);
+  const monthsMatch = raw.match(/(\d+(?:\.\d+)?)\s*months?/);
+  if (!yearsMatch && !monthsMatch) return null;
+  const years = yearsMatch ? Number(yearsMatch[1]) : 0;
+  const months = monthsMatch ? Number(monthsMatch[1]) : 0;
+  return years + (months / 12);
+}
+
+function parseNoticePeriodToDays(value) {
+  const raw = String(value || "").trim().toLowerCase();
+  if (!raw) return null;
+  if (/immediate|immediately|serving notice|available now/.test(raw)) return 0;
+  const daysMatch = raw.match(/(\d+(?:\.\d+)?)\s*days?/);
+  if (daysMatch) return Number(daysMatch[1]);
+  const monthsMatch = raw.match(/(\d+(?:\.\d+)?)\s*months?/);
+  if (monthsMatch) return Number(monthsMatch[1]) * 30;
+  return null;
+}
+
 function parseShortcutMap(value) {
   if (!String(value || "").trim()) return {};
   try {
