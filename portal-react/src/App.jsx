@@ -2394,8 +2394,14 @@ function PortalApp({ token, onLogout }) {
       assessment_status: item.candidateStatus || "",
       follow_up_at: formatDateForCopy(item.followUpAt || item.interviewAt || ""),
       candidate_id: assessmentLinkedCandidateMap.get(String(item.id || ""))?.id || "",
-      cv_url: assessmentLinkedCandidateMap.get(String(item.id || ""))?.cv_url || "",
-      cv_filename: assessmentLinkedCandidateMap.get(String(item.id || ""))?.cv_filename || ""
+      cv_url: decodePortalApplicantMetadata(assessmentLinkedCandidateMap.get(String(item.id || "")) || {}).fileUrl
+        || decodePortalApplicantMetadata(assessmentLinkedCandidateMap.get(String(item.id || "")) || {})?.cvAnalysisCache?.storedFile?.url
+        || assessmentLinkedCandidateMap.get(String(item.id || ""))?.cv_url
+        || "",
+      cv_filename: decodePortalApplicantMetadata(assessmentLinkedCandidateMap.get(String(item.id || "")) || {}).filename
+        || decodePortalApplicantMetadata(assessmentLinkedCandidateMap.get(String(item.id || "")) || {})?.cvAnalysisCache?.storedFile?.filename
+        || assessmentLinkedCandidateMap.get(String(item.id || ""))?.cv_filename
+        || ""
     }));
   }, [assessmentLinkedCandidateMap, filteredAssessments]);
   const selectedAssessmentRows = useMemo(() => (
@@ -2418,7 +2424,10 @@ function PortalApp({ token, onLogout }) {
       });
       const entries = await Promise.all(rowsNeedingLinks.map(async (item) => {
         try {
-          const result = await api(`/company/candidates/${encodeURIComponent(item.candidate_id)}/share-cv-link`, token);
+          const params = new URLSearchParams();
+          if (item.cv_url) params.set("cv_url", String(item.cv_url));
+          if (item.cv_filename) params.set("cv_filename", String(item.cv_filename));
+          const result = await api(`/company/candidates/${encodeURIComponent(item.candidate_id)}/share-cv-link${params.toString() ? `?${params.toString()}` : ""}`, token);
           return [item.candidate_id, result.url, "ready"];
         } catch {
           return [item.candidate_id, "", "missing"];
@@ -2785,6 +2794,22 @@ function PortalApp({ token, onLogout }) {
     if (storedFile.filename) params.set("cv_filename", String(storedFile.filename));
     window.open(`/company/candidates/${encodeURIComponent(interviewMeta.candidateId)}/cv?${params.toString()}`, "_blank", "noopener,noreferrer");
     setStatus("interview", "Opening uploaded CV...", "ok");
+  }
+
+  async function removeInterviewStoredCv() {
+    if (!interviewMeta.candidateId) {
+      setStatus("interview", "Open a real candidate draft before removing the uploaded CV.", "error");
+      return;
+    }
+    if (!interviewForm.cvAnalysis?.storedFile) {
+      setStatus("interview", "No uploaded CV is available to remove.", "error");
+      return;
+    }
+    if (!window.confirm("Remove the uploaded CV from this candidate?")) return;
+    await api(`/company/candidates/${encodeURIComponent(interviewMeta.candidateId)}/interview-cv`, token, "DELETE");
+    setInterviewForm((current) => ({ ...current, cvAnalysis: null, cvAnalysisApplied: false }));
+    setStatus("interview", "Uploaded CV removed.", "ok");
+    await loadWorkspace();
   }
 
   async function removeApplicant(applicantId) {
@@ -5257,6 +5282,7 @@ function PortalApp({ token, onLogout }) {
                       <span className="status-note">{getInterviewCvStoredFileLabel(interviewForm.cvAnalysis)}</span>
                       <span className="status-note">{`Stored: ${getInterviewCvStoredFilePath(interviewForm.cvAnalysis)}`}</span>
                       {interviewMeta.candidateId ? <button className="ghost-btn" onClick={() => openInterviewStoredCv()}>Open uploaded CV</button> : null}
+                      {interviewMeta.candidateId ? <button className="ghost-btn" onClick={() => void removeInterviewStoredCv()}>Remove uploaded CV</button> : null}
                     </div>
                   ) : null}
                   {interviewForm.cvAnalysis ? (

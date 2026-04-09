@@ -3265,6 +3265,9 @@ const server = http.createServer(async (req, res) => {
       const candidateId = String(requestUrl.pathname.replace(/^\/company\/candidates\//, "").replace(/\/cv$/, "")).trim();
       const candidate = (await listCandidatesForUser(actor, { id: candidateId, limit: 1 }))[0] || null;
       const meta = candidate ? decodeApplicantMetadata(candidate) : {};
+      const cachedStoredFile = meta?.cvAnalysisCache?.storedFile && typeof meta.cvAnalysisCache.storedFile === "object"
+        ? meta.cvAnalysisCache.storedFile
+        : null;
       const fallbackFileRef = inferStoredFileRefFromUrl(actor, requestUrl);
       const fileRef = (meta.fileProvider || meta.fileKey || meta.fileUrl)
         ? {
@@ -3274,6 +3277,14 @@ const server = http.createServer(async (req, res) => {
             filename: meta.filename,
             mimeType: meta.mimeType
           }
+        : (cachedStoredFile && (cachedStoredFile.key || cachedStoredFile.url))
+          ? {
+              provider: cachedStoredFile.provider,
+              key: cachedStoredFile.key,
+              url: cachedStoredFile.url,
+              filename: cachedStoredFile.filename,
+              mimeType: cachedStoredFile.mimeType
+            }
         : fallbackFileRef;
       if (!fileRef || (!fileRef.key && !fileRef.url)) {
         if (!candidate) throw new Error("Candidate not found in this company.");
@@ -3390,7 +3401,16 @@ const server = http.createServer(async (req, res) => {
       const candidate = (await listCandidatesForUser(actor, { id: candidateId, limit: 1 }))[0] || null;
       if (!candidate) throw new Error("Candidate not found in this company.");
       const meta = decodeApplicantMetadata(candidate);
-      if (!meta.fileProvider && !meta.fileKey && !meta.fileUrl) {
+      const cachedStoredFile = meta?.cvAnalysisCache?.storedFile && typeof meta.cvAnalysisCache.storedFile === "object"
+        ? meta.cvAnalysisCache.storedFile
+        : null;
+      const fallbackFileRef = inferStoredFileRefFromUrl(actor, requestUrl);
+      const fileProvider = meta.fileProvider || cachedStoredFile?.provider || fallbackFileRef?.provider || "";
+      const fileKey = meta.fileKey || cachedStoredFile?.key || fallbackFileRef?.key || "";
+      const fileUrl = meta.fileUrl || cachedStoredFile?.url || fallbackFileRef?.url || "";
+      const filename = meta.filename || cachedStoredFile?.filename || fallbackFileRef?.filename || "resume.pdf";
+      const mimeType = meta.mimeType || cachedStoredFile?.mimeType || fallbackFileRef?.mimeType || "application/octet-stream";
+      if (!fileProvider && !fileKey && !fileUrl) {
         throw new Error("CV file not available for this candidate.");
       }
       const expiresAt = Date.now() + 1000 * 60 * 60 * 24 * 45;
@@ -3399,11 +3419,11 @@ const server = http.createServer(async (req, res) => {
         companyId: actor.companyId,
         candidateId: String(candidate.id || "").trim(),
         candidateName: String(candidate.name || "").trim(),
-        fileProvider: meta.fileProvider || "",
-        fileKey: meta.fileKey || "",
-        fileUrl: meta.fileUrl || "",
-        filename: meta.filename || "resume.pdf",
-        mimeType: meta.mimeType || "application/octet-stream",
+        fileProvider,
+        fileKey,
+        fileUrl,
+        filename,
+        mimeType,
         expiresAt
       });
       const baseUrl = getRequestBaseUrl(req);
@@ -3417,6 +3437,31 @@ const server = http.createServer(async (req, res) => {
       });
     } catch (error) {
       sendJson(req, res, 400, { ok: false, error: String(error.message || error) });
+    }
+    return;
+  }
+
+  if (req.method === "DELETE" && /^\/company\/candidates\/[^/]+\/interview-cv$/.test(requestUrl.pathname)) {
+    try {
+      const actor = await requireSessionUser(getBearerToken(req));
+      const candidateId = String(requestUrl.pathname.replace(/^\/company\/candidates\//, "").replace(/\/interview-cv$/, "")).trim();
+      if (!candidateId) throw new Error("Candidate not found.");
+      const candidate = (await listCandidatesForUser(actor, { id: candidateId, limit: 1 }))[0] || null;
+      if (!candidate) throw new Error("Candidate not found in this company.");
+      const existingMeta = decodeApplicantMetadata(candidate);
+      const nextMeta = { ...(existingMeta || {}) };
+      delete nextMeta.filename;
+      delete nextMeta.mimeType;
+      delete nextMeta.fileProvider;
+      delete nextMeta.fileKey;
+      delete nextMeta.fileUrl;
+      delete nextMeta.cvAnalysisCache;
+      await patchCandidate(candidate.id, {
+        raw_note: encodeApplicantMetadata(nextMeta)
+      }, { companyId: actor.companyId });
+      sendJson(res, 200, { ok: true, result: { removed: true } });
+    } catch (error) {
+      sendJson(res, 400, { ok: false, error: String(error.message || error) });
     }
     return;
   }
@@ -3660,11 +3705,16 @@ const server = http.createServer(async (req, res) => {
     try {
       const actor = await requireSessionUser(getBearerToken(req));
       const body = await readJsonBody(req);
+      const incomingAssessment = body.assessment || body || {};
       const assessment = await saveAssessment({
         actorUserId: actor.id,
         companyId: actor.companyId,
-        assessment: body.assessment || body
+        assessment: incomingAssessment
       });
+      const linkedCandidateId = String(incomingAssessment.candidateId || incomingAssessment.candidate_id || "").trim();
+      if (linkedCandidateId && assessment?.id) {
+        await linkCandidateToAssessment(linkedCandidateId, assessment.id, { companyId: actor.companyId }).catch(() => null);
+      }
       sendJson(res, 200, { ok: true, result: assessment });
     } catch (error) {
       sendJson(res, 400, { ok: false, error: String(error.message || error) });
