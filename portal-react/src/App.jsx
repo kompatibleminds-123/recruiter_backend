@@ -2398,7 +2398,7 @@ function PortalApp({ token, onLogout }) {
     return () => {
       cancelled = true;
     };
-  }, [clientShareCvLinkState, selectedAssessmentRows, token]);
+  }, [selectedAssessmentRows, token]);
   const candidateUniverseAll = useMemo(() => {
     const linkedAssessmentIds = new Set((state.candidates || []).map((item) => String(item.assessment_id || "").trim()).filter(Boolean));
     const candidateNames = new Set((state.candidates || []).map((item) => String(item.name || "").trim().toLowerCase()).filter(Boolean));
