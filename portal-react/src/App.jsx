@@ -188,6 +188,12 @@ function getInterviewCvStoredFileLabel(analysis = null) {
   return String(stored.filename || stored.key || stored.url || "").trim();
 }
 
+function getInterviewCvStoredFilePath(analysis = null) {
+  const stored = analysis?.storedFile || null;
+  if (!stored) return "";
+  return String(stored.key || stored.url || "").trim();
+}
+
 function splitStructuredDraftLines(rawText) {
   return String(rawText || "")
     .replace(/\r/g, "")
@@ -2429,6 +2435,20 @@ function PortalApp({ token, onLogout }) {
     setStatus("applicants", "Opening CV...", "ok");
   }
 
+  function openInterviewStoredCv() {
+    if (!interviewMeta.candidateId) {
+      setStatus("interview", "Save or open a real candidate draft before opening the stored CV.", "error");
+      return;
+    }
+    if (!interviewForm.cvAnalysis?.storedFile) {
+      setStatus("interview", "No uploaded CV available yet.", "error");
+      return;
+    }
+    const params = new URLSearchParams({ access_token: token });
+    window.open(`/company/candidates/${encodeURIComponent(interviewMeta.candidateId)}/cv?${params.toString()}`, "_blank", "noopener,noreferrer");
+    setStatus("interview", "Opening uploaded CV...", "ok");
+  }
+
   async function removeApplicant(applicantId) {
     if (!window.confirm("Remove this applicant from the intake inbox?")) return;
     await api(`/company/applicants?id=${encodeURIComponent(applicantId)}`, token, "DELETE");
@@ -4516,6 +4536,8 @@ function PortalApp({ token, onLogout }) {
                     <div className="cv-analysis-meta">
                       <span className="status-note">{interviewForm.cvAnalysis.cached ? "Using cached parse" : "Parsed from uploaded CV"}</span>
                       <span className="status-note">{getInterviewCvStoredFileLabel(interviewForm.cvAnalysis)}</span>
+                      <span className="status-note">{`Stored: ${getInterviewCvStoredFilePath(interviewForm.cvAnalysis)}`}</span>
+                      {interviewMeta.candidateId ? <button className="ghost-btn" onClick={() => openInterviewStoredCv()}>Open uploaded CV</button> : null}
                     </div>
                   ) : null}
                   {interviewForm.cvAnalysis ? (
