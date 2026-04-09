@@ -312,6 +312,31 @@ function buildUploadedFileFingerprint(file = {}) {
   return crypto.createHash("sha1").update(fileData).digest("hex");
 }
 
+const INFERRED_SEARCH_TAG_RULES = [
+  { tag: "saas", patterns: [/\bsaas\b/i, /\bsoftware as a service\b/i, /\bcrm\b/i, /\bproduct company\b/i] },
+  { tag: "b2b", patterns: [/\bb2b\b/i, /\benterprise\b/i, /\bcorporate sales\b/i, /\bchannel partner\b/i, /\bbusiness development\b/i] },
+  { tag: "fintech", patterns: [/\bfintech\b/i, /\bpayments\b/i, /\blending\b/i, /\bloans?\b/i, /\bnbfc\b/i, /\bfinancial services\b/i] },
+  { tag: "lending", patterns: [/\bloans?\b/i, /\blap\b/i, /\bhome loan\b/i, /\bpersonal loan\b/i, /\bmortgage\b/i] },
+  { tag: "healthtech", patterns: [/\bhealthtech\b/i, /\bhealth care\b/i, /\bhospital\b/i, /\bpharma\b/i] },
+  { tag: "enterprise sales", patterns: [/\benterprise sales\b/i, /\baccount executive\b/i, /\baccount manager\b/i, /\bbusiness development\b/i] },
+  { tag: "node backend", patterns: [/\bnode\.?js\b/i, /\bnode js\b/i, /\bbackend\b/i] },
+  { tag: "react frontend", patterns: [/\breact\.?js\b/i, /\breact js\b/i, /\bfrontend\b/i, /\bfront end\b/i] }
+];
+
+function deriveInferredSearchTags({ cvResult = null, recruiterNotes = "", otherPointers = "", tags = [] } = {}) {
+  const combinedText = [
+    recruiterNotes,
+    otherPointers,
+    Array.isArray(tags) ? tags.join(" ") : "",
+    cvResult && typeof cvResult === "object" ? JSON.stringify(cvResult) : ""
+  ].filter(Boolean).join("\n");
+  const inferred = new Set();
+  for (const rule of INFERRED_SEARCH_TAG_RULES) {
+    if (rule.patterns.some((pattern) => pattern.test(combinedText))) inferred.add(rule.tag);
+  }
+  return Array.from(inferred);
+}
+
 function summarizeApplicantNotes(payload = {}) {
   return [
     payload?.sourcePlatform ? `Source: ${payload.sourcePlatform}` : "",
@@ -1358,6 +1383,7 @@ function buildCandidateSearchHay(item = {}) {
     item.currentOrgTenure || "",
     item.highestEducation || "",
     Array.isArray(item.skills) ? item.skills.join(" ") : "",
+    Array.isArray(item.inferredTags) ? item.inferredTags.join(" ") : "",
     item.hiddenCvText || "",
     item.notesText || "",
     item.candidateStatus || "",
@@ -1395,6 +1421,7 @@ function buildCandidateSearchUniverse(candidates = [], assessments = [], jobs = 
       currentOrgTenure: String(linkedAssessment?.currentOrgTenure || cachedCvResult?.currentOrgTenure || "").trim(),
       highestEducation: String(candidate?.highest_education || linkedAssessment?.highestEducation || cachedCvResult?.highestEducation || "").trim(),
       skills: Array.isArray(candidate?.skills) ? candidate.skills : [],
+      inferredTags: Array.isArray(candidateMeta?.inferredSearchTags) ? candidateMeta.inferredSearchTags : [],
       clientName: getClientLabel(candidate, linkedAssessment || {}),
       recruiterName: getRecruiterLabel(candidate, linkedAssessment || {}),
       sourcedRecruiter: getRecruiterLabel(candidate, linkedAssessment || {}),
@@ -1447,6 +1474,7 @@ function buildCandidateSearchUniverse(candidates = [], assessments = [], jobs = 
       currentOrgTenure: String(assessment?.currentOrgTenure || "").trim(),
       highestEducation: String(assessment?.highestEducation || "").trim(),
       skills: [],
+      inferredTags: [],
       clientName: getClientLabel({}, assessment),
       recruiterName: getRecruiterLabel({}, assessment),
       sourcedRecruiter: getRecruiterLabel({}, assessment),
@@ -3712,6 +3740,23 @@ const server = http.createServer(async (req, res) => {
         raw_note: String(input.raw_note || input.rawNote || "").trim() || undefined
       };
       Object.keys(patch).forEach((key) => patch[key] === undefined && delete patch[key]);
+      const existing = (await listCandidatesForUser(actor, { id: candidateId, limit: 1 }))[0] || null;
+      if (existing) {
+        const existingMeta = decodeApplicantMetadata(existing);
+        const cvResult = existingMeta?.cvAnalysisCache?.result && typeof existingMeta.cvAnalysisCache.result === "object"
+          ? existingMeta.cvAnalysisCache.result
+          : null;
+        const inferredSearchTags = deriveInferredSearchTags({
+          cvResult,
+          recruiterNotes: patch.recruiter_context_notes ?? existing.recruiter_context_notes ?? "",
+          otherPointers: patch.other_pointers ?? existing.other_pointers ?? "",
+          tags: Array.isArray(input.skills) ? input.skills : (Array.isArray(existing.skills) ? existing.skills : [])
+        });
+        patch.raw_note = encodeApplicantMetadata({
+          ...(existingMeta || {}),
+          inferredSearchTags
+        });
+      }
       const result = await patchCandidate(candidateId, patch, { companyId: actor.companyId });
       sendJson(res, 200, { ok: true, result });
     } catch (error) {
@@ -3951,7 +3996,13 @@ const server = http.createServer(async (req, res) => {
             mimeType: storedFile?.mimeType || ""
           },
           result
-        }
+        },
+        inferredSearchTags: deriveInferredSearchTags({
+          cvResult: result,
+          recruiterNotes: candidate?.recruiter_context_notes || "",
+          otherPointers: candidate?.other_pointers || "",
+          tags: Array.isArray(candidate?.skills) ? candidate.skills : []
+        })
       };
 
       await patchCandidate(candidate.id, {

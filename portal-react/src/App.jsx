@@ -2447,6 +2447,7 @@ function PortalApp({ token, onLogout }) {
         item.role || item.currentDesignation || "",
         item.position || item.jdTitle || "",
         Array.isArray(item.skills) ? item.skills.join(" ") : "",
+        Array.isArray(item.inferredTags) ? item.inferredTags.join(" ") : "",
         item.notesText || "",
         item.hiddenCvText || "",
         item.other_pointers || "",
