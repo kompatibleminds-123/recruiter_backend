@@ -737,12 +737,9 @@ function getRecruiterLabel(candidate = {}, assessment = {}) {
 }
 
 function getOwnerRecruiterLabel(candidate = {}, assessment = {}) {
-  return (
-    String(candidate.assigned_to_name || candidate.assignedToName || "").trim() ||
-    String(candidate.recruiter_name || candidate.recruiterName || "").trim() ||
-    String(assessment.recruiterName || assessment.recruiter_name || "").trim() ||
-    "Unassigned"
-  );
+  const assigned = String(candidate.assigned_to_name || candidate.assignedToName || "").trim();
+  if (assigned) return assigned;
+  return "Unassigned";
 }
 
 function buildKnownJdTitleSet(jobs = []) {
@@ -902,6 +899,17 @@ function createDashboardBucket() {
   };
 }
 
+function createDashboardRecruiterBucket() {
+  return {
+    metrics: createDashboardBucket(),
+    ownership: {
+      assignedSourcing: 0,
+      selfSourced: 0,
+      assignedApplicants: 0
+    }
+  };
+}
+
 function incrementDashboardMetric(target, metric) {
   target[metric] = Number(target[metric] || 0) + 1;
 }
@@ -927,6 +935,28 @@ function addCandidateMetrics(target, candidate, linkedAssessment, dateRange = {}
   if (bucket === "offered") incrementDashboardMetric(target, "offered");
   if (bucket === "joined") incrementDashboardMetric(target, "joined");
   return changed;
+}
+
+function addRecruiterOwnershipMetrics(target, recruiterLabel, candidate, linkedAssessment, dateRange = {}) {
+  if (!target || !recruiterLabel || recruiterLabel === "Unassigned") return;
+  const createdAt = getCandidateCreatedAt(candidate);
+  if (!isDateWithinRange(createdAt, dateRange.from, dateRange.to)) return;
+  const source = String(candidate?.source || "").trim().toLowerCase();
+  const isApplicant = source === "website_apply" || source === "hosted_apply";
+  const assignedLabel = getOwnerRecruiterLabel(candidate, linkedAssessment || {});
+  const sourcedLabel = getRecruiterLabel(candidate, linkedAssessment || {});
+  if (isApplicant) {
+    if (assignedLabel === recruiterLabel) {
+      target.ownership.assignedApplicants = Number(target.ownership.assignedApplicants || 0) + 1;
+    }
+    return;
+  }
+  if (assignedLabel === recruiterLabel) {
+    target.ownership.assignedSourcing = Number(target.ownership.assignedSourcing || 0) + 1;
+  }
+  if (sourcedLabel === recruiterLabel) {
+    target.ownership.selfSourced = Number(target.ownership.selfSourced || 0) + 1;
+  }
 }
 
 function toDashboardBreakdownMap(itemsMap) {
@@ -957,9 +987,10 @@ function buildDashboardSummary({ candidates = [], assessments = [], jobs = [], d
     const contributes = addCandidateMetrics(overall, candidate, linkedAssessment, dateRange);
     if (!contributes) continue;
     if (!byClient.has(clientLabel)) byClient.set(clientLabel, createDashboardBucket());
-    if (!byOwnerRecruiter.has(ownerRecruiterLabel)) byOwnerRecruiter.set(ownerRecruiterLabel, createDashboardBucket());
+    if (!byOwnerRecruiter.has(ownerRecruiterLabel)) byOwnerRecruiter.set(ownerRecruiterLabel, createDashboardRecruiterBucket());
     addCandidateMetrics(byClient.get(clientLabel), candidate, linkedAssessment, dateRange);
-    addCandidateMetrics(byOwnerRecruiter.get(ownerRecruiterLabel), candidate, linkedAssessment, dateRange);
+    addCandidateMetrics(byOwnerRecruiter.get(ownerRecruiterLabel).metrics, candidate, linkedAssessment, dateRange);
+    addRecruiterOwnershipMetrics(byOwnerRecruiter.get(ownerRecruiterLabel), ownerRecruiterLabel, candidate, linkedAssessment, dateRange);
     if (positionLabel) {
       const matrixKey = `${clientLabel}|||${positionLabel}|||${ownerRecruiterLabel}`;
       const clientPositionKey = `${clientLabel}|||${positionLabel}`;
@@ -982,7 +1013,9 @@ function buildDashboardSummary({ candidates = [], assessments = [], jobs = [], d
   return {
     overall,
     byClient: toDashboardBreakdownMap(byClient),
-    byOwnerRecruiter: toDashboardBreakdownMap(byOwnerRecruiter),
+    byOwnerRecruiter: Array.from(byOwnerRecruiter.entries())
+      .map(([label, value]) => ({ label, metrics: value.metrics, ownership: value.ownership }))
+      .sort((a, b) => a.label.localeCompare(b.label)),
     byClientPosition: Array.from(byClientPosition.values()).sort((a, b) =>
       `${a.clientLabel} ${a.positionLabel}`.localeCompare(`${b.clientLabel} ${b.positionLabel}`)
     ),

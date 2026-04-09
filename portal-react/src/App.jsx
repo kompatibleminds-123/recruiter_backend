@@ -4,7 +4,7 @@ import { NavLink, Navigate, Route, Routes, useLocation, useNavigate } from "reac
 const TOKEN_KEY = "recruitdesk_portal_token";
 const COPY_SETTINGS_STORAGE_KEY = "recruitdesk_portal_copy_settings_v1";
 
-const navSections = [
+const BASE_NAV_SECTIONS = [
   {
     label: "Core",
     items: [
@@ -32,10 +32,13 @@ const navSections = [
     label: "Admin",
     items: [
       { to: "/intake-settings", label: "Job Apply Link" },
-      { to: "/settings", label: "Preset Settings" },
-      { to: "/candidates", label: "Database" }
+      { to: "/settings", label: "Preset Settings" }
     ]
   }
+];
+
+const STANDALONE_NAV_ITEMS = [
+  { to: "/candidates", label: "Database" }
 ];
 
 const DEFAULT_COPY_SETTINGS = {
@@ -2234,6 +2237,18 @@ function PortalApp({ token, onLogout }) {
     }) || null;
   }, [quickUpdateCandidate, state.assessments]);
   const isSettingsAdmin = String(state.user?.role || "").toLowerCase() === "admin";
+  const navSections = useMemo(() => (
+    BASE_NAV_SECTIONS
+      .map((section) => ({
+        ...section,
+        items: section.items.filter((item) => {
+          if ((item.to === "/intake-settings" || item.to === "/settings") && !isSettingsAdmin) return false;
+          return true;
+        })
+      }))
+      .filter((section) => section.items.length)
+  ), [isSettingsAdmin]);
+  const standaloneNavItems = STANDALONE_NAV_ITEMS;
 
   function setStatus(key, message, kind = "") {
     setStatuses((current) => ({ ...current, [key]: message, [`${key}Kind`]: kind }));
@@ -4493,6 +4508,13 @@ function PortalApp({ token, onLogout }) {
               </div>
             </div>
           ))}
+          <div className="nav-standalone">
+            {standaloneNavItems.map((item) => (
+              <NavLink key={item.to} to={item.to} className={({ isActive }) => `nav-btn${isActive ? " active" : ""}`}>
+                {item.label}
+              </NavLink>
+            ))}
+          </div>
         </nav>
         <div className="sidebar-footer">
           <div className="muted">{state.user ? `${state.user.name} | ${state.user.role} | ${state.user.companyName || "Company"}` : "Not logged in"}</div>
@@ -4667,6 +4689,12 @@ function PortalApp({ token, onLogout }) {
                           <div>
                             <h3>{group.label}</h3>
                             <p className="muted">{`${group.metrics?.sourced || 0} sourced | ${group.metrics?.converted || 0} converted | ${group.metrics?.under_interview_process || 0} under interview`}</p>
+                            <p className="muted">
+                              {`Sourcing: ${group.ownership?.assignedSourcing || 0} assigned | ${group.ownership?.selfSourced || 0} self sourced`}
+                            </p>
+                            <p className="muted">
+                              {`Applicants: ${group.ownership?.assignedApplicants || 0} assigned/direct`}
+                            </p>
                           </div>
                         </summary>
                         <div className="metric-grid metric-grid--tight">
