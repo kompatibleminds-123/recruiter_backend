@@ -4245,16 +4245,21 @@ const server = http.createServer(async (req, res) => {
       summary.overall = createClientPortalBucket();
       summary.byClient = [];
       summary.byClientPosition = [];
+      summary.byStatus = [];
       const byPosition = new Map();
+      const byStatus = new Map();
       const dateRange = { from: dateFrom, to: dateTo };
       for (const item of scopedUniverse.filter((entry) => entry.sourceType !== "assessment_only")) {
         if (!addClientPortalMetrics(summary.overall, item, dateRange)) continue;
+        const statusBucket = getClientPortalLifecycleBucket(item);
+        byStatus.set(statusBucket, Number(byStatus.get(statusBucket) || 0) + 1);
         const key = `${item.clientName}|||${item.position || "Unassigned"}`;
         if (!byPosition.has(key)) byPosition.set(key, { clientLabel: item.clientName, positionLabel: item.position || "Unassigned", metrics: createClientPortalBucket() });
         addClientPortalMetrics(byPosition.get(key).metrics, item, dateRange);
       }
       summary.byClient = [{ label: clientUser.clientName, metrics: summary.overall }];
       summary.byClientPosition = Array.from(byPosition.values()).sort((a, b) => `${a.clientLabel} ${a.positionLabel}`.localeCompare(`${b.clientLabel} ${b.positionLabel}`));
+      summary.byStatus = Array.from(byStatus.entries()).map(([label, count]) => ({ label, count })).sort((a, b) => String(a.label).localeCompare(String(b.label)));
       sendJson(res, 200, { ok: true, result: { summary, user: clientUser } });
     } catch (error) {
       sendJson(res, 401, { ok: false, error: String(error.message || error) });

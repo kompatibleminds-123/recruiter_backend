@@ -2203,7 +2203,7 @@ function DrilldownModal({ open, title, items, onClose, onOpenCv, onOpenDraft, on
                       <div className="muted">{[feedbackMeta.status ? `Status: ${feedbackMeta.status}` : "", feedbackMeta.updatedBy || "", feedbackMeta.updatedAt ? new Date(feedbackMeta.updatedAt).toLocaleString() : ""].filter(Boolean).join(" | ")}</div>
                     </div>
                   ) : null}
-                  <div className="button-row">
+                  <div className="button-row drilldown-actions">
                     {onOpenCv && (item.raw?.candidate?.id || item.id) && (item.raw?.candidate?.cv_filename || item.raw?.candidate?.cv_url) ? <button onClick={() => onOpenCv(item.raw?.candidate?.id || item.id)}>Open CV</button> : null}
                     {onOpenDraft && item.raw?.candidate?.id ? <button onClick={() => onOpenDraft(item.raw.candidate.id)}>Open draft</button> : null}
                     {onOpenAssessment && (item.raw?.assessment || item.sourceType === "assessment_only") ? <button onClick={() => onOpenAssessment(item.raw?.assessment || item)}>{onOpenDraft ? "Edit assessment" : "Open profile"}</button> : null}
@@ -6339,7 +6339,9 @@ function ClientPortalApp({ token, onLogout }) {
   const selectedPosition = (summary.byClientPosition || []).find((row) => String(row.positionLabel || "") === String(filters.positionLabel || "")) || null;
   const positionOptions = Array.from(new Set((summary.byClientPosition || []).map((row) => row.positionLabel).filter(Boolean)));
   const rolePieRows = (summary.byClientPosition || []).map((row) => ({ label: row.positionLabel || "Unassigned", count: row.metrics?.total_shared || 0 }));
-  const statusPieRows = (summary.byStatus || []).map((row) => ({ label: CLIENT_PORTAL_STATUS_LABELS[row.label] || row.label, count: row.count || 0 }));
+  const statusPieRows = (summary.byStatus || []).length
+    ? (summary.byStatus || []).map((row) => ({ label: CLIENT_PORTAL_STATUS_LABELS[row.label] || row.label, count: row.count || 0 }))
+    : CLIENT_PORTAL_METRICS.filter(([key]) => key !== "total_shared" && Number(overall[key] || 0) > 0).map(([key, label]) => ({ label, count: Number(overall[key] || 0) }));
 
   async function applyFilters() {
     try {
