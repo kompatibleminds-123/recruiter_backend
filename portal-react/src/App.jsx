@@ -6212,7 +6212,14 @@ function ClientPortalApp({ token, onLogout }) {
   }
 
   useEffect(() => {
-    void loadClientPortal().catch((error) => setStatus(String(error?.message || error)));
+    void loadClientPortal().catch((error) => {
+      const message = String(error?.message || error);
+      if (/invalid|missing session|unauthorized|401/i.test(message)) {
+        onLogout();
+        return;
+      }
+      setStatus(message);
+    });
   }, [token]);
 
   const summary = clientPortal.summary || { overall: {}, byClient: [], byClientPosition: [] };
@@ -6223,9 +6230,18 @@ function ClientPortalApp({ token, onLogout }) {
   const positionOptions = Array.from(new Set((summary.byClientPosition || []).map((row) => row.positionLabel).filter(Boolean)));
 
   async function applyFilters() {
-    setStatus("Refreshing client portal...");
-    await loadClientPortal(filters);
-    setStatus("");
+    try {
+      setStatus("Refreshing client portal...");
+      await loadClientPortal(filters);
+      setStatus("");
+    } catch (error) {
+      const message = String(error?.message || error);
+      if (/invalid|missing session|unauthorized|401/i.test(message)) {
+        onLogout();
+        return;
+      }
+      setStatus(message);
+    }
   }
 
   async function openDrilldown({ title, metric, groupType, params = {} }) {
