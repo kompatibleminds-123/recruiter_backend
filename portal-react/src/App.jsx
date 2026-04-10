@@ -1499,7 +1499,7 @@ function isClientPortalUrl() {
 }
 
 function LoginScreen({ onRecruiterLogin, onClientLogin, busy, error, clientOnly = false }) {
-  const [mode, setMode] = useState(() => clientOnly ? "client" : window.localStorage.getItem(AUTH_MODE_KEY) || "recruiter");
+  const [mode, setMode] = useState(() => clientOnly ? "client" : "recruiter");
   const [email, setEmail] = useState("");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -6366,11 +6366,8 @@ function ClientPortalApp({ token, onLogout }) {
 
 export default function App() {
   const clientPortalUrl = isClientPortalUrl();
-  const [authMode, setAuthMode] = useState(() => {
-    if (clientPortalUrl) return "client";
-    return window.localStorage.getItem(AUTH_MODE_KEY) || (window.localStorage.getItem(CLIENT_TOKEN_KEY) ? "client" : "recruiter");
-  });
-  const [token, setToken] = useState(() => clientPortalUrl ? (window.localStorage.getItem(CLIENT_TOKEN_KEY) || "") : (window.localStorage.getItem(TOKEN_KEY) || window.localStorage.getItem(CLIENT_TOKEN_KEY) || ""));
+  const [authMode, setAuthMode] = useState(() => clientPortalUrl ? "client" : "recruiter");
+  const [token, setToken] = useState(() => clientPortalUrl ? (window.localStorage.getItem(CLIENT_TOKEN_KEY) || "") : (window.localStorage.getItem(TOKEN_KEY) || ""));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
