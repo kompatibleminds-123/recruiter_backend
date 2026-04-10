@@ -317,6 +317,13 @@ function buildVisibleTagList(item = {}) {
   return Array.from(new Set([...explicit, ...inferred].map((tag) => String(tag || "").trim()).filter(Boolean)));
 }
 
+function parseTagInputValue(raw = "") {
+  return String(raw || "")
+    .split(/[\n,]/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
 function buildInterviewCvAnalysis(baseForm = {}, result = {}, storedFile = null) {
   return {
     exactTotalExperience: result.totalExperience || "",
@@ -2218,6 +2225,7 @@ function PortalApp({ token, onLogout }) {
     recruiterNotes: "",
     callbackNotes: "",
     otherPointers: "",
+    tags: "",
     jdScreeningAnswers: {},
     cvAnalysis: null,
     cvAnalysisApplied: false
@@ -3339,6 +3347,7 @@ function PortalApp({ token, onLogout }) {
       recruiterNotes: matched?.recruiterNotes || candidate?.recruiter_context_notes || "",
       callbackNotes: candidate?.notes || "",
       otherPointers: matched?.otherPointers || candidate?.other_pointers || "",
+      tags: Array.isArray(candidate?.skills) ? candidate.skills.join(", ") : "",
       jdScreeningAnswers: matched?.jdScreeningAnswers || {},
       cvAnalysis: matched?.cvAnalysis || candidateCvAnalysis || null,
       cvAnalysisApplied: Boolean(matched?.cvAnalysisApplied),
@@ -3391,6 +3400,7 @@ function PortalApp({ token, onLogout }) {
       recruiterNotes: assessment?.recruiterNotes || matchedCandidate?.recruiter_context_notes || "",
       callbackNotes: matchedCandidate?.notes || "",
       otherPointers: assessment?.otherPointers || matchedCandidate?.other_pointers || "",
+      tags: Array.isArray(matchedCandidate?.skills) ? matchedCandidate.skills.join(", ") : "",
       jdScreeningAnswers: assessment?.jdScreeningAnswers || {},
       cvAnalysis: assessment?.cvAnalysis || candidateCvAnalysis || null,
       cvAnalysisApplied: Boolean(assessment?.cvAnalysisApplied),
@@ -3450,6 +3460,7 @@ function PortalApp({ token, onLogout }) {
       recruiterNotes: candidate.recruiter_context_notes || "",
       callbackNotes: candidate.notes || "",
       otherPointers: candidate.other_pointers || "",
+      tags: Array.isArray(candidate.skills) ? candidate.skills.join(", ") : "",
       jdScreeningAnswers: {},
       cvAnalysis: candidateCvAnalysis,
       cvAnalysisApplied: false,
@@ -3516,6 +3527,7 @@ function PortalApp({ token, onLogout }) {
         notice_period: interviewForm.noticePeriod,
         recruiter_context_notes: interviewForm.recruiterNotes,
         other_pointers: interviewForm.otherPointers,
+        skills: parseTagInputValue(interviewForm.tags),
         lwd_or_doj: interviewForm.lwdOrDoj,
         jd_title: interviewForm.jdTitle,
         client_name: interviewForm.clientName,
@@ -5358,6 +5370,7 @@ function PortalApp({ token, onLogout }) {
                       <label><span>LWD / DOJ</span><input value={interviewForm.lwdOrDoj} onChange={(e) => setInterviewForm((c) => ({ ...c, lwdOrDoj: e.target.value }))} /></label>
                       <label><span>Total experience</span><input value={interviewForm.totalExperience} onChange={(e) => setInterviewForm((c) => ({ ...c, totalExperience: e.target.value }))} /></label>
                       <label><span>Tenure in current org</span><input value={interviewForm.currentOrgTenure} onChange={(e) => setInterviewForm((c) => ({ ...c, currentOrgTenure: e.target.value }))} /></label>
+                      <label><span>Tags / searchable keywords</span><textarea value={interviewForm.tags} onChange={(e) => setInterviewForm((c) => ({ ...c, tags: e.target.value }))} placeholder="SaaS, B2B, enterprise sales, node backend..." /></label>
                       <label><span>Reason of change</span><textarea value={interviewForm.reasonForChange} onChange={(e) => setInterviewForm((c) => ({ ...c, reasonForChange: e.target.value }))} /></label>
                       <label><span>Location</span><input value={interviewForm.location} onChange={(e) => setInterviewForm((c) => ({ ...c, location: e.target.value }))} /></label>
                     </div>
