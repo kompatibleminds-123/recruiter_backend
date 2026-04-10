@@ -5303,12 +5303,12 @@ function PortalApp({ token, onLogout }) {
                         <summary className="dashboard-group__summary">
                           <div>
                             <h3>{group.label}</h3>
-                            <p className="muted">{`${group.metrics?.sourced || 0} sourced | ${group.metrics?.converted || 0} converted | ${group.metrics?.under_interview_process || 0} under interview`}</p>
+                            <p className="muted">{`${group.metrics?.sourced || 0} candidates | ${group.metrics?.converted || 0} shared | ${group.metrics?.under_interview_process || 0} under interview | ${group.metrics?.shortlisted || 0} shortlisted | ${group.metrics?.offered || 0} offered`}</p>
                             <p className="muted">
                               {`Sourcing: ${group.ownership?.assignedSourcing || 0} assigned | ${group.ownership?.selfSourced || 0} self sourced`}
                             </p>
                             <p className="muted">
-                              {`Applicants: ${group.ownership?.assignedApplicants || 0} assigned/direct`}
+                              {`Applicants: ${group.ownership?.assignedApplicants || 0} assigned | ${group.ownership?.directApplicants || 0} direct`}
                             </p>
                           </div>
                         </summary>

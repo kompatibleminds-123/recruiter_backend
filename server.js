@@ -948,7 +948,8 @@ function createDashboardRecruiterBucket() {
     ownership: {
       assignedSourcing: 0,
       selfSourced: 0,
-      assignedApplicants: 0
+      assignedApplicants: 0,
+      directApplicants: 0
     }
   };
 }
@@ -994,7 +995,12 @@ function addRecruiterOwnershipMetrics(target, recruiterLabel, candidate, linkedA
   const sourcedLabel = getRecruiterLabel(candidate, linkedAssessment || {});
   if (isApplicant) {
     if (assignedLabel === recruiterLabel) {
-      target.ownership.assignedApplicants = Number(target.ownership.assignedApplicants || 0) + 1;
+      const wasManuallyAssigned = Boolean(
+        String(candidate?.assigned_by_user_id || candidate?.assignedByUserId || "").trim()
+        || String(candidate?.assigned_by_name || candidate?.assignedByName || "").trim()
+      );
+      const key = wasManuallyAssigned ? "assignedApplicants" : "directApplicants";
+      target.ownership[key] = Number(target.ownership[key] || 0) + 1;
     }
     return;
   }
