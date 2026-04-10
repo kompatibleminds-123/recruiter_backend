@@ -33,6 +33,7 @@ const BASE_NAV_SECTIONS = [
   {
     label: "Admin",
     items: [
+      { to: "/login-settings", label: "Login Settings" },
       { to: "/intake-settings", label: "Job Apply Link" },
       { to: "/settings", label: "Preset Settings" }
     ]
@@ -1490,11 +1491,22 @@ function Section({ kicker, title, children }) {
   );
 }
 
-function LoginScreen({ onRecruiterLogin, onClientLogin, busy, error }) {
-  const [mode, setMode] = useState(() => window.localStorage.getItem(AUTH_MODE_KEY) || "recruiter");
+function isClientPortalUrl() {
+  if (typeof window === "undefined") return false;
+  const search = new URLSearchParams(window.location.search || "");
+  const mode = String(search.get("mode") || search.get("portal") || "").toLowerCase();
+  return window.location.pathname.startsWith("/client-portal") || mode === "client";
+}
+
+function LoginScreen({ onRecruiterLogin, onClientLogin, busy, error, clientOnly = false }) {
+  const [mode, setMode] = useState(() => clientOnly ? "client" : window.localStorage.getItem(AUTH_MODE_KEY) || "recruiter");
   const [email, setEmail] = useState("");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+
+  useEffect(() => {
+    if (clientOnly) setMode("client");
+  }, [clientOnly]);
 
   useEffect(() => {
     try {
@@ -1510,10 +1522,11 @@ function LoginScreen({ onRecruiterLogin, onClientLogin, busy, error }) {
         <div className="section-kicker">{mode === "client" ? "Client Portal" : "Company Login"}</div>
         <h1>{mode === "client" ? "Open your client hiring dashboard" : "Open your RecruitDesk workspace"}</h1>
         <p className="muted">{mode === "client" ? "Use the client username and password shared by your recruiter team." : "Use your existing company admin or recruiter credentials."}</p>
-        <div className="button-row">
-          <button type="button" className={mode === "recruiter" ? "" : "ghost-btn"} onClick={() => setMode("recruiter")}>Recruiter login</button>
-          <button type="button" className={mode === "client" ? "" : "ghost-btn"} onClick={() => setMode("client")}>Client login</button>
-        </div>
+        {!clientOnly ? (
+          <div className="button-row">
+            <button type="button">Recruiter login</button>
+          </div>
+        ) : null}
         <form className="form-grid" onSubmit={(e) => { e.preventDefault(); mode === "client" ? onClientLogin({ username, password }) : onRecruiterLogin({ email, password }); }}>
           {mode === "client"
             ? <label><span>Username</span><input value={username} onChange={(e) => setUsername(e.target.value)} required /></label>
@@ -2278,6 +2291,9 @@ function PortalApp({ token, onLogout }) {
     }
   });
   const [newPresetDraft, setNewPresetDraft] = useState({ label: "", columns: "" });
+  const [teamUserDraft, setTeamUserDraft] = useState({ name: "", email: "", password: "", role: "recruiter" });
+  const [teamPasswordDrafts, setTeamPasswordDrafts] = useState({});
+  const [companyDraft, setCompanyDraft] = useState({ companyName: "", adminName: "", email: "", password: "", platformSecret: "" });
   const [clientUsers, setClientUsers] = useState([]);
   const [clientUserDraft, setClientUserDraft] = useState({ username: "", password: "", clientName: "", allowedPositions: "" });
   const [clientPasswordDrafts, setClientPasswordDrafts] = useState({});
@@ -2382,7 +2398,7 @@ function PortalApp({ token, onLogout }) {
       .map((section) => ({
         ...section,
         items: section.items.filter((item) => {
-          if ((item.to === "/intake-settings" || item.to === "/settings") && !isSettingsAdmin) return false;
+          if ((item.to === "/login-settings" || item.to === "/intake-settings" || item.to === "/settings") && !isSettingsAdmin) return false;
           return true;
         })
       }))
@@ -4377,7 +4393,7 @@ function PortalApp({ token, onLogout }) {
 
   async function createClientPortalUser() {
     if (!isSettingsAdmin) {
-      setStatus("settings", "Only admin can create client accounts.", "error");
+      setStatus("loginSettings", "Only admin can create client accounts.", "error");
       return;
     }
     const payload = {
@@ -4389,22 +4405,82 @@ function PortalApp({ token, onLogout }) {
     await api("/company/client-users", token, "POST", payload);
     await loadWorkspace();
     setClientUserDraft({ username: "", password: "", clientName: "", allowedPositions: "" });
-    setStatus("settings", "Client portal account created.", "ok");
+    setStatus("loginSettings", "Client portal account created.", "ok");
   }
 
   async function resetClientPortalPassword(clientUserId) {
     if (!isSettingsAdmin) {
-      setStatus("settings", "Only admin can reset client passwords.", "error");
+      setStatus("loginSettings", "Only admin can reset client passwords.", "error");
       return;
     }
     const nextPassword = String(clientPasswordDrafts[clientUserId] || "").trim();
     if (!nextPassword) {
-      setStatus("settings", "Enter a new password first.", "error");
+      setStatus("loginSettings", "Enter a new password first.", "error");
       return;
     }
     await api("/company/client-users/password", token, "POST", { clientUserId, newPassword: nextPassword });
     setClientPasswordDrafts((current) => ({ ...current, [clientUserId]: "" }));
-    setStatus("settings", "Client password reset.", "ok");
+    setStatus("loginSettings", "Client password reset.", "ok");
+  }
+
+  async function createTeamUser() {
+    if (!isSettingsAdmin) {
+      setStatus("loginSettings", "Only admin can add team members.", "error");
+      return;
+    }
+    const payload = {
+      name: String(teamUserDraft.name || "").trim(),
+      email: String(teamUserDraft.email || "").trim(),
+      password: String(teamUserDraft.password || ""),
+      role: String(teamUserDraft.role || "recruiter").trim()
+    };
+    await api("/company/users", token, "POST", payload);
+    await loadWorkspace();
+    setTeamUserDraft({ name: "", email: "", password: "", role: "recruiter" });
+    setStatus("loginSettings", "Team member created.", "ok");
+  }
+
+  async function resetTeamUserPassword(userId) {
+    if (!isSettingsAdmin) {
+      setStatus("loginSettings", "Only admin can reset team passwords.", "error");
+      return;
+    }
+    const nextPassword = String(teamPasswordDrafts[userId] || "").trim();
+    if (!nextPassword) {
+      setStatus("loginSettings", "Enter a new team password first.", "error");
+      return;
+    }
+    await api("/company/users/password", token, "POST", { userId, newPassword: nextPassword });
+    setTeamPasswordDrafts((current) => ({ ...current, [userId]: "" }));
+    setStatus("loginSettings", "Team password reset.", "ok");
+  }
+
+  async function deleteTeamUser(userId) {
+    if (!isSettingsAdmin) {
+      setStatus("loginSettings", "Only admin can remove team members.", "error");
+      return;
+    }
+    if (!window.confirm("Remove this team member from the company?")) return;
+    await api("/company/users", token, "DELETE", { userId });
+    await loadWorkspace();
+    setStatus("loginSettings", "Team member removed.", "ok");
+  }
+
+  async function createCompanyFromLoginSettings() {
+    if (!isSettingsAdmin) {
+      setStatus("loginSettings", "Only admin can create companies from this panel.", "error");
+      return;
+    }
+    const payload = {
+      companyName: String(companyDraft.companyName || "").trim(),
+      adminName: String(companyDraft.adminName || "").trim(),
+      email: String(companyDraft.email || "").trim(),
+      password: String(companyDraft.password || ""),
+      platformSecret: String(companyDraft.platformSecret || "").trim()
+    };
+    await api("/platform/companies", token, "POST", payload);
+    setCompanyDraft({ companyName: "", adminName: "", email: "", password: "", platformSecret: "" });
+    setStatus("loginSettings", "Company and first admin created.", "ok");
   }
 
   function addCustomPreset() {
@@ -5921,16 +5997,69 @@ function PortalApp({ token, onLogout }) {
                     {isSettingsAdmin ? <button onClick={() => void saveSharedCopySettings()}>Save shared settings</button> : null}
                   </div>
                 </Section>
+              </div>
+            } />
 
-                <Section kicker="Client Access" title="Client Portal Accounts">
-                  <p className="muted">Create client usernames here. These credentials are for the separate client-facing portal, not the recruiter workspace.</p>
+            <Route path="/login-settings" element={
+              <div className="page-grid">
+                <Section kicker="Admin Access" title="Login Settings">
+                  <p className="muted">Manage company workspace users and client portal access from one place. Client portal URL: https://recruiter-backend-yvex.onrender.com/client-portal</p>
+                  {statuses.loginSettings ? <div className={`status ${statuses.loginSettingsKind || ""}`}>{statuses.loginSettings}</div> : null}
+                </Section>
+
+                <Section kicker="Company Workspace" title="Add Company">
+                  <p className="muted">Only platform-authorized admins can create companies. Backend will allow this only if your email is in Render allowlist or a valid platform secret is provided.</p>
+                  <div className="form-grid two-col">
+                    <label><span>Company name</span><input disabled={!isSettingsAdmin} value={companyDraft.companyName} onChange={(e) => setCompanyDraft((current) => ({ ...current, companyName: e.target.value }))} placeholder="Kompatible Minds" /></label>
+                    <label><span>First admin name</span><input disabled={!isSettingsAdmin} value={companyDraft.adminName} onChange={(e) => setCompanyDraft((current) => ({ ...current, adminName: e.target.value }))} placeholder="Admin name" /></label>
+                    <label><span>Admin email</span><input disabled={!isSettingsAdmin} type="email" value={companyDraft.email} onChange={(e) => setCompanyDraft((current) => ({ ...current, email: e.target.value }))} placeholder="admin@company.com" /></label>
+                    <label><span>Temporary password</span><input disabled={!isSettingsAdmin} type="password" value={companyDraft.password} onChange={(e) => setCompanyDraft((current) => ({ ...current, password: e.target.value }))} placeholder="Temporary password" /></label>
+                    <label className="full"><span>Platform authorization secret</span><input disabled={!isSettingsAdmin} type="password" value={companyDraft.platformSecret} onChange={(e) => setCompanyDraft((current) => ({ ...current, platformSecret: e.target.value }))} placeholder="Optional if your admin email is already allowlisted in Render" /></label>
+                  </div>
+                  {isSettingsAdmin ? <div className="button-row"><button onClick={() => void createCompanyFromLoginSettings()}>Create company</button></div> : null}
+                </Section>
+
+                <Section kicker="Team Access" title="Add Users">
+                  <p className="muted">Create admins and recruiters for this company workspace. Existing admin passwords are not reset from here for safety.</p>
+                  <div className="form-grid two-col">
+                    <label><span>Member name</span><input disabled={!isSettingsAdmin} value={teamUserDraft.name} onChange={(e) => setTeamUserDraft((current) => ({ ...current, name: e.target.value }))} placeholder="Ankit Garg" /></label>
+                    <label><span>Member email</span><input disabled={!isSettingsAdmin} type="email" value={teamUserDraft.email} onChange={(e) => setTeamUserDraft((current) => ({ ...current, email: e.target.value }))} placeholder="member@company.com" /></label>
+                    <label><span>Member role</span><select disabled={!isSettingsAdmin} value={teamUserDraft.role} onChange={(e) => setTeamUserDraft((current) => ({ ...current, role: e.target.value }))}><option value="recruiter">Recruiter</option><option value="admin">Admin</option></select></label>
+                    <label><span>Temporary password</span><input disabled={!isSettingsAdmin} type="password" value={teamUserDraft.password} onChange={(e) => setTeamUserDraft((current) => ({ ...current, password: e.target.value }))} placeholder="Temporary password" /></label>
+                  </div>
+                  {isSettingsAdmin ? <div className="button-row"><button onClick={() => void createTeamUser()}>Create member</button></div> : null}
+                  <div className="stack-list compact">
+                    {(state.users || []).map((item) => (
+                      <article className="item-card compact-card" key={item.id}>
+                        <div className="item-card__top">
+                          <div>
+                            <h3>{item.name}</h3>
+                            <p className="muted">{`${item.email} | ${String(item.role || "").toLowerCase() === "admin" ? "Admin" : "Recruiter"}`}</p>
+                          </div>
+                          {isSettingsAdmin && String(item.role || "").toLowerCase() !== "admin" ? (
+                            <div className="form-grid" style={{ minWidth: "260px" }}>
+                              <label><span>Reset password</span><input type="password" value={teamPasswordDrafts[item.id] || ""} onChange={(e) => setTeamPasswordDrafts((current) => ({ ...current, [item.id]: e.target.value }))} placeholder="New password" /></label>
+                              <div className="button-row tight">
+                                <button className="ghost-btn" onClick={() => void resetTeamUserPassword(item.id)}>Reset</button>
+                                <button className="ghost-btn" onClick={() => void deleteTeamUser(item.id)}>Remove</button>
+                              </div>
+                            </div>
+                          ) : null}
+                        </div>
+                      </article>
+                    ))}
+                  </div>
+                </Section>
+
+                <Section kicker="Client Access" title="Add Client">
+                  <p className="muted">Create client usernames for the separate client portal. Position access is optional; leave it blank so this client can see all current and future positions for their client name.</p>
                   <div className="form-grid two-col">
                     <label><span>Username</span><input disabled={!isSettingsAdmin} value={clientUserDraft.username} onChange={(e) => setClientUserDraft((current) => ({ ...current, username: e.target.value }))} placeholder="attentive_hr" /></label>
                     <label><span>Password</span><input disabled={!isSettingsAdmin} type="password" value={clientUserDraft.password} onChange={(e) => setClientUserDraft((current) => ({ ...current, password: e.target.value }))} placeholder="Set client password" /></label>
                     <label><span>Client name</span><input disabled={!isSettingsAdmin} value={clientUserDraft.clientName} onChange={(e) => setClientUserDraft((current) => ({ ...current, clientName: e.target.value }))} placeholder="Attentive" /></label>
-                    <label className="full"><span>Allowed positions</span><textarea disabled={!isSettingsAdmin} value={clientUserDraft.allowedPositions} onChange={(e) => setClientUserDraft((current) => ({ ...current, allowedPositions: e.target.value }))} placeholder={"AE\nSDR\nAccount Manager"} /></label>
+                    <label className="full"><span>Position access (optional)</span><textarea disabled={!isSettingsAdmin} value={clientUserDraft.allowedPositions} onChange={(e) => setClientUserDraft((current) => ({ ...current, allowedPositions: e.target.value }))} placeholder={"Leave blank for all current and future positions\nOptional: AE\nOptional: SDR"} /></label>
                   </div>
-                  {isSettingsAdmin ? <div className="button-row"><button onClick={() => void createClientPortalUser()}>Create client account</button></div> : null}
+                  {isSettingsAdmin ? <div className="button-row"><button onClick={() => void createClientPortalUser()}>Create client login</button></div> : null}
                   <div className="stack-list compact">
                     {!clientUsers.length ? <div className="empty-state">No client portal accounts created yet.</div> : clientUsers.map((item) => (
                       <article className="item-card compact-card" key={item.id}>
@@ -5938,7 +6067,7 @@ function PortalApp({ token, onLogout }) {
                           <div>
                             <h3>{item.clientName}</h3>
                             <p className="muted">{`Username: ${item.username}`}</p>
-                            <div className="candidate-snippet">{(item.allowedPositions || []).join("\n") || "All positions for this client"}</div>
+                            <div className="candidate-snippet">{(item.allowedPositions || []).join("\n") || "All current and future positions for this client"}</div>
                           </div>
                           {isSettingsAdmin ? (
                             <div className="form-grid" style={{ minWidth: "240px" }}>
@@ -6166,8 +6295,12 @@ function ClientPortalApp({ token, onLogout }) {
 }
 
 export default function App() {
-  const [authMode, setAuthMode] = useState(() => window.localStorage.getItem(AUTH_MODE_KEY) || (window.localStorage.getItem(CLIENT_TOKEN_KEY) ? "client" : "recruiter"));
-  const [token, setToken] = useState(() => window.localStorage.getItem(TOKEN_KEY) || window.localStorage.getItem(CLIENT_TOKEN_KEY) || "");
+  const clientPortalUrl = isClientPortalUrl();
+  const [authMode, setAuthMode] = useState(() => {
+    if (clientPortalUrl) return "client";
+    return window.localStorage.getItem(AUTH_MODE_KEY) || (window.localStorage.getItem(CLIENT_TOKEN_KEY) ? "client" : "recruiter");
+  });
+  const [token, setToken] = useState(() => clientPortalUrl ? (window.localStorage.getItem(CLIENT_TOKEN_KEY) || "") : (window.localStorage.getItem(TOKEN_KEY) || window.localStorage.getItem(CLIENT_TOKEN_KEY) || ""));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
@@ -6209,11 +6342,11 @@ export default function App() {
     localStorage.removeItem(TOKEN_KEY);
     localStorage.removeItem(CLIENT_TOKEN_KEY);
     localStorage.removeItem(AUTH_MODE_KEY);
-    setAuthMode("recruiter");
+    setAuthMode(clientPortalUrl ? "client" : "recruiter");
     setToken("");
   }
 
-  if (!token) return <LoginScreen onRecruiterLogin={loginRecruiter} onClientLogin={loginClientUser} busy={busy} error={error} />;
+  if (!token) return <LoginScreen onRecruiterLogin={loginRecruiter} onClientLogin={loginClientUser} busy={busy} error={error} clientOnly={clientPortalUrl} />;
   return authMode === "client"
     ? <PortalErrorBoundary><ClientPortalApp token={token} onLogout={logout} /></PortalErrorBoundary>
     : <PortalErrorBoundary><PortalApp token={token} onLogout={logout} /></PortalErrorBoundary>;
