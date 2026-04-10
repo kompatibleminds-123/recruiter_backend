@@ -800,6 +800,16 @@ function buildAssessmentJourneyEntries(assessment, contactAttempts = [], candida
     });
   });
 
+  const feedbackHistory = Array.isArray(assessment?.clientFeedbackHistory) ? assessment.clientFeedbackHistory : [];
+  feedbackHistory.forEach((item) => {
+    const when = item?.updatedAt || item?.at || "";
+    if (!when) return;
+    entries.push({
+      at: when,
+      text: `Client feedback | ${[item?.status, item?.feedback, item?.interviewAt ? `Interview ${new Date(item.interviewAt).toLocaleString()}` : "", item?.updatedBy].filter(Boolean).join(" | ")}`
+    });
+  });
+
   return entries
     .filter((item) => item.at && item.text)
     .sort((a, b) => new Date(a.at) - new Date(b.at));
@@ -5595,6 +5605,13 @@ function PortalApp({ token, onLogout }) {
                             item.updatedAt ? `Updated ${new Date(item.updatedAt).toLocaleString()}` : ""
                           ].filter(Boolean).join(" | ")}
                         </div>
+                        {item.clientFeedback ? (
+                          <div className="feedback-preview">
+                            <div className="feedback-preview__label">Client feedback</div>
+                            <div>{item.clientFeedback}</div>
+                            <div className="muted">{[item.clientFeedbackStatus ? `Status: ${item.clientFeedbackStatus}` : "", item.clientFeedbackUpdatedBy || "", item.clientFeedbackUpdatedAt ? new Date(item.clientFeedbackUpdatedAt).toLocaleString() : ""].filter(Boolean).join(" | ")}</div>
+                          </div>
+                        ) : null}
                       </div>
                     </div>
                     <div className="button-row">
