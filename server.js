@@ -3620,6 +3620,48 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (req.method === "GET" && requestUrl.pathname === "/company/share-cv-link") {
+    try {
+      const actor = await requireSessionUser(getBearerToken(req));
+      const fallbackFileRef = inferStoredFileRefFromUrl(actor, requestUrl);
+      const fileProvider = String(requestUrl.searchParams.get("cv_provider") || fallbackFileRef?.provider || "").trim();
+      const fileKey = String(requestUrl.searchParams.get("cv_key") || fallbackFileRef?.key || "").trim();
+      const fileUrl = String(requestUrl.searchParams.get("cv_url") || fallbackFileRef?.url || "").trim();
+      const filename = String(requestUrl.searchParams.get("cv_filename") || fallbackFileRef?.filename || "resume.pdf").trim();
+      const mimeType = String(requestUrl.searchParams.get("cv_mime_type") || fallbackFileRef?.mimeType || "application/octet-stream").trim();
+      const candidateId = String(requestUrl.searchParams.get("candidate_id") || "").trim();
+      const candidateName = String(requestUrl.searchParams.get("candidate_name") || "").trim();
+      if (!fileProvider && !fileKey && !fileUrl) {
+        throw new Error("CV file not available for sharing.");
+      }
+      const expiresAt = Date.now() + 1000 * 60 * 60 * 24 * 45;
+      const token = createSignedCvShareToken({
+        type: "shared_cv",
+        companyId: actor.companyId,
+        candidateId,
+        candidateName,
+        fileProvider,
+        fileKey,
+        fileUrl,
+        filename,
+        mimeType,
+        expiresAt
+      });
+      const baseUrl = getRequestBaseUrl(req);
+      sendJson(res, 200, {
+        ok: true,
+        result: {
+          token,
+          expiresAt: new Date(expiresAt).toISOString(),
+          url: `${baseUrl}/shared/cv?token=${encodeURIComponent(token)}`
+        }
+      });
+    } catch (error) {
+      sendJson(res, 400, { ok: false, error: String(error.message || error) });
+    }
+    return;
+  }
+
   if (req.method === "DELETE" && /^\/company\/candidates\/[^/]+\/interview-cv$/.test(requestUrl.pathname)) {
     try {
       const actor = await requireSessionUser(getBearerToken(req));

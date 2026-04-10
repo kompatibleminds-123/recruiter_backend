@@ -2548,13 +2548,13 @@ function PortalApp({ token, onLogout }) {
         const shareKey = String(item.candidate_id || item.id || "");
         try {
           const params = new URLSearchParams();
+          if (item.candidate_id) params.set("candidate_id", String(item.candidate_id));
           if (item.cv_provider) params.set("cv_provider", String(item.cv_provider));
           if (item.cv_key) params.set("cv_key", String(item.cv_key));
           if (item.cv_url) params.set("cv_url", String(item.cv_url));
           if (item.cv_filename) params.set("cv_filename", String(item.cv_filename));
           if (item.name) params.set("candidate_name", String(item.name));
-          const routeId = String(item.candidate_id || item.id || "");
-          const result = await api(`/company/candidates/${encodeURIComponent(routeId)}/share-cv-link${params.toString() ? `?${params.toString()}` : ""}`, token);
+          const result = await api(`/company/share-cv-link${params.toString() ? `?${params.toString()}` : ""}`, token);
           return [shareKey, result.url, "ready"];
         } catch {
           return [shareKey, "", "missing"];
