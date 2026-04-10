@@ -673,7 +673,7 @@ function inferAssessmentStatusAndSchedule(text, baseDate = new Date()) {
 
   const hasOffer = /\boffer\b|\boffered\b/.test(value);
   const hasDropped = /\bdropout\b|\bdropped\b|\bbackout\b/.test(value);
-  const hasReject = /\breject\b|\brejected\b/.test(value);
+  const hasReject = /\breject\b|\brejected\b|\brejct\b|\brject\b|\brejecte?d?\b/.test(value);
   const hasScreening = /\bscreening\b/.test(value);
   const hasHr = /\bhr\b/.test(value);
   const hasL2 = /\bl2\b/.test(value);
@@ -695,13 +695,13 @@ function inferAssessmentStatusAndSchedule(text, baseDate = new Date()) {
   else if (hasJoined) candidateStatus = "Joined";
   else if (hasShortlisted) candidateStatus = "Shortlisted";
   else if (hasOffer) candidateStatus = "Offered";
+  else if (hasReject) candidateStatus = "Interview Reject";
   else if (hasFeedback) candidateStatus = "Feedback Awaited";
   else if (hasHold) candidateStatus = "Hold";
   else if (hasHr) candidateStatus = "HR interview aligned";
   else if (hasL2) candidateStatus = "L2 aligned";
   else if (hasL1) candidateStatus = "L1 aligned";
   else if (hasScreeningCall) candidateStatus = "Screening call aligned";
-  else if (hasReject) candidateStatus = "Interview Reject";
 
   const shouldTrackDate = Boolean(candidateStatus) && (
     isInterviewAlignedStatus(candidateStatus) ||
@@ -1920,7 +1920,8 @@ function AssessmentStatusModal({ open, assessment, onClose, onSave }) {
 
   useEffect(() => {
     const lastLine = extractLastMeaningfulLine(notes);
-    const parsed = inferAssessmentStatusAndSchedule(lastLine);
+    const parsedFromLastLine = inferAssessmentStatusAndSchedule(lastLine);
+    const parsed = parsedFromLastLine.candidateStatus ? parsedFromLastLine : inferAssessmentStatusAndSchedule(notes);
     if (parsed.candidateStatus && parsed.candidateStatus !== candidateStatus) {
       setCandidateStatus(parsed.candidateStatus);
     }
@@ -2241,7 +2242,12 @@ function ClientProfileModal({ open, item, onClose }) {
             </div>
           ))}
         </div>
-        {otherPointers ? <div className="candidate-snippet"><strong>Other Pointers</strong>{`\n${otherPointers}`}</div> : null}
+        {otherPointers ? (
+          <div className="client-profile-notes">
+            <div className="info-label">Other Pointers</div>
+            <div className="client-profile-notes__body">{otherPointers}</div>
+          </div>
+        ) : null}
         <div className="button-row">
           <button className="ghost-btn" onClick={onClose}>Close</button>
         </div>

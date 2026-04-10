@@ -160,6 +160,19 @@ textarea { min-height: 92px; resize: vertical; }
 .client-pie-card__legend { display: flex; flex-wrap: wrap; gap: 0.45rem 0.75rem; color: var(--muted); font-size: 0.86rem; }
 .client-pie-card__legend span { display: inline-flex; align-items: center; gap: 0.35rem; }
 .client-pie-card__legend i { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
+.client-profile-notes {
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  background: linear-gradient(180deg, #fffdf8 0%, #f8fbff 100%);
+  padding: 1rem 1.1rem;
+}
+.client-profile-notes__body {
+  margin-top: 0.55rem;
+  color: var(--text);
+  font-weight: 700;
+  line-height: 1.55;
+  white-space: pre-wrap;
+}
 .agenda-summary-grid { display: grid; gap: 0.75rem; grid-template-columns: repeat(auto-fit, minmax(155px, 1fr)); margin-bottom: 0.9rem; }
 .agenda-header {
   display: flex;
