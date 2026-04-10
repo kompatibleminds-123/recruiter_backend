@@ -819,72 +819,46 @@ async function saveCompanySharedExportPresets({ actorUserId, companyId, settings
 async function getCompanyClientUsers(companyId) {
   if (!companyId) throw new Error("companyId is required.");
   if (!cfg().on) {
-    const row = (readStore().jobs || []).find((j) => j.companyId === companyId && isClientUsersRow(j));
-    return sanitizeClientUserPayload(row?.payload || row || {}).clientUsers.map(sanitizeClientUser);
+    return (readStore().clientUsers || [])
+      .filter((item) => String(item.companyId || "") === String(companyId))
+      .map(sanitizeClientUser);
   }
   await ensureSeeded();
-  const rows = await sbSel("company_jobs", `select=*&company_id=eq.${enc(companyId)}&title=eq.${enc(CLIENT_USERS_ROW_TITLE)}&limit=1`);
-  return sanitizeClientUserPayload(rows?.[0]?.payload || rows?.[0] || {}).clientUsers.map(sanitizeClientUser);
+  const rows = await sbSel("client_portal_users", `select=*&company_id=eq.${enc(companyId)}&order=created_at.asc`);
+  return (rows || []).map(sanitizeClientUser).filter(Boolean);
 }
 async function getAllClientUsers() {
   if (!cfg().on) {
-    const jobs = Array.isArray(readStore().jobs) ? readStore().jobs : [];
-    return jobs
-      .filter((job) => isClientUsersRow(job))
-      .flatMap((job) => sanitizeClientUserPayload(job?.payload || job || {}).clientUsers.map(sanitizeClientUserForStorage))
-      .filter(Boolean);
+    return (readStore().clientUsers || []).map(sanitizeClientUserForStorage).filter(Boolean);
   }
   await ensureSeeded();
-  const rows = await sbSel("company_jobs", `select=*&title=eq.${enc(CLIENT_USERS_ROW_TITLE)}&limit=1000`);
-  return (rows || [])
-    .flatMap((row) => sanitizeClientUserPayload(row?.payload || row || {}).clientUsers.map(sanitizeClientUserForStorage))
-    .filter(Boolean);
+  const rows = await sbSel("client_portal_users", "select=*&limit=10000");
+  return (rows || []).map(sanitizeClientUserForStorage).filter(Boolean);
 }
 async function saveCompanyClientUsersRow({ companyId, clientUsers, actorEmail = "" }) {
   const sanitizedUsers = (Array.isArray(clientUsers) ? clientUsers : []).map((item) => sanitizeClientUserForStorage(item)).filter(Boolean);
-  const now = new Date().toISOString();
-  const payload = { clientUsers: sanitizedUsers, updatedAt: now, updatedBy: String(actorEmail || "").trim() };
+  if (!sanitizedUsers.length) return [];
   if (!cfg().on) {
     const store = readStore();
-    store.jobs = Array.isArray(store.jobs) ? store.jobs : [];
-    const ix = store.jobs.findIndex((j) => j.companyId === companyId && isClientUsersRow(j));
-    const next = {
-      id: CLIENT_USERS_ROW_ID,
-      companyId,
-      title: CLIENT_USERS_ROW_TITLE,
-      clientName: "__system__",
-      jobDescription: "Client portal users",
-      mustHaveSkills: "",
-      redFlags: "",
-      recruiterNotes: "",
-      standardQuestions: "",
-      jdShortcuts: "",
-      createdAt: ix >= 0 ? store.jobs[ix].createdAt : now,
-      updatedAt: now,
-      updatedBy: actorEmail,
-      payload
-    };
-    if (ix >= 0) store.jobs[ix] = next; else store.jobs.push(next);
+    store.clientUsers = Array.isArray(store.clientUsers) ? store.clientUsers : [];
+    const keep = store.clientUsers.filter((item) => String(item.companyId || "") !== String(companyId));
+    store.clientUsers = [...keep, ...sanitizedUsers];
     writeStore(store);
-    return payload.clientUsers.map(sanitizeClientUser);
+    return sanitizedUsers.map(sanitizeClientUser);
   }
-  const rows = await sbIns("company_jobs", [{
-    id: systemJobRowId(companyId, CLIENT_USERS_ROW_ID),
-    company_id: companyId,
-    title: CLIENT_USERS_ROW_TITLE,
-    client_name: "__system__",
-    job_description: "Client portal users",
-    must_have_skills: "",
-    red_flags: "",
-    recruiter_notes: "",
-    standard_questions: "",
-    jd_shortcuts: "",
-    created_at: now,
-    updated_at: now,
-    updated_by: actorEmail,
-    payload
-  }], { conflict: "id", upsert: true });
-  return sanitizeClientUserPayload(rows?.[0]?.payload || payload).clientUsers.map(sanitizeClientUser);
+  const rows = await sbIns("client_portal_users", sanitizedUsers.map((item) => ({
+    id: item.id,
+    company_id: item.companyId,
+    company_name: item.companyName,
+    username: item.username,
+    client_name: item.clientName,
+    allowed_positions: item.allowedPositions || [],
+    password_hash: item.passwordHash,
+    created_at: item.createdAt || new Date().toISOString(),
+    updated_at: item.updatedAt || new Date().toISOString(),
+    updated_by: String(actorEmail || "").trim()
+  })), { conflict: "id", upsert: true });
+  return (rows || []).map(sanitizeClientUser).filter(Boolean);
 }
 async function createClientUser({ actorUserId, companyId, username, password, clientName, allowedPositions = [] }) {
   const actor = sanitizeUser(await getUserById(actorUserId, companyId));
