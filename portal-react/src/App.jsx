@@ -2465,6 +2465,7 @@ function PortalApp({ token, onLogout }) {
     clientName: "",
     ownerRecruiterId: "",
     ownerRecruiterName: "",
+    assignedRecruiters: [],
     jobDescription: "",
     mustHaveSkills: "",
     redFlags: "",
@@ -3966,6 +3967,7 @@ function PortalApp({ token, onLogout }) {
         clientName: "",
         ownerRecruiterId: "",
         ownerRecruiterName: "",
+        assignedRecruiters: [],
         jobDescription: "",
         mustHaveSkills: "",
         redFlags: "",
@@ -3982,6 +3984,7 @@ function PortalApp({ token, onLogout }) {
       clientName: String(job.clientName || ""),
       ownerRecruiterId: String(job.ownerRecruiterId || ""),
       ownerRecruiterName: String(job.ownerRecruiterName || ""),
+      assignedRecruiters: Array.isArray(job.assignedRecruiters) ? job.assignedRecruiters : [],
       jobDescription: String(job.jobDescription || ""),
       mustHaveSkills: String(job.mustHaveSkills || ""),
       redFlags: String(job.redFlags || ""),
@@ -3995,7 +3998,21 @@ function PortalApp({ token, onLogout }) {
 
   async function saveJobDraft() {
     setStatus("jobs", "Saving JD...");
-    const result = await api("/company/jds", token, "POST", { job: jobDraft });
+    const primaryRecruiter = jobDraft.ownerRecruiterId
+      ? [{ id: jobDraft.ownerRecruiterId, name: jobDraft.ownerRecruiterName || "", primary: true }]
+      : [];
+    const additionalRecruiters = Array.isArray(jobDraft.assignedRecruiters) ? jobDraft.assignedRecruiters : [];
+    const dedupedRecruiters = new Map();
+    [...primaryRecruiter, ...additionalRecruiters].forEach((item) => {
+      const id = String(item?.id || "").trim();
+      if (!id) return;
+      dedupedRecruiters.set(id, {
+        id,
+        name: String(item?.name || "").trim(),
+        primary: id === String(jobDraft.ownerRecruiterId || "").trim()
+      });
+    });
+    const result = await api("/company/jds", token, "POST", { job: { ...jobDraft, assignedRecruiters: Array.from(dedupedRecruiters.values()) } });
     await loadWorkspace();
     setSelectedJobId(String(result?.id || jobDraft.id || ""));
     setStatus("jobs", "JD saved.", "ok");
@@ -5745,13 +5762,13 @@ function PortalApp({ token, onLogout }) {
                     <div className="button-row">
                       {quickUpdateLinkedAssessment ? (
                         <>
-                          <button onClick={() => void applyQuickUpdateAssessmentDetails()}>Update assessment details</button>
+                          <button onClick={() => void applyQuickUpdateAssessmentDetails()}>Update captured details</button>
                           <button onClick={() => void applyQuickAssessmentStatusUpdate()}>Update status</button>
                         </>
                       ) : (
                         <>
-                          <button onClick={() => void applyQuickUpdateRecruiterNote()}>Apply recruiter note</button>
-                          <button onClick={() => void applyQuickCandidateUpdate()}>Apply candidate update</button>
+                          <button onClick={() => void applyQuickUpdateRecruiterNote()}>Update captured details</button>
+                          <button onClick={() => void applyQuickCandidateUpdate()}>Update status</button>
                         </>
                       )}
                     </div>
@@ -5995,31 +6012,73 @@ function PortalApp({ token, onLogout }) {
                   <button onClick={() => applySelectedJobToInterview()}>Apply generated JD</button>
                   <button onClick={() => generateJdFromText()}>Generate JD from text</button>
                   <button onClick={() => downloadJobDraft()}>Download JD</button>
-                  <button onClick={() => void saveJobDraft()}>Save JD</button>
+                  {isSettingsAdmin ? <button onClick={() => void saveJobDraft()}>Save JD</button> : null}
                 </div>
 
                 <div className="form-grid two-col">
                   <label><span>Job title</span><input value={jobDraft.title} onChange={(e) => setJobDraft((c) => ({ ...c, title: e.target.value }))} /></label>
                   <label><span>Client</span><input value={jobDraft.clientName} onChange={(e) => setJobDraft((c) => ({ ...c, clientName: e.target.value }))} /></label>
-                  <label>
-                    <span>Owner recruiter</span>
-                    <select
-                      value={jobDraft.ownerRecruiterId}
-                      onChange={(e) => {
-                        const selectedId = e.target.value;
-                        const selectedUser = (state.users || []).find((user) => String(user.id) === String(selectedId)) || null;
-                        setJobDraft((c) => ({
-                          ...c,
-                          ownerRecruiterId: selectedId,
-                          ownerRecruiterName: selectedUser?.name || ""
-                        }));
-                      }}
-                    >
-                      <option value="">Unassigned</option>
-                      {(state.users || []).map((user) => <option key={user.id} value={user.id}>{user.name} | {user.email}</option>)}
-                    </select>
-                  </label>
-                  <label><span>Owner recruiter name</span><input value={jobDraft.ownerRecruiterName} readOnly /></label>
+                  {isSettingsAdmin ? (
+                    <>
+                      <label>
+                        <span>Primary recruiter</span>
+                        <select
+                          value={jobDraft.ownerRecruiterId}
+                          onChange={(e) => {
+                            const selectedId = e.target.value;
+                            const selectedUser = (state.users || []).find((user) => String(user.id) === String(selectedId)) || null;
+                            setJobDraft((c) => {
+                              const currentAssigned = Array.isArray(c.assignedRecruiters) ? c.assignedRecruiters : [];
+                              const withoutOldPrimary = currentAssigned.filter((item) => String(item?.id || "") !== String(c.ownerRecruiterId || ""));
+                              const nextAssigned = selectedId
+                                ? [{ id: selectedId, name: selectedUser?.name || "", primary: true }, ...withoutOldPrimary]
+                                : withoutOldPrimary;
+                              return {
+                                ...c,
+                                ownerRecruiterId: selectedId,
+                                ownerRecruiterName: selectedUser?.name || "",
+                                assignedRecruiters: nextAssigned
+                              };
+                            });
+                          }}
+                        >
+                          <option value="">Unassigned</option>
+                          {(state.users || []).map((user) => <option key={user.id} value={user.id}>{user.name} | {user.email}</option>)}
+                        </select>
+                      </label>
+                      <label><span>Primary recruiter name</span><input value={jobDraft.ownerRecruiterName} readOnly /></label>
+                      <div className="full">
+                        <div className="info-label">Recruiters on this JD</div>
+                        <p className="muted">Primary recruiter receives direct applied candidates and owns applicant counts. Others are supporting recruiters.</p>
+                        <div className="chip-grid">
+                          {(state.users || []).map((user) => {
+                            const userId = String(user.id || "");
+                            const isPrimary = userId && userId === String(jobDraft.ownerRecruiterId || "");
+                            const isChecked = isPrimary || (Array.isArray(jobDraft.assignedRecruiters) && jobDraft.assignedRecruiters.some((item) => String(item?.id || "") === userId));
+                            return (
+                              <label className="checkbox-pill" key={user.id}>
+                                <input
+                                  type="checkbox"
+                                  checked={isChecked}
+                                  disabled={isPrimary}
+                                  onChange={(e) => {
+                                    const checked = e.target.checked;
+                                    setJobDraft((c) => {
+                                      const currentAssigned = Array.isArray(c.assignedRecruiters) ? c.assignedRecruiters : [];
+                                      if (!checked) return { ...c, assignedRecruiters: currentAssigned.filter((item) => String(item?.id || "") !== userId) };
+                                      if (currentAssigned.some((item) => String(item?.id || "") === userId)) return c;
+                                      return { ...c, assignedRecruiters: [...currentAssigned, { id: userId, name: user.name || "", primary: false }] };
+                                    });
+                                  }}
+                                />
+                                <span>{user.name}{isPrimary ? " | Primary" : ""}</span>
+                              </label>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    </>
+                  ) : null}
                   <label className="full"><span>Job description</span><textarea className="jd-editor" value={jobDraft.jobDescription} onChange={(e) => setJobDraft((c) => ({ ...c, jobDescription: e.target.value }))} /></label>
                   <label className="full"><span>Must-have skills</span><textarea value={jobDraft.mustHaveSkills} onChange={(e) => setJobDraft((c) => ({ ...c, mustHaveSkills: e.target.value }))} /></label>
                   <label className="full"><span>Red flags</span><textarea value={jobDraft.redFlags} onChange={(e) => setJobDraft((c) => ({ ...c, redFlags: e.target.value }))} /></label>

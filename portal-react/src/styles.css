@@ -381,6 +381,12 @@ textarea { min-height: 92px; resize: vertical; }
   height: 16px;
   margin: 0;
 }
+.chip-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+  margin-top: 0.7rem;
+}
 .candidate-snippet {
   margin-top: 0.85rem;
   padding-top: 0.85rem;
