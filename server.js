@@ -1136,6 +1136,49 @@ function pickBestCandidateForAssessment(assessment = {}, candidates = []) {
   return bestScore > 0 ? best : null;
 }
 
+function pickBestAssessmentForCandidate(candidate = {}, assessments = []) {
+  const candidateAssessmentId = String(candidate?.assessment_id || candidate?.assessmentId || "").trim();
+  if (candidateAssessmentId) {
+    const exactLinked = assessments.find((assessment) => String(assessment?.id || "").trim() === candidateAssessmentId);
+    if (exactLinked) return exactLinked;
+  }
+  const targetName = String(candidate?.name || "").trim().toLowerCase();
+  const targetEmail = String(candidate?.email || "").trim().toLowerCase();
+  const targetPhone = normalizePhoneDigits(candidate?.phone || "");
+  const targetJd = String(candidate?.jd_title || candidate?.jdTitle || "").trim().toLowerCase();
+  const targetCompany = String(candidate?.company || "").trim().toLowerCase();
+  const targetRole = String(candidate?.role || "").trim().toLowerCase();
+
+  let best = null;
+  let bestScore = -1;
+  for (const assessment of Array.isArray(assessments) ? assessments : []) {
+    let score = 0;
+    const assessmentId = String(assessment?.id || "").trim();
+    const linkedCandidateId = String(assessment?.candidateId || assessment?.candidate_id || "").trim();
+    const assessmentName = String(assessment?.candidateName || "").trim().toLowerCase();
+    const assessmentEmail = String(assessment?.emailId || assessment?.email || "").trim().toLowerCase();
+    const assessmentPhone = normalizePhoneDigits(assessment?.phoneNumber || assessment?.phone || "");
+    const assessmentJd = String(assessment?.jdTitle || assessment?.jd_title || "").trim().toLowerCase();
+    const assessmentCompany = String(assessment?.currentCompany || assessment?.company || "").trim().toLowerCase();
+    const assessmentRole = String(assessment?.currentDesignation || assessment?.role || "").trim().toLowerCase();
+
+    if (candidateAssessmentId && assessmentId && candidateAssessmentId === assessmentId) score += 200;
+    if (linkedCandidateId && String(candidate?.id || "").trim() === linkedCandidateId) score += 180;
+    if (targetEmail && assessmentEmail && targetEmail === assessmentEmail) score += 120;
+    if (targetPhone && assessmentPhone && targetPhone === assessmentPhone) score += 120;
+    if (targetName && assessmentName && targetName === assessmentName) score += 70;
+    if (targetJd && assessmentJd && targetJd === assessmentJd) score += 25;
+    if (targetCompany && assessmentCompany && targetCompany === assessmentCompany) score += 15;
+    if (targetRole && assessmentRole && targetRole === assessmentRole) score += 15;
+
+    if (score > bestScore) {
+      best = assessment;
+      bestScore = score;
+    }
+  }
+  return bestScore > 0 ? best : null;
+}
+
 async function backfillCandidateAssessmentLinks(user) {
   const actor = user || {};
   if (!actor?.id || !actor?.companyId) return { linked: 0 };
@@ -1154,6 +1197,19 @@ async function backfillCandidateAssessmentLinks(user) {
     await linkCandidateToAssessment(String(matchedCandidate.id || "").trim(), assessmentId, { companyId: actor.companyId });
     matchedCandidate.used_in_assessment = true;
     matchedCandidate.assessment_id = assessmentId;
+    linked += 1;
+  }
+  for (const candidate of Array.isArray(candidates) ? candidates : []) {
+    const currentAssessmentId = String(candidate?.assessment_id || candidate?.assessmentId || "").trim();
+    const needsRepair = Boolean(candidate?.used_in_assessment) || !currentAssessmentId;
+    if (!needsRepair) continue;
+    const matchedAssessment = pickBestAssessmentForCandidate(candidate, assessments);
+    if (!matchedAssessment?.id) continue;
+    const matchedAssessmentId = String(matchedAssessment.id || "").trim();
+    if (currentAssessmentId === matchedAssessmentId && candidate?.used_in_assessment) continue;
+    await linkCandidateToAssessment(String(candidate.id || "").trim(), matchedAssessmentId, { companyId: actor.companyId });
+    candidate.used_in_assessment = true;
+    candidate.assessment_id = matchedAssessmentId;
     linked += 1;
   }
   return { linked };
