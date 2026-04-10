@@ -745,13 +745,30 @@ async function getPublicCompanyJob(jobId) {
 async function saveCompanyJob({ actorUserId, companyId, job }) {
   if (!actorUserId || !companyId || !job?.title || !job?.jobDescription) throw new Error("actorUserId, companyId, job title, and job description are required.");
   const actor = sanitizeUser(await getUserById(actorUserId, companyId));
-  if (!actor || actor.role !== "admin") throw new Error("Only an admin for this company can save or edit company JDs.");
+  if (!actor) throw new Error("Authenticated recruiter not found for this company.");
+  const actorIsAdmin = String(actor.role || "").toLowerCase() === "admin";
+  let existingJob = null;
+  const incomingJobId = String(job?.id || "").trim();
   if (!cfg().on) {
     const store = readStore(); store.jobs = Array.isArray(store.jobs) ? store.jobs : []; const now = new Date().toISOString(); const ix = store.jobs.findIndex((i) => i.id === job.id && i.companyId === companyId);
-    const next = { id: persistedJobId(job.id), companyId, title: String(job.title || "").trim(), clientName: String(job.clientName || "").trim(), jobDescription: String(job.jobDescription || "").trim(), mustHaveSkills: String(job.mustHaveSkills || "").trim(), redFlags: String(job.redFlags || "").trim(), recruiterNotes: String(job.recruiterNotes || "").trim(), standardQuestions: String(job.standardQuestions || "").trim(), jdShortcuts: String(job.jdShortcuts || "").trim(), ownerRecruiterId: String(job.ownerRecruiterId || job.owner_recruiter_id || "").trim(), ownerRecruiterName: String(job.ownerRecruiterName || job.owner_recruiter_name || "").trim(), assignedRecruiters: Array.isArray(job.assignedRecruiters) ? job.assignedRecruiters : [], createdAt: ix >= 0 ? store.jobs[ix].createdAt : now, updatedAt: now, updatedBy: actor.email };
+    existingJob = ix >= 0 ? sanitizeJob(store.jobs[ix]) : null;
+    if (!actorIsAdmin && existingJob?.ownerRecruiterId && String(existingJob.ownerRecruiterId) !== String(actor.id)) throw new Error("Only an admin or the owner recruiter can edit this JD.");
+    const ownerRecruiterId = actorIsAdmin ? String(job.ownerRecruiterId || job.owner_recruiter_id || "").trim() : String(actor.id || "").trim();
+    const ownerRecruiterName = actorIsAdmin ? String(job.ownerRecruiterName || job.owner_recruiter_name || "").trim() : String(actor.name || "").trim();
+    const assignedRecruiters = actorIsAdmin && Array.isArray(job.assignedRecruiters) ? job.assignedRecruiters : ownerRecruiterId ? [{ id: ownerRecruiterId, name: ownerRecruiterName, primary: true }] : [];
+    const next = { id: persistedJobId(job.id), companyId, title: String(job.title || "").trim(), clientName: String(job.clientName || "").trim(), jobDescription: String(job.jobDescription || "").trim(), mustHaveSkills: String(job.mustHaveSkills || "").trim(), redFlags: String(job.redFlags || "").trim(), recruiterNotes: String(job.recruiterNotes || "").trim(), standardQuestions: String(job.standardQuestions || "").trim(), jdShortcuts: String(job.jdShortcuts || "").trim(), ownerRecruiterId, ownerRecruiterName, assignedRecruiters, createdAt: ix >= 0 ? store.jobs[ix].createdAt : now, updatedAt: now, updatedBy: actor.email };
     if (ix >= 0) store.jobs[ix] = next; else store.jobs.push(next); writeStore(store); return sanitizeJob(next);
   }
-  const now = new Date().toISOString(); const rows = await sbIns("company_jobs", [jobRow({ ...job, id: persistedJobId(job.id), companyId, updatedBy: actor.email, createdAt: job.createdAt || now, updatedAt: now })], { conflict: "id", upsert: true }); return sanitizeJob(rows[0]);
+  await ensureSeeded();
+  if (incomingJobId) {
+    const existingRows = await sbSel("company_jobs", `select=*&id=eq.${enc(incomingJobId)}&company_id=eq.${enc(companyId)}&limit=1`);
+    existingJob = sanitizeJob(existingRows?.[0]);
+    if (!actorIsAdmin && existingJob?.ownerRecruiterId && String(existingJob.ownerRecruiterId) !== String(actor.id)) throw new Error("Only an admin or the owner recruiter can edit this JD.");
+  }
+  const ownerRecruiterId = actorIsAdmin ? String(job.ownerRecruiterId || job.owner_recruiter_id || "").trim() : String(actor.id || "").trim();
+  const ownerRecruiterName = actorIsAdmin ? String(job.ownerRecruiterName || job.owner_recruiter_name || "").trim() : String(actor.name || "").trim();
+  const assignedRecruiters = actorIsAdmin && Array.isArray(job.assignedRecruiters) ? job.assignedRecruiters : ownerRecruiterId ? [{ id: ownerRecruiterId, name: ownerRecruiterName, primary: true }] : [];
+  const now = new Date().toISOString(); const rows = await sbIns("company_jobs", [jobRow({ ...job, ownerRecruiterId, ownerRecruiterName, assignedRecruiters, id: persistedJobId(job.id), companyId, updatedBy: actor.email, createdAt: job.createdAt || existingJob?.createdAt || now, updatedAt: now })], { conflict: "id", upsert: true }); return sanitizeJob(rows[0]);
 }
 async function getCompanySharedExportPresets(companyId) {
   if (!companyId) throw new Error("companyId is required.");

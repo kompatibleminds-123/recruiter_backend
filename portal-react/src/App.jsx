@@ -4010,10 +4010,13 @@ function PortalApp({ token, onLogout }) {
 
   async function saveJobDraft() {
     setStatus("jobs", "Saving JD...");
-    const primaryRecruiter = jobDraft.ownerRecruiterId
-      ? [{ id: jobDraft.ownerRecruiterId, name: jobDraft.ownerRecruiterName || "", primary: true }]
+    const isAdmin = String(state.user?.role || "").toLowerCase() === "admin";
+    const ownerRecruiterId = isAdmin ? jobDraft.ownerRecruiterId : String(state.user?.id || "");
+    const ownerRecruiterName = isAdmin ? jobDraft.ownerRecruiterName : String(state.user?.name || "");
+    const primaryRecruiter = ownerRecruiterId
+      ? [{ id: ownerRecruiterId, name: ownerRecruiterName || "", primary: true }]
       : [];
-    const additionalRecruiters = Array.isArray(jobDraft.assignedRecruiters) ? jobDraft.assignedRecruiters : [];
+    const additionalRecruiters = isAdmin && Array.isArray(jobDraft.assignedRecruiters) ? jobDraft.assignedRecruiters : [];
     const dedupedRecruiters = new Map();
     [...primaryRecruiter, ...additionalRecruiters].forEach((item) => {
       const id = String(item?.id || "").trim();
@@ -4021,10 +4024,17 @@ function PortalApp({ token, onLogout }) {
       dedupedRecruiters.set(id, {
         id,
         name: String(item?.name || "").trim(),
-        primary: id === String(jobDraft.ownerRecruiterId || "").trim()
+        primary: id === String(ownerRecruiterId || "").trim()
       });
     });
-    const result = await api("/company/jds", token, "POST", { job: { ...jobDraft, assignedRecruiters: Array.from(dedupedRecruiters.values()) } });
+    const result = await api("/company/jds", token, "POST", {
+      job: {
+        ...jobDraft,
+        ownerRecruiterId,
+        ownerRecruiterName,
+        assignedRecruiters: Array.from(dedupedRecruiters.values())
+      }
+    });
     await loadWorkspace();
     setSelectedJobId(String(result?.id || jobDraft.id || ""));
     setStatus("jobs", "JD saved.", "ok");
@@ -4064,8 +4074,7 @@ function PortalApp({ token, onLogout }) {
     setJobDraft((current) => ({
       ...current,
       title,
-      mustHaveSkills: current.mustHaveSkills || skills,
-      recruiterNotes: current.recruiterNotes || `Generated from text on ${new Date().toLocaleString()}`
+      mustHaveSkills: current.mustHaveSkills || skills
     }));
     setStatus("jobs", "Generated JD fields from text.", "ok");
   }
@@ -6040,7 +6049,7 @@ function PortalApp({ token, onLogout }) {
                   <button onClick={() => applySelectedJobToInterview()}>Apply generated JD</button>
                   <button onClick={() => generateJdFromText()}>Generate JD from text</button>
                   <button onClick={() => downloadJobDraft()}>Download JD</button>
-                  {isSettingsAdmin ? <button onClick={() => void saveJobDraft()}>Save JD</button> : null}
+                  <button onClick={() => void saveJobDraft()}>Save JD</button>
                 </div>
 
                 <div className="form-grid two-col">
@@ -6106,7 +6115,12 @@ function PortalApp({ token, onLogout }) {
                         </div>
                       </div>
                     </>
-                  ) : null}
+                  ) : (
+                    <label>
+                      <span>Owner recruiter</span>
+                      <input value={jobDraft.ownerRecruiterName || state.user?.name || ""} readOnly />
+                    </label>
+                  )}
                   <label className="full"><span>Job description</span><textarea className="jd-editor" value={jobDraft.jobDescription} onChange={(e) => setJobDraft((c) => ({ ...c, jobDescription: e.target.value }))} /></label>
                   <label className="full"><span>Must-have skills</span><textarea value={jobDraft.mustHaveSkills} onChange={(e) => setJobDraft((c) => ({ ...c, mustHaveSkills: e.target.value }))} /></label>
                   <label className="full"><span>Red flags</span><textarea value={jobDraft.redFlags} onChange={(e) => setJobDraft((c) => ({ ...c, redFlags: e.target.value }))} /></label>
