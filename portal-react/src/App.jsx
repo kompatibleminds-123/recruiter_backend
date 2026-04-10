@@ -1892,7 +1892,7 @@ function AssessmentStatusModal({ open, assessment, onClose, onSave }) {
     if (!open || !assessment) return;
     setCandidateStatus(String(assessment.candidateStatus || "").trim());
     setAtValue(toDateInputValue(assessment.interviewAt || assessment.followUpAt || ""));
-    setNotes(String(assessment.callbackNotes || "").trim());
+    setNotes("");
     setOfferAmount(String(assessment.offerAmount || "").trim());
     setExpectedDoj(toDateInputValue(assessment.expectedDoj || assessment.followUpAt || ""));
     setDateOfJoining(toDateInputValue(assessment.dateOfJoining || assessment.followUpAt || ""));
@@ -1962,8 +1962,8 @@ function AssessmentStatusModal({ open, assessment, onClose, onSave }) {
           </label>
         ) : null}
         <label>
-          <span>Notes</span>
-          <textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="L1 aligned tomorrow 5 PM, screening reject, CV shared, etc." />
+          <span>Status note</span>
+          <textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Write only the new status update here, e.g. L1 aligned tomorrow 5 PM, screening reject, CV shared." />
         </label>
         <p className="muted">Last line in notes is the final source of truth for current status.</p>
         {status ? <div className="status">{status}</div> : null}
