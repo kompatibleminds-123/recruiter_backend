@@ -156,6 +156,44 @@ function readSignedCvShareToken(token) {
   }
 }
 
+function getClientPortalSecret() {
+  return (
+    String(process.env.CLIENT_PORTAL_SECRET || "").trim() ||
+    String(process.env.PLATFORM_SESSION_SECRET || "").trim() ||
+    "recruitdesk-client-portal-secret"
+  );
+}
+
+function createSignedClientPortalToken(payload) {
+  const encoded = Buffer.from(JSON.stringify(payload), "utf8").toString("base64url");
+  const signature = crypto
+    .createHmac("sha256", getClientPortalSecret())
+    .update(encoded)
+    .digest("base64url");
+  return `${encoded}.${signature}`;
+}
+
+function readSignedClientPortalToken(token) {
+  const raw = String(token || "").trim();
+  if (!raw) return null;
+  const [encoded, signature] = raw.split(".");
+  if (!encoded || !signature) return null;
+  const expected = crypto
+    .createHmac("sha256", getClientPortalSecret())
+    .update(encoded)
+    .digest("base64url");
+  if (!timingSafeEqualString(signature, expected)) return null;
+  try {
+    const payload = JSON.parse(Buffer.from(encoded, "base64url").toString("utf8"));
+    if (payload?.type !== "client_portal") return null;
+    if (!payload.companyId) return null;
+    if (payload.expiresAt && Date.now() > Number(payload.expiresAt)) return null;
+    return payload;
+  } catch {
+    return null;
+  }
+}
+
 function getRequestBaseUrl(req) {
   const proto = String(req.headers["x-forwarded-proto"] || "").trim() || "http";
   const host = String(req.headers.host || "").trim();
@@ -3022,6 +3060,11 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (req.method === "GET" && (requestUrl.pathname === "/client-portal" || requestUrl.pathname === "/client-portal/")) {
+    serveStaticFile(res, path.join(ROOT_PUBLIC_DIR, "client-portal", "index.html"));
+    return;
+  }
+
   if (req.method === "GET" && (requestUrl.pathname === "/apply" || requestUrl.pathname === "/apply/")) {
     serveStaticFile(res, path.join(ROOT_PUBLIC_DIR, "apply.html"));
     return;
@@ -3052,6 +3095,14 @@ const server = http.createServer(async (req, res) => {
     const assetPath = requestUrl.pathname.replace(/^\/portal-app\//, "");
     const safeRelativePath = path.normalize(assetPath).replace(/^(\.\.(\/|\\|$))+/, "");
     const resolvedPath = path.join(ROOT_PUBLIC_DIR, "portal-app", safeRelativePath);
+    serveStaticFile(res, resolvedPath);
+    return;
+  }
+
+  if (req.method === "GET" && requestUrl.pathname.startsWith("/client-portal/")) {
+    const assetPath = requestUrl.pathname.replace(/^\/client-portal\//, "");
+    const safeRelativePath = path.normalize(assetPath).replace(/^(\.\.(\/|\\|$))+/, "");
+    const resolvedPath = path.join(ROOT_PUBLIC_DIR, "client-portal", safeRelativePath);
     serveStaticFile(res, resolvedPath);
     return;
   }
@@ -3583,6 +3634,92 @@ const server = http.createServer(async (req, res) => {
         "Content-Type": String(file.mimeType || payload.mimeType || "application/octet-stream").trim(),
         "Content-Disposition": `inline; filename="${downloadName}"`,
         "Cache-Control": "private, max-age=300"
+      });
+    } catch (error) {
+      sendJson(req, res, 400, { ok: false, error: String(error.message || error) });
+    }
+    return;
+  }
+
+  if (req.method === "GET" && requestUrl.pathname === "/client-portal/data") {
+    try {
+      const token = String(requestUrl.searchParams.get("token") || "").trim();
+      const payload = readSignedClientPortalToken(token);
+      if (!payload) throw new Error("Invalid or expired client portal link.");
+      const [candidates, assessments, jobs] = await Promise.all([
+        listCandidates({ companyId: payload.companyId, limit: 5000 }),
+        listAssessments({ companyId: payload.companyId, limit: 5000 }),
+        listCompanyJobs({ companyId: payload.companyId })
+      ]);
+      const scopedClientName = String(payload.clientName || "").trim();
+      const universe = buildCandidateSearchUniverse(candidates, assessments, jobs)
+        .filter((item) => item?.sharedAt && item?.sourceType !== "captured_note")
+        .filter((item) => !scopedClientName || String(item.clientName || "").trim().toLowerCase() === scopedClientName.toLowerCase());
+      const groupedByRole = {};
+      for (const item of universe) {
+        const role = String(item.position || item.role || "Unspecified role").trim();
+        if (!groupedByRole[role]) groupedByRole[role] = [];
+        groupedByRole[role].push({
+          id: item.id,
+          candidateName: item.candidateName || "",
+          currentCompany: item.company || "",
+          experience: item.totalExperience || "",
+          location: item.location || "",
+          status: item.candidateStatus || item.workflowStatus || "",
+          sharedAt: item.sharedAt || "",
+          recruiterName: item.recruiterName || "",
+          clientName: item.clientName || ""
+        });
+      }
+      const roles = Object.entries(groupedByRole)
+        .map(([role, items]) => ({
+          role,
+          count: items.length,
+          candidates: items.sort((a, b) => String(b.sharedAt || "").localeCompare(String(a.sharedAt || "")))
+        }))
+        .sort((a, b) => b.count - a.count || a.role.localeCompare(b.role));
+      sendJson(req, res, 200, {
+        ok: true,
+        result: {
+          companyId: payload.companyId,
+          clientName: scopedClientName,
+          generatedAt: new Date().toISOString(),
+          roles,
+          summary: {
+            totalRoles: roles.length,
+            totalCandidates: roles.reduce((sum, role) => sum + role.count, 0)
+          }
+        }
+      });
+    } catch (error) {
+      sendJson(req, res, 400, { ok: false, error: String(error.message || error) });
+    }
+    return;
+  }
+
+  if (req.method === "GET" && requestUrl.pathname === "/company/client-portal-link") {
+    try {
+      const actor = await requireSessionUser(getBearerToken(req));
+      const clientName = String(requestUrl.searchParams.get("clientName") || "").trim();
+      const expiresInDays = Math.min(180, Math.max(1, Number(requestUrl.searchParams.get("expiresInDays") || 30)));
+      const expiresAt = Date.now() + 1000 * 60 * 60 * 24 * expiresInDays;
+      const token = createSignedClientPortalToken({
+        type: "client_portal",
+        companyId: actor.companyId,
+        clientName,
+        issuedByUserId: actor.id,
+        issuedByName: actor.name,
+        expiresAt
+      });
+      const baseUrl = getRequestBaseUrl(req);
+      sendJson(req, res, 200, {
+        ok: true,
+        result: {
+          token,
+          clientName,
+          expiresAt: new Date(expiresAt).toISOString(),
+          url: `${baseUrl}/client-portal?token=${encodeURIComponent(token)}`
+        }
       });
     } catch (error) {
       sendJson(req, res, 400, { ok: false, error: String(error.message || error) });
