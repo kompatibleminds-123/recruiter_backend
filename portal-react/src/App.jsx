@@ -3540,6 +3540,9 @@ function PortalApp({ token, onLogout }) {
         offerAmount: inferred.offerAmount || "",
         expectedDoj: inferred.expectedDoj || "",
         dateOfJoining: inferred.dateOfJoining || ""
+      }, {
+        statusTarget: "quickUpdate",
+        closeModal: false
       });
       setQuickUpdateStatusText("");
       setStatus("quickUpdate", `Assessment status updated to ${inferred.candidateStatus}.`, "ok");
@@ -4800,7 +4803,8 @@ function PortalApp({ token, onLogout }) {
     return [...header, "", "Journey:", ...timeline].filter(Boolean).join("\n");
   }
 
-  async function saveAssessmentStatusUpdate(assessment, payload) {
+  async function saveAssessmentStatusUpdate(assessment, payload, options = {}) {
+    const statusTarget = options.statusTarget || "assessments";
     const lastLine = extractLastMeaningfulLine(payload?.notes || "");
     const inferred = inferAssessmentStatusAndSchedule(lastLine);
     const nextStatus = String(inferred.candidateStatus || payload?.candidateStatus || "").trim();
@@ -4814,8 +4818,9 @@ function PortalApp({ token, onLogout }) {
       : isJoined
         ? (payload?.dateOfJoining || inferred.dateOfJoining || payload?.atValue || "")
         : (inferred.atValue || payload?.atValue || "");
-    const atIso = (isInterviewStatus || isOffered || isJoined) && effectiveAtValue
-      ? new Date(effectiveAtValue).toISOString()
+    const dateCandidate = effectiveAtValue ? new Date(effectiveAtValue) : null;
+    const atIso = (isInterviewStatus || isOffered || isJoined) && dateCandidate && !Number.isNaN(dateCandidate.getTime())
+      ? dateCandidate.toISOString()
       : "";
     const readableNotes = formatReadableUpdateText(payload?.notes || "");
     const confirmMessage = buildDetectedUpdateConfirmation({
@@ -4889,8 +4894,8 @@ function PortalApp({ token, onLogout }) {
       }
     });
     await loadWorkspace();
-    setAssessmentStatusId("");
-    setStatus("assessments", `Updated status for ${assessment?.candidateName || "candidate"}.`, "ok");
+    if (options.closeModal !== false) setAssessmentStatusId("");
+    setStatus(statusTarget, `Updated status for ${assessment?.candidateName || "candidate"}.`, "ok");
   }
 
   async function deleteAssessmentItem(assessment) {
