@@ -128,6 +128,34 @@ const APPLIED_OUTCOME_FILTER_ORDER = [
   "Screening reject",
   "Revisit for other role"
 ];
+const ATTEMPT_OUTCOME_OPTIONS = APPLIED_OUTCOME_FILTER_ORDER;
+
+function normalizeAttemptOutcomeLabel(outcome) {
+  const value = String(outcome || "").trim();
+  const key = value.toLowerCase().replace(/[_-]+/g, " ").replace(/\s+/g, " ");
+  const map = {
+    "": "No outcome",
+    "no outcome": "No outcome",
+    "not responding": "Not responding",
+    "nr": "Not responding",
+    "no response": "Not responding",
+    "busy": "Busy",
+    "switch off": "Switch Off",
+    "switched off": "Switch Off",
+    "disconnected": "Disconnected",
+    "not reachable": "Not reachable",
+    "call back later": "Call later",
+    "callback later": "Call later",
+    "call later": "Call later",
+    "interested": "Interested",
+    "hold": "Hold by recruiter",
+    "hold by recruiter": "Hold by recruiter",
+    "not interested": "Not interested",
+    "screening reject": "Screening reject",
+    "revisit for other role": "Revisit for other role"
+  };
+  return map[key] || value;
+}
 
 const EMPTY_CANDIDATE_STRUCTURED_FILTERS = {
   minExperience: "",
@@ -1173,7 +1201,7 @@ function sanitizeClientShareHtml(value) {
 }
 
 function getCapturedOutcome(candidate, assessment) {
-  return String(candidate?.last_contact_outcome || "No outcome").trim();
+  return normalizeAttemptOutcomeLabel(candidate?.last_contact_outcome || "No outcome");
 }
 
 function getApplicantOutcome(applicant) {
@@ -1183,8 +1211,7 @@ function getApplicantOutcome(applicant) {
 
 function getApplicantWorkflowOutcome(applicant, linkedCandidate = null) {
   const candidateOutcome = String(linkedCandidate?.last_contact_outcome || "").trim();
-  if (!candidateOutcome) return "No outcome";
-  return candidateOutcome;
+  return normalizeAttemptOutcomeLabel(candidateOutcome || "No outcome");
 }
 
 function fillCandidateTemplate(template, candidate) {
@@ -3066,9 +3093,11 @@ function PortalApp({ token, onLogout }) {
       clients: Array.from(meta.clients).sort(),
       jds: Array.from(meta.jds).sort(),
       sources: Array.from(meta.sources).sort(),
-      outcomes: Array.from(meta.outcomes).sort(),
       assignedTo: Array.from(meta.assignedTo).sort(),
-      capturedBy: Array.from(meta.capturedBy).sort()
+      capturedBy: Array.from(meta.capturedBy).sort(),
+      outcomes: ATTEMPT_OUTCOME_OPTIONS.filter((item) => meta.outcomes.has(item)).concat(
+        Array.from(meta.outcomes).filter((item) => !ATTEMPT_OUTCOME_OPTIONS.includes(item)).sort((a, b) => a.localeCompare(b))
+      )
     };
   }, [capturedAssessmentMap, state.candidates, state.jobs, state.user]);
 
