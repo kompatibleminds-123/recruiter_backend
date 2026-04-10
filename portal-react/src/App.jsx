@@ -934,6 +934,7 @@ function normalizeRecruiterConflictValue(key, value) {
     .replace(/\s+/g, " ")
     .replace(/\s+\./g, ".")
     .toLowerCase();
+  normalized = normalized.replace(/^[^a-z0-9]+/i, "").trim();
   if (!normalized) return "";
   if (["current_ctc", "expected_ctc", "offer_in_hand"].includes(key)) {
     const amount = normalized.match(/(\d+(?:\.\d+)?)/);
@@ -3379,11 +3380,6 @@ function PortalApp({ token, onLogout }) {
     }
     const effectiveRawRecruiterNote = buildStructuredRecruiterRawNote(quickUpdateRecruiterSections, "");
     const mergeForSave = quickUpdateMergedPatch || buildRecruiterMerge(quickUpdateCandidate, buildStructuredRecruiterSectionOverrides(quickUpdateRecruiterSections), effectiveRawRecruiterNote);
-    if (mergeForSave.overwritten?.length) {
-      const message = mergeForSave.overwritten.map((entry) => `${formatRecruiterOverwriteLabel(entry.key)}: "${entry.from}" -> "${entry.to}"`).join("\n");
-      const confirmed = window.confirm(`These fields will be overwritten:\n\n${message}\n\nApply recruiter note update?`);
-      if (!confirmed) return;
-    }
     try {
       const extractedFieldPatch = buildRecruiterFieldPatchFromMerge(mergeForSave);
       const parsedSkills = String(quickUpdateRecruiterSections.tags || "")
@@ -3416,19 +3412,14 @@ function PortalApp({ token, onLogout }) {
       setStatus("quickUpdate", "This candidate does not have a linked assessment yet.", "error");
       return;
     }
-    const mergeForSave = quickUpdateMergedPatch;
-    if (!mergeForSave) {
-      setStatus("quickUpdate", "Parse recruiter note first, then apply assessment details.", "error");
-      return;
-    }
-    if (mergeForSave.overwritten?.length) {
-      const message = mergeForSave.overwritten.map((entry) => `${formatRecruiterOverwriteLabel(entry.key)}: "${entry.from}" -> "${entry.to}"`).join("\n");
-      const confirmed = window.confirm(`These fields will be overwritten in candidate + assessment:\n\n${message}\n\nApply assessment detail update?`);
-      if (!confirmed) return;
-    }
+    const effectiveRawRecruiterNote = buildStructuredRecruiterRawNote(quickUpdateRecruiterSections, "");
+    const mergeForSave = quickUpdateMergedPatch || buildRecruiterMerge(
+      quickUpdateCandidate,
+      buildStructuredRecruiterSectionOverrides(quickUpdateRecruiterSections),
+      effectiveRawRecruiterNote
+    );
     try {
       const merged = mergeForSave.merged || normalizeRecruiterMergeBase(quickUpdateCandidate);
-      const effectiveRawRecruiterNote = buildStructuredRecruiterRawNote(quickUpdateRecruiterSections, "");
       const extractedFieldPatch = buildRecruiterFieldPatchFromMerge(mergeForSave);
       const parsedSkills = String(quickUpdateRecruiterSections.tags || "")
         .split(/\r?\n|,|\||;/)
@@ -5740,7 +5731,6 @@ function PortalApp({ token, onLogout }) {
                         : "For captured or applied candidates, use the fixed recruiter-note boxes for detail changes and the last line of the status update box for log-attempt movement."}
                     </p>
                     <div className="button-row">
-                      <button onClick={() => void parseQuickUpdateRecruiterNote()}>Parse recruiter note</button>
                       {quickUpdateLinkedAssessment ? (
                         <>
                           <button onClick={() => void applyQuickUpdateAssessmentDetails()}>Update assessment details</button>
@@ -5753,27 +5743,6 @@ function PortalApp({ token, onLogout }) {
                         </>
                       )}
                     </div>
-                    {quickUpdateParsedSummary ? (
-                      <div className="parsed-summary">
-                        <div className="info-label">Parsed summary</div>
-                        <div className="info-grid">
-                          {[["Company", quickUpdateParsedSummary.company],["Role", quickUpdateParsedSummary.role],["Location", quickUpdateParsedSummary.location],["Current CTC", quickUpdateParsedSummary.current_ctc],["Expected CTC", quickUpdateParsedSummary.expected_ctc],["Notice period", quickUpdateParsedSummary.notice_period],["LWD / DOJ", quickUpdateParsedSummary.lwd_or_doj],["Offer in hand", quickUpdateParsedSummary.offer_in_hand]].map(([label, value]) => value ? (
-                            <div className="info-card" key={label}>
-                              <div className="info-label">{label}</div>
-                              <div className="info-value">{value}</div>
-                            </div>
-                          ) : null)}
-                        </div>
-                      </div>
-                    ) : null}
-                    {quickUpdateConflicts.length ? (
-                      <div className="conflict-box">
-                        <div className="info-label">Conflicts detected</div>
-                        <ul>
-                          {quickUpdateConflicts.map((entry) => <li key={`${entry.key}-${entry.from}-${entry.to}`}><strong>{formatRecruiterOverwriteLabel(entry.key)}</strong>{`: existing "${entry.from}" to new "${entry.to}"`}</li>)}
-                        </ul>
-                      </div>
-                    ) : null}
                   </>
                 )}
               </Section>
