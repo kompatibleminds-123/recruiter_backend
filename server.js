@@ -683,11 +683,12 @@ function sanitizeGapRows(gaps) {
 }
 
 const DASHBOARD_REJECTED_STATUSES = new Set(["screening reject", "interview reject"]);
-const DASHBOARD_DROPPED_STATUSES = new Set(["did not attend", "dropped"]);
+const DASHBOARD_DROPPED_STATUSES = new Set(["did not attend", "not responding", "dropped"]);
 const DASHBOARD_FINAL_OUTCOMES = new Set([
   "offered",
   "hold",
   "did not attend",
+  "not responding",
   "dropped",
   "screening reject",
   "interview reject",
@@ -1364,11 +1365,11 @@ function parseNaturalLanguageCandidateQuery(rawQuery) {
   if (/\bjoined\b/i.test(lower)) statusTerms.push("joined");
   if (/\breject(?:ed)?\b/i.test(lower)) statusTerms.push("rejected");
   if (/\bduplicate\b/i.test(lower)) statusTerms.push("duplicate");
-  if (/\bdropped\b|\bdid not attend\b/i.test(lower)) statusTerms.push("dropped");
+  if (/\bdropped\b|\bdid not attend\b|\bnot responding\b|\bno response\b|\bno answer\b|\bnr\b/i.test(lower)) statusTerms.push("dropped");
   if (/\bscreening reject\b/i.test(lower)) detailedStatusTerms.push("screening reject");
   if (/\binterview reject\b/i.test(lower)) detailedStatusTerms.push("interview reject");
   if (/\bhold\b/i.test(lower)) detailedStatusTerms.push("hold");
-  if (/\bdid not attend\b/i.test(lower)) detailedStatusTerms.push("did not attend");
+  if (/\bdid not attend\b|\bnot responding\b|\bno response\b|\bno answer\b|\bnr\b/i.test(lower)) detailedStatusTerms.push("not responding");
   if (/\bunder process\b/i.test(lower)) detailedStatusTerms.push("under process");
   if (/\baligned\b|\binterview aligned\b|\bl1 aligned\b|\bl2 aligned\b|\bl3 aligned\b|\bhr interview aligned\b/i.test(lower)) detailedStatusTerms.push("aligned");
   if (/\bnot received\b|\bno response\b|\bnot responding\b|\bno answer\b|\bnr\b/i.test(lower)) detailedStatusTerms.push("not received");
@@ -1581,7 +1582,7 @@ async function interpretCandidateSearchQueryWithAi({ apiKey, query, actor }) {
     "Allowed lifecycle statuses:",
     "shortlisted, offered, joined, rejected, duplicate, dropped",
     "Allowed detailed statuses:",
-    "screening reject, interview reject, hold, did not attend, under process, aligned, not received, not reachable, busy, switch off, disconnected, call later, interested, not interested, revisit for other role",
+    "screening reject, interview reject, hold, not responding, under process, aligned, not received, not reachable, busy, switch off, disconnected, call later, interested, not interested, revisit for other role",
     "",
     `Query: ${String(query || "").trim()}`
   ].join("\n");
@@ -1931,6 +1932,7 @@ function candidateMatchesNaturalFilter(item, filters, actor = null) {
       const term = normalizeDashboardText(statusTerm);
       if (term === "aligned") return /\balign|interview scheduled|interview\b/.test(detailedHay) || Boolean(item.interviewAt);
       if (term === "not received") return /\bnot received|no response|not responding|no answer|nr\b/.test(detailedHay);
+      if (term === "not responding") return /\bnot responding|did not attend|did not join|no response|no answer|nr\b/.test(detailedHay);
       if (term === "call later") return /\bcall back later|call later\b/.test(detailedHay);
       if (term === "switch off") return /\bswitch off|switched off\b/.test(detailedHay);
       if (term === "under process") return getAssessmentLifecycleBucket(item) === "under_process";

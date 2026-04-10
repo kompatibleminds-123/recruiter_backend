@@ -105,7 +105,7 @@ const DEFAULT_STATUS_OPTIONS = [
   "Offered",
   "Feedback Awaited",
   "Hold",
-  "Did not attend",
+  "Not responding",
   "Dropped",
   "Screening Reject",
   "Interview Reject",
@@ -115,16 +115,18 @@ const DEFAULT_STATUS_OPTIONS = [
 ];
 
 const APPLIED_OUTCOME_FILTER_ORDER = [
-  "Aligned for Interview",
-  "CV Shared",
-  "Dropped",
-  "L1 aligned",
-  "L2 aligned",
   "No outcome",
+  "Not responding",
+  "Busy",
+  "Switch Off",
+  "Disconnected",
+  "Not reachable",
+  "Call later",
+  "Interested",
+  "Hold by recruiter",
   "Not interested",
-  "Offered",
-  "call_back_later",
-  "revisit_for_other_role"
+  "Screening reject",
+  "Revisit for other role"
 ];
 
 const EMPTY_CANDIDATE_STRUCTURED_FILTERS = {
@@ -263,12 +265,20 @@ function isTerminalStatus(status) {
     "offered",
     "hold",
     "did not attend",
+    "not responding",
     "dropped",
     "screening reject",
     "interview reject",
     "duplicate",
     "joined"
   ].includes(String(status || "").trim().toLowerCase());
+}
+
+function normalizeAssessmentStatusLabel(status) {
+  const value = String(status || "").trim();
+  if (!value) return "";
+  if (/^did not attend$/i.test(value)) return "Not responding";
+  return value;
 }
 
 function normalizeShortcutKey(raw) {
@@ -672,6 +682,7 @@ function isAssessmentStatusLine(line) {
     "feedback awaited",
     "hold",
     "did not attend",
+    "not responding",
     "dropped",
     "duplicate",
     "screening reject",
@@ -696,7 +707,7 @@ function inferAssessmentStatusAndSchedule(text, baseDate = new Date()) {
   const hasScreeningCall = /\bscreening\b/.test(value);
   const hasFeedback = /\bfeedback\b/.test(value);
   const hasHold = /\bon hold\b|\bhold\b|\bhigh notice\b|\bhigh ctc\b|\bout of budget\b/.test(value);
-  const hasDNA = /\bdid not join\b|\bdid not attend\b/.test(value);
+  const hasNotResponding = /\bnr\b|\bnot responding\b|\bno response\b|\bno answer\b|\bdid not pick up\b|\bdid not join\b|\bdid not attend\b/.test(value);
   const hasDuplicate = /\bduplicate\b/.test(value);
   const hasShortlisted = /\bshortlisted\b|\bselected\b/.test(value);
   const hasJoined = /\bjoined\b/.test(value);
@@ -704,7 +715,7 @@ function inferAssessmentStatusAndSchedule(text, baseDate = new Date()) {
   let candidateStatus = "";
   if (hasOffer && hasDropped) candidateStatus = "Dropped";
   else if (hasScreening && (hasReject || /\bsr\b/.test(value))) candidateStatus = "Screening Reject";
-  else if (hasDNA) candidateStatus = "Did not attend";
+  else if (hasNotResponding) candidateStatus = "Not responding";
   else if (hasDropped) candidateStatus = "Dropped";
   else if (hasDuplicate) candidateStatus = "Duplicate";
   else if (hasJoined) candidateStatus = "Joined";
@@ -1153,8 +1164,6 @@ function escapeHtml(value) {
 }
 
 function getCapturedOutcome(candidate, assessment) {
-  const isConverted = Boolean(assessment || candidate?.used_in_assessment);
-  if (isConverted) return String(assessment?.candidateStatus || "No outcome").trim();
   return String(candidate?.last_contact_outcome || "No outcome").trim();
 }
 
@@ -1164,15 +1173,8 @@ function getApplicantOutcome(applicant) {
 }
 
 function getApplicantWorkflowOutcome(applicant, linkedCandidate = null) {
-  const assessmentStatus = String(linkedCandidate?.candidate_status || applicant?.candidateStatus || "").trim();
-  if (assessmentStatus) {
-    if (/^screening call aligned$/i.test(assessmentStatus)) return "Aligned for Interview";
-    return assessmentStatus;
-  }
   const candidateOutcome = String(linkedCandidate?.last_contact_outcome || "").trim();
   if (!candidateOutcome) return "No outcome";
-  if (/^call later$/i.test(candidateOutcome)) return "call_back_later";
-  if (/^revisit for other role$/i.test(candidateOutcome)) return "revisit_for_other_role";
   return candidateOutcome;
 }
 
@@ -1471,7 +1473,7 @@ function mapAssessmentStatusToPipelineStage(status) {
   if (isInterviewAlignedStatus(value)) return "Interview Scheduled";
   if (value === "offered") return "Offer Extended";
   if (value === "feedback awaited" || value === "hold") return "On Hold";
-  if (value === "screening reject" || value === "interview reject" || value === "duplicate" || value === "dropped") return "Rejected";
+  if (value === "screening reject" || value === "interview reject" || value === "duplicate" || value === "dropped" || value === "not responding" || value === "did not attend") return "Rejected";
   if (value === "shortlisted") return "Shortlisted";
   if (value === "joined") return "Joined";
   return "";
@@ -1484,7 +1486,7 @@ function deriveInterviewRoundFromStatus(status) {
   if (value === "l2 aligned") return "L2";
   if (value === "l3 aligned") return "L3";
   if (value === "hr interview aligned") return "HR";
-  if (value === "did not attend") return "Interview";
+  if (value === "not responding" || value === "did not attend") return "Interview";
   return "";
 }
 
@@ -1518,7 +1520,7 @@ function buildAssessmentStatusCalendarNote(statusValue, atLocalValue) {
   if (isInterviewAlignedStatus(status)) return label ? `${statusLabel} on ${label}.` : statusLabel;
   if (status === "offered") return label ? `Offered. LWD / DOJ on ${label}.` : "Offered.";
   if (status === "cv shared") return "CV Shared.";
-  if (status === "did not attend") return "Did not attend.";
+  if (status === "not responding" || status === "did not attend") return "Not responding.";
   if (status === "screening reject") return "Screening reject.";
   if (status === "interview reject") return "Interview reject.";
   if (status === "duplicate") return "Duplicate.";
@@ -1954,7 +1956,7 @@ function AssessmentStatusModal({ open, assessment, onClose, onSave }) {
 
   useEffect(() => {
     if (!open || !assessment) return;
-    setCandidateStatus(String(assessment.candidateStatus || "").trim());
+    setCandidateStatus(normalizeAssessmentStatusLabel(assessment.candidateStatus));
     setAtValue(toDateInputValue(assessment.interviewAt || assessment.followUpAt || ""));
     setNotes("");
     setOfferAmount(String(assessment.offerAmount || "").trim());
@@ -2143,7 +2145,7 @@ function ClientFeedbackModal({ open, item, onClose, onSave }) {
 
   useEffect(() => {
     if (!open) return;
-    setStatus(String(feedbackMeta.status || assessment?.candidateStatus || "").trim());
+    setStatus(normalizeAssessmentStatusLabel(feedbackMeta.status || assessment?.candidateStatus));
     setFeedback("");
     setInterviewAt(toDateInputValue(assessment?.interviewAt || ""));
   }, [open, item]);
@@ -2372,7 +2374,8 @@ function PortalApp({ token, onLogout }) {
     dateTo: "",
     clients: [],
     jds: [],
-    recruiters: []
+    recruiters: [],
+    outcomes: []
   });
   const [candidateSearchMode, setCandidateSearchMode] = useState("all");
   const [candidateSearchText, setCandidateSearchText] = useState("");
@@ -2681,6 +2684,7 @@ function PortalApp({ token, onLogout }) {
     const clients = new Set();
     const jds = new Set();
     const recruiters = new Set();
+    const outcomes = new Set();
     const isAdmin = String(state.user?.role || "").toLowerCase() === "admin";
     const currentUserName = String(state.user?.name || "").trim();
     const adminNames = (state.users || [])
@@ -2698,15 +2702,20 @@ function PortalApp({ token, onLogout }) {
       const clientValue = String(item?.clientName || matchedCandidate?.client_name || "").trim();
       const jdValue = String(item?.jdTitle || matchedCandidate?.jd_title || "").trim();
       const recruiterValue = String(item?.recruiterName || matchedCandidate?.assigned_to_name || matchedCandidate?.recruiter_name || "").trim();
+      const outcomeValue = normalizeAssessmentStatusLabel(item?.candidateStatus || item?.candidate_status || "No outcome") || "No outcome";
       if (clientValue) clients.add(clientValue);
       if (jdValue) jds.add(jdValue);
       if (recruiterValue) recruiters.add(recruiterValue);
+      if (outcomeValue) outcomes.add(outcomeValue);
     });
     allowedRecruiterNames.forEach((name) => recruiters.add(name));
     return {
       clients: Array.from(clients).sort((a, b) => a.localeCompare(b)),
       jds: Array.from(jds).sort((a, b) => a.localeCompare(b)),
-      recruiters: Array.from(recruiters).sort((a, b) => a.localeCompare(b))
+      recruiters: Array.from(recruiters).sort((a, b) => a.localeCompare(b)),
+      outcomes: DEFAULT_STATUS_OPTIONS.filter((item) => outcomes.has(item)).concat(
+        Array.from(outcomes).filter((item) => !DEFAULT_STATUS_OPTIONS.includes(item)).sort((a, b) => a.localeCompare(b))
+      )
     };
   }, [state.assessments, state.candidates, state.user, state.users]);
 
@@ -2720,6 +2729,7 @@ function PortalApp({ token, onLogout }) {
       const clientValue = String(item?.clientName || matchedCandidate?.client_name || "").trim();
       const jdValue = String(item?.jdTitle || matchedCandidate?.jd_title || "").trim();
       const recruiterValue = String(item?.recruiterName || matchedCandidate?.assigned_to_name || matchedCandidate?.recruiter_name || "").trim();
+      const outcomeValue = normalizeAssessmentStatusLabel(item?.candidateStatus || item?.candidate_status || "No outcome") || "No outcome";
       const createdDate = String(item?.generatedAt || item?.updatedAt || "").slice(0, 10);
       const hay = [
         item?.candidateName,
@@ -2735,6 +2745,7 @@ function PortalApp({ token, onLogout }) {
       if (assessmentFilters.clients.length && !assessmentFilters.clients.includes(clientValue)) return false;
       if (assessmentFilters.jds.length && !assessmentFilters.jds.includes(jdValue)) return false;
       if (assessmentFilters.recruiters.length && !assessmentFilters.recruiters.includes(recruiterValue)) return false;
+      if (assessmentFilters.outcomes.length && !assessmentFilters.outcomes.includes(outcomeValue)) return false;
       return true;
     });
   }, [state.assessments, state.candidates, assessmentFilters]);
@@ -4857,10 +4868,10 @@ function PortalApp({ token, onLogout }) {
         notes: readableNotes || nextStatus,
         createdAt: new Date().toISOString()
       });
-    } else if (nextStatusLower === "did not attend") {
+    } else if (nextStatusLower === "not responding" || nextStatusLower === "did not attend") {
       nextAssessment.interviewAttempts.push({
         round: deriveInterviewRoundFromStatus(nextStatus) || "Interview",
-        outcome: "Did not attend",
+        outcome: "Not responding",
         at: new Date().toISOString(),
         notes: readableNotes || nextStatus,
         createdAt: new Date().toISOString()
@@ -5225,7 +5236,7 @@ function PortalApp({ token, onLogout }) {
                   <label><span>Quick range</span><select value={dashboardFilters.quickRange} onChange={(e) => applyDashboardQuickRange(e.target.value)}><option value="all">All time</option><option value="last_7_days">Last 7 days</option><option value="this_month">This month</option><option value="custom">Custom</option></select></label>
                   <div className="button-row align-end"><button onClick={() => void applyDashboardFilters()}>Apply</button></div>
                 </div>
-                <p className="muted">Under Interview Process excludes shortlisted, offered, hold, did not attend, dropped, screening reject, interview reject, duplicate, and joined.</p>
+                <p className="muted">Under Interview Process excludes shortlisted, offered, hold, not responding, dropped, screening reject, interview reject, duplicate, and joined.</p>
                 <div className="metric-grid dashboard-metric-grid">
                   {DASHBOARD_METRIC_COLUMNS.map(([key, label]) => (
                     <button key={key} className="metric-card metric-card--button" onClick={() => void openDashboardDrilldown({ title: `${label} candidates`, metric: key, groupType: "all" })}>
@@ -5545,7 +5556,7 @@ function PortalApp({ token, onLogout }) {
                   {String(state.user?.role || "").toLowerCase() === "admin" ? <MultiSelectDropdown label="Assigned to" options={capturedCandidateOptions.assignedTo} selected={candidateFilters.assignedTo} onToggle={(value) => setCandidateFilters((current) => ({ ...current, assignedTo: value === "__all__" ? [] : current.assignedTo.includes(value) ? current.assignedTo.filter((item) => item !== value) : [...current.assignedTo, value] }))} /> : null}
                   <MultiSelectDropdown label="Captured by" options={capturedCandidateOptions.capturedBy} selected={candidateFilters.capturedBy} onToggle={(value) => setCandidateFilters((current) => ({ ...current, capturedBy: value === "__all__" ? [] : current.capturedBy.includes(value) ? current.capturedBy.filter((item) => item !== value) : [...current.capturedBy, value] }))} />
                   <MultiSelectDropdown label="Sources" options={capturedCandidateOptions.sources} selected={candidateFilters.sources} onToggle={(value) => setCandidateFilters((current) => ({ ...current, sources: value === "__all__" ? [] : current.sources.includes(value) ? current.sources.filter((item) => item !== value) : [...current.sources, value] }))} />
-                  <MultiSelectDropdown label="Outcomes" options={capturedCandidateOptions.outcomes} selected={candidateFilters.outcomes} onToggle={(value) => setCandidateFilters((current) => ({ ...current, outcomes: value === "__all__" ? [] : current.outcomes.includes(value) ? current.outcomes.filter((item) => item !== value) : [...current.outcomes, value] }))} />
+                  <MultiSelectDropdown label="Outcome" options={capturedCandidateOptions.outcomes} selected={candidateFilters.outcomes} onToggle={(value) => setCandidateFilters((current) => ({ ...current, outcomes: value === "__all__" ? [] : current.outcomes.includes(value) ? current.outcomes.filter((item) => item !== value) : [...current.outcomes, value] }))} />
                   <MultiSelectDropdown label="State" options={["active", "inactive"]} selected={candidateFilters.activeStates} onToggle={(value) => setCandidateFilters((current) => ({ ...current, activeStates: value === "__all__" ? [] : current.activeStates.includes(value) ? current.activeStates.filter((item) => item !== value) : [...current.activeStates, value] }))} />
                 </div>
                 <div className="button-row">
@@ -5600,6 +5611,7 @@ function PortalApp({ token, onLogout }) {
                 <MultiSelectDropdown label="Clients" options={assessmentOptions.clients} selected={assessmentFilters.clients} onToggle={(value) => setAssessmentFilters((current) => ({ ...current, clients: value === "__all__" ? [] : current.clients.includes(value) ? current.clients.filter((item) => item !== value) : [...current.clients, value] }))} />
                 <MultiSelectDropdown label="JD / Role" options={assessmentOptions.jds} selected={assessmentFilters.jds} onToggle={(value) => setAssessmentFilters((current) => ({ ...current, jds: value === "__all__" ? [] : current.jds.includes(value) ? current.jds.filter((item) => item !== value) : [...current.jds, value] }))} />
                 <MultiSelectDropdown label="Recruiters" options={assessmentOptions.recruiters} selected={assessmentFilters.recruiters} onToggle={(value) => setAssessmentFilters((current) => ({ ...current, recruiters: value === "__all__" ? [] : current.recruiters.includes(value) ? current.recruiters.filter((item) => item !== value) : [...current.recruiters, value] }))} />
+                <MultiSelectDropdown label="Outcome" options={assessmentOptions.outcomes} selected={assessmentFilters.outcomes} onToggle={(value) => setAssessmentFilters((current) => ({ ...current, outcomes: value === "__all__" ? [] : current.outcomes.includes(value) ? current.outcomes.filter((item) => item !== value) : [...current.outcomes, value] }))} />
               </div>
               <div className="button-row">
                 <button onClick={() => void copyAssessmentsExcel()}>Copy Excel</button>
@@ -5619,7 +5631,7 @@ function PortalApp({ token, onLogout }) {
                     <div className="item-card__top">
                       <div>
                         <h3>{item.candidateName || "Candidate"} | {item.jdTitle || "Untitled role"}</h3>
-                        <p className="muted">{[item.pipelineStage || "", item.candidateStatus || ""].filter(Boolean).join(" | ")}</p>
+                        <p className="muted">{[item.pipelineStage || "", normalizeAssessmentStatusLabel(item.candidateStatus) || ""].filter(Boolean).join(" | ")}</p>
                         <div className="status-note">
                           {[
                             item.currentCompany || "",
