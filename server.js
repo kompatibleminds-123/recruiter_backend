@@ -1012,6 +1012,10 @@ function toDashboardBreakdownMap(itemsMap) {
     .sort((a, b) => a.label.localeCompare(b.label));
 }
 
+function isInterviewAlignedStatus(status) {
+  return /\b(screening call aligned|l1 aligned|l2 aligned|l3 aligned|hr interview aligned)\b/i.test(String(status || ""));
+}
+
 function buildDashboardSummary({ candidates = [], assessments = [], jobs = [], dateFrom = "", dateTo = "", clientFilter = "", recruiterFilter = "" }) {
   const overall = createDashboardBucket();
   const byClient = new Map();
@@ -4299,6 +4303,19 @@ const server = http.createServer(async (req, res) => {
         throw new Error("Not allowed for this role.");
       }
       const nextStatus = String(body.status || assessment.candidateStatus || "").trim();
+      const timestamp = new Date().toISOString();
+      const nextInterviewAt = String(body.interviewAt || "").trim();
+      const trimmedFeedback = String(body.feedback || "").trim();
+      const nextHistory = [
+        ...(Array.isArray(assessment.clientFeedbackHistory) ? assessment.clientFeedbackHistory : []),
+        {
+          status: nextStatus,
+          feedback: trimmedFeedback,
+          interviewAt: nextInterviewAt,
+          updatedAt: timestamp,
+          updatedBy: clientUser.username
+        }
+      ];
       const ownerRecruiter = (allRecruiters || []).find((item) => String(item?.id || "") === String(assessment.recruiterId || "").trim()) || adminUser;
       const saved = await saveAssessment({
         actorUserId: ownerRecruiter.id,
@@ -4307,10 +4324,12 @@ const server = http.createServer(async (req, res) => {
           ...assessment,
           candidateStatus: nextStatus,
           pipelineStage: assessment.pipelineStage || "Submitted",
-          clientFeedback: String(body.feedback || "").trim(),
+          interviewAt: isInterviewAlignedStatus(nextStatus) ? (nextInterviewAt || assessment.interviewAt || "") : assessment.interviewAt,
+          clientFeedback: trimmedFeedback,
           clientFeedbackStatus: nextStatus,
-          clientFeedbackUpdatedAt: new Date().toISOString(),
-          clientFeedbackUpdatedBy: clientUser.username
+          clientFeedbackUpdatedAt: timestamp,
+          clientFeedbackUpdatedBy: clientUser.username,
+          clientFeedbackHistory: nextHistory
         }
       });
       sendJson(res, 200, { ok: true, result: saved });

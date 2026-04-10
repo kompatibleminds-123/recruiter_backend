@@ -2057,11 +2057,15 @@ function NewDraftModal({ open, form, users, jobs, currentUser, onChange, onClose
 function readItemClientFeedback(item) {
   const assessment = item?.raw?.assessment || (item?.sourceType === "assessment_only" ? item : null);
   const candidate = item?.raw?.candidate || null;
+  const history = Array.isArray(assessment?.clientFeedbackHistory || candidate?.client_feedback_history)
+    ? (assessment?.clientFeedbackHistory || candidate?.client_feedback_history)
+    : [];
   return {
     feedback: String(assessment?.clientFeedback || candidate?.client_feedback || "").trim(),
     status: String(assessment?.clientFeedbackStatus || "").trim(),
     updatedAt: String(assessment?.clientFeedbackUpdatedAt || "").trim(),
-    updatedBy: String(assessment?.clientFeedbackUpdatedBy || "").trim()
+    updatedBy: String(assessment?.clientFeedbackUpdatedBy || "").trim(),
+    history
   };
 }
 
@@ -2070,14 +2074,17 @@ function ClientFeedbackModal({ open, item, onClose, onSave }) {
   const assessment = item?.raw?.assessment || (item?.sourceType === "assessment_only" ? item : null);
   const [status, setStatus] = useState("");
   const [feedback, setFeedback] = useState("");
+  const [interviewAt, setInterviewAt] = useState("");
 
   useEffect(() => {
     if (!open) return;
     setStatus(String(feedbackMeta.status || assessment?.candidateStatus || "").trim());
-    setFeedback(String(feedbackMeta.feedback || "").trim());
+    setFeedback("");
+    setInterviewAt(toDateInputValue(assessment?.interviewAt || ""));
   }, [open, item]);
 
   if (!open) return null;
+  const showCalendar = isInterviewAlignedStatus(status);
   return (
     <div className="overlay" onClick={onClose}>
       <div className="overlay-card" onClick={(e) => e.stopPropagation()}>
@@ -2091,13 +2098,30 @@ function ClientFeedbackModal({ open, item, onClose, onSave }) {
               {DEFAULT_STATUS_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}
             </select>
           </label>
+          {showCalendar ? (
+            <label>
+              <span>Interview / call date</span>
+              <input type="datetime-local" value={interviewAt} onChange={(e) => setInterviewAt(e.target.value)} />
+            </label>
+          ) : null}
           <label>
             <span>Comment / feedback</span>
             <textarea value={feedback} onChange={(e) => setFeedback(e.target.value)} placeholder="Add what the client said or what should be reviewed next." />
           </label>
         </div>
+        {feedbackMeta.history.length ? (
+          <div className="feedback-preview">
+            <div className="feedback-preview__label">Previous feedback</div>
+            {feedbackMeta.history.slice().reverse().map((entry, index) => (
+              <div className="status-note" key={`${entry.updatedAt || index}-${entry.status || ""}`}>
+                {[entry.updatedAt ? new Date(entry.updatedAt).toLocaleString() : "", entry.updatedBy || "", entry.status || ""].filter(Boolean).join(" | ")}
+                {entry.feedback ? <div>{entry.feedback}</div> : null}
+              </div>
+            ))}
+          </div>
+        ) : null}
         <div className="button-row">
-          <button onClick={() => onSave({ status, feedback })}>Save feedback</button>
+          <button onClick={() => onSave({ status, feedback, interviewAt })}>Save feedback</button>
           <button className="ghost-btn" onClick={onClose}>Cancel</button>
         </div>
       </div>
@@ -2127,6 +2151,7 @@ function DrilldownModal({ open, title, items, onClose, onOpenCv, onOpenDraft, on
                     <div className="feedback-preview">
                       <div className="feedback-preview__label">Client feedback</div>
                       <div>{feedbackMeta.feedback}</div>
+                      {feedbackMeta.history.length > 1 ? <div className="muted">{feedbackMeta.history.length} feedback update(s)</div> : null}
                       <div className="muted">{[feedbackMeta.status ? `Status: ${feedbackMeta.status}` : "", feedbackMeta.updatedBy || "", feedbackMeta.updatedAt ? new Date(feedbackMeta.updatedAt).toLocaleString() : ""].filter(Boolean).join(" | ")}</div>
                     </div>
                   ) : null}
@@ -2134,7 +2159,7 @@ function DrilldownModal({ open, title, items, onClose, onOpenCv, onOpenDraft, on
                     {onOpenCv && (item.raw?.candidate?.id || item.id) && (item.raw?.candidate?.cv_filename || item.raw?.candidate?.cv_url) ? <button onClick={() => onOpenCv(item.raw?.candidate?.id || item.id)}>Open CV</button> : null}
                     {onOpenDraft && item.raw?.candidate?.id ? <button onClick={() => onOpenDraft(item.raw.candidate.id)}>Open draft</button> : null}
                     {onOpenAssessment && (item.raw?.assessment || item.sourceType === "assessment_only") ? <button onClick={() => onOpenAssessment(item.raw?.assessment || item)}>{onOpenDraft ? "Edit assessment" : "Open profile"}</button> : null}
-                    {onAddFeedback ? <button className="ghost-btn" onClick={() => onAddFeedback(item)}>{feedbackMeta.feedback ? "Edit feedback" : "Add feedback"}</button> : null}
+                    {onAddFeedback ? <button className="ghost-btn" onClick={() => onAddFeedback(item)}>{feedbackMeta.feedback ? "Add another feedback" : "Add feedback"}</button> : null}
                   </div>
                 </div>
               </div>
@@ -4035,7 +4060,7 @@ function PortalApp({ token, onLogout }) {
     await openClientPortalDrilldown(drilldownState.request);
   }
 
-  async function saveClientFeedback({ status, feedback }) {
+  async function saveClientFeedback({ status, feedback, interviewAt }) {
     if (!clientFeedbackItem) return;
     const assessment = clientFeedbackItem.raw?.assessment || (clientFeedbackItem.sourceType === "assessment_only" ? clientFeedbackItem : null);
     const candidate = clientFeedbackItem.raw?.candidate || null;
@@ -4043,15 +4068,28 @@ function PortalApp({ token, onLogout }) {
     const trimmedFeedback = String(feedback || "").trim();
     if (assessment) {
       const nextStatus = trimmedStatus || assessment.candidateStatus || "";
+      const timestamp = new Date().toISOString();
+      const nextHistory = [
+        ...(Array.isArray(assessment.clientFeedbackHistory) ? assessment.clientFeedbackHistory : []),
+        {
+          status: nextStatus,
+          feedback: trimmedFeedback,
+          interviewAt: String(interviewAt || "").trim(),
+          updatedAt: timestamp,
+          updatedBy: state.user?.name || ""
+        }
+      ];
       await api("/company/assessments", token, "POST", {
         assessment: {
           ...assessment,
           candidateStatus: nextStatus,
           pipelineStage: mapAssessmentStatusToPipelineStage(nextStatus) || assessment.pipelineStage || "Submitted",
+          interviewAt: isInterviewAlignedStatus(nextStatus) ? String(interviewAt || assessment.interviewAt || "").trim() : assessment.interviewAt,
           clientFeedback: trimmedFeedback,
           clientFeedbackStatus: nextStatus,
-          clientFeedbackUpdatedAt: new Date().toISOString(),
-          clientFeedbackUpdatedBy: state.user?.name || ""
+          clientFeedbackUpdatedAt: timestamp,
+          clientFeedbackUpdatedBy: state.user?.name || "",
+          clientFeedbackHistory: nextHistory
         }
       });
     } else if (candidate?.id) {
@@ -6280,9 +6318,9 @@ function ClientPortalApp({ token, onLogout }) {
     await openDrilldown(drilldownState.request);
   }
 
-  async function saveFeedback({ status: nextStatus, feedback }) {
+  async function saveFeedback({ status: nextStatus, feedback, interviewAt }) {
     const assessmentId = String(clientFeedbackItem?.raw?.assessment?.id || clientFeedbackItem?.id || "").trim();
-    await api("/client-portal/feedback", token, "POST", { assessmentId, status: nextStatus, feedback });
+    await api("/client-portal/feedback", token, "POST", { assessmentId, status: nextStatus, feedback, interviewAt });
     await loadClientPortal(filters);
     await refreshDrilldown();
     setClientFeedbackItem(null);
