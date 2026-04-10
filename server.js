@@ -268,9 +268,34 @@ function getBearerTokenFromRequest(req, requestUrl = null) {
   return queryToken;
 }
 
+function timingSafeEqualString(a, b) {
+  const left = String(a || "");
+  const right = String(b || "");
+  const leftBuffer = Buffer.from(left, "utf8");
+  const rightBuffer = Buffer.from(right, "utf8");
+  if (leftBuffer.length !== rightBuffer.length) return false;
+  try {
+    return crypto.timingSafeEqual(leftBuffer, rightBuffer);
+  } catch {
+    return false;
+  }
+}
+
 function inferStoredFileRefFromUrl(actor, requestUrl) {
+  const fileProvider = String(requestUrl?.searchParams?.get("cv_provider") || "").trim();
+  const fileKey = String(requestUrl?.searchParams?.get("cv_key") || "").trim();
   const fileUrl = String(requestUrl?.searchParams?.get("cv_url") || "").trim();
   const filename = String(requestUrl?.searchParams?.get("cv_filename") || "").trim();
+  if (fileProvider && fileKey) {
+    if (!fileKey.includes(String(actor.companyId || "").trim())) return null;
+    return {
+      provider: fileProvider,
+      key: fileKey,
+      url: fileUrl,
+      filename,
+      mimeType: "application/octet-stream"
+    };
+  }
   if (!fileUrl) {
     return null;
   }
@@ -1029,6 +1054,81 @@ function buildDashboardSummary({ candidates = [], assessments = [], jobs = [], d
     clientFilter: String(clientFilter || "").trim(),
     recruiterFilter: String(recruiterFilter || "").trim()
   };
+}
+
+function normalizePhoneDigits(value) {
+  return String(value || "").replace(/[^\d]/g, "");
+}
+
+function pickBestCandidateForAssessment(assessment = {}, candidates = []) {
+  const exactCandidateId = String(assessment?.candidateId || assessment?.candidate_id || "").trim();
+  if (exactCandidateId) {
+    const exactMatch = candidates.find((candidate) => String(candidate?.id || "").trim() === exactCandidateId);
+    if (exactMatch) return exactMatch;
+  }
+  const assessmentId = String(assessment?.id || "").trim();
+  if (assessmentId) {
+    const linkedMatch = candidates.find((candidate) => String(candidate?.assessment_id || candidate?.assessmentId || "").trim() === assessmentId);
+    if (linkedMatch) return linkedMatch;
+  }
+  const targetName = String(assessment?.candidateName || "").trim().toLowerCase();
+  const targetEmail = String(assessment?.emailId || assessment?.email || "").trim().toLowerCase();
+  const targetPhone = normalizePhoneDigits(assessment?.phoneNumber || assessment?.phone || "");
+  const targetJd = String(assessment?.jdTitle || assessment?.jd_title || "").trim().toLowerCase();
+  const targetCompany = String(assessment?.currentCompany || assessment?.company || "").trim().toLowerCase();
+  const targetRole = String(assessment?.currentDesignation || assessment?.role || "").trim().toLowerCase();
+
+  let best = null;
+  let bestScore = -1;
+  for (const candidate of Array.isArray(candidates) ? candidates : []) {
+    let score = 0;
+    const candidateId = String(candidate?.id || "").trim();
+    if (!candidateId) continue;
+    const candidateAssessmentId = String(candidate?.assessment_id || candidate?.assessmentId || "").trim();
+    const candidateName = String(candidate?.name || "").trim().toLowerCase();
+    const candidateEmail = String(candidate?.email || "").trim().toLowerCase();
+    const candidatePhone = normalizePhoneDigits(candidate?.phone || "");
+    const candidateJd = String(candidate?.jd_title || candidate?.jdTitle || "").trim().toLowerCase();
+    const candidateCompany = String(candidate?.company || "").trim().toLowerCase();
+    const candidateRole = String(candidate?.role || "").trim().toLowerCase();
+
+    if (assessmentId && candidateAssessmentId === assessmentId) score += 120;
+    if (targetEmail && candidateEmail && targetEmail === candidateEmail) score += 100;
+    if (targetPhone && candidatePhone && targetPhone === candidatePhone) score += 100;
+    if (targetName && candidateName && targetName === candidateName) score += 60;
+    if (targetJd && candidateJd && targetJd === candidateJd) score += 25;
+    if (targetCompany && candidateCompany && targetCompany === candidateCompany) score += 15;
+    if (targetRole && candidateRole && targetRole === candidateRole) score += 15;
+
+    if (score > bestScore) {
+      best = candidate;
+      bestScore = score;
+    }
+  }
+  return bestScore > 0 ? best : null;
+}
+
+async function backfillCandidateAssessmentLinks(user) {
+  const actor = user || {};
+  if (!actor?.id || !actor?.companyId) return { linked: 0 };
+  const [candidates, assessments] = await Promise.all([
+    listCandidatesForUser(actor, { limit: 5000 }),
+    listAssessments({ actorUserId: actor.id, companyId: actor.companyId })
+  ]);
+  let linked = 0;
+  for (const assessment of Array.isArray(assessments) ? assessments : []) {
+    const matchedCandidate = pickBestCandidateForAssessment(assessment, candidates);
+    if (!matchedCandidate) continue;
+    const assessmentId = String(assessment?.id || "").trim();
+    const currentAssessmentId = String(matchedCandidate?.assessment_id || matchedCandidate?.assessmentId || "").trim();
+    const needsLink = !matchedCandidate?.used_in_assessment || !currentAssessmentId || currentAssessmentId !== assessmentId;
+    if (!needsLink) continue;
+    await linkCandidateToAssessment(String(matchedCandidate.id || "").trim(), assessmentId, { companyId: actor.companyId });
+    matchedCandidate.used_in_assessment = true;
+    matchedCandidate.assessment_id = assessmentId;
+    linked += 1;
+  }
+  return { linked };
 }
 
 function parseNaturalLanguageCandidateQuery(rawQuery) {
@@ -3229,6 +3329,17 @@ const server = http.createServer(async (req, res) => {
       sendJson(res, 200, { ok: true, result: { assessments } });
     } catch (error) {
       sendJson(res, 401, { ok: false, error: String(error.message || error) });
+    }
+    return;
+  }
+
+  if (req.method === "POST" && req.url === "/company/candidates/backfill-assessment-links") {
+    try {
+      const user = await requireSessionUser(getBearerToken(req));
+      const result = await backfillCandidateAssessmentLinks(user);
+      sendJson(res, 200, { ok: true, result });
+    } catch (error) {
+      sendJson(res, 400, { ok: false, error: String(error.message || error) });
     }
     return;
   }

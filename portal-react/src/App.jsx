@@ -126,8 +126,8 @@ const APPLIED_OUTCOME_FILTER_ORDER = [
 
 const DASHBOARD_METRIC_COLUMNS = [
   ["sourced", "Sourced"],
-  ["converted", "Converted"],
-  ["under_interview_process", "Under Interview Process"],
+  ["converted", "Shared"],
+  ["under_interview_process", "Under Interview"],
   ["rejected", "Rejected"],
   ["duplicate", "Duplicate"],
   ["dropped", "Dropped"],
@@ -138,7 +138,7 @@ const DASHBOARD_METRIC_COLUMNS = [
 
 const DASHBOARD_METRIC_TILES = [
   ["sourced", "Sourced"],
-  ["converted", "Converted"],
+  ["converted", "Shared"],
   ["under_interview_process", "Under Interview"],
   ["offered", "Offered"],
   ["joined", "Joined"]
@@ -2265,6 +2265,7 @@ function PortalApp({ token, onLogout }) {
   }
 
   async function loadWorkspace() {
+    await api("/company/candidates/backfill-assessment-links", token, { method: "POST" }).catch(() => null);
     const [userResult, dashboardResult, applicantsResult, intakeResult, jobsResult, usersResult, candidatesResult, assessmentsResult, sharedPresetResult] = await Promise.all([
       api("/auth/me", token),
       api("/company/dashboard", token),
@@ -2486,6 +2487,12 @@ function PortalApp({ token, onLogout }) {
       assessment_status: item.candidateStatus || "",
       follow_up_at: formatDateForCopy(item.followUpAt || item.interviewAt || ""),
       candidate_id: assessmentLinkedCandidateMap.get(String(item.id || ""))?.id || "",
+      cv_provider: decodePortalApplicantMetadata(assessmentLinkedCandidateMap.get(String(item.id || "")) || {}).fileProvider
+        || decodePortalApplicantMetadata(assessmentLinkedCandidateMap.get(String(item.id || "")) || {})?.cvAnalysisCache?.storedFile?.provider
+        || "",
+      cv_key: decodePortalApplicantMetadata(assessmentLinkedCandidateMap.get(String(item.id || "")) || {}).fileKey
+        || decodePortalApplicantMetadata(assessmentLinkedCandidateMap.get(String(item.id || "")) || {})?.cvAnalysisCache?.storedFile?.key
+        || "",
       cv_url: decodePortalApplicantMetadata(assessmentLinkedCandidateMap.get(String(item.id || "")) || {}).fileUrl
         || decodePortalApplicantMetadata(assessmentLinkedCandidateMap.get(String(item.id || "")) || {})?.cvAnalysisCache?.storedFile?.url
         || assessmentLinkedCandidateMap.get(String(item.id || ""))?.cv_url
@@ -2516,6 +2523,8 @@ function PortalApp({ token, onLogout }) {
       const entries = await Promise.all(rowsNeedingLinks.map(async (item) => {
         try {
           const params = new URLSearchParams();
+          if (item.cv_provider) params.set("cv_provider", String(item.cv_provider));
+          if (item.cv_key) params.set("cv_key", String(item.cv_key));
           if (item.cv_url) params.set("cv_url", String(item.cv_url));
           if (item.cv_filename) params.set("cv_filename", String(item.cv_filename));
           if (item.name) params.set("candidate_name", String(item.name));
@@ -4664,7 +4673,7 @@ function PortalApp({ token, onLogout }) {
                   <label><span>Client</span><select value={dashboardFilters.clientLabel} onChange={(e) => setDashboardFilters((c) => ({ ...c, clientLabel: e.target.value }))}><option value="">All clients</option>{(state.dashboard?.availableClients || []).map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
                   <label><span>Recruiter</span><select value={dashboardFilters.recruiterLabel} onChange={(e) => setDashboardFilters((c) => ({ ...c, recruiterLabel: e.target.value }))}><option value="">All recruiters</option>{(state.dashboard?.availableRecruiters || []).map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
                   <label><span>Quick range</span><select value={dashboardFilters.quickRange} onChange={(e) => applyDashboardQuickRange(e.target.value)}><option value="all">All time</option><option value="last_7_days">Last 7 days</option><option value="this_month">This month</option><option value="custom">Custom</option></select></label>
-                  <div className="button-row align-end"><button onClick={() => void applyDashboardFilters()}>Apply dates</button></div>
+                  <div className="button-row align-end"><button onClick={() => void applyDashboardFilters()}>Apply</button></div>
                 </div>
                 <p className="muted">Under Interview Process excludes shortlisted, offered, hold, did not attend, dropped, screening reject, interview reject, duplicate, and joined.</p>
                 <div className="metric-grid dashboard-metric-grid">
