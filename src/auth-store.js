@@ -8,7 +8,7 @@ const STORE_PATH = path.join(DATA_DIR, "store.json");
 function ensureStore() {
   if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
   if (!fs.existsSync(STORE_PATH)) {
-    fs.writeFileSync(STORE_PATH, JSON.stringify({ companies: [], users: [], sessions: [], jobs: [], assessments: [] }, null, 2), "utf8");
+    fs.writeFileSync(STORE_PATH, JSON.stringify({ companies: [], users: [], sessions: [], jobs: [], assessments: [], clientUsers: [] }, null, 2), "utf8");
   }
 }
 function readStore() { ensureStore(); return JSON.parse(fs.readFileSync(STORE_PATH, "utf8")); }
@@ -38,6 +38,13 @@ function timingSafeEqualString(a, b) {
   const y = Buffer.from(String(b || ""), "utf8");
   if (x.length !== y.length) return false;
   return crypto.timingSafeEqual(x, y);
+}
+function normalizeUsername(username) {
+  return String(username || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9._-]+/g, "_")
+    .replace(/^_+|_+$/g, "");
 }
 function getPlatformCompanyCreatorEmails() {
   return String(process.env.PLATFORM_COMPANY_CREATOR_EMAILS || "")
@@ -216,9 +223,14 @@ function sanitizeJob(job) {
 }
 const SHARED_EXPORT_PRESET_ROW_ID = "__shared_export_presets__";
 const SHARED_EXPORT_PRESET_ROW_TITLE = "__shared_export_presets__";
+const CLIENT_USERS_ROW_ID = "__client_users__";
+const CLIENT_USERS_ROW_TITLE = "__client_users__";
 const MAX_SHARED_CUSTOM_EXPORT_PRESETS = 10;
 function isSharedExportPresetRow(job) {
   return String(job?.id || "").trim() === SHARED_EXPORT_PRESET_ROW_ID || String(job?.title || "").trim() === SHARED_EXPORT_PRESET_ROW_TITLE;
+}
+function isClientUsersRow(job) {
+  return String(job?.id || "").trim() === CLIENT_USERS_ROW_ID || String(job?.title || "").trim() === CLIENT_USERS_ROW_TITLE;
 }
 function sanitizeSharedExportPresetSettings(raw) {
   const source = raw && typeof raw === "object" ? raw : {};
@@ -315,6 +327,38 @@ function sanitizeAssessment(item) {
     pageTitle: item.pageTitle ?? item.page_title ?? p.pageTitle ?? "",
     pageUrl: item.pageUrl ?? item.page_url ?? p.pageUrl ?? "",
     pdfFilename: item.pdfFilename ?? item.pdf_filename ?? p.pdfFilename ?? ""
+  };
+}
+function sanitizeClientUser(raw) {
+  if (!raw) return null;
+  return {
+    id: String(raw.id || "").trim(),
+    companyId: String(raw.companyId || raw.company_id || "").trim(),
+    companyName: String(raw.companyName || raw.company_name || "").trim(),
+    username: normalizeUsername(raw.username || raw.userName || ""),
+    clientName: String(raw.clientName || raw.client_name || "").trim(),
+    allowedPositions: Array.isArray(raw.allowedPositions || raw.allowed_positions)
+      ? (raw.allowedPositions || raw.allowed_positions).map((item) => String(item || "").trim()).filter(Boolean)
+      : [],
+    createdAt: String(raw.createdAt || raw.created_at || "").trim(),
+    updatedAt: String(raw.updatedAt || raw.updated_at || "").trim()
+  };
+}
+function sanitizeClientUserForStorage(raw) {
+  const user = sanitizeClientUser(raw);
+  if (!user?.id || !user?.companyId || !user?.username || !user?.clientName) return null;
+  return {
+    ...user,
+    passwordHash: String(raw.passwordHash || raw.password_hash || "").trim()
+  };
+}
+function sanitizeClientUserPayload(raw) {
+  const source = raw && typeof raw === "object" ? raw : {};
+  const users = Array.isArray(source.clientUsers) ? source.clientUsers : Array.isArray(source.client_users) ? source.client_users : [];
+  return {
+    clientUsers: users
+      .map((item) => sanitizeClientUserForStorage(item))
+      .filter((item) => item?.id && item?.username && item?.clientName && item?.passwordHash)
   };
 }
 function persistedAssessmentId(rawId) {
@@ -634,9 +678,37 @@ async function getSessionUser(token) {
   const session = sessions[0]; if (!session) return null; return sanitizeUser(await getUserById(session.user_id, session.company_id));
 }
 async function requireSessionUser(token) { const user = await getSessionUser(token); if (!user) throw new Error("Invalid or missing session."); return user; }
+function getClientSessionSecret() {
+  return (
+    String(process.env.CLIENT_PORTAL_SESSION_SECRET || "").trim() ||
+    String(process.env.PLATFORM_SESSION_SECRET || "").trim() ||
+    "client-portal-session-secret"
+  );
+}
+function createSignedClientToken(payload) {
+  const encoded = Buffer.from(JSON.stringify(payload), "utf8").toString("base64url");
+  const signature = crypto.createHmac("sha256", getClientSessionSecret()).update(encoded).digest("base64url");
+  return `${encoded}.${signature}`;
+}
+function readSignedClientToken(token) {
+  const raw = String(token || "").trim();
+  if (!raw) return null;
+  const [encoded, signature] = raw.split(".");
+  if (!encoded || !signature) return null;
+  const expected = crypto.createHmac("sha256", getClientSessionSecret()).update(encoded).digest("base64url");
+  if (!timingSafeEqualString(signature, expected)) return null;
+  try {
+    const payload = JSON.parse(Buffer.from(encoded, "base64url").toString("utf8"));
+    if (payload?.type !== "client_portal") return null;
+    if (payload.expiresAt && Date.now() > Number(payload.expiresAt)) return null;
+    return payload;
+  } catch {
+    return null;
+  }
+}
 async function listCompanyUsers(companyId) {
-  if (!cfg().on) return readStore().users.filter((u) => u.companyId === companyId).map(sanitizeUser);
-  await ensureSeeded(); return (await sbSel("users", `select=*&company_id=eq.${enc(companyId)}&order=created_at.asc`)).map(sanitizeUser);
+  if (!cfg().on) return readStore().users.filter((u) => u.companyId === companyId && String(u.role || "").toLowerCase() !== "client").map(sanitizeUser);
+  await ensureSeeded(); return (await sbSel("users", `select=*&company_id=eq.${enc(companyId)}&order=created_at.asc`)).filter((u) => String(u.role || "").toLowerCase() !== "client").map(sanitizeUser);
 }
 async function listCompanyJobs(companyId) {
   if (!cfg().on) return (readStore().jobs || []).filter((j) => j.companyId === companyId && !isSharedExportPresetRow(j)).sort((a, b) => String(b.updatedAt || "").localeCompare(String(a.updatedAt || ""))).map(sanitizeJob);
@@ -736,6 +808,145 @@ async function saveCompanySharedExportPresets({ actorUserId, companyId, settings
   }], { conflict: "id", upsert: true });
   return sanitizeSharedExportPresetSettings(rows?.[0]?.payload || payload);
 }
+async function getCompanyClientUsers(companyId) {
+  if (!companyId) throw new Error("companyId is required.");
+  if (!cfg().on) {
+    const row = (readStore().jobs || []).find((j) => j.companyId === companyId && isClientUsersRow(j));
+    return sanitizeClientUserPayload(row?.payload || row || {}).clientUsers.map(sanitizeClientUser);
+  }
+  await ensureSeeded();
+  const rows = await sbSel("company_jobs", `select=*&company_id=eq.${enc(companyId)}&id=eq.${enc(CLIENT_USERS_ROW_ID)}&limit=1`);
+  return sanitizeClientUserPayload(rows?.[0]?.payload || rows?.[0] || {}).clientUsers.map(sanitizeClientUser);
+}
+async function getAllClientUsers() {
+  if (!cfg().on) {
+    const jobs = Array.isArray(readStore().jobs) ? readStore().jobs : [];
+    return jobs
+      .filter((job) => isClientUsersRow(job))
+      .flatMap((job) => sanitizeClientUserPayload(job?.payload || job || {}).clientUsers.map(sanitizeClientUserForStorage))
+      .filter(Boolean);
+  }
+  await ensureSeeded();
+  const rows = await sbSel("company_jobs", `select=*&id=eq.${enc(CLIENT_USERS_ROW_ID)}&limit=1000`);
+  return (rows || [])
+    .flatMap((row) => sanitizeClientUserPayload(row?.payload || row || {}).clientUsers.map(sanitizeClientUserForStorage))
+    .filter(Boolean);
+}
+async function saveCompanyClientUsersRow({ companyId, clientUsers, actorEmail = "" }) {
+  const sanitizedUsers = (Array.isArray(clientUsers) ? clientUsers : []).map((item) => sanitizeClientUserForStorage(item)).filter(Boolean);
+  const now = new Date().toISOString();
+  const payload = { clientUsers: sanitizedUsers, updatedAt: now, updatedBy: String(actorEmail || "").trim() };
+  if (!cfg().on) {
+    const store = readStore();
+    store.jobs = Array.isArray(store.jobs) ? store.jobs : [];
+    const ix = store.jobs.findIndex((j) => j.companyId === companyId && isClientUsersRow(j));
+    const next = {
+      id: CLIENT_USERS_ROW_ID,
+      companyId,
+      title: CLIENT_USERS_ROW_TITLE,
+      clientName: "__system__",
+      jobDescription: "Client portal users",
+      mustHaveSkills: "",
+      redFlags: "",
+      recruiterNotes: "",
+      standardQuestions: "",
+      jdShortcuts: "",
+      createdAt: ix >= 0 ? store.jobs[ix].createdAt : now,
+      updatedAt: now,
+      updatedBy: actorEmail,
+      payload
+    };
+    if (ix >= 0) store.jobs[ix] = next; else store.jobs.push(next);
+    writeStore(store);
+    return payload.clientUsers.map(sanitizeClientUser);
+  }
+  const rows = await sbIns("company_jobs", [{
+    id: CLIENT_USERS_ROW_ID,
+    company_id: companyId,
+    title: CLIENT_USERS_ROW_TITLE,
+    client_name: "__system__",
+    job_description: "Client portal users",
+    must_have_skills: "",
+    red_flags: "",
+    recruiter_notes: "",
+    standard_questions: "",
+    jd_shortcuts: "",
+    created_at: now,
+    updated_at: now,
+    updated_by: actorEmail,
+    payload
+  }], { conflict: "id", upsert: true });
+  return sanitizeClientUserPayload(rows?.[0]?.payload || payload).clientUsers.map(sanitizeClientUser);
+}
+async function createClientUser({ actorUserId, companyId, username, password, clientName, allowedPositions = [] }) {
+  const actor = sanitizeUser(await getUserById(actorUserId, companyId));
+  if (!actor || actor.role !== "admin") throw new Error("Only an admin for this company can create client accounts.");
+  const normalizedUsername = normalizeUsername(username);
+  const normalizedClientName = String(clientName || "").trim();
+  if (!normalizedUsername || !password || !normalizedClientName) throw new Error("username, password, and clientName are required.");
+  const allUsers = await getAllClientUsers();
+  if (allUsers.some((item) => normalizeUsername(item?.username || "") === normalizedUsername)) throw new Error("This client username already exists.");
+  const currentUsers = (await getCompanyClientUsers(companyId)).map((item) => sanitizeClientUserForStorage(item));
+  const nextUser = {
+    id: crypto.randomUUID(),
+    companyId,
+    companyName: actor.companyName || "",
+    username: normalizedUsername,
+    clientName: normalizedClientName,
+    allowedPositions: Array.isArray(allowedPositions) ? allowedPositions.map((item) => String(item || "").trim()).filter(Boolean) : [],
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    passwordHash: hashPassword(password)
+  };
+  await saveCompanyClientUsersRow({ companyId, clientUsers: [...currentUsers, nextUser], actorEmail: actor.email || "" });
+  return sanitizeClientUser(nextUser);
+}
+async function resetClientUserPassword({ actorUserId, companyId, clientUserId, newPassword }) {
+  const actor = sanitizeUser(await getUserById(actorUserId, companyId));
+  if (!actor || actor.role !== "admin") throw new Error("Only an admin for this company can reset client passwords.");
+  if (!newPassword) throw new Error("newPassword is required.");
+  const currentUsers = (await getCompanyClientUsers(companyId)).map((item) => sanitizeClientUserForStorage(item));
+  const ix = currentUsers.findIndex((item) => String(item?.id || "") === String(clientUserId || "").trim());
+  if (ix < 0) throw new Error("Client user not found.");
+  currentUsers[ix] = { ...currentUsers[ix], updatedAt: new Date().toISOString(), passwordHash: hashPassword(newPassword) };
+  await saveCompanyClientUsersRow({ companyId, clientUsers: currentUsers, actorEmail: actor.email || "" });
+  return { reset: true, clientUserId };
+}
+async function loginClient({ username, password }) {
+  const normalizedUsername = normalizeUsername(username);
+  const allUsers = await getAllClientUsers();
+  const matched = allUsers.find((item) => normalizeUsername(item?.username || "") === normalizedUsername);
+  if (!matched || !verifyPassword(password, matched.passwordHash)) throw new Error("Invalid username or password.");
+  const sessionUser = sanitizeClientUser(matched);
+  const token = createSignedClientToken({
+    type: "client_portal",
+    clientUserId: sessionUser.id,
+    companyId: sessionUser.companyId,
+    companyName: sessionUser.companyName,
+    username: sessionUser.username,
+    clientName: sessionUser.clientName,
+    allowedPositions: sessionUser.allowedPositions,
+    expiresAt: Date.now() + 1000 * 60 * 60 * 24 * 7
+  });
+  return { token, user: sessionUser };
+}
+async function getClientSessionUser(token) {
+  const payload = readSignedClientToken(token);
+  if (!payload) return null;
+  return sanitizeClientUser({
+    id: payload.clientUserId,
+    companyId: payload.companyId,
+    companyName: payload.companyName,
+    username: payload.username,
+    clientName: payload.clientName,
+    allowedPositions: payload.allowedPositions || []
+  });
+}
+async function requireClientSessionUser(token) {
+  const user = await getClientSessionUser(token);
+  if (!user) throw new Error("Invalid or missing client session.");
+  return user;
+}
 async function deleteCompanyJob({ actorUserId, companyId, jobId }) {
   const actor = sanitizeUser(await getUserById(actorUserId, companyId));
   if (!actor || actor.role !== "admin") throw new Error("Only an admin for this company can delete company JDs.");
@@ -807,7 +1018,10 @@ async function deleteAssessment({ actorUserId, companyId, assessmentId }) {
 
 module.exports = {
   bootstrapAdmin,
+  createClientUser,
   getPlatformSessionUser,
+  getCompanyClientUsers,
+  getClientSessionUser,
   createCompanyWithAdmin,
   createUser,
   deleteUser,
@@ -821,10 +1035,13 @@ module.exports = {
   listAssessments,
   listCompanyJobs,
   listCompanyUsers,
+  loginClient,
   loginPlatformCreator,
   login,
   requirePlatformSessionUser,
+  requireClientSessionUser,
   requireSessionUser,
+  resetClientUserPassword,
   resetUserPassword,
   saveCompanySharedExportPresets,
   setCompanyApplicantIntakeSecret,
