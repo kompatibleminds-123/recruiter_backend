@@ -924,6 +924,18 @@ function createDashboardBucket() {
   };
 }
 
+function createClientPortalBucket() {
+  return {
+    total_shared: 0,
+    in_interview_stage: 0,
+    to_be_reviewed: 0,
+    rejected: 0,
+    duplicates: 0,
+    put_on_hold: 0,
+    interview_dropout: 0
+  };
+}
+
 function createDashboardRecruiterBucket() {
   return {
     metrics: createDashboardBucket(),
@@ -936,6 +948,10 @@ function createDashboardRecruiterBucket() {
 }
 
 function incrementDashboardMetric(target, metric) {
+  target[metric] = Number(target[metric] || 0) + 1;
+}
+
+function incrementClientPortalMetric(target, metric) {
   target[metric] = Number(target[metric] || 0) + 1;
 }
 
@@ -1053,6 +1069,64 @@ function buildDashboardSummary({ candidates = [], assessments = [], jobs = [], d
     },
     clientFilter: String(clientFilter || "").trim(),
     recruiterFilter: String(recruiterFilter || "").trim()
+  };
+}
+
+function getClientPortalLifecycleBucket(item) {
+  const status = normalizeDashboardText(item?.candidateStatus || item?.candidate_status || item?.status || "");
+  const pipeline = normalizeDashboardText(item?.pipelineStage || item?.pipeline_stage || "");
+  const combined = `${status} ${pipeline}`.trim();
+  if (combined.includes("duplicate")) return "duplicates";
+  if (DASHBOARD_REJECTED_STATUSES.has(status)) return "rejected";
+  if (DASHBOARD_DROPPED_STATUSES.has(status)) return "interview_dropout";
+  if (status === "hold" || combined.includes("on hold")) return "put_on_hold";
+  if (!status || status === "cv shared" || status === "feedback awaited" || pipeline === "submitted") return "to_be_reviewed";
+  return "in_interview_stage";
+}
+
+function addClientPortalMetrics(target, item, dateRange = {}) {
+  const sharedAt = String(item?.sharedAt || "").trim();
+  if (!sharedAt || item?.sourceType === "captured_note" || !isDateWithinRange(sharedAt, dateRange.from, dateRange.to)) {
+    return false;
+  }
+  incrementClientPortalMetric(target, "total_shared");
+  incrementClientPortalMetric(target, getClientPortalLifecycleBucket(item));
+  return true;
+}
+
+function buildClientPortalSummary({ candidates = [], assessments = [], jobs = [], dateFrom = "", dateTo = "", clientFilter = "" }) {
+  const overall = createClientPortalBucket();
+  const byClient = new Map();
+  const byClientPosition = new Map();
+  const universe = buildCandidateSearchUniverse(candidates, assessments, jobs).filter((item) => item.sourceType !== "assessment_only");
+  const dateRange = { from: dateFrom, to: dateTo };
+
+  for (const item of universe) {
+    const clientLabel = String(item?.clientName || "Unassigned").trim() || "Unassigned";
+    if (clientFilter && clientLabel !== clientFilter) continue;
+    const contributes = addClientPortalMetrics(overall, item, dateRange);
+    if (!contributes) continue;
+    if (!byClient.has(clientLabel)) byClient.set(clientLabel, createClientPortalBucket());
+    addClientPortalMetrics(byClient.get(clientLabel), item, dateRange);
+    const positionLabel = String(item?.position || item?.jdTitle || item?.role || "Unassigned").trim() || "Unassigned";
+    const key = `${clientLabel}|||${positionLabel}`;
+    if (!byClientPosition.has(key)) byClientPosition.set(key, { clientLabel, positionLabel, metrics: createClientPortalBucket() });
+    addClientPortalMetrics(byClientPosition.get(key).metrics, item, dateRange);
+  }
+
+  return {
+    overall,
+    byClient: Array.from(byClient.entries())
+      .map(([label, metrics]) => ({ label, metrics }))
+      .sort((a, b) => a.label.localeCompare(b.label)),
+    byClientPosition: Array.from(byClientPosition.values()).sort((a, b) =>
+      `${a.clientLabel} ${a.positionLabel}`.localeCompare(`${b.clientLabel} ${b.positionLabel}`)
+    ),
+    dateRange: {
+      from: String(dateFrom || "").trim(),
+      to: String(dateTo || "").trim()
+    },
+    clientFilter: String(clientFilter || "").trim()
   };
 }
 
@@ -1923,6 +1997,13 @@ function itemMatchesDashboardGroup(item, groupType, params = {}) {
     );
   }
   return false;
+}
+
+function itemMatchesClientPortalMetric(item, metric, dateFrom = "", dateTo = "") {
+  const sharedAt = String(item?.sharedAt || "").trim();
+  if (!sharedAt || item?.sourceType === "captured_note" || !isDateWithinRange(sharedAt, dateFrom, dateTo)) return false;
+  if (metric === "total_shared") return true;
+  return getClientPortalLifecycleBucket(item) === metric;
 }
 
 function parseSkillListFromText(text) {
@@ -3500,6 +3581,34 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (req.method === "GET" && requestUrl.pathname === "/company/client-portal") {
+    try {
+      const user = await requireSessionUser(getBearerToken(req));
+      const dateFrom = String(requestUrl.searchParams.get("dateFrom") || "").trim();
+      const dateTo = String(requestUrl.searchParams.get("dateTo") || "").trim();
+      const clientFilter = String(requestUrl.searchParams.get("clientLabel") || "").trim();
+      const [candidates, assessments, jobs] = await Promise.all([
+        listCandidatesForUser(user, { limit: 5000 }),
+        listAssessments({ actorUserId: user.id, companyId: user.companyId }),
+        listCompanyJobs(user.companyId)
+      ]);
+      const summary = buildClientPortalSummary({ candidates, assessments, jobs, dateFrom, dateTo, clientFilter });
+      const availableClients = Array.from(
+        new Set((Array.isArray(candidates) ? candidates : []).map((candidate) => getClientLabel(candidate, {})).filter(Boolean))
+      ).sort((a, b) => a.localeCompare(b));
+      sendJson(res, 200, {
+        ok: true,
+        result: {
+          summary,
+          availableClients
+        }
+      });
+    } catch (error) {
+      sendJson(res, 400, { ok: false, error: String(error.message || error) });
+    }
+    return;
+  }
+
   if (req.method === "GET" && requestUrl.pathname === "/company/applicants") {
     try {
       const user = await requireSessionUser(getBearerToken(req));
@@ -3940,6 +4049,44 @@ const server = http.createServer(async (req, res) => {
         .filter((item) => !recruiterFilter || String(item.ownerRecruiter || "").trim() === recruiterFilter)
         .filter((item) => itemMatchesDashboardGroup(item, groupType, params))
         .filter((item) => itemMatchesDashboardMetric(item, metric, dateFrom, dateTo))
+        .slice(0, 300);
+      sendJson(res, 200, {
+        ok: true,
+        result: {
+          metric,
+          groupType,
+          params,
+          total: items.length,
+          items
+        }
+      });
+    } catch (error) {
+      sendJson(res, 400, { ok: false, error: String(error.message || error) });
+    }
+    return;
+  }
+
+  if (req.method === "GET" && requestUrl.pathname === "/company/client-portal/drilldown") {
+    try {
+      const user = await requireSessionUser(getBearerToken(req));
+      const metric = String(requestUrl.searchParams.get("metric") || "").trim();
+      const groupType = String(requestUrl.searchParams.get("groupType") || "").trim();
+      const dateFrom = String(requestUrl.searchParams.get("dateFrom") || "").trim();
+      const dateTo = String(requestUrl.searchParams.get("dateTo") || "").trim();
+      const params = {
+        clientLabel: String(requestUrl.searchParams.get("clientLabel") || "").trim(),
+        positionLabel: String(requestUrl.searchParams.get("positionLabel") || "").trim()
+      };
+      const [candidates, assessments, jobs] = await Promise.all([
+        listCandidatesForUser(user, { limit: 5000 }),
+        listAssessments({ actorUserId: user.id, companyId: user.companyId }),
+        listCompanyJobs(user.companyId)
+      ]);
+      const universe = buildCandidateSearchUniverse(candidates, assessments, jobs);
+      const items = universe
+        .filter((item) => item.sourceType !== "assessment_only")
+        .filter((item) => itemMatchesDashboardGroup(item, groupType, params))
+        .filter((item) => itemMatchesClientPortalMetric(item, metric, dateFrom, dateTo))
         .slice(0, 300);
       sendJson(res, 200, {
         ok: true,

@@ -25,6 +25,7 @@ const BASE_NAV_SECTIONS = [
     items: [
       { to: "/interview", label: "Interview Panel" },
       { to: "/assessments", label: "Assessments" },
+      { to: "/client-portal", label: "Client Portal" },
       { to: "/client-share", label: "Direct Share" }
     ]
   },
@@ -142,6 +143,16 @@ const DASHBOARD_METRIC_TILES = [
   ["under_interview_process", "Under Interview"],
   ["offered", "Offered"],
   ["joined", "Joined"]
+];
+
+const CLIENT_PORTAL_METRICS = [
+  ["total_shared", "Total Shared"],
+  ["in_interview_stage", "In Interview Stage"],
+  ["to_be_reviewed", "To Be Reviewed"],
+  ["rejected", "Rejected"],
+  ["duplicates", "Duplicates"],
+  ["put_on_hold", "Put on Hold"],
+  ["interview_dropout", "Interview Dropout"]
 ];
 
 class PortalErrorBoundary extends React.Component {
@@ -2012,7 +2023,58 @@ function NewDraftModal({ open, form, users, jobs, currentUser, onChange, onClose
   );
 }
 
-function DrilldownModal({ open, title, items, onClose, onOpenCv, onOpenDraft, onOpenAssessment }) {
+function readItemClientFeedback(item) {
+  const assessment = item?.raw?.assessment || (item?.sourceType === "assessment_only" ? item : null);
+  const candidate = item?.raw?.candidate || null;
+  return {
+    feedback: String(assessment?.clientFeedback || candidate?.client_feedback || "").trim(),
+    status: String(assessment?.clientFeedbackStatus || "").trim(),
+    updatedAt: String(assessment?.clientFeedbackUpdatedAt || "").trim(),
+    updatedBy: String(assessment?.clientFeedbackUpdatedBy || "").trim()
+  };
+}
+
+function ClientFeedbackModal({ open, item, onClose, onSave }) {
+  const feedbackMeta = readItemClientFeedback(item);
+  const assessment = item?.raw?.assessment || (item?.sourceType === "assessment_only" ? item : null);
+  const [status, setStatus] = useState("");
+  const [feedback, setFeedback] = useState("");
+
+  useEffect(() => {
+    if (!open) return;
+    setStatus(String(feedbackMeta.status || assessment?.candidateStatus || "").trim());
+    setFeedback(String(feedbackMeta.feedback || "").trim());
+  }, [open, item]);
+
+  if (!open) return null;
+  return (
+    <div className="overlay" onClick={onClose}>
+      <div className="overlay-card" onClick={(e) => e.stopPropagation()}>
+        <h3>Client Feedback</h3>
+        <p className="muted">{item?.candidateName || item?.name || "Candidate"} | {item?.position || item?.jdTitle || item?.role || "Untitled role"}</p>
+        <div className="form-grid">
+          <label>
+            <span>Status</span>
+            <select value={status} onChange={(e) => setStatus(e.target.value)}>
+              <option value="">Keep current status</option>
+              {DEFAULT_STATUS_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}
+            </select>
+          </label>
+          <label>
+            <span>Comment / feedback</span>
+            <textarea value={feedback} onChange={(e) => setFeedback(e.target.value)} placeholder="Add what the client said or what should be reviewed next." />
+          </label>
+        </div>
+        <div className="button-row">
+          <button onClick={() => onSave({ status, feedback })}>Save feedback</button>
+          <button className="ghost-btn" onClick={onClose}>Cancel</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function DrilldownModal({ open, title, items, onClose, onOpenCv, onOpenDraft, onOpenAssessment, onAddFeedback }) {
   if (!open) return null;
   return (
     <div className="overlay" onClick={onClose}>
@@ -2022,18 +2084,31 @@ function DrilldownModal({ open, title, items, onClose, onOpenCv, onOpenDraft, on
         <div className="stack-list compact">
           {!items.length ? <div className="empty-state">No matching candidates found.</div> : items.map((item, index) => (
             <article className="item-card compact-card" key={`${item.id || item.assessmentId || index}`}>
+              {(() => {
+                const feedbackMeta = readItemClientFeedback(item);
+                return (
               <div className="item-card__top">
                 <div>
                   <h3>{item.name || item.candidateName || "Candidate"} | {item.position || item.jdTitle || item.role || "Untitled role"}</h3>
                   <p className="muted">{[item.company || item.currentCompany || "", item.clientName ? `Client: ${item.clientName}` : "", item.ownerRecruiter ? `Recruiter: ${item.ownerRecruiter}` : "", item.source ? `Source: ${item.source}` : ""].filter(Boolean).join(" | ")}</p>
                   <div className="candidate-snippet">{[item.pipelineStage ? `Pipeline: ${item.pipelineStage}` : "", item.candidateStatus ? `Status: ${item.candidateStatus}` : "", item.followUpAt ? `Follow-up: ${new Date(item.followUpAt).toLocaleString()}` : "", item.interviewAt ? `Interview: ${new Date(item.interviewAt).toLocaleString()}` : ""].filter(Boolean).join("\n")}</div>
+                  {feedbackMeta.feedback ? (
+                    <div className="feedback-preview">
+                      <div className="feedback-preview__label">Client feedback</div>
+                      <div>{feedbackMeta.feedback}</div>
+                      <div className="muted">{[feedbackMeta.status ? `Status: ${feedbackMeta.status}` : "", feedbackMeta.updatedBy || "", feedbackMeta.updatedAt ? new Date(feedbackMeta.updatedAt).toLocaleString() : ""].filter(Boolean).join(" | ")}</div>
+                    </div>
+                  ) : null}
                   <div className="button-row">
                     {(item.raw?.candidate?.id || item.id) && (item.raw?.candidate?.cv_filename || item.raw?.candidate?.cv_url) ? <button onClick={() => onOpenCv(item.raw?.candidate?.id || item.id)}>Open CV</button> : null}
                     {item.raw?.candidate?.id ? <button onClick={() => onOpenDraft(item.raw.candidate.id)}>Open draft</button> : null}
                     {item.raw?.assessment || item.sourceType === "assessment_only" ? <button onClick={() => onOpenAssessment(item.raw?.assessment || item)}>Edit assessment</button> : null}
+                    <button className="ghost-btn" onClick={() => onAddFeedback(item)}>{feedbackMeta.feedback ? "Edit feedback" : "Add feedback"}</button>
                   </div>
                 </div>
               </div>
+                );
+              })()}
             </article>
           ))}
         </div>
@@ -2053,6 +2128,7 @@ function PortalApp({ token, onLogout }) {
   const [state, setState] = useState({
     user: null,
     dashboard: null,
+    clientPortal: null,
     applicants: [],
     candidates: [],
     assessments: [],
@@ -2079,6 +2155,12 @@ function PortalApp({ token, onLogout }) {
     } catch {
       return { dateFrom: "", dateTo: "", clientLabel: "", recruiterLabel: "", quickRange: "all" };
     }
+  });
+  const [clientPortalFilters, setClientPortalFilters] = useState({
+    dateFrom: "",
+    dateTo: "",
+    clientLabel: "",
+    positionLabel: ""
   });
   const [candidateFilters, setCandidateFilters] = useState({
     q: "",
@@ -2182,7 +2264,8 @@ function PortalApp({ token, onLogout }) {
   const [notesCandidateId, setNotesCandidateId] = useState("");
   const [attemptsCandidateId, setAttemptsCandidateId] = useState("");
   const [assessmentStatusId, setAssessmentStatusId] = useState("");
-  const [drilldownState, setDrilldownState] = useState({ open: false, title: "", items: [] });
+  const [drilldownState, setDrilldownState] = useState({ open: false, title: "", items: [], request: null });
+  const [clientFeedbackItem, setClientFeedbackItem] = useState(null);
   const [attempts, setAttempts] = useState([]);
   const [selectedJobId, setSelectedJobId] = useState("");
   const [jobShortcutKey, setJobShortcutKey] = useState("");
@@ -2272,12 +2355,22 @@ function PortalApp({ token, onLogout }) {
     setState((current) => ({ ...current, dashboard: dashboardResult || {} }));
   }
 
+  async function loadClientPortalSummary(filters = clientPortalFilters) {
+    const params = new URLSearchParams();
+    if (filters.dateFrom) params.set("dateFrom", filters.dateFrom);
+    if (filters.dateTo) params.set("dateTo", filters.dateTo);
+    if (filters.clientLabel) params.set("clientLabel", filters.clientLabel);
+    const clientPortalResult = await api(`/company/client-portal${params.toString() ? `?${params.toString()}` : ""}`, token);
+    setState((current) => ({ ...current, clientPortal: clientPortalResult || {} }));
+  }
+
   async function loadWorkspace() {
     await api("/company/candidates/backfill-assessment-links", token, { method: "POST" }).catch(() => null);
     await api("/company/candidates/backfill-skills", token, { method: "POST" }).catch(() => null);
-    const [userResult, dashboardResult, applicantsResult, intakeResult, jobsResult, usersResult, candidatesResult, assessmentsResult, sharedPresetResult] = await Promise.all([
+    const [userResult, dashboardResult, clientPortalResult, applicantsResult, intakeResult, jobsResult, usersResult, candidatesResult, assessmentsResult, sharedPresetResult] = await Promise.all([
       api("/auth/me", token),
       api("/company/dashboard", token),
+      api("/company/client-portal", token).catch(() => ({ summary: { byClient: [], byClientPosition: [] }, availableClients: [] })),
       api("/company/applicants", token).catch(() => ({ items: [] })),
       api("/company/applicant-intake-secret", token).catch(() => null),
       api("/company/jds", token).catch(() => ({ jobs: [] })),
@@ -2289,6 +2382,7 @@ function PortalApp({ token, onLogout }) {
     setState({
       user: userResult.user || userResult,
       dashboard: dashboardResult || {},
+      clientPortal: clientPortalResult || {},
       applicants: applicantsResult.items || [],
       intake: intakeResult || {},
       jobs: jobsResult.jobs || [],
@@ -2327,6 +2421,27 @@ function PortalApp({ token, onLogout }) {
     setQuickUpdateConflicts([]);
     setQuickUpdateMergedPatch(null);
   }, [quickUpdateCandidateId, quickUpdateText, quickUpdateStatusText]);
+
+  useEffect(() => {
+    const clients = state.clientPortal?.availableClients || [];
+    if (!clients.length || clientPortalFilters.clientLabel) return;
+    setClientPortalFilters((current) => ({
+      ...current,
+      clientLabel: current.clientLabel || clients[0] || "",
+      positionLabel: ""
+    }));
+  }, [state.clientPortal?.availableClients, clientPortalFilters.clientLabel]);
+
+  useEffect(() => {
+    if (!clientPortalFilters.positionLabel) return;
+    const stillValid = (state.clientPortal?.summary?.byClientPosition || []).some((row) =>
+      String(row.clientLabel || "") === String(clientPortalFilters.clientLabel || "") &&
+      String(row.positionLabel || "") === String(clientPortalFilters.positionLabel || "")
+    );
+    if (!stillValid) {
+      setClientPortalFilters((current) => ({ ...current, positionLabel: "" }));
+    }
+  }, [clientPortalFilters.clientLabel, clientPortalFilters.positionLabel, state.clientPortal?.summary?.byClientPosition]);
 
   useEffect(() => {
     if (!quickUpdateCandidate) {
@@ -3792,8 +3907,72 @@ function PortalApp({ token, onLogout }) {
     setDrilldownState({
       open: true,
       title,
-      items: result.items || []
+      items: result.items || [],
+      request: { mode: "dashboard", title, metric, groupType, params }
     });
+  }
+
+  async function applyClientPortalFilters() {
+    setStatus("workspace", "Refreshing client portal...");
+    await loadClientPortalSummary(clientPortalFilters);
+    setStatus("workspace", "Client portal refreshed.", "ok");
+  }
+
+  async function openClientPortalDrilldown({ title, metric, groupType, params = {} }) {
+    const query = new URLSearchParams({
+      metric,
+      groupType,
+      dateFrom: clientPortalFilters.dateFrom || "",
+      dateTo: clientPortalFilters.dateTo || "",
+      clientLabel: params.clientLabel || "",
+      positionLabel: params.positionLabel || ""
+    });
+    const result = await api(`/company/client-portal/drilldown?${query.toString()}`, token);
+    setDrilldownState({
+      open: true,
+      title,
+      items: result.items || [],
+      request: { mode: "clientPortal", title, metric, groupType, params }
+    });
+  }
+
+  async function refreshOpenDrilldown() {
+    if (!drilldownState.request) return;
+    if (drilldownState.request.mode === "dashboard") {
+      await openDashboardDrilldown(drilldownState.request);
+      return;
+    }
+    await openClientPortalDrilldown(drilldownState.request);
+  }
+
+  async function saveClientFeedback({ status, feedback }) {
+    if (!clientFeedbackItem) return;
+    const assessment = clientFeedbackItem.raw?.assessment || (clientFeedbackItem.sourceType === "assessment_only" ? clientFeedbackItem : null);
+    const candidate = clientFeedbackItem.raw?.candidate || null;
+    const trimmedStatus = String(status || "").trim();
+    const trimmedFeedback = String(feedback || "").trim();
+    if (assessment) {
+      const nextStatus = trimmedStatus || assessment.candidateStatus || "";
+      await api("/company/assessments", token, "POST", {
+        assessment: {
+          ...assessment,
+          candidateStatus: nextStatus,
+          pipelineStage: mapAssessmentStatusToPipelineStage(nextStatus) || assessment.pipelineStage || "Submitted",
+          clientFeedback: trimmedFeedback,
+          clientFeedbackStatus: nextStatus,
+          clientFeedbackUpdatedAt: new Date().toISOString(),
+          clientFeedbackUpdatedBy: state.user?.name || ""
+        }
+      });
+    } else if (candidate?.id) {
+      await patchCandidateQuiet(candidate.id, {
+        notes: trimmedFeedback
+      });
+    }
+    await loadWorkspace();
+    await refreshOpenDrilldown();
+    setClientFeedbackItem(null);
+    setStatus("workspace", "Client feedback saved.", "ok");
   }
 
   async function runCandidateSearch() {
@@ -4467,6 +4646,11 @@ function PortalApp({ token, onLogout }) {
   const interviewScreeningQuestions = parseQuestionList(interviewSelectedJob?.standardQuestions || "");
   const clientPositionRows = state.dashboard?.summary?.byClientPosition || [];
   const recruiterPositionRows = state.dashboard?.summary?.byClientRecruiter || [];
+  const clientPortalSummary = state.clientPortal?.summary || { overall: {}, byClient: [], byClientPosition: [] };
+  const selectedClientPortalGroup = (clientPortalSummary.byClient || []).find((group) => String(group.label || "") === String(clientPortalFilters.clientLabel || "")) || null;
+  const clientPortalPositionRows = (clientPortalSummary.byClientPosition || []).filter((row) => String(row.clientLabel || "") === String(clientPortalFilters.clientLabel || ""));
+  const selectedClientPortalPosition = clientPortalPositionRows.find((row) => String(row.positionLabel || "") === String(clientPortalFilters.positionLabel || "")) || null;
+  const clientPortalPositionOptions = clientPortalPositionRows.map((row) => row.positionLabel);
   const todayStart = new Date();
   todayStart.setHours(0, 0, 0, 0);
   const tomorrowStart = new Date(todayStart);
@@ -5262,6 +5446,88 @@ function PortalApp({ token, onLogout }) {
             </div>
           } />
 
+          <Route path="/client-portal" element={
+            <div className="page-grid">
+              <Section kicker="Client View" title="Client Portal">
+                <p className="muted">See client-wise numbers, then go one level deeper by role. Clicking any number opens the matching profiles so they can be reviewed, opened, and updated with feedback.</p>
+                <div className="form-grid three-col">
+                  <label><span>Date from</span><input type="date" value={clientPortalFilters.dateFrom} onChange={(e) => setClientPortalFilters((current) => ({ ...current, dateFrom: e.target.value }))} /></label>
+                  <label><span>Date to</span><input type="date" value={clientPortalFilters.dateTo} onChange={(e) => setClientPortalFilters((current) => ({ ...current, dateTo: e.target.value }))} /></label>
+                  <label><span>Client</span><select value={clientPortalFilters.clientLabel} onChange={(e) => setClientPortalFilters((current) => ({ ...current, clientLabel: e.target.value, positionLabel: "" }))}><option value="">Select client</option>{(state.clientPortal?.availableClients || []).map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
+                  <label className="full"><span>Position</span><select value={clientPortalFilters.positionLabel} onChange={(e) => setClientPortalFilters((current) => ({ ...current, positionLabel: e.target.value }))}><option value="">All positions</option>{clientPortalPositionOptions.map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
+                  <div className="button-row align-end"><button onClick={() => void applyClientPortalFilters()}>Apply</button></div>
+                </div>
+              </Section>
+
+              <Section kicker="Overall Recruitment Summary" title={clientPortalFilters.clientLabel || "Select a Client"}>
+                {!selectedClientPortalGroup ? (
+                  <div className="empty-state">Choose a client to see its overall recruitment summary.</div>
+                ) : (
+                  <div className="metric-grid dashboard-metric-grid client-portal-metric-grid">
+                    {CLIENT_PORTAL_METRICS.map(([key, label]) => (
+                      <button key={key} className="metric-card metric-card--button client-portal-metric-card" onClick={() => void openClientPortalDrilldown({ title: `${selectedClientPortalGroup.label} | ${label}`, metric: key, groupType: "client", params: { clientLabel: selectedClientPortalGroup.label } })}>
+                        <div className="metric-label">{label}</div>
+                        <div className="metric-value">{selectedClientPortalGroup.metrics?.[key] || 0}</div>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </Section>
+
+              <Section kicker="Role Wise Summary" title={clientPortalFilters.positionLabel || "All Positions"}>
+                {!selectedClientPortalGroup ? (
+                  <div className="empty-state">Select a client first to see position-wise numbers.</div>
+                ) : (
+                  <>
+                    {selectedClientPortalPosition ? (
+                      <div className="metric-grid dashboard-metric-grid client-portal-metric-grid">
+                        {CLIENT_PORTAL_METRICS.map(([key, label]) => (
+                          <button key={key} className="metric-card metric-card--button client-portal-metric-card" onClick={() => void openClientPortalDrilldown({ title: `${selectedClientPortalPosition.clientLabel} | ${selectedClientPortalPosition.positionLabel} | ${label}`, metric: key, groupType: "position", params: { clientLabel: selectedClientPortalPosition.clientLabel, positionLabel: selectedClientPortalPosition.positionLabel } })}>
+                            <div className="metric-label">{label}</div>
+                            <div className="metric-value">{selectedClientPortalPosition.metrics?.[key] || 0}</div>
+                          </button>
+                        ))}
+                      </div>
+                    ) : null}
+                    <div className="table-wrap">
+                      <table className="dashboard-table">
+                        <thead>
+                          <tr>
+                            <th>Position</th>
+                            {CLIENT_PORTAL_METRICS.map(([, label]) => <th key={label}>{label}</th>)}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {clientPortalPositionRows.map((row) => (
+                            <tr key={`${row.clientLabel}-${row.positionLabel}`}>
+                              <td>
+                                <button className="table-metric-btn table-metric-btn--label" onClick={() => setClientPortalFilters((current) => ({ ...current, positionLabel: row.positionLabel }))}>
+                                  {row.positionLabel}
+                                </button>
+                              </td>
+                              {CLIENT_PORTAL_METRICS.map(([key, label]) => (
+                                <td key={key}>
+                                  <button className="table-metric-btn" onClick={() => void openClientPortalDrilldown({ title: `${row.clientLabel} | ${row.positionLabel} | ${label}`, metric: key, groupType: "position", params: { clientLabel: row.clientLabel, positionLabel: row.positionLabel } })}>
+                                    {row.metrics?.[key] || 0}
+                                  </button>
+                                </td>
+                              ))}
+                            </tr>
+                          ))}
+                          {!clientPortalPositionRows.length ? (
+                            <tr>
+                              <td colSpan={CLIENT_PORTAL_METRICS.length + 1}><div className="empty-state compact-empty">No shared profiles found for this client and date range.</div></td>
+                            </tr>
+                          ) : null}
+                        </tbody>
+                      </table>
+                    </div>
+                  </>
+                )}
+              </Section>
+            </div>
+          } />
+
           <Route path="/client-share" element={
             <div className="page-grid">
               <Section kicker="Client Submission" title="Direct Share with Client">
@@ -5703,11 +5969,13 @@ function PortalApp({ token, onLogout }) {
         open={drilldownState.open}
         title={drilldownState.title}
         items={drilldownState.items}
-        onClose={() => setDrilldownState({ open: false, title: "", items: [] })}
+        onClose={() => setDrilldownState({ open: false, title: "", items: [], request: null })}
         onOpenCv={(candidateId) => void openCv(candidateId)}
-        onOpenDraft={(candidateId) => { setDrilldownState({ open: false, title: "", items: [] }); loadCandidateIntoInterview(candidateId); }}
-        onOpenAssessment={(assessment) => { setDrilldownState({ open: false, title: "", items: [] }); openSavedAssessment(assessment); }}
+        onOpenDraft={(candidateId) => { setDrilldownState({ open: false, title: "", items: [], request: null }); loadCandidateIntoInterview(candidateId); }}
+        onOpenAssessment={(assessment) => { setDrilldownState({ open: false, title: "", items: [], request: null }); openSavedAssessment(assessment); }}
+        onAddFeedback={(item) => setClientFeedbackItem(item)}
       />
+      <ClientFeedbackModal open={Boolean(clientFeedbackItem)} item={clientFeedbackItem} onClose={() => setClientFeedbackItem(null)} onSave={(payload) => void saveClientFeedback(payload)} />
     </div>
   );
 }
