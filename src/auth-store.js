@@ -195,7 +195,24 @@ function sanitizeCompany(company) {
 function sanitizeJob(job) {
   if (!job) return null;
   const p = job.payload && typeof job.payload === "object" ? job.payload : {};
-  return { ...p, id: job.id, companyId: job.companyId ?? job.company_id ?? p.companyId ?? null, title: job.title ?? p.title ?? "", clientName: job.clientName ?? job.client_name ?? p.clientName ?? "", jobDescription: job.jobDescription ?? job.job_description ?? p.jobDescription ?? "", mustHaveSkills: job.mustHaveSkills ?? job.must_have_skills ?? p.mustHaveSkills ?? "", redFlags: job.redFlags ?? job.red_flags ?? p.redFlags ?? "", recruiterNotes: job.recruiterNotes ?? job.recruiter_notes ?? p.recruiterNotes ?? "", standardQuestions: job.standardQuestions ?? job.standard_questions ?? p.standardQuestions ?? "", jdShortcuts: job.jdShortcuts ?? job.jd_shortcuts ?? p.jdShortcuts ?? "", createdAt: job.createdAt ?? job.created_at ?? p.createdAt ?? null, updatedAt: job.updatedAt ?? job.updated_at ?? p.updatedAt ?? null, updatedBy: job.updatedBy ?? job.updated_by ?? p.updatedBy ?? null };
+  return {
+    ...p,
+    id: job.id,
+    companyId: job.companyId ?? job.company_id ?? p.companyId ?? null,
+    title: job.title ?? p.title ?? "",
+    clientName: job.clientName ?? job.client_name ?? p.clientName ?? "",
+    jobDescription: job.jobDescription ?? job.job_description ?? p.jobDescription ?? "",
+    mustHaveSkills: job.mustHaveSkills ?? job.must_have_skills ?? p.mustHaveSkills ?? "",
+    redFlags: job.redFlags ?? job.red_flags ?? p.redFlags ?? "",
+    recruiterNotes: job.recruiterNotes ?? job.recruiter_notes ?? p.recruiterNotes ?? "",
+    standardQuestions: job.standardQuestions ?? job.standard_questions ?? p.standardQuestions ?? "",
+    jdShortcuts: job.jdShortcuts ?? job.jd_shortcuts ?? p.jdShortcuts ?? "",
+    ownerRecruiterId: job.ownerRecruiterId ?? job.owner_recruiter_id ?? p.ownerRecruiterId ?? "",
+    ownerRecruiterName: job.ownerRecruiterName ?? job.owner_recruiter_name ?? p.ownerRecruiterName ?? "",
+    createdAt: job.createdAt ?? job.created_at ?? p.createdAt ?? null,
+    updatedAt: job.updatedAt ?? job.updated_at ?? p.updatedAt ?? null,
+    updatedBy: job.updatedBy ?? job.updated_by ?? p.updatedBy ?? null
+  };
 }
 const SHARED_EXPORT_PRESET_ROW_ID = "__shared_export_presets__";
 const SHARED_EXPORT_PRESET_ROW_TITLE = "__shared_export_presets__";
@@ -206,6 +223,7 @@ function isSharedExportPresetRow(job) {
 function sanitizeSharedExportPresetSettings(raw) {
   const source = raw && typeof raw === "object" ? raw : {};
   const rawLabels = source.exportPresetLabels && typeof source.exportPresetLabels === "object" ? source.exportPresetLabels : {};
+  const rawColumns = source.exportPresetColumns && typeof source.exportPresetColumns === "object" ? source.exportPresetColumns : {};
   const rawCustomPresets = Array.isArray(source.customExportPresets) ? source.customExportPresets : [];
   return {
     exportPresetLabels: {
@@ -215,6 +233,13 @@ function sanitizeSharedExportPresetSettings(raw) {
       client_submission: String(rawLabels.client_submission || "").trim(),
       screening_focus: String(rawLabels.screening_focus || "").trim(),
       custom_template: String(rawLabels.custom_template || "").trim()
+    },
+    exportPresetColumns: {
+      compact_recruiter: String(rawColumns.compact_recruiter || "").trim(),
+      client_tracker: String(rawColumns.client_tracker || "").trim(),
+      attentive_tracker: String(rawColumns.attentive_tracker || "").trim(),
+      client_submission: String(rawColumns.client_submission || "").trim(),
+      screening_focus: String(rawColumns.screening_focus || "").trim()
     },
     excelPreset: String(source.excelPreset || source.excel_preset || "").trim(),
     whatsappTemplate: String(source.whatsappTemplate || source.whatsapp_template || "").trim(),
@@ -244,6 +269,7 @@ function sanitizeAssessment(item) {
     recruiterEmail: item.recruiterEmail ?? item.recruiter_email ?? p.recruiterEmail ?? null,
     generatedAt: item.generatedAt ?? item.generated_at ?? item.created_at ?? p.generatedAt ?? null,
     updatedAt: item.updatedAt ?? item.updated_at ?? p.updatedAt ?? null,
+    candidateId: item.candidateId ?? item.candidate_id ?? p.candidateId ?? p.candidate_id ?? "",
     candidateName: item.candidateName ?? item.candidate_name ?? p.candidateName ?? "",
     phoneNumber: item.phoneNumber ?? item.phone_number ?? p.phoneNumber ?? "",
     emailId: item.emailId ?? item.email_id ?? p.emailId ?? "",
@@ -636,7 +662,7 @@ async function saveCompanyJob({ actorUserId, companyId, job }) {
   if (!actor || actor.role !== "admin") throw new Error("Only an admin for this company can save or edit company JDs.");
   if (!cfg().on) {
     const store = readStore(); store.jobs = Array.isArray(store.jobs) ? store.jobs : []; const now = new Date().toISOString(); const ix = store.jobs.findIndex((i) => i.id === job.id && i.companyId === companyId);
-    const next = { id: persistedJobId(job.id), companyId, title: String(job.title || "").trim(), clientName: String(job.clientName || "").trim(), jobDescription: String(job.jobDescription || "").trim(), mustHaveSkills: String(job.mustHaveSkills || "").trim(), redFlags: String(job.redFlags || "").trim(), recruiterNotes: String(job.recruiterNotes || "").trim(), standardQuestions: String(job.standardQuestions || "").trim(), jdShortcuts: String(job.jdShortcuts || "").trim(), createdAt: ix >= 0 ? store.jobs[ix].createdAt : now, updatedAt: now, updatedBy: actor.email };
+    const next = { id: persistedJobId(job.id), companyId, title: String(job.title || "").trim(), clientName: String(job.clientName || "").trim(), jobDescription: String(job.jobDescription || "").trim(), mustHaveSkills: String(job.mustHaveSkills || "").trim(), redFlags: String(job.redFlags || "").trim(), recruiterNotes: String(job.recruiterNotes || "").trim(), standardQuestions: String(job.standardQuestions || "").trim(), jdShortcuts: String(job.jdShortcuts || "").trim(), ownerRecruiterId: String(job.ownerRecruiterId || job.owner_recruiter_id || "").trim(), ownerRecruiterName: String(job.ownerRecruiterName || job.owner_recruiter_name || "").trim(), createdAt: ix >= 0 ? store.jobs[ix].createdAt : now, updatedAt: now, updatedBy: actor.email };
     if (ix >= 0) store.jobs[ix] = next; else store.jobs.push(next); writeStore(store); return sanitizeJob(next);
   }
   const now = new Date().toISOString(); const rows = await sbIns("company_jobs", [jobRow({ ...job, id: persistedJobId(job.id), companyId, updatedBy: actor.email, createdAt: job.createdAt || now, updatedAt: now })], { conflict: "id", upsert: true }); return sanitizeJob(rows[0]);
@@ -655,6 +681,9 @@ async function saveCompanySharedExportPresets({ actorUserId, companyId, settings
   if (!actorUserId || !companyId) throw new Error("actorUserId and companyId are required.");
   const actor = sanitizeUser(await getUserById(actorUserId, companyId));
   if (!actor) throw new Error("Authenticated recruiter not found for this company.");
+  if (String(actor.role || "").toLowerCase() !== "admin") {
+    throw new Error("Only an admin can manage shared export presets.");
+  }
   const sanitized = sanitizeSharedExportPresetSettings(settings);
   const now = new Date().toISOString();
   const payload = {
