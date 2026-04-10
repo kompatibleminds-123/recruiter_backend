@@ -1214,6 +1214,27 @@ function getApplicantWorkflowOutcome(applicant, linkedCandidate = null) {
   return normalizeAttemptOutcomeLabel(candidateOutcome || "No outcome");
 }
 
+function getApplicantOwnerLabel(applicant, linkedCandidate = null) {
+  return String(
+    applicant?.assignedToName ||
+    applicant?.assigned_to_name ||
+    linkedCandidate?.assigned_to_name ||
+    "Unassigned"
+  ).trim() || "Unassigned";
+}
+
+function isAdminAssignedApplicant(applicant, linkedCandidate = null) {
+  return Boolean(
+    String(applicant?.assignedByUserId || applicant?.assigned_by_user_id || linkedCandidate?.assigned_by_user_id || "").trim() ||
+    String(applicant?.assignedByName || applicant?.assigned_by_name || linkedCandidate?.assigned_by_name || "").trim()
+  );
+}
+
+function getApplicantManualAssigneeLabel(applicant, linkedCandidate = null) {
+  if (!isAdminAssignedApplicant(applicant, linkedCandidate)) return "";
+  return getApplicantOwnerLabel(applicant, linkedCandidate);
+}
+
 function fillCandidateTemplate(template, candidate) {
   const source = candidate || {};
   const map = {
@@ -2401,6 +2422,7 @@ function PortalApp({ token, onLogout }) {
     dateTo: "",
     clients: [],
     jds: [],
+    ownedBy: [],
     assignedTo: [],
     outcomes: []
   });
@@ -3176,36 +3198,32 @@ function PortalApp({ token, onLogout }) {
   const applicantOptions = useMemo(() => {
     const clients = new Set();
     const jds = new Set();
+    const ownedBy = new Set();
     const assignedTo = new Set();
     const outcomes = new Set();
-    const isAdmin = String(state.user?.role || "").toLowerCase() === "admin";
-    if (isAdmin) {
-      (state.users || []).forEach((user) => {
-        const name = String(user?.name || "").trim();
-        if (name) assignedTo.add(name);
-      });
-      assignedTo.add("Unassigned");
-    }
     filteredApplicants.forEach((item) => {
       const linkedCandidate = applicantCandidateMap.get(String(item.id)) || null;
       const clientValue = String(item.clientName || item.client_name || "Unassigned").trim();
       const jdValue = String(item.jdTitle || item.jd_title || "").trim();
-      const assignedValue = String(item.assignedToName || item.assigned_to_name || "Unassigned").trim();
+      const ownedValue = getApplicantOwnerLabel(item, linkedCandidate);
+      const assignedValue = getApplicantManualAssigneeLabel(item, linkedCandidate);
       const outcomeValue = getApplicantWorkflowOutcome(item, linkedCandidate);
       if (clientValue) clients.add(clientValue);
       if (jdValue) jds.add(jdValue);
-      if (!isAdmin && assignedValue) assignedTo.add(assignedValue);
+      if (ownedValue) ownedBy.add(ownedValue);
+      if (assignedValue) assignedTo.add(assignedValue);
       if (outcomeValue) outcomes.add(outcomeValue);
     });
     return {
       clients: Array.from(clients).sort((a, b) => a.localeCompare(b)),
       jds: Array.from(jds).sort((a, b) => a.localeCompare(b)),
+      ownedBy: Array.from(ownedBy).sort((a, b) => a.localeCompare(b)),
       assignedTo: Array.from(assignedTo).sort((a, b) => a.localeCompare(b)),
       outcomes: APPLIED_OUTCOME_FILTER_ORDER.filter((item) => outcomes.has(item)).concat(
         Array.from(outcomes).filter((item) => !APPLIED_OUTCOME_FILTER_ORDER.includes(item)).sort((a, b) => a.localeCompare(b))
       )
     };
-  }, [filteredApplicants, applicantCandidateMap, state.user, state.users]);
+  }, [filteredApplicants, applicantCandidateMap]);
 
   const visibleApplicants = useMemo(() => {
     const query = String(applicantFilters.q || "").trim().toLowerCase();
@@ -3213,7 +3231,8 @@ function PortalApp({ token, onLogout }) {
       const linkedCandidate = applicantCandidateMap.get(String(item.id)) || null;
       const clientValue = String(item.clientName || item.client_name || "Unassigned").trim();
       const jdValue = String(item.jdTitle || item.jd_title || "").trim();
-      const assignedValue = String(item.assignedToName || item.assigned_to_name || "Unassigned").trim();
+      const ownedValue = getApplicantOwnerLabel(item, linkedCandidate);
+      const assignedValue = getApplicantManualAssigneeLabel(item, linkedCandidate);
       const outcomeValue = getApplicantWorkflowOutcome(item, linkedCandidate);
       const createdDate = String(item.createdAt || item.created_at || "").slice(0, 10);
       const hay = [
@@ -3222,6 +3241,7 @@ function PortalApp({ token, onLogout }) {
         item.email,
         jdValue,
         clientValue,
+        ownedValue,
         assignedValue,
         item.currentCompany,
         item.currentDesignation
@@ -3231,6 +3251,7 @@ function PortalApp({ token, onLogout }) {
       if (applicantFilters.dateTo && createdDate && createdDate > applicantFilters.dateTo) return false;
       if (applicantFilters.clients.length && !applicantFilters.clients.includes(clientValue)) return false;
       if (applicantFilters.jds.length && !applicantFilters.jds.includes(jdValue)) return false;
+      if (applicantFilters.ownedBy.length && !applicantFilters.ownedBy.includes(ownedValue)) return false;
       if (applicantFilters.assignedTo.length && !applicantFilters.assignedTo.includes(assignedValue)) return false;
       if (applicantFilters.outcomes.length && !applicantFilters.outcomes.includes(outcomeValue)) return false;
       return true;
@@ -5561,12 +5582,14 @@ function PortalApp({ token, onLogout }) {
               </div>
               <div className="metric-grid metric-grid--tight">
                 <div className="metric-card compact-metric"><div className="metric-label">Applied today</div><div className="metric-value">{visibleApplicants.filter((item) => String(item.createdAt || item.created_at || "").slice(0, 10) === new Date().toISOString().slice(0, 10)).length}</div></div>
-                <div className="metric-card compact-metric"><div className="metric-label">Assigned</div><div className="metric-value">{visibleApplicants.filter((item) => String(item.assignedToName || item.assigned_to_name || "").trim()).length}</div></div>
+                <div className="metric-card compact-metric"><div className="metric-label">Owned</div><div className="metric-value">{visibleApplicants.filter((item) => getApplicantOwnerLabel(item, applicantCandidateMap.get(String(item.id)) || null) !== "Unassigned").length}</div></div>
+                <div className="metric-card compact-metric"><div className="metric-label">Assigned</div><div className="metric-value">{visibleApplicants.filter((item) => getApplicantManualAssigneeLabel(item, applicantCandidateMap.get(String(item.id)) || null)).length}</div></div>
                 <div className="metric-card compact-metric"><div className="metric-label">Total visible</div><div className="metric-value">{visibleApplicants.length}</div></div>
               </div>
               <div className="captured-filter-grid">
                 <MultiSelectDropdown label="Clients" options={applicantOptions.clients} selected={applicantFilters.clients} onToggle={(value) => setApplicantFilters((current) => ({ ...current, clients: value === "__all__" ? [] : current.clients.includes(value) ? current.clients.filter((item) => item !== value) : [...current.clients, value] }))} />
                 <MultiSelectDropdown label="JD / Role" options={applicantOptions.jds} selected={applicantFilters.jds} onToggle={(value) => setApplicantFilters((current) => ({ ...current, jds: value === "__all__" ? [] : current.jds.includes(value) ? current.jds.filter((item) => item !== value) : [...current.jds, value] }))} />
+                {String(state.user?.role || "").toLowerCase() === "admin" ? <MultiSelectDropdown label="Owned by" options={applicantOptions.ownedBy} selected={applicantFilters.ownedBy} onToggle={(value) => setApplicantFilters((current) => ({ ...current, ownedBy: value === "__all__" ? [] : current.ownedBy.includes(value) ? current.ownedBy.filter((item) => item !== value) : [...current.ownedBy, value] }))} /> : null}
                 {String(state.user?.role || "").toLowerCase() === "admin" ? <MultiSelectDropdown label="Assigned to" options={applicantOptions.assignedTo} selected={applicantFilters.assignedTo} onToggle={(value) => setApplicantFilters((current) => ({ ...current, assignedTo: value === "__all__" ? [] : current.assignedTo.includes(value) ? current.assignedTo.filter((item) => item !== value) : [...current.assignedTo, value] }))} /> : null}
                 <MultiSelectDropdown label="Outcome" options={applicantOptions.outcomes} selected={applicantFilters.outcomes} onToggle={(value) => setApplicantFilters((current) => ({ ...current, outcomes: value === "__all__" ? [] : current.outcomes.includes(value) ? current.outcomes.filter((item) => item !== value) : [...current.outcomes, value] }))} />
               </div>
