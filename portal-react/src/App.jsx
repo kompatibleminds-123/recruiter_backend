@@ -927,6 +927,35 @@ function normalizeRecruiterMergeBase(item) {
   return base;
 }
 
+function normalizeRecruiterConflictValue(key, value) {
+  let normalized = String(value || "")
+    .trim()
+    .replace(/^[\s\-–—:]+/, "")
+    .replace(/\s+/g, " ")
+    .replace(/\s+\./g, ".")
+    .toLowerCase();
+  if (!normalized) return "";
+  if (["current_ctc", "expected_ctc", "offer_in_hand"].includes(key)) {
+    const amount = normalized.match(/(\d+(?:\.\d+)?)/);
+    if (amount) return `${Number(amount[1])}l`;
+  }
+  if (key === "notice_period") {
+    const days = normalized.match(/(\d+(?:\.\d+)?)\s*(?:days?|d)\b/);
+    if (days) return `${Number(days[1])}days`;
+    const months = normalized.match(/(\d+(?:\.\d+)?)\s*(?:months?|m)\b/);
+    if (months) return `${Number(months[1])}months`;
+    normalized = normalized.replace(/^notice\s*period\s*(?:is|:|-)?\s*/i, "").trim();
+  }
+  if (key === "lwd_or_doj") normalized = normalized.replace(/^(lwd|doj|last working day)\s*(?:is|:|-)?\s*/i, "").trim();
+  return normalized.replace(/[.\s]+$/g, "");
+}
+
+function isMeaningfulRecruiterConflict(key, fromValue, toValue) {
+  const fromNormalized = normalizeRecruiterConflictValue(key, fromValue);
+  const toNormalized = normalizeRecruiterConflictValue(key, toValue);
+  return Boolean(fromNormalized && toNormalized && fromNormalized !== toNormalized);
+}
+
 function extractRecruiterNoteFieldFallbacks(rawNote = "") {
   const text = String(rawNote || "").trim();
   if (!text) return { current_ctc: "", expected_ctc: "", notice_period: "", lwd_or_doj: "", offer_in_hand: "" };
@@ -1016,7 +1045,7 @@ function buildRecruiterMerge(item, parsed, rawNote = "") {
     const explicitIncoming = fallbacks[key] || (mentionedKeys.has(key) ? incoming[key] || "" : "");
     const nextIncoming = explicitIncoming || "";
     merged[key] = nextIncoming || base[key] || "";
-    if (nextIncoming && base[key] && nextIncoming.toLowerCase() !== base[key].toLowerCase()) {
+    if (nextIncoming && base[key] && isMeaningfulRecruiterConflict(key, base[key], nextIncoming)) {
       overwritten.push({ key, from: base[key], to: nextIncoming });
     }
   }
