@@ -1131,6 +1131,31 @@ async function backfillCandidateAssessmentLinks(user) {
   return { linked };
 }
 
+async function backfillCandidateSkillsFromMetadata(user) {
+  const actor = user || {};
+  if (!actor?.id || !actor?.companyId) return { updated: 0 };
+  const candidates = await listCandidatesForUser(actor, { limit: 5000 });
+  let updated = 0;
+  for (const candidate of Array.isArray(candidates) ? candidates : []) {
+    const meta = decodeApplicantMetadata(candidate);
+    const inferredFromMeta = Array.isArray(meta?.inferredSearchTags) ? meta.inferredSearchTags : [];
+    const inferred = deriveInferredSearchTags({
+      cvResult: meta?.cvAnalysisCache?.result || null,
+      recruiterNotes: candidate?.recruiter_context_notes || "",
+      otherPointers: candidate?.other_pointers || "",
+      tags: Array.isArray(candidate?.skills) ? candidate.skills : inferredFromMeta
+    });
+    const nextSkills = Array.from(
+      new Set([...(Array.isArray(candidate?.skills) ? candidate.skills : []), ...inferredFromMeta, ...inferred].map((item) => String(item || "").trim()).filter(Boolean))
+    );
+    const currentSkills = Array.isArray(candidate?.skills) ? candidate.skills.map((item) => String(item || "").trim()).filter(Boolean) : [];
+    if (JSON.stringify(currentSkills) === JSON.stringify(nextSkills)) continue;
+    await patchCandidate(String(candidate.id || "").trim(), { skills: nextSkills }, { companyId: actor.companyId });
+    updated += 1;
+  }
+  return { updated };
+}
+
 function parseNaturalLanguageCandidateQuery(rawQuery) {
   const query = String(rawQuery || "").trim();
   const lower = query.toLowerCase();
@@ -3337,6 +3362,17 @@ const server = http.createServer(async (req, res) => {
     try {
       const user = await requireSessionUser(getBearerToken(req));
       const result = await backfillCandidateAssessmentLinks(user);
+      sendJson(res, 200, { ok: true, result });
+    } catch (error) {
+      sendJson(res, 400, { ok: false, error: String(error.message || error) });
+    }
+    return;
+  }
+
+  if (req.method === "POST" && req.url === "/company/candidates/backfill-skills") {
+    try {
+      const user = await requireSessionUser(getBearerToken(req));
+      const result = await backfillCandidateSkillsFromMetadata(user);
       sendJson(res, 200, { ok: true, result });
     } catch (error) {
       sendJson(res, 400, { ok: false, error: String(error.message || error) });

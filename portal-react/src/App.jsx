@@ -2274,6 +2274,7 @@ function PortalApp({ token, onLogout }) {
 
   async function loadWorkspace() {
     await api("/company/candidates/backfill-assessment-links", token, { method: "POST" }).catch(() => null);
+    await api("/company/candidates/backfill-skills", token, { method: "POST" }).catch(() => null);
     const [userResult, dashboardResult, applicantsResult, intakeResult, jobsResult, usersResult, candidatesResult, assessmentsResult, sharedPresetResult] = await Promise.all([
       api("/auth/me", token),
       api("/company/dashboard", token),
