@@ -28,12 +28,15 @@ const {
 } = require("./src/whatsapp-notes");
 const {
   bootstrapAdmin,
+  createClientUser,
   createCompanyWithAdmin,
   createUser,
   deleteUser,
   deleteAssessment,
   deleteCompanyJob,
   getCompanyApplicantIntakeSecret,
+  getCompanyClientUsers,
+  getClientSessionUser,
   getSessionUser,
   getPlatformSessionUser,
   getCompanySharedExportPresets,
@@ -43,10 +46,13 @@ const {
   searchAssessments,
   listCompanyJobs,
   listCompanyUsers,
+  loginClient,
   loginPlatformCreator,
   login,
   requirePlatformSessionUser,
+  requireClientSessionUser,
   requireSessionUser,
+  resetClientUserPassword,
   resetUserPassword,
   saveAssessment,
   saveCompanyJob,
@@ -2006,6 +2012,21 @@ function itemMatchesClientPortalMetric(item, metric, dateFrom = "", dateTo = "")
   return getClientPortalLifecycleBucket(item) === metric;
 }
 
+function itemMatchesAllowedPositions(item, allowedPositions = []) {
+  const allowed = Array.isArray(allowedPositions) ? allowedPositions.map((value) => String(value || "").trim()).filter(Boolean) : [];
+  if (!allowed.length) return true;
+  const position = String(item?.position || item?.jdTitle || item?.role || "").trim();
+  return allowed.includes(position);
+}
+
+function filterUniverseForClientUser(universe = [], clientUser = {}) {
+  const clientName = String(clientUser?.clientName || "").trim();
+  const allowedPositions = Array.isArray(clientUser?.allowedPositions) ? clientUser.allowedPositions : [];
+  return (Array.isArray(universe) ? universe : []).filter((item) =>
+    String(item?.clientName || "").trim() === clientName && itemMatchesAllowedPositions(item, allowedPositions)
+  );
+}
+
 function parseSkillListFromText(text) {
   return String(text || "")
     .split(/\n|,|\/|;|\|| and /i)
@@ -3103,6 +3124,18 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (req.method === "GET" && (
+    requestUrl.pathname === "/client-portal" ||
+    requestUrl.pathname === "/client-portal/" ||
+    requestUrl.pathname === "/client-login" ||
+    requestUrl.pathname === "/client-login/" ||
+    requestUrl.pathname === "/client" ||
+    requestUrl.pathname === "/client/"
+  )) {
+    serveStaticFile(res, path.join(ROOT_PUBLIC_DIR, "portal-app", "index.html"));
+    return;
+  }
+
   if (req.method === "GET" && (requestUrl.pathname === "/apply" || requestUrl.pathname === "/apply/")) {
     serveStaticFile(res, path.join(ROOT_PUBLIC_DIR, "apply.html"));
     return;
@@ -3366,9 +3399,33 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (req.method === "POST" && req.url === "/client-auth/login") {
+    try {
+      const body = await readJsonBody(req);
+      const result = await loginClient({
+        username: String(body.username || "").trim(),
+        password: String(body.password || "")
+      });
+      sendJson(res, 200, { ok: true, result });
+    } catch (error) {
+      sendJson(res, 400, { ok: false, error: String(error.message || error) });
+    }
+    return;
+  }
+
   if (req.method === "GET" && req.url === "/auth/me") {
     try {
       const user = await requireSessionUser(getBearerToken(req));
+      sendJson(res, 200, { ok: true, result: { user } });
+    } catch (error) {
+      sendJson(res, 401, { ok: false, error: String(error.message || error) });
+    }
+    return;
+  }
+
+  if (req.method === "GET" && req.url === "/client-auth/me") {
+    try {
+      const user = await requireClientSessionUser(getBearerToken(req));
       sendJson(res, 200, { ok: true, result: { user } });
     } catch (error) {
       sendJson(res, 401, { ok: false, error: String(error.message || error) });
@@ -3430,6 +3487,53 @@ const server = http.createServer(async (req, res) => {
         actorUserId: actor.id,
         companyId: actor.companyId,
         userId: String(body.userId || "").trim(),
+        newPassword: String(body.newPassword || "")
+      });
+      sendJson(res, 200, { ok: true, result });
+    } catch (error) {
+      sendJson(res, 400, { ok: false, error: String(error.message || error) });
+    }
+    return;
+  }
+
+  if (req.method === "GET" && req.url === "/company/client-users") {
+    try {
+      const actor = await requireSessionUser(getBearerToken(req));
+      const clientUsers = await getCompanyClientUsers(actor.companyId);
+      sendJson(res, 200, { ok: true, result: { companyId: actor.companyId, clientUsers } });
+    } catch (error) {
+      sendJson(res, 401, { ok: false, error: String(error.message || error) });
+    }
+    return;
+  }
+
+  if (req.method === "POST" && req.url === "/company/client-users") {
+    try {
+      const actor = await requireSessionUser(getBearerToken(req));
+      const body = await readJsonBody(req);
+      const createdUser = await createClientUser({
+        actorUserId: actor.id,
+        companyId: actor.companyId,
+        username: String(body.username || "").trim(),
+        password: String(body.password || ""),
+        clientName: String(body.clientName || "").trim(),
+        allowedPositions: Array.isArray(body.allowedPositions) ? body.allowedPositions : String(body.allowedPositions || "").split(/\r?\n|,/)
+      });
+      sendJson(res, 200, { ok: true, result: createdUser });
+    } catch (error) {
+      sendJson(res, 400, { ok: false, error: String(error.message || error) });
+    }
+    return;
+  }
+
+  if (req.method === "POST" && req.url === "/company/client-users/password") {
+    try {
+      const actor = await requireSessionUser(getBearerToken(req));
+      const body = await readJsonBody(req);
+      const result = await resetClientUserPassword({
+        actorUserId: actor.id,
+        companyId: actor.companyId,
+        clientUserId: String(body.clientUserId || "").trim(),
         newPassword: String(body.newPassword || "")
       });
       sendJson(res, 200, { ok: true, result });
@@ -4098,6 +4202,118 @@ const server = http.createServer(async (req, res) => {
           items
         }
       });
+    } catch (error) {
+      sendJson(res, 400, { ok: false, error: String(error.message || error) });
+    }
+    return;
+  }
+
+  if (req.method === "GET" && requestUrl.pathname === "/client-portal/summary") {
+    try {
+      const clientUser = await requireClientSessionUser(getBearerToken(req));
+      const dateFrom = String(requestUrl.searchParams.get("dateFrom") || "").trim();
+      const dateTo = String(requestUrl.searchParams.get("dateTo") || "").trim();
+      const [candidates, assessments, jobs] = await Promise.all([
+        listCandidatesForUser({ id: "__client_scope__", companyId: clientUser.companyId, role: "admin" }, { limit: 5000 }),
+        listAssessments({ actorUserId: "__client_scope__", companyId: clientUser.companyId }).catch(async () => {
+          const allRecruiters = await listCompanyUsers(clientUser.companyId);
+          const adminUser = (allRecruiters || []).find((item) => String(item?.role || "").toLowerCase() === "admin") || allRecruiters?.[0];
+          if (!adminUser?.id) return [];
+          return listAssessments({ actorUserId: adminUser.id, companyId: clientUser.companyId });
+        }),
+        listCompanyJobs(clientUser.companyId)
+      ]);
+      const scopedUniverse = filterUniverseForClientUser(buildCandidateSearchUniverse(candidates, assessments, jobs), clientUser);
+      const summary = buildClientPortalSummary({
+        candidates: [],
+        assessments: [],
+        jobs: [],
+        dateFrom,
+        dateTo,
+        clientFilter: clientUser.clientName
+      });
+      summary.overall = createClientPortalBucket();
+      summary.byClient = [];
+      summary.byClientPosition = [];
+      const byPosition = new Map();
+      const dateRange = { from: dateFrom, to: dateTo };
+      for (const item of scopedUniverse.filter((entry) => entry.sourceType !== "assessment_only")) {
+        if (!addClientPortalMetrics(summary.overall, item, dateRange)) continue;
+        const key = `${item.clientName}|||${item.position || "Unassigned"}`;
+        if (!byPosition.has(key)) byPosition.set(key, { clientLabel: item.clientName, positionLabel: item.position || "Unassigned", metrics: createClientPortalBucket() });
+        addClientPortalMetrics(byPosition.get(key).metrics, item, dateRange);
+      }
+      summary.byClient = [{ label: clientUser.clientName, metrics: summary.overall }];
+      summary.byClientPosition = Array.from(byPosition.values()).sort((a, b) => `${a.clientLabel} ${a.positionLabel}`.localeCompare(`${b.clientLabel} ${b.positionLabel}`));
+      sendJson(res, 200, { ok: true, result: { summary, user: clientUser } });
+    } catch (error) {
+      sendJson(res, 401, { ok: false, error: String(error.message || error) });
+    }
+    return;
+  }
+
+  if (req.method === "GET" && requestUrl.pathname === "/client-portal/drilldown") {
+    try {
+      const clientUser = await requireClientSessionUser(getBearerToken(req));
+      const metric = String(requestUrl.searchParams.get("metric") || "").trim();
+      const groupType = String(requestUrl.searchParams.get("groupType") || "").trim();
+      const dateFrom = String(requestUrl.searchParams.get("dateFrom") || "").trim();
+      const dateTo = String(requestUrl.searchParams.get("dateTo") || "").trim();
+      const params = {
+        clientLabel: clientUser.clientName,
+        positionLabel: String(requestUrl.searchParams.get("positionLabel") || "").trim()
+      };
+      const allRecruiters = await listCompanyUsers(clientUser.companyId);
+      const adminUser = (allRecruiters || []).find((item) => String(item?.role || "").toLowerCase() === "admin") || allRecruiters?.[0];
+      const [candidates, assessments, jobs] = await Promise.all([
+        listCandidatesForUser(adminUser || { id: "__client_scope__", companyId: clientUser.companyId, role: "admin" }, { limit: 5000 }),
+        adminUser?.id ? listAssessments({ actorUserId: adminUser.id, companyId: clientUser.companyId }) : [],
+        listCompanyJobs(clientUser.companyId)
+      ]);
+      const items = filterUniverseForClientUser(buildCandidateSearchUniverse(candidates, assessments, jobs), clientUser)
+        .filter((item) => item.sourceType !== "assessment_only")
+        .filter((item) => itemMatchesDashboardGroup(item, groupType || "client", params))
+        .filter((item) => itemMatchesClientPortalMetric(item, metric, dateFrom, dateTo))
+        .slice(0, 300);
+      sendJson(res, 200, { ok: true, result: { metric, groupType, params, total: items.length, items } });
+    } catch (error) {
+      sendJson(res, 401, { ok: false, error: String(error.message || error) });
+    }
+    return;
+  }
+
+  if (req.method === "POST" && requestUrl.pathname === "/client-portal/feedback") {
+    try {
+      const clientUser = await requireClientSessionUser(getBearerToken(req));
+      const body = await readJsonBody(req);
+      const assessmentId = String(body.assessmentId || "").trim();
+      if (!assessmentId) throw new Error("assessmentId is required.");
+      const allRecruiters = await listCompanyUsers(clientUser.companyId);
+      const adminUser = (allRecruiters || []).find((item) => String(item?.role || "").toLowerCase() === "admin") || allRecruiters?.[0];
+      if (!adminUser?.id) throw new Error("No recruiter found for this company.");
+      const assessments = await listAssessments({ actorUserId: adminUser.id, companyId: clientUser.companyId });
+      const assessment = (assessments || []).find((item) => String(item?.id || "") === assessmentId);
+      if (!assessment) throw new Error("Assessment not found.");
+      if (String(assessment.clientName || "").trim() !== String(clientUser.clientName || "").trim()) throw new Error("Not allowed for this client.");
+      if (!itemMatchesAllowedPositions({ position: assessment.jdTitle || assessment.currentDesignation || "" }, clientUser.allowedPositions || [])) {
+        throw new Error("Not allowed for this role.");
+      }
+      const nextStatus = String(body.status || assessment.candidateStatus || "").trim();
+      const ownerRecruiter = (allRecruiters || []).find((item) => String(item?.id || "") === String(assessment.recruiterId || "").trim()) || adminUser;
+      const saved = await saveAssessment({
+        actorUserId: ownerRecruiter.id,
+        companyId: clientUser.companyId,
+        assessment: {
+          ...assessment,
+          candidateStatus: nextStatus,
+          pipelineStage: assessment.pipelineStage || "Submitted",
+          clientFeedback: String(body.feedback || "").trim(),
+          clientFeedbackStatus: nextStatus,
+          clientFeedbackUpdatedAt: new Date().toISOString(),
+          clientFeedbackUpdatedBy: clientUser.username
+        }
+      });
+      sendJson(res, 200, { ok: true, result: saved });
     } catch (error) {
       sendJson(res, 400, { ok: false, error: String(error.message || error) });
     }

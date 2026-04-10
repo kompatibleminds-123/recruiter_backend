@@ -1495,7 +1495,7 @@ function isClientPortalUrl() {
   if (typeof window === "undefined") return false;
   const search = new URLSearchParams(window.location.search || "");
   const mode = String(search.get("mode") || search.get("portal") || "").toLowerCase();
-  return window.location.pathname.startsWith("/client-portal") || mode === "client";
+  return ["/client-portal", "/client-login", "/client"].some((path) => window.location.pathname.startsWith(path)) || mode === "client";
 }
 
 function LoginScreen({ onRecruiterLogin, onClientLogin, busy, error, clientOnly = false }) {
