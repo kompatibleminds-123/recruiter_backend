@@ -127,6 +127,21 @@ const APPLIED_OUTCOME_FILTER_ORDER = [
   "revisit_for_other_role"
 ];
 
+const EMPTY_CANDIDATE_STRUCTURED_FILTERS = {
+  minExperience: "",
+  maxExperience: "",
+  location: "",
+  keySkills: "",
+  currentCompany: "",
+  client: "",
+  maxCurrentCtc: "",
+  maxExpectedCtc: "",
+  qualification: "",
+  maxNoticeDays: "",
+  recruiter: "",
+  gender: ""
+};
+
 const DASHBOARD_METRIC_COLUMNS = [
   ["sourced", "Sourced"],
   ["converted", "Shared"],
@@ -2334,20 +2349,7 @@ function PortalApp({ token, onLogout }) {
   const [candidateAiQueryMode, setCandidateAiQueryMode] = useState("natural");
   const [candidateSearchResults, setCandidateSearchResults] = useState([]);
   const [candidatePage, setCandidatePage] = useState(1);
-  const [candidateStructuredFilters, setCandidateStructuredFilters] = useState({
-    minExperience: "",
-    maxExperience: "",
-    location: "",
-    keySkills: "",
-    currentCompany: "",
-    client: "",
-    maxCurrentCtc: "",
-    maxExpectedCtc: "",
-    qualification: "",
-    maxNoticeDays: "",
-    recruiter: "",
-    gender: ""
-  });
+  const [candidateStructuredFilters, setCandidateStructuredFilters] = useState(EMPTY_CANDIDATE_STRUCTURED_FILTERS);
   const [clientShareDraft, setClientShareDraft] = useState({
     hrName: "",
     recipientEmail: "",
@@ -4169,21 +4171,23 @@ function PortalApp({ token, onLogout }) {
     setCandidateSearchMode("search");
     setCandidatePage(1);
     if (candidateAiQueryMode === "natural" && result.filters) {
-      setCandidateStructuredFilters((current) => ({
-        ...current,
-        minExperience: result.filters.minExperienceYears != null ? String(result.filters.minExperienceYears) : current.minExperience,
-        maxExperience: result.filters.maxExperienceYears != null ? String(result.filters.maxExperienceYears) : current.maxExperience,
-        location: result.filters.location || (Array.isArray(result.filters.locations) ? result.filters.locations[0] || "" : "") || current.location,
-        keySkills: Array.isArray(result.filters.skills) && result.filters.skills.length ? result.filters.skills.join(", ") : current.keySkills,
-        currentCompany: result.filters.currentCompany || current.currentCompany,
-        client: result.filters.client || current.client,
-        maxCurrentCtc: result.filters.maxCurrentCtcLpa != null ? String(result.filters.maxCurrentCtcLpa) : current.maxCurrentCtc,
-        maxExpectedCtc: result.filters.maxExpectedCtcLpa != null ? String(result.filters.maxExpectedCtcLpa) : current.maxExpectedCtc,
-        qualification: result.filters.qualification || current.qualification,
-        maxNoticeDays: result.filters.maxNoticeDays != null ? String(result.filters.maxNoticeDays) : current.maxNoticeDays,
-        recruiter: result.filters.recruiterName || current.recruiter,
-        gender: result.filters.gender || current.gender
-      }));
+      setCandidateStructuredFilters({
+        ...EMPTY_CANDIDATE_STRUCTURED_FILTERS,
+        minExperience: result.filters.minExperienceYears != null ? String(result.filters.minExperienceYears) : "",
+        maxExperience: result.filters.maxExperienceYears != null ? String(result.filters.maxExperienceYears) : "",
+        location: result.filters.location || (Array.isArray(result.filters.locations) ? result.filters.locations[0] || "" : ""),
+        keySkills: Array.isArray(result.filters.skills) && result.filters.skills.length ? result.filters.skills.join(", ") : "",
+        currentCompany: result.filters.currentCompany || "",
+        client: result.filters.client || "",
+        maxCurrentCtc: result.filters.maxCurrentCtcLpa != null ? String(result.filters.maxCurrentCtcLpa) : "",
+        maxExpectedCtc: result.filters.maxExpectedCtcLpa != null ? String(result.filters.maxExpectedCtcLpa) : "",
+        qualification: result.filters.qualification || "",
+        maxNoticeDays: result.filters.maxNoticeDays != null ? String(result.filters.maxNoticeDays) : "",
+        recruiter: result.filters.recruiterName || "",
+        gender: result.filters.gender || ""
+      });
+    } else {
+      setCandidateStructuredFilters(EMPTY_CANDIDATE_STRUCTURED_FILTERS);
     }
     setStatus("workspace", `${candidateAiQueryMode === "boolean" ? "Boolean search" : "AI-interpreted search"} returned ${result.items?.length || 0} candidates.`, "ok");
   }
@@ -5359,20 +5363,7 @@ function PortalApp({ token, onLogout }) {
                     setCandidateSearchResults([]);
                     setCandidateSearchMode("all");
                     setCandidatePage(1);
-                    setCandidateStructuredFilters({
-                      minExperience: "",
-                      maxExperience: "",
-                      location: "",
-                      keySkills: "",
-                      currentCompany: "",
-                      client: "",
-                      maxCurrentCtc: "",
-                      maxExpectedCtc: "",
-                      qualification: "",
-                      maxNoticeDays: "",
-                      recruiter: "",
-                      gender: ""
-                    });
+                    setCandidateStructuredFilters(EMPTY_CANDIDATE_STRUCTURED_FILTERS);
                   }}>Reset search</button>
                 </div>
                 <div className="item-card compact-card">

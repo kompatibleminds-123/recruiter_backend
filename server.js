@@ -1635,6 +1635,15 @@ function buildNaturalSearchFallbackTokens(rawQuery = "") {
     );
 }
 
+function isPlainCandidateLookupQuery(rawQuery = "") {
+  const value = normalizeDashboardText(rawQuery).replace(/[^\w\s+&/-]+/g, " ").replace(/\s+/g, " ").trim();
+  if (!value) return false;
+  if (/\bAND\b|\bOR\b/i.test(String(rawQuery || ""))) return false;
+  if (/\b(?:under|below|max|minimum|min|years?|ctc|notice|profiles?|candidates?|sales|saas|b2b|developer|engineer|recruiter|sourced|captured|shared|converted|assessment|interview|joined|offered|rejected|location|company|client|role|skill)\b/.test(value)) return false;
+  const tokens = value.split(/\s+/).filter(Boolean);
+  return tokens.length >= 1 && tokens.length <= 4;
+}
+
 function splitBooleanTerms(raw = "") {
   const matches = String(raw || "").match(/"[^"]+"|\S+/g) || [];
   return matches
@@ -4088,6 +4097,16 @@ const server = http.createServer(async (req, res) => {
           .filter((item) => !recruiterFilter || String(item.ownerRecruiter || "").trim() === recruiterFilter)
           .filter((item) => candidateMatchesBooleanQuery(item, query))
           .slice(0, 200);
+        if (!matches.length && isPlainCandidateLookupQuery(query)) {
+          const fallbackTokens = buildNaturalSearchFallbackTokens(query);
+          matches = universe
+            .filter((item) => !recruiterFilter || String(item.ownerRecruiter || "").trim() === recruiterFilter)
+            .filter((item) => {
+              const hay = buildCandidateSearchHay(item);
+              return fallbackTokens.length && fallbackTokens.every((token) => hay.includes(normalizeDashboardText(token)));
+            })
+            .slice(0, 200);
+        }
       } else {
         matches = universe
           .filter((item) => !recruiterFilter || String(item.ownerRecruiter || "").trim() === recruiterFilter)
