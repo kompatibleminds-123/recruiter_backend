@@ -371,6 +371,14 @@ function persistedJobId(rawId) {
   if (!v || /^jd-/i.test(v)) return crypto.randomUUID();
   return v;
 }
+function systemJobRowId(companyId, key) {
+  const hex = crypto
+    .createHash("sha256")
+    .update(`${String(companyId || "").trim()}:${String(key || "").trim()}`)
+    .digest("hex");
+  const variant = ((parseInt(hex.slice(16, 18), 16) & 0x3f) | 0x80).toString(16).padStart(2, "0");
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-5${hex.slice(13, 16)}-${variant}${hex.slice(18, 20)}-${hex.slice(20, 32)}`;
+}
 function assessmentRow(assessment, actor, companyId) {
   const a = sanitizeAssessment(assessment);
   const id = persistedAssessmentId(a.id);
@@ -746,7 +754,7 @@ async function getCompanySharedExportPresets(companyId) {
     return sanitizeSharedExportPresetSettings(row?.payload || row || {});
   }
   await ensureSeeded();
-  const rows = await sbSel("company_jobs", `select=*&company_id=eq.${enc(companyId)}&id=eq.${enc(SHARED_EXPORT_PRESET_ROW_ID)}&limit=1`);
+  const rows = await sbSel("company_jobs", `select=*&company_id=eq.${enc(companyId)}&title=eq.${enc(SHARED_EXPORT_PRESET_ROW_TITLE)}&limit=1`);
   return sanitizeSharedExportPresetSettings(rows?.[0]?.payload || rows?.[0] || {});
 }
 async function saveCompanySharedExportPresets({ actorUserId, companyId, settings }) {
@@ -791,7 +799,7 @@ async function saveCompanySharedExportPresets({ actorUserId, companyId, settings
     return sanitizeSharedExportPresetSettings(next.payload);
   }
   const rows = await sbIns("company_jobs", [{
-    id: SHARED_EXPORT_PRESET_ROW_ID,
+    id: systemJobRowId(companyId, SHARED_EXPORT_PRESET_ROW_ID),
     company_id: companyId,
     title: SHARED_EXPORT_PRESET_ROW_TITLE,
     client_name: "__system__",
@@ -815,7 +823,7 @@ async function getCompanyClientUsers(companyId) {
     return sanitizeClientUserPayload(row?.payload || row || {}).clientUsers.map(sanitizeClientUser);
   }
   await ensureSeeded();
-  const rows = await sbSel("company_jobs", `select=*&company_id=eq.${enc(companyId)}&id=eq.${enc(CLIENT_USERS_ROW_ID)}&limit=1`);
+  const rows = await sbSel("company_jobs", `select=*&company_id=eq.${enc(companyId)}&title=eq.${enc(CLIENT_USERS_ROW_TITLE)}&limit=1`);
   return sanitizeClientUserPayload(rows?.[0]?.payload || rows?.[0] || {}).clientUsers.map(sanitizeClientUser);
 }
 async function getAllClientUsers() {
@@ -827,7 +835,7 @@ async function getAllClientUsers() {
       .filter(Boolean);
   }
   await ensureSeeded();
-  const rows = await sbSel("company_jobs", `select=*&id=eq.${enc(CLIENT_USERS_ROW_ID)}&limit=1000`);
+  const rows = await sbSel("company_jobs", `select=*&title=eq.${enc(CLIENT_USERS_ROW_TITLE)}&limit=1000`);
   return (rows || [])
     .flatMap((row) => sanitizeClientUserPayload(row?.payload || row || {}).clientUsers.map(sanitizeClientUserForStorage))
     .filter(Boolean);
@@ -861,7 +869,7 @@ async function saveCompanyClientUsersRow({ companyId, clientUsers, actorEmail = 
     return payload.clientUsers.map(sanitizeClientUser);
   }
   const rows = await sbIns("company_jobs", [{
-    id: CLIENT_USERS_ROW_ID,
+    id: systemJobRowId(companyId, CLIENT_USERS_ROW_ID),
     company_id: companyId,
     title: CLIENT_USERS_ROW_TITLE,
     client_name: "__system__",
