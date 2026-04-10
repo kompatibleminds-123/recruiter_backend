@@ -4087,7 +4087,7 @@ function PortalApp({ token, onLogout }) {
       const shareKey = String(item.candidate_id || item.id || "");
       const cvLink = clientShareCvLinks[shareKey];
       const cvCell = cvLink
-        ? `<a href="${escapeHtml(cvLink)}" style="color:#0b57d0;text-decoration:none;">Open CV</a>`
+        ? `<a href="${escapeHtml(cvLink)}" target="_blank" rel="noopener noreferrer" style="color:#0b57d0;text-decoration:none;">Open CV</a>`
         : (!shareKey
           ? "Linked candidate not found"
           : (clientShareCvLinkState[shareKey] === "missing" ? "CV link not available yet" : "Generating secure CV link..."));
