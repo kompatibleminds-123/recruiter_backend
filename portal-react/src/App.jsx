@@ -2463,7 +2463,13 @@ function PortalApp({ token, onLogout }) {
   }, [filteredAssessments, state.candidates]);
 
   const normalizedAssessmentCopyRows = useMemo(() => {
-    return filteredAssessments.map((item, index) => ({
+    return filteredAssessments.map((item, index) => {
+      const linkedCandidate = assessmentLinkedCandidateMap.get(String(item.id || "")) || null;
+      const linkedMeta = decodePortalApplicantMetadata(linkedCandidate || {});
+      const assessmentStoredFile = item?.cvAnalysis?.storedFile && typeof item.cvAnalysis.storedFile === "object"
+        ? item.cvAnalysis.storedFile
+        : null;
+      return {
       id: item.id || "",
       index: index + 1,
       s_no: index + 1,
@@ -2495,22 +2501,27 @@ function PortalApp({ token, onLogout }) {
       outcome: item.candidateStatus || "",
       assessment_status: item.candidateStatus || "",
       follow_up_at: formatDateForCopy(item.followUpAt || item.interviewAt || ""),
-      candidate_id: assessmentLinkedCandidateMap.get(String(item.id || ""))?.id || "",
-      cv_provider: decodePortalApplicantMetadata(assessmentLinkedCandidateMap.get(String(item.id || "")) || {}).fileProvider
-        || decodePortalApplicantMetadata(assessmentLinkedCandidateMap.get(String(item.id || "")) || {})?.cvAnalysisCache?.storedFile?.provider
+      candidate_id: linkedCandidate?.id || item.candidateId || "",
+      cv_provider: linkedMeta.fileProvider
+        || linkedMeta?.cvAnalysisCache?.storedFile?.provider
+        || assessmentStoredFile?.provider
         || "",
-      cv_key: decodePortalApplicantMetadata(assessmentLinkedCandidateMap.get(String(item.id || "")) || {}).fileKey
-        || decodePortalApplicantMetadata(assessmentLinkedCandidateMap.get(String(item.id || "")) || {})?.cvAnalysisCache?.storedFile?.key
+      cv_key: linkedMeta.fileKey
+        || linkedMeta?.cvAnalysisCache?.storedFile?.key
+        || assessmentStoredFile?.key
         || "",
-      cv_url: decodePortalApplicantMetadata(assessmentLinkedCandidateMap.get(String(item.id || "")) || {}).fileUrl
-        || decodePortalApplicantMetadata(assessmentLinkedCandidateMap.get(String(item.id || "")) || {})?.cvAnalysisCache?.storedFile?.url
-        || assessmentLinkedCandidateMap.get(String(item.id || ""))?.cv_url
+      cv_url: linkedMeta.fileUrl
+        || linkedMeta?.cvAnalysisCache?.storedFile?.url
+        || assessmentStoredFile?.url
+        || linkedCandidate?.cv_url
         || "",
-      cv_filename: decodePortalApplicantMetadata(assessmentLinkedCandidateMap.get(String(item.id || "")) || {}).filename
-        || decodePortalApplicantMetadata(assessmentLinkedCandidateMap.get(String(item.id || "")) || {})?.cvAnalysisCache?.storedFile?.filename
-        || assessmentLinkedCandidateMap.get(String(item.id || ""))?.cv_filename
+      cv_filename: linkedMeta.filename
+        || linkedMeta?.cvAnalysisCache?.storedFile?.filename
+        || assessmentStoredFile?.filename
+        || linkedCandidate?.cv_filename
         || ""
-    }));
+      };
+    });
   }, [assessmentLinkedCandidateMap, filteredAssessments]);
   const selectedAssessmentRows = useMemo(() => (
     normalizedAssessmentCopyRows
@@ -2520,16 +2531,21 @@ function PortalApp({ token, onLogout }) {
   useEffect(() => {
     async function loadCvLinks() {
       if (!token || !selectedAssessmentRows.length) return;
-      const rowsNeedingLinks = selectedAssessmentRows.filter((item) => item.candidate_id && !clientShareCvLinkState[item.candidate_id]);
+      const rowsNeedingLinks = selectedAssessmentRows.filter((item) => {
+        const shareKey = String(item.candidate_id || item.id || "");
+        return shareKey && (item.cv_key || item.cv_url || item.candidate_id) && !clientShareCvLinkState[shareKey];
+      });
       if (!rowsNeedingLinks.length) return;
       setClientShareCvLinkState((current) => {
         const next = { ...current };
         rowsNeedingLinks.forEach((item) => {
-          if (item.candidate_id) next[item.candidate_id] = "loading";
+          const shareKey = String(item.candidate_id || item.id || "");
+          if (shareKey) next[shareKey] = "loading";
         });
         return next;
       });
       const entries = await Promise.all(rowsNeedingLinks.map(async (item) => {
+        const shareKey = String(item.candidate_id || item.id || "");
         try {
           const params = new URLSearchParams();
           if (item.cv_provider) params.set("cv_provider", String(item.cv_provider));
@@ -2537,12 +2553,13 @@ function PortalApp({ token, onLogout }) {
           if (item.cv_url) params.set("cv_url", String(item.cv_url));
           if (item.cv_filename) params.set("cv_filename", String(item.cv_filename));
           if (item.name) params.set("candidate_name", String(item.name));
-          const result = await api(`/company/candidates/${encodeURIComponent(item.candidate_id)}/share-cv-link${params.toString() ? `?${params.toString()}` : ""}`, token);
-          return [item.candidate_id, result.url, "ready"];
+          const routeId = String(item.candidate_id || item.id || "");
+          const result = await api(`/company/candidates/${encodeURIComponent(routeId)}/share-cv-link${params.toString() ? `?${params.toString()}` : ""}`, token);
+          return [shareKey, result.url, "ready"];
         } catch {
-          return [item.candidate_id, "", "missing"];
+          return [shareKey, "", "missing"];
         }
-        }));
+      }));
       setClientShareCvLinks((current) => {
         const next = { ...current };
         entries.forEach(([candidateId, url]) => {
@@ -4022,10 +4039,11 @@ function PortalApp({ token, onLogout }) {
     const rows = getClientShareRows();
     const profileLines = rows.flatMap((item, index) => {
       const cells = presetColumns.map((column) => `${column.header}: ${getCapturedExportFieldValue({ index: index + 1, ...item }, column.field) || "-"}`);
-      const cvLinkText = !item.candidate_id
+      const shareKey = String(item.candidate_id || item.id || "");
+      const cvLinkText = !shareKey
         ? "Linked candidate not found for this assessment"
-        : clientShareCvLinks[item.candidate_id]
-          || (clientShareCvLinkState[item.candidate_id] === "missing" ? "CV link not available yet" : "Generating secure CV link...");
+        : clientShareCvLinks[shareKey]
+          || (clientShareCvLinkState[shareKey] === "missing" ? "CV link not available yet" : "Generating secure CV link...");
       return [
         `${index + 1}. ${item.name || "Candidate"}`,
         ...cells,
@@ -4063,12 +4081,13 @@ function PortalApp({ token, onLogout }) {
         const value = getCapturedExportFieldValue({ index: index + 1, ...item }, column.field) || "-";
         return `<td style="border:1px solid #d8dee8;padding:10px 12px;vertical-align:top;font-size:13px;line-height:1.45;">${escapeHtml(value).replace(/\n/g, "<br/>")}</td>`;
       }).join("");
-      const cvLink = clientShareCvLinks[item.candidate_id];
+      const shareKey = String(item.candidate_id || item.id || "");
+      const cvLink = clientShareCvLinks[shareKey];
       const cvCell = cvLink
         ? `<a href="${escapeHtml(cvLink)}" style="color:#0b57d0;text-decoration:none;">Open CV</a>`
-        : (!item.candidate_id
+        : (!shareKey
           ? "Linked candidate not found"
-          : (clientShareCvLinkState[item.candidate_id] === "missing" ? "CV link not available yet" : "Generating secure CV link..."));
+          : (clientShareCvLinkState[shareKey] === "missing" ? "CV link not available yet" : "Generating secure CV link..."));
       return `<tr>${cells}<td style="border:1px solid #d8dee8;padding:10px 12px;vertical-align:top;font-size:13px;line-height:1.45;">${cvCell}</td></tr>`;
     }).join("");
     const extraMessage = String(clientShareDraft.extraMessage || "").trim();
