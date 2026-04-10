@@ -2,6 +2,8 @@ import React, { useEffect, useMemo, useState } from "react";
 import { NavLink, Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 
 const TOKEN_KEY = "recruitdesk_portal_token";
+const CLIENT_TOKEN_KEY = "recruitdesk_client_portal_token";
+const AUTH_MODE_KEY = "recruitdesk_auth_mode";
 const COPY_SETTINGS_STORAGE_KEY = "recruitdesk_portal_copy_settings_v1";
 
 const BASE_NAV_SECTIONS = [
@@ -25,7 +27,6 @@ const BASE_NAV_SECTIONS = [
     items: [
       { to: "/interview", label: "Interview Panel" },
       { to: "/assessments", label: "Assessments" },
-      { to: "/client-portal", label: "Client Portal" },
       { to: "/client-share", label: "Direct Share" }
     ]
   },
@@ -1489,17 +1490,34 @@ function Section({ kicker, title, children }) {
   );
 }
 
-function LoginScreen({ onLogin, busy, error }) {
+function LoginScreen({ onRecruiterLogin, onClientLogin, busy, error }) {
+  const [mode, setMode] = useState(() => window.localStorage.getItem(AUTH_MODE_KEY) || "recruiter");
   const [email, setEmail] = useState("");
+  const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(AUTH_MODE_KEY, mode);
+    } catch {
+      // Ignore local storage failures.
+    }
+  }, [mode]);
+
   return (
     <div className="auth-screen">
       <div className="auth-card">
-        <div className="section-kicker">Company Login</div>
-        <h1>Open your RecruitDesk workspace</h1>
-        <p className="muted">Use your existing company admin or recruiter credentials.</p>
-        <form className="form-grid" onSubmit={(e) => { e.preventDefault(); onLogin({ email, password }); }}>
-          <label><span>Email</span><input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required /></label>
+        <div className="section-kicker">{mode === "client" ? "Client Portal" : "Company Login"}</div>
+        <h1>{mode === "client" ? "Open your client hiring dashboard" : "Open your RecruitDesk workspace"}</h1>
+        <p className="muted">{mode === "client" ? "Use the client username and password shared by your recruiter team." : "Use your existing company admin or recruiter credentials."}</p>
+        <div className="button-row">
+          <button type="button" className={mode === "recruiter" ? "" : "ghost-btn"} onClick={() => setMode("recruiter")}>Recruiter login</button>
+          <button type="button" className={mode === "client" ? "" : "ghost-btn"} onClick={() => setMode("client")}>Client login</button>
+        </div>
+        <form className="form-grid" onSubmit={(e) => { e.preventDefault(); mode === "client" ? onClientLogin({ username, password }) : onRecruiterLogin({ email, password }); }}>
+          {mode === "client"
+            ? <label><span>Username</span><input value={username} onChange={(e) => setUsername(e.target.value)} required /></label>
+            : <label><span>Email</span><input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required /></label>}
           <label><span>Password</span><input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required /></label>
           <button type="submit" disabled={busy}>{busy ? "Logging in..." : "Login"}</button>
         </form>
@@ -2100,10 +2118,10 @@ function DrilldownModal({ open, title, items, onClose, onOpenCv, onOpenDraft, on
                     </div>
                   ) : null}
                   <div className="button-row">
-                    {(item.raw?.candidate?.id || item.id) && (item.raw?.candidate?.cv_filename || item.raw?.candidate?.cv_url) ? <button onClick={() => onOpenCv(item.raw?.candidate?.id || item.id)}>Open CV</button> : null}
-                    {item.raw?.candidate?.id ? <button onClick={() => onOpenDraft(item.raw.candidate.id)}>Open draft</button> : null}
-                    {item.raw?.assessment || item.sourceType === "assessment_only" ? <button onClick={() => onOpenAssessment(item.raw?.assessment || item)}>Edit assessment</button> : null}
-                    <button className="ghost-btn" onClick={() => onAddFeedback(item)}>{feedbackMeta.feedback ? "Edit feedback" : "Add feedback"}</button>
+                    {onOpenCv && (item.raw?.candidate?.id || item.id) && (item.raw?.candidate?.cv_filename || item.raw?.candidate?.cv_url) ? <button onClick={() => onOpenCv(item.raw?.candidate?.id || item.id)}>Open CV</button> : null}
+                    {onOpenDraft && item.raw?.candidate?.id ? <button onClick={() => onOpenDraft(item.raw.candidate.id)}>Open draft</button> : null}
+                    {onOpenAssessment && (item.raw?.assessment || item.sourceType === "assessment_only") ? <button onClick={() => onOpenAssessment(item.raw?.assessment || item)}>{onOpenDraft ? "Edit assessment" : "Open profile"}</button> : null}
+                    {onAddFeedback ? <button className="ghost-btn" onClick={() => onAddFeedback(item)}>{feedbackMeta.feedback ? "Edit feedback" : "Add feedback"}</button> : null}
                   </div>
                 </div>
               </div>
@@ -2111,6 +2129,34 @@ function DrilldownModal({ open, title, items, onClose, onOpenCv, onOpenDraft, on
               })()}
             </article>
           ))}
+        </div>
+        <div className="button-row">
+          <button className="ghost-btn" onClick={onClose}>Close</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ClientProfileModal({ open, item, onClose }) {
+  if (!open || !item) return null;
+  const assessment = item.raw?.assessment || item;
+  return (
+    <div className="overlay" onClick={onClose}>
+      <div className="overlay-card overlay-card--wide" onClick={(e) => e.stopPropagation()}>
+        <h3>{assessment.candidateName || item.candidateName || "Candidate"}</h3>
+        <p className="muted">{[assessment.jdTitle || item.position || item.role || "", assessment.clientName || item.clientName || "", assessment.currentCompany || item.company || ""].filter(Boolean).join(" | ")}</p>
+        <div className="info-grid">
+          {[["Status", assessment.candidateStatus || "-"],["Pipeline", assessment.pipelineStage || "-"],["Experience", assessment.totalExperience || item.totalExperience || "-"],["Current designation", assessment.currentDesignation || item.role || "-"],["Location", assessment.location || item.location || "-"],["Notice period", assessment.noticePeriod || item.noticePeriod || "-"],["Current CTC", assessment.currentCtc || item.currentCtc || "-"],["Expected CTC", assessment.expectedCtc || item.expectedCtc || "-"]].map(([label, value]) => (
+            <div className="info-card" key={label}>
+              <div className="info-label">{label}</div>
+              <div className="info-value">{value || "-"}</div>
+            </div>
+          ))}
+        </div>
+        <div className="form-grid">
+          <label className="full"><span>Recruiter summary</span><textarea readOnly value={assessment.otherPointers || assessment.recruiterNotes || item.notesText || ""} /></label>
+          <label className="full"><span>Assessment notes</span><textarea readOnly value={assessment.callbackNotes || ""} /></label>
         </div>
         <div className="button-row">
           <button className="ghost-btn" onClick={onClose}>Close</button>
@@ -2232,6 +2278,9 @@ function PortalApp({ token, onLogout }) {
     }
   });
   const [newPresetDraft, setNewPresetDraft] = useState({ label: "", columns: "" });
+  const [clientUsers, setClientUsers] = useState([]);
+  const [clientUserDraft, setClientUserDraft] = useState({ username: "", password: "", clientName: "", allowedPositions: "" });
+  const [clientPasswordDrafts, setClientPasswordDrafts] = useState({});
   const [quickUpdateCandidateQuery, setQuickUpdateCandidateQuery] = useState("");
   const [quickUpdateCandidateId, setQuickUpdateCandidateId] = useState("");
   const [quickUpdateText, setQuickUpdateText] = useState("");
@@ -2367,7 +2416,7 @@ function PortalApp({ token, onLogout }) {
   async function loadWorkspace() {
     await api("/company/candidates/backfill-assessment-links", token, { method: "POST" }).catch(() => null);
     await api("/company/candidates/backfill-skills", token, { method: "POST" }).catch(() => null);
-    const [userResult, dashboardResult, clientPortalResult, applicantsResult, intakeResult, jobsResult, usersResult, candidatesResult, assessmentsResult, sharedPresetResult] = await Promise.all([
+    const [userResult, dashboardResult, clientPortalResult, applicantsResult, intakeResult, jobsResult, usersResult, clientUsersResult, candidatesResult, assessmentsResult, sharedPresetResult] = await Promise.all([
       api("/auth/me", token),
       api("/company/dashboard", token),
       api("/company/client-portal", token).catch(() => ({ summary: { byClient: [], byClientPosition: [] }, availableClients: [] })),
@@ -2375,6 +2424,7 @@ function PortalApp({ token, onLogout }) {
       api("/company/applicant-intake-secret", token).catch(() => null),
       api("/company/jds", token).catch(() => ({ jobs: [] })),
       api("/company/users", token).catch(() => ({ users: [] })),
+      api("/company/client-users", token).catch(() => ({ clientUsers: [] })),
       api("/candidates", token).catch(() => []),
       api("/company/assessments", token).catch(() => ({ assessments: [] })),
       api("/company/shared-export-presets", token).catch(() => null)
@@ -2390,6 +2440,7 @@ function PortalApp({ token, onLogout }) {
       candidates: Array.isArray(candidatesResult) ? candidatesResult : [],
       assessments: assessmentsResult.assessments || []
     });
+    setClientUsers(clientUsersResult.clientUsers || []);
     if (sharedPresetResult) {
       setCopySettings((current) => ({ ...current, ...DEFAULT_COPY_SETTINGS, ...sharedPresetResult }));
     }
@@ -4324,6 +4375,38 @@ function PortalApp({ token, onLogout }) {
     setStatus("settings", "Shared copy presets saved for all recruiters.", "ok");
   }
 
+  async function createClientPortalUser() {
+    if (!isSettingsAdmin) {
+      setStatus("settings", "Only admin can create client accounts.", "error");
+      return;
+    }
+    const payload = {
+      username: String(clientUserDraft.username || "").trim(),
+      password: String(clientUserDraft.password || ""),
+      clientName: String(clientUserDraft.clientName || "").trim(),
+      allowedPositions: String(clientUserDraft.allowedPositions || "").split(/\r?\n|,/).map((item) => item.trim()).filter(Boolean)
+    };
+    await api("/company/client-users", token, "POST", payload);
+    await loadWorkspace();
+    setClientUserDraft({ username: "", password: "", clientName: "", allowedPositions: "" });
+    setStatus("settings", "Client portal account created.", "ok");
+  }
+
+  async function resetClientPortalPassword(clientUserId) {
+    if (!isSettingsAdmin) {
+      setStatus("settings", "Only admin can reset client passwords.", "error");
+      return;
+    }
+    const nextPassword = String(clientPasswordDrafts[clientUserId] || "").trim();
+    if (!nextPassword) {
+      setStatus("settings", "Enter a new password first.", "error");
+      return;
+    }
+    await api("/company/client-users/password", token, "POST", { clientUserId, newPassword: nextPassword });
+    setClientPasswordDrafts((current) => ({ ...current, [clientUserId]: "" }));
+    setStatus("settings", "Client password reset.", "ok");
+  }
+
   function addCustomPreset() {
     if (!isSettingsAdmin) {
       setStatus("settings", "Only admin can add shared presets.", "error");
@@ -5446,88 +5529,6 @@ function PortalApp({ token, onLogout }) {
             </div>
           } />
 
-          <Route path="/client-portal" element={
-            <div className="page-grid">
-              <Section kicker="Client View" title="Client Portal">
-                <p className="muted">See client-wise numbers, then go one level deeper by role. Clicking any number opens the matching profiles so they can be reviewed, opened, and updated with feedback.</p>
-                <div className="form-grid three-col">
-                  <label><span>Date from</span><input type="date" value={clientPortalFilters.dateFrom} onChange={(e) => setClientPortalFilters((current) => ({ ...current, dateFrom: e.target.value }))} /></label>
-                  <label><span>Date to</span><input type="date" value={clientPortalFilters.dateTo} onChange={(e) => setClientPortalFilters((current) => ({ ...current, dateTo: e.target.value }))} /></label>
-                  <label><span>Client</span><select value={clientPortalFilters.clientLabel} onChange={(e) => setClientPortalFilters((current) => ({ ...current, clientLabel: e.target.value, positionLabel: "" }))}><option value="">Select client</option>{(state.clientPortal?.availableClients || []).map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
-                  <label className="full"><span>Position</span><select value={clientPortalFilters.positionLabel} onChange={(e) => setClientPortalFilters((current) => ({ ...current, positionLabel: e.target.value }))}><option value="">All positions</option>{clientPortalPositionOptions.map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
-                  <div className="button-row align-end"><button onClick={() => void applyClientPortalFilters()}>Apply</button></div>
-                </div>
-              </Section>
-
-              <Section kicker="Overall Recruitment Summary" title={clientPortalFilters.clientLabel || "Select a Client"}>
-                {!selectedClientPortalGroup ? (
-                  <div className="empty-state">Choose a client to see its overall recruitment summary.</div>
-                ) : (
-                  <div className="metric-grid dashboard-metric-grid client-portal-metric-grid">
-                    {CLIENT_PORTAL_METRICS.map(([key, label]) => (
-                      <button key={key} className="metric-card metric-card--button client-portal-metric-card" onClick={() => void openClientPortalDrilldown({ title: `${selectedClientPortalGroup.label} | ${label}`, metric: key, groupType: "client", params: { clientLabel: selectedClientPortalGroup.label } })}>
-                        <div className="metric-label">{label}</div>
-                        <div className="metric-value">{selectedClientPortalGroup.metrics?.[key] || 0}</div>
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </Section>
-
-              <Section kicker="Role Wise Summary" title={clientPortalFilters.positionLabel || "All Positions"}>
-                {!selectedClientPortalGroup ? (
-                  <div className="empty-state">Select a client first to see position-wise numbers.</div>
-                ) : (
-                  <>
-                    {selectedClientPortalPosition ? (
-                      <div className="metric-grid dashboard-metric-grid client-portal-metric-grid">
-                        {CLIENT_PORTAL_METRICS.map(([key, label]) => (
-                          <button key={key} className="metric-card metric-card--button client-portal-metric-card" onClick={() => void openClientPortalDrilldown({ title: `${selectedClientPortalPosition.clientLabel} | ${selectedClientPortalPosition.positionLabel} | ${label}`, metric: key, groupType: "position", params: { clientLabel: selectedClientPortalPosition.clientLabel, positionLabel: selectedClientPortalPosition.positionLabel } })}>
-                            <div className="metric-label">{label}</div>
-                            <div className="metric-value">{selectedClientPortalPosition.metrics?.[key] || 0}</div>
-                          </button>
-                        ))}
-                      </div>
-                    ) : null}
-                    <div className="table-wrap">
-                      <table className="dashboard-table">
-                        <thead>
-                          <tr>
-                            <th>Position</th>
-                            {CLIENT_PORTAL_METRICS.map(([, label]) => <th key={label}>{label}</th>)}
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {clientPortalPositionRows.map((row) => (
-                            <tr key={`${row.clientLabel}-${row.positionLabel}`}>
-                              <td>
-                                <button className="table-metric-btn table-metric-btn--label" onClick={() => setClientPortalFilters((current) => ({ ...current, positionLabel: row.positionLabel }))}>
-                                  {row.positionLabel}
-                                </button>
-                              </td>
-                              {CLIENT_PORTAL_METRICS.map(([key, label]) => (
-                                <td key={key}>
-                                  <button className="table-metric-btn" onClick={() => void openClientPortalDrilldown({ title: `${row.clientLabel} | ${row.positionLabel} | ${label}`, metric: key, groupType: "position", params: { clientLabel: row.clientLabel, positionLabel: row.positionLabel } })}>
-                                    {row.metrics?.[key] || 0}
-                                  </button>
-                                </td>
-                              ))}
-                            </tr>
-                          ))}
-                          {!clientPortalPositionRows.length ? (
-                            <tr>
-                              <td colSpan={CLIENT_PORTAL_METRICS.length + 1}><div className="empty-state compact-empty">No shared profiles found for this client and date range.</div></td>
-                            </tr>
-                          ) : null}
-                        </tbody>
-                      </table>
-                    </div>
-                  </>
-                )}
-              </Section>
-            </div>
-          } />
-
           <Route path="/client-share" element={
             <div className="page-grid">
               <Section kicker="Client Submission" title="Direct Share with Client">
@@ -5920,6 +5921,36 @@ function PortalApp({ token, onLogout }) {
                     {isSettingsAdmin ? <button onClick={() => void saveSharedCopySettings()}>Save shared settings</button> : null}
                   </div>
                 </Section>
+
+                <Section kicker="Client Access" title="Client Portal Accounts">
+                  <p className="muted">Create client usernames here. These credentials are for the separate client-facing portal, not the recruiter workspace.</p>
+                  <div className="form-grid two-col">
+                    <label><span>Username</span><input disabled={!isSettingsAdmin} value={clientUserDraft.username} onChange={(e) => setClientUserDraft((current) => ({ ...current, username: e.target.value }))} placeholder="attentive_hr" /></label>
+                    <label><span>Password</span><input disabled={!isSettingsAdmin} type="password" value={clientUserDraft.password} onChange={(e) => setClientUserDraft((current) => ({ ...current, password: e.target.value }))} placeholder="Set client password" /></label>
+                    <label><span>Client name</span><input disabled={!isSettingsAdmin} value={clientUserDraft.clientName} onChange={(e) => setClientUserDraft((current) => ({ ...current, clientName: e.target.value }))} placeholder="Attentive" /></label>
+                    <label className="full"><span>Allowed positions</span><textarea disabled={!isSettingsAdmin} value={clientUserDraft.allowedPositions} onChange={(e) => setClientUserDraft((current) => ({ ...current, allowedPositions: e.target.value }))} placeholder={"AE\nSDR\nAccount Manager"} /></label>
+                  </div>
+                  {isSettingsAdmin ? <div className="button-row"><button onClick={() => void createClientPortalUser()}>Create client account</button></div> : null}
+                  <div className="stack-list compact">
+                    {!clientUsers.length ? <div className="empty-state">No client portal accounts created yet.</div> : clientUsers.map((item) => (
+                      <article className="item-card compact-card" key={item.id}>
+                        <div className="item-card__top">
+                          <div>
+                            <h3>{item.clientName}</h3>
+                            <p className="muted">{`Username: ${item.username}`}</p>
+                            <div className="candidate-snippet">{(item.allowedPositions || []).join("\n") || "All positions for this client"}</div>
+                          </div>
+                          {isSettingsAdmin ? (
+                            <div className="form-grid" style={{ minWidth: "240px" }}>
+                              <label><span>Reset password</span><input type="password" value={clientPasswordDrafts[item.id] || ""} onChange={(e) => setClientPasswordDrafts((current) => ({ ...current, [item.id]: e.target.value }))} placeholder="New password" /></label>
+                              <div className="button-row"><button className="ghost-btn" onClick={() => void resetClientPortalPassword(item.id)}>Reset</button></div>
+                            </div>
+                          ) : null}
+                        </div>
+                      </article>
+                    ))}
+                  </div>
+                </Section>
               </div>
             } />
 
@@ -5980,17 +6011,192 @@ function PortalApp({ token, onLogout }) {
   );
 }
 
+function ClientPortalApp({ token, onLogout }) {
+  const [clientUser, setClientUser] = useState(null);
+  const [clientPortal, setClientPortal] = useState({ summary: { byClient: [], byClientPosition: [] } });
+  const [filters, setFilters] = useState({ dateFrom: "", dateTo: "", positionLabel: "" });
+  const [status, setStatus] = useState("");
+  const [drilldownState, setDrilldownState] = useState({ open: false, title: "", items: [], request: null });
+  const [clientFeedbackItem, setClientFeedbackItem] = useState(null);
+  const [profileItem, setProfileItem] = useState(null);
+
+  async function loadClientPortal(currentFilters = filters) {
+    const params = new URLSearchParams();
+    if (currentFilters.dateFrom) params.set("dateFrom", currentFilters.dateFrom);
+    if (currentFilters.dateTo) params.set("dateTo", currentFilters.dateTo);
+    const [meResult, summaryResult] = await Promise.all([
+      api("/client-auth/me", token),
+      api(`/client-portal/summary${params.toString() ? `?${params.toString()}` : ""}`, token)
+    ]);
+    setClientUser(meResult.user || meResult);
+    setClientPortal(summaryResult || { summary: { byClient: [], byClientPosition: [] } });
+  }
+
+  useEffect(() => {
+    void loadClientPortal().catch((error) => setStatus(String(error?.message || error)));
+  }, [token]);
+
+  const summary = clientPortal.summary || { overall: {}, byClient: [], byClientPosition: [] };
+  const clientName = clientUser?.clientName || summary.byClient?.[0]?.label || "";
+  const overall = summary.byClient?.[0]?.metrics || summary.overall || {};
+  const positionRows = (summary.byClientPosition || []).filter((row) => !filters.positionLabel || String(row.positionLabel || "") === String(filters.positionLabel || ""));
+  const selectedPosition = (summary.byClientPosition || []).find((row) => String(row.positionLabel || "") === String(filters.positionLabel || "")) || null;
+  const positionOptions = Array.from(new Set((summary.byClientPosition || []).map((row) => row.positionLabel).filter(Boolean)));
+
+  async function applyFilters() {
+    setStatus("Refreshing client portal...");
+    await loadClientPortal(filters);
+    setStatus("");
+  }
+
+  async function openDrilldown({ title, metric, groupType, params = {} }) {
+    const query = new URLSearchParams({
+      metric,
+      groupType,
+      dateFrom: filters.dateFrom || "",
+      dateTo: filters.dateTo || "",
+      positionLabel: params.positionLabel || ""
+    });
+    const result = await api(`/client-portal/drilldown?${query.toString()}`, token);
+    setDrilldownState({ open: true, title, items: result.items || [], request: { title, metric, groupType, params } });
+  }
+
+  async function refreshDrilldown() {
+    if (!drilldownState.request) return;
+    await openDrilldown(drilldownState.request);
+  }
+
+  async function saveFeedback({ status: nextStatus, feedback }) {
+    const assessmentId = String(clientFeedbackItem?.raw?.assessment?.id || clientFeedbackItem?.id || "").trim();
+    await api("/client-portal/feedback", token, "POST", { assessmentId, status: nextStatus, feedback });
+    await loadClientPortal(filters);
+    await refreshDrilldown();
+    setClientFeedbackItem(null);
+  }
+
+  return (
+    <div className="app-shell app-shell--client">
+      <main className="content">
+        <header className="workspace-header">
+          <div>
+            <div className="section-kicker">{clientUser?.companyName || "Client Portal"}</div>
+            <h1>{clientName || "Client Hiring Portal"}</h1>
+          </div>
+          <div className="button-row tight">
+            <div className="muted">{clientUser?.username ? `Username: ${clientUser.username}` : ""}</div>
+            <button className="ghost-btn" onClick={onLogout}>Logout</button>
+          </div>
+        </header>
+
+        <div className="page-grid">
+          <Section kicker="Client View" title="Hiring Summary">
+            <p className="muted">Track shared profiles by role, open profile details, and add client feedback directly in the portal.</p>
+            {status ? <div className="status">{status}</div> : null}
+            <div className="form-grid three-col">
+              <label><span>Date from</span><input type="date" value={filters.dateFrom} onChange={(e) => setFilters((current) => ({ ...current, dateFrom: e.target.value }))} /></label>
+              <label><span>Date to</span><input type="date" value={filters.dateTo} onChange={(e) => setFilters((current) => ({ ...current, dateTo: e.target.value }))} /></label>
+              <label><span>Position</span><select value={filters.positionLabel} onChange={(e) => setFilters((current) => ({ ...current, positionLabel: e.target.value }))}><option value="">All positions</option>{positionOptions.map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
+              <div className="button-row align-end"><button onClick={() => void applyFilters()}>Apply</button></div>
+            </div>
+          </Section>
+
+          <Section kicker="Overall Recruitment Summary" title={clientName || "Client"}>
+            <div className="metric-grid dashboard-metric-grid client-portal-metric-grid">
+              {CLIENT_PORTAL_METRICS.map(([key, label]) => (
+                <button key={key} className="metric-card metric-card--button client-portal-metric-card" onClick={() => void openDrilldown({ title: `${clientName} | ${label}`, metric: key, groupType: "client" })}>
+                  <div className="metric-label">{label}</div>
+                  <div className="metric-value">{overall[key] || 0}</div>
+                </button>
+              ))}
+            </div>
+          </Section>
+
+          <Section kicker="Role Wise Summary" title={filters.positionLabel || "All Positions"}>
+            {selectedPosition ? (
+              <div className="metric-grid dashboard-metric-grid client-portal-metric-grid">
+                {CLIENT_PORTAL_METRICS.map(([key, label]) => (
+                  <button key={key} className="metric-card metric-card--button client-portal-metric-card" onClick={() => void openDrilldown({ title: `${clientName} | ${selectedPosition.positionLabel} | ${label}`, metric: key, groupType: "position", params: { positionLabel: selectedPosition.positionLabel } })}>
+                    <div className="metric-label">{label}</div>
+                    <div className="metric-value">{selectedPosition.metrics?.[key] || 0}</div>
+                  </button>
+                ))}
+              </div>
+            ) : null}
+            <div className="table-wrap">
+              <table className="dashboard-table">
+                <thead>
+                  <tr>
+                    <th>Position</th>
+                    {CLIENT_PORTAL_METRICS.map(([, label]) => <th key={label}>{label}</th>)}
+                  </tr>
+                </thead>
+                <tbody>
+                  {positionRows.map((row) => (
+                    <tr key={`${row.clientLabel}-${row.positionLabel}`}>
+                      <td><button className="table-metric-btn table-metric-btn--label" onClick={() => setFilters((current) => ({ ...current, positionLabel: row.positionLabel }))}>{row.positionLabel}</button></td>
+                      {CLIENT_PORTAL_METRICS.map(([key, label]) => (
+                        <td key={key}>
+                          <button className="table-metric-btn" onClick={() => void openDrilldown({ title: `${clientName} | ${row.positionLabel} | ${label}`, metric: key, groupType: "position", params: { positionLabel: row.positionLabel } })}>
+                            {row.metrics?.[key] || 0}
+                          </button>
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                  {!positionRows.length ? <tr><td colSpan={CLIENT_PORTAL_METRICS.length + 1}><div className="empty-state compact-empty">No shared profiles found for this view.</div></td></tr> : null}
+                </tbody>
+              </table>
+            </div>
+          </Section>
+        </div>
+
+        <DrilldownModal
+          open={drilldownState.open}
+          title={drilldownState.title}
+          items={drilldownState.items}
+          onClose={() => setDrilldownState({ open: false, title: "", items: [], request: null })}
+          onOpenAssessment={(item) => setProfileItem(item)}
+          onAddFeedback={(item) => setClientFeedbackItem(item)}
+        />
+        <ClientFeedbackModal open={Boolean(clientFeedbackItem)} item={clientFeedbackItem} onClose={() => setClientFeedbackItem(null)} onSave={(payload) => void saveFeedback(payload)} />
+        <ClientProfileModal open={Boolean(profileItem)} item={profileItem} onClose={() => setProfileItem(null)} />
+      </main>
+    </div>
+  );
+}
+
 export default function App() {
-  const [token, setToken] = useState(localStorage.getItem(TOKEN_KEY) || "");
+  const [authMode, setAuthMode] = useState(() => window.localStorage.getItem(AUTH_MODE_KEY) || (window.localStorage.getItem(CLIENT_TOKEN_KEY) ? "client" : "recruiter"));
+  const [token, setToken] = useState(() => window.localStorage.getItem(TOKEN_KEY) || window.localStorage.getItem(CLIENT_TOKEN_KEY) || "");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
-  async function login({ email, password }) {
+  async function loginRecruiter({ email, password }) {
     try {
       setBusy(true);
       setError("");
       const result = await api("/auth/login", "", "POST", { email, password });
       localStorage.setItem(TOKEN_KEY, result.token || "");
+      localStorage.removeItem(CLIENT_TOKEN_KEY);
+      localStorage.setItem(AUTH_MODE_KEY, "recruiter");
+      setAuthMode("recruiter");
+      setToken(result.token || "");
+    } catch (loginError) {
+      setError(String(loginError?.message || loginError));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function loginClientUser({ username, password }) {
+    try {
+      setBusy(true);
+      setError("");
+      const result = await api("/client-auth/login", "", "POST", { username, password });
+      localStorage.setItem(CLIENT_TOKEN_KEY, result.token || "");
+      localStorage.removeItem(TOKEN_KEY);
+      localStorage.setItem(AUTH_MODE_KEY, "client");
+      setAuthMode("client");
       setToken(result.token || "");
     } catch (loginError) {
       setError(String(loginError?.message || loginError));
@@ -6001,13 +6207,14 @@ export default function App() {
 
   function logout() {
     localStorage.removeItem(TOKEN_KEY);
+    localStorage.removeItem(CLIENT_TOKEN_KEY);
+    localStorage.removeItem(AUTH_MODE_KEY);
+    setAuthMode("recruiter");
     setToken("");
   }
 
-  if (!token) return <LoginScreen onLogin={login} busy={busy} error={error} />;
-  return (
-    <PortalErrorBoundary>
-      <PortalApp token={token} onLogout={logout} />
-    </PortalErrorBoundary>
-  );
+  if (!token) return <LoginScreen onRecruiterLogin={loginRecruiter} onClientLogin={loginClientUser} busy={busy} error={error} />;
+  return authMode === "client"
+    ? <PortalErrorBoundary><ClientPortalApp token={token} onLogout={logout} /></PortalErrorBoundary>
+    : <PortalErrorBoundary><PortalApp token={token} onLogout={logout} /></PortalErrorBoundary>;
 }
