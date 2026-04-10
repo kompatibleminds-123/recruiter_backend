@@ -2549,6 +2549,9 @@ function PortalApp({ token, onLogout }) {
         try {
           const params = new URLSearchParams();
           if (item.candidate_id) params.set("candidate_id", String(item.candidate_id));
+          if (item.phone) params.set("candidate_phone", String(item.phone));
+          if (item.email) params.set("candidate_email", String(item.email));
+          if (item.jd_title) params.set("jd_title", String(item.jd_title));
           if (item.cv_provider) params.set("cv_provider", String(item.cv_provider));
           if (item.cv_key) params.set("cv_key", String(item.cv_key));
           if (item.cv_url) params.set("cv_url", String(item.cv_url));

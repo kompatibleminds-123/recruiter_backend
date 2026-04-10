@@ -1060,6 +1060,34 @@ function normalizePhoneDigits(value) {
   return String(value || "").replace(/[^\d]/g, "");
 }
 
+function findBestCandidateByIdentity(candidates = [], criteria = {}) {
+  const targetId = String(criteria.candidateId || "").trim();
+  const targetEmail = String(criteria.email || "").trim().toLowerCase();
+  const targetPhone = normalizePhoneDigits(criteria.phone || "");
+  const targetName = String(criteria.name || "").trim().toLowerCase();
+  const targetJd = String(criteria.jdTitle || "").trim().toLowerCase();
+  let best = null;
+  let bestScore = -1;
+  for (const candidate of Array.isArray(candidates) ? candidates : []) {
+    let score = 0;
+    const candidateId = String(candidate?.id || "").trim();
+    const candidateEmail = String(candidate?.email || "").trim().toLowerCase();
+    const candidatePhone = normalizePhoneDigits(candidate?.phone || "");
+    const candidateName = String(candidate?.name || "").trim().toLowerCase();
+    const candidateJd = String(candidate?.jd_title || candidate?.jdTitle || "").trim().toLowerCase();
+    if (targetId && candidateId && targetId === candidateId) score += 200;
+    if (targetEmail && candidateEmail && targetEmail === candidateEmail) score += 120;
+    if (targetPhone && candidatePhone && targetPhone === candidatePhone) score += 120;
+    if (targetName && candidateName && targetName === candidateName) score += 70;
+    if (targetJd && candidateJd && targetJd === candidateJd) score += 20;
+    if (score > bestScore) {
+      best = candidate;
+      bestScore = score;
+    }
+  }
+  return bestScore > 0 ? best : null;
+}
+
 function pickBestCandidateForAssessment(assessment = {}, candidates = []) {
   const exactCandidateId = String(assessment?.candidateId || assessment?.candidate_id || "").trim();
   if (exactCandidateId) {
@@ -3623,14 +3651,32 @@ const server = http.createServer(async (req, res) => {
   if (req.method === "GET" && requestUrl.pathname === "/company/share-cv-link") {
     try {
       const actor = await requireSessionUser(getBearerToken(req));
-      const fallbackFileRef = inferStoredFileRefFromUrl(actor, requestUrl);
-      const fileProvider = String(requestUrl.searchParams.get("cv_provider") || fallbackFileRef?.provider || "").trim();
-      const fileKey = String(requestUrl.searchParams.get("cv_key") || fallbackFileRef?.key || "").trim();
-      const fileUrl = String(requestUrl.searchParams.get("cv_url") || fallbackFileRef?.url || "").trim();
-      const filename = String(requestUrl.searchParams.get("cv_filename") || fallbackFileRef?.filename || "resume.pdf").trim();
-      const mimeType = String(requestUrl.searchParams.get("cv_mime_type") || fallbackFileRef?.mimeType || "application/octet-stream").trim();
       const candidateId = String(requestUrl.searchParams.get("candidate_id") || "").trim();
       const candidateName = String(requestUrl.searchParams.get("candidate_name") || "").trim();
+      const candidateEmail = String(requestUrl.searchParams.get("candidate_email") || "").trim();
+      const candidatePhone = String(requestUrl.searchParams.get("candidate_phone") || "").trim();
+      const candidateJdTitle = String(requestUrl.searchParams.get("jd_title") || "").trim();
+      const fallbackFileRef = inferStoredFileRefFromUrl(actor, requestUrl);
+      let matchedCandidate = null;
+      if (!fallbackFileRef) {
+        const candidatePool = await listCandidatesForUser(actor, { limit: 5000 });
+        matchedCandidate = findBestCandidateByIdentity(candidatePool, {
+          candidateId,
+          email: candidateEmail,
+          phone: candidatePhone,
+          name: candidateName,
+          jdTitle: candidateJdTitle
+        });
+      }
+      const matchedMeta = decodeApplicantMetadata(matchedCandidate || {});
+      const matchedStoredFile = matchedMeta?.cvAnalysisCache?.storedFile && typeof matchedMeta.cvAnalysisCache.storedFile === "object"
+        ? matchedMeta.cvAnalysisCache.storedFile
+        : null;
+      const fileProvider = String(requestUrl.searchParams.get("cv_provider") || matchedMeta.fileProvider || matchedStoredFile?.provider || fallbackFileRef?.provider || "").trim();
+      const fileKey = String(requestUrl.searchParams.get("cv_key") || matchedMeta.fileKey || matchedStoredFile?.key || fallbackFileRef?.key || "").trim();
+      const fileUrl = String(requestUrl.searchParams.get("cv_url") || matchedMeta.fileUrl || matchedStoredFile?.url || fallbackFileRef?.url || "").trim();
+      const filename = String(requestUrl.searchParams.get("cv_filename") || matchedMeta.filename || matchedStoredFile?.filename || fallbackFileRef?.filename || "resume.pdf").trim();
+      const mimeType = String(requestUrl.searchParams.get("cv_mime_type") || matchedMeta.mimeType || matchedStoredFile?.mimeType || fallbackFileRef?.mimeType || "application/octet-stream").trim();
       if (!fileProvider && !fileKey && !fileUrl) {
         throw new Error("CV file not available for sharing.");
       }
@@ -3638,8 +3684,8 @@ const server = http.createServer(async (req, res) => {
       const token = createSignedCvShareToken({
         type: "shared_cv",
         companyId: actor.companyId,
-        candidateId,
-        candidateName,
+        candidateId: String(matchedCandidate?.id || candidateId || "").trim(),
+        candidateName: String(matchedCandidate?.name || candidateName || "").trim(),
         fileProvider,
         fileKey,
         fileUrl,
