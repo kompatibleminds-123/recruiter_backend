@@ -157,6 +157,15 @@ const CLIENT_PORTAL_METRICS = [
   ["interview_dropout", "Interview Dropout"]
 ];
 
+const CLIENT_PORTAL_STATUS_LABELS = {
+  to_be_reviewed: "Under Review",
+  in_interview_stage: "Under Interview",
+  rejected: "Rejected",
+  duplicates: "Duplicates",
+  put_on_hold: "On Hold",
+  interview_dropout: "Interview Dropout"
+};
+
 class PortalErrorBoundary extends React.Component {
   constructor(props) {
     super(props);
@@ -2129,6 +2138,35 @@ function ClientFeedbackModal({ open, item, onClose, onSave }) {
   );
 }
 
+function ClientPortalPieCard({ title, total, rows }) {
+  const safeRows = (rows || []).filter((row) => Number(row.count || 0) > 0);
+  const denominator = Math.max(1, Number(total || safeRows.reduce((sum, row) => sum + Number(row.count || 0), 0)));
+  const colors = ["#a86f0d", "#163b6d", "#2f855a", "#b45309", "#9b2c2c", "#64748b", "#7c3aed"];
+  let cursor = 0;
+  const gradient = safeRows.length
+    ? safeRows.map((row, index) => {
+      const start = cursor;
+      cursor += (Number(row.count || 0) / denominator) * 100;
+      return `${colors[index % colors.length]} ${start}% ${cursor}%`;
+    }).join(", ")
+    : "#e8edf5 0% 100%";
+  return (
+    <article className="client-pie-card">
+      <div className="client-pie-card__chart" style={{ background: `conic-gradient(${gradient})` }}>
+        <span>{Number(total || 0)}</span>
+      </div>
+      <div>
+        <div className="feedback-preview__label">{title}</div>
+        <div className="client-pie-card__legend">
+          {safeRows.length ? safeRows.map((row, index) => (
+            <span key={row.label}><i style={{ background: colors[index % colors.length] }} />{row.label}: {row.count}</span>
+          )) : <span>No profiles yet</span>}
+        </div>
+      </div>
+    </article>
+  );
+}
+
 function DrilldownModal({ open, title, items, onClose, onOpenCv, onOpenDraft, onOpenAssessment, onAddFeedback }) {
   if (!open) return null;
   return (
@@ -2179,23 +2217,21 @@ function DrilldownModal({ open, title, items, onClose, onOpenCv, onOpenDraft, on
 function ClientProfileModal({ open, item, onClose }) {
   if (!open || !item) return null;
   const assessment = item.raw?.assessment || item;
+  const otherPointers = String(assessment.otherPointers || item.otherPointers || item.raw?.candidate?.other_pointers || "").trim();
   return (
     <div className="overlay" onClick={onClose}>
       <div className="overlay-card overlay-card--wide" onClick={(e) => e.stopPropagation()}>
         <h3>{assessment.candidateName || item.candidateName || "Candidate"}</h3>
         <p className="muted">{[assessment.jdTitle || item.position || item.role || "", assessment.clientName || item.clientName || "", assessment.currentCompany || item.company || ""].filter(Boolean).join(" | ")}</p>
         <div className="info-grid">
-          {[["Status", assessment.candidateStatus || "-"],["Pipeline", assessment.pipelineStage || "-"],["Experience", assessment.totalExperience || item.totalExperience || "-"],["Current designation", assessment.currentDesignation || item.role || "-"],["Location", assessment.location || item.location || "-"],["Notice period", assessment.noticePeriod || item.noticePeriod || "-"],["Current CTC", assessment.currentCtc || item.currentCtc || "-"],["Expected CTC", assessment.expectedCtc || item.expectedCtc || "-"]].map(([label, value]) => (
+          {[["Current Status", assessment.candidateStatus || "-"],["Experience", assessment.totalExperience || item.totalExperience || "-"],["Current company", assessment.currentCompany || item.company || "-"],["Current Designation", assessment.currentDesignation || item.role || "-"],["Location", assessment.location || item.location || "-"],["Notice Period", assessment.noticePeriod || item.noticePeriod || "-"],["Current CTC", assessment.currentCtc || item.currentCtc || "-"],["Expected CTC", assessment.expectedCtc || item.expectedCtc || "-"],["Offer in Hand", assessment.offerInHand || assessment.offerAmount || item.offerInHand || "-"],["LWD / DOJ", assessment.lwdOrDoj || assessment.offerDoj || item.lwdOrDoj || "-"]].filter(([, value]) => value && value !== "-").map(([label, value]) => (
             <div className="info-card" key={label}>
               <div className="info-label">{label}</div>
               <div className="info-value">{value || "-"}</div>
             </div>
           ))}
         </div>
-        <div className="form-grid">
-          <label className="full"><span>Recruiter summary</span><textarea readOnly value={assessment.otherPointers || assessment.recruiterNotes || item.notesText || ""} /></label>
-          <label className="full"><span>Assessment notes</span><textarea readOnly value={assessment.callbackNotes || ""} /></label>
-        </div>
+        {otherPointers ? <div className="candidate-snippet"><strong>Other Pointers</strong>{`\n${otherPointers}`}</div> : null}
         <div className="button-row">
           <button className="ghost-btn" onClick={onClose}>Close</button>
         </div>
@@ -6285,6 +6321,8 @@ function ClientPortalApp({ token, onLogout }) {
   const positionRows = (summary.byClientPosition || []).filter((row) => !filters.positionLabel || String(row.positionLabel || "") === String(filters.positionLabel || ""));
   const selectedPosition = (summary.byClientPosition || []).find((row) => String(row.positionLabel || "") === String(filters.positionLabel || "")) || null;
   const positionOptions = Array.from(new Set((summary.byClientPosition || []).map((row) => row.positionLabel).filter(Boolean)));
+  const rolePieRows = (summary.byClientPosition || []).map((row) => ({ label: row.positionLabel || "Unassigned", count: row.metrics?.total_shared || 0 }));
+  const statusPieRows = (summary.byStatus || []).map((row) => ({ label: CLIENT_PORTAL_STATUS_LABELS[row.label] || row.label, count: row.count || 0 }));
 
   async function applyFilters() {
     try {
@@ -6328,14 +6366,14 @@ function ClientPortalApp({ token, onLogout }) {
 
   return (
     <div className="app-shell app-shell--client">
-      <main className="content">
-        <header className="workspace-header">
+      <main className="content client-portal-content">
+        <header className="workspace-header client-portal-header">
           <div>
             <div className="section-kicker">{clientUser?.companyName || "Client Portal"}</div>
             <h1>{clientName || "Client Hiring Portal"}</h1>
           </div>
-          <div className="button-row tight">
-            <div className="muted">{clientUser?.username ? `Username: ${clientUser.username}` : ""}</div>
+          <div className="client-user-pill">
+            {clientUser?.username ? <span>{clientUser.username}</span> : null}
             <button className="ghost-btn" onClick={onLogout}>Logout</button>
           </div>
         </header>
@@ -6353,6 +6391,10 @@ function ClientPortalApp({ token, onLogout }) {
           </Section>
 
           <Section kicker="Overall Recruitment Summary" title={clientName || "Client"}>
+            <div className="client-pie-grid">
+              <ClientPortalPieCard title="Shared by role" total={overall.total_shared || 0} rows={rolePieRows} />
+              <ClientPortalPieCard title="Status split" total={overall.total_shared || 0} rows={statusPieRows} />
+            </div>
             <div className="metric-grid dashboard-metric-grid client-portal-metric-grid">
               {CLIENT_PORTAL_METRICS.map(([key, label]) => (
                 <button key={key} className="metric-card metric-card--button client-portal-metric-card" onClick={() => void openDrilldown({ title: `${clientName} | ${label}`, metric: key, groupType: "client" })}>

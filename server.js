@@ -1108,6 +1108,7 @@ function buildClientPortalSummary({ candidates = [], assessments = [], jobs = []
   const overall = createClientPortalBucket();
   const byClient = new Map();
   const byClientPosition = new Map();
+  const byStatus = new Map();
   const universe = buildCandidateSearchUniverse(candidates, assessments, jobs).filter((item) => item.sourceType !== "assessment_only");
   const dateRange = { from: dateFrom, to: dateTo };
 
@@ -1116,6 +1117,8 @@ function buildClientPortalSummary({ candidates = [], assessments = [], jobs = []
     if (clientFilter && clientLabel !== clientFilter) continue;
     const contributes = addClientPortalMetrics(overall, item, dateRange);
     if (!contributes) continue;
+    const statusBucket = getClientPortalLifecycleBucket(item);
+    byStatus.set(statusBucket, Number(byStatus.get(statusBucket) || 0) + 1);
     if (!byClient.has(clientLabel)) byClient.set(clientLabel, createClientPortalBucket());
     addClientPortalMetrics(byClient.get(clientLabel), item, dateRange);
     const positionLabel = String(item?.position || item?.jdTitle || item?.role || "Unassigned").trim() || "Unassigned";
@@ -1132,6 +1135,9 @@ function buildClientPortalSummary({ candidates = [], assessments = [], jobs = []
     byClientPosition: Array.from(byClientPosition.values()).sort((a, b) =>
       `${a.clientLabel} ${a.positionLabel}`.localeCompare(`${b.clientLabel} ${b.positionLabel}`)
     ),
+    byStatus: Array.from(byStatus.entries())
+      .map(([label, count]) => ({ label, count }))
+      .sort((a, b) => String(a.label).localeCompare(String(b.label))),
     dateRange: {
       from: String(dateFrom || "").trim(),
       to: String(dateTo || "").trim()
