@@ -1163,6 +1163,15 @@ function escapeHtml(value) {
     .replace(/'/g, "&#39;");
 }
 
+function sanitizeClientShareHtml(value) {
+  return String(value || "")
+    .replace(/<script[\s\S]*?>[\s\S]*?<\/script>/gi, "")
+    .replace(/\son\w+="[^"]*"/gi, "")
+    .replace(/\son\w+='[^']*'/gi, "")
+    .replace(/\s(href|src)="javascript:[^"]*"/gi, "")
+    .replace(/\s(href|src)='javascript:[^']*'/gi, "");
+}
+
 function getCapturedOutcome(candidate, assessment) {
   return String(candidate?.last_contact_outcome || "No outcome").trim();
 }
@@ -2357,7 +2366,7 @@ function PortalApp({ token, onLogout }) {
     capturedBy: [],
     sources: [],
     outcomes: [],
-    activeStates: ["active"]
+    activeStates: []
   });
   const [applicantFilters, setApplicantFilters] = useState({
     q: "",
@@ -2385,11 +2394,14 @@ function PortalApp({ token, onLogout }) {
   const [candidateStructuredFilters, setCandidateStructuredFilters] = useState(EMPTY_CANDIDATE_STRUCTURED_FILTERS);
   const [clientShareDraft, setClientShareDraft] = useState({
     hrName: "",
+    recruiterName: "",
     recipientEmail: "",
     clientLabel: "",
     targetRole: "",
     presetId: "client_submission",
-    extraMessage: ""
+    introText: "",
+    extraMessage: "",
+    signatureHtml: ""
   });
   const [selectedAssessmentIds, setSelectedAssessmentIds] = useState([]);
   const [clientShareCvLinks, setClientShareCvLinks] = useState({});
@@ -4449,9 +4461,19 @@ function PortalApp({ token, onLogout }) {
     const hrName = String(clientShareDraft.hrName || "").trim();
     const clientLabel = String(clientShareDraft.clientLabel || "").trim();
     const targetRole = String(clientShareDraft.targetRole || "").trim();
-    const recruiterName = String(state.user?.name || "Recruiter").trim();
+    const recruiterName = String(clientShareDraft.recruiterName || state.user?.name || "Recruiter").trim();
     const companyName = String(state.user?.companyName || state.user?.company_name || "RecruitDesk").trim();
     const roleLine = [targetRole, clientLabel].filter(Boolean).join(" for ");
+    const introText = String(clientShareDraft.introText || "").trim()
+      || [
+        `Hello ${hrName || "Team"},`,
+        "",
+        "Greetings !!",
+        "",
+        `This is ${recruiterName} from ${companyName}.`,
+        `PFA the profiles${roleLine ? ` for ${roleLine}` : ""}.`,
+        "Kindly review and share your feedback."
+      ].join("\n");
     const presetColumns = getClientSharePresetColumns();
     const rows = getClientShareRows();
     const profileLines = rows.flatMap((item, index) => {
@@ -4469,17 +4491,12 @@ function PortalApp({ token, onLogout }) {
       ];
     });
     return [
-      `Hello ${hrName || "Team"},`,
-      "",
-      "Greetings !!",
-      "",
-      `This is ${recruiterName} from ${companyName}.`,
-      `PFA the profiles${roleLine ? ` for ${roleLine}` : ""}.`,
-      "Kindly review and share your feedback.",
+      introText,
       `${getClientShareRows().length} selected profile(s) are listed below.`,
       "",
       ...profileLines,
-      String(clientShareDraft.extraMessage || "").trim()
+      String(clientShareDraft.extraMessage || "").trim(),
+      String(clientShareDraft.signatureHtml || "").replace(/<[^>]+>/g, "").trim()
     ].filter((line, index, array) => line || (index > 0 && array[index - 1] !== "")).join("\n");
   }
 
@@ -4487,7 +4504,7 @@ function PortalApp({ token, onLogout }) {
     const hrName = String(clientShareDraft.hrName || "").trim();
     const clientLabel = String(clientShareDraft.clientLabel || "").trim();
     const targetRole = String(clientShareDraft.targetRole || "").trim();
-    const recruiterName = String(state.user?.name || "Recruiter").trim();
+    const recruiterName = String(clientShareDraft.recruiterName || state.user?.name || "Recruiter").trim();
     const companyName = String(state.user?.companyName || state.user?.company_name || "RecruitDesk").trim();
     const roleLine = [targetRole, clientLabel].filter(Boolean).join(" for ");
     const rows = getClientShareRows();
@@ -4508,13 +4525,21 @@ function PortalApp({ token, onLogout }) {
       return `<tr>${cells}<td style="border:1px solid #d8dee8;padding:10px 12px;vertical-align:top;font-size:13px;line-height:1.45;">${cvCell}</td></tr>`;
     }).join("");
     const extraMessage = String(clientShareDraft.extraMessage || "").trim();
+    const introText = String(clientShareDraft.introText || "").trim()
+      || [
+        `Hello ${hrName || "Team"},`,
+        "",
+        "Greetings !!",
+        "",
+        `This is ${recruiterName} from ${companyName}.`,
+        `PFA the profiles${roleLine ? ` for ${roleLine}` : ""}.`,
+        "Kindly review and share your feedback."
+      ].join("\n");
+    const introHtml = escapeHtml(introText).replace(/\n/g, "<br/>");
+    const signatureHtml = sanitizeClientShareHtml(clientShareDraft.signatureHtml);
     return `
       <div style="font-family:Arial, sans-serif;color:#1f2a44;line-height:1.6;">
-        <p>Hello ${escapeHtml(hrName || "Team")},</p>
-        <p>Greetings !!</p>
-        <p>This is ${escapeHtml(recruiterName)} from ${escapeHtml(companyName)}.<br/>
-        PFA the profiles${roleLine ? ` for ${escapeHtml(roleLine)}` : ""}.<br/>
-        Kindly review and share your feedback.</p>
+        <p>${introHtml}</p>
         <p>${rows.length} selected profile(s) are listed below.</p>
         <table style="border-collapse:collapse;width:100%;margin-top:12px;">
           <thead>
@@ -4525,6 +4550,7 @@ function PortalApp({ token, onLogout }) {
           </tbody>
         </table>
         ${extraMessage ? `<p style="margin-top:16px;">${escapeHtml(extraMessage).replace(/\n/g, "<br/>")}</p>` : ""}
+        ${signatureHtml ? `<div style="margin-top:18px;">${signatureHtml}</div>` : ""}
       </div>
     `.trim();
   }
@@ -5574,7 +5600,6 @@ function PortalApp({ token, onLogout }) {
                   <MultiSelectDropdown label="Captured by" options={capturedCandidateOptions.capturedBy} selected={candidateFilters.capturedBy} onToggle={(value) => setCandidateFilters((current) => ({ ...current, capturedBy: value === "__all__" ? [] : current.capturedBy.includes(value) ? current.capturedBy.filter((item) => item !== value) : [...current.capturedBy, value] }))} />
                   <MultiSelectDropdown label="Sources" options={capturedCandidateOptions.sources} selected={candidateFilters.sources} onToggle={(value) => setCandidateFilters((current) => ({ ...current, sources: value === "__all__" ? [] : current.sources.includes(value) ? current.sources.filter((item) => item !== value) : [...current.sources, value] }))} />
                   <MultiSelectDropdown label="Outcome" options={capturedCandidateOptions.outcomes} selected={candidateFilters.outcomes} onToggle={(value) => setCandidateFilters((current) => ({ ...current, outcomes: value === "__all__" ? [] : current.outcomes.includes(value) ? current.outcomes.filter((item) => item !== value) : [...current.outcomes, value] }))} />
-                  <MultiSelectDropdown label="State" options={["active", "inactive"]} selected={candidateFilters.activeStates} onToggle={(value) => setCandidateFilters((current) => ({ ...current, activeStates: value === "__all__" ? [] : current.activeStates.includes(value) ? current.activeStates.filter((item) => item !== value) : [...current.activeStates, value] }))} />
                 </div>
                 <div className="button-row">
                   <button onClick={() => void copyCapturedExcel()}>Copy Excel</button>
@@ -5798,14 +5823,17 @@ function PortalApp({ token, onLogout }) {
                     <span className="field-help">Admin defines these presets; recruiters can choose the right client format for this share.</span>
                   </label>
                   <label><span>HR name</span><input value={clientShareDraft.hrName} onChange={(e) => setClientShareDraft((current) => ({ ...current, hrName: e.target.value }))} placeholder="Attentive HR Team" /></label>
+                  <label><span>Recruiter name</span><input value={clientShareDraft.recruiterName} onChange={(e) => setClientShareDraft((current) => ({ ...current, recruiterName: e.target.value }))} placeholder={state.user?.name || "Ankit Garg"} /></label>
                   <label><span>Recipient email</span><input type="email" value={clientShareDraft.recipientEmail} onChange={(e) => setClientShareDraft((current) => ({ ...current, recipientEmail: e.target.value }))} placeholder="hr@client.com" /></label>
                   <label><span>Client</span><input value={clientShareDraft.clientLabel} onChange={(e) => setClientShareDraft((current) => ({ ...current, clientLabel: e.target.value }))} placeholder="Attentive" /></label>
                   <label><span>Role / requirement</span><input value={clientShareDraft.targetRole} onChange={(e) => setClientShareDraft((current) => ({ ...current, targetRole: e.target.value }))} placeholder="AE / Account Executive" /></label>
+                  <label className="full"><span>Email intro</span><textarea value={clientShareDraft.introText || ""} onChange={(e) => setClientShareDraft((current) => ({ ...current, introText: e.target.value }))} placeholder={`Hello ${clientShareDraft.hrName || "Team"},\n\nGreetings !!\n\nThis is ${clientShareDraft.recruiterName || state.user?.name || "Recruiter"} from ${state.user?.companyName || state.user?.company_name || "RecruitDesk"}.\nPFA the profiles.\nKindly review and share your feedback.`} /></label>
                   <label className="full">
                     <span>Selected preset columns</span>
                     <textarea value={(copySettings.customExportPresets || []).find((preset) => String(preset.id) === String(clientShareDraft.presetId))?.columns || copySettings.exportPresetColumns?.[clientShareDraft.presetId] || DEFAULT_COPY_SETTINGS.exportPresetColumns?.[clientShareDraft.presetId] || ""} readOnly />
                   </label>
                   <label className="full"><span>Extra message</span><textarea value={clientShareDraft.extraMessage} onChange={(e) => setClientShareDraft((current) => ({ ...current, extraMessage: e.target.value }))} placeholder="Optional note for the client." /></label>
+                  <label className="full"><span>Signature HTML</span><textarea value={clientShareDraft.signatureHtml || ""} onChange={(e) => setClientShareDraft((current) => ({ ...current, signatureHtml: e.target.value }))} placeholder={'Regards,<br/>Ankit Garg<br/><a href="https://kompatibleminds.com">Kompatible Minds</a>'} /></label>
                   <label className="full">
                     <span>Email preview</span>
                     <div className="client-share-preview" dangerouslySetInnerHTML={{ __html: buildClientShareHtml() }} />
@@ -6083,7 +6111,6 @@ function PortalApp({ token, onLogout }) {
                   <label className="full"><span>Must-have skills</span><textarea value={jobDraft.mustHaveSkills} onChange={(e) => setJobDraft((c) => ({ ...c, mustHaveSkills: e.target.value }))} /></label>
                   <label className="full"><span>Red flags</span><textarea value={jobDraft.redFlags} onChange={(e) => setJobDraft((c) => ({ ...c, redFlags: e.target.value }))} /></label>
                   <label className="full"><span>Standard screening questions</span><textarea value={jobDraft.standardQuestions} onChange={(e) => setJobDraft((c) => ({ ...c, standardQuestions: e.target.value }))} /></label>
-                  <label className="full"><span>Recruiter notes</span><textarea value={jobDraft.recruiterNotes} onChange={(e) => setJobDraft((c) => ({ ...c, recruiterNotes: e.target.value }))} /></label>
                 </div>
 
                 <div className="shortcut-builder">
