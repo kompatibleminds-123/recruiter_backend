@@ -2190,6 +2190,7 @@ function PortalApp({ token, onLogout }) {
     clientPortal: null,
     applicants: [],
     candidates: [],
+    databaseCandidates: [],
     assessments: [],
     users: [],
     intake: null,
@@ -2432,7 +2433,7 @@ function PortalApp({ token, onLogout }) {
   async function loadWorkspace() {
     await api("/company/candidates/backfill-assessment-links", token, { method: "POST" }).catch(() => null);
     await api("/company/candidates/backfill-skills", token, { method: "POST" }).catch(() => null);
-    const [userResult, dashboardResult, clientPortalResult, applicantsResult, intakeResult, jobsResult, usersResult, clientUsersResult, candidatesResult, assessmentsResult, sharedPresetResult] = await Promise.all([
+    const [userResult, dashboardResult, clientPortalResult, applicantsResult, intakeResult, jobsResult, usersResult, clientUsersResult, candidatesResult, databaseCandidatesResult, assessmentsResult, sharedPresetResult] = await Promise.all([
       api("/auth/me", token),
       api("/company/dashboard", token),
       api("/company/client-portal", token).catch(() => ({ summary: { byClient: [], byClientPosition: [] }, availableClients: [] })),
@@ -2442,6 +2443,7 @@ function PortalApp({ token, onLogout }) {
       api("/company/users", token).catch(() => ({ users: [] })),
       api("/company/client-users", token).catch(() => ({ clientUsers: [] })),
       api("/candidates", token).catch(() => []),
+      api("/candidates?scope=company&limit=5000", token).catch(() => []),
       api("/company/assessments", token).catch(() => ({ assessments: [] })),
       api("/company/shared-export-presets", token).catch(() => null)
     ]);
@@ -2454,6 +2456,7 @@ function PortalApp({ token, onLogout }) {
       jobs: jobsResult.jobs || [],
       users: usersResult.users || [],
       candidates: Array.isArray(candidatesResult) ? candidatesResult : [],
+      databaseCandidates: Array.isArray(databaseCandidatesResult) ? databaseCandidatesResult : Array.isArray(candidatesResult) ? candidatesResult : [],
       assessments: assessmentsResult.assessments || []
     });
     setClientUsers(clientUsersResult.clientUsers || []);
@@ -2763,8 +2766,9 @@ function PortalApp({ token, onLogout }) {
     void loadCvLinks();
   }, [selectedAssessmentRows, token]);
   const candidateUniverseAll = useMemo(() => {
-    const linkedAssessmentIds = new Set((state.candidates || []).map((item) => String(item.assessment_id || "").trim()).filter(Boolean));
-    const candidateNames = new Set((state.candidates || []).map((item) => String(item.name || "").trim().toLowerCase()).filter(Boolean));
+    const databaseRows = Array.isArray(state.databaseCandidates) && state.databaseCandidates.length ? state.databaseCandidates : (state.candidates || []);
+    const linkedAssessmentIds = new Set(databaseRows.map((item) => String(item.assessment_id || "").trim()).filter(Boolean));
+    const candidateNames = new Set(databaseRows.map((item) => String(item.name || "").trim().toLowerCase()).filter(Boolean));
     const assessmentOnlyItems = (state.assessments || [])
       .filter((item) => {
         const assessmentId = String(item.id || "").trim();
@@ -2794,8 +2798,8 @@ function PortalApp({ token, onLogout }) {
         recruiter_context_notes: item.recruiterNotes || "",
         other_pointers: item.otherPointers || ""
       }));
-    return [...(state.candidates || []), ...assessmentOnlyItems];
-  }, [state.assessments, state.candidates]);
+    return [...databaseRows, ...assessmentOnlyItems];
+  }, [state.assessments, state.candidates, state.databaseCandidates]);
   const candidateSearchOptions = useMemo(() => {
     const recruiters = new Set();
     const genders = new Set();

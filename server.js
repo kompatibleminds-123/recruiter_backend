@@ -4067,7 +4067,7 @@ const server = http.createServer(async (req, res) => {
       if (queryDateTo && !filters.dateTo) filters.dateTo = queryDateTo;
       if (clientFilter && !filters.client) filters.client = clientFilter;
       const [candidates, assessments, jobs] = await Promise.all([
-        listCandidatesForUser(user, { limit: 5000 }),
+        listCandidatesForUser(user, { limit: 5000, scope: "company" }),
         listAssessments({ actorUserId: user.id, companyId: user.companyId }),
         listCompanyJobs(user.companyId)
       ]);
@@ -4430,7 +4430,8 @@ const server = http.createServer(async (req, res) => {
       const listOptions = {
         limit: Number(requestUrl.searchParams.get("limit") || 100),
         q: String(requestUrl.searchParams.get("q") || "").trim(),
-        id: String(requestUrl.searchParams.get("id") || "").trim()
+        id: String(requestUrl.searchParams.get("id") || "").trim(),
+        scope: String(requestUrl.searchParams.get("scope") || "").trim()
       };
       const result = await listCandidatesForUser(sessionUser, listOptions);
       sendJson(res, 200, { ok: true, result });

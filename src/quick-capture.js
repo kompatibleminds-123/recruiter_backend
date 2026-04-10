@@ -607,9 +607,14 @@ async function listCandidates(options = 100) {
 async function listCandidatesForUser(user, options = 100) {
   const { limit, q } = normalizeListOptions(options);
   const id = String(options?.id || "").trim();
+  const companyWide = options?.companyWide === true || options?.scope === "company";
   const maxRows = limit;
   if (!user?.id) {
     return listCandidates({ limit: maxRows, q, id, companyId: normalizeCompanyId(user?.companyId) });
+  }
+
+  if (companyWide) {
+    return listCandidates({ limit: maxRows, q, id, companyId: normalizeCompanyId(user.companyId) });
   }
 
   if (user.role === "admin") {
