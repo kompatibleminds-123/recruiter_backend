@@ -2291,6 +2291,17 @@ function PortalApp({ token, onLogout }) {
       return DEFAULT_COPY_SETTINGS;
     }
   });
+  const exportPresetOptions = useMemo(() => [
+    { id: "compact_recruiter", label: copySettings.exportPresetLabels?.compact_recruiter || "Compact recruiter" },
+    { id: "client_tracker", label: copySettings.exportPresetLabels?.client_tracker || "Client tracker" },
+    { id: "attentive_tracker", label: copySettings.exportPresetLabels?.attentive_tracker || "Attentive tracker" },
+    { id: "client_submission", label: copySettings.exportPresetLabels?.client_submission || "Client submission" },
+    { id: "screening_focus", label: copySettings.exportPresetLabels?.screening_focus || "Screening focus" },
+    ...((copySettings.customExportPresets || []).map((preset) => ({
+      id: preset.id,
+      label: preset.label || preset.id
+    })))
+  ].filter((preset) => String(preset.id || "").trim()), [copySettings]);
   const [newPresetDraft, setNewPresetDraft] = useState({ label: "", columns: "" });
   const [teamUserDraft, setTeamUserDraft] = useState({ name: "", email: "", password: "", role: "recruiter" });
   const [teamPasswordDrafts, setTeamPasswordDrafts] = useState({});
@@ -2485,6 +2496,14 @@ function PortalApp({ token, onLogout }) {
       // Ignore local storage errors in restricted browsers.
     }
   }, [copySettings]);
+
+  useEffect(() => {
+    if (!exportPresetOptions.length) return;
+    const selectedPresetExists = exportPresetOptions.some((preset) => String(preset.id) === String(clientShareDraft.presetId));
+    if (!selectedPresetExists) {
+      setClientShareDraft((current) => ({ ...current, presetId: exportPresetOptions[0].id }));
+    }
+  }, [exportPresetOptions, clientShareDraft.presetId]);
 
   useEffect(() => {
     setQuickUpdateParsedSummary(null);
@@ -5642,7 +5661,7 @@ function PortalApp({ token, onLogout }) {
           <Route path="/client-share" element={
             <div className="page-grid">
               <Section kicker="Client Submission" title="Direct Share with Client">
-                <p className="muted">Prepare a clean email draft for the client using selected assessments only. Select profiles in the Assessments tab first, then copy this draft into your email client.</p>
+                <p className="muted">Prepare a clean email draft for the client using selected assessments only. Select profiles in the Assessments tab first, choose the client preset here, then copy this draft into your email client.</p>
                 {statuses.clientShare ? <div className={`status ${statuses.clientShareKind || ""}`}>{statuses.clientShare}</div> : null}
                 <div className="form-grid two-col">
                   <label>
@@ -5650,17 +5669,13 @@ function PortalApp({ token, onLogout }) {
                     <input value={`${selectedAssessmentRows.length} assessment profile(s)`} readOnly />
                   </label>
                   <label>
-                    <span>Attachment preset</span>
+                    <span>Client share preset</span>
                     <select value={clientShareDraft.presetId} onChange={(e) => setClientShareDraft((current) => ({ ...current, presetId: e.target.value }))}>
-                      <option value="compact_recruiter">{copySettings.exportPresetLabels?.compact_recruiter || "Compact recruiter"}</option>
-                      <option value="client_tracker">{copySettings.exportPresetLabels?.client_tracker || "Client tracker"}</option>
-                      <option value="attentive_tracker">{copySettings.exportPresetLabels?.attentive_tracker || "Attentive tracker"}</option>
-                      <option value="client_submission">{copySettings.exportPresetLabels?.client_submission || "Client submission"}</option>
-                      <option value="screening_focus">{copySettings.exportPresetLabels?.screening_focus || "Screening focus"}</option>
-                      {(copySettings.customExportPresets || []).map((preset) => (
+                      {exportPresetOptions.map((preset) => (
                         <option key={preset.id} value={preset.id}>{preset.label}</option>
                       ))}
                     </select>
+                    <span className="field-help">Admin defines these presets; recruiters can choose the right client format for this share.</span>
                   </label>
                   <label><span>HR name</span><input value={clientShareDraft.hrName} onChange={(e) => setClientShareDraft((current) => ({ ...current, hrName: e.target.value }))} placeholder="Attentive HR Team" /></label>
                   <label><span>Recipient email</span><input type="email" value={clientShareDraft.recipientEmail} onChange={(e) => setClientShareDraft((current) => ({ ...current, recipientEmail: e.target.value }))} placeholder="hr@client.com" /></label>
