@@ -2539,6 +2539,9 @@ function PortalApp({ token, onLogout }) {
   const [quickUpdateCandidateId, setQuickUpdateCandidateId] = useState("");
   const [quickUpdateText, setQuickUpdateText] = useState("");
   const [quickUpdateStatusText, setQuickUpdateStatusText] = useState("");
+  const [quickUpdateAttemptOutcome, setQuickUpdateAttemptOutcome] = useState("");
+  const [quickUpdateAssessmentStatus, setQuickUpdateAssessmentStatus] = useState("");
+  const [quickUpdateStatusAt, setQuickUpdateStatusAt] = useState("");
   const [quickUpdateRecruiterSections, setQuickUpdateRecruiterSections] = useState({
     current_ctc: "",
     expected_ctc: "",
@@ -2739,7 +2742,7 @@ function PortalApp({ token, onLogout }) {
     setQuickUpdateParsedSummary(null);
     setQuickUpdateConflicts([]);
     setQuickUpdateMergedPatch(null);
-  }, [quickUpdateCandidateId, quickUpdateText, quickUpdateStatusText]);
+  }, [quickUpdateCandidateId, quickUpdateText, quickUpdateStatusText, quickUpdateAttemptOutcome, quickUpdateAssessmentStatus, quickUpdateStatusAt]);
 
   useEffect(() => {
     const clients = state.clientPortal?.availableClients || [];
@@ -3285,14 +3288,45 @@ function PortalApp({ token, onLogout }) {
     return map;
   }, [filteredApplicants, state.candidates]);
 
+  const applicantAssessmentMap = useMemo(() => {
+    const map = new Map();
+    filteredApplicants.forEach((item) => {
+      const linkedCandidate = applicantCandidateMap.get(String(item.id)) || null;
+      const applicantId = String(item.id || "").trim();
+      const candidateId = String(linkedCandidate?.id || item.candidateId || item.candidate_id || item.id || "").trim();
+      const applicantName = String(item.candidateName || linkedCandidate?.name || "").trim().toLowerCase();
+      const applicantJd = String(item.jdTitle || item.jd_title || linkedCandidate?.jd_title || "").trim().toLowerCase();
+      const match = (state.assessments || []).find((assessment) => {
+        const assessmentCandidateId = String(assessment.candidateId || assessment.candidate_id || "").trim();
+        if (assessmentCandidateId && (assessmentCandidateId === candidateId || assessmentCandidateId === applicantId)) return true;
+        const sameName = applicantName && String(assessment.candidateName || "").trim().toLowerCase() === applicantName;
+        const sameJd = !applicantJd || String(assessment.jdTitle || assessment.jd_title || "").trim().toLowerCase() === applicantJd;
+        return sameName && sameJd;
+      }) || null;
+      map.set(String(item.id), match);
+    });
+    return map;
+  }, [filteredApplicants, applicantCandidateMap, state.assessments]);
+
   const applicantOptions = useMemo(() => {
     const clients = new Set();
     const jds = new Set();
     const ownedBy = new Set();
     const assignedTo = new Set();
     const outcomes = new Set();
+    const isAdmin = String(state.user?.role || "").toLowerCase() === "admin";
+    if (isAdmin) {
+      (state.users || []).forEach((user) => {
+        const name = String(user?.name || "").trim();
+        if (!name) return;
+        ownedBy.add(name);
+        assignedTo.add(name);
+      });
+    }
     filteredApplicants.forEach((item) => {
       const linkedCandidate = applicantCandidateMap.get(String(item.id)) || null;
+      const linkedAssessment = applicantAssessmentMap.get(String(item.id)) || null;
+      if (linkedCandidate?.used_in_assessment || linkedAssessment) return;
       const clientValue = String(item.clientName || item.client_name || "Unassigned").trim();
       const jdValue = String(item.jdTitle || item.jd_title || "").trim();
       const ownedValue = getApplicantOwnerLabel(item, linkedCandidate);
@@ -3309,16 +3343,18 @@ function PortalApp({ token, onLogout }) {
       jds: Array.from(jds).sort((a, b) => a.localeCompare(b)),
       ownedBy: Array.from(ownedBy).sort((a, b) => a.localeCompare(b)),
       assignedTo: Array.from(assignedTo).sort((a, b) => a.localeCompare(b)),
-      outcomes: APPLIED_OUTCOME_FILTER_ORDER.filter((item) => outcomes.has(item)).concat(
+      outcomes: APPLIED_OUTCOME_FILTER_ORDER.concat(
         Array.from(outcomes).filter((item) => !APPLIED_OUTCOME_FILTER_ORDER.includes(item)).sort((a, b) => a.localeCompare(b))
       )
     };
-  }, [filteredApplicants, applicantCandidateMap]);
+  }, [filteredApplicants, applicantCandidateMap, applicantAssessmentMap, state.user, state.users]);
 
   const visibleApplicants = useMemo(() => {
     const query = String(applicantFilters.q || "").trim().toLowerCase();
     return filteredApplicants.filter((item) => {
       const linkedCandidate = applicantCandidateMap.get(String(item.id)) || null;
+      const linkedAssessment = applicantAssessmentMap.get(String(item.id)) || null;
+      if (linkedCandidate?.used_in_assessment || linkedAssessment) return false;
       const clientValue = String(item.clientName || item.client_name || "Unassigned").trim();
       const jdValue = String(item.jdTitle || item.jd_title || "").trim();
       const ownedValue = getApplicantOwnerLabel(item, linkedCandidate);
@@ -3346,7 +3382,19 @@ function PortalApp({ token, onLogout }) {
       if (applicantFilters.outcomes.length && !applicantFilters.outcomes.includes(outcomeValue)) return false;
       return true;
     });
-  }, [filteredApplicants, applicantFilters, applicantCandidateMap]);
+  }, [filteredApplicants, applicantFilters, applicantCandidateMap, applicantAssessmentMap]);
+  const applicantStats = useMemo(() => {
+    const todayKey = new Date().toISOString().slice(0, 10);
+    const owned = visibleApplicants.filter((item) => getApplicantOwnerLabel(item, applicantCandidateMap.get(String(item.id)) || null) !== "Unassigned").length;
+    const unassigned = visibleApplicants.length - owned;
+    return {
+      today: visibleApplicants.filter((item) => String(item.createdAt || item.created_at || "").slice(0, 10) === todayKey).length,
+      owned,
+      unassigned,
+      manualAssigned: visibleApplicants.filter((item) => getApplicantManualAssigneeLabel(item, applicantCandidateMap.get(String(item.id)) || null)).length,
+      total: visibleApplicants.length
+    };
+  }, [applicantCandidateMap, visibleApplicants]);
 
   const quickUpdateMatches = useMemo(() => {
     const query = String(quickUpdateCandidateQuery || "").trim().toLowerCase();
@@ -3638,34 +3686,36 @@ function PortalApp({ token, onLogout }) {
       return;
     }
     const finalLine = extractLastMeaningfulLine(quickUpdateStatusText);
-    if (!finalLine) {
-      setStatus("quickUpdate", "Type the quick update note first.", "error");
-      return;
-    }
+    const manualOutcome = String(quickUpdateAttemptOutcome || "").trim();
     const inferred = inferAttemptOutcomeAndFollowUp(finalLine);
-    if (!inferred?.outcome) {
-      setStatus("quickUpdate", "Could not understand the update from the last line.", "error");
+    const outcome = manualOutcome || inferred?.outcome || "";
+    const note = finalLine || outcome;
+    const followUpAt = quickUpdateStatusAt || inferred?.followUpAt || "";
+    if (!outcome) {
+      setStatus("quickUpdate", "Select an outcome or type a clear update note.", "error");
       return;
     }
     try {
       await api("/contact-attempts", token, "POST", {
         candidateId: quickUpdateCandidate.id,
-        outcome: inferred.outcome,
-        notes: finalLine,
-        next_follow_up_at: inferred.followUpAt || ""
+        outcome,
+        notes: note,
+        next_follow_up_at: followUpAt || ""
       });
       const candidatePatch = {
-        last_contact_outcome: inferred.outcome || "",
-        last_contact_notes: finalLine,
+        last_contact_outcome: outcome || "",
+        last_contact_notes: note,
         last_contact_at: new Date().toISOString()
       };
-      if (inferred.followUpAt) {
-        candidatePatch.next_follow_up_at = new Date(inferred.followUpAt).toISOString();
-      } else if (inferred.outcome !== "Call later" && inferred.outcome !== "Switch Off") {
+      if (followUpAt) {
+        candidatePatch.next_follow_up_at = new Date(followUpAt).toISOString();
+      } else if (outcome !== "Call later" && outcome !== "Switch Off") {
         candidatePatch.next_follow_up_at = "";
       }
       await patchCandidateQuiet(quickUpdateCandidate.id, candidatePatch);
       setQuickUpdateStatusText("");
+      setQuickUpdateAttemptOutcome("");
+      setQuickUpdateStatusAt("");
       setStatus("quickUpdate", `Quick update applied for ${quickUpdateCandidate.name || "candidate"}.`, "ok");
     } catch (error) {
       setStatus("quickUpdate", String(error?.message || error), "error");
@@ -3678,14 +3728,11 @@ function PortalApp({ token, onLogout }) {
       return;
     }
     const lastLine = extractLastMeaningfulLine(quickUpdateStatusText);
-    if (!lastLine) {
-      setStatus("quickUpdate", "Type the status note first.", "error");
-      return;
-    }
+    const manualStatus = String(quickUpdateAssessmentStatus || "").trim();
     const inferred = inferAssessmentStatusAndSchedule(lastLine);
     const inferredAttempt = inferAttemptOutcomeAndFollowUp(lastLine);
     try {
-      if (!inferred?.candidateStatus && inferredAttempt?.outcome && quickUpdateCandidate?.id) {
+      if (!manualStatus && !inferred?.candidateStatus && inferredAttempt?.outcome && quickUpdateCandidate?.id) {
         await api("/contact-attempts", token, "POST", {
           candidateId: quickUpdateCandidate.id,
           outcome: inferredAttempt.outcome,
@@ -3708,14 +3755,15 @@ function PortalApp({ token, onLogout }) {
         return;
       }
       const fallbackStatus = String(quickUpdateLinkedAssessment?.candidateStatus || "").trim();
-      if (!inferred?.candidateStatus && !fallbackStatus) {
-        setStatus("quickUpdate", "Use a status phrase like L1 aligned, feedback awaited, interview reject, offered, joined, or write a call/follow-up update.", "error");
+      const candidateStatus = manualStatus || inferred.candidateStatus || fallbackStatus;
+      if (!candidateStatus) {
+        setStatus("quickUpdate", "Select an assessment status or write a clear status update note.", "error");
         return;
       }
       await saveAssessmentStatusUpdate(quickUpdateLinkedAssessment, {
-        candidateStatus: inferred.candidateStatus || fallbackStatus,
-        atValue: inferred.atValue || "",
-        notes: lastLine,
+        candidateStatus,
+        atValue: quickUpdateStatusAt || inferred.atValue || "",
+        notes: lastLine || candidateStatus,
         offerAmount: inferred.offerAmount || "",
         expectedDoj: inferred.expectedDoj || "",
         dateOfJoining: inferred.dateOfJoining || ""
@@ -3724,7 +3772,9 @@ function PortalApp({ token, onLogout }) {
         closeModal: false
       });
       setQuickUpdateStatusText("");
-      setStatus("quickUpdate", `Assessment status updated to ${inferred.candidateStatus || fallbackStatus}.`, "ok");
+      setQuickUpdateAssessmentStatus("");
+      setQuickUpdateStatusAt("");
+      setStatus("quickUpdate", `Assessment status updated to ${candidateStatus}.`, "ok");
     } catch (error) {
       setStatus("quickUpdate", String(error?.message || error), "error");
     }
@@ -3957,56 +4007,61 @@ function PortalApp({ token, onLogout }) {
   }
 
   async function createAssessmentFromCandidate(candidateId) {
-    const candidate = (state.candidates || []).find((item) => String(item.id) === String(candidateId));
-    if (!candidate) {
-      setStatus("captured", "Candidate not found for assessment conversion.", "error");
+    const sourceApplicant = (state.applicants || []).find((item) => String(item.id) === String(candidateId)) || null;
+    const statusKey = sourceApplicant ? "applicants" : "captured";
+    const linkedApplicantCandidate = sourceApplicant ? applicantCandidateMap.get(String(sourceApplicant.id)) : null;
+    const candidate = (state.candidates || []).find((item) => String(item.id) === String(candidateId)) || linkedApplicantCandidate;
+    const source = candidate || sourceApplicant;
+    if (!source) {
+      setStatus(statusKey, "Candidate not found for assessment conversion.", "error");
       return;
     }
     const matched = (state.assessments || []).find((item) =>
-      String(item.candidateId || "") === String(candidate.id || "") ||
-      String(item.candidateName || "").trim().toLowerCase() === String(candidate.name || "").trim().toLowerCase()
+      String(item.candidateId || "") === String(candidate?.id || sourceApplicant?.id || "") ||
+      String(item.candidateName || "").trim().toLowerCase() === String(candidate?.name || sourceApplicant?.candidateName || "").trim().toLowerCase()
     );
     if (matched) {
       openSavedAssessment(matched);
       return;
     }
 
-    const cvMeta = decodePortalApplicantMetadata(candidate);
+    const cvMeta = candidate ? decodePortalApplicantMetadata(candidate) : null;
     const candidateCvAnalysis = cvMeta?.cvAnalysisCache?.result
       ? buildInterviewCvAnalysis({
-          currentCompany: candidate.company || "",
-          currentDesignation: candidate.role || "",
-          totalExperience: candidate.experience || "",
-          currentOrgTenure: candidate.current_org_tenure || ""
+          currentCompany: candidate?.company || sourceApplicant?.currentCompany || "",
+          currentDesignation: candidate?.role || sourceApplicant?.currentDesignation || "",
+          totalExperience: candidate?.experience || sourceApplicant?.totalExperience || "",
+          currentOrgTenure: candidate?.current_org_tenure || ""
         }, cvMeta.cvAnalysisCache.result, cvMeta.cvAnalysisCache.storedFile || null)
       : null;
+    const candidateName = candidate?.name || sourceApplicant?.candidateName || "";
     const assessment = {
       id: `assessment-${Date.now()}`,
-      candidateId: String(candidate.id || ""),
-      candidateName: candidate.name || "",
-      phoneNumber: candidate.phone || "",
-      emailId: candidate.email || "",
-      location: candidate.location || "",
-      currentCtc: candidate.current_ctc || "",
-      expectedCtc: candidate.expected_ctc || "",
-      noticePeriod: candidate.notice_period || "",
-      offerInHand: candidate.offer_in_hand || "",
-      lwdOrDoj: candidate.lwd_or_doj || "",
-      currentCompany: candidate.company || "",
-      currentDesignation: candidate.role || "",
-      totalExperience: candidate.experience || "",
-      currentOrgTenure: candidate.current_org_tenure || "",
-      reasonForChange: candidate.reason_of_change || "",
-      clientName: candidate.client_name || "",
-      jdTitle: candidate.jd_title || "",
+      candidateId: String(candidate?.id || sourceApplicant?.id || ""),
+      candidateName,
+      phoneNumber: candidate?.phone || sourceApplicant?.phone || "",
+      emailId: candidate?.email || sourceApplicant?.email || "",
+      location: candidate?.location || sourceApplicant?.location || "",
+      currentCtc: candidate?.current_ctc || sourceApplicant?.currentCtc || "",
+      expectedCtc: candidate?.expected_ctc || sourceApplicant?.expectedCtc || "",
+      noticePeriod: candidate?.notice_period || sourceApplicant?.noticePeriod || "",
+      offerInHand: candidate?.offer_in_hand || "",
+      lwdOrDoj: candidate?.lwd_or_doj || "",
+      currentCompany: candidate?.company || sourceApplicant?.currentCompany || "",
+      currentDesignation: candidate?.role || sourceApplicant?.currentDesignation || "",
+      totalExperience: candidate?.experience || sourceApplicant?.totalExperience || "",
+      currentOrgTenure: candidate?.current_org_tenure || "",
+      reasonForChange: candidate?.reason_of_change || "",
+      clientName: candidate?.client_name || sourceApplicant?.clientName || "",
+      jdTitle: candidate?.jd_title || sourceApplicant?.jdTitle || "",
       pipelineStage: "Submitted",
       candidateStatus: "CV to be shared",
       followUpAt: "",
       interviewAt: "",
-      recruiterNotes: candidate.recruiter_context_notes || "",
-      callbackNotes: candidate.notes || "",
-      otherPointers: candidate.other_pointers || "",
-      tags: Array.isArray(candidate.skills) ? candidate.skills.join(", ") : "",
+      recruiterNotes: candidate?.recruiter_context_notes || sourceApplicant?.screeningAnswers || "",
+      callbackNotes: candidate?.notes || "",
+      otherPointers: candidate?.other_pointers || "",
+      tags: Array.isArray(candidate?.skills) ? candidate.skills.join(", ") : "",
       jdScreeningAnswers: {},
       cvAnalysis: candidateCvAnalysis,
       cvAnalysisApplied: false,
@@ -4021,15 +4076,17 @@ function PortalApp({ token, onLogout }) {
       updatedAt: new Date().toISOString()
     };
 
-    setStatus("captured", "Converting draft into assessment...");
+    setStatus(statusKey, "Converting draft into assessment...");
     const savedAssessment = await api("/company/assessments", token, "POST", { assessment });
-    await api("/candidates/link-assessment", token, "POST", {
-      id: candidate.id,
-      assessmentId: savedAssessment?.id || assessment.id
-    }).catch(() => null);
+    if (candidate?.id) {
+      await api("/candidates/link-assessment", token, "POST", {
+        id: candidate.id,
+        assessmentId: savedAssessment?.id || assessment.id
+      }).catch(() => null);
+    }
     await loadWorkspace();
     navigate("/assessments");
-    setStatus("assessments", `Converted ${candidate.name || "candidate"} into assessment.`, "ok");
+    setStatus("assessments", `Converted ${candidateName || "candidate"} into assessment.`, "ok");
   }
 
   async function saveAssessment() {
@@ -5786,11 +5843,13 @@ function PortalApp({ token, onLogout }) {
                 <label><span>Date to</span><input type="date" value={applicantFilters.dateTo} onChange={(e) => setApplicantFilters((current) => ({ ...current, dateTo: e.target.value }))} /></label>
               </div>
               <div className="metric-grid metric-grid--tight">
-                <div className="metric-card compact-metric"><div className="metric-label">Applied today</div><div className="metric-value">{visibleApplicants.filter((item) => String(item.createdAt || item.created_at || "").slice(0, 10) === new Date().toISOString().slice(0, 10)).length}</div></div>
-                <div className="metric-card compact-metric"><div className="metric-label">Owned</div><div className="metric-value">{visibleApplicants.filter((item) => getApplicantOwnerLabel(item, applicantCandidateMap.get(String(item.id)) || null) !== "Unassigned").length}</div></div>
-                <div className="metric-card compact-metric"><div className="metric-label">Assigned</div><div className="metric-value">{visibleApplicants.filter((item) => getApplicantManualAssigneeLabel(item, applicantCandidateMap.get(String(item.id)) || null)).length}</div></div>
-                <div className="metric-card compact-metric"><div className="metric-label">Total visible</div><div className="metric-value">{visibleApplicants.length}</div></div>
+                <div className="metric-card compact-metric"><div className="metric-label">Applied today</div><div className="metric-value">{applicantStats.today}</div></div>
+                <div className="metric-card compact-metric"><div className="metric-label">Owned</div><div className="metric-value">{applicantStats.owned}</div></div>
+                <div className="metric-card compact-metric"><div className="metric-label">Unassigned</div><div className="metric-value">{applicantStats.unassigned}</div></div>
+                <div className="metric-card compact-metric"><div className="metric-label">Manual assigned</div><div className="metric-value">{applicantStats.manualAssigned}</div></div>
+                <div className="metric-card compact-metric"><div className="metric-label">Total visible</div><div className="metric-value">{applicantStats.total}</div></div>
               </div>
+              <p className="muted">Owned means the applicant belongs to a recruiter through the job owner / primary recruiter. Manual assigned means admin manually reassigned it. For admin, Owned + Unassigned = Total visible.</p>
               <div className="captured-filter-grid">
                 <MultiSelectDropdown label="Clients" options={applicantOptions.clients} selected={applicantFilters.clients} onToggle={(value) => setApplicantFilters((current) => ({ ...current, clients: value === "__all__" ? [] : current.clients.includes(value) ? current.clients.filter((item) => item !== value) : [...current.clients, value] }))} />
                 <MultiSelectDropdown label="JD / Role" options={applicantOptions.jds} selected={applicantFilters.jds} onToggle={(value) => setApplicantFilters((current) => ({ ...current, jds: value === "__all__" ? [] : current.jds.includes(value) ? current.jds.filter((item) => item !== value) : [...current.jds, value] }))} />
@@ -5828,6 +5887,7 @@ function PortalApp({ token, onLogout }) {
                       <button onClick={() => loadApplicantIntoInterview(item.id)}>Open draft</button>
                       <button onClick={() => setNotesCandidateId(item.id)}>Recruiter note</button>
                       <button onClick={() => void openAttempts(item.id)}>Attempts</button>
+                      <button onClick={() => void createAssessmentFromCandidate(item.id)}>Create assessment</button>
                       {item.cvFilename ? <button onClick={() => void openCv(item.id)}>Open CV</button> : null}
                       {state.user?.role === "admin" ? <button onClick={() => setAssignApplicantId(item.id)}>Assign</button> : null}
                       {state.user?.role === "admin" ? <button className="ghost-btn" onClick={() => void removeApplicant(item.id)}>Remove</button> : null}
@@ -6035,19 +6095,42 @@ function PortalApp({ token, onLogout }) {
                           placeholder="Good communication. Okay with remote setup."
                         />
                       </label>
-                      <label className="full">
+                      <div className="full form-field">
                         <span>Status update note</span>
+                        <div className="form-grid three-col nested-status-grid">
+                          {quickUpdateLinkedAssessment ? (
+                            <label>
+                              <span>Assessment status</span>
+                              <select value={quickUpdateAssessmentStatus} onChange={(e) => setQuickUpdateAssessmentStatus(e.target.value)}>
+                                <option value="">Use existing / infer from note</option>
+                                {DEFAULT_STATUS_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}
+                              </select>
+                            </label>
+                          ) : (
+                            <label>
+                              <span>Attempt outcome</span>
+                              <select value={quickUpdateAttemptOutcome} onChange={(e) => setQuickUpdateAttemptOutcome(e.target.value)}>
+                                <option value="">Infer from note</option>
+                                {ATTEMPT_OUTCOME_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}
+                              </select>
+                            </label>
+                          )}
+                          <label>
+                            <span>{quickUpdateLinkedAssessment ? "Interview / status date" : "Next follow-up"}</span>
+                            <input type="datetime-local" value={quickUpdateStatusAt} onChange={(e) => setQuickUpdateStatusAt(e.target.value)} />
+                          </label>
+                        </div>
                         <textarea
                           value={quickUpdateStatusText}
                           onChange={(e) => setQuickUpdateStatusText(e.target.value)}
-                          placeholder="Call tomorrow at 7 PM, or L2 tomorrow 12 PM."
+                          placeholder={quickUpdateLinkedAssessment ? "Optional note, e.g. client asked to schedule L2." : "Optional note, e.g. call tomorrow at 7 PM."}
                         />
-                      </label>
+                      </div>
                     </div>
                     <p className="muted">
                       {quickUpdateLinkedAssessment
-                        ? "This candidate is already in Assessments. Use the fixed recruiter-note boxes to sync changed details, and use the last line of the status update box to update assessment status."
-                        : "For captured or applied candidates, use the fixed recruiter-note boxes for detail changes and the last line of the status update box for log-attempt movement."}
+                        ? "This candidate is already in Assessments. Use the fixed recruiter-note boxes for detail changes, then pick the assessment status/date from the dropdown controls."
+                        : "For captured or applied candidates, use the fixed recruiter-note boxes for detail changes, then pick the attempt outcome/follow-up date from the dropdown controls."}
                     </p>
                     <div className="button-row">
                       {quickUpdateLinkedAssessment ? (
