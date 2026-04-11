@@ -982,13 +982,15 @@ function addCandidateMetrics(target, candidate, linkedAssessment, dateRange = {}
     incrementDashboardMetric(target, "sourced");
     changed = true;
   }
-  if (!candidate?.used_in_assessment) return changed;
+  if (!candidate?.used_in_assessment || !linkedAssessment) return changed;
   const convertedAt = getCandidateConvertedAt(candidate, linkedAssessment || {});
   if (!isDateWithinRange(convertedAt, dateRange.from, dateRange.to)) return changed;
   incrementDashboardMetric(target, "converted");
   changed = true;
   const bucket = getAssessmentLifecycleBucket(linkedAssessment || {});
-  if (bucket === "under_process") incrementDashboardMetric(target, "under_interview_process");
+  if (isInterviewAlignedStatus(linkedAssessment?.candidateStatus || linkedAssessment?.candidate_status || linkedAssessment?.status || "")) {
+    incrementDashboardMetric(target, "under_interview_process");
+  }
   if (bucket === "rejected") incrementDashboardMetric(target, "rejected");
   if (bucket === "duplicate") incrementDashboardMetric(target, "duplicate");
   if (bucket === "dropped") incrementDashboardMetric(target, "dropped");
@@ -1032,7 +1034,7 @@ function toDashboardBreakdownMap(itemsMap) {
 }
 
 function isInterviewAlignedStatus(status) {
-  return /\b(screening call aligned|l1 aligned|l2 aligned|l3 aligned|hr interview aligned)\b/i.test(String(status || ""));
+  return /\b(screening call aligned|l1 aligned|l2 aligned|l3 aligned|hr interview aligned|aligned for interview|interview scheduled)\b/i.test(String(status || ""));
 }
 
 function buildDashboardSummary({ candidates = [], assessments = [], jobs = [], dateFrom = "", dateTo = "", clientFilter = "", recruiterFilter = "" }) {
@@ -2060,14 +2062,17 @@ function candidateMatchesNaturalFilter(item, filters, actor = null) {
 
 function itemMatchesDashboardMetric(item, metric, dateFrom = "", dateTo = "") {
   const bucket = getAssessmentLifecycleBucket(item);
+  const hasLinkedAssessment = Boolean(item?.raw?.assessment || item?.assessment || item?.assessmentId);
+  const isSharedAssessment = item?.sourceType === "captured_and_converted" && hasLinkedAssessment;
   if (metric === "sourced") {
     return isDateWithinRange(item.createdAt, dateFrom, dateTo);
   }
   if (metric === "converted") {
-    return isDateWithinRange(item.sharedAt, dateFrom, dateTo) && item.sourceType !== "captured_note";
+    return isSharedAssessment && isDateWithinRange(item.sharedAt, dateFrom, dateTo);
   }
+  if (!isSharedAssessment) return false;
   if (!isDateWithinRange(item.sharedAt, dateFrom, dateTo)) return false;
-  if (metric === "under_interview_process") return bucket === "under_process";
+  if (metric === "under_interview_process") return isInterviewAlignedStatus(item?.candidateStatus || item?.status || "");
   if (metric === "rejected") return bucket === "rejected";
   if (metric === "duplicate") return bucket === "duplicate";
   if (metric === "dropped") return bucket === "dropped";

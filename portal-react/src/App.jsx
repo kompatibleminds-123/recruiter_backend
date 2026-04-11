@@ -2349,7 +2349,7 @@ function DrilldownModal({ open, title, items, onClose, onOpenCv, onOpenDraft, on
                   ) : null}
                   <div className="button-row drilldown-actions">
                     {onOpenCv && (item.raw?.candidate?.id || item.id) && (item.raw?.candidate?.cv_filename || item.raw?.candidate?.cv_url) ? <button onClick={() => onOpenCv(item.raw?.candidate?.id || item.id)}>Open CV</button> : null}
-                    {assessmentForAction && onOpenAssessment ? <button onClick={() => onOpenAssessment(assessmentForAction)}>{profileOnlyMode ? "Open profile" : "Update details"}</button> : null}
+                    {assessmentForAction && onOpenAssessment ? <button onClick={() => onOpenAssessment(assessmentForAction)}>{profileOnlyMode ? "Open profile" : "Update Assessment"}</button> : null}
                     {assessmentForAction && onOpenStatus ? <button onClick={() => onOpenStatus(assessmentForAction)}>Update status</button> : null}
                     {!assessmentForAction && onOpenNotes && candidateIdForAction ? <button onClick={() => onOpenNotes(candidateIdForAction)}>Update notes</button> : null}
                     {!assessmentForAction && !onOpenNotes && onOpenDraft && candidateIdForAction ? <button onClick={() => onOpenDraft(candidateIdForAction)}>Update details</button> : null}
