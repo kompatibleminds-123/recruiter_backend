@@ -30,12 +30,14 @@ const {
   bootstrapAdmin,
   createClientUser,
   createCompanyWithAdmin,
+  createTrialCompanyWithAdmin,
   createUser,
   deleteUser,
   deleteAssessment,
   deleteCompanyJob,
   getCompanyApplicantIntakeSecret,
   getCompanyClientUsers,
+  getCompanyLicense,
   getClientSessionUser,
   getSessionUser,
   getPlatformSessionUser,
@@ -49,6 +51,7 @@ const {
   loginClient,
   loginPlatformCreator,
   login,
+  incrementCompanyCaptureUsage,
   requirePlatformSessionUser,
   requireClientSessionUser,
   requireSessionUser,
@@ -847,6 +850,12 @@ function getCandidateConvertedAt(candidate = {}, assessment = {}) {
 function normalizeDateOutput(value) {
   const parsed = parseIsoDateValue(value);
   return parsed ? parsed.toISOString() : "";
+}
+
+function normalizeNullableTimestampInput(value) {
+  if (value === null) return null;
+  const trimmed = String(value || "").trim();
+  return trimmed ? trimmed : null;
 }
 
 function getRelativeMonthRange(monthOffset = 0) {
@@ -3198,7 +3207,7 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (req.method === "GET" && (requestUrl.pathname === "/portal" || requestUrl.pathname === "/portal/")) {
-    serveStaticFile(res, path.join(ROOT_PUBLIC_DIR, "portal", "index.html"));
+    serveStaticFile(res, path.join(ROOT_PUBLIC_DIR, "portal-app", "index.html"));
     return;
   }
 
@@ -3229,18 +3238,15 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (req.method === "GET" && (requestUrl.pathname === "/jobs" || requestUrl.pathname === "/jobs/" || requestUrl.pathname.startsWith("/jobs/"))) {
+    serveStaticFile(res, path.join(ROOT_PUBLIC_DIR, "apply.html"));
+    return;
+  }
+
   if (req.method === "GET" && requestUrl.pathname.startsWith("/quick-capture/")) {
     const assetPath = requestUrl.pathname.replace(/^\/quick-capture\//, "");
     const safeRelativePath = path.normalize(assetPath).replace(/^(\.\.(\/|\\|$))+/, "");
     const resolvedPath = path.join(QUICK_CAPTURE_PUBLIC_DIR, safeRelativePath);
-    serveStaticFile(res, resolvedPath);
-    return;
-  }
-
-  if (req.method === "GET" && requestUrl.pathname.startsWith("/portal/")) {
-    const assetPath = requestUrl.pathname.replace(/^\/portal\//, "");
-    const safeRelativePath = path.normalize(assetPath).replace(/^(\.\.(\/|\\|$))+/, "");
-    const resolvedPath = path.join(ROOT_PUBLIC_DIR, "portal", safeRelativePath);
     serveStaticFile(res, resolvedPath);
     return;
   }
@@ -3484,6 +3490,27 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (req.method === "POST" && req.url === "/auth/trial-signup") {
+    try {
+      const body = await readJsonBody(req);
+      await createTrialCompanyWithAdmin({
+        companyName: String(body.companyName || "").trim(),
+        adminName: String(body.adminName || "").trim(),
+        email: String(body.email || "").trim(),
+        password: String(body.password || "")
+      });
+      const result = await login({
+        email: String(body.email || "").trim(),
+        password: String(body.password || "")
+      });
+      const license = await getCompanyLicense(result.user.companyId);
+      sendJson(res, 200, { ok: true, result: { ...result, license } });
+    } catch (error) {
+      sendJson(res, 400, { ok: false, error: String(error.message || error) });
+    }
+    return;
+  }
+
   if (req.method === "POST" && req.url === "/client-auth/login") {
     try {
       const body = await readJsonBody(req);
@@ -3502,6 +3529,17 @@ const server = http.createServer(async (req, res) => {
     try {
       const user = await requireSessionUser(getBearerToken(req));
       sendJson(res, 200, { ok: true, result: { user } });
+    } catch (error) {
+      sendJson(res, 401, { ok: false, error: String(error.message || error) });
+    }
+    return;
+  }
+
+  if (req.method === "GET" && req.url === "/license/me") {
+    try {
+      const user = await requireSessionUser(getBearerToken(req));
+      const license = await getCompanyLicense(user.companyId);
+      sendJson(res, 200, { ok: true, result: { license } });
     } catch (error) {
       sendJson(res, 401, { ok: false, error: String(error.message || error) });
     }
@@ -4583,9 +4621,9 @@ const server = http.createServer(async (req, res) => {
         last_contact_notes: String(input.last_contact_notes || input.lastContactNotes || "").trim() || undefined,
         last_contact_at: String(input.last_contact_at || input.lastContactAt || "").trim() || undefined,
         next_follow_up_at: Object.prototype.hasOwnProperty.call(input, "next_follow_up_at")
-          ? String(input.next_follow_up_at || "").trim()
+          ? normalizeNullableTimestampInput(input.next_follow_up_at)
           : Object.prototype.hasOwnProperty.call(input, "nextFollowUpAt")
-            ? String(input.nextFollowUpAt || "").trim()
+            ? normalizeNullableTimestampInput(input.nextFollowUpAt)
             : undefined,
         hidden_from_captured: input.hidden_from_captured === true ? true : input.hidden_from_captured === false ? false : undefined,
         jd_title: String(input.jd_title || input.jdTitle || "").trim() || undefined,
@@ -4636,8 +4674,14 @@ const server = http.createServer(async (req, res) => {
         });
         return;
       }
+      const licenseBeforeSave = await getCompanyLicense(actor.companyId);
+      if (!licenseBeforeSave.canCapture) {
+        sendJson(res, 402, { ok: false, error: "Trial limit reached. Upgrade required to save more captures.", result: { license: licenseBeforeSave } });
+        return;
+      }
       const result = await saveCandidate(candidate, { companyId: actor.companyId });
-      sendJson(res, 200, { ok: true, result });
+      const license = await incrementCompanyCaptureUsage(actor.companyId, 1);
+      sendJson(res, 200, { ok: true, result, license });
     } catch (error) {
       sendJson(res, 400, { ok: false, error: String(error.message || error) });
     }

@@ -229,12 +229,54 @@ const SHARED_EXPORT_PRESET_ROW_ID = "__shared_export_presets__";
 const SHARED_EXPORT_PRESET_ROW_TITLE = "__shared_export_presets__";
 const CLIENT_USERS_ROW_ID = "__client_users__";
 const CLIENT_USERS_ROW_TITLE = "__client_users__";
+const COMPANY_LICENSE_ROW_ID = "__company_license__";
+const COMPANY_LICENSE_ROW_TITLE = "__company_license__";
 const MAX_SHARED_CUSTOM_EXPORT_PRESETS = 10;
 function isSharedExportPresetRow(job) {
   return String(job?.id || "").trim() === SHARED_EXPORT_PRESET_ROW_ID || String(job?.title || "").trim() === SHARED_EXPORT_PRESET_ROW_TITLE;
 }
 function isClientUsersRow(job) {
   return String(job?.id || "").trim() === CLIENT_USERS_ROW_ID || String(job?.title || "").trim() === CLIENT_USERS_ROW_TITLE;
+}
+function isCompanyLicenseRow(job) {
+  return String(job?.id || "").trim() === COMPANY_LICENSE_ROW_ID || String(job?.title || "").trim() === COMPANY_LICENSE_ROW_TITLE;
+}
+function isSystemJobRow(job) {
+  return isSharedExportPresetRow(job) || isClientUsersRow(job) || isCompanyLicenseRow(job);
+}
+function addDays(dateLike, days) {
+  const date = dateLike ? new Date(dateLike) : new Date();
+  const base = Number.isNaN(date.getTime()) ? new Date() : date;
+  base.setDate(base.getDate() + Number(days || 0));
+  return base.toISOString();
+}
+function sanitizeCompanyLicense(raw, company = null) {
+  const source = raw && typeof raw === "object" ? raw : {};
+  const payload = source.payload && typeof source.payload === "object" ? source.payload : source;
+  const now = new Date().toISOString();
+  const companyId = String(payload.companyId || payload.company_id || company?.id || company?.companyId || "").trim();
+  const startedAt = String(payload.trialStartedAt || payload.trial_started_at || company?.createdAt || company?.created_at || now).trim() || now;
+  const trialEndsAt = String(payload.trialEndsAt || payload.trial_ends_at || addDays(startedAt, 14)).trim();
+  const captureLimit = Math.max(0, Number(payload.captureLimit ?? payload.capture_limit ?? 50) || 50);
+  const capturesUsed = Math.max(0, Number(payload.capturesUsed ?? payload.captures_used ?? 0) || 0);
+  const plan = String(payload.plan || "trial").trim().toLowerCase();
+  const status = String(payload.status || "trial").trim().toLowerCase();
+  const isTrial = status === "trial" || plan === "trial";
+  const trialActive = isTrial && Date.now() <= new Date(trialEndsAt).getTime() && capturesUsed < captureLimit;
+  const unlimited = !isTrial || status === "active" || status === "legacy";
+  return {
+    companyId,
+    plan,
+    status,
+    trialStartedAt: startedAt,
+    trialEndsAt,
+    captureLimit,
+    capturesUsed,
+    capturesRemaining: unlimited ? null : Math.max(0, captureLimit - capturesUsed),
+    daysRemaining: unlimited ? null : Math.max(0, Math.ceil((new Date(trialEndsAt).getTime() - Date.now()) / 86400000)),
+    canCapture: unlimited || trialActive,
+    updatedAt: String(payload.updatedAt || payload.updated_at || now).trim() || now
+  };
 }
 function sanitizeSharedExportPresetSettings(raw) {
   const source = raw && typeof raw === "object" ? raw : {};
@@ -569,6 +611,110 @@ async function createCompanyWithAdmin({ companyName, adminName, email, password,
     user: sanitizeUser(inserted[0] || user)
   };
 }
+
+async function saveCompanyLicense(companyId, license) {
+  const scopedCompanyId = String(companyId || "").trim();
+  if (!scopedCompanyId) throw new Error("companyId is required.");
+  const nextLicense = sanitizeCompanyLicense({ ...license, companyId: scopedCompanyId });
+  const now = new Date().toISOString();
+  if (!cfg().on) {
+    const store = readStore();
+    store.jobs = Array.isArray(store.jobs) ? store.jobs : [];
+    const ix = store.jobs.findIndex((item) => String(item.companyId || item.company_id || "") === scopedCompanyId && isCompanyLicenseRow(item));
+    const row = {
+      id: COMPANY_LICENSE_ROW_ID,
+      companyId: scopedCompanyId,
+      title: COMPANY_LICENSE_ROW_TITLE,
+      clientName: "__system__",
+      jobDescription: "Company license and trial quota",
+      payload: nextLicense,
+      createdAt: ix >= 0 ? store.jobs[ix].createdAt : now,
+      updatedAt: now
+    };
+    if (ix >= 0) store.jobs[ix] = row; else store.jobs.push(row);
+    writeStore(store);
+    return nextLicense;
+  }
+  await ensureSeeded();
+  const row = {
+    id: systemJobRowId(scopedCompanyId, COMPANY_LICENSE_ROW_ID),
+    company_id: scopedCompanyId,
+    title: COMPANY_LICENSE_ROW_TITLE,
+    client_name: "__system__",
+    job_description: "Company license and trial quota",
+    created_at: now,
+    updated_at: now,
+    updated_by: "system",
+    payload: nextLicense
+  };
+  const rows = await sbIns("company_jobs", [row], { conflict: "id", upsert: true });
+  return sanitizeCompanyLicense(rows?.[0] || row);
+}
+
+async function getCompanyLicense(companyId) {
+  const scopedCompanyId = String(companyId || "").trim();
+  if (!scopedCompanyId) throw new Error("companyId is required.");
+  if (!cfg().on) {
+    const store = readStore();
+    const company = sanitizeCompany((store.companies || []).find((item) => String(item.id || "") === scopedCompanyId));
+    const row = (store.jobs || []).find((item) => String(item.companyId || item.company_id || "") === scopedCompanyId && isCompanyLicenseRow(item));
+    return row ? sanitizeCompanyLicense(row, company) : sanitizeCompanyLicense({ plan: "legacy", status: "legacy", captureLimit: 0, capturesUsed: 0, companyId: scopedCompanyId }, company);
+  }
+  await ensureSeeded();
+  const [companyRows, licenseRows] = await Promise.all([
+    sbSel("companies", `select=*&id=eq.${enc(scopedCompanyId)}&limit=1`),
+    sbSel("company_jobs", `select=*&company_id=eq.${enc(scopedCompanyId)}&title=eq.${enc(COMPANY_LICENSE_ROW_TITLE)}&limit=1`)
+  ]);
+  const company = sanitizeCompany(companyRows?.[0]);
+  const row = licenseRows?.[0] || null;
+  return row ? sanitizeCompanyLicense(row, company) : sanitizeCompanyLicense({ plan: "legacy", status: "legacy", captureLimit: 0, capturesUsed: 0, companyId: scopedCompanyId }, company);
+}
+
+async function incrementCompanyCaptureUsage(companyId, amount = 1) {
+  const license = await getCompanyLicense(companyId);
+  if (!license.canCapture) {
+    throw new Error("Trial limit reached. Upgrade required to save more captures.");
+  }
+  if (license.status === "legacy" || license.plan === "legacy" || license.status === "active") return license;
+  return saveCompanyLicense(companyId, {
+    ...license,
+    capturesUsed: license.capturesUsed + Math.max(1, Number(amount) || 1),
+    updatedAt: new Date().toISOString()
+  });
+}
+
+async function createTrialCompanyWithAdmin({ companyName, adminName, email, password }) {
+  const e = normalizeEmail(email);
+  if (!companyName || !adminName || !e || !password) throw new Error("companyName, adminName, email, and password are required.");
+  if (await getUserByEmail(e)) throw new Error("A user with this email already exists.");
+  const now = new Date().toISOString();
+  if (!cfg().on) {
+    const store = readStore();
+    const company = { id: crypto.randomUUID(), name: String(companyName).trim(), createdAt: now, applicantIntakeSecret: buildApplicantIntakeSecret(companyName) };
+    const user = { id: crypto.randomUUID(), companyId: company.id, companyName: company.name, name: String(adminName).trim(), email: e, role: "admin", passwordHash: hashPassword(password), createdAt: now };
+    store.companies.push(company);
+    store.users.push(user);
+    writeStore(store);
+    const license = await saveCompanyLicense(company.id, { companyId: company.id, plan: "trial", status: "trial", trialStartedAt: now, trialEndsAt: addDays(now, 14), captureLimit: 50, capturesUsed: 0 });
+    return { company, user: sanitizeUser(user), license };
+  }
+  await ensureSeeded();
+  const company = { id: crypto.randomUUID(), name: String(companyName).trim(), created_at: now, applicant_intake_secret: buildApplicantIntakeSecret(companyName) };
+  const user = { id: crypto.randomUUID(), company_id: company.id, company_name: company.name, name: String(adminName).trim(), email: e, role: "admin", password_hash: hashPassword(password), created_at: now };
+  try {
+    await sbIns("companies", [company], { conflict: "id", upsert: true });
+  } catch (error) {
+    const message = String(error?.message || error);
+    if (/applicant_intake_secret/i.test(message)) {
+      await sbIns("companies", [{ id: company.id, name: company.name, created_at: company.created_at }], { conflict: "id", upsert: true });
+    } else {
+      throw error;
+    }
+  }
+  const inserted = await sbIns("users", [user], { conflict: "id", upsert: true });
+  const license = await saveCompanyLicense(company.id, { companyId: company.id, plan: "trial", status: "trial", trialStartedAt: now, trialEndsAt: addDays(now, 14), captureLimit: 50, capturesUsed: 0 });
+  return { company: sanitizeCompany(company), user: sanitizeUser(inserted?.[0] || user), license };
+}
 async function createUser({ actorUserId, companyId, name, email, password, role }) {
   const e = normalizeEmail(email), r = role === "admin" ? "admin" : "team";
   if (!actorUserId || !companyId || !name || !e || !password) throw new Error("actorUserId, companyId, name, email, and password are required.");
@@ -732,20 +878,20 @@ async function listCompanyUsers(companyId) {
   await ensureSeeded(); return (await sbSel("users", `select=*&company_id=eq.${enc(companyId)}&order=created_at.asc`)).filter((u) => String(u.role || "").toLowerCase() !== "client").map(sanitizeUser);
 }
 async function listCompanyJobs(companyId) {
-  if (!cfg().on) return (readStore().jobs || []).filter((j) => j.companyId === companyId && !isSharedExportPresetRow(j)).sort((a, b) => String(b.updatedAt || "").localeCompare(String(a.updatedAt || ""))).map(sanitizeJob);
-  await ensureSeeded(); return (await sbSel("company_jobs", `select=*&company_id=eq.${enc(companyId)}&order=updated_at.desc`)).filter((row) => !isSharedExportPresetRow(row)).map(sanitizeJob);
+  if (!cfg().on) return (readStore().jobs || []).filter((j) => j.companyId === companyId && !isSystemJobRow(j)).sort((a, b) => String(b.updatedAt || "").localeCompare(String(a.updatedAt || ""))).map(sanitizeJob);
+  await ensureSeeded(); return (await sbSel("company_jobs", `select=*&company_id=eq.${enc(companyId)}&order=updated_at.desc`)).filter((row) => !isSystemJobRow(row)).map(sanitizeJob);
 }
 async function getPublicCompanyJob(jobId) {
   const id = String(jobId || "").trim();
   if (!id) throw new Error("jobId is required.");
   if (!cfg().on) {
-    const job = sanitizeJob((readStore().jobs || []).find((j) => String(j?.id || "").trim() === id && !isSharedExportPresetRow(j)));
+    const job = sanitizeJob((readStore().jobs || []).find((j) => String(j?.id || "").trim() === id && !isSystemJobRow(j)));
     if (!job) throw new Error("Job not found.");
     return job;
   }
   await ensureSeeded();
   const rows = await sbSel("company_jobs", `select=*&id=eq.${enc(id)}&limit=1`);
-  const job = sanitizeJob((rows || []).find((row) => !isSharedExportPresetRow(row)));
+  const job = sanitizeJob((rows || []).find((row) => !isSystemJobRow(row)));
   if (!job) throw new Error("Job not found.");
   return job;
 }
@@ -1031,8 +1177,10 @@ async function deleteAssessment({ actorUserId, companyId, assessmentId }) {
 module.exports = {
   bootstrapAdmin,
   createClientUser,
+  createTrialCompanyWithAdmin,
   getPlatformSessionUser,
   getCompanyClientUsers,
+  getCompanyLicense,
   getClientSessionUser,
   createCompanyWithAdmin,
   createUser,
@@ -1043,6 +1191,7 @@ module.exports = {
   getCompanySharedExportPresets,
   getPublicCompanyJob,
   getSessionUser,
+  incrementCompanyCaptureUsage,
   listCompaniesAndUsersSummary,
   listAssessments,
   listCompanyJobs,

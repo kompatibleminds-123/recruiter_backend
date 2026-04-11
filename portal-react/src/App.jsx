@@ -3704,8 +3704,18 @@ function PortalApp({ token, onLogout }) {
   }
 
   async function completeAgendaFollowUp(candidate) {
+    if (!candidate?.id) return;
+    setState((current) => ({
+      ...current,
+      candidates: (current.candidates || []).map((item) =>
+        String(item.id || "") === String(candidate.id || "") ? { ...item, next_follow_up_at: "" } : item
+      ),
+      databaseCandidates: (current.databaseCandidates || []).map((item) =>
+        String(item.id || "") === String(candidate.id || "") ? { ...item, next_follow_up_at: "" } : item
+      )
+    }));
     await patchCandidate(candidate.id, {
-      next_follow_up_at: ""
+      next_follow_up_at: null
     }, "Follow-up marked done.");
     setStatus("workspace", `Marked follow-up done for ${candidate?.name || "candidate"}.`, "ok");
   }
