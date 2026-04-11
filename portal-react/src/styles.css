@@ -63,6 +63,69 @@ textarea { min-height: 92px; resize: vertical; }
   box-shadow: var(--shadow);
 }
 .auth-card { width: min(560px, 100%); padding: 2rem; }
+.auth-kicker { margin-top: 1.35rem; }
+.brand-lockup {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.72rem;
+}
+.brand-lockup--compact { gap: 0.58rem; }
+.brand-logo {
+  position: relative;
+  width: 42px;
+  height: 42px;
+  flex: 0 0 auto;
+}
+.brand-lockup--compact .brand-logo {
+  width: 34px;
+  height: 34px;
+}
+.brand-logo__blue,
+.brand-logo__grey {
+  position: absolute;
+  display: block;
+  border-radius: 2px;
+}
+.brand-logo__blue {
+  left: 3px;
+  top: 5px;
+  width: 13px;
+  height: 32px;
+  background: #1687bd;
+  transform: skewY(-42deg);
+}
+.brand-logo__grey {
+  right: 4px;
+  width: 28px;
+  height: 7px;
+  background: #7b858d;
+  transform-origin: right center;
+}
+.brand-logo__grey--top {
+  top: 10px;
+  transform: rotate(135deg);
+}
+.brand-logo__grey--bottom {
+  bottom: 10px;
+  transform: rotate(-135deg);
+}
+.brand-title {
+  color: var(--text);
+  font-size: 1.02rem;
+  line-height: 1;
+  font-weight: 850;
+  letter-spacing: 0.02em;
+}
+.brand-subtitle {
+  margin-top: 0.18rem;
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.brand-lockup--compact .brand-title { font-size: 0.95rem; }
+.brand-lockup--compact .brand-subtitle { font-size: 0.64rem; }
 .app-shell { display: grid; grid-template-columns: 280px 1fr; min-height: 100vh; }
 .app-shell--client { display: block; }
 .sidebar {

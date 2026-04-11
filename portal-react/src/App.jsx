@@ -87,6 +87,22 @@ const BOOLEAN_SEARCH_EXAMPLE_PROMPTS = [
 
 const PORTAL_APPLICANT_METADATA_PREFIX = "[APPLICANT_META]";
 
+function BrandMark({ compact = false }) {
+  return (
+    <div className={`brand-lockup${compact ? " brand-lockup--compact" : ""}`}>
+      <div className="brand-logo" aria-hidden="true">
+        <span className="brand-logo__blue" />
+        <span className="brand-logo__grey brand-logo__grey--top" />
+        <span className="brand-logo__grey brand-logo__grey--bottom" />
+      </div>
+      <div>
+        <div className="brand-title">RecruitDesk AI</div>
+        <div className="brand-subtitle">by Kompatible Minds</div>
+      </div>
+    </div>
+  );
+}
+
 const DEFAULT_PIPELINE_STAGE_OPTIONS = [
   "HR screening",
   "Recruiter screening",
@@ -1666,8 +1682,9 @@ function LoginScreen({ onRecruiterLogin, onClientLogin, busy, error, clientOnly 
   return (
     <div className="auth-screen">
       <div className="auth-card">
-        <div className="section-kicker">{mode === "client" ? "Client Portal" : "Company Login"}</div>
-        <h1>{mode === "client" ? "Open your client hiring dashboard" : "Open your RecruitDesk workspace"}</h1>
+        <BrandMark />
+        <div className="section-kicker auth-kicker">{mode === "client" ? "Client Login" : "Company Login"}</div>
+        <h1>{mode === "client" ? "Client Portal" : "Open your RecruitDesk workspace"}</h1>
         <p className="muted">{mode === "client" ? "Use the client username and password shared by your recruiter team." : "Use your existing company admin or recruiter credentials."}</p>
         {!clientOnly ? (
           <div className="button-row">
@@ -5204,8 +5221,7 @@ function PortalApp({ token, onLogout }) {
     <div className="app-shell">
       <aside className="sidebar">
         <div className="brand">
-          <div className="brand-kicker">RecruitDesk</div>
-          <h1>Portal</h1>
+          <BrandMark compact />
         </div>
         <nav className="nav">
           {navSections.map((section) => (
@@ -5237,8 +5253,9 @@ function PortalApp({ token, onLogout }) {
       <main className="content">
         <header className="workspace-header">
           <div>
+            <BrandMark compact />
             <div className="section-kicker">{state.user?.companyName || "Company Workspace"}</div>
-            <h1>RecruitDesk Portal</h1>
+            <h1>RecruitDesk AI Portal</h1>
           </div>
           {statuses.workspace ? <div className={`status inline ${statuses.workspaceKind || ""}`}>{statuses.workspace}</div> : null}
         </header>
@@ -6621,8 +6638,9 @@ function ClientPortalApp({ token, onLogout }) {
       <main className="content client-portal-content">
         <header className="workspace-header client-portal-header">
           <div>
+            <BrandMark compact />
             <div className="section-kicker">{clientUser?.companyName || "Client Portal"}</div>
-            <h1>{clientName || "Client Hiring Portal"}</h1>
+            <h1>{clientName || "Client Portal"}</h1>
           </div>
           <div className="client-user-pill">
             {clientUser?.username ? <span>{clientUser.username}</span> : null}
