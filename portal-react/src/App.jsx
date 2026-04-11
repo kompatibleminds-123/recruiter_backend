@@ -3647,13 +3647,37 @@ function PortalApp({ token, onLogout }) {
       return;
     }
     const inferred = inferAssessmentStatusAndSchedule(lastLine);
-    if (!inferred?.candidateStatus) {
-      setStatus("quickUpdate", "Could not map assessment status from the last line.", "error");
-      return;
-    }
+    const inferredAttempt = inferAttemptOutcomeAndFollowUp(lastLine);
     try {
+      if (!inferred?.candidateStatus && inferredAttempt?.outcome && quickUpdateCandidate?.id) {
+        await api("/contact-attempts", token, "POST", {
+          candidateId: quickUpdateCandidate.id,
+          outcome: inferredAttempt.outcome,
+          notes: lastLine,
+          next_follow_up_at: inferredAttempt.followUpAt || ""
+        });
+        const candidatePatch = {
+          last_contact_outcome: inferredAttempt.outcome || "",
+          last_contact_notes: lastLine,
+          last_contact_at: new Date().toISOString()
+        };
+        if (inferredAttempt.followUpAt) {
+          candidatePatch.next_follow_up_at = new Date(inferredAttempt.followUpAt).toISOString();
+        } else if (inferredAttempt.outcome !== "Call later" && inferredAttempt.outcome !== "Switch Off") {
+          candidatePatch.next_follow_up_at = "";
+        }
+        await patchCandidateQuiet(quickUpdateCandidate.id, candidatePatch);
+        setQuickUpdateStatusText("");
+        setStatus("quickUpdate", `Follow-up saved for ${quickUpdateCandidate.name || "candidate"}. Assessment status was not changed.`, "ok");
+        return;
+      }
+      const fallbackStatus = String(quickUpdateLinkedAssessment?.candidateStatus || "").trim();
+      if (!inferred?.candidateStatus && !fallbackStatus) {
+        setStatus("quickUpdate", "Use a status phrase like L1 aligned, feedback awaited, interview reject, offered, joined, or write a call/follow-up update.", "error");
+        return;
+      }
       await saveAssessmentStatusUpdate(quickUpdateLinkedAssessment, {
-        candidateStatus: inferred.candidateStatus,
+        candidateStatus: inferred.candidateStatus || fallbackStatus,
         atValue: inferred.atValue || "",
         notes: lastLine,
         offerAmount: inferred.offerAmount || "",
@@ -3664,7 +3688,7 @@ function PortalApp({ token, onLogout }) {
         closeModal: false
       });
       setQuickUpdateStatusText("");
-      setStatus("quickUpdate", `Assessment status updated to ${inferred.candidateStatus}.`, "ok");
+      setStatus("quickUpdate", `Assessment status updated to ${inferred.candidateStatus || fallbackStatus}.`, "ok");
     } catch (error) {
       setStatus("quickUpdate", String(error?.message || error), "error");
     }
@@ -5914,7 +5938,6 @@ function PortalApp({ token, onLogout }) {
             <div className="page-grid">
               <Section kicker="Fast Lane" title="Quick Update">
                 <p className="muted">Use this for already saved candidates when details change later. Pick the candidate once, then either merge recruiter details or apply a quick status/timeline update.</p>
-                {statuses.quickUpdate ? <div className={`status ${statuses.quickUpdateKind || ""}`}>{statuses.quickUpdate}</div> : null}
                 <div className="form-grid">
                   <label className="full">
                     <span>Search existing candidate</span>
@@ -6003,6 +6026,7 @@ function PortalApp({ token, onLogout }) {
                         </>
                       )}
                     </div>
+                    {statuses.quickUpdate ? <div className={`status action-status ${statuses.quickUpdateKind || ""}`}>{statuses.quickUpdate}</div> : null}
                   </>
                 )}
               </Section>

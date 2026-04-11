@@ -636,6 +636,7 @@ textarea { min-height: 92px; resize: vertical; }
   font-size: 0.9rem;
 }
 .status.inline { margin-top: 0; max-width: 420px; }
+.status.action-status { margin-top: 0.75rem; }
 .status.ok { background: #eaf9f4; border-color: #bde9d7; color: var(--ok); }
 .status.error { background: #fff1ef; border-color: #f5cbc5; color: var(--error); }
 .empty-state {
