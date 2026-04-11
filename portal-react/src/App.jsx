@@ -2330,6 +2330,7 @@ function DrilldownModal({ open, title, items, onClose, onOpenCv, onOpenDraft, on
             <article className="item-card compact-card" key={`${item.id || item.assessmentId || index}`}>
               {(() => {
                 const feedbackMeta = readItemClientFeedback(item);
+                const assessmentForAction = item.raw?.assessment || item.assessment || (item.assessmentId || item.sourceType === "assessment_only" ? item : null);
                 return (
               <div className="item-card__top">
                 <div>
@@ -2347,7 +2348,7 @@ function DrilldownModal({ open, title, items, onClose, onOpenCv, onOpenDraft, on
                   <div className="button-row drilldown-actions">
                     {onOpenCv && (item.raw?.candidate?.id || item.id) && (item.raw?.candidate?.cv_filename || item.raw?.candidate?.cv_url) ? <button onClick={() => onOpenCv(item.raw?.candidate?.id || item.id)}>Open CV</button> : null}
                     {onOpenDraft && item.raw?.candidate?.id ? <button onClick={() => onOpenDraft(item.raw.candidate.id)}>Open draft</button> : null}
-                    {onOpenAssessment && (item.raw?.assessment || item.sourceType === "assessment_only") ? <button onClick={() => onOpenAssessment(item.raw?.assessment || item)}>{onOpenDraft ? "Edit assessment" : "Open profile"}</button> : null}
+                    {onOpenAssessment && assessmentForAction ? <button onClick={() => onOpenAssessment(assessmentForAction)}>{onOpenDraft ? "Edit assessment" : "Open profile"}</button> : null}
                     {onAddFeedback ? <button className="ghost-btn" onClick={() => onAddFeedback(item)}>{feedbackMeta.feedback ? "Add another feedback" : "Add feedback"}</button> : null}
                   </div>
                 </div>
@@ -3704,7 +3705,13 @@ function PortalApp({ token, onLogout }) {
   }
 
   async function completeAgendaFollowUp(candidate) {
-    if (!candidate?.id) return;
+    if (!candidate?.id) {
+      setStatus("workspace", "Could not mark follow-up done because the candidate id is missing.", "error");
+      return;
+    }
+    const confirmed = typeof window === "undefined" || window.confirm(`Mark follow-up done for ${candidate?.name || "this candidate"}?`);
+    if (!confirmed) return;
+    const previousFollowUpAt = candidate.next_follow_up_at || "";
     setState((current) => ({
       ...current,
       candidates: (current.candidates || []).map((item) =>
@@ -3714,10 +3721,24 @@ function PortalApp({ token, onLogout }) {
         String(item.id || "") === String(candidate.id || "") ? { ...item, next_follow_up_at: "" } : item
       )
     }));
-    await patchCandidate(candidate.id, {
-      next_follow_up_at: null
-    }, "Follow-up marked done.");
-    setStatus("workspace", `Marked follow-up done for ${candidate?.name || "candidate"}.`, "ok");
+    try {
+      await api(`/company/candidates/${encodeURIComponent(candidate.id)}`, token, "PATCH", {
+        patch: { next_follow_up_at: null }
+      });
+      await loadWorkspace();
+      setStatus("workspace", `Marked follow-up done for ${candidate?.name || "candidate"}.`, "ok");
+    } catch (error) {
+      setState((current) => ({
+        ...current,
+        candidates: (current.candidates || []).map((item) =>
+          String(item.id || "") === String(candidate.id || "") ? { ...item, next_follow_up_at: previousFollowUpAt } : item
+        ),
+        databaseCandidates: (current.databaseCandidates || []).map((item) =>
+          String(item.id || "") === String(candidate.id || "") ? { ...item, next_follow_up_at: previousFollowUpAt } : item
+        )
+      }));
+      setStatus("workspace", String(error?.message || error || "Could not mark follow-up done."), "error");
+    }
   }
 
   async function openAttempts(candidateId) {
@@ -5086,6 +5107,8 @@ function PortalApp({ token, onLogout }) {
   }
 
   async function completeAgendaInterview(assessment) {
+    const confirmed = typeof window === "undefined" || window.confirm(`Mark interview done for ${assessment?.candidateName || "this candidate"}?`);
+    if (!confirmed) return;
     await saveAssessmentStatusUpdate(assessment, {
       candidateStatus: "Feedback Awaited",
       atValue: "",
@@ -5094,6 +5117,8 @@ function PortalApp({ token, onLogout }) {
   }
 
   async function completeAgendaJoining(assessment) {
+    const confirmed = typeof window === "undefined" || window.confirm(`Mark joining complete for ${assessment?.candidateName || "this candidate"}?`);
+    if (!confirmed) return;
     await saveAssessmentStatusUpdate(assessment, {
       candidateStatus: "Joined",
       atValue: "",
@@ -5435,7 +5460,7 @@ function PortalApp({ token, onLogout }) {
                         <summary className="dashboard-group__summary">
                           <div>
                             <h3>{group.label}</h3>
-                            <p className="muted">{`${group.metrics?.sourced || 0} sourced | ${group.metrics?.converted || 0} converted | ${group.metrics?.under_interview_process || 0} under interview`}</p>
+                            <p className="muted">{`${group.metrics?.sourced || 0} sourced | ${group.metrics?.converted || 0} shared | ${group.metrics?.under_interview_process || 0} under interview`}</p>
                           </div>
                         </summary>
                         <div className="metric-grid metric-grid--tight">
@@ -5455,7 +5480,7 @@ function PortalApp({ token, onLogout }) {
                             >
                               <span className="dashboard-position-chip__title">{row.positionLabel}</span>
                               <span className="dashboard-position-chip__meta">
-                                {`${row.metrics?.sourced || 0} sourced | ${row.metrics?.converted || 0} converted | ${row.metrics?.under_interview_process || 0} under interview`}
+                                {`${row.metrics?.sourced || 0} sourced | ${row.metrics?.converted || 0} shared | ${row.metrics?.under_interview_process || 0} under interview`}
                               </span>
                             </button>
                           ))}
@@ -5495,7 +5520,7 @@ function PortalApp({ token, onLogout }) {
                         <summary className="dashboard-group__summary">
                           <div>
                             <h3>{group.label}</h3>
-                            <p className="muted">{`${group.metrics?.sourced || 0} candidates | ${group.metrics?.converted || 0} shared | ${group.metrics?.under_interview_process || 0} under interview | ${group.metrics?.shortlisted || 0} shortlisted | ${group.metrics?.offered || 0} offered`}</p>
+                            <p className="muted">{`${group.metrics?.sourced || 0} sourced | ${group.metrics?.converted || 0} shared | ${group.metrics?.under_interview_process || 0} under interview | ${group.metrics?.shortlisted || 0} shortlisted | ${group.metrics?.offered || 0} offered`}</p>
                             <p className="muted">
                               {`Sourcing: ${group.ownership?.assignedSourcing || 0} assigned | ${group.ownership?.selfSourced || 0} self sourced`}
                             </p>
