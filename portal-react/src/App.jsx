@@ -5578,26 +5578,57 @@ function PortalApp({ token, onLogout }) {
                     setCandidateStructuredFilters(EMPTY_CANDIDATE_STRUCTURED_FILTERS);
                   }}>Reset search</button>
                 </div>
-                <div className="item-card compact-card">
-                  <h3>Structured filters</h3>
-                  <div className="form-grid three-col">
-                    <label><span>Experience from</span><input type="number" min="0" value={candidateStructuredFilters.minExperience} onChange={(e) => setCandidateStructuredFilters((current) => ({ ...current, minExperience: e.target.value }))} placeholder="2" /></label>
-                    <label><span>Experience to</span><input type="number" min="0" value={candidateStructuredFilters.maxExperience} onChange={(e) => setCandidateStructuredFilters((current) => ({ ...current, maxExperience: e.target.value }))} placeholder="10" /></label>
-                    <label><span>Years</span><input value="Years" readOnly /></label>
-                    <label><span>Location</span><input value={candidateStructuredFilters.location} onChange={(e) => setCandidateStructuredFilters((current) => ({ ...current, location: e.target.value }))} placeholder="Mumbai" /></label>
-                    <label><span>Keywords</span><input value={candidateStructuredFilters.keySkills} onChange={(e) => setCandidateStructuredFilters((current) => ({ ...current, keySkills: e.target.value }))} placeholder="SaaS, sales, B2B, candidate name" /></label>
-                    <label><span>Current company</span><input value={candidateStructuredFilters.currentCompany} onChange={(e) => setCandidateStructuredFilters((current) => ({ ...current, currentCompany: e.target.value }))} placeholder="Infosys" /></label>
-                    <label><span>Client</span><select value={candidateStructuredFilters.client} onChange={(e) => setCandidateStructuredFilters((current) => ({ ...current, client: e.target.value }))}><option value="">All clients</option>{candidateSearchOptions.clients.map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
-                    <label><span>Current CTC from</span><input type="number" min="0" value={candidateStructuredFilters.minCurrentCtc} onChange={(e) => setCandidateStructuredFilters((current) => ({ ...current, minCurrentCtc: e.target.value }))} placeholder="10" /></label>
-                    <label><span>Current CTC to</span><input type="number" min="0" value={candidateStructuredFilters.maxCurrentCtc} onChange={(e) => setCandidateStructuredFilters((current) => ({ ...current, maxCurrentCtc: e.target.value }))} placeholder="20" /></label>
-                    <label><span>Lacs</span><input value="Lacs" readOnly /></label>
-                    <label><span>Expected CTC from</span><input type="number" min="0" value={candidateStructuredFilters.minExpectedCtc} onChange={(e) => setCandidateStructuredFilters((current) => ({ ...current, minExpectedCtc: e.target.value }))} placeholder="15" /></label>
-                    <label><span>Expected CTC to</span><input type="number" min="0" value={candidateStructuredFilters.maxExpectedCtc} onChange={(e) => setCandidateStructuredFilters((current) => ({ ...current, maxExpectedCtc: e.target.value }))} placeholder="25" /></label>
-                    <label><span>Lacs</span><input value="Lacs" readOnly /></label>
-                    <label><span>Qualification</span><input value={candidateStructuredFilters.qualification} onChange={(e) => setCandidateStructuredFilters((current) => ({ ...current, qualification: e.target.value }))} placeholder="B.Tech / MBA" /></label>
-                    <label><span>Notice under (days)</span><input type="number" min="0" value={candidateStructuredFilters.maxNoticeDays} onChange={(e) => setCandidateStructuredFilters((current) => ({ ...current, maxNoticeDays: e.target.value }))} placeholder="30" /></label>
-                    <label><span>Recruiter</span><select value={candidateStructuredFilters.recruiter} onChange={(e) => setCandidateStructuredFilters((current) => ({ ...current, recruiter: e.target.value }))}><option value="">All recruiters</option>{candidateSearchOptions.recruiters.map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
-                    <label><span>Gender</span><select value={candidateStructuredFilters.gender} onChange={(e) => setCandidateStructuredFilters((current) => ({ ...current, gender: e.target.value }))}><option value="">All genders</option>{candidateSearchOptions.genders.map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
+                <div className="item-card compact-card candidate-filter-card">
+                  <div className="candidate-filter-head">
+                    <div>
+                      <h3>Structured filters</h3>
+                      <p className="muted">Naukri-style filters. AI Search fills these automatically; you can adjust them before copying or downloading results.</p>
+                    </div>
+                  </div>
+                  <div className="candidate-filter-layout">
+                    <div className="candidate-filter-column candidate-filter-column--wide">
+                      <div className="candidate-filter-group">
+                        <div className="candidate-filter-label">Experience</div>
+                        <div className="range-row">
+                          <input type="number" min="0" value={candidateStructuredFilters.minExperience} onChange={(e) => setCandidateStructuredFilters((current) => ({ ...current, minExperience: e.target.value }))} placeholder="Min experience" />
+                          <span>to</span>
+                          <input type="number" min="0" value={candidateStructuredFilters.maxExperience} onChange={(e) => setCandidateStructuredFilters((current) => ({ ...current, maxExperience: e.target.value }))} placeholder="Max experience" />
+                          <span>Years</span>
+                        </div>
+                      </div>
+                      <div className="candidate-filter-group">
+                        <div className="candidate-filter-label">Current CTC</div>
+                        <div className="range-row">
+                          <input type="number" min="0" value={candidateStructuredFilters.minCurrentCtc} onChange={(e) => setCandidateStructuredFilters((current) => ({ ...current, minCurrentCtc: e.target.value }))} placeholder="Min salary" />
+                          <span>to</span>
+                          <input type="number" min="0" value={candidateStructuredFilters.maxCurrentCtc} onChange={(e) => setCandidateStructuredFilters((current) => ({ ...current, maxCurrentCtc: e.target.value }))} placeholder="Max salary" />
+                          <span>Lacs</span>
+                        </div>
+                      </div>
+                      <div className="candidate-filter-group">
+                        <div className="candidate-filter-label">Expected CTC</div>
+                        <div className="range-row">
+                          <input type="number" min="0" value={candidateStructuredFilters.minExpectedCtc} onChange={(e) => setCandidateStructuredFilters((current) => ({ ...current, minExpectedCtc: e.target.value }))} placeholder="Min salary" />
+                          <span>to</span>
+                          <input type="number" min="0" value={candidateStructuredFilters.maxExpectedCtc} onChange={(e) => setCandidateStructuredFilters((current) => ({ ...current, maxExpectedCtc: e.target.value }))} placeholder="Max salary" />
+                          <span>Lacs</span>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="candidate-filter-column">
+                      <label><span>Keywords</span><input value={candidateStructuredFilters.keySkills} onChange={(e) => setCandidateStructuredFilters((current) => ({ ...current, keySkills: e.target.value }))} placeholder="SaaS, sales, B2B, candidate name" /></label>
+                      <label><span>Current location</span><input value={candidateStructuredFilters.location} onChange={(e) => setCandidateStructuredFilters((current) => ({ ...current, location: e.target.value }))} placeholder="Mumbai" /></label>
+                      <label><span>Notice under (days)</span><input type="number" min="0" value={candidateStructuredFilters.maxNoticeDays} onChange={(e) => setCandidateStructuredFilters((current) => ({ ...current, maxNoticeDays: e.target.value }))} placeholder="30" /></label>
+                    </div>
+                    <div className="candidate-filter-column">
+                      <label><span>Current company</span><input value={candidateStructuredFilters.currentCompany} onChange={(e) => setCandidateStructuredFilters((current) => ({ ...current, currentCompany: e.target.value }))} placeholder="Infosys" /></label>
+                      <label><span>Qualification</span><input value={candidateStructuredFilters.qualification} onChange={(e) => setCandidateStructuredFilters((current) => ({ ...current, qualification: e.target.value }))} placeholder="B.Tech / MBA" /></label>
+                      <label><span>Client</span><select value={candidateStructuredFilters.client} onChange={(e) => setCandidateStructuredFilters((current) => ({ ...current, client: e.target.value }))}><option value="">All clients</option>{candidateSearchOptions.clients.map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
+                    </div>
+                    <div className="candidate-filter-column">
+                      <label><span>Recruiter</span><select value={candidateStructuredFilters.recruiter} onChange={(e) => setCandidateStructuredFilters((current) => ({ ...current, recruiter: e.target.value }))}><option value="">All recruiters</option>{candidateSearchOptions.recruiters.map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
+                      <label><span>Gender</span><select value={candidateStructuredFilters.gender} onChange={(e) => setCandidateStructuredFilters((current) => ({ ...current, gender: e.target.value }))}><option value="">All genders</option>{candidateSearchOptions.genders.map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
+                    </div>
                   </div>
                 </div>
                 <div className="item-card compact-card">
