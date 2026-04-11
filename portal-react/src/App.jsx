@@ -2318,7 +2318,7 @@ function ClientPortalPieCard({ title, total, rows }) {
   );
 }
 
-function DrilldownModal({ open, title, items, onClose, onOpenCv, onOpenDraft, onOpenAssessment, onAddFeedback }) {
+function DrilldownModal({ open, title, items, onClose, onOpenCv, onOpenDraft, onOpenAssessment, onOpenNotes, onOpenStatus, onAddFeedback }) {
   if (!open) return null;
   return (
     <div className="overlay" onClick={onClose}>
@@ -2331,6 +2331,8 @@ function DrilldownModal({ open, title, items, onClose, onOpenCv, onOpenDraft, on
               {(() => {
                 const feedbackMeta = readItemClientFeedback(item);
                 const assessmentForAction = item.raw?.assessment || item.assessment || (item.assessmentId || item.sourceType === "assessment_only" ? item : null);
+                const candidateIdForAction = String(item.raw?.candidate?.id || (!assessmentForAction ? item.id : "") || "").trim();
+                const profileOnlyMode = Boolean(onAddFeedback && !onOpenDraft && !onOpenNotes && !onOpenStatus);
                 return (
               <div className="item-card__top">
                 <div>
@@ -2347,8 +2349,11 @@ function DrilldownModal({ open, title, items, onClose, onOpenCv, onOpenDraft, on
                   ) : null}
                   <div className="button-row drilldown-actions">
                     {onOpenCv && (item.raw?.candidate?.id || item.id) && (item.raw?.candidate?.cv_filename || item.raw?.candidate?.cv_url) ? <button onClick={() => onOpenCv(item.raw?.candidate?.id || item.id)}>Open CV</button> : null}
-                    {onOpenDraft && item.raw?.candidate?.id ? <button onClick={() => onOpenDraft(item.raw.candidate.id)}>Open draft</button> : null}
-                    {onOpenAssessment && assessmentForAction ? <button onClick={() => onOpenAssessment(assessmentForAction)}>{onOpenDraft ? "Edit assessment" : "Open profile"}</button> : null}
+                    {assessmentForAction && onOpenAssessment ? <button onClick={() => onOpenAssessment(assessmentForAction)}>{profileOnlyMode ? "Open profile" : "Update details"}</button> : null}
+                    {assessmentForAction && onOpenStatus ? <button onClick={() => onOpenStatus(assessmentForAction)}>Update status</button> : null}
+                    {!assessmentForAction && onOpenNotes && candidateIdForAction ? <button onClick={() => onOpenNotes(candidateIdForAction)}>Update notes</button> : null}
+                    {!assessmentForAction && !onOpenNotes && onOpenDraft && candidateIdForAction ? <button onClick={() => onOpenDraft(candidateIdForAction)}>Update details</button> : null}
+                    {!assessmentForAction && onOpenStatus && candidateIdForAction ? <button onClick={() => onOpenStatus({ candidateId: candidateIdForAction, item })}>Update status</button> : null}
                     {onAddFeedback ? <button className="ghost-btn" onClick={() => onAddFeedback(item)}>{feedbackMeta.feedback ? "Add another feedback" : "Add feedback"}</button> : null}
                   </div>
                 </div>
@@ -6618,9 +6623,17 @@ function PortalApp({ token, onLogout }) {
         items={drilldownState.items}
         onClose={() => setDrilldownState({ open: false, title: "", items: [], request: null })}
         onOpenCv={(candidateId) => void openCv(candidateId)}
-        onOpenDraft={(candidateId) => { setDrilldownState({ open: false, title: "", items: [], request: null }); loadCandidateIntoInterview(candidateId); }}
         onOpenAssessment={(assessment) => { setDrilldownState({ open: false, title: "", items: [], request: null }); openSavedAssessment(assessment); }}
-        onAddFeedback={(item) => setClientFeedbackItem(item)}
+        onOpenNotes={(candidateId) => { setDrilldownState({ open: false, title: "", items: [], request: null }); setNotesCandidateId(candidateId); }}
+        onOpenStatus={(target) => {
+          setDrilldownState({ open: false, title: "", items: [], request: null });
+          const assessmentId = String(target?.id || target?.assessmentId || "").trim();
+          if (assessmentId) {
+            setAssessmentStatusId(assessmentId);
+            return;
+          }
+          if (target?.candidateId) void openAttempts(target.candidateId);
+        }}
       />
       <ClientFeedbackModal open={Boolean(clientFeedbackItem)} item={clientFeedbackItem} onClose={() => setClientFeedbackItem(null)} onSave={(payload) => void saveClientFeedback(payload)} />
     </div>
