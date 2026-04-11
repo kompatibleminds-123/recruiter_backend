@@ -1347,7 +1347,9 @@ function parseNaturalLanguageCandidateQuery(rawQuery) {
   const minExperienceMatch = lower.match(/(\d+(?:\.\d+)?)\s*\+?\s*years?/);
   const maxExperienceMatch = lower.match(/\b(?:under|less than|max)\s+(\d+(?:\.\d+)?)\s*years?/);
   const locationMatch = lower.match(/\b(?:based out of|based in|located in|in)\s+([a-z][a-z\s]+?)(?:\s+\bwith\b|\s+\bunder\b|\s+\bbelow\b|\s+\bfor\b|$)/i);
+  const ctcAboveMatch = lower.match(/\b(?:current\s+ctc\s+(?:above|over|more than|min|minimum)|ctc\s+(?:above|over|more than|min|minimum)|package\s+(?:above|over|more than|min|minimum)|more than)\s+(\d+(?:\.\d+)?)\s*(l|lpa|lakhs?|lac|cr|crore|k)?\b/i);
   const ctcUnderMatch = lower.match(/\b(?:current\s+ctc\s+under|ctc\s+under|under|below)\s+(\d+(?:\.\d+)?)\s*(l|lpa|lakhs?|lac|cr|crore|k)?\b/i);
+  const expectedCtcAboveMatch = lower.match(/\b(?:expected\s+ctc\s+(?:above|over|more than|min|minimum))\s+(\d+(?:\.\d+)?)\s*(l|lpa|lakhs?|lac|cr|crore|k)?\b/i);
   const expectedCtcUnderMatch = lower.match(/\b(?:expected\s+ctc\s+under)\s+(\d+(?:\.\d+)?)\s*(l|lpa|lakhs?|lac|cr|crore|k)?\b/i);
   const noticeMatch = lower.match(/\b(?:notice\s+period\s+under|notice\s+under|notice period of)\s+(\d+(?:\.\d+)?)\s*(days?|months?)\b/i);
   const skillMatch = lower.match(/\b(?:with skills?|skills?|having)\s+([a-z0-9,+/&\s-]+?)(?:\bwith\b|\bbased\b|\bfor\b|$)/i);
@@ -1457,9 +1459,11 @@ function parseNaturalLanguageCandidateQuery(rawQuery) {
     .replace(/\bbased out of\b.*$/i, "")
     .replace(/\bbased in\b.*$/i, "")
     .replace(/\bin\s+[a-z][a-z\s]+(?:\s+(?:or|and)\s+[a-z][a-z\s]+)+.*$/i, "")
+    .replace(/\b(?:in|from|based in|based out of|located in)\s+[a-z][a-z\s]+(?=\s+(?:under|below|with|for|over|above|more than)\b|$).*$/i, "")
     .replace(/\bfrom\b.*$/i, "")
     .replace(/\bcurrent\s+ctc\s+under\b.*$/i, "")
     .replace(/\bctc\s+under\b.*$/i, "")
+    .replace(/\b(?:package|salary|ctc|current ctc|expected ctc)?\s*(?:under|below|max|less than|more than|above|over|minimum|min)\s+\d+(?:\.\d+)?\s*(?:l|lpa|lakhs?|lac|cr|crore|k)?\b.*$/i, "")
     .replace(/\baligned\b.*$/i, "")
     .replace(/\binterviews?\b.*$/i, "")
     .replace(/\bby\s+[a-z][a-z\s.-]+$/i, "")
@@ -1482,6 +1486,14 @@ function parseNaturalLanguageCandidateQuery(rawQuery) {
       roleText = roleText.slice(0, roleText.length - derivedLocation.length).trim();
     }
   }
+  const explicitSkills = skillMatch
+    ? String(skillMatch[1] || "")
+        .split(/,| and |\/|&/i)
+        .map((item) => String(item || "").trim())
+        .filter(Boolean)
+    : [];
+  const derivedSkills = explicitSkills.length ? explicitSkills : splitCandidateSearchKeywords(roleText);
+
   return {
     raw: query,
     role: roleText,
@@ -1490,15 +1502,12 @@ function parseNaturalLanguageCandidateQuery(rawQuery) {
     maxExperienceYears: maxExperienceMatch ? Number(maxExperienceMatch[1]) : null,
     location: derivedLocation,
     locations,
+    minCurrentCtcLpa: ctcAboveMatch ? parseAmountToLpa(`${ctcAboveMatch[1]} ${ctcAboveMatch[2] || "lpa"}`) : null,
     maxCurrentCtcLpa: ctcUnderMatch ? parseAmountToLpa(`${ctcUnderMatch[1]} ${ctcUnderMatch[2] || "lpa"}`) : null,
+    minExpectedCtcLpa: expectedCtcAboveMatch ? parseAmountToLpa(`${expectedCtcAboveMatch[1]} ${expectedCtcAboveMatch[2] || "lpa"}`) : null,
     maxExpectedCtcLpa: expectedCtcUnderMatch ? parseAmountToLpa(`${expectedCtcUnderMatch[1]} ${expectedCtcUnderMatch[2] || "lpa"}`) : null,
     maxNoticeDays: noticeMatch ? parseNoticePeriodToDays(`${noticeMatch[1]} ${noticeMatch[2]}`) : null,
-    skills: skillMatch
-      ? String(skillMatch[1] || "")
-          .split(/,| and |\/|&/i)
-          .map((item) => String(item || "").trim())
-          .filter(Boolean)
-      : [],
+    skills: Array.from(new Set(derivedSkills)),
     currentCompany: currentCompanyMatch ? String(currentCompanyMatch[1] || "").trim() : "",
     statuses: statusTerms,
     detailedStatuses: detailedStatusTerms,
@@ -1524,7 +1533,11 @@ function buildCandidateSearchInterpretationSchema() {
       "role",
       "skills",
       "locations",
+      "minExperienceYears",
+      "maxExperienceYears",
+      "minCurrentCtcLpa",
       "maxCurrentCtcLpa",
+      "minExpectedCtcLpa",
       "maxExpectedCtcLpa",
       "maxNoticeDays",
       "statuses",
@@ -1543,7 +1556,11 @@ function buildCandidateSearchInterpretationSchema() {
       role: { type: "string" },
       skills: { type: "array", items: { type: "string" }, maxItems: 12 },
       locations: { type: "array", items: { type: "string" }, maxItems: 8 },
+      minExperienceYears: { type: ["number", "null"] },
+      maxExperienceYears: { type: ["number", "null"] },
+      minCurrentCtcLpa: { type: ["number", "null"] },
       maxCurrentCtcLpa: { type: ["number", "null"] },
+      minExpectedCtcLpa: { type: ["number", "null"] },
       maxExpectedCtcLpa: { type: ["number", "null"] },
       maxNoticeDays: { type: ["number", "null"] },
       statuses: { type: "array", items: { type: "string" }, maxItems: 8 },
@@ -1574,13 +1591,17 @@ async function interpretCandidateSearchQueryWithAi({ apiKey, query, actor }) {
     "5. Extract role keywords into role and/or skills.",
     "6. Extract locations exactly as mentioned.",
     "7. Convert 'under 20 L' like phrases into maxCurrentCtcLpa when no expected CTC is specified.",
-    "8. Convert notice constraints into maxNoticeDays.",
-    "9. If they mention a recruiter name, set recruiterName.",
-    "10. If they mean 'profiles sourced by X', recruiterField = sourced.",
-    "11. If they mean 'profiles under X' or assigned/owned by X, recruiterField = owner.",
-    "12. If they ask for 'my' profiles, recruiterScope = me.",
-    "13. Keep arrays empty and strings blank if not specified.",
-    `14. Current recruiter is "${String(actor?.name || "").trim()}".`,
+    "8. Convert 'more than 20 L' / 'above 20 L' / 'package more than 20 L' into minCurrentCtcLpa when no expected CTC is specified.",
+    "9. Convert experience range phrases into minExperienceYears and maxExperienceYears.",
+    "10. Convert phrases like 'SaaS Sales' into separate skills/keywords: ['saas','sales'], not one combined phrase.",
+    "11. If a query looks like a person name, keep it in role or skills as searchable keywords.",
+    "12. Convert notice constraints into maxNoticeDays.",
+    "13. If they mention a recruiter name, set recruiterName.",
+    "14. If they mean 'profiles sourced by X', recruiterField = sourced.",
+    "15. If they mean 'profiles under X' or assigned/owned by X, recruiterField = owner.",
+    "16. If they ask for 'my' profiles, recruiterScope = me.",
+    "17. Keep arrays empty and strings blank if not specified.",
+    `18. Current recruiter is "${String(actor?.name || "").trim()}".`,
     "",
     "Allowed lifecycle statuses:",
     "shortlisted, offered, joined, rejected, duplicate, dropped",
@@ -1602,14 +1623,16 @@ async function interpretCandidateSearchQueryWithAi({ apiKey, query, actor }) {
     raw: String(query || "").trim(),
     role: String(result?.role || "").trim(),
     roleFamilies: detectRoleFamilies(String(result?.role || "").trim()),
-    minExperienceYears: null,
-    maxExperienceYears: null,
+    minExperienceYears: typeof result?.minExperienceYears === "number" ? result.minExperienceYears : null,
+    maxExperienceYears: typeof result?.maxExperienceYears === "number" ? result.maxExperienceYears : null,
     location: Array.isArray(result?.locations) && result.locations.length ? String(result.locations[0] || "").trim() : "",
     locations: Array.isArray(result?.locations) ? result.locations.map((item) => String(item || "").trim()).filter(Boolean) : [],
+    minCurrentCtcLpa: typeof result?.minCurrentCtcLpa === "number" ? result.minCurrentCtcLpa : null,
     maxCurrentCtcLpa: typeof result?.maxCurrentCtcLpa === "number" ? result.maxCurrentCtcLpa : null,
+    minExpectedCtcLpa: typeof result?.minExpectedCtcLpa === "number" ? result.minExpectedCtcLpa : null,
     maxExpectedCtcLpa: typeof result?.maxExpectedCtcLpa === "number" ? result.maxExpectedCtcLpa : null,
     maxNoticeDays: typeof result?.maxNoticeDays === "number" ? result.maxNoticeDays : null,
-    skills: Array.isArray(result?.skills) ? result.skills.map((item) => String(item || "").trim()).filter(Boolean) : [],
+    skills: normalizeCandidateSearchKeywords(result?.skills || []),
     currentCompany: String(result?.currentCompany || "").trim(),
     statuses: Array.isArray(result?.statuses) ? result.statuses.map((item) => normalizeDashboardText(item)).filter(Boolean) : [],
     detailedStatuses: Array.isArray(result?.detailedStatuses) ? result.detailedStatuses.map((item) => String(item || "").trim()).filter(Boolean) : [],
@@ -1643,6 +1666,27 @@ function buildNaturalSearchFallbackTokens(rawQuery = "") {
         "week", "month", "today", "tomorrow", "last", "next"
       ].includes(part)
     );
+}
+
+function splitCandidateSearchKeywords(value = "") {
+  return String(value || "")
+    .toLowerCase()
+    .replace(/[()"]/g, " ")
+    .split(/,|\n|\/|&|\+|\band\b|\s+/i)
+    .map((part) => part.trim())
+    .filter((part) =>
+      part &&
+      part.length >= 2 &&
+      ![
+        "get", "me", "show", "all", "profiles", "profile", "candidate", "candidates",
+        "with", "for", "in", "from", "the", "and", "or"
+      ].includes(part)
+    );
+}
+
+function normalizeCandidateSearchKeywords(values = []) {
+  const list = Array.isArray(values) ? values : [values];
+  return Array.from(new Set(list.flatMap(splitCandidateSearchKeywords)));
 }
 
 function isPlainCandidateLookupQuery(rawQuery = "") {
@@ -1719,6 +1763,10 @@ function candidateMatchesLooseNaturalTokens(item, rawQuery = "") {
 function buildCandidateSearchHay(item = {}) {
   return normalizeDashboardText([
     item.candidateName || "",
+    item.raw?.candidate?.phone || "",
+    item.raw?.candidate?.email || "",
+    item.raw?.assessment?.phoneNumber || "",
+    item.raw?.assessment?.emailId || "",
     item.role || "",
     item.position || "",
     item.company || "",
@@ -1859,19 +1907,15 @@ function buildCandidateSearchUniverse(candidates = [], assessments = [], jobs = 
 function candidateMatchesNaturalFilter(item, filters, actor = null) {
   if (!item) return false;
   if (filters.role) {
-    const roleHay = `${item.role} ${item.position || ""} ${(item.skills || []).join(" ")} ${item.hiddenCvText || ""} ${item.notesText || ""}`.toLowerCase();
-    const roleTokens = String(filters.role || "")
-      .toLowerCase()
-      .split(/\s+/)
-      .map((part) => part.trim())
-      .filter((part) => part.length >= 2 && !["me", "get", "show", "all", "profile"].includes(part));
+    const roleHay = buildCandidateSearchHay(item);
+    const roleTokens = splitCandidateSearchKeywords(filters.role);
     if (roleTokens.length) {
-      const matchedTokens = roleTokens.filter((token) => roleHay.includes(token));
-      if (!matchedTokens.length) return false;
+      const allRoleTokensMatched = roleTokens.every((token) => roleHay.includes(normalizeDashboardText(token)));
+      if (!allRoleTokensMatched) return false;
     }
   }
   if (Array.isArray(filters.roleFamilies) && filters.roleFamilies.length) {
-    const candidateRoleFamilies = detectRoleFamilies(String(item.role || ""));
+    const candidateRoleFamilies = detectRoleFamilies(buildCandidateSearchHay(item));
     if (!candidateRoleFamilies.length || !filters.roleFamilies.some((family) => candidateRoleFamilies.includes(family))) {
       return false;
     }
@@ -1898,9 +1942,17 @@ function candidateMatchesNaturalFilter(item, filters, actor = null) {
     const years = parseExperienceToYears(item.totalExperience);
     if (years == null || years > filters.maxExperienceYears) return false;
   }
+  if (filters.minCurrentCtcLpa != null) {
+    const currentCtc = parseAmountToLpa(item.currentCtc);
+    if (currentCtc == null || currentCtc < filters.minCurrentCtcLpa) return false;
+  }
   if (filters.maxCurrentCtcLpa != null) {
     const currentCtc = parseAmountToLpa(item.currentCtc);
     if (currentCtc == null || currentCtc > filters.maxCurrentCtcLpa) return false;
+  }
+  if (filters.minExpectedCtcLpa != null) {
+    const expectedCtc = parseAmountToLpa(item.expectedCtc);
+    if (expectedCtc == null || expectedCtc < filters.minExpectedCtcLpa) return false;
   }
   if (filters.maxExpectedCtcLpa != null) {
     const expectedCtc = parseAmountToLpa(item.expectedCtc);
@@ -1915,8 +1967,9 @@ function candidateMatchesNaturalFilter(item, filters, actor = null) {
     if (!companyHay.includes(filters.currentCompany.toLowerCase())) return false;
   }
   if (Array.isArray(filters.skills) && filters.skills.length) {
-    const hay = `${item.role} ${item.position} ${item.company} ${(item.skills || []).join(" ")} ${item.hiddenCvText || ""} ${item.notesText || ""}`.toLowerCase();
-    if (!filters.skills.every((skill) => hay.includes(String(skill || "").toLowerCase()))) return false;
+    const hay = buildCandidateSearchHay(item);
+    const requiredSkills = normalizeCandidateSearchKeywords(filters.skills);
+    if (requiredSkills.length && !requiredSkills.every((skill) => hay.includes(skill))) return false;
   }
   if (Array.isArray(filters.statuses) && filters.statuses.length) {
     const lifecycleBucket = getAssessmentLifecycleBucket(item);

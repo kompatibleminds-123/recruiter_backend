@@ -168,7 +168,9 @@ const EMPTY_CANDIDATE_STRUCTURED_FILTERS = {
   keySkills: "",
   currentCompany: "",
   client: "",
+  minCurrentCtc: "",
   maxCurrentCtc: "",
+  minExpectedCtc: "",
   maxExpectedCtc: "",
   qualification: "",
   maxNoticeDays: "",
@@ -1261,6 +1263,18 @@ function fillClientShareTemplate(template, context) {
     role_line: context.roleLine ? ` for ${context.roleLine}` : ""
   };
   return String(template || "").replace(/\{\{\s*([a-z_]+)\s*\}\}/gi, (_, key) => String(map[key] || ""));
+}
+
+function splitSearchKeywords(value) {
+  return String(value || "")
+    .replace(/[()"]/g, " ")
+    .split(/,|\n|\/|&|\+|\band\b|\s+/i)
+    .map((part) => part.trim().toLowerCase())
+    .filter((part) =>
+      part &&
+      part.length >= 2 &&
+      !["get", "me", "show", "all", "profile", "profiles", "candidate", "candidates", "with", "for", "in", "from", "the"].includes(part)
+    );
 }
 
 function fileToBase64(file) {
@@ -3041,12 +3055,22 @@ function PortalApp({ token, onLogout }) {
       const noticeDays = parseNoticePeriodToDays(item.notice_period || item.noticePeriod || "");
       const currentCtc = parseAmountToLpa(item.current_ctc || item.currentCtc || "");
       const expectedCtc = parseAmountToLpa(item.expected_ctc || item.expectedCtc || "");
+      const minCurrentCtc = Number(candidateStructuredFilters.minCurrentCtc || "");
+      const maxCurrentCtc = Number(candidateStructuredFilters.maxCurrentCtc || "");
+      const minExpectedCtc = Number(candidateStructuredFilters.minExpectedCtc || "");
+      const maxExpectedCtc = Number(candidateStructuredFilters.maxExpectedCtc || "");
       const locationHay = String(item.location || "").toLowerCase();
       const companyHay = String(item.company || item.currentCompany || "").toLowerCase();
       const educationHay = String(item.highest_education || item.highestEducation || "").toLowerCase();
       const skillsHay = [
+        item.name || "",
+        item.candidateName || "",
+        item.phone || "",
+        item.email || "",
         item.role || item.currentDesignation || "",
         item.position || item.jdTitle || "",
+        item.company || item.currentCompany || "",
+        item.location || "",
         Array.isArray(item.skills) ? item.skills.join(" ") : "",
         Array.isArray(item.inferredTags) ? item.inferredTags.join(" ") : "",
         item.notesText || "",
@@ -3061,16 +3085,15 @@ function PortalApp({ token, onLogout }) {
       if (candidateStructuredFilters.maxExperience && (years == null || years > maxYears)) return false;
       if (candidateStructuredFilters.location && !locationHay.includes(String(candidateStructuredFilters.location).trim().toLowerCase())) return false;
       if (candidateStructuredFilters.keySkills) {
-        const requiredSkills = String(candidateStructuredFilters.keySkills)
-          .split(/[,\n]/)
-          .map((part) => part.trim().toLowerCase())
-          .filter(Boolean);
+        const requiredSkills = splitSearchKeywords(candidateStructuredFilters.keySkills);
         if (requiredSkills.length && !requiredSkills.every((term) => skillsHay.includes(term))) return false;
       }
       if (candidateStructuredFilters.currentCompany && !companyHay.includes(String(candidateStructuredFilters.currentCompany).trim().toLowerCase())) return false;
       if (candidateStructuredFilters.client && clientValue !== candidateStructuredFilters.client) return false;
-      if (candidateStructuredFilters.maxCurrentCtc && (currentCtc == null || currentCtc > Number(candidateStructuredFilters.maxCurrentCtc))) return false;
-      if (candidateStructuredFilters.maxExpectedCtc && (expectedCtc == null || expectedCtc > Number(candidateStructuredFilters.maxExpectedCtc))) return false;
+      if (candidateStructuredFilters.minCurrentCtc && (currentCtc == null || currentCtc < minCurrentCtc)) return false;
+      if (candidateStructuredFilters.maxCurrentCtc && (currentCtc == null || currentCtc > maxCurrentCtc)) return false;
+      if (candidateStructuredFilters.minExpectedCtc && (expectedCtc == null || expectedCtc < minExpectedCtc)) return false;
+      if (candidateStructuredFilters.maxExpectedCtc && (expectedCtc == null || expectedCtc > maxExpectedCtc)) return false;
       if (candidateStructuredFilters.qualification && !educationHay.includes(String(candidateStructuredFilters.qualification).trim().toLowerCase())) return false;
       if (candidateStructuredFilters.maxNoticeDays && (noticeDays == null || noticeDays > Number(candidateStructuredFilters.maxNoticeDays))) return false;
       if (candidateStructuredFilters.recruiter && recruiterValue !== candidateStructuredFilters.recruiter) return false;
@@ -4309,10 +4332,12 @@ function PortalApp({ token, onLogout }) {
         minExperience: result.filters.minExperienceYears != null ? String(result.filters.minExperienceYears) : "",
         maxExperience: result.filters.maxExperienceYears != null ? String(result.filters.maxExperienceYears) : "",
         location: result.filters.location || (Array.isArray(result.filters.locations) ? result.filters.locations[0] || "" : ""),
-        keySkills: Array.isArray(result.filters.skills) && result.filters.skills.length ? result.filters.skills.join(", ") : "",
+        keySkills: Array.isArray(result.filters.skills) && result.filters.skills.length ? Array.from(new Set(result.filters.skills.flatMap(splitSearchKeywords))).join(", ") : "",
         currentCompany: result.filters.currentCompany || "",
         client: result.filters.client || "",
+        minCurrentCtc: result.filters.minCurrentCtcLpa != null ? String(result.filters.minCurrentCtcLpa) : "",
         maxCurrentCtc: result.filters.maxCurrentCtcLpa != null ? String(result.filters.maxCurrentCtcLpa) : "",
+        minExpectedCtc: result.filters.minExpectedCtcLpa != null ? String(result.filters.minExpectedCtcLpa) : "",
         maxExpectedCtc: result.filters.maxExpectedCtcLpa != null ? String(result.filters.maxExpectedCtcLpa) : "",
         qualification: result.filters.qualification || "",
         maxNoticeDays: result.filters.maxNoticeDays != null ? String(result.filters.maxNoticeDays) : "",
@@ -5526,14 +5551,19 @@ function PortalApp({ token, onLogout }) {
                 <div className="item-card compact-card">
                   <h3>Structured filters</h3>
                   <div className="form-grid three-col">
-                    <label><span>Min experience</span><input type="number" min="0" value={candidateStructuredFilters.minExperience} onChange={(e) => setCandidateStructuredFilters((current) => ({ ...current, minExperience: e.target.value }))} placeholder="2" /></label>
-                    <label><span>Max experience</span><input type="number" min="0" value={candidateStructuredFilters.maxExperience} onChange={(e) => setCandidateStructuredFilters((current) => ({ ...current, maxExperience: e.target.value }))} placeholder="10" /></label>
+                    <label><span>Experience from</span><input type="number" min="0" value={candidateStructuredFilters.minExperience} onChange={(e) => setCandidateStructuredFilters((current) => ({ ...current, minExperience: e.target.value }))} placeholder="2" /></label>
+                    <label><span>Experience to</span><input type="number" min="0" value={candidateStructuredFilters.maxExperience} onChange={(e) => setCandidateStructuredFilters((current) => ({ ...current, maxExperience: e.target.value }))} placeholder="10" /></label>
+                    <label><span>Years</span><input value="Years" readOnly /></label>
                     <label><span>Location</span><input value={candidateStructuredFilters.location} onChange={(e) => setCandidateStructuredFilters((current) => ({ ...current, location: e.target.value }))} placeholder="Mumbai" /></label>
                     <label><span>Key skills</span><input value={candidateStructuredFilters.keySkills} onChange={(e) => setCandidateStructuredFilters((current) => ({ ...current, keySkills: e.target.value }))} placeholder="SaaS, sales, B2B" /></label>
                     <label><span>Current company</span><input value={candidateStructuredFilters.currentCompany} onChange={(e) => setCandidateStructuredFilters((current) => ({ ...current, currentCompany: e.target.value }))} placeholder="Infosys" /></label>
                     <label><span>Client</span><select value={candidateStructuredFilters.client} onChange={(e) => setCandidateStructuredFilters((current) => ({ ...current, client: e.target.value }))}><option value="">All clients</option>{candidateSearchOptions.clients.map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
-                    <label><span>Current CTC under</span><input type="number" min="0" value={candidateStructuredFilters.maxCurrentCtc} onChange={(e) => setCandidateStructuredFilters((current) => ({ ...current, maxCurrentCtc: e.target.value }))} placeholder="20" /></label>
-                    <label><span>Expected CTC under</span><input type="number" min="0" value={candidateStructuredFilters.maxExpectedCtc} onChange={(e) => setCandidateStructuredFilters((current) => ({ ...current, maxExpectedCtc: e.target.value }))} placeholder="25" /></label>
+                    <label><span>Current CTC from</span><input type="number" min="0" value={candidateStructuredFilters.minCurrentCtc} onChange={(e) => setCandidateStructuredFilters((current) => ({ ...current, minCurrentCtc: e.target.value }))} placeholder="10" /></label>
+                    <label><span>Current CTC to</span><input type="number" min="0" value={candidateStructuredFilters.maxCurrentCtc} onChange={(e) => setCandidateStructuredFilters((current) => ({ ...current, maxCurrentCtc: e.target.value }))} placeholder="20" /></label>
+                    <label><span>Lacs</span><input value="Lacs" readOnly /></label>
+                    <label><span>Expected CTC from</span><input type="number" min="0" value={candidateStructuredFilters.minExpectedCtc} onChange={(e) => setCandidateStructuredFilters((current) => ({ ...current, minExpectedCtc: e.target.value }))} placeholder="15" /></label>
+                    <label><span>Expected CTC to</span><input type="number" min="0" value={candidateStructuredFilters.maxExpectedCtc} onChange={(e) => setCandidateStructuredFilters((current) => ({ ...current, maxExpectedCtc: e.target.value }))} placeholder="25" /></label>
+                    <label><span>Lacs</span><input value="Lacs" readOnly /></label>
                     <label><span>Qualification</span><input value={candidateStructuredFilters.qualification} onChange={(e) => setCandidateStructuredFilters((current) => ({ ...current, qualification: e.target.value }))} placeholder="B.Tech / MBA" /></label>
                     <label><span>Notice under (days)</span><input type="number" min="0" value={candidateStructuredFilters.maxNoticeDays} onChange={(e) => setCandidateStructuredFilters((current) => ({ ...current, maxNoticeDays: e.target.value }))} placeholder="30" /></label>
                     <label><span>Recruiter</span><select value={candidateStructuredFilters.recruiter} onChange={(e) => setCandidateStructuredFilters((current) => ({ ...current, recruiter: e.target.value }))}><option value="">All recruiters</option>{candidateSearchOptions.recruiters.map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
