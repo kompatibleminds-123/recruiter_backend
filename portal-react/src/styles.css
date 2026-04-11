@@ -320,6 +320,27 @@ textarea { min-height: 92px; resize: vertical; }
 .muted { color: var(--muted); font-size: 0.86rem; line-height: 1.45; }
 .chip-row, .button-row, .toolbar { display: flex; flex-wrap: wrap; gap: 0.55rem; min-width: 0; }
 .button-row { margin-top: 0.85rem; }
+.copy-preset-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.18rem 0.2rem;
+}
+.copy-preset-control span {
+  color: var(--muted);
+  font-size: 0.76rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.copy-preset-control select {
+  min-height: 38px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--panel);
+  color: var(--text);
+  padding: 0 0.7rem;
+}
 .toolbar { margin: 0.65rem 0 1rem; }
 .toolbar > * { flex: 1 1 200px; }
 .chip {
@@ -349,6 +370,13 @@ textarea { min-height: 92px; resize: vertical; }
 }
 .candidate-filter-card {
   padding: 1.1rem;
+}
+.settings-subsection {
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.72);
+  padding: 1rem;
+  margin-top: 1rem;
 }
 .candidate-filter-head h3 {
   margin: 0 0 0.25rem;

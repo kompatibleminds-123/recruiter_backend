@@ -66,7 +66,9 @@ const DEFAULT_COPY_SETTINGS = {
   clientShareIntroTemplate: "Hello {{hr_name}},\n\nGreetings !!\n\nThis is {{recruiter_name}} from {{company_name}}.\nPFA the profiles{{role_line}}.\nKindly review and share your feedback.",
   clientShareSignatureText: "Regards,\n{{recruiter_name}}\n{{company_name}}",
   clientShareSignatureLinkLabel: "",
-  clientShareSignatureLinkUrl: ""
+  clientShareSignatureLinkUrl: "",
+  clientShareSignatureLinkLabel2: "",
+  clientShareSignatureLinkUrl2: ""
 };
 
 const AI_SEARCH_EXAMPLE_PROMPTS = [
@@ -827,6 +829,15 @@ function buildAssessmentStatusNoteLine(statusValue, atValue = "", extra = {}) {
 
 function buildAssessmentJourneyEntries(assessment, contactAttempts = [], candidate = null) {
   const entries = [];
+  const candidateCreatedAt = candidate?.created_at || candidate?.createdAt || "";
+  if (candidateCreatedAt) {
+    const sourceValue = String(candidate?.source || "").trim();
+    const isApplied = ["website_apply", "hosted_apply", "google_sheet"].includes(sourceValue);
+    entries.push({
+      at: candidateCreatedAt,
+      text: `${isApplied ? "Applied" : "Captured note created"}${sourceValue ? ` | ${sourceValue}` : ""}`
+    });
+  }
   (contactAttempts || []).forEach((item) => {
     const when = item?.created_at || item?.at || "";
     if (!when) return;
@@ -837,7 +848,7 @@ function buildAssessmentJourneyEntries(assessment, contactAttempts = [], candida
       .join(" | ");
     entries.push({
       at: when,
-      text: `Captured note | ${item?.outcome || "Attempt"}${noteLines ? ` | ${noteLines}` : ""}`
+      text: `Log attempt | ${item?.outcome || "Attempt"}${noteLines ? ` | ${noteLines}` : ""}`
     });
   });
 
@@ -850,7 +861,7 @@ function buildAssessmentJourneyEntries(assessment, contactAttempts = [], candida
       .join(" | ");
     entries.push({
       at: candidate.last_contact_at,
-      text: `Captured note | ${candidate?.last_contact_outcome || "Attempt"}${noteLines ? ` | ${noteLines}` : ""}`
+      text: `Log attempt | ${candidate?.last_contact_outcome || "Attempt"}${noteLines ? ` | ${noteLines}` : ""}`
     });
   }
 
@@ -1235,6 +1246,10 @@ function getApplicantWorkflowOutcome(applicant, linkedCandidate = null) {
   return normalizeAttemptOutcomeLabel(candidateOutcome || "No outcome");
 }
 
+function isAutoHiddenWorkflowOutcome(outcome) {
+  return ["not interested", "screening reject", "revisit for other role"].includes(String(outcome || "").trim().toLowerCase());
+}
+
 function getApplicantOwnerLabel(applicant, linkedCandidate = null) {
   return String(
     applicant?.assignedToName ||
@@ -1321,10 +1336,8 @@ function buildCombinedAssessmentInsightsForExport(item = {}) {
   const parts = [];
   const otherStandardQuestions = String(item.other_standard_questions || item.last_contact_notes || "").trim();
   const otherPointers = String(item.other_pointers || "").trim();
-  const recruiterNotes = String(item.recruiter_context_notes || item.notes || "").trim();
   if (otherStandardQuestions) parts.push(otherStandardQuestions);
   if (otherPointers) parts.push(otherPointers.replace(/^•\s*/gm, ""));
-  if (recruiterNotes) parts.push(recruiterNotes);
   return parts.filter(Boolean).join("\n");
 }
 
@@ -2475,7 +2488,8 @@ function PortalApp({ token, onLogout }) {
     jds: [],
     ownedBy: [],
     assignedTo: [],
-    outcomes: []
+    outcomes: [],
+    activeStates: []
   });
   const [assessmentFilters, setAssessmentFilters] = useState({
     q: "",
@@ -2503,7 +2517,9 @@ function PortalApp({ token, onLogout }) {
     extraMessage: "",
     signatureText: "",
     signatureLinkLabel: "",
-    signatureLinkUrl: ""
+    signatureLinkUrl: "",
+    signatureLinkLabel2: "",
+    signatureLinkUrl2: ""
   });
   const [selectedAssessmentIds, setSelectedAssessmentIds] = useState([]);
   const [clientShareCvLinks, setClientShareCvLinks] = useState({});
@@ -2528,6 +2544,7 @@ function PortalApp({ token, onLogout }) {
       label: preset.label || preset.id
     })))
   ].filter((preset) => String(preset.id || "").trim()), [copySettings]);
+  const [activeCopyPresetId, setActiveCopyPresetId] = useState(copySettings.excelPreset || "compact_recruiter");
   const [newPresetDraft, setNewPresetDraft] = useState({ label: "", columns: "" });
   const [teamUserDraft, setTeamUserDraft] = useState({ name: "", email: "", password: "", role: "recruiter" });
   const [teamPasswordDrafts, setTeamPasswordDrafts] = useState({});
@@ -2705,7 +2722,7 @@ function PortalApp({ token, onLogout }) {
     });
     setClientUsers(clientUsersResult.clientUsers || []);
     if (sharedPresetResult) {
-      setCopySettings((current) => ({ ...current, ...DEFAULT_COPY_SETTINGS, ...sharedPresetResult }));
+      setCopySettings((current) => ({ ...DEFAULT_COPY_SETTINGS, ...current, ...sharedPresetResult }));
     }
     setStatus("workspace", "Portal loaded.", "ok");
   }
@@ -2737,6 +2754,14 @@ function PortalApp({ token, onLogout }) {
       setClientShareDraft((current) => ({ ...current, presetId: exportPresetOptions[0].id }));
     }
   }, [exportPresetOptions, clientShareDraft.presetId]);
+
+  useEffect(() => {
+    if (!exportPresetOptions.length) return;
+    const selectedPresetExists = exportPresetOptions.some((preset) => String(preset.id) === String(activeCopyPresetId));
+    if (!selectedPresetExists) {
+      setActiveCopyPresetId(copySettings.excelPreset || exportPresetOptions[0].id);
+    }
+  }, [activeCopyPresetId, copySettings.excelPreset, exportPresetOptions]);
 
   useEffect(() => {
     setQuickUpdateParsedSummary(null);
@@ -3150,8 +3175,12 @@ function PortalApp({ token, onLogout }) {
     if (isAdmin) {
       (state.users || []).forEach((user) => {
         const label = String(user?.name || "").trim();
-        if (label) meta.capturedBy.add(label);
+        if (label) {
+          meta.capturedBy.add(label);
+          meta.assignedTo.add(label);
+        }
       });
+      meta.assignedTo.add("Unassigned");
     } else {
       if (currentUserName) meta.capturedBy.add(currentUserName);
       const adminUser = (state.users || []).find((user) => String(user?.role || "").toLowerCase() === "admin");
@@ -3184,9 +3213,10 @@ function PortalApp({ token, onLogout }) {
       sources: Array.from(meta.sources).sort(),
       assignedTo: Array.from(meta.assignedTo).sort(),
       capturedBy: Array.from(meta.capturedBy).sort(),
-      outcomes: ATTEMPT_OUTCOME_OPTIONS.filter((item) => meta.outcomes.has(item)).concat(
+      outcomes: ATTEMPT_OUTCOME_OPTIONS.concat(
         Array.from(meta.outcomes).filter((item) => !ATTEMPT_OUTCOME_OPTIONS.includes(item)).sort((a, b) => a.localeCompare(b))
-      )
+      ),
+      activeStates: ["Active", "Inactive"]
     };
   }, [capturedAssessmentMap, state.candidates, state.jobs, state.user]);
 
@@ -3208,7 +3238,7 @@ function PortalApp({ token, onLogout }) {
       const matchedAssessment = capturedAssessmentMap.get(String(item.name || "").trim().toLowerCase());
       if (matchedAssessment || item.used_in_assessment) return false;
       const outcomeValue = getCapturedOutcome(item, matchedAssessment);
-      const hiddenOutcome = ["not interested", "screening reject", "revisit for other role"].includes(String(outcomeValue || "").trim().toLowerCase());
+      const hiddenOutcome = isAutoHiddenWorkflowOutcome(outcomeValue);
       return !item.hidden_from_captured && !hiddenOutcome && !isTerminalStatus(outcomeValue);
     }).length;
     return {
@@ -3229,10 +3259,10 @@ function PortalApp({ token, onLogout }) {
       const assignedToValue = String(item.assigned_to_name || "Unassigned").trim();
       const capturedByValue = String(item.recruiter_name || item.assigned_by_name || "Unknown").trim();
       const outcomeValue = getCapturedOutcome(item, matchedAssessment);
-      const activeValue = isTerminalStatus(outcomeValue) ? "inactive" : "active";
       const createdAtValue = item.created_at ? String(item.created_at).slice(0, 10) : "";
-      const hiddenOutcome = ["not interested", "screening reject", "revisit for other role"].includes(String(outcomeValue || "").trim().toLowerCase());
+      const hiddenOutcome = isAutoHiddenWorkflowOutcome(outcomeValue);
       const manuallyHidden = item.hidden_from_captured === true;
+      const activeValue = (manuallyHidden || hiddenOutcome || isTerminalStatus(outcomeValue)) ? "Inactive" : "Active";
       const nameHay = [item.name].join(" ").toLowerCase();
       const hay = [
         item.name,
@@ -3256,11 +3286,12 @@ function PortalApp({ token, onLogout }) {
       const capturedByOk = !candidateFilters.capturedBy.length || candidateFilters.capturedBy.includes(capturedByValue);
       const sourceOk = !candidateFilters.sources.length || candidateFilters.sources.includes(sourceValue);
       const outcomeOk = !candidateFilters.outcomes.length || candidateFilters.outcomes.includes(outcomeValue);
-      const activeOk = !candidateFilters.activeStates.length || candidateFilters.activeStates.includes(activeValue);
+      const activeOk = !candidateFilters.activeStates.length ? activeValue === "Active" : candidateFilters.activeStates.includes(activeValue);
       const searchNameMatch = Boolean(queryText && nameHay.includes(queryText));
-      const hiddenBlocked = manuallyHidden && !searchNameMatch;
-      const hiddenOutcomeBlocked = hiddenOutcome && !searchNameMatch;
-      return !hiddenBlocked && !hiddenOutcomeBlocked && queryOk && dateFromOk && dateToOk && clientOk && jdOk && assignedToOk && capturedByOk && sourceOk && outcomeOk && activeOk;
+      const inactiveBlockedByDefault = !candidateFilters.activeStates.length && activeValue === "Inactive" && !searchNameMatch;
+      const hiddenBlocked = manuallyHidden && !searchNameMatch && candidateFilters.activeStates.includes("Active");
+      const hiddenOutcomeBlocked = hiddenOutcome && !searchNameMatch && candidateFilters.activeStates.includes("Active");
+      return !inactiveBlockedByDefault && !hiddenBlocked && !hiddenOutcomeBlocked && queryOk && dateFromOk && dateToOk && clientOk && jdOk && assignedToOk && capturedByOk && sourceOk && outcomeOk && activeOk;
     });
   }, [candidateFilters, capturedAssessmentMap, capturedNotesUniverse]);
 
@@ -3345,7 +3376,8 @@ function PortalApp({ token, onLogout }) {
       assignedTo: Array.from(assignedTo).sort((a, b) => a.localeCompare(b)),
       outcomes: APPLIED_OUTCOME_FILTER_ORDER.concat(
         Array.from(outcomes).filter((item) => !APPLIED_OUTCOME_FILTER_ORDER.includes(item)).sort((a, b) => a.localeCompare(b))
-      )
+      ),
+      activeStates: ["Active", "Inactive"]
     };
   }, [filteredApplicants, applicantCandidateMap, applicantAssessmentMap, state.user, state.users]);
 
@@ -3360,9 +3392,14 @@ function PortalApp({ token, onLogout }) {
       const ownedValue = getApplicantOwnerLabel(item, linkedCandidate);
       const assignedValue = getApplicantManualAssigneeLabel(item, linkedCandidate);
       const outcomeValue = getApplicantWorkflowOutcome(item, linkedCandidate);
+      const manuallyHidden = Boolean(item.hidden_from_captured || linkedCandidate?.hidden_from_captured);
+      const autoHidden = isAutoHiddenWorkflowOutcome(outcomeValue);
+      const activeValue = (manuallyHidden || autoHidden || isTerminalStatus(outcomeValue)) ? "Inactive" : "Active";
       const createdDate = String(item.createdAt || item.created_at || "").slice(0, 10);
+      const nameHay = [item.candidateName, linkedCandidate?.name].join(" ").toLowerCase();
       const hay = [
         item.candidateName,
+        linkedCandidate?.name,
         item.phone,
         item.email,
         jdValue,
@@ -3373,6 +3410,9 @@ function PortalApp({ token, onLogout }) {
         item.currentDesignation
       ].join(" ").toLowerCase();
       if (query && !hay.includes(query)) return false;
+      const searchNameMatch = Boolean(query && nameHay.includes(query));
+      if (!applicantFilters.activeStates.length && activeValue === "Inactive" && !searchNameMatch) return false;
+      if (applicantFilters.activeStates.length && !applicantFilters.activeStates.includes(activeValue)) return false;
       if (applicantFilters.dateFrom && createdDate && createdDate < applicantFilters.dateFrom) return false;
       if (applicantFilters.dateTo && createdDate && createdDate > applicantFilters.dateTo) return false;
       if (applicantFilters.clients.length && !applicantFilters.clients.includes(clientValue)) return false;
@@ -3471,6 +3511,18 @@ function PortalApp({ token, onLogout }) {
     setStatus("applicants", "Applicant removed.", "ok");
   }
 
+  async function hideApplicant(applicantId) {
+    await api(`/company/candidates/${encodeURIComponent(applicantId)}`, token, "PATCH", { patch: { hidden_from_captured: true } });
+    await loadWorkspace();
+    setStatus("applicants", "Applicant hidden from active list.", "ok");
+  }
+
+  async function restoreApplicant(applicantId) {
+    await api(`/company/candidates/${encodeURIComponent(applicantId)}`, token, "PATCH", { patch: { hidden_from_captured: false } });
+    await loadWorkspace();
+    setStatus("applicants", "Applicant restored to active list.", "ok");
+  }
+
   async function saveApplicantAssignment({ recruiterId, jdTitle }) {
     await api("/company/applicants/assign", token, "POST", { id: assignApplicantId, assignedToUserId: recruiterId, jdTitle });
     setAssignApplicantId("");
@@ -3543,6 +3595,17 @@ function PortalApp({ token, onLogout }) {
 
   async function hideCapturedCandidate(candidateId) {
     await patchCandidate(candidateId, { hidden_from_captured: true }, "Candidate hidden from captured notes.");
+  }
+
+  async function restoreCapturedCandidate(candidateId) {
+    await patchCandidate(candidateId, { hidden_from_captured: false }, "Candidate restored to active captured notes.");
+  }
+
+  async function deleteCapturedCandidate(candidateId) {
+    if (!window.confirm("Delete this captured note permanently?")) return;
+    await api(`/candidates?id=${encodeURIComponent(candidateId)}`, token, "DELETE");
+    await loadWorkspace();
+    setStatus("captured", "Candidate deleted.", "ok");
   }
 
   async function parseQuickUpdateRecruiterNote() {
@@ -4016,12 +4079,17 @@ function PortalApp({ token, onLogout }) {
       setStatus(statusKey, "Candidate not found for assessment conversion.", "error");
       return;
     }
+    const candidateName = candidate?.name || sourceApplicant?.candidateName || "";
     const matched = (state.assessments || []).find((item) =>
       String(item.candidateId || "") === String(candidate?.id || sourceApplicant?.id || "") ||
       String(item.candidateName || "").trim().toLowerCase() === String(candidate?.name || sourceApplicant?.candidateName || "").trim().toLowerCase()
     );
     if (matched) {
       openSavedAssessment(matched);
+      return;
+    }
+
+    if (!window.confirm(`Create assessment for ${candidateName || "this candidate"}? This will move the record out of the active ${sourceApplicant ? "Applied Candidates" : "Captured Notes"} list.`)) {
       return;
     }
 
@@ -4034,7 +4102,6 @@ function PortalApp({ token, onLogout }) {
           currentOrgTenure: candidate?.current_org_tenure || ""
         }, cvMeta.cvAnalysisCache.result, cvMeta.cvAnalysisCache.storedFile || null)
       : null;
-    const candidateName = candidate?.name || sourceApplicant?.candidateName || "";
     const assessment = {
       id: `assessment-${Date.now()}`,
       candidateId: String(candidate?.id || sourceApplicant?.id || ""),
@@ -4550,7 +4617,7 @@ function PortalApp({ token, onLogout }) {
 
   async function copyCapturedExcel() {
     const rows = buildCapturedCopyRows();
-    const preset = buildCapturedExcelRows(rows, copySettings.excelPreset, copySettings);
+    const preset = buildCapturedExcelRows(rows, activeCopyPresetId || copySettings.excelPreset, copySettings);
     const lines = [preset.headers.join("\t"), ...preset.rows.map((row) => row.map((cell) => String(cell || "").replace(/\t/g, " ").replace(/\r?\n/g, " ")).join("\t"))].join("\n");
     await copyText(lines);
     setStatus("captured", "Filtered candidates copied in Excel format.", "ok");
@@ -4558,14 +4625,14 @@ function PortalApp({ token, onLogout }) {
 
   async function copyCapturedWhatsapp() {
     const rows = buildCapturedCopyRows();
-    const text = rows.map((item, index) => fillCandidateTemplate(copySettings.whatsappTemplate, { ...item, index: index + 1, follow_up_at: formatDateForCopy(item.next_follow_up_at) })).filter(Boolean).join("\n\n");
+    const text = rows.map((item, index) => fillCandidateTemplate(copySettings.whatsappTemplate || DEFAULT_COPY_SETTINGS.whatsappTemplate, { ...item, index: index + 1, follow_up_at: formatDateForCopy(item.next_follow_up_at) })).filter(Boolean).join("\n\n");
     await copyText(text);
     setStatus("captured", "Filtered candidates copied in WhatsApp format.", "ok");
   }
 
   async function copyCapturedEmail() {
     const rows = buildCapturedCopyRows();
-    const text = rows.map((item, index) => fillCandidateTemplate(copySettings.emailTemplate, { ...item, index: index + 1, follow_up_at: formatDateForCopy(item.next_follow_up_at) })).filter(Boolean).join("\n\n");
+    const text = rows.map((item, index) => fillCandidateTemplate(copySettings.emailTemplate || DEFAULT_COPY_SETTINGS.emailTemplate, { ...item, index: index + 1, follow_up_at: formatDateForCopy(item.next_follow_up_at) })).filter(Boolean).join("\n\n");
     await copyText(text);
     setStatus("captured", "Filtered candidates copied in email format.", "ok");
   }
@@ -4607,7 +4674,7 @@ function PortalApp({ token, onLogout }) {
 
   async function copyApplicantsExcel() {
     const rows = buildApplicantCopyRows();
-    const preset = buildCapturedExcelRows(rows, copySettings.excelPreset, copySettings);
+    const preset = buildCapturedExcelRows(rows, activeCopyPresetId || copySettings.excelPreset, copySettings);
     const lines = [preset.headers.join("\t"), ...preset.rows.map((row) => row.map((cell) => String(cell || "").replace(/\t/g, " ").replace(/\r?\n/g, " ")).join("\t"))].join("\n");
     await copyText(lines);
     setStatus("applicants", "Filtered applied candidates copied in Excel format.", "ok");
@@ -4615,33 +4682,33 @@ function PortalApp({ token, onLogout }) {
 
   async function copyApplicantsWhatsapp() {
     const rows = buildApplicantCopyRows();
-    const text = rows.map((item, index) => fillCandidateTemplate(copySettings.whatsappTemplate, { ...item, index: index + 1 })).filter(Boolean).join("\n\n");
+    const text = rows.map((item, index) => fillCandidateTemplate(copySettings.whatsappTemplate || DEFAULT_COPY_SETTINGS.whatsappTemplate, { ...item, index: index + 1 })).filter(Boolean).join("\n\n");
     await copyText(text);
     setStatus("applicants", "Filtered applied candidates copied in WhatsApp format.", "ok");
   }
 
   async function copyApplicantsEmail() {
     const rows = buildApplicantCopyRows();
-    const text = rows.map((item, index) => fillCandidateTemplate(copySettings.emailTemplate, { ...item, index: index + 1 })).filter(Boolean).join("\n\n");
+    const text = rows.map((item, index) => fillCandidateTemplate(copySettings.emailTemplate || DEFAULT_COPY_SETTINGS.emailTemplate, { ...item, index: index + 1 })).filter(Boolean).join("\n\n");
     await copyText(text);
     setStatus("applicants", "Filtered applied candidates copied in email format.", "ok");
   }
 
   async function copyAssessmentsExcel() {
-    const preset = buildCapturedExcelRows(normalizedAssessmentCopyRows, copySettings.excelPreset, copySettings);
+    const preset = buildCapturedExcelRows(normalizedAssessmentCopyRows, activeCopyPresetId || copySettings.excelPreset, copySettings);
     const lines = [preset.headers.join("\t"), ...preset.rows.map((row) => row.map((cell) => String(cell || "").replace(/\t/g, " ").replace(/\r?\n/g, " ")).join("\t"))].join("\n");
     await copyText(lines);
     setStatus("assessments", "Filtered assessments copied in Excel format.", "ok");
   }
 
   async function copyAssessmentsWhatsapp() {
-    const text = normalizedAssessmentCopyRows.map((item, index) => fillCandidateTemplate(copySettings.whatsappTemplate, { ...item, index: index + 1 })).filter(Boolean).join("\n\n");
+    const text = normalizedAssessmentCopyRows.map((item, index) => fillCandidateTemplate(copySettings.whatsappTemplate || DEFAULT_COPY_SETTINGS.whatsappTemplate, { ...item, index: index + 1 })).filter(Boolean).join("\n\n");
     await copyText(text);
     setStatus("assessments", "Filtered assessments copied in WhatsApp format.", "ok");
   }
 
   async function copyAssessmentsEmail() {
-    const text = normalizedAssessmentCopyRows.map((item, index) => fillCandidateTemplate(copySettings.emailTemplate, { ...item, index: index + 1 })).filter(Boolean).join("\n\n");
+    const text = normalizedAssessmentCopyRows.map((item, index) => fillCandidateTemplate(copySettings.emailTemplate || DEFAULT_COPY_SETTINGS.emailTemplate, { ...item, index: index + 1 })).filter(Boolean).join("\n\n");
     await copyText(text);
     setStatus("assessments", "Filtered assessments copied in email format.", "ok");
   }
@@ -4683,7 +4750,7 @@ function PortalApp({ token, onLogout }) {
 
   async function copyCandidatesExcel() {
     const rows = buildCandidateUniverseCopyRows();
-    const preset = buildCapturedExcelRows(rows, copySettings.excelPreset, copySettings);
+    const preset = buildCapturedExcelRows(rows, activeCopyPresetId || copySettings.excelPreset, copySettings);
     const lines = [preset.headers.join("\t"), ...preset.rows.map((row) => row.map((cell) => String(cell || "").replace(/\t/g, " ").replace(/\r?\n/g, " ")).join("\t"))].join("\n");
     await copyText(lines);
     setStatus("workspace", "Candidate search results copied in Excel format.", "ok");
@@ -4691,21 +4758,21 @@ function PortalApp({ token, onLogout }) {
 
   async function copyCandidatesWhatsapp() {
     const rows = buildCandidateUniverseCopyRows();
-    const text = rows.map((item, index) => fillCandidateTemplate(copySettings.whatsappTemplate, { ...item, index: index + 1 })).filter(Boolean).join("\n\n");
+    const text = rows.map((item, index) => fillCandidateTemplate(copySettings.whatsappTemplate || DEFAULT_COPY_SETTINGS.whatsappTemplate, { ...item, index: index + 1 })).filter(Boolean).join("\n\n");
     await copyText(text);
     setStatus("workspace", "Candidate search results copied in WhatsApp format.", "ok");
   }
 
   async function copyCandidatesEmail() {
     const rows = buildCandidateUniverseCopyRows();
-    const text = rows.map((item, index) => fillCandidateTemplate(copySettings.emailTemplate, { ...item, index: index + 1 })).filter(Boolean).join("\n\n");
+    const text = rows.map((item, index) => fillCandidateTemplate(copySettings.emailTemplate || DEFAULT_COPY_SETTINGS.emailTemplate, { ...item, index: index + 1 })).filter(Boolean).join("\n\n");
     await copyText(text);
     setStatus("workspace", "Candidate search results copied in email format.", "ok");
   }
 
   function downloadCandidatesExcel() {
     const rows = buildCandidateUniverseCopyRows();
-    const preset = buildCapturedExcelRows(rows, copySettings.excelPreset, copySettings);
+    const preset = buildCapturedExcelRows(rows, activeCopyPresetId || copySettings.excelPreset, copySettings);
     const text = [preset.headers.join("\t"), ...preset.rows.map((row) => row.map((cell) => String(cell || "").replace(/\t/g, " ").replace(/\r?\n/g, " ")).join("\t"))].join("\n");
     const blob = new Blob([text], { type: "text/tab-separated-values;charset=utf-8" });
     const url = URL.createObjectURL(blob);
@@ -4750,9 +4817,17 @@ function PortalApp({ token, onLogout }) {
     const context = getClientShareContext();
     const signatureText = String(clientShareDraft.signatureText || "").trim()
       || fillClientShareTemplate(copySettings.clientShareSignatureText || DEFAULT_COPY_SETTINGS.clientShareSignatureText || "", context).trim();
-    const linkLabel = String(clientShareDraft.signatureLinkLabel || copySettings.clientShareSignatureLinkLabel || "").trim();
-    const linkUrl = String(clientShareDraft.signatureLinkUrl || copySettings.clientShareSignatureLinkUrl || "").trim();
-    return { signatureText, linkLabel, linkUrl };
+    const links = [
+      {
+        label: String(clientShareDraft.signatureLinkLabel || copySettings.clientShareSignatureLinkLabel || "").trim(),
+        url: String(clientShareDraft.signatureLinkUrl || copySettings.clientShareSignatureLinkUrl || "").trim()
+      },
+      {
+        label: String(clientShareDraft.signatureLinkLabel2 || copySettings.clientShareSignatureLinkLabel2 || "").trim(),
+        url: String(clientShareDraft.signatureLinkUrl2 || copySettings.clientShareSignatureLinkUrl2 || "").trim()
+      }
+    ].filter((link) => link.url);
+    return { signatureText, links };
   }
 
   function buildClientShareBody() {
@@ -4782,7 +4857,7 @@ function PortalApp({ token, onLogout }) {
       ...profileLines,
       String(clientShareDraft.extraMessage || "").trim(),
       signature.signatureText,
-      signature.linkUrl ? `${signature.linkLabel || "Link"}: ${signature.linkUrl}` : ""
+      ...signature.links.map((link) => `${link.label || "Link"}: ${link.url}`)
     ].filter((line, index, array) => line || (index > 0 && array[index - 1] !== "")).join("\n");
   }
 
@@ -4808,9 +4883,13 @@ function PortalApp({ token, onLogout }) {
     const introText = getClientShareIntroText();
     const introHtml = escapeHtml(introText).replace(/\n/g, "<br/>");
     const signature = getClientShareSignature();
-    const signatureHtml = signature.signatureText
-      ? `${escapeHtml(signature.signatureText).replace(/\n/g, "<br/>")}${signature.linkUrl ? `<br/><a href="${escapeHtml(signature.linkUrl)}" target="_blank" rel="noopener noreferrer" style="color:#0b57d0;text-decoration:none;">${escapeHtml(signature.linkLabel || signature.linkUrl)}</a>` : ""}`
-      : (signature.linkUrl ? `<a href="${escapeHtml(signature.linkUrl)}" target="_blank" rel="noopener noreferrer" style="color:#0b57d0;text-decoration:none;">${escapeHtml(signature.linkLabel || signature.linkUrl)}</a>` : "");
+    const signatureLinksHtml = signature.links
+      .map((link) => `<a href="${escapeHtml(link.url)}" target="_blank" rel="noopener noreferrer" style="color:#0b57d0;text-decoration:none;">${escapeHtml(link.label || link.url)}</a>`)
+      .join("<br/>");
+    const signatureHtml = [
+      signature.signatureText ? escapeHtml(signature.signatureText).replace(/\n/g, "<br/>") : "",
+      signatureLinksHtml
+    ].filter(Boolean).join("<br/>");
     return `
       <div style="font-family:Arial, sans-serif;color:#1f2a44;line-height:1.6;">
         <p>${introHtml}</p>
@@ -4855,7 +4934,7 @@ function PortalApp({ token, onLogout }) {
       customExportPresets: copySettings.customExportPresets || []
     };
     const result = await api("/company/shared-export-presets", token, "POST", { settings: payload });
-    setCopySettings((current) => ({ ...current, ...DEFAULT_COPY_SETTINGS, ...result }));
+    setCopySettings((current) => ({ ...DEFAULT_COPY_SETTINGS, ...current, ...result }));
     setStatus("settings", "Shared copy presets saved for all recruiters.", "ok");
   }
 
@@ -5356,7 +5435,14 @@ function PortalApp({ token, onLogout }) {
     return value && value >= agendaWindowStart && value < nextWeekEnd;
   });
   const pendingAssignments = (state.applicants || []).length;
-  const pendingNotes = (state.candidates || []).filter((item) => !String(item.assessment_id || "").trim()).length;
+  const pendingNotes = (state.candidates || []).filter((item) => {
+    const sourceValue = String(item.source || "").trim();
+    if (["website_apply", "hosted_apply", "google_sheet"].includes(sourceValue)) return false;
+    const matchedAssessment = capturedAssessmentMap.get(String(item.name || "").trim().toLowerCase());
+    if (matchedAssessment || item.used_in_assessment || String(item.assessment_id || "").trim()) return false;
+    const outcomeValue = getCapturedOutcome(item, matchedAssessment);
+    return !item.hidden_from_captured && !isAutoHiddenWorkflowOutcome(outcomeValue) && !isTerminalStatus(outcomeValue);
+  }).length;
   const scheduledFollowUpItems = todaysFollowUps
     .map((item) => ({
       key: `followup-${item.id}`,
@@ -5856,8 +5942,15 @@ function PortalApp({ token, onLogout }) {
                 {String(state.user?.role || "").toLowerCase() === "admin" ? <MultiSelectDropdown label="Owned by" options={applicantOptions.ownedBy} selected={applicantFilters.ownedBy} onToggle={(value) => setApplicantFilters((current) => ({ ...current, ownedBy: value === "__all__" ? [] : current.ownedBy.includes(value) ? current.ownedBy.filter((item) => item !== value) : [...current.ownedBy, value] }))} /> : null}
                 {String(state.user?.role || "").toLowerCase() === "admin" ? <MultiSelectDropdown label="Assigned to" options={applicantOptions.assignedTo} selected={applicantFilters.assignedTo} onToggle={(value) => setApplicantFilters((current) => ({ ...current, assignedTo: value === "__all__" ? [] : current.assignedTo.includes(value) ? current.assignedTo.filter((item) => item !== value) : [...current.assignedTo, value] }))} /> : null}
                 <MultiSelectDropdown label="Outcome" options={applicantOptions.outcomes} selected={applicantFilters.outcomes} onToggle={(value) => setApplicantFilters((current) => ({ ...current, outcomes: value === "__all__" ? [] : current.outcomes.includes(value) ? current.outcomes.filter((item) => item !== value) : [...current.outcomes, value] }))} />
+                <MultiSelectDropdown label="State" options={applicantOptions.activeStates} selected={applicantFilters.activeStates} onToggle={(value) => setApplicantFilters((current) => ({ ...current, activeStates: value === "__all__" ? [] : current.activeStates.includes(value) ? current.activeStates.filter((item) => item !== value) : [...current.activeStates, value] }))} />
               </div>
               <div className="button-row">
+                <label className="copy-preset-control">
+                  <span>Copy preset</span>
+                  <select value={activeCopyPresetId} onChange={(e) => setActiveCopyPresetId(e.target.value)}>
+                    {exportPresetOptions.map((preset) => <option key={preset.id} value={preset.id}>{preset.label}</option>)}
+                  </select>
+                </label>
                 <button onClick={() => void copyApplicantsExcel()}>Copy Excel</button>
                 <button onClick={() => void copyApplicantsWhatsapp()}>Copy WhatsApp</button>
                 <button onClick={() => void copyApplicantsEmail()}>Copy Email</button>
@@ -5890,6 +5983,11 @@ function PortalApp({ token, onLogout }) {
                       <button onClick={() => void createAssessmentFromCandidate(item.id)}>Create assessment</button>
                       {item.cvFilename ? <button onClick={() => void openCv(item.id)}>Open CV</button> : null}
                       {state.user?.role === "admin" ? <button onClick={() => setAssignApplicantId(item.id)}>Assign</button> : null}
+                      {item.hidden_from_captured ? (
+                        <button className="ghost-btn" onClick={() => void restoreApplicant(item.id)}>Restore to active</button>
+                      ) : (
+                        <button className="ghost-btn" onClick={() => void hideApplicant(item.id)}>Hide from list</button>
+                      )}
                       {state.user?.role === "admin" ? <button className="ghost-btn" onClick={() => void removeApplicant(item.id)}>Remove</button> : null}
                     </div>
                     <div className="candidate-snippet">{[
@@ -5926,8 +6024,15 @@ function PortalApp({ token, onLogout }) {
                   <MultiSelectDropdown label="Captured by" options={capturedCandidateOptions.capturedBy} selected={candidateFilters.capturedBy} onToggle={(value) => setCandidateFilters((current) => ({ ...current, capturedBy: value === "__all__" ? [] : current.capturedBy.includes(value) ? current.capturedBy.filter((item) => item !== value) : [...current.capturedBy, value] }))} />
                   <MultiSelectDropdown label="Sources" options={capturedCandidateOptions.sources} selected={candidateFilters.sources} onToggle={(value) => setCandidateFilters((current) => ({ ...current, sources: value === "__all__" ? [] : current.sources.includes(value) ? current.sources.filter((item) => item !== value) : [...current.sources, value] }))} />
                   <MultiSelectDropdown label="Outcome" options={capturedCandidateOptions.outcomes} selected={candidateFilters.outcomes} onToggle={(value) => setCandidateFilters((current) => ({ ...current, outcomes: value === "__all__" ? [] : current.outcomes.includes(value) ? current.outcomes.filter((item) => item !== value) : [...current.outcomes, value] }))} />
+                  <MultiSelectDropdown label="State" options={capturedCandidateOptions.activeStates} selected={candidateFilters.activeStates} onToggle={(value) => setCandidateFilters((current) => ({ ...current, activeStates: value === "__all__" ? [] : current.activeStates.includes(value) ? current.activeStates.filter((item) => item !== value) : [...current.activeStates, value] }))} />
                 </div>
                 <div className="button-row">
+                  <label className="copy-preset-control">
+                    <span>Copy preset</span>
+                    <select value={activeCopyPresetId} onChange={(e) => setActiveCopyPresetId(e.target.value)}>
+                      {exportPresetOptions.map((preset) => <option key={preset.id} value={preset.id}>{preset.label}</option>)}
+                    </select>
+                  </label>
                   <button onClick={() => void copyCapturedExcel()}>Copy Excel</button>
                   <button onClick={() => void copyCapturedWhatsapp()}>Copy WhatsApp</button>
                   <button onClick={() => void copyCapturedEmail()}>Copy Email</button>
@@ -5956,8 +6061,12 @@ function PortalApp({ token, onLogout }) {
                         <button onClick={() => setNotesCandidateId(item.id)}>Recruiter note</button>
                         <button onClick={() => void openAttempts(item.id)}>Attempts</button>
                         <button onClick={() => void createAssessmentFromCandidate(item.id)}>Create assessment</button>
-                        <button className="ghost-btn" onClick={() => void hideCapturedCandidate(item.id)}>Hide from list</button>
-                        <button className="ghost-btn" onClick={() => void api(`/candidates?id=${encodeURIComponent(item.id)}`, token, "DELETE").then(loadWorkspace).then(() => setStatus("captured", "Candidate deleted.", "ok")).catch((error) => setStatus("captured", String(error?.message || error), "error"))}>Delete</button>
+                        {item.hidden_from_captured ? (
+                          <button className="ghost-btn" onClick={() => void restoreCapturedCandidate(item.id)}>Restore to active</button>
+                        ) : (
+                          <button className="ghost-btn" onClick={() => void hideCapturedCandidate(item.id)}>Hide from list</button>
+                        )}
+                        <button className="ghost-btn" onClick={() => void deleteCapturedCandidate(item.id).catch((error) => setStatus("captured", String(error?.message || error), "error"))}>Delete</button>
                       </div>
                       <div className="candidate-snippet">{[item.notes ? `Initial notes:\n${item.notes}` : "", item.recruiter_context_notes, item.other_pointers].filter(Boolean).join("\n\n") || "No recruiter note or pointers yet."}</div>
                     </article>
@@ -5982,6 +6091,12 @@ function PortalApp({ token, onLogout }) {
                 <MultiSelectDropdown label="Outcome" options={assessmentOptions.outcomes} selected={assessmentFilters.outcomes} onToggle={(value) => setAssessmentFilters((current) => ({ ...current, outcomes: value === "__all__" ? [] : current.outcomes.includes(value) ? current.outcomes.filter((item) => item !== value) : [...current.outcomes, value] }))} />
               </div>
               <div className="button-row">
+                <label className="copy-preset-control">
+                  <span>Copy preset</span>
+                  <select value={activeCopyPresetId} onChange={(e) => setActiveCopyPresetId(e.target.value)}>
+                    {exportPresetOptions.map((preset) => <option key={preset.id} value={preset.id}>{preset.label}</option>)}
+                  </select>
+                </label>
                 <button onClick={() => void copyAssessmentsExcel()}>Copy Excel</button>
                 <button onClick={() => void copyAssessmentsWhatsapp()}>Copy WhatsApp</button>
                 <button onClick={() => void copyAssessmentsEmail()}>Copy Email</button>
@@ -6191,8 +6306,10 @@ function PortalApp({ token, onLogout }) {
                     <textarea value={clientShareDraft.signatureText || ""} onChange={(e) => setClientShareDraft((current) => ({ ...current, signatureText: e.target.value }))} placeholder={fillClientShareTemplate(copySettings.clientShareSignatureText || DEFAULT_COPY_SETTINGS.clientShareSignatureText, getClientShareContext())} />
                     <span className="field-help">Normal text only. Font email body jaisa hi rahega.</span>
                   </label>
-                  <label><span>Signature link text</span><input value={clientShareDraft.signatureLinkLabel || ""} onChange={(e) => setClientShareDraft((current) => ({ ...current, signatureLinkLabel: e.target.value }))} placeholder="Kompatible Minds" /></label>
-                  <label><span>Signature link URL</span><input value={clientShareDraft.signatureLinkUrl || ""} onChange={(e) => setClientShareDraft((current) => ({ ...current, signatureLinkUrl: e.target.value }))} placeholder="https://kompatibleminds.com" /></label>
+                  <label><span>Signature link 1 text</span><input value={clientShareDraft.signatureLinkLabel || ""} onChange={(e) => setClientShareDraft((current) => ({ ...current, signatureLinkLabel: e.target.value }))} placeholder="Kompatible Minds" /></label>
+                  <label><span>Signature link 1 URL</span><input value={clientShareDraft.signatureLinkUrl || ""} onChange={(e) => setClientShareDraft((current) => ({ ...current, signatureLinkUrl: e.target.value }))} placeholder="https://kompatibleminds.com" /></label>
+                  <label><span>Signature link 2 text</span><input value={clientShareDraft.signatureLinkLabel2 || ""} onChange={(e) => setClientShareDraft((current) => ({ ...current, signatureLinkLabel2: e.target.value }))} placeholder="LinkedIn" /></label>
+                  <label><span>Signature link 2 URL</span><input value={clientShareDraft.signatureLinkUrl2 || ""} onChange={(e) => setClientShareDraft((current) => ({ ...current, signatureLinkUrl2: e.target.value }))} placeholder="https://www.linkedin.com/in/..." /></label>
                   <label className="full">
                     <span>Email preview</span>
                     <div className="client-share-preview" dangerouslySetInnerHTML={{ __html: buildClientShareHtml() }} />
@@ -6523,9 +6640,12 @@ function PortalApp({ token, onLogout }) {
             <Route path="/settings" element={
               <div className="page-grid">
                 <Section kicker="Copy Presets" title="Preset Settings">
-                  <p className="muted">Set shared Excel preset and default WhatsApp / email formats for filtered captured notes. These settings can be shared across recruiters.</p>
+                  <p className="muted">Set shared candidate tracker presets and direct-share email defaults. Admin saves them once; recruiters can choose the preset while copying or sharing.</p>
                   {!isSettingsAdmin ? <p className="muted">You can use shared presets here. Only admin can create, edit, or save shared preset settings.</p> : null}
                   {statuses.settings ? <div className={`status ${statuses.settingsKind || ""}`}>{statuses.settings}</div> : null}
+                  <div className="settings-subsection">
+                    <div className="section-kicker">Candidate Tracker Preset</div>
+                    <p className="muted">Excel columns, WhatsApp copy, and email copy used in Captured Notes, Applied Candidates, Assessments, and Database.</p>
                   <div className="form-grid">
                     <label>
                       <span>Excel preset</span>
@@ -6569,12 +6689,19 @@ function PortalApp({ token, onLogout }) {
                     </p>
                     <label className="full">
                       <span>WhatsApp template</span>
-                      <textarea disabled={!isSettingsAdmin} value={copySettings.whatsappTemplate} onChange={(e) => setCopySettings((current) => ({ ...current, whatsappTemplate: e.target.value }))} />
+                      <textarea disabled={!isSettingsAdmin} value={copySettings.whatsappTemplate || DEFAULT_COPY_SETTINGS.whatsappTemplate} onChange={(e) => setCopySettings((current) => ({ ...current, whatsappTemplate: e.target.value }))} />
                     </label>
                     <label className="full">
                       <span>Email template</span>
-                      <textarea disabled={!isSettingsAdmin} value={copySettings.emailTemplate} onChange={(e) => setCopySettings((current) => ({ ...current, emailTemplate: e.target.value }))} />
+                      <textarea disabled={!isSettingsAdmin} value={copySettings.emailTemplate || DEFAULT_COPY_SETTINGS.emailTemplate} onChange={(e) => setCopySettings((current) => ({ ...current, emailTemplate: e.target.value }))} />
                     </label>
+                  </div>
+                  <p className="muted">Available placeholders: copy templates use {`{{index}} {{name}} {{jd_title}} {{company}} {{outcome}} {{recruiter_notes}} {{location}} {{phone}} {{email}} {{source}} {{follow_up_at}}`}.</p>
+                  </div>
+                  <div className="settings-subsection">
+                    <div className="section-kicker">Direct Share Email Preset</div>
+                    <p className="muted">Default intro and signature used in Direct Share. Recruiters can still override them for one email draft.</p>
+                    <div className="form-grid">
                     <label className="full">
                       <span>Direct share default email intro</span>
                       <textarea disabled={!isSettingsAdmin} value={copySettings.clientShareIntroTemplate || DEFAULT_COPY_SETTINGS.clientShareIntroTemplate} onChange={(e) => setCopySettings((current) => ({ ...current, clientShareIntroTemplate: e.target.value }))} />
@@ -6583,15 +6710,23 @@ function PortalApp({ token, onLogout }) {
                       <span>Direct share default signature text</span>
                       <textarea disabled={!isSettingsAdmin} value={copySettings.clientShareSignatureText || DEFAULT_COPY_SETTINGS.clientShareSignatureText} onChange={(e) => setCopySettings((current) => ({ ...current, clientShareSignatureText: e.target.value }))} />
                     </label>
-                    <label><span>Signature default link text</span><input disabled={!isSettingsAdmin} value={copySettings.clientShareSignatureLinkLabel || ""} onChange={(e) => setCopySettings((current) => ({ ...current, clientShareSignatureLinkLabel: e.target.value }))} placeholder="Kompatible Minds" /></label>
-                    <label><span>Signature default link URL</span><input disabled={!isSettingsAdmin} value={copySettings.clientShareSignatureLinkUrl || ""} onChange={(e) => setCopySettings((current) => ({ ...current, clientShareSignatureLinkUrl: e.target.value }))} placeholder="https://kompatibleminds.com" /></label>
+                    <label><span>Signature link 1 text</span><input disabled={!isSettingsAdmin} value={copySettings.clientShareSignatureLinkLabel || ""} onChange={(e) => setCopySettings((current) => ({ ...current, clientShareSignatureLinkLabel: e.target.value }))} placeholder="Kompatible Minds" /></label>
+                    <label><span>Signature link 1 URL</span><input disabled={!isSettingsAdmin} value={copySettings.clientShareSignatureLinkUrl || ""} onChange={(e) => setCopySettings((current) => ({ ...current, clientShareSignatureLinkUrl: e.target.value }))} placeholder="https://kompatibleminds.com" /></label>
+                    <label><span>Signature link 2 text</span><input disabled={!isSettingsAdmin} value={copySettings.clientShareSignatureLinkLabel2 || ""} onChange={(e) => setCopySettings((current) => ({ ...current, clientShareSignatureLinkLabel2: e.target.value }))} placeholder="LinkedIn" /></label>
+                    <label><span>Signature link 2 URL</span><input disabled={!isSettingsAdmin} value={copySettings.clientShareSignatureLinkUrl2 || ""} onChange={(e) => setCopySettings((current) => ({ ...current, clientShareSignatureLinkUrl2: e.target.value }))} placeholder="https://www.linkedin.com/in/..." /></label>
+                    </div>
+                    <p className="muted">Direct share intro/signature placeholders use {`{{hr_name}} {{recruiter_name}} {{company_name}} {{client_name}} {{role}} {{role_line}}`}.</p>
+                  </div>
+                  <div className="settings-subsection">
+                    <div className="section-kicker">Create Candidate Tracker Preset</div>
+                    <div className="form-grid">
                     <label><span>New preset label</span><input disabled={!isSettingsAdmin} value={newPresetDraft.label} onChange={(e) => setNewPresetDraft((current) => ({ ...current, label: e.target.value }))} placeholder="Client shortlisting sheet" /></label>
                     <label className="full"><span>New preset columns</span><textarea disabled={!isSettingsAdmin} value={newPresetDraft.columns} onChange={(e) => setNewPresetDraft((current) => ({ ...current, columns: e.target.value }))} placeholder={"S.No.|s_no\nName|name\nStatus|assessment_status"} /></label>
                   </div>
-                  <p className="muted">Available placeholders: copy templates use {`{{index}} {{name}} {{jd_title}} {{company}} {{outcome}} {{recruiter_notes}} {{location}} {{phone}} {{email}} {{source}} {{follow_up_at}}`}. Direct share intro/signature use {`{{hr_name}} {{recruiter_name}} {{company_name}} {{client_name}} {{role}} {{role_line}}`}.</p>
                   {isSettingsAdmin ? <div className="button-row">
                     <button className="ghost-btn" onClick={addCustomPreset}>Add custom preset</button>
                   </div> : null}
+                  </div>
                   <div className="stack-list compact">
                     {(copySettings.customExportPresets || []).map((preset) => (
                       <article className="item-card compact-card" key={preset.id}>
