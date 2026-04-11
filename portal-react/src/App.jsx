@@ -5555,7 +5555,7 @@ function PortalApp({ token, onLogout }) {
                     <label><span>Experience to</span><input type="number" min="0" value={candidateStructuredFilters.maxExperience} onChange={(e) => setCandidateStructuredFilters((current) => ({ ...current, maxExperience: e.target.value }))} placeholder="10" /></label>
                     <label><span>Years</span><input value="Years" readOnly /></label>
                     <label><span>Location</span><input value={candidateStructuredFilters.location} onChange={(e) => setCandidateStructuredFilters((current) => ({ ...current, location: e.target.value }))} placeholder="Mumbai" /></label>
-                    <label><span>Key skills</span><input value={candidateStructuredFilters.keySkills} onChange={(e) => setCandidateStructuredFilters((current) => ({ ...current, keySkills: e.target.value }))} placeholder="SaaS, sales, B2B" /></label>
+                    <label><span>Keywords</span><input value={candidateStructuredFilters.keySkills} onChange={(e) => setCandidateStructuredFilters((current) => ({ ...current, keySkills: e.target.value }))} placeholder="SaaS, sales, B2B, candidate name" /></label>
                     <label><span>Current company</span><input value={candidateStructuredFilters.currentCompany} onChange={(e) => setCandidateStructuredFilters((current) => ({ ...current, currentCompany: e.target.value }))} placeholder="Infosys" /></label>
                     <label><span>Client</span><select value={candidateStructuredFilters.client} onChange={(e) => setCandidateStructuredFilters((current) => ({ ...current, client: e.target.value }))}><option value="">All clients</option>{candidateSearchOptions.clients.map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
                     <label><span>Current CTC from</span><input type="number" min="0" value={candidateStructuredFilters.minCurrentCtc} onChange={(e) => setCandidateStructuredFilters((current) => ({ ...current, minCurrentCtc: e.target.value }))} placeholder="10" /></label>
@@ -5572,7 +5572,7 @@ function PortalApp({ token, onLogout }) {
                 </div>
                 <div className="item-card compact-card">
                   <h3>Search examples</h3>
-                  <p className="muted">{candidateAiQueryMode === "boolean" ? "Use exact keywords with AND / OR and quoted phrases, similar to Naukri boolean search." : "Write the recruiter query naturally. AI will interpret the statement into structured search filters, then retrieval will run deterministically on saved fields, recruiter notes, other pointers, attempts, tags, and hidden CV metadata."}</p>
+                  <p className="muted">{candidateAiQueryMode === "boolean" ? "Use exact keywords with AND / OR and quoted phrases, similar to Naukri boolean search." : "Write the recruiter query naturally. AI will interpret the statement into structured filters and keywords, then retrieval will run deterministically on saved fields, recruiter notes, other pointers, attempts, tags, and hidden CV metadata."}</p>
                   <div className="button-row">
                     {(candidateAiQueryMode === "boolean" ? BOOLEAN_SEARCH_EXAMPLE_PROMPTS : AI_SEARCH_EXAMPLE_PROMPTS).map((prompt) => (
                       <button
