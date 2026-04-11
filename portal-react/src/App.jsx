@@ -191,6 +191,7 @@ const EMPTY_CANDIDATE_STRUCTURED_FILTERS = {
 
 const DASHBOARD_METRIC_COLUMNS = [
   ["sourced", "Sourced"],
+  ["applied", "Applied"],
   ["converted", "Shared"],
   ["under_interview_process", "Under Interview"],
   ["rejected", "Rejected"],
@@ -203,6 +204,7 @@ const DASHBOARD_METRIC_COLUMNS = [
 
 const DASHBOARD_METRIC_TILES = [
   ["sourced", "Sourced"],
+  ["applied", "Applied"],
   ["converted", "Shared"],
   ["under_interview_process", "Under Interview"],
   ["offered", "Offered"],
@@ -2459,7 +2461,6 @@ function PortalApp({ token, onLogout }) {
     dateTo: "",
     clients: [],
     jds: [],
-    lanes: ["captured"],
     assignedTo: [],
     capturedBy: [],
     sources: [],
@@ -3157,8 +3158,9 @@ function PortalApp({ token, onLogout }) {
     for (const item of state.candidates || []) {
       const matchedAssessment = capturedAssessmentMap.get(String(item.name || "").trim().toLowerCase());
       const sourceValue = String(item.source || "").trim();
-      const isInboundApplicant = sourceValue === "website_apply" || sourceValue === "hosted_apply";
+      const isInboundApplicant = sourceValue === "website_apply" || sourceValue === "hosted_apply" || sourceValue === "google_sheet";
       if (isInboundApplicant) continue;
+      if (matchedAssessment || item.used_in_assessment) continue;
       const clientValue = String(item.client_name || matchedAssessment?.clientName || "Unassigned").trim();
       const jdValue = String(item.jd_title || matchedAssessment?.jdTitle || item.role || "").trim();
       const outcomeValue = getCapturedOutcome(item, matchedAssessment);
@@ -3185,15 +3187,42 @@ function PortalApp({ token, onLogout }) {
     };
   }, [capturedAssessmentMap, state.candidates, state.jobs, state.user]);
 
-  const capturedCandidates = useMemo(() => {
+  const capturedNotesUniverse = useMemo(() => {
     return (state.candidates || []).filter((item) => {
-      const matchedAssessment = capturedAssessmentMap.get(String(item.name || "").trim().toLowerCase());
       const sourceValue = String(item.source || "").trim();
-      const isInboundApplicant = sourceValue === "website_apply" || sourceValue === "hosted_apply";
-      if (isInboundApplicant) return false;
+      const isInboundApplicant = sourceValue === "website_apply" || sourceValue === "hosted_apply" || sourceValue === "google_sheet";
+      return !isInboundApplicant;
+    });
+  }, [state.candidates]);
+
+  const capturedNotesStats = useMemo(() => {
+    const todayKey = new Date().toISOString().slice(0, 10);
+    const convertedCount = capturedNotesUniverse.filter((item) => {
+      const matchedAssessment = capturedAssessmentMap.get(String(item.name || "").trim().toLowerCase());
+      return Boolean(matchedAssessment || item.used_in_assessment);
+    }).length;
+    const activeCount = capturedNotesUniverse.filter((item) => {
+      const matchedAssessment = capturedAssessmentMap.get(String(item.name || "").trim().toLowerCase());
+      if (matchedAssessment || item.used_in_assessment) return false;
+      const outcomeValue = getCapturedOutcome(item, matchedAssessment);
+      const hiddenOutcome = ["not interested", "screening reject", "revisit for other role"].includes(String(outcomeValue || "").trim().toLowerCase());
+      return !item.hidden_from_captured && !hiddenOutcome && !isTerminalStatus(outcomeValue);
+    }).length;
+    return {
+      today: capturedNotesUniverse.filter((item) => String(item.created_at || "").slice(0, 10) === todayKey).length,
+      total: capturedNotesUniverse.length,
+      active: activeCount,
+      converted: convertedCount
+    };
+  }, [capturedAssessmentMap, capturedNotesUniverse]);
+
+  const capturedCandidates = useMemo(() => {
+    return capturedNotesUniverse.filter((item) => {
+      const matchedAssessment = capturedAssessmentMap.get(String(item.name || "").trim().toLowerCase());
+      if (matchedAssessment || item.used_in_assessment) return false;
+      const sourceValue = String(item.source || "").trim();
       const clientValue = String(item.client_name || matchedAssessment?.clientName || "Unassigned").trim();
       const jdValue = String(item.jd_title || matchedAssessment?.jdTitle || item.role || "").trim();
-      const laneValue = matchedAssessment || item.used_in_assessment ? "converted" : "captured";
       const assignedToValue = String(item.assigned_to_name || "Unassigned").trim();
       const capturedByValue = String(item.recruiter_name || item.assigned_by_name || "Unknown").trim();
       const outcomeValue = getCapturedOutcome(item, matchedAssessment);
@@ -3220,7 +3249,6 @@ function PortalApp({ token, onLogout }) {
       const dateToOk = !candidateFilters.dateTo || (createdAtValue && createdAtValue <= candidateFilters.dateTo);
       const clientOk = !candidateFilters.clients.length || candidateFilters.clients.includes(clientValue);
       const jdOk = !candidateFilters.jds.length || candidateFilters.jds.includes(jdValue);
-      const laneOk = !candidateFilters.lanes.length || candidateFilters.lanes.includes(laneValue);
       const assignedToOk = !candidateFilters.assignedTo.length || candidateFilters.assignedTo.includes(assignedToValue);
       const capturedByOk = !candidateFilters.capturedBy.length || candidateFilters.capturedBy.includes(capturedByValue);
       const sourceOk = !candidateFilters.sources.length || candidateFilters.sources.includes(sourceValue);
@@ -3229,9 +3257,9 @@ function PortalApp({ token, onLogout }) {
       const searchNameMatch = Boolean(queryText && nameHay.includes(queryText));
       const hiddenBlocked = manuallyHidden && !searchNameMatch;
       const hiddenOutcomeBlocked = hiddenOutcome && !searchNameMatch;
-      return !hiddenBlocked && !hiddenOutcomeBlocked && queryOk && dateFromOk && dateToOk && clientOk && jdOk && laneOk && assignedToOk && capturedByOk && sourceOk && outcomeOk && activeOk;
+      return !hiddenBlocked && !hiddenOutcomeBlocked && queryOk && dateFromOk && dateToOk && clientOk && jdOk && assignedToOk && capturedByOk && sourceOk && outcomeOk && activeOk;
     });
-  }, [candidateFilters, capturedAssessmentMap, state.candidates, state.users, state.user]);
+  }, [candidateFilters, capturedAssessmentMap, capturedNotesUniverse]);
 
   const filteredApplicants = useMemo(() => {
     const isAdmin = String(state.user?.role || "").toLowerCase() === "admin";
@@ -5497,7 +5525,7 @@ function PortalApp({ token, onLogout }) {
                         <summary className="dashboard-group__summary">
                           <div>
                             <h3>{group.label}</h3>
-                            <p className="muted">{`${group.metrics?.sourced || 0} sourced | ${group.metrics?.converted || 0} shared | ${group.metrics?.under_interview_process || 0} under interview`}</p>
+                            <p className="muted">{`${group.metrics?.sourced || 0} sourced | ${group.metrics?.applied || 0} applied | ${group.metrics?.converted || 0} shared | ${group.metrics?.under_interview_process || 0} under interview`}</p>
                           </div>
                         </summary>
                         <div className="metric-grid metric-grid--tight">
@@ -5517,7 +5545,7 @@ function PortalApp({ token, onLogout }) {
                             >
                               <span className="dashboard-position-chip__title">{row.positionLabel}</span>
                               <span className="dashboard-position-chip__meta">
-                                {`${row.metrics?.sourced || 0} sourced | ${row.metrics?.converted || 0} shared | ${row.metrics?.under_interview_process || 0} under interview`}
+                              {`${row.metrics?.sourced || 0} sourced | ${row.metrics?.applied || 0} applied | ${row.metrics?.converted || 0} shared | ${row.metrics?.under_interview_process || 0} under interview`}
                               </span>
                             </button>
                           ))}
@@ -5557,7 +5585,7 @@ function PortalApp({ token, onLogout }) {
                         <summary className="dashboard-group__summary">
                           <div>
                             <h3>{group.label}</h3>
-                            <p className="muted">{`${group.metrics?.sourced || 0} sourced | ${group.metrics?.converted || 0} shared | ${group.metrics?.under_interview_process || 0} under interview | ${group.metrics?.shortlisted || 0} shortlisted | ${group.metrics?.offered || 0} offered`}</p>
+                            <p className="muted">{`${group.metrics?.sourced || 0} sourced | ${group.metrics?.applied || 0} applied | ${group.metrics?.converted || 0} shared | ${group.metrics?.under_interview_process || 0} under interview | ${group.metrics?.shortlisted || 0} shortlisted | ${group.metrics?.offered || 0} offered`}</p>
                             <p className="muted">
                               {`Sourcing: ${group.ownership?.assignedSourcing || 0} assigned | ${group.ownership?.selfSourced || 0} self sourced`}
                             </p>
@@ -5826,14 +5854,14 @@ function PortalApp({ token, onLogout }) {
                 <label><span>Date to</span><input type="date" value={candidateFilters.dateTo} onChange={(e) => setCandidateFilters((c) => ({ ...c, dateTo: e.target.value }))} /></label>
               </div>
               <div className="metric-grid metric-grid--tight">
-                <div className="metric-card compact-metric"><div className="metric-label">Today</div><div className="metric-value">{capturedCandidates.filter((item) => String(item.created_at || "").slice(0, 10) === new Date().toISOString().slice(0, 10)).length}</div></div>
-                <div className="metric-card compact-metric"><div className="metric-label">Active</div><div className="metric-value">{capturedCandidates.filter((item) => !isTerminalStatus((capturedAssessmentMap.get(String(item.name || "").trim().toLowerCase())?.candidateStatus || item.candidate_status || ""))).length}</div></div>
-                <div className="metric-card compact-metric"><div className="metric-label">Converted</div><div className="metric-value">{capturedCandidates.filter((item) => capturedAssessmentMap.has(String(item.name || "").trim().toLowerCase()) || item.used_in_assessment).length}</div></div>
+                <div className="metric-card compact-metric"><div className="metric-label">Today</div><div className="metric-value">{capturedNotesStats.today}</div></div>
+                <div className="metric-card compact-metric"><div className="metric-label">Total notes captured</div><div className="metric-value">{capturedNotesStats.total}</div></div>
+                <div className="metric-card compact-metric"><div className="metric-label">Active</div><div className="metric-value">{capturedNotesStats.active}</div></div>
+                <div className="metric-card compact-metric"><div className="metric-label">Converted</div><div className="metric-value">{capturedNotesStats.converted}</div></div>
               </div>
                 <div className="captured-filter-grid">
                   <MultiSelectDropdown label="Clients" options={capturedCandidateOptions.clients} selected={candidateFilters.clients} onToggle={(value) => setCandidateFilters((current) => ({ ...current, clients: value === "__all__" ? [] : current.clients.includes(value) ? current.clients.filter((item) => item !== value) : [...current.clients, value] }))} />
                   <MultiSelectDropdown label="JD / Role" options={capturedCandidateOptions.jds} selected={candidateFilters.jds} onToggle={(value) => setCandidateFilters((current) => ({ ...current, jds: value === "__all__" ? [] : current.jds.includes(value) ? current.jds.filter((item) => item !== value) : [...current.jds, value] }))} />
-                  <MultiSelectDropdown label="Lane" options={["captured", "converted"]} selected={candidateFilters.lanes} onToggle={(value) => setCandidateFilters((current) => ({ ...current, lanes: value === "__all__" ? [] : current.lanes.includes(value) ? current.lanes.filter((item) => item !== value) : [...current.lanes, value] }))} />
                   {String(state.user?.role || "").toLowerCase() === "admin" ? <MultiSelectDropdown label="Assigned to" options={capturedCandidateOptions.assignedTo} selected={candidateFilters.assignedTo} onToggle={(value) => setCandidateFilters((current) => ({ ...current, assignedTo: value === "__all__" ? [] : current.assignedTo.includes(value) ? current.assignedTo.filter((item) => item !== value) : [...current.assignedTo, value] }))} /> : null}
                   <MultiSelectDropdown label="Captured by" options={capturedCandidateOptions.capturedBy} selected={candidateFilters.capturedBy} onToggle={(value) => setCandidateFilters((current) => ({ ...current, capturedBy: value === "__all__" ? [] : current.capturedBy.includes(value) ? current.capturedBy.filter((item) => item !== value) : [...current.capturedBy, value] }))} />
                   <MultiSelectDropdown label="Sources" options={capturedCandidateOptions.sources} selected={candidateFilters.sources} onToggle={(value) => setCandidateFilters((current) => ({ ...current, sources: value === "__all__" ? [] : current.sources.includes(value) ? current.sources.filter((item) => item !== value) : [...current.sources, value] }))} />

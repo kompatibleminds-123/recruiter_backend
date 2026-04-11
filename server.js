@@ -932,6 +932,7 @@ function parseFreeformDateText(raw) {
 function createDashboardBucket() {
   return {
     sourced: 0,
+    applied: 0,
     converted: 0,
     under_interview_process: 0,
     rejected: 0,
@@ -978,8 +979,10 @@ function incrementClientPortalMetric(target, metric) {
 function addCandidateMetrics(target, candidate, linkedAssessment, dateRange = {}) {
   let changed = false;
   const createdAt = getCandidateCreatedAt(candidate);
+  const source = String(candidate?.source || "").trim().toLowerCase();
+  const isApplicant = source === "website_apply" || source === "hosted_apply" || source === "google_sheet";
   if (isDateWithinRange(createdAt, dateRange.from, dateRange.to)) {
-    incrementDashboardMetric(target, "sourced");
+    incrementDashboardMetric(target, isApplicant ? "applied" : "sourced");
     changed = true;
   }
   if (!candidate?.used_in_assessment || !linkedAssessment) return changed;
@@ -2064,8 +2067,13 @@ function itemMatchesDashboardMetric(item, metric, dateFrom = "", dateTo = "") {
   const bucket = getAssessmentLifecycleBucket(item);
   const hasLinkedAssessment = Boolean(item?.raw?.assessment || item?.assessment || item?.assessmentId);
   const isSharedAssessment = item?.sourceType === "captured_and_converted" && hasLinkedAssessment;
+  const rawSource = String(item?.raw?.candidate?.source || item?.source || "").trim().toLowerCase();
+  const isApplicantSource = rawSource === "website_apply" || rawSource === "hosted_apply" || rawSource === "google_sheet";
   if (metric === "sourced") {
-    return isDateWithinRange(item.createdAt, dateFrom, dateTo);
+    return !isApplicantSource && isDateWithinRange(item.createdAt, dateFrom, dateTo);
+  }
+  if (metric === "applied") {
+    return isApplicantSource && isDateWithinRange(item.createdAt, dateFrom, dateTo);
   }
   if (metric === "converted") {
     return isSharedAssessment && isDateWithinRange(item.sharedAt, dateFrom, dateTo);
