@@ -90,11 +90,11 @@ const PORTAL_APPLICANT_METADATA_PREFIX = "[APPLICANT_META]";
 function BrandMark({ compact = false }) {
   return (
     <div className={`brand-lockup${compact ? " brand-lockup--compact" : ""}`}>
-      <div className="brand-logo" aria-hidden="true">
-        <span className="brand-logo__blue" />
-        <span className="brand-logo__grey brand-logo__grey--top" />
-        <span className="brand-logo__grey brand-logo__grey--bottom" />
-      </div>
+      <svg className="brand-logo" viewBox="0 0 64 64" aria-hidden="true" focusable="false">
+        <path d="M15 12 L28 20 L28 52 L15 44 Z" fill="#1687bd" />
+        <path d="M31 19 L50 8 L56 19 L37 31 Z" fill="#7b858d" />
+        <path d="M31 45 L50 56 L56 45 L37 33 Z" fill="#7b858d" />
+      </svg>
       <div>
         <div className="brand-title">RecruitDesk AI</div>
         <div className="brand-subtitle">by Kompatible Minds</div>
