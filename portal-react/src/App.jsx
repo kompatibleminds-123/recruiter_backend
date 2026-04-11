@@ -96,7 +96,7 @@ const DEFAULT_PIPELINE_STAGE_OPTIONS = [
 ];
 
 const DEFAULT_STATUS_OPTIONS = [
-  "CV Shared",
+  "CV to be shared",
   "Screening call aligned",
   "L1 aligned",
   "L2 aligned",
@@ -305,6 +305,8 @@ function isTerminalStatus(status) {
 function normalizeAssessmentStatusLabel(status) {
   const value = String(status || "").trim();
   if (!value) return "";
+  if (/^cv shared$/i.test(value)) return "CV to be shared";
+  if (/^cv to be shared$/i.test(value)) return "CV to be shared";
   if (/^did not attend$/i.test(value)) return "Not responding";
   return value;
 }
@@ -702,6 +704,7 @@ function isAssessmentStatusLine(line) {
   if (!value) return false;
   return [
     "cv shared",
+    "cv to be shared",
     "screening call aligned",
     "l1 aligned",
     "l2 aligned",
@@ -827,7 +830,7 @@ function buildAssessmentJourneyEntries(assessment, contactAttempts = [], candida
   if (assessment?.generatedAt) {
     entries.push({
       at: assessment.generatedAt,
-      text: `Assessment created | ${assessment?.candidateStatus || "CV Shared"}`
+      text: `Assessment created | ${normalizeAssessmentStatusLabel(assessment?.candidateStatus) || "CV to be shared"}`
     });
   }
 
@@ -1524,9 +1527,9 @@ function isInterviewAlignedStatus(status) {
 }
 
 function mapAssessmentStatusToPipelineStage(status) {
-  const value = String(status || "").trim().toLowerCase();
+  const value = normalizeAssessmentStatusLabel(status).toLowerCase();
   if (!value) return "";
-  if (value === "cv shared") return "Submitted";
+  if (value === "cv to be shared") return "Submitted";
   if (isInterviewAlignedStatus(value)) return "Interview Scheduled";
   if (value === "offered") return "Offer Extended";
   if (value === "feedback awaited" || value === "hold") return "On Hold";
@@ -1571,12 +1574,12 @@ function formatAssessmentStatusCalendarNoteDate(value) {
 }
 
 function buildAssessmentStatusCalendarNote(statusValue, atLocalValue) {
-  const status = String(statusValue || "").trim().toLowerCase();
-  const statusLabel = String(statusValue || "").trim();
+  const statusLabel = normalizeAssessmentStatusLabel(statusValue);
+  const status = statusLabel.toLowerCase();
   const label = atLocalValue ? formatAssessmentStatusCalendarNoteDate(atLocalValue) : "";
   if (isInterviewAlignedStatus(status)) return label ? `${statusLabel} on ${label}.` : statusLabel;
   if (status === "offered") return label ? `Offered. LWD / DOJ on ${label}.` : "Offered.";
-  if (status === "cv shared") return "CV Shared.";
+  if (status === "cv to be shared") return "CV to be shared.";
   if (status === "not responding" || status === "did not attend") return "Not responding.";
   if (status === "screening reject") return "Screening reject.";
   if (status === "interview reject") return "Interview reject.";
@@ -2087,7 +2090,7 @@ function AssessmentStatusModal({ open, assessment, onClose, onSave }) {
         ) : null}
         <label>
           <span>Status note</span>
-          <textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Write only the new status update here, e.g. L1 aligned tomorrow 5 PM, screening reject, CV shared." />
+          <textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Write only the new status update here, e.g. L1 aligned tomorrow 5 PM, screening reject, CV to be shared." />
         </label>
         <p className="muted">Last line in notes is the final source of truth for current status.</p>
         {status ? <div className="status">{status}</div> : null}
@@ -2764,7 +2767,7 @@ function PortalApp({ token, onLogout }) {
       const clientValue = String(item?.clientName || matchedCandidate?.client_name || "").trim();
       const jdValue = String(item?.jdTitle || matchedCandidate?.jd_title || "").trim();
       const recruiterValue = String(item?.recruiterName || matchedCandidate?.assigned_to_name || matchedCandidate?.recruiter_name || "").trim();
-      const outcomeValue = normalizeAssessmentStatusLabel(item?.candidateStatus || item?.candidate_status || "No outcome") || "No outcome";
+      const outcomeValue = normalizeAssessmentStatusLabel(item?.candidateStatus || item?.candidate_status || "") || "No outcome";
       if (clientValue) clients.add(clientValue);
       if (jdValue) jds.add(jdValue);
       if (recruiterValue) recruiters.add(recruiterValue);
@@ -2775,9 +2778,7 @@ function PortalApp({ token, onLogout }) {
       clients: Array.from(clients).sort((a, b) => a.localeCompare(b)),
       jds: Array.from(jds).sort((a, b) => a.localeCompare(b)),
       recruiters: Array.from(recruiters).sort((a, b) => a.localeCompare(b)),
-      outcomes: DEFAULT_STATUS_OPTIONS.filter((item) => outcomes.has(item)).concat(
-        Array.from(outcomes).filter((item) => !DEFAULT_STATUS_OPTIONS.includes(item)).sort((a, b) => a.localeCompare(b))
-      )
+      outcomes: DEFAULT_STATUS_OPTIONS
     };
   }, [state.assessments, state.candidates, state.user, state.users]);
 
@@ -2791,7 +2792,7 @@ function PortalApp({ token, onLogout }) {
       const clientValue = String(item?.clientName || matchedCandidate?.client_name || "").trim();
       const jdValue = String(item?.jdTitle || matchedCandidate?.jd_title || "").trim();
       const recruiterValue = String(item?.recruiterName || matchedCandidate?.assigned_to_name || matchedCandidate?.recruiter_name || "").trim();
-      const outcomeValue = normalizeAssessmentStatusLabel(item?.candidateStatus || item?.candidate_status || "No outcome") || "No outcome";
+      const outcomeValue = normalizeAssessmentStatusLabel(item?.candidateStatus || item?.candidate_status || "") || "No outcome";
       const createdDate = String(item?.generatedAt || item?.updatedAt || "").slice(0, 10);
       const hay = [
         item?.candidateName,
@@ -3743,7 +3744,7 @@ function PortalApp({ token, onLogout }) {
       clientName: matched?.clientName || candidate?.client_name || "",
       jdTitle: matched?.jdTitle || candidate?.jd_title || "",
       pipelineStage: matched?.pipelineStage || candidate?.pipeline_stage || "Under Interview Process",
-      candidateStatus: matched?.candidateStatus || candidate?.candidate_status || "Screening in progress",
+      candidateStatus: normalizeAssessmentStatusLabel(matched?.candidateStatus || candidate?.candidate_status) || "Screening in progress",
       followUpAt: toDateInputValue(matched?.followUpAt || candidate?.next_follow_up_at),
       interviewAt: toDateInputValue(matched?.interviewAt),
       recruiterNotes: matched?.recruiterNotes || candidate?.recruiter_context_notes || "",
@@ -3796,7 +3797,7 @@ function PortalApp({ token, onLogout }) {
       clientName: assessment?.clientName || matchedCandidate?.client_name || "",
       jdTitle: assessment?.jdTitle || matchedCandidate?.jd_title || "",
       pipelineStage: assessment?.pipelineStage || "Under Interview Process",
-      candidateStatus: assessment?.candidateStatus || "Screening in progress",
+      candidateStatus: normalizeAssessmentStatusLabel(assessment?.candidateStatus) || "Screening in progress",
       followUpAt: toDateInputValue(assessment?.followUpAt),
       interviewAt: toDateInputValue(assessment?.interviewAt),
       recruiterNotes: assessment?.recruiterNotes || matchedCandidate?.recruiter_context_notes || "",
@@ -3856,7 +3857,7 @@ function PortalApp({ token, onLogout }) {
       clientName: candidate.client_name || "",
       jdTitle: candidate.jd_title || "",
       pipelineStage: "Submitted",
-      candidateStatus: "CV Shared",
+      candidateStatus: "CV to be shared",
       followUpAt: "",
       interviewAt: "",
       recruiterNotes: candidate.recruiter_context_notes || "",
@@ -3867,7 +3868,7 @@ function PortalApp({ token, onLogout }) {
       cvAnalysis: candidateCvAnalysis,
       cvAnalysisApplied: false,
       statusHistory: [{
-        status: "CV Shared",
+        status: "CV to be shared",
         at: new Date().toISOString(),
         notes: "Draft converted into assessment.",
         atLabel: ""
@@ -3889,10 +3890,11 @@ function PortalApp({ token, onLogout }) {
   }
 
   async function saveAssessment() {
-    const normalizedInitialStatus = String(interviewForm.candidateStatus || "").trim().toLowerCase();
+    const canonicalInitialStatus = normalizeAssessmentStatusLabel(interviewForm.candidateStatus);
+    const normalizedInitialStatus = canonicalInitialStatus.toLowerCase();
     const initialStatus = !normalizedInitialStatus || normalizedInitialStatus === "screening in progress"
-      ? "CV Shared"
-      : interviewForm.candidateStatus;
+      ? "CV to be shared"
+      : canonicalInitialStatus;
     const assessment = {
       id: interviewMeta.assessmentId || `assessment-${Date.now()}`,
       ...interviewForm,
@@ -5044,7 +5046,7 @@ function PortalApp({ token, onLogout }) {
       clientName: assessment?.clientName || "",
       jdTitle: assessment?.jdTitle || "",
       pipelineStage: assessment?.pipelineStage || "Under Interview Process",
-      candidateStatus: assessment?.candidateStatus || "Screening in progress",
+      candidateStatus: normalizeAssessmentStatusLabel(assessment?.candidateStatus) || "Screening in progress",
       followUpAt: toDateInputValue(assessment?.followUpAt),
       interviewAt: toDateInputValue(assessment?.interviewAt),
       recruiterNotes: assessment?.recruiterNotes || "",

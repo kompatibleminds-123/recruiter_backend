@@ -1100,7 +1100,7 @@ function getClientPortalLifecycleBucket(item) {
   if (DASHBOARD_REJECTED_STATUSES.has(status)) return "rejected";
   if (DASHBOARD_DROPPED_STATUSES.has(status)) return "interview_dropout";
   if (status === "hold" || combined.includes("on hold")) return "put_on_hold";
-  if (!status || status === "cv shared" || status === "feedback awaited" || pipeline === "submitted") return "to_be_reviewed";
+  if (!status || status === "cv shared" || status === "cv to be shared" || status === "feedback awaited" || pipeline === "submitted") return "to_be_reviewed";
   return "in_interview_stage";
 }
 
@@ -1358,7 +1358,7 @@ function parseNaturalLanguageCandidateQuery(rawQuery) {
   const interviewIntent = /\b(?:aligned|interview(?:s)?|scheduled)\b/i.test(lower);
   const recruiterScopeMe = /\b(?:i|me|my)\s+(?:sourced|captured|shared|converted)\b/i.test(lower) || /\bthat i (?:sourced|captured|shared|converted)\b/i.test(lower);
   const sourcedIntent = /\b(?:sourced|captured)\b/i.test(lower);
-  const convertedIntent = /\b(?:shared|converted|cv shared|assessment)\b/i.test(lower);
+  const convertedIntent = /\b(?:shared|converted|cv shared|cv to be shared|assessment)\b/i.test(lower);
   const recruiterNameMatch = lower.match(/\bby\s+([a-z][a-z\s.-]+?)(?:\s+for\b|\s+in\b|\s+this\b|\s+last\b|\s+today\b|\s+tomorrow\b|$)/i);
   const targetLabelMatch = lower.match(/\bfor\s+([a-z0-9][a-z0-9\s&.-]+?)(?:\s+across roles|\s+this week|\s+tomorrow|\s+today|\s+last month|\s+this month|\s+from\s|\s+with\s|\s+under\b|$)/i);
   const statusTerms = [];
@@ -1431,7 +1431,7 @@ function parseNaturalLanguageCandidateQuery(rawQuery) {
     dateFrom = range.from;
   }
   let dateField = "";
-  if (/\bshared\b|\bconverted\b|\bassessment\b|\bcv shared\b/i.test(lower)) {
+  if (/\bshared\b|\bconverted\b|\bassessment\b|\bcv shared\b|\bcv to be shared\b/i.test(lower)) {
     dateField = "shared";
   } else if (/\bjoined\b|\bjoining(?:s)?\b/i.test(lower) || upcomingJoiningsIntent) {
     dateField = "joined";
