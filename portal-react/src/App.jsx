@@ -1243,11 +1243,30 @@ function getApplicantOutcome(applicant) {
 
 function getApplicantWorkflowOutcome(applicant, linkedCandidate = null) {
   const candidateOutcome = String(linkedCandidate?.last_contact_outcome || "").trim();
-  return normalizeAttemptOutcomeLabel(candidateOutcome || "No outcome");
+  const applicantOutcome = String(
+    applicant?.lastContactOutcome ||
+    applicant?.last_contact_outcome ||
+    applicant?.outcome ||
+    applicant?.status ||
+    ""
+  ).trim();
+  return normalizeAttemptOutcomeLabel(candidateOutcome || applicantOutcome || "No outcome");
 }
 
 function isAutoHiddenWorkflowOutcome(outcome) {
   return ["not interested", "screening reject", "revisit for other role"].includes(String(outcome || "").trim().toLowerCase());
+}
+
+function isApplicantConvertedToAssessment(applicant = {}, linkedCandidate = null, linkedAssessment = null) {
+  if (linkedAssessment) return true;
+  return Boolean(
+    applicant?.usedInAssessment ||
+    applicant?.used_in_assessment ||
+    String(applicant?.assessmentId || applicant?.assessment_id || "").trim() ||
+    linkedCandidate?.used_in_assessment ||
+    linkedCandidate?.usedInAssessment ||
+    String(linkedCandidate?.assessment_id || linkedCandidate?.assessmentId || "").trim()
+  );
 }
 
 function getApplicantOwnerLabel(applicant, linkedCandidate = null) {
@@ -3368,7 +3387,7 @@ function PortalApp({ token, onLogout }) {
     filteredApplicants.forEach((item) => {
       const linkedCandidate = applicantCandidateMap.get(String(item.id)) || null;
       const linkedAssessment = applicantAssessmentMap.get(String(item.id)) || null;
-      if (linkedCandidate?.used_in_assessment || linkedAssessment) return;
+      if (isApplicantConvertedToAssessment(item, linkedCandidate, linkedAssessment)) return;
       const clientValue = String(item.clientName || item.client_name || "Unassigned").trim();
       const jdValue = String(item.jdTitle || item.jd_title || "").trim();
       const ownedValue = getApplicantOwnerLabel(item, linkedCandidate);
@@ -3397,7 +3416,7 @@ function PortalApp({ token, onLogout }) {
     return filteredApplicants.filter((item) => {
       const linkedCandidate = applicantCandidateMap.get(String(item.id)) || null;
       const linkedAssessment = applicantAssessmentMap.get(String(item.id)) || null;
-      if (linkedCandidate?.used_in_assessment || linkedAssessment) return false;
+      if (isApplicantConvertedToAssessment(item, linkedCandidate, linkedAssessment)) return false;
       const clientValue = String(item.clientName || item.client_name || "Unassigned").trim();
       const jdValue = String(item.jdTitle || item.jd_title || "").trim();
       const ownedValue = getApplicantOwnerLabel(item, linkedCandidate);
