@@ -4527,7 +4527,11 @@ const server = http.createServer(async (req, res) => {
         last_contact_outcome: String(input.last_contact_outcome || input.lastContactOutcome || "").trim() || undefined,
         last_contact_notes: String(input.last_contact_notes || input.lastContactNotes || "").trim() || undefined,
         last_contact_at: String(input.last_contact_at || input.lastContactAt || "").trim() || undefined,
-        next_follow_up_at: String(input.next_follow_up_at || input.nextFollowUpAt || "").trim() || undefined,
+        next_follow_up_at: Object.prototype.hasOwnProperty.call(input, "next_follow_up_at")
+          ? String(input.next_follow_up_at || "").trim()
+          : Object.prototype.hasOwnProperty.call(input, "nextFollowUpAt")
+            ? String(input.nextFollowUpAt || "").trim()
+            : undefined,
         hidden_from_captured: input.hidden_from_captured === true ? true : input.hidden_from_captured === false ? false : undefined,
         jd_title: String(input.jd_title || input.jdTitle || "").trim() || undefined,
         client_name: String(input.client_name || input.clientName || "").trim() || undefined,

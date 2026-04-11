@@ -257,6 +257,10 @@ function sanitizeSharedExportPresetSettings(raw) {
     excelPreset: String(source.excelPreset || source.excel_preset || "").trim(),
     whatsappTemplate: String(source.whatsappTemplate || source.whatsapp_template || "").trim(),
     emailTemplate: String(source.emailTemplate || source.email_template || "").trim(),
+    clientShareIntroTemplate: String(source.clientShareIntroTemplate || source.client_share_intro_template || "").trim(),
+    clientShareSignatureText: String(source.clientShareSignatureText || source.client_share_signature_text || "").trim(),
+    clientShareSignatureLinkLabel: String(source.clientShareSignatureLinkLabel || source.client_share_signature_link_label || "").trim(),
+    clientShareSignatureLinkUrl: String(source.clientShareSignatureLinkUrl || source.client_share_signature_link_url || "").trim(),
     customExportPresets: rawCustomPresets
       .map((item, index) => ({
         id: String(item?.id || `custom_preset_${index + 1}`).trim(),

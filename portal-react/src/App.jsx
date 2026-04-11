@@ -62,7 +62,11 @@ const DEFAULT_COPY_SETTINGS = {
   },
   customExportPresets: [],
   whatsappTemplate: "{{index}}. {{name}}\nRole: {{jd_title}}\nCompany: {{company}}\nOutcome: {{outcome}}\nRecruiter note: {{recruiter_notes}}",
-  emailTemplate: "{{index}}. {{name}}\nCompany: {{company}}\nRole: {{jd_title}}\nLocation: {{location}}\nOutcome: {{outcome}}\nEmail: {{email}}\nPhone: {{phone}}\nNotes: {{recruiter_notes}}"
+  emailTemplate: "{{index}}. {{name}}\nCompany: {{company}}\nRole: {{jd_title}}\nLocation: {{location}}\nOutcome: {{outcome}}\nEmail: {{email}}\nPhone: {{phone}}\nNotes: {{recruiter_notes}}",
+  clientShareIntroTemplate: "Hello {{hr_name}},\n\nGreetings !!\n\nThis is {{recruiter_name}} from {{company_name}}.\nPFA the profiles{{role_line}}.\nKindly review and share your feedback.",
+  clientShareSignatureText: "Regards,\n{{recruiter_name}}\n{{company_name}}",
+  clientShareSignatureLinkLabel: "",
+  clientShareSignatureLinkUrl: ""
 };
 
 const AI_SEARCH_EXAMPLE_PROMPTS = [
@@ -1194,15 +1198,6 @@ function escapeHtml(value) {
     .replace(/'/g, "&#39;");
 }
 
-function sanitizeClientShareHtml(value) {
-  return String(value || "")
-    .replace(/<script[\s\S]*?>[\s\S]*?<\/script>/gi, "")
-    .replace(/\son\w+="[^"]*"/gi, "")
-    .replace(/\son\w+='[^']*'/gi, "")
-    .replace(/\s(href|src)="javascript:[^"]*"/gi, "")
-    .replace(/\s(href|src)='javascript:[^']*'/gi, "");
-}
-
 function getCapturedOutcome(candidate, assessment) {
   return normalizeAttemptOutcomeLabel(candidate?.last_contact_outcome || "No outcome");
 }
@@ -1252,6 +1247,18 @@ function fillCandidateTemplate(template, candidate) {
     email: source.email || "",
     source: source.source || "",
     follow_up_at: source.follow_up_at || ""
+  };
+  return String(template || "").replace(/\{\{\s*([a-z_]+)\s*\}\}/gi, (_, key) => String(map[key] || ""));
+}
+
+function fillClientShareTemplate(template, context) {
+  const map = {
+    hr_name: context.hrName || "Team",
+    recruiter_name: context.recruiterName || "Recruiter",
+    company_name: context.companyName || "RecruitDesk",
+    client_name: context.clientLabel || "",
+    role: context.targetRole || "",
+    role_line: context.roleLine ? ` for ${context.roleLine}` : ""
   };
   return String(template || "").replace(/\{\{\s*([a-z_]+)\s*\}\}/gi, (_, key) => String(map[key] || ""));
 }
@@ -2453,7 +2460,9 @@ function PortalApp({ token, onLogout }) {
     presetId: "client_submission",
     introText: "",
     extraMessage: "",
-    signatureHtml: ""
+    signatureText: "",
+    signatureLinkLabel: "",
+    signatureLinkUrl: ""
   });
   const [selectedAssessmentIds, setSelectedAssessmentIds] = useState([]);
   const [clientShareCvLinks, setClientShareCvLinks] = useState({});
@@ -4518,23 +4527,35 @@ function PortalApp({ token, onLogout }) {
     return parsePresetColumns(columnsText);
   }
 
-  function buildClientShareBody() {
+  function getClientShareContext() {
     const hrName = String(clientShareDraft.hrName || "").trim();
     const clientLabel = String(clientShareDraft.clientLabel || "").trim();
     const targetRole = String(clientShareDraft.targetRole || "").trim();
     const recruiterName = String(clientShareDraft.recruiterName || state.user?.name || "Recruiter").trim();
     const companyName = String(state.user?.companyName || state.user?.company_name || "RecruitDesk").trim();
     const roleLine = [targetRole, clientLabel].filter(Boolean).join(" for ");
+    return { hrName, clientLabel, targetRole, recruiterName, companyName, roleLine };
+  }
+
+  function getClientShareIntroText() {
+    const context = getClientShareContext();
+    const template = String(copySettings.clientShareIntroTemplate || DEFAULT_COPY_SETTINGS.clientShareIntroTemplate || "").trim();
+    return String(clientShareDraft.introText || "").trim() || fillClientShareTemplate(template, context);
+  }
+
+  function getClientShareSignature() {
+    const context = getClientShareContext();
+    const signatureText = String(clientShareDraft.signatureText || "").trim()
+      || fillClientShareTemplate(copySettings.clientShareSignatureText || DEFAULT_COPY_SETTINGS.clientShareSignatureText || "", context).trim();
+    const linkLabel = String(clientShareDraft.signatureLinkLabel || copySettings.clientShareSignatureLinkLabel || "").trim();
+    const linkUrl = String(clientShareDraft.signatureLinkUrl || copySettings.clientShareSignatureLinkUrl || "").trim();
+    return { signatureText, linkLabel, linkUrl };
+  }
+
+  function buildClientShareBody() {
     const introText = String(clientShareDraft.introText || "").trim()
-      || [
-        `Hello ${hrName || "Team"},`,
-        "",
-        "Greetings !!",
-        "",
-        `This is ${recruiterName} from ${companyName}.`,
-        `PFA the profiles${roleLine ? ` for ${roleLine}` : ""}.`,
-        "Kindly review and share your feedback."
-      ].join("\n");
+      || getClientShareIntroText();
+    const signature = getClientShareSignature();
     const presetColumns = getClientSharePresetColumns();
     const rows = getClientShareRows();
     const profileLines = rows.flatMap((item, index) => {
@@ -4557,17 +4578,12 @@ function PortalApp({ token, onLogout }) {
       "",
       ...profileLines,
       String(clientShareDraft.extraMessage || "").trim(),
-      String(clientShareDraft.signatureHtml || "").replace(/<[^>]+>/g, "").trim()
+      signature.signatureText,
+      signature.linkUrl ? `${signature.linkLabel || "Link"}: ${signature.linkUrl}` : ""
     ].filter((line, index, array) => line || (index > 0 && array[index - 1] !== "")).join("\n");
   }
 
   function buildClientShareHtml() {
-    const hrName = String(clientShareDraft.hrName || "").trim();
-    const clientLabel = String(clientShareDraft.clientLabel || "").trim();
-    const targetRole = String(clientShareDraft.targetRole || "").trim();
-    const recruiterName = String(clientShareDraft.recruiterName || state.user?.name || "Recruiter").trim();
-    const companyName = String(state.user?.companyName || state.user?.company_name || "RecruitDesk").trim();
-    const roleLine = [targetRole, clientLabel].filter(Boolean).join(" for ");
     const rows = getClientShareRows();
     const presetColumns = getClientSharePresetColumns();
     const tableHeaders = presetColumns.map((column) => `<th style="border:1px solid #d8dee8;padding:10px 12px;background:#f6f8fb;text-align:left;font-size:13px;">${escapeHtml(column.header)}</th>`).join("");
@@ -4586,18 +4602,12 @@ function PortalApp({ token, onLogout }) {
       return `<tr>${cells}<td style="border:1px solid #d8dee8;padding:10px 12px;vertical-align:top;font-size:13px;line-height:1.45;">${cvCell}</td></tr>`;
     }).join("");
     const extraMessage = String(clientShareDraft.extraMessage || "").trim();
-    const introText = String(clientShareDraft.introText || "").trim()
-      || [
-        `Hello ${hrName || "Team"},`,
-        "",
-        "Greetings !!",
-        "",
-        `This is ${recruiterName} from ${companyName}.`,
-        `PFA the profiles${roleLine ? ` for ${roleLine}` : ""}.`,
-        "Kindly review and share your feedback."
-      ].join("\n");
+    const introText = getClientShareIntroText();
     const introHtml = escapeHtml(introText).replace(/\n/g, "<br/>");
-    const signatureHtml = sanitizeClientShareHtml(clientShareDraft.signatureHtml);
+    const signature = getClientShareSignature();
+    const signatureHtml = signature.signatureText
+      ? `${escapeHtml(signature.signatureText).replace(/\n/g, "<br/>")}${signature.linkUrl ? `<br/><a href="${escapeHtml(signature.linkUrl)}" target="_blank" rel="noopener noreferrer" style="color:#0b57d0;text-decoration:none;">${escapeHtml(signature.linkLabel || signature.linkUrl)}</a>` : ""}`
+      : (signature.linkUrl ? `<a href="${escapeHtml(signature.linkUrl)}" target="_blank" rel="noopener noreferrer" style="color:#0b57d0;text-decoration:none;">${escapeHtml(signature.linkLabel || signature.linkUrl)}</a>` : "");
     return `
       <div style="font-family:Arial, sans-serif;color:#1f2a44;line-height:1.6;">
         <p>${introHtml}</p>
@@ -4992,6 +5002,10 @@ function PortalApp({ token, onLogout }) {
 
     nextAssessment.interviewAt = isInterviewStatus ? (atIso || assessment?.interviewAt || "") : "";
     nextAssessment.followUpAt = !isInterviewStatus && (isOffered || isJoined) ? atIso : "";
+    if (options.clearAgendaSchedule) {
+      nextAssessment.interviewAt = "";
+      nextAssessment.followUpAt = "";
+    }
 
     await api("/company/assessments", token, "POST", {
       assessment: {
@@ -5024,6 +5038,9 @@ function PortalApp({ token, onLogout }) {
       candidateStatus: "Joined",
       atValue: "",
       notes: "Marked complete from Today's Agenda."
+    }, {
+      clearAgendaSchedule: true,
+      statusTarget: "workspace"
     });
   }
 
@@ -5890,13 +5907,23 @@ function PortalApp({ token, onLogout }) {
                   <label><span>Recipient email</span><input type="email" value={clientShareDraft.recipientEmail} onChange={(e) => setClientShareDraft((current) => ({ ...current, recipientEmail: e.target.value }))} placeholder="hr@client.com" /></label>
                   <label><span>Client</span><input value={clientShareDraft.clientLabel} onChange={(e) => setClientShareDraft((current) => ({ ...current, clientLabel: e.target.value }))} placeholder="Attentive" /></label>
                   <label><span>Role / requirement</span><input value={clientShareDraft.targetRole} onChange={(e) => setClientShareDraft((current) => ({ ...current, targetRole: e.target.value }))} placeholder="AE / Account Executive" /></label>
-                  <label className="full"><span>Email intro</span><textarea value={clientShareDraft.introText || ""} onChange={(e) => setClientShareDraft((current) => ({ ...current, introText: e.target.value }))} placeholder={`Hello ${clientShareDraft.hrName || "Team"},\n\nGreetings !!\n\nThis is ${clientShareDraft.recruiterName || state.user?.name || "Recruiter"} from ${state.user?.companyName || state.user?.company_name || "RecruitDesk"}.\nPFA the profiles.\nKindly review and share your feedback.`} /></label>
+                  <label className="full">
+                    <span>Email intro</span>
+                    <textarea value={clientShareDraft.introText || ""} onChange={(e) => setClientShareDraft((current) => ({ ...current, introText: e.target.value }))} placeholder={getClientShareIntroText()} />
+                    <span className="field-help">Default intro admin Preset Settings mein set karega. Yahan likhoge to sirf is share ke liye override hoga.</span>
+                  </label>
                   <label className="full">
                     <span>Selected preset columns</span>
                     <textarea value={(copySettings.customExportPresets || []).find((preset) => String(preset.id) === String(clientShareDraft.presetId))?.columns || copySettings.exportPresetColumns?.[clientShareDraft.presetId] || DEFAULT_COPY_SETTINGS.exportPresetColumns?.[clientShareDraft.presetId] || ""} readOnly />
                   </label>
                   <label className="full"><span>Extra message</span><textarea value={clientShareDraft.extraMessage} onChange={(e) => setClientShareDraft((current) => ({ ...current, extraMessage: e.target.value }))} placeholder="Optional note for the client." /></label>
-                  <label className="full"><span>Signature HTML</span><textarea value={clientShareDraft.signatureHtml || ""} onChange={(e) => setClientShareDraft((current) => ({ ...current, signatureHtml: e.target.value }))} placeholder={'Regards,<br/>Ankit Garg<br/><a href="https://kompatibleminds.com">Kompatible Minds</a>'} /></label>
+                  <label className="full">
+                    <span>Signature text</span>
+                    <textarea value={clientShareDraft.signatureText || ""} onChange={(e) => setClientShareDraft((current) => ({ ...current, signatureText: e.target.value }))} placeholder={fillClientShareTemplate(copySettings.clientShareSignatureText || DEFAULT_COPY_SETTINGS.clientShareSignatureText, getClientShareContext())} />
+                    <span className="field-help">Normal text only. Font email body jaisa hi rahega.</span>
+                  </label>
+                  <label><span>Signature link text</span><input value={clientShareDraft.signatureLinkLabel || ""} onChange={(e) => setClientShareDraft((current) => ({ ...current, signatureLinkLabel: e.target.value }))} placeholder="Kompatible Minds" /></label>
+                  <label><span>Signature link URL</span><input value={clientShareDraft.signatureLinkUrl || ""} onChange={(e) => setClientShareDraft((current) => ({ ...current, signatureLinkUrl: e.target.value }))} placeholder="https://kompatibleminds.com" /></label>
                   <label className="full">
                     <span>Email preview</span>
                     <div className="client-share-preview" dangerouslySetInnerHTML={{ __html: buildClientShareHtml() }} />
@@ -6276,10 +6303,20 @@ function PortalApp({ token, onLogout }) {
                       <span>Email template</span>
                       <textarea disabled={!isSettingsAdmin} value={copySettings.emailTemplate} onChange={(e) => setCopySettings((current) => ({ ...current, emailTemplate: e.target.value }))} />
                     </label>
+                    <label className="full">
+                      <span>Direct share default email intro</span>
+                      <textarea disabled={!isSettingsAdmin} value={copySettings.clientShareIntroTemplate || DEFAULT_COPY_SETTINGS.clientShareIntroTemplate} onChange={(e) => setCopySettings((current) => ({ ...current, clientShareIntroTemplate: e.target.value }))} />
+                    </label>
+                    <label className="full">
+                      <span>Direct share default signature text</span>
+                      <textarea disabled={!isSettingsAdmin} value={copySettings.clientShareSignatureText || DEFAULT_COPY_SETTINGS.clientShareSignatureText} onChange={(e) => setCopySettings((current) => ({ ...current, clientShareSignatureText: e.target.value }))} />
+                    </label>
+                    <label><span>Signature default link text</span><input disabled={!isSettingsAdmin} value={copySettings.clientShareSignatureLinkLabel || ""} onChange={(e) => setCopySettings((current) => ({ ...current, clientShareSignatureLinkLabel: e.target.value }))} placeholder="Kompatible Minds" /></label>
+                    <label><span>Signature default link URL</span><input disabled={!isSettingsAdmin} value={copySettings.clientShareSignatureLinkUrl || ""} onChange={(e) => setCopySettings((current) => ({ ...current, clientShareSignatureLinkUrl: e.target.value }))} placeholder="https://kompatibleminds.com" /></label>
                     <label><span>New preset label</span><input disabled={!isSettingsAdmin} value={newPresetDraft.label} onChange={(e) => setNewPresetDraft((current) => ({ ...current, label: e.target.value }))} placeholder="Client shortlisting sheet" /></label>
                     <label className="full"><span>New preset columns</span><textarea disabled={!isSettingsAdmin} value={newPresetDraft.columns} onChange={(e) => setNewPresetDraft((current) => ({ ...current, columns: e.target.value }))} placeholder={"S.No.|s_no\nName|name\nStatus|assessment_status"} /></label>
                   </div>
-                  <p className="muted">Available placeholders: {`{{index}} {{name}} {{jd_title}} {{company}} {{outcome}} {{recruiter_notes}} {{location}} {{phone}} {{email}} {{source}} {{follow_up_at}}`}</p>
+                  <p className="muted">Available placeholders: copy templates use {`{{index}} {{name}} {{jd_title}} {{company}} {{outcome}} {{recruiter_notes}} {{location}} {{phone}} {{email}} {{source}} {{follow_up_at}}`}. Direct share intro/signature use {`{{hr_name}} {{recruiter_name}} {{company_name}} {{client_name}} {{role}} {{role_line}}`}.</p>
                   {isSettingsAdmin ? <div className="button-row">
                     <button className="ghost-btn" onClick={addCustomPreset}>Add custom preset</button>
                   </div> : null}
