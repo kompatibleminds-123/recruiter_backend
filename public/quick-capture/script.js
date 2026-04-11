@@ -33,6 +33,8 @@ const existingApplyRecruiterButton = document.getElementById("existingApplyRecru
 const existingApplyUpdateButton = document.getElementById("existingApplyUpdateButton");
 const existingStatusMicButton = document.getElementById("existingStatusMicButton");
 const existingStatusMessage = document.getElementById("existingStatusMessage");
+const workspaceRefreshButton = document.getElementById("workspaceRefreshButton");
+const workspaceRefreshStatus = document.getElementById("workspaceRefreshStatus");
 const existingCandidateSummary = document.getElementById("existingCandidateSummary");
 const voiceLanguageSelect = document.getElementById("voiceLanguageSelect");
 const existingConflictSummary = document.getElementById("existingConflictSummary");
@@ -1718,6 +1720,7 @@ if (newCandidateCvFile) {
     }
   });
 }
+wireQuickCaptureRefreshButton(workspaceRefreshButton, workspaceRefreshStatus);
 
 async function bootstrapAuthState() {
   const user = await getQuickCaptureCurrentUser();

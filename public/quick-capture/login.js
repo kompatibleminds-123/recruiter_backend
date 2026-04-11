@@ -6,6 +6,8 @@ const loginButton = document.getElementById("loginButton");
 const logoutButton = document.getElementById("logoutButton");
 const authStatus = document.getElementById("authStatus");
 const authSummary = document.getElementById("authSummary");
+const workspaceRefreshButton = document.getElementById("workspaceRefreshButton");
+const workspaceRefreshStatus = document.getElementById("workspaceRefreshStatus");
 
 function setAuthStatus(message, tone = "") {
   if (!authStatus) return;
@@ -61,6 +63,8 @@ if (loginButton) {
 if (logoutButton) {
   logoutButton.addEventListener("click", handleLogout);
 }
+
+wireQuickCaptureRefreshButton(workspaceRefreshButton, workspaceRefreshStatus);
 
 getQuickCaptureCurrentUser()
   .then((user) => {

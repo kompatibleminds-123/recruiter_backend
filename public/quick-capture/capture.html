@@ -23,8 +23,10 @@
         <div class="hero-actions topbar-stack">
           <a class="secondary-link topbar-link" href="/quick-capture/">Login</a>
           <a class="secondary-link topbar-link" href="/quick-capture/list.html">Drafts</a>
+          <button id="workspaceRefreshButton" type="button" class="secondary-link topbar-link">Refresh</button>
         </div>
       </section>
+      <p id="workspaceRefreshStatus" class="status-message" role="status" aria-live="polite"></p>
 
       <div class="capture-tabs" role="tablist" aria-label="Candidate workflow">
         <button id="existingCandidateTab" class="capture-tab active" type="button" aria-selected="true">Existing candidate</button>
