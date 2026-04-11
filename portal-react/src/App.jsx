@@ -2559,6 +2559,7 @@ function PortalApp({ token, onLogout }) {
   const [quickUpdateAttemptOutcome, setQuickUpdateAttemptOutcome] = useState("");
   const [quickUpdateAssessmentStatus, setQuickUpdateAssessmentStatus] = useState("");
   const [quickUpdateStatusAt, setQuickUpdateStatusAt] = useState("");
+  const [quickUpdateOfferAmount, setQuickUpdateOfferAmount] = useState("");
   const [quickUpdateRecruiterSections, setQuickUpdateRecruiterSections] = useState({
     current_ctc: "",
     expected_ctc: "",
@@ -2767,7 +2768,7 @@ function PortalApp({ token, onLogout }) {
     setQuickUpdateParsedSummary(null);
     setQuickUpdateConflicts([]);
     setQuickUpdateMergedPatch(null);
-  }, [quickUpdateCandidateId, quickUpdateText, quickUpdateStatusText, quickUpdateAttemptOutcome, quickUpdateAssessmentStatus, quickUpdateStatusAt]);
+  }, [quickUpdateCandidateId, quickUpdateText, quickUpdateStatusText, quickUpdateAttemptOutcome, quickUpdateAssessmentStatus, quickUpdateStatusAt, quickUpdateOfferAmount]);
 
   useEffect(() => {
     const clients = state.clientPortal?.availableClients || [];
@@ -3748,14 +3749,16 @@ function PortalApp({ token, onLogout }) {
       setStatus("quickUpdate", "Select an existing candidate first.", "error");
       return;
     }
-    const finalLine = extractLastMeaningfulLine(quickUpdateStatusText);
     const manualOutcome = String(quickUpdateAttemptOutcome || "").trim();
-    const inferred = inferAttemptOutcomeAndFollowUp(finalLine);
-    const outcome = manualOutcome || inferred?.outcome || "";
-    const note = finalLine || outcome;
-    const followUpAt = quickUpdateStatusAt || inferred?.followUpAt || "";
+    const outcome = manualOutcome;
+    const note = outcome;
+    const followUpAt = quickUpdateStatusAt || "";
     if (!outcome) {
-      setStatus("quickUpdate", "Select an outcome or type a clear update note.", "error");
+      setStatus("quickUpdate", "Select an attempt outcome first.", "error");
+      return;
+    }
+    if ((outcome === "Call later" || outcome === "Switch Off") && !followUpAt) {
+      setStatus("quickUpdate", "Select next follow-up time for this outcome.", "error");
       return;
     }
     try {
@@ -3779,6 +3782,7 @@ function PortalApp({ token, onLogout }) {
       setQuickUpdateStatusText("");
       setQuickUpdateAttemptOutcome("");
       setQuickUpdateStatusAt("");
+      setQuickUpdateOfferAmount("");
       setStatus("quickUpdate", `Quick update applied for ${quickUpdateCandidate.name || "candidate"}.`, "ok");
     } catch (error) {
       setStatus("quickUpdate", String(error?.message || error), "error");
@@ -3790,46 +3794,29 @@ function PortalApp({ token, onLogout }) {
       setStatus("quickUpdate", "This candidate does not have a linked assessment yet.", "error");
       return;
     }
-    const lastLine = extractLastMeaningfulLine(quickUpdateStatusText);
     const manualStatus = String(quickUpdateAssessmentStatus || "").trim();
-    const inferred = inferAssessmentStatusAndSchedule(lastLine);
-    const inferredAttempt = inferAttemptOutcomeAndFollowUp(lastLine);
     try {
-      if (!manualStatus && !inferred?.candidateStatus && inferredAttempt?.outcome && quickUpdateCandidate?.id) {
-        await api("/contact-attempts", token, "POST", {
-          candidateId: quickUpdateCandidate.id,
-          outcome: inferredAttempt.outcome,
-          notes: lastLine,
-          next_follow_up_at: inferredAttempt.followUpAt || ""
-        });
-        const candidatePatch = {
-          last_contact_outcome: inferredAttempt.outcome || "",
-          last_contact_notes: lastLine,
-          last_contact_at: new Date().toISOString()
-        };
-        if (inferredAttempt.followUpAt) {
-          candidatePatch.next_follow_up_at = new Date(inferredAttempt.followUpAt).toISOString();
-        } else if (inferredAttempt.outcome !== "Call later" && inferredAttempt.outcome !== "Switch Off") {
-          candidatePatch.next_follow_up_at = "";
-        }
-        await patchCandidateQuiet(quickUpdateCandidate.id, candidatePatch);
-        setQuickUpdateStatusText("");
-        setStatus("quickUpdate", `Follow-up saved for ${quickUpdateCandidate.name || "candidate"}. Assessment status was not changed.`, "ok");
+      const candidateStatus = manualStatus;
+      if (!candidateStatus) {
+        setStatus("quickUpdate", "Select an assessment status first.", "error");
         return;
       }
-      const fallbackStatus = String(quickUpdateLinkedAssessment?.candidateStatus || "").trim();
-      const candidateStatus = manualStatus || inferred.candidateStatus || fallbackStatus;
-      if (!candidateStatus) {
-        setStatus("quickUpdate", "Select an assessment status or write a clear status update note.", "error");
+      const lowerStatus = candidateStatus.toLowerCase();
+      if (lowerStatus === "offered" && (!String(quickUpdateOfferAmount || "").trim() || !quickUpdateStatusAt)) {
+        setStatus("quickUpdate", "Offer amount and expected DOJ are required for Offered.", "error");
+        return;
+      }
+      if (lowerStatus === "joined" && !quickUpdateStatusAt) {
+        setStatus("quickUpdate", "Date of joining is required for Joined.", "error");
         return;
       }
       await saveAssessmentStatusUpdate(quickUpdateLinkedAssessment, {
         candidateStatus,
-        atValue: quickUpdateStatusAt || inferred.atValue || "",
-        notes: lastLine || candidateStatus,
-        offerAmount: inferred.offerAmount || "",
-        expectedDoj: inferred.expectedDoj || "",
-        dateOfJoining: inferred.dateOfJoining || ""
+        atValue: quickUpdateStatusAt || "",
+        notes: "",
+        offerAmount: quickUpdateOfferAmount || "",
+        expectedDoj: lowerStatus === "offered" ? quickUpdateStatusAt : "",
+        dateOfJoining: lowerStatus === "joined" ? quickUpdateStatusAt : ""
       }, {
         statusTarget: "quickUpdate",
         closeModal: false
@@ -3837,6 +3824,7 @@ function PortalApp({ token, onLogout }) {
       setQuickUpdateStatusText("");
       setQuickUpdateAssessmentStatus("");
       setQuickUpdateStatusAt("");
+      setQuickUpdateOfferAmount("");
       setStatus("quickUpdate", `Assessment status updated to ${candidateStatus}.`, "ok");
     } catch (error) {
       setStatus("quickUpdate", String(error?.message || error), "error");
@@ -6211,13 +6199,13 @@ function PortalApp({ token, onLogout }) {
                         />
                       </label>
                       <div className="full form-field">
-                        <span>Status update note</span>
+                        <span>Status update</span>
                         <div className="form-grid three-col nested-status-grid">
                           {quickUpdateLinkedAssessment ? (
                             <label>
                               <span>Assessment status</span>
                               <select value={quickUpdateAssessmentStatus} onChange={(e) => setQuickUpdateAssessmentStatus(e.target.value)}>
-                                <option value="">Use existing / infer from note</option>
+                                <option value="">Select status</option>
                                 {DEFAULT_STATUS_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}
                               </select>
                             </label>
@@ -6225,21 +6213,30 @@ function PortalApp({ token, onLogout }) {
                             <label>
                               <span>Attempt outcome</span>
                               <select value={quickUpdateAttemptOutcome} onChange={(e) => setQuickUpdateAttemptOutcome(e.target.value)}>
-                                <option value="">Infer from note</option>
+                                <option value="">Select outcome</option>
                                 {ATTEMPT_OUTCOME_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}
                               </select>
                             </label>
                           )}
-                          <label>
-                            <span>{quickUpdateLinkedAssessment ? "Interview / status date" : "Next follow-up"}</span>
-                            <input type="datetime-local" value={quickUpdateStatusAt} onChange={(e) => setQuickUpdateStatusAt(e.target.value)} />
-                          </label>
+                          {quickUpdateLinkedAssessment && quickUpdateAssessmentStatus === "Offered" ? (
+                            <label>
+                              <span>Offer amount</span>
+                              <input value={quickUpdateOfferAmount} onChange={(e) => setQuickUpdateOfferAmount(e.target.value)} placeholder="25 LPA" />
+                            </label>
+                          ) : null}
+                          {quickUpdateLinkedAssessment && (quickUpdateAssessmentStatus === "Offered" || quickUpdateAssessmentStatus === "Joined" || isInterviewAlignedStatus(quickUpdateAssessmentStatus)) ? (
+                            <label>
+                              <span>{quickUpdateAssessmentStatus === "Offered" ? "Expected DOJ" : quickUpdateAssessmentStatus === "Joined" ? "Date of joining" : "Interview / status date"}</span>
+                              <input type="datetime-local" value={quickUpdateStatusAt} onChange={(e) => setQuickUpdateStatusAt(e.target.value)} />
+                            </label>
+                          ) : null}
+                          {!quickUpdateLinkedAssessment && (quickUpdateAttemptOutcome === "Call later" || quickUpdateAttemptOutcome === "Switch Off") ? (
+                            <label>
+                              <span>Next follow-up</span>
+                              <input type="datetime-local" value={quickUpdateStatusAt} onChange={(e) => setQuickUpdateStatusAt(e.target.value)} />
+                            </label>
+                          ) : null}
                         </div>
-                        <textarea
-                          value={quickUpdateStatusText}
-                          onChange={(e) => setQuickUpdateStatusText(e.target.value)}
-                          placeholder={quickUpdateLinkedAssessment ? "Optional note, e.g. client asked to schedule L2." : "Optional note, e.g. call tomorrow at 7 PM."}
-                        />
                       </div>
                     </div>
                     <p className="muted">
