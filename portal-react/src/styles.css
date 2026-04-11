@@ -67,22 +67,11 @@ textarea { min-height: 92px; resize: vertical; }
 .brand-lockup {
   display: inline-flex;
   align-items: center;
-  gap: 0.72rem;
-}
-.brand-lockup--compact { gap: 0.58rem; }
-.brand-logo {
-  width: 42px;
-  height: 42px;
-  flex: 0 0 auto;
-  display: block;
-}
-.brand-lockup--compact .brand-logo {
-  width: 34px;
-  height: 34px;
+  gap: 0;
 }
 .brand-title {
   color: var(--text);
-  font-size: 1.02rem;
+  font-size: 1.08rem;
   line-height: 1;
   font-weight: 850;
   letter-spacing: 0.02em;
@@ -95,7 +84,7 @@ textarea { min-height: 92px; resize: vertical; }
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
-.brand-lockup--compact .brand-title { font-size: 0.95rem; }
+.brand-lockup--compact .brand-title { font-size: 1rem; }
 .brand-lockup--compact .brand-subtitle { font-size: 0.64rem; }
 .app-shell { display: grid; grid-template-columns: 280px 1fr; min-height: 100vh; }
 .app-shell--client { display: block; }
