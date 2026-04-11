@@ -2111,29 +2111,39 @@ function AssessmentStatusModal({ open, assessment, onClose, onSave }) {
           <span>Status</span>
           <select value={candidateStatus} onChange={(e) => {
             const selected = e.target.value;
+            const selectedNormalized = String(selected || "").trim().toLowerCase();
+            const selectedNeedsCalendar = isInterviewAlignedStatus(selected) || selectedNormalized === "offered" || selectedNormalized === "joined";
             setCandidateStatus(selected);
-            const nextDate = selected.toLowerCase() === "offered" ? expectedDoj : selected.toLowerCase() === "joined" ? dateOfJoining : atValue;
+            if (!selectedNeedsCalendar) {
+              setAtValue("");
+              setExpectedDoj("");
+              setDateOfJoining("");
+            }
+            const nextDate = selectedNeedsCalendar
+              ? (selectedNormalized === "offered" ? expectedDoj : selectedNormalized === "joined" ? dateOfJoining : atValue)
+              : "";
             setNotes((current) => syncAssessmentNotesWithStatus(current, selected, nextDate, { offerAmount }));
           }}>
             <option value="">Select status</option>
             {DEFAULT_STATUS_OPTIONS.map((item) => <option key={item} value={item}>{item}</option>)}
           </select>
         </label>
-        <label>
-          <span>{normalizedStatus === "offered" ? "Expected DOJ" : normalizedStatus === "joined" ? "Date of joining" : "Interview / status date"}</span>
-          <input
-            type="datetime-local"
-            value={effectiveAtValue}
-            onChange={(e) => {
-              const nextValue = e.target.value;
-              if (normalizedStatus === "offered") setExpectedDoj(nextValue);
-              else if (normalizedStatus === "joined") setDateOfJoining(nextValue);
-              else setAtValue(nextValue);
-              setNotes((current) => syncAssessmentNotesWithStatus(current, candidateStatus, nextValue, { offerAmount }));
-            }}
-            disabled={!shouldShowCalendar}
-          />
-        </label>
+        {shouldShowCalendar ? (
+          <label>
+            <span>{normalizedStatus === "offered" ? "Expected DOJ" : normalizedStatus === "joined" ? "Date of joining" : "Interview / status date"}</span>
+            <input
+              type="datetime-local"
+              value={effectiveAtValue}
+              onChange={(e) => {
+                const nextValue = e.target.value;
+                if (normalizedStatus === "offered") setExpectedDoj(nextValue);
+                else if (normalizedStatus === "joined") setDateOfJoining(nextValue);
+                else setAtValue(nextValue);
+                setNotes((current) => syncAssessmentNotesWithStatus(current, candidateStatus, nextValue, { offerAmount }));
+              }}
+            />
+          </label>
+        ) : null}
         {normalizedStatus === "offered" ? (
           <label>
             <span>Offer amount</span>
@@ -2164,11 +2174,11 @@ function AssessmentStatusModal({ open, assessment, onClose, onSave }) {
             try {
               await onSave({
                 candidateStatus,
-                atValue: effectiveAtValue,
+                atValue: shouldShowCalendar ? effectiveAtValue : "",
                 notes,
                 offerAmount,
-                expectedDoj,
-                dateOfJoining
+                expectedDoj: normalizedStatus === "offered" ? expectedDoj : "",
+                dateOfJoining: normalizedStatus === "joined" ? dateOfJoining : ""
               });
             } catch (error) {
               setStatus(String(error?.message || error));
