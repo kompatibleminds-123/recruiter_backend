@@ -506,12 +506,20 @@ function extractFreeRecruiterLines(text) {
     .filter((line) => getRecruiterNoteLineKey(line).startsWith("free:"));
 }
 
+function normalizeParsedRecruiterValue(value) {
+  return String(value || "")
+    .trim()
+    .replace(/^[\s\-–—:;]+/, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 function buildCanonicalRecruiterNotes(baseText, currentText, mergedValues = {}) {
   const lines = [];
   const pushStructured = (label, value) => {
-    const clean = String(value || "").trim();
+    const clean = normalizeParsedRecruiterValue(value);
     if (!clean) return;
-    lines.push(`${label} - ${clean}`);
+    lines.push(`${label}: ${clean}`);
   };
 
   pushStructured("Current CTC", mergedValues.current_ctc);
@@ -568,9 +576,9 @@ function normalizeOtherPointersBody(rawText) {
 function buildStructuredRecruiterRawNote(sections = {}, extraText = "") {
   const lines = [];
   const pushLine = (label, value) => {
-    const clean = String(value || "").trim();
+    const clean = normalizeParsedRecruiterValue(value);
     if (!clean) return;
-    lines.push(`${label} - ${clean}`);
+    lines.push(`${label}: ${clean}`);
   };
   pushLine("Current CTC", sections.current_ctc);
   pushLine("Expected CTC", sections.expected_ctc);
@@ -583,7 +591,7 @@ function buildStructuredRecruiterRawNote(sections = {}, extraText = "") {
 
 function buildStructuredRecruiterSectionOverrides(sections = {}) {
   const normalizeSectionValue = (value) => {
-    const clean = String(value || "").trim();
+    const clean = normalizeParsedRecruiterValue(value);
     if (!clean) return "";
     const lowered = clean.toLowerCase();
     if (["0", "-", "--", "na", "n/a", "nil", "none", "same", "same as existing", "unchanged"].includes(lowered)) {
@@ -963,11 +971,11 @@ function normalizeRecruiterMergeBase(item) {
     role: String(source.role || source.currentDesignation || "").trim(),
     experience: String(source.experience || source.totalExperience || "").trim(),
     location: String(source.location || "").trim(),
-    current_ctc: String(source.current_ctc || source.currentCtc || "").trim(),
-    expected_ctc: String(source.expected_ctc || source.expectedCtc || "").trim(),
-    notice_period: String(source.notice_period || source.noticePeriod || "").trim(),
-    lwd_or_doj: String(source.lwd_or_doj || source.lwdOrDoj || "").trim(),
-    offer_in_hand: String(source.offer_in_hand || source.offerInHand || "").trim(),
+    current_ctc: normalizeParsedRecruiterValue(source.current_ctc || source.currentCtc || ""),
+    expected_ctc: normalizeParsedRecruiterValue(source.expected_ctc || source.expectedCtc || ""),
+    notice_period: normalizeParsedRecruiterValue(source.notice_period || source.noticePeriod || ""),
+    lwd_or_doj: normalizeParsedRecruiterValue(source.lwd_or_doj || source.lwdOrDoj || ""),
+    offer_in_hand: normalizeParsedRecruiterValue(source.offer_in_hand || source.offerInHand || ""),
     phone: String(source.phone || source.phoneNumber || "").trim(),
     email: String(source.email || source.emailId || "").trim(),
     linkedin: String(source.linkedin || source.linkedinUrl || "").trim(),
@@ -1024,7 +1032,7 @@ function extractRecruiterNoteFieldFallbacks(rawNote = "") {
     for (const line of lines) {
       for (const pattern of patterns) {
         const match = line.match(pattern);
-        if (match?.[1]) return String(match[1]).trim();
+        if (match?.[1]) return normalizeParsedRecruiterValue(match[1]);
       }
     }
     return "";
@@ -6016,12 +6024,12 @@ function PortalApp({ token, onLogout }) {
                     <div className="button-row">
                       {quickUpdateLinkedAssessment ? (
                         <>
-                          <button onClick={() => void applyQuickUpdateAssessmentDetails()}>Update captured details</button>
+                          <button onClick={() => void applyQuickUpdateAssessmentDetails()}>Update Assessment details</button>
                           <button onClick={() => void applyQuickAssessmentStatusUpdate()}>Update status</button>
                         </>
                       ) : (
                         <>
-                          <button onClick={() => void applyQuickUpdateRecruiterNote()}>Update captured details</button>
+                          <button onClick={() => void applyQuickUpdateRecruiterNote()}>Update Captured notes</button>
                           <button onClick={() => void applyQuickCandidateUpdate()}>Update status</button>
                         </>
                       )}
