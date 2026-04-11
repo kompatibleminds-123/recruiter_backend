@@ -52,17 +52,6 @@
     return data.result || {};
   }
 
-  function renderJob(job) {
-    $("jobTitle").textContent = job.title || "Apply";
-    renderJobDescription(job);
-    const meta = $("jobMeta");
-    if (!meta) return;
-    const chips = [];
-    if (job.clientName) chips.push(`Client: ${job.clientName}`);
-    if (job.mustHaveSkills) chips.push(`Must have: ${job.mustHaveSkills}`);
-    meta.innerHTML = chips.map((item) => `<span class="chip">${item}</span>`).join("");
-  }
-
   function escapeHtml(value) {
     return String(value || "")
       .replace(/&/g, "&amp;")
@@ -75,61 +64,18 @@
   function normalizeJobText(text) {
     return String(text || "")
       .replace(/\r/g, "\n")
-      .replace(/[□•▪◦]/g, "\n- ")
-      .replace(/\s{2,}/g, " ")
       .replace(/\n{3,}/g, "\n\n")
       .trim();
   }
 
-  function bodyToListItems(body) {
-    return String(body || "")
-      .split(/\n|(?=\s-\s)|(?=\d+\.\s)/g)
-      .map((item) => item.replace(/^\s*-\s*/, "").trim())
-      .filter(Boolean);
-  }
-
-  function extractSection(text, labels) {
-    const normalized = normalizeJobText(text);
-    if (!normalized) return "";
-    const escaped = labels.map((label) => label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
-    const pattern = new RegExp(`(?:^|\\n)(${escaped.join("|")})\\s*:?`, "i");
-    const match = pattern.exec(normalized);
-    if (!match) return "";
-    const start = match.index + match[0].length;
-    const remainder = normalized.slice(start);
-    const nextHeadingPattern = /\n(?:About Company|Role Description|Responsibilities|Key Responsibilities|Requirements|Key Requirements|Preferred Profile|Skillsets Needed|Skills|Location|Other Details|KPIs(?: \/ Success Metrics)?|Success Metrics)\s*:?/i;
-    const nextMatch = nextHeadingPattern.exec(remainder);
-    return (nextMatch ? remainder.slice(0, nextMatch.index) : remainder).trim();
-  }
-
-  function extractLocation(text) {
-    const normalized = normalizeJobText(text);
-    const match = normalized.match(/Location\s*:?\s*([^\n]+)/i);
-    return match ? String(match[1] || "").trim() : "";
-  }
-
   function buildStructuredSections(job) {
     const description = normalizeJobText(job.jobDescription || "");
-    const aboutCompany = extractSection(description, ["About Company"]) || (job.clientName ? `Hiring for ${job.clientName}.` : "");
-    const roleDescription =
-      extractSection(description, ["Role Description", "Responsibilities", "Key Responsibilities"]) ||
-      description;
-    const skillsetsNeeded =
-      String(job.mustHaveSkills || "").trim() ||
-      extractSection(description, ["Skillsets Needed", "Skills", "Requirements", "Key Requirements", "Preferred Profile"]);
-    const location = extractLocation(description);
-    const otherDetails = [
-      extractSection(description, ["Other Details", "KPIs / Success Metrics", "KPIs", "Success Metrics"]),
-      String(job.redFlags || "").trim() ? `Red flags: ${String(job.redFlags || "").trim()}` : "",
-      String(job.standardQuestions || "").trim() ? `Screening focus: ${String(job.standardQuestions || "").trim()}` : ""
-    ].filter(Boolean).join("\n");
-
     return [
-      { heading: "About Company", body: aboutCompany },
-      { heading: "Requirement / Role Description", body: roleDescription },
-      { heading: "Skillsets Needed", body: skillsetsNeeded },
-      { heading: "Location", body: location },
-      { heading: "Other Details", body: otherDetails }
+      { heading: "About Company", body: String(job.aboutCompany || "").trim() },
+      { heading: "Job Description", body: description },
+      { heading: "Must-have Skills", body: String(job.mustHaveSkills || "").trim() },
+      { heading: "Location", body: String(job.location || "").trim() },
+      { heading: "Work Mode", body: String(job.workMode || "").trim() }
     ].filter((section) => String(section.body || "").trim());
   }
 
@@ -143,19 +89,26 @@
     }
     node.innerHTML = `
       <div class="job-copy">
-        ${sections.map((section) => {
-          const items = bodyToListItems(section.body);
-          return `
-            <section class="job-copy-section">
-              <h3>${escapeHtml(section.heading)}</h3>
-              ${items.length > 1
-                ? `<ul>${items.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>`
-                : `<p>${escapeHtml(section.body)}</p>`}
-            </section>
-          `;
-        }).join("")}
+        ${sections.map((section) => `
+          <section class="job-copy-section">
+            <h3>${escapeHtml(section.heading)}</h3>
+            <p>${escapeHtml(section.body)}</p>
+          </section>
+        `).join("")}
       </div>
     `;
+  }
+
+  function renderJob(job) {
+    $("jobTitle").textContent = job.title || "Apply";
+    renderJobDescription(job);
+    const meta = $("jobMeta");
+    if (!meta) return;
+    const chips = [];
+    if (job.clientName) chips.push(`Client: ${job.clientName}`);
+    if (job.location) chips.push(`Location: ${job.location}`);
+    if (job.workMode) chips.push(`Work mode: ${job.workMode}`);
+    meta.innerHTML = chips.map((item) => `<span class="chip">${escapeHtml(item)}</span>`).join("");
   }
 
   async function init() {

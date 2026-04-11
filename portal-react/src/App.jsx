@@ -2570,6 +2570,9 @@ function PortalApp({ token, onLogout }) {
     ownerRecruiterId: "",
     ownerRecruiterName: "",
     assignedRecruiters: [],
+    aboutCompany: "",
+    location: "",
+    workMode: "",
     jobDescription: "",
     mustHaveSkills: "",
     redFlags: "",
@@ -4081,6 +4084,9 @@ function PortalApp({ token, onLogout }) {
         ownerRecruiterId: "",
         ownerRecruiterName: "",
         assignedRecruiters: [],
+        aboutCompany: "",
+        location: "",
+        workMode: "",
         jobDescription: "",
         mustHaveSkills: "",
         redFlags: "",
@@ -4098,6 +4104,9 @@ function PortalApp({ token, onLogout }) {
       ownerRecruiterId: String(job.ownerRecruiterId || ""),
       ownerRecruiterName: String(job.ownerRecruiterName || ""),
       assignedRecruiters: Array.isArray(job.assignedRecruiters) ? job.assignedRecruiters : [],
+      aboutCompany: String(job.aboutCompany || ""),
+      location: String(job.location || ""),
+      workMode: String(job.workMode || ""),
       jobDescription: String(job.jobDescription || ""),
       mustHaveSkills: String(job.mustHaveSkills || ""),
       redFlags: String(job.redFlags || ""),
@@ -4172,9 +4181,13 @@ function PortalApp({ token, onLogout }) {
     const skills = (text.match(/\b(Java|Python|React|Node|Sales|Recruitment|HR|SQL|Excel|Flutter|Real Estate)\b/gi) || [])
       .filter((value, index, array) => array.findIndex((item) => item.toLowerCase() === value.toLowerCase()) === index)
       .join(", ");
+    const locationMatch = text.match(/\bLocation\s*:?\s*([^\n]+)/i);
+    const aboutMatch = text.match(/\bAbout\s+(?:the\s+)?Company\s*:?\s*([\s\S]+?)(?:\n\s*(?:Job\s+Description|Role|Responsibilities|Requirements|Key\s+Responsibilities|Must\s+Have|Skills)\s*:|$)/i);
     setJobDraft((current) => ({
       ...current,
       title,
+      location: current.location || String(locationMatch?.[1] || "").trim(),
+      aboutCompany: current.aboutCompany || String(aboutMatch?.[1] || "").trim(),
       mustHaveSkills: current.mustHaveSkills || skills
     }));
     setStatus("jobs", "Generated JD fields from text.", "ok");
@@ -6183,6 +6196,8 @@ function PortalApp({ token, onLogout }) {
                 <div className="form-grid two-col">
                   <label><span>Job title</span><input value={jobDraft.title} onChange={(e) => setJobDraft((c) => ({ ...c, title: e.target.value }))} /></label>
                   <label><span>Client</span><input value={jobDraft.clientName} onChange={(e) => setJobDraft((c) => ({ ...c, clientName: e.target.value }))} /></label>
+                  <label><span>Location</span><input value={jobDraft.location} onChange={(e) => setJobDraft((c) => ({ ...c, location: e.target.value }))} placeholder="Mumbai / Bengaluru / Remote" /></label>
+                  <label><span>Work mode</span><select value={jobDraft.workMode} onChange={(e) => setJobDraft((c) => ({ ...c, workMode: e.target.value }))}><option value="">Not specified</option><option value="Remote">Remote</option><option value="Hybrid">Hybrid</option><option value="Work from office">Work from office</option></select></label>
                   {isSettingsAdmin ? (
                     <>
                       <label>
@@ -6249,10 +6264,11 @@ function PortalApp({ token, onLogout }) {
                       <input value={jobDraft.ownerRecruiterName || state.user?.name || ""} readOnly />
                     </label>
                   )}
-                  <label className="full"><span>Job description</span><textarea className="jd-editor" value={jobDraft.jobDescription} onChange={(e) => setJobDraft((c) => ({ ...c, jobDescription: e.target.value }))} /></label>
-                  <label className="full"><span>Must-have skills</span><textarea value={jobDraft.mustHaveSkills} onChange={(e) => setJobDraft((c) => ({ ...c, mustHaveSkills: e.target.value }))} /></label>
+                  <label className="full"><span>About company</span><textarea value={jobDraft.aboutCompany} onChange={(e) => setJobDraft((c) => ({ ...c, aboutCompany: e.target.value }))} placeholder="Short company context shown on hosted apply link." /></label>
+                  <label className="full"><span>Job description</span><textarea className="jd-editor" value={jobDraft.jobDescription} onChange={(e) => setJobDraft((c) => ({ ...c, jobDescription: e.target.value }))} placeholder="Paste the full JD here. Hosted apply link will show this as one clean block." /></label>
+                  <label className="full"><span>Must-have skills</span><textarea value={jobDraft.mustHaveSkills} onChange={(e) => setJobDraft((c) => ({ ...c, mustHaveSkills: e.target.value }))} placeholder="Shown on hosted apply link only when filled." /></label>
                   <label className="full"><span>Red flags</span><textarea value={jobDraft.redFlags} onChange={(e) => setJobDraft((c) => ({ ...c, redFlags: e.target.value }))} /></label>
-                  <label className="full"><span>Standard screening questions</span><textarea value={jobDraft.standardQuestions} onChange={(e) => setJobDraft((c) => ({ ...c, standardQuestions: e.target.value }))} /></label>
+                  <label className="full"><span>Standard screening questions</span><textarea value={jobDraft.standardQuestions} onChange={(e) => setJobDraft((c) => ({ ...c, standardQuestions: e.target.value }))} placeholder="Recruiter-only. These are used in Interview Panel and will not show on hosted apply link." /></label>
                 </div>
 
                 <div className="shortcut-builder">

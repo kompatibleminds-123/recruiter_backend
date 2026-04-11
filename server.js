@@ -3265,10 +3265,12 @@ const server = http.createServer(async (req, res) => {
           companyId: job.companyId,
           title: job.title || "",
           clientName: job.clientName || "",
+          aboutCompany: job.aboutCompany || "",
+          location: job.location || "",
+          workMode: job.workMode || "",
           jobDescription: job.jobDescription || "",
           mustHaveSkills: job.mustHaveSkills || "",
-          redFlags: job.redFlags || "",
-          standardQuestions: job.standardQuestions || ""
+          redFlags: job.redFlags || ""
         }
       });
     } catch (error) {
