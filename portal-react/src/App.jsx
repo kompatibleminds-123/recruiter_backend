@@ -1609,6 +1609,33 @@ function buildTsvFromPreset(rows, presetId, settings = DEFAULT_COPY_SETTINGS) {
   return [preset.headers.join("\t"), ...preset.rows.map((row) => row.map((cell) => String(cell || "").replace(/\t/g, " ").replace(/\r?\n/g, " ")).join("\t"))].join("\n");
 }
 
+function buildExcelHtmlFromPreset(rows, presetId, settings = DEFAULT_COPY_SETTINGS, sheetName = "Sheet1") {
+  const preset = buildCapturedExcelRows(rows || [], presetId || settings?.excelPreset || "compact_recruiter", settings);
+  const headers = preset.headers.map((header) => `<th style="border:1px solid #d8dee8;padding:10px 12px;background:#f6f8fb;text-align:left;font-size:13px;">${escapeHtml(header)}</th>`).join("");
+  const body = preset.rows.map((row) => {
+    const cells = row.map((cell) => `<td style="border:1px solid #d8dee8;padding:10px 12px;vertical-align:top;font-size:13px;line-height:1.45;">${escapeHtml(String(cell || "")).replace(/\n/g, "<br/>")}</td>`).join("");
+    return `<tr>${cells}</tr>`;
+  }).join("");
+  return `<!doctype html>
+<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">
+<head>
+  <meta charset="utf-8" />
+  <meta name="ProgId" content="Excel.Sheet" />
+  <meta name="Generator" content="RecruitDesk AI" />
+  <style>
+    table { border-collapse: collapse; width: 100%; }
+    td, th { font-family: Calibri, Arial, sans-serif; }
+  </style>
+</head>
+<body>
+  <table>
+    <thead><tr>${headers}</tr></thead>
+    <tbody>${body}</tbody>
+  </table>
+</body>
+</html>`;
+}
+
 function downloadTextFile(filename, text, mimeType = "text/tab-separated-values;charset=utf-8") {
   const blob = new Blob([String(text || "")], { type: mimeType });
   const url = URL.createObjectURL(blob);
@@ -1617,6 +1644,11 @@ function downloadTextFile(filename, text, mimeType = "text/tab-separated-values;
   link.download = filename;
   link.click();
   URL.revokeObjectURL(url);
+}
+
+function downloadPresetExcelFile(filename, rows, presetId, settings = DEFAULT_COPY_SETTINGS, sheetName = "Sheet1") {
+  const html = buildExcelHtmlFromPreset(rows, presetId, settings, sheetName);
+  downloadTextFile(filename, html, "application/vnd.ms-excel;charset=utf-8");
 }
 
 function getAssessmentQuestionAnswers(assessment = {}) {
@@ -2580,10 +2612,11 @@ function DrilldownModal({ open, title, items, onClose, onOpenCv, onOpenDraft, on
   );
 }
 
-function CandidateProfileModal({ open, candidate, onClose, onOpenCv }) {
+function CandidateProfileModal({ open, candidate, onClose, onOpenCv, onReuse }) {
   if (!open || !candidate) return null;
   const cvMeta = getCandidateProfileCvMeta(candidate);
   const tags = buildVisibleTagList(candidate);
+  const questionAnswers = getAssessmentQuestionAnswers(candidate);
   const noteFields = [
     candidate.other_pointers,
     candidate.otherPointers,
@@ -2596,33 +2629,43 @@ function CandidateProfileModal({ open, candidate, onClose, onOpenCv }) {
   ].map((item) => String(item || "").trim()).filter(Boolean);
   const uniqueNotes = Array.from(new Set(noteFields));
   const detailCards = [
-    ["Status / outcome", candidate.assessment_status || candidate.outcome || candidate.status || "-"],
+    ["Current Status", candidate.assessment_status || candidate.outcome || candidate.status || "-"],
     ["Experience", candidate.total_experience || candidate.totalExperience || candidate.experience || "-"],
     ["Current company", candidate.current_company || candidate.currentCompany || candidate.company || "-"],
-    ["Current designation", candidate.current_designation || candidate.currentDesignation || candidate.role || "-"],
+    ["Current Designation", candidate.current_designation || candidate.currentDesignation || candidate.role || "-"],
     ["Location", candidate.location || "-"],
-    ["Notice period", candidate.notice_period || candidate.noticePeriod || "-"],
+    ["Notice Period", candidate.notice_period || candidate.noticePeriod || "-"],
     ["Current CTC", candidate.current_ctc || candidate.currentCtc || "-"],
     ["Expected CTC", candidate.expected_ctc || candidate.expectedCtc || "-"],
-    ["Client", candidate.client_name || candidate.clientName || "-"],
-    ["JD / role", candidate.jd_title || candidate.jdTitle || candidate.role || "-"],
-    ["Recruiter", candidate.assigned_to_name || candidate.recruiter_name || candidate.ownerRecruiter || "-"],
-    ["Phone", candidate.phone || "-"],
-    ["Email", candidate.email || "-"],
-    ["LinkedIn", candidate.linkedin || candidate.linkedinUrl || "-"]
-  ];
+    ["Offer in Hand", candidate.offer_in_hand || candidate.offerInHand || "-"],
+    ["LWD / DOJ", candidate.lwd_or_doj || candidate.lwdOrDoj || "-"]
+  ].filter(([, value]) => value && value !== "-");
   return (
     <div className="overlay">
       <div className="overlay-card overlay-card--wide" onClick={(e) => e.stopPropagation()}>
-        <h3>{candidate.name || candidate.candidateName || "Candidate"} | {candidate.role || candidate.currentDesignation || candidate.jd_title || candidate.jdTitle || "Profile"}</h3>
-        <div className="metric-grid metric-grid--tight">
+        <h3>{candidate.name || candidate.candidateName || "Candidate"}</h3>
+        <p className="muted">{[candidate.jd_title || candidate.jdTitle || candidate.role || "", candidate.client_name || candidate.clientName || "", candidate.current_company || candidate.currentCompany || candidate.company || ""].filter(Boolean).join(" | ")}</p>
+        <div className="info-grid">
           {detailCards.map(([label, value]) => (
-            <div className="metric-card compact-metric" key={label}>
-              <div className="metric-label">{label}</div>
-              <div className="metric-value small-text">{value}</div>
+            <div className="info-card" key={label}>
+              <div className="info-label">{label}</div>
+              <div className="info-value">{value}</div>
             </div>
           ))}
         </div>
+        {questionAnswers.length ? (
+          <div className="client-profile-notes">
+            <div className="info-label">Screening Questions</div>
+            <div className="client-profile-qa">
+              {questionAnswers.map((pair, index) => (
+                <div className="client-profile-qa__item" key={`${pair.question}-${index}`}>
+                  <strong>{pair.question}</strong>
+                  <span>{pair.answer}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : null}
         {tags.length ? (
           <div className="candidate-detail-box">
             <div className="metric-label">Tags / searchable keywords</div>
@@ -2644,6 +2687,7 @@ function CandidateProfileModal({ open, candidate, onClose, onOpenCv }) {
           )}
         </div>
         <div className="button-row">
+          {onReuse ? <button onClick={() => onReuse(candidate)}>Reuse profile</button> : null}
           {candidateHasStoredCv(candidate) ? <button onClick={() => onOpenCv(candidate)}>Open CV</button> : null}
           <button className="ghost-btn" onClick={onClose}>Close</button>
         </div>
@@ -5087,16 +5131,8 @@ function PortalApp({ token, onLogout }) {
 
   function downloadCandidatesExcel() {
     const rows = buildCandidateUniverseCopyRows();
-    const preset = buildCapturedExcelRows(rows, activeCopyPresetId || copySettings.excelPreset, copySettings);
-    const text = [preset.headers.join("\t"), ...preset.rows.map((row) => row.map((cell) => String(cell || "").replace(/\t/g, " ").replace(/\r?\n/g, " ")).join("\t"))].join("\n");
-    const blob = new Blob([text], { type: "text/tab-separated-values;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = `candidate-search-${new Date().toISOString().slice(0, 10)}.tsv`;
-    link.click();
-    URL.revokeObjectURL(url);
-    setStatus("workspace", "Candidate search results downloaded.", "ok");
+    downloadPresetExcelFile(`candidate-search-${new Date().toISOString().slice(0, 10)}.xls`, rows, activeCopyPresetId || copySettings.excelPreset, copySettings, "Candidates");
+    setStatus("workspace", "Candidate search results downloaded in Excel format.", "ok");
   }
 
   function getClientShareRows() {
@@ -5727,6 +5763,43 @@ function PortalApp({ token, onLogout }) {
     });
     navigate("/interview");
     setStatus("interview", `Loaded ${assessment?.candidateName || "candidate"} as reusable draft.`, "ok");
+  }
+
+  function reuseDatabaseCandidate(candidate) {
+    if (!candidate) return;
+    setInterviewMeta({ candidateId: "", assessmentId: "" });
+    setInterviewForm({
+      candidateName: candidate?.name || candidate?.candidateName || "",
+      phoneNumber: candidate?.phone || candidate?.phoneNumber || "",
+      emailId: candidate?.email || candidate?.emailId || "",
+      location: candidate?.location || "",
+      currentCtc: candidate?.current_ctc || candidate?.currentCtc || "",
+      expectedCtc: candidate?.expected_ctc || candidate?.expectedCtc || "",
+      noticePeriod: candidate?.notice_period || candidate?.noticePeriod || "",
+      offerInHand: candidate?.offer_in_hand || candidate?.offerInHand || "",
+      lwdOrDoj: candidate?.lwd_or_doj || candidate?.lwdOrDoj || "",
+      currentCompany: candidate?.current_company || candidate?.currentCompany || candidate?.company || "",
+      currentDesignation: candidate?.current_designation || candidate?.currentDesignation || candidate?.role || "",
+      totalExperience: candidate?.total_experience || candidate?.totalExperience || candidate?.experience || "",
+      currentOrgTenure: candidate?.current_org_tenure || candidate?.currentOrgTenure || "",
+      reasonForChange: candidate?.reason_of_change || candidate?.reasonForChange || "",
+      clientName: candidate?.client_name || candidate?.clientName || "",
+      jdTitle: candidate?.jd_title || candidate?.jdTitle || candidate?.role || "",
+      pipelineStage: "Under Interview Process",
+      candidateStatus: normalizeAssessmentStatusLabel(candidate?.assessment_status || candidate?.candidate_status || candidate?.outcome) || "Screening in progress",
+      followUpAt: "",
+      interviewAt: "",
+      recruiterNotes: candidate?.recruiter_context_notes || candidate?.recruiterNotes || "",
+      callbackNotes: candidate?.notes || candidate?.callbackNotes || "",
+      otherPointers: candidate?.other_pointers || candidate?.otherPointers || "",
+      tags: buildVisibleTagList(candidate).join(", "),
+      jdScreeningAnswers: {},
+      cvAnalysis: null,
+      cvAnalysisApplied: false
+    });
+    setDatabaseProfileItem(null);
+    navigate("/interview");
+    setStatus("interview", `Loaded ${candidate?.name || "candidate"} as reusable draft.`, "ok");
   }
 
   async function openAssessmentJourney(assessment) {
@@ -7317,6 +7390,7 @@ function PortalApp({ token, onLogout }) {
         candidate={databaseProfileItem}
         onClose={() => setDatabaseProfileItem(null)}
         onOpenCv={(candidate) => openDatabaseCandidateCv(candidate)}
+        onReuse={(candidate) => reuseDatabaseCandidate(candidate)}
       />
       <ClientFeedbackModal open={Boolean(clientFeedbackItem)} item={clientFeedbackItem} onClose={() => setClientFeedbackItem(null)} onSave={(payload) => void saveClientFeedback(payload)} />
     </div>
@@ -7476,7 +7550,7 @@ function ClientPortalApp({ token, onLogout }) {
       if (id && cvUrl) cvTextByAssessmentId[id] = `${window.location.origin}${cvUrl}`;
     });
     const rows = buildClientPortalTrackerRows(items, cvTextByAssessmentId);
-    downloadTextFile(`client-tracker-${new Date().toISOString().slice(0, 10)}.tsv`, buildTsvFromPreset(rows, clientTrackerPresetId, clientCopySettings));
+    downloadPresetExcelFile(`client-tracker-${new Date().toISOString().slice(0, 10)}.xls`, rows, clientTrackerPresetId, clientCopySettings, "Client Tracker");
     setStatus("Tracker downloaded in selected preset.");
   }
 
