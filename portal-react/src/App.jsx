@@ -1596,6 +1596,96 @@ function buildCapturedExcelRows(items, preset, settings = DEFAULT_COPY_SETTINGS)
   }
 }
 
+function buildTsvFromPreset(rows, presetId, settings = DEFAULT_COPY_SETTINGS) {
+  const preset = buildCapturedExcelRows(rows || [], presetId || settings?.excelPreset || "compact_recruiter", settings);
+  return [preset.headers.join("\t"), ...preset.rows.map((row) => row.map((cell) => String(cell || "").replace(/\t/g, " ").replace(/\r?\n/g, " ")).join("\t"))].join("\n");
+}
+
+function downloadTextFile(filename, text, mimeType = "text/tab-separated-values;charset=utf-8") {
+  const blob = new Blob([String(text || "")], { type: mimeType });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
+function getAssessmentQuestionAnswers(assessment = {}) {
+  const source = assessment && typeof assessment === "object" ? assessment : {};
+  const pairs = [];
+  [
+    source.questionAnswerPairs,
+    source.screeningQuestionAnswers,
+    source.screeningQuestions,
+    source.questions,
+    source.answers,
+    source.runbookAnswers
+  ].forEach((list) => {
+    if (!Array.isArray(list)) return;
+    list.forEach((entry, index) => {
+      if (!entry || typeof entry === "string") return;
+      const question = String(entry.question || entry.label || entry.title || entry.q || `Question ${index + 1}`).trim();
+      const answer = String(entry.answer || entry.value || entry.response || entry.a || "").trim();
+      if (question && answer) pairs.push({ question, answer });
+    });
+  });
+  if (source.screeningAnswers && typeof source.screeningAnswers === "object") {
+    Object.entries(source.screeningAnswers).forEach(([question, answer]) => {
+      const safeQuestion = String(question || "").trim();
+      const safeAnswer = String(answer || "").trim();
+      if (safeQuestion && safeAnswer) pairs.push({ question: safeQuestion, answer: safeAnswer });
+    });
+  }
+  return Array.from(new Map(pairs.map((pair) => [`${pair.question}|||${pair.answer}`, pair])).values()).slice(0, 40);
+}
+
+function buildClientPortalTrackerRows(items = [], cvTextByAssessmentId = {}) {
+  return (items || []).map((item, index) => {
+    const assessment = item.raw?.assessment || item.assessment || item;
+    const candidate = item.raw?.candidate || {};
+    const questionAnswers = getAssessmentQuestionAnswers(assessment)
+      .map((pair) => `${pair.question}: ${pair.answer}`)
+      .join("\n");
+    const otherPointers = String(assessment.otherPointers || item.otherPointers || candidate.other_pointers || "").trim();
+    const recruiterNotes = String(assessment.recruiterNotes || item.notesText || candidate.recruiter_context_notes || "").trim();
+    return {
+      id: assessment.id || item.id || "",
+      index: index + 1,
+      s_no: index + 1,
+      name: assessment.candidateName || item.candidateName || item.name || "",
+      phone: assessment.phoneNumber || item.phone || candidate.phone || "",
+      email: assessment.emailId || item.email || candidate.email || "",
+      location: assessment.location || item.location || candidate.location || "",
+      company: assessment.currentCompany || item.company || candidate.company || "",
+      current_company: assessment.currentCompany || item.company || candidate.company || "",
+      role: assessment.currentDesignation || item.role || candidate.role || "",
+      current_designation: assessment.currentDesignation || item.role || candidate.role || "",
+      total_experience: assessment.totalExperience || item.totalExperience || candidate.experience || "",
+      highest_education: assessment.highestEducation || item.highestEducation || "",
+      current_ctc: assessment.currentCtc || item.currentCtc || candidate.current_ctc || "",
+      expected_ctc: assessment.expectedCtc || item.expectedCtc || candidate.expected_ctc || "",
+      notice_period: assessment.noticePeriod || item.noticePeriod || candidate.notice_period || "",
+      lwd_or_doj: assessment.lwdOrDoj || assessment.offerDoj || item.lwdOrDoj || "",
+      recruiter_context_notes: recruiterNotes,
+      other_pointers: otherPointers,
+      other_standard_questions: questionAnswers || assessment.callbackNotes || "",
+      combined_assessment_insights: buildCombinedAssessmentInsightsForExport({
+        recruiter_context_notes: recruiterNotes,
+        other_pointers: otherPointers,
+        other_standard_questions: questionAnswers || assessment.callbackNotes || ""
+      }),
+      notes: recruiterNotes || assessment.callbackNotes || "",
+      linkedin: assessment.linkedinUrl || item.linkedin || candidate.linkedin || "",
+      jd_title: assessment.jdTitle || item.position || item.role || "",
+      client_name: assessment.clientName || item.clientName || "",
+      outcome: assessment.candidateStatus || item.candidateStatus || "",
+      assessment_status: assessment.candidateStatus || item.candidateStatus || "",
+      cv_link: cvTextByAssessmentId[String(assessment.id || item.id || "")] || ""
+    };
+  });
+}
+
 function getApplyLink(jobId) {
   return jobId ? `${window.location.origin}/apply/${encodeURIComponent(jobId)}` : "";
 }
@@ -2397,19 +2487,21 @@ function ClientPortalPieCard({ title, total, rows }) {
   );
 }
 
-function DrilldownModal({ open, title, items, onClose, onOpenCv, onOpenDraft, onOpenAssessment, onOpenNotes, onOpenStatus, onAddFeedback }) {
+function DrilldownModal({ open, title, items, onClose, onOpenCv, onOpenDraft, onOpenAssessment, onOpenNotes, onOpenStatus, onAddFeedback, extraActions = null }) {
   if (!open) return null;
   return (
     <div className="overlay" onClick={onClose}>
       <div className="overlay-card overlay-card--wide" onClick={(e) => e.stopPropagation()}>
         <h3>{title}</h3>
         <p className="muted">{items.length} candidate(s)</p>
+        {extraActions ? <div className="drilldown-toolbar">{extraActions}</div> : null}
         <div className="stack-list compact">
           {!items.length ? <div className="empty-state">No matching candidates found.</div> : items.map((item, index) => (
             <article className="item-card compact-card" key={`${item.id || item.assessmentId || index}`}>
               {(() => {
                 const feedbackMeta = readItemClientFeedback(item);
                 const assessmentForAction = item.raw?.assessment || item.assessment || (item.assessmentId || item.sourceType === "assessment_only" ? item : null);
+                const profileTarget = assessmentForAction || item;
                 const candidateIdForAction = String(item.raw?.candidate?.id || (!assessmentForAction ? item.id : "") || "").trim();
                 const profileOnlyMode = Boolean(onAddFeedback && !onOpenDraft && !onOpenNotes && !onOpenStatus);
                 return (
@@ -2428,7 +2520,7 @@ function DrilldownModal({ open, title, items, onClose, onOpenCv, onOpenDraft, on
                   ) : null}
                   <div className="button-row drilldown-actions">
                     {onOpenCv && (item.raw?.candidate?.id || item.id) && (item.raw?.candidate?.cv_filename || item.raw?.candidate?.cv_url) ? <button onClick={() => onOpenCv(item.raw?.candidate?.id || item.id)}>Open CV</button> : null}
-                    {assessmentForAction && onOpenAssessment ? <button onClick={() => onOpenAssessment(assessmentForAction)}>{profileOnlyMode ? "Open profile" : "Update Assessment"}</button> : null}
+                    {onOpenAssessment && (assessmentForAction || profileOnlyMode) ? <button onClick={() => onOpenAssessment(profileTarget)}>{profileOnlyMode ? "Open profile" : "Update Assessment"}</button> : null}
                     {assessmentForAction && onOpenStatus ? <button onClick={() => onOpenStatus(assessmentForAction)}>Update status</button> : null}
                     {!assessmentForAction && onOpenNotes && candidateIdForAction ? <button onClick={() => onOpenNotes(candidateIdForAction)}>Update notes</button> : null}
                     {!assessmentForAction && !onOpenNotes && onOpenDraft && candidateIdForAction ? <button onClick={() => onOpenDraft(candidateIdForAction)}>Update details</button> : null}
@@ -2522,10 +2614,17 @@ function CandidateProfileModal({ open, candidate, onClose, onOpenCv }) {
   );
 }
 
-function ClientProfileModal({ open, item, onClose }) {
+function ClientProfileModal({ open, item, onClose, copySettings = DEFAULT_COPY_SETTINGS, presetId = "client_submission", onOpenCv }) {
   if (!open || !item) return null;
   const assessment = item.raw?.assessment || item;
-  const otherPointers = String(assessment.otherPointers || item.otherPointers || item.raw?.candidate?.other_pointers || "").trim();
+  const candidate = item.raw?.candidate || {};
+  const assessmentId = String(assessment.id || item.id || "").trim();
+  const otherPointers = String(assessment.otherPointers || item.otherPointers || candidate.other_pointers || "").trim();
+  const recruiterNotes = String(assessment.recruiterNotes || item.notesText || candidate.recruiter_context_notes || "").trim();
+  const questionAnswers = getAssessmentQuestionAnswers(assessment);
+  const trackerRows = buildClientPortalTrackerRows([item], assessmentId ? { [assessmentId]: "Open CV from client portal" } : {});
+  const trackerPreview = buildCapturedExcelRows(trackerRows, presetId || copySettings.excelPreset, copySettings);
+  const hasCv = Boolean(assessmentId);
   return (
     <div className="overlay" onClick={onClose}>
       <div className="overlay-card overlay-card--wide" onClick={(e) => e.stopPropagation()}>
@@ -2539,13 +2638,46 @@ function ClientProfileModal({ open, item, onClose }) {
             </div>
           ))}
         </div>
+        {questionAnswers.length ? (
+          <div className="client-profile-notes">
+            <div className="info-label">Screening Questions</div>
+            <div className="client-profile-qa">
+              {questionAnswers.map((pair, index) => (
+                <div className="client-profile-qa__item" key={`${pair.question}-${index}`}>
+                  <strong>{pair.question}</strong>
+                  <span>{pair.answer}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : null}
+        {recruiterNotes ? (
+          <div className="client-profile-notes">
+            <div className="info-label">Recruiter Notes</div>
+            <div className="client-profile-notes__body">{recruiterNotes}</div>
+          </div>
+        ) : null}
         {otherPointers ? (
           <div className="client-profile-notes">
             <div className="info-label">Other Pointers</div>
             <div className="client-profile-notes__body">{otherPointers}</div>
           </div>
         ) : null}
+        <div className="client-profile-notes">
+          <div className="info-label">Client Tracker Preview</div>
+          <div className="table-wrap client-tracker-preview">
+            <table className="dashboard-table">
+              <thead><tr>{trackerPreview.headers.map((header) => <th key={header}>{header}</th>)}</tr></thead>
+              <tbody>
+                {trackerPreview.rows.map((row, rowIndex) => (
+                  <tr key={rowIndex}>{row.map((cell, cellIndex) => <td key={`${rowIndex}-${cellIndex}`}>{cell || "-"}</td>)}</tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
         <div className="button-row">
+          {hasCv ? <button onClick={() => onOpenCv?.(item)}>Download / Open CV</button> : null}
           <button className="ghost-btn" onClick={onClose}>Close</button>
         </div>
       </div>
@@ -2674,7 +2806,7 @@ function PortalApp({ token, onLogout }) {
     })))
   ].filter((preset) => String(preset.id || "").trim()), [copySettings]);
   const [activeCopyPresetId, setActiveCopyPresetId] = useState(copySettings.excelPreset || "compact_recruiter");
-  const [newPresetDraft, setNewPresetDraft] = useState({ label: "", columns: "" });
+  const [newPresetDraft, setNewPresetDraft] = useState({ label: "", clientName: "", columns: "" });
   const [teamUserDraft, setTeamUserDraft] = useState({ name: "", email: "", password: "", role: "recruiter" });
   const [teamPasswordDrafts, setTeamPasswordDrafts] = useState({});
   const [companyDraft, setCompanyDraft] = useState({ companyName: "", adminName: "", email: "", password: "", platformSecret: "" });
@@ -5241,10 +5373,10 @@ function PortalApp({ token, onLogout }) {
       ...current,
       customExportPresets: [
         ...((current.customExportPresets || []).filter((item) => String(item.id) !== String(id))),
-        { id, label, columns }
+        { id, label, clientName: String(newPresetDraft.clientName || "").trim(), columns }
       ]
     }));
-    setNewPresetDraft({ label: "", columns: "" });
+    setNewPresetDraft({ label: "", clientName: "", columns: "" });
     setStatus("settings", "Custom preset added. Save settings to share it with the team.", "ok");
   }
 
@@ -5301,6 +5433,14 @@ function PortalApp({ token, onLogout }) {
         ...(current.exportPresetColumns || {}),
         [selectedBuiltInPresetId]: value
       }
+    }));
+  }
+
+  function updateSelectedPresetClientName(value) {
+    if (!selectedCustomPreset) return;
+    setCopySettings((current) => ({
+      ...current,
+      customExportPresets: (current.customExportPresets || []).map((preset) => String(preset.id) === String(selectedCustomPreset.id) ? { ...preset, clientName: value } : preset)
     }));
   }
 
@@ -6849,6 +6989,18 @@ function PortalApp({ token, onLogout }) {
                         spellCheck={false}
                       />
                     </label>
+                    {selectedCustomPreset ? (
+                      <label>
+                        <span>Client for this preset</span>
+                        <input
+                          disabled={!isSettingsAdmin}
+                          value={selectedCustomPreset.clientName || ""}
+                          onChange={(e) => updateSelectedPresetClientName(e.target.value)}
+                          placeholder="Blank = internal / all clients"
+                          spellCheck={false}
+                        />
+                      </label>
+                    ) : null}
                     <label className="full">
                       <span>{isSettingsAdmin ? "Editable preset columns" : "Selected preset columns"}</span>
                       <textarea
@@ -6900,6 +7052,7 @@ function PortalApp({ token, onLogout }) {
                     <div className="section-kicker">Create Candidate Tracker Preset</div>
                     <div className="form-grid">
                     <label><span>New preset label</span><input disabled={!isSettingsAdmin} value={newPresetDraft.label} onChange={(e) => setNewPresetDraft((current) => ({ ...current, label: e.target.value }))} placeholder="Client shortlisting sheet" /></label>
+                    <label><span>Client name for preset</span><input disabled={!isSettingsAdmin} value={newPresetDraft.clientName || ""} onChange={(e) => setNewPresetDraft((current) => ({ ...current, clientName: e.target.value }))} placeholder="Blank = internal / all clients" /></label>
                     <label className="full"><span>New preset columns</span><textarea disabled={!isSettingsAdmin} value={newPresetDraft.columns} onChange={(e) => setNewPresetDraft((current) => ({ ...current, columns: e.target.value }))} placeholder={"S.No.|s_no\nName|name\nStatus|assessment_status"} /></label>
                   </div>
                   {isSettingsAdmin ? <div className="button-row">
@@ -6912,6 +7065,7 @@ function PortalApp({ token, onLogout }) {
                         <div className="item-card__top">
                           <div>
                             <h3>{preset.label}</h3>
+                            {preset.clientName ? <p className="muted">Client preset: {preset.clientName}</p> : <p className="muted">Internal / all-client preset</p>}
                             <div className="candidate-snippet">{preset.columns}</div>
                           </div>
                           {isSettingsAdmin ? <div className="button-row">
@@ -7106,6 +7260,8 @@ function PortalApp({ token, onLogout }) {
 function ClientPortalApp({ token, onLogout }) {
   const [clientUser, setClientUser] = useState(null);
   const [clientPortal, setClientPortal] = useState({ summary: { byClient: [], byClientPosition: [] } });
+  const [clientCopySettings, setClientCopySettings] = useState(DEFAULT_COPY_SETTINGS);
+  const [clientTrackerPresetId, setClientTrackerPresetId] = useState("client_submission");
   const [filters, setFilters] = useState({ dateFrom: "", dateTo: "", positionLabel: "" });
   const [status, setStatus] = useState("");
   const [drilldownState, setDrilldownState] = useState({ open: false, title: "", items: [], request: null });
@@ -7120,7 +7276,14 @@ function ClientPortalApp({ token, onLogout }) {
       api("/client-auth/me", token),
       api(`/client-portal/summary${params.toString() ? `?${params.toString()}` : ""}`, token)
     ]);
-    setClientUser(meResult.user || meResult);
+    const nextUser = meResult.user || meResult;
+    const nextCopySettings = { ...DEFAULT_COPY_SETTINGS, ...(summaryResult.copySettings || {}) };
+    const clientSpecificPreset = (nextCopySettings.customExportPresets || []).find((preset) => (
+      String(preset.clientName || "").trim().toLowerCase() === String(nextUser?.clientName || "").trim().toLowerCase()
+    ));
+    setClientUser(nextUser);
+    setClientCopySettings(nextCopySettings);
+    setClientTrackerPresetId((current) => (current && current !== "client_submission") ? current : (clientSpecificPreset?.id || nextCopySettings.excelPreset || "client_submission"));
     setClientPortal(summaryResult || { summary: { byClient: [], byClientPosition: [] } });
   }
 
@@ -7145,6 +7308,22 @@ function ClientPortalApp({ token, onLogout }) {
   const statusPieRows = (summary.byStatus || []).length
     ? (summary.byStatus || []).map((row) => ({ label: CLIENT_PORTAL_STATUS_LABELS[row.label] || row.label, count: row.count || 0 }))
     : CLIENT_PORTAL_METRICS.filter(([key]) => key !== "total_shared" && Number(overall[key] || 0) > 0).map(([key, label]) => ({ label, count: Number(overall[key] || 0) }));
+  const clientTrackerPresetOptions = useMemo(() => {
+    const builtIns = [
+      { id: "client_submission", label: clientCopySettings.exportPresetLabels?.client_submission || "Client submission" },
+      { id: "attentive_tracker", label: clientCopySettings.exportPresetLabels?.attentive_tracker || "Attentive tracker" },
+      { id: "client_tracker", label: clientCopySettings.exportPresetLabels?.client_tracker || "Client tracker" },
+      { id: "screening_focus", label: clientCopySettings.exportPresetLabels?.screening_focus || "Screening focus" }
+    ];
+    const clientNameKey = String(clientName || clientUser?.clientName || "").trim().toLowerCase();
+    const custom = (clientCopySettings.customExportPresets || [])
+      .filter((preset) => {
+        const presetClient = String(preset.clientName || "").trim().toLowerCase();
+        return !presetClient || !clientNameKey || presetClient === clientNameKey;
+      })
+      .map((preset) => ({ id: preset.id, label: preset.clientName ? `${preset.label} (${preset.clientName})` : preset.label }));
+    return [...custom, ...builtIns].filter((preset) => String(preset.id || "").trim());
+  }, [clientCopySettings, clientName, clientUser?.clientName]);
 
   async function applyFilters() {
     try {
@@ -7184,6 +7363,46 @@ function ClientPortalApp({ token, onLogout }) {
     await loadClientPortal(filters);
     await refreshDrilldown();
     setClientFeedbackItem(null);
+  }
+
+  function getClientCvUrl(item) {
+    const assessment = item?.raw?.assessment || item || {};
+    const assessmentId = String(assessment.id || item?.id || "").trim();
+    if (!assessmentId) return "";
+    return `/client-portal/cv?assessmentId=${encodeURIComponent(assessmentId)}&access_token=${encodeURIComponent(token)}`;
+  }
+
+  function openClientCv(item) {
+    const url = getClientCvUrl(item);
+    if (!url) {
+      setStatus("CV link not available for this profile.");
+      return;
+    }
+    window.open(url, "_blank", "noopener,noreferrer");
+  }
+
+  async function copyClientTrackerRows(items = drilldownState.items) {
+    const cvTextByAssessmentId = {};
+    (items || []).forEach((item) => {
+      const assessment = item.raw?.assessment || item;
+      const id = String(assessment.id || item.id || "").trim();
+      if (id) cvTextByAssessmentId[id] = `${window.location.origin}${getClientCvUrl(item)}`;
+    });
+    const rows = buildClientPortalTrackerRows(items, cvTextByAssessmentId);
+    await copyText(buildTsvFromPreset(rows, clientTrackerPresetId, clientCopySettings));
+    setStatus("Tracker copied in selected preset.");
+  }
+
+  function downloadClientTrackerRows(items = drilldownState.items) {
+    const cvTextByAssessmentId = {};
+    (items || []).forEach((item) => {
+      const assessment = item.raw?.assessment || item;
+      const id = String(assessment.id || item.id || "").trim();
+      if (id) cvTextByAssessmentId[id] = `${window.location.origin}${getClientCvUrl(item)}`;
+    });
+    const rows = buildClientPortalTrackerRows(items, cvTextByAssessmentId);
+    downloadTextFile(`client-tracker-${new Date().toISOString().slice(0, 10)}.tsv`, buildTsvFromPreset(rows, clientTrackerPresetId, clientCopySettings));
+    setStatus("Tracker downloaded in selected preset.");
   }
 
   return (
@@ -7274,9 +7493,28 @@ function ClientPortalApp({ token, onLogout }) {
           onClose={() => setDrilldownState({ open: false, title: "", items: [], request: null })}
           onOpenAssessment={(item) => setProfileItem(item)}
           onAddFeedback={(item) => setClientFeedbackItem(item)}
+          extraActions={(
+            <div className="button-row tight client-tracker-actions">
+              <label className="inline-select">
+                <span>Tracker preset</span>
+                <select value={clientTrackerPresetId} onChange={(e) => setClientTrackerPresetId(e.target.value)}>
+                  {clientTrackerPresetOptions.map((preset) => <option key={preset.id} value={preset.id}>{preset.label}</option>)}
+                </select>
+              </label>
+              <button onClick={() => void copyClientTrackerRows()}>Copy tracker</button>
+              <button className="ghost-btn" onClick={() => downloadClientTrackerRows()}>Download tracker</button>
+            </div>
+          )}
         />
         <ClientFeedbackModal open={Boolean(clientFeedbackItem)} item={clientFeedbackItem} onClose={() => setClientFeedbackItem(null)} onSave={(payload) => void saveFeedback(payload)} />
-        <ClientProfileModal open={Boolean(profileItem)} item={profileItem} onClose={() => setProfileItem(null)} />
+        <ClientProfileModal
+          open={Boolean(profileItem)}
+          item={profileItem}
+          onClose={() => setProfileItem(null)}
+          copySettings={clientCopySettings}
+          presetId={clientTrackerPresetId}
+          onOpenCv={(item) => openClientCv(item)}
+        />
       </main>
     </div>
   );

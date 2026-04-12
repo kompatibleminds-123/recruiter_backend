@@ -310,7 +310,9 @@ function sanitizeSharedExportPresetSettings(raw) {
       .map((item, index) => ({
         id: String(item?.id || `custom_preset_${index + 1}`).trim(),
         label: String(item?.label || item?.id || `Custom preset ${index + 1}`).trim(),
-        columns: String(item?.columns || "").trim()
+        columns: String(item?.columns || "").trim(),
+        clientName: String(item?.clientName || item?.client_name || "").trim(),
+        scope: String(item?.scope || "").trim()
       }))
       .filter((item) => item.id && item.label && item.columns)
       .slice(0, MAX_SHARED_CUSTOM_EXPORT_PRESETS),

@@ -4359,7 +4359,7 @@ const server = http.createServer(async (req, res) => {
       const clientUser = await requireClientSessionUser(getBearerToken(req));
       const dateFrom = String(requestUrl.searchParams.get("dateFrom") || "").trim();
       const dateTo = String(requestUrl.searchParams.get("dateTo") || "").trim();
-      const [candidates, assessments, jobs] = await Promise.all([
+      const [candidates, assessments, jobs, copySettings] = await Promise.all([
         listCandidatesForUser({ id: "__client_scope__", companyId: clientUser.companyId, role: "admin" }, { limit: 5000 }),
         listAssessments({ actorUserId: "__client_scope__", companyId: clientUser.companyId }).catch(async () => {
           const allRecruiters = await listCompanyUsers(clientUser.companyId);
@@ -4367,7 +4367,8 @@ const server = http.createServer(async (req, res) => {
           if (!adminUser?.id) return [];
           return listAssessments({ actorUserId: adminUser.id, companyId: clientUser.companyId });
         }),
-        listCompanyJobs(clientUser.companyId)
+        listCompanyJobs(clientUser.companyId),
+        getCompanySharedExportPresets(clientUser.companyId).catch(() => ({}))
       ]);
       const scopedUniverse = filterUniverseForClientUser(buildCandidateSearchUniverse(candidates, assessments, jobs), clientUser);
       const summary = buildClientPortalSummary({
@@ -4396,9 +4397,59 @@ const server = http.createServer(async (req, res) => {
       summary.byClient = [{ label: clientUser.clientName, metrics: summary.overall }];
       summary.byClientPosition = Array.from(byPosition.values()).sort((a, b) => `${a.clientLabel} ${a.positionLabel}`.localeCompare(`${b.clientLabel} ${b.positionLabel}`));
       summary.byStatus = Array.from(byStatus.entries()).map(([label, count]) => ({ label, count })).sort((a, b) => String(a.label).localeCompare(String(b.label)));
-      sendJson(res, 200, { ok: true, result: { summary, user: clientUser } });
+      sendJson(res, 200, { ok: true, result: { summary, user: clientUser, copySettings } });
     } catch (error) {
       sendJson(res, 401, { ok: false, error: String(error.message || error) });
+    }
+    return;
+  }
+
+  if (req.method === "GET" && requestUrl.pathname === "/client-portal/cv") {
+    try {
+      const clientUser = await requireClientSessionUser(getBearerTokenFromRequest(req, requestUrl));
+      const assessmentId = String(requestUrl.searchParams.get("assessmentId") || requestUrl.searchParams.get("assessment_id") || "").trim();
+      if (!assessmentId) throw new Error("assessmentId is required.");
+      const allRecruiters = await listCompanyUsers(clientUser.companyId);
+      const adminUser = (allRecruiters || []).find((item) => String(item?.role || "").toLowerCase() === "admin") || allRecruiters?.[0];
+      if (!adminUser?.id) throw new Error("No recruiter found for this company.");
+      const [assessments, candidates] = await Promise.all([
+        listAssessments({ actorUserId: adminUser.id, companyId: clientUser.companyId }),
+        listCandidatesForUser(adminUser, { limit: 5000 })
+      ]);
+      const assessment = (assessments || []).find((item) => String(item?.id || "") === assessmentId);
+      if (!assessment) throw new Error("Assessment not found.");
+      if (String(assessment.clientName || "").trim() !== String(clientUser.clientName || "").trim()) throw new Error("Not allowed for this client.");
+      if (!itemMatchesAllowedPositions({ position: assessment.jdTitle || assessment.currentDesignation || "" }, clientUser.allowedPositions || [])) {
+        throw new Error("Not allowed for this role.");
+      }
+      const matchedCandidate = findBestCandidateByIdentity(candidates || [], {
+        candidateId: assessment.candidateId,
+        email: assessment.emailId,
+        phone: assessment.phoneNumber,
+        name: assessment.candidateName,
+        jdTitle: assessment.jdTitle
+      });
+      const meta = decodeApplicantMetadata(matchedCandidate || {});
+      const storedFile = meta?.cvAnalysisCache?.storedFile && typeof meta.cvAnalysisCache.storedFile === "object" ? meta.cvAnalysisCache.storedFile : null;
+      const fileRef = {
+        provider: meta.fileProvider || storedFile?.provider || "",
+        key: meta.fileKey || storedFile?.key || "",
+        url: meta.fileUrl || storedFile?.url || "",
+        filename: meta.filename || storedFile?.filename || "resume.pdf",
+        mimeType: meta.mimeType || storedFile?.mimeType || "application/octet-stream"
+      };
+      if (!fileRef.provider && !fileRef.key && !fileRef.url) {
+        throw new Error("CV file not available for this candidate.");
+      }
+      const file = await loadStoredFile(fileRef);
+      const downloadName = String(file.filename || fileRef.filename || "resume.pdf").replace(/"/g, "");
+      sendBuffer(req, res, 200, file.buffer, {
+        "Content-Type": String(file.mimeType || fileRef.mimeType || "application/octet-stream").trim(),
+        "Content-Disposition": `inline; filename="${downloadName}"`,
+        "Cache-Control": "private, max-age=300"
+      });
+    } catch (error) {
+      sendJson(res, 400, { ok: false, error: String(error.message || error) });
     }
     return;
   }
