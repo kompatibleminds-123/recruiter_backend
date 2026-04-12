@@ -406,7 +406,32 @@ function decodePortalApplicantMetadata(item = {}) {
 
 function candidateHasStoredCv(item = {}) {
   const meta = decodePortalApplicantMetadata(item);
-  return Boolean(meta?.fileProvider || meta?.fileKey || meta?.fileUrl || meta?.cvAnalysisCache?.storedFile?.key || meta?.cvAnalysisCache?.storedFile?.url);
+  const storedFile = item.cvAnalysis?.storedFile || item.cv_analysis?.storedFile || meta?.cvAnalysisCache?.storedFile || {};
+  return Boolean(
+    item.cv_url
+    || item.cvUrl
+    || item.cv_key
+    || item.cvKey
+    || item.cv_filename
+    || item.cvFilename
+    || meta?.fileProvider
+    || meta?.fileKey
+    || meta?.fileUrl
+    || storedFile?.key
+    || storedFile?.url
+  );
+}
+
+function getCandidateProfileCvMeta(item = {}) {
+  const meta = decodePortalApplicantMetadata(item);
+  const storedFile = item.cvAnalysis?.storedFile || item.cv_analysis?.storedFile || meta?.cvAnalysisCache?.storedFile || {};
+  return {
+    candidateId: item.candidate_id || item.candidateId || item.id || "",
+    url: item.cv_url || item.cvUrl || meta?.fileUrl || storedFile?.url || "",
+    filename: item.cv_filename || item.cvFilename || meta?.filename || storedFile?.filename || "",
+    key: item.cv_key || item.cvKey || meta?.fileKey || storedFile?.key || "",
+    provider: item.cv_provider || item.cvProvider || meta?.fileProvider || storedFile?.provider || ""
+  };
 }
 
 function buildVisibleTagList(item = {}) {
@@ -1404,6 +1429,8 @@ function getCapturedExportFieldValue(item = {}, field = "") {
     case "other_pointers": return item.other_pointers || "";
     case "other_standard_questions": return item.other_standard_questions || item.last_contact_notes || "";
     case "remarks": return item.recruiter_context_notes || item.notes || "";
+    case "cv_link": return item.cv_link || item.cv_url || item.cvUrl || "";
+    case "cv_url": return item.cv_url || item.cvUrl || item.cv_link || "";
     default: return item[key] || "";
   }
 }
@@ -2423,6 +2450,78 @@ function DrilldownModal({ open, title, items, onClose, onOpenCv, onOpenDraft, on
   );
 }
 
+function CandidateProfileModal({ open, candidate, onClose, onOpenCv }) {
+  if (!open || !candidate) return null;
+  const cvMeta = getCandidateProfileCvMeta(candidate);
+  const tags = buildVisibleTagList(candidate);
+  const noteFields = [
+    candidate.other_pointers,
+    candidate.otherPointers,
+    candidate.recruiter_context_notes,
+    candidate.recruiterNotes,
+    candidate.notes,
+    candidate.callbackNotes,
+    candidate.last_contact_notes,
+    String(candidate.raw_note || "").trim().startsWith(PORTAL_APPLICANT_METADATA_PREFIX) ? "" : candidate.raw_note
+  ].map((item) => String(item || "").trim()).filter(Boolean);
+  const uniqueNotes = Array.from(new Set(noteFields));
+  const detailCards = [
+    ["Status / outcome", candidate.assessment_status || candidate.outcome || candidate.status || "-"],
+    ["Experience", candidate.total_experience || candidate.totalExperience || candidate.experience || "-"],
+    ["Current company", candidate.current_company || candidate.currentCompany || candidate.company || "-"],
+    ["Current designation", candidate.current_designation || candidate.currentDesignation || candidate.role || "-"],
+    ["Location", candidate.location || "-"],
+    ["Notice period", candidate.notice_period || candidate.noticePeriod || "-"],
+    ["Current CTC", candidate.current_ctc || candidate.currentCtc || "-"],
+    ["Expected CTC", candidate.expected_ctc || candidate.expectedCtc || "-"],
+    ["Client", candidate.client_name || candidate.clientName || "-"],
+    ["JD / role", candidate.jd_title || candidate.jdTitle || candidate.role || "-"],
+    ["Recruiter", candidate.assigned_to_name || candidate.recruiter_name || candidate.ownerRecruiter || "-"],
+    ["Phone", candidate.phone || "-"],
+    ["Email", candidate.email || "-"],
+    ["LinkedIn", candidate.linkedin || candidate.linkedinUrl || "-"]
+  ];
+  return (
+    <div className="overlay">
+      <div className="overlay-card overlay-card--wide" onClick={(e) => e.stopPropagation()}>
+        <h3>{candidate.name || candidate.candidateName || "Candidate"} | {candidate.role || candidate.currentDesignation || candidate.jd_title || candidate.jdTitle || "Profile"}</h3>
+        <div className="metric-grid metric-grid--tight">
+          {detailCards.map(([label, value]) => (
+            <div className="metric-card compact-metric" key={label}>
+              <div className="metric-label">{label}</div>
+              <div className="metric-value small-text">{value}</div>
+            </div>
+          ))}
+        </div>
+        {tags.length ? (
+          <div className="candidate-detail-box">
+            <div className="metric-label">Tags / searchable keywords</div>
+            <div className="chip-row">
+              {tags.map((tag) => <span key={tag} className="chip">{tag}</span>)}
+            </div>
+          </div>
+        ) : null}
+        <div className="candidate-detail-box">
+          <div className="metric-label">Remarks / notes</div>
+          {uniqueNotes.length ? uniqueNotes.map((note, index) => <p key={`${note}-${index}`}>{note}</p>) : <p className="muted">No remarks saved yet.</p>}
+        </div>
+        <div className="candidate-detail-box">
+          <div className="metric-label">CV</div>
+          {candidateHasStoredCv(candidate) ? (
+            <p>{cvMeta.filename || "Uploaded CV"} is available for this profile.</p>
+          ) : (
+            <p className="muted">No uploaded CV available yet.</p>
+          )}
+        </div>
+        <div className="button-row">
+          {candidateHasStoredCv(candidate) ? <button onClick={() => onOpenCv(candidate)}>Open CV</button> : null}
+          <button className="ghost-btn" onClick={onClose}>Close</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function ClientProfileModal({ open, item, onClose }) {
   if (!open || !item) return null;
   const assessment = item.raw?.assessment || item;
@@ -2551,6 +2650,7 @@ function PortalApp({ token, onLogout }) {
     signatureLinkUrl2: ""
   });
   const [selectedAssessmentIds, setSelectedAssessmentIds] = useState([]);
+  const [databaseProfileItem, setDatabaseProfileItem] = useState(null);
   const [clientShareCvLinks, setClientShareCvLinks] = useState({});
   const [clientShareCvLinkState, setClientShareCvLinkState] = useState({});
   const [agendaRange, setAgendaRange] = useState("today");
@@ -3499,6 +3599,25 @@ function PortalApp({ token, onLogout }) {
     });
     window.open(`/company/candidates/${encodeURIComponent(applicantId)}/cv?${params.toString()}`, "_blank", "noopener,noreferrer");
     setStatus("applicants", "Opening CV...", "ok");
+  }
+
+  function openDatabaseCandidateCv(candidate) {
+    const meta = getCandidateProfileCvMeta(candidate);
+    if (!meta.candidateId) {
+      setStatus("workspace", "Linked candidate not found for this CV.", "error");
+      return;
+    }
+    if (!candidateHasStoredCv(candidate)) {
+      setStatus("workspace", "No uploaded CV available for this profile.", "error");
+      return;
+    }
+    const params = new URLSearchParams({ access_token: token });
+    if (meta.url) params.set("cv_url", String(meta.url));
+    if (meta.filename) params.set("cv_filename", String(meta.filename));
+    if (meta.key) params.set("cv_key", String(meta.key));
+    if (meta.provider) params.set("cv_provider", String(meta.provider));
+    window.open(`/company/candidates/${encodeURIComponent(meta.candidateId)}/cv?${params.toString()}`, "_blank", "noopener,noreferrer");
+    setStatus("workspace", "Opening CV...", "ok");
   }
 
   function openInterviewStoredCv() {
@@ -4805,6 +4924,13 @@ function PortalApp({ token, onLogout }) {
     return selectedAssessmentRows;
   }
 
+  function getClientShareCvText(item = {}) {
+    const shareKey = String(item.candidate_id || item.id || "");
+    if (!shareKey) return "Linked candidate not found";
+    return clientShareCvLinks[shareKey]
+      || (clientShareCvLinkState[shareKey] === "missing" ? "CV link not available yet" : "Generating secure CV link...");
+  }
+
   function getClientSharePresetColumns() {
     const customPreset = (copySettings.customExportPresets || []).find((preset) => String(preset.id) === String(clientShareDraft.presetId));
     const columnsText = customPreset?.columns
@@ -4932,6 +5058,28 @@ function PortalApp({ token, onLogout }) {
     }
     await copyHtmlAndText(buildClientShareHtml(), buildClientShareBody());
     setStatus("clientShare", "Client email draft copied in table format.", "ok");
+  }
+
+  async function copyClientShareTracker() {
+    const rows = getClientShareRows();
+    if (!rows.length) {
+      setStatus("clientShare", "Select assessment profiles first from the Assessments tab.", "error");
+      return;
+    }
+    const rowsWithCv = rows.map((item, index) => ({
+      ...item,
+      index: index + 1,
+      s_no: index + 1,
+      cv_link: getClientShareCvText(item),
+      cv_url: getClientShareCvText(item)
+    }));
+    const preset = buildCapturedExcelRows(rowsWithCv, clientShareDraft.presetId || copySettings.excelPreset, copySettings);
+    const hasCvColumn = preset.headers.some((header) => String(header || "").trim().toLowerCase().includes("cv"));
+    const headers = hasCvColumn ? preset.headers : [...preset.headers, "CV Link"];
+    const outputRows = preset.rows.map((row, index) => (hasCvColumn ? row : [...row, getClientShareCvText(rows[index] || {})]));
+    const lines = [headers.join("\t"), ...outputRows.map((row) => row.map((cell) => String(cell || "").replace(/\t/g, " ").replace(/\r?\n/g, " ")).join("\t"))].join("\n");
+    await copyText(lines);
+    setStatus("clientShare", "Selected profiles copied as tracker in the chosen preset.", "ok");
   }
 
   function toggleAssessmentSelection(assessmentId) {
@@ -5923,6 +6071,10 @@ function PortalApp({ token, onLogout }) {
                               {buildVisibleTagList(item).slice(0, 8).map((tag) => <span key={tag} className="chip">{tag}</span>)}
                             </div>
                           ) : null}
+                          <div className="button-row">
+                            <button onClick={() => setDatabaseProfileItem(item)}>Open profile</button>
+                            {candidateHasStoredCv(item) ? <button className="ghost-btn" onClick={() => openDatabaseCandidateCv(item)}>Open CV</button> : null}
+                          </div>
                         </div>
                       </div>
                     </article>
@@ -6345,6 +6497,7 @@ function PortalApp({ token, onLogout }) {
                 <p className="muted">Current flow: copy the email draft from here, then paste it into Zoho/Gmail/Outlook and attach CVs manually.</p>
                 <div className="button-row">
                   <button onClick={() => void copyClientShareEmailDraft()}>Copy email draft</button>
+                  <button className="ghost-btn" onClick={() => void copyClientShareTracker()}>Copy tracker only</button>
                 </div>
               </Section>
             </div>
@@ -6938,6 +7091,12 @@ function PortalApp({ token, onLogout }) {
           }
           if (target?.candidateId) void openAttempts(target.candidateId);
         }}
+      />
+      <CandidateProfileModal
+        open={Boolean(databaseProfileItem)}
+        candidate={databaseProfileItem}
+        onClose={() => setDatabaseProfileItem(null)}
+        onOpenCv={(candidate) => openDatabaseCandidateCv(candidate)}
       />
       <ClientFeedbackModal open={Boolean(clientFeedbackItem)} item={clientFeedbackItem} onClose={() => setClientFeedbackItem(null)} onSave={(payload) => void saveClientFeedback(payload)} />
     </div>
