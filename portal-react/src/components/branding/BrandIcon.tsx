@@ -8,18 +8,18 @@ export default function BrandIcon({ size = 28, className = "" }) {
       className={className}
       width={resolvedSize}
       height={resolvedSize}
-      viewBox="0 0 64 64"
+      viewBox="0 0 128 128"
       fill="none"
       xmlns="http://www.w3.org/2000/svg"
       aria-hidden="true"
     >
-      <circle cx="24" cy="40" r="16" fill={BRAND_BLUE} />
-      <path d="M38 30.5L45 23.5" stroke={BRAND_BLUE} strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" />
-      <path d="M42 34V13" stroke={BRAND_BLUE} strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" />
-      <path d="M46 37.5L56 27.5" stroke={BRAND_BLUE} strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" />
-      <circle cx="48" cy="21" r="4.5" fill="white" stroke={BRAND_BLUE} strokeWidth="4" />
-      <circle cx="42" cy="9" r="4.5" fill="white" stroke={BRAND_BLUE} strokeWidth="4" />
-      <circle cx="58" cy="25" r="4.5" fill="white" stroke={BRAND_BLUE} strokeWidth="4" />
+      <circle cx="46" cy="82" r="33" fill={BRAND_BLUE} />
+      <path d="M74 56L92 74V100" stroke={BRAND_BLUE} strokeWidth="8" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M89 39V93L76 106" stroke={BRAND_BLUE} strokeWidth="8" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M106 31L99 38L99 86L84 101" stroke={BRAND_BLUE} strokeWidth="8" strokeLinecap="round" strokeLinejoin="round" />
+      <circle cx="74" cy="50" r="10" fill="white" stroke={BRAND_BLUE} strokeWidth="8" />
+      <circle cx="89" cy="29" r="10" fill="white" stroke={BRAND_BLUE} strokeWidth="8" />
+      <circle cx="108" cy="27" r="10" fill="white" stroke={BRAND_BLUE} strokeWidth="8" />
     </svg>
   );
 }
