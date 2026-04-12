@@ -232,6 +232,13 @@ const CLIENT_PORTAL_STATUS_LABELS = {
   interview_dropout: "Interview Dropout"
 };
 
+function formatClientPortalStatusLabel(value) {
+  const normalized = normalizeAssessmentStatusLabel(value);
+  if (!normalized) return "";
+  if (normalized.toLowerCase() === "cv to be shared") return "CV Shared";
+  return normalized;
+}
+
 class PortalErrorBoundary extends React.Component {
   constructor(props) {
     super(props);
@@ -2429,6 +2436,7 @@ function ClientFeedbackModal({ open, item, onClose, onSave }) {
   const [status, setStatus] = useState("");
   const [feedback, setFeedback] = useState("");
   const [interviewAt, setInterviewAt] = useState("");
+  const currentStatus = formatClientPortalStatusLabel(feedbackMeta.status || assessment?.candidateStatus) || "Not set";
 
   useEffect(() => {
     if (!open) return;
@@ -2446,10 +2454,14 @@ function ClientFeedbackModal({ open, item, onClose, onSave }) {
         <p className="muted">{item?.candidateName || item?.name || "Candidate"} | {item?.position || item?.jdTitle || item?.role || "Untitled role"}</p>
         <div className="form-grid">
           <label>
-            <span>Status</span>
+            <span>Current status</span>
+            <input value={currentStatus} readOnly />
+          </label>
+          <label>
+            <span>Choose new status</span>
             <select value={status} onChange={(e) => setStatus(e.target.value)}>
               <option value="">Keep current status</option>
-              {DEFAULT_STATUS_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}
+              {DEFAULT_STATUS_OPTIONS.map((option) => <option key={option} value={option}>{formatClientPortalStatusLabel(option) || option}</option>)}
             </select>
           </label>
           {showCalendar ? (
@@ -2655,7 +2667,7 @@ function ClientProfileModal({ open, item, onClose, copySettings = DEFAULT_COPY_S
         <h3>{assessment.candidateName || item.candidateName || "Candidate"}</h3>
         <p className="muted">{[assessment.jdTitle || item.position || item.role || "", assessment.clientName || item.clientName || "", assessment.currentCompany || item.company || ""].filter(Boolean).join(" | ")}</p>
         <div className="info-grid">
-          {[["Current Status", assessment.candidateStatus || "-"],["Experience", assessment.totalExperience || item.totalExperience || "-"],["Current company", assessment.currentCompany || item.company || "-"],["Current Designation", assessment.currentDesignation || item.role || "-"],["Location", assessment.location || item.location || "-"],["Notice Period", assessment.noticePeriod || item.noticePeriod || "-"],["Current CTC", assessment.currentCtc || item.currentCtc || "-"],["Expected CTC", assessment.expectedCtc || item.expectedCtc || "-"],["Offer in Hand", assessment.offerInHand || assessment.offerAmount || item.offerInHand || "-"],["LWD / DOJ", assessment.lwdOrDoj || assessment.offerDoj || item.lwdOrDoj || "-"]].filter(([, value]) => value && value !== "-").map(([label, value]) => (
+          {[["Current Status", formatClientPortalStatusLabel(assessment.candidateStatus) || "-"],["Experience", assessment.totalExperience || item.totalExperience || "-"],["Current company", assessment.currentCompany || item.company || "-"],["Current Designation", assessment.currentDesignation || item.role || "-"],["Location", assessment.location || item.location || "-"],["Notice Period", assessment.noticePeriod || item.noticePeriod || "-"],["Current CTC", assessment.currentCtc || item.currentCtc || "-"],["Expected CTC", assessment.expectedCtc || item.expectedCtc || "-"],["Offer in Hand", assessment.offerInHand || assessment.offerAmount || item.offerInHand || "-"],["LWD / DOJ", assessment.lwdOrDoj || assessment.offerDoj || item.lwdOrDoj || "-"]].filter(([, value]) => value && value !== "-").map(([label, value]) => (
             <div className="info-card" key={label}>
               <div className="info-label">{label}</div>
               <div className="info-value">{value || "-"}</div>
