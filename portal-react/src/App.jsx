@@ -60,6 +60,7 @@ const DEFAULT_COPY_SETTINGS = {
     client_submission: "S.No.|s_no\nName|name\nPh|phone\nEmail|email\nCurrent Company|current_company\nCurrent Designation|current_designation\nTotal Experience|total_experience\nStrong Points|other_pointers\nRemarks|remarks",
     screening_focus: "S.No.|s_no\nName|name\nCurrent CTC|current_ctc\nExpected CTC|expected_ctc\nNotice Period|notice_period\nScreening Answers|other_standard_questions\nRemarks|remarks"
   },
+  exportPresetClientMap: {},
   customExportPresets: [],
   whatsappTemplate: "{{index}}. {{name}}\nRole: {{jd_title}}\nCompany: {{company}}\nOutcome: {{outcome}}\nRecruiter note: {{recruiter_notes}}",
   emailTemplate: "{{index}}. {{name}}\nCompany: {{company}}\nRole: {{jd_title}}\nLocation: {{location}}\nOutcome: {{outcome}}\nEmail: {{email}}\nPhone: {{phone}}\nNotes: {{recruiter_notes}}",
@@ -2841,6 +2842,22 @@ function PortalApp({ token, onLogout }) {
   const [teamPasswordDrafts, setTeamPasswordDrafts] = useState({});
   const [companyDraft, setCompanyDraft] = useState({ companyName: "", adminName: "", email: "", password: "", platformSecret: "" });
   const [clientUsers, setClientUsers] = useState([]);
+  const availablePresetClients = useMemo(() => {
+    const values = new Set();
+    (state.jobs || []).forEach((job) => {
+      const clientName = String(job?.clientName || job?.client_name || "").trim();
+      if (clientName) values.add(clientName);
+    });
+    (clientUsers || []).forEach((client) => {
+      const clientName = String(client?.clientName || "").trim();
+      if (clientName) values.add(clientName);
+    });
+    (((state.clientPortal || {}).availableClients) || []).forEach((clientName) => {
+      const value = String(clientName || "").trim();
+      if (value) values.add(value);
+    });
+    return Array.from(values).sort((a, b) => a.localeCompare(b));
+  }, [state.jobs, state.clientPortal, clientUsers]);
   const [clientUserDraft, setClientUserDraft] = useState({ username: "", password: "", clientName: "", allowedPositions: "" });
   const [clientPasswordDrafts, setClientPasswordDrafts] = useState({});
   const [quickUpdateCandidateQuery, setQuickUpdateCandidateQuery] = useState("");
@@ -5258,6 +5275,7 @@ function PortalApp({ token, onLogout }) {
     const payload = {
       ...copySettings,
       exportPresetLabels: copySettings.exportPresetLabels || DEFAULT_COPY_SETTINGS.exportPresetLabels,
+      exportPresetClientMap: copySettings.exportPresetClientMap || DEFAULT_COPY_SETTINGS.exportPresetClientMap,
       customExportPresets: copySettings.customExportPresets || []
     };
     const result = await api("/company/shared-export-presets", token, "POST", { settings: payload });
@@ -5429,6 +5447,9 @@ function PortalApp({ token, onLogout }) {
   const selectedPresetColumns = selectedCustomPreset
     ? selectedCustomPreset.columns
     : (copySettings.exportPresetColumns?.[selectedBuiltInPresetId] || DEFAULT_COPY_SETTINGS.exportPresetColumns?.[selectedBuiltInPresetId] || "");
+  const selectedPresetClientName = selectedCustomPreset
+    ? String(selectedCustomPreset.clientName || "").trim()
+    : String(copySettings.exportPresetClientMap?.[selectedBuiltInPresetId] || "").trim();
 
   function updateSelectedPresetLabel(value) {
     if (selectedCustomPreset) {
@@ -5467,10 +5488,20 @@ function PortalApp({ token, onLogout }) {
   }
 
   function updateSelectedPresetClientName(value) {
-    if (!selectedCustomPreset) return;
+    if (selectedCustomPreset) {
+      setCopySettings((current) => ({
+        ...current,
+        customExportPresets: (current.customExportPresets || []).map((preset) => String(preset.id) === String(selectedCustomPreset.id) ? { ...preset, clientName: value } : preset)
+      }));
+      return;
+    }
+    if (!selectedBuiltInPresetId) return;
     setCopySettings((current) => ({
       ...current,
-      customExportPresets: (current.customExportPresets || []).map((preset) => String(preset.id) === String(selectedCustomPreset.id) ? { ...preset, clientName: value } : preset)
+      exportPresetClientMap: {
+        ...(current.exportPresetClientMap || {}),
+        [selectedBuiltInPresetId]: value
+      }
     }));
   }
 
@@ -6993,121 +7024,126 @@ function PortalApp({ token, onLogout }) {
                   {!isSettingsAdmin ? <p className="muted">You can use shared presets here. Only admin can create, edit, or save shared preset settings.</p> : null}
                   {statuses.settings ? <div className={`status ${statuses.settingsKind || ""}`}>{statuses.settings}</div> : null}
                   <div className="settings-subsection">
-                    <div className="section-kicker">Candidate Tracker Preset</div>
-                    <p className="muted">Excel columns, WhatsApp copy, and email copy used in Captured Notes, Applied Candidates, Assessments, and Database.</p>
-                  <div className="form-grid">
-                    <label>
-                      <span>Excel preset</span>
-                      <select value={copySettings.excelPreset} onChange={(e) => setCopySettings((current) => ({ ...current, excelPreset: e.target.value }))}>
-                        <option value="compact_recruiter">{copySettings.exportPresetLabels?.compact_recruiter || "Compact recruiter"}</option>
-                        <option value="client_tracker">{copySettings.exportPresetLabels?.client_tracker || "Client tracker"}</option>
-                        <option value="attentive_tracker">{copySettings.exportPresetLabels?.attentive_tracker || "Attentive tracker"}</option>
-                        <option value="client_submission">{copySettings.exportPresetLabels?.client_submission || "Client submission"}</option>
-                        <option value="screening_focus">{copySettings.exportPresetLabels?.screening_focus || "Screening focus"}</option>
-                        {(copySettings.customExportPresets || []).map((preset) => (
-                          <option key={preset.id} value={preset.id}>{preset.label}</option>
-                        ))}
-                      </select>
-                    </label>
-                    <label>
-                      <span>{isSettingsAdmin ? "Editable preset label" : "Selected preset label"}</span>
-                      <input
-                        disabled={!isSettingsAdmin}
-                        value={selectedPresetLabel}
-                        onChange={(e) => updateSelectedPresetLabel(e.target.value)}
-                        placeholder="Attentive tracker"
-                        spellCheck={false}
-                      />
-                    </label>
-                    {selectedCustomPreset ? (
+                    <div className="section-kicker">Edit Existing Presets</div>
+                    <p className="muted">Edit any existing candidate tracker preset, attach it to a specific client if needed, and save shared usage defaults.</p>
+                    <div className="form-grid">
                       <label>
-                        <span>Client for this preset</span>
+                        <span>Select preset to edit</span>
+                        <select value={copySettings.excelPreset} onChange={(e) => setCopySettings((current) => ({ ...current, excelPreset: e.target.value }))}>
+                          <option value="compact_recruiter">{copySettings.exportPresetLabels?.compact_recruiter || "Compact recruiter"}</option>
+                          <option value="client_tracker">{copySettings.exportPresetLabels?.client_tracker || "Client tracker"}</option>
+                          <option value="attentive_tracker">{copySettings.exportPresetLabels?.attentive_tracker || "Attentive tracker"}</option>
+                          <option value="client_submission">{copySettings.exportPresetLabels?.client_submission || "Client submission"}</option>
+                          <option value="screening_focus">{copySettings.exportPresetLabels?.screening_focus || "Screening focus"}</option>
+                          {(copySettings.customExportPresets || []).map((preset) => (
+                            <option key={preset.id} value={preset.id}>{preset.label}</option>
+                          ))}
+                        </select>
+                      </label>
+                      <label>
+                        <span>{isSettingsAdmin ? "Preset label" : "Selected preset label"}</span>
                         <input
                           disabled={!isSettingsAdmin}
-                          value={selectedCustomPreset.clientName || ""}
-                          onChange={(e) => updateSelectedPresetClientName(e.target.value)}
-                          placeholder="Blank = internal / all clients"
+                          value={selectedPresetLabel}
+                          onChange={(e) => updateSelectedPresetLabel(e.target.value)}
+                          placeholder="Attentive tracker"
                           spellCheck={false}
                         />
                       </label>
-                    ) : null}
-                    <label className="full">
-                      <span>{isSettingsAdmin ? "Editable preset columns" : "Selected preset columns"}</span>
-                      <textarea
-                        className="preset-editor"
-                        disabled={!isSettingsAdmin}
-                        value={selectedPresetColumns}
-                        onChange={(e) => updateSelectedPresetColumns(e.target.value)}
-                        placeholder={"S.No.|s_no\nName|name\nStatus|assessment_status"}
-                        rows={10}
-                        spellCheck={false}
-                      />
-                    </label>
-                    <p className="muted full">
-                      {isSettingsAdmin
-                        ? "Edit one column per line in Header|field format, then click Save shared settings to apply changes for everyone."
-                        : "This preset is managed by your admin. Each line follows Header|field format."}
-                    </p>
-                    <label className="full">
-                      <span>WhatsApp template</span>
-                      <textarea disabled={!isSettingsAdmin} value={copySettings.whatsappTemplate || DEFAULT_COPY_SETTINGS.whatsappTemplate} onChange={(e) => setCopySettings((current) => ({ ...current, whatsappTemplate: e.target.value }))} />
-                    </label>
-                    <label className="full">
-                      <span>Email template</span>
-                      <textarea disabled={!isSettingsAdmin} value={copySettings.emailTemplate || DEFAULT_COPY_SETTINGS.emailTemplate} onChange={(e) => setCopySettings((current) => ({ ...current, emailTemplate: e.target.value }))} />
-                    </label>
+                      <label>
+                        <span>Client for this preset</span>
+                        <select
+                          disabled={!isSettingsAdmin}
+                          value={selectedPresetClientName}
+                          onChange={(e) => updateSelectedPresetClientName(e.target.value)}
+                        >
+                          <option value="">Internal / all clients</option>
+                          {availablePresetClients.map((clientName) => <option key={clientName} value={clientName}>{clientName}</option>)}
+                        </select>
+                      </label>
+                      <label className="full">
+                        <span>{isSettingsAdmin ? "Preset columns" : "Selected preset columns"}</span>
+                        <textarea
+                          className="preset-editor"
+                          disabled={!isSettingsAdmin}
+                          value={selectedPresetColumns}
+                          onChange={(e) => updateSelectedPresetColumns(e.target.value)}
+                          placeholder={"S.No.|s_no\nName|name\nStatus|assessment_status"}
+                          rows={10}
+                          spellCheck={false}
+                        />
+                      </label>
+                      <label className="full">
+                        <span>WhatsApp template</span>
+                        <textarea disabled={!isSettingsAdmin} value={copySettings.whatsappTemplate || DEFAULT_COPY_SETTINGS.whatsappTemplate} onChange={(e) => setCopySettings((current) => ({ ...current, whatsappTemplate: e.target.value }))} />
+                      </label>
+                      <label className="full">
+                        <span>Email template</span>
+                        <textarea disabled={!isSettingsAdmin} value={copySettings.emailTemplate || DEFAULT_COPY_SETTINGS.emailTemplate} onChange={(e) => setCopySettings((current) => ({ ...current, emailTemplate: e.target.value }))} />
+                      </label>
+                    </div>
+                    <p className="muted">Available placeholders: copy templates use {`{{index}} {{name}} {{jd_title}} {{company}} {{outcome}} {{recruiter_notes}} {{location}} {{phone}} {{email}} {{source}} {{follow_up_at}}`}.</p>
+                    <div className="button-row">
+                      {isSettingsAdmin ? <button onClick={() => void saveSharedCopySettings()}>Save existing preset changes</button> : null}
+                    </div>
                   </div>
-                  <p className="muted">Available placeholders: copy templates use {`{{index}} {{name}} {{jd_title}} {{company}} {{outcome}} {{recruiter_notes}} {{location}} {{phone}} {{email}} {{source}} {{follow_up_at}}`}.</p>
+                  <div className="settings-subsection">
+                    <div className="section-kicker">Create New Presets</div>
+                    <p className="muted">Create a new candidate tracker preset and optionally map it to a client right away.</p>
+                    <div className="form-grid">
+                      <label><span>New preset label</span><input disabled={!isSettingsAdmin} value={newPresetDraft.label} onChange={(e) => setNewPresetDraft((current) => ({ ...current, label: e.target.value }))} placeholder="Client shortlisting sheet" /></label>
+                      <label>
+                        <span>Client for new preset</span>
+                        <select disabled={!isSettingsAdmin} value={newPresetDraft.clientName || ""} onChange={(e) => setNewPresetDraft((current) => ({ ...current, clientName: e.target.value }))}>
+                          <option value="">Internal / all clients</option>
+                          {availablePresetClients.map((clientName) => <option key={clientName} value={clientName}>{clientName}</option>)}
+                        </select>
+                      </label>
+                      <label className="full"><span>New preset columns</span><textarea disabled={!isSettingsAdmin} value={newPresetDraft.columns} onChange={(e) => setNewPresetDraft((current) => ({ ...current, columns: e.target.value }))} placeholder={"S.No.|s_no\nName|name\nStatus|assessment_status"} /></label>
+                    </div>
+                    {isSettingsAdmin ? <div className="button-row">
+                      <button className="ghost-btn" onClick={addCustomPreset}>Create preset</button>
+                      <button onClick={() => void saveSharedCopySettings()}>Save new preset</button>
+                    </div> : null}
+                    <div className="stack-list compact">
+                      {(copySettings.customExportPresets || []).map((preset) => (
+                        <article className="item-card compact-card" key={preset.id}>
+                          <div className="item-card__top">
+                            <div>
+                              <h3>{preset.label}</h3>
+                              {preset.clientName ? <p className="muted">Client preset: {preset.clientName}</p> : <p className="muted">Internal / all-client preset</p>}
+                              <div className="candidate-snippet">{preset.columns}</div>
+                            </div>
+                            {isSettingsAdmin ? <div className="button-row">
+                              <button className="ghost-btn" onClick={() => removeCustomPreset(preset.id)}>Remove</button>
+                            </div> : null}
+                          </div>
+                        </article>
+                      ))}
+                    </div>
                   </div>
                   <div className="settings-subsection">
                     <div className="section-kicker">Direct Share Email Preset</div>
                     <p className="muted">Default intro and signature used in Direct Share. Recruiters can still override them for one email draft.</p>
                     <div className="form-grid">
-                    <label className="full">
-                      <span>Direct share default email intro</span>
-                      <textarea disabled={!isSettingsAdmin} value={copySettings.clientShareIntroTemplate || DEFAULT_COPY_SETTINGS.clientShareIntroTemplate} onChange={(e) => setCopySettings((current) => ({ ...current, clientShareIntroTemplate: e.target.value }))} />
-                    </label>
-                    <label className="full">
-                      <span>Direct share default signature text</span>
-                      <textarea disabled={!isSettingsAdmin} value={copySettings.clientShareSignatureText || DEFAULT_COPY_SETTINGS.clientShareSignatureText} onChange={(e) => setCopySettings((current) => ({ ...current, clientShareSignatureText: e.target.value }))} />
-                    </label>
-                    <label><span>Signature link 1 text</span><input disabled={!isSettingsAdmin} value={copySettings.clientShareSignatureLinkLabel || ""} onChange={(e) => setCopySettings((current) => ({ ...current, clientShareSignatureLinkLabel: e.target.value }))} placeholder="Kompatible Minds" /></label>
-                    <label><span>Signature link 1 URL</span><input disabled={!isSettingsAdmin} value={copySettings.clientShareSignatureLinkUrl || ""} onChange={(e) => setCopySettings((current) => ({ ...current, clientShareSignatureLinkUrl: e.target.value }))} placeholder="https://kompatibleminds.com" /></label>
-                    <label><span>Signature link 2 text</span><input disabled={!isSettingsAdmin} value={copySettings.clientShareSignatureLinkLabel2 || ""} onChange={(e) => setCopySettings((current) => ({ ...current, clientShareSignatureLinkLabel2: e.target.value }))} placeholder="LinkedIn" /></label>
-                    <label><span>Signature link 2 URL</span><input disabled={!isSettingsAdmin} value={copySettings.clientShareSignatureLinkUrl2 || ""} onChange={(e) => setCopySettings((current) => ({ ...current, clientShareSignatureLinkUrl2: e.target.value }))} placeholder="https://www.linkedin.com/in/..." /></label>
+                      <label className="full">
+                        <span>Direct share default email intro</span>
+                        <textarea disabled={!isSettingsAdmin} value={copySettings.clientShareIntroTemplate || DEFAULT_COPY_SETTINGS.clientShareIntroTemplate} onChange={(e) => setCopySettings((current) => ({ ...current, clientShareIntroTemplate: e.target.value }))} />
+                      </label>
+                      <label className="full">
+                        <span>Direct share default signature text</span>
+                        <textarea disabled={!isSettingsAdmin} value={copySettings.clientShareSignatureText || DEFAULT_COPY_SETTINGS.clientShareSignatureText} onChange={(e) => setCopySettings((current) => ({ ...current, clientShareSignatureText: e.target.value }))} />
+                      </label>
+                      <label><span>Signature link 1 text</span><input disabled={!isSettingsAdmin} value={copySettings.clientShareSignatureLinkLabel || ""} onChange={(e) => setCopySettings((current) => ({ ...current, clientShareSignatureLinkLabel: e.target.value }))} placeholder="Kompatible Minds" /></label>
+                      <label><span>Signature link 1 URL</span><input disabled={!isSettingsAdmin} value={copySettings.clientShareSignatureLinkUrl || ""} onChange={(e) => setCopySettings((current) => ({ ...current, clientShareSignatureLinkUrl: e.target.value }))} placeholder="https://kompatibleminds.com" /></label>
+                      <label><span>Signature link 2 text</span><input disabled={!isSettingsAdmin} value={copySettings.clientShareSignatureLinkLabel2 || ""} onChange={(e) => setCopySettings((current) => ({ ...current, clientShareSignatureLinkLabel2: e.target.value }))} placeholder="LinkedIn" /></label>
+                      <label><span>Signature link 2 URL</span><input disabled={!isSettingsAdmin} value={copySettings.clientShareSignatureLinkUrl2 || ""} onChange={(e) => setCopySettings((current) => ({ ...current, clientShareSignatureLinkUrl2: e.target.value }))} placeholder="https://www.linkedin.com/in/..." /></label>
                     </div>
                     <p className="muted">Direct share intro/signature placeholders use {`{{hr_name}} {{recruiter_name}} {{company_name}} {{client_name}} {{role}} {{role_line}}`}.</p>
-                  </div>
-                  <div className="settings-subsection">
-                    <div className="section-kicker">Create Candidate Tracker Preset</div>
-                    <div className="form-grid">
-                    <label><span>New preset label</span><input disabled={!isSettingsAdmin} value={newPresetDraft.label} onChange={(e) => setNewPresetDraft((current) => ({ ...current, label: e.target.value }))} placeholder="Client shortlisting sheet" /></label>
-                    <label><span>Client name for preset</span><input disabled={!isSettingsAdmin} value={newPresetDraft.clientName || ""} onChange={(e) => setNewPresetDraft((current) => ({ ...current, clientName: e.target.value }))} placeholder="Blank = internal / all clients" /></label>
-                    <label className="full"><span>New preset columns</span><textarea disabled={!isSettingsAdmin} value={newPresetDraft.columns} onChange={(e) => setNewPresetDraft((current) => ({ ...current, columns: e.target.value }))} placeholder={"S.No.|s_no\nName|name\nStatus|assessment_status"} /></label>
-                  </div>
-                  {isSettingsAdmin ? <div className="button-row">
-                    <button className="ghost-btn" onClick={addCustomPreset}>Add custom preset</button>
-                  </div> : null}
-                  </div>
-                  <div className="stack-list compact">
-                    {(copySettings.customExportPresets || []).map((preset) => (
-                      <article className="item-card compact-card" key={preset.id}>
-                        <div className="item-card__top">
-                          <div>
-                            <h3>{preset.label}</h3>
-                            {preset.clientName ? <p className="muted">Client preset: {preset.clientName}</p> : <p className="muted">Internal / all-client preset</p>}
-                            <div className="candidate-snippet">{preset.columns}</div>
-                          </div>
-                          {isSettingsAdmin ? <div className="button-row">
-                            <button className="ghost-btn" onClick={() => removeCustomPreset(preset.id)}>Remove</button>
-                          </div> : null}
-                        </div>
-                      </article>
-                    ))}
-                  </div>
-                  <div className="button-row">
-                    <button onClick={() => setCopySettings(DEFAULT_COPY_SETTINGS)}>Reset defaults</button>
-                    {isSettingsAdmin ? <button onClick={() => void saveSharedCopySettings()}>Save shared settings</button> : null}
+                    <div className="button-row">
+                      <button onClick={() => setCopySettings(DEFAULT_COPY_SETTINGS)}>Reset defaults</button>
+                      {isSettingsAdmin ? <button onClick={() => void saveSharedCopySettings()}>Save direct share preset</button> : null}
+                    </div>
                   </div>
                 </Section>
               </div>
@@ -7311,9 +7347,12 @@ function ClientPortalApp({ token, onLogout }) {
     const clientSpecificPreset = (nextCopySettings.customExportPresets || []).find((preset) => (
       String(preset.clientName || "").trim().toLowerCase() === String(nextUser?.clientName || "").trim().toLowerCase()
     ));
+    const builtInClientPreset = ["compact_recruiter", "client_tracker", "attentive_tracker", "client_submission", "screening_focus"].find((presetId) => (
+      String(nextCopySettings.exportPresetClientMap?.[presetId] || "").trim().toLowerCase() === String(nextUser?.clientName || "").trim().toLowerCase()
+    ));
     setClientUser(nextUser);
     setClientCopySettings(nextCopySettings);
-    setClientTrackerPresetId(clientSpecificPreset?.id || nextCopySettings.excelPreset || "client_submission");
+    setClientTrackerPresetId(clientSpecificPreset?.id || builtInClientPreset || nextCopySettings.excelPreset || "client_submission");
     setClientPortal(summaryResult || { summary: { byClient: [], byClientPosition: [] } });
   }
 
