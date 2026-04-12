@@ -7578,9 +7578,19 @@ function ClientPortalApp({ token, onLogout }) {
 export default function App() {
   const clientPortalUrl = isClientPortalUrl();
   const [authMode, setAuthMode] = useState(() => clientPortalUrl ? "client" : "recruiter");
-  const [token, setToken] = useState(() => clientPortalUrl ? (window.localStorage.getItem(CLIENT_TOKEN_KEY) || "") : (window.localStorage.getItem(TOKEN_KEY) || ""));
+  const [token, setToken] = useState(() => clientPortalUrl
+    ? (window.localStorage.getItem(CLIENT_TOKEN_KEY) || "")
+    : (window.localStorage.getItem(TOKEN_KEY) || ""));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+
+  useEffect(() => {
+    const forcedMode = clientPortalUrl ? "client" : "recruiter";
+    setAuthMode(forcedMode);
+    setToken(clientPortalUrl
+      ? (window.localStorage.getItem(CLIENT_TOKEN_KEY) || "")
+      : (window.localStorage.getItem(TOKEN_KEY) || ""));
+  }, [clientPortalUrl]);
 
   async function loginRecruiter({ email, password }) {
     try {
