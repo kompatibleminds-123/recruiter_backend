@@ -1,5 +1,14 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { NavLink, Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
+import BrandLogo from "./components/branding/BrandLogo";
+import {
+  CLIENT_BROWSER_TITLE,
+  CLIENT_PORTAL_LABEL,
+  COMPANY_ATTRIBUTION,
+  PRODUCT_NAME,
+  RECRUITER_BROWSER_TITLE,
+  RECRUITER_PORTAL_LABEL
+} from "./components/branding/brandConfig";
 
 const TOKEN_KEY = "recruitdesk_portal_token";
 const CLIENT_TOKEN_KEY = "recruitdesk_client_portal_token";
@@ -89,17 +98,6 @@ const BOOLEAN_SEARCH_EXAMPLE_PROMPTS = [
 ];
 
 const PORTAL_APPLICANT_METADATA_PREFIX = "[APPLICANT_META]";
-
-function BrandMark({ compact = false }) {
-  return (
-    <div className={`brand-lockup${compact ? " brand-lockup--compact" : ""}`}>
-      <div>
-        <div className="brand-title">RecruitDesk AI</div>
-        <div className="brand-subtitle">by Kompatible Minds</div>
-      </div>
-    </div>
-  );
-}
 
 const DEFAULT_PIPELINE_STAGE_OPTIONS = [
   "HR screening",
@@ -1901,9 +1899,9 @@ function LoginScreen({ onRecruiterLogin, onClientLogin, busy, error, clientOnly 
   return (
     <div className="auth-screen">
       <div className="auth-card">
-        <BrandMark />
+        <BrandLogo size="lg" />
         <div className="section-kicker auth-kicker">{mode === "client" ? "Client Login" : "Company Login"}</div>
-        <h1>{mode === "client" ? "Client Portal" : "Open your RecruitDesk workspace"}</h1>
+        <h1>{mode === "client" ? CLIENT_PORTAL_LABEL : RECRUITER_PORTAL_LABEL}</h1>
         <p className="muted">{mode === "client" ? "Use the client username and password shared by your recruiter team." : "Use your existing company admin or recruiter credentials."}</p>
         {!clientOnly ? (
           <div className="button-row">
@@ -1918,6 +1916,7 @@ function LoginScreen({ onRecruiterLogin, onClientLogin, busy, error, clientOnly 
           <button type="submit" disabled={busy}>{busy ? "Logging in..." : "Login"}</button>
         </form>
         {error ? <div className="status error">{error}</div> : null}
+        <div className="portal-footer portal-footer--auth">{COMPANY_ATTRIBUTION}</div>
       </div>
     </div>
   );
@@ -5911,7 +5910,7 @@ function PortalApp({ token, onLogout }) {
     <div className="app-shell">
       <aside className="sidebar">
         <div className="brand">
-          <BrandMark compact />
+          <BrandLogo size="md" />
         </div>
         <nav className="nav">
           {navSections.map((section) => (
@@ -5936,6 +5935,7 @@ function PortalApp({ token, onLogout }) {
         </nav>
         <div className="sidebar-footer">
           <div className="muted">{state.user ? `${state.user.name} | ${state.user.role} | ${state.user.companyName || "Company"}` : "Not logged in"}</div>
+          <div className="portal-footer">{COMPANY_ATTRIBUTION}</div>
           <button className="ghost-btn" onClick={onLogout}>Logout</button>
         </div>
       </aside>
@@ -5943,9 +5943,9 @@ function PortalApp({ token, onLogout }) {
       <main className="content">
         <header className="workspace-header">
           <div>
-            <BrandMark compact />
+            <BrandLogo size="sm" />
             <div className="section-kicker">{state.user?.companyName || "Company Workspace"}</div>
-            <h1>RecruitDesk AI Portal</h1>
+            <h1>{RECRUITER_PORTAL_LABEL}</h1>
           </div>
           {statuses.workspace ? <div className={`status inline ${statuses.workspaceKind || ""}`}>{statuses.workspace}</div> : null}
         </header>
@@ -7328,6 +7328,7 @@ function PortalApp({ token, onLogout }) {
           <Route path="*" element={<Navigate to="/dashboard" replace />} />
           </Routes>
         </RouteErrorBoundary>
+        <footer className="portal-footer portal-footer--content">{PRODUCT_NAME} {COMPANY_ATTRIBUTION}</footer>
       </main>
 
       <AssignModal open={Boolean(assignApplicantId)} applicant={assignApplicant} users={state.users} jobs={state.jobs} onClose={() => setAssignApplicantId("")} onSave={saveApplicantAssignment} />
@@ -7559,9 +7560,9 @@ function ClientPortalApp({ token, onLogout }) {
       <main className="content client-portal-content">
         <header className="workspace-header client-portal-header">
           <div>
-            <BrandMark compact />
-            <div className="section-kicker">{clientUser?.companyName || "Client Portal"}</div>
-            <h1>{clientName || "Client Portal"}</h1>
+            <BrandLogo size="sm" />
+            <div className="section-kicker">{clientName || clientUser?.companyName || "Client Workspace"}</div>
+            <h1>{CLIENT_PORTAL_LABEL}</h1>
           </div>
           <div className="client-user-pill">
             {clientUser?.username ? <span>{clientUser.username}</span> : null}
@@ -7670,6 +7671,7 @@ function ClientPortalApp({ token, onLogout }) {
               </table>
             </div>
           </Section>
+          <footer className="portal-footer portal-footer--content">{COMPANY_ATTRIBUTION}</footer>
         </div>
 
         <DrilldownModal
@@ -7715,6 +7717,10 @@ export default function App() {
     setToken(clientPortalUrl
       ? (window.localStorage.getItem(CLIENT_TOKEN_KEY) || "")
       : (window.localStorage.getItem(TOKEN_KEY) || ""));
+  }, [clientPortalUrl]);
+
+  useEffect(() => {
+    document.title = clientPortalUrl ? CLIENT_BROWSER_TITLE : RECRUITER_BROWSER_TITLE;
   }, [clientPortalUrl]);
 
   async function loginRecruiter({ email, password }) {
