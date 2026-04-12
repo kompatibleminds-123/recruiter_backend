@@ -1614,6 +1614,15 @@ function downloadTextFile(filename, text, mimeType = "text/tab-separated-values;
 function getAssessmentQuestionAnswers(assessment = {}) {
   const source = assessment && typeof assessment === "object" ? assessment : {};
   const pairs = [];
+  const isVisibleQuestion = (question, answer) => {
+    const label = String(question || "").trim().toLowerCase();
+    const value = String(answer || "").trim().toLowerCase();
+    if (!label || !value) return false;
+    if (/^(status|current status|assessment status|candidate status|pipeline|pipeline stage)$/i.test(label)) return false;
+    if (label === "source" || label === "recruiter" || label === "client") return false;
+    if ((label.includes("status") || label.includes("pipeline")) && /cv\s+(shared|to be shared)|submitted|screening in progress/i.test(value)) return false;
+    return true;
+  };
   [
     source.questionAnswerPairs,
     source.screeningQuestionAnswers,
@@ -1627,17 +1636,33 @@ function getAssessmentQuestionAnswers(assessment = {}) {
       if (!entry || typeof entry === "string") return;
       const question = String(entry.question || entry.label || entry.title || entry.q || `Question ${index + 1}`).trim();
       const answer = String(entry.answer || entry.value || entry.response || entry.a || "").trim();
-      if (question && answer) pairs.push({ question, answer });
+      if (isVisibleQuestion(question, answer)) pairs.push({ question, answer });
     });
   });
   if (source.screeningAnswers && typeof source.screeningAnswers === "object") {
     Object.entries(source.screeningAnswers).forEach(([question, answer]) => {
       const safeQuestion = String(question || "").trim();
       const safeAnswer = String(answer || "").trim();
-      if (safeQuestion && safeAnswer) pairs.push({ question: safeQuestion, answer: safeAnswer });
+      if (isVisibleQuestion(safeQuestion, safeAnswer)) pairs.push({ question: safeQuestion, answer: safeAnswer });
     });
   }
   return Array.from(new Map(pairs.map((pair) => [`${pair.question}|||${pair.answer}`, pair])).values()).slice(0, 40);
+}
+
+function clientPortalItemHasCv(item = {}) {
+  const candidate = item?.raw?.candidate || item?.candidate || {};
+  const metadata = item?.raw?.metadata || item?.metadata || {};
+  const storedFile = metadata?.cvAnalysisCache?.storedFile && typeof metadata.cvAnalysisCache.storedFile === "object"
+    ? metadata.cvAnalysisCache.storedFile
+    : {};
+  return Boolean(
+    item?.cvAvailable
+    || candidateHasStoredCv(candidate)
+    || metadata?.fileKey
+    || metadata?.fileUrl
+    || storedFile?.key
+    || storedFile?.url
+  );
 }
 
 function buildClientPortalTrackerRows(items = [], cvTextByAssessmentId = {}) {
@@ -2620,11 +2645,10 @@ function ClientProfileModal({ open, item, onClose, copySettings = DEFAULT_COPY_S
   const candidate = item.raw?.candidate || {};
   const assessmentId = String(assessment.id || item.id || "").trim();
   const otherPointers = String(assessment.otherPointers || item.otherPointers || candidate.other_pointers || "").trim();
-  const recruiterNotes = String(assessment.recruiterNotes || item.notesText || candidate.recruiter_context_notes || "").trim();
   const questionAnswers = getAssessmentQuestionAnswers(assessment);
-  const trackerRows = buildClientPortalTrackerRows([item], assessmentId ? { [assessmentId]: "Open CV from client portal" } : {});
+  const hasCv = clientPortalItemHasCv(item);
+  const trackerRows = buildClientPortalTrackerRows([item], assessmentId && hasCv ? { [assessmentId]: "Open CV from client portal" } : {});
   const trackerPreview = buildCapturedExcelRows(trackerRows, presetId || copySettings.excelPreset, copySettings);
-  const hasCv = Boolean(assessmentId);
   return (
     <div className="overlay" onClick={onClose}>
       <div className="overlay-card overlay-card--wide" onClick={(e) => e.stopPropagation()}>
@@ -2649,12 +2673,6 @@ function ClientProfileModal({ open, item, onClose, copySettings = DEFAULT_COPY_S
                 </div>
               ))}
             </div>
-          </div>
-        ) : null}
-        {recruiterNotes ? (
-          <div className="client-profile-notes">
-            <div className="info-label">Recruiter Notes</div>
-            <div className="client-profile-notes__body">{recruiterNotes}</div>
           </div>
         ) : null}
         {otherPointers ? (
@@ -7283,7 +7301,7 @@ function ClientPortalApp({ token, onLogout }) {
     ));
     setClientUser(nextUser);
     setClientCopySettings(nextCopySettings);
-    setClientTrackerPresetId((current) => (current && current !== "client_submission") ? current : (clientSpecificPreset?.id || nextCopySettings.excelPreset || "client_submission"));
+    setClientTrackerPresetId(clientSpecificPreset?.id || nextCopySettings.excelPreset || "client_submission");
     setClientPortal(summaryResult || { summary: { byClient: [], byClientPosition: [] } });
   }
 
@@ -7299,32 +7317,18 @@ function ClientPortalApp({ token, onLogout }) {
   }, [token]);
 
   const summary = clientPortal.summary || { overall: {}, byClient: [], byClientPosition: [] };
+  const agenda = clientPortal.agenda || { interviews: [], joinings: [] };
   const clientName = clientUser?.clientName || summary.byClient?.[0]?.label || "";
   const overall = summary.byClient?.[0]?.metrics || summary.overall || {};
   const positionRows = (summary.byClientPosition || []).filter((row) => !filters.positionLabel || String(row.positionLabel || "") === String(filters.positionLabel || ""));
+  const clientAgendaInterviews = (agenda.interviews || []).filter((item) => !filters.positionLabel || String(item.position || "") === String(filters.positionLabel || ""));
+  const clientAgendaJoinings = (agenda.joinings || []).filter((item) => !filters.positionLabel || String(item.position || "") === String(filters.positionLabel || ""));
   const selectedPosition = (summary.byClientPosition || []).find((row) => String(row.positionLabel || "") === String(filters.positionLabel || "")) || null;
   const positionOptions = Array.from(new Set((summary.byClientPosition || []).map((row) => row.positionLabel).filter(Boolean)));
   const rolePieRows = (summary.byClientPosition || []).map((row) => ({ label: row.positionLabel || "Unassigned", count: row.metrics?.total_shared || 0 }));
   const statusPieRows = (summary.byStatus || []).length
     ? (summary.byStatus || []).map((row) => ({ label: CLIENT_PORTAL_STATUS_LABELS[row.label] || row.label, count: row.count || 0 }))
     : CLIENT_PORTAL_METRICS.filter(([key]) => key !== "total_shared" && Number(overall[key] || 0) > 0).map(([key, label]) => ({ label, count: Number(overall[key] || 0) }));
-  const clientTrackerPresetOptions = useMemo(() => {
-    const builtIns = [
-      { id: "client_submission", label: clientCopySettings.exportPresetLabels?.client_submission || "Client submission" },
-      { id: "attentive_tracker", label: clientCopySettings.exportPresetLabels?.attentive_tracker || "Attentive tracker" },
-      { id: "client_tracker", label: clientCopySettings.exportPresetLabels?.client_tracker || "Client tracker" },
-      { id: "screening_focus", label: clientCopySettings.exportPresetLabels?.screening_focus || "Screening focus" }
-    ];
-    const clientNameKey = String(clientName || clientUser?.clientName || "").trim().toLowerCase();
-    const custom = (clientCopySettings.customExportPresets || [])
-      .filter((preset) => {
-        const presetClient = String(preset.clientName || "").trim().toLowerCase();
-        return !presetClient || !clientNameKey || presetClient === clientNameKey;
-      })
-      .map((preset) => ({ id: preset.id, label: preset.clientName ? `${preset.label} (${preset.clientName})` : preset.label }));
-    return [...custom, ...builtIns].filter((preset) => String(preset.id || "").trim());
-  }, [clientCopySettings, clientName, clientUser?.clientName]);
-
   async function applyFilters() {
     try {
       setStatus("Refreshing client portal...");
@@ -7365,10 +7369,28 @@ function ClientPortalApp({ token, onLogout }) {
     setClientFeedbackItem(null);
   }
 
+  async function completeClientAgendaItem(item, kind) {
+    const candidateName = item?.candidateName || "this candidate";
+    const label = kind === "joining" ? "joining" : "interview";
+    const confirmed = typeof window === "undefined" || window.confirm(`Mark ${label} done for ${candidateName}?`);
+    if (!confirmed) return;
+    try {
+      await api("/client-portal/agenda/complete", token, "POST", {
+        assessmentId: item?.assessmentId || item?.id || "",
+        kind
+      });
+      await loadClientPortal(filters);
+      await refreshDrilldown();
+      setStatus(`${label[0].toUpperCase()}${label.slice(1)} marked done.`);
+    } catch (error) {
+      setStatus(String(error?.message || error));
+    }
+  }
+
   function getClientCvUrl(item) {
     const assessment = item?.raw?.assessment || item || {};
     const assessmentId = String(assessment.id || item?.id || "").trim();
-    if (!assessmentId) return "";
+    if (!assessmentId || !clientPortalItemHasCv(item)) return "";
     return `/client-portal/cv?assessmentId=${encodeURIComponent(assessmentId)}&access_token=${encodeURIComponent(token)}`;
   }
 
@@ -7386,7 +7408,8 @@ function ClientPortalApp({ token, onLogout }) {
     (items || []).forEach((item) => {
       const assessment = item.raw?.assessment || item;
       const id = String(assessment.id || item.id || "").trim();
-      if (id) cvTextByAssessmentId[id] = `${window.location.origin}${getClientCvUrl(item)}`;
+      const cvUrl = getClientCvUrl(item);
+      if (id && cvUrl) cvTextByAssessmentId[id] = `${window.location.origin}${cvUrl}`;
     });
     const rows = buildClientPortalTrackerRows(items, cvTextByAssessmentId);
     await copyText(buildTsvFromPreset(rows, clientTrackerPresetId, clientCopySettings));
@@ -7398,7 +7421,8 @@ function ClientPortalApp({ token, onLogout }) {
     (items || []).forEach((item) => {
       const assessment = item.raw?.assessment || item;
       const id = String(assessment.id || item.id || "").trim();
-      if (id) cvTextByAssessmentId[id] = `${window.location.origin}${getClientCvUrl(item)}`;
+      const cvUrl = getClientCvUrl(item);
+      if (id && cvUrl) cvTextByAssessmentId[id] = `${window.location.origin}${cvUrl}`;
     });
     const rows = buildClientPortalTrackerRows(items, cvTextByAssessmentId);
     downloadTextFile(`client-tracker-${new Date().toISOString().slice(0, 10)}.tsv`, buildTsvFromPreset(rows, clientTrackerPresetId, clientCopySettings));
@@ -7444,6 +7468,43 @@ function ClientPortalApp({ token, onLogout }) {
                   <div className="metric-value">{overall[key] || 0}</div>
                 </button>
               ))}
+            </div>
+          </Section>
+
+          <Section kicker="Schedule" title="Interviews and Joinings">
+            <div className="agenda-split-grid">
+              <div className="agenda-subblock">
+                <h4>Interviews aligned</h4>
+                <div className="stack-list compact">
+                  {clientAgendaInterviews.slice(0, 8).map((item) => (
+                    <article className="agenda-item" key={`client-interview-${item.assessmentId || item.id}`}>
+                      <div>
+                        <span className="agenda-item__title">{item.candidateName || "Candidate"}</span>
+                        <span className="agenda-item__subtitle">{item.position || "Untitled role"}</span>
+                        <span className="agenda-item__time">{item.at ? new Date(item.at).toLocaleString() : item.status}</span>
+                      </div>
+                      <button className="ghost-btn" onClick={() => void completeClientAgendaItem(item, "interview")}>Mark done</button>
+                    </article>
+                  ))}
+                  {!clientAgendaInterviews.length ? <div className="empty-state compact-empty">No interviews aligned.</div> : null}
+                </div>
+              </div>
+              <div className="agenda-subblock">
+                <h4>Upcoming joinings</h4>
+                <div className="stack-list compact">
+                  {clientAgendaJoinings.slice(0, 8).map((item) => (
+                    <article className="agenda-item" key={`client-joining-${item.assessmentId || item.id}`}>
+                      <div>
+                        <span className="agenda-item__title">{item.candidateName || "Candidate"}</span>
+                        <span className="agenda-item__subtitle">{item.position || "Untitled role"}</span>
+                        <span className="agenda-item__time">{item.at ? new Date(item.at).toLocaleString() : item.status}</span>
+                      </div>
+                      <button className="ghost-btn" onClick={() => void completeClientAgendaItem(item, "joining")}>Mark done</button>
+                    </article>
+                  ))}
+                  {!clientAgendaJoinings.length ? <div className="empty-state compact-empty">No upcoming joinings.</div> : null}
+                </div>
+              </div>
             </div>
           </Section>
 
@@ -7495,12 +7556,6 @@ function ClientPortalApp({ token, onLogout }) {
           onAddFeedback={(item) => setClientFeedbackItem(item)}
           extraActions={(
             <div className="button-row tight client-tracker-actions">
-              <label className="inline-select">
-                <span>Tracker preset</span>
-                <select value={clientTrackerPresetId} onChange={(e) => setClientTrackerPresetId(e.target.value)}>
-                  {clientTrackerPresetOptions.map((preset) => <option key={preset.id} value={preset.id}>{preset.label}</option>)}
-                </select>
-              </label>
               <button onClick={() => void copyClientTrackerRows()}>Copy tracker</button>
               <button className="ghost-btn" onClick={() => downloadClientTrackerRows()}>Download tracker</button>
             </div>

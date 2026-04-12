@@ -1174,6 +1174,54 @@ function normalizePhoneDigits(value) {
   return String(value || "").replace(/[^\d]/g, "");
 }
 
+function isDateInClientAgendaWindow(value, dateRange = {}) {
+  const parsed = parseIsoDateValue(value);
+  if (!parsed) return false;
+  if (dateRange.from || dateRange.to) return isDateWithinRange(value, dateRange.from, dateRange.to);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const end = new Date(today);
+  end.setDate(end.getDate() + 45);
+  end.setHours(23, 59, 59, 999);
+  return parsed >= today && parsed <= end;
+}
+
+function buildClientPortalAgenda(scopedUniverse = [], dateRange = {}) {
+  const interviews = [];
+  const joinings = [];
+  const seen = new Set();
+  for (const item of Array.isArray(scopedUniverse) ? scopedUniverse : []) {
+    if (!item || item.sourceType === "captured_note") continue;
+    const assessment = item.raw?.assessment || {};
+    const assessmentId = String(assessment.id || item.id || "").trim();
+    if (!assessmentId || seen.has(assessmentId)) continue;
+    seen.add(assessmentId);
+    const status = String(assessment.candidateStatus || item.candidateStatus || "").trim();
+    const normalizedStatus = normalizeDashboardText(status);
+    const base = {
+      id: assessmentId,
+      assessmentId,
+      candidateName: String(assessment.candidateName || item.candidateName || "").trim(),
+      position: String(assessment.jdTitle || item.position || item.role || "Untitled role").trim(),
+      company: String(assessment.currentCompany || item.company || "").trim(),
+      status
+    };
+    const interviewAt = normalizeDateOutput(assessment.interviewAt || item.interviewAt || "");
+    if (isInterviewAlignedStatus(status) && isDateInClientAgendaWindow(interviewAt, dateRange)) {
+      interviews.push({ ...base, kind: "interview", at: interviewAt });
+    }
+    const joiningAt = normalizeDateOutput(assessment.offerDoj || item.offerDoj || assessment.followUpAt || item.followUpAt || "");
+    if (normalizedStatus === "offered" && isDateInClientAgendaWindow(joiningAt, dateRange)) {
+      joinings.push({ ...base, kind: "joining", at: joiningAt });
+    }
+  }
+  const byDate = (a, b) => String(a.at || "").localeCompare(String(b.at || ""));
+  return {
+    interviews: interviews.sort(byDate).slice(0, 50),
+    joinings: joinings.sort(byDate).slice(0, 50)
+  };
+}
+
 function findBestCandidateByIdentity(candidates = [], criteria = {}) {
   const targetId = String(criteria.candidateId || "").trim();
   const targetEmail = String(criteria.email || "").trim().toLowerCase();
@@ -4397,7 +4445,8 @@ const server = http.createServer(async (req, res) => {
       summary.byClient = [{ label: clientUser.clientName, metrics: summary.overall }];
       summary.byClientPosition = Array.from(byPosition.values()).sort((a, b) => `${a.clientLabel} ${a.positionLabel}`.localeCompare(`${b.clientLabel} ${b.positionLabel}`));
       summary.byStatus = Array.from(byStatus.entries()).map(([label, count]) => ({ label, count })).sort((a, b) => String(a.label).localeCompare(String(b.label)));
-      sendJson(res, 200, { ok: true, result: { summary, user: clientUser, copySettings } });
+      const agenda = buildClientPortalAgenda(scopedUniverse, dateRange);
+      sendJson(res, 200, { ok: true, result: { summary, agenda, user: clientUser, copySettings } });
     } catch (error) {
       sendJson(res, 401, { ok: false, error: String(error.message || error) });
     }
@@ -4528,6 +4577,74 @@ const server = http.createServer(async (req, res) => {
           clientFeedbackUpdatedAt: timestamp,
           clientFeedbackUpdatedBy: clientUser.username,
           clientFeedbackHistory: nextHistory
+        }
+      });
+      sendJson(res, 200, { ok: true, result: saved });
+    } catch (error) {
+      sendJson(res, 400, { ok: false, error: String(error.message || error) });
+    }
+    return;
+  }
+
+  if (req.method === "POST" && requestUrl.pathname === "/client-portal/agenda/complete") {
+    try {
+      const clientUser = await requireClientSessionUser(getBearerToken(req));
+      const body = await readJsonBody(req);
+      const assessmentId = String(body.assessmentId || body.assessment_id || "").trim();
+      const kind = String(body.kind || "").trim().toLowerCase() === "joining" ? "joining" : "interview";
+      if (!assessmentId) throw new Error("assessmentId is required.");
+      const allRecruiters = await listCompanyUsers(clientUser.companyId);
+      const adminUser = (allRecruiters || []).find((item) => String(item?.role || "").toLowerCase() === "admin") || allRecruiters?.[0];
+      if (!adminUser?.id) throw new Error("No recruiter found for this company.");
+      const assessments = await listAssessments({ actorUserId: adminUser.id, companyId: clientUser.companyId });
+      const assessment = (assessments || []).find((item) => String(item?.id || "") === assessmentId);
+      if (!assessment) throw new Error("Assessment not found.");
+      if (String(assessment.clientName || "").trim() !== String(clientUser.clientName || "").trim()) throw new Error("Not allowed for this client.");
+      if (!itemMatchesAllowedPositions({ position: assessment.jdTitle || assessment.currentDesignation || "" }, clientUser.allowedPositions || [])) {
+        throw new Error("Not allowed for this role.");
+      }
+      const timestamp = new Date().toISOString();
+      const nextStatus = kind === "joining" ? "Joined" : "Feedback Awaited";
+      const note = kind === "joining"
+        ? "Joining marked complete from client portal."
+        : "Interview marked done from client portal.";
+      const ownerRecruiter = (allRecruiters || []).find((item) => String(item?.id || "") === String(assessment.recruiterId || "").trim()) || adminUser;
+      const nextStatusHistory = [
+        ...(Array.isArray(assessment.statusHistory) ? assessment.statusHistory : []),
+        {
+          status: nextStatus,
+          notes: note,
+          updatedAt: timestamp,
+          at: timestamp,
+          updatedBy: clientUser.username
+        }
+      ];
+      const nextFeedbackHistory = [
+        ...(Array.isArray(assessment.clientFeedbackHistory) ? assessment.clientFeedbackHistory : []),
+        {
+          status: nextStatus,
+          feedback: note,
+          updatedAt: timestamp,
+          updatedBy: clientUser.username
+        }
+      ];
+      const saved = await saveAssessment({
+        actorUserId: ownerRecruiter.id,
+        companyId: clientUser.companyId,
+        assessment: {
+          ...assessment,
+          candidateStatus: nextStatus,
+          pipelineStage: assessment.pipelineStage || "Submitted",
+          interviewAt: kind === "interview" ? "" : assessment.interviewAt,
+          offerDoj: kind === "joining" ? "" : assessment.offerDoj,
+          followUpAt: kind === "joining" ? "" : assessment.followUpAt,
+          dateOfJoining: kind === "joining" ? (assessment.offerDoj || assessment.dateOfJoining || timestamp) : assessment.dateOfJoining,
+          clientFeedback: note,
+          clientFeedbackStatus: nextStatus,
+          clientFeedbackUpdatedAt: timestamp,
+          clientFeedbackUpdatedBy: clientUser.username,
+          clientFeedbackHistory: nextFeedbackHistory,
+          statusHistory: nextStatusHistory
         }
       });
       sendJson(res, 200, { ok: true, result: saved });
