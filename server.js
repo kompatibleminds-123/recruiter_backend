@@ -526,6 +526,28 @@ async function ensureCompanyCandidateExists(companyId, candidateId) {
   return matches[0];
 }
 
+async function unlinkAssessmentFromCompanyCandidates(companyId, assessmentId) {
+  const scopedAssessmentId = String(assessmentId || "").trim();
+  const scopedCompanyId = String(companyId || "").trim();
+  if (!scopedAssessmentId || !scopedCompanyId) {
+    return;
+  }
+  const candidates = await listCandidates({ companyId: scopedCompanyId, limit: 5000 });
+  const linkedCandidates = (Array.isArray(candidates) ? candidates : []).filter(
+    (candidate) =>
+      String(candidate?.assessment_id || candidate?.assessmentId || "").trim() === scopedAssessmentId
+  );
+  for (const candidate of linkedCandidates) {
+    const candidateId = String(candidate?.id || "").trim();
+    if (!candidateId) continue;
+    await patchCandidate(candidateId, {
+      used_in_assessment: false,
+      assessment_id: "",
+      updated_at: new Date().toISOString()
+    }, { companyId: scopedCompanyId });
+  }
+}
+
 async function ingestApplicantSubmission(body, req) {
   const payload = normalizeApplicantBody(body);
   if (!payload.companyId) {
@@ -4746,11 +4768,13 @@ const server = http.createServer(async (req, res) => {
     try {
       const actor = await requireSessionUser(getBearerToken(req));
       const body = await readJsonBody(req);
+      const assessmentId = String(body.assessmentId || "").trim();
       const result = await deleteAssessment({
         actorUserId: actor.id,
         companyId: actor.companyId,
-        assessmentId: String(body.assessmentId || "").trim()
+        assessmentId
       });
+      await unlinkAssessmentFromCompanyCandidates(actor.companyId, assessmentId);
       sendJson(res, 200, { ok: true, result });
     } catch (error) {
       sendJson(res, 400, { ok: false, error: String(error.message || error) });
@@ -4873,7 +4897,7 @@ const server = http.createServer(async (req, res) => {
     try {
       const actor = await requireSessionUser(getBearerToken(req));
       const candidateId = String(requestUrl.searchParams.get("id") || "").trim();
-      await ensureCandidateVisibleToActor(actor, candidateId);
+      await ensureCompanyCandidateExists(actor.companyId, candidateId);
       const result = await deleteCandidate(candidateId, { companyId: actor.companyId });
       sendJson(res, 200, { ok: true, result });
     } catch (error) {

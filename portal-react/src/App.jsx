@@ -138,7 +138,8 @@ const APPLIED_OUTCOME_FILTER_ORDER = [
   "Disconnected",
   "Not reachable",
   "Call later",
-  "Duplicate", 
+  "Duplicate",
+  "JD shared",
   "Interested",
   "Hold by recruiter",
   "Not interested",
@@ -158,6 +159,8 @@ function normalizeAttemptOutcomeLabel(outcome) {
     "no response": "Not responding",
     "busy": "Busy",
     "duplicate": "Duplicate",
+    "jd shared": "JD shared",
+    "shared jd": "JD shared",
     "switch off": "Switch Off",
     "switched off": "Switch Off",
     "disconnected": "Disconnected",
@@ -765,6 +768,7 @@ function inferAttemptOutcomeAndFollowUp(text) {
   if (/\binterested\b/.test(value)) return { outcome: "Interested", followUpAt: "", candidateStatus: "Interested" };
   if (/\bcall later\b|\bcall next\b|\bnext call\b|\bfollow up\b|\bcall tomorrow\b|\bcall today\b|\bcall day after tomorrow\b|\bcall next week\b|\bcall this week\b|\bcall on\b|\bcall at\b|\bcall (monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b|\bcall this (monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b|\bcall next (monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/.test(value)) return { outcome: "Call later", followUpAt: parseNaturalFollowUpDate(value), candidateStatus: "Follow-up" };
   if (/\bduplicate\b/.test(value)) return { outcome: "Duplicate", followUpAt: "", candidateStatus: "Duplicate" };
+  if (/\bjd shared\b|\bshared jd\b/.test(value)) return { outcome: "JD shared", followUpAt: "", candidateStatus: "" };
   if (/\bnot reachable\b|\bnot able to connect\b/.test(value)) return { outcome: "Not reachable", followUpAt: "", candidateStatus: "" };
   if (/\bswitch off\b|\bswitched off\b/.test(value)) return { outcome: "Switch Off", followUpAt: "", candidateStatus: "" };
   if (/\bdisconnected\b|\bdisconnecting\b|\bcutting the call\b|\bcall cut\b/.test(value)) return { outcome: "Disconnected", followUpAt: "", candidateStatus: "" };
@@ -1018,7 +1022,45 @@ function formatAttemptLinesWithTimestamp(text, atValue) {
   const lines = String(text || "").split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
   if (!lines.length) return "";
   const stamp = atValue ? new Date(atValue).toLocaleString() : "";
-  return lines.map((line) => `${stamp ? `[${stamp}] ` : ""}${line}`).join("\n");
+  return lines.map((line) => (/^\[[^\]]+\]\s/.test(line) ? line : `${stamp ? `[${stamp}] ` : ""}${line}`)).join("\n");
+}
+
+function buildDefaultAttemptRemark(outcome) {
+  const value = String(outcome || "").trim();
+  if (!value) return "";
+  if (value === "JD shared") return "JD shared";
+  if (value === "Duplicate") return "Duplicate";
+  return "";
+}
+
+function buildAttemptHistoryLine({ outcome = "", remarks = "", followUpAt = "", atValue = "" }) {
+  const bits = [String(outcome || "").trim()].filter(Boolean);
+  const cleanedRemarks = String(remarks || "").trim();
+  if (cleanedRemarks) bits.push(`Remarks: ${cleanedRemarks}`);
+  if (followUpAt) bits.push(`Follow-up: ${new Date(followUpAt).toLocaleString()}`);
+  const line = bits.join(" | ").trim();
+  if (!line) return "";
+  const stamp = atValue ? new Date(atValue).toLocaleString() : "";
+  return stamp ? `[${stamp}] ${line}` : line;
+}
+
+function appendAttemptHistory(existingText, nextLine) {
+  const existingLines = String(existingText || "").split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  const line = String(nextLine || "").trim();
+  if (!line) return existingLines.join("\n");
+  return [...existingLines, line].join("\n");
+}
+
+function extractLatestAttemptLine(text) {
+  const lines = String(text || "").split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  return lines.length ? lines[lines.length - 1] : "";
+}
+
+function extractAttemptRemarks(text) {
+  const value = String(text || "").trim();
+  if (!value) return "";
+  const remarksMatch = value.match(/(?:^|\|)\s*remarks:\s*(.+?)(?:\s*\|\s*follow-up:|\s*$)/i);
+  return String(remarksMatch?.[1] || "").trim();
 }
 
 function normalizeRecruiterMergeBase(item) {
@@ -1299,7 +1341,7 @@ function getApplicantWorkflowOutcome(applicant, linkedCandidate = null) {
 }
 
 function isAutoHiddenWorkflowOutcome(outcome) {
-  return ["not interested", "screening reject", "revisit for other role"].includes(String(outcome || "").trim().toLowerCase());
+  return false;
 }
 
 function isApplicantConvertedToAssessment(applicant = {}, linkedCandidate = null, linkedAssessment = null) {
@@ -2168,29 +2210,19 @@ function AttemptsModal({ open, candidate, attempts, onClose, onRefresh, onSave }
 
   useEffect(() => {
     if (!open || !candidate) return;
-    setOutcome(String(candidate.last_contact_outcome || "").trim());
-    setNotes(String(candidate.last_contact_notes || "").trim());
-    if (candidate.next_follow_up_at) {
-      const followUp = new Date(candidate.next_follow_up_at);
-      const localValue = Number.isNaN(followUp.getTime())
-        ? ""
-        : new Date(followUp.getTime() - followUp.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
-      setNextFollowUpAt(localValue);
-    } else {
-      setNextFollowUpAt("");
-    }
+    setOutcome("");
+    setNotes("");
+    setNextFollowUpAt("");
     setStatus("");
   }, [open, candidate]);
 
-    useEffect(() => {
-      const parsed = inferAttemptOutcomeAndFollowUp(extractLastMeaningfulLine(notes));
-      if (parsed.outcome && parsed.outcome !== outcome) setOutcome(parsed.outcome);
-      if (parsed.followUpAt) {
-        setNextFollowUpAt(parsed.followUpAt);
-      } else if (parsed.outcome && parsed.outcome !== "Call later" && parsed.outcome !== "Switch Off") {
-        setNextFollowUpAt("");
-      }
-    }, [notes]);
+  useEffect(() => {
+    if (outcome !== "Call later") setNextFollowUpAt("");
+    if (!String(notes || "").trim()) {
+      const suggested = buildDefaultAttemptRemark(outcome);
+      if (suggested) setNotes(suggested);
+    }
+  }, [outcome]);
 
   if (!open || !candidate) return null;
 
@@ -2210,6 +2242,7 @@ function AttemptsModal({ open, candidate, attempts, onClose, onRefresh, onSave }
                     <span className="muted">{candidate?.last_contact_at ? new Date(candidate.last_contact_at).toLocaleString() : ""}</span>
                   </div>
                   <p className="muted">{candidate?.last_contact_outcome || "No outcome"}</p>
+                  {extractAttemptRemarks(extractLatestAttemptLine(candidate?.last_contact_notes || "")) ? <div className="candidate-snippet">{extractAttemptRemarks(extractLatestAttemptLine(candidate?.last_contact_notes || ""))}</div> : null}
                   {candidate?.last_contact_notes ? <div className="candidate-snippet">{formatAttemptLinesWithTimestamp(candidate.last_contact_notes, candidate.last_contact_at)}</div> : null}
                   {candidate?.next_follow_up_at ? <div className="chip-row"><span className="chip">Next follow-up: {new Date(candidate.next_follow_up_at).toLocaleString()}</span></div> : null}
                 </article>
@@ -2229,36 +2262,34 @@ function AttemptsModal({ open, candidate, attempts, onClose, onRefresh, onSave }
           <div className="attempt-form">
             <h4>Log attempt</h4>
             <label><span>Outcome</span><select value={outcome} onChange={(e) => {
-              const selected = e.target.value;
-              setOutcome(selected);
-              setNotes((current) => {
-                if (!selected) return current;
-                const line = extractLastMeaningfulLine(current);
-                const nextLine = line.toLowerCase() === selected.toLowerCase() ? line : selected;
-                return String(current || "").trim() ? `${String(current || "").trim()}\n${nextLine}` : nextLine;
-              });
-              }}><option value="">Select outcome</option><option>Not responding</option><option>Busy</option><option>Switch Off</option><option>Disconnected</option><option>Not reachable</option><option>Call later</option><option>Interested</option><option>Hold by recruiter</option><option>Not interested</option><option>Screening reject</option><option>Revisit for other role</option></select></label>
-            <label><span>Notes</span><textarea value={notes} onChange={(e) => setNotes(e.target.value)} /></label>
-            <label><span>Next follow-up</span><input type="datetime-local" value={nextFollowUpAt} onChange={(e) => setNextFollowUpAt(e.target.value)} /></label>
+              setOutcome(e.target.value);
+            }}>{[
+              <option key="" value="">Select outcome</option>,
+              ...ATTEMPT_OUTCOME_OPTIONS.filter((option) => option !== "No outcome").map((option) => <option key={option} value={option}>{option}</option>)
+            ]}</select></label>
+            <label><span>Remarks</span><textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Busy in production, communication bad, asked to call tomorrow..." /></label>
+            <label><span>Next follow-up</span><input type="datetime-local" value={nextFollowUpAt} onChange={(e) => setNextFollowUpAt(e.target.value)} disabled={outcome !== "Call later"} /></label>
             {status ? <div className="status">{status}</div> : null}
             <div className="button-row">
                 <button onClick={async () => {
                   setStatus("Saving attempt...");
                   try {
-                    const lastLine = extractLastMeaningfulLine(notes);
-                    const parsed = inferAttemptOutcomeAndFollowUp(lastLine);
-                    const finalOutcome = parsed.outcome || outcome;
-                    const finalFollowUpAt =
-                      parsed.followUpAt ||
-                      ((finalOutcome === "Call later" || finalOutcome === "Switch Off") ? nextFollowUpAt : "");
+                    const finalOutcome = String(outcome || "").trim();
+                    const finalFollowUpAt = finalOutcome === "Call later" ? nextFollowUpAt : "";
+                    if (!finalOutcome) {
+                      throw new Error("Select attempt outcome first.");
+                    }
+                    if (finalOutcome === "Call later" && !finalFollowUpAt) {
+                      throw new Error("Select next follow-up time for Call later.");
+                    }
                     await onSave({
                       outcome: finalOutcome,
                       notes,
                       next_follow_up_at: finalFollowUpAt,
-                      derived_status: parsed.candidateStatus,
-                      final_line: lastLine
+                      derived_status: ""
                     });
                   setStatus("Attempt saved.");
+                  setOutcome("");
                   setNotes("");
                   setNextFollowUpAt("");
                   await onRefresh();
@@ -3604,9 +3635,7 @@ function PortalApp({ token, onLogout }) {
     const activeCount = capturedNotesUniverse.filter((item) => {
       const matchedAssessment = capturedAssessmentMap.get(String(item.name || "").trim().toLowerCase());
       if (matchedAssessment || item.used_in_assessment) return false;
-      const outcomeValue = getCapturedOutcome(item, matchedAssessment);
-      const hiddenOutcome = isAutoHiddenWorkflowOutcome(outcomeValue);
-      return !item.hidden_from_captured && !hiddenOutcome && !isTerminalStatus(outcomeValue);
+      return !item.hidden_from_captured;
     }).length;
     return {
       today: capturedNotesUniverse.filter((item) => String(item.created_at || "").slice(0, 10) === todayKey).length,
@@ -3627,9 +3656,8 @@ function PortalApp({ token, onLogout }) {
       const capturedByValue = String(item.recruiter_name || item.assigned_by_name || "Unknown").trim();
       const outcomeValue = getCapturedOutcome(item, matchedAssessment);
       const createdAtValue = item.created_at ? String(item.created_at).slice(0, 10) : "";
-      const hiddenOutcome = isAutoHiddenWorkflowOutcome(outcomeValue);
       const manuallyHidden = item.hidden_from_captured === true;
-      const activeValue = (manuallyHidden || hiddenOutcome || isTerminalStatus(outcomeValue)) ? "Inactive" : "Active";
+      const activeValue = manuallyHidden ? "Inactive" : "Active";
       const nameHay = [item.name].join(" ").toLowerCase();
       const hay = [
         item.name,
@@ -3657,8 +3685,7 @@ function PortalApp({ token, onLogout }) {
       const searchNameMatch = Boolean(queryText && nameHay.includes(queryText));
       const inactiveBlockedByDefault = !candidateFilters.activeStates.length && activeValue === "Inactive" && !searchNameMatch;
       const hiddenBlocked = manuallyHidden && !searchNameMatch && candidateFilters.activeStates.includes("Active");
-      const hiddenOutcomeBlocked = hiddenOutcome && !searchNameMatch && candidateFilters.activeStates.includes("Active");
-      return !inactiveBlockedByDefault && !hiddenBlocked && !hiddenOutcomeBlocked && queryOk && dateFromOk && dateToOk && clientOk && jdOk && assignedToOk && capturedByOk && sourceOk && outcomeOk && activeOk;
+      return !inactiveBlockedByDefault && !hiddenBlocked && queryOk && dateFromOk && dateToOk && clientOk && jdOk && assignedToOk && capturedByOk && sourceOk && outcomeOk && activeOk;
     });
   }, [candidateFilters, capturedAssessmentMap, capturedNotesUniverse]);
 
@@ -3760,8 +3787,7 @@ function PortalApp({ token, onLogout }) {
       const assignedValue = getApplicantManualAssigneeLabel(item, linkedCandidate);
       const outcomeValue = getApplicantWorkflowOutcome(item, linkedCandidate);
       const manuallyHidden = Boolean(item.hidden_from_captured || linkedCandidate?.hidden_from_captured);
-      const autoHidden = isAutoHiddenWorkflowOutcome(outcomeValue);
-      const activeValue = (manuallyHidden || autoHidden || isTerminalStatus(outcomeValue)) ? "Inactive" : "Active";
+      const activeValue = manuallyHidden ? "Inactive" : "Active";
       const createdDate = String(item.createdAt || item.created_at || "").slice(0, 10);
       const nameHay = [item.candidateName, linkedCandidate?.name].join(" ").toLowerCase();
       const hay = [
@@ -4142,11 +4168,12 @@ function PortalApp({ token, onLogout }) {
       setStatus("quickUpdate", "Select an attempt outcome first.", "error");
       return;
     }
-    if ((outcome === "Call later" || outcome === "Switch Off") && !followUpAt) {
+    if (outcome === "Call later" && !followUpAt) {
       setStatus("quickUpdate", "Select next follow-up time for this outcome.", "error");
       return;
     }
     try {
+      const savedAt = new Date().toISOString();
       await api("/contact-attempts", token, "POST", {
         candidateId: quickUpdateCandidate.id,
         outcome,
@@ -4155,12 +4182,15 @@ function PortalApp({ token, onLogout }) {
       });
       const candidatePatch = {
         last_contact_outcome: outcome || "",
-        last_contact_notes: note,
-        last_contact_at: new Date().toISOString()
+        last_contact_notes: appendAttemptHistory(
+          quickUpdateCandidate?.last_contact_notes || "",
+          buildAttemptHistoryLine({ outcome, remarks: buildDefaultAttemptRemark(outcome), followUpAt, atValue: savedAt })
+        ),
+        last_contact_at: savedAt
       };
       if (followUpAt) {
         candidatePatch.next_follow_up_at = new Date(followUpAt).toISOString();
-      } else if (outcome !== "Call later" && outcome !== "Switch Off") {
+      } else if (outcome !== "Call later") {
         candidatePatch.next_follow_up_at = "";
       }
       await patchCandidateQuiet(quickUpdateCandidate.id, candidatePatch);
@@ -4306,21 +4336,30 @@ function PortalApp({ token, onLogout }) {
   }
 
   async function saveAttempt(patch) {
-    const finalLine = String(patch.final_line || extractLastMeaningfulLine(patch.notes || "")).trim();
+    const savedAt = new Date().toISOString();
+    const finalOutcome = String(patch.outcome || "").trim();
+    const finalRemarks = String(patch.notes || "").trim();
+    const storedNote = finalRemarks || buildDefaultAttemptRemark(finalOutcome) || finalOutcome;
+    const historyLine = buildAttemptHistoryLine({
+      outcome: finalOutcome,
+      remarks: finalRemarks,
+      followUpAt: patch.next_follow_up_at,
+      atValue: savedAt
+    });
     await api("/contact-attempts", token, "POST", {
       candidateId: attemptsCandidateId,
-      outcome: patch.outcome,
-      notes: finalLine || String(patch.notes || "").trim(),
+      outcome: finalOutcome,
+      notes: storedNote,
       next_follow_up_at: patch.next_follow_up_at
     });
     const candidatePatch = {
-      last_contact_outcome: patch.outcome || "",
-      last_contact_notes: finalLine || String(patch.notes || "").trim(),
-      last_contact_at: new Date().toISOString()
+      last_contact_outcome: finalOutcome,
+      last_contact_notes: appendAttemptHistory(attemptsCandidate?.last_contact_notes || "", historyLine),
+      last_contact_at: savedAt
     };
     if (patch.next_follow_up_at) {
       candidatePatch.next_follow_up_at = new Date(patch.next_follow_up_at).toISOString();
-    } else if (patch.outcome && patch.outcome !== "Call later" && patch.outcome !== "Switch Off") {
+    } else if (finalOutcome && finalOutcome !== "Call later") {
       candidatePatch.next_follow_up_at = "";
     }
     if (Object.keys(candidatePatch).length) {
@@ -5940,8 +5979,7 @@ function PortalApp({ token, onLogout }) {
     if (["website_apply", "hosted_apply", "google_sheet"].includes(sourceValue)) return false;
     const matchedAssessment = capturedAssessmentMap.get(String(item.name || "").trim().toLowerCase());
     if (matchedAssessment || item.used_in_assessment || String(item.assessment_id || "").trim()) return false;
-    const outcomeValue = getCapturedOutcome(item, matchedAssessment);
-    return !item.hidden_from_captured && !isAutoHiddenWorkflowOutcome(outcomeValue) && !isTerminalStatus(outcomeValue);
+    return !item.hidden_from_captured;
   }).length;
   const scheduledFollowUpItems = todaysFollowUps
     .map((item) => ({
@@ -6546,6 +6584,8 @@ function PortalApp({ token, onLogout }) {
                 {!capturedCandidates.length ? <div className="empty-state">No captured notes or recruiter-owned candidates yet.</div> : capturedCandidates.map((item) => {
                   const matchedAssessment = capturedAssessmentMap.get(String(item.name || "").trim().toLowerCase());
                   const statusState = normalizedAssessmentState(matchedAssessment, item);
+                  const latestAttemptLine = extractLatestAttemptLine(item.last_contact_notes || "");
+                  const latestAttemptRemarks = extractAttemptRemarks(latestAttemptLine);
                   return (
                     <article className="item-card compact-card" key={item.id}>
                       <div className="item-card__top">
@@ -6560,6 +6600,11 @@ function PortalApp({ token, onLogout }) {
                           </div>
                         </div>
                       </div>
+                      {item.last_contact_outcome || latestAttemptRemarks ? (
+                        <div className="status-line" style={{ justifyContent: "flex-end", textAlign: "right" }}>
+                          {[item.last_contact_outcome ? `Status: ${item.last_contact_outcome}` : "", latestAttemptRemarks ? `Remarks: ${latestAttemptRemarks}` : ""].filter(Boolean).join(" | ")}
+                        </div>
+                      ) : null}
                       <div className="button-row">
                         <button onClick={() => loadCandidateIntoInterview(item.id)}>Open draft</button>
                         <button onClick={() => setAssignCandidateId(item.id)}>Assign</button>
@@ -6731,7 +6776,7 @@ function PortalApp({ token, onLogout }) {
                               <span>Attempt outcome</span>
                               <select value={quickUpdateAttemptOutcome} onChange={(e) => setQuickUpdateAttemptOutcome(e.target.value)}>
                                 <option value="">Select outcome</option>
-                                {ATTEMPT_OUTCOME_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}
+                                {ATTEMPT_OUTCOME_OPTIONS.filter((option) => option !== "No outcome").map((option) => <option key={option} value={option}>{option}</option>)}
                               </select>
                             </label>
                           )}
@@ -6747,7 +6792,7 @@ function PortalApp({ token, onLogout }) {
                               <input type="datetime-local" value={quickUpdateStatusAt} onChange={(e) => setQuickUpdateStatusAt(e.target.value)} />
                             </label>
                           ) : null}
-                          {!quickUpdateLinkedAssessment && (quickUpdateAttemptOutcome === "Call later" || quickUpdateAttemptOutcome === "Switch Off") ? (
+                          {!quickUpdateLinkedAssessment && quickUpdateAttemptOutcome === "Call later" ? (
                             <label>
                               <span>Next follow-up</span>
                               <input type="datetime-local" value={quickUpdateStatusAt} onChange={(e) => setQuickUpdateStatusAt(e.target.value)} />
