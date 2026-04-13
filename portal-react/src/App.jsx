@@ -2990,6 +2990,7 @@ function PortalApp({ token, onLogout }) {
     currentCompany: "",
     currentDesignation: "",
     totalExperience: "",
+    highestEducation: "",
     currentOrgTenure: "",
     reasonForChange: "",
     clientName: "",
@@ -4367,6 +4368,7 @@ function PortalApp({ token, onLogout }) {
       currentCompany: matched?.currentCompany || candidate?.company || "",
       currentDesignation: matched?.currentDesignation || candidate?.role || "",
       totalExperience: matched?.totalExperience || candidate?.experience || "",
+      highestEducation: matched?.highestEducation || candidate?.highest_education || "",
       currentOrgTenure: matched?.currentOrgTenure || candidate?.current_org_tenure || "",
       reasonForChange: matched?.reasonForChange || "",
       clientName: matched?.clientName || candidate?.client_name || "",
@@ -4420,6 +4422,7 @@ function PortalApp({ token, onLogout }) {
       currentCompany: assessment?.currentCompany || matchedCandidate?.company || "",
       currentDesignation: assessment?.currentDesignation || matchedCandidate?.role || "",
       totalExperience: assessment?.totalExperience || matchedCandidate?.experience || "",
+      highestEducation: assessment?.highestEducation || matchedCandidate?.highest_education || "",
       currentOrgTenure: assessment?.currentOrgTenure || matchedCandidate?.current_org_tenure || "",
       reasonForChange: assessment?.reasonForChange || "",
       clientName: assessment?.clientName || matchedCandidate?.client_name || "",
@@ -4489,6 +4492,7 @@ function PortalApp({ token, onLogout }) {
       currentCompany: candidate?.company || sourceApplicant?.currentCompany || "",
       currentDesignation: candidate?.role || sourceApplicant?.currentDesignation || "",
       totalExperience: candidate?.experience || sourceApplicant?.totalExperience || "",
+      highestEducation: candidate?.highest_education || "",
       currentOrgTenure: candidate?.current_org_tenure || "",
       reasonForChange: candidate?.reason_of_change || "",
       clientName: candidate?.client_name || sourceApplicant?.clientName || "",
@@ -4567,6 +4571,7 @@ function PortalApp({ token, onLogout }) {
         company: interviewForm.currentCompany,
         role: interviewForm.currentDesignation,
         experience: interviewForm.totalExperience,
+        highest_education: interviewForm.highestEducation,
         current_ctc: interviewForm.currentCtc,
         expected_ctc: interviewForm.expectedCtc,
         notice_period: interviewForm.noticePeriod,
@@ -4605,6 +4610,7 @@ function PortalApp({ token, onLogout }) {
       company: interviewForm.currentCompany,
       role: interviewForm.currentDesignation,
       experience: interviewForm.totalExperience,
+      highest_education: interviewForm.highestEducation,
       current_ctc: interviewForm.currentCtc,
       expected_ctc: interviewForm.expectedCtc,
       notice_period: interviewForm.noticePeriod,
@@ -6841,7 +6847,7 @@ function PortalApp({ token, onLogout }) {
 
               <Section kicker="Captured Information" title="Candidate Context">
                 <div className="info-grid">
-                  {[["Candidate", interviewForm.candidateName],["Phone", interviewForm.phoneNumber],["Email", interviewForm.emailId],["Location", interviewForm.location],["Current company", interviewForm.currentCompany],["Current designation", interviewForm.currentDesignation],["Experience", interviewForm.totalExperience],["Client", interviewForm.clientName],["JD / role", interviewForm.jdTitle],["Tags", interviewForm.tags]].map(([label, value]) => (
+                  {[["Candidate", interviewForm.candidateName],["Phone", interviewForm.phoneNumber],["Email", interviewForm.emailId],["Location", interviewForm.location],["Current company", interviewForm.currentCompany],["Current designation", interviewForm.currentDesignation],["Experience", interviewForm.totalExperience],["Qualification", interviewForm.highestEducation],["Client", interviewForm.clientName],["JD / role", interviewForm.jdTitle],["Tags", interviewForm.tags]].map(([label, value]) => (
                     <div className="info-card" key={label}>
                       <div className="info-label">{label}</div>
                       <div className="info-value">{value || "-"}</div>
@@ -6852,7 +6858,7 @@ function PortalApp({ token, onLogout }) {
 
               <Section kicker="Recruiter Inputs" title="Draft Notes">
                 <form className="form-grid two-col" onSubmit={(e) => { e.preventDefault(); }}>
-                  {[["candidateName", "Candidate name"], ["phoneNumber", "Phone"], ["emailId", "Email", "email"], ["location", "Location"], ["currentCompany", "Current company"], ["currentDesignation", "Current designation"], ["totalExperience", "Total experience"]].map(([name, label, type]) => (
+                  {[["candidateName", "Candidate name"], ["phoneNumber", "Phone"], ["emailId", "Email", "email"], ["location", "Location"], ["currentCompany", "Current company"], ["currentDesignation", "Current designation"], ["totalExperience", "Total experience"], ["highestEducation", "Qualification"]].map(([name, label, type]) => (
                     <label key={name}><span>{label}</span><input type={type || "text"} value={interviewForm[name]} onChange={(e) => setInterviewForm((c) => ({ ...c, [name]: e.target.value }))} /></label>
                   ))}
                   <label>
