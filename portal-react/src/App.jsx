@@ -138,8 +138,8 @@ const APPLIED_OUTCOME_FILTER_ORDER = [
   "Disconnected",
   "Not reachable",
   "Call later",
+  "Duplicate", 
   "Interested",
-  "Duplicate",
   "Hold by recruiter",
   "Not interested",
   "Screening reject",
@@ -157,7 +157,7 @@ function normalizeAttemptOutcomeLabel(outcome) {
     "nr": "Not responding",
     "no response": "Not responding",
     "busy": "Busy",
-    "duplicate": "Duplicate",
+    "duplicate": "Duplicate"
     "switch off": "Switch Off",
     "switched off": "Switch Off",
     "disconnected": "Disconnected",
@@ -750,9 +750,9 @@ function inferAttemptOutcomeAndFollowUp(text) {
   if (/\bnot interested\b/.test(value)) return { outcome: "Not interested", followUpAt: "", candidateStatus: "Not interested" };
   if (/\brevisit\b/.test(value)) return { outcome: "Revisit for other role", followUpAt: "", candidateStatus: "Revisit for other role" };
   if (/\bhold\b|\bon hold\b|\bhigh ctc\b|\bhigh notice\b|\bhigh np\b|\bout of budget\b/.test(value)) return { outcome: "Hold by recruiter", followUpAt: "", candidateStatus: "Hold" };
-  if (/\bduplicate\b/.test(value)) return { outcome: "Duplicate", followUpAt: "", candidateStatus: "Duplicate" };
   if (/\binterested\b/.test(value)) return { outcome: "Interested", followUpAt: "", candidateStatus: "Interested" };
   if (/\bcall later\b|\bcall next\b|\bnext call\b|\bfollow up\b|\bcall tomorrow\b|\bcall today\b|\bcall day after tomorrow\b|\bcall next week\b|\bcall this week\b|\bcall on\b|\bcall at\b|\bcall (monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b|\bcall this (monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b|\bcall next (monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/.test(value)) return { outcome: "Call later", followUpAt: parseNaturalFollowUpDate(value), candidateStatus: "Follow-up" };
+  if (/\bduplicate\b/.test(value)) return { outcome: "Duplicate", followUpAt: "", candidateStatus: "Duplicate" };
   if (/\bnot reachable\b|\bnot able to connect\b/.test(value)) return { outcome: "Not reachable", followUpAt: "", candidateStatus: "" };
   if (/\bswitch off\b|\bswitched off\b/.test(value)) return { outcome: "Switch Off", followUpAt: "", candidateStatus: "" };
   if (/\bdisconnected\b|\bdisconnecting\b|\bcutting the call\b|\bcall cut\b/.test(value)) return { outcome: "Disconnected", followUpAt: "", candidateStatus: "" };
@@ -1284,6 +1284,10 @@ function getApplicantWorkflowOutcome(applicant, linkedCandidate = null) {
     ""
   ).trim();
   return normalizeAttemptOutcomeLabel(candidateOutcome || applicantOutcome || "No outcome");
+}
+
+function isAutoHiddenWorkflowOutcome(outcome) {
+  return ["not interested", "screening reject", "revisit for other role"].includes(String(outcome || "").trim().toLowerCase());
 }
 
 function isApplicantConvertedToAssessment(applicant = {}, linkedCandidate = null, linkedAssessment = null) {
