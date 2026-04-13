@@ -4571,6 +4571,35 @@ function PortalApp({ token, onLogout }) {
     }
   }
 
+  async function saveInterviewDraft() {
+    if (!interviewMeta.candidateId) {
+      setStatus("interview", "Open an existing draft first to save recruiter edits.", "error");
+      return;
+    }
+    setStatus("interview", "Saving draft...");
+    await patchCandidateQuiet(interviewMeta.candidateId, {
+      name: interviewForm.candidateName,
+      phone: interviewForm.phoneNumber,
+      email: interviewForm.emailId,
+      location: interviewForm.location,
+      company: interviewForm.currentCompany,
+      role: interviewForm.currentDesignation,
+      experience: interviewForm.totalExperience,
+      current_ctc: interviewForm.currentCtc,
+      expected_ctc: interviewForm.expectedCtc,
+      notice_period: interviewForm.noticePeriod,
+      recruiter_context_notes: interviewForm.recruiterNotes,
+      notes: interviewForm.callbackNotes,
+      other_pointers: interviewForm.otherPointers,
+      skills: parseTagInputValue(interviewForm.tags),
+      lwd_or_doj: interviewForm.lwdOrDoj,
+      jd_title: interviewForm.jdTitle,
+      client_name: interviewForm.clientName,
+      next_follow_up_at: interviewForm.followUpAt
+    });
+    setStatus("interview", "Draft saved.", "ok");
+  }
+
   async function parseInterviewCvFile(file) {
     if (!file) return;
     setStatus("interview", "Uploading CV for analysis...");
@@ -6924,6 +6953,7 @@ function PortalApp({ token, onLogout }) {
                   <button onClick={() => void copyInterviewResult()}>Copy result</button>
                   <button onClick={() => copyInterviewWhatsapp()}>Copy WhatsApp</button>
                   <button onClick={() => void copyInterviewEmail()}>Copy Email</button>
+                  {interviewMeta.candidateId ? <button onClick={() => void saveInterviewDraft()}>Save draft</button> : null}
                   <button onClick={() => void saveAssessment()}>{interviewMeta.assessmentId ? "Save assessment" : "Create assessment"}</button>
                   <button onClick={() => sendInterviewToSheets()}>Send to Sheets</button>
                   <button onClick={() => exportInterviewAll()}>Export all</button>
