@@ -1083,21 +1083,21 @@ function extractRecruiterNoteFieldFallbacks(rawNote = "") {
   };
   return {
     current_ctc: findLineValue([
-      /^\s*current\s*ctc(?:\s*is|:)?\s*([^\n,;.]+)/i,
-      /^\s*current\s*ctc\s*-\s*([^\n,;.]+)/i,
-      /^\s*current\s*[-:]\s*([^\n,;.]+)/i,
-      /\bcurrent\s*ctc\s*is\s*([^\n,;.]+)/i,
-      /\bcurrent\s*ctc\s*(?:as|=)\s*([^\n,;.]+)/i
-    ]),
-    expected_ctc: findLineValue([
-      /^\s*expected\s*ctc(?:\s*is|:)?\s*([^\n,;.]+)/i,
-      /^\s*expected\s*ctc\s*-\s*([^\n,;.]+)/i,
-      /^\s*expected\s*[-:]\s*([^\n,;.]+)/i,
-      /^\s*expectation(?:\s*is|:)?\s*([^\n,;.]+)/i,
-      /^\s*expectation\s*-\s*([^\n,;.]+)/i,
-      /\bexpected\s*ctc\s*is\s*([^\n,;.]+)/i,
-      /\bexpectation\s*(?:is|as|=)\s*([^\n,;.]+)/i
-    ]),
+     /^\s*current\s*ctc(?:\s*is|:)?\s*([^\n,;]+)/i,
+     /^\s*current\s*ctc\s*-\s*([^\n,;]+)/i,
+     /^\s*current\s*[-:]\s*([^\n,;]+)/i,
+     /\bcurrent\s*ctc\s*is\s*([^\n,;]+)/i,
+     /\bcurrent\s*ctc\s*(?:as|=)\s*([^\n,;]+)/i
+]),
+expected_ctc: findLineValue([
+     /^\s*expected\s*ctc(?:\s*is|:)?\s*([^\n,;]+)/i,
+     /^\s*expected\s*ctc\s*-\s*([^\n,;]+)/i,
+     /^\s*expected\s*[-:]\s*([^\n,;]+)/i,
+     /^\s*expectation(?:\s*is|:)?\s*([^\n,;]+)/i,
+     /^\s*expectation\s*-\s*([^\n,;]+)/i,
+     /\bexpected\s*ctc\s*is\s*([^\n,;]+)/i,
+     /\bexpectation\s*(?:is|as|=)\s*([^\n,;]+)/i
+]),
     notice_period: findLineValue([
       /^\s*notice\s*period(?:\s*is|:)?\s*([^\n]+)/i,
       /^\s*notice\s*period\s*-\s*([^\n]+)/i,
