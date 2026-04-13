@@ -411,6 +411,18 @@ function decodePortalApplicantMetadata(item = {}) {
   }
 }
 
+function encodePortalApplicantMetadata(metadata = {}) {
+  return `${PORTAL_APPLICANT_METADATA_PREFIX}${JSON.stringify(metadata || {})}`;
+}
+
+function sanitizeLwdOrDojValue(value) {
+  return String(value || "")
+    .trim()
+    .replace(/^(?:lwd\s*\/\s*doj|lwd|doj|last working day)\s*(?:is|:|-)?\s*/i, "")
+    .replace(/^(?:\/\s*)?(?:lwd|doj)\s*(?:is|:|-)?\s*/i, "")
+    .trim();
+}
+
 function candidateHasStoredCv(item = {}) {
   const meta = decodePortalApplicantMetadata(item);
   const storedFile = item.cvAnalysis?.storedFile || item.cv_analysis?.storedFile || meta?.cvAnalysisCache?.storedFile || {};
@@ -553,7 +565,7 @@ function normalizeParsedRecruiterValue(value) {
 function buildCanonicalRecruiterNotes(baseText, currentText, mergedValues = {}) {
   const lines = [];
   const pushStructured = (label, value) => {
-    const clean = normalizeParsedRecruiterValue(value);
+    const clean = label === "LWD / DOJ" ? sanitizeLwdOrDojValue(value) : normalizeParsedRecruiterValue(value);
     if (!clean) return;
     lines.push(`${label}: ${clean}`);
   };
@@ -1020,7 +1032,7 @@ function normalizeRecruiterMergeBase(item) {
     current_ctc: normalizeParsedRecruiterValue(source.current_ctc || source.currentCtc || ""),
     expected_ctc: normalizeParsedRecruiterValue(source.expected_ctc || source.expectedCtc || ""),
     notice_period: normalizeParsedRecruiterValue(source.notice_period || source.noticePeriod || ""),
-    lwd_or_doj: normalizeParsedRecruiterValue(source.lwd_or_doj || source.lwdOrDoj || ""),
+    lwd_or_doj: sanitizeLwdOrDojValue(source.lwd_or_doj || source.lwdOrDoj || ""),
     offer_in_hand: normalizeParsedRecruiterValue(source.offer_in_hand || source.offerInHand || ""),
     phone: String(source.phone || source.phoneNumber || "").trim(),
     email: String(source.email || source.emailId || "").trim(),
@@ -4351,7 +4363,7 @@ function PortalApp({ token, onLogout }) {
       expectedCtc: matched?.expectedCtc || candidate?.expected_ctc || "",
       noticePeriod: matched?.noticePeriod || candidate?.notice_period || parsedRecruiterBase.notice_period || "",
       offerInHand: matched?.offerInHand || parsedRecruiterBase.offer_in_hand || "",
-      lwdOrDoj: matched?.lwdOrDoj || candidate?.lwd_or_doj || parsedRecruiterBase.lwd_or_doj || "",
+      lwdOrDoj: sanitizeLwdOrDojValue(matched?.lwdOrDoj || candidate?.lwd_or_doj || parsedRecruiterBase.lwd_or_doj || ""),
       currentCompany: matched?.currentCompany || candidate?.company || "",
       currentDesignation: matched?.currentDesignation || candidate?.role || "",
       totalExperience: matched?.totalExperience || candidate?.experience || "",
@@ -4367,7 +4379,7 @@ function PortalApp({ token, onLogout }) {
       callbackNotes: candidate?.notes || "",
       otherPointers: matched?.otherPointers || candidate?.other_pointers || "",
       tags: Array.isArray(candidate?.skills) ? candidate.skills.join(", ") : "",
-      jdScreeningAnswers: matched?.jdScreeningAnswers || {},
+      jdScreeningAnswers: matched?.jdScreeningAnswers || decodePortalApplicantMetadata(candidate).jdScreeningAnswers || {},
       cvAnalysis: matched?.cvAnalysis || candidateCvAnalysis || null,
       cvAnalysisApplied: Boolean(matched?.cvAnalysisApplied),
       statusHistory: Array.isArray(matched?.statusHistory) ? matched.statusHistory : []
@@ -4404,7 +4416,7 @@ function PortalApp({ token, onLogout }) {
       expectedCtc: assessment?.expectedCtc || matchedCandidate?.expected_ctc || "",
       noticePeriod: assessment?.noticePeriod || matchedCandidate?.notice_period || parsedRecruiterBase.notice_period || "",
       offerInHand: assessment?.offerInHand || parsedRecruiterBase.offer_in_hand || "",
-      lwdOrDoj: assessment?.lwdOrDoj || matchedCandidate?.lwd_or_doj || parsedRecruiterBase.lwd_or_doj || "",
+      lwdOrDoj: sanitizeLwdOrDojValue(assessment?.lwdOrDoj || matchedCandidate?.lwd_or_doj || parsedRecruiterBase.lwd_or_doj || ""),
       currentCompany: assessment?.currentCompany || matchedCandidate?.company || "",
       currentDesignation: assessment?.currentDesignation || matchedCandidate?.role || "",
       totalExperience: assessment?.totalExperience || matchedCandidate?.experience || "",
@@ -4420,7 +4432,7 @@ function PortalApp({ token, onLogout }) {
       callbackNotes: matchedCandidate?.notes || "",
       otherPointers: assessment?.otherPointers || matchedCandidate?.other_pointers || "",
       tags: Array.isArray(matchedCandidate?.skills) ? matchedCandidate.skills.join(", ") : "",
-      jdScreeningAnswers: assessment?.jdScreeningAnswers || {},
+      jdScreeningAnswers: assessment?.jdScreeningAnswers || decodePortalApplicantMetadata(matchedCandidate || {}).jdScreeningAnswers || {},
       cvAnalysis: assessment?.cvAnalysis || candidateCvAnalysis || null,
       cvAnalysisApplied: Boolean(assessment?.cvAnalysisApplied),
       statusHistory: Array.isArray(assessment?.statusHistory) ? assessment.statusHistory : []
@@ -4473,7 +4485,7 @@ function PortalApp({ token, onLogout }) {
       expectedCtc: candidate?.expected_ctc || sourceApplicant?.expectedCtc || "",
       noticePeriod: candidate?.notice_period || sourceApplicant?.noticePeriod || "",
       offerInHand: candidate?.offer_in_hand || "",
-      lwdOrDoj: candidate?.lwd_or_doj || "",
+      lwdOrDoj: sanitizeLwdOrDojValue(candidate?.lwd_or_doj || ""),
       currentCompany: candidate?.company || sourceApplicant?.currentCompany || "",
       currentDesignation: candidate?.role || sourceApplicant?.currentDesignation || "",
       totalExperience: candidate?.experience || sourceApplicant?.totalExperience || "",
@@ -4545,6 +4557,8 @@ function PortalApp({ token, onLogout }) {
         id: interviewMeta.candidateId,
         assessmentId: savedAssessment?.id || assessment.id
       }).catch(() => null);
+      const existingCandidate = (state.candidates || []).find((item) => String(item.id) === String(interviewMeta.candidateId));
+      const existingMeta = decodePortalApplicantMetadata(existingCandidate || {});
       await patchCandidateQuiet(interviewMeta.candidateId, {
         name: interviewForm.candidateName,
         phone: interviewForm.phoneNumber,
@@ -4559,10 +4573,14 @@ function PortalApp({ token, onLogout }) {
         recruiter_context_notes: interviewForm.recruiterNotes,
         other_pointers: interviewForm.otherPointers,
         skills: parseTagInputValue(interviewForm.tags),
-        lwd_or_doj: interviewForm.lwdOrDoj,
+        lwd_or_doj: sanitizeLwdOrDojValue(interviewForm.lwdOrDoj),
         jd_title: interviewForm.jdTitle,
         client_name: interviewForm.clientName,
-        next_follow_up_at: interviewForm.followUpAt
+        next_follow_up_at: interviewForm.followUpAt,
+        raw_note: encodePortalApplicantMetadata({
+          ...existingMeta,
+          jdScreeningAnswers: interviewForm.jdScreeningAnswers || {}
+        })
       });
       setStatus("interview", "Assessment saved and candidate details updated.", "ok");
     } else {
@@ -4577,7 +4595,9 @@ function PortalApp({ token, onLogout }) {
       return;
     }
     setStatus("interview", "Saving draft...");
-    await patchCandidateQuiet(interviewMeta.candidateId, {
+    const existingCandidate = (state.candidates || []).find((item) => String(item.id) === String(interviewMeta.candidateId));
+    const existingMeta = decodePortalApplicantMetadata(existingCandidate || {});
+    await api(`/company/candidates/${encodeURIComponent(interviewMeta.candidateId)}`, token, "PATCH", { patch: {
       name: interviewForm.candidateName,
       phone: interviewForm.phoneNumber,
       email: interviewForm.emailId,
@@ -4592,11 +4612,16 @@ function PortalApp({ token, onLogout }) {
       notes: interviewForm.callbackNotes,
       other_pointers: interviewForm.otherPointers,
       skills: parseTagInputValue(interviewForm.tags),
-      lwd_or_doj: interviewForm.lwdOrDoj,
+      lwd_or_doj: sanitizeLwdOrDojValue(interviewForm.lwdOrDoj),
       jd_title: interviewForm.jdTitle,
       client_name: interviewForm.clientName,
-      next_follow_up_at: interviewForm.followUpAt
-    });
+      next_follow_up_at: interviewForm.followUpAt,
+      raw_note: encodePortalApplicantMetadata({
+        ...existingMeta,
+        jdScreeningAnswers: interviewForm.jdScreeningAnswers || {}
+      })
+    } });
+    await loadWorkspace();
     setStatus("interview", "Draft saved.", "ok");
   }
 
