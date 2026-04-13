@@ -1081,23 +1081,23 @@ function extractRecruiterNoteFieldFallbacks(rawNote = "") {
     }
     return "";
   };
-  return {
-    current_ctc: findLineValue([
-      /^\s*current\s*ctc(?:\s*is|:)?\s*([^\n,;]+)/i,
-      /^\s*current\s*ctc\s*-\s*([^\n,;]+)/i,
-      /^\s*current\s*[-:]\s*([^\n,;]+)/i,
-      /\bcurrent\s*ctc\s*is\s*([^\n,;]+)/i,
-      /\bcurrent\s*ctc\s*(?:as|=)\s*([^\n,;]+)/i
-    ]),
-    expected_ctc: findLineValue([
-      /^\s*expected\s*ctc(?:\s*is|:)?\s*([^\n,;]+)/i,
-      /^\s*expected\s*ctc\s*-\s*([^\n,;]+)/i,
-      /^\s*expected\s*[-:]\s*([^\n,;.]+)/i,
-      /^\s*expectation(?:\s*is|:)?\s*([^\n,;]+)/i,
-      /^\s*expectation\s*-\s*([^\n,;]+)/i,
-      /\bexpected\s*ctc\s*is\s*([^\n,;]+)/i,
-      /\bexpectation\s*(?:is|as|=)\s*([^\n,;]+)/i
-    ]),
+return {
+  current_ctc: findLineValue([
+    /^\s*current\s*ctc(?:\s*is|:)?\s*(\d+(?:\.\d+)?\s*(?:lpa|l|lac|lakh|lakhs)?)\.?$/i,
+    /^\s*current\s*ctc\s*-\s*(\d+(?:\.\d+)?\s*(?:lpa|l|lac|lakh|lakhs)?)\.?$/i,
+    /^\s*current\s*[-:]\s*(\d+(?:\.\d+)?\s*(?:lpa|l|lac|lakh|lakhs)?)\.?$/i,
+    /\bcurrent\s*ctc\s*is\s*(\d+(?:\.\d+)?\s*(?:lpa|l|lac|lakh|lakhs)?)\.?$/i,
+    /\bcurrent\s*ctc\s*(?:as|=)\s*(\d+(?:\.\d+)?\s*(?:lpa|l|lac|lakh|lakhs)?)\.?$/i
+  ]),
+  expected_ctc: findLineValue([
+    /^\s*expected\s*ctc(?:\s*is|:)?\s*(\d+(?:\.\d+)?\s*(?:lpa|l|lac|lakh|lakhs)?)\.?$/i,
+    /^\s*expected\s*ctc\s*-\s*(\d+(?:\.\d+)?\s*(?:lpa|l|lac|lakh|lakhs)?)\.?$/i,
+    /^\s*expected\s*[-:]\s*(\d+(?:\.\d+)?\s*(?:lpa|l|lac|lakh|lakhs)?)\.?$/i,
+    /^\s*expectation(?:\s*is|:)?\s*(\d+(?:\.\d+)?\s*(?:lpa|l|lac|lakh|lakhs)?)\.?$/i,
+    /^\s*expectation\s*-\s*(\d+(?:\.\d+)?\s*(?:lpa|l|lac|lakh|lakhs)?)\.?$/i,
+    /\bexpected\s*ctc\s*is\s*(\d+(?:\.\d+)?\s*(?:lpa|l|lac|lakh|lakhs)?)\.?$/i,
+    /\bexpectation\s*(?:is|as|=)\s*(\d+(?:\.\d+)?\s*(?:lpa|l|lac|lakh|lakhs)?)\.?$/i
+  ]),
     notice_period: findLineValue([
       /^\s*notice\s*period(?:\s*is|:)?\s*([^\n]+)/i,
       /^\s*notice\s*period\s*-\s*([^\n]+)/i,
