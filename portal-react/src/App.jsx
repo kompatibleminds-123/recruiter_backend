@@ -157,7 +157,7 @@ function normalizeAttemptOutcomeLabel(outcome) {
     "nr": "Not responding",
     "no response": "Not responding",
     "busy": "Busy",
-    "duplicate": "Duplicate"
+    "duplicate": "Duplicate",
     "switch off": "Switch Off",
     "switched off": "Switch Off",
     "disconnected": "Disconnected",
