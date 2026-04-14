@@ -3798,7 +3798,11 @@ function PortalApp({ token, onLogout }) {
       other_pointers: item.otherPointers || "",
       notes: item.recruiterNotes || item.callbackNotes || "",
       other_standard_questions: screeningSummary,
-      reason_of_change: item.reasonForChange || "",
+      reason_of_change: item.reasonForChange
+        || linkedCandidateDraft?.reasonForChange
+        || linkedCandidate?.reason_of_change
+        || linkedCandidate?.reasonForChange
+        || "",
       combined_assessment_insights: buildCombinedAssessmentInsightsForExportV2({
         recruiter_context_notes: item.recruiterNotes || "",
         other_pointers: item.otherPointers || "",
