@@ -2088,7 +2088,7 @@ function MultiSelectDropdown({ label, options, selected, onToggle }) {
   );
 }
 
-function AssignModal({ open, applicant, users, jobs, onClose, onSave, title = "Assign Applicant", description = "Assign this record to a recruiter and JD.", nameKey = "candidateName" }) {
+function AssignModal({ open, applicant, users, jobs, onClose, onSave, title = "Assign Applicant", description = "Assign this record to a recruiter and JD.", nameKey = "candidateName", allowRecruiterSelect = true, lockedRecruiterName = "" }) {
   const [recruiterId, setRecruiterId] = useState("");
   const [jdTitle, setJdTitle] = useState("");
   const [status, setStatus] = useState("");
@@ -2107,11 +2107,15 @@ function AssignModal({ open, applicant, users, jobs, onClose, onSave, title = "A
       <div className="overlay-card" onClick={(e) => e.stopPropagation()}>
         <h3>{title}</h3>
         <p className="muted">{description.replace("{name}", applicant?.[nameKey] || applicant?.name || "this candidate")}</p>
-        <label><span>Recruiter</span><select value={recruiterId} onChange={(e) => setRecruiterId(e.target.value)}><option value="">Select recruiter</option>{users.map((user) => <option key={user.id} value={user.id}>{user.name} | {user.email}</option>)}</select></label>
+        {allowRecruiterSelect ? (
+          <label><span>Recruiter</span><select value={recruiterId} onChange={(e) => setRecruiterId(e.target.value)}><option value="">Select recruiter</option>{users.map((user) => <option key={user.id} value={user.id}>{user.name} | {user.email}</option>)}</select></label>
+        ) : (
+          <label><span>Recruiter</span><input value={lockedRecruiterName || "Current recruiter"} readOnly /></label>
+        )}
         <label><span>JD / role</span><select value={jdTitle} onChange={(e) => setJdTitle(e.target.value)}><option value="">Select JD / role</option>{jobs.map((job) => <option key={job.id} value={job.title}>{job.title}</option>)}</select></label>
         {status ? <div className="status">{status}</div> : null}
         <div className="button-row">
-          <button onClick={async () => { if (!recruiterId || !jdTitle) { setStatus("Select recruiter and JD first."); return; } setStatus("Saving assignment..."); try { await onSave({ recruiterId, jdTitle }); } catch (error) { setStatus(String(error?.message || error)); } }}>Save assignment</button>
+          <button onClick={async () => { if ((allowRecruiterSelect && !recruiterId) || !jdTitle) { setStatus(allowRecruiterSelect ? "Select recruiter and JD first." : "Select JD first."); return; } setStatus("Saving assignment..."); try { await onSave({ recruiterId, jdTitle }); } catch (error) { setStatus(String(error?.message || error)); } }}>Save assignment</button>
           <button className="ghost-btn" onClick={onClose}>Cancel</button>
         </div>
       </div>
@@ -4044,10 +4048,12 @@ function PortalApp({ token, onLogout }) {
   }
 
   async function saveCapturedAssignment({ recruiterId, jdTitle }) {
-    const recruiter = (state.users || []).find((user) => String(user.id) === String(recruiterId));
+    const isAdmin = String(state.user?.role || "").toLowerCase() === "admin";
+    const effectiveRecruiterId = isAdmin ? String(recruiterId || "").trim() : String(state.user?.id || "").trim();
+    const recruiter = (state.users || []).find((user) => String(user.id) === String(effectiveRecruiterId));
     await patchCandidate(assignCandidateId, {
-      assigned_to_user_id: recruiterId,
-      assigned_to_name: recruiter?.name || "",
+      assigned_to_user_id: effectiveRecruiterId,
+      assigned_to_name: recruiter?.name || state.user?.name || "",
       jd_title: jdTitle
     }, "Draft assigned to recruiter.");
     setAssignCandidateId("");
@@ -7594,8 +7600,10 @@ function PortalApp({ token, onLogout }) {
         onClose={() => setAssignCandidateId("")}
         onSave={saveCapturedAssignment}
         title="Assign Draft"
-        description="Assign {name} to a recruiter and JD."
+        description="Assign {name} to a JD. Recruiters can map the role for themselves; admins can also assign another recruiter."
         nameKey="name"
+        allowRecruiterSelect={String(state.user?.role || "").toLowerCase() === "admin"}
+        lockedRecruiterName={state.user?.name || ""}
       />
       <NotesModal
         open={Boolean(notesCandidateId)}
