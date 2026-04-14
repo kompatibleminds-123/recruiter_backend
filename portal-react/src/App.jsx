@@ -1186,11 +1186,24 @@ function extractRecruiterNoteFieldFallbacks(rawNote = "") {
     for (const line of lines) {
       for (const pattern of patterns) {
         const match = line.match(pattern);
-        if (match?.[1]) return normalizeParsedRecruiterValue(match[1]);
+        if (match?.[1]) {
+          const extracted = normalizeParsedRecruiterValue(match[1]);
+          return patterns === lwdPatterns ? sanitizeLwdOrDojValue(extracted) : extracted;
+        }
       }
     }
     return "";
   };
+  const lwdPatterns = [
+    /^\s*lwd(?:\s*is|:)?\s*([^\n]+)/i,
+    /^\s*lwd\s*-\s*([^\n]+)/i,
+    /^\s*doj(?:\s*is|:)?\s*([^\n]+)/i,
+    /^\s*doj\s*-\s*([^\n]+)/i,
+    /^\s*last\s*working\s*day(?:\s*is|:)?\s*([^\n]+)/i,
+    /\blwd\s*(?:as|is|=)\s*([^\n]+)/i,
+    /\bdoj\s*(?:as|is|=)\s*([^\n]+)/i,
+    /\bserving\s*notice.*?\blwd\s*(?:as|is|=)?\s*([^\n]+)/i
+  ];
 return {
   current_ctc: findLineValue([
     /^\s*current\s*ctc(?:\s*is|:)?\s*(\d+(?:\.\d+)?\s*(?:lpa|l|lac|lakh|lakhs)?)\.?$/i,
@@ -1214,16 +1227,7 @@ return {
       /^\s*notice\s*[-:]\s*([^\n]+)/i,
       /^\s*np(?:\s*is|:)?\s*([^\n]+)/i
     ]),
-    lwd_or_doj: findLineValue([
-      /^\s*lwd(?:\s*is|:)?\s*([^\n]+)/i,
-      /^\s*lwd\s*-\s*([^\n]+)/i,
-      /^\s*doj(?:\s*is|:)?\s*([^\n]+)/i,
-      /^\s*doj\s*-\s*([^\n]+)/i,
-      /^\s*last\s*working\s*day(?:\s*is|:)?\s*([^\n]+)/i,
-      /\blwd\s*(?:as|is|=)\s*([^\n]+)/i,
-      /\bdoj\s*(?:as|is|=)\s*([^\n]+)/i,
-      /\bserving\s*notice.*?\blwd\s*(?:as|is|=)?\s*([^\n]+)/i
-    ]),
+    lwd_or_doj: findLineValue(lwdPatterns),
     offer_in_hand: findLineValue([
       /^\s*offer\s*in\s*hand(?:\s*is|:)?\s*([^\n]+)/i,
       /^\s*offer\s*in\s*hand\s*-\s*([^\n]+)/i,
@@ -1293,7 +1297,8 @@ function buildRecruiterFieldPatchFromMerge(mergedPatch) {
     "highest_education"
   ].forEach((key) => {
     const value = mergedPatch?.incoming?.[key] || mergedPatch?.fallbacks?.[key] || "";
-    if (String(value || "").trim()) extractedFieldPatch[key] = value;
+    if (!String(value || "").trim()) return;
+    extractedFieldPatch[key] = key === "lwd_or_doj" ? sanitizeLwdOrDojValue(value) : value;
   });
   return extractedFieldPatch;
 }
