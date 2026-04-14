@@ -2353,7 +2353,7 @@ function AttemptsModal({ open, candidate, attempts, onClose, onRefresh, onSave }
     setRemarks("");
     setNextFollowUpAt("");
     setStatus("");
-  }, [open, candidate]);
+  }, [open, candidate?.id]);
 
   useEffect(() => {
     const parsed = inferAttemptOutcomeAndFollowUp(inferText);
@@ -2475,7 +2475,7 @@ function AssessmentStatusModal({ open, assessment, onClose, onSave }) {
     setExpectedDoj(toDateInputValue(assessment.expectedDoj || assessment.followUpAt || ""));
     setDateOfJoining(toDateInputValue(assessment.dateOfJoining || assessment.followUpAt || ""));
     setStatus("");
-  }, [open, assessment]);
+  }, [open, assessment?.id]);
 
   useEffect(() => {
     const lastLine = extractLastMeaningfulLine(inferText);
