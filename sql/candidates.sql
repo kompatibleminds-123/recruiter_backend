@@ -38,6 +38,8 @@ create table if not exists public.candidates (
   last_contact_at timestamptz,
   next_follow_up_at timestamptz,
   hidden_from_captured boolean not null default false,
+  screening_answers jsonb not null default '{}'::jsonb,
+  draft_payload jsonb not null default '{}'::jsonb,
   raw_note text,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()

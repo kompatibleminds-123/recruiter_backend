@@ -340,6 +340,18 @@ function decodeApplicantMetadata(candidate = {}) {
   }
 }
 
+function normalizeJsonObjectInput(value) {
+  if (value && typeof value === "object" && !Array.isArray(value)) return value;
+  const raw = String(value || "").trim();
+  if (!raw) return {};
+  try {
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
 function buildUploadedFileFingerprint(file = {}) {
   const fileData = String(file?.fileData || "").trim();
   if (!fileData) return "";
@@ -2510,6 +2522,8 @@ function matchCandidatesToJd(universe = [], jdPayload = {}) {
 
 function sanitizeCandidateSavePayload(rawCandidate, actor) {
   const input = rawCandidate && typeof rawCandidate === "object" ? rawCandidate : {};
+  const screeningAnswers = normalizeJsonObjectInput(input.screening_answers || input.screeningAnswers);
+  const draftPayload = normalizeJsonObjectInput(input.draft_payload || input.draftPayload);
   const candidate = {
     id: String(input.id || "").trim() || undefined,
     company_id: String(actor.companyId || "").trim() || undefined,
@@ -2548,6 +2562,8 @@ function sanitizeCandidateSavePayload(rawCandidate, actor) {
     last_contact_at: String(input.last_contact_at || "").trim() || undefined,
     next_follow_up_at: String(input.next_follow_up_at || "").trim() || undefined,
     hidden_from_captured: input.hidden_from_captured === true,
+    screening_answers: screeningAnswers,
+    draft_payload: draftPayload,
     used_in_assessment: input.used_in_assessment === true,
     assessment_id: String(input.assessment_id || "").trim() || undefined,
     created_at: String(input.created_at || "").trim() || undefined,
@@ -4805,6 +4821,12 @@ const server = http.createServer(async (req, res) => {
       const candidateId = String(requestUrl.pathname.replace(/^\/company\/candidates\//, "")).trim();
       const body = await readJsonBody(req);
       const input = body.patch || body || {};
+      const screeningAnswers = Object.prototype.hasOwnProperty.call(input, "screening_answers") || Object.prototype.hasOwnProperty.call(input, "screeningAnswers")
+        ? normalizeJsonObjectInput(input.screening_answers || input.screeningAnswers)
+        : undefined;
+      const draftPayload = Object.prototype.hasOwnProperty.call(input, "draft_payload") || Object.prototype.hasOwnProperty.call(input, "draftPayload")
+        ? normalizeJsonObjectInput(input.draft_payload || input.draftPayload)
+        : undefined;
       const patch = {
         name: String(input.name || input.candidateName || "").trim() || undefined,
         notes: String(input.notes || "").trim() || undefined,
@@ -4831,6 +4853,8 @@ const server = http.createServer(async (req, res) => {
             ? normalizeNullableTimestampInput(input.nextFollowUpAt)
             : undefined,
         hidden_from_captured: input.hidden_from_captured === true ? true : input.hidden_from_captured === false ? false : undefined,
+        screening_answers: screeningAnswers,
+        draft_payload: draftPayload,
         jd_title: String(input.jd_title || input.jdTitle || "").trim() || undefined,
         client_name: String(input.client_name || input.clientName || "").trim() || undefined,
         assigned_to_user_id: String(input.assigned_to_user_id || input.assignedToUserId || "").trim() || undefined,
@@ -4842,6 +4866,9 @@ const server = http.createServer(async (req, res) => {
       const existing = (await listCandidatesForUser(actor, { id: candidateId, limit: 1 }))[0] || null;
       if (existing) {
         const existingMeta = decodeApplicantMetadata(existing);
+        const incomingMeta = Object.prototype.hasOwnProperty.call(patch, "raw_note")
+          ? decodeApplicantMetadata({ raw_note: patch.raw_note })
+          : {};
         const cvResult = existingMeta?.cvAnalysisCache?.result && typeof existingMeta.cvAnalysisCache.result === "object"
           ? existingMeta.cvAnalysisCache.result
           : null;
@@ -4853,6 +4880,7 @@ const server = http.createServer(async (req, res) => {
         });
         patch.raw_note = encodeApplicantMetadata({
           ...(existingMeta || {}),
+          ...(incomingMeta || {}),
           inferredSearchTags
         });
       }

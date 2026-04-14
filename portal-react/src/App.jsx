@@ -418,6 +418,60 @@ function encodePortalApplicantMetadata(metadata = {}) {
   return `${PORTAL_APPLICANT_METADATA_PREFIX}${JSON.stringify(metadata || {})}`;
 }
 
+function parsePortalObjectField(value) {
+  if (value && typeof value === "object" && !Array.isArray(value)) return value;
+  const raw = String(value || "").trim();
+  if (!raw) return {};
+  try {
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function getCandidateDraftState(candidate = {}) {
+  const meta = decodePortalApplicantMetadata(candidate);
+  const draftPayload = parsePortalObjectField(candidate?.draft_payload || candidate?.draftPayload);
+  const screeningAnswers = parsePortalObjectField(candidate?.screening_answers || candidate?.screeningAnswers);
+  return {
+    ...draftPayload,
+    jdScreeningAnswers: Object.keys(screeningAnswers).length
+      ? screeningAnswers
+      : draftPayload?.jdScreeningAnswers && typeof draftPayload.jdScreeningAnswers === "object"
+        ? draftPayload.jdScreeningAnswers
+        : meta?.jdScreeningAnswers || {}
+  };
+}
+
+function buildCandidateDraftPayloadPatch(candidate = {}, patch = {}) {
+  const current = getCandidateDraftState(candidate);
+  const next = { ...current };
+  if (Object.prototype.hasOwnProperty.call(patch, "name") || Object.prototype.hasOwnProperty.call(patch, "candidateName")) next.candidateName = patch.candidateName ?? patch.name ?? next.candidateName ?? "";
+  if (Object.prototype.hasOwnProperty.call(patch, "phone") || Object.prototype.hasOwnProperty.call(patch, "phoneNumber")) next.phoneNumber = patch.phoneNumber ?? patch.phone ?? next.phoneNumber ?? "";
+  if (Object.prototype.hasOwnProperty.call(patch, "email") || Object.prototype.hasOwnProperty.call(patch, "emailId")) next.emailId = patch.emailId ?? patch.email ?? next.emailId ?? "";
+  if (Object.prototype.hasOwnProperty.call(patch, "location")) next.location = patch.location ?? next.location ?? "";
+  if (Object.prototype.hasOwnProperty.call(patch, "company") || Object.prototype.hasOwnProperty.call(patch, "currentCompany")) next.currentCompany = patch.currentCompany ?? patch.company ?? next.currentCompany ?? "";
+  if (Object.prototype.hasOwnProperty.call(patch, "role") || Object.prototype.hasOwnProperty.call(patch, "currentDesignation")) next.currentDesignation = patch.currentDesignation ?? patch.role ?? next.currentDesignation ?? "";
+  if (Object.prototype.hasOwnProperty.call(patch, "experience") || Object.prototype.hasOwnProperty.call(patch, "totalExperience")) next.totalExperience = patch.totalExperience ?? patch.experience ?? next.totalExperience ?? "";
+  if (Object.prototype.hasOwnProperty.call(patch, "highest_education") || Object.prototype.hasOwnProperty.call(patch, "highestEducation")) next.highestEducation = patch.highestEducation ?? patch.highest_education ?? next.highestEducation ?? "";
+  if (Object.prototype.hasOwnProperty.call(patch, "current_ctc") || Object.prototype.hasOwnProperty.call(patch, "currentCtc")) next.currentCtc = patch.currentCtc ?? patch.current_ctc ?? next.currentCtc ?? "";
+  if (Object.prototype.hasOwnProperty.call(patch, "expected_ctc") || Object.prototype.hasOwnProperty.call(patch, "expectedCtc")) next.expectedCtc = patch.expectedCtc ?? patch.expected_ctc ?? next.expectedCtc ?? "";
+  if (Object.prototype.hasOwnProperty.call(patch, "notice_period") || Object.prototype.hasOwnProperty.call(patch, "noticePeriod")) next.noticePeriod = patch.noticePeriod ?? patch.notice_period ?? next.noticePeriod ?? "";
+  if (Object.prototype.hasOwnProperty.call(patch, "lwd_or_doj") || Object.prototype.hasOwnProperty.call(patch, "lwdOrDoj")) next.lwdOrDoj = patch.lwdOrDoj ?? patch.lwd_or_doj ?? next.lwdOrDoj ?? "";
+  if (Object.prototype.hasOwnProperty.call(patch, "recruiter_context_notes") || Object.prototype.hasOwnProperty.call(patch, "recruiterNotes")) next.recruiterNotes = patch.recruiterNotes ?? patch.recruiter_context_notes ?? next.recruiterNotes ?? "";
+  if (Object.prototype.hasOwnProperty.call(patch, "notes") || Object.prototype.hasOwnProperty.call(patch, "callbackNotes")) next.callbackNotes = patch.callbackNotes ?? patch.notes ?? next.callbackNotes ?? "";
+  if (Object.prototype.hasOwnProperty.call(patch, "other_pointers") || Object.prototype.hasOwnProperty.call(patch, "otherPointers")) next.otherPointers = patch.otherPointers ?? patch.other_pointers ?? next.otherPointers ?? "";
+  if (Object.prototype.hasOwnProperty.call(patch, "jd_title") || Object.prototype.hasOwnProperty.call(patch, "jdTitle")) next.jdTitle = patch.jdTitle ?? patch.jd_title ?? next.jdTitle ?? "";
+  if (Object.prototype.hasOwnProperty.call(patch, "client_name") || Object.prototype.hasOwnProperty.call(patch, "clientName")) next.clientName = patch.clientName ?? patch.client_name ?? next.clientName ?? "";
+  if (Object.prototype.hasOwnProperty.call(patch, "next_follow_up_at") || Object.prototype.hasOwnProperty.call(patch, "nextFollowUpAt")) next.followUpAt = patch.nextFollowUpAt ?? patch.next_follow_up_at ?? next.followUpAt ?? "";
+  if (Object.prototype.hasOwnProperty.call(patch, "skills")) next.tags = Array.isArray(patch.skills) ? patch.skills.join(", ") : next.tags ?? "";
+  if (Object.prototype.hasOwnProperty.call(patch, "screening_answers") || Object.prototype.hasOwnProperty.call(patch, "screeningAnswers")) {
+    next.jdScreeningAnswers = patch.screeningAnswers ?? patch.screening_answers ?? next.jdScreeningAnswers ?? {};
+  }
+  return next;
+}
+
 function sanitizeLwdOrDojValue(value) {
   return String(value || "")
     .trim()
@@ -3995,13 +4049,31 @@ function PortalApp({ token, onLogout }) {
   }
 
   async function patchCandidate(candidateId, patch, okMessage) {
-    await api(`/company/candidates/${encodeURIComponent(candidateId)}`, token, "PATCH", { patch });
+    const currentCandidate = (state.candidates || []).find((item) => String(item.id) === String(candidateId)) || {};
+    const nextPatch = { ...patch };
+    if (!Object.prototype.hasOwnProperty.call(nextPatch, "draft_payload")) {
+      nextPatch.draft_payload = buildCandidateDraftPayloadPatch(currentCandidate, patch);
+    }
+    if (!Object.prototype.hasOwnProperty.call(nextPatch, "screening_answers")) {
+      const currentDraft = getCandidateDraftState(currentCandidate);
+      nextPatch.screening_answers = currentDraft.jdScreeningAnswers || parsePortalObjectField(currentCandidate?.screening_answers || currentCandidate?.screeningAnswers);
+    }
+    await api(`/company/candidates/${encodeURIComponent(candidateId)}`, token, "PATCH", { patch: nextPatch });
     await loadWorkspace();
     setStatus("captured", okMessage, "ok");
   }
 
   async function patchCandidateQuiet(candidateId, patch) {
-    await api(`/company/candidates/${encodeURIComponent(candidateId)}`, token, "PATCH", { patch });
+    const currentCandidate = (state.candidates || []).find((item) => String(item.id) === String(candidateId)) || {};
+    const nextPatch = { ...patch };
+    if (!Object.prototype.hasOwnProperty.call(nextPatch, "draft_payload")) {
+      nextPatch.draft_payload = buildCandidateDraftPayloadPatch(currentCandidate, patch);
+    }
+    if (!Object.prototype.hasOwnProperty.call(nextPatch, "screening_answers")) {
+      const currentDraft = getCandidateDraftState(currentCandidate);
+      nextPatch.screening_answers = currentDraft.jdScreeningAnswers || parsePortalObjectField(currentCandidate?.screening_answers || currentCandidate?.screeningAnswers);
+    }
+    await api(`/company/candidates/${encodeURIComponent(candidateId)}`, token, "PATCH", { patch: nextPatch });
     await loadWorkspace();
   }
 
@@ -4262,6 +4334,38 @@ function PortalApp({ token, onLogout }) {
       other_pointers: "",
       hidden_from_captured: false,
       skills: parsedSkills,
+      screening_answers: {},
+      draft_payload: {
+        candidateName: newDraftForm.name || "",
+        phoneNumber: newDraftForm.phone || "",
+        emailId: newDraftForm.email || "",
+        location: newDraftForm.location || "",
+        currentCompany: newDraftForm.company || "",
+        currentDesignation: "",
+        totalExperience: "",
+        highestEducation: "",
+        currentCtc: "",
+        expectedCtc: "",
+        noticePeriod: "",
+        offerInHand: "",
+        lwdOrDoj: "",
+        currentOrgTenure: "",
+        reasonForChange: "",
+        clientName: newDraftForm.client_name || "",
+        jdTitle: newDraftForm.jd_title || "",
+        pipelineStage: "Under Interview Process",
+        candidateStatus: "Screening in progress",
+        followUpAt: "",
+        interviewAt: "",
+        recruiterNotes: "",
+        callbackNotes: newDraftForm.notes || "",
+        otherPointers: "",
+        tags: newDraftForm.tags || "",
+        jdScreeningAnswers: {},
+        cvAnalysis: null,
+        cvAnalysisApplied: false,
+        statusHistory: []
+      },
       linkedin: newDraftForm.linkedin || "",
       assigned_to_user_id: assignedRecruiter?.id || "",
       assigned_to_name: assignedRecruiter?.name || ""
@@ -4377,9 +4481,15 @@ function PortalApp({ token, onLogout }) {
       setStatus("captured", "Candidate not found for interview panel.", "error");
       return;
     }
-    const matched = (state.assessments || []).find((item) =>
-      String(item.candidateName || "").trim().toLowerCase() === String(candidate.name || "").trim().toLowerCase()
-    );
+    const candidateDraft = getCandidateDraftState(candidate);
+    const candidateAssessmentId = String(candidate.assessment_id || candidate.assessmentId || "").trim();
+    const matched = (state.assessments || []).find((item) => {
+      const assessmentId = String(item?.id || "").trim();
+      const assessmentCandidateId = String(item?.candidateId || item?.candidate_id || "").trim();
+      if (candidateAssessmentId && assessmentId && candidateAssessmentId === assessmentId) return true;
+      if (assessmentCandidateId && String(candidate.id || "").trim() === assessmentCandidateId) return true;
+      return false;
+    });
     setInterviewMeta({
       candidateId: String(candidate.id || ""),
       assessmentId: String(matched?.id || "")
@@ -4388,42 +4498,42 @@ function PortalApp({ token, onLogout }) {
     const cvMeta = decodePortalApplicantMetadata(candidate);
     const candidateCvAnalysis = cvMeta?.cvAnalysisCache?.result
       ? buildInterviewCvAnalysis({
-          currentCompany: matched?.currentCompany || candidate?.company || "",
-          currentDesignation: matched?.currentDesignation || candidate?.role || "",
-          totalExperience: matched?.totalExperience || candidate?.experience || "",
-          currentOrgTenure: matched?.currentOrgTenure || candidate?.current_org_tenure || ""
+          currentCompany: candidateDraft.currentCompany || matched?.currentCompany || candidate?.company || "",
+          currentDesignation: candidateDraft.currentDesignation || matched?.currentDesignation || candidate?.role || "",
+          totalExperience: candidateDraft.totalExperience || matched?.totalExperience || candidate?.experience || "",
+          currentOrgTenure: candidateDraft.currentOrgTenure || matched?.currentOrgTenure || candidate?.current_org_tenure || ""
         }, cvMeta.cvAnalysisCache.result, cvMeta.cvAnalysisCache.storedFile || null)
       : null;
     setInterviewForm({
-      candidateName: matched?.candidateName || candidate?.name || "",
-      phoneNumber: matched?.phoneNumber || candidate?.phone || "",
-      emailId: matched?.emailId || candidate?.email || "",
-      location: matched?.location || candidate?.location || "",
-      currentCtc: matched?.currentCtc || candidate?.current_ctc || "",
-      expectedCtc: matched?.expectedCtc || candidate?.expected_ctc || "",
-      noticePeriod: matched?.noticePeriod || candidate?.notice_period || parsedRecruiterBase.notice_period || "",
-      offerInHand: matched?.offerInHand || parsedRecruiterBase.offer_in_hand || "",
-      lwdOrDoj: sanitizeLwdOrDojValue(matched?.lwdOrDoj || candidate?.lwd_or_doj || parsedRecruiterBase.lwd_or_doj || ""),
-      currentCompany: matched?.currentCompany || candidate?.company || "",
-      currentDesignation: matched?.currentDesignation || candidate?.role || "",
-      totalExperience: matched?.totalExperience || candidate?.experience || "",
-      highestEducation: matched?.highestEducation || candidate?.highest_education || "",
-      currentOrgTenure: matched?.currentOrgTenure || candidate?.current_org_tenure || "",
-      reasonForChange: matched?.reasonForChange || "",
-      clientName: matched?.clientName || candidate?.client_name || "",
-      jdTitle: matched?.jdTitle || candidate?.jd_title || "",
-      pipelineStage: matched?.pipelineStage || candidate?.pipeline_stage || "Under Interview Process",
-      candidateStatus: normalizeAssessmentStatusLabel(matched?.candidateStatus || candidate?.candidate_status) || "Screening in progress",
-      followUpAt: toDateInputValue(matched?.followUpAt || candidate?.next_follow_up_at),
-      interviewAt: toDateInputValue(matched?.interviewAt),
-      recruiterNotes: matched?.recruiterNotes || candidate?.recruiter_context_notes || "",
-      callbackNotes: candidate?.notes || "",
-      otherPointers: matched?.otherPointers || candidate?.other_pointers || "",
-      tags: Array.isArray(candidate?.skills) ? candidate.skills.join(", ") : "",
-      jdScreeningAnswers: matched?.jdScreeningAnswers || decodePortalApplicantMetadata(candidate).jdScreeningAnswers || {},
+      candidateName: candidateDraft.candidateName || matched?.candidateName || candidate?.name || "",
+      phoneNumber: candidateDraft.phoneNumber || matched?.phoneNumber || candidate?.phone || "",
+      emailId: candidateDraft.emailId || matched?.emailId || candidate?.email || "",
+      location: candidateDraft.location || matched?.location || candidate?.location || "",
+      currentCtc: candidateDraft.currentCtc || matched?.currentCtc || candidate?.current_ctc || "",
+      expectedCtc: candidateDraft.expectedCtc || matched?.expectedCtc || candidate?.expected_ctc || "",
+      noticePeriod: candidateDraft.noticePeriod || matched?.noticePeriod || candidate?.notice_period || parsedRecruiterBase.notice_period || "",
+      offerInHand: candidateDraft.offerInHand || matched?.offerInHand || parsedRecruiterBase.offer_in_hand || "",
+      lwdOrDoj: sanitizeLwdOrDojValue(candidateDraft.lwdOrDoj || matched?.lwdOrDoj || candidate?.lwd_or_doj || parsedRecruiterBase.lwd_or_doj || ""),
+      currentCompany: candidateDraft.currentCompany || matched?.currentCompany || candidate?.company || "",
+      currentDesignation: candidateDraft.currentDesignation || matched?.currentDesignation || candidate?.role || "",
+      totalExperience: candidateDraft.totalExperience || matched?.totalExperience || candidate?.experience || "",
+      highestEducation: candidateDraft.highestEducation || matched?.highestEducation || candidate?.highest_education || "",
+      currentOrgTenure: candidateDraft.currentOrgTenure || matched?.currentOrgTenure || candidate?.current_org_tenure || "",
+      reasonForChange: candidateDraft.reasonForChange || matched?.reasonForChange || "",
+      clientName: candidateDraft.clientName || matched?.clientName || candidate?.client_name || "",
+      jdTitle: candidateDraft.jdTitle || matched?.jdTitle || candidate?.jd_title || "",
+      pipelineStage: candidateDraft.pipelineStage || matched?.pipelineStage || candidate?.pipeline_stage || "Under Interview Process",
+      candidateStatus: normalizeAssessmentStatusLabel(candidateDraft.candidateStatus || matched?.candidateStatus || candidate?.candidate_status) || "Screening in progress",
+      followUpAt: toDateInputValue(candidateDraft.followUpAt || matched?.followUpAt || candidate?.next_follow_up_at),
+      interviewAt: toDateInputValue(candidateDraft.interviewAt || matched?.interviewAt),
+      recruiterNotes: candidateDraft.recruiterNotes || matched?.recruiterNotes || candidate?.recruiter_context_notes || "",
+      callbackNotes: candidateDraft.callbackNotes || candidate?.notes || "",
+      otherPointers: candidateDraft.otherPointers || matched?.otherPointers || candidate?.other_pointers || "",
+      tags: candidateDraft.tags || (Array.isArray(candidate?.skills) ? candidate.skills.join(", ") : ""),
+      jdScreeningAnswers: candidateDraft.jdScreeningAnswers || matched?.jdScreeningAnswers || {},
       cvAnalysis: matched?.cvAnalysis || candidateCvAnalysis || null,
-      cvAnalysisApplied: Boolean(matched?.cvAnalysisApplied),
-      statusHistory: Array.isArray(matched?.statusHistory) ? matched.statusHistory : []
+      cvAnalysisApplied: candidateDraft.cvAnalysisApplied === true ? true : Boolean(matched?.cvAnalysisApplied),
+      statusHistory: Array.isArray(candidateDraft.statusHistory) ? candidateDraft.statusHistory : Array.isArray(matched?.statusHistory) ? matched.statusHistory : []
     });
     navigate("/interview");
     setStatus("interview", `Loaded ${candidate.name || "candidate"} into Interview Panel.`, "ok");
@@ -4434,6 +4544,7 @@ function PortalApp({ token, onLogout }) {
       if (assessment?.candidateId && String(item.id) === String(assessment.candidateId)) return true;
       return String(item.name || "").trim().toLowerCase() === String(assessment?.candidateName || "").trim().toLowerCase();
     });
+    const candidateDraft = getCandidateDraftState(matchedCandidate || {});
     setInterviewMeta({
       candidateId: String(matchedCandidate?.id || assessment?.candidateId || ""),
       assessmentId: String(assessment?.id || "")
@@ -4442,39 +4553,39 @@ function PortalApp({ token, onLogout }) {
     const cvMeta = decodePortalApplicantMetadata(matchedCandidate || {});
     const candidateCvAnalysis = cvMeta?.cvAnalysisCache?.result
       ? buildInterviewCvAnalysis({
-          currentCompany: assessment?.currentCompany || matchedCandidate?.company || "",
-          currentDesignation: assessment?.currentDesignation || matchedCandidate?.role || "",
-          totalExperience: assessment?.totalExperience || matchedCandidate?.experience || "",
-          currentOrgTenure: assessment?.currentOrgTenure || matchedCandidate?.current_org_tenure || ""
+          currentCompany: assessment?.currentCompany || candidateDraft.currentCompany || matchedCandidate?.company || "",
+          currentDesignation: assessment?.currentDesignation || candidateDraft.currentDesignation || matchedCandidate?.role || "",
+          totalExperience: assessment?.totalExperience || candidateDraft.totalExperience || matchedCandidate?.experience || "",
+          currentOrgTenure: assessment?.currentOrgTenure || candidateDraft.currentOrgTenure || matchedCandidate?.current_org_tenure || ""
         }, cvMeta.cvAnalysisCache.result, cvMeta.cvAnalysisCache.storedFile || null)
       : null;
     setInterviewForm({
       candidateName: assessment?.candidateName || "",
-      phoneNumber: assessment?.phoneNumber || matchedCandidate?.phone || "",
-      emailId: assessment?.emailId || matchedCandidate?.email || "",
-      location: assessment?.location || matchedCandidate?.location || "",
-      currentCtc: assessment?.currentCtc || matchedCandidate?.current_ctc || "",
-      expectedCtc: assessment?.expectedCtc || matchedCandidate?.expected_ctc || "",
-      noticePeriod: assessment?.noticePeriod || matchedCandidate?.notice_period || parsedRecruiterBase.notice_period || "",
+      phoneNumber: assessment?.phoneNumber || candidateDraft.phoneNumber || matchedCandidate?.phone || "",
+      emailId: assessment?.emailId || candidateDraft.emailId || matchedCandidate?.email || "",
+      location: assessment?.location || candidateDraft.location || matchedCandidate?.location || "",
+      currentCtc: assessment?.currentCtc || candidateDraft.currentCtc || matchedCandidate?.current_ctc || "",
+      expectedCtc: assessment?.expectedCtc || candidateDraft.expectedCtc || matchedCandidate?.expected_ctc || "",
+      noticePeriod: assessment?.noticePeriod || candidateDraft.noticePeriod || matchedCandidate?.notice_period || parsedRecruiterBase.notice_period || "",
       offerInHand: assessment?.offerInHand || parsedRecruiterBase.offer_in_hand || "",
-      lwdOrDoj: sanitizeLwdOrDojValue(assessment?.lwdOrDoj || matchedCandidate?.lwd_or_doj || parsedRecruiterBase.lwd_or_doj || ""),
-      currentCompany: assessment?.currentCompany || matchedCandidate?.company || "",
-      currentDesignation: assessment?.currentDesignation || matchedCandidate?.role || "",
-      totalExperience: assessment?.totalExperience || matchedCandidate?.experience || "",
-      highestEducation: assessment?.highestEducation || matchedCandidate?.highest_education || "",
-      currentOrgTenure: assessment?.currentOrgTenure || matchedCandidate?.current_org_tenure || "",
-      reasonForChange: assessment?.reasonForChange || "",
-      clientName: assessment?.clientName || matchedCandidate?.client_name || "",
-      jdTitle: assessment?.jdTitle || matchedCandidate?.jd_title || "",
+      lwdOrDoj: sanitizeLwdOrDojValue(assessment?.lwdOrDoj || candidateDraft.lwdOrDoj || matchedCandidate?.lwd_or_doj || parsedRecruiterBase.lwd_or_doj || ""),
+      currentCompany: assessment?.currentCompany || candidateDraft.currentCompany || matchedCandidate?.company || "",
+      currentDesignation: assessment?.currentDesignation || candidateDraft.currentDesignation || matchedCandidate?.role || "",
+      totalExperience: assessment?.totalExperience || candidateDraft.totalExperience || matchedCandidate?.experience || "",
+      highestEducation: assessment?.highestEducation || candidateDraft.highestEducation || matchedCandidate?.highest_education || "",
+      currentOrgTenure: assessment?.currentOrgTenure || candidateDraft.currentOrgTenure || matchedCandidate?.current_org_tenure || "",
+      reasonForChange: assessment?.reasonForChange || candidateDraft.reasonForChange || "",
+      clientName: assessment?.clientName || candidateDraft.clientName || matchedCandidate?.client_name || "",
+      jdTitle: assessment?.jdTitle || candidateDraft.jdTitle || matchedCandidate?.jd_title || "",
       pipelineStage: assessment?.pipelineStage || "Under Interview Process",
       candidateStatus: normalizeAssessmentStatusLabel(assessment?.candidateStatus) || "Screening in progress",
       followUpAt: toDateInputValue(assessment?.followUpAt),
       interviewAt: toDateInputValue(assessment?.interviewAt),
-      recruiterNotes: assessment?.recruiterNotes || matchedCandidate?.recruiter_context_notes || "",
-      callbackNotes: matchedCandidate?.notes || "",
-      otherPointers: assessment?.otherPointers || matchedCandidate?.other_pointers || "",
-      tags: Array.isArray(matchedCandidate?.skills) ? matchedCandidate.skills.join(", ") : "",
-      jdScreeningAnswers: assessment?.jdScreeningAnswers || decodePortalApplicantMetadata(matchedCandidate || {}).jdScreeningAnswers || {},
+      recruiterNotes: assessment?.recruiterNotes || candidateDraft.recruiterNotes || matchedCandidate?.recruiter_context_notes || "",
+      callbackNotes: candidateDraft.callbackNotes || matchedCandidate?.notes || "",
+      otherPointers: assessment?.otherPointers || candidateDraft.otherPointers || matchedCandidate?.other_pointers || "",
+      tags: candidateDraft.tags || (Array.isArray(matchedCandidate?.skills) ? matchedCandidate.skills.join(", ") : ""),
+      jdScreeningAnswers: assessment?.jdScreeningAnswers || candidateDraft.jdScreeningAnswers || {},
       cvAnalysis: assessment?.cvAnalysis || candidateCvAnalysis || null,
       cvAnalysisApplied: Boolean(assessment?.cvAnalysisApplied),
       statusHistory: Array.isArray(assessment?.statusHistory) ? assessment.statusHistory : []
@@ -4621,6 +4732,11 @@ function PortalApp({ token, onLogout }) {
         jd_title: interviewForm.jdTitle,
         client_name: interviewForm.clientName,
         next_follow_up_at: interviewForm.followUpAt,
+        screening_answers: interviewForm.jdScreeningAnswers || {},
+        draft_payload: {
+          ...interviewForm,
+          jdScreeningAnswers: interviewForm.jdScreeningAnswers || {}
+        },
         raw_note: encodePortalApplicantMetadata({
           ...existingMeta,
           jdScreeningAnswers: interviewForm.jdScreeningAnswers || {}
@@ -4641,6 +4757,9 @@ function PortalApp({ token, onLogout }) {
     setStatus("interview", "Saving draft...");
     const existingCandidate = (state.candidates || []).find((item) => String(item.id) === String(interviewMeta.candidateId));
     const existingMeta = decodePortalApplicantMetadata(existingCandidate || {});
+    const linkedAssessment = interviewMeta.assessmentId
+      ? (state.assessments || []).find((item) => String(item.id || "") === String(interviewMeta.assessmentId || ""))
+      : null;
     await api(`/company/candidates/${encodeURIComponent(interviewMeta.candidateId)}`, token, "PATCH", { patch: {
       name: interviewForm.candidateName,
       phone: interviewForm.phoneNumber,
@@ -4661,11 +4780,33 @@ function PortalApp({ token, onLogout }) {
       jd_title: interviewForm.jdTitle,
       client_name: interviewForm.clientName,
       next_follow_up_at: interviewForm.followUpAt,
+      screening_answers: interviewForm.jdScreeningAnswers || {},
+      draft_payload: {
+        ...interviewForm,
+        jdScreeningAnswers: interviewForm.jdScreeningAnswers || {}
+      },
       raw_note: encodePortalApplicantMetadata({
         ...existingMeta,
         jdScreeningAnswers: interviewForm.jdScreeningAnswers || {}
       })
     } });
+    if (linkedAssessment?.id) {
+      await api("/company/assessments", token, "POST", { assessment: {
+        ...linkedAssessment,
+        ...interviewForm,
+        id: linkedAssessment.id,
+        candidateId: interviewMeta.candidateId,
+        candidateName: interviewForm.candidateName,
+        questionMode: linkedAssessment.questionMode || "basic",
+        generatedAt: linkedAssessment.generatedAt || new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        statusHistory: Array.isArray(interviewForm.statusHistory) && interviewForm.statusHistory.length
+          ? interviewForm.statusHistory
+          : Array.isArray(linkedAssessment.statusHistory)
+            ? linkedAssessment.statusHistory
+            : []
+      } });
+    }
     await loadWorkspace();
     setStatus("interview", "Draft saved.", "ok");
   }

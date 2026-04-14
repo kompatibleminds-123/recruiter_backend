@@ -553,7 +553,9 @@ function matchesCandidateSearch(candidate, query) {
     candidate?.recruiter_context_notes,
     candidate?.other_pointers,
     candidate?.next_action,
-    candidate?.raw_note
+    candidate?.raw_note,
+    candidate?.draft_payload && typeof candidate.draft_payload === "object" ? JSON.stringify(candidate.draft_payload) : candidate?.draft_payload,
+    candidate?.screening_answers && typeof candidate.screening_answers === "object" ? JSON.stringify(candidate.screening_answers) : candidate?.screening_answers
   ]
     .filter(Boolean)
     .join(" | ")
