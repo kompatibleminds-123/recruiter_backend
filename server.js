@@ -4056,6 +4056,18 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (req.method === "DELETE" && /^\/company\/candidates\/[^/]+$/.test(requestUrl.pathname)) {
+    try {
+      const actor = await requireSessionUser(getBearerToken(req));
+      const candidateId = String(requestUrl.pathname.replace(/^\/company\/candidates\//, "")).trim();
+      const result = await deleteCandidate(candidateId, { companyId: actor.companyId });
+      sendJson(res, 200, { ok: true, result });
+    } catch (error) {
+      sendJson(res, 400, { ok: false, error: String(error.message || error) });
+    }
+    return;
+  }
+
   if (req.method === "POST" && requestUrl.pathname === "/company/applicants/link-assessment") {
     try {
       const actor = await requireSessionUser(getBearerToken(req));
@@ -4925,7 +4937,6 @@ const server = http.createServer(async (req, res) => {
     try {
       const actor = await requireSessionUser(getBearerToken(req));
       const candidateId = String(requestUrl.searchParams.get("id") || "").trim();
-      await ensureCompanyCandidateExists(actor.companyId, candidateId);
       const result = await deleteCandidate(candidateId, { companyId: actor.companyId });
       sendJson(res, 200, { ok: true, result });
     } catch (error) {

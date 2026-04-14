@@ -681,17 +681,25 @@ async function deleteCandidate(candidateId, options = {}) {
       throw new Error(`Supabase delete failed: ${response.status} ${errorText}`);
     }
 
-    return { id };
+    const rows = await response.json().catch(() => []);
+    if (Array.isArray(rows) && rows.length === 0) {
+      throw new Error("Candidate not found in this company.");
+    }
+    return { id, deleted: Array.isArray(rows) ? rows.length : 1 };
   }
 
   const store = readLocalStore();
   store.candidates = Array.isArray(store.candidates) ? store.candidates : [];
+  const before = store.candidates.length;
   const nextCandidates = store.candidates.filter(
     (item) => !(String(item?.id || "") === id && (!companyId || getCandidateCompanyId(item) === companyId))
   );
+  if (nextCandidates.length === before) {
+    throw new Error("Candidate not found in this company.");
+  }
   store.candidates = nextCandidates;
   writeLocalStore(store);
-  return { id };
+  return { id, deleted: before - nextCandidates.length };
 }
 
 async function linkCandidateToAssessment(candidateId, assessmentId, options = {}) {

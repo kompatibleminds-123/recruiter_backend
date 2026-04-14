@@ -4087,7 +4087,7 @@ function PortalApp({ token, onLogout }) {
 
   async function deleteCapturedCandidate(candidateId) {
     if (!window.confirm("Delete this captured note permanently?")) return;
-    await api(`/candidates?id=${encodeURIComponent(candidateId)}`, token, "DELETE");
+    await api(`/company/candidates/${encodeURIComponent(candidateId)}`, token, "DELETE");
     await loadWorkspace();
     setStatus("captured", "Candidate deleted.", "ok");
   }
