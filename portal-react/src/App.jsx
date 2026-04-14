@@ -2384,7 +2384,8 @@ function AttemptsModal({ open, candidate, attempts, onClose, onRefresh, onSave }
 function AssessmentStatusModal({ open, assessment, onClose, onSave }) {
   const [candidateStatus, setCandidateStatus] = useState("");
   const [atValue, setAtValue] = useState("");
-  const [notes, setNotes] = useState("");
+  const [inferText, setInferText] = useState("");
+  const [manualRemarks, setManualRemarks] = useState("");
   const [offerAmount, setOfferAmount] = useState("");
   const [expectedDoj, setExpectedDoj] = useState("");
   const [dateOfJoining, setDateOfJoining] = useState("");
@@ -2394,7 +2395,8 @@ function AssessmentStatusModal({ open, assessment, onClose, onSave }) {
     if (!open || !assessment) return;
     setCandidateStatus(normalizeAssessmentStatusLabel(assessment.candidateStatus));
     setAtValue(toDateInputValue(assessment.interviewAt || assessment.followUpAt || ""));
-    setNotes("");
+    setInferText("");
+    setManualRemarks("");
     setOfferAmount(String(assessment.offerAmount || "").trim());
     setExpectedDoj(toDateInputValue(assessment.expectedDoj || assessment.followUpAt || ""));
     setDateOfJoining(toDateInputValue(assessment.dateOfJoining || assessment.followUpAt || ""));
@@ -2402,9 +2404,9 @@ function AssessmentStatusModal({ open, assessment, onClose, onSave }) {
   }, [open, assessment]);
 
   useEffect(() => {
-    const lastLine = extractLastMeaningfulLine(notes);
+    const lastLine = extractLastMeaningfulLine(inferText);
     const parsedFromLastLine = inferAssessmentStatusAndSchedule(lastLine);
-    const parsed = parsedFromLastLine.candidateStatus ? parsedFromLastLine : inferAssessmentStatusAndSchedule(notes);
+    const parsed = parsedFromLastLine.candidateStatus ? parsedFromLastLine : inferAssessmentStatusAndSchedule(inferText);
     if (parsed.candidateStatus && parsed.candidateStatus !== candidateStatus) {
       setCandidateStatus(parsed.candidateStatus);
     }
@@ -2414,7 +2416,7 @@ function AssessmentStatusModal({ open, assessment, onClose, onSave }) {
       else if (parsed.atValue !== atValue) setAtValue(parsed.atValue);
     }
     if (parsed.offerAmount && parsed.offerAmount !== offerAmount) setOfferAmount(parsed.offerAmount);
-  }, [notes]);
+  }, [inferText]);
 
   if (!open || !assessment) return null;
 
@@ -2442,7 +2444,7 @@ function AssessmentStatusModal({ open, assessment, onClose, onSave }) {
             const nextDate = selectedNeedsCalendar
               ? (selectedNormalized === "offered" ? expectedDoj : selectedNormalized === "joined" ? dateOfJoining : atValue)
               : "";
-            setNotes((current) => syncAssessmentNotesWithStatus(current, selected, nextDate, { offerAmount }));
+            setInferText((current) => syncAssessmentNotesWithStatus(current, selected, nextDate, { offerAmount }));
           }}>
             <option value="">Select status</option>
             {DEFAULT_STATUS_OPTIONS.map((item) => <option key={item} value={item}>{item}</option>)}
@@ -2459,7 +2461,7 @@ function AssessmentStatusModal({ open, assessment, onClose, onSave }) {
                 if (normalizedStatus === "offered") setExpectedDoj(nextValue);
                 else if (normalizedStatus === "joined") setDateOfJoining(nextValue);
                 else setAtValue(nextValue);
-                setNotes((current) => syncAssessmentNotesWithStatus(current, candidateStatus, nextValue, { offerAmount }));
+                setInferText((current) => syncAssessmentNotesWithStatus(current, candidateStatus, nextValue, { offerAmount }));
               }}
             />
           </label>
@@ -2470,15 +2472,19 @@ function AssessmentStatusModal({ open, assessment, onClose, onSave }) {
             <input value={offerAmount} onChange={(e) => {
               const nextValue = e.target.value;
               setOfferAmount(nextValue);
-              setNotes((current) => syncAssessmentNotesWithStatus(current, candidateStatus, expectedDoj || atValue, { offerAmount: nextValue }));
+              setInferText((current) => syncAssessmentNotesWithStatus(current, candidateStatus, expectedDoj || atValue, { offerAmount: nextValue }));
             }} placeholder="25 L" />
           </label>
         ) : null}
         <label>
-          <span>Status note</span>
-          <textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Write only the new status update here, e.g. L1 aligned tomorrow 5 PM, screening reject, CV to be shared." />
+          <span>Infer box</span>
+          <textarea value={inferText} onChange={(e) => setInferText(e.target.value)} placeholder="Write only the new status update here, e.g. L1 aligned tomorrow 5 PM, screening reject, CV to be shared." />
         </label>
-        <p className="muted">Last line in notes is the final source of truth for current status.</p>
+        <label>
+          <span>Manual remarks</span>
+          <textarea value={manualRemarks} onChange={(e) => setManualRemarks(e.target.value)} placeholder="Add recruiter remarks here, e.g. candidate asked to reconnect after release, communication good, salary flexibility possible." />
+        </label>
+        <p className="muted">Last line in infer box is the final source of truth for current status.</p>
         {status ? <div className="status">{status}</div> : null}
         <div className="button-row">
           <button onClick={async () => {
@@ -2495,7 +2501,9 @@ function AssessmentStatusModal({ open, assessment, onClose, onSave }) {
               await onSave({
                 candidateStatus,
                 atValue: shouldShowCalendar ? effectiveAtValue : "",
-                notes,
+                notes: inferText,
+                inferText,
+                manualRemarks,
                 offerAmount,
                 expectedDoj: normalizedStatus === "offered" ? expectedDoj : "",
                 dateOfJoining: normalizedStatus === "joined" ? dateOfJoining : ""
@@ -5870,7 +5878,10 @@ function PortalApp({ token, onLogout }) {
 
   async function saveAssessmentStatusUpdate(assessment, payload, options = {}) {
     const statusTarget = options.statusTarget || "assessments";
-    const lastLine = extractLastMeaningfulLine(payload?.notes || "");
+    const inferText = String(payload?.inferText || payload?.notes || "").trim();
+    const manualRemarks = String(payload?.manualRemarks || "").trim();
+    const combinedNotes = [inferText, manualRemarks ? `Remarks: ${manualRemarks}` : ""].filter(Boolean).join("\n");
+    const lastLine = extractLastMeaningfulLine(inferText);
     const inferred = inferAssessmentStatusAndSchedule(lastLine);
     const nextStatus = String(inferred.candidateStatus || payload?.candidateStatus || "").trim();
     if (!nextStatus) throw new Error("Select a status first.");
@@ -5887,7 +5898,7 @@ function PortalApp({ token, onLogout }) {
     const atIso = (isInterviewStatus || isOffered || isJoined) && dateCandidate && !Number.isNaN(dateCandidate.getTime())
       ? dateCandidate.toISOString()
       : "";
-    const readableNotes = formatReadableUpdateText(payload?.notes || "");
+    const readableNotes = formatReadableUpdateText(combinedNotes);
     const confirmMessage = buildDetectedUpdateConfirmation({
       candidateName: assessment?.candidateName || "",
       status: nextStatus,
@@ -5919,6 +5930,8 @@ function PortalApp({ token, onLogout }) {
       status: nextStatus,
       at: atIso || new Date().toISOString(),
       notes: readableNotes || "",
+      inferText,
+      manualRemarks,
       offerAmount: isOffered ? String(payload?.offerAmount || inferred.offerAmount || "").trim() : "",
       atLabel: buildAssessmentStatusNoteLine(nextStatus, atIso, { offerAmount: payload?.offerAmount })
     });
@@ -5962,6 +5975,36 @@ function PortalApp({ token, onLogout }) {
         generatedAt: assessment?.generatedAt || new Date().toISOString()
       }
     });
+    const linkedCandidateId = String(assessment?.candidateId || "").trim();
+    if (linkedCandidateId) {
+      const currentCandidate = (state.candidates || []).find((item) => String(item.id || "") === linkedCandidateId) || {};
+      const candidatePatch = {
+        assessment_status: nextStatus,
+        notes: appendReadableUpdateNote(
+          currentCandidate?.notes || "",
+          [readableNotes, buildAssessmentStatusNoteLine(nextStatus, atIso, { offerAmount: payload?.offerAmount })].filter(Boolean).join("\n")
+        )
+      };
+      if (isInterviewStatus || isOffered || isJoined) {
+        candidatePatch.next_follow_up_at = atIso || "";
+      }
+      const nextDraftPayload = buildCandidateDraftPayloadPatch(currentCandidate, {
+        candidateStatus: nextStatus,
+        callbackNotes: candidatePatch.notes,
+        followUpAt: candidatePatch.next_follow_up_at,
+        interviewAt: isInterviewStatus ? (atIso || "") : "",
+        statusHistory: Array.isArray(nextAssessment.statusHistory) ? nextAssessment.statusHistory : [],
+        pipelineStage: nextAssessment.pipelineStage
+      });
+      const currentDraft = getCandidateDraftState(currentCandidate);
+      await api(`/company/candidates/${encodeURIComponent(linkedCandidateId)}`, token, "PATCH", {
+        patch: {
+          ...candidatePatch,
+          draft_payload: nextDraftPayload,
+          screening_answers: currentDraft.jdScreeningAnswers || parsePortalObjectField(currentCandidate?.screening_answers || currentCandidate?.screeningAnswers)
+        }
+      }).catch(() => null);
+    }
     await loadWorkspace();
     if (options.closeModal !== false) setAssessmentStatusId("");
     setStatus(statusTarget, `Updated status for ${assessment?.candidateName || "candidate"}.`, "ok");
