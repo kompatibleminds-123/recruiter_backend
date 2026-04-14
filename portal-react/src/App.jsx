@@ -2172,7 +2172,7 @@ function AssignModal({ open, applicant, users, jobs, onClose, onSave, title = "A
     setRecruiterId("");
     setJdTitle(applicant?.jd_title || applicant?.jdTitle || "");
     setStatus("");
-  }, [open, applicant]);
+  }, [open, applicant?.id]);
 
   if (!open) return null;
 
@@ -2677,7 +2677,7 @@ function ClientFeedbackModal({ open, item, onClose, onSave }) {
     setStatus(normalizeAssessmentStatusLabel(feedbackMeta.status || assessment?.candidateStatus));
     setFeedback("");
     setInterviewAt(toDateInputValue(assessment?.interviewAt || ""));
-  }, [open, item]);
+  }, [open, item?.id]);
 
   if (!open) return null;
   const showCalendar = isInterviewAlignedStatus(status);
