@@ -1417,6 +1417,27 @@ function escapeHtml(value) {
     .replace(/'/g, "&#39;");
 }
 
+function formatExcelMultilineCell(value) {
+  const raw = String(value ?? "");
+  if (!raw) return "";
+  // Preserve existing formulas (e.g. HYPERLINK) and avoid double-wrapping.
+  if (raw.startsWith("=")) return raw;
+  if (!/\r?\n/.test(raw)) return raw;
+  const lines = raw.split(/\r?\n/).map((line) => String(line ?? ""));
+  const parts = [];
+  lines.forEach((line, idx) => {
+    const escaped = String(line).replace(/\"/g, "\"\"");
+    parts.push(`\"${escaped}\"`);
+    if (idx < lines.length - 1) parts.push("CHAR(10)");
+  });
+  // `"a"&CHAR(10)&"b"` (blank lines work because "" is a valid segment)
+  return `=${parts.join("&")}`;
+}
+
+function normalizeExcelClipboardCell(value) {
+  return formatExcelMultilineCell(String(value ?? "").replace(/\t/g, " "));
+}
+
 function getCapturedOutcome(candidate, assessment) {
   return normalizeAttemptOutcomeLabel(candidate?.last_contact_outcome || "No outcome");
 }
@@ -5814,7 +5835,10 @@ function PortalApp({ token, onLogout }) {
   async function copyCandidatesExcel() {
     const rows = buildCandidateUniverseCopyRows();
     const preset = buildCapturedExcelRows(rows, activeCopyPresetId || copySettings.excelPreset, copySettings);
-    const lines = [preset.headers.join("\t"), ...preset.rows.map((row) => row.map((cell) => String(cell || "").replace(/\t/g, " ").replace(/\r?\n/g, " ")).join("\t"))].join("\n");
+    const lines = [
+      preset.headers.join("\t"),
+      ...preset.rows.map((row) => row.map((cell) => normalizeExcelClipboardCell(cell)).join("\t"))
+    ].join("\n");
     await copyText(lines);
     setStatus("workspace", "Candidate search results copied in Excel format.", "ok");
   }
@@ -5999,7 +6023,10 @@ function PortalApp({ token, onLogout }) {
       ? row
       : [...row, getCapturedExportFieldValue({ cv_link: getClientShareCvText(rows[index] || {}) }, "cv_link")]
     ));
-    const lines = [headers.join("\t"), ...outputRows.map((row) => row.map((cell) => String(cell || "").replace(/\t/g, " ").replace(/\r?\n/g, " ")).join("\t"))].join("\n");
+    const lines = [
+      headers.join("\t"),
+      ...outputRows.map((row) => row.map((cell) => normalizeExcelClipboardCell(cell)).join("\t"))
+    ].join("\n");
     await copyText(lines);
     setStatus("clientShare", "Selected profiles copied as tracker in the chosen preset.", "ok");
   }
@@ -7517,7 +7544,7 @@ function PortalApp({ token, onLogout }) {
                   <label className="full">
                     <span>Email intro</span>
                     <textarea value={clientShareDraft.introText || ""} onChange={(e) => setClientShareDraft((current) => ({ ...current, introText: e.target.value }))} placeholder={getClientShareIntroText()} />
-                    <span className="field-help">Default intro admin Preset Settings mein set karega. Yahan likhoge to sirf is share ke liye override hoga.</span>
+                    <span className="field-help">Default intro is configured by admin in Preset Settings. Writing here overrides it only for this share.</span>
                   </label>
                   <label className="full">
                     <span>Selected preset columns</span>
@@ -7527,7 +7554,7 @@ function PortalApp({ token, onLogout }) {
                   <label className="full">
                     <span>Signature text</span>
                     <textarea value={clientShareDraft.signatureText || ""} onChange={(e) => setClientShareDraft((current) => ({ ...current, signatureText: e.target.value }))} placeholder={fillClientShareTemplate(copySettings.clientShareSignatureText || DEFAULT_COPY_SETTINGS.clientShareSignatureText, getClientShareContext())} />
-                    <span className="field-help">Normal text only. Font email body jaisa hi rahega.</span>
+                    <span className="field-help">Plain text only. It will use the same font as the email body.</span>
                   </label>
                   <label><span>Signature link 1 text</span><input value={clientShareDraft.signatureLinkLabel || ""} onChange={(e) => setClientShareDraft((current) => ({ ...current, signatureLinkLabel: e.target.value }))} placeholder="Kompatible Minds" /></label>
                   <label><span>Signature link 1 URL</span><input value={clientShareDraft.signatureLinkUrl || ""} onChange={(e) => setClientShareDraft((current) => ({ ...current, signatureLinkUrl: e.target.value }))} placeholder="https://kompatibleminds.com" /></label>
