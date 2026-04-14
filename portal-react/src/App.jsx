@@ -1672,7 +1672,7 @@ function getCapturedExportFieldValue(item = {}, field = "") {
     case "lwd_or_doj": return item.lwd_or_doj || "";
     case "combined_assessment_insights": return buildCombinedAssessmentInsightsForExportV2(item);
     case "screening_remarks": return item.screening_remarks || buildScreeningRemarksForExport(item);
-    case "linkedin": return item.linkedin || "";
+    case "linkedin": return item.linkedin || item.linkedinUrl || getCandidateDraftState(item).linkedin || "";
     case "client_name": return item.client_name || "";
     case "jd_title": return item.jd_title || item.role || "";
     case "target_role_open_position": return item.jd_title || item.role || "";
@@ -1957,6 +1957,7 @@ function buildClientPortalTrackerRows(items = [], cvTextByAssessmentId = {}) {
   return (items || []).map((item, index) => {
     const assessment = item.raw?.assessment || item.assessment || item;
     const candidate = item.raw?.candidate || {};
+    const candidateDraft = getCandidateDraftState(candidate);
     const questionAnswers = getAssessmentQuestionAnswers(assessment)
       .map((pair) => `${pair.question}: ${pair.answer}`)
       .join("\n");
@@ -1990,7 +1991,7 @@ function buildClientPortalTrackerRows(items = [], cvTextByAssessmentId = {}) {
         reason_of_change: assessment.reasonForChange || candidate.reason_of_change || ""
       }),
       notes: recruiterNotes || assessment.callbackNotes || "",
-      linkedin: assessment.linkedinUrl || item.linkedin || candidate.linkedin || "",
+      linkedin: assessment.linkedinUrl || item.linkedin || candidate.linkedin || candidateDraft.linkedin || "",
       jd_title: assessment.jdTitle || item.position || item.role || "",
       client_name: assessment.clientName || item.clientName || "",
       outcome: assessment.candidateStatus || item.candidateStatus || "",
@@ -3670,7 +3671,7 @@ function PortalApp({ token, onLogout }) {
         other_standard_questions: screeningSummary,
         reason_of_change: item.reasonForChange || ""
       }),
-      linkedin: item.linkedinUrl || "",
+      linkedin: item.linkedinUrl || linkedCandidate?.linkedin || linkedCandidateDraft?.linkedin || "",
       jd_title: item.jdTitle || "",
       client_name: item.clientName || "",
       outcome: item.candidateStatus || "",
