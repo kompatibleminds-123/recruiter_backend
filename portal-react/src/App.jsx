@@ -5360,27 +5360,33 @@ function PortalApp({ token, onLogout }) {
     setStatus("intake", "Applicant intake secret rotated.", "ok");
   }
 
+  function resetJobDraftBlank() {
+    setSelectedJobId("");
+    setJobDraft({
+      id: "",
+      title: "",
+      clientName: "",
+      ownerRecruiterId: "",
+      ownerRecruiterName: "",
+      assignedRecruiters: [],
+      aboutCompany: "",
+      location: "",
+      workMode: "",
+      jobDescription: "",
+      mustHaveSkills: "",
+      redFlags: "",
+      recruiterNotes: "",
+      standardQuestions: "",
+      jdShortcuts: ""
+    });
+    setJobShortcutKey("");
+    setJobShortcutValue("");
+  }
+
   function loadJobIntoDraft(jobId) {
     const job = (state.jobs || []).find((item) => String(item.id) === String(jobId));
     if (!job) {
-      setSelectedJobId("");
-      setJobDraft({
-        id: "",
-        title: "",
-        clientName: "",
-        ownerRecruiterId: "",
-        ownerRecruiterName: "",
-        assignedRecruiters: [],
-        aboutCompany: "",
-        location: "",
-        workMode: "",
-        jobDescription: "",
-        mustHaveSkills: "",
-        redFlags: "",
-        recruiterNotes: "",
-        standardQuestions: "",
-        jdShortcuts: ""
-      });
+      resetJobDraftBlank();
       return;
     }
     setSelectedJobId(String(job.id || ""));
@@ -5435,6 +5441,58 @@ function PortalApp({ token, onLogout }) {
     await loadWorkspace();
     setSelectedJobId(String(result?.id || jobDraft.id || ""));
     setStatus("jobs", "JD saved.", "ok");
+  }
+
+  async function saveJobDraftAsNew() {
+    setStatus("jobs", "Saving as new JD...");
+    const isAdmin = String(state.user?.role || "").toLowerCase() === "admin";
+    const ownerRecruiterId = isAdmin ? jobDraft.ownerRecruiterId : String(state.user?.id || "");
+    const ownerRecruiterName = isAdmin ? jobDraft.ownerRecruiterName : String(state.user?.name || "");
+    const primaryRecruiter = ownerRecruiterId
+      ? [{ id: ownerRecruiterId, name: ownerRecruiterName || "", primary: true }]
+      : [];
+    const additionalRecruiters = isAdmin && Array.isArray(jobDraft.assignedRecruiters) ? jobDraft.assignedRecruiters : [];
+    const dedupedRecruiters = new Map();
+    [...primaryRecruiter, ...additionalRecruiters].forEach((item) => {
+      const id = String(item?.id || "").trim();
+      if (!id) return;
+      dedupedRecruiters.set(id, {
+        id,
+        name: String(item?.name || "").trim(),
+        primary: id === String(ownerRecruiterId || "").trim()
+      });
+    });
+
+    const result = await api("/company/jds", token, "POST", {
+      job: {
+        ...jobDraft,
+        // Force-create a new JD even if user is currently editing an existing one.
+        id: `jd-${Date.now()}`,
+        ownerRecruiterId,
+        ownerRecruiterName,
+        assignedRecruiters: Array.from(dedupedRecruiters.values())
+      }
+    });
+    await loadWorkspace();
+    const nextId = String(result?.id || "").trim();
+    if (nextId) {
+      loadJobIntoDraft(nextId);
+    } else {
+      resetJobDraftBlank();
+    }
+    setStatus("jobs", "Saved as a new JD.", "ok");
+  }
+
+  async function deleteSelectedJobDraft() {
+    const jobId = String(selectedJobId || jobDraft.id || "").trim();
+    if (!jobId) return;
+    const confirmed = window.confirm("Delete this JD? This cannot be undone.");
+    if (!confirmed) return;
+    setStatus("jobs", "Deleting JD...");
+    await api("/company/jds", token, "DELETE", { jobId });
+    await loadWorkspace();
+    resetJobDraftBlank();
+    setStatus("jobs", "JD deleted.", "ok");
   }
 
   function downloadJobDraft() {
@@ -7766,10 +7824,28 @@ function PortalApp({ token, onLogout }) {
                     Upload JD
                     <input type="file" accept=".txt,.md,.doc,.docx,.pdf" hidden onChange={(e) => { const file = e.target.files?.[0]; if (file) void handleJdUpload(file); }} />
                   </label>
+                  <button className="ghost-btn" onClick={() => resetJobDraftBlank()}>New blank JD</button>
                   <button onClick={() => applySelectedJobToInterview()}>Apply generated JD</button>
                   <button onClick={() => generateJdFromText()}>Generate JD from text</button>
                   <button onClick={() => downloadJobDraft()}>Download JD</button>
-                  <button onClick={() => void saveJobDraft()}>Save JD</button>
+                  <button onClick={() => void saveJobDraft()}>{selectedJobId ? "Update JD" : "Save JD"}</button>
+                  <button
+                    className="ghost-btn"
+                    disabled={!String(jobDraft.title || "").trim() || !String(jobDraft.jobDescription || "").trim()}
+                    onClick={() => void saveJobDraftAsNew()}
+                    title="Duplicate current JD as a new saved record"
+                  >
+                    Save as new JD
+                  </button>
+                  {isSettingsAdmin ? (
+                    <button
+                      className="ghost-btn"
+                      disabled={!selectedJobId}
+                      onClick={() => void deleteSelectedJobDraft()}
+                    >
+                      Delete JD
+                    </button>
+                  ) : null}
                 </div>
 
                 <div className="form-grid two-col">
