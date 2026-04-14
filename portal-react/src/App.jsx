@@ -3242,6 +3242,24 @@ function PortalApp({ token, onLogout }) {
     }
   }
 
+  async function refreshWorkspaceNow() {
+    if (!token || workspaceRefreshInFlightRef.current) return;
+    workspaceRefreshInFlightRef.current = true;
+    lastWorkspaceRefreshAtRef.current = Date.now();
+    setStatus("workspace", "Refreshing workspace...", "ok");
+    try {
+      const latestLoader = loadWorkspaceRef.current;
+      if (typeof latestLoader === "function") {
+        await latestLoader();
+      }
+      setStatus("workspace", "Workspace refreshed.", "ok");
+    } catch (error) {
+      setStatus("workspace", String(error?.message || error), "error");
+    } finally {
+      workspaceRefreshInFlightRef.current = false;
+    }
+  }
+
   useEffect(() => {
     void loadWorkspace().catch((error) => setStatus("workspace", String(error?.message || error), "error"));
   }, [token]);
@@ -6313,7 +6331,10 @@ function PortalApp({ token, onLogout }) {
             <div className="section-kicker">{state.user?.companyName || "Company Workspace"}</div>
             <h1>{RECRUITER_PORTAL_LABEL}</h1>
           </div>
-          {statuses.workspace ? <div className={`status inline ${statuses.workspaceKind || ""}`}>{statuses.workspace}</div> : null}
+          <div className="button-row tight">
+            <button className="ghost-btn" onClick={() => void refreshWorkspaceNow()}>Refresh</button>
+            {statuses.workspace ? <div className={`status inline ${statuses.workspaceKind || ""}`}>{statuses.workspace}</div> : null}
+          </div>
         </header>
 
         <RouteErrorBoundary routeKey={location.pathname}>
