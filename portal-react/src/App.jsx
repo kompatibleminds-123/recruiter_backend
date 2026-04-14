@@ -81,6 +81,31 @@ const DEFAULT_COPY_SETTINGS = {
   clientShareSignatureLinkUrl2: ""
 };
 
+function migrateCopySettings(settings = {}) {
+  const next = { ...DEFAULT_COPY_SETTINGS, ...(settings || {}) };
+  const presetColumns = { ...(next.exportPresetColumns || {}) };
+  const attentive = String(presetColumns.attentive_tracker || "").trim();
+  if (attentive && !attentive.includes("|notice_period_indicator")) {
+    const migrated = attentive
+      .split(/\r?\n/)
+      .map((line) => {
+        const trimmed = String(line || "").trim();
+        if (!trimmed) return "";
+        const parts = trimmed.split("|");
+        if (parts.length < 2) return trimmed;
+        const field = String(parts[parts.length - 1] || "").trim();
+        if (field !== "notice_period") return trimmed;
+        parts[parts.length - 1] = "notice_period_indicator";
+        return parts.join("|");
+      })
+      .filter(Boolean)
+      .join("\n");
+    presetColumns.attentive_tracker = migrated;
+  }
+  next.exportPresetColumns = presetColumns;
+  return next;
+}
+
 const AI_SEARCH_EXAMPLE_PROMPTS = [
   "AE in Bangalore",
   "Head of Sales",
@@ -1581,7 +1606,26 @@ function buildCombinedAssessmentInsightsForExport(item = {}) {
 
 function buildScreeningRemarksForExport(item = {}) {
   const otherStandardQuestions = String(item.other_standard_questions || item.last_contact_notes || "").trim();
-  const reasonOfChangeValue = String(item.reason_of_change || item.reasonForChange || item.reason_for_change || "").trim();
+  const draft = getCandidateDraftState(item);
+  const reasonOfChangeValue = String(
+    item.reason_of_change
+    || item.reasonForChange
+    || item.reason_for_change
+    || draft.reasonForChange
+    || ""
+  ).trim();
+  const meta = decodePortalApplicantMetadata(item);
+  const cvResult = meta?.cvAnalysisCache?.result && typeof meta.cvAnalysisCache.result === "object" ? meta.cvAnalysisCache.result : null;
+  const highlights = Array.isArray(item.cv_highlights)
+    ? item.cv_highlights
+    : Array.isArray(item.highlights)
+      ? item.highlights
+      : Array.isArray(item.cvAnalysis?.highlights)
+        ? item.cvAnalysis.highlights
+        : Array.isArray(cvResult?.highlights)
+          ? cvResult.highlights
+          : [];
+  const strongPoints = highlights.map((value) => String(value || "").trim()).filter(Boolean).slice(0, 2);
   const fixedFieldLabels = new Set([
     "current ctc",
     "expected ctc",
@@ -1636,6 +1680,10 @@ function buildScreeningRemarksForExport(item = {}) {
   const finalReasonOfChange = inlineReasonOfChange || reasonOfChangeValue;
   const parts = [];
   if (finalReasonOfChange) parts.push(`Reason of change: *${finalReasonOfChange}*`);
+  if (strongPoints.length) {
+    parts.push("Strong points:");
+    strongPoints.forEach((point, index) => parts.push(`${index + 1}. *${point}*`));
+  }
   if (questionLines.length) parts.push(...questionLines);
   return parts.join("\n");
 }
@@ -1670,13 +1718,15 @@ function getCapturedExportFieldValue(item = {}, field = "") {
     case "expected_ctc": return item.expected_ctc || "";
     case "notice_period": return item.notice_period || "";
     case "notice_period_indicator": {
-      const notice = String(item.notice_period || item.noticePeriod || "").trim();
-      const lwdOrDoj = String(item.lwd_or_doj || item.lwdOrDoj || "").trim();
+      const draft = getCandidateDraftState(item);
+      const notice = String(item.notice_period || item.noticePeriod || draft.noticePeriod || "").trim();
+      const lwdOrDoj = String(item.lwd_or_doj || item.lwdOrDoj || draft.lwdOrDoj || "").trim();
       const offerAmount = String(
         item.offer_in_hand
         || item.offerInHand
         || item.offerAmount
         || item.offer_amount
+        || draft.offerInHand
         || ""
       ).trim();
       return [
@@ -1701,7 +1751,15 @@ function getCapturedExportFieldValue(item = {}, field = "") {
     case "other_pointers": return item.other_pointers || "";
     case "other_standard_questions": return item.other_standard_questions || item.last_contact_notes || "";
     case "remarks": return item.recruiter_context_notes || item.notes || "";
-    case "cv_link": return item.cv_link || item.cv_url || item.cvUrl || "";
+    case "cv_link": {
+      const value = String(item.cv_link || item.cv_url || item.cvUrl || "").trim();
+      if (!value) return "";
+      if (/^https?:\/\//i.test(value)) {
+        const safe = value.replace(/\"/g, "\"\"");
+        return `=HYPERLINK(\"${safe}\",\"Open CV\")`;
+      }
+      return value;
+    }
     case "cv_url": return item.cv_url || item.cvUrl || item.cv_link || "";
     default: return item[key] || "";
   }
@@ -3144,9 +3202,9 @@ function PortalApp({ token, onLogout }) {
   const [copySettings, setCopySettings] = useState(() => {
     try {
       const saved = window.localStorage.getItem(COPY_SETTINGS_STORAGE_KEY);
-      return saved ? { ...DEFAULT_COPY_SETTINGS, ...JSON.parse(saved) } : DEFAULT_COPY_SETTINGS;
+      return migrateCopySettings(saved ? JSON.parse(saved) : {});
     } catch {
-      return DEFAULT_COPY_SETTINGS;
+      return migrateCopySettings({});
     }
   });
   const exportPresetOptions = useMemo(() => [
@@ -3361,7 +3419,7 @@ function PortalApp({ token, onLogout }) {
     });
     setClientUsers(clientUsersResult.clientUsers || []);
     if (sharedPresetResult) {
-      setCopySettings((current) => ({ ...DEFAULT_COPY_SETTINGS, ...current, ...sharedPresetResult }));
+      setCopySettings((current) => migrateCopySettings({ ...current, ...sharedPresetResult }));
     }
     setStatus("workspace", "Portal loaded.", "ok");
   }
@@ -3679,6 +3737,11 @@ function PortalApp({ token, onLogout }) {
       notice_period: item.noticePeriod || "",
       lwd_or_doj: item.lwdOrDoj || item.offerDoj || linkedCandidate?.lwd_or_doj || linkedCandidateDraft?.lwdOrDoj || "",
       offer_in_hand: item.offerInHand || item.offerAmount || linkedCandidate?.offer_in_hand || linkedCandidateDraft?.offerInHand || "",
+      cv_highlights: Array.isArray(item?.cvAnalysis?.highlights)
+        ? item.cvAnalysis.highlights
+        : Array.isArray(item?.cv_analysis?.highlights)
+          ? item.cv_analysis.highlights
+          : [],
       recruiter_context_notes: item.recruiterNotes || "",
       other_pointers: item.otherPointers || "",
       notes: item.recruiterNotes || item.callbackNotes || "",
@@ -5822,7 +5885,10 @@ function PortalApp({ token, onLogout }) {
     const preset = buildCapturedExcelRows(rowsWithCv, clientShareDraft.presetId || copySettings.excelPreset, copySettings);
     const hasCvColumn = preset.headers.some((header) => String(header || "").trim().toLowerCase().includes("cv"));
     const headers = hasCvColumn ? preset.headers : [...preset.headers, "CV Link"];
-    const outputRows = preset.rows.map((row, index) => (hasCvColumn ? row : [...row, getClientShareCvText(rows[index] || {})]));
+    const outputRows = preset.rows.map((row, index) => (hasCvColumn
+      ? row
+      : [...row, getCapturedExportFieldValue({ cv_link: getClientShareCvText(rows[index] || {}) }, "cv_link")]
+    ));
     const lines = [headers.join("\t"), ...outputRows.map((row) => row.map((cell) => String(cell || "").replace(/\t/g, " ").replace(/\r?\n/g, " ")).join("\t"))].join("\n");
     await copyText(lines);
     setStatus("clientShare", "Selected profiles copied as tracker in the chosen preset.", "ok");
