@@ -2267,25 +2267,31 @@ function NotesModal({ open, candidate, onClose, onPatch, onParse }) {
 
 function AttemptsModal({ open, candidate, attempts, onClose, onRefresh, onSave }) {
   const [outcome, setOutcome] = useState("");
-  const [notes, setNotes] = useState("");
+  const [inferText, setInferText] = useState("");
+  const [remarks, setRemarks] = useState("");
   const [nextFollowUpAt, setNextFollowUpAt] = useState("");
   const [status, setStatus] = useState("");
 
   useEffect(() => {
     if (!open || !candidate) return;
     setOutcome("");
-    setNotes("");
+    setInferText("");
+    setRemarks("");
     setNextFollowUpAt("");
     setStatus("");
   }, [open, candidate]);
 
   useEffect(() => {
-    if (outcome !== "Call later") setNextFollowUpAt("");
-    if (!String(notes || "").trim()) {
-      const suggested = buildDefaultAttemptRemark(outcome);
-      if (suggested) setNotes(suggested);
+    const parsed = inferAttemptOutcomeAndFollowUp(inferText);
+    if (parsed.outcome && parsed.outcome !== outcome) setOutcome(parsed.outcome);
+    if (parsed.outcome === "Call later" && parsed.followUpAt) {
+      setNextFollowUpAt(parsed.followUpAt);
+      return;
     }
-  }, [outcome]);
+    if ((parsed.outcome && parsed.outcome !== "Call later") || (outcome && outcome !== "Call later")) {
+      setNextFollowUpAt("");
+    }
+  }, [inferText]);
 
   if (!open || !candidate) return null;
 
@@ -2325,20 +2331,24 @@ function AttemptsModal({ open, candidate, attempts, onClose, onRefresh, onSave }
           <div className="attempt-form">
             <h4>Log attempt</h4>
             <label><span>Outcome</span><select value={outcome} onChange={(e) => {
-              setOutcome(e.target.value);
+              const selected = e.target.value;
+              setOutcome(selected);
+              setInferText(selected || "");
             }}>{[
               <option key="" value="">Select outcome</option>,
               ...ATTEMPT_OUTCOME_OPTIONS.filter((option) => option !== "No outcome").map((option) => <option key={option} value={option}>{option}</option>)
             ]}</select></label>
-            <label><span>Remarks</span><textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Busy in production, communication bad, asked to call tomorrow..." /></label>
+            <label><span>Infer Box</span><textarea value={inferText} onChange={(e) => setInferText(e.target.value)} placeholder="Busy, call tomorrow 5 PM, duplicate, screening reject..." /></label>
+            <label><span>Manual Remarks</span><textarea value={remarks} onChange={(e) => setRemarks(e.target.value)} placeholder="Busy in production, communication bad, asked to call tomorrow..." /></label>
             <label><span>Next follow-up</span><input type="datetime-local" value={nextFollowUpAt} onChange={(e) => setNextFollowUpAt(e.target.value)} disabled={outcome !== "Call later"} /></label>
             {status ? <div className="status">{status}</div> : null}
             <div className="button-row">
                 <button onClick={async () => {
                   setStatus("Saving attempt...");
                   try {
-                    const finalOutcome = String(outcome || "").trim();
-                    const finalFollowUpAt = finalOutcome === "Call later" ? nextFollowUpAt : "";
+                    const parsed = inferAttemptOutcomeAndFollowUp(inferText);
+                    const finalOutcome = String(parsed.outcome || outcome || "").trim();
+                    const finalFollowUpAt = finalOutcome === "Call later" ? (parsed.followUpAt || nextFollowUpAt) : "";
                     if (!finalOutcome) {
                       throw new Error("Select attempt outcome first.");
                     }
@@ -2347,13 +2357,15 @@ function AttemptsModal({ open, candidate, attempts, onClose, onRefresh, onSave }
                     }
                     await onSave({
                       outcome: finalOutcome,
-                      notes,
+                      infer_text: inferText,
+                      remarks,
                       next_follow_up_at: finalFollowUpAt,
                       derived_status: ""
                     });
                   setStatus("Attempt saved.");
                   setOutcome("");
-                  setNotes("");
+                  setInferText("");
+                  setRemarks("");
                   setNextFollowUpAt("");
                   await onRefresh();
                 } catch (error) {
@@ -4453,8 +4465,9 @@ function PortalApp({ token, onLogout }) {
   async function saveAttempt(patch) {
     const savedAt = new Date().toISOString();
     const finalOutcome = String(patch.outcome || "").trim();
-    const finalRemarks = String(patch.notes || "").trim();
-    const storedNote = finalRemarks || buildDefaultAttemptRemark(finalOutcome) || finalOutcome;
+    const finalInferText = String(patch.infer_text || "").trim();
+    const finalRemarks = String(patch.remarks || patch.notes || "").trim();
+    const storedNote = [finalInferText, finalRemarks ? `Remarks: ${finalRemarks}` : ""].filter(Boolean).join("\n") || buildDefaultAttemptRemark(finalOutcome) || finalOutcome;
     const historyLine = buildAttemptHistoryLine({
       outcome: finalOutcome,
       remarks: finalRemarks,
