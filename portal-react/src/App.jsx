@@ -6247,6 +6247,8 @@ function PortalApp({ token, onLogout }) {
     const id = label.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "") || `custom_${Date.now()}`;
     setCopySettings((current) => ({
       ...current,
+      // Auto-select the newly created preset so admin can edit it right away.
+      excelPreset: id,
       customExportPresets: [
         ...((current.customExportPresets || []).filter((item) => String(item.id) !== String(id))),
         { id, label, clientName: String(newPresetDraft.clientName || "").trim(), columns }
@@ -6263,7 +6265,8 @@ function PortalApp({ token, onLogout }) {
     }
     setCopySettings((current) => ({
       ...current,
-      customExportPresets: (current.customExportPresets || []).filter((item) => String(item.id) !== String(id))
+      customExportPresets: (current.customExportPresets || []).filter((item) => String(item.id) !== String(id)),
+      excelPreset: String(current.excelPreset) === String(id) ? "compact_recruiter" : current.excelPreset
     }));
   }
 
@@ -8034,6 +8037,19 @@ function PortalApp({ token, onLogout }) {
                     <p className="muted">Available placeholders: copy templates use {`{{index}} {{name}} {{jd_title}} {{company}} {{outcome}} {{recruiter_notes}} {{location}} {{phone}} {{email}} {{source}} {{follow_up_at}}`}.</p>
                     <div className="button-row">
                       {isSettingsAdmin ? <button onClick={() => void saveSharedCopySettings()}>Save existing preset changes</button> : null}
+                      {isSettingsAdmin && selectedCustomPreset ? (
+                        <button
+                          className="ghost-btn"
+                          onClick={() => {
+                            const confirmed = window.confirm(`Remove preset "${selectedCustomPreset.label}"?`);
+                            if (!confirmed) return;
+                            removeCustomPreset(selectedCustomPreset.id);
+                            setStatus("settings", "Preset removed. Save settings to apply for the team.", "ok");
+                          }}
+                        >
+                          Remove selected preset
+                        </button>
+                      ) : null}
                     </div>
                   </div>
                   <div className="settings-subsection">
@@ -8054,22 +8070,7 @@ function PortalApp({ token, onLogout }) {
                       <button className="ghost-btn" onClick={addCustomPreset}>Create preset</button>
                       <button onClick={() => void saveSharedCopySettings()}>Save new preset</button>
                     </div> : null}
-                    <div className="stack-list compact">
-                      {(copySettings.customExportPresets || []).map((preset) => (
-                        <article className="item-card compact-card" key={preset.id}>
-                          <div className="item-card__top">
-                            <div>
-                              <h3>{preset.label}</h3>
-                              {preset.clientName ? <p className="muted">Client preset: {preset.clientName}</p> : <p className="muted">Internal / all-client preset</p>}
-                              <div className="candidate-snippet">{preset.columns}</div>
-                            </div>
-                            {isSettingsAdmin ? <div className="button-row">
-                              <button className="ghost-btn" onClick={() => removeCustomPreset(preset.id)}>Remove</button>
-                            </div> : null}
-                          </div>
-                        </article>
-                      ))}
-                    </div>
+                    <p className="muted">After creating a preset, select it from the dropdown above to view, edit, or remove it.</p>
                   </div>
                   <div className="settings-subsection">
                     <div className="section-kicker">Direct Share Email Preset</div>
