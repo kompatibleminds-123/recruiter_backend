@@ -45,6 +45,7 @@ create table if not exists public.assessments (
   recruiter_id uuid not null references public.users(id) on delete cascade,
   recruiter_name text,
   recruiter_email text,
+  candidate_id uuid,
   candidate_name text,
   phone_number text,
   email_id text,
@@ -94,4 +95,5 @@ create index if not exists idx_sessions_user_id on public.sessions(user_id);
 create index if not exists idx_company_jobs_company_id on public.company_jobs(company_id);
 create index if not exists idx_assessments_company_id on public.assessments(company_id);
 create index if not exists idx_assessments_recruiter_id on public.assessments(recruiter_id);
+create index if not exists idx_assessments_candidate_id on public.assessments(candidate_id);
 create index if not exists idx_assessments_generated_at on public.assessments(generated_at desc);
