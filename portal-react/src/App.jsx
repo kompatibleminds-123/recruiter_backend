@@ -1013,6 +1013,16 @@ function buildAssessmentJourneyEntries(assessment, contactAttempts = [], candida
     .sort((a, b) => new Date(a.at) - new Date(b.at));
 }
 
+function getLatestAssessmentStatusPreview(assessment = {}) {
+  const statusHistory = Array.isArray(assessment?.statusHistory) ? assessment.statusHistory : [];
+  const latest = statusHistory.length ? statusHistory[statusHistory.length - 1] : null;
+  return {
+    status: String(latest?.status || assessment?.candidateStatus || "").trim(),
+    remarks: String(latest?.manualRemarks || "").trim(),
+    at: String(latest?.at || assessment?.updatedAt || "").trim()
+  };
+}
+
 function syncAssessmentNotesWithStatus(currentNotes, statusValue, atValue = "", extra = {}) {
   const lines = String(currentNotes || "").split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
   const nextLine = buildAssessmentStatusNoteLine(statusValue, atValue, extra).trim();
@@ -6863,6 +6873,10 @@ function PortalApp({ token, onLogout }) {
               <div className="stack-list">
                 {!filteredAssessments.length ? <div className="empty-state">No assessments saved yet.</div> : filteredAssessments.map((item) => (
                   <article className={`item-card compact-card ${selectedAssessmentIds.includes(String(item.id)) ? "selected-card" : ""}`} key={item.id}>
+                    {(() => {
+                      const latestStatusPreview = getLatestAssessmentStatusPreview(item);
+                      return (
+                        <>
                     <div className="assessment-select-row">
                       <label className="checkbox-pill">
                         <input type="checkbox" checked={selectedAssessmentIds.includes(String(item.id))} onChange={() => toggleAssessmentSelection(item.id)} />
@@ -6880,6 +6894,14 @@ function PortalApp({ token, onLogout }) {
                             item.updatedAt ? `Updated ${new Date(item.updatedAt).toLocaleString()}` : ""
                           ].filter(Boolean).join(" | ")}
                         </div>
+                        {(latestStatusPreview.status || latestStatusPreview.remarks) ? (
+                          <div className="feedback-preview">
+                            <div className="feedback-preview__label">Latest saved update</div>
+                            {latestStatusPreview.status ? <div>{`Status: ${latestStatusPreview.status}`}</div> : null}
+                            {latestStatusPreview.remarks ? <div>{`Remarks: ${latestStatusPreview.remarks}`}</div> : null}
+                            {latestStatusPreview.at ? <div className="muted">{new Date(latestStatusPreview.at).toLocaleString()}</div> : null}
+                          </div>
+                        ) : null}
                         {item.clientFeedback ? (
                           <div className="feedback-preview">
                             <div className="feedback-preview__label">Client feedback</div>
@@ -6897,6 +6919,9 @@ function PortalApp({ token, onLogout }) {
                       <button onClick={() => reuseAssessmentAsNew(item)}>Reuse as new</button>
                       <button className="ghost-btn" onClick={() => void deleteAssessmentItem(item)}>Delete</button>
                     </div>
+                        </>
+                      );
+                    })()}
                   </article>
                 ))}
               </div>
