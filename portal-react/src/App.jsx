@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { NavLink, Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import BrandLogo from "./components/branding/BrandLogo";
 import {
@@ -3080,6 +3080,9 @@ function PortalApp({ token, onLogout }) {
   const [drilldownState, setDrilldownState] = useState({ open: false, title: "", items: [], request: null });
   const [clientFeedbackItem, setClientFeedbackItem] = useState(null);
   const [attempts, setAttempts] = useState([]);
+  const workspaceRefreshInFlightRef = useRef(false);
+  const lastWorkspaceRefreshAtRef = useRef(0);
+  const loadWorkspaceRef = useRef(null);
   const [selectedJobId, setSelectedJobId] = useState("");
   const [jobShortcutKey, setJobShortcutKey] = useState("");
   const [jobShortcutValue, setJobShortcutValue] = useState("");
@@ -3218,8 +3221,53 @@ function PortalApp({ token, onLogout }) {
     setStatus("workspace", "Portal loaded.", "ok");
   }
 
+  loadWorkspaceRef.current = loadWorkspace;
+
+  async function refreshWorkspaceSilently(reason = "manual") {
+    if (!token || workspaceRefreshInFlightRef.current) return;
+    const now = Date.now();
+    const throttleMs = reason === "poll" ? 20000 : 4000;
+    if (now - lastWorkspaceRefreshAtRef.current < throttleMs) return;
+    workspaceRefreshInFlightRef.current = true;
+    lastWorkspaceRefreshAtRef.current = now;
+    try {
+      const latestLoader = loadWorkspaceRef.current;
+      if (typeof latestLoader === "function") {
+        await latestLoader();
+      }
+    } catch (error) {
+      setStatus("workspace", String(error?.message || error), "error");
+    } finally {
+      workspaceRefreshInFlightRef.current = false;
+    }
+  }
+
   useEffect(() => {
     void loadWorkspace().catch((error) => setStatus("workspace", String(error?.message || error), "error"));
+  }, [token]);
+
+  useEffect(() => {
+    if (!token) return undefined;
+    const handleWindowFocus = () => {
+      if (typeof document !== "undefined" && document.visibilityState === "hidden") return;
+      void refreshWorkspaceSilently("focus");
+    };
+    const handleVisibilityChange = () => {
+      if (typeof document !== "undefined" && document.visibilityState === "visible") {
+        void refreshWorkspaceSilently("visible");
+      }
+    };
+    const poller = window.setInterval(() => {
+      if (typeof document !== "undefined" && document.visibilityState === "hidden") return;
+      void refreshWorkspaceSilently("poll");
+    }, 20000);
+    window.addEventListener("focus", handleWindowFocus);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => {
+      window.clearInterval(poller);
+      window.removeEventListener("focus", handleWindowFocus);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
   }, [token]);
 
   useEffect(() => {
