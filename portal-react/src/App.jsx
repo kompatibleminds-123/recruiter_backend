@@ -1737,7 +1737,10 @@ function getCapturedExportFieldValue(item = {}, field = "") {
     }
     case "lwd_or_doj": return item.lwd_or_doj || "";
     case "combined_assessment_insights": return buildCombinedAssessmentInsightsForExportV2(item);
-    case "screening_remarks": return item.screening_remarks || buildScreeningRemarksForExport(item);
+    case "screening_remarks": {
+      const next = buildScreeningRemarksForExport(item);
+      return next || item.screening_remarks || "";
+    }
     case "linkedin": return item.linkedin || item.linkedinUrl || getCandidateDraftState(item).linkedin || "";
     case "client_name": return item.client_name || "";
     case "jd_title": return item.jd_title || item.role || "";
@@ -3741,7 +3744,9 @@ function PortalApp({ token, onLogout }) {
         ? item.cvAnalysis.highlights
         : Array.isArray(item?.cv_analysis?.highlights)
           ? item.cv_analysis.highlights
-          : [],
+          : Array.isArray(linkedMeta?.cvAnalysisCache?.result?.highlights)
+            ? linkedMeta.cvAnalysisCache.result.highlights
+            : [],
       recruiter_context_notes: item.recruiterNotes || "",
       other_pointers: item.otherPointers || "",
       notes: item.recruiterNotes || item.callbackNotes || "",
