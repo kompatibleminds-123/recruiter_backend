@@ -454,6 +454,7 @@ function buildCandidateDraftPayloadPatch(candidate = {}, patch = {}) {
   if (Object.prototype.hasOwnProperty.call(patch, "company") || Object.prototype.hasOwnProperty.call(patch, "currentCompany")) next.currentCompany = patch.currentCompany ?? patch.company ?? next.currentCompany ?? "";
   if (Object.prototype.hasOwnProperty.call(patch, "role") || Object.prototype.hasOwnProperty.call(patch, "currentDesignation")) next.currentDesignation = patch.currentDesignation ?? patch.role ?? next.currentDesignation ?? "";
   if (Object.prototype.hasOwnProperty.call(patch, "experience") || Object.prototype.hasOwnProperty.call(patch, "totalExperience")) next.totalExperience = patch.totalExperience ?? patch.experience ?? next.totalExperience ?? "";
+  if (Object.prototype.hasOwnProperty.call(patch, "relevantExperience") || Object.prototype.hasOwnProperty.call(patch, "relevant_experience")) next.relevantExperience = patch.relevantExperience ?? patch.relevant_experience ?? next.relevantExperience ?? "";
   if (Object.prototype.hasOwnProperty.call(patch, "highest_education") || Object.prototype.hasOwnProperty.call(patch, "highestEducation")) next.highestEducation = patch.highestEducation ?? patch.highest_education ?? next.highestEducation ?? "";
   if (Object.prototype.hasOwnProperty.call(patch, "current_ctc") || Object.prototype.hasOwnProperty.call(patch, "currentCtc")) next.currentCtc = patch.currentCtc ?? patch.current_ctc ?? next.currentCtc ?? "";
   if (Object.prototype.hasOwnProperty.call(patch, "expected_ctc") || Object.prototype.hasOwnProperty.call(patch, "expectedCtc")) next.expectedCtc = patch.expectedCtc ?? patch.expected_ctc ?? next.expectedCtc ?? "";
@@ -3178,6 +3179,7 @@ function PortalApp({ token, onLogout }) {
     currentCompany: "",
     currentDesignation: "",
     totalExperience: "",
+    relevantExperience: "",
     highestEducation: "",
     currentOrgTenure: "",
     reasonForChange: "",
@@ -4511,6 +4513,7 @@ function PortalApp({ token, onLogout }) {
         currentCompany: newDraftForm.company || "",
         currentDesignation: "",
         totalExperience: "",
+        relevantExperience: "",
         highestEducation: "",
         currentCtc: "",
         expectedCtc: "",
@@ -4686,6 +4689,7 @@ function PortalApp({ token, onLogout }) {
       currentCompany: candidateDraft.currentCompany || matched?.currentCompany || candidate?.company || "",
       currentDesignation: candidateDraft.currentDesignation || matched?.currentDesignation || candidate?.role || "",
       totalExperience: candidateDraft.totalExperience || matched?.totalExperience || candidate?.experience || "",
+      relevantExperience: candidateDraft.relevantExperience || matched?.relevantExperience || "",
       highestEducation: candidateDraft.highestEducation || matched?.highestEducation || candidate?.highest_education || "",
       currentOrgTenure: candidateDraft.currentOrgTenure || matched?.currentOrgTenure || candidate?.current_org_tenure || "",
       reasonForChange: candidateDraft.reasonForChange || matched?.reasonForChange || "",
@@ -4741,6 +4745,7 @@ function PortalApp({ token, onLogout }) {
       currentCompany: assessment?.currentCompany || candidateDraft.currentCompany || matchedCandidate?.company || "",
       currentDesignation: assessment?.currentDesignation || candidateDraft.currentDesignation || matchedCandidate?.role || "",
       totalExperience: assessment?.totalExperience || candidateDraft.totalExperience || matchedCandidate?.experience || "",
+      relevantExperience: assessment?.relevantExperience || candidateDraft.relevantExperience || "",
       highestEducation: assessment?.highestEducation || candidateDraft.highestEducation || matchedCandidate?.highest_education || "",
       currentOrgTenure: assessment?.currentOrgTenure || candidateDraft.currentOrgTenure || matchedCandidate?.current_org_tenure || "",
       reasonForChange: assessment?.reasonForChange || candidateDraft.reasonForChange || "",
@@ -4811,6 +4816,7 @@ function PortalApp({ token, onLogout }) {
       currentCompany: candidate?.company || sourceApplicant?.currentCompany || "",
       currentDesignation: candidate?.role || sourceApplicant?.currentDesignation || "",
       totalExperience: candidate?.experience || sourceApplicant?.totalExperience || "",
+      relevantExperience: "",
       highestEducation: candidate?.highest_education || "",
       currentOrgTenure: candidate?.current_org_tenure || "",
       reasonForChange: candidate?.reason_of_change || "",
@@ -4890,6 +4896,7 @@ function PortalApp({ token, onLogout }) {
         company: interviewForm.currentCompany,
         role: interviewForm.currentDesignation,
         experience: interviewForm.totalExperience,
+        relevant_experience: interviewForm.relevantExperience,
         highest_education: interviewForm.highestEducation,
         current_ctc: interviewForm.currentCtc,
         expected_ctc: interviewForm.expectedCtc,
@@ -4937,6 +4944,7 @@ function PortalApp({ token, onLogout }) {
       company: interviewForm.currentCompany,
       role: interviewForm.currentDesignation,
       experience: interviewForm.totalExperience,
+      relevant_experience: interviewForm.relevantExperience,
       highest_education: interviewForm.highestEducation,
       current_ctc: interviewForm.currentCtc,
       expected_ctc: interviewForm.expectedCtc,
@@ -6191,6 +6199,7 @@ function PortalApp({ token, onLogout }) {
       currentCompany: assessment?.currentCompany || "",
       currentDesignation: assessment?.currentDesignation || "",
       totalExperience: assessment?.totalExperience || "",
+      relevantExperience: assessment?.relevantExperience || "",
       currentOrgTenure: assessment?.currentOrgTenure || "",
       reasonForChange: assessment?.reasonForChange || "",
       clientName: assessment?.clientName || "",
@@ -6226,6 +6235,7 @@ function PortalApp({ token, onLogout }) {
       currentCompany: candidate?.current_company || candidate?.currentCompany || candidate?.company || "",
       currentDesignation: candidate?.current_designation || candidate?.currentDesignation || candidate?.role || "",
       totalExperience: candidate?.total_experience || candidate?.totalExperience || candidate?.experience || "",
+      relevantExperience: candidate?.relevant_experience || candidate?.relevantExperience || "",
       currentOrgTenure: candidate?.current_org_tenure || candidate?.currentOrgTenure || "",
       reasonForChange: candidate?.reason_of_change || candidate?.reasonForChange || "",
       clientName: candidate?.client_name || candidate?.clientName || "",
@@ -7255,7 +7265,7 @@ function PortalApp({ token, onLogout }) {
 
               <Section kicker="Captured Information" title="Candidate Context">
                 <div className="info-grid">
-                  {[["Candidate", interviewForm.candidateName],["Phone", interviewForm.phoneNumber],["Email", interviewForm.emailId],["Location", interviewForm.location],["Current company", interviewForm.currentCompany],["Current designation", interviewForm.currentDesignation],["Experience", interviewForm.totalExperience],["Qualification", interviewForm.highestEducation],["Client", interviewForm.clientName],["JD / role", interviewForm.jdTitle],["Tags", interviewForm.tags]].map(([label, value]) => (
+                  {[["Candidate", interviewForm.candidateName],["Phone", interviewForm.phoneNumber],["Email", interviewForm.emailId],["Location", interviewForm.location],["Current company", interviewForm.currentCompany],["Current designation", interviewForm.currentDesignation],["Total experience", interviewForm.totalExperience],["Relevant experience", interviewForm.relevantExperience],["Qualification", interviewForm.highestEducation],["Client", interviewForm.clientName],["JD / role", interviewForm.jdTitle],["Tags", interviewForm.tags]].map(([label, value]) => (
                     <div className="info-card" key={label}>
                       <div className="info-label">{label}</div>
                       <div className="info-value">{value || "-"}</div>
@@ -7266,7 +7276,7 @@ function PortalApp({ token, onLogout }) {
 
               <Section kicker="Recruiter Inputs" title="Draft Notes">
                 <form className="form-grid two-col" onSubmit={(e) => { e.preventDefault(); }}>
-                  {[["candidateName", "Candidate name"], ["phoneNumber", "Phone"], ["emailId", "Email", "email"], ["location", "Location"], ["currentCompany", "Current company"], ["currentDesignation", "Current designation"], ["totalExperience", "Total experience"], ["highestEducation", "Qualification"]].map(([name, label, type]) => (
+                  {[["candidateName", "Candidate name"], ["phoneNumber", "Phone"], ["emailId", "Email", "email"], ["location", "Location"], ["currentCompany", "Current company"], ["currentDesignation", "Current designation"], ["totalExperience", "Total experience"], ["relevantExperience", "Relevant experience"], ["highestEducation", "Qualification"]].map(([name, label, type]) => (
                     <label key={name}><span>{label}</span><input type={type || "text"} value={interviewForm[name]} onChange={(e) => setInterviewForm((c) => ({ ...c, [name]: e.target.value }))} /></label>
                   ))}
                   <label>
@@ -7332,6 +7342,7 @@ function PortalApp({ token, onLogout }) {
                       <label><span>Offer in hand</span><input value={interviewForm.offerInHand} onChange={(e) => setInterviewForm((c) => ({ ...c, offerInHand: e.target.value }))} /></label>
                       <label><span>LWD / DOJ</span><input value={interviewForm.lwdOrDoj} onChange={(e) => setInterviewForm((c) => ({ ...c, lwdOrDoj: e.target.value }))} /></label>
                       <label><span>Total experience</span><input value={interviewForm.totalExperience} onChange={(e) => setInterviewForm((c) => ({ ...c, totalExperience: e.target.value }))} /></label>
+                      <label><span>Relevant experience</span><input value={interviewForm.relevantExperience} onChange={(e) => setInterviewForm((c) => ({ ...c, relevantExperience: e.target.value }))} /></label>
                       <label><span>Tenure in current org</span><input value={interviewForm.currentOrgTenure} onChange={(e) => setInterviewForm((c) => ({ ...c, currentOrgTenure: e.target.value }))} /></label>
                       <label><span>Reason of change</span><textarea value={interviewForm.reasonForChange} onChange={(e) => setInterviewForm((c) => ({ ...c, reasonForChange: e.target.value }))} /></label>
                       <label><span>Location</span><input value={interviewForm.location} onChange={(e) => setInterviewForm((c) => ({ ...c, location: e.target.value }))} /></label>
@@ -7396,7 +7407,7 @@ function PortalApp({ token, onLogout }) {
                   <button onClick={() => void saveAssessment()}>{interviewMeta.assessmentId ? "Save assessment" : "Create assessment"}</button>
                   <button onClick={() => sendInterviewToSheets()}>Send to Sheets</button>
                   <button onClick={() => exportInterviewAll()}>Export all</button>
-                  <button className="ghost-btn" onClick={() => { setInterviewMeta({ candidateId: "", assessmentId: "" }); setInterviewForm({ candidateName: "", phoneNumber: "", emailId: "", location: "", currentCtc: "", expectedCtc: "", noticePeriod: "", offerInHand: "", lwdOrDoj: "", currentCompany: "", currentDesignation: "", totalExperience: "", currentOrgTenure: "", reasonForChange: "", clientName: "", jdTitle: "", pipelineStage: "Under Interview Process", candidateStatus: "Screening in progress", followUpAt: "", interviewAt: "", recruiterNotes: "", callbackNotes: "", otherPointers: "", tags: "", jdScreeningAnswers: {}, cvAnalysis: null, cvAnalysisApplied: false, statusHistory: [] }); setStatus("interview", ""); }}>Clear draft</button>
+                  <button className="ghost-btn" onClick={() => { setInterviewMeta({ candidateId: "", assessmentId: "" }); setInterviewForm({ candidateName: "", phoneNumber: "", emailId: "", location: "", currentCtc: "", expectedCtc: "", noticePeriod: "", offerInHand: "", lwdOrDoj: "", currentCompany: "", currentDesignation: "", totalExperience: "", relevantExperience: "", currentOrgTenure: "", reasonForChange: "", clientName: "", jdTitle: "", pipelineStage: "Under Interview Process", candidateStatus: "Screening in progress", followUpAt: "", interviewAt: "", recruiterNotes: "", callbackNotes: "", otherPointers: "", tags: "", jdScreeningAnswers: {}, cvAnalysis: null, cvAnalysisApplied: false, statusHistory: [] }); setStatus("interview", ""); }}>Clear draft</button>
                 </div>
               </Section>
             </div>
