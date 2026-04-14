@@ -4137,7 +4137,7 @@ const server = http.createServer(async (req, res) => {
         expiresAt
       });
       const baseUrl = getRequestBaseUrl(req);
-      sendJson(req, res, 200, {
+      sendJson(res, 200, {
         ok: true,
         result: {
           token,
@@ -4146,7 +4146,7 @@ const server = http.createServer(async (req, res) => {
         }
       });
     } catch (error) {
-      sendJson(req, res, 400, { ok: false, error: String(error.message || error) });
+      sendJson(res, 400, { ok: false, error: String(error.message || error) });
     }
     return;
   }

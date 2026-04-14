@@ -3640,8 +3640,9 @@ function PortalApp({ token, onLogout }) {
         .map((pair) => `${pair.question}: ${pair.answer}`)
         .join("\n");
       const linkedMeta = decodePortalApplicantMetadata(linkedCandidate || {});
-      const assessmentStoredFile = item?.cvAnalysis?.storedFile && typeof item.cvAnalysis.storedFile === "object"
-        ? item.cvAnalysis.storedFile
+      const assessmentStoredFileRaw = item?.cvAnalysis?.storedFile || item?.cv_analysis?.storedFile || null;
+      const assessmentStoredFile = assessmentStoredFileRaw && typeof assessmentStoredFileRaw === "object"
+        ? assessmentStoredFileRaw
         : null;
       return {
       id: item.id || "",
