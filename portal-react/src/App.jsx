@@ -1614,6 +1614,36 @@ function buildScreeningRemarksForExport(item = {}) {
     || draft.reasonForChange
     || ""
   ).trim();
+
+  function extractReasonOfChangeFromText(...candidates) {
+    const merged = candidates
+      .flatMap((value) => String(value || "").split(/\r?\n+/))
+      .map((line) => String(line || "").trim())
+      .filter(Boolean);
+    for (let i = 0; i < merged.length; i += 1) {
+      const line = merged[i];
+      if (!/^reason\s+of\s+change\b/i.test(line)) continue;
+      const colonIndex = line.indexOf(":");
+      if (colonIndex >= 0) {
+        const extracted = line.slice(colonIndex + 1).trim();
+        if (extracted) return extracted;
+      }
+      const next = merged[i + 1] || "";
+      if (next && !/^(\d+[\.\)\-]\s*)/i.test(next)) return next;
+    }
+    return "";
+  }
+
+  const fallbackReason = extractReasonOfChangeFromText(
+    item.recruiter_context_notes,
+    item.recruiterNotes,
+    item.other_pointers,
+    item.otherPointers,
+    item.notes,
+    draft.recruiterNotes,
+    draft.otherPointers,
+    draft.callbackNotes
+  );
   const meta = decodePortalApplicantMetadata(item);
   const cvResult = meta?.cvAnalysisCache?.result && typeof meta.cvAnalysisCache.result === "object" ? meta.cvAnalysisCache.result : null;
   const highlights = Array.isArray(item.cv_highlights)
@@ -1677,7 +1707,7 @@ function buildScreeningRemarksForExport(item = {}) {
     questionLines.push(`${questionLines.length + 1}. ${label} - *${answer}*`);
   });
 
-  const finalReasonOfChange = inlineReasonOfChange || reasonOfChangeValue;
+  const finalReasonOfChange = inlineReasonOfChange || reasonOfChangeValue || fallbackReason;
   const parts = [];
   if (finalReasonOfChange) parts.push(`Reason of change: *${finalReasonOfChange}*`);
   if (strongPoints.length) {
