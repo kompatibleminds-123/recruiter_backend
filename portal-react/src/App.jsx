@@ -65,7 +65,7 @@ const DEFAULT_COPY_SETTINGS = {
   exportPresetColumns: {
     compact_recruiter: "S.No.|s_no\nName|name\nPh|phone\nEmail|email\nCurrent Company|current_company\nCurrent Designation|current_designation\nTotal Experience|total_experience\nTenure in current company|current_org_tenure\nLocation|location\nReason of change|reason_of_change\nStatus|status\nCurrent CTC|current_ctc\nExpected CTC|expected_ctc\nNotice Period|notice_period\nOther Standard Questions|other_standard_questions\nRemarks|remarks\nLinkedIn|linkedin",
     client_tracker: "Client Name|client_name\nTarget Role / Open Position|jd_title\nKey Skills Required|key_skills_required\nRecruiter Name|recruiter_name\nDate Added|date_added\nCandidate Name|name\nStatus|status\nContact No.|phone\nEmail ID|email\nLocation|location\nCurrent Company|current_company\nCurrent Designation|current_designation\nDomain / Industry|domain_industry\nWork Exp (Total years/months)|total_experience\nHighest Education|highest_education\nCurrent CTC|current_ctc\nExpected CTC|expected_ctc\nNotice Period|notice_period\nRemarks / Notes|remarks\nLinkedIn Profile Link (Optional)|linkedin",
-    attentive_tracker: "S.No.|s_no\nName|name\nStatus|assessment_status\nPh|phone\nEmail|email\nLocation|location\nCurrent Company|current_company\nCurrent Designation|current_designation\nWork Experience|total_experience\nHighest Education|highest_education\nCurrent CTC|current_ctc\nExpected CTC|expected_ctc\nNotice Period|notice_period\nScreening remarks|screening_remarks\nLinkedIn|linkedin",
+    attentive_tracker: "S.No.|s_no\nName|name\nStatus|assessment_status\nPh|phone\nEmail|email\nLocation|location\nCurrent Company|current_company\nCurrent Designation|current_designation\nWork Experience|total_experience\nHighest Education|highest_education\nCurrent CTC|current_ctc\nExpected CTC|expected_ctc\nNotice Period|notice_period_indicator\nScreening remarks|screening_remarks\nLinkedIn|linkedin",
     client_submission: "S.No.|s_no\nName|name\nPh|phone\nEmail|email\nCurrent Company|current_company\nCurrent Designation|current_designation\nTotal Experience|total_experience\nStrong Points|other_pointers\nRemarks|remarks",
     screening_focus: "S.No.|s_no\nName|name\nCurrent CTC|current_ctc\nExpected CTC|expected_ctc\nNotice Period|notice_period\nScreening Answers|other_standard_questions\nRemarks|remarks"
   },
@@ -1669,6 +1669,22 @@ function getCapturedExportFieldValue(item = {}, field = "") {
     case "current_ctc": return item.current_ctc || "";
     case "expected_ctc": return item.expected_ctc || "";
     case "notice_period": return item.notice_period || "";
+    case "notice_period_indicator": {
+      const notice = String(item.notice_period || item.noticePeriod || "").trim();
+      const lwdOrDoj = String(item.lwd_or_doj || item.lwdOrDoj || "").trim();
+      const offerAmount = String(
+        item.offer_in_hand
+        || item.offerInHand
+        || item.offerAmount
+        || item.offer_amount
+        || ""
+      ).trim();
+      return [
+        notice ? `Notice period: ${notice}` : "",
+        lwdOrDoj ? `LWD/DOJ: ${lwdOrDoj}` : "",
+        offerAmount ? `Offer amount: ${offerAmount}` : ""
+      ].filter(Boolean).join(" | ");
+    }
     case "lwd_or_doj": return item.lwd_or_doj || "";
     case "combined_assessment_insights": return buildCombinedAssessmentInsightsForExportV2(item);
     case "screening_remarks": return item.screening_remarks || buildScreeningRemarksForExport(item);
@@ -3661,6 +3677,8 @@ function PortalApp({ token, onLogout }) {
       current_ctc: item.currentCtc || "",
       expected_ctc: item.expectedCtc || "",
       notice_period: item.noticePeriod || "",
+      lwd_or_doj: item.lwdOrDoj || item.offerDoj || linkedCandidate?.lwd_or_doj || linkedCandidateDraft?.lwdOrDoj || "",
+      offer_in_hand: item.offerInHand || item.offerAmount || linkedCandidate?.offer_in_hand || linkedCandidateDraft?.offerInHand || "",
       recruiter_context_notes: item.recruiterNotes || "",
       other_pointers: item.otherPointers || "",
       notes: item.recruiterNotes || item.callbackNotes || "",
