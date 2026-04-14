@@ -1152,7 +1152,8 @@ async function listAssessments({ actorUserId, companyId }) {
   return (rows || [])
     .filter((i) => {
       if (String(i.recruiter_id || "") === actor.id) return true;
-      const candidateId = String(i.candidate_id || "").trim();
+      const payload = i?.payload && typeof i.payload === "object" ? i.payload : {};
+      const candidateId = String(i.candidate_id || payload.candidateId || payload.candidate_id || "").trim();
       if (!candidateId) return false;
       return visibleCandidateIds.has(candidateId);
     })
