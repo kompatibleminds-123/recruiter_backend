@@ -65,7 +65,7 @@ const DEFAULT_COPY_SETTINGS = {
   exportPresetColumns: {
     compact_recruiter: "S.No.|s_no\nName|name\nPh|phone\nEmail|email\nCurrent Company|current_company\nCurrent Designation|current_designation\nTotal Experience|total_experience\nTenure in current company|current_org_tenure\nLocation|location\nReason of change|reason_of_change\nStatus|status\nCurrent CTC|current_ctc\nExpected CTC|expected_ctc\nNotice Period|notice_period\nOther Standard Questions|other_standard_questions\nRemarks|remarks\nLinkedIn|linkedin",
     client_tracker: "Client Name|client_name\nTarget Role / Open Position|jd_title\nKey Skills Required|key_skills_required\nRecruiter Name|recruiter_name\nDate Added|date_added\nCandidate Name|name\nStatus|status\nContact No.|phone\nEmail ID|email\nLocation|location\nCurrent Company|current_company\nCurrent Designation|current_designation\nDomain / Industry|domain_industry\nWork Exp (Total years/months)|total_experience\nHighest Education|highest_education\nCurrent CTC|current_ctc\nExpected CTC|expected_ctc\nNotice Period|notice_period\nRemarks / Notes|remarks\nLinkedIn Profile Link (Optional)|linkedin",
-    attentive_tracker: "S.No.|s_no\nName|name\nStatus|assessment_status\nPh|phone\nEmail|email\nLocation|location\nCurrent Company|current_company\nCurrent Designation|current_designation\nWork Experience|total_experience\nHighest Education|highest_education\nCurrent CTC|current_ctc\nExpected CTC|expected_ctc\nNotice Period|notice_period_indicator\nReason of change|reason_of_change_indicator\nScreening remarks|screening_remarks\nLinkedIn|linkedin",
+    attentive_tracker: "S.No.|s_no\nName|name\nStatus|assessment_status\nPh|phone\nEmail|email\nLocation|location\nCurrent Company|current_company\nCurrent Designation|current_designation\nWork Experience|total_experience\nHighest Education|highest_education\nCurrent CTC|current_ctc\nExpected CTC|expected_ctc\nNotice Period|notice_period_indicator\nScreening remarks|screening_remarks\nLinkedIn|linkedin",
     client_submission: "S.No.|s_no\nName|name\nPh|phone\nEmail|email\nCurrent Company|current_company\nCurrent Designation|current_designation\nTotal Experience|total_experience\nStrong Points|other_pointers\nRemarks|remarks",
     screening_focus: "S.No.|s_no\nName|name\nCurrent CTC|current_ctc\nExpected CTC|expected_ctc\nNotice Period|notice_period\nScreening Answers|other_standard_questions\nRemarks|remarks"
   },
@@ -97,16 +97,10 @@ function migrateCopySettings(settings = {}) {
       didChange = true;
       return parts.join("|");
     });
-    const hasReasonIndicator = migratedLines.some((line) => String(line).includes("|reason_of_change_indicator"));
-    const hasReasonLegacy = migratedLines.some((line) => String(line).toLowerCase().includes("|reason_of_change"));
-    if (!hasReasonIndicator && !hasReasonLegacy) {
-      const insertAt = migratedLines.findIndex((line) => String(line).includes("|notice_period_indicator"));
-      const addition = "Reason of change|reason_of_change_indicator";
-      if (insertAt >= 0) migratedLines.splice(insertAt + 1, 0, addition);
-      else migratedLines.push(addition);
-      didChange = true;
-    }
-    if (didChange) presetColumns.attentive_tracker = migratedLines.join("\n");
+    const beforeCount = migratedLines.length;
+    const cleanedLines = migratedLines.filter((line) => !String(line).includes("|reason_of_change_indicator"));
+    if (cleanedLines.length !== beforeCount) didChange = true;
+    if (didChange) presetColumns.attentive_tracker = cleanedLines.join("\n");
   }
   next.exportPresetColumns = presetColumns;
   return next;
@@ -1612,44 +1606,7 @@ function buildCombinedAssessmentInsightsForExport(item = {}) {
 
 function buildScreeningRemarksForExport(item = {}) {
   const otherStandardQuestions = String(item.other_standard_questions || item.last_contact_notes || "").trim();
-  const draft = getCandidateDraftState(item);
-  const reasonOfChangeValue = String(
-    item.reason_of_change
-    || item.reasonForChange
-    || item.reason_for_change
-    || draft.reasonForChange
-    || ""
-  ).trim();
-
-  function extractReasonOfChangeFromText(...candidates) {
-    const merged = candidates
-      .flatMap((value) => String(value || "").split(/\r?\n+/))
-      .map((line) => String(line || "").trim())
-      .filter(Boolean);
-    for (let i = 0; i < merged.length; i += 1) {
-      const line = merged[i];
-      if (!/^reason\s+of\s+change\b/i.test(line)) continue;
-      const colonIndex = line.indexOf(":");
-      if (colonIndex >= 0) {
-        const extracted = line.slice(colonIndex + 1).trim();
-        if (extracted) return extracted;
-      }
-      const next = merged[i + 1] || "";
-      if (next && !/^(\d+[\.\)\-]\s*)/i.test(next)) return next;
-    }
-    return "";
-  }
-
-  const fallbackReason = extractReasonOfChangeFromText(
-    item.recruiter_context_notes,
-    item.recruiterNotes,
-    item.other_pointers,
-    item.otherPointers,
-    item.notes,
-    draft.recruiterNotes,
-    draft.otherPointers,
-    draft.callbackNotes
-  );
+  const reasonOfChangeValue = buildReasonOfChangeForExport(item);
   const meta = decodePortalApplicantMetadata(item);
   const cvResult = meta?.cvAnalysisCache?.result && typeof meta.cvAnalysisCache.result === "object" ? meta.cvAnalysisCache.result : null;
   const highlights = Array.isArray(item.cv_highlights)
@@ -1713,7 +1670,7 @@ function buildScreeningRemarksForExport(item = {}) {
     questionLines.push(`${questionLines.length + 1}. ${label} - *${answer}*`);
   });
 
-  const finalReasonOfChange = inlineReasonOfChange || reasonOfChangeValue || fallbackReason;
+  const finalReasonOfChange = inlineReasonOfChange || reasonOfChangeValue;
   const parts = [];
   if (finalReasonOfChange) parts.push(`Reason of change: *${finalReasonOfChange}*`);
   if (strongPoints.length) {
