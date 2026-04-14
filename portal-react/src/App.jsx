@@ -139,7 +139,7 @@ const DEFAULT_PIPELINE_STAGE_OPTIONS = [
 ];
 
 const DEFAULT_STATUS_OPTIONS = [
-  "CV to be shared",
+  "CV shared",
   "Screening call aligned",
   "L1 aligned",
   "L2 aligned",
@@ -363,8 +363,8 @@ function isTerminalStatus(status) {
 function normalizeAssessmentStatusLabel(status) {
   const value = String(status || "").trim();
   if (!value) return "";
-  if (/^cv shared$/i.test(value)) return "CV to be shared";
-  if (/^cv to be shared$/i.test(value)) return "CV to be shared";
+  if (/^cv shared$/i.test(value)) return "CV shared";
+  if (/^cv to be shared$/i.test(value)) return "CV shared";
   if (/^did not attend$/i.test(value)) return "Not responding";
   return value;
 }
@@ -1000,7 +1000,7 @@ function buildAssessmentJourneyEntries(assessment, contactAttempts = [], candida
   if (assessment?.generatedAt) {
     entries.push({
       at: assessment.generatedAt,
-      text: `Assessment created | ${normalizeAssessmentStatusLabel(assessment?.candidateStatus) || "CV to be shared"}`
+      text: `Assessment created | ${normalizeAssessmentStatusLabel(assessment?.candidateStatus) || "CV shared"}`
     });
   }
 
@@ -2216,7 +2216,7 @@ function buildAssessmentStatusCalendarNote(statusValue, atLocalValue) {
   const label = atLocalValue ? formatAssessmentStatusCalendarNoteDate(atLocalValue) : "";
   if (isInterviewAlignedStatus(status)) return label ? `${statusLabel} on ${label}.` : statusLabel;
   if (status === "offered") return label ? `Offered. LWD / DOJ on ${label}.` : "Offered.";
-  if (status === "cv to be shared") return "CV to be shared.";
+  if (status === "cv shared") return "CV shared.";
   if (status === "not responding" || status === "did not attend") return "Not responding.";
   if (status === "screening reject") return "Screening reject.";
   if (status === "interview reject") return "Interview reject.";
@@ -2746,7 +2746,7 @@ function AssessmentStatusModal({ open, assessment, onClose, onSave }) {
         ) : null}
         <label>
           <span>Infer box</span>
-          <textarea value={inferText} onChange={(e) => setInferText(e.target.value)} placeholder="Write only the new status update here, e.g. L1 aligned tomorrow 5 PM, screening reject, CV to be shared." />
+          <textarea value={inferText} onChange={(e) => setInferText(e.target.value)} placeholder="Write only the new status update here, e.g. L1 aligned tomorrow 5 PM, screening reject, CV shared." />
         </label>
         <label>
           <span>Manual remarks</span>
@@ -5064,7 +5064,7 @@ function PortalApp({ token, onLogout }) {
       clientName: candidate?.client_name || sourceApplicant?.clientName || "",
       jdTitle: candidate?.jd_title || sourceApplicant?.jdTitle || "",
       pipelineStage: "Submitted",
-      candidateStatus: "CV to be shared",
+      candidateStatus: "CV shared",
       followUpAt: "",
       interviewAt: "",
       recruiterNotes: candidate?.recruiter_context_notes || sourceApplicant?.screeningAnswers || "",
@@ -5075,7 +5075,7 @@ function PortalApp({ token, onLogout }) {
       cvAnalysis: candidateCvAnalysis,
       cvAnalysisApplied: false,
       statusHistory: [{
-        status: "CV to be shared",
+        status: "CV shared",
         at: new Date().toISOString(),
         notes: "Draft converted into assessment.",
         atLabel: ""
@@ -5102,7 +5102,7 @@ function PortalApp({ token, onLogout }) {
     const canonicalInitialStatus = normalizeAssessmentStatusLabel(interviewForm.candidateStatus);
     const normalizedInitialStatus = canonicalInitialStatus.toLowerCase();
     const initialStatus = !normalizedInitialStatus || normalizedInitialStatus === "screening in progress"
-      ? "CV to be shared"
+      ? "CV shared"
       : canonicalInitialStatus;
     const assessment = {
       id: interviewMeta.assessmentId || `assessment-${Date.now()}`,
@@ -7663,7 +7663,7 @@ function PortalApp({ token, onLogout }) {
                   <button onClick={() => void copyInterviewResult()}>Copy result</button>
                   <button onClick={() => copyInterviewWhatsapp()}>Copy WhatsApp</button>
                   <button onClick={() => void copyInterviewEmail()}>Copy Email</button>
-                  {interviewMeta.candidateId ? <button onClick={() => void saveInterviewDraft()}>Save draft</button> : null}
+                  {interviewMeta.candidateId && !interviewMeta.assessmentId ? <button onClick={() => void saveInterviewDraft()}>Save draft</button> : null}
                   <button onClick={() => void saveAssessment()}>{interviewMeta.assessmentId ? "Save assessment" : "Create assessment"}</button>
                   <button onClick={() => sendInterviewToSheets()}>Send to Sheets</button>
                   <button onClick={() => exportInterviewAll()}>Export all</button>
