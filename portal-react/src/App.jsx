@@ -1920,11 +1920,12 @@ function buildClientPortalTrackerRows(items = [], cvTextByAssessmentId = {}) {
       lwd_or_doj: assessment.lwdOrDoj || assessment.offerDoj || item.lwdOrDoj || "",
       recruiter_context_notes: recruiterNotes,
       other_pointers: otherPointers,
-      other_standard_questions: questionAnswers || assessment.callbackNotes || "",
+      other_standard_questions: questionAnswers,
       combined_assessment_insights: buildCombinedAssessmentInsightsForExportV2({
         recruiter_context_notes: recruiterNotes,
         other_pointers: otherPointers,
-        other_standard_questions: questionAnswers || assessment.callbackNotes || ""
+        other_standard_questions: questionAnswers,
+        reason_of_change: assessment.reasonForChange || candidate.reason_of_change || ""
       }),
       notes: recruiterNotes || assessment.callbackNotes || "",
       linkedin: assessment.linkedinUrl || item.linkedin || candidate.linkedin || "",
@@ -3554,6 +3555,9 @@ function PortalApp({ token, onLogout }) {
 
   const normalizedAssessmentCopyRows = useMemo(() => {
     return filteredAssessments.map((item, index) => {
+      const screeningSummary = getAssessmentQuestionAnswers(item)
+        .map((pair) => `${pair.question}: ${pair.answer}`)
+        .join("\n");
       const linkedCandidate = assessmentLinkedCandidateMap.get(String(item.id || "")) || null;
       const linkedMeta = decodePortalApplicantMetadata(linkedCandidate || {});
       const assessmentStoredFile = item?.cvAnalysis?.storedFile && typeof item.cvAnalysis.storedFile === "object"
@@ -3579,11 +3583,12 @@ function PortalApp({ token, onLogout }) {
       recruiter_context_notes: item.recruiterNotes || "",
       other_pointers: item.otherPointers || "",
       notes: item.recruiterNotes || item.callbackNotes || "",
-      other_standard_questions: item.callbackNotes || "",
+      other_standard_questions: screeningSummary,
       combined_assessment_insights: buildCombinedAssessmentInsightsForExportV2({
         recruiter_context_notes: item.recruiterNotes || "",
         other_pointers: item.otherPointers || "",
-        other_standard_questions: item.callbackNotes || ""
+        other_standard_questions: screeningSummary,
+        reason_of_change: item.reasonForChange || ""
       }),
       linkedin: item.linkedinUrl || "",
       jd_title: item.jdTitle || "",
