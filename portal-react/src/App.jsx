@@ -1661,7 +1661,10 @@ function buildScreeningRemarksForExport(item = {}) {
     const separatorIndex = normalizedLine.indexOf(":");
     if (separatorIndex <= 0) return;
     const label = normalizedLine.slice(0, separatorIndex).trim();
-    const answer = normalizedLine.slice(separatorIndex + 1).trim();
+    const answer = normalizedLine
+      .slice(separatorIndex + 1)
+      .replace(/^[\s:\-]+/, "")
+      .trim();
     const normalizedLabel = label.toLowerCase();
     if (!label || !answer) return;
     if (normalizedLabel === "reason of change") {
@@ -1674,12 +1677,20 @@ function buildScreeningRemarksForExport(item = {}) {
 
   const finalReasonOfChange = inlineReasonOfChange || reasonOfChangeValue;
   const parts = [];
-  if (finalReasonOfChange) parts.push(`Reason of change: *${finalReasonOfChange}*`);
   if (strongPoints.length) {
     parts.push("Strong points:");
     strongPoints.forEach((point, index) => parts.push(`${index + 1}. *${point}*`));
   }
-  if (questionLines.length) parts.push(...questionLines);
+  if (questionLines.length) {
+    if (parts.length) parts.push("");
+    parts.push("Screening pointers:");
+    parts.push(...questionLines);
+  }
+  if (finalReasonOfChange) {
+    if (parts.length) parts.push("");
+    parts.push("Reason of change:");
+    parts.push(`*${finalReasonOfChange}*`);
+  }
   return parts.join("\n");
 }
 
