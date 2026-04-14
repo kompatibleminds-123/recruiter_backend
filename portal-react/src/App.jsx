@@ -2636,16 +2636,9 @@ function AttemptsModal({ open, candidate, attempts, onClose, onRefresh, onSave }
                   {candidate?.next_follow_up_at ? <div className="chip-row"><span className="chip">Next follow-up: {new Date(candidate.next_follow_up_at).toLocaleString()}</span></div> : null}
                 </article>
               ) : null}
-              {!attempts.length ? <div className="empty-state">No attempts logged yet.</div> : attempts.map((item) => (
-                <article key={item.id || `${item.created_at}-${item.outcome}`} className="item-card compact-card">
-                  <div className="item-card__top compact-top">
-                    <strong>{item.outcome || "Attempt"}</strong>
-                    <span className="muted">{item.created_at ? new Date(item.created_at).toLocaleString() : ""}</span>
-                  </div>
-                  <div className="candidate-snippet">{formatAttemptLinesWithTimestamp(item.notes || "No notes", item.created_at)}</div>
-                  {item.next_follow_up_at ? <div className="chip-row"><span className="chip">Next follow-up: {new Date(item.next_follow_up_at).toLocaleString()}</span></div> : null}
-                </article>
-              ))}
+              {!(candidate?.last_contact_outcome || candidate?.last_contact_notes || candidate?.next_follow_up_at)
+                ? <div className="empty-state">No attempts logged yet.</div>
+                : null}
             </div>
           </div>
           <div className="attempt-form">
