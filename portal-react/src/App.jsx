@@ -1701,9 +1701,40 @@ function buildReasonOfChangeForExport(item = {}) {
     || item.reasonForChange
     || item.reason_for_change
     || draft.reasonForChange
+    || draft.reason_of_change
+    || draft.reasonOfChange
     || ""
   ).trim();
   if (direct) return direct;
+  const screeningMap = (draft?.jdScreeningAnswers && typeof draft.jdScreeningAnswers === "object" ? draft.jdScreeningAnswers : null)
+    || (item?.screening_answers && typeof item.screening_answers === "object" ? item.screening_answers : null)
+    || (item?.screeningAnswers && typeof item.screeningAnswers === "object" ? item.screeningAnswers : null)
+    || null;
+  if (screeningMap) {
+    const matchKey = Object.keys(screeningMap).find((key) => String(key || "").trim().toLowerCase() === "reason of change");
+    if (matchKey) {
+      const value = String(screeningMap[matchKey] || "").trim();
+      if (value) return value;
+    }
+  }
+  const structuredQuestions = String(item.other_standard_questions || item.last_contact_notes || "").trim();
+  if (structuredQuestions) {
+    const lines = structuredQuestions
+      .split(/\r?\n+/)
+      .map((line) => String(line || "").trim())
+      .filter(Boolean);
+    for (let i = 0; i < lines.length; i += 1) {
+      const line = lines[i];
+      if (!/^reason\s+of\s+change\b/i.test(line)) continue;
+      const colonIndex = line.indexOf(":");
+      if (colonIndex >= 0) {
+        const extracted = line.slice(colonIndex + 1).trim();
+        if (extracted) return extracted;
+      }
+      const next = lines[i + 1] || "";
+      if (next && !/^(\d+[\.\)\-]\s*)/i.test(next)) return next;
+    }
+  }
   const candidates = [
     item.recruiter_context_notes,
     item.recruiterNotes,
