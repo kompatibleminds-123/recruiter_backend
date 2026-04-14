@@ -1507,13 +1507,74 @@ function formatDateForCopy(value) {
   return Number.isNaN(date.getTime()) ? "" : date.toLocaleString();
 }
 
-function buildCombinedAssessmentInsightsForExport(item = {}) {
+function buildCombinedAssessmentInsightsForExportV2(item = {}) {
   const parts = [];
   const otherStandardQuestions = String(item.other_standard_questions || item.last_contact_notes || "").trim();
   const otherPointers = String(item.other_pointers || "").trim();
   if (otherStandardQuestions) parts.push(otherStandardQuestions);
   if (otherPointers) parts.push(otherPointers.replace(/^•\s*/gm, ""));
   return parts.filter(Boolean).join("\n");
+}
+
+function buildCombinedAssessmentInsightsForExport(item = {}) {
+  const otherStandardQuestions = String(item.other_standard_questions || item.last_contact_notes || "").trim();
+  const reasonOfChangeValue = String(item.reason_of_change || "").trim();
+  const fixedFieldLabels = new Set([
+    "current ctc",
+    "expected ctc",
+    "notice period",
+    "notice",
+    "experience",
+    "total experience",
+    "work experience",
+    "highest education",
+    "qualification",
+    "current company",
+    "current designation",
+    "location",
+    "offer in hand",
+    "lwd",
+    "doj",
+    "lwd / doj",
+    "lwd or doj",
+    "status",
+    "current status",
+    "assessment status",
+    "candidate status",
+    "pipeline",
+    "pipeline stage",
+    "source",
+    "client",
+    "recruiter"
+  ]);
+  const lines = otherStandardQuestions
+    .split(/\r?\n+/)
+    .map((line) => String(line || "").trim())
+    .filter(Boolean);
+  const questionLines = [];
+  let inlineReasonOfChange = "";
+
+  lines.forEach((line) => {
+    const normalizedLine = line.replace(/^[\d\.\-\)\s]+/, "").trim();
+    const separatorIndex = normalizedLine.indexOf(":");
+    if (separatorIndex <= 0) return;
+    const label = normalizedLine.slice(0, separatorIndex).trim();
+    const answer = normalizedLine.slice(separatorIndex + 1).trim();
+    const normalizedLabel = label.toLowerCase();
+    if (!label || !answer) return;
+    if (normalizedLabel === "reason of change") {
+      inlineReasonOfChange = answer;
+      return;
+    }
+    if (fixedFieldLabels.has(normalizedLabel)) return;
+    questionLines.push(`${questionLines.length + 1}. ${label} - *${answer}*`);
+  });
+
+  const finalReasonOfChange = inlineReasonOfChange || reasonOfChangeValue;
+  const parts = [];
+  if (finalReasonOfChange) parts.push(`Reason of change: *${finalReasonOfChange}*`);
+  if (questionLines.length) parts.push(...questionLines);
+  return parts.join("\n");
 }
 
 function parsePresetColumns(columnsText = "") {
@@ -1546,7 +1607,7 @@ function getCapturedExportFieldValue(item = {}, field = "") {
     case "expected_ctc": return item.expected_ctc || "";
     case "notice_period": return item.notice_period || "";
     case "lwd_or_doj": return item.lwd_or_doj || "";
-    case "combined_assessment_insights": return item.combined_assessment_insights || buildCombinedAssessmentInsightsForExport(item);
+    case "combined_assessment_insights": return item.combined_assessment_insights || buildCombinedAssessmentInsightsForExportV2(item);
     case "linkedin": return item.linkedin || "";
     case "client_name": return item.client_name || "";
     case "jd_title": return item.jd_title || item.role || "";
@@ -1668,7 +1729,7 @@ function buildCapturedExcelRows(items, preset, settings = DEFAULT_COPY_SETTINGS)
           item.current_ctc || "",
           item.expected_ctc || "",
           item.notice_period || "",
-          item.combined_assessment_insights || buildCombinedAssessmentInsightsForExport(item),
+          item.combined_assessment_insights || buildCombinedAssessmentInsightsForExportV2(item),
           item.linkedin || ""
         ])
       };
@@ -1858,7 +1919,7 @@ function buildClientPortalTrackerRows(items = [], cvTextByAssessmentId = {}) {
       recruiter_context_notes: recruiterNotes,
       other_pointers: otherPointers,
       other_standard_questions: questionAnswers || assessment.callbackNotes || "",
-      combined_assessment_insights: buildCombinedAssessmentInsightsForExport({
+      combined_assessment_insights: buildCombinedAssessmentInsightsForExportV2({
         recruiter_context_notes: recruiterNotes,
         other_pointers: otherPointers,
         other_standard_questions: questionAnswers || assessment.callbackNotes || ""
@@ -3515,7 +3576,7 @@ function PortalApp({ token, onLogout }) {
       other_pointers: item.otherPointers || "",
       notes: item.recruiterNotes || item.callbackNotes || "",
       other_standard_questions: item.callbackNotes || "",
-      combined_assessment_insights: buildCombinedAssessmentInsightsForExport({
+      combined_assessment_insights: buildCombinedAssessmentInsightsForExportV2({
         recruiter_context_notes: item.recruiterNotes || "",
         other_pointers: item.otherPointers || "",
         other_standard_questions: item.callbackNotes || ""
@@ -5313,7 +5374,7 @@ function PortalApp({ token, onLogout }) {
         current_company: item.company || item.currentCompany || "",
         current_designation: item.role || item.currentDesignation || "",
         total_experience: item.experience || item.totalExperience || "",
-        combined_assessment_insights: buildCombinedAssessmentInsightsForExport({
+        combined_assessment_insights: buildCombinedAssessmentInsightsForExportV2({
           ...item,
           notes: matchedAssessment?.recruiterNotes || item.notes || "",
           other_pointers: matchedAssessment?.otherPointers || item.other_pointers || "",
@@ -5366,7 +5427,7 @@ function PortalApp({ token, onLogout }) {
       other_pointers: "",
       notes: item.screeningAnswers || "",
       other_standard_questions: item.screeningAnswers || "",
-      combined_assessment_insights: buildCombinedAssessmentInsightsForExport({
+      combined_assessment_insights: buildCombinedAssessmentInsightsForExportV2({
         recruiter_context_notes: item.screeningAnswers || "",
         other_pointers: "",
         other_standard_questions: item.screeningAnswers || ""
@@ -5442,7 +5503,7 @@ function PortalApp({ token, onLogout }) {
       other_pointers: item.other_pointers || item.otherPointers || "",
       notes: item.notes || item.callbackNotes || "",
       other_standard_questions: item.notes || item.callbackNotes || "",
-      combined_assessment_insights: buildCombinedAssessmentInsightsForExport({
+      combined_assessment_insights: buildCombinedAssessmentInsightsForExportV2({
         recruiter_context_notes: item.recruiter_context_notes || item.recruiterNotes || "",
         other_pointers: item.other_pointers || item.otherPointers || "",
         other_standard_questions: item.notes || item.callbackNotes || ""
