@@ -1137,7 +1137,26 @@ async function listAssessments({ actorUserId, companyId }) {
   if (!cfg().on) {
     return (readStore().assessments || []).filter((i) => i.companyId === companyId && (actor.role === "admin" || i.recruiterId === actor.id)).sort((a, b) => String(b.generatedAt || b.createdAt || "").localeCompare(String(a.generatedAt || a.createdAt || ""))).map(sanitizeAssessment);
   }
-  await ensureSeeded(); return (await sbSel("assessments", `select=*&company_id=eq.${enc(companyId)}&order=created_at.desc&limit=500`)).filter((i) => actor.role === "admin" || String(i.recruiter_id || "") === actor.id).map(sanitizeAssessment);
+  await ensureSeeded();
+  const rows = await sbSel("assessments", `select=*&company_id=eq.${enc(companyId)}&order=created_at.desc&limit=500`);
+  if (actor.role === "admin") return (rows || []).map(sanitizeAssessment);
+
+  // Team recruiters should also see admin-created assessments if the underlying candidate
+  // is visible to them (assigned-to or owned).
+  const visibleCandidates = await sbSel(
+    "candidates",
+    `select=id&company_id=eq.${enc(companyId)}&or=(recruiter_id.eq.${enc(actor.id)},assigned_to_user_id.eq.${enc(actor.id)})&limit=5000`
+  ).catch(() => []);
+  const visibleCandidateIds = new Set((visibleCandidates || []).map((c) => String(c?.id || "").trim()).filter(Boolean));
+
+  return (rows || [])
+    .filter((i) => {
+      if (String(i.recruiter_id || "") === actor.id) return true;
+      const candidateId = String(i.candidate_id || "").trim();
+      if (!candidateId) return false;
+      return visibleCandidateIds.has(candidateId);
+    })
+    .map(sanitizeAssessment);
 }
 async function saveAssessment({ actorUserId, companyId, assessment }) {
   if (!actorUserId || !companyId || !assessment) throw new Error("actorUserId, companyId, and assessment payload are required.");
