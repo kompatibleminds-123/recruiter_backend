@@ -1792,12 +1792,19 @@ function getCapturedExportFieldValue(item = {}, field = "") {
     case "client_name": return item.client_name || "";
     case "jd_title": return item.jd_title || item.role || "";
     case "target_role_open_position": return item.jd_title || item.role || "";
-    case "key_skills_required": return Array.isArray(item.skills) ? item.skills.join(", ") : String(item.skills || "");
-    case "recruiter_name": return item.assigned_to_name || item.recruiter_name || "";
-    case "date_added": return item.created_at ? String(item.created_at).slice(0, 10) : "";
-    case "domain_industry": return item.domain_industry || "";
-    case "current_org_tenure": return item.current_org_tenure || "";
-    case "reason_of_change": return item.reason_of_change || "";
+    case "key_skills_required": {
+      if (Array.isArray(item.skills) && item.skills.length) return item.skills.join(", ");
+      const draft = getCandidateDraftState(item);
+      const tags = String(draft?.tags || "").trim();
+      return String(item.key_skills_required || item.keySkillsRequired || item.skills || tags || "").trim();
+    }
+    case "recruiter_name": return item.assigned_to_name || item.recruiter_name || item.recruiterName || "";
+    case "date_added": {
+      const value = item.created_at || item.createdAt || item.created_on || item.createdOn || "";
+      return value ? String(value).slice(0, 10) : "";
+    }
+    case "domain_industry": return item.domain_industry || item.domainIndustry || "";
+    case "current_org_tenure": return item.current_org_tenure || item.currentOrgTenure || "";
     case "other_pointers": return item.other_pointers || "";
     case "other_standard_questions": return item.other_standard_questions || item.last_contact_notes || "";
     case "remarks": return item.recruiter_context_notes || item.notes || "";
@@ -3784,6 +3791,10 @@ function PortalApp({ token, onLogout }) {
       highest_education: item.highestEducation || "",
       current_ctc: item.currentCtc || "",
       expected_ctc: item.expectedCtc || "",
+      created_at: item.createdAt || item.generatedAt || "",
+      skills: Array.isArray(linkedCandidate?.skills) ? linkedCandidate.skills : [],
+      assigned_to_name: String(item.recruiterName || linkedCandidate?.assigned_to_name || linkedCandidate?.recruiter_name || "").trim(),
+      recruiter_name: String(item.recruiterName || linkedCandidate?.assigned_to_name || linkedCandidate?.recruiter_name || "").trim(),
       notice_period: item.noticePeriod || "",
       lwd_or_doj: item.lwdOrDoj || item.offerDoj || linkedCandidate?.lwd_or_doj || linkedCandidateDraft?.lwdOrDoj || "",
       offer_in_hand: item.offerInHand || item.offerAmount || linkedCandidate?.offer_in_hand || linkedCandidateDraft?.offerInHand || "",
@@ -5742,6 +5753,12 @@ function PortalApp({ token, onLogout }) {
       lwd_or_doj: item.lwd_or_doj || item.lwdOrDoj || "",
       offer_in_hand: item.offer_in_hand || item.offerInHand || item.offerAmount || "",
       reason_of_change: buildReasonOfChangeForExport(item),
+      created_at: item.created_at || item.createdAt || "",
+      skills: Array.isArray(item.skills) ? item.skills : (Array.isArray(item.inferredTags) ? item.inferredTags : []),
+      domain_industry: item.domain_industry || item.domainIndustry || "",
+      current_org_tenure: item.current_org_tenure || item.currentOrgTenure || "",
+      assigned_to_name: item.assigned_to_name || item.assignedToName || item.recruiterName || "",
+      recruiter_name: item.recruiter_name || item.recruiterName || "",
       recruiter_context_notes: item.recruiter_context_notes || item.recruiterNotes || "",
       other_pointers: item.other_pointers || item.otherPointers || "",
       notes: item.notes || item.callbackNotes || "",
