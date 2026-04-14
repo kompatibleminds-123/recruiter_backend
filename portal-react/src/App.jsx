@@ -1609,7 +1609,7 @@ function getCapturedExportFieldValue(item = {}, field = "") {
     case "expected_ctc": return item.expected_ctc || "";
     case "notice_period": return item.notice_period || "";
     case "lwd_or_doj": return item.lwd_or_doj || "";
-    case "combined_assessment_insights": return item.combined_assessment_insights || buildCombinedAssessmentInsightsForExportV2(item);
+    case "combined_assessment_insights": return buildCombinedAssessmentInsightsForExportV2(item);
     case "linkedin": return item.linkedin || "";
     case "client_name": return item.client_name || "";
     case "jd_title": return item.jd_title || item.role || "";
