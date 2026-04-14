@@ -1776,7 +1776,7 @@ function buildCapturedExcelRows(items, preset, settings = DEFAULT_COPY_SETTINGS)
           "Current CTC",
           "Expected CTC",
           "Notice Period",
-          "Insights",
+          "Screening remarks",
           "LinkedIn"
         ],
         rows: normalized.map((item) => [
@@ -1793,7 +1793,7 @@ function buildCapturedExcelRows(items, preset, settings = DEFAULT_COPY_SETTINGS)
           item.current_ctc || "",
           item.expected_ctc || "",
           item.notice_period || "",
-          item.combined_assessment_insights || buildCombinedAssessmentInsightsForExportV2(item),
+          buildScreeningRemarksForExport(item),
           item.linkedin || ""
         ])
       };
@@ -3617,10 +3617,27 @@ function PortalApp({ token, onLogout }) {
 
   const normalizedAssessmentCopyRows = useMemo(() => {
     return filteredAssessments.map((item, index) => {
-      const screeningSummary = getAssessmentQuestionAnswers(item)
+      const linkedCandidate = assessmentLinkedCandidateMap.get(String(item.id || "")) || null;
+      const linkedCandidateDraft = getCandidateDraftState(linkedCandidate || {});
+      const linkedCandidateAnswers = linkedCandidateDraft?.jdScreeningAnswers && typeof linkedCandidateDraft.jdScreeningAnswers === "object"
+        ? linkedCandidateDraft.jdScreeningAnswers
+        : {};
+      const combinedQuestionMap = new Map();
+      getAssessmentQuestionAnswers(item).forEach((pair) => {
+        const questionKey = String(pair.question || "").trim().toLowerCase();
+        const answerValue = String(pair.answer || "").trim();
+        if (!questionKey || !answerValue) return;
+        if (!combinedQuestionMap.has(questionKey)) combinedQuestionMap.set(questionKey, { question: String(pair.question || "").trim(), answer: answerValue });
+      });
+      Object.entries(linkedCandidateAnswers || {}).forEach(([question, answer]) => {
+        const questionKey = String(question || "").trim().toLowerCase();
+        const answerValue = String(answer || "").trim();
+        if (!questionKey || !answerValue) return;
+        if (!combinedQuestionMap.has(questionKey)) combinedQuestionMap.set(questionKey, { question: String(question || "").trim(), answer: answerValue });
+      });
+      const screeningSummary = Array.from(combinedQuestionMap.values())
         .map((pair) => `${pair.question}: ${pair.answer}`)
         .join("\n");
-      const linkedCandidate = assessmentLinkedCandidateMap.get(String(item.id || "")) || null;
       const linkedMeta = decodePortalApplicantMetadata(linkedCandidate || {});
       const assessmentStoredFile = item?.cvAnalysis?.storedFile && typeof item.cvAnalysis.storedFile === "object"
         ? item.cvAnalysis.storedFile
@@ -3646,6 +3663,7 @@ function PortalApp({ token, onLogout }) {
       other_pointers: item.otherPointers || "",
       notes: item.recruiterNotes || item.callbackNotes || "",
       other_standard_questions: screeningSummary,
+      reason_of_change: item.reasonForChange || "",
       combined_assessment_insights: buildCombinedAssessmentInsightsForExportV2({
         recruiter_context_notes: item.recruiterNotes || "",
         other_pointers: item.otherPointers || "",
