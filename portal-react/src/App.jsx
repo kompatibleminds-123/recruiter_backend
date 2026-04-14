@@ -7544,7 +7544,7 @@ function PortalApp({ token, onLogout }) {
                   <label className="full">
                     <span>Email intro</span>
                     <textarea value={clientShareDraft.introText || ""} onChange={(e) => setClientShareDraft((current) => ({ ...current, introText: e.target.value }))} placeholder={getClientShareIntroText()} />
-                    <span className="field-help">Default intro is configured by admin in Preset Settings. Writing here overrides it only for this share.</span>
+                    <span className="field-help">Default intro to be set by Admin.</span>
                   </label>
                   <label className="full">
                     <span>Selected preset columns</span>
@@ -7554,7 +7554,7 @@ function PortalApp({ token, onLogout }) {
                   <label className="full">
                     <span>Signature text</span>
                     <textarea value={clientShareDraft.signatureText || ""} onChange={(e) => setClientShareDraft((current) => ({ ...current, signatureText: e.target.value }))} placeholder={fillClientShareTemplate(copySettings.clientShareSignatureText || DEFAULT_COPY_SETTINGS.clientShareSignatureText, getClientShareContext())} />
-                    <span className="field-help">Plain text only. It will use the same font as the email body.</span>
+                    <span className="field-help">Normal text only. Font will be similar to the mail body.</span>
                   </label>
                   <label><span>Signature link 1 text</span><input value={clientShareDraft.signatureLinkLabel || ""} onChange={(e) => setClientShareDraft((current) => ({ ...current, signatureLinkLabel: e.target.value }))} placeholder="Kompatible Minds" /></label>
                   <label><span>Signature link 1 URL</span><input value={clientShareDraft.signatureLinkUrl || ""} onChange={(e) => setClientShareDraft((current) => ({ ...current, signatureLinkUrl: e.target.value }))} placeholder="https://kompatibleminds.com" /></label>
