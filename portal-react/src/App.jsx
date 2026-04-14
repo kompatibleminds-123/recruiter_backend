@@ -2227,7 +2227,7 @@ function NotesModal({ open, candidate, onClose, onPatch, onParse }) {
     setConflicts([]);
     setMergedPatch(null);
     setStatus("");
-  }, [open, candidate]);
+  }, [open, candidate?.id]);
 
   if (!open || !candidate) return null;
 
