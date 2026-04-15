@@ -3077,6 +3077,16 @@ function CandidateProfileModal({ open, candidate, onClose, onOpenCv, onReuse }) 
   const cvMeta = getCandidateProfileCvMeta(candidate);
   const tags = buildVisibleTagList(candidate);
   const questionAnswers = getAssessmentQuestionAnswers(candidate);
+  const draft = getCandidateDraftState(candidate);
+  const screeningRemarks = buildScreeningRemarksForExport(candidate);
+  const reasonOfChange = buildReasonOfChangeForExport(candidate);
+  const timeline = String(
+    candidate.experienceTimeline
+    || candidate.experience_timeline
+    || draft.experienceTimeline
+    || draft.experience_timeline
+    || ""
+  ).trim();
   const noteFields = [
     candidate.other_pointers,
     candidate.otherPointers,
@@ -3088,63 +3098,131 @@ function CandidateProfileModal({ open, candidate, onClose, onOpenCv, onReuse }) 
     String(candidate.raw_note || "").trim().startsWith(PORTAL_APPLICANT_METADATA_PREFIX) ? "" : candidate.raw_note
   ].map((item) => String(item || "").trim()).filter(Boolean);
   const uniqueNotes = Array.from(new Set(noteFields));
-  const detailCards = [
-    ["Current Status", candidate.assessment_status || candidate.outcome || candidate.status || "-"],
-    ["Experience", candidate.total_experience || candidate.totalExperience || candidate.experience || "-"],
-    ["Current company", candidate.current_company || candidate.currentCompany || candidate.company || "-"],
-    ["Current Designation", candidate.current_designation || candidate.currentDesignation || candidate.role || "-"],
-    ["Location", candidate.location || "-"],
-    ["Notice Period", candidate.notice_period || candidate.noticePeriod || "-"],
-    ["Current CTC", candidate.current_ctc || candidate.currentCtc || "-"],
-    ["Expected CTC", candidate.expected_ctc || candidate.expectedCtc || "-"],
-    ["Offer in Hand", candidate.offer_in_hand || candidate.offerInHand || "-"],
-    ["LWD / DOJ", candidate.lwd_or_doj || candidate.lwdOrDoj || "-"]
-  ].filter(([, value]) => value && value !== "-");
+  const dateApplied = String(candidate.created_at || candidate.createdAt || "").trim();
+  const candidateRows = [
+    ["Name of candidate", candidate.name || candidate.candidateName || draft.candidateName || "-"],
+    ["Position applied for", candidate.jd_title || candidate.jdTitle || candidate.role || draft.jdTitle || "-"],
+    ["Date applied", dateApplied ? new Date(dateApplied).toLocaleDateString() : "-"],
+    ["Mobile", candidate.phone || candidate.phoneNumber || draft.phoneNumber || "-"],
+    ["Email", candidate.email || candidate.emailId || draft.emailId || "-"],
+    ["Source", candidate.source || candidate.sourcePlatform || "-"]
+  ];
+  const educationRows = [
+    ["Highest qualification", candidate.highest_education || candidate.highestEducation || draft.highestEducation || "-"]
+  ];
+  const professionalRows = [
+    ["Current/Last Organization", candidate.company || candidate.currentCompany || draft.currentCompany || "-"],
+    ["Designation / Role", candidate.role || candidate.currentDesignation || draft.currentDesignation || "-"],
+    ["Total Work Experience", candidate.experience || candidate.totalExperience || draft.totalExperience || "-"],
+    ["Relevant Experience", draft.relevantExperience || "-"],
+    ["Notice period", candidate.notice_period || candidate.noticePeriod || draft.noticePeriod || "-"],
+    ["Reason for looking for a change", reasonOfChange || "-"],
+    ["Current/Last CTC/PA", candidate.current_ctc || candidate.currentCtc || draft.currentCtc || "-"],
+    ["Expected CTC", candidate.expected_ctc || candidate.expectedCtc || draft.expectedCtc || "-"],
+    ["Residence Location", candidate.location || draft.location || "-"],
+    ["Offer in hand", candidate.offer_in_hand || candidate.offerInHand || draft.offerInHand || "-"],
+    ["LWD / DOJ", sanitizeLwdOrDojValue(candidate.lwd_or_doj || candidate.lwdOrDoj || draft.lwdOrDoj || "") || "-"]
+  ];
   return (
     <div className="overlay">
       <div className="overlay-card overlay-card--wide" onClick={(e) => e.stopPropagation()}>
-        <h3>{candidate.name || candidate.candidateName || "Candidate"}</h3>
-        <p className="muted">{[candidate.jd_title || candidate.jdTitle || candidate.role || "", candidate.client_name || candidate.clientName || "", candidate.current_company || candidate.currentCompany || candidate.company || ""].filter(Boolean).join(" | ")}</p>
-        <div className="info-grid">
-          {detailCards.map(([label, value]) => (
-            <div className="info-card" key={label}>
-              <div className="info-label">{label}</div>
-              <div className="info-value">{value}</div>
-            </div>
-          ))}
+        <div className="candidate-sheet__head">
+          <div>
+            <h3>{candidate.name || candidate.candidateName || draft.candidateName || "Candidate"}</h3>
+            <p className="muted">{[candidate.client_name || candidate.clientName || draft.clientName || "", candidate.jd_title || candidate.jdTitle || draft.jdTitle || candidate.role || "", candidate.company || candidate.currentCompany || draft.currentCompany || ""].filter(Boolean).join(" | ")}</p>
+          </div>
+          <div className="candidate-sheet__head-meta">
+            {candidate.assessment_status || candidate.outcome || candidate.status ? <span className="chip">Status: {candidate.assessment_status || candidate.outcome || candidate.status}</span> : null}
+            {draft.pipelineStage ? <span className="chip">Pipeline: {draft.pipelineStage}</span> : null}
+          </div>
         </div>
-        {questionAnswers.length ? (
-          <div className="client-profile-notes">
-            <div className="info-label">Screening Questions</div>
-            <div className="client-profile-qa">
-              {questionAnswers.map((pair, index) => (
-                <div className="client-profile-qa__item" key={`${pair.question}-${index}`}>
-                  <strong>{pair.question}</strong>
-                  <span>{pair.answer}</span>
+
+        <div className="candidate-sheet">
+          <div className="candidate-sheet__section">
+            <div className="candidate-sheet__section-title">Candidate Details</div>
+            <div className="candidate-sheet__rows">
+              {candidateRows.map(([label, value]) => (
+                <div className="candidate-sheet__row" key={label}>
+                  <div className="candidate-sheet__label">{label}</div>
+                  <div className="candidate-sheet__value">{String(value || "-")}</div>
                 </div>
               ))}
             </div>
           </div>
-        ) : null}
-        {tags.length ? (
-          <div className="candidate-detail-box">
-            <div className="metric-label">Tags / searchable keywords</div>
-            <div className="chip-row">
-              {tags.map((tag) => <span key={tag} className="chip">{tag}</span>)}
+
+          <div className="candidate-sheet__section">
+            <div className="candidate-sheet__section-title">Education Background</div>
+            <div className="candidate-sheet__rows">
+              {educationRows.map(([label, value]) => (
+                <div className="candidate-sheet__row" key={label}>
+                  <div className="candidate-sheet__label">{label}</div>
+                  <div className="candidate-sheet__value">{String(value || "-")}</div>
+                </div>
+              ))}
             </div>
           </div>
-        ) : null}
-        <div className="candidate-detail-box">
-          <div className="metric-label">Remarks / notes</div>
-          {uniqueNotes.length ? uniqueNotes.map((note, index) => <p key={`${note}-${index}`}>{note}</p>) : <p className="muted">No remarks saved yet.</p>}
-        </div>
-        <div className="candidate-detail-box">
-          <div className="metric-label">CV</div>
-          {candidateHasStoredCv(candidate) ? (
-            <p>{cvMeta.filename || "Uploaded CV"} is available for this profile.</p>
-          ) : (
-            <p className="muted">No uploaded CV available yet.</p>
-          )}
+
+          <div className="candidate-sheet__section">
+            <div className="candidate-sheet__section-title">Personal &amp; Professional Information</div>
+            <div className="candidate-sheet__rows">
+              {professionalRows.map(([label, value]) => (
+                <div className="candidate-sheet__row" key={label}>
+                  <div className="candidate-sheet__label">{label}</div>
+                  <div className="candidate-sheet__value">{String(value || "-")}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="candidate-sheet__section">
+            <div className="candidate-sheet__section-title">Screening Remarks</div>
+            {screeningRemarks ? (
+              <pre className="candidate-sheet__pre">{screeningRemarks}</pre>
+            ) : questionAnswers.length ? (
+              <div className="client-profile-qa">
+                {questionAnswers.map((pair, index) => (
+                  <div className="client-profile-qa__item" key={`${pair.question}-${index}`}>
+                    <strong>{pair.question}</strong>
+                    <span>{pair.answer}</span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="muted">No screening remarks saved yet.</p>
+            )}
+          </div>
+
+          {timeline ? (
+            <div className="candidate-sheet__section">
+              <div className="candidate-sheet__section-title">Previous Experience (timeline)</div>
+              <pre className="candidate-sheet__pre">{timeline}</pre>
+            </div>
+          ) : null}
+
+          {uniqueNotes.length ? (
+            <div className="candidate-sheet__section">
+              <div className="candidate-sheet__section-title">Other Pointers / Notes</div>
+              {uniqueNotes.map((note, index) => <p key={`${note}-${index}`}>{note}</p>)}
+            </div>
+          ) : null}
+
+          {tags.length ? (
+            <div className="candidate-sheet__section">
+              <div className="candidate-sheet__section-title">Tags / searchable keywords</div>
+              <div className="chip-row">
+                {tags.map((tag) => <span key={tag} className="chip">{tag}</span>)}
+              </div>
+            </div>
+          ) : null}
+
+          <div className="candidate-sheet__section">
+            <div className="candidate-sheet__section-title">CV</div>
+            {candidateHasStoredCv(candidate) ? (
+              <p>{cvMeta.filename || "Uploaded CV"} is available for this profile.</p>
+            ) : (
+              <p className="muted">No uploaded CV available yet.</p>
+            )}
+          </div>
         </div>
         <div className="button-row">
           {onReuse ? <button onClick={() => onReuse(candidate)}>Reuse profile</button> : null}
@@ -3161,43 +3239,132 @@ function ClientProfileModal({ open, item, onClose, copySettings = DEFAULT_COPY_S
   const assessment = item.raw?.assessment || item;
   const candidate = item.raw?.candidate || {};
   const assessmentId = String(assessment.id || item.id || "").trim();
+  const candidateDraft = getCandidateDraftState(candidate);
   const otherPointers = String(assessment.otherPointers || item.otherPointers || candidate.other_pointers || "").trim();
   const questionAnswers = getAssessmentQuestionAnswers(assessment);
   const hasCv = clientPortalItemHasCv(item);
   const trackerRows = buildClientPortalTrackerRows([item], assessmentId && hasCv ? { [assessmentId]: "Open CV from client portal" } : {});
   const trackerPreview = buildCapturedExcelRows(trackerRows, presetId || copySettings.excelPreset, copySettings);
+  const screeningRemarks = buildScreeningRemarksForExport({
+    ...candidate,
+    ...assessment,
+    other_standard_questions: assessment.other_standard_questions || assessment.otherStandardQuestions || assessment.otherStandardQuestionAnswers || "",
+    reason_of_change: assessment.reasonForChange || candidate.reason_of_change || ""
+  });
+  const timeline = String(assessment.experienceTimeline || assessment.experience_timeline || candidateDraft.experienceTimeline || "").trim();
+  const dateApplied = String(item.createdAt || assessment.createdAt || candidate.created_at || "").trim();
+  const candidateRows = [
+    ["Name of candidate", assessment.candidateName || item.candidateName || candidate.name || candidateDraft.candidateName || "-"],
+    ["Position applied for", assessment.jdTitle || item.position || item.role || candidate.jd_title || candidateDraft.jdTitle || "-"],
+    ["Date applied", dateApplied ? new Date(dateApplied).toLocaleDateString() : "-"],
+    ["Mobile", assessment.phoneNumber || item.phone || candidate.phone || candidateDraft.phoneNumber || "-"],
+    ["Email", assessment.emailId || item.email || candidate.email || candidateDraft.emailId || "-"],
+    ["Source", candidate.source || item.source || "Client portal"]
+  ];
+  const educationRows = [
+    ["Highest qualification", assessment.highestEducation || candidate.highest_education || candidateDraft.highestEducation || "-"]
+  ];
+  const professionalRows = [
+    ["Current/Last Organization", assessment.currentCompany || item.company || candidate.company || candidateDraft.currentCompany || "-"],
+    ["Designation / Role", assessment.currentDesignation || item.role || candidate.role || candidateDraft.currentDesignation || "-"],
+    ["Total Work Experience", assessment.totalExperience || item.totalExperience || candidate.experience || candidateDraft.totalExperience || "-"],
+    ["Relevant Experience", assessment.relevantExperience || candidateDraft.relevantExperience || "-"],
+    ["Notice period", assessment.noticePeriod || item.noticePeriod || candidate.notice_period || candidateDraft.noticePeriod || "-"],
+    ["Reason for looking for a change", assessment.reasonForChange || buildReasonOfChangeForExport(candidate) || "-"],
+    ["Current/Last CTC/PA", assessment.currentCtc || item.currentCtc || candidate.current_ctc || candidateDraft.currentCtc || "-"],
+    ["Expected CTC", assessment.expectedCtc || item.expectedCtc || candidate.expected_ctc || candidateDraft.expectedCtc || "-"],
+    ["Residence Location", assessment.location || item.location || candidate.location || candidateDraft.location || "-"],
+    ["Offer in hand", assessment.offerInHand || assessment.offerAmount || item.offerInHand || candidate.offer_in_hand || candidateDraft.offerInHand || "-"],
+    ["LWD / DOJ", sanitizeLwdOrDojValue(assessment.lwdOrDoj || assessment.offerDoj || item.lwdOrDoj || candidate.lwd_or_doj || candidateDraft.lwdOrDoj || "") || "-"]
+  ];
   return (
     <div className="overlay" onClick={onClose}>
       <div className="overlay-card overlay-card--wide" onClick={(e) => e.stopPropagation()}>
-        <h3>{assessment.candidateName || item.candidateName || "Candidate"}</h3>
-        <p className="muted">{[assessment.jdTitle || item.position || item.role || "", assessment.clientName || item.clientName || "", assessment.currentCompany || item.company || ""].filter(Boolean).join(" | ")}</p>
-        <div className="info-grid">
-          {[["Current Status", formatClientPortalStatusLabel(assessment.candidateStatus) || "-"],["Experience", assessment.totalExperience || item.totalExperience || "-"],["Current company", assessment.currentCompany || item.company || "-"],["Current Designation", assessment.currentDesignation || item.role || "-"],["Location", assessment.location || item.location || "-"],["Notice Period", assessment.noticePeriod || item.noticePeriod || "-"],["Current CTC", assessment.currentCtc || item.currentCtc || "-"],["Expected CTC", assessment.expectedCtc || item.expectedCtc || "-"],["Offer in Hand", assessment.offerInHand || assessment.offerAmount || item.offerInHand || "-"],["LWD / DOJ", assessment.lwdOrDoj || assessment.offerDoj || item.lwdOrDoj || "-"]].filter(([, value]) => value && value !== "-").map(([label, value]) => (
-            <div className="info-card" key={label}>
-              <div className="info-label">{label}</div>
-              <div className="info-value">{value || "-"}</div>
-            </div>
-          ))}
+        <div className="candidate-sheet__head">
+          <div>
+            <h3>{assessment.candidateName || item.candidateName || candidate.name || "Candidate"}</h3>
+            <p className="muted">{[assessment.clientName || item.clientName || candidate.client_name || candidateDraft.clientName || "", assessment.jdTitle || item.position || item.role || candidate.jd_title || candidateDraft.jdTitle || "", assessment.currentCompany || item.company || candidate.company || ""].filter(Boolean).join(" | ")}</p>
+          </div>
+          <div className="candidate-sheet__head-meta">
+            {assessment.candidateStatus ? <span className="chip">Status: {formatClientPortalStatusLabel(assessment.candidateStatus)}</span> : null}
+            {assessment.pipelineStage ? <span className="chip">Pipeline: {assessment.pipelineStage}</span> : null}
+          </div>
         </div>
-        {questionAnswers.length ? (
-          <div className="client-profile-notes">
-            <div className="info-label">Screening Questions</div>
-            <div className="client-profile-qa">
-              {questionAnswers.map((pair, index) => (
-                <div className="client-profile-qa__item" key={`${pair.question}-${index}`}>
-                  <strong>{pair.question}</strong>
-                  <span>{pair.answer}</span>
+
+        <div className="candidate-sheet">
+          <div className="candidate-sheet__section">
+            <div className="candidate-sheet__section-title">Candidate Details</div>
+            <div className="candidate-sheet__rows">
+              {candidateRows.map(([label, value]) => (
+                <div className="candidate-sheet__row" key={label}>
+                  <div className="candidate-sheet__label">{label}</div>
+                  <div className="candidate-sheet__value">{String(value || "-")}</div>
                 </div>
               ))}
             </div>
           </div>
-        ) : null}
-        {otherPointers ? (
-          <div className="client-profile-notes">
-            <div className="info-label">Other Pointers</div>
-            <div className="client-profile-notes__body">{otherPointers}</div>
+
+          <div className="candidate-sheet__section">
+            <div className="candidate-sheet__section-title">Education Background</div>
+            <div className="candidate-sheet__rows">
+              {educationRows.map(([label, value]) => (
+                <div className="candidate-sheet__row" key={label}>
+                  <div className="candidate-sheet__label">{label}</div>
+                  <div className="candidate-sheet__value">{String(value || "-")}</div>
+                </div>
+              ))}
+            </div>
           </div>
-        ) : null}
+
+          <div className="candidate-sheet__section">
+            <div className="candidate-sheet__section-title">Personal &amp; Professional Information</div>
+            <div className="candidate-sheet__rows">
+              {professionalRows.map(([label, value]) => (
+                <div className="candidate-sheet__row" key={label}>
+                  <div className="candidate-sheet__label">{label}</div>
+                  <div className="candidate-sheet__value">{String(value || "-")}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="candidate-sheet__section">
+            <div className="candidate-sheet__section-title">Screening Remarks</div>
+            {screeningRemarks ? (
+              <pre className="candidate-sheet__pre">{screeningRemarks}</pre>
+            ) : questionAnswers.length ? (
+              <div className="client-profile-qa">
+                {questionAnswers.map((pair, index) => (
+                  <div className="client-profile-qa__item" key={`${pair.question}-${index}`}>
+                    <strong>{pair.question}</strong>
+                    <span>{pair.answer}</span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="muted">No screening remarks saved yet.</p>
+            )}
+          </div>
+
+          {timeline ? (
+            <div className="candidate-sheet__section">
+              <div className="candidate-sheet__section-title">Previous Experience (timeline)</div>
+              <pre className="candidate-sheet__pre">{timeline}</pre>
+            </div>
+          ) : null}
+
+          {otherPointers ? (
+            <div className="candidate-sheet__section">
+              <div className="candidate-sheet__section-title">Other Pointers</div>
+              <div className="client-profile-notes__body">{otherPointers}</div>
+            </div>
+          ) : null}
+
+          <div className="candidate-sheet__section">
+            <div className="candidate-sheet__section-title">CV</div>
+            {hasCv ? <p>CV is available for this profile.</p> : <p className="muted">No uploaded CV available yet.</p>}
+          </div>
+        </div>
         <div className="client-profile-notes">
           <div className="info-label">Client Tracker Preview</div>
           <div className="table-wrap client-tracker-preview">
