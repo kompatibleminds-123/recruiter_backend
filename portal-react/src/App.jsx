@@ -5545,13 +5545,45 @@ function PortalApp({ token, onLogout }) {
 
   async function handleJdUpload(file) {
     if (!file) return;
-    const text = await file.text();
-    setJobDraft((current) => ({
-      ...current,
-      jobDescription: text,
-      title: current.title || String(file.name || "").replace(/\.[^.]+$/, "").replace(/[-_]+/g, " ")
-    }));
-    setStatus("jobs", "JD text uploaded into editor.", "ok");
+    setStatus("jobs", "Reading JD file...");
+    try {
+      const filename = String(file.name || "").trim();
+      const ext = filename.toLowerCase().split(".").pop() || "";
+      let text = "";
+
+      // Plain text formats can be read directly in the browser.
+      if (["txt", "md"].includes(ext) || String(file.type || "").toLowerCase().includes("text")) {
+        text = await file.text();
+      } else {
+        // PDFs/DOCX/RTF need server-side extraction; file.text() becomes binary gibberish.
+        if (ext === "doc") {
+          throw new Error("Legacy .doc parsing is not supported yet. Please upload PDF or DOCX.");
+        }
+        const fileData = await fileToBase64(file);
+        const extracted = await api("/extract-document-text", token, "POST", {
+          sourceType: "jd_upload",
+          file: {
+            filename,
+            mimeType: file.type || "application/octet-stream",
+            fileData
+          }
+        });
+        text = String(extracted?.rawText || extracted?.result?.rawText || "").trim();
+      }
+
+      if (!String(text || "").trim()) {
+        throw new Error("JD text could not be extracted from this file.");
+      }
+
+      setJobDraft((current) => ({
+        ...current,
+        jobDescription: text,
+        title: current.title || filename.replace(/\.[^.]+$/, "").replace(/[-_]+/g, " ")
+      }));
+      setStatus("jobs", "JD text uploaded into editor.", "ok");
+    } catch (error) {
+      setStatus("jobs", String(error?.message || error), "error");
+    }
   }
 
   function saveShortcutDraft() {
