@@ -3430,6 +3430,7 @@ function PortalApp({ token, onLogout }) {
     highestEducation: "",
     currentOrgTenure: "",
     reasonForChange: "",
+    cautiousIndicators: "",
     clientName: "",
     jdTitle: "",
     pipelineStage: "Under Interview Process",
@@ -4479,6 +4480,7 @@ function PortalApp({ token, onLogout }) {
       totalExperience: applicant.totalExperience || "",
       currentOrgTenure: applicant.currentOrgTenure || "",
       reasonForChange: applicant.reasonForChange || "",
+      cautiousIndicators: "",
       clientName: applicant.clientName || "",
       jdTitle: applicant.jdTitle || "",
       pipelineStage: "Submitted",
@@ -4985,6 +4987,7 @@ function PortalApp({ token, onLogout }) {
       highestEducation: candidateDraft.highestEducation || matched?.highestEducation || candidate?.highest_education || "",
       currentOrgTenure: candidateDraft.currentOrgTenure || matched?.currentOrgTenure || candidate?.current_org_tenure || "",
       reasonForChange: candidateDraft.reasonForChange || matched?.reasonForChange || "",
+      cautiousIndicators: candidateDraft.cautiousIndicators || "",
       clientName: candidateDraft.clientName || matched?.clientName || candidate?.client_name || "",
       jdTitle: candidateDraft.jdTitle || matched?.jdTitle || candidate?.jd_title || "",
       pipelineStage: candidateDraft.pipelineStage || matched?.pipelineStage || candidate?.pipeline_stage || "Under Interview Process",
@@ -5042,6 +5045,7 @@ function PortalApp({ token, onLogout }) {
       highestEducation: assessment?.highestEducation || candidateDraft.highestEducation || matchedCandidate?.highest_education || "",
       currentOrgTenure: assessment?.currentOrgTenure || candidateDraft.currentOrgTenure || matchedCandidate?.current_org_tenure || "",
       reasonForChange: assessment?.reasonForChange || candidateDraft.reasonForChange || "",
+      cautiousIndicators: assessment?.cautiousIndicators || candidateDraft.cautiousIndicators || "",
       clientName: assessment?.clientName || candidateDraft.clientName || matchedCandidate?.client_name || "",
       jdTitle: assessment?.jdTitle || candidateDraft.jdTitle || matchedCandidate?.jd_title || "",
       pipelineStage: assessment?.pipelineStage || "Under Interview Process",
@@ -7719,6 +7723,7 @@ function PortalApp({ token, onLogout }) {
                   <label className="full"><span>Captured notes</span><textarea value={interviewForm.callbackNotes} onChange={(e) => setInterviewForm((c) => ({ ...c, callbackNotes: e.target.value }))} /></label>
                   <label className="full"><span>Recruiter notes</span><textarea value={interviewForm.recruiterNotes} onChange={(e) => setInterviewForm((c) => ({ ...c, recruiterNotes: e.target.value }))} /></label>
                   <label className="full"><span>Other pointers</span><textarea value={interviewForm.otherPointers} onChange={(e) => setInterviewForm((c) => ({ ...c, otherPointers: e.target.value }))} /></label>
+                  <label className="full"><span>Cautious indicators to check</span><textarea value={interviewForm.cautiousIndicators} onChange={(e) => setInterviewForm((c) => ({ ...c, cautiousIndicators: e.target.value }))} placeholder="What to verify on call: gaps, stability reason, domain mismatch, missing target metrics..." /></label>
                   <label className="full"><span>Tags / searchable keywords</span><textarea value={interviewForm.tags} onChange={(e) => setInterviewForm((c) => ({ ...c, tags: e.target.value }))} placeholder="SaaS, B2B, enterprise sales, node backend, react + java..." /></label>
                 </form>
               </Section>
@@ -7827,7 +7832,7 @@ function PortalApp({ token, onLogout }) {
                   <button onClick={() => void saveAssessment()}>{interviewMeta.assessmentId ? "Save assessment" : "Create assessment"}</button>
                   <button onClick={() => sendInterviewToSheets()}>Send to Sheets</button>
                   <button onClick={() => exportInterviewAll()}>Export all</button>
-                  <button className="ghost-btn" onClick={() => { setInterviewMeta({ candidateId: "", assessmentId: "" }); setInterviewForm({ candidateName: "", phoneNumber: "", emailId: "", linkedin: "", location: "", currentCtc: "", expectedCtc: "", noticePeriod: "", offerInHand: "", lwdOrDoj: "", currentCompany: "", currentDesignation: "", totalExperience: "", relevantExperience: "", currentOrgTenure: "", reasonForChange: "", clientName: "", jdTitle: "", pipelineStage: "Under Interview Process", candidateStatus: "Screening in progress", followUpAt: "", interviewAt: "", recruiterNotes: "", callbackNotes: "", otherPointers: "", tags: "", jdScreeningAnswers: {}, cvAnalysis: null, cvAnalysisApplied: false, statusHistory: [] }); setStatus("interview", ""); }}>Clear draft</button>
+                    <button className="ghost-btn" onClick={() => { setInterviewMeta({ candidateId: "", assessmentId: "" }); setInterviewForm({ candidateName: "", phoneNumber: "", emailId: "", linkedin: "", location: "", currentCtc: "", expectedCtc: "", noticePeriod: "", offerInHand: "", lwdOrDoj: "", currentCompany: "", currentDesignation: "", totalExperience: "", relevantExperience: "", currentOrgTenure: "", reasonForChange: "", cautiousIndicators: "", clientName: "", jdTitle: "", pipelineStage: "Under Interview Process", candidateStatus: "Screening in progress", followUpAt: "", interviewAt: "", recruiterNotes: "", callbackNotes: "", otherPointers: "", tags: "", jdScreeningAnswers: {}, cvAnalysis: null, cvAnalysisApplied: false, statusHistory: [] }); setStatus("interview", ""); }}>Clear draft</button>
                 </div>
               </Section>
             </div>
