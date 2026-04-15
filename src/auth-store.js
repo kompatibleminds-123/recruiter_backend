@@ -284,6 +284,7 @@ function sanitizeSharedExportPresetSettings(raw) {
   const rawColumns = source.exportPresetColumns && typeof source.exportPresetColumns === "object" ? source.exportPresetColumns : {};
   const rawCustomPresets = Array.isArray(source.customExportPresets) ? source.customExportPresets : [];
   return {
+    semanticSearchEnabled: source.semanticSearchEnabled !== false && source.semantic_search_enabled !== false,
     exportPresetLabels: {
       compact_recruiter: String(rawLabels.compact_recruiter || "").trim(),
       client_tracker: String(rawLabels.client_tracker || "").trim(),

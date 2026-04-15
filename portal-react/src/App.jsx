@@ -55,6 +55,9 @@ const STANDALONE_NAV_ITEMS = [
 
 const DEFAULT_COPY_SETTINGS = {
   excelPreset: "compact_recruiter",
+  // When enabled, /company/candidates/search-natural will use embeddings for semantic reranking.
+  // Admin can turn it off for the whole workspace from Preset Settings.
+  semanticSearchEnabled: true,
   exportPresetLabels: {
     compact_recruiter: "Compact recruiter",
     client_tracker: "Client tracker",
@@ -83,6 +86,7 @@ const DEFAULT_COPY_SETTINGS = {
 
 function migrateCopySettings(settings = {}) {
   const next = { ...DEFAULT_COPY_SETTINGS, ...(settings || {}) };
+  next.semanticSearchEnabled = next.semanticSearchEnabled !== false;
   const presetColumns = { ...(next.exportPresetColumns || {}) };
   const attentive = String(presetColumns.attentive_tracker || "").trim();
   if (attentive) {
@@ -5698,7 +5702,11 @@ function PortalApp({ token, onLogout }) {
       return;
     }
     const mode = candidateAiQueryMode === "natural" ? "ai" : "boolean";
-    const result = await api(`/company/candidates/search-natural?q=${encodeURIComponent(candidateSearchText)}&mode=${encodeURIComponent(mode)}`, token);
+    const semanticEnabled = copySettings.semanticSearchEnabled !== false;
+    const result = await api(
+      `/company/candidates/search-natural?q=${encodeURIComponent(candidateSearchText)}&mode=${encodeURIComponent(mode)}&semantic=${semanticEnabled ? "1" : "0"}`,
+      token
+    );
     setCandidateSearchResults(result.items || []);
     setCandidateSearchMode("search");
     setCandidatePage(1);
@@ -7976,6 +7984,25 @@ function PortalApp({ token, onLogout }) {
                   <p className="muted">Set shared candidate tracker presets and direct-share email defaults. Admin saves them once; recruiters can choose the preset while copying or sharing.</p>
                   {!isSettingsAdmin ? <p className="muted">You can use shared presets here. Only admin can create, edit, or save shared preset settings.</p> : null}
                   {statuses.settings ? <div className={`status ${statuses.settingsKind || ""}`}>{statuses.settings}</div> : null}
+                  <div className="settings-subsection">
+                    <div className="section-kicker">Search Settings</div>
+                    <p className="muted">Controls apply to the Database AI Search for the whole workspace.</p>
+                    <div className="form-grid">
+                      <label className="checkbox-row">
+                        <input
+                          type="checkbox"
+                          disabled={!isSettingsAdmin}
+                          checked={copySettings.semanticSearchEnabled !== false}
+                          onChange={(e) => setCopySettings((current) => ({ ...current, semanticSearchEnabled: e.target.checked }))}
+                        />
+                        <span>Enable semantic (embeddings) reranking</span>
+                      </label>
+                    </div>
+                    <p className="muted">When disabled, search remains structured/boolean only (no OpenAI embedding calls per query).</p>
+                    <div className="button-row">
+                      {isSettingsAdmin ? <button onClick={() => void saveSharedCopySettings()}>Save search settings</button> : null}
+                    </div>
+                  </div>
                   <div className="settings-subsection">
                     <div className="section-kicker">Edit Existing Presets</div>
                     <p className="muted">Edit any existing candidate tracker preset, attach it to a specific client if needed, and save shared usage defaults.</p>
