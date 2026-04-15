@@ -5183,9 +5183,24 @@ const server = http.createServer(async (req, res) => {
         companyId: actor.companyId,
         assessment: incomingAssessment
       });
-      const linkedCandidateId = String(incomingAssessment.candidateId || incomingAssessment.candidate_id || "").trim();
+      let linkedCandidateId = String(incomingAssessment.candidateId || incomingAssessment.candidate_id || "").trim();
+      if (!linkedCandidateId) {
+        const emailNeedle = String(incomingAssessment.emailId || incomingAssessment.email_id || "").trim().toLowerCase();
+        const phoneNeedle = String(incomingAssessment.phoneNumber || incomingAssessment.phone_number || "").replace(/[^\d]/g, "");
+        if (emailNeedle || phoneNeedle) {
+          const candidatePool = await listCandidatesForUser(actor, { limit: 5000, scope: "company" });
+          const match = (candidatePool || []).find((c) => {
+            const cEmail = String(c?.email || "").trim().toLowerCase();
+            const cPhone = String(c?.phone || "").replace(/[^\d]/g, "");
+            if (emailNeedle && cEmail && emailNeedle === cEmail) return true;
+            if (phoneNeedle && cPhone && phoneNeedle.length >= 10 && cPhone.endsWith(phoneNeedle.slice(-10))) return true;
+            return false;
+          }) || null;
+          if (match?.id) linkedCandidateId = String(match.id).trim();
+        }
+      }
       if (linkedCandidateId && assessment?.id) {
-        await linkCandidateToAssessment(linkedCandidateId, assessment.id, { companyId: actor.companyId }).catch(() => null);
+        await linkCandidateToAssessment(linkedCandidateId, assessment.id, { companyId: actor.companyId });
       }
       sendJson(res, 200, { ok: true, result: assessment });
     } catch (error) {

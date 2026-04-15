@@ -5509,6 +5509,7 @@ function PortalApp({ token, onLogout }) {
       : canonicalInitialStatus;
     const assessment = {
       id: interviewMeta.assessmentId || `assessment-${Date.now()}`,
+      ...(interviewMeta.candidateId ? { candidateId: String(interviewMeta.candidateId) } : {}),
       ...interviewForm,
       candidateStatus: initialStatus,
       pipelineStage: mapAssessmentStatusToPipelineStage(initialStatus) || interviewForm.pipelineStage || "Submitted",

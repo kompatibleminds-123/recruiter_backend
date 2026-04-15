@@ -1215,17 +1215,25 @@ async function listAssessments({ actorUserId, companyId }) {
   // is visible to them (assigned-to or owned).
   const visibleCandidates = await sbSel(
     "candidates",
-    `select=id&company_id=eq.${enc(companyId)}&or=(recruiter_id.eq.${enc(actor.id)},assigned_to_user_id.eq.${enc(actor.id)})&limit=5000`
+    `select=id,email,phone&company_id=eq.${enc(companyId)}&or=(recruiter_id.eq.${enc(actor.id)},assigned_to_user_id.eq.${enc(actor.id)})&limit=5000`
   ).catch(() => []);
   const visibleCandidateIds = new Set((visibleCandidates || []).map((c) => String(c?.id || "").trim()).filter(Boolean));
+  const visibleEmails = new Set((visibleCandidates || []).map((c) => String(c?.email || "").trim().toLowerCase()).filter(Boolean));
+  const visiblePhones = new Set((visibleCandidates || []).map((c) => normalizeAssessmentPhone(c?.phone)).filter(Boolean));
 
   return (rows || [])
     .filter((i) => {
       if (String(i.recruiter_id || "") === actor.id) return true;
       const payload = i?.payload && typeof i.payload === "object" ? i.payload : {};
       const candidateId = String(i.candidate_id || payload.candidateId || payload.candidate_id || "").trim();
-      if (!candidateId) return false;
-      return visibleCandidateIds.has(candidateId);
+      if (candidateId) return visibleCandidateIds.has(candidateId);
+
+      // Fallback: candidate_id missing (bad legacy rows). Match by identity if possible.
+      const email = String(i.email_id || payload.emailId || payload.email_id || "").trim().toLowerCase();
+      const phone = normalizeAssessmentPhone(i.phone_number || payload.phoneNumber || payload.phone_number || "");
+      if (email && visibleEmails.has(email)) return true;
+      if (phone && visiblePhones.has(phone)) return true;
+      return false;
     })
     .map(sanitizeAssessment);
 }
