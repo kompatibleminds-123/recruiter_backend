@@ -3521,7 +3521,6 @@ function PortalApp({ token, onLogout }) {
   const [assignCandidateId, setAssignCandidateId] = useState("");
   const [hostedJobId, setHostedJobId] = useState("");
   const [hostedRecruiterApplyLinks, setHostedRecruiterApplyLinks] = useState([]);
-  const [cvUploadWithAi, setCvUploadWithAi] = useState(false);
   const [dashboardFilters, setDashboardFilters] = useState(() => {
     try {
       const raw = window.localStorage.getItem(DASHBOARD_FILTER_STORAGE_KEY);
@@ -5639,7 +5638,7 @@ function PortalApp({ token, onLogout }) {
 
   async function parseInterviewCvFile(file) {
     if (!file) return;
-    setStatus("interview", cvUploadWithAi ? "Uploading CV and running AI parsing (can take ~10-15 seconds)..." : "Uploading CV (fast mode)...");
+    setStatus("interview", "Uploading CV... (parsing will continue in the background)");
     try {
       const fileData = await fileToBase64(file);
       const payload = {
@@ -5647,7 +5646,8 @@ function PortalApp({ token, onLogout }) {
         emailId: interviewForm.emailId,
         phoneNumber: interviewForm.phoneNumber,
         totalExperience: interviewForm.totalExperience,
-        normalizeWithAi: cvUploadWithAi,
+        // Keep AI parsing off from the portal to avoid confusion/cost. Backend still runs deterministic parsing.
+        normalizeWithAi: false,
         deferParse: true,
         file: {
           filename: file.name,
@@ -5672,7 +5672,7 @@ function PortalApp({ token, onLogout }) {
         result.cached
           ? "Loaded cached CV data from the stored upload."
           : interviewMeta.candidateId
-            ? (cvUploadWithAi ? "CV uploaded to storage and AI-parsed. Parsed data is saved for search and later sharing." : "CV uploaded to storage. You can optionally run AI parsing later by re-uploading with AI mode.")
+            ? "CV uploaded to storage. Parsing is running in the background. CV link is available immediately."
             : "CV parsed and saved in hidden metadata for later search use.",
         "ok"
       );
@@ -8141,10 +8141,6 @@ function PortalApp({ token, onLogout }) {
                           ? "Candidate-linked upload is active. This CV should store against the current candidate."
                           : "Open a real candidate draft first if you want this CV stored in S3 for later sharing."}
                       </div>
-                      <label className="checkbox-inline" style={{ marginTop: 10 }}>
-                        <input type="checkbox" checked={cvUploadWithAi} onChange={(e) => setCvUploadWithAi(Boolean(e.target.checked))} />
-                        <span>AI parse CV (slower, better accuracy). Keep OFF for faster upload.</span>
-                      </label>
                     </div>
                     <div className="button-row">
                       <label className="file-btn">
