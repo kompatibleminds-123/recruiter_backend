@@ -1244,6 +1244,55 @@ async function getAssessmentById({ companyId, assessmentId }) {
   const rows = await sbSel("assessments", `select=*&company_id=eq.${enc(safeCompanyId)}&id=eq.${enc(safeAssessmentId)}&limit=1`).catch(() => []);
   return rows && rows[0] ? sanitizeAssessment(rows[0]) : null;
 }
+
+function normalizeAssessmentKeyPart(value) {
+  return String(value || "").trim().toLowerCase();
+}
+
+function assessmentsMatchSameCandidateKey(existing = {}, incoming = {}) {
+  const exCandidateId = String(existing?.candidateId || existing?.candidate_id || "").trim();
+  const inCandidateId = String(incoming?.candidateId || incoming?.candidate_id || "").trim();
+  if (exCandidateId && inCandidateId && exCandidateId === inCandidateId) {
+    const exJd = normalizeAssessmentKeyPart(existing?.jdTitle || existing?.jd_title || "");
+    const inJd = normalizeAssessmentKeyPart(incoming?.jdTitle || incoming?.jd_title || "");
+    const exClient = normalizeAssessmentKeyPart(existing?.clientName || existing?.client_name || "");
+    const inClient = normalizeAssessmentKeyPart(incoming?.clientName || incoming?.client_name || "");
+    // Prefer matching within same client + JD to avoid merging a candidate submitted to multiple roles.
+    if (exJd && inJd && exJd !== inJd) return false;
+    if (exClient && inClient && exClient !== inClient) return false;
+    return true;
+  }
+  return false;
+}
+
+async function findExistingAssessmentIdForCandidate({ actorUserId, companyId, assessment }) {
+  const a = sanitizeAssessment(assessment);
+  const candidateId = String(a?.candidateId || "").trim();
+  if (!candidateId) return "";
+  const jdTitle = normalizeAssessmentKeyPart(a?.jdTitle || "");
+  const clientName = normalizeAssessmentKeyPart(a?.clientName || "");
+
+  if (!cfg().on) {
+    const store = readStore();
+    const items = Array.isArray(store.assessments) ? store.assessments.filter((i) => i.companyId === companyId) : [];
+    const match = items.find((existing) => assessmentsMatchSameCandidateKey(existing, a)) || null;
+    return match ? String(match.id || "").trim() : "";
+  }
+
+  await ensureSeeded();
+  // Pull a small set for the candidate, then filter in JS to keep logic consistent.
+  const rows = await sbSel("assessments", `select=id,candidate_id,candidate_name,client_name,jd_title,payload&company_id=eq.${enc(companyId)}&candidate_id=eq.${enc(candidateId)}&limit=50`).catch(() => []);
+  const sanitized = (rows || []).map(sanitizeAssessment);
+  const match = sanitized.find((existing) => {
+    if (!assessmentsMatchSameCandidateKey(existing, a)) return false;
+    const exJd = normalizeAssessmentKeyPart(existing?.jdTitle || "");
+    const exClient = normalizeAssessmentKeyPart(existing?.clientName || "");
+    if (jdTitle && exJd && jdTitle !== exJd) return false;
+    if (clientName && exClient && clientName !== exClient) return false;
+    return true;
+  }) || null;
+  return match ? String(match.id || "").trim() : "";
+}
 async function saveAssessment({ actorUserId, companyId, assessment }) {
   if (!actorUserId || !companyId || !assessment) throw new Error("actorUserId, companyId, and assessment payload are required.");
   const actor = sanitizeUser(await getUserById(actorUserId, companyId)); if (!actor) throw new Error("Authenticated recruiter not found for this company.");
@@ -1252,7 +1301,14 @@ async function saveAssessment({ actorUserId, companyId, assessment }) {
     const next = { ...assessment, id, companyId, recruiterId: actor.id, recruiterName: actor.name, recruiterEmail: actor.email, generatedAt: assessment.generatedAt || now, updatedAt: now };
     if (ix >= 0) store.assessments[ix] = next; else store.assessments.unshift(next); writeStore(store); return sanitizeAssessment(next);
   }
-  const rows = await sbIns("assessments", [assessmentRow(assessment, actor, companyId)], { conflict: "id", upsert: true }); return sanitizeAssessment(rows[0]);
+  // De-duplicate: if an assessment already exists for the same candidate (and same client/JD when present),
+  // reuse that id instead of creating a brand-new row. This prevents "assessment created twice" when admin
+  // and recruiter both try converting the same captured note.
+  const existingId = await findExistingAssessmentIdForCandidate({ actorUserId: actor.id, companyId, assessment }).catch(() => "");
+  const incoming = sanitizeAssessment(assessment);
+  const safeAssessment = existingId ? { ...incoming, id: existingId } : incoming;
+  const rows = await sbIns("assessments", [assessmentRow(safeAssessment, actor, companyId)], { conflict: "id", upsert: true });
+  return sanitizeAssessment(rows[0]);
 }
 async function searchAssessments({ actorUserId, companyId, q, limit = 25 }) {
   const base = await listAssessments({ actorUserId, companyId }); const spec = buildAssessmentSearchSpec(q);

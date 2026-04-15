@@ -5523,7 +5523,7 @@ function PortalApp({ token, onLogout }) {
       await api("/candidates/link-assessment", token, "POST", {
         id: interviewMeta.candidateId,
         assessmentId: savedAssessment?.id || assessment.id
-      }).catch(() => null);
+      });
       const existingCandidate = (state.candidates || []).find((item) => String(item.id) === String(interviewMeta.candidateId));
       const existingMeta = decodePortalApplicantMetadata(existingCandidate || {});
       const nextMeta = mergeStoredCvIntoApplicantMeta(existingMeta, interviewForm.cvAnalysis || null);
