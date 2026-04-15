@@ -1385,12 +1385,71 @@ async function searchAssessments({ actorUserId, companyId, q, limit = 25 }) {
   }).slice(0, Math.max(1, Number(limit) || 25));
 }
 async function deleteAssessment({ actorUserId, companyId, assessmentId }) {
-  const actor = sanitizeUser(await getUserById(actorUserId, companyId)); if (!actor) throw new Error("Authenticated recruiter not found for this company.");
+  const actor = sanitizeUser(await getUserById(actorUserId, companyId));
+  if (!actor) throw new Error("Authenticated recruiter not found for this company.");
+  const actorIsAdmin = String(actor.role || "").toLowerCase() === "admin";
+
+  const isAllowedForRecruiter = async (assessmentRow) => {
+    if (actorIsAdmin) return true;
+    if (!assessmentRow) return false;
+    if (String(assessmentRow?.recruiter_id || assessmentRow?.recruiterId || "").trim() === String(actor.id || "").trim()) return true;
+
+    // Recruiters can see admin-created assessments if the candidate is assigned/visible to them.
+    // Allow delete under the same visibility rule to avoid "can't delete from recruiter login".
+    const candidateId = String(
+      assessmentRow?.candidate_id
+      || assessmentRow?.candidateId
+      || assessmentRow?.payload?.candidateId
+      || assessmentRow?.payload?.candidate_id
+      || ""
+    ).trim();
+    if (!candidateId) return false;
+
+    const visibleCandidates = await sbSel(
+      "candidates",
+      `select=id&company_id=eq.${enc(companyId)}&or=(recruiter_id.eq.${enc(actor.id)},assigned_to_user_id.eq.${enc(actor.id)})&id=eq.${enc(candidateId)}&limit=1`
+    ).catch(() => []);
+    return Array.isArray(visibleCandidates) && visibleCandidates.length > 0;
+  };
+
   if (!cfg().on) {
-    const store = readStore(); const before = (store.assessments || []).length; store.assessments = (store.assessments || []).filter((i) => !(i.companyId === companyId && i.id === assessmentId) || (actor.role !== "admin" && i.recruiterId !== actor.id)); if (store.assessments.length === before) throw new Error("Assessment not found or not allowed."); writeStore(store);
-  } else {
-    const filters = [`id=eq.${enc(assessmentId)}`, `company_id=eq.${enc(companyId)}`]; if (actor.role !== "admin") filters.push(`recruiter_id=eq.${enc(actor.id)}`); await sbDel("assessments", filters.join("&"));
+    const store = readStore();
+    const existing = (store.assessments || []).find((i) => i.companyId === companyId && i.id === assessmentId) || null;
+    const allowed = actorIsAdmin || (existing && (existing.recruiterId === actor.id || String(existing?.candidateId || "").trim() !== ""));
+    if (!allowed) throw new Error("Assessment not found or not allowed.");
+    const before = (store.assessments || []).length;
+    store.assessments = (store.assessments || []).filter((i) => !(i.companyId === companyId && i.id === assessmentId));
+    if (store.assessments.length === before) throw new Error("Assessment not found or not allowed.");
+    writeStore(store);
+    return { deleted: true, assessmentId };
   }
+
+  await ensureSeeded();
+  const rows = await sbSel(
+    "assessments",
+    `select=id,company_id,recruiter_id,candidate_id,email_id,phone_number,payload&company_id=eq.${enc(companyId)}&id=eq.${enc(assessmentId)}&limit=1`
+  ).catch(() => []);
+  const assessmentRow = rows && rows[0] ? rows[0] : null;
+  if (!assessmentRow) throw new Error("Assessment not found or not allowed.");
+
+  let allowed = await isAllowedForRecruiter(assessmentRow);
+  if (!allowed && !actorIsAdmin) {
+    // Fallback: candidate_id missing (legacy). If the assessment matches a visible candidate by identity, allow delete.
+    const emailNeedle = normalizeAssessmentEmail(assessmentRow?.email_id || assessmentRow?.payload?.emailId || assessmentRow?.payload?.email_id || "");
+    const phoneNeedle = normalizeAssessmentPhone(assessmentRow?.phone_number || assessmentRow?.payload?.phoneNumber || assessmentRow?.payload?.phone_number || "");
+    if (emailNeedle || phoneNeedle) {
+      const visible = await sbSel(
+        "candidates",
+        `select=id,email,phone&company_id=eq.${enc(companyId)}&or=(recruiter_id.eq.${enc(actor.id)},assigned_to_user_id.eq.${enc(actor.id)})&limit=5000`
+      ).catch(() => []);
+      const emailSet = new Set((visible || []).map((c) => normalizeAssessmentEmail(c?.email)).filter(Boolean));
+      const phoneSet = new Set((visible || []).map((c) => normalizeAssessmentPhone(c?.phone)).filter(Boolean));
+      allowed = (emailNeedle && emailSet.has(emailNeedle)) || (phoneNeedle && phoneSet.has(phoneNeedle));
+    }
+  }
+  if (!allowed) throw new Error("Assessment not found or not allowed.");
+
+  await sbDel("assessments", `id=eq.${enc(assessmentId)}&company_id=eq.${enc(companyId)}`);
   return { deleted: true, assessmentId };
 }
 

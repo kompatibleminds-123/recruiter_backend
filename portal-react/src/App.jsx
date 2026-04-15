@@ -4766,14 +4766,31 @@ function PortalApp({ token, onLogout }) {
       setStatus(statusTarget, "Candidate id missing for candidate card.", "error");
       return;
     }
-    const result = await api(`/company/candidates/${encodeURIComponent(safeId)}/share-profile-link`, token, "POST");
-    const url = String(result?.url || "").trim();
-    if (!url) {
-      setStatus(statusTarget, "Could not generate candidate card link.", "error");
+    // Open a blank tab synchronously (popup blockers allow this). We'll redirect once the URL is ready.
+    const popup = window.open("about:blank", "_blank");
+    if (!popup) {
+      setStatus(statusTarget, "Popup blocked. Allow popups to open candidate card.", "error");
       return;
     }
-    window.open(url, "_blank", "noopener,noreferrer");
-    setStatus(statusTarget, "Opening candidate card...", "ok");
+    try {
+      popup.opener = null;
+    } catch {
+      // ignore
+    }
+    try {
+      const result = await api(`/company/candidates/${encodeURIComponent(safeId)}/share-profile-link`, token, "POST");
+      const url = String(result?.url || "").trim();
+      if (!url) {
+        try { popup.close(); } catch { /* ignore */ }
+        setStatus(statusTarget, "Could not generate candidate card link.", "error");
+        return;
+      }
+      popup.location.href = url;
+      setStatus(statusTarget, "Opening candidate card...", "ok");
+    } catch (error) {
+      try { popup.close(); } catch { /* ignore */ }
+      setStatus(statusTarget, String(error?.message || error), "error");
+    }
   }
 
   function resolveCandidateIdForAssessment(assessment) {
@@ -4790,7 +4807,8 @@ function PortalApp({ token, onLogout }) {
     const wantedPhone = normalizePhone(assessment?.phoneNumber || assessment?.phone || "");
     if (!wantedEmail && !wantedPhone) return "";
 
-    const match = (state.candidates || []).find((candidate) => {
+    const pool = (state.databaseCandidates || []).length ? state.databaseCandidates : (state.candidates || []);
+    const match = pool.find((candidate) => {
       const email = normalizeEmail(candidate?.email || candidate?.emailId || "");
       const phone = normalizePhone(candidate?.phone || candidate?.phoneNumber || "");
       return (wantedEmail && email && wantedEmail === email) || (wantedPhone && phone && wantedPhone === phone);
