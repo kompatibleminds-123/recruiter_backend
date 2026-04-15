@@ -7586,6 +7586,12 @@ function PortalApp({ token, onLogout }) {
                   </div>
                 </div>
                 <div className="button-row">
+                  <label className="copy-preset-control">
+                    <span>Copy preset</span>
+                    <select value={activeCopyPresetId} onChange={(e) => setActiveCopyPresetId(e.target.value)}>
+                      {exportPresetOptions.map((preset) => <option key={preset.id} value={preset.id}>{preset.label}</option>)}
+                    </select>
+                  </label>
                   <button onClick={() => void copyCandidatesExcel()}>Copy Excel</button>
                   <button onClick={() => void copyCandidatesWhatsapp()}>Copy WhatsApp</button>
                   <button onClick={() => void copyCandidatesEmail()}>Copy Email</button>
