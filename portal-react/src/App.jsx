@@ -3244,8 +3244,14 @@ function CandidateProfileModal({ open, candidate, onClose, onOpenCv, onReuse, on
     linkedAssessment?.jdTitle || baseCandidate.assigned_jd_title || baseCandidate.jd_title || baseCandidate.jdTitle || draft.jdTitle || baseCandidate.role || "",
     linkedAssessment?.currentCompany || baseCandidate.company || baseCandidate.currentCompany || draft.currentCompany || ""
   ].filter(Boolean).join(" | ");
-  const statusLabel = linkedAssessment?.candidateStatus || candidate.candidateStatus || candidate.assessment_status || candidate.outcome || candidate.status || "";
-  const pipelineLabel = linkedAssessment?.pipelineStage || candidate.pipelineStage || draft.pipelineStage || "";
+  const assessmentStatusLabel = linkedAssessment
+    ? normalizeAssessmentStatusLabel(
+        linkedAssessment?.candidateStatus ||
+          linkedAssessment?.candidate_status ||
+          linkedAssessment?.assessment_status ||
+          ""
+      )
+    : "";
   return (
     <div className="overlay">
       <div className="overlay-card overlay-card--wide" onClick={(e) => e.stopPropagation()}>
@@ -3255,8 +3261,7 @@ function CandidateProfileModal({ open, candidate, onClose, onOpenCv, onReuse, on
             <p className="muted">{modalSubtitle}</p>
           </div>
           <div className="candidate-sheet__head-meta">
-            {statusLabel ? <span className="chip">Status: {statusLabel}</span> : null}
-            {pipelineLabel ? <span className="chip">Pipeline: {pipelineLabel}</span> : null}
+            {assessmentStatusLabel ? <span className="chip">Assessment status: {assessmentStatusLabel}</span> : null}
           </div>
         </div>
 
@@ -4752,6 +4757,45 @@ function PortalApp({ token, onLogout }) {
     }
     await copyText(url);
     setStatus("workspace", "Candidate profile share link copied.", "ok");
+  }
+
+  async function openCandidateProfileCard(candidateId, options = {}) {
+    const statusTarget = String(options?.statusTarget || "workspace");
+    const safeId = String(candidateId || "").trim();
+    if (!safeId) {
+      setStatus(statusTarget, "Candidate id missing for candidate card.", "error");
+      return;
+    }
+    const result = await api(`/company/candidates/${encodeURIComponent(safeId)}/share-profile-link`, token, "POST");
+    const url = String(result?.url || "").trim();
+    if (!url) {
+      setStatus(statusTarget, "Could not generate candidate card link.", "error");
+      return;
+    }
+    window.open(url, "_blank", "noopener,noreferrer");
+    setStatus(statusTarget, "Opening candidate card...", "ok");
+  }
+
+  function resolveCandidateIdForAssessment(assessment) {
+    const directId = String(assessment?.candidateId || assessment?.candidate_id || "").trim();
+    if (directId) return directId;
+
+    const normalizeEmail = (value) => String(value || "").trim().toLowerCase();
+    const normalizePhone = (value) => {
+      const digits = String(value || "").replace(/[^\d]/g, "");
+      return digits.length > 10 ? digits.slice(-10) : digits;
+    };
+
+    const wantedEmail = normalizeEmail(assessment?.emailId || assessment?.email || "");
+    const wantedPhone = normalizePhone(assessment?.phoneNumber || assessment?.phone || "");
+    if (!wantedEmail && !wantedPhone) return "";
+
+    const match = (state.candidates || []).find((candidate) => {
+      const email = normalizeEmail(candidate?.email || candidate?.emailId || "");
+      const phone = normalizePhone(candidate?.phone || candidate?.phoneNumber || "");
+      return (wantedEmail && email && wantedEmail === email) || (wantedPhone && phone && wantedPhone === phone);
+    });
+    return String(match?.id || "").trim();
   }
 
   function openInterviewStoredCv() {
@@ -7863,6 +7907,18 @@ function PortalApp({ token, onLogout }) {
                       <button onClick={() => setAssessmentStatusId(item.id)}>Update status</button>
                       <button onClick={() => void openAssessmentJourney(item)}>Journey</button>
                       <button onClick={() => openAssessmentWhatsapp(item)}>WhatsApp</button>
+                      <button
+                        onClick={() => {
+                          const candidateId = resolveCandidateIdForAssessment(item);
+                          if (!candidateId) {
+                            setStatus("assessments", "Linked candidate not found for this assessment.", "error");
+                            return;
+                          }
+                          void openCandidateProfileCard(candidateId, { statusTarget: "assessments" });
+                        }}
+                      >
+                        Candidate card
+                      </button>
                       <button onClick={() => reuseAssessmentAsNew(item)}>Reuse as new</button>
                       <button className="ghost-btn" onClick={() => void deleteAssessmentItem(item)}>Delete</button>
                     </div>
