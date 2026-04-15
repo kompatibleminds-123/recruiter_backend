@@ -1089,7 +1089,13 @@ function getRecruiterLabel(candidate = {}, assessment = {}) {
 function getOwnerRecruiterLabel(candidate = {}, assessment = {}) {
   const assigned = String(candidate.assigned_to_name || candidate.assignedToName || "").trim();
   if (assigned) return assigned;
-  return "Unassigned";
+  // For many flows (extension capture, website apply), assigned_to_name can be empty even though
+  // the candidate is clearly owned by a recruiter. Use recruiter_name / assessment recruiterName
+  // as a safe fallback so dashboards and filters behave consistently.
+  const owner =
+    String(candidate.recruiter_name || candidate.recruiterName || "").trim() ||
+    String(assessment.recruiterName || assessment.recruiter_name || "").trim();
+  return owner || "Unassigned";
 }
 
 function buildKnownJdTitleSet(jobs = []) {
@@ -1362,22 +1368,40 @@ function buildDashboardSummary({ candidates = [], assessments = [], jobs = [], d
   const assessmentsById = new Map(
     (Array.isArray(assessments) ? assessments : []).map((item) => [String(item?.id || "").trim(), item])
   );
+  // Avoid double-counting conversion metrics if duplicate candidate rows reference the same assessment.
+  const countedAssessmentIds = new Set();
 
   for (const candidate of Array.isArray(candidates) ? candidates : []) {
-    const linkedAssessment = assessmentsById.get(String(candidate?.assessment_id || candidate?.assessmentId || "").trim()) || null;
+    let linkedAssessment = assessmentsById.get(String(candidate?.assessment_id || candidate?.assessmentId || "").trim()) || null;
+    // Fallback: if the candidate row isn't linked properly yet, try matching an assessment by identity.
+    if (!linkedAssessment) {
+      linkedAssessment = pickBestAssessmentForCandidate(candidate, assessments) || null;
+    }
     const clientLabel = getClientLabel(candidate, linkedAssessment || {});
     if (clientFilter && clientLabel !== clientFilter) continue;
     const ownerRecruiterLabel = getOwnerRecruiterLabel(candidate, linkedAssessment || {});
     if (recruiterFilter && ownerRecruiterLabel !== recruiterFilter) continue;
     const positionLabel = getPositionLabel(candidate, linkedAssessment || {}, knownJdTitles);
     const dateRange = { from: dateFrom, to: dateTo };
-    const contributes = addCandidateMetrics(overall, candidate, linkedAssessment, dateRange);
+    // If we found an assessment, treat this candidate as converted for metrics even if legacy flags are missing.
+    // Also dedupe conversion metrics by assessment id.
+    let effectiveAssessment = linkedAssessment;
+    if (effectiveAssessment?.id) {
+      const assessmentId = String(effectiveAssessment.id || "").trim();
+      if (assessmentId && countedAssessmentIds.has(assessmentId)) {
+        effectiveAssessment = null;
+      } else if (assessmentId) {
+        countedAssessmentIds.add(assessmentId);
+      }
+    }
+    const effectiveCandidate = effectiveAssessment ? { ...candidate, used_in_assessment: true } : candidate;
+    const contributes = addCandidateMetrics(overall, effectiveCandidate, effectiveAssessment, dateRange);
     if (!contributes) continue;
     if (!byClient.has(clientLabel)) byClient.set(clientLabel, createDashboardBucket());
     if (!byOwnerRecruiter.has(ownerRecruiterLabel)) byOwnerRecruiter.set(ownerRecruiterLabel, createDashboardRecruiterBucket());
-    addCandidateMetrics(byClient.get(clientLabel), candidate, linkedAssessment, dateRange);
-    addCandidateMetrics(byOwnerRecruiter.get(ownerRecruiterLabel).metrics, candidate, linkedAssessment, dateRange);
-    addRecruiterOwnershipMetrics(byOwnerRecruiter.get(ownerRecruiterLabel), ownerRecruiterLabel, candidate, linkedAssessment, dateRange);
+    addCandidateMetrics(byClient.get(clientLabel), effectiveCandidate, effectiveAssessment, dateRange);
+    addCandidateMetrics(byOwnerRecruiter.get(ownerRecruiterLabel).metrics, effectiveCandidate, effectiveAssessment, dateRange);
+    addRecruiterOwnershipMetrics(byOwnerRecruiter.get(ownerRecruiterLabel), ownerRecruiterLabel, effectiveCandidate, effectiveAssessment, dateRange);
     if (positionLabel) {
       const matrixKey = `${clientLabel}|||${positionLabel}|||${ownerRecruiterLabel}`;
       const clientPositionKey = `${clientLabel}|||${positionLabel}`;
@@ -1392,8 +1416,8 @@ function buildDashboardSummary({ candidates = [], assessments = [], jobs = [], d
       if (!byClientPosition.has(clientPositionKey)) {
         byClientPosition.set(clientPositionKey, { clientLabel, positionLabel, metrics: createDashboardBucket() });
       }
-      addCandidateMetrics(byClientRecruiter.get(matrixKey).metrics, candidate, linkedAssessment, dateRange);
-      addCandidateMetrics(byClientPosition.get(clientPositionKey).metrics, candidate, linkedAssessment, dateRange);
+      addCandidateMetrics(byClientRecruiter.get(matrixKey).metrics, effectiveCandidate, effectiveAssessment, dateRange);
+      addCandidateMetrics(byClientPosition.get(clientPositionKey).metrics, effectiveCandidate, effectiveAssessment, dateRange);
     }
   }
 
