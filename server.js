@@ -4768,7 +4768,38 @@ const server = http.createServer(async (req, res) => {
           normalizeDashboardText
         }
       });
-      const matches = hybrid.items || [];
+      const matches = (hybrid.items || []).map((item) => {
+        // Keep backward-compatible "universe" shape but also flatten the most-used candidate fields
+        // so exports/indicators do not depend on raw.candidate.
+        const candidate = item?.raw?.candidate && typeof item.raw.candidate === "object" ? item.raw.candidate : {};
+        const assessment = item?.raw?.assessment && typeof item.raw.assessment === "object" ? item.raw.assessment : {};
+        const draftPayload = candidate?.draft_payload && typeof candidate.draft_payload === "object"
+          ? candidate.draft_payload
+          : candidate?.draftPayload && typeof candidate.draftPayload === "object"
+            ? candidate.draftPayload
+            : {};
+        const screeningAnswers = candidate?.screening_answers && typeof candidate.screening_answers === "object"
+          ? candidate.screening_answers
+          : candidate?.screeningAnswers && typeof candidate.screeningAnswers === "object"
+            ? candidate.screeningAnswers
+            : {};
+        return {
+          ...item,
+          // core contact fields
+          phone: String(candidate?.phone || assessment?.phoneNumber || assessment?.phone || "").trim(),
+          email: String(candidate?.email || assessment?.emailId || assessment?.email || "").trim(),
+          linkedin: String(candidate?.linkedin || assessment?.linkedinUrl || "").trim(),
+          // common indicator fields
+          current_ctc: String(candidate?.current_ctc || assessment?.currentCtc || "").trim(),
+          expected_ctc: String(candidate?.expected_ctc || assessment?.expectedCtc || "").trim(),
+          notice_period: String(candidate?.notice_period || assessment?.noticePeriod || "").trim(),
+          lwd_or_doj: String(candidate?.lwd_or_doj || assessment?.lwdOrDoj || assessment?.offerDoj || "").trim(),
+          // structured Q/A sources used by Screening remarks indicator
+          draft_payload: draftPayload,
+          screening_answers: screeningAnswers,
+          other_standard_questions: String(candidate?.last_contact_notes || candidate?.other_standard_questions || assessment?.other_standard_questions || "").trim()
+        };
+      });
       sendJson(res, 200, {
         ok: true,
         result: {
