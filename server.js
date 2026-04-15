@@ -63,6 +63,11 @@ const {
   setCompanyApplicantIntakeSecret
 } = require("./src/auth-store");
 
+const { DEFAULT_SYNONYMS } = require("./src/search/synonyms");
+const { normalizeRecruiterQuery } = require("./src/search/normalize");
+const { hybridSearchCandidates, buildCandidateSemanticText } = require("./src/search/hybrid-search");
+const { createEmbedding, hashText } = require("./src/search/embedding-service");
+
 const PORT = Number(process.env.PORT || 8787);
 const WHATSAPP_VERIFY_TOKEN = String(process.env.WHATSAPP_VERIFY_TOKEN || "").trim();
 const QUICK_CAPTURE_PUBLIC_DIR = path.join(__dirname, "public", "quick-capture");
@@ -3860,6 +3865,67 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (req.method === "POST" && req.url === "/company/candidates/backfill-search-embeddings") {
+    try {
+      const actor = await requireSessionUser(getBearerToken(req));
+      if (String(actor.role || "").toLowerCase() !== "admin") {
+        throw new Error("Only an admin can backfill candidate embeddings.");
+      }
+      const apiKey = String(process.env.OPENAI_API_KEY || "").trim();
+      if (!apiKey) throw new Error("Missing OPENAI_API_KEY on server.");
+
+      const body = await readJsonBody(req);
+      const limit = Math.max(1, Math.min(2000, Number(body?.limit || 300) || 300));
+      const force = body?.force === true;
+
+      const candidates = await listCandidatesForUser(actor, { limit: 5000, scope: "company" });
+      let updated = 0;
+      let skipped = 0;
+      let failed = 0;
+
+      for (const candidate of Array.isArray(candidates) ? candidates : []) {
+        if (updated >= limit) break;
+        const existingDraft = candidate?.draft_payload && typeof candidate.draft_payload === "object" ? candidate.draft_payload : {};
+        const existingEmbedding = Array.isArray(existingDraft?.search_embedding_v1) ? existingDraft.search_embedding_v1 : Array.isArray(existingDraft?.searchEmbeddingV1) ? existingDraft.searchEmbeddingV1 : null;
+        const existingHash = String(existingDraft?.search_embedding_text_hash || existingDraft?.searchEmbeddingTextHash || "").trim();
+
+        const universeItem = buildCandidateSearchUniverse([candidate], [], [])[0] || null;
+        const embeddingText = buildCandidateSemanticText(universeItem || { raw: { candidate }, notesText: candidate?.notes || "" });
+        const textHash = hashText(embeddingText);
+
+        if (!force && existingEmbedding && existingEmbedding.length && existingHash && existingHash === textHash) {
+          skipped += 1;
+          continue;
+        }
+
+        try {
+          const embedding = await createEmbedding({ apiKey, text: embeddingText });
+          if (!embedding.length) {
+            skipped += 1;
+            continue;
+          }
+          const nextDraft = {
+            ...existingDraft,
+            search_embedding_v1: embedding,
+            search_embedding_model: String(process.env.OPENAI_EMBEDDINGS_MODEL || "text-embedding-3-small").trim(),
+            search_embedding_text_hash: textHash,
+            search_embedding_updated_at: new Date().toISOString()
+          };
+          await patchCandidate(String(candidate.id || "").trim(), { draft_payload: nextDraft }, { companyId: actor.companyId });
+          updated += 1;
+        } catch (error) {
+          failed += 1;
+          console.warn("Embedding backfill failed:", error?.message || error);
+        }
+      }
+
+      sendJson(res, 200, { ok: true, result: { updated, skipped, failed, limit } });
+    } catch (error) {
+      sendJson(res, 400, { ok: false, error: String(error.message || error) });
+    }
+    return;
+  }
+
   if (req.method === "POST" && req.url === "/company/candidates/backfill-skills") {
     try {
       const user = await requireSessionUser(getBearerToken(req));
@@ -4282,12 +4348,17 @@ const server = http.createServer(async (req, res) => {
       const user = await requireSessionUser(getBearerToken(req));
       const query = String(requestUrl.searchParams.get("q") || "").trim();
       const queryMode = String(requestUrl.searchParams.get("mode") || "natural").trim().toLowerCase();
-      let filters = parseNaturalLanguageCandidateQuery(query);
+      const debug = String(requestUrl.searchParams.get("debug") || "").trim() === "1";
+      const semanticEnabled = String(requestUrl.searchParams.get("semantic") || "").trim() !== "0";
+      const normalized = normalizeRecruiterQuery(query, DEFAULT_SYNONYMS);
+      let filters = parseNaturalLanguageCandidateQuery(normalized.normalized || query);
+      filters.raw = query;
       if (query && queryMode === "ai") {
         const apiKey = String(process.env.OPENAI_API_KEY || "").trim();
         if (apiKey) {
           try {
-            filters = await interpretCandidateSearchQueryWithAi({ apiKey, query, actor: user });
+            filters = await interpretCandidateSearchQueryWithAi({ apiKey, query: normalized.normalized || query, actor: user });
+            filters.raw = query;
           } catch (error) {
             console.warn("AI query interpretation failed, falling back to heuristic parser:", error?.message || error);
           }
@@ -4306,61 +4377,43 @@ const server = http.createServer(async (req, res) => {
         listCompanyJobs(user.companyId)
       ]);
       const universe = buildCandidateSearchUniverse(candidates, assessments, jobs);
-      let matches = [];
-      if (queryMode === "boolean") {
-        matches = universe
-          .filter((item) => !recruiterFilter || String(item.ownerRecruiter || "").trim() === recruiterFilter)
-          .filter((item) => candidateMatchesBooleanQuery(item, query))
-          .slice(0, 200);
-        if (!matches.length && isPlainCandidateLookupQuery(query)) {
-          const fallbackTokens = buildNaturalSearchFallbackTokens(query);
-          matches = universe
-            .filter((item) => !recruiterFilter || String(item.ownerRecruiter || "").trim() === recruiterFilter)
-            .filter((item) => {
-              const hay = buildCandidateSearchHay(item);
-              return fallbackTokens.length && fallbackTokens.every((token) => hay.includes(normalizeDashboardText(token)));
-            })
-            .slice(0, 200);
+
+      const scopedUniverse = universe.filter((item) => !recruiterFilter || String(item.ownerRecruiter || "").trim() === recruiterFilter);
+      const apiKey = semanticEnabled ? String(process.env.OPENAI_API_KEY || "").trim() : "";
+      const hybrid = await hybridSearchCandidates({
+        universe: scopedUniverse,
+        actor: user,
+        rawQuery: query,
+        normalizedQuery: normalized.normalized,
+        filters,
+        queryMode,
+        apiKey,
+        synonyms: DEFAULT_SYNONYMS,
+        helpers: {
+          buildHay: buildCandidateSearchHay,
+          matchesNatural: candidateMatchesNaturalFilter,
+          matchesBoolean: candidateMatchesBooleanQuery,
+          matchesLooseTokens: candidateMatchesLooseNaturalTokens
+        },
+        options: {
+          debug,
+          semantic: semanticEnabled,
+          semanticTopK: 80,
+          parseExperienceToYears,
+          isPlainLookup: isPlainCandidateLookupQuery,
+          buildNaturalSearchFallbackTokens,
+          normalizeDashboardText
         }
-      } else {
-        matches = universe
-          .filter((item) => !recruiterFilter || String(item.ownerRecruiter || "").trim() === recruiterFilter)
-          .filter((item) => candidateMatchesNaturalFilter(item, filters, user))
-          .slice(0, 200);
-      }
-      if (!matches.length && query && queryMode !== "boolean") {
-        const fallbackTokens = buildNaturalSearchFallbackTokens(query);
-        const relaxedFilters = {
-          ...filters,
-          role: "",
-          roleFamilies: [],
-          targetLabel: "",
-          currentCompany: "",
-          skills: []
-        };
-        matches = universe
-          .filter((item) => !recruiterFilter || String(item.ownerRecruiter || "").trim() === recruiterFilter)
-          .filter((item) => candidateMatchesNaturalFilter(item, relaxedFilters, user))
-          .filter((item) => {
-            if (!fallbackTokens.length) return true;
-            const hay = buildCandidateSearchHay(item);
-            return fallbackTokens.every((token) => hay.includes(normalizeDashboardText(token)));
-          })
-          .slice(0, 200);
-        if (!matches.length) {
-          matches = universe
-            .filter((item) => !recruiterFilter || String(item.ownerRecruiter || "").trim() === recruiterFilter)
-            .filter((item) => candidateMatchesNaturalFilter(item, relaxedFilters, user))
-            .filter((item) => candidateMatchesLooseNaturalTokens(item, query))
-            .slice(0, 200);
-        }
-      }
+      });
+      const matches = hybrid.items || [];
       sendJson(res, 200, {
         ok: true,
         result: {
           query,
           queryMode,
-          filters,
+          normalizedQuery: normalized.normalized,
+          filters: hybrid.filters || filters,
+          ...(debug && hybrid.debug ? { debug: hybrid.debug } : {}),
           total: matches.length,
           items: matches
         }
