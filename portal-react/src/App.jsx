@@ -3607,6 +3607,8 @@ function PortalApp({ token, onLogout }) {
       return { dateFrom: "", dateTo: "", clientLabel: "", recruiterLabel: "", quickRange: "all" };
     }
   });
+  const latestDashboardKeyRef = useRef("");
+  const latestClientPortalKeyRef = useRef("");
   const [clientPortalFilters, setClientPortalFilters] = useState({
     dateFrom: "",
     dateTo: "",
@@ -3866,33 +3868,61 @@ function PortalApp({ token, onLogout }) {
   }, [hostedJobId, token, state.user?.role]);
 
   async function loadDashboardSummary(filters = dashboardFilters) {
+    const key = JSON.stringify({
+      dateFrom: String(filters?.dateFrom || ""),
+      dateTo: String(filters?.dateTo || ""),
+      clientLabel: String(filters?.clientLabel || ""),
+      recruiterLabel: String(filters?.recruiterLabel || "")
+    });
+    latestDashboardKeyRef.current = key;
     const params = new URLSearchParams();
     if (filters.dateFrom) params.set("dateFrom", filters.dateFrom);
     if (filters.dateTo) params.set("dateTo", filters.dateTo);
     if (filters.clientLabel) params.set("clientLabel", filters.clientLabel);
     if (filters.recruiterLabel) params.set("recruiterLabel", filters.recruiterLabel);
     const dashboardResult = await api(`/company/dashboard${params.toString() ? `?${params.toString()}` : ""}`, token);
+    if (latestDashboardKeyRef.current !== key) return;
     setState((current) => ({ ...current, dashboard: dashboardResult || {} }));
   }
 
   async function loadClientPortalSummary(filters = clientPortalFilters) {
+    const key = JSON.stringify({
+      dateFrom: String(filters?.dateFrom || ""),
+      dateTo: String(filters?.dateTo || ""),
+      clientLabel: String(filters?.clientLabel || "")
+    });
+    latestClientPortalKeyRef.current = key;
     const params = new URLSearchParams();
     if (filters.dateFrom) params.set("dateFrom", filters.dateFrom);
     if (filters.dateTo) params.set("dateTo", filters.dateTo);
     if (filters.clientLabel) params.set("clientLabel", filters.clientLabel);
     const clientPortalResult = await api(`/company/client-portal${params.toString() ? `?${params.toString()}` : ""}`, token);
+    if (latestClientPortalKeyRef.current !== key) return;
     setState((current) => ({ ...current, clientPortal: clientPortalResult || {} }));
   }
 
   async function loadWorkspace() {
     await api("/company/candidates/backfill-assessment-links", token, { method: "POST" }).catch(() => null);
     await api("/company/candidates/backfill-skills", token, { method: "POST" }).catch(() => null);
+    const dashboardKey = JSON.stringify({
+      dateFrom: String(dashboardFilters?.dateFrom || ""),
+      dateTo: String(dashboardFilters?.dateTo || ""),
+      clientLabel: String(dashboardFilters?.clientLabel || ""),
+      recruiterLabel: String(dashboardFilters?.recruiterLabel || "")
+    });
+    latestDashboardKeyRef.current = dashboardKey;
     const dashboardParams = new URLSearchParams();
     if (dashboardFilters.dateFrom) dashboardParams.set("dateFrom", dashboardFilters.dateFrom);
     if (dashboardFilters.dateTo) dashboardParams.set("dateTo", dashboardFilters.dateTo);
     if (dashboardFilters.clientLabel) dashboardParams.set("clientLabel", dashboardFilters.clientLabel);
     if (dashboardFilters.recruiterLabel) dashboardParams.set("recruiterLabel", dashboardFilters.recruiterLabel);
 
+    const clientPortalKey = JSON.stringify({
+      dateFrom: String(clientPortalFilters?.dateFrom || ""),
+      dateTo: String(clientPortalFilters?.dateTo || ""),
+      clientLabel: String(clientPortalFilters?.clientLabel || "")
+    });
+    latestClientPortalKeyRef.current = clientPortalKey;
     const clientPortalParams = new URLSearchParams();
     if (clientPortalFilters.dateFrom) clientPortalParams.set("dateFrom", clientPortalFilters.dateFrom);
     if (clientPortalFilters.dateTo) clientPortalParams.set("dateTo", clientPortalFilters.dateTo);
@@ -3913,10 +3943,11 @@ function PortalApp({ token, onLogout }) {
       api("/company/assessments", token).catch(() => ({ assessments: [] })),
       api("/company/shared-export-presets", token).catch(() => null)
     ]);
-    setState({
+    setState((current) => ({
+      ...current,
       user: userResult.user || userResult,
-      dashboard: dashboardResult || {},
-      clientPortal: clientPortalResult || {},
+      dashboard: latestDashboardKeyRef.current === dashboardKey ? (dashboardResult || {}) : current.dashboard,
+      clientPortal: latestClientPortalKeyRef.current === clientPortalKey ? (clientPortalResult || {}) : current.clientPortal,
       applicants: applicantsResult.items || [],
       intake: intakeResult || {},
       jobs: jobsResult.jobs || [],
@@ -3924,7 +3955,7 @@ function PortalApp({ token, onLogout }) {
       candidates: Array.isArray(candidatesResult) ? candidatesResult : [],
       databaseCandidates: Array.isArray(databaseCandidatesResult) ? databaseCandidatesResult : Array.isArray(candidatesResult) ? candidatesResult : [],
       assessments: assessmentsResult.assessments || []
-    });
+    }));
     setClientUsers(clientUsersResult.clientUsers || []);
     if (sharedPresetResult) {
       setCopySettings((current) => migrateCopySettings({ ...current, ...sharedPresetResult }));
