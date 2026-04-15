@@ -7740,7 +7740,7 @@ function PortalApp({ token, onLogout }) {
                       ) : null}
                       <div className="button-row">
                         <button onClick={() => loadCandidateIntoInterview(item.id)}>Open draft</button>
-                        <button onClick={() => setAssignCandidateId(item.id)}>Assign</button>
+                        <button onClick={() => setAssignCandidateId(item.id)}>{item.assigned_to_name ? "Reassign" : "Assign"}</button>
                         <button onClick={() => setNotesCandidateId(item.id)}>Recruiter note</button>
                         <button onClick={() => void openAttempts(item.id)}>Attempts</button>
                         <button onClick={() => void createAssessmentFromCandidate(item.id)}>Create assessment</button>
@@ -8671,8 +8671,8 @@ function PortalApp({ token, onLogout }) {
         jobs={state.jobs}
         onClose={() => setAssignCandidateId("")}
         onSave={saveCapturedAssignment}
-        title="Assign Draft"
-        description="Assign {name} to a JD. Recruiters can map the role for themselves; admins can also assign another recruiter."
+        title={assignCandidate?.assigned_to_name ? "Reassign Draft" : "Assign Draft"}
+        description={assignCandidate?.assigned_to_name ? "Reassign {name} to a recruiter and JD." : "Assign {name} to a recruiter and JD. Recruiters can map the role for themselves; admins can also assign another recruiter."}
         nameKey="name"
         allowRecruiterSelect={String(state.user?.role || "").toLowerCase() === "admin"}
         lockedRecruiterName={state.user?.name || ""}
