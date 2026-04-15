@@ -1249,6 +1249,16 @@ function normalizeAssessmentKeyPart(value) {
   return String(value || "").trim().toLowerCase();
 }
 
+function normalizeAssessmentPhone(value) {
+  const digits = String(value || "").replace(/\D/g, "");
+  if (digits.length < 10) return "";
+  return digits.length > 10 ? digits.slice(-10) : digits;
+}
+
+function normalizeAssessmentEmail(value) {
+  return String(value || "").trim().toLowerCase();
+}
+
 function assessmentsMatchSameCandidateKey(existing = {}, incoming = {}) {
   const exCandidateId = String(existing?.candidateId || existing?.candidate_id || "").trim();
   const inCandidateId = String(incoming?.candidateId || incoming?.candidate_id || "").trim();
@@ -1268,30 +1278,69 @@ function assessmentsMatchSameCandidateKey(existing = {}, incoming = {}) {
 async function findExistingAssessmentIdForCandidate({ actorUserId, companyId, assessment }) {
   const a = sanitizeAssessment(assessment);
   const candidateId = String(a?.candidateId || "").trim();
-  if (!candidateId) return "";
+  const emailNeedle = normalizeAssessmentEmail(a?.emailId || a?.email_id || "");
+  const phoneNeedle = normalizeAssessmentPhone(a?.phoneNumber || a?.phone_number || "");
   const jdTitle = normalizeAssessmentKeyPart(a?.jdTitle || "");
   const clientName = normalizeAssessmentKeyPart(a?.clientName || "");
 
   if (!cfg().on) {
     const store = readStore();
     const items = Array.isArray(store.assessments) ? store.assessments.filter((i) => i.companyId === companyId) : [];
-    const match = items.find((existing) => assessmentsMatchSameCandidateKey(existing, a)) || null;
+    const match = items.find((existing) => {
+      if (assessmentsMatchSameCandidateKey(existing, a)) return true;
+      const exEmail = normalizeAssessmentEmail(existing?.emailId || existing?.email_id || "");
+      const exPhone = normalizeAssessmentPhone(existing?.phoneNumber || existing?.phone_number || "");
+      const sameIdentity = (emailNeedle && exEmail && emailNeedle === exEmail) || (phoneNeedle && exPhone && phoneNeedle === exPhone);
+      if (!sameIdentity) return false;
+      const exJd = normalizeAssessmentKeyPart(existing?.jdTitle || existing?.jd_title || "");
+      const exClient = normalizeAssessmentKeyPart(existing?.clientName || existing?.client_name || "");
+      if (jdTitle && exJd && jdTitle !== exJd) return false;
+      if (clientName && exClient && clientName !== exClient) return false;
+      return true;
+    }) || null;
     return match ? String(match.id || "").trim() : "";
   }
 
   await ensureSeeded();
   // Pull a small set for the candidate, then filter in JS to keep logic consistent.
-  const rows = await sbSel("assessments", `select=id,candidate_id,candidate_name,client_name,jd_title,payload&company_id=eq.${enc(companyId)}&candidate_id=eq.${enc(candidateId)}&limit=50`).catch(() => []);
+  let rows = [];
+  if (candidateId) {
+    rows = await sbSel("assessments", `select=id,candidate_id,candidate_name,client_name,jd_title,email_id,phone_number,payload&company_id=eq.${enc(companyId)}&candidate_id=eq.${enc(candidateId)}&limit=50`).catch(() => []);
+  } else if (emailNeedle || phoneNeedle) {
+    const orParts = [];
+    if (emailNeedle) orParts.push(`email_id.eq.${enc(emailNeedle)}`);
+    if (phoneNeedle) orParts.push(`phone_number.eq.${enc(phoneNeedle)}`);
+    rows = await sbSel("assessments", `select=id,candidate_id,candidate_name,client_name,jd_title,email_id,phone_number,payload&company_id=eq.${enc(companyId)}&or=(${orParts.join(",")})&limit=50`).catch(() => []);
+  }
   const sanitized = (rows || []).map(sanitizeAssessment);
   const match = sanitized.find((existing) => {
-    if (!assessmentsMatchSameCandidateKey(existing, a)) return false;
+    const sameCandidateId = assessmentsMatchSameCandidateKey(existing, a);
+    if (!sameCandidateId) return false;
     const exJd = normalizeAssessmentKeyPart(existing?.jdTitle || "");
     const exClient = normalizeAssessmentKeyPart(existing?.clientName || "");
     if (jdTitle && exJd && jdTitle !== exJd) return false;
     if (clientName && exClient && clientName !== exClient) return false;
     return true;
   }) || null;
-  return match ? String(match.id || "").trim() : "";
+  if (match) return String(match.id || "").trim();
+
+  // Fallback: if candidateId differs due to accidental duplicate candidate rows, match by phone/email instead.
+  if (emailNeedle || phoneNeedle) {
+    const fallbackRows = await sbSel("assessments", `select=id,candidate_id,client_name,jd_title,email_id,phone_number,payload&company_id=eq.${enc(companyId)}&limit=250`).catch(() => []);
+    const fallback = (fallbackRows || []).map(sanitizeAssessment).find((existing) => {
+      const exEmail = normalizeAssessmentEmail(existing?.emailId || existing?.email_id || "");
+      const exPhone = normalizeAssessmentPhone(existing?.phoneNumber || existing?.phone_number || "");
+      const sameIdentity = (emailNeedle && exEmail && emailNeedle === exEmail) || (phoneNeedle && exPhone && phoneNeedle === exPhone);
+      if (!sameIdentity) return false;
+      const exJd = normalizeAssessmentKeyPart(existing?.jdTitle || "");
+      const exClient = normalizeAssessmentKeyPart(existing?.clientName || "");
+      if (jdTitle && exJd && jdTitle !== exJd) return false;
+      if (clientName && exClient && clientName !== exClient) return false;
+      return true;
+    }) || null;
+    if (fallback) return String(fallback.id || "").trim();
+  }
+  return "";
 }
 async function saveAssessment({ actorUserId, companyId, assessment }) {
   if (!actorUserId || !companyId || !assessment) throw new Error("actorUserId, companyId, and assessment payload are required.");
