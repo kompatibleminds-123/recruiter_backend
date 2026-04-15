@@ -5641,6 +5641,7 @@ function PortalApp({ token, onLogout }) {
         phoneNumber: interviewForm.phoneNumber,
         totalExperience: interviewForm.totalExperience,
         normalizeWithAi: cvUploadWithAi,
+        deferParse: true,
         file: {
           filename: file.name,
           mimeType: file.type || "application/octet-stream",

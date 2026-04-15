@@ -5426,6 +5426,7 @@ const server = http.createServer(async (req, res) => {
       const candidateId = String(requestUrl.pathname.replace(/^\/company\/candidates\//, "").replace(/\/interview-cv$/, "")).trim();
       const body = await readJsonBody(req);
       const uploadedFile = body.file || null;
+      const deferParse = body.deferParse === true || body.defer_parse === true;
       if (!candidateId) throw new Error("Candidate not found.");
       if (!uploadedFile?.fileData) throw new Error("Missing CV file.");
       let candidate = (await listCandidatesForUser(actor, { id: candidateId, limit: 1 }))[0] || null;
@@ -5480,6 +5481,132 @@ const server = http.createServer(async (req, res) => {
         objectPrefix: `candidates/${actor.companyId}/${candidate.id}`
       });
 
+      // Persist stored file pointers immediately so the CV link becomes available right away in trackers/shares.
+      const storedFilePayload = {
+        provider: storedFile?.provider || "",
+        key: storedFile?.key || "",
+        url: storedFile?.url || "",
+        filename: storedFile?.filename || "",
+        mimeType: storedFile?.mimeType || ""
+      };
+      const immediateMeta = {
+        ...(existingMeta || {}),
+        filename: storedFilePayload.filename || existingMeta.filename || "",
+        mimeType: storedFilePayload.mimeType || existingMeta.mimeType || "",
+        fileProvider: storedFilePayload.provider || existingMeta.fileProvider || "",
+        fileKey: storedFilePayload.key || existingMeta.fileKey || "",
+        fileUrl: storedFilePayload.url || existingMeta.fileUrl || "",
+        cvAnalysisCache: {
+          ...(existingMeta?.cvAnalysisCache && typeof existingMeta.cvAnalysisCache === "object" ? existingMeta.cvAnalysisCache : {}),
+          fingerprint: fileFingerprint,
+          storedAt: new Date().toISOString(),
+          storedFile: storedFilePayload,
+          parsePending: true,
+          updatedAt: new Date().toISOString()
+        }
+      };
+      await patchCandidate(candidate.id, {
+        raw_note: encodeApplicantMetadata(immediateMeta)
+      }, { companyId: actor.companyId });
+
+      if (deferParse) {
+        // Fast response, parse continues in the background.
+        sendJson(res, 200, { ok: true, result: { queued: true, cached: false, storedFile: storedFilePayload } });
+
+        setImmediate(async () => {
+          try {
+            const parsed = await parseCandidatePayload({
+              sourceType: "cv",
+              candidateName: body.candidateName || candidate.name || "",
+              totalExperience: body.totalExperience || candidate.experience || "",
+              file: uploadedFile
+            });
+
+            const apiKey = body.apiKey || process.env.OPENAI_API_KEY || "";
+            let normalized = null;
+            let aiParseMode = "fallback_only";
+            let aiParseReason = "AI normalization was not used.";
+
+            if (apiKey && body.normalizeWithAi !== false) {
+              const fallbackFields = {
+                candidateName: parsed.candidateName,
+                totalExperience: parsed.totalExperience,
+                currentCompany: parsed.currentCompany,
+                currentDesignation: parsed.currentDesignation,
+                emailId: parsed.emailId,
+                phoneNumber: parsed.phoneNumber,
+                timeline: parsed.timeline,
+                gaps: parsed.gaps
+              };
+              const canUseFileAi = uploadedFile?.fileData && supportsOpenAiFileParse(uploadedFile);
+              if (canUseFileAi) {
+                aiParseMode = "deep_file_ai";
+                aiParseReason = "Direct file-based AI parsing was used for interview-panel CV upload (background).";
+                normalized = await normalizeCandidateFileWithAi({
+                  apiKey,
+                  model: String(body.model || "").trim(),
+                  uploadedFile,
+                  sourceType: parsed.sourceType,
+                  filename: parsed.filename,
+                  fallbackFields
+                });
+              }
+            }
+
+            const result = buildCandidateParseResponse(parsed, normalized, { aiParseMode, aiParseReason });
+            const refreshed = (await listCandidatesForUser(actor, { id: candidate.id, limit: 1 }))[0] || null;
+            const refreshedMeta = refreshed ? decodeApplicantMetadata(refreshed) : immediateMeta;
+            const nextMeta = {
+              ...(refreshedMeta || immediateMeta || {}),
+              filename: storedFilePayload.filename || refreshedMeta?.filename || "",
+              mimeType: storedFilePayload.mimeType || refreshedMeta?.mimeType || "",
+              fileProvider: storedFilePayload.provider || refreshedMeta?.fileProvider || "",
+              fileKey: storedFilePayload.key || refreshedMeta?.fileKey || "",
+              fileUrl: storedFilePayload.url || refreshedMeta?.fileUrl || "",
+              cvAnalysisCache: {
+                fingerprint: fileFingerprint,
+                storedAt: new Date().toISOString(),
+                storedFile: storedFilePayload,
+                result,
+                parsePending: false,
+                updatedAt: new Date().toISOString()
+              },
+              inferredSearchTags: deriveInferredSearchTags({
+                cvResult: result,
+                recruiterNotes: refreshed?.recruiter_context_notes || candidate?.recruiter_context_notes || "",
+                otherPointers: refreshed?.other_pointers || candidate?.other_pointers || "",
+                tags: Array.isArray(refreshed?.skills) ? refreshed.skills : Array.isArray(candidate?.skills) ? candidate.skills : []
+              })
+            };
+
+            await patchCandidate(candidate.id, {
+              raw_note: encodeApplicantMetadata(nextMeta)
+            }, { companyId: actor.companyId });
+          } catch (error) {
+            console.warn("Background CV parse failed:", error?.message || error);
+            try {
+              const refreshed = (await listCandidatesForUser(actor, { id: candidate.id, limit: 1 }))[0] || null;
+              const refreshedMeta = refreshed ? decodeApplicantMetadata(refreshed) : immediateMeta;
+              const nextMeta = {
+                ...(refreshedMeta || immediateMeta || {}),
+                cvAnalysisCache: {
+                  ...(refreshedMeta?.cvAnalysisCache && typeof refreshedMeta.cvAnalysisCache === "object" ? refreshedMeta.cvAnalysisCache : {}),
+                  parsePending: false,
+                  parseError: String(error?.message || error || "Unknown background parse error."),
+                  updatedAt: new Date().toISOString()
+                }
+              };
+              await patchCandidate(candidate.id, {
+                raw_note: encodeApplicantMetadata(nextMeta)
+              }, { companyId: actor.companyId });
+            } catch (inner) {
+              console.warn("Could not persist background parse error:", inner?.message || inner);
+            }
+          }
+        });
+        return;
+      }
+
       const parsed = await parseCandidatePayload({
         sourceType: "cv",
         candidateName: body.candidateName || candidate.name || "",
@@ -5525,23 +5652,19 @@ const server = http.createServer(async (req, res) => {
       });
 
       const nextMeta = {
-        ...(existingMeta || {}),
-        filename: storedFile?.filename || existingMeta.filename || "",
-        mimeType: storedFile?.mimeType || existingMeta.mimeType || "",
-        fileProvider: storedFile?.provider || existingMeta.fileProvider || "",
-        fileKey: storedFile?.key || existingMeta.fileKey || "",
-        fileUrl: storedFile?.url || existingMeta.fileUrl || "",
+        ...(immediateMeta || existingMeta || {}),
+        filename: storedFilePayload.filename || existingMeta.filename || "",
+        mimeType: storedFilePayload.mimeType || existingMeta.mimeType || "",
+        fileProvider: storedFilePayload.provider || existingMeta.fileProvider || "",
+        fileKey: storedFilePayload.key || existingMeta.fileKey || "",
+        fileUrl: storedFilePayload.url || existingMeta.fileUrl || "",
         cvAnalysisCache: {
           fingerprint: fileFingerprint,
           storedAt: new Date().toISOString(),
-          storedFile: {
-            provider: storedFile?.provider || "",
-            key: storedFile?.key || "",
-            url: storedFile?.url || "",
-            filename: storedFile?.filename || "",
-            mimeType: storedFile?.mimeType || ""
-          },
-          result
+          storedFile: storedFilePayload,
+          result,
+          parsePending: false,
+          updatedAt: new Date().toISOString()
         },
         inferredSearchTags: deriveInferredSearchTags({
           cvResult: result,
@@ -5559,13 +5682,7 @@ const server = http.createServer(async (req, res) => {
         ok: true,
         result: {
           ...result,
-          storedFile: {
-            provider: storedFile?.provider || "",
-            key: storedFile?.key || "",
-            url: storedFile?.url || "",
-            filename: storedFile?.filename || "",
-            mimeType: storedFile?.mimeType || ""
-          }
+          storedFile: storedFilePayload
         }
       });
     } catch (error) {
