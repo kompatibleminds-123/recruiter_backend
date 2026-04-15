@@ -1686,6 +1686,9 @@ function buildScreeningRemarksForExport(item = {}) {
   let inlineReasonOfChange = "";
 
   lines.forEach((line) => {
+    // Attempt history lines look like: "[4/15/2026, 4:08:06 PM] JD shared"
+    // They contain ":" because of time, which previously got mis-parsed as "label: answer".
+    if (/^\[[^\]]+\]\s*/.test(line)) return;
     const normalizedLine = line.replace(/^[\d\.\-\)\s]+/, "").trim();
     const separatorIndex = normalizedLine.indexOf(":");
     if (separatorIndex <= 0) return;
@@ -1696,6 +1699,8 @@ function buildScreeningRemarksForExport(item = {}) {
       .trim();
     const normalizedLabel = label.toLowerCase();
     if (!label || !answer) return;
+    // Only keep actual question labels (needs at least one letter).
+    if (!/[a-z]/i.test(label)) return;
     if (normalizedLabel === "reason of change") {
       inlineReasonOfChange = answer;
       return;
@@ -3234,7 +3239,6 @@ function CandidateProfileModal({ open, candidate, onClose, onOpenCv, onReuse, on
     { title: "Screening Remarks", rows: [{ label: "Screening remarks", value: screeningRemarks || (questionAnswers || []).map((pair) => `${pair.question}: ${pair.answer}`).join("\n") || "-" }] }
   ];
   if (timeline) excelSections.push({ title: "Previous Experience (timeline)", rows: [{ label: "Experience timeline", value: timeline }] });
-  if (uniqueNotes.length) excelSections.push({ title: "Other Pointers / Notes", rows: [{ label: "Notes", value: uniqueNotes.join("\n\n") }] });
   if (tags.length) excelSections.push({ title: "Tags / searchable keywords", rows: [{ label: "Tags", value: tags.join(", ") }] });
   excelSections.push({ title: "CV", rows: [{ label: "CV", value: candidateHasStoredCv(baseCandidate) ? (cvMeta.filename || "Uploaded CV available") : "No uploaded CV available yet." }] });
 
@@ -3324,13 +3328,6 @@ function CandidateProfileModal({ open, candidate, onClose, onOpenCv, onReuse, on
             <div className="candidate-sheet__section">
               <div className="candidate-sheet__section-title">Previous Experience (timeline)</div>
               <pre className="candidate-sheet__pre">{timeline}</pre>
-            </div>
-          ) : null}
-
-          {uniqueNotes.length ? (
-            <div className="candidate-sheet__section">
-              <div className="candidate-sheet__section-title">Other Pointers / Notes</div>
-              {uniqueNotes.map((note, index) => <p key={`${note}-${index}`}>{note}</p>)}
             </div>
           ) : null}
 
