@@ -477,6 +477,62 @@ function getCandidateDraftState(candidate = {}) {
   };
 }
 
+function resolveCandidateContext(input = {}) {
+  // Canonical resolver so indicators/presets do not have to guess between:
+  // - plain candidate rows
+  // - universe rows (raw.candidate/raw.assessment)
+  // - assessment-only rows
+  const raw = input || {};
+  const candidate = raw?.raw?.candidate || raw?.candidate || raw;
+  const assessment = raw?.raw?.assessment || raw?.assessment || null;
+  const draft = getCandidateDraftState(candidate);
+
+  const screeningMap =
+    (draft?.jdScreeningAnswers && typeof draft.jdScreeningAnswers === "object" ? draft.jdScreeningAnswers : null)
+    || (candidate?.screening_answers && typeof candidate.screening_answers === "object" ? candidate.screening_answers : null)
+    || (candidate?.screeningAnswers && typeof candidate.screeningAnswers === "object" ? candidate.screeningAnswers : null)
+    || null;
+
+  const otherStandardQuestions = String(
+    assessment?.other_standard_questions
+      || assessment?.otherStandardQuestions
+      || assessment?.otherStandardQuestionAnswers
+      || candidate?.other_standard_questions
+      || candidate?.otherStandardQuestions
+      || candidate?.last_contact_notes
+      || candidate?.lastContactNotes
+      || ""
+  ).trim();
+
+  const meta = decodePortalApplicantMetadata(candidate);
+  const cvResult = meta?.cvAnalysisCache?.result && typeof meta.cvAnalysisCache.result === "object" ? meta.cvAnalysisCache.result : null;
+  const highlights = Array.isArray(candidate?.cv_highlights)
+    ? candidate.cv_highlights
+    : Array.isArray(candidate?.highlights)
+      ? candidate.highlights
+      : Array.isArray(candidate?.cvAnalysis?.highlights)
+        ? candidate.cvAnalysis.highlights
+        : Array.isArray(cvResult?.highlights)
+          ? cvResult.highlights
+          : [];
+
+  const phone = String(candidate?.phone || candidate?.phoneNumber || assessment?.phoneNumber || assessment?.phone || draft?.phoneNumber || "").trim();
+  const email = String(candidate?.email || candidate?.emailId || assessment?.emailId || assessment?.email || draft?.emailId || "").trim();
+  const linkedin = String(candidate?.linkedin || assessment?.linkedinUrl || draft?.linkedin || "").trim();
+
+  return {
+    candidate,
+    assessment,
+    draft,
+    screeningMap,
+    otherStandardQuestions,
+    highlights: highlights.map((v) => String(v || "").trim()).filter(Boolean),
+    phone,
+    email,
+    linkedin
+  };
+}
+
 function buildCandidateDraftPayloadPatch(candidate = {}, patch = {}) {
   const current = getCandidateDraftState(candidate);
   const next = { ...current };
@@ -1636,20 +1692,10 @@ function buildCombinedAssessmentInsightsForExport(item = {}) {
 }
 
 function buildScreeningRemarksForExport(item = {}) {
-  const otherStandardQuestions = String(item.other_standard_questions || item.last_contact_notes || "").trim();
-  const reasonOfChangeValue = buildReasonOfChangeForExport(item);
-  const meta = decodePortalApplicantMetadata(item);
-  const cvResult = meta?.cvAnalysisCache?.result && typeof meta.cvAnalysisCache.result === "object" ? meta.cvAnalysisCache.result : null;
-  const highlights = Array.isArray(item.cv_highlights)
-    ? item.cv_highlights
-    : Array.isArray(item.highlights)
-      ? item.highlights
-      : Array.isArray(item.cvAnalysis?.highlights)
-        ? item.cvAnalysis.highlights
-        : Array.isArray(cvResult?.highlights)
-          ? cvResult.highlights
-          : [];
-  const strongPoints = highlights.map((value) => String(value || "").trim()).filter(Boolean).slice(0, 2);
+  const ctx = resolveCandidateContext(item);
+  const otherStandardQuestions = String(ctx.otherStandardQuestions || "").trim();
+  const reasonOfChangeValue = buildReasonOfChangeForExport({ ...ctx.candidate, ...(ctx.assessment || {}), screening_answers: ctx.screeningMap || {} });
+  const strongPoints = (ctx.highlights || []).slice(0, 2);
   const fixedFieldLabels = new Set([
     "current ctc",
     "expected ctc",
@@ -1709,28 +1755,24 @@ function buildScreeningRemarksForExport(item = {}) {
     questionLines.push(`${questionLines.length + 1}. ${label} - *${answer}*`);
   });
 
-  // Fallback: if structured questions text is empty/missing (common in database search export),
-  // build screening pointers from saved screening answers map (draft_payload / screening_answers).
-  if (!questionLines.length) {
-    const draft = getCandidateDraftState(item);
-    const screeningMap =
-      (draft?.jdScreeningAnswers && typeof draft.jdScreeningAnswers === "object" ? draft.jdScreeningAnswers : null)
-      || (item?.screening_answers && typeof item.screening_answers === "object" ? item.screening_answers : null)
-      || (item?.screeningAnswers && typeof item.screeningAnswers === "object" ? item.screeningAnswers : null)
-      || null;
-    if (screeningMap) {
-      Object.entries(screeningMap).forEach(([question, answer]) => {
-        const label = String(question || "").trim();
-        const value = String(answer || "").trim();
-        if (!label || !value) return;
-        const normalizedLabel = label.toLowerCase();
-        if (normalizedLabel === "reason of change") {
-          inlineReasonOfChange = value;
-          return;
-        }
-        if (fixedFieldLabels.has(normalizedLabel)) return;
-        questionLines.push(`${questionLines.length + 1}. ${label} - *${value}*`);
-      });
+  // Primary: use saved screening answers map (JD questions). This avoids leaking attempt-history/status notes.
+  if (ctx.screeningMap) {
+    const nextLines = [];
+    Object.entries(ctx.screeningMap).forEach(([question, answer]) => {
+      const label = String(question || "").trim();
+      const value = String(answer || "").trim();
+      if (!label || !value) return;
+      const normalizedLabel = label.toLowerCase();
+      if (normalizedLabel === "reason of change") {
+        inlineReasonOfChange = value;
+        return;
+      }
+      if (fixedFieldLabels.has(normalizedLabel)) return;
+      nextLines.push([label, value]);
+    });
+    if (nextLines.length) {
+      questionLines.length = 0;
+      nextLines.forEach(([label, value]) => questionLines.push(`${questionLines.length + 1}. ${label} - *${value}*`));
     }
   }
 
@@ -3171,8 +3213,9 @@ function DrilldownModal({ open, title, items, onClose, onOpenCv, onOpenDraft, on
 
 function CandidateProfileModal({ open, candidate, onClose, onOpenCv, onReuse, onCopyShareLink }) {
   if (!open || !candidate) return null;
-  const baseCandidate = candidate.raw?.candidate || candidate;
-  const linkedAssessment = candidate.raw?.assessment || null;
+  const ctx = resolveCandidateContext(candidate);
+  const baseCandidate = ctx.candidate || candidate;
+  const linkedAssessment = ctx.assessment || null;
   const cvMeta = getCandidateProfileCvMeta(baseCandidate);
   const tags = buildVisibleTagList(baseCandidate);
   const questionAnswers = getAssessmentQuestionAnswers(linkedAssessment || candidate);
@@ -3180,7 +3223,7 @@ function CandidateProfileModal({ open, candidate, onClose, onOpenCv, onReuse, on
   const screeningRemarks = buildScreeningRemarksForExport({
     ...baseCandidate,
     ...(linkedAssessment || {}),
-    other_standard_questions: linkedAssessment?.other_standard_questions || linkedAssessment?.otherStandardQuestions || linkedAssessment?.otherStandardQuestionAnswers || "",
+    other_standard_questions: String(ctx.otherStandardQuestions || linkedAssessment?.other_standard_questions || linkedAssessment?.otherStandardQuestions || linkedAssessment?.otherStandardQuestionAnswers || "").trim(),
     reason_of_change: linkedAssessment?.reasonForChange || baseCandidate.reason_of_change || ""
   });
   const reasonOfChange = String(linkedAssessment?.reasonForChange || buildReasonOfChangeForExport(baseCandidate) || "").trim();
@@ -6372,33 +6415,16 @@ function PortalApp({ token, onLogout }) {
 
   function buildCandidateUniverseCopyRows() {
     return candidateUniverse.map((item, index) => {
-      // Candidate universe rows can come from:
-      // 1) Plain DB candidate rows (captured/applied), or
-      // 2) AI Search "universe" rows (they store data under raw.candidate + raw.assessment).
-      const baseCandidate = item?.raw?.candidate || item;
-      const linkedAssessment = item?.raw?.assessment || item?.assessment || null;
-      const draft = getCandidateDraftState(baseCandidate);
-
-      const phone = String(
-        baseCandidate?.phone
-        || baseCandidate?.phoneNumber
-        || linkedAssessment?.phoneNumber
-        || linkedAssessment?.phone
-        || draft?.phoneNumber
-        || ""
-      ).trim();
-      const email = String(
-        baseCandidate?.email
-        || baseCandidate?.emailId
-        || linkedAssessment?.emailId
-        || linkedAssessment?.email
-        || draft?.emailId
-        || ""
-      ).trim();
+      const ctx = resolveCandidateContext(item);
+      const baseCandidate = ctx.candidate || {};
+      const linkedAssessment = ctx.assessment || null;
+      const draft = ctx.draft || {};
+      const phone = ctx.phone || "";
+      const email = ctx.email || "";
 
       const recruiterNotes = String(baseCandidate?.recruiter_context_notes || baseCandidate?.recruiterNotes || linkedAssessment?.recruiterNotes || "").trim();
       const otherPointers = String(baseCandidate?.other_pointers || baseCandidate?.otherPointers || linkedAssessment?.otherPointers || "").trim();
-      const lastContactNotes = String(baseCandidate?.last_contact_notes || baseCandidate?.lastContactNotes || baseCandidate?.other_standard_questions || baseCandidate?.otherStandardQuestions || "").trim();
+      const lastContactNotes = String(ctx.otherStandardQuestions || "").trim();
       const candidateNotes = String(baseCandidate?.notes || "").trim();
       const createdAt = baseCandidate?.created_at || baseCandidate?.createdAt || item?.createdAt || "";
 
@@ -6446,9 +6472,9 @@ function PortalApp({ token, onLogout }) {
           other_standard_questions: lastContactNotes
         }),
         draft_payload: baseCandidate?.draft_payload || baseCandidate?.draftPayload || {},
-        screening_answers: baseCandidate?.screening_answers || baseCandidate?.screeningAnswers || {},
+        screening_answers: ctx.screeningMap || baseCandidate?.screening_answers || baseCandidate?.screeningAnswers || {},
         raw_note: baseCandidate?.raw_note || baseCandidate?.rawNote || "",
-        linkedin: baseCandidate?.linkedin || linkedAssessment?.linkedinUrl || draft?.linkedin || "",
+        linkedin: ctx.linkedin || baseCandidate?.linkedin || linkedAssessment?.linkedinUrl || draft?.linkedin || "",
         jd_title: baseCandidate?.jd_title || baseCandidate?.jdTitle || linkedAssessment?.jdTitle || item?.position || "",
         client_name: baseCandidate?.client_name || baseCandidate?.clientName || linkedAssessment?.clientName || "",
         outcome: linkedAssessment?.candidateStatus || item?.candidateStatus || baseCandidate?.last_contact_outcome || baseCandidate?.lastContactOutcome || "",
