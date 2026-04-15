@@ -4783,7 +4783,14 @@ function PortalApp({ token, onLogout }) {
   }
 
   async function saveApplicantAssignment({ recruiterId, jdTitle }) {
-    await api("/company/applicants/assign", token, "POST", { id: assignApplicantId, assignedToUserId: recruiterId, jdTitle });
+    const user = (state.users || []).find((item) => String(item.id || "") === String(recruiterId || "")) || null;
+    await api("/company/applicants/assign", token, "POST", {
+      id: assignApplicantId,
+      assignedToUserId: recruiterId,
+      assignedToName: user?.name || "",
+      assignedJdTitle: jdTitle,
+      jdTitle
+    });
     setAssignApplicantId("");
     await loadWorkspace();
     setStatus("workspace", "Applicant assigned into recruiter workflow.", "ok");
