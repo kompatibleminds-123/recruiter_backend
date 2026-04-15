@@ -2193,6 +2193,18 @@ function getApplyLink(jobId) {
   return jobId ? `${window.location.origin}/apply/${encodeURIComponent(jobId)}` : "";
 }
 
+function getRecruiterApplyLink(jobId, recruiterId, sig) {
+  if (!jobId) return "";
+  const base = `${window.location.origin}/apply/${encodeURIComponent(jobId)}`;
+  const rid = String(recruiterId || "").trim();
+  const token = String(sig || "").trim();
+  if (!rid || !token) return base;
+  const params = new URLSearchParams();
+  params.set("rid", rid);
+  params.set("sig", token);
+  return `${base}?${params.toString()}`;
+}
+
 function buildWordpressSnippet(companyId, secret, apiUrl) {
   return `add_action('wpcf7_before_send_mail', function ($contact_form) {\n  $submission = WPCF7_Submission::get_instance();\n  if (!$submission) return;\n  $data = $submission->get_posted_data();\n  $payload = [\n    'companyId' => '${companyId}',\n    'jdTitle' => !empty($data['job-role']) ? $data['job-role'] : '',\n    'jobId' => sanitize_title(!empty($data['job-role']) ? $data['job-role'] : ''),\n    'sourcePlatform' => 'website',\n    'sourceLabel' => 'WordPress Website',\n    'candidateName' => isset($data['your-name']) ? $data['your-name'] : '',\n    'email' => isset($data['your-email']) ? $data['your-email'] : '',\n    'phone' => isset($data['tel-581']) ? $data['tel-581'] : '',\n    'location' => isset($data['text-961']) ? $data['text-961'] : ''\n  ];\n  wp_remote_post('${apiUrl}', [\n    'timeout' => 90,\n    'headers' => [\n      'Content-Type' => 'application/json',\n      'x-applicant-intake-secret' => '${secret}'\n    ],\n    'body' => wp_json_encode($payload)\n  ]);\n}, 10, 1);`;
 }
@@ -3228,6 +3240,7 @@ function PortalApp({ token, onLogout }) {
   const [assignApplicantId, setAssignApplicantId] = useState("");
   const [assignCandidateId, setAssignCandidateId] = useState("");
   const [hostedJobId, setHostedJobId] = useState("");
+  const [hostedRecruiterApplyLinks, setHostedRecruiterApplyLinks] = useState([]);
   const [dashboardFilters, setDashboardFilters] = useState(() => {
     try {
       const raw = window.localStorage.getItem(DASHBOARD_FILTER_STORAGE_KEY);
@@ -3478,6 +3491,29 @@ function PortalApp({ token, onLogout }) {
   function setStatus(key, message, kind = "") {
     setStatuses((current) => ({ ...current, [key]: message, [`${key}Kind`]: kind }));
   }
+
+  useEffect(() => {
+    if (!hostedJobId) {
+      setHostedRecruiterApplyLinks([]);
+      return;
+    }
+    // Intake settings is admin-only, but keep guard for safety.
+    const isAdmin = String(state.user?.role || "").toLowerCase() === "admin";
+    if (!isAdmin) {
+      setHostedRecruiterApplyLinks([]);
+      return;
+    }
+    setStatus("intake", "");
+    api(`/company/jobs/${encodeURIComponent(hostedJobId)}/apply-link-signatures`, token)
+      .then((result) => {
+        const items = Array.isArray(result?.items) ? result.items : [];
+        setHostedRecruiterApplyLinks(items);
+      })
+      .catch((error) => {
+        setHostedRecruiterApplyLinks([]);
+        setStatus("intake", String(error?.message || error), "error");
+      });
+  }, [hostedJobId, token, state.user?.role]);
 
   async function loadDashboardSummary(filters = dashboardFilters) {
     const params = new URLSearchParams();
@@ -7850,6 +7886,32 @@ function PortalApp({ token, onLogout }) {
                   <label><span>Hosted Apply Link</span><textarea readOnly value={getApplyLink(hostedJobId)} /></label>
                   <div className="button-row"><button onClick={() => void copyText(getApplyLink(hostedJobId)).then(() => setStatus("intake", "Hosted apply link copied.", "ok"))}>Copy Apply Link</button></div>
                 </div>
+                {hostedJobId ? (
+                  <div className="template-item" style={{ marginTop: 16 }}>
+                    <div className="template-key">Recruiter-specific public links</div>
+                    <p className="muted">Share the recruiter-specific link with candidates. Whoever applies via that link will land under that recruiter in Applied Candidates.</p>
+                    {!hostedRecruiterApplyLinks.length ? (
+                      <div className="empty-state">No assigned recruiters found for this JD yet. Set recruiters in Jobs, then come back here.</div>
+                    ) : (
+                      <div className="stack-list compact" style={{ marginTop: 10 }}>
+                        {hostedRecruiterApplyLinks.map((item) => {
+                          const url = getRecruiterApplyLink(hostedJobId, item.recruiterId, item.sig);
+                          return (
+                            <article className="item-card compact-card" key={item.recruiterId}>
+                              <div className="item-card__top compact-top">
+                                <strong>{item.recruiterName || "Recruiter"}</strong>
+                                <div className="button-row tight">
+                                  <button className="ghost-btn" onClick={() => void copyText(url).then(() => setStatus("intake", `Apply link copied for ${item.recruiterName || "recruiter"}.`, "ok"))}>Copy link</button>
+                                </div>
+                              </div>
+                              <label className="full"><span>Link</span><textarea readOnly value={url} /></label>
+                            </article>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                ) : null}
               </Section>
             </div>
           } />

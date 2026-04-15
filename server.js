@@ -427,6 +427,8 @@ function normalizeApplicantBody(body = {}) {
     clientName: String(input.clientName || input.client_name || "").trim(),
     jdTitle: String(input.jdTitle || input.jd_title || input.jobTitle || "").trim(),
     jobId: String(input.jobId || input.job_id || "").trim(),
+    assignedToUserId: String(input.assignedToUserId || input.assigned_to_user_id || input.rid || "").trim(),
+    assignedToSig: String(input.assignedToSig || input.assigned_to_sig || input.sig || "").trim(),
     sourcePlatform: String(input.sourcePlatform || input.source_platform || input.source || "website").trim(),
     sourceLabel: String(input.sourceLabel || input.source_label || "").trim(),
     jobPageUrl: String(input.jobPageUrl || input.job_page_url || input.applyUrl || "").trim(),
@@ -449,6 +451,30 @@ function normalizeApplicantBody(body = {}) {
     model: String(input.model || "").trim(),
     skills: Array.isArray(input.skills) ? input.skills : []
   };
+}
+
+function signRecruiterApplyLink({ companyId, jobId, recruiterId, secret }) {
+  const scopedSecret = String(secret || "").trim();
+  const scopedCompanyId = String(companyId || "").trim();
+  const scopedJobId = String(jobId || "").trim();
+  const scopedRecruiterId = String(recruiterId || "").trim();
+  if (!scopedSecret || !scopedCompanyId || !scopedJobId || !scopedRecruiterId) return "";
+  const message = `${scopedCompanyId}|${scopedJobId}|${scopedRecruiterId}`;
+  return crypto.createHmac("sha256", scopedSecret).update(message).digest("base64url");
+}
+
+function verifyRecruiterApplyLinkSignature({ companyId, jobId, recruiterId, secret, signature }) {
+  const expected = signRecruiterApplyLink({ companyId, jobId, recruiterId, secret });
+  const provided = String(signature || "").trim();
+  if (!expected || !provided) return false;
+  try {
+    const expectedBuf = Buffer.from(expected);
+    const providedBuf = Buffer.from(provided);
+    if (expectedBuf.length !== providedBuf.length) return false;
+    return crypto.timingSafeEqual(expectedBuf, providedBuf);
+  } catch {
+    return false;
+  }
 }
 
 function sanitizeApplicantCandidate(candidate = {}) {
@@ -665,6 +691,29 @@ async function ingestApplicantSubmission(body, req) {
     applicantState: "new"
   };
 
+  // Recruiter-specific public apply links (signed).
+  // If present and valid, override the default JD owner assignment so the applicant appears under that recruiter.
+  let linkAssignedRecruiter = null;
+  const intakeSecret = String(configuredSecretInfo?.applicantIntakeSecret || "").trim();
+  if (matchedJob?.id && payload.assignedToUserId && payload.assignedToSig && intakeSecret) {
+    const ok = verifyRecruiterApplyLinkSignature({
+      companyId: payload.companyId,
+      jobId: matchedJob.id,
+      recruiterId: payload.assignedToUserId,
+      secret: intakeSecret,
+      signature: payload.assignedToSig
+    });
+    if (ok) {
+      const recruiters = await listCompanyUsers(payload.companyId);
+      linkAssignedRecruiter = (recruiters || []).find((user) => String(user?.id || "").trim() === String(payload.assignedToUserId || "").trim()) || null;
+      if (linkAssignedRecruiter) {
+        metadata.applyAssignedToUserId = String(linkAssignedRecruiter.id || "");
+        metadata.applyAssignedToName = String(linkAssignedRecruiter.name || "");
+        metadata.applyAssignedVia = "apply_link";
+      }
+    }
+  }
+
   const candidate = await saveCandidate(
     {
       id: "",
@@ -689,8 +738,8 @@ async function ingestApplicantSubmission(body, req) {
       client_name: payload.clientName || null,
       jd_title: payload.jdTitle || null,
       recruiter_name: payload.recruiterName || "Website Apply",
-      assigned_to_user_id: matchedJob?.ownerRecruiterId || null,
-      assigned_to_name: matchedJob?.ownerRecruiterName || null,
+      assigned_to_user_id: linkAssignedRecruiter?.id || matchedJob?.ownerRecruiterId || null,
+      assigned_to_name: linkAssignedRecruiter?.name || matchedJob?.ownerRecruiterName || null,
       assigned_jd_id: matchedJob?.id || null,
       assigned_jd_title: matchedJob?.title || payload.jdTitle || null,
       linkedin: merged.linkedin || null,
@@ -4018,6 +4067,44 @@ const server = http.createServer(async (req, res) => {
       const actor = await requireSessionUser(getBearerToken(req));
       const result = await getCompanyApplicantIntakeSecret(actor.companyId);
       sendJson(res, 200, { ok: true, result });
+    } catch (error) {
+      sendJson(res, 400, { ok: false, error: String(error.message || error) });
+    }
+    return;
+  }
+
+  if (req.method === "GET" && /^\/company\/jobs\/[^/]+\/apply-link-signatures$/.test(requestUrl.pathname)) {
+    try {
+      const actor = await requireSessionUser(getBearerToken(req));
+      if (String(actor.role || "").toLowerCase() !== "admin") {
+        throw new Error("Only an admin can generate recruiter-specific apply links.");
+      }
+      const jobId = String(requestUrl.pathname.replace(/^\/company\/jobs\//, "").replace(/\/apply-link-signatures$/, "")).trim();
+      if (!jobId) throw new Error("Missing job id.");
+      const jobs = await listCompanyJobs(actor.companyId);
+      const job = (jobs || []).find((item) => String(item?.id || "").trim() === jobId) || null;
+      if (!job) throw new Error("Job not found in this company.");
+      const secretInfo = await getCompanyApplicantIntakeSecret(actor.companyId);
+      const secret = String(secretInfo?.applicantIntakeSecret || "").trim();
+      if (!secret) throw new Error("Applicant intake secret is not configured yet.");
+
+      const recruiterSeeds = Array.isArray(job.assignedRecruiters) && job.assignedRecruiters.length
+        ? job.assignedRecruiters
+        : job.ownerRecruiterId
+          ? [{ id: job.ownerRecruiterId, name: job.ownerRecruiterName || "", primary: true }]
+          : [];
+      const recruiterIds = recruiterSeeds.map((item) => String(item?.id || "").trim()).filter(Boolean);
+      const allUsers = await listCompanyUsers(actor.companyId);
+      const items = recruiterIds
+        .map((rid) => {
+          const user = (allUsers || []).find((u) => String(u?.id || "").trim() === rid) || null;
+          if (!user) return null;
+          const sig = signRecruiterApplyLink({ companyId: actor.companyId, jobId, recruiterId: rid, secret });
+          if (!sig) return null;
+          return { recruiterId: rid, recruiterName: String(user.name || "").trim(), sig };
+        })
+        .filter(Boolean);
+      sendJson(res, 200, { ok: true, result: { jobId, items } });
     } catch (error) {
       sendJson(res, 400, { ok: false, error: String(error.message || error) });
     }

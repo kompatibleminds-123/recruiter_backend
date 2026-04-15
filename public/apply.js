@@ -27,6 +27,14 @@
     return new URLSearchParams(window.location.search).get("jobId") || "";
   }
 
+  function getApplyAssignment() {
+    const params = new URLSearchParams(window.location.search);
+    return {
+      rid: String(params.get("rid") || "").trim(),
+      sig: String(params.get("sig") || "").trim()
+    };
+  }
+
   async function readFileAsBase64(file) {
     if (!file) return null;
     const buffer = await file.arrayBuffer();
@@ -135,6 +143,7 @@
 
         const cvFile = $("cvFile")?.files?.[0] || null;
         const file = await readFileAsBase64(cvFile);
+        const assignment = getApplyAssignment();
 
         const payload = {
           jdTitle: job.title || "",
@@ -142,6 +151,8 @@
           sourcePlatform: "hosted_apply",
           sourceLabel: "RecruitDesk Apply Link",
           jobPageUrl: window.location.href,
+          assignedToUserId: assignment.rid,
+          assignedToSig: assignment.sig,
           candidateName: $("candidateName").value.trim(),
           email: $("email").value.trim(),
           phone: $("phone").value.trim(),
