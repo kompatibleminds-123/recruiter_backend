@@ -850,12 +850,14 @@ async function ingestApplicantSubmission(body, req) {
     parseStatus,
     sourcePlatform: payload.sourcePlatform,
     sourceLabel: payload.sourceLabel,
-    fileProvider: storedFile?.provider || "",
-    fileKey: storedFile?.key || "",
-    fileUrl: storedFile?.url || "",
-    filename: storedFile?.filename || "",
-    mimeType: storedFile?.mimeType || "",
-    sizeBytes: storedFile?.sizeBytes || 0,
+    ...(storedFile ? {
+      fileProvider: storedFile.provider || "",
+      fileKey: storedFile.key || "",
+      fileUrl: storedFile.url || "",
+      filename: storedFile.filename || "",
+      mimeType: storedFile.mimeType || "",
+      sizeBytes: storedFile.sizeBytes || 0
+    } : {}),
     jobId: payload.jobId,
     jobPageUrl: payload.jobPageUrl,
     screeningAnswers: payload.screeningAnswers,
@@ -885,11 +887,62 @@ async function ingestApplicantSubmission(body, req) {
     }
   }
 
+  const appliedSource = payload.sourcePlatform === "hosted_apply" ? "hosted_apply" : "website_apply";
+
+  // If the same candidate already exists (captured note), merge into that row and move it to Applied
+  // instead of creating a duplicate candidate entry.
+  const duplicate = await findDuplicateCandidate(
+    { company_id: payload.companyId, phone: merged.phone, email: merged.email, linkedin: merged.linkedin },
+    { companyId: payload.companyId }
+  ).catch(() => null);
+
+  if (duplicate?.existing?.id) {
+    const existing = duplicate.existing;
+    const existingMeta = decodeApplicantMetadata(existing);
+    const nextMeta = {
+      ...(existingMeta || {}),
+      ...(metadata || {}),
+      originalSource: String(existingMeta?.originalSource || existing?.source || "").trim() || undefined,
+      mergedFrom: "website_apply_duplicate",
+      mergedAt: new Date().toISOString()
+    };
+    Object.keys(nextMeta).forEach((k) => nextMeta[k] === undefined && delete nextMeta[k]);
+
+    const patch = {
+      source: appliedSource,
+      raw_note: encodeApplicantMetadata(nextMeta),
+      client_name: payload.clientName || existing.client_name || null,
+      jd_title: payload.jdTitle || existing.jd_title || null,
+      assigned_to_user_id: linkAssignedRecruiter?.id || matchedJob?.ownerRecruiterId || existing.assigned_to_user_id || null,
+      assigned_to_name: linkAssignedRecruiter?.name || matchedJob?.ownerRecruiterName || existing.assigned_to_name || null,
+      assigned_jd_id: matchedJob?.id || existing.assigned_jd_id || null,
+      assigned_jd_title: matchedJob?.title || payload.jdTitle || existing.assigned_jd_title || null,
+      recruiter_context_notes: payload.screeningAnswers || existing.recruiter_context_notes || null,
+      // Fill missing contact fields if they were empty in the captured record.
+      phone: existing.phone ? undefined : (merged.phone || undefined),
+      email: existing.email ? undefined : (merged.email || undefined),
+      linkedin: existing.linkedin ? undefined : (merged.linkedin || undefined),
+      location: existing.location ? undefined : (merged.location || undefined),
+      name: existing.name ? undefined : (merged.name || undefined),
+      company: existing.company ? undefined : (merged.company || undefined),
+      role: existing.role ? undefined : (merged.role || undefined),
+      experience: existing.experience ? undefined : (merged.experience || undefined),
+      highest_education: existing.highest_education ? undefined : (merged.highest_education || undefined),
+      current_ctc: existing.current_ctc ? undefined : (merged.current_ctc || undefined),
+      expected_ctc: existing.expected_ctc ? undefined : (merged.expected_ctc || undefined),
+      notice_period: existing.notice_period ? undefined : (merged.notice_period || undefined)
+    };
+    Object.keys(patch).forEach((k) => patch[k] === undefined && delete patch[k]);
+
+    const updated = await patchCandidate(String(existing.id), patch, { companyId: payload.companyId });
+    return sanitizeApplicantCandidate(updated);
+  }
+
   const candidate = await saveCandidate(
     {
       id: "",
       company_id: payload.companyId,
-      source: "website_apply",
+      source: appliedSource,
       name: merged.name,
       company: merged.company,
       role: merged.role,
