@@ -4,7 +4,9 @@ const DEFAULT_SYNONYMS = {
     "bengaluru": "bangalore",
     "blr": "bangalore",
     "delhi ncr": ["delhi", "gurgaon", "noida"],
-    "ncr": ["delhi", "gurgaon", "noida"]
+    "ncr": ["delhi", "gurgaon", "noida"],
+    "gurugram": ["gurugram", "gurgaon"],
+    "gurgram": ["gurugram", "gurgaon"]
   },
   experienceLevels: {
     junior: { min: 0, max: 2 },
@@ -71,7 +73,12 @@ function mapLocationAlias(value, synonyms = DEFAULT_SYNONYMS) {
   const mapping = synonyms?.locations || {};
   const mapped = mapping[token];
   if (!mapped) return { canonical: token, variants: [] };
-  if (Array.isArray(mapped)) return { canonical: token, variants: mapped.map((v) => normalizeToken(v)).filter(Boolean) };
+  if (Array.isArray(mapped)) {
+    const variants = mapped.map((v) => normalizeToken(v)).filter(Boolean);
+    // Prefer a real city name as canonical so "Delhi NCR" queries don't fail the strict `filters.location` check.
+    const canonical = variants[0] || token;
+    return { canonical, variants: Array.from(new Set([canonical, ...variants])).filter(Boolean) };
+  }
   return { canonical: normalizeToken(mapped), variants: [] };
 }
 

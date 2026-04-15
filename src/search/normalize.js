@@ -64,6 +64,9 @@ function standardizeSkillAliases(text) {
   // golang aliases
   next = next.replace(/\bgo\s*[-]?\s*lang\b/gi, "golang");
   next = next.replace(/\bgo\s*[-]?\s*language\b/gi, "golang");
+  // dotnet aliases
+  next = next.replace(/\basp\s*\.?\s*net\b/gi, "asp.net");
+  next = next.replace(/\b\.net\b/gi, "dotnet");
   return next;
 }
 

@@ -1867,6 +1867,8 @@ function parseNaturalLanguageCandidateQuery(rawQuery) {
         .filter(Boolean)
     : [];
   const derivedSkills = explicitSkills.length ? explicitSkills : splitCandidateSearchKeywords(roleText);
+  const hasOrOperator = /\bor\b/i.test(lower);
+  const skillsMatch = hasOrOperator && derivedSkills.length >= 2 ? "any" : "all";
 
   return {
     raw: query,
@@ -1882,6 +1884,7 @@ function parseNaturalLanguageCandidateQuery(rawQuery) {
     maxExpectedCtcLpa: expectedCtcUnderMatch ? parseAmountToLpa(`${expectedCtcUnderMatch[1]} ${expectedCtcUnderMatch[2] || "lpa"}`) : null,
     maxNoticeDays: noticeMatch ? parseNoticePeriodToDays(`${noticeMatch[1]} ${noticeMatch[2]}`) : null,
     skills: Array.from(new Set(derivedSkills)),
+    skillsMatch,
     currentCompany: currentCompanyMatch ? String(currentCompanyMatch[1] || "").trim() : "",
     statuses: statusTerms,
     detailedStatuses: detailedStatusTerms,
@@ -2088,6 +2091,8 @@ const BOOLEAN_TERM_SYNONYMS = {
   node: ["node", "nodejs", "\"node js\"", "\"node.js\""],
   react: ["react", "reactjs", "\"react js\"", "\"react.js\""],
   golang: ["golang", "go", "\"go lang\"", "\"go-language\""],
+  ".net": [".net", "dotnet", "\"dot net\"", "asp.net", "aspnet", "c#", "csharp"],
+  dotnet: ["dotnet", ".net", "\"dot net\"", "asp.net", "aspnet", "c#", "csharp"],
   frontend: ["frontend", "\"front end\"", "\"front-end\""],
   backend: ["backend", "\"back end\"", "\"back-end\""],
   devops: ["devops", "\"dev ops\"", "\"dev ops engineer\""]
@@ -2344,7 +2349,15 @@ function candidateMatchesNaturalFilter(item, filters, actor = null) {
   if (Array.isArray(filters.skills) && filters.skills.length) {
     const hay = buildCandidateSearchHay(item);
     const requiredSkills = normalizeCandidateSearchKeywords(filters.skills);
-    if (requiredSkills.length && !requiredSkills.every((skill) => hay.includes(skill))) return false;
+    const matchMode = String(filters.skillsMatch || "").trim().toLowerCase();
+    if (requiredSkills.length) {
+      const matched = requiredSkills.filter((skill) => hay.includes(skill));
+      if (matchMode === "any") {
+        if (!matched.length) return false;
+      } else {
+        if (matched.length !== requiredSkills.length) return false;
+      }
+    }
   }
   if (Array.isArray(filters.statuses) && filters.statuses.length) {
     const lifecycleBucket = getAssessmentLifecycleBucket(item);

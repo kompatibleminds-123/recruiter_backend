@@ -22,9 +22,9 @@ function run() {
   assert.deepEqual(inferExperienceRangeFromText("junior java dev", DEFAULT_SYNONYMS), { min: 0, max: 2, label: "junior" });
 
   const mapped = mapLocationAlias("delhi ncr", DEFAULT_SYNONYMS);
-  assert.equal(mapped.canonical, "delhi ncr");
+  // Canonical uses a real city name so strict `filters.location` checks don't fail in search.
+  assert.equal(mapped.canonical, "delhi");
   assert.deepEqual(mapped.variants.sort(), ["delhi", "gurgaon", "noida"].sort());
 }
 
 module.exports = { run };
-
