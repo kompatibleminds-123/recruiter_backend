@@ -2502,7 +2502,7 @@ function AssignModal({ open, applicant, users, jobs, onClose, onSave, title = "A
 
   useEffect(() => {
     if (!open) return;
-    setRecruiterId("");
+    setRecruiterId(String(applicant?.assigned_to_user_id || applicant?.assignedToUserId || applicant?.assigned_to || "").trim());
     setJdTitle(applicant?.jd_title || applicant?.jdTitle || "");
     setStatus("");
   }, [open, applicant?.id]);
@@ -7658,7 +7658,7 @@ function PortalApp({ token, onLogout }) {
                       <button onClick={() => void openAttempts(item.id)}>Attempts</button>
                       <button onClick={() => void createAssessmentFromCandidate(item.id)}>Create assessment</button>
                       {item.cvFilename ? <button onClick={() => void openCv(item.id)}>Open CV</button> : null}
-                      {state.user?.role === "admin" ? <button onClick={() => setAssignApplicantId(item.id)}>Assign</button> : null}
+                      {state.user?.role === "admin" ? <button onClick={() => setAssignApplicantId(item.id)}>{item.assignedToName ? "Reassign" : "Assign"}</button> : null}
                       {item.hidden_from_captured ? (
                         <button className="ghost-btn" onClick={() => void restoreApplicant(item.id)}>Restore to active</button>
                       ) : (
@@ -8654,7 +8654,16 @@ function PortalApp({ token, onLogout }) {
         <footer className="portal-footer portal-footer--content">{PRODUCT_NAME} {COMPANY_ATTRIBUTION}</footer>
       </main>
 
-      <AssignModal open={Boolean(assignApplicantId)} applicant={assignApplicant} users={state.users} jobs={state.jobs} onClose={() => setAssignApplicantId("")} onSave={saveApplicantAssignment} />
+      <AssignModal
+        open={Boolean(assignApplicantId)}
+        applicant={assignApplicant}
+        users={state.users}
+        jobs={state.jobs}
+        title={assignApplicant?.assignedToName ? "Reassign Applicant" : "Assign Applicant"}
+        description={assignApplicant?.assignedToName ? "Reassign this record to a recruiter and JD." : "Assign this record to a recruiter and JD."}
+        onClose={() => setAssignApplicantId("")}
+        onSave={saveApplicantAssignment}
+      />
       <AssignModal
         open={Boolean(assignCandidateId)}
         applicant={assignCandidate}
