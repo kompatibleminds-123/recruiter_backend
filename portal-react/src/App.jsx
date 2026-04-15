@@ -3887,10 +3887,22 @@ function PortalApp({ token, onLogout }) {
   async function loadWorkspace() {
     await api("/company/candidates/backfill-assessment-links", token, { method: "POST" }).catch(() => null);
     await api("/company/candidates/backfill-skills", token, { method: "POST" }).catch(() => null);
+    const dashboardParams = new URLSearchParams();
+    if (dashboardFilters.dateFrom) dashboardParams.set("dateFrom", dashboardFilters.dateFrom);
+    if (dashboardFilters.dateTo) dashboardParams.set("dateTo", dashboardFilters.dateTo);
+    if (dashboardFilters.clientLabel) dashboardParams.set("clientLabel", dashboardFilters.clientLabel);
+    if (dashboardFilters.recruiterLabel) dashboardParams.set("recruiterLabel", dashboardFilters.recruiterLabel);
+
+    const clientPortalParams = new URLSearchParams();
+    if (clientPortalFilters.dateFrom) clientPortalParams.set("dateFrom", clientPortalFilters.dateFrom);
+    if (clientPortalFilters.dateTo) clientPortalParams.set("dateTo", clientPortalFilters.dateTo);
+    if (clientPortalFilters.clientLabel) clientPortalParams.set("clientLabel", clientPortalFilters.clientLabel);
+
     const [userResult, dashboardResult, clientPortalResult, applicantsResult, intakeResult, jobsResult, usersResult, clientUsersResult, candidatesResult, databaseCandidatesResult, assessmentsResult, sharedPresetResult] = await Promise.all([
       api("/auth/me", token),
-      api("/company/dashboard", token),
-      api("/company/client-portal", token).catch(() => ({ summary: { byClient: [], byClientPosition: [] }, availableClients: [] })),
+      api(`/company/dashboard${dashboardParams.toString() ? `?${dashboardParams.toString()}` : ""}`, token),
+      api(`/company/client-portal${clientPortalParams.toString() ? `?${clientPortalParams.toString()}` : ""}`, token)
+        .catch(() => ({ summary: { byClient: [], byClientPosition: [] }, availableClients: [] })),
       api("/company/applicants", token).catch(() => ({ items: [] })),
       api("/company/applicant-intake-secret", token).catch(() => null),
       api("/company/jds", token).catch(() => ({ jobs: [] })),
