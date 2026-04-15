@@ -1704,6 +1704,31 @@ function buildScreeningRemarksForExport(item = {}) {
     questionLines.push(`${questionLines.length + 1}. ${label} - *${answer}*`);
   });
 
+  // Fallback: if structured questions text is empty/missing (common in database search export),
+  // build screening pointers from saved screening answers map (draft_payload / screening_answers).
+  if (!questionLines.length) {
+    const draft = getCandidateDraftState(item);
+    const screeningMap =
+      (draft?.jdScreeningAnswers && typeof draft.jdScreeningAnswers === "object" ? draft.jdScreeningAnswers : null)
+      || (item?.screening_answers && typeof item.screening_answers === "object" ? item.screening_answers : null)
+      || (item?.screeningAnswers && typeof item.screeningAnswers === "object" ? item.screeningAnswers : null)
+      || null;
+    if (screeningMap) {
+      Object.entries(screeningMap).forEach(([question, answer]) => {
+        const label = String(question || "").trim();
+        const value = String(answer || "").trim();
+        if (!label || !value) return;
+        const normalizedLabel = label.toLowerCase();
+        if (normalizedLabel === "reason of change") {
+          inlineReasonOfChange = value;
+          return;
+        }
+        if (fixedFieldLabels.has(normalizedLabel)) return;
+        questionLines.push(`${questionLines.length + 1}. ${label} - *${value}*`);
+      });
+    }
+  }
+
   const finalReasonOfChange = inlineReasonOfChange || reasonOfChangeValue;
   const parts = [];
   if (strongPoints.length) {
