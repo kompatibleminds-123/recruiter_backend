@@ -2049,6 +2049,19 @@ function buildTsvFromPreset(rows, presetId, settings = DEFAULT_COPY_SETTINGS) {
   return [preset.headers.join("\t"), ...preset.rows.map((row) => row.map((cell) => String(cell || "").replace(/\t/g, " ").replace(/\r?\n/g, " ")).join("\t"))].join("\n");
 }
 
+function mergeStoredCvIntoApplicantMeta(existingMeta = {}, cvAnalysis = null) {
+  const meta = existingMeta && typeof existingMeta === "object" ? { ...existingMeta } : {};
+  const stored = cvAnalysis?.storedFile && typeof cvAnalysis.storedFile === "object" ? cvAnalysis.storedFile : null;
+  if (!stored) return meta;
+  // Only fill missing CV pointers; never overwrite a real stored link/key already present.
+  if (!meta.fileProvider && stored.provider) meta.fileProvider = String(stored.provider || "").trim();
+  if (!meta.fileKey && stored.key) meta.fileKey = String(stored.key || "").trim();
+  if (!meta.fileUrl && stored.url) meta.fileUrl = String(stored.url || "").trim();
+  if (!meta.filename && stored.filename) meta.filename = String(stored.filename || "").trim();
+  if (!meta.mimeType && stored.mimeType) meta.mimeType = String(stored.mimeType || "").trim();
+  return meta;
+}
+
 function buildExcelHtmlFromPreset(rows, presetId, settings = DEFAULT_COPY_SETTINGS, sheetName = "Sheet1") {
   const preset = buildCapturedExcelRows(rows || [], presetId || settings?.excelPreset || "compact_recruiter", settings);
   const headers = preset.headers.map((header) => `<th style="border:1px solid #d8dee8;padding:10px 12px;background:#f6f8fb;text-align:left;font-size:13px;">${escapeHtml(header)}</th>`).join("");
@@ -5396,6 +5409,10 @@ function PortalApp({ token, onLogout }) {
       setStatus(statusKey, "Candidate not found for assessment conversion.", "error");
       return;
     }
+    if (sourceApplicant && !candidate) {
+      setStatus(statusKey, "This applied candidate is not linked to a saved candidate record yet. Open the draft once (so it saves in Captured Notes), then convert to assessment.", "error");
+      return;
+    }
     const candidateName = candidate?.name || sourceApplicant?.candidateName || "";
     const matched = (state.assessments || []).find((item) =>
       String(item.candidateId || "") === String(candidate?.id || sourceApplicant?.id || "") ||
@@ -5410,6 +5427,7 @@ function PortalApp({ token, onLogout }) {
       return;
     }
 
+    const candidateDraft = candidate ? getCandidateDraftState(candidate) : {};
     const cvMeta = candidate ? decodePortalApplicantMetadata(candidate) : null;
     const candidateCvAnalysis = cvMeta?.cvAnalysisCache?.result
       ? buildInterviewCvAnalysis({
@@ -5421,34 +5439,35 @@ function PortalApp({ token, onLogout }) {
       : null;
     const assessment = {
       id: `assessment-${Date.now()}`,
-      candidateId: String(candidate?.id || sourceApplicant?.id || ""),
+      candidateId: String(candidate?.id || ""),
       candidateName,
-      phoneNumber: candidate?.phone || sourceApplicant?.phone || "",
-      emailId: candidate?.email || sourceApplicant?.email || "",
-      location: candidate?.location || sourceApplicant?.location || "",
-      currentCtc: candidate?.current_ctc || sourceApplicant?.currentCtc || "",
-      expectedCtc: candidate?.expected_ctc || sourceApplicant?.expectedCtc || "",
-      noticePeriod: candidate?.notice_period || sourceApplicant?.noticePeriod || "",
-      offerInHand: candidate?.offer_in_hand || "",
-      lwdOrDoj: sanitizeLwdOrDojValue(candidate?.lwd_or_doj || ""),
-      currentCompany: candidate?.company || sourceApplicant?.currentCompany || "",
-      currentDesignation: candidate?.role || sourceApplicant?.currentDesignation || "",
-      totalExperience: candidate?.experience || sourceApplicant?.totalExperience || "",
-      relevantExperience: "",
-      highestEducation: candidate?.highest_education || "",
-      currentOrgTenure: candidate?.current_org_tenure || "",
-      reasonForChange: candidate?.reason_of_change || "",
-      clientName: candidate?.client_name || sourceApplicant?.clientName || "",
-      jdTitle: candidate?.jd_title || sourceApplicant?.jdTitle || "",
+      phoneNumber: candidateDraft.phoneNumber || candidate?.phone || sourceApplicant?.phone || "",
+      emailId: candidateDraft.emailId || candidate?.email || sourceApplicant?.email || "",
+      location: candidateDraft.location || candidate?.location || sourceApplicant?.location || "",
+      currentCtc: candidateDraft.currentCtc || candidate?.current_ctc || sourceApplicant?.currentCtc || "",
+      expectedCtc: candidateDraft.expectedCtc || candidate?.expected_ctc || sourceApplicant?.expectedCtc || "",
+      noticePeriod: candidateDraft.noticePeriod || candidate?.notice_period || sourceApplicant?.noticePeriod || "",
+      offerInHand: candidateDraft.offerInHand || candidate?.offer_in_hand || "",
+      lwdOrDoj: sanitizeLwdOrDojValue(candidateDraft.lwdOrDoj || candidate?.lwd_or_doj || ""),
+      currentCompany: candidateDraft.currentCompany || candidate?.company || sourceApplicant?.currentCompany || "",
+      currentDesignation: candidateDraft.currentDesignation || candidate?.role || sourceApplicant?.currentDesignation || "",
+      totalExperience: candidateDraft.totalExperience || candidate?.experience || sourceApplicant?.totalExperience || "",
+      relevantExperience: candidateDraft.relevantExperience || "",
+      highestEducation: candidateDraft.highestEducation || candidate?.highest_education || "",
+      currentOrgTenure: candidateDraft.currentOrgTenure || candidate?.current_org_tenure || "",
+      reasonForChange: candidateDraft.reasonForChange || candidate?.reason_of_change || "",
+      cautiousIndicators: candidateDraft.cautiousIndicators || "",
+      clientName: candidateDraft.clientName || candidate?.client_name || sourceApplicant?.clientName || "",
+      jdTitle: candidateDraft.jdTitle || candidate?.jd_title || sourceApplicant?.jdTitle || "",
       pipelineStage: "Submitted",
       candidateStatus: "CV shared",
       followUpAt: "",
       interviewAt: "",
-      recruiterNotes: candidate?.recruiter_context_notes || sourceApplicant?.screeningAnswers || "",
-      callbackNotes: candidate?.notes || "",
-      otherPointers: candidate?.other_pointers || "",
-      tags: Array.isArray(candidate?.skills) ? candidate.skills.join(", ") : "",
-      jdScreeningAnswers: {},
+      recruiterNotes: candidateDraft.recruiterNotes || candidate?.recruiter_context_notes || sourceApplicant?.screeningAnswers || "",
+      callbackNotes: candidateDraft.callbackNotes || candidate?.notes || "",
+      otherPointers: candidateDraft.otherPointers || candidate?.other_pointers || "",
+      tags: candidateDraft.tags || (Array.isArray(candidate?.skills) ? candidate.skills.join(", ") : ""),
+      jdScreeningAnswers: candidateDraft.jdScreeningAnswers || {},
       cvAnalysis: candidateCvAnalysis,
       cvAnalysisApplied: false,
       statusHistory: [{
@@ -5468,7 +5487,7 @@ function PortalApp({ token, onLogout }) {
       await api("/candidates/link-assessment", token, "POST", {
         id: candidate.id,
         assessmentId: savedAssessment?.id || assessment.id
-      }).catch(() => null);
+      });
     }
     await loadWorkspace();
     navigate("/assessments");
@@ -5506,6 +5525,7 @@ function PortalApp({ token, onLogout }) {
       }).catch(() => null);
       const existingCandidate = (state.candidates || []).find((item) => String(item.id) === String(interviewMeta.candidateId));
       const existingMeta = decodePortalApplicantMetadata(existingCandidate || {});
+      const nextMeta = mergeStoredCvIntoApplicantMeta(existingMeta, interviewForm.cvAnalysis || null);
       await patchCandidateQuiet(interviewMeta.candidateId, {
         name: interviewForm.candidateName,
         phone: interviewForm.phoneNumber,
@@ -5533,7 +5553,7 @@ function PortalApp({ token, onLogout }) {
           jdScreeningAnswers: interviewForm.jdScreeningAnswers || {}
         },
         raw_note: encodePortalApplicantMetadata({
-          ...existingMeta,
+          ...nextMeta,
           jdScreeningAnswers: interviewForm.jdScreeningAnswers || {}
         })
       });
@@ -5552,6 +5572,7 @@ function PortalApp({ token, onLogout }) {
     setStatus("interview", "Saving draft...");
     const existingCandidate = (state.candidates || []).find((item) => String(item.id) === String(interviewMeta.candidateId));
     const existingMeta = decodePortalApplicantMetadata(existingCandidate || {});
+    const nextMeta = mergeStoredCvIntoApplicantMeta(existingMeta, interviewForm.cvAnalysis || null);
     const linkedAssessment = interviewMeta.assessmentId
       ? (state.assessments || []).find((item) => String(item.id || "") === String(interviewMeta.assessmentId || ""))
       : null;
@@ -5583,7 +5604,7 @@ function PortalApp({ token, onLogout }) {
         jdScreeningAnswers: interviewForm.jdScreeningAnswers || {}
       },
       raw_note: encodePortalApplicantMetadata({
-        ...existingMeta,
+        ...nextMeta,
         jdScreeningAnswers: interviewForm.jdScreeningAnswers || {}
       })
     } });
