@@ -4816,6 +4816,52 @@ function PortalApp({ token, onLogout }) {
     return String(match?.id || "").trim();
   }
 
+  async function openAssessmentCandidateCardModal(assessment) {
+    const candidateId = resolveCandidateIdForAssessment(assessment);
+    if (!candidateId) {
+      setStatus("assessments", "Linked candidate not found for this assessment.", "error");
+      return;
+    }
+
+    const pool = (state.databaseCandidates || []).length ? state.databaseCandidates : (state.candidates || []);
+    let candidateRow = pool.find((item) => String(item?.id || "").trim() === String(candidateId).trim()) || null;
+    if (!candidateRow) {
+      try {
+        const rows = await api(`/candidates?id=${encodeURIComponent(candidateId)}&scope=company&limit=1`, token).catch(() => []);
+        candidateRow = Array.isArray(rows) && rows[0] ? rows[0] : null;
+      } catch {
+        candidateRow = null;
+      }
+    }
+
+    // If still missing, show a lightweight modal using assessment fields (fallback).
+    if (!candidateRow) {
+      candidateRow = {
+        id: candidateId,
+        name: assessment?.candidateName || "Candidate",
+        phone: assessment?.phoneNumber || "",
+        email: assessment?.emailId || "",
+        company: assessment?.currentCompany || "",
+        role: assessment?.currentDesignation || "",
+        experience: assessment?.totalExperience || "",
+        location: assessment?.location || "",
+        current_ctc: assessment?.currentCtc || "",
+        expected_ctc: assessment?.expectedCtc || "",
+        notice_period: assessment?.noticePeriod || "",
+        linkedin: assessment?.linkedinUrl || "",
+        client_name: assessment?.clientName || "",
+        jd_title: assessment?.jdTitle || ""
+      };
+    }
+
+    setDatabaseProfileItem({
+      raw: {
+        candidate: candidateRow,
+        assessment
+      }
+    });
+  }
+
   function openInterviewStoredCv() {
     if (!interviewMeta.candidateId) {
       setStatus("interview", "Save or open a real candidate draft before opening the stored CV.", "error");
@@ -7966,18 +8012,7 @@ function PortalApp({ token, onLogout }) {
                       <button onClick={() => setAssessmentStatusId(item.id)}>Update status</button>
                       <button onClick={() => void openAssessmentJourney(item)}>Journey</button>
                       <button onClick={() => openAssessmentWhatsapp(item)}>WhatsApp</button>
-                      <button
-                        onClick={() => {
-                          const candidateId = resolveCandidateIdForAssessment(item);
-                          if (!candidateId) {
-                            setStatus("assessments", "Linked candidate not found for this assessment.", "error");
-                            return;
-                          }
-                          void openCandidateProfileCard(candidateId, { statusTarget: "assessments" });
-                        }}
-                      >
-                        Candidate card
-                      </button>
+                      <button onClick={() => void openAssessmentCandidateCardModal(item)}>Candidate card</button>
                       <button onClick={() => reuseAssessmentAsNew(item)}>Reuse as new</button>
                       <button className="ghost-btn" onClick={() => void deleteAssessmentItem(item)}>Delete</button>
                     </div>
