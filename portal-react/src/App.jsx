@@ -5428,13 +5428,18 @@ function PortalApp({ token, onLogout }) {
     const result = await api("/company/jds", token, "POST", {
       job: {
         ...jobDraft,
+        id: String(selectedJobId || jobDraft.id || "").trim() || jobDraft.id,
         ownerRecruiterId,
         ownerRecruiterName,
         assignedRecruiters: Array.from(dedupedRecruiters.values())
       }
     });
     await loadWorkspace();
-    setSelectedJobId(String(result?.id || jobDraft.id || ""));
+    const nextId = String(result?.id || selectedJobId || jobDraft.id || "").trim();
+    if (nextId) {
+      setSelectedJobId(nextId);
+      setJobDraft((current) => ({ ...current, id: nextId }));
+    }
     setStatus("jobs", "JD saved.", "ok");
   }
 
@@ -7835,7 +7840,7 @@ function PortalApp({ token, onLogout }) {
                   >
                     Save as new JD
                   </button>
-                  {isSettingsAdmin ? (
+                  {isSettingsAdmin || String(jobDraft.ownerRecruiterId || "") === String(state.user?.id || "") ? (
                     <button
                       className="ghost-btn"
                       disabled={!selectedJobId}

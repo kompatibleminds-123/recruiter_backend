@@ -1159,10 +1159,29 @@ async function requireClientSessionUser(token) {
 }
 async function deleteCompanyJob({ actorUserId, companyId, jobId }) {
   const actor = sanitizeUser(await getUserById(actorUserId, companyId));
-  if (!actor || actor.role !== "admin") throw new Error("Only an admin for this company can delete company JDs.");
+  if (!actor) throw new Error("Authenticated recruiter not found for this company.");
+  const actorIsAdmin = String(actor.role || "").toLowerCase() === "admin";
+
+  let job = null;
   if (!cfg().on) {
-    const store = readStore(); const before = (store.jobs || []).length; store.jobs = (store.jobs || []).filter((j) => !(j.companyId === companyId && j.id === jobId)); if (store.jobs.length === before) throw new Error("Company JD not found."); writeStore(store);
-  } else await sbDel("company_jobs", `id=eq.${enc(jobId)}&company_id=eq.${enc(companyId)}`);
+    job = sanitizeJob((readStore().jobs || []).find((j) => j.companyId === companyId && j.id === jobId && !isSystemJobRow(j)));
+  } else {
+    await ensureSeeded();
+    const rows = await sbSel("company_jobs", `select=*&id=eq.${enc(jobId)}&company_id=eq.${enc(companyId)}&limit=1`);
+    job = sanitizeJob((rows || []).find((row) => !isSystemJobRow(row)));
+  }
+  if (!job) throw new Error("Company JD not found.");
+  if (!actorIsAdmin && String(job.ownerRecruiterId || "").trim() !== String(actor.id || "").trim()) {
+    throw new Error("Only an admin or the owner recruiter can delete this JD.");
+  }
+
+  if (!cfg().on) {
+    const store = readStore();
+    store.jobs = (store.jobs || []).filter((j) => !(j.companyId === companyId && j.id === jobId));
+    writeStore(store);
+  } else {
+    await sbDel("company_jobs", `id=eq.${enc(jobId)}&company_id=eq.${enc(companyId)}`);
+  }
   return { deleted: true, jobId };
 }
 function parseExperienceMonths(value) {
