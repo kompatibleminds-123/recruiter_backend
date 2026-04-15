@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Candidate Profile</title>
+    <style>
+      :root { color-scheme: light; }
+      body { margin: 0; font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; background: #f6f8fc; color: #0f172a; }
+      .wrap { max-width: 980px; margin: 24px auto; padding: 0 16px; }
+      .card { background: #fff; border: 1px solid #e2e8f0; border-radius: 16px; padding: 16px; box-shadow: 0 10px 30px rgba(15, 23, 42, 0.06); }
+      h1 { margin: 0 0 4px; font-size: 20px; }
+      .muted { color: #64748b; font-size: 14px; margin: 0 0 12px; }
+      .status { margin-top: 12px; padding: 10px 12px; border-radius: 12px; border: 1px solid #dae3fa; background: #eff4ff; }
+      .grid { display: grid; gap: 12px; margin-top: 14px; }
+      .section { border: 1px solid #e2e8f0; border-radius: 14px; overflow: hidden; }
+      .section h2 { margin: 0; padding: 10px 12px; background: #eaf0fb; border-bottom: 1px solid #d8e3fb; font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: #203253; }
+      .row { display: grid; grid-template-columns: minmax(220px, 0.9fr) 1.6fr; gap: 10px; padding: 10px 12px; border-top: 1px solid #eef1f6; }
+      .row:first-child { border-top: 0; }
+      .label { font-weight: 700; color: #2c3e5f; }
+      .value { white-space: pre-line; overflow-wrap: anywhere; }
+      pre { margin: 0; padding: 10px 12px; white-space: pre-wrap; overflow-wrap: anywhere; font-family: ui-monospace, "Cascadia Code", Menlo, Monaco, Consolas, "Liberation Mono", monospace; font-size: 13px; line-height: 1.55; }
+      .actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 14px; }
+      button, a.btn { appearance: none; border: 1px solid #1d4ed8; background: #1d4ed8; color: #fff; padding: 10px 12px; border-radius: 12px; cursor: pointer; font-weight: 700; text-decoration: none; display: inline-flex; align-items: center; justify-content: center; }
+      a.ghost { background: transparent; color: #1d4ed8; }
+      .ghost { background: transparent; color: #1d4ed8; border-color: #bcd0ff; }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <div class="card">
+        <h1 id="title">Candidate Profile</h1>
+        <p class="muted" id="subtitle"></p>
+        <div id="status" class="status" style="display:none"></div>
+        <div class="actions">
+          <a id="cvLink" class="btn" href="#" target="_blank" rel="noopener noreferrer" style="display:none">Download / Open CV</a>
+          <button id="downloadExcel" type="button" class="ghost">Download card (Excel)</button>
+        </div>
+        <div class="grid" id="sections"></div>
+      </div>
+      <div id="error" class="status" style="display:none"></div>
+    </div>
+    <script src="/public/candidate.js"></script>
+  </body>
+</html>
+

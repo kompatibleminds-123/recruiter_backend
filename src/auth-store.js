@@ -1229,6 +1229,21 @@ async function listAssessments({ actorUserId, companyId }) {
     })
     .map(sanitizeAssessment);
 }
+
+// Used by signed public share links. This intentionally bypasses recruiter scoping,
+// because access is controlled via a signed token that includes companyId + assessmentId.
+async function getAssessmentById({ companyId, assessmentId }) {
+  const safeCompanyId = String(companyId || "").trim();
+  const safeAssessmentId = String(assessmentId || "").trim();
+  if (!safeCompanyId || !safeAssessmentId) throw new Error("companyId and assessmentId are required.");
+  if (!cfg().on) {
+    const match = (readStore().assessments || []).find((i) => i.companyId === safeCompanyId && i.id === safeAssessmentId) || null;
+    return match ? sanitizeAssessment(match) : null;
+  }
+  await ensureSeeded();
+  const rows = await sbSel("assessments", `select=*&company_id=eq.${enc(safeCompanyId)}&id=eq.${enc(safeAssessmentId)}&limit=1`).catch(() => []);
+  return rows && rows[0] ? sanitizeAssessment(rows[0]) : null;
+}
 async function saveAssessment({ actorUserId, companyId, assessment }) {
   if (!actorUserId || !companyId || !assessment) throw new Error("actorUserId, companyId, and assessment payload are required.");
   const actor = sanitizeUser(await getUserById(actorUserId, companyId)); if (!actor) throw new Error("Authenticated recruiter not found for this company.");
@@ -1286,6 +1301,7 @@ module.exports = {
   incrementCompanyCaptureUsage,
   listCompaniesAndUsersSummary,
   listAssessments,
+  getAssessmentById,
   listCompanyJobs,
   listCompanyUsers,
   loginClient,

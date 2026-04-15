@@ -45,6 +45,7 @@ const {
   getPublicCompanyJob,
   listCompaniesAndUsersSummary,
   listAssessments,
+  getAssessmentById,
   searchAssessments,
   listCompanyJobs,
   listCompanyUsers,
@@ -168,6 +169,172 @@ function readSignedCvShareToken(token) {
   } catch {
     return null;
   }
+}
+
+function createSignedCandidateShareToken(payload) {
+  const encoded = Buffer.from(JSON.stringify(payload), "utf8").toString("base64url");
+  const signature = crypto
+    .createHmac("sha256", getCvShareSecret())
+    .update(encoded)
+    .digest("base64url");
+  return `${encoded}.${signature}`;
+}
+
+function readSignedCandidateShareToken(token) {
+  const raw = String(token || "").trim();
+  if (!raw) return null;
+  const [encoded, signature] = raw.split(".");
+  if (!encoded || !signature) return null;
+  const expected = crypto
+    .createHmac("sha256", getCvShareSecret())
+    .update(encoded)
+    .digest("base64url");
+  if (!timingSafeEqualString(signature, expected)) return null;
+  try {
+    const payload = JSON.parse(Buffer.from(encoded, "base64url").toString("utf8"));
+    if (payload?.type !== "shared_candidate") return null;
+    if (payload.expiresAt && Date.now() > Number(payload.expiresAt)) return null;
+    return payload;
+  } catch {
+    return null;
+  }
+}
+
+function buildSharedCandidateProfile({ candidate = {}, assessment = null } = {}) {
+  const c = candidate && typeof candidate === "object" ? candidate : {};
+  const a = assessment && typeof assessment === "object" ? assessment : null;
+  const meta = decodeApplicantMetadata(c);
+  const draftPayload = normalizeJsonObjectInput(c.draft_payload || c.draftPayload);
+  const screeningAnswers = normalizeJsonObjectInput(c.screening_answers || c.screeningAnswers);
+
+  const cvResult = meta?.cvAnalysisCache?.result && typeof meta.cvAnalysisCache.result === "object" ? meta.cvAnalysisCache.result : {};
+  const highlights = Array.isArray(c?.cv_highlights)
+    ? c.cv_highlights
+    : Array.isArray(cvResult?.highlights)
+      ? cvResult.highlights
+      : [];
+  const strongPoints = highlights.map((v) => String(v || "").trim()).filter(Boolean).slice(0, 2);
+
+  const candidateName = String(a?.candidateName || c.name || draftPayload.candidateName || "").trim();
+  const phone = String(a?.phoneNumber || c.phone || draftPayload.phoneNumber || "").trim();
+  const email = String(a?.emailId || c.email || draftPayload.emailId || "").trim();
+  const linkedin = String(a?.linkedinUrl || c.linkedin || draftPayload.linkedin || "").trim();
+  const clientName = String(a?.clientName || draftPayload.clientName || c.client_name || c.clientName || c.assigned_jd_client || "").trim();
+  const jdTitle = String(a?.jdTitle || draftPayload.jdTitle || c.assigned_jd_title || c.jd_title || c.jdTitle || "").trim();
+  const currentCompany = String(a?.currentCompany || c.company || draftPayload.currentCompany || cvResult?.currentCompany || "").trim();
+  const currentDesignation = String(a?.currentDesignation || c.role || draftPayload.currentDesignation || cvResult?.currentDesignation || "").trim();
+  const totalExperience = String(a?.totalExperience || c.experience || draftPayload.totalExperience || cvResult?.exactTotalExperience || "").trim();
+  const relevantExperience = String(a?.relevantExperience || draftPayload.relevantExperience || "").trim();
+  const location = String(a?.location || c.location || draftPayload.location || "").trim();
+  const highestEducation = String(a?.highestEducation || c.highest_education || draftPayload.highestEducation || cvResult?.highestEducation || "").trim();
+  const noticePeriod = String(a?.noticePeriod || c.notice_period || draftPayload.noticePeriod || "").trim();
+  const currentCtc = String(a?.currentCtc || c.current_ctc || draftPayload.currentCtc || "").trim();
+  const expectedCtc = String(a?.expectedCtc || c.expected_ctc || draftPayload.expectedCtc || "").trim();
+  const offerInHand = String(a?.offerInHand || a?.offerAmount || c.offer_in_hand || draftPayload.offerInHand || "").trim();
+  const lwdOrDoj = String(a?.lwdOrDoj || a?.offerDoj || c.lwd_or_doj || draftPayload.lwdOrDoj || "").trim();
+
+  const pipelineStage = String(a?.pipelineStage || draftPayload.pipelineStage || "").trim();
+  const candidateStatus = String(a?.candidateStatus || draftPayload.candidateStatus || "").trim();
+  const dateAppliedRaw = String(c.created_at || c.createdAt || a?.createdAt || a?.generatedAt || "").trim();
+  const sourcePlatform = String(c.source || meta?.sourcePlatform || "").trim();
+
+  const otherStandardQuestions = String(a?.other_standard_questions || a?.otherStandardQuestions || a?.otherStandardQuestionAnswers || "").trim();
+  const reasonOfChange = String(
+    a?.reasonForChange
+    || c.reason_of_change
+    || c.reasonForChange
+    || draftPayload.reasonForChange
+    || ""
+  ).trim() || String(screeningAnswers["Reason of change"] || screeningAnswers["reason of change"] || "").trim();
+  const experienceTimeline = String(a?.experienceTimeline || a?.experience_timeline || draftPayload.experienceTimeline || "").trim();
+  const otherPointers = String(a?.otherPointers || c.other_pointers || draftPayload.otherPointers || "").trim();
+  const recruiterNotes = String(a?.recruiterNotes || c.recruiter_context_notes || draftPayload.recruiterNotes || "").trim();
+  const callbackNotes = String(a?.callbackNotes || c.notes || draftPayload.callbackNotes || "").trim();
+
+  const screeningPointers = otherStandardQuestions
+    ? otherStandardQuestions
+      .split(/\r?\n+/)
+      .map((line) => String(line || "").trim())
+      .filter(Boolean)
+      .filter((line) => !/^\s*(reason\s+of\s+change)\s*:/i.test(line))
+      .join("\n")
+    : "";
+
+  const screeningRemarksParts = [];
+  if (strongPoints.length) {
+    screeningRemarksParts.push("Strong points:");
+    strongPoints.forEach((p, idx) => screeningRemarksParts.push(`${idx + 1}. *${p}*`));
+  }
+  if (screeningPointers) {
+    if (screeningRemarksParts.length) screeningRemarksParts.push("");
+    screeningRemarksParts.push("Screening pointers:");
+    screeningRemarksParts.push(screeningPointers);
+  }
+  if (reasonOfChange) {
+    if (screeningRemarksParts.length) screeningRemarksParts.push("");
+    screeningRemarksParts.push("Reason of change:");
+    screeningRemarksParts.push(`*${reasonOfChange}*`);
+  }
+  const screeningRemarks = screeningRemarksParts.join("\n").trim();
+
+  const sections = [
+    {
+      title: "Candidate Details",
+      rows: [
+        { label: "Name of candidate", value: candidateName || "-" },
+        { label: "Position applied for", value: jdTitle || "-" },
+        { label: "Date applied", value: dateAppliedRaw ? new Date(dateAppliedRaw).toLocaleDateString() : "-" },
+        { label: "Mobile", value: phone || "-" },
+        { label: "Email", value: email || "-" },
+        { label: "Source", value: sourcePlatform || "-" }
+      ]
+    },
+    {
+      title: "Education Background",
+      rows: [{ label: "Highest qualification", value: highestEducation || "-" }]
+    },
+    {
+      title: "Personal & Professional Information",
+      rows: [
+        { label: "Current/Last Organization", value: currentCompany || "-" },
+        { label: "Designation / Role", value: currentDesignation || "-" },
+        { label: "Total Work Experience", value: totalExperience || "-" },
+        { label: "Relevant Experience", value: relevantExperience || "-" },
+        { label: "Residence Location", value: location || "-" },
+        { label: "Notice period", value: noticePeriod || "-" },
+        { label: "Current/Last CTC/PA", value: currentCtc || "-" },
+        { label: "Expected CTC", value: expectedCtc || "-" },
+        { label: "Offer in hand", value: offerInHand || "-" },
+        { label: "LWD / DOJ", value: lwdOrDoj || "-" }
+      ]
+    },
+    {
+      title: "Screening Remarks",
+      rows: [{ label: "Screening remarks", value: screeningRemarks || "-" }]
+    }
+  ];
+
+  if (experienceTimeline) {
+    sections.push({
+      title: "Previous Experience (timeline)",
+      rows: [{ label: "Experience timeline", value: experienceTimeline }]
+    });
+  }
+
+  const notesBlock = [recruiterNotes, callbackNotes, otherPointers].map((v) => String(v || "").trim()).filter(Boolean).join("\n\n");
+  if (notesBlock) {
+    sections.push({
+      title: "Other Pointers / Notes",
+      rows: [{ label: "Notes", value: notesBlock }]
+    });
+  }
+
+  return {
+    title: candidateName || "Candidate Profile",
+    subtitle: [clientName ? `Client: ${clientName}` : "", jdTitle ? `JD: ${jdTitle}` : "", currentCompany ? `Company: ${currentCompany}` : ""].filter(Boolean).join(" | "),
+    statusText: [candidateStatus ? `Status: ${candidateStatus}` : "", pipelineStage ? `Pipeline: ${pipelineStage}` : ""].filter(Boolean).join(" | "),
+    sections
+  };
 }
 
 function getRequestBaseUrl(req) {
@@ -3390,6 +3557,67 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (req.method === "GET" && requestUrl.pathname === "/shared/candidate") {
+    serveStaticFile(res, path.join(ROOT_PUBLIC_DIR, "candidate.html"));
+    return;
+  }
+
+  if (req.method === "GET" && requestUrl.pathname === "/shared/candidate/data") {
+    try {
+      const token = String(requestUrl.searchParams.get("token") || "").trim();
+      const payload = readSignedCandidateShareToken(token);
+      if (!payload) throw new Error("Invalid or expired candidate share link.");
+      const candidateId = String(payload.candidateId || "").trim();
+      const companyId = String(payload.companyId || "").trim();
+      if (!candidateId || !companyId) throw new Error("Invalid share token payload.");
+      const candidate = (await listCandidates({ id: candidateId, companyId, limit: 1 }))[0] || null;
+      if (!candidate) throw new Error("Candidate not found.");
+
+      const assessmentId = String(candidate?.assessment_id || "").trim();
+      const assessment = assessmentId ? await getAssessmentById({ companyId, assessmentId }).catch(() => null) : null;
+
+      // If CV exists, generate a short-lived download link via existing CV share token mechanism.
+      const meta = candidate ? decodeApplicantMetadata(candidate) : {};
+      const cachedStoredFile = meta?.cvAnalysisCache?.storedFile && typeof meta.cvAnalysisCache.storedFile === "object"
+        ? meta.cvAnalysisCache.storedFile
+        : null;
+      const fileProvider = meta.fileProvider || cachedStoredFile?.provider || "";
+      const fileKey = meta.fileKey || cachedStoredFile?.key || "";
+      const fileUrl = meta.fileUrl || cachedStoredFile?.url || "";
+      const filename = meta.filename || cachedStoredFile?.filename || "resume.pdf";
+      const mimeType = meta.mimeType || cachedStoredFile?.mimeType || "application/octet-stream";
+      let cvShareUrl = "";
+      if (fileProvider || fileKey || fileUrl) {
+        const expiresAt = Date.now() + 1000 * 60 * 60 * 24 * 7;
+        const cvToken = createSignedCvShareToken({
+          type: "shared_cv",
+          companyId,
+          candidateId: String(candidate?.id || candidateId || "").trim(),
+          candidateName: String(candidate?.name || "").trim(),
+          fileProvider,
+          fileKey,
+          fileUrl,
+          filename,
+          mimeType,
+          expiresAt
+        });
+        const baseUrl = getRequestBaseUrl(req);
+        cvShareUrl = `${baseUrl}/shared/cv?token=${encodeURIComponent(cvToken)}`;
+      }
+
+      sendJson(res, 200, {
+        ok: true,
+        result: {
+          profile: buildSharedCandidateProfile({ candidate, assessment }),
+          cvShareUrl
+        }
+      });
+    } catch (error) {
+      sendJson(res, 400, { ok: false, error: String(error.message || error) });
+    }
+    return;
+  }
+
   if (req.method === "GET" && requestUrl.pathname.startsWith("/apply/")) {
     serveStaticFile(res, path.join(ROOT_PUBLIC_DIR, "apply.html"));
     return;
@@ -4071,6 +4299,35 @@ const server = http.createServer(async (req, res) => {
       const actor = await requireSessionUser(getBearerToken(req));
       const result = await getCompanyApplicantIntakeSecret(actor.companyId);
       sendJson(res, 200, { ok: true, result });
+    } catch (error) {
+      sendJson(res, 400, { ok: false, error: String(error.message || error) });
+    }
+    return;
+  }
+
+  if (req.method === "POST" && /^\/company\/candidates\/[^/]+\/share-profile-link$/.test(requestUrl.pathname)) {
+    try {
+      const actor = await requireSessionUser(getBearerToken(req));
+      const candidateId = String(requestUrl.pathname.replace(/^\/company\/candidates\//, "").replace(/\/share-profile-link$/, "")).trim();
+      const candidate = (await listCandidatesForUser(actor, { id: candidateId, limit: 1 }))[0] || null;
+      if (!candidate) throw new Error("Candidate not found or not allowed.");
+      const expiresAt = Date.now() + 1000 * 60 * 60 * 24 * 45;
+      const token = createSignedCandidateShareToken({
+        type: "shared_candidate",
+        companyId: actor.companyId,
+        candidateId: String(candidate?.id || candidateId || "").trim(),
+        candidateName: String(candidate?.name || "").trim(),
+        expiresAt
+      });
+      const baseUrl = getRequestBaseUrl(req);
+      sendJson(res, 200, {
+        ok: true,
+        result: {
+          token,
+          expiresAt: new Date(expiresAt).toISOString(),
+          url: `${baseUrl}/shared/candidate?token=${encodeURIComponent(token)}`
+        }
+      });
     } catch (error) {
       sendJson(res, 400, { ok: false, error: String(error.message || error) });
     }

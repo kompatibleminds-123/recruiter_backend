@@ -436,7 +436,8 @@ function parseQuestionList(value) {
 }
 
 function decodePortalApplicantMetadata(item = {}) {
-  const raw = String(item?.raw_note || "").trim();
+  const candidate = item?.raw?.candidate || item;
+  const raw = String(candidate?.raw_note || "").trim();
   if (!raw.startsWith(PORTAL_APPLICANT_METADATA_PREFIX)) return {};
   try {
     return JSON.parse(raw.slice(PORTAL_APPLICANT_METADATA_PREFIX.length));
@@ -462,9 +463,10 @@ function parsePortalObjectField(value) {
 }
 
 function getCandidateDraftState(candidate = {}) {
-  const meta = decodePortalApplicantMetadata(candidate);
-  const draftPayload = parsePortalObjectField(candidate?.draft_payload || candidate?.draftPayload);
-  const screeningAnswers = parsePortalObjectField(candidate?.screening_answers || candidate?.screeningAnswers);
+  const source = candidate?.raw?.candidate || candidate;
+  const meta = decodePortalApplicantMetadata(source);
+  const draftPayload = parsePortalObjectField(source?.draft_payload || source?.draftPayload);
+  const screeningAnswers = parsePortalObjectField(source?.screening_answers || source?.screeningAnswers);
   return {
     ...draftPayload,
     jdScreeningAnswers: Object.keys(screeningAnswers).length
@@ -514,15 +516,16 @@ function sanitizeLwdOrDojValue(value) {
 }
 
 function candidateHasStoredCv(item = {}) {
-  const meta = decodePortalApplicantMetadata(item);
-  const storedFile = item.cvAnalysis?.storedFile || item.cv_analysis?.storedFile || meta?.cvAnalysisCache?.storedFile || {};
+  const candidate = item?.raw?.candidate || item;
+  const meta = decodePortalApplicantMetadata(candidate);
+  const storedFile = candidate.cvAnalysis?.storedFile || candidate.cv_analysis?.storedFile || meta?.cvAnalysisCache?.storedFile || {};
   return Boolean(
-    item.cv_url
-    || item.cvUrl
-    || item.cv_key
-    || item.cvKey
-    || item.cv_filename
-    || item.cvFilename
+    candidate.cv_url
+    || candidate.cvUrl
+    || candidate.cv_key
+    || candidate.cvKey
+    || candidate.cv_filename
+    || candidate.cvFilename
     || meta?.fileProvider
     || meta?.fileKey
     || meta?.fileUrl
@@ -532,14 +535,15 @@ function candidateHasStoredCv(item = {}) {
 }
 
 function getCandidateProfileCvMeta(item = {}) {
-  const meta = decodePortalApplicantMetadata(item);
-  const storedFile = item.cvAnalysis?.storedFile || item.cv_analysis?.storedFile || meta?.cvAnalysisCache?.storedFile || {};
+  const candidate = item?.raw?.candidate || item;
+  const meta = decodePortalApplicantMetadata(candidate);
+  const storedFile = candidate.cvAnalysis?.storedFile || candidate.cv_analysis?.storedFile || meta?.cvAnalysisCache?.storedFile || {};
   return {
-    candidateId: item.candidate_id || item.candidateId || item.id || "",
-    url: item.cv_url || item.cvUrl || meta?.fileUrl || storedFile?.url || "",
-    filename: item.cv_filename || item.cvFilename || meta?.filename || storedFile?.filename || "",
-    key: item.cv_key || item.cvKey || meta?.fileKey || storedFile?.key || "",
-    provider: item.cv_provider || item.cvProvider || meta?.fileProvider || storedFile?.provider || ""
+    candidateId: candidate.candidate_id || candidate.candidateId || candidate.id || "",
+    url: candidate.cv_url || candidate.cvUrl || meta?.fileUrl || storedFile?.url || "",
+    filename: candidate.cv_filename || candidate.cvFilename || meta?.filename || storedFile?.filename || "",
+    key: candidate.cv_key || candidate.cvKey || meta?.fileKey || storedFile?.key || "",
+    provider: candidate.cv_provider || candidate.cvProvider || meta?.fileProvider || storedFile?.provider || ""
   };
 }
 
@@ -2072,6 +2076,56 @@ function buildExcelHtmlFromPreset(rows, presetId, settings = DEFAULT_COPY_SETTIN
 </html>`;
 }
 
+function buildExcelHtmlFromCardSections({ title = "", subtitle = "", sections = [] } = {}) {
+  const rowsHtml = [];
+  const pushSection = (label) => {
+    rowsHtml.push(`<tr><th colspan="2" style="border:1px solid #d8dee8;padding:10px 12px;background:#eaf0fb;text-align:left;font-size:13px;letter-spacing:.06em;text-transform:uppercase;">${escapeHtml(label)}</th></tr>`);
+  };
+  const pushRow = (label, value) => {
+    rowsHtml.push(
+      `<tr>
+        <td style="border:1px solid #d8dee8;padding:10px 12px;vertical-align:top;font-size:13px;font-weight:700;width:260px;background:#fbfcff;">${escapeHtml(label)}</td>
+        <td style="border:1px solid #d8dee8;padding:10px 12px;vertical-align:top;font-size:13px;line-height:1.45;">${escapeHtml(String(value || "")).replace(/\n/g, "<br/>")}</td>
+      </tr>`
+    );
+  };
+  (sections || []).forEach((section) => {
+    if (!section) return;
+    pushSection(section.title || "Section");
+    (section.rows || []).forEach((row) => {
+      if (!row) return;
+      pushRow(String(row.label || ""), row.value == null ? "" : String(row.value));
+    });
+  });
+
+  const heading = [
+    title ? `<h2 style="margin:0 0 6px;font-family:Calibri,Arial,sans-serif;">${escapeHtml(title)}</h2>` : "",
+    subtitle ? `<div style="margin:0 0 12px;color:#4b5563;font-family:Calibri,Arial,sans-serif;">${escapeHtml(subtitle)}</div>` : ""
+  ].filter(Boolean).join("");
+
+  return `<!doctype html>
+<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">
+<head>
+  <meta charset="utf-8" />
+  <meta name="ProgId" content="Excel.Sheet" />
+  <meta name="Generator" content="RecruitDesk AI" />
+  <style>
+    table { border-collapse: collapse; width: 100%; }
+    td, th { font-family: Calibri, Arial, sans-serif; }
+  </style>
+</head>
+<body>
+  ${heading}
+  <table><tbody>${rowsHtml.join("")}</tbody></table>
+</body>
+</html>`;
+}
+
+function downloadCandidateCardExcelFile(filename, { title, subtitle, sections }) {
+  const html = buildExcelHtmlFromCardSections({ title, subtitle, sections });
+  downloadTextFile(filename, html, "application/vnd.ms-excel;charset=utf-8");
+}
+
 function downloadTextFile(filename, text, mimeType = "text/tab-separated-values;charset=utf-8") {
   const blob = new Blob([String(text || "")], { type: mimeType });
   const url = URL.createObjectURL(blob);
@@ -3072,68 +3126,99 @@ function DrilldownModal({ open, title, items, onClose, onOpenCv, onOpenDraft, on
   );
 }
 
-function CandidateProfileModal({ open, candidate, onClose, onOpenCv, onReuse }) {
+function CandidateProfileModal({ open, candidate, onClose, onOpenCv, onReuse, onCopyShareLink }) {
   if (!open || !candidate) return null;
-  const cvMeta = getCandidateProfileCvMeta(candidate);
-  const tags = buildVisibleTagList(candidate);
-  const questionAnswers = getAssessmentQuestionAnswers(candidate);
-  const draft = getCandidateDraftState(candidate);
-  const screeningRemarks = buildScreeningRemarksForExport(candidate);
-  const reasonOfChange = buildReasonOfChangeForExport(candidate);
+  const baseCandidate = candidate.raw?.candidate || candidate;
+  const linkedAssessment = candidate.raw?.assessment || null;
+  const cvMeta = getCandidateProfileCvMeta(baseCandidate);
+  const tags = buildVisibleTagList(baseCandidate);
+  const questionAnswers = getAssessmentQuestionAnswers(linkedAssessment || candidate);
+  const draft = getCandidateDraftState(baseCandidate);
+  const screeningRemarks = buildScreeningRemarksForExport({
+    ...baseCandidate,
+    ...(linkedAssessment || {}),
+    other_standard_questions: linkedAssessment?.other_standard_questions || linkedAssessment?.otherStandardQuestions || linkedAssessment?.otherStandardQuestionAnswers || "",
+    reason_of_change: linkedAssessment?.reasonForChange || baseCandidate.reason_of_change || ""
+  });
+  const reasonOfChange = String(linkedAssessment?.reasonForChange || buildReasonOfChangeForExport(baseCandidate) || "").trim();
   const timeline = String(
-    candidate.experienceTimeline
-    || candidate.experience_timeline
+    linkedAssessment?.experienceTimeline
+    || linkedAssessment?.experience_timeline
+    || baseCandidate.experienceTimeline
+    || baseCandidate.experience_timeline
     || draft.experienceTimeline
     || draft.experience_timeline
     || ""
   ).trim();
   const noteFields = [
-    candidate.other_pointers,
-    candidate.otherPointers,
-    candidate.recruiter_context_notes,
-    candidate.recruiterNotes,
-    candidate.notes,
-    candidate.callbackNotes,
-    candidate.last_contact_notes,
-    String(candidate.raw_note || "").trim().startsWith(PORTAL_APPLICANT_METADATA_PREFIX) ? "" : candidate.raw_note
+    linkedAssessment?.otherPointers,
+    linkedAssessment?.callbackNotes,
+    linkedAssessment?.recruiterNotes,
+    baseCandidate.other_pointers,
+    baseCandidate.otherPointers,
+    baseCandidate.recruiter_context_notes,
+    baseCandidate.recruiterNotes,
+    baseCandidate.notes,
+    baseCandidate.callbackNotes,
+    baseCandidate.last_contact_notes,
+    String(baseCandidate.raw_note || "").trim().startsWith(PORTAL_APPLICANT_METADATA_PREFIX) ? "" : baseCandidate.raw_note
   ].map((item) => String(item || "").trim()).filter(Boolean);
   const uniqueNotes = Array.from(new Set(noteFields));
-  const dateApplied = String(candidate.created_at || candidate.createdAt || "").trim();
+  const dateApplied = String(baseCandidate.created_at || baseCandidate.createdAt || candidate.createdAt || "").trim();
   const candidateRows = [
-    ["Name of candidate", candidate.name || candidate.candidateName || draft.candidateName || "-"],
-    ["Position applied for", candidate.jd_title || candidate.jdTitle || candidate.role || draft.jdTitle || "-"],
+    ["Name of candidate", linkedAssessment?.candidateName || baseCandidate.name || draft.candidateName || "-"],
+    ["Position applied for", linkedAssessment?.jdTitle || baseCandidate.assigned_jd_title || baseCandidate.jd_title || baseCandidate.jdTitle || baseCandidate.role || draft.jdTitle || "-"],
     ["Date applied", dateApplied ? new Date(dateApplied).toLocaleDateString() : "-"],
-    ["Mobile", candidate.phone || candidate.phoneNumber || draft.phoneNumber || "-"],
-    ["Email", candidate.email || candidate.emailId || draft.emailId || "-"],
-    ["Source", candidate.source || candidate.sourcePlatform || "-"]
+    ["Mobile", linkedAssessment?.phoneNumber || baseCandidate.phone || baseCandidate.phoneNumber || draft.phoneNumber || "-"],
+    ["Email", linkedAssessment?.emailId || baseCandidate.email || baseCandidate.emailId || draft.emailId || "-"],
+    ["Source", baseCandidate.source || baseCandidate.sourcePlatform || "-"]
   ];
   const educationRows = [
-    ["Highest qualification", candidate.highest_education || candidate.highestEducation || draft.highestEducation || "-"]
+    ["Highest qualification", linkedAssessment?.highestEducation || baseCandidate.highest_education || baseCandidate.highestEducation || draft.highestEducation || "-"]
   ];
   const professionalRows = [
-    ["Current/Last Organization", candidate.company || candidate.currentCompany || draft.currentCompany || "-"],
-    ["Designation / Role", candidate.role || candidate.currentDesignation || draft.currentDesignation || "-"],
-    ["Total Work Experience", candidate.experience || candidate.totalExperience || draft.totalExperience || "-"],
+    ["Current/Last Organization", linkedAssessment?.currentCompany || baseCandidate.company || baseCandidate.currentCompany || draft.currentCompany || "-"],
+    ["Designation / Role", linkedAssessment?.currentDesignation || baseCandidate.role || baseCandidate.currentDesignation || draft.currentDesignation || "-"],
+    ["Total Work Experience", linkedAssessment?.totalExperience || baseCandidate.experience || baseCandidate.totalExperience || draft.totalExperience || "-"],
     ["Relevant Experience", draft.relevantExperience || "-"],
-    ["Notice period", candidate.notice_period || candidate.noticePeriod || draft.noticePeriod || "-"],
+    ["Notice period", linkedAssessment?.noticePeriod || baseCandidate.notice_period || baseCandidate.noticePeriod || draft.noticePeriod || "-"],
     ["Reason for looking for a change", reasonOfChange || "-"],
-    ["Current/Last CTC/PA", candidate.current_ctc || candidate.currentCtc || draft.currentCtc || "-"],
-    ["Expected CTC", candidate.expected_ctc || candidate.expectedCtc || draft.expectedCtc || "-"],
-    ["Residence Location", candidate.location || draft.location || "-"],
-    ["Offer in hand", candidate.offer_in_hand || candidate.offerInHand || draft.offerInHand || "-"],
-    ["LWD / DOJ", sanitizeLwdOrDojValue(candidate.lwd_or_doj || candidate.lwdOrDoj || draft.lwdOrDoj || "") || "-"]
+    ["Current/Last CTC/PA", linkedAssessment?.currentCtc || baseCandidate.current_ctc || baseCandidate.currentCtc || draft.currentCtc || "-"],
+    ["Expected CTC", linkedAssessment?.expectedCtc || baseCandidate.expected_ctc || baseCandidate.expectedCtc || draft.expectedCtc || "-"],
+    ["Residence Location", linkedAssessment?.location || baseCandidate.location || draft.location || "-"],
+    ["Offer in hand", linkedAssessment?.offerInHand || linkedAssessment?.offerAmount || baseCandidate.offer_in_hand || baseCandidate.offerInHand || draft.offerInHand || "-"],
+    ["LWD / DOJ", sanitizeLwdOrDojValue(linkedAssessment?.lwdOrDoj || linkedAssessment?.offerDoj || baseCandidate.lwd_or_doj || baseCandidate.lwdOrDoj || draft.lwdOrDoj || "") || "-"]
   ];
+  const excelSections = [
+    { title: "Candidate Details", rows: candidateRows.map(([label, value]) => ({ label, value })) },
+    { title: "Education Background", rows: educationRows.map(([label, value]) => ({ label, value })) },
+    { title: "Personal & Professional Information", rows: professionalRows.map(([label, value]) => ({ label, value })) },
+    { title: "Screening Remarks", rows: [{ label: "Screening remarks", value: screeningRemarks || (questionAnswers || []).map((pair) => `${pair.question}: ${pair.answer}`).join("\n") || "-" }] }
+  ];
+  if (timeline) excelSections.push({ title: "Previous Experience (timeline)", rows: [{ label: "Experience timeline", value: timeline }] });
+  if (uniqueNotes.length) excelSections.push({ title: "Other Pointers / Notes", rows: [{ label: "Notes", value: uniqueNotes.join("\n\n") }] });
+  if (tags.length) excelSections.push({ title: "Tags / searchable keywords", rows: [{ label: "Tags", value: tags.join(", ") }] });
+  excelSections.push({ title: "CV", rows: [{ label: "CV", value: candidateHasStoredCv(baseCandidate) ? (cvMeta.filename || "Uploaded CV available") : "No uploaded CV available yet." }] });
+
+  const modalTitle = linkedAssessment?.candidateName || baseCandidate.name || draft.candidateName || "Candidate";
+  const modalSubtitle = [
+    linkedAssessment?.clientName || baseCandidate.client_name || baseCandidate.clientName || draft.clientName || "",
+    linkedAssessment?.jdTitle || baseCandidate.assigned_jd_title || baseCandidate.jd_title || baseCandidate.jdTitle || draft.jdTitle || baseCandidate.role || "",
+    linkedAssessment?.currentCompany || baseCandidate.company || baseCandidate.currentCompany || draft.currentCompany || ""
+  ].filter(Boolean).join(" | ");
+  const statusLabel = linkedAssessment?.candidateStatus || candidate.candidateStatus || candidate.assessment_status || candidate.outcome || candidate.status || "";
+  const pipelineLabel = linkedAssessment?.pipelineStage || candidate.pipelineStage || draft.pipelineStage || "";
   return (
     <div className="overlay">
       <div className="overlay-card overlay-card--wide" onClick={(e) => e.stopPropagation()}>
         <div className="candidate-sheet__head">
           <div>
-            <h3>{candidate.name || candidate.candidateName || draft.candidateName || "Candidate"}</h3>
-            <p className="muted">{[candidate.client_name || candidate.clientName || draft.clientName || "", candidate.jd_title || candidate.jdTitle || draft.jdTitle || candidate.role || "", candidate.company || candidate.currentCompany || draft.currentCompany || ""].filter(Boolean).join(" | ")}</p>
+            <h3>{modalTitle}</h3>
+            <p className="muted">{modalSubtitle}</p>
           </div>
           <div className="candidate-sheet__head-meta">
-            {candidate.assessment_status || candidate.outcome || candidate.status ? <span className="chip">Status: {candidate.assessment_status || candidate.outcome || candidate.status}</span> : null}
-            {draft.pipelineStage ? <span className="chip">Pipeline: {draft.pipelineStage}</span> : null}
+            {statusLabel ? <span className="chip">Status: {statusLabel}</span> : null}
+            {pipelineLabel ? <span className="chip">Pipeline: {pipelineLabel}</span> : null}
           </div>
         </div>
 
@@ -3217,7 +3302,7 @@ function CandidateProfileModal({ open, candidate, onClose, onOpenCv, onReuse }) 
 
           <div className="candidate-sheet__section">
             <div className="candidate-sheet__section-title">CV</div>
-            {candidateHasStoredCv(candidate) ? (
+            {candidateHasStoredCv(baseCandidate) ? (
               <p>{cvMeta.filename || "Uploaded CV"} is available for this profile.</p>
             ) : (
               <p className="muted">No uploaded CV available yet.</p>
@@ -3226,7 +3311,9 @@ function CandidateProfileModal({ open, candidate, onClose, onOpenCv, onReuse }) 
         </div>
         <div className="button-row">
           {onReuse ? <button onClick={() => onReuse(candidate)}>Reuse profile</button> : null}
-          {candidateHasStoredCv(candidate) ? <button onClick={() => onOpenCv(candidate)}>Open CV</button> : null}
+          <button className="ghost-btn" onClick={() => downloadCandidateCardExcelFile(`candidate-card-${new Date().toISOString().slice(0, 10)}.xls`, { title: modalTitle, subtitle: modalSubtitle, sections: excelSections })}>Download card (Excel)</button>
+          {onCopyShareLink && baseCandidate?.id ? <button className="ghost-btn" onClick={() => onCopyShareLink(baseCandidate.id)}>Copy share link</button> : null}
+          {candidateHasStoredCv(baseCandidate) ? <button onClick={() => onOpenCv(candidate)}>Open CV</button> : null}
           <button className="ghost-btn" onClick={onClose}>Close</button>
         </div>
       </div>
@@ -3253,6 +3340,8 @@ function ClientProfileModal({ open, item, onClose, copySettings = DEFAULT_COPY_S
   });
   const timeline = String(assessment.experienceTimeline || assessment.experience_timeline || candidateDraft.experienceTimeline || "").trim();
   const dateApplied = String(item.createdAt || assessment.createdAt || candidate.created_at || "").trim();
+  const modalTitle = assessment.candidateName || item.candidateName || candidate.name || "Candidate";
+  const modalSubtitle = [assessment.clientName || item.clientName || candidate.client_name || candidateDraft.clientName || "", assessment.jdTitle || item.position || item.role || candidate.jd_title || candidateDraft.jdTitle || "", assessment.currentCompany || item.company || candidate.company || ""].filter(Boolean).join(" | ");
   const candidateRows = [
     ["Name of candidate", assessment.candidateName || item.candidateName || candidate.name || candidateDraft.candidateName || "-"],
     ["Position applied for", assessment.jdTitle || item.position || item.role || candidate.jd_title || candidateDraft.jdTitle || "-"],
@@ -3277,13 +3366,22 @@ function ClientProfileModal({ open, item, onClose, copySettings = DEFAULT_COPY_S
     ["Offer in hand", assessment.offerInHand || assessment.offerAmount || item.offerInHand || candidate.offer_in_hand || candidateDraft.offerInHand || "-"],
     ["LWD / DOJ", sanitizeLwdOrDojValue(assessment.lwdOrDoj || assessment.offerDoj || item.lwdOrDoj || candidate.lwd_or_doj || candidateDraft.lwdOrDoj || "") || "-"]
   ];
+  const excelSections = [
+    { title: "Candidate Details", rows: candidateRows.map(([label, value]) => ({ label, value })) },
+    { title: "Education Background", rows: educationRows.map(([label, value]) => ({ label, value })) },
+    { title: "Personal & Professional Information", rows: professionalRows.map(([label, value]) => ({ label, value })) },
+    { title: "Screening Remarks", rows: [{ label: "Screening remarks", value: screeningRemarks || (questionAnswers || []).map((pair) => `${pair.question}: ${pair.answer}`).join("\n") || "-" }] }
+  ];
+  if (timeline) excelSections.push({ title: "Previous Experience (timeline)", rows: [{ label: "Experience timeline", value: timeline }] });
+  if (otherPointers) excelSections.push({ title: "Other Pointers", rows: [{ label: "Other pointers", value: otherPointers }] });
+  excelSections.push({ title: "CV", rows: [{ label: "CV", value: hasCv ? "CV is available for this profile." : "No uploaded CV available yet." }] });
   return (
     <div className="overlay" onClick={onClose}>
       <div className="overlay-card overlay-card--wide" onClick={(e) => e.stopPropagation()}>
         <div className="candidate-sheet__head">
           <div>
-            <h3>{assessment.candidateName || item.candidateName || candidate.name || "Candidate"}</h3>
-            <p className="muted">{[assessment.clientName || item.clientName || candidate.client_name || candidateDraft.clientName || "", assessment.jdTitle || item.position || item.role || candidate.jd_title || candidateDraft.jdTitle || "", assessment.currentCompany || item.company || candidate.company || ""].filter(Boolean).join(" | ")}</p>
+            <h3>{modalTitle}</h3>
+            <p className="muted">{modalSubtitle}</p>
           </div>
           <div className="candidate-sheet__head-meta">
             {assessment.candidateStatus ? <span className="chip">Status: {formatClientPortalStatusLabel(assessment.candidateStatus)}</span> : null}
@@ -3380,6 +3478,7 @@ function ClientProfileModal({ open, item, onClose, copySettings = DEFAULT_COPY_S
         </div>
         <div className="button-row">
           {hasCv ? <button onClick={() => onOpenCv?.(item)}>Download / Open CV</button> : null}
+          <button className="ghost-btn" onClick={() => downloadCandidateCardExcelFile(`candidate-card-${new Date().toISOString().slice(0, 10)}.xls`, { title: modalTitle, subtitle: modalSubtitle, sections: excelSections })}>Download card (Excel)</button>
           <button className="ghost-btn" onClick={onClose}>Close</button>
         </div>
       </div>
@@ -4599,6 +4698,22 @@ function PortalApp({ token, onLogout }) {
     if (meta.provider) params.set("cv_provider", String(meta.provider));
     window.open(`/company/candidates/${encodeURIComponent(meta.candidateId)}/cv?${params.toString()}`, "_blank", "noopener,noreferrer");
     setStatus("workspace", "Opening CV...", "ok");
+  }
+
+  async function copyCandidateProfileShareLink(candidateId) {
+    const safeId = String(candidateId || "").trim();
+    if (!safeId) {
+      setStatus("workspace", "Candidate id missing for share link.", "error");
+      return;
+    }
+    const result = await api(`/company/candidates/${encodeURIComponent(safeId)}/share-profile-link`, token, "POST");
+    const url = String(result?.url || "").trim();
+    if (!url) {
+      setStatus("workspace", "Could not generate share link.", "error");
+      return;
+    }
+    await copyText(url);
+    setStatus("workspace", "Candidate profile share link copied.", "ok");
   }
 
   function openInterviewStoredCv() {
@@ -8568,6 +8683,7 @@ function PortalApp({ token, onLogout }) {
         onClose={() => setDatabaseProfileItem(null)}
         onOpenCv={(candidate) => openDatabaseCandidateCv(candidate)}
         onReuse={(candidate) => reuseDatabaseCandidate(candidate)}
+        onCopyShareLink={(candidateId) => void copyCandidateProfileShareLink(candidateId)}
       />
       <ClientFeedbackModal open={Boolean(clientFeedbackItem)} item={clientFeedbackItem} onClose={() => setClientFeedbackItem(null)} onSave={(payload) => void saveClientFeedback(payload)} />
     </div>
