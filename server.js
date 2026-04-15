@@ -2141,7 +2141,7 @@ function candidateMatchesLooseNaturalTokens(item, rawQuery = "") {
 }
 
 function buildCandidateSearchHay(item = {}) {
-  return normalizeDashboardText([
+  const base = normalizeDashboardText([
     item.candidateName || "",
     item.raw?.candidate?.phone || "",
     item.raw?.candidate?.email || "",
@@ -2170,6 +2170,10 @@ function buildCandidateSearchHay(item = {}) {
     item.workflowStatus || "",
     item.attemptStatus || ""
   ].join(" "));
+  // Make common tech keywords searchable even when punctuation/format differs in JSON CV text.
+  return base
+    .replace(/\basp\s*\.?\s*net\b/gi, "asp.net")
+    .replace(/\b\.net\b/gi, "dotnet");
 }
 
 function buildCandidateSearchUniverse(candidates = [], assessments = [], jobs = []) {
@@ -4767,7 +4771,8 @@ const server = http.createServer(async (req, res) => {
       const debug = String(requestUrl.searchParams.get("debug") || "").trim() === "1";
       const semanticEnabled = String(requestUrl.searchParams.get("semantic") || "").trim() !== "0";
       const normalized = normalizeRecruiterQuery(query, DEFAULT_SYNONYMS);
-      let filters = parseNaturalLanguageCandidateQuery(normalized.normalized || query);
+      const heuristic = parseNaturalLanguageCandidateQuery(normalized.normalized || query);
+      let filters = heuristic;
       filters.raw = query;
       if (query && queryMode === "ai") {
         const apiKey = String(process.env.OPENAI_API_KEY || "").trim();
@@ -4779,6 +4784,34 @@ const server = http.createServer(async (req, res) => {
             console.warn("AI query interpretation failed, falling back to heuristic parser:", error?.message || error);
           }
         }
+      }
+
+      // Always merge deterministic heuristic signals so AI mode doesn't miss obvious intent like "today" or "captured".
+      // Keep backward-compatible: only fill missing fields, do not override AI-filled ones.
+      if (heuristic) {
+        if (!filters.dateFrom && heuristic.dateFrom) filters.dateFrom = heuristic.dateFrom;
+        if (!filters.dateTo && heuristic.dateTo) filters.dateTo = heuristic.dateTo;
+        if (!filters.dateField && heuristic.dateField) filters.dateField = heuristic.dateField;
+        if (!filters.sourceTypeFilter && heuristic.sourceTypeFilter) filters.sourceTypeFilter = heuristic.sourceTypeFilter;
+        if (!filters.recruiterScope && heuristic.recruiterScope) filters.recruiterScope = heuristic.recruiterScope;
+        if (!filters.recruiterName && heuristic.recruiterName) filters.recruiterName = heuristic.recruiterName;
+        if (!filters.recruiterField && heuristic.recruiterField) filters.recruiterField = heuristic.recruiterField;
+        if (!filters.location && heuristic.location) filters.location = heuristic.location;
+        if ((!Array.isArray(filters.locations) || !filters.locations.length) && Array.isArray(heuristic.locations) && heuristic.locations.length) {
+          filters.locations = heuristic.locations;
+        }
+        // If query uses OR, avoid "all skills must match" which returns zero too often.
+        if (String(filters.skillsMatch || "").trim() === "" && heuristic.skillsMatch) filters.skillsMatch = heuristic.skillsMatch;
+        if (/\bor\b/i.test(normalized.normalized || query)) filters.skillsMatch = "any";
+      }
+
+      // Normalize location aliases even in AI mode.
+      if (filters.location) {
+        const alias = mapLocationAlias(filters.location, DEFAULT_SYNONYMS);
+        if (alias?.canonical) filters.location = alias.canonical;
+        const existing = Array.isArray(filters.locations) ? filters.locations : [];
+        const merged = Array.from(new Set([...existing, ...(alias?.variants || []), alias?.canonical].filter(Boolean).map((v) => String(v).trim())));
+        if (merged.length) filters.locations = merged;
       }
 
       // Post-normalization patches:
