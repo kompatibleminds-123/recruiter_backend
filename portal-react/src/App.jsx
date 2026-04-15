@@ -2387,8 +2387,8 @@ function MultiSelectChipFilter({ label, options, selected, onToggle }) {
   );
 }
 
-function MultiSelectDropdown({ label, options, selected, onToggle }) {
-  const summary = !selected.length ? `All ${label.toLowerCase()}` : `${selected.length} selected`;
+function MultiSelectDropdown({ label, options, selected, onToggle, allowAll = true, emptySummary = "" }) {
+  const summary = !selected.length ? (emptySummary || `All ${label.toLowerCase()}`) : `${selected.length} selected`;
   return (
     <details className="filter-dropdown">
       <summary className="filter-dropdown__summary">
@@ -2397,7 +2397,9 @@ function MultiSelectDropdown({ label, options, selected, onToggle }) {
       </summary>
       <div className="filter-dropdown__body">
         <div className="chip-row">
-          <button className={`chip chip-toggle${!selected.length ? " active" : ""}`} onClick={() => onToggle("__all__")}>All</button>
+          {allowAll ? (
+            <button className={`chip chip-toggle${!selected.length ? " active" : ""}`} onClick={() => onToggle("__all__")}>All</button>
+          ) : null}
           {options.map((option) => (
             <button
               key={option}
@@ -7267,7 +7269,7 @@ function PortalApp({ token, onLogout }) {
                 {String(state.user?.role || "").toLowerCase() === "admin" ? <MultiSelectDropdown label="Owned by" options={applicantOptions.ownedBy} selected={applicantFilters.ownedBy} onToggle={(value) => setApplicantFilters((current) => ({ ...current, ownedBy: value === "__all__" ? [] : current.ownedBy.includes(value) ? current.ownedBy.filter((item) => item !== value) : [...current.ownedBy, value] }))} /> : null}
                 {String(state.user?.role || "").toLowerCase() === "admin" ? <MultiSelectDropdown label="Assigned to" options={applicantOptions.assignedTo} selected={applicantFilters.assignedTo} onToggle={(value) => setApplicantFilters((current) => ({ ...current, assignedTo: value === "__all__" ? [] : current.assignedTo.includes(value) ? current.assignedTo.filter((item) => item !== value) : [...current.assignedTo, value] }))} /> : null}
                 <MultiSelectDropdown label="Outcome" options={applicantOptions.outcomes} selected={applicantFilters.outcomes} onToggle={(value) => setApplicantFilters((current) => ({ ...current, outcomes: value === "__all__" ? [] : current.outcomes.includes(value) ? current.outcomes.filter((item) => item !== value) : [...current.outcomes, value] }))} />
-                <MultiSelectDropdown label="State" options={applicantOptions.activeStates} selected={applicantFilters.activeStates} onToggle={(value) => setApplicantFilters((current) => ({ ...current, activeStates: value === "__all__" ? [] : current.activeStates.includes(value) ? current.activeStates.filter((item) => item !== value) : [...current.activeStates, value] }))} />
+                <MultiSelectDropdown label="State" options={applicantOptions.activeStates} selected={applicantFilters.activeStates} allowAll={false} emptySummary="Active only" onToggle={(value) => setApplicantFilters((current) => ({ ...current, activeStates: current.activeStates.includes(value) ? current.activeStates.filter((item) => item !== value) : [...current.activeStates, value] }))} />
               </div>
               <div className="button-row">
                 <label className="copy-preset-control">
@@ -7349,7 +7351,7 @@ function PortalApp({ token, onLogout }) {
                   <MultiSelectDropdown label="Captured by" options={capturedCandidateOptions.capturedBy} selected={candidateFilters.capturedBy} onToggle={(value) => setCandidateFilters((current) => ({ ...current, capturedBy: value === "__all__" ? [] : current.capturedBy.includes(value) ? current.capturedBy.filter((item) => item !== value) : [...current.capturedBy, value] }))} />
                   <MultiSelectDropdown label="Sources" options={capturedCandidateOptions.sources} selected={candidateFilters.sources} onToggle={(value) => setCandidateFilters((current) => ({ ...current, sources: value === "__all__" ? [] : current.sources.includes(value) ? current.sources.filter((item) => item !== value) : [...current.sources, value] }))} />
                   <MultiSelectDropdown label="Outcome" options={capturedCandidateOptions.outcomes} selected={candidateFilters.outcomes} onToggle={(value) => setCandidateFilters((current) => ({ ...current, outcomes: value === "__all__" ? [] : current.outcomes.includes(value) ? current.outcomes.filter((item) => item !== value) : [...current.outcomes, value] }))} />
-                  <MultiSelectDropdown label="State" options={capturedCandidateOptions.activeStates} selected={candidateFilters.activeStates} onToggle={(value) => setCandidateFilters((current) => ({ ...current, activeStates: value === "__all__" ? [] : current.activeStates.includes(value) ? current.activeStates.filter((item) => item !== value) : [...current.activeStates, value] }))} />
+                  <MultiSelectDropdown label="State" options={capturedCandidateOptions.activeStates} selected={candidateFilters.activeStates} allowAll={false} emptySummary="Active only" onToggle={(value) => setCandidateFilters((current) => ({ ...current, activeStates: current.activeStates.includes(value) ? current.activeStates.filter((item) => item !== value) : [...current.activeStates, value] }))} />
                 </div>
                 <div className="button-row">
                   <label className="copy-preset-control">
