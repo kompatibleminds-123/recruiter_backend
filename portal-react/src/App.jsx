@@ -3709,7 +3709,8 @@ function PortalApp({ token, onLogout }) {
       );
       const clientValue = String(item?.clientName || matchedCandidate?.client_name || "").trim();
       const jdValue = String(item?.jdTitle || matchedCandidate?.jd_title || "").trim();
-      const recruiterValue = String(item?.recruiterName || matchedCandidate?.assigned_to_name || matchedCandidate?.recruiter_name || "").trim();
+      // Always display the assigned recruiter (not assessment creator/last editor).
+      const recruiterValue = String(matchedCandidate?.assigned_to_name || item?.recruiterName || matchedCandidate?.recruiter_name || "").trim();
       const outcomeValue = normalizeAssessmentStatusLabel(item?.candidateStatus || item?.candidate_status || "") || "No outcome";
       if (clientValue) clients.add(clientValue);
       if (jdValue) jds.add(jdValue);
@@ -3734,7 +3735,8 @@ function PortalApp({ token, onLogout }) {
       );
       const clientValue = String(item?.clientName || matchedCandidate?.client_name || "").trim();
       const jdValue = String(item?.jdTitle || matchedCandidate?.jd_title || "").trim();
-      const recruiterValue = String(item?.recruiterName || matchedCandidate?.assigned_to_name || matchedCandidate?.recruiter_name || "").trim();
+      // Always filter by assigned recruiter (not assessment creator/last editor).
+      const recruiterValue = String(matchedCandidate?.assigned_to_name || item?.recruiterName || matchedCandidate?.recruiter_name || "").trim();
       const outcomeValue = normalizeAssessmentStatusLabel(item?.candidateStatus || item?.candidate_status || "") || "No outcome";
       const createdDate = String(item?.generatedAt || item?.updatedAt || "").slice(0, 10);
       const hay = [
@@ -3838,8 +3840,8 @@ function PortalApp({ token, onLogout }) {
       expected_ctc: item.expectedCtc || "",
       created_at: item.createdAt || item.generatedAt || "",
       skills: Array.isArray(linkedCandidate?.skills) ? linkedCandidate.skills : [],
-      assigned_to_name: String(item.recruiterName || linkedCandidate?.assigned_to_name || linkedCandidate?.recruiter_name || "").trim(),
-      recruiter_name: String(item.recruiterName || linkedCandidate?.assigned_to_name || linkedCandidate?.recruiter_name || "").trim(),
+      assigned_to_name: String(linkedCandidate?.assigned_to_name || item.recruiterName || linkedCandidate?.recruiter_name || "").trim(),
+      recruiter_name: String(linkedCandidate?.assigned_to_name || item.recruiterName || linkedCandidate?.recruiter_name || "").trim(),
       notice_period: item.noticePeriod || "",
       lwd_or_doj: item.lwdOrDoj || item.offerDoj || linkedCandidate?.lwd_or_doj || linkedCandidateDraft?.lwdOrDoj || "",
       offer_in_hand: item.offerInHand || item.offerAmount || linkedCandidate?.offer_in_hand || linkedCandidateDraft?.offerInHand || "",
@@ -5861,7 +5863,7 @@ function PortalApp({ token, onLogout }) {
       domain_industry: item.domain_industry || item.domainIndustry || "",
       current_org_tenure: item.current_org_tenure || item.currentOrgTenure || "",
       assigned_to_name: item.assigned_to_name || item.assignedToName || item.recruiterName || "",
-      recruiter_name: item.recruiter_name || item.recruiterName || "",
+      recruiter_name: item.assigned_to_name || item.assignedToName || item.recruiter_name || item.recruiterName || "",
       recruiter_context_notes: item.recruiter_context_notes || item.recruiterNotes || "",
       other_pointers: item.other_pointers || item.otherPointers || "",
       notes: item.notes || item.callbackNotes || "",
