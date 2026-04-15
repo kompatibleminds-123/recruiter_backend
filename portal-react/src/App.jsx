@@ -1845,10 +1845,11 @@ function getCapturedExportFieldValue(item = {}, field = "") {
     case "jd_title": return item.jd_title || item.role || "";
     case "target_role_open_position": return item.jd_title || item.role || "";
     case "key_skills_required": {
-      if (Array.isArray(item.skills) && item.skills.length) return item.skills.join(", ");
       const draft = getCandidateDraftState(item);
       const tags = String(draft?.tags || "").trim();
-      return String(item.key_skills_required || item.keySkillsRequired || item.skills || tags || "").trim();
+      if (tags) return tags;
+      if (Array.isArray(item.skills) && item.skills.length) return item.skills.join(", ");
+      return String(item.key_skills_required || item.keySkillsRequired || item.skills || "").trim();
     }
     case "recruiter_name": return item.assigned_to_name || item.recruiter_name || item.recruiterName || "";
     case "date_added": {
