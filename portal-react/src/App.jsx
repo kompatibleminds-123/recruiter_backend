@@ -6310,50 +6310,91 @@ function PortalApp({ token, onLogout }) {
   }
 
   function buildCandidateUniverseCopyRows() {
-    return candidateUniverse.map((item, index) => ({
-      index: index + 1,
-      s_no: index + 1,
-      name: item.name || item.candidateName || "",
-      phone: item.phone || item.phoneNumber || "",
-      email: item.email || item.emailId || "",
-      location: item.location || "",
-      company: item.company || item.currentCompany || "",
-      current_company: item.company || item.currentCompany || "",
-      role: item.role || item.currentDesignation || item.jdTitle || "",
-      current_designation: item.role || item.currentDesignation || "",
-      total_experience: item.experience || item.totalExperience || "",
-      highest_education: item.highest_education || item.highestEducation || "",
-      current_ctc: item.current_ctc || item.currentCtc || "",
-      expected_ctc: item.expected_ctc || item.expectedCtc || "",
-      notice_period: item.notice_period || item.noticePeriod || "",
-      lwd_or_doj: item.lwd_or_doj || item.lwdOrDoj || "",
-      offer_in_hand: item.offer_in_hand || item.offerInHand || item.offerAmount || "",
-      reason_of_change: buildReasonOfChangeForExport(item),
-      created_at: item.created_at || item.createdAt || "",
-      skills: Array.isArray(item.skills) ? item.skills : (Array.isArray(item.inferredTags) ? item.inferredTags : []),
-      domain_industry: item.domain_industry || item.domainIndustry || "",
-      current_org_tenure: item.current_org_tenure || item.currentOrgTenure || "",
-      assigned_to_name: item.assigned_to_name || item.assignedToName || item.recruiterName || "",
-      recruiter_name: item.assigned_to_name || item.assignedToName || item.recruiter_name || item.recruiterName || "",
-      recruiter_context_notes: item.recruiter_context_notes || item.recruiterNotes || "",
-      other_pointers: item.other_pointers || item.otherPointers || "",
-      notes: item.notes || item.callbackNotes || "",
-      other_standard_questions: item.notes || item.callbackNotes || "",
-      combined_assessment_insights: buildCombinedAssessmentInsightsForExportV2({
-        recruiter_context_notes: item.recruiter_context_notes || item.recruiterNotes || "",
-        other_pointers: item.other_pointers || item.otherPointers || "",
-        other_standard_questions: item.notes || item.callbackNotes || ""
-      }),
-      draft_payload: item.draft_payload || item.draftPayload || {},
-      screening_answers: item.screening_answers || item.screeningAnswers || {},
-      raw_note: item.raw_note || item.rawNote || "",
-      linkedin: item.linkedin || item.linkedinUrl || "",
-      jd_title: item.jd_title || item.jdTitle || "",
-      client_name: item.client_name || item.clientName || "",
-      outcome: item.candidate_status || item.candidateStatus || item.last_contact_outcome || "",
-      assessment_status: item.candidate_status || item.candidateStatus || item.last_contact_outcome || "",
-      follow_up_at: formatDateForCopy(item.next_follow_up_at || item.followUpAt || item.interviewAt || "")
-    }));
+    return candidateUniverse.map((item, index) => {
+      // Candidate universe rows can come from:
+      // 1) Plain DB candidate rows (captured/applied), or
+      // 2) AI Search "universe" rows (they store data under raw.candidate + raw.assessment).
+      const baseCandidate = item?.raw?.candidate || item;
+      const linkedAssessment = item?.raw?.assessment || item?.assessment || null;
+      const draft = getCandidateDraftState(baseCandidate);
+
+      const phone = String(
+        baseCandidate?.phone
+        || baseCandidate?.phoneNumber
+        || linkedAssessment?.phoneNumber
+        || linkedAssessment?.phone
+        || draft?.phoneNumber
+        || ""
+      ).trim();
+      const email = String(
+        baseCandidate?.email
+        || baseCandidate?.emailId
+        || linkedAssessment?.emailId
+        || linkedAssessment?.email
+        || draft?.emailId
+        || ""
+      ).trim();
+
+      const recruiterNotes = String(baseCandidate?.recruiter_context_notes || baseCandidate?.recruiterNotes || linkedAssessment?.recruiterNotes || "").trim();
+      const otherPointers = String(baseCandidate?.other_pointers || baseCandidate?.otherPointers || linkedAssessment?.otherPointers || "").trim();
+      const lastContactNotes = String(baseCandidate?.last_contact_notes || baseCandidate?.lastContactNotes || baseCandidate?.other_standard_questions || baseCandidate?.otherStandardQuestions || "").trim();
+      const candidateNotes = String(baseCandidate?.notes || "").trim();
+      const createdAt = baseCandidate?.created_at || baseCandidate?.createdAt || item?.createdAt || "";
+
+      const normalizedSkills = Array.isArray(baseCandidate?.skills)
+        ? baseCandidate.skills
+        : Array.isArray(item?.skills)
+          ? item.skills
+          : Array.isArray(item?.inferredTags)
+            ? item.inferredTags
+            : [];
+
+      return {
+        index: index + 1,
+        s_no: index + 1,
+        id: String(baseCandidate?.id || item?.id || linkedAssessment?.id || "").trim(),
+        name: baseCandidate?.name || item?.candidateName || linkedAssessment?.candidateName || draft?.candidateName || "",
+        phone,
+        email,
+        location: baseCandidate?.location || linkedAssessment?.location || draft?.location || item?.location || "",
+        company: baseCandidate?.company || item?.company || linkedAssessment?.currentCompany || draft?.currentCompany || "",
+        current_company: baseCandidate?.company || item?.company || linkedAssessment?.currentCompany || draft?.currentCompany || "",
+        role: baseCandidate?.role || item?.role || linkedAssessment?.currentDesignation || draft?.currentDesignation || item?.position || "",
+        current_designation: baseCandidate?.role || linkedAssessment?.currentDesignation || draft?.currentDesignation || "",
+        total_experience: baseCandidate?.experience || item?.totalExperience || linkedAssessment?.totalExperience || draft?.totalExperience || "",
+        highest_education: baseCandidate?.highest_education || baseCandidate?.highestEducation || linkedAssessment?.highestEducation || draft?.highestEducation || "",
+        current_ctc: baseCandidate?.current_ctc || linkedAssessment?.currentCtc || draft?.currentCtc || "",
+        expected_ctc: baseCandidate?.expected_ctc || linkedAssessment?.expectedCtc || draft?.expectedCtc || "",
+        notice_period: baseCandidate?.notice_period || linkedAssessment?.noticePeriod || draft?.noticePeriod || "",
+        lwd_or_doj: baseCandidate?.lwd_or_doj || linkedAssessment?.lwdOrDoj || linkedAssessment?.offerDoj || draft?.lwdOrDoj || "",
+        offer_in_hand: baseCandidate?.offer_in_hand || linkedAssessment?.offerInHand || linkedAssessment?.offerAmount || draft?.offerInHand || "",
+        reason_of_change: linkedAssessment?.reasonForChange || buildReasonOfChangeForExport(baseCandidate),
+        created_at: createdAt,
+        skills: normalizedSkills,
+        domain_industry: baseCandidate?.domain_industry || baseCandidate?.domainIndustry || "",
+        current_org_tenure: baseCandidate?.current_org_tenure || baseCandidate?.currentOrgTenure || linkedAssessment?.currentOrgTenure || "",
+        assigned_to_name: baseCandidate?.assigned_to_name || baseCandidate?.assignedToName || item?.ownerRecruiter || item?.recruiterName || "",
+        recruiter_name: baseCandidate?.recruiter_name || baseCandidate?.assigned_by_name || item?.sourcedRecruiter || baseCandidate?.assigned_to_name || "",
+        recruiter_context_notes: recruiterNotes,
+        other_pointers: otherPointers,
+        notes: candidateNotes || String(linkedAssessment?.callbackNotes || "").trim(),
+        other_standard_questions: lastContactNotes,
+        combined_assessment_insights: buildCombinedAssessmentInsightsForExportV2({
+          recruiter_context_notes: recruiterNotes,
+          other_pointers: otherPointers,
+          other_standard_questions: lastContactNotes
+        }),
+        draft_payload: baseCandidate?.draft_payload || baseCandidate?.draftPayload || {},
+        screening_answers: baseCandidate?.screening_answers || baseCandidate?.screeningAnswers || {},
+        raw_note: baseCandidate?.raw_note || baseCandidate?.rawNote || "",
+        linkedin: baseCandidate?.linkedin || linkedAssessment?.linkedinUrl || draft?.linkedin || "",
+        jd_title: baseCandidate?.jd_title || baseCandidate?.jdTitle || linkedAssessment?.jdTitle || item?.position || "",
+        client_name: baseCandidate?.client_name || baseCandidate?.clientName || linkedAssessment?.clientName || "",
+        outcome: linkedAssessment?.candidateStatus || item?.candidateStatus || baseCandidate?.last_contact_outcome || baseCandidate?.lastContactOutcome || "",
+        assessment_status: linkedAssessment?.candidateStatus || item?.candidateStatus || baseCandidate?.last_contact_outcome || baseCandidate?.lastContactOutcome || "",
+        follow_up_at: formatDateForCopy(linkedAssessment?.followUpAt || item?.followUpAt || item?.interviewAt || baseCandidate?.next_follow_up_at || "")
+      };
+    });
   }
 
   async function copyCandidatesExcel() {

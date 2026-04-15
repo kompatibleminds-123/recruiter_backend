@@ -2034,6 +2034,7 @@ const BOOLEAN_TERM_SYNONYMS = {
   hr: ["hr", "\"human resources\"", "\"talent acquisition\""],
   node: ["node", "nodejs", "\"node js\"", "\"node.js\""],
   react: ["react", "reactjs", "\"react js\"", "\"react.js\""],
+  golang: ["golang", "go", "\"go lang\"", "\"go-language\""],
   frontend: ["frontend", "\"front end\"", "\"front-end\""],
   backend: ["backend", "\"back end\"", "\"back-end\""],
   devops: ["devops", "\"dev ops\"", "\"dev ops engineer\""]
@@ -4713,6 +4714,19 @@ const server = http.createServer(async (req, res) => {
           }
         }
       }
+
+      // Post-normalization patches:
+      // The AI interpreter can sometimes miss obvious skill tokens (e.g. "golang").
+      // Keep behavior backward compatible by only adding skills when they are explicitly present in the normalized query.
+      if (normalized?.normalized) {
+        const qLower = String(normalized.normalized || "").toLowerCase();
+        const nextSkills = Array.isArray(filters?.skills) ? [...filters.skills] : [];
+        if (/\bgolang\b/.test(qLower) && !nextSkills.some((s) => String(s || "").toLowerCase() === "golang")) {
+          nextSkills.push("golang");
+        }
+        filters.skills = normalizeCandidateSearchKeywords(nextSkills);
+      }
+
       const queryDateFrom = String(requestUrl.searchParams.get("dateFrom") || "").trim();
       const queryDateTo = String(requestUrl.searchParams.get("dateTo") || "").trim();
       const clientFilter = String(requestUrl.searchParams.get("clientLabel") || "").trim();

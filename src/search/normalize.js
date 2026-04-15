@@ -61,6 +61,9 @@ function standardizeSkillAliases(text) {
   next = next.replace(/\bnode\s*\.?\s*js\b/gi, "nodejs");
   next = next.replace(/\breact\s*\.?\s*js\b/gi, "react");
   next = next.replace(/\bspring\s*boot\b/gi, "spring boot");
+  // golang aliases
+  next = next.replace(/\bgo\s*[-]?\s*lang\b/gi, "golang");
+  next = next.replace(/\bgo\s*[-]?\s*language\b/gi, "golang");
   return next;
 }
 
@@ -87,4 +90,3 @@ module.exports = {
   standardizeLocationAliases,
   standardizeSkillAliases
 };
-

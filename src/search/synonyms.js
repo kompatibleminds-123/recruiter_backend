@@ -19,7 +19,9 @@ const DEFAULT_SYNONYMS = {
   skills: {
     nodejs: ["node", "node js", "node.js", "node developer", "backend node engineer"],
     react: ["reactjs", "react js", "react.js", "frontend react engineer", "react developer"],
-    "spring boot": ["spring", "springboot", "java spring", "java spring developer", "spring boot developer"]
+    "spring boot": ["spring", "springboot", "java spring", "java spring developer", "spring boot developer"],
+    // Golang is frequently written as "go" or "go lang" by recruiters.
+    golang: ["go", "go lang", "go-language", "go developer", "golang developer"]
   }
 };
 
@@ -94,4 +96,3 @@ module.exports = {
   mapLocationAlias,
   normalizeToken
 };
-
