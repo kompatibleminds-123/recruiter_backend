@@ -30,8 +30,9 @@
   function getApplyAssignment() {
     const params = new URLSearchParams(window.location.search);
     return {
-      rid: String(params.get("rid") || "").trim(),
-      sig: String(params.get("sig") || "").trim()
+      // Support both old (rid/sig) and short (r/s) query params.
+      rid: String(params.get("r") || params.get("rid") || "").trim(),
+      sig: String(params.get("s") || params.get("sig") || "").trim()
     };
   }
 

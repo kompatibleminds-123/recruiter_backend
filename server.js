@@ -427,8 +427,8 @@ function normalizeApplicantBody(body = {}) {
     clientName: String(input.clientName || input.client_name || "").trim(),
     jdTitle: String(input.jdTitle || input.jd_title || input.jobTitle || "").trim(),
     jobId: String(input.jobId || input.job_id || "").trim(),
-    assignedToUserId: String(input.assignedToUserId || input.assigned_to_user_id || input.rid || "").trim(),
-    assignedToSig: String(input.assignedToSig || input.assigned_to_sig || input.sig || "").trim(),
+    assignedToUserId: String(input.assignedToUserId || input.assigned_to_user_id || input.rid || input.r || "").trim(),
+    assignedToSig: String(input.assignedToSig || input.assigned_to_sig || input.sig || input.s || "").trim(),
     sourcePlatform: String(input.sourcePlatform || input.source_platform || input.source || "website").trim(),
     sourceLabel: String(input.sourceLabel || input.source_label || "").trim(),
     jobPageUrl: String(input.jobPageUrl || input.job_page_url || input.applyUrl || "").trim(),
@@ -467,8 +467,12 @@ function verifyRecruiterApplyLinkSignature({ companyId, jobId, recruiterId, secr
   const expected = signRecruiterApplyLink({ companyId, jobId, recruiterId, secret });
   const provided = String(signature || "").trim();
   if (!expected || !provided) return false;
+  // Allow truncated signatures for shorter URLs (prefix match).
+  // Provided signature may be a prefix of the expected HMAC (base64url).
+  if (provided.length > expected.length) return false;
   try {
-    const expectedBuf = Buffer.from(expected);
+    const expectedPrefix = expected.slice(0, provided.length);
+    const expectedBuf = Buffer.from(expectedPrefix);
     const providedBuf = Buffer.from(provided);
     if (expectedBuf.length !== providedBuf.length) return false;
     return crypto.timingSafeEqual(expectedBuf, providedBuf);
@@ -4099,7 +4103,8 @@ const server = http.createServer(async (req, res) => {
         .map((rid) => {
           const user = (allUsers || []).find((u) => String(u?.id || "").trim() === rid) || null;
           if (!user) return null;
-          const sig = signRecruiterApplyLink({ companyId: actor.companyId, jobId, recruiterId: rid, secret });
+          const sigFull = signRecruiterApplyLink({ companyId: actor.companyId, jobId, recruiterId: rid, secret });
+          const sig = sigFull ? sigFull.slice(0, 12) : "";
           if (!sig) return null;
           return { recruiterId: rid, recruiterName: String(user.name || "").trim(), sig };
         })

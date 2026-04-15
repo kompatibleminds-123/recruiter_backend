@@ -2200,8 +2200,9 @@ function getRecruiterApplyLink(jobId, recruiterId, sig) {
   const token = String(sig || "").trim();
   if (!rid || !token) return base;
   const params = new URLSearchParams();
-  params.set("rid", rid);
-  params.set("sig", token);
+  // Short query params to keep URLs readable.
+  params.set("r", rid);
+  params.set("s", token);
   return `${base}?${params.toString()}`;
 }
 
