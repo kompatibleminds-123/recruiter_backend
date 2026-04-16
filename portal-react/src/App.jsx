@@ -3988,8 +3988,8 @@ function PortalApp({ token, onLogout }) {
   }
 
   async function loadWorkspace(options = {}) {
-    await api("/company/candidates/backfill-assessment-links", token, { method: "POST" }).catch(() => null);
-    await api("/company/candidates/backfill-skills", token, { method: "POST" }).catch(() => null);
+    await api("/company/candidates/backfill-assessment-links", token, "POST").catch(() => null);
+    await api("/company/candidates/backfill-skills", token, "POST").catch(() => null);
     const dashboardKey = JSON.stringify({
       dateFrom: String(dashboardFilters?.dateFrom || ""),
       dateTo: String(dashboardFilters?.dateTo || ""),
