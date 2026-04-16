@@ -4666,12 +4666,10 @@ function PortalApp({ token, onLogout }) {
   const capturedNotesStats = useMemo(() => {
     const todayKey = new Date().toISOString().slice(0, 10);
     const convertedCount = capturedNotesUniverse.filter((item) => {
-      const matchedAssessment = capturedAssessmentMap.get(String(item.name || "").trim().toLowerCase());
-      return Boolean(matchedAssessment || item.used_in_assessment);
+      return Boolean(item.used_in_assessment || String(item.assessment_id || "").trim());
     }).length;
     const activeCount = capturedNotesUniverse.filter((item) => {
-      const matchedAssessment = capturedAssessmentMap.get(String(item.name || "").trim().toLowerCase());
-      if (matchedAssessment || item.used_in_assessment) return false;
+      if (item.used_in_assessment || String(item.assessment_id || "").trim()) return false;
       return !item.hidden_from_captured;
     }).length;
     return {
@@ -4680,18 +4678,17 @@ function PortalApp({ token, onLogout }) {
       active: activeCount,
       converted: convertedCount
     };
-  }, [capturedAssessmentMap, capturedNotesUniverse]);
+  }, [capturedNotesUniverse]);
 
   const capturedCandidates = useMemo(() => {
     return capturedNotesUniverse.filter((item) => {
-      const matchedAssessment = capturedAssessmentMap.get(String(item.name || "").trim().toLowerCase());
-      if (matchedAssessment || item.used_in_assessment) return false;
+      if (item.used_in_assessment || String(item.assessment_id || "").trim()) return false;
       const sourceValue = String(item.source || "").trim();
-      const clientValue = String(item.client_name || matchedAssessment?.clientName || "Unassigned").trim();
-      const jdValue = String(item.jd_title || matchedAssessment?.jdTitle || item.role || "").trim();
+      const clientValue = String(item.client_name || "Unassigned").trim();
+      const jdValue = String(item.jd_title || item.role || "").trim();
       const assignedToValue = String(item.assigned_to_name || "Unassigned").trim();
       const capturedByValue = String(item.recruiter_name || item.assigned_by_name || "Unknown").trim();
-      const outcomeValue = getCapturedOutcome(item, matchedAssessment);
+      const outcomeValue = getCapturedOutcome(item, null);
       const createdAtValue = item.created_at ? String(item.created_at).slice(0, 10) : "";
       const manuallyHidden = item.hidden_from_captured === true;
       const activeValue = manuallyHidden ? "Inactive" : "Active";
@@ -4724,7 +4721,7 @@ function PortalApp({ token, onLogout }) {
       const hiddenBlocked = manuallyHidden && !searchNameMatch && candidateFilters.activeStates.includes("Active");
       return !inactiveBlockedByDefault && !hiddenBlocked && queryOk && dateFromOk && dateToOk && clientOk && jdOk && assignedToOk && capturedByOk && sourceOk && outcomeOk && activeOk;
     });
-  }, [candidateFilters, capturedAssessmentMap, capturedNotesUniverse]);
+  }, [candidateFilters, capturedNotesUniverse]);
 
   const filteredApplicants = useMemo(() => {
     const isAdmin = String(state.user?.role || "").toLowerCase() === "admin";
@@ -7449,8 +7446,7 @@ function PortalApp({ token, onLogout }) {
   const pendingNotes = (state.candidates || []).filter((item) => {
     const sourceValue = String(item.source || "").trim();
     if (["website_apply", "hosted_apply", "google_sheet"].includes(sourceValue)) return false;
-    const matchedAssessment = capturedAssessmentMap.get(String(item.name || "").trim().toLowerCase());
-    if (matchedAssessment || item.used_in_assessment || String(item.assessment_id || "").trim()) return false;
+    if (item.used_in_assessment || String(item.assessment_id || "").trim()) return false;
     return !item.hidden_from_captured;
   }).length;
   const scheduledFollowUpItems = todaysFollowUps
