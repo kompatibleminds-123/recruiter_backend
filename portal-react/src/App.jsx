@@ -3902,8 +3902,7 @@ function PortalApp({ token, onLogout }) {
   }
 
   async function loadWorkspace() {
-    await api("/company/candidates/backfill-assessment-links", token, { method: "POST" }).catch(() => null);
-    await api("/company/candidates/backfill-skills", token, { method: "POST" }).catch(() => null);
+    // Backfills mutate production candidate rows; keep them admin-only and manual.
     const dashboardKey = JSON.stringify({
       dateFrom: String(dashboardFilters?.dateFrom || ""),
       dateTo: String(dashboardFilters?.dateTo || ""),
@@ -4145,7 +4144,20 @@ function PortalApp({ token, onLogout }) {
     };
 
     const assessmentId = String(candidateRow?.assessment_id || candidateRow?.assessmentId || "").trim();
-    if (assessmentId) return capturedAssessmentMap.get(`id:${assessmentId}`) || null;
+    if (assessmentId) {
+      const assessment = capturedAssessmentMap.get(`id:${assessmentId}`) || null;
+      if (!assessment) return null;
+      // Only trust stored assessment_id when we can verify stable identity matches.
+      const candidateEmail = normalizeEmail(candidateRow?.email || candidateRow?.emailId || "");
+      const candidatePhone = normalizePhone(candidateRow?.phone || candidateRow?.phoneNumber || "");
+      const assessmentEmail = normalizeEmail(assessment?.emailId || assessment?.email || "");
+      const assessmentPhone = normalizePhone(assessment?.phoneNumber || assessment?.phone || "");
+      const hasStableKey = Boolean(candidateEmail || candidatePhone);
+      if (!hasStableKey) return null;
+      if (candidateEmail && assessmentEmail && candidateEmail === assessmentEmail) return assessment;
+      if (candidatePhone && assessmentPhone && candidatePhone === assessmentPhone) return assessment;
+      // Mismatch: ignore this stored link (it may be from an incorrect backfill).
+    }
 
     const email = normalizeEmail(candidateRow?.email || candidateRow?.emailId || "");
     if (email) return capturedAssessmentMap.get(`email:${email}`) || null;

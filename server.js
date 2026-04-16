@@ -4233,6 +4233,9 @@ const server = http.createServer(async (req, res) => {
   if (req.method === "POST" && req.url === "/company/candidates/backfill-assessment-links") {
     try {
       const user = await requireSessionUser(getBearerToken(req));
+      if (String(user.role || "").toLowerCase() !== "admin") {
+        throw new Error("Only an admin can run backfill-assessment-links.");
+      }
       const result = await backfillCandidateAssessmentLinks(user);
       sendJson(res, 200, { ok: true, result });
     } catch (error) {
