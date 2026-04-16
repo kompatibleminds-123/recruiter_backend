@@ -3971,6 +3971,22 @@ function PortalApp({ token, onLogout }) {
     setState((current) => ({ ...current, dashboard: dashboardResult || {} }));
   }
 
+  // If a previously selected dashboard filter value is no longer available (common when switching users),
+  // reset it so the dashboard doesn't get stuck showing all zeros.
+  useEffect(() => {
+    const clients = Array.isArray(state.dashboard?.availableClients) ? state.dashboard.availableClients : [];
+    if (dashboardFilters.clientLabel && !clients.includes(dashboardFilters.clientLabel)) {
+      setDashboardFilters((current) => ({ ...current, clientLabel: "" }));
+    }
+  }, [state.dashboard?.availableClients, dashboardFilters.clientLabel]);
+
+  useEffect(() => {
+    const recruiters = Array.isArray(state.dashboard?.availableRecruiters) ? state.dashboard.availableRecruiters : [];
+    if (dashboardFilters.recruiterLabel && !recruiters.includes(dashboardFilters.recruiterLabel)) {
+      setDashboardFilters((current) => ({ ...current, recruiterLabel: "" }));
+    }
+  }, [state.dashboard?.availableRecruiters, dashboardFilters.recruiterLabel]);
+
   async function loadClientPortalSummary(filters = clientPortalFilters) {
     const key = JSON.stringify({
       dateFrom: String(filters?.dateFrom || ""),

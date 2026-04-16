@@ -4461,11 +4461,14 @@ const server = http.createServer(async (req, res) => {
         listCompanyJobs(user.companyId)
       ]);
       const summary = buildDashboardSummary({ candidates, assessments, jobs, dateFrom, dateTo, clientFilter, recruiterFilter });
+      // Build filter dropdowns from the same "universe" used by the dashboard summary,
+      // so recruiters don't lose client options when candidate rows are legacy/missing links.
+      const universe = buildCandidateSearchUniverse(candidates, assessments, jobs);
       const availableClients = Array.from(
-        new Set((Array.isArray(candidates) ? candidates : []).map((candidate) => getClientLabel(candidate, {})).filter(Boolean))
+        new Set((Array.isArray(universe) ? universe : []).map((item) => String(item?.clientName || "").trim()).filter(Boolean))
       ).sort((a, b) => a.localeCompare(b));
       const availableRecruiters = Array.from(
-        new Set((Array.isArray(candidates) ? candidates : []).map((candidate) => getOwnerRecruiterLabel(candidate, {})).filter(Boolean))
+        new Set((Array.isArray(universe) ? universe : []).map((item) => String(item?.ownerRecruiter || "").trim()).filter(Boolean))
       ).sort((a, b) => a.localeCompare(b));
       sendJson(res, 200, {
         ok: true,
