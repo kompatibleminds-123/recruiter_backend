@@ -4856,7 +4856,7 @@ function PortalApp({ token, onLogout }) {
       return isToMe && !assignedByUserId && !assignedByName;
     }).length;
 
-    const manualAssigned = universe.filter((item) => {
+    const assignedManual = universe.filter((item) => {
       const assignedByUserId = String(item.assignedByUserId || item.assigned_by_user_id || "").trim();
       const assignedByName = String(item.assignedByName || item.assigned_by_name || "").trim();
       if (!assignedByUserId && !assignedByName) return false;
@@ -4873,7 +4873,7 @@ function PortalApp({ token, onLogout }) {
       inactive,
       converted,
       ownedDirect,
-      manualAssigned,
+      assignedManual,
       total: universe.length
     };
   }, [applicantAssessmentMap, applicantCandidateMap, filteredApplicants, state.user]);
@@ -7955,15 +7955,13 @@ function PortalApp({ token, onLogout }) {
               </div>
               <div className="metric-grid metric-grid--tight">
                 <div className="metric-card compact-metric"><div className="metric-label">Applied today</div><div className="metric-value">{applicantStats.today}</div></div>
+                <div className="metric-card compact-metric"><div className="metric-label">{String(state.user?.role || "").toLowerCase() === "admin" ? "Owned (direct inbox)" : "Owned (direct inbox)"}</div><div className="metric-value">{applicantStats.ownedDirect || 0}</div></div>
+                <div className="metric-card compact-metric"><div className="metric-label">Assigned (manual)</div><div className="metric-value">{applicantStats.assignedManual || 0}</div></div>
                 <div className="metric-card compact-metric"><div className="metric-label">Active</div><div className="metric-value">{applicantStats.active}</div></div>
-                <div className="metric-card compact-metric"><div className="metric-label">Inactive</div><div className="metric-value">{applicantStats.inactive}</div></div>
                 <div className="metric-card compact-metric"><div className="metric-label">Converted</div><div className="metric-value">{applicantStats.converted}</div></div>
-                <div className="metric-card compact-metric"><div className="metric-label">Total</div><div className="metric-value">{applicantStats.total}</div></div>
               </div>
               <div className="muted" style={{ marginTop: 8 }}>
-                {String(state.user?.role || "").toLowerCase() === "admin"
-                  ? `Owner (direct inbox): ${applicantStats.ownedDirect || 0} | Manual assigned by you: ${applicantStats.manualAssigned || 0}`
-                  : `Owned (direct link): ${applicantStats.ownedDirect || 0} | Manual assigned by admin: ${applicantStats.manualAssigned || 0}`}
+                Inactive: {applicantStats.inactive || 0} (hidden). Total: {applicantStats.total || 0}
               </div>
               <p className="muted">Owned means the applicant belongs to a recruiter through the job owner / primary recruiter. Manual assigned means admin manually reassigned it. For admin, Owned + Unassigned = Total visible.</p>
               <div className="captured-filter-grid">
