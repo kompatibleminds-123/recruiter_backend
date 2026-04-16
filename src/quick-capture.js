@@ -574,10 +574,14 @@ async function listCandidates(options = 100) {
   const id = String(options?.id || "").trim();
   const { url, serviceRoleKey } = getSupabaseConfig();
   if (url && serviceRoleKey) {
-    const fetchLimit = q ? Math.max(limit, 2000) : limit;
+    // If querying for a specific id, filter at the API level (UUID ordering + limit=1 would otherwise miss).
+    const fetchLimit = id ? Math.max(limit, 50) : (q ? Math.max(limit, 2000) : limit);
     const filters = ["select=*", "order=created_at.desc", `limit=${fetchLimit}`];
     if (companyId) {
       filters.push(`company_id=eq.${encodeURIComponent(companyId)}`);
+    }
+    if (id) {
+      filters.push(`id=eq.${encodeURIComponent(id)}`);
     }
     const response = await fetch(
       `${url}/rest/v1/candidates?${filters.join("&")}`,
@@ -627,9 +631,11 @@ async function listCandidatesForUser(user, options = 100) {
   const companyId = normalizeCompanyId(user.companyId);
   if (url && serviceRoleKey) {
     const recruiterId = encodeURIComponent(String(user.id).trim());
-    const fetchLimit = q ? Math.max(maxRows, 2000) : maxRows;
+    // If querying for a specific id, filter at the API level (otherwise limit=1 often misses).
+    const fetchLimit = id ? Math.max(maxRows, 50) : (q ? Math.max(maxRows, 2000) : maxRows);
+    const idFilter = id ? `&id=eq.${encodeURIComponent(id)}` : "";
     const response = await fetch(
-      `${url}/rest/v1/candidates?select=*&company_id=eq.${encodeURIComponent(companyId)}&or=(recruiter_id.eq.${recruiterId},assigned_to_user_id.eq.${recruiterId})&order=created_at.desc&limit=${fetchLimit}`,
+      `${url}/rest/v1/candidates?select=*&company_id=eq.${encodeURIComponent(companyId)}&or=(recruiter_id.eq.${recruiterId},assigned_to_user_id.eq.${recruiterId})${idFilter}&order=created_at.desc&limit=${fetchLimit}`,
       {
         headers: {
           apikey: serviceRoleKey,
