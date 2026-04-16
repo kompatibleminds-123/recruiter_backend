@@ -5745,12 +5745,6 @@ function PortalApp({ token, onLogout }) {
 
     setStatus(statusKey, "Converting draft into assessment...");
     const savedAssessment = await api("/company/assessments", token, "POST", { assessment });
-    if (candidate?.id) {
-      await api("/candidates/link-assessment", token, "POST", {
-        id: candidate.id,
-        assessmentId: savedAssessment?.id || assessment.id
-      });
-    }
     await loadWorkspace();
     navigate("/assessments");
     setStatus("assessments", `Converted ${candidateName || "candidate"} into assessment.`, "ok");
@@ -5782,10 +5776,6 @@ function PortalApp({ token, onLogout }) {
     setStatus("interview", "Saving assessment...");
     const savedAssessment = await api("/company/assessments", token, "POST", { assessment });
     if (interviewMeta.candidateId) {
-      await api("/candidates/link-assessment", token, "POST", {
-        id: interviewMeta.candidateId,
-        assessmentId: savedAssessment?.id || assessment.id
-      });
       const existingCandidate = (state.candidates || []).find((item) => String(item.id) === String(interviewMeta.candidateId));
       const existingMeta = decodePortalApplicantMetadata(existingCandidate || {});
       const nextMeta = mergeStoredCvIntoApplicantMeta(existingMeta, interviewForm.cvAnalysis || null);
