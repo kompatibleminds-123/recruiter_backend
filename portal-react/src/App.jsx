@@ -231,7 +231,6 @@ const DASHBOARD_METRIC_COLUMNS = [
   ["applied", "Applied"],
   ["converted", "Shared"],
   ["under_interview_process", "Under Interview"],
-  ["hold", "Hold"],
   ["rejected", "Rejected"],
   ["duplicate", "Duplicate"],
   ["dropped", "Dropped"],
@@ -245,7 +244,6 @@ const DASHBOARD_METRIC_TILES = [
   ["applied", "Applied"],
   ["converted", "Shared"],
   ["under_interview_process", "Under Interview"],
-  ["hold", "Hold"],
   ["offered", "Offered"],
   ["joined", "Joined"]
 ];
@@ -1452,59 +1450,7 @@ function api(path, token, method = "GET", body = null) {
 }
 
 function copyText(value) {
-  const text = String(value || "");
-  if (!text) return Promise.resolve(false);
-  // Prefer modern clipboard API, but fall back for browsers that block it.
-  if (navigator.clipboard?.writeText) {
-    return navigator.clipboard.writeText(text).then(() => true).catch(() => {
-      // continue to fallback
-      try {
-        const textarea = document.createElement("textarea");
-        textarea.value = text;
-        textarea.setAttribute("readonly", "true");
-        textarea.style.position = "fixed";
-        textarea.style.left = "-9999px";
-        textarea.style.top = "0";
-        document.body.appendChild(textarea);
-        textarea.select();
-        textarea.setSelectionRange(0, textarea.value.length);
-        const ok = document.execCommand && document.execCommand("copy");
-        document.body.removeChild(textarea);
-        if (ok) return true;
-      } catch {
-        // ignore
-      }
-      // Last resort: let the user copy manually.
-      try {
-        window.prompt("Copy to clipboard:", text);
-      } catch {
-        // ignore
-      }
-      return false;
-    });
-  }
-  try {
-    const textarea = document.createElement("textarea");
-    textarea.value = text;
-    textarea.setAttribute("readonly", "true");
-    textarea.style.position = "fixed";
-    textarea.style.left = "-9999px";
-    textarea.style.top = "0";
-    document.body.appendChild(textarea);
-    textarea.select();
-    textarea.setSelectionRange(0, textarea.value.length);
-    const ok = document.execCommand && document.execCommand("copy");
-    document.body.removeChild(textarea);
-    if (ok) return Promise.resolve(true);
-  } catch {
-    // ignore
-  }
-  try {
-    window.prompt("Copy to clipboard:", text);
-  } catch {
-    // ignore
-  }
-  return Promise.resolve(false);
+  return navigator.clipboard.writeText(String(value || ""));
 }
 
 async function copyHtmlAndText(htmlValue, textValue) {
@@ -3265,7 +3211,7 @@ function DrilldownModal({ open, title, items, onClose, onOpenCv, onOpenDraft, on
   );
 }
 
-function CandidateProfileModal({ open, candidate, onClose, onOpenCv, onReuse, onCopyShareLink, copyHintKey = "" }) {
+function CandidateProfileModal({ open, candidate, onClose, onOpenCv, onReuse, onCopyShareLink }) {
   if (!open || !candidate) return null;
   const ctx = resolveCandidateContext(candidate);
   const baseCandidate = ctx.candidate || candidate;
@@ -3353,7 +3299,6 @@ function CandidateProfileModal({ open, candidate, onClose, onOpenCv, onReuse, on
           ""
       )
     : "";
-  const showCopyHint = String(copyHintKey || "").trim();
   return (
     <div className="overlay">
       <div className="overlay-card overlay-card--wide" onClick={(e) => e.stopPropagation()}>
@@ -3450,12 +3395,7 @@ function CandidateProfileModal({ open, candidate, onClose, onOpenCv, onReuse, on
         <div className="button-row">
           {onReuse ? <button onClick={() => onReuse(candidate)}>Reuse profile</button> : null}
           <button className="ghost-btn" onClick={() => downloadCandidateCardExcelFile(`candidate-card-${new Date().toISOString().slice(0, 10)}.xls`, { title: modalTitle, subtitle: modalSubtitle, sections: excelSections })}>Download card (Excel)</button>
-          {onCopyShareLink && baseCandidate?.id ? (
-            <div className="copy-action">
-              <button className="ghost-btn" onClick={() => onCopyShareLink(baseCandidate.id)}>Copy share link</button>
-              {showCopyHint === "candidate_card_share_link" ? <div className="copy-hint">Copied</div> : null}
-            </div>
-          ) : null}
+          {onCopyShareLink && baseCandidate?.id ? <button className="ghost-btn" onClick={() => onCopyShareLink(baseCandidate.id)}>Copy share link</button> : null}
           {candidateHasStoredCv(baseCandidate) ? <button onClick={() => onOpenCv(candidate)}>Open CV</button> : null}
           <button className="ghost-btn" onClick={onClose}>Close</button>
         </div>
@@ -3647,8 +3587,6 @@ function PortalApp({ token, onLogout }) {
     jobs: []
   });
   const [statuses, setStatuses] = useState({});
-  const [copyHintKey, setCopyHintKey] = useState("");
-  const copyHintTimerRef = useRef(null);
   const [assignApplicantId, setAssignApplicantId] = useState("");
   const [assignCandidateId, setAssignCandidateId] = useState("");
   const [hostedJobId, setHostedJobId] = useState("");
@@ -3695,7 +3633,6 @@ function PortalApp({ token, onLogout }) {
     dateTo: "",
     clients: [],
     jds: [],
-    sources: [],
     ownedBy: [],
     assignedTo: [],
     outcomes: [],
@@ -3907,29 +3844,6 @@ function PortalApp({ token, onLogout }) {
     setStatuses((current) => ({ ...current, [key]: message, [`${key}Kind`]: kind }));
   }
 
-  function showCopied(key) {
-    const safeKey = String(key || "").trim();
-    if (!safeKey) return;
-    setCopyHintKey(safeKey);
-    if (copyHintTimerRef.current) {
-      window.clearTimeout(copyHintTimerRef.current);
-    }
-    copyHintTimerRef.current = window.setTimeout(() => {
-      setCopyHintKey((current) => (current === safeKey ? "" : current));
-    }, 1200);
-  }
-
-  async function runCopyAction(key, action) {
-    try {
-      const result = await action();
-      // If the copy function explicitly reports failure, do not show Copied.
-      if (result === false) return;
-      showCopied(key);
-    } catch (error) {
-      setStatus("workspace", String(error?.message || error), "error");
-    }
-  }
-
   useEffect(() => {
     if (!hostedJobId) {
       setHostedRecruiterApplyLinks([]);
@@ -3971,22 +3885,6 @@ function PortalApp({ token, onLogout }) {
     setState((current) => ({ ...current, dashboard: dashboardResult || {} }));
   }
 
-  // If a previously selected dashboard filter value is no longer available (common when switching users),
-  // reset it so the dashboard doesn't get stuck showing all zeros.
-  useEffect(() => {
-    const clients = Array.isArray(state.dashboard?.availableClients) ? state.dashboard.availableClients : [];
-    if (dashboardFilters.clientLabel && !clients.includes(dashboardFilters.clientLabel)) {
-      setDashboardFilters((current) => ({ ...current, clientLabel: "" }));
-    }
-  }, [state.dashboard?.availableClients, dashboardFilters.clientLabel]);
-
-  useEffect(() => {
-    const recruiters = Array.isArray(state.dashboard?.availableRecruiters) ? state.dashboard.availableRecruiters : [];
-    if (dashboardFilters.recruiterLabel && !recruiters.includes(dashboardFilters.recruiterLabel)) {
-      setDashboardFilters((current) => ({ ...current, recruiterLabel: "" }));
-    }
-  }, [state.dashboard?.availableRecruiters, dashboardFilters.recruiterLabel]);
-
   async function loadClientPortalSummary(filters = clientPortalFilters) {
     const key = JSON.stringify({
       dateFrom: String(filters?.dateFrom || ""),
@@ -4003,9 +3901,9 @@ function PortalApp({ token, onLogout }) {
     setState((current) => ({ ...current, clientPortal: clientPortalResult || {} }));
   }
 
-  async function loadWorkspace(options = {}) {
-    await api("/company/candidates/backfill-assessment-links", token, "POST").catch(() => null);
-    await api("/company/candidates/backfill-skills", token, "POST").catch(() => null);
+  async function loadWorkspace() {
+    await api("/company/candidates/backfill-assessment-links", token, { method: "POST" }).catch(() => null);
+    await api("/company/candidates/backfill-skills", token, { method: "POST" }).catch(() => null);
     const dashboardKey = JSON.stringify({
       dateFrom: String(dashboardFilters?.dateFrom || ""),
       dateTo: String(dashboardFilters?.dateTo || ""),
@@ -4030,18 +3928,11 @@ function PortalApp({ token, onLogout }) {
     if (clientPortalFilters.dateTo) clientPortalParams.set("dateTo", clientPortalFilters.dateTo);
     if (clientPortalFilters.clientLabel) clientPortalParams.set("clientLabel", clientPortalFilters.clientLabel);
 
-    const includeDashboard = options?.includeDashboard === true;
-    const includeClientPortal = options?.includeClientPortal === true;
-
     const [userResult, dashboardResult, clientPortalResult, applicantsResult, intakeResult, jobsResult, usersResult, clientUsersResult, candidatesResult, databaseCandidatesResult, assessmentsResult, sharedPresetResult] = await Promise.all([
       api("/auth/me", token),
-      includeDashboard
-        ? api(`/company/dashboard${dashboardParams.toString() ? `?${dashboardParams.toString()}` : ""}`, token)
-        : Promise.resolve(null),
-      includeClientPortal
-        ? api(`/company/client-portal${clientPortalParams.toString() ? `?${clientPortalParams.toString()}` : ""}`, token)
-          .catch(() => ({ summary: { byClient: [], byClientPosition: [] }, availableClients: [] }))
-        : Promise.resolve(null),
+      api(`/company/dashboard${dashboardParams.toString() ? `?${dashboardParams.toString()}` : ""}`, token),
+      api(`/company/client-portal${clientPortalParams.toString() ? `?${clientPortalParams.toString()}` : ""}`, token)
+        .catch(() => ({ summary: { byClient: [], byClientPosition: [] }, availableClients: [] })),
       api("/company/applicants", token).catch(() => ({ items: [] })),
       api("/company/applicant-intake-secret", token).catch(() => null),
       api("/company/jds", token).catch(() => ({ jobs: [] })),
@@ -4055,8 +3946,8 @@ function PortalApp({ token, onLogout }) {
     setState((current) => ({
       ...current,
       user: userResult.user || userResult,
-      dashboard: includeDashboard ? (latestDashboardKeyRef.current === dashboardKey ? (dashboardResult || {}) : current.dashboard) : current.dashboard,
-      clientPortal: includeClientPortal ? (latestClientPortalKeyRef.current === clientPortalKey ? (clientPortalResult || {}) : current.clientPortal) : current.clientPortal,
+      dashboard: latestDashboardKeyRef.current === dashboardKey ? (dashboardResult || {}) : current.dashboard,
+      clientPortal: latestClientPortalKeyRef.current === clientPortalKey ? (clientPortalResult || {}) : current.clientPortal,
       applicants: applicantsResult.items || [],
       intake: intakeResult || {},
       jobs: jobsResult.jobs || [],
@@ -4084,7 +3975,7 @@ function PortalApp({ token, onLogout }) {
     try {
       const latestLoader = loadWorkspaceRef.current;
       if (typeof latestLoader === "function") {
-        await latestLoader({ includeDashboard: false, includeClientPortal: false });
+        await latestLoader();
       }
     } catch (error) {
       setStatus("workspace", String(error?.message || error), "error");
@@ -4101,7 +3992,7 @@ function PortalApp({ token, onLogout }) {
     try {
       const latestLoader = loadWorkspaceRef.current;
       if (typeof latestLoader === "function") {
-        await latestLoader({ includeDashboard: true, includeClientPortal: true });
+        await latestLoader();
       }
       setStatus("workspace", "Workspace refreshed.", "ok");
     } catch (error) {
@@ -4112,9 +4003,7 @@ function PortalApp({ token, onLogout }) {
   }
 
   useEffect(() => {
-    void loadWorkspace({ includeDashboard: true, includeClientPortal: true }).catch((error) =>
-      setStatus("workspace", String(error?.message || error), "error")
-    );
+    void loadWorkspace().catch((error) => setStatus("workspace", String(error?.message || error), "error"));
   }, [token]);
 
   useEffect(() => {
@@ -4229,43 +4118,12 @@ function PortalApp({ token, onLogout }) {
 
   const capturedAssessmentMap = useMemo(() => {
     const map = new Map();
-    const normPhone = (value) => {
-      const digits = String(value || "").replace(/\D/g, "");
-      if (digits.length < 10) return "";
-      return digits.length > 10 ? digits.slice(-10) : digits;
-    };
     for (const item of state.assessments || []) {
-      const idKey = String(item?.candidateId || item?.candidate_id || "").trim();
-      const emailKey = String(item?.emailId || item?.email_id || "").trim().toLowerCase();
-      const phoneKey = normPhone(item?.phoneNumber || item?.phone_number || "");
-      const put = (k) => {
-        if (k && !map.has(k)) map.set(k, item);
-      };
-      if (idKey) put(`id:${idKey}`);
-      if (emailKey) put(`e:${emailKey}`);
-      if (phoneKey) put(`p:${phoneKey}`);
+      const key = String(item.candidateName || "").trim().toLowerCase();
+      if (key && !map.has(key)) map.set(key, item);
     }
     return map;
   }, [state.assessments]);
-
-  const getCapturedMatchedAssessment = (candidate) => {
-    if (!candidate) return null;
-    const idKey = String(candidate?.id || "").trim();
-    if (idKey && capturedAssessmentMap.has(`id:${idKey}`)) return capturedAssessmentMap.get(`id:${idKey}`);
-    const emailKey = String(candidate?.email || "").trim().toLowerCase();
-    if (emailKey && capturedAssessmentMap.has(`e:${emailKey}`)) return capturedAssessmentMap.get(`e:${emailKey}`);
-    const digits = String(candidate?.phone || "").replace(/\D/g, "");
-    const phoneKey = digits.length >= 10 ? digits.slice(-10) : "";
-    if (phoneKey && capturedAssessmentMap.has(`p:${phoneKey}`)) return capturedAssessmentMap.get(`p:${phoneKey}`);
-    return null;
-  };
-
-  const isCapturedCandidateConverted = (candidate) => {
-    if (!candidate) return false;
-    if (candidate.used_in_assessment) return true;
-    if (String(candidate.assessment_id || candidate.assessmentId || "").trim()) return true;
-    return Boolean(getCapturedMatchedAssessment(candidate));
-  };
   const capturedSources = useMemo(() => Array.from(new Set((state.candidates || []).map((item) => String(item.source || "").trim()).filter(Boolean))), [state.candidates]);
   const assessmentOptions = useMemo(() => {
     const clients = new Set();
@@ -4671,11 +4529,11 @@ function PortalApp({ token, onLogout }) {
       if (adminName) meta.capturedBy.add(adminName);
     }
     for (const item of state.candidates || []) {
-      const matchedAssessment = getCapturedMatchedAssessment(item);
+      const matchedAssessment = capturedAssessmentMap.get(String(item.name || "").trim().toLowerCase());
       const sourceValue = String(item.source || "").trim();
       const isInboundApplicant = sourceValue === "website_apply" || sourceValue === "hosted_apply" || sourceValue === "google_sheet";
       if (isInboundApplicant) continue;
-      if (isCapturedCandidateConverted(item)) continue;
+      if (matchedAssessment || item.used_in_assessment) continue;
       const clientValue = String(item.client_name || matchedAssessment?.clientName || "Unassigned").trim();
       const jdValue = String(item.jd_title || matchedAssessment?.jdTitle || item.role || "").trim();
       const outcomeValue = getCapturedOutcome(item, matchedAssessment);
@@ -4714,10 +4572,12 @@ function PortalApp({ token, onLogout }) {
   const capturedNotesStats = useMemo(() => {
     const todayKey = new Date().toISOString().slice(0, 10);
     const convertedCount = capturedNotesUniverse.filter((item) => {
-      return isCapturedCandidateConverted(item);
+      const matchedAssessment = capturedAssessmentMap.get(String(item.name || "").trim().toLowerCase());
+      return Boolean(matchedAssessment || item.used_in_assessment);
     }).length;
     const activeCount = capturedNotesUniverse.filter((item) => {
-      if (isCapturedCandidateConverted(item)) return false;
+      const matchedAssessment = capturedAssessmentMap.get(String(item.name || "").trim().toLowerCase());
+      if (matchedAssessment || item.used_in_assessment) return false;
       return !item.hidden_from_captured;
     }).length;
     return {
@@ -4726,17 +4586,18 @@ function PortalApp({ token, onLogout }) {
       active: activeCount,
       converted: convertedCount
     };
-  }, [capturedNotesUniverse, capturedAssessmentMap]);
+  }, [capturedAssessmentMap, capturedNotesUniverse]);
 
   const capturedCandidates = useMemo(() => {
     return capturedNotesUniverse.filter((item) => {
-      if (isCapturedCandidateConverted(item)) return false;
+      const matchedAssessment = capturedAssessmentMap.get(String(item.name || "").trim().toLowerCase());
+      if (matchedAssessment || item.used_in_assessment) return false;
       const sourceValue = String(item.source || "").trim();
-      const clientValue = String(item.client_name || "Unassigned").trim();
-      const jdValue = String(item.jd_title || item.role || "").trim();
+      const clientValue = String(item.client_name || matchedAssessment?.clientName || "Unassigned").trim();
+      const jdValue = String(item.jd_title || matchedAssessment?.jdTitle || item.role || "").trim();
       const assignedToValue = String(item.assigned_to_name || "Unassigned").trim();
       const capturedByValue = String(item.recruiter_name || item.assigned_by_name || "Unknown").trim();
-      const outcomeValue = getCapturedOutcome(item, null);
+      const outcomeValue = getCapturedOutcome(item, matchedAssessment);
       const createdAtValue = item.created_at ? String(item.created_at).slice(0, 10) : "";
       const manuallyHidden = item.hidden_from_captured === true;
       const activeValue = manuallyHidden ? "Inactive" : "Active";
@@ -4769,7 +4630,7 @@ function PortalApp({ token, onLogout }) {
       const hiddenBlocked = manuallyHidden && !searchNameMatch && candidateFilters.activeStates.includes("Active");
       return !inactiveBlockedByDefault && !hiddenBlocked && queryOk && dateFromOk && dateToOk && clientOk && jdOk && assignedToOk && capturedByOk && sourceOk && outcomeOk && activeOk;
     });
-  }, [candidateFilters, capturedNotesUniverse, capturedAssessmentMap]);
+  }, [candidateFilters, capturedAssessmentMap, capturedNotesUniverse]);
 
   const filteredApplicants = useMemo(() => {
     const isAdmin = String(state.user?.role || "").toLowerCase() === "admin";
@@ -4818,7 +4679,6 @@ function PortalApp({ token, onLogout }) {
   const applicantOptions = useMemo(() => {
     const clients = new Set();
     const jds = new Set();
-    const sources = new Set();
     const ownedBy = new Set();
     const assignedTo = new Set();
     const outcomes = new Set();
@@ -4837,13 +4697,11 @@ function PortalApp({ token, onLogout }) {
       if (isApplicantConvertedToAssessment(item, linkedCandidate, linkedAssessment)) return;
       const clientValue = String(item.clientName || item.client_name || "Unassigned").trim();
       const jdValue = String(item.jdTitle || item.jd_title || "").trim();
-      const sourceValue = String(item.sourcePlatform || item.sourceLabel || item.source || "").trim() || "Unknown";
       const ownedValue = getApplicantOwnerLabel(item, linkedCandidate);
       const assignedValue = getApplicantManualAssigneeLabel(item, linkedCandidate);
       const outcomeValue = getApplicantWorkflowOutcome(item, linkedCandidate);
       if (clientValue) clients.add(clientValue);
       if (jdValue) jds.add(jdValue);
-      if (sourceValue) sources.add(sourceValue);
       if (ownedValue) ownedBy.add(ownedValue);
       if (assignedValue) assignedTo.add(assignedValue);
       if (outcomeValue) outcomes.add(outcomeValue);
@@ -4851,7 +4709,6 @@ function PortalApp({ token, onLogout }) {
     return {
       clients: Array.from(clients).sort((a, b) => a.localeCompare(b)),
       jds: Array.from(jds).sort((a, b) => a.localeCompare(b)),
-      sources: Array.from(sources).sort((a, b) => a.localeCompare(b)),
       ownedBy: Array.from(ownedBy).sort((a, b) => a.localeCompare(b)),
       assignedTo: Array.from(assignedTo).sort((a, b) => a.localeCompare(b)),
       outcomes: APPLIED_OUTCOME_FILTER_ORDER.concat(
@@ -4869,7 +4726,6 @@ function PortalApp({ token, onLogout }) {
       if (isApplicantConvertedToAssessment(item, linkedCandidate, linkedAssessment)) return false;
       const clientValue = String(item.clientName || item.client_name || "Unassigned").trim();
       const jdValue = String(item.jdTitle || item.jd_title || "").trim();
-      const sourceValue = String(item.sourcePlatform || item.sourceLabel || item.source || "").trim() || "Unknown";
       const ownedValue = getApplicantOwnerLabel(item, linkedCandidate);
       const assignedValue = getApplicantManualAssigneeLabel(item, linkedCandidate);
       const outcomeValue = getApplicantWorkflowOutcome(item, linkedCandidate);
@@ -4897,44 +4753,24 @@ function PortalApp({ token, onLogout }) {
       if (applicantFilters.dateTo && createdDate && createdDate > applicantFilters.dateTo) return false;
       if (applicantFilters.clients.length && !applicantFilters.clients.includes(clientValue)) return false;
       if (applicantFilters.jds.length && !applicantFilters.jds.includes(jdValue)) return false;
-      if (applicantFilters.sources?.length && !applicantFilters.sources.includes(sourceValue)) return false;
       if (applicantFilters.ownedBy.length && !applicantFilters.ownedBy.includes(ownedValue)) return false;
       if (applicantFilters.assignedTo.length && !applicantFilters.assignedTo.includes(assignedValue)) return false;
       if (applicantFilters.outcomes.length && !applicantFilters.outcomes.includes(outcomeValue)) return false;
       return true;
     });
   }, [filteredApplicants, applicantFilters, applicantCandidateMap, applicantAssessmentMap]);
-
   const applicantStats = useMemo(() => {
-    // Match Captured Notes stats style: total = active + inactive + converted (ignores deleted rows because they won't be in state.applicants).
     const todayKey = new Date().toISOString().slice(0, 10);
-    const universe = filteredApplicants;
-    const converted = universe.filter((item) => {
-      const linkedCandidate = applicantCandidateMap.get(String(item.id)) || null;
-      const linkedAssessment = applicantAssessmentMap.get(String(item.id)) || null;
-      return isApplicantConvertedToAssessment(item, linkedCandidate, linkedAssessment);
-    }).length;
-    const inactive = universe.filter((item) => {
-      const linkedCandidate = applicantCandidateMap.get(String(item.id)) || null;
-      const linkedAssessment = applicantAssessmentMap.get(String(item.id)) || null;
-      if (isApplicantConvertedToAssessment(item, linkedCandidate, linkedAssessment)) return false;
-      const manuallyHidden = Boolean(item.hidden_from_captured || linkedCandidate?.hidden_from_captured);
-      return manuallyHidden;
-    }).length;
-    const active = universe.filter((item) => {
-      const linkedCandidate = applicantCandidateMap.get(String(item.id)) || null;
-      const linkedAssessment = applicantAssessmentMap.get(String(item.id)) || null;
-      if (isApplicantConvertedToAssessment(item, linkedCandidate, linkedAssessment)) return false;
-      const manuallyHidden = Boolean(item.hidden_from_captured || linkedCandidate?.hidden_from_captured);
-      return !manuallyHidden;
-    }).length;
+    const owned = visibleApplicants.filter((item) => getApplicantOwnerLabel(item, applicantCandidateMap.get(String(item.id)) || null) !== "Unassigned").length;
+    const unassigned = visibleApplicants.length - owned;
     return {
-      today: universe.filter((item) => String(item.createdAt || item.created_at || "").slice(0, 10) === todayKey).length,
-      total: universe.length,
-      active,
-      converted
+      today: visibleApplicants.filter((item) => String(item.createdAt || item.created_at || "").slice(0, 10) === todayKey).length,
+      owned,
+      unassigned,
+      manualAssigned: visibleApplicants.filter((item) => getApplicantManualAssigneeLabel(item, applicantCandidateMap.get(String(item.id)) || null)).length,
+      total: visibleApplicants.length
     };
-  }, [applicantAssessmentMap, applicantCandidateMap, filteredApplicants]);
+  }, [applicantCandidateMap, visibleApplicants]);
 
   const quickUpdateMatches = useMemo(() => {
     const query = String(quickUpdateCandidateQuery || "").trim().toLowerCase();
@@ -5801,20 +5637,10 @@ function PortalApp({ token, onLogout }) {
       return;
     }
     const candidateName = candidate?.name || sourceApplicant?.candidateName || "";
-    const candidateNeedleId = String(candidate?.id || sourceApplicant?.id || "").trim();
-    const candidateNeedleEmail = String(candidate?.email || sourceApplicant?.email || sourceApplicant?.emailId || "").trim().toLowerCase();
-    const candidateNeedlePhoneDigits = String(candidate?.phone || sourceApplicant?.phone || sourceApplicant?.phoneNumber || "").replace(/\D/g, "");
-    const candidateNeedlePhone = candidateNeedlePhoneDigits.length >= 10 ? candidateNeedlePhoneDigits.slice(-10) : "";
-    const matched = (state.assessments || []).find((item) => {
-      const idMatch = String(item?.candidateId || item?.candidate_id || "").trim();
-      if (candidateNeedleId && idMatch && idMatch === candidateNeedleId) return true;
-      const emailMatch = String(item?.emailId || item?.email_id || "").trim().toLowerCase();
-      if (candidateNeedleEmail && emailMatch && emailMatch === candidateNeedleEmail) return true;
-      const phoneDigits = String(item?.phoneNumber || item?.phone_number || "").replace(/\D/g, "");
-      const phoneMatch = phoneDigits.length >= 10 ? phoneDigits.slice(-10) : "";
-      if (candidateNeedlePhone && phoneMatch && phoneMatch === candidateNeedlePhone) return true;
-      return false;
-    });
+    const matched = (state.assessments || []).find((item) =>
+      String(item.candidateId || "") === String(candidate?.id || sourceApplicant?.id || "") ||
+      String(item.candidateName || "").trim().toLowerCase() === String(candidate?.name || sourceApplicant?.candidateName || "").trim().toLowerCase()
+    );
     if (matched) {
       openSavedAssessment(matched);
       return;
@@ -6514,7 +6340,7 @@ function PortalApp({ token, onLogout }) {
 
   function buildCapturedCopyRows() {
     return capturedCandidates.map((item) => {
-      const matchedAssessment = getCapturedMatchedAssessment(item);
+      const matchedAssessment = capturedAssessmentMap.get(String(item.name || "").trim().toLowerCase());
       return {
         ...item,
         outcome: getCapturedOutcome(item, matchedAssessment),
@@ -7518,18 +7344,12 @@ function PortalApp({ token, onLogout }) {
     const value = item?.followUpAt ? new Date(item.followUpAt) : item?.interviewAt ? new Date(item.interviewAt) : null;
     return value && value >= agendaWindowStart && value < nextWeekEnd;
   });
-  const pendingAssignments = (state.applicants || []).filter((item) => {
-    const linkedCandidate = applicantCandidateMap.get(String(item.id)) || null;
-    const linkedAssessment = applicantAssessmentMap.get(String(item.id)) || null;
-    if (isApplicantConvertedToAssessment(item, linkedCandidate, linkedAssessment)) return false;
-    const manuallyHidden = Boolean(item.hidden_from_captured || linkedCandidate?.hidden_from_captured);
-    if (manuallyHidden) return false;
-    return true;
-  }).length;
+  const pendingAssignments = (state.applicants || []).length;
   const pendingNotes = (state.candidates || []).filter((item) => {
     const sourceValue = String(item.source || "").trim();
     if (["website_apply", "hosted_apply", "google_sheet"].includes(sourceValue)) return false;
-    if (item.used_in_assessment || String(item.assessment_id || item.assessmentId || "").trim()) return false;
+    const matchedAssessment = capturedAssessmentMap.get(String(item.name || "").trim().toLowerCase());
+    if (matchedAssessment || item.used_in_assessment || String(item.assessment_id || "").trim()) return false;
     return !item.hidden_from_captured;
   }).length;
   const scheduledFollowUpItems = todaysFollowUps
@@ -7987,18 +7807,9 @@ function PortalApp({ token, onLogout }) {
                       {exportPresetOptions.map((preset) => <option key={preset.id} value={preset.id}>{preset.label}</option>)}
                     </select>
                   </label>
-                  <div className="copy-action">
-                    <button onClick={() => void runCopyAction("copy_candidates_excel", copyCandidatesExcel)}>Copy Excel</button>
-                    {copyHintKey === "copy_candidates_excel" ? <div className="copy-hint">Copied</div> : null}
-                  </div>
-                  <div className="copy-action">
-                    <button onClick={() => void runCopyAction("copy_candidates_whatsapp", copyCandidatesWhatsapp)}>Copy WhatsApp</button>
-                    {copyHintKey === "copy_candidates_whatsapp" ? <div className="copy-hint">Copied</div> : null}
-                  </div>
-                  <div className="copy-action">
-                    <button onClick={() => void runCopyAction("copy_candidates_email", copyCandidatesEmail)}>Copy Email</button>
-                    {copyHintKey === "copy_candidates_email" ? <div className="copy-hint">Copied</div> : null}
-                  </div>
+                  <button onClick={() => void copyCandidatesExcel()}>Copy Excel</button>
+                  <button onClick={() => void copyCandidatesWhatsapp()}>Copy WhatsApp</button>
+                  <button onClick={() => void copyCandidatesEmail()}>Copy Email</button>
                   <button className="ghost-btn" onClick={() => downloadCandidatesExcel()}>Download results</button>
                 </div>
                 <div className="stack-list">
@@ -8041,16 +7852,18 @@ function PortalApp({ token, onLogout }) {
                 <label><span>Date to</span><input type="date" value={applicantFilters.dateTo} onChange={(e) => setApplicantFilters((current) => ({ ...current, dateTo: e.target.value }))} /></label>
               </div>
               <div className="metric-grid metric-grid--tight">
-                <div className="metric-card compact-metric"><div className="metric-label">Today</div><div className="metric-value">{applicantStats.today}</div></div>
-                <div className="metric-card compact-metric"><div className="metric-label">Total applied</div><div className="metric-value">{applicantStats.total}</div></div>
-                <div className="metric-card compact-metric"><div className="metric-label">Active</div><div className="metric-value">{applicantStats.active}</div></div>
-                <div className="metric-card compact-metric"><div className="metric-label">Converted</div><div className="metric-value">{applicantStats.converted}</div></div>
+                <div className="metric-card compact-metric"><div className="metric-label">Applied today</div><div className="metric-value">{applicantStats.today}</div></div>
+                <div className="metric-card compact-metric"><div className="metric-label">Owned</div><div className="metric-value">{applicantStats.owned}</div></div>
+                <div className="metric-card compact-metric"><div className="metric-label">Unassigned</div><div className="metric-value">{applicantStats.unassigned}</div></div>
+                <div className="metric-card compact-metric"><div className="metric-label">Manual assigned</div><div className="metric-value">{applicantStats.manualAssigned}</div></div>
+                <div className="metric-card compact-metric"><div className="metric-label">Total visible</div><div className="metric-value">{applicantStats.total}</div></div>
               </div>
+              <p className="muted">Owned means the applicant belongs to a recruiter through the job owner / primary recruiter. Manual assigned means admin manually reassigned it. For admin, Owned + Unassigned = Total visible.</p>
               <div className="captured-filter-grid">
                 <MultiSelectDropdown label="Clients" options={applicantOptions.clients} selected={applicantFilters.clients} onToggle={(value) => setApplicantFilters((current) => ({ ...current, clients: value === "__all__" ? [] : current.clients.includes(value) ? current.clients.filter((item) => item !== value) : [...current.clients, value] }))} />
                 <MultiSelectDropdown label="JD / Role" options={applicantOptions.jds} selected={applicantFilters.jds} onToggle={(value) => setApplicantFilters((current) => ({ ...current, jds: value === "__all__" ? [] : current.jds.includes(value) ? current.jds.filter((item) => item !== value) : [...current.jds, value] }))} />
+                {String(state.user?.role || "").toLowerCase() === "admin" ? <MultiSelectDropdown label="Owned by" options={applicantOptions.ownedBy} selected={applicantFilters.ownedBy} onToggle={(value) => setApplicantFilters((current) => ({ ...current, ownedBy: value === "__all__" ? [] : current.ownedBy.includes(value) ? current.ownedBy.filter((item) => item !== value) : [...current.ownedBy, value] }))} /> : null}
                 {String(state.user?.role || "").toLowerCase() === "admin" ? <MultiSelectDropdown label="Assigned to" options={applicantOptions.assignedTo} selected={applicantFilters.assignedTo} onToggle={(value) => setApplicantFilters((current) => ({ ...current, assignedTo: value === "__all__" ? [] : current.assignedTo.includes(value) ? current.assignedTo.filter((item) => item !== value) : [...current.assignedTo, value] }))} /> : null}
-                <MultiSelectDropdown label="Sources" options={applicantOptions.sources || []} selected={applicantFilters.sources || []} onToggle={(value) => setApplicantFilters((current) => ({ ...current, sources: value === "__all__" ? [] : (current.sources || []).includes(value) ? (current.sources || []).filter((item) => item !== value) : [...(current.sources || []), value] }))} />
                 <MultiSelectDropdown label="Outcome" options={applicantOptions.outcomes} selected={applicantFilters.outcomes} onToggle={(value) => setApplicantFilters((current) => ({ ...current, outcomes: value === "__all__" ? [] : current.outcomes.includes(value) ? current.outcomes.filter((item) => item !== value) : [...current.outcomes, value] }))} />
                 <MultiSelectDropdown label="State" options={applicantOptions.activeStates} selected={applicantFilters.activeStates} allowAll={false} emptySummary="Active only" onToggle={(value) => setApplicantFilters((current) => ({ ...current, activeStates: current.activeStates.includes(value) ? current.activeStates.filter((item) => item !== value) : [...current.activeStates, value] }))} />
               </div>
@@ -8061,18 +7874,9 @@ function PortalApp({ token, onLogout }) {
                     {exportPresetOptions.map((preset) => <option key={preset.id} value={preset.id}>{preset.label}</option>)}
                   </select>
                 </label>
-                <div className="copy-action">
-                  <button onClick={() => void runCopyAction("copy_applicants_excel", copyApplicantsExcel)}>Copy Excel</button>
-                  {copyHintKey === "copy_applicants_excel" ? <div className="copy-hint">Copied</div> : null}
-                </div>
-                <div className="copy-action">
-                  <button onClick={() => void runCopyAction("copy_applicants_whatsapp", copyApplicantsWhatsapp)}>Copy WhatsApp</button>
-                  {copyHintKey === "copy_applicants_whatsapp" ? <div className="copy-hint">Copied</div> : null}
-                </div>
-                <div className="copy-action">
-                  <button onClick={() => void runCopyAction("copy_applicants_email", copyApplicantsEmail)}>Copy Email</button>
-                  {copyHintKey === "copy_applicants_email" ? <div className="copy-hint">Copied</div> : null}
-                </div>
+                <button onClick={() => void copyApplicantsExcel()}>Copy Excel</button>
+                <button onClick={() => void copyApplicantsWhatsapp()}>Copy WhatsApp</button>
+                <button onClick={() => void copyApplicantsEmail()}>Copy Email</button>
               </div>
               <div className="stack-list">
                 {!visibleApplicants.length ? <div className="empty-state">No applied candidates right now.</div> : visibleApplicants.map((item) => (
@@ -8152,22 +7956,13 @@ function PortalApp({ token, onLogout }) {
                       {exportPresetOptions.map((preset) => <option key={preset.id} value={preset.id}>{preset.label}</option>)}
                     </select>
                   </label>
-                  <div className="copy-action">
-                    <button onClick={() => void runCopyAction("copy_captured_excel", copyCapturedExcel)}>Copy Excel</button>
-                    {copyHintKey === "copy_captured_excel" ? <div className="copy-hint">Copied</div> : null}
-                  </div>
-                  <div className="copy-action">
-                    <button onClick={() => void runCopyAction("copy_captured_whatsapp", copyCapturedWhatsapp)}>Copy WhatsApp</button>
-                    {copyHintKey === "copy_captured_whatsapp" ? <div className="copy-hint">Copied</div> : null}
-                  </div>
-                  <div className="copy-action">
-                    <button onClick={() => void runCopyAction("copy_captured_email", copyCapturedEmail)}>Copy Email</button>
-                    {copyHintKey === "copy_captured_email" ? <div className="copy-hint">Copied</div> : null}
-                  </div>
+                  <button onClick={() => void copyCapturedExcel()}>Copy Excel</button>
+                  <button onClick={() => void copyCapturedWhatsapp()}>Copy WhatsApp</button>
+                  <button onClick={() => void copyCapturedEmail()}>Copy Email</button>
                 </div>
                 <div className="stack-list">
                 {!capturedCandidates.length ? <div className="empty-state">No captured notes or recruiter-owned candidates yet.</div> : capturedCandidates.map((item) => {
-                  const matchedAssessment = getCapturedMatchedAssessment(item);
+                  const matchedAssessment = capturedAssessmentMap.get(String(item.name || "").trim().toLowerCase());
                   const statusState = normalizedAssessmentState(matchedAssessment, item);
                   const latestAttemptLine = extractLatestAttemptLine(item.last_contact_notes || "");
                   const latestAttemptRemarks = extractAttemptRemarks(latestAttemptLine);
@@ -8232,18 +8027,9 @@ function PortalApp({ token, onLogout }) {
                     {exportPresetOptions.map((preset) => <option key={preset.id} value={preset.id}>{preset.label}</option>)}
                   </select>
                 </label>
-                <div className="copy-action">
-                  <button onClick={() => void runCopyAction("copy_assessments_excel", copyAssessmentsExcel)}>Copy Excel</button>
-                  {copyHintKey === "copy_assessments_excel" ? <div className="copy-hint">Copied</div> : null}
-                </div>
-                <div className="copy-action">
-                  <button onClick={() => void runCopyAction("copy_assessments_whatsapp", copyAssessmentsWhatsapp)}>Copy WhatsApp</button>
-                  {copyHintKey === "copy_assessments_whatsapp" ? <div className="copy-hint">Copied</div> : null}
-                </div>
-                <div className="copy-action">
-                  <button onClick={() => void runCopyAction("copy_assessments_email", copyAssessmentsEmail)}>Copy Email</button>
-                  {copyHintKey === "copy_assessments_email" ? <div className="copy-hint">Copied</div> : null}
-                </div>
+                <button onClick={() => void copyAssessmentsExcel()}>Copy Excel</button>
+                <button onClick={() => void copyAssessmentsWhatsapp()}>Copy WhatsApp</button>
+                <button onClick={() => void copyAssessmentsEmail()}>Copy Email</button>
               </div>
               <div className="status-note">Selected for client share: {selectedAssessmentIds.length}</div>
               <div className="stack-list">
@@ -8638,18 +8424,9 @@ function PortalApp({ token, onLogout }) {
                 <p className="muted">Save the assessment and export recruiter-sheet format.</p>
                 {statuses.interview ? <div className={`status ${statuses.interviewKind || ""}`}>{statuses.interview}</div> : null}
                 <div className="button-row">
-                  <div className="copy-action">
-                    <button onClick={() => void runCopyAction("copy_interview_result", copyInterviewResult)}>Copy result</button>
-                    {copyHintKey === "copy_interview_result" ? <div className="copy-hint">Copied</div> : null}
-                  </div>
-                  <div className="copy-action">
-                    <button onClick={() => void runCopyAction("copy_interview_whatsapp", () => Promise.resolve(copyInterviewWhatsapp()))}>Copy WhatsApp</button>
-                    {copyHintKey === "copy_interview_whatsapp" ? <div className="copy-hint">Copied</div> : null}
-                  </div>
-                  <div className="copy-action">
-                    <button onClick={() => void runCopyAction("copy_interview_email", copyInterviewEmail)}>Copy Email</button>
-                    {copyHintKey === "copy_interview_email" ? <div className="copy-hint">Copied</div> : null}
-                  </div>
+                  <button onClick={() => void copyInterviewResult()}>Copy result</button>
+                  <button onClick={() => copyInterviewWhatsapp()}>Copy WhatsApp</button>
+                  <button onClick={() => void copyInterviewEmail()}>Copy Email</button>
                   {interviewMeta.candidateId && !interviewMeta.assessmentId ? <button onClick={() => void saveInterviewDraft()}>Save draft</button> : null}
                   <button onClick={() => void saveAssessment()}>{interviewMeta.assessmentId ? "Save assessment" : "Create assessment"}</button>
                   <button onClick={() => sendInterviewToSheets()}>Send to Sheets</button>
@@ -8685,20 +8462,7 @@ function PortalApp({ token, onLogout }) {
                               <div className="item-card__top compact-top">
                                 <strong>{item.recruiterName || "Recruiter"}</strong>
                                 <div className="button-row tight">
-                                  <div className="copy-action">
-                                    <button
-                                      className="ghost-btn"
-                                      onClick={() => void runCopyAction(`copy_apply_link_${item.recruiterId}`, () =>
-                                        copyText(url).then((ok) => {
-                                          if (ok) setStatus("intake", `Apply link copied for ${item.recruiterName || "recruiter"}.`, "ok");
-                                          return ok;
-                                        })
-                                      )}
-                                    >
-                                      Copy link
-                                    </button>
-                                    {copyHintKey === `copy_apply_link_${item.recruiterId}` ? <div className="copy-hint">Copied</div> : null}
-                                  </div>
+                                  <button className="ghost-btn" onClick={() => void copyText(url).then(() => setStatus("intake", `Apply link copied for ${item.recruiterName || "recruiter"}.`, "ok"))}>Copy link</button>
                                 </div>
                               </div>
                               <label className="full"><span>Link</span><textarea readOnly value={url} /></label>
@@ -9206,8 +8970,7 @@ function PortalApp({ token, onLogout }) {
         onClose={() => setDatabaseProfileItem(null)}
         onOpenCv={(candidate) => openDatabaseCandidateCv(candidate)}
         onReuse={(candidate) => reuseDatabaseCandidate(candidate)}
-        onCopyShareLink={(candidateId) => void runCopyAction("candidate_card_share_link", () => copyCandidateProfileShareLink(candidateId))}
-        copyHintKey={copyHintKey}
+        onCopyShareLink={(candidateId) => void copyCandidateProfileShareLink(candidateId)}
       />
       <ClientFeedbackModal open={Boolean(clientFeedbackItem)} item={clientFeedbackItem} onClose={() => setClientFeedbackItem(null)} onSave={(payload) => void saveClientFeedback(payload)} />
     </div>

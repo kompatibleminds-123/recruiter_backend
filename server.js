@@ -758,33 +758,8 @@ async function unlinkAssessmentFromCompanyCandidates(companyId, assessmentId) {
       used_in_assessment: false,
       assessment_id: "",
       updated_at: new Date().toISOString()
-    }, { companyId: scopedCompanyId }).catch(() => null);
+    }, { companyId: scopedCompanyId });
   }
-}
-
-async function deleteAssessmentFromCompanyCandidates(companyId, assessmentId) {
-  const scopedAssessmentId = String(assessmentId || "").trim();
-  const scopedCompanyId = String(companyId || "").trim();
-  if (!scopedAssessmentId || !scopedCompanyId) {
-    return { deletedCandidates: 0 };
-  }
-  const candidates = await listCandidates({ companyId: scopedCompanyId, limit: 5000 });
-  const linkedCandidates = (Array.isArray(candidates) ? candidates : []).filter(
-    (candidate) =>
-      String(candidate?.assessment_id || candidate?.assessmentId || "").trim() === scopedAssessmentId
-  );
-  let deletedCandidates = 0;
-  for (const candidate of linkedCandidates) {
-    const candidateId = String(candidate?.id || "").trim();
-    if (!candidateId) continue;
-    try {
-      await deleteCandidate(candidateId, { companyId: scopedCompanyId });
-      deletedCandidates += 1;
-    } catch {
-      // ignore
-    }
-  }
-  return { deletedCandidates };
 }
 
 async function ingestApplicantSubmission(body, req) {
@@ -1278,7 +1253,6 @@ function createDashboardBucket() {
     applied: 0,
     converted: 0,
     under_interview_process: 0,
-    hold: 0,
     rejected: 0,
     duplicate: 0,
     dropped: 0,
@@ -1286,70 +1260,6 @@ function createDashboardBucket() {
     offered: 0,
     joined: 0
   };
-}
-
-function normalizeAssessmentStatusForDashboard(value) {
-  return normalizeDashboardText(String(value || "")).replace(/\s+/g, " ").trim();
-}
-
-function getAssessmentCandidateId(assessment = {}) {
-  const payload = assessment?.payload && typeof assessment.payload === "object" ? assessment.payload : {};
-  return String(
-    assessment?.candidateId ||
-      assessment?.candidate_id ||
-      payload?.candidateId ||
-      payload?.candidate_id ||
-      ""
-  ).trim();
-}
-
-function getAssessmentConvertedAt(assessment = {}) {
-  return String(
-    assessment?.generatedAt ||
-      assessment?.generated_at ||
-      assessment?.created_at ||
-      assessment?.createdAt ||
-      assessment?.updatedAt ||
-      assessment?.updated_at ||
-      ""
-  ).trim();
-}
-
-function getAssessmentStatusValue(assessment = {}) {
-  const payload = assessment?.payload && typeof assessment.payload === "object" ? assessment.payload : {};
-  return String(
-    assessment?.candidateStatus ||
-      assessment?.candidate_status ||
-      payload?.candidateStatus ||
-      payload?.candidate_status ||
-      payload?.status ||
-      assessment?.status ||
-      ""
-  );
-}
-
-function getDashboardAssessmentMetric(statusValue) {
-  const status = normalizeAssessmentStatusForDashboard(statusValue);
-  if (!status) return "";
-  // Order matters: a status string can contain multiple words.
-  if (status.includes("joined")) return "joined";
-  if (status.includes("offered") || /\boffer\b/.test(status)) return "offered";
-  if (status.includes("shortlist")) return "shortlisted";
-  if (status.includes("dropped")) return "dropped";
-  if (status.includes("duplicate")) return "duplicate";
-  if (status.includes("screening reject") || status.includes("interview reject")) return "rejected";
-  if (status === "hold" || status.includes("on hold")) return "hold";
-  if (
-    status.includes("screening call aligned") ||
-    status.includes("l1 aligned") ||
-    status.includes("l2 aligned") ||
-    status.includes("l3 aligned") ||
-    status.includes("hr interview aligned") ||
-    status.includes("feedback awaited")
-  ) {
-    return "under_interview_process";
-  }
-  return "";
 }
 
 function createClientPortalBucket() {
@@ -1393,17 +1303,21 @@ function addCandidateMetrics(target, candidate, linkedAssessment, dateRange = {}
     incrementDashboardMetric(target, isApplicant ? "applied" : "sourced");
     changed = true;
   }
-  // "Shared" and later pipeline metrics should only count when the candidate is actually converted.
-  // Do not infer conversion just because an assessment exists with the same identity/name.
-  const assessmentId = String(candidate?.assessment_id || candidate?.assessmentId || "").trim();
-  const isConvertedCandidate = Boolean(candidate?.used_in_assessment) || Boolean(assessmentId);
-  if (!isConvertedCandidate || !linkedAssessment) return changed;
+  if (!candidate?.used_in_assessment || !linkedAssessment) return changed;
   const convertedAt = getCandidateConvertedAt(candidate, linkedAssessment || {});
   if (!isDateWithinRange(convertedAt, dateRange.from, dateRange.to)) return changed;
   incrementDashboardMetric(target, "converted");
   changed = true;
-  const metric = getDashboardAssessmentMetric(getAssessmentStatusValue(linkedAssessment || {}));
-  if (metric) incrementDashboardMetric(target, metric);
+  const bucket = getAssessmentLifecycleBucket(linkedAssessment || {});
+  if (isInterviewAlignedStatus(linkedAssessment?.candidateStatus || linkedAssessment?.candidate_status || linkedAssessment?.status || "")) {
+    incrementDashboardMetric(target, "under_interview_process");
+  }
+  if (bucket === "rejected") incrementDashboardMetric(target, "rejected");
+  if (bucket === "duplicate") incrementDashboardMetric(target, "duplicate");
+  if (bucket === "dropped") incrementDashboardMetric(target, "dropped");
+  if (bucket === "shortlisted") incrementDashboardMetric(target, "shortlisted");
+  if (bucket === "offered") incrementDashboardMetric(target, "offered");
+  if (bucket === "joined") incrementDashboardMetric(target, "joined");
   return changed;
 }
 
@@ -1450,60 +1364,61 @@ function buildDashboardSummary({ candidates = [], assessments = [], jobs = [], d
   const byOwnerRecruiter = new Map();
   const byClientRecruiter = new Map();
   const byClientPosition = new Map();
+  const knownJdTitles = buildKnownJdTitleSet(jobs);
+  const assessmentsById = new Map(
+    (Array.isArray(assessments) ? assessments : []).map((item) => [String(item?.id || "").trim(), item])
+  );
+  // Avoid double-counting conversion metrics if duplicate candidate rows reference the same assessment.
+  const countedAssessmentIds = new Set();
 
-  const universe = buildCandidateSearchUniverse(candidates, assessments, jobs);
-  const dateRange = { from: dateFrom, to: dateTo };
-
-  function addItemMetrics(bucket, item) {
-    const candidate = item?.raw?.candidate || null;
-    const assessment = item?.raw?.assessment || null;
-    const rawSource = String(candidate?.source || item?.source || "").trim().toLowerCase();
-    const isApplicantSource = rawSource === "website_apply" || rawSource === "hosted_apply" || rawSource === "google_sheet";
-
-    const createdAt = String(item?.createdAt || "").trim();
-    if (createdAt && isDateWithinRange(createdAt, dateRange.from, dateRange.to)) {
-      incrementDashboardMetric(bucket, isApplicantSource ? "applied" : "sourced");
+  for (const candidate of Array.isArray(candidates) ? candidates : []) {
+    let linkedAssessment = assessmentsById.get(String(candidate?.assessment_id || candidate?.assessmentId || "").trim()) || null;
+    // Fallback: if the candidate row isn't linked properly yet, try matching an assessment by identity.
+    if (!linkedAssessment) {
+      linkedAssessment = pickBestAssessmentForCandidate(candidate, assessments) || null;
     }
-
-    const sharedAt = String(item?.sharedAt || "").trim();
-    const hasAssessment = Boolean(assessment) || item?.sourceType === "assessment_only";
-    if (!hasAssessment || !sharedAt || !isDateWithinRange(sharedAt, dateRange.from, dateRange.to)) return;
-
-    incrementDashboardMetric(bucket, "converted");
-    const metric = getDashboardAssessmentMetric(getAssessmentStatusValue(assessment || item?.raw?.assessment || item || {}));
-    if (metric) incrementDashboardMetric(bucket, metric);
-  }
-
-  for (const item of Array.isArray(universe) ? universe : []) {
-    const clientLabel = String(item?.clientName || "Unassigned").trim() || "Unassigned";
-    const ownerRecruiterLabel = String(item?.ownerRecruiter || "Unassigned").trim() || "Unassigned";
+    const clientLabel = getClientLabel(candidate, linkedAssessment || {});
     if (clientFilter && clientLabel !== clientFilter) continue;
+    const ownerRecruiterLabel = getOwnerRecruiterLabel(candidate, linkedAssessment || {});
     if (recruiterFilter && ownerRecruiterLabel !== recruiterFilter) continue;
-
-    const createdAt = String(item?.createdAt || "").trim();
-    const sharedAt = String(item?.sharedAt || "").trim();
-    const contributes = (createdAt && isDateWithinRange(createdAt, dateRange.from, dateRange.to)) || (sharedAt && isDateWithinRange(sharedAt, dateRange.from, dateRange.to));
+    const positionLabel = getPositionLabel(candidate, linkedAssessment || {}, knownJdTitles);
+    const dateRange = { from: dateFrom, to: dateTo };
+    // If we found an assessment, treat this candidate as converted for metrics even if legacy flags are missing.
+    // Also dedupe conversion metrics by assessment id.
+    let effectiveAssessment = linkedAssessment;
+    if (effectiveAssessment?.id) {
+      const assessmentId = String(effectiveAssessment.id || "").trim();
+      if (assessmentId && countedAssessmentIds.has(assessmentId)) {
+        effectiveAssessment = null;
+      } else if (assessmentId) {
+        countedAssessmentIds.add(assessmentId);
+      }
+    }
+    const effectiveCandidate = effectiveAssessment ? { ...candidate, used_in_assessment: true } : candidate;
+    const contributes = addCandidateMetrics(overall, effectiveCandidate, effectiveAssessment, dateRange);
     if (!contributes) continue;
-
-    addItemMetrics(overall, item);
-
     if (!byClient.has(clientLabel)) byClient.set(clientLabel, createDashboardBucket());
-    addItemMetrics(byClient.get(clientLabel), item);
-
     if (!byOwnerRecruiter.has(ownerRecruiterLabel)) byOwnerRecruiter.set(ownerRecruiterLabel, createDashboardRecruiterBucket());
-    addItemMetrics(byOwnerRecruiter.get(ownerRecruiterLabel).metrics, item);
-
-    const positionLabel = String(item?.position || "Unassigned").trim() || "Unassigned";
-    const matrixKey = `${clientLabel}|||${positionLabel}|||${ownerRecruiterLabel}`;
-    const clientPositionKey = `${clientLabel}|||${positionLabel}`;
-    if (!byClientRecruiter.has(matrixKey)) {
-      byClientRecruiter.set(matrixKey, { clientLabel, positionLabel, recruiterLabel: ownerRecruiterLabel, metrics: createDashboardBucket() });
+    addCandidateMetrics(byClient.get(clientLabel), effectiveCandidate, effectiveAssessment, dateRange);
+    addCandidateMetrics(byOwnerRecruiter.get(ownerRecruiterLabel).metrics, effectiveCandidate, effectiveAssessment, dateRange);
+    addRecruiterOwnershipMetrics(byOwnerRecruiter.get(ownerRecruiterLabel), ownerRecruiterLabel, effectiveCandidate, effectiveAssessment, dateRange);
+    if (positionLabel) {
+      const matrixKey = `${clientLabel}|||${positionLabel}|||${ownerRecruiterLabel}`;
+      const clientPositionKey = `${clientLabel}|||${positionLabel}`;
+      if (!byClientRecruiter.has(matrixKey)) {
+        byClientRecruiter.set(matrixKey, {
+          clientLabel,
+          positionLabel,
+          recruiterLabel: ownerRecruiterLabel,
+          metrics: createDashboardBucket()
+        });
+      }
+      if (!byClientPosition.has(clientPositionKey)) {
+        byClientPosition.set(clientPositionKey, { clientLabel, positionLabel, metrics: createDashboardBucket() });
+      }
+      addCandidateMetrics(byClientRecruiter.get(matrixKey).metrics, effectiveCandidate, effectiveAssessment, dateRange);
+      addCandidateMetrics(byClientPosition.get(clientPositionKey).metrics, effectiveCandidate, effectiveAssessment, dateRange);
     }
-    if (!byClientPosition.has(clientPositionKey)) {
-      byClientPosition.set(clientPositionKey, { clientLabel, positionLabel, metrics: createDashboardBucket() });
-    }
-    addItemMetrics(byClientRecruiter.get(matrixKey).metrics, item);
-    addItemMetrics(byClientPosition.get(clientPositionKey).metrics, item);
   }
 
   return {
@@ -1512,9 +1427,16 @@ function buildDashboardSummary({ candidates = [], assessments = [], jobs = [], d
     byOwnerRecruiter: Array.from(byOwnerRecruiter.entries())
       .map(([label, value]) => ({ label, metrics: value.metrics, ownership: value.ownership }))
       .sort((a, b) => a.label.localeCompare(b.label)),
-    byClientPosition: Array.from(byClientPosition.values()).sort((a, b) => `${a.clientLabel} ${a.positionLabel}`.localeCompare(`${b.clientLabel} ${b.positionLabel}`)),
-    byClientRecruiter: Array.from(byClientRecruiter.values()).sort((a, b) => `${a.clientLabel} ${a.recruiterLabel}`.localeCompare(`${b.clientLabel} ${b.recruiterLabel}`)),
-    dateRange: { from: String(dateFrom || "").trim(), to: String(dateTo || "").trim() },
+    byClientPosition: Array.from(byClientPosition.values()).sort((a, b) =>
+      `${a.clientLabel} ${a.positionLabel}`.localeCompare(`${b.clientLabel} ${b.positionLabel}`)
+    ),
+    byClientRecruiter: Array.from(byClientRecruiter.values()).sort((a, b) =>
+      `${a.clientLabel} ${a.recruiterLabel}`.localeCompare(`${b.clientLabel} ${b.recruiterLabel}`)
+    ),
+    dateRange: {
+      from: String(dateFrom || "").trim(),
+      to: String(dateTo || "").trim()
+    },
     clientFilter: String(clientFilter || "").trim(),
     recruiterFilter: String(recruiterFilter || "").trim()
   };
@@ -1586,18 +1508,6 @@ function buildClientPortalSummary({ candidates = [], assessments = [], jobs = []
 
 function normalizePhoneDigits(value) {
   return String(value || "").replace(/[^\d]/g, "");
-}
-
-// Keep these helpers local (mirrors auth-store.js). These are used for identity matching
-// between candidates and assessments when legacy rows are missing candidate_id links.
-function normalizeAssessmentPhone(value) {
-  const digits = String(value || "").replace(/\D/g, "");
-  if (digits.length < 10) return "";
-  return digits.length > 10 ? digits.slice(-10) : digits;
-}
-
-function normalizeAssessmentEmail(value) {
-  return String(value || "").trim().toLowerCase();
 }
 
 function isDateInClientAgendaWindow(value, dateRange = {}) {
@@ -2292,19 +2202,6 @@ function buildCandidateSearchHay(item = {}) {
 
 function buildCandidateSearchUniverse(candidates = [], assessments = [], jobs = []) {
   const assessmentsById = new Map((assessments || []).map((item) => [String(item?.id || "").trim(), item]));
-  const assessmentsByCandidateId = new Map();
-  const assessmentsByEmail = new Map();
-  const assessmentsByPhone = new Map();
-  for (const assessment of assessments || []) {
-    const assessmentId = String(assessment?.id || "").trim();
-    if (!assessmentId) continue;
-    const candidateId = String(getAssessmentCandidateId(assessment) || "").trim();
-    if (candidateId && !assessmentsByCandidateId.has(candidateId)) assessmentsByCandidateId.set(candidateId, assessment);
-    const email = normalizeAssessmentEmail(assessment?.emailId || assessment?.email_id || assessment?.email || "");
-    if (email && !assessmentsByEmail.has(email)) assessmentsByEmail.set(email, assessment);
-    const phone = normalizeAssessmentPhone(assessment?.phoneNumber || assessment?.phone_number || assessment?.phone || "");
-    if (phone && !assessmentsByPhone.has(phone)) assessmentsByPhone.set(phone, assessment);
-  }
   const universe = [];
   const seenAssessmentIds = new Set();
   const knownJdTitles = buildKnownJdTitleSet(jobs);
@@ -2315,28 +2212,8 @@ function buildCandidateSearchUniverse(candidates = [], assessments = [], jobs = 
     const cachedCvResult = candidateMeta?.cvAnalysisCache?.result && typeof candidateMeta.cvAnalysisCache.result === "object"
       ? candidateMeta.cvAnalysisCache.result
       : {};
-    const candidateAssessmentId = String(candidate?.assessment_id || candidate?.assessmentId || "").trim();
-    let linkedAssessment = candidateAssessmentId ? (assessmentsById.get(candidateAssessmentId) || null) : null;
-    if (!linkedAssessment) {
-      const candidateId = String(candidate?.id || "").trim();
-      if (candidateId && assessmentsByCandidateId.has(candidateId)) {
-        linkedAssessment = assessmentsByCandidateId.get(candidateId) || null;
-      }
-    }
-    if (!linkedAssessment) {
-      const email = normalizeAssessmentEmail(candidate?.email || "");
-      if (email && assessmentsByEmail.has(email)) {
-        linkedAssessment = assessmentsByEmail.get(email) || null;
-      }
-    }
-    if (!linkedAssessment) {
-      const phone = normalizeAssessmentPhone(candidate?.phone || "");
-      if (phone && assessmentsByPhone.has(phone)) {
-        linkedAssessment = assessmentsByPhone.get(phone) || null;
-      }
-    }
+    const linkedAssessment = assessmentsById.get(String(candidate?.assessment_id || "").trim()) || null;
     if (linkedAssessment?.id) seenAssessmentIds.add(String(linkedAssessment.id));
-    const isConverted = Boolean(linkedAssessment) || Boolean(candidate?.used_in_assessment) || Boolean(candidateAssessmentId);
     universe.push({
       id: String(candidate?.id || linkedAssessment?.id || "").trim(),
       candidateName: String(candidate?.name || linkedAssessment?.candidateName || "").trim(),
@@ -2364,8 +2241,8 @@ function buildCandidateSearchUniverse(candidates = [], assessments = [], jobs = 
       followUpAt: normalizeDateOutput(linkedAssessment?.followUpAt || linkedAssessment?.follow_up_at || candidate?.next_follow_up_at || ""),
       offerDoj: normalizeDateOutput(linkedAssessment?.offerDoj || linkedAssessment?.offer_doj || ""),
       createdAt: normalizeDateOutput(getCandidateCreatedAt(candidate)),
-      sharedAt: linkedAssessment ? normalizeDateOutput(getCandidateConvertedAt(candidate, linkedAssessment || {})) : "",
-      sourceType: isConverted
+      sharedAt: normalizeDateOutput(getCandidateConvertedAt(candidate, linkedAssessment || {})),
+      sourceType: candidate?.used_in_assessment
         ? "captured_and_converted"
         : (candidateSource === "website_apply" || candidateSource === "hosted_apply" || candidateSource === "google_sheet"
           ? "applied"
@@ -2390,21 +2267,11 @@ function buildCandidateSearchUniverse(candidates = [], assessments = [], jobs = 
   for (const assessment of assessments || []) {
     const assessmentId = String(assessment?.id || "").trim();
     if (!assessmentId || seenAssessmentIds.has(assessmentId)) continue;
-    const resolvedCandidateId = String(getAssessmentCandidateId(assessment) || "").trim();
-    const emailNeedle = normalizeAssessmentEmail(assessment?.emailId || assessment?.email_id || assessment?.email || "");
-    const phoneNeedle = normalizeAssessmentPhone(assessment?.phoneNumber || assessment?.phone_number || assessment?.phone || "");
-    const matchedCandidate = findBestCandidateByIdentity(candidates || [], {
-      candidateId: resolvedCandidateId,
-      email: emailNeedle,
-      phone: phoneNeedle,
-      name: String(assessment?.candidateName || "").trim(),
-      jdTitle: String(assessment?.jdTitle || assessment?.jd_title || "").trim()
-    });
     universe.push({
       id: assessmentId,
       candidateName: String(assessment?.candidateName || "").trim(),
       role: String(assessment?.currentDesignation || "").trim(),
-      position: getPositionLabel(matchedCandidate || {}, assessment, knownJdTitles),
+      position: getPositionLabel({}, assessment, knownJdTitles),
       company: String(assessment?.currentCompany || "").trim(),
       totalExperience: String(assessment?.totalExperience || "").trim(),
       location: String(assessment?.location || "").trim(),
@@ -2415,10 +2282,10 @@ function buildCandidateSearchUniverse(candidates = [], assessments = [], jobs = 
       highestEducation: String(assessment?.highestEducation || "").trim(),
       skills: [],
       inferredTags: [],
-      clientName: getClientLabel(matchedCandidate || {}, assessment),
-      recruiterName: getRecruiterLabel(matchedCandidate || {}, assessment),
-      sourcedRecruiter: getRecruiterLabel(matchedCandidate || {}, assessment),
-      ownerRecruiter: getOwnerRecruiterLabel(matchedCandidate || {}, assessment),
+      clientName: getClientLabel({}, assessment),
+      recruiterName: getRecruiterLabel({}, assessment),
+      sourcedRecruiter: getRecruiterLabel({}, assessment),
+      ownerRecruiter: getOwnerRecruiterLabel({}, assessment),
       candidateStatus: String(assessment?.candidateStatus || "").trim(),
       pipelineStage: String(assessment?.pipelineStage || "").trim(),
       workflowStatus: String(assessment?.status || "").trim(),
@@ -2436,7 +2303,7 @@ function buildCandidateSearchUniverse(candidates = [], assessments = [], jobs = 
         assessment?.callbackNotes || ""
       ].filter(Boolean).join("\n"),
       raw: {
-        candidate: matchedCandidate || null,
+        candidate: null,
         assessment
       }
     });
@@ -2599,10 +2466,9 @@ function candidateMatchesNaturalFilter(item, filters, actor = null) {
 }
 
 function itemMatchesDashboardMetric(item, metric, dateFrom = "", dateTo = "") {
-  const assessment = item?.raw?.assessment || item?.assessment || null;
-  const statusValue = String(assessment?.candidateStatus || assessment?.candidate_status || assessment?.status || item?.candidateStatus || item?.status || "");
-  const mappedMetric = getDashboardAssessmentMetric(statusValue);
-  const hasLinkedAssessment = Boolean(assessment) || item?.sourceType === "assessment_only" || Boolean(item?.assessmentId);
+  const bucket = getAssessmentLifecycleBucket(item);
+  const hasLinkedAssessment = Boolean(item?.raw?.assessment || item?.assessment || item?.assessmentId);
+  const isSharedAssessment = item?.sourceType === "captured_and_converted" && hasLinkedAssessment;
   const rawSource = String(item?.raw?.candidate?.source || item?.source || "").trim().toLowerCase();
   const isApplicantSource = rawSource === "website_apply" || rawSource === "hosted_apply" || rawSource === "google_sheet";
   if (metric === "sourced") {
@@ -2612,18 +2478,17 @@ function itemMatchesDashboardMetric(item, metric, dateFrom = "", dateTo = "") {
     return isApplicantSource && isDateWithinRange(item.createdAt, dateFrom, dateTo);
   }
   if (metric === "converted") {
-    return hasLinkedAssessment && isDateWithinRange(item.sharedAt, dateFrom, dateTo);
+    return isSharedAssessment && isDateWithinRange(item.sharedAt, dateFrom, dateTo);
   }
-  if (!hasLinkedAssessment) return false;
+  if (!isSharedAssessment) return false;
   if (!isDateWithinRange(item.sharedAt, dateFrom, dateTo)) return false;
-  if (metric === "rejected") return mappedMetric === "rejected";
-  if (metric === "duplicate") return mappedMetric === "duplicate";
-  if (metric === "dropped") return mappedMetric === "dropped";
-  if (metric === "shortlisted") return mappedMetric === "shortlisted";
-  if (metric === "offered") return mappedMetric === "offered";
-  if (metric === "joined") return mappedMetric === "joined";
-  if (metric === "hold") return mappedMetric === "hold";
-  if (metric === "under_interview_process") return mappedMetric === "under_interview_process";
+  if (metric === "under_interview_process") return isInterviewAlignedStatus(item?.candidateStatus || item?.status || "");
+  if (metric === "rejected") return bucket === "rejected";
+  if (metric === "duplicate") return bucket === "duplicate";
+  if (metric === "dropped") return bucket === "dropped";
+  if (metric === "shortlisted") return bucket === "shortlisted";
+  if (metric === "offered") return bucket === "offered";
+  if (metric === "joined") return bucket === "joined";
   return false;
 }
 
@@ -4461,14 +4326,11 @@ const server = http.createServer(async (req, res) => {
         listCompanyJobs(user.companyId)
       ]);
       const summary = buildDashboardSummary({ candidates, assessments, jobs, dateFrom, dateTo, clientFilter, recruiterFilter });
-      // Build filter dropdowns from the same "universe" used by the dashboard summary,
-      // so recruiters don't lose client options when candidate rows are legacy/missing links.
-      const universe = buildCandidateSearchUniverse(candidates, assessments, jobs);
       const availableClients = Array.from(
-        new Set((Array.isArray(universe) ? universe : []).map((item) => String(item?.clientName || "").trim()).filter(Boolean))
+        new Set((Array.isArray(candidates) ? candidates : []).map((candidate) => getClientLabel(candidate, {})).filter(Boolean))
       ).sort((a, b) => a.localeCompare(b));
       const availableRecruiters = Array.from(
-        new Set((Array.isArray(universe) ? universe : []).map((item) => String(item?.ownerRecruiter || "").trim()).filter(Boolean))
+        new Set((Array.isArray(candidates) ? candidates : []).map((candidate) => getOwnerRecruiterLabel(candidate, {})).filter(Boolean))
       ).sort((a, b) => a.localeCompare(b));
       sendJson(res, 200, {
         ok: true,
@@ -5100,6 +4962,7 @@ const server = http.createServer(async (req, res) => {
       ]);
       const universe = buildCandidateSearchUniverse(candidates, assessments, jobs);
       const items = universe
+        .filter((item) => item.sourceType !== "assessment_only")
         .filter((item) => !clientFilter || String(item.clientName || "").trim() === clientFilter)
         .filter((item) => !recruiterFilter || String(item.ownerRecruiter || "").trim() === recruiterFilter)
         .filter((item) => itemMatchesDashboardGroup(item, groupType, params))
@@ -5524,9 +5387,7 @@ const server = http.createServer(async (req, res) => {
         companyId: actor.companyId,
         assessmentId
       });
-      // Keep it simple: if an assessment is deleted from the workflow, remove linked candidate rows too,
-      // so they do not re-appear in Applied/Captured lists.
-      await deleteAssessmentFromCompanyCandidates(actor.companyId, assessmentId).catch(() => null);
+      await unlinkAssessmentFromCompanyCandidates(actor.companyId, assessmentId);
       sendJson(res, 200, { ok: true, result });
     } catch (error) {
       sendJson(res, 400, { ok: false, error: String(error.message || error) });
