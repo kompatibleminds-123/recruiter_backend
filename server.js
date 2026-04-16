@@ -1292,6 +1292,42 @@ function normalizeAssessmentStatusForDashboard(value) {
   return normalizeDashboardText(String(value || "")).replace(/\s+/g, " ").trim();
 }
 
+function getAssessmentCandidateId(assessment = {}) {
+  const payload = assessment?.payload && typeof assessment.payload === "object" ? assessment.payload : {};
+  return String(
+    assessment?.candidateId ||
+      assessment?.candidate_id ||
+      payload?.candidateId ||
+      payload?.candidate_id ||
+      ""
+  ).trim();
+}
+
+function getAssessmentConvertedAt(assessment = {}) {
+  return String(
+    assessment?.generatedAt ||
+      assessment?.generated_at ||
+      assessment?.created_at ||
+      assessment?.createdAt ||
+      assessment?.updatedAt ||
+      assessment?.updated_at ||
+      ""
+  ).trim();
+}
+
+function getAssessmentStatusValue(assessment = {}) {
+  const payload = assessment?.payload && typeof assessment.payload === "object" ? assessment.payload : {};
+  return String(
+    assessment?.candidateStatus ||
+      assessment?.candidate_status ||
+      payload?.candidateStatus ||
+      payload?.candidate_status ||
+      payload?.status ||
+      assessment?.status ||
+      ""
+  );
+}
+
 function getDashboardAssessmentMetric(statusValue) {
   const status = normalizeAssessmentStatusForDashboard(statusValue);
   if (!status) return "";
@@ -1366,13 +1402,7 @@ function addCandidateMetrics(target, candidate, linkedAssessment, dateRange = {}
   if (!isDateWithinRange(convertedAt, dateRange.from, dateRange.to)) return changed;
   incrementDashboardMetric(target, "converted");
   changed = true;
-  const statusValue = String(
-    linkedAssessment?.candidateStatus ||
-      linkedAssessment?.candidate_status ||
-      linkedAssessment?.status ||
-      ""
-  );
-  const metric = getDashboardAssessmentMetric(statusValue);
+  const metric = getDashboardAssessmentMetric(getAssessmentStatusValue(linkedAssessment || {}));
   if (metric) incrementDashboardMetric(target, metric);
   return changed;
 }
@@ -1420,44 +1450,60 @@ function buildDashboardSummary({ candidates = [], assessments = [], jobs = [], d
   const byOwnerRecruiter = new Map();
   const byClientRecruiter = new Map();
   const byClientPosition = new Map();
-  const knownJdTitles = buildKnownJdTitleSet(jobs);
-  const assessmentsById = new Map(
-    (Array.isArray(assessments) ? assessments : []).map((item) => [String(item?.id || "").trim(), item])
-  );
 
-  for (const candidate of Array.isArray(candidates) ? candidates : []) {
-    const candidateAssessmentId = String(candidate?.assessment_id || candidate?.assessmentId || "").trim();
-    const linkedAssessment = candidateAssessmentId ? (assessmentsById.get(candidateAssessmentId) || null) : null;
-    const clientLabel = getClientLabel(candidate, linkedAssessment || {});
-    if (clientFilter && clientLabel !== clientFilter) continue;
-    const ownerRecruiterLabel = getOwnerRecruiterLabel(candidate, linkedAssessment || {});
-    if (recruiterFilter && ownerRecruiterLabel !== recruiterFilter) continue;
-    const positionLabel = getPositionLabel(candidate, linkedAssessment || {}, knownJdTitles);
-    const dateRange = { from: dateFrom, to: dateTo };
-    const contributes = addCandidateMetrics(overall, candidate, linkedAssessment, dateRange);
-    if (!contributes) continue;
-    if (!byClient.has(clientLabel)) byClient.set(clientLabel, createDashboardBucket());
-    if (!byOwnerRecruiter.has(ownerRecruiterLabel)) byOwnerRecruiter.set(ownerRecruiterLabel, createDashboardRecruiterBucket());
-    addCandidateMetrics(byClient.get(clientLabel), candidate, linkedAssessment, dateRange);
-    addCandidateMetrics(byOwnerRecruiter.get(ownerRecruiterLabel).metrics, candidate, linkedAssessment, dateRange);
-    addRecruiterOwnershipMetrics(byOwnerRecruiter.get(ownerRecruiterLabel), ownerRecruiterLabel, candidate, linkedAssessment, dateRange);
-    if (positionLabel) {
-      const matrixKey = `${clientLabel}|||${positionLabel}|||${ownerRecruiterLabel}`;
-      const clientPositionKey = `${clientLabel}|||${positionLabel}`;
-      if (!byClientRecruiter.has(matrixKey)) {
-        byClientRecruiter.set(matrixKey, {
-          clientLabel,
-          positionLabel,
-          recruiterLabel: ownerRecruiterLabel,
-          metrics: createDashboardBucket()
-        });
-      }
-      if (!byClientPosition.has(clientPositionKey)) {
-        byClientPosition.set(clientPositionKey, { clientLabel, positionLabel, metrics: createDashboardBucket() });
-      }
-      addCandidateMetrics(byClientRecruiter.get(matrixKey).metrics, candidate, linkedAssessment, dateRange);
-      addCandidateMetrics(byClientPosition.get(clientPositionKey).metrics, candidate, linkedAssessment, dateRange);
+  const universe = buildCandidateSearchUniverse(candidates, assessments, jobs);
+  const dateRange = { from: dateFrom, to: dateTo };
+
+  function addItemMetrics(bucket, item) {
+    const candidate = item?.raw?.candidate || null;
+    const assessment = item?.raw?.assessment || null;
+    const rawSource = String(candidate?.source || item?.source || "").trim().toLowerCase();
+    const isApplicantSource = rawSource === "website_apply" || rawSource === "hosted_apply" || rawSource === "google_sheet";
+
+    const createdAt = String(item?.createdAt || "").trim();
+    if (createdAt && isDateWithinRange(createdAt, dateRange.from, dateRange.to)) {
+      incrementDashboardMetric(bucket, isApplicantSource ? "applied" : "sourced");
     }
+
+    const sharedAt = String(item?.sharedAt || "").trim();
+    const hasAssessment = Boolean(assessment) || item?.sourceType === "assessment_only";
+    if (!hasAssessment || !sharedAt || !isDateWithinRange(sharedAt, dateRange.from, dateRange.to)) return;
+
+    incrementDashboardMetric(bucket, "converted");
+    const metric = getDashboardAssessmentMetric(getAssessmentStatusValue(assessment || item?.raw?.assessment || item || {}));
+    if (metric) incrementDashboardMetric(bucket, metric);
+  }
+
+  for (const item of Array.isArray(universe) ? universe : []) {
+    const clientLabel = String(item?.clientName || "Unassigned").trim() || "Unassigned";
+    const ownerRecruiterLabel = String(item?.ownerRecruiter || "Unassigned").trim() || "Unassigned";
+    if (clientFilter && clientLabel !== clientFilter) continue;
+    if (recruiterFilter && ownerRecruiterLabel !== recruiterFilter) continue;
+
+    const createdAt = String(item?.createdAt || "").trim();
+    const sharedAt = String(item?.sharedAt || "").trim();
+    const contributes = (createdAt && isDateWithinRange(createdAt, dateRange.from, dateRange.to)) || (sharedAt && isDateWithinRange(sharedAt, dateRange.from, dateRange.to));
+    if (!contributes) continue;
+
+    addItemMetrics(overall, item);
+
+    if (!byClient.has(clientLabel)) byClient.set(clientLabel, createDashboardBucket());
+    addItemMetrics(byClient.get(clientLabel), item);
+
+    if (!byOwnerRecruiter.has(ownerRecruiterLabel)) byOwnerRecruiter.set(ownerRecruiterLabel, createDashboardRecruiterBucket());
+    addItemMetrics(byOwnerRecruiter.get(ownerRecruiterLabel).metrics, item);
+
+    const positionLabel = String(item?.position || "Unassigned").trim() || "Unassigned";
+    const matrixKey = `${clientLabel}|||${positionLabel}|||${ownerRecruiterLabel}`;
+    const clientPositionKey = `${clientLabel}|||${positionLabel}`;
+    if (!byClientRecruiter.has(matrixKey)) {
+      byClientRecruiter.set(matrixKey, { clientLabel, positionLabel, recruiterLabel: ownerRecruiterLabel, metrics: createDashboardBucket() });
+    }
+    if (!byClientPosition.has(clientPositionKey)) {
+      byClientPosition.set(clientPositionKey, { clientLabel, positionLabel, metrics: createDashboardBucket() });
+    }
+    addItemMetrics(byClientRecruiter.get(matrixKey).metrics, item);
+    addItemMetrics(byClientPosition.get(clientPositionKey).metrics, item);
   }
 
   return {
@@ -1466,16 +1512,9 @@ function buildDashboardSummary({ candidates = [], assessments = [], jobs = [], d
     byOwnerRecruiter: Array.from(byOwnerRecruiter.entries())
       .map(([label, value]) => ({ label, metrics: value.metrics, ownership: value.ownership }))
       .sort((a, b) => a.label.localeCompare(b.label)),
-    byClientPosition: Array.from(byClientPosition.values()).sort((a, b) =>
-      `${a.clientLabel} ${a.positionLabel}`.localeCompare(`${b.clientLabel} ${b.positionLabel}`)
-    ),
-    byClientRecruiter: Array.from(byClientRecruiter.values()).sort((a, b) =>
-      `${a.clientLabel} ${a.recruiterLabel}`.localeCompare(`${b.clientLabel} ${b.recruiterLabel}`)
-    ),
-    dateRange: {
-      from: String(dateFrom || "").trim(),
-      to: String(dateTo || "").trim()
-    },
+    byClientPosition: Array.from(byClientPosition.values()).sort((a, b) => `${a.clientLabel} ${a.positionLabel}`.localeCompare(`${b.clientLabel} ${b.positionLabel}`)),
+    byClientRecruiter: Array.from(byClientRecruiter.values()).sort((a, b) => `${a.clientLabel} ${a.recruiterLabel}`.localeCompare(`${b.clientLabel} ${b.recruiterLabel}`)),
+    dateRange: { from: String(dateFrom || "").trim(), to: String(dateTo || "").trim() },
     clientFilter: String(clientFilter || "").trim(),
     recruiterFilter: String(recruiterFilter || "").trim()
   };
@@ -2241,6 +2280,19 @@ function buildCandidateSearchHay(item = {}) {
 
 function buildCandidateSearchUniverse(candidates = [], assessments = [], jobs = []) {
   const assessmentsById = new Map((assessments || []).map((item) => [String(item?.id || "").trim(), item]));
+  const assessmentsByCandidateId = new Map();
+  const assessmentsByEmail = new Map();
+  const assessmentsByPhone = new Map();
+  for (const assessment of assessments || []) {
+    const assessmentId = String(assessment?.id || "").trim();
+    if (!assessmentId) continue;
+    const candidateId = String(getAssessmentCandidateId(assessment) || "").trim();
+    if (candidateId && !assessmentsByCandidateId.has(candidateId)) assessmentsByCandidateId.set(candidateId, assessment);
+    const email = normalizeAssessmentEmail(assessment?.emailId || assessment?.email_id || assessment?.email || "");
+    if (email && !assessmentsByEmail.has(email)) assessmentsByEmail.set(email, assessment);
+    const phone = normalizeAssessmentPhone(assessment?.phoneNumber || assessment?.phone_number || assessment?.phone || "");
+    if (phone && !assessmentsByPhone.has(phone)) assessmentsByPhone.set(phone, assessment);
+  }
   const universe = [];
   const seenAssessmentIds = new Set();
   const knownJdTitles = buildKnownJdTitleSet(jobs);
@@ -2252,9 +2304,27 @@ function buildCandidateSearchUniverse(candidates = [], assessments = [], jobs = 
       ? candidateMeta.cvAnalysisCache.result
       : {};
     const candidateAssessmentId = String(candidate?.assessment_id || candidate?.assessmentId || "").trim();
-    const linkedAssessment = candidateAssessmentId ? (assessmentsById.get(candidateAssessmentId) || null) : null;
+    let linkedAssessment = candidateAssessmentId ? (assessmentsById.get(candidateAssessmentId) || null) : null;
+    if (!linkedAssessment) {
+      const candidateId = String(candidate?.id || "").trim();
+      if (candidateId && assessmentsByCandidateId.has(candidateId)) {
+        linkedAssessment = assessmentsByCandidateId.get(candidateId) || null;
+      }
+    }
+    if (!linkedAssessment) {
+      const email = normalizeAssessmentEmail(candidate?.email || "");
+      if (email && assessmentsByEmail.has(email)) {
+        linkedAssessment = assessmentsByEmail.get(email) || null;
+      }
+    }
+    if (!linkedAssessment) {
+      const phone = normalizeAssessmentPhone(candidate?.phone || "");
+      if (phone && assessmentsByPhone.has(phone)) {
+        linkedAssessment = assessmentsByPhone.get(phone) || null;
+      }
+    }
     if (linkedAssessment?.id) seenAssessmentIds.add(String(linkedAssessment.id));
-    const isConverted = Boolean(candidate?.used_in_assessment) || Boolean(candidateAssessmentId);
+    const isConverted = Boolean(linkedAssessment) || Boolean(candidate?.used_in_assessment) || Boolean(candidateAssessmentId);
     universe.push({
       id: String(candidate?.id || linkedAssessment?.id || "").trim(),
       candidateName: String(candidate?.name || linkedAssessment?.candidateName || "").trim(),
@@ -2282,7 +2352,7 @@ function buildCandidateSearchUniverse(candidates = [], assessments = [], jobs = 
       followUpAt: normalizeDateOutput(linkedAssessment?.followUpAt || linkedAssessment?.follow_up_at || candidate?.next_follow_up_at || ""),
       offerDoj: normalizeDateOutput(linkedAssessment?.offerDoj || linkedAssessment?.offer_doj || ""),
       createdAt: normalizeDateOutput(getCandidateCreatedAt(candidate)),
-      sharedAt: normalizeDateOutput(getCandidateConvertedAt(candidate, linkedAssessment || {})),
+      sharedAt: linkedAssessment ? normalizeDateOutput(getCandidateConvertedAt(candidate, linkedAssessment || {})) : "",
       sourceType: isConverted
         ? "captured_and_converted"
         : (candidateSource === "website_apply" || candidateSource === "hosted_apply" || candidateSource === "google_sheet"
@@ -2308,6 +2378,16 @@ function buildCandidateSearchUniverse(candidates = [], assessments = [], jobs = 
   for (const assessment of assessments || []) {
     const assessmentId = String(assessment?.id || "").trim();
     if (!assessmentId || seenAssessmentIds.has(assessmentId)) continue;
+    const resolvedCandidateId = String(getAssessmentCandidateId(assessment) || "").trim();
+    const emailNeedle = normalizeAssessmentEmail(assessment?.emailId || assessment?.email_id || assessment?.email || "");
+    const phoneNeedle = normalizeAssessmentPhone(assessment?.phoneNumber || assessment?.phone_number || assessment?.phone || "");
+    const matchedCandidate = findBestCandidateByIdentity(candidates || [], {
+      candidateId: resolvedCandidateId,
+      email: emailNeedle,
+      phone: phoneNeedle,
+      name: String(assessment?.candidateName || "").trim(),
+      jdTitle: String(assessment?.jdTitle || assessment?.jd_title || "").trim()
+    });
     universe.push({
       id: assessmentId,
       candidateName: String(assessment?.candidateName || "").trim(),
@@ -2344,7 +2424,7 @@ function buildCandidateSearchUniverse(candidates = [], assessments = [], jobs = 
         assessment?.callbackNotes || ""
       ].filter(Boolean).join("\n"),
       raw: {
-        candidate: null,
+        candidate: matchedCandidate || null,
         assessment
       }
     });
@@ -2510,10 +2590,9 @@ function itemMatchesDashboardMetric(item, metric, dateFrom = "", dateTo = "") {
   const assessment = item?.raw?.assessment || item?.assessment || null;
   const statusValue = String(assessment?.candidateStatus || assessment?.candidate_status || assessment?.status || item?.candidateStatus || item?.status || "");
   const mappedMetric = getDashboardAssessmentMetric(statusValue);
-  const hasLinkedAssessment = Boolean(assessment || item?.assessmentId);
+  const hasLinkedAssessment = Boolean(assessment) || item?.sourceType === "assessment_only" || Boolean(item?.assessmentId);
   const rawSource = String(item?.raw?.candidate?.source || item?.source || "").trim().toLowerCase();
   const isApplicantSource = rawSource === "website_apply" || rawSource === "hosted_apply" || rawSource === "google_sheet";
-  const isConverted = item?.sourceType === "captured_and_converted";
   if (metric === "sourced") {
     return !isApplicantSource && isDateWithinRange(item.createdAt, dateFrom, dateTo);
   }
@@ -2521,9 +2600,9 @@ function itemMatchesDashboardMetric(item, metric, dateFrom = "", dateTo = "") {
     return isApplicantSource && isDateWithinRange(item.createdAt, dateFrom, dateTo);
   }
   if (metric === "converted") {
-    return isConverted && hasLinkedAssessment && isDateWithinRange(item.sharedAt, dateFrom, dateTo);
+    return hasLinkedAssessment && isDateWithinRange(item.sharedAt, dateFrom, dateTo);
   }
-  if (!isConverted || !hasLinkedAssessment) return false;
+  if (!hasLinkedAssessment) return false;
   if (!isDateWithinRange(item.sharedAt, dateFrom, dateTo)) return false;
   if (metric === "rejected") return mappedMetric === "rejected";
   if (metric === "duplicate") return mappedMetric === "duplicate";
@@ -5006,7 +5085,6 @@ const server = http.createServer(async (req, res) => {
       ]);
       const universe = buildCandidateSearchUniverse(candidates, assessments, jobs);
       const items = universe
-        .filter((item) => item.sourceType !== "assessment_only")
         .filter((item) => !clientFilter || String(item.clientName || "").trim() === clientFilter)
         .filter((item) => !recruiterFilter || String(item.ownerRecruiter || "").trim() === recruiterFilter)
         .filter((item) => itemMatchesDashboardGroup(item, groupType, params))
