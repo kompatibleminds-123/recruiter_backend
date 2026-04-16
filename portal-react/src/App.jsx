@@ -5547,14 +5547,7 @@ function PortalApp({ token, onLogout }) {
       return;
     }
     const candidateDraft = getCandidateDraftState(candidate);
-    const candidateAssessmentId = String(candidate.assessment_id || candidate.assessmentId || "").trim();
-    const matched = (state.assessments || []).find((item) => {
-      const assessmentId = String(item?.id || "").trim();
-      const assessmentCandidateId = String(item?.candidateId || item?.candidate_id || "").trim();
-      if (candidateAssessmentId && assessmentId && candidateAssessmentId === assessmentId) return true;
-      if (assessmentCandidateId && String(candidate.id || "").trim() === assessmentCandidateId) return true;
-      return false;
-    });
+    const matched = resolveCapturedAssessment(candidate);
     setInterviewMeta({
       candidateId: String(candidate.id || ""),
       assessmentId: String(matched?.id || "")
@@ -5608,10 +5601,20 @@ function PortalApp({ token, onLogout }) {
   }
 
   function openSavedAssessment(assessment) {
+    const normalizeEmail = (value) => String(value || "").trim().toLowerCase();
+    const normalizePhone = (value) => {
+      const digits = String(value || "").replace(/[^\d]/g, "");
+      return digits.length > 10 ? digits.slice(-10) : digits;
+    };
+    const wantedCandidateId = String(assessment?.candidateId || assessment?.candidate_id || "").trim();
+    const wantedEmail = normalizeEmail(assessment?.emailId || assessment?.email || "");
+    const wantedPhone = normalizePhone(assessment?.phoneNumber || assessment?.phone || "");
     const matchedCandidate = (state.candidates || []).find((item) => {
-      if (assessment?.candidateId && String(item.id) === String(assessment.candidateId)) return true;
-      return String(item.name || "").trim().toLowerCase() === String(assessment?.candidateName || "").trim().toLowerCase();
-    });
+      if (wantedCandidateId && String(item.id) === wantedCandidateId) return true;
+      const email = normalizeEmail(item?.email || item?.emailId || "");
+      const phone = normalizePhone(item?.phone || item?.phoneNumber || "");
+      return (wantedEmail && email && wantedEmail === email) || (wantedPhone && phone && wantedPhone === phone);
+    }) || null;
     const candidateDraft = getCandidateDraftState(matchedCandidate || {});
     setInterviewMeta({
       candidateId: String(matchedCandidate?.id || assessment?.candidateId || ""),
