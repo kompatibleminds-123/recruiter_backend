@@ -4118,12 +4118,43 @@ function PortalApp({ token, onLogout }) {
 
   const capturedAssessmentMap = useMemo(() => {
     const map = new Map();
+    const normalizeEmail = (value) => String(value || "").trim().toLowerCase();
+    const normalizePhone = (value) => {
+      const digits = String(value || "").replace(/[^\d]/g, "");
+      return digits.length > 10 ? digits.slice(-10) : digits;
+    };
+
     for (const item of state.assessments || []) {
-      const key = String(item.candidateName || "").trim().toLowerCase();
-      if (key && !map.has(key)) map.set(key, item);
+      const id = String(item?.id || "").trim();
+      if (id) map.set(`id:${id}`, item);
+
+      const email = normalizeEmail(item?.emailId || item?.email || "");
+      if (email && !map.has(`email:${email}`)) map.set(`email:${email}`, item);
+
+      const phone = normalizePhone(item?.phoneNumber || item?.phone || "");
+      if (phone && !map.has(`phone:${phone}`)) map.set(`phone:${phone}`, item);
     }
     return map;
   }, [state.assessments]);
+
+  function resolveCapturedAssessment(candidateRow) {
+    const normalizeEmail = (value) => String(value || "").trim().toLowerCase();
+    const normalizePhone = (value) => {
+      const digits = String(value || "").replace(/[^\d]/g, "");
+      return digits.length > 10 ? digits.slice(-10) : digits;
+    };
+
+    const assessmentId = String(candidateRow?.assessment_id || candidateRow?.assessmentId || "").trim();
+    if (assessmentId) return capturedAssessmentMap.get(`id:${assessmentId}`) || null;
+
+    const email = normalizeEmail(candidateRow?.email || candidateRow?.emailId || "");
+    if (email) return capturedAssessmentMap.get(`email:${email}`) || null;
+
+    const phone = normalizePhone(candidateRow?.phone || candidateRow?.phoneNumber || "");
+    if (phone) return capturedAssessmentMap.get(`phone:${phone}`) || null;
+
+    return null;
+  }
   const capturedSources = useMemo(() => Array.from(new Set((state.candidates || []).map((item) => String(item.source || "").trim()).filter(Boolean))), [state.candidates]);
   const assessmentOptions = useMemo(() => {
     const clients = new Set();
@@ -4529,11 +4560,11 @@ function PortalApp({ token, onLogout }) {
       if (adminName) meta.capturedBy.add(adminName);
     }
     for (const item of state.candidates || []) {
-      const matchedAssessment = capturedAssessmentMap.get(String(item.name || "").trim().toLowerCase());
+      const matchedAssessment = resolveCapturedAssessment(item);
       const sourceValue = String(item.source || "").trim();
       const isInboundApplicant = sourceValue === "website_apply" || sourceValue === "hosted_apply" || sourceValue === "google_sheet";
       if (isInboundApplicant) continue;
-      if (matchedAssessment || item.used_in_assessment) continue;
+      if (matchedAssessment) continue;
       const clientValue = String(item.client_name || matchedAssessment?.clientName || "Unassigned").trim();
       const jdValue = String(item.jd_title || matchedAssessment?.jdTitle || item.role || "").trim();
       const outcomeValue = getCapturedOutcome(item, matchedAssessment);
@@ -4572,12 +4603,12 @@ function PortalApp({ token, onLogout }) {
   const capturedNotesStats = useMemo(() => {
     const todayKey = new Date().toISOString().slice(0, 10);
     const convertedCount = capturedNotesUniverse.filter((item) => {
-      const matchedAssessment = capturedAssessmentMap.get(String(item.name || "").trim().toLowerCase());
-      return Boolean(matchedAssessment || item.used_in_assessment);
+      const matchedAssessment = resolveCapturedAssessment(item);
+      return Boolean(matchedAssessment);
     }).length;
     const activeCount = capturedNotesUniverse.filter((item) => {
-      const matchedAssessment = capturedAssessmentMap.get(String(item.name || "").trim().toLowerCase());
-      if (matchedAssessment || item.used_in_assessment) return false;
+      const matchedAssessment = resolveCapturedAssessment(item);
+      if (matchedAssessment) return false;
       return !item.hidden_from_captured;
     }).length;
     return {
@@ -4590,8 +4621,8 @@ function PortalApp({ token, onLogout }) {
 
   const capturedCandidates = useMemo(() => {
     return capturedNotesUniverse.filter((item) => {
-      const matchedAssessment = capturedAssessmentMap.get(String(item.name || "").trim().toLowerCase());
-      if (matchedAssessment || item.used_in_assessment) return false;
+      const matchedAssessment = resolveCapturedAssessment(item);
+      if (matchedAssessment) return false;
       const sourceValue = String(item.source || "").trim();
       const clientValue = String(item.client_name || matchedAssessment?.clientName || "Unassigned").trim();
       const jdValue = String(item.jd_title || matchedAssessment?.jdTitle || item.role || "").trim();
@@ -6340,7 +6371,7 @@ function PortalApp({ token, onLogout }) {
 
   function buildCapturedCopyRows() {
     return capturedCandidates.map((item) => {
-      const matchedAssessment = capturedAssessmentMap.get(String(item.name || "").trim().toLowerCase());
+      const matchedAssessment = resolveCapturedAssessment(item);
       return {
         ...item,
         outcome: getCapturedOutcome(item, matchedAssessment),
@@ -7348,9 +7379,9 @@ function PortalApp({ token, onLogout }) {
   const pendingNotes = (state.candidates || []).filter((item) => {
     const sourceValue = String(item.source || "").trim();
     if (["website_apply", "hosted_apply", "google_sheet"].includes(sourceValue)) return false;
-    const matchedAssessment = capturedAssessmentMap.get(String(item.name || "").trim().toLowerCase());
-    if (matchedAssessment || item.used_in_assessment || String(item.assessment_id || "").trim()) return false;
-    return !item.hidden_from_captured;
+      const matchedAssessment = resolveCapturedAssessment(item);
+      if (matchedAssessment) return false;
+      return !item.hidden_from_captured;
   }).length;
   const scheduledFollowUpItems = todaysFollowUps
     .map((item) => ({
@@ -7962,7 +7993,7 @@ function PortalApp({ token, onLogout }) {
                 </div>
                 <div className="stack-list">
                 {!capturedCandidates.length ? <div className="empty-state">No captured notes or recruiter-owned candidates yet.</div> : capturedCandidates.map((item) => {
-                  const matchedAssessment = capturedAssessmentMap.get(String(item.name || "").trim().toLowerCase());
+                  const matchedAssessment = resolveCapturedAssessment(item);
                   const statusState = normalizedAssessmentState(matchedAssessment, item);
                   const latestAttemptLine = extractLatestAttemptLine(item.last_contact_notes || "");
                   const latestAttemptRemarks = extractAttemptRemarks(latestAttemptLine);
