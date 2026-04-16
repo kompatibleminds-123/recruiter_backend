@@ -1452,7 +1452,59 @@ function api(path, token, method = "GET", body = null) {
 }
 
 function copyText(value) {
-  return navigator.clipboard.writeText(String(value || ""));
+  const text = String(value || "");
+  if (!text) return Promise.resolve(false);
+  // Prefer modern clipboard API, but fall back for browsers that block it.
+  if (navigator.clipboard?.writeText) {
+    return navigator.clipboard.writeText(text).then(() => true).catch(() => {
+      // continue to fallback
+      try {
+        const textarea = document.createElement("textarea");
+        textarea.value = text;
+        textarea.setAttribute("readonly", "true");
+        textarea.style.position = "fixed";
+        textarea.style.left = "-9999px";
+        textarea.style.top = "0";
+        document.body.appendChild(textarea);
+        textarea.select();
+        textarea.setSelectionRange(0, textarea.value.length);
+        const ok = document.execCommand && document.execCommand("copy");
+        document.body.removeChild(textarea);
+        if (ok) return true;
+      } catch {
+        // ignore
+      }
+      // Last resort: let the user copy manually.
+      try {
+        window.prompt("Copy to clipboard:", text);
+      } catch {
+        // ignore
+      }
+      return false;
+    });
+  }
+  try {
+    const textarea = document.createElement("textarea");
+    textarea.value = text;
+    textarea.setAttribute("readonly", "true");
+    textarea.style.position = "fixed";
+    textarea.style.left = "-9999px";
+    textarea.style.top = "0";
+    document.body.appendChild(textarea);
+    textarea.select();
+    textarea.setSelectionRange(0, textarea.value.length);
+    const ok = document.execCommand && document.execCommand("copy");
+    document.body.removeChild(textarea);
+    if (ok) return Promise.resolve(true);
+  } catch {
+    // ignore
+  }
+  try {
+    window.prompt("Copy to clipboard:", text);
+  } catch {
+    // ignore
+  }
+  return Promise.resolve(false);
 }
 
 async function copyHtmlAndText(htmlValue, textValue) {
@@ -3213,7 +3265,7 @@ function DrilldownModal({ open, title, items, onClose, onOpenCv, onOpenDraft, on
   );
 }
 
-function CandidateProfileModal({ open, candidate, onClose, onOpenCv, onReuse, onCopyShareLink }) {
+function CandidateProfileModal({ open, candidate, onClose, onOpenCv, onReuse, onCopyShareLink, copyHintKey = "" }) {
   if (!open || !candidate) return null;
   const ctx = resolveCandidateContext(candidate);
   const baseCandidate = ctx.candidate || candidate;
@@ -3301,6 +3353,7 @@ function CandidateProfileModal({ open, candidate, onClose, onOpenCv, onReuse, on
           ""
       )
     : "";
+  const showCopyHint = String(copyHintKey || "").trim();
   return (
     <div className="overlay">
       <div className="overlay-card overlay-card--wide" onClick={(e) => e.stopPropagation()}>
@@ -3397,7 +3450,12 @@ function CandidateProfileModal({ open, candidate, onClose, onOpenCv, onReuse, on
         <div className="button-row">
           {onReuse ? <button onClick={() => onReuse(candidate)}>Reuse profile</button> : null}
           <button className="ghost-btn" onClick={() => downloadCandidateCardExcelFile(`candidate-card-${new Date().toISOString().slice(0, 10)}.xls`, { title: modalTitle, subtitle: modalSubtitle, sections: excelSections })}>Download card (Excel)</button>
-          {onCopyShareLink && baseCandidate?.id ? <button className="ghost-btn" onClick={() => onCopyShareLink(baseCandidate.id)}>Copy share link</button> : null}
+          {onCopyShareLink && baseCandidate?.id ? (
+            <div className="copy-action">
+              <button className="ghost-btn" onClick={() => onCopyShareLink(baseCandidate.id)}>Copy share link</button>
+              {showCopyHint === "candidate_card_share_link" ? <div className="copy-hint">Copied</div> : null}
+            </div>
+          ) : null}
           {candidateHasStoredCv(baseCandidate) ? <button onClick={() => onOpenCv(candidate)}>Open CV</button> : null}
           <button className="ghost-btn" onClick={onClose}>Close</button>
         </div>
@@ -3589,6 +3647,8 @@ function PortalApp({ token, onLogout }) {
     jobs: []
   });
   const [statuses, setStatuses] = useState({});
+  const [copyHintKey, setCopyHintKey] = useState("");
+  const copyHintTimerRef = useRef(null);
   const [assignApplicantId, setAssignApplicantId] = useState("");
   const [assignCandidateId, setAssignCandidateId] = useState("");
   const [hostedJobId, setHostedJobId] = useState("");
@@ -3844,6 +3904,29 @@ function PortalApp({ token, onLogout }) {
 
   function setStatus(key, message, kind = "") {
     setStatuses((current) => ({ ...current, [key]: message, [`${key}Kind`]: kind }));
+  }
+
+  function showCopied(key) {
+    const safeKey = String(key || "").trim();
+    if (!safeKey) return;
+    setCopyHintKey(safeKey);
+    if (copyHintTimerRef.current) {
+      window.clearTimeout(copyHintTimerRef.current);
+    }
+    copyHintTimerRef.current = window.setTimeout(() => {
+      setCopyHintKey((current) => (current === safeKey ? "" : current));
+    }, 1200);
+  }
+
+  async function runCopyAction(key, action) {
+    try {
+      const result = await action();
+      // If the copy function explicitly reports failure, do not show Copied.
+      if (result === false) return;
+      showCopied(key);
+    } catch (error) {
+      setStatus("workspace", String(error?.message || error), "error");
+    }
   }
 
   useEffect(() => {
@@ -7825,9 +7908,18 @@ function PortalApp({ token, onLogout }) {
                       {exportPresetOptions.map((preset) => <option key={preset.id} value={preset.id}>{preset.label}</option>)}
                     </select>
                   </label>
-                  <button onClick={() => void copyCandidatesExcel()}>Copy Excel</button>
-                  <button onClick={() => void copyCandidatesWhatsapp()}>Copy WhatsApp</button>
-                  <button onClick={() => void copyCandidatesEmail()}>Copy Email</button>
+                  <div className="copy-action">
+                    <button onClick={() => void runCopyAction("copy_candidates_excel", copyCandidatesExcel)}>Copy Excel</button>
+                    {copyHintKey === "copy_candidates_excel" ? <div className="copy-hint">Copied</div> : null}
+                  </div>
+                  <div className="copy-action">
+                    <button onClick={() => void runCopyAction("copy_candidates_whatsapp", copyCandidatesWhatsapp)}>Copy WhatsApp</button>
+                    {copyHintKey === "copy_candidates_whatsapp" ? <div className="copy-hint">Copied</div> : null}
+                  </div>
+                  <div className="copy-action">
+                    <button onClick={() => void runCopyAction("copy_candidates_email", copyCandidatesEmail)}>Copy Email</button>
+                    {copyHintKey === "copy_candidates_email" ? <div className="copy-hint">Copied</div> : null}
+                  </div>
                   <button className="ghost-btn" onClick={() => downloadCandidatesExcel()}>Download results</button>
                 </div>
                 <div className="stack-list">
@@ -7892,9 +7984,18 @@ function PortalApp({ token, onLogout }) {
                     {exportPresetOptions.map((preset) => <option key={preset.id} value={preset.id}>{preset.label}</option>)}
                   </select>
                 </label>
-                <button onClick={() => void copyApplicantsExcel()}>Copy Excel</button>
-                <button onClick={() => void copyApplicantsWhatsapp()}>Copy WhatsApp</button>
-                <button onClick={() => void copyApplicantsEmail()}>Copy Email</button>
+                <div className="copy-action">
+                  <button onClick={() => void runCopyAction("copy_applicants_excel", copyApplicantsExcel)}>Copy Excel</button>
+                  {copyHintKey === "copy_applicants_excel" ? <div className="copy-hint">Copied</div> : null}
+                </div>
+                <div className="copy-action">
+                  <button onClick={() => void runCopyAction("copy_applicants_whatsapp", copyApplicantsWhatsapp)}>Copy WhatsApp</button>
+                  {copyHintKey === "copy_applicants_whatsapp" ? <div className="copy-hint">Copied</div> : null}
+                </div>
+                <div className="copy-action">
+                  <button onClick={() => void runCopyAction("copy_applicants_email", copyApplicantsEmail)}>Copy Email</button>
+                  {copyHintKey === "copy_applicants_email" ? <div className="copy-hint">Copied</div> : null}
+                </div>
               </div>
               <div className="stack-list">
                 {!visibleApplicants.length ? <div className="empty-state">No applied candidates right now.</div> : visibleApplicants.map((item) => (
@@ -7974,9 +8075,18 @@ function PortalApp({ token, onLogout }) {
                       {exportPresetOptions.map((preset) => <option key={preset.id} value={preset.id}>{preset.label}</option>)}
                     </select>
                   </label>
-                  <button onClick={() => void copyCapturedExcel()}>Copy Excel</button>
-                  <button onClick={() => void copyCapturedWhatsapp()}>Copy WhatsApp</button>
-                  <button onClick={() => void copyCapturedEmail()}>Copy Email</button>
+                  <div className="copy-action">
+                    <button onClick={() => void runCopyAction("copy_captured_excel", copyCapturedExcel)}>Copy Excel</button>
+                    {copyHintKey === "copy_captured_excel" ? <div className="copy-hint">Copied</div> : null}
+                  </div>
+                  <div className="copy-action">
+                    <button onClick={() => void runCopyAction("copy_captured_whatsapp", copyCapturedWhatsapp)}>Copy WhatsApp</button>
+                    {copyHintKey === "copy_captured_whatsapp" ? <div className="copy-hint">Copied</div> : null}
+                  </div>
+                  <div className="copy-action">
+                    <button onClick={() => void runCopyAction("copy_captured_email", copyCapturedEmail)}>Copy Email</button>
+                    {copyHintKey === "copy_captured_email" ? <div className="copy-hint">Copied</div> : null}
+                  </div>
                 </div>
                 <div className="stack-list">
                 {!capturedCandidates.length ? <div className="empty-state">No captured notes or recruiter-owned candidates yet.</div> : capturedCandidates.map((item) => {
@@ -8045,9 +8155,18 @@ function PortalApp({ token, onLogout }) {
                     {exportPresetOptions.map((preset) => <option key={preset.id} value={preset.id}>{preset.label}</option>)}
                   </select>
                 </label>
-                <button onClick={() => void copyAssessmentsExcel()}>Copy Excel</button>
-                <button onClick={() => void copyAssessmentsWhatsapp()}>Copy WhatsApp</button>
-                <button onClick={() => void copyAssessmentsEmail()}>Copy Email</button>
+                <div className="copy-action">
+                  <button onClick={() => void runCopyAction("copy_assessments_excel", copyAssessmentsExcel)}>Copy Excel</button>
+                  {copyHintKey === "copy_assessments_excel" ? <div className="copy-hint">Copied</div> : null}
+                </div>
+                <div className="copy-action">
+                  <button onClick={() => void runCopyAction("copy_assessments_whatsapp", copyAssessmentsWhatsapp)}>Copy WhatsApp</button>
+                  {copyHintKey === "copy_assessments_whatsapp" ? <div className="copy-hint">Copied</div> : null}
+                </div>
+                <div className="copy-action">
+                  <button onClick={() => void runCopyAction("copy_assessments_email", copyAssessmentsEmail)}>Copy Email</button>
+                  {copyHintKey === "copy_assessments_email" ? <div className="copy-hint">Copied</div> : null}
+                </div>
               </div>
               <div className="status-note">Selected for client share: {selectedAssessmentIds.length}</div>
               <div className="stack-list">
@@ -8442,9 +8561,18 @@ function PortalApp({ token, onLogout }) {
                 <p className="muted">Save the assessment and export recruiter-sheet format.</p>
                 {statuses.interview ? <div className={`status ${statuses.interviewKind || ""}`}>{statuses.interview}</div> : null}
                 <div className="button-row">
-                  <button onClick={() => void copyInterviewResult()}>Copy result</button>
-                  <button onClick={() => copyInterviewWhatsapp()}>Copy WhatsApp</button>
-                  <button onClick={() => void copyInterviewEmail()}>Copy Email</button>
+                  <div className="copy-action">
+                    <button onClick={() => void runCopyAction("copy_interview_result", copyInterviewResult)}>Copy result</button>
+                    {copyHintKey === "copy_interview_result" ? <div className="copy-hint">Copied</div> : null}
+                  </div>
+                  <div className="copy-action">
+                    <button onClick={() => void runCopyAction("copy_interview_whatsapp", () => Promise.resolve(copyInterviewWhatsapp()))}>Copy WhatsApp</button>
+                    {copyHintKey === "copy_interview_whatsapp" ? <div className="copy-hint">Copied</div> : null}
+                  </div>
+                  <div className="copy-action">
+                    <button onClick={() => void runCopyAction("copy_interview_email", copyInterviewEmail)}>Copy Email</button>
+                    {copyHintKey === "copy_interview_email" ? <div className="copy-hint">Copied</div> : null}
+                  </div>
                   {interviewMeta.candidateId && !interviewMeta.assessmentId ? <button onClick={() => void saveInterviewDraft()}>Save draft</button> : null}
                   <button onClick={() => void saveAssessment()}>{interviewMeta.assessmentId ? "Save assessment" : "Create assessment"}</button>
                   <button onClick={() => sendInterviewToSheets()}>Send to Sheets</button>
@@ -8480,7 +8608,20 @@ function PortalApp({ token, onLogout }) {
                               <div className="item-card__top compact-top">
                                 <strong>{item.recruiterName || "Recruiter"}</strong>
                                 <div className="button-row tight">
-                                  <button className="ghost-btn" onClick={() => void copyText(url).then(() => setStatus("intake", `Apply link copied for ${item.recruiterName || "recruiter"}.`, "ok"))}>Copy link</button>
+                                  <div className="copy-action">
+                                    <button
+                                      className="ghost-btn"
+                                      onClick={() => void runCopyAction(`copy_apply_link_${item.recruiterId}`, () =>
+                                        copyText(url).then((ok) => {
+                                          if (ok) setStatus("intake", `Apply link copied for ${item.recruiterName || "recruiter"}.`, "ok");
+                                          return ok;
+                                        })
+                                      )}
+                                    >
+                                      Copy link
+                                    </button>
+                                    {copyHintKey === `copy_apply_link_${item.recruiterId}` ? <div className="copy-hint">Copied</div> : null}
+                                  </div>
                                 </div>
                               </div>
                               <label className="full"><span>Link</span><textarea readOnly value={url} /></label>
@@ -8988,7 +9129,8 @@ function PortalApp({ token, onLogout }) {
         onClose={() => setDatabaseProfileItem(null)}
         onOpenCv={(candidate) => openDatabaseCandidateCv(candidate)}
         onReuse={(candidate) => reuseDatabaseCandidate(candidate)}
-        onCopyShareLink={(candidateId) => void copyCandidateProfileShareLink(candidateId)}
+        onCopyShareLink={(candidateId) => void runCopyAction("candidate_card_share_link", () => copyCandidateProfileShareLink(candidateId))}
+        copyHintKey={copyHintKey}
       />
       <ClientFeedbackModal open={Boolean(clientFeedbackItem)} item={clientFeedbackItem} onClose={() => setClientFeedbackItem(null)} onSave={(payload) => void saveClientFeedback(payload)} />
     </div>

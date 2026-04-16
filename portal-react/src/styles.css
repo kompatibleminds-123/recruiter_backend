@@ -146,6 +146,18 @@ textarea { min-height: 92px; resize: vertical; }
 .metric-grid--tight { grid-template-columns: repeat(auto-fit, minmax(96px, 1fr)); gap: 0.6rem; }
 .dashboard-metric-grid { grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); }
 .dashboard-metric-grid .metric-label { white-space: normal; font-size: 0.74rem; line-height: 1.2; }
+
+.copy-action {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+.copy-hint {
+  margin-top: 0.25rem;
+  font-size: 0.75rem;
+  color: #1f7a3a;
+}
 .client-portal-content { width: min(1380px, calc(100vw - 2rem)); margin: 0 auto; align-content: start; }
 .client-portal-header { align-items: center; padding: 0.2rem 0.15rem; }
 .portal-footer {
