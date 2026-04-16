@@ -758,8 +758,33 @@ async function unlinkAssessmentFromCompanyCandidates(companyId, assessmentId) {
       used_in_assessment: false,
       assessment_id: "",
       updated_at: new Date().toISOString()
-    }, { companyId: scopedCompanyId });
+    }, { companyId: scopedCompanyId }).catch(() => null);
   }
+}
+
+async function deleteAssessmentFromCompanyCandidates(companyId, assessmentId) {
+  const scopedAssessmentId = String(assessmentId || "").trim();
+  const scopedCompanyId = String(companyId || "").trim();
+  if (!scopedAssessmentId || !scopedCompanyId) {
+    return { deletedCandidates: 0 };
+  }
+  const candidates = await listCandidates({ companyId: scopedCompanyId, limit: 5000 });
+  const linkedCandidates = (Array.isArray(candidates) ? candidates : []).filter(
+    (candidate) =>
+      String(candidate?.assessment_id || candidate?.assessmentId || "").trim() === scopedAssessmentId
+  );
+  let deletedCandidates = 0;
+  for (const candidate of linkedCandidates) {
+    const candidateId = String(candidate?.id || "").trim();
+    if (!candidateId) continue;
+    try {
+      await deleteCandidate(candidateId, { companyId: scopedCompanyId });
+      deletedCandidates += 1;
+    } catch {
+      // ignore
+    }
+  }
+  return { deletedCandidates };
 }
 
 async function ingestApplicantSubmission(body, req) {
@@ -5406,7 +5431,9 @@ const server = http.createServer(async (req, res) => {
         companyId: actor.companyId,
         assessmentId
       });
-      await unlinkAssessmentFromCompanyCandidates(actor.companyId, assessmentId);
+      // Keep it simple: if an assessment is deleted from the workflow, remove linked candidate rows too,
+      // so they do not re-appear in Applied/Captured lists.
+      await deleteAssessmentFromCompanyCandidates(actor.companyId, assessmentId).catch(() => null);
       sendJson(res, 200, { ok: true, result });
     } catch (error) {
       sendJson(res, 400, { ok: false, error: String(error.message || error) });
