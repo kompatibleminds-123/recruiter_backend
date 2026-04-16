@@ -3938,7 +3938,7 @@ function PortalApp({ token, onLogout }) {
       api("/company/jds", token).catch(() => ({ jobs: [] })),
       api("/company/users", token).catch(() => ({ users: [] })),
       api("/company/client-users", token).catch(() => ({ clientUsers: [] })),
-      api("/candidates", token).catch(() => []),
+      api("/candidates?limit=5000", token).catch(() => []),
       api("/candidates?scope=company&limit=5000", token).catch(() => []),
       api("/company/assessments", token).catch(() => ({ assessments: [] })),
       api("/company/shared-export-presets", token).catch(() => null)
