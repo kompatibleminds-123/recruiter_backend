@@ -449,7 +449,7 @@ function assessmentRow(assessment, actor, companyId) {
     recruiter_id: actor.id,
     recruiter_name: actor.name,
     recruiter_email: actor.email,
-    candidate_id: candidateId || null,
+    candidate_id: candidateId,
     candidate_name: next.candidateName || "",
     phone_number: next.phoneNumber || "",
     email_id: next.emailId || "",
@@ -474,7 +474,7 @@ function assessmentRow(assessment, actor, companyId) {
     location: next.location || "",
     linkedin_url: next.linkedinUrl || "",
     callback_notes: next.callbackNotes || "",
-    pipeline_stage: next.pipelineStage || "",
+    pipeline_stage: "",
     candidate_status: next.candidateStatus || "",
     follow_up_at: next.followUpAt || "",
     interview_at: next.interviewAt || "",
@@ -1363,9 +1363,46 @@ async function saveAssessment({ actorUserId, companyId, assessment }) {
   // and recruiter both try converting the same captured note.
   const existingId = await findExistingAssessmentIdForCandidate({ actorUserId: actor.id, companyId, assessment }).catch(() => "");
   const incoming = sanitizeAssessment(assessment);
+  const candidateId = String(incoming?.candidateId || incoming?.candidate_id || "").trim();
+  if (!candidateId) {
+    throw new Error("candidateId is required for assessments.");
+  }
   const safeAssessment = existingId ? { ...incoming, id: existingId } : incoming;
   const rows = await sbIns("assessments", [assessmentRow(safeAssessment, actor, companyId)], { conflict: "id", upsert: true });
   return sanitizeAssessment(rows[0]);
+}
+
+async function patchAssessmentCandidateLink({ actorUserId, companyId, assessmentId, candidateId }) {
+  if (!actorUserId || !companyId || !assessmentId || !candidateId) {
+    throw new Error("actorUserId, companyId, assessmentId, and candidateId are required.");
+  }
+  const actor = sanitizeUser(await getUserById(actorUserId, companyId));
+  if (!actor) throw new Error("Authenticated recruiter not found for this company.");
+  if (String(actor.role || "").toLowerCase() !== "admin") throw new Error("Only an admin can repair assessment links.");
+  if (!cfg().on) throw new Error("Supabase must be enabled to repair assessment links.");
+
+  await ensureSeeded();
+  const safeAssessmentId = String(assessmentId || "").trim();
+  const safeCandidateId = String(candidateId || "").trim();
+  if (!safeAssessmentId || !safeCandidateId) throw new Error("assessmentId and candidateId are required.");
+
+  const existingRows = await sbSel(
+    "assessments",
+    `select=id,company_id,payload&company_id=eq.${enc(companyId)}&id=eq.${enc(safeAssessmentId)}&limit=1`
+  ).catch(() => []);
+  const existing = existingRows && existingRows[0] ? existingRows[0] : null;
+  if (!existing) throw new Error("Assessment not found.");
+
+  const payload = existing?.payload && typeof existing.payload === "object" ? { ...existing.payload } : {};
+  payload.candidateId = safeCandidateId;
+  payload.candidate_id = safeCandidateId;
+
+  const patched = await sbPatch(
+    "assessments",
+    `id=eq.${enc(safeAssessmentId)}&company_id=eq.${enc(companyId)}`,
+    { candidate_id: safeCandidateId, payload, updated_at: new Date().toISOString() }
+  );
+  return sanitizeAssessment(patched && patched[0] ? patched[0] : { ...existing, candidate_id: safeCandidateId, payload });
 }
 async function searchAssessments({ actorUserId, companyId, q, limit = 25 }) {
   const base = await listAssessments({ actorUserId, companyId }); const spec = buildAssessmentSearchSpec(q);
@@ -1488,5 +1525,6 @@ module.exports = {
   setCompanyApplicantIntakeSecret,
   searchAssessments,
   saveAssessment,
+  patchAssessmentCandidateLink,
   saveCompanyJob
 };

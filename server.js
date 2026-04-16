@@ -59,6 +59,7 @@ const {
   resetClientUserPassword,
   resetUserPassword,
   saveAssessment,
+  patchAssessmentCandidateLink,
   saveCompanyJob,
   saveCompanySharedExportPresets,
   setCompanyApplicantIntakeSecret
@@ -1058,8 +1059,7 @@ function parseNoticePeriodToDays(value) {
 
 function getAssessmentLifecycleBucket(item) {
   const status = normalizeDashboardText(item?.candidateStatus || item?.candidate_status || item?.status || "");
-  const pipeline = normalizeDashboardText(item?.pipelineStage || item?.pipeline_stage || "");
-  const combined = `${status} ${pipeline}`.trim();
+  const combined = `${status}`.trim();
   if (combined.includes("duplicate")) return "duplicate";
   if (combined.includes("joined")) return "joined";
   if (combined.includes("offer") || status === "offered") return "offered";
@@ -1253,6 +1253,7 @@ function createDashboardBucket() {
     applied: 0,
     converted: 0,
     under_interview_process: 0,
+    hold: 0,
     rejected: 0,
     duplicate: 0,
     dropped: 0,
@@ -1303,7 +1304,8 @@ function addCandidateMetrics(target, candidate, linkedAssessment, dateRange = {}
     incrementDashboardMetric(target, isApplicant ? "applied" : "sourced");
     changed = true;
   }
-  if (!candidate?.used_in_assessment || !linkedAssessment) return changed;
+  const isConverted = Boolean(linkedAssessment?.id);
+  if (!isConverted) return changed;
   const convertedAt = getCandidateConvertedAt(candidate, linkedAssessment || {});
   if (!isDateWithinRange(convertedAt, dateRange.from, dateRange.to)) return changed;
   incrementDashboardMetric(target, "converted");
@@ -1312,6 +1314,7 @@ function addCandidateMetrics(target, candidate, linkedAssessment, dateRange = {}
   if (isInterviewAlignedStatus(linkedAssessment?.candidateStatus || linkedAssessment?.candidate_status || linkedAssessment?.status || "")) {
     incrementDashboardMetric(target, "under_interview_process");
   }
+  if (bucket === "hold") incrementDashboardMetric(target, "hold");
   if (bucket === "rejected") incrementDashboardMetric(target, "rejected");
   if (bucket === "duplicate") incrementDashboardMetric(target, "duplicate");
   if (bucket === "dropped") incrementDashboardMetric(target, "dropped");
@@ -1319,6 +1322,25 @@ function addCandidateMetrics(target, candidate, linkedAssessment, dateRange = {}
   if (bucket === "offered") incrementDashboardMetric(target, "offered");
   if (bucket === "joined") incrementDashboardMetric(target, "joined");
   return changed;
+}
+
+function getCanonicalLinkedAssessmentForCandidate(candidate = {}, assessmentsById = null) {
+  if (!(assessmentsById instanceof Map)) return null;
+  const assessmentId = String(candidate?.assessment_id || candidate?.assessmentId || "").trim();
+  if (!assessmentId) return null;
+  const assessment = assessmentsById.get(assessmentId) || null;
+  if (!assessment) return null;
+  const candidateId = String(candidate?.id || "").trim();
+  const linkedCandidateId = String(
+    assessment?.candidateId ||
+    assessment?.candidate_id ||
+    assessment?.payload?.candidateId ||
+    assessment?.payload?.candidate_id ||
+    ""
+  ).trim();
+  if (!candidateId || !linkedCandidateId) return null;
+  if (candidateId !== linkedCandidateId) return null;
+  return assessment;
 }
 
 function addRecruiterOwnershipMetrics(target, recruiterLabel, candidate, linkedAssessment, dateRange = {}) {
@@ -1372,19 +1394,14 @@ function buildDashboardSummary({ candidates = [], assessments = [], jobs = [], d
   const countedAssessmentIds = new Set();
 
   for (const candidate of Array.isArray(candidates) ? candidates : []) {
-    let linkedAssessment = assessmentsById.get(String(candidate?.assessment_id || candidate?.assessmentId || "").trim()) || null;
-    // Fallback: if the candidate row isn't linked properly yet, try matching an assessment by identity.
-    if (!linkedAssessment) {
-      linkedAssessment = pickBestAssessmentForCandidate(candidate, assessments) || null;
-    }
+    const linkedAssessment = getCanonicalLinkedAssessmentForCandidate(candidate, assessmentsById) || null;
     const clientLabel = getClientLabel(candidate, linkedAssessment || {});
     if (clientFilter && clientLabel !== clientFilter) continue;
     const ownerRecruiterLabel = getOwnerRecruiterLabel(candidate, linkedAssessment || {});
     if (recruiterFilter && ownerRecruiterLabel !== recruiterFilter) continue;
     const positionLabel = getPositionLabel(candidate, linkedAssessment || {}, knownJdTitles);
     const dateRange = { from: dateFrom, to: dateTo };
-    // If we found an assessment, treat this candidate as converted for metrics even if legacy flags are missing.
-    // Also dedupe conversion metrics by assessment id.
+    // Dedupe conversion metrics by assessment id (legacy duplicates can exist).
     let effectiveAssessment = linkedAssessment;
     if (effectiveAssessment?.id) {
       const assessmentId = String(effectiveAssessment.id || "").trim();
@@ -1394,14 +1411,13 @@ function buildDashboardSummary({ candidates = [], assessments = [], jobs = [], d
         countedAssessmentIds.add(assessmentId);
       }
     }
-    const effectiveCandidate = effectiveAssessment ? { ...candidate, used_in_assessment: true } : candidate;
-    const contributes = addCandidateMetrics(overall, effectiveCandidate, effectiveAssessment, dateRange);
+    const contributes = addCandidateMetrics(overall, candidate, effectiveAssessment, dateRange);
     if (!contributes) continue;
     if (!byClient.has(clientLabel)) byClient.set(clientLabel, createDashboardBucket());
     if (!byOwnerRecruiter.has(ownerRecruiterLabel)) byOwnerRecruiter.set(ownerRecruiterLabel, createDashboardRecruiterBucket());
-    addCandidateMetrics(byClient.get(clientLabel), effectiveCandidate, effectiveAssessment, dateRange);
-    addCandidateMetrics(byOwnerRecruiter.get(ownerRecruiterLabel).metrics, effectiveCandidate, effectiveAssessment, dateRange);
-    addRecruiterOwnershipMetrics(byOwnerRecruiter.get(ownerRecruiterLabel), ownerRecruiterLabel, effectiveCandidate, effectiveAssessment, dateRange);
+    addCandidateMetrics(byClient.get(clientLabel), candidate, effectiveAssessment, dateRange);
+    addCandidateMetrics(byOwnerRecruiter.get(ownerRecruiterLabel).metrics, candidate, effectiveAssessment, dateRange);
+    addRecruiterOwnershipMetrics(byOwnerRecruiter.get(ownerRecruiterLabel), ownerRecruiterLabel, candidate, effectiveAssessment, dateRange);
     if (positionLabel) {
       const matrixKey = `${clientLabel}|||${positionLabel}|||${ownerRecruiterLabel}`;
       const clientPositionKey = `${clientLabel}|||${positionLabel}`;
@@ -1416,8 +1432,8 @@ function buildDashboardSummary({ candidates = [], assessments = [], jobs = [], d
       if (!byClientPosition.has(clientPositionKey)) {
         byClientPosition.set(clientPositionKey, { clientLabel, positionLabel, metrics: createDashboardBucket() });
       }
-      addCandidateMetrics(byClientRecruiter.get(matrixKey).metrics, effectiveCandidate, effectiveAssessment, dateRange);
-      addCandidateMetrics(byClientPosition.get(clientPositionKey).metrics, effectiveCandidate, effectiveAssessment, dateRange);
+      addCandidateMetrics(byClientRecruiter.get(matrixKey).metrics, candidate, effectiveAssessment, dateRange);
+      addCandidateMetrics(byClientPosition.get(clientPositionKey).metrics, candidate, effectiveAssessment, dateRange);
     }
   }
 
@@ -1444,13 +1460,12 @@ function buildDashboardSummary({ candidates = [], assessments = [], jobs = [], d
 
 function getClientPortalLifecycleBucket(item) {
   const status = normalizeDashboardText(item?.candidateStatus || item?.candidate_status || item?.status || "");
-  const pipeline = normalizeDashboardText(item?.pipelineStage || item?.pipeline_stage || "");
-  const combined = `${status} ${pipeline}`.trim();
+  const combined = `${status}`.trim();
   if (combined.includes("duplicate")) return "duplicates";
   if (DASHBOARD_REJECTED_STATUSES.has(status)) return "rejected";
   if (DASHBOARD_DROPPED_STATUSES.has(status)) return "interview_dropout";
   if (status === "hold" || combined.includes("on hold")) return "put_on_hold";
-  if (!status || status === "cv shared" || status === "cv to be shared" || status === "feedback awaited" || pipeline === "submitted") return "to_be_reviewed";
+  if (!status || status === "cv shared" || status === "cv to be shared" || status === "feedback awaited") return "to_be_reviewed";
   return "in_interview_stage";
 }
 
@@ -2212,7 +2227,8 @@ function buildCandidateSearchUniverse(candidates = [], assessments = [], jobs = 
     const cachedCvResult = candidateMeta?.cvAnalysisCache?.result && typeof candidateMeta.cvAnalysisCache.result === "object"
       ? candidateMeta.cvAnalysisCache.result
       : {};
-    const linkedAssessment = assessmentsById.get(String(candidate?.assessment_id || "").trim()) || null;
+    const linkedAssessment = getCanonicalLinkedAssessmentForCandidate(candidate, assessmentsById) || null;
+    const isConverted = Boolean(linkedAssessment?.id);
     if (linkedAssessment?.id) seenAssessmentIds.add(String(linkedAssessment.id));
     universe.push({
       id: String(candidate?.id || linkedAssessment?.id || "").trim(),
@@ -2234,15 +2250,15 @@ function buildCandidateSearchUniverse(candidates = [], assessments = [], jobs = 
       sourcedRecruiter: getRecruiterLabel(candidate, linkedAssessment || {}),
       ownerRecruiter: getOwnerRecruiterLabel(candidate, linkedAssessment || {}),
       candidateStatus: String(linkedAssessment?.candidateStatus || "").trim(),
-      pipelineStage: String(linkedAssessment?.pipelineStage || "").trim(),
+      pipelineStage: "",
       workflowStatus: String(linkedAssessment?.status || candidate?.status || "").trim(),
       attemptStatus: String(candidate?.last_contact_outcome || "").trim(),
       interviewAt: normalizeDateOutput(linkedAssessment?.interviewAt || linkedAssessment?.interview_at || ""),
       followUpAt: normalizeDateOutput(linkedAssessment?.followUpAt || linkedAssessment?.follow_up_at || candidate?.next_follow_up_at || ""),
       offerDoj: normalizeDateOutput(linkedAssessment?.offerDoj || linkedAssessment?.offer_doj || ""),
       createdAt: normalizeDateOutput(getCandidateCreatedAt(candidate)),
-      sharedAt: normalizeDateOutput(getCandidateConvertedAt(candidate, linkedAssessment || {})),
-      sourceType: candidate?.used_in_assessment
+      sharedAt: isConverted ? normalizeDateOutput(getCandidateConvertedAt(candidate, linkedAssessment || {})) : "",
+      sourceType: isConverted
         ? "captured_and_converted"
         : (candidateSource === "website_apply" || candidateSource === "hosted_apply" || candidateSource === "google_sheet"
           ? "applied"
@@ -2287,7 +2303,7 @@ function buildCandidateSearchUniverse(candidates = [], assessments = [], jobs = 
       sourcedRecruiter: getRecruiterLabel({}, assessment),
       ownerRecruiter: getOwnerRecruiterLabel({}, assessment),
       candidateStatus: String(assessment?.candidateStatus || "").trim(),
-      pipelineStage: String(assessment?.pipelineStage || "").trim(),
+      pipelineStage: "",
       workflowStatus: String(assessment?.status || "").trim(),
       attemptStatus: "",
       interviewAt: normalizeDateOutput(assessment?.interviewAt || assessment?.interview_at || ""),
@@ -4244,6 +4260,106 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (req.method === "POST" && req.url === "/company/assessments/repair-links") {
+    try {
+      const actor = await requireSessionUser(getBearerToken(req));
+      if (String(actor.role || "").toLowerCase() !== "admin") {
+        throw new Error("Only an admin can repair assessment links.");
+      }
+      const [candidates, assessments] = await Promise.all([
+        listCandidatesForUser(actor, { limit: 5000, scope: "company" }),
+        listAssessments({ actorUserId: actor.id, companyId: actor.companyId })
+      ]);
+      const normalizeEmail = (value) => String(value || "").trim().toLowerCase();
+      const normalizePhone = (value) => {
+        const digits = String(value || "").replace(/[^\d]/g, "");
+        return digits.length > 10 ? digits.slice(-10) : digits;
+      };
+
+      const candidatesById = new Map((candidates || []).map((c) => [String(c?.id || "").trim(), c]));
+      const emailToCandidateIds = new Map();
+      const phoneToCandidateIds = new Map();
+      for (const c of candidates || []) {
+        const id = String(c?.id || "").trim();
+        if (!id) continue;
+        const email = normalizeEmail(c?.email || c?.emailId || "");
+        const phone = normalizePhone(c?.phone || c?.phoneNumber || "");
+        if (email) emailToCandidateIds.set(email, (emailToCandidateIds.get(email) || []).concat(id));
+        if (phone) phoneToCandidateIds.set(phone, (phoneToCandidateIds.get(phone) || []).concat(id));
+      }
+      const pickUnique = (arr) => (Array.isArray(arr) && arr.length === 1 ? arr[0] : "");
+
+      const assessmentsById = new Map((assessments || []).map((a) => [String(a?.id || "").trim(), a]));
+      let repairedAssessments = 0;
+      let repairedCandidates = 0;
+      let clearedCandidates = 0;
+
+      // 1) Ensure every assessment has candidate_id and every linked candidate points back to the assessment.
+      for (const assessment of assessments || []) {
+        const assessmentId = String(assessment?.id || "").trim();
+        if (!assessmentId) continue;
+        let candidateId = String(
+          assessment?.candidateId ||
+          assessment?.candidate_id ||
+          assessment?.payload?.candidateId ||
+          assessment?.payload?.candidate_id ||
+          ""
+        ).trim();
+        if (candidateId && !candidatesById.has(candidateId)) candidateId = "";
+        if (!candidateId) {
+          const email = normalizeEmail(assessment?.emailId || assessment?.email_id || assessment?.payload?.emailId || "");
+          const phone = normalizePhone(assessment?.phoneNumber || assessment?.phone_number || assessment?.payload?.phoneNumber || "");
+          if (email) candidateId = pickUnique(emailToCandidateIds.get(email));
+          if (!candidateId && phone) candidateId = pickUnique(phoneToCandidateIds.get(phone));
+        }
+        if (!candidateId) continue;
+
+        const canonicalCandidateId = String(candidateId).trim();
+        const existingCandidateId = String(assessment?.candidateId || assessment?.candidate_id || "").trim();
+        if (existingCandidateId !== canonicalCandidateId) {
+          await patchAssessmentCandidateLink({
+            actorUserId: actor.id,
+            companyId: actor.companyId,
+            assessmentId,
+            candidateId: canonicalCandidateId
+          });
+          repairedAssessments += 1;
+        }
+
+        const candidate = candidatesById.get(canonicalCandidateId) || null;
+        const currentAssessmentId = String(candidate?.assessment_id || candidate?.assessmentId || "").trim();
+        if (candidate && currentAssessmentId !== assessmentId) {
+          await linkCandidateToAssessment(canonicalCandidateId, assessmentId, { companyId: actor.companyId });
+          repairedCandidates += 1;
+        }
+      }
+
+      // 2) Clear any candidate.assessment_id that points to a missing/mismatched assessment.
+      for (const candidate of candidates || []) {
+        const candidateId = String(candidate?.id || "").trim();
+        const assessmentId = String(candidate?.assessment_id || candidate?.assessmentId || "").trim();
+        if (!candidateId || !assessmentId) continue;
+        const assessment = assessmentsById.get(assessmentId) || null;
+        const linkedCandidateId = String(
+          assessment?.candidateId ||
+          assessment?.candidate_id ||
+          assessment?.payload?.candidateId ||
+          assessment?.payload?.candidate_id ||
+          ""
+        ).trim();
+        if (!assessment || !linkedCandidateId || linkedCandidateId !== candidateId) {
+          await patchCandidate(candidateId, { assessment_id: "", used_in_assessment: false }, { companyId: actor.companyId });
+          clearedCandidates += 1;
+        }
+      }
+
+      sendJson(res, 200, { ok: true, result: { repairedAssessments, repairedCandidates, clearedCandidates } });
+    } catch (error) {
+      sendJson(res, 400, { ok: false, error: String(error.message || error) });
+    }
+    return;
+  }
+
   if (req.method === "POST" && req.url === "/company/candidates/backfill-search-embeddings") {
     try {
       const actor = await requireSessionUser(getBearerToken(req));
@@ -5349,29 +5465,20 @@ const server = http.createServer(async (req, res) => {
       const actor = await requireSessionUser(getBearerToken(req));
       const body = await readJsonBody(req);
       const incomingAssessment = body.assessment || body || {};
+      const incomingCandidateId = String(incomingAssessment.candidateId || incomingAssessment.candidate_id || "").trim();
+      if (!incomingCandidateId) {
+        throw new Error("candidateId is required to create/update an assessment.");
+      }
+      // Ensure the candidate exists and is visible to the actor (admin can see all; recruiters see assigned/owned).
+      await ensureCandidateVisibleToActor(actor, incomingCandidateId);
       const assessment = await saveAssessment({
         actorUserId: actor.id,
         companyId: actor.companyId,
-        assessment: incomingAssessment
+        assessment: { ...incomingAssessment, candidateId: incomingCandidateId }
       });
-      let linkedCandidateId = String(incomingAssessment.candidateId || incomingAssessment.candidate_id || "").trim();
-      if (!linkedCandidateId) {
-        const emailNeedle = String(incomingAssessment.emailId || incomingAssessment.email_id || "").trim().toLowerCase();
-        const phoneNeedle = String(incomingAssessment.phoneNumber || incomingAssessment.phone_number || "").replace(/[^\d]/g, "");
-        if (emailNeedle || phoneNeedle) {
-          const candidatePool = await listCandidatesForUser(actor, { limit: 5000, scope: "company" });
-          const match = (candidatePool || []).find((c) => {
-            const cEmail = String(c?.email || "").trim().toLowerCase();
-            const cPhone = String(c?.phone || "").replace(/[^\d]/g, "");
-            if (emailNeedle && cEmail && emailNeedle === cEmail) return true;
-            if (phoneNeedle && cPhone && phoneNeedle.length >= 10 && cPhone.endsWith(phoneNeedle.slice(-10))) return true;
-            return false;
-          }) || null;
-          if (match?.id) linkedCandidateId = String(match.id).trim();
-        }
-      }
-      if (linkedCandidateId && assessment?.id) {
-        await linkCandidateToAssessment(linkedCandidateId, assessment.id, { companyId: actor.companyId });
+      if (assessment?.id) {
+        // Canonical 1:1 link: candidates.assessment_id must always point to the assessment.id
+        await linkCandidateToAssessment(incomingCandidateId, assessment.id, { companyId: actor.companyId });
       }
       sendJson(res, 200, { ok: true, result: assessment });
     } catch (error) {

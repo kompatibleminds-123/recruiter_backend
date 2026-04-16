@@ -231,6 +231,7 @@ const DASHBOARD_METRIC_COLUMNS = [
   ["applied", "Applied"],
   ["converted", "Shared"],
   ["under_interview_process", "Under Interview"],
+  ["hold", "Hold"],
   ["rejected", "Rejected"],
   ["duplicate", "Duplicate"],
   ["dropped", "Dropped"],
@@ -244,6 +245,7 @@ const DASHBOARD_METRIC_TILES = [
   ["applied", "Applied"],
   ["converted", "Shared"],
   ["under_interview_process", "Under Interview"],
+  ["hold", "Hold"],
   ["offered", "Offered"],
   ["joined", "Joined"]
 ];
@@ -1528,15 +1530,7 @@ function isAutoHiddenWorkflowOutcome(outcome) {
 }
 
 function isApplicantConvertedToAssessment(applicant = {}, linkedCandidate = null, linkedAssessment = null) {
-  if (linkedAssessment) return true;
-  return Boolean(
-    applicant?.usedInAssessment ||
-    applicant?.used_in_assessment ||
-    String(applicant?.assessmentId || applicant?.assessment_id || "").trim() ||
-    linkedCandidate?.used_in_assessment ||
-    linkedCandidate?.usedInAssessment ||
-    String(linkedCandidate?.assessment_id || linkedCandidate?.assessmentId || "").trim()
-  );
+  return Boolean(linkedAssessment);
 }
 
 function getApplicantOwnerLabel(applicant, linkedCandidate = null) {
@@ -5684,8 +5678,7 @@ function PortalApp({ token, onLogout }) {
     }
     const candidateName = candidate?.name || sourceApplicant?.candidateName || "";
     const matched = (state.assessments || []).find((item) =>
-      String(item.candidateId || "") === String(candidate?.id || sourceApplicant?.id || "") ||
-      String(item.candidateName || "").trim().toLowerCase() === String(candidate?.name || sourceApplicant?.candidateName || "").trim().toLowerCase()
+      String(item.candidateId || item.candidate_id || "") === String(candidate?.id || sourceApplicant?.id || "")
     );
     if (matched) {
       openSavedAssessment(matched);
@@ -5728,7 +5721,7 @@ function PortalApp({ token, onLogout }) {
       cautiousIndicators: candidateDraft.cautiousIndicators || "",
       clientName: candidateDraft.clientName || candidate?.client_name || sourceApplicant?.clientName || "",
       jdTitle: candidateDraft.jdTitle || candidate?.jd_title || sourceApplicant?.jdTitle || "",
-      pipelineStage: "Submitted",
+      pipelineStage: "",
       candidateStatus: "CV shared",
       followUpAt: "",
       interviewAt: "",
@@ -5774,7 +5767,7 @@ function PortalApp({ token, onLogout }) {
       ...(interviewMeta.candidateId ? { candidateId: String(interviewMeta.candidateId) } : {}),
       ...interviewForm,
       candidateStatus: initialStatus,
-      pipelineStage: mapAssessmentStatusToPipelineStage(initialStatus) || interviewForm.pipelineStage || "Submitted",
+      pipelineStage: "",
       statusHistory: Array.isArray(interviewForm.statusHistory) && interviewForm.statusHistory.length
         ? interviewForm.statusHistory
         : [{
