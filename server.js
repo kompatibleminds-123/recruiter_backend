@@ -1588,6 +1588,18 @@ function normalizePhoneDigits(value) {
   return String(value || "").replace(/[^\d]/g, "");
 }
 
+// Keep these helpers local (mirrors auth-store.js). These are used for identity matching
+// between candidates and assessments when legacy rows are missing candidate_id links.
+function normalizeAssessmentPhone(value) {
+  const digits = String(value || "").replace(/\D/g, "");
+  if (digits.length < 10) return "";
+  return digits.length > 10 ? digits.slice(-10) : digits;
+}
+
+function normalizeAssessmentEmail(value) {
+  return String(value || "").trim().toLowerCase();
+}
+
 function isDateInClientAgendaWindow(value, dateRange = {}) {
   const parsed = parseIsoDateValue(value);
   if (!parsed) return false;
