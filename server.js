@@ -1253,6 +1253,7 @@ function createDashboardBucket() {
     applied: 0,
     converted: 0,
     under_interview_process: 0,
+    hold: 0,
     rejected: 0,
     duplicate: 0,
     dropped: 0,
@@ -1260,6 +1261,34 @@ function createDashboardBucket() {
     offered: 0,
     joined: 0
   };
+}
+
+function normalizeAssessmentStatusForDashboard(value) {
+  return normalizeDashboardText(String(value || "")).replace(/\s+/g, " ").trim();
+}
+
+function getDashboardAssessmentMetric(statusValue) {
+  const status = normalizeAssessmentStatusForDashboard(statusValue);
+  if (!status) return "";
+  // Order matters: a status string can contain multiple words.
+  if (status.includes("joined")) return "joined";
+  if (status.includes("offered") || /\boffer\b/.test(status)) return "offered";
+  if (status.includes("shortlist")) return "shortlisted";
+  if (status.includes("dropped")) return "dropped";
+  if (status.includes("duplicate")) return "duplicate";
+  if (status.includes("screening reject") || status.includes("interview reject")) return "rejected";
+  if (status === "hold" || status.includes("on hold")) return "hold";
+  if (
+    status.includes("screening call aligned") ||
+    status.includes("l1 aligned") ||
+    status.includes("l2 aligned") ||
+    status.includes("l3 aligned") ||
+    status.includes("hr interview aligned") ||
+    status.includes("feedback awaited")
+  ) {
+    return "under_interview_process";
+  }
+  return "";
 }
 
 function createClientPortalBucket() {
@@ -1303,21 +1332,19 @@ function addCandidateMetrics(target, candidate, linkedAssessment, dateRange = {}
     incrementDashboardMetric(target, isApplicant ? "applied" : "sourced");
     changed = true;
   }
-  if (!candidate?.used_in_assessment || !linkedAssessment) return changed;
+  if (!linkedAssessment) return changed;
   const convertedAt = getCandidateConvertedAt(candidate, linkedAssessment || {});
   if (!isDateWithinRange(convertedAt, dateRange.from, dateRange.to)) return changed;
   incrementDashboardMetric(target, "converted");
   changed = true;
-  const bucket = getAssessmentLifecycleBucket(linkedAssessment || {});
-  if (isInterviewAlignedStatus(linkedAssessment?.candidateStatus || linkedAssessment?.candidate_status || linkedAssessment?.status || "")) {
-    incrementDashboardMetric(target, "under_interview_process");
-  }
-  if (bucket === "rejected") incrementDashboardMetric(target, "rejected");
-  if (bucket === "duplicate") incrementDashboardMetric(target, "duplicate");
-  if (bucket === "dropped") incrementDashboardMetric(target, "dropped");
-  if (bucket === "shortlisted") incrementDashboardMetric(target, "shortlisted");
-  if (bucket === "offered") incrementDashboardMetric(target, "offered");
-  if (bucket === "joined") incrementDashboardMetric(target, "joined");
+  const statusValue = String(
+    linkedAssessment?.candidateStatus ||
+      linkedAssessment?.candidate_status ||
+      linkedAssessment?.status ||
+      ""
+  );
+  const metric = getDashboardAssessmentMetric(statusValue);
+  if (metric) incrementDashboardMetric(target, metric);
   return changed;
 }
 
@@ -2212,8 +2239,14 @@ function buildCandidateSearchUniverse(candidates = [], assessments = [], jobs = 
     const cachedCvResult = candidateMeta?.cvAnalysisCache?.result && typeof candidateMeta.cvAnalysisCache.result === "object"
       ? candidateMeta.cvAnalysisCache.result
       : {};
-    const linkedAssessment = assessmentsById.get(String(candidate?.assessment_id || "").trim()) || null;
+    let linkedAssessment = assessmentsById.get(String(candidate?.assessment_id || "").trim()) || null;
+    // Legacy data: candidates might not have assessment_id linked even though an assessment exists.
+    // This keeps drilldowns consistent with dashboard summaries (which also do identity fallback).
+    if (!linkedAssessment) {
+      linkedAssessment = pickBestAssessmentForCandidate(candidate, assessments) || null;
+    }
     if (linkedAssessment?.id) seenAssessmentIds.add(String(linkedAssessment.id));
+    const isConverted = Boolean(candidate?.used_in_assessment) || Boolean(linkedAssessment?.id);
     universe.push({
       id: String(candidate?.id || linkedAssessment?.id || "").trim(),
       candidateName: String(candidate?.name || linkedAssessment?.candidateName || "").trim(),
@@ -2242,7 +2275,7 @@ function buildCandidateSearchUniverse(candidates = [], assessments = [], jobs = 
       offerDoj: normalizeDateOutput(linkedAssessment?.offerDoj || linkedAssessment?.offer_doj || ""),
       createdAt: normalizeDateOutput(getCandidateCreatedAt(candidate)),
       sharedAt: normalizeDateOutput(getCandidateConvertedAt(candidate, linkedAssessment || {})),
-      sourceType: candidate?.used_in_assessment
+      sourceType: isConverted
         ? "captured_and_converted"
         : (candidateSource === "website_apply" || candidateSource === "hosted_apply" || candidateSource === "google_sheet"
           ? "applied"
@@ -2466,9 +2499,10 @@ function candidateMatchesNaturalFilter(item, filters, actor = null) {
 }
 
 function itemMatchesDashboardMetric(item, metric, dateFrom = "", dateTo = "") {
-  const bucket = getAssessmentLifecycleBucket(item);
-  const hasLinkedAssessment = Boolean(item?.raw?.assessment || item?.assessment || item?.assessmentId);
-  const isSharedAssessment = item?.sourceType === "captured_and_converted" && hasLinkedAssessment;
+  const assessment = item?.raw?.assessment || item?.assessment || null;
+  const statusValue = String(assessment?.candidateStatus || assessment?.candidate_status || assessment?.status || item?.candidateStatus || item?.status || "");
+  const mappedMetric = getDashboardAssessmentMetric(statusValue);
+  const hasLinkedAssessment = Boolean(assessment || item?.assessmentId);
   const rawSource = String(item?.raw?.candidate?.source || item?.source || "").trim().toLowerCase();
   const isApplicantSource = rawSource === "website_apply" || rawSource === "hosted_apply" || rawSource === "google_sheet";
   if (metric === "sourced") {
@@ -2478,17 +2512,18 @@ function itemMatchesDashboardMetric(item, metric, dateFrom = "", dateTo = "") {
     return isApplicantSource && isDateWithinRange(item.createdAt, dateFrom, dateTo);
   }
   if (metric === "converted") {
-    return isSharedAssessment && isDateWithinRange(item.sharedAt, dateFrom, dateTo);
+    return hasLinkedAssessment && isDateWithinRange(item.sharedAt, dateFrom, dateTo);
   }
-  if (!isSharedAssessment) return false;
+  if (!hasLinkedAssessment) return false;
   if (!isDateWithinRange(item.sharedAt, dateFrom, dateTo)) return false;
-  if (metric === "under_interview_process") return isInterviewAlignedStatus(item?.candidateStatus || item?.status || "");
-  if (metric === "rejected") return bucket === "rejected";
-  if (metric === "duplicate") return bucket === "duplicate";
-  if (metric === "dropped") return bucket === "dropped";
-  if (metric === "shortlisted") return bucket === "shortlisted";
-  if (metric === "offered") return bucket === "offered";
-  if (metric === "joined") return bucket === "joined";
+  if (metric === "rejected") return mappedMetric === "rejected";
+  if (metric === "duplicate") return mappedMetric === "duplicate";
+  if (metric === "dropped") return mappedMetric === "dropped";
+  if (metric === "shortlisted") return mappedMetric === "shortlisted";
+  if (metric === "offered") return mappedMetric === "offered";
+  if (metric === "joined") return mappedMetric === "joined";
+  if (metric === "hold") return mappedMetric === "hold";
+  if (metric === "under_interview_process") return mappedMetric === "under_interview_process";
   return false;
 }
 

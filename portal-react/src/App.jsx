@@ -231,6 +231,7 @@ const DASHBOARD_METRIC_COLUMNS = [
   ["applied", "Applied"],
   ["converted", "Shared"],
   ["under_interview_process", "Under Interview"],
+  ["hold", "Hold"],
   ["rejected", "Rejected"],
   ["duplicate", "Duplicate"],
   ["dropped", "Dropped"],
@@ -244,6 +245,7 @@ const DASHBOARD_METRIC_TILES = [
   ["applied", "Applied"],
   ["converted", "Shared"],
   ["under_interview_process", "Under Interview"],
+  ["hold", "Hold"],
   ["offered", "Offered"],
   ["joined", "Joined"]
 ];
@@ -3901,7 +3903,7 @@ function PortalApp({ token, onLogout }) {
     setState((current) => ({ ...current, clientPortal: clientPortalResult || {} }));
   }
 
-  async function loadWorkspace() {
+  async function loadWorkspace(options = {}) {
     await api("/company/candidates/backfill-assessment-links", token, { method: "POST" }).catch(() => null);
     await api("/company/candidates/backfill-skills", token, { method: "POST" }).catch(() => null);
     const dashboardKey = JSON.stringify({
@@ -3928,11 +3930,18 @@ function PortalApp({ token, onLogout }) {
     if (clientPortalFilters.dateTo) clientPortalParams.set("dateTo", clientPortalFilters.dateTo);
     if (clientPortalFilters.clientLabel) clientPortalParams.set("clientLabel", clientPortalFilters.clientLabel);
 
+    const includeDashboard = options?.includeDashboard === true;
+    const includeClientPortal = options?.includeClientPortal === true;
+
     const [userResult, dashboardResult, clientPortalResult, applicantsResult, intakeResult, jobsResult, usersResult, clientUsersResult, candidatesResult, databaseCandidatesResult, assessmentsResult, sharedPresetResult] = await Promise.all([
       api("/auth/me", token),
-      api(`/company/dashboard${dashboardParams.toString() ? `?${dashboardParams.toString()}` : ""}`, token),
-      api(`/company/client-portal${clientPortalParams.toString() ? `?${clientPortalParams.toString()}` : ""}`, token)
-        .catch(() => ({ summary: { byClient: [], byClientPosition: [] }, availableClients: [] })),
+      includeDashboard
+        ? api(`/company/dashboard${dashboardParams.toString() ? `?${dashboardParams.toString()}` : ""}`, token)
+        : Promise.resolve(null),
+      includeClientPortal
+        ? api(`/company/client-portal${clientPortalParams.toString() ? `?${clientPortalParams.toString()}` : ""}`, token)
+          .catch(() => ({ summary: { byClient: [], byClientPosition: [] }, availableClients: [] }))
+        : Promise.resolve(null),
       api("/company/applicants", token).catch(() => ({ items: [] })),
       api("/company/applicant-intake-secret", token).catch(() => null),
       api("/company/jds", token).catch(() => ({ jobs: [] })),
@@ -3946,8 +3955,8 @@ function PortalApp({ token, onLogout }) {
     setState((current) => ({
       ...current,
       user: userResult.user || userResult,
-      dashboard: latestDashboardKeyRef.current === dashboardKey ? (dashboardResult || {}) : current.dashboard,
-      clientPortal: latestClientPortalKeyRef.current === clientPortalKey ? (clientPortalResult || {}) : current.clientPortal,
+      dashboard: includeDashboard ? (latestDashboardKeyRef.current === dashboardKey ? (dashboardResult || {}) : current.dashboard) : current.dashboard,
+      clientPortal: includeClientPortal ? (latestClientPortalKeyRef.current === clientPortalKey ? (clientPortalResult || {}) : current.clientPortal) : current.clientPortal,
       applicants: applicantsResult.items || [],
       intake: intakeResult || {},
       jobs: jobsResult.jobs || [],
@@ -3975,7 +3984,7 @@ function PortalApp({ token, onLogout }) {
     try {
       const latestLoader = loadWorkspaceRef.current;
       if (typeof latestLoader === "function") {
-        await latestLoader();
+        await latestLoader({ includeDashboard: false, includeClientPortal: false });
       }
     } catch (error) {
       setStatus("workspace", String(error?.message || error), "error");
@@ -3992,7 +4001,7 @@ function PortalApp({ token, onLogout }) {
     try {
       const latestLoader = loadWorkspaceRef.current;
       if (typeof latestLoader === "function") {
-        await latestLoader();
+        await latestLoader({ includeDashboard: true, includeClientPortal: true });
       }
       setStatus("workspace", "Workspace refreshed.", "ok");
     } catch (error) {
@@ -4003,7 +4012,9 @@ function PortalApp({ token, onLogout }) {
   }
 
   useEffect(() => {
-    void loadWorkspace().catch((error) => setStatus("workspace", String(error?.message || error), "error"));
+    void loadWorkspace({ includeDashboard: true, includeClientPortal: true }).catch((error) =>
+      setStatus("workspace", String(error?.message || error), "error")
+    );
   }, [token]);
 
   useEffect(() => {
@@ -7344,7 +7355,14 @@ function PortalApp({ token, onLogout }) {
     const value = item?.followUpAt ? new Date(item.followUpAt) : item?.interviewAt ? new Date(item.interviewAt) : null;
     return value && value >= agendaWindowStart && value < nextWeekEnd;
   });
-  const pendingAssignments = (state.applicants || []).length;
+  const pendingAssignments = (state.applicants || []).filter((item) => {
+    const linkedCandidate = applicantCandidateMap.get(String(item.id)) || null;
+    const linkedAssessment = applicantAssessmentMap.get(String(item.id)) || null;
+    if (isApplicantConvertedToAssessment(item, linkedCandidate, linkedAssessment)) return false;
+    const manuallyHidden = Boolean(item.hidden_from_captured || linkedCandidate?.hidden_from_captured);
+    if (manuallyHidden) return false;
+    return true;
+  }).length;
   const pendingNotes = (state.candidates || []).filter((item) => {
     const sourceValue = String(item.source || "").trim();
     if (["website_apply", "hosted_apply", "google_sheet"].includes(sourceValue)) return false;
