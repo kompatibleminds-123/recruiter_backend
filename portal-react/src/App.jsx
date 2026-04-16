@@ -7446,7 +7446,15 @@ function PortalApp({ token, onLogout }) {
     const value = item?.followUpAt ? new Date(item.followUpAt) : item?.interviewAt ? new Date(item.interviewAt) : null;
     return value && value >= agendaWindowStart && value < nextWeekEnd;
   });
-  const pendingAssignments = (state.applicants || []).length;
+  // Pending applicants = Active applicants in Applied Candidates (not converted, not hidden),
+  // scoped to the current user's visibility (filteredApplicants already applies this).
+  const pendingAssignments = filteredApplicants.filter((item) => {
+    const linkedCandidate = applicantCandidateMap.get(String(item.id)) || null;
+    const linkedAssessment = applicantAssessmentMap.get(String(item.id)) || null;
+    if (isApplicantConvertedToAssessment(item, linkedCandidate, linkedAssessment)) return false;
+    const manuallyHidden = Boolean(item.hidden_from_captured || linkedCandidate?.hidden_from_captured);
+    return !manuallyHidden;
+  }).length;
   const pendingNotes = (state.candidates || []).filter((item) => {
     const sourceValue = String(item.source || "").trim();
     if (["website_apply", "hosted_apply", "google_sheet"].includes(sourceValue)) return false;
