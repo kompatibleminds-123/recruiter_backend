@@ -4689,9 +4689,13 @@ function PortalApp({ token, onLogout }) {
   const filteredApplicants = useMemo(() => {
     const isAdmin = String(state.user?.role || "").toLowerCase() === "admin";
     const currentUserName = String(state.user?.name || "").trim().toLowerCase();
+    const currentUserId = String(state.user?.id || "").trim();
     return (state.applicants || []).filter((item) => {
       if (isAdmin) return true;
       const assignedName = String(item.assignedToName || item.assigned_to_name || "").trim().toLowerCase();
+      const assignedId = String(item.assignedToUserId || item.assigned_to_user_id || "").trim();
+      // Prefer stable id matching; fall back to name for legacy rows.
+      if (currentUserId && assignedId) return assignedId === currentUserId;
       return Boolean(assignedName && assignedName === currentUserName);
     });
   }, [state.applicants, state.user]);
@@ -4713,19 +4717,18 @@ function PortalApp({ token, onLogout }) {
   const applicantAssessmentMap = useMemo(() => {
     const map = new Map();
     filteredApplicants.forEach((item) => {
-      const linkedCandidate = applicantCandidateMap.get(String(item.id)) || null;
       const applicantId = String(item.id || "").trim();
-      const candidateId = String(linkedCandidate?.id || item.candidateId || item.candidate_id || item.id || "").trim();
-      const applicantName = String(item.candidateName || linkedCandidate?.name || "").trim().toLowerCase();
-      const applicantJd = String(item.jdTitle || item.jd_title || linkedCandidate?.jd_title || "").trim().toLowerCase();
       const match = (state.assessments || []).find((assessment) => {
-        const assessmentCandidateId = String(assessment.candidateId || assessment.candidate_id || "").trim();
-        if (assessmentCandidateId && (assessmentCandidateId === candidateId || assessmentCandidateId === applicantId)) return true;
-        const sameName = applicantName && String(assessment.candidateName || "").trim().toLowerCase() === applicantName;
-        const sameJd = !applicantJd || String(assessment.jdTitle || assessment.jd_title || "").trim().toLowerCase() === applicantJd;
-        return sameName && sameJd;
+        const assessmentCandidateId = String(
+          assessment.candidateId ||
+          assessment.candidate_id ||
+          assessment?.payload?.candidateId ||
+          assessment?.payload?.candidate_id ||
+          ""
+        ).trim();
+        return Boolean(assessmentCandidateId && applicantId && assessmentCandidateId === applicantId);
       }) || null;
-      map.set(String(item.id), match);
+      map.set(applicantId, match);
     });
     return map;
   }, [filteredApplicants, applicantCandidateMap, state.assessments]);
@@ -4815,16 +4818,65 @@ function PortalApp({ token, onLogout }) {
   }, [filteredApplicants, applicantFilters, applicantCandidateMap, applicantAssessmentMap]);
   const applicantStats = useMemo(() => {
     const todayKey = new Date().toISOString().slice(0, 10);
-    const owned = visibleApplicants.filter((item) => getApplicantOwnerLabel(item, applicantCandidateMap.get(String(item.id)) || null) !== "Unassigned").length;
-    const unassigned = visibleApplicants.length - owned;
+    const currentUserId = String(state.user?.id || "").trim();
+    const currentUserName = String(state.user?.name || "").trim();
+    const isAdmin = String(state.user?.role || "").toLowerCase() === "admin";
+
+    const universe = filteredApplicants;
+    const converted = universe.filter((item) => Boolean(applicantAssessmentMap.get(String(item.id)) || null)).length;
+    const active = universe.filter((item) => {
+      const linkedAssessment = applicantAssessmentMap.get(String(item.id)) || null;
+      if (linkedAssessment) return false;
+      const linkedCandidate = applicantCandidateMap.get(String(item.id)) || null;
+      const manuallyHidden = Boolean(item.hidden_from_captured || linkedCandidate?.hidden_from_captured);
+      return !manuallyHidden;
+    }).length;
+    const inactive = universe.filter((item) => {
+      const linkedAssessment = applicantAssessmentMap.get(String(item.id)) || null;
+      if (linkedAssessment) return false;
+      const linkedCandidate = applicantCandidateMap.get(String(item.id)) || null;
+      const manuallyHidden = Boolean(item.hidden_from_captured || linkedCandidate?.hidden_from_captured);
+      return manuallyHidden;
+    }).length;
+
+    // Ownership breakdown (for recruiter/admin clarity):
+    // - ownedDirect: came directly to the user's inbox via their apply link (assigned_to_user_id == user and no assigned_by_user_id)
+    // - manualAssigned: assigned by admin (assigned_by_user_id present)
+    const ownedDirect = universe.filter((item) => {
+      const assignedToUserId = String(item.assignedToUserId || item.assigned_to_user_id || "").trim();
+      const assignedToName = String(item.assignedToName || item.assigned_to_name || "").trim();
+      const assignedByUserId = String(item.assignedByUserId || item.assigned_by_user_id || "").trim();
+      const assignedByName = String(item.assignedByName || item.assigned_by_name || "").trim();
+      if (isAdmin) {
+        // For admin: "Owner" means it came directly to admin's inbox (apply link owned by admin).
+        const isToAdmin = (currentUserId && assignedToUserId === currentUserId) || (currentUserName && assignedToName === currentUserName);
+        return isToAdmin && !assignedByUserId && !assignedByName;
+      }
+      const isToMe = currentUserId && assignedToUserId === currentUserId;
+      return isToMe && !assignedByUserId && !assignedByName;
+    }).length;
+
+    const manualAssigned = universe.filter((item) => {
+      const assignedByUserId = String(item.assignedByUserId || item.assigned_by_user_id || "").trim();
+      const assignedByName = String(item.assignedByName || item.assigned_by_name || "").trim();
+      if (!assignedByUserId && !assignedByName) return false;
+      if (!isAdmin) return true;
+      // For admin: count only those the admin assigned (not those assigned by someone else).
+      if (currentUserId && assignedByUserId) return assignedByUserId === currentUserId;
+      if (currentUserName && assignedByName) return assignedByName === currentUserName;
+      return false;
+    }).length;
+
     return {
-      today: visibleApplicants.filter((item) => String(item.createdAt || item.created_at || "").slice(0, 10) === todayKey).length,
-      owned,
-      unassigned,
-      manualAssigned: visibleApplicants.filter((item) => getApplicantManualAssigneeLabel(item, applicantCandidateMap.get(String(item.id)) || null)).length,
-      total: visibleApplicants.length
+      today: universe.filter((item) => String(item.createdAt || item.created_at || "").slice(0, 10) === todayKey).length,
+      active,
+      inactive,
+      converted,
+      ownedDirect,
+      manualAssigned,
+      total: universe.length
     };
-  }, [applicantCandidateMap, visibleApplicants]);
+  }, [applicantAssessmentMap, applicantCandidateMap, filteredApplicants, state.user]);
 
   const quickUpdateMatches = useMemo(() => {
     const query = String(quickUpdateCandidateQuery || "").trim().toLowerCase();
@@ -7903,10 +7955,15 @@ function PortalApp({ token, onLogout }) {
               </div>
               <div className="metric-grid metric-grid--tight">
                 <div className="metric-card compact-metric"><div className="metric-label">Applied today</div><div className="metric-value">{applicantStats.today}</div></div>
-                <div className="metric-card compact-metric"><div className="metric-label">Owned</div><div className="metric-value">{applicantStats.owned}</div></div>
-                <div className="metric-card compact-metric"><div className="metric-label">Unassigned</div><div className="metric-value">{applicantStats.unassigned}</div></div>
-                <div className="metric-card compact-metric"><div className="metric-label">Manual assigned</div><div className="metric-value">{applicantStats.manualAssigned}</div></div>
-                <div className="metric-card compact-metric"><div className="metric-label">Total visible</div><div className="metric-value">{applicantStats.total}</div></div>
+                <div className="metric-card compact-metric"><div className="metric-label">Active</div><div className="metric-value">{applicantStats.active}</div></div>
+                <div className="metric-card compact-metric"><div className="metric-label">Inactive</div><div className="metric-value">{applicantStats.inactive}</div></div>
+                <div className="metric-card compact-metric"><div className="metric-label">Converted</div><div className="metric-value">{applicantStats.converted}</div></div>
+                <div className="metric-card compact-metric"><div className="metric-label">Total</div><div className="metric-value">{applicantStats.total}</div></div>
+              </div>
+              <div className="muted" style={{ marginTop: 8 }}>
+                {String(state.user?.role || "").toLowerCase() === "admin"
+                  ? `Owner (direct inbox): ${applicantStats.ownedDirect || 0} | Manual assigned by you: ${applicantStats.manualAssigned || 0}`
+                  : `Owned (direct link): ${applicantStats.ownedDirect || 0} | Manual assigned by admin: ${applicantStats.manualAssigned || 0}`}
               </div>
               <p className="muted">Owned means the applicant belongs to a recruiter through the job owner / primary recruiter. Manual assigned means admin manually reassigned it. For admin, Owned + Unassigned = Total visible.</p>
               <div className="captured-filter-grid">
