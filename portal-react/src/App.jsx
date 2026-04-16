@@ -4121,6 +4121,9 @@ function PortalApp({ token, onLogout }) {
       const id = String(item?.id || "").trim();
       if (id) map.set(`id:${id}`, item);
 
+      const candidateId = String(item?.candidateId || item?.candidate_id || item?.payload?.candidateId || item?.payload?.candidate_id || "").trim();
+      if (candidateId && !map.has(`cid:${candidateId}`)) map.set(`cid:${candidateId}`, item);
+
       const email = normalizeEmail(item?.emailId || item?.email || "");
       if (email && !map.has(`email:${email}`)) map.set(`email:${email}`, item);
 
@@ -4142,15 +4145,29 @@ function PortalApp({ token, onLogout }) {
       const assessment = capturedAssessmentMap.get(`id:${assessmentId}`) || null;
       if (!assessment) return null;
       // Only trust stored assessment_id when we can verify stable identity matches.
+      const candidateId = String(candidateRow?.id || "").trim();
+      const assessmentCandidateId = String(
+        assessment?.candidateId ||
+        assessment?.candidate_id ||
+        assessment?.payload?.candidateId ||
+        assessment?.payload?.candidate_id ||
+        ""
+      ).trim();
+      if (candidateId && assessmentCandidateId && candidateId === assessmentCandidateId) return assessment;
+
       const candidateEmail = normalizeEmail(candidateRow?.email || candidateRow?.emailId || "");
       const candidatePhone = normalizePhone(candidateRow?.phone || candidateRow?.phoneNumber || "");
       const assessmentEmail = normalizeEmail(assessment?.emailId || assessment?.email || "");
       const assessmentPhone = normalizePhone(assessment?.phoneNumber || assessment?.phone || "");
-      const hasStableKey = Boolean(candidateEmail || candidatePhone);
-      if (!hasStableKey) return null;
       if (candidateEmail && assessmentEmail && candidateEmail === assessmentEmail) return assessment;
       if (candidatePhone && assessmentPhone && candidatePhone === assessmentPhone) return assessment;
       // Mismatch: ignore this stored link (it may be from an incorrect backfill).
+    }
+
+    const candidateIdKey = String(candidateRow?.id || "").trim();
+    if (candidateIdKey) {
+      const byCandidateId = capturedAssessmentMap.get(`cid:${candidateIdKey}`) || null;
+      if (byCandidateId) return byCandidateId;
     }
 
     const email = normalizeEmail(candidateRow?.email || candidateRow?.emailId || "");
@@ -5744,10 +5761,14 @@ function PortalApp({ token, onLogout }) {
     };
 
     setStatus(statusKey, "Converting draft into assessment...");
-    const savedAssessment = await api("/company/assessments", token, "POST", { assessment });
-    await loadWorkspace();
-    navigate("/assessments");
-    setStatus("assessments", `Converted ${candidateName || "candidate"} into assessment.`, "ok");
+    try {
+      await api("/company/assessments", token, "POST", { assessment });
+      await loadWorkspace();
+      navigate("/assessments");
+      setStatus("assessments", `Converted ${candidateName || "candidate"} into assessment.`, "ok");
+    } catch (error) {
+      setStatus(statusKey, String(error?.message || error), "error");
+    }
   }
 
   async function saveAssessment() {
