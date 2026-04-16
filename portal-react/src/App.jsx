@@ -4666,10 +4666,10 @@ function PortalApp({ token, onLogout }) {
   const capturedNotesStats = useMemo(() => {
     const todayKey = new Date().toISOString().slice(0, 10);
     const convertedCount = capturedNotesUniverse.filter((item) => {
-      return Boolean(item.used_in_assessment || String(item.assessment_id || "").trim());
+      return Boolean(item.used_in_assessment || String(item.assessment_id || item.assessmentId || "").trim());
     }).length;
     const activeCount = capturedNotesUniverse.filter((item) => {
-      if (item.used_in_assessment || String(item.assessment_id || "").trim()) return false;
+      if (item.used_in_assessment || String(item.assessment_id || item.assessmentId || "").trim()) return false;
       return !item.hidden_from_captured;
     }).length;
     return {
@@ -4682,7 +4682,7 @@ function PortalApp({ token, onLogout }) {
 
   const capturedCandidates = useMemo(() => {
     return capturedNotesUniverse.filter((item) => {
-      if (item.used_in_assessment || String(item.assessment_id || "").trim()) return false;
+      if (item.used_in_assessment || String(item.assessment_id || item.assessmentId || "").trim()) return false;
       const sourceValue = String(item.source || "").trim();
       const clientValue = String(item.client_name || "Unassigned").trim();
       const jdValue = String(item.jd_title || item.role || "").trim();
@@ -7446,7 +7446,7 @@ function PortalApp({ token, onLogout }) {
   const pendingNotes = (state.candidates || []).filter((item) => {
     const sourceValue = String(item.source || "").trim();
     if (["website_apply", "hosted_apply", "google_sheet"].includes(sourceValue)) return false;
-    if (item.used_in_assessment || String(item.assessment_id || "").trim()) return false;
+    if (item.used_in_assessment || String(item.assessment_id || item.assessmentId || "").trim()) return false;
     return !item.hidden_from_captured;
   }).length;
   const scheduledFollowUpItems = todaysFollowUps

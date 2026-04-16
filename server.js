@@ -2226,7 +2226,7 @@ function buildCandidateSearchUniverse(candidates = [], assessments = [], jobs = 
     const cachedCvResult = candidateMeta?.cvAnalysisCache?.result && typeof candidateMeta.cvAnalysisCache.result === "object"
       ? candidateMeta.cvAnalysisCache.result
       : {};
-    const candidateAssessmentId = String(candidate?.assessment_id || "").trim();
+    const candidateAssessmentId = String(candidate?.assessment_id || candidate?.assessmentId || "").trim();
     const linkedAssessment = candidateAssessmentId ? (assessmentsById.get(candidateAssessmentId) || null) : null;
     if (linkedAssessment?.id) seenAssessmentIds.add(String(linkedAssessment.id));
     const isConverted = Boolean(candidate?.used_in_assessment) || Boolean(candidateAssessmentId);
