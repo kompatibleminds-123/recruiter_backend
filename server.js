@@ -920,8 +920,15 @@ async function ingestApplicantSubmission(body, req) {
     };
     Object.keys(nextMeta).forEach((k) => nextMeta[k] === undefined && delete nextMeta[k]);
 
+    // Keep candidates in one place:
+    // - If this person was already captured (extension/manual/etc), do NOT move them into Applied Candidates.
+    // - Only keep "website_apply/hosted_apply" source if the existing record was already an inbound applicant.
+    const existingSource = String(existing?.source || "").trim();
+    const existingIsInbound = existingSource === "website_apply" || existingSource === "hosted_apply";
+    const nextSource = existingIsInbound ? appliedSource : (existingSource || appliedSource);
+
     const patch = {
-      source: appliedSource,
+      source: nextSource,
       raw_note: encodeApplicantMetadata(nextMeta),
       client_name: payload.clientName || existing.client_name || null,
       jd_title: payload.jdTitle || existing.jd_title || null,

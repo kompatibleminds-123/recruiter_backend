@@ -4848,9 +4848,11 @@ function PortalApp({ token, onLogout }) {
       const assignedByUserId = String(item.assignedByUserId || item.assigned_by_user_id || "").trim();
       const assignedByName = String(item.assignedByName || item.assigned_by_name || "").trim();
       if (isAdmin) {
-        // For admin: "Owner" means it came directly to admin's inbox (apply link owned by admin).
-        const isToAdmin = (currentUserId && assignedToUserId === currentUserId) || (currentUserName && assignedToName === currentUserName);
-        return isToAdmin && !assignedByUserId && !assignedByName;
+        // For admin: "Owner" means unassigned inbound applicants sitting in the admin inbox.
+        // (assigned_to_* empty) and not manually assigned (assigned_by_* empty).
+        const isAssignedToSomeone = Boolean(assignedToUserId || assignedToName);
+        const isManuallyAssigned = Boolean(assignedByUserId || assignedByName);
+        return !isAssignedToSomeone && !isManuallyAssigned;
       }
       const isToMe = currentUserId && assignedToUserId === currentUserId;
       return isToMe && !assignedByUserId && !assignedByName;
@@ -7963,7 +7965,7 @@ function PortalApp({ token, onLogout }) {
               </div>
               <div className="metric-grid metric-grid--tight">
                 <div className="metric-card compact-metric"><div className="metric-label">Applied today</div><div className="metric-value">{applicantStats.today}</div></div>
-                <div className="metric-card compact-metric"><div className="metric-label">{String(state.user?.role || "").toLowerCase() === "admin" ? "Owned (direct inbox)" : "Owned (direct inbox)"}</div><div className="metric-value">{applicantStats.ownedDirect || 0}</div></div>
+                <div className="metric-card compact-metric"><div className="metric-label">{String(state.user?.role || "").toLowerCase() === "admin" ? "Owner (unassigned inbox)" : "Owned (direct inbox)"}</div><div className="metric-value">{applicantStats.ownedDirect || 0}</div></div>
                 <div className="metric-card compact-metric"><div className="metric-label">Assigned (manual)</div><div className="metric-value">{applicantStats.assignedManual || 0}</div></div>
                 <div className="metric-card compact-metric"><div className="metric-label">Active</div><div className="metric-value">{applicantStats.active}</div></div>
                 <div className="metric-card compact-metric"><div className="metric-label">Converted</div><div className="metric-value">{applicantStats.converted}</div></div>
@@ -7971,7 +7973,7 @@ function PortalApp({ token, onLogout }) {
               <div className="muted" style={{ marginTop: 8 }}>
                 Inactive: {applicantStats.inactive || 0} (hidden). Total: {applicantStats.total || 0}
               </div>
-              <p className="muted">Owned means the applicant belongs to a recruiter through the job owner / primary recruiter. Manual assigned means admin manually reassigned it. For admin, Owned + Unassigned = Total visible.</p>
+              <p className="muted">For admin: Owner means inbound applicants not assigned to anyone yet. Assigned (manual) means admin assigned them to a recruiter. For recruiters: Owned means it landed directly in your inbox via your apply link.</p>
               <div className="captured-filter-grid">
                 <MultiSelectDropdown label="Clients" options={applicantOptions.clients} selected={applicantFilters.clients} onToggle={(value) => setApplicantFilters((current) => ({ ...current, clients: value === "__all__" ? [] : current.clients.includes(value) ? current.clients.filter((item) => item !== value) : [...current.clients, value] }))} />
                 <MultiSelectDropdown label="JD / Role" options={applicantOptions.jds} selected={applicantFilters.jds} onToggle={(value) => setApplicantFilters((current) => ({ ...current, jds: value === "__all__" ? [] : current.jds.includes(value) ? current.jds.filter((item) => item !== value) : [...current.jds, value] }))} />
