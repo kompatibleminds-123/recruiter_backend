@@ -4232,23 +4232,11 @@ function PortalApp({ token, onLogout }) {
     return map;
   }, [state.assessments]);
 
-  const getCapturedMatchedAssessment = (candidate) => {
-    if (!candidate) return null;
-    const idKey = String(candidate?.id || "").trim();
-    if (idKey && capturedAssessmentMap.has(`id:${idKey}`)) return capturedAssessmentMap.get(`id:${idKey}`);
-    const emailKey = String(candidate?.email || "").trim().toLowerCase();
-    if (emailKey && capturedAssessmentMap.has(`e:${emailKey}`)) return capturedAssessmentMap.get(`e:${emailKey}`);
-    const digits = String(candidate?.phone || "").replace(/\D/g, "");
-    const phoneKey = digits.length >= 10 ? digits.slice(-10) : "";
-    if (phoneKey && capturedAssessmentMap.has(`p:${phoneKey}`)) return capturedAssessmentMap.get(`p:${phoneKey}`);
-    return null;
-  };
-
   const isCapturedCandidateConverted = (candidate) => {
     if (!candidate) return false;
     if (candidate.used_in_assessment) return true;
     if (String(candidate.assessment_id || candidate.assessmentId || "").trim()) return true;
-    return Boolean(getCapturedMatchedAssessment(candidate));
+    return false;
   };
   const capturedSources = useMemo(() => Array.from(new Set((state.candidates || []).map((item) => String(item.source || "").trim()).filter(Boolean))), [state.candidates]);
   const assessmentOptions = useMemo(() => {
@@ -4655,7 +4643,7 @@ function PortalApp({ token, onLogout }) {
       if (adminName) meta.capturedBy.add(adminName);
     }
     for (const item of state.candidates || []) {
-      const matchedAssessment = getCapturedMatchedAssessment(item);
+      const matchedAssessment = null;
       const sourceValue = String(item.source || "").trim();
       const isInboundApplicant = sourceValue === "website_apply" || sourceValue === "hosted_apply" || sourceValue === "google_sheet";
       if (isInboundApplicant) continue;
@@ -6498,7 +6486,7 @@ function PortalApp({ token, onLogout }) {
 
   function buildCapturedCopyRows() {
     return capturedCandidates.map((item) => {
-      const matchedAssessment = getCapturedMatchedAssessment(item);
+      const matchedAssessment = null;
       return {
         ...item,
         outcome: getCapturedOutcome(item, matchedAssessment),
@@ -8151,7 +8139,7 @@ function PortalApp({ token, onLogout }) {
                 </div>
                 <div className="stack-list">
                 {!capturedCandidates.length ? <div className="empty-state">No captured notes or recruiter-owned candidates yet.</div> : capturedCandidates.map((item) => {
-                  const matchedAssessment = getCapturedMatchedAssessment(item);
+                  const matchedAssessment = null;
                   const statusState = normalizedAssessmentState(matchedAssessment, item);
                   const latestAttemptLine = extractLatestAttemptLine(item.last_contact_notes || "");
                   const latestAttemptRemarks = extractAttemptRemarks(latestAttemptLine);
