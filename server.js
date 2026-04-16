@@ -2309,23 +2309,6 @@ function buildCandidateSearchUniverse(candidates = [], assessments = [], jobs = 
   const seenAssessmentIds = new Set();
   const knownJdTitles = buildKnownJdTitleSet(jobs);
 
-  const normalizeLoose = (value) => String(value || "").trim().toLowerCase();
-  const candidateIdentityAllowsAssessment = (candidate, assessment) => {
-    if (!candidate || !assessment) return false;
-    const candidateName = normalizeLoose(candidate?.name);
-    const assessmentName = normalizeLoose(assessment?.candidateName || assessment?.candidate_name);
-    const candidateClient = normalizeLoose(candidate?.client_name || candidate?.clientName);
-    const assessmentClient = normalizeLoose(assessment?.clientName || assessment?.client_name);
-    const candidateJd = normalizeLoose(candidate?.jd_title || candidate?.jdTitle || candidate?.assigned_jd_title || candidate?.assignedJdTitle);
-    const assessmentJd = normalizeLoose(assessment?.jdTitle || assessment?.jd_title);
-
-    // Prefer these strong alignments to prevent "wrong assessment opens" due to shared/missing identity fields.
-    if (candidateJd && assessmentJd && candidateJd === assessmentJd) return true;
-    if (candidateClient && assessmentClient && candidateClient === assessmentClient) return true;
-    if (candidateName && assessmentName && candidateName === assessmentName) return true;
-    return false;
-  };
-
   for (const candidate of candidates || []) {
     const candidateMeta = decodeApplicantMetadata(candidate);
     const candidateSource = normalizeDashboardText(candidate?.source || candidateMeta?.sourcePlatform || "");
@@ -2343,15 +2326,13 @@ function buildCandidateSearchUniverse(candidates = [], assessments = [], jobs = 
     if (!linkedAssessment) {
       const email = normalizeAssessmentEmail(candidate?.email || "");
       if (email && assessmentsByEmail.has(email)) {
-        const possible = assessmentsByEmail.get(email) || null;
-        if (candidateIdentityAllowsAssessment(candidate, possible)) linkedAssessment = possible;
+        linkedAssessment = assessmentsByEmail.get(email) || null;
       }
     }
     if (!linkedAssessment) {
       const phone = normalizeAssessmentPhone(candidate?.phone || "");
       if (phone && assessmentsByPhone.has(phone)) {
-        const possible = assessmentsByPhone.get(phone) || null;
-        if (candidateIdentityAllowsAssessment(candidate, possible)) linkedAssessment = possible;
+        linkedAssessment = assessmentsByPhone.get(phone) || null;
       }
     }
     if (linkedAssessment?.id) seenAssessmentIds.add(String(linkedAssessment.id));
