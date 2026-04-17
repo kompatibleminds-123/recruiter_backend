@@ -7671,7 +7671,7 @@ function PortalApp({ token, onLogout }) {
       subtitle: item.jd_title || item.role || "Untitled role",
       when: item.next_follow_up_at,
       raw: item,
-      action: () => loadCandidateIntoInterview(item.id)
+      action: () => void openAttempts(item.id)
     }))
     .sort((a, b) => new Date(a.when) - new Date(b.when))
     .slice(0, 5);
@@ -7683,7 +7683,7 @@ function PortalApp({ token, onLogout }) {
       subtitle: item.jdTitle || "Untitled role",
       when: item.interviewAt,
       raw: item,
-      action: () => openSavedAssessment(item)
+      action: () => setAssessmentStatusId(String(item.id || ""))
     }))
     .sort((a, b) => new Date(a.when) - new Date(b.when))
     .slice(0, 5);
@@ -7785,7 +7785,7 @@ function PortalApp({ token, onLogout }) {
                               <span className="agenda-item__time">{`Call follow-up | ${new Date(item.next_follow_up_at).toLocaleString()}`}</span>
                             </div>
                             <div className="button-row tight">
-                              <button onClick={() => loadCandidateIntoInterview(item.id)}>Update</button>
+                              <button onClick={() => void openAttempts(item.id)}>Update</button>
                               <button className="ghost-btn" onClick={() => void completeAgendaFollowUp(item)}>Done</button>
                             </div>
                           </article>
