@@ -2631,6 +2631,7 @@ function NotesModal({ open, candidate, onClose, onPatch, onParse }) {
 
   if (!open || !candidate) return null;
 
+  const cautiousIndicatorsText = String(getCandidateDraftState(candidate || {})?.cautiousIndicators || "").trim();
   const effectiveRawRecruiterNote = buildStructuredRecruiterRawNote(rawRecruiterSections, "");
 
   const saveAll = async () => {
@@ -2664,6 +2665,12 @@ function NotesModal({ open, candidate, onClose, onPatch, onParse }) {
       <div className="overlay-card" onClick={(e) => e.stopPropagation()}>
         <h3>Recruiter Note</h3>
         <p className="muted">{candidate.name || "Candidate"} | {candidate.jd_title || candidate.role || "No role set"}</p>
+        {cautiousIndicatorsText ? (
+          <div style={{ marginTop: 8 }}>
+            <div className="status-note"><strong>Cautious indicators to check</strong></div>
+            <div className="candidate-snippet">{cautiousIndicatorsText}</div>
+          </div>
+        ) : null}
         <div className="form-grid two-col">
           <label><span>Current CTC</span><input value={rawRecruiterSections.current_ctc} onChange={(e) => setRawRecruiterSections((current) => ({ ...current, current_ctc: e.target.value }))} placeholder="Recruiter can type in any style here" /></label>
           <label><span>Expected CTC</span><input value={rawRecruiterSections.expected_ctc} onChange={(e) => setRawRecruiterSections((current) => ({ ...current, expected_ctc: e.target.value }))} placeholder="Expected / expectation" /></label>
@@ -3806,6 +3813,7 @@ function PortalApp({ token, onLogout }) {
     cvAnalysis: null,
     cvAnalysisApplied: false
   });
+  const [editCautiousIndicators, setEditCautiousIndicators] = useState(false);
 
   const assignApplicant = (state.applicants || []).find((item) => String(item.id) === String(assignApplicantId)) || null;
   const assignCandidate = (state.candidates || []).find((item) => String(item.id) === String(assignCandidateId)) || null;
@@ -8437,7 +8445,30 @@ function PortalApp({ token, onLogout }) {
                   <label className="full"><span>Captured notes</span><textarea value={interviewForm.callbackNotes} onChange={(e) => setInterviewForm((c) => ({ ...c, callbackNotes: e.target.value }))} /></label>
                   <label className="full"><span>Recruiter notes</span><textarea value={interviewForm.recruiterNotes} onChange={(e) => setInterviewForm((c) => ({ ...c, recruiterNotes: e.target.value }))} /></label>
                   <label className="full"><span>Other pointers</span><textarea value={interviewForm.otherPointers} onChange={(e) => setInterviewForm((c) => ({ ...c, otherPointers: e.target.value }))} /></label>
-                  <label className="full"><span>Cautious indicators to check</span><textarea value={interviewForm.cautiousIndicators} onChange={(e) => setInterviewForm((c) => ({ ...c, cautiousIndicators: e.target.value }))} placeholder="What to verify on call: gaps, stability reason, domain mismatch, missing target metrics..." /></label>
+                  {(String(interviewForm.cautiousIndicators || "").trim() || editCautiousIndicators) ? (
+                    <label className="full">
+                      <span>Cautious indicators to check</span>
+                      {String(interviewForm.cautiousIndicators || "").trim() ? (
+                        <div className="candidate-snippet">{String(interviewForm.cautiousIndicators || "").trim()}</div>
+                      ) : (
+                        <div className="muted">No cautious indicators saved yet.</div>
+                      )}
+                      <div className="button-row tight" style={{ marginTop: 6 }}>
+                        <button type="button" className="ghost-btn" onClick={() => setEditCautiousIndicators((v) => !v)}>{editCautiousIndicators ? "Hide editor" : "Edit note"}</button>
+                      </div>
+                      {editCautiousIndicators ? (
+                        <textarea
+                          value={interviewForm.cautiousIndicators}
+                          onChange={(e) => setInterviewForm((c) => ({ ...c, cautiousIndicators: e.target.value }))}
+                          placeholder="What to verify on call: gaps, stability reason, domain mismatch, missing target metrics..."
+                        />
+                      ) : null}
+                    </label>
+                  ) : (
+                    <div className="full" style={{ marginTop: 6 }}>
+                      <button type="button" className="ghost-btn" onClick={() => setEditCautiousIndicators(true)}>Add cautious indicator note</button>
+                    </div>
+                  )}
                   <label className="full"><span>Tags / searchable keywords</span><textarea value={interviewForm.tags} onChange={(e) => setInterviewForm((c) => ({ ...c, tags: e.target.value }))} placeholder="SaaS, B2B, enterprise sales, node backend, react + java..." /></label>
                 </form>
               </Section>
@@ -8546,7 +8577,7 @@ function PortalApp({ token, onLogout }) {
                   <button onClick={() => void saveAssessment()}>{interviewMeta.assessmentId ? "Save assessment" : "Create assessment"}</button>
                   <button onClick={() => sendInterviewToSheets()}>Send to Sheets</button>
                   <button onClick={() => exportInterviewAll()}>Export all</button>
-                    <button className="ghost-btn" onClick={() => { setInterviewMeta({ candidateId: "", assessmentId: "" }); setInterviewForm({ candidateName: "", phoneNumber: "", emailId: "", linkedin: "", location: "", currentCtc: "", expectedCtc: "", noticePeriod: "", offerInHand: "", lwdOrDoj: "", currentCompany: "", currentDesignation: "", totalExperience: "", relevantExperience: "", currentOrgTenure: "", reasonForChange: "", cautiousIndicators: "", clientName: "", jdTitle: "", pipelineStage: "Under Interview Process", candidateStatus: "Screening in progress", followUpAt: "", interviewAt: "", recruiterNotes: "", callbackNotes: "", otherPointers: "", tags: "", jdScreeningAnswers: {}, cvAnalysis: null, cvAnalysisApplied: false, statusHistory: [] }); setStatus("interview", ""); }}>Clear draft</button>
+                    <button className="ghost-btn" onClick={() => { setEditCautiousIndicators(false); setInterviewMeta({ candidateId: "", assessmentId: "" }); setInterviewForm({ candidateName: "", phoneNumber: "", emailId: "", linkedin: "", location: "", currentCtc: "", expectedCtc: "", noticePeriod: "", offerInHand: "", lwdOrDoj: "", currentCompany: "", currentDesignation: "", totalExperience: "", relevantExperience: "", currentOrgTenure: "", reasonForChange: "", cautiousIndicators: "", clientName: "", jdTitle: "", pipelineStage: "Under Interview Process", candidateStatus: "Screening in progress", followUpAt: "", interviewAt: "", recruiterNotes: "", callbackNotes: "", otherPointers: "", tags: "", jdScreeningAnswers: {}, cvAnalysis: null, cvAnalysisApplied: false, statusHistory: [] }); setStatus("interview", ""); }}>Clear draft</button>
                 </div>
               </Section>
             </div>
