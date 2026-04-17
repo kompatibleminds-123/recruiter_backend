@@ -1804,6 +1804,11 @@ function buildScreeningRemarksForExport(item = {}) {
     parts.push("Strong points:");
     strongPoints.forEach((point, index) => parts.push(`${index + 1}. *${point}*`));
   }
+  if (questionLines.length) {
+    if (parts.length) parts.push("");
+    parts.push("Screening pointers:");
+    parts.push(...questionLines);
+  }
   if (finalReasonOfChange) {
     if (parts.length) parts.push("");
     parts.push("Reason of change:");
