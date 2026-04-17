@@ -4,7 +4,7 @@ const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
 const { parseCandidatePayload } = require("./src/parser");
-const { callOpenAiJsonSchema, callOpenAiQuestions, normalizeCandidateFileWithAi, normalizeCandidateWithAi } = require("./src/ai");
+const { callOpenAiJsonSchema, callOpenAiQuestions, normalizeCandidateFileWithAi, normalizeCandidateWithAi, extractLinkedInAssistFromScreenshotWithAi } = require("./src/ai");
 const { storeUploadedFile, loadStoredFile } = require("./src/storage");
 const {
   assignCandidate,
@@ -4520,6 +4520,59 @@ const server = http.createServer(async (req, res) => {
       const q = String(requestUrl.searchParams.get("q") || "").trim();
       const items = await listApplicantsForUser(user, { q, limit: 500 });
       sendJson(res, 200, { ok: true, result: { total: items.length, items } });
+    } catch (error) {
+      sendJson(res, 400, { ok: false, error: String(error.message || error) });
+    }
+    return;
+  }
+
+  if (req.method === "POST" && requestUrl.pathname === "/company/linkedin-assist/screenshot") {
+    try {
+      const actor = await requireSessionUser(getBearerToken(req));
+      const body = await readJsonBody(req);
+      const uploadedFile = body.file || body.uploadedFile || null;
+      if (!uploadedFile?.fileData) {
+        throw new Error("Missing screenshot file.");
+      }
+      const apiKey = String(process.env.OPENAI_API_KEY || "").trim();
+      if (!apiKey) throw new Error("Missing OPENAI_API_KEY on server.");
+
+      const extracted = await extractLinkedInAssistFromScreenshotWithAi({
+        apiKey,
+        model: String(body.model || "").trim() || "gpt-4o-mini",
+        uploadedFile: {
+          filename: uploadedFile.filename || uploadedFile.name || "screenshot.png",
+          mimeType: uploadedFile.mimeType || uploadedFile.type || "image/png",
+          fileData: String(uploadedFile.fileData || "").replace(/^data:[^;]+;base64,/i, "")
+        }
+      });
+
+      const name = String(extracted?.name || "").trim();
+      const company = String(extracted?.company || "").trim();
+      const role = String(extracted?.role || "").trim();
+      const location = String(extracted?.location || "").trim();
+      const linkedin = String(extracted?.linkedin || "").trim();
+
+      const query = [name, role, company, location].filter(Boolean).join(" ");
+      const finalQuery = query ? `"${query.replace(/\"/g, " ").trim()}" site:linkedin.com/in` : "site:linkedin.com/in";
+      const url = linkedin && /linkedin\.com\/in\//i.test(linkedin)
+        ? String(linkedin).replace(/^http:\/\//i, "https://")
+        : `https://www.google.com/search?q=${encodeURIComponent(finalQuery)}`;
+
+      sendJson(res, 200, {
+        ok: true,
+        result: {
+          extracted: {
+            name: extracted?.name ?? null,
+            company: extracted?.company ?? null,
+            role: extracted?.role ?? null,
+            location: extracted?.location ?? null,
+            linkedin: extracted?.linkedin ?? null
+          },
+          query: finalQuery,
+          url
+        }
+      });
     } catch (error) {
       sendJson(res, 400, { ok: false, error: String(error.message || error) });
     }

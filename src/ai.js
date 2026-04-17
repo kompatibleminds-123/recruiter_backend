@@ -424,9 +424,53 @@ async function normalizeCandidateFileWithAi({ apiKey, model, uploadedFile, sourc
   return convertAiResumeJsonToInternalShape(result, fallbackFields);
 }
 
+function buildLinkedInAssistSchema() {
+  return {
+    type: "object",
+    additionalProperties: false,
+    required: ["name", "company", "role", "location", "linkedin"],
+    properties: {
+      name: { type: ["string", "null"] },
+      company: { type: ["string", "null"] },
+      role: { type: ["string", "null"] },
+      location: { type: ["string", "null"] },
+      linkedin: { type: ["string", "null"] }
+    }
+  };
+}
+
+function buildLinkedInAssistPrompt() {
+  return [
+    "You are extracting candidate identity hints from a screenshot of a candidate card.",
+    "Return only JSON in the provided schema.",
+    "",
+    "Rules:",
+    "- If linkedin profile URL is visible anywhere, return it in linkedin.",
+    "- Otherwise set linkedin = null.",
+    "- Extract name, current company, role/designation, and location as visible on the card.",
+    "- Do not guess missing fields; return null when not present.",
+    "",
+    "Output schema:",
+    JSON.stringify(buildLinkedInAssistSchema(), null, 2)
+  ].join("\n");
+}
+
+async function extractLinkedInAssistFromScreenshotWithAi({ apiKey, model, uploadedFile }) {
+  const prompt = buildLinkedInAssistPrompt();
+  return callOpenAiFileJsonSchema({
+    apiKey,
+    prompt,
+    model: model || "gpt-4o-mini",
+    uploadedFile,
+    schemaName: "linkedin_assist_from_screenshot",
+    schema: buildLinkedInAssistSchema()
+  });
+}
+
 module.exports = {
   callOpenAiJsonSchema,
   callOpenAiQuestions,
   normalizeCandidateWithAi,
-  normalizeCandidateFileWithAi
+  normalizeCandidateFileWithAi,
+  extractLinkedInAssistFromScreenshotWithAi
 };
