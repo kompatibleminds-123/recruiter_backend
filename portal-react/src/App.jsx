@@ -7482,11 +7482,25 @@ function PortalApp({ token, onLogout }) {
       : nextWeekEnd;
   const oneDayAgoStart = new Date(todayStart);
   oneDayAgoStart.setDate(oneDayAgoStart.getDate() - 1);
+  const candidateHasAssessment = (item) => {
+    const id = String(item?.assessment_id || item?.assessmentId || item?.assessment_id || "").trim();
+    return Boolean(id) || item?.used_in_assessment === true || item?.usedInAssessment === true;
+  };
+  const isCapturedCallLater = (item) => {
+    if (!item?.next_follow_up_at) return false;
+    if (item?.hidden_from_captured === true || item?.hiddenFromCaptured === true) return false;
+    // Follow-ups are for captured notes only (Call later), not for assessments.
+    if (candidateHasAssessment(item)) return false;
+    const outcome = String(item?.last_contact_outcome || item?.lastContactOutcome || "").trim().toLowerCase();
+    return outcome === "call later" || outcome === "call_later";
+  };
   const overdueFollowUps = (state.candidates || []).filter((item) => {
+    if (!isCapturedCallLater(item)) return false;
     const value = item?.next_follow_up_at ? new Date(item.next_follow_up_at) : null;
     return value && value >= oneDayAgoStart && value < todayStart;
   });
   const todaysFollowUps = (state.candidates || []).filter((item) => {
+    if (!isCapturedCallLater(item)) return false;
     const value = item?.next_follow_up_at ? new Date(item.next_follow_up_at) : null;
     return value && value >= agendaWindowStart && value < agendaWindowEnd;
   });
