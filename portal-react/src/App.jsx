@@ -3758,6 +3758,8 @@ function PortalApp({ token, onLogout }) {
   const [clientShareCvLinks, setClientShareCvLinks] = useState({});
   const [clientShareCvLinkState, setClientShareCvLinkState] = useState({});
   const [agendaRange, setAgendaRange] = useState("today");
+  const [openAssessmentMoreId, setOpenAssessmentMoreId] = useState("");
+  const assessmentMoreMenuRef = useRef(null);
   const [copySettings, setCopySettings] = useState(() => {
     try {
       const saved = window.localStorage.getItem(COPY_SETTINGS_STORAGE_KEY);
@@ -3911,6 +3913,21 @@ function PortalApp({ token, onLogout }) {
     // Archived assessments should not be selected for client share.
     setSelectedAssessmentIds([]);
   }, [assessmentLane]);
+
+  useEffect(() => {
+    if (!openAssessmentMoreId) return;
+    const handlePointerDown = (event) => {
+      const root = assessmentMoreMenuRef.current;
+      if (root && event?.target && root.contains(event.target)) return;
+      setOpenAssessmentMoreId("");
+    };
+    document.addEventListener("mousedown", handlePointerDown);
+    document.addEventListener("touchstart", handlePointerDown);
+    return () => {
+      document.removeEventListener("mousedown", handlePointerDown);
+      document.removeEventListener("touchstart", handlePointerDown);
+    };
+  }, [openAssessmentMoreId]);
   const [editCautiousIndicators, setEditCautiousIndicators] = useState(false);
 
   const assignApplicant = (state.applicants || []).find((item) => String(item.id) === String(assignApplicantId)) || null;
@@ -7487,13 +7504,8 @@ function PortalApp({ token, onLogout }) {
     }
   }
 
-  function closeDetailsMenuFromEvent(event) {
-    try {
-      const details = event?.currentTarget?.closest?.("details");
-      if (details) details.open = false;
-    } catch {
-      // ignore
-    }
+  function closeAssessmentMoreMenu() {
+    setOpenAssessmentMoreId("");
   }
 
   async function completeAgendaInterview(assessment) {
@@ -8456,33 +8468,53 @@ function PortalApp({ token, onLogout }) {
                           <button onClick={() => void openAssessmentJourney(item)}>Journey</button>
                           <button onClick={() => void openAssessmentCandidateCardModal(item)}>Candidate card</button>
                           <button onClick={() => openAssessmentWhatsapp(item)}>WhatsApp</button>
-                          <details className="filter-dropdown more-dropdown">
-                            <summary className="filter-dropdown__summary">
-                              <span>More</span>
-                              <span className="muted">⋯</span>
-                            </summary>
-                            <div className="filter-dropdown__body">
-                              <button className="more-dropdown__item" onClick={(e) => { closeDetailsMenuFromEvent(e); void setAssessmentArchivedState(item, true, { navigateToCaptured: true }); }}>Move back to captured</button>
-                              <button className="more-dropdown__item" onClick={(e) => { closeDetailsMenuFromEvent(e); void setAssessmentArchivedState(item, true); }}>Hide</button>
-                              <button className="more-dropdown__item" onClick={(e) => { closeDetailsMenuFromEvent(e); reuseAssessmentAsNew(item); }}>Reuse as new</button>
-                              <button className="more-dropdown__item more-dropdown__danger" onClick={(e) => { closeDetailsMenuFromEvent(e); void deleteAssessmentItem(item); }}>Delete</button>
-                            </div>
-                          </details>
+                          <div
+                            className="more-menu"
+                            ref={(node) => {
+                              if (openAssessmentMoreId === String(item.id)) assessmentMoreMenuRef.current = node;
+                            }}
+                          >
+                            <button
+                              type="button"
+                              className="ghost-btn more-menu__trigger"
+                              onClick={() => setOpenAssessmentMoreId((current) => (current === String(item.id) ? "" : String(item.id)))}
+                            >
+                              More <span className="muted">⋯</span>
+                            </button>
+                            {openAssessmentMoreId === String(item.id) ? (
+                              <div className="more-menu__dropdown" role="menu">
+                                <button type="button" className="more-menu__item" onClick={() => { closeAssessmentMoreMenu(); void setAssessmentArchivedState(item, true, { navigateToCaptured: true }); }}>Move back to captured</button>
+                                <button type="button" className="more-menu__item" onClick={() => { closeAssessmentMoreMenu(); void setAssessmentArchivedState(item, true); }}>Hide</button>
+                                <button type="button" className="more-menu__item" onClick={() => { closeAssessmentMoreMenu(); reuseAssessmentAsNew(item); }}>Reuse as new</button>
+                                <button type="button" className="more-menu__item more-menu__danger" onClick={() => { closeAssessmentMoreMenu(); void deleteAssessmentItem(item); }}>Delete</button>
+                              </div>
+                            ) : null}
+                          </div>
                         </>
                       ) : (
                         <>
                           <button onClick={() => void setAssessmentArchivedState(item, false)}>Restore</button>
                           <button onClick={() => void openAssessmentCandidateCardModal(item)}>Candidate card</button>
-                          <details className="filter-dropdown more-dropdown">
-                            <summary className="filter-dropdown__summary">
-                              <span>More</span>
-                              <span className="muted">⋯</span>
-                            </summary>
-                            <div className="filter-dropdown__body">
-                              <button className="more-dropdown__item" onClick={(e) => { closeDetailsMenuFromEvent(e); reuseAssessmentAsNew(item); }}>Reuse as new</button>
-                              <button className="more-dropdown__item more-dropdown__danger" onClick={(e) => { closeDetailsMenuFromEvent(e); void deleteAssessmentItem(item); }}>Delete</button>
-                            </div>
-                          </details>
+                          <div
+                            className="more-menu"
+                            ref={(node) => {
+                              if (openAssessmentMoreId === String(item.id)) assessmentMoreMenuRef.current = node;
+                            }}
+                          >
+                            <button
+                              type="button"
+                              className="ghost-btn more-menu__trigger"
+                              onClick={() => setOpenAssessmentMoreId((current) => (current === String(item.id) ? "" : String(item.id)))}
+                            >
+                              More <span className="muted">⋯</span>
+                            </button>
+                            {openAssessmentMoreId === String(item.id) ? (
+                              <div className="more-menu__dropdown" role="menu">
+                                <button type="button" className="more-menu__item" onClick={() => { closeAssessmentMoreMenu(); reuseAssessmentAsNew(item); }}>Reuse as new</button>
+                                <button type="button" className="more-menu__item more-menu__danger" onClick={() => { closeAssessmentMoreMenu(); void deleteAssessmentItem(item); }}>Delete</button>
+                              </div>
+                            ) : null}
+                          </div>
                         </>
                       )}
                     </div>
