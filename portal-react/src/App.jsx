@@ -7474,6 +7474,15 @@ function PortalApp({ token, onLogout }) {
     }
   }
 
+  function closeDetailsMenuFromEvent(event) {
+    try {
+      const details = event?.currentTarget?.closest?.("details");
+      if (details) details.open = false;
+    } catch {
+      // ignore
+    }
+  }
+
   async function completeAgendaInterview(assessment) {
     const confirmed = typeof window === "undefined" || window.confirm(`Mark interview done for ${assessment?.candidateName || "this candidate"}?`);
     if (!confirmed) return;
@@ -8430,23 +8439,21 @@ function PortalApp({ token, onLogout }) {
                     <div className="button-row">
                       {assessmentLane === "active" && !isArchived ? (
                         <>
-                          <button onClick={() => void setAssessmentArchivedState(item, true, { navigateToCaptured: true })}>Move back to Captured</button>
                           <button onClick={() => openSavedAssessment(item)}>Edit assessment</button>
                           <button onClick={() => setAssessmentStatusId(item.id)}>Update status</button>
                           <button onClick={() => void openAssessmentJourney(item)}>Journey</button>
-                          <button onClick={() => openAssessmentWhatsapp(item)}>WhatsApp</button>
                           <button onClick={() => void openAssessmentCandidateCardModal(item)}>Candidate card</button>
-                          <details className="filter-dropdown">
+                          <button onClick={() => openAssessmentWhatsapp(item)}>WhatsApp</button>
+                          <details className="filter-dropdown more-dropdown">
                             <summary className="filter-dropdown__summary">
                               <span>More</span>
                               <span className="muted">⋯</span>
                             </summary>
                             <div className="filter-dropdown__body">
-                              <div className="button-row tight">
-                                <button className="ghost-btn" onClick={() => void setAssessmentArchivedState(item, true)}>Hide/Archive</button>
-                                <button className="ghost-btn" onClick={() => reuseAssessmentAsNew(item)}>Reuse as new</button>
-                                <button className="ghost-btn" onClick={() => void deleteAssessmentItem(item)}>Delete</button>
-                              </div>
+                              <button className="more-dropdown__item" onClick={(e) => { closeDetailsMenuFromEvent(e); void setAssessmentArchivedState(item, true, { navigateToCaptured: true }); }}>Move back to captured</button>
+                              <button className="more-dropdown__item" onClick={(e) => { closeDetailsMenuFromEvent(e); void setAssessmentArchivedState(item, true); }}>Hide</button>
+                              <button className="more-dropdown__item" onClick={(e) => { closeDetailsMenuFromEvent(e); reuseAssessmentAsNew(item); }}>Reuse as new</button>
+                              <button className="more-dropdown__item more-dropdown__danger" onClick={(e) => { closeDetailsMenuFromEvent(e); void deleteAssessmentItem(item); }}>Delete</button>
                             </div>
                           </details>
                         </>
@@ -8454,16 +8461,14 @@ function PortalApp({ token, onLogout }) {
                         <>
                           <button onClick={() => void setAssessmentArchivedState(item, false)}>Restore</button>
                           <button onClick={() => void openAssessmentCandidateCardModal(item)}>Candidate card</button>
-                          <details className="filter-dropdown">
+                          <details className="filter-dropdown more-dropdown">
                             <summary className="filter-dropdown__summary">
                               <span>More</span>
                               <span className="muted">⋯</span>
                             </summary>
                             <div className="filter-dropdown__body">
-                              <div className="button-row tight">
-                                <button className="ghost-btn" onClick={() => reuseAssessmentAsNew(item)}>Reuse as new</button>
-                                <button className="ghost-btn" onClick={() => void deleteAssessmentItem(item)}>Delete</button>
-                              </div>
+                              <button className="more-dropdown__item" onClick={(e) => { closeDetailsMenuFromEvent(e); reuseAssessmentAsNew(item); }}>Reuse as new</button>
+                              <button className="more-dropdown__item more-dropdown__danger" onClick={(e) => { closeDetailsMenuFromEvent(e); void deleteAssessmentItem(item); }}>Delete</button>
                             </div>
                           </details>
                         </>
