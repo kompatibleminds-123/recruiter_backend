@@ -8428,7 +8428,7 @@ function PortalApp({ token, onLogout }) {
               <div className="status-note">Selected for client share: {selectedAssessmentIds.length}</div>
               <div className="stack-list">
                 {!filteredAssessments.length ? <div className="empty-state">No assessments saved yet.</div> : filteredAssessments.map((item) => (
-                  <article className={`item-card compact-card ${selectedAssessmentIds.includes(String(item.id)) ? "selected-card" : ""}`} key={item.id}>
+                  <article className={`item-card compact-card assessment-card ${selectedAssessmentIds.includes(String(item.id)) ? "selected-card" : ""}`} key={item.id}>
                     {(() => {
                       const latestStatusPreview = getLatestAssessmentStatusPreview(item);
                       const isArchived = isAssessmentArchived(item);
