@@ -407,6 +407,10 @@ function sanitizeAssessment(item) {
     clientFeedbackUpdatedBy: item.clientFeedbackUpdatedBy ?? item.client_feedback_updated_by ?? p.clientFeedbackUpdatedBy ?? "",
     clientFeedbackHistory: item.clientFeedbackHistory ?? item.client_feedback_history ?? p.clientFeedbackHistory ?? [],
     status: item.status ?? p.status ?? "",
+    // Archive / hide support (stored in payload for backwards-compatible schema).
+    archived: Boolean(item.archived ?? item.isArchived ?? item.archived_flag ?? p.archived ?? p.isArchived ?? false),
+    archivedAt: String(item.archivedAt ?? item.archived_at ?? p.archivedAt ?? p.archived_at ?? "").trim(),
+    archivedBy: String(item.archivedBy ?? item.archived_by ?? p.archivedBy ?? p.archived_by ?? "").trim(),
     customPipelineStages: item.customPipelineStages ?? item.custom_pipeline_stages ?? p.customPipelineStages ?? "",
     customCandidateStatuses: item.customCandidateStatuses ?? item.custom_candidate_statuses ?? p.customCandidateStatuses ?? "",
     customHrCandidateStatuses: item.customHrCandidateStatuses ?? item.custom_hr_candidate_statuses ?? p.customHrCandidateStatuses ?? "",

@@ -7461,7 +7461,7 @@ function PortalApp({ token, onLogout }) {
       const saved = await api("/company/assessments", token, "POST", { assessment: next });
       upsertAssessmentInState(saved);
       if (archived && options.navigateToCaptured) {
-        navigate("/captured");
+        navigate("/captured-notes");
         setStatus("captured", "Moved assessment back to Captured.", "ok");
       } else {
         setStatus("assessments", archived ? "Assessment archived." : "Assessment restored.", "ok");
