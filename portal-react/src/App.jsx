@@ -2181,6 +2181,54 @@ function resolveTimelineText({ textTimeline = "", jsonTimeline = null } = {}) {
   return "";
 }
 
+function normalizeCompanyKey(value) {
+  return String(value || "")
+    .toLowerCase()
+    .replace(/&/g, "and")
+    .replace(/[^\w\s]/g, " ")
+    .replace(/\b(ltd|limited|pvt|private|inc|llc|co|company|technologies|technology|services)\b/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function extractCompanyFromTimelineSegment(segment) {
+  const raw = String(segment || "").replace(/\s+/g, " ").trim();
+  if (!raw) return "";
+  const cleaned = raw.replace(/^\[[^\]]+\]\s*/g, "").trim();
+  const atMatch = cleaned.match(/\bat\s+(.+?)(?:\s*\||\s*\(|\s*\d{4}|\s*$)/i);
+  if (atMatch && atMatch[1]) return String(atMatch[1]).trim();
+  const pipeParts = cleaned.split("|").map((p) => p.trim()).filter(Boolean);
+  if (pipeParts.length) {
+    const first = pipeParts[0];
+    const looksLikeTitle = /\b(engineer|developer|manager|lead|executive|associate|consultant|analyst|architect|director|head)\b/i.test(first);
+    if (!looksLikeTitle) return first;
+    if (pipeParts[1] && !/\d{4}/.test(pipeParts[1])) return pipeParts[1];
+  }
+  return "";
+}
+
+function extractPreviousCompaniesFromTimeline({ timelineText = "", currentCompany = "", limit = 3 } = {}) {
+  const text = String(timelineText || "").trim();
+  if (!text) return [];
+  const segments = text
+    .replace(/\r/g, "")
+    .split(/(?:\n+|;\s*|\u2022\s*)/g)
+    .map((s) => String(s || "").trim())
+    .filter(Boolean);
+  const currentKey = normalizeCompanyKey(currentCompany);
+  const companies = [];
+  segments.forEach((segment) => {
+    const company = extractCompanyFromTimelineSegment(segment);
+    if (!company) return;
+    const key = normalizeCompanyKey(company);
+    if (!key) return;
+    if (currentKey && (key === currentKey || key.includes(currentKey) || currentKey.includes(key))) return;
+    if (companies.some((existing) => normalizeCompanyKey(existing) === key)) return;
+    companies.push(company);
+  });
+  return companies.slice(0, Math.max(0, Number(limit || 0) || 0));
+}
+
 function buildExcelHtmlFromPreset(rows, presetId, settings = DEFAULT_COPY_SETTINGS, sheetName = "Sheet1") {
   const preset = buildCapturedExcelRows(rows || [], presetId || settings?.excelPreset || "compact_recruiter", settings);
   const headers = preset.headers.map((header) => `<th style="border:1px solid #d8dee8;padding:10px 12px;background:#f6f8fb;text-align:left;font-size:13px;">${escapeHtml(header)}</th>`).join("");
@@ -3270,6 +3318,8 @@ function CandidateProfileModal({ open, candidate, onClose, onOpenCv, onReuse, on
   const ctx = resolveCandidateContext(candidate);
   const baseCandidate = ctx.candidate || candidate;
   const linkedAssessment = ctx.assessment || null;
+  const meta = decodePortalApplicantMetadata(baseCandidate);
+  const cvResult = meta?.cvAnalysisCache?.result && typeof meta.cvAnalysisCache.result === "object" ? meta.cvAnalysisCache.result : null;
   const cvMeta = getCandidateProfileCvMeta(baseCandidate);
   const tags = buildVisibleTagList(baseCandidate);
   const questionAnswers = getAssessmentQuestionAnswers(linkedAssessment || candidate);
@@ -3298,6 +3348,26 @@ function CandidateProfileModal({ open, candidate, onClose, onOpenCv, onReuse, on
     || null
   );
   const finalTimeline = resolveTimelineText({ textTimeline: timeline, jsonTimeline: timelineJson });
+  const currentCompanyLabel = String(
+    linkedAssessment?.currentCompany
+    || baseCandidate.company
+    || baseCandidate.current_company
+    || draft.currentCompany
+    || cvResult?.currentCompany
+    || ""
+  ).trim();
+  const timelineFromCv = String(
+    cvResult?.experienceTimeline
+    || cvResult?.experience_timeline
+    || cvResult?.experienceTimelineText
+    || cvResult?.timeline
+    || ""
+  ).trim();
+  const previousCompanies = extractPreviousCompaniesFromTimeline({
+    timelineText: timelineFromCv || finalTimeline || "",
+    currentCompany: currentCompanyLabel,
+    limit: 3
+  });
   const noteFields = [
     linkedAssessment?.otherPointers,
     linkedAssessment?.callbackNotes,
@@ -3343,6 +3413,12 @@ function CandidateProfileModal({ open, candidate, onClose, onOpenCv, onReuse, on
     { title: "Personal & Professional Information", rows: professionalRows.map(([label, value]) => ({ label, value })) },
     { title: "Screening Remarks", rows: [{ label: "Screening remarks", value: screeningRemarks || (questionAnswers || []).map((pair) => `${pair.question}: ${pair.answer}`).join("\n") || "-" }] }
   ];
+  if (previousCompanies.length) {
+    excelSections.push({
+      title: "Previous Companies (last 3)",
+      rows: [{ label: "Previous companies", value: previousCompanies.map((name, index) => `${index + 1}. ${name}`).join("\n") }]
+    });
+  }
   if (finalTimeline) excelSections.push({ title: "Previous Experience (timeline)", rows: [{ label: "Experience timeline", value: finalTimeline }] });
   if (tags.length) excelSections.push({ title: "Tags / searchable keywords", rows: [{ label: "Tags", value: tags.join(", ") }] });
   excelSections.push({ title: "CV", rows: [{ label: "CV", value: candidateHasStoredCv(baseCandidate) ? (cvMeta.filename || "Uploaded CV available") : "No uploaded CV available yet." }] });
@@ -3433,6 +3509,17 @@ function CandidateProfileModal({ open, candidate, onClose, onOpenCv, onReuse, on
             <div className="candidate-sheet__section">
               <div className="candidate-sheet__section-title">Previous Experience (timeline)</div>
               <div className="candidate-sheet__remarks">{finalTimeline}</div>
+            </div>
+          ) : null}
+
+          {previousCompanies.length ? (
+            <div className="candidate-sheet__section">
+              <div className="candidate-sheet__section-title">Previous Companies (last 3)</div>
+              <div className="candidate-sheet__remarks">
+                {previousCompanies.map((name, index) => (
+                  <div key={`${name}-${index}`}>{`${index + 1}. ${name}`}</div>
+                ))}
+              </div>
             </div>
           ) : null}
 
