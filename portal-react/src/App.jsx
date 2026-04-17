@@ -5890,10 +5890,32 @@ function PortalApp({ token, onLogout }) {
 
     setStatus(statusKey, "Converting draft into assessment...");
     try {
-      await api("/company/assessments", token, "POST", { assessment });
-      await loadWorkspace();
+      const saved = await api("/company/assessments", token, "POST", { assessment });
+      // Avoid blocking the UI on a full workspace reload (which can be slow with large datasets).
+      // Optimistically update local state, then refresh in the background.
+      setState((current) => {
+        const nextAssessments = Array.isArray(current.assessments) ? [...current.assessments] : [];
+        const savedId = String(saved?.id || assessment?.id || "").trim();
+        if (savedId) {
+          const existingIx = nextAssessments.findIndex((a) => String(a?.id || "").trim() === savedId);
+          if (existingIx >= 0) nextAssessments.splice(existingIx, 1);
+          nextAssessments.unshift(saved);
+        }
+        const nextCandidates = Array.isArray(current.candidates)
+          ? current.candidates.map((item) => {
+              if (String(item?.id || "") !== String(candidate?.id || "")) return item;
+              return {
+                ...item,
+                assessment_id: savedId || item.assessment_id,
+                used_in_assessment: true
+              };
+            })
+          : current.candidates;
+        return { ...current, assessments: nextAssessments, candidates: nextCandidates };
+      });
       navigate("/assessments");
       setStatus("assessments", `Converted ${candidateName || "candidate"} into assessment.`, "ok");
+      void refreshWorkspaceSilently("manual");
     } catch (error) {
       setStatus(statusKey, String(error?.message || error), "error");
     }
