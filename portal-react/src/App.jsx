@@ -4761,26 +4761,37 @@ function PortalApp({ token, onLogout }) {
 
   const capturedNotesStats = useMemo(() => {
     const todayKey = new Date().toISOString().slice(0, 10);
-    const convertedCount = capturedNotesUniverse.filter((item) => {
+    const universe = capturedNotesUniverse.filter((item) => {
+      const createdKey = String(item.created_at || "").slice(0, 10);
+      if (candidateFilters.dateFrom && createdKey && createdKey < candidateFilters.dateFrom) return false;
+      if (candidateFilters.dateTo && createdKey && createdKey > candidateFilters.dateTo) return false;
+      return true;
+    });
+    const convertedCount = universe.filter((item) => {
       const matchedAssessment = resolveCapturedAssessment(item);
       return Boolean(matchedAssessment);
     }).length;
-    const activeCount = capturedNotesUniverse.filter((item) => {
+    const activeCount = universe.filter((item) => {
       const matchedAssessment = resolveCapturedAssessment(item);
       if (matchedAssessment) return false;
       return !item.hidden_from_captured;
     }).length;
     return {
-      today: capturedNotesUniverse.filter((item) => String(item.created_at || "").slice(0, 10) === todayKey).length,
-      total: capturedNotesUniverse.length,
+      today: universe.filter((item) => String(item.created_at || "").slice(0, 10) === todayKey).length,
+      total: universe.length,
       active: activeCount,
       converted: convertedCount
     };
-  }, [capturedAssessmentMap, capturedNotesUniverse]);
+  }, [capturedAssessmentMap, capturedNotesUniverse, candidateFilters.dateFrom, candidateFilters.dateTo]);
 
   const assessmentStats = useMemo(() => {
     const todayKey = new Date().toISOString().slice(0, 10);
-    const universe = Array.isArray(state.assessments) ? state.assessments : [];
+    const universe = (Array.isArray(state.assessments) ? state.assessments : []).filter((item) => {
+      const createdKey = String(item?.generatedAt || item?.createdAt || item?.created_at || item?.updatedAt || "").slice(0, 10);
+      if (assessmentFilters.dateFrom && createdKey && createdKey < assessmentFilters.dateFrom) return false;
+      if (assessmentFilters.dateTo && createdKey && createdKey > assessmentFilters.dateTo) return false;
+      return true;
+    });
     const activeCount = universe.filter((item) => !isAssessmentArchived(item)).length;
     const archivedCount = universe.filter((item) => isAssessmentArchived(item)).length;
     return {
@@ -4789,7 +4800,7 @@ function PortalApp({ token, onLogout }) {
       active: activeCount,
       archived: archivedCount
     };
-  }, [state.assessments]);
+  }, [assessmentFilters.dateFrom, assessmentFilters.dateTo, state.assessments]);
 
   const capturedCandidates = useMemo(() => {
     return capturedNotesUniverse.filter((item) => {
@@ -4971,7 +4982,12 @@ function PortalApp({ token, onLogout }) {
     const currentUserName = String(state.user?.name || "").trim();
     const isAdmin = String(state.user?.role || "").toLowerCase() === "admin";
 
-    const universe = filteredApplicants;
+    const universe = filteredApplicants.filter((item) => {
+      const createdKey = String(item.createdAt || item.created_at || "").slice(0, 10);
+      if (applicantFilters.dateFrom && createdKey && createdKey < applicantFilters.dateFrom) return false;
+      if (applicantFilters.dateTo && createdKey && createdKey > applicantFilters.dateTo) return false;
+      return true;
+    });
     const converted = universe.filter((item) => Boolean(applicantAssessmentMap.get(String(item.id)) || null)).length;
     const active = universe.filter((item) => {
       const linkedAssessment = applicantAssessmentMap.get(String(item.id)) || null;
@@ -5027,7 +5043,7 @@ function PortalApp({ token, onLogout }) {
       assignedManual,
       total: universe.length
     };
-  }, [applicantAssessmentMap, applicantCandidateMap, filteredApplicants, state.user]);
+  }, [applicantAssessmentMap, applicantCandidateMap, filteredApplicants, state.user, applicantFilters.dateFrom, applicantFilters.dateTo]);
 
   const quickUpdateMatches = useMemo(() => {
     const query = String(quickUpdateCandidateQuery || "").trim().toLowerCase();
@@ -8204,8 +8220,6 @@ function PortalApp({ token, onLogout }) {
               {statuses.applicants ? <div className={`status ${statuses.applicantsKind || ""}`}>{statuses.applicants}</div> : null}
               <div className="form-grid three-col">
                 <label className="full"><span>Search</span><input placeholder="Search by candidate, phone, email, JD..." value={applicantFilters.q} onChange={(e) => setApplicantFilters((current) => ({ ...current, q: e.target.value }))} /></label>
-                <label><span>Date from</span><input type="date" value={applicantFilters.dateFrom} onChange={(e) => setApplicantFilters((current) => ({ ...current, dateFrom: e.target.value }))} /></label>
-                <label><span>Date to</span><input type="date" value={applicantFilters.dateTo} onChange={(e) => setApplicantFilters((current) => ({ ...current, dateTo: e.target.value }))} /></label>
               </div>
               <div className="metric-grid metric-grid--tight">
                 <div className="metric-card compact-metric"><div className="metric-label">Applied today</div><div className="metric-value">{applicantStats.today}</div></div>
@@ -8213,6 +8227,10 @@ function PortalApp({ token, onLogout }) {
                 <div className="metric-card compact-metric"><div className="metric-label">Assigned (manual)</div><div className="metric-value">{applicantStats.assignedManual || 0}</div></div>
                 <div className="metric-card compact-metric"><div className="metric-label">Active</div><div className="metric-value">{applicantStats.active}</div></div>
                 <div className="metric-card compact-metric"><div className="metric-label">Converted</div><div className="metric-value">{applicantStats.converted}</div></div>
+              </div>
+              <div className="form-grid three-col" style={{ marginTop: 10 }}>
+                <label><span>Date from</span><input type="date" value={applicantFilters.dateFrom} onChange={(e) => setApplicantFilters((current) => ({ ...current, dateFrom: e.target.value }))} /></label>
+                <label><span>Date to</span><input type="date" value={applicantFilters.dateTo} onChange={(e) => setApplicantFilters((current) => ({ ...current, dateTo: e.target.value }))} /></label>
               </div>
               <div className="muted" style={{ marginTop: 8 }}>
                 Inactive: {applicantStats.inactive || 0} (hidden). Total: {applicantStats.total || 0}
@@ -8290,14 +8308,16 @@ function PortalApp({ token, onLogout }) {
               </div>
               <div className="form-grid three-col">
                 <label className="full"><span>Search</span><input placeholder="Search candidate name, company, phone, email, LinkedIn..." value={candidateFilters.q} onChange={(e) => setCandidateFilters((c) => ({ ...c, q: e.target.value }))} /></label>
-                <label><span>Date from</span><input type="date" value={candidateFilters.dateFrom} onChange={(e) => setCandidateFilters((c) => ({ ...c, dateFrom: e.target.value }))} /></label>
-                <label><span>Date to</span><input type="date" value={candidateFilters.dateTo} onChange={(e) => setCandidateFilters((c) => ({ ...c, dateTo: e.target.value }))} /></label>
               </div>
               <div className="metric-grid metric-grid--tight">
                 <div className="metric-card compact-metric"><div className="metric-label">Today</div><div className="metric-value">{capturedNotesStats.today}</div></div>
                 <div className="metric-card compact-metric"><div className="metric-label">Total notes captured</div><div className="metric-value">{capturedNotesStats.total}</div></div>
                 <div className="metric-card compact-metric"><div className="metric-label">Active</div><div className="metric-value">{capturedNotesStats.active}</div></div>
                 <div className="metric-card compact-metric"><div className="metric-label">Converted</div><div className="metric-value">{capturedNotesStats.converted}</div></div>
+              </div>
+              <div className="form-grid three-col" style={{ marginTop: 10 }}>
+                <label><span>Date from</span><input type="date" value={candidateFilters.dateFrom} onChange={(e) => setCandidateFilters((c) => ({ ...c, dateFrom: e.target.value }))} /></label>
+                <label><span>Date to</span><input type="date" value={candidateFilters.dateTo} onChange={(e) => setCandidateFilters((c) => ({ ...c, dateTo: e.target.value }))} /></label>
               </div>
                 <div className="captured-filter-grid">
                   <MultiSelectDropdown label="Clients" options={capturedCandidateOptions.clients} selected={candidateFilters.clients} onToggle={(value) => setCandidateFilters((current) => ({ ...current, clients: value === "__all__" ? [] : current.clients.includes(value) ? current.clients.filter((item) => item !== value) : [...current.clients, value] }))} />
@@ -8370,6 +8390,14 @@ function PortalApp({ token, onLogout }) {
               {statuses.assessments ? <div className={`status ${statuses.assessmentsKind || ""}`}>{statuses.assessments}</div> : null}
               <div className="form-grid three-col">
                 <label className="full"><span>Search</span><input placeholder="Search by candidate, phone, email, JD..." value={assessmentFilters.q} onChange={(e) => setAssessmentFilters((current) => ({ ...current, q: e.target.value }))} /></label>
+              </div>
+              <div className="metric-grid metric-grid--tight">
+                <div className="metric-card compact-metric"><div className="metric-label">Today</div><div className="metric-value">{assessmentStats.today}</div></div>
+                <div className="metric-card compact-metric"><div className="metric-label">Total assessments</div><div className="metric-value">{assessmentStats.total}</div></div>
+                <div className="metric-card compact-metric"><div className="metric-label">Active</div><div className="metric-value">{assessmentStats.active}</div></div>
+                <div className="metric-card compact-metric"><div className="metric-label">Archived</div><div className="metric-value">{assessmentStats.archived}</div></div>
+              </div>
+              <div className="form-grid three-col" style={{ marginTop: 10 }}>
                 <label><span>Date from</span><input type="date" value={assessmentFilters.dateFrom} onChange={(e) => setAssessmentFilters((current) => ({ ...current, dateFrom: e.target.value }))} /></label>
                 <label><span>Date to</span><input type="date" value={assessmentFilters.dateTo} onChange={(e) => setAssessmentFilters((current) => ({ ...current, dateTo: e.target.value }))} /></label>
                 <label>
@@ -8379,12 +8407,6 @@ function PortalApp({ token, onLogout }) {
                     <option value="archived">Archived</option>
                   </select>
                 </label>
-              </div>
-              <div className="metric-grid metric-grid--tight">
-                <div className="metric-card compact-metric"><div className="metric-label">Today</div><div className="metric-value">{assessmentStats.today}</div></div>
-                <div className="metric-card compact-metric"><div className="metric-label">Total assessments</div><div className="metric-value">{assessmentStats.total}</div></div>
-                <div className="metric-card compact-metric"><div className="metric-label">Active</div><div className="metric-value">{assessmentStats.active}</div></div>
-                <div className="metric-card compact-metric"><div className="metric-label">Archived</div><div className="metric-value">{assessmentStats.archived}</div></div>
               </div>
               <div className="captured-filter-grid">
                 <MultiSelectDropdown label="Clients" options={assessmentOptions.clients} selected={assessmentFilters.clients} onToggle={(value) => setAssessmentFilters((current) => ({ ...current, clients: value === "__all__" ? [] : current.clients.includes(value) ? current.clients.filter((item) => item !== value) : [...current.clients, value] }))} />
