@@ -257,6 +257,54 @@ async function callOpenAiFileJsonSchema({ apiKey, prompt, model, schemaName, sch
   return parseStructuredOutput(data);
 }
 
+async function callOpenAiImageJsonSchema({ apiKey, prompt, model, schemaName, schema, image }) {
+  if (!apiKey) {
+    throw new Error("Missing OpenAI API key for backend image parsing.");
+  }
+  if (!image?.fileData) {
+    throw new Error("Missing image data for backend image parsing.");
+  }
+  const mimeType = String(image.mimeType || "image/png").trim() || "image/png";
+  const base64 = String(image.fileData || "").trim().replace(/^data:[^;]+;base64,/i, "");
+  const dataUrl = `data:${mimeType};base64,${base64}`;
+
+  const response = await fetch("https://api.openai.com/v1/responses", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${apiKey}`
+    },
+    body: JSON.stringify({
+      model: model || "gpt-4o-mini",
+      input: [
+        {
+          role: "user",
+          content: [
+            { type: "input_image", image_url: dataUrl },
+            { type: "input_text", text: prompt }
+          ]
+        }
+      ],
+      text: {
+        format: {
+          type: "json_schema",
+          name: schemaName,
+          strict: true,
+          schema
+        }
+      }
+    })
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`OpenAI image request failed: ${response.status} ${errorText}`);
+  }
+
+  const data = await response.json();
+  return parseStructuredOutput(data);
+}
+
 async function callOpenAiQuestions({ apiKey, prompt, model }) {
   return callOpenAiJsonSchema({
     apiKey,
@@ -457,11 +505,14 @@ function buildLinkedInAssistPrompt() {
 
 async function extractLinkedInAssistFromScreenshotWithAi({ apiKey, model, uploadedFile }) {
   const prompt = buildLinkedInAssistPrompt();
-  return callOpenAiFileJsonSchema({
+
+  // Screenshots are images (png/jpg). Use vision input_image instead of file uploads,
+  // because OpenAI file-based "input_file" supports only a subset of formats (not png).
+  return callOpenAiImageJsonSchema({
     apiKey,
     prompt,
     model: model || "gpt-4o-mini",
-    uploadedFile,
+    image: uploadedFile,
     schemaName: "linkedin_assist_from_screenshot",
     schema: buildLinkedInAssistSchema()
   });
@@ -469,6 +520,7 @@ async function extractLinkedInAssistFromScreenshotWithAi({ apiKey, model, upload
 
 module.exports = {
   callOpenAiJsonSchema,
+  callOpenAiImageJsonSchema,
   callOpenAiQuestions,
   normalizeCandidateWithAi,
   normalizeCandidateFileWithAi,
