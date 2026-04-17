@@ -232,6 +232,7 @@ const CLIENT_USERS_ROW_TITLE = "__client_users__";
 const COMPANY_LICENSE_ROW_ID = "__company_license__";
 const COMPANY_LICENSE_ROW_TITLE = "__company_license__";
 const MAX_SHARED_CUSTOM_EXPORT_PRESETS = 10;
+const { parseExperienceTimelineTextToStructured, normalizeTimelineRow } = require("./timeline-utils");
 function isSharedExportPresetRow(job) {
   return String(job?.id || "").trim() === SHARED_EXPORT_PRESET_ROW_ID || String(job?.title || "").trim() === SHARED_EXPORT_PRESET_ROW_TITLE;
 }
@@ -325,6 +326,19 @@ function sanitizeSharedExportPresetSettings(raw) {
 function sanitizeAssessment(item) {
   if (!item) return null;
   const p = item.payload && typeof item.payload === "object" ? item.payload : {};
+  const timelineJson = Array.isArray(item.experience_timeline_json)
+    ? item.experience_timeline_json
+    : Array.isArray(item.experienceTimelineJson)
+      ? item.experienceTimelineJson
+      : Array.isArray(p.experience_timeline_json)
+        ? p.experience_timeline_json
+        : Array.isArray(p.experienceTimelineJson)
+          ? p.experienceTimelineJson
+          : null;
+  const derivedTimelineJson =
+    Array.isArray(timelineJson) && timelineJson.length
+      ? timelineJson
+      : parseExperienceTimelineTextToStructured(item.experienceTimeline ?? item.experience_timeline ?? p.experienceTimeline ?? "");
   return {
     ...p,
     id: item.id ?? p.id ?? null,
@@ -346,6 +360,7 @@ function sanitizeAssessment(item) {
     averageTenurePerCompany: item.averageTenurePerCompany ?? item.average_tenure_per_company ?? p.averageTenurePerCompany ?? "",
     currentOrgTenure: item.currentOrgTenure ?? item.current_org_tenure ?? p.currentOrgTenure ?? "",
     experienceTimeline: item.experienceTimeline ?? item.experience_timeline ?? p.experienceTimeline ?? "",
+    experienceTimelineJson: Array.isArray(derivedTimelineJson) ? derivedTimelineJson.map(normalizeTimelineRow) : [],
     jdTitle: item.jdTitle ?? item.jd_title ?? p.jdTitle ?? "",
     jobDescription: item.jobDescription ?? item.job_description ?? p.jobDescription ?? "",
     mustHaveSkills: item.mustHaveSkills ?? item.must_have_skills ?? p.mustHaveSkills ?? "",
@@ -441,7 +456,21 @@ function assessmentRow(assessment, actor, companyId) {
   const a = sanitizeAssessment(assessment);
   const id = persistedAssessmentId(a.id);
   const now = new Date().toISOString();
-  const next = { ...a, id, companyId, recruiterId: actor.id, recruiterName: actor.name, recruiterEmail: actor.email, generatedAt: a.generatedAt || now, updatedAt: now };
+  const structuredTimeline =
+    Array.isArray(a.experienceTimelineJson) && a.experienceTimelineJson.length
+      ? a.experienceTimelineJson
+      : parseExperienceTimelineTextToStructured(a.experienceTimeline || "");
+  const next = {
+    ...a,
+    id,
+    companyId,
+    recruiterId: actor.id,
+    recruiterName: actor.name,
+    recruiterEmail: actor.email,
+    generatedAt: a.generatedAt || now,
+    updatedAt: now,
+    experienceTimelineJson: structuredTimeline
+  };
   const candidateId = String(next.candidateId || "").trim();
   return {
     id,
@@ -461,6 +490,7 @@ function assessmentRow(assessment, actor, companyId) {
     average_tenure_per_company: next.averageTenurePerCompany || "",
     current_org_tenure: next.currentOrgTenure || "",
     experience_timeline: next.experienceTimeline || "",
+    experience_timeline_json: next.experienceTimelineJson || [],
     jd_title: next.jdTitle || "",
     job_description: next.jobDescription || "",
     must_have_skills: next.mustHaveSkills || "",

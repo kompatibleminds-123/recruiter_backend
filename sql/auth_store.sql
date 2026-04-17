@@ -57,6 +57,7 @@ create table if not exists public.assessments (
   average_tenure_per_company text,
   current_org_tenure text,
   experience_timeline text,
+  experience_timeline_json jsonb not null default '[]'::jsonb,
   jd_title text,
   job_description text,
   must_have_skills text,

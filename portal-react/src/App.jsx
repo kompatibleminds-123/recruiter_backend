@@ -1785,11 +1785,6 @@ function buildScreeningRemarksForExport(item = {}) {
     parts.push("Strong points:");
     strongPoints.forEach((point, index) => parts.push(`${index + 1}. *${point}*`));
   }
-  if (questionLines.length) {
-    if (parts.length) parts.push("");
-    parts.push("Screening pointers:");
-    parts.push(...questionLines);
-  }
   if (finalReasonOfChange) {
     if (parts.length) parts.push("");
     parts.push("Reason of change:");
@@ -2135,6 +2130,31 @@ function mergeStoredCvIntoApplicantMeta(existingMeta = {}, cvAnalysis = null) {
   if (!meta.filename && stored.filename) meta.filename = String(stored.filename || "").trim();
   if (!meta.mimeType && stored.mimeType) meta.mimeType = String(stored.mimeType || "").trim();
   return meta;
+}
+
+function formatTimelineJsonForText(rows = []) {
+  if (!Array.isArray(rows) || !rows.length) return "";
+  const lines = rows
+    .map((row) => {
+      const title = String(row?.title || row?.designation || "").trim();
+      const company = String(row?.company || "").trim();
+      const start = String(row?.start || "").trim();
+      const end = String(row?.end || "").trim();
+      const duration = String(row?.duration || "").trim();
+      const rolePart = [title, company].filter(Boolean).join(" | ");
+      const datePart = [start, end].filter(Boolean).join(" - ");
+      return [rolePart, datePart, duration].filter(Boolean).join(" | ");
+    })
+    .map((line) => String(line || "").trim())
+    .filter(Boolean);
+  return lines.join("\n");
+}
+
+function resolveTimelineText({ textTimeline = "", jsonTimeline = null } = {}) {
+  const direct = String(textTimeline || "").trim();
+  if (direct) return direct;
+  if (Array.isArray(jsonTimeline) && jsonTimeline.length) return formatTimelineJsonForText(jsonTimeline);
+  return "";
 }
 
 function buildExcelHtmlFromPreset(rows, presetId, settings = DEFAULT_COPY_SETTINGS, sheetName = "Sheet1") {
@@ -3188,7 +3208,7 @@ function DrilldownModal({ open, title, items, onClose, onOpenCv, onOpenDraft, on
                 <div>
                   <h3>{item.name || item.candidateName || "Candidate"} | {item.position || item.jdTitle || item.role || "Untitled role"}</h3>
                   <p className="muted">{[item.company || item.currentCompany || "", item.clientName ? `Client: ${item.clientName}` : "", item.ownerRecruiter ? `Recruiter: ${item.ownerRecruiter}` : "", item.source ? `Source: ${item.source}` : ""].filter(Boolean).join(" | ")}</p>
-                  <div className="candidate-snippet">{[item.pipelineStage ? `Pipeline: ${item.pipelineStage}` : "", item.candidateStatus ? `Status: ${item.candidateStatus}` : "", item.followUpAt ? `Follow-up: ${new Date(item.followUpAt).toLocaleString()}` : "", item.interviewAt ? `Interview: ${new Date(item.interviewAt).toLocaleString()}` : ""].filter(Boolean).join("\n")}</div>
+                  <div className="candidate-snippet">{[item.candidateStatus ? `Assessment status: ${item.candidateStatus}` : "", item.followUpAt ? `Follow-up: ${new Date(item.followUpAt).toLocaleString()}` : "", item.interviewAt ? `Interview: ${new Date(item.interviewAt).toLocaleString()}` : ""].filter(Boolean).join("\n")}</div>
                   {feedbackMeta.feedback ? (
                     <div className="feedback-preview">
                       <div className="feedback-preview__label">Client feedback</div>
@@ -3246,6 +3266,14 @@ function CandidateProfileModal({ open, candidate, onClose, onOpenCv, onReuse, on
     || draft.experience_timeline
     || ""
   ).trim();
+  const timelineJson = (
+    linkedAssessment?.experienceTimelineJson
+    || linkedAssessment?.experience_timeline_json
+    || baseCandidate.experienceTimelineJson
+    || baseCandidate.experience_timeline_json
+    || null
+  );
+  const finalTimeline = resolveTimelineText({ textTimeline: timeline, jsonTimeline: timelineJson });
   const noteFields = [
     linkedAssessment?.otherPointers,
     linkedAssessment?.callbackNotes,
@@ -3291,7 +3319,7 @@ function CandidateProfileModal({ open, candidate, onClose, onOpenCv, onReuse, on
     { title: "Personal & Professional Information", rows: professionalRows.map(([label, value]) => ({ label, value })) },
     { title: "Screening Remarks", rows: [{ label: "Screening remarks", value: screeningRemarks || (questionAnswers || []).map((pair) => `${pair.question}: ${pair.answer}`).join("\n") || "-" }] }
   ];
-  if (timeline) excelSections.push({ title: "Previous Experience (timeline)", rows: [{ label: "Experience timeline", value: timeline }] });
+  if (finalTimeline) excelSections.push({ title: "Previous Experience (timeline)", rows: [{ label: "Experience timeline", value: finalTimeline }] });
   if (tags.length) excelSections.push({ title: "Tags / searchable keywords", rows: [{ label: "Tags", value: tags.join(", ") }] });
   excelSections.push({ title: "CV", rows: [{ label: "CV", value: candidateHasStoredCv(baseCandidate) ? (cvMeta.filename || "Uploaded CV available") : "No uploaded CV available yet." }] });
 
@@ -3362,7 +3390,7 @@ function CandidateProfileModal({ open, candidate, onClose, onOpenCv, onReuse, on
           <div className="candidate-sheet__section">
             <div className="candidate-sheet__section-title">Screening Remarks</div>
             {screeningRemarks ? (
-              <pre className="candidate-sheet__pre">{screeningRemarks}</pre>
+              <div className="candidate-sheet__remarks">{screeningRemarks}</div>
             ) : questionAnswers.length ? (
               <div className="client-profile-qa">
                 {questionAnswers.map((pair, index) => (
@@ -3377,10 +3405,10 @@ function CandidateProfileModal({ open, candidate, onClose, onOpenCv, onReuse, on
             )}
           </div>
 
-          {timeline ? (
+          {finalTimeline ? (
             <div className="candidate-sheet__section">
               <div className="candidate-sheet__section-title">Previous Experience (timeline)</div>
-              <pre className="candidate-sheet__pre">{timeline}</pre>
+              <div className="candidate-sheet__remarks">{finalTimeline}</div>
             </div>
           ) : null}
 
@@ -3432,6 +3460,8 @@ function ClientProfileModal({ open, item, onClose, copySettings = DEFAULT_COPY_S
     reason_of_change: assessment.reasonForChange || candidate.reason_of_change || ""
   });
   const timeline = String(assessment.experienceTimeline || assessment.experience_timeline || candidateDraft.experienceTimeline || "").trim();
+  const timelineJson = assessment.experienceTimelineJson || assessment.experience_timeline_json || null;
+  const finalTimeline = resolveTimelineText({ textTimeline: timeline, jsonTimeline: timelineJson });
   const dateApplied = String(item.createdAt || assessment.createdAt || candidate.created_at || "").trim();
   const modalTitle = assessment.candidateName || item.candidateName || candidate.name || "Candidate";
   const modalSubtitle = [assessment.clientName || item.clientName || candidate.client_name || candidateDraft.clientName || "", assessment.jdTitle || item.position || item.role || candidate.jd_title || candidateDraft.jdTitle || "", assessment.currentCompany || item.company || candidate.company || ""].filter(Boolean).join(" | ");
@@ -3465,7 +3495,7 @@ function ClientProfileModal({ open, item, onClose, copySettings = DEFAULT_COPY_S
     { title: "Personal & Professional Information", rows: professionalRows.map(([label, value]) => ({ label, value })) },
     { title: "Screening Remarks", rows: [{ label: "Screening remarks", value: screeningRemarks || (questionAnswers || []).map((pair) => `${pair.question}: ${pair.answer}`).join("\n") || "-" }] }
   ];
-  if (timeline) excelSections.push({ title: "Previous Experience (timeline)", rows: [{ label: "Experience timeline", value: timeline }] });
+  if (finalTimeline) excelSections.push({ title: "Previous Experience (timeline)", rows: [{ label: "Experience timeline", value: finalTimeline }] });
   if (otherPointers) excelSections.push({ title: "Other Pointers", rows: [{ label: "Other pointers", value: otherPointers }] });
   excelSections.push({ title: "CV", rows: [{ label: "CV", value: hasCv ? "CV is available for this profile." : "No uploaded CV available yet." }] });
   return (
@@ -3477,8 +3507,7 @@ function ClientProfileModal({ open, item, onClose, copySettings = DEFAULT_COPY_S
             <p className="muted">{modalSubtitle}</p>
           </div>
           <div className="candidate-sheet__head-meta">
-            {assessment.candidateStatus ? <span className="chip">Status: {formatClientPortalStatusLabel(assessment.candidateStatus)}</span> : null}
-            {assessment.pipelineStage ? <span className="chip">Pipeline: {assessment.pipelineStage}</span> : null}
+            {assessment.candidateStatus ? <span className="chip">Assessment status: {formatClientPortalStatusLabel(assessment.candidateStatus)}</span> : null}
           </div>
         </div>
 
@@ -3522,7 +3551,7 @@ function ClientProfileModal({ open, item, onClose, copySettings = DEFAULT_COPY_S
           <div className="candidate-sheet__section">
             <div className="candidate-sheet__section-title">Screening Remarks</div>
             {screeningRemarks ? (
-              <pre className="candidate-sheet__pre">{screeningRemarks}</pre>
+              <div className="candidate-sheet__remarks">{screeningRemarks}</div>
             ) : questionAnswers.length ? (
               <div className="client-profile-qa">
                 {questionAnswers.map((pair, index) => (
@@ -3537,10 +3566,10 @@ function ClientProfileModal({ open, item, onClose, copySettings = DEFAULT_COPY_S
             )}
           </div>
 
-          {timeline ? (
+          {finalTimeline ? (
             <div className="candidate-sheet__section">
               <div className="candidate-sheet__section-title">Previous Experience (timeline)</div>
-              <pre className="candidate-sheet__pre">{timeline}</pre>
+              <div className="candidate-sheet__remarks">{finalTimeline}</div>
             </div>
           ) : null}
 
@@ -3806,6 +3835,7 @@ function PortalApp({ token, onLogout }) {
     relevantExperience: "",
     highestEducation: "",
     currentOrgTenure: "",
+    experienceTimeline: "",
     reasonForChange: "",
     cautiousIndicators: "",
     clientName: "",
@@ -5161,6 +5191,7 @@ function PortalApp({ token, onLogout }) {
       currentDesignation: applicant.currentDesignation || "",
       totalExperience: applicant.totalExperience || "",
       currentOrgTenure: applicant.currentOrgTenure || "",
+      experienceTimeline: "",
       reasonForChange: applicant.reasonForChange || "",
       cautiousIndicators: "",
       clientName: applicant.clientName || "",
@@ -5661,6 +5692,7 @@ function PortalApp({ token, onLogout }) {
       relevantExperience: candidateDraft.relevantExperience || matched?.relevantExperience || "",
       highestEducation: candidateDraft.highestEducation || matched?.highestEducation || candidate?.highest_education || "",
       currentOrgTenure: candidateDraft.currentOrgTenure || matched?.currentOrgTenure || candidate?.current_org_tenure || "",
+      experienceTimeline: candidateDraft.experienceTimeline || matched?.experienceTimeline || matched?.experience_timeline || "",
       reasonForChange: candidateDraft.reasonForChange || matched?.reasonForChange || "",
       cautiousIndicators: candidateDraft.cautiousIndicators || "",
       clientName: candidateDraft.clientName || matched?.clientName || candidate?.client_name || "",
@@ -5729,6 +5761,7 @@ function PortalApp({ token, onLogout }) {
       relevantExperience: assessment?.relevantExperience || candidateDraft.relevantExperience || "",
       highestEducation: assessment?.highestEducation || candidateDraft.highestEducation || matchedCandidate?.highest_education || "",
       currentOrgTenure: assessment?.currentOrgTenure || candidateDraft.currentOrgTenure || matchedCandidate?.current_org_tenure || "",
+      experienceTimeline: assessment?.experienceTimeline || assessment?.experience_timeline || candidateDraft.experienceTimeline || "",
       reasonForChange: assessment?.reasonForChange || candidateDraft.reasonForChange || "",
       cautiousIndicators: assessment?.cautiousIndicators || candidateDraft.cautiousIndicators || "",
       clientName: assessment?.clientName || candidateDraft.clientName || matchedCandidate?.client_name || "",
@@ -7337,6 +7370,7 @@ function PortalApp({ token, onLogout }) {
       totalExperience: assessment?.totalExperience || "",
       relevantExperience: assessment?.relevantExperience || "",
       currentOrgTenure: assessment?.currentOrgTenure || "",
+      experienceTimeline: assessment?.experienceTimeline || assessment?.experience_timeline || "",
       reasonForChange: assessment?.reasonForChange || "",
       clientName: assessment?.clientName || "",
       jdTitle: assessment?.jdTitle || "",
@@ -7374,6 +7408,7 @@ function PortalApp({ token, onLogout }) {
       totalExperience: candidate?.total_experience || candidate?.totalExperience || candidate?.experience || "",
       relevantExperience: candidate?.relevant_experience || candidate?.relevantExperience || "",
       currentOrgTenure: candidate?.current_org_tenure || candidate?.currentOrgTenure || "",
+      experienceTimeline: candidate?.experience_timeline || candidate?.experienceTimeline || "",
       reasonForChange: candidate?.reason_of_change || candidate?.reasonForChange || "",
       clientName: candidate?.client_name || candidate?.clientName || "",
       jdTitle: candidate?.jd_title || candidate?.jdTitle || candidate?.role || "",
@@ -8454,6 +8489,17 @@ function PortalApp({ token, onLogout }) {
                   <label className="full"><span>Captured notes</span><textarea value={interviewForm.callbackNotes} onChange={(e) => setInterviewForm((c) => ({ ...c, callbackNotes: e.target.value }))} /></label>
                   <label className="full"><span>Recruiter notes</span><textarea value={interviewForm.recruiterNotes} onChange={(e) => setInterviewForm((c) => ({ ...c, recruiterNotes: e.target.value }))} /></label>
                   <label className="full"><span>Other pointers</span><textarea value={interviewForm.otherPointers} onChange={(e) => setInterviewForm((c) => ({ ...c, otherPointers: e.target.value }))} /></label>
+                  {isSettingsAdmin ? (
+                    <label className="full">
+                      <span>Experience timeline (admin)</span>
+                      <textarea
+                        value={interviewForm.experienceTimeline}
+                        onChange={(e) => setInterviewForm((c) => ({ ...c, experienceTimeline: e.target.value }))}
+                        placeholder="One line per role. Suggested: Title | Company | Jan 2022 - Present | 2 yrs"
+                      />
+                      <span className="field-help">This is used for candidate card exports and for showing last roles without re-parsing the CV.</span>
+                    </label>
+                  ) : null}
                   {(String(interviewForm.cautiousIndicators || "").trim() || editCautiousIndicators) ? (
                     <label className="full">
                       <span>Cautious indicators to check</span>
@@ -8583,7 +8629,7 @@ function PortalApp({ token, onLogout }) {
                   <button onClick={() => void saveAssessment()}>{interviewMeta.assessmentId ? "Save assessment" : "Create assessment"}</button>
                   <button onClick={() => sendInterviewToSheets()}>Send to Sheets</button>
                   <button onClick={() => exportInterviewAll()}>Export all</button>
-                    <button className="ghost-btn" onClick={() => { setEditCautiousIndicators(false); setInterviewMeta({ candidateId: "", assessmentId: "" }); setInterviewForm({ candidateName: "", phoneNumber: "", emailId: "", linkedin: "", location: "", currentCtc: "", expectedCtc: "", noticePeriod: "", offerInHand: "", lwdOrDoj: "", currentCompany: "", currentDesignation: "", totalExperience: "", relevantExperience: "", currentOrgTenure: "", reasonForChange: "", cautiousIndicators: "", clientName: "", jdTitle: "", pipelineStage: "Under Interview Process", candidateStatus: "Screening in progress", followUpAt: "", interviewAt: "", recruiterNotes: "", callbackNotes: "", otherPointers: "", tags: "", jdScreeningAnswers: {}, cvAnalysis: null, cvAnalysisApplied: false, statusHistory: [] }); setStatus("interview", ""); }}>Clear draft</button>
+                    <button className="ghost-btn" onClick={() => { setEditCautiousIndicators(false); setInterviewMeta({ candidateId: "", assessmentId: "" }); setInterviewForm({ candidateName: "", phoneNumber: "", emailId: "", linkedin: "", location: "", currentCtc: "", expectedCtc: "", noticePeriod: "", offerInHand: "", lwdOrDoj: "", currentCompany: "", currentDesignation: "", totalExperience: "", relevantExperience: "", currentOrgTenure: "", experienceTimeline: "", reasonForChange: "", cautiousIndicators: "", clientName: "", jdTitle: "", pipelineStage: "Under Interview Process", candidateStatus: "Screening in progress", followUpAt: "", interviewAt: "", recruiterNotes: "", callbackNotes: "", otherPointers: "", tags: "", jdScreeningAnswers: {}, cvAnalysis: null, cvAnalysisApplied: false, statusHistory: [] }); setStatus("interview", ""); }}>Clear draft</button>
                 </div>
               </Section>
             </div>

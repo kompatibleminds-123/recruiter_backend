@@ -252,24 +252,10 @@ function buildSharedCandidateProfile({ candidate = {}, assessment = null } = {})
   const recruiterNotes = String(a?.recruiterNotes || c.recruiter_context_notes || draftPayload.recruiterNotes || "").trim();
   const callbackNotes = String(a?.callbackNotes || c.notes || draftPayload.callbackNotes || "").trim();
 
-  const screeningPointers = otherStandardQuestions
-    ? otherStandardQuestions
-      .split(/\r?\n+/)
-      .map((line) => String(line || "").trim())
-      .filter(Boolean)
-      .filter((line) => !/^\s*(reason\s+of\s+change)\s*:/i.test(line))
-      .join("\n")
-    : "";
-
   const screeningRemarksParts = [];
   if (strongPoints.length) {
     screeningRemarksParts.push("Strong points:");
     strongPoints.forEach((p, idx) => screeningRemarksParts.push(`${idx + 1}. *${p}*`));
-  }
-  if (screeningPointers) {
-    if (screeningRemarksParts.length) screeningRemarksParts.push("");
-    screeningRemarksParts.push("Screening pointers:");
-    screeningRemarksParts.push(screeningPointers);
   }
   if (reasonOfChange) {
     if (screeningRemarksParts.length) screeningRemarksParts.push("");
@@ -333,7 +319,7 @@ function buildSharedCandidateProfile({ candidate = {}, assessment = null } = {})
   return {
     title: candidateName || "Candidate Profile",
     subtitle: [clientName ? `Client: ${clientName}` : "", jdTitle ? `JD: ${jdTitle}` : "", currentCompany ? `Company: ${currentCompany}` : ""].filter(Boolean).join(" | "),
-    statusText: [candidateStatus ? `Status: ${candidateStatus}` : "", pipelineStage ? `Pipeline: ${pipelineStage}` : ""].filter(Boolean).join(" | "),
+    statusText: [candidateStatus ? `Assessment status: ${candidateStatus}` : ""].filter(Boolean).join(" | "),
     sections
   };
 }
