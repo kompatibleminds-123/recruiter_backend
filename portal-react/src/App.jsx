@@ -3724,6 +3724,7 @@ function PortalApp({ token, onLogout }) {
     recruiters: [],
     outcomes: []
   });
+  const [assessmentLane, setAssessmentLane] = useState("active"); // active | archived
   const [candidateSearchMode, setCandidateSearchMode] = useState("all");
   const [candidateSearchText, setCandidateSearchText] = useState("");
   const [candidateAiQueryMode, setCandidateAiQueryMode] = useState("natural");
@@ -3890,6 +3891,19 @@ function PortalApp({ token, onLogout }) {
     cvAnalysis: null,
     cvAnalysisApplied: false
   });
+
+  const isAssessmentArchived = (assessment) => {
+    if (!assessment) return false;
+    const archivedFlag = assessment?.archived ?? assessment?.isArchived ?? assessment?.archived_flag;
+    if (archivedFlag === true) return true;
+    const archivedAt = String(assessment?.archivedAt || assessment?.archived_at || "").trim();
+    return Boolean(archivedAt);
+  };
+
+  useEffect(() => {
+    // Archived assessments should not be selected for client share.
+    setSelectedAssessmentIds([]);
+  }, [assessmentLane]);
   const [editCautiousIndicators, setEditCautiousIndicators] = useState(false);
 
   const assignApplicant = (state.applicants || []).find((item) => String(item.id) === String(assignApplicantId)) || null;
@@ -4229,6 +4243,7 @@ function PortalApp({ token, onLogout }) {
     if (assessmentId) {
       const assessment = capturedAssessmentMap.get(`id:${assessmentId}`) || null;
       if (!assessment) return null;
+      if (isAssessmentArchived(assessment)) return null;
       // Only trust stored assessment_id when we can verify stable identity matches.
       const candidateId = String(candidateRow?.id || "").trim();
       const assessmentCandidateId = String(
@@ -4252,14 +4267,23 @@ function PortalApp({ token, onLogout }) {
     const candidateIdKey = String(candidateRow?.id || "").trim();
     if (candidateIdKey) {
       const byCandidateId = capturedAssessmentMap.get(`cid:${candidateIdKey}`) || null;
+      if (byCandidateId && isAssessmentArchived(byCandidateId)) return null;
       if (byCandidateId) return byCandidateId;
     }
 
     const email = normalizeEmail(candidateRow?.email || candidateRow?.emailId || "");
-    if (email) return capturedAssessmentMap.get(`email:${email}`) || null;
+    if (email) {
+      const byEmail = capturedAssessmentMap.get(`email:${email}`) || null;
+      if (byEmail && isAssessmentArchived(byEmail)) return null;
+      return byEmail;
+    }
 
     const phone = normalizePhone(candidateRow?.phone || candidateRow?.phoneNumber || "");
-    if (phone) return capturedAssessmentMap.get(`phone:${phone}`) || null;
+    if (phone) {
+      const byPhone = capturedAssessmentMap.get(`phone:${phone}`) || null;
+      if (byPhone && isAssessmentArchived(byPhone)) return null;
+      return byPhone;
+    }
 
     return null;
   }
@@ -4305,6 +4329,9 @@ function PortalApp({ token, onLogout }) {
   const filteredAssessments = useMemo(() => {
     const query = String(assessmentFilters.q || "").trim().toLowerCase();
     return (state.assessments || []).filter((item) => {
+      const archived = isAssessmentArchived(item);
+      if (assessmentLane === "active" && archived) return false;
+      if (assessmentLane === "archived" && !archived) return false;
       const matchedCandidate = (state.candidates || []).find((candidate) =>
         (item?.candidateId && String(candidate.id) === String(item.candidateId)) ||
         String(candidate.name || "").trim().toLowerCase() === String(item?.candidateName || "").trim().toLowerCase()
@@ -4332,7 +4359,7 @@ function PortalApp({ token, onLogout }) {
       if (assessmentFilters.outcomes.length && !assessmentFilters.outcomes.includes(outcomeValue)) return false;
       return true;
     });
-  }, [state.assessments, state.candidates, assessmentFilters]);
+  }, [state.assessments, state.candidates, assessmentFilters, assessmentLane]);
 
   const assessmentLinkedCandidateMap = useMemo(() => {
     const map = new Map();
@@ -7390,6 +7417,56 @@ function PortalApp({ token, onLogout }) {
     setStatus("assessments", "Assessment deleted.", "ok");
   }
 
+  function upsertAssessmentInState(saved) {
+    setState((current) => {
+      const nextAssessments = Array.isArray(current.assessments) ? [...current.assessments] : [];
+      const savedId = String(saved?.id || "").trim();
+      if (savedId) {
+        const existingIx = nextAssessments.findIndex((a) => String(a?.id || "").trim() === savedId);
+        if (existingIx >= 0) nextAssessments.splice(existingIx, 1);
+        nextAssessments.unshift(saved);
+      }
+      return { ...current, assessments: nextAssessments };
+    });
+  }
+
+  async function setAssessmentArchivedState(assessment, archived, options = {}) {
+    const safeAssessment = assessment && typeof assessment === "object" ? assessment : null;
+    if (!safeAssessment?.id) {
+      setStatus("assessments", "Assessment id missing.", "error");
+      return null;
+    }
+    const candidateId = String(safeAssessment?.candidateId || "").trim();
+    if (!candidateId) {
+      setStatus("assessments", "Candidate id missing for this assessment (cannot archive/restore safely).", "error");
+      return null;
+    }
+    const nowIso = new Date().toISOString();
+    const next = {
+      ...safeAssessment,
+      candidateId,
+      archived: Boolean(archived),
+      archivedAt: archived ? nowIso : "",
+      archivedBy: archived ? String(state.user?.name || "").trim() : ""
+    };
+    setStatus("assessments", archived ? "Archiving assessment..." : "Restoring assessment...");
+    try {
+      const saved = await api("/company/assessments", token, "POST", { assessment: next });
+      upsertAssessmentInState(saved);
+      if (archived && options.navigateToCaptured) {
+        navigate("/captured");
+        setStatus("captured", "Moved assessment back to Captured.", "ok");
+      } else {
+        setStatus("assessments", archived ? "Assessment archived." : "Assessment restored.", "ok");
+      }
+      void refreshWorkspaceSilently("manual");
+      return saved;
+    } catch (error) {
+      setStatus("assessments", String(error?.message || error), "error");
+      return null;
+    }
+  }
+
   async function completeAgendaInterview(assessment) {
     const confirmed = typeof window === "undefined" || window.confirm(`Mark interview done for ${assessment?.candidateName || "this candidate"}?`);
     if (!confirmed) return;
@@ -7543,8 +7620,8 @@ function PortalApp({ token, onLogout }) {
   const oneDayAgoStart = new Date(todayStart);
   oneDayAgoStart.setDate(oneDayAgoStart.getDate() - 1);
   const candidateHasAssessment = (item) => {
-    const id = String(item?.assessment_id || item?.assessmentId || item?.assessment_id || "").trim();
-    return Boolean(id) || item?.used_in_assessment === true || item?.usedInAssessment === true;
+    // Treat archived assessments as "moved back to captured".
+    return Boolean(resolveCapturedAssessment(item));
   };
   const isCapturedCallLater = (item) => {
     if (!item?.next_follow_up_at) return false;
@@ -8255,6 +8332,20 @@ function PortalApp({ token, onLogout }) {
                 <label><span>Date from</span><input type="date" value={assessmentFilters.dateFrom} onChange={(e) => setAssessmentFilters((current) => ({ ...current, dateFrom: e.target.value }))} /></label>
                 <label><span>Date to</span><input type="date" value={assessmentFilters.dateTo} onChange={(e) => setAssessmentFilters((current) => ({ ...current, dateTo: e.target.value }))} /></label>
               </div>
+              <div className="chip-row" style={{ marginBottom: 12 }}>
+                <button
+                  className={`chip chip-toggle${assessmentLane === "active" ? " active" : ""}`}
+                  onClick={() => setAssessmentLane("active")}
+                >
+                  Active
+                </button>
+                <button
+                  className={`chip chip-toggle${assessmentLane === "archived" ? " active" : ""}`}
+                  onClick={() => setAssessmentLane("archived")}
+                >
+                  Archived
+                </button>
+              </div>
               <div className="captured-filter-grid">
                 <MultiSelectDropdown label="Clients" options={assessmentOptions.clients} selected={assessmentFilters.clients} onToggle={(value) => setAssessmentFilters((current) => ({ ...current, clients: value === "__all__" ? [] : current.clients.includes(value) ? current.clients.filter((item) => item !== value) : [...current.clients, value] }))} />
                 <MultiSelectDropdown label="JD / Role" options={assessmentOptions.jds} selected={assessmentFilters.jds} onToggle={(value) => setAssessmentFilters((current) => ({ ...current, jds: value === "__all__" ? [] : current.jds.includes(value) ? current.jds.filter((item) => item !== value) : [...current.jds, value] }))} />
@@ -8278,13 +8369,18 @@ function PortalApp({ token, onLogout }) {
                   <article className={`item-card compact-card ${selectedAssessmentIds.includes(String(item.id)) ? "selected-card" : ""}`} key={item.id}>
                     {(() => {
                       const latestStatusPreview = getLatestAssessmentStatusPreview(item);
+                      const isArchived = isAssessmentArchived(item);
                       return (
                         <>
                     <div className="assessment-select-row">
-                      <label className="checkbox-pill">
-                        <input type="checkbox" checked={selectedAssessmentIds.includes(String(item.id))} onChange={() => toggleAssessmentSelection(item.id)} />
-                        <span>Select for client share</span>
-                      </label>
+                      {assessmentLane === "active" && !isArchived ? (
+                        <label className="checkbox-pill">
+                          <input type="checkbox" checked={selectedAssessmentIds.includes(String(item.id))} onChange={() => toggleAssessmentSelection(item.id)} />
+                          <span>Select for client share</span>
+                        </label>
+                      ) : (
+                        <span className="muted">Archived</span>
+                      )}
                     </div>
                     <div className="item-card__top">
                       <div>
@@ -8315,13 +8411,46 @@ function PortalApp({ token, onLogout }) {
                       </div>
                     </div>
                     <div className="button-row">
-                      <button onClick={() => openSavedAssessment(item)}>Edit assessment</button>
-                      <button onClick={() => setAssessmentStatusId(item.id)}>Update status</button>
-                      <button onClick={() => void openAssessmentJourney(item)}>Journey</button>
-                      <button onClick={() => openAssessmentWhatsapp(item)}>WhatsApp</button>
-                      <button onClick={() => void openAssessmentCandidateCardModal(item)}>Candidate card</button>
-                      <button onClick={() => reuseAssessmentAsNew(item)}>Reuse as new</button>
-                      <button className="ghost-btn" onClick={() => void deleteAssessmentItem(item)}>Delete</button>
+                      {assessmentLane === "active" && !isArchived ? (
+                        <>
+                          <button onClick={() => void setAssessmentArchivedState(item, true, { navigateToCaptured: true })}>Move back to Captured</button>
+                          <button onClick={() => openSavedAssessment(item)}>Edit assessment</button>
+                          <button onClick={() => setAssessmentStatusId(item.id)}>Update status</button>
+                          <button onClick={() => void openAssessmentJourney(item)}>Journey</button>
+                          <button onClick={() => openAssessmentWhatsapp(item)}>WhatsApp</button>
+                          <button onClick={() => void openAssessmentCandidateCardModal(item)}>Candidate card</button>
+                          <details className="filter-dropdown">
+                            <summary className="filter-dropdown__summary">
+                              <span>More</span>
+                              <span className="muted">⋯</span>
+                            </summary>
+                            <div className="filter-dropdown__body">
+                              <div className="button-row tight">
+                                <button className="ghost-btn" onClick={() => void setAssessmentArchivedState(item, true)}>Hide/Archive</button>
+                                <button className="ghost-btn" onClick={() => reuseAssessmentAsNew(item)}>Reuse as new</button>
+                                <button className="ghost-btn" onClick={() => void deleteAssessmentItem(item)}>Delete</button>
+                              </div>
+                            </div>
+                          </details>
+                        </>
+                      ) : (
+                        <>
+                          <button onClick={() => void setAssessmentArchivedState(item, false)}>Restore</button>
+                          <button onClick={() => void openAssessmentCandidateCardModal(item)}>Candidate card</button>
+                          <details className="filter-dropdown">
+                            <summary className="filter-dropdown__summary">
+                              <span>More</span>
+                              <span className="muted">⋯</span>
+                            </summary>
+                            <div className="filter-dropdown__body">
+                              <div className="button-row tight">
+                                <button className="ghost-btn" onClick={() => reuseAssessmentAsNew(item)}>Reuse as new</button>
+                                <button className="ghost-btn" onClick={() => void deleteAssessmentItem(item)}>Delete</button>
+                              </div>
+                            </div>
+                          </details>
+                        </>
+                      )}
                     </div>
                         </>
                       );
