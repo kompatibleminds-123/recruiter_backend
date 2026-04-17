@@ -1441,23 +1441,42 @@ function formatRecruiterOverwriteLabel(key) {
 function api(path, token, method = "GET", body = null) {
   const headers = { "Content-Type": "application/json" };
   if (token) headers.Authorization = `Bearer ${token}`;
+  const controller = new AbortController();
+  const safeMethod = String(method || "GET").toUpperCase();
+  const safePath = String(path || "");
+  // Avoid indefinite "Saving..." states on network/server issues.
+  // Assessments/candidate writes can take longer, so give them a bigger budget.
+  const timeoutMs =
+    safeMethod !== "GET" && /\/company\/assessments\b/.test(safePath) ? 60000
+      : safeMethod !== "GET" ? 45000
+        : 30000;
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
   return fetch(path, {
     method,
     headers,
+    signal: controller.signal,
     body: body ? JSON.stringify(body) : null
-  }).then(async (response) => {
-    const text = await response.text();
-    let data = {};
-    try {
-      data = text ? JSON.parse(text) : {};
-    } catch {
-      data = { ok: false, error: text || `HTTP ${response.status}` };
-    }
-    if (!response.ok || data?.ok === false) {
-      throw new Error(data?.error || `HTTP ${response.status}`);
-    }
-    return data.result || data;
-  });
+  })
+    .then(async (response) => {
+      const text = await response.text();
+      let data = {};
+      try {
+        data = text ? JSON.parse(text) : {};
+      } catch {
+        data = { ok: false, error: text || `HTTP ${response.status}` };
+      }
+      if (!response.ok || data?.ok === false) {
+        throw new Error(data?.error || `HTTP ${response.status}`);
+      }
+      return data.result || data;
+    })
+    .catch((error) => {
+      if (String(error?.name || "") === "AbortError") {
+        throw new Error(`Request timed out (${Math.round(timeoutMs / 1000)}s). Please refresh and try again.`);
+      }
+      throw error;
+    })
+    .finally(() => clearTimeout(timer));
 }
 
 function copyText(value) {
