@@ -3331,43 +3331,6 @@ function CandidateProfileModal({ open, candidate, onClose, onOpenCv, onReuse, on
     reason_of_change: linkedAssessment?.reasonForChange || baseCandidate.reason_of_change || ""
   });
   const reasonOfChange = String(linkedAssessment?.reasonForChange || buildReasonOfChangeForExport(baseCandidate) || "").trim();
-  const timeline = String(
-    linkedAssessment?.experienceTimeline
-    || linkedAssessment?.experience_timeline
-    || baseCandidate.experienceTimeline
-    || baseCandidate.experience_timeline
-    || draft.experienceTimeline
-    || draft.experience_timeline
-    || ""
-  ).trim();
-  const timelineJson = (
-    linkedAssessment?.experienceTimelineJson
-    || linkedAssessment?.experience_timeline_json
-    || baseCandidate.experienceTimelineJson
-    || baseCandidate.experience_timeline_json
-    || null
-  );
-  const finalTimeline = resolveTimelineText({ textTimeline: timeline, jsonTimeline: timelineJson });
-  const currentCompanyLabel = String(
-    linkedAssessment?.currentCompany
-    || baseCandidate.company
-    || baseCandidate.current_company
-    || draft.currentCompany
-    || cvResult?.currentCompany
-    || ""
-  ).trim();
-  const timelineFromCv = String(
-    cvResult?.experienceTimeline
-    || cvResult?.experience_timeline
-    || cvResult?.experienceTimelineText
-    || cvResult?.timeline
-    || ""
-  ).trim();
-  const previousCompanies = extractPreviousCompaniesFromTimeline({
-    timelineText: timelineFromCv || finalTimeline || "",
-    currentCompany: currentCompanyLabel,
-    limit: 3
-  });
   const noteFields = [
     linkedAssessment?.otherPointers,
     linkedAssessment?.callbackNotes,
@@ -3413,13 +3376,6 @@ function CandidateProfileModal({ open, candidate, onClose, onOpenCv, onReuse, on
     { title: "Personal & Professional Information", rows: professionalRows.map(([label, value]) => ({ label, value })) },
     { title: "Screening Remarks", rows: [{ label: "Screening remarks", value: screeningRemarks || (questionAnswers || []).map((pair) => `${pair.question}: ${pair.answer}`).join("\n") || "-" }] }
   ];
-  if (previousCompanies.length) {
-    excelSections.push({
-      title: "Previous Companies (last 3)",
-      rows: [{ label: "Previous companies", value: previousCompanies.map((name, index) => `${index + 1}. ${name}`).join("\n") }]
-    });
-  }
-  if (finalTimeline) excelSections.push({ title: "Previous Experience (timeline)", rows: [{ label: "Experience timeline", value: finalTimeline }] });
   if (tags.length) excelSections.push({ title: "Tags / searchable keywords", rows: [{ label: "Tags", value: tags.join(", ") }] });
   excelSections.push({ title: "CV", rows: [{ label: "CV", value: candidateHasStoredCv(baseCandidate) ? (cvMeta.filename || "Uploaded CV available") : "No uploaded CV available yet." }] });
 
@@ -3505,24 +3461,6 @@ function CandidateProfileModal({ open, candidate, onClose, onOpenCv, onReuse, on
             )}
           </div>
 
-          {finalTimeline ? (
-            <div className="candidate-sheet__section">
-              <div className="candidate-sheet__section-title">Previous Experience (timeline)</div>
-              <div className="candidate-sheet__remarks">{finalTimeline}</div>
-            </div>
-          ) : null}
-
-          {previousCompanies.length ? (
-            <div className="candidate-sheet__section">
-              <div className="candidate-sheet__section-title">Previous Companies (last 3)</div>
-              <div className="candidate-sheet__remarks">
-                {previousCompanies.map((name, index) => (
-                  <div key={`${name}-${index}`}>{`${index + 1}. ${name}`}</div>
-                ))}
-              </div>
-            </div>
-          ) : null}
-
           {tags.length ? (
             <div className="candidate-sheet__section">
               <div className="candidate-sheet__section-title">Tags / searchable keywords</div>
@@ -3570,9 +3508,6 @@ function ClientProfileModal({ open, item, onClose, copySettings = DEFAULT_COPY_S
     other_standard_questions: assessment.other_standard_questions || assessment.otherStandardQuestions || assessment.otherStandardQuestionAnswers || "",
     reason_of_change: assessment.reasonForChange || candidate.reason_of_change || ""
   });
-  const timeline = String(assessment.experienceTimeline || assessment.experience_timeline || candidateDraft.experienceTimeline || "").trim();
-  const timelineJson = assessment.experienceTimelineJson || assessment.experience_timeline_json || null;
-  const finalTimeline = resolveTimelineText({ textTimeline: timeline, jsonTimeline: timelineJson });
   const dateApplied = String(item.createdAt || assessment.createdAt || candidate.created_at || "").trim();
   const modalTitle = assessment.candidateName || item.candidateName || candidate.name || "Candidate";
   const modalSubtitle = [assessment.clientName || item.clientName || candidate.client_name || candidateDraft.clientName || "", assessment.jdTitle || item.position || item.role || candidate.jd_title || candidateDraft.jdTitle || "", assessment.currentCompany || item.company || candidate.company || ""].filter(Boolean).join(" | ");
@@ -3606,7 +3541,6 @@ function ClientProfileModal({ open, item, onClose, copySettings = DEFAULT_COPY_S
     { title: "Personal & Professional Information", rows: professionalRows.map(([label, value]) => ({ label, value })) },
     { title: "Screening Remarks", rows: [{ label: "Screening remarks", value: screeningRemarks || (questionAnswers || []).map((pair) => `${pair.question}: ${pair.answer}`).join("\n") || "-" }] }
   ];
-  if (finalTimeline) excelSections.push({ title: "Previous Experience (timeline)", rows: [{ label: "Experience timeline", value: finalTimeline }] });
   if (otherPointers) excelSections.push({ title: "Other Pointers", rows: [{ label: "Other pointers", value: otherPointers }] });
   excelSections.push({ title: "CV", rows: [{ label: "CV", value: hasCv ? "CV is available for this profile." : "No uploaded CV available yet." }] });
   return (
@@ -3676,13 +3610,6 @@ function ClientProfileModal({ open, item, onClose, copySettings = DEFAULT_COPY_S
               <p className="muted">No screening remarks saved yet.</p>
             )}
           </div>
-
-          {finalTimeline ? (
-            <div className="candidate-sheet__section">
-              <div className="candidate-sheet__section-title">Previous Experience (timeline)</div>
-              <div className="candidate-sheet__remarks">{finalTimeline}</div>
-            </div>
-          ) : null}
 
           {otherPointers ? (
             <div className="candidate-sheet__section">
