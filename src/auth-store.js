@@ -171,7 +171,32 @@ function enc(v) { return encodeURIComponent(String(v || "").trim()); }
 async function sb(method, rel, body = null, headers = {}) {
   const { on, url, key } = cfg();
   if (!on) throw new Error("Supabase auth store is not configured.");
-  const res = await fetch(`${url}${rel}`, { method, headers: { apikey: key, Authorization: `Bearer ${key}`, ...headers }, body });
+  const controller = new AbortController();
+  const safeMethod = String(method || "GET").toUpperCase();
+  const safeRel = String(rel || "");
+  // Supabase can occasionally hang during heavy backfills or long locks.
+  // Use a hard timeout so the UI never sits in "Saving..." forever.
+  const timeoutMs =
+    safeMethod === "GET" ? 30000
+      : /\/rest\/v1\/assessments\b/i.test(safeRel) ? 60000
+        : 45000;
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  let res;
+  try {
+    res = await fetch(`${url}${rel}`, {
+      method,
+      signal: controller.signal,
+      headers: { apikey: key, Authorization: `Bearer ${key}`, ...headers },
+      body
+    });
+  } catch (error) {
+    if (String(error?.name || "") === "AbortError") {
+      throw new Error(`Supabase request timed out (${Math.round(timeoutMs / 1000)}s) for ${safeMethod} ${safeRel}.`);
+    }
+    throw error;
+  } finally {
+    clearTimeout(timer);
+  }
   if (!res.ok) throw new Error(`Supabase auth failed: ${res.status} ${await res.text()}`);
   if (method === "HEAD" || res.status === 204) return null;
   return String(res.headers.get("content-type") || "").includes("application/json") ? res.json() : res.text();
