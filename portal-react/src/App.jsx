@@ -4761,6 +4761,19 @@ function PortalApp({ token, onLogout }) {
     };
   }, [capturedAssessmentMap, capturedNotesUniverse]);
 
+  const assessmentStats = useMemo(() => {
+    const todayKey = new Date().toISOString().slice(0, 10);
+    const universe = Array.isArray(state.assessments) ? state.assessments : [];
+    const activeCount = universe.filter((item) => !isAssessmentArchived(item)).length;
+    const archivedCount = universe.filter((item) => isAssessmentArchived(item)).length;
+    return {
+      today: universe.filter((item) => String(item?.generatedAt || item?.createdAt || item?.created_at || item?.updatedAt || "").slice(0, 10) === todayKey).length,
+      total: universe.length,
+      active: activeCount,
+      archived: archivedCount
+    };
+  }, [state.assessments]);
+
   const capturedCandidates = useMemo(() => {
     return capturedNotesUniverse.filter((item) => {
       const matchedAssessment = resolveCapturedAssessment(item);
@@ -8354,6 +8367,12 @@ function PortalApp({ token, onLogout }) {
                     <option value="archived">Archived</option>
                   </select>
                 </label>
+              </div>
+              <div className="metric-grid metric-grid--tight">
+                <div className="metric-card compact-metric"><div className="metric-label">Today</div><div className="metric-value">{assessmentStats.today}</div></div>
+                <div className="metric-card compact-metric"><div className="metric-label">Total assessments</div><div className="metric-value">{assessmentStats.total}</div></div>
+                <div className="metric-card compact-metric"><div className="metric-label">Active</div><div className="metric-value">{assessmentStats.active}</div></div>
+                <div className="metric-card compact-metric"><div className="metric-label">Archived</div><div className="metric-value">{assessmentStats.archived}</div></div>
               </div>
               <div className="captured-filter-grid">
                 <MultiSelectDropdown label="Clients" options={assessmentOptions.clients} selected={assessmentFilters.clients} onToggle={(value) => setAssessmentFilters((current) => ({ ...current, clients: value === "__all__" ? [] : current.clients.includes(value) ? current.clients.filter((item) => item !== value) : [...current.clients, value] }))} />
