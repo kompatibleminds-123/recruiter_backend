@@ -469,8 +469,17 @@ function getCandidateDraftState(candidate = {}) {
   const meta = decodePortalApplicantMetadata(source);
   const draftPayload = parsePortalObjectField(source?.draft_payload || source?.draftPayload);
   const screeningAnswers = parsePortalObjectField(source?.screening_answers || source?.screeningAnswers);
+  const cautiousIndicatorsFallback = String(
+    draftPayload?.cautiousIndicators
+      || meta?.cautiousIndicators
+      || meta?.cautious_indicators
+      || meta?.cautiousIndicatorNote
+      || meta?.cautious_indicator_note
+      || ""
+  ).trim();
   return {
     ...draftPayload,
+    ...(cautiousIndicatorsFallback ? { cautiousIndicators: cautiousIndicatorsFallback } : {}),
     jdScreeningAnswers: Object.keys(screeningAnswers).length
       ? screeningAnswers
       : draftPayload?.jdScreeningAnswers && typeof draftPayload.jdScreeningAnswers === "object"
