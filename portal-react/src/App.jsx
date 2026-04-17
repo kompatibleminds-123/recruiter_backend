@@ -144,6 +144,7 @@ const DEFAULT_PIPELINE_STAGE_OPTIONS = [
 
 const DEFAULT_STATUS_OPTIONS = [
   "CV shared",
+  "Test or Assignment shared",
   "Screening call aligned",
   "L1 aligned",
   "L2 aligned",
@@ -371,6 +372,8 @@ function normalizeAssessmentStatusLabel(status) {
   if (!value) return "";
   if (/^cv shared$/i.test(value)) return "CV shared";
   if (/^cv to be shared$/i.test(value)) return "CV shared";
+  if (/^test\b/i.test(value)) return "Test or Assignment shared";
+  if (/\bassignment\b/i.test(value)) return "Test or Assignment shared";
   if (/^did not attend$/i.test(value)) return "Not responding";
   return value;
 }
@@ -941,6 +944,8 @@ function isAssessmentStatusLine(line) {
   return [
     "cv shared",
     "cv to be shared",
+    "test",
+    "assignment",
     "screening call aligned",
     "l1 aligned",
     "l2 aligned",
@@ -974,6 +979,7 @@ function inferAssessmentStatusAndSchedule(text, baseDate = new Date()) {
   const hasScreeningCall = /\bscreening\b/.test(value);
   const hasFeedback = /\bfeedback\b/.test(value);
   const hasHold = /\bon hold\b|\bhold\b|\bhigh notice\b|\bhigh ctc\b|\bout of budget\b/.test(value);
+  const hasTestOrAssignment = /\btest\b|\bassignment\b|\bassignment shared\b/.test(value);
   const hasNotResponding = /\bnr\b|\bnot responding\b|\bno response\b|\bno answer\b|\bdid not pick up\b|\bdid not join\b|\bdid not attend\b/.test(value);
   const hasDuplicate = /\bduplicate\b/.test(value);
   const hasShortlisted = /\bshortlisted\b|\bselected\b/.test(value);
@@ -991,6 +997,7 @@ function inferAssessmentStatusAndSchedule(text, baseDate = new Date()) {
   else if (hasReject) candidateStatus = "Interview Reject";
   else if (hasFeedback) candidateStatus = "Feedback Awaited";
   else if (hasHold) candidateStatus = "Hold";
+  else if (hasTestOrAssignment) candidateStatus = "Test or Assignment shared";
   else if (hasHr) candidateStatus = "HR interview aligned";
   else if (hasL2) candidateStatus = "L2 aligned";
   else if (hasL1) candidateStatus = "L1 aligned";
@@ -8385,7 +8392,17 @@ function PortalApp({ token, onLogout }) {
                     <div className="item-card__top">
                       <div>
                         <h3>{item.candidateName || "Candidate"} | {item.jdTitle || "Untitled role"}</h3>
-                        <p className="muted">{[item.pipelineStage || "", normalizeAssessmentStatusLabel(item.candidateStatus) || ""].filter(Boolean).join(" | ")}</p>
+                        {(() => {
+                          const linkedCandidate = assessmentLinkedCandidateMap.get(String(item.id || "")) || null;
+                          const assignedTo = String(linkedCandidate?.assigned_to_name || linkedCandidate?.assignedToName || "").trim();
+                          const ownerName = String(linkedCandidate?.recruiter_name || linkedCandidate?.recruiterName || item.recruiterName || "").trim();
+                          const recruiterLabel = assignedTo ? `Assigned to: ${assignedTo}` : ownerName ? `Owner: ${ownerName}` : "";
+                          return (
+                            <p className="muted">
+                              {[item.pipelineStage || "", normalizeAssessmentStatusLabel(item.candidateStatus) || "", recruiterLabel].filter(Boolean).join(" | ")}
+                            </p>
+                          );
+                        })()}
                         <div className="status-note">
                           {[
                             item.currentCompany || "",
