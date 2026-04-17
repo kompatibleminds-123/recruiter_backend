@@ -8347,20 +8347,13 @@ function PortalApp({ token, onLogout }) {
                 <label className="full"><span>Search</span><input placeholder="Search by candidate, phone, email, JD..." value={assessmentFilters.q} onChange={(e) => setAssessmentFilters((current) => ({ ...current, q: e.target.value }))} /></label>
                 <label><span>Date from</span><input type="date" value={assessmentFilters.dateFrom} onChange={(e) => setAssessmentFilters((current) => ({ ...current, dateFrom: e.target.value }))} /></label>
                 <label><span>Date to</span><input type="date" value={assessmentFilters.dateTo} onChange={(e) => setAssessmentFilters((current) => ({ ...current, dateTo: e.target.value }))} /></label>
-              </div>
-              <div className="chip-row" style={{ marginBottom: 12 }}>
-                <button
-                  className={`chip chip-toggle${assessmentLane === "active" ? " active" : ""}`}
-                  onClick={() => setAssessmentLane("active")}
-                >
-                  Active
-                </button>
-                <button
-                  className={`chip chip-toggle${assessmentLane === "archived" ? " active" : ""}`}
-                  onClick={() => setAssessmentLane("archived")}
-                >
-                  Archived
-                </button>
+                <label>
+                  <span>State</span>
+                  <select value={assessmentLane} onChange={(e) => setAssessmentLane(e.target.value)}>
+                    <option value="active">Active</option>
+                    <option value="archived">Archived</option>
+                  </select>
+                </label>
               </div>
               <div className="captured-filter-grid">
                 <MultiSelectDropdown label="Clients" options={assessmentOptions.clients} selected={assessmentFilters.clients} onToggle={(value) => setAssessmentFilters((current) => ({ ...current, clients: value === "__all__" ? [] : current.clients.includes(value) ? current.clients.filter((item) => item !== value) : [...current.clients, value] }))} />
