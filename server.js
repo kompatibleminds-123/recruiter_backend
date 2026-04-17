@@ -3635,6 +3635,14 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  // Render/Cloudflare health check endpoint: keep it fast and dependency-free.
+  // This helps reduce transient 502s during deploys/restarts by letting the platform
+  // know when the service is ready to serve traffic.
+  if (req.method === "GET" && (requestUrl.pathname === "/health" || requestUrl.pathname === "/healthz")) {
+    sendJson(res, 200, { ok: true, ts: new Date().toISOString() });
+    return;
+  }
+
   if (req.method === "GET" && (requestUrl.pathname === "/" || requestUrl.pathname === "")) {
     serveStaticFile(res, path.join(ROOT_PUBLIC_DIR, "index.html"));
     return;
