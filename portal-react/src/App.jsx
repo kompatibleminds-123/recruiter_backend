@@ -8485,13 +8485,13 @@ function PortalApp({ token, onLogout }) {
                     <div className="button-row">
                       {assessmentLane === "active" && !isArchived ? (
                         <>
-                          <button onClick={() => openSavedAssessment(item)}>Edit assessment</button>
-                          <button onClick={() => setAssessmentStatusId(item.id)}>Update status</button>
-                          <button onClick={() => void openAssessmentJourney(item)}>Journey</button>
-                          <button onClick={() => void openAssessmentCandidateCardModal(item)}>Candidate card</button>
-                          <button onClick={() => openAssessmentWhatsapp(item)}>WhatsApp</button>
+                          <button onClick={() => { closeAssessmentMoreMenu(); openSavedAssessment(item); }}>Edit assessment</button>
+                          <button onClick={() => { closeAssessmentMoreMenu(); setAssessmentStatusId(item.id); }}>Update status</button>
+                          <button onClick={() => { closeAssessmentMoreMenu(); void openAssessmentJourney(item); }}>Journey</button>
+                          <button onClick={() => { closeAssessmentMoreMenu(); void openAssessmentCandidateCardModal(item); }}>Candidate card</button>
+                          <button onClick={() => { closeAssessmentMoreMenu(); openAssessmentWhatsapp(item); }}>WhatsApp</button>
                           <div
-                            className="more-menu"
+                            className={`more-menu ${openAssessmentMoreId === String(item.id) ? "more-menu--open" : ""}`}
                             ref={(node) => {
                               if (openAssessmentMoreId === String(item.id)) assessmentMoreMenuRef.current = node;
                             }}
@@ -8504,7 +8504,7 @@ function PortalApp({ token, onLogout }) {
                               More <span className="muted">⋯</span>
                             </button>
                             {openAssessmentMoreId === String(item.id) ? (
-                              <div className="more-menu__dropdown" role="menu">
+                              <div className="more-menu__dropdown more-menu__dropdown--inline" role="menu">
                                 <button type="button" className="more-menu__item" onClick={() => { closeAssessmentMoreMenu(); void setAssessmentArchivedState(item, true, { navigateToCaptured: true }); }}>Move back to captured</button>
                                 <button type="button" className="more-menu__item" onClick={() => { closeAssessmentMoreMenu(); void setAssessmentArchivedState(item, true); }}>Hide</button>
                                 <button type="button" className="more-menu__item" onClick={() => { closeAssessmentMoreMenu(); reuseAssessmentAsNew(item); }}>Reuse as new</button>
@@ -8515,10 +8515,10 @@ function PortalApp({ token, onLogout }) {
                         </>
                       ) : (
                         <>
-                          <button onClick={() => void setAssessmentArchivedState(item, false)}>Restore</button>
-                          <button onClick={() => void openAssessmentCandidateCardModal(item)}>Candidate card</button>
+                          <button onClick={() => { closeAssessmentMoreMenu(); void setAssessmentArchivedState(item, false); }}>Restore</button>
+                          <button onClick={() => { closeAssessmentMoreMenu(); void openAssessmentCandidateCardModal(item); }}>Candidate card</button>
                           <div
-                            className="more-menu"
+                            className={`more-menu ${openAssessmentMoreId === String(item.id) ? "more-menu--open" : ""}`}
                             ref={(node) => {
                               if (openAssessmentMoreId === String(item.id)) assessmentMoreMenuRef.current = node;
                             }}
@@ -8531,7 +8531,7 @@ function PortalApp({ token, onLogout }) {
                               More <span className="muted">⋯</span>
                             </button>
                             {openAssessmentMoreId === String(item.id) ? (
-                              <div className="more-menu__dropdown" role="menu">
+                              <div className="more-menu__dropdown more-menu__dropdown--inline" role="menu">
                                 <button type="button" className="more-menu__item" onClick={() => { closeAssessmentMoreMenu(); reuseAssessmentAsNew(item); }}>Reuse as new</button>
                                 <button type="button" className="more-menu__item more-menu__danger" onClick={() => { closeAssessmentMoreMenu(); void deleteAssessmentItem(item); }}>Delete</button>
                               </div>

@@ -489,22 +489,27 @@ textarea { min-height: 92px; resize: vertical; }
   position: relative;
   flex: 0 0 auto;
   min-width: 0;
-  z-index: 1000;
+}
+.more-menu--open {
+  flex: 1 0 100%;
 }
 .more-menu__trigger {
   white-space: nowrap;
 }
 .more-menu__dropdown {
-  position: absolute;
-  top: calc(100% + 0.45rem);
-  right: 0;
-  min-width: 220px;
   padding: 0.45rem;
   border: 1px solid var(--border);
   border-radius: 14px;
   background: var(--panel-strong);
   box-shadow: 0 10px 30px rgba(15, 23, 42, 0.12);
-  z-index: 2000;
+  display: grid;
+  gap: 0.45rem;
+  width: 100%;
+  min-width: 0;
+}
+.more-menu__dropdown--inline {
+  position: static;
+  margin-top: 0.55rem;
 }
 .more-menu__item {
   width: 100%;
@@ -518,7 +523,7 @@ textarea { min-height: 92px; resize: vertical; }
   cursor: pointer;
 }
 .more-menu__item + .more-menu__item {
-  margin-top: 0.45rem;
+  margin-top: 0;
 }
 .more-menu__item:hover {
   border-color: rgba(59, 130, 246, 0.35);
@@ -857,8 +862,10 @@ textarea { min-height: 92px; resize: vertical; }
   place-items: center;
   padding: 1.5rem;
   overflow-y: auto;
+  z-index: 5000;
 }
 .overlay-card {
+  position: relative;
   width: min(560px, 100%);
   padding: 1.2rem;
   display: grid;
