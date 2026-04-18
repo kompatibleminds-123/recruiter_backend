@@ -6199,70 +6199,74 @@ function PortalApp({ token, onLogout }) {
     void refreshWorkspaceSilently("post-save");
   }
 
-  async function saveInterviewDraft() {
-    if (!interviewMeta.candidateId) {
-      setStatus("interview", "Open an existing draft first to save recruiter edits.", "error");
-      return;
-    }
-    setStatus("interview", "Saving draft...");
-    const existingCandidate = (state.candidates || []).find((item) => String(item.id) === String(interviewMeta.candidateId));
-    const existingMeta = decodePortalApplicantMetadata(existingCandidate || {});
-    const nextMeta = mergeStoredCvIntoApplicantMeta(existingMeta, interviewForm.cvAnalysis || null);
-    const linkedAssessment = interviewMeta.assessmentId
-      ? (state.assessments || []).find((item) => String(item.id || "") === String(interviewMeta.assessmentId || ""))
-      : null;
-    await api(`/company/candidates/${encodeURIComponent(interviewMeta.candidateId)}`, token, "PATCH", { patch: {
-      name: interviewForm.candidateName,
-      phone: interviewForm.phoneNumber,
-      email: interviewForm.emailId,
-      linkedin: interviewForm.linkedin,
-      location: interviewForm.location,
-      company: interviewForm.currentCompany,
-      role: interviewForm.currentDesignation,
-      experience: interviewForm.totalExperience,
-      relevant_experience: interviewForm.relevantExperience,
-      highest_education: interviewForm.highestEducation,
-      current_ctc: interviewForm.currentCtc,
-      expected_ctc: interviewForm.expectedCtc,
-      notice_period: interviewForm.noticePeriod,
-      recruiter_context_notes: interviewForm.recruiterNotes,
-      notes: interviewForm.callbackNotes,
-      other_pointers: interviewForm.otherPointers,
-      skills: parseTagInputValue(interviewForm.tags),
-      lwd_or_doj: sanitizeLwdOrDojValue(interviewForm.lwdOrDoj),
-      jd_title: interviewForm.jdTitle,
-      client_name: interviewForm.clientName,
-      next_follow_up_at: interviewForm.followUpAt,
-      screening_answers: interviewForm.jdScreeningAnswers || {},
-      draft_payload: {
-        ...interviewForm,
-        jdScreeningAnswers: interviewForm.jdScreeningAnswers || {}
-      },
-      raw_note: encodePortalApplicantMetadata({
-        ...nextMeta,
-        jdScreeningAnswers: interviewForm.jdScreeningAnswers || {}
-      })
-    } });
-    if (linkedAssessment?.id) {
-      await api("/company/assessments", token, "POST", { assessment: {
-        ...linkedAssessment,
-        ...interviewForm,
-        id: linkedAssessment.id,
-        candidateId: interviewMeta.candidateId,
-        candidateName: interviewForm.candidateName,
-        questionMode: linkedAssessment.questionMode || "basic",
-        generatedAt: linkedAssessment.generatedAt || new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-        statusHistory: Array.isArray(interviewForm.statusHistory) && interviewForm.statusHistory.length
-          ? interviewForm.statusHistory
-          : Array.isArray(linkedAssessment.statusHistory)
-            ? linkedAssessment.statusHistory
-            : []
-      } });
-    }
-    void refreshWorkspaceSilently("post-save");
-    setStatus("interview", "Draft saved.", "ok");
-  }
+	  async function saveInterviewDraft() {
+	    if (!interviewMeta.candidateId) {
+	      setStatus("interview", "Open an existing draft first to save recruiter edits.", "error");
+	      return;
+	    }
+	    setStatus("interview", "Saving draft...");
+	    try {
+	      const existingCandidate = (state.candidates || []).find((item) => String(item.id) === String(interviewMeta.candidateId));
+	      const existingMeta = decodePortalApplicantMetadata(existingCandidate || {});
+	      const nextMeta = mergeStoredCvIntoApplicantMeta(existingMeta, interviewForm.cvAnalysis || null);
+	      const linkedAssessment = interviewMeta.assessmentId
+	        ? (state.assessments || []).find((item) => String(item.id || "") === String(interviewMeta.assessmentId || ""))
+	        : null;
+	      await api(`/company/candidates/${encodeURIComponent(interviewMeta.candidateId)}`, token, "PATCH", { patch: {
+	        name: interviewForm.candidateName,
+	        phone: interviewForm.phoneNumber,
+	        email: interviewForm.emailId,
+	        linkedin: interviewForm.linkedin,
+	        location: interviewForm.location,
+	        company: interviewForm.currentCompany,
+	        role: interviewForm.currentDesignation,
+	        experience: interviewForm.totalExperience,
+	        relevant_experience: interviewForm.relevantExperience,
+	        highest_education: interviewForm.highestEducation,
+	        current_ctc: interviewForm.currentCtc,
+	        expected_ctc: interviewForm.expectedCtc,
+	        notice_period: interviewForm.noticePeriod,
+	        recruiter_context_notes: interviewForm.recruiterNotes,
+	        notes: interviewForm.callbackNotes,
+	        other_pointers: interviewForm.otherPointers,
+	        skills: parseTagInputValue(interviewForm.tags),
+	        lwd_or_doj: sanitizeLwdOrDojValue(interviewForm.lwdOrDoj),
+	        jd_title: interviewForm.jdTitle,
+	        client_name: interviewForm.clientName,
+	        next_follow_up_at: interviewForm.followUpAt,
+	        screening_answers: interviewForm.jdScreeningAnswers || {},
+	        draft_payload: {
+	          ...interviewForm,
+	          jdScreeningAnswers: interviewForm.jdScreeningAnswers || {}
+	        },
+	        raw_note: encodePortalApplicantMetadata({
+	          ...nextMeta,
+	          jdScreeningAnswers: interviewForm.jdScreeningAnswers || {}
+	        })
+	      } });
+	      if (linkedAssessment?.id) {
+	        await api("/company/assessments", token, "POST", { assessment: {
+	          ...linkedAssessment,
+	          ...interviewForm,
+	          id: linkedAssessment.id,
+	          candidateId: interviewMeta.candidateId,
+	          candidateName: interviewForm.candidateName,
+	          questionMode: linkedAssessment.questionMode || "basic",
+	          generatedAt: linkedAssessment.generatedAt || new Date().toISOString(),
+	          updatedAt: new Date().toISOString(),
+	          statusHistory: Array.isArray(interviewForm.statusHistory) && interviewForm.statusHistory.length
+	            ? interviewForm.statusHistory
+	            : Array.isArray(linkedAssessment.statusHistory)
+	              ? linkedAssessment.statusHistory
+	              : []
+	        } });
+	      }
+	      void refreshWorkspaceSilently("post-save");
+	      setStatus("interview", "Draft saved.", "ok");
+	    } catch (error) {
+	      setStatus("interview", `Draft save failed: ${String(error?.message || error)}`, "error");
+	    }
+	  }
 
   async function parseInterviewCvFile(file) {
     if (!file) return;
