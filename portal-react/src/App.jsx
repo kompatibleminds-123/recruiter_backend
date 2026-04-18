@@ -6066,6 +6066,13 @@ function PortalApp({ token, onLogout }) {
       questionMode: "basic",
       generatedAt: new Date().toISOString()
     };
+    if (interviewMeta.candidateId) {
+      const linkedCandidate = (state.candidates || []).find((item) => String(item?.id || "") === String(interviewMeta.candidateId));
+      if (linkedCandidate?.hidden_from_captured) {
+        setStatus("interview", "This note is hidden/inactive. Restore to active first, then create/update an assessment.", "error");
+        return;
+      }
+    }
     setStatus("interview", "Saving assessment...");
     const savedAssessment = await api("/company/assessments", token, "POST", { assessment });
     upsertAssessmentInState(savedAssessment || assessment);
@@ -8376,7 +8383,9 @@ function PortalApp({ token, onLogout }) {
                       </div>
                     </div>
                     <div className="button-row">
-                      <button onClick={() => loadApplicantIntoInterview(item.id)}>Open draft</button>
+                      {!item.hidden_from_captured ? (
+                        <button onClick={() => loadApplicantIntoInterview(item.id)}>Open draft</button>
+                      ) : null}
                       <button onClick={() => setNotesCandidateId(item.id)}>Recruiter note</button>
                       <button onClick={() => void openAttempts(item.id)}>Attempts</button>
                       {!item.hidden_from_captured ? (
@@ -8466,7 +8475,9 @@ function PortalApp({ token, onLogout }) {
                         </div>
                       ) : null}
                       <div className="button-row">
-                        <button onClick={() => loadCandidateIntoInterview(item.id)}>Open draft</button>
+                        {!item.hidden_from_captured ? (
+                          <button onClick={() => loadCandidateIntoInterview(item.id)}>Open draft</button>
+                        ) : null}
                         <button onClick={() => setAssignCandidateId(item.id)}>{item.assigned_to_name ? "Reassign" : "Assign"}</button>
                         <button onClick={() => setNotesCandidateId(item.id)}>Recruiter note</button>
                         <button onClick={() => void openAttempts(item.id)}>Attempts</button>

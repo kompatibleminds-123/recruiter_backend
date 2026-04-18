@@ -5535,7 +5535,10 @@ const server = http.createServer(async (req, res) => {
         throw new Error("candidateId is required to create/update an assessment.");
       }
       // Ensure the candidate exists and is visible to the actor (admin can see all; recruiters see assigned/owned).
-      await ensureCandidateVisibleToActor(actor, incomingCandidateId);
+      const linkedCandidate = await ensureCandidateVisibleToActor(actor, incomingCandidateId);
+      if (linkedCandidate?.hidden_from_captured) {
+        throw new Error("This note is hidden/inactive. Restore to active first, then create/update an assessment.");
+      }
       const assessment = await saveAssessment({
         actorUserId: actor.id,
         companyId: actor.companyId,
