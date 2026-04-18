@@ -7554,7 +7554,22 @@ function PortalApp({ token, onLogout }) {
       void refreshWorkspaceSilently("manual");
       return saved;
     } catch (error) {
-      setStatus("assessments", String(error?.message || error), "error");
+      const message = String(error?.message || error);
+      // Edge case: the candidate row was deleted, so Supabase restore fails the visibility check.
+      // Recover by asking backend to recreate the missing candidate and restore the assessment.
+      if (!archived && /candidate not found or not allowed/i.test(message)) {
+        try {
+          const restored = await api("/company/assessments/restore", token, "POST", { assessmentId: safeAssessment.id });
+          upsertAssessmentInState(restored);
+          setStatus("assessments", "Assessment restored.", "ok");
+          void refreshWorkspaceSilently("post-restore");
+          return restored;
+        } catch (restoreError) {
+          setStatus("assessments", String(restoreError?.message || restoreError), "error");
+          return null;
+        }
+      }
+      setStatus("assessments", message, "error");
       return null;
     }
   }

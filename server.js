@@ -5552,6 +5552,72 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (req.method === "POST" && req.url === "/company/assessments/restore") {
+    try {
+      const actor = await requireSessionUser(getBearerToken(req));
+      const body = await readJsonBody(req);
+      const assessmentId = String(body.assessmentId || body.assessment_id || "").trim();
+      if (!assessmentId) throw new Error("assessmentId is required.");
+
+      const existing = await getAssessmentById({ companyId: actor.companyId, assessmentId });
+      if (!existing) throw new Error("Assessment not found.");
+
+      const candidateId = String(existing.candidateId || existing.candidate_id || "").trim();
+      if (!candidateId) throw new Error("candidateId is required to restore an assessment.");
+
+      // If the candidate row was deleted, recreate a minimal one so restore doesn't fail.
+      // We keep it assigned/owned by the actor so they can operate on it immediately.
+      const candidate = await listCandidates({ id: candidateId, limit: 1, companyId: actor.companyId }).then((rows) => (rows && rows[0] ? rows[0] : null)).catch(() => null);
+      if (!candidate) {
+        await saveCandidate(
+          {
+            id: candidateId,
+            company_id: actor.companyId,
+            source: "restored_assessment",
+            name: existing.candidateName || "",
+            company: existing.currentCompany || "",
+            role: existing.currentDesignation || existing.jdTitle || "",
+            experience: existing.totalExperience || "",
+            phone: existing.phoneNumber || "",
+            email: existing.emailId || "",
+            linkedin: existing.linkedinUrl || "",
+            location: existing.location || "",
+            recruiter_id: actor.id,
+            recruiter_name: actor.name,
+            assigned_to_user_id: actor.id,
+            assigned_to_name: actor.name,
+            used_in_assessment: true,
+            assessment_id: assessmentId,
+            jd_title: existing.jdTitle || "",
+            client_name: existing.clientName || ""
+          },
+          { companyId: actor.companyId }
+        );
+      }
+
+      // Now restore assessment and relink canonically.
+      const restored = await saveAssessment({
+        actorUserId: actor.id,
+        companyId: actor.companyId,
+        assessment: {
+          ...existing,
+          id: assessmentId,
+          candidateId,
+          archived: false,
+          archivedAt: "",
+          archivedBy: ""
+        }
+      });
+      if (restored?.id) {
+        await linkCandidateToAssessment(candidateId, restored.id, { companyId: actor.companyId });
+      }
+      sendJson(res, 200, { ok: true, result: restored });
+    } catch (error) {
+      sendJson(res, 400, { ok: false, error: String(error.message || error) });
+    }
+    return;
+  }
+
   if (req.method === "DELETE" && req.url === "/company/assessments") {
     try {
       const actor = await requireSessionUser(getBearerToken(req));
