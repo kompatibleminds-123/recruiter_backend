@@ -1888,13 +1888,8 @@ function parseNaturalLanguageCandidateQuery(rawQuery) {
         .filter(Boolean)
     : [];
   let derivedLocation = locationMatch ? String(locationMatch[1] || "").trim() : "";
-  if (!derivedLocation && !locations.length) {
-    const trailingLocationMatch = roleText.match(/\b([a-z][a-z\s]{2,})$/i);
-    if (trailingLocationMatch && roleText.split(/\s+/).length >= 2) {
-      derivedLocation = String(trailingLocationMatch[1] || "").trim();
-      roleText = roleText.slice(0, roleText.length - derivedLocation.length).trim();
-    }
-  }
+  // Do not guess trailing "locations" from remaining role text.
+  // This caused false positives like "Loan sales" being treated as a location.
   const explicitSkills = skillMatch
     ? String(skillMatch[1] || "")
         .split(/,| and |\/|&/i)
