@@ -168,10 +168,25 @@ function cfg() {
   return { on: Boolean(url && key), url, key };
 }
 function enc(v) { return encodeURIComponent(String(v || "").trim()); }
+function sleep(ms) { return new Promise((resolve) => setTimeout(resolve, ms)); }
+function looksLikeHtml(text) {
+  const raw = String(text || "").toLowerCase();
+  return raw.includes("<!doctype") || raw.includes("<html") || raw.includes("<head") || raw.includes("<body");
+}
+function sanitizeSupabaseErrorText(text, status) {
+  const raw = String(text || "").trim();
+  if (!raw) return status ? `HTTP ${status}` : "Request failed.";
+  if (looksLikeHtml(raw)) {
+    if (status === 502) return "Temporary gateway error (502) from Supabase. Please retry.";
+    if (status === 503) return "Supabase is temporarily unavailable (503). Please retry.";
+    if (status === 504) return "Supabase gateway timed out (504). Please retry.";
+    return status ? `Supabase returned HTTP ${status}. Please retry.` : "Supabase request failed. Please retry.";
+  }
+  return raw.length > 500 ? `${raw.slice(0, 500)}…` : raw;
+}
 async function sb(method, rel, body = null, headers = {}) {
   const { on, url, key } = cfg();
   if (!on) throw new Error("Supabase auth store is not configured.");
-  const controller = new AbortController();
   const safeMethod = String(method || "GET").toUpperCase();
   const safeRel = String(rel || "");
   // Supabase can occasionally hang during heavy backfills or long locks.
@@ -180,26 +195,58 @@ async function sb(method, rel, body = null, headers = {}) {
     safeMethod === "GET" ? 30000
       : /\/rest\/v1\/assessments\b/i.test(safeRel) ? 60000
         : 45000;
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-  let res;
-  try {
-    res = await fetch(`${url}${rel}`, {
-      method,
-      signal: controller.signal,
-      headers: { apikey: key, Authorization: `Bearer ${key}`, ...headers },
-      body
-    });
-  } catch (error) {
-    if (String(error?.name || "") === "AbortError") {
-      throw new Error(`Supabase request timed out (${Math.round(timeoutMs / 1000)}s) for ${safeMethod} ${safeRel}.`);
+
+  // Permanent-ish fix for transient 502/503/504 from Supabase/Cloudflare during deploy spikes.
+  // Only retry idempotent reads to avoid accidental double-writes.
+  const shouldRetry = safeMethod === "GET" || safeMethod === "HEAD";
+  const maxAttempts = shouldRetry ? 3 : 1;
+  let lastResponse = null;
+  let lastError = null;
+
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      const res = await fetch(`${url}${rel}`, {
+        method,
+        signal: controller.signal,
+        headers: { apikey: key, Authorization: `Bearer ${key}`, ...headers },
+        body
+      });
+      lastResponse = res;
+
+      if (res.ok) {
+        if (method === "HEAD" || res.status === 204) return null;
+        return String(res.headers.get("content-type") || "").includes("application/json") ? res.json() : res.text();
+      }
+
+      const retryable = shouldRetry && [502, 503, 504].includes(res.status);
+      if (!retryable || attempt === maxAttempts - 1) {
+        const errorText = await res.text();
+        throw new Error(`Supabase auth failed: ${res.status} ${sanitizeSupabaseErrorText(errorText, res.status)}`);
+      }
+    } catch (error) {
+      lastError = error;
+      if (String(error?.name || "") === "AbortError") {
+        // Timeouts could be caused by long locks; retries can amplify load, so fail fast.
+        throw new Error(`Supabase request timed out (${Math.round(timeoutMs / 1000)}s) for ${safeMethod} ${safeRel}.`);
+      }
+      if (!shouldRetry || attempt === maxAttempts - 1) {
+        throw error;
+      }
+    } finally {
+      clearTimeout(timer);
     }
-    throw error;
-  } finally {
-    clearTimeout(timer);
+
+    // Retry with jittered exponential backoff.
+    const backoffMs = Math.min(2500, 250 * (2 ** attempt)) + Math.floor(Math.random() * 120);
+    await sleep(backoffMs);
   }
-  if (!res.ok) throw new Error(`Supabase auth failed: ${res.status} ${await res.text()}`);
-  if (method === "HEAD" || res.status === 204) return null;
-  return String(res.headers.get("content-type") || "").includes("application/json") ? res.json() : res.text();
+
+  if (lastResponse) {
+    throw new Error(`Supabase auth failed: ${lastResponse.status}`);
+  }
+  throw lastError || new Error("Supabase auth failed.");
 }
 const sbSel = (t, q) => sb("GET", `/rest/v1/${t}?${q}`);
 const sbIns = (t, rows, { conflict = "", upsert = false, returning = "representation" } = {}) => {
