@@ -419,6 +419,17 @@ function parseNoticePeriodToDays(value) {
   return null;
 }
 
+function parseLocationFilterTokens(value) {
+  const raw = String(value || "").trim().toLowerCase();
+  if (!raw) return [];
+  // Support comma-separated lists and simple OR usage.
+  return raw
+    .replace(/\s+or\s+/g, ",")
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
 const NOTICE_BUCKET_OPTIONS = [
   { value: "", label: "Any notice period" },
   { value: "immediate", label: "Immediate" },
@@ -4787,7 +4798,15 @@ function PortalApp({ token, onLogout }) {
       const genderValue = String(item.gender || draftPayload?.gender || "").trim();
       if (candidateStructuredFilters.minExperience && (years == null || years < minYears)) return false;
       if (candidateStructuredFilters.maxExperience && (years == null || years > maxYears)) return false;
-      if (candidateStructuredFilters.location && !locationHay.includes(String(candidateStructuredFilters.location).trim().toLowerCase())) return false;
+      if (candidateStructuredFilters.location) {
+        const locationTokens = parseLocationFilterTokens(candidateStructuredFilters.location);
+        if (locationTokens.length) {
+          const matchesAny = locationTokens.some((token) => locationHay.includes(token));
+          if (!matchesAny) return false;
+        } else if (!locationHay.includes(String(candidateStructuredFilters.location).trim().toLowerCase())) {
+          return false;
+        }
+      }
       if (candidateStructuredFilters.keySkills) {
         const requiredSkills = splitSearchKeywords(candidateStructuredFilters.keySkills);
         if (requiredSkills.length && !requiredSkills.every((term) => skillsHay.includes(term))) return false;
@@ -6841,7 +6860,7 @@ function PortalApp({ token, onLogout }) {
           ...EMPTY_CANDIDATE_STRUCTURED_FILTERS,
           minExperience: result.filters.minExperienceYears != null ? String(result.filters.minExperienceYears) : "",
           maxExperience: result.filters.maxExperienceYears != null ? String(result.filters.maxExperienceYears) : "",
-          location: result.filters.location || (Array.isArray(result.filters.locations) ? result.filters.locations[0] || "" : ""),
+          location: result.filters.location || (Array.isArray(result.filters.locations) ? result.filters.locations.filter(Boolean).join(", ") : ""),
           keySkills: Array.isArray(result.filters.skills) && result.filters.skills.length ? Array.from(new Set(result.filters.skills.flatMap(splitSearchKeywords))).join(", ") : "",
           currentCompany: result.filters.currentCompany || "",
           client: result.filters.client || "",
@@ -8486,7 +8505,7 @@ function PortalApp({ token, onLogout }) {
                     </div>
                     <div className="candidate-filter-column">
                       <label><span>Keywords</span><input value={candidateStructuredFiltersDraft.keySkills} onChange={(e) => setCandidateStructuredFiltersDraft((current) => ({ ...current, keySkills: e.target.value }))} placeholder="SaaS, sales, B2B, candidate name" /></label>
-                      <label><span>Current location</span><input value={candidateStructuredFiltersDraft.location} onChange={(e) => setCandidateStructuredFiltersDraft((current) => ({ ...current, location: e.target.value }))} placeholder="Mumbai" /></label>
+                      <label><span>Locations</span><input value={candidateStructuredFiltersDraft.location} onChange={(e) => setCandidateStructuredFiltersDraft((current) => ({ ...current, location: e.target.value }))} placeholder="Mumbai, Hyderabad" /></label>
                       <label>
                         <span>Notice period</span>
                         <select value={candidateStructuredFiltersDraft.noticeBucket} onChange={(e) => {
