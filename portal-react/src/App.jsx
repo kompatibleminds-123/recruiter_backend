@@ -2718,7 +2718,7 @@ function AssignModal({ open, applicant, users, jobs, onClose, onSave, title = "A
   );
 }
 
-function NotesModal({ open, candidate, onClose, onPatch, onParse }) {
+function NotesModal({ open, candidate, onClose, onPatch, onParse, onOpenLinkedin }) {
   const [recruiterNote, setRecruiterNote] = useState("");
   const [otherPointers, setOtherPointers] = useState("");
   const [rawRecruiterSections, setRawRecruiterSections] = useState({
@@ -2753,8 +2753,9 @@ function NotesModal({ open, candidate, onClose, onPatch, onParse }) {
 
   if (!open || !candidate) return null;
 
-  const cautiousIndicatorsText = String(getCandidateDraftState(candidate || {})?.cautiousIndicators || "").trim();
-  const effectiveRawRecruiterNote = buildStructuredRecruiterRawNote(rawRecruiterSections, "");
+	  const cautiousIndicatorsText = String(getCandidateDraftState(candidate || {})?.cautiousIndicators || "").trim();
+	  const effectiveRawRecruiterNote = buildStructuredRecruiterRawNote(rawRecruiterSections, "");
+	  const linkedinUrl = String(parsedSummary?.linkedin || candidate?.linkedin || getCandidateDraftState(candidate || {})?.linkedin || "").trim();
 
   const saveAll = async () => {
     try {
@@ -2835,15 +2836,26 @@ function NotesModal({ open, candidate, onClose, onPatch, onParse }) {
           }}>Parse recruiter note</button>
           <button className="ghost-btn" onClick={saveAll}>Save all</button>
         </div>
-        {parsedSummary ? (
-          <div className="parsed-summary">
-            <div className="info-label">Parsed summary</div>
-            <div className="info-grid">
-              {[["Candidate", parsedSummary.name],["Company", parsedSummary.company],["Role", parsedSummary.role],["Experience", parsedSummary.experience],["Location", parsedSummary.location],["Current CTC", parsedSummary.current_ctc],["Expected CTC", parsedSummary.expected_ctc],["Notice period", parsedSummary.notice_period],["LWD / DOJ", parsedSummary.lwd_or_doj],["Offer in hand", parsedSummary.offer_in_hand],["Phone", parsedSummary.phone],["Email", parsedSummary.email],["LinkedIn", parsedSummary.linkedin],["Highest education", parsedSummary.highest_education]].map(([label, value]) => value ? (
-                <div className="info-card" key={label}>
-                  <div className="info-label">{label}</div>
-                  <div className="info-value">{value}</div>
-                </div>
+	        {parsedSummary ? (
+	          <div className="parsed-summary">
+	            <div className="info-label">Parsed summary</div>
+	            {linkedinUrl ? (
+	              <div className="button-row tight" style={{ marginTop: 8 }}>
+	                <button
+	                  className="ghost-btn"
+	                  onClick={() => onOpenLinkedin?.(linkedinUrl)}
+	                  title="Opens LinkedIn in a small side browser window"
+	                >
+	                  Open LinkedIn in a side browser
+	                </button>
+	              </div>
+	            ) : null}
+	            <div className="info-grid">
+	              {[["Candidate", parsedSummary.name],["Company", parsedSummary.company],["Role", parsedSummary.role],["Experience", parsedSummary.experience],["Location", parsedSummary.location],["Current CTC", parsedSummary.current_ctc],["Expected CTC", parsedSummary.expected_ctc],["Notice period", parsedSummary.notice_period],["LWD / DOJ", parsedSummary.lwd_or_doj],["Offer in hand", parsedSummary.offer_in_hand],["Phone", parsedSummary.phone],["Email", parsedSummary.email],["LinkedIn", parsedSummary.linkedin],["Highest education", parsedSummary.highest_education]].map(([label, value]) => value ? (
+	                <div className="info-card" key={label}>
+	                  <div className="info-label">{label}</div>
+	                  <div className="info-value">{value}</div>
+	                </div>
               ) : null)}
             </div>
           </div>
@@ -3991,8 +4003,8 @@ function PortalApp({ token, onLogout }) {
 	  if (!normalized) return;
 	  if (!/linkedin\.com/i.test(normalized)) return;
 	  try {
-	    const width = 520;
-	    const height = Math.min(920, Math.max(640, (window.outerHeight || 900) - 80));
+	    const width = 440;
+	    const height = Math.min(820, Math.max(560, (window.outerHeight || 900) - 140));
 	    const left = Math.max(0, (window.screenX || 0) + (window.outerWidth || 1200) - width - 20);
 	    const top = Math.max(0, (window.screenY || 0) + 40);
 	    const features = `popup=yes,width=${width},height=${height},left=${left},top=${top},noopener,noreferrer`;
@@ -4013,11 +4025,6 @@ function PortalApp({ token, onLogout }) {
 	  const candidateId = String(candidateOrId?.id || candidateOrId || "").trim();
 	  if (!candidateId) return;
 	  setNotesCandidateId(candidateId);
-	  const candidate = (candidateOrId && typeof candidateOrId === "object")
-	    ? candidateOrId
-	    : (state.candidates || []).find((item) => String(item.id) === candidateId) || null;
-	  const ctx = resolveCandidateContext(candidate || {});
-	  if (ctx.linkedin) openLinkedinInSideWindow(ctx.linkedin);
 	}
 
   useEffect(() => {
@@ -9700,19 +9707,20 @@ function PortalApp({ token, onLogout }) {
         allowRecruiterSelect={String(state.user?.role || "").toLowerCase() === "admin"}
         lockedRecruiterName={state.user?.name || ""}
       />
-      <NotesModal
-        open={Boolean(notesCandidateId)}
-        candidate={notesCandidate}
-        onClose={() => setNotesCandidateId("")}
-        onPatch={async (patch, message) => { await patchCandidate(notesCandidateId, patch, message || "Recruiter note updated."); setNotesCandidateId(""); }}
-        onParse={async (rawText) => api("/parse-note", token, "POST", {
-          note: rawText,
-          source: "portal_manual",
-          client_name: notesCandidate?.client_name || "",
-          jd_title: notesCandidate?.jd_title || "",
-          preview: true
-        })}
-      />
+	      <NotesModal
+	        open={Boolean(notesCandidateId)}
+	        candidate={notesCandidate}
+	        onClose={() => setNotesCandidateId("")}
+	        onPatch={async (patch, message) => { await patchCandidate(notesCandidateId, patch, message || "Recruiter note updated."); setNotesCandidateId(""); }}
+	        onParse={async (rawText) => api("/parse-note", token, "POST", {
+	          note: rawText,
+	          source: "portal_manual",
+	          client_name: notesCandidate?.client_name || "",
+	          jd_title: notesCandidate?.jd_title || "",
+	          preview: true
+	        })}
+	        onOpenLinkedin={(url) => openLinkedinInSideWindow(url)}
+	      />
       <NewDraftModal
         open={newDraftOpen}
         form={newDraftForm}
