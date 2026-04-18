@@ -1115,7 +1115,7 @@ function getRecruiterLabel(candidate = {}, assessment = {}) {
 
 function getOwnerRecruiterLabel(candidate = {}, assessment = {}) {
   const source = String(candidate?.source || "").trim().toLowerCase();
-  const isApplicant = source === "website_apply" || source === "hosted_apply";
+  const isApplicant = source === "website" || source === "website_apply" || source === "hosted_apply";
   const assigned = String(candidate.assigned_to_name || candidate.assignedToName || "").trim();
   if (assigned) return assigned;
   // Applicants often arrive without an assigned recruiter. Avoid showing "Website Apply" as a
@@ -1469,7 +1469,7 @@ function isInterviewAlignedStatus(status) {
   return /\b(screening call aligned|l1 aligned|l2 aligned|l3 aligned|hr interview aligned|aligned for interview|interview scheduled)\b/i.test(String(status || ""));
 }
 
-function buildDashboardSummary({ candidates = [], assessments = [], jobs = [], dateFrom = "", dateTo = "", clientFilter = "", recruiterFilter = "" }) {
+function buildDashboardSummary({ candidates = [], assessments = [], jobs = [], dateFrom = "", dateTo = "", clientFilter = "", recruiterFilter = "", actor = null }) {
   const overall = createDashboardBucket();
   const byClient = new Map();
   const byOwnerRecruiter = new Map();
@@ -1482,12 +1482,17 @@ function buildDashboardSummary({ candidates = [], assessments = [], jobs = [], d
   );
   // Avoid double-counting conversion metrics if duplicate candidate rows reference the same assessment.
   const countedAssessmentIds = new Set();
+  const actorName = actor && typeof actor === "object" ? String(actor?.name || "").trim() : "";
+  const actorIsAdmin = actor && typeof actor === "object"
+    ? String(actor?.role || "").toLowerCase() === "admin"
+    : false;
+  let actorSourcedCredit = 0;
 
   for (const candidate of Array.isArray(candidates) ? candidates : []) {
     const linkedAssessment = getCanonicalLinkedAssessmentForCandidate(candidate, assessmentsById) || null;
     const resolvedJob = resolveJobForDashboard(candidate, linkedAssessment || {}, jobById);
     const source = String(candidate?.source || "").trim().toLowerCase();
-    const isApplicant = source === "website_apply" || source === "hosted_apply";
+    const isApplicant = source === "website" || source === "website_apply" || source === "hosted_apply";
     const rawPosition = String(candidate?.assigned_jd_title || candidate?.assignedJdTitle || candidate?.jd_title || candidate?.jdTitle || "").trim();
     // Website/hosted applicants can refer to jobs that are no longer in the system.
     // Keep them visible, but group them under a clear "Unmapped candidates" bucket so
@@ -1497,12 +1502,21 @@ function buildDashboardSummary({ candidates = [], assessments = [], jobs = [], d
       ? "Unmapped candidates"
       : (resolvedJob?.clientName || getClientLabel(candidate, linkedAssessment || {}));
     if (clientFilter && clientLabel !== clientFilter) continue;
-    const ownerRecruiterLabel = getOwnerRecruiterLabel(candidate, linkedAssessment || {});
+    let ownerRecruiterLabel = getOwnerRecruiterLabel(candidate, linkedAssessment || {});
+    // Admin dashboard: keep unassigned applicants in admin's inbox bucket (avoid "Website Apply"/"Unassigned" pseudo recruiter).
+    if (actorIsAdmin && actorName && isApplicant && ownerRecruiterLabel === "Unassigned") {
+      ownerRecruiterLabel = actorName;
+    }
     if (recruiterFilter && ownerRecruiterLabel !== recruiterFilter) continue;
     const positionLabel = isUnmappedApplicant
       ? rawPosition
       : (resolvedJob?.title || getPositionLabel(candidate, linkedAssessment || {}, knownJdTitles));
     const dateRange = { from: dateFrom, to: dateTo };
+    // Admin sourcing credit: show how many candidates were originally captured by the admin (even if assigned to others).
+    const capturedByLabel = String(candidate?.recruiter_name || candidate?.recruiterName || "").trim();
+    if (!isApplicant && actorIsAdmin && actorName && capturedByLabel && capturedByLabel.toLowerCase() === actorName.toLowerCase()) {
+      actorSourcedCredit += 1;
+    }
     // Dedupe conversion metrics by assessment id (legacy duplicates can exist).
     let effectiveAssessment = linkedAssessment;
     if (effectiveAssessment?.id) {
@@ -1537,6 +1551,13 @@ function buildDashboardSummary({ candidates = [], assessments = [], jobs = [], d
       addCandidateMetrics(byClientRecruiter.get(matrixKey).metrics, candidate, effectiveAssessment, dateRange);
       addCandidateMetrics(byClientPosition.get(clientPositionKey).metrics, candidate, effectiveAssessment, dateRange);
     }
+  }
+
+  if (actorIsAdmin && actorName && actorSourcedCredit) {
+    if (!byOwnerRecruiter.has(actorName)) byOwnerRecruiter.set(actorName, createDashboardRecruiterBucket());
+    const bucket = byOwnerRecruiter.get(actorName);
+    bucket.ownership = bucket.ownership && typeof bucket.ownership === "object" ? bucket.ownership : {};
+    bucket.ownership.sourcedCredit = actorSourcedCredit;
   }
 
   // Include assessments that are not canonically linked to a candidate row (assessment-only / legacy).
@@ -2475,6 +2496,7 @@ function buildCandidateSearchUniverse(candidates = [], assessments = [], jobs = 
   const universe = [];
   const seenAssessmentIds = new Set();
   const knownJdTitles = buildKnownJdTitleSet(jobs);
+  const jobById = buildJobIndexById(jobs);
 
   for (const candidate of candidates || []) {
     const candidateMeta = decodeApplicantMetadata(candidate);
@@ -2503,11 +2525,16 @@ function buildCandidateSearchUniverse(candidates = [], assessments = [], jobs = 
     const linkedAssessment = getCanonicalLinkedAssessmentForCandidate(candidate, assessmentsById) || null;
     const isConverted = Boolean(linkedAssessment?.id);
     if (linkedAssessment?.id) seenAssessmentIds.add(String(linkedAssessment.id));
+    const resolvedJob = resolveJobForDashboard(candidate, linkedAssessment || {}, jobById);
+    const rawSource = String(candidate?.source || "").trim().toLowerCase();
+    const isApplicantSource = rawSource === "website" || rawSource === "website_apply" || rawSource === "hosted_apply";
+    const rawPosition = String(candidate?.assigned_jd_title || candidate?.assignedJdTitle || candidate?.jd_title || candidate?.jdTitle || "").trim();
+    const isUnmappedApplicant = isApplicantSource && !resolvedJob && Boolean(rawPosition);
     universe.push({
       id: String(candidate?.id || linkedAssessment?.id || "").trim(),
       candidateName: String(candidate?.name || linkedAssessment?.candidateName || "").trim(),
       role: String(candidate?.role || linkedAssessment?.currentDesignation || cachedCvResult?.currentDesignation || "").trim(),
-      position: getPositionLabel(candidate, linkedAssessment || {}, knownJdTitles),
+      position: isUnmappedApplicant ? rawPosition : getPositionLabel(candidate, linkedAssessment || {}, knownJdTitles),
       company: String(candidate?.company || linkedAssessment?.currentCompany || cachedCvResult?.currentCompany || "").trim(),
       totalExperience: String(candidate?.experience || linkedAssessment?.totalExperience || cachedCvResult?.exactTotalExperience || "").trim(),
       location: String(candidate?.location || linkedAssessment?.location || "").trim(),
@@ -2518,7 +2545,7 @@ function buildCandidateSearchUniverse(candidates = [], assessments = [], jobs = 
       highestEducation: String(candidate?.highest_education || linkedAssessment?.highestEducation || cachedCvResult?.highestEducation || "").trim(),
       skills: Array.isArray(candidate?.skills) ? candidate.skills : [],
       inferredTags: Array.isArray(candidateMeta?.inferredSearchTags) ? candidateMeta.inferredSearchTags : [],
-      clientName: getClientLabel(candidate, linkedAssessment || {}),
+      clientName: isUnmappedApplicant ? "Unmapped candidates" : getClientLabel(candidate, linkedAssessment || {}),
       recruiterName: getRecruiterLabel(candidate, linkedAssessment || {}),
       sourcedRecruiter: getRecruiterLabel(candidate, linkedAssessment || {}),
       ownerRecruiter: getOwnerRecruiterLabel(candidate, linkedAssessment || {}),
@@ -2772,7 +2799,7 @@ function itemMatchesDashboardMetric(item, metric, dateFrom = "", dateTo = "") {
   const hasLinkedAssessment = Boolean(item?.raw?.assessment || item?.assessment || item?.assessmentId);
   const isSharedAssessment = item?.sourceType === "captured_and_converted" && hasLinkedAssessment;
   const rawSource = String(item?.raw?.candidate?.source || item?.source || "").trim().toLowerCase();
-  const isApplicantSource = rawSource === "website_apply" || rawSource === "hosted_apply" || rawSource === "google_sheet";
+  const isApplicantSource = rawSource === "website" || rawSource === "website_apply" || rawSource === "hosted_apply" || rawSource === "google_sheet";
   if (metric === "sourced") {
     return !isApplicantSource && isDateWithinRange(item.createdAt, dateFrom, dateTo);
   }
@@ -4765,12 +4792,20 @@ const server = http.createServer(async (req, res) => {
         listAssessments({ actorUserId: user.id, companyId: user.companyId }),
         listCompanyJobs(user.companyId)
       ]);
-      const summary = buildDashboardSummary({ candidates, assessments, jobs, dateFrom, dateTo, clientFilter, recruiterFilter });
+      const summary = buildDashboardSummary({ candidates, assessments, jobs, dateFrom, dateTo, clientFilter, recruiterFilter, actor: user });
       const availableClients = Array.from(
         new Set((Array.isArray(candidates) ? candidates : []).map((candidate) => getClientLabel(candidate, {})).filter(Boolean))
       ).sort((a, b) => a.localeCompare(b));
+      const actorIsAdmin = String(user?.role || "").toLowerCase() === "admin";
+      const actorName = String(user?.name || "").trim();
       const availableRecruiters = Array.from(
-        new Set((Array.isArray(candidates) ? candidates : []).map((candidate) => getOwnerRecruiterLabel(candidate, {})).filter(Boolean))
+        new Set((Array.isArray(candidates) ? candidates : []).map((candidate) => {
+          const source = String(candidate?.source || "").trim().toLowerCase();
+          const isApplicant = source === "website" || source === "website_apply" || source === "hosted_apply";
+          const owner = getOwnerRecruiterLabel(candidate, {});
+          if (actorIsAdmin && actorName && isApplicant && owner === "Unassigned") return actorName;
+          return owner;
+        }).filter(Boolean))
       ).sort((a, b) => a.localeCompare(b));
       sendJson(res, 200, {
         ok: true,
@@ -5476,7 +5511,17 @@ const server = http.createServer(async (req, res) => {
         listAssessments({ actorUserId: user.id, companyId: user.companyId }),
         listCompanyJobs(user.companyId)
       ]);
-      const universe = buildCandidateSearchUniverse(candidates, assessments, jobs);
+      const actorIsAdmin = String(user?.role || "").toLowerCase() === "admin";
+      const actorName = String(user?.name || "").trim();
+      const universe = buildCandidateSearchUniverse(candidates, assessments, jobs)
+        .map((item) => {
+          if (!actorIsAdmin || !actorName) return item;
+          const rawSource = String(item?.raw?.candidate?.source || item?.source || "").trim().toLowerCase();
+          const isApplicant = rawSource === "website" || rawSource === "website_apply" || rawSource === "hosted_apply";
+          if (!isApplicant) return item;
+          if (String(item?.ownerRecruiter || "").trim() !== "Unassigned") return item;
+          return { ...item, ownerRecruiter: actorName };
+        });
       const items = universe
         .filter((item) => item.sourceType !== "assessment_only")
         .filter((item) => !clientFilter || String(item.clientName || "").trim() === clientFilter)

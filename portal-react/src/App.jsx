@@ -8387,6 +8387,9 @@ function PortalApp({ token, onLogout }) {
                             <p className="muted">
                               {`Sourcing: ${group.ownership?.assignedSourcing || 0} assigned | ${group.ownership?.selfSourced || 0} self sourced`}
                             </p>
+                            {group.ownership?.sourcedCredit ? (
+                              <p className="muted">{`Sourced by you (credit): ${group.ownership.sourcedCredit}`}</p>
+                            ) : null}
                             <p className="muted">
                               {`Applicants: ${group.ownership?.assignedApplicants || 0} assigned | ${group.ownership?.directApplicants || 0} direct`}
                             </p>
