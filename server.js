@@ -503,6 +503,15 @@ function normalizeJsonObjectInput(value) {
   }
 }
 
+function screeningAnswersToSearchText(obj) {
+  const input = obj && typeof obj === "object" ? obj : {};
+  const pairs = Object.entries(input)
+    .map(([k, v]) => `${String(k || "").trim()} ${String(v == null ? "" : v).trim()}`.trim())
+    .filter(Boolean);
+  if (!pairs.length) return "";
+  return pairs.join("\n");
+}
+
 function buildUploadedFileFingerprint(file = {}) {
   const fileData = String(file?.fileData || "").trim();
   if (!fileData) return "";
@@ -2323,7 +2332,8 @@ function buildCandidateSearchHay(item = {}) {
   // Make common tech keywords searchable even when punctuation/format differs in JSON CV text.
   return base
     .replace(/\basp\s*\.?\s*net\b/gi, "asp.net")
-    .replace(/\b\.net\b/gi, "dotnet");
+    // Keep both tokens so boolean phrases like ".net core" still match.
+    .replace(/\b\.net\b/gi, "dotnet .net");
 }
 
 function buildCandidateSearchUniverse(candidates = [], assessments = [], jobs = []) {
@@ -2335,6 +2345,24 @@ function buildCandidateSearchUniverse(candidates = [], assessments = [], jobs = 
   for (const candidate of candidates || []) {
     const candidateMeta = decodeApplicantMetadata(candidate);
     const candidateSource = normalizeDashboardText(candidate?.source || candidateMeta?.sourcePlatform || "");
+    const candidateDraftPayload = normalizeJsonObjectInput(candidate?.draft_payload || candidate?.draftPayload || {});
+    const candidateScreeningAnswers = normalizeJsonObjectInput(candidate?.screening_answers || candidate?.screeningAnswers || {});
+    const metaScreeningAnswers = normalizeJsonObjectInput(
+      candidateMeta?.jdScreeningAnswers
+        || candidateMeta?.jd_screening_answers
+        || candidateMeta?.jdScreeninganswers
+        || {}
+    );
+    const draftScreeningAnswers = normalizeJsonObjectInput(
+      candidateDraftPayload?.jdScreeningAnswers
+        || candidateDraftPayload?.jd_screening_answers
+        || {}
+    );
+    const combinedScreeningText = [
+      screeningAnswersToSearchText(candidateScreeningAnswers),
+      screeningAnswersToSearchText(draftScreeningAnswers),
+      screeningAnswersToSearchText(metaScreeningAnswers)
+    ].filter(Boolean).join("\n");
     const cachedCvResult = candidateMeta?.cvAnalysisCache?.result && typeof candidateMeta.cvAnalysisCache.result === "object"
       ? candidateMeta.cvAnalysisCache.result
       : {};
@@ -2379,6 +2407,7 @@ function buildCandidateSearchUniverse(candidates = [], assessments = [], jobs = 
         candidate?.notes || "",
         candidate?.recruiter_context_notes || "",
         candidate?.other_pointers || "",
+        combinedScreeningText,
         linkedAssessment?.recruiterNotes || "",
         linkedAssessment?.otherPointers || "",
         linkedAssessment?.callbackNotes || ""
@@ -2394,6 +2423,17 @@ function buildCandidateSearchUniverse(candidates = [], assessments = [], jobs = 
   for (const assessment of assessments || []) {
     const assessmentId = String(assessment?.id || "").trim();
     if (!assessmentId || seenAssessmentIds.has(assessmentId)) continue;
+    const assessmentPayload = assessment?.payload && typeof assessment.payload === "object" ? assessment.payload : {};
+    const assessmentScreeningAnswers = normalizeJsonObjectInput(
+      assessment?.jdScreeningAnswers
+        || assessment?.jd_screening_answers
+        || assessmentPayload?.jdScreeningAnswers
+        || assessmentPayload?.jd_screening_answers
+        || assessment?.screening_answers
+        || assessment?.screeningAnswers
+        || {}
+    );
+    const assessmentScreeningText = screeningAnswersToSearchText(assessmentScreeningAnswers);
     universe.push({
       id: assessmentId,
       candidateName: String(assessment?.candidateName || "").trim(),
@@ -2425,6 +2465,7 @@ function buildCandidateSearchUniverse(candidates = [], assessments = [], jobs = 
       sourceType: "assessment_only",
       hiddenCvText: "",
       notesText: [
+        assessmentScreeningText,
         assessment?.recruiterNotes || "",
         assessment?.otherPointers || "",
         assessment?.callbackNotes || ""
