@@ -5352,7 +5352,18 @@ function PortalApp({ token, onLogout }) {
       nextPatch.screening_answers = currentDraft.jdScreeningAnswers || parsePortalObjectField(currentCandidate?.screening_answers || currentCandidate?.screeningAnswers);
     }
     await api(`/company/candidates/${encodeURIComponent(candidateId)}`, token, "PATCH", { patch: nextPatch });
-    await loadWorkspace();
+    // Optimistic local patch to avoid blocking the UI on a full workspace refresh.
+    setState((current) => {
+      const applyPatch = (items) => Array.isArray(items)
+        ? items.map((item) => String(item?.id || "") === String(candidateId) ? { ...item, ...nextPatch } : item)
+        : items;
+      return {
+        ...current,
+        candidates: applyPatch(current.candidates),
+        databaseCandidates: applyPatch(current.databaseCandidates)
+      };
+    });
+    void refreshWorkspaceSilently("post-patch");
     setStatus("captured", okMessage, "ok");
   }
 
@@ -5367,7 +5378,17 @@ function PortalApp({ token, onLogout }) {
       nextPatch.screening_answers = currentDraft.jdScreeningAnswers || parsePortalObjectField(currentCandidate?.screening_answers || currentCandidate?.screeningAnswers);
     }
     await api(`/company/candidates/${encodeURIComponent(candidateId)}`, token, "PATCH", { patch: nextPatch });
-    await loadWorkspace();
+    setState((current) => {
+      const applyPatch = (items) => Array.isArray(items)
+        ? items.map((item) => String(item?.id || "") === String(candidateId) ? { ...item, ...nextPatch } : item)
+        : items;
+      return {
+        ...current,
+        candidates: applyPatch(current.candidates),
+        databaseCandidates: applyPatch(current.databaseCandidates)
+      };
+    });
+    void refreshWorkspaceSilently("post-patch");
   }
 
   async function hideCapturedCandidate(candidateId) {
@@ -5381,7 +5402,12 @@ function PortalApp({ token, onLogout }) {
   async function deleteCapturedCandidate(candidateId) {
     if (!window.confirm("Delete this captured note permanently?")) return;
     await api(`/company/candidates/${encodeURIComponent(candidateId)}`, token, "DELETE");
-    await loadWorkspace();
+    setState((current) => ({
+      ...current,
+      candidates: Array.isArray(current.candidates) ? current.candidates.filter((item) => String(item?.id || "") !== String(candidateId)) : current.candidates,
+      databaseCandidates: Array.isArray(current.databaseCandidates) ? current.databaseCandidates.filter((item) => String(item?.id || "") !== String(candidateId)) : current.databaseCandidates
+    }));
+    void refreshWorkspaceSilently("post-delete");
     setStatus("captured", "Candidate deleted.", "ok");
   }
 
@@ -6040,6 +6066,10 @@ function PortalApp({ token, onLogout }) {
     };
     setStatus("interview", "Saving assessment...");
     const savedAssessment = await api("/company/assessments", token, "POST", { assessment });
+    upsertAssessmentInState(savedAssessment || assessment);
+    if (savedAssessment?.id) {
+      setInterviewMeta((current) => ({ ...current, assessmentId: String(savedAssessment.id) }));
+    }
     if (interviewMeta.candidateId) {
       const existingCandidate = (state.candidates || []).find((item) => String(item.id) === String(interviewMeta.candidateId));
       const existingMeta = decodePortalApplicantMetadata(existingCandidate || {});
@@ -6077,9 +6107,9 @@ function PortalApp({ token, onLogout }) {
       });
       setStatus("interview", "Assessment saved and candidate details updated.", "ok");
     } else {
-      await loadWorkspace();
       setStatus("interview", "Assessment saved.", "ok");
     }
+    void refreshWorkspaceSilently("post-save");
   }
 
   async function saveInterviewDraft() {
@@ -6143,7 +6173,7 @@ function PortalApp({ token, onLogout }) {
             : []
       } });
     }
-    await loadWorkspace();
+    void refreshWorkspaceSilently("post-save");
     setStatus("interview", "Draft saved.", "ok");
   }
 
@@ -7457,8 +7487,20 @@ function PortalApp({ token, onLogout }) {
           screening_answers: currentDraft.jdScreeningAnswers || parsePortalObjectField(currentCandidate?.screening_answers || currentCandidate?.screeningAnswers)
         }
       }).catch(() => null);
+      // Optimistically reflect the status write on the local candidate row for instant UI feedback.
+      setState((current) => {
+        const applyPatch = (items) => Array.isArray(items)
+          ? items.map((item) => String(item?.id || "") === linkedCandidateId ? { ...item, ...candidatePatch } : item)
+          : items;
+        return {
+          ...current,
+          candidates: applyPatch(current.candidates),
+          databaseCandidates: applyPatch(current.databaseCandidates)
+        };
+      });
     }
-    await loadWorkspace();
+    upsertAssessmentInState(nextAssessment);
+    void refreshWorkspaceSilently("post-status");
     if (options.closeModal !== false) setAssessmentStatusId("");
     setStatus(statusTarget, `Updated status for ${assessment?.candidateName || "candidate"}.`, "ok");
   }
@@ -7466,7 +7508,13 @@ function PortalApp({ token, onLogout }) {
   async function deleteAssessmentItem(assessment) {
     if (!window.confirm(`Delete assessment for ${assessment?.candidateName || "candidate"}?`)) return;
     await api("/company/assessments", token, "DELETE", { assessmentId: assessment?.id });
-    await loadWorkspace();
+    setState((current) => ({
+      ...current,
+      assessments: Array.isArray(current.assessments)
+        ? current.assessments.filter((item) => String(item?.id || "") !== String(assessment?.id || ""))
+        : current.assessments
+    }));
+    void refreshWorkspaceSilently("post-delete");
     setStatus("assessments", "Assessment deleted.", "ok");
   }
 
