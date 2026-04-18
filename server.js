@@ -2003,19 +2003,20 @@ async function interpretCandidateSearchQueryWithAi({ apiKey, query, actor }) {
     "3. If they ask for applied candidates, sourceTypeFilter = applied.",
     "4. If they ask for assessments or shared candidates, sourceTypeFilter = converted or assessment depending on intent.",
     "5. Extract role keywords into role and/or skills.",
-    "6. Extract locations exactly as mentioned.",
+    "6. Extract locations ONLY when the query clearly mentions a geography (city/region). Never put role/skill phrases into locations. If unsure, return locations as an empty array.",
     "7. Convert 'under 20 L' like phrases into maxCurrentCtcLpa when no expected CTC is specified.",
     "8. Convert 'more than 20 L' / 'above 20 L' / 'package more than 20 L' into minCurrentCtcLpa when no expected CTC is specified.",
     "9. Convert experience range phrases into minExperienceYears and maxExperienceYears.",
     "10. Convert phrases like 'SaaS Sales' into separate skills/keywords: ['saas','sales'], not one combined phrase.",
     "11. If a query looks like a person name, keep it in role or skills as searchable keywords.",
-    "12. Convert notice constraints into maxNoticeDays.",
+    "12. Convert notice constraints into maxNoticeDays ONLY if notice/immediate/joining is explicitly mentioned; otherwise set maxNoticeDays = null.",
     "13. If they mention a recruiter name, set recruiterName.",
     "14. If they mean 'profiles sourced by X', recruiterField = sourced.",
     "15. If they mean 'profiles under X' or assigned/owned by X, recruiterField = owner.",
     "16. If they ask for 'my' profiles, recruiterScope = me.",
     "17. Keep arrays empty and strings blank if not specified.",
-    `18. Current recruiter is "${String(actor?.name || "").trim()}".`,
+    "18. If the query is source-only (e.g. 'profiles in assessments', 'show captured notes'), keep role='' and skills=[].",
+    `19. Current recruiter is "${String(actor?.name || "").trim()}".`,
     "",
     "Allowed lifecycle statuses:",
     "shortlisted, offered, joined, rejected, duplicate, dropped",
@@ -2033,19 +2034,29 @@ async function interpretCandidateSearchQueryWithAi({ apiKey, query, actor }) {
     schema: buildCandidateSearchInterpretationSchema()
   });
 
+  const qLower = String(query || "").toLowerCase();
+  const noticeMentioned = /\b(notice|immediate|join|joining|lwd|doj)\b/i.test(qLower);
+  const maxNoticeDaysValue = typeof result?.maxNoticeDays === "number" ? result.maxNoticeDays : null;
+  const safeMaxNoticeDays = noticeMentioned ? maxNoticeDaysValue : null;
+
+  const rawLocations = Array.isArray(result?.locations)
+    ? result.locations.map((item) => String(item || "").trim()).filter(Boolean)
+    : [];
+  const safeLocations = rawLocations.filter((loc) => !looksLikeNonLocationToken(loc));
+
   return {
     raw: String(query || "").trim(),
     role: String(result?.role || "").trim(),
     roleFamilies: detectRoleFamilies(String(result?.role || "").trim()),
     minExperienceYears: typeof result?.minExperienceYears === "number" ? result.minExperienceYears : null,
     maxExperienceYears: typeof result?.maxExperienceYears === "number" ? result.maxExperienceYears : null,
-    location: Array.isArray(result?.locations) && result.locations.length ? String(result.locations[0] || "").trim() : "",
-    locations: Array.isArray(result?.locations) ? result.locations.map((item) => String(item || "").trim()).filter(Boolean) : [],
+    location: safeLocations.length ? String(safeLocations[0] || "").trim() : "",
+    locations: safeLocations,
     minCurrentCtcLpa: typeof result?.minCurrentCtcLpa === "number" ? result.minCurrentCtcLpa : null,
     maxCurrentCtcLpa: typeof result?.maxCurrentCtcLpa === "number" ? result.maxCurrentCtcLpa : null,
     minExpectedCtcLpa: typeof result?.minExpectedCtcLpa === "number" ? result.minExpectedCtcLpa : null,
     maxExpectedCtcLpa: typeof result?.maxExpectedCtcLpa === "number" ? result.maxExpectedCtcLpa : null,
-    maxNoticeDays: typeof result?.maxNoticeDays === "number" ? result.maxNoticeDays : null,
+    maxNoticeDays: safeMaxNoticeDays,
     skills: normalizeCandidateSearchKeywords(result?.skills || []),
     currentCompany: String(result?.currentCompany || "").trim(),
     statuses: Array.isArray(result?.statuses) ? result.statuses.map((item) => normalizeDashboardText(item)).filter(Boolean) : [],
@@ -2101,6 +2112,108 @@ function splitCandidateSearchKeywords(value = "") {
 function normalizeCandidateSearchKeywords(values = []) {
   const list = Array.isArray(values) ? values : [values];
   return Array.from(new Set(list.flatMap(splitCandidateSearchKeywords)));
+}
+
+function buildKnownUniverseLocationSet(universe = [], synonyms = DEFAULT_SYNONYMS) {
+  const known = new Set();
+  (Array.isArray(universe) ? universe : []).forEach((item) => {
+    const loc = String(item?.location || "").trim();
+    if (!loc) return;
+    const normalized = normalizeDashboardText(loc).toLowerCase();
+    if (normalized) known.add(normalized);
+    const alias = mapLocationAlias(normalized, synonyms);
+    if (alias?.canonical) known.add(String(alias.canonical).toLowerCase());
+    (alias?.variants || []).forEach((v) => {
+      const token = String(v || "").trim().toLowerCase();
+      if (token) known.add(token);
+    });
+  });
+  return known;
+}
+
+function looksLikeNonLocationToken(value = "") {
+  const token = normalizeDashboardText(value).toLowerCase();
+  if (!token) return true;
+  if (token.length >= 48) return true;
+  if (/\d/.test(token)) return true;
+  // Obvious role/skill words that should never be treated as a geography filter.
+  if (/\b(sales|developer|engineer|programmer|manager|executive|account|loan|lending|fintech|saas|b2b|b2c|backend|frontend|fullstack|dotnet|node|nodejs|react|java|spring|golang)\b/.test(token)) {
+    return true;
+  }
+  return false;
+}
+
+function sanitizeCandidateSearchFilters(filters, normalizedQuery = "", universe = [], synonyms = DEFAULT_SYNONYMS) {
+  const next = filters && typeof filters === "object" ? { ...filters } : {};
+  const qLower = String(normalizedQuery || "").toLowerCase();
+  const knownLocations = buildKnownUniverseLocationSet(universe, synonyms);
+
+  const noticeMentioned = /\b(notice|immediate|join|joining|lwd|doj)\b/i.test(qLower);
+  if (!noticeMentioned && (next.maxNoticeDays === 0 || String(next.maxNoticeDays || "").trim() === "0")) {
+    next.maxNoticeDays = null;
+  }
+
+  const rawLocation = String(next.location || "").trim();
+  if (rawLocation) {
+    const normalized = normalizeDashboardText(rawLocation).toLowerCase();
+    const alias = mapLocationAlias(normalized, synonyms);
+    const canonical = String(alias?.canonical || normalized).trim().toLowerCase();
+    const matchesKnown = Boolean(canonical && knownLocations.has(canonical));
+    if (!matchesKnown || looksLikeNonLocationToken(rawLocation)) {
+      // Don't let a bad AI location guess zero out the result set.
+      // If it looks like a role/skill phrase, keep it searchable via skills instead.
+      const extraSkills = splitCandidateSearchKeywords(rawLocation);
+      if (extraSkills.length) {
+        next.skills = normalizeCandidateSearchKeywords([...(Array.isArray(next.skills) ? next.skills : []), ...extraSkills]);
+      }
+      next.location = "";
+    } else {
+      next.location = canonical;
+    }
+  }
+
+  const locations = Array.isArray(next.locations) ? next.locations : [];
+  const cleanedLocations = locations
+    .map((loc) => String(loc || "").trim())
+    .filter(Boolean)
+    .filter((loc) => {
+      const normalized = normalizeDashboardText(loc).toLowerCase();
+      const alias = mapLocationAlias(normalized, synonyms);
+      const canonical = String(alias?.canonical || normalized).trim().toLowerCase();
+      if (!canonical) return false;
+      if (!knownLocations.has(canonical)) return false;
+      if (looksLikeNonLocationToken(loc)) return false;
+      return true;
+    })
+    .map((loc) => {
+      const normalized = normalizeDashboardText(loc).toLowerCase();
+      const alias = mapLocationAlias(normalized, synonyms);
+      return String(alias?.canonical || normalized).trim();
+    });
+  next.locations = Array.from(new Set(cleanedLocations));
+  if (!next.location && next.locations.length) {
+    next.location = String(next.locations[0] || "").trim();
+  }
+
+  // Source-only queries like "profiles in assessments" should not force role/skills filters.
+  const stripped = qLower.replace(/[^\w\s]+/g, " ").replace(/\s+/g, " ").trim();
+  const tokens = stripped.split(/\s+/).filter(Boolean);
+  const sourceOnlyTokens = new Set([
+    "get", "me", "show", "all", "profiles", "profile", "candidate", "candidates",
+    "in", "of", "the", "a", "an",
+    "assessment", "assessments", "converted", "shared", "captured", "sourced", "applied"
+  ]);
+  const isSourceOnlyQuery = tokens.length && tokens.every((t) => sourceOnlyTokens.has(t));
+  if (isSourceOnlyQuery) {
+    next.role = "";
+    next.skills = [];
+    if (!/\bin\s+[a-z]/i.test(qLower)) {
+      next.location = "";
+      next.locations = [];
+    }
+  }
+
+  return next;
 }
 
 function isPlainCandidateLookupQuery(rawQuery = "") {
@@ -5068,6 +5181,29 @@ const server = http.createServer(async (req, res) => {
         listCompanyJobs(user.companyId)
       ]);
       const universe = buildCandidateSearchUniverse(candidates, assessments, jobs);
+
+      // Disambiguate "in <client>" vs "in <location>" when the token matches a known client label.
+      // Example: "sourced by Ankit in Faircent" should treat Faircent as client, not a city.
+      if (!filters.client) {
+        const clientMap = new Map();
+        universe.forEach((item) => {
+          const label = String(item?.clientName || "").trim();
+          if (!label) return;
+          clientMap.set(normalizeDashboardText(label).toLowerCase(), label);
+        });
+        const locToken = String(filters.location || "").trim();
+        if (locToken) {
+          const matchedClient = clientMap.get(normalizeDashboardText(locToken).toLowerCase()) || "";
+          if (matchedClient) {
+            filters.client = matchedClient;
+            filters.location = "";
+            filters.locations = [];
+          }
+        }
+      }
+
+      // Final safety pass: prevent AI from putting role/skill phrases into `location` or forcing notice=immediate.
+      filters = sanitizeCandidateSearchFilters(filters, normalized.normalized || query, universe, DEFAULT_SYNONYMS);
 
       const scopedUniverse = universe.filter((item) => !recruiterFilter || String(item.ownerRecruiter || "").trim() === recruiterFilter);
       const apiKey = semanticEnabled ? String(process.env.OPENAI_API_KEY || "").trim() : "";

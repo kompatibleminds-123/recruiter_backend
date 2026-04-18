@@ -4040,7 +4040,13 @@ function PortalApp({ token, onLogout }) {
 	}
 
 	function normalizeLinkedinUrl(value) {
-	  const raw = String(value || "").trim();
+	  const input = String(value || "");
+	  // Some sources store "LinkedIn: <url> Email: ..." or multi-line blobs.
+	  // Extract the first linkedin.com URL-like token and ignore the rest.
+	  const match = input.match(
+	    /(https?:\/\/[^\s<>"']*linkedin\.com\/[^\s<>"']+|www\.[^\s<>"']*linkedin\.com\/[^\s<>"']+|linkedin\.com\/[^\s<>"']+)/i
+	  );
+	  const raw = String(match ? match[0] : input || "").trim().replace(/[).,;]+$/g, "");
 	  if (!raw) return "";
 	  if (/^https?:\/\//i.test(raw)) return raw;
 	  if (raw.startsWith("//")) return `https:${raw}`;
