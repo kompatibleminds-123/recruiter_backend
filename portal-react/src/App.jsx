@@ -4267,7 +4267,6 @@ function PortalApp({ token, onLogout }) {
     if (assessmentId) {
       const assessment = capturedAssessmentMap.get(`id:${assessmentId}`) || null;
       if (!assessment) return null;
-      if (isAssessmentArchived(assessment)) return null;
       // Only trust stored assessment_id when we can verify stable identity matches.
       const candidateId = String(candidateRow?.id || "").trim();
       const assessmentCandidateId = String(
@@ -4291,21 +4290,18 @@ function PortalApp({ token, onLogout }) {
     const candidateIdKey = String(candidateRow?.id || "").trim();
     if (candidateIdKey) {
       const byCandidateId = capturedAssessmentMap.get(`cid:${candidateIdKey}`) || null;
-      if (byCandidateId && isAssessmentArchived(byCandidateId)) return null;
       if (byCandidateId) return byCandidateId;
     }
 
     const email = normalizeEmail(candidateRow?.email || candidateRow?.emailId || "");
     if (email) {
       const byEmail = capturedAssessmentMap.get(`email:${email}`) || null;
-      if (byEmail && isAssessmentArchived(byEmail)) return null;
       return byEmail;
     }
 
     const phone = normalizePhone(candidateRow?.phone || candidateRow?.phoneNumber || "");
     if (phone) {
       const byPhone = capturedAssessmentMap.get(`phone:${phone}`) || null;
-      if (byPhone && isAssessmentArchived(byPhone)) return null;
       return byPhone;
     }
 
@@ -7554,17 +7550,51 @@ function PortalApp({ token, onLogout }) {
     try {
       const saved = await api("/company/assessments", token, "POST", { assessment: next });
       upsertAssessmentInState(saved);
-      if (archived && options.navigateToCaptured) {
-        navigate("/captured-notes");
-        setStatus("captured", "Moved assessment back to Captured.", "ok");
-      } else {
-        setStatus("assessments", archived ? "Assessment archived." : "Assessment restored.", "ok");
-      }
+      setStatus("assessments", archived ? "Assessment archived." : "Assessment restored.", "ok");
       void refreshWorkspaceSilently("manual");
       return saved;
     } catch (error) {
       setStatus("assessments", String(error?.message || error), "error");
       return null;
+    }
+  }
+
+  async function moveAssessmentBackToCaptured(assessment) {
+    const safeAssessment = assessment && typeof assessment === "object" ? assessment : null;
+    const assessmentId = String(safeAssessment?.id || "").trim();
+    const candidateId = String(safeAssessment?.candidateId || "").trim();
+    if (!assessmentId) {
+      setStatus("assessments", "Assessment id missing.", "error");
+      return;
+    }
+    if (!candidateId) {
+      setStatus("assessments", "Candidate id missing for this assessment (cannot move back safely).", "error");
+      return;
+    }
+    const confirmed = typeof window === "undefined" || window.confirm(
+      "Move back to Captured will remove this assessment and keep the candidate as a captured note. Continue?"
+    );
+    if (!confirmed) return;
+    setStatus("assessments", "Moving back to Captured...");
+    try {
+      await api("/company/assessments", token, "DELETE", { assessmentId });
+      // Clear the candidate link so it shows up in captured notes again.
+      await patchCandidateQuiet(candidateId, {
+        assessment_id: "",
+        used_in_assessment: false,
+        assessment_status: ""
+      });
+      setState((current) => ({
+        ...current,
+        assessments: Array.isArray(current.assessments)
+          ? current.assessments.filter((item) => String(item?.id || "") !== assessmentId)
+          : current.assessments
+      }));
+      navigate("/captured-notes");
+      setStatus("captured", "Moved back to Captured.", "ok");
+      void refreshWorkspaceSilently("post-delete");
+    } catch (error) {
+      setStatus("assessments", String(error?.message || error), "error");
     }
   }
 
@@ -8553,7 +8583,7 @@ function PortalApp({ token, onLogout }) {
                             </button>
                             {openAssessmentMoreId === String(item.id) ? (
                               <div className="more-menu__dropdown more-menu__dropdown--inline" role="menu">
-                                <button type="button" className="more-menu__item" onClick={() => { closeAssessmentMoreMenu(); void setAssessmentArchivedState(item, true, { navigateToCaptured: true }); }}>Move back to captured</button>
+                                <button type="button" className="more-menu__item" onClick={() => { closeAssessmentMoreMenu(); void moveAssessmentBackToCaptured(item); }}>Move back to captured</button>
                                 <button type="button" className="more-menu__item" onClick={() => { closeAssessmentMoreMenu(); void setAssessmentArchivedState(item, true); }}>Hide</button>
                                 <button type="button" className="more-menu__item" onClick={() => { closeAssessmentMoreMenu(); reuseAssessmentAsNew(item); }}>Reuse as new</button>
                                 <button type="button" className="more-menu__item more-menu__danger" onClick={() => { closeAssessmentMoreMenu(); void deleteAssessmentItem(item); }}>Delete</button>
