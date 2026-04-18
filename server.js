@@ -65,7 +65,7 @@ const {
   setCompanyApplicantIntakeSecret
 } = require("./src/auth-store");
 
-const { DEFAULT_SYNONYMS } = require("./src/search/synonyms");
+const { DEFAULT_SYNONYMS, mapLocationAlias } = require("./src/search/synonyms");
 const { normalizeRecruiterQuery } = require("./src/search/normalize");
 const { hybridSearchCandidates, buildCandidateSemanticText } = require("./src/search/hybrid-search");
 const { createEmbedding, hashText } = require("./src/search/embedding-service");
