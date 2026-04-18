@@ -5565,10 +5565,64 @@ const server = http.createServer(async (req, res) => {
       const candidateId = String(existing.candidateId || existing.candidate_id || "").trim();
       if (!candidateId) throw new Error("candidateId is required to restore an assessment.");
 
+      const jdScreeningAnswers = normalizeJsonObjectInput(
+        existing.jdScreeningAnswers
+          || existing.jd_screening_answers
+          || existing.payload?.jdScreeningAnswers
+          || existing.payload?.jd_screening_answers
+          || {}
+      );
+      const cvAnalysis = existing.cvAnalysis && typeof existing.cvAnalysis === "object"
+        ? existing.cvAnalysis
+        : existing.payload?.cvAnalysis && typeof existing.payload.cvAnalysis === "object"
+          ? existing.payload.cvAnalysis
+          : null;
+
+      const draftPayload = {
+        candidateName: String(existing.candidateName || "").trim(),
+        phoneNumber: String(existing.phoneNumber || "").trim(),
+        emailId: String(existing.emailId || "").trim(),
+        linkedin: String(existing.linkedinUrl || "").trim(),
+        location: String(existing.location || "").trim(),
+        currentCtc: String(existing.currentCtc || "").trim(),
+        expectedCtc: String(existing.expectedCtc || "").trim(),
+        noticePeriod: String(existing.noticePeriod || "").trim(),
+        offerInHand: String(existing.offerAmount || existing.offerInHand || "").trim(),
+        lwdOrDoj: String(existing.lwdOrDoj || existing.lwd_or_doj || "").trim(),
+        currentCompany: String(existing.currentCompany || "").trim(),
+        currentDesignation: String(existing.currentDesignation || "").trim(),
+        totalExperience: String(existing.totalExperience || "").trim(),
+        relevantExperience: String(existing.relevantExperience || "").trim(),
+        highestEducation: String(existing.highestEducation || "").trim(),
+        currentOrgTenure: String(existing.currentOrgTenure || "").trim(),
+        experienceTimeline: String(existing.experienceTimeline || existing.experience_timeline || "").trim(),
+        reasonForChange: String(existing.reasonForChange || existing.reason_for_change || "").trim(),
+        cautiousIndicators: String(existing.cautiousIndicators || existing.cautious_indicators || "").trim(),
+        clientName: String(existing.clientName || "").trim(),
+        jdTitle: String(existing.jdTitle || "").trim(),
+        recruiterNotes: String(existing.recruiterNotes || existing.recruiterContextNotes || "").trim(),
+        callbackNotes: String(existing.callbackNotes || "").trim(),
+        otherPointers: String(existing.otherPointers || "").trim(),
+        tags: String(existing.tags || "").trim(),
+        candidateStatus: String(existing.candidateStatus || "").trim(),
+        followUpAt: String(existing.followUpAt || "").trim(),
+        interviewAt: String(existing.interviewAt || "").trim(),
+        pipelineStage: String(existing.pipelineStage || "").trim(),
+        statusHistory: Array.isArray(existing.statusHistory) ? existing.statusHistory : [],
+        jdScreeningAnswers,
+        cvAnalysis,
+        cvAnalysisApplied: Boolean(existing.cvAnalysisApplied)
+      };
+
       // If the candidate row was deleted, recreate a minimal one so restore doesn't fail.
       // We keep it assigned/owned by the actor so they can operate on it immediately.
       const candidate = await listCandidates({ id: candidateId, limit: 1, companyId: actor.companyId }).then((rows) => (rows && rows[0] ? rows[0] : null)).catch(() => null);
       if (!candidate) {
+        const nextMeta = {
+          jdScreeningAnswers,
+          ...(cvAnalysis ? { cvAnalysisCache: { result: cvAnalysis, storedFile: cvAnalysis?.storedFile || null } } : {}),
+          cautiousIndicators: draftPayload.cautiousIndicators || ""
+        };
         await saveCandidate(
           {
             id: candidateId,
@@ -5589,10 +5643,34 @@ const server = http.createServer(async (req, res) => {
             used_in_assessment: true,
             assessment_id: assessmentId,
             jd_title: existing.jdTitle || "",
-            client_name: existing.clientName || ""
+            client_name: existing.clientName || "",
+            // Backfill rich draft data so trackers/search keep working after a restore.
+            draft_payload: draftPayload,
+            screening_answers: jdScreeningAnswers,
+            raw_note: encodeApplicantMetadata(nextMeta)
           },
           { companyId: actor.companyId }
         );
+      } else {
+        const existingMeta = decodeApplicantMetadata(candidate || {});
+        const nextMeta = {
+          ...(existingMeta && typeof existingMeta === "object" ? existingMeta : {}),
+          jdScreeningAnswers: Object.keys(jdScreeningAnswers).length ? jdScreeningAnswers : (existingMeta?.jdScreeningAnswers || {}),
+          cautiousIndicators: draftPayload.cautiousIndicators || existingMeta?.cautiousIndicators || existingMeta?.cautious_indicators || "",
+          ...(cvAnalysis ? { cvAnalysisCache: { ...(existingMeta?.cvAnalysisCache && typeof existingMeta.cvAnalysisCache === "object" ? existingMeta.cvAnalysisCache : {}), result: cvAnalysis, storedFile: cvAnalysis?.storedFile || existingMeta?.cvAnalysisCache?.storedFile || null } } : {})
+        };
+        await patchCandidate(candidateId, {
+          used_in_assessment: true,
+          assessment_id: assessmentId,
+          jd_title: existing.jdTitle || candidate.jd_title || "",
+          client_name: existing.clientName || candidate.client_name || "",
+          recruiter_context_notes: draftPayload.recruiterNotes || candidate.recruiter_context_notes || "",
+          other_pointers: draftPayload.otherPointers || candidate.other_pointers || "",
+          draft_payload: draftPayload,
+          screening_answers: jdScreeningAnswers,
+          raw_note: encodeApplicantMetadata(nextMeta),
+          updated_at: new Date().toISOString()
+        }, { companyId: actor.companyId });
       }
 
       // Now restore assessment and relink canonically.
