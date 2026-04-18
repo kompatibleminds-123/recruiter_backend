@@ -1772,6 +1772,7 @@ function parseNaturalLanguageCandidateQuery(rawQuery) {
   const assessmentIntent = /\bassessments?\b/i.test(lower);
   const convertedIntent = /\b(?:shared|converted|cv shared|cv to be shared)\b/i.test(lower);
   const recruiterNameMatch = lower.match(/\bby\s+([a-z][a-z\s.-]+?)(?:\s+for\b|\s+in\b|\s+this\b|\s+last\b|\s+today\b|\s+tomorrow\b|$)/i);
+  const assignedToMatch = lower.match(/\bassigned\s+to\s+([a-z][a-z\s.-]+?)(?:\s+for\b|\s+in\b|\s+this\b|\s+last\b|\s+today\b|\s+tomorrow\b|$)/i);
   const targetLabelMatch = lower.match(/\bfor\s+([a-z0-9][a-z0-9\s&.-]+?)(?:\s+across roles|\s+this week|\s+tomorrow|\s+today|\s+last month|\s+this month|\s+from\s|\s+with\s|\s+under\b|$)/i);
   const statusTerms = [];
   const detailedStatusTerms = [];
@@ -1925,8 +1926,12 @@ function parseNaturalLanguageCandidateQuery(rawQuery) {
     interviewScheduled: interviewIntent,
     upcomingJoinings: upcomingJoiningsIntent,
     recruiterScope: recruiterScopeMe ? "me" : "",
-    recruiterName: recruiterNameMatch ? String(recruiterNameMatch[1] || "").trim() : "",
-    recruiterField: sourcedIntent ? "sourced" : convertedIntent ? "owner" : "",
+    recruiterName: recruiterNameMatch
+      ? String(recruiterNameMatch[1] || "").trim()
+      : assignedToMatch
+        ? String(assignedToMatch[1] || "").trim()
+        : "",
+    recruiterField: sourcedIntent ? "sourced" : (convertedIntent || assessmentIntent || assignedToMatch) ? "owner" : "",
     sourceTypeFilter: assessmentIntent ? "assessment" : convertedIntent ? "converted" : sourcedIntent ? "captured" : "",
     dateFrom,
     dateTo,
