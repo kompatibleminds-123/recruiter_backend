@@ -1446,6 +1446,20 @@ function formatRecruiterOverwriteLabel(key) {
 }
 
 function api(path, token, method = "GET", body = null) {
+  function sanitizeApiErrorMessage(message, statusCode) {
+    const raw = String(message || "").trim();
+    if (!raw) return statusCode ? `HTTP ${statusCode}` : "Request failed.";
+    const lowered = raw.toLowerCase();
+    const looksLikeHtml = lowered.includes("<!doctype") || lowered.includes("<html") || lowered.includes("<head") || lowered.includes("<body");
+    if (looksLikeHtml) {
+      if (statusCode === 502) return "Temporary gateway error (502). Please retry in a minute.";
+      if (statusCode === 503) return "Service temporarily unavailable (503). Please retry in a minute.";
+      return statusCode ? `Request failed (HTTP ${statusCode}). Please retry.` : "Request failed. Please retry.";
+    }
+    // Avoid dumping full HTML / stack traces into UI status banners.
+    if (raw.length > 350) return `${raw.slice(0, 350)}…`;
+    return raw;
+  }
   const headers = { "Content-Type": "application/json" };
   if (token) headers.Authorization = `Bearer ${token}`;
   const controller = new AbortController();
@@ -1473,7 +1487,7 @@ function api(path, token, method = "GET", body = null) {
         data = { ok: false, error: text || `HTTP ${response.status}` };
       }
       if (!response.ok || data?.ok === false) {
-        throw new Error(data?.error || `HTTP ${response.status}`);
+        throw new Error(sanitizeApiErrorMessage(data?.error || `HTTP ${response.status}`, response.status));
       }
       return data.result || data;
     })
@@ -6450,15 +6464,92 @@ function PortalApp({ token, onLogout }) {
     setStatus("jobs", "JD deleted.", "ok");
   }
 
-  function downloadJobDraft() {
-    const blob = new Blob([jobDraft.jobDescription || ""], { type: "text/plain;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = `${(jobDraft.title || "jd").replace(/[^\w\-]+/g, "-")}.txt`;
-    link.click();
-    URL.revokeObjectURL(url);
-  }
+	function downloadJobDraft() {
+	  // Backward-compatible: keep text export, but primary exports are Word/PDF.
+	  const blob = new Blob([jobDraft.jobDescription || ""], { type: "text/plain;charset=utf-8" });
+	  const url = URL.createObjectURL(blob);
+	  const link = document.createElement("a");
+	  link.href = url;
+	  link.download = `${(jobDraft.title || "jd").replace(/[^\w\-]+/g, "-")}.txt`;
+	  link.click();
+	  URL.revokeObjectURL(url);
+	}
+
+	function buildJobDraftHtml() {
+	  const title = String(jobDraft.title || "").trim();
+	  const sections = [
+	    { label: "Client", value: String(jobDraft.clientName || "").trim() },
+	    { label: "Location", value: String(jobDraft.location || "").trim() },
+	    { label: "Work mode", value: String(jobDraft.workMode || "").trim() },
+	    { label: "About company", value: String(jobDraft.aboutCompany || "").trim() },
+	    { label: "Must have skills", value: String(jobDraft.mustHaveSkills || "").trim() },
+	    { label: "Job description", value: String(jobDraft.jobDescription || "").trim() },
+	    { label: "Red flags", value: String(jobDraft.redFlags || "").trim() },
+	    { label: "Recruiter notes", value: String(jobDraft.recruiterNotes || "").trim() },
+	    { label: "Standard questions", value: String(jobDraft.standardQuestions || "").trim() }
+	  ].filter((item) => item.value);
+
+	  const body = sections.map((item) => `
+	    <h2>${escapeHtml(item.label)}</h2>
+	    <div class="block">${escapeHtml(item.value).replace(/\n/g, "<br/>")}</div>
+	  `.trim()).join("\n");
+
+	  return `
+	    <!doctype html>
+	    <html>
+	      <head>
+	        <meta charset="utf-8" />
+	        <title>${escapeHtml(title || "Job Description")}</title>
+	        <style>
+	          body { font-family: Arial, sans-serif; color: #111827; line-height: 1.5; padding: 28px; }
+	          h1 { font-size: 22px; margin: 0 0 12px; }
+	          h2 { font-size: 14px; margin: 18px 0 6px; color: #374151; letter-spacing: .02em; text-transform: uppercase; }
+	          .muted { color: #6b7280; font-size: 12px; margin-bottom: 18px; }
+	          .block { font-size: 13.5px; white-space: normal; }
+	          hr { border: 0; border-top: 1px solid #e5e7eb; margin: 18px 0; }
+	        </style>
+	      </head>
+	      <body>
+	        <h1>${escapeHtml(title || "Job Description")}</h1>
+	        <div class="muted">Exported from RecruitDesk Jobs</div>
+	        <hr/>
+	        ${body || "<div class='block'>No JD content yet.</div>"}
+	      </body>
+	    </html>
+	  `.trim();
+	}
+
+	function downloadJobDraftWord() {
+	  const html = buildJobDraftHtml();
+	  const blob = new Blob([html], { type: "application/msword;charset=utf-8" });
+	  const url = URL.createObjectURL(blob);
+	  const link = document.createElement("a");
+	  link.href = url;
+	  link.download = `${(jobDraft.title || "jd").replace(/[^\w\-]+/g, "-")}.doc`;
+	  link.click();
+	  URL.revokeObjectURL(url);
+	}
+
+	function downloadJobDraftPdf() {
+	  const html = buildJobDraftHtml();
+	  const win = window.open("", "_blank", "noopener,noreferrer");
+	  if (!win) {
+	    setStatus("jobs", "Popup blocked. Allow popups to export PDF.", "error");
+	    return;
+	  }
+	  win.document.open();
+	  win.document.write(html);
+	  win.document.close();
+	  setTimeout(() => {
+	    try {
+	      win.focus?.();
+	      win.print?.();
+	    } catch {
+	      // ignore
+	    }
+	  }, 350);
+	  setStatus("jobs", "PDF export opened. Use Save as PDF in print dialog.", "ok");
+	}
 
   function applySelectedJobToInterview() {
     setInterviewForm((current) => ({
@@ -9180,19 +9271,20 @@ function PortalApp({ token, onLogout }) {
               </Section>
 
               <Section kicker="JD Setup" title="JD Workspace">
-                <div className="button-row">
-                  <label className="file-btn">
-                    Upload JD
-                    <input type="file" accept=".txt,.md,.doc,.docx,.pdf" hidden onChange={(e) => { const file = e.target.files?.[0]; if (file) void handleJdUpload(file); }} />
-                  </label>
-                  <button className="ghost-btn" onClick={() => resetJobDraftBlank()}>New blank JD</button>
-                  <button onClick={() => applySelectedJobToInterview()}>Apply generated JD</button>
-                  <button onClick={() => generateJdFromText()}>Generate JD from text</button>
-                  <button onClick={() => downloadJobDraft()}>Download JD</button>
-                  <button onClick={() => void saveJobDraft()}>{selectedJobId ? "Update JD" : "Save JD"}</button>
-                  <button
-                    className="ghost-btn"
-                    disabled={!String(jobDraft.title || "").trim() || !String(jobDraft.jobDescription || "").trim()}
+	                <div className="button-row">
+	                  <label className="file-btn">
+	                    Upload JD
+	                    <input type="file" accept=".txt,.md,.doc,.docx,.pdf" hidden onChange={(e) => { const file = e.target.files?.[0]; if (file) void handleJdUpload(file); }} />
+	                  </label>
+	                  <button className="ghost-btn" onClick={() => resetJobDraftBlank()}>New blank JD</button>
+	                  <button onClick={() => applySelectedJobToInterview()}>Apply generated JD</button>
+	                  <button onClick={() => generateJdFromText()}>Generate JD from text</button>
+	                  <button className="ghost-btn" onClick={() => downloadJobDraftWord()}>Download Word</button>
+	                  <button className="ghost-btn" onClick={() => downloadJobDraftPdf()}>Download PDF</button>
+	                  <button onClick={() => void saveJobDraft()}>{selectedJobId ? "Update JD" : "Save JD"}</button>
+	                  <button
+	                    className="ghost-btn"
+	                    disabled={!String(jobDraft.title || "").trim() || !String(jobDraft.jobDescription || "").trim()}
                     onClick={() => void saveJobDraftAsNew()}
                     title="Duplicate current JD as a new saved record"
                   >
