@@ -3841,10 +3841,11 @@ function PortalApp({ token, onLogout }) {
   const [assessmentStatusId, setAssessmentStatusId] = useState("");
   const [drilldownState, setDrilldownState] = useState({ open: false, title: "", items: [], request: null });
   const [clientFeedbackItem, setClientFeedbackItem] = useState(null);
-  const [attempts, setAttempts] = useState([]);
-  const workspaceRefreshInFlightRef = useRef(false);
-  const lastWorkspaceRefreshAtRef = useRef(0);
-  const loadWorkspaceRef = useRef(null);
+	const [attempts, setAttempts] = useState([]);
+	const workspaceRefreshInFlightRef = useRef(false);
+	const lastWorkspaceRefreshAtRef = useRef(0);
+	const loadWorkspaceRef = useRef(null);
+	const linkedinSideWindowRef = useRef(null);
   const [selectedJobId, setSelectedJobId] = useState("");
   const [jobShortcutKey, setJobShortcutKey] = useState("");
   const [jobShortcutValue, setJobShortcutValue] = useState("");
@@ -3957,9 +3958,53 @@ function PortalApp({ token, onLogout }) {
   ), [isSettingsAdmin]);
   const standaloneNavItems = STANDALONE_NAV_ITEMS;
 
-  function setStatus(key, message, kind = "") {
-    setStatuses((current) => ({ ...current, [key]: message, [`${key}Kind`]: kind }));
-  }
+	function setStatus(key, message, kind = "") {
+	  setStatuses((current) => ({ ...current, [key]: message, [`${key}Kind`]: kind }));
+	}
+
+	function normalizeLinkedinUrl(value) {
+	  const raw = String(value || "").trim();
+	  if (!raw) return "";
+	  if (/^https?:\/\//i.test(raw)) return raw;
+	  if (raw.startsWith("//")) return `https:${raw}`;
+	  if (/^www\./i.test(raw)) return `https://${raw}`;
+	  if (/^linkedin\.com/i.test(raw)) return `https://${raw}`;
+	  return raw;
+	}
+
+	function openLinkedinInSideWindow(url) {
+	  const normalized = normalizeLinkedinUrl(url);
+	  if (!normalized) return;
+	  if (!/linkedin\.com/i.test(normalized)) return;
+	  try {
+	    const width = 520;
+	    const height = Math.min(920, Math.max(640, (window.outerHeight || 900) - 80));
+	    const left = Math.max(0, (window.screenX || 0) + (window.outerWidth || 1200) - width - 20);
+	    const top = Math.max(0, (window.screenY || 0) + 40);
+	    const features = `popup=yes,width=${width},height=${height},left=${left},top=${top},noopener,noreferrer`;
+	    const existing = linkedinSideWindowRef.current;
+	    const win = existing && !existing.closed
+	      ? existing
+	      : window.open("about:blank", "linkedin_side_window", features);
+	    if (!win) return;
+	    linkedinSideWindowRef.current = win;
+	    win.location.href = normalized;
+	    win.focus?.();
+	  } catch {
+	    // Ignore popup errors / blockers.
+	  }
+	}
+
+	function openRecruiterNotes(candidateOrId) {
+	  const candidateId = String(candidateOrId?.id || candidateOrId || "").trim();
+	  if (!candidateId) return;
+	  setNotesCandidateId(candidateId);
+	  const candidate = (candidateOrId && typeof candidateOrId === "object")
+	    ? candidateOrId
+	    : (state.candidates || []).find((item) => String(item.id) === candidateId) || null;
+	  const ctx = resolveCandidateContext(candidate || {});
+	  if (ctx.linkedin) openLinkedinInSideWindow(ctx.linkedin);
+	}
 
   useEffect(() => {
     if (!hostedJobId) {
@@ -8421,7 +8466,7 @@ function PortalApp({ token, onLogout }) {
                       {!item.hidden_from_captured ? (
                         <button onClick={() => loadApplicantIntoInterview(item.id)}>Open draft</button>
                       ) : null}
-                      <button onClick={() => setNotesCandidateId(item.id)}>Recruiter note</button>
+	                            <button onClick={() => openRecruiterNotes(item)}>Recruiter note</button>
                       <button onClick={() => void openAttempts(item.id)}>Attempts</button>
                       {!item.hidden_from_captured ? (
                         <button onClick={() => void createAssessmentFromCandidate(item.id)}>Create assessment</button>
@@ -8514,7 +8559,7 @@ function PortalApp({ token, onLogout }) {
                           <button onClick={() => loadCandidateIntoInterview(item.id)}>Open draft</button>
                         ) : null}
                         <button onClick={() => setAssignCandidateId(item.id)}>{item.assigned_to_name ? "Reassign" : "Assign"}</button>
-                        <button onClick={() => setNotesCandidateId(item.id)}>Recruiter note</button>
+	                      <button onClick={() => openRecruiterNotes(item)}>Recruiter note</button>
                         <button onClick={() => void openAttempts(item.id)}>Attempts</button>
                         {!item.hidden_from_captured ? (
                           <button onClick={() => void createAssessmentFromCandidate(item.id)}>Create assessment</button>
@@ -9595,7 +9640,7 @@ function PortalApp({ token, onLogout }) {
         onClose={() => setDrilldownState({ open: false, title: "", items: [], request: null })}
         onOpenCv={(candidateId) => void openCv(candidateId)}
         onOpenAssessment={(assessment) => { setDrilldownState({ open: false, title: "", items: [], request: null }); openSavedAssessment(assessment); }}
-        onOpenNotes={(candidateId) => { setDrilldownState({ open: false, title: "", items: [], request: null }); setNotesCandidateId(candidateId); }}
+	        onOpenNotes={(candidateId) => { setDrilldownState({ open: false, title: "", items: [], request: null }); openRecruiterNotes(candidateId); }}
         onOpenStatus={(target) => {
           setDrilldownState({ open: false, title: "", items: [], request: null });
           const assessmentId = String(target?.id || target?.assessmentId || "").trim();
