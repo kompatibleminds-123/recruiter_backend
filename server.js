@@ -1367,9 +1367,21 @@ function addRecruiterOwnershipMetrics(target, recruiterLabel, candidate, linkedA
     }
     return;
   }
+  // For sourcing, keep buckets disjoint to avoid confusing overlaps.
+  // "assigned" means manually assigned by someone else; "self sourced" means captured/owned directly.
+  const wasManuallyAssigned = Boolean(
+    String(candidate?.assigned_by_user_id || candidate?.assignedByUserId || "").trim()
+    || String(candidate?.assigned_by_name || candidate?.assignedByName || "").trim()
+  );
   if (assignedLabel === recruiterLabel) {
-    target.ownership.assignedSourcing = Number(target.ownership.assignedSourcing || 0) + 1;
+    if (wasManuallyAssigned) {
+      target.ownership.assignedSourcing = Number(target.ownership.assignedSourcing || 0) + 1;
+    } else {
+      target.ownership.selfSourced = Number(target.ownership.selfSourced || 0) + 1;
+    }
+    return;
   }
+  // If they captured it but it's owned by someone else, still record as self-sourced for visibility.
   if (sourcedLabel === recruiterLabel) {
     target.ownership.selfSourced = Number(target.ownership.selfSourced || 0) + 1;
   }
