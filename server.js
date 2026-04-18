@@ -886,6 +886,28 @@ async function ingestApplicantSubmission(body, req) {
     }
   }
 
+  // Default assignment for inbound applicants:
+  // 1) recruiter-specific apply link
+  // 2) JD owner recruiter
+  // 3) company admin (fallback)
+  let defaultInboxOwner = linkAssignedRecruiter
+    ? { id: String(linkAssignedRecruiter.id || "").trim(), name: String(linkAssignedRecruiter.name || "").trim() }
+    : matchedJob?.ownerRecruiterId
+      ? { id: String(matchedJob.ownerRecruiterId || "").trim(), name: String(matchedJob.ownerRecruiterName || "").trim() }
+      : null;
+  if (!defaultInboxOwner?.id) {
+    try {
+      const users = await listCompanyUsers(payload.companyId);
+      const admin = (Array.isArray(users) ? users : []).find((u) => String(u?.role || "").toLowerCase() === "admin") || null;
+      const picked = admin || (Array.isArray(users) ? users[0] : null) || null;
+      if (picked?.id) {
+        defaultInboxOwner = { id: String(picked.id || "").trim(), name: String(picked.name || "").trim() };
+      }
+    } catch {
+      // ignore
+    }
+  }
+
   const appliedSource = payload.sourcePlatform === "hosted_apply" ? "hosted_apply" : "website_apply";
 
   // If the same candidate already exists (captured note), merge into that row and move it to Applied
@@ -919,8 +941,8 @@ async function ingestApplicantSubmission(body, req) {
       raw_note: encodeApplicantMetadata(nextMeta),
       client_name: payload.clientName || existing.client_name || null,
       jd_title: payload.jdTitle || existing.jd_title || null,
-      assigned_to_user_id: linkAssignedRecruiter?.id || matchedJob?.ownerRecruiterId || existing.assigned_to_user_id || null,
-      assigned_to_name: linkAssignedRecruiter?.name || matchedJob?.ownerRecruiterName || existing.assigned_to_name || null,
+      assigned_to_user_id: defaultInboxOwner?.id || existing.assigned_to_user_id || null,
+      assigned_to_name: defaultInboxOwner?.name || existing.assigned_to_name || null,
       assigned_jd_id: matchedJob?.id || existing.assigned_jd_id || null,
       assigned_jd_title: matchedJob?.title || payload.jdTitle || existing.assigned_jd_title || null,
       recruiter_context_notes: payload.screeningAnswers || existing.recruiter_context_notes || null,
@@ -967,9 +989,9 @@ async function ingestApplicantSubmission(body, req) {
       next_action: merged.next_action,
       client_name: payload.clientName || null,
       jd_title: payload.jdTitle || null,
-      recruiter_name: payload.recruiterName || "Website Apply",
-      assigned_to_user_id: linkAssignedRecruiter?.id || matchedJob?.ownerRecruiterId || null,
-      assigned_to_name: linkAssignedRecruiter?.name || matchedJob?.ownerRecruiterName || null,
+      recruiter_name: defaultInboxOwner?.name || payload.recruiterName || "Website Apply",
+      assigned_to_user_id: defaultInboxOwner?.id || null,
+      assigned_to_name: defaultInboxOwner?.name || null,
       assigned_jd_id: matchedJob?.id || null,
       assigned_jd_title: matchedJob?.title || payload.jdTitle || null,
       linkedin: merged.linkedin || null,
