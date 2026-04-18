@@ -5332,7 +5332,9 @@ function PortalApp({ token, onLogout }) {
     await patchCandidate(assignCandidateId, {
       assigned_to_user_id: effectiveRecruiterId,
       assigned_to_name: recruiter?.name || state.user?.name || "",
-      jd_title: jdTitle
+      jd_title: jdTitle,
+      // If a hidden/inactive note is reassigned, make it active for the new assignee.
+      hidden_from_captured: false
     }, "Draft assigned to recruiter.");
     setAssignCandidateId("");
   }
@@ -5931,6 +5933,10 @@ function PortalApp({ token, onLogout }) {
     const source = candidate || sourceApplicant;
     if (!source) {
       setStatus(statusKey, "Candidate not found for assessment conversion.", "error");
+      return;
+    }
+    if (candidate?.hidden_from_captured) {
+      setStatus(statusKey, "This note is hidden/inactive. Restore to active first, then convert to assessment.", "error");
       return;
     }
     if (sourceApplicant && !candidate) {
@@ -8373,7 +8379,9 @@ function PortalApp({ token, onLogout }) {
                       <button onClick={() => loadApplicantIntoInterview(item.id)}>Open draft</button>
                       <button onClick={() => setNotesCandidateId(item.id)}>Recruiter note</button>
                       <button onClick={() => void openAttempts(item.id)}>Attempts</button>
-                      <button onClick={() => void createAssessmentFromCandidate(item.id)}>Create assessment</button>
+                      {!item.hidden_from_captured ? (
+                        <button onClick={() => void createAssessmentFromCandidate(item.id)}>Create assessment</button>
+                      ) : null}
                       {item.cvFilename ? <button onClick={() => void openCv(item.id)}>Open CV</button> : null}
                       {state.user?.role === "admin" ? <button onClick={() => setAssignApplicantId(item.id)}>{item.assignedToName ? "Reassign" : "Assign"}</button> : null}
                       {item.hidden_from_captured ? (
@@ -8462,7 +8470,9 @@ function PortalApp({ token, onLogout }) {
                         <button onClick={() => setAssignCandidateId(item.id)}>{item.assigned_to_name ? "Reassign" : "Assign"}</button>
                         <button onClick={() => setNotesCandidateId(item.id)}>Recruiter note</button>
                         <button onClick={() => void openAttempts(item.id)}>Attempts</button>
-                        <button onClick={() => void createAssessmentFromCandidate(item.id)}>Create assessment</button>
+                        {!item.hidden_from_captured ? (
+                          <button onClick={() => void createAssessmentFromCandidate(item.id)}>Create assessment</button>
+                        ) : null}
                         {item.hidden_from_captured ? (
                           <button className="ghost-btn" onClick={() => void restoreCapturedCandidate(item.id)}>Restore to active</button>
                         ) : (
