@@ -3587,6 +3587,31 @@ function buildCandidateParseResponse(baseResult, normalizedResult, parseMeta = {
     ? ""
     : candidateCurrentOrgTenure;
 
+  const rawTextForSearch = String(baseResult?.rawText || "").trim();
+  const rawTextPreview = rawTextForSearch ? rawTextForSearch.slice(0, 2200) : "";
+  const searchKeywords = (() => {
+    if (!rawTextForSearch) return "";
+    const normalized = rawTextForSearch
+      .toLowerCase()
+      .replace(/\basp\s*\.?\s*net\b/g, "asp.net")
+      .replace(/\b\.net\b/g, "dotnet")
+      .replace(/[^a-z0-9+.#\s-]/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+    if (!normalized) return "";
+    const tokens = normalized.split(" ").map((t) => t.trim()).filter(Boolean);
+    const seen = new Set();
+    const kept = [];
+    for (const token of tokens) {
+      if (token.length < 3) continue;
+      if (seen.has(token)) continue;
+      seen.add(token);
+      kept.push(token);
+      if (kept.length >= 2500) break;
+    }
+    return kept.join(" ");
+  })();
+
     return {
       candidateName: String(
         normalizedResult?.candidateName || baseResult?.candidateName || ""
@@ -3608,6 +3633,8 @@ function buildCandidateParseResponse(baseResult, normalizedResult, parseMeta = {
     currentOrgTenure: finalCurrentOrgTenure,
     shortStints: Array.isArray(baseResult?.shortStints) ? baseResult.shortStints : [],
     highlights: Array.isArray(baseResult?.highlights) ? baseResult.highlights : [],
+    rawTextPreview,
+    searchKeywords,
     parseDebug,
     validation
   };
