@@ -1769,7 +1769,8 @@ function parseNaturalLanguageCandidateQuery(rawQuery) {
   const interviewIntent = /\b(?:aligned|interview(?:s)?|scheduled)\b/i.test(lower);
   const recruiterScopeMe = /\b(?:i|me|my)\s+(?:sourced|captured|shared|converted)\b/i.test(lower) || /\bthat i (?:sourced|captured|shared|converted)\b/i.test(lower);
   const sourcedIntent = /\b(?:sourced|captured)\b/i.test(lower);
-  const convertedIntent = /\b(?:shared|converted|cv shared|cv to be shared|assessment)\b/i.test(lower);
+  const assessmentIntent = /\bassessments?\b/i.test(lower);
+  const convertedIntent = /\b(?:shared|converted|cv shared|cv to be shared)\b/i.test(lower);
   const recruiterNameMatch = lower.match(/\bby\s+([a-z][a-z\s.-]+?)(?:\s+for\b|\s+in\b|\s+this\b|\s+last\b|\s+today\b|\s+tomorrow\b|$)/i);
   const targetLabelMatch = lower.match(/\bfor\s+([a-z0-9][a-z0-9\s&.-]+?)(?:\s+across roles|\s+this week|\s+tomorrow|\s+today|\s+last month|\s+this month|\s+from\s|\s+with\s|\s+under\b|$)/i);
   const statusTerms = [];
@@ -1897,8 +1898,9 @@ function parseNaturalLanguageCandidateQuery(rawQuery) {
         .filter(Boolean)
     : [];
   const derivedSkills = explicitSkills.length ? explicitSkills : splitCandidateSearchKeywords(roleText);
+  const cleanedSkills = derivedSkills.filter((skill) => !["assessment", "assessments"].includes(String(skill || "").toLowerCase().trim()));
   const hasOrOperator = /\bor\b/i.test(lower);
-  const skillsMatch = hasOrOperator && derivedSkills.length >= 2 ? "any" : "all";
+  const skillsMatch = hasOrOperator && cleanedSkills.length >= 2 ? "any" : "all";
 
   return {
     raw: query,
@@ -1913,7 +1915,7 @@ function parseNaturalLanguageCandidateQuery(rawQuery) {
     minExpectedCtcLpa: expectedCtcAboveMatch ? parseAmountToLpa(`${expectedCtcAboveMatch[1]} ${expectedCtcAboveMatch[2] || "lpa"}`) : null,
     maxExpectedCtcLpa: expectedCtcUnderMatch ? parseAmountToLpa(`${expectedCtcUnderMatch[1]} ${expectedCtcUnderMatch[2] || "lpa"}`) : null,
     maxNoticeDays: noticeMatch ? parseNoticePeriodToDays(`${noticeMatch[1]} ${noticeMatch[2]}`) : null,
-    skills: Array.from(new Set(derivedSkills)),
+    skills: Array.from(new Set(cleanedSkills)),
     skillsMatch,
     currentCompany: currentCompanyMatch ? String(currentCompanyMatch[1] || "").trim() : "",
     statuses: statusTerms,
@@ -1925,7 +1927,7 @@ function parseNaturalLanguageCandidateQuery(rawQuery) {
     recruiterScope: recruiterScopeMe ? "me" : "",
     recruiterName: recruiterNameMatch ? String(recruiterNameMatch[1] || "").trim() : "",
     recruiterField: sourcedIntent ? "sourced" : convertedIntent ? "owner" : "",
-    sourceTypeFilter: convertedIntent ? "converted" : sourcedIntent ? "captured" : "",
+    sourceTypeFilter: assessmentIntent ? "assessment" : convertedIntent ? "converted" : sourcedIntent ? "captured" : "",
     dateFrom,
     dateTo,
     dateField
