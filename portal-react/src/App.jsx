@@ -3783,6 +3783,7 @@ function PortalApp({ token, onLogout }) {
   const [databaseProfileItem, setDatabaseProfileItem] = useState(null);
   const [clientShareCvLinks, setClientShareCvLinks] = useState({});
   const [clientShareCvLinkState, setClientShareCvLinkState] = useState({});
+  const [clientShareCvLinkFingerprint, setClientShareCvLinkFingerprint] = useState({});
   const [agendaRange, setAgendaRange] = useState("today");
   const [openAssessmentMoreId, setOpenAssessmentMoreId] = useState("");
   const assessmentMoreMenuRef = useRef(null);
@@ -4589,25 +4590,29 @@ function PortalApp({ token, onLogout }) {
       .filter((item) => selectedAssessmentIds.includes(String(item.id || item.assessmentId || "")))
       .map((item, index) => ({ ...item, index: index + 1 }))
   ), [normalizedAssessmentCopyRows, selectedAssessmentIds]);
-  useEffect(() => {
-    async function loadCvLinks() {
-      if (!token || !selectedAssessmentRows.length) return;
-      const rowsNeedingLinks = selectedAssessmentRows.filter((item) => {
-        const shareKey = String(item.candidate_id || item.id || "");
-        return shareKey && (item.cv_key || item.cv_url || item.candidate_id) && !clientShareCvLinkState[shareKey];
-      });
-      if (!rowsNeedingLinks.length) return;
-      setClientShareCvLinkState((current) => {
-        const next = { ...current };
-        rowsNeedingLinks.forEach((item) => {
-          const shareKey = String(item.candidate_id || item.id || "");
-          if (shareKey) next[shareKey] = "loading";
-        });
-        return next;
-      });
-      const entries = await Promise.all(rowsNeedingLinks.map(async (item) => {
-        const shareKey = String(item.candidate_id || item.id || "");
-        try {
+	  useEffect(() => {
+	    async function loadCvLinks() {
+	      if (!token || !selectedAssessmentRows.length) return;
+	      const rowsNeedingLinks = selectedAssessmentRows.filter((item) => {
+	        const shareKey = String(item.candidate_id || item.id || "");
+	        if (!shareKey) return false;
+	        const hasCvRef = Boolean(item.cv_key || item.cv_url || item.cv_provider || item.cv_filename);
+	        if (!hasCvRef) return false;
+	        const fingerprint = [item.cv_provider || "", item.cv_key || "", item.cv_url || "", item.cv_filename || ""].join("|");
+	        return clientShareCvLinkFingerprint[shareKey] !== fingerprint;
+	      });
+	      if (!rowsNeedingLinks.length) return;
+	      setClientShareCvLinkState((current) => {
+	        const next = { ...current };
+	        rowsNeedingLinks.forEach((item) => {
+	          const shareKey = String(item.candidate_id || item.id || "");
+	          if (shareKey) next[shareKey] = "loading";
+	        });
+	        return next;
+	      });
+	      const entries = await Promise.all(rowsNeedingLinks.map(async (item) => {
+	        const shareKey = String(item.candidate_id || item.id || "");
+	        try {
           const params = new URLSearchParams();
           if (item.candidate_id) params.set("candidate_id", String(item.candidate_id));
           if (item.phone) params.set("candidate_phone", String(item.phone));
@@ -4618,29 +4623,36 @@ function PortalApp({ token, onLogout }) {
           if (item.cv_url) params.set("cv_url", String(item.cv_url));
           if (item.cv_filename) params.set("cv_filename", String(item.cv_filename));
           if (item.name) params.set("candidate_name", String(item.name));
-          const result = await api(`/company/share-cv-link${params.toString() ? `?${params.toString()}` : ""}`, token);
-          return [shareKey, result.url, "ready"];
-        } catch {
-          return [shareKey, "", "missing"];
-        }
-      }));
-      setClientShareCvLinks((current) => {
-        const next = { ...current };
-        entries.forEach(([candidateId, url]) => {
-          if (candidateId && url) next[candidateId] = url;
-        });
-        return next;
-      });
-      setClientShareCvLinkState((current) => {
-        const next = { ...current };
-        entries.forEach(([candidateId, _url, state]) => {
-          if (candidateId) next[candidateId] = state;
-        });
-        return next;
-      });
-    }
-    void loadCvLinks();
-  }, [selectedAssessmentRows, token]);
+	          const result = await api(`/company/share-cv-link${params.toString() ? `?${params.toString()}` : ""}`, token);
+	          return [shareKey, result.url, "ready", [item.cv_provider || "", item.cv_key || "", item.cv_url || "", item.cv_filename || ""].join("|")];
+	        } catch {
+	          return [shareKey, "", "missing", [item.cv_provider || "", item.cv_key || "", item.cv_url || "", item.cv_filename || ""].join("|")];
+	        }
+	      }));
+	      setClientShareCvLinks((current) => {
+	        const next = { ...current };
+	        entries.forEach(([candidateId, url]) => {
+	          if (candidateId && url) next[candidateId] = url;
+	        });
+	        return next;
+	      });
+	      setClientShareCvLinkState((current) => {
+	        const next = { ...current };
+	        entries.forEach(([candidateId, _url, state]) => {
+	          if (candidateId) next[candidateId] = state;
+	        });
+	        return next;
+	      });
+	      setClientShareCvLinkFingerprint((current) => {
+	        const next = { ...current };
+	        entries.forEach(([candidateId, _url, _state, fingerprint]) => {
+	          if (candidateId) next[candidateId] = fingerprint || "";
+	        });
+	        return next;
+	      });
+	    }
+	    void loadCvLinks();
+	  }, [selectedAssessmentRows, token, clientShareCvLinkFingerprint]);
   const candidateUniverseAll = useMemo(() => {
     const databaseRows = Array.isArray(state.databaseCandidates) && state.databaseCandidates.length ? state.databaseCandidates : (state.candidates || []);
     const linkedAssessmentIds = new Set(databaseRows.map((item) => String(item.assessment_id || "").trim()).filter(Boolean));
