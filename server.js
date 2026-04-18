@@ -1356,6 +1356,9 @@ function addRecruiterOwnershipMetrics(target, recruiterLabel, candidate, linkedA
   const isApplicant = source === "website_apply" || source === "hosted_apply";
   const assignedLabel = getOwnerRecruiterLabel(candidate, linkedAssessment || {});
   const sourcedLabel = getRecruiterLabel(candidate, linkedAssessment || {});
+  // "Self sourced" should mean: who first brought the candidate into Captured Notes.
+  // Do not infer from later edits; prefer the original captured-by recruiter_name.
+  const capturedByLabel = String(candidate?.recruiter_name || candidate?.recruiterName || sourcedLabel || "").trim();
   if (isApplicant) {
     if (assignedLabel === recruiterLabel) {
       const wasManuallyAssigned = Boolean(
@@ -1367,22 +1370,21 @@ function addRecruiterOwnershipMetrics(target, recruiterLabel, candidate, linkedA
     }
     return;
   }
-  // For sourcing, keep buckets disjoint to avoid confusing overlaps.
-  // "assigned" means manually assigned by someone else; "self sourced" means captured/owned directly.
-  const wasManuallyAssigned = Boolean(
-    String(candidate?.assigned_by_user_id || candidate?.assignedByUserId || "").trim()
-    || String(candidate?.assigned_by_name || candidate?.assignedByName || "").trim()
-  );
+  // For sourcing, keep buckets disjoint:
+  // - selfSourced: captured-by recruiter is this recruiter
+  // - assignedSourcing: owned by this recruiter but captured-by was someone else (admin/other recruiter)
+  const recruiterNeedle = String(recruiterLabel || "").trim().toLowerCase();
+  const capturedByNeedle = String(capturedByLabel || "").trim().toLowerCase();
   if (assignedLabel === recruiterLabel) {
-    if (wasManuallyAssigned) {
-      target.ownership.assignedSourcing = Number(target.ownership.assignedSourcing || 0) + 1;
-    } else {
+    if (capturedByNeedle && capturedByNeedle === recruiterNeedle) {
       target.ownership.selfSourced = Number(target.ownership.selfSourced || 0) + 1;
+    } else {
+      target.ownership.assignedSourcing = Number(target.ownership.assignedSourcing || 0) + 1;
     }
     return;
   }
-  // If they captured it but it's owned by someone else, still record as self-sourced for visibility.
-  if (sourcedLabel === recruiterLabel) {
+  // Still show "self sourced" credit even if the candidate is currently owned by someone else.
+  if (capturedByNeedle && capturedByNeedle === recruiterNeedle) {
     target.ownership.selfSourced = Number(target.ownership.selfSourced || 0) + 1;
   }
 }
