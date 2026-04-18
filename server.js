@@ -1152,7 +1152,21 @@ function buildJobIndexById(jobs = []) {
   return map;
 }
 
-function resolveJobForDashboard(candidate = {}, assessment = {}, jobById = null) {
+function buildJobIndexByTitle(jobs = []) {
+  const map = new Map();
+  (Array.isArray(jobs) ? jobs : []).forEach((job) => {
+    const title = String(job?.title || job?.jdTitle || job?.jd_title || "").trim();
+    if (!title) return;
+    map.set(title.toLowerCase(), {
+      id: String(job?.id || "").trim(),
+      title,
+      clientName: String(job?.clientName || job?.client_name || "").trim()
+    });
+  });
+  return map;
+}
+
+function resolveJobForDashboard(candidate = {}, assessment = {}, jobById = null, jobByTitle = null) {
   if (!(jobById instanceof Map)) return null;
   const candidateJobId = String(candidate?.assigned_jd_id || candidate?.assignedJdId || "").trim();
   const assessmentPayload = assessment?.payload && typeof assessment.payload === "object" ? assessment.payload : {};
@@ -1160,6 +1174,24 @@ function resolveJobForDashboard(candidate = {}, assessment = {}, jobById = null)
   const id = candidateJobId || assessmentJobId;
   if (!id) return null;
   return jobById.get(id) || null;
+}
+
+function resolveJobForDashboardLoose(candidate = {}, assessment = {}, jobById = null, jobByTitle = null) {
+  const resolvedById = resolveJobForDashboard(candidate, assessment, jobById, jobByTitle);
+  if (resolvedById) return resolvedById;
+  if (!(jobByTitle instanceof Map)) return null;
+  const titleCandidates = [
+    String(candidate?.assigned_jd_title || candidate?.assignedJdTitle || "").trim(),
+    String(candidate?.jd_title || candidate?.jdTitle || "").trim()
+  ].filter(Boolean);
+  const assessmentPayload = assessment?.payload && typeof assessment.payload === "object" ? assessment.payload : {};
+  const assessmentTitle = String(assessment?.jdTitle || assessment?.jd_title || assessmentPayload?.jdTitle || assessmentPayload?.jd_title || "").trim();
+  if (assessmentTitle) titleCandidates.push(assessmentTitle);
+  for (const title of titleCandidates) {
+    const hit = jobByTitle.get(String(title).toLowerCase());
+    if (hit) return hit;
+  }
+  return null;
 }
 
 function getPositionLabel(candidate = {}, assessment = {}, knownJdTitles = null) {
@@ -1477,6 +1509,7 @@ function buildDashboardSummary({ candidates = [], assessments = [], jobs = [], d
   const byClientPosition = new Map();
   const knownJdTitles = buildKnownJdTitleSet(jobs);
   const jobById = buildJobIndexById(jobs);
+  const jobByTitle = buildJobIndexByTitle(jobs);
   const assessmentsById = new Map(
     (Array.isArray(assessments) ? assessments : []).map((item) => [String(item?.id || "").trim(), item])
   );
@@ -1490,7 +1523,7 @@ function buildDashboardSummary({ candidates = [], assessments = [], jobs = [], d
 
   for (const candidate of Array.isArray(candidates) ? candidates : []) {
     const linkedAssessment = getCanonicalLinkedAssessmentForCandidate(candidate, assessmentsById) || null;
-    const resolvedJob = resolveJobForDashboard(candidate, linkedAssessment || {}, jobById);
+    const resolvedJob = resolveJobForDashboardLoose(candidate, linkedAssessment || {}, jobById, jobByTitle);
     const source = String(candidate?.source || "").trim().toLowerCase();
     const isApplicant = source === "website" || source === "website_apply" || source === "hosted_apply";
     const rawPosition = String(candidate?.assigned_jd_title || candidate?.assignedJdTitle || candidate?.jd_title || candidate?.jdTitle || "").trim();
@@ -1564,7 +1597,7 @@ function buildDashboardSummary({ candidates = [], assessments = [], jobs = [], d
   for (const assessment of Array.isArray(assessments) ? assessments : []) {
     const assessmentId = String(assessment?.id || "").trim();
     if (!assessmentId || countedAssessmentIds.has(assessmentId)) continue;
-    const resolvedJob = resolveJobForDashboard({}, assessment || {}, jobById);
+    const resolvedJob = resolveJobForDashboardLoose({}, assessment || {}, jobById, jobByTitle);
     const clientLabel = resolvedJob?.clientName || getClientLabel({}, assessment || {});
     if (clientFilter && clientLabel !== clientFilter) continue;
     const ownerRecruiterLabel = getOwnerRecruiterLabel({}, assessment || {});
@@ -2497,6 +2530,7 @@ function buildCandidateSearchUniverse(candidates = [], assessments = [], jobs = 
   const seenAssessmentIds = new Set();
   const knownJdTitles = buildKnownJdTitleSet(jobs);
   const jobById = buildJobIndexById(jobs);
+  const jobByTitle = buildJobIndexByTitle(jobs);
 
   for (const candidate of candidates || []) {
     const candidateMeta = decodeApplicantMetadata(candidate);
@@ -2525,7 +2559,7 @@ function buildCandidateSearchUniverse(candidates = [], assessments = [], jobs = 
     const linkedAssessment = getCanonicalLinkedAssessmentForCandidate(candidate, assessmentsById) || null;
     const isConverted = Boolean(linkedAssessment?.id);
     if (linkedAssessment?.id) seenAssessmentIds.add(String(linkedAssessment.id));
-    const resolvedJob = resolveJobForDashboard(candidate, linkedAssessment || {}, jobById);
+    const resolvedJob = resolveJobForDashboardLoose(candidate, linkedAssessment || {}, jobById, jobByTitle);
     const rawSource = String(candidate?.source || "").trim().toLowerCase();
     const isApplicantSource = rawSource === "website" || rawSource === "website_apply" || rawSource === "hosted_apply";
     const rawPosition = String(candidate?.assigned_jd_title || candidate?.assignedJdTitle || candidate?.jd_title || candidate?.jdTitle || "").trim();
@@ -2534,7 +2568,7 @@ function buildCandidateSearchUniverse(candidates = [], assessments = [], jobs = 
       id: String(candidate?.id || linkedAssessment?.id || "").trim(),
       candidateName: String(candidate?.name || linkedAssessment?.candidateName || "").trim(),
       role: String(candidate?.role || linkedAssessment?.currentDesignation || cachedCvResult?.currentDesignation || "").trim(),
-      position: isUnmappedApplicant ? rawPosition : getPositionLabel(candidate, linkedAssessment || {}, knownJdTitles),
+      position: isUnmappedApplicant ? rawPosition : (resolvedJob?.title || getPositionLabel(candidate, linkedAssessment || {}, knownJdTitles)),
       company: String(candidate?.company || linkedAssessment?.currentCompany || cachedCvResult?.currentCompany || "").trim(),
       totalExperience: String(candidate?.experience || linkedAssessment?.totalExperience || cachedCvResult?.exactTotalExperience || "").trim(),
       location: String(candidate?.location || linkedAssessment?.location || "").trim(),
@@ -2545,7 +2579,7 @@ function buildCandidateSearchUniverse(candidates = [], assessments = [], jobs = 
       highestEducation: String(candidate?.highest_education || linkedAssessment?.highestEducation || cachedCvResult?.highestEducation || "").trim(),
       skills: Array.isArray(candidate?.skills) ? candidate.skills : [],
       inferredTags: Array.isArray(candidateMeta?.inferredSearchTags) ? candidateMeta.inferredSearchTags : [],
-      clientName: isUnmappedApplicant ? "Unmapped candidates" : getClientLabel(candidate, linkedAssessment || {}),
+      clientName: isUnmappedApplicant ? "Unmapped candidates" : (resolvedJob?.clientName || getClientLabel(candidate, linkedAssessment || {})),
       recruiterName: getRecruiterLabel(candidate, linkedAssessment || {}),
       sourcedRecruiter: getRecruiterLabel(candidate, linkedAssessment || {}),
       ownerRecruiter: getOwnerRecruiterLabel(candidate, linkedAssessment || {}),
@@ -2585,6 +2619,7 @@ function buildCandidateSearchUniverse(candidates = [], assessments = [], jobs = 
     const assessmentId = String(assessment?.id || "").trim();
     if (!assessmentId || seenAssessmentIds.has(assessmentId)) continue;
     const assessmentPayload = assessment?.payload && typeof assessment.payload === "object" ? assessment.payload : {};
+    const resolvedJob = resolveJobForDashboardLoose({}, assessment || {}, jobById, jobByTitle);
     const assessmentScreeningAnswers = normalizeJsonObjectInput(
       assessment?.jdScreeningAnswers
         || assessment?.jd_screening_answers
@@ -2599,7 +2634,7 @@ function buildCandidateSearchUniverse(candidates = [], assessments = [], jobs = 
       id: assessmentId,
       candidateName: String(assessment?.candidateName || "").trim(),
       role: String(assessment?.currentDesignation || "").trim(),
-      position: getPositionLabel({}, assessment, knownJdTitles),
+      position: resolvedJob?.title || getPositionLabel({}, assessment, knownJdTitles),
       company: String(assessment?.currentCompany || "").trim(),
       totalExperience: String(assessment?.totalExperience || "").trim(),
       location: String(assessment?.location || "").trim(),
@@ -2610,7 +2645,7 @@ function buildCandidateSearchUniverse(candidates = [], assessments = [], jobs = 
       highestEducation: String(assessment?.highestEducation || "").trim(),
       skills: [],
       inferredTags: [],
-      clientName: getClientLabel({}, assessment),
+      clientName: resolvedJob?.clientName || getClientLabel({}, assessment),
       recruiterName: getRecruiterLabel({}, assessment),
       sourcedRecruiter: getRecruiterLabel({}, assessment),
       ownerRecruiter: getOwnerRecruiterLabel({}, assessment),
