@@ -2729,15 +2729,22 @@ function MultiSelectDropdown({ label, options, selected, onToggle, allowAll = tr
 
 function AssignModal({ open, applicant, users, jobs, onClose, onSave, title = "Assign Applicant", description = "Assign this record to a recruiter and JD.", nameKey = "candidateName", allowRecruiterSelect = true, lockedRecruiterName = "" }) {
   const [recruiterId, setRecruiterId] = useState("");
-  const [jdTitle, setJdTitle] = useState("");
+  const [jdId, setJdId] = useState("");
   const [status, setStatus] = useState("");
 
   useEffect(() => {
     if (!open) return;
     setRecruiterId(String(applicant?.assigned_to_user_id || applicant?.assignedToUserId || applicant?.assigned_to || "").trim());
-    setJdTitle(applicant?.jd_title || applicant?.jdTitle || "");
+    const existingJdId = String(applicant?.assigned_jd_id || applicant?.assignedJdId || "").trim();
+    if (existingJdId) {
+      setJdId(existingJdId);
+    } else {
+      const title = String(applicant?.assigned_jd_title || applicant?.assignedJdTitle || applicant?.jd_title || applicant?.jdTitle || "").trim();
+      const match = (Array.isArray(jobs) ? jobs : []).find((job) => String(job?.title || "").trim() === title) || null;
+      setJdId(match?.id ? String(match.id) : "");
+    }
     setStatus("");
-  }, [open, applicant?.id]);
+  }, [open, applicant?.id, jobs]);
 
   if (!open) return null;
 
@@ -2751,10 +2758,24 @@ function AssignModal({ open, applicant, users, jobs, onClose, onSave, title = "A
         ) : (
           <label><span>Recruiter</span><input value={lockedRecruiterName || "Current recruiter"} readOnly /></label>
         )}
-        <label><span>JD / role</span><select value={jdTitle} onChange={(e) => setJdTitle(e.target.value)}><option value="">Select JD / role</option>{jobs.map((job) => <option key={job.id} value={job.title}>{job.title}</option>)}</select></label>
+        <label><span>JD / role</span><select value={jdId} onChange={(e) => setJdId(e.target.value)}><option value="">Select JD / role</option>{jobs.map((job) => <option key={job.id} value={job.id}>{job.title}</option>)}</select></label>
         {status ? <div className="status">{status}</div> : null}
         <div className="button-row">
-          <button onClick={async () => { if ((allowRecruiterSelect && !recruiterId) || !jdTitle) { setStatus(allowRecruiterSelect ? "Select recruiter and JD first." : "Select JD first."); return; } setStatus("Saving assignment..."); try { await onSave({ recruiterId, jdTitle }); } catch (error) { setStatus(String(error?.message || error)); } }}>Save assignment</button>
+          <button onClick={async () => {
+            if ((allowRecruiterSelect && !recruiterId) || !jdId) {
+              setStatus(allowRecruiterSelect ? "Select recruiter and JD first." : "Select JD first.");
+              return;
+            }
+            const job = (Array.isArray(jobs) ? jobs : []).find((item) => String(item?.id || "") === String(jdId || "")) || null;
+            const jdTitle = String(job?.title || "").trim();
+            const clientName = String(job?.clientName || job?.client_name || "").trim();
+            setStatus("Saving assignment...");
+            try {
+              await onSave({ recruiterId, jdId, jdTitle, clientName });
+            } catch (error) {
+              setStatus(String(error?.message || error));
+            }
+          }}>Save assignment</button>
           <button className="ghost-btn" onClick={onClose}>Cancel</button>
         </div>
       </div>
@@ -5418,13 +5439,16 @@ function PortalApp({ token, onLogout }) {
     setStatus("applicants", "Applicant restored to active list.", "ok");
   }
 
-  async function saveApplicantAssignment({ recruiterId, jdTitle }) {
+  async function saveApplicantAssignment({ recruiterId, jdId, jdTitle, clientName }) {
     const user = (state.users || []).find((item) => String(item.id || "") === String(recruiterId || "")) || null;
     await api("/company/applicants/assign", token, "POST", {
       id: assignApplicantId,
       assignedToUserId: recruiterId,
       assignedToName: user?.name || "",
+      assignedJdId: jdId,
       assignedJdTitle: jdTitle,
+      clientName,
+      client_name: clientName,
       jdTitle
     });
     setAssignApplicantId("");
@@ -5477,14 +5501,33 @@ function PortalApp({ token, onLogout }) {
     setStatus("interview", `Loaded ${applicant.candidateName || "applicant"} into Interview Panel.`, "ok");
   }
 
-  async function saveCapturedAssignment({ recruiterId, jdTitle }) {
+  async function saveCapturedAssignment({ recruiterId, jdId, jdTitle, clientName }) {
     const isAdmin = String(state.user?.role || "").toLowerCase() === "admin";
     const effectiveRecruiterId = isAdmin ? String(recruiterId || "").trim() : String(state.user?.id || "").trim();
     const recruiter = (state.users || []).find((user) => String(user.id) === String(effectiveRecruiterId));
+    const nextAssigneeName = recruiter?.name || state.user?.name || "";
+    if (isAdmin) {
+      await api("/candidates/assign", token, "POST", {
+        id: assignCandidateId,
+        assignedToUserId: effectiveRecruiterId,
+        assignedToName: nextAssigneeName,
+        assignedJdId: jdId,
+        assignedJdTitle: jdTitle,
+        clientName,
+        client_name: clientName
+      });
+      await patchCandidateQuiet(assignCandidateId, { hidden_from_captured: false });
+      setAssignCandidateId("");
+      setStatus("captured", "Draft assigned to recruiter.", "ok");
+      return;
+    }
     await patchCandidate(assignCandidateId, {
       assigned_to_user_id: effectiveRecruiterId,
-      assigned_to_name: recruiter?.name || state.user?.name || "",
+      assigned_to_name: nextAssigneeName,
+      assigned_jd_id: jdId,
+      assigned_jd_title: jdTitle,
       jd_title: jdTitle,
+      client_name: clientName || "",
       // If a hidden/inactive note is reassigned, make it active for the new assignee.
       hidden_from_captured: false
     }, "Draft assigned to recruiter.");

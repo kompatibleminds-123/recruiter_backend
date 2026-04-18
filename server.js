@@ -5182,7 +5182,9 @@ const server = http.createServer(async (req, res) => {
         assigned_by_user_id: actor.id,
         assigned_by_name: actor.name,
         assigned_jd_id: body.assigned_jd_id || body.assignedJdId,
-        assigned_jd_title: body.assigned_jd_title || body.assignedJdTitle
+        assigned_jd_title: body.assigned_jd_title || body.assignedJdTitle,
+        jd_title: body.jd_title || body.jdTitle,
+        client_name: body.client_name || body.clientName
       }, { companyId: actor.companyId });
       sendJson(res, 200, { ok: true, result });
     } catch (error) {
@@ -6304,7 +6306,9 @@ const server = http.createServer(async (req, res) => {
         assigned_by_user_id: actor.id,
         assigned_by_name: actor.name,
         assigned_jd_id: body.assigned_jd_id || body.assignedJdId,
-        assigned_jd_title: body.assigned_jd_title || body.assignedJdTitle
+        assigned_jd_title: body.assigned_jd_title || body.assignedJdTitle,
+        jd_title: body.jd_title || body.jdTitle,
+        client_name: body.client_name || body.clientName
       }, { companyId: actor.companyId });
       sendJson(res, 200, { ok: true, result });
     } catch (error) {

@@ -734,6 +734,10 @@ async function assignCandidate(candidateId, assignment = {}, options = {}) {
 
   const assignedToUserId = String(assignment.assigned_to_user_id || assignment.assignedToUserId || "").trim();
   const assignedToName = String(assignment.assigned_to_name || assignment.assignedToName || "").trim();
+  const assignedJdId = String(assignment.assigned_jd_id || assignment.assignedJdId || "").trim();
+  const assignedJdTitle = String(assignment.assigned_jd_title || assignment.assignedJdTitle || "").trim();
+  const clientName = String(assignment.client_name || assignment.clientName || "").trim();
+  const jdTitle = String(assignment.jd_title || assignment.jdTitle || "").trim();
 
   if (!assignedToUserId || !assignedToName) {
     throw new Error("Assigned recruiter is required.");
@@ -744,8 +748,11 @@ async function assignCandidate(candidateId, assignment = {}, options = {}) {
     assigned_to_name: assignedToName,
     assigned_by_user_id: String(assignment.assigned_by_user_id || assignment.assignedByUserId || "").trim() || null,
     assigned_by_name: String(assignment.assigned_by_name || assignment.assignedByName || "").trim() || null,
-    assigned_jd_id: String(assignment.assigned_jd_id || assignment.assignedJdId || "").trim() || null,
-    assigned_jd_title: String(assignment.assigned_jd_title || assignment.assignedJdTitle || "").trim() || null,
+    assigned_jd_id: assignedJdId || null,
+    assigned_jd_title: assignedJdTitle || null,
+    // Keep the legacy display fields in sync so dashboards/search don't have to guess.
+    jd_title: (jdTitle || assignedJdTitle || null),
+    client_name: clientName || null,
     assigned_at: new Date().toISOString()
   }, options);
 }
