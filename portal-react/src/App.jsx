@@ -6493,7 +6493,7 @@ function PortalApp({ token, onLogout }) {
 	    { label: "Job description", value: String(jobDraft.jobDescription || "").trim() },
 	    { label: "Red flags", value: String(jobDraft.redFlags || "").trim() },
 	    { label: "Recruiter notes", value: String(jobDraft.recruiterNotes || "").trim() },
-	    { label: "Standard questions", value: String(jobDraft.standardQuestions || "").trim() }
+	    // Standard questions are internal-only and should not be exported in JD downloads.
 	  ].filter((item) => item.value);
 
 	  const body = sections.map((item) => `
@@ -6535,27 +6535,6 @@ function PortalApp({ token, onLogout }) {
 	  link.download = `${(jobDraft.title || "jd").replace(/[^\w\-]+/g, "-")}.doc`;
 	  link.click();
 	  URL.revokeObjectURL(url);
-	}
-
-	function downloadJobDraftPdf() {
-	  const html = buildJobDraftHtml();
-	  const win = window.open("", "_blank", "noopener,noreferrer");
-	  if (!win) {
-	    setStatus("jobs", "Popup blocked. Allow popups to export PDF.", "error");
-	    return;
-	  }
-	  win.document.open();
-	  win.document.write(html);
-	  win.document.close();
-	  setTimeout(() => {
-	    try {
-	      win.focus?.();
-	      win.print?.();
-	    } catch {
-	      // ignore
-	    }
-	  }, 350);
-	  setStatus("jobs", "PDF export opened. Use Save as PDF in print dialog.", "ok");
 	}
 
   function applySelectedJobToInterview() {
@@ -9287,7 +9266,6 @@ function PortalApp({ token, onLogout }) {
 	                  <button onClick={() => applySelectedJobToInterview()}>Apply generated JD</button>
 	                  <button onClick={() => generateJdFromText()}>Generate JD from text</button>
 	                  <button className="ghost-btn" onClick={() => downloadJobDraftWord()}>Download Word</button>
-	                  <button className="ghost-btn" onClick={() => downloadJobDraftPdf()}>Download PDF</button>
 	                  <button onClick={() => void saveJobDraft()}>{selectedJobId ? "Update JD" : "Save JD"}</button>
 	                  <button
 	                    className="ghost-btn"
