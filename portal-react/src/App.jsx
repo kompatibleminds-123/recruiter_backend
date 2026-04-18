@@ -4057,21 +4057,24 @@ function PortalApp({ token, onLogout }) {
 
 	function openLinkedinInSideWindow(url) {
 	  const normalized = normalizeLinkedinUrl(url);
-	  if (!normalized) return;
-	  if (!/linkedin\.com/i.test(normalized)) return;
+	  if (!normalized) {
+	    setStatus("workspace", "LinkedIn link not available for this candidate.", "error");
+	    return;
+	  }
+	  if (!/linkedin\.com/i.test(normalized)) {
+	    setStatus("workspace", "LinkedIn link is missing or invalid.", "error");
+	    return;
+	  }
 	  try {
 	    const width = 440;
 	    const height = Math.min(820, Math.max(560, (window.outerHeight || 900) - 140));
 	    const left = Math.max(0, (window.screenX || 0) + (window.outerWidth || 1200) - width - 20);
 	    const top = Math.max(0, (window.screenY || 0) + 40);
-	    const features = `popup=yes,width=${width},height=${height},left=${left},top=${top},noopener,noreferrer`;
-	    const existing = linkedinSideWindowRef.current;
-	    const win = existing && !existing.closed
-	      ? existing
-	      : window.open("about:blank", "linkedin_side_window", features);
+	    // Open directly to the destination URL (some browsers keep about:blank when navigation is set later).
+	    const features = `popup=yes,width=${width},height=${height},left=${left},top=${top},resizable=yes,scrollbars=yes`;
+	    const win = window.open(normalized, "linkedin_side_window", features);
 	    if (!win) return;
 	    linkedinSideWindowRef.current = win;
-	    win.location.href = normalized;
 	    win.focus?.();
 	  } catch {
 	    // Ignore popup errors / blockers.
