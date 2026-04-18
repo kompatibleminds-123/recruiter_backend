@@ -1567,6 +1567,19 @@ function buildDashboardSummary({ candidates = [], assessments = [], jobs = [], d
     addCandidateMetrics(byClient.get(clientLabel), candidate, effectiveAssessment, dateRange);
     addCandidateMetrics(byOwnerRecruiter.get(ownerRecruiterLabel).metrics, candidate, effectiveAssessment, dateRange);
     addRecruiterOwnershipMetrics(byOwnerRecruiter.get(ownerRecruiterLabel), ownerRecruiterLabel, candidate, effectiveAssessment, dateRange);
+
+    // Credit sourcing ("self sourced") to the recruiter who originally captured the candidate,
+    // even if the candidate is now assigned to someone else.
+    if (!isApplicant && capturedByLabel) {
+      const normalizedCapturedBy = capturedByLabel.trim();
+      if (normalizedCapturedBy) {
+        if (!byOwnerRecruiter.has(normalizedCapturedBy)) byOwnerRecruiter.set(normalizedCapturedBy, createDashboardRecruiterBucket());
+        const capturedBucket = byOwnerRecruiter.get(normalizedCapturedBy);
+        capturedBucket.ownership = capturedBucket.ownership && typeof capturedBucket.ownership === "object" ? capturedBucket.ownership : {};
+        // Keep this separate so UI can display "self sourced" as inclusive of credit.
+        capturedBucket.ownership.selfSourcedCredit = Number(capturedBucket.ownership.selfSourcedCredit || 0) + 1;
+      }
+    }
     if (positionLabel) {
       const matrixKey = `${clientLabel}|||${positionLabel}|||${ownerRecruiterLabel}`;
       const clientPositionKey = `${clientLabel}|||${positionLabel}`;
