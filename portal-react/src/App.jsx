@@ -67,8 +67,8 @@ const STANDALONE_NAV_ITEMS = [
   },
 	  exportPresetColumns: {
 	    compact_recruiter: "S.No.|s_no\nName|name\nPh|phone\nEmail|email\nCurrent Company|current_company\nCurrent Designation|current_designation\nTotal Experience|total_experience\nTenure in current company|current_org_tenure\nLocation|location\nReason of change|reason_of_change\nStatus|status\nCurrent CTC|current_ctc\nExpected CTC|expected_ctc\nNotice Period|notice_period\nOther Standard Questions|other_standard_questions\nRemarks|remarks\nLinkedIn|linkedin",
-	    client_tracker: "Client Name|client_name\nTarget Role / Open Position|jd_title\nKey Skills Required|key_skills_required\nRecruiter Name|recruiter_name\nDate Added|date_added\nCandidate Name|name\nStatus|status\nContact No.|phone\nEmail ID|email\nLocation|location\nCurrent Company|current_company\nCurrent Designation|current_designation\nDomain / Industry|domain_industry\nWork Exp (Total years/months)|total_experience\nHighest Education|highest_education\nCurrent CTC|current_ctc\nExpected CTC|expected_ctc\nNotice Period|notice_period\nRemarks / Notes|remarks\nLinkedIn Profile Link (Optional)|linkedin\nCV Link|cv_link",
-	    attentive_tracker: "S.No.|s_no\nName|name\nStatus|assessment_status\nPh|phone\nEmail|email\nLocation|location\nCurrent Company|current_company\nCurrent Designation|current_designation\nWork Experience|total_experience\nHighest Education|highest_education\nCurrent CTC|current_ctc\nExpected CTC|expected_ctc\nNotice Period|notice_period\nScreening remarks|screening_remarks\nLinkedIn|linkedin\nCV Link|cv_link",
+	    client_tracker: "Client Name|client_name\nTarget Role / Open Position|jd_title\nKey Skills Required|key_skills_required\nRecruiter Name|recruiter_name\nDate Added|date_added\nCandidate Name|name\nStatus|status\nContact No.|phone\nEmail ID|email\nLocation|location\nCurrent Company|current_company\nCurrent Designation|current_designation\nDomain / Industry|domain_industry\nWork Exp (Total years/months)|total_experience\nHighest Education|highest_education\nCurrent CTC|current_ctc\nExpected CTC|expected_ctc\nNotice Period|notice_period\nRemarks / Notes|remarks\nLinkedIn Profile Link (Optional)|linkedin",
+	    attentive_tracker: "S.No.|s_no\nName|name\nStatus|assessment_status\nPh|phone\nEmail|email\nLocation|location\nCurrent Company|current_company\nCurrent Designation|current_designation\nWork Experience|total_experience\nHighest Education|highest_education\nCurrent CTC|current_ctc\nExpected CTC|expected_ctc\nNotice Period|notice_period\nScreening remarks|screening_remarks\nLinkedIn|linkedin",
 	    client_submission: "S.No.|s_no\nName|name\nPh|phone\nEmail|email\nCurrent Company|current_company\nCurrent Designation|current_designation\nTotal Experience|total_experience\nStrong Points|other_pointers\nRemarks|remarks",
 	    screening_focus: "S.No.|s_no\nName|name\nCurrent CTC|current_ctc\nExpected CTC|expected_ctc\nNotice Period|notice_period\nScreening Answers|other_standard_questions\nRemarks|remarks"
 	  },
@@ -106,18 +106,7 @@ const STANDALONE_NAV_ITEMS = [
 	    const beforeCount = migratedLines.length;
 	    const cleanedLines = migratedLines.filter((line) => !String(line).includes("|reason_of_change_indicator"));
 	    if (cleanedLines.length !== beforeCount) didChange = true;
-	    if (!cleanedLines.some((line) => /\|\s*cv_link\s*$/i.test(line))) {
-	      cleanedLines.push("CV Link|cv_link");
-	      didChange = true;
-	    }
 	    if (didChange) presetColumns.attentive_tracker = cleanedLines.join("\n");
-	  }
-	  const clientTracker = String(presetColumns.client_tracker || "").trim();
-	  if (clientTracker) {
-	    const lines = clientTracker.split(/\r?\n/).map((line) => String(line || "").trim()).filter(Boolean);
-	    if (!lines.some((line) => /\|\s*cv_link\s*$/i.test(line))) {
-	      presetColumns.client_tracker = [...lines, "CV Link|cv_link"].join("\n");
-	    }
 	  }
 	  next.exportPresetColumns = presetColumns;
 	  return next;
