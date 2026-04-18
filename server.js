@@ -247,7 +247,6 @@ function buildSharedCandidateProfile({ candidate = {}, assessment = null } = {})
     || draftPayload.reasonForChange
     || ""
   ).trim() || String(screeningAnswers["Reason of change"] || screeningAnswers["reason of change"] || "").trim();
-  const experienceTimeline = String(a?.experienceTimeline || a?.experience_timeline || draftPayload.experienceTimeline || "").trim();
   const otherPointers = String(a?.otherPointers || c.other_pointers || draftPayload.otherPointers || "").trim();
   const recruiterNotes = String(a?.recruiterNotes || c.recruiter_context_notes || draftPayload.recruiterNotes || "").trim();
   const callbackNotes = String(a?.callbackNotes || c.notes || draftPayload.callbackNotes || "").trim();
@@ -300,13 +299,6 @@ function buildSharedCandidateProfile({ candidate = {}, assessment = null } = {})
       rows: [{ label: "Screening remarks", value: screeningRemarks || "-" }]
     }
   ];
-
-  if (experienceTimeline) {
-    sections.push({
-      title: "Previous Experience (timeline)",
-      rows: [{ label: "Experience timeline", value: experienceTimeline }]
-    });
-  }
 
   const notesBlock = [recruiterNotes, callbackNotes, otherPointers].map((v) => String(v || "").trim()).filter(Boolean).join("\n\n");
   if (notesBlock) {

@@ -9067,17 +9067,7 @@ function PortalApp({ token, onLogout }) {
                   <label className="full"><span>Captured notes</span><textarea value={interviewForm.callbackNotes} onChange={(e) => setInterviewForm((c) => ({ ...c, callbackNotes: e.target.value }))} /></label>
                   <label className="full"><span>Recruiter notes</span><textarea value={interviewForm.recruiterNotes} onChange={(e) => setInterviewForm((c) => ({ ...c, recruiterNotes: e.target.value }))} /></label>
                   <label className="full"><span>Other pointers</span><textarea value={interviewForm.otherPointers} onChange={(e) => setInterviewForm((c) => ({ ...c, otherPointers: e.target.value }))} /></label>
-                  {isSettingsAdmin ? (
-                    <label className="full">
-                      <span>Experience timeline (admin)</span>
-                      <textarea
-                        value={interviewForm.experienceTimeline}
-                        onChange={(e) => setInterviewForm((c) => ({ ...c, experienceTimeline: e.target.value }))}
-                        placeholder="One line per role. Suggested: Title | Company | Jan 2022 - Present | 2 yrs"
-                      />
-                      <span className="field-help">This is used for candidate card exports and for showing last roles without re-parsing the CV.</span>
-                    </label>
-                  ) : null}
+                  {/* Experience timeline removed from recruiter UI (not reliable; CV already contains this). */}
                   {(String(interviewForm.cautiousIndicators || "").trim() || editCautiousIndicators) ? (
                     <label className="full">
                       <span>Cautious indicators to check</span>
