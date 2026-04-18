@@ -1114,9 +1114,14 @@ function getRecruiterLabel(candidate = {}, assessment = {}) {
 }
 
 function getOwnerRecruiterLabel(candidate = {}, assessment = {}) {
+  const source = String(candidate?.source || "").trim().toLowerCase();
+  const isApplicant = source === "website_apply" || source === "hosted_apply";
   const assigned = String(candidate.assigned_to_name || candidate.assignedToName || "").trim();
   if (assigned) return assigned;
-  // For many flows (extension capture, website apply), assigned_to_name can be empty even though
+  // Applicants often arrive without an assigned recruiter. Avoid showing "Website Apply" as a
+  // pseudo-recruiter bucket; treat them as unassigned until an admin maps/assigns them.
+  if (isApplicant) return "Unassigned";
+  // For many flows (extension capture), assigned_to_name can be empty even though
   // the candidate is clearly owned by a recruiter. Use recruiter_name / assessment recruiterName
   // as a safe fallback so dashboards and filters behave consistently.
   const owner =
@@ -1481,11 +1486,22 @@ function buildDashboardSummary({ candidates = [], assessments = [], jobs = [], d
   for (const candidate of Array.isArray(candidates) ? candidates : []) {
     const linkedAssessment = getCanonicalLinkedAssessmentForCandidate(candidate, assessmentsById) || null;
     const resolvedJob = resolveJobForDashboard(candidate, linkedAssessment || {}, jobById);
-    const clientLabel = resolvedJob?.clientName || getClientLabel(candidate, linkedAssessment || {});
+    const source = String(candidate?.source || "").trim().toLowerCase();
+    const isApplicant = source === "website_apply" || source === "hosted_apply";
+    const rawPosition = String(candidate?.assigned_jd_title || candidate?.assignedJdTitle || candidate?.jd_title || candidate?.jdTitle || "").trim();
+    // Website/hosted applicants can refer to jobs that are no longer in the system.
+    // Keep them visible, but group them under a clear "Unmapped candidates" bucket so
+    // they don't pollute real client breakdowns.
+    const isUnmappedApplicant = isApplicant && !resolvedJob && Boolean(rawPosition);
+    const clientLabel = isUnmappedApplicant
+      ? "Unmapped candidates"
+      : (resolvedJob?.clientName || getClientLabel(candidate, linkedAssessment || {}));
     if (clientFilter && clientLabel !== clientFilter) continue;
     const ownerRecruiterLabel = getOwnerRecruiterLabel(candidate, linkedAssessment || {});
     if (recruiterFilter && ownerRecruiterLabel !== recruiterFilter) continue;
-    const positionLabel = resolvedJob?.title || getPositionLabel(candidate, linkedAssessment || {}, knownJdTitles);
+    const positionLabel = isUnmappedApplicant
+      ? rawPosition
+      : (resolvedJob?.title || getPositionLabel(candidate, linkedAssessment || {}, knownJdTitles));
     const dateRange = { from: dateFrom, to: dateTo };
     // Dedupe conversion metrics by assessment id (legacy duplicates can exist).
     let effectiveAssessment = linkedAssessment;
