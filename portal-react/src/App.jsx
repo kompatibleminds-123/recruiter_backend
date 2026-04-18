@@ -7317,15 +7317,50 @@ function PortalApp({ token, onLogout }) {
     setStatus("jobs", `Removed shortcut ${key}.`, "ok");
   }
 
+  async function copyInterviewTracker() {
+    const row = {
+      index: 1,
+      s_no: 1,
+      name: interviewForm.candidateName || "",
+      phone: interviewForm.phoneNumber || "",
+      email: interviewForm.emailId || "",
+      location: interviewForm.location || "",
+      client_name: interviewForm.clientName || "",
+      jd_title: interviewForm.jdTitle || "",
+      current_company: interviewForm.currentCompany || "",
+      current_designation: interviewForm.currentDesignation || "",
+      total_experience: interviewForm.totalExperience || "",
+      relevant_experience: interviewForm.relevantExperience || "",
+      highest_education: interviewForm.highestEducation || "",
+      current_ctc: interviewForm.currentCtc || "",
+      expected_ctc: interviewForm.expectedCtc || "",
+      notice_period: interviewForm.noticePeriod || "",
+      lwd_or_doj: interviewForm.lwdOrDoj || "",
+      offer_in_hand: interviewForm.offerInHand || "",
+      reason_of_change: interviewForm.reasonForChange || "",
+      recruiter_context_notes: interviewForm.recruiterNotes || "",
+      other_pointers: interviewForm.otherPointers || "",
+      other_standard_questions: interviewForm.callbackNotes || "",
+      screening_answers: interviewForm.jdScreeningAnswers && typeof interviewForm.jdScreeningAnswers === "object"
+        ? interviewForm.jdScreeningAnswers
+        : {},
+      linkedin: interviewForm.linkedin || "",
+      status: interviewForm.candidateStatus || "",
+      assessment_status: interviewForm.candidateStatus || ""
+    };
+
+    const preset = buildCapturedExcelRows([row], activeCopyPresetId || copySettings.excelPreset, copySettings);
+    const lines = [
+      preset.headers.join("\t"),
+      ...preset.rows.map((cells) => cells.map((cell) => String(cell || "").replace(/\t/g, " ").replace(/\r?\n/g, " ")).join("\t"))
+    ].join("\n");
+    await copyText(lines);
+    setStatus("interview", "Tracker copied in Excel format.", "ok");
+  }
+
   function copyInterviewResult() {
-    const text = [
-      interviewForm.candidateName,
-      interviewForm.jdTitle ? `JD: ${interviewForm.jdTitle}` : "",
-      interviewForm.clientName ? `Client: ${interviewForm.clientName}` : "",
-      interviewForm.recruiterNotes ? `Recruiter notes: ${interviewForm.recruiterNotes}` : "",
-      interviewForm.callbackNotes ? `Callback notes: ${interviewForm.callbackNotes}` : ""
-    ].filter(Boolean).join("\n");
-    return copyText(text).then(() => setStatus("interview", "Interview result copied.", "ok"));
+    // Backward-compat: older UI used "Copy result". Keep it as an alias.
+    return copyInterviewTracker();
   }
 
   function copyInterviewEmail() {
@@ -9023,20 +9058,24 @@ function PortalApp({ token, onLogout }) {
                 </div>
               </Section>
 
-              <Section kicker="Step 5" title="Final Excel Output">
-                <p className="muted">Save the assessment and export recruiter-sheet format.</p>
-                {statuses.interview ? <div className={`status ${statuses.interviewKind || ""}`}>{statuses.interview}</div> : null}
-                <div className="button-row">
-                  <button onClick={() => void copyInterviewResult()}>Copy result</button>
-                  <button onClick={() => copyInterviewWhatsapp()}>Copy WhatsApp</button>
-                  <button onClick={() => void copyInterviewEmail()}>Copy Email</button>
-                  {interviewMeta.candidateId && !interviewMeta.assessmentId ? <button onClick={() => void saveInterviewDraft()}>Save draft</button> : null}
-                  <button onClick={() => void saveAssessment()}>{interviewMeta.assessmentId ? "Save assessment" : "Create assessment"}</button>
-                  <button onClick={() => sendInterviewToSheets()}>Send to Sheets</button>
-                  <button onClick={() => exportInterviewAll()}>Export all</button>
-                    <button className="ghost-btn" onClick={() => { setEditCautiousIndicators(false); setInterviewMeta({ candidateId: "", assessmentId: "" }); setInterviewForm({ candidateName: "", phoneNumber: "", emailId: "", linkedin: "", location: "", currentCtc: "", expectedCtc: "", noticePeriod: "", offerInHand: "", lwdOrDoj: "", currentCompany: "", currentDesignation: "", totalExperience: "", relevantExperience: "", currentOrgTenure: "", experienceTimeline: "", reasonForChange: "", cautiousIndicators: "", clientName: "", jdTitle: "", pipelineStage: "Under Interview Process", candidateStatus: "Screening in progress", followUpAt: "", interviewAt: "", recruiterNotes: "", callbackNotes: "", otherPointers: "", tags: "", jdScreeningAnswers: {}, cvAnalysis: null, cvAnalysisApplied: false, statusHistory: [] }); setStatus("interview", ""); }}>Clear draft</button>
-                </div>
-              </Section>
+	              <Section kicker="Step 5" title="Final Excel Output">
+	                <p className="muted">Save the assessment and export recruiter-sheet format.</p>
+	                {statuses.interview ? <div className={`status ${statuses.interviewKind || ""}`}>{statuses.interview}</div> : null}
+	                <div className="button-row">
+	                  <label className="copy-preset-control">
+	                    <span>Copy preset</span>
+	                    <select value={activeCopyPresetId} onChange={(e) => setActiveCopyPresetId(e.target.value)}>
+	                      {exportPresetOptions.map((preset) => <option key={preset.id} value={preset.id}>{preset.label}</option>)}
+	                    </select>
+	                  </label>
+	                  <button onClick={() => void copyInterviewTracker()}>Copy tracker</button>
+	                  {interviewMeta.candidateId && !interviewMeta.assessmentId ? <button onClick={() => void saveInterviewDraft()}>Save draft</button> : null}
+	                  <button onClick={() => void saveAssessment()}>{interviewMeta.assessmentId ? "Save assessment" : "Create assessment"}</button>
+	                  <button onClick={() => sendInterviewToSheets()}>Send to Sheets</button>
+	                  <button onClick={() => exportInterviewAll()}>Export all</button>
+	                    <button className="ghost-btn" onClick={() => { setEditCautiousIndicators(false); setInterviewMeta({ candidateId: "", assessmentId: "" }); setInterviewForm({ candidateName: "", phoneNumber: "", emailId: "", linkedin: "", location: "", currentCtc: "", expectedCtc: "", noticePeriod: "", offerInHand: "", lwdOrDoj: "", currentCompany: "", currentDesignation: "", totalExperience: "", relevantExperience: "", currentOrgTenure: "", experienceTimeline: "", reasonForChange: "", cautiousIndicators: "", clientName: "", jdTitle: "", pipelineStage: "Under Interview Process", candidateStatus: "Screening in progress", followUpAt: "", interviewAt: "", recruiterNotes: "", callbackNotes: "", otherPointers: "", tags: "", jdScreeningAnswers: {}, cvAnalysis: null, cvAnalysisApplied: false, statusHistory: [] }); setStatus("interview", ""); }}>Clear draft</button>
+	                </div>
+	              </Section>
             </div>
           } />
 
