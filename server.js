@@ -1111,6 +1111,30 @@ function buildKnownJdTitleSet(jobs = []) {
   );
 }
 
+function buildJobIndexById(jobs = []) {
+  const map = new Map();
+  (Array.isArray(jobs) ? jobs : []).forEach((job) => {
+    const id = String(job?.id || "").trim();
+    if (!id) return;
+    map.set(id, {
+      id,
+      title: String(job?.title || job?.jdTitle || job?.jd_title || "").trim(),
+      clientName: String(job?.clientName || job?.client_name || "").trim()
+    });
+  });
+  return map;
+}
+
+function resolveJobForDashboard(candidate = {}, assessment = {}, jobById = null) {
+  if (!(jobById instanceof Map)) return null;
+  const candidateJobId = String(candidate?.assigned_jd_id || candidate?.assignedJdId || "").trim();
+  const assessmentPayload = assessment?.payload && typeof assessment.payload === "object" ? assessment.payload : {};
+  const assessmentJobId = String(assessment?.jobId || assessment?.job_id || assessmentPayload?.jobId || assessmentPayload?.job_id || "").trim();
+  const id = candidateJobId || assessmentJobId;
+  if (!id) return null;
+  return jobById.get(id) || null;
+}
+
 function getPositionLabel(candidate = {}, assessment = {}, knownJdTitles = null) {
   const candidates = [
     String(candidate.assigned_jd_title || candidate.assignedJdTitle || "").trim(),
@@ -1329,6 +1353,25 @@ function addCandidateMetrics(target, candidate, linkedAssessment, dateRange = {}
   return changed;
 }
 
+function addAssessmentOnlyMetrics(target, assessment, dateRange = {}) {
+  if (!assessment) return false;
+  const convertedAt = getCandidateConvertedAt({}, assessment || {});
+  if (!isDateWithinRange(convertedAt, dateRange.from, dateRange.to)) return false;
+  incrementDashboardMetric(target, "converted");
+  const bucket = getAssessmentLifecycleBucket(assessment || {});
+  if (isInterviewAlignedStatus(assessment?.candidateStatus || assessment?.candidate_status || assessment?.status || "")) {
+    incrementDashboardMetric(target, "under_interview_process");
+  }
+  if (bucket === "hold") incrementDashboardMetric(target, "hold");
+  if (bucket === "rejected") incrementDashboardMetric(target, "rejected");
+  if (bucket === "duplicate") incrementDashboardMetric(target, "duplicate");
+  if (bucket === "dropped") incrementDashboardMetric(target, "dropped");
+  if (bucket === "shortlisted") incrementDashboardMetric(target, "shortlisted");
+  if (bucket === "offered") incrementDashboardMetric(target, "offered");
+  if (bucket === "joined") incrementDashboardMetric(target, "joined");
+  return true;
+}
+
 function getCanonicalLinkedAssessmentForCandidate(candidate = {}, assessmentsById = null) {
   if (!(assessmentsById instanceof Map)) return null;
   const assessmentId = String(candidate?.assessment_id || candidate?.assessmentId || "").trim();
@@ -1406,6 +1449,7 @@ function buildDashboardSummary({ candidates = [], assessments = [], jobs = [], d
   const byClientRecruiter = new Map();
   const byClientPosition = new Map();
   const knownJdTitles = buildKnownJdTitleSet(jobs);
+  const jobById = buildJobIndexById(jobs);
   const assessmentsById = new Map(
     (Array.isArray(assessments) ? assessments : []).map((item) => [String(item?.id || "").trim(), item])
   );
@@ -1414,11 +1458,12 @@ function buildDashboardSummary({ candidates = [], assessments = [], jobs = [], d
 
   for (const candidate of Array.isArray(candidates) ? candidates : []) {
     const linkedAssessment = getCanonicalLinkedAssessmentForCandidate(candidate, assessmentsById) || null;
-    const clientLabel = getClientLabel(candidate, linkedAssessment || {});
+    const resolvedJob = resolveJobForDashboard(candidate, linkedAssessment || {}, jobById);
+    const clientLabel = resolvedJob?.clientName || getClientLabel(candidate, linkedAssessment || {});
     if (clientFilter && clientLabel !== clientFilter) continue;
     const ownerRecruiterLabel = getOwnerRecruiterLabel(candidate, linkedAssessment || {});
     if (recruiterFilter && ownerRecruiterLabel !== recruiterFilter) continue;
-    const positionLabel = getPositionLabel(candidate, linkedAssessment || {}, knownJdTitles);
+    const positionLabel = resolvedJob?.title || getPositionLabel(candidate, linkedAssessment || {}, knownJdTitles);
     const dateRange = { from: dateFrom, to: dateTo };
     // Dedupe conversion metrics by assessment id (legacy duplicates can exist).
     let effectiveAssessment = linkedAssessment;
@@ -1453,6 +1498,43 @@ function buildDashboardSummary({ candidates = [], assessments = [], jobs = [], d
       }
       addCandidateMetrics(byClientRecruiter.get(matrixKey).metrics, candidate, effectiveAssessment, dateRange);
       addCandidateMetrics(byClientPosition.get(clientPositionKey).metrics, candidate, effectiveAssessment, dateRange);
+    }
+  }
+
+  // Include assessments that are not canonically linked to a candidate row (assessment-only / legacy).
+  for (const assessment of Array.isArray(assessments) ? assessments : []) {
+    const assessmentId = String(assessment?.id || "").trim();
+    if (!assessmentId || countedAssessmentIds.has(assessmentId)) continue;
+    const resolvedJob = resolveJobForDashboard({}, assessment || {}, jobById);
+    const clientLabel = resolvedJob?.clientName || getClientLabel({}, assessment || {});
+    if (clientFilter && clientLabel !== clientFilter) continue;
+    const ownerRecruiterLabel = getOwnerRecruiterLabel({}, assessment || {});
+    if (recruiterFilter && ownerRecruiterLabel !== recruiterFilter) continue;
+    const positionLabel = resolvedJob?.title || getPositionLabel({}, assessment || {}, knownJdTitles);
+    const dateRange = { from: dateFrom, to: dateTo };
+    const contributes = addAssessmentOnlyMetrics(overall, assessment, dateRange);
+    if (!contributes) continue;
+    countedAssessmentIds.add(assessmentId);
+    if (!byClient.has(clientLabel)) byClient.set(clientLabel, createDashboardBucket());
+    if (!byOwnerRecruiter.has(ownerRecruiterLabel)) byOwnerRecruiter.set(ownerRecruiterLabel, createDashboardRecruiterBucket());
+    addAssessmentOnlyMetrics(byClient.get(clientLabel), assessment, dateRange);
+    addAssessmentOnlyMetrics(byOwnerRecruiter.get(ownerRecruiterLabel).metrics, assessment, dateRange);
+    if (positionLabel) {
+      const matrixKey = `${clientLabel}|||${positionLabel}|||${ownerRecruiterLabel}`;
+      const clientPositionKey = `${clientLabel}|||${positionLabel}`;
+      if (!byClientRecruiter.has(matrixKey)) {
+        byClientRecruiter.set(matrixKey, {
+          clientLabel,
+          positionLabel,
+          recruiterLabel: ownerRecruiterLabel,
+          metrics: createDashboardBucket()
+        });
+      }
+      if (!byClientPosition.has(clientPositionKey)) {
+        byClientPosition.set(clientPositionKey, { clientLabel, positionLabel, metrics: createDashboardBucket() });
+      }
+      addAssessmentOnlyMetrics(byClientRecruiter.get(matrixKey).metrics, assessment, dateRange);
+      addAssessmentOnlyMetrics(byClientPosition.get(clientPositionKey).metrics, assessment, dateRange);
     }
   }
 
