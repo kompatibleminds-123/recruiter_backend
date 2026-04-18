@@ -6789,13 +6789,19 @@ function PortalApp({ token, onLogout }) {
   }
 
   async function openDashboardDrilldown({ title, metric, groupType, params = {} }) {
+    const effectiveClientFilter = groupType === "client" || groupType === "clientPosition" || groupType === "position" || groupType === "clientPositionOwner" || groupType === "recruiter_position"
+      ? (params.clientLabel || "")
+      : (dashboardFilters.clientLabel || "");
+    const effectiveRecruiterFilter = groupType === "ownerRecruiter" || groupType === "recruiter" || groupType === "clientPositionOwner" || groupType === "recruiter_position"
+      ? (params.recruiterLabel || "")
+      : (dashboardFilters.recruiterLabel || "");
     const query = new URLSearchParams({
       metric,
       groupType,
       dateFrom: dashboardFilters.dateFrom || "",
       dateTo: dashboardFilters.dateTo || "",
-      clientFilter: dashboardFilters.clientLabel || "",
-      recruiterFilter: dashboardFilters.recruiterLabel || "",
+      clientFilter: effectiveClientFilter || "",
+      recruiterFilter: effectiveRecruiterFilter || "",
       clientLabel: params.clientLabel || "",
       recruiterLabel: params.recruiterLabel || "",
       positionLabel: params.positionLabel || ""
