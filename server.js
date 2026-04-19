@@ -2848,6 +2848,13 @@ function itemMatchesDashboardMetric(item, metric, dateFrom = "", dateTo = "") {
   const isSharedAssessment = item?.sourceType === "captured_and_converted" && hasLinkedAssessment;
   const rawSource = String(item?.raw?.candidate?.source || item?.source || "").trim().toLowerCase();
   const isApplicantSource = rawSource === "website" || rawSource === "website_apply" || rawSource === "hosted_apply" || rawSource === "google_sheet";
+  if (metric === "all") {
+    if (!dateFrom && !dateTo) return true;
+    return (
+      isDateWithinRange(item.createdAt, dateFrom, dateTo) ||
+      isDateWithinRange(item.sharedAt, dateFrom, dateTo)
+    );
+  }
   if (metric === "sourced") {
     return !isApplicantSource && isDateWithinRange(item.createdAt, dateFrom, dateTo);
   }

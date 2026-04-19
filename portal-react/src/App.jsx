@@ -8388,7 +8388,7 @@ function PortalApp({ token, onLogout }) {
                             <button
                               key={`${row.clientLabel}-${row.positionLabel}-chip`}
                               className="dashboard-position-chip"
-                              onClick={() => void openDashboardDrilldown({ title: `${group.label} | ${row.positionLabel}`, metric: "sourced", groupType: "position", params: { clientLabel: group.label, positionLabel: row.positionLabel } })}
+                              onClick={() => void openDashboardDrilldown({ title: `${group.label} | ${row.positionLabel}`, metric: "all", groupType: "position", params: { clientLabel: group.label, positionLabel: row.positionLabel } })}
                             >
                               <span className="dashboard-position-chip__title">{row.positionLabel}</span>
                               <span className="dashboard-position-chip__meta">
