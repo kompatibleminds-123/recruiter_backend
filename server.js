@@ -6310,6 +6310,12 @@ const server = http.createServer(async (req, res) => {
       const actor = await requireSessionUser(getBearerToken(req));
       const body = await readJsonBody(req);
       const candidate = sanitizeCandidateSavePayload(body.candidate || body || {}, actor);
+      // Always keep a single "current owner". If caller didn't choose an assignee,
+      // default to the current actor (admin can later assign to team).
+      if (!String(candidate.assigned_to_user_id || "").trim() && !String(candidate.assigned_to_name || "").trim()) {
+        candidate.assigned_to_user_id = actor.id;
+        candidate.assigned_to_name = actor.name;
+      }
       const duplicate = await findDuplicateCandidate(candidate, { companyId: actor.companyId });
       if (duplicate) {
         sendJson(res, 200, {
