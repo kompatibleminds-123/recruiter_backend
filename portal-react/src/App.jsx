@@ -3746,6 +3746,46 @@ function ClientProfileModal({ open, item, onClose, copySettings = DEFAULT_COPY_S
   );
 }
 
+function JdEmailModal({ open, jobs, value, onChange, onClose, onSend, busy = false }) {
+  if (!open) return null;
+  const jobOptions = Array.isArray(jobs) ? jobs : [];
+  return (
+    <div className="overlay" onClick={onClose}>
+      <div className="overlay-card" onClick={(e) => e.stopPropagation()}>
+        <h3>Send JD Email</h3>
+        <p className="muted">Sends from your configured SMTP (Settings → Email settings). Use Zoho app password.</p>
+        <div className="form-grid">
+          <label className="full">
+            <span>To</span>
+            <input value={value.to} onChange={(e) => onChange("to", e.target.value)} placeholder="candidate@example.com" />
+          </label>
+          <label className="full">
+            <span>JD / role</span>
+            <select value={value.jobId} onChange={(e) => onChange("jobId", e.target.value)}>
+              <option value="">Select JD / role</option>
+              {jobOptions.map((job) => (
+                <option key={job.id} value={job.id}>{job.title || "Untitled role"}</option>
+              ))}
+            </select>
+          </label>
+          <label className="full">
+            <span>Subject</span>
+            <input value={value.subject} onChange={(e) => onChange("subject", e.target.value)} placeholder="JD: ..." />
+          </label>
+          <label className="full">
+            <span>Intro message (optional)</span>
+            <textarea rows={5} value={value.introText} onChange={(e) => onChange("introText", e.target.value)} placeholder="Hi, sharing the JD for your reference..." />
+          </label>
+        </div>
+        <div className="button-row">
+          <button disabled={busy} onClick={onSend}>{busy ? "Sending..." : "Send email"}</button>
+          <button className="ghost-btn" disabled={busy} onClick={onClose}>Cancel</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 const DASHBOARD_FILTER_STORAGE_KEY = "recruitdesk_portal_dashboard_filters_v1";
 
 function PortalApp({ token, onLogout }) {
@@ -4001,10 +4041,12 @@ function PortalApp({ token, onLogout }) {
     cvAnalysis: null,
     cvAnalysisApplied: false
   });
-  const [jdSharePanelOpen, setJdSharePanelOpen] = useState(false);
-  const [jdShareTo, setJdShareTo] = useState("");
-  const [jdShareSubject, setJdShareSubject] = useState("");
-  const [jdShareIntro, setJdShareIntro] = useState("");
+  const [smtpSettings, setSmtpSettings] = useState({ host: "", port: 587, secure: false, user: "", from: "", pass: "", hasPassword: false });
+  const [smtpSettingsLoaded, setSmtpSettingsLoaded] = useState(false);
+  const [smtpSettingsKeepPass, setSmtpSettingsKeepPass] = useState(true);
+
+  const [jdEmailModal, setJdEmailModal] = useState({ open: false, candidate: null, to: "", subject: "", introText: "", jobId: "" });
+  const [jdEmailBusy, setJdEmailBusy] = useState(false);
 
   const isAssessmentArchived = (assessment) => {
     if (!assessment) return false;
@@ -4018,6 +4060,11 @@ function PortalApp({ token, onLogout }) {
     // Archived assessments should not be selected for client share.
     setSelectedAssessmentIds([]);
   }, [assessmentLane]);
+
+  useEffect(() => {
+    // Load per-recruiter SMTP settings when user opens Settings.
+    if (location?.pathname === "/settings") void loadSmtpSettingsOnce();
+  }, [location?.pathname]);
 
   useEffect(() => {
     if (!openAssessmentMoreId) return;
@@ -6990,31 +7037,100 @@ function PortalApp({ token, onLogout }) {
     }
   }
 
-  async function sendJobDraftEmail() {
-    const jobId = String(selectedJobId || jobDraft.id || "").trim();
-    const to = String(jdShareTo || "").trim();
-    if (!jobId) {
-      setStatus("jobs", "Select a JD first.", "error");
-      return;
-    }
-    if (!to) {
-      setStatus("jobs", "Enter candidate email.", "error");
-      return;
-    }
-    setStatus("jobs", "Sending JD email...");
+  async function loadSmtpSettingsOnce() {
+    if (smtpSettingsLoaded) return;
     try {
-      const subject = String(jdShareSubject || "").trim() || `JD: ${String(jobDraft.title || "Job Description").trim()}`;
+      const result = await api("/company/email-settings", token);
+      setSmtpSettings((current) => ({
+        ...current,
+        host: String(result?.host || "").trim(),
+        port: Number(result?.port || 587),
+        secure: Boolean(result?.secure),
+        user: String(result?.user || "").trim(),
+        from: String(result?.from || "").trim(),
+        hasPassword: Boolean(result?.hasPassword),
+        pass: ""
+      }));
+      setSmtpSettingsKeepPass(Boolean(result?.hasPassword));
+    } catch (error) {
+      // Settings are optional; show errors only when user tries to save.
+    } finally {
+      setSmtpSettingsLoaded(true);
+    }
+  }
+
+  async function saveSmtpSettings() {
+    setStatus("settings", "Saving email settings...");
+    try {
+      await api("/company/email-settings", token, "POST", {
+        settings: {
+          host: smtpSettings.host,
+          port: smtpSettings.port,
+          secure: smtpSettings.secure,
+          user: smtpSettings.user,
+          from: smtpSettings.from,
+          pass: smtpSettings.pass,
+          keepPass: smtpSettingsKeepPass
+        }
+      });
+      setSmtpSettings((c) => ({ ...c, pass: "", hasPassword: true }));
+      setSmtpSettingsKeepPass(true);
+      setStatus("settings", "Email settings saved.", "ok");
+    } catch (error) {
+      setStatus("settings", `Email settings failed: ${String(error?.message || error)}`, "error");
+    }
+  }
+
+  function openJdEmailModalForCandidate(candidate, defaultJobId = "") {
+    const candidateEmail = String(candidate?.email || candidate?.email_id || candidate?.emailId || "").trim() || String(candidate?.raw?.candidate?.email || "").trim();
+    const assignedJobId = String(
+      candidate?.assigned_jd_id ||
+      candidate?.assignedJdId ||
+      candidate?.jdId ||
+      candidate?.assignedJdId ||
+      ""
+    ).trim();
+    const suggestedJobId = String(defaultJobId || assignedJobId || "").trim();
+    setJdEmailModal({
+      open: true,
+      candidate,
+      to: candidateEmail,
+      subject: "",
+      introText: "",
+      jobId: suggestedJobId
+    });
+  }
+
+  async function sendCandidateJdEmail() {
+    const candidate = jdEmailModal.candidate;
+    const to = String(jdEmailModal.to || "").trim();
+    const jobId = String(jdEmailModal.jobId || "").trim();
+    if (!candidate) return;
+    if (!to) {
+      setStatus("workspace", "Candidate email is required.", "error");
+      return;
+    }
+    if (!jobId) {
+      setStatus("workspace", "Select JD/role first.", "error");
+      return;
+    }
+    setJdEmailBusy(true);
+    setStatus("workspace", "Sending JD email...", "ok");
+    try {
+      const jobTitle = String((state.jobs || []).find((j) => String(j.id) === jobId)?.title || "Job Description").trim();
+      const subject = String(jdEmailModal.subject || "").trim() || `JD: ${jobTitle}`;
       await api("/company/jds/send-email", token, "POST", {
         jobId,
         to,
         subject,
-        introText: String(jdShareIntro || "").trim()
+        introText: String(jdEmailModal.introText || "").trim()
       });
-      setStatus("jobs", "JD emailed to candidate.", "ok");
-      setJdSharePanelOpen(false);
-      setJdShareIntro("");
+      setStatus("workspace", "JD emailed.", "ok");
+      setJdEmailModal({ open: false, candidate: null, to: "", subject: "", introText: "", jobId: "" });
     } catch (error) {
-      setStatus("jobs", `Email failed: ${String(error?.message || error)}`, "error");
+      setStatus("workspace", `Email failed: ${String(error?.message || error)}`, "error");
+    } finally {
+      setJdEmailBusy(false);
     }
   }
 
@@ -8818,6 +8934,9 @@ function PortalApp({ token, onLogout }) {
 	                            <button onClick={() => openRecruiterNotes(item)}>Recruiter note</button>
                       <button onClick={() => void openAttempts(item.id)}>Attempts</button>
                       {!item.hidden_from_captured ? (
+                        <button className="ghost-btn" onClick={() => openJdEmailModalForCandidate(item, item.jdId || "")}>Email JD</button>
+                      ) : null}
+                      {!item.hidden_from_captured ? (
                         <button onClick={() => void createAssessmentFromCandidate(item.id)}>Create assessment</button>
                       ) : null}
                       {item.cvFilename ? <button onClick={() => void openCv(item.id)}>Open CV</button> : null}
@@ -8910,6 +9029,9 @@ function PortalApp({ token, onLogout }) {
                         <button onClick={() => setAssignCandidateId(item.id)}>{item.assigned_to_name ? "Reassign" : "Assign"}</button>
 	                      <button onClick={() => openRecruiterNotes(item)}>Recruiter note</button>
                         <button onClick={() => void openAttempts(item.id)}>Attempts</button>
+                        {!item.hidden_from_captured ? (
+                          <button className="ghost-btn" onClick={() => openJdEmailModalForCandidate(item)}>Email JD</button>
+                        ) : null}
                         {!item.hidden_from_captured ? (
                           <button onClick={() => void createAssessmentFromCandidate(item.id)}>Create assessment</button>
                         ) : null}
@@ -9536,7 +9658,6 @@ function PortalApp({ token, onLogout }) {
 	                  <button onClick={() => applySelectedJobToInterview()}>Apply generated JD</button>
 	                  <button onClick={() => generateJdFromText()}>Generate JD from text</button>
 	                  <button className="ghost-btn" onClick={() => downloadJobDraftWord()}>Download Word</button>
-	                  <button className="ghost-btn" onClick={() => setJdSharePanelOpen((v) => !v)}>{jdSharePanelOpen ? "Hide email" : "Email JD"}</button>
 	                  <button onClick={() => void saveJobDraft()}>{selectedJobId ? "Update JD" : "Save JD"}</button>
 	                  <button
 	                    className="ghost-btn"
@@ -9556,22 +9677,6 @@ function PortalApp({ token, onLogout }) {
                     </button>
                   ) : null}
                 </div>
-
-                {jdSharePanelOpen ? (
-                  <div className="item-card compact-card" style={{ marginTop: 12 }}>
-                    <h3>Share JD by email</h3>
-                    <p className="muted">Sends the JD content (no internal screening questions) to the candidate email.</p>
-                    <div className="form-grid">
-                      <label className="full"><span>Candidate email(s)</span><input value={jdShareTo} onChange={(e) => setJdShareTo(e.target.value)} placeholder="candidate@gmail.com (comma-separated allowed)" /></label>
-                      <label className="full"><span>Subject</span><input value={jdShareSubject} onChange={(e) => setJdShareSubject(e.target.value)} placeholder={`JD: ${String(jobDraft.title || "Job Description").trim()}`} /></label>
-                      <label className="full"><span>Message (optional)</span><textarea value={jdShareIntro} onChange={(e) => setJdShareIntro(e.target.value)} placeholder="Hi, sharing the JD for your reference..." /></label>
-                      <div className="button-row">
-                        <button onClick={() => void sendJobDraftEmail()}>Send email</button>
-                        <button className="ghost-btn" onClick={() => setJdSharePanelOpen(false)}>Cancel</button>
-                      </div>
-                    </div>
-                  </div>
-                ) : null}
 
                 <div className="form-grid two-col">
                   <label><span>Job title</span><input value={jobDraft.title} onChange={(e) => setJobDraft((c) => ({ ...c, title: e.target.value }))} /></label>
@@ -9714,6 +9819,35 @@ function PortalApp({ token, onLogout }) {
                     <p className="muted">When disabled, search remains structured/boolean only (no OpenAI embedding calls per query).</p>
                     <div className="button-row">
                       {isSettingsAdmin ? <button onClick={() => void saveSharedCopySettings()}>Save search settings</button> : null}
+                    </div>
+                  </div>
+
+                  <div className="settings-subsection">
+                    <div className="section-kicker">Email Settings (Per Recruiter)</div>
+                    <p className="muted">Used for sending JD emails from candidate cards. Configure Zoho SMTP with an app password.</p>
+                    <div className="form-grid two-col">
+                      <label><span>SMTP host</span><input value={smtpSettings.host} onChange={(e) => setSmtpSettings((c) => ({ ...c, host: e.target.value }))} placeholder="smtp.zoho.in" /></label>
+                      <label><span>SMTP port</span><input type="number" value={smtpSettings.port} onChange={(e) => setSmtpSettings((c) => ({ ...c, port: Number(e.target.value || 0) || 587 }))} placeholder="587" /></label>
+                      <label className="checkbox-row" style={{ alignItems: "center" }}>
+                        <input type="checkbox" checked={smtpSettings.secure} onChange={(e) => setSmtpSettings((c) => ({ ...c, secure: e.target.checked }))} />
+                        <span>Use secure (SSL)</span>
+                      </label>
+                      <div />
+                      <label><span>SMTP user</span><input value={smtpSettings.user} onChange={(e) => setSmtpSettings((c) => ({ ...c, user: e.target.value }))} placeholder="yourname@yourdomain.com" /></label>
+                      <label><span>From</span><input value={smtpSettings.from} onChange={(e) => setSmtpSettings((c) => ({ ...c, from: e.target.value }))} placeholder="Your Name <yourname@yourdomain.com>" /></label>
+                      <label className="full">
+                        <span>{smtpSettings.hasPassword && smtpSettingsKeepPass ? "SMTP app password (kept)" : "SMTP app password"}</span>
+                        <input type="password" value={smtpSettings.pass} onChange={(e) => setSmtpSettings((c) => ({ ...c, pass: e.target.value }))} placeholder={smtpSettings.hasPassword ? "Leave blank to keep existing" : "Zoho app password"} />
+                      </label>
+                      {smtpSettings.hasPassword ? (
+                        <label className="checkbox-row full">
+                          <input type="checkbox" checked={smtpSettingsKeepPass} onChange={(e) => setSmtpSettingsKeepPass(e.target.checked)} />
+                          <span>Keep existing password if blank</span>
+                        </label>
+                      ) : null}
+                    </div>
+                    <div className="button-row">
+                      <button onClick={() => void saveSmtpSettings()}>Save email settings</button>
                     </div>
                   </div>
                   <div className="settings-subsection">
@@ -10023,6 +10157,15 @@ function PortalApp({ token, onLogout }) {
         onOpenCv={(candidate) => openDatabaseCandidateCv(candidate)}
         onReuse={(candidate) => reuseDatabaseCandidate(candidate)}
         onCopyShareLink={(candidateId) => void copyCandidateProfileShareLink(candidateId)}
+      />
+      <JdEmailModal
+        open={Boolean(jdEmailModal.open)}
+        jobs={state.jobs}
+        value={jdEmailModal}
+        onChange={(key, val) => setJdEmailModal((current) => ({ ...current, [key]: val }))}
+        onClose={() => setJdEmailModal({ open: false, candidate: null, to: "", subject: "", introText: "", jobId: "" })}
+        onSend={() => void sendCandidateJdEmail()}
+        busy={jdEmailBusy}
       />
       <ClientFeedbackModal open={Boolean(clientFeedbackItem)} item={clientFeedbackItem} onClose={() => setClientFeedbackItem(null)} onSave={(payload) => void saveClientFeedback(payload)} />
     </div>

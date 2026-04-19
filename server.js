@@ -35,6 +35,8 @@ const {
   deleteUser,
   deleteAssessment,
   deleteCompanyJob,
+  getUserSmtpSettings,
+  saveUserSmtpSettings,
   getCompanyApplicantIntakeSecret,
   getCompanyClientUsers,
   getCompanyLicense,
@@ -167,30 +169,24 @@ function buildJobShareEmail({ job, introText = "", senderName = "" }) {
   return { html, text, applyLink };
 }
 
-function getSmtpConfigFromEnv() {
-  const host = String(process.env.SMTP_HOST || "").trim();
-  const port = Number(process.env.SMTP_PORT || 587);
-  const user = String(process.env.SMTP_USER || "").trim();
-  const pass = String(process.env.SMTP_PASS || "").trim();
-  const from = String(process.env.SMTP_FROM || "").trim();
-  const secureEnv = String(process.env.SMTP_SECURE || "").trim();
-  const secure = secureEnv ? ["1", "true", "yes"].includes(secureEnv.toLowerCase()) : port === 465;
-  if (!host || !port || !user || !pass || !from) return null;
-  return { host, port, user, pass, from, secure };
+async function sendSmtpEmail({ to, subject, html, text }) {
+  throw new Error("Email is not configured. Each recruiter must configure Zoho SMTP in Settings.");
 }
 
-async function sendSmtpEmail({ to, subject, html, text }) {
-  if (!nodemailer) throw new Error("Email sending is not available (nodemailer not installed).");
-  const config = getSmtpConfigFromEnv();
-  if (!config) throw new Error("Email is not configured. Ask admin to set SMTP_* environment variables.");
+async function sendJdEmailAsActor(actor, { to, subject, html, text }) {
+  if (!nodemailer) throw new Error("Email sending is not available.");
+  const cfg = await getUserSmtpSettings({ companyId: actor.companyId, userId: actor.id });
+  if (!cfg || !cfg.host || !cfg.user || !cfg.pass || !cfg.from) {
+    throw new Error("Email settings not configured. Go to Settings → Email settings.");
+  }
   const transport = nodemailer.createTransport({
-    host: config.host,
-    port: config.port,
-    secure: config.secure,
-    auth: { user: config.user, pass: config.pass }
+    host: cfg.host,
+    port: Number(cfg.port || 587),
+    secure: Boolean(cfg.secure),
+    auth: { user: cfg.user, pass: cfg.pass }
   });
   await transport.sendMail({
-    from: config.from,
+    from: cfg.from,
     to,
     subject,
     text,
@@ -5103,7 +5099,7 @@ const server = http.createServer(async (req, res) => {
 
       const mail = buildJobShareEmail({ job, introText, senderName: String(actor?.name || "").trim() });
       const finalSubject = subject || `JD: ${String(job?.title || "Job Description").trim()}`;
-      await sendSmtpEmail({
+      await sendJdEmailAsActor(actor, {
         to: recipients.join(", "),
         subject: finalSubject,
         html: mail.html,
@@ -5127,6 +5123,39 @@ const server = http.createServer(async (req, res) => {
         jobId: String(body.jobId || "").trim()
       });
       sendJson(res, 200, { ok: true, result });
+    } catch (error) {
+      sendJson(res, 400, { ok: false, error: String(error.message || error) });
+    }
+    return;
+  }
+
+  if (req.method === "GET" && req.url === "/company/email-settings") {
+    try {
+      const actor = await requireSessionUser(getBearerToken(req));
+      const settings = await getUserSmtpSettings({ companyId: actor.companyId, userId: actor.id }).catch(() => null);
+      sendJson(res, 200, {
+        ok: true,
+        result: settings
+          ? { host: settings.host, port: settings.port, secure: settings.secure, user: settings.user, from: settings.from, hasPassword: Boolean(settings.pass) }
+          : { host: "", port: 587, secure: false, user: actor.email || "", from: actor.email ? `${actor.name || "Recruiter"} <${actor.email}>` : "", hasPassword: false }
+      });
+    } catch (error) {
+      sendJson(res, 401, { ok: false, error: String(error.message || error) });
+    }
+    return;
+  }
+
+  if (req.method === "POST" && req.url === "/company/email-settings") {
+    try {
+      const actor = await requireSessionUser(getBearerToken(req));
+      const body = await readJsonBody(req);
+      const saved = await saveUserSmtpSettings({
+        actorUserId: actor.id,
+        companyId: actor.companyId,
+        userId: actor.id,
+        settings: body.settings || body
+      });
+      sendJson(res, 200, { ok: true, result: saved });
     } catch (error) {
       sendJson(res, 400, { ok: false, error: String(error.message || error) });
     }

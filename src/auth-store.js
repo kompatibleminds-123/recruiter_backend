@@ -258,6 +258,116 @@ const sbIns = (t, rows, { conflict = "", upsert = false, returning = "representa
 const sbPatch = (t, f, p) => sb("PATCH", `/rest/v1/${t}?${f}`, JSON.stringify(p), { "Content-Type": "application/json", Prefer: "return=representation" });
 const sbDel = (t, f) => sb("DELETE", `/rest/v1/${t}?${f}`, null, { Prefer: "return=representation" });
 
+function getEmailSettingsSecret() {
+  const secret = String(process.env.EMAIL_SETTINGS_ENCRYPTION_SECRET || process.env.PLATFORM_SESSION_SECRET || "").trim();
+  if (!secret) return "";
+  return crypto.createHash("sha256").update(secret).digest("hex");
+}
+function encryptSecretString(plain) {
+  const text = String(plain || "");
+  if (!text) return "";
+  const keyHex = getEmailSettingsSecret();
+  if (!keyHex) throw new Error("EMAIL_SETTINGS_ENCRYPTION_SECRET is not set.");
+  const key = Buffer.from(keyHex, "hex");
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv("aes-256-gcm", key, iv);
+  const ciphertext = Buffer.concat([cipher.update(Buffer.from(text, "utf8")), cipher.final()]);
+  const tag = cipher.getAuthTag();
+  return `enc:v1:${iv.toString("base64")}:${tag.toString("base64")}:${ciphertext.toString("base64")}`;
+}
+function decryptSecretString(encValue) {
+  const raw = String(encValue || "").trim();
+  if (!raw) return "";
+  if (!raw.startsWith("enc:v1:")) return raw;
+  const parts = raw.split(":");
+  if (parts.length !== 5) return "";
+  const iv = Buffer.from(parts[2], "base64");
+  const tag = Buffer.from(parts[3], "base64");
+  const data = Buffer.from(parts[4], "base64");
+  const keyHex = getEmailSettingsSecret();
+  if (!keyHex) return "";
+  const key = Buffer.from(keyHex, "hex");
+  const decipher = crypto.createDecipheriv("aes-256-gcm", key, iv);
+  decipher.setAuthTag(tag);
+  return Buffer.concat([decipher.update(data), decipher.final()]).toString("utf8");
+}
+
+async function getUserSmtpSettings({ companyId, userId }) {
+  if (!companyId || !userId) return null;
+  if (!cfg().on) {
+    const store = readStore();
+    const blob = store.smtpSettings && typeof store.smtpSettings === "object" ? store.smtpSettings[String(userId)] : null;
+    if (!blob) return null;
+    const payload = blob && typeof blob === "object" ? blob : {};
+    return {
+      host: String(payload.host || "").trim(),
+      port: Number(payload.port || 587),
+      secure: Boolean(payload.secure),
+      user: String(payload.user || "").trim(),
+      from: String(payload.from || "").trim(),
+      pass: decryptSecretString(String(payload.passEnc || ""))
+    };
+  }
+  const rows = await sbSel("user_smtp_settings", `select=payload&company_id=eq.${enc(companyId)}&user_id=eq.${enc(userId)}&limit=1`).catch(() => []);
+  const row = Array.isArray(rows) && rows.length ? rows[0] : null;
+  const payload = row?.payload && typeof row.payload === "object" ? row.payload : {};
+  if (!payload.host) return null;
+  return {
+    host: String(payload.host || "").trim(),
+    port: Number(payload.port || 587),
+    secure: Boolean(payload.secure),
+    user: String(payload.user || "").trim(),
+    from: String(payload.from || "").trim(),
+    pass: decryptSecretString(String(payload.passEnc || ""))
+  };
+}
+
+async function saveUserSmtpSettings({ actorUserId, companyId, userId, settings }) {
+  if (!companyId || !userId) throw new Error("Missing companyId/userId.");
+  if (String(actorUserId || "") !== String(userId || "")) throw new Error("Only the user can update their email settings.");
+  const src = settings && typeof settings === "object" ? settings : {};
+  const host = String(src.host || "").trim();
+  const port = Number(src.port || 587);
+  const secure = Boolean(src.secure);
+  const user = String(src.user || "").trim();
+  const from = String(src.from || "").trim();
+  const pass = String(src.pass || "").trim();
+  const keepPass = Boolean(src.keepPass) && !pass;
+  if (!host || !port || !user || !from) throw new Error("SMTP host, port, user and from are required.");
+
+  const existing = await getUserSmtpSettings({ companyId, userId });
+  const passToStore = keepPass ? String(existing?.pass || "") : pass;
+  if (!passToStore) throw new Error("SMTP app password is required.");
+  const payload = {
+    host,
+    port,
+    secure,
+    user,
+    from,
+    passEnc: encryptSecretString(passToStore)
+  };
+
+  if (!cfg().on) {
+    const store = readStore();
+    store.smtpSettings = store.smtpSettings && typeof store.smtpSettings === "object" ? store.smtpSettings : {};
+    store.smtpSettings[String(userId)] = payload;
+    writeStore(store);
+    return { host, port, secure, user, from, hasPassword: true };
+  }
+
+  const now = new Date().toISOString();
+  await sbIns("user_smtp_settings", [{
+    id: crypto.randomUUID(),
+    company_id: companyId,
+    user_id: userId,
+    payload,
+    created_at: now,
+    updated_at: now,
+    updated_by: user
+  }], { conflict: "company_id,user_id", upsert: true, returning: "minimal" });
+  return { host, port, secure, user, from, hasPassword: true };
+}
+
 function sanitizeUser(user) {
   if (!user) return null;
   return { id: user.id, companyId: user.companyId ?? user.company_id ?? null, companyName: user.companyName ?? user.company_name ?? null, name: user.name, email: user.email, role: user.role, createdAt: user.createdAt ?? user.created_at ?? null };
@@ -1615,5 +1725,7 @@ module.exports = {
   searchAssessments,
   saveAssessment,
   patchAssessmentCandidateLink,
-  saveCompanyJob
+  saveCompanyJob,
+  getUserSmtpSettings,
+  saveUserSmtpSettings
 };
