@@ -8446,8 +8446,11 @@ function PortalApp({ token, onLogout }) {
                             <h3>{group.label}</h3>
                             <p className="muted">{`${group.metrics?.sourced || 0} sourced | ${group.metrics?.applied || 0} applied | ${group.metrics?.converted || 0} shared | ${group.metrics?.under_interview_process || 0} under interview | ${group.metrics?.shortlisted || 0} shortlisted | ${group.metrics?.offered || 0} offered`}</p>
                             <p className="muted">
-                              {`Sourcing: ${group.ownership?.assignedSourcing || 0} assigned | ${(group.ownership?.selfSourced || 0) + (group.ownership?.selfSourcedCredit || 0)} self sourced`}
+                              {`Sourcing: ${group.ownership?.assignedSourcing || 0} assigned | ${group.ownership?.selfSourced || 0} self sourced`}
                             </p>
+                            {group.ownership?.websiteApply ? (
+                              <p className="muted">{`Website apply: ${group.ownership.websiteApply}`}</p>
+                            ) : null}
                             {group.ownership?.sourcedCredit ? (
                               <p className="muted">{`Sourced by you (credit): ${group.ownership.sourcedCredit}`}</p>
                             ) : null}

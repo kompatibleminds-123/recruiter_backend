@@ -1370,7 +1370,11 @@ function createDashboardRecruiterBucket() {
       assignedSourcing: 0,
       selfSourced: 0,
       assignedApplicants: 0,
-      directApplicants: 0
+      directApplicants: 0,
+      // For admin: unassigned website/hosted apply sitting in admin inbox.
+      websiteApply: 0,
+      // Credit for "captured by X" even if owned/assigned to someone else.
+      sourcedCredit: 0
     }
   };
 }
@@ -1458,16 +1462,20 @@ function addRecruiterOwnershipMetrics(target, recruiterLabel, candidate, linkedA
   const isApplicant = source === "website_apply" || source === "hosted_apply";
   const assignedLabel = getOwnerRecruiterLabel(candidate, linkedAssessment || {});
   const sourcedLabel = getRecruiterLabel(candidate, linkedAssessment || {});
-  // "Self sourced" should mean: who first brought the candidate into Captured Notes.
-  // Do not infer from later edits; prefer the original captured-by recruiter_name.
-  const capturedByLabel = String(candidate?.recruiter_name || candidate?.recruiterName || sourcedLabel || "").trim();
+  // recruiter_name can be overwritten on later edits; prefer assigned_by_name when present.
+  const assignedByLabel = String(candidate?.assigned_by_name || candidate?.assignedByName || "").trim();
+  const capturedByLabel = String(assignedByLabel || candidate?.recruiter_name || candidate?.recruiterName || sourcedLabel || "").trim();
   if (isApplicant) {
     if (assignedLabel === recruiterLabel) {
+      const hasAssignedTo = Boolean(
+        String(candidate?.assigned_to_user_id || candidate?.assignedToUserId || "").trim()
+        || String(candidate?.assigned_to_name || candidate?.assignedToName || "").trim()
+      );
       const wasManuallyAssigned = Boolean(
         String(candidate?.assigned_by_user_id || candidate?.assignedByUserId || "").trim()
         || String(candidate?.assigned_by_name || candidate?.assignedByName || "").trim()
       );
-      const key = wasManuallyAssigned ? "assignedApplicants" : "directApplicants";
+      const key = !hasAssignedTo ? "websiteApply" : (wasManuallyAssigned ? "assignedApplicants" : "directApplicants");
       target.ownership[key] = Number(target.ownership[key] || 0) + 1;
     }
     return;
@@ -1477,17 +1485,19 @@ function addRecruiterOwnershipMetrics(target, recruiterLabel, candidate, linkedA
   // - assignedSourcing: owned by this recruiter but captured-by was someone else (admin/other recruiter)
   const recruiterNeedle = String(recruiterLabel || "").trim().toLowerCase();
   const capturedByNeedle = String(capturedByLabel || "").trim().toLowerCase();
+  const assignedByNeedle = String(assignedByLabel || "").trim().toLowerCase();
   if (assignedLabel === recruiterLabel) {
-    if (capturedByNeedle && capturedByNeedle === recruiterNeedle) {
+    // If assigned-by is someone else, treat as admin/team assigned.
+    if (!assignedByNeedle || assignedByNeedle === recruiterNeedle) {
       target.ownership.selfSourced = Number(target.ownership.selfSourced || 0) + 1;
     } else {
       target.ownership.assignedSourcing = Number(target.ownership.assignedSourcing || 0) + 1;
     }
     return;
   }
-  // Still show "self sourced" credit even if the candidate is currently owned by someone else.
+  // Credit sourcing even if the candidate is currently owned by someone else.
   if (capturedByNeedle && capturedByNeedle === recruiterNeedle) {
-    target.ownership.selfSourced = Number(target.ownership.selfSourced || 0) + 1;
+    target.ownership.sourcedCredit = Number(target.ownership.sourcedCredit || 0) + 1;
   }
 }
 
@@ -1546,7 +1556,9 @@ function buildDashboardSummary({ candidates = [], assessments = [], jobs = [], d
       : (resolvedJob?.title || getPositionLabel(candidate, linkedAssessment || {}, knownJdTitles));
     const dateRange = { from: dateFrom, to: dateTo };
     // Admin sourcing credit: show how many candidates were originally captured by the admin (even if assigned to others).
-    const capturedByLabel = String(candidate?.recruiter_name || candidate?.recruiterName || "").trim();
+    // Prefer assigned_by_name when present; recruiter_name can be overwritten later.
+    const assignedByLabel = String(candidate?.assigned_by_name || candidate?.assignedByName || "").trim();
+    const capturedByLabel = String(assignedByLabel || candidate?.recruiter_name || candidate?.recruiterName || "").trim();
     if (!isApplicant && actorIsAdmin && actorName && capturedByLabel && capturedByLabel.toLowerCase() === actorName.toLowerCase()) {
       actorSourcedCredit += 1;
     }
@@ -1568,17 +1580,17 @@ function buildDashboardSummary({ candidates = [], assessments = [], jobs = [], d
     addCandidateMetrics(byOwnerRecruiter.get(ownerRecruiterLabel).metrics, candidate, effectiveAssessment, dateRange);
     addRecruiterOwnershipMetrics(byOwnerRecruiter.get(ownerRecruiterLabel), ownerRecruiterLabel, candidate, effectiveAssessment, dateRange);
 
-    // Credit sourcing ("self sourced") to the recruiter who originally captured the candidate,
-    // even if the candidate is now assigned to someone else.
-    if (!isApplicant && capturedByLabel) {
+    // Credit "sourced" to the recruiter who originally brought the candidate into the system,
+    // even if it is currently owned by someone else.
+    if (!isApplicant && capturedByLabel && capturedByLabel.trim() && capturedByLabel.trim().toLowerCase() !== String(ownerRecruiterLabel || "").trim().toLowerCase()) {
       const normalizedCapturedBy = capturedByLabel.trim();
-      if (normalizedCapturedBy) {
-        if (!byOwnerRecruiter.has(normalizedCapturedBy)) byOwnerRecruiter.set(normalizedCapturedBy, createDashboardRecruiterBucket());
-        const capturedBucket = byOwnerRecruiter.get(normalizedCapturedBy);
-        capturedBucket.ownership = capturedBucket.ownership && typeof capturedBucket.ownership === "object" ? capturedBucket.ownership : {};
-        // Keep this separate so UI can display "self sourced" as inclusive of credit.
-        capturedBucket.ownership.selfSourcedCredit = Number(capturedBucket.ownership.selfSourcedCredit || 0) + 1;
+      if (!byOwnerRecruiter.has(normalizedCapturedBy)) byOwnerRecruiter.set(normalizedCapturedBy, createDashboardRecruiterBucket());
+      const capturedBucket = byOwnerRecruiter.get(normalizedCapturedBy);
+      // Only add sourced credit (avoid polluting conversion status metrics).
+      if (isDateWithinRange(createdAt, dateRange.from, dateRange.to)) {
+        incrementDashboardMetric(capturedBucket.metrics, "sourced");
       }
+      capturedBucket.ownership.sourcedCredit = Number(capturedBucket.ownership.sourcedCredit || 0) + 1;
     }
     if (positionLabel) {
       const matrixKey = `${clientLabel}|||${positionLabel}|||${ownerRecruiterLabel}`;
@@ -2593,7 +2605,9 @@ function buildCandidateSearchUniverse(candidates = [], assessments = [], jobs = 
       skills: Array.isArray(candidate?.skills) ? candidate.skills : [],
       inferredTags: Array.isArray(candidateMeta?.inferredSearchTags) ? candidateMeta.inferredSearchTags : [],
       clientName: isUnmappedApplicant ? "Unmapped candidates" : (resolvedJob?.clientName || getClientLabel(candidate, linkedAssessment || {})),
-      recruiterName: getRecruiterLabel(candidate, linkedAssessment || {}),
+      // For UI/presets: "Recruiter" should mean currently assigned/owned recruiter.
+      recruiterName: getOwnerRecruiterLabel(candidate, linkedAssessment || {}),
+      // Keep captured-by separately for internal debugging (may be overwritten in legacy rows).
       sourcedRecruiter: getRecruiterLabel(candidate, linkedAssessment || {}),
       ownerRecruiter: getOwnerRecruiterLabel(candidate, linkedAssessment || {}),
       candidateStatus: String(linkedAssessment?.candidateStatus || "").trim(),
