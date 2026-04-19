@@ -4072,6 +4072,56 @@ function buildCandidateParseResponse(baseResult, normalizedResult, parseMeta = {
   };
 }
 
+function buildCvAutofillPatch(candidateRow, cvResult) {
+  const candidate = candidateRow && typeof candidateRow === "object" ? candidateRow : {};
+  const result = cvResult && typeof cvResult === "object" ? cvResult : {};
+  const isBlank = (value) => !String(value || "").trim();
+
+  const patch = {};
+  const nextName = String(result.candidateName || "").trim();
+  const nextEmail = String(result.emailId || "").trim();
+  const nextPhone = String(result.phoneNumber || "").trim();
+  const nextCompany = String(result.currentCompany || "").trim();
+  const nextRole = String(result.currentDesignation || "").trim();
+  const nextExp = String(result.totalExperience || "").trim();
+  const nextEdu = String(result.highestEducation || "").trim();
+  const nextLinkedIn = String(result.linkedinUrl || "").trim();
+  const nextOrgTenure = String(result.currentOrgTenure || "").trim();
+
+  if (isBlank(candidate.name) && nextName) patch.name = nextName;
+  if (isBlank(candidate.email) && nextEmail) patch.email = nextEmail;
+  if (isBlank(candidate.phone) && nextPhone) patch.phone = nextPhone;
+  if (isBlank(candidate.company) && nextCompany) patch.company = nextCompany;
+  if (isBlank(candidate.role) && nextRole) patch.role = nextRole;
+  if (isBlank(candidate.experience) && nextExp) patch.experience = nextExp;
+  if (isBlank(candidate.highest_education) && nextEdu) patch.highest_education = nextEdu;
+  if (isBlank(candidate.linkedin) && nextLinkedIn) patch.linkedin = nextLinkedIn;
+
+  const existingDraft = normalizeJsonObjectInput(candidate.draft_payload || candidate.draftPayload || {});
+  const nextDraft = { ...existingDraft };
+  const setBlank = (key, value) => {
+    if (!value) return;
+    if (isBlank(nextDraft[key])) nextDraft[key] = value;
+  };
+
+  setBlank("candidateName", nextName);
+  setBlank("emailId", nextEmail);
+  setBlank("phoneNumber", nextPhone);
+  setBlank("currentCompany", nextCompany);
+  setBlank("currentDesignation", nextRole);
+  setBlank("totalExperience", nextExp);
+  setBlank("highestEducation", nextEdu);
+  setBlank("linkedin", nextLinkedIn);
+  setBlank("currentOrgTenure", nextOrgTenure);
+
+  // Only write draft_payload when we actually changed something to avoid noisy updates.
+  const draftChanged = JSON.stringify(existingDraft) !== JSON.stringify(nextDraft);
+  if (draftChanged) {
+    patch.draft_payload = nextDraft;
+  }
+  return patch;
+}
+
 const server = http.createServer(async (req, res) => {
   if (!req.url) {
     sendJson(res, 404, { ok: false, error: "Not found." });
@@ -6587,7 +6637,8 @@ const server = http.createServer(async (req, res) => {
             };
 
             await patchCandidate(candidate.id, {
-              raw_note: encodeApplicantMetadata(nextMeta)
+              raw_note: encodeApplicantMetadata(nextMeta),
+              ...buildCvAutofillPatch(refreshed || candidate, result)
             }, { companyId: actor.companyId });
           } catch (error) {
             console.warn("Background CV parse failed:", error?.message || error);
@@ -6682,7 +6733,8 @@ const server = http.createServer(async (req, res) => {
       };
 
       await patchCandidate(candidate.id, {
-        raw_note: encodeApplicantMetadata(nextMeta)
+        raw_note: encodeApplicantMetadata(nextMeta),
+        ...buildCvAutofillPatch(candidate, result)
       }, { companyId: actor.companyId });
 
       sendJson(res, 200, {

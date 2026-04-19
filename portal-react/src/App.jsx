@@ -6458,12 +6458,13 @@ function PortalApp({ token, onLogout }) {
       setStatus("interview", "No CV analysis available yet.", "error");
       return;
     }
+    const isBlank = (value) => !String(value || "").trim();
     setInterviewForm((current) => ({
       ...current,
-      totalExperience: analysis.exactTotalExperience || current.totalExperience,
-      currentCompany: analysis.currentCompany || current.currentCompany,
-      currentDesignation: analysis.currentDesignation || current.currentDesignation,
-      currentOrgTenure: analysis.currentOrgTenure || current.currentOrgTenure,
+      totalExperience: isBlank(current.totalExperience) ? (analysis.exactTotalExperience || analysis.totalExperience || current.totalExperience) : current.totalExperience,
+      currentCompany: isBlank(current.currentCompany) ? (analysis.currentCompany || current.currentCompany) : current.currentCompany,
+      currentDesignation: isBlank(current.currentDesignation) ? (analysis.currentDesignation || current.currentDesignation) : current.currentDesignation,
+      currentOrgTenure: isBlank(current.currentOrgTenure) ? (analysis.currentOrgTenure || current.currentOrgTenure) : current.currentOrgTenure,
       cvAnalysisApplied: true
     }));
     setStatus("interview", "Applied CV analysis values to draft.", "ok");
