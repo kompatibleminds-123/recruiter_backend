@@ -69,6 +69,14 @@ const { DEFAULT_SYNONYMS, mapLocationAlias } = require("./src/search/synonyms");
 const { normalizeRecruiterQuery } = require("./src/search/normalize");
 const { hybridSearchCandidates, buildCandidateSemanticText } = require("./src/search/hybrid-search");
 const { createEmbedding, hashText } = require("./src/search/embedding-service");
+let nodemailer = null;
+try {
+  // Optional dependency: only needed when SMTP-based JD email sharing is enabled.
+  // If not installed / not configured, endpoint will return a clear error.
+  nodemailer = require("nodemailer");
+} catch (_) {
+  nodemailer = null;
+}
 
 const PORT = Number(process.env.PORT || 8787);
 const WHATSAPP_VERIFY_TOKEN = String(process.env.WHATSAPP_VERIFY_TOKEN || "").trim();
@@ -89,6 +97,106 @@ const MONTH_INDEX = {
   nov: 10,
   dec: 11
 };
+
+function escapeHtml(value) {
+  return String(value || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
+function buildJobShareEmail({ job, introText = "", senderName = "" }) {
+  const title = String(job?.title || "").trim();
+  const client = String(job?.clientName || "").trim();
+  const location = String(job?.location || "").trim();
+  const workMode = String(job?.workMode || "").trim();
+  const aboutCompany = String(job?.aboutCompany || "").trim();
+  const mustHave = String(job?.mustHaveSkills || "").trim();
+  const jd = String(job?.jobDescription || "").trim();
+  const redFlags = String(job?.redFlags || "").trim();
+  const recruiterNotes = String(job?.recruiterNotes || "").trim();
+  const applyBase = String(process.env.PUBLIC_PORTAL_BASE_URL || "https://recruit.kompatibleminds.com").trim().replace(/\/+$/, "");
+  const applyLink = job?.id ? `${applyBase}/apply/${encodeURIComponent(String(job.id))}` : "";
+
+  const blocks = [
+    introText ? { label: "Message", value: introText } : null,
+    client ? { label: "Client", value: client } : null,
+    location ? { label: "Location", value: location } : null,
+    workMode ? { label: "Work mode", value: workMode } : null,
+    aboutCompany ? { label: "About company", value: aboutCompany } : null,
+    mustHave ? { label: "Must have skills", value: mustHave } : null,
+    jd ? { label: "Job description", value: jd } : null,
+    redFlags ? { label: "Red flags", value: redFlags } : null,
+    recruiterNotes ? { label: "Notes", value: recruiterNotes } : null,
+    applyLink ? { label: "Apply link", value: applyLink } : null
+  ].filter(Boolean);
+
+  const htmlBody = blocks.map((item) => `
+    <h2>${escapeHtml(item.label)}</h2>
+    <div class="block">${escapeHtml(item.value).replace(/\n/g, "<br/>")}</div>
+  `.trim()).join("\n");
+
+  const html = `
+    <!doctype html>
+    <html>
+      <head>
+        <meta charset="utf-8" />
+        <title>${escapeHtml(title || "Job Description")}</title>
+        <style>
+          body { font-family: Arial, sans-serif; color: #111827; line-height: 1.5; padding: 20px; }
+          h1 { font-size: 18px; margin: 0 0 10px; }
+          h2 { font-size: 12px; margin: 16px 0 6px; color: #374151; letter-spacing: .02em; text-transform: uppercase; }
+          .muted { color: #6b7280; font-size: 12px; margin-bottom: 14px; }
+          .block { font-size: 13.5px; white-space: normal; }
+          hr { border: 0; border-top: 1px solid #e5e7eb; margin: 14px 0; }
+          a { color: #2563eb; text-decoration: none; }
+        </style>
+      </head>
+      <body>
+        <h1>${escapeHtml(title || "Job Description")}</h1>
+        <div class="muted">Shared from RecruitDesk${senderName ? ` by ${escapeHtml(senderName)}` : ""}</div>
+        <hr/>
+        ${htmlBody || "<div class='block'>No JD content found.</div>"}
+      </body>
+    </html>
+  `.trim();
+
+  const text = blocks.map((item) => `${item.label}:\n${item.value}`).join("\n\n");
+  return { html, text, applyLink };
+}
+
+function getSmtpConfigFromEnv() {
+  const host = String(process.env.SMTP_HOST || "").trim();
+  const port = Number(process.env.SMTP_PORT || 587);
+  const user = String(process.env.SMTP_USER || "").trim();
+  const pass = String(process.env.SMTP_PASS || "").trim();
+  const from = String(process.env.SMTP_FROM || "").trim();
+  const secureEnv = String(process.env.SMTP_SECURE || "").trim();
+  const secure = secureEnv ? ["1", "true", "yes"].includes(secureEnv.toLowerCase()) : port === 465;
+  if (!host || !port || !user || !pass || !from) return null;
+  return { host, port, user, pass, from, secure };
+}
+
+async function sendSmtpEmail({ to, subject, html, text }) {
+  if (!nodemailer) throw new Error("Email sending is not available (nodemailer not installed).");
+  const config = getSmtpConfigFromEnv();
+  if (!config) throw new Error("Email is not configured. Ask admin to set SMTP_* environment variables.");
+  const transport = nodemailer.createTransport({
+    host: config.host,
+    port: config.port,
+    secure: config.secure,
+    auth: { user: config.user, pass: config.pass }
+  });
+  await transport.sendMail({
+    from: config.from,
+    to,
+    subject,
+    text,
+    html
+  });
+}
 
 const STATIC_MIME_TYPES = {
   ".html": "text/html; charset=utf-8",
@@ -4968,6 +5076,41 @@ const server = http.createServer(async (req, res) => {
         job: body.job || body
       });
       sendJson(res, 200, { ok: true, result: job });
+    } catch (error) {
+      sendJson(res, 400, { ok: false, error: String(error.message || error) });
+    }
+    return;
+  }
+
+  if (req.method === "POST" && req.url === "/company/jds/send-email") {
+    try {
+      const actor = await requireSessionUser(getBearerToken(req));
+      const body = await readJsonBody(req);
+      const jobId = String(body.jobId || "").trim();
+      const toRaw = String(body.to || "").trim();
+      const subject = String(body.subject || "").trim();
+      const introText = String(body.introText || "").trim();
+      if (!jobId) throw new Error("jobId is required.");
+      if (!toRaw) throw new Error("Recipient email is required.");
+      const recipients = toRaw
+        .split(/,|;|\s+/)
+        .map((item) => String(item || "").trim())
+        .filter(Boolean);
+      if (!recipients.length) throw new Error("Recipient email is required.");
+      const jobs = await listCompanyJobs(actor.companyId);
+      const job = (Array.isArray(jobs) ? jobs : []).find((item) => String(item?.id || "").trim() === jobId) || null;
+      if (!job) throw new Error("JD not found.");
+
+      const mail = buildJobShareEmail({ job, introText, senderName: String(actor?.name || "").trim() });
+      const finalSubject = subject || `JD: ${String(job?.title || "Job Description").trim()}`;
+      await sendSmtpEmail({
+        to: recipients.join(", "),
+        subject: finalSubject,
+        html: mail.html,
+        text: mail.text
+      });
+
+      sendJson(res, 200, { ok: true, result: { sent: true, to: recipients, subject: finalSubject } });
     } catch (error) {
       sendJson(res, 400, { ok: false, error: String(error.message || error) });
     }

@@ -4001,6 +4001,10 @@ function PortalApp({ token, onLogout }) {
     cvAnalysis: null,
     cvAnalysisApplied: false
   });
+  const [jdSharePanelOpen, setJdSharePanelOpen] = useState(false);
+  const [jdShareTo, setJdShareTo] = useState("");
+  const [jdShareSubject, setJdShareSubject] = useState("");
+  const [jdShareIntro, setJdShareIntro] = useState("");
 
   const isAssessmentArchived = (assessment) => {
     if (!assessment) return false;
@@ -6986,6 +6990,34 @@ function PortalApp({ token, onLogout }) {
     }
   }
 
+  async function sendJobDraftEmail() {
+    const jobId = String(selectedJobId || jobDraft.id || "").trim();
+    const to = String(jdShareTo || "").trim();
+    if (!jobId) {
+      setStatus("jobs", "Select a JD first.", "error");
+      return;
+    }
+    if (!to) {
+      setStatus("jobs", "Enter candidate email.", "error");
+      return;
+    }
+    setStatus("jobs", "Sending JD email...");
+    try {
+      const subject = String(jdShareSubject || "").trim() || `JD: ${String(jobDraft.title || "Job Description").trim()}`;
+      await api("/company/jds/send-email", token, "POST", {
+        jobId,
+        to,
+        subject,
+        introText: String(jdShareIntro || "").trim()
+      });
+      setStatus("jobs", "JD emailed to candidate.", "ok");
+      setJdSharePanelOpen(false);
+      setJdShareIntro("");
+    } catch (error) {
+      setStatus("jobs", `Email failed: ${String(error?.message || error)}`, "error");
+    }
+  }
+
   function buildCapturedCopyRows() {
     return capturedCandidates.map((item) => {
       const matchedAssessment = resolveCapturedAssessment(item);
@@ -9504,6 +9536,7 @@ function PortalApp({ token, onLogout }) {
 	                  <button onClick={() => applySelectedJobToInterview()}>Apply generated JD</button>
 	                  <button onClick={() => generateJdFromText()}>Generate JD from text</button>
 	                  <button className="ghost-btn" onClick={() => downloadJobDraftWord()}>Download Word</button>
+	                  <button className="ghost-btn" onClick={() => setJdSharePanelOpen((v) => !v)}>{jdSharePanelOpen ? "Hide email" : "Email JD"}</button>
 	                  <button onClick={() => void saveJobDraft()}>{selectedJobId ? "Update JD" : "Save JD"}</button>
 	                  <button
 	                    className="ghost-btn"
@@ -9523,6 +9556,22 @@ function PortalApp({ token, onLogout }) {
                     </button>
                   ) : null}
                 </div>
+
+                {jdSharePanelOpen ? (
+                  <div className="item-card compact-card" style={{ marginTop: 12 }}>
+                    <h3>Share JD by email</h3>
+                    <p className="muted">Sends the JD content (no internal screening questions) to the candidate email.</p>
+                    <div className="form-grid">
+                      <label className="full"><span>Candidate email(s)</span><input value={jdShareTo} onChange={(e) => setJdShareTo(e.target.value)} placeholder="candidate@gmail.com (comma-separated allowed)" /></label>
+                      <label className="full"><span>Subject</span><input value={jdShareSubject} onChange={(e) => setJdShareSubject(e.target.value)} placeholder={`JD: ${String(jobDraft.title || "Job Description").trim()}`} /></label>
+                      <label className="full"><span>Message (optional)</span><textarea value={jdShareIntro} onChange={(e) => setJdShareIntro(e.target.value)} placeholder="Hi, sharing the JD for your reference..." /></label>
+                      <div className="button-row">
+                        <button onClick={() => void sendJobDraftEmail()}>Send email</button>
+                        <button className="ghost-btn" onClick={() => setJdSharePanelOpen(false)}>Cancel</button>
+                      </div>
+                    </div>
+                  </div>
+                ) : null}
 
                 <div className="form-grid two-col">
                   <label><span>Job title</span><input value={jobDraft.title} onChange={(e) => setJobDraft((c) => ({ ...c, title: e.target.value }))} /></label>
