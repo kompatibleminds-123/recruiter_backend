@@ -2717,6 +2717,35 @@ function buildCandidateSearchHay(item = {}) {
     .replace(/\b\.net\b/gi, "dotnet .net");
 }
 
+function deriveInterviewAtFromHistory(assessment) {
+  if (!assessment || typeof assessment !== "object") return "";
+  const history = Array.isArray(assessment.statusHistory) ? assessment.statusHistory : [];
+  if (!history.length) return "";
+  const candidates = history.filter((entry) => {
+    const status = String(entry?.status || "").trim();
+    if (!status) return false;
+    if (isInterviewAlignedStatus(status)) return true;
+    if (String(status).toLowerCase() === "feedback awaited") return true;
+    return false;
+  });
+  if (!candidates.length) return "";
+  const toTs = (value) => {
+    const raw = String(value || "").trim();
+    if (!raw) return 0;
+    const parsed = Date.parse(raw);
+    return Number.isFinite(parsed) ? parsed : 0;
+  };
+  const best = candidates
+    .map((entry) => ({
+      entry,
+      ts: Math.max(toTs(entry?.at), toTs(entry?.updatedAt), toTs(entry?.updated_at))
+    }))
+    .sort((a, b) => b.ts - a.ts)[0];
+  const picked = best?.entry || null;
+  if (!picked) return "";
+  return String(picked.at || picked.updatedAt || picked.updated_at || "").trim();
+}
+
 function buildCandidateSearchUniverse(candidates = [], assessments = [], jobs = []) {
   const assessmentsById = new Map((assessments || []).map((item) => [String(item?.id || "").trim(), item]));
   const universe = [];
@@ -2794,7 +2823,12 @@ function buildCandidateSearchUniverse(candidates = [], assessments = [], jobs = 
       pipelineStage: "",
       workflowStatus: String(linkedAssessment?.status || candidate?.status || "").trim(),
       attemptStatus: String(candidate?.last_contact_outcome || "").trim(),
-      interviewAt: normalizeDateOutput(linkedAssessment?.interviewAt || linkedAssessment?.interview_at || ""),
+      interviewAt: normalizeDateOutput(
+        linkedAssessment?.interviewAt
+          || linkedAssessment?.interview_at
+          || deriveInterviewAtFromHistory(linkedAssessment)
+          || ""
+      ),
       followUpAt: normalizeDateOutput(linkedAssessment?.followUpAt || linkedAssessment?.follow_up_at || candidate?.next_follow_up_at || ""),
       offerDoj: normalizeDateOutput(linkedAssessment?.offerDoj || linkedAssessment?.offer_doj || ""),
       createdAt: normalizeDateOutput(getCandidateCreatedAt(candidate)),
@@ -2860,7 +2894,12 @@ function buildCandidateSearchUniverse(candidates = [], assessments = [], jobs = 
       pipelineStage: "",
       workflowStatus: String(assessment?.status || "").trim(),
       attemptStatus: "",
-      interviewAt: normalizeDateOutput(assessment?.interviewAt || assessment?.interview_at || ""),
+      interviewAt: normalizeDateOutput(
+        assessment?.interviewAt
+          || assessment?.interview_at
+          || deriveInterviewAtFromHistory(assessment)
+          || ""
+      ),
       followUpAt: normalizeDateOutput(assessment?.followUpAt || assessment?.follow_up_at || ""),
       offerDoj: normalizeDateOutput(assessment?.offerDoj || assessment?.offer_doj || ""),
       createdAt: "",

@@ -225,7 +225,9 @@ const EMPTY_CANDIDATE_STRUCTURED_FILTERS = {
   maxNoticeDays: "",
   noticeBucket: "",
   recruiter: "",
-  gender: ""
+  gender: "",
+  assessmentStatus: "",
+  attemptOutcome: ""
 };
 
 const DASHBOARD_METRIC_COLUMNS = [
@@ -4804,6 +4806,7 @@ function PortalApp({ token, onLogout }) {
     return candidateSearchResults || [];
   }, [candidateSearchMode, candidateSearchResults, candidateSearchText, candidateUniverseAll]);
   const candidateUniverse = useMemo(() => {
+    const assessmentById = new Map((state.assessments || []).map((item) => [String(item?.id || "").trim(), item]));
     return candidateBaseUniverse.filter((item) => {
       const years = parseExperienceToYears(item.experience || item.totalExperience || "");
       const minYears = Number(candidateStructuredFilters.minExperience || "");
@@ -4841,6 +4844,20 @@ function PortalApp({ token, onLogout }) {
       const normalizedClientValue = clientValue.toLowerCase();
       const normalizedRecruiterValue = recruiterValue.toLowerCase();
       const normalizedGenderValue = genderValue.toLowerCase();
+      const linkedAssessment = item?.raw?.assessment
+        || item?.assessment
+        || assessmentById.get(String(item.assessment_id || item.assessmentId || "").trim())
+        || null;
+      const assessmentStatusValue = String(
+        linkedAssessment?.candidateStatus
+          || linkedAssessment?.status
+          || item.candidateStatus
+          || item.workflowStatus
+          || item.assessment_status
+          || item.assessmentStatus
+          || ""
+      ).trim();
+      const attemptOutcomeValue = String(item.last_contact_outcome || item.attemptStatus || item.outcome || "").trim();
       if (candidateStructuredFilters.minExperience && (years == null || years < minYears)) return false;
       if (candidateStructuredFilters.maxExperience && (years == null || years > maxYears)) return false;
       if (candidateStructuredFilters.location) {
@@ -4871,9 +4888,11 @@ function PortalApp({ token, onLogout }) {
       }
       if (candidateStructuredFilters.recruiter && normalizedRecruiterValue !== String(candidateStructuredFilters.recruiter || "").trim().toLowerCase()) return false;
       if (candidateStructuredFilters.gender && normalizedGenderValue !== String(candidateStructuredFilters.gender || "").trim().toLowerCase()) return false;
+      if (candidateStructuredFilters.assessmentStatus && assessmentStatusValue.toLowerCase() !== String(candidateStructuredFilters.assessmentStatus || "").trim().toLowerCase()) return false;
+      if (candidateStructuredFilters.attemptOutcome && normalizeAttemptOutcomeLabel(attemptOutcomeValue).toLowerCase() !== normalizeAttemptOutcomeLabel(candidateStructuredFilters.attemptOutcome).toLowerCase()) return false;
       return true;
     });
-  }, [candidateBaseUniverse, candidateStructuredFilters]);
+  }, [candidateBaseUniverse, candidateStructuredFilters, state.assessments]);
   const pagedCandidates = useMemo(() => {
     const start = (candidatePage - 1) * 10;
     return candidateUniverse.slice(start, start + 10);
@@ -6948,12 +6967,11 @@ function PortalApp({ token, onLogout }) {
           recruiter: result.filters.recruiterName || "",
           gender: result.filters.gender || ""
         };
-        // AI Search fills filters; keep them editable but also apply immediately to results.
+        // AI Search fills filters; keep them editable but do NOT auto-apply,
+        // otherwise we end up double-filtering already-filtered results and the list can look empty.
         setCandidateStructuredFiltersDraft(next);
-        setCandidateStructuredFilters(next);
       } else {
         setCandidateStructuredFiltersDraft(EMPTY_CANDIDATE_STRUCTURED_FILTERS);
-        setCandidateStructuredFilters(EMPTY_CANDIDATE_STRUCTURED_FILTERS);
       }
       setStatus("workspace", `${candidateAiQueryMode === "boolean" ? "Boolean search" : "AI-interpreted search"} returned ${result.items?.length || 0} candidates.`, "ok");
     } catch (error) {
@@ -8617,6 +8635,8 @@ function PortalApp({ token, onLogout }) {
                     <div className="candidate-filter-column">
                       <label><span>Recruiter</span><select value={candidateStructuredFiltersDraft.recruiter} onChange={(e) => setCandidateStructuredFiltersDraft((current) => ({ ...current, recruiter: e.target.value }))}><option value="">All recruiters</option>{candidateSearchOptions.recruiters.map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
                       <label><span>Gender</span><select value={candidateStructuredFiltersDraft.gender} onChange={(e) => setCandidateStructuredFiltersDraft((current) => ({ ...current, gender: e.target.value }))}><option value="">All genders</option>{Array.from(new Set(["Male", "Female", ...(candidateSearchOptions.genders || [])])).filter(Boolean).map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
+                      <label><span>Assessment status</span><select value={candidateStructuredFiltersDraft.assessmentStatus} onChange={(e) => setCandidateStructuredFiltersDraft((current) => ({ ...current, assessmentStatus: e.target.value }))}><option value="">Any status</option>{DEFAULT_STATUS_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}</select></label>
+                      <label><span>Attempt outcome</span><select value={candidateStructuredFiltersDraft.attemptOutcome} onChange={(e) => setCandidateStructuredFiltersDraft((current) => ({ ...current, attemptOutcome: e.target.value }))}><option value="">Any outcome</option>{ATTEMPT_OUTCOME_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}</select></label>
                     </div>
                   </div>
                   <div className="button-row" style={{ marginTop: 10 }}>
