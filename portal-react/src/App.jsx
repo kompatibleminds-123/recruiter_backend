@@ -8445,18 +8445,28 @@ function PortalApp({ token, onLogout }) {
                           <div>
                             <h3>{group.label}</h3>
                             <p className="muted">{`${group.metrics?.sourced || 0} sourced | ${group.metrics?.applied || 0} applied | ${group.metrics?.converted || 0} shared | ${group.metrics?.under_interview_process || 0} under interview | ${group.metrics?.shortlisted || 0} shortlisted | ${group.metrics?.offered || 0} offered`}</p>
-                            <p className="muted">
-                              {`Sourcing: ${group.ownership?.assignedSourcing || 0} assigned | ${group.ownership?.selfSourced || 0} self sourced`}
-                            </p>
-                            {group.ownership?.websiteApply ? (
-                              <p className="muted">{`Website apply: ${group.ownership.websiteApply}`}</p>
-                            ) : null}
-                            {group.ownership?.sourcedCredit ? (
-                              <p className="muted">{`Sourced by you (credit): ${group.ownership.sourcedCredit}`}</p>
-                            ) : null}
-                            <p className="muted">
-                              {`Applicants: ${group.ownership?.assignedApplicants || 0} assigned | ${group.ownership?.directApplicants || 0} direct`}
-                            </p>
+                            {String(state.user?.role || "").toLowerCase() === "admin" && String(state.user?.name || "").trim() === String(group.label || "").trim() ? (
+                              <>
+                                <p className="muted">
+                                  {`Sourcing: ${group.ownership?.selfSourced || 0} self sourced | ${group.ownership?.adminAssignedSourcing || 0} assigned to team`}
+                                </p>
+                                <p className="muted">
+                                  {`Applicants (inbox): ${Number(group.ownership?.websiteApply || 0) + Number(group.ownership?.otherInboxApplicants || 0)} | Website apply: ${group.ownership?.websiteApply || 0} | Other: ${group.ownership?.otherInboxApplicants || 0}`}
+                                </p>
+                                <p className="muted">
+                                  {`Assigned (from applicants): ${group.ownership?.adminAssignedApplicants || 0}`}
+                                </p>
+                              </>
+                            ) : (
+                              <>
+                                <p className="muted">
+                                  {`Sourcing: ${group.ownership?.assignedSourcing || 0} assigned | ${group.ownership?.selfSourced || 0} self sourced`}
+                                </p>
+                                <p className="muted">
+                                  {`Applicants: ${group.ownership?.assignedApplicants || 0} assigned | ${group.ownership?.directApplicants || 0} direct`}
+                                </p>
+                              </>
+                            )}
                           </div>
                         </summary>
                         <div className="metric-grid metric-grid--tight">

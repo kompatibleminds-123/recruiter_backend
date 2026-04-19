@@ -430,6 +430,13 @@ async function saveCandidate(candidate, options = {}) {
       isUpdate = Array.isArray(existingRows) && existingRows.length > 0;
     }
 
+    // recruiter_id / recruiter_name represent "captured by" (first time sourcing).
+    // They should not be overwritten on later edits (recruiter notes, attempts, etc).
+    if (isUpdate && !options.forceRecruiterIdentityUpdate) {
+      delete nextCandidate.recruiter_id;
+      delete nextCandidate.recruiter_name;
+    }
+
     const response = await fetch(
       isUpdate
         ? `${url}/rest/v1/candidates?id=eq.${encodeURIComponent(candidateId)}${companyId ? `&company_id=eq.${encodeURIComponent(companyId)}` : ""}`

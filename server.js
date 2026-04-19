@@ -1369,12 +1369,13 @@ function createDashboardRecruiterBucket() {
     ownership: {
       assignedSourcing: 0,
       selfSourced: 0,
+      // Admin-only: how many of admin-sourced candidates were assigned out to the team.
+      adminAssignedSourcing: 0,
       assignedApplicants: 0,
       directApplicants: 0,
-      // For admin: unassigned website/hosted apply sitting in admin inbox.
       websiteApply: 0,
-      // Credit for "captured by X" even if owned/assigned to someone else.
-      sourcedCredit: 0
+      otherInboxApplicants: 0,
+      adminAssignedApplicants: 0
     }
   };
 }
@@ -1459,45 +1460,63 @@ function addRecruiterOwnershipMetrics(target, recruiterLabel, candidate, linkedA
   const createdAt = getCandidateCreatedAt(candidate);
   if (!isDateWithinRange(createdAt, dateRange.from, dateRange.to)) return;
   const source = String(candidate?.source || "").trim().toLowerCase();
-  const isApplicant = source === "website_apply" || source === "hosted_apply";
+  const isApplicant = source === "website_apply" || source === "hosted_apply" || source === "google_sheet";
   const assignedLabel = getOwnerRecruiterLabel(candidate, linkedAssessment || {});
-  const sourcedLabel = getRecruiterLabel(candidate, linkedAssessment || {});
-  // recruiter_name can be overwritten on later edits; prefer assigned_by_name when present.
+  const capturedByLabel = String(candidate?.recruiter_name || candidate?.recruiterName || "").trim();
   const assignedByLabel = String(candidate?.assigned_by_name || candidate?.assignedByName || "").trim();
-  const capturedByLabel = String(assignedByLabel || candidate?.recruiter_name || candidate?.recruiterName || sourcedLabel || "").trim();
+  const hasAssignedTo = Boolean(
+    String(candidate?.assigned_to_user_id || candidate?.assignedToUserId || "").trim()
+    || String(candidate?.assigned_to_name || candidate?.assignedToName || "").trim()
+  );
   if (isApplicant) {
+    const recruiterNeedle = String(recruiterLabel || "").trim().toLowerCase();
+    const assignedByNeedle = String(assignedByLabel || "").trim().toLowerCase();
+
+    // Admin view: attribute unassigned inbox applicants to admin bucket (handled earlier via owner label).
+    // For any recruiter bucket, count applicants only when they are owned by that recruiter.
     if (assignedLabel === recruiterLabel) {
-      const hasAssignedTo = Boolean(
-        String(candidate?.assigned_to_user_id || candidate?.assignedToUserId || "").trim()
-        || String(candidate?.assigned_to_name || candidate?.assignedToName || "").trim()
-      );
-      const wasManuallyAssigned = Boolean(
-        String(candidate?.assigned_by_user_id || candidate?.assignedByUserId || "").trim()
-        || String(candidate?.assigned_by_name || candidate?.assignedByName || "").trim()
-      );
-      const key = !hasAssignedTo ? "websiteApply" : (wasManuallyAssigned ? "assignedApplicants" : "directApplicants");
-      target.ownership[key] = Number(target.ownership[key] || 0) + 1;
+      const wasManuallyAssigned = Boolean(assignedByLabel);
+      if (!hasAssignedTo) {
+        // Inbox
+        if (source === "website_apply") target.ownership.websiteApply = Number(target.ownership.websiteApply || 0) + 1;
+        else target.ownership.otherInboxApplicants = Number(target.ownership.otherInboxApplicants || 0) + 1;
+      } else if (wasManuallyAssigned) {
+        target.ownership.assignedApplicants = Number(target.ownership.assignedApplicants || 0) + 1;
+      } else {
+        target.ownership.directApplicants = Number(target.ownership.directApplicants || 0) + 1;
+      }
+
+      // Admin metric: how many inbox applicants were assigned out by admin.
+      if (recruiterNeedle && assignedByNeedle && recruiterNeedle === assignedByNeedle) {
+        // This is the admin bucket; count assignments out (once they have an assignee).
+        if (hasAssignedTo && wasManuallyAssigned) {
+          target.ownership.adminAssignedApplicants = Number(target.ownership.adminAssignedApplicants || 0) + 1;
+        }
+      }
     }
     return;
   }
   // For sourcing, keep buckets disjoint:
-  // - selfSourced: captured-by recruiter is this recruiter
-  // - assignedSourcing: owned by this recruiter but captured-by was someone else (admin/other recruiter)
+  // - selfSourced: candidate currently owned by recruiter and was sourced by them (initial capture)
+  // - assignedSourcing: candidate currently owned by recruiter but originally sourced by someone else (admin assigned)
   const recruiterNeedle = String(recruiterLabel || "").trim().toLowerCase();
-  const capturedByNeedle = String(capturedByLabel || "").trim().toLowerCase();
-  const assignedByNeedle = String(assignedByLabel || "").trim().toLowerCase();
   if (assignedLabel === recruiterLabel) {
-    // If assigned-by is someone else, treat as admin/team assigned.
-    if (!assignedByNeedle || assignedByNeedle === recruiterNeedle) {
+    const assignedByNeedle = String(assignedByLabel || "").trim().toLowerCase();
+    // If assigned_by exists and is not this recruiter, it's assigned sourcing (admin/team assigned).
+    if (assignedByNeedle && assignedByNeedle !== recruiterNeedle) {
+      target.ownership.assignedSourcing = Number(target.ownership.assignedSourcing || 0) + 1;
+    } else if (capturedByLabel && capturedByLabel.trim().toLowerCase() === recruiterNeedle) {
       target.ownership.selfSourced = Number(target.ownership.selfSourced || 0) + 1;
     } else {
+      // Fallback: if capture identity is missing, treat as assigned to avoid inflating self-sourced.
       target.ownership.assignedSourcing = Number(target.ownership.assignedSourcing || 0) + 1;
     }
     return;
   }
-  // Credit sourcing even if the candidate is currently owned by someone else.
-  if (capturedByNeedle && capturedByNeedle === recruiterNeedle) {
-    target.ownership.sourcedCredit = Number(target.ownership.sourcedCredit || 0) + 1;
+  // Admin-only: count how many admin-sourced candidates were assigned out to someone else.
+  const capturedByNeedle = String(capturedByLabel || "").trim().toLowerCase();
+  if (capturedByNeedle && capturedByNeedle === recruiterNeedle && hasAssignedTo) {
+    target.ownership.adminAssignedSourcing = Number(target.ownership.adminAssignedSourcing || 0) + 1;
   }
 }
 
@@ -1529,7 +1548,7 @@ function buildDashboardSummary({ candidates = [], assessments = [], jobs = [], d
   const actorIsAdmin = actor && typeof actor === "object"
     ? String(actor?.role || "").toLowerCase() === "admin"
     : false;
-  let actorSourcedCredit = 0;
+  // No "credit" metric; keep simple and stable.
 
   for (const candidate of Array.isArray(candidates) ? candidates : []) {
     const linkedAssessment = getCanonicalLinkedAssessmentForCandidate(candidate, assessmentsById) || null;
@@ -1556,13 +1575,7 @@ function buildDashboardSummary({ candidates = [], assessments = [], jobs = [], d
       : (resolvedJob?.title || getPositionLabel(candidate, linkedAssessment || {}, knownJdTitles));
     const dateRange = { from: dateFrom, to: dateTo };
     const createdAt = getCandidateCreatedAt(candidate);
-    // Admin sourcing credit: show how many candidates were originally captured by the admin (even if assigned to others).
-    // Prefer assigned_by_name when present; recruiter_name can be overwritten later.
-    const assignedByLabel = String(candidate?.assigned_by_name || candidate?.assignedByName || "").trim();
-    const capturedByLabel = String(assignedByLabel || candidate?.recruiter_name || candidate?.recruiterName || "").trim();
-    if (!isApplicant && actorIsAdmin && actorName && capturedByLabel && capturedByLabel.toLowerCase() === actorName.toLowerCase()) {
-      actorSourcedCredit += 1;
-    }
+    // No-op: removed "sourced credit" to avoid confusion.
     // Dedupe conversion metrics by assessment id (legacy duplicates can exist).
     let effectiveAssessment = linkedAssessment;
     if (effectiveAssessment?.id) {
@@ -1581,18 +1594,7 @@ function buildDashboardSummary({ candidates = [], assessments = [], jobs = [], d
     addCandidateMetrics(byOwnerRecruiter.get(ownerRecruiterLabel).metrics, candidate, effectiveAssessment, dateRange);
     addRecruiterOwnershipMetrics(byOwnerRecruiter.get(ownerRecruiterLabel), ownerRecruiterLabel, candidate, effectiveAssessment, dateRange);
 
-    // Credit "sourced" to the recruiter who originally brought the candidate into the system,
-    // even if it is currently owned by someone else.
-    if (!isApplicant && capturedByLabel && capturedByLabel.trim() && capturedByLabel.trim().toLowerCase() !== String(ownerRecruiterLabel || "").trim().toLowerCase()) {
-      const normalizedCapturedBy = capturedByLabel.trim();
-      if (!byOwnerRecruiter.has(normalizedCapturedBy)) byOwnerRecruiter.set(normalizedCapturedBy, createDashboardRecruiterBucket());
-      const capturedBucket = byOwnerRecruiter.get(normalizedCapturedBy);
-      // Only add sourced credit (avoid polluting conversion status metrics).
-      if (isDateWithinRange(createdAt, dateRange.from, dateRange.to)) {
-        incrementDashboardMetric(capturedBucket.metrics, "sourced");
-      }
-      capturedBucket.ownership.sourcedCredit = Number(capturedBucket.ownership.sourcedCredit || 0) + 1;
-    }
+    // Do not create extra buckets based on captured-by; keep recruiter buckets purely ownership-based.
     if (positionLabel) {
       const matrixKey = `${clientLabel}|||${positionLabel}|||${ownerRecruiterLabel}`;
       const clientPositionKey = `${clientLabel}|||${positionLabel}`;
@@ -1612,12 +1614,7 @@ function buildDashboardSummary({ candidates = [], assessments = [], jobs = [], d
     }
   }
 
-  if (actorIsAdmin && actorName && actorSourcedCredit) {
-    if (!byOwnerRecruiter.has(actorName)) byOwnerRecruiter.set(actorName, createDashboardRecruiterBucket());
-    const bucket = byOwnerRecruiter.get(actorName);
-    bucket.ownership = bucket.ownership && typeof bucket.ownership === "object" ? bucket.ownership : {};
-    bucket.ownership.sourcedCredit = actorSourcedCredit;
-  }
+  // No credit bucket.
 
   // Include assessments that are not canonically linked to a candidate row (assessment-only / legacy).
   for (const assessment of Array.isArray(assessments) ? assessments : []) {
