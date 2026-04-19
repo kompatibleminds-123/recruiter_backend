@@ -2061,7 +2061,10 @@ function parseNaturalLanguageCandidateQuery(rawQuery) {
     null;
   const interviewIntent = /\b(?:aligned|interview(?:s)?|scheduled)\b/i.test(lower);
   const recruiterScopeMe = /\b(?:i|me|my)\s+(?:sourced|captured|shared|converted)\b/i.test(lower) || /\bthat i (?:sourced|captured|shared|converted)\b/i.test(lower);
-  const sourcedIntent = /\b(?:sourced|captured)\b/i.test(lower);
+  const capturedNotesIntent = /\bcaptured\s+notes?\b|\bnotes?\s+captured\b/i.test(lower);
+  const appliedIntent = /\bapplied\b|\bapplicants?\b|\bwebsite\s+apply\b|\bhosted\s+apply\b/i.test(lower);
+  const sourcedIntent = /\bsourced\b/i.test(lower);
+  const capturedByIntent = /\bcaptured\s+by\b|\bcaptured\s+from\b|\badded\s+by\b|\bcreated\s+by\b/i.test(lower);
   const assessmentIntent = /\bassessments?\b/i.test(lower);
   const convertedIntent = /\b(?:shared|converted|cv shared|cv to be shared)\b/i.test(lower);
   const recruiterNameMatch = lower.match(/\bby\s+([a-z][a-z\s.-]+?)(?:\s+for\b|\s+in\b|\s+this\b|\s+last\b|\s+today\b|\s+tomorrow\b|$)/i);
@@ -2224,8 +2227,19 @@ function parseNaturalLanguageCandidateQuery(rawQuery) {
       : assignedToMatch
         ? String(assignedToMatch[1] || "").trim()
         : "",
-    recruiterField: sourcedIntent ? "sourced" : (convertedIntent || assessmentIntent || assignedToMatch) ? "owner" : "",
-    sourceTypeFilter: assessmentIntent ? "assessment" : convertedIntent ? "converted" : sourcedIntent ? "captured" : "",
+    // "Recruiter" is ambiguous in natural language: by default treat "by Nike" as "owned/assigned to Nike".
+    // Use recruiterField="sourced" only when user explicitly says "captured by/added by".
+    recruiterField: capturedByIntent ? "sourced" : (convertedIntent || assessmentIntent || assignedToMatch) ? "owner" : "",
+    // Only force captured/applied when the user explicitly asks for captured notes / applicants.
+    sourceTypeFilter: assessmentIntent
+      ? "assessment"
+      : convertedIntent
+        ? "converted"
+        : appliedIntent
+          ? "applied"
+          : capturedNotesIntent
+            ? "captured"
+            : "",
     dateFrom,
     dateTo,
     dateField
@@ -2515,6 +2529,15 @@ function sanitizeCandidateSearchFilters(filters, normalizedQuery = "", universe 
       next.dateFrom = "";
       next.dateTo = "";
       next.dateField = "";
+      // Don't accidentally narrow recruiter-only queries down to "captured" only.
+      // Default is "all sources" unless the recruiter explicitly says applied/captured/assessments/converted.
+      if (!/\b(applied|applicants?|website\s+apply|hosted\s+apply|captured\s+notes?|assessments?|converted|shared)\b/i.test(qLower)) {
+        next.sourceTypeFilter = "";
+      }
+      if (!String(next.recruiterField || "").trim()) {
+        // Default recruiter filter should use owner/assigned dimension.
+        next.recruiterField = "owner";
+      }
     }
   }
 
