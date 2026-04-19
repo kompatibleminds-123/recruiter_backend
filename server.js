@@ -2553,9 +2553,12 @@ function isPlainCandidateLookupQuery(rawQuery = "") {
 }
 
 function splitBooleanTerms(raw = "") {
-  const matches = String(raw || "").match(/"[^"]+"|\S+/g) || [];
+  const normalized = String(raw || "")
+    .replace(/[“”]/g, "\"")
+    .replace(/[‘’]/g, "'");
+  const matches = normalized.match(/"[^"]+"|'[^']+'|\S+/g) || [];
   return matches
-    .map((part) => String(part || "").trim().replace(/^"|"$/g, ""))
+    .map((part) => String(part || "").trim().replace(/^["']|["']$/g, ""))
     .filter(Boolean);
 }
 
@@ -2601,8 +2604,25 @@ function candidateMatchesBooleanQuery(item, rawQuery = "") {
   const groups = parseBooleanSearchQuery(rawQuery);
   if (!groups.length) return true;
   const hay = buildCandidateSearchHay(item);
+  const matchesVariant = (variant = "") => {
+    const needle = String(variant || "").trim();
+    if (!needle) return false;
+    // Phrase match: keep substring semantics.
+    if (needle.includes(" ") || needle.startsWith(".") || /[^a-z0-9]/i.test(needle)) {
+      return hay.includes(needle);
+    }
+    // Short acronyms/terms like "ats" should match whole words only (avoid substring noise).
+    if (needle.length <= 3) {
+      try {
+        return new RegExp(`\\b${needle.replace(/[.*+?^${}()|[\\]\\\\]/g, "\\$&")}\\b`, "i").test(hay);
+      } catch {
+        return hay.includes(needle);
+      }
+    }
+    return hay.includes(needle);
+  };
   return groups.every((group) =>
-    group.some((term) => expandBooleanTerm(term).some((variant) => hay.includes(variant)))
+    group.some((term) => expandBooleanTerm(term).some((variant) => matchesVariant(variant)))
   );
 }
 
