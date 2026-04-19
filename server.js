@@ -1349,7 +1349,11 @@ function getNamedMonthRange(monthName, year = new Date().getFullYear()) {
 }
 
 function parseFreeformDateText(raw) {
-  const text = String(raw || "").trim().replace(/\.$/, "");
+  const text = String(raw || "")
+    .trim()
+    .replace(/\.$/, "")
+    // Handle ordinal day tokens like "13th April 2026" which `new Date(...)` often fails to parse.
+    .replace(/\b(\d{1,2})(st|nd|rd|th)\b/gi, "$1");
   if (!text) return "";
   const parsed = new Date(text);
   if (!Number.isFinite(parsed.getTime())) return "";
@@ -2461,6 +2465,11 @@ function sanitizeCandidateSearchFilters(filters, normalizedQuery = "", universe 
       next.client = "";
       next.location = "";
       next.locations = [];
+      next.statuses = [];
+      next.detailedStatuses = [];
+      next.recruiterName = "";
+      next.recruiterField = "";
+      next.recruiterScope = "";
       next.minExperienceYears = null;
       next.maxExperienceYears = null;
       next.minCurrentCtcLpa = null;
@@ -2472,6 +2481,40 @@ function sanitizeCandidateSearchFilters(filters, normalizedQuery = "", universe 
       // Ensure interview window uses assessment interview dates.
       next.sourceTypeFilter = String(next.sourceTypeFilter || "").trim() || "assessment";
       next.dateField = "interview";
+    }
+  }
+
+  // Recruiter-only queries like "Profiles sourced by Nike" or "Profiles assigned to Sakeena"
+  // should not inherit unrelated AI filters like location/company/notice buckets.
+  const recruiterOnlyIntent = Boolean(String(next.recruiterName || "").trim());
+  if (recruiterOnlyIntent) {
+    const remainder = qLower
+      .replace(/\bprofiles?\b|\bcandidates?\b|\bshow\b|\bget\b|\bme\b|\ball\b/g, " ")
+      .replace(/\bself\b|\bsourced\b|\bcaptured\b|\bassigned\b|\bowned\b|\bowner\b|\bby\b|\bto\b|\bof\b|\bfor\b/g, " ")
+      .replace(new RegExp(`\\b${String(next.recruiterName || "").trim().toLowerCase().replace(/[.*+?^${}()|[\\]\\\\]/g, "\\$&")}\\b`, "g"), " ")
+      .replace(/[^\w\s]+/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+    const hasExtraConstraints = Boolean(remainder);
+    if (!hasExtraConstraints) {
+      next.role = "";
+      next.skills = [];
+      next.currentCompany = "";
+      next.client = "";
+      next.location = "";
+      next.locations = [];
+      next.statuses = [];
+      next.detailedStatuses = [];
+      next.minExperienceYears = null;
+      next.maxExperienceYears = null;
+      next.minCurrentCtcLpa = null;
+      next.maxCurrentCtcLpa = null;
+      next.minExpectedCtcLpa = null;
+      next.maxExpectedCtcLpa = null;
+      next.maxNoticeDays = null;
+      next.dateFrom = "";
+      next.dateTo = "";
+      next.dateField = "";
     }
   }
 
