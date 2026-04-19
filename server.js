@@ -1555,6 +1555,7 @@ function buildDashboardSummary({ candidates = [], assessments = [], jobs = [], d
       ? rawPosition
       : (resolvedJob?.title || getPositionLabel(candidate, linkedAssessment || {}, knownJdTitles));
     const dateRange = { from: dateFrom, to: dateTo };
+    const createdAt = getCandidateCreatedAt(candidate);
     // Admin sourcing credit: show how many candidates were originally captured by the admin (even if assigned to others).
     // Prefer assigned_by_name when present; recruiter_name can be overwritten later.
     const assignedByLabel = String(candidate?.assigned_by_name || candidate?.assignedByName || "").trim();
