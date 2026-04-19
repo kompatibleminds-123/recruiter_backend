@@ -4838,6 +4838,9 @@ function PortalApp({ token, onLogout }) {
       const recruiterValue = String(item.assigned_to_name || item.ownerRecruiter || item.recruiterName || "").trim();
       const draftPayload = parsePortalObjectField(item?.draft_payload || item?.draftPayload);
       const genderValue = String(item.gender || draftPayload?.gender || "").trim();
+      const normalizedClientValue = clientValue.toLowerCase();
+      const normalizedRecruiterValue = recruiterValue.toLowerCase();
+      const normalizedGenderValue = genderValue.toLowerCase();
       if (candidateStructuredFilters.minExperience && (years == null || years < minYears)) return false;
       if (candidateStructuredFilters.maxExperience && (years == null || years > maxYears)) return false;
       if (candidateStructuredFilters.location) {
@@ -4854,7 +4857,7 @@ function PortalApp({ token, onLogout }) {
         if (requiredSkills.length && !requiredSkills.every((term) => skillsHay.includes(term))) return false;
       }
       if (candidateStructuredFilters.currentCompany && !companyHay.includes(String(candidateStructuredFilters.currentCompany).trim().toLowerCase())) return false;
-      if (candidateStructuredFilters.client && clientValue !== candidateStructuredFilters.client) return false;
+      if (candidateStructuredFilters.client && normalizedClientValue !== String(candidateStructuredFilters.client || "").trim().toLowerCase()) return false;
       if (candidateStructuredFilters.minCurrentCtc && (currentCtc == null || currentCtc < minCurrentCtc)) return false;
       if (candidateStructuredFilters.maxCurrentCtc && (currentCtc == null || currentCtc > maxCurrentCtc)) return false;
       if (candidateStructuredFilters.minExpectedCtc && (expectedCtc == null || expectedCtc < minExpectedCtc)) return false;
@@ -4866,8 +4869,8 @@ function PortalApp({ token, onLogout }) {
       } else if (candidateStructuredFilters.maxNoticeDays && (noticeDays == null || noticeDays > Number(candidateStructuredFilters.maxNoticeDays))) {
         return false;
       }
-      if (candidateStructuredFilters.recruiter && recruiterValue !== candidateStructuredFilters.recruiter) return false;
-      if (candidateStructuredFilters.gender && genderValue !== candidateStructuredFilters.gender) return false;
+      if (candidateStructuredFilters.recruiter && normalizedRecruiterValue !== String(candidateStructuredFilters.recruiter || "").trim().toLowerCase()) return false;
+      if (candidateStructuredFilters.gender && normalizedGenderValue !== String(candidateStructuredFilters.gender || "").trim().toLowerCase()) return false;
       return true;
     });
   }, [candidateBaseUniverse, candidateStructuredFilters]);
