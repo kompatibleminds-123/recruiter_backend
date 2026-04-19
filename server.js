@@ -2058,6 +2058,7 @@ async function backfillCandidateSkillsFromMetadata(user) {
 function parseNaturalLanguageCandidateQuery(rawQuery) {
   const query = String(rawQuery || "").trim();
   const lower = query.toLowerCase();
+  const statusNoiseRegex = /\b(feedback awaited|awaiting feedback|awaited feedback|not received|not responding|no response|nr|call later|call back later|switch off|switched off|not reachable|disconnected|busy|jd shared|shared jd|interested|not interested|revisit for other role|screening reject|interview reject|duplicate|shortlisted|offered|joined|hold)\b/ig;
   const upcomingJoiningsIntent = /\bupcoming\s+joining(?:s)?\b/i.test(lower);
   const minExperienceMatch = lower.match(/(\d+(?:\.\d+)?)\s*\+?\s*years?/);
   const maxExperienceMatch = lower.match(/\b(?:under|less than|max)\s+(\d+(?:\.\d+)?)\s*years?/);
@@ -2176,6 +2177,7 @@ function parseNaturalLanguageCandidateQuery(rawQuery) {
     .replace(/\bshared\b.*$/i, "")
     .replace(/\bcaptured\b.*$/i, "")
     .replace(/\bsourced\b.*$/i, "")
+    .replace(statusNoiseRegex, " ")
     .replace(/\bthis month\b.*$/i, "")
     .replace(/\blast month\b.*$/i, "")
     .replace(/\bin\s+(january|february|march|april|may|june|july|august|september|october|november|december)\b.*$/i, "")
@@ -2197,6 +2199,7 @@ function parseNaturalLanguageCandidateQuery(rawQuery) {
     .replace(/\bfor\s+[a-z0-9][a-z0-9\s&.-]+$/i, "")
     .replace(/\bin\s+[a-z0-9][a-z0-9\s&.-]+$/i, "")
     .trim();
+  roleText = roleText.replace(/\s+/g, " ").trim();
   roleText = roleText.replace(/\bcandidates?\b/gi, "").trim();
   roleText = roleText.replace(/\bprofiles?\b/gi, "").trim();
   const locations = locationListMatch
@@ -2215,7 +2218,12 @@ function parseNaturalLanguageCandidateQuery(rawQuery) {
         .filter(Boolean)
     : [];
   const derivedSkills = explicitSkills.length ? explicitSkills : splitCandidateSearchKeywords(roleText);
-  const cleanedSkills = derivedSkills.filter((skill) => !["assessment", "assessments"].includes(String(skill || "").toLowerCase().trim()));
+  const cleanedSkills = derivedSkills
+    .map((skill) => String(skill || "").trim())
+    .filter(Boolean)
+    .filter((skill) => !["assessment", "assessments"].includes(String(skill || "").toLowerCase().trim()))
+    // prevent status terms like "not received" turning into required keywords (causes zero results)
+    .filter((skill) => !["not", "received", "feedback", "awaited", "awaiting", "responding", "response", "nr"].includes(String(skill || "").toLowerCase().trim()));
   const hasOrOperator = /\bor\b/i.test(lower);
   const skillsMatch = hasOrOperator && cleanedSkills.length >= 2 ? "any" : "all";
 
@@ -2483,6 +2491,12 @@ function sanitizeCandidateSearchFilters(filters, normalizedQuery = "", universe 
   const next = filters && typeof filters === "object" ? { ...filters } : {};
   const qLower = String(normalizedQuery || "").toLowerCase();
   const knownLocations = buildKnownUniverseLocationSet(universe, synonyms);
+  const noiseSkillTokens = new Set([
+    "not", "received", "feedback", "awaited", "awaiting", "responding", "response", "nr",
+    "screening", "interview", "reject", "rejected", "aligned", "hold", "busy", "disconnected",
+    "reachable", "switch", "off", "call", "later", "duplicate", "dropped", "shortlisted", "offered", "joined",
+    "jd", "shared", "interested", "revisit"
+  ]);
 
   // Interview list queries like "Interviews from 13th April 2026 to 19th April 2026" should not
   // accidentally inherit/introduce role/skill/company/location filters from AI interpretation.
@@ -2629,6 +2643,16 @@ function sanitizeCandidateSearchFilters(filters, normalizedQuery = "", universe 
       next.location = "";
       next.locations = [];
     }
+  }
+
+  // If the query is primarily about a status (attempt outcome / assessment status),
+  // don't let those status words become required skills keywords.
+  if (Array.isArray(next.detailedStatuses) && next.detailedStatuses.length && Array.isArray(next.skills) && next.skills.length) {
+    const cleaned = next.skills
+      .map((s) => String(s || "").trim())
+      .filter(Boolean)
+      .filter((s) => !noiseSkillTokens.has(normalizeDashboardText(s).toLowerCase()));
+    next.skills = cleaned;
   }
 
   return next;
