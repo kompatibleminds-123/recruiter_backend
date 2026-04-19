@@ -1489,7 +1489,10 @@ function addRecruiterOwnershipMetrics(target, recruiterLabel, candidate, linkedA
   const isApplicant = source === "website_apply" || source === "hosted_apply" || source === "google_sheet";
   const assignedLabel = getOwnerRecruiterLabel(candidate, linkedAssessment || {});
   const capturedByLabel = String(candidate?.recruiter_name || candidate?.recruiterName || "").trim();
+  const capturedById = String(candidate?.recruiter_id || candidate?.recruiterId || "").trim();
   const assignedByLabel = String(candidate?.assigned_by_name || candidate?.assignedByName || "").trim();
+  const assignedById = String(candidate?.assigned_by_user_id || candidate?.assignedByUserId || "").trim();
+  const assignedToId = String(candidate?.assigned_to_user_id || candidate?.assignedToUserId || "").trim();
   const hasAssignedTo = Boolean(
     String(candidate?.assigned_to_user_id || candidate?.assignedToUserId || "").trim()
     || String(candidate?.assigned_to_name || candidate?.assignedToName || "").trim()
@@ -1528,10 +1531,20 @@ function addRecruiterOwnershipMetrics(target, recruiterLabel, candidate, linkedA
   const recruiterNeedle = String(recruiterLabel || "").trim().toLowerCase();
   if (assignedLabel === recruiterLabel) {
     const assignedByNeedle = String(assignedByLabel || "").trim().toLowerCase();
-    // If assigned_by exists and is not this recruiter, it's assigned sourcing (admin/team assigned).
-    if (assignedByNeedle && assignedByNeedle !== recruiterNeedle) {
+    const capturedByNeedle = String(capturedByLabel || "").trim().toLowerCase();
+
+    // Core rule:
+    // If the note was captured by someone else (admin/team) and then assigned to this recruiter,
+    // it must count as "assigned", not "self sourced". To avoid misclassifying true self-sourced
+    // notes that were later re-assigned, we only treat "assigned" as canonical when the assigner
+    // is the same entity as the original capturer (capturedBy == assignedBy) and the assignee differs.
+    const assignedFromAnotherCapturer =
+      Boolean(assignedById && capturedById && assignedToId && assignedById === capturedById && assignedById !== assignedToId)
+      || Boolean(assignedByNeedle && capturedByNeedle && assignedByNeedle === capturedByNeedle && assignedByNeedle !== recruiterNeedle);
+
+    if (assignedFromAnotherCapturer) {
       target.ownership.assignedSourcing = Number(target.ownership.assignedSourcing || 0) + 1;
-    } else if (capturedByLabel && capturedByLabel.trim().toLowerCase() === recruiterNeedle) {
+    } else if (capturedByNeedle && capturedByNeedle === recruiterNeedle) {
       target.ownership.selfSourced = Number(target.ownership.selfSourced || 0) + 1;
     } else {
       // Fallback: if capture identity is missing, treat as assigned to avoid inflating self-sourced.
