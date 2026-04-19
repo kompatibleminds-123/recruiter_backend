@@ -6939,6 +6939,9 @@ function PortalApp({ token, onLogout }) {
     setCandidateSearchBusy(true);
     setStatus("workspace", "Searching candidates...", "ok");
     try {
+      // Avoid previous applied filters (especially notice bucket) silently wiping results.
+      // Search results should render as-is; filters remain editable and can be applied manually.
+      setCandidateStructuredFilters(EMPTY_CANDIDATE_STRUCTURED_FILTERS);
       const result = await api(
         `/company/candidates/search-natural?q=${encodeURIComponent(candidateSearchText)}&mode=${encodeURIComponent(mode)}&semantic=${semanticEnabled ? "1" : "0"}`,
         token
