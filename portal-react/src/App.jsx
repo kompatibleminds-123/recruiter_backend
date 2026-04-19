@@ -8451,7 +8451,7 @@ function PortalApp({ token, onLogout }) {
                                   {`Sourcing: ${group.ownership?.selfSourced || 0} self sourced | ${group.ownership?.adminAssignedSourcing || 0} assigned to team`}
                                 </p>
                                 <p className="muted">
-                                  {`Applicants (inbox): ${Number(group.ownership?.websiteApply || 0) + Number(group.ownership?.otherInboxApplicants || 0)} | Website apply: ${group.ownership?.websiteApply || 0} | Other: ${group.ownership?.otherInboxApplicants || 0}`}
+                                  {`Applicants (inbox): ${Number(group.ownership?.otherInboxApplicants || 0) + Number(group.ownership?.websiteApply || 0) + Number(group.ownership?.otherApplicants || 0)} | Website apply: ${group.ownership?.websiteApply || 0} | Hosted apply: ${group.ownership?.otherInboxApplicants || 0} | Others: ${group.ownership?.otherApplicants || 0}`}
                                 </p>
                                 <p className="muted">
                                   {`Assigned (from applicants): ${group.ownership?.adminAssignedApplicants || 0}`}

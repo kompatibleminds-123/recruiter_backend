@@ -1375,6 +1375,7 @@ function createDashboardRecruiterBucket() {
       directApplicants: 0,
       websiteApply: 0,
       otherInboxApplicants: 0,
+      otherApplicants: 0,
       adminAssignedApplicants: 0
     }
   };
@@ -1548,13 +1549,27 @@ function buildDashboardSummary({ candidates = [], assessments = [], jobs = [], d
   const actorIsAdmin = actor && typeof actor === "object"
     ? String(actor?.role || "").toLowerCase() === "admin"
     : false;
-  // No "credit" metric; keep simple and stable.
+  const dateRange = { from: dateFrom, to: dateTo };
+
+  // Admin block should show overall pipeline metrics, plus simple admin activity counts:
+  // - Sourcing (self sourced + assigned to team)
+  // - Applicants (inbox split by source + assigned to team)
+  const adminOwnership = actorIsAdmin && actorName
+    ? {
+      sourcedTotal: 0,
+      sourcedAssignedToTeam: 0,
+      applicantWebsite: 0,
+      applicantHosted: 0,
+      applicantOther: 0,
+      applicantsAssignedToTeam: 0
+    }
+    : null;
 
   for (const candidate of Array.isArray(candidates) ? candidates : []) {
     const linkedAssessment = getCanonicalLinkedAssessmentForCandidate(candidate, assessmentsById) || null;
     const resolvedJob = resolveJobForDashboardLoose(candidate, linkedAssessment || {}, jobById, jobByTitle);
     const source = String(candidate?.source || "").trim().toLowerCase();
-    const isApplicant = source === "website" || source === "website_apply" || source === "hosted_apply";
+    const isApplicant = source === "website" || source === "website_apply" || source === "hosted_apply" || source === "google_sheet";
     const rawPosition = String(candidate?.assigned_jd_title || candidate?.assignedJdTitle || candidate?.jd_title || candidate?.jdTitle || "").trim();
     // Website/hosted applicants can refer to jobs that are no longer in the system.
     // Keep them visible, but group them under a clear "Unmapped candidates" bucket so
@@ -1573,9 +1588,28 @@ function buildDashboardSummary({ candidates = [], assessments = [], jobs = [], d
     const positionLabel = isUnmappedApplicant
       ? rawPosition
       : (resolvedJob?.title || getPositionLabel(candidate, linkedAssessment || {}, knownJdTitles));
-    const dateRange = { from: dateFrom, to: dateTo };
     const createdAt = getCandidateCreatedAt(candidate);
-    // No-op: removed "sourced credit" to avoid confusion.
+
+    if (adminOwnership && isDateWithinRange(createdAt, dateRange.from, dateRange.to)) {
+      if (source === "website_apply") adminOwnership.applicantWebsite += 1;
+      else if (source === "hosted_apply") adminOwnership.applicantHosted += 1;
+      else if (source === "google_sheet") adminOwnership.applicantOther += 1;
+
+      const capturedBy = String(candidate?.recruiter_name || candidate?.recruiterName || "").trim();
+      if (capturedBy && capturedBy.toLowerCase() === actorName.toLowerCase() && !isApplicant) {
+        adminOwnership.sourcedTotal += 1;
+        const assignedTo = String(candidate?.assigned_to_name || candidate?.assignedToName || "").trim();
+        if (assignedTo && assignedTo.toLowerCase() !== actorName.toLowerCase()) {
+          adminOwnership.sourcedAssignedToTeam += 1;
+        }
+      }
+
+      const assignedBy = String(candidate?.assigned_by_name || candidate?.assignedByName || "").trim();
+      const assignedTo = String(candidate?.assigned_to_name || candidate?.assignedToName || "").trim();
+      if (assignedBy && assignedBy.toLowerCase() === actorName.toLowerCase() && isApplicant && assignedTo && assignedTo.toLowerCase() !== actorName.toLowerCase()) {
+        adminOwnership.applicantsAssignedToTeam += 1;
+      }
+    }
     // Dedupe conversion metrics by assessment id (legacy duplicates can exist).
     let effectiveAssessment = linkedAssessment;
     if (effectiveAssessment?.id) {
@@ -1651,6 +1685,20 @@ function buildDashboardSummary({ candidates = [], assessments = [], jobs = [], d
       addAssessmentOnlyMetrics(byClientRecruiter.get(matrixKey).metrics, assessment, dateRange);
       addAssessmentOnlyMetrics(byClientPosition.get(clientPositionKey).metrics, assessment, dateRange);
     }
+  }
+
+  // Override the admin bucket to behave as a company-level summary.
+  if (adminOwnership && actorName) {
+    if (!byOwnerRecruiter.has(actorName)) byOwnerRecruiter.set(actorName, createDashboardRecruiterBucket());
+    const bucket = byOwnerRecruiter.get(actorName);
+    bucket.metrics = { ...overall };
+    bucket.ownership = bucket.ownership && typeof bucket.ownership === "object" ? bucket.ownership : {};
+    bucket.ownership.selfSourced = adminOwnership.sourcedTotal;
+    bucket.ownership.adminAssignedSourcing = adminOwnership.sourcedAssignedToTeam;
+    bucket.ownership.websiteApply = adminOwnership.applicantWebsite;
+    bucket.ownership.otherInboxApplicants = adminOwnership.applicantHosted;
+    bucket.ownership.otherApplicants = adminOwnership.applicantOther;
+    bucket.ownership.adminAssignedApplicants = adminOwnership.applicantsAssignedToTeam;
   }
 
   return {
