@@ -2078,8 +2078,14 @@ function parseNaturalLanguageCandidateQuery(rawQuery) {
   const appliedIntent = /\bapplied\b|\bapplicants?\b|\bwebsite\s+apply\b|\bhosted\s+apply\b/i.test(lower);
   // recruiter attribution intent (who captured it first, not current owner/assignee)
   const capturedByIntent = /\b(?:captured|sourced|added|created)\s+by\b|\b(?:captured|sourced)\s+from\b/i.test(lower);
-  const assessmentIntent = /\bassessments?\b/i.test(lower);
-  const convertedIntent = /\b(?:shared|converted|cv shared|cv to be shared)\b/i.test(lower);
+  const hasFeedbackAwaited = /\b(feedback awaited|awaiting feedback|awaited feedback)\b/i.test(lower);
+  let assessmentIntent = /\bassessments?\b/i.test(lower);
+  let convertedIntent = /\b(?:shared|converted|cv shared|cv to be shared)\b/i.test(lower);
+  // Treat "feedback awaited" as an assessment-status intent even if the recruiter doesn't say "assessment".
+  if (hasFeedbackAwaited) {
+    assessmentIntent = true;
+    convertedIntent = true;
+  }
   const recruiterNameMatch = lower.match(/\bby\s+([a-z][a-z\s.-]+?)(?:\s+for\b|\s+in\b|\s+this\b|\s+last\b|\s+today\b|\s+tomorrow\b|$)/i);
   const assignedToMatch = lower.match(/\bassigned\s+to\s+([a-z][a-z\s.-]+?)(?:\s+for\b|\s+in\b|\s+this\b|\s+last\b|\s+today\b|\s+tomorrow\b|$)/i);
   const targetLabelMatch = lower.match(/\bfor\s+([a-z0-9][a-z0-9\s&.-]+?)(?:\s+across roles|\s+this week|\s+tomorrow|\s+today|\s+last month|\s+this month|\s+from\s|\s+with\s|\s+under\b|$)/i);
@@ -2091,6 +2097,7 @@ function parseNaturalLanguageCandidateQuery(rawQuery) {
   if (/\breject(?:ed)?\b/i.test(lower)) statusTerms.push("rejected");
   if (/\bduplicate\b/i.test(lower)) statusTerms.push("duplicate");
   if (/\bdropped\b|\bdid not attend\b|\bnot responding\b|\bno response\b|\bno answer\b|\bnr\b/i.test(lower)) statusTerms.push("dropped");
+  if (hasFeedbackAwaited) detailedStatusTerms.push("feedback awaited");
   if (/\bscreening reject\b/i.test(lower)) detailedStatusTerms.push("screening reject");
   if (/\binterview reject\b/i.test(lower)) detailedStatusTerms.push("interview reject");
   if (/\bhold\b/i.test(lower)) detailedStatusTerms.push("hold");
@@ -2341,7 +2348,7 @@ async function interpretCandidateSearchQueryWithAi({ apiKey, query, actor }) {
     "Allowed lifecycle statuses:",
     "shortlisted, offered, joined, rejected, duplicate, dropped",
     "Allowed detailed statuses:",
-    "screening reject, interview reject, hold, not responding, under process, aligned, not received, not reachable, busy, switch off, disconnected, call later, interested, not interested, revisit for other role",
+    "feedback awaited, screening reject, interview reject, hold, not responding, under process, aligned, not received, not reachable, busy, switch off, disconnected, call later, interested, not interested, revisit for other role",
     "",
     `Query: ${String(query || "").trim()}`
   ].join("\n");
@@ -2359,10 +2366,19 @@ async function interpretCandidateSearchQueryWithAi({ apiKey, query, actor }) {
   const maxNoticeDaysValue = typeof result?.maxNoticeDays === "number" ? result.maxNoticeDays : null;
   const safeMaxNoticeDays = noticeMentioned ? maxNoticeDaysValue : null;
 
+  const feedbackMentioned = /\b(feedback awaited|awaiting feedback|awaited feedback)\b/i.test(qLower);
+
   const rawLocations = Array.isArray(result?.locations)
     ? result.locations.map((item) => String(item || "").trim()).filter(Boolean)
     : [];
   const safeLocations = rawLocations.filter((loc) => !looksLikeNonLocationToken(loc));
+
+  let nextDetailedStatuses = Array.isArray(result?.detailedStatuses)
+    ? result.detailedStatuses.map((item) => String(item || "").trim()).filter(Boolean)
+    : [];
+  if (feedbackMentioned && !nextDetailedStatuses.some((s) => String(s || "").toLowerCase() === "feedback awaited")) {
+    nextDetailedStatuses = [...nextDetailedStatuses, "feedback awaited"];
+  }
 
   return {
     raw: String(query || "").trim(),
@@ -2380,7 +2396,7 @@ async function interpretCandidateSearchQueryWithAi({ apiKey, query, actor }) {
     skills: normalizeCandidateSearchKeywords(result?.skills || []),
     currentCompany: String(result?.currentCompany || "").trim(),
     statuses: Array.isArray(result?.statuses) ? result.statuses.map((item) => normalizeDashboardText(item)).filter(Boolean) : [],
-    detailedStatuses: Array.isArray(result?.detailedStatuses) ? result.detailedStatuses.map((item) => String(item || "").trim()).filter(Boolean) : [],
+    detailedStatuses: nextDetailedStatuses,
     client: String(result?.client || "").trim(),
     targetLabel: "",
     interviewScheduled: false,
