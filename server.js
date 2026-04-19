@@ -525,8 +525,10 @@ const INFERRED_SEARCH_TAG_RULES = [
   { tag: "lending", patterns: [/\bloans?\b/i, /\blap\b/i, /\bhome loan\b/i, /\bpersonal loan\b/i, /\bmortgage\b/i] },
   { tag: "healthtech", patterns: [/\bhealthtech\b/i, /\bhealth care\b/i, /\bhospital\b/i, /\bpharma\b/i] },
   { tag: "enterprise sales", patterns: [/\benterprise sales\b/i, /\baccount executive\b/i, /\baccount manager\b/i, /\bbusiness development\b/i] },
-  { tag: "node backend", patterns: [/\bnode\.?js\b/i, /\bnode js\b/i, /\bbackend\b/i] },
-  { tag: "react frontend", patterns: [/\breact\.?js\b/i, /\breact js\b/i, /\bfrontend\b/i, /\bfront end\b/i] }
+  // IMPORTANT: Keep tech tags strict. Generic words like "backend" / "frontend" should not auto-map
+  // to "node backend" / "react frontend" because that causes false positives in Database search.
+  { tag: "node backend", patterns: [/\bnode\.?js\b/i, /\bnode js\b/i, /\bexpress\.?js\b/i, /\bnest\.?js\b/i] },
+  { tag: "react frontend", patterns: [/\breact\.?js\b/i, /\breact js\b/i, /\breact\b/i] }
 ];
 
 function deriveInferredSearchTags({ cvResult = null, recruiterNotes = "", otherPointers = "", tags = [] } = {}) {
@@ -541,6 +543,25 @@ function deriveInferredSearchTags({ cvResult = null, recruiterNotes = "", otherP
     if (rule.patterns.some((pattern) => pattern.test(combinedText))) inferred.add(rule.tag);
   }
   return Array.from(inferred);
+}
+
+function filterTechSearchTags(rawTags = [], evidenceText = "") {
+  const tags = Array.isArray(rawTags) ? rawTags : [];
+  if (!tags.length) return [];
+
+  // NOTE: This intentionally ignores the tag text itself as evidence (otherwise a stored tag like
+  // "react frontend" would keep itself forever). Only keep these tech tags when we see supporting
+  // evidence in notes/CV metadata/screening answers.
+  const hay = String(evidenceText || "");
+  const keepNodeBackend = /\bnode\.?js\b|\bnode js\b|\bexpress\.?js\b|\bnest\.?js\b/i.test(hay);
+  const keepReactFrontend = /\breact\.?js\b|\breact js\b|\breact\b/i.test(hay);
+
+  return tags.filter((tag) => {
+    const normalized = String(tag || "").trim().toLowerCase();
+    if (normalized === "node backend") return keepNodeBackend;
+    if (normalized === "react frontend") return keepReactFrontend;
+    return true;
+  });
 }
 
 function summarizeApplicantNotes(payload = {}) {
@@ -2631,6 +2652,18 @@ function buildCandidateSearchUniverse(candidates = [], assessments = [], jobs = 
     const isConverted = Boolean(linkedAssessment?.id);
     if (linkedAssessment?.id) seenAssessmentIds.add(String(linkedAssessment.id));
     const resolvedJob = resolveJobForDashboardLoose(candidate, linkedAssessment || {}, jobById, jobByTitle);
+
+    // Evidence for keeping strict tech tags (avoid false positives from generic "backend"/"front").
+    const techTagEvidenceText = [
+      candidate?.notes || "",
+      candidate?.recruiter_context_notes || "",
+      candidate?.other_pointers || "",
+      combinedScreeningText,
+      linkedAssessment?.recruiterNotes || "",
+      linkedAssessment?.otherPointers || "",
+      linkedAssessment?.callbackNotes || "",
+      JSON.stringify(cachedCvResult || {})
+    ].filter(Boolean).join("\n");
     const rawSource = String(candidate?.source || "").trim().toLowerCase();
     const isApplicantSource = rawSource === "website" || rawSource === "website_apply" || rawSource === "hosted_apply";
     const rawPosition = String(candidate?.assigned_jd_title || candidate?.assignedJdTitle || candidate?.jd_title || candidate?.jdTitle || "").trim();
@@ -2648,8 +2681,8 @@ function buildCandidateSearchUniverse(candidates = [], assessments = [], jobs = 
       noticePeriod: String(candidate?.notice_period || linkedAssessment?.noticePeriod || "").trim(),
       currentOrgTenure: String(linkedAssessment?.currentOrgTenure || cachedCvResult?.currentOrgTenure || "").trim(),
       highestEducation: String(candidate?.highest_education || linkedAssessment?.highestEducation || cachedCvResult?.highestEducation || "").trim(),
-      skills: Array.isArray(candidate?.skills) ? candidate.skills : [],
-      inferredTags: Array.isArray(candidateMeta?.inferredSearchTags) ? candidateMeta.inferredSearchTags : [],
+      skills: filterTechSearchTags(Array.isArray(candidate?.skills) ? candidate.skills : [], techTagEvidenceText),
+      inferredTags: filterTechSearchTags(Array.isArray(candidateMeta?.inferredSearchTags) ? candidateMeta.inferredSearchTags : [], techTagEvidenceText),
       clientName: isUnmappedApplicant ? "Unmapped candidates" : (resolvedJob?.clientName || getClientLabel(candidate, linkedAssessment || {})),
       // For UI/presets: "Recruiter" should mean currently assigned/owned recruiter.
       recruiterName: getOwnerRecruiterLabel(candidate, linkedAssessment || {}),
