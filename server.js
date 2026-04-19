@@ -1691,7 +1691,7 @@ function buildDashboardSummary({ candidates = [], assessments = [], jobs = [], d
   if (adminOwnership && actorName) {
     if (!byOwnerRecruiter.has(actorName)) byOwnerRecruiter.set(actorName, createDashboardRecruiterBucket());
     const bucket = byOwnerRecruiter.get(actorName);
-    bucket.metrics = { ...overall };
+    // Keep bucket.metrics ownership-based (what admin currently owns / not assigned out).
     bucket.ownership = bucket.ownership && typeof bucket.ownership === "object" ? bucket.ownership : {};
     bucket.ownership.selfSourced = adminOwnership.sourcedTotal;
     bucket.ownership.adminAssignedSourcing = adminOwnership.sourcedAssignedToTeam;
