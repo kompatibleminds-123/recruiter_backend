@@ -2437,6 +2437,44 @@ function sanitizeCandidateSearchFilters(filters, normalizedQuery = "", universe 
   const qLower = String(normalizedQuery || "").toLowerCase();
   const knownLocations = buildKnownUniverseLocationSet(universe, synonyms);
 
+  // Interview list queries like "Interviews from 13th April 2026 to 19th April 2026" should not
+  // accidentally inherit/introduce role/skill/company/location filters from AI interpretation.
+  // These are "source-only" queries over assessments using the interview date field.
+  const isInterviewIntentQuery = /\binterviews?\b/i.test(qLower) || /\binterview\s+aligned\b/i.test(qLower) || /\bscheduled\s+interview\b/i.test(qLower);
+  if (isInterviewIntentQuery) {
+    const remainder = qLower
+      .replace(/\binterviews?\b/g, " ")
+      .replace(/\baligned\b|\bscheduled\b|\bschedule\b/g, " ")
+      .replace(/\bfrom\b|\bto\b|\bbetween\b|\band\b/g, " ")
+      .replace(/\b(last|this|next)\b/g, " ")
+      .replace(/\b(days?|weeks?|months?|month|week|today|tomorrow|yesterday)\b/g, " ")
+      .replace(/\b\d{1,4}(?:st|nd|rd|th)?\b/g, " ")
+      .replace(/\b(january|february|march|april|may|june|july|august|september|october|november|december)\b/g, " ")
+      .replace(/[^\w\s]+/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+    const hasExtraConstraints = Boolean(remainder);
+    if (!hasExtraConstraints) {
+      next.role = "";
+      next.skills = [];
+      next.currentCompany = "";
+      next.client = "";
+      next.location = "";
+      next.locations = [];
+      next.minExperienceYears = null;
+      next.maxExperienceYears = null;
+      next.minCurrentCtcLpa = null;
+      next.maxCurrentCtcLpa = null;
+      next.minExpectedCtcLpa = null;
+      next.maxExpectedCtcLpa = null;
+      next.maxNoticeDays = null;
+
+      // Ensure interview window uses assessment interview dates.
+      next.sourceTypeFilter = String(next.sourceTypeFilter || "").trim() || "assessment";
+      next.dateField = "interview";
+    }
+  }
+
   const noticeMentioned = /\b(notice|immediate|join|joining|lwd|doj)\b/i.test(qLower);
   if (!noticeMentioned && (next.maxNoticeDays === 0 || String(next.maxNoticeDays || "").trim() === "0")) {
     next.maxNoticeDays = null;
