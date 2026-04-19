@@ -4381,6 +4381,7 @@ function PortalApp({ token, onLogout }) {
 
   const capturedAssessmentMap = useMemo(() => {
     const map = new Map();
+    const AMBIGUOUS = { __ambiguous: true };
     const normalizeEmail = (value) => String(value || "").trim().toLowerCase();
     const normalizePhone = (value) => {
       const digits = String(value || "").replace(/[^\d]/g, "");
@@ -4395,10 +4396,19 @@ function PortalApp({ token, onLogout }) {
       if (candidateId && !map.has(`cid:${candidateId}`)) map.set(`cid:${candidateId}`, item);
 
       const email = normalizeEmail(item?.emailId || item?.email || "");
-      if (email && !map.has(`email:${email}`)) map.set(`email:${email}`, item);
+      if (email) {
+        const key = `email:${email}`;
+        // If multiple assessments share the same email, do not guess. Canonical candidate_id should exist.
+        if (!map.has(key)) map.set(key, item);
+        else map.set(key, AMBIGUOUS);
+      }
 
       const phone = normalizePhone(item?.phoneNumber || item?.phone || "");
-      if (phone && !map.has(`phone:${phone}`)) map.set(`phone:${phone}`, item);
+      if (phone) {
+        const key = `phone:${phone}`;
+        if (!map.has(key)) map.set(key, item);
+        else map.set(key, AMBIGUOUS);
+      }
     }
     return map;
   }, [state.assessments]);
@@ -4443,12 +4453,14 @@ function PortalApp({ token, onLogout }) {
     const email = normalizeEmail(candidateRow?.email || candidateRow?.emailId || "");
     if (email) {
       const byEmail = capturedAssessmentMap.get(`email:${email}`) || null;
+      if (byEmail && byEmail.__ambiguous) return null;
       return byEmail;
     }
 
     const phone = normalizePhone(candidateRow?.phone || candidateRow?.phoneNumber || "");
     if (phone) {
       const byPhone = capturedAssessmentMap.get(`phone:${phone}`) || null;
+      if (byPhone && byPhone.__ambiguous) return null;
       return byPhone;
     }
 
