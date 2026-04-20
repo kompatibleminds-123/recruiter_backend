@@ -3750,7 +3750,7 @@ function JdEmailModal({ open, jobs, value, onChange, onClose, onSend, busy = fal
   if (!open) return null;
   const jobOptions = Array.isArray(jobs) ? jobs : [];
   return (
-    <div className="overlay" onClick={onClose}>
+    <div className="overlay" onClick={() => { if (!busy) onClose(); }}>
       <div className="overlay-card" onClick={(e) => e.stopPropagation()}>
         <h3>Send JD Email</h3>
         <p className="muted">Sends from your configured SMTP (Settings → Email settings). Use Zoho app password.</p>
@@ -3983,6 +3983,8 @@ function PortalApp({ token, onLogout }) {
 	const [attempts, setAttempts] = useState([]);
 	const workspaceRefreshInFlightRef = useRef(false);
 	const lastWorkspaceRefreshAtRef = useRef(0);
+  // Prevent background refresh from clobbering in-flight actions (e.g. SMTP send).
+  const suspendWorkspaceRefreshRef = useRef(false);
 	const loadWorkspaceRef = useRef(null);
 	const linkedinSideWindowRef = useRef(null);
   const [selectedJobId, setSelectedJobId] = useState("");
@@ -4283,6 +4285,7 @@ function PortalApp({ token, onLogout }) {
 
   async function refreshWorkspaceSilently(reason = "manual") {
     if (!token || workspaceRefreshInFlightRef.current) return;
+    if (suspendWorkspaceRefreshRef.current) return;
     const now = Date.now();
     const throttleMs = reason === "poll" ? 20000 : 4000;
     if (now - lastWorkspaceRefreshAtRef.current < throttleMs) return;
@@ -4302,6 +4305,7 @@ function PortalApp({ token, onLogout }) {
 
   async function refreshWorkspaceNow() {
     if (!token || workspaceRefreshInFlightRef.current) return;
+    if (suspendWorkspaceRefreshRef.current) return;
     workspaceRefreshInFlightRef.current = true;
     lastWorkspaceRefreshAtRef.current = Date.now();
     setStatus("workspace", "Refreshing workspace...", "ok");
@@ -7115,6 +7119,7 @@ function PortalApp({ token, onLogout }) {
       return;
     }
     setJdEmailBusy(true);
+    suspendWorkspaceRefreshRef.current = true;
     setStatus("workspace", "Sending JD email...", "ok");
     try {
       const jobTitle = String((state.jobs || []).find((j) => String(j.id) === jobId)?.title || "Job Description").trim();
@@ -7131,6 +7136,7 @@ function PortalApp({ token, onLogout }) {
       setStatus("workspace", `Email failed: ${String(error?.message || error)}`, "error");
     } finally {
       setJdEmailBusy(false);
+      suspendWorkspaceRefreshRef.current = false;
     }
   }
 
