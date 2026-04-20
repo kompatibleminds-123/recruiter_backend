@@ -126,6 +126,7 @@ function buildJobShareEmail({ job, introText = "", senderName = "" }) {
   const jd = String(job?.jobDescription || "").trim();
   const redFlags = String(job?.redFlags || "").trim();
   const recruiterNotes = String(job?.recruiterNotes || "").trim();
+  const signatureText = String(job?.emailSignature || "").trim();
   const applyBase = String(process.env.PUBLIC_PORTAL_BASE_URL || "https://recruit.kompatibleminds.com").trim().replace(/\/+$/, "");
   const applyLink = job?.id ? `${applyBase}/apply/${encodeURIComponent(String(job.id))}` : "";
 
@@ -139,7 +140,8 @@ function buildJobShareEmail({ job, introText = "", senderName = "" }) {
     jd ? { label: "Job description", value: jd } : null,
     redFlags ? { label: "Red flags", value: redFlags } : null,
     recruiterNotes ? { label: "Notes", value: recruiterNotes } : null,
-    applyLink ? { label: "Apply link", value: applyLink } : null
+    applyLink ? { label: "Apply link", value: applyLink } : null,
+    signatureText ? { label: "Signature", value: signatureText } : null
   ].filter(Boolean);
 
   const htmlBody = blocks.map((item) => `
@@ -187,6 +189,7 @@ async function buildJobShareDocxBuffer({ job, introText = "", senderName = "" })
   const jd = String(job?.jobDescription || "").trim();
   const redFlags = String(job?.redFlags || "").trim();
   const recruiterNotes = String(job?.recruiterNotes || "").trim();
+  const signatureText = String(job?.emailSignature || "").trim();
   const applyBase = String(process.env.PUBLIC_PORTAL_BASE_URL || "https://recruit.kompatibleminds.com").trim().replace(/\/+$/, "");
   const applyLink = job?.id ? `${applyBase}/apply/${encodeURIComponent(String(job.id))}` : "";
 
@@ -202,7 +205,8 @@ async function buildJobShareDocxBuffer({ job, introText = "", senderName = "" })
     jd ? { label: "Job description", value: jd } : null,
     redFlags ? { label: "Red flags", value: redFlags } : null,
     recruiterNotes ? { label: "Notes", value: recruiterNotes } : null,
-    applyLink ? { label: "Apply link", value: applyLink } : null
+    applyLink ? { label: "Apply link", value: applyLink } : null,
+    signatureText ? { label: "Signature", value: signatureText } : null
   ].filter(Boolean);
 
   const children = [
@@ -5164,24 +5168,28 @@ const server = http.createServer(async (req, res) => {
       const job = (Array.isArray(jobs) ? jobs : []).find((item) => String(item?.id || "").trim() === jobId) || null;
       if (!job) throw new Error("JD not found.");
 
-      const mail = buildJobShareEmail({ job, introText, senderName: String(actor?.name || "").trim() });
+      const smtp = await getUserSmtpSettings({ companyId: actor.companyId, userId: actor.id }).catch(() => null);
+      const emailSignature = String(smtp?.signature || "").trim();
+      const mail = buildJobShareEmail({
+        job: { ...job, emailSignature },
+        introText,
+        senderName: String(actor?.name || "").trim()
+      });
       const finalSubject = subject || `JD: ${String(job?.title || "Job Description").trim()}`;
       const attachments = [];
       if (attachJdFile) {
-        const docxBuffer = await buildJobShareDocxBuffer({ job, introText, senderName: String(actor?.name || "").trim() }).catch(() => null);
-        if (docxBuffer) {
-          attachments.push({
-            filename: `${finalSubject.replace(/[^\w\s.-]+/g, "").slice(0, 80) || "job-description"}.docx`,
-            content: docxBuffer,
-            contentType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-          });
-        } else {
-          attachments.push({
-            filename: `${finalSubject.replace(/[^\w\s.-]+/g, "").slice(0, 80) || "job-description"}.txt`,
-            content: mail.text || "",
-            contentType: "text/plain; charset=utf-8"
-          });
-        }
+        if (!docxLib) throw new Error("DOCX attachment is not available on the server yet. Please redeploy and try again.");
+        const docxBuffer = await buildJobShareDocxBuffer({
+          job: { ...job, emailSignature },
+          introText,
+          senderName: String(actor?.name || "").trim()
+        });
+        if (!docxBuffer) throw new Error("DOCX generation failed. Please try again.");
+        attachments.push({
+          filename: `${finalSubject.replace(/[^\w\s.-]+/g, "").slice(0, 80) || "job-description"}.docx`,
+          content: docxBuffer,
+          contentType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        });
       }
 
       await sendJdEmailAsActor(actor, {
@@ -5251,7 +5259,7 @@ const server = http.createServer(async (req, res) => {
       sendJson(res, 200, {
         ok: true,
         result: settings
-          ? { host: settings.host, port: settings.port, secure: settings.secure, user: settings.user, from: settings.from, hasPassword: Boolean(settings.pass) }
+          ? { host: settings.host, port: settings.port, secure: settings.secure, user: settings.user, from: settings.from, signature: String(settings.signature || ""), hasPassword: Boolean(settings.pass) }
           : { host: "", port: 587, secure: false, user: actor.email || "", from: actor.email ? `${actor.name || "Recruiter"} <${actor.email}>` : "", hasPassword: false }
       });
     } catch (error) {

@@ -3782,7 +3782,7 @@ function JdEmailModal({ open, jobs, value, onChange, onClose, onSend, busy = fal
           </label>
           <label className="checkbox-row full">
             <input type="checkbox" checked={value.attachJdFile !== false} onChange={(e) => onChange("attachJdFile", e.target.checked)} />
-            <span>Attach JD as a text file</span>
+            <span>Attach JD as Word (.docx)</span>
           </label>
         </div>
         <div className="button-row">
@@ -4052,7 +4052,7 @@ function PortalApp({ token, onLogout }) {
     cvAnalysis: null,
     cvAnalysisApplied: false
   });
-  const [smtpSettings, setSmtpSettings] = useState({ host: "", port: 587, secure: false, user: "", from: "", pass: "", hasPassword: false });
+  const [smtpSettings, setSmtpSettings] = useState({ host: "", port: 587, secure: false, user: "", from: "", signature: "", pass: "", hasPassword: false });
   const [smtpSettingsLoaded, setSmtpSettingsLoaded] = useState(false);
   const [smtpSettingsKeepPass, setSmtpSettingsKeepPass] = useState(true);
 
@@ -7062,6 +7062,7 @@ function PortalApp({ token, onLogout }) {
         secure: Boolean(result?.secure),
         user: String(result?.user || "").trim(),
         from: String(result?.from || "").trim(),
+        signature: String(result?.signature || "").trim(),
         hasPassword: Boolean(result?.hasPassword),
         pass: ""
       }));
@@ -7083,6 +7084,7 @@ function PortalApp({ token, onLogout }) {
           secure: smtpSettings.secure,
           user: smtpSettings.user,
           from: smtpSettings.from,
+          signature: smtpSettings.signature,
           pass: smtpSettings.pass,
           keepPass: smtpSettingsKeepPass
         }
@@ -9728,6 +9730,15 @@ function PortalApp({ token, onLogout }) {
                   <div />
                   <label><span>SMTP user</span><input value={smtpSettings.user} onChange={(e) => setSmtpSettings((c) => ({ ...c, user: e.target.value }))} placeholder="you@yourdomain.com" /></label>
                   <label><span>From</span><input value={smtpSettings.from} onChange={(e) => setSmtpSettings((c) => ({ ...c, from: e.target.value }))} placeholder="Your Name <you@yourdomain.com>" /></label>
+                  <label className="full">
+                    <span>Email signature (optional)</span>
+                    <textarea
+                      rows={4}
+                      value={smtpSettings.signature}
+                      onChange={(e) => setSmtpSettings((c) => ({ ...c, signature: e.target.value }))}
+                      placeholder={"Regards,\nYour Name\nCompany\nPhone"}
+                    />
+                  </label>
                   <label className="full">
                     <span>{smtpSettings.hasPassword && smtpSettingsKeepPass ? "SMTP app password (kept)" : "SMTP app password"}</span>
                     <input type="password" value={smtpSettings.pass} onChange={(e) => setSmtpSettings((c) => ({ ...c, pass: e.target.value }))} placeholder={smtpSettings.hasPassword ? "Leave blank to keep existing" : "App password"} />
