@@ -80,6 +80,13 @@ try {
   nodemailer = null;
 }
 
+let docxLib = null;
+try {
+  docxLib = require("docx");
+} catch (_) {
+  docxLib = null;
+}
+
 const PORT = Number(process.env.PORT || 8787);
 const WHATSAPP_VERIFY_TOKEN = String(process.env.WHATSAPP_VERIFY_TOKEN || "").trim();
 const QUICK_CAPTURE_PUBLIC_DIR = path.join(__dirname, "public", "quick-capture");
@@ -167,6 +174,64 @@ function buildJobShareEmail({ job, introText = "", senderName = "" }) {
 
   const text = blocks.map((item) => `${item.label}:\n${item.value}`).join("\n\n");
   return { html, text, applyLink };
+}
+
+async function buildJobShareDocxBuffer({ job, introText = "", senderName = "" }) {
+  if (!docxLib) return null;
+  const title = String(job?.title || "Job Description").trim();
+  const client = String(job?.clientName || "").trim();
+  const location = String(job?.location || "").trim();
+  const workMode = String(job?.workMode || "").trim();
+  const aboutCompany = String(job?.aboutCompany || "").trim();
+  const mustHave = String(job?.mustHaveSkills || "").trim();
+  const jd = String(job?.jobDescription || "").trim();
+  const redFlags = String(job?.redFlags || "").trim();
+  const recruiterNotes = String(job?.recruiterNotes || "").trim();
+  const applyBase = String(process.env.PUBLIC_PORTAL_BASE_URL || "https://recruit.kompatibleminds.com").trim().replace(/\/+$/, "");
+  const applyLink = job?.id ? `${applyBase}/apply/${encodeURIComponent(String(job.id))}` : "";
+
+  const { Document, Packer, Paragraph, TextRun, HeadingLevel } = docxLib;
+
+  const blocks = [
+    introText ? { label: "Message", value: introText } : null,
+    client ? { label: "Client", value: client } : null,
+    location ? { label: "Location", value: location } : null,
+    workMode ? { label: "Work mode", value: workMode } : null,
+    aboutCompany ? { label: "About company", value: aboutCompany } : null,
+    mustHave ? { label: "Must have skills", value: mustHave } : null,
+    jd ? { label: "Job description", value: jd } : null,
+    redFlags ? { label: "Red flags", value: redFlags } : null,
+    recruiterNotes ? { label: "Notes", value: recruiterNotes } : null,
+    applyLink ? { label: "Apply link", value: applyLink } : null
+  ].filter(Boolean);
+
+  const children = [
+    new Paragraph({ text: title, heading: HeadingLevel.TITLE }),
+    new Paragraph({
+      children: [
+        new TextRun({
+          text: `Shared from RecruitDesk${senderName ? ` by ${senderName}` : ""}`,
+          italics: true
+        })
+      ]
+    }),
+    new Paragraph({ text: "" })
+  ];
+
+  blocks.forEach((item) => {
+    children.push(new Paragraph({ text: String(item.label || ""), heading: HeadingLevel.HEADING_2 }));
+    const lines = String(item.value || "").split(/\r?\n/);
+    lines.forEach((line) => {
+      children.push(new Paragraph({ text: String(line || "") }));
+    });
+    children.push(new Paragraph({ text: "" }));
+  });
+
+  const doc = new Document({
+    sections: [{ properties: {}, children }]
+  });
+  const buf = await Packer.toBuffer(doc);
+  return buf;
 }
 
 async function sendSmtpEmail({ to, subject, html, text }) {
@@ -5101,16 +5166,30 @@ const server = http.createServer(async (req, res) => {
 
       const mail = buildJobShareEmail({ job, introText, senderName: String(actor?.name || "").trim() });
       const finalSubject = subject || `JD: ${String(job?.title || "Job Description").trim()}`;
+      const attachments = [];
+      if (attachJdFile) {
+        const docxBuffer = await buildJobShareDocxBuffer({ job, introText, senderName: String(actor?.name || "").trim() }).catch(() => null);
+        if (docxBuffer) {
+          attachments.push({
+            filename: `${finalSubject.replace(/[^\w\s.-]+/g, "").slice(0, 80) || "job-description"}.docx`,
+            content: docxBuffer,
+            contentType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+          });
+        } else {
+          attachments.push({
+            filename: `${finalSubject.replace(/[^\w\s.-]+/g, "").slice(0, 80) || "job-description"}.txt`,
+            content: mail.text || "",
+            contentType: "text/plain; charset=utf-8"
+          });
+        }
+      }
+
       await sendJdEmailAsActor(actor, {
         to: recipients.join(", "),
         subject: finalSubject,
         html: mail.html,
         text: mail.text,
-        attachments: attachJdFile ? [{
-          filename: `${finalSubject.replace(/[^\w\s.-]+/g, "").slice(0, 80) || "job-description"}.txt`,
-          content: mail.text || "",
-          contentType: "text/plain; charset=utf-8"
-        }] : []
+        attachments
       });
 
       sendJson(res, 200, { ok: true, result: { sent: true, to: recipients, subject: finalSubject } });
