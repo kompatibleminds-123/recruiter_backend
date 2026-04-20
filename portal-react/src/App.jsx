@@ -3746,7 +3746,7 @@ function ClientProfileModal({ open, item, onClose, copySettings = DEFAULT_COPY_S
   );
 }
 
-function JdEmailModal({ open, jobs, value, onChange, onClose, onSend, busy = false }) {
+function JdEmailModal({ open, jobs, value, onChange, onClose, onSend, busy = false, status = "", statusKind = "" }) {
   if (!open) return null;
   const jobOptions = Array.isArray(jobs) ? jobs : [];
   return (
@@ -3754,6 +3754,7 @@ function JdEmailModal({ open, jobs, value, onChange, onClose, onSend, busy = fal
       <div className="overlay-card" onClick={(e) => e.stopPropagation()}>
         <h3>Send JD Email</h3>
         <p className="muted">Sends from your configured SMTP (Settings → Email settings). Use Zoho app password.</p>
+        {status ? <div className={`status ${statusKind || ""}`} style={{ marginBottom: 12 }}>{status}</div> : null}
         <div className="form-grid">
           <label className="full">
             <span>To</span>
@@ -4049,6 +4050,7 @@ function PortalApp({ token, onLogout }) {
 
   const [jdEmailModal, setJdEmailModal] = useState({ open: false, candidate: null, to: "", subject: "", introText: "", jobId: "" });
   const [jdEmailBusy, setJdEmailBusy] = useState(false);
+  const [jdEmailModalStatus, setJdEmailModalStatus] = useState({ message: "", kind: "" });
 
   const isAssessmentArchived = (assessment) => {
     if (!assessment) return false;
@@ -7103,6 +7105,7 @@ function PortalApp({ token, onLogout }) {
       introText: "",
       jobId: suggestedJobId
     });
+    setJdEmailModalStatus({ message: "", kind: "" });
   }
 
   async function sendCandidateJdEmail() {
@@ -7116,11 +7119,13 @@ function PortalApp({ token, onLogout }) {
     }
     if (!jobId) {
       setStatus("workspace", "Select JD/role first.", "error");
+      setJdEmailModalStatus({ message: "Select JD/role first.", kind: "error" });
       return;
     }
     setJdEmailBusy(true);
     suspendWorkspaceRefreshRef.current = true;
     setStatus("workspace", "Sending JD email...", "ok");
+    setJdEmailModalStatus({ message: "Sending email...", kind: "ok" });
     try {
       const jobTitle = String((state.jobs || []).find((j) => String(j.id) === jobId)?.title || "Job Description").trim();
       const subject = String(jdEmailModal.subject || "").trim() || `JD: ${jobTitle}`;
@@ -7131,9 +7136,10 @@ function PortalApp({ token, onLogout }) {
         introText: String(jdEmailModal.introText || "").trim()
       });
       setStatus("workspace", "JD emailed.", "ok");
-      setJdEmailModal({ open: false, candidate: null, to: "", subject: "", introText: "", jobId: "" });
+      setJdEmailModalStatus({ message: "JD emailed. Check your Zoho Sent folder to confirm.", kind: "ok" });
     } catch (error) {
       setStatus("workspace", `Email failed: ${String(error?.message || error)}`, "error");
+      setJdEmailModalStatus({ message: `Email failed: ${String(error?.message || error)}`, kind: "error" });
     } finally {
       setJdEmailBusy(false);
       suspendWorkspaceRefreshRef.current = false;
@@ -10169,9 +10175,11 @@ function PortalApp({ token, onLogout }) {
         jobs={state.jobs}
         value={jdEmailModal}
         onChange={(key, val) => setJdEmailModal((current) => ({ ...current, [key]: val }))}
-        onClose={() => setJdEmailModal({ open: false, candidate: null, to: "", subject: "", introText: "", jobId: "" })}
+        onClose={() => { setJdEmailModal({ open: false, candidate: null, to: "", subject: "", introText: "", jobId: "" }); setJdEmailModalStatus({ message: "", kind: "" }); }}
         onSend={() => void sendCandidateJdEmail()}
         busy={jdEmailBusy}
+        status={jdEmailModalStatus.message}
+        statusKind={jdEmailModalStatus.kind}
       />
       <ClientFeedbackModal open={Boolean(clientFeedbackItem)} item={clientFeedbackItem} onClose={() => setClientFeedbackItem(null)} onSave={(payload) => void saveClientFeedback(payload)} />
     </div>
