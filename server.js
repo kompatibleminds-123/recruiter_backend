@@ -173,7 +173,7 @@ async function sendSmtpEmail({ to, subject, html, text }) {
   throw new Error("Email is not configured. Each recruiter must configure Zoho SMTP in Settings.");
 }
 
-async function sendJdEmailAsActor(actor, { to, subject, html, text }) {
+async function sendJdEmailAsActor(actor, { to, subject, html, text, attachments = [] }) {
   if (!nodemailer) throw new Error("Email sending is not available.");
   const cfg = await getUserSmtpSettings({ companyId: actor.companyId, userId: actor.id });
   if (!cfg || !cfg.host || !cfg.user || !cfg.pass || !cfg.from) {
@@ -190,7 +190,8 @@ async function sendJdEmailAsActor(actor, { to, subject, html, text }) {
     to,
     subject,
     text,
-    html
+    html,
+    attachments: Array.isArray(attachments) ? attachments : []
   });
 }
 
@@ -5086,6 +5087,7 @@ const server = http.createServer(async (req, res) => {
       const toRaw = String(body.to || "").trim();
       const subject = String(body.subject || "").trim();
       const introText = String(body.introText || "").trim();
+      const attachJdFile = Boolean(body.attachJdFile);
       if (!jobId) throw new Error("jobId is required.");
       if (!toRaw) throw new Error("Recipient email is required.");
       const recipients = toRaw
@@ -5103,10 +5105,44 @@ const server = http.createServer(async (req, res) => {
         to: recipients.join(", "),
         subject: finalSubject,
         html: mail.html,
-        text: mail.text
+        text: mail.text,
+        attachments: attachJdFile ? [{
+          filename: `${finalSubject.replace(/[^\w\s.-]+/g, "").slice(0, 80) || "job-description"}.txt`,
+          content: mail.text || "",
+          contentType: "text/plain; charset=utf-8"
+        }] : []
       });
 
       sendJson(res, 200, { ok: true, result: { sent: true, to: recipients, subject: finalSubject } });
+    } catch (error) {
+      sendJson(res, 400, { ok: false, error: String(error.message || error) });
+    }
+    return;
+  }
+
+  if (req.method === "POST" && req.url === "/company/email/send") {
+    try {
+      const actor = await requireSessionUser(getBearerToken(req));
+      const body = await readJsonBody(req);
+      const toRaw = String(body.to || "").trim();
+      const subject = String(body.subject || "").trim();
+      const html = String(body.html || "").trim();
+      const text = String(body.text || "").trim();
+      if (!toRaw) throw new Error("Recipient email is required.");
+      if (!subject) throw new Error("Subject is required.");
+      if (!html && !text) throw new Error("Email content missing.");
+      const recipients = toRaw
+        .split(/,|;|\s+/)
+        .map((item) => String(item || "").trim())
+        .filter(Boolean);
+      if (!recipients.length) throw new Error("Recipient email is required.");
+      await sendJdEmailAsActor(actor, {
+        to: recipients.join(", "),
+        subject,
+        html: html || `<pre>${escapeHtml(text).replace(/\n/g, "<br/>")}</pre>`,
+        text: text || ""
+      });
+      sendJson(res, 200, { ok: true, result: { sent: true, to: recipients, subject } });
     } catch (error) {
       sendJson(res, 400, { ok: false, error: String(error.message || error) });
     }
