@@ -6698,6 +6698,34 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  // Lightweight endpoint to fetch latest CV parse result (stored in hidden metadata),
+  // used by the portal to auto-fill blank draft fields after background parsing completes.
+  if (req.method === "GET" && /^\/company\/candidates\/[^/]+\/cv-analysis$/.test(requestUrl.pathname)) {
+    try {
+      const actor = await requireSessionUser(getBearerTokenFromRequest(req, requestUrl));
+      const candidateId = String(requestUrl.pathname.replace(/^\/company\/candidates\//, "").replace(/\/cv-analysis$/, "")).trim();
+      if (!candidateId) throw new Error("Candidate not found.");
+      await ensureCandidateVisibleToActor(actor, candidateId);
+      const candidate = (await listCandidatesForUser(actor, { id: candidateId, limit: 1 }))[0] || null;
+      if (!candidate) throw new Error("Candidate not found in this company.");
+      const meta = decodeApplicantMetadata(candidate);
+      const cache = meta?.cvAnalysisCache && typeof meta.cvAnalysisCache === "object" ? meta.cvAnalysisCache : null;
+      const storedFile = cache?.storedFile && typeof cache.storedFile === "object" ? cache.storedFile : null;
+      const result = cache?.result && typeof cache.result === "object" ? cache.result : null;
+      sendJson(res, 200, {
+        ok: true,
+        result: {
+          parsePending: Boolean(cache?.parsePending),
+          storedFile,
+          analysis: result
+        }
+      });
+    } catch (error) {
+      sendJson(res, 400, { ok: false, error: String(error.message || error) });
+    }
+    return;
+  }
+
   if (req.method === "POST" && req.url === "/company/assessments/restore") {
     try {
       const actor = await requireSessionUser(getBearerToken(req));

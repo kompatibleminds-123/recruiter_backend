@@ -686,6 +686,9 @@ function buildInterviewCvAnalysis(baseForm = {}, result = {}, storedFile = null)
     currentDesignation: result.currentDesignation || "",
     currentOrgTenure: result.currentOrgTenure || "",
     highestEducation: result.highestEducation || "",
+    candidateName: result.candidateName || "",
+    emailId: result.emailId || "",
+    phoneNumber: result.phoneNumber || "",
     storedFile: storedFile || result.storedFile || null,
     cached: Boolean(result.cached),
     contradictions: [
@@ -6505,6 +6508,7 @@ function PortalApp({ token, onLogout }) {
     setStatus("interview", "Uploading CV... (parsing will continue in the background)");
     try {
       const fileData = await fileToBase64(file);
+      const isBlank = (value) => !String(value || "").trim();
       const payload = {
         candidateName: interviewForm.candidateName,
         emailId: interviewForm.emailId,
@@ -6526,11 +6530,25 @@ function PortalApp({ token, onLogout }) {
             ...payload
           });
       const result = parsed?.result || parsed || {};
-      setInterviewForm((current) => ({
-        ...current,
-        cvAnalysis: buildInterviewCvAnalysis(current, result, result.storedFile || current.cvAnalysis?.storedFile || null),
-        cvAnalysisApplied: false
-      }));
+      const nextStoredFile = result.storedFile || interviewForm.cvAnalysis?.storedFile || null;
+      setInterviewForm((current) => {
+        const analysis = buildInterviewCvAnalysis(current, result, nextStoredFile);
+        const next = { ...current, cvAnalysis: analysis, cvAnalysisApplied: false };
+        const fillBlank = (key, value) => {
+          if (!value) return;
+          if (isBlank(next[key])) next[key] = value;
+        };
+        // Never override typed fields; fill only blanks.
+        fillBlank("candidateName", analysis.candidateName);
+        fillBlank("emailId", analysis.emailId);
+        fillBlank("phoneNumber", analysis.phoneNumber);
+        fillBlank("totalExperience", analysis.exactTotalExperience || analysis.totalExperience);
+        fillBlank("currentCompany", analysis.currentCompany);
+        fillBlank("currentDesignation", analysis.currentDesignation);
+        fillBlank("currentOrgTenure", analysis.currentOrgTenure);
+        fillBlank("highestEducation", analysis.highestEducation);
+        return next;
+      });
       setStatus(
         "interview",
         result.cached
@@ -6540,6 +6558,45 @@ function PortalApp({ token, onLogout }) {
             : "CV parsed and saved in hidden metadata for later search use.",
         "ok"
       );
+
+      // If we uploaded in candidate context with background parsing, poll for completion and then auto-fill blanks.
+      if (interviewMeta.candidateId && payload.deferParse === true && result && result.queued === true) {
+        const candidateId = interviewMeta.candidateId;
+        (async () => {
+          for (let attempt = 0; attempt < 10; attempt += 1) {
+            await new Promise((r) => setTimeout(r, 2000));
+            try {
+              const latest = await api(`/company/candidates/${encodeURIComponent(candidateId)}/cv-analysis`, token).catch(() => null);
+              const latestResult = latest?.analysis || latest?.result?.analysis || null;
+              const parsePending = Boolean(latest?.parsePending || latest?.result?.parsePending);
+              const storedFile = latest?.storedFile || latest?.result?.storedFile || null;
+              if (parsePending) continue;
+              if (!latestResult) continue;
+              setInterviewForm((current) => {
+                const analysis = buildInterviewCvAnalysis(current, latestResult, storedFile || current.cvAnalysis?.storedFile || null);
+                const next = { ...current, cvAnalysis: analysis };
+                const fill = (key, value) => {
+                  if (!value) return;
+                  if (isBlank(next[key])) next[key] = value;
+                };
+                fill("candidateName", analysis.candidateName);
+                fill("emailId", analysis.emailId);
+                fill("phoneNumber", analysis.phoneNumber);
+                fill("totalExperience", analysis.exactTotalExperience || analysis.totalExperience);
+                fill("currentCompany", analysis.currentCompany);
+                fill("currentDesignation", analysis.currentDesignation);
+                fill("currentOrgTenure", analysis.currentOrgTenure);
+                fill("highestEducation", analysis.highestEducation);
+                return next;
+              });
+              setStatus("interview", "CV parsed in background. Blank fields auto-filled.", "ok");
+              break;
+            } catch {
+              // ignore
+            }
+          }
+        })();
+      }
     } catch (error) {
       setStatus("interview", String(error?.message || error), "error");
     }
@@ -6564,10 +6621,14 @@ function PortalApp({ token, onLogout }) {
     const isBlank = (value) => !String(value || "").trim();
     setInterviewForm((current) => ({
       ...current,
+      candidateName: isBlank(current.candidateName) ? (analysis.candidateName || current.candidateName) : current.candidateName,
+      emailId: isBlank(current.emailId) ? (analysis.emailId || current.emailId) : current.emailId,
+      phoneNumber: isBlank(current.phoneNumber) ? (analysis.phoneNumber || current.phoneNumber) : current.phoneNumber,
       totalExperience: isBlank(current.totalExperience) ? (analysis.exactTotalExperience || analysis.totalExperience || current.totalExperience) : current.totalExperience,
       currentCompany: isBlank(current.currentCompany) ? (analysis.currentCompany || current.currentCompany) : current.currentCompany,
       currentDesignation: isBlank(current.currentDesignation) ? (analysis.currentDesignation || current.currentDesignation) : current.currentDesignation,
       currentOrgTenure: isBlank(current.currentOrgTenure) ? (analysis.currentOrgTenure || current.currentOrgTenure) : current.currentOrgTenure,
+      highestEducation: isBlank(current.highestEducation) ? (analysis.highestEducation || current.highestEducation) : current.highestEducation,
       cvAnalysisApplied: true
     }));
     setStatus("interview", "Applied CV analysis values to draft.", "ok");
