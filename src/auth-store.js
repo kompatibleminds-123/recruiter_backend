@@ -391,6 +391,9 @@ function sanitizeJob(job) {
     title: job.title ?? p.title ?? "",
     clientName: job.clientName ?? job.client_name ?? p.clientName ?? "",
     aboutCompany: job.aboutCompany ?? job.about_company ?? p.aboutCompany ?? "",
+    // Anonymous/public apply link fields (stored in payload).
+    publicCompanyLine: job.publicCompanyLine ?? job.public_company_line ?? p.publicCompanyLine ?? p.public_company_line ?? "",
+    publicTitle: job.publicTitle ?? job.public_title ?? p.publicTitle ?? p.public_title ?? "",
     location: job.location ?? p.location ?? "",
     workMode: job.workMode ?? job.work_mode ?? p.workMode ?? "",
     jobDescription: job.jobDescription ?? job.job_description ?? p.jobDescription ?? "",
@@ -1161,7 +1164,30 @@ async function saveCompanyJob({ actorUserId, companyId, job }) {
     const ownerRecruiterId = actorIsAdmin ? String(job.ownerRecruiterId || job.owner_recruiter_id || "").trim() : String(actor.id || "").trim();
     const ownerRecruiterName = actorIsAdmin ? String(job.ownerRecruiterName || job.owner_recruiter_name || "").trim() : String(actor.name || "").trim();
     const assignedRecruiters = actorIsAdmin && Array.isArray(job.assignedRecruiters) ? job.assignedRecruiters : ownerRecruiterId ? [{ id: ownerRecruiterId, name: ownerRecruiterName, primary: true }] : [];
-    const next = { id: persistedJobId(job.id), companyId, title: String(job.title || "").trim(), clientName: String(job.clientName || "").trim(), aboutCompany: String(job.aboutCompany || "").trim(), location: String(job.location || "").trim(), workMode: String(job.workMode || "").trim(), jobDescription: String(job.jobDescription || "").trim(), mustHaveSkills: String(job.mustHaveSkills || "").trim(), redFlags: String(job.redFlags || "").trim(), recruiterNotes: String(job.recruiterNotes || "").trim(), standardQuestions: String(job.standardQuestions || "").trim(), jdShortcuts: String(job.jdShortcuts || "").trim(), ownerRecruiterId, ownerRecruiterName, assignedRecruiters, createdAt: ix >= 0 ? store.jobs[ix].createdAt : now, updatedAt: now, updatedBy: actor.email };
+    const next = {
+      id: persistedJobId(job.id),
+      companyId,
+      title: String(job.title || "").trim(),
+      clientName: String(job.clientName || "").trim(),
+      aboutCompany: String(job.aboutCompany || "").trim(),
+      // Anonymous/public apply link fields.
+      publicCompanyLine: String(job.publicCompanyLine || job.public_company_line || "").trim(),
+      publicTitle: String(job.publicTitle || job.public_title || "").trim(),
+      location: String(job.location || "").trim(),
+      workMode: String(job.workMode || "").trim(),
+      jobDescription: String(job.jobDescription || "").trim(),
+      mustHaveSkills: String(job.mustHaveSkills || "").trim(),
+      redFlags: String(job.redFlags || "").trim(),
+      recruiterNotes: String(job.recruiterNotes || "").trim(),
+      standardQuestions: String(job.standardQuestions || "").trim(),
+      jdShortcuts: String(job.jdShortcuts || "").trim(),
+      ownerRecruiterId,
+      ownerRecruiterName,
+      assignedRecruiters,
+      createdAt: ix >= 0 ? store.jobs[ix].createdAt : now,
+      updatedAt: now,
+      updatedBy: actor.email
+    };
     if (ix >= 0) store.jobs[ix] = next; else store.jobs.push(next); writeStore(store); return sanitizeJob(next);
   }
   await ensureSeeded();
