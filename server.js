@@ -116,7 +116,7 @@ function escapeHtml(value) {
     .replace(/'/g, "&#039;");
 }
 
-function buildJobShareEmail({ job, introText = "", senderName = "" }) {
+function buildJobShareEmail({ job, introText = "", senderName = "", signatureText = "", signatureLinks = [] }) {
   const title = String(job?.title || "").trim();
   const client = String(job?.clientName || "").trim();
   const location = String(job?.location || "").trim();
@@ -147,6 +147,21 @@ function buildJobShareEmail({ job, introText = "", senderName = "" }) {
     <div class="block">${escapeHtml(item.value).replace(/\n/g, "<br/>")}</div>
   `.trim()).join("\n");
 
+  const signatureLinksSafe = Array.isArray(signatureLinks) ? signatureLinks : [];
+  const signatureTextSafe = String(signatureText || "").trim();
+  const signatureLinksHtml = signatureLinksSafe
+    .map((link) => ({
+      label: String(link?.label || "").trim(),
+      url: String(link?.url || "").trim()
+    }))
+    .filter((link) => link.url)
+    .map((link) => `<div><a href="${escapeHtml(link.url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(link.label || link.url)}</a></div>`)
+    .join("");
+  const signatureHtml = [
+    signatureTextSafe ? `<div>${escapeHtml(signatureTextSafe).replace(/\n/g, "<br/>")}</div>` : "",
+    signatureLinksHtml
+  ].filter(Boolean).join("");
+
   const html = `
     <!doctype html>
     <html>
@@ -168,11 +183,22 @@ function buildJobShareEmail({ job, introText = "", senderName = "" }) {
         <div class="muted">Shared from RecruitDesk${senderName ? ` by ${escapeHtml(senderName)}` : ""}</div>
         <hr/>
         ${htmlBody || "<div class='block'>No JD content found.</div>"}
+        ${signatureHtml ? `<div style="margin-top:22px;">${signatureHtml}</div>` : ""}
       </body>
     </html>
   `.trim();
 
-  const text = blocks.map((item) => `${item.label}:\n${item.value}`).join("\n\n");
+  const signatureTextLines = [
+    signatureTextSafe,
+    ...(signatureLinksSafe || [])
+      .map((link) => ({ label: String(link?.label || "").trim(), url: String(link?.url || "").trim() }))
+      .filter((link) => link.url)
+      .map((link) => `${link.label || "Link"}: ${link.url}`)
+  ].filter(Boolean).join("\n");
+  const text = [
+    blocks.map((item) => `${item.label}:\n${item.value}`).join("\n\n"),
+    signatureTextLines
+  ].filter(Boolean).join("\n\n");
   return { html, text, applyLink };
 }
 
@@ -5187,6 +5213,8 @@ const server = http.createServer(async (req, res) => {
       const toRaw = String(body.to || "").trim();
       const subject = String(body.subject || "").trim();
       const introText = String(body.introText || "").trim();
+      const signatureText = String(body.signatureText || "").trim();
+      const signatureLinks = Array.isArray(body.signatureLinks) ? body.signatureLinks : [];
       const attachJdFile = Boolean(body.attachJdFile);
       if (!jobId) throw new Error("jobId is required.");
       if (!toRaw) throw new Error("Recipient email is required.");
@@ -5202,7 +5230,9 @@ const server = http.createServer(async (req, res) => {
       const mail = buildJobShareEmail({
         job,
         introText,
-        senderName: String(actor?.name || "").trim()
+        senderName: String(actor?.name || "").trim(),
+        signatureText,
+        signatureLinks
       });
       const finalSubject = subject || `JD: ${String(job?.title || "Job Description").trim()}`;
       const attachments = [];

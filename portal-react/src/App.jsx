@@ -4062,7 +4062,17 @@ function PortalApp({ token, onLogout }) {
   const [smtpSettingsLoaded, setSmtpSettingsLoaded] = useState(false);
   const [smtpSettingsKeepPass, setSmtpSettingsKeepPass] = useState(true);
 
-  const [jdEmailModal, setJdEmailModal] = useState({ open: false, candidate: null, to: "", subject: "", introText: "", jobId: "", attachJdFile: true });
+  const [jdEmailModal, setJdEmailModal] = useState({
+    open: false,
+    candidate: null,
+    to: "",
+    subject: "",
+    introText: "",
+    jobId: "",
+    attachJdFile: true,
+    signatureText: "",
+    signatureLinks: []
+  });
   const [jdEmailBusy, setJdEmailBusy] = useState(false);
   const [jdEmailModalStatus, setJdEmailModalStatus] = useState({ message: "", kind: "" });
 
@@ -7143,11 +7153,7 @@ function PortalApp({ token, onLogout }) {
       { label: String(copySettings.clientShareSignatureLinkLabel || "").trim(), url: String(copySettings.clientShareSignatureLinkUrl || "").trim() },
       { label: String(copySettings.clientShareSignatureLinkLabel2 || "").trim(), url: String(copySettings.clientShareSignatureLinkUrl2 || "").trim() }
     ].filter((link) => link.url);
-    const signatureLines = [
-      signatureText,
-      ...signatureLinks.map((link) => `${link.label || "Link"}: ${link.url}`)
-    ].filter(Boolean).join("\n");
-    const defaultIntro = [baseIntro, signatureLines].filter(Boolean).join(baseIntro && signatureLines ? "\n\n" : "");
+    const defaultIntro = baseIntro;
     setJdEmailModal({
       open: true,
       candidate,
@@ -7156,7 +7162,9 @@ function PortalApp({ token, onLogout }) {
       introText: defaultIntro,
       jobId: suggestedJobId
       ,
-      attachJdFile: true
+      attachJdFile: true,
+      signatureText,
+      signatureLinks
     });
     setJdEmailModalStatus({ message: "", kind: "" });
   }
@@ -7188,6 +7196,8 @@ function PortalApp({ token, onLogout }) {
         to,
         subject,
         introText: String(jdEmailModal.introText || "").trim(),
+        signatureText: String(jdEmailModal.signatureText || "").trim(),
+        signatureLinks: Array.isArray(jdEmailModal.signatureLinks) ? jdEmailModal.signatureLinks : [],
         attachJdFile
       });
       setStatus("workspace", "JD emailed.", "ok");
