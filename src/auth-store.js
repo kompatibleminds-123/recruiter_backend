@@ -305,8 +305,7 @@ async function getUserSmtpSettings({ companyId, userId }) {
       secure: Boolean(payload.secure),
       user: String(payload.user || "").trim(),
       from: String(payload.from || "").trim(),
-      pass: decryptSecretString(String(payload.passEnc || "")),
-      signature: String(payload.signature || "").trim()
+      pass: decryptSecretString(String(payload.passEnc || ""))
     };
   }
   const rows = await sbSel("user_smtp_settings", `select=payload&company_id=eq.${enc(companyId)}&user_id=eq.${enc(userId)}&limit=1`).catch(() => []);
@@ -319,8 +318,7 @@ async function getUserSmtpSettings({ companyId, userId }) {
     secure: Boolean(payload.secure),
     user: String(payload.user || "").trim(),
     from: String(payload.from || "").trim(),
-    pass: decryptSecretString(String(payload.passEnc || "")),
-    signature: String(payload.signature || "").trim()
+    pass: decryptSecretString(String(payload.passEnc || ""))
   };
 }
 
@@ -334,7 +332,6 @@ async function saveUserSmtpSettings({ actorUserId, companyId, userId, settings }
   const user = String(src.user || "").trim();
   const from = String(src.from || "").trim();
   const pass = String(src.pass || "").trim();
-  const signature = String(src.signature || "").trim();
   const keepPass = Boolean(src.keepPass) && !pass;
   if (!host || !port || !user || !from) throw new Error("SMTP host, port, user and from are required.");
 
@@ -347,8 +344,7 @@ async function saveUserSmtpSettings({ actorUserId, companyId, userId, settings }
     secure,
     user,
     from,
-    passEnc: encryptSecretString(passToStore),
-    signature
+    passEnc: encryptSecretString(passToStore)
   };
 
   if (!cfg().on) {
