@@ -150,12 +150,23 @@ function buildJobShareEmail({ job, introText = "", senderName = "", signatureTex
   const signatureLinksSafe = Array.isArray(signatureLinks) ? signatureLinks : [];
   const signatureTextSafe = String(signatureText || "").trim();
   const signatureLinksHtml = signatureLinksSafe
-    .map((link) => ({
-      label: String(link?.label || "").trim(),
-      url: String(link?.url || "").trim()
-    }))
+    .map((link) => {
+      const labelRaw = String(link?.label || "").trim();
+      const parts = labelRaw.split("||").map((p) => String(p || "").trim()).filter(Boolean);
+      const label = String(parts[0] || labelRaw || "").trim();
+      const suffix = parts.length > 1 ? parts.slice(1).join(" || ").trim() : "";
+      return {
+        label,
+        suffix,
+        url: String(link?.url || "").trim()
+      };
+    })
     .filter((link) => link.url)
-    .map((link) => `<div><a href="${escapeHtml(link.url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(link.label || link.url)}</a></div>`)
+    .map((link) => {
+      const anchorText = escapeHtml(link.label || link.url);
+      const suffixText = link.suffix ? ` <span style="color:#6b7280;">${escapeHtml(link.suffix)}</span>` : "";
+      return `<div><a href="${escapeHtml(link.url)}" target="_blank" rel="noopener noreferrer">${anchorText}</a>${suffixText}</div>`;
+    })
     .join("");
   const signatureHtml = [
     signatureTextSafe ? `<div>${escapeHtml(signatureTextSafe).replace(/\n/g, "<br/>")}</div>` : "",
@@ -191,9 +202,16 @@ function buildJobShareEmail({ job, introText = "", senderName = "", signatureTex
   const signatureTextLines = [
     signatureTextSafe,
     ...(signatureLinksSafe || [])
-      .map((link) => ({ label: String(link?.label || "").trim(), url: String(link?.url || "").trim() }))
-      .filter((link) => link.url)
-      .map((link) => `${link.label || "Link"}: ${link.url}`)
+      .map((link) => {
+        const labelRaw = String(link?.label || "").trim();
+        const parts = labelRaw.split("||").map((p) => String(p || "").trim()).filter(Boolean);
+        const label = String(parts[0] || labelRaw || "").trim();
+        const suffix = parts.length > 1 ? parts.slice(1).join(" || ").trim() : "";
+        const url = String(link?.url || "").trim();
+        if (!url) return "";
+        return suffix ? `${label || "Link"}: ${url} (${suffix})` : `${label || "Link"}: ${url}`;
+      })
+      .filter(Boolean)
   ].filter(Boolean).join("\n");
   const text = [
     blocks.map((item) => `${item.label}:\n${item.value}`).join("\n\n"),
@@ -219,7 +237,6 @@ async function buildJobShareDocxBuffer({ job, introText = "", senderName = "" })
   const { Document, Packer, Paragraph, TextRun, HeadingLevel } = docxLib;
 
   const blocks = [
-    introText ? { label: "Message", value: introText } : null,
     client ? { label: "Client", value: client } : null,
     location ? { label: "Location", value: location } : null,
     workMode ? { label: "Work mode", value: workMode } : null,
