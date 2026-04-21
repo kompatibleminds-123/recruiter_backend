@@ -2493,8 +2493,12 @@ function buildClientPortalTrackerRows(items = [], cvTextByAssessmentId = {}) {
   });
 }
 
-function getApplyLink(jobId) {
+  function getApplyLink(jobId) {
   return jobId ? `${window.location.origin}/apply/${encodeURIComponent(jobId)}` : "";
+}
+
+function getPublicApplyLink(jobId) {
+  return jobId ? `${window.location.origin}/apply-public/${encodeURIComponent(jobId)}` : "";
 }
 
 function getRecruiterApplyLink(jobId, recruiterId, sig) {
@@ -9695,7 +9699,9 @@ function PortalApp({ token, onLogout }) {
                 <div className="form-grid">
                   <label><span>Select JD / role</span><select value={hostedJobId} onChange={(e) => setHostedJobId(e.target.value)}><option value="">Select JD / role</option>{state.jobs.map((job) => <option key={job.id} value={job.id}>{job.title}</option>)}</select></label>
                   <label><span>Hosted Apply Link</span><textarea readOnly value={getApplyLink(hostedJobId)} /></label>
+                  <label><span>Anonymous / Public Apply Link (client name hidden)</span><textarea readOnly value={getPublicApplyLink(hostedJobId)} /></label>
                   <div className="button-row"><button onClick={() => void copyText(getApplyLink(hostedJobId)).then(() => setStatus("intake", "Hosted apply link copied.", "ok"))}>Copy Apply Link</button></div>
+                  <div className="button-row"><button className="ghost-btn" onClick={() => void copyText(getPublicApplyLink(hostedJobId)).then(() => setStatus("intake", "Public apply link copied.", "ok"))}>Copy Public Link</button></div>
                 </div>
                 {hostedJobId ? (
                   <div className="template-item" style={{ marginTop: 16 }}>
@@ -9905,6 +9911,22 @@ function PortalApp({ token, onLogout }) {
                     </label>
                   )}
                   <label className="full"><span>About company</span><textarea value={jobDraft.aboutCompany} onChange={(e) => setJobDraft((c) => ({ ...c, aboutCompany: e.target.value }))} placeholder="Short company context shown on hosted apply link." /></label>
+                  <label className="full">
+                    <span>Public company line (anonymous apply link)</span>
+                    <textarea
+                      value={jobDraft.publicCompanyLine || ""}
+                      onChange={(e) => setJobDraft((c) => ({ ...c, publicCompanyLine: e.target.value }))}
+                      placeholder="Shown on /apply-public. Example: Leading company with all-in-one CRM stack for connected customer experience."
+                    />
+                  </label>
+                  <label className="full">
+                    <span>Public posting title (optional)</span>
+                    <input
+                      value={jobDraft.publicTitle || ""}
+                      onChange={(e) => setJobDraft((c) => ({ ...c, publicTitle: e.target.value }))}
+                      placeholder="If blank, public link will use JD title with client name redacted."
+                    />
+                  </label>
                   <label className="full"><span>Job description</span><textarea className="jd-editor" value={jobDraft.jobDescription} onChange={(e) => setJobDraft((c) => ({ ...c, jobDescription: e.target.value }))} placeholder="Paste the full JD here. Hosted apply link will show this as one clean block." /></label>
                   <label className="full"><span>Must-have skills</span><textarea value={jobDraft.mustHaveSkills} onChange={(e) => setJobDraft((c) => ({ ...c, mustHaveSkills: e.target.value }))} placeholder="Shown on hosted apply link only when filled." /></label>
                   <label className="full"><span>Red flags</span><textarea value={jobDraft.redFlags} onChange={(e) => setJobDraft((c) => ({ ...c, redFlags: e.target.value }))} /></label>

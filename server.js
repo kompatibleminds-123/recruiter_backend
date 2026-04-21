@@ -4596,6 +4596,11 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (req.method === "GET" && (requestUrl.pathname === "/apply-public" || requestUrl.pathname === "/apply-public/")) {
+    serveStaticFile(res, path.join(ROOT_PUBLIC_DIR, "apply.html"));
+    return;
+  }
+
   if (req.method === "GET" && requestUrl.pathname === "/shared/candidate") {
     serveStaticFile(res, path.join(ROOT_PUBLIC_DIR, "candidate.html"));
     return;
@@ -4662,6 +4667,11 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (req.method === "GET" && requestUrl.pathname.startsWith("/apply-public/")) {
+    serveStaticFile(res, path.join(ROOT_PUBLIC_DIR, "apply.html"));
+    return;
+  }
+
   if (req.method === "GET" && (requestUrl.pathname === "/jobs" || requestUrl.pathname === "/jobs/" || requestUrl.pathname.startsWith("/jobs/"))) {
     serveStaticFile(res, path.join(ROOT_PUBLIC_DIR, "apply.html"));
     return;
@@ -4688,17 +4698,42 @@ const server = http.createServer(async (req, res) => {
       const jobId = String(requestUrl.pathname.replace(/^\/public\/jobs\//, "").replace(/\/+$/, "")).trim();
       if (!jobId) throw new Error("Job not found.");
       const job = await getPublicCompanyJob(jobId);
+      const mode = String(requestUrl.searchParams.get("mode") || "").trim().toLowerCase();
+      const isPublic = mode === "public" || mode === "anonymous";
+
+      const rawClientName = String(job.clientName || "").trim();
+      const publicCompanyLine = String(
+        job.publicCompanyLine
+        || job.public_company_line
+        || job.publicCompany
+        || job.public_company
+        || ""
+      ).trim();
+      const publicTitle = String(job.publicTitle || job.public_title || "").trim();
+
+      const redactClientName = (text) => {
+        const value = String(text || "");
+        if (!isPublic) return value;
+        if (!rawClientName) return value;
+        try {
+          const escaped = rawClientName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+          return value.replace(new RegExp(escaped, "gi"), "Confidential Client");
+        } catch {
+          return value;
+        }
+      };
+
       sendJson(res, 200, {
         ok: true,
         result: {
           id: job.id,
           companyId: job.companyId,
-          title: job.title || "",
-          clientName: job.clientName || "",
-          aboutCompany: job.aboutCompany || "",
+          title: isPublic ? (publicTitle || redactClientName(job.title || "")) : (job.title || ""),
+          clientName: isPublic ? "" : (job.clientName || ""),
+          aboutCompany: isPublic ? (publicCompanyLine || "Confidential company") : (job.aboutCompany || ""),
           location: job.location || "",
           workMode: job.workMode || "",
-          jobDescription: job.jobDescription || "",
+          jobDescription: isPublic ? redactClientName(job.jobDescription || "") : (job.jobDescription || ""),
           mustHaveSkills: job.mustHaveSkills || "",
           redFlags: job.redFlags || ""
         }

@@ -23,8 +23,14 @@
   function getJobId() {
     const pathname = window.location.pathname || "";
     const parts = pathname.split("/").filter(Boolean);
-    if (parts[0] === "apply" && parts[1]) return decodeURIComponent(parts[1]);
+    if ((parts[0] === "apply" || parts[0] === "apply-public") && parts[1]) return decodeURIComponent(parts[1]);
     return new URLSearchParams(window.location.search).get("jobId") || "";
+  }
+
+  function isPublicApplyMode() {
+    const pathname = window.location.pathname || "";
+    const parts = pathname.split("/").filter(Boolean);
+    return parts[0] === "apply-public";
   }
 
   function getApplyAssignment() {
@@ -53,7 +59,11 @@
   }
 
   async function loadJob(jobId) {
-    const response = await fetch(`/public/jobs/${encodeURIComponent(jobId)}`);
+    const publicMode = isPublicApplyMode();
+    const url = publicMode
+      ? `/public/jobs/${encodeURIComponent(jobId)}?mode=public`
+      : `/public/jobs/${encodeURIComponent(jobId)}`;
+    const response = await fetch(url);
     const data = await readJsonSafely(response);
     if (!response.ok || !data?.ok) {
       throw new Error(data?.error || "Could not load this job. This link may be stale or the JD is not published in backend.");
@@ -114,7 +124,8 @@
     const meta = $("jobMeta");
     if (!meta) return;
     const chips = [];
-    if (job.clientName) chips.push(`Client: ${job.clientName}`);
+    // Public (anonymous) apply links never show the client name.
+    if (!isPublicApplyMode() && job.clientName) chips.push(`Client: ${job.clientName}`);
     if (job.location) chips.push(`Location: ${job.location}`);
     if (job.workMode) chips.push(`Work mode: ${job.workMode}`);
     meta.innerHTML = chips.map((item) => `<span class="chip">${escapeHtml(item)}</span>`).join("");
@@ -148,7 +159,7 @@
 
         const payload = {
           jdTitle: job.title || "",
-          clientName: job.clientName || "",
+          // Do not rely on clientName coming from the browser; backend will set it from the job record.
           sourcePlatform: "hosted_apply",
           sourceLabel: "RecruitDesk Apply Link",
           jobPageUrl: window.location.href,
