@@ -60,13 +60,18 @@ function standardizeSkillAliases(text) {
   let next = normalizeWhitespace(text).toLowerCase();
   next = next.replace(/\bnode\s*\.?\s*js\b/gi, "nodejs");
   next = next.replace(/\breact\s*\.?\s*js\b/gi, "react");
+  next = next.replace(/\bnext\s*\.?\s*js\b/gi, "nextjs");
   next = next.replace(/\bspring\s*boot\b/gi, "spring boot");
   // golang aliases
   next = next.replace(/\bgo\s*[-]?\s*lang\b/gi, "golang");
   next = next.replace(/\bgo\s*[-]?\s*language\b/gi, "golang");
   // dotnet aliases
   next = next.replace(/\basp\s*\.?\s*net\b/gi, "asp.net");
+  next = next.replace(/\basp\s*\.?\s*net\s*core\b/gi, "asp.net core");
+  next = next.replace(/\b\.net\s*core\b/gi, "dotnet core");
+  next = next.replace(/\bdot\s*net\b/gi, "dotnet");
   next = next.replace(/\b\.net\b/gi, "dotnet");
+  next = next.replace(/\bc\s*sharp\b/gi, "c#");
   return next;
 }
 

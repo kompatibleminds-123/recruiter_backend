@@ -1,29 +1,127 @@
+// Deterministic recruitment ontology used by normalization + synonym expansion.
+// This is safe to keep always-on (cost-free) and shared by both Boolean and Natural search.
 const DEFAULT_SYNONYMS = {
   locations: {
-    bombay: "mumbai",
-    "bengaluru": "bangalore",
-    "blr": "bangalore",
-    "delhi ncr": ["delhi", "gurgaon", "noida"],
-    "ncr": ["delhi", "gurgaon", "noida"],
-    "gurugram": ["gurugram", "gurgaon"],
-    "gurgram": ["gurugram", "gurgaon"]
+    // Delhi / NCR
+    "delhi": "delhi",
+    "new delhi": "delhi",
+    "ncr": ["delhi", "gurgaon", "noida", "faridabad", "ghaziabad"],
+    "delhi ncr": ["delhi", "gurgaon", "noida", "faridabad", "ghaziabad"],
+    "gurgaon": ["gurgaon", "gurugram", "ggn"],
+    "gurugram": ["gurgaon", "gurugram", "ggn"],
+    "gurgram": ["gurgaon", "gurugram", "ggn"],
+    "ggn": ["gurgaon", "gurugram", "ggn"],
+    "noida": ["noida", "greater noida"],
+    "greater noida": ["noida", "greater noida"],
+    "faridabad": "faridabad",
+    "ghaziabad": "ghaziabad",
+
+    // Major metros
+    "bangalore": ["bangalore", "bengaluru", "blr"],
+    "bengaluru": ["bangalore", "bengaluru", "blr"],
+    "blr": ["bangalore", "bengaluru", "blr"],
+    "mumbai": ["mumbai", "bombay", "navi mumbai", "thane"],
+    "bombay": ["mumbai", "bombay", "navi mumbai", "thane"],
+    "navi mumbai": ["mumbai", "navi mumbai"],
+    "thane": ["mumbai", "thane"],
+    "pune": ["pune", "hinjewadi"],
+    "hinjewadi": ["pune", "hinjewadi"],
+    "hyderabad": ["hyderabad", "hitech city", "gachibowli"],
+    "hitech city": ["hyderabad", "hitech city", "gachibowli"],
+    "gachibowli": ["hyderabad", "gachibowli"],
+    "chennai": "chennai",
+    "kolkata": ["kolkata", "calcutta"],
+    "calcutta": ["kolkata", "calcutta"],
+    "ahmedabad": "ahmedabad",
+    "jaipur": "jaipur",
+    "indore": "indore",
+    "chandigarh": ["chandigarh", "tricity", "mohali"],
+    "tricity": ["chandigarh", "tricity", "mohali"],
+    "mohali": ["chandigarh", "mohali", "tricity"],
+    "lucknow": "lucknow",
+    "kochi": ["kochi", "cochin"],
+    "cochin": ["kochi", "cochin"],
+    "coimbatore": "coimbatore",
+    "nagpur": "nagpur",
+    "surat": "surat",
+    "vadodara": ["vadodara", "baroda"],
+    "baroda": ["vadodara", "baroda"],
+
+    // Work modes
+    "remote": ["remote", "work from home", "wfh"],
+    "hybrid": "hybrid",
+    "onsite": "onsite"
   },
   experienceLevels: {
-    junior: { min: 0, max: 2 },
-    "entry level": { min: 0, max: 2 },
     fresher: { min: 0, max: 1 },
+    "entry level": { min: 0, max: 2 },
+    trainee: { min: 0, max: 2 },
+    junior: { min: 1, max: 2 },
+    "mid level": { min: 3, max: 5 },
     "mid-level": { min: 3, max: 5 },
     midlevel: { min: 3, max: 5 },
     senior: { min: 6, max: null },
-    "lead": { min: 7, max: null }
+    sr: { min: 6, max: null },
+    lead: { min: 8, max: null },
+    "team lead": { min: 8, max: null },
+    "tech lead": { min: 8, max: null },
+    architect: { min: 10, max: null },
+    "solution architect": { min: 10, max: null },
+    "enterprise architect": { min: 10, max: null }
   },
   // Canonical skill -> list of variants that should be treated as the same intent.
   skills: {
-    nodejs: ["node", "node js", "node.js", "node developer", "backend node engineer"],
-    react: ["reactjs", "react js", "react.js", "frontend react engineer", "react developer"],
-    "spring boot": ["spring", "springboot", "java spring", "java spring developer", "spring boot developer"],
-    // Golang is frequently written as "go" or "go lang" by recruiters.
-    golang: ["go", "go lang", "go-language", "go developer", "golang developer"]
+    // Languages / backend stacks
+    java: ["core java", "j2ee", "spring", "spring boot", "hibernate", "microservices", "maven"],
+    nodejs: ["node", "node js", "node.js", "express", "nestjs", "backend javascript", "node developer", "nodejs developer"],
+    javascript: ["js", "ecmascript"],
+    typescript: ["ts", "typescript frontend"],
+    python: ["django", "flask", "fastapi", "pandas", "numpy"],
+    php: ["laravel", "codeigniter"],
+    dotnet: ["dotnet", ".net", "asp.net", "aspnet", "c#", "c sharp", "csharp", "mvc", ".net core", "dotnet core", "asp.net core"],
+    ruby: ["rails", "ruby on rails"],
+    golang: ["go", "go lang", "go-language", "go developer", "golang developer"],
+    rust: ["rustlang"],
+
+    // Frontend
+    react: ["reactjs", "react js", "redux", "nextjs", "next js", "jsx", "frontend react engineer", "react developer"],
+    angular: ["angularjs", "angular js", "typescript frontend"],
+    vue: ["vuejs", "vue js"],
+
+    // Mobile
+    android: ["kotlin", "java android"],
+    ios: ["swift", "objective c", "objective-c"],
+    flutter: ["dart"],
+    "react native": ["rn mobile", "react-native"],
+
+    // QA
+    "qa manual": ["qa", "manual tester", "testing", "software tester"],
+    "automation qa": ["selenium", "cypress", "playwright", "automation tester", "testng"],
+    "performance testing": ["jmeter", "loadrunner"],
+
+    // DevOps / cloud
+    devops: ["sre", "platform engineer", "dev ops", "devops engineer"],
+    aws: ["amazon web services", "ec2", "s3", "lambda"],
+    azure: ["microsoft azure"],
+    gcp: ["google cloud"],
+    docker: ["containers"],
+    kubernetes: ["k8s"],
+    cicd: ["ci/cd", "ci cd", "jenkins", "github actions", "gitlab ci"],
+
+    // Databases / data
+    sql: ["mysql", "postgresql", "postgres", "mssql", "sql server"],
+    nosql: ["mongodb", "mongo", "cassandra", "dynamodb", "redis"],
+    kafka: ["apache kafka"],
+    "data engineering": ["data engineer", "etl", "spark", "pyspark", "airflow"],
+    bi: ["power bi", "tableau", "looker", "reporting analyst"],
+
+    // AI/ML
+    "ai/ml": ["machine learning", "ml", "ai", "nlp", "llm", "deep learning", "tensorflow", "pytorch"],
+    genai: ["openai", "langchain", "rag", "vector db", "vector database", "embeddings"],
+
+    // Apps
+    erp: ["sap", "oracle apps", "dynamics"],
+    crm: ["salesforce", "zoho crm", "hubspot"]
   }
 };
 
