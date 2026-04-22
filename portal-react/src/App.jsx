@@ -2394,6 +2394,37 @@ function downloadPresetExcelFile(filename, rows, presetId, settings = DEFAULT_CO
   downloadTextFile(filename, html, "application/vnd.ms-excel;charset=utf-8");
 }
 
+function buildExcelHtmlFromTable({ title = "", subtitle = "", headers = [], rows = [] } = {}) {
+  const heading = [
+    title ? `<h2>${escapeHtml(title)}</h2>` : "",
+    subtitle ? `<p>${escapeHtml(subtitle)}</p>` : ""
+  ].filter(Boolean).join("");
+
+  const headerHtml = `<tr>${(headers || []).map((h) => `<th>${escapeHtml(h)}</th>`).join("")}</tr>`;
+  const rowsHtml = (rows || []).map((row) => (
+    `<tr>${(row || []).map((cell) => `<td>${escapeHtml(cell)}</td>`).join("")}</tr>`
+  ));
+
+  return `<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <style>
+    table { border-collapse: collapse; width: 100%; }
+    td, th { font-family: Calibri, Arial, sans-serif; border: 1px solid #d9d9d9; padding: 6px; vertical-align: top; }
+    th { background: #f3f6ff; font-weight: 700; }
+  </style>
+</head>
+<body>
+  ${heading}
+  <table>
+    <thead>${headerHtml}</thead>
+    <tbody>${rowsHtml.join("")}</tbody>
+  </table>
+</body>
+</html>`;
+}
+
 function getAssessmentQuestionAnswers(assessment = {}) {
   const source = assessment && typeof assessment === "object" ? assessment : {};
   const pairs = [];
@@ -3915,6 +3946,8 @@ function PortalApp({ token, onLogout }) {
   const [agendaRange, setAgendaRange] = useState("today");
   const [openAssessmentMoreId, setOpenAssessmentMoreId] = useState("");
   const assessmentMoreMenuRef = useRef(null);
+  const [assessmentExportOpen, setAssessmentExportOpen] = useState(false);
+  const [assessmentExportKind, setAssessmentExportKind] = useState("interviews"); // interviews | offered
   const [copySettings, setCopySettings] = useState(() => {
     try {
       const saved = window.localStorage.getItem(COPY_SETTINGS_STORAGE_KEY);
@@ -4658,6 +4691,118 @@ function PortalApp({ token, onLogout }) {
       return true;
     });
   }, [state.assessments, state.candidates, assessmentFilters, assessmentLane]);
+
+  function inferInterviewRoundFromStatus(value) {
+    const raw = String(value || "").trim().toLowerCase();
+    if (!raw) return "";
+    if (raw.includes("screening call")) return "Screening";
+    if (/\bl1\b/.test(raw)) return "L1";
+    if (/\bl2\b/.test(raw)) return "L2";
+    if (/\bl3\b/.test(raw)) return "L3";
+    if (raw.includes("hr")) return "HR";
+    return "";
+  }
+
+  function getAssessmentOwnerLabel(assessment, linkedCandidate) {
+    const assignedTo = String(linkedCandidate?.assigned_to_name || linkedCandidate?.assignedToName || "").trim();
+    const ownerName = String(linkedCandidate?.recruiter_name || linkedCandidate?.recruiterName || assessment?.recruiterName || linkedCandidate?.recruiter_name || "").trim();
+    return assignedTo || ownerName || "";
+  }
+
+  function getAssessmentOfferedAt(assessment) {
+    const statusHistory = Array.isArray(assessment?.statusHistory) ? assessment.statusHistory : [];
+    const offered = statusHistory
+      .slice()
+      .reverse()
+      .find((entry) => normalizeAssessmentStatusLabel(entry?.status || "").toLowerCase() === "offered");
+    const stamp = String(offered?.at || "").trim() || String(assessment?.updatedAt || "").trim();
+    return stamp;
+  }
+
+  function downloadAssessmentEventXlsx(kind = assessmentExportKind) {
+    const dateFrom = String(assessmentFilters.dateFrom || "").trim();
+    const dateTo = String(assessmentFilters.dateTo || "").trim();
+    const labelRange = [dateFrom || "any", dateTo || "any"].join("_to_");
+    const today = new Date().toISOString().slice(0, 10);
+    const filename = `assessments-${kind}-${labelRange}-${today}.xlsx`;
+
+    if (kind === "interviews") {
+      const rows = filteredAssessments
+        .map((assessment) => {
+          const linkedCandidate = assessmentLinkedCandidateMap.get(String(assessment?.id || "")) || null;
+          const interviewAt = String(assessment?.interviewAt || "").trim();
+          const interviewDate = interviewAt ? interviewAt.slice(0, 10) : "";
+          if (!interviewAt) return null;
+          if (dateFrom && interviewDate && interviewDate < dateFrom) return null;
+          if (dateTo && interviewDate && interviewDate > dateTo) return null;
+
+          const latest = getLatestAssessmentStatusPreview(assessment);
+          const status = normalizeAssessmentStatusLabel(latest.status) || latest.status || "";
+          const round = inferInterviewRoundFromStatus(status) || inferInterviewRoundFromStatus(assessment?.candidateStatus || "");
+          const recruiter = getAssessmentOwnerLabel(assessment, linkedCandidate);
+          const clientName = String(assessment?.clientName || linkedCandidate?.client_name || "").trim();
+          const jdTitle = String(assessment?.jdTitle || linkedCandidate?.jd_title || "").trim();
+          return [
+            interviewAt ? new Date(interviewAt).toLocaleString() : "",
+            round,
+            String(assessment?.candidateName || "").trim(),
+            jdTitle,
+            clientName,
+            recruiter,
+            status,
+            String(latest.remarks || "").trim()
+          ];
+        })
+        .filter(Boolean);
+
+      const html = buildExcelHtmlFromTable({
+        title: "Interview List",
+        subtitle: `Range: ${dateFrom || "Any"} to ${dateTo || "Any"}`,
+        headers: ["Interview date/time", "Round", "Candidate", "Role", "Client", "Recruiter", "Assessment status", "Remarks"],
+        rows
+      });
+      downloadTextFile(filename, html, "application/vnd.ms-excel;charset=utf-8");
+      return;
+    }
+
+    if (kind === "offered") {
+      const rows = filteredAssessments
+        .map((assessment) => {
+          const linkedCandidate = assessmentLinkedCandidateMap.get(String(assessment?.id || "")) || null;
+          const latest = getLatestAssessmentStatusPreview(assessment);
+          const status = normalizeAssessmentStatusLabel(latest.status) || normalizeAssessmentStatusLabel(assessment?.candidateStatus || "") || "";
+          if (status.toLowerCase() !== "offered") return null;
+
+          const offeredAt = getAssessmentOfferedAt(assessment);
+          const offeredDate = offeredAt ? offeredAt.slice(0, 10) : "";
+          if (dateFrom && offeredDate && offeredDate < dateFrom) return null;
+          if (dateTo && offeredDate && offeredDate > dateTo) return null;
+
+          const recruiter = getAssessmentOwnerLabel(assessment, linkedCandidate);
+          const clientName = String(assessment?.clientName || linkedCandidate?.client_name || "").trim();
+          const jdTitle = String(assessment?.jdTitle || linkedCandidate?.jd_title || "").trim();
+
+          return [
+            offeredAt ? new Date(offeredAt).toLocaleString() : "",
+            String(assessment?.candidateName || "").trim(),
+            jdTitle,
+            clientName,
+            recruiter,
+            status,
+            String(latest.remarks || "").trim()
+          ];
+        })
+        .filter(Boolean);
+
+      const html = buildExcelHtmlFromTable({
+        title: "Offered Candidates",
+        subtitle: `Range: ${dateFrom || "Any"} to ${dateTo || "Any"}`,
+        headers: ["Offered at", "Candidate", "Role", "Client", "Recruiter", "Assessment status", "Remarks"],
+        rows
+      });
+      downloadTextFile(filename, html, "application/vnd.ms-excel;charset=utf-8");
+    }
+  }
 
   const assessmentLinkedCandidateMap = useMemo(() => {
     const map = new Map();
@@ -9308,6 +9453,7 @@ function PortalApp({ token, onLogout }) {
                 <button onClick={() => void copyAssessmentsExcel()}>Copy Excel</button>
                 <button onClick={() => void copyAssessmentsWhatsapp()}>Copy WhatsApp</button>
                 <button onClick={() => void copyAssessmentsEmail()}>Copy Email</button>
+                <button className="ghost-btn" onClick={() => setAssessmentExportOpen(true)}>Download XLSX</button>
               </div>
               <div className="status-note">Selected for client share: {selectedAssessmentIds.length}</div>
               <div className="stack-list">
@@ -10469,6 +10615,25 @@ function PortalApp({ token, onLogout }) {
         status={jdEmailModalStatus.message}
         statusKind={jdEmailModalStatus.kind}
       />
+      {assessmentExportOpen ? (
+        <div className="overlay" onClick={() => setAssessmentExportOpen(false)}>
+          <div className="overlay-card" onClick={(e) => e.stopPropagation()}>
+            <h3>Download XLSX</h3>
+            <p className="muted">Exports from the current Assessments list and uses the Date from/to filters above as the event date range.</p>
+            <label>
+              <span>Export type</span>
+              <select value={assessmentExportKind} onChange={(e) => setAssessmentExportKind(e.target.value)}>
+                <option value="interviews">Interviews (scheduled)</option>
+                <option value="offered">Offered</option>
+              </select>
+            </label>
+            <div className="button-row" style={{ marginTop: 12 }}>
+              <button onClick={() => { downloadAssessmentEventXlsx(assessmentExportKind); setAssessmentExportOpen(false); }}>Download</button>
+              <button className="ghost-btn" onClick={() => setAssessmentExportOpen(false)}>Cancel</button>
+            </div>
+          </div>
+        </div>
+      ) : null}
       <ClientFeedbackModal open={Boolean(clientFeedbackItem)} item={clientFeedbackItem} onClose={() => setClientFeedbackItem(null)} onSave={(payload) => void saveClientFeedback(payload)} />
     </div>
   );
