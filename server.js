@@ -1444,9 +1444,43 @@ function getPositionLabel(candidate = {}, assessment = {}, knownJdTitles = null)
 function parseIsoDateValue(value) {
   const text = String(value || "").trim();
   if (!text) return null;
-  const stamp = new Date(text).getTime();
-  if (!Number.isFinite(stamp)) return null;
-  return new Date(stamp);
+
+  // 1) Native parsing for ISO/RFC formats.
+  const nativeStamp = new Date(text).getTime();
+  if (Number.isFinite(nativeStamp)) return new Date(nativeStamp);
+
+  // 2) Flexible parsing for common portal formats:
+  // - "15/04/2026, 01:55:52"
+  // - "15/04/2026 01:55"
+  // - "15-04-2026"
+  // - "04/15/2026" (less common, but handle)
+  const cleaned = text.replace(/,/g, " ").replace(/\s+/g, " ").trim();
+  const match = cleaned.match(/^(\d{1,2})[\/-](\d{1,2})[\/-](\d{2,4})(?:\s+(\d{1,2}):(\d{2})(?::(\d{2}))?)?(?:\s*(am|pm))?$/i);
+  if (match) {
+    const a = Number(match[1]);
+    const b = Number(match[2]);
+    const yearRaw = Number(match[3]);
+    const year = yearRaw < 100 ? 2000 + yearRaw : yearRaw;
+    let hour = match[4] != null ? Number(match[4]) : 0;
+    const minute = match[5] != null ? Number(match[5]) : 0;
+    const second = match[6] != null ? Number(match[6]) : 0;
+    const meridiem = String(match[7] || "").toLowerCase();
+    if (meridiem) {
+      if (meridiem === "pm" && hour < 12) hour += 12;
+      if (meridiem === "am" && hour === 12) hour = 0;
+    }
+
+    // Prefer dd/mm/yyyy (India) unless it is clearly mm/dd/yyyy.
+    const dayFirst = a > 12 || b <= 12;
+    const day = dayFirst ? a : b;
+    const month = dayFirst ? b : a;
+    if (year >= 1900 && month >= 1 && month <= 12 && day >= 1 && day <= 31) {
+      const stamp = Date.UTC(year, month - 1, day, hour, minute, second);
+      if (Number.isFinite(stamp)) return new Date(stamp);
+    }
+  }
+
+  return null;
 }
 
 function parseDateInput(value, endOfDay = false) {
@@ -3017,8 +3051,8 @@ function deriveInterviewAtFromHistory(assessment) {
   const toTs = (value) => {
     const raw = String(value || "").trim();
     if (!raw) return 0;
-    const parsed = Date.parse(raw);
-    return Number.isFinite(parsed) ? parsed : 0;
+    const parsed = parseIsoDateValue(raw);
+    return parsed ? parsed.getTime() : 0;
   };
   const best = candidates
     .map((entry) => ({
