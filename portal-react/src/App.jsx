@@ -3802,6 +3802,10 @@ function JdEmailModal({ open, jobs, value, onChange, onClose, onSend, busy = fal
             <input value={value.to} onChange={(e) => onChange("to", e.target.value)} placeholder="candidate@example.com" />
           </label>
           <label className="full">
+            <span>CC (optional)</span>
+            <input value={value.cc || ""} onChange={(e) => onChange("cc", e.target.value)} placeholder="manager@company.com, team@company.com" />
+          </label>
+          <label className="full">
             <span>JD / role</span>
             <select value={value.jobId} onChange={(e) => onChange("jobId", e.target.value)}>
               <option value="">Select JD / role</option>
@@ -3947,7 +3951,7 @@ function PortalApp({ token, onLogout }) {
   const [openAssessmentMoreId, setOpenAssessmentMoreId] = useState("");
   const assessmentMoreMenuRef = useRef(null);
   const [assessmentExportOpen, setAssessmentExportOpen] = useState(false);
-  const [assessmentExportKind, setAssessmentExportKind] = useState("interviews"); // interviews | offered
+  const [assessmentExportKind, setAssessmentExportKind] = useState("interviews_done"); // interviews_done | interviews_aligned | offered
   const [copySettings, setCopySettings] = useState(() => {
     try {
       const saved = window.localStorage.getItem(COPY_SETTINGS_STORAGE_KEY);
@@ -4110,11 +4114,14 @@ function PortalApp({ token, onLogout }) {
   });
   const [smtpSettingsLoaded, setSmtpSettingsLoaded] = useState(false);
   const [smtpSettingsKeepPass, setSmtpSettingsKeepPass] = useState(true);
+  const smtpSettingsDirtyRef = useRef(false);
+  const markSmtpSettingsDirty = () => { smtpSettingsDirtyRef.current = true; };
 
   const [jdEmailModal, setJdEmailModal] = useState({
     open: false,
     candidate: null,
     to: "",
+    cc: "",
     subject: "",
     introText: "",
     jobId: "",
@@ -4355,23 +4362,26 @@ function PortalApp({ token, onLogout }) {
       setCopySettings((current) => migrateCopySettings({ ...current, ...sharedPresetResult }));
     }
     if (smtpSettingsResult) {
-      setSmtpSettings((current) => ({
-        ...current,
-        host: String(smtpSettingsResult?.host || "").trim(),
-        port: Number(smtpSettingsResult?.port || 587),
-        secure: Boolean(smtpSettingsResult?.secure),
-        user: String(smtpSettingsResult?.user || "").trim(),
-        from: String(smtpSettingsResult?.from || "").trim(),
-        hasPassword: Boolean(smtpSettingsResult?.hasPassword),
-        signatureText: String(smtpSettingsResult?.signatureText || "").trim(),
-        signatureLinkLabel: String(smtpSettingsResult?.signatureLinkLabel || "").trim(),
-        signatureLinkUrl: String(smtpSettingsResult?.signatureLinkUrl || "").trim(),
-        signatureLinkLabel2: String(smtpSettingsResult?.signatureLinkLabel2 || "").trim(),
-        signatureLinkUrl2: String(smtpSettingsResult?.signatureLinkUrl2 || "").trim(),
-        pass: ""
-      }));
-      setSmtpSettingsKeepPass(Boolean(smtpSettingsResult?.hasPassword));
-      setSmtpSettingsLoaded(true);
+      const isEditingMailSettings = location?.pathname === "/mail-settings";
+      if (!isEditingMailSettings || !smtpSettingsDirtyRef.current) {
+        setSmtpSettings((current) => ({
+          ...current,
+          host: String(smtpSettingsResult?.host || "").trim(),
+          port: Number(smtpSettingsResult?.port || 587),
+          secure: Boolean(smtpSettingsResult?.secure),
+          user: String(smtpSettingsResult?.user || "").trim(),
+          from: String(smtpSettingsResult?.from || "").trim(),
+          hasPassword: Boolean(smtpSettingsResult?.hasPassword),
+          signatureText: String(smtpSettingsResult?.signatureText || "").trim(),
+          signatureLinkLabel: String(smtpSettingsResult?.signatureLinkLabel || "").trim(),
+          signatureLinkUrl: String(smtpSettingsResult?.signatureLinkUrl || "").trim(),
+          signatureLinkLabel2: String(smtpSettingsResult?.signatureLinkLabel2 || "").trim(),
+          signatureLinkUrl2: String(smtpSettingsResult?.signatureLinkUrl2 || "").trim(),
+          pass: ""
+        }));
+        setSmtpSettingsKeepPass(Boolean(smtpSettingsResult?.hasPassword));
+        setSmtpSettingsLoaded(true);
+      }
     }
     setStatus("workspace", "Portal loaded.", "ok");
   }
@@ -4719,14 +4729,73 @@ function PortalApp({ token, onLogout }) {
     return stamp;
   }
 
+  function buildAssessmentInterviewDoneRows({ assessments, linkedCandidateMap, dateFrom, dateTo }) {
+    const rows = [];
+    (assessments || []).forEach((assessment) => {
+      const linkedCandidate = linkedCandidateMap.get(String(assessment?.id || "")) || null;
+      const history = Array.isArray(assessment?.statusHistory) ? assessment.statusHistory : [];
+      history.forEach((entry, index) => {
+        const status = normalizeAssessmentStatusLabel(entry?.status || "");
+        const notes = String(entry?.notes || "").trim();
+        const atValue = String(entry?.at || entry?.updatedAt || "").trim();
+        const eventDate = atValue ? atValue.slice(0, 10) : "";
+        const marksInterviewDone = status.toLowerCase() === "feedback awaited"
+          && /interview/i.test(notes)
+          && /\bdone\b|\bcompleted\b/i.test(notes);
+        if (!marksInterviewDone || !atValue) return;
+        if (dateFrom && eventDate && eventDate < dateFrom) return;
+        if (dateTo && eventDate && eventDate > dateTo) return;
+
+        const priorRound = history
+          .slice(0, index)
+          .reverse()
+          .map((item) => normalizeAssessmentStatusLabel(item?.status || "") || String(item?.status || "").trim())
+          .map((value) => inferInterviewRoundFromStatus(value))
+          .find(Boolean);
+        const fallbackRound = inferInterviewRoundFromStatus(assessment?.candidateStatus || "");
+        const recruiter = getAssessmentOwnerLabel(assessment, linkedCandidate);
+        const clientName = String(assessment?.clientName || linkedCandidate?.client_name || "").trim();
+        const jdTitle = String(assessment?.jdTitle || linkedCandidate?.jd_title || "").trim();
+        rows.push([
+          atValue ? new Date(atValue).toLocaleString() : "",
+          priorRound || fallbackRound || "",
+          String(assessment?.candidateName || "").trim(),
+          jdTitle,
+          clientName,
+          recruiter,
+          status || "Feedback Awaited",
+          notes
+        ]);
+      });
+    });
+    return rows.sort((a, b) => String(b?.[0] || "").localeCompare(String(a?.[0] || "")));
+  }
+
   function downloadAssessmentEventXlsx(kind = assessmentExportKind) {
     const dateFrom = String(assessmentFilters.dateFrom || "").trim();
     const dateTo = String(assessmentFilters.dateTo || "").trim();
     const labelRange = [dateFrom || "any", dateTo || "any"].join("_to_");
     const today = new Date().toISOString().slice(0, 10);
-    const filename = `assessments-${kind}-${labelRange}-${today}.xlsx`;
+    const filename = `assessments-${kind}-${labelRange}-${today}.xls`;
 
-    if (kind === "interviews") {
+    if (kind === "interviews_done") {
+      const rows = buildAssessmentInterviewDoneRows({
+        assessments: filteredAssessments,
+        linkedCandidateMap: assessmentLinkedCandidateMap,
+        dateFrom,
+        dateTo
+      });
+      const html = buildExcelHtmlFromTable({
+        title: "Interviews Done",
+        subtitle: `Range: ${dateFrom || "Any"} to ${dateTo || "Any"}`,
+        headers: ["Done at", "Round", "Candidate", "Role", "Client", "Recruiter", "Current status", "Remarks"],
+        rows
+      });
+      downloadTextFile(filename, html, "application/vnd.ms-excel;charset=utf-8");
+      return;
+    }
+
+    if (kind === "interviews_aligned") {
       const rows = filteredAssessments
         .map((assessment) => {
           const linkedCandidate = assessmentLinkedCandidateMap.get(String(assessment?.id || "")) || null;
@@ -7314,6 +7383,7 @@ function PortalApp({ token, onLogout }) {
     if (smtpSettingsLoaded) return;
     try {
       const result = await api("/company/email-settings", token);
+      if (smtpSettingsDirtyRef.current) return;
       setSmtpSettings((current) => ({
         ...current,
         host: String(result?.host || "").trim(),
@@ -7358,6 +7428,7 @@ function PortalApp({ token, onLogout }) {
       });
       setSmtpSettings((c) => ({ ...c, pass: "", hasPassword: true }));
       setSmtpSettingsKeepPass(true);
+      smtpSettingsDirtyRef.current = false;
       setStatus("settings", "Email settings saved.", "ok");
     } catch (error) {
       setStatus("settings", `Email settings failed: ${String(error?.message || error)}`, "error");
@@ -7408,6 +7479,7 @@ function PortalApp({ token, onLogout }) {
       open: true,
       candidate,
       to: candidateEmail,
+      cc: "",
       subject: defaultSubject,
       introText: defaultIntro,
       jobId: suggestedJobId
@@ -7422,6 +7494,7 @@ function PortalApp({ token, onLogout }) {
   async function sendCandidateJdEmail() {
     const candidate = jdEmailModal.candidate;
     const to = String(jdEmailModal.to || "").trim();
+    const cc = String(jdEmailModal.cc || "").trim();
     const jobId = String(jdEmailModal.jobId || "").trim();
     const attachJdFile = jdEmailModal.attachJdFile !== false;
     if (!candidate) return;
@@ -7444,6 +7517,7 @@ function PortalApp({ token, onLogout }) {
       await api("/company/jds/send-email", token, "POST", {
         jobId,
         to,
+        cc,
         subject,
         introText: String(jdEmailModal.introText || "").trim(),
         signatureText: String(jdEmailModal.signatureText || "").trim(),
@@ -9453,7 +9527,10 @@ function PortalApp({ token, onLogout }) {
                 <button onClick={() => void copyAssessmentsExcel()}>Copy Excel</button>
                 <button onClick={() => void copyAssessmentsWhatsapp()}>Copy WhatsApp</button>
                 <button onClick={() => void copyAssessmentsEmail()}>Copy Email</button>
-                <button className="ghost-btn" onClick={() => setAssessmentExportOpen(true)}>Download XLSX</button>
+                <button className="ghost-btn" onClick={() => setAssessmentExportOpen(true)}>Download event report</button>
+              </div>
+              <div className="muted" style={{ marginTop: 6 }}>
+                Export interview done, interview aligned, or offered lists using the current date filters.
               </div>
               <div className="status-note">Selected for client share: {selectedAssessmentIds.length}</div>
               <div className="stack-list">
@@ -10008,18 +10085,18 @@ function PortalApp({ token, onLogout }) {
                 {statuses.settings ? <div className={`status ${statuses.settingsKind || ""}`}>{statuses.settings}</div> : null}
                 <p className="muted">Configure your SMTP credentials here. JD emails from candidate cards will send using these settings (per recruiter).</p>
                 <div className="form-grid two-col">
-                  <label><span>SMTP host</span><input value={smtpSettings.host} onChange={(e) => setSmtpSettings((c) => ({ ...c, host: e.target.value }))} placeholder="smtppro.zoho.com" /></label>
-                  <label><span>SMTP port</span><input type="number" value={smtpSettings.port} onChange={(e) => setSmtpSettings((c) => ({ ...c, port: Number(e.target.value || 0) || 587 }))} placeholder="587" /></label>
+                  <label><span>SMTP host</span><input value={smtpSettings.host} onChange={(e) => { markSmtpSettingsDirty(); setSmtpSettings((c) => ({ ...c, host: e.target.value })); }} placeholder="smtppro.zoho.com" /></label>
+                  <label><span>SMTP port</span><input type="number" value={smtpSettings.port} onChange={(e) => { markSmtpSettingsDirty(); setSmtpSettings((c) => ({ ...c, port: Number(e.target.value || 0) || 587 })); }} placeholder="587" /></label>
                   <label className="checkbox-row" style={{ alignItems: "center" }}>
-                    <input type="checkbox" checked={smtpSettings.secure} onChange={(e) => setSmtpSettings((c) => ({ ...c, secure: e.target.checked }))} />
+                    <input type="checkbox" checked={smtpSettings.secure} onChange={(e) => { markSmtpSettingsDirty(); setSmtpSettings((c) => ({ ...c, secure: e.target.checked })); }} />
                     <span>Use secure (SSL)</span>
                   </label>
                   <div />
-                  <label><span>SMTP user</span><input value={smtpSettings.user} onChange={(e) => setSmtpSettings((c) => ({ ...c, user: e.target.value }))} placeholder="you@yourdomain.com" /></label>
-                  <label><span>From</span><input value={smtpSettings.from} onChange={(e) => setSmtpSettings((c) => ({ ...c, from: e.target.value }))} placeholder="Your Name <you@yourdomain.com>" /></label>
+                  <label><span>SMTP user</span><input value={smtpSettings.user} onChange={(e) => { markSmtpSettingsDirty(); setSmtpSettings((c) => ({ ...c, user: e.target.value })); }} placeholder="you@yourdomain.com" /></label>
+                  <label><span>From</span><input value={smtpSettings.from} onChange={(e) => { markSmtpSettingsDirty(); setSmtpSettings((c) => ({ ...c, from: e.target.value })); }} placeholder="Your Name <you@yourdomain.com>" /></label>
                   <label className="full">
                     <span>{smtpSettings.hasPassword && smtpSettingsKeepPass ? "SMTP app password (kept)" : "SMTP app password"}</span>
-                    <input type="password" value={smtpSettings.pass} onChange={(e) => setSmtpSettings((c) => ({ ...c, pass: e.target.value }))} placeholder={smtpSettings.hasPassword ? "Leave blank to keep existing" : "App password"} />
+                    <input type="password" value={smtpSettings.pass} onChange={(e) => { markSmtpSettingsDirty(); setSmtpSettings((c) => ({ ...c, pass: e.target.value })); }} placeholder={smtpSettings.hasPassword ? "Leave blank to keep existing" : "App password"} />
                   </label>
                   {smtpSettings.hasPassword ? (
                     <label className="checkbox-row full">
@@ -10038,23 +10115,23 @@ function PortalApp({ token, onLogout }) {
                   <div className="form-grid two-col">
                     <label className="full">
                       <span>Signature text</span>
-                      <textarea value={smtpSettings.signatureText || ""} onChange={(e) => setSmtpSettings((c) => ({ ...c, signatureText: e.target.value }))} rows={5} placeholder={"Regards,\nYour Name\nYour Company"} />
+                      <textarea value={smtpSettings.signatureText || ""} onChange={(e) => { markSmtpSettingsDirty(); setSmtpSettings((c) => ({ ...c, signatureText: e.target.value })); }} rows={5} placeholder={"Regards,\nYour Name\nYour Company"} />
                     </label>
                     <label>
                       <span>Signature link 1 text</span>
-                      <input value={smtpSettings.signatureLinkLabel || ""} onChange={(e) => setSmtpSettings((c) => ({ ...c, signatureLinkLabel: e.target.value }))} placeholder="Kompatible Minds" />
+                      <input value={smtpSettings.signatureLinkLabel || ""} onChange={(e) => { markSmtpSettingsDirty(); setSmtpSettings((c) => ({ ...c, signatureLinkLabel: e.target.value })); }} placeholder="Kompatible Minds" />
                     </label>
                     <label>
                       <span>Signature link 1 URL</span>
-                      <input value={smtpSettings.signatureLinkUrl || ""} onChange={(e) => setSmtpSettings((c) => ({ ...c, signatureLinkUrl: e.target.value }))} placeholder="https://kompatibleminds.com" />
+                      <input value={smtpSettings.signatureLinkUrl || ""} onChange={(e) => { markSmtpSettingsDirty(); setSmtpSettings((c) => ({ ...c, signatureLinkUrl: e.target.value })); }} placeholder="https://kompatibleminds.com" />
                     </label>
                     <label>
                       <span>Signature link 2 text</span>
-                      <input value={smtpSettings.signatureLinkLabel2 || ""} onChange={(e) => setSmtpSettings((c) => ({ ...c, signatureLinkLabel2: e.target.value }))} placeholder="LinkedIn" />
+                      <input value={smtpSettings.signatureLinkLabel2 || ""} onChange={(e) => { markSmtpSettingsDirty(); setSmtpSettings((c) => ({ ...c, signatureLinkLabel2: e.target.value })); }} placeholder="LinkedIn" />
                     </label>
                     <label>
                       <span>Signature link 2 URL</span>
-                      <input value={smtpSettings.signatureLinkUrl2 || ""} onChange={(e) => setSmtpSettings((c) => ({ ...c, signatureLinkUrl2: e.target.value }))} placeholder="https://www.linkedin.com/in/..." />
+                      <input value={smtpSettings.signatureLinkUrl2 || ""} onChange={(e) => { markSmtpSettingsDirty(); setSmtpSettings((c) => ({ ...c, signatureLinkUrl2: e.target.value })); }} placeholder="https://www.linkedin.com/in/..." />
                     </label>
                   </div>
                 </div>
@@ -10609,7 +10686,7 @@ function PortalApp({ token, onLogout }) {
         jobs={state.jobs}
         value={jdEmailModal}
         onChange={(key, val) => setJdEmailModal((current) => ({ ...current, [key]: val }))}
-        onClose={() => { setJdEmailModal({ open: false, candidate: null, to: "", subject: "", introText: "", jobId: "", attachJdFile: true }); setJdEmailModalStatus({ message: "", kind: "" }); }}
+        onClose={() => { setJdEmailModal({ open: false, candidate: null, to: "", cc: "", subject: "", introText: "", jobId: "", attachJdFile: true, signatureText: "", signatureLinks: [] }); setJdEmailModalStatus({ message: "", kind: "" }); }}
         onSend={() => void sendCandidateJdEmail()}
         busy={jdEmailBusy}
         status={jdEmailModalStatus.message}
@@ -10618,12 +10695,13 @@ function PortalApp({ token, onLogout }) {
       {assessmentExportOpen ? (
         <div className="overlay" onClick={() => setAssessmentExportOpen(false)}>
           <div className="overlay-card" onClick={(e) => e.stopPropagation()}>
-            <h3>Download XLSX</h3>
-            <p className="muted">Exports from the current Assessments list and uses the Date from/to filters above as the event date range.</p>
+            <h3>Download event report</h3>
+            <p className="muted">Exports from the current Assessments list. Admin sees all visible assessments; recruiter sees only their own visible assessments. Date from/to above is used as the event date range.</p>
             <label>
               <span>Export type</span>
               <select value={assessmentExportKind} onChange={(e) => setAssessmentExportKind(e.target.value)}>
-                <option value="interviews">Interviews (scheduled)</option>
+                <option value="interviews_done">Interviews done</option>
+                <option value="interviews_aligned">Interviews aligned</option>
                 <option value="offered">Offered</option>
               </select>
             </label>
