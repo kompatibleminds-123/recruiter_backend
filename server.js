@@ -779,6 +779,79 @@ function filterTechSearchTags(rawTags = [], evidenceText = "") {
   });
 }
 
+function normalizeCandidateSearchDocText(value) {
+  const base = normalizeDashboardText(value);
+  if (!base) return "";
+  // Keep punctuation but normalize common tech strings so boolean queries match reliably.
+  return base
+    .replace(/\basp\s*\.?\s*net\b/gi, "asp.net")
+    // Keep both tokens so boolean phrases like ".net core" still match.
+    .replace(/\b\.net\b/gi, "dotnet .net")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function deriveCandidateSearchDocV1FromParts({
+  candidate = {},
+  meta = {},
+  draftPayload = {},
+  screeningAnswers = {},
+  cvResult = null,
+  inferredSearchTags = []
+} = {}) {
+  const safeCandidate = candidate && typeof candidate === "object" ? candidate : {};
+  const safeMeta = meta && typeof meta === "object" ? meta : {};
+  const safeDraft = draftPayload && typeof draftPayload === "object" ? draftPayload : {};
+  const safeScreening = screeningAnswers && typeof screeningAnswers === "object" ? screeningAnswers : {};
+  const safeCv = cvResult && typeof cvResult === "object" ? cvResult : {};
+
+  const metaScreening = normalizeJsonObjectInput(
+    safeMeta?.jdScreeningAnswers
+      || safeMeta?.jd_screening_answers
+      || {}
+  );
+  const draftScreening = normalizeJsonObjectInput(
+    safeDraft?.jdScreeningAnswers
+      || safeDraft?.jd_screening_answers
+      || {}
+  );
+
+  const chunks = [
+    safeCandidate?.name || "",
+    safeCandidate?.phone || "",
+    safeCandidate?.email || "",
+    safeCandidate?.linkedin || "",
+    safeCandidate?.company || "",
+    safeCandidate?.role || "",
+    safeCandidate?.experience || "",
+    safeCandidate?.location || "",
+    safeCandidate?.client_name || safeCandidate?.clientName || "",
+    safeCandidate?.jd_title || safeCandidate?.jdTitle || "",
+    safeCandidate?.assigned_jd_title || safeCandidate?.assignedJdTitle || "",
+    safeCandidate?.recruiter_name || safeCandidate?.recruiterName || "",
+    safeCandidate?.assigned_to_name || safeCandidate?.assignedToName || "",
+    safeCandidate?.notes || "",
+    safeCandidate?.recruiter_context_notes || safeCandidate?.recruiterContextNotes || "",
+    safeCandidate?.other_pointers || safeCandidate?.otherPointers || "",
+    safeCandidate?.current_ctc || safeCandidate?.currentCtc || "",
+    safeCandidate?.expected_ctc || safeCandidate?.expectedCtc || "",
+    safeCandidate?.notice_period || safeCandidate?.noticePeriod || "",
+    safeCandidate?.lwd_or_doj || safeCandidate?.lwdOrDoj || "",
+    safeCandidate?.highest_education || safeCandidate?.highestEducation || "",
+    Array.isArray(safeCandidate?.skills) ? safeCandidate.skills.join(" ") : "",
+    Array.isArray(inferredSearchTags) ? inferredSearchTags.join(" ") : "",
+    screeningAnswersToSearchText(safeScreening),
+    screeningAnswersToSearchText(draftScreening),
+    screeningAnswersToSearchText(metaScreening),
+    Object.keys(safeCv).length ? JSON.stringify(safeCv) : ""
+  ].filter(Boolean);
+
+  // Keep a hard cap to avoid raw_note metadata blowups.
+  const joined = chunks.join(" \n ");
+  const capped = joined.length > 24000 ? joined.slice(0, 24000) : joined;
+  return normalizeCandidateSearchDocText(capped);
+}
+
 function summarizeApplicantNotes(payload = {}) {
   return [
     payload?.sourcePlatform ? `Source: ${payload.sourcePlatform}` : "",
@@ -3003,6 +3076,16 @@ function candidateMatchesLooseNaturalTokens(item, rawQuery = "") {
 }
 
 function buildCandidateSearchHay(item = {}) {
+  const persisted = String(item?.raw?.metadata?.searchDocV1 || item?.raw?.metadata?.search_doc_v1 || "").trim();
+  if (persisted) {
+    const dynamic = normalizeDashboardText([
+      item.candidateStatus || "",
+      item.pipelineStage || "",
+      item.workflowStatus || "",
+      item.attemptStatus || ""
+    ].join(" "));
+    return normalizeCandidateSearchDocText(`${persisted} ${dynamic}`);
+  }
   const base = normalizeDashboardText([
     item.candidateName || "",
     item.raw?.candidate?.phone || "",
@@ -3033,10 +3116,7 @@ function buildCandidateSearchHay(item = {}) {
     item.attemptStatus || ""
   ].join(" "));
   // Make common tech keywords searchable even when punctuation/format differs in JSON CV text.
-  return base
-    .replace(/\basp\s*\.?\s*net\b/gi, "asp.net")
-    // Keep both tokens so boolean phrases like ".net core" still match.
-    .replace(/\b\.net\b/gi, "dotnet .net");
+  return normalizeCandidateSearchDocText(base);
 }
 
 function deriveInterviewAtFromHistory(assessment) {
@@ -3236,7 +3316,8 @@ function buildCandidateSearchUniverse(candidates = [], assessments = [], jobs = 
       ].filter(Boolean).join("\n"),
       raw: {
         candidate: null,
-        assessment
+        assessment,
+        metadata: null
       }
     });
   }
@@ -7062,10 +7143,38 @@ const server = http.createServer(async (req, res) => {
           otherPointers: patch.other_pointers ?? existing.other_pointers ?? "",
           tags: Array.isArray(input.skills) ? input.skills : (Array.isArray(existing.skills) ? existing.skills : [])
         });
-        patch.raw_note = encodeApplicantMetadata({
+        const mergedMeta = {
           ...(existingMeta || {}),
           ...(incomingMeta || {}),
           inferredSearchTags
+        };
+        const mergedCandidate = { ...(existing || {}), ...(patch || {}) };
+        const mergedDraft = patch.draft_payload && typeof patch.draft_payload === "object"
+          ? patch.draft_payload
+          : existing?.draft_payload && typeof existing.draft_payload === "object"
+            ? existing.draft_payload
+            : {};
+        const mergedScreening = patch.screening_answers && typeof patch.screening_answers === "object"
+          ? patch.screening_answers
+          : existing?.screening_answers && typeof existing.screening_answers === "object"
+            ? existing.screening_answers
+            : {};
+        const mergedCvResult = mergedMeta?.cvAnalysisCache?.result && typeof mergedMeta.cvAnalysisCache.result === "object"
+          ? mergedMeta.cvAnalysisCache.result
+          : cvResult && typeof cvResult === "object"
+            ? cvResult
+            : null;
+        mergedMeta.searchDocV1 = deriveCandidateSearchDocV1FromParts({
+          candidate: mergedCandidate,
+          meta: mergedMeta,
+          draftPayload: mergedDraft,
+          screeningAnswers: mergedScreening,
+          cvResult: mergedCvResult,
+          inferredSearchTags
+        });
+        mergedMeta.searchDocUpdatedAt = new Date().toISOString();
+        patch.raw_note = encodeApplicantMetadata({
+          ...(mergedMeta || {})
         });
       }
       const result = await patchCandidate(candidateId, patch, { companyId: actor.companyId });
@@ -7086,6 +7195,33 @@ const server = http.createServer(async (req, res) => {
       if (!String(candidate.assigned_to_user_id || "").trim() && !String(candidate.assigned_to_name || "").trim()) {
         candidate.assigned_to_user_id = actor.id;
         candidate.assigned_to_name = actor.name;
+      }
+
+      // Persist deterministic search doc for new saves (no backfill). This improves boolean/AI retrieval
+      // while keeping current behavior for older records (computed on the fly).
+      {
+        const meta = decodeApplicantMetadata(candidate);
+        const cvResult = meta?.cvAnalysisCache?.result && typeof meta.cvAnalysisCache.result === "object" ? meta.cvAnalysisCache.result : null;
+        const inferredSearchTags = deriveInferredSearchTags({
+          cvResult,
+          recruiterNotes: candidate.recruiter_context_notes || "",
+          otherPointers: candidate.other_pointers || "",
+          tags: Array.isArray(candidate.skills) ? candidate.skills : []
+        });
+        const nextMeta = {
+          ...(meta || {}),
+          inferredSearchTags
+        };
+        nextMeta.searchDocV1 = deriveCandidateSearchDocV1FromParts({
+          candidate,
+          meta: nextMeta,
+          draftPayload: candidate.draft_payload && typeof candidate.draft_payload === "object" ? candidate.draft_payload : {},
+          screeningAnswers: candidate.screening_answers && typeof candidate.screening_answers === "object" ? candidate.screening_answers : {},
+          cvResult,
+          inferredSearchTags
+        });
+        nextMeta.searchDocUpdatedAt = new Date().toISOString();
+        candidate.raw_note = encodeApplicantMetadata(nextMeta);
       }
       const duplicate = await findDuplicateCandidate(candidate, { companyId: actor.companyId });
       if (duplicate) {
@@ -7430,6 +7566,13 @@ const server = http.createServer(async (req, res) => {
         aiParseReason
       });
 
+      const inferredSearchTags = deriveInferredSearchTags({
+        cvResult: result,
+        recruiterNotes: candidate?.recruiter_context_notes || "",
+        otherPointers: candidate?.other_pointers || "",
+        tags: Array.isArray(candidate?.skills) ? candidate.skills : []
+      });
+
       const nextMeta = {
         ...(immediateMeta || existingMeta || {}),
         filename: storedFilePayload.filename || existingMeta.filename || "",
@@ -7445,13 +7588,17 @@ const server = http.createServer(async (req, res) => {
           parsePending: false,
           updatedAt: new Date().toISOString()
         },
-        inferredSearchTags: deriveInferredSearchTags({
-          cvResult: result,
-          recruiterNotes: candidate?.recruiter_context_notes || "",
-          otherPointers: candidate?.other_pointers || "",
-          tags: Array.isArray(candidate?.skills) ? candidate.skills : []
-        })
+        inferredSearchTags
       };
+      nextMeta.searchDocV1 = deriveCandidateSearchDocV1FromParts({
+        candidate,
+        meta: nextMeta,
+        draftPayload: candidate?.draft_payload && typeof candidate.draft_payload === "object" ? candidate.draft_payload : {},
+        screeningAnswers: candidate?.screening_answers && typeof candidate.screening_answers === "object" ? candidate.screening_answers : {},
+        cvResult: result,
+        inferredSearchTags
+      });
+      nextMeta.searchDocUpdatedAt = new Date().toISOString();
 
       await patchCandidate(candidate.id, {
         raw_note: encodeApplicantMetadata(nextMeta),
@@ -7509,6 +7656,29 @@ const server = http.createServer(async (req, res) => {
           result: duplicate.existing
         });
         return;
+      }
+
+      // Persist deterministic search doc for newly captured notes (no backfill).
+      {
+        const meta = decodeApplicantMetadata(parsed);
+        const cvResult = meta?.cvAnalysisCache?.result && typeof meta.cvAnalysisCache.result === "object" ? meta.cvAnalysisCache.result : null;
+        const inferredSearchTags = deriveInferredSearchTags({
+          cvResult,
+          recruiterNotes: parsed?.recruiter_context_notes || parsed?.recruiterContextNotes || "",
+          otherPointers: parsed?.other_pointers || parsed?.otherPointers || "",
+          tags: Array.isArray(parsed?.skills) ? parsed.skills : []
+        });
+        const nextMeta = { ...(meta || {}), inferredSearchTags };
+        nextMeta.searchDocV1 = deriveCandidateSearchDocV1FromParts({
+          candidate: parsed,
+          meta: nextMeta,
+          draftPayload: parsed?.draft_payload && typeof parsed.draft_payload === "object" ? parsed.draft_payload : {},
+          screeningAnswers: parsed?.screening_answers && typeof parsed.screening_answers === "object" ? parsed.screening_answers : {},
+          cvResult,
+          inferredSearchTags
+        });
+        nextMeta.searchDocUpdatedAt = new Date().toISOString();
+        parsed.raw_note = encodeApplicantMetadata(nextMeta);
       }
       const saved = await saveCandidate(parsed, { companyId: sessionUser.companyId });
       sendJson(res, 200, { ok: true, result: saved });
