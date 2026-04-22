@@ -137,6 +137,27 @@ function extractTotalExperience(_lines, rawText, hint) {
   const cleanHint = sanitizeText(hint);
   if (cleanHint) return cleanHint;
 
+  const text = String(rawText || "");
+
+  // Prefer decimal years if present (e.g., "4.5 years") and normalize to years + months.
+  // This avoids accidental matches like ".5 years" => "5 years".
+  const decimalMatch = text.match(/\b(\d+(?:\.\d+)?)\s*(?:years?|yrs?)\b/i);
+  if (decimalMatch?.[1]) {
+    const value = Number(decimalMatch[1]);
+    if (Number.isFinite(value) && value > 0) {
+      const years = Math.floor(value);
+      let months = Math.round((value - years) * 12);
+      let normalizedYears = years;
+      if (months >= 12) {
+        normalizedYears += 1;
+        months = 0;
+      }
+      const totalMonths = normalizedYears * 12 + months;
+      const formatted = formatMonthCount(totalMonths);
+      if (formatted) return formatted;
+    }
+  }
+
   const patterns = [
     /\b(\d+\+?\s*(?:years?|yrs?)\s*\d*\s*(?:months?|mos?)?)\b/i,
     /\b(\d+\s*(?:years?|yrs?))\b/i,
@@ -144,7 +165,7 @@ function extractTotalExperience(_lines, rawText, hint) {
   ];
 
   for (const pattern of patterns) {
-    const match = rawText.match(pattern);
+    const match = text.match(pattern);
     if (match?.[1]) return match[1].trim();
   }
 
@@ -279,11 +300,58 @@ function extractTitleDateCompany(lines, index) {
   const dateMatch = line.match(/^(.*?)(\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*[\s,-]+(?:'\d{2}|\d{4}).*)$/i);
   if (!dateMatch) return null;
 
-  const title = dateMatch[1].trim().replace(/^[^A-Za-z0-9(]+/, "");
+  const prefix = dateMatch[1]
+    .trim()
+    .replace(/^[^A-Za-z0-9(]+/, "")
+    .replace(/\s*\|\s*$/, "")
+    .trim();
   const dates = dateMatch[2].trim();
+
+  // Some CVs encode company + title in one line:
+  // - "Company (Title) | Jul 2023 - Jan 2025"
+  // - "Company | Location | Title | Mar 2023 - Jun 2023"
+  let title = prefix;
+  let companyInline = "";
+
+  function looksLikeCompanyName(value) {
+    const text = String(value || "").trim();
+    if (!text) return false;
+    if (/\b(pvt|private|ltd|limited|inc|llc|corp|co\.|company|technologies|services|solutions|systems|consulting|group)\b/i.test(text)) {
+      return true;
+    }
+    const letters = text.replace(/[^A-Za-z]/g, "");
+    if (letters.length >= 6) {
+      const upper = letters.replace(/[^A-Z]/g, "").length;
+      const ratio = upper / letters.length;
+      if (ratio >= 0.7) return true;
+    }
+    return false;
+  }
+
+  const paren = prefix.match(/^(.+?)\s*\(([^)]+)\)\s*$/);
+  if (paren?.[1] && paren?.[2]) {
+    // If the left side looks like a company (e.g., "MUDS ... PRIVATE LIMITED (BDM)"),
+    // treat it as company. Otherwise it's likely a title (e.g., "Assistant Sales Manager (Portfolio Manager)"),
+    // and the company should come from neighbor lines.
+    if (looksLikeCompanyName(paren[1])) {
+      companyInline = cleanCompanyLine(paren[1]);
+      title = String(paren[2] || "").trim();
+    } else {
+      companyInline = "";
+      title = prefix;
+    }
+  } else if (prefix.includes("|")) {
+    const parts = prefix.split("|").map((p) => p.trim()).filter(Boolean);
+    if (parts.length >= 2) {
+      companyInline = cleanCompanyLine(parts[0]);
+      title = parts[parts.length - 1];
+    }
+  }
+
   const prevScore = isLikelyCompanyLine(previousLine) ? companyLineScore(previousLine) : -100;
   const nextScore = isLikelyCompanyLine(nextLine) ? companyLineScore(nextLine) : -100;
-  const company = prevScore >= nextScore ? cleanCompanyLine(previousLine) : cleanCompanyLine(nextLine);
+  const companyNeighbor = prevScore >= nextScore ? cleanCompanyLine(previousLine) : cleanCompanyLine(nextLine);
+  const company = companyInline && isLikelyCompanyLine(companyInline) ? companyInline : companyNeighbor;
   if (!title || !company) return null;
   if (!isLikelyCompanyLine(company)) return null;
 
@@ -292,14 +360,58 @@ function extractTitleDateCompany(lines, index) {
 
 function extractExperienceSection(rawText) {
   const text = String(rawText || "");
-  const experienceMatch = text.match(/\bEXPERIENCE\b/i);
-  if (!experienceMatch) return text;
+  const rawLines = splitLines(text);
+  if (!rawLines.length) return text;
 
-  const start = experienceMatch.index || 0;
-  const tail = text.slice(start);
-  const endMatch = tail.match(/\b(EDUCATION|RECOMMENDATIONS|CERTIFICATIONS|VOLUNTEERING|PROJECTS|SKILLS|ACHIEVEMENTS|LANGUAGES)\b/i);
-  if (!endMatch) return tail;
-  return tail.slice(0, endMatch.index || tail.length);
+  const START_HEADINGS = new Set(["experience", "workexperience", "professionalexperience"]);
+  const END_HEADINGS = new Set([
+    "education",
+    "projects",
+    "certifications",
+    "volunteering",
+    "recommendations",
+    "languages",
+    "achievements",
+    "skills"
+  ]);
+
+  // Find the first true "Experience" heading line (avoid matching "experience" inside a sentence).
+  let startIdx = -1;
+  for (let i = 0; i < rawLines.length; i += 1) {
+    const key = normalizeHeadingLikeText(rawLines[i]).replace(/[^a-z]/g, "");
+    if (START_HEADINGS.has(key)) {
+      startIdx = i;
+      break;
+    }
+  }
+  if (startIdx < 0) return text;
+
+  // Stop at the next section heading line (line-based, so "Technical Skills: ..." won't prematurely cut it).
+  let endIdx = rawLines.length;
+  for (let i = startIdx + 1; i < rawLines.length; i += 1) {
+    const normalized = normalizeHeadingLikeText(rawLines[i]);
+    const key = normalized.replace(/[^a-z]/g, "");
+    if (!key) continue;
+
+    // Heading lines tend to be short; this reduces accidental matches in long sentences.
+    if (rawLines[i].length > 45) continue;
+
+    if (END_HEADINGS.has(key)) {
+      endIdx = i;
+      break;
+    }
+
+    // Handle headings like "Projects (relevant...)" or "Skills & Tools".
+    for (const prefix of END_HEADINGS) {
+      if (key.startsWith(prefix) && key.length <= prefix.length + 18) {
+        endIdx = i;
+        i = rawLines.length;
+        break;
+      }
+    }
+  }
+
+  return rawLines.slice(startIdx, endIdx).join("\n");
 }
 
 function extractTimeline(lines, rawText, structuredExperienceText) {
