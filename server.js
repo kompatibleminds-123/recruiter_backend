@@ -1813,7 +1813,8 @@ function toDashboardBreakdownMap(itemsMap) {
 }
 
 function isInterviewAlignedStatus(status) {
-  return /\b(screening call aligned|l1 aligned|l2 aligned|l3 aligned|hr interview aligned|aligned for interview|interview scheduled)\b/i.test(String(status || ""));
+  // Dashboard rule: "Feedback awaited" is still considered "Under interview" (interview happened, awaiting outcome).
+  return /\b(screening call aligned|l1 aligned|l2 aligned|l3 aligned|hr interview aligned|aligned for interview|interview scheduled|feedback awaited)\b/i.test(String(status || ""));
 }
 
 function buildDashboardSummary({ candidates = [], assessments = [], jobs = [], dateFrom = "", dateTo = "", clientFilter = "", recruiterFilter = "", actor = null }) {
