@@ -24,7 +24,7 @@ function run() {
   const mapped = mapLocationAlias("delhi ncr", DEFAULT_SYNONYMS);
   // Canonical uses a real city name so strict `filters.location` checks don't fail in search.
   assert.equal(mapped.canonical, "delhi");
-  assert.deepEqual(mapped.variants.sort(), ["delhi", "gurgaon", "noida"].sort());
+  assert.deepEqual(mapped.variants.sort(), ["delhi", "gurgaon", "noida", "faridabad", "ghaziabad"].sort());
 }
 
 module.exports = { run };

@@ -7360,7 +7360,9 @@ function PortalApp({ token, onLogout }) {
           maxNoticeDays,
           noticeBucket,
           recruiter: result.filters.recruiterName || "",
-          gender: result.filters.gender || ""
+          gender: result.filters.gender || "",
+          assessmentStatus: result.filters.assessmentStatus || "",
+          attemptOutcome: result.filters.attemptOutcome || ""
         };
         // AI Search fills filters; keep them editable but do NOT auto-apply,
         // otherwise we end up double-filtering already-filtered results and the list can look empty.

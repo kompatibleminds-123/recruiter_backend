@@ -56,7 +56,7 @@ const DEFAULT_SYNONYMS = {
     fresher: { min: 0, max: 1 },
     "entry level": { min: 0, max: 2 },
     trainee: { min: 0, max: 2 },
-    junior: { min: 1, max: 2 },
+    junior: { min: 0, max: 2 },
     "mid level": { min: 3, max: 5 },
     "mid-level": { min: 3, max: 5 },
     midlevel: { min: 3, max: 5 },

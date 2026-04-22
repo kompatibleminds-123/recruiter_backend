@@ -2415,6 +2415,8 @@ function parseNaturalLanguageCandidateQuery(rawQuery) {
   const targetLabelMatch = lower.match(/\bfor\s+([a-z0-9][a-z0-9\s&.-]+?)(?:\s+across roles|\s+this week|\s+tomorrow|\s+today|\s+last month|\s+this month|\s+from\s|\s+with\s|\s+under\b|$)/i);
   const statusTerms = [];
   const detailedStatusTerms = [];
+  const attemptOutcomeCandidates = [];
+  const assessmentStatusCandidates = [];
   if (/\bshortlisted\b/i.test(lower)) statusTerms.push("shortlisted");
   if (/\boffered\b|\boffer\b/i.test(lower)) statusTerms.push("offered");
   if (/\bjoined\b/i.test(lower)) statusTerms.push("joined");
@@ -2437,6 +2439,36 @@ function parseNaturalLanguageCandidateQuery(rawQuery) {
   if (/\binterested\b/i.test(lower)) detailedStatusTerms.push("interested");
   if (/\bnot interested\b/i.test(lower)) detailedStatusTerms.push("not interested");
   if (/\brevisit for other role\b/i.test(lower)) detailedStatusTerms.push("revisit for other role");
+
+  // Attempt outcomes (captured notes log-attempt dropdown) - canonical labels.
+  if (/\bbusy\b|\bcall busy\b/i.test(lower)) attemptOutcomeCandidates.push("Busy");
+  if (/\bdisconnected\b/i.test(lower)) attemptOutcomeCandidates.push("Disconnected");
+  if (/\bnot reachable\b|\bunreachable\b/i.test(lower)) attemptOutcomeCandidates.push("Not reachable");
+  if (/\bswitch off\b|\bswitched off\b/i.test(lower)) attemptOutcomeCandidates.push("Switch off");
+  if (/\bnot received\b/i.test(lower)) attemptOutcomeCandidates.push("Not responding");
+  if (/\bnot responding\b|\bno response\b|\bno answer\b|\bnr\b/i.test(lower)) attemptOutcomeCandidates.push("Not responding");
+  if (/\bjd shared\b|\bshared jd\b/i.test(lower)) attemptOutcomeCandidates.push("JD shared");
+  if (/\bduplicate\b/i.test(lower)) attemptOutcomeCandidates.push("Duplicate");
+  if (/\bscreening reject\b/i.test(lower)) attemptOutcomeCandidates.push("Screening reject");
+  if (/\bcall later\b|\bcall back later\b/i.test(lower)) attemptOutcomeCandidates.push("Call later");
+  if (/\binterested\b/i.test(lower)) attemptOutcomeCandidates.push("Interested");
+  if (/\bnot interested\b/i.test(lower)) attemptOutcomeCandidates.push("Not interested");
+
+  // Assessment statuses (assessment status dropdown) - canonical labels.
+  if (/\bscreening call aligned\b/i.test(lower)) assessmentStatusCandidates.push("Screening call aligned");
+  if (/\bl1 aligned\b/i.test(lower)) assessmentStatusCandidates.push("L1 aligned");
+  if (/\bl2 aligned\b/i.test(lower)) assessmentStatusCandidates.push("L2 aligned");
+  if (/\bl3 aligned\b/i.test(lower)) assessmentStatusCandidates.push("L3 aligned");
+  if (/\bhr interview aligned\b/i.test(lower)) assessmentStatusCandidates.push("HR interview aligned");
+  if (/\bfeedback awaited\b|\bawaiting feedback\b|\bawaited feedback\b/i.test(lower)) assessmentStatusCandidates.push("Feedback awaited");
+  if (/\bshortlisted\b/i.test(lower)) assessmentStatusCandidates.push("Shortlisted");
+  if (/\boffered\b|\boffer released\b/i.test(lower)) assessmentStatusCandidates.push("Offered");
+  if (/\bjoined\b|\bonboarded\b/i.test(lower)) assessmentStatusCandidates.push("Joined");
+  if (/\bduplicate\b/i.test(lower)) assessmentStatusCandidates.push("Duplicate");
+  if (/\bdropped\b|\bdid not attend\b/i.test(lower)) assessmentStatusCandidates.push("Dropped");
+  if (/\bscreening reject\b/i.test(lower)) assessmentStatusCandidates.push("Screening reject");
+  if (/\binterview reject\b/i.test(lower)) assessmentStatusCandidates.push("Interview reject");
+  if (/\bhold\b/i.test(lower)) assessmentStatusCandidates.push("Hold");
   const explicitRangeMatch =
     lower.match(/\bfrom\s+([a-z0-9,/\- ]+?)\s+to\s+([a-z0-9,/\- ]+?)(?:\bwith\b|\bfor\b|$)/i) ||
     lower.match(/\bbetween\s+([a-z0-9,/\- ]+?)\s+and\s+([a-z0-9,/\- ]+?)(?:\bwith\b|\bfor\b|$)/i);
@@ -2568,6 +2600,10 @@ function parseNaturalLanguageCandidateQuery(rawQuery) {
     currentCompany: currentCompanyMatch ? String(currentCompanyMatch[1] || "").trim() : "",
     statuses: statusTerms,
     detailedStatuses: detailedStatusTerms,
+    // Additive: lets Natural search also act like structured filters for status/outcome dropdowns.
+    // If multiple statuses/outcomes are present, leave blank to avoid over-filtering.
+    attemptOutcome: attemptOutcomeCandidates.length === 1 ? attemptOutcomeCandidates[0] : "",
+    assessmentStatus: assessmentStatusCandidates.length === 1 ? assessmentStatusCandidates[0] : "",
     client: clientMatch ? String(clientMatch[1] || "").trim() : "",
     targetLabel: targetLabelMatch ? String(targetLabelMatch[1] || "").trim() : "",
     interviewScheduled: interviewIntent,
@@ -3203,16 +3239,34 @@ function buildCandidateSearchUniverse(candidates = [], assessments = [], jobs = 
     universe.push({
       id: String(candidate?.id || linkedAssessment?.id || "").trim(),
       candidateName: String(candidate?.name || linkedAssessment?.candidateName || "").trim(),
-      role: String(candidate?.role || linkedAssessment?.currentDesignation || cachedCvResult?.currentDesignation || "").trim(),
+      role: String(
+        candidate?.role
+          || linkedAssessment?.currentDesignation
+          || linkedAssessment?.current_designation
+          || cachedCvResult?.currentDesignation
+          || ""
+      ).trim(),
       position: isUnmappedApplicant ? rawPosition : (resolvedJob?.title || getPositionLabel(candidate, linkedAssessment || {}, knownJdTitles)),
-      company: String(candidate?.company || linkedAssessment?.currentCompany || cachedCvResult?.currentCompany || "").trim(),
-      totalExperience: String(candidate?.experience || linkedAssessment?.totalExperience || cachedCvResult?.exactTotalExperience || "").trim(),
-      location: String(candidate?.location || linkedAssessment?.location || "").trim(),
-      currentCtc: String(candidate?.current_ctc || linkedAssessment?.currentCtc || "").trim(),
-      expectedCtc: String(candidate?.expected_ctc || linkedAssessment?.expectedCtc || "").trim(),
-      noticePeriod: String(candidate?.notice_period || linkedAssessment?.noticePeriod || "").trim(),
-      currentOrgTenure: String(linkedAssessment?.currentOrgTenure || cachedCvResult?.currentOrgTenure || "").trim(),
-      highestEducation: String(candidate?.highest_education || linkedAssessment?.highestEducation || cachedCvResult?.highestEducation || "").trim(),
+      company: String(
+        candidate?.company
+          || linkedAssessment?.currentCompany
+          || linkedAssessment?.current_company
+          || cachedCvResult?.currentCompany
+          || ""
+      ).trim(),
+      totalExperience: String(
+        candidate?.experience
+          || linkedAssessment?.totalExperience
+          || linkedAssessment?.total_experience
+          || cachedCvResult?.exactTotalExperience
+          || ""
+      ).trim(),
+      location: String(candidate?.location || linkedAssessment?.location || linkedAssessment?.candidate_location || "").trim(),
+      currentCtc: String(candidate?.current_ctc || linkedAssessment?.currentCtc || linkedAssessment?.current_ctc || "").trim(),
+      expectedCtc: String(candidate?.expected_ctc || linkedAssessment?.expectedCtc || linkedAssessment?.expected_ctc || "").trim(),
+      noticePeriod: String(candidate?.notice_period || linkedAssessment?.noticePeriod || linkedAssessment?.notice_period || "").trim(),
+      currentOrgTenure: String(linkedAssessment?.currentOrgTenure || linkedAssessment?.current_org_tenure || cachedCvResult?.currentOrgTenure || "").trim(),
+      highestEducation: String(candidate?.highest_education || linkedAssessment?.highestEducation || linkedAssessment?.highest_education || cachedCvResult?.highestEducation || "").trim(),
       skills: filterTechSearchTags(Array.isArray(candidate?.skills) ? candidate.skills : [], techTagEvidenceText),
       inferredTags: filterTechSearchTags(Array.isArray(candidateMeta?.inferredSearchTags) ? candidateMeta.inferredSearchTags : [], techTagEvidenceText),
       clientName: isUnmappedApplicant ? "Unmapped candidates" : (resolvedJob?.clientName || getClientLabel(candidate, linkedAssessment || {})),
@@ -3221,7 +3275,7 @@ function buildCandidateSearchUniverse(candidates = [], assessments = [], jobs = 
       // Keep captured-by separately for internal debugging (may be overwritten in legacy rows).
       sourcedRecruiter: getRecruiterLabel(candidate, linkedAssessment || {}),
       ownerRecruiter: getOwnerRecruiterLabel(candidate, linkedAssessment || {}),
-      candidateStatus: String(linkedAssessment?.candidateStatus || "").trim(),
+      candidateStatus: String(linkedAssessment?.candidateStatus || linkedAssessment?.candidate_status || linkedAssessment?.assessment_status || linkedAssessment?.status || "").trim(),
       pipelineStage: "",
       workflowStatus: String(linkedAssessment?.status || candidate?.status || "").trim(),
       attemptStatus: String(candidate?.last_contact_outcome || "").trim(),
@@ -3276,23 +3330,23 @@ function buildCandidateSearchUniverse(candidates = [], assessments = [], jobs = 
     universe.push({
       id: assessmentId,
       candidateName: String(assessment?.candidateName || "").trim(),
-      role: String(assessment?.currentDesignation || "").trim(),
+      role: String(assessment?.currentDesignation || assessment?.current_designation || "").trim(),
       position: resolvedJob?.title || getPositionLabel({}, assessment, knownJdTitles),
-      company: String(assessment?.currentCompany || "").trim(),
-      totalExperience: String(assessment?.totalExperience || "").trim(),
+      company: String(assessment?.currentCompany || assessment?.current_company || "").trim(),
+      totalExperience: String(assessment?.totalExperience || assessment?.total_experience || "").trim(),
       location: String(assessment?.location || "").trim(),
-      currentCtc: String(assessment?.currentCtc || "").trim(),
-      expectedCtc: String(assessment?.expectedCtc || "").trim(),
-      noticePeriod: String(assessment?.noticePeriod || "").trim(),
-      currentOrgTenure: String(assessment?.currentOrgTenure || "").trim(),
-      highestEducation: String(assessment?.highestEducation || "").trim(),
+      currentCtc: String(assessment?.currentCtc || assessment?.current_ctc || "").trim(),
+      expectedCtc: String(assessment?.expectedCtc || assessment?.expected_ctc || "").trim(),
+      noticePeriod: String(assessment?.noticePeriod || assessment?.notice_period || "").trim(),
+      currentOrgTenure: String(assessment?.currentOrgTenure || assessment?.current_org_tenure || "").trim(),
+      highestEducation: String(assessment?.highestEducation || assessment?.highest_education || "").trim(),
       skills: [],
       inferredTags: [],
       clientName: resolvedJob?.clientName || getClientLabel({}, assessment),
       recruiterName: getRecruiterLabel({}, assessment),
       sourcedRecruiter: getRecruiterLabel({}, assessment),
       ownerRecruiter: getOwnerRecruiterLabel({}, assessment),
-      candidateStatus: String(assessment?.candidateStatus || "").trim(),
+      candidateStatus: String(assessment?.candidateStatus || assessment?.candidate_status || assessment?.assessment_status || assessment?.status || "").trim(),
       pipelineStage: "",
       workflowStatus: String(assessment?.status || "").trim(),
       attemptStatus: "",
@@ -3327,6 +3381,36 @@ function buildCandidateSearchUniverse(candidates = [], assessments = [], jobs = 
 
 function candidateMatchesNaturalFilter(item, filters, actor = null) {
   if (!item) return false;
+  const normalizeLabel = (value) => normalizeDashboardText(String(value || "")).toLowerCase().trim();
+  const normalizeAttemptOutcomeLabel = (value) => {
+    const v = normalizeLabel(value);
+    if (!v) return "";
+    const map = {
+      "jd shared": "jd shared",
+      "shared jd": "jd shared",
+      "call later": "call later",
+      "call back later": "call later",
+      "callback later": "call later",
+      "switch off": "switch off",
+      "switched off": "switch off",
+      "not reachable": "not reachable",
+      "unreachable": "not reachable",
+      "not responding": "not responding",
+      "no response": "not responding",
+      "no answer": "not responding",
+      "nr": "not responding",
+      "screening reject": "screening reject",
+      "interview reject": "interview reject",
+      "duplicate": "duplicate",
+      "disconnected": "disconnected",
+      "busy": "busy",
+      "interested": "interested",
+      "not interested": "not interested",
+      "revisit for other role": "revisit for other role",
+      "revisit": "revisit for other role"
+    };
+    return map[v] || v;
+  };
   if (filters.role) {
     const roleHay = buildCandidateSearchHay(item);
     const roleTokens = splitCandidateSearchKeywords(filters.role);
@@ -3399,6 +3483,18 @@ function candidateMatchesNaturalFilter(item, filters, actor = null) {
         if (matched.length !== requiredSkills.length) return false;
       }
     }
+  }
+  // Explicit status filters (assessment status + captured-attempt outcome) for AI search.
+  // Use substring semantics so things like "L1 aligned tomorrow 5 PM" still match "L1 aligned".
+  if (filters.assessmentStatus) {
+    const needle = normalizeLabel(filters.assessmentStatus);
+    const hay = normalizeLabel(item.candidateStatus || item.workflowStatus || item.pipelineStage || "");
+    if (needle && !hay.includes(needle)) return false;
+  }
+  if (filters.attemptOutcome) {
+    const needle = normalizeAttemptOutcomeLabel(filters.attemptOutcome);
+    const hay = normalizeAttemptOutcomeLabel(item.attemptStatus || "");
+    if (needle && (!hay || !hay.includes(needle))) return false;
   }
   if (Array.isArray(filters.statuses) && filters.statuses.length) {
     const lifecycleBucket = getAssessmentLifecycleBucket(item);
@@ -6290,6 +6386,8 @@ const server = http.createServer(async (req, res) => {
         if (!filters.recruiterName && heuristic.recruiterName) filters.recruiterName = heuristic.recruiterName;
         if (!filters.recruiterField && heuristic.recruiterField) filters.recruiterField = heuristic.recruiterField;
         if (!filters.location && heuristic.location) filters.location = heuristic.location;
+        if (!filters.attemptOutcome && heuristic.attemptOutcome) filters.attemptOutcome = heuristic.attemptOutcome;
+        if (!filters.assessmentStatus && heuristic.assessmentStatus) filters.assessmentStatus = heuristic.assessmentStatus;
         if ((!Array.isArray(filters.locations) || !filters.locations.length) && Array.isArray(heuristic.locations) && heuristic.locations.length) {
           filters.locations = heuristic.locations;
         }
