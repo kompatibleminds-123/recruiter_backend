@@ -281,7 +281,7 @@ async function sendSmtpEmail({ to, subject, html, text }) {
   throw new Error("Email is not configured. Each recruiter must configure Zoho SMTP in Settings.");
 }
 
-async function sendJdEmailAsActor(actor, { to, subject, html, text, attachments = [] }) {
+async function sendJdEmailAsActor(actor, { to, cc = "", subject, html, text, attachments = [] }) {
   if (!nodemailer) throw new Error("Email sending is not available.");
   const cfg = await getUserSmtpSettings({ companyId: actor.companyId, userId: actor.id });
   if (!cfg || !cfg.host || !cfg.user || !cfg.pass || !cfg.from) {
@@ -293,9 +293,11 @@ async function sendJdEmailAsActor(actor, { to, subject, html, text, attachments 
     secure: Boolean(cfg.secure),
     auth: { user: cfg.user, pass: cfg.pass }
   });
+  const ccValue = String(cc || "").trim();
   await transport.sendMail({
     from: cfg.from,
     to,
+    ...(ccValue ? { cc: ccValue } : {}),
     subject,
     text,
     html,
@@ -5263,6 +5265,7 @@ const server = http.createServer(async (req, res) => {
       const body = await readJsonBody(req);
       const jobId = String(body.jobId || "").trim();
       const toRaw = String(body.to || "").trim();
+      const ccRaw = String(body.cc || "").trim();
       const subject = String(body.subject || "").trim();
       const introText = String(body.introText || "").trim();
       const signatureText = String(body.signatureText || "").trim();
@@ -5275,6 +5278,12 @@ const server = http.createServer(async (req, res) => {
         .map((item) => String(item || "").trim())
         .filter(Boolean);
       if (!recipients.length) throw new Error("Recipient email is required.");
+      const ccRecipients = ccRaw
+        ? ccRaw
+            .split(/,|;|\s+/)
+            .map((item) => String(item || "").trim())
+            .filter(Boolean)
+        : [];
       const jobs = await listCompanyJobs(actor.companyId);
       const job = (Array.isArray(jobs) ? jobs : []).find((item) => String(item?.id || "").trim() === jobId) || null;
       if (!job) throw new Error("JD not found.");
@@ -5305,6 +5314,7 @@ const server = http.createServer(async (req, res) => {
 
       await sendJdEmailAsActor(actor, {
         to: recipients.join(", "),
+        cc: ccRecipients.join(", "),
         subject: finalSubject,
         html: mail.html,
         text: mail.text,
@@ -5323,6 +5333,7 @@ const server = http.createServer(async (req, res) => {
       const actor = await requireSessionUser(getBearerToken(req));
       const body = await readJsonBody(req);
       const toRaw = String(body.to || "").trim();
+      const ccRaw = String(body.cc || "").trim();
       const subject = String(body.subject || "").trim();
       const html = String(body.html || "").trim();
       const text = String(body.text || "").trim();
@@ -5334,8 +5345,15 @@ const server = http.createServer(async (req, res) => {
         .map((item) => String(item || "").trim())
         .filter(Boolean);
       if (!recipients.length) throw new Error("Recipient email is required.");
+      const ccRecipients = ccRaw
+        ? ccRaw
+            .split(/,|;|\s+/)
+            .map((item) => String(item || "").trim())
+            .filter(Boolean)
+        : [];
       await sendJdEmailAsActor(actor, {
         to: recipients.join(", "),
+        cc: ccRecipients.join(", "),
         subject,
         html: html || `<pre>${escapeHtml(text).replace(/\n/g, "<br/>")}</pre>`,
         text: text || ""

@@ -3950,8 +3950,7 @@ function PortalApp({ token, onLogout }) {
   const [agendaRange, setAgendaRange] = useState("today");
   const [openAssessmentMoreId, setOpenAssessmentMoreId] = useState("");
   const assessmentMoreMenuRef = useRef(null);
-  const [assessmentExportOpen, setAssessmentExportOpen] = useState(false);
-  const [assessmentExportKind, setAssessmentExportKind] = useState("interviews_done"); // interviews_done | interviews_aligned | offered
+  // Assessment event exports are available via dedicated buttons (no modal).
   const [copySettings, setCopySettings] = useState(() => {
     try {
       const saved = window.localStorage.getItem(COPY_SETTINGS_STORAGE_KEY);
@@ -4771,7 +4770,7 @@ function PortalApp({ token, onLogout }) {
     return rows.sort((a, b) => String(b?.[0] || "").localeCompare(String(a?.[0] || "")));
   }
 
-  function downloadAssessmentEventXlsx(kind = assessmentExportKind) {
+  function downloadAssessmentEventXlsx(kind) {
     const dateFrom = String(assessmentFilters.dateFrom || "").trim();
     const dateTo = String(assessmentFilters.dateTo || "").trim();
     const labelRange = [dateFrom || "any", dateTo || "any"].join("_to_");
@@ -9527,7 +9526,9 @@ function PortalApp({ token, onLogout }) {
                 <button onClick={() => void copyAssessmentsExcel()}>Copy Excel</button>
                 <button onClick={() => void copyAssessmentsWhatsapp()}>Copy WhatsApp</button>
                 <button onClick={() => void copyAssessmentsEmail()}>Copy Email</button>
-                <button className="ghost-btn" onClick={() => setAssessmentExportOpen(true)}>Download event report</button>
+                <button className="ghost-btn" onClick={() => downloadAssessmentEventXlsx("interviews_done")}>Download interviews done</button>
+                <button className="ghost-btn" onClick={() => downloadAssessmentEventXlsx("interviews_aligned")}>Download interviews aligned</button>
+                <button className="ghost-btn" onClick={() => downloadAssessmentEventXlsx("offered")}>Download offered</button>
               </div>
               <div className="muted" style={{ marginTop: 6 }}>
                 Export interview done, interview aligned, or offered lists using the current date filters.
@@ -10692,26 +10693,6 @@ function PortalApp({ token, onLogout }) {
         status={jdEmailModalStatus.message}
         statusKind={jdEmailModalStatus.kind}
       />
-      {assessmentExportOpen ? (
-        <div className="overlay" onClick={() => setAssessmentExportOpen(false)}>
-          <div className="overlay-card" onClick={(e) => e.stopPropagation()}>
-            <h3>Download event report</h3>
-            <p className="muted">Exports from the current Assessments list. Admin sees all visible assessments; recruiter sees only their own visible assessments. Date from/to above is used as the event date range.</p>
-            <label>
-              <span>Export type</span>
-              <select value={assessmentExportKind} onChange={(e) => setAssessmentExportKind(e.target.value)}>
-                <option value="interviews_done">Interviews done</option>
-                <option value="interviews_aligned">Interviews aligned</option>
-                <option value="offered">Offered</option>
-              </select>
-            </label>
-            <div className="button-row" style={{ marginTop: 12 }}>
-              <button onClick={() => { downloadAssessmentEventXlsx(assessmentExportKind); setAssessmentExportOpen(false); }}>Download</button>
-              <button className="ghost-btn" onClick={() => setAssessmentExportOpen(false)}>Cancel</button>
-            </div>
-          </div>
-        </div>
-      ) : null}
       <ClientFeedbackModal open={Boolean(clientFeedbackItem)} item={clientFeedbackItem} onClose={() => setClientFeedbackItem(null)} onSave={(payload) => void saveClientFeedback(payload)} />
     </div>
   );
