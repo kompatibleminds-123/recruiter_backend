@@ -2573,10 +2573,22 @@ function parseNaturalLanguageCandidateQuery(rawQuery) {
         .filter(Boolean)
     : [];
   const derivedSkills = explicitSkills.length ? explicitSkills : splitCandidateSearchKeywords(roleText);
+  const hasBusinessDevelopmentPhrase = /\bbusiness\s+development\b/i.test(lower);
+  const hasKnownTechSignal =
+    /\b(node\.?js|nodejs|react(?:js)?|angular|vue(?:js)?|java\b|spring|spring\s*boot|python|django|flask|fastapi|golang|\bgo\b|rust|dotnet|\.net|asp\.?net|c#|kotlin|swift|android|ios|devops|aws|azure|gcp|docker|kubernetes|sql\b|mysql|postgres|mongodb|mongo|kafka)\b/i.test(lower);
   const cleanedSkills = derivedSkills
     .map((skill) => String(skill || "").trim())
     .filter(Boolean)
     .filter((skill) => !["assessment", "assessments"].includes(String(skill || "").toLowerCase().trim()))
+    // "development" is extremely noisy because of "Business Development" in sales profiles.
+    // If the query already has a clear tech signal, treat "development" as a stopword
+    // unless the recruiter explicitly says "business development".
+    .filter((skill) => {
+      const token = String(skill || "").toLowerCase().trim();
+      if (token !== "development") return true;
+      if (hasBusinessDevelopmentPhrase) return true;
+      return !hasKnownTechSignal;
+    })
     // prevent status terms like "not received" turning into required keywords (causes zero results)
     .filter((skill) => !["not", "received", "feedback", "awaited", "awaiting", "responding", "response", "nr"].includes(String(skill || "").toLowerCase().trim()));
   const hasOrOperator = /\bor\b/i.test(lower);
