@@ -5335,8 +5335,32 @@ const server = http.createServer(async (req, res) => {
       sendJson(res, 200, {
         ok: true,
         result: settings
-          ? { host: settings.host, port: settings.port, secure: settings.secure, user: settings.user, from: settings.from, hasPassword: Boolean(settings.pass) }
-          : { host: "", port: 587, secure: false, user: actor.email || "", from: actor.email ? `${actor.name || "Recruiter"} <${actor.email}>` : "", hasPassword: false }
+          ? {
+              host: settings.host,
+              port: settings.port,
+              secure: settings.secure,
+              user: settings.user,
+              from: settings.from,
+              hasPassword: Boolean(settings.pass),
+              signatureText: String(settings.signatureText || "").trim(),
+              signatureLinkLabel: String(settings.signatureLinkLabel || "").trim(),
+              signatureLinkUrl: String(settings.signatureLinkUrl || "").trim(),
+              signatureLinkLabel2: String(settings.signatureLinkLabel2 || "").trim(),
+              signatureLinkUrl2: String(settings.signatureLinkUrl2 || "").trim()
+            }
+          : {
+              host: "",
+              port: 587,
+              secure: false,
+              user: actor.email || "",
+              from: actor.email ? `${actor.name || "Recruiter"} <${actor.email}>` : "",
+              hasPassword: false,
+              signatureText: "",
+              signatureLinkLabel: "",
+              signatureLinkUrl: "",
+              signatureLinkLabel2: "",
+              signatureLinkUrl2: ""
+            }
       });
     } catch (error) {
       sendJson(res, 401, { ok: false, error: String(error.message || error) });

@@ -305,7 +305,12 @@ async function getUserSmtpSettings({ companyId, userId }) {
       secure: Boolean(payload.secure),
       user: String(payload.user || "").trim(),
       from: String(payload.from || "").trim(),
-      pass: decryptSecretString(String(payload.passEnc || ""))
+      pass: decryptSecretString(String(payload.passEnc || "")),
+      signatureText: String(payload.signatureText || "").trim(),
+      signatureLinkLabel: String(payload.signatureLinkLabel || "").trim(),
+      signatureLinkUrl: String(payload.signatureLinkUrl || "").trim(),
+      signatureLinkLabel2: String(payload.signatureLinkLabel2 || "").trim(),
+      signatureLinkUrl2: String(payload.signatureLinkUrl2 || "").trim()
     };
   }
   const rows = await sbSel("user_smtp_settings", `select=payload&company_id=eq.${enc(companyId)}&user_id=eq.${enc(userId)}&limit=1`).catch(() => []);
@@ -318,7 +323,12 @@ async function getUserSmtpSettings({ companyId, userId }) {
     secure: Boolean(payload.secure),
     user: String(payload.user || "").trim(),
     from: String(payload.from || "").trim(),
-    pass: decryptSecretString(String(payload.passEnc || ""))
+    pass: decryptSecretString(String(payload.passEnc || "")),
+    signatureText: String(payload.signatureText || "").trim(),
+    signatureLinkLabel: String(payload.signatureLinkLabel || "").trim(),
+    signatureLinkUrl: String(payload.signatureLinkUrl || "").trim(),
+    signatureLinkLabel2: String(payload.signatureLinkLabel2 || "").trim(),
+    signatureLinkUrl2: String(payload.signatureLinkUrl2 || "").trim()
   };
 }
 
@@ -344,7 +354,12 @@ async function saveUserSmtpSettings({ actorUserId, companyId, userId, settings }
     secure,
     user,
     from,
-    passEnc: encryptSecretString(passToStore)
+    passEnc: encryptSecretString(passToStore),
+    signatureText: String(src.signatureText || "").trim(),
+    signatureLinkLabel: String(src.signatureLinkLabel || "").trim(),
+    signatureLinkUrl: String(src.signatureLinkUrl || "").trim(),
+    signatureLinkLabel2: String(src.signatureLinkLabel2 || "").trim(),
+    signatureLinkUrl2: String(src.signatureLinkUrl2 || "").trim()
   };
 
   if (!cfg().on) {
@@ -352,7 +367,19 @@ async function saveUserSmtpSettings({ actorUserId, companyId, userId, settings }
     store.smtpSettings = store.smtpSettings && typeof store.smtpSettings === "object" ? store.smtpSettings : {};
     store.smtpSettings[String(userId)] = payload;
     writeStore(store);
-    return { host, port, secure, user, from, hasPassword: true };
+    return {
+      host,
+      port,
+      secure,
+      user,
+      from,
+      hasPassword: true,
+      signatureText: String(payload.signatureText || "").trim(),
+      signatureLinkLabel: String(payload.signatureLinkLabel || "").trim(),
+      signatureLinkUrl: String(payload.signatureLinkUrl || "").trim(),
+      signatureLinkLabel2: String(payload.signatureLinkLabel2 || "").trim(),
+      signatureLinkUrl2: String(payload.signatureLinkUrl2 || "").trim()
+    };
   }
 
   const now = new Date().toISOString();
@@ -365,7 +392,19 @@ async function saveUserSmtpSettings({ actorUserId, companyId, userId, settings }
     updated_at: now,
     updated_by: user
   }], { conflict: "company_id,user_id", upsert: true, returning: "minimal" });
-  return { host, port, secure, user, from, hasPassword: true };
+  return {
+    host,
+    port,
+    secure,
+    user,
+    from,
+    hasPassword: true,
+    signatureText: String(payload.signatureText || "").trim(),
+    signatureLinkLabel: String(payload.signatureLinkLabel || "").trim(),
+    signatureLinkUrl: String(payload.signatureLinkUrl || "").trim(),
+    signatureLinkLabel2: String(payload.signatureLinkLabel2 || "").trim(),
+    signatureLinkUrl2: String(payload.signatureLinkUrl2 || "").trim()
+  };
 }
 
 function sanitizeUser(user) {

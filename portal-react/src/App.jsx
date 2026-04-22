@@ -4061,7 +4061,20 @@ function PortalApp({ token, onLogout }) {
     cvAnalysis: null,
     cvAnalysisApplied: false
   });
-  const [smtpSettings, setSmtpSettings] = useState({ host: "", port: 587, secure: false, user: "", from: "", pass: "", hasPassword: false });
+  const [smtpSettings, setSmtpSettings] = useState({
+    host: "",
+    port: 587,
+    secure: false,
+    user: "",
+    from: "",
+    pass: "",
+    hasPassword: false,
+    signatureText: "",
+    signatureLinkLabel: "",
+    signatureLinkUrl: "",
+    signatureLinkLabel2: "",
+    signatureLinkUrl2: ""
+  });
   const [smtpSettingsLoaded, setSmtpSettingsLoaded] = useState(false);
   const [smtpSettingsKeepPass, setSmtpSettingsKeepPass] = useState(true);
 
@@ -4275,7 +4288,7 @@ function PortalApp({ token, onLogout }) {
     if (clientPortalFilters.dateTo) clientPortalParams.set("dateTo", clientPortalFilters.dateTo);
     if (clientPortalFilters.clientLabel) clientPortalParams.set("clientLabel", clientPortalFilters.clientLabel);
 
-    const [userResult, dashboardResult, clientPortalResult, applicantsResult, intakeResult, jobsResult, usersResult, clientUsersResult, candidatesResult, databaseCandidatesResult, assessmentsResult, sharedPresetResult] = await Promise.all([
+    const [userResult, dashboardResult, clientPortalResult, applicantsResult, intakeResult, jobsResult, usersResult, clientUsersResult, candidatesResult, databaseCandidatesResult, assessmentsResult, sharedPresetResult, smtpSettingsResult] = await Promise.all([
       api("/auth/me", token),
       api(`/company/dashboard${dashboardParams.toString() ? `?${dashboardParams.toString()}` : ""}`, token),
       api(`/company/client-portal${clientPortalParams.toString() ? `?${clientPortalParams.toString()}` : ""}`, token)
@@ -4288,7 +4301,8 @@ function PortalApp({ token, onLogout }) {
       api("/candidates?limit=5000", token).catch(() => []),
       api("/candidates?scope=company&limit=5000", token).catch(() => []),
       api("/company/assessments", token).catch(() => ({ assessments: [] })),
-      api("/company/shared-export-presets", token).catch(() => null)
+      api("/company/shared-export-presets", token).catch(() => null),
+      api("/company/email-settings", token).catch(() => null)
     ]);
     setState((current) => ({
       ...current,
@@ -4306,6 +4320,25 @@ function PortalApp({ token, onLogout }) {
     setClientUsers(clientUsersResult.clientUsers || []);
     if (sharedPresetResult) {
       setCopySettings((current) => migrateCopySettings({ ...current, ...sharedPresetResult }));
+    }
+    if (smtpSettingsResult) {
+      setSmtpSettings((current) => ({
+        ...current,
+        host: String(smtpSettingsResult?.host || "").trim(),
+        port: Number(smtpSettingsResult?.port || 587),
+        secure: Boolean(smtpSettingsResult?.secure),
+        user: String(smtpSettingsResult?.user || "").trim(),
+        from: String(smtpSettingsResult?.from || "").trim(),
+        hasPassword: Boolean(smtpSettingsResult?.hasPassword),
+        signatureText: String(smtpSettingsResult?.signatureText || "").trim(),
+        signatureLinkLabel: String(smtpSettingsResult?.signatureLinkLabel || "").trim(),
+        signatureLinkUrl: String(smtpSettingsResult?.signatureLinkUrl || "").trim(),
+        signatureLinkLabel2: String(smtpSettingsResult?.signatureLinkLabel2 || "").trim(),
+        signatureLinkUrl2: String(smtpSettingsResult?.signatureLinkUrl2 || "").trim(),
+        pass: ""
+      }));
+      setSmtpSettingsKeepPass(Boolean(smtpSettingsResult?.hasPassword));
+      setSmtpSettingsLoaded(true);
     }
     setStatus("workspace", "Portal loaded.", "ok");
   }
@@ -7143,6 +7176,11 @@ function PortalApp({ token, onLogout }) {
         secure: Boolean(result?.secure),
         user: String(result?.user || "").trim(),
         from: String(result?.from || "").trim(),
+        signatureText: String(result?.signatureText || "").trim(),
+        signatureLinkLabel: String(result?.signatureLinkLabel || "").trim(),
+        signatureLinkUrl: String(result?.signatureLinkUrl || "").trim(),
+        signatureLinkLabel2: String(result?.signatureLinkLabel2 || "").trim(),
+        signatureLinkUrl2: String(result?.signatureLinkUrl2 || "").trim(),
         hasPassword: Boolean(result?.hasPassword),
         pass: ""
       }));
@@ -7165,7 +7203,12 @@ function PortalApp({ token, onLogout }) {
           user: smtpSettings.user,
           from: smtpSettings.from,
           pass: smtpSettings.pass,
-          keepPass: smtpSettingsKeepPass
+          keepPass: smtpSettingsKeepPass,
+          signatureText: smtpSettings.signatureText,
+          signatureLinkLabel: smtpSettings.signatureLinkLabel,
+          signatureLinkUrl: smtpSettings.signatureLinkUrl,
+          signatureLinkLabel2: smtpSettings.signatureLinkLabel2,
+          signatureLinkUrl2: smtpSettings.signatureLinkUrl2
         }
       });
       setSmtpSettings((c) => ({ ...c, pass: "", hasPassword: true }));
@@ -7209,10 +7252,11 @@ function PortalApp({ token, onLogout }) {
     const clientLabel = String(candidate?.client_name || candidate?.clientName || candidate?.client || "").trim();
     const roleLine = [roleLabel, clientLabel].filter(Boolean).join(" for ");
     const signatureContext = { hrName: "", clientLabel, targetRole: roleLabel, recruiterName, companyName, roleLine };
-    const signatureText = fillClientShareTemplate(copySettings.clientShareSignatureText || DEFAULT_COPY_SETTINGS.clientShareSignatureText || "", signatureContext).trim();
+    const signatureText = String(smtpSettings.signatureText || "").trim()
+      || fillClientShareTemplate(copySettings.clientShareSignatureText || DEFAULT_COPY_SETTINGS.clientShareSignatureText || "", signatureContext).trim();
     const signatureLinks = [
-      { label: String(copySettings.clientShareSignatureLinkLabel || "").trim(), url: String(copySettings.clientShareSignatureLinkUrl || "").trim() },
-      { label: String(copySettings.clientShareSignatureLinkLabel2 || "").trim(), url: String(copySettings.clientShareSignatureLinkUrl2 || "").trim() }
+      { label: String(smtpSettings.signatureLinkLabel || copySettings.clientShareSignatureLinkLabel || "").trim(), url: String(smtpSettings.signatureLinkUrl || copySettings.clientShareSignatureLinkUrl || "").trim() },
+      { label: String(smtpSettings.signatureLinkLabel2 || copySettings.clientShareSignatureLinkLabel2 || "").trim(), url: String(smtpSettings.signatureLinkUrl2 || copySettings.clientShareSignatureLinkUrl2 || "").trim() }
     ].filter((link) => link.url);
     const defaultIntro = baseIntro;
     setJdEmailModal({
@@ -7530,16 +7574,18 @@ function PortalApp({ token, onLogout }) {
 
   function getClientShareSignature() {
     const context = getClientShareContext();
+    const perUserSignatureText = String(smtpSettings.signatureText || "").trim();
     const signatureText = String(clientShareDraft.signatureText || "").trim()
+      || perUserSignatureText
       || fillClientShareTemplate(copySettings.clientShareSignatureText || DEFAULT_COPY_SETTINGS.clientShareSignatureText || "", context).trim();
     const links = [
       {
-        label: String(clientShareDraft.signatureLinkLabel || copySettings.clientShareSignatureLinkLabel || "").trim(),
-        url: String(clientShareDraft.signatureLinkUrl || copySettings.clientShareSignatureLinkUrl || "").trim()
+        label: String(clientShareDraft.signatureLinkLabel || smtpSettings.signatureLinkLabel || copySettings.clientShareSignatureLinkLabel || "").trim(),
+        url: String(clientShareDraft.signatureLinkUrl || smtpSettings.signatureLinkUrl || copySettings.clientShareSignatureLinkUrl || "").trim()
       },
       {
-        label: String(clientShareDraft.signatureLinkLabel2 || copySettings.clientShareSignatureLinkLabel2 || "").trim(),
-        url: String(clientShareDraft.signatureLinkUrl2 || copySettings.clientShareSignatureLinkUrl2 || "").trim()
+        label: String(clientShareDraft.signatureLinkLabel2 || smtpSettings.signatureLinkLabel2 || copySettings.clientShareSignatureLinkLabel2 || "").trim(),
+        url: String(clientShareDraft.signatureLinkUrl2 || smtpSettings.signatureLinkUrl2 || copySettings.clientShareSignatureLinkUrl2 || "").trim()
       }
     ].filter((link) => link.url);
     return { signatureText, links };
@@ -9838,6 +9884,33 @@ function PortalApp({ token, onLogout }) {
                 </div>
                 <div className="button-row">
                   <button onClick={() => void saveSmtpSettings()}>Save email settings</button>
+                </div>
+
+                <div className="settings-subsection" style={{ marginTop: 18 }}>
+                  <div className="section-kicker">Your Email Signature (per recruiter)</div>
+                  <p className="muted">Used in JD emails and Direct Share by default. Tip: to make only part of link text clickable, write it as <code>LinkedIn || 7027xxxxxxx</code> (only “LinkedIn” becomes the hyperlink).</p>
+                  <div className="form-grid two-col">
+                    <label className="full">
+                      <span>Signature text</span>
+                      <textarea value={smtpSettings.signatureText || ""} onChange={(e) => setSmtpSettings((c) => ({ ...c, signatureText: e.target.value }))} rows={5} placeholder={"Regards,\nYour Name\nYour Company"} />
+                    </label>
+                    <label>
+                      <span>Signature link 1 text</span>
+                      <input value={smtpSettings.signatureLinkLabel || ""} onChange={(e) => setSmtpSettings((c) => ({ ...c, signatureLinkLabel: e.target.value }))} placeholder="Kompatible Minds" />
+                    </label>
+                    <label>
+                      <span>Signature link 1 URL</span>
+                      <input value={smtpSettings.signatureLinkUrl || ""} onChange={(e) => setSmtpSettings((c) => ({ ...c, signatureLinkUrl: e.target.value }))} placeholder="https://kompatibleminds.com" />
+                    </label>
+                    <label>
+                      <span>Signature link 2 text</span>
+                      <input value={smtpSettings.signatureLinkLabel2 || ""} onChange={(e) => setSmtpSettings((c) => ({ ...c, signatureLinkLabel2: e.target.value }))} placeholder="LinkedIn" />
+                    </label>
+                    <label>
+                      <span>Signature link 2 URL</span>
+                      <input value={smtpSettings.signatureLinkUrl2 || ""} onChange={(e) => setSmtpSettings((c) => ({ ...c, signatureLinkUrl2: e.target.value }))} placeholder="https://www.linkedin.com/in/..." />
+                    </label>
+                  </div>
                 </div>
 
                 <div className="settings-subsection" style={{ marginTop: 18 }}>
