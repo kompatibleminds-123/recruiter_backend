@@ -3105,6 +3105,7 @@ function AssessmentStatusModal({ open, assessment, onClose, onSave }) {
   const [expectedDoj, setExpectedDoj] = useState("");
   const [dateOfJoining, setDateOfJoining] = useState("");
   const [status, setStatus] = useState("");
+  const inferSyncModeRef = useRef("manual");
 
   useEffect(() => {
     if (!open || !assessment) return;
@@ -3116,9 +3117,17 @@ function AssessmentStatusModal({ open, assessment, onClose, onSave }) {
     setExpectedDoj(toDateInputValue(assessment.expectedDoj || assessment.followUpAt || ""));
     setDateOfJoining(toDateInputValue(assessment.dateOfJoining || assessment.followUpAt || ""));
     setStatus("");
+    inferSyncModeRef.current = "programmatic";
   }, [open, assessment?.id]);
 
   useEffect(() => {
+    const mode = inferSyncModeRef.current;
+    // Prevent calendar/status from getting overwritten by parser when infer text
+    // is auto-updated from dropdown/date inputs.
+    if (mode !== "manual") {
+      inferSyncModeRef.current = "manual";
+      return;
+    }
     const lastLine = extractLastMeaningfulLine(inferText);
     const parsedFromLastLine = inferAssessmentStatusAndSchedule(lastLine);
     const parsed = parsedFromLastLine.candidateStatus ? parsedFromLastLine : inferAssessmentStatusAndSchedule(inferText);
@@ -3159,6 +3168,7 @@ function AssessmentStatusModal({ open, assessment, onClose, onSave }) {
             const nextDate = selectedNeedsCalendar
               ? (selectedNormalized === "offered" ? expectedDoj : selectedNormalized === "joined" ? dateOfJoining : atValue)
               : "";
+            inferSyncModeRef.current = "programmatic";
             setInferText((current) => syncAssessmentNotesWithStatus(current, selected, nextDate, { offerAmount }));
           }}>
             <option value="">Select status</option>
@@ -3176,6 +3186,7 @@ function AssessmentStatusModal({ open, assessment, onClose, onSave }) {
                 if (normalizedStatus === "offered") setExpectedDoj(nextValue);
                 else if (normalizedStatus === "joined") setDateOfJoining(nextValue);
                 else setAtValue(nextValue);
+                inferSyncModeRef.current = "programmatic";
                 setInferText((current) => syncAssessmentNotesWithStatus(current, candidateStatus, nextValue, { offerAmount }));
               }}
             />
@@ -3187,13 +3198,17 @@ function AssessmentStatusModal({ open, assessment, onClose, onSave }) {
             <input value={offerAmount} onChange={(e) => {
               const nextValue = e.target.value;
               setOfferAmount(nextValue);
+              inferSyncModeRef.current = "programmatic";
               setInferText((current) => syncAssessmentNotesWithStatus(current, candidateStatus, expectedDoj || atValue, { offerAmount: nextValue }));
             }} placeholder="25 L" />
           </label>
         ) : null}
         <label>
           <span>Infer box</span>
-          <textarea value={inferText} onChange={(e) => setInferText(e.target.value)} placeholder="Write only the new status update here, e.g. L1 aligned tomorrow 5 PM, screening reject, CV shared." />
+          <textarea value={inferText} onChange={(e) => {
+            inferSyncModeRef.current = "manual";
+            setInferText(e.target.value);
+          }} placeholder="Write only the new status update here, e.g. L1 aligned tomorrow 5 PM, screening reject, CV shared." />
         </label>
         <label>
           <span>Manual remarks</span>
