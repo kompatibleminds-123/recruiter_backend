@@ -2572,14 +2572,35 @@ function parseNaturalLanguageCandidateQuery(rawQuery) {
         .map((item) => String(item || "").trim())
         .filter(Boolean)
     : [];
-  const derivedSkills = explicitSkills.length ? explicitSkills : splitCandidateSearchKeywords(roleText);
+  // Phrase-aware skill hints (avoid splitting into noisy tokens like "data" + "engineer").
+  // Only used when explicit "skills:" section is not provided.
+  const phraseSkillHints = [];
+  if (/\bdata\s+engineer(?:s)?\b/i.test(lower)) phraseSkillHints.push("data engineer");
+  if (/\bdata\s+engineering\b/i.test(lower)) phraseSkillHints.push("data engineer");
+  if (/\bproduct\s+manager(?:s)?\b/i.test(lower)) phraseSkillHints.push("product manager");
+  if (/\bproject\s+manager(?:s)?\b/i.test(lower)) phraseSkillHints.push("project manager");
+  // "node development"/"node developer" usually means Node.js, and "development" is very noisy (Business Development).
+  if (/\bnode(?:js)?\s+(?:dev|developer|development)\b/i.test(lower)) phraseSkillHints.push("nodejs");
+  if (/\bnode\s+development\b/i.test(lower)) phraseSkillHints.push("nodejs");
+
+  const derivedSkills = explicitSkills.length
+    ? explicitSkills
+    : Array.from(new Set([...phraseSkillHints, ...splitCandidateSearchKeywords(roleText)]));
   const hasBusinessDevelopmentPhrase = /\bbusiness\s+development\b/i.test(lower);
   const hasKnownTechSignal =
-    /\b(node\.?js|nodejs|react(?:js)?|angular|vue(?:js)?|java\b|spring|spring\s*boot|python|django|flask|fastapi|golang|\bgo\b|rust|dotnet|\.net|asp\.?net|c#|kotlin|swift|android|ios|devops|aws|azure|gcp|docker|kubernetes|sql\b|mysql|postgres|mongodb|mongo|kafka)\b/i.test(lower);
+    /\b(node\b|node\.?js|nodejs|react(?:js)?|angular|vue(?:js)?|java\b|spring|spring\s*boot|python|django|flask|fastapi|golang|\bgo\b|rust|dotnet|\.net|asp\.?net|c#|kotlin|swift|android|ios|devops|aws|azure|gcp|docker|kubernetes|sql\b|mysql|postgres|mongodb|mongo|kafka)\b/i.test(lower);
+  const hasDataEngineerPhrase = /\bdata\s+engineer(?:s)?\b/i.test(lower) || phraseSkillHints.includes("data engineer");
   const cleanedSkills = derivedSkills
     .map((skill) => String(skill || "").trim())
     .filter(Boolean)
     .filter((skill) => !["assessment", "assessments"].includes(String(skill || "").toLowerCase().trim()))
+    // If the recruiter asked for "data engineer", don't treat generic "engineer" token as a required skill.
+    .filter((skill) => {
+      const token = String(skill || "").toLowerCase().trim();
+      if (!hasDataEngineerPhrase) return true;
+      if (token === "engineer" || token === "engineers") return false;
+      return true;
+    })
     // "development" is extremely noisy because of "Business Development" in sales profiles.
     // If the query already has a clear tech signal, treat "development" as a stopword
     // unless the recruiter explicitly says "business development".
@@ -2729,6 +2750,8 @@ async function interpretCandidateSearchQueryWithAi({ apiKey, query, actor }) {
     `19. Current recruiter is "${String(actor?.name || "").trim()}".`,
     "20. If the recruiter mentions a single explicit assessment status (e.g. 'L1 aligned', 'Feedback awaited', 'Offered'), set assessmentStatus to that exact label.",
     "21. If the recruiter mentions a single explicit call/attempt outcome (e.g. 'Not responding', 'JD shared', 'Call later'), set attemptOutcome to that exact label.",
+    "22. Treat common multi-word roles as phrases: 'data engineer', 'product manager', 'project manager', 'business development'. Prefer adding the whole phrase instead of splitting into generic tokens.",
+    "23. Interpret 'node developer' / 'node development' as Node.js. Prefer skill 'nodejs' and avoid using the generic word 'development' as a skill.",
     "",
     "Allowed lifecycle statuses:",
     "shortlisted, offered, joined, rejected, duplicate, dropped",
