@@ -3112,16 +3112,20 @@ function sanitizeCandidateSearchFilters(filters, normalizedQuery = "", universe 
 
     // Require Sales via roleFamilies instead of keywords, to avoid token noise.
     next.roleFamilies = Array.from(new Set([...(Array.isArray(next.roleFamilies) ? next.roleFamilies : []), "sales"]));
-    // Keep role minimal to avoid over-filtering (role token matching is AND across tokens).
-    if (!String(next.role || "").trim()) next.role = "sales";
+
+    // IMPORTANT:
+    // - `filters.role` is matched as an AND across tokens (see candidateMatchesNaturalFilter),
+    //   which is too strict for sales-family intent ("AE", "AM", "BDM", etc may not contain the word "sales").
+    // - So we clear `role` and rely on roleFamilies detection instead.
+    next.role = "";
 
     // Make domain terms the searchable keyword group, with OR semantics when multiple are present.
     next.skills = domainTerms;
     if (domainTerms.length >= 2) next.skillsMatch = "any";
 
     // First-class OR groups (planner-compatible shape, additive/backward-compatible).
-    // Required "sales" is expressed via roleFamilies above; we still keep it in mustSkills for explicitness.
-    next.mustSkills = ["sales"];
+    // Required "sales" is expressed via roleFamilies above (more reliable than raw substring "sales").
+    next.mustSkills = [];
     next.anyOfSkillGroups = domainTerms.length ? [domainTerms] : [];
   }
 
