@@ -3006,13 +3006,23 @@ function sanitizeCandidateSearchFilters(filters, normalizedQuery = "", universe 
     next.maxNoticeDays = null;
   }
 
+  // If the recruiter explicitly asked for a source bucket, honor it even if AI guessed wrong.
+  // This is critical for queries like "duplicate ... in captured notes" which must not get forced to assessment-only.
+  const capturedNotesMentioned = /\bcaptured\s+notes?\b|\bnotes?\s+captured\b|\bcaptured\s+note\b/i.test(qLower);
+  const appliedMentioned = /\bapplied\b|\bapplicants?\b|\bwebsite\s+apply\b|\bhosted\s+apply\b/i.test(qLower);
+  const assessmentsMentioned = /\bassessments?\b|\bconverted\b|\bshared\b|\bcv shared\b|\bcv to be shared\b/i.test(qLower);
+  if (capturedNotesMentioned) next.sourceTypeFilter = "captured";
+  else if (appliedMentioned) next.sourceTypeFilter = "applied";
+  else if (assessmentsMentioned && String(next.sourceTypeFilter || "").trim() === "") next.sourceTypeFilter = "assessment";
+
   const rawLocation = String(next.location || "").trim();
   if (rawLocation) {
     const normalized = normalizeDashboardText(rawLocation).toLowerCase();
     const alias = mapLocationAlias(normalized, synonyms);
     const canonical = String(alias?.canonical || normalized).trim().toLowerCase();
-    const matchesKnown = Boolean(canonical && knownLocations.has(canonical));
-    if (!matchesKnown || looksLikeNonLocationToken(rawLocation)) {
+    // Do NOT require location to exist in current universe. New cities (or formatting differences like "Delhi / NCR")
+    // should still be accepted as long as it doesn't look like a role/skill phrase.
+    if (looksLikeNonLocationToken(rawLocation)) {
       // Don't let a bad AI location guess zero out the result set.
       // If it looks like a role/skill phrase, keep it searchable via skills instead.
       const extraSkills = splitCandidateSearchKeywords(rawLocation);
@@ -3034,7 +3044,6 @@ function sanitizeCandidateSearchFilters(filters, normalizedQuery = "", universe 
       const alias = mapLocationAlias(normalized, synonyms);
       const canonical = String(alias?.canonical || normalized).trim().toLowerCase();
       if (!canonical) return false;
-      if (!knownLocations.has(canonical)) return false;
       if (looksLikeNonLocationToken(loc)) return false;
       return true;
     })
@@ -3163,13 +3172,22 @@ function sanitizeCandidateSearchFilters(filters, normalizedQuery = "", universe 
 
   // If someone asks for "duplicate" without explicitly scoping to assessments,
   // don't let AI accidentally force `sourceTypeFilter="assessment"` which hides captured duplicates.
-  if (Array.isArray(next.detailedStatuses) && next.detailedStatuses.length) {
-    const normalizedDetailed = next.detailedStatuses.map((s) => normalizeDashboardText(s).toLowerCase().trim()).filter(Boolean);
-    if (normalizedDetailed.includes("duplicate")) {
-      const explicitAssessmentScope = /\b(assessment|assessments|converted|shared|pipeline)\b/i.test(qLower);
-      if (!explicitAssessmentScope && String(next.sourceTypeFilter || "").trim() === "assessment") {
-        next.sourceTypeFilter = "";
-      }
+  const normalizedDetailed = Array.isArray(next.detailedStatuses)
+    ? next.detailedStatuses.map((s) => normalizeDashboardText(s).toLowerCase().trim()).filter(Boolean)
+    : [];
+  const normalizedStatuses = Array.isArray(next.statuses)
+    ? next.statuses.map((s) => normalizeDashboardText(s).toLowerCase().trim()).filter(Boolean)
+    : [];
+  const hasDuplicateIntent =
+    normalizedDetailed.includes("duplicate") ||
+    normalizedStatuses.includes("duplicate") ||
+    /\bduplicate\b/i.test(qLower) ||
+    normalizeDashboardText(String(next.assessmentStatus || "")).toLowerCase().includes("duplicate") ||
+    normalizeDashboardText(String(next.attemptOutcome || "")).toLowerCase().includes("duplicate");
+  if (hasDuplicateIntent) {
+    const explicitAssessmentScope = /\b(assessment|assessments|converted|shared|pipeline)\b/i.test(qLower);
+    if (!explicitAssessmentScope && String(next.sourceTypeFilter || "").trim() === "assessment") {
+      next.sourceTypeFilter = "";
     }
   }
 
