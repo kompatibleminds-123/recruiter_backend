@@ -5357,16 +5357,49 @@ function PortalApp({ token, onLogout }) {
 
   const capturedNotesStats = useMemo(() => {
     const todayKey = new Date().toISOString().slice(0, 10);
+    const queryText = String(candidateFilters.q || "").trim().toLowerCase();
+    // Keep stats aligned with the same filters as the visible list (clients/JD/recruiter/outcome/state/date/query).
+    // We do not exclude converted rows here because we show both Active + Converted counts.
     const universe = capturedNotesUniverse.filter((item) => {
-      const createdKey = String(item.created_at || "").slice(0, 10);
-      if (candidateFilters.dateFrom && createdKey && createdKey < candidateFilters.dateFrom) return false;
-      if (candidateFilters.dateTo && createdKey && createdKey > candidateFilters.dateTo) return false;
-      return true;
-    });
-    const convertedCount = universe.filter((item) => {
       const matchedAssessment = resolveCapturedAssessment(item);
-      return Boolean(matchedAssessment);
-    }).length;
+      const sourceValue = String(item.source || "").trim();
+      const clientValue = String(item.client_name || matchedAssessment?.clientName || "Unassigned").trim();
+      const jdValue = String(item.jd_title || matchedAssessment?.jdTitle || item.role || "").trim();
+      const assignedToValue = String(item.assigned_to_name || "Unassigned").trim();
+      const capturedByValue = String(item.recruiter_name || item.assigned_by_name || "Unknown").trim();
+      const outcomeValue = getCapturedOutcome(item, matchedAssessment);
+      const createdAtValue = item.created_at ? String(item.created_at).slice(0, 10) : "";
+      const manuallyHidden = item.hidden_from_captured === true;
+      const activeValue = manuallyHidden ? "Inactive" : "Active";
+      const nameHay = [item.name].join(" ").toLowerCase();
+      const hay = [
+        item.name,
+        item.company,
+        item.role,
+        item.jd_title,
+        item.client_name,
+        item.assigned_to_name,
+        item.source,
+        item.notes,
+        item.recruiter_context_notes,
+        item.other_pointers
+      ].join(" ").toLowerCase();
+      const queryOk = !queryText || hay.includes(queryText);
+      const dateFromOk = !candidateFilters.dateFrom || (createdAtValue && createdAtValue >= candidateFilters.dateFrom);
+      const dateToOk = !candidateFilters.dateTo || (createdAtValue && createdAtValue <= candidateFilters.dateTo);
+      const clientOk = !candidateFilters.clients.length || candidateFilters.clients.includes(clientValue);
+      const jdOk = !candidateFilters.jds.length || candidateFilters.jds.includes(jdValue);
+      const assignedToOk = !candidateFilters.assignedTo.length || candidateFilters.assignedTo.includes(assignedToValue);
+      const capturedByOk = !candidateFilters.capturedBy.length || candidateFilters.capturedBy.includes(capturedByValue);
+      const sourceOk = !candidateFilters.sources.length || candidateFilters.sources.includes(sourceValue);
+      const outcomeOk = !candidateFilters.outcomes.length || candidateFilters.outcomes.includes(outcomeValue);
+      const activeOk = !candidateFilters.activeStates.length ? activeValue === "Active" : candidateFilters.activeStates.includes(activeValue);
+      const searchNameMatch = Boolean(queryText && nameHay.includes(queryText));
+      const inactiveBlockedByDefault = !candidateFilters.activeStates.length && activeValue === "Inactive" && !searchNameMatch;
+      const hiddenBlocked = manuallyHidden && !searchNameMatch && candidateFilters.activeStates.includes("Active");
+      return !inactiveBlockedByDefault && !hiddenBlocked && queryOk && dateFromOk && dateToOk && clientOk && jdOk && assignedToOk && capturedByOk && sourceOk && outcomeOk && activeOk;
+    });
+    const convertedCount = universe.filter((item) => Boolean(resolveCapturedAssessment(item))).length;
     const activeCount = universe.filter((item) => {
       const matchedAssessment = resolveCapturedAssessment(item);
       if (matchedAssessment) return false;
@@ -5378,14 +5411,38 @@ function PortalApp({ token, onLogout }) {
       active: activeCount,
       converted: convertedCount
     };
-  }, [capturedAssessmentMap, capturedNotesUniverse, candidateFilters.dateFrom, candidateFilters.dateTo]);
+  }, [candidateFilters, capturedAssessmentMap, capturedNotesUniverse]);
 
   const assessmentStats = useMemo(() => {
     const todayKey = new Date().toISOString().slice(0, 10);
+    const query = String(assessmentFilters.q || "").trim().toLowerCase();
+    // Keep stats aligned with the same filters as the visible list (client/JD/recruiter/outcome/date/query),
+    // but we intentionally do not apply the "Active/Archived lane" filter here so the cards can show both counts.
     const universe = (Array.isArray(state.assessments) ? state.assessments : []).filter((item) => {
+      const matchedCandidate = (state.candidates || []).find((candidate) =>
+        (item?.candidateId && String(candidate.id) === String(item.candidateId)) ||
+        String(candidate.name || "").trim().toLowerCase() === String(item?.candidateName || "").trim().toLowerCase()
+      );
+      const clientValue = String(item?.clientName || matchedCandidate?.client_name || "").trim();
+      const jdValue = String(item?.jdTitle || matchedCandidate?.jd_title || "").trim();
+      const recruiterValue = String(matchedCandidate?.assigned_to_name || item?.recruiterName || matchedCandidate?.recruiter_name || "").trim();
+      const outcomeValue = normalizeAssessmentStatusLabel(item?.candidateStatus || item?.candidate_status || "") || "No outcome";
       const createdKey = String(item?.generatedAt || item?.createdAt || item?.created_at || item?.updatedAt || "").slice(0, 10);
+      const hay = [
+        item?.candidateName,
+        item?.phoneNumber,
+        item?.emailId,
+        jdValue,
+        clientValue,
+        recruiterValue
+      ].join(" ").toLowerCase();
+      if (query && !hay.includes(query)) return false;
       if (assessmentFilters.dateFrom && createdKey && createdKey < assessmentFilters.dateFrom) return false;
       if (assessmentFilters.dateTo && createdKey && createdKey > assessmentFilters.dateTo) return false;
+      if (assessmentFilters.clients.length && !assessmentFilters.clients.includes(clientValue)) return false;
+      if (assessmentFilters.jds.length && !assessmentFilters.jds.includes(jdValue)) return false;
+      if (assessmentFilters.recruiters.length && !assessmentFilters.recruiters.includes(recruiterValue)) return false;
+      if (assessmentFilters.outcomes.length && !assessmentFilters.outcomes.includes(outcomeValue)) return false;
       return true;
     });
     const activeCount = universe.filter((item) => !isAssessmentArchived(item)).length;
@@ -5396,7 +5453,7 @@ function PortalApp({ token, onLogout }) {
       active: activeCount,
       archived: archivedCount
     };
-  }, [assessmentFilters.dateFrom, assessmentFilters.dateTo, state.assessments]);
+  }, [assessmentFilters, state.assessments, state.candidates]);
 
   const capturedCandidates = useMemo(() => {
     return capturedNotesUniverse.filter((item) => {
@@ -5578,10 +5635,46 @@ function PortalApp({ token, onLogout }) {
     const currentUserName = String(state.user?.name || "").trim();
     const isAdmin = String(state.user?.role || "").toLowerCase() === "admin";
 
+    // Keep stats aligned with the same filters as the visible list (clients/JD/owner/assignee/outcome/state/date/query).
+    // We do not exclude converted rows here because we show both Active + Converted counts.
+    const query = String(applicantFilters.q || "").trim().toLowerCase();
     const universe = filteredApplicants.filter((item) => {
-      const createdKey = String(item.createdAt || item.created_at || "").slice(0, 10);
-      if (applicantFilters.dateFrom && createdKey && createdKey < applicantFilters.dateFrom) return false;
-      if (applicantFilters.dateTo && createdKey && createdKey > applicantFilters.dateTo) return false;
+      const linkedCandidate = applicantCandidateMap.get(String(item.id)) || null;
+      const linkedAssessment = applicantAssessmentMap.get(String(item.id)) || null;
+      const clientValue = String(item.clientName || item.client_name || "Unassigned").trim();
+      const jdValue = String(item.jdTitle || item.jd_title || "").trim();
+      const ownedValue = getApplicantOwnerLabel(item, linkedCandidate);
+      const assignedValue = getApplicantManualAssigneeLabel(item, linkedCandidate);
+      const outcomeValue = getApplicantWorkflowOutcome(item, linkedCandidate);
+      const manuallyHidden = Boolean(item.hidden_from_captured || linkedCandidate?.hidden_from_captured);
+      const activeValue = manuallyHidden ? "Inactive" : "Active";
+      const createdDate = String(item.createdAt || item.created_at || "").slice(0, 10);
+      const nameHay = [item.candidateName, linkedCandidate?.name].join(" ").toLowerCase();
+      const hay = [
+        item.candidateName,
+        linkedCandidate?.name,
+        item.phone,
+        item.email,
+        jdValue,
+        clientValue,
+        ownedValue,
+        assignedValue,
+        item.currentCompany,
+        item.currentDesignation
+      ].join(" ").toLowerCase();
+      if (query && !hay.includes(query)) return false;
+      const searchNameMatch = Boolean(query && nameHay.includes(query));
+      if (!applicantFilters.activeStates.length && activeValue === "Inactive" && !searchNameMatch) return false;
+      if (applicantFilters.activeStates.length && !applicantFilters.activeStates.includes(activeValue)) return false;
+      if (applicantFilters.dateFrom && createdDate && createdDate < applicantFilters.dateFrom) return false;
+      if (applicantFilters.dateTo && createdDate && createdDate > applicantFilters.dateTo) return false;
+      if (applicantFilters.clients.length && !applicantFilters.clients.includes(clientValue)) return false;
+      if (applicantFilters.jds.length && !applicantFilters.jds.includes(jdValue)) return false;
+      if (applicantFilters.ownedBy.length && !applicantFilters.ownedBy.includes(ownedValue)) return false;
+      if (applicantFilters.assignedTo.length && !applicantFilters.assignedTo.includes(assignedValue)) return false;
+      if (applicantFilters.outcomes.length && !applicantFilters.outcomes.includes(outcomeValue)) return false;
+      // Keep converted rows in universe for Converted counts; list view excludes them separately.
+      if (linkedAssessment && isApplicantConvertedToAssessment(item, linkedCandidate, linkedAssessment)) return true;
       return true;
     });
     const converted = universe.filter((item) => Boolean(applicantAssessmentMap.get(String(item.id)) || null)).length;
@@ -5639,7 +5732,7 @@ function PortalApp({ token, onLogout }) {
       assignedManual,
       total: universe.length
     };
-  }, [applicantAssessmentMap, applicantCandidateMap, filteredApplicants, state.user, applicantFilters.dateFrom, applicantFilters.dateTo]);
+  }, [applicantAssessmentMap, applicantCandidateMap, filteredApplicants, state.user, applicantFilters]);
 
   const quickUpdateMatches = useMemo(() => {
     const query = String(quickUpdateCandidateQuery || "").trim().toLowerCase();
