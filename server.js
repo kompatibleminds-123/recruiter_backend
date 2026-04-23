@@ -3656,7 +3656,25 @@ function candidateMatchesNaturalFilter(item, filters, actor = null) {
     if (!filters.locations.some((location) => itemLocation.includes(String(location || "").toLowerCase()))) return false;
   }
   if (filters.client) {
-    if (!String(item.clientName || "").toLowerCase().includes(filters.client.toLowerCase())) return false;
+    const needle = String(filters.client || "").toLowerCase().trim();
+    const clientHay = String(item.clientName || "").toLowerCase();
+    if (needle && !clientHay.includes(needle)) {
+      // Backward-compatible fallback:
+      // Some captured notes may not have a resolved clientName yet (JD missing / unmapped),
+      // but the JD/position text still contains the client label (e.g. "AE - Attentive").
+      // Allow matching against position / raw JD title so "in Attentive from captured notes"
+      // doesn't return 0 just because clientName is "Unassigned".
+      const rawCandidate = item?.raw?.candidate && typeof item.raw.candidate === "object" ? item.raw.candidate : {};
+      const jdText = String(
+        item.position
+          || rawCandidate?.assigned_jd_title
+          || rawCandidate?.assignedJdTitle
+          || rawCandidate?.jd_title
+          || rawCandidate?.jdTitle
+          || ""
+      ).toLowerCase();
+      if (!jdText.includes(needle)) return false;
+    }
   }
   if (filters.targetLabel) {
     const targetHay = `${item.clientName || ""} ${item.position || ""}`.toLowerCase();
