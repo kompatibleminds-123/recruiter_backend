@@ -8486,11 +8486,13 @@ function PortalApp({ token, onLogout }) {
     const isInterviewStatus = isInterviewAlignedStatus(nextStatus);
     const isOffered = nextStatusLower === "offered";
     const isJoined = nextStatusLower === "joined";
+    // Calendar picker should always win over stale infer-box text when the user explicitly changes date/time.
+    // (Infer box still works because we keep it synced into atValue via the modal effect.)
     const effectiveAtValue = isOffered
-      ? (payload?.expectedDoj || inferred.expectedDoj || payload?.atValue || "")
+      ? (payload?.expectedDoj || payload?.atValue || inferred.expectedDoj || inferred.atValue || "")
       : isJoined
-        ? (payload?.dateOfJoining || inferred.dateOfJoining || payload?.atValue || "")
-        : (inferred.atValue || payload?.atValue || "");
+        ? (payload?.dateOfJoining || payload?.atValue || inferred.dateOfJoining || inferred.atValue || "")
+        : (payload?.atValue || inferred.atValue || "");
     const dateCandidate = effectiveAtValue ? new Date(effectiveAtValue) : null;
     const atIso = (isInterviewStatus || isOffered || isJoined) && dateCandidate && !Number.isNaN(dateCandidate.getTime())
       ? dateCandidate.toISOString()
