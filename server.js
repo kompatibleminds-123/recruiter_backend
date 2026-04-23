@@ -71,6 +71,7 @@ const { DEFAULT_SYNONYMS, mapLocationAlias } = require("./src/search/synonyms");
 const { normalizeRecruiterQuery } = require("./src/search/normalize");
 const { hybridSearchCandidates, buildCandidateSemanticText } = require("./src/search/hybrid-search");
 const { createEmbedding, hashText } = require("./src/search/embedding-service");
+const { upsertCandidateSearchDocV1, listCandidateSearchDocsForCompany } = require("./src/search/search-doc-store");
 let nodemailer = null;
 try {
   // Optional dependency: only needed when SMTP-based JD email sharing is enabled.
@@ -3090,6 +3091,11 @@ function sanitizeCandidateSearchFilters(filters, normalizedQuery = "", universe 
     // Make domain terms the searchable keyword group, with OR semantics when multiple are present.
     next.skills = domainTerms;
     if (domainTerms.length >= 2) next.skillsMatch = "any";
+
+    // First-class OR groups (planner-compatible shape, additive/backward-compatible).
+    // Required "sales" is expressed via roleFamilies above; we still keep it in mustSkills for explicitness.
+    next.mustSkills = ["sales"];
+    next.anyOfSkillGroups = domainTerms.length ? [domainTerms] : [];
   }
 
   return next;
@@ -3198,7 +3204,8 @@ function buildCandidateSearchHay(item = {}) {
       item.workflowStatus || "",
       item.attemptStatus || ""
     ].join(" "));
-    return normalizeCandidateSearchDocText(`${persisted} ${dynamic}`);
+    const cvExcerpt = String(item?.hiddenCvText || "").trim();
+    return normalizeCandidateSearchDocText(`${persisted} ${dynamic} ${cvExcerpt}`);
   }
   const base = normalizeDashboardText([
     item.candidateName || "",
@@ -3560,6 +3567,19 @@ function candidateMatchesNaturalFilter(item, filters, actor = null) {
       } else {
         if (matched.length !== requiredSkills.length) return false;
       }
+    }
+  }
+  // First-class OR-groups (additive): mustSkills AND anyOfSkillGroups.
+  if (Array.isArray(filters.mustSkills) && filters.mustSkills.length) {
+    const hay = buildCandidateSearchHay(item);
+    const must = normalizeCandidateSearchKeywords(filters.mustSkills);
+    if (must.length && !must.every((skill) => hay.includes(skill))) return false;
+  }
+  if (Array.isArray(filters.anyOfSkillGroups) && filters.anyOfSkillGroups.length) {
+    const hay = buildCandidateSearchHay(item);
+    for (const group of filters.anyOfSkillGroups) {
+      const terms = normalizeCandidateSearchKeywords(Array.isArray(group) ? group : []);
+      if (terms.length && !terms.some((skill) => hay.includes(skill))) return false;
     }
   }
   // Explicit status filters (assessment status + captured-attempt outcome) for AI search.
@@ -6509,6 +6529,27 @@ const server = http.createServer(async (req, res) => {
       ]);
       const universe = buildCandidateSearchUniverse(candidates, assessments, jobs);
 
+      // Optional: attach persisted search-docs (if table exists). This improves boolean/AI matching
+      // without changing any workflow behavior. Missing table/rows are treated as a no-op.
+      try {
+        const docs = await listCandidateSearchDocsForCompany(user.companyId);
+        const byId = new Map((docs || []).map((row) => [String(row?.candidate_id || "").trim(), row]));
+        for (const item of universe) {
+          const candidateId = String(item?.raw?.candidate?.id || item?.id || "").trim();
+          if (!candidateId) continue;
+          const doc = byId.get(candidateId) || null;
+          if (!doc) continue;
+          if (!item.raw || typeof item.raw !== "object") item.raw = { candidate: item?.raw?.candidate || null, assessment: item?.raw?.assessment || null, metadata: null };
+          if (!item.raw.metadata || typeof item.raw.metadata !== "object") item.raw.metadata = {};
+          if (doc?.doc_v1) item.raw.metadata.searchDocV1 = String(doc.doc_v1 || "").trim();
+          // Provide a safe excerpt for semantic text building (avoid loading huge payloads into UI).
+          if (!item.hiddenCvText && doc?.cv_text_full) {
+            const cvText = String(doc.cv_text_full || "");
+            item.hiddenCvText = cvText.length > 60000 ? `${cvText.slice(0, 60000)}...` : cvText;
+          }
+        }
+      } catch (_) {}
+
       // Disambiguate "in <client>" vs "in <location>" when the token matches a known client label.
       // Example: "sourced by Ankit in Faircent" should treat Faircent as client, not a city.
       if (!filters.client) {
@@ -7669,10 +7710,32 @@ const server = http.createServer(async (req, res) => {
               })
             };
 
+            const draftPayload = refreshed?.draft_payload && typeof refreshed.draft_payload === "object" ? refreshed.draft_payload : {};
+            const screeningAnswers = refreshed?.screening_answers && typeof refreshed.screening_answers === "object" ? refreshed.screening_answers : {};
+            nextMeta.searchDocV1 = deriveCandidateSearchDocV1FromParts({
+              candidate: refreshed || candidate,
+              meta: nextMeta,
+              draftPayload,
+              screeningAnswers,
+              cvResult: result,
+              inferredSearchTags: nextMeta.inferredSearchTags
+            });
+            nextMeta.searchDocUpdatedAt = new Date().toISOString();
+
             await patchCandidate(candidate.id, {
               raw_note: encodeApplicantMetadata(nextMeta),
               ...buildCvAutofillPatch(refreshed || candidate, result)
             }, { companyId: actor.companyId });
+
+            // Best-effort persistence of unified search-doc + full CV text (if table exists).
+            try {
+              await upsertCandidateSearchDocV1({
+                companyId: actor.companyId,
+                candidateId: candidate.id,
+                docV1: nextMeta.searchDocV1,
+                cvTextFull: String(parsed?.rawText || "")
+              });
+            } catch (_) {}
           } catch (error) {
             console.warn("Background CV parse failed:", error?.message || error);
             try {
@@ -7780,6 +7843,16 @@ const server = http.createServer(async (req, res) => {
         raw_note: encodeApplicantMetadata(nextMeta),
         ...buildCvAutofillPatch(candidate, result)
       }, { companyId: actor.companyId });
+
+      // Best-effort persistence of unified search-doc + full CV text (if table exists).
+      try {
+        await upsertCandidateSearchDocV1({
+          companyId: actor.companyId,
+          candidateId: candidate.id,
+          docV1: nextMeta.searchDocV1,
+          cvTextFull: String(parsed?.rawText || "")
+        });
+      } catch (_) {}
 
       sendJson(res, 200, {
         ok: true,

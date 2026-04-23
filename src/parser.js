@@ -51,6 +51,27 @@ function stripRtf(rtf) {
 
 function parseDateRange(text) {
   const normalized = String(text || "").replace(/[\u2013\u2014\u2212]/g, "-");
+
+  // Prefer explicit year-only ranges like "2020-2023" or "2020 to 2023"
+  // before falling back to "any year in the line" (which can be noisy in CV bullets).
+  const yearRange = normalized.match(/\b(19\d{2}|20\d{2})\b\s*(?:-|to)\s*\b(19\d{2}|20\d{2}|present|current|till date)\b/i);
+  if (yearRange) {
+    const startYear = Number(yearRange[1]);
+    const endToken = String(yearRange[2] || "").toLowerCase();
+    if (endToken === "present" || endToken === "current" || endToken === "till date") {
+      const now = new Date();
+      return {
+        start: { year: startYear, month: 0 },
+        end: { year: now.getFullYear(), month: now.getMonth() },
+        isCurrent: true
+      };
+    }
+    const endYear = Number(endToken);
+    if (Number.isFinite(startYear) && Number.isFinite(endYear)) {
+      return { start: { year: startYear, month: 0 }, end: { year: endYear, month: 11 }, isCurrent: false };
+    }
+  }
+
   const matches = Array.from(
     normalized.matchAll(/\b(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*[\s,-]+(?:'(\d{2})|(\d{4}))/ig)
   ).map((match) => ({

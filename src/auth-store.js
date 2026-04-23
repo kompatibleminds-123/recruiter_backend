@@ -1,6 +1,7 @@
 const crypto = require("crypto");
 const fs = require("fs");
 const path = require("path");
+const { insertAssessmentEvent } = require("./search/search-doc-store");
 
 const DATA_DIR = path.join(__dirname, "..", "data");
 const STORE_PATH = path.join(DATA_DIR, "store.json");
@@ -1632,8 +1633,81 @@ async function saveAssessment({ actorUserId, companyId, assessment }) {
     throw new Error("candidateId is required for assessments.");
   }
   const safeAssessment = existingId ? { ...incoming, id: existingId } : incoming;
+
+  // Read previous row (best-effort) so we can create factual events (status changes, interview done, offered, etc.)
+  // without breaking existing flows if the table isn't present.
+  let previous = null;
+  try {
+    await ensureSeeded();
+    const idNeedle = String(persistedAssessmentId(safeAssessment.id) || "").trim();
+    if (idNeedle) {
+      const rowsPrev = await sbSel(
+        "assessments",
+        `select=id,candidate_status,status,interview_at,offer_doj,offer_amount,updated_at,client_name,jd_title,candidate_id&company_id=eq.${enc(companyId)}&id=eq.${enc(idNeedle)}&limit=1`
+      ).catch(() => []);
+      previous = rowsPrev && rowsPrev[0] ? rowsPrev[0] : null;
+    }
+  } catch (_) {
+    previous = null;
+  }
+
   const rows = await sbIns("assessments", [assessmentRow(safeAssessment, actor, companyId)], { conflict: "id", upsert: true });
-  return sanitizeAssessment(rows[0]);
+  const saved = sanitizeAssessment(rows[0]);
+
+  // Best-effort event insert (no-op if the table doesn't exist yet).
+  try {
+    const prevStatus = String(previous?.candidate_status || previous?.status || "").trim().toLowerCase();
+    const nextStatus = String(saved?.candidateStatus || saved?.status || "").trim();
+    const nextStatusLower = nextStatus.toLowerCase();
+
+    const statusChanged = !prevStatus || prevStatus !== nextStatusLower;
+    const isInterviewAligned = /\baligned\b/.test(nextStatusLower);
+    const isInterviewDone = nextStatusLower === "feedback awaited";
+    const isOffered = nextStatusLower === "offered";
+    const isJoined = nextStatusLower === "joined";
+
+    const bestDate = (value) => {
+      const raw = String(value || "").trim();
+      if (!raw) return null;
+      const d = new Date(raw);
+      if (Number.isFinite(d.getTime())) return d.toISOString();
+      return null;
+    };
+
+    if (statusChanged) {
+      const eventType =
+        isJoined ? "joined"
+          : isOffered ? "offered"
+            : isInterviewDone ? "interview_done"
+              : isInterviewAligned ? "interview_aligned"
+                : "status_updated";
+      const eventAt =
+        eventType === "interview_aligned"
+          ? (bestDate(saved?.interviewAt || previous?.interview_at) || new Date().toISOString())
+          : new Date().toISOString();
+
+      await insertAssessmentEvent({
+        companyId,
+        assessmentId: String(saved?.id || "").trim(),
+        candidateId: String(saved?.candidateId || "").trim(),
+        recruiterId: actor.id,
+        recruiterName: actor.name,
+        clientName: String(saved?.clientName || "").trim(),
+        jdTitle: String(saved?.jdTitle || "").trim(),
+        eventType,
+        status: nextStatus,
+        eventAt,
+        payload: {
+          previousStatus: String(previous?.candidate_status || previous?.status || "").trim(),
+          interviewAt: String(saved?.interviewAt || "").trim(),
+          offerDoj: String(saved?.offerDoj || "").trim(),
+          offerAmount: String(saved?.offerAmount || "").trim()
+        }
+      });
+    }
+  } catch (_) {}
+
+  return saved;
 }
 
 async function patchAssessmentCandidateLink({ actorUserId, companyId, assessmentId, candidateId }) {
