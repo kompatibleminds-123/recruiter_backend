@@ -4803,6 +4803,11 @@ function PortalApp({ token, onLogout }) {
         if (dateTo) params.set("dateTo", dateTo);
         const response = await api(`/company/assessment-events?${params.toString()}`, token);
         const rowsRaw = Array.isArray(response?.result?.rows) ? response.result.rows : [];
+        if (!rowsRaw.length) {
+          // No factual events yet for this range/kind (or pre-events historical rows).
+          // Let existing fallback exporters build rows from current assessment data.
+          return false;
+        }
 
         const rows = rowsRaw.map((row) => {
           const atValue = String(row?.event_at || row?.created_at || "").trim();
