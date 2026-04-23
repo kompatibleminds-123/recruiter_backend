@@ -2569,7 +2569,8 @@ function parseNaturalLanguageCandidateQuery(rawQuery) {
   roleText = roleText.replace(/\bprofiles?\b/gi, "").trim();
   const locations = locationListMatch
     ? String(locationListMatch[1] || "")
-        .split(/\s+(?:or|and)\s+/i)
+        // Support "an" typo as well ("an" -> "and") consistently in split.
+        .split(/\s+(?:or|and|an)\s+/i)
         .map((item) => String(item || "").trim())
         .filter(Boolean)
     : [];
@@ -3043,7 +3044,13 @@ function sanitizeCandidateSearchFilters(filters, normalizedQuery = "", universe 
       return String(alias?.canonical || normalized).trim();
     });
   next.locations = Array.from(new Set(cleanedLocations));
-  if (!next.location && next.locations.length) {
+  // IMPORTANT:
+  // If multiple locations are present, do NOT also set `location` (single) because
+  // candidateMatchesNaturalFilter checks `location` first and would accidentally turn
+  // the intended OR into an AND (must match the first location).
+  if (next.locations.length >= 2) {
+    next.location = "";
+  } else if (!next.location && next.locations.length) {
     next.location = String(next.locations[0] || "").trim();
   }
 
