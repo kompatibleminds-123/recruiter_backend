@@ -2395,7 +2395,8 @@ function parseNaturalLanguageCandidateQuery(rawQuery) {
   const skillMatch = lower.match(/\b(?:with skills?|skills?|having)\s+([a-z0-9,+/&\s-]+?)(?:\bwith\b|\bbased\b|\bfor\b|$)/i);
   const currentCompanyMatch = lower.match(/\b(?:from current company|in current company|currently at)\s+([a-z0-9][a-z0-9\s&.-]+?)(?:\bwith\b|\bbased\b|$)/i);
   const locationListMatch =
-    lower.match(/\b(?:in|from|based in|based out of|located in)\s+([a-z][a-z\s]+(?:\s+(?:or|and)\s+[a-z][a-z\s]+)+)\b/i) ||
+    // Support "delhi an gurugram" typo as well ("an" -> "and").
+    lower.match(/\b(?:in|from|based in|based out of|located in)\s+([a-z][a-z\s]+(?:\s+(?:or|and|an)\s+[a-z][a-z\s]+)+)\b/i) ||
     null;
   const interviewIntent = /\b(?:aligned|interview(?:s)?|scheduled)\b/i.test(lower);
   const recruiterScopeMe = /\b(?:i|me|my)\s+(?:sourced|captured|shared|converted)\b/i.test(lower) || /\bthat i (?:sourced|captured|shared|converted)\b/i.test(lower);
@@ -3081,7 +3082,13 @@ function sanitizeCandidateSearchFilters(filters, normalizedQuery = "", universe 
     const rawSkills = Array.isArray(next.skills) ? next.skills : [];
     const normalizedSkills = normalizeCandidateSearchKeywords(rawSkills);
     const domainSet = new Set(["finance", "fintech", "lending", "loan"]);
-    const domainTerms = normalizedSkills.filter((t) => domainSet.has(String(t || "").toLowerCase().trim()));
+    const domainTermsFromSkills = normalizedSkills.filter((t) => domainSet.has(String(t || "").toLowerCase().trim()));
+    // Even if AI/heuristics failed to put domain tokens into skills, the query text itself is a strong signal.
+    // This makes "lending or fintech or finance sales" behave like an OR, not an accidental AND.
+    const domainTermsFromQuery = Array.from(
+      new Set((qLower.match(/\b(finance|fintech|lending|loan)\b/g) || []).map((m) => String(m || "").trim().toLowerCase()))
+    ).filter(Boolean);
+    const domainTerms = Array.from(new Set([...(domainTermsFromSkills || []), ...(domainTermsFromQuery || [])]));
 
     // Require Sales via roleFamilies instead of keywords, to avoid token noise.
     next.roleFamilies = Array.from(new Set([...(Array.isArray(next.roleFamilies) ? next.roleFamilies : []), "sales"]));
