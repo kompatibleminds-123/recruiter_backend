@@ -7487,6 +7487,7 @@ function PortalApp({ token, onLogout }) {
     const mode = candidateAiQueryMode === "natural" ? "ai" : "boolean";
     const semanticEnabled = copySettings.semanticSearchEnabled !== false;
     setCandidateSearchBusy(true);
+    setCandidateSearchDebug(null);
     setStatus("workspace", "Searching candidates...", "ok");
     try {
       // Avoid previous applied filters (especially notice bucket) silently wiping results.
@@ -7496,6 +7497,14 @@ function PortalApp({ token, onLogout }) {
         `/company/candidates/search-natural?q=${encodeURIComponent(candidateSearchText)}&mode=${encodeURIComponent(mode)}&semantic=${semanticEnabled ? "1" : "0"}`,
         token
       );
+      setCandidateSearchDebug({
+        mode,
+        semantic: semanticEnabled,
+        query: candidateSearchText,
+        filters: result?.filters || null,
+        interpretation: result?.interpretation || result?.parsed || result?.planner || null,
+        debug: result?.debug || null
+      });
       setCandidateSearchResults(result.items || []);
       setCandidateSearchMode("search");
       setCandidatePage(1);
@@ -7532,6 +7541,7 @@ function PortalApp({ token, onLogout }) {
     } catch (error) {
       setCandidateSearchMode("search");
       setCandidateSearchResults([]);
+      setCandidateSearchDebug({ error: String(error?.message || error), query: candidateSearchText, mode });
       setStatus("workspace", `Search failed: ${String(error?.message || error)}`, "error");
     } finally {
       setCandidateSearchBusy(false);
@@ -9318,6 +9328,39 @@ function PortalApp({ token, onLogout }) {
                 </div>
                 {candidateSearchBusy ? (
                   <div className="muted" style={{ marginTop: 6 }}>Searching candidates...</div>
+                ) : null}
+                {candidateSearchDebug ? (
+                  <div className="item-card compact-card" style={{ marginTop: 10 }}>
+                    <div className="button-row" style={{ justifyContent: "space-between" }}>
+                      <strong>AI Debug JSON</strong>
+                      <div className="button-row">
+                        <button
+                          className="ghost-btn"
+                          onClick={() => setCandidateSearchDebugOpen((current) => !current)}
+                        >
+                          {candidateSearchDebugOpen ? "Hide" : "Show"}
+                        </button>
+                        <button
+                          className="ghost-btn"
+                          onClick={() => {
+                            try {
+                              void navigator.clipboard.writeText(JSON.stringify(candidateSearchDebug, null, 2));
+                              setStatus("workspace", "Copied AI JSON.", "ok");
+                            } catch (error) {
+                              setStatus("workspace", "Copy failed.", "error");
+                            }
+                          }}
+                        >
+                          Copy JSON
+                        </button>
+                      </div>
+                    </div>
+                    {candidateSearchDebugOpen ? (
+                      <pre className="code-block" style={{ whiteSpace: "pre-wrap", marginTop: 8 }}>
+                        {JSON.stringify(candidateSearchDebug, null, 2)}
+                      </pre>
+                    ) : null}
+                  </div>
                 ) : null}
                 <div className="item-card compact-card candidate-filter-card">
                   <div className="candidate-filter-head">
