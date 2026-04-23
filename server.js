@@ -2752,6 +2752,7 @@ async function interpretCandidateSearchQueryWithAi({ apiKey, query, actor }) {
     "21. If the recruiter mentions a single explicit call/attempt outcome (e.g. 'Not responding', 'JD shared', 'Call later'), set attemptOutcome to that exact label.",
     "22. Treat common multi-word roles as phrases: 'data engineer', 'product manager', 'project manager', 'business development'. Prefer adding the whole phrase instead of splitting into generic tokens.",
     "23. Interpret 'node developer' / 'node development' as Node.js. Prefer skill 'nodejs' and avoid using the generic word 'development' as a skill.",
+    "24. Domain-sales queries: if the recruiter asks for sales profiles in finance/lending/loan/fintech, treat Sales as the required role family and treat the domain terms as an OR-group (skillsMatch = any). Example: 'finance or lending or loan sales' => role='sales', skills=['finance','lending','loan'], skillsMatch='any'.",
     "",
     "Allowed lifecycle statuses:",
     "shortlisted, offered, joined, rejected, duplicate, dropped",
@@ -3060,6 +3061,33 @@ function sanitizeCandidateSearchFilters(filters, normalizedQuery = "", universe 
       .filter(Boolean)
       .filter((s) => !noiseSkillTokens.has(normalizeDashboardText(s).toLowerCase()));
     next.skills = cleaned;
+  }
+
+  // Domain + Sales intent:
+  // Queries like "finance or lending or loan sales profiles from Gurugram or Delhi" should mean:
+  // - Sales is REQUIRED (role family)
+  // - Domain keywords are an OR-group (finance/lending/loan/fintech)
+  // Without this, "sales" and "development" tokens create noisy matches or over-filtering.
+  const hasSalesIntent =
+    /\bsales\b/i.test(qLower) ||
+    /\bbusiness\s+development\b/i.test(qLower) ||
+    /\baccount\s+(?:executive|manager)\b/i.test(qLower) ||
+    /\brelationship\s+manager\b/i.test(qLower);
+  const hasFinanceDomainIntent = /\b(finance|fintech|lending|loan)\b/i.test(qLower);
+  if (hasSalesIntent && hasFinanceDomainIntent) {
+    const rawSkills = Array.isArray(next.skills) ? next.skills : [];
+    const normalizedSkills = normalizeCandidateSearchKeywords(rawSkills);
+    const domainSet = new Set(["finance", "fintech", "lending", "loan"]);
+    const domainTerms = normalizedSkills.filter((t) => domainSet.has(String(t || "").toLowerCase().trim()));
+
+    // Require Sales via roleFamilies instead of keywords, to avoid token noise.
+    next.roleFamilies = Array.from(new Set([...(Array.isArray(next.roleFamilies) ? next.roleFamilies : []), "sales"]));
+    // Keep role minimal to avoid over-filtering (role token matching is AND across tokens).
+    if (!String(next.role || "").trim()) next.role = "sales";
+
+    // Make domain terms the searchable keyword group, with OR semantics when multiple are present.
+    next.skills = domainTerms;
+    if (domainTerms.length >= 2) next.skillsMatch = "any";
   }
 
   return next;
