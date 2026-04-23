@@ -5395,11 +5395,19 @@ function PortalApp({ token, onLogout }) {
       const capturedByOk = !candidateFilters.capturedBy.length || candidateFilters.capturedBy.includes(capturedByValue);
       const sourceOk = !candidateFilters.sources.length || candidateFilters.sources.includes(sourceValue);
       const outcomeOk = !candidateFilters.outcomes.length || candidateFilters.outcomes.includes(outcomeValue);
-      const activeOk = !candidateFilters.activeStates.length ? activeValue === "Active" : candidateFilters.activeStates.includes(activeValue);
       const searchNameMatch = Boolean(queryText && nameHay.includes(queryText));
-      const inactiveBlockedByDefault = !candidateFilters.activeStates.length && activeValue === "Inactive" && !searchNameMatch;
-      const hiddenBlocked = manuallyHidden && !searchNameMatch && candidateFilters.activeStates.includes("Active");
-      return !inactiveBlockedByDefault && !hiddenBlocked && queryOk && dateFromOk && dateToOk && clientOk && jdOk && assignedToOk && capturedByOk && sourceOk && outcomeOk && activeOk;
+
+      // State filter rules:
+      // - Default (no selection): Active only, but allow finding Inactive rows when searching by name.
+      // - If user selects Active/Inactive (or both): respect selection, but still allow name search to surface Inactive even when "Active" is selected.
+      const wantsActive = candidateFilters.activeStates.includes("Active");
+      const defaultActiveOnly = !candidateFilters.activeStates.length;
+      const activeOk = defaultActiveOnly
+        ? (activeValue === "Active" || searchNameMatch)
+        : (candidateFilters.activeStates.includes(activeValue) || (searchNameMatch && wantsActive));
+
+      const inactiveBlockedByDefault = defaultActiveOnly && activeValue === "Inactive" && !searchNameMatch;
+      return !inactiveBlockedByDefault && queryOk && dateFromOk && dateToOk && clientOk && jdOk && assignedToOk && capturedByOk && sourceOk && outcomeOk && activeOk;
     });
     const convertedCount = universe.filter((item) => Boolean(resolveCapturedAssessment(item))).length;
     const activeCount = universe.filter((item) => {
@@ -5493,11 +5501,16 @@ function PortalApp({ token, onLogout }) {
       const capturedByOk = !candidateFilters.capturedBy.length || candidateFilters.capturedBy.includes(capturedByValue);
       const sourceOk = !candidateFilters.sources.length || candidateFilters.sources.includes(sourceValue);
       const outcomeOk = !candidateFilters.outcomes.length || candidateFilters.outcomes.includes(outcomeValue);
-      const activeOk = !candidateFilters.activeStates.length ? activeValue === "Active" : candidateFilters.activeStates.includes(activeValue);
       const searchNameMatch = Boolean(queryText && nameHay.includes(queryText));
-      const inactiveBlockedByDefault = !candidateFilters.activeStates.length && activeValue === "Inactive" && !searchNameMatch;
-      const hiddenBlocked = manuallyHidden && !searchNameMatch && candidateFilters.activeStates.includes("Active");
-      return !inactiveBlockedByDefault && !hiddenBlocked && queryOk && dateFromOk && dateToOk && clientOk && jdOk && assignedToOk && capturedByOk && sourceOk && outcomeOk && activeOk;
+
+      const wantsActive = candidateFilters.activeStates.includes("Active");
+      const defaultActiveOnly = !candidateFilters.activeStates.length;
+      const activeOk = defaultActiveOnly
+        ? (activeValue === "Active" || searchNameMatch)
+        : (candidateFilters.activeStates.includes(activeValue) || (searchNameMatch && wantsActive));
+
+      const inactiveBlockedByDefault = defaultActiveOnly && activeValue === "Inactive" && !searchNameMatch;
+      return !inactiveBlockedByDefault && queryOk && dateFromOk && dateToOk && clientOk && jdOk && assignedToOk && capturedByOk && sourceOk && outcomeOk && activeOk;
     });
   }, [candidateFilters, capturedAssessmentMap, capturedNotesUniverse]);
 
