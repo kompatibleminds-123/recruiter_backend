@@ -2896,6 +2896,51 @@ function buildKnownUniverseLocationSet(universe = [], synonyms = DEFAULT_SYNONYM
   return known;
 }
 
+function levenshteinDistance(a = "", b = "") {
+  const s = String(a || "");
+  const t = String(b || "");
+  if (s === t) return 0;
+  if (!s.length) return t.length;
+  if (!t.length) return s.length;
+  const v0 = new Array(t.length + 1);
+  const v1 = new Array(t.length + 1);
+  for (let i = 0; i <= t.length; i += 1) v0[i] = i;
+  for (let i = 0; i < s.length; i += 1) {
+    v1[0] = i + 1;
+    for (let j = 0; j < t.length; j += 1) {
+      const cost = s[i] === t[j] ? 0 : 1;
+      v1[j + 1] = Math.min(v1[j] + 1, v0[j + 1] + 1, v0[j] + cost);
+    }
+    for (let j = 0; j <= t.length; j += 1) v0[j] = v1[j];
+  }
+  return v0[t.length];
+}
+
+function coerceToKnownLocation(token = "", knownLocations = new Set()) {
+  const raw = normalizeDashboardText(token).toLowerCase().trim();
+  if (!raw) return "";
+  if (knownLocations.has(raw)) return raw;
+  // Only try fuzzy match for reasonably short tokens to avoid random text getting mapped.
+  if (raw.length < 3 || raw.length > 24) return raw;
+  let best = "";
+  let bestDist = Infinity;
+  for (const candidate of knownLocations) {
+    const c = String(candidate || "").trim().toLowerCase();
+    if (!c) continue;
+    // Fast path: prefix/contains for common truncations.
+    if (c.startsWith(raw) || raw.startsWith(c)) return c;
+    const dist = levenshteinDistance(raw, c);
+    if (dist < bestDist) {
+      bestDist = dist;
+      best = c;
+      if (bestDist === 1) break;
+    }
+  }
+  // Allow small typos like "hyerabad" -> "hyderabad"
+  if (best && bestDist <= 2) return best;
+  return raw;
+}
+
 function looksLikeNonLocationToken(value = "") {
   const token = normalizeDashboardText(value).toLowerCase();
   if (!token) return true;
@@ -3019,7 +3064,7 @@ function sanitizeCandidateSearchFilters(filters, normalizedQuery = "", universe 
   if (rawLocation) {
     const normalized = normalizeDashboardText(rawLocation).toLowerCase();
     const alias = mapLocationAlias(normalized, synonyms);
-    const canonical = String(alias?.canonical || normalized).trim().toLowerCase();
+    const canonical = coerceToKnownLocation(String(alias?.canonical || normalized), knownLocations);
     // Do NOT require location to exist in current universe. New cities (or formatting differences like "Delhi / NCR")
     // should still be accepted as long as it doesn't look like a role/skill phrase.
     if (looksLikeNonLocationToken(rawLocation)) {
@@ -3042,7 +3087,7 @@ function sanitizeCandidateSearchFilters(filters, normalizedQuery = "", universe 
     .filter((loc) => {
       const normalized = normalizeDashboardText(loc).toLowerCase();
       const alias = mapLocationAlias(normalized, synonyms);
-      const canonical = String(alias?.canonical || normalized).trim().toLowerCase();
+      const canonical = coerceToKnownLocation(String(alias?.canonical || normalized), knownLocations);
       if (!canonical) return false;
       if (looksLikeNonLocationToken(loc)) return false;
       return true;
@@ -3050,7 +3095,7 @@ function sanitizeCandidateSearchFilters(filters, normalizedQuery = "", universe 
     .map((loc) => {
       const normalized = normalizeDashboardText(loc).toLowerCase();
       const alias = mapLocationAlias(normalized, synonyms);
-      return String(alias?.canonical || normalized).trim();
+      return coerceToKnownLocation(String(alias?.canonical || normalized), knownLocations);
     });
   next.locations = Array.from(new Set(cleanedLocations));
   // IMPORTANT:
