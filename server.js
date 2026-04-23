@@ -7527,6 +7527,7 @@ const server = http.createServer(async (req, res) => {
         client_name: String(input.client_name || input.clientName || "").trim() || undefined,
         assigned_to_user_id: String(input.assigned_to_user_id || input.assignedToUserId || "").trim() || undefined,
         assigned_to_name: String(input.assigned_to_name || input.assignedToName || "").trim() || undefined,
+        assigned_jd_id: String(input.assigned_jd_id || input.assignedJdId || "").trim() || undefined,
         assigned_jd_title: String(input.assigned_jd_title || input.assignedJdTitle || "").trim() || undefined,
         raw_note: String(input.raw_note || input.rawNote || "").trim() || undefined
       };
