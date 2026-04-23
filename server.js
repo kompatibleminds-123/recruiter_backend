@@ -3110,23 +3110,52 @@ function sanitizeCandidateSearchFilters(filters, normalizedQuery = "", universe 
     ).filter(Boolean);
     const domainTerms = Array.from(new Set([...(domainTermsFromSkills || []), ...(domainTermsFromQuery || [])]));
 
-    // Require Sales via roleFamilies instead of keywords, to avoid token noise.
-    next.roleFamilies = Array.from(new Set([...(Array.isArray(next.roleFamilies) ? next.roleFamilies : []), "sales"]));
-
     // IMPORTANT:
-    // - `filters.role` is matched as an AND across tokens (see candidateMatchesNaturalFilter),
-    //   which is too strict for sales-family intent ("AE", "AM", "BDM", etc may not contain the word "sales").
-    // - So we clear `role` and rely on roleFamilies detection instead.
+    // `roleFamilies=["sales"]` can be too strict because many "sales" roles are stored as AE/AM/BDM/RM etc
+    // without containing the literal word "sales" in the saved hay. That makes OR queries look worse than
+    // single-domain queries, which is exactly what users are reporting.
+    //
+    // So we express sales intent as an OR-group of sales-family terms, and keep domain terms as another OR-group.
+    // This yields:
+    // - MUST match at least one finance domain term (finance|lending|loan|fintech)
+    // - MUST match at least one sales-family term (sales|business development|AE|AM|RM|BDM...)
+    next.roleFamilies = [];
     next.role = "";
 
-    // Make domain terms the searchable keyword group, with OR semantics when multiple are present.
-    next.skills = domainTerms;
-    if (domainTerms.length >= 2) next.skillsMatch = "any";
+    const salesFamilyTerms = [
+      "sales",
+      "business development",
+      "account executive",
+      "account manager",
+      "enterprise sales",
+      "corporate sales",
+      "inside sales",
+      "relationship manager",
+      "bdm",
+      "bdr",
+      "sdr",
+      "client acquisition",
+      "key account",
+      "key accounts"
+    ];
 
-    // First-class OR groups (planner-compatible shape, additive/backward-compatible).
-    // Required "sales" is expressed via roleFamilies above (more reliable than raw substring "sales").
+    next.skills = [];
     next.mustSkills = [];
-    next.anyOfSkillGroups = domainTerms.length ? [domainTerms] : [];
+    // Use OR semantics for domain terms.
+    if (domainTerms.length >= 2) next.skillsMatch = "any";
+    next.anyOfSkillGroups = domainTerms.length ? [domainTerms, salesFamilyTerms] : [salesFamilyTerms];
+  }
+
+  // If someone asks for "duplicate" without explicitly scoping to assessments,
+  // don't let AI accidentally force `sourceTypeFilter="assessment"` which hides captured duplicates.
+  if (Array.isArray(next.detailedStatuses) && next.detailedStatuses.length) {
+    const normalizedDetailed = next.detailedStatuses.map((s) => normalizeDashboardText(s).toLowerCase().trim()).filter(Boolean);
+    if (normalizedDetailed.includes("duplicate")) {
+      const explicitAssessmentScope = /\b(assessment|assessments|converted|shared|pipeline)\b/i.test(qLower);
+      if (!explicitAssessmentScope && String(next.sourceTypeFilter || "").trim() === "assessment") {
+        next.sourceTypeFilter = "";
+      }
+    }
   }
 
   return next;
