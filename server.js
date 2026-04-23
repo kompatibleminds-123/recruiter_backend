@@ -3067,6 +3067,26 @@ function sanitizeCandidateSearchFilters(filters, normalizedQuery = "", universe 
     next.skills = cleaned;
   }
 
+  // If the query mentions a status term that exists in both worlds:
+  // - captured notes attempt outcomes (attemptOutcome)
+  // - assessment statuses (assessmentStatus)
+  // then requiring BOTH creates false "zero result" scenarios.
+  // Example: "duplicate for Attentive" should return:
+  // - captured notes with attempt outcome Duplicate
+  // - assessments with status Duplicate
+  // So we convert it into a single detailedStatuses term (union) and clear the strict fields.
+  const hasBothStatusWorlds = Boolean(String(next.assessmentStatus || "").trim()) && Boolean(String(next.attemptOutcome || "").trim());
+  if (hasBothStatusWorlds) {
+    const normalizedTerm = normalizeDashboardText(String(next.assessmentStatus || next.attemptOutcome || "")).toLowerCase().trim();
+    if (normalizedTerm) {
+      const existing = Array.isArray(next.detailedStatuses) ? next.detailedStatuses : [];
+      const merged = Array.from(new Set([...existing.map((s) => normalizeDashboardText(s).toLowerCase().trim()).filter(Boolean), normalizedTerm]));
+      next.detailedStatuses = merged;
+    }
+    next.assessmentStatus = "";
+    next.attemptOutcome = "";
+  }
+
   // Domain + Sales intent:
   // Queries like "finance or lending or loan sales profiles from Gurugram or Delhi" should mean:
   // - Sales is REQUIRED (role family)
