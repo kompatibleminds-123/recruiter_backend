@@ -1395,14 +1395,22 @@ function parseNoticePeriodToDays(value) {
 }
 
 function getAssessmentLifecycleBucket(item) {
+  // Lifecycle buckets must work for both:
+  // - assessments (candidateStatus)
+  // - captured notes (attemptStatus / workflowStatus)
+  // Otherwise queries like "duplicate" only match assessments and miss captured-note duplicates.
   const status = normalizeDashboardText(item?.candidateStatus || item?.candidate_status || item?.status || "");
-  const combined = `${status}`.trim();
+  const workflow = normalizeDashboardText(item?.workflowStatus || "");
+  const attempt = normalizeDashboardText(item?.attemptStatus || "");
+  const combined = `${status} ${workflow} ${attempt}`.trim();
   if (combined.includes("duplicate")) return "duplicate";
   if (combined.includes("joined")) return "joined";
   if (combined.includes("offer") || status === "offered") return "offered";
   if (combined.includes("shortlist")) return "shortlisted";
-  if (DASHBOARD_REJECTED_STATUSES.has(status)) return "rejected";
-  if (DASHBOARD_DROPPED_STATUSES.has(status)) return "dropped";
+  // Rejected/dropped can appear in captured attempts as well, so check both the strict status token
+  // and the combined text.
+  if (DASHBOARD_REJECTED_STATUSES.has(status) || DASHBOARD_REJECTED_STATUSES.has(combined)) return "rejected";
+  if (DASHBOARD_DROPPED_STATUSES.has(status) || DASHBOARD_DROPPED_STATUSES.has(combined)) return "dropped";
   if (status === "hold" || combined.includes("on hold")) return "hold";
   return "under_process";
 }
