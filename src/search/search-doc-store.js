@@ -57,6 +57,23 @@ function hashText(value = "") {
   return crypto.createHash("sha256").update(raw, "utf8").digest("hex");
 }
 
+function toIsoDayStart(dateValue = "") {
+  const raw = String(dateValue || "").trim();
+  if (!raw) return "";
+  // Expect YYYY-MM-DD from UI. Treat as day boundary in UTC to keep it deterministic.
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return `${raw}T00:00:00.000Z`;
+  const d = new Date(raw);
+  return Number.isFinite(d.getTime()) ? d.toISOString() : "";
+}
+
+function toIsoDayEnd(dateValue = "") {
+  const raw = String(dateValue || "").trim();
+  if (!raw) return "";
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return `${raw}T23:59:59.999Z`;
+  const d = new Date(raw);
+  return Number.isFinite(d.getTime()) ? d.toISOString() : "";
+}
+
 async function upsertCandidateSearchDocV1({
   companyId,
   candidateId,
@@ -132,10 +149,52 @@ async function insertAssessmentEvent({
   return { ok: true };
 }
 
+async function listAssessmentEvents({
+  companyId,
+  recruiterId = "",
+  kind = "",
+  dateFrom = "",
+  dateTo = "",
+  limit = 10000
+} = {}) {
+  const safeCompanyId = String(companyId || "").trim();
+  if (!safeCompanyId) return [];
+
+  const kindKey = String(kind || "").trim().toLowerCase();
+  const kindToEventType = {
+    interviews_done: "interview_done",
+    interviews_aligned: "interview_aligned",
+    offered: "offered",
+    joined: "joined"
+  };
+  const eventType = kindToEventType[kindKey] || "";
+  if (!eventType) return [];
+
+  const parts = [
+    "select=id,company_id,assessment_id,candidate_id,recruiter_id,recruiter_name,client_name,jd_title,event_type,status,event_at,payload,created_at",
+    `company_id=eq.${enc(safeCompanyId)}`,
+    `event_type=eq.${enc(eventType)}`,
+    "order=event_at.desc,created_at.desc"
+  ];
+
+  const safeRecruiterId = String(recruiterId || "").trim();
+  if (safeRecruiterId) parts.push(`recruiter_id=eq.${enc(safeRecruiterId)}`);
+
+  const fromIso = toIsoDayStart(dateFrom);
+  const toIso = toIsoDayEnd(dateTo);
+  if (fromIso) parts.push(`event_at=gte.${enc(fromIso)}`);
+  if (toIso) parts.push(`event_at=lte.${enc(toIso)}`);
+
+  const safeLimit = Math.min(10000, Math.max(1, Number(limit) || 10000));
+  parts.push(`limit=${safeLimit}`);
+
+  return sbSel("assessment_events", parts.join("&")).catch(() => []);
+}
+
 module.exports = {
   upsertCandidateSearchDocV1,
   listCandidateSearchDocsForCompany,
   insertAssessmentEvent,
+  listAssessmentEvents,
   hashText
 };
-

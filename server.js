@@ -71,7 +71,7 @@ const { DEFAULT_SYNONYMS, mapLocationAlias } = require("./src/search/synonyms");
 const { normalizeRecruiterQuery } = require("./src/search/normalize");
 const { hybridSearchCandidates, buildCandidateSemanticText } = require("./src/search/hybrid-search");
 const { createEmbedding, hashText } = require("./src/search/embedding-service");
-const { upsertCandidateSearchDocV1, listCandidateSearchDocsForCompany } = require("./src/search/search-doc-store");
+const { upsertCandidateSearchDocV1, listCandidateSearchDocsForCompany, listAssessmentEvents } = require("./src/search/search-doc-store");
 let nodemailer = null;
 try {
   // Optional dependency: only needed when SMTP-based JD email sharing is enabled.
@@ -5723,6 +5723,36 @@ const server = http.createServer(async (req, res) => {
       sendJson(res, 200, { ok: true, result: { assessments } });
     } catch (error) {
       sendJson(res, 401, { ok: false, error: String(error.message || error) });
+    }
+    return;
+  }
+
+  // Service-role backed exports for factual analytics (interviews aligned/done, offered, etc.).
+  // This avoids relying on free-text notes inside status history and remains stable over time.
+  if (req.method === "GET" && requestUrl.pathname === "/company/assessment-events") {
+    try {
+      const user = await requireSessionUser(getBearerToken(req));
+      const kind = String(requestUrl.searchParams.get("kind") || "").trim();
+      const dateFrom = String(requestUrl.searchParams.get("dateFrom") || "").trim();
+      const dateTo = String(requestUrl.searchParams.get("dateTo") || "").trim();
+      const limit = Number(requestUrl.searchParams.get("limit") || 10000) || 10000;
+
+      // Recruiters should only see their own candidates/events. Admin sees company-wide.
+      const isAdmin = String(user.role || "").toLowerCase() === "admin";
+      const recruiterId = isAdmin ? "" : String(user.id || "").trim();
+
+      const rows = await listAssessmentEvents({
+        companyId: user.companyId,
+        recruiterId,
+        kind,
+        dateFrom,
+        dateTo,
+        limit
+      });
+
+      sendJson(res, 200, { ok: true, result: { rows } });
+    } catch (error) {
+      sendJson(res, 400, { ok: false, error: String(error.message || error) });
     }
     return;
   }

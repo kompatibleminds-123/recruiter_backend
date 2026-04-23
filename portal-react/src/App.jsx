@@ -4777,98 +4777,161 @@ function PortalApp({ token, onLogout }) {
     const today = new Date().toISOString().slice(0, 10);
     const filename = `assessments-${kind}-${labelRange}-${today}.xls`;
 
+    const downloadFromEvents = async () => {
+      setStatus("assessments", "Preparing download...", "ok");
+      try {
+        const params = new URLSearchParams();
+        params.set("kind", kind);
+        if (dateFrom) params.set("dateFrom", dateFrom);
+        if (dateTo) params.set("dateTo", dateTo);
+        const response = await api(`/company/assessment-events?${params.toString()}`, token);
+        const rowsRaw = Array.isArray(response?.result?.rows) ? response.result.rows : [];
+
+        const rows = rowsRaw.map((row) => {
+          const atValue = String(row?.event_at || row?.created_at || "").trim();
+          const payload = row?.payload && typeof row.payload === "object" ? row.payload : {};
+          const round = String(payload?.round || "").trim();
+          const candidateName = String(payload?.candidateName || "").trim();
+          return [
+            atValue ? new Date(atValue).toLocaleString() : "",
+            round,
+            candidateName,
+            String(row?.jd_title || "").trim(),
+            String(row?.client_name || "").trim(),
+            String(row?.recruiter_name || "").trim(),
+            String(row?.status || "").trim(),
+            String(payload?.notes || payload?.remarks || "").trim()
+          ];
+        });
+
+        const title = kind === "interviews_done"
+          ? "Interviews Done"
+          : kind === "interviews_aligned"
+            ? "Interviews Aligned"
+            : kind === "offered"
+              ? "Offered"
+              : "Events";
+
+        const headers = ["At", "Round", "Candidate", "Role", "Client", "Recruiter", "Status", "Remarks"];
+        const html = buildExcelHtmlFromTable({
+          title,
+          subtitle: `Range: ${dateFrom || "Any"} to ${dateTo || "Any"}`,
+          headers,
+          rows
+        });
+        downloadTextFile(filename, html, "application/vnd.ms-excel;charset=utf-8");
+        setStatus("assessments", "Download ready.", "ok");
+        return true;
+      } catch (error) {
+        setStatus("assessments", `Download failed: ${String(error?.message || error)}`, "error");
+        return false;
+      }
+    };
+
     if (kind === "interviews_done") {
-      const rows = buildAssessmentInterviewDoneRows({
-        assessments: filteredAssessments,
-        linkedCandidateMap: assessmentLinkedCandidateMap,
-        dateFrom,
-        dateTo
+      // Prefer factual backend events; fallback to legacy statusHistory-only logic.
+      void downloadFromEvents().then((ok) => {
+        if (ok) return;
+        const rows = buildAssessmentInterviewDoneRows({
+          assessments: filteredAssessments,
+          linkedCandidateMap: assessmentLinkedCandidateMap,
+          dateFrom,
+          dateTo
+        });
+        const html = buildExcelHtmlFromTable({
+          title: "Interviews Done",
+          subtitle: `Range: ${dateFrom || "Any"} to ${dateTo || "Any"}`,
+          headers: ["Done at", "Round", "Candidate", "Role", "Client", "Recruiter", "Current status", "Remarks"],
+          rows
+        });
+        downloadTextFile(filename, html, "application/vnd.ms-excel;charset=utf-8");
       });
-      const html = buildExcelHtmlFromTable({
-        title: "Interviews Done",
-        subtitle: `Range: ${dateFrom || "Any"} to ${dateTo || "Any"}`,
-        headers: ["Done at", "Round", "Candidate", "Role", "Client", "Recruiter", "Current status", "Remarks"],
-        rows
-      });
-      downloadTextFile(filename, html, "application/vnd.ms-excel;charset=utf-8");
       return;
     }
 
     if (kind === "interviews_aligned") {
-      const rows = filteredAssessments
-        .map((assessment) => {
-          const linkedCandidate = assessmentLinkedCandidateMap.get(String(assessment?.id || "")) || null;
-          const interviewAt = String(assessment?.interviewAt || "").trim();
-          const interviewDate = interviewAt ? interviewAt.slice(0, 10) : "";
-          if (!interviewAt) return null;
-          if (dateFrom && interviewDate && interviewDate < dateFrom) return null;
-          if (dateTo && interviewDate && interviewDate > dateTo) return null;
+      // Prefer backend events to avoid missing data when interviewAt/statusHistory is inconsistent.
+      void downloadFromEvents().then((ok) => {
+        if (ok) return;
+        const rows = filteredAssessments
+          .map((assessment) => {
+            const linkedCandidate = assessmentLinkedCandidateMap.get(String(assessment?.id || "")) || null;
+            const interviewAt = String(assessment?.interviewAt || "").trim();
+            const interviewDate = interviewAt ? interviewAt.slice(0, 10) : "";
+            if (!interviewAt) return null;
+            if (dateFrom && interviewDate && interviewDate < dateFrom) return null;
+            if (dateTo && interviewDate && interviewDate > dateTo) return null;
 
-          const latest = getLatestAssessmentStatusPreview(assessment);
-          const status = normalizeAssessmentStatusLabel(latest.status) || latest.status || "";
-          const round = inferInterviewRoundFromStatus(status) || inferInterviewRoundFromStatus(assessment?.candidateStatus || "");
-          const recruiter = getAssessmentOwnerLabel(assessment, linkedCandidate);
-          const clientName = String(assessment?.clientName || linkedCandidate?.client_name || "").trim();
-          const jdTitle = String(assessment?.jdTitle || linkedCandidate?.jd_title || "").trim();
-          return [
-            interviewAt ? new Date(interviewAt).toLocaleString() : "",
-            round,
-            String(assessment?.candidateName || "").trim(),
-            jdTitle,
-            clientName,
-            recruiter,
-            status,
-            String(latest.remarks || "").trim()
-          ];
-        })
-        .filter(Boolean);
+            const latest = getLatestAssessmentStatusPreview(assessment);
+            const status = normalizeAssessmentStatusLabel(latest.status) || latest.status || "";
+            const round = inferInterviewRoundFromStatus(status) || inferInterviewRoundFromStatus(assessment?.candidateStatus || "");
+            const recruiter = getAssessmentOwnerLabel(assessment, linkedCandidate);
+            const clientName = String(assessment?.clientName || linkedCandidate?.client_name || "").trim();
+            const jdTitle = String(assessment?.jdTitle || linkedCandidate?.jd_title || "").trim();
+            return [
+              interviewAt ? new Date(interviewAt).toLocaleString() : "",
+              round,
+              String(assessment?.candidateName || "").trim(),
+              jdTitle,
+              clientName,
+              recruiter,
+              status,
+              String(latest.remarks || "").trim()
+            ];
+          })
+          .filter(Boolean);
 
-      const html = buildExcelHtmlFromTable({
-        title: "Interview List",
-        subtitle: `Range: ${dateFrom || "Any"} to ${dateTo || "Any"}`,
-        headers: ["Interview date/time", "Round", "Candidate", "Role", "Client", "Recruiter", "Assessment status", "Remarks"],
-        rows
+        const html = buildExcelHtmlFromTable({
+          title: "Interview List",
+          subtitle: `Range: ${dateFrom || "Any"} to ${dateTo || "Any"}`,
+          headers: ["Interview date/time", "Round", "Candidate", "Role", "Client", "Recruiter", "Assessment status", "Remarks"],
+          rows
+        });
+        downloadTextFile(filename, html, "application/vnd.ms-excel;charset=utf-8");
       });
-      downloadTextFile(filename, html, "application/vnd.ms-excel;charset=utf-8");
       return;
     }
 
     if (kind === "offered") {
-      const rows = filteredAssessments
-        .map((assessment) => {
-          const linkedCandidate = assessmentLinkedCandidateMap.get(String(assessment?.id || "")) || null;
-          const latest = getLatestAssessmentStatusPreview(assessment);
-          const status = normalizeAssessmentStatusLabel(latest.status) || normalizeAssessmentStatusLabel(assessment?.candidateStatus || "") || "";
-          if (status.toLowerCase() !== "offered") return null;
+      void downloadFromEvents().then((ok) => {
+        if (ok) return;
+        const rows = filteredAssessments
+          .map((assessment) => {
+            const linkedCandidate = assessmentLinkedCandidateMap.get(String(assessment?.id || "")) || null;
+            const latest = getLatestAssessmentStatusPreview(assessment);
+            const status = normalizeAssessmentStatusLabel(latest.status) || normalizeAssessmentStatusLabel(assessment?.candidateStatus || "") || "";
+            if (status.toLowerCase() !== "offered") return null;
 
-          const offeredAt = getAssessmentOfferedAt(assessment);
-          const offeredDate = offeredAt ? offeredAt.slice(0, 10) : "";
-          if (dateFrom && offeredDate && offeredDate < dateFrom) return null;
-          if (dateTo && offeredDate && offeredDate > dateTo) return null;
+            const offeredAt = getAssessmentOfferedAt(assessment);
+            const offeredDate = offeredAt ? offeredAt.slice(0, 10) : "";
+            if (dateFrom && offeredDate && offeredDate < dateFrom) return null;
+            if (dateTo && offeredDate && offeredDate > dateTo) return null;
 
-          const recruiter = getAssessmentOwnerLabel(assessment, linkedCandidate);
-          const clientName = String(assessment?.clientName || linkedCandidate?.client_name || "").trim();
-          const jdTitle = String(assessment?.jdTitle || linkedCandidate?.jd_title || "").trim();
+            const recruiter = getAssessmentOwnerLabel(assessment, linkedCandidate);
+            const clientName = String(assessment?.clientName || linkedCandidate?.client_name || "").trim();
+            const jdTitle = String(assessment?.jdTitle || linkedCandidate?.jd_title || "").trim();
 
-          return [
-            offeredAt ? new Date(offeredAt).toLocaleString() : "",
-            String(assessment?.candidateName || "").trim(),
-            jdTitle,
-            clientName,
-            recruiter,
-            status,
-            String(latest.remarks || "").trim()
-          ];
-        })
-        .filter(Boolean);
+            return [
+              offeredAt ? new Date(offeredAt).toLocaleString() : "",
+              String(assessment?.candidateName || "").trim(),
+              jdTitle,
+              clientName,
+              recruiter,
+              status,
+              String(latest.remarks || "").trim()
+            ];
+          })
+          .filter(Boolean);
 
-      const html = buildExcelHtmlFromTable({
-        title: "Offered Candidates",
-        subtitle: `Range: ${dateFrom || "Any"} to ${dateTo || "Any"}`,
-        headers: ["Offered at", "Candidate", "Role", "Client", "Recruiter", "Assessment status", "Remarks"],
-        rows
+        const html = buildExcelHtmlFromTable({
+          title: "Offered Candidates",
+          subtitle: `Range: ${dateFrom || "Any"} to ${dateTo || "Any"}`,
+          headers: ["Offered at", "Candidate", "Role", "Client", "Recruiter", "Assessment status", "Remarks"],
+          rows
+        });
+        downloadTextFile(filename, html, "application/vnd.ms-excel;charset=utf-8");
       });
-      downloadTextFile(filename, html, "application/vnd.ms-excel;charset=utf-8");
+      return;
     }
   }
 

@@ -1661,8 +1661,6 @@ async function saveAssessment({ actorUserId, companyId, assessment }) {
     const nextStatusLower = nextStatus.toLowerCase();
 
     const statusChanged = !prevStatus || prevStatus !== nextStatusLower;
-    const isInterviewAligned = /\baligned\b/.test(nextStatusLower);
-    const isInterviewDone = nextStatusLower === "feedback awaited";
     const isOffered = nextStatusLower === "offered";
     const isJoined = nextStatusLower === "joined";
 
@@ -1675,35 +1673,129 @@ async function saveAssessment({ actorUserId, companyId, assessment }) {
     };
 
     if (statusChanged) {
-      const eventType =
-        isJoined ? "joined"
-          : isOffered ? "offered"
-            : isInterviewDone ? "interview_done"
-              : isInterviewAligned ? "interview_aligned"
-                : "status_updated";
-      const eventAt =
-        eventType === "interview_aligned"
-          ? (bestDate(saved?.interviewAt || previous?.interview_at) || new Date().toISOString())
-          : new Date().toISOString();
+      // Prefer the assigned recruiter as the event owner so exports and "my events" match expectations.
+      // Actor (who clicked) is tracked in payload as updatedBy.
+      let ownerRecruiterId = actor.id;
+      let ownerRecruiterName = actor.name;
+      let ownerClientName = String(saved?.clientName || "").trim();
+      let ownerJdTitle = String(saved?.jdTitle || "").trim();
+      let ownerCandidateName = String(saved?.candidateName || "").trim();
+      try {
+        const candidateIdNeedle = String(saved?.candidateId || "").trim();
+        if (candidateIdNeedle) {
+          const rowsCand = await sbSel(
+            "candidates",
+            `select=id,name,assigned_to_user_id,assigned_to_name,client_name,jd_title&company_id=eq.${enc(companyId)}&id=eq.${enc(candidateIdNeedle)}&limit=1`
+          ).catch(() => []);
+          const cand = rowsCand && rowsCand[0] ? rowsCand[0] : null;
+          const assignedId = String(cand?.assigned_to_user_id || "").trim();
+          const assignedName = String(cand?.assigned_to_name || "").trim();
+          if (assignedId) ownerRecruiterId = assignedId;
+          if (assignedName) ownerRecruiterName = assignedName;
+          if (!ownerCandidateName) ownerCandidateName = String(cand?.name || "").trim();
+          if (!ownerClientName) ownerClientName = String(cand?.client_name || "").trim();
+          if (!ownerJdTitle) ownerJdTitle = String(cand?.jd_title || "").trim();
+        }
+      } catch (_) {}
 
-      await insertAssessmentEvent({
+      const normalized = (value) => String(value || "").trim().toLowerCase();
+      const stageIndex = (valueLower) => {
+        if (valueLower === "screening call aligned") return 0;
+        if (valueLower === "l1 aligned") return 1;
+        if (valueLower === "l2 aligned") return 2;
+        if (valueLower === "l3 aligned") return 3;
+        if (valueLower === "hr interview aligned") return 4;
+        return -1;
+      };
+      const stageRound = (idx) => {
+        if (idx === 1) return "L1";
+        if (idx === 2) return "L2";
+        if (idx === 3) return "L3";
+        if (idx === 4) return "HR";
+        return "";
+      };
+      const inferDoneRound = (prevLower, nextLower) => {
+        const nextIdx = stageIndex(nextLower);
+        // Rule: if status becomes L2/L3/HR aligned, previous round is done.
+        if (nextIdx === 2) return "L1";
+        if (nextIdx === 3) return "L2";
+        if (nextIdx === 4) return "L3";
+        // Rule: feedback awaited => last aligned round is done (based on previous status).
+        if (nextLower === "feedback awaited") {
+          const prevIdx = stageIndex(prevLower);
+          return stageRound(prevIdx);
+        }
+        return "";
+      };
+
+      const isAligned = stageIndex(nextStatusLower) >= 0;
+      const alignedRound = stageRound(stageIndex(nextStatusLower));
+      const doneRound = inferDoneRound(prevStatus, nextStatusLower);
+
+      const eventBase = {
         companyId,
         assessmentId: String(saved?.id || "").trim(),
         candidateId: String(saved?.candidateId || "").trim(),
-        recruiterId: actor.id,
-        recruiterName: actor.name,
-        clientName: String(saved?.clientName || "").trim(),
-        jdTitle: String(saved?.jdTitle || "").trim(),
-        eventType,
-        status: nextStatus,
-        eventAt,
+        recruiterId: ownerRecruiterId,
+        recruiterName: ownerRecruiterName,
+        clientName: ownerClientName,
+        jdTitle: ownerJdTitle,
         payload: {
           previousStatus: String(previous?.candidate_status || previous?.status || "").trim(),
+          candidateName: ownerCandidateName,
+          updatedByUserId: actor.id,
+          updatedByName: actor.name,
           interviewAt: String(saved?.interviewAt || "").trim(),
           offerDoj: String(saved?.offerDoj || "").trim(),
           offerAmount: String(saved?.offerAmount || "").trim()
         }
+      };
+
+      // Always keep a factual status_updated event for analytics/debug.
+      await insertAssessmentEvent({
+        ...eventBase,
+        eventType: "status_updated",
+        status: nextStatus,
+        eventAt: new Date().toISOString()
       });
+
+      if (isAligned) {
+        await insertAssessmentEvent({
+          ...eventBase,
+          eventType: "interview_aligned",
+          status: nextStatus,
+          eventAt: bestDate(saved?.interviewAt || previous?.interview_at) || new Date().toISOString(),
+          payload: { ...eventBase.payload, round: alignedRound }
+        });
+      }
+
+      if (doneRound) {
+        await insertAssessmentEvent({
+          ...eventBase,
+          eventType: "interview_done",
+          status: nextStatus,
+          eventAt: new Date().toISOString(),
+          payload: { ...eventBase.payload, round: doneRound }
+        });
+      }
+
+      if (isOffered) {
+        await insertAssessmentEvent({
+          ...eventBase,
+          eventType: "offered",
+          status: nextStatus,
+          eventAt: new Date().toISOString()
+        });
+      }
+
+      if (isJoined) {
+        await insertAssessmentEvent({
+          ...eventBase,
+          eventType: "joined",
+          status: nextStatus,
+          eventAt: new Date().toISOString()
+        });
+      }
     }
   } catch (_) {}
 
