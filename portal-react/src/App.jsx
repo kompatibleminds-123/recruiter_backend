@@ -3923,6 +3923,8 @@ function PortalApp({ token, onLogout }) {
   const [candidateStructuredFilters, setCandidateStructuredFilters] = useState(EMPTY_CANDIDATE_STRUCTURED_FILTERS); // applied
   const [candidateStructuredFiltersDraft, setCandidateStructuredFiltersDraft] = useState(EMPTY_CANDIDATE_STRUCTURED_FILTERS); // editable
   const [candidateSearchBusy, setCandidateSearchBusy] = useState(false);
+  const [candidateSearchDebug, setCandidateSearchDebug] = useState(null);
+  const [candidateSearchDebugOpen, setCandidateSearchDebugOpen] = useState(false);
   const candidateStructuredFiltersDirty = useMemo(() => (
     JSON.stringify(candidateStructuredFiltersDraft) !== JSON.stringify(candidateStructuredFilters)
   ), [candidateStructuredFiltersDraft, candidateStructuredFilters]);
