@@ -2840,6 +2840,7 @@ function buildNaturalSearchFallbackTokens(rawQuery = "") {
       ![
         "get", "me", "show", "all", "profiles", "profile", "candidate", "candidates",
         "in", "for", "by", "with", "this", "that", "from", "the", "and", "or",
+        "those", "these", "who", "whom", "whose", "are", "is", "was", "were", "into", "within", "between",
         "week", "month", "today", "tomorrow", "last", "next"
       ].includes(part)
     );
@@ -2856,7 +2857,8 @@ function splitCandidateSearchKeywords(value = "") {
       part.length >= 2 &&
       ![
         "get", "me", "show", "all", "profiles", "profile", "candidate", "candidates",
-        "with", "for", "in", "from", "the", "and", "or"
+        "with", "for", "in", "from", "the", "and", "or",
+        "those", "these", "who", "whom", "whose", "are", "is", "was", "were", "into", "within", "between"
       ].includes(part)
     );
 }
