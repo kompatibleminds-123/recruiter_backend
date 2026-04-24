@@ -2876,6 +2876,20 @@ async function parseRecruiterQueryWithOpenAI(rawQuery, { apiKey, actor } = {}) {
 
   const toArray = (value) =>
     Array.from(new Set((Array.isArray(value) ? value : []).map((x) => String(x || "").trim()).filter(Boolean)));
+  const detectExplicitTechSkillsFromQuery = (text = "") => {
+    const q = String(text || "").toLowerCase();
+    const out = [];
+    const add = (v) => { if (!out.includes(v)) out.push(v); };
+    if (/\b(node\.?js|nodejs|node js)\b/.test(q)) add("nodejs");
+    if (/\breact(\.js|js)?\b/.test(q)) add("react");
+    if (/\bangular(\.js|js)?\b/.test(q)) add("angular");
+    if (/\b(java|spring|spring boot)\b/.test(q)) add("java");
+    if (/\b(python|django|flask|fastapi)\b/.test(q)) add("python");
+    if (/\b(go|golang|go lang)\b/.test(q)) add("golang");
+    if (/\b(\.net|dotnet|dot net|asp\.?net|c#|c sharp)\b/.test(q)) add("dotnet");
+    if (/\b(qa|automation tester|selenium|playwright|cypress)\b/.test(q)) add("qa");
+    return out;
+  };
   const safeRole = resolveKnownRole(String(result?.filters?.role || "").trim());
   const qLower = norm.toLowerCase();
   const filters = {
@@ -2904,6 +2918,7 @@ async function parseRecruiterQueryWithOpenAI(rawQuery, { apiKey, actor } = {}) {
     recruiterScope: String(result?.filters?.recruiterScope || "").trim(),
     fallbackKeywords: toArray(result?.filters?.fallbackKeywords)
   };
+  const explicitTechSkills = detectExplicitTechSkillsFromQuery(norm);
 
   // Deterministic corrections
   if (/\bshared|submitted|cv shared|converted\b/i.test(qLower)) {
@@ -2924,6 +2939,27 @@ async function parseRecruiterQueryWithOpenAI(rawQuery, { apiKey, actor } = {}) {
   if (!filters.role) {
     filters.skills = filters.skills.filter((s) => !/^(those|who|are|having|profiles?|candidates?|people)$/i.test(s));
   }
+  if (explicitTechSkills.length) {
+    const currentSkills = normalizeCandidateSearchKeywords(filters.skills || []);
+    filters.skills = normalizeCandidateSearchKeywords([...currentSkills, ...explicitTechSkills]);
+    // If recruiter explicitly asks for developers/engineers and we detected tech skill,
+    // keep role deterministic and avoid broad non-tech matches.
+    if (!filters.role && /\b(developer|developers|engineer|engineers)\b/i.test(norm)) {
+      const primary = explicitTechSkills[0];
+      const roleGuess =
+        primary === "dotnet" ? ".net developer"
+        : primary === "nodejs" ? "nodejs developer"
+        : primary === "react" ? "react developer"
+        : primary === "angular" ? "angular developer"
+        : primary === "java" ? "java developer"
+        : primary === "python" ? "python developer"
+        : primary === "golang" ? "golang developer"
+        : "";
+      if (roleGuess) filters.role = roleGuess;
+    }
+    // Default to strict match for explicit tech-role queries unless recruiter used OR explicitly.
+    if (!/\bor\b/i.test(norm)) filters.skillsMatch = "all";
+  }
   const keepFallback = Array.from(new Set([
     ...filters.fallbackKeywords,
     ...filters.jobTitleKeywords,
@@ -2943,8 +2979,18 @@ function mapOpenAiParsedToDeterministicFilters(parsed = {}) {
   const pf = parsed?.filters && typeof parsed.filters === "object" ? parsed.filters : {};
   const keywords = normalizeCandidateSearchKeywords([...(pf.skills || []), ...(pf.jobTitleKeywords || [])]);
   const role = resolveKnownRole(String(pf.role || "").trim()) || "";
+  const normalizedQuery = String(parsed?.normalizedQuery || "").trim();
+  const lowerQuery = normalizedQuery.toLowerCase();
+  const hasExplicitTargetIntent = /\b(jd|job|role|position|title|opening|openings|under)\b/i.test(lowerQuery);
+  const hasExplicitRecruiterIntent = /\b(assigned to|owned by|owner|sourced by|captured by|by|under)\b/i.test(lowerQuery);
+  const rawRecruiterName = String(pf.recruiterName || "").trim();
+  const recruiterNameToken = normalizeDashboardText(rawRecruiterName).toLowerCase();
+  const recruiterExplicitlyMentioned =
+    hasExplicitRecruiterIntent &&
+    recruiterNameToken &&
+    lowerQuery.includes(recruiterNameToken);
   return {
-    raw: String(parsed?.normalizedQuery || "").trim(),
+    raw: normalizedQuery,
     role,
     roleFamilies: role ? detectRoleFamilies(role) : [],
     minExperienceYears: typeof pf.minExperienceYears === "number" ? pf.minExperienceYears : null,
@@ -2965,11 +3011,11 @@ function mapOpenAiParsedToDeterministicFilters(parsed = {}) {
     attemptOutcome: String(pf.attemptOutcome || "").trim(),
     assessmentStatus: String(pf.assessmentStatus || "").trim(),
     client: String(pf.client || "").trim(),
-    targetLabel: Array.isArray(pf.jobTitleKeywords) ? String(pf.jobTitleKeywords[0] || "").trim() : "",
+    targetLabel: hasExplicitTargetIntent && Array.isArray(pf.jobTitleKeywords) ? String(pf.jobTitleKeywords[0] || "").trim() : "",
     interviewScheduled: Boolean(pf.interviewScheduled),
     upcomingJoinings: Boolean(pf.upcomingJoinings),
-    recruiterScope: String(pf.recruiterScope || "").trim(),
-    recruiterName: String(pf.recruiterName || "").trim(),
+    recruiterScope: recruiterExplicitlyMentioned ? String(pf.recruiterScope || "").trim() : "",
+    recruiterName: recruiterExplicitlyMentioned ? rawRecruiterName : "",
     recruiterField: "owner",
     sourceTypeFilter: String(pf.sourceTypeFilter || "").trim(),
     dateFrom: String(pf.dateFrom || "").trim(),
@@ -3160,6 +3206,19 @@ function candidateHayMatchesTerm(hay = "", term = "") {
   const normalizedHay = String(hay || "").toLowerCase();
   const normalizedTerm = normalizeDashboardText(term).toLowerCase().trim();
   if (!normalizedHay || !normalizedTerm) return false;
+  // Canonical tech matching so ".NET" / "ASP.NET" / "dot net" / "node js" do not miss deterministic filters.
+  if (normalizedTerm === "dotnet") {
+    return /\b(dotnet|dot\s*net|asp\.?\s*net|net\s*core|\.net)\b/i.test(normalizedHay);
+  }
+  if (normalizedTerm === "nodejs") {
+    return /\b(nodejs|node\.?\s*js|node)\b/i.test(normalizedHay);
+  }
+  if (normalizedTerm === "react") {
+    return /\b(react|reactjs|react\.?\s*js)\b/i.test(normalizedHay);
+  }
+  if (normalizedTerm === "golang") {
+    return /\b(golang|go\s*lang)\b/i.test(normalizedHay);
+  }
   if (normalizedTerm.includes(" ")) {
     return normalizedHay.includes(normalizedTerm);
   }
@@ -4155,10 +4214,37 @@ function candidateMatchesNaturalFilter(item, filters, actor = null) {
   };
   if (filters.role) {
     const roleHay = buildCandidateSearchHay(item);
-    const roleTokens = splitCandidateSearchKeywords(filters.role);
-    if (roleTokens.length) {
-      const allRoleTokensMatched = roleTokens.every((token) => roleHay.includes(normalizeDashboardText(token)));
-      if (!allRoleTokensMatched) return false;
+    const normalizedRolePhrase = normalizeDashboardText(String(filters.role || ""))
+      .toLowerCase()
+      .replace(/\b\.net\b/g, "dotnet")
+      .replace(/\bdot net\b/g, "dotnet")
+      .replace(/\bnode js\b/g, "nodejs")
+      .trim();
+    const techMustTokens = [];
+    if (/\bdotnet|asp net|c#|c sharp\b/i.test(normalizedRolePhrase)) techMustTokens.push("dotnet");
+    if (/\bnodejs|node js|node\b/i.test(normalizedRolePhrase)) techMustTokens.push("nodejs");
+    if (/\breact|reactjs\b/i.test(normalizedRolePhrase)) techMustTokens.push("react");
+    if (/\bangular\b/i.test(normalizedRolePhrase)) techMustTokens.push("angular");
+    if (/\bjava\b/i.test(normalizedRolePhrase)) techMustTokens.push("java");
+    if (/\bpython\b/i.test(normalizedRolePhrase)) techMustTokens.push("python");
+    if (/\bgolang|go lang|go\b/i.test(normalizedRolePhrase)) techMustTokens.push("golang");
+    if (techMustTokens.length && !techMustTokens.every((token) => candidateHayMatchesTerm(roleHay, token))) {
+      return false;
+    }
+    if (!candidateHayMatchesTerm(roleHay, normalizedRolePhrase)) {
+      const roleTokens = normalizedRolePhrase
+        .split(/\s+/)
+        .map((token) => String(token || "").trim())
+        .filter((token) => token && token.length >= 3);
+      const roleStop = new Set([
+        "developer", "engineer", "manager", "executive", "analyst", "recruiter",
+        "consultant", "specialist", "lead", "senior", "junior", "sales", "role", "profiles", "candidates"
+      ]);
+      const discriminative = roleTokens.filter((token) => !roleStop.has(token));
+      const mustMatch = discriminative.length ? discriminative : roleTokens;
+      if (mustMatch.length && !mustMatch.every((token) => candidateHayMatchesTerm(roleHay, token))) {
+        return false;
+      }
     }
   }
   if (Array.isArray(filters.roleFamilies) && filters.roleFamilies.length) {
