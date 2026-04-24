@@ -64,6 +64,44 @@ const ROLE_PATTERNS = [
   { role: "recruiter", regex: /\brecruiter\b/i, skills: [] }
 ];
 
+const KNOWN_ROLES_DICTIONARY = new Set([
+  ...ROLE_PATTERNS.map((item) => String(item?.role || "").trim().toLowerCase()).filter(Boolean),
+  "backend developer",
+  "frontend developer",
+  "full stack developer",
+  "software engineer",
+  "software developer",
+  "qa engineer",
+  "automation qa engineer",
+  "devops engineer",
+  "product manager",
+  "project manager",
+  "account executive",
+  "account manager",
+  "relationship manager",
+  "business development manager",
+  "hr recruiter",
+  "technical recruiter",
+  "talent acquisition"
+]);
+
+const ROLE_ALIAS_TO_CANONICAL = {
+  "node developer": "nodejs developer",
+  "nodejs developer": "nodejs developer",
+  "node js developer": "nodejs developer",
+  "node.js developer": "nodejs developer",
+  "react developer": "react developer",
+  "reactjs developer": "react developer",
+  "java developer": "java developer",
+  "python developer": "python developer",
+  ".net developer": "dotnet developer",
+  "asp.net developer": "dotnet developer",
+  "dot net developer": "dotnet developer",
+  "dotnet developer": "dotnet developer",
+  "go developer": "golang developer",
+  "golang developer": "golang developer"
+};
+
 const SKILL_PATTERNS = [
   { skill: "nodejs", regex: /\b(nodejs|node js|node\.js|node)\b/i },
   { skill: "react", regex: /\b(react|reactjs|react js|nextjs)\b/i },
@@ -81,6 +119,8 @@ const SKILL_PATTERNS = [
 
 function detectSourceTypeFilter(query = "") {
   const text = String(query || "").toLowerCase();
+  if (/\battempt\s+outcome\b|\bfrom\s+attempt\b/.test(text)) return "captured";
+  if (/\bassessment\s+status\b|\bfrom\s+assessment\b/.test(text)) return "assessment";
   if (/\bcaptured\s+notes?\b|\bcaptured\s+note\b|\bnotes?\s+captured\b/.test(text)) return "captured";
   if (/\bapplied\b|\bapplicants?\b|\bwebsite\s+apply\b|\bhosted\s+apply\b/.test(text)) return "applied";
   if (/\bassessments?\b|\bconverted\b|\bshared\b|\bcv shared\b|\bcv to be shared\b/.test(text)) return "assessment";
@@ -302,6 +342,23 @@ function sanitizeSkillTokens(skills = []) {
   );
 }
 
+function normalizeRoleToken(value = "") {
+  return String(value || "")
+    .toLowerCase()
+    .replace(/[._]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function resolveKnownRole(value = "") {
+  const normalized = normalizeRoleToken(value);
+  if (!normalized) return "";
+  const aliasHit = ROLE_ALIAS_TO_CANONICAL[normalized];
+  if (aliasHit) return aliasHit;
+  if (KNOWN_ROLES_DICTIONARY.has(normalized)) return normalized;
+  return "";
+}
+
 function parseDeterministicRecruiterQuery(rawQuery = "", synonyms = DEFAULT_SYNONYMS) {
   const normalizedQuery = normalizeParserQuery(rawQuery, synonyms);
   const locations = extractLocations(normalizedQuery, synonyms);
@@ -335,5 +392,7 @@ module.exports = {
   normalizeParserQuery,
   extractLocations,
   extractNoticePeriod,
-  parseDeterministicRecruiterQuery
+  parseDeterministicRecruiterQuery,
+  resolveKnownRole,
+  KNOWN_ROLES_DICTIONARY
 };

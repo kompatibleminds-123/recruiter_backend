@@ -191,10 +191,38 @@ async function listAssessmentEvents({
   return sbSel("assessment_events", parts.join("&")).catch(() => []);
 }
 
+async function insertSearchParseFeedback({
+  companyId,
+  userId = "",
+  userName = "",
+  mode = "",
+  semantic = null,
+  query = "",
+  note = "",
+  parseDebug = {}
+} = {}) {
+  const safeCompanyId = String(companyId || "").trim();
+  if (!safeCompanyId) return { ok: false, skipped: true };
+
+  const row = {
+    company_id: safeCompanyId,
+    user_id: String(userId || "").trim() || null,
+    user_name: String(userName || "").trim() || null,
+    mode: String(mode || "").trim() || null,
+    semantic: typeof semantic === "boolean" ? semantic : null,
+    query_text: String(query || "").trim() || null,
+    note: String(note || "").trim() || null,
+    parse_debug: parseDebug && typeof parseDebug === "object" ? parseDebug : {}
+  };
+  await sbIns("search_parse_feedback", [row], { conflict: "", upsert: false, returning: "minimal" });
+  return { ok: true };
+}
+
 module.exports = {
   upsertCandidateSearchDocV1,
   listCandidateSearchDocsForCompany,
   insertAssessmentEvent,
   listAssessmentEvents,
+  insertSearchParseFeedback,
   hashText
 };

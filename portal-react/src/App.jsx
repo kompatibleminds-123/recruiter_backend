@@ -3940,6 +3940,7 @@ function PortalApp({ token, onLogout }) {
   const [candidateSearchBusy, setCandidateSearchBusy] = useState(false);
   const [candidateSearchDebug, setCandidateSearchDebug] = useState(null);
   const [candidateSearchDebugOpen, setCandidateSearchDebugOpen] = useState(false);
+  const [candidateParseFeedbackBusy, setCandidateParseFeedbackBusy] = useState(false);
   const candidateStructuredFiltersDirty = useMemo(() => (
     JSON.stringify(candidateStructuredFiltersDraft) !== JSON.stringify(candidateStructuredFilters)
   ), [candidateStructuredFiltersDraft, candidateStructuredFilters]);
@@ -7581,6 +7582,39 @@ function PortalApp({ token, onLogout }) {
     }
   }
 
+  async function markCandidateParseWrong() {
+    const isAdmin = String(state.user?.role || "").toLowerCase() === "admin";
+    if (!isAdmin) {
+      setStatus("workspace", "Only admin can mark parse feedback.", "error");
+      return;
+    }
+    if (!candidateSearchDebug) {
+      setStatus("workspace", "Run search first, then mark parse wrong.", "error");
+      return;
+    }
+    const note = window.prompt("What was wrong in parsing? (optional)") || "";
+    setCandidateParseFeedbackBusy(true);
+    try {
+      const result = await api("/company/candidates/search-parse-feedback", token, "POST", {
+        query: candidateSearchText,
+        mode: candidateAiQueryMode,
+        semantic: copySettings.semanticSearchEnabled !== false,
+        note: String(note || "").trim(),
+        parseDebug: candidateSearchDebug
+      });
+      const persisted = Boolean(result?.persisted);
+      if (persisted) {
+        setStatus("workspace", "Parse feedback saved for admin tuning.", "ok");
+      } else {
+        setStatus("workspace", "Parse feedback captured (fallback log).", "ok");
+      }
+    } catch (error) {
+      setStatus("workspace", `Mark parse wrong failed: ${String(error?.message || error)}`, "error");
+    } finally {
+      setCandidateParseFeedbackBusy(false);
+    }
+  }
+
   async function loadSmtpSettingsOnce() {
     if (smtpSettingsLoaded) return;
     try {
@@ -9369,6 +9403,15 @@ function PortalApp({ token, onLogout }) {
                     <div className="button-row" style={{ justifyContent: "space-between" }}>
                       <strong>AI Debug JSON</strong>
                       <div className="button-row">
+                        {String(state.user?.role || "").toLowerCase() === "admin" ? (
+                          <button
+                            className="ghost-btn"
+                            disabled={candidateParseFeedbackBusy}
+                            onClick={() => void markCandidateParseWrong()}
+                          >
+                            {candidateParseFeedbackBusy ? "Saving..." : "Mark parse wrong"}
+                          </button>
+                        ) : null}
                         <button
                           className="ghost-btn"
                           onClick={() => setCandidateSearchDebugOpen((current) => !current)}

@@ -1,7 +1,7 @@
 const assert = require("node:assert/strict");
 
 const { DEFAULT_SYNONYMS } = require("../src/search/synonyms");
-const { parseDeterministicRecruiterQuery } = require("../src/search/query-parser");
+const { parseDeterministicRecruiterQuery, resolveKnownRole } = require("../src/search/query-parser");
 
 function run() {
   const q1 = parseDeterministicRecruiterQuery("Get me Node developers from Gurgaon", DEFAULT_SYNONYMS);
@@ -62,6 +62,10 @@ function run() {
   assert.deepEqual(q12.locations, ["hyderabad", "delhi"]);
   assert.equal(q12.role, "sales");
   assert.deepEqual(q12.domainKeywords, ["fintech"]);
+
+  assert.equal(resolveKnownRole("Node Developer"), "nodejs developer");
+  assert.equal(resolveKnownRole(".NET Developer"), "dotnet developer");
+  assert.equal(resolveKnownRole("those who are"), "");
 }
 
 module.exports = { run };

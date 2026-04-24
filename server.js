@@ -69,10 +69,10 @@ const {
 
 const { DEFAULT_SYNONYMS, mapLocationAlias } = require("./src/search/synonyms");
 const { normalizeRecruiterQuery } = require("./src/search/normalize");
-const { parseDeterministicRecruiterQuery } = require("./src/search/query-parser");
+const { parseDeterministicRecruiterQuery, resolveKnownRole } = require("./src/search/query-parser");
 const { hybridSearchCandidates, buildCandidateSemanticText } = require("./src/search/hybrid-search");
 const { createEmbedding, hashText } = require("./src/search/embedding-service");
-const { upsertCandidateSearchDocV1, listCandidateSearchDocsForCompany, listAssessmentEvents } = require("./src/search/search-doc-store");
+const { upsertCandidateSearchDocV1, listCandidateSearchDocsForCompany, listAssessmentEvents, insertSearchParseFeedback } = require("./src/search/search-doc-store");
 let nodemailer = null;
 try {
   // Optional dependency: only needed when SMTP-based JD email sharing is enabled.
@@ -3039,12 +3039,14 @@ function sanitizeCandidateSearchFilters(filters, normalizedQuery = "", universe 
   const next = filters && typeof filters === "object" ? { ...filters } : {};
   const qLower = String(normalizedQuery || "").toLowerCase();
   next.domainKeywords = normalizeCandidateSearchKeywords(next.domainKeywords || []);
-
-  if (isGarbageRoleText(next.role)) {
+  const knownRole = resolveKnownRole(next.role);
+  if (!knownRole || isGarbageRoleText(knownRole)) {
     next.role = "";
     if (!Array.isArray(next.roleFamilies) || !next.roleFamilies.length || next.roleFamilies.every((f) => !String(f || "").trim())) {
       next.roleFamilies = [];
     }
+  } else {
+    next.role = knownRole;
   }
 
   const knownLocations = buildKnownUniverseLocationSet(universe, synonyms);
@@ -6946,6 +6948,73 @@ const server = http.createServer(async (req, res) => {
           ...(debug && hybrid.debug ? { debug: hybrid.debug } : {}),
           total: matches.length,
           items: matches
+        }
+      });
+    } catch (error) {
+      sendJson(res, 400, { ok: false, error: String(error.message || error) });
+    }
+    return;
+  }
+
+  if (req.method === "POST" && requestUrl.pathname === "/company/candidates/search-parse-feedback") {
+    try {
+      const user = await requireSessionUser(getBearerToken(req));
+      if (String(user?.role || "").toLowerCase() !== "admin") {
+        throw new Error("Only admin can submit parse feedback.");
+      }
+      const body = await readJsonBody(req);
+      const queryText = String(body?.query || "").trim();
+      const mode = String(body?.mode || "").trim().toLowerCase();
+      const semantic = body?.semantic === true;
+      const note = String(body?.note || "").trim();
+      const parseDebug = body?.parseDebug && typeof body.parseDebug === "object" ? body.parseDebug : {};
+      if (!queryText) throw new Error("Query is required.");
+
+      let persisted = false;
+      let warning = "";
+      try {
+        await insertSearchParseFeedback({
+          companyId: user.companyId,
+          userId: user.id,
+          userName: user.name,
+          mode,
+          semantic,
+          query: queryText,
+          note,
+          parseDebug
+        });
+        persisted = true;
+      } catch (error) {
+        warning = String(error?.message || error || "Could not persist parse feedback.");
+        console.warn("Search parse feedback persistence failed:", warning);
+        try {
+          const logDir = path.join(__dirname, "logs");
+          if (!fs.existsSync(logDir)) fs.mkdirSync(logDir, { recursive: true });
+          fs.appendFileSync(
+            path.join(logDir, "search-parse-feedback.log"),
+            `${JSON.stringify({
+              at: new Date().toISOString(),
+              companyId: user.companyId,
+              userId: user.id,
+              userName: user.name,
+              mode,
+              semantic,
+              query: queryText,
+              note,
+              parseDebug
+            })}\n`,
+            "utf8"
+          );
+        } catch (inner) {
+          console.warn("Search parse feedback local log fallback failed:", String(inner?.message || inner || ""));
+        }
+      }
+
+      sendJson(res, 200, {
+        ok: true,
+        result: {
+          persisted,
+          warning
         }
       });
     } catch (error) {
