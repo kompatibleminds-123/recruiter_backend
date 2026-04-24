@@ -2422,8 +2422,8 @@ function parseNaturalLanguageCandidateQuery(rawQuery) {
     assessmentIntent = true;
     convertedIntent = true;
   }
-  const recruiterNameMatch = lower.match(/\bby\s+([a-z][a-z\s.-]+?)(?:\s+for\b|\s+in\b|\s+this\b|\s+last\b|\s+today\b|\s+tomorrow\b|$)/i);
-  const assignedToMatch = lower.match(/\bassigned\s+to\s+([a-z][a-z\s.-]+?)(?:\s+for\b|\s+in\b|\s+this\b|\s+last\b|\s+today\b|\s+tomorrow\b|$)/i);
+  const recruiterNameMatch = lower.match(/\bby\s+([a-z][a-z\s.-]+?)(?:\s+for\b|\s+in\b|\s+this\b|\s+last\b|\s+today\b|\s+tomorrow\b|\s+and\b|\s+are\b|\s+with\b|\s+who\b|\s+whose\b|$)/i);
+  const assignedToMatch = lower.match(/\bassigned\s+to\s+([a-z][a-z\s.-]+?)(?:\s+for\b|\s+in\b|\s+this\b|\s+last\b|\s+today\b|\s+tomorrow\b|\s+and\b|\s+are\b|\s+with\b|\s+who\b|\s+whose\b|$)/i);
   // JD/role scoping can come as:
   // - "profiles shared for <role> in <client>"
   // - "profiles shared under <role> in <client>"
@@ -3070,6 +3070,15 @@ function sanitizeCandidateSearchFilters(filters, normalizedQuery = "", universe 
   }
 
   const knownLocations = buildKnownUniverseLocationSet(universe, synonyms);
+  const knownRecruiterLabels = Array.from(
+    new Set(
+      (Array.isArray(universe) ? universe : [])
+        .flatMap((item) => [item?.ownerRecruiter, item?.recruiterName, item?.sourcedRecruiter])
+        .map((label) => String(label || "").trim())
+        .filter(Boolean)
+        .filter((label) => !/^unassigned$/i.test(label) && !/^website apply$/i.test(label))
+    )
+  );
   const knownClientLabels = Array.from(
     new Set(
       (Array.isArray(universe) ? universe : [])
@@ -3094,6 +3103,43 @@ function sanitizeCandidateSearchFilters(filters, normalizedQuery = "", universe 
       if (!needle) continue;
       const pattern = new RegExp(`\\b${escapeRegex(needle).replace(/\s+/g, "\\s+")}\\b`, "i");
       if (pattern.test(qNormalized)) return label;
+    }
+    return "";
+  };
+
+  const resolveRecruiterFromUniverse = (rawValue = "") => {
+    if (!knownRecruiterLabels.length) return "";
+    const raw = normalizeDashboardText(String(rawValue || "")).toLowerCase().trim();
+    const queryText = qNormalized;
+
+    const stripTail = (value) =>
+      String(value || "")
+        .replace(/\b(and|are|with|who|whose|where|that|from|for|in)\b.*$/i, "")
+        .replace(/\b(not responding|not received|busy|duplicate|interested|not interested|screening reject|interview reject|call later|jd shared|feedback awaited)\b.*$/i, "")
+        .trim();
+
+    const cleanedRaw = normalizeDashboardText(stripTail(raw)).toLowerCase().trim();
+    const candidates = [cleanedRaw, raw].filter(Boolean);
+
+    const byNorm = new Map(
+      knownRecruiterLabels.map((label) => [normalizeDashboardText(label).toLowerCase().trim(), label])
+    );
+
+    for (const token of candidates) {
+      const exact = byNorm.get(token);
+      if (exact) return exact;
+    }
+    for (const token of candidates) {
+      const partial = Array.from(byNorm.entries()).find(([norm]) => token && (norm.includes(token) || token.includes(norm)));
+      if (partial?.[1]) return partial[1];
+    }
+
+    const ranked = [...knownRecruiterLabels].sort((a, b) => b.length - a.length);
+    for (const label of ranked) {
+      const needle = normalizeDashboardText(label).toLowerCase().trim();
+      if (!needle) continue;
+      const pattern = new RegExp(`\\b${escapeRegex(needle).replace(/\s+/g, "\\s+")}\\b`, "i");
+      if (pattern.test(queryText)) return label;
     }
     return "";
   };
@@ -3141,6 +3187,19 @@ function sanitizeCandidateSearchFilters(filters, normalizedQuery = "", universe 
   if (!String(next.targetLabel || "").trim()) {
     const inferredTarget = inferTargetLabelFromQuery();
     if (inferredTarget) next.targetLabel = inferredTarget;
+  }
+
+  const recruiterIntentMentioned =
+    /\b(assigned to|owned by|owner|under|sourced by|captured by|by)\b/i.test(qLower) ||
+    Boolean(String(next.recruiterName || "").trim());
+  if (recruiterIntentMentioned) {
+    const resolvedRecruiter = resolveRecruiterFromUniverse(String(next.recruiterName || "").trim());
+    if (resolvedRecruiter) {
+      next.recruiterName = resolvedRecruiter;
+    } else if (String(next.recruiterName || "").trim()) {
+      // Never keep garbage recruiter tails.
+      next.recruiterName = "";
+    }
   }
 
   const noiseSkillTokens = new Set([
