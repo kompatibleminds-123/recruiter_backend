@@ -3938,8 +3938,8 @@ function PortalApp({ token, onLogout }) {
   const [candidateStructuredFilters, setCandidateStructuredFilters] = useState(EMPTY_CANDIDATE_STRUCTURED_FILTERS); // applied
   const [candidateStructuredFiltersDraft, setCandidateStructuredFiltersDraft] = useState(EMPTY_CANDIDATE_STRUCTURED_FILTERS); // editable
   const [candidateSearchBusy, setCandidateSearchBusy] = useState(false);
+  const [candidateSearchingAs, setCandidateSearchingAs] = useState("");
   const [candidateSearchDebug, setCandidateSearchDebug] = useState(null);
-  const [candidateSearchDebugOpen, setCandidateSearchDebugOpen] = useState(false);
   const [candidateParseFeedbackBusy, setCandidateParseFeedbackBusy] = useState(false);
   const candidateStructuredFiltersDirty = useMemo(() => (
     JSON.stringify(candidateStructuredFiltersDraft) !== JSON.stringify(candidateStructuredFilters)
@@ -4748,39 +4748,63 @@ function PortalApp({ token, onLogout }) {
 
   function buildAssessmentInterviewDoneRows({ assessments, linkedCandidateMap, dateFrom, dateTo }) {
     const rows = [];
+    const stageIndexFromStatus = (value) => {
+      const lower = normalizeAssessmentStatusLabel(value || "").toLowerCase();
+      if (lower === "screening call aligned") return 0;
+      if (lower === "l1 aligned") return 1;
+      if (lower === "l2 aligned") return 2;
+      if (lower === "l3 aligned") return 3;
+      if (lower === "hr interview aligned") return 4;
+      return -1;
+    };
+    const stageRoundFromIndex = (idx) => {
+      if (idx === 1) return "L1";
+      if (idx === 2) return "L2";
+      if (idx === 3) return "L3";
+      if (idx === 4) return "HR";
+      return "";
+    };
+    const inferDoneRoundFromTransition = (prevStatus, nextStatus) => {
+      const nextLower = normalizeAssessmentStatusLabel(nextStatus || "").toLowerCase();
+      const prevLower = normalizeAssessmentStatusLabel(prevStatus || "").toLowerCase();
+      const nextIdx = stageIndexFromStatus(nextLower);
+      // L2/L3/HR aligned means previous round got done.
+      if (nextIdx === 2) return "L1";
+      if (nextIdx === 3) return "L2";
+      if (nextIdx === 4) return "L3";
+      // Feedback awaited / interview reject means previous aligned round got done.
+      if (nextLower === "feedback awaited" || nextLower === "interview reject") {
+        const prevIdx = stageIndexFromStatus(prevLower);
+        return stageRoundFromIndex(prevIdx);
+      }
+      return "";
+    };
+
     (assessments || []).forEach((assessment) => {
       const linkedCandidate = linkedCandidateMap.get(String(assessment?.id || "")) || null;
       const history = Array.isArray(assessment?.statusHistory) ? assessment.statusHistory : [];
       history.forEach((entry, index) => {
         const status = normalizeAssessmentStatusLabel(entry?.status || "");
         const notes = String(entry?.notes || "").trim();
-        const atValue = String(entry?.at || entry?.updatedAt || "").trim();
+        const atValue = String(entry?.at || entry?.updatedAt || assessment?.interviewAt || "").trim();
         const eventDate = atValue ? atValue.slice(0, 10) : "";
-        const marksInterviewDone = status.toLowerCase() === "feedback awaited"
-          && /interview/i.test(notes)
-          && /\bdone\b|\bcompleted\b/i.test(notes);
-        if (!marksInterviewDone || !atValue) return;
+        const prevStatus = index > 0 ? normalizeAssessmentStatusLabel(history[index - 1]?.status || "") : "";
+        const inferredRound = inferDoneRoundFromTransition(prevStatus, status);
+        if (!inferredRound || !atValue) return;
         if (dateFrom && eventDate && eventDate < dateFrom) return;
         if (dateTo && eventDate && eventDate > dateTo) return;
 
-        const priorRound = history
-          .slice(0, index)
-          .reverse()
-          .map((item) => normalizeAssessmentStatusLabel(item?.status || "") || String(item?.status || "").trim())
-          .map((value) => inferInterviewRoundFromStatus(value))
-          .find(Boolean);
-        const fallbackRound = inferInterviewRoundFromStatus(assessment?.candidateStatus || "");
         const recruiter = getAssessmentOwnerLabel(assessment, linkedCandidate);
         const clientName = String(assessment?.clientName || linkedCandidate?.client_name || "").trim();
         const jdTitle = String(assessment?.jdTitle || linkedCandidate?.jd_title || "").trim();
         rows.push([
           atValue ? new Date(atValue).toLocaleString() : "",
-          priorRound || fallbackRound || "",
+          inferredRound,
           String(assessment?.candidateName || "").trim(),
           jdTitle,
           clientName,
           recruiter,
-          status || "Feedback Awaited",
+          status || "Interview done",
           notes
         ]);
       });
@@ -7519,6 +7543,7 @@ function PortalApp({ token, onLogout }) {
       setCandidateSearchMode("all");
       setCandidateSearchResults([]);
       setCandidatePage(1);
+      setCandidateSearchingAs("");
       setStatus("workspace", "Showing candidates using structured filters.", "ok");
       return;
     }
@@ -7526,6 +7551,7 @@ function PortalApp({ token, onLogout }) {
     const semanticEnabled = copySettings.semanticSearchEnabled !== false;
     setCandidateSearchBusy(true);
     setCandidateSearchDebug(null);
+    setCandidateSearchingAs("");
     setStatus("workspace", "Searching candidates...", "ok");
     try {
       // Avoid previous applied filters (especially notice bucket) silently wiping results.
@@ -7539,10 +7565,12 @@ function PortalApp({ token, onLogout }) {
         mode,
         semantic: semanticEnabled,
         query: candidateSearchText,
+        searchingAsBoolean: result?.searchingAsBoolean || "",
         filters: result?.filters || null,
         interpretation: result?.interpretation || result?.parsed || result?.planner || null,
         debug: result?.debug || null
       });
+      setCandidateSearchingAs(String(result?.searchingAsBoolean || "").trim());
       setCandidateSearchResults(result.items || []);
       setCandidateSearchMode("search");
       setCandidatePage(1);
@@ -7575,11 +7603,12 @@ function PortalApp({ token, onLogout }) {
       } else {
         setCandidateStructuredFiltersDraft(EMPTY_CANDIDATE_STRUCTURED_FILTERS);
       }
-      setStatus("workspace", `${candidateAiQueryMode === "boolean" ? "Boolean search" : "AI-interpreted search"} returned ${result.items?.length || 0} candidates.`, "ok");
+      setStatus("workspace", `${candidateAiQueryMode === "boolean" ? "Boolean search" : "Smart search"} returned ${result.items?.length || 0} candidates.`, "ok");
     } catch (error) {
       setCandidateSearchMode("search");
       setCandidateSearchResults([]);
       setCandidateSearchDebug({ error: String(error?.message || error), query: candidateSearchText, mode });
+      setCandidateSearchingAs("");
       setStatus("workspace", `Search failed: ${String(error?.message || error)}`, "error");
     } finally {
       setCandidateSearchBusy(false);
@@ -9383,20 +9412,21 @@ function PortalApp({ token, onLogout }) {
                 <p className="muted">This view can surface captured, applied, and assessment-linked candidates together. Candidates without CV uploads still remain searchable through saved structured fields, recruiter notes, attempts, and assessment data. Hidden CV metadata is used only by search and not shown in the UI.</p>
                 <div className="item-card compact-card">
                   <h3>Search mode</h3>
-                  <p className="muted">Use Boolean for exact keyword retrieval. Use Natural when you want AI to interpret the statement and convert it into deterministic filters.</p>
+                  <p className="muted">Use Boolean for exact keyword retrieval. Use Smart when you want plain-English converted into deterministic Boolean + filters.</p>
                   <div className="button-row">
-                    <button className={candidateAiQueryMode === "boolean" ? "" : "ghost-btn"} onClick={() => setCandidateAiQueryMode("boolean")}>Boolean</button>
-                    <button className={candidateAiQueryMode === "natural" ? "" : "ghost-btn"} onClick={() => setCandidateAiQueryMode("natural")}>Natural</button>
+                  <button className={candidateAiQueryMode === "boolean" ? "" : "ghost-btn"} onClick={() => setCandidateAiQueryMode("boolean")}>Boolean</button>
+                    <button className={candidateAiQueryMode === "natural" ? "" : "ghost-btn"} onClick={() => setCandidateAiQueryMode("natural")}>Smart</button>
                   </div>
                 </div>
                 <div className="toolbar">
                   <input placeholder={candidateAiQueryMode === "boolean" ? '(sales OR "business development") AND saas' : "Get me Account Executives with 4+ years of experience based out of Mumbai with current CTC under 20 L"} value={candidateSearchText} onChange={(e) => setCandidateSearchText(e.target.value)} />
-                  <button disabled={candidateSearchBusy} onClick={() => void runCandidateSearch()}>{candidateAiQueryMode === "boolean" ? "Run Boolean Search" : "Run AI Search"}</button>
+                  <button disabled={candidateSearchBusy} onClick={() => void runCandidateSearch()}>{candidateAiQueryMode === "boolean" ? "Run Boolean Search" : "Run Smart Search"}</button>
                   <button className="ghost-btn" onClick={() => {
                     setCandidateSearchText("");
                     setCandidateSearchResults([]);
                     setCandidateSearchMode("all");
                     setCandidatePage(1);
+                    setCandidateSearchingAs("");
                     setCandidateStructuredFilters(EMPTY_CANDIDATE_STRUCTURED_FILTERS);
                     setCandidateStructuredFiltersDraft(EMPTY_CANDIDATE_STRUCTURED_FILTERS);
                   }}>Reset search</button>
@@ -9404,46 +9434,20 @@ function PortalApp({ token, onLogout }) {
                 {candidateSearchBusy ? (
                   <div className="muted" style={{ marginTop: 6 }}>Searching candidates...</div>
                 ) : null}
-                {candidateSearchDebug ? (
-                  <div className="item-card compact-card" style={{ marginTop: 10 }}>
-                    <div className="button-row" style={{ justifyContent: "space-between" }}>
-                      <strong>AI Debug JSON</strong>
-                      <div className="button-row">
-                        {String(state.user?.role || "").toLowerCase() === "admin" ? (
-                          <button
-                            className="ghost-btn"
-                            disabled={candidateParseFeedbackBusy}
-                            onClick={() => void markCandidateParseWrong()}
-                          >
-                            {candidateParseFeedbackBusy ? "Saving..." : "Mark parse wrong"}
-                          </button>
-                        ) : null}
-                        <button
-                          className="ghost-btn"
-                          onClick={() => setCandidateSearchDebugOpen((current) => !current)}
-                        >
-                          {candidateSearchDebugOpen ? "Hide" : "Show"}
-                        </button>
-                        <button
-                          className="ghost-btn"
-                          onClick={() => {
-                            try {
-                              void navigator.clipboard.writeText(JSON.stringify(candidateSearchDebug, null, 2));
-                              setStatus("workspace", "Copied AI JSON.", "ok");
-                            } catch (error) {
-                              setStatus("workspace", "Copy failed.", "error");
-                            }
-                          }}
-                        >
-                          Copy JSON
-                        </button>
-                      </div>
-                    </div>
-                    {candidateSearchDebugOpen ? (
-                      <pre className="code-block" style={{ whiteSpace: "pre-wrap", marginTop: 8 }}>
-                        {JSON.stringify(candidateSearchDebug, null, 2)}
-                      </pre>
-                    ) : null}
+                {candidateAiQueryMode === "natural" && candidateSearchingAs ? (
+                  <div className="muted" style={{ marginTop: 8 }}>
+                    Searching as: <code>{candidateSearchingAs}</code>
+                  </div>
+                ) : null}
+                {candidateAiQueryMode === "natural" && String(state.user?.role || "").toLowerCase() === "admin" ? (
+                  <div className="button-row" style={{ marginTop: 8 }}>
+                    <button
+                      className="ghost-btn"
+                      disabled={candidateParseFeedbackBusy}
+                      onClick={() => void markCandidateParseWrong()}
+                    >
+                      {candidateParseFeedbackBusy ? "Saving..." : "Mark parse wrong"}
+                    </button>
                   </div>
                 ) : null}
                 <div className="item-card compact-card candidate-filter-card">

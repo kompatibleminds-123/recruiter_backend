@@ -4130,6 +4130,78 @@ function parseBooleanSearchQuery(rawQuery = "") {
   return splitBooleanTerms(compact).map((term) => [term]);
 }
 
+function quoteBooleanTerm(term = "") {
+  const raw = String(term || "").trim();
+  if (!raw) return "";
+  if (/^[a-z0-9_.#+-]+$/i.test(raw) && !/\s/.test(raw)) return raw;
+  return `"${raw.replace(/"/g, '\\"')}"`;
+}
+
+function uniqNormalizedBooleanTerms(list = []) {
+  const seen = new Set();
+  const out = [];
+  for (const item of Array.isArray(list) ? list : []) {
+    const raw = String(item || "").trim();
+    if (!raw) continue;
+    const key = normalizeDashboardText(raw).toLowerCase();
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    out.push(raw);
+  }
+  return out;
+}
+
+function buildBooleanQueryFromFilters(rawQuery = "", filters = {}) {
+  const f = filters && typeof filters === "object" ? filters : {};
+  const clauses = [];
+
+  const addOrClause = (terms = []) => {
+    const uniqTerms = uniqNormalizedBooleanTerms(terms).map(quoteBooleanTerm).filter(Boolean);
+    if (!uniqTerms.length) return;
+    if (uniqTerms.length === 1) clauses.push(uniqTerms[0]);
+    else clauses.push(`(${uniqTerms.join(" OR ")})`);
+  };
+
+  const addAndGroupClause = (groups = []) => {
+    const normalizedGroups = Array.isArray(groups) ? groups : [];
+    normalizedGroups.forEach((group) => {
+      const terms = uniqNormalizedBooleanTerms(group);
+      if (!terms.length) return;
+      addOrClause(terms);
+    });
+  };
+
+  if (Array.isArray(f.anyOfSkillGroups) && f.anyOfSkillGroups.length) {
+    addAndGroupClause(f.anyOfSkillGroups);
+  } else if (Array.isArray(f.mustSkills) && f.mustSkills.length) {
+    const terms = uniqNormalizedBooleanTerms(f.mustSkills);
+    terms.forEach((term) => clauses.push(quoteBooleanTerm(term)));
+  } else if (Array.isArray(f.skills) && f.skills.length) {
+    if (String(f.skillsMatch || "").toLowerCase() === "all") {
+      uniqNormalizedBooleanTerms(f.skills).forEach((term) => clauses.push(quoteBooleanTerm(term)));
+    } else {
+      addOrClause(f.skills);
+    }
+  }
+
+  if (Array.isArray(f.domainKeywords) && f.domainKeywords.length) addOrClause(f.domainKeywords);
+  if (f.role) addOrClause([f.role]);
+  if (f.currentCompany) addOrClause([f.currentCompany]);
+  if (f.client) addOrClause([f.client]);
+  if (f.targetLabel) addOrClause([f.targetLabel]);
+  if (Array.isArray(f.jobTitleKeywords) && f.jobTitleKeywords.length) addOrClause(f.jobTitleKeywords);
+  if (Array.isArray(f.fallbackKeywords) && f.fallbackKeywords.length) addOrClause(f.fallbackKeywords);
+
+  const locTerms = Array.isArray(f.locations) && f.locations.length ? f.locations : (f.location ? [f.location] : []);
+  if (locTerms.length) addOrClause(locTerms);
+
+  if (!clauses.length) {
+    const fallback = String(rawQuery || "").trim();
+    return fallback || "";
+  }
+  return clauses.join(" AND ");
+}
+
 function candidateMatchesBooleanQuery(item, rawQuery = "") {
   const groups = parseBooleanSearchQuery(rawQuery);
   if (!groups.length) return true;
@@ -7699,14 +7771,21 @@ const server = http.createServer(async (req, res) => {
       } else if (queryMode === "ai" && parsedQueryJson) {
         searchPathUsed = "deterministic_db_filter_only";
       }
+      const searchingAsBoolean = queryMode === "ai"
+        ? buildBooleanQueryFromFilters(query, filters)
+        : "";
+      const effectiveQueryMode = queryMode === "ai" ? "boolean" : queryMode;
+      const effectiveRawQuery = effectiveQueryMode === "boolean"
+        ? (searchingAsBoolean || query)
+        : query;
       const apiKey = useSemantic ? String(process.env.OPENAI_API_KEY || "").trim() : "";
       const hybrid = await hybridSearchCandidates({
         universe: scopedUniverse,
         actor: user,
-        rawQuery: query,
+        rawQuery: effectiveRawQuery,
         normalizedQuery: normalized.normalized,
         filters,
-        queryMode,
+        queryMode: effectiveQueryMode,
         apiKey,
         synonyms: DEFAULT_SYNONYMS,
         helpers: {
@@ -7722,7 +7801,8 @@ const server = http.createServer(async (req, res) => {
           parseExperienceToYears,
           isPlainLookup: isPlainCandidateLookupQuery,
           buildNaturalSearchFallbackTokens,
-          normalizeDashboardText
+          normalizeDashboardText,
+          enforceDeterministicFiltersWithBoolean: queryMode === "ai"
         }
       });
       let finalHybrid = hybrid;
@@ -7762,10 +7842,10 @@ const server = http.createServer(async (req, res) => {
           finalHybrid = await hybridSearchCandidates({
             universe: scopedUniverse,
             actor: user,
-            rawQuery: query,
+            rawQuery: buildBooleanQueryFromFilters(query, fallbackFilters) || effectiveRawQuery,
             normalizedQuery: normalized.normalized,
             filters: fallbackFilters,
-            queryMode,
+            queryMode: effectiveQueryMode,
             apiKey,
             synonyms: DEFAULT_SYNONYMS,
             helpers: {
@@ -7781,7 +7861,8 @@ const server = http.createServer(async (req, res) => {
               parseExperienceToYears,
               isPlainLookup: isPlainCandidateLookupQuery,
               buildNaturalSearchFallbackTokens,
-              normalizeDashboardText
+              normalizeDashboardText,
+              enforceDeterministicFiltersWithBoolean: queryMode === "ai"
             }
           });
           filters = fallbackFilters;
@@ -7824,6 +7905,7 @@ const server = http.createServer(async (req, res) => {
         result: {
           query,
           queryMode,
+          searchingAsBoolean,
           normalizedQuery: normalized.normalized,
           filters: finalHybrid.filters || filters,
           interpretation: parsedQueryJson,
