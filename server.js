@@ -2778,6 +2778,205 @@ function buildCandidateSearchInterpretationSchema() {
   };
 }
 
+function buildRecruiterQueryParserSchema() {
+  return {
+    type: "object",
+    additionalProperties: false,
+    required: ["intent", "normalizedQuery", "confidence", "filters"],
+    properties: {
+      intent: {
+        type: "string",
+        enum: [
+          "candidate_search",
+          "shared_profiles_search",
+          "stale_candidates",
+          "recruiter_activity_report",
+          "job_search",
+          "company_search",
+          "general_keyword_search"
+        ]
+      },
+      normalizedQuery: { type: "string" },
+      confidence: { type: "number" },
+      filters: {
+        type: "object",
+        additionalProperties: false,
+        required: [
+          "role", "skills", "location", "locations", "client", "company", "jobTitleKeywords",
+          "statuses", "detailedStatuses", "attemptOutcome", "assessmentStatus", "sourceTypeFilter",
+          "sharedOnly", "interviewScheduled", "upcomingJoinings", "minExperienceYears", "maxExperienceYears",
+          "maxNoticeDays", "dateFrom", "dateTo", "dateField", "recruiterName", "recruiterScope", "fallbackKeywords"
+        ],
+        properties: {
+          role: { type: "string" },
+          skills: { type: "array", items: { type: "string" }, maxItems: 20 },
+          location: { type: "string" },
+          locations: { type: "array", items: { type: "string" }, maxItems: 12 },
+          client: { type: "string" },
+          company: { type: "string" },
+          jobTitleKeywords: { type: "array", items: { type: "string" }, maxItems: 12 },
+          statuses: { type: "array", items: { type: "string" }, maxItems: 12 },
+          detailedStatuses: { type: "array", items: { type: "string" }, maxItems: 20 },
+          attemptOutcome: { type: "string" },
+          assessmentStatus: { type: "string" },
+          sourceTypeFilter: { type: "string" },
+          sharedOnly: { type: "boolean" },
+          interviewScheduled: { type: "boolean" },
+          upcomingJoinings: { type: "boolean" },
+          minExperienceYears: { type: ["number", "null"] },
+          maxExperienceYears: { type: ["number", "null"] },
+          maxNoticeDays: { type: ["number", "null"] },
+          dateFrom: { type: "string" },
+          dateTo: { type: "string" },
+          dateField: { type: "string" },
+          recruiterName: { type: "string" },
+          recruiterScope: { type: "string" },
+          fallbackKeywords: { type: "array", items: { type: "string" }, maxItems: 20 }
+        }
+      }
+    }
+  };
+}
+
+async function parseRecruiterQueryWithOpenAI(rawQuery, { apiKey, actor } = {}) {
+  const query = String(rawQuery || "").trim();
+  const normalized = normalizeRecruiterQuery(query, DEFAULT_SYNONYMS);
+  const norm = String(normalized?.normalized || query || "").trim();
+  const prompt = [
+    "You are a recruiter query parser. Convert messy English into strict JSON filters.",
+    "Do not search database. Do not explain. Return JSON only.",
+    "Use intent and filters exactly matching schema.",
+    "",
+    "Rules:",
+    "1) Prefer empty role over wrong role.",
+    "2) Never infer role from filler phrases like: those who are, who are, having, profiles, candidates, people.",
+    "3) Set role only for known job functions like developer, recruiter, engineer, manager, analyst, tester, sales, accountant, hr.",
+    "4) Preserve uncertain useful terms in fallbackKeywords or jobTitleKeywords.",
+    "5) If query asks for shared/submitted profiles: intent=shared_profiles_search, sourceTypeFilter=assessment, sharedOnly=true, dateField=shared.",
+    "6) If C2H / contract to hire appears, keep it in jobTitleKeywords.",
+    "7) If client appears inside title text, keep it in jobTitleKeywords too.",
+    "8) If busy appears: detailedStatuses=['busy'], attemptOutcome='Busy'.",
+    "9) If not contacted in X days: intent=stale_candidates, dateField=last_contacted.",
+    "10) immediate joiner/can join immediately => maxNoticeDays=0.",
+    "11) If confidence is low, intent=general_keyword_search and keep fallbackKeywords rich.",
+    `12) Current recruiter name is "${String(actor?.name || "").trim()}".`,
+    "",
+    `Query: ${norm}`
+  ].join("\n");
+
+  const result = await callOpenAiJsonSchema({
+    apiKey,
+    prompt,
+    model: "gpt-4.1-mini",
+    schemaName: "recruiter_query_parser",
+    schema: buildRecruiterQueryParserSchema()
+  });
+
+  const toArray = (value) =>
+    Array.from(new Set((Array.isArray(value) ? value : []).map((x) => String(x || "").trim()).filter(Boolean)));
+  const safeRole = resolveKnownRole(String(result?.filters?.role || "").trim());
+  const qLower = norm.toLowerCase();
+  const filters = {
+    role: safeRole || "",
+    skills: normalizeCandidateSearchKeywords(toArray(result?.filters?.skills)),
+    location: String(result?.filters?.location || "").trim(),
+    locations: toArray(result?.filters?.locations),
+    client: String(result?.filters?.client || "").trim(),
+    company: String(result?.filters?.company || "").trim(),
+    jobTitleKeywords: toArray(result?.filters?.jobTitleKeywords),
+    statuses: toArray(result?.filters?.statuses),
+    detailedStatuses: toArray(result?.filters?.detailedStatuses),
+    attemptOutcome: String(result?.filters?.attemptOutcome || "").trim(),
+    assessmentStatus: String(result?.filters?.assessmentStatus || "").trim(),
+    sourceTypeFilter: String(result?.filters?.sourceTypeFilter || "").trim(),
+    sharedOnly: Boolean(result?.filters?.sharedOnly),
+    interviewScheduled: Boolean(result?.filters?.interviewScheduled),
+    upcomingJoinings: Boolean(result?.filters?.upcomingJoinings),
+    minExperienceYears: typeof result?.filters?.minExperienceYears === "number" ? result.filters.minExperienceYears : null,
+    maxExperienceYears: typeof result?.filters?.maxExperienceYears === "number" ? result.filters.maxExperienceYears : null,
+    maxNoticeDays: typeof result?.filters?.maxNoticeDays === "number" ? result.filters.maxNoticeDays : null,
+    dateFrom: String(result?.filters?.dateFrom || "").trim(),
+    dateTo: String(result?.filters?.dateTo || "").trim(),
+    dateField: String(result?.filters?.dateField || "").trim(),
+    recruiterName: String(result?.filters?.recruiterName || "").trim(),
+    recruiterScope: String(result?.filters?.recruiterScope || "").trim(),
+    fallbackKeywords: toArray(result?.filters?.fallbackKeywords)
+  };
+
+  // Deterministic corrections
+  if (/\bshared|submitted|cv shared|converted\b/i.test(qLower)) {
+    filters.sharedOnly = true;
+    filters.sourceTypeFilter = "assessment";
+    filters.dateField = "shared";
+  }
+  if (/\bbusy\b/i.test(qLower)) {
+    if (!filters.detailedStatuses.includes("busy")) filters.detailedStatuses.push("busy");
+    if (!filters.attemptOutcome) filters.attemptOutcome = "Busy";
+  }
+  if (/\bimmediate joiner|can join immediately|immediate\b/i.test(qLower)) {
+    filters.maxNoticeDays = 0;
+  }
+  if (/\bc2h\b|\bcontract to hire\b/i.test(qLower) && !filters.jobTitleKeywords.some((k) => /^c2h$/i.test(k))) {
+    filters.jobTitleKeywords.push("C2H");
+  }
+  if (!filters.role) {
+    filters.skills = filters.skills.filter((s) => !/^(those|who|are|having|profiles?|candidates?|people)$/i.test(s));
+  }
+  const keepFallback = Array.from(new Set([
+    ...filters.fallbackKeywords,
+    ...filters.jobTitleKeywords,
+    ...filters.skills
+  ])).filter(Boolean);
+  filters.fallbackKeywords = keepFallback;
+
+  return {
+    intent: String(result?.intent || "general_keyword_search").trim() || "general_keyword_search",
+    normalizedQuery: String(result?.normalizedQuery || norm).trim() || norm,
+    confidence: typeof result?.confidence === "number" ? result.confidence : 0.5,
+    filters
+  };
+}
+
+function mapOpenAiParsedToDeterministicFilters(parsed = {}) {
+  const pf = parsed?.filters && typeof parsed.filters === "object" ? parsed.filters : {};
+  const keywords = normalizeCandidateSearchKeywords([...(pf.skills || []), ...(pf.jobTitleKeywords || [])]);
+  const role = resolveKnownRole(String(pf.role || "").trim()) || "";
+  return {
+    raw: String(parsed?.normalizedQuery || "").trim(),
+    role,
+    roleFamilies: role ? detectRoleFamilies(role) : [],
+    minExperienceYears: typeof pf.minExperienceYears === "number" ? pf.minExperienceYears : null,
+    maxExperienceYears: typeof pf.maxExperienceYears === "number" ? pf.maxExperienceYears : null,
+    location: String(pf.location || "").trim(),
+    locations: Array.isArray(pf.locations) ? pf.locations.map((x) => String(x || "").trim()).filter(Boolean) : [],
+    minCurrentCtcLpa: null,
+    maxCurrentCtcLpa: null,
+    minExpectedCtcLpa: null,
+    maxExpectedCtcLpa: null,
+    maxNoticeDays: typeof pf.maxNoticeDays === "number" ? pf.maxNoticeDays : null,
+    skills: keywords,
+    domainKeywords: [],
+    skillsMatch: /\bor\b/i.test(String(parsed?.normalizedQuery || "")) ? "any" : "all",
+    currentCompany: String(pf.company || "").trim(),
+    statuses: Array.isArray(pf.statuses) ? pf.statuses.map((x) => normalizeDashboardText(x)).filter(Boolean) : [],
+    detailedStatuses: Array.isArray(pf.detailedStatuses) ? pf.detailedStatuses.map((x) => String(x || "").trim()).filter(Boolean) : [],
+    attemptOutcome: String(pf.attemptOutcome || "").trim(),
+    assessmentStatus: String(pf.assessmentStatus || "").trim(),
+    client: String(pf.client || "").trim(),
+    targetLabel: Array.isArray(pf.jobTitleKeywords) ? String(pf.jobTitleKeywords[0] || "").trim() : "",
+    interviewScheduled: Boolean(pf.interviewScheduled),
+    upcomingJoinings: Boolean(pf.upcomingJoinings),
+    recruiterScope: String(pf.recruiterScope || "").trim(),
+    recruiterName: String(pf.recruiterName || "").trim(),
+    recruiterField: "owner",
+    sourceTypeFilter: String(pf.sourceTypeFilter || "").trim(),
+    dateFrom: String(pf.dateFrom || "").trim(),
+    dateTo: String(pf.dateTo || "").trim(),
+    dateField: String(pf.dateField || "").trim(),
+    fallbackKeywords: Array.isArray(pf.fallbackKeywords) ? pf.fallbackKeywords.map((x) => String(x || "").trim()).filter(Boolean) : []
+  };
+}
+
 async function interpretCandidateSearchQueryWithAi({ apiKey, query, actor }) {
   const prompt = [
     "You convert recruiter search statements into deterministic candidate-search filters.",
@@ -6941,12 +7140,14 @@ const server = http.createServer(async (req, res) => {
       const normalized = normalizeRecruiterQuery(query, DEFAULT_SYNONYMS);
       const heuristic = parseNaturalLanguageCandidateQuery(normalized.normalized || query);
       let filters = heuristic;
+      let parsedQueryJson = null;
       filters.raw = query;
       if (query && queryMode === "ai") {
         const apiKey = String(process.env.OPENAI_API_KEY || "").trim();
         if (apiKey) {
           try {
-            filters = await interpretCandidateSearchQueryWithAi({ apiKey, query: normalized.normalized || query, actor: user });
+            parsedQueryJson = await parseRecruiterQueryWithOpenAI(normalized.normalized || query, { apiKey, actor: user });
+            filters = mapOpenAiParsedToDeterministicFilters(parsedQueryJson);
             filters.raw = query;
           } catch (error) {
             console.warn("AI query interpretation failed, falling back to heuristic parser:", error?.message || error);
@@ -7084,7 +7285,68 @@ const server = http.createServer(async (req, res) => {
           normalizeDashboardText
         }
       });
-      const matches = (hybrid.items || []).map((item) => {
+      let finalHybrid = hybrid;
+      if (
+        query &&
+        queryMode === "ai" &&
+        Array.isArray(hybrid?.items) &&
+        hybrid.items.length === 0 &&
+        parsedQueryJson?.filters &&
+        (
+          (Array.isArray(parsedQueryJson.filters.fallbackKeywords) && parsedQueryJson.filters.fallbackKeywords.length > 0) ||
+          (Array.isArray(parsedQueryJson.filters.jobTitleKeywords) && parsedQueryJson.filters.jobTitleKeywords.length > 0)
+        )
+      ) {
+        const fallbackTokens = normalizeCandidateSearchKeywords(
+          Array.from(
+            new Set([
+              ...(Array.isArray(parsedQueryJson.filters.fallbackKeywords) ? parsedQueryJson.filters.fallbackKeywords : []),
+              ...(Array.isArray(parsedQueryJson.filters.jobTitleKeywords) ? parsedQueryJson.filters.jobTitleKeywords : [])
+            ])
+          )
+        );
+        if (fallbackTokens.length > 0) {
+          const fallbackFilters = sanitizeCandidateSearchFilters(
+            {
+              ...filters,
+              role: "",
+              roleFamilies: [],
+              skills: fallbackTokens,
+              skillsMatch: "any"
+            },
+            normalized.normalized || query,
+            universe,
+            DEFAULT_SYNONYMS
+          );
+          finalHybrid = await hybridSearchCandidates({
+            universe: scopedUniverse,
+            actor: user,
+            rawQuery: query,
+            normalizedQuery: normalized.normalized,
+            filters: fallbackFilters,
+            queryMode,
+            apiKey,
+            synonyms: DEFAULT_SYNONYMS,
+            helpers: {
+              buildHay: buildCandidateSearchHay,
+              matchesNatural: candidateMatchesNaturalFilter,
+              matchesBoolean: candidateMatchesBooleanQuery,
+              matchesLooseTokens: candidateMatchesLooseNaturalTokens
+            },
+            options: {
+              debug,
+              semantic: semanticEnabled,
+              semanticTopK: 80,
+              parseExperienceToYears,
+              isPlainLookup: isPlainCandidateLookupQuery,
+              buildNaturalSearchFallbackTokens,
+              normalizeDashboardText
+            }
+          });
+          filters = fallbackFilters;
+        }
+      }
+      const matches = (finalHybrid.items || []).map((item) => {
         // Keep backward-compatible "universe" shape but also flatten the most-used candidate fields
         // so exports/indicators do not depend on raw.candidate.
         const candidate = item?.raw?.candidate && typeof item.raw.candidate === "object" ? item.raw.candidate : {};
@@ -7122,12 +7384,24 @@ const server = http.createServer(async (req, res) => {
           query,
           queryMode,
           normalizedQuery: normalized.normalized,
-          filters: hybrid.filters || filters,
-          ...(debug && hybrid.debug ? { debug: hybrid.debug } : {}),
+          filters: finalHybrid.filters || filters,
+          interpretation: parsedQueryJson,
+          ...(debug && finalHybrid.debug ? { debug: finalHybrid.debug } : {}),
           total: matches.length,
           items: matches
         }
       });
+      if (query && queryMode === "ai") {
+        console.info(
+          "[ai-query-parser]",
+          JSON.stringify({
+            rawQuery: query,
+            normalizedQuery: normalized.normalized,
+            parsed: parsedQueryJson,
+            resultCount: matches.length
+          })
+        );
+      }
     } catch (error) {
       sendJson(res, 400, { ok: false, error: String(error.message || error) });
     }
