@@ -2424,7 +2424,13 @@ function parseNaturalLanguageCandidateQuery(rawQuery) {
   }
   const recruiterNameMatch = lower.match(/\bby\s+([a-z][a-z\s.-]+?)(?:\s+for\b|\s+in\b|\s+this\b|\s+last\b|\s+today\b|\s+tomorrow\b|$)/i);
   const assignedToMatch = lower.match(/\bassigned\s+to\s+([a-z][a-z\s.-]+?)(?:\s+for\b|\s+in\b|\s+this\b|\s+last\b|\s+today\b|\s+tomorrow\b|$)/i);
-  const targetLabelMatch = lower.match(/\bfor\s+([a-z0-9][a-z0-9\s&.-]+?)(?:\s+across roles|\s+this week|\s+tomorrow|\s+today|\s+last month|\s+this month|\s+from\s|\s+with\s|\s+under\b|$)/i);
+  // JD/role scoping can come as:
+  // - "profiles shared for <role> in <client>"
+  // - "profiles shared under <role> in <client>"
+  // Keep this deterministic and avoid numeric phrases like "under 15 days".
+  const targetLabelMatch =
+    lower.match(/\bfor\s+([a-z0-9][a-z0-9\s&.-]+?)(?:\s+across roles|\s+this week|\s+tomorrow|\s+today|\s+last month|\s+this month|\s+from\s|\s+with\s|\s+under\b|\s+in\s|$)/i)
+    || lower.match(/\bunder\s+([a-z][a-z0-9\s&.-]+?)(?:\s+across roles|\s+this week|\s+tomorrow|\s+today|\s+last month|\s+this month|\s+from\s|\s+with\s|\s+for\s|\s+in\s|$)/i);
   const statusTerms = [];
   const detailedStatusTerms = [];
   const attemptOutcomeCandidates = [];
@@ -3038,6 +3044,13 @@ function looksLikeNonLocationToken(value = "") {
 function sanitizeCandidateSearchFilters(filters, normalizedQuery = "", universe = [], synonyms = DEFAULT_SYNONYMS) {
   const next = filters && typeof filters === "object" ? { ...filters } : {};
   const qLower = String(normalizedQuery || "").toLowerCase();
+  const hasExplicitExperienceIntent =
+    /\b\d+(?:\.\d+)?\s*\+?\s*years?\b/i.test(qLower)
+    || /\b(?:fresher|entry level|junior|mid level|senior|lead|architect)\b/i.test(qLower);
+  if (!hasExplicitExperienceIntent) {
+    next.minExperienceYears = null;
+    next.maxExperienceYears = null;
+  }
   next.domainKeywords = normalizeCandidateSearchKeywords(next.domainKeywords || []);
   const knownRole = resolveKnownRole(next.role);
   if (!knownRole || isGarbageRoleText(knownRole)) {
