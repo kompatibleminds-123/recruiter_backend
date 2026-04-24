@@ -2859,7 +2859,9 @@ async function parseRecruiterQueryWithOpenAI(rawQuery, { apiKey, actor } = {}) {
     "9) If not contacted in X days: intent=stale_candidates, dateField=last_contacted.",
     "10) immediate joiner/can join immediately => maxNoticeDays=0.",
     "11) If confidence is low, intent=general_keyword_search and keep fallbackKeywords rich.",
-    `12) Current recruiter name is "${String(actor?.name || "").trim()}".`,
+    "12) Never set recruiterName unless recruiter is explicitly mentioned in query text.",
+    "13) Never default recruiterName to current actor.",
+    `Current recruiter name context: "${String(actor?.name || "").trim()}" (for disambiguation only, not default).`,
     "",
     `Query: ${norm}`
   ].join("\n");
@@ -3293,6 +3295,16 @@ function sanitizeCandidateSearchFilters(filters, normalizedQuery = "", universe 
         .filter(Boolean)
     )
   );
+  const queryMentionsAnyRecruiterLabel = () => {
+    if (!knownRecruiterLabels.length) return false;
+    const ranked = [...knownRecruiterLabels].sort((a, b) => b.length - a.length);
+    return ranked.some((label) => {
+      const needle = normalizeDashboardText(label).toLowerCase().trim();
+      if (!needle) return false;
+      const pattern = new RegExp(`\\b${escapeRegex(needle).replace(/\s+/g, "\\s+")}\\b`, "i");
+      return pattern.test(qNormalized);
+    });
+  };
 
   const findKnownClientFromQuery = () => {
     if (!knownClientLabels.length) return "";
@@ -3345,6 +3357,11 @@ function sanitizeCandidateSearchFilters(filters, normalizedQuery = "", universe 
 
   const inferTargetLabelFromQuery = () => {
     if (!knownTargetLabels.length) return "";
+    const hasTargetIntent =
+      /\b(jd|job|role|position|title|opening|openings)\b/i.test(qLower) ||
+      /\bc2h\b/i.test(qLower) ||
+      /\bcontract to hire\b/i.test(qLower);
+    if (!hasTargetIntent) return "";
     const hasC2h = /\bc2h\b/i.test(qLower);
     if (hasC2h) return "c2h";
 
@@ -3391,6 +3408,14 @@ function sanitizeCandidateSearchFilters(filters, normalizedQuery = "", universe 
   const recruiterIntentMentioned =
     /\b(assigned to|owned by|owner|under|sourced by|captured by|by)\b/i.test(qLower) ||
     Boolean(String(next.recruiterName || "").trim());
+  const explicitRecruiterIntent =
+    /\b(assigned to|owned by|owner|under|sourced by|captured by|by)\b/i.test(qLower) ||
+    queryMentionsAnyRecruiterLabel();
+  // Prevent accidental defaulting to actor/current recruiter in generic queries.
+  if (!explicitRecruiterIntent && String(next.recruiterName || "").trim()) {
+    next.recruiterName = "";
+    next.recruiterField = "";
+  }
   if (recruiterIntentMentioned) {
     const resolvedRecruiter = resolveRecruiterFromUniverse(String(next.recruiterName || "").trim());
     if (resolvedRecruiter) {
