@@ -4246,7 +4246,47 @@ function candidateMatchesNaturalFilter(item, filters, actor = null) {
   }
   if (Array.isArray(filters.statuses) && filters.statuses.length) {
     const lifecycleBucket = getAssessmentLifecycleBucket(item);
-    if (!filters.statuses.includes(lifecycleBucket)) return false;
+    const lifecycleTerms = new Set([
+      "sourced",
+      "applied",
+      "shared",
+      "under_interview_process",
+      "under_process",
+      "hold",
+      "rejected",
+      "duplicate",
+      "dropped",
+      "shortlisted",
+      "offered",
+      "joined"
+    ]);
+    const normalizedStatuses = filters.statuses
+      .map((status) => normalizeDashboardText(status).toLowerCase().trim())
+      .filter(Boolean);
+    const strictLifecycleStatuses = normalizedStatuses.filter((status) => lifecycleTerms.has(status));
+    const nonLifecycleStatuses = normalizedStatuses.filter((status) => !lifecycleTerms.has(status));
+
+    if (strictLifecycleStatuses.length && !strictLifecycleStatuses.includes(lifecycleBucket)) return false;
+
+    if (nonLifecycleStatuses.length) {
+      const detailedHay = normalizeDashboardText(
+        [
+          item.candidateStatus || "",
+          item.pipelineStage || "",
+          item.workflowStatus || "",
+          item.attemptStatus || ""
+        ].join(" ")
+      );
+      const detailedOk = nonLifecycleStatuses.every((statusTerm) => {
+        if (statusTerm === "not received") return /\bnot received|no response|not responding|no answer|nr\b/.test(detailedHay);
+        if (statusTerm === "not responding") return /\bnot responding|did not attend|did not join|no response|no answer|nr\b/.test(detailedHay);
+        if (statusTerm === "busy") return /\bbusy\b/.test(detailedHay);
+        if (statusTerm === "call later") return /\bcall back later|call later\b/.test(detailedHay);
+        if (statusTerm === "switch off") return /\bswitch off|switched off\b/.test(detailedHay);
+        return detailedHay.includes(statusTerm);
+      });
+      if (!detailedOk) return false;
+    }
   }
   if (Array.isArray(filters.detailedStatuses) && filters.detailedStatuses.length) {
     const detailedHay = normalizeDashboardText(
