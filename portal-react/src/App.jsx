@@ -131,6 +131,39 @@ const BOOLEAN_SEARCH_EXAMPLE_PROMPTS = [
   'mumbai AND "account executive"'
 ];
 
+const SMART_SEARCH_QUICK_CHIPS = [
+  { id: "ongoing_interviews", label: "Ongoing interviews", querySuffix: "assessment status L1 aligned or L2 aligned or L3 aligned or HR interview aligned or Screening call aligned" },
+  { id: "feedback_awaited", label: "Feedback awaited", querySuffix: "assessment status feedback awaited" },
+  { id: "cv_shared", label: "CV shared", querySuffix: "assessment status cv shared" },
+  { id: "not_contacted_7d", label: "Not Contacted 7 Days", querySuffix: "not contacted in 7 days" },
+  { id: "interview_this_week", label: "Interview This Week", querySuffix: "interview this week" }
+];
+
+function parseKeywordBarTokens(value) {
+  return String(value || "")
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function formatBooleanToken(token) {
+  const value = String(token || "").trim();
+  if (!value) return "";
+  if (/^".*"$/.test(value)) return value;
+  return /\s/.test(value) ? `"${value}"` : value;
+}
+
+function buildBooleanFromKeywordBars({ must = "", any = "", exclude = "" } = {}) {
+  const mustTokens = parseKeywordBarTokens(must).map(formatBooleanToken).filter(Boolean);
+  const anyTokens = parseKeywordBarTokens(any).map(formatBooleanToken).filter(Boolean);
+  const excludeTokens = parseKeywordBarTokens(exclude).map(formatBooleanToken).filter(Boolean);
+  const parts = [];
+  if (mustTokens.length) parts.push(mustTokens.join(" AND "));
+  if (anyTokens.length) parts.push(`(${anyTokens.join(" OR ")})`);
+  if (excludeTokens.length) parts.push(`NOT (${excludeTokens.join(" OR ")})`);
+  return parts.join(" AND ").trim();
+}
+
 const PORTAL_APPLICANT_METADATA_PREFIX = "[APPLICANT_META]";
 
 const DEFAULT_PIPELINE_STAGE_OPTIONS = [
@@ -433,6 +466,22 @@ function parseLocationFilterTokens(value) {
     .split(",")
     .map((item) => item.trim())
     .filter(Boolean);
+}
+
+function parseMultiChipTokens(value) {
+  return String(value || "")
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function toggleMultiChipValue(value, option) {
+  const current = parseMultiChipTokens(value);
+  if (option === "__all__") return "";
+  if (current.includes(option)) {
+    return current.filter((item) => item !== option).join(", ");
+  }
+  return [...current, option].join(", ");
 }
 
 const NOTICE_BUCKET_OPTIONS = [
@@ -3933,6 +3982,15 @@ function PortalApp({ token, onLogout }) {
   const [candidateSearchMode, setCandidateSearchMode] = useState("all");
   const [candidateSearchText, setCandidateSearchText] = useState("");
   const [candidateAiQueryMode, setCandidateAiQueryMode] = useState("natural");
+  const [candidateKeywordMust, setCandidateKeywordMust] = useState("");
+  const [candidateKeywordAny, setCandidateKeywordAny] = useState("");
+  const [candidateKeywordExclude, setCandidateKeywordExclude] = useState("");
+  const [candidateQuickChipIds, setCandidateQuickChipIds] = useState([]);
+  const [candidateFilterPanelOpen, setCandidateFilterPanelOpen] = useState(true);
+  const [candidateFilterDrawerOpen, setCandidateFilterDrawerOpen] = useState(false);
+  const [isCandidateFilterMobile, setIsCandidateFilterMobile] = useState(() => (
+    typeof window !== "undefined" ? window.innerWidth <= 1024 : false
+  ));
   const [candidateSearchResults, setCandidateSearchResults] = useState([]);
   const [candidatePage, setCandidatePage] = useState(1);
   const [candidateStructuredFilters, setCandidateStructuredFilters] = useState(EMPTY_CANDIDATE_STRUCTURED_FILTERS); // applied
@@ -3941,9 +3999,186 @@ function PortalApp({ token, onLogout }) {
   const [candidateSearchingAs, setCandidateSearchingAs] = useState("");
   const [candidateSearchDebug, setCandidateSearchDebug] = useState(null);
   const [candidateParseFeedbackBusy, setCandidateParseFeedbackBusy] = useState(false);
+  const candidateKeywordPreview = useMemo(() => (
+    buildBooleanFromKeywordBars({
+      must: candidateKeywordMust,
+      any: candidateKeywordAny,
+      exclude: candidateKeywordExclude
+    })
+  ), [candidateKeywordMust, candidateKeywordAny, candidateKeywordExclude]);
   const candidateStructuredFiltersDirty = useMemo(() => (
     JSON.stringify(candidateStructuredFiltersDraft) !== JSON.stringify(candidateStructuredFilters)
   ), [candidateStructuredFiltersDraft, candidateStructuredFilters]);
+  const candidateNoticeBucketChipOptions = useMemo(() => (
+    NOTICE_BUCKET_OPTIONS
+      .filter((option) => option.value)
+      .map((option) => option.label)
+  ), []);
+  const candidateNoticeBucketValueByLabel = useMemo(() => (
+    Object.fromEntries(NOTICE_BUCKET_OPTIONS.filter((option) => option.value).map((option) => [option.label, option.value]))
+  ), []);
+  const candidateNoticeBucketLabelByValue = useMemo(() => (
+    Object.fromEntries(NOTICE_BUCKET_OPTIONS.filter((option) => option.value).map((option) => [option.value, option.label]))
+  ), []);
+  const candidateNoticeBucketSelectedLabels = useMemo(() => (
+    parseMultiChipTokens(candidateStructuredFiltersDraft.noticeBucket)
+      .map((value) => candidateNoticeBucketLabelByValue[value] || value)
+      .filter(Boolean)
+  ), [candidateStructuredFiltersDraft.noticeBucket, candidateNoticeBucketLabelByValue]);
+  const candidateFilterPanel = (
+    <div className="item-card compact-card candidate-filter-card">
+      <div className="candidate-filter-head">
+        <div>
+          <h3>Structured filters</h3>
+          <p className="muted">Naukri-style filters. Smart search fills these automatically; you can adjust them before copying or downloading results.</p>
+        </div>
+      </div>
+      <div className="candidate-filter-layout">
+        <div className="candidate-filter-column candidate-filter-column--wide">
+          <div className="candidate-filter-group">
+            <div className="candidate-filter-label">Experience</div>
+            <div className="range-row">
+              <input type="number" min="0" value={candidateStructuredFiltersDraft.minExperience} onChange={(e) => setCandidateStructuredFiltersDraft((current) => ({ ...current, minExperience: e.target.value }))} placeholder="Min experience" />
+              <span>to</span>
+              <input type="number" min="0" value={candidateStructuredFiltersDraft.maxExperience} onChange={(e) => setCandidateStructuredFiltersDraft((current) => ({ ...current, maxExperience: e.target.value }))} placeholder="Max experience" />
+              <span>Years</span>
+            </div>
+          </div>
+          <div className="candidate-filter-group">
+            <div className="candidate-filter-label">Current CTC</div>
+            <div className="range-row">
+              <input type="number" min="0" value={candidateStructuredFiltersDraft.minCurrentCtc} onChange={(e) => setCandidateStructuredFiltersDraft((current) => ({ ...current, minCurrentCtc: e.target.value }))} placeholder="Min salary" />
+              <span>to</span>
+              <input type="number" min="0" value={candidateStructuredFiltersDraft.maxCurrentCtc} onChange={(e) => setCandidateStructuredFiltersDraft((current) => ({ ...current, maxCurrentCtc: e.target.value }))} placeholder="Max salary" />
+              <span>Lacs</span>
+            </div>
+          </div>
+          <div className="candidate-filter-group">
+            <div className="candidate-filter-label">Expected CTC</div>
+            <div className="range-row">
+              <input type="number" min="0" value={candidateStructuredFiltersDraft.minExpectedCtc} onChange={(e) => setCandidateStructuredFiltersDraft((current) => ({ ...current, minExpectedCtc: e.target.value }))} placeholder="Min salary" />
+              <span>to</span>
+              <input type="number" min="0" value={candidateStructuredFiltersDraft.maxExpectedCtc} onChange={(e) => setCandidateStructuredFiltersDraft((current) => ({ ...current, maxExpectedCtc: e.target.value }))} placeholder="Max salary" />
+              <span>Lacs</span>
+            </div>
+          </div>
+        </div>
+        <div className="candidate-filter-column">
+          <label><span>Keywords</span><input value={candidateStructuredFiltersDraft.keySkills} onChange={(e) => setCandidateStructuredFiltersDraft((current) => ({ ...current, keySkills: e.target.value }))} placeholder="SaaS, sales, B2B, candidate name" /></label>
+          <label><span>Locations</span><input value={candidateStructuredFiltersDraft.location} onChange={(e) => setCandidateStructuredFiltersDraft((current) => ({ ...current, location: e.target.value }))} placeholder="Mumbai, Hyderabad" /></label>
+          <div className="filter-block">
+            <div className="candidate-filter-label">Notice period</div>
+            <MultiSelectDropdown
+              label="Notice period"
+              options={candidateNoticeBucketChipOptions}
+              selected={candidateNoticeBucketSelectedLabels}
+              onToggle={(option) => {
+                if (option === "__all__") {
+                  setCandidateStructuredFiltersDraft((current) => ({ ...current, noticeBucket: "", maxNoticeDays: "" }));
+                  return;
+                }
+                const toggledLabels = toggleMultiChipValue(candidateNoticeBucketSelectedLabels.join(", "), option);
+                const selectedLabels = parseMultiChipTokens(toggledLabels);
+                const selectedValues = selectedLabels.map((label) => candidateNoticeBucketValueByLabel[label]).filter(Boolean);
+                setCandidateStructuredFiltersDraft((current) => ({
+                  ...current,
+                  noticeBucket: selectedValues.join(", "),
+                  maxNoticeDays: ""
+                }));
+              }}
+              emptySummary="Any notice period"
+            />
+          </div>
+        </div>
+        <div className="candidate-filter-column">
+          <label><span>Current company</span><input value={candidateStructuredFiltersDraft.currentCompany} onChange={(e) => setCandidateStructuredFiltersDraft((current) => ({ ...current, currentCompany: e.target.value }))} placeholder="Infosys" /></label>
+          <label><span>Qualification</span><input value={candidateStructuredFiltersDraft.qualification} onChange={(e) => setCandidateStructuredFiltersDraft((current) => ({ ...current, qualification: e.target.value }))} placeholder="B.Tech / MBA" /></label>
+          <div className="filter-block">
+            <div className="candidate-filter-label">Client</div>
+            <MultiSelectDropdown
+              label="Client"
+              options={candidateSearchOptions.clients}
+              selected={parseMultiChipTokens(candidateStructuredFiltersDraft.client)}
+              onToggle={(option) => setCandidateStructuredFiltersDraft((current) => ({
+                ...current,
+                client: toggleMultiChipValue(current.client, option)
+              }))}
+              emptySummary="All clients"
+            />
+          </div>
+        </div>
+        <div className="candidate-filter-column">
+          <div className="filter-block">
+            <div className="candidate-filter-label">Recruiter</div>
+            <MultiSelectDropdown
+              label="Recruiter"
+              options={candidateSearchOptions.recruiters}
+              selected={parseMultiChipTokens(candidateStructuredFiltersDraft.recruiter)}
+              onToggle={(option) => setCandidateStructuredFiltersDraft((current) => ({
+                ...current,
+                recruiter: toggleMultiChipValue(current.recruiter, option)
+              }))}
+              emptySummary="All recruiters"
+            />
+          </div>
+          <div className="filter-block">
+            <div className="candidate-filter-label">Gender</div>
+            <MultiSelectDropdown
+              label="Gender"
+              options={Array.from(new Set(["Male", "Female", ...(candidateSearchOptions.genders || [])])).filter(Boolean)}
+              selected={parseMultiChipTokens(candidateStructuredFiltersDraft.gender)}
+              onToggle={(option) => setCandidateStructuredFiltersDraft((current) => ({
+                ...current,
+                gender: toggleMultiChipValue(current.gender, option)
+              }))}
+              emptySummary="All genders"
+            />
+          </div>
+          <div className="filter-block">
+            <div className="candidate-filter-label">Assessment status</div>
+            <MultiSelectDropdown
+              label="Assessment status"
+              options={DEFAULT_STATUS_OPTIONS}
+              selected={parseMultiChipTokens(candidateStructuredFiltersDraft.assessmentStatus)}
+              onToggle={(option) => setCandidateStructuredFiltersDraft((current) => ({
+                ...current,
+                assessmentStatus: toggleMultiChipValue(current.assessmentStatus, option)
+              }))}
+              emptySummary="Any status"
+            />
+          </div>
+          <div className="filter-block">
+            <div className="candidate-filter-label">Attempt outcome</div>
+            <MultiSelectDropdown
+              label="Attempt outcome"
+              options={ATTEMPT_OUTCOME_OPTIONS}
+              selected={parseMultiChipTokens(candidateStructuredFiltersDraft.attemptOutcome)}
+              onToggle={(option) => setCandidateStructuredFiltersDraft((current) => ({
+                ...current,
+                attemptOutcome: toggleMultiChipValue(current.attemptOutcome, option)
+              }))}
+              emptySummary="Any outcome"
+            />
+          </div>
+        </div>
+      </div>
+      <div className="button-row" style={{ marginTop: 10 }}>
+        <button
+          className={candidateStructuredFiltersDirty ? "" : "ghost-btn"}
+          disabled={!candidateStructuredFiltersDirty}
+          onClick={() => {
+            setCandidateStructuredFilters(candidateStructuredFiltersDraft);
+            setCandidatePage(1);
+            setStatus("workspace", "Filters applied.", "ok");
+            if (isCandidateFilterMobile) setCandidateFilterDrawerOpen(false);
+          }}
+        >
+          Apply filters
+        </button>
+        {candidateStructuredFiltersDirty ? <div className="muted">You have unapplied filter changes.</div> : null}
+      </div>
+    </div>
+  );
   const [clientShareDraft, setClientShareDraft] = useState({
     hrName: "",
     recruiterName: "",
@@ -4181,6 +4416,15 @@ function PortalApp({ token, onLogout }) {
       document.removeEventListener("touchstart", handlePointerDown);
     };
   }, [openAssessmentMoreId]);
+  useEffect(() => {
+    const handleResize = () => {
+      const nextMobile = window.innerWidth <= 1024;
+      setIsCandidateFilterMobile(nextMobile);
+      if (!nextMobile) setCandidateFilterDrawerOpen(false);
+    };
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
   const [editCautiousIndicators, setEditCautiousIndicators] = useState(false);
 
   const assignApplicant = (state.applicants || []).find((item) => String(item.id) === String(assignApplicantId)) || null;
@@ -5314,22 +5558,27 @@ function PortalApp({ token, onLogout }) {
         if (requiredSkills.length && !requiredSkills.every((term) => skillsHay.includes(term))) return false;
       }
       if (candidateStructuredFilters.currentCompany && !companyHay.includes(String(candidateStructuredFilters.currentCompany).trim().toLowerCase())) return false;
-      if (candidateStructuredFilters.client && normalizedClientValue !== String(candidateStructuredFilters.client || "").trim().toLowerCase()) return false;
+      const selectedClients = parseMultiChipTokens(candidateStructuredFilters.client).map((item) => item.toLowerCase());
+      if (selectedClients.length && !selectedClients.includes(normalizedClientValue)) return false;
       if (candidateStructuredFilters.minCurrentCtc && (currentCtc == null || currentCtc < minCurrentCtc)) return false;
       if (candidateStructuredFilters.maxCurrentCtc && (currentCtc == null || currentCtc > maxCurrentCtc)) return false;
       if (candidateStructuredFilters.minExpectedCtc && (expectedCtc == null || expectedCtc < minExpectedCtc)) return false;
       if (candidateStructuredFilters.maxExpectedCtc && (expectedCtc == null || expectedCtc > maxExpectedCtc)) return false;
       if (candidateStructuredFilters.qualification && !educationHay.includes(String(candidateStructuredFilters.qualification).trim().toLowerCase())) return false;
-      const selectedNoticeBucket = String(candidateStructuredFilters.noticeBucket || "").trim();
-      if (selectedNoticeBucket) {
-        if (bucketNoticeDays(noticeDays) !== selectedNoticeBucket) return false;
+      const selectedNoticeBuckets = parseMultiChipTokens(candidateStructuredFilters.noticeBucket);
+      if (selectedNoticeBuckets.length) {
+        if (!selectedNoticeBuckets.includes(bucketNoticeDays(noticeDays))) return false;
       } else if (candidateStructuredFilters.maxNoticeDays && (noticeDays == null || noticeDays > Number(candidateStructuredFilters.maxNoticeDays))) {
         return false;
       }
-      if (candidateStructuredFilters.recruiter && normalizedRecruiterValue !== String(candidateStructuredFilters.recruiter || "").trim().toLowerCase()) return false;
-      if (candidateStructuredFilters.gender && normalizedGenderValue !== String(candidateStructuredFilters.gender || "").trim().toLowerCase()) return false;
-      if (candidateStructuredFilters.assessmentStatus && assessmentStatusValue.toLowerCase() !== String(candidateStructuredFilters.assessmentStatus || "").trim().toLowerCase()) return false;
-      if (candidateStructuredFilters.attemptOutcome && normalizeAttemptOutcomeLabel(attemptOutcomeValue).toLowerCase() !== normalizeAttemptOutcomeLabel(candidateStructuredFilters.attemptOutcome).toLowerCase()) return false;
+      const selectedRecruiters = parseMultiChipTokens(candidateStructuredFilters.recruiter).map((item) => item.toLowerCase());
+      if (selectedRecruiters.length && !selectedRecruiters.includes(normalizedRecruiterValue)) return false;
+      const selectedGenders = parseMultiChipTokens(candidateStructuredFilters.gender).map((item) => item.toLowerCase());
+      if (selectedGenders.length && !selectedGenders.includes(normalizedGenderValue)) return false;
+      const selectedAssessmentStatuses = parseMultiChipTokens(candidateStructuredFilters.assessmentStatus).map((item) => item.toLowerCase());
+      if (selectedAssessmentStatuses.length && !selectedAssessmentStatuses.includes(assessmentStatusValue.toLowerCase())) return false;
+      const selectedAttemptOutcomes = parseMultiChipTokens(candidateStructuredFilters.attemptOutcome).map((item) => normalizeAttemptOutcomeLabel(item).toLowerCase());
+      if (selectedAttemptOutcomes.length && !selectedAttemptOutcomes.includes(normalizeAttemptOutcomeLabel(attemptOutcomeValue).toLowerCase())) return false;
       return true;
     });
   }, [candidateBaseUniverse, candidateStructuredFilters, state.assessments]);
@@ -7539,7 +7788,23 @@ function PortalApp({ token, onLogout }) {
   }
 
   async function runCandidateSearch() {
-    if (!candidateSearchText.trim()) {
+    const keywordDrivenBoolean = buildBooleanFromKeywordBars({
+      must: candidateKeywordMust,
+      any: candidateKeywordAny,
+      exclude: candidateKeywordExclude
+    });
+    const hasKeywordBuilder = Boolean(keywordDrivenBoolean);
+    const chipSuffix = SMART_SEARCH_QUICK_CHIPS
+      .filter((chip) => candidateQuickChipIds.includes(chip.id))
+      .map((chip) => String(chip.querySuffix || "").trim())
+      .filter(Boolean)
+      .join(" ");
+    const rawInput = String(candidateSearchText || "").trim();
+    const effectiveSearchText = hasKeywordBuilder
+      ? keywordDrivenBoolean
+      : [rawInput, chipSuffix].filter(Boolean).join(" ").trim();
+
+    if (!effectiveSearchText) {
       setCandidateSearchMode("all");
       setCandidateSearchResults([]);
       setCandidatePage(1);
@@ -7547,30 +7812,30 @@ function PortalApp({ token, onLogout }) {
       setStatus("workspace", "Showing candidates using structured filters.", "ok");
       return;
     }
-    const mode = candidateAiQueryMode === "natural" ? "ai" : "boolean";
+    const mode = hasKeywordBuilder ? "boolean" : (candidateAiQueryMode === "natural" ? "ai" : "boolean");
     const semanticEnabled = copySettings.semanticSearchEnabled !== false;
     setCandidateSearchBusy(true);
     setCandidateSearchDebug(null);
-    setCandidateSearchingAs("");
+    setCandidateSearchingAs(hasKeywordBuilder ? keywordDrivenBoolean : "");
     setStatus("workspace", "Searching candidates...", "ok");
     try {
       // Avoid previous applied filters (especially notice bucket) silently wiping results.
       // Search results should render as-is; filters remain editable and can be applied manually.
       setCandidateStructuredFilters(EMPTY_CANDIDATE_STRUCTURED_FILTERS);
       const result = await api(
-        `/company/candidates/search-natural?q=${encodeURIComponent(candidateSearchText)}&mode=${encodeURIComponent(mode)}&semantic=${semanticEnabled ? "1" : "0"}`,
+        `/company/candidates/search-natural?q=${encodeURIComponent(effectiveSearchText)}&mode=${encodeURIComponent(mode)}&semantic=${semanticEnabled ? "1" : "0"}`,
         token
       );
       setCandidateSearchDebug({
         mode,
         semantic: semanticEnabled,
-        query: candidateSearchText,
+        query: effectiveSearchText,
         searchingAsBoolean: result?.searchingAsBoolean || "",
         filters: result?.filters || null,
         interpretation: result?.interpretation || result?.parsed || result?.planner || null,
         debug: result?.debug || null
       });
-      setCandidateSearchingAs(String(result?.searchingAsBoolean || "").trim());
+      setCandidateSearchingAs(hasKeywordBuilder ? keywordDrivenBoolean : String(result?.searchingAsBoolean || "").trim());
       setCandidateSearchResults(result.items || []);
       setCandidateSearchMode("search");
       setCandidatePage(1);
@@ -7603,11 +7868,11 @@ function PortalApp({ token, onLogout }) {
       } else {
         setCandidateStructuredFiltersDraft(EMPTY_CANDIDATE_STRUCTURED_FILTERS);
       }
-      setStatus("workspace", `${candidateAiQueryMode === "boolean" ? "Boolean search" : "Smart search"} returned ${result.items?.length || 0} candidates.`, "ok");
+      setStatus("workspace", `${mode === "boolean" ? "Boolean search" : "Smart search"} returned ${result.items?.length || 0} candidates.`, "ok");
     } catch (error) {
       setCandidateSearchMode("search");
       setCandidateSearchResults([]);
-      setCandidateSearchDebug({ error: String(error?.message || error), query: candidateSearchText, mode });
+      setCandidateSearchDebug({ error: String(error?.message || error), query: effectiveSearchText, mode });
       setCandidateSearchingAs("");
       setStatus("workspace", `Search failed: ${String(error?.message || error)}`, "error");
     } finally {
@@ -9422,7 +9687,18 @@ function PortalApp({ token, onLogout }) {
                   <input placeholder={candidateAiQueryMode === "boolean" ? '(sales OR "business development") AND saas' : "Get me Account Executives with 4+ years of experience based out of Mumbai with current CTC under 20 L"} value={candidateSearchText} onChange={(e) => setCandidateSearchText(e.target.value)} />
                   <button disabled={candidateSearchBusy} onClick={() => void runCandidateSearch()}>{candidateAiQueryMode === "boolean" ? "Run Boolean Search" : "Run Smart Search"}</button>
                   <button className="ghost-btn" onClick={() => {
+                    if (isCandidateFilterMobile) {
+                      setCandidateFilterDrawerOpen(true);
+                    } else {
+                      setCandidateFilterPanelOpen((current) => !current);
+                    }
+                  }}>{isCandidateFilterMobile ? "Filters" : (candidateFilterPanelOpen ? "Hide filters" : "Show filters")}</button>
+                  <button className="ghost-btn" onClick={() => {
                     setCandidateSearchText("");
+                    setCandidateKeywordMust("");
+                    setCandidateKeywordAny("");
+                    setCandidateKeywordExclude("");
+                    setCandidateQuickChipIds([]);
                     setCandidateSearchResults([]);
                     setCandidateSearchMode("all");
                     setCandidatePage(1);
@@ -9433,6 +9709,40 @@ function PortalApp({ token, onLogout }) {
                 </div>
                 {candidateSearchBusy ? (
                   <div className="muted" style={{ marginTop: 6 }}>Searching candidates...</div>
+                ) : null}
+                {candidateAiQueryMode === "natural" ? (
+                  <div className="item-card compact-card candidate-keyword-builder">
+                    <h3>Smart keyword builder</h3>
+                    <p className="muted">Use comma separated values. We build a clean Boolean preview before search.</p>
+                    <div className="candidate-keyword-grid">
+                      <label><span>Must keywords</span><input value={candidateKeywordMust} onChange={(e) => setCandidateKeywordMust(e.target.value)} placeholder=".NET Core, C#, Azure" /></label>
+                      <label><span>Any keywords</span><input value={candidateKeywordAny} onChange={(e) => setCandidateKeywordAny(e.target.value)} placeholder="Fintech, lending, finance" /></label>
+                      <label><span>Exclude keywords</span><input value={candidateKeywordExclude} onChange={(e) => setCandidateKeywordExclude(e.target.value)} placeholder="sales, recruiter, hr" /></label>
+                    </div>
+                    <div className="filter-block">
+                      <div className="info-label">Quick chips</div>
+                      <div className="chip-row">
+                        {SMART_SEARCH_QUICK_CHIPS.map((chip) => (
+                          <button
+                            key={chip.id}
+                            className={`chip chip-toggle${candidateQuickChipIds.includes(chip.id) ? " active" : ""}`}
+                            onClick={() => setCandidateQuickChipIds((current) => (
+                              current.includes(chip.id)
+                                ? current.filter((id) => id !== chip.id)
+                                : [...current, chip.id]
+                            ))}
+                          >
+                            {chip.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    {candidateKeywordPreview ? (
+                      <div className="muted">Query preview: <code>{candidateKeywordPreview}</code></div>
+                    ) : (
+                      <div className="muted">Add keywords to generate Boolean preview.</div>
+                    )}
+                  </div>
                 ) : null}
                 {candidateAiQueryMode === "natural" && candidateSearchingAs ? (
                   <div className="muted" style={{ marginTop: 8 }}>
@@ -9450,146 +9760,83 @@ function PortalApp({ token, onLogout }) {
                     </button>
                   </div>
                 ) : null}
-                <div className="item-card compact-card candidate-filter-card">
-                  <div className="candidate-filter-head">
-                    <div>
-                      <h3>Structured filters</h3>
-                      <p className="muted">Naukri-style filters. AI Search fills these automatically; you can adjust them before copying or downloading results.</p>
-                    </div>
-                  </div>
-                  <div className="candidate-filter-layout">
-                    <div className="candidate-filter-column candidate-filter-column--wide">
-                      <div className="candidate-filter-group">
-                        <div className="candidate-filter-label">Experience</div>
-                        <div className="range-row">
-                          <input type="number" min="0" value={candidateStructuredFiltersDraft.minExperience} onChange={(e) => setCandidateStructuredFiltersDraft((current) => ({ ...current, minExperience: e.target.value }))} placeholder="Min experience" />
-                          <span>to</span>
-                          <input type="number" min="0" value={candidateStructuredFiltersDraft.maxExperience} onChange={(e) => setCandidateStructuredFiltersDraft((current) => ({ ...current, maxExperience: e.target.value }))} placeholder="Max experience" />
-                          <span>Years</span>
-                        </div>
-                      </div>
-                      <div className="candidate-filter-group">
-                        <div className="candidate-filter-label">Current CTC</div>
-                        <div className="range-row">
-                          <input type="number" min="0" value={candidateStructuredFiltersDraft.minCurrentCtc} onChange={(e) => setCandidateStructuredFiltersDraft((current) => ({ ...current, minCurrentCtc: e.target.value }))} placeholder="Min salary" />
-                          <span>to</span>
-                          <input type="number" min="0" value={candidateStructuredFiltersDraft.maxCurrentCtc} onChange={(e) => setCandidateStructuredFiltersDraft((current) => ({ ...current, maxCurrentCtc: e.target.value }))} placeholder="Max salary" />
-                          <span>Lacs</span>
-                        </div>
-                      </div>
-                      <div className="candidate-filter-group">
-                        <div className="candidate-filter-label">Expected CTC</div>
-                        <div className="range-row">
-                          <input type="number" min="0" value={candidateStructuredFiltersDraft.minExpectedCtc} onChange={(e) => setCandidateStructuredFiltersDraft((current) => ({ ...current, minExpectedCtc: e.target.value }))} placeholder="Min salary" />
-                          <span>to</span>
-                          <input type="number" min="0" value={candidateStructuredFiltersDraft.maxExpectedCtc} onChange={(e) => setCandidateStructuredFiltersDraft((current) => ({ ...current, maxExpectedCtc: e.target.value }))} placeholder="Max salary" />
-                          <span>Lacs</span>
-                        </div>
+                <div className={`candidate-search-content${(!isCandidateFilterMobile && candidateFilterPanelOpen) ? "" : " no-filters"}`}>
+                  {!isCandidateFilterMobile && candidateFilterPanelOpen ? (
+                    <aside className="candidate-search-filters">
+                      {candidateFilterPanel}
+                    </aside>
+                  ) : null}
+                  <section className="candidate-search-results">
+                    <div className="item-card compact-card">
+                      <h3>Search examples</h3>
+                      <p className="muted">{candidateAiQueryMode === "boolean" ? "Use exact keywords with AND / OR and quoted phrases, similar to Naukri boolean search." : "Write the recruiter query naturally. Smart search converts intent into deterministic retrieval on saved fields, recruiter notes, attempts, tags, and hidden CV metadata."}</p>
+                      <div className="button-row">
+                        {(candidateAiQueryMode === "boolean" ? BOOLEAN_SEARCH_EXAMPLE_PROMPTS : AI_SEARCH_EXAMPLE_PROMPTS).map((prompt) => (
+                          <button
+                            key={prompt}
+                            className="ghost-btn"
+                            onClick={() => {
+                              setCandidateSearchText(prompt);
+                              setCandidatePage(1);
+                            }}
+                          >
+                            {prompt}
+                          </button>
+                        ))}
                       </div>
                     </div>
-                    <div className="candidate-filter-column">
-                      <label><span>Keywords</span><input value={candidateStructuredFiltersDraft.keySkills} onChange={(e) => setCandidateStructuredFiltersDraft((current) => ({ ...current, keySkills: e.target.value }))} placeholder="SaaS, sales, B2B, candidate name" /></label>
-                      <label><span>Locations</span><input value={candidateStructuredFiltersDraft.location} onChange={(e) => setCandidateStructuredFiltersDraft((current) => ({ ...current, location: e.target.value }))} placeholder="Mumbai, Hyderabad" /></label>
-                      <label>
-                        <span>Notice period</span>
-                        <select value={candidateStructuredFiltersDraft.noticeBucket} onChange={(e) => {
-                          const bucket = e.target.value;
-                          const maxNoticeDays = bucket === "immediate" ? "0"
-                            : bucket === "15_or_less" ? "15"
-                              : bucket === "15_30" ? "30"
-                                : bucket === "30_60" ? "60"
-                                  : bucket === "60_90" ? "90"
-                                    : "";
-                          setCandidateStructuredFiltersDraft((current) => ({ ...current, noticeBucket: bucket, maxNoticeDays }));
-                        }}>
-                          {NOTICE_BUCKET_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                    <div className="button-row">
+                      <label className="copy-preset-control">
+                        <span>Copy preset</span>
+                        <select value={activeCopyPresetId} onChange={(e) => setActiveCopyPresetId(e.target.value)}>
+                          {exportPresetOptions.map((preset) => <option key={preset.id} value={preset.id}>{preset.label}</option>)}
                         </select>
                       </label>
+                      <button onClick={() => void copyCandidatesExcel()}>Copy Excel</button>
+                      <button onClick={() => void copyCandidatesWhatsapp()}>Copy WhatsApp</button>
+                      <button onClick={() => void copyCandidatesEmail()}>Copy Email</button>
+                      <button className="ghost-btn" onClick={() => downloadCandidatesExcel()}>Download results</button>
                     </div>
-                    <div className="candidate-filter-column">
-                      <label><span>Current company</span><input value={candidateStructuredFiltersDraft.currentCompany} onChange={(e) => setCandidateStructuredFiltersDraft((current) => ({ ...current, currentCompany: e.target.value }))} placeholder="Infosys" /></label>
-                      <label><span>Qualification</span><input value={candidateStructuredFiltersDraft.qualification} onChange={(e) => setCandidateStructuredFiltersDraft((current) => ({ ...current, qualification: e.target.value }))} placeholder="B.Tech / MBA" /></label>
-                      <label><span>Client</span><select value={candidateStructuredFiltersDraft.client} onChange={(e) => setCandidateStructuredFiltersDraft((current) => ({ ...current, client: e.target.value }))}><option value="">All clients</option>{candidateSearchOptions.clients.map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
-                    </div>
-                    <div className="candidate-filter-column">
-                      <label><span>Recruiter</span><select value={candidateStructuredFiltersDraft.recruiter} onChange={(e) => setCandidateStructuredFiltersDraft((current) => ({ ...current, recruiter: e.target.value }))}><option value="">All recruiters</option>{candidateSearchOptions.recruiters.map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
-                      <label><span>Gender</span><select value={candidateStructuredFiltersDraft.gender} onChange={(e) => setCandidateStructuredFiltersDraft((current) => ({ ...current, gender: e.target.value }))}><option value="">All genders</option>{Array.from(new Set(["Male", "Female", ...(candidateSearchOptions.genders || [])])).filter(Boolean).map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
-                      <label><span>Assessment status</span><select value={candidateStructuredFiltersDraft.assessmentStatus} onChange={(e) => setCandidateStructuredFiltersDraft((current) => ({ ...current, assessmentStatus: e.target.value }))}><option value="">Any status</option>{DEFAULT_STATUS_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}</select></label>
-                      <label><span>Attempt outcome</span><select value={candidateStructuredFiltersDraft.attemptOutcome} onChange={(e) => setCandidateStructuredFiltersDraft((current) => ({ ...current, attemptOutcome: e.target.value }))}><option value="">Any outcome</option>{ATTEMPT_OUTCOME_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}</select></label>
-                    </div>
-                  </div>
-                  <div className="button-row" style={{ marginTop: 10 }}>
-                    <button
-                      className={candidateStructuredFiltersDirty ? "" : "ghost-btn"}
-                      disabled={!candidateStructuredFiltersDirty}
-                      onClick={() => {
-                        setCandidateStructuredFilters(candidateStructuredFiltersDraft);
-                        setCandidatePage(1);
-                        setStatus("workspace", "Filters applied.", "ok");
-                      }}
-                    >
-                      Apply filters
-                    </button>
-                    {candidateStructuredFiltersDirty ? <div className="muted">You have unapplied filter changes.</div> : null}
-                  </div>
-                </div>
-                <div className="item-card compact-card">
-                  <h3>Search examples</h3>
-                  <p className="muted">{candidateAiQueryMode === "boolean" ? "Use exact keywords with AND / OR and quoted phrases, similar to Naukri boolean search." : "Write the recruiter query naturally. AI will interpret the statement into structured filters and keywords, then retrieval will run deterministically on saved fields, recruiter notes, other pointers, attempts, tags, and hidden CV metadata."}</p>
-                  <div className="button-row">
-                    {(candidateAiQueryMode === "boolean" ? BOOLEAN_SEARCH_EXAMPLE_PROMPTS : AI_SEARCH_EXAMPLE_PROMPTS).map((prompt) => (
-                      <button
-                        key={prompt}
-                        className="ghost-btn"
-                        onClick={() => {
-                          setCandidateSearchText(prompt);
-                          setCandidatePage(1);
-                        }}
-                      >
-                        {prompt}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-                <div className="button-row">
-                  <label className="copy-preset-control">
-                    <span>Copy preset</span>
-                    <select value={activeCopyPresetId} onChange={(e) => setActiveCopyPresetId(e.target.value)}>
-                      {exportPresetOptions.map((preset) => <option key={preset.id} value={preset.id}>{preset.label}</option>)}
-                    </select>
-                  </label>
-                  <button onClick={() => void copyCandidatesExcel()}>Copy Excel</button>
-                  <button onClick={() => void copyCandidatesWhatsapp()}>Copy WhatsApp</button>
-                  <button onClick={() => void copyCandidatesEmail()}>Copy Email</button>
-                  <button className="ghost-btn" onClick={() => downloadCandidatesExcel()}>Download results</button>
-                </div>
-                <div className="stack-list">
-                  {!pagedCandidates.length ? <div className="empty-state">No candidates found for this view.</div> : pagedCandidates.map((item) => (
-                    <article className="item-card compact-card" key={item.id || item.assessmentId}>
-                      <div className="item-card__top">
-                        <div>
-                          <h3>{item.name || item.candidateName || "Candidate"} | {item.role || item.currentDesignation || item.jdTitle || "Untitled role"}</h3>
-                          <p className="muted">{[item.company || item.currentCompany || "", item.location || "", item.ownerRecruiter ? `Recruiter: ${item.ownerRecruiter}` : "", item.source ? `Source: ${item.source}` : ""].filter(Boolean).join(" | ")}</p>
-                          <div className="candidate-snippet">{[item.experience || item.totalExperience || "", item.current_ctc || item.currentCtc ? `Current CTC: ${item.current_ctc || item.currentCtc}` : "", item.expected_ctc || item.expectedCtc ? `Expected CTC: ${item.expected_ctc || item.expectedCtc}` : "", item.notice_period || item.noticePeriod ? `Notice: ${item.notice_period || item.noticePeriod}` : ""].filter(Boolean).join("\n")}</div>
-                          {buildVisibleTagList(item).length ? (
-                            <div className="chip-row">
-                              {buildVisibleTagList(item).slice(0, 8).map((tag) => <span key={tag} className="chip">{tag}</span>)}
+                    <div className="stack-list">
+                      {!pagedCandidates.length ? <div className="empty-state">No candidates found for this view.</div> : pagedCandidates.map((item) => (
+                        <article className="item-card compact-card" key={item.id || item.assessmentId}>
+                          <div className="item-card__top">
+                            <div>
+                              <h3>{item.name || item.candidateName || "Candidate"} | {item.role || item.currentDesignation || item.jdTitle || "Untitled role"}</h3>
+                              <p className="muted">{[item.company || item.currentCompany || "", item.location || "", item.ownerRecruiter ? `Recruiter: ${item.ownerRecruiter}` : "", item.source ? `Source: ${item.source}` : ""].filter(Boolean).join(" | ")}</p>
+                              <div className="candidate-snippet">{[item.experience || item.totalExperience || "", item.current_ctc || item.currentCtc ? `Current CTC: ${item.current_ctc || item.currentCtc}` : "", item.expected_ctc || item.expectedCtc ? `Expected CTC: ${item.expected_ctc || item.expectedCtc}` : "", item.notice_period || item.noticePeriod ? `Notice: ${item.notice_period || item.noticePeriod}` : ""].filter(Boolean).join("\n")}</div>
+                              {buildVisibleTagList(item).length ? (
+                                <div className="chip-row">
+                                  {buildVisibleTagList(item).slice(0, 8).map((tag) => <span key={tag} className="chip">{tag}</span>)}
+                                </div>
+                              ) : null}
+                              <div className="button-row">
+                                <button onClick={() => setDatabaseProfileItem(item)}>Open profile</button>
+                                {candidateHasStoredCv(item) ? <button className="ghost-btn" onClick={() => openDatabaseCandidateCv(item)}>Open CV</button> : null}
+                              </div>
                             </div>
-                          ) : null}
-                          <div className="button-row">
-                            <button onClick={() => setDatabaseProfileItem(item)}>Open profile</button>
-                            {candidateHasStoredCv(item) ? <button className="ghost-btn" onClick={() => openDatabaseCandidateCv(item)}>Open CV</button> : null}
                           </div>
-                        </div>
+                        </article>
+                      ))}
+                    </div>
+                    <div className="button-row">
+                      <button className="ghost-btn" disabled={candidatePage <= 1} onClick={() => setCandidatePage((page) => Math.max(1, page - 1))}>Previous</button>
+                      <div className="muted">Page {candidatePage} of {totalCandidatePages}</div>
+                      <button className="ghost-btn" disabled={candidatePage >= totalCandidatePages} onClick={() => setCandidatePage((page) => Math.min(totalCandidatePages, page + 1))}>Next</button>
+                    </div>
+                  </section>
+                </div>
+                {isCandidateFilterMobile && candidateFilterDrawerOpen ? (
+                  <div className="candidate-filter-drawer-backdrop" onClick={() => setCandidateFilterDrawerOpen(false)}>
+                    <div className="candidate-filter-drawer" onClick={(e) => e.stopPropagation()}>
+                      <div className="candidate-filter-drawer__head">
+                        <h3>Filters</h3>
+                        <button className="ghost-btn" onClick={() => setCandidateFilterDrawerOpen(false)}>Close</button>
                       </div>
-                    </article>
-                  ))}
-                </div>
-                <div className="button-row">
-                  <button className="ghost-btn" disabled={candidatePage <= 1} onClick={() => setCandidatePage((page) => Math.max(1, page - 1))}>Previous</button>
-                  <div className="muted">Page {candidatePage} of {totalCandidatePages}</div>
-                  <button className="ghost-btn" disabled={candidatePage >= totalCandidatePages} onClick={() => setCandidatePage((page) => Math.min(totalCandidatePages, page + 1))}>Next</button>
-                </div>
+                      {candidateFilterPanel}
+                    </div>
+                  </div>
+                ) : null}
               </Section>
             </div>
           } />

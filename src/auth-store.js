@@ -1725,6 +1725,11 @@ async function saveAssessment({ actorUserId, companyId, assessment }) {
           const prevIdx = stageIndex(prevLower);
           return stageRound(prevIdx);
         }
+        // Rule: interview reject => currently running aligned round is considered done.
+        if (nextLower === "interview reject") {
+          const prevIdx = stageIndex(prevLower);
+          return stageRound(prevIdx);
+        }
         return "";
       };
 
@@ -1770,11 +1775,14 @@ async function saveAssessment({ actorUserId, companyId, assessment }) {
       }
 
       if (doneRound) {
+        const doneEventAt =
+          bestDate(saved?.interviewAt || previous?.interview_at || previous?.interviewAt)
+          || new Date().toISOString();
         await insertAssessmentEvent({
           ...eventBase,
           eventType: "interview_done",
           status: nextStatus,
-          eventAt: new Date().toISOString(),
+          eventAt: doneEventAt,
           payload: { ...eventBase.payload, round: doneRound }
         });
       }

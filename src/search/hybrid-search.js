@@ -186,14 +186,10 @@ async function hybridSearchCandidates({
 
   // 1) Keep existing filter semantics (backward compatible)
   let structuredMatches = [];
-  const enforceBooleanDeterministic = options.enforceDeterministicFiltersWithBoolean === true;
   if (queryMode === "boolean") {
     structuredMatches = prepared
       .filter(({ item }) => {
         if (!matchesBoolean(item, rawQuery)) return false;
-        if (enforceBooleanDeterministic && typeof matchesNatural === "function") {
-          return matchesNatural(item, matchingFilters, actor);
-        }
         return true;
       })
       .slice(0, 500);

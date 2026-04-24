@@ -7771,13 +7771,9 @@ const server = http.createServer(async (req, res) => {
       } else if (queryMode === "ai" && parsedQueryJson) {
         searchPathUsed = "deterministic_db_filter_only";
       }
-      const searchingAsBoolean = queryMode === "ai"
-        ? buildBooleanQueryFromFilters(query, filters)
-        : "";
-      const effectiveQueryMode = queryMode === "ai" ? "boolean" : queryMode;
-      const effectiveRawQuery = effectiveQueryMode === "boolean"
-        ? (searchingAsBoolean || query)
-        : query;
+      const searchingAsBoolean = "";
+      const effectiveQueryMode = queryMode;
+      const effectiveRawQuery = query;
       const apiKey = useSemantic ? String(process.env.OPENAI_API_KEY || "").trim() : "";
       const hybrid = await hybridSearchCandidates({
         universe: scopedUniverse,
@@ -7801,8 +7797,7 @@ const server = http.createServer(async (req, res) => {
           parseExperienceToYears,
           isPlainLookup: isPlainCandidateLookupQuery,
           buildNaturalSearchFallbackTokens,
-          normalizeDashboardText,
-          enforceDeterministicFiltersWithBoolean: queryMode === "ai"
+          normalizeDashboardText
         }
       });
       let finalHybrid = hybrid;
@@ -7826,12 +7821,12 @@ const server = http.createServer(async (req, res) => {
             ])
           )
         );
-        if (fallbackTokens.length > 0) {
-          const fallbackFilters = sanitizeCandidateSearchFilters(
-            {
-              ...filters,
-              role: "",
-              roleFamilies: [],
+          if (fallbackTokens.length > 0) {
+            const fallbackFilters = sanitizeCandidateSearchFilters(
+              {
+                ...filters,
+                role: "",
+                roleFamilies: [],
               skills: fallbackTokens,
               skillsMatch: "any"
             },
@@ -7842,7 +7837,7 @@ const server = http.createServer(async (req, res) => {
           finalHybrid = await hybridSearchCandidates({
             universe: scopedUniverse,
             actor: user,
-            rawQuery: buildBooleanQueryFromFilters(query, fallbackFilters) || effectiveRawQuery,
+            rawQuery: effectiveRawQuery,
             normalizedQuery: normalized.normalized,
             filters: fallbackFilters,
             queryMode: effectiveQueryMode,
@@ -7861,8 +7856,7 @@ const server = http.createServer(async (req, res) => {
               parseExperienceToYears,
               isPlainLookup: isPlainCandidateLookupQuery,
               buildNaturalSearchFallbackTokens,
-              normalizeDashboardText,
-              enforceDeterministicFiltersWithBoolean: queryMode === "ai"
+              normalizeDashboardText
             }
           });
           filters = fallbackFilters;
