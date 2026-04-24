@@ -3353,6 +3353,32 @@ function sanitizeCandidateSearchFilters(filters, normalizedQuery = "", universe 
     }
   }
 
+  // Scope phrases like "from captured notes" / "in assessments" indicate source bucket,
+  // not a date field. Avoid polluting dateField with "captured" in such queries unless
+  // a real date intent is present.
+  const hasExplicitDateIntent =
+    /\b(today|yesterday|tomorrow|this week|last week|this month|last month|last\s+\d+\s+days|from\s+\d|between\s+\d|january|february|march|april|may|june|july|august|september|october|november|december)\b/i.test(qLower);
+  if (!hasExplicitDateIntent) {
+    const hasSourceScopeOnly = /\b(from|in)\s+(captured\s+notes?|captured\s+note|assessments?|applied|applicants?)\b/i.test(qLower);
+    if (hasSourceScopeOnly && ["captured", "shared", "interview", "joined"].includes(String(next.dateField || "").trim())) {
+      next.dateField = "";
+    }
+  }
+
+  // If query is primarily status + source/client scoping (no role intent),
+  // drop noisy skill tokens that AI may hallucinate from sentence grammar.
+  const hasStatusIntent =
+    Boolean(String(next.attemptOutcome || "").trim()) ||
+    Boolean(String(next.assessmentStatus || "").trim()) ||
+    (Array.isArray(next.detailedStatuses) && next.detailedStatuses.length > 0);
+  const hasRoleIntent = Boolean(String(next.role || "").trim()) || (Array.isArray(next.roleFamilies) && next.roleFamilies.length > 0);
+  const hasSourceScopeIntent = /\b(captured\s+notes?|captured\s+note|assessments?|assessment\s+status|attempt\s+outcome|applied|applicants?)\b/i.test(qLower);
+  if (hasStatusIntent && hasSourceScopeIntent && !hasRoleIntent) {
+    next.skills = [];
+    next.mustSkills = [];
+    next.anyOfSkillGroups = [];
+  }
+
   return next;
 }
 
