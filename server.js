@@ -69,6 +69,7 @@ const {
 
 const { DEFAULT_SYNONYMS, mapLocationAlias } = require("./src/search/synonyms");
 const { normalizeRecruiterQuery } = require("./src/search/normalize");
+const { parseDeterministicRecruiterQuery } = require("./src/search/query-parser");
 const { hybridSearchCandidates, buildCandidateSemanticText } = require("./src/search/hybrid-search");
 const { createEmbedding, hashText } = require("./src/search/embedding-service");
 const { upsertCandidateSearchDocV1, listCandidateSearchDocsForCompany, listAssessmentEvents } = require("./src/search/search-doc-store");
@@ -2390,11 +2391,12 @@ async function backfillCandidateSkillsFromMetadata(user) {
 function parseNaturalLanguageCandidateQuery(rawQuery) {
   const query = String(rawQuery || "").trim();
   const lower = query.toLowerCase();
+  const deterministic = parseDeterministicRecruiterQuery(query, DEFAULT_SYNONYMS);
   const statusNoiseRegex = /\b(feedback awaited|awaiting feedback|awaited feedback|not received|not responding|no response|nr|call later|call back later|switch off|switched off|not reachable|disconnected|busy|jd shared|shared jd|interested|not interested|revisit for other role|screening reject|interview reject|duplicate|shortlisted|offered|joined|hold)\b/ig;
   const upcomingJoiningsIntent = /\bupcoming\s+joining(?:s)?\b/i.test(lower);
   const minExperienceMatch = lower.match(/(\d+(?:\.\d+)?)\s*\+?\s*years?/);
   const maxExperienceMatch = lower.match(/\b(?:under|less than|max)\s+(\d+(?:\.\d+)?)\s*years?/);
-  const locationMatch = lower.match(/\b(?:based out of|based in|located in|in)\s+([a-z][a-z\s]+?)(?:\s+\bwith\b|\s+\bunder\b|\s+\bbelow\b|\s+\bfor\b|$)/i);
+  const locationMatch = lower.match(/\b(?:based out of|based in|located in|in|from)\s+([a-z][a-z\s]+?)(?:\s+\bwith\b|\s+\bunder\b|\s+\bbelow\b|\s+\bfor\b|$)/i);
   const ctcAboveMatch = lower.match(/\b(?:current\s+ctc\s+(?:above|over|more than|min|minimum)|ctc\s+(?:above|over|more than|min|minimum)|package\s+(?:above|over|more than|min|minimum)|more than)\s+(\d+(?:\.\d+)?)\s*(l|lpa|lakhs?|lac|cr|crore|k)?\b/i);
   const ctcUnderMatch = lower.match(/\b(?:current\s+ctc\s+under|ctc\s+under|under|below)\s+(\d+(?:\.\d+)?)\s*(l|lpa|lakhs?|lac|cr|crore|k)?\b/i);
   const expectedCtcAboveMatch = lower.match(/\b(?:expected\s+ctc\s+(?:above|over|more than|min|minimum))\s+(\d+(?:\.\d+)?)\s*(l|lpa|lakhs?|lac|cr|crore|k)?\b/i);
@@ -2567,14 +2569,22 @@ function parseNaturalLanguageCandidateQuery(rawQuery) {
   roleText = roleText.replace(/\s+/g, " ").trim();
   roleText = roleText.replace(/\bcandidates?\b/gi, "").trim();
   roleText = roleText.replace(/\bprofiles?\b/gi, "").trim();
-  const locations = locationListMatch
+  const locationsFromRegex = locationListMatch
     ? String(locationListMatch[1] || "")
         // Support "an" typo as well ("an" -> "and") consistently in split.
         .split(/\s+(?:or|and|an)\s+/i)
         .map((item) => String(item || "").trim())
         .filter(Boolean)
     : [];
-  let derivedLocation = locationMatch ? String(locationMatch[1] || "").trim() : "";
+  const deterministicLocations = Array.isArray(deterministic?.locations) ? deterministic.locations : [];
+  const locations = deterministicLocations.length
+    ? deterministicLocations
+    : locationsFromRegex;
+  let derivedLocation = deterministic?.location
+    ? String(deterministic.location || "").trim()
+    : locationMatch
+      ? String(locationMatch[1] || "").trim()
+      : "";
   // Do not guess trailing "locations" from remaining role text.
   // This caused false positives like "Loan sales" being treated as a location.
   const explicitSkills = skillMatch
@@ -2625,11 +2635,27 @@ function parseNaturalLanguageCandidateQuery(rawQuery) {
     .filter((skill) => !["not", "received", "feedback", "awaited", "awaiting", "responding", "response", "nr"].includes(String(skill || "").toLowerCase().trim()));
   const hasOrOperator = /\bor\b/i.test(lower);
   const skillsMatch = hasOrOperator && cleanedSkills.length >= 2 ? "any" : "all";
+  const resolvedRoleText = String(deterministic?.role || roleText || "").trim();
+  const resolvedRoleFamilies = Array.isArray(deterministic?.roleFamilies) && deterministic.roleFamilies.length
+    ? deterministic.roleFamilies
+    : detectRoleFamilies(resolvedRoleText);
+  const resolvedSkills = Array.isArray(deterministic?.skills) && deterministic.skills.length
+    ? deterministic.skills
+    : Array.from(new Set(cleanedSkills));
+  const resolvedMaxNoticeDays = typeof deterministic?.maxNoticeDays === "number"
+    ? deterministic.maxNoticeDays
+    : noticeMatch
+      ? parseNoticePeriodToDays(`${noticeMatch[1]} ${noticeMatch[2]}`)
+      : null;
+  const resolvedDomainKeywords = Array.isArray(deterministic?.domainKeywords)
+    ? deterministic.domainKeywords.map((item) => String(item || "").trim()).filter(Boolean)
+    : [];
+  if (!derivedLocation && locations.length) derivedLocation = String(locations[0] || "").trim();
 
   return {
     raw: query,
-    role: roleText,
-    roleFamilies: detectRoleFamilies(roleText),
+    role: resolvedRoleText,
+    roleFamilies: resolvedRoleFamilies,
     minExperienceYears: minExperienceMatch ? Number(minExperienceMatch[1]) : null,
     maxExperienceYears: maxExperienceMatch ? Number(maxExperienceMatch[1]) : null,
     location: derivedLocation,
@@ -2638,8 +2664,9 @@ function parseNaturalLanguageCandidateQuery(rawQuery) {
     maxCurrentCtcLpa: ctcUnderMatch ? parseAmountToLpa(`${ctcUnderMatch[1]} ${ctcUnderMatch[2] || "lpa"}`) : null,
     minExpectedCtcLpa: expectedCtcAboveMatch ? parseAmountToLpa(`${expectedCtcAboveMatch[1]} ${expectedCtcAboveMatch[2] || "lpa"}`) : null,
     maxExpectedCtcLpa: expectedCtcUnderMatch ? parseAmountToLpa(`${expectedCtcUnderMatch[1]} ${expectedCtcUnderMatch[2] || "lpa"}`) : null,
-    maxNoticeDays: noticeMatch ? parseNoticePeriodToDays(`${noticeMatch[1]} ${noticeMatch[2]}`) : null,
-    skills: Array.from(new Set(cleanedSkills)),
+    maxNoticeDays: resolvedMaxNoticeDays,
+    skills: resolvedSkills,
+    domainKeywords: resolvedDomainKeywords,
     skillsMatch,
     currentCompany: currentCompanyMatch ? String(currentCompanyMatch[1] || "").trim() : "",
     statuses: statusTerms,
@@ -2706,7 +2733,9 @@ function buildCandidateSearchInterpretationSchema() {
     ],
     properties: {
       role: { type: "string" },
+      roleFamilies: { type: "array", items: { type: "string" }, maxItems: 6 },
       skills: { type: "array", items: { type: "string" }, maxItems: 12 },
+      domainKeywords: { type: "array", items: { type: "string" }, maxItems: 12 },
       locations: { type: "array", items: { type: "string" }, maxItems: 8 },
       minExperienceYears: { type: ["number", "null"] },
       maxExperienceYears: { type: ["number", "null"] },
@@ -2808,7 +2837,9 @@ async function interpretCandidateSearchQueryWithAi({ apiKey, query, actor }) {
   return {
     raw: String(query || "").trim(),
     role: String(result?.role || "").trim(),
-    roleFamilies: detectRoleFamilies(String(result?.role || "").trim()),
+    roleFamilies: Array.isArray(result?.roleFamilies) && result.roleFamilies.length
+      ? result.roleFamilies.map((item) => String(item || "").trim()).filter(Boolean)
+      : detectRoleFamilies(String(result?.role || "").trim()),
     minExperienceYears: typeof result?.minExperienceYears === "number" ? result.minExperienceYears : null,
     maxExperienceYears: typeof result?.maxExperienceYears === "number" ? result.maxExperienceYears : null,
     location: safeLocations.length ? String(safeLocations[0] || "").trim() : "",
@@ -2819,6 +2850,7 @@ async function interpretCandidateSearchQueryWithAi({ apiKey, query, actor }) {
     maxExpectedCtcLpa: typeof result?.maxExpectedCtcLpa === "number" ? result.maxExpectedCtcLpa : null,
     maxNoticeDays: safeMaxNoticeDays,
     skills: normalizeCandidateSearchKeywords(result?.skills || []),
+    domainKeywords: normalizeCandidateSearchKeywords(result?.domainKeywords || []),
     currentCompany: String(result?.currentCompany || "").trim(),
     statuses: Array.isArray(result?.statuses) ? result.statuses.map((item) => normalizeDashboardText(item)).filter(Boolean) : [],
     detailedStatuses: nextDetailedStatuses,
@@ -2868,8 +2900,9 @@ function splitCandidateSearchKeywords(value = "") {
       part.length >= 2 &&
       ![
         "get", "me", "show", "all", "profiles", "profile", "candidate", "candidates",
-        "with", "for", "in", "from", "the", "and", "or",
-        "those", "these", "who", "whom", "whose", "are", "is", "was", "were", "into", "within", "between"
+        "with", "for", "in", "from", "the", "and", "or", "at", "to", "of", "by", "find",
+        "those", "these", "who", "whom", "whose", "are", "is", "was", "were", "into", "within", "between",
+        "has", "have", "less", "than", "under", "below", "maximum", "max", "days", "day", "notice", "period"
       ].includes(part)
     );
 }
@@ -2956,6 +2989,7 @@ function looksLikeNonLocationToken(value = "") {
 function sanitizeCandidateSearchFilters(filters, normalizedQuery = "", universe = [], synonyms = DEFAULT_SYNONYMS) {
   const next = filters && typeof filters === "object" ? { ...filters } : {};
   const qLower = String(normalizedQuery || "").toLowerCase();
+  next.domainKeywords = normalizeCandidateSearchKeywords(next.domainKeywords || []);
   const knownLocations = buildKnownUniverseLocationSet(universe, synonyms);
   const noiseSkillTokens = new Set([
     "not", "received", "feedback", "awaited", "awaiting", "responding", "response", "nr",
@@ -3177,7 +3211,7 @@ function sanitizeCandidateSearchFilters(filters, normalizedQuery = "", universe 
     const domainTermsFromQuery = Array.from(
       new Set((qLower.match(/\b(finance|fintech|lending|loan)\b/g) || []).map((m) => String(m || "").trim().toLowerCase()))
     ).filter(Boolean);
-    const domainTerms = Array.from(new Set([...(domainTermsFromSkills || []), ...(domainTermsFromQuery || [])]));
+    const domainTerms = Array.from(new Set([...(domainTermsFromSkills || []), ...(domainTermsFromQuery || []), ...next.domainKeywords]));
 
     // IMPORTANT:
     // `roleFamilies=["sales"]` can be too strict because many "sales" roles are stored as AE/AM/BDM/RM etc
@@ -3213,6 +3247,22 @@ function sanitizeCandidateSearchFilters(filters, normalizedQuery = "", universe 
     // Use OR semantics for domain terms.
     if (domainTerms.length >= 2) next.skillsMatch = "any";
     next.anyOfSkillGroups = domainTerms.length ? [domainTerms, salesFamilyTerms] : [salesFamilyTerms];
+  }
+
+  // Generic domain keyword support (not only finance/sales).
+  // Keep deterministic extraction as OR-group and avoid poisoning `skills` with noisy tokens.
+  if (Array.isArray(next.domainKeywords) && next.domainKeywords.length) {
+    const existingGroups = Array.isArray(next.anyOfSkillGroups) ? next.anyOfSkillGroups.filter((group) => Array.isArray(group) && group.length) : [];
+    const hasDomainGroup = existingGroups.some((group) =>
+      group.some((term) => next.domainKeywords.includes(String(term || "").toLowerCase().trim()))
+    );
+    if (!hasDomainGroup) {
+      existingGroups.push(Array.from(new Set(next.domainKeywords)));
+    }
+    next.anyOfSkillGroups = existingGroups;
+    if (Array.isArray(next.skills) && next.skills.length) {
+      next.skills = next.skills.filter((token) => !next.domainKeywords.includes(String(token || "").toLowerCase().trim()));
+    }
   }
 
   // If someone asks for "duplicate" without explicitly scoping to assessments,
@@ -6674,6 +6724,9 @@ const server = http.createServer(async (req, res) => {
         if (!filters.assessmentStatus && heuristic.assessmentStatus) filters.assessmentStatus = heuristic.assessmentStatus;
         if ((!Array.isArray(filters.locations) || !filters.locations.length) && Array.isArray(heuristic.locations) && heuristic.locations.length) {
           filters.locations = heuristic.locations;
+        }
+        if ((!Array.isArray(filters.domainKeywords) || !filters.domainKeywords.length) && Array.isArray(heuristic.domainKeywords) && heuristic.domainKeywords.length) {
+          filters.domainKeywords = heuristic.domainKeywords;
         }
         // If query uses OR, avoid "all skills must match" which returns zero too often.
         if (String(filters.skillsMatch || "").trim() === "" && heuristic.skillsMatch) filters.skillsMatch = heuristic.skillsMatch;

@@ -19,6 +19,25 @@ function normalizeWhitespace(value) {
   return String(value || "").replace(/\s+/g, " ").trim();
 }
 
+function dedupeAdjacentWords(value) {
+  let next = String(value || "");
+  let previous = "";
+  while (next !== previous) {
+    previous = next;
+    next = next.replace(/\b([a-z0-9#+.]+)(?:\s+\1\b)+/gi, "$1");
+  }
+  return next;
+}
+
+function normalizePunctuation(value) {
+  return String(value || "")
+    .replace(/[(){}\[\]]/g, " ")
+    .replace(/[|]/g, " ")
+    .replace(/[;]+/g, ",")
+    .replace(/\s*\/\s*/g, " / ")
+    .replace(/\s*,\s*/g, ", ");
+}
+
 function standardizeExperienceExpressions(text) {
   let next = normalizeWhitespace(text).toLowerCase();
   if (!next) return "";
@@ -78,10 +97,13 @@ function standardizeSkillAliases(text) {
 function normalizeRecruiterQuery(rawQuery, synonyms) {
   const raw = String(rawQuery || "");
   let normalized = raw;
+  normalized = normalizePunctuation(normalized);
   normalized = normalizeWhitespace(normalized);
   normalized = standardizeExperienceExpressions(normalized);
   normalized = standardizeSkillAliases(normalized);
   normalized = standardizeLocationAliases(normalized, synonyms);
+  normalized = normalized.replace(/\bless\s+less\s+than\b/gi, "less than");
+  normalized = dedupeAdjacentWords(normalized);
   normalized = normalizeWhitespace(normalized).toLowerCase();
 
   return {
@@ -93,6 +115,8 @@ function normalizeRecruiterQuery(rawQuery, synonyms) {
 
 module.exports = {
   normalizeRecruiterQuery,
+  normalizePunctuation,
+  dedupeAdjacentWords,
   normalizeWhitespace,
   standardizeExperienceExpressions,
   standardizeLocationAliases,

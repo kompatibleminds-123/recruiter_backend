@@ -2,6 +2,7 @@ const path = require("path");
 
 const specs = [
   "./search-normalize.spec.js",
+  "./search-query-parser.spec.js",
   "./search-hybrid.spec.js"
 ];
 
@@ -22,4 +23,3 @@ main().catch((err) => {
   console.error(err?.stack || String(err));
   process.exit(1);
 });
-
