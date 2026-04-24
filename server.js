@@ -2485,7 +2485,10 @@ function parseNaturalLanguageCandidateQuery(rawQuery) {
     lower.match(/\bfrom\s+([a-z0-9,/\- ]+?)\s+to\s+([a-z0-9,/\- ]+?)(?:\bwith\b|\bfor\b|$)/i) ||
     lower.match(/\bbetween\s+([a-z0-9,/\- ]+?)\s+and\s+([a-z0-9,/\- ]+?)(?:\bwith\b|\bfor\b|$)/i);
   const monthOnlyMatch = lower.match(/\bin\s+(january|february|march|april|may|june|july|august|september|october|november|december)\b/i);
-  const clientMatch = lower.match(/\b(?:for client|for)\s+([a-z0-9][a-z0-9\s&.-]+?)(?=\s+\b(?:in\s+captured\s+notes?|in\s+captured\s+note|from\s+captured\s+notes?|from\s+captured\s+note|in\s+assessments?|from\s+assessments?|in\s+applied|from\s+applied)\b|$)/i);
+  const clientMatch =
+    lower.match(/\bin\s+([a-z0-9][a-z0-9\s&.-]+?)\s+from\s+attempt\s+outcome\b/i) ||
+    lower.match(/\bin\s+([a-z0-9][a-z0-9\s&.-]+?)\s+from\s+assessment\s+status\b/i) ||
+    lower.match(/\b(?:for client|for)\s+([a-z0-9][a-z0-9\s&.-]+?)(?=\s+\b(?:in\s+captured\s+notes?|in\s+captured\s+note|from\s+captured\s+notes?|from\s+captured\s+note|in\s+assessments?|from\s+assessments?|in\s+applied|from\s+applied)\b|$)/i);
   let dateFrom = "";
   let dateTo = "";
   if (/\blast month\b/i.test(lower)) {
@@ -2918,6 +2921,44 @@ function normalizeCandidateSearchKeywords(values = []) {
   return Array.from(new Set(list.flatMap(splitCandidateSearchKeywords)));
 }
 
+function isGarbageRoleText(value = "") {
+  const role = normalizeDashboardText(value).toLowerCase().trim();
+  if (!role) return true;
+  if (role.length > 80) return true;
+  const hardBad = [
+    "those who are",
+    "who are",
+    "get me",
+    "show me",
+    "find me",
+    "candidates",
+    "profiles",
+    "candidate",
+    "profile"
+  ];
+  if (hardBad.some((phrase) => role === phrase || role.startsWith(`${phrase} `) || role.endsWith(` ${phrase}`))) return true;
+  if (/^(those|who|are|with|from|in|for|me|get|show|find|\s)+$/i.test(role)) return true;
+  const tokens = role.split(/\s+/).filter(Boolean);
+  if (!tokens.length) return true;
+  const filler = new Set(["those", "who", "are", "with", "from", "in", "for", "me", "get", "show", "find", "all", "the"]);
+  const fillerCount = tokens.filter((token) => filler.has(token)).length;
+  return fillerCount === tokens.length || fillerCount >= Math.max(2, Math.ceil(tokens.length * 0.7));
+}
+
+function escapeRegex(value = "") {
+  return String(value || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function candidateHayMatchesTerm(hay = "", term = "") {
+  const normalizedHay = String(hay || "").toLowerCase();
+  const normalizedTerm = normalizeDashboardText(term).toLowerCase().trim();
+  if (!normalizedHay || !normalizedTerm) return false;
+  if (normalizedTerm.includes(" ")) {
+    return normalizedHay.includes(normalizedTerm);
+  }
+  return new RegExp(`\\b${escapeRegex(normalizedTerm)}\\b`, "i").test(normalizedHay);
+}
+
 function buildKnownUniverseLocationSet(universe = [], synonyms = DEFAULT_SYNONYMS) {
   const known = new Set();
   (Array.isArray(universe) ? universe : []).forEach((item) => {
@@ -2985,6 +3026,8 @@ function looksLikeNonLocationToken(value = "") {
   if (!token) return true;
   if (token.length >= 48) return true;
   if (/\d/.test(token)) return true;
+  if (/\b(attempt|outcome|status|captured|assessment|notes?|applied|duplicate)\b/.test(token)) return true;
+  if (/\bfrom\b/.test(token) && token.split(/\s+/).length > 2) return true;
   // Obvious role/skill words that should never be treated as a geography filter.
   if (/\b(sales|developer|engineer|programmer|manager|executive|account|loan|lending|fintech|saas|b2b|b2c|backend|frontend|fullstack|dotnet|node|nodejs|react|java|spring|golang)\b/.test(token)) {
     return true;
@@ -2996,6 +3039,14 @@ function sanitizeCandidateSearchFilters(filters, normalizedQuery = "", universe 
   const next = filters && typeof filters === "object" ? { ...filters } : {};
   const qLower = String(normalizedQuery || "").toLowerCase();
   next.domainKeywords = normalizeCandidateSearchKeywords(next.domainKeywords || []);
+
+  if (isGarbageRoleText(next.role)) {
+    next.role = "";
+    if (!Array.isArray(next.roleFamilies) || !next.roleFamilies.length || next.roleFamilies.every((f) => !String(f || "").trim())) {
+      next.roleFamilies = [];
+    }
+  }
+
   const knownLocations = buildKnownUniverseLocationSet(universe, synonyms);
   const noiseSkillTokens = new Set([
     "not", "received", "feedback", "awaited", "awaiting", "responding", "response", "nr",
@@ -3186,14 +3237,22 @@ function sanitizeCandidateSearchFilters(filters, normalizedQuery = "", universe 
   // So we convert it into a single detailedStatuses term (union) and clear the strict fields.
   const hasBothStatusWorlds = Boolean(String(next.assessmentStatus || "").trim()) && Boolean(String(next.attemptOutcome || "").trim());
   if (hasBothStatusWorlds) {
-    const normalizedTerm = normalizeDashboardText(String(next.assessmentStatus || next.attemptOutcome || "")).toLowerCase().trim();
-    if (normalizedTerm) {
-      const existing = Array.isArray(next.detailedStatuses) ? next.detailedStatuses : [];
-      const merged = Array.from(new Set([...existing.map((s) => normalizeDashboardText(s).toLowerCase().trim()).filter(Boolean), normalizedTerm]));
-      next.detailedStatuses = merged;
+    const explicitAttemptScope = /\battempt\s+outcome\b|\bfrom\s+attempt\b|\bcaptured\s+notes?\b/.test(qLower);
+    const explicitAssessmentScope = /\bassessment\s+status\b|\bfrom\s+assessment\b|\bassessments?\b|\bconverted\b|\bshared\b/.test(qLower);
+    if (explicitAttemptScope && !explicitAssessmentScope) {
+      next.assessmentStatus = "";
+    } else if (explicitAssessmentScope && !explicitAttemptScope) {
+      next.attemptOutcome = "";
+    } else {
+      const normalizedTerm = normalizeDashboardText(String(next.assessmentStatus || next.attemptOutcome || "")).toLowerCase().trim();
+      if (normalizedTerm) {
+        const existing = Array.isArray(next.detailedStatuses) ? next.detailedStatuses : [];
+        const merged = Array.from(new Set([...existing.map((s) => normalizeDashboardText(s).toLowerCase().trim()).filter(Boolean), normalizedTerm]));
+        next.detailedStatuses = merged;
+      }
+      next.assessmentStatus = "";
+      next.attemptOutcome = "";
     }
-    next.assessmentStatus = "";
-    next.attemptOutcome = "";
   }
 
   // Domain + Sales intent:
@@ -3773,7 +3832,7 @@ function candidateMatchesNaturalFilter(item, filters, actor = null) {
     const requiredSkills = normalizeCandidateSearchKeywords(filters.skills);
     const matchMode = String(filters.skillsMatch || "").trim().toLowerCase();
     if (requiredSkills.length) {
-      const matched = requiredSkills.filter((skill) => hay.includes(skill));
+      const matched = requiredSkills.filter((skill) => candidateHayMatchesTerm(hay, skill));
       if (matchMode === "any") {
         if (!matched.length) return false;
       } else {
@@ -3785,13 +3844,13 @@ function candidateMatchesNaturalFilter(item, filters, actor = null) {
   if (Array.isArray(filters.mustSkills) && filters.mustSkills.length) {
     const hay = buildCandidateSearchHay(item);
     const must = normalizeCandidateSearchKeywords(filters.mustSkills);
-    if (must.length && !must.every((skill) => hay.includes(skill))) return false;
+    if (must.length && !must.every((skill) => candidateHayMatchesTerm(hay, skill))) return false;
   }
   if (Array.isArray(filters.anyOfSkillGroups) && filters.anyOfSkillGroups.length) {
     const hay = buildCandidateSearchHay(item);
     for (const group of filters.anyOfSkillGroups) {
       const terms = normalizeCandidateSearchKeywords(Array.isArray(group) ? group : []);
-      if (terms.length && !terms.some((skill) => hay.includes(skill))) return false;
+      if (terms.length && !terms.some((skill) => candidateHayMatchesTerm(hay, skill))) return false;
     }
   }
   // Explicit status filters (assessment status + captured-attempt outcome) for AI search.
