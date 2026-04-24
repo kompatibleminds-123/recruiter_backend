@@ -52,7 +52,16 @@ function run() {
   assert.equal(q10.role, "sales manager");
   assert.deepEqual(q10.locations, ["hyderabad"]);
   assert.deepEqual(q10.domainKeywords, ["lending"]);
+
+  const q11 = parseDeterministicRecruiterQuery("Get me duplicate in Attentive from captured notes", DEFAULT_SYNONYMS);
+  assert.equal(q11.sourceTypeFilter, "captured");
+  assert.equal(q11.detailedStatuses.includes("duplicate"), true);
+  assert.equal(q11.attemptOutcome, "Duplicate");
+
+  const q12 = parseDeterministicRecruiterQuery("Get me candidates in fintech sales from Hyderabad and Delhi", DEFAULT_SYNONYMS);
+  assert.deepEqual(q12.locations, ["hyderabad", "delhi"]);
+  assert.equal(q12.role, "sales");
+  assert.deepEqual(q12.domainKeywords, ["fintech"]);
 }
 
 module.exports = { run };
-

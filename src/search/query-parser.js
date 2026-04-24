@@ -79,6 +79,57 @@ const SKILL_PATTERNS = [
   { skill: "azure", regex: /\bazure\b/i }
 ];
 
+function detectSourceTypeFilter(query = "") {
+  const text = String(query || "").toLowerCase();
+  if (/\bcaptured\s+notes?\b|\bcaptured\s+note\b|\bnotes?\s+captured\b/.test(text)) return "captured";
+  if (/\bapplied\b|\bapplicants?\b|\bwebsite\s+apply\b|\bhosted\s+apply\b/.test(text)) return "applied";
+  if (/\bassessments?\b|\bconverted\b|\bshared\b|\bcv shared\b|\bcv to be shared\b/.test(text)) return "assessment";
+  return "";
+}
+
+function detectStatusFields(query = "") {
+  const text = String(query || "").toLowerCase();
+  const detailedStatuses = [];
+  let attemptOutcome = "";
+  let assessmentStatus = "";
+
+  if (/\bduplicate(?:s)?\b/.test(text)) {
+    detailedStatuses.push("duplicate");
+    attemptOutcome = "Duplicate";
+    assessmentStatus = "Duplicate";
+  }
+  if (/\bfeedback awaited\b|\bawaiting feedback\b|\bawaited feedback\b/.test(text)) {
+    detailedStatuses.push("feedback awaited");
+    assessmentStatus = "Feedback awaited";
+  }
+  if (/\bnot received\b|\bnot responding\b|\bno response\b|\bno answer\b|\bnr\b/.test(text)) {
+    detailedStatuses.push("not received");
+    attemptOutcome = "Not responding";
+  }
+  if (/\bbusy\b|\bcall busy\b/.test(text)) {
+    detailedStatuses.push("busy");
+    attemptOutcome = "Busy";
+  }
+  if (/\bnot reachable\b|\bunreachable\b/.test(text)) {
+    detailedStatuses.push("not reachable");
+    attemptOutcome = "Not reachable";
+  }
+  if (/\bdisconnected\b/.test(text)) {
+    detailedStatuses.push("disconnected");
+    attemptOutcome = "Disconnected";
+  }
+  if (/\bcall later\b|\bcall back later\b/.test(text)) {
+    detailedStatuses.push("call later");
+    attemptOutcome = "Call later";
+  }
+
+  return {
+    detailedStatuses: Array.from(new Set(detailedStatuses)),
+    attemptOutcome,
+    assessmentStatus
+  };
+}
+
 function dedupeAdjacentWords(value = "") {
   let text = String(value || "");
   let previous = "";
@@ -259,6 +310,8 @@ function parseDeterministicRecruiterQuery(rawQuery = "", synonyms = DEFAULT_SYNO
   const roleSkill = detectRoleAndSkills(cleanedText, normalizedQuery);
   const domainKeywords = detectDomainKeywords(normalizedQuery);
   const skills = sanitizeSkillTokens(roleSkill.skills);
+  const sourceTypeFilter = detectSourceTypeFilter(normalizedQuery);
+  const statuses = detectStatusFields(normalizedQuery);
 
   return {
     normalizedQuery,
@@ -270,7 +323,11 @@ function parseDeterministicRecruiterQuery(rawQuery = "", synonyms = DEFAULT_SYNO
     skills,
     domainKeywords,
     maxNoticeDays: typeof notice.maxNoticeDays === "number" ? notice.maxNoticeDays : null,
-    servingNotice: Boolean(notice.servingNotice)
+    servingNotice: Boolean(notice.servingNotice),
+    sourceTypeFilter,
+    detailedStatuses: statuses.detailedStatuses,
+    attemptOutcome: statuses.attemptOutcome,
+    assessmentStatus: statuses.assessmentStatus
   };
 }
 

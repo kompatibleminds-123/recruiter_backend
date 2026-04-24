@@ -2485,7 +2485,7 @@ function parseNaturalLanguageCandidateQuery(rawQuery) {
     lower.match(/\bfrom\s+([a-z0-9,/\- ]+?)\s+to\s+([a-z0-9,/\- ]+?)(?:\bwith\b|\bfor\b|$)/i) ||
     lower.match(/\bbetween\s+([a-z0-9,/\- ]+?)\s+and\s+([a-z0-9,/\- ]+?)(?:\bwith\b|\bfor\b|$)/i);
   const monthOnlyMatch = lower.match(/\bin\s+(january|february|march|april|may|june|july|august|september|october|november|december)\b/i);
-  const clientMatch = lower.match(/\b(?:for client|for)\s+([a-z0-9][a-z0-9\s&.-]+)$/i);
+  const clientMatch = lower.match(/\b(?:for client|for)\s+([a-z0-9][a-z0-9\s&.-]+?)(?=\s+\b(?:in\s+captured\s+notes?|in\s+captured\s+note|from\s+captured\s+notes?|from\s+captured\s+note|in\s+assessments?|from\s+assessments?|in\s+applied|from\s+applied)\b|$)/i);
   let dateFrom = "";
   let dateTo = "";
   if (/\blast month\b/i.test(lower)) {
@@ -2650,6 +2650,12 @@ function parseNaturalLanguageCandidateQuery(rawQuery) {
   const resolvedDomainKeywords = Array.isArray(deterministic?.domainKeywords)
     ? deterministic.domainKeywords.map((item) => String(item || "").trim()).filter(Boolean)
     : [];
+  const resolvedSourceTypeFilter = String(deterministic?.sourceTypeFilter || "").trim();
+  const resolvedDetailedStatuses = Array.isArray(deterministic?.detailedStatuses)
+    ? deterministic.detailedStatuses.map((item) => String(item || "").trim()).filter(Boolean)
+    : [];
+  const resolvedAttemptOutcome = String(deterministic?.attemptOutcome || "").trim();
+  const resolvedAssessmentStatus = String(deterministic?.assessmentStatus || "").trim();
   if (!derivedLocation && locations.length) derivedLocation = String(locations[0] || "").trim();
 
   return {
@@ -2670,11 +2676,11 @@ function parseNaturalLanguageCandidateQuery(rawQuery) {
     skillsMatch,
     currentCompany: currentCompanyMatch ? String(currentCompanyMatch[1] || "").trim() : "",
     statuses: statusTerms,
-    detailedStatuses: detailedStatusTerms,
+    detailedStatuses: Array.from(new Set([...detailedStatusTerms, ...resolvedDetailedStatuses])),
     // Additive: lets Natural search also act like structured filters for status/outcome dropdowns.
     // If multiple statuses/outcomes are present, leave blank to avoid over-filtering.
-    attemptOutcome: attemptOutcomeCandidates.length === 1 ? attemptOutcomeCandidates[0] : "",
-    assessmentStatus: assessmentStatusCandidates.length === 1 ? assessmentStatusCandidates[0] : "",
+    attemptOutcome: resolvedAttemptOutcome || (attemptOutcomeCandidates.length === 1 ? attemptOutcomeCandidates[0] : ""),
+    assessmentStatus: resolvedAssessmentStatus || (assessmentStatusCandidates.length === 1 ? assessmentStatusCandidates[0] : ""),
     client: clientMatch ? String(clientMatch[1] || "").trim() : "",
     targetLabel: targetLabelMatch ? String(targetLabelMatch[1] || "").trim() : "",
     interviewScheduled: interviewIntent,
@@ -2689,7 +2695,7 @@ function parseNaturalLanguageCandidateQuery(rawQuery) {
     // "Assigned to ..." maps to owner/assignee dimension.
     recruiterField: capturedByIntent ? "sourced" : (convertedIntent || assessmentIntent || assignedToMatch) ? "owner" : "",
     // Only force captured/applied when the user explicitly asks for captured notes / applicants.
-    sourceTypeFilter: assessmentIntent
+    sourceTypeFilter: resolvedSourceTypeFilter || (assessmentIntent
       ? "assessment"
       : convertedIntent
         ? "converted"
@@ -2697,7 +2703,7 @@ function parseNaturalLanguageCandidateQuery(rawQuery) {
           ? "applied"
           : capturedNotesIntent
             ? "captured"
-            : "",
+            : ""),
     dateFrom,
     dateTo,
     dateField
