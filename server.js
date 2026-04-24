@@ -2788,9 +2788,11 @@ function buildRecruiterQueryParserSchema() {
         type: "string",
         enum: [
           "candidate_search",
+          "interview_schedule_search",
           "shared_profiles_search",
           "stale_candidates",
           "recruiter_activity_report",
+          "reports",
           "job_search",
           "company_search",
           "general_keyword_search"
@@ -2853,6 +2855,8 @@ async function parseRecruiterQueryWithOpenAI(rawQuery, { apiKey, actor } = {}) {
     "3) Set role only for known job functions like developer, recruiter, engineer, manager, analyst, tester, sales, accountant, hr.",
     "4) Preserve uncertain useful terms in fallbackKeywords or jobTitleKeywords.",
     "5) If query asks for shared/submitted profiles: intent=shared_profiles_search, sourceTypeFilter=assessment, sharedOnly=true, dateField=shared.",
+    "5b) Interview scheduling/listing queries should use intent=interview_schedule_search.",
+    "5c) Reporting summaries should use intent=reports.",
     "6) If C2H / contract to hire appears, keep it in jobTitleKeywords.",
     "7) If client appears inside title text, keep it in jobTitleKeywords too.",
     "8) If busy appears: detailedStatuses=['busy'], attemptOutcome='Busy'.",
@@ -2861,6 +2865,9 @@ async function parseRecruiterQueryWithOpenAI(rawQuery, { apiKey, actor } = {}) {
     "11) If confidence is low, intent=general_keyword_search and keep fallbackKeywords rich.",
     "12) Never set recruiterName unless recruiter is explicitly mentioned in query text.",
     "13) Never default recruiterName to current actor.",
+    "14) Date phrases (today, tomorrow, next week, this month, dd/mm/yyyy, month names) are never locations.",
+    "15) Filler phrases are never roles: those who are, who are, profiles, candidates, people.",
+    "16) Unknown useful terms should go to fallbackKeywords or jobTitleKeywords instead of role/location.",
     `Current recruiter name context: "${String(actor?.name || "").trim()}" (for disambiguation only, not default).`,
     "",
     `Query: ${norm}`
@@ -3003,7 +3010,7 @@ function mapOpenAiParsedToDeterministicFilters(parsed = {}) {
     maxExpectedCtcLpa: null,
     maxNoticeDays: typeof pf.maxNoticeDays === "number" ? pf.maxNoticeDays : null,
     skills: keywords,
-    domainKeywords: [],
+    domainKeywords: normalizeCandidateSearchKeywords(Array.isArray(pf.domainKeywords) ? pf.domainKeywords : []),
     skillsMatch: /\bor\b/i.test(String(parsed?.normalizedQuery || "")) ? "any" : "all",
     currentCompany: String(pf.company || "").trim(),
     statuses: Array.isArray(pf.statuses) ? pf.statuses.map((x) => normalizeDashboardText(x)).filter(Boolean) : [],
@@ -3815,6 +3822,133 @@ function sanitizeCandidateSearchFilters(filters, normalizedQuery = "", universe 
   }
 
   return next;
+}
+
+function isLikelyDatePhraseToken(value = "") {
+  const text = normalizeDashboardText(value).toLowerCase().trim();
+  if (!text) return false;
+  if (/\b(today|tomorrow|yesterday|next week|last week|this week|next month|last month|this month|next year|last year)\b/.test(text)) return true;
+  if (/\b\d{1,2}[/-]\d{1,2}(?:[/-]\d{2,4})?\b/.test(text)) return true;
+  if (/\b\d{4}-\d{2}-\d{2}\b/.test(text)) return true;
+  if (/\b(january|february|march|april|may|june|july|august|september|october|november|december|jan|feb|mar|apr|jun|jul|aug|sep|oct|nov|dec)\b/.test(text)) return true;
+  if (/\b\d{1,2}(st|nd|rd|th)\b/.test(text)) return true;
+  return false;
+}
+
+function uniqStrings(values = []) {
+  return Array.from(new Set((Array.isArray(values) ? values : []).map((v) => String(v || "").trim()).filter(Boolean)));
+}
+
+function validateOpenAiPrimaryFilters(filters, { query = "", universe = [], synonyms = DEFAULT_SYNONYMS } = {}) {
+  const qLower = normalizeDashboardText(query).toLowerCase();
+  const next = filters && typeof filters === "object" ? { ...filters } : {};
+  const knownLocations = buildKnownUniverseLocationSet(universe, synonyms);
+  const knownRecruiters = uniqStrings(
+    (Array.isArray(universe) ? universe : []).flatMap((item) => [item?.ownerRecruiter, item?.recruiterName, item?.sourcedRecruiter])
+  ).filter((label) => !/^unassigned$/i.test(label) && !/^website apply$/i.test(label));
+  const hasExplicitTargetIntent = /\b(jd|job|role|position|title|opening|openings|under)\b/i.test(qLower);
+  const hasExplicitRecruiterIntent = /\b(assigned to|owned by|owner|sourced by|captured by|by|under)\b/i.test(qLower);
+
+  next.skills = normalizeCandidateSearchKeywords(uniqStrings(next.skills));
+  next.domainKeywords = normalizeCandidateSearchKeywords(uniqStrings(next.domainKeywords));
+  next.fallbackKeywords = normalizeCandidateSearchKeywords(uniqStrings(next.fallbackKeywords));
+  next.jobTitleKeywords = uniqStrings(next.jobTitleKeywords);
+  next.statuses = uniqStrings(next.statuses).map((s) => normalizeDashboardText(s)).filter(Boolean);
+  next.detailedStatuses = uniqStrings(next.detailedStatuses).map((s) => normalizeDashboardText(s)).filter(Boolean);
+  next.locations = uniqStrings(next.locations);
+  next.roleFamilies = uniqStrings(next.roleFamilies);
+
+  const rawRole = String(next.role || "").trim();
+  const resolvedRole = resolveKnownRole(rawRole);
+  if (!resolvedRole || isGarbageRoleText(rawRole)) {
+    if (rawRole) next.fallbackKeywords = normalizeCandidateSearchKeywords([...next.fallbackKeywords, rawRole]);
+    next.role = "";
+    next.roleFamilies = [];
+  } else {
+    next.role = resolvedRole;
+    if (!next.roleFamilies.length) next.roleFamilies = detectRoleFamilies(resolvedRole);
+  }
+
+  // Role phrases should never leak into locations.
+  const sanitizeLocationToken = (value) => {
+    const raw = String(value || "").trim();
+    if (!raw) return "";
+    if (isLikelyDatePhraseToken(raw) || looksLikeNonLocationToken(raw)) return "";
+    const normalized = normalizeDashboardText(raw).toLowerCase();
+    const alias = mapLocationAlias(normalized, synonyms);
+    const canonical = coerceToKnownLocation(String(alias?.canonical || normalized), knownLocations);
+    return canonical;
+  };
+
+  const singleLocation = sanitizeLocationToken(next.location);
+  const multiLocations = uniqStrings(next.locations.map(sanitizeLocationToken)).filter(Boolean);
+  next.locations = uniqStrings([...(singleLocation ? [singleLocation] : []), ...multiLocations]).filter((loc) => !isLikelyDatePhraseToken(loc));
+  if (next.locations.length >= 2) next.location = "";
+  else next.location = next.locations.length === 1 ? next.locations[0] : singleLocation;
+  if (!next.location) next.location = "";
+  if (!next.locations.length && next.location) next.locations = [next.location];
+
+  // OpenAI is primary: recruiter name only if explicitly in query and maps to known recruiter.
+  const recruiterToken = normalizeDashboardText(String(next.recruiterName || "")).toLowerCase().trim();
+  if (!hasExplicitRecruiterIntent || !recruiterToken) {
+    next.recruiterName = "";
+    next.recruiterField = "";
+    next.recruiterScope = "";
+  } else {
+    const match = knownRecruiters.find((label) => {
+      const norm = normalizeDashboardText(label).toLowerCase();
+      return recruiterToken && (norm === recruiterToken || norm.includes(recruiterToken) || recruiterToken.includes(norm));
+    });
+    if (match) {
+      next.recruiterName = match;
+    } else {
+      next.recruiterName = "";
+      next.recruiterField = "";
+      next.recruiterScope = "";
+    }
+  }
+
+  if (!hasExplicitTargetIntent) next.targetLabel = "";
+  if (!hasExplicitTargetIntent && next.jobTitleKeywords?.length) {
+    next.fallbackKeywords = normalizeCandidateSearchKeywords([...next.fallbackKeywords, ...next.jobTitleKeywords]);
+  }
+
+  // Keep unknown useful tokens in fallback instead of forcing wrong fields.
+  if (!next.role && !next.skills.length && next.domainKeywords.length) {
+    next.fallbackKeywords = normalizeCandidateSearchKeywords([...next.fallbackKeywords, ...next.domainKeywords]);
+  }
+
+  // Deterministic intent for shared/interview/stale should enforce deterministic path-friendly fields.
+  if (next.sharedOnly && !next.sourceTypeFilter) next.sourceTypeFilter = "assessment";
+  if (next.interviewScheduled && !next.dateField) next.dateField = "interview";
+  if (String(next.dateField || "").trim() === "last_contacted") next.sourceTypeFilter = next.sourceTypeFilter || "captured";
+
+  return next;
+}
+
+function resolveSearchIntentRoute(intent = "") {
+  const key = String(intent || "").trim().toLowerCase();
+  const operationalIntents = new Set([
+    "interview_schedule_search",
+    "shared_profiles_search",
+    "stale_candidates",
+    "reports",
+    "recruiter_activity_report"
+  ]);
+  if (operationalIntents.has(key)) {
+    return {
+      intent: key,
+      semanticAllowed: false,
+      chosenSearchMode: "deterministic_only",
+      searchPath: "deterministic_db_filter"
+    };
+  }
+  return {
+    intent: key || "candidate_search",
+    semanticAllowed: true,
+    chosenSearchMode: "candidate_discovery",
+    searchPath: "deterministic_db_filter_with_optional_semantic_rerank"
+  };
 }
 
 function isPlainCandidateLookupQuery(rawQuery = "") {
@@ -7290,9 +7424,13 @@ const server = http.createServer(async (req, res) => {
       const semanticEnabled = String(requestUrl.searchParams.get("semantic") || "").trim() !== "0";
       const normalized = normalizeRecruiterQuery(query, DEFAULT_SYNONYMS);
       const heuristic = parseNaturalLanguageCandidateQuery(normalized.normalized || query);
-      let filters = heuristic;
+      const ruleParsed = { ...(heuristic || {}), raw: query };
+      let filters = ruleParsed;
       let parsedQueryJson = null;
-      filters.raw = query;
+      let mergedBeforeValidation = { ...filters };
+      let chosenSearchMode = queryMode === "ai" ? "ai_primary_parser" : "rule_parser";
+      let searchPathUsed = "deterministic_db_filter";
+      let intentRoute = resolveSearchIntentRoute("candidate_search");
       if (query && queryMode === "ai") {
         const apiKey = String(process.env.OPENAI_API_KEY || "").trim();
         if (apiKey) {
@@ -7300,34 +7438,47 @@ const server = http.createServer(async (req, res) => {
             parsedQueryJson = await parseRecruiterQueryWithOpenAI(normalized.normalized || query, { apiKey, actor: user });
             filters = mapOpenAiParsedToDeterministicFilters(parsedQueryJson);
             filters.raw = query;
+            mergedBeforeValidation = { ...filters };
+            intentRoute = resolveSearchIntentRoute(parsedQueryJson?.intent);
+            chosenSearchMode = intentRoute.chosenSearchMode;
+            searchPathUsed = intentRoute.searchPath;
           } catch (error) {
             console.warn("AI query interpretation failed, falling back to heuristic parser:", error?.message || error);
+            filters = { ...ruleParsed };
+            mergedBeforeValidation = { ...filters };
+            chosenSearchMode = "rule_fallback_after_ai_error";
           }
+        } else {
+          filters = { ...ruleParsed };
+          mergedBeforeValidation = { ...filters };
+          chosenSearchMode = "rule_fallback_no_openai_key";
         }
       }
 
-      // Always merge deterministic heuristic signals so AI mode doesn't miss obvious intent like "today" or "captured".
-      // Keep backward-compatible: only fill missing fields, do not override AI-filled ones.
-      if (heuristic) {
-        if (!filters.dateFrom && heuristic.dateFrom) filters.dateFrom = heuristic.dateFrom;
-        if (!filters.dateTo && heuristic.dateTo) filters.dateTo = heuristic.dateTo;
-        if (!filters.dateField && heuristic.dateField) filters.dateField = heuristic.dateField;
-        if (!filters.sourceTypeFilter && heuristic.sourceTypeFilter) filters.sourceTypeFilter = heuristic.sourceTypeFilter;
-        if (!filters.recruiterScope && heuristic.recruiterScope) filters.recruiterScope = heuristic.recruiterScope;
-        if (!filters.recruiterName && heuristic.recruiterName) filters.recruiterName = heuristic.recruiterName;
-        if (!filters.recruiterField && heuristic.recruiterField) filters.recruiterField = heuristic.recruiterField;
-        if (!filters.location && heuristic.location) filters.location = heuristic.location;
-        if (!filters.attemptOutcome && heuristic.attemptOutcome) filters.attemptOutcome = heuristic.attemptOutcome;
-        if (!filters.assessmentStatus && heuristic.assessmentStatus) filters.assessmentStatus = heuristic.assessmentStatus;
-        if ((!Array.isArray(filters.locations) || !filters.locations.length) && Array.isArray(heuristic.locations) && heuristic.locations.length) {
-          filters.locations = heuristic.locations;
+      // Legacy parser stays as fallback only. OpenAI output remains primary and is never overwritten.
+      if (queryMode !== "ai" || !parsedQueryJson) {
+        if (heuristic) {
+          if (!filters.dateFrom && heuristic.dateFrom) filters.dateFrom = heuristic.dateFrom;
+          if (!filters.dateTo && heuristic.dateTo) filters.dateTo = heuristic.dateTo;
+          if (!filters.dateField && heuristic.dateField) filters.dateField = heuristic.dateField;
+          if (!filters.sourceTypeFilter && heuristic.sourceTypeFilter) filters.sourceTypeFilter = heuristic.sourceTypeFilter;
+          if (!filters.recruiterScope && heuristic.recruiterScope) filters.recruiterScope = heuristic.recruiterScope;
+          if (!filters.recruiterName && heuristic.recruiterName) filters.recruiterName = heuristic.recruiterName;
+          if (!filters.recruiterField && heuristic.recruiterField) filters.recruiterField = heuristic.recruiterField;
+          if (!filters.location && heuristic.location) filters.location = heuristic.location;
+          if (!filters.attemptOutcome && heuristic.attemptOutcome) filters.attemptOutcome = heuristic.attemptOutcome;
+          if (!filters.assessmentStatus && heuristic.assessmentStatus) filters.assessmentStatus = heuristic.assessmentStatus;
+          if ((!Array.isArray(filters.locations) || !filters.locations.length) && Array.isArray(heuristic.locations) && heuristic.locations.length) {
+            filters.locations = heuristic.locations;
+          }
+          if ((!Array.isArray(filters.domainKeywords) || !filters.domainKeywords.length) && Array.isArray(heuristic.domainKeywords) && heuristic.domainKeywords.length) {
+            filters.domainKeywords = heuristic.domainKeywords;
+          }
+          if (String(filters.skillsMatch || "").trim() === "" && heuristic.skillsMatch) filters.skillsMatch = heuristic.skillsMatch;
+          if (/\bor\b/i.test(normalized.normalized || query)) filters.skillsMatch = "any";
         }
-        if ((!Array.isArray(filters.domainKeywords) || !filters.domainKeywords.length) && Array.isArray(heuristic.domainKeywords) && heuristic.domainKeywords.length) {
-          filters.domainKeywords = heuristic.domainKeywords;
-        }
-        // If query uses OR, avoid "all skills must match" which returns zero too often.
-        if (String(filters.skillsMatch || "").trim() === "" && heuristic.skillsMatch) filters.skillsMatch = heuristic.skillsMatch;
-        if (/\bor\b/i.test(normalized.normalized || query)) filters.skillsMatch = "any";
+      } else if (/\bor\b/i.test(normalized.normalized || query)) {
+        filters.skillsMatch = "any";
       }
 
       // Normalize location aliases even in AI mode.
@@ -7406,11 +7557,27 @@ const server = http.createServer(async (req, res) => {
         }
       }
 
-      // Final safety pass: prevent AI from putting role/skill phrases into `location` or forcing notice=immediate.
-      filters = sanitizeCandidateSearchFilters(filters, normalized.normalized || query, universe, DEFAULT_SYNONYMS);
+      // Final validation/conflict resolver pass.
+      if (queryMode === "ai" && parsedQueryJson) {
+        filters = validateOpenAiPrimaryFilters(filters, {
+          query: normalized.normalized || query,
+          universe,
+          synonyms: DEFAULT_SYNONYMS
+        });
+      } else {
+        filters = sanitizeCandidateSearchFilters(filters, normalized.normalized || query, universe, DEFAULT_SYNONYMS);
+      }
+      const finalValidatedFilters = { ...filters };
 
       const scopedUniverse = universe.filter((item) => !recruiterFilter || String(item.ownerRecruiter || "").trim() === recruiterFilter);
-      const apiKey = semanticEnabled ? String(process.env.OPENAI_API_KEY || "").trim() : "";
+      const semanticAllowedByIntent = intentRoute.semanticAllowed;
+      const useSemantic = semanticEnabled && semanticAllowedByIntent;
+      if (useSemantic) {
+        searchPathUsed = "deterministic_db_filter_with_semantic_rerank";
+      } else if (queryMode === "ai" && parsedQueryJson) {
+        searchPathUsed = "deterministic_db_filter_only";
+      }
+      const apiKey = useSemantic ? String(process.env.OPENAI_API_KEY || "").trim() : "";
       const hybrid = await hybridSearchCandidates({
         universe: scopedUniverse,
         actor: user,
@@ -7428,7 +7595,7 @@ const server = http.createServer(async (req, res) => {
         },
         options: {
           debug,
-          semantic: semanticEnabled,
+          semantic: useSemantic,
           semanticTopK: 80,
           parseExperienceToYears,
           isPlainLookup: isPlainCandidateLookupQuery,
@@ -7440,6 +7607,7 @@ const server = http.createServer(async (req, res) => {
       if (
         query &&
         queryMode === "ai" &&
+        semanticAllowedByIntent &&
         Array.isArray(hybrid?.items) &&
         hybrid.items.length === 0 &&
         parsedQueryJson?.filters &&
@@ -7486,7 +7654,7 @@ const server = http.createServer(async (req, res) => {
             },
             options: {
               debug,
-              semantic: semanticEnabled,
+              semantic: useSemantic,
               semanticTopK: 80,
               parseExperienceToYears,
               isPlainLookup: isPlainCandidateLookupQuery,
@@ -7537,7 +7705,21 @@ const server = http.createServer(async (req, res) => {
           normalizedQuery: normalized.normalized,
           filters: finalHybrid.filters || filters,
           interpretation: parsedQueryJson,
-          ...(debug && finalHybrid.debug ? { debug: finalHybrid.debug } : {}),
+          ...(debug ? {
+            debug: {
+              rawQuery: query,
+              openAiParsed: parsedQueryJson,
+              ruleParsed,
+              mergedBeforeValidation,
+              finalValidatedFilters,
+              chosenSearchMode,
+              sqlOrSearchPath: searchPathUsed,
+              semanticAllowedByIntent,
+              semanticRequested: semanticEnabled,
+              semanticUsed: useSemantic,
+              hybridDebug: finalHybrid.debug || null
+            }
+          } : {}),
           total: matches.length,
           items: matches
         }

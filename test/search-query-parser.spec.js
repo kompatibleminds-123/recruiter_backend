@@ -63,6 +63,86 @@ function run() {
   assert.equal(q12.role, "sales");
   assert.deepEqual(q12.domainKeywords, ["fintech"]);
 
+  const matrix = [
+    ["need .NET developers in Gurugram and delhi with 4 years", { mustSkill: "dotnet", mustLocs: ["gurgaon", "delhi"] }],
+    ["Get me Node developers from Gurgaon", { mustSkill: "nodejs", mustLocs: ["gurgaon"] }],
+    ["Get me nodejs engineers in ggn", { mustSkill: "nodejs", mustLocs: ["gurgaon"] }],
+    ["react developer in noida", { mustSkill: "react", mustLocs: ["noida"] }],
+    ["java spring profiles in pune", { mustSkill: "java", mustLocs: ["pune"] }],
+    ["golang backend in bangalore", { mustSkill: "golang", mustLocs: ["bangalore"] }],
+    ["python django in hyderabad", { mustSkill: "python", mustLocs: ["hyderabad"] }],
+    ["dot net core in delhi ncr", { mustSkill: "dotnet" }],
+    ["node js dev in blr", { mustSkill: "nodejs", mustLocs: ["bangalore"] }],
+    ["react js in bombay", { mustSkill: "react", mustLocs: ["mumbai"] }],
+    ["java developer under 30 days notice in pune", { mustRole: "java developer", maxNotice: 30 }],
+    ["react developer immediate joiner in noida", { mustRole: "react developer", maxNotice: 0 }],
+    ["nodejs developers less than 15 days notice", { mustRole: "nodejs developer", maxNotice: 15 }],
+    ["sales profiles in gurgaon", { mustRole: "sales", mustLocs: ["gurgaon"] }],
+    ["finance sales profiles in gurgaon", { mustRole: "sales", mustDomain: ["finance"] }],
+    ["lending sales manager in hyderabad", { mustRole: "sales manager", mustDomain: ["lending"] }],
+    ["fintech or finance or lending sales profiles in gurugram", { mustRole: "sales", mustDomain: ["fintech", "finance", "lending"] }],
+    ["Get me duplicate in Attentive from captured notes", { source: "captured", attempt: "Duplicate" }],
+    ["Get me duplicate in Attentive from assessments", { source: "assessment", assessment: "Duplicate" }],
+    ["show busy candidates", { attempt: "Busy" }],
+    ["show not responding candidates", { attempt: "Not responding" }],
+    ["show not reachable profiles", { attempt: "Not reachable" }],
+    ["show disconnected profiles", { attempt: "Disconnected" }],
+    ["show call later profiles", { attempt: "Call later" }],
+    ["show feedback awaited candidates", { assessment: "Feedback awaited" }],
+    ["show candidates in mumbai, hyderabad, bangalore", { mustLocs: ["mumbai", "hyderabad", "bangalore"] }],
+    ["show candidates from gurgaon and hyderabad", { mustLocs: ["gurgaon", "hyderabad"] }],
+    ["show candidates gurgaon/hyderabad/bangalore", { mustLocs: ["gurgaon", "hyderabad", "bangalore"] }],
+    ["node dev from delhi", { mustSkill: "nodejs", mustLocs: ["delhi"] }],
+    ["dotnet developer gurugram", { mustSkill: "dotnet", mustLocs: ["gurgaon"] }],
+    ["react engineer noida", { mustSkill: "react", mustLocs: ["noida"] }],
+    ["go lang engineer in pune", { mustSkill: "golang", mustLocs: ["pune"] }],
+    ["python flask remote", { mustSkill: "python" }],
+    ["accounts executive in mumbai", { mustLocs: ["mumbai"] }],
+    ["technical recruiter in delhi", { mustLocs: ["delhi"] }],
+    ["business development in gurgaon", { mustLocs: ["gurgaon"] }],
+    ["fintech profiles in delhi", { mustDomain: ["fintech"], mustLocs: ["delhi"] }],
+    ["loan sales profiles in gurgaon", { mustRole: "sales", mustDomain: ["loan"], mustLocs: ["gurgaon"] }],
+    ["edtech recruiter in noida", { mustDomain: ["edtech"], mustLocs: ["noida"] }],
+    ["healthcare sales in mumbai", { mustDomain: ["healthcare"], mustLocs: ["mumbai"] }],
+    ["proptech inside sales in gurgaon", { mustDomain: ["proptech"], mustLocs: ["gurgaon"] }],
+    ["profiles shared in easyrewardz c2h role", { source: "assessment" }],
+    ["profiles shared under lead marketing in livlong", { source: "assessment" }],
+    ["profiles in assessments", { source: "assessment" }],
+    ["profiles in captured notes", { source: "captured" }],
+    ["profiles in applied candidates", { source: "applied" }],
+    ["show me profiles sourced by nike this week", {}],
+    ["show me profiles assigned to sakeena", {}],
+    ["show profiles in delhi or gurgaon for nodejs", { mustSkill: "nodejs", mustLocs: ["delhi", "gurgaon"] }],
+    ["show java in gurgaon, noida and delhi", { mustSkill: "java", mustLocs: ["gurgaon", "noida", "delhi"] }],
+    ["show .net core and c# in hyderabad", { mustSkill: "dotnet", mustLocs: ["hyderabad"] }],
+    ["show duplicate candidates in captured notes for attentive", { source: "captured", attempt: "Duplicate" }],
+    ["show duplicate candidates in assessments for attentive", { source: "assessment", assessment: "Duplicate" }]
+  ];
+
+  const badRoleFragments = ["those who are", "who are", "profiles", "candidates", "people", "has less", "from in"];
+  const badSkillTokens = ["has", "less", "than", "who", "are", "profiles", "candidates"];
+
+  for (const [query, expected] of matrix) {
+    const parsed = parseDeterministicRecruiterQuery(query, DEFAULT_SYNONYMS);
+    const roleLower = String(parsed.role || "").toLowerCase();
+    badRoleFragments.forEach((frag) => assert.equal(roleLower.includes(frag), false, `bad role fragment "${frag}" in query: ${query}`));
+    (parsed.skills || []).forEach((skill) => {
+      assert.equal(badSkillTokens.includes(String(skill || "").toLowerCase()), false, `bad skill token "${skill}" in query: ${query}`);
+    });
+    if (expected.mustRole) assert.equal(parsed.role, expected.mustRole, `role mismatch for query: ${query}`);
+    if (expected.mustSkill) assert.equal((parsed.skills || []).includes(expected.mustSkill), true, `skill mismatch for query: ${query}`);
+    if (expected.mustDomain) {
+      expected.mustDomain.forEach((d) => assert.equal((parsed.domainKeywords || []).includes(d), true, `domain mismatch (${d}) for query: ${query}`));
+    }
+    if (expected.mustLocs) {
+      expected.mustLocs.forEach((loc) => assert.equal((parsed.locations || []).includes(loc), true, `location mismatch (${loc}) for query: ${query}`));
+    }
+    if (typeof expected.maxNotice === "number") assert.equal(parsed.maxNoticeDays, expected.maxNotice, `notice mismatch for query: ${query}`);
+    if (expected.source) assert.equal(parsed.sourceTypeFilter, expected.source, `source mismatch for query: ${query}`);
+    if (expected.attempt) assert.equal(parsed.attemptOutcome, expected.attempt, `attempt mismatch for query: ${query}`);
+    if (expected.assessment) assert.equal(parsed.assessmentStatus, expected.assessment, `assessment mismatch for query: ${query}`);
+  }
+
   assert.equal(resolveKnownRole("Node Developer"), "nodejs developer");
   assert.equal(resolveKnownRole(".NET Developer"), "dotnet developer");
   assert.equal(resolveKnownRole("those who are"), "");
