@@ -3044,6 +3044,13 @@ function looksLikeNonLocationToken(value = "") {
 function sanitizeCandidateSearchFilters(filters, normalizedQuery = "", universe = [], synonyms = DEFAULT_SYNONYMS) {
   const next = filters && typeof filters === "object" ? { ...filters } : {};
   const qLower = String(normalizedQuery || "").toLowerCase();
+  const qNormalized = normalizeDashboardText(qLower).toLowerCase();
+  const searchScopeStopwords = new Set([
+    "get", "show", "find", "me", "all", "profiles", "profile", "candidates", "candidate",
+    "those", "who", "are", "is", "in", "from", "for", "with", "where", "under", "role",
+    "captured", "notes", "note", "applied", "assessment", "assessments", "shared", "converted",
+    "attempt", "outcome", "status", "duplicate", "busy", "interested", "not", "received", "responding"
+  ]);
   const hasExplicitExperienceIntent =
     /\b\d+(?:\.\d+)?\s*\+?\s*years?\b/i.test(qLower)
     || /\b(?:fresher|entry level|junior|mid level|senior|lead|architect)\b/i.test(qLower);
@@ -3063,6 +3070,79 @@ function sanitizeCandidateSearchFilters(filters, normalizedQuery = "", universe 
   }
 
   const knownLocations = buildKnownUniverseLocationSet(universe, synonyms);
+  const knownClientLabels = Array.from(
+    new Set(
+      (Array.isArray(universe) ? universe : [])
+        .map((item) => String(item?.clientName || "").trim())
+        .filter(Boolean)
+        .filter((label) => !/^unmapped candidates$/i.test(label))
+    )
+  );
+  const knownTargetLabels = Array.from(
+    new Set(
+      (Array.isArray(universe) ? universe : [])
+        .map((item) => String(item?.position || "").trim())
+        .filter(Boolean)
+    )
+  );
+
+  const findKnownClientFromQuery = () => {
+    if (!knownClientLabels.length) return "";
+    const ranked = [...knownClientLabels].sort((a, b) => b.length - a.length);
+    for (const label of ranked) {
+      const needle = normalizeDashboardText(label).toLowerCase().trim();
+      if (!needle) continue;
+      const pattern = new RegExp(`\\b${escapeRegex(needle).replace(/\s+/g, "\\s+")}\\b`, "i");
+      if (pattern.test(qNormalized)) return label;
+    }
+    return "";
+  };
+
+  const inferTargetLabelFromQuery = () => {
+    if (!knownTargetLabels.length) return "";
+    const hasC2h = /\bc2h\b/i.test(qLower);
+    if (hasC2h) return "c2h";
+
+    const clientNorm = normalizeDashboardText(String(next.client || "")).toLowerCase().trim();
+    const queryTokens = Array.from(
+      new Set(
+        qNormalized
+          .split(/\s+/)
+          .map((token) => String(token || "").trim())
+          .filter((token) => token && token.length >= 3 && !searchScopeStopwords.has(token) && token !== clientNorm)
+      )
+    );
+    if (!queryTokens.length) return "";
+
+    let bestLabel = "";
+    let bestScore = 0;
+    for (const label of knownTargetLabels) {
+      const labelNorm = normalizeDashboardText(label).toLowerCase().trim();
+      if (!labelNorm) continue;
+      if (clientNorm && !labelNorm.includes(clientNorm)) {
+        // Keep scanning: target label can still be found without client token.
+      }
+      const score = queryTokens.reduce((count, token) => (labelNorm.includes(token) ? count + 1 : count), 0);
+      if (score > bestScore) {
+        bestScore = score;
+        bestLabel = label;
+      }
+    }
+    // Avoid weak random picks.
+    if (bestScore >= 2) return bestLabel;
+    return "";
+  };
+
+  if (!String(next.client || "").trim()) {
+    const inferredClient = findKnownClientFromQuery();
+    if (inferredClient) next.client = inferredClient;
+  }
+
+  if (!String(next.targetLabel || "").trim()) {
+    const inferredTarget = inferTargetLabelFromQuery();
+    if (inferredTarget) next.targetLabel = inferredTarget;
+  }
+
   const noiseSkillTokens = new Set([
     "not", "received", "feedback", "awaited", "awaiting", "responding", "response", "nr",
     "screening", "interview", "reject", "rejected", "aligned", "hold", "busy", "disconnected",
