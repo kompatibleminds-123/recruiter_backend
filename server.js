@@ -1668,6 +1668,19 @@ function getCurrentWeekRange() {
   };
 }
 
+function getNextWeekRange() {
+  const current = getCurrentWeekRange();
+  const start = new Date(`${current.from}T00:00:00.000Z`);
+  start.setUTCDate(start.getUTCDate() + 7);
+  const end = new Date(start);
+  end.setUTCDate(end.getUTCDate() + 6);
+  end.setUTCHours(23, 59, 59, 999);
+  return {
+    from: start.toISOString().slice(0, 10),
+    to: end.toISOString().slice(0, 10)
+  };
+}
+
 function getNamedMonthRange(monthName, year = new Date().getFullYear()) {
   const names = ["january", "february", "march", "april", "may", "june", "july", "august", "september", "october", "november", "december"];
   const monthIndex = names.indexOf(String(monthName || "").trim().toLowerCase());
@@ -2501,6 +2514,10 @@ function parseNaturalLanguageCandidateQuery(rawQuery) {
     const range = getRelativeMonthRange(-1);
     dateFrom = range.from;
     dateTo = range.to;
+  } else if (/\bnext week\b/i.test(lower)) {
+    const range = getNextWeekRange();
+    dateFrom = range.from;
+    dateTo = range.to;
   } else if (/\bthis week\b/i.test(lower)) {
     const range = getCurrentWeekRange();
     dateFrom = range.from;
@@ -2659,6 +2676,7 @@ function parseNaturalLanguageCandidateQuery(rawQuery) {
   const resolvedDomainKeywords = Array.isArray(deterministic?.domainKeywords)
     ? deterministic.domainKeywords.map((item) => String(item || "").trim()).filter(Boolean)
     : [];
+  const resolvedMustHaveSkills = Boolean(deterministic?.mustHaveSkills);
   const resolvedSourceTypeFilter = String(deterministic?.sourceTypeFilter || "").trim();
   const resolvedDetailedStatuses = Array.isArray(deterministic?.detailedStatuses)
     ? deterministic.detailedStatuses.map((item) => String(item || "").trim()).filter(Boolean)
@@ -2683,6 +2701,7 @@ function parseNaturalLanguageCandidateQuery(rawQuery) {
     skills: resolvedSkills,
     domainKeywords: resolvedDomainKeywords,
     skillsMatch,
+    mustHaveSkills: resolvedMustHaveSkills,
     currentCompany: currentCompanyMatch ? String(currentCompanyMatch[1] || "").trim() : "",
     statuses: statusTerms,
     detailedStatuses: Array.from(new Set([...detailedStatusTerms, ...resolvedDetailedStatuses])),
@@ -2812,6 +2831,8 @@ function buildRecruiterQueryParserSchema() {
         properties: {
           role: { type: "string" },
           skills: { type: "array", items: { type: "string" }, maxItems: 20 },
+          skillsMatch: { type: "string", enum: ["all", "any"] },
+          mustHaveSkills: { type: "boolean" },
           location: { type: "string" },
           locations: { type: "array", items: { type: "string" }, maxItems: 12 },
           client: { type: "string" },
@@ -2887,6 +2908,21 @@ async function parseRecruiterQueryWithOpenAI(rawQuery, { apiKey, actor } = {}) {
     const q = String(text || "").toLowerCase();
     const out = [];
     const add = (v) => { if (!out.includes(v)) out.push(v); };
+    if (/\b(\.net\s*core|dot\s*net\s*core|dotnet\s*core|asp\.?\s*net\s*core)\b/.test(q)) add(".NET Core");
+    if (/\basp\.?\s*net\s*core\b/.test(q)) add("ASP.NET Core");
+    if (/\bspring\s+boot\b/.test(q)) add("Spring Boot");
+    if (/\bcore\s+java\b/.test(q)) add("Core Java");
+    if (/\breact\s+native\b/.test(q)) add("React Native");
+    if (/\bnode(\.js|js| js)\b/.test(q)) add("Node.js");
+    if (/\bnext(\.js|js| js)\b/.test(q)) add("Next.js");
+    if (/\bangular(\s+js|js)\b/.test(q)) add("Angular JS");
+    if (/\bsql\s+server\b/.test(q)) add("SQL Server");
+    if (/\bpower\s+bi\b/.test(q)) add("Power BI");
+    if (/\bmachine\s+learning\b/.test(q)) add("Machine Learning");
+    if (/\bdata\s+engineering\b/.test(q)) add("Data Engineering");
+    if (/\bbusiness\s+analyst\b/.test(q)) add("Business Analyst");
+    if (/\bmanual\s+testing\b/.test(q)) add("Manual Testing");
+    if (/\bautomation\s+testing\b/.test(q)) add("Automation Testing");
     if (/\b(node\.?js|nodejs|node js)\b/.test(q)) add("nodejs");
     if (/\breact(\.js|js)?\b/.test(q)) add("react");
     if (/\bangular(\.js|js)?\b/.test(q)) add("angular");
@@ -2909,6 +2945,8 @@ async function parseRecruiterQueryWithOpenAI(rawQuery, { apiKey, actor } = {}) {
     jobTitleKeywords: toArray(result?.filters?.jobTitleKeywords),
     statuses: toArray(result?.filters?.statuses),
     detailedStatuses: toArray(result?.filters?.detailedStatuses),
+    skillsMatch: String(result?.filters?.skillsMatch || "").trim().toLowerCase() === "any" ? "any" : "all",
+    mustHaveSkills: Boolean(result?.filters?.mustHaveSkills),
     attemptOutcome: String(result?.filters?.attemptOutcome || "").trim(),
     assessmentStatus: String(result?.filters?.assessmentStatus || "").trim(),
     sourceTypeFilter: String(result?.filters?.sourceTypeFilter || "").trim(),
@@ -2948,7 +2986,15 @@ async function parseRecruiterQueryWithOpenAI(rawQuery, { apiKey, actor } = {}) {
   }
   if (explicitTechSkills.length) {
     const currentSkills = normalizeCandidateSearchKeywords(filters.skills || []);
-    filters.skills = normalizeCandidateSearchKeywords([...currentSkills, ...explicitTechSkills]);
+    const hasDotNetCoreAtomic = explicitTechSkills.some((s) => String(s || "").toLowerCase() === ".net core");
+    if (hasDotNetCoreAtomic) {
+      filters.skills = [".NET Core"];
+      filters.skillsMatch = "all";
+      filters.mustHaveSkills = true;
+      filters.role = filters.role || "dotnet developer";
+    } else {
+      filters.skills = normalizeCandidateSearchKeywords([...currentSkills, ...explicitTechSkills]);
+    }
     // If recruiter explicitly asks for developers/engineers and we detected tech skill,
     // keep role deterministic and avoid broad non-tech matches.
     if (!filters.role && /\b(developer|developers|engineer|engineers)\b/i.test(norm)) {
@@ -2967,12 +3013,17 @@ async function parseRecruiterQueryWithOpenAI(rawQuery, { apiKey, actor } = {}) {
     // Default to strict match for explicit tech-role queries unless recruiter used OR explicitly.
     if (!/\bor\b/i.test(norm)) filters.skillsMatch = "all";
   }
+  if (Array.isArray(filters.skills) && filters.skills.some((s) => String(s || "").toLowerCase() === ".net core")) {
+    filters.skills = [".NET Core"];
+    filters.skillsMatch = "all";
+    filters.mustHaveSkills = true;
+  }
   const keepFallback = Array.from(new Set([
     ...filters.fallbackKeywords,
     ...filters.jobTitleKeywords,
     ...filters.skills
   ])).filter(Boolean);
-  filters.fallbackKeywords = keepFallback;
+  filters.fallbackKeywords = keepFallback.filter((k) => String(k || "").trim().toLowerCase() !== "core");
 
   return {
     intent: String(result?.intent || "general_keyword_search").trim() || "general_keyword_search",
@@ -3011,7 +3062,8 @@ function mapOpenAiParsedToDeterministicFilters(parsed = {}) {
     maxNoticeDays: typeof pf.maxNoticeDays === "number" ? pf.maxNoticeDays : null,
     skills: keywords,
     domainKeywords: normalizeCandidateSearchKeywords(Array.isArray(pf.domainKeywords) ? pf.domainKeywords : []),
-    skillsMatch: /\bor\b/i.test(String(parsed?.normalizedQuery || "")) ? "any" : "all",
+    skillsMatch: String(pf.skillsMatch || "").trim().toLowerCase() === "any" ? "any" : "all",
+    mustHaveSkills: Boolean(pf.mustHaveSkills),
     currentCompany: String(pf.company || "").trim(),
     statuses: Array.isArray(pf.statuses) ? pf.statuses.map((x) => normalizeDashboardText(x)).filter(Boolean) : [],
     detailedStatuses: Array.isArray(pf.detailedStatuses) ? pf.detailedStatuses.map((x) => String(x || "").trim()).filter(Boolean) : [],
@@ -3158,12 +3210,59 @@ function buildNaturalSearchFallbackTokens(rawQuery = "") {
     );
 }
 
+const ATOMIC_SEARCH_SKILL_ALIASES = {
+  ".net core": [
+    ".net core",
+    "dotnet core",
+    "dot net core",
+    "asp.net core",
+    "asp net core",
+    "c#",
+    "c sharp",
+    "mvc",
+    "web api",
+    "entity framework",
+    "ef core"
+  ],
+  "asp.net core": ["asp.net core", "asp net core"],
+  "spring boot": ["spring boot"],
+  "core java": ["core java"],
+  "react native": ["react native"],
+  "node.js": ["node.js", "node js", "nodejs"],
+  "next.js": ["next.js", "next js", "nextjs"],
+  "angular js": ["angular js", "angularjs"],
+  "sql server": ["sql server"],
+  "power bi": ["power bi"],
+  "machine learning": ["machine learning"],
+  "data engineering": ["data engineering"],
+  "business analyst": ["business analyst"],
+  "manual testing": ["manual testing"],
+  "automation testing": ["automation testing"]
+};
+
+const ATOMIC_SEARCH_PHRASE_PATTERNS = Object.entries(ATOMIC_SEARCH_SKILL_ALIASES).map(([canonical, variants]) => {
+  const escaped = Array.from(new Set((Array.isArray(variants) ? variants : [canonical]).map((v) => normalizeDashboardText(v).toLowerCase().trim()).filter(Boolean)))
+    .sort((a, b) => b.length - a.length)
+    .map((v) => escapeRegex(v).replace(/\s+/g, "\\s+"));
+  return {
+    canonical,
+    placeholder: `__atomic_${canonical.replace(/[^a-z0-9]+/gi, "_")}__`,
+    regex: new RegExp(`\\b(?:${escaped.join("|")})\\b`, "gi")
+  };
+});
+
 function splitCandidateSearchKeywords(value = "") {
-  return String(value || "")
-    .toLowerCase()
-    .replace(/[()"]/g, " ")
+  let normalized = String(value || "").toLowerCase().replace(/[()"]/g, " ");
+  for (const atomic of ATOMIC_SEARCH_PHRASE_PATTERNS) {
+    normalized = normalized.replace(atomic.regex, ` ${atomic.placeholder} `);
+  }
+  return String(normalized || "")
     .split(/,|\n|\/|&|\+|\band\b|\s+/i)
     .map((part) => part.trim())
+    .map((part) => {
+      const atomic = ATOMIC_SEARCH_PHRASE_PATTERNS.find((item) => item.placeholder === part);
+      return atomic ? atomic.canonical : part;
+    })
     .filter((part) =>
       part &&
       part.length >= 2 &&
@@ -3213,6 +3312,9 @@ function candidateHayMatchesTerm(hay = "", term = "") {
   const normalizedHay = String(hay || "").toLowerCase();
   const normalizedTerm = normalizeDashboardText(term).toLowerCase().trim();
   if (!normalizedHay || !normalizedTerm) return false;
+  if (normalizedTerm === ".net core" || normalizedTerm === "asp.net core") {
+    return /\b(\.net\s*core|dot\s*net\s*core|dotnet\s*core|asp\.?\s*net\s*core|c#|c\s*sharp|mvc|web\s*api|entity\s*framework|ef\s*core)\b/i.test(normalizedHay);
+  }
   // Canonical tech matching so ".NET" / "ASP.NET" / "dot net" / "node js" do not miss deterministic filters.
   if (normalizedTerm === "dotnet") {
     return /\b(dotnet|dot\s*net|asp\.?\s*net|net\s*core|\.net)\b/i.test(normalizedHay);
@@ -3326,6 +3428,23 @@ function sanitizeCandidateSearchFilters(filters, normalizedQuery = "", universe 
     next.maxExperienceYears = null;
   }
   next.domainKeywords = normalizeCandidateSearchKeywords(next.domainKeywords || []);
+  next.mustHaveSkills = Boolean(next.mustHaveSkills);
+  if (Array.isArray(next.skills)) {
+    const hasDotNetCore = next.skills.some((s) => {
+      const t = normalizeDashboardText(s).toLowerCase().trim();
+      return t === ".net core" || t === "asp.net core";
+    });
+    if (hasDotNetCore || /\b(\.net\s*core|dot\s*net\s*core|dotnet\s*core|asp\.?\s*net\s*core)\b/i.test(qLower)) {
+      next.skills = [".NET Core"];
+      next.skillsMatch = "all";
+      next.mustHaveSkills = true;
+      if (!resolveKnownRole(next.role)) next.role = "dotnet developer";
+      next.roleFamilies = detectRoleFamilies(next.role);
+      next.fallbackKeywords = normalizeCandidateSearchKeywords(
+        [...(Array.isArray(next.fallbackKeywords) ? next.fallbackKeywords : []), ".NET Core"]
+      ).filter((token) => String(token || "").toLowerCase() !== "core");
+    }
+  }
   const knownRole = resolveKnownRole(next.role);
   if (!knownRole || isGarbageRoleText(knownRole)) {
     next.role = "";
@@ -3773,6 +3892,9 @@ function sanitizeCandidateSearchFilters(filters, normalizedQuery = "", universe 
       next.skills = next.skills.filter((token) => !next.domainKeywords.includes(String(token || "").toLowerCase().trim()));
     }
   }
+
+  // Keep location OR semantics explicit for "x and y" / "x or y" queries.
+  if (next.locations.length >= 2) next.location = "";
 
   // If someone asks for "duplicate" without explicitly scoping to assessments,
   // don't let AI accidentally force `sourceTypeFilter="assessment"` which hides captured duplicates.
@@ -4455,9 +4577,12 @@ function candidateMatchesNaturalFilter(item, filters, actor = null) {
     const hay = buildCandidateSearchHay(item);
     const requiredSkills = normalizeCandidateSearchKeywords(filters.skills);
     const matchMode = String(filters.skillsMatch || "").trim().toLowerCase();
+    const mustHaveSkills = Boolean(filters.mustHaveSkills);
     if (requiredSkills.length) {
       const matched = requiredSkills.filter((skill) => candidateHayMatchesTerm(hay, skill));
-      if (matchMode === "any") {
+      if (mustHaveSkills) {
+        if (!matched.length) return false;
+      } else if (matchMode === "any") {
         if (!matched.length) return false;
       } else {
         if (matched.length !== requiredSkills.length) return false;
@@ -7475,10 +7600,7 @@ const server = http.createServer(async (req, res) => {
             filters.domainKeywords = heuristic.domainKeywords;
           }
           if (String(filters.skillsMatch || "").trim() === "" && heuristic.skillsMatch) filters.skillsMatch = heuristic.skillsMatch;
-          if (/\bor\b/i.test(normalized.normalized || query)) filters.skillsMatch = "any";
         }
-      } else if (/\bor\b/i.test(normalized.normalized || query)) {
-        filters.skillsMatch = "any";
       }
 
       // Normalize location aliases even in AI mode.

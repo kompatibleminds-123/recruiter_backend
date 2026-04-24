@@ -109,7 +109,7 @@ const SKILL_PATTERNS = [
   { skill: "react", regex: /\b(react|reactjs|react js|nextjs)\b/i },
   { skill: "java", regex: /\b(java|spring|spring boot)\b/i },
   { skill: "python", regex: /\b(python|django|flask|fastapi)\b/i },
-  { skill: "dotnet", regex: /(?:^|\s)(?:dotnet|dot net|\.net|asp\.net|asp net|net core|c#)\b/i },
+  { skill: "dotnet", regex: /(?:^|\s)(?:dotnet|dot net|\.net|asp\.net|asp net|c#)\b/i },
   { skill: "golang", regex: /\b(golang|go lang|go)\b/i },
   { skill: "angular", regex: /\bangular\b/i },
   { skill: "sql", regex: /\b(sql|mysql|postgres|postgresql|sql server)\b/i },
@@ -117,6 +117,24 @@ const SKILL_PATTERNS = [
   { skill: "kafka", regex: /\bkafka\b/i },
   { skill: "aws", regex: /\baws|amazon web services\b/i },
   { skill: "azure", regex: /\bazure\b/i }
+];
+
+const ATOMIC_SKILL_PHRASES = [
+  { canonical: ".NET Core", regex: /(?:^|\s)(?:\.net\s*core|dot\s*net\s*core|dotnet\s*core|asp\.?\s*net\s*core)(?=$|\s)/i },
+  { canonical: "ASP.NET Core", regex: /(?:^|\s)(?:asp\.?\s*net\s*core)(?=$|\s)/i },
+  { canonical: "spring boot", regex: /\bspring\s+boot\b/i },
+  { canonical: "core java", regex: /\bcore\s+java\b/i },
+  { canonical: "react native", regex: /\breact\s+native\b/i },
+  { canonical: "node.js", regex: /\b(?:node\.js|node\s+js|nodejs)\b/i },
+  { canonical: "next.js", regex: /\b(?:next\.js|next\s+js|nextjs)\b/i },
+  { canonical: "angular js", regex: /\b(?:angular\s+js|angularjs)\b/i },
+  { canonical: "sql server", regex: /\bsql\s+server\b/i },
+  { canonical: "power bi", regex: /\bpower\s+bi\b/i },
+  { canonical: "machine learning", regex: /\bmachine\s+learning\b/i },
+  { canonical: "data engineering", regex: /\bdata\s+engineering\b/i },
+  { canonical: "business analyst", regex: /\bbusiness\s+analyst\b/i },
+  { canonical: "manual testing", regex: /\bmanual\s+testing\b/i },
+  { canonical: "automation testing", regex: /\bautomation\s+testing\b/i }
 ];
 
 function detectSourceTypeFilter(query = "") {
@@ -264,6 +282,21 @@ function extractNoticePeriod(query = "") {
   return { maxNoticeDays: null, servingNotice };
 }
 
+function extractAtomicSkillPhrases(query = "") {
+  let residual = String(query || "");
+  const found = [];
+  for (const phrase of ATOMIC_SKILL_PHRASES) {
+    const regex = new RegExp(phrase.regex.source, phrase.regex.flags.includes("g") ? phrase.regex.flags : `${phrase.regex.flags}g`);
+    if (!regex.test(residual)) continue;
+    found.push(phrase.canonical);
+    residual = residual.replace(regex, " ");
+  }
+  return {
+    phrases: Array.from(new Set(found)),
+    residual: normalizeWhitespace(residual)
+  };
+}
+
 function cleanupResidualText(query = "", locations = []) {
   let residual = String(query || "").toLowerCase();
   locations.forEach((loc) => {
@@ -289,11 +322,11 @@ function detectDomainKeywords(query = "") {
   return DOMAIN_KEYWORDS.filter((word) => new RegExp(`\\b${word}\\b`, "i").test(text));
 }
 
-function detectRoleAndSkills(cleanedText = "", fullQuery = "") {
+function detectRoleAndSkills(cleanedText = "", fullQuery = "", atomicSkills = []) {
   const roleSource = `${String(cleanedText || "")} ${String(fullQuery || "")}`.trim();
   const text = roleSource.toLowerCase();
   let role = "";
-  const skillSet = new Set();
+  const skillSet = new Set((Array.isArray(atomicSkills) ? atomicSkills : []).map((s) => String(s || "").trim().toLowerCase()).filter(Boolean));
 
   for (const rule of ROLE_PATTERNS) {
     if (rule.regex.test(text)) {
@@ -308,6 +341,13 @@ function detectRoleAndSkills(cleanedText = "", fullQuery = "") {
   }
 
   if (!role) {
+    const hasDotNetCore = (Array.isArray(atomicSkills) ? atomicSkills : []).some((s) => {
+      const t = String(s || "").trim().toLowerCase();
+      return t === ".net core" || t === "asp.net core";
+    });
+    if (hasDotNetCore && /\b(developer|developers|engineer|engineers|programmer|programmers)\b/.test(text)) {
+      role = "dotnet developer";
+    } else
     if (/\bdeveloper\b|\bengineer\b/.test(text)) {
       const firstSkill = Array.from(skillSet)[0] || "";
       if (firstSkill && !["sql", "azure", "aws", "mongodb", "kafka"].includes(firstSkill)) {
@@ -363,24 +403,52 @@ function resolveKnownRole(value = "") {
 
 function parseDeterministicRecruiterQuery(rawQuery = "", synonyms = DEFAULT_SYNONYMS) {
   const normalizedQuery = normalizeParserQuery(rawQuery, synonyms);
+  const atomic = extractAtomicSkillPhrases(normalizedQuery);
   const locations = extractLocations(normalizedQuery, synonyms);
   const notice = extractNoticePeriod(normalizedQuery);
-  const cleanedText = cleanupResidualText(normalizedQuery, locations);
-  const roleSkill = detectRoleAndSkills(cleanedText, normalizedQuery);
+  const cleanedText = cleanupResidualText(atomic.residual, locations);
+  const roleSkill = detectRoleAndSkills(cleanedText, normalizedQuery, atomic.phrases);
   const domainKeywords = detectDomainKeywords(normalizedQuery);
-  const skills = sanitizeSkillTokens(roleSkill.skills);
+  const hasDotNetCoreAtomic = atomic.phrases.some((p) => {
+    const t = String(p || "").trim().toLowerCase();
+    return t === ".net core" || t === "asp.net core";
+  });
+  const hasDotNetCoreIntent = hasDotNetCoreAtomic || /\b(?:dotnet\s*core|dot\s*net\s*core|asp\.?\s*net\s*core|\.net\s*core)\b/i.test(normalizedQuery);
+  const skills = hasDotNetCoreAtomic ? [".NET Core"] : sanitizeSkillTokens(roleSkill.skills);
   const sourceTypeFilter = detectSourceTypeFilter(normalizedQuery);
   const statuses = detectStatusFields(normalizedQuery);
+  const hasAtomic = atomic.phrases.length > 0;
+  const mustHaveSkills = hasAtomic || hasDotNetCoreIntent;
+  const skillsMatch = mustHaveSkills ? "all" : "all";
+  const fallbackKeywords = Array.from(
+    new Set([
+      ...(hasAtomic ? atomic.phrases : []),
+      ...(hasDotNetCoreIntent ? [".NET Core"] : []),
+      ...domainKeywords
+    ])
+  ).filter((token) => String(token || "").trim().toLowerCase() !== "core");
+  const resolvedRole = hasDotNetCoreIntent
+    ? "dotnet developer"
+    : roleSkill.role;
+  const resolvedSkills = hasDotNetCoreIntent
+    ? [".NET Core"]
+    : skills;
+  const resolvedRoleFamilies = hasDotNetCoreIntent
+    ? Array.from(new Set([...(Array.isArray(roleSkill.roleFamilies) ? roleSkill.roleFamilies : []), "tech"]))
+    : roleSkill.roleFamilies;
 
   return {
     normalizedQuery,
     cleanedText,
-    role: roleSkill.role,
-    roleFamilies: roleSkill.roleFamilies,
+    role: resolvedRole,
+    roleFamilies: resolvedRoleFamilies,
     locations,
     location: locations.length ? locations[0] : "",
-    skills,
+    skills: resolvedSkills,
     domainKeywords,
+    skillsMatch,
+    mustHaveSkills,
+    fallbackKeywords,
     maxNoticeDays: typeof notice.maxNoticeDays === "number" ? notice.maxNoticeDays : null,
     servingNotice: Boolean(notice.servingNotice),
     sourceTypeFilter,
