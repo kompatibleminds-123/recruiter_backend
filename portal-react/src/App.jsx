@@ -136,7 +136,7 @@ const SMART_SEARCH_QUICK_CHIPS = [
   { id: "feedback_awaited", label: "Feedback awaited", querySuffix: "assessment status feedback awaited" },
   { id: "quick_joiners", label: "Quick joiners (<=15 days)", querySuffix: "notice period under 15 days" },
   { id: "offered_candidates", label: "Offered candidates", querySuffix: "assessment status offered" },
-  { id: "cv_shared", label: "CV shared", querySuffix: "assessment status cv shared" }
+  { id: "cv_shared", label: "Active pipeline", querySuffix: "active assessments" }
 ];
 const SMART_CHIP_INTERVIEW_ALIGNED_STATUSES = new Set([
   "screening call aligned",
@@ -5481,8 +5481,21 @@ function PortalApp({ token, onLogout }) {
         recruiter_context_notes: item.recruiterNotes || "",
         other_pointers: item.otherPointers || ""
       }));
-    return [...databaseRows, ...assessmentOnlyItems];
-  }, [state.assessments, state.candidates, state.databaseCandidates]);
+    const combined = [...databaseRows, ...assessmentOnlyItems];
+    const isAdmin = String(state.user?.role || "").toLowerCase() === "admin";
+    if (isAdmin) return combined;
+    const currentUserId = String(state.user?.id || "").trim();
+    const currentUserName = String(state.user?.name || "").trim().toLowerCase();
+    return combined.filter((item) => {
+      const assignedUserId = String(item?.assigned_to_user_id || item?.assignedToUserId || "").trim();
+      const ownerRecruiterId = String(item?.ownerRecruiterId || item?.recruiter_id || "").trim();
+      const assignedToName = String(item?.assigned_to_name || item?.assignedToName || "").trim().toLowerCase();
+      const recruiterName = String(item?.ownerRecruiter || item?.recruiterName || item?.recruiter_name || "").trim().toLowerCase();
+      if (currentUserId && (assignedUserId === currentUserId || ownerRecruiterId === currentUserId)) return true;
+      if (currentUserName && (assignedToName === currentUserName || recruiterName === currentUserName)) return true;
+      return false;
+    });
+  }, [state.assessments, state.candidates, state.databaseCandidates, state.user]);
   const candidateSearchOptions = useMemo(() => {
     const recruiters = new Set();
     const genders = new Set();
@@ -5684,8 +5697,9 @@ function PortalApp({ token, onLogout }) {
       if (assessmentStatus === "offered" && inDateRange(updatedAt)) {
         rowsByChip.offered_candidates.push({ ...baseRow, round: "Offered" });
       }
-      if (assessmentStatus === "cv shared" && inDateRange(updatedAt)) {
-        rowsByChip.cv_shared.push({ ...baseRow, round: "CV shared" });
+      const activeAssessment = linkedAssessment && !isAssessmentArchived(linkedAssessment);
+      if (activeAssessment && inDateRange(updatedAt)) {
+        rowsByChip.cv_shared.push({ ...baseRow, round: normalizeAssessmentStatusLabel(assessmentStatus || "Active") });
       }
     });
     return rowsByChip;
@@ -9886,8 +9900,18 @@ function PortalApp({ token, onLogout }) {
                       <label><span>Any keywords</span><input value={candidateKeywordAny} onChange={(e) => setCandidateKeywordAny(e.target.value)} placeholder="Fintech, lending, finance" /></label>
                       <label><span>Exclude keywords</span><input value={candidateKeywordExclude} onChange={(e) => setCandidateKeywordExclude(e.target.value)} placeholder="sales, recruiter, hr" /></label>
                     </div>
+                    {candidateKeywordPreview ? (
+                      <div className="muted">Query preview: <code>{candidateKeywordPreview}</code></div>
+                    ) : (
+                      <div className="muted">Add keywords to generate Boolean preview.</div>
+                    )}
+                  </div>
+                ) : null}
+                {candidateAiQueryMode === "natural" ? (
+                  <div className="item-card compact-card candidate-quick-chip-builder">
+                    <h3>Quick chips</h3>
+                    <p className="muted">One-click shortlist blocks. Results stay aligned with your selected filters.</p>
                     <div className="filter-block">
-                      <div className="info-label">Quick chips</div>
                       <div className="chip-row">
                         {SMART_SEARCH_QUICK_CHIPS.map((chip) => (
                           <button
@@ -9922,11 +9946,6 @@ function PortalApp({ token, onLogout }) {
                         />
                       </label>
                     </div>
-                    {candidateKeywordPreview ? (
-                      <div className="muted">Query preview: <code>{candidateKeywordPreview}</code></div>
-                    ) : (
-                      <div className="muted">Add keywords to generate Boolean preview.</div>
-                    )}
                   </div>
                 ) : null}
                 {candidateAiQueryMode === "natural" ? (

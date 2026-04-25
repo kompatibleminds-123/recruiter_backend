@@ -857,6 +857,18 @@ textarea { min-height: 92px; resize: vertical; }
 .candidate-smart-link {
   white-space: nowrap;
 }
+.candidate-keyword-builder {
+  border: 1px solid #d9e4fb;
+  background: linear-gradient(180deg, #f8fbff 0%, #f2f7ff 100%);
+}
+.candidate-quick-chip-builder {
+  border: 1px solid #cfe6dd;
+  background: linear-gradient(180deg, #f3fbf7 0%, #ecf9f2 100%);
+}
+.candidate-quick-chip-builder .chip-toggle.active {
+  border-color: #93c7b0;
+  background: #dff4e9;
+}
 .table-metric-btn {
   border: 0;
   background: transparent;
