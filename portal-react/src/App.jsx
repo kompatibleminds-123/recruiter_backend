@@ -561,6 +561,24 @@ function parseMultiChipTokens(value) {
     .filter(Boolean);
 }
 
+function toTimestampSafe(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return NaN;
+  const direct = Date.parse(raw);
+  if (Number.isFinite(direct)) return direct;
+  // Support: DD/MM/YYYY, HH:mm:ss (or HH:mm)
+  const m = raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:,\s*(\d{1,2}):(\d{2})(?::(\d{2}))?)?$/);
+  if (!m) return NaN;
+  const day = Number(m[1]);
+  const month = Number(m[2]) - 1;
+  const year = Number(m[3]);
+  const hours = Number(m[4] || 0);
+  const minutes = Number(m[5] || 0);
+  const seconds = Number(m[6] || 0);
+  const dt = new Date(year, month, day, hours, minutes, seconds);
+  return dt.getTime();
+}
+
 function toggleMultiChipValue(value, option) {
   const current = parseMultiChipTokens(value);
   if (option === "__all__") return "";
@@ -5707,19 +5725,19 @@ function PortalApp({ token, onLogout }) {
     const weekEndTs = weekStartTs + (7 * 24 * 60 * 60 * 1000) - 1;
     const inDateRange = (value) => {
       if (!fromTs && !toTs) return true;
-      const ts = value ? new Date(value).getTime() : NaN;
+      const ts = toTimestampSafe(value);
       if (!Number.isFinite(ts)) return false;
       if (fromTs && ts < fromTs) return false;
       if (toTs && ts > toTs) return false;
       return true;
     };
     const inToday = (value) => {
-      const ts = value ? new Date(value).getTime() : NaN;
+      const ts = toTimestampSafe(value);
       if (!Number.isFinite(ts)) return false;
       return ts >= startOfTodayTs && ts <= endOfTodayTs;
     };
     const inThisWeek = (value) => {
-      const ts = value ? new Date(value).getTime() : NaN;
+      const ts = toTimestampSafe(value);
       if (!Number.isFinite(ts)) return false;
       return ts >= weekStartTs && ts <= weekEndTs;
     };
