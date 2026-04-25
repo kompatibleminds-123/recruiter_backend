@@ -5714,7 +5714,21 @@ function PortalApp({ token, onLogout }) {
   }, [candidateUniverse, candidatePage]);
   const totalCandidatePages = Math.max(1, Math.ceil((candidateUniverse.length || 0) / 10));
   const candidateSmartChipRows = useMemo(() => {
-    const assessmentById = new Map((state.assessments || []).map((assessment) => [String(assessment?.id || "").trim(), assessment]));
+    const assessments = Array.isArray(state.assessments) ? state.assessments : [];
+    const assessmentById = new Map(assessments.map((assessment) => [String(assessment?.id || "").trim(), assessment]));
+    const assessmentByCandidateId = new Map();
+    assessments.forEach((assessment) => {
+      const candidateId = String(
+        assessment?.candidateId
+        || assessment?.candidate_id
+        || assessment?.payload?.candidateId
+        || assessment?.payload?.candidate_id
+        || ""
+      ).trim();
+      if (candidateId && !assessmentByCandidateId.has(candidateId)) {
+        assessmentByCandidateId.set(candidateId, assessment);
+      }
+    });
     const fromTs = candidateSmartDateFrom ? new Date(`${candidateSmartDateFrom}T00:00:00`).getTime() : null;
     const toTs = candidateSmartDateTo ? new Date(`${candidateSmartDateTo}T23:59:59`).getTime() : null;
     const now = new Date();
@@ -5752,9 +5766,9 @@ function PortalApp({ token, onLogout }) {
       cv_shared: []
     };
     candidateUniverse.forEach((item) => {
-      const linkedAssessment = item?.raw?.assessment
-        || item?.assessment
-        || assessmentById.get(String(item?.assessment_id || item?.assessmentId || "").trim())
+      const candidateId = String(item?.id || "").trim();
+      const linkedAssessment = assessmentById.get(String(item?.assessment_id || item?.assessmentId || "").trim())
+        || (candidateId ? assessmentByCandidateId.get(candidateId) : null)
         || null;
       const assessmentStatus = normalizeStatus(
         linkedAssessment?.candidateStatus
