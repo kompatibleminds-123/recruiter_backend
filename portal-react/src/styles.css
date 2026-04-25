@@ -862,12 +862,12 @@ textarea { min-height: 92px; resize: vertical; }
   background: linear-gradient(180deg, #f8fbff 0%, #f2f7ff 100%);
 }
 .candidate-quick-chip-builder {
-  border: 1px solid #cfe6dd;
-  background: linear-gradient(180deg, #f3fbf7 0%, #ecf9f2 100%);
+  border: 1px solid #f1c7cf;
+  background: linear-gradient(180deg, #fff7f8 0%, #fff1f3 100%);
 }
 .candidate-quick-chip-builder .chip-toggle.active {
-  border-color: #93c7b0;
-  background: #dff4e9;
+  border-color: #e99aa8;
+  background: #ffe5ea;
 }
 .table-metric-btn {
   border: 0;

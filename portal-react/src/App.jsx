@@ -425,6 +425,14 @@ function normalizeAssessmentStatusLabel(status) {
   return value;
 }
 
+function formatAssessmentStatusDisplay(status) {
+  const label = normalizeAssessmentStatusLabel(status);
+  if (!label) return "";
+  return label
+    .replace(/\bl(\d)\b/gi, "L$1")
+    .replace(/\bhr\b/gi, "HR");
+}
+
 function normalizeShortcutKey(raw) {
   const value = String(raw || "").trim();
   if (!value) return "";
@@ -5686,20 +5694,21 @@ function PortalApp({ token, onLogout }) {
       };
 
       if (SMART_CHIP_INTERVIEW_ALIGNED_STATUSES.has(assessmentStatus) && inDateRange(interviewAt || updatedAt)) {
-        rowsByChip.aligned_interviews.push({ ...baseRow, round: normalizeAssessmentStatusLabel(assessmentStatus) });
+        rowsByChip.aligned_interviews.push({ ...baseRow, round: formatAssessmentStatusDisplay(assessmentStatus) });
       }
       if (assessmentStatus === "feedback awaited" && inDateRange(interviewAt || updatedAt)) {
         rowsByChip.feedback_awaited.push({ ...baseRow, round: "Feedback awaited" });
       }
-      if (noticeDays != null && noticeDays <= 15 && inDateRange(updatedAt)) {
-        rowsByChip.quick_joiners.push({ ...baseRow, round: "Quick joiner" });
+      const capturedIsActive = item?.hidden_from_captured !== true && item?.hiddenFromCaptured !== true;
+      const activeAssessment = linkedAssessment && !isAssessmentArchived(linkedAssessment);
+      if (noticeDays != null && noticeDays <= 15 && capturedIsActive && activeAssessment && inDateRange(updatedAt)) {
+        rowsByChip.quick_joiners.push({ ...baseRow, round: formatAssessmentStatusDisplay(baseRow.status || assessmentStatus || "CV shared") });
       }
       if (assessmentStatus === "offered" && inDateRange(updatedAt)) {
         rowsByChip.offered_candidates.push({ ...baseRow, round: "Offered" });
       }
-      const activeAssessment = linkedAssessment && !isAssessmentArchived(linkedAssessment);
       if (activeAssessment && inDateRange(updatedAt)) {
-        rowsByChip.cv_shared.push({ ...baseRow, round: normalizeAssessmentStatusLabel(assessmentStatus || "Active") });
+        rowsByChip.cv_shared.push({ ...baseRow, round: formatAssessmentStatusDisplay(assessmentStatus || "Active") });
       }
     });
     return rowsByChip;
