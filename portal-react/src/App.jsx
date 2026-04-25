@@ -5798,10 +5798,10 @@ function PortalApp({ token, onLogout }) {
         || assessment?.payload?.candidate_id
         || ""
       ).trim();
-      const inScopedUniverse = (
-        (assessmentId && universeAssessmentIds.has(assessmentId))
-        || (candidateId && universeCandidateIds.has(candidateId))
-      );
+      const hasAssessmentScope = universeAssessmentIds.size > 0;
+      const inScopedUniverse = hasAssessmentScope
+        ? (assessmentId && universeAssessmentIds.has(assessmentId))
+        : (candidateId && universeCandidateIds.has(candidateId));
       if (!inScopedUniverse) return;
       const item = (candidateId && candidateById.get(candidateId)) || null;
       const linkedAssessment = assessmentById.get(assessmentId)
@@ -5819,12 +5819,16 @@ function PortalApp({ token, onLogout }) {
           || ""
       ).trim();
       const updatedAt = String(
-        linkedAssessment?.updatedAt
+        linkedAssessment?.generatedAt
+          || linkedAssessment?.generated_at
+          linkedAssessment?.updatedAt
           || linkedAssessment?.updated_at
           || ""
       ).trim();
       const convertedAt = String(
-        linkedAssessment?.createdAt
+        linkedAssessment?.generatedAt
+          || linkedAssessment?.generated_at
+          linkedAssessment?.createdAt
           || linkedAssessment?.created_at
           || ""
       ).trim();
@@ -5832,8 +5836,8 @@ function PortalApp({ token, onLogout }) {
       const baseRow = {
         item: item || { assessmentId: linkedAssessment?.id, candidateId },
         candidateName: item?.name || item?.candidateName || "Candidate",
-        role: item?.role || item?.currentDesignation || item?.jd_title || item?.jdTitle || "",
-        client: item?.client_name || item?.clientName || linkedAssessment?.clientName || "",
+        role: linkedAssessment?.jdTitle || item?.role || item?.currentDesignation || item?.jd_title || item?.jdTitle || "",
+        client: linkedAssessment?.clientName || item?.client_name || item?.clientName || "",
         recruiter: item?.assigned_to_name || item?.ownerRecruiter || item?.recruiterName || "",
         currentCtc: item?.current_ctc || item?.currentCtc || "",
         expectedCtc: item?.expected_ctc || item?.expectedCtc || "",
@@ -10483,12 +10487,6 @@ function PortalApp({ token, onLogout }) {
                 <button onClick={() => void copyAssessmentsExcel()}>Copy Excel</button>
                 <button onClick={() => void copyAssessmentsWhatsapp()}>Copy WhatsApp</button>
                 <button onClick={() => void copyAssessmentsEmail()}>Copy Email</button>
-                <button className="ghost-btn" onClick={() => downloadAssessmentEventXlsx("interviews_done")}>Download interviews done</button>
-                <button className="ghost-btn" onClick={() => downloadAssessmentEventXlsx("interviews_aligned")}>Download interviews aligned</button>
-                <button className="ghost-btn" onClick={() => downloadAssessmentEventXlsx("offered")}>Download offered</button>
-              </div>
-              <div className="muted" style={{ marginTop: 6 }}>
-                Export interview done, interview aligned, or offered lists using the current date filters.
               </div>
               <div className="status-note">Selected for client share: {selectedAssessmentIds.length}</div>
               <div className="stack-list">
