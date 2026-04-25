@@ -1,17 +1,24 @@
 :root {
-  --bg: #f5f8fc;
-  --panel: rgba(255, 255, 255, 0.92);
+  --bg: #f4f7fb;
+  --panel: rgba(255, 255, 255, 0.94);
   --panel-strong: #ffffff;
-  --border: #d9dee8;
-  --text: #17233a;
-  --muted: #66758e;
+  --border: #d9e2ef;
+  --text: #0f172a;
+  --muted: #5d6d88;
   --accent: #2563eb;
-  --accent-strong: #1d4ed8;
-  --accent-soft: #dbeafe;
-  --chip: #eef3fb;
+  --accent-strong: #1e4ed8;
+  --accent-soft: #e8f0ff;
+  --chip: #eef4ff;
   --ok: #0f8a67;
   --error: #b42318;
-  --shadow: 0 16px 42px rgba(28, 44, 78, 0.07);
+  --shadow: 0 16px 38px rgba(15, 23, 42, 0.08);
+  --shadow-sm: 0 3px 12px rgba(15, 23, 42, 0.06);
+  --shadow-md: 0 10px 24px rgba(15, 23, 42, 0.09);
+  --ring: 0 0 0 3px rgba(37, 99, 235, 0.22);
+  --radius-sm: 10px;
+  --radius-md: 14px;
+  --radius-lg: 16px;
+  --radius-xl: 20px;
   font-family: "Segoe UI", system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
 }
 
@@ -20,8 +27,9 @@ body {
   margin: 0;
   min-height: 100vh;
   background:
-    radial-gradient(circle at top left, rgba(37, 99, 235, 0.08), transparent 26%),
-    linear-gradient(180deg, #fbfdff 0%, #eef4fb 100%);
+    radial-gradient(circle at top left, rgba(37, 99, 235, 0.06), transparent 28%),
+    radial-gradient(circle at bottom right, rgba(29, 78, 216, 0.05), transparent 26%),
+    linear-gradient(180deg, #fbfdff 0%, #eef3fa 100%);
   color: var(--text);
   font-family: inherit;
   font-size: 15px;
@@ -29,25 +37,48 @@ body {
 
 button, input, select, textarea { font: inherit; }
 button {
-  background: var(--accent);
-  color: white;
+  background: linear-gradient(180deg, #2d6eff 0%, #245fe4 100%);
+  color: #fff;
   border: 1px solid transparent;
-  border-radius: 10px;
-  padding: 0.58rem 0.82rem;
+  border-radius: var(--radius-md);
+  padding: 0.62rem 0.9rem;
   cursor: pointer;
-  font-size: 0.9rem;
+  font-size: 0.92rem;
   font-weight: 600;
+  box-shadow: 0 4px 14px rgba(37, 99, 235, 0.2);
+  transition: transform 120ms ease, box-shadow 160ms ease, background-color 160ms ease, border-color 160ms ease;
 }
-button:hover { background: var(--accent-strong); }
-.ghost-btn { background: transparent; color: var(--text); border-color: var(--border); }
+button:hover {
+  background: linear-gradient(180deg, #285fe2 0%, #1e49b5 100%);
+  transform: translateY(-1px);
+  box-shadow: 0 8px 18px rgba(37, 99, 235, 0.24);
+}
+.ghost-btn {
+  background: #fff;
+  color: var(--text);
+  border-color: var(--border);
+  box-shadow: none;
+}
+.ghost-btn:hover {
+  background: #f8fbff;
+  border-color: #c9d6ea;
+  box-shadow: var(--shadow-sm);
+}
 input, select, textarea {
   width: 100%;
   border: 1px solid var(--border);
-  border-radius: 12px;
-  padding: 0.66rem 0.82rem;
+  border-radius: var(--radius-md);
+  padding: 0.68rem 0.86rem;
   background: white;
   color: var(--text);
   font-size: 0.92rem;
+  transition: border-color 140ms ease, box-shadow 140ms ease, background-color 140ms ease;
+}
+input:hover, select:hover, textarea:hover { border-color: #c9d5e8; }
+input:focus-visible, select:focus-visible, textarea:focus-visible, button:focus-visible {
+  outline: none;
+  box-shadow: var(--ring);
+  border-color: #8fb3ff;
 }
 textarea { min-height: 92px; resize: vertical; }
 .preset-editor {
@@ -61,7 +92,7 @@ textarea { min-height: 92px; resize: vertical; }
 .auth-card, .panel, .overlay-card {
   background: var(--panel);
   border: 1px solid rgba(217, 222, 232, 0.9);
-  border-radius: 18px;
+  border-radius: var(--radius-xl);
   box-shadow: var(--shadow);
 }
 .auth-card { width: min(560px, 100%); padding: 2rem; }
@@ -87,12 +118,13 @@ textarea { min-height: 92px; resize: vertical; }
 .app-shell { display: grid; grid-template-columns: 280px 1fr; min-height: 100vh; }
 .app-shell--client { display: block; }
 .sidebar {
-  padding: 1.5rem 1rem;
-  background: rgba(255, 255, 255, 0.45);
+  padding: 1.35rem 1rem;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.72) 0%, rgba(248, 251, 255, 0.86) 100%);
   border-right: 1px solid rgba(217, 222, 232, 0.8);
   display: flex;
   flex-direction: column;
-  gap: 1.25rem;
+  gap: 1rem;
+  backdrop-filter: blur(6px);
 }
 .brand h1, .workspace-header h1, .auth-card h1 {
   margin: 0.25rem 0 0;
@@ -121,17 +153,24 @@ textarea { min-height: 92px; resize: vertical; }
 .nav-btn {
   text-decoration: none;
   display: block;
-  padding: 0.72rem 0.86rem;
+  padding: 0.76rem 0.9rem;
   border: 1px solid var(--border);
-  border-radius: 13px;
+  border-radius: var(--radius-md);
   color: var(--text);
-  background: rgba(255, 255, 255, 0.72);
+  background: rgba(255, 255, 255, 0.82);
   font-size: 0.92rem;
   font-weight: 600;
+  transition: transform 130ms ease, box-shadow 160ms ease, border-color 160ms ease, background-color 160ms ease;
+}
+.nav-btn:hover {
+  background: #f7faff;
+  border-color: #c7d5eb;
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-sm);
 }
 .nav-btn.active { background: linear-gradient(135deg, #2563eb, #38bdf8); color: white; border-color: transparent; }
 .sidebar-footer { margin-top: auto; display: grid; gap: 0.85rem; }
-.content { padding: 1.25rem; display: grid; gap: 0.95rem; }
+.content { padding: 1.25rem; display: grid; gap: 1rem; }
 .workspace-header { display: flex; justify-content: space-between; gap: 1rem; align-items: flex-start; }
 .workspace-header > div:first-child {
   display: grid;
@@ -140,7 +179,7 @@ textarea { min-height: 92px; resize: vertical; }
 .page-grid { display: grid; gap: 1rem; }
 .two-pane-grid { display: grid; gap: 1rem; grid-template-columns: 1fr 1fr; }
 .dashboard-breakdown-stack { display: grid; gap: 1rem; }
-.panel { padding: 1rem; }
+.panel { padding: 1rem; background: var(--panel-strong); }
 .panel h2 { margin: 0.22rem 0 0.65rem; font-size: 1.18rem; line-height: 1.15; }
 .metric-grid { display: grid; gap: 0.75rem; grid-template-columns: repeat(auto-fit, minmax(124px, 1fr)); }
 .metric-grid--tight { grid-template-columns: repeat(auto-fit, minmax(96px, 1fr)); gap: 0.6rem; }
@@ -243,15 +282,25 @@ textarea { min-height: 92px; resize: vertical; }
 .agenda-header select {
   min-width: 180px;
 }
-.metric-card { padding: 0.62rem 0.72rem; border-radius: 15px; border: 1px solid var(--border); background: var(--panel-strong); min-height: 78px; display: grid; align-content: start; }
+.metric-card {
+  padding: 0.72rem 0.8rem;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border);
+  background: linear-gradient(180deg, #ffffff 0%, #f9fbff 100%);
+  min-height: 78px;
+  display: grid;
+  align-content: start;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9);
+}
 .metric-card--button {
   text-align: left;
   cursor: pointer;
   color: var(--text);
 }
 .metric-card--button:hover {
-  border-color: #d2ddf4;
+  border-color: #c5d5ef;
   transform: translateY(-1px);
+  box-shadow: var(--shadow-sm);
 }
 .compact-metric { padding: 0.62rem; min-height: 72px; }
 .metric-label { font-size: 0.72rem; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em; line-height: 1.2; }
@@ -344,7 +393,15 @@ textarea { min-height: 92px; resize: vertical; }
 .compact-empty {
   padding: 0.75rem;
 }
-.item-card { border: 1px solid var(--border); background: var(--panel-strong); border-radius: 15px; padding: 0.82rem 0.9rem; min-width: 0; overflow: hidden; }
+.item-card {
+  border: 1px solid var(--border);
+  background: var(--panel-strong);
+  border-radius: var(--radius-lg);
+  padding: 0.86rem 0.92rem;
+  min-width: 0;
+  overflow: hidden;
+  box-shadow: var(--shadow-sm);
+}
 .assessment-card {
   /* Allow the "More" dropdown to render outside the card without being clipped. */
   overflow: visible;
@@ -408,7 +465,7 @@ textarea { min-height: 92px; resize: vertical; }
 .captured-filter-grid {
   display: grid;
   gap: 0.85rem;
-  margin: 1rem 0;
+  margin: 1rem 0 0.9rem;
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
 }
 .candidate-filter-card {
@@ -488,9 +545,10 @@ textarea { min-height: 92px; resize: vertical; }
 }
 .filter-dropdown {
   border: 1px solid var(--border);
-  border-radius: 16px;
+  border-radius: var(--radius-lg);
   background: var(--panel-strong);
   overflow: hidden;
+  box-shadow: var(--shadow-sm);
 }
 .filter-dropdown__summary {
   list-style: none;
@@ -802,7 +860,8 @@ textarea { min-height: 92px; resize: vertical; }
   margin-top: 0.7rem;
   overflow-x: auto;
   border: 1px solid #e7edf8;
-  border-radius: 16px;
+  border-radius: var(--radius-lg);
+  background: #fff;
 }
 .dashboard-table {
   width: 100%;
@@ -822,7 +881,12 @@ textarea { min-height: 92px; resize: vertical; }
   background: #edf2fb;
   font-weight: 700;
   color: #243557;
+  position: sticky;
+  top: 0;
+  z-index: 1;
 }
+.dashboard-table tbody tr:nth-child(even) { background: #fcfdff; }
+.dashboard-table tbody tr:hover { background: #f6faff; }
 .linkish {
   border: 0;
   background: transparent;
@@ -932,7 +996,7 @@ textarea { min-height: 92px; resize: vertical; }
 .status {
   margin-top: 0.85rem;
   padding: 0.8rem 0.95rem;
-  border-radius: 14px;
+  border-radius: var(--radius-md);
   background: #eff4ff;
   color: var(--text);
   border: 1px solid #dae3fa;
@@ -945,9 +1009,10 @@ textarea { min-height: 92px; resize: vertical; }
 .empty-state {
   padding: 1rem;
   border: 1px dashed var(--border);
-  border-radius: 16px;
+  border-radius: var(--radius-lg);
   color: var(--muted);
   font-size: 0.92rem;
+  background: #fbfdff;
 }
 .overlay {
   position: fixed;
@@ -967,6 +1032,7 @@ textarea { min-height: 92px; resize: vertical; }
   gap: 0.85rem;
   max-height: calc(100vh - 3rem);
   overflow-y: auto;
+  box-shadow: var(--shadow-md);
 }
 .overlay-card--wide { width: min(1320px, calc(100vw - 3rem)); }
 .overlay-card h3 { margin: 0; font-size: 1.25rem; }
@@ -1006,7 +1072,7 @@ textarea { min-height: 92px; resize: vertical; }
 .runbook-block,
 .shortcut-builder {
   border: 1px solid var(--border);
-  border-radius: 18px;
+  border-radius: var(--radius-xl);
   background: var(--panel-strong);
   padding: 1rem;
 }
@@ -1020,7 +1086,7 @@ textarea { min-height: 92px; resize: vertical; }
   gap: 0.85rem;
   align-items: start;
   padding: 0.8rem 0.9rem;
-  border-radius: 14px;
+  border-radius: var(--radius-md);
   background: #f7f9fd;
   border: 1px solid #e3e9f6;
   font-size: 0.93rem;
@@ -1074,7 +1140,7 @@ textarea { min-height: 92px; resize: vertical; }
   gap: 1rem;
   padding: 1rem 1.1rem;
   border: 1px solid rgba(217, 222, 232, 0.9);
-  border-radius: 18px;
+  border-radius: var(--radius-xl);
   background: #f9fbff;
 }
 .cv-upload-card__copy {
