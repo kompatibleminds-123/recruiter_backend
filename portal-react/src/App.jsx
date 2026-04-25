@@ -7807,9 +7807,10 @@ function PortalApp({ token, onLogout }) {
       .filter(Boolean)
       .join(" ");
     const rawInput = String(candidateSearchText || "").trim();
-    const effectiveSearchText = hasKeywordBuilder
-      ? keywordDrivenBoolean
-      : [rawInput, chipSuffix].filter(Boolean).join(" ").trim();
+    const effectiveSearchText = [
+      hasKeywordBuilder ? keywordDrivenBoolean : rawInput,
+      chipSuffix
+    ].filter(Boolean).join(" ").trim();
 
     if (!effectiveSearchText) {
       setCandidateSearchMode("all");
@@ -7819,7 +7820,9 @@ function PortalApp({ token, onLogout }) {
       setStatus("workspace", "Showing candidates using structured filters.", "ok");
       return;
     }
-    const mode = hasKeywordBuilder ? "boolean" : (candidateAiQueryMode === "natural" ? "ai" : "boolean");
+    const mode = candidateAiQueryMode === "natural"
+      ? ((hasKeywordBuilder && !chipSuffix) ? "boolean" : "ai")
+      : "boolean";
     const semanticEnabled = copySettings.semanticSearchEnabled !== false;
     setCandidateSearchBusy(true);
     setCandidateSearchDebug(null);
@@ -9690,32 +9693,32 @@ function PortalApp({ token, onLogout }) {
                     <button className={candidateAiQueryMode === "natural" ? "" : "ghost-btn"} onClick={() => setCandidateAiQueryMode("natural")}>Smart</button>
                   </div>
                 </div>
-                <div className="toolbar candidate-search-toolbar">
-                  {candidateAiQueryMode === "boolean" ? (
+                {candidateAiQueryMode === "boolean" ? (
+                  <div className="toolbar candidate-search-toolbar">
                     <input
                       placeholder='(sales OR "business development") AND saas'
                       value={candidateSearchText}
                       onChange={(e) => setCandidateSearchText(e.target.value)}
                     />
-                  ) : null}
-                  <button disabled={candidateSearchBusy} onClick={() => void runCandidateSearch()}>{candidateAiQueryMode === "boolean" ? "Run Boolean Search" : "Run Smart Search"}</button>
-                  <button className="ghost-btn" onClick={() => {
-                    setCandidateFilterPanelOpen((current) => !current);
-                  }}>{candidateFilterPanelOpen ? "Hide filters" : "Show filters"}</button>
-                  <button className="ghost-btn" onClick={() => {
-                    setCandidateSearchText("");
-                    setCandidateKeywordMust("");
-                    setCandidateKeywordAny("");
-                    setCandidateKeywordExclude("");
-                    setCandidateQuickChipIds([]);
-                    setCandidateSearchResults([]);
-                    setCandidateSearchMode("all");
-                    setCandidatePage(1);
-                    setCandidateSearchingAs("");
-                    setCandidateStructuredFilters(EMPTY_CANDIDATE_STRUCTURED_FILTERS);
-                    setCandidateStructuredFiltersDraft(EMPTY_CANDIDATE_STRUCTURED_FILTERS);
-                  }}>Reset search</button>
-                </div>
+                    <button disabled={candidateSearchBusy} onClick={() => void runCandidateSearch()}>Run Boolean Search</button>
+                    <button className="ghost-btn" onClick={() => {
+                      setCandidateFilterPanelOpen((current) => !current);
+                    }}>{candidateFilterPanelOpen ? "Hide filters" : "Show filters"}</button>
+                    <button className="ghost-btn" onClick={() => {
+                      setCandidateSearchText("");
+                      setCandidateKeywordMust("");
+                      setCandidateKeywordAny("");
+                      setCandidateKeywordExclude("");
+                      setCandidateQuickChipIds([]);
+                      setCandidateSearchResults([]);
+                      setCandidateSearchMode("all");
+                      setCandidatePage(1);
+                      setCandidateSearchingAs("");
+                      setCandidateStructuredFilters(EMPTY_CANDIDATE_STRUCTURED_FILTERS);
+                      setCandidateStructuredFiltersDraft(EMPTY_CANDIDATE_STRUCTURED_FILTERS);
+                    }}>Reset search</button>
+                  </div>
+                ) : null}
                 {candidateSearchBusy ? (
                   <div className="muted" style={{ marginTop: 6 }}>Searching candidates...</div>
                 ) : null}
@@ -9751,6 +9754,27 @@ function PortalApp({ token, onLogout }) {
                     ) : (
                       <div className="muted">Add keywords to generate Boolean preview.</div>
                     )}
+                  </div>
+                ) : null}
+                {candidateAiQueryMode === "natural" ? (
+                  <div className="toolbar candidate-search-toolbar">
+                    <button disabled={candidateSearchBusy} onClick={() => void runCandidateSearch()}>Run Smart Search</button>
+                    <button className="ghost-btn" onClick={() => {
+                      setCandidateFilterPanelOpen((current) => !current);
+                    }}>{candidateFilterPanelOpen ? "Hide filters" : "Show filters"}</button>
+                    <button className="ghost-btn" onClick={() => {
+                      setCandidateSearchText("");
+                      setCandidateKeywordMust("");
+                      setCandidateKeywordAny("");
+                      setCandidateKeywordExclude("");
+                      setCandidateQuickChipIds([]);
+                      setCandidateSearchResults([]);
+                      setCandidateSearchMode("all");
+                      setCandidatePage(1);
+                      setCandidateSearchingAs("");
+                      setCandidateStructuredFilters(EMPTY_CANDIDATE_STRUCTURED_FILTERS);
+                      setCandidateStructuredFiltersDraft(EMPTY_CANDIDATE_STRUCTURED_FILTERS);
+                    }}>Reset search</button>
                   </div>
                 ) : null}
                 {candidateAiQueryMode === "natural" && candidateSearchingAs ? (
