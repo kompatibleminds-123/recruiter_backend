@@ -157,11 +157,12 @@ function buildBooleanFromKeywordBars({ must = "", any = "", exclude = "" } = {})
   const mustTokens = parseKeywordBarTokens(must).map(formatBooleanToken).filter(Boolean);
   const anyTokens = parseKeywordBarTokens(any).map(formatBooleanToken).filter(Boolean);
   const excludeTokens = parseKeywordBarTokens(exclude).map(formatBooleanToken).filter(Boolean);
-  const parts = [];
-  if (mustTokens.length) parts.push(mustTokens.join(" AND "));
-  if (anyTokens.length) parts.push(`(${anyTokens.join(" OR ")})`);
-  if (excludeTokens.length) parts.push(`NOT (${excludeTokens.join(" OR ")})`);
-  return parts.join(" AND ").trim();
+  const positiveParts = [];
+  if (mustTokens.length) positiveParts.push(mustTokens.join(" AND "));
+  if (anyTokens.length) positiveParts.push(`(${anyTokens.join(" OR ")})`);
+  const positiveQuery = positiveParts.join(" AND ").trim();
+  const excludeQuery = excludeTokens.length ? `NOT (${excludeTokens.join(" OR ")})` : "";
+  return [positiveQuery, excludeQuery].filter(Boolean).join(" ").trim();
 }
 
 const PORTAL_APPLICANT_METADATA_PREFIX = "[APPLICANT_META]";
@@ -9690,7 +9691,13 @@ function PortalApp({ token, onLogout }) {
                   </div>
                 </div>
                 <div className="toolbar candidate-search-toolbar">
-                  <input placeholder={candidateAiQueryMode === "boolean" ? '(sales OR "business development") AND saas' : "Get me Account Executives with 4+ years of experience based out of Mumbai with current CTC under 20 L"} value={candidateSearchText} onChange={(e) => setCandidateSearchText(e.target.value)} />
+                  {candidateAiQueryMode === "boolean" ? (
+                    <input
+                      placeholder='(sales OR "business development") AND saas'
+                      value={candidateSearchText}
+                      onChange={(e) => setCandidateSearchText(e.target.value)}
+                    />
+                  ) : null}
                   <button disabled={candidateSearchBusy} onClick={() => void runCandidateSearch()}>{candidateAiQueryMode === "boolean" ? "Run Boolean Search" : "Run Smart Search"}</button>
                   <button className="ghost-btn" onClick={() => {
                     setCandidateFilterPanelOpen((current) => !current);
@@ -9751,36 +9758,7 @@ function PortalApp({ token, onLogout }) {
                     Searching as: <code>{candidateSearchingAs}</code>
                   </div>
                 ) : null}
-                {candidateAiQueryMode === "natural" && String(state.user?.role || "").toLowerCase() === "admin" ? (
-                  <div className="button-row" style={{ marginTop: 8 }}>
-                    <button
-                      className="ghost-btn"
-                      disabled={candidateParseFeedbackBusy}
-                      onClick={() => void markCandidateParseWrong()}
-                    >
-                      {candidateParseFeedbackBusy ? "Saving..." : "Mark parse wrong"}
-                    </button>
-                  </div>
-                ) : null}
                 {candidateFilterPanelOpen ? renderCandidateFilterPanel() : null}
-                <div className="item-card compact-card">
-                  <h3>Search examples</h3>
-                  <p className="muted">{candidateAiQueryMode === "boolean" ? "Use exact keywords with AND / OR and quoted phrases, similar to Naukri boolean search." : "Write the recruiter query naturally. Smart search converts intent into deterministic retrieval on saved fields, recruiter notes, attempts, tags, and hidden CV metadata."}</p>
-                  <div className="button-row">
-                    {(candidateAiQueryMode === "boolean" ? BOOLEAN_SEARCH_EXAMPLE_PROMPTS : AI_SEARCH_EXAMPLE_PROMPTS).map((prompt) => (
-                      <button
-                        key={prompt}
-                        className="ghost-btn"
-                        onClick={() => {
-                          setCandidateSearchText(prompt);
-                          setCandidatePage(1);
-                        }}
-                      >
-                        {prompt}
-                      </button>
-                    ))}
-                  </div>
-                </div>
                 <div className="button-row">
                   <label className="copy-preset-control">
                     <span>Copy preset</span>
