@@ -5821,14 +5821,14 @@ function PortalApp({ token, onLogout }) {
       const updatedAt = String(
         linkedAssessment?.generatedAt
           || linkedAssessment?.generated_at
-          linkedAssessment?.updatedAt
+          || linkedAssessment?.updatedAt
           || linkedAssessment?.updated_at
           || ""
       ).trim();
       const convertedAt = String(
         linkedAssessment?.generatedAt
           || linkedAssessment?.generated_at
-          linkedAssessment?.createdAt
+          || linkedAssessment?.createdAt
           || linkedAssessment?.created_at
           || ""
       ).trim();
