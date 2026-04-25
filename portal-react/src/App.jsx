@@ -11559,7 +11559,7 @@ function PortalApp({ token, onLogout }) {
           <Route path="*" element={<Navigate to="/dashboard" replace />} />
           </Routes>
         </RouteErrorBoundary>
-        <footer className="portal-footer portal-footer--content">{PRODUCT_NAME} {COMPANY_ATTRIBUTION}</footer>
+        <footer className="portal-footer portal-footer--content">{PRODUCT_NAME} {COMPANY_ATTRIBUTION} | build-a4b4ffb</footer>
       </main>
 
       <AssignModal
@@ -11926,7 +11926,7 @@ function ClientPortalApp({ token, onLogout }) {
               </table>
             </div>
           </Section>
-          <footer className="portal-footer portal-footer--content">{COMPANY_ATTRIBUTION}</footer>
+          <footer className="portal-footer portal-footer--content">{COMPANY_ATTRIBUTION} | build-a4b4ffb</footer>
         </div>
 
         <DrilldownModal
