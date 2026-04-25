@@ -470,6 +470,73 @@ function parseNoticePeriodToDays(value) {
   if (daysMatch) return Number(daysMatch[1]);
   const monthsMatch = raw.match(/(\d+(?:\.\d+)?)\s*months?/);
   if (monthsMatch) return Number(monthsMatch[1]) * 30;
+  const monthMap = {
+    jan: 0, january: 0,
+    feb: 1, february: 1,
+    mar: 2, march: 2,
+    apr: 3, april: 3,
+    may: 4,
+    jun: 5, june: 5,
+    jul: 6, july: 6,
+    aug: 7, august: 7,
+    sep: 8, sept: 8, september: 8,
+    oct: 9, october: 9,
+    nov: 10, november: 10,
+    dec: 11, december: 11
+  };
+  const cleaned = raw
+    .replace(/\b(\d{1,2})(st|nd|rd|th)\b/g, "$1")
+    .replace(/\s+/g, " ")
+    .trim();
+  const now = new Date();
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  let targetDate = null;
+
+  // Formats: 30/04/2026 or 30-04-2026 or 30/04
+  const numericMatch = cleaned.match(/\b(\d{1,2})[\/\-](\d{1,2})(?:[\/\-](\d{2,4}))?\b/);
+  if (numericMatch) {
+    const day = Number(numericMatch[1]);
+    const month = Number(numericMatch[2]) - 1;
+    let year = numericMatch[3] ? Number(numericMatch[3]) : now.getFullYear();
+    if (year < 100) year += 2000;
+    if (day >= 1 && day <= 31 && month >= 0 && month <= 11) {
+      targetDate = new Date(year, month, day);
+    }
+  }
+
+  // Formats: 30 april / april 30
+  if (!targetDate) {
+    const dmyMatch = cleaned.match(/\b(\d{1,2})\s+([a-z]{3,9})(?:\s+(\d{4}))?\b/);
+    if (dmyMatch) {
+      const day = Number(dmyMatch[1]);
+      const monthKey = dmyMatch[2].toLowerCase();
+      const month = monthMap[monthKey];
+      let year = dmyMatch[3] ? Number(dmyMatch[3]) : now.getFullYear();
+      if (day >= 1 && day <= 31 && Number.isInteger(month)) {
+        targetDate = new Date(year, month, day);
+      }
+    }
+  }
+  if (!targetDate) {
+    const mdyMatch = cleaned.match(/\b([a-z]{3,9})\s+(\d{1,2})(?:\s*,?\s*(\d{4}))?\b/);
+    if (mdyMatch) {
+      const monthKey = mdyMatch[1].toLowerCase();
+      const month = monthMap[monthKey];
+      const day = Number(mdyMatch[2]);
+      let year = mdyMatch[3] ? Number(mdyMatch[3]) : now.getFullYear();
+      if (day >= 1 && day <= 31 && Number.isInteger(month)) {
+        targetDate = new Date(year, month, day);
+      }
+    }
+  }
+  if (targetDate && Number.isFinite(targetDate.getTime())) {
+    // If year was omitted and parsed date already passed significantly, assume next year.
+    if (!/\b\d{4}\b/.test(cleaned) && targetDate.getTime() < startOfToday.getTime() - (2 * 24 * 60 * 60 * 1000)) {
+      targetDate = new Date(targetDate.getFullYear() + 1, targetDate.getMonth(), targetDate.getDate());
+    }
+    const dayDiff = Math.ceil((targetDate.getTime() - startOfToday.getTime()) / (24 * 60 * 60 * 1000));
+    return Math.max(0, dayDiff);
+  }
   return null;
 }
 
