@@ -823,6 +823,40 @@ textarea { min-height: 92px; resize: vertical; }
   font-weight: 700;
   color: #243557;
 }
+.linkish {
+  border: 0;
+  background: transparent;
+  color: #1c4ed8;
+  cursor: pointer;
+  padding: 0;
+  font: inherit;
+  font-weight: 700;
+  text-align: left;
+}
+.linkish:hover {
+  text-decoration: underline;
+}
+.candidate-smart-section {
+  padding: 0.8rem 0.9rem;
+}
+.candidate-smart-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.7rem;
+}
+.candidate-smart-head h3 {
+  margin: 0;
+}
+.candidate-smart-table-wrap {
+  margin-top: 0.65rem;
+}
+.candidate-smart-table {
+  min-width: 1080px;
+}
+.candidate-smart-link {
+  white-space: nowrap;
+}
 .table-metric-btn {
   border: 0;
   background: transparent;

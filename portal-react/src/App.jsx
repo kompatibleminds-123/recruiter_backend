@@ -8421,6 +8421,36 @@ function PortalApp({ token, onLogout }) {
     setStatus("workspace", "Candidate search results downloaded in Excel format.", "ok");
   }
 
+  function downloadCandidateSmartChipRows(chipId) {
+    const chip = SMART_SEARCH_QUICK_CHIPS.find((item) => item.id === chipId);
+    const rows = candidateSmartChipRows[chipId] || [];
+    if (!rows.length) {
+      setStatus("workspace", "No rows to download for this chip.", "error");
+      return;
+    }
+    const safeLabel = String(chip?.label || chipId || "smart-chip")
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "");
+    const headers = ["Candidate", "Round / Status", "Date", "Client", "Role", "Current CTC", "Expected CTC", "Notice", "Recruiter"];
+    const bodyRows = rows.map((row) => ([
+      row.candidateName || "",
+      row.round || row.status || "",
+      row.date ? formatDateForCopy(row.date) : "",
+      row.client || "",
+      row.role || "",
+      row.currentCtc || "",
+      row.expectedCtc || "",
+      row.notice || "",
+      row.recruiter || ""
+    ]));
+    const tableHeaders = headers.map((heading) => `<th style="border:1px solid #d8dee8;padding:10px 12px;background:#f6f8fb;text-align:left;font-size:13px;">${escapeHtml(heading)}</th>`).join("");
+    const tableRows = bodyRows.map((cells) => `<tr>${cells.map((cell) => `<td style="border:1px solid #d8dee8;padding:8px 10px;font-size:12px;">${escapeHtml(cell)}</td>`).join("")}</tr>`).join("");
+    const html = `<!doctype html><html><head><meta charset="utf-8"/></head><body><table style="border-collapse:collapse;width:100%;"><thead><tr>${tableHeaders}</tr></thead><tbody>${tableRows}</tbody></table></body></html>`;
+    downloadTextFile(`smart-${safeLabel || "search"}-${new Date().toISOString().slice(0, 10)}.xls`, html, "application/vnd.ms-excel;charset=utf-8");
+    setStatus("workspace", `${chip?.label || "Smart chip"} downloaded in Excel format.`, "ok");
+  }
+
   function getClientShareRows() {
     return selectedAssessmentRows;
   }
@@ -9928,6 +9958,7 @@ function PortalApp({ token, onLogout }) {
                     Searching as: <code>{candidateSearchingAs}</code>
                   </div>
                 ) : null}
+                {candidateFilterPanelOpen ? renderCandidateFilterPanel() : null}
                 {candidateHasSmartChipSelection ? (
                   <div className="stack-list" style={{ marginTop: 10 }}>
                     {SMART_SEARCH_QUICK_CHIPS
@@ -9935,13 +9966,22 @@ function PortalApp({ token, onLogout }) {
                       .map((chip) => {
                         const rows = candidateSmartChipRows[chip.id] || [];
                         return (
-                          <article key={chip.id} className="item-card compact-card">
-                            <h3>{chip.label} ({rows.length})</h3>
+                          <article key={chip.id} className="item-card compact-card candidate-smart-section">
+                            <div className="candidate-smart-head">
+                              <h3>{chip.label} ({rows.length})</h3>
+                              <button
+                                className="ghost-btn"
+                                disabled={!rows.length}
+                                onClick={() => downloadCandidateSmartChipRows(chip.id)}
+                              >
+                                Download
+                              </button>
+                            </div>
                             {!rows.length ? (
-                              <div className="empty-state">No candidates found for this chip and filters.</div>
+                              <div className="empty-state">No candidates found for this chip and current filters.</div>
                             ) : (
-                              <div className="table-wrap" style={{ marginTop: 8 }}>
-                                <table>
+                              <div className="table-wrap candidate-smart-table-wrap">
+                                <table className="dashboard-table candidate-smart-table">
                                   <thead>
                                     <tr>
                                       <th>Candidate</th>
@@ -9959,7 +9999,7 @@ function PortalApp({ token, onLogout }) {
                                       <tr key={`${chip.id}-${row.item?.id || row.item?.assessmentId || row.candidateName}-${index}`}>
                                         <td>
                                           <button
-                                            className="linkish"
+                                            className="linkish candidate-smart-link"
                                             onClick={() => void openCandidateFromSearch(row.item)}
                                           >
                                             {row.candidateName}
@@ -9983,7 +10023,6 @@ function PortalApp({ token, onLogout }) {
                       })}
                   </div>
                 ) : null}
-                {candidateFilterPanelOpen ? renderCandidateFilterPanel() : null}
                 <div className="button-row">
                   <label className="copy-preset-control">
                     <span>Copy preset</span>
