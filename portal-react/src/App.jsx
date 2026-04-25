@@ -9966,7 +9966,7 @@ function PortalApp({ token, onLogout }) {
                                           </button>
                                         </td>
                                         <td>{row.round || row.status || "-"}</td>
-                                        <td>{row.date ? formatDateTimeDisplay(row.date) : "-"}</td>
+                                        <td>{row.date ? formatDateForCopy(row.date) : "-"}</td>
                                         <td>{row.client || "-"}</td>
                                         <td>{row.role || "-"}</td>
                                         <td>{row.currentCtc || "-"}</td>
