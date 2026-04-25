@@ -2791,12 +2791,12 @@ function MultiSelectChipFilter({ label, options, selected, onToggle }) {
   );
 }
 
-function MultiSelectDropdown({ label, options, selected, onToggle, allowAll = true, emptySummary = "" }) {
+function MultiSelectDropdown({ label, options, selected, onToggle, allowAll = true, emptySummary = "", summaryLabel = "" }) {
   const summary = !selected.length ? (emptySummary || `All ${label.toLowerCase()}`) : `${selected.length} selected`;
   return (
     <details className="filter-dropdown">
       <summary className="filter-dropdown__summary">
-        <span>{label}</span>
+        <span>{summaryLabel || label}</span>
         <span className="muted">{summary}</span>
       </summary>
       <div className="filter-dropdown__body">
@@ -4070,6 +4070,7 @@ function PortalApp({ token, onLogout }) {
             <div className="candidate-filter-label">Notice period</div>
             <MultiSelectDropdown
               label="Notice period"
+              summaryLabel="Select"
               options={candidateNoticeBucketChipOptions}
               selected={candidateNoticeBucketSelectedLabels}
               onToggle={(option) => {
@@ -4097,6 +4098,7 @@ function PortalApp({ token, onLogout }) {
             <div className="candidate-filter-label">Client</div>
             <MultiSelectDropdown
               label="Client"
+              summaryLabel="Select"
               options={candidateSearchOptions.clients}
               selected={parseMultiChipTokens(candidateStructuredFiltersDraft.client)}
               onToggle={(option) => setCandidateStructuredFiltersDraft((current) => ({
@@ -4112,6 +4114,7 @@ function PortalApp({ token, onLogout }) {
             <div className="candidate-filter-label">Recruiter</div>
             <MultiSelectDropdown
               label="Recruiter"
+              summaryLabel="Select"
               options={candidateSearchOptions.recruiters}
               selected={parseMultiChipTokens(candidateStructuredFiltersDraft.recruiter)}
               onToggle={(option) => setCandidateStructuredFiltersDraft((current) => ({
@@ -4125,6 +4128,7 @@ function PortalApp({ token, onLogout }) {
             <div className="candidate-filter-label">Gender</div>
             <MultiSelectDropdown
               label="Gender"
+              summaryLabel="Select"
               options={Array.from(new Set(["Male", "Female", ...(candidateSearchOptions.genders || [])])).filter(Boolean)}
               selected={parseMultiChipTokens(candidateStructuredFiltersDraft.gender)}
               onToggle={(option) => setCandidateStructuredFiltersDraft((current) => ({
@@ -4138,6 +4142,7 @@ function PortalApp({ token, onLogout }) {
             <div className="candidate-filter-label">Assessment status</div>
             <MultiSelectDropdown
               label="Assessment status"
+              summaryLabel="Select"
               options={DEFAULT_STATUS_OPTIONS}
               selected={parseMultiChipTokens(candidateStructuredFiltersDraft.assessmentStatus)}
               onToggle={(option) => setCandidateStructuredFiltersDraft((current) => ({
@@ -4151,6 +4156,7 @@ function PortalApp({ token, onLogout }) {
             <div className="candidate-filter-label">Attempt outcome</div>
             <MultiSelectDropdown
               label="Attempt outcome"
+              summaryLabel="Select"
               options={ATTEMPT_OUTCOME_OPTIONS}
               selected={parseMultiChipTokens(candidateStructuredFiltersDraft.attemptOutcome)}
               onToggle={(option) => setCandidateStructuredFiltersDraft((current) => ({
