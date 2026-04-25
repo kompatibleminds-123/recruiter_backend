@@ -5729,6 +5729,30 @@ function PortalApp({ token, onLogout }) {
         assessmentByCandidateId.set(candidateId, assessment);
       }
     });
+    const candidateRows = Array.isArray(state.candidates) ? state.candidates : [];
+    const candidateById = new Map(
+      candidateRows.map((candidate) => [String(candidate?.id || "").trim(), candidate]).filter(([id]) => id)
+    );
+    const universeAssessmentIds = new Set();
+    const universeCandidateIds = new Set();
+    (candidateUniverse || []).forEach((item) => {
+      const assessmentId = String(
+        item?.assessment_id
+        || item?.assessmentId
+        || item?.assessment?.id
+        || item?.raw?.assessment?.id
+        || ""
+      ).trim();
+      const candidateId = String(
+        item?.id
+        || item?.candidate_id
+        || item?.candidateId
+        || item?.raw?.candidate?.id
+        || ""
+      ).trim();
+      if (assessmentId) universeAssessmentIds.add(assessmentId);
+      if (candidateId) universeCandidateIds.add(candidateId);
+    });
     const fromTs = candidateSmartDateFrom ? new Date(`${candidateSmartDateFrom}T00:00:00`).getTime() : null;
     const toTs = candidateSmartDateTo ? new Date(`${candidateSmartDateTo}T23:59:59`).getTime() : null;
     const now = new Date();
@@ -5765,42 +5789,48 @@ function PortalApp({ token, onLogout }) {
       offered_candidates: [],
       cv_shared: []
     };
-    candidateUniverse.forEach((item) => {
-      const candidateId = String(item?.id || "").trim();
-      const linkedAssessment = assessmentById.get(String(item?.assessment_id || item?.assessmentId || "").trim())
+    assessments.forEach((assessment) => {
+      const assessmentId = String(assessment?.id || "").trim();
+      const candidateId = String(
+        assessment?.candidateId
+        || assessment?.candidate_id
+        || assessment?.payload?.candidateId
+        || assessment?.payload?.candidate_id
+        || ""
+      ).trim();
+      const inScopedUniverse = (
+        (assessmentId && universeAssessmentIds.has(assessmentId))
+        || (candidateId && universeCandidateIds.has(candidateId))
+      );
+      if (!inScopedUniverse) return;
+      const item = (candidateId && candidateById.get(candidateId)) || null;
+      const linkedAssessment = assessmentById.get(assessmentId)
         || (candidateId ? assessmentByCandidateId.get(candidateId) : null)
         || null;
+      if (!linkedAssessment) return;
       const assessmentStatus = normalizeStatus(
         linkedAssessment?.candidateStatus
           || linkedAssessment?.status
-          || item?.candidateStatus
-          || item?.assessment_status
-          || item?.assessmentStatus
           || ""
       );
       const interviewAt = String(
         linkedAssessment?.interviewAt
           || linkedAssessment?.interview_at
-          || item?.interviewAt
           || ""
       ).trim();
       const updatedAt = String(
         linkedAssessment?.updatedAt
           || linkedAssessment?.updated_at
-          || item?.updated_at
-          || item?.updatedAt
-          || item?.created_at
           || ""
       ).trim();
       const convertedAt = String(
         linkedAssessment?.createdAt
           || linkedAssessment?.created_at
-          || item?.assessment_created_at
           || ""
       ).trim();
       const noticeDays = parseNoticePeriodToDays(item?.notice_period || item?.noticePeriod || "");
       const baseRow = {
-        item,
+        item: item || { assessmentId: linkedAssessment?.id, candidateId },
         candidateName: item?.name || item?.candidateName || "Candidate",
         role: item?.role || item?.currentDesignation || item?.jd_title || item?.jdTitle || "",
         client: item?.client_name || item?.clientName || linkedAssessment?.clientName || "",
@@ -5825,7 +5855,7 @@ function PortalApp({ token, onLogout }) {
       if (assessmentStatus === "feedback awaited" && inDateRange(interviewAt || updatedAt)) {
         rowsByChip.feedback_awaited.push({ ...baseRow, round: "Feedback awaited" });
       }
-      const capturedIsActive = item?.hidden_from_captured !== true && item?.hiddenFromCaptured !== true;
+      const capturedIsActive = item ? (item?.hidden_from_captured !== true && item?.hiddenFromCaptured !== true) : true;
       const activeAssessment = linkedAssessment && !isAssessmentArchived(linkedAssessment);
       if (noticeDays != null && noticeDays <= 15 && capturedIsActive && activeAssessment && inDateRange(updatedAt)) {
         rowsByChip.quick_joiners.push({ ...baseRow, round: formatAssessmentStatusDisplay(baseRow.status || assessmentStatus || "CV shared") });
@@ -5844,7 +5874,7 @@ function PortalApp({ token, onLogout }) {
       }
     });
     return rowsByChip;
-  }, [candidateUniverse, candidateSmartDateFrom, candidateSmartDateTo, state.assessments]);
+  }, [candidateUniverse, candidateSmartDateFrom, candidateSmartDateTo, state.assessments, state.candidates]);
   const candidateHasSmartChipSelection = candidateAiQueryMode === "natural" && candidateQuickChipIds.length > 0;
 
   const capturedCandidateOptions = useMemo(() => {
