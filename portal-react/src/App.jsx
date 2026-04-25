@@ -135,6 +135,8 @@ const SMART_SEARCH_QUICK_CHIPS = [
   { id: "aligned_interviews", label: "Aligned interviews", querySuffix: "assessment status screening call aligned or L1 aligned or L2 aligned or L3 aligned or HR interview aligned" },
   { id: "feedback_awaited", label: "Feedback awaited", querySuffix: "assessment status feedback awaited" },
   { id: "quick_joiners", label: "Quick joiners (<=15 days)", querySuffix: "notice period under 15 days" },
+  { id: "shared_today", label: "Candidates shared today", querySuffix: "converted to assessments today" },
+  { id: "shared_this_week", label: "Shared this week", querySuffix: "converted to assessments this week" },
   { id: "offered_candidates", label: "Offered candidates", querySuffix: "assessment status offered" },
   { id: "cv_shared", label: "Active pipeline", querySuffix: "active assessments" }
 ];
@@ -466,6 +468,7 @@ function parseNoticePeriodToDays(value) {
   const raw = String(value || "").trim().toLowerCase();
   if (!raw) return null;
   if (/immediate|immediately|serving notice|available now/.test(raw)) return 0;
+  if (/\b(lwd|doj)\b/.test(raw) && /\bnext week\b/.test(raw)) return 7;
   const daysMatch = raw.match(/(\d+(?:\.\d+)?)\s*days?/);
   if (daysMatch) return Number(daysMatch[1]);
   const monthsMatch = raw.match(/(\d+(?:\.\d+)?)\s*months?/);
@@ -5696,6 +5699,12 @@ function PortalApp({ token, onLogout }) {
     const assessmentById = new Map((state.assessments || []).map((assessment) => [String(assessment?.id || "").trim(), assessment]));
     const fromTs = candidateSmartDateFrom ? new Date(`${candidateSmartDateFrom}T00:00:00`).getTime() : null;
     const toTs = candidateSmartDateTo ? new Date(`${candidateSmartDateTo}T23:59:59`).getTime() : null;
+    const now = new Date();
+    const startOfTodayTs = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+    const endOfTodayTs = startOfTodayTs + (24 * 60 * 60 * 1000) - 1;
+    const dayOfWeek = now.getDay(); // 0 sunday
+    const weekStartTs = new Date(now.getFullYear(), now.getMonth(), now.getDate() - dayOfWeek).getTime();
+    const weekEndTs = weekStartTs + (7 * 24 * 60 * 60 * 1000) - 1;
     const inDateRange = (value) => {
       if (!fromTs && !toTs) return true;
       const ts = value ? new Date(value).getTime() : NaN;
@@ -5704,11 +5713,23 @@ function PortalApp({ token, onLogout }) {
       if (toTs && ts > toTs) return false;
       return true;
     };
+    const inToday = (value) => {
+      const ts = value ? new Date(value).getTime() : NaN;
+      if (!Number.isFinite(ts)) return false;
+      return ts >= startOfTodayTs && ts <= endOfTodayTs;
+    };
+    const inThisWeek = (value) => {
+      const ts = value ? new Date(value).getTime() : NaN;
+      if (!Number.isFinite(ts)) return false;
+      return ts >= weekStartTs && ts <= weekEndTs;
+    };
     const normalizeStatus = (value) => normalizeAssessmentStatusLabel(String(value || "")).toLowerCase();
     const rowsByChip = {
       aligned_interviews: [],
       feedback_awaited: [],
       quick_joiners: [],
+      shared_today: [],
+      shared_this_week: [],
       offered_candidates: [],
       cv_shared: []
     };
@@ -5737,6 +5758,12 @@ function PortalApp({ token, onLogout }) {
           || item?.updated_at
           || item?.updatedAt
           || item?.created_at
+          || ""
+      ).trim();
+      const convertedAt = String(
+        linkedAssessment?.createdAt
+          || linkedAssessment?.created_at
+          || item?.assessment_created_at
           || ""
       ).trim();
       const noticeDays = parseNoticePeriodToDays(item?.notice_period || item?.noticePeriod || "");
@@ -5770,6 +5797,12 @@ function PortalApp({ token, onLogout }) {
       const activeAssessment = linkedAssessment && !isAssessmentArchived(linkedAssessment);
       if (noticeDays != null && noticeDays <= 15 && capturedIsActive && activeAssessment && inDateRange(updatedAt)) {
         rowsByChip.quick_joiners.push({ ...baseRow, round: formatAssessmentStatusDisplay(baseRow.status || assessmentStatus || "CV shared") });
+      }
+      if (linkedAssessment && inToday(convertedAt) && inDateRange(convertedAt)) {
+        rowsByChip.shared_today.push({ ...baseRow, round: "Converted to assessment", date: convertedAt });
+      }
+      if (linkedAssessment && inThisWeek(convertedAt) && inDateRange(convertedAt)) {
+        rowsByChip.shared_this_week.push({ ...baseRow, round: "Converted to assessment", date: convertedAt });
       }
       if (assessmentStatus === "offered" && inDateRange(updatedAt)) {
         rowsByChip.offered_candidates.push({ ...baseRow, round: "Offered" });
