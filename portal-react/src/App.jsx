@@ -9683,16 +9683,12 @@ function PortalApp({ token, onLogout }) {
                     <button className={candidateAiQueryMode === "natural" ? "" : "ghost-btn"} onClick={() => setCandidateAiQueryMode("natural")}>Smart</button>
                   </div>
                 </div>
-                <div className="toolbar">
+                <div className="toolbar candidate-search-toolbar">
                   <input placeholder={candidateAiQueryMode === "boolean" ? '(sales OR "business development") AND saas' : "Get me Account Executives with 4+ years of experience based out of Mumbai with current CTC under 20 L"} value={candidateSearchText} onChange={(e) => setCandidateSearchText(e.target.value)} />
                   <button disabled={candidateSearchBusy} onClick={() => void runCandidateSearch()}>{candidateAiQueryMode === "boolean" ? "Run Boolean Search" : "Run Smart Search"}</button>
                   <button className="ghost-btn" onClick={() => {
-                    if (isCandidateFilterMobile) {
-                      setCandidateFilterDrawerOpen(true);
-                    } else {
-                      setCandidateFilterPanelOpen((current) => !current);
-                    }
-                  }}>{isCandidateFilterMobile ? "Filters" : (candidateFilterPanelOpen ? "Hide filters" : "Show filters")}</button>
+                    setCandidateFilterPanelOpen((current) => !current);
+                  }}>{candidateFilterPanelOpen ? "Hide filters" : "Show filters"}</button>
                   <button className="ghost-btn" onClick={() => {
                     setCandidateSearchText("");
                     setCandidateKeywordMust("");
@@ -9760,83 +9756,64 @@ function PortalApp({ token, onLogout }) {
                     </button>
                   </div>
                 ) : null}
-                <div className={`candidate-search-content${(!isCandidateFilterMobile && candidateFilterPanelOpen) ? "" : " no-filters"}`}>
-                  {!isCandidateFilterMobile && candidateFilterPanelOpen ? (
-                    <aside className="candidate-search-filters">
-                      {renderCandidateFilterPanel()}
-                    </aside>
-                  ) : null}
-                  <section className="candidate-search-results">
-                    <div className="item-card compact-card">
-                      <h3>Search examples</h3>
-                      <p className="muted">{candidateAiQueryMode === "boolean" ? "Use exact keywords with AND / OR and quoted phrases, similar to Naukri boolean search." : "Write the recruiter query naturally. Smart search converts intent into deterministic retrieval on saved fields, recruiter notes, attempts, tags, and hidden CV metadata."}</p>
-                      <div className="button-row">
-                        {(candidateAiQueryMode === "boolean" ? BOOLEAN_SEARCH_EXAMPLE_PROMPTS : AI_SEARCH_EXAMPLE_PROMPTS).map((prompt) => (
-                          <button
-                            key={prompt}
-                            className="ghost-btn"
-                            onClick={() => {
-                              setCandidateSearchText(prompt);
-                              setCandidatePage(1);
-                            }}
-                          >
-                            {prompt}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                    <div className="button-row">
-                      <label className="copy-preset-control">
-                        <span>Copy preset</span>
-                        <select value={activeCopyPresetId} onChange={(e) => setActiveCopyPresetId(e.target.value)}>
-                          {exportPresetOptions.map((preset) => <option key={preset.id} value={preset.id}>{preset.label}</option>)}
-                        </select>
-                      </label>
-                      <button onClick={() => void copyCandidatesExcel()}>Copy Excel</button>
-                      <button onClick={() => void copyCandidatesWhatsapp()}>Copy WhatsApp</button>
-                      <button onClick={() => void copyCandidatesEmail()}>Copy Email</button>
-                      <button className="ghost-btn" onClick={() => downloadCandidatesExcel()}>Download results</button>
-                    </div>
-                    <div className="stack-list">
-                      {!pagedCandidates.length ? <div className="empty-state">No candidates found for this view.</div> : pagedCandidates.map((item) => (
-                        <article className="item-card compact-card" key={item.id || item.assessmentId}>
-                          <div className="item-card__top">
-                            <div>
-                              <h3>{item.name || item.candidateName || "Candidate"} | {item.role || item.currentDesignation || item.jdTitle || "Untitled role"}</h3>
-                              <p className="muted">{[item.company || item.currentCompany || "", item.location || "", item.ownerRecruiter ? `Recruiter: ${item.ownerRecruiter}` : "", item.source ? `Source: ${item.source}` : ""].filter(Boolean).join(" | ")}</p>
-                              <div className="candidate-snippet">{[item.experience || item.totalExperience || "", item.current_ctc || item.currentCtc ? `Current CTC: ${item.current_ctc || item.currentCtc}` : "", item.expected_ctc || item.expectedCtc ? `Expected CTC: ${item.expected_ctc || item.expectedCtc}` : "", item.notice_period || item.noticePeriod ? `Notice: ${item.notice_period || item.noticePeriod}` : ""].filter(Boolean).join("\n")}</div>
-                              {buildVisibleTagList(item).length ? (
-                                <div className="chip-row">
-                                  {buildVisibleTagList(item).slice(0, 8).map((tag) => <span key={tag} className="chip">{tag}</span>)}
-                                </div>
-                              ) : null}
-                              <div className="button-row">
-                                <button onClick={() => setDatabaseProfileItem(item)}>Open profile</button>
-                                {candidateHasStoredCv(item) ? <button className="ghost-btn" onClick={() => openDatabaseCandidateCv(item)}>Open CV</button> : null}
-                              </div>
-                            </div>
-                          </div>
-                        </article>
-                      ))}
-                    </div>
-                    <div className="button-row">
-                      <button className="ghost-btn" disabled={candidatePage <= 1} onClick={() => setCandidatePage((page) => Math.max(1, page - 1))}>Previous</button>
-                      <div className="muted">Page {candidatePage} of {totalCandidatePages}</div>
-                      <button className="ghost-btn" disabled={candidatePage >= totalCandidatePages} onClick={() => setCandidatePage((page) => Math.min(totalCandidatePages, page + 1))}>Next</button>
-                    </div>
-                  </section>
-                </div>
-                {isCandidateFilterMobile && candidateFilterDrawerOpen ? (
-                  <div className="candidate-filter-drawer-backdrop" onClick={() => setCandidateFilterDrawerOpen(false)}>
-                    <div className="candidate-filter-drawer" onClick={(e) => e.stopPropagation()}>
-                      <div className="candidate-filter-drawer__head">
-                        <h3>Filters</h3>
-                        <button className="ghost-btn" onClick={() => setCandidateFilterDrawerOpen(false)}>Close</button>
-                      </div>
-                      {renderCandidateFilterPanel()}
-                    </div>
+                {candidateFilterPanelOpen ? renderCandidateFilterPanel() : null}
+                <div className="item-card compact-card">
+                  <h3>Search examples</h3>
+                  <p className="muted">{candidateAiQueryMode === "boolean" ? "Use exact keywords with AND / OR and quoted phrases, similar to Naukri boolean search." : "Write the recruiter query naturally. Smart search converts intent into deterministic retrieval on saved fields, recruiter notes, attempts, tags, and hidden CV metadata."}</p>
+                  <div className="button-row">
+                    {(candidateAiQueryMode === "boolean" ? BOOLEAN_SEARCH_EXAMPLE_PROMPTS : AI_SEARCH_EXAMPLE_PROMPTS).map((prompt) => (
+                      <button
+                        key={prompt}
+                        className="ghost-btn"
+                        onClick={() => {
+                          setCandidateSearchText(prompt);
+                          setCandidatePage(1);
+                        }}
+                      >
+                        {prompt}
+                      </button>
+                    ))}
                   </div>
-                ) : null}
+                </div>
+                <div className="button-row">
+                  <label className="copy-preset-control">
+                    <span>Copy preset</span>
+                    <select value={activeCopyPresetId} onChange={(e) => setActiveCopyPresetId(e.target.value)}>
+                      {exportPresetOptions.map((preset) => <option key={preset.id} value={preset.id}>{preset.label}</option>)}
+                    </select>
+                  </label>
+                  <button onClick={() => void copyCandidatesExcel()}>Copy Excel</button>
+                  <button onClick={() => void copyCandidatesWhatsapp()}>Copy WhatsApp</button>
+                  <button onClick={() => void copyCandidatesEmail()}>Copy Email</button>
+                  <button className="ghost-btn" onClick={() => downloadCandidatesExcel()}>Download results</button>
+                </div>
+                <div className="stack-list">
+                  {!pagedCandidates.length ? <div className="empty-state">No candidates found for this view.</div> : pagedCandidates.map((item) => (
+                    <article className="item-card compact-card" key={item.id || item.assessmentId}>
+                      <div className="item-card__top">
+                        <div>
+                          <h3>{item.name || item.candidateName || "Candidate"} | {item.role || item.currentDesignation || item.jdTitle || "Untitled role"}</h3>
+                          <p className="muted">{[item.company || item.currentCompany || "", item.location || "", item.ownerRecruiter ? `Recruiter: ${item.ownerRecruiter}` : "", item.source ? `Source: ${item.source}` : ""].filter(Boolean).join(" | ")}</p>
+                          <div className="candidate-snippet">{[item.experience || item.totalExperience || "", item.current_ctc || item.currentCtc ? `Current CTC: ${item.current_ctc || item.currentCtc}` : "", item.expected_ctc || item.expectedCtc ? `Expected CTC: ${item.expected_ctc || item.expectedCtc}` : "", item.notice_period || item.noticePeriod ? `Notice: ${item.notice_period || item.noticePeriod}` : ""].filter(Boolean).join("\n")}</div>
+                          {buildVisibleTagList(item).length ? (
+                            <div className="chip-row">
+                              {buildVisibleTagList(item).slice(0, 8).map((tag) => <span key={tag} className="chip">{tag}</span>)}
+                            </div>
+                          ) : null}
+                          <div className="button-row">
+                            <button onClick={() => setDatabaseProfileItem(item)}>Open profile</button>
+                            {candidateHasStoredCv(item) ? <button className="ghost-btn" onClick={() => openDatabaseCandidateCv(item)}>Open CV</button> : null}
+                          </div>
+                        </div>
+                      </div>
+                    </article>
+                  ))}
+                </div>
+                <div className="button-row">
+                  <button className="ghost-btn" disabled={candidatePage <= 1} onClick={() => setCandidatePage((page) => Math.max(1, page - 1))}>Previous</button>
+                  <div className="muted">Page {candidatePage} of {totalCandidatePages}</div>
+                  <button className="ghost-btn" disabled={candidatePage >= totalCandidatePages} onClick={() => setCandidatePage((page) => Math.min(totalCandidatePages, page + 1))}>Next</button>
+                </div>
               </Section>
             </div>
           } />
