@@ -4025,7 +4025,7 @@ function PortalApp({ token, onLogout }) {
       .map((value) => candidateNoticeBucketLabelByValue[value] || value)
       .filter(Boolean)
   ), [candidateStructuredFiltersDraft.noticeBucket, candidateNoticeBucketLabelByValue]);
-  const candidateFilterPanel = (
+  const renderCandidateFilterPanel = () => (
     <div className="item-card compact-card candidate-filter-card">
       <div className="candidate-filter-head">
         <div>
@@ -9763,7 +9763,7 @@ function PortalApp({ token, onLogout }) {
                 <div className={`candidate-search-content${(!isCandidateFilterMobile && candidateFilterPanelOpen) ? "" : " no-filters"}`}>
                   {!isCandidateFilterMobile && candidateFilterPanelOpen ? (
                     <aside className="candidate-search-filters">
-                      {candidateFilterPanel}
+                      {renderCandidateFilterPanel()}
                     </aside>
                   ) : null}
                   <section className="candidate-search-results">
@@ -9833,7 +9833,7 @@ function PortalApp({ token, onLogout }) {
                         <h3>Filters</h3>
                         <button className="ghost-btn" onClick={() => setCandidateFilterDrawerOpen(false)}>Close</button>
                       </div>
-                      {candidateFilterPanel}
+                      {renderCandidateFilterPanel()}
                     </div>
                   </div>
                 ) : null}
