@@ -132,12 +132,19 @@ const BOOLEAN_SEARCH_EXAMPLE_PROMPTS = [
 ];
 
 const SMART_SEARCH_QUICK_CHIPS = [
-  { id: "ongoing_interviews", label: "Ongoing interviews", querySuffix: "assessment status L1 aligned or L2 aligned or L3 aligned or HR interview aligned or Screening call aligned" },
+  { id: "aligned_interviews", label: "Aligned interviews", querySuffix: "assessment status screening call aligned or L1 aligned or L2 aligned or L3 aligned or HR interview aligned" },
   { id: "feedback_awaited", label: "Feedback awaited", querySuffix: "assessment status feedback awaited" },
-  { id: "cv_shared", label: "CV shared", querySuffix: "assessment status cv shared" },
-  { id: "not_contacted_7d", label: "Not Contacted 7 Days", querySuffix: "not contacted in 7 days" },
-  { id: "interview_this_week", label: "Interview This Week", querySuffix: "interview this week" }
+  { id: "quick_joiners", label: "Quick joiners (<=15 days)", querySuffix: "notice period under 15 days" },
+  { id: "offered_candidates", label: "Offered candidates", querySuffix: "assessment status offered" },
+  { id: "cv_shared", label: "CV shared", querySuffix: "assessment status cv shared" }
 ];
+const SMART_CHIP_INTERVIEW_ALIGNED_STATUSES = new Set([
+  "screening call aligned",
+  "l1 aligned",
+  "l2 aligned",
+  "l3 aligned",
+  "hr interview aligned"
+]);
 
 function parseKeywordBarTokens(value) {
   return String(value || "")
@@ -3982,11 +3989,14 @@ function PortalApp({ token, onLogout }) {
   const [assessmentLane, setAssessmentLane] = useState("active"); // active | archived
   const [candidateSearchMode, setCandidateSearchMode] = useState("all");
   const [candidateSearchText, setCandidateSearchText] = useState("");
+  const [candidateSearchQueryUsed, setCandidateSearchQueryUsed] = useState("");
   const [candidateAiQueryMode, setCandidateAiQueryMode] = useState("natural");
   const [candidateKeywordMust, setCandidateKeywordMust] = useState("");
   const [candidateKeywordAny, setCandidateKeywordAny] = useState("");
   const [candidateKeywordExclude, setCandidateKeywordExclude] = useState("");
   const [candidateQuickChipIds, setCandidateQuickChipIds] = useState([]);
+  const [candidateSmartDateFrom, setCandidateSmartDateFrom] = useState("");
+  const [candidateSmartDateTo, setCandidateSmartDateTo] = useState("");
   const [candidateFilterPanelOpen, setCandidateFilterPanelOpen] = useState(true);
   const [candidateFilterDrawerOpen, setCandidateFilterDrawerOpen] = useState(false);
   const [isCandidateFilterMobile, setIsCandidateFilterMobile] = useState(() => (
@@ -5493,9 +5503,9 @@ function PortalApp({ token, onLogout }) {
     };
   }, [candidateUniverseAll]);
   const candidateBaseUniverse = useMemo(() => {
-    if (candidateSearchMode === "all" || !String(candidateSearchText || "").trim()) return candidateUniverseAll;
+    if (candidateSearchMode === "all" || !String(candidateSearchQueryUsed || "").trim()) return candidateUniverseAll;
     return candidateSearchResults || [];
-  }, [candidateSearchMode, candidateSearchResults, candidateSearchText, candidateUniverseAll]);
+  }, [candidateSearchMode, candidateSearchResults, candidateSearchQueryUsed, candidateUniverseAll]);
   const candidateUniverse = useMemo(() => {
     const assessmentById = new Map((state.assessments || []).map((item) => [String(item?.id || "").trim(), item]));
     return candidateBaseUniverse.filter((item) => {
@@ -5594,6 +5604,93 @@ function PortalApp({ token, onLogout }) {
     return candidateUniverse.slice(start, start + 10);
   }, [candidateUniverse, candidatePage]);
   const totalCandidatePages = Math.max(1, Math.ceil((candidateUniverse.length || 0) / 10));
+  const candidateSmartChipRows = useMemo(() => {
+    const assessmentById = new Map((state.assessments || []).map((assessment) => [String(assessment?.id || "").trim(), assessment]));
+    const fromTs = candidateSmartDateFrom ? new Date(`${candidateSmartDateFrom}T00:00:00`).getTime() : null;
+    const toTs = candidateSmartDateTo ? new Date(`${candidateSmartDateTo}T23:59:59`).getTime() : null;
+    const inDateRange = (value) => {
+      if (!fromTs && !toTs) return true;
+      const ts = value ? new Date(value).getTime() : NaN;
+      if (!Number.isFinite(ts)) return false;
+      if (fromTs && ts < fromTs) return false;
+      if (toTs && ts > toTs) return false;
+      return true;
+    };
+    const normalizeStatus = (value) => normalizeAssessmentStatusLabel(String(value || "")).toLowerCase();
+    const rowsByChip = {
+      aligned_interviews: [],
+      feedback_awaited: [],
+      quick_joiners: [],
+      offered_candidates: [],
+      cv_shared: []
+    };
+    candidateUniverse.forEach((item) => {
+      const linkedAssessment = item?.raw?.assessment
+        || item?.assessment
+        || assessmentById.get(String(item?.assessment_id || item?.assessmentId || "").trim())
+        || null;
+      const assessmentStatus = normalizeStatus(
+        linkedAssessment?.candidateStatus
+          || linkedAssessment?.status
+          || item?.candidateStatus
+          || item?.assessment_status
+          || item?.assessmentStatus
+          || ""
+      );
+      const interviewAt = String(
+        linkedAssessment?.interviewAt
+          || linkedAssessment?.interview_at
+          || item?.interviewAt
+          || ""
+      ).trim();
+      const updatedAt = String(
+        linkedAssessment?.updatedAt
+          || linkedAssessment?.updated_at
+          || item?.updated_at
+          || item?.updatedAt
+          || item?.created_at
+          || ""
+      ).trim();
+      const noticeDays = parseNoticePeriodToDays(item?.notice_period || item?.noticePeriod || "");
+      const baseRow = {
+        item,
+        candidateName: item?.name || item?.candidateName || "Candidate",
+        role: item?.role || item?.currentDesignation || item?.jd_title || item?.jdTitle || "",
+        client: item?.client_name || item?.clientName || linkedAssessment?.clientName || "",
+        recruiter: item?.assigned_to_name || item?.ownerRecruiter || item?.recruiterName || "",
+        currentCtc: item?.current_ctc || item?.currentCtc || "",
+        expectedCtc: item?.expected_ctc || item?.expectedCtc || "",
+        notice: item?.notice_period || item?.noticePeriod || "",
+        status: normalizeAssessmentStatusLabel(
+          linkedAssessment?.candidateStatus
+            || linkedAssessment?.status
+            || item?.candidateStatus
+            || item?.assessment_status
+            || item?.assessmentStatus
+            || ""
+        ),
+        date: interviewAt || updatedAt || ""
+      };
+
+      if (SMART_CHIP_INTERVIEW_ALIGNED_STATUSES.has(assessmentStatus) && inDateRange(interviewAt || updatedAt)) {
+        rowsByChip.aligned_interviews.push({ ...baseRow, round: normalizeAssessmentStatusLabel(assessmentStatus) });
+      }
+      if (assessmentStatus === "feedback awaited" && inDateRange(interviewAt || updatedAt)) {
+        rowsByChip.feedback_awaited.push({ ...baseRow, round: "Feedback awaited" });
+      }
+      if (noticeDays != null && noticeDays <= 15 && inDateRange(updatedAt)) {
+        rowsByChip.quick_joiners.push({ ...baseRow, round: "Quick joiner" });
+      }
+      if (assessmentStatus === "offered" && inDateRange(updatedAt)) {
+        rowsByChip.offered_candidates.push({ ...baseRow, round: "Offered" });
+      }
+      if (assessmentStatus === "cv shared" && inDateRange(updatedAt)) {
+        rowsByChip.cv_shared.push({ ...baseRow, round: "CV shared" });
+      }
+    });
+    return rowsByChip;
+  }, [candidateUniverse, candidateSmartDateFrom, candidateSmartDateTo, state.assessments]);
+  const candidateHasSmartChipSelection = candidateAiQueryMode === "natural" && candidateQuickChipIds.length > 0;
 
   const capturedCandidateOptions = useMemo(() => {
     const meta = { clients: new Set(), jds: new Set(), sources: new Set(), outcomes: new Set(), assignedTo: new Set(), capturedBy: new Set() };
@@ -6221,6 +6318,29 @@ function PortalApp({ token, onLogout }) {
         assessment
       }
     });
+  }
+
+  async function openCandidateFromSearch(item) {
+    const candidateId = String(item?.id || item?.candidate_id || "").trim();
+    const assessmentId = String(item?.assessment_id || item?.assessmentId || "").trim();
+    const hasCandidateInWorkflow = candidateId && (state.candidates || []).some((candidate) => String(candidate?.id || "").trim() === candidateId);
+    if (hasCandidateInWorkflow) {
+      loadCandidateIntoInterview(candidateId);
+      return;
+    }
+    const assessmentFromItem = item?.raw?.assessment
+      || item?.assessment
+      || (assessmentId ? (state.assessments || []).find((assessment) => String(assessment?.id || "").trim() === assessmentId) : null)
+      || null;
+    if (assessmentFromItem) {
+      await openAssessmentCandidateCardModal(assessmentFromItem);
+      return;
+    }
+    if (candidateId) {
+      await openCandidateProfileCard(candidateId, { statusTarget: "workspace" });
+      return;
+    }
+    setStatus("workspace", "Candidate link not available for this row.", "error");
   }
 
   function openInterviewStoredCv() {
@@ -7816,6 +7936,7 @@ function PortalApp({ token, onLogout }) {
       setCandidateSearchMode("all");
       setCandidateSearchResults([]);
       setCandidatePage(1);
+      setCandidateSearchQueryUsed("");
       setCandidateSearchingAs("");
       setStatus("workspace", "Showing candidates using structured filters.", "ok");
       return;
@@ -7826,6 +7947,7 @@ function PortalApp({ token, onLogout }) {
     const semanticEnabled = copySettings.semanticSearchEnabled !== false;
     setCandidateSearchBusy(true);
     setCandidateSearchDebug(null);
+    setCandidateSearchQueryUsed(effectiveSearchText);
     setCandidateSearchingAs(hasKeywordBuilder ? keywordDrivenBoolean : "");
     setStatus("workspace", "Searching candidates...", "ok");
     try {
@@ -9706,10 +9828,13 @@ function PortalApp({ token, onLogout }) {
                     }}>{candidateFilterPanelOpen ? "Hide filters" : "Show filters"}</button>
                     <button className="ghost-btn" onClick={() => {
                       setCandidateSearchText("");
+                      setCandidateSearchQueryUsed("");
                       setCandidateKeywordMust("");
                       setCandidateKeywordAny("");
                       setCandidateKeywordExclude("");
                       setCandidateQuickChipIds([]);
+                      setCandidateSmartDateFrom("");
+                      setCandidateSmartDateTo("");
                       setCandidateSearchResults([]);
                       setCandidateSearchMode("all");
                       setCandidatePage(1);
@@ -9749,6 +9874,24 @@ function PortalApp({ token, onLogout }) {
                         ))}
                       </div>
                     </div>
+                    <div className="form-grid three-col" style={{ marginTop: 8 }}>
+                      <label>
+                        <span>Chip date from</span>
+                        <input
+                          type="date"
+                          value={candidateSmartDateFrom}
+                          onChange={(e) => setCandidateSmartDateFrom(e.target.value)}
+                        />
+                      </label>
+                      <label>
+                        <span>Chip date to</span>
+                        <input
+                          type="date"
+                          value={candidateSmartDateTo}
+                          onChange={(e) => setCandidateSmartDateTo(e.target.value)}
+                        />
+                      </label>
+                    </div>
                     {candidateKeywordPreview ? (
                       <div className="muted">Query preview: <code>{candidateKeywordPreview}</code></div>
                     ) : (
@@ -9764,10 +9907,13 @@ function PortalApp({ token, onLogout }) {
                     }}>{candidateFilterPanelOpen ? "Hide filters" : "Show filters"}</button>
                     <button className="ghost-btn" onClick={() => {
                       setCandidateSearchText("");
+                      setCandidateSearchQueryUsed("");
                       setCandidateKeywordMust("");
                       setCandidateKeywordAny("");
                       setCandidateKeywordExclude("");
                       setCandidateQuickChipIds([]);
+                      setCandidateSmartDateFrom("");
+                      setCandidateSmartDateTo("");
                       setCandidateSearchResults([]);
                       setCandidateSearchMode("all");
                       setCandidatePage(1);
@@ -9780,6 +9926,61 @@ function PortalApp({ token, onLogout }) {
                 {candidateAiQueryMode === "natural" && candidateSearchingAs ? (
                   <div className="muted" style={{ marginTop: 8 }}>
                     Searching as: <code>{candidateSearchingAs}</code>
+                  </div>
+                ) : null}
+                {candidateHasSmartChipSelection ? (
+                  <div className="stack-list" style={{ marginTop: 10 }}>
+                    {SMART_SEARCH_QUICK_CHIPS
+                      .filter((chip) => candidateQuickChipIds.includes(chip.id))
+                      .map((chip) => {
+                        const rows = candidateSmartChipRows[chip.id] || [];
+                        return (
+                          <article key={chip.id} className="item-card compact-card">
+                            <h3>{chip.label} ({rows.length})</h3>
+                            {!rows.length ? (
+                              <div className="empty-state">No candidates found for this chip and filters.</div>
+                            ) : (
+                              <div className="table-wrap" style={{ marginTop: 8 }}>
+                                <table>
+                                  <thead>
+                                    <tr>
+                                      <th>Candidate</th>
+                                      <th>Round / Status</th>
+                                      <th>Date</th>
+                                      <th>Client</th>
+                                      <th>Role</th>
+                                      <th>Current CTC</th>
+                                      <th>Expected CTC</th>
+                                      <th>Notice</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {rows.map((row, index) => (
+                                      <tr key={`${chip.id}-${row.item?.id || row.item?.assessmentId || row.candidateName}-${index}`}>
+                                        <td>
+                                          <button
+                                            className="linkish"
+                                            onClick={() => void openCandidateFromSearch(row.item)}
+                                          >
+                                            {row.candidateName}
+                                          </button>
+                                        </td>
+                                        <td>{row.round || row.status || "-"}</td>
+                                        <td>{row.date ? formatDateTimeDisplay(row.date) : "-"}</td>
+                                        <td>{row.client || "-"}</td>
+                                        <td>{row.role || "-"}</td>
+                                        <td>{row.currentCtc || "-"}</td>
+                                        <td>{row.expectedCtc || "-"}</td>
+                                        <td>{row.notice || "-"}</td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              </div>
+                            )}
+                          </article>
+                        );
+                      })}
                   </div>
                 ) : null}
                 {candidateFilterPanelOpen ? renderCandidateFilterPanel() : null}
@@ -9795,33 +9996,37 @@ function PortalApp({ token, onLogout }) {
                   <button onClick={() => void copyCandidatesEmail()}>Copy Email</button>
                   <button className="ghost-btn" onClick={() => downloadCandidatesExcel()}>Download results</button>
                 </div>
-                <div className="stack-list">
-                  {!pagedCandidates.length ? <div className="empty-state">No candidates found for this view.</div> : pagedCandidates.map((item) => (
-                    <article className="item-card compact-card" key={item.id || item.assessmentId}>
-                      <div className="item-card__top">
-                        <div>
-                          <h3>{item.name || item.candidateName || "Candidate"} | {item.role || item.currentDesignation || item.jdTitle || "Untitled role"}</h3>
-                          <p className="muted">{[item.company || item.currentCompany || "", item.location || "", item.ownerRecruiter ? `Recruiter: ${item.ownerRecruiter}` : "", item.source ? `Source: ${item.source}` : ""].filter(Boolean).join(" | ")}</p>
-                          <div className="candidate-snippet">{[item.experience || item.totalExperience || "", item.current_ctc || item.currentCtc ? `Current CTC: ${item.current_ctc || item.currentCtc}` : "", item.expected_ctc || item.expectedCtc ? `Expected CTC: ${item.expected_ctc || item.expectedCtc}` : "", item.notice_period || item.noticePeriod ? `Notice: ${item.notice_period || item.noticePeriod}` : ""].filter(Boolean).join("\n")}</div>
-                          {buildVisibleTagList(item).length ? (
-                            <div className="chip-row">
-                              {buildVisibleTagList(item).slice(0, 8).map((tag) => <span key={tag} className="chip">{tag}</span>)}
+                {!candidateHasSmartChipSelection ? (
+                  <>
+                    <div className="stack-list">
+                      {!pagedCandidates.length ? <div className="empty-state">No candidates found for this view.</div> : pagedCandidates.map((item) => (
+                        <article className="item-card compact-card" key={item.id || item.assessmentId}>
+                          <div className="item-card__top">
+                            <div>
+                              <h3>{item.name || item.candidateName || "Candidate"} | {item.role || item.currentDesignation || item.jdTitle || "Untitled role"}</h3>
+                              <p className="muted">{[item.company || item.currentCompany || "", item.location || "", item.ownerRecruiter ? `Recruiter: ${item.ownerRecruiter}` : "", item.source ? `Source: ${item.source}` : ""].filter(Boolean).join(" | ")}</p>
+                              <div className="candidate-snippet">{[item.experience || item.totalExperience || "", item.current_ctc || item.currentCtc ? `Current CTC: ${item.current_ctc || item.currentCtc}` : "", item.expected_ctc || item.expectedCtc ? `Expected CTC: ${item.expected_ctc || item.expectedCtc}` : "", item.notice_period || item.noticePeriod ? `Notice: ${item.notice_period || item.noticePeriod}` : ""].filter(Boolean).join("\n")}</div>
+                              {buildVisibleTagList(item).length ? (
+                                <div className="chip-row">
+                                  {buildVisibleTagList(item).slice(0, 8).map((tag) => <span key={tag} className="chip">{tag}</span>)}
+                                </div>
+                              ) : null}
+                              <div className="button-row">
+                                <button onClick={() => setDatabaseProfileItem(item)}>Open profile</button>
+                                {candidateHasStoredCv(item) ? <button className="ghost-btn" onClick={() => openDatabaseCandidateCv(item)}>Open CV</button> : null}
+                              </div>
                             </div>
-                          ) : null}
-                          <div className="button-row">
-                            <button onClick={() => setDatabaseProfileItem(item)}>Open profile</button>
-                            {candidateHasStoredCv(item) ? <button className="ghost-btn" onClick={() => openDatabaseCandidateCv(item)}>Open CV</button> : null}
                           </div>
-                        </div>
-                      </div>
-                    </article>
-                  ))}
-                </div>
-                <div className="button-row">
-                  <button className="ghost-btn" disabled={candidatePage <= 1} onClick={() => setCandidatePage((page) => Math.max(1, page - 1))}>Previous</button>
-                  <div className="muted">Page {candidatePage} of {totalCandidatePages}</div>
-                  <button className="ghost-btn" disabled={candidatePage >= totalCandidatePages} onClick={() => setCandidatePage((page) => Math.min(totalCandidatePages, page + 1))}>Next</button>
-                </div>
+                        </article>
+                      ))}
+                    </div>
+                    <div className="button-row">
+                      <button className="ghost-btn" disabled={candidatePage <= 1} onClick={() => setCandidatePage((page) => Math.max(1, page - 1))}>Previous</button>
+                      <div className="muted">Page {candidatePage} of {totalCandidatePages}</div>
+                      <button className="ghost-btn" disabled={candidatePage >= totalCandidatePages} onClick={() => setCandidatePage((page) => Math.min(totalCandidatePages, page + 1))}>Next</button>
+                    </div>
+                  </>
+                ) : null}
               </Section>
             </div>
           } />
