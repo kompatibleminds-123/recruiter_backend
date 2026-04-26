@@ -984,9 +984,58 @@ async function listApplicantsForUser(user, options = {}) {
   return rows
     .filter((candidate) => {
       const source = String(candidate?.source || "").trim();
+      if (candidate?.used_in_assessment) return false;
       return source === "website_apply" || source === "hosted_apply";
     })
     .map(sanitizeApplicantCandidate);
+}
+
+function getSupabaseServiceConfig() {
+  const url = String(process.env.SUPABASE_URL || "").trim().replace(/\/+$/, "");
+  const key = String(process.env.SUPABASE_SERVICE_ROLE_KEY || "").trim();
+  return { on: Boolean(url && key), url, key };
+}
+
+function normalizeApplicantPhoneForMatch(value) {
+  const digits = String(value || "").replace(/\D/g, "");
+  if (digits.length < 10) return "";
+  return digits.length > 10 ? digits.slice(-10) : digits;
+}
+
+function normalizeApplicantEmailForMatch(value) {
+  return String(value || "").trim().toLowerCase();
+}
+
+async function findAssessmentLinkedCandidateByIdentity({ companyId, phone, email }) {
+  const safeCompanyId = String(companyId || "").trim();
+  const needlePhone = normalizeApplicantPhoneForMatch(phone);
+  const needleEmail = normalizeApplicantEmailForMatch(email);
+  if (!safeCompanyId) return null;
+  if (!needlePhone && !needleEmail) return null;
+
+  const { on, url, key } = getSupabaseServiceConfig();
+  if (!on) return null;
+
+  const orParts = [];
+  if (needleEmail) orParts.push(`email_id.eq.${encodeURIComponent(needleEmail)}`);
+  if (needlePhone) orParts.push(`phone_number.like.*${encodeURIComponent(needlePhone)}*`);
+  if (!orParts.length) return null;
+
+  try {
+    const rel = `/rest/v1/assessments?select=id,candidate_id,email_id,phone_number&company_id=eq.${encodeURIComponent(safeCompanyId)}&or=(${orParts.join(",")})&order=updated_at.desc&limit=25`;
+    const response = await fetch(`${url}${rel}`, {
+      headers: { apikey: key, Authorization: `Bearer ${key}` }
+    });
+    if (!response.ok) return null;
+    const rows = await response.json();
+    const match = (rows || []).find((row) => String(row?.candidate_id || "").trim()) || null;
+    const candidateId = String(match?.candidate_id || "").trim();
+    if (!candidateId) return null;
+    const candidates = await listCandidates({ id: candidateId, companyId: safeCompanyId, limit: 1 }).catch(() => []);
+    return Array.isArray(candidates) && candidates.length ? candidates[0] : null;
+  } catch {
+    return null;
+  }
 }
 
 function getPlatformCreateCompanySecret(req, body = {}) {
@@ -1223,10 +1272,16 @@ async function ingestApplicantSubmission(body, req) {
 
   // If the same candidate already exists (captured note), merge into that row and move it to Applied
   // instead of creating a duplicate candidate entry.
-  const duplicate = await findDuplicateCandidate(
+  let duplicate = await findDuplicateCandidate(
     { company_id: payload.companyId, phone: merged.phone, email: merged.email, linkedin: merged.linkedin },
     { companyId: payload.companyId }
   ).catch(() => null);
+  if (!duplicate?.existing?.id) {
+    const linked = await findAssessmentLinkedCandidateByIdentity({ companyId: payload.companyId, phone: merged.phone, email: merged.email }).catch(() => null);
+    if (linked?.id) {
+      duplicate = { existing: linked, matchBy: ["assessment_identity"] };
+    }
+  }
 
   if (duplicate?.existing?.id) {
     const existing = duplicate.existing;
@@ -1245,7 +1300,10 @@ async function ingestApplicantSubmission(body, req) {
     // - Only keep "website_apply/hosted_apply" source if the existing record was already an inbound applicant.
     const existingSource = String(existing?.source || "").trim();
     const existingIsInbound = existingSource === "website_apply" || existingSource === "hosted_apply";
-    const nextSource = existingIsInbound ? appliedSource : (existingSource || appliedSource);
+    const existingConverted = Boolean(existing?.used_in_assessment) || Boolean(String(existing?.assessment_id || existing?.assessmentId || "").trim());
+    const nextSource = existingIsInbound
+      ? appliedSource
+      : (existingSource || (existingConverted ? "manual_draft" : appliedSource));
 
     const patch = {
       source: nextSource,

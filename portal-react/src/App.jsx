@@ -4182,7 +4182,6 @@ function PortalApp({ token, onLogout }) {
           </div>
         </div>
         <div className="candidate-filter-column">
-          <label><span>Keywords</span><input value={candidateStructuredFiltersDraft.keySkills} onChange={(e) => setCandidateStructuredFiltersDraft((current) => ({ ...current, keySkills: e.target.value }))} placeholder="SaaS, sales, B2B, candidate name" /></label>
           <label><span>Locations</span><input value={candidateStructuredFiltersDraft.location} onChange={(e) => setCandidateStructuredFiltersDraft((current) => ({ ...current, location: e.target.value }))} placeholder="Mumbai, Hyderabad" /></label>
           <div className="filter-block">
             <div className="candidate-filter-label">Notice period</div>
@@ -8172,14 +8171,13 @@ function PortalApp({ token, onLogout }) {
       setCandidateSearchMode("search");
       setCandidatePage(1);
       if (candidateAiQueryMode === "natural" && result.filters) {
-        const maxNoticeDays = result.filters.maxNoticeDays != null ? String(result.filters.maxNoticeDays) : "";
-        const noticeBucket = String(result.filters.noticeBucket || "").trim() || mapMaxNoticeDaysToBucket(result.filters.maxNoticeDays);
         const next = {
           ...EMPTY_CANDIDATE_STRUCTURED_FILTERS,
           minExperience: result.filters.minExperienceYears != null ? String(result.filters.minExperienceYears) : "",
           maxExperience: result.filters.maxExperienceYears != null ? String(result.filters.maxExperienceYears) : "",
           location: result.filters.location || (Array.isArray(result.filters.locations) ? result.filters.locations.filter(Boolean).join(", ") : ""),
-          keySkills: Array.isArray(result.filters.skills) && result.filters.skills.length ? Array.from(new Set(result.filters.skills.flatMap(splitSearchKeywords))).join(", ") : "",
+          // Smart keyword builder already captures skills/keywords above.
+          keySkills: "",
           currentCompany: result.filters.currentCompany || "",
           client: result.filters.client || "",
           minCurrentCtc: result.filters.minCurrentCtcLpa != null ? String(result.filters.minCurrentCtcLpa) : "",
@@ -8187,8 +8185,9 @@ function PortalApp({ token, onLogout }) {
           minExpectedCtc: result.filters.minExpectedCtcLpa != null ? String(result.filters.minExpectedCtcLpa) : "",
           maxExpectedCtc: result.filters.maxExpectedCtcLpa != null ? String(result.filters.maxExpectedCtcLpa) : "",
           qualification: result.filters.qualification || "",
-          maxNoticeDays,
-          noticeBucket,
+          // Never auto-select notice period buckets; keep it explicit/manual.
+          maxNoticeDays: "",
+          noticeBucket: "",
           recruiter: result.filters.recruiterName || "",
           gender: result.filters.gender || "",
           assessmentStatus: result.filters.assessmentStatus || "",
