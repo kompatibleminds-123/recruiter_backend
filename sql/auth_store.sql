@@ -39,6 +39,18 @@ create table if not exists public.company_jobs (
   payload jsonb not null default '{}'::jsonb
 );
 
+-- Recruiter-personal JD shortcuts per job (does not overwrite `company_jobs.jd_shortcuts`).
+create table if not exists public.company_job_shortcuts (
+  company_id uuid not null references public.companies(id) on delete cascade,
+  job_id uuid not null references public.company_jobs(id) on delete cascade,
+  recruiter_id uuid not null references public.users(id) on delete cascade,
+  shortcuts text not null default '',
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  payload jsonb not null default '{}'::jsonb,
+  primary key (job_id, recruiter_id)
+);
+
 create table if not exists public.assessments (
   id uuid primary key,
   company_id uuid not null references public.companies(id) on delete cascade,

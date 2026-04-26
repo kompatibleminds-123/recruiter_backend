@@ -11282,7 +11282,7 @@ function PortalApp({ token, onLogout }) {
                   <div className="shortcut-builder__head">
                     <div>
                       <div className="info-label">JD shortcuts</div>
-                      <div className="muted">These save in backend JD records and are meant to be reused by extension templates too.</div>
+                      <div className="muted">These save per recruiter for this JD (so one recruiter's shortcuts don't overwrite others). Extension templates use the same shortcuts.</div>
                     </div>
                   </div>
                   <div className="form-grid two-col">

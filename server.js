@@ -6673,7 +6673,7 @@ const server = http.createServer(async (req, res) => {
   if (req.method === "GET" && req.url === "/company/jds") {
     try {
       const user = await requireSessionUser(getBearerToken(req));
-      const jobs = await listCompanyJobs(user.companyId);
+      const jobs = await listCompanyJobs(user.companyId, user.id);
       sendJson(res, 200, { ok: true, result: { jobs } });
     } catch (error) {
       sendJson(res, 401, { ok: false, error: String(error.message || error) });
@@ -6749,7 +6749,7 @@ const server = http.createServer(async (req, res) => {
             .map((item) => String(item || "").trim())
             .filter(Boolean)
         : [];
-      const jobs = await listCompanyJobs(actor.companyId);
+      const jobs = await listCompanyJobs(actor.companyId, actor.id);
       const job = (Array.isArray(jobs) ? jobs : []).find((item) => String(item?.id || "").trim() === jobId) || null;
       if (!job) throw new Error("JD not found.");
 
@@ -7143,7 +7143,7 @@ const server = http.createServer(async (req, res) => {
       const [candidates, assessments, jobs] = await Promise.all([
         listCandidatesForUser(user, { limit: 5000 }),
         listAssessments({ actorUserId: user.id, companyId: user.companyId }),
-        listCompanyJobs(user.companyId)
+        listCompanyJobs(user.companyId, user.id)
       ]);
       const summary = buildDashboardSummary({ candidates, assessments, jobs, dateFrom, dateTo, clientFilter, recruiterFilter, actor: user });
       const availableClients = Array.from(
@@ -7186,7 +7186,7 @@ const server = http.createServer(async (req, res) => {
       const [candidates, assessments, jobs] = await Promise.all([
         listCandidatesForUser(user, { limit: 5000 }),
         listAssessments({ actorUserId: user.id, companyId: user.companyId }),
-        listCompanyJobs(user.companyId)
+        listCompanyJobs(user.companyId, user.id)
       ]);
       const summary = buildClientPortalSummary({ candidates, assessments, jobs, dateFrom, dateTo, clientFilter });
       const availableClients = Array.from(
@@ -7318,7 +7318,7 @@ const server = http.createServer(async (req, res) => {
       }
       const jobId = String(requestUrl.pathname.replace(/^\/company\/jobs\//, "").replace(/\/apply-link-signatures$/, "")).trim();
       if (!jobId) throw new Error("Missing job id.");
-      const jobs = await listCompanyJobs(actor.companyId);
+      const jobs = await listCompanyJobs(actor.companyId, actor.id);
       const job = (jobs || []).find((item) => String(item?.id || "").trim() === jobId) || null;
       if (!job) throw new Error("Job not found in this company.");
       const secretInfo = await getCompanyApplicantIntakeSecret(actor.companyId);
@@ -7764,7 +7764,7 @@ const server = http.createServer(async (req, res) => {
       const [candidates, assessments, jobs] = await Promise.all([
         listCandidatesForUser(user, { limit: 5000, scope: "company" }),
         listAssessments({ actorUserId: user.id, companyId: user.companyId }),
-        listCompanyJobs(user.companyId)
+        listCompanyJobs(user.companyId, user.id)
       ]);
       const universe = buildCandidateSearchUniverse(candidates, assessments, jobs);
 
@@ -8081,7 +8081,7 @@ const server = http.createServer(async (req, res) => {
       const [candidates, assessments, jobs] = await Promise.all([
         listCandidatesForUser(user, { limit: 5000 }),
         listAssessments({ actorUserId: user.id, companyId: user.companyId }),
-        listCompanyJobs(user.companyId)
+        listCompanyJobs(user.companyId, user.id)
       ]);
       const actorIsAdmin = String(user?.role || "").toLowerCase() === "admin";
       const actorName = String(user?.name || "").trim();
@@ -8131,7 +8131,7 @@ const server = http.createServer(async (req, res) => {
       const [candidates, assessments, jobs] = await Promise.all([
         listCandidatesForUser(user, { limit: 5000 }),
         listAssessments({ actorUserId: user.id, companyId: user.companyId }),
-        listCompanyJobs(user.companyId)
+        listCompanyJobs(user.companyId, user.id)
       ]);
       const universe = buildCandidateSearchUniverse(candidates, assessments, jobs);
       const items = universe
@@ -8414,7 +8414,7 @@ const server = http.createServer(async (req, res) => {
       const [candidates, assessments, jobs] = await Promise.all([
         listCandidatesForUser(user, { limit: 5000 }),
         listAssessments({ actorUserId: user.id, companyId: user.companyId }),
-        listCompanyJobs(user.companyId)
+        listCompanyJobs(user.companyId, user.id)
       ]);
       const universe = buildCandidateSearchUniverse(candidates, assessments, jobs);
       const result = matchCandidatesToJd(universe, body || {});
@@ -8436,7 +8436,7 @@ const server = http.createServer(async (req, res) => {
       }
       const [users, jobs, assessments, quickCapture] = await Promise.all([
         listCompanyUsers(user.companyId),
-        listCompanyJobs(user.companyId),
+        listCompanyJobs(user.companyId, user.id),
         listAssessments({ actorUserId: user.id, companyId: user.companyId }),
         exportCompanyQuickCaptureData(user.companyId)
       ]);

@@ -1172,9 +1172,43 @@ async function listCompanyUsers(companyId) {
   if (!cfg().on) return readStore().users.filter((u) => u.companyId === companyId && String(u.role || "").toLowerCase() !== "client").map(sanitizeUser);
   await ensureSeeded(); return (await sbSel("users", `select=*&company_id=eq.${enc(companyId)}&order=created_at.asc`)).filter((u) => String(u.role || "").toLowerCase() !== "client").map(sanitizeUser);
 }
-async function listCompanyJobs(companyId) {
-  if (!cfg().on) return (readStore().jobs || []).filter((j) => j.companyId === companyId && !isSystemJobRow(j)).sort((a, b) => String(b.updatedAt || "").localeCompare(String(a.updatedAt || ""))).map(sanitizeJob);
-  await ensureSeeded(); return (await sbSel("company_jobs", `select=*&company_id=eq.${enc(companyId)}&order=updated_at.desc`)).filter((row) => !isSystemJobRow(row)).map(sanitizeJob);
+async function listCompanyJobs(companyId, recruiterId = "") {
+  const scopedRecruiterId = String(recruiterId || "").trim();
+  if (!cfg().on) {
+    const store = readStore();
+    const jobs = (store.jobs || [])
+      .filter((j) => j.companyId === companyId && !isSystemJobRow(j))
+      .sort((a, b) => String(b.updatedAt || "").localeCompare(String(a.updatedAt || "")))
+      .map(sanitizeJob);
+    if (!scopedRecruiterId) return jobs;
+
+    store.jobShortcuts = Array.isArray(store.jobShortcuts) ? store.jobShortcuts : [];
+    const shortcutsMap = new Map(
+      store.jobShortcuts
+        .filter((row) => String(row?.companyId || "") === String(companyId) && String(row?.recruiterId || "") === scopedRecruiterId)
+        .map((row) => [String(row?.jobId || "").trim(), String(row?.shortcuts || "")])
+        .filter(([jobId]) => Boolean(jobId))
+    );
+
+    return jobs.map((job) => (shortcutsMap.has(String(job?.id || "")) ? { ...job, jdShortcuts: shortcutsMap.get(String(job.id)) } : job));
+  }
+
+  await ensureSeeded();
+  const jobs = (await sbSel("company_jobs", `select=*&company_id=eq.${enc(companyId)}&order=updated_at.desc`))
+    .filter((row) => !isSystemJobRow(row))
+    .map(sanitizeJob);
+  if (!scopedRecruiterId) return jobs;
+
+  const shortcutRows = await sbSel(
+    "company_job_shortcuts",
+    `select=job_id,shortcuts&company_id=eq.${enc(companyId)}&recruiter_id=eq.${enc(scopedRecruiterId)}&limit=5000`
+  ).catch(() => []);
+  const shortcutsMap = new Map(
+    (shortcutRows || [])
+      .map((row) => [String(row?.job_id || "").trim(), String(row?.shortcuts || "")])
+      .filter(([jobId]) => Boolean(jobId))
+  );
+  return jobs.map((job) => (shortcutsMap.has(String(job?.id || "")) ? { ...job, jdShortcuts: shortcutsMap.get(String(job.id)) } : job));
 }
 async function getPublicCompanyJob(jobId) {
   const id = String(jobId || "").trim();
@@ -1195,12 +1229,14 @@ async function saveCompanyJob({ actorUserId, companyId, job }) {
   const actor = sanitizeUser(await getUserById(actorUserId, companyId));
   if (!actor) throw new Error("Authenticated recruiter not found for this company.");
   const actorIsAdmin = String(actor.role || "").toLowerCase() === "admin";
+  const incomingRecruiterShortcuts = String(job?.jdShortcuts || "").trim();
   let existingJob = null;
   const incomingJobId = String(job?.id || "").trim();
   if (!cfg().on) {
     const store = readStore(); store.jobs = Array.isArray(store.jobs) ? store.jobs : []; const now = new Date().toISOString(); const ix = store.jobs.findIndex((i) => i.id === job.id && i.companyId === companyId);
     existingJob = ix >= 0 ? sanitizeJob(store.jobs[ix]) : null;
     if (!actorIsAdmin && existingJob?.ownerRecruiterId && String(existingJob.ownerRecruiterId) !== String(actor.id)) throw new Error("Only an admin or the owner recruiter can edit this JD.");
+    const globalShortcuts = existingJob ? String(existingJob.jdShortcuts || "").trim() : "";
     const ownerRecruiterId = actorIsAdmin ? String(job.ownerRecruiterId || job.owner_recruiter_id || "").trim() : String(actor.id || "").trim();
     const ownerRecruiterName = actorIsAdmin ? String(job.ownerRecruiterName || job.owner_recruiter_name || "").trim() : String(actor.name || "").trim();
     const assignedRecruiters = actorIsAdmin && Array.isArray(job.assignedRecruiters) ? job.assignedRecruiters : ownerRecruiterId ? [{ id: ownerRecruiterId, name: ownerRecruiterName, primary: true }] : [];
@@ -1220,7 +1256,7 @@ async function saveCompanyJob({ actorUserId, companyId, job }) {
       redFlags: String(job.redFlags || "").trim(),
       recruiterNotes: String(job.recruiterNotes || "").trim(),
       standardQuestions: String(job.standardQuestions || "").trim(),
-      jdShortcuts: String(job.jdShortcuts || "").trim(),
+      jdShortcuts: globalShortcuts,
       ownerRecruiterId,
       ownerRecruiterName,
       assignedRecruiters,
@@ -1228,7 +1264,23 @@ async function saveCompanyJob({ actorUserId, companyId, job }) {
       updatedAt: now,
       updatedBy: actor.email
     };
-    if (ix >= 0) store.jobs[ix] = next; else store.jobs.push(next); writeStore(store); return sanitizeJob(next);
+    if (ix >= 0) store.jobs[ix] = next; else store.jobs.push(next);
+
+    store.jobShortcuts = Array.isArray(store.jobShortcuts) ? store.jobShortcuts : [];
+    const shortcutIx = store.jobShortcuts.findIndex((row) => row && row.companyId === companyId && row.jobId === next.id && row.recruiterId === actor.id);
+    const shortcutRow = {
+      companyId,
+      jobId: next.id,
+      recruiterId: actor.id,
+      shortcuts: incomingRecruiterShortcuts,
+      createdAt: shortcutIx >= 0 ? store.jobShortcuts[shortcutIx].createdAt : now,
+      updatedAt: now,
+      updatedBy: actor.email
+    };
+    if (shortcutIx >= 0) store.jobShortcuts[shortcutIx] = shortcutRow; else store.jobShortcuts.push(shortcutRow);
+
+    writeStore(store);
+    return { ...sanitizeJob(next), jdShortcuts: incomingRecruiterShortcuts };
   }
   await ensureSeeded();
   if (incomingJobId) {
@@ -1236,10 +1288,33 @@ async function saveCompanyJob({ actorUserId, companyId, job }) {
     existingJob = sanitizeJob(existingRows?.[0]);
     if (!actorIsAdmin && existingJob?.ownerRecruiterId && String(existingJob.ownerRecruiterId) !== String(actor.id)) throw new Error("Only an admin or the owner recruiter can edit this JD.");
   }
+  const globalShortcuts = existingJob ? String(existingJob.jdShortcuts || "").trim() : "";
   const ownerRecruiterId = actorIsAdmin ? String(job.ownerRecruiterId || job.owner_recruiter_id || "").trim() : String(actor.id || "").trim();
   const ownerRecruiterName = actorIsAdmin ? String(job.ownerRecruiterName || job.owner_recruiter_name || "").trim() : String(actor.name || "").trim();
   const assignedRecruiters = actorIsAdmin && Array.isArray(job.assignedRecruiters) ? job.assignedRecruiters : ownerRecruiterId ? [{ id: ownerRecruiterId, name: ownerRecruiterName, primary: true }] : [];
-  const now = new Date().toISOString(); const rows = await sbIns("company_jobs", [jobRow({ ...job, ownerRecruiterId, ownerRecruiterName, assignedRecruiters, id: persistedJobId(job.id), companyId, updatedBy: actor.email, createdAt: job.createdAt || existingJob?.createdAt || now, updatedAt: now })], { conflict: "id", upsert: true }); return sanitizeJob(rows[0]);
+  const now = new Date().toISOString();
+  const persistedJob = persistedJobId(job.id);
+  const rows = await sbIns(
+    "company_jobs",
+    [jobRow({ ...job, jdShortcuts: globalShortcuts, ownerRecruiterId, ownerRecruiterName, assignedRecruiters, id: persistedJob, companyId, updatedBy: actor.email, createdAt: job.createdAt || existingJob?.createdAt || now, updatedAt: now })],
+    { conflict: "id", upsert: true }
+  );
+
+  await sbIns(
+    "company_job_shortcuts",
+    [{
+      company_id: companyId,
+      job_id: persistedJob,
+      recruiter_id: actor.id,
+      shortcuts: incomingRecruiterShortcuts,
+      created_at: now,
+      updated_at: now,
+      payload: { updatedBy: actor.email }
+    }],
+    { conflict: "job_id,recruiter_id", upsert: true, returning: "minimal" }
+  );
+
+  return { ...sanitizeJob(rows[0]), jdShortcuts: incomingRecruiterShortcuts };
 }
 async function getCompanySharedExportPresets(companyId) {
   if (!companyId) throw new Error("companyId is required.");
