@@ -162,13 +162,22 @@ function formatBooleanToken(token) {
   return /\s/.test(value) ? `"${value}"` : value;
 }
 
-function buildBooleanFromKeywordBars({ must = "", any = "", exclude = "" } = {}) {
+function buildBooleanFromKeywordBars({ must = "", any = "", anyGroups = [], exclude = "" } = {}) {
   const mustTokens = parseKeywordBarTokens(must).map(formatBooleanToken).filter(Boolean);
-  const anyTokens = parseKeywordBarTokens(any).map(formatBooleanToken).filter(Boolean);
+  const normalizedAnyGroups = Array.isArray(anyGroups)
+    ? anyGroups.map((group) => parseKeywordBarTokens(group).map(formatBooleanToken).filter(Boolean)).filter((group) => group.length)
+    : [];
+  // Backward compatibility for legacy single "any" bar.
+  const legacyAnyTokens = parseKeywordBarTokens(any).map(formatBooleanToken).filter(Boolean);
+  if (legacyAnyTokens.length) normalizedAnyGroups.unshift(legacyAnyTokens);
   const excludeTokens = parseKeywordBarTokens(exclude).map(formatBooleanToken).filter(Boolean);
   const positiveParts = [];
   if (mustTokens.length) positiveParts.push(mustTokens.join(" AND "));
-  if (anyTokens.length) positiveParts.push(`(${anyTokens.join(" OR ")})`);
+  if (normalizedAnyGroups.length) {
+    normalizedAnyGroups.forEach((group) => {
+      positiveParts.push(`(${group.join(" OR ")})`);
+    });
+  }
   const positiveQuery = positiveParts.join(" AND ").trim();
   const excludeQuery = excludeTokens.length ? `NOT (${excludeTokens.join(" OR ")})` : "";
   return [positiveQuery, excludeQuery].filter(Boolean).join(" ").trim();
@@ -4088,7 +4097,9 @@ function PortalApp({ token, onLogout }) {
   const [candidateSearchQueryUsed, setCandidateSearchQueryUsed] = useState("");
   const [candidateAiQueryMode, setCandidateAiQueryMode] = useState("natural");
   const [candidateKeywordMust, setCandidateKeywordMust] = useState("");
-  const [candidateKeywordAny, setCandidateKeywordAny] = useState("");
+  const [candidateKeywordAny1, setCandidateKeywordAny1] = useState("");
+  const [candidateKeywordAny2, setCandidateKeywordAny2] = useState("");
+  const [candidateKeywordAny3, setCandidateKeywordAny3] = useState("");
   const [candidateKeywordExclude, setCandidateKeywordExclude] = useState("");
   const [candidateQuickChipIds, setCandidateQuickChipIds] = useState([]);
   const [candidateSmartDateFrom, setCandidateSmartDateFrom] = useState("");
@@ -4109,10 +4120,10 @@ function PortalApp({ token, onLogout }) {
   const candidateKeywordPreview = useMemo(() => (
     buildBooleanFromKeywordBars({
       must: candidateKeywordMust,
-      any: candidateKeywordAny,
+      anyGroups: [candidateKeywordAny1, candidateKeywordAny2, candidateKeywordAny3],
       exclude: candidateKeywordExclude
     })
-  ), [candidateKeywordMust, candidateKeywordAny, candidateKeywordExclude]);
+  ), [candidateKeywordMust, candidateKeywordAny1, candidateKeywordAny2, candidateKeywordAny3, candidateKeywordExclude]);
   const candidateStructuredFiltersDirty = useMemo(() => (
     JSON.stringify(candidateStructuredFiltersDraft) !== JSON.stringify(candidateStructuredFilters)
   ), [candidateStructuredFiltersDraft, candidateStructuredFilters]);
@@ -8106,7 +8117,7 @@ function PortalApp({ token, onLogout }) {
   async function runCandidateSearch() {
     const keywordDrivenBoolean = buildBooleanFromKeywordBars({
       must: candidateKeywordMust,
-      any: candidateKeywordAny,
+      anyGroups: [candidateKeywordAny1, candidateKeywordAny2, candidateKeywordAny3],
       exclude: candidateKeywordExclude
     });
     const hasKeywordBuilder = Boolean(keywordDrivenBoolean);
@@ -10049,7 +10060,9 @@ function PortalApp({ token, onLogout }) {
                       setCandidateSearchText("");
                       setCandidateSearchQueryUsed("");
                       setCandidateKeywordMust("");
-                      setCandidateKeywordAny("");
+                      setCandidateKeywordAny1("");
+                      setCandidateKeywordAny2("");
+                      setCandidateKeywordAny3("");
                       setCandidateKeywordExclude("");
                       setCandidateQuickChipIds([]);
                       setCandidateSmartDateFrom("");
@@ -10072,7 +10085,9 @@ function PortalApp({ token, onLogout }) {
                     <p className="muted">Use comma separated values. We build a clean Boolean preview before search.</p>
                     <div className="candidate-keyword-grid">
                       <label><span>Must keywords</span><input value={candidateKeywordMust} onChange={(e) => setCandidateKeywordMust(e.target.value)} placeholder=".NET Core, C#, Azure" /></label>
-                      <label><span>Any keywords</span><input value={candidateKeywordAny} onChange={(e) => setCandidateKeywordAny(e.target.value)} placeholder="Fintech, lending, finance" /></label>
+                      <label><span>Any group 1 (OR)</span><input value={candidateKeywordAny1} onChange={(e) => setCandidateKeywordAny1(e.target.value)} placeholder=".NET Core, C#" /></label>
+                      <label><span>Any group 2 (OR)</span><input value={candidateKeywordAny2} onChange={(e) => setCandidateKeywordAny2(e.target.value)} placeholder="Angular, React" /></label>
+                      <label><span>Any group 3 (OR)</span><input value={candidateKeywordAny3} onChange={(e) => setCandidateKeywordAny3(e.target.value)} placeholder="SQL, MongoDB" /></label>
                       <label><span>Exclude keywords</span><input value={candidateKeywordExclude} onChange={(e) => setCandidateKeywordExclude(e.target.value)} placeholder="sales, recruiter, hr" /></label>
                     </div>
                     {candidateKeywordPreview ? (
@@ -10133,7 +10148,9 @@ function PortalApp({ token, onLogout }) {
                       setCandidateSearchText("");
                       setCandidateSearchQueryUsed("");
                       setCandidateKeywordMust("");
-                      setCandidateKeywordAny("");
+                      setCandidateKeywordAny1("");
+                      setCandidateKeywordAny2("");
+                      setCandidateKeywordAny3("");
                       setCandidateKeywordExclude("");
                       setCandidateQuickChipIds([]);
                       setCandidateSmartDateFrom("");
