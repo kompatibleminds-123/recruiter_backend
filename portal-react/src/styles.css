@@ -1243,13 +1243,13 @@ textarea { min-height: 92px; resize: vertical; }
 
 /* ---------- Premium UI Polish Layer (CSS-only, no logic changes) ---------- */
 .content {
-  padding: 1.35rem;
-  gap: 1.1rem;
+  padding: 1.45rem;
+  gap: 1.15rem;
 }
 
 .panel {
-  border-color: #d6e1f0;
-  box-shadow: 0 10px 28px rgba(15, 23, 42, 0.06);
+  border-color: #ccdaee;
+  box-shadow: 0 14px 34px rgba(15, 23, 42, 0.09);
 }
 
 .panel h2 {
@@ -1259,9 +1259,9 @@ textarea { min-height: 92px; resize: vertical; }
 }
 
 .item-card {
-  border-color: #dbe5f3;
-  border-radius: 18px;
-  box-shadow: 0 7px 22px rgba(15, 23, 42, 0.06);
+  border-color: #d1deef;
+  border-radius: 20px;
+  box-shadow: 0 12px 30px rgba(15, 23, 42, 0.1);
 }
 
 .item-card h3 {
@@ -1275,9 +1275,9 @@ textarea { min-height: 92px; resize: vertical; }
 }
 
 .metric-card {
-  background: linear-gradient(180deg, #ffffff 0%, #f3f7ff 100%);
-  border-color: #d5e1f4;
-  box-shadow: 0 4px 18px rgba(37, 99, 235, 0.08);
+  background: linear-gradient(180deg, #ffffff 0%, #edf4ff 100%);
+  border-color: #cddcf2;
+  box-shadow: 0 8px 20px rgba(37, 99, 235, 0.14);
 }
 
 .metric-label {
@@ -1286,36 +1286,48 @@ textarea { min-height: 92px; resize: vertical; }
 }
 
 .metric-value {
-  font-size: 1.42rem;
+  font-size: 1.5rem;
   letter-spacing: -0.02em;
 }
 
 .nav-btn {
-  border-color: #d5e1f2;
-  border-radius: 14px;
+  border-color: #d0dcf0;
+  border-radius: 16px;
+  background: linear-gradient(180deg, #ffffff 0%, #f6f9ff 100%);
+  box-shadow: 0 4px 10px rgba(15, 23, 42, 0.05);
+}
+
+.sidebar {
+  background: linear-gradient(180deg, #f8fbff 0%, #eef4ff 100%);
+  border-right: 1px solid #d7e2f3;
 }
 
 .nav-btn.active {
-  box-shadow: 0 8px 20px rgba(37, 99, 235, 0.3);
+  box-shadow: 0 11px 26px rgba(37, 99, 235, 0.35);
 }
 
 .toolbar {
-  margin-top: 0.7rem;
+  margin-top: 0.75rem;
 }
 
 .toolbar > button,
 .button-row > button {
-  min-height: 40px;
+  min-height: 42px;
+  border-radius: 14px;
+  font-weight: 700;
 }
 
 .candidate-search-toolbar > input {
-  min-height: 42px;
+  min-height: 44px;
   background: #ffffff;
+  border: 1px solid #cad9ef;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.85);
 }
 
 .candidate-keyword-builder {
   border-color: #cfe0ff;
-  background: linear-gradient(180deg, #fafdff 0%, #f0f6ff 100%);
+  background: linear-gradient(180deg, #fafdff 0%, #edf5ff 100%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9), 0 6px 18px rgba(37, 99, 235, 0.08);
 }
 
 .candidate-keyword-grid {
@@ -1339,8 +1351,9 @@ textarea { min-height: 92px; resize: vertical; }
 }
 
 .candidate-quick-chip-builder {
-  border-color: #efb8c4;
-  background: linear-gradient(180deg, #fff8f9 0%, #ffeff3 100%);
+  border-color: #efb1c0;
+  background: linear-gradient(180deg, #fff8fa 0%, #ffe8ef 100%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.92), 0 8px 20px rgba(190, 24, 93, 0.08);
 }
 
 .candidate-quick-chip-builder h3 {
@@ -1348,8 +1361,8 @@ textarea { min-height: 92px; resize: vertical; }
 }
 
 .candidate-quick-chip-builder .chip {
-  border-color: #e8c7cf;
-  background: #fff4f7;
+  border-color: #e4bcc9;
+  background: #fff2f6;
 }
 
 .candidate-quick-chip-builder .chip-toggle.active {
@@ -1360,11 +1373,13 @@ textarea { min-height: 92px; resize: vertical; }
 
 .filter-dropdown {
   border-color: #d2deef;
-  border-radius: 16px;
+  border-radius: 18px;
+  box-shadow: 0 6px 16px rgba(15, 23, 42, 0.06);
 }
 
 .filter-dropdown__summary {
-  background: linear-gradient(180deg, #ffffff 0%, #f7faff 100%);
+  background: linear-gradient(180deg, #ffffff 0%, #f3f8ff 100%);
+  font-weight: 800;
 }
 
 .chip {
@@ -1381,12 +1396,14 @@ textarea { min-height: 92px; resize: vertical; }
 
 .table-wrap {
   border-color: #d9e5f5;
-  border-radius: 16px;
+  border-radius: 18px;
+  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.07);
 }
 
 .dashboard-table th {
-  background: #eaf1fd;
+  background: linear-gradient(180deg, #eef4ff 0%, #e3edfd 100%);
   color: #1f3760;
+  font-weight: 800;
 }
 
 .dashboard-table td {
@@ -1400,6 +1417,7 @@ textarea { min-height: 92px; resize: vertical; }
 .candidate-smart-section {
   border: 1px solid #d7e4f7;
   background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+  box-shadow: 0 10px 26px rgba(37, 99, 235, 0.09);
 }
 
 .candidate-smart-head {
@@ -1418,6 +1436,7 @@ textarea { min-height: 92px; resize: vertical; }
   border: 1px solid #d7e3f5;
   border-radius: 14px;
   background: #f9fbff;
+  box-shadow: 0 4px 10px rgba(15, 23, 42, 0.05);
 }
 
 .copy-preset-control span {
@@ -1427,6 +1446,26 @@ textarea { min-height: 92px; resize: vertical; }
 .copy-preset-control select {
   min-width: 190px;
   background: #fff;
+}
+
+input,
+select,
+textarea {
+  border-color: #cad8ef;
+  border-radius: 14px;
+  background: linear-gradient(180deg, #ffffff 0%, #fcfdff 100%);
+}
+
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+button:focus-visible {
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.25);
+}
+
+.status {
+  border-radius: 16px;
+  box-shadow: 0 6px 14px rgba(15, 23, 42, 0.06);
 }
 
 @media (max-width: 960px) {
