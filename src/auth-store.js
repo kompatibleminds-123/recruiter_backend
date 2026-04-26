@@ -1300,19 +1300,24 @@ async function saveCompanyJob({ actorUserId, companyId, job }) {
     { conflict: "id", upsert: true }
   );
 
-  await sbIns(
-    "company_job_shortcuts",
-    [{
-      company_id: companyId,
-      job_id: persistedJob,
-      recruiter_id: actor.id,
-      shortcuts: incomingRecruiterShortcuts,
-      created_at: now,
-      updated_at: now,
-      payload: { updatedBy: actor.email }
-    }],
-    { conflict: "job_id,recruiter_id", upsert: true, returning: "minimal" }
-  );
+  try {
+    await sbIns(
+      "company_job_shortcuts",
+      [{
+        company_id: companyId,
+        job_id: persistedJob,
+        recruiter_id: actor.id,
+        shortcuts: incomingRecruiterShortcuts,
+        created_at: now,
+        updated_at: now,
+        payload: { updatedBy: actor.email }
+      }],
+      { conflict: "job_id,recruiter_id", upsert: true, returning: "minimal" }
+    );
+  } catch (_) {
+    // Backward-compatible: some deployments might not have the recruiter-scoped shortcuts table yet.
+    // In that case, keep the JD save working and let the user apply the migration later.
+  }
 
   return { ...sanitizeJob(rows[0]), jdShortcuts: incomingRecruiterShortcuts };
 }

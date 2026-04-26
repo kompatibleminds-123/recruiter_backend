@@ -109,4 +109,15 @@ create index if not exists idx_company_jobs_company_id on public.company_jobs(co
 create index if not exists idx_assessments_company_id on public.assessments(company_id);
 create index if not exists idx_assessments_recruiter_id on public.assessments(recruiter_id);
 create index if not exists idx_assessments_candidate_id on public.assessments(candidate_id);
-create index if not exists idx_assessments_generated_at on public.assessments(generated_at desc);
+do $$
+begin
+  if exists (
+    select 1
+    from information_schema.columns
+    where table_schema = 'public'
+      and table_name = 'assessments'
+      and column_name = 'generated_at'
+  ) then
+    create index if not exists idx_assessments_generated_at on public.assessments(generated_at desc);
+  end if;
+end $$;
