@@ -4924,6 +4924,82 @@ function PortalApp({ token, onLogout }) {
     }
   }
 
+  async function reloadApplicantsSlice() {
+    if (!token) return;
+    const applicantsResult = await api("/company/applicants", token).catch(() => ({ items: [] }));
+    setState((current) => ({
+      ...current,
+      applicants: applicantsResult?.items || []
+    }));
+  }
+
+  async function reloadIntakeSlice() {
+    if (!token) return;
+    const intakeResult = await api("/company/applicant-intake-secret", token).catch(() => null);
+    setState((current) => ({
+      ...current,
+      intake: intakeResult || {}
+    }));
+  }
+
+  async function reloadJobsWorkspace() {
+    if (!token) return;
+    const [jobsResult, usersResult, intakeResult] = await Promise.all([
+      api("/company/jds", token).catch(() => ({ jobs: [] })),
+      api("/company/users", token).catch(() => ({ users: [] })),
+      api("/company/applicant-intake-secret", token).catch(() => null)
+    ]);
+    setState((current) => ({
+      ...current,
+      jobs: jobsResult?.jobs || [],
+      users: usersResult?.users || [],
+      intake: intakeResult || current.intake
+    }));
+  }
+
+  async function reloadLoginSettingsWorkspace() {
+    if (!token) return;
+    const [usersResult, clientUsersResult] = await Promise.all([
+      api("/company/users", token).catch(() => ({ users: [] })),
+      api("/company/client-users", token).catch(() => ({ clientUsers: [] }))
+    ]);
+    setState((current) => ({
+      ...current,
+      users: usersResult?.users || []
+    }));
+    setClientUsers(clientUsersResult?.clientUsers || []);
+  }
+
+  async function reloadCandidatesSlice({ includeDatabase = false } = {}) {
+    if (!token) return;
+    const [candidatesResult, databaseCandidatesResult] = await Promise.all([
+      api("/candidates?limit=5000", token).catch(() => []),
+      includeDatabase ? api("/candidates?scope=company&limit=5000", token).catch(() => []) : Promise.resolve(null)
+    ]);
+    setState((current) => ({
+      ...current,
+      candidates: Array.isArray(candidatesResult) ? candidatesResult : current.candidates,
+      databaseCandidates: includeDatabase
+        ? (Array.isArray(databaseCandidatesResult) ? databaseCandidatesResult : current.databaseCandidates)
+        : current.databaseCandidates
+    }));
+  }
+
+  async function reloadAssessmentsSlice({ includeEvents = false } = {}) {
+    if (!token) return;
+    const [assessmentsResult, assessmentEventsResult] = await Promise.all([
+      api("/company/assessments", token).catch(() => ({ assessments: [] })),
+      includeEvents
+        ? api("/company/assessment-events?limit=10000", token).catch(() => ({ result: { rows: [] } }))
+        : Promise.resolve(null)
+    ]);
+    setState((current) => ({
+      ...current,
+      assessments: assessmentsResult?.assessments || current.assessments,
+      assessmentEvents: includeEvents ? (assessmentEventsResult?.result?.rows || current.assessmentEvents) : current.assessmentEvents
+    }));
+  }
+
   useEffect(() => {
     void loadWorkspace().catch((error) => setStatus("workspace", String(error?.message || error), "error"));
   }, [token, location?.pathname]);
@@ -6826,25 +6902,62 @@ function PortalApp({ token, onLogout }) {
     await api(`/company/candidates/${encodeURIComponent(interviewMeta.candidateId)}/interview-cv`, token, "DELETE");
     setInterviewForm((current) => ({ ...current, cvAnalysis: null, cvAnalysisApplied: false }));
     setStatus("interview", "Uploaded CV removed.", "ok");
-    await loadWorkspace();
+    void refreshWorkspaceSilently("post-cv-remove");
   }
 
   async function removeApplicant(applicantId) {
     if (!window.confirm("Remove this applicant from the intake inbox?")) return;
     await api(`/company/applicants?id=${encodeURIComponent(applicantId)}`, token, "DELETE");
-    await loadWorkspace();
+    setState((current) => ({
+      ...current,
+      applicants: Array.isArray(current.applicants)
+        ? current.applicants.filter((item) => String(item?.id || "") !== String(applicantId))
+        : current.applicants,
+      candidates: Array.isArray(current.candidates)
+        ? current.candidates.filter((item) => String(item?.id || "") !== String(applicantId))
+        : current.candidates,
+      databaseCandidates: Array.isArray(current.databaseCandidates)
+        ? current.databaseCandidates.filter((item) => String(item?.id || "") !== String(applicantId))
+        : current.databaseCandidates
+    }));
+    await reloadApplicantsSlice();
+    void refreshWorkspaceSilently("post-applicant-remove");
     setStatus("applicants", "Applicant removed.", "ok");
   }
 
   async function hideApplicant(applicantId) {
     await api(`/company/candidates/${encodeURIComponent(applicantId)}`, token, "PATCH", { patch: { hidden_from_captured: true } });
-    await loadWorkspace();
+    setState((current) => {
+      const applyPatch = (items) => Array.isArray(items)
+        ? items.map((item) => String(item?.id || "") === String(applicantId) ? { ...item, hidden_from_captured: true } : item)
+        : items;
+      return {
+        ...current,
+        applicants: applyPatch(current.applicants),
+        candidates: applyPatch(current.candidates),
+        databaseCandidates: applyPatch(current.databaseCandidates)
+      };
+    });
+    await reloadApplicantsSlice();
+    void refreshWorkspaceSilently("post-applicant-hide");
     setStatus("applicants", "Applicant hidden from active list.", "ok");
   }
 
   async function restoreApplicant(applicantId) {
     await api(`/company/candidates/${encodeURIComponent(applicantId)}`, token, "PATCH", { patch: { hidden_from_captured: false } });
-    await loadWorkspace();
+    setState((current) => {
+      const applyPatch = (items) => Array.isArray(items)
+        ? items.map((item) => String(item?.id || "") === String(applicantId) ? { ...item, hidden_from_captured: false } : item)
+        : items;
+      return {
+        ...current,
+        applicants: applyPatch(current.applicants),
+        candidates: applyPatch(current.candidates),
+        databaseCandidates: applyPatch(current.databaseCandidates)
+      };
+    });
+    await reloadApplicantsSlice();
+    void refreshWorkspaceSilently("post-applicant-restore");
     setStatus("applicants", "Applicant restored to active list.", "ok");
   }
 
@@ -6861,7 +6974,8 @@ function PortalApp({ token, onLogout }) {
       jdTitle
     });
     setAssignApplicantId("");
-    await loadWorkspace();
+    await reloadApplicantsSlice();
+    void refreshWorkspaceSilently("post-applicant-assign");
     setStatus("workspace", "Applicant assigned into recruiter workflow.", "ok");
   }
 
@@ -7138,7 +7252,8 @@ function PortalApp({ token, onLogout }) {
         updatedAt: new Date().toISOString()
       };
       await api("/company/assessments", token, "POST", { assessment: nextAssessment });
-      await loadWorkspace();
+      await reloadAssessmentsSlice();
+      void refreshWorkspaceSilently("post-quick-update");
       setQuickUpdateMergedPatch(null);
       setQuickUpdateConflicts([]);
       setQuickUpdateParsedSummary(null);
@@ -7295,7 +7410,8 @@ function PortalApp({ token, onLogout }) {
       assigned_to_name: assignedRecruiter?.name || ""
     };
     await api("/candidates", token, "POST", { candidate: payload });
-    await loadWorkspace();
+    await reloadCandidatesSlice({ includeDatabase: location?.pathname === "/candidates" });
+    void refreshWorkspaceSilently("post-manual-draft");
     setNewDraftOpen(false);
     setNewDraftForm({
       assigned_to_user_id: "",
@@ -7334,7 +7450,7 @@ function PortalApp({ token, onLogout }) {
       await api(`/company/candidates/${encodeURIComponent(candidate.id)}`, token, "PATCH", {
         patch: { next_follow_up_at: null }
       });
-      await loadWorkspace();
+      void refreshWorkspaceSilently("post-followup-done");
       setStatus("workspace", `Marked follow-up done for ${candidate?.name || "candidate"}.`, "ok");
     } catch (error) {
       setState((current) => ({
@@ -7360,7 +7476,7 @@ function PortalApp({ token, onLogout }) {
     if (!attemptsCandidateId) return;
     const result = await api(`/contact-attempts?candidate_id=${encodeURIComponent(attemptsCandidateId)}&limit=20`, token).catch(() => []);
     setAttempts(Array.isArray(result) ? result : []);
-    await loadWorkspace();
+    void refreshWorkspaceSilently("post-attempt-refresh");
   }
 
   async function saveAttempt(patch) {
@@ -7394,7 +7510,7 @@ function PortalApp({ token, onLogout }) {
     if (Object.keys(candidatePatch).length) {
       await patchCandidate(attemptsCandidateId, candidatePatch, "Attempt logged.");
     } else {
-      await loadWorkspace();
+      void refreshWorkspaceSilently("post-attempt-save");
       setStatus("captured", "Attempt logged.", "ok");
     }
     setStatus("captured", "Attempt logged.", "ok");
@@ -7932,7 +8048,7 @@ function PortalApp({ token, onLogout }) {
   async function rotateSecret() {
     setStatus("intake", "Rotating secret...");
     await api("/company/applicant-intake-secret", token, "POST", {});
-    await loadWorkspace();
+    await reloadIntakeSlice();
     setStatus("intake", "Applicant intake secret rotated.", "ok");
   }
 
@@ -8019,7 +8135,7 @@ function PortalApp({ token, onLogout }) {
         assignedRecruiters: Array.from(dedupedRecruiters.values())
       }
     });
-    await loadWorkspace();
+    await reloadJobsWorkspace();
     const nextId = String(result?.id || selectedJobId || jobDraft.id || "").trim();
     if (nextId) {
       setSelectedJobId(nextId);
@@ -8058,7 +8174,7 @@ function PortalApp({ token, onLogout }) {
         assignedRecruiters: Array.from(dedupedRecruiters.values())
       }
     });
-    await loadWorkspace();
+    await reloadJobsWorkspace();
     const nextId = String(result?.id || "").trim();
     if (nextId) {
       loadJobIntoDraft(nextId);
@@ -8075,7 +8191,7 @@ function PortalApp({ token, onLogout }) {
     if (!confirmed) return;
     setStatus("jobs", "Deleting JD...");
     await api("/company/jds", token, "DELETE", { jobId });
-    await loadWorkspace();
+    await reloadJobsWorkspace();
     resetJobDraftBlank();
     setStatus("jobs", "JD deleted.", "ok");
   }
@@ -8361,7 +8477,12 @@ function PortalApp({ token, onLogout }) {
         notes: trimmedFeedback
       });
     }
-    await loadWorkspace();
+    if (assessment) {
+      await reloadAssessmentsSlice();
+    } else {
+      await reloadCandidatesSlice({ includeDatabase: location?.pathname === "/candidates" });
+    }
+    void refreshWorkspaceSilently("post-client-feedback");
     await refreshOpenDrilldown();
     setClientFeedbackItem(null);
     setStatus("workspace", "Client feedback saved.", "ok");
@@ -9145,7 +9266,7 @@ function PortalApp({ token, onLogout }) {
         allowedPositions: []
       };
       await api("/company/client-users", token, "POST", payload);
-      await loadWorkspace();
+      await reloadLoginSettingsWorkspace();
       setClientUserDraft({ username: "", password: "", clientName: "", allowedPositions: "" });
       setStatus("loginClient", "Client login created.", "ok");
     } catch (error) {
@@ -9187,7 +9308,7 @@ function PortalApp({ token, onLogout }) {
         role: String(teamUserDraft.role || "recruiter").trim()
       };
       await api("/company/users", token, "POST", payload);
-      await loadWorkspace();
+      await reloadLoginSettingsWorkspace();
       setTeamUserDraft({ name: "", email: "", password: "", role: "recruiter" });
       setStatus("loginTeam", "Team member created.", "ok");
     } catch (error) {
@@ -9224,7 +9345,7 @@ function PortalApp({ token, onLogout }) {
     try {
       setStatus("loginTeam", "Removing team member...");
       await api("/company/users", token, "DELETE", { userId });
-      await loadWorkspace();
+      await reloadLoginSettingsWorkspace();
       setStatus("loginTeam", "Team member removed.", "ok");
     } catch (error) {
       setStatus("loginTeam", String(error?.message || error), "error");
