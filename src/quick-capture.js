@@ -773,6 +773,11 @@ async function assignCandidate(candidateId, assignment = {}, options = {}) {
     try {
       const select = [
         "id",
+        "assigned_to_user_id",
+        "assigned_to_name",
+        "assigned_at",
+        "assigned_by_user_id",
+        "assigned_by_name",
         "first_assigned_to_user_id",
         "first_assigned_to_name",
         "first_assigned_at",
@@ -795,12 +800,19 @@ async function assignCandidate(candidateId, assignment = {}, options = {}) {
         const existing = rows?.[0] || null;
         const hasFirst = Boolean(existing?.first_assigned_to_user_id || existing?.first_assigned_to_name || existing?.first_assigned_at);
         if (!hasFirst) {
+          const existingAssignedToUserId = String(existing?.assigned_to_user_id || "").trim();
+          const existingAssignedToName = String(existing?.assigned_to_name || "").trim();
+          const existingAssignedAt = String(existing?.assigned_at || "").trim();
+          const existingAssignedByUserId = String(existing?.assigned_by_user_id || "").trim() || null;
+          const existingAssignedByName = String(existing?.assigned_by_name || "").trim() || null;
+          const hasExistingAssignment = Boolean(existingAssignedToUserId || existingAssignedToName || existingAssignedAt);
+
           firstAssignmentPatch = {
-            first_assigned_to_user_id: assignedToUserId,
-            first_assigned_to_name: assignedToName,
-            first_assigned_at: basePatch.assigned_at,
-            first_assigned_by_user_id: assignedByUserId,
-            first_assigned_by_name: assignedByName
+            first_assigned_to_user_id: hasExistingAssignment ? (existingAssignedToUserId || null) : assignedToUserId,
+            first_assigned_to_name: hasExistingAssignment ? (existingAssignedToName || null) : assignedToName,
+            first_assigned_at: hasExistingAssignment ? (existingAssignedAt || basePatch.assigned_at) : basePatch.assigned_at,
+            first_assigned_by_user_id: hasExistingAssignment ? existingAssignedByUserId : assignedByUserId,
+            first_assigned_by_name: hasExistingAssignment ? existingAssignedByName : assignedByName
           };
         }
       }

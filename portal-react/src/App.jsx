@@ -4634,7 +4634,12 @@ function PortalApp({ token, onLogout }) {
       }))
       .filter((section) => section.items.length)
   ), [isSettingsAdmin]);
-  const standaloneNavItems = STANDALONE_NAV_ITEMS;
+  const standaloneNavItems = useMemo(() => (
+    STANDALONE_NAV_ITEMS.filter((item) => {
+      if (item.to === "/reports") return isSettingsAdmin;
+      return true;
+    })
+  ), [isSettingsAdmin]);
 
 	function setStatus(key, message, kind = "") {
 	  setStatuses((current) => ({ ...current, [key]: message, [`${key}Kind`]: kind }));
@@ -6113,6 +6118,7 @@ function PortalApp({ token, onLogout }) {
         }
         if (viewMode === "reassigned_to_me") {
           return isAssignedToCurrentUser(item)
+            && !isCapturedByCurrentUser(item)
             && Boolean(item?.first_assigned_to_user_id || item?.first_assigned_to_name)
             && !isFirstAssignedToCurrentUser(item);
         }
@@ -6284,6 +6290,7 @@ function PortalApp({ token, onLogout }) {
         }
         if (viewMode === "reassigned_to_me") {
           return isAssignedToCurrentUser(item)
+            && !isCapturedByCurrentUser(item)
             && Boolean(item?.first_assigned_to_user_id || item?.first_assigned_to_name)
             && !isFirstAssignedToCurrentUser(item);
         }
