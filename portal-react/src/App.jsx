@@ -14,6 +14,7 @@ const TOKEN_KEY = "recruitdesk_portal_token";
 const CLIENT_TOKEN_KEY = "recruitdesk_client_portal_token";
 const AUTH_MODE_KEY = "recruitdesk_auth_mode";
 const COPY_SETTINGS_STORAGE_KEY = "recruitdesk_portal_copy_settings_v1";
+const DEFAULT_JD_EMAIL_CC = "ankit.garg@kompatibleminds.com";
 
 const BASE_NAV_SECTIONS = [
   {
@@ -4554,7 +4555,7 @@ function PortalApp({ token, onLogout }) {
     open: false,
     candidate: null,
     to: "",
-    cc: "",
+    cc: DEFAULT_JD_EMAIL_CC,
     subject: "",
     introText: "",
     jobId: "",
@@ -6043,6 +6044,12 @@ function PortalApp({ token, onLogout }) {
       if (currentUserId && assignedById) return assignedById === currentUserId;
       return Boolean(currentUserName && assignedByName && assignedByName === currentUserName);
     };
+    const isCapturedByCurrentUser = (item) => {
+      const capturedId = String(item?.recruiter_id || "").trim();
+      const capturedName = String(item?.recruiter_name || "").trim().toLowerCase();
+      if (currentUserId && capturedId) return capturedId === currentUserId;
+      return Boolean(currentUserName && capturedName && capturedName === currentUserName);
+    };
     // Keep stats aligned with the same filters as the visible list (clients/JD/recruiter/outcome/state/date/query).
     // We do not exclude converted rows here because we show both Active + Converted counts.
     const universe = capturedNotesUniverse.filter((item) => {
@@ -6081,9 +6088,13 @@ function PortalApp({ token, onLogout }) {
       const searchNameMatch = Boolean(queryText && nameHay.includes(queryText));
       const viewOk = (() => {
         if (viewMode === "all") return true;
-        if (viewMode === "assigned_to_me") return isAssignedToCurrentUser(item);
-        if (viewMode === "recently_assigned_to_me") {
-          return isAssignedToCurrentUser(item) && Boolean(item?.assigned_at) && Boolean(item?.assigned_by_user_id || item?.assigned_by_name);
+        if (viewMode === "added_by_me") return isCapturedByCurrentUser(item);
+        if (viewMode === "assigned_to_me") return isAssignedToCurrentUser(item) && isCapturedByCurrentUser(item);
+        if (viewMode === "reassigned_to_me") {
+          return isAssignedToCurrentUser(item)
+            && !isCapturedByCurrentUser(item)
+            && Boolean(item?.assigned_at)
+            && Boolean(item?.assigned_by_user_id || item?.assigned_by_name);
         }
         if (viewMode === "reassigned_by_me") return isAssignedByCurrentUser(item) && Boolean(item?.assigned_at);
         return true;
@@ -6184,6 +6195,12 @@ function PortalApp({ token, onLogout }) {
       if (currentUserId && assignedById) return assignedById === currentUserId;
       return Boolean(currentUserName && assignedByName && assignedByName === currentUserName);
     };
+    const isCapturedByCurrentUser = (item) => {
+      const capturedId = String(item?.recruiter_id || "").trim();
+      const capturedName = String(item?.recruiter_name || "").trim().toLowerCase();
+      if (currentUserId && capturedId) return capturedId === currentUserId;
+      return Boolean(currentUserName && capturedName && capturedName === currentUserName);
+    };
 
     const filtered = capturedNotesUniverse.filter((item) => {
       const matchedAssessment = resolveCapturedAssessment(item);
@@ -6222,9 +6239,13 @@ function PortalApp({ token, onLogout }) {
       const searchNameMatch = Boolean(queryText && nameHay.includes(queryText));
       const viewOk = (() => {
         if (viewMode === "all") return true;
-        if (viewMode === "assigned_to_me") return isAssignedToCurrentUser(item);
-        if (viewMode === "recently_assigned_to_me") {
-          return isAssignedToCurrentUser(item) && Boolean(item?.assigned_at) && Boolean(item?.assigned_by_user_id || item?.assigned_by_name);
+        if (viewMode === "added_by_me") return isCapturedByCurrentUser(item);
+        if (viewMode === "assigned_to_me") return isAssignedToCurrentUser(item) && isCapturedByCurrentUser(item);
+        if (viewMode === "reassigned_to_me") {
+          return isAssignedToCurrentUser(item)
+            && !isCapturedByCurrentUser(item)
+            && Boolean(item?.assigned_at)
+            && Boolean(item?.assigned_by_user_id || item?.assigned_by_name);
         }
         if (viewMode === "reassigned_by_me") return isAssignedByCurrentUser(item) && Boolean(item?.assigned_at);
         return true;
@@ -8480,7 +8501,7 @@ function PortalApp({ token, onLogout }) {
       open: true,
       candidate,
       to: candidateEmail,
-      cc: "",
+      cc: DEFAULT_JD_EMAIL_CC,
       subject: defaultSubject,
       introText: defaultIntro,
       jobId: suggestedJobId
@@ -10522,8 +10543,9 @@ function PortalApp({ token, onLogout }) {
                   <span>View</span>
                   <select value={candidateFilters.view} onChange={(e) => setCandidateFilters((current) => ({ ...current, view: e.target.value }))}>
                     <option value="all">All captured</option>
-                    <option value="assigned_to_me">Assigned to me</option>
-                    <option value="recently_assigned_to_me">Recently reassigned to me</option>
+                    <option value="added_by_me">Added by me</option>
+                    <option value="assigned_to_me">Assigned to me (primary)</option>
+                    <option value="reassigned_to_me">Reassigned to me</option>
                     {String(state.user?.role || "").toLowerCase() === "admin" ? <option value="reassigned_by_me">Reassigned by me</option> : null}
                   </select>
                 </label>
@@ -11812,7 +11834,7 @@ function PortalApp({ token, onLogout }) {
         jobs={state.jobs}
         value={jdEmailModal}
         onChange={(key, val) => setJdEmailModal((current) => ({ ...current, [key]: val }))}
-        onClose={() => { setJdEmailModal({ open: false, candidate: null, to: "", cc: "", subject: "", introText: "", jobId: "", attachJdFile: true, signatureText: "", signatureLinks: [] }); setJdEmailModalStatus({ message: "", kind: "" }); }}
+        onClose={() => { setJdEmailModal({ open: false, candidate: null, to: "", cc: DEFAULT_JD_EMAIL_CC, subject: "", introText: "", jobId: "", attachJdFile: true, signatureText: "", signatureLinks: [] }); setJdEmailModalStatus({ message: "", kind: "" }); }}
         onSend={() => void sendCandidateJdEmail()}
         busy={jdEmailBusy}
         status={jdEmailModalStatus.message}
