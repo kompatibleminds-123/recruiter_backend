@@ -1016,13 +1016,28 @@ async function createUser({ actorUserId, companyId, name, email, password, role 
   const actor = sanitizeUser(await getUserById(actorUserId, companyId));
   if (!actor || actor.role !== "admin") throw new Error("Only an admin for this company can create recruiter accounts.");
   if (await getUserByEmail(e)) throw new Error("A user with this email already exists.");
+  const license = await getCompanyLicense(companyId).catch(() => null);
+  const isTrial = license && (String(license.status || "").toLowerCase() === "trial" || String(license.plan || "").toLowerCase() === "trial");
   if (!cfg().on) {
     const store = readStore(); const company = store.companies.find((c) => c.id === companyId); if (!company) throw new Error("Company not found.");
+    if (isTrial) {
+      const memberCount = (store.users || []).filter((u) => u && String(u.companyId || u.company_id || "") === String(companyId) && String(u.role || "").toLowerCase() !== "client").length;
+      if (memberCount >= 3) {
+        throw new Error("Trial workspaces can have at most 3 team users (1 admin + 2 recruiters).");
+      }
+    }
     const user = { id: crypto.randomUUID(), companyId, companyName: company.name, name: String(name).trim(), email: e, role: r, passwordHash: hashPassword(password), createdAt: new Date().toISOString() };
     store.users.push(user); writeStore(store); return sanitizeUser(user);
   }
   const companies = await sbSel("companies", `select=*&id=eq.${enc(companyId)}&limit=1`);
   const company = companies[0]; if (!company) throw new Error("Company not found.");
+  if (isTrial) {
+    const existingUsers = await sbSel("users", `select=id,role&company_id=eq.${enc(companyId)}&limit=1000`).catch(() => []);
+    const memberCount = (existingUsers || []).filter((u) => u && String(u.role || "").toLowerCase() !== "client").length;
+    if (memberCount >= 3) {
+      throw new Error("Trial workspaces can have at most 3 team users (1 admin + 2 recruiters).");
+    }
+  }
   const rows = await sbIns("users", [{ id: crypto.randomUUID(), company_id: companyId, company_name: company.name, name: String(name).trim(), email: e, role: r, password_hash: hashPassword(password), created_at: new Date().toISOString() }], { conflict: "id", upsert: true });
   return sanitizeUser(rows[0]);
 }

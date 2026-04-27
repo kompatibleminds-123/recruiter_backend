@@ -1507,6 +1507,28 @@ function getOwnerRecruiterLabel(candidate = {}, assessment = {}) {
   return owner || "Unassigned";
 }
 
+function candidateRowQualityScore(candidate = {}) {
+  if (!candidate || typeof candidate !== "object") return 0;
+  const assignedTo = String(candidate.assigned_to_name || candidate.assignedToName || "").trim();
+  const phone = String(candidate.phone_number || candidate.phoneNumber || candidate.phone || "").trim();
+  const email = String(candidate.email_id || candidate.emailId || candidate.email || "").trim();
+  const linkedin = String(candidate.linkedin_url || candidate.linkedinUrl || candidate.linkedin || "").trim();
+  const notes = String(candidate.notes || "").trim();
+  const cv = String(candidate.pdf_filename || candidate.pdfFilename || "").trim();
+  const updatedAt = String(candidate.updated_at || candidate.updatedAt || "").trim();
+  const createdAt = String(candidate.created_at || candidate.createdAt || "").trim();
+  const ts = Math.max(parseIsoDateValue(updatedAt)?.getTime() || 0, parseIsoDateValue(createdAt)?.getTime() || 0);
+  return (
+    (assignedTo ? 50 : 0)
+    + (phone ? 8 : 0)
+    + (email ? 8 : 0)
+    + (linkedin ? 5 : 0)
+    + (cv ? 4 : 0)
+    + (notes ? Math.min(6, Math.ceil(notes.length / 80)) : 0)
+    + (ts ? Math.min(10, Math.floor((Date.now() - ts) / 86400000) * -1) : 0)
+  );
+}
+
 function buildKnownJdTitleSet(jobs = []) {
   return new Set(
     (Array.isArray(jobs) ? jobs : [])
@@ -1993,6 +2015,31 @@ function buildDashboardSummary({ candidates = [], assessments = [], jobs = [], d
     : false;
   const dateRange = { from: dateFrom, to: dateTo };
 
+  // Deduplicate candidates that reference the same linked assessment.
+  // Without this, the same assessment can show up under multiple recruiter buckets when
+  // duplicate candidate rows exist (e.g. re-capture + conversion).
+  const canonicalCandidates = (() => {
+    const looseCandidates = [];
+    const bestByAssessment = new Map();
+    for (const candidate of Array.isArray(candidates) ? candidates : []) {
+      const linkedAssessment = getCanonicalLinkedAssessmentForCandidate(candidate, assessmentsById) || null;
+      const assessmentId = String(linkedAssessment?.id || "").trim();
+      if (!assessmentId) {
+        looseCandidates.push(candidate);
+        continue;
+      }
+      const existing = bestByAssessment.get(assessmentId) || null;
+      if (!existing) {
+        bestByAssessment.set(assessmentId, candidate);
+        continue;
+      }
+      const prevScore = candidateRowQualityScore(existing);
+      const nextScore = candidateRowQualityScore(candidate);
+      if (nextScore > prevScore) bestByAssessment.set(assessmentId, candidate);
+    }
+    return [...looseCandidates, ...Array.from(bestByAssessment.values())];
+  })();
+
   // Admin block should show overall pipeline metrics, plus simple admin activity counts:
   // - Sourcing (self sourced + assigned to team)
   // - Applicants (inbox split by source + assigned to team)
@@ -2007,7 +2054,7 @@ function buildDashboardSummary({ candidates = [], assessments = [], jobs = [], d
     }
     : null;
 
-  for (const candidate of Array.isArray(candidates) ? candidates : []) {
+  for (const candidate of canonicalCandidates) {
     const linkedAssessment = getCanonicalLinkedAssessmentForCandidate(candidate, assessmentsById) || null;
     const resolvedJob = resolveJobForDashboardLoose(candidate, linkedAssessment || {}, jobById, jobByTitle);
     const source = String(candidate?.source || "").trim().toLowerCase();
@@ -4379,7 +4426,29 @@ function buildCandidateSearchUniverse(candidates = [], assessments = [], jobs = 
   const jobById = buildJobIndexById(jobs);
   const jobByTitle = buildJobIndexByTitle(jobs);
 
-  for (const candidate of candidates || []) {
+  const canonicalCandidates = (() => {
+    const looseCandidates = [];
+    const bestByAssessment = new Map();
+    for (const candidate of Array.isArray(candidates) ? candidates : []) {
+      const linkedAssessment = getCanonicalLinkedAssessmentForCandidate(candidate, assessmentsById) || null;
+      const assessmentId = String(linkedAssessment?.id || "").trim();
+      if (!assessmentId) {
+        looseCandidates.push(candidate);
+        continue;
+      }
+      const existing = bestByAssessment.get(assessmentId) || null;
+      if (!existing) {
+        bestByAssessment.set(assessmentId, candidate);
+        continue;
+      }
+      const prevScore = candidateRowQualityScore(existing);
+      const nextScore = candidateRowQualityScore(candidate);
+      if (nextScore > prevScore) bestByAssessment.set(assessmentId, candidate);
+    }
+    return [...looseCandidates, ...Array.from(bestByAssessment.values())];
+  })();
+
+  for (const candidate of canonicalCandidates) {
     const candidateMeta = decodeApplicantMetadata(candidate);
     const candidateSource = normalizeDashboardText(candidate?.source || candidateMeta?.sourcePlatform || "");
     const candidateDraftPayload = normalizeJsonObjectInput(candidate?.draft_payload || candidate?.draftPayload || {});
@@ -4404,8 +4473,9 @@ function buildCandidateSearchUniverse(candidates = [], assessments = [], jobs = 
       ? candidateMeta.cvAnalysisCache.result
       : {};
     const linkedAssessment = getCanonicalLinkedAssessmentForCandidate(candidate, assessmentsById) || null;
-    const isConverted = Boolean(linkedAssessment?.id);
-    if (linkedAssessment?.id) seenAssessmentIds.add(String(linkedAssessment.id));
+    const assessmentId = String(linkedAssessment?.id || "").trim();
+    const isConverted = Boolean(assessmentId);
+    if (assessmentId) seenAssessmentIds.add(assessmentId);
     const resolvedJob = resolveJobForDashboardLoose(candidate, linkedAssessment || {}, jobById, jobByTitle);
 
     // Evidence for keeping strict tech tags (avoid false positives from generic "backend"/"front").

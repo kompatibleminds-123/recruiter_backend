@@ -51,7 +51,8 @@ const BASE_NAV_SECTIONS = [
 ];
 
 const STANDALONE_NAV_ITEMS = [
-  { to: "/candidates", label: "Database" }
+  { to: "/candidates", label: "Database" },
+  { to: "/reports", label: "Reports & Analytics" }
 ];
 
 	const DEFAULT_COPY_SETTINGS = {
@@ -148,6 +149,27 @@ const SMART_CHIP_INTERVIEW_ALIGNED_STATUSES = new Set([
   "hr interview aligned"
 ]);
 
+const REPORT_PENDING_FEEDBACK_STATUSES = new Set([
+  "cv shared",
+  "test or assignment shared",
+  "feedback awaited"
+]);
+
+const REPORT_ACTIVE_PIPELINE_STATUSES = new Set([
+  "cv shared",
+  "test or assignment shared",
+  "screening call aligned",
+  "l1 aligned",
+  "l2 aligned",
+  "l3 aligned",
+  "hr interview aligned",
+  "feedback awaited",
+  "hold",
+  "offered",
+  "shortlisted",
+  "joined"
+]);
+
 function parseKeywordBarTokens(value) {
   return String(value || "")
     .split(",")
@@ -181,6 +203,32 @@ function buildBooleanFromKeywordBars({ must = "", any = "", anyGroups = [], excl
   const positiveQuery = positiveParts.join(" AND ").trim();
   const excludeQuery = excludeTokens.length ? `NOT (${excludeTokens.join(" OR ")})` : "";
   return [positiveQuery, excludeQuery].filter(Boolean).join(" ").trim();
+}
+
+function toIsoDateOnly(value) {
+  return String(value || "").trim().slice(0, 10);
+}
+
+function safeTime(value) {
+  const parsed = Date.parse(String(value || "").trim());
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function isDateWithinRange(value, dateFrom = "", dateTo = "") {
+  const dateOnly = toIsoDateOnly(value);
+  if (!dateOnly) return false;
+  if (dateFrom && dateOnly < dateFrom) return false;
+  if (dateTo && dateOnly > dateTo) return false;
+  return true;
+}
+
+function uniqueNonEmpty(values = []) {
+  return Array.from(new Set((values || []).map((item) => String(item || "").trim()).filter(Boolean)));
+}
+
+function formatPercent(value) {
+  if (!Number.isFinite(value)) return "0%";
+  return `${Math.round(value * 100)}%`;
 }
 
 const PORTAL_APPLICANT_METADATA_PREFIX = "[APPLICANT_META]";
@@ -4026,6 +4074,7 @@ function PortalApp({ token, onLogout }) {
     candidates: [],
     databaseCandidates: [],
     assessments: [],
+    assessmentEvents: [],
     users: [],
     intake: null,
     jobs: []
@@ -4092,6 +4141,14 @@ function PortalApp({ token, onLogout }) {
     outcomes: []
   });
   const [assessmentLane, setAssessmentLane] = useState("active"); // active | archived
+  const [reportsTab, setReportsTab] = useState("overall");
+  const [reportsFilters, setReportsFilters] = useState({
+    dateFrom: "",
+    dateTo: "",
+    recruiter: "",
+    client: "",
+    job: ""
+  });
   const [candidateSearchMode, setCandidateSearchMode] = useState("all");
   const [candidateSearchText, setCandidateSearchText] = useState("");
   const [candidateSearchQueryUsed, setCandidateSearchQueryUsed] = useState("");
@@ -4712,7 +4769,7 @@ function PortalApp({ token, onLogout }) {
     if (clientPortalFilters.dateTo) clientPortalParams.set("dateTo", clientPortalFilters.dateTo);
     if (clientPortalFilters.clientLabel) clientPortalParams.set("clientLabel", clientPortalFilters.clientLabel);
 
-    const [userResult, dashboardResult, clientPortalResult, applicantsResult, intakeResult, jobsResult, usersResult, clientUsersResult, candidatesResult, databaseCandidatesResult, assessmentsResult, sharedPresetResult, smtpSettingsResult] = await Promise.all([
+    const [userResult, dashboardResult, clientPortalResult, applicantsResult, intakeResult, jobsResult, usersResult, clientUsersResult, candidatesResult, databaseCandidatesResult, assessmentsResult, assessmentEventsResult, sharedPresetResult, smtpSettingsResult] = await Promise.all([
       api("/auth/me", token),
       api(`/company/dashboard${dashboardParams.toString() ? `?${dashboardParams.toString()}` : ""}`, token),
       api(`/company/client-portal${clientPortalParams.toString() ? `?${clientPortalParams.toString()}` : ""}`, token)
@@ -4725,6 +4782,7 @@ function PortalApp({ token, onLogout }) {
       api("/candidates?limit=5000", token).catch(() => []),
       api("/candidates?scope=company&limit=5000", token).catch(() => []),
       api("/company/assessments", token).catch(() => ({ assessments: [] })),
+      api("/company/assessment-events?limit=10000", token).catch(() => ({ result: { rows: [] } })),
       api("/company/shared-export-presets", token).catch(() => null),
       api("/company/email-settings", token).catch(() => null)
     ]);
@@ -4739,7 +4797,8 @@ function PortalApp({ token, onLogout }) {
       users: usersResult.users || [],
       candidates: Array.isArray(candidatesResult) ? candidatesResult : [],
       databaseCandidates: Array.isArray(databaseCandidatesResult) ? databaseCandidatesResult : Array.isArray(candidatesResult) ? candidatesResult : [],
-      assessments: assessmentsResult.assessments || []
+      assessments: assessmentsResult.assessments || [],
+      assessmentEvents: assessmentEventsResult?.result?.rows || []
     }));
     setClientUsers(clientUsersResult.clientUsers || []);
     if (sharedPresetResult) {
