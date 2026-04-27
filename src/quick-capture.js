@@ -576,6 +576,51 @@ function matchesCandidateId(candidate, rawId) {
   return String(candidate?.id || "").trim() === id;
 }
 
+const DATABASE_CANDIDATE_SELECT_FIELDS = [
+  "id",
+  "company_id",
+  "candidate_name",
+  "name",
+  "company",
+  "role",
+  "experience",
+  "skills",
+  "current_ctc",
+  "expected_ctc",
+  "notice_period",
+  "lwd_or_doj",
+  "notes",
+  "raw_note",
+  "linkedin",
+  "email",
+  "phone",
+  "location",
+  "highest_education",
+  "recruiter_context_notes",
+  "other_pointers",
+  "assessment_id",
+  "used_in_assessment",
+  "assigned_to_user_id",
+  "assigned_to_name",
+  "recruiter_id",
+  "recruiter_name",
+  "assigned_jd_title",
+  "jd_title",
+  "client_name",
+  "draft_payload",
+  "screening_answers",
+  "gender",
+  "last_contact_outcome",
+  "source",
+  "hidden_from_captured",
+  "created_at",
+  "updated_at"
+];
+
+function buildCandidateSelectParam(fields) {
+  return `select=${fields.join(",")}`;
+}
+
 async function listCandidates(options = 100) {
   const { limit, q, companyId } = normalizeListOptions(options);
   const id = String(options?.id || "").trim();
@@ -667,6 +712,49 @@ async function listCandidatesForUser(user, options = 100) {
     .filter((item) => matchesCandidateId(item, id))
     .filter((item) => matchesCandidateSearch(item, q))
     .slice(0, maxRows);
+}
+
+async function listDatabaseCandidatesForUser(user, options = 100) {
+  const { limit, q } = normalizeListOptions(options);
+  const id = String(options?.id || "").trim();
+  const companyWide = options?.companyWide === true || options?.scope === "company";
+  const maxRows = limit;
+  if (!user?.id) {
+    return listCandidates({ limit: maxRows, q, id, companyId: normalizeCompanyId(user?.companyId) });
+  }
+
+  const companyId = normalizeCompanyId(user.companyId);
+  const { url, serviceRoleKey } = getSupabaseConfig();
+  if (url && serviceRoleKey) {
+    const selectParam = buildCandidateSelectParam(DATABASE_CANDIDATE_SELECT_FIELDS);
+    const fetchLimit = id ? Math.max(maxRows, 50) : (q ? Math.max(maxRows, 2000) : maxRows);
+    const baseFilters = [selectParam, `company_id=eq.${encodeURIComponent(companyId)}`, "order=created_at.desc", `limit=${fetchLimit}`];
+    if (id) {
+      baseFilters.push(`id=eq.${encodeURIComponent(id)}`);
+    }
+
+    if (!companyWide && user.role !== "admin") {
+      const recruiterId = encodeURIComponent(String(user.id).trim());
+      baseFilters.push(`or=(recruiter_id.eq.${recruiterId},assigned_to_user_id.eq.${recruiterId})`);
+    }
+
+    const response = await fetch(`${url}/rest/v1/candidates?${baseFilters.join("&")}`, {
+      headers: {
+        apikey: serviceRoleKey,
+        Authorization: `Bearer ${serviceRoleKey}`
+      }
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Supabase database candidate list failed: ${response.status} ${errorText}`);
+    }
+
+    const rows = await response.json();
+    return rows.filter((item) => matchesCandidateId(item, id)).filter((item) => matchesCandidateSearch(item, q)).slice(0, maxRows);
+  }
+
+  return listCandidatesForUser(user, options);
 }
 
 async function deleteCandidate(candidateId, options = {}) {
@@ -992,6 +1080,7 @@ module.exports = {
   exportCompanyQuickCaptureData,
   findDuplicateCandidate,
   linkCandidateToAssessment,
+  listDatabaseCandidatesForUser,
   listCandidatesForUser,
   listContactAttempts,
   listCandidates,

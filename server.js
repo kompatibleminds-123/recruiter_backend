@@ -12,6 +12,7 @@ const {
   exportCompanyQuickCaptureData,
   findDuplicateCandidate,
   linkCandidateToAssessment,
+  listDatabaseCandidatesForUser,
   listCandidatesForUser,
   listCandidates,
   listContactAttempts,
@@ -9015,6 +9016,23 @@ const server = http.createServer(async (req, res) => {
         jd_title: body.jd_title || body.jdTitle,
         client_name: body.client_name || body.clientName
       }, { companyId: actor.companyId });
+      sendJson(res, 200, { ok: true, result });
+    } catch (error) {
+      sendJson(res, 400, { ok: false, error: String(error.message || error) });
+    }
+    return;
+  }
+
+  if (req.method === "GET" && requestUrl.pathname === "/company/database-candidates") {
+    try {
+      const sessionUser = await requireSessionUser(getBearerToken(req));
+      const listOptions = {
+        limit: Number(requestUrl.searchParams.get("limit") || 100),
+        q: String(requestUrl.searchParams.get("q") || "").trim(),
+        id: String(requestUrl.searchParams.get("id") || "").trim(),
+        scope: String(requestUrl.searchParams.get("scope") || "company").trim()
+      };
+      const result = await listDatabaseCandidatesForUser(sessionUser, listOptions);
       sendJson(res, 200, { ok: true, result });
     } catch (error) {
       sendJson(res, 400, { ok: false, error: String(error.message || error) });

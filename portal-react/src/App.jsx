@@ -4819,7 +4819,7 @@ function PortalApp({ token, onLogout }) {
         ? api("/company/client-users", token).catch(() => ({ clientUsers: [] }))
         : Promise.resolve(null),
       needsCandidates ? api("/candidates?limit=5000", token).catch(() => []) : Promise.resolve(null),
-      needsDatabaseCandidates ? api("/candidates?scope=company&limit=5000", token).catch(() => []) : Promise.resolve(null),
+      needsDatabaseCandidates ? api("/company/database-candidates?limit=5000", token).catch(() => []) : Promise.resolve(null),
       needsAssessments ? api("/company/assessments", token).catch(() => ({ assessments: [] })) : Promise.resolve(null),
       needsAssessmentEvents
         ? api("/company/assessment-events?limit=10000", token).catch(() => ({ result: { rows: [] } }))
@@ -4974,7 +4974,7 @@ function PortalApp({ token, onLogout }) {
     if (!token) return;
     const [candidatesResult, databaseCandidatesResult] = await Promise.all([
       api("/candidates?limit=5000", token).catch(() => []),
-      includeDatabase ? api("/candidates?scope=company&limit=5000", token).catch(() => []) : Promise.resolve(null)
+      includeDatabase ? api("/company/database-candidates?limit=5000", token).catch(() => []) : Promise.resolve(null)
     ]);
     setState((current) => ({
       ...current,
