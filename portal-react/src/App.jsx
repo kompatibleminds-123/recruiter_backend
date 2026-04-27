@@ -4109,6 +4109,7 @@ function PortalApp({ token, onLogout }) {
     positionLabel: ""
   });
   const [candidateFilters, setCandidateFilters] = useState({
+    view: "all",
     q: "",
     dateFrom: "",
     dateTo: "",
@@ -6016,6 +6017,32 @@ function PortalApp({ token, onLogout }) {
   const capturedNotesStats = useMemo(() => {
     const todayKey = new Date().toISOString().slice(0, 10);
     const queryText = String(candidateFilters.q || "").trim().toLowerCase();
+    const viewMode = String(candidateFilters.view || "all").trim() || "all";
+    const currentUserName = String(state.user?.name || "").trim().toLowerCase();
+    const currentUserId = String(state.user?.id || "").trim();
+    const parseTime = (value) => {
+      const time = Date.parse(String(value || ""));
+      return Number.isFinite(time) ? time : 0;
+    };
+    const activityDateKey = (item) => {
+      const createdAt = parseTime(item?.created_at);
+      const assignedAt = parseTime(item?.assigned_at);
+      const activityAt = Math.max(createdAt, assignedAt);
+      if (!activityAt) return item?.created_at ? String(item.created_at).slice(0, 10) : "";
+      return new Date(activityAt).toISOString().slice(0, 10);
+    };
+    const isAssignedToCurrentUser = (item) => {
+      const assignedId = String(item?.assigned_to_user_id || "").trim();
+      const assignedName = String(item?.assigned_to_name || "").trim().toLowerCase();
+      if (currentUserId && assignedId) return assignedId === currentUserId;
+      return Boolean(currentUserName && assignedName && assignedName === currentUserName);
+    };
+    const isAssignedByCurrentUser = (item) => {
+      const assignedById = String(item?.assigned_by_user_id || "").trim();
+      const assignedByName = String(item?.assigned_by_name || "").trim().toLowerCase();
+      if (currentUserId && assignedById) return assignedById === currentUserId;
+      return Boolean(currentUserName && assignedByName && assignedByName === currentUserName);
+    };
     // Keep stats aligned with the same filters as the visible list (clients/JD/recruiter/outcome/state/date/query).
     // We do not exclude converted rows here because we show both Active + Converted counts.
     const universe = capturedNotesUniverse.filter((item) => {
@@ -6026,7 +6053,7 @@ function PortalApp({ token, onLogout }) {
       const assignedToValue = String(item.assigned_to_name || "Unassigned").trim();
       const capturedByValue = String(item.recruiter_name || item.assigned_by_name || "Unknown").trim();
       const outcomeValue = getCapturedOutcome(item, matchedAssessment);
-      const createdAtValue = item.created_at ? String(item.created_at).slice(0, 10) : "";
+      const activityKey = activityDateKey(item);
       const manuallyHidden = item.hidden_from_captured === true;
       const activeValue = manuallyHidden ? "Inactive" : "Active";
       const nameHay = [item.name].join(" ").toLowerCase();
@@ -6043,8 +6070,8 @@ function PortalApp({ token, onLogout }) {
         item.other_pointers
       ].join(" ").toLowerCase();
       const queryOk = !queryText || hay.includes(queryText);
-      const dateFromOk = !candidateFilters.dateFrom || (createdAtValue && createdAtValue >= candidateFilters.dateFrom);
-      const dateToOk = !candidateFilters.dateTo || (createdAtValue && createdAtValue <= candidateFilters.dateTo);
+      const dateFromOk = !candidateFilters.dateFrom || (activityKey && activityKey >= candidateFilters.dateFrom);
+      const dateToOk = !candidateFilters.dateTo || (activityKey && activityKey <= candidateFilters.dateTo);
       const clientOk = !candidateFilters.clients.length || candidateFilters.clients.includes(clientValue);
       const jdOk = !candidateFilters.jds.length || candidateFilters.jds.includes(jdValue);
       const assignedToOk = !candidateFilters.assignedTo.length || candidateFilters.assignedTo.includes(assignedToValue);
@@ -6052,6 +6079,15 @@ function PortalApp({ token, onLogout }) {
       const sourceOk = !candidateFilters.sources.length || candidateFilters.sources.includes(sourceValue);
       const outcomeOk = !candidateFilters.outcomes.length || candidateFilters.outcomes.includes(outcomeValue);
       const searchNameMatch = Boolean(queryText && nameHay.includes(queryText));
+      const viewOk = (() => {
+        if (viewMode === "all") return true;
+        if (viewMode === "assigned_to_me") return isAssignedToCurrentUser(item);
+        if (viewMode === "recently_assigned_to_me") {
+          return isAssignedToCurrentUser(item) && Boolean(item?.assigned_at) && Boolean(item?.assigned_by_user_id || item?.assigned_by_name);
+        }
+        if (viewMode === "reassigned_by_me") return isAssignedByCurrentUser(item) && Boolean(item?.assigned_at);
+        return true;
+      })();
 
       // State filter rules:
       // - Default (no selection): Active only, but allow finding Inactive rows when searching by name.
@@ -6063,7 +6099,7 @@ function PortalApp({ token, onLogout }) {
         : (candidateFilters.activeStates.includes(activeValue) || (searchNameMatch && wantsActive));
 
       const inactiveBlockedByDefault = defaultActiveOnly && activeValue === "Inactive" && !searchNameMatch;
-      return !inactiveBlockedByDefault && queryOk && dateFromOk && dateToOk && clientOk && jdOk && assignedToOk && capturedByOk && sourceOk && outcomeOk && activeOk;
+      return !inactiveBlockedByDefault && viewOk && queryOk && dateFromOk && dateToOk && clientOk && jdOk && assignedToOk && capturedByOk && sourceOk && outcomeOk && activeOk;
     });
     const convertedCount = universe.filter((item) => Boolean(resolveCapturedAssessment(item))).length;
     const activeCount = universe.filter((item) => {
@@ -6072,12 +6108,12 @@ function PortalApp({ token, onLogout }) {
       return !item.hidden_from_captured;
     }).length;
     return {
-      today: universe.filter((item) => String(item.created_at || "").slice(0, 10) === todayKey).length,
+      today: universe.filter((item) => activityDateKey(item) === todayKey).length,
       total: universe.length,
       active: activeCount,
       converted: convertedCount
     };
-  }, [candidateFilters, capturedAssessmentMap, capturedNotesUniverse]);
+  }, [candidateFilters, capturedAssessmentMap, capturedNotesUniverse, state.user]);
 
   const assessmentStats = useMemo(() => {
     const todayKey = new Date().toISOString().slice(0, 10);
@@ -6122,7 +6158,34 @@ function PortalApp({ token, onLogout }) {
   }, [assessmentFilters, state.assessments, state.candidates]);
 
   const capturedCandidates = useMemo(() => {
-    return capturedNotesUniverse.filter((item) => {
+    const queryText = candidateFilters.q.trim().toLowerCase();
+    const viewMode = String(candidateFilters.view || "all").trim() || "all";
+    const currentUserName = String(state.user?.name || "").trim().toLowerCase();
+    const currentUserId = String(state.user?.id || "").trim();
+    const parseTime = (value) => {
+      const time = Date.parse(String(value || ""));
+      return Number.isFinite(time) ? time : 0;
+    };
+    const activityTime = (item) => Math.max(parseTime(item?.created_at), parseTime(item?.assigned_at));
+    const activityDateKey = (item) => {
+      const time = activityTime(item);
+      if (!time) return item?.created_at ? String(item.created_at).slice(0, 10) : "";
+      return new Date(time).toISOString().slice(0, 10);
+    };
+    const isAssignedToCurrentUser = (item) => {
+      const assignedId = String(item?.assigned_to_user_id || "").trim();
+      const assignedName = String(item?.assigned_to_name || "").trim().toLowerCase();
+      if (currentUserId && assignedId) return assignedId === currentUserId;
+      return Boolean(currentUserName && assignedName && assignedName === currentUserName);
+    };
+    const isAssignedByCurrentUser = (item) => {
+      const assignedById = String(item?.assigned_by_user_id || "").trim();
+      const assignedByName = String(item?.assigned_by_name || "").trim().toLowerCase();
+      if (currentUserId && assignedById) return assignedById === currentUserId;
+      return Boolean(currentUserName && assignedByName && assignedByName === currentUserName);
+    };
+
+    const filtered = capturedNotesUniverse.filter((item) => {
       const matchedAssessment = resolveCapturedAssessment(item);
       if (matchedAssessment) return false;
       const sourceValue = String(item.source || "").trim();
@@ -6131,7 +6194,7 @@ function PortalApp({ token, onLogout }) {
       const assignedToValue = String(item.assigned_to_name || "Unassigned").trim();
       const capturedByValue = String(item.recruiter_name || item.assigned_by_name || "Unknown").trim();
       const outcomeValue = getCapturedOutcome(item, matchedAssessment);
-      const createdAtValue = item.created_at ? String(item.created_at).slice(0, 10) : "";
+      const activityKey = activityDateKey(item);
       const manuallyHidden = item.hidden_from_captured === true;
       const activeValue = manuallyHidden ? "Inactive" : "Active";
       const nameHay = [item.name].join(" ").toLowerCase();
@@ -6147,10 +6210,9 @@ function PortalApp({ token, onLogout }) {
         item.recruiter_context_notes,
         item.other_pointers
       ].join(" ").toLowerCase();
-      const queryText = candidateFilters.q.trim().toLowerCase();
       const queryOk = !queryText || hay.includes(queryText);
-      const dateFromOk = !candidateFilters.dateFrom || (createdAtValue && createdAtValue >= candidateFilters.dateFrom);
-      const dateToOk = !candidateFilters.dateTo || (createdAtValue && createdAtValue <= candidateFilters.dateTo);
+      const dateFromOk = !candidateFilters.dateFrom || (activityKey && activityKey >= candidateFilters.dateFrom);
+      const dateToOk = !candidateFilters.dateTo || (activityKey && activityKey <= candidateFilters.dateTo);
       const clientOk = !candidateFilters.clients.length || candidateFilters.clients.includes(clientValue);
       const jdOk = !candidateFilters.jds.length || candidateFilters.jds.includes(jdValue);
       const assignedToOk = !candidateFilters.assignedTo.length || candidateFilters.assignedTo.includes(assignedToValue);
@@ -6158,6 +6220,15 @@ function PortalApp({ token, onLogout }) {
       const sourceOk = !candidateFilters.sources.length || candidateFilters.sources.includes(sourceValue);
       const outcomeOk = !candidateFilters.outcomes.length || candidateFilters.outcomes.includes(outcomeValue);
       const searchNameMatch = Boolean(queryText && nameHay.includes(queryText));
+      const viewOk = (() => {
+        if (viewMode === "all") return true;
+        if (viewMode === "assigned_to_me") return isAssignedToCurrentUser(item);
+        if (viewMode === "recently_assigned_to_me") {
+          return isAssignedToCurrentUser(item) && Boolean(item?.assigned_at) && Boolean(item?.assigned_by_user_id || item?.assigned_by_name);
+        }
+        if (viewMode === "reassigned_by_me") return isAssignedByCurrentUser(item) && Boolean(item?.assigned_at);
+        return true;
+      })();
 
       const wantsActive = candidateFilters.activeStates.includes("Active");
       const defaultActiveOnly = !candidateFilters.activeStates.length;
@@ -6166,9 +6237,15 @@ function PortalApp({ token, onLogout }) {
         : (candidateFilters.activeStates.includes(activeValue) || (searchNameMatch && wantsActive));
 
       const inactiveBlockedByDefault = defaultActiveOnly && activeValue === "Inactive" && !searchNameMatch;
-      return !inactiveBlockedByDefault && queryOk && dateFromOk && dateToOk && clientOk && jdOk && assignedToOk && capturedByOk && sourceOk && outcomeOk && activeOk;
+      return !inactiveBlockedByDefault && viewOk && queryOk && dateFromOk && dateToOk && clientOk && jdOk && assignedToOk && capturedByOk && sourceOk && outcomeOk && activeOk;
     });
-  }, [candidateFilters, capturedAssessmentMap, capturedNotesUniverse]);
+
+    return filtered.sort((a, b) => {
+      const delta = activityTime(b) - activityTime(a);
+      if (delta !== 0) return delta;
+      return String(b?.created_at || "").localeCompare(String(a?.created_at || ""));
+    });
+  }, [candidateFilters, capturedAssessmentMap, capturedNotesUniverse, state.user]);
 
   const filteredApplicants = useMemo(() => {
     const isAdmin = String(state.user?.role || "").toLowerCase() === "admin";
@@ -10440,6 +10517,17 @@ function PortalApp({ token, onLogout }) {
               <div className="form-grid three-col">
                 <label className="full"><span>Search</span><input placeholder="Search candidate name, company, phone, email, LinkedIn..." value={candidateFilters.q} onChange={(e) => setCandidateFilters((c) => ({ ...c, q: e.target.value }))} /></label>
               </div>
+              <div className="form-grid three-col">
+                <label>
+                  <span>View</span>
+                  <select value={candidateFilters.view} onChange={(e) => setCandidateFilters((current) => ({ ...current, view: e.target.value }))}>
+                    <option value="all">All captured</option>
+                    <option value="assigned_to_me">Assigned to me</option>
+                    <option value="recently_assigned_to_me">Recently reassigned to me</option>
+                    {String(state.user?.role || "").toLowerCase() === "admin" ? <option value="reassigned_by_me">Reassigned by me</option> : null}
+                  </select>
+                </label>
+              </div>
               <div className="metric-grid metric-grid--tight">
                 <div className="metric-card compact-metric"><div className="metric-label">Today</div><div className="metric-value">{capturedNotesStats.today}</div></div>
                 <div className="metric-card compact-metric"><div className="metric-label">Total notes captured</div><div className="metric-value">{capturedNotesStats.total}</div></div>
@@ -10479,9 +10567,16 @@ function PortalApp({ token, onLogout }) {
                   return (
                     <article className="item-card compact-card" key={item.id}>
                       <div className="item-card__top">
-                        <div>
-                          <h3>{item.name || "Candidate"} | {item.jd_title || item.role || "Untitled role"}</h3>
-                          <p className="muted">{[item.company || "", item.source ? `Source: ${item.source}` : "", item.assigned_to_name ? `Assigned: ${item.assigned_to_name}` : ""].filter(Boolean).join(" | ")}</p>
+                          <div>
+                            <h3>{item.name || "Candidate"} | {item.jd_title || item.role || "Untitled role"}</h3>
+                          <p className="muted">{[
+                            item.company || "",
+                            item.source ? `Source: ${item.source}` : "",
+                            item.recruiter_name ? `Captured: ${item.recruiter_name}` : "",
+                            item.assigned_to_name ? `Assigned: ${item.assigned_to_name}` : "",
+                            item.assigned_by_name ? `Assigned by: ${item.assigned_by_name}` : "",
+                            item.assigned_at ? `Assigned at: ${new Date(item.assigned_at).toLocaleString()}` : ""
+                          ].filter(Boolean).join(" | ")}</p>
                           {statusState.summary ? <div className="status-line">{statusState.summary}</div> : null}
                           {statusState.note ? <div className="status-note">{statusState.note}</div> : null}
                           <div className="chip-row">
