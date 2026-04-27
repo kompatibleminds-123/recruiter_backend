@@ -1889,14 +1889,7 @@ function addAssessmentOnlyMetrics(target, assessment, dateRange = {}) {
 
 function getCanonicalLinkedAssessmentForCandidate(candidate = {}, assessmentsById = null) {
   if (!(assessmentsById instanceof Map)) return null;
-  const payload = candidate && typeof candidate === "object" && candidate.payload && typeof candidate.payload === "object" ? candidate.payload : {};
-  const assessmentId = String(
-    candidate?.assessment_id
-    || candidate?.assessmentId
-    || payload?.assessment_id
-    || payload?.assessmentId
-    || ""
-  ).trim();
+  const assessmentId = String(candidate?.assessment_id || candidate?.assessmentId || "").trim();
   if (!assessmentId) return null;
   const assessment = assessmentsById.get(assessmentId) || null;
   if (!assessment) return null;
@@ -1908,9 +1901,8 @@ function getCanonicalLinkedAssessmentForCandidate(candidate = {}, assessmentsByI
     assessment?.payload?.candidate_id ||
     ""
   ).trim();
-  // Backward-compatible: older conversions stored only `candidate.assessment_id` and left
-  // `assessments.candidate_id` empty. Treat that as linked to avoid double-counting / duplicates.
-  if (linkedCandidateId && candidateId && candidateId !== linkedCandidateId) return null;
+  if (!candidateId || !linkedCandidateId) return null;
+  if (candidateId !== linkedCandidateId) return null;
   return assessment;
 }
 
