@@ -4757,6 +4757,26 @@ function PortalApp({ token, onLogout }) {
       includeSharedPresets = true,
       includeEmailSettings = true
     } = options || {};
+    const pathname = String(location?.pathname || "/dashboard").trim() || "/dashboard";
+    const needsDashboard = pathname === "/dashboard";
+    const needsApplicants = pathname === "/dashboard" || pathname === "/applicants";
+    const needsIntake = pathname === "/intake-settings" || pathname === "/jobs" || pathname === "/applicants";
+    const needsJobs = pathname !== "/mail-settings" && pathname !== "/settings" && pathname !== "/login-settings";
+    const needsUsers = needsJobs;
+    const needsCandidates =
+      pathname === "/dashboard" ||
+      pathname === "/captured-notes" ||
+      pathname === "/assessments" ||
+      pathname === "/quick-update" ||
+      pathname === "/interview";
+    const needsDatabaseCandidates = pathname === "/candidates";
+    const needsAssessments =
+      pathname === "/dashboard" ||
+      pathname === "/assessments" ||
+      pathname === "/client-share" ||
+      pathname === "/interview";
+    const needsAssessmentEvents = includeEvents && (pathname === "/dashboard" || pathname === "/assessments");
+    const needsEmailSettings = includeEmailSettings && pathname === "/mail-settings";
     // Backfills mutate production candidate rows; keep them admin-only and manual.
     const dashboardKey = JSON.stringify({
       dateFrom: String(dashboardFilters?.dateFrom || ""),
@@ -4784,42 +4804,48 @@ function PortalApp({ token, onLogout }) {
 
     const [userResult, dashboardResult, clientPortalResult, applicantsResult, intakeResult, jobsResult, usersResult, clientUsersResult, candidatesResult, databaseCandidatesResult, assessmentsResult, assessmentEventsResult, sharedPresetResult, smtpSettingsResult] = await Promise.all([
       api("/auth/me", token),
-      api(`/company/dashboard${dashboardParams.toString() ? `?${dashboardParams.toString()}` : ""}`, token),
-      api(`/company/client-portal${clientPortalParams.toString() ? `?${clientPortalParams.toString()}` : ""}`, token)
-        .catch(() => ({ summary: { byClient: [], byClientPosition: [] }, availableClients: [] })),
-      api("/company/applicants", token).catch(() => ({ items: [] })),
-      api("/company/applicant-intake-secret", token).catch(() => null),
-      api("/company/jds", token).catch(() => ({ jobs: [] })),
-      api("/company/users", token).catch(() => ({ users: [] })),
+      needsDashboard
+        ? api(`/company/dashboard${dashboardParams.toString() ? `?${dashboardParams.toString()}` : ""}`, token)
+        : Promise.resolve(null),
+      needsDashboard
+        ? api(`/company/client-portal${clientPortalParams.toString() ? `?${clientPortalParams.toString()}` : ""}`, token)
+            .catch(() => ({ summary: { byClient: [], byClientPosition: [] }, availableClients: [] }))
+        : Promise.resolve(null),
+      needsApplicants ? api("/company/applicants", token).catch(() => ({ items: [] })) : Promise.resolve(null),
+      needsIntake ? api("/company/applicant-intake-secret", token).catch(() => null) : Promise.resolve(null),
+      needsJobs ? api("/company/jds", token).catch(() => ({ jobs: [] })) : Promise.resolve(null),
+      needsUsers ? api("/company/users", token).catch(() => ({ users: [] })) : Promise.resolve(null),
       includeClientUsers
         ? api("/company/client-users", token).catch(() => ({ clientUsers: [] }))
         : Promise.resolve(null),
-      api("/candidates?limit=5000", token).catch(() => []),
-      api("/candidates?scope=company&limit=5000", token).catch(() => []),
-      api("/company/assessments", token).catch(() => ({ assessments: [] })),
-      includeEvents
+      needsCandidates ? api("/candidates?limit=5000", token).catch(() => []) : Promise.resolve(null),
+      needsDatabaseCandidates ? api("/candidates?scope=company&limit=5000", token).catch(() => []) : Promise.resolve(null),
+      needsAssessments ? api("/company/assessments", token).catch(() => ({ assessments: [] })) : Promise.resolve(null),
+      needsAssessmentEvents
         ? api("/company/assessment-events?limit=10000", token).catch(() => ({ result: { rows: [] } }))
         : Promise.resolve(null),
       includeSharedPresets
         ? api("/company/shared-export-presets", token).catch(() => null)
         : Promise.resolve(null),
-      includeEmailSettings
+      needsEmailSettings
         ? api("/company/email-settings", token).catch(() => null)
         : Promise.resolve(null)
     ]);
     setState((current) => ({
       ...current,
       user: userResult.user || userResult,
-      dashboard: latestDashboardKeyRef.current === dashboardKey ? (dashboardResult || {}) : current.dashboard,
-      clientPortal: latestClientPortalKeyRef.current === clientPortalKey ? (clientPortalResult || {}) : current.clientPortal,
-      applicants: applicantsResult.items || [],
-      intake: intakeResult || {},
-      jobs: jobsResult.jobs || [],
-      users: usersResult.users || [],
-      candidates: Array.isArray(candidatesResult) ? candidatesResult : [],
-      databaseCandidates: Array.isArray(databaseCandidatesResult) ? databaseCandidatesResult : Array.isArray(candidatesResult) ? candidatesResult : [],
-      assessments: assessmentsResult.assessments || [],
-      assessmentEvents: includeEvents ? (assessmentEventsResult?.result?.rows || []) : current.assessmentEvents
+      dashboard: needsDashboard && latestDashboardKeyRef.current === dashboardKey ? (dashboardResult || {}) : current.dashboard,
+      clientPortal: needsDashboard && latestClientPortalKeyRef.current === clientPortalKey ? (clientPortalResult || {}) : current.clientPortal,
+      applicants: needsApplicants ? (applicantsResult?.items || []) : current.applicants,
+      intake: needsIntake ? (intakeResult || {}) : current.intake,
+      jobs: needsJobs ? (jobsResult?.jobs || []) : current.jobs,
+      users: needsUsers ? (usersResult?.users || []) : current.users,
+      candidates: needsCandidates ? (Array.isArray(candidatesResult) ? candidatesResult : []) : current.candidates,
+      databaseCandidates: needsDatabaseCandidates
+        ? (Array.isArray(databaseCandidatesResult) ? databaseCandidatesResult : [])
+        : current.databaseCandidates,
+      assessments: needsAssessments ? (assessmentsResult?.assessments || []) : current.assessments,
+      assessmentEvents: needsAssessmentEvents ? (assessmentEventsResult?.result?.rows || []) : current.assessmentEvents
     }));
     if (includeClientUsers && clientUsersResult) {
       setClientUsers(clientUsersResult.clientUsers || []);
@@ -4827,7 +4853,7 @@ function PortalApp({ token, onLogout }) {
     if (includeSharedPresets && sharedPresetResult) {
       setCopySettings((current) => migrateCopySettings({ ...current, ...sharedPresetResult }));
     }
-    if (includeEmailSettings && smtpSettingsResult) {
+    if (needsEmailSettings && smtpSettingsResult) {
       const isEditingMailSettings = location?.pathname === "/mail-settings";
       if (!isEditingMailSettings || !smtpSettingsDirtyRef.current) {
         setSmtpSettings((current) => ({
@@ -4900,7 +4926,7 @@ function PortalApp({ token, onLogout }) {
 
   useEffect(() => {
     void loadWorkspace().catch((error) => setStatus("workspace", String(error?.message || error), "error"));
-  }, [token]);
+  }, [token, location?.pathname]);
 
   useEffect(() => {
     if (!token) return undefined;
