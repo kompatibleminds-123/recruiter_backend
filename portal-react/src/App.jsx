@@ -4750,7 +4750,13 @@ function PortalApp({ token, onLogout }) {
     setState((current) => ({ ...current, clientPortal: clientPortalResult || {} }));
   }
 
-  async function loadWorkspace() {
+  async function loadWorkspace(options = {}) {
+    const {
+      includeEvents = true,
+      includeClientUsers = true,
+      includeSharedPresets = true,
+      includeEmailSettings = true
+    } = options || {};
     // Backfills mutate production candidate rows; keep them admin-only and manual.
     const dashboardKey = JSON.stringify({
       dateFrom: String(dashboardFilters?.dateFrom || ""),
@@ -4785,13 +4791,21 @@ function PortalApp({ token, onLogout }) {
       api("/company/applicant-intake-secret", token).catch(() => null),
       api("/company/jds", token).catch(() => ({ jobs: [] })),
       api("/company/users", token).catch(() => ({ users: [] })),
-      api("/company/client-users", token).catch(() => ({ clientUsers: [] })),
+      includeClientUsers
+        ? api("/company/client-users", token).catch(() => ({ clientUsers: [] }))
+        : Promise.resolve(null),
       api("/candidates?limit=5000", token).catch(() => []),
       api("/candidates?scope=company&limit=5000", token).catch(() => []),
       api("/company/assessments", token).catch(() => ({ assessments: [] })),
-      api("/company/assessment-events?limit=10000", token).catch(() => ({ result: { rows: [] } })),
-      api("/company/shared-export-presets", token).catch(() => null),
-      api("/company/email-settings", token).catch(() => null)
+      includeEvents
+        ? api("/company/assessment-events?limit=10000", token).catch(() => ({ result: { rows: [] } }))
+        : Promise.resolve(null),
+      includeSharedPresets
+        ? api("/company/shared-export-presets", token).catch(() => null)
+        : Promise.resolve(null),
+      includeEmailSettings
+        ? api("/company/email-settings", token).catch(() => null)
+        : Promise.resolve(null)
     ]);
     setState((current) => ({
       ...current,
@@ -4805,13 +4819,15 @@ function PortalApp({ token, onLogout }) {
       candidates: Array.isArray(candidatesResult) ? candidatesResult : [],
       databaseCandidates: Array.isArray(databaseCandidatesResult) ? databaseCandidatesResult : Array.isArray(candidatesResult) ? candidatesResult : [],
       assessments: assessmentsResult.assessments || [],
-      assessmentEvents: assessmentEventsResult?.result?.rows || []
+      assessmentEvents: includeEvents ? (assessmentEventsResult?.result?.rows || []) : current.assessmentEvents
     }));
-    setClientUsers(clientUsersResult.clientUsers || []);
-    if (sharedPresetResult) {
+    if (includeClientUsers && clientUsersResult) {
+      setClientUsers(clientUsersResult.clientUsers || []);
+    }
+    if (includeSharedPresets && sharedPresetResult) {
       setCopySettings((current) => migrateCopySettings({ ...current, ...sharedPresetResult }));
     }
-    if (smtpSettingsResult) {
+    if (includeEmailSettings && smtpSettingsResult) {
       const isEditingMailSettings = location?.pathname === "/mail-settings";
       if (!isEditingMailSettings || !smtpSettingsDirtyRef.current) {
         setSmtpSettings((current) => ({
@@ -4842,14 +4858,19 @@ function PortalApp({ token, onLogout }) {
     if (!token || workspaceRefreshInFlightRef.current) return;
     if (suspendWorkspaceRefreshRef.current) return;
     const now = Date.now();
-    const throttleMs = reason === "poll" ? 20000 : 4000;
+    const throttleMs = 15000;
     if (now - lastWorkspaceRefreshAtRef.current < throttleMs) return;
     workspaceRefreshInFlightRef.current = true;
     lastWorkspaceRefreshAtRef.current = now;
     try {
       const latestLoader = loadWorkspaceRef.current;
       if (typeof latestLoader === "function") {
-        await latestLoader();
+        await latestLoader({
+          includeEvents: false,
+          includeClientUsers: false,
+          includeSharedPresets: false,
+          includeEmailSettings: false
+        });
       }
     } catch (error) {
       setStatus("workspace", String(error?.message || error), "error");
@@ -4883,26 +4904,8 @@ function PortalApp({ token, onLogout }) {
 
   useEffect(() => {
     if (!token) return undefined;
-    const handleWindowFocus = () => {
-      if (typeof document !== "undefined" && document.visibilityState === "hidden") return;
-      void refreshWorkspaceSilently("focus");
-    };
-    const handleVisibilityChange = () => {
-      if (typeof document !== "undefined" && document.visibilityState === "visible") {
-        void refreshWorkspaceSilently("visible");
-      }
-    };
-    const poller = window.setInterval(() => {
-      if (typeof document !== "undefined" && document.visibilityState === "hidden") return;
-      void refreshWorkspaceSilently("poll");
-    }, 20000);
-    window.addEventListener("focus", handleWindowFocus);
-    document.addEventListener("visibilitychange", handleVisibilityChange);
-    return () => {
-      window.clearInterval(poller);
-      window.removeEventListener("focus", handleWindowFocus);
-      document.removeEventListener("visibilitychange", handleVisibilityChange);
-    };
+    // Keep workspace refresh manual/lightweight to avoid burning Supabase egress on every tab focus/poll.
+    return undefined;
   }, [token]);
 
   useEffect(() => {
