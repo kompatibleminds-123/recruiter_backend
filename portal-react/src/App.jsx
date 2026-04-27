@@ -6021,6 +6021,7 @@ function PortalApp({ token, onLogout }) {
     const viewMode = String(candidateFilters.view || "all").trim() || "all";
     const currentUserName = String(state.user?.name || "").trim().toLowerCase();
     const currentUserId = String(state.user?.id || "").trim();
+    const adminUserIds = new Set((state.users || []).filter((user) => String(user?.role || "").toLowerCase() === "admin").map((user) => String(user?.id || "").trim()).filter(Boolean));
     const parseTime = (value) => {
       const time = Date.parse(String(value || ""));
       return Number.isFinite(time) ? time : 0;
@@ -6049,6 +6050,20 @@ function PortalApp({ token, onLogout }) {
       const capturedName = String(item?.recruiter_name || "").trim().toLowerCase();
       if (currentUserId && capturedId) return capturedId === currentUserId;
       return Boolean(currentUserName && capturedName && capturedName === currentUserName);
+    };
+    const isFirstAssignedToCurrentUser = (item) => {
+      const firstId = String(item?.first_assigned_to_user_id || "").trim();
+      const firstName = String(item?.first_assigned_to_name || "").trim().toLowerCase();
+      if (currentUserId && firstId) return firstId === currentUserId;
+      return Boolean(currentUserName && firstName && firstName === currentUserName);
+    };
+    const isFirstAssignedByAdmin = (item) => {
+      const firstById = String(item?.first_assigned_by_user_id || "").trim();
+      if (firstById && adminUserIds.size) return adminUserIds.has(firstById);
+      const fallbackById = String(item?.assigned_by_user_id || "").trim();
+      if (fallbackById && adminUserIds.size) return adminUserIds.has(fallbackById);
+      const fallbackByName = String(item?.assigned_by_name || "").trim().toLowerCase();
+      return Boolean(fallbackByName === "admin");
     };
     // Keep stats aligned with the same filters as the visible list (clients/JD/recruiter/outcome/state/date/query).
     // We do not exclude converted rows here because we show both Active + Converted counts.
@@ -6089,12 +6104,18 @@ function PortalApp({ token, onLogout }) {
       const viewOk = (() => {
         if (viewMode === "all") return true;
         if (viewMode === "added_by_me") return isCapturedByCurrentUser(item);
-        if (viewMode === "assigned_to_me") return isAssignedToCurrentUser(item) && isCapturedByCurrentUser(item);
+        if (viewMode === "assigned_to_me") {
+          return isAssignedToCurrentUser(item)
+            && !isCapturedByCurrentUser(item)
+            && Boolean(item?.first_assigned_to_user_id || item?.first_assigned_to_name)
+            && isFirstAssignedToCurrentUser(item)
+            && isFirstAssignedByAdmin(item);
+        }
         if (viewMode === "reassigned_to_me") {
           return isAssignedToCurrentUser(item)
             && !isCapturedByCurrentUser(item)
-            && Boolean(item?.assigned_at)
-            && Boolean(item?.assigned_by_user_id || item?.assigned_by_name);
+            && Boolean(item?.first_assigned_to_user_id || item?.first_assigned_to_name)
+            && !isFirstAssignedToCurrentUser(item);
         }
         if (viewMode === "reassigned_by_me") return isAssignedByCurrentUser(item) && Boolean(item?.assigned_at);
         return true;
@@ -6173,6 +6194,7 @@ function PortalApp({ token, onLogout }) {
     const viewMode = String(candidateFilters.view || "all").trim() || "all";
     const currentUserName = String(state.user?.name || "").trim().toLowerCase();
     const currentUserId = String(state.user?.id || "").trim();
+    const adminUserIds = new Set((state.users || []).filter((user) => String(user?.role || "").toLowerCase() === "admin").map((user) => String(user?.id || "").trim()).filter(Boolean));
     const parseTime = (value) => {
       const time = Date.parse(String(value || ""));
       return Number.isFinite(time) ? time : 0;
@@ -6200,6 +6222,20 @@ function PortalApp({ token, onLogout }) {
       const capturedName = String(item?.recruiter_name || "").trim().toLowerCase();
       if (currentUserId && capturedId) return capturedId === currentUserId;
       return Boolean(currentUserName && capturedName && capturedName === currentUserName);
+    };
+    const isFirstAssignedToCurrentUser = (item) => {
+      const firstId = String(item?.first_assigned_to_user_id || "").trim();
+      const firstName = String(item?.first_assigned_to_name || "").trim().toLowerCase();
+      if (currentUserId && firstId) return firstId === currentUserId;
+      return Boolean(currentUserName && firstName && firstName === currentUserName);
+    };
+    const isFirstAssignedByAdmin = (item) => {
+      const firstById = String(item?.first_assigned_by_user_id || "").trim();
+      if (firstById && adminUserIds.size) return adminUserIds.has(firstById);
+      const fallbackById = String(item?.assigned_by_user_id || "").trim();
+      if (fallbackById && adminUserIds.size) return adminUserIds.has(fallbackById);
+      const fallbackByName = String(item?.assigned_by_name || "").trim().toLowerCase();
+      return Boolean(fallbackByName === "admin");
     };
 
     const filtered = capturedNotesUniverse.filter((item) => {
@@ -6240,12 +6276,18 @@ function PortalApp({ token, onLogout }) {
       const viewOk = (() => {
         if (viewMode === "all") return true;
         if (viewMode === "added_by_me") return isCapturedByCurrentUser(item);
-        if (viewMode === "assigned_to_me") return isAssignedToCurrentUser(item) && isCapturedByCurrentUser(item);
+        if (viewMode === "assigned_to_me") {
+          return isAssignedToCurrentUser(item)
+            && !isCapturedByCurrentUser(item)
+            && Boolean(item?.first_assigned_to_user_id || item?.first_assigned_to_name)
+            && isFirstAssignedToCurrentUser(item)
+            && isFirstAssignedByAdmin(item);
+        }
         if (viewMode === "reassigned_to_me") {
           return isAssignedToCurrentUser(item)
             && !isCapturedByCurrentUser(item)
-            && Boolean(item?.assigned_at)
-            && Boolean(item?.assigned_by_user_id || item?.assigned_by_name);
+            && Boolean(item?.first_assigned_to_user_id || item?.first_assigned_to_name)
+            && !isFirstAssignedToCurrentUser(item);
         }
         if (viewMode === "reassigned_by_me") return isAssignedByCurrentUser(item) && Boolean(item?.assigned_at);
         return true;

@@ -745,23 +745,83 @@ async function assignCandidate(candidateId, assignment = {}, options = {}) {
   const assignedJdTitle = String(assignment.assigned_jd_title || assignment.assignedJdTitle || "").trim();
   const clientName = String(assignment.client_name || assignment.clientName || "").trim();
   const jdTitle = String(assignment.jd_title || assignment.jdTitle || "").trim();
+  const assignedByUserId = String(assignment.assigned_by_user_id || assignment.assignedByUserId || "").trim() || null;
+  const assignedByName = String(assignment.assigned_by_name || assignment.assignedByName || "").trim() || null;
 
   if (!assignedToUserId || !assignedToName) {
     throw new Error("Assigned recruiter is required.");
   }
 
-  return patchCandidate(id, {
+  const basePatch = {
     assigned_to_user_id: assignedToUserId,
     assigned_to_name: assignedToName,
-    assigned_by_user_id: String(assignment.assigned_by_user_id || assignment.assignedByUserId || "").trim() || null,
-    assigned_by_name: String(assignment.assigned_by_name || assignment.assignedByName || "").trim() || null,
+    assigned_by_user_id: assignedByUserId,
+    assigned_by_name: assignedByName,
     assigned_jd_id: assignedJdId || null,
     assigned_jd_title: assignedJdTitle || null,
     // Keep the legacy display fields in sync so dashboards/search don't have to guess.
     jd_title: (jdTitle || assignedJdTitle || null),
     client_name: clientName || null,
     assigned_at: new Date().toISOString()
-  }, options);
+  };
+
+  const { url, serviceRoleKey } = getSupabaseConfig();
+  const companyId = normalizeCompanyId(options.companyId || assignment.company_id || assignment.companyId);
+  let firstAssignmentPatch = null;
+
+  if (url && serviceRoleKey) {
+    try {
+      const select = [
+        "id",
+        "first_assigned_to_user_id",
+        "first_assigned_to_name",
+        "first_assigned_at",
+        "first_assigned_by_user_id",
+        "first_assigned_by_name"
+      ].join(",");
+      const filters = [`id=eq.${encodeURIComponent(id)}`, `select=${select}`, "limit=1"];
+      if (companyId) {
+        filters.unshift(`company_id=eq.${encodeURIComponent(companyId)}`);
+      }
+      const response = await fetch(`${url}/rest/v1/candidates?${filters.join("&")}`, {
+        headers: {
+          apikey: serviceRoleKey,
+          Authorization: `Bearer ${serviceRoleKey}`
+        }
+      });
+
+      if (response.ok) {
+        const rows = await response.json();
+        const existing = rows?.[0] || null;
+        const hasFirst = Boolean(existing?.first_assigned_to_user_id || existing?.first_assigned_to_name || existing?.first_assigned_at);
+        if (!hasFirst) {
+          firstAssignmentPatch = {
+            first_assigned_to_user_id: assignedToUserId,
+            first_assigned_to_name: assignedToName,
+            first_assigned_at: basePatch.assigned_at,
+            first_assigned_by_user_id: assignedByUserId,
+            first_assigned_by_name: assignedByName
+          };
+        }
+      }
+    } catch {
+      firstAssignmentPatch = null;
+    }
+  }
+
+  if (firstAssignmentPatch) {
+    try {
+      return await patchCandidate(id, { ...basePatch, ...firstAssignmentPatch }, options);
+    } catch (error) {
+      const message = String(error?.message || error);
+      if (message.includes("first_assigned_") && message.includes("does not exist")) {
+        return patchCandidate(id, basePatch, options);
+      }
+      throw error;
+    }
+  }
+
+  return patchCandidate(id, basePatch, options);
 }
 
 function normalizeContactAttemptRow(candidateId, payload = {}) {
