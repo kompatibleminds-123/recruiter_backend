@@ -6113,7 +6113,6 @@ function PortalApp({ token, onLogout }) {
         }
         if (viewMode === "reassigned_to_me") {
           return isAssignedToCurrentUser(item)
-            && !isCapturedByCurrentUser(item)
             && Boolean(item?.first_assigned_to_user_id || item?.first_assigned_to_name)
             && !isFirstAssignedToCurrentUser(item);
         }
@@ -6285,7 +6284,6 @@ function PortalApp({ token, onLogout }) {
         }
         if (viewMode === "reassigned_to_me") {
           return isAssignedToCurrentUser(item)
-            && !isCapturedByCurrentUser(item)
             && Boolean(item?.first_assigned_to_user_id || item?.first_assigned_to_name)
             && !isFirstAssignedToCurrentUser(item);
         }
