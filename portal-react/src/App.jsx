@@ -6013,12 +6013,33 @@ function PortalApp({ token, onLogout }) {
   }, [capturedAssessmentMap, state.candidates, state.jobs, state.user]);
 
   const capturedNotesUniverse = useMemo(() => {
+    const isAdmin = String(state.user?.role || "").toLowerCase() === "admin";
+    const currentUserName = String(state.user?.name || "").trim().toLowerCase();
+    const currentUserId = String(state.user?.id || "").trim();
+    const isMine = (item) => {
+      const capturedId = String(item?.recruiter_id || "").trim();
+      const capturedName = String(item?.recruiter_name || "").trim().toLowerCase();
+      const assignedId = String(item?.assigned_to_user_id || "").trim();
+      const assignedName = String(item?.assigned_to_name || "").trim().toLowerCase();
+      if (currentUserId && (capturedId || assignedId)) {
+        if (capturedId && capturedId === currentUserId) return true;
+        if (assignedId && assignedId === currentUserId) return true;
+      }
+      if (currentUserName) {
+        if (capturedName && capturedName === currentUserName) return true;
+        if (assignedName && assignedName === currentUserName) return true;
+      }
+      return false;
+    };
+
     return (state.candidates || []).filter((item) => {
       const sourceValue = String(item.source || "").trim();
       const isInboundApplicant = sourceValue === "website_apply" || sourceValue === "hosted_apply" || sourceValue === "google_sheet";
-      return !isInboundApplicant;
+      if (isInboundApplicant) return false;
+      if (isAdmin) return true;
+      return isMine(item);
     });
-  }, [state.candidates]);
+  }, [state.candidates, state.user]);
 
   const capturedNotesStats = useMemo(() => {
     const todayKey = new Date().toISOString().slice(0, 10);
@@ -6881,17 +6902,17 @@ function PortalApp({ token, onLogout }) {
       setStatus("captured", "Draft assigned to recruiter.", "ok");
       return;
     }
-    await patchCandidate(assignCandidateId, {
-      assigned_to_user_id: effectiveRecruiterId,
-      assigned_to_name: nextAssigneeName,
-      assigned_jd_id: jdId,
-      assigned_jd_title: jdTitle,
-      jd_title: jdTitle,
-      client_name: clientName || "",
-      // If a hidden/inactive note is reassigned, make it active for the new assignee.
-      hidden_from_captured: false
-    }, "Draft assigned to recruiter.");
+    await api("/candidates/claim", token, "POST", {
+      id: assignCandidateId,
+      assignedJdId: jdId,
+      assignedJdTitle: jdTitle,
+      jdTitle,
+      clientName,
+      client_name: clientName
+    });
     setAssignCandidateId("");
+    setStatus("captured", "Draft assigned to recruiter.", "ok");
+    void refreshWorkspaceSilently("post-claim");
   }
 
   async function patchCandidate(candidateId, patch, okMessage) {

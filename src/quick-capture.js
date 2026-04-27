@@ -762,7 +762,9 @@ async function assignCandidate(candidateId, assignment = {}, options = {}) {
     // Keep the legacy display fields in sync so dashboards/search don't have to guess.
     jd_title: (jdTitle || assignedJdTitle || null),
     client_name: clientName || null,
-    assigned_at: new Date().toISOString()
+    assigned_at: new Date().toISOString(),
+    // If a hidden/inactive note is reassigned, make it active for the new assignee.
+    hidden_from_captured: false
   };
 
   const { url, serviceRoleKey } = getSupabaseConfig();

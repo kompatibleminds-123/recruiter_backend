@@ -8999,6 +8999,29 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (req.method === "POST" && requestUrl.pathname === "/candidates/claim") {
+    try {
+      const actor = await requireSessionUser(getBearerToken(req));
+      const body = await readJsonBody(req);
+      const candidateId = body.id || body.candidateId;
+      await ensureCandidateVisibleToActor(actor, candidateId);
+      const result = await assignCandidate(candidateId, {
+        assigned_to_user_id: actor.id,
+        assigned_to_name: actor.name,
+        assigned_by_user_id: actor.id,
+        assigned_by_name: actor.name,
+        assigned_jd_id: body.assigned_jd_id || body.assignedJdId,
+        assigned_jd_title: body.assigned_jd_title || body.assignedJdTitle,
+        jd_title: body.jd_title || body.jdTitle,
+        client_name: body.client_name || body.clientName
+      }, { companyId: actor.companyId });
+      sendJson(res, 200, { ok: true, result });
+    } catch (error) {
+      sendJson(res, 400, { ok: false, error: String(error.message || error) });
+    }
+    return;
+  }
+
   if (req.method === "GET" && requestUrl.pathname === "/contact-attempts") {
     try {
       const actor = await requireSessionUser(getBearerToken(req));
