@@ -6029,16 +6029,21 @@ function PortalApp({ token, onLogout }) {
           || ""
       ).trim();
       const statusHistory = Array.isArray(linkedAssessment?.statusHistory) ? linkedAssessment.statusHistory : [];
-      const firstStatusEntry = statusHistory[0] && typeof statusHistory[0] === "object" ? statusHistory[0] : null;
-      const firstStatusAt = String(firstStatusEntry?.at || "").trim();
-      const firstStatusLabel = normalizeAssessmentStatusLabel(String(firstStatusEntry?.status || "")).toLowerCase();
-      const firstStatusNotes = String(firstStatusEntry?.notes || "").trim().toLowerCase();
-      const statusHistoryConvertedAt = firstStatusAt && (
-        firstStatusLabel === "cv shared"
-        || firstStatusNotes.includes("converted into assessment")
-      )
-        ? firstStatusAt
-        : "";
+      // Status history ordering isn't guaranteed (some payloads prepend newest).
+      // Find the earliest "conversion/share" marker across the full list.
+      let statusHistoryConvertedAt = "";
+      statusHistory.forEach((entry) => {
+        if (!entry || typeof entry !== "object") return;
+        const at = String(entry?.at || "").trim();
+        if (!at) return;
+        const label = normalizeAssessmentStatusLabel(String(entry?.status || "")).toLowerCase();
+        const notes = String(entry?.notes || "").trim().toLowerCase();
+        const isConversionMarker = label === "cv shared" || notes.includes("converted into assessment");
+        if (!isConversionMarker) return;
+        if (!statusHistoryConvertedAt || toTimestampSafe(at) < toTimestampSafe(statusHistoryConvertedAt)) {
+          statusHistoryConvertedAt = at;
+        }
+      });
       const convertedAt = String(
         assessmentSharedAtMap.get(String(linkedAssessment?.id || assessmentId || "").trim())
           || statusHistoryConvertedAt
