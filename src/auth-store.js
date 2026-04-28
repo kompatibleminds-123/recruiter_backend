@@ -1738,7 +1738,7 @@ async function saveAssessment({ actorUserId, companyId, assessment }) {
     if (idNeedle) {
       const rowsPrev = await sbSel(
         "assessments",
-        `select=id,candidate_status,status,interview_at,offer_doj,offer_amount,updated_at,client_name,jd_title,candidate_id&company_id=eq.${enc(companyId)}&id=eq.${enc(idNeedle)}&limit=1`
+        `select=id,candidate_status,status,interview_at,offer_doj,offer_amount,updated_at,created_at,client_name,jd_title,candidate_id&company_id=eq.${enc(companyId)}&id=eq.${enc(idNeedle)}&limit=1`
       ).catch(() => []);
       previous = rowsPrev && rowsPrev[0] ? rowsPrev[0] : null;
     }
@@ -1746,7 +1746,12 @@ async function saveAssessment({ actorUserId, companyId, assessment }) {
     previous = null;
   }
 
-  const rows = await sbIns("assessments", [assessmentRow(safeAssessment, actor, companyId)], { conflict: "id", upsert: true });
+  // Preserve the original created_at / generatedAt on upserts to avoid collapsing timestamps
+  // when patching many assessments (e.g. migrations, link repairs, bulk edits).
+  const preservedCreatedAt = String(previous?.created_at || previous?.createdAt || "").trim();
+  const safeAssessmentForSave = preservedCreatedAt ? { ...safeAssessment, generatedAt: preservedCreatedAt } : safeAssessment;
+
+  const rows = await sbIns("assessments", [assessmentRow(safeAssessmentForSave, actor, companyId)], { conflict: "id", upsert: true });
   const saved = sanitizeAssessment(rows[0]);
 
   // Best-effort event insert (no-op if the table doesn't exist yet).
