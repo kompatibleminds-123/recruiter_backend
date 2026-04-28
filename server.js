@@ -1671,18 +1671,14 @@ function getCandidateCreatedAt(candidate = {}) {
   return String(candidate.created_at || candidate.createdAt || "").trim();
 }
 
-function getCandidateConvertedAt(candidate = {}, assessment = {}) {
+function getCandidateConvertedAt(_candidate = {}, assessment = {}) {
+  // "Converted/shared at" must reflect when assessment got created, not when
+  // candidate/assessment records were later updated in bulk.
   return String(
     assessment.generatedAt ||
       assessment.generated_at ||
       assessment.created_at ||
       assessment.createdAt ||
-      assessment.updatedAt ||
-      assessment.updated_at ||
-      candidate.updated_at ||
-      candidate.updatedAt ||
-      candidate.created_at ||
-      candidate.createdAt ||
       ""
   ).trim();
 }
@@ -7000,7 +6996,10 @@ const server = http.createServer(async (req, res) => {
 
       // Recruiters should only see their own candidates/events. Admin sees company-wide.
       const isAdmin = String(user.role || "").toLowerCase() === "admin";
-      const recruiterId = isAdmin ? "" : String(user.id || "").trim();
+      // When the portal asks for "all events" (no kind), we need company-wide rows so it can
+      // compute correct derived timestamps even after reassignment. Restrict only for specific
+      // analytics kinds.
+      const recruiterId = isAdmin ? "" : (kind ? String(user.id || "").trim() : "");
 
       const rows = await listAssessmentEvents({
         companyId: user.companyId,

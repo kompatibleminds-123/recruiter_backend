@@ -6084,7 +6084,11 @@ function PortalApp({ token, onLogout }) {
         rowsByChip.offered_candidates.push({ ...baseRow, round: "Offered" });
       }
       if (activeAssessment && inDateRange(updatedAt)) {
-        rowsByChip.cv_shared.push({ ...baseRow, round: formatAssessmentStatusDisplay(assessmentStatus || "Active") });
+        const statusLower = normalizeStatus(baseRow.status || assessmentStatus || "");
+        const displayDate = statusLower === "cv shared"
+          ? (convertedAt || updatedAt || "")
+          : (interviewAt || updatedAt || "");
+        rowsByChip.cv_shared.push({ ...baseRow, round: formatAssessmentStatusDisplay(assessmentStatus || "Active"), date: displayDate });
       }
     });
     return rowsByChip;
