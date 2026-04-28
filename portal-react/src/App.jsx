@@ -4775,7 +4775,9 @@ function PortalApp({ token, onLogout }) {
       pathname === "/assessments" ||
       pathname === "/client-share" ||
       pathname === "/interview";
-    const needsAssessmentEvents = includeEvents && (pathname === "/dashboard" || pathname === "/assessments");
+    // Candidate smart-search chips (Shared this week/today) need conversion timestamps,
+    // which are best sourced from assessment events.
+    const needsAssessmentEvents = includeEvents && (pathname === "/dashboard" || pathname === "/assessments" || pathname === "/candidates");
     const needsEmailSettings = includeEmailSettings && pathname === "/mail-settings";
     // Backfills mutate production candidate rows; keep them admin-only and manual.
     const dashboardKey = JSON.stringify({
