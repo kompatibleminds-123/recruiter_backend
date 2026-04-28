@@ -5970,6 +5970,26 @@ function PortalApp({ token, onLogout }) {
       offered_candidates: [],
       cv_shared: []
     };
+    const assessmentSharedAtMap = new Map();
+    const eventRows = Array.isArray(state.assessmentEvents) ? state.assessmentEvents : [];
+    eventRows.forEach((event) => {
+      const assessmentId = String(event?.assessment_id || event?.assessmentId || "").trim();
+      if (!assessmentId) return;
+      const eventType = String(event?.event_type || event?.eventType || "").trim().toLowerCase();
+      const status = normalizeAssessmentStatusLabel(String(event?.status || "")).toLowerCase();
+      const payload = event?.payload && typeof event.payload === "object" ? event.payload : {};
+      const previousStatus = normalizeAssessmentStatusLabel(String(payload?.previousStatus || "")).toLowerCase();
+      const eventAt = String(event?.event_at || event?.eventAt || event?.created_at || event?.createdAt || "").trim();
+      const isInitialShareEvent =
+        eventType === "converted"
+        || (eventType === "status_updated" && !previousStatus && status === "cv shared");
+      if (isInitialShareEvent && eventAt) {
+        const existing = assessmentSharedAtMap.get(assessmentId);
+        if (!existing || toTimestampSafe(eventAt) < toTimestampSafe(existing)) {
+          assessmentSharedAtMap.set(assessmentId, eventAt);
+        }
+      }
+    });
     assessments.forEach((assessment) => {
       const assessmentId = String(assessment?.id || "").trim();
       const candidateId = String(
@@ -6006,11 +6026,20 @@ function PortalApp({ token, onLogout }) {
           || linkedAssessment?.updated_at
           || ""
       ).trim();
+      const statusHistory = Array.isArray(linkedAssessment?.statusHistory) ? linkedAssessment.statusHistory : [];
+      const firstStatusEntry = statusHistory[0] && typeof statusHistory[0] === "object" ? statusHistory[0] : null;
+      const firstStatusAt = String(firstStatusEntry?.at || "").trim();
+      const firstStatusLabel = normalizeAssessmentStatusLabel(String(firstStatusEntry?.status || "")).toLowerCase();
+      const firstStatusNotes = String(firstStatusEntry?.notes || "").trim().toLowerCase();
+      const statusHistoryConvertedAt = firstStatusAt && (
+        firstStatusLabel === "cv shared"
+        || firstStatusNotes.includes("converted into assessment")
+      )
+        ? firstStatusAt
+        : "";
       const convertedAt = String(
-        linkedAssessment?.generatedAt
-          || linkedAssessment?.generated_at
-          || linkedAssessment?.createdAt
-          || linkedAssessment?.created_at
+        assessmentSharedAtMap.get(String(linkedAssessment?.id || assessmentId || "").trim())
+          || statusHistoryConvertedAt
           || ""
       ).trim();
       const noticeDays = parseNoticePeriodToDays(item?.notice_period || item?.noticePeriod || "");
@@ -6059,7 +6088,7 @@ function PortalApp({ token, onLogout }) {
       }
     });
     return rowsByChip;
-  }, [candidateUniverse, candidateSmartDateFrom, candidateSmartDateTo, state.assessments, state.candidates]);
+  }, [candidateUniverse, candidateSmartDateFrom, candidateSmartDateTo, state.assessments, state.candidates, state.assessmentEvents]);
   const candidateHasSmartChipSelection = candidateAiQueryMode === "natural" && candidateQuickChipIds.length > 0;
 
   const capturedCandidateOptions = useMemo(() => {

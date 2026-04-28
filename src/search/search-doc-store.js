@@ -168,14 +168,13 @@ async function listAssessmentEvents({
     joined: "joined"
   };
   const eventType = kindToEventType[kindKey] || "";
-  if (!eventType) return [];
 
   const parts = [
     "select=id,company_id,assessment_id,candidate_id,recruiter_id,recruiter_name,client_name,jd_title,event_type,status,event_at,payload,created_at",
     `company_id=eq.${enc(safeCompanyId)}`,
-    `event_type=eq.${enc(eventType)}`,
     "order=event_at.desc,created_at.desc"
   ];
+  if (eventType) parts.splice(2, 0, `event_type=eq.${enc(eventType)}`);
 
   const safeRecruiterId = String(recruiterId || "").trim();
   if (safeRecruiterId) parts.push(`recruiter_id=eq.${enc(safeRecruiterId)}`);
