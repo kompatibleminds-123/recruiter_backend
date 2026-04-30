@@ -284,21 +284,30 @@ async function sendSmtpEmail({ to, subject, html, text }) {
   throw new Error("Email is not configured. Each recruiter must configure Zoho SMTP in Settings.");
 }
 
-async function sendJdEmailAsActor(actor, { to, cc = "", subject, html, text, attachments = [] }) {
+async function createActorSmtpTransport(actor) {
   if (!nodemailer) throw new Error("Email sending is not available.");
   const cfg = await getUserSmtpSettings({ companyId: actor.companyId, userId: actor.id });
   if (!cfg || !cfg.host || !cfg.user || !cfg.pass || !cfg.from) {
-    throw new Error("Email settings not configured. Go to Settings → Email settings.");
+    throw new Error("Email settings not configured. Go to Settings â†’ Email settings.");
   }
   const transport = nodemailer.createTransport({
     host: cfg.host,
     port: Number(cfg.port || 587),
     secure: Boolean(cfg.secure),
-    auth: { user: cfg.user, pass: cfg.pass }
+    auth: { user: cfg.user, pass: cfg.pass },
+    connectionTimeout: 15000,
+    greetingTimeout: 10000,
+    socketTimeout: 20000,
+    dnsTimeout: 10000
   });
+  return { transport, cfg };
+}
+
+async function sendJdEmailAsActor(actor, { to, cc = "", subject, html, text, attachments = [] }) {
+  const { transport, cfg } = await createActorSmtpTransport(actor);
   const ccValue = String(cc || "").trim();
   await transport.sendMail({
-    from: cfg.from,
+    from: String(cfg.from || "").trim(),
     to,
     ...(ccValue ? { cc: ccValue } : {}),
     subject,
@@ -6964,6 +6973,48 @@ const server = http.createServer(async (req, res) => {
         settings: body.settings || body
       });
       sendJson(res, 200, { ok: true, result: saved });
+    } catch (error) {
+      sendJson(res, 400, { ok: false, error: String(error.message || error) });
+    }
+    return;
+  }
+
+  if (req.method === "POST" && req.url === "/company/email-settings/test") {
+    try {
+      const actor = await requireSessionUser(getBearerToken(req));
+      const body = await readJsonBody(req);
+      const sendTestMail = Boolean(body?.sendTestMail);
+      const overrideTo = String(body?.to || "").trim();
+      const { transport, cfg } = await createActorSmtpTransport(actor);
+      await transport.verify();
+      let testMailSent = false;
+      let sentTo = "";
+      if (sendTestMail) {
+        const to = overrideTo || String(actor?.email || cfg.user || "").trim();
+        if (!to) throw new Error("No email address available for test mail.");
+        await transport.sendMail({
+          from: String(cfg.from || "").trim(),
+          to,
+          subject: "RecruitDesk SMTP test",
+          text: "SMTP test successful. Your RecruitDesk mail settings are working.",
+          html: "<p>SMTP test successful. Your RecruitDesk mail settings are working.</p>"
+        });
+        testMailSent = true;
+        sentTo = to;
+      }
+      sendJson(res, 200, {
+        ok: true,
+        result: {
+          verified: true,
+          host: String(cfg.host || "").trim(),
+          port: Number(cfg.port || 587),
+          secure: Boolean(cfg.secure),
+          user: String(cfg.user || "").trim(),
+          from: String(cfg.from || "").trim(),
+          testMailSent,
+          sentTo
+        }
+      });
     } catch (error) {
       sendJson(res, 400, { ok: false, error: String(error.message || error) });
     }

@@ -4548,6 +4548,7 @@ function PortalApp({ token, onLogout }) {
   });
   const [smtpSettingsLoaded, setSmtpSettingsLoaded] = useState(false);
   const [smtpSettingsKeepPass, setSmtpSettingsKeepPass] = useState(true);
+  const [smtpTestBusy, setSmtpTestBusy] = useState(false);
   const smtpSettingsDirtyRef = useRef(false);
   const markSmtpSettingsDirty = () => { smtpSettingsDirtyRef.current = true; };
 
@@ -8715,6 +8716,23 @@ function PortalApp({ token, onLogout }) {
     }
   }
 
+  async function testSmtpSettings(sendTestMail = false) {
+    setSmtpTestBusy(true);
+    setStatus("settings", sendTestMail ? "Sending test email..." : "Verifying SMTP settings...");
+    try {
+      const result = await api("/company/email-settings/test", token, "POST", { sendTestMail });
+      if (result?.testMailSent) {
+        setStatus("settings", `SMTP verified and test email sent to ${result.sentTo}.`, "ok");
+      } else {
+        setStatus("settings", `SMTP verified for ${result.user} via ${result.host}:${result.port}.`, "ok");
+      }
+    } catch (error) {
+      setStatus("settings", `SMTP test failed: ${String(error?.message || error)}`, "error");
+    } finally {
+      setSmtpTestBusy(false);
+    }
+  }
+
   function fillJdEmailTemplate(template, { candidateName, recruiterName, roleLabel }) {
     const tpl = String(template || "");
     return tpl
@@ -11513,6 +11531,12 @@ function PortalApp({ token, onLogout }) {
                 </div>
                 <div className="button-row">
                   <button onClick={() => void saveSmtpSettings()}>Save email settings</button>
+                  <button className="secondary" disabled={smtpTestBusy} onClick={() => void testSmtpSettings(false)}>
+                    {smtpTestBusy ? "Testing..." : "Test SMTP settings"}
+                  </button>
+                  <button className="secondary" disabled={smtpTestBusy} onClick={() => void testSmtpSettings(true)}>
+                    {smtpTestBusy ? "Testing..." : "Send test mail to self"}
+                  </button>
                 </div>
 
                 <div className="settings-subsection" style={{ marginTop: 18 }}>
