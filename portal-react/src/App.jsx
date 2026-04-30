@@ -9405,6 +9405,7 @@ function PortalApp({ token, onLogout }) {
       setStatus("loginEmployee", String(error?.message || error), "error");
     }
   }
+  const createEmployeeUser = createEmployeePortalUser;
 
   async function resetEmployeePortalPassword(employeeUserId) {
     if (!isSettingsAdmin) {
@@ -12799,6 +12800,7 @@ export default function App() {
       setBusy(false);
     }
   }
+  const loginEmployee = loginEmployeeUser;
 
   function logout() {
     localStorage.removeItem(TOKEN_KEY);
@@ -12809,7 +12811,7 @@ export default function App() {
     setToken("");
   }
 
-  if (!token) return <LoginScreen onRecruiterLogin={loginRecruiter} onClientLogin={loginClientUser} onEmployeeLogin={loginEmployeeUser} busy={busy} error={error} forcedMode={forcedMode === "recruiter" ? "" : forcedMode} />;
+  if (!token) return <LoginScreen onRecruiterLogin={loginRecruiter} onClientLogin={loginClientUser} onEmployeeLogin={loginEmployee} busy={busy} error={error} forcedMode={forcedMode === "recruiter" ? "" : forcedMode} />;
   return authMode === "client"
     ? <PortalErrorBoundary><ClientPortalApp token={token} onLogout={logout} /></PortalErrorBoundary>
     : authMode === "employee"
