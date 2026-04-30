@@ -4432,6 +4432,16 @@ function PortalApp({ token, onLogout }) {
   const [newPresetDraft, setNewPresetDraft] = useState({ label: "", clientName: "", columns: "" });
   const [teamUserDraft, setTeamUserDraft] = useState({ name: "", email: "", password: "", role: "recruiter" });
   const [teamPasswordDrafts, setTeamPasswordDrafts] = useState({});
+  const [employeeUsers, setEmployeeUsers] = useState([]);
+  const [employeeUserDraft, setEmployeeUserDraft] = useState({
+    employeeCode: "",
+    username: "",
+    fullName: "",
+    password: "",
+    designation: "",
+    clientName: ""
+  });
+  const [employeePasswordDrafts, setEmployeePasswordDrafts] = useState({});
   const [companyDraft, setCompanyDraft] = useState({ companyName: "", adminName: "", email: "", password: "", platformSecret: "" });
   const [clientUsers, setClientUsers] = useState([]);
   const availablePresetClients = useMemo(() => {
@@ -4778,6 +4788,7 @@ function PortalApp({ token, onLogout }) {
     const {
       includeEvents = true,
       includeClientUsers = true,
+      includeEmployeeUsers = true,
       includeSharedPresets = true,
       includeEmailSettings = true
     } = options || {};
@@ -4786,7 +4797,8 @@ function PortalApp({ token, onLogout }) {
     const needsApplicants = pathname === "/dashboard" || pathname === "/applicants";
     const needsIntake = pathname === "/intake-settings" || pathname === "/jobs" || pathname === "/applicants";
     const needsJobs = pathname !== "/mail-settings" && pathname !== "/settings" && pathname !== "/login-settings";
-    const needsUsers = needsJobs;
+    const needsUsers = needsJobs || pathname === "/login-settings";
+    const needsEmployeeUsers = includeEmployeeUsers && pathname === "/login-settings";
     const needsCandidates =
       pathname === "/dashboard" ||
       pathname === "/captured-notes" ||
@@ -4828,7 +4840,7 @@ function PortalApp({ token, onLogout }) {
     if (clientPortalFilters.dateTo) clientPortalParams.set("dateTo", clientPortalFilters.dateTo);
     if (clientPortalFilters.clientLabel) clientPortalParams.set("clientLabel", clientPortalFilters.clientLabel);
 
-    const [userResult, dashboardResult, clientPortalResult, applicantsResult, intakeResult, jobsResult, usersResult, clientUsersResult, candidatesResult, databaseCandidatesResult, assessmentsResult, assessmentEventsResult, sharedPresetResult, smtpSettingsResult] = await Promise.all([
+    const [userResult, dashboardResult, clientPortalResult, applicantsResult, intakeResult, jobsResult, usersResult, clientUsersResult, employeeUsersResult, candidatesResult, databaseCandidatesResult, assessmentsResult, assessmentEventsResult, sharedPresetResult, smtpSettingsResult] = await Promise.all([
       api("/auth/me", token),
       needsDashboard
         ? api(`/company/dashboard${dashboardParams.toString() ? `?${dashboardParams.toString()}` : ""}`, token)
@@ -4843,6 +4855,9 @@ function PortalApp({ token, onLogout }) {
       needsUsers ? api("/company/users", token).catch(() => ({ users: [] })) : Promise.resolve(null),
       includeClientUsers
         ? api("/company/client-users", token).catch(() => ({ clientUsers: [] }))
+        : Promise.resolve(null),
+      needsEmployeeUsers
+        ? api("/company/employees", token).catch(() => ({ result: { employees: [] } }))
         : Promise.resolve(null),
       needsCandidates ? api("/candidates?limit=5000", token).catch(() => []) : Promise.resolve(null),
       needsDatabaseCandidates ? api("/company/database-candidates?limit=5000", token).catch(() => []) : Promise.resolve(null),
@@ -4875,6 +4890,9 @@ function PortalApp({ token, onLogout }) {
     }));
     if (includeClientUsers && clientUsersResult) {
       setClientUsers(clientUsersResult.clientUsers || []);
+    }
+    if (needsEmployeeUsers && employeeUsersResult) {
+      setEmployeeUsers(employeeUsersResult?.result?.employees || []);
     }
     if (includeSharedPresets && sharedPresetResult) {
       setCopySettings((current) => migrateCopySettings({ ...current, ...sharedPresetResult }));
@@ -4985,15 +5003,17 @@ function PortalApp({ token, onLogout }) {
 
   async function reloadLoginSettingsWorkspace() {
     if (!token) return;
-    const [usersResult, clientUsersResult] = await Promise.all([
+    const [usersResult, clientUsersResult, employeesResult] = await Promise.all([
       api("/company/users", token).catch(() => ({ users: [] })),
-      api("/company/client-users", token).catch(() => ({ clientUsers: [] }))
+      api("/company/client-users", token).catch(() => ({ clientUsers: [] })),
+      api("/company/employees", token).catch(() => ({ result: { employees: [] } }))
     ]);
     setState((current) => ({
       ...current,
       users: usersResult?.users || []
     }));
     setClientUsers(clientUsersResult?.clientUsers || []);
+    setEmployeeUsers(employeesResult?.result?.employees || []);
   }
 
   async function reloadCandidatesSlice({ includeDatabase = false } = {}) {
@@ -9355,6 +9375,57 @@ function PortalApp({ token, onLogout }) {
     }
   }
 
+  async function createEmployeePortalUser() {
+    if (!isSettingsAdmin) {
+      setStatus("loginEmployee", "Only admin can add employees.", "error");
+      return;
+    }
+    try {
+      setStatus("loginEmployee", "Creating employee login...");
+      const payload = {
+        employeeCode: String(employeeUserDraft.employeeCode || "").trim(),
+        username: String(employeeUserDraft.username || "").trim(),
+        fullName: String(employeeUserDraft.fullName || "").trim(),
+        password: String(employeeUserDraft.password || ""),
+        designation: String(employeeUserDraft.designation || "").trim(),
+        clientName: String(employeeUserDraft.clientName || "").trim()
+      };
+      await api("/company/employees", token, "POST", payload);
+      await reloadLoginSettingsWorkspace();
+      setEmployeeUserDraft({
+        employeeCode: "",
+        username: "",
+        fullName: "",
+        password: "",
+        designation: "",
+        clientName: ""
+      });
+      setStatus("loginEmployee", "Employee login created.", "ok");
+    } catch (error) {
+      setStatus("loginEmployee", String(error?.message || error), "error");
+    }
+  }
+
+  async function resetEmployeePortalPassword(employeeUserId) {
+    if (!isSettingsAdmin) {
+      setStatus("loginEmployee", "Only admin can reset employee passwords.", "error");
+      return;
+    }
+    const nextPassword = String(employeePasswordDrafts[employeeUserId] || "").trim();
+    if (!nextPassword) {
+      setStatus("loginEmployee", "Enter a new employee password first.", "error");
+      return;
+    }
+    try {
+      setStatus("loginEmployee", "Resetting employee password...");
+      await api("/company/employees/password", token, "POST", { employeeUserId, newPassword: nextPassword });
+      setEmployeePasswordDrafts((current) => ({ ...current, [employeeUserId]: "" }));
+      setStatus("loginEmployee", "Employee password reset.", "ok");
+    } catch (error) {
+      setStatus("loginEmployee", String(error?.message || error), "error");
+    }
+  }
+
   async function resetClientPortalPassword(clientUserId) {
     if (!isSettingsAdmin) {
       setStatus("loginClient", "Only admin can reset client passwords.", "error");
@@ -12043,6 +12114,48 @@ function PortalApp({ token, onLogout }) {
                             <div className="form-grid" style={{ minWidth: "240px" }}>
                               <label><span>Reset password</span><input type="password" value={clientPasswordDrafts[item.id] || ""} onChange={(e) => setClientPasswordDrafts((current) => ({ ...current, [item.id]: e.target.value }))} placeholder="New password" /></label>
                               <div className="button-row"><button className="ghost-btn" onClick={() => void resetClientPortalPassword(item.id)}>Reset</button></div>
+                            </div>
+                          ) : null}
+                        </div>
+                      </article>
+                    ))}
+                  </div>
+                </details>
+
+                <details className="panel login-settings-collapse" open>
+                  <summary className="dashboard-group__summary">
+                    <div>
+                      <div className="section-kicker">Employee Access</div>
+                      <h2>Add Employee</h2>
+                    </div>
+                  </summary>
+                  <p className="muted">Create employee portal logins with the minimum required fields. Designation and client are optional helpers.</p>
+                  <div className="form-grid two-col">
+                    <label><span>Employee code</span><input disabled={!isSettingsAdmin} value={employeeUserDraft.employeeCode} onChange={(e) => setEmployeeUserDraft((current) => ({ ...current, employeeCode: e.target.value }))} placeholder="KM001" /></label>
+                    <label><span>Username</span><input disabled={!isSettingsAdmin} value={employeeUserDraft.username} onChange={(e) => setEmployeeUserDraft((current) => ({ ...current, username: e.target.value }))} placeholder="km001" /></label>
+                    <label><span>Full name</span><input disabled={!isSettingsAdmin} value={employeeUserDraft.fullName} onChange={(e) => setEmployeeUserDraft((current) => ({ ...current, fullName: e.target.value }))} placeholder="Rasel Ahmed" /></label>
+                    <label><span>Temporary password</span><input disabled={!isSettingsAdmin} type="password" value={employeeUserDraft.password} onChange={(e) => setEmployeeUserDraft((current) => ({ ...current, password: e.target.value }))} placeholder="Set employee password" /></label>
+                    <label><span>Designation (optional)</span><input disabled={!isSettingsAdmin} value={employeeUserDraft.designation} onChange={(e) => setEmployeeUserDraft((current) => ({ ...current, designation: e.target.value }))} placeholder="Software Engineer" /></label>
+                    <label><span>Client name (optional)</span><input disabled={!isSettingsAdmin} value={employeeUserDraft.clientName} onChange={(e) => setEmployeeUserDraft((current) => ({ ...current, clientName: e.target.value }))} placeholder="Easyrewardz" /></label>
+                  </div>
+                  {isSettingsAdmin ? <div className="button-row"><button onClick={() => void createEmployeePortalUser()}>Create employee login</button></div> : null}
+                  {statuses.loginEmployee ? <div className={`status ${statuses.loginEmployeeKind || ""}`}>{statuses.loginEmployee}</div> : null}
+                  <div className="stack-list compact">
+                    {!employeeUsers.length ? <div className="empty-state">No employee portal accounts created yet.</div> : employeeUsers.map((item) => (
+                      <article className="item-card compact-card" key={item.id}>
+                        <div className="item-card__top">
+                          <div>
+                            <h3>{item.fullName || item.username || item.employeeCode}</h3>
+                            <p className="muted">{`${item.employeeCode || "No code"} | ${item.username || "No username"}`}</p>
+                            <div className="candidate-snippet">{[
+                              item.designation ? `Designation: ${item.designation}` : "",
+                              item.clientName ? `Client: ${item.clientName}` : ""
+                            ].filter(Boolean).join("\n") || "No optional employee details added yet."}</div>
+                          </div>
+                          {isSettingsAdmin && item.portalUserId ? (
+                            <div className="form-grid" style={{ minWidth: "240px" }}>
+                              <label><span>Reset password</span><input type="password" value={employeePasswordDrafts[item.portalUserId] || ""} onChange={(e) => setEmployeePasswordDrafts((current) => ({ ...current, [item.portalUserId]: e.target.value }))} placeholder="New password" /></label>
+                              <div className="button-row"><button className="ghost-btn" onClick={() => void resetEmployeePortalPassword(item.portalUserId)}>Reset</button></div>
                             </div>
                           ) : null}
                         </div>
