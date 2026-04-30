@@ -30,6 +30,7 @@ const {
 const {
   bootstrapAdmin,
   createClientUser,
+  createEmployeeUser,
   createCompanyWithAdmin,
   createTrialCompanyWithAdmin,
   createUser,
@@ -40,28 +41,37 @@ const {
   saveUserSmtpSettings,
   getCompanyApplicantIntakeSecret,
   getCompanyClientUsers,
+  getEmployeeProfile,
   getCompanyLicense,
   getClientSessionUser,
+  getEmployeeSessionUser,
   getSessionUser,
   getPlatformSessionUser,
   getCompanySharedExportPresets,
   getPublicCompanyJob,
+  listCompanyEmployees,
   listCompaniesAndUsersSummary,
   listAssessments,
+  listEmployeeAttendance,
   getAssessmentById,
   searchAssessments,
   listCompanyJobs,
   listCompanyUsers,
   loginClient,
+  loginEmployee,
   loginPlatformCreator,
   login,
   incrementCompanyCaptureUsage,
+  markEmployeeAttendance,
   requirePlatformSessionUser,
   requireClientSessionUser,
+  requireEmployeeSessionUser,
   requireSessionUser,
   resetClientUserPassword,
+  resetEmployeeUserPassword,
   resetUserPassword,
   saveAssessment,
+  saveEmployeeProfile,
   patchAssessmentCandidateLink,
   saveCompanyJob,
   saveCompanySharedExportPresets,
@@ -6212,6 +6222,18 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (req.method === "GET" && (
+    requestUrl.pathname === "/employee-portal" ||
+    requestUrl.pathname === "/employee-portal/" ||
+    requestUrl.pathname === "/employee-login" ||
+    requestUrl.pathname === "/employee-login/" ||
+    requestUrl.pathname === "/employee" ||
+    requestUrl.pathname === "/employee/"
+  )) {
+    serveStaticFile(res, path.join(ROOT_PUBLIC_DIR, "portal-app", "index.html"));
+    return;
+  }
+
   if (req.method === "GET" && (requestUrl.pathname === "/apply" || requestUrl.pathname === "/apply/")) {
     serveStaticFile(res, path.join(ROOT_PUBLIC_DIR, "apply.html"));
     return;
@@ -6605,6 +6627,20 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (req.method === "POST" && req.url === "/employee-auth/login") {
+    try {
+      const body = await readJsonBody(req);
+      const result = await loginEmployee({
+        username: String(body.username || body.employeeCode || "").trim(),
+        password: String(body.password || "")
+      });
+      sendJson(res, 200, { ok: true, result });
+    } catch (error) {
+      sendJson(res, 400, { ok: false, error: String(error.message || error) });
+    }
+    return;
+  }
+
   if (req.method === "GET" && req.url === "/auth/me") {
     try {
       const user = await requireSessionUser(getBearerToken(req));
@@ -6975,6 +7011,185 @@ const server = http.createServer(async (req, res) => {
       sendJson(res, 200, { ok: true, result: saved });
     } catch (error) {
       sendJson(res, 400, { ok: false, error: String(error.message || error) });
+    }
+    return;
+  }
+
+  if (req.method === "GET" && req.url === "/company/employees") {
+    try {
+      const actor = await requireSessionUser(getBearerToken(req));
+      const employees = await listCompanyEmployees(actor.companyId);
+      sendJson(res, 200, { ok: true, result: { companyId: actor.companyId, employees } });
+    } catch (error) {
+      sendJson(res, 401, { ok: false, error: String(error.message || error) });
+    }
+    return;
+  }
+
+  if (req.method === "POST" && req.url === "/company/employees") {
+    try {
+      const actor = await requireSessionUser(getBearerToken(req));
+      const body = await readJsonBody(req);
+      const result = await createEmployeeUser({
+        actorUserId: actor.id,
+        companyId: actor.companyId,
+        employeeCode: String(body.employeeCode || body.employee_code || "").trim(),
+        username: String(body.username || "").trim(),
+        password: String(body.password || ""),
+        fullName: String(body.fullName || body.full_name || "").trim(),
+        profile: {
+          personalEmail: String(body.personalEmail || body.personal_email || "").trim(),
+          phone: String(body.phone || "").trim(),
+          designation: String(body.designation || "").trim(),
+          employmentType: String(body.employmentType || body.employment_type || "c2h").trim(),
+          joiningDate: String(body.joiningDate || body.joining_date || "").trim(),
+          reportingManagerName: String(body.reportingManagerName || body.reporting_manager_name || "").trim(),
+          clientName: String(body.clientName || body.client_name || "").trim(),
+          workMode: String(body.workMode || body.work_mode || "").trim(),
+          status: String(body.status || "active").trim(),
+          payload: body.payload && typeof body.payload === "object" ? body.payload : {}
+        },
+        workSite: body.workSite && typeof body.workSite === "object" ? body.workSite : {}
+      });
+      sendJson(res, 200, { ok: true, result });
+    } catch (error) {
+      sendJson(res, 400, { ok: false, error: String(error.message || error) });
+    }
+    return;
+  }
+
+  if (req.method === "POST" && req.url === "/company/employees/password") {
+    try {
+      const actor = await requireSessionUser(getBearerToken(req));
+      const body = await readJsonBody(req);
+      const result = await resetEmployeeUserPassword({
+        actorUserId: actor.id,
+        companyId: actor.companyId,
+        employeeUserId: String(body.employeeUserId || body.employee_user_id || "").trim(),
+        newPassword: String(body.newPassword || "")
+      });
+      sendJson(res, 200, { ok: true, result });
+    } catch (error) {
+      sendJson(res, 400, { ok: false, error: String(error.message || error) });
+    }
+    return;
+  }
+
+  if (req.method === "GET" && req.url === "/employee/me") {
+    try {
+      const employeeUser = await requireEmployeeSessionUser(getBearerToken(req));
+      const profile = await getEmployeeProfile(employeeUser.companyId, employeeUser.employeeId);
+      sendJson(res, 200, { ok: true, result: { user: profile || employeeUser } });
+    } catch (error) {
+      sendJson(res, 401, { ok: false, error: String(error.message || error) });
+    }
+    return;
+  }
+
+  if (req.method === "GET" && req.url.startsWith("/employee/dashboard")) {
+    try {
+      const employeeUser = await requireEmployeeSessionUser(getBearerToken(req));
+      const today = new Date().toISOString().slice(0, 10);
+      const attendance = await listEmployeeAttendance({
+        companyId: employeeUser.companyId,
+        employeeId: employeeUser.employeeId,
+        dateFrom: today,
+        dateTo: today
+      });
+      sendJson(res, 200, {
+        ok: true,
+        result: {
+          user: employeeUser,
+          todayAttendance: attendance[0] || null
+        }
+      });
+    } catch (error) {
+      sendJson(res, 401, { ok: false, error: String(error.message || error) });
+    }
+    return;
+  }
+
+  if (req.method === "GET" && requestUrl.pathname === "/employee/attendance") {
+    try {
+      const employeeUser = await requireEmployeeSessionUser(getBearerToken(req));
+      const dateFrom = String(requestUrl.searchParams.get("dateFrom") || "").trim();
+      const dateTo = String(requestUrl.searchParams.get("dateTo") || "").trim();
+      const items = await listEmployeeAttendance({
+        companyId: employeeUser.companyId,
+        employeeId: employeeUser.employeeId,
+        dateFrom,
+        dateTo
+      });
+      sendJson(res, 200, { ok: true, result: { items } });
+    } catch (error) {
+      sendJson(res, 401, { ok: false, error: String(error.message || error) });
+    }
+    return;
+  }
+
+  if (req.method === "POST" && requestUrl.pathname === "/employee/attendance/check-in") {
+    try {
+      const employeeUser = await requireEmployeeSessionUser(getBearerToken(req));
+      const body = await readJsonBody(req);
+      const result = await markEmployeeAttendance({
+        employeeUser,
+        action: "check_in",
+        latitude: body.latitude,
+        longitude: body.longitude,
+        accuracyMeters: body.accuracyMeters,
+        addressLabel: body.addressLabel,
+        note: body.note,
+        devicePayload: body.device && typeof body.device === "object" ? body.device : {}
+      });
+      sendJson(res, 200, { ok: true, result });
+    } catch (error) {
+      sendJson(res, 400, { ok: false, error: String(error.message || error) });
+    }
+    return;
+  }
+
+  if (req.method === "POST" && requestUrl.pathname === "/employee/attendance/check-out") {
+    try {
+      const employeeUser = await requireEmployeeSessionUser(getBearerToken(req));
+      const body = await readJsonBody(req);
+      const result = await markEmployeeAttendance({
+        employeeUser,
+        action: "check_out",
+        latitude: body.latitude,
+        longitude: body.longitude,
+        accuracyMeters: body.accuracyMeters,
+        addressLabel: body.addressLabel,
+        note: body.note,
+        devicePayload: body.device && typeof body.device === "object" ? body.device : {}
+      });
+      sendJson(res, 200, { ok: true, result });
+    } catch (error) {
+      sendJson(res, 400, { ok: false, error: String(error.message || error) });
+    }
+    return;
+  }
+
+  if (req.method === "GET" && requestUrl.pathname === "/company/employee-attendance") {
+    try {
+      const actor = await requireSessionUser(getBearerToken(req));
+      const employeeId = String(requestUrl.searchParams.get("employeeId") || "").trim();
+      const dateFrom = String(requestUrl.searchParams.get("dateFrom") || "").trim();
+      const dateTo = String(requestUrl.searchParams.get("dateTo") || "").trim();
+      if (!employeeId) throw new Error("employeeId is required.");
+      const items = await listEmployeeAttendance({ companyId: actor.companyId, employeeId, dateFrom, dateTo });
+      sendJson(res, 200, { ok: true, result: { items } });
+    } catch (error) {
+      sendJson(res, 400, { ok: false, error: String(error.message || error) });
+    }
+    return;
+  }
+
+  if (req.method === "GET" && req.url === "/employee-auth/me") {
+    try {
+      const user = await requireEmployeeSessionUser(getBearerToken(req));
+      sendJson(res, 200, { ok: true, result: { user } });
+    } catch (error) {
+      sendJson(res, 401, { ok: false, error: String(error.message || error) });
     }
     return;
   }

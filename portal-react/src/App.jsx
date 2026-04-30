@@ -12,6 +12,7 @@ import {
 
 const TOKEN_KEY = "recruitdesk_portal_token";
 const CLIENT_TOKEN_KEY = "recruitdesk_client_portal_token";
+const EMPLOYEE_TOKEN_KEY = "recruitdesk_employee_portal_token";
 const AUTH_MODE_KEY = "recruitdesk_auth_mode";
 const COPY_SETTINGS_STORAGE_KEY = "recruitdesk_portal_copy_settings_v1";
 const DEFAULT_JD_EMAIL_CC = "ankit.garg@kompatibleminds.com";
@@ -2884,15 +2885,22 @@ function isClientPortalUrl() {
   return ["/client-portal", "/client-login", "/client"].some((path) => window.location.pathname.startsWith(path)) || mode === "client";
 }
 
-function LoginScreen({ onRecruiterLogin, onClientLogin, busy, error, clientOnly = false }) {
-  const [mode, setMode] = useState(() => clientOnly ? "client" : "recruiter");
+function isEmployeePortalUrl() {
+  if (typeof window === "undefined") return false;
+  const search = new URLSearchParams(window.location.search || "");
+  const mode = String(search.get("mode") || search.get("portal") || "").toLowerCase();
+  return ["/employee-portal", "/employee-login", "/employee"].some((path) => window.location.pathname.startsWith(path)) || mode === "employee";
+}
+
+function LoginScreen({ onRecruiterLogin, onClientLogin, onEmployeeLogin, busy, error, forcedMode = "" }) {
+  const [mode, setMode] = useState(() => forcedMode || "recruiter");
   const [email, setEmail] = useState("");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
 
   useEffect(() => {
-    if (clientOnly) setMode("client");
-  }, [clientOnly]);
+    if (forcedMode) setMode(forcedMode);
+  }, [forcedMode]);
 
   useEffect(() => {
     try {
@@ -2906,16 +2914,31 @@ function LoginScreen({ onRecruiterLogin, onClientLogin, busy, error, clientOnly 
     <div className="auth-screen">
       <div className="auth-card">
         <BrandLogo size="lg" />
-        <div className="section-kicker auth-kicker">{mode === "client" ? "Client Login" : "Company Login"}</div>
-        <h1>{mode === "client" ? CLIENT_PORTAL_LABEL : RECRUITER_PORTAL_LABEL}</h1>
-        <p className="muted">{mode === "client" ? "Use the client username and password shared by your recruiter team." : "Use your existing company admin or recruiter credentials."}</p>
-        {!clientOnly ? (
+        <div className="section-kicker auth-kicker">
+          {mode === "client" ? "Client Login" : mode === "employee" ? "Employee Login" : "Company Login"}
+        </div>
+        <h1>{mode === "client" ? CLIENT_PORTAL_LABEL : mode === "employee" ? `${PRODUCT_NAME} Employee Portal` : RECRUITER_PORTAL_LABEL}</h1>
+        <p className="muted">
+          {mode === "client"
+            ? "Use the client username and password shared by your recruiter team."
+            : mode === "employee"
+              ? "Use your employee username or employee code and password."
+              : "Use your existing company admin or recruiter credentials."}
+        </p>
+        {!forcedMode ? (
           <div className="button-row">
-            <button type="button">Recruiter login</button>
+            <button type="button" className={mode === "recruiter" ? "" : "ghost-btn"} onClick={() => setMode("recruiter")}>Recruiter login</button>
+            <button type="button" className={mode === "client" ? "" : "ghost-btn"} onClick={() => setMode("client")}>Client login</button>
+            <button type="button" className={mode === "employee" ? "" : "ghost-btn"} onClick={() => setMode("employee")}>Employee login</button>
           </div>
         ) : null}
-        <form className="form-grid" onSubmit={(e) => { e.preventDefault(); mode === "client" ? onClientLogin({ username, password }) : onRecruiterLogin({ email, password }); }}>
-          {mode === "client"
+        <form className="form-grid" onSubmit={(e) => {
+          e.preventDefault();
+          if (mode === "client") onClientLogin({ username, password });
+          else if (mode === "employee") onEmployeeLogin({ username, password });
+          else onRecruiterLogin({ email, password });
+        }}>
+          {mode === "client" || mode === "employee"
             ? <label><span>Username</span><input value={username} onChange={(e) => setUsername(e.target.value)} required /></label>
             : <label><span>Email</span><input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required /></label>}
           <label><span>Password</span><input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required /></label>
@@ -12431,26 +12454,186 @@ function ClientPortalApp({ token, onLogout }) {
   );
 }
 
+function getBrowserDevicePayload() {
+  if (typeof navigator === "undefined") return {};
+  return {
+    userAgent: String(navigator.userAgent || "").trim(),
+    platform: String(navigator.platform || "").trim(),
+    language: String(navigator.language || "").trim()
+  };
+}
+
+function getCurrentPositionAsync() {
+  return new Promise((resolve, reject) => {
+    if (typeof navigator === "undefined" || !navigator.geolocation) {
+      reject(new Error("Geolocation is not available in this browser."));
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(resolve, reject, {
+      enableHighAccuracy: true,
+      timeout: 20000,
+      maximumAge: 0
+    });
+  });
+}
+
+function EmployeePortalApp({ token, onLogout }) {
+  const [employeeUser, setEmployeeUser] = useState(null);
+  const [todayAttendance, setTodayAttendance] = useState(null);
+  const [attendanceItems, setAttendanceItems] = useState([]);
+  const [status, setStatus] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  async function loadEmployeePortal() {
+    const today = new Date().toISOString().slice(0, 10);
+    const monthStart = `${today.slice(0, 8)}01`;
+    const [meResult, dashboardResult, attendanceResult] = await Promise.all([
+      api("/employee-auth/me", token),
+      api("/employee/dashboard", token),
+      api(`/employee/attendance?dateFrom=${encodeURIComponent(monthStart)}&dateTo=${encodeURIComponent(today)}`, token)
+    ]);
+    setEmployeeUser(meResult.user || meResult);
+    setTodayAttendance(dashboardResult.todayAttendance || null);
+    setAttendanceItems(Array.isArray(attendanceResult.items) ? attendanceResult.items : []);
+  }
+
+  useEffect(() => {
+    void loadEmployeePortal().catch((error) => {
+      const message = String(error?.message || error);
+      if (/invalid|missing session|unauthorized|401/i.test(message)) {
+        onLogout();
+        return;
+      }
+      setStatus(message);
+    });
+  }, [token]);
+
+  async function markAttendance(action) {
+    try {
+      setBusy(true);
+      setStatus(action === "check_in" ? "Capturing location for check-in..." : "Capturing location for check-out...");
+      const position = await getCurrentPositionAsync();
+      await api(action === "check_in" ? "/employee/attendance/check-in" : "/employee/attendance/check-out", token, "POST", {
+        latitude: position.coords.latitude,
+        longitude: position.coords.longitude,
+        accuracyMeters: position.coords.accuracy,
+        addressLabel: "",
+        note: "",
+        device: getBrowserDevicePayload()
+      });
+      await loadEmployeePortal();
+      setStatus(action === "check_in" ? "Checked in successfully." : "Checked out successfully.");
+    } catch (error) {
+      setStatus(String(error?.message || error));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const isCheckedIn = Boolean(todayAttendance?.checkInAt && !todayAttendance?.checkOutAt);
+
+  return (
+    <div className="app-shell app-shell--client">
+      <main className="content client-portal-content">
+        <header className="workspace-header client-portal-header">
+          <div>
+            <BrandLogo size="sm" />
+            <div className="section-kicker">{employeeUser?.clientName || employeeUser?.companyName || "Employee Workspace"}</div>
+            <h1>{PRODUCT_NAME} Employee Portal</h1>
+          </div>
+          <div className="client-user-pill">
+            {employeeUser?.fullName ? <span>{employeeUser.fullName}</span> : null}
+            <button className="ghost-btn" onClick={onLogout}>Logout</button>
+          </div>
+        </header>
+
+        <div className="page-grid">
+          <Section kicker="Employee" title="Today">
+            <p className="muted">Mark attendance with live location from your mobile or browser.</p>
+            {status ? <div className="status">{status}</div> : null}
+            <div className="metric-grid dashboard-metric-grid client-portal-metric-grid">
+              <div className="metric-card">
+                <div className="metric-label">Employee Code</div>
+                <div className="metric-value">{employeeUser?.employeeCode || "-"}</div>
+              </div>
+              <div className="metric-card">
+                <div className="metric-label">Designation</div>
+                <div className="metric-value">{employeeUser?.designation || "-"}</div>
+              </div>
+              <div className="metric-card">
+                <div className="metric-label">Check In</div>
+                <div className="metric-value">{todayAttendance?.checkInAt ? new Date(todayAttendance.checkInAt).toLocaleTimeString() : "-"}</div>
+              </div>
+              <div className="metric-card">
+                <div className="metric-label">Check Out</div>
+                <div className="metric-value">{todayAttendance?.checkOutAt ? new Date(todayAttendance.checkOutAt).toLocaleTimeString() : "-"}</div>
+              </div>
+            </div>
+            <div className="button-row">
+              {!isCheckedIn ? <button disabled={busy} onClick={() => void markAttendance("check_in")}>{busy ? "Please wait..." : "Check In"}</button> : null}
+              {isCheckedIn ? <button disabled={busy} onClick={() => void markAttendance("check_out")}>{busy ? "Please wait..." : "Check Out"}</button> : null}
+            </div>
+          </Section>
+
+          <Section kicker="Attendance Log" title="This Month">
+            <div className="table-wrap">
+              <table className="dashboard-table">
+                <thead>
+                  <tr>
+                    <th>Date</th>
+                    <th>Check In</th>
+                    <th>Check Out</th>
+                    <th>Status</th>
+                    <th>Accuracy</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {attendanceItems.map((item) => (
+                    <tr key={item.id}>
+                      <td>{item.attendanceDate || "-"}</td>
+                      <td>{item.checkInAt ? new Date(item.checkInAt).toLocaleString() : "-"}</td>
+                      <td>{item.checkOutAt ? new Date(item.checkOutAt).toLocaleString() : "-"}</td>
+                      <td>{item.locationStatus || "-"}</td>
+                      <td>{item.checkInAccuracyMeters ? `${item.checkInAccuracyMeters} m` : "-"}</td>
+                    </tr>
+                  ))}
+                  {!attendanceItems.length ? <tr><td colSpan="5"><div className="empty-state compact-empty">No attendance records yet.</div></td></tr> : null}
+                </tbody>
+              </table>
+            </div>
+          </Section>
+          <footer className="portal-footer portal-footer--content">{COMPANY_ATTRIBUTION} | employee-mvp</footer>
+        </div>
+      </main>
+    </div>
+  );
+}
+
 export default function App() {
   const clientPortalUrl = isClientPortalUrl();
-  const [authMode, setAuthMode] = useState(() => clientPortalUrl ? "client" : "recruiter");
-  const [token, setToken] = useState(() => clientPortalUrl
+  const employeePortalUrl = isEmployeePortalUrl();
+  const forcedMode = employeePortalUrl ? "employee" : clientPortalUrl ? "client" : "recruiter";
+  const [authMode, setAuthMode] = useState(() => forcedMode);
+  const [token, setToken] = useState(() => forcedMode === "client"
     ? (window.localStorage.getItem(CLIENT_TOKEN_KEY) || "")
-    : (window.localStorage.getItem(TOKEN_KEY) || ""));
+    : forcedMode === "employee"
+      ? (window.localStorage.getItem(EMPLOYEE_TOKEN_KEY) || "")
+      : (window.localStorage.getItem(TOKEN_KEY) || ""));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
   useEffect(() => {
-    const forcedMode = clientPortalUrl ? "client" : "recruiter";
     setAuthMode(forcedMode);
-    setToken(clientPortalUrl
+    setToken(forcedMode === "client"
       ? (window.localStorage.getItem(CLIENT_TOKEN_KEY) || "")
-      : (window.localStorage.getItem(TOKEN_KEY) || ""));
-  }, [clientPortalUrl]);
+      : forcedMode === "employee"
+        ? (window.localStorage.getItem(EMPLOYEE_TOKEN_KEY) || "")
+        : (window.localStorage.getItem(TOKEN_KEY) || ""));
+  }, [forcedMode]);
 
   useEffect(() => {
-    document.title = clientPortalUrl ? CLIENT_BROWSER_TITLE : RECRUITER_BROWSER_TITLE;
-  }, [clientPortalUrl]);
+    document.title = forcedMode === "client" ? CLIENT_BROWSER_TITLE : forcedMode === "employee" ? `${PRODUCT_NAME} Employee Portal` : RECRUITER_BROWSER_TITLE;
+  }, [forcedMode]);
 
   async function loginRecruiter({ email, password }) {
     try {
@@ -12486,16 +12669,37 @@ export default function App() {
     }
   }
 
+  async function loginEmployeeUser({ username, password }) {
+    try {
+      setBusy(true);
+      setError("");
+      const result = await api("/employee-auth/login", "", "POST", { username, password });
+      localStorage.setItem(EMPLOYEE_TOKEN_KEY, result.token || "");
+      localStorage.removeItem(TOKEN_KEY);
+      localStorage.removeItem(CLIENT_TOKEN_KEY);
+      localStorage.setItem(AUTH_MODE_KEY, "employee");
+      setAuthMode("employee");
+      setToken(result.token || "");
+    } catch (loginError) {
+      setError(String(loginError?.message || loginError));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   function logout() {
     localStorage.removeItem(TOKEN_KEY);
     localStorage.removeItem(CLIENT_TOKEN_KEY);
+    localStorage.removeItem(EMPLOYEE_TOKEN_KEY);
     localStorage.removeItem(AUTH_MODE_KEY);
-    setAuthMode(clientPortalUrl ? "client" : "recruiter");
+    setAuthMode(forcedMode);
     setToken("");
   }
 
-  if (!token) return <LoginScreen onRecruiterLogin={loginRecruiter} onClientLogin={loginClientUser} busy={busy} error={error} clientOnly={clientPortalUrl} />;
+  if (!token) return <LoginScreen onRecruiterLogin={loginRecruiter} onClientLogin={loginClientUser} onEmployeeLogin={loginEmployeeUser} busy={busy} error={error} forcedMode={forcedMode === "recruiter" ? "" : forcedMode} />;
   return authMode === "client"
     ? <PortalErrorBoundary><ClientPortalApp token={token} onLogout={logout} /></PortalErrorBoundary>
+    : authMode === "employee"
+      ? <PortalErrorBoundary><EmployeePortalApp token={token} onLogout={logout} /></PortalErrorBoundary>
     : <PortalErrorBoundary><PortalApp token={token} onLogout={logout} /></PortalErrorBoundary>;
 }
