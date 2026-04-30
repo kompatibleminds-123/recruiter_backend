@@ -34,13 +34,12 @@
       }
 
       .shell {
-        width: min(100%, 760px);
+        width: min(100%, 980px);
         background: rgba(255, 255, 255, 0.9);
         border: 1px solid var(--line);
         border-radius: 32px;
         box-shadow: var(--shadow);
         padding: 40px 28px;
-        text-align: center;
         backdrop-filter: blur(14px);
       }
 
@@ -68,12 +67,42 @@
         line-height: 1.6;
       }
 
-      .actions {
+      .hero {
+        text-align: center;
+      }
+
+      .portal-grid {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 18px;
+        margin-top: 30px;
+      }
+
+      .portal-card {
+        border: 1px solid var(--line);
+        border-radius: 26px;
+        background: rgba(251, 248, 242, 0.8);
+        padding: 24px 22px;
         display: flex;
-        justify-content: center;
-        flex-wrap: wrap;
-        gap: 12px;
-        margin-top: 28px;
+        flex-direction: column;
+        gap: 14px;
+        text-align: left;
+      }
+
+      .portal-card h2 {
+        margin: 0;
+        font-size: 1.35rem;
+        letter-spacing: -0.03em;
+      }
+
+      .portal-card p {
+        margin: 0;
+        max-width: none;
+        font-size: 0.96rem;
+      }
+
+      .portal-card .btn {
+        width: 100%;
       }
 
       .btn {
@@ -106,23 +135,59 @@
       }
 
       .footer-note {
-        margin-top: 20px;
+        margin-top: 28px;
         font-size: 0.92rem;
         color: var(--muted);
+        text-align: center;
+      }
+
+      .helper-copy {
+        margin-top: 18px;
+        max-width: 700px;
+      }
+
+      @media (max-width: 820px) {
+        .portal-grid {
+          grid-template-columns: 1fr;
+        }
+
+        .shell {
+          padding: 32px 20px;
+        }
       }
     </style>
   </head>
   <body>
     <main class="shell">
-      <p class="eyebrow">Kompatible Minds</p>
-      <h1>Welcome to RecruitDesk AI</h1>
-      <p>
-        RecruitDesk AI helps recruiter teams capture candidate notes, structure quick assessments,
-        and move faster across mobile and desktop workflows.
-      </p>
-      <div class="actions">
-        <a class="btn btn-primary" href="/quick-capture/">Open Quick Capture</a>
-        <a class="btn btn-secondary" href="/quick-capture/list.html">Open Draft Notes</a>
+      <div class="hero">
+        <p class="eyebrow">Kompatible Minds</p>
+        <h1>Choose your RecruitDesk AI portal</h1>
+        <p>
+          Use the right workspace for your role. Recruiters manage sourcing and pipeline, clients review shared profiles, and employees access their dedicated portal.
+        </p>
+        <p class="helper-copy">
+          If you were previously landing on the recruiter app directly, use the options below to enter the correct portal.
+        </p>
+      </div>
+      <div class="portal-grid">
+        <section class="portal-card">
+          <p class="eyebrow">Recruiter Access</p>
+          <h2>Login as Recruiter</h2>
+          <p>Open the recruiter workspace for sourcing, captured notes, assessments, database search, and admin operations.</p>
+          <a class="btn btn-primary" href="/portal-app">Open recruiter portal</a>
+        </section>
+        <section class="portal-card">
+          <p class="eyebrow">Client Access</p>
+          <h2>Login as Client</h2>
+          <p>Review shared candidate profiles, view pipeline progress, and submit feedback through the client-facing portal.</p>
+          <a class="btn btn-secondary" href="/client-portal">Open client portal</a>
+        </section>
+        <section class="portal-card">
+          <p class="eyebrow">Employee Access</p>
+          <h2>Login as Employee</h2>
+          <p>Use the employee portal with employee code or username for the dedicated internal employee workflow.</p>
+          <a class="btn btn-secondary" href="/employee-portal">Open employee portal</a>
+        </section>
       </div>
       <p class="footer-note">Built by Kompatible Minds for recruiter workflow acceleration.</p>
     </main>
