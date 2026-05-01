@@ -6627,7 +6627,7 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  if (req.method === "POST" && req.url === "/employee-auth/login") {
+  if (req.method === "POST" && (req.url === "/employee-auth/login" || req.url === "/employer-auth/login")) {
     try {
       const body = await readJsonBody(req);
       const result = await loginEmployee({
@@ -7026,7 +7026,7 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  if (req.method === "POST" && req.url === "/company/employees") {
+  if (req.method === "POST" && (req.url === "/company/employees" || req.url === "/company/createemployee")) {
     try {
       const actor = await requireSessionUser(getBearerToken(req));
       const body = await readJsonBody(req);

@@ -2892,7 +2892,7 @@ function isEmployeePortalUrl() {
   return ["/employee-portal", "/employee-login", "/employee"].some((path) => window.location.pathname.startsWith(path)) || mode === "employee";
 }
 
-function LoginScreen({ onRecruiterLogin, onClientLogin, onEmployeeLogin, busy, error, forcedMode = "" }) {
+function LoginScreen({ onRecruiterLogin, onClientLogin, onEmployeeLogin, onEmployerLogin, busy, error, forcedMode = "" }) {
   const [mode, setMode] = useState(() => forcedMode || "recruiter");
   const [email, setEmail] = useState("");
   const [username, setUsername] = useState("");
@@ -2935,7 +2935,7 @@ function LoginScreen({ onRecruiterLogin, onClientLogin, onEmployeeLogin, busy, e
         <form className="form-grid" onSubmit={(e) => {
           e.preventDefault();
           if (mode === "client") onClientLogin({ username, password });
-          else if (mode === "employee") onEmployeeLogin({ username, password });
+          else if (mode === "employee") (onEmployeeLogin || onEmployerLogin)?.({ username, password });
           else onRecruiterLogin({ email, password });
         }}>
           {mode === "client" || mode === "employee"
@@ -12801,6 +12801,7 @@ export default function App() {
     }
   }
   const loginEmployee = loginEmployeeUser;
+  const loginEmployer = loginEmployeeUser;
 
   function logout() {
     localStorage.removeItem(TOKEN_KEY);
@@ -12811,7 +12812,7 @@ export default function App() {
     setToken("");
   }
 
-  if (!token) return <LoginScreen onRecruiterLogin={loginRecruiter} onClientLogin={loginClientUser} onEmployeeLogin={loginEmployee} busy={busy} error={error} forcedMode={forcedMode === "recruiter" ? "" : forcedMode} />;
+  if (!token) return <LoginScreen onRecruiterLogin={loginRecruiter} onClientLogin={loginClientUser} onEmployeeLogin={loginEmployee} onEmployerLogin={loginEmployer} busy={busy} error={error} forcedMode={forcedMode === "recruiter" ? "" : forcedMode} />;
   return authMode === "client"
     ? <PortalErrorBoundary><ClientPortalApp token={token} onLogout={logout} /></PortalErrorBoundary>
     : authMode === "employee"
