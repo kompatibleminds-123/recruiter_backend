@@ -12601,10 +12601,13 @@ function EmployeePortalApp({ token, onLogout }) {
   async function loadEmployeePortal() {
     const today = new Date().toISOString().slice(0, 10);
     const monthStart = `${today.slice(0, 8)}01`;
-    const [meResult, dashboardResult, attendanceResult] = await Promise.all([
-      api("/employee-auth/me", token),
-      api("/employee/dashboard", token),
+    // Session validity should be decided only by /employee-auth/me.
+    // Attendance endpoints may fail due to partial setup and should not auto-logout the user.
+    const meResult = await api("/employee-auth/me", token);
+    const [dashboardResult, attendanceResult] = await Promise.all([
+      api("/employee/dashboard", token).catch(() => ({ todayAttendance: null })),
       api(`/employee/attendance?dateFrom=${encodeURIComponent(monthStart)}&dateTo=${encodeURIComponent(today)}`, token)
+        .catch(() => ({ items: [] }))
     ]);
     setEmployeeUser(meResult.user || meResult);
     setTodayAttendance(dashboardResult.todayAttendance || null);
