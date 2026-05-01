@@ -652,6 +652,99 @@ function sanitizeClientUserPayload(raw) {
       .filter((item) => item?.id && item?.username && item?.clientName && item?.passwordHash)
   };
 }
+function sanitizeEmployeeProfile(raw) {
+  if (!raw) return null;
+  return {
+    id: String(raw.id || "").trim(),
+    companyId: String(raw.companyId || raw.company_id || "").trim(),
+    employeeCode: String(raw.employeeCode || raw.employee_code || "").trim(),
+    fullName: String(raw.fullName || raw.full_name || "").trim(),
+    personalEmail: String(raw.personalEmail || raw.personal_email || "").trim(),
+    phone: String(raw.phone || "").trim(),
+    designation: String(raw.designation || "").trim(),
+    employmentType: String(raw.employmentType || raw.employment_type || "c2h").trim(),
+    joiningDate: String(raw.joiningDate || raw.joining_date || "").trim(),
+    reportingManagerName: String(raw.reportingManagerName || raw.reporting_manager_name || "").trim(),
+    clientName: String(raw.clientName || raw.client_name || "").trim(),
+    workMode: String(raw.workMode || raw.work_mode || "").trim(),
+    status: String(raw.status || "active").trim(),
+    taxRegimeCurrent: String(raw.taxRegimeCurrent || raw.tax_regime_current || "").trim(),
+    payload: raw.payload && typeof raw.payload === "object" ? raw.payload : {},
+    createdAt: String(raw.createdAt || raw.created_at || "").trim(),
+    updatedAt: String(raw.updatedAt || raw.updated_at || "").trim(),
+    updatedBy: String(raw.updatedBy || raw.updated_by || "").trim()
+  };
+}
+function sanitizeEmployeePortalUser(raw) {
+  if (!raw) return null;
+  return {
+    id: String(raw.id || "").trim(),
+    companyId: String(raw.companyId || raw.company_id || "").trim(),
+    companyName: String(raw.companyName || raw.company_name || "").trim(),
+    employeeId: String(raw.employeeId || raw.employee_id || "").trim(),
+    employeeCode: String(raw.employeeCode || raw.employee_code || "").trim(),
+    username: normalizeUsername(raw.username || raw.userName || ""),
+    fullName: String(raw.fullName || raw.full_name || "").trim(),
+    passwordHash: String(raw.passwordHash || raw.password_hash || "").trim(),
+    createdAt: String(raw.createdAt || raw.created_at || "").trim(),
+    updatedAt: String(raw.updatedAt || raw.updated_at || "").trim(),
+    updatedBy: String(raw.updatedBy || raw.updated_by || "").trim()
+  };
+}
+function sanitizeEmployeeSessionUser(raw) {
+  const profile = sanitizeEmployeeProfile(raw);
+  if (!profile) return null;
+  return {
+    id: String(raw.employeeUserId || raw.id || "").trim(),
+    employeeUserId: String(raw.employeeUserId || raw.id || "").trim(),
+    employeeId: profile.id,
+    companyId: profile.companyId,
+    companyName: String(raw.companyName || raw.company_name || "").trim(),
+    employeeCode: profile.employeeCode,
+    username: normalizeUsername(raw.username || ""),
+    fullName: profile.fullName,
+    personalEmail: profile.personalEmail,
+    phone: profile.phone,
+    designation: profile.designation,
+    employmentType: profile.employmentType,
+    joiningDate: profile.joiningDate,
+    reportingManagerName: profile.reportingManagerName,
+    clientName: profile.clientName,
+    workMode: profile.workMode,
+    status: profile.status,
+    taxRegimeCurrent: profile.taxRegimeCurrent,
+    payload: profile.payload,
+    createdAt: profile.createdAt,
+    updatedAt: profile.updatedAt
+  };
+}
+function sanitizeEmployeeAttendanceLog(raw) {
+  if (!raw) return null;
+  return {
+    id: String(raw.id || "").trim(),
+    companyId: String(raw.companyId || raw.company_id || "").trim(),
+    employeeId: String(raw.employeeId || raw.employee_id || "").trim(),
+    attendanceDate: String(raw.attendanceDate || raw.attendance_date || "").trim(),
+    checkInAt: String(raw.checkInAt || raw.check_in_at || "").trim(),
+    checkOutAt: String(raw.checkOutAt || raw.check_out_at || "").trim(),
+    checkInLatitude: raw.checkInLatitude ?? raw.check_in_latitude ?? null,
+    checkInLongitude: raw.checkInLongitude ?? raw.check_in_longitude ?? null,
+    checkInAccuracyMeters: raw.checkInAccuracyMeters ?? raw.check_in_accuracy_meters ?? null,
+    checkOutLatitude: raw.checkOutLatitude ?? raw.check_out_latitude ?? null,
+    checkOutLongitude: raw.checkOutLongitude ?? raw.check_out_longitude ?? null,
+    checkOutAccuracyMeters: raw.checkOutAccuracyMeters ?? raw.check_out_accuracy_meters ?? null,
+    checkInAddressLabel: String(raw.checkInAddressLabel || raw.check_in_address_label || "").trim(),
+    checkOutAddressLabel: String(raw.checkOutAddressLabel || raw.check_out_address_label || "").trim(),
+    checkInNote: String(raw.checkInNote || raw.check_in_note || "").trim(),
+    checkOutNote: String(raw.checkOutNote || raw.check_out_note || "").trim(),
+    siteId: String(raw.siteId || raw.site_id || "").trim(),
+    locationStatus: String(raw.locationStatus || raw.location_status || "unknown").trim(),
+    distanceFromSiteMeters: raw.distanceFromSiteMeters ?? raw.distance_from_site_meters ?? null,
+    devicePayload: raw.devicePayload || raw.device_payload || {},
+    createdAt: String(raw.createdAt || raw.created_at || "").trim(),
+    updatedAt: String(raw.updatedAt || raw.updated_at || "").trim()
+  };
+}
 function persistedAssessmentId(rawId) {
   const v = String(rawId || "").trim();
   if (!v || /^(quick-note|assessment)-/i.test(v)) return crypto.randomUUID();
@@ -1518,6 +1611,495 @@ async function requireClientSessionUser(token) {
   if (!user) throw new Error("Invalid or missing client session.");
   return user;
 }
+function getEmployeeSessionSecret() {
+  return (
+    String(process.env.EMPLOYEE_PORTAL_SESSION_SECRET || "").trim() ||
+    String(process.env.PLATFORM_SESSION_SECRET || "").trim() ||
+    "employee-portal-session-secret"
+  );
+}
+function createSignedEmployeeToken(payload) {
+  const encoded = Buffer.from(JSON.stringify(payload), "utf8").toString("base64url");
+  const signature = crypto.createHmac("sha256", getEmployeeSessionSecret()).update(encoded).digest("base64url");
+  return `${encoded}.${signature}`;
+}
+function readSignedEmployeeToken(token) {
+  const raw = String(token || "").trim();
+  if (!raw) return null;
+  const [encoded, signature] = raw.split(".");
+  if (!encoded || !signature) return null;
+  const expected = crypto.createHmac("sha256", getEmployeeSessionSecret()).update(encoded).digest("base64url");
+  if (!timingSafeEqualString(signature, expected)) return null;
+  try {
+    const payload = JSON.parse(Buffer.from(encoded, "base64url").toString("utf8"));
+    if (payload?.type !== "employee_portal") return null;
+    if (payload.expiresAt && Date.now() > Number(payload.expiresAt)) return null;
+    return payload;
+  } catch {
+    return null;
+  }
+}
+function toIsoDateOnly(value) {
+  return String(value || "").trim().slice(0, 10);
+}
+function haversineMeters(aLat, aLng, bLat, bLng) {
+  const lat1 = Number(aLat);
+  const lng1 = Number(aLng);
+  const lat2 = Number(bLat);
+  const lng2 = Number(bLng);
+  if (![lat1, lng1, lat2, lng2].every(Number.isFinite)) return null;
+  const toRad = (deg) => (deg * Math.PI) / 180;
+  const earthRadiusMeters = 6371000;
+  const dLat = toRad(lat2 - lat1);
+  const dLng = toRad(lng2 - lng1);
+  const p1 = toRad(lat1);
+  const p2 = toRad(lat2);
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos(p1) * Math.cos(p2) * Math.sin(dLng / 2) ** 2;
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return Math.round(earthRadiusMeters * c * 100) / 100;
+}
+async function getAllEmployeePortalUsers() {
+  if (!cfg().on) {
+    const store = readStore();
+    return (store.employeePortalUsers || []).map(sanitizeEmployeePortalUser).filter(Boolean);
+  }
+  await ensureSeeded();
+  const rows = await sbSel("employee_portal_users", "select=*&limit=10000");
+  return (rows || []).map(sanitizeEmployeePortalUser).filter(Boolean);
+}
+async function getCompanyEmployeeProfiles(companyId) {
+  if (!companyId) throw new Error("companyId is required.");
+  if (!cfg().on) {
+    const store = readStore();
+    return (store.employeeProfiles || [])
+      .filter((item) => String(item.companyId || "") === String(companyId))
+      .map(sanitizeEmployeeProfile)
+      .filter(Boolean);
+  }
+  await ensureSeeded();
+  const rows = await sbSel("employee_profiles", `select=*&company_id=eq.${enc(companyId)}&order=created_at.asc`);
+  return (rows || []).map(sanitizeEmployeeProfile).filter(Boolean);
+}
+async function getEmployeeWorkSites(companyId, employeeId) {
+  if (!companyId || !employeeId) return [];
+  if (!cfg().on) {
+    const store = readStore();
+    return (store.employeeWorkSites || [])
+      .filter((item) => String(item.companyId || "") === String(companyId) && String(item.employeeId || "") === String(employeeId))
+      .map((item) => ({
+        id: String(item.id || "").trim(),
+        companyId: String(item.companyId || "").trim(),
+        employeeId: String(item.employeeId || "").trim(),
+        siteName: String(item.siteName || "").trim(),
+        clientName: String(item.clientName || "").trim(),
+        latitude: item.latitude ?? null,
+        longitude: item.longitude ?? null,
+        radiusMeters: Number(item.radiusMeters || 300),
+        addressText: String(item.addressText || "").trim(),
+        isPrimary: item.isPrimary !== false
+      }));
+  }
+  await ensureSeeded();
+  const rows = await sbSel("employee_work_sites", `select=*&company_id=eq.${enc(companyId)}&employee_id=eq.${enc(employeeId)}&order=created_at.asc`);
+  return (rows || []).map((item) => ({
+    id: String(item.id || "").trim(),
+    companyId: String(item.company_id || "").trim(),
+    employeeId: String(item.employee_id || "").trim(),
+    siteName: String(item.site_name || "").trim(),
+    clientName: String(item.client_name || "").trim(),
+    latitude: item.latitude ?? null,
+    longitude: item.longitude ?? null,
+    radiusMeters: Number(item.radius_meters || 300),
+    addressText: String(item.address_text || "").trim(),
+    isPrimary: item.is_primary !== false
+  }));
+}
+async function listCompanyEmployees(companyId) {
+  const [profiles, portalUsers] = await Promise.all([
+    getCompanyEmployeeProfiles(companyId),
+    getAllEmployeePortalUsers()
+  ]);
+  const userMap = new Map(
+    portalUsers
+      .filter((item) => String(item.companyId || "") === String(companyId))
+      .map((item) => [String(item.employeeId || "").trim(), item])
+  );
+  return profiles.map((profile) => ({
+    ...profile,
+    portalUserId: String(userMap.get(profile.id)?.id || "").trim(),
+    username: String(userMap.get(profile.id)?.username || "").trim(),
+    companyName: String(userMap.get(profile.id)?.companyName || "").trim()
+  }));
+}
+async function saveEmployeeProfile({ actorUserId, companyId, employeeId = "", profile = {} }) {
+  const actor = sanitizeUser(await getUserById(actorUserId, companyId));
+  if (!actor || actor.role !== "admin") throw new Error("Only an admin for this company can save employee profiles.");
+  const source = profile && typeof profile === "object" ? profile : {};
+  const now = new Date().toISOString();
+  const nextId = String(employeeId || source.id || "").trim() || crypto.randomUUID();
+  const nextProfile = {
+    id: nextId,
+    companyId,
+    employeeCode: String(source.employeeCode || source.employee_code || "").trim(),
+    fullName: String(source.fullName || source.full_name || "").trim(),
+    personalEmail: String(source.personalEmail || source.personal_email || "").trim(),
+    phone: String(source.phone || "").trim(),
+    designation: String(source.designation || "").trim(),
+    employmentType: String(source.employmentType || source.employment_type || "c2h").trim(),
+    joiningDate: String(source.joiningDate || source.joining_date || "").trim(),
+    reportingManagerName: String(source.reportingManagerName || source.reporting_manager_name || "").trim(),
+    clientName: String(source.clientName || source.client_name || "").trim(),
+    workMode: String(source.workMode || source.work_mode || "").trim(),
+    status: String(source.status || "active").trim(),
+    taxRegimeCurrent: String(source.taxRegimeCurrent || source.tax_regime_current || "").trim(),
+    payload: source.payload && typeof source.payload === "object" ? source.payload : {},
+    updatedAt: now,
+    updatedBy: actor.email || ""
+  };
+  if (!nextProfile.employeeCode || !nextProfile.fullName) {
+    throw new Error("employeeCode and fullName are required.");
+  }
+  if (!cfg().on) {
+    const store = readStore();
+    store.employeeProfiles = Array.isArray(store.employeeProfiles) ? store.employeeProfiles : [];
+    const ix = store.employeeProfiles.findIndex((item) => String(item.id || "") === nextId && String(item.companyId || "") === String(companyId));
+    const existing = ix >= 0 ? store.employeeProfiles[ix] : null;
+    const row = { ...existing, ...nextProfile, createdAt: existing?.createdAt || now };
+    if (ix >= 0) store.employeeProfiles[ix] = row; else store.employeeProfiles.push(row);
+    writeStore(store);
+    return sanitizeEmployeeProfile(row);
+  }
+  await ensureSeeded();
+  const rows = await sbIns("employee_profiles", [{
+    id: nextId,
+    company_id: companyId,
+    employee_code: nextProfile.employeeCode,
+    full_name: nextProfile.fullName,
+    personal_email: nextProfile.personalEmail,
+    phone: nextProfile.phone,
+    designation: nextProfile.designation,
+    employment_type: nextProfile.employmentType,
+    joining_date: nextProfile.joiningDate || null,
+    reporting_manager_name: nextProfile.reportingManagerName,
+    client_name: nextProfile.clientName,
+    work_mode: nextProfile.workMode,
+    status: nextProfile.status,
+    tax_regime_current: nextProfile.taxRegimeCurrent || null,
+    payload: nextProfile.payload,
+    created_at: now,
+    updated_at: now,
+    updated_by: actor.email || ""
+  }], { conflict: "id", upsert: true });
+  return sanitizeEmployeeProfile(rows?.[0] || nextProfile);
+}
+async function upsertEmployeeWorkSite({ companyId, employeeId, workSite = {}, updatedBy = "" }) {
+  const source = workSite && typeof workSite === "object" ? workSite : {};
+  if (!source.siteName && !source.site_name && source.latitude == null && source.longitude == null) return null;
+  const now = new Date().toISOString();
+  const row = {
+    id: String(source.id || "").trim() || crypto.randomUUID(),
+    companyId,
+    employeeId,
+    siteName: String(source.siteName || source.site_name || "Primary Work Site").trim(),
+    clientName: String(source.clientName || source.client_name || "").trim(),
+    latitude: source.latitude == null ? null : Number(source.latitude),
+    longitude: source.longitude == null ? null : Number(source.longitude),
+    radiusMeters: Number(source.radiusMeters || source.radius_meters || 300),
+    addressText: String(source.addressText || source.address_text || "").trim(),
+    isPrimary: source.isPrimary !== false
+  };
+  if (!cfg().on) {
+    const store = readStore();
+    store.employeeWorkSites = Array.isArray(store.employeeWorkSites) ? store.employeeWorkSites : [];
+    const filtered = store.employeeWorkSites.filter((item) => !(String(item.companyId || "") === String(companyId) && String(item.employeeId || "") === String(employeeId)));
+    filtered.push({ ...row, createdAt: now, updatedAt: now, updatedBy });
+    store.employeeWorkSites = filtered;
+    writeStore(store);
+    return row;
+  }
+  await ensureSeeded();
+  await sbDel("employee_work_sites", `company_id=eq.${enc(companyId)}&employee_id=eq.${enc(employeeId)}`);
+  const rows = await sbIns("employee_work_sites", [{
+    id: row.id,
+    company_id: companyId,
+    employee_id: employeeId,
+    site_name: row.siteName,
+    client_name: row.clientName,
+    latitude: Number.isFinite(row.latitude) ? row.latitude : null,
+    longitude: Number.isFinite(row.longitude) ? row.longitude : null,
+    radius_meters: row.radiusMeters,
+    address_text: row.addressText,
+    is_primary: row.isPrimary,
+    created_at: now,
+    updated_at: now,
+    updated_by: updatedBy
+  }], { conflict: "id", upsert: true });
+  return rows?.[0] || row;
+}
+async function getEmployeeProfile(companyId, employeeId) {
+  if (!companyId || !employeeId) return null;
+  const employees = await listCompanyEmployees(companyId);
+  return employees.find((item) => String(item.id || "") === String(employeeId)) || null;
+}
+async function createEmployeeUser({ actorUserId, companyId, employeeCode, username, password, fullName, profile = {}, workSite = {} }) {
+  const actor = sanitizeUser(await getUserById(actorUserId, companyId));
+  if (!actor || actor.role !== "admin") throw new Error("Only an admin for this company can create employee accounts.");
+  const normalizedUsername = normalizeUsername(username || employeeCode || "");
+  const normalizedEmployeeCode = String(employeeCode || "").trim().toUpperCase();
+  const safeFullName = String(fullName || profile.fullName || "").trim();
+  if (!normalizedUsername || !normalizedEmployeeCode || !password || !safeFullName) {
+    throw new Error("employeeCode, username, password, and fullName are required.");
+  }
+  const allUsers = await getAllEmployeePortalUsers();
+  if (allUsers.some((item) => normalizeUsername(item?.username || "") === normalizedUsername)) throw new Error("This employee username already exists.");
+  const existingProfiles = await getCompanyEmployeeProfiles(companyId);
+  if (existingProfiles.some((item) => String(item.employeeCode || "").toUpperCase() === normalizedEmployeeCode)) {
+    throw new Error("This employee code already exists.");
+  }
+  const savedProfile = await saveEmployeeProfile({
+    actorUserId,
+    companyId,
+    profile: {
+      ...profile,
+      employeeCode: normalizedEmployeeCode,
+      fullName: safeFullName
+    }
+  });
+  await upsertEmployeeWorkSite({ companyId, employeeId: savedProfile.id, workSite, updatedBy: actor.email || "" });
+  const now = new Date().toISOString();
+  const portalUser = {
+    id: crypto.randomUUID(),
+    companyId,
+    companyName: actor.companyName || "",
+    employeeId: savedProfile.id,
+    employeeCode: normalizedEmployeeCode,
+    username: normalizedUsername,
+    fullName: safeFullName,
+    passwordHash: hashPassword(password),
+    createdAt: now,
+    updatedAt: now,
+    updatedBy: actor.email || ""
+  };
+  if (!cfg().on) {
+    const store = readStore();
+    store.employeePortalUsers = Array.isArray(store.employeePortalUsers) ? store.employeePortalUsers : [];
+    store.employeePortalUsers.push(portalUser);
+    writeStore(store);
+  } else {
+    await ensureSeeded();
+    await sbIns("employee_portal_users", [{
+      id: portalUser.id,
+      company_id: companyId,
+      company_name: portalUser.companyName,
+      employee_id: portalUser.employeeId,
+      employee_code: portalUser.employeeCode,
+      username: portalUser.username,
+      password_hash: portalUser.passwordHash,
+      full_name: portalUser.fullName,
+      created_at: now,
+      updated_at: now,
+      updated_by: portalUser.updatedBy
+    }], { conflict: "id", upsert: true });
+  }
+  return {
+    ...savedProfile,
+    portalUserId: portalUser.id,
+    username: portalUser.username,
+    companyName: portalUser.companyName
+  };
+}
+async function resetEmployeeUserPassword({ actorUserId, companyId, employeeUserId, newPassword }) {
+  const actor = sanitizeUser(await getUserById(actorUserId, companyId));
+  if (!actor || actor.role !== "admin") throw new Error("Only an admin for this company can reset employee passwords.");
+  if (!newPassword) throw new Error("newPassword is required.");
+  if (!cfg().on) {
+    const store = readStore();
+    store.employeePortalUsers = Array.isArray(store.employeePortalUsers) ? store.employeePortalUsers : [];
+    const ix = store.employeePortalUsers.findIndex((item) => String(item.id || "") === String(employeeUserId || "").trim() && String(item.companyId || "") === String(companyId));
+    if (ix < 0) throw new Error("Employee user not found.");
+    store.employeePortalUsers[ix] = {
+      ...store.employeePortalUsers[ix],
+      passwordHash: hashPassword(newPassword),
+      updatedAt: new Date().toISOString(),
+      updatedBy: actor.email || ""
+    };
+    writeStore(store);
+    return { reset: true, employeeUserId };
+  }
+  await ensureSeeded();
+  const rows = await sbPatch("employee_portal_users", `id=eq.${enc(employeeUserId)}&company_id=eq.${enc(companyId)}`, {
+    password_hash: hashPassword(newPassword),
+    updated_at: new Date().toISOString(),
+    updated_by: actor.email || ""
+  });
+  if (!Array.isArray(rows) || !rows.length) throw new Error("Employee user not found.");
+  return { reset: true, employeeUserId };
+}
+async function loginEmployee({ username, password }) {
+  const normalizedUsername = normalizeUsername(username);
+  const allUsers = await getAllEmployeePortalUsers();
+  const matched = allUsers.find((item) => normalizeUsername(item?.username || "") === normalizedUsername);
+  if (!matched || !verifyPassword(password, matched.passwordHash)) throw new Error("Invalid username or password.");
+  const profile = await getEmployeeProfile(matched.companyId, matched.employeeId);
+  if (!profile) throw new Error("Employee profile not found.");
+  const sessionUser = sanitizeEmployeeSessionUser({ ...profile, ...matched, employeeUserId: matched.id });
+  const token = createSignedEmployeeToken({
+    type: "employee_portal",
+    employeeUserId: sessionUser.employeeUserId,
+    employeeId: sessionUser.employeeId,
+    companyId: sessionUser.companyId,
+    companyName: sessionUser.companyName,
+    employeeCode: sessionUser.employeeCode,
+    username: sessionUser.username,
+    fullName: sessionUser.fullName,
+    expiresAt: Date.now() + 1000 * 60 * 60 * 24 * 7
+  });
+  return { token, user: sessionUser };
+}
+async function getEmployeeSessionUser(token) {
+  const payload = readSignedEmployeeToken(token);
+  if (!payload) return null;
+  const profile = await getEmployeeProfile(payload.companyId, payload.employeeId);
+  if (!profile) return null;
+  return sanitizeEmployeeSessionUser({ ...profile, ...payload, employeeUserId: payload.employeeUserId });
+}
+async function requireEmployeeSessionUser(token) {
+  const user = await getEmployeeSessionUser(token);
+  if (!user) throw new Error("Invalid or missing employee session.");
+  return user;
+}
+async function listEmployeeAttendance({ companyId, employeeId, dateFrom = "", dateTo = "" }) {
+  if (!companyId || !employeeId) return [];
+  const from = toIsoDateOnly(dateFrom);
+  const to = toIsoDateOnly(dateTo);
+  if (!cfg().on) {
+    const store = readStore();
+    return (store.employeeAttendanceLogs || [])
+      .filter((item) => String(item.companyId || "") === String(companyId) && String(item.employeeId || "") === String(employeeId))
+      .map(sanitizeEmployeeAttendanceLog)
+      .filter((item) => item && (!from || item.attendanceDate >= from) && (!to || item.attendanceDate <= to))
+      .sort((a, b) => String(b.attendanceDate || "").localeCompare(String(a.attendanceDate || "")));
+  }
+  await ensureSeeded();
+  const filters = [
+    `company_id=eq.${enc(companyId)}`,
+    `employee_id=eq.${enc(employeeId)}`,
+    from ? `attendance_date=gte.${enc(from)}` : "",
+    to ? `attendance_date=lte.${enc(to)}` : "",
+    "order=attendance_date.desc"
+  ].filter(Boolean).join("&");
+  const rows = await sbSel("employee_attendance_logs", `select=*&${filters}`);
+  return (rows || []).map(sanitizeEmployeeAttendanceLog).filter(Boolean);
+}
+async function markEmployeeAttendance({ employeeUser, action, latitude, longitude, accuracyMeters, addressLabel = "", note = "", devicePayload = {} }) {
+  const actor = sanitizeEmployeeSessionUser(employeeUser);
+  if (!actor?.companyId || !actor?.employeeId) throw new Error("Employee session is required.");
+  const safeAction = String(action || "").trim().toLowerCase();
+  if (!["check_in", "check_out"].includes(safeAction)) throw new Error("Invalid attendance action.");
+  const today = toIsoDateOnly(new Date().toISOString());
+  const now = new Date().toISOString();
+  const logs = await listEmployeeAttendance({ companyId: actor.companyId, employeeId: actor.employeeId, dateFrom: today, dateTo: today });
+  const openLog = logs.find((item) => item.checkInAt && !item.checkOutAt) || null;
+  const sites = await getEmployeeWorkSites(actor.companyId, actor.employeeId);
+  const primarySite = sites.find((item) => item.isPrimary) || sites[0] || null;
+  const distance = primarySite ? haversineMeters(latitude, longitude, primarySite.latitude, primarySite.longitude) : null;
+  const locationStatus = !Number.isFinite(Number(latitude)) || !Number.isFinite(Number(longitude))
+    ? "unknown"
+    : !primarySite || distance == null
+      ? "remote"
+      : distance <= Number(primarySite.radiusMeters || 300)
+        ? "on_site"
+        : "outside_radius";
+
+  if (safeAction === "check_in" && openLog) throw new Error("You are already checked in for today.");
+  if (safeAction === "check_out" && !openLog) throw new Error("No open check-in found for today.");
+
+  if (!cfg().on) {
+    const store = readStore();
+    store.employeeAttendanceLogs = Array.isArray(store.employeeAttendanceLogs) ? store.employeeAttendanceLogs : [];
+    if (safeAction === "check_in") {
+      const row = {
+        id: crypto.randomUUID(),
+        companyId: actor.companyId,
+        employeeId: actor.employeeId,
+        attendanceDate: today,
+        checkInAt: now,
+        checkOutAt: "",
+        checkInLatitude: latitude,
+        checkInLongitude: longitude,
+        checkInAccuracyMeters: accuracyMeters,
+        checkOutLatitude: null,
+        checkOutLongitude: null,
+        checkOutAccuracyMeters: null,
+        checkInAddressLabel: String(addressLabel || "").trim(),
+        checkOutAddressLabel: "",
+        checkInNote: String(note || "").trim(),
+        checkOutNote: "",
+        siteId: String(primarySite?.id || "").trim(),
+        locationStatus,
+        distanceFromSiteMeters: distance,
+        devicePayload: devicePayload && typeof devicePayload === "object" ? devicePayload : {},
+        createdAt: now,
+        updatedAt: now
+      };
+      store.employeeAttendanceLogs.push(row);
+      writeStore(store);
+      return sanitizeEmployeeAttendanceLog(row);
+    }
+    const ix = store.employeeAttendanceLogs.findIndex((item) => String(item.id || "") === String(openLog.id || ""));
+    if (ix < 0) throw new Error("Open attendance row not found.");
+    store.employeeAttendanceLogs[ix] = {
+      ...store.employeeAttendanceLogs[ix],
+      checkOutAt: now,
+      checkOutLatitude: latitude,
+      checkOutLongitude: longitude,
+      checkOutAccuracyMeters: accuracyMeters,
+      checkOutAddressLabel: String(addressLabel || "").trim(),
+      checkOutNote: String(note || "").trim(),
+      locationStatus,
+      distanceFromSiteMeters: distance,
+      devicePayload: devicePayload && typeof devicePayload === "object" ? devicePayload : store.employeeAttendanceLogs[ix].devicePayload,
+      updatedAt: now
+    };
+    writeStore(store);
+    return sanitizeEmployeeAttendanceLog(store.employeeAttendanceLogs[ix]);
+  }
+
+  await ensureSeeded();
+  if (safeAction === "check_in") {
+    const rows = await sbIns("employee_attendance_logs", [{
+      id: crypto.randomUUID(),
+      company_id: actor.companyId,
+      employee_id: actor.employeeId,
+      attendance_date: today,
+      check_in_at: now,
+      check_in_latitude: Number.isFinite(Number(latitude)) ? Number(latitude) : null,
+      check_in_longitude: Number.isFinite(Number(longitude)) ? Number(longitude) : null,
+      check_in_accuracy_meters: Number.isFinite(Number(accuracyMeters)) ? Number(accuracyMeters) : null,
+      check_in_address_label: String(addressLabel || "").trim(),
+      check_in_note: String(note || "").trim(),
+      site_id: primarySite?.id || null,
+      location_status: locationStatus,
+      distance_from_site_meters: distance,
+      device_payload: devicePayload && typeof devicePayload === "object" ? devicePayload : {},
+      created_at: now,
+      updated_at: now
+    }], { conflict: "id", upsert: true });
+    return sanitizeEmployeeAttendanceLog(rows?.[0]);
+  }
+  const rows = await sbPatch("employee_attendance_logs", `id=eq.${enc(openLog.id)}&company_id=eq.${enc(actor.companyId)}`, {
+    check_out_at: now,
+    check_out_latitude: Number.isFinite(Number(latitude)) ? Number(latitude) : null,
+    check_out_longitude: Number.isFinite(Number(longitude)) ? Number(longitude) : null,
+    check_out_accuracy_meters: Number.isFinite(Number(accuracyMeters)) ? Number(accuracyMeters) : null,
+    check_out_address_label: String(addressLabel || "").trim(),
+    check_out_note: String(note || "").trim(),
+    location_status: locationStatus,
+    distance_from_site_meters: distance,
+    updated_at: now
+  });
+  return sanitizeEmployeeAttendanceLog(rows?.[0] || openLog);
+}
 async function deleteCompanyJob({ actorUserId, companyId, jobId }) {
   const actor = sanitizeUser(await getUserById(actorUserId, companyId));
   if (!actor) throw new Error("Authenticated recruiter not found for this company.");
@@ -2031,11 +2613,15 @@ async function deleteAssessment({ actorUserId, companyId, assessmentId }) {
 module.exports = {
   bootstrapAdmin,
   createClientUser,
+  createEmployeeUser,
   createTrialCompanyWithAdmin,
   getPlatformSessionUser,
   getCompanyClientUsers,
+  getCompanyEmployeeProfiles,
   getCompanyLicense,
   getClientSessionUser,
+  getEmployeeProfile,
+  getEmployeeSessionUser,
   createCompanyWithAdmin,
   createUser,
   deleteUser,
@@ -2046,19 +2632,26 @@ module.exports = {
   getPublicCompanyJob,
   getSessionUser,
   incrementCompanyCaptureUsage,
+  listCompanyEmployees,
   listCompaniesAndUsersSummary,
   listAssessments,
+  listEmployeeAttendance,
   getAssessmentById,
   listCompanyJobs,
   listCompanyUsers,
   loginClient,
+  loginEmployee,
   loginPlatformCreator,
   login,
+  markEmployeeAttendance,
   requirePlatformSessionUser,
   requireClientSessionUser,
+  requireEmployeeSessionUser,
   requireSessionUser,
   resetClientUserPassword,
+  resetEmployeeUserPassword,
   resetUserPassword,
+  saveEmployeeProfile,
   saveCompanySharedExportPresets,
   setCompanyApplicantIntakeSecret,
   searchAssessments,
