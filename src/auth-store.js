@@ -848,6 +848,131 @@ function sanitizeSalaryTemplate(raw) {
     updatedBy: String(raw.updatedBy || raw.updated_by || "").trim()
   };
 }
+function sanitizePayrollInput(raw) {
+  if (!raw) return null;
+  return {
+    id: String(raw.id || "").trim(),
+    companyId: String(raw.companyId || raw.company_id || "").trim(),
+    employeeId: String(raw.employeeId || raw.employee_id || "").trim(),
+    payrollMonth: Number(raw.payrollMonth ?? raw.payroll_month ?? 0) || 0,
+    payrollYear: Number(raw.payrollYear ?? raw.payroll_year ?? 0) || 0,
+    totalCalendarDays: Number(raw.totalCalendarDays ?? raw.total_calendar_days ?? 0) || 0,
+    workingDays: Number(raw.workingDays ?? raw.working_days ?? 0) || 0,
+    payableDays: Number(raw.payableDays ?? raw.payable_days ?? 0) || 0,
+    paidLeaveDays: Number(raw.paidLeaveDays ?? raw.paid_leave_days ?? 0) || 0,
+    unpaidLeaveDays: Number(raw.unpaidLeaveDays ?? raw.unpaid_leave_days ?? 0) || 0,
+    absentDays: Number(raw.absentDays ?? raw.absent_days ?? 0) || 0,
+    holidays: Number(raw.holidays ?? 0) || 0,
+    overtimeAmount: Number(raw.overtimeAmount ?? raw.overtime_amount ?? 0) || 0,
+    arrearsAmount: Number(raw.arrearsAmount ?? raw.arrears_amount ?? 0) || 0,
+    bonusAmount: Number(raw.bonusAmount ?? raw.bonus_amount ?? 0) || 0,
+    otherEarnings: Number(raw.otherEarnings ?? raw.other_earnings ?? 0) || 0,
+    otherDeductions: Number(raw.otherDeductions ?? raw.other_deductions ?? 0) || 0,
+    professionalTax: Number(raw.professionalTax ?? raw.professional_tax ?? 0) || 0,
+    tdsAmount: Number(raw.tdsAmount ?? raw.tds_amount ?? 0) || 0,
+    approvedReimbursements: Number(raw.approvedReimbursements ?? raw.approved_reimbursements ?? 0) || 0,
+    remarks: String(raw.remarks || "").trim(),
+    createdAt: String(raw.createdAt || raw.created_at || "").trim(),
+    updatedAt: String(raw.updatedAt || raw.updated_at || "").trim(),
+    createdBy: String(raw.createdBy || raw.created_by || "").trim(),
+    updatedBy: String(raw.updatedBy || raw.updated_by || "").trim()
+  };
+}
+function sanitizePayrollRun(raw) {
+  if (!raw) return null;
+  return {
+    id: String(raw.id || "").trim(),
+    companyId: String(raw.companyId || raw.company_id || "").trim(),
+    payrollMonth: Number(raw.payrollMonth ?? raw.payroll_month ?? 0) || 0,
+    payrollYear: Number(raw.payrollYear ?? raw.payroll_year ?? 0) || 0,
+    status: String(raw.status || "draft").trim().toLowerCase(),
+    totalGross: Number(raw.totalGross ?? raw.total_gross ?? 0) || 0,
+    totalDeductions: Number(raw.totalDeductions ?? raw.total_deductions ?? 0) || 0,
+    totalNetPay: Number(raw.totalNetPay ?? raw.total_net_pay ?? 0) || 0,
+    totalEmployerCost: Number(raw.totalEmployerCost ?? raw.total_employer_cost ?? 0) || 0,
+    lockReason: String(raw.lockReason || raw.lock_reason || "").trim(),
+    lockedAt: String(raw.lockedAt || raw.locked_at || "").trim(),
+    approvedBy: String(raw.approvedBy || raw.approved_by || "").trim(),
+    createdBy: String(raw.createdBy || raw.created_by || "").trim(),
+    updatedBy: String(raw.updatedBy || raw.updated_by || "").trim(),
+    createdAt: String(raw.createdAt || raw.created_at || "").trim(),
+    updatedAt: String(raw.updatedAt || raw.updated_at || "").trim()
+  };
+}
+function sanitizePayrollRunItem(raw) {
+  if (!raw) return null;
+  return {
+    id: String(raw.id || "").trim(),
+    companyId: String(raw.companyId || raw.company_id || "").trim(),
+    payrollRunId: String(raw.payrollRunId || raw.payroll_run_id || "").trim(),
+    employeeId: String(raw.employeeId || raw.employee_id || "").trim(),
+    payload: raw.payload && typeof raw.payload === "object" ? raw.payload : {},
+    grossEarnings: Number(raw.grossEarnings ?? raw.gross_earnings ?? 0) || 0,
+    grossDeductions: Number(raw.grossDeductions ?? raw.gross_deductions ?? 0) || 0,
+    netSalary: Number(raw.netSalary ?? raw.net_salary ?? 0) || 0,
+    employerCost: Number(raw.employerCost ?? raw.employer_cost ?? 0) || 0,
+    createdAt: String(raw.createdAt || raw.created_at || "").trim(),
+    updatedAt: String(raw.updatedAt || raw.updated_at || "").trim()
+  };
+}
+function roundMoney(value) {
+  const n = Number(value || 0);
+  if (!Number.isFinite(n)) return 0;
+  return Math.round(n * 100) / 100;
+}
+function calculatePayrollLine({ compensation, payrollInput, settings }) {
+  const totalDays = Math.max(1, Number(payrollInput?.totalCalendarDays || 0) || 1);
+  const payableDays = Math.max(0, Number(payrollInput?.payableDays || totalDays));
+  const prorate = settings?.applyLopProration !== false;
+  const factor = prorate ? Math.min(1, payableDays / totalDays) : 1;
+  const prorateField = (v) => roundMoney((Number(v || 0) || 0) * factor);
+  const prorateHealth = settings?.prorateHealthInsurance === true;
+
+  const basic = prorateField(compensation?.basicMonthly);
+  const hra = prorateField(compensation?.hraMonthly);
+  const fbp = prorateField(compensation?.fbpMonthly);
+  const special = prorateField(compensation?.specialAllowanceMonthly);
+  const healthInsurance = prorateHealth ? prorateField(compensation?.healthInsuranceMonthly) : roundMoney(compensation?.healthInsuranceMonthly || 0);
+  const otherAllowance = prorateField(compensation?.otherAllowanceMonthly);
+  const otherEarnings = roundMoney(payrollInput?.otherEarnings || 0) + roundMoney(payrollInput?.overtimeAmount || 0) + roundMoney(payrollInput?.arrearsAmount || 0) + roundMoney(payrollInput?.bonusAmount || 0);
+  const approvedReimbursements = roundMoney(payrollInput?.approvedReimbursements || 0);
+
+  const grossEarnings = roundMoney(basic + hra + fbp + special + otherAllowance + otherEarnings + approvedReimbursements);
+  const employeePf = roundMoney(compensation?.employeePfMonthly || 0);
+  const professionalTax = roundMoney(payrollInput?.professionalTax || settings?.defaultMonthlyProfessionalTax || 0);
+  const tds = roundMoney(payrollInput?.tdsAmount || 0);
+  const otherDeductions = roundMoney(payrollInput?.otherDeductions || 0);
+  const grossDeductions = roundMoney(employeePf + professionalTax + tds + otherDeductions);
+  const netSalary = roundMoney(grossEarnings - grossDeductions);
+
+  const employerPf = roundMoney(compensation?.employerPfMonthly || 0);
+  const gratuity = roundMoney(compensation?.gratuityMonthly || 0);
+  const employerCost = roundMoney(grossEarnings + employerPf + gratuity + healthInsurance);
+
+  return {
+    proratedBasic: basic,
+    proratedHra: hra,
+    proratedFbp: fbp,
+    proratedSpecialAllowance: special,
+    otherAllowance,
+    otherEarnings,
+    approvedReimbursements,
+    grossEarnings,
+    employeePf,
+    professionalTax,
+    tds,
+    otherDeductions,
+    grossDeductions,
+    netSalary,
+    employerPf,
+    gratuityProvision: gratuity,
+    healthInsuranceBenefit: healthInsurance,
+    totalEmployerCost: employerCost,
+    payableDays,
+    totalDays,
+    prorationFactor: roundMoney(factor)
+  };
+}
 function persistedAssessmentId(rawId) {
   const v = String(rawId || "").trim();
   if (!v || /^(quick-note|assessment)-/i.test(v)) return crypto.randomUUID();
@@ -2300,6 +2425,285 @@ async function saveCompanySalaryTemplate({ actorUserId, companyId, template = {}
   }], { conflict: "id", upsert: true });
   return sanitizeSalaryTemplate(rows?.[0]);
 }
+async function listPayrollInputs({ actorUserId, companyId, payrollMonth, payrollYear, employeeId = "" }) {
+  await requireAdminForCompany({ actorUserId, companyId });
+  const month = Number(payrollMonth || 0);
+  const year = Number(payrollYear || 0);
+  const safeEmployeeId = String(employeeId || "").trim();
+  if (!month || !year) throw new Error("payrollMonth and payrollYear are required.");
+  if (!cfg().on) {
+    const store = readStore();
+    return (store.payrollInputs || [])
+      .filter((item) => String(item.companyId || "") === String(companyId))
+      .filter((item) => Number(item.payrollMonth || 0) === month && Number(item.payrollYear || 0) === year)
+      .filter((item) => !safeEmployeeId || String(item.employeeId || "") === safeEmployeeId)
+      .map(sanitizePayrollInput)
+      .filter(Boolean);
+  }
+  await ensureSeeded();
+  const filters = [
+    `company_id=eq.${enc(companyId)}`,
+    `payroll_month=eq.${month}`,
+    `payroll_year=eq.${year}`,
+    safeEmployeeId ? `employee_id=eq.${enc(safeEmployeeId)}` : "",
+    "order=employee_id.asc"
+  ].filter(Boolean).join("&");
+  const rows = await sbSel("payroll_inputs", `select=*&${filters}`);
+  return (rows || []).map(sanitizePayrollInput).filter(Boolean);
+}
+async function savePayrollInput({ actorUserId, companyId, input = {} }) {
+  const actor = await requireAdminForCompany({ actorUserId, companyId });
+  const month = Number(input.payrollMonth || 0);
+  const year = Number(input.payrollYear || 0);
+  const employeeId = String(input.employeeId || "").trim();
+  if (!month || !year || !employeeId) throw new Error("employeeId, payrollMonth, payrollYear are required.");
+  const now = new Date().toISOString();
+  const payload = {
+    id: String(input.id || "").trim() || crypto.randomUUID(),
+    company_id: companyId,
+    employee_id: employeeId,
+    payroll_month: month,
+    payroll_year: year,
+    total_calendar_days: Number(input.totalCalendarDays || 0) || 0,
+    working_days: Number(input.workingDays || 0) || 0,
+    payable_days: Number(input.payableDays || 0) || 0,
+    paid_leave_days: Number(input.paidLeaveDays || 0) || 0,
+    unpaid_leave_days: Number(input.unpaidLeaveDays || 0) || 0,
+    absent_days: Number(input.absentDays || 0) || 0,
+    holidays: Number(input.holidays || 0) || 0,
+    overtime_amount: Number(input.overtimeAmount || 0) || 0,
+    arrears_amount: Number(input.arrearsAmount || 0) || 0,
+    bonus_amount: Number(input.bonusAmount || 0) || 0,
+    other_earnings: Number(input.otherEarnings || 0) || 0,
+    other_deductions: Number(input.otherDeductions || 0) || 0,
+    professional_tax: Number(input.professionalTax || 0) || 0,
+    tds_amount: Number(input.tdsAmount || 0) || 0,
+    approved_reimbursements: Number(input.approvedReimbursements || 0) || 0,
+    remarks: String(input.remarks || "").trim(),
+    updated_at: now,
+    updated_by: actor.id
+  };
+  if (!cfg().on) {
+    const store = readStore();
+    store.payrollInputs = Array.isArray(store.payrollInputs) ? store.payrollInputs : [];
+    const ix = store.payrollInputs.findIndex((item) =>
+      String(item.companyId || item.company_id || "") === String(companyId) &&
+      String(item.employeeId || item.employee_id || "") === employeeId &&
+      Number(item.payrollMonth || item.payroll_month || 0) === month &&
+      Number(item.payrollYear || item.payroll_year || 0) === year
+    );
+    if (ix >= 0) store.payrollInputs[ix] = { ...store.payrollInputs[ix], ...payload };
+    else store.payrollInputs.push({ ...payload, companyId, employeeId, payrollMonth: month, payrollYear: year, createdAt: now, createdBy: actor.id });
+    writeStore(store);
+    return sanitizePayrollInput(store.payrollInputs[ix >= 0 ? ix : store.payrollInputs.length - 1]);
+  }
+  await ensureSeeded();
+  const rows = await sbIns("payroll_inputs", [{
+    ...payload,
+    created_at: now,
+    created_by: actor.id
+  }], { conflict: "company_id,employee_id,payroll_month,payroll_year", upsert: true });
+  return sanitizePayrollInput(rows?.[0]);
+}
+async function listPayrollRuns({ actorUserId, companyId, payrollMonth = 0, payrollYear = 0 }) {
+  await requireAdminForCompany({ actorUserId, companyId });
+  const month = Number(payrollMonth || 0);
+  const year = Number(payrollYear || 0);
+  if (!cfg().on) {
+    const store = readStore();
+    return (store.payrollRuns || [])
+      .filter((item) => String(item.companyId || "") === String(companyId))
+      .filter((item) => !month || Number(item.payrollMonth || 0) === month)
+      .filter((item) => !year || Number(item.payrollYear || 0) === year)
+      .map(sanitizePayrollRun)
+      .filter(Boolean)
+      .sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || "")));
+  }
+  await ensureSeeded();
+  const filters = [
+    `company_id=eq.${enc(companyId)}`,
+    month ? `payroll_month=eq.${month}` : "",
+    year ? `payroll_year=eq.${year}` : "",
+    "order=created_at.desc"
+  ].filter(Boolean).join("&");
+  const rows = await sbSel("payroll_runs", `select=*&${filters}`);
+  return (rows || []).map(sanitizePayrollRun).filter(Boolean);
+}
+async function createPayrollRunDraft({ actorUserId, companyId, payrollMonth, payrollYear }) {
+  const actor = await requireAdminForCompany({ actorUserId, companyId });
+  const month = Number(payrollMonth || 0);
+  const year = Number(payrollYear || 0);
+  if (!month || !year) throw new Error("payrollMonth and payrollYear are required.");
+  const now = new Date().toISOString();
+  const row = {
+    id: crypto.randomUUID(),
+    company_id: companyId,
+    payroll_month: month,
+    payroll_year: year,
+    status: "draft",
+    total_gross: 0,
+    total_deductions: 0,
+    total_net_pay: 0,
+    total_employer_cost: 0,
+    lock_reason: "",
+    locked_at: null,
+    approved_by: null,
+    created_by: actor.id,
+    updated_by: actor.id,
+    created_at: now,
+    updated_at: now
+  };
+  if (!cfg().on) {
+    const store = readStore();
+    store.payrollRuns = Array.isArray(store.payrollRuns) ? store.payrollRuns : [];
+    store.payrollRuns.push({ ...row, companyId, payrollMonth: month, payrollYear: year, status: "draft" });
+    writeStore(store);
+    return sanitizePayrollRun(store.payrollRuns[store.payrollRuns.length - 1]);
+  }
+  await ensureSeeded();
+  const rows = await sbIns("payroll_runs", [row], { conflict: "id", upsert: true });
+  return sanitizePayrollRun(rows?.[0]);
+}
+async function getPayrollRunDetail({ actorUserId, companyId, payrollRunId }) {
+  await requireAdminForCompany({ actorUserId, companyId });
+  const runId = String(payrollRunId || "").trim();
+  if (!runId) throw new Error("payrollRunId is required.");
+  if (!cfg().on) {
+    const store = readStore();
+    const run = sanitizePayrollRun((store.payrollRuns || []).find((item) => String(item.id || "") === runId && String(item.companyId || "") === String(companyId)));
+    const items = (store.payrollRunItems || []).filter((item) => String(item.payrollRunId || "") === runId && String(item.companyId || "") === String(companyId)).map(sanitizePayrollRunItem).filter(Boolean);
+    return { run, items };
+  }
+  await ensureSeeded();
+  const runRows = await sbSel("payroll_runs", `select=*&id=eq.${enc(runId)}&company_id=eq.${enc(companyId)}&limit=1`);
+  const itemRows = await sbSel("payroll_run_items", `select=*&payroll_run_id=eq.${enc(runId)}&company_id=eq.${enc(companyId)}&order=created_at.asc`);
+  return { run: sanitizePayrollRun(runRows?.[0]), items: (itemRows || []).map(sanitizePayrollRunItem).filter(Boolean) };
+}
+async function calculatePayrollRun({ actorUserId, companyId, payrollRunId }) {
+  const actor = await requireAdminForCompany({ actorUserId, companyId });
+  const { run } = await getPayrollRunDetail({ actorUserId, companyId, payrollRunId });
+  if (!run) throw new Error("Payroll run not found.");
+  if (["locked", "paid"].includes(run.status)) throw new Error("Locked/Paid payroll run cannot be recalculated.");
+  const settings = await getCompanyPayrollSettings({ actorUserId, companyId });
+  const employees = await listCompanyEmployees(companyId);
+  const inputs = await listPayrollInputs({ actorUserId, companyId, payrollMonth: run.payrollMonth, payrollYear: run.payrollYear });
+  const activeComp = await listEmployeeCompensationStructures({ actorUserId, companyId, activeOnly: true });
+  const byEmployeeInput = new Map(inputs.map((item) => [String(item.employeeId || ""), item]));
+  const byEmployeeComp = new Map(activeComp.map((item) => [String(item.employeeId || ""), item]));
+  const now = new Date().toISOString();
+  const rows = [];
+  for (const emp of employees) {
+    if (String(emp?.status || "").toLowerCase() === "exited") continue;
+    const employeeId = String(emp.id || "").trim();
+    const input = byEmployeeInput.get(employeeId) || sanitizePayrollInput({
+      companyId,
+      employeeId,
+      payrollMonth: run.payrollMonth,
+      payrollYear: run.payrollYear,
+      totalCalendarDays: 30,
+      workingDays: 22,
+      payableDays: 30
+    });
+    const comp = byEmployeeComp.get(employeeId);
+    if (!comp) continue;
+    const calc = calculatePayrollLine({ compensation: comp, payrollInput: input, settings });
+    rows.push({
+      id: crypto.randomUUID(),
+      company_id: companyId,
+      payroll_run_id: run.id,
+      employee_id: employeeId,
+      payload: {
+        employeeCode: emp.employeeCode,
+        employeeName: emp.fullName,
+        compensationId: comp.id,
+        payrollInputId: input.id || "",
+        ...calc
+      },
+      gross_earnings: calc.grossEarnings,
+      gross_deductions: calc.grossDeductions,
+      net_salary: calc.netSalary,
+      employer_cost: calc.totalEmployerCost,
+      created_at: now,
+      updated_at: now
+    });
+  }
+  const totalGross = roundMoney(rows.reduce((sum, r) => sum + Number(r.gross_earnings || 0), 0));
+  const totalDeductions = roundMoney(rows.reduce((sum, r) => sum + Number(r.gross_deductions || 0), 0));
+  const totalNetPay = roundMoney(rows.reduce((sum, r) => sum + Number(r.net_salary || 0), 0));
+  const totalEmployerCost = roundMoney(rows.reduce((sum, r) => sum + Number(r.employer_cost || 0), 0));
+  if (!cfg().on) {
+    const store = readStore();
+    store.payrollRunItems = Array.isArray(store.payrollRunItems) ? store.payrollRunItems : [];
+    store.payrollRunItems = store.payrollRunItems.filter((item) => !(String(item.payrollRunId || item.payroll_run_id || "") === run.id && String(item.companyId || item.company_id || "") === String(companyId)));
+    store.payrollRunItems.push(...rows.map((row) => ({ ...row, companyId, payrollRunId: run.id, employeeId: row.employee_id })));
+    store.payrollRuns = Array.isArray(store.payrollRuns) ? store.payrollRuns : [];
+    const ix = store.payrollRuns.findIndex((item) => String(item.id || "") === run.id && String(item.companyId || "") === String(companyId));
+    if (ix >= 0) {
+      store.payrollRuns[ix] = { ...store.payrollRuns[ix], status: "calculated", totalGross, totalDeductions, totalNetPay, totalEmployerCost, updatedAt: now, updatedBy: actor.id };
+    }
+    writeStore(store);
+    return getPayrollRunDetail({ actorUserId, companyId, payrollRunId: run.id });
+  }
+  await ensureSeeded();
+  await sbDel("payroll_run_items", `payroll_run_id=eq.${enc(run.id)}&company_id=eq.${enc(companyId)}`);
+  if (rows.length) await sbIns("payroll_run_items", rows, { conflict: "id", upsert: true });
+  await sbPatch("payroll_runs", `id=eq.${enc(run.id)}&company_id=eq.${enc(companyId)}`, {
+    status: "calculated",
+    total_gross: totalGross,
+    total_deductions: totalDeductions,
+    total_net_pay: totalNetPay,
+    total_employer_cost: totalEmployerCost,
+    updated_at: now,
+    updated_by: actor.id
+  });
+  return getPayrollRunDetail({ actorUserId, companyId, payrollRunId: run.id });
+}
+async function approvePayrollRun({ actorUserId, companyId, payrollRunId }) {
+  const actor = await requireAdminForCompany({ actorUserId, companyId });
+  const { run } = await getPayrollRunDetail({ actorUserId, companyId, payrollRunId });
+  if (!run) throw new Error("Payroll run not found.");
+  if (!["calculated", "approved"].includes(run.status)) throw new Error("Only calculated payroll run can be approved.");
+  const now = new Date().toISOString();
+  if (!cfg().on) {
+    const store = readStore();
+    const ix = (store.payrollRuns || []).findIndex((item) => String(item.id || "") === run.id && String(item.companyId || "") === String(companyId));
+    if (ix >= 0) store.payrollRuns[ix] = { ...store.payrollRuns[ix], status: "approved", approvedBy: actor.id, updatedAt: now, updatedBy: actor.id };
+    writeStore(store);
+    return sanitizePayrollRun(store.payrollRuns[ix]);
+  }
+  await ensureSeeded();
+  const rows = await sbPatch("payroll_runs", `id=eq.${enc(run.id)}&company_id=eq.${enc(companyId)}`, {
+    status: "approved",
+    approved_by: actor.id,
+    updated_at: now,
+    updated_by: actor.id
+  });
+  return sanitizePayrollRun(rows?.[0]);
+}
+async function lockPayrollRun({ actorUserId, companyId, payrollRunId, reason = "" }) {
+  const actor = await requireAdminForCompany({ actorUserId, companyId });
+  const { run } = await getPayrollRunDetail({ actorUserId, companyId, payrollRunId });
+  if (!run) throw new Error("Payroll run not found.");
+  if (!["approved", "locked"].includes(run.status)) throw new Error("Only approved payroll run can be locked.");
+  const now = new Date().toISOString();
+  const safeReason = String(reason || "").trim();
+  if (!cfg().on) {
+    const store = readStore();
+    const ix = (store.payrollRuns || []).findIndex((item) => String(item.id || "") === run.id && String(item.companyId || "") === String(companyId));
+    if (ix >= 0) store.payrollRuns[ix] = { ...store.payrollRuns[ix], status: "locked", lockReason: safeReason, lockedAt: now, updatedAt: now, updatedBy: actor.id };
+    writeStore(store);
+    return sanitizePayrollRun(store.payrollRuns[ix]);
+  }
+  await ensureSeeded();
+  const rows = await sbPatch("payroll_runs", `id=eq.${enc(run.id)}&company_id=eq.${enc(companyId)}`, {
+    status: "locked",
+    lock_reason: safeReason,
+    locked_at: now,
+    updated_at: now,
+    updated_by: actor.id
+  });
+  return sanitizePayrollRun(rows?.[0]);
+}
 async function createEmployeeUser({ actorUserId, companyId, employeeCode, username, password, fullName, profile = {}, workSite = {} }) {
   const actor = sanitizeUser(await getUserById(actorUserId, companyId));
   if (!actor || actor.role !== "admin") throw new Error("Only an admin for this company can create employee accounts.");
@@ -3157,6 +3561,8 @@ module.exports = {
   listCompanyEmployees,
   listCompanySalaryTemplates,
   listCompanyFbpHeads,
+  listPayrollInputs,
+  listPayrollRuns,
   listEmployeeCompensationStructures,
   listCompaniesAndUsersSummary,
   listAssessments,
@@ -3169,6 +3575,11 @@ module.exports = {
   loginPlatformCreator,
   login,
   markEmployeeAttendance,
+  createPayrollRunDraft,
+  calculatePayrollRun,
+  approvePayrollRun,
+  lockPayrollRun,
+  getPayrollRunDetail,
   requirePlatformSessionUser,
   requireClientSessionUser,
   requireEmployeeSessionUser,
@@ -3181,6 +3592,7 @@ module.exports = {
   saveCompanyFbpHead,
   saveCompanySalaryTemplate,
   saveCompanyPayrollSettings,
+  savePayrollInput,
   saveEmployeeCompensationStructure,
   updateEmployeeProfileAndWorkSite,
   saveCompanySharedExportPresets,

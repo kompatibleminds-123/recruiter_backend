@@ -53,6 +53,8 @@ const {
   listCompanyEmployees,
   listCompanySalaryTemplates,
   listCompanyFbpHeads,
+  listPayrollInputs,
+  listPayrollRuns,
   listEmployeeCompensationStructures,
   listCompaniesAndUsersSummary,
   listAssessments,
@@ -67,6 +69,11 @@ const {
   login,
   incrementCompanyCaptureUsage,
   markEmployeeAttendance,
+  createPayrollRunDraft,
+  calculatePayrollRun,
+  approvePayrollRun,
+  lockPayrollRun,
+  getPayrollRunDetail,
   requirePlatformSessionUser,
   requireClientSessionUser,
   requireEmployeeSessionUser,
@@ -79,6 +86,7 @@ const {
   saveCompanyFbpHead,
   saveCompanySalaryTemplate,
   saveCompanyPayrollSettings,
+  savePayrollInput,
   saveEmployeeCompensationStructure,
   saveEmployeeProfile,
   updateEmployeeProfileAndWorkSite,
@@ -7395,6 +7403,135 @@ const server = http.createServer(async (req, res) => {
         template: body?.template && typeof body.template === "object" ? body.template : body
       });
       sendJson(res, 200, { ok: true, result: saved });
+    } catch (error) {
+      const message = String(error?.message || error);
+      const status = /admin access required|forbidden|not allowed|403/i.test(message) ? 403 : 400;
+      sendJson(res, status, { ok: false, error: message });
+    }
+    return;
+  }
+
+  if (req.method === "GET" && requestUrl.pathname === "/company/payroll/inputs") {
+    try {
+      const actor = await requireSessionUser(getBearerToken(req));
+      const payrollMonth = Number(requestUrl.searchParams.get("payrollMonth") || 0);
+      const payrollYear = Number(requestUrl.searchParams.get("payrollYear") || 0);
+      const employeeId = String(requestUrl.searchParams.get("employeeId") || "").trim();
+      const items = await listPayrollInputs({ actorUserId: actor.id, companyId: actor.companyId, payrollMonth, payrollYear, employeeId });
+      sendJson(res, 200, { ok: true, result: { items } });
+    } catch (error) {
+      const message = String(error?.message || error);
+      const status = /admin access required|forbidden|not allowed|403/i.test(message) ? 403 : 400;
+      sendJson(res, status, { ok: false, error: message });
+    }
+    return;
+  }
+
+  if (req.method === "POST" && requestUrl.pathname === "/company/payroll/inputs") {
+    try {
+      const actor = await requireSessionUser(getBearerToken(req));
+      const body = await readJsonBody(req);
+      const saved = await savePayrollInput({
+        actorUserId: actor.id,
+        companyId: actor.companyId,
+        input: body?.input && typeof body.input === "object" ? body.input : body
+      });
+      sendJson(res, 200, { ok: true, result: saved });
+    } catch (error) {
+      const message = String(error?.message || error);
+      const status = /admin access required|forbidden|not allowed|403/i.test(message) ? 403 : 400;
+      sendJson(res, status, { ok: false, error: message });
+    }
+    return;
+  }
+
+  if (req.method === "GET" && requestUrl.pathname === "/company/payroll/runs") {
+    try {
+      const actor = await requireSessionUser(getBearerToken(req));
+      const runId = String(requestUrl.searchParams.get("runId") || "").trim();
+      if (runId) {
+        const detail = await getPayrollRunDetail({ actorUserId: actor.id, companyId: actor.companyId, payrollRunId: runId });
+        sendJson(res, 200, { ok: true, result: detail });
+      } else {
+        const payrollMonth = Number(requestUrl.searchParams.get("payrollMonth") || 0);
+        const payrollYear = Number(requestUrl.searchParams.get("payrollYear") || 0);
+        const items = await listPayrollRuns({ actorUserId: actor.id, companyId: actor.companyId, payrollMonth, payrollYear });
+        sendJson(res, 200, { ok: true, result: { items } });
+      }
+    } catch (error) {
+      const message = String(error?.message || error);
+      const status = /admin access required|forbidden|not allowed|403/i.test(message) ? 403 : 400;
+      sendJson(res, status, { ok: false, error: message });
+    }
+    return;
+  }
+
+  if (req.method === "POST" && requestUrl.pathname === "/company/payroll/runs/draft") {
+    try {
+      const actor = await requireSessionUser(getBearerToken(req));
+      const body = await readJsonBody(req);
+      const run = await createPayrollRunDraft({
+        actorUserId: actor.id,
+        companyId: actor.companyId,
+        payrollMonth: Number(body?.payrollMonth || 0),
+        payrollYear: Number(body?.payrollYear || 0)
+      });
+      sendJson(res, 200, { ok: true, result: run });
+    } catch (error) {
+      const message = String(error?.message || error);
+      const status = /admin access required|forbidden|not allowed|403/i.test(message) ? 403 : 400;
+      sendJson(res, status, { ok: false, error: message });
+    }
+    return;
+  }
+
+  if (req.method === "POST" && requestUrl.pathname === "/company/payroll/runs/calculate") {
+    try {
+      const actor = await requireSessionUser(getBearerToken(req));
+      const body = await readJsonBody(req);
+      const detail = await calculatePayrollRun({
+        actorUserId: actor.id,
+        companyId: actor.companyId,
+        payrollRunId: String(body?.payrollRunId || "").trim()
+      });
+      sendJson(res, 200, { ok: true, result: detail });
+    } catch (error) {
+      const message = String(error?.message || error);
+      const status = /admin access required|forbidden|not allowed|403/i.test(message) ? 403 : 400;
+      sendJson(res, status, { ok: false, error: message });
+    }
+    return;
+  }
+
+  if (req.method === "POST" && requestUrl.pathname === "/company/payroll/runs/approve") {
+    try {
+      const actor = await requireSessionUser(getBearerToken(req));
+      const body = await readJsonBody(req);
+      const run = await approvePayrollRun({
+        actorUserId: actor.id,
+        companyId: actor.companyId,
+        payrollRunId: String(body?.payrollRunId || "").trim()
+      });
+      sendJson(res, 200, { ok: true, result: run });
+    } catch (error) {
+      const message = String(error?.message || error);
+      const status = /admin access required|forbidden|not allowed|403/i.test(message) ? 403 : 400;
+      sendJson(res, status, { ok: false, error: message });
+    }
+    return;
+  }
+
+  if (req.method === "POST" && requestUrl.pathname === "/company/payroll/runs/lock") {
+    try {
+      const actor = await requireSessionUser(getBearerToken(req));
+      const body = await readJsonBody(req);
+      const run = await lockPayrollRun({
+        actorUserId: actor.id,
+        companyId: actor.companyId,
+        payrollRunId: String(body?.payrollRunId || "").trim(),
+        reason: String(body?.reason || "").trim()
+      });
+      sendJson(res, 200, { ok: true, result: run });
     } catch (error) {
       const message = String(error?.message || error);
       const status = /admin access required|forbidden|not allowed|403/i.test(message) ? 403 : 400;
