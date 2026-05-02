@@ -1069,7 +1069,10 @@ function calculatePayrollLine({ compensation, payrollInput, settings }) {
   const employerCost = configuredMonthlyCtc > 0 ? ctcWithVariableEarnings : computedEmployerCost;
   const lopProratedEarningsFull = roundMoney(basicFull + hraFull + fbpFull + specialFull + otherAllowanceFull + monthlyOtherEarningsFull);
   const lopProratedEarningsPayable = roundMoney(basic + hra + fbp + special + otherAllowance + monthlyOtherEarnings);
-  const lopAmount = roundMoney(Math.max(0, lopProratedEarningsFull - lopProratedEarningsPayable));
+  // Guardrail: if computed LOP days are zero, deduction must stay zero.
+  const lopAmount = lopDays > 0
+    ? roundMoney(Math.max(0, lopProratedEarningsFull - lopProratedEarningsPayable))
+    : 0;
 
   return {
     proratedBasic: basic,
