@@ -12924,6 +12924,12 @@ function PayrollLiteAdminPage({ token, employees = [] }) {
     defaultMonthlyProfessionalTax: 0,
     applyLopProration: true,
     prorateHealthInsurance: false,
+    prorateReimbursements: false,
+    gratuityOnFullMonthlyBasic: false,
+    lwfEnabled: true,
+    lwfEmployeeRatePercent: 0.2,
+    lwfEmployeeMonthlyCap: 34,
+    lwfEmployerMultiplier: 2,
     defaultSalaryTemplateCode: "c2h_it_standard",
     policyNote: ""
   });
@@ -13226,6 +13232,11 @@ function PayrollLiteAdminPage({ token, employees = [] }) {
       remarks: ""
     };
     const next = { ...current, [key]: value };
+    const total = Math.max(1, Number(next.totalCalendarDays || 0) || 1);
+    const unpaid = Math.max(0, Number(next.unpaidLeaveDays || 0) || 0);
+    if (key === "unpaidLeaveDays" || key === "totalCalendarDays") {
+      next.payableDays = Math.max(0, Math.min(Number(next.payableDays || total), total - unpaid));
+    }
     setPayrollInputs((list) => {
       const rest = (list || []).filter((item) => String(item.employeeId || "") !== String(employeeId || ""));
       return [...rest, next];
@@ -13311,6 +13322,12 @@ function PayrollLiteAdminPage({ token, employees = [] }) {
           <label><span>Default PT (monthly)</span><input type="number" value={settings.defaultMonthlyProfessionalTax} onChange={(e) => setSettings((c) => ({ ...c, defaultMonthlyProfessionalTax: Number(e.target.value || 0) }))} /></label>
           <label className="checkbox-row"><input type="checkbox" checked={settings.applyLopProration} onChange={(e) => setSettings((c) => ({ ...c, applyLopProration: e.target.checked }))} /><span>Apply LOP proration</span></label>
           <label className="checkbox-row"><input type="checkbox" checked={settings.prorateHealthInsurance} onChange={(e) => setSettings((c) => ({ ...c, prorateHealthInsurance: e.target.checked }))} /><span>Prorate health insurance</span></label>
+          <label className="checkbox-row"><input type="checkbox" checked={settings.prorateReimbursements} onChange={(e) => setSettings((c) => ({ ...c, prorateReimbursements: e.target.checked }))} /><span>Prorate reimbursements</span></label>
+          <label className="checkbox-row"><input type="checkbox" checked={settings.gratuityOnFullMonthlyBasic} onChange={(e) => setSettings((c) => ({ ...c, gratuityOnFullMonthlyBasic: e.target.checked }))} /><span>Gratuity on full basic</span></label>
+          <label className="checkbox-row"><input type="checkbox" checked={settings.lwfEnabled} onChange={(e) => setSettings((c) => ({ ...c, lwfEnabled: e.target.checked }))} /><span>Enable LWF formula rule</span></label>
+          <label><span>LWF employee % of basic</span><input type="number" step="0.01" value={settings.lwfEmployeeRatePercent} onChange={(e) => setSettings((c) => ({ ...c, lwfEmployeeRatePercent: Number(e.target.value || 0) }))} /></label>
+          <label><span>LWF employee cap (monthly)</span><input type="number" value={settings.lwfEmployeeMonthlyCap} onChange={(e) => setSettings((c) => ({ ...c, lwfEmployeeMonthlyCap: Number(e.target.value || 0) }))} /></label>
+          <label><span>LWF employer multiplier</span><input type="number" step="0.01" value={settings.lwfEmployerMultiplier} onChange={(e) => setSettings((c) => ({ ...c, lwfEmployerMultiplier: Number(e.target.value || 0) }))} /></label>
           <label><span>Default salary template</span><input value={settings.defaultSalaryTemplateCode} onChange={(e) => setSettings((c) => ({ ...c, defaultSalaryTemplateCode: e.target.value }))} /></label>
           <label className="full"><span>Policy note</span><textarea rows={2} value={settings.policyNote} onChange={(e) => setSettings((c) => ({ ...c, policyNote: e.target.value }))} /></label>
         </div>
@@ -13513,8 +13530,15 @@ function PayrollLiteAdminPage({ token, employees = [] }) {
                       Gross = {formatMoney(item.payload?.proratedBasic)} + {formatMoney(item.payload?.proratedHra)} + {formatMoney(item.payload?.proratedFbp)} + {formatMoney(item.payload?.proratedSpecialAllowance)} + {formatMoney(item.payload?.otherAllowance)} + {formatMoney(item.payload?.otherEarnings)} + {formatMoney(item.payload?.approvedReimbursements)}
                     </div>
                     <div className="muted">
+                      LOP: Total Days {item.payload?.totalDays ?? item.payload?.total_days ?? 0} | Payable Days {item.payload?.payableDays ?? item.payload?.payable_days ?? 0} | Paid Leave {item.payload?.paidLeaveDays ?? item.payload?.paid_leave_days ?? 0} | LOP Days {item.payload?.lopDays ?? item.payload?.lop_days ?? 0} | LOP Deduction {formatMoney(item.payload?.lopAmount ?? item.payload?.lop_amount ?? 0)}
+                    </div>
+                    <div className="muted">
                       Deductions = PF {formatMoney(item.payload?.employeePf)} + ESI {formatMoney(item.payload?.employeeEsi)} + LWF {formatMoney(item.payload?.employeeLwf)} + PT {formatMoney(item.payload?.professionalTax)} + TDS {formatMoney(item.payload?.tds)} + Other {formatMoney(item.payload?.otherDeductions)}
                     </div>
+                    <div className="muted">
+                      Net Pay = Gross ({formatMoney(item.payload?.grossEarnings)}) - Deductions ({formatMoney(item.payload?.grossDeductions)}) = {formatMoney(item.payload?.netSalary)}
+                    </div>
+                    {item.payload?.remarks ? <div className="muted">Remarks: {String(item.payload.remarks)}</div> : null}
                     <div className="muted">
                       Employer Cost = {Number(item.payload?.configuredMonthlyCtc || 0) > 0
                         ? `Configured Monthly CTC (${formatMoney(item.payload?.configuredMonthlyCtc)})`

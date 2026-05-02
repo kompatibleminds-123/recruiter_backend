@@ -769,6 +769,12 @@ function sanitizePayrollSettings(raw) {
     defaultMonthlyProfessionalTax: Number(raw.defaultMonthlyProfessionalTax ?? raw.default_monthly_professional_tax ?? 0) || 0,
     applyLopProration: Boolean(raw.applyLopProration ?? raw.apply_lop_proration ?? true),
     prorateHealthInsurance: Boolean(raw.prorateHealthInsurance ?? raw.prorate_health_insurance ?? false),
+    prorateReimbursements: Boolean(raw.prorateReimbursements ?? raw.prorate_reimbursements ?? false),
+    gratuityOnFullMonthlyBasic: Boolean(raw.gratuityOnFullMonthlyBasic ?? raw.gratuity_on_full_monthly_basic ?? false),
+    lwfEnabled: Boolean(raw.lwfEnabled ?? raw.lwf_enabled ?? true),
+    lwfEmployeeRatePercent: Number(raw.lwfEmployeeRatePercent ?? raw.lwf_employee_rate_percent ?? 0.2) || 0.2,
+    lwfEmployeeMonthlyCap: Number(raw.lwfEmployeeMonthlyCap ?? raw.lwf_employee_monthly_cap ?? 34) || 34,
+    lwfEmployerMultiplier: Number(raw.lwfEmployerMultiplier ?? raw.lwf_employer_multiplier ?? 2) || 2,
     defaultSalaryTemplateCode: String(raw.defaultSalaryTemplateCode || raw.default_salary_template_code || "c2h_it_standard").trim() || "c2h_it_standard",
     policyNote: String(raw.policyNote || raw.policy_note || "").trim(),
     createdAt: String(raw.createdAt || raw.created_at || "").trim(),
@@ -932,31 +938,64 @@ function roundMoney(value) {
 }
 function calculatePayrollLine({ compensation, payrollInput, settings }) {
   const totalDays = Math.max(1, Number(payrollInput?.totalCalendarDays || 0) || 1);
-  const payableDays = Math.max(0, Number(payrollInput?.payableDays || totalDays));
+  const inputPayableDays = Number(payrollInput?.payableDays || totalDays);
+  const unpaidDays = Math.max(0, Number(payrollInput?.unpaidLeaveDays || payrollInput?.unpaid_leave_days || 0) || 0);
+  const maxPayableFromLop = Math.max(0, totalDays - unpaidDays);
+  // Enforce LOP impact even if payableDays was not manually reduced in UI.
+  const payableDays = Math.max(0, Math.min(inputPayableDays, maxPayableFromLop));
+  const paidLeaveDays = Math.max(0, Number(payrollInput?.paidLeaveDays || payrollInput?.paid_leave_days || 0) || 0);
+  const lopDays = Math.max(0, totalDays - payableDays);
   const prorate = settings?.applyLopProration !== false;
   const factor = prorate ? Math.min(1, payableDays / totalDays) : 1;
   const prorateField = (v) => roundMoney((Number(v || 0) || 0) * factor);
   const prorateHealth = settings?.prorateHealthInsurance === true;
+  const prorateReimbursements = settings?.prorateReimbursements === true;
 
-  const basic = prorateField(compensation?.basicMonthly);
-  const hra = prorateField(compensation?.hraMonthly);
-  const fbp = prorateField(compensation?.fbpMonthly);
-  let special = prorateField(compensation?.specialAllowanceMonthly);
+  const basicFull = roundMoney(compensation?.basicMonthly || 0);
+  const hraFull = roundMoney(compensation?.hraMonthly || 0);
+  const fbpFull = roundMoney(compensation?.fbpMonthly || 0);
+  const specialFull = roundMoney(compensation?.specialAllowanceMonthly || 0);
+  const otherAllowanceFull = roundMoney(compensation?.otherAllowanceMonthly || 0);
+  const monthlyOtherEarningsFull = roundMoney(payrollInput?.otherEarnings || 0);
+
+  const basic = prorateField(basicFull);
+  const hra = prorateField(hraFull);
+  const fbp = prorateField(fbpFull);
+  let special = prorateField(specialFull);
   const healthInsurance = prorateHealth ? prorateField(compensation?.healthInsuranceMonthly) : roundMoney(compensation?.healthInsuranceMonthly || 0);
-  const otherAllowance = prorateField(compensation?.otherAllowanceMonthly);
-  const otherEarnings = roundMoney(payrollInput?.otherEarnings || 0) + roundMoney(payrollInput?.overtimeAmount || 0) + roundMoney(payrollInput?.arrearsAmount || 0) + roundMoney(payrollInput?.bonusAmount || 0);
-  const approvedReimbursements = roundMoney(payrollInput?.approvedReimbursements || 0);
+  const otherAllowance = prorateField(otherAllowanceFull);
+  const monthlyOtherEarnings = prorateField(monthlyOtherEarningsFull);
+  const oneTimeVariableEarnings =
+    roundMoney(payrollInput?.overtimeAmount || 0)
+    + roundMoney(payrollInput?.arrearsAmount || 0)
+    + roundMoney(payrollInput?.bonusAmount || 0);
+  const otherEarnings = roundMoney(monthlyOtherEarnings + oneTimeVariableEarnings);
+  const approvedReimbursementsRaw = roundMoney(payrollInput?.approvedReimbursements || 0);
+  const approvedReimbursements = prorateReimbursements ? prorateField(approvedReimbursementsRaw) : approvedReimbursementsRaw;
 
-  const employeePf = roundMoney(compensation?.employeePfMonthly || 0);
+  const pfEmployeeRate = basicFull > 0 ? (Number(compensation?.employeePfMonthly || 0) || 0) / basicFull : 0;
+  const pfEmployerRate = basicFull > 0 ? (Number(compensation?.employerPfMonthly || 0) || 0) / basicFull : 0;
+  const employeePf = roundMoney((pfEmployeeRate > 0 ? basic * pfEmployeeRate : (Number(compensation?.employeePfMonthly || 0) || 0) * factor));
   const employeeEsi = roundMoney(compensation?.employeeEsiMonthly || 0);
-  const employeeLwf = roundMoney(compensation?.employeeLwfMonthly || 0);
+  const lwfEnabled = settings?.lwfEnabled !== false;
+  const lwfEmployeeRatePercent = Number(settings?.lwfEmployeeRatePercent ?? 0.2) || 0.2;
+  const lwfEmployeeMonthlyCap = Number(settings?.lwfEmployeeMonthlyCap ?? 34) || 34;
+  const lwfEmployerMultiplier = Number(settings?.lwfEmployerMultiplier ?? 2) || 2;
+  const employeeLwf = lwfEnabled
+    ? roundMoney(Math.min((basic * lwfEmployeeRatePercent) / 100, lwfEmployeeMonthlyCap))
+    : roundMoney(compensation?.employeeLwfMonthly || 0);
   const professionalTax = roundMoney(payrollInput?.professionalTax || compensation?.professionalTaxMonthly || settings?.defaultMonthlyProfessionalTax || 0);
   const tds = roundMoney(payrollInput?.tdsAmount || 0);
   const otherDeductions = roundMoney(payrollInput?.otherDeductions || 0);
-  const employerPf = roundMoney(compensation?.employerPfMonthly || 0);
+  const employerPf = roundMoney((pfEmployerRate > 0 ? basic * pfEmployerRate : (Number(compensation?.employerPfMonthly || 0) || 0) * factor));
   const employerEsi = roundMoney(compensation?.employerEsiMonthly || 0);
-  const employerLwf = roundMoney(compensation?.employerLwfMonthly || 0);
-  const gratuity = roundMoney(compensation?.gratuityMonthly || 0);
+  const employerLwf = lwfEnabled
+    ? roundMoney(employeeLwf * lwfEmployerMultiplier)
+    : roundMoney(compensation?.employerLwfMonthly || 0);
+  const gratuityFull = roundMoney(compensation?.gratuityMonthly || 0);
+  const gratuityBaseBasic = settings?.gratuityOnFullMonthlyBasic ? basicFull : basic;
+  const gratuityRate = basicFull > 0 ? (gratuityFull / basicFull) : 0;
+  const gratuity = roundMoney(gratuityRate > 0 ? gratuityBaseBasic * gratuityRate : (settings?.gratuityOnFullMonthlyBasic ? gratuityFull : gratuityFull * factor));
   // Keep employer cost aligned with CTC semantics:
   // - If monthly CTC exists, employer cost should come from monthly CTC (prorated if enabled)
   // - Otherwise, fallback to computed gross + employer contributions
@@ -979,6 +1018,9 @@ function calculatePayrollLine({ compensation, payrollInput, settings }) {
     ? roundMoney(configuredMonthlyCtc + otherEarnings + approvedReimbursements)
     : 0;
   const employerCost = configuredMonthlyCtc > 0 ? ctcWithVariableEarnings : computedEmployerCost;
+  const lopProratedEarningsFull = roundMoney(basicFull + hraFull + fbpFull + specialFull + otherAllowanceFull + monthlyOtherEarningsFull);
+  const lopProratedEarningsPayable = roundMoney(basic + hra + fbp + special + otherAllowance + monthlyOtherEarnings);
+  const lopAmount = roundMoney(Math.max(0, lopProratedEarningsFull - lopProratedEarningsPayable));
 
   return {
     proratedBasic: basic,
@@ -1006,7 +1048,16 @@ function calculatePayrollLine({ compensation, payrollInput, settings }) {
     configuredMonthlyCtc,
     computedEmployerCost,
     payableDays,
+    paidLeaveDays,
+    lopDays,
+    lopAmount,
+    remarks: String(payrollInput?.remarks || "").trim(),
     totalDays,
+    total_days: totalDays,
+    payable_days: payableDays,
+    paid_leave_days: paidLeaveDays,
+    lop_days: lopDays,
+    lop_amount: lopAmount,
     prorationFactor: roundMoney(factor)
   };
 }
@@ -2159,6 +2210,12 @@ async function getCompanyPayrollSettings({ actorUserId, companyId }) {
       defaultMonthlyProfessionalTax: 0,
       applyLopProration: true,
       prorateHealthInsurance: false,
+      prorateReimbursements: false,
+      gratuityOnFullMonthlyBasic: false,
+      lwfEnabled: true,
+      lwfEmployeeRatePercent: 0.2,
+      lwfEmployeeMonthlyCap: 34,
+      lwfEmployerMultiplier: 2,
       defaultSalaryTemplateCode: "c2h_it_standard",
       policyNote: ""
     });
@@ -2174,6 +2231,12 @@ async function getCompanyPayrollSettings({ actorUserId, companyId }) {
     defaultMonthlyProfessionalTax: 0,
     applyLopProration: true,
     prorateHealthInsurance: false,
+    prorateReimbursements: false,
+    gratuityOnFullMonthlyBasic: false,
+    lwfEnabled: true,
+    lwfEmployeeRatePercent: 0.2,
+    lwfEmployeeMonthlyCap: 34,
+    lwfEmployerMultiplier: 2,
     defaultSalaryTemplateCode: "c2h_it_standard",
     policyNote: ""
   });
@@ -2187,6 +2250,12 @@ async function saveCompanyPayrollSettings({ actorUserId, companyId, settings = {
     default_monthly_professional_tax: Number(settings.defaultMonthlyProfessionalTax || 0) || 0,
     apply_lop_proration: settings.applyLopProration !== false,
     prorate_health_insurance: Boolean(settings.prorateHealthInsurance),
+    prorate_reimbursements: Boolean(settings.prorateReimbursements),
+    gratuity_on_full_monthly_basic: Boolean(settings.gratuityOnFullMonthlyBasic),
+    lwf_enabled: settings.lwfEnabled !== false,
+    lwf_employee_rate_percent: Number(settings.lwfEmployeeRatePercent ?? 0.2) || 0.2,
+    lwf_employee_monthly_cap: Number(settings.lwfEmployeeMonthlyCap ?? 34) || 34,
+    lwf_employer_multiplier: Number(settings.lwfEmployerMultiplier ?? 2) || 2,
     default_salary_template_code: String(settings.defaultSalaryTemplateCode || "c2h_it_standard").trim().toLowerCase() || "c2h_it_standard",
     policy_note: String(settings.policyNote || "").trim(),
     updated_at: now,
@@ -2775,6 +2844,30 @@ async function setPayrollRunStatus({ actorUserId, companyId, payrollRunId, statu
   await ensureSeeded();
   const rows = await sbPatch("payroll_runs", `id=eq.${enc(run.id)}&company_id=eq.${enc(companyId)}`, patch);
   return sanitizePayrollRun(rows?.[0]);
+}
+async function deletePayrollRun({ actorUserId, companyId, payrollRunId }) {
+  await requireAdminForCompany({ actorUserId, companyId });
+  const runId = String(payrollRunId || "").trim();
+  if (!runId) throw new Error("payrollRunId is required.");
+  if (!cfg().on) {
+    const store = readStore();
+    const before = Array.isArray(store.payrollRuns) ? store.payrollRuns.length : 0;
+    store.payrollRuns = (store.payrollRuns || []).filter(
+      (item) => !(String(item.id || "") === runId && String(item.companyId || "") === String(companyId))
+    );
+    store.payrollRunItems = (store.payrollRunItems || []).filter(
+      (item) => !(String(item.payrollRunId || item.payroll_run_id || "") === runId && String(item.companyId || item.company_id || "") === String(companyId))
+    );
+    writeStore(store);
+    if ((store.payrollRuns || []).length === before) throw new Error("Payroll run not found.");
+    return { ok: true, deletedRunId: runId };
+  }
+  await ensureSeeded();
+  const existing = await sbSel("payroll_runs", `select=id&company_id=eq.${enc(companyId)}&id=eq.${enc(runId)}&limit=1`);
+  if (!Array.isArray(existing) || !existing.length) throw new Error("Payroll run not found.");
+  await sbDel("payroll_run_items", `company_id=eq.${enc(companyId)}&payroll_run_id=eq.${enc(runId)}`);
+  await sbDel("payroll_runs", `company_id=eq.${enc(companyId)}&id=eq.${enc(runId)}`);
+  return { ok: true, deletedRunId: runId };
 }
 async function createEmployeeUser({ actorUserId, companyId, employeeCode, username, password, fullName, profile = {}, workSite = {} }) {
   const actor = sanitizeUser(await getUserById(actorUserId, companyId));
@@ -3652,6 +3745,7 @@ module.exports = {
   approvePayrollRun,
   lockPayrollRun,
   setPayrollRunStatus,
+  deletePayrollRun,
   getPayrollRunDetail,
   requirePlatformSessionUser,
   requireClientSessionUser,

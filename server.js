@@ -74,6 +74,7 @@ const {
   approvePayrollRun,
   lockPayrollRun,
   setPayrollRunStatus,
+  deletePayrollRun,
   getPayrollRunDetail,
   requirePlatformSessionUser,
   requireClientSessionUser,
@@ -7569,6 +7570,20 @@ const server = http.createServer(async (req, res) => {
       sendJson(res, status, { ok: false, error: message });
     }
     return;
+  }
+  if (req.method === "POST" && requestUrl.pathname === "/company/payroll/runs/delete") {
+    try {
+      const actor = await requireSessionUser(getBearerToken(req));
+      const body = await readJsonBody(req);
+      const result = await deletePayrollRun({
+        actorUserId: actor.id,
+        companyId: actor.companyId,
+        payrollRunId: String(body?.payrollRunId || "").trim()
+      });
+      return sendJson(res, 200, result);
+    } catch (error) {
+      return sendJson(res, 400, { error: String(error?.message || error) });
+    }
   }
 
   if (req.method === "POST" && req.url === "/company/email-settings/test") {
