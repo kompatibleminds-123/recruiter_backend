@@ -1731,13 +1731,22 @@ function normalizeNullableTimestampInput(value) {
   return trimmed ? trimmed : null;
 }
 
+function formatLocalDateKey(value) {
+  const date = value instanceof Date ? value : new Date(value);
+  if (!Number.isFinite(date.getTime())) return "";
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
 function getRelativeMonthRange(monthOffset = 0) {
   const now = new Date();
   const start = new Date(now.getFullYear(), now.getMonth() + monthOffset, 1);
   const end = new Date(now.getFullYear(), now.getMonth() + monthOffset + 1, 0, 23, 59, 59, 999);
   return {
-    from: start.toISOString().slice(0, 10),
-    to: end.toISOString().slice(0, 10)
+    from: formatLocalDateKey(start),
+    to: formatLocalDateKey(end)
   };
 }
 
@@ -1749,8 +1758,8 @@ function getRelativeDayRange(days = 0) {
   const end = new Date(now);
   end.setHours(23, 59, 59, 999);
   return {
-    from: start.toISOString().slice(0, 10),
-    to: end.toISOString().slice(0, 10)
+    from: formatLocalDateKey(start),
+    to: formatLocalDateKey(end)
   };
 }
 
@@ -1761,8 +1770,8 @@ function getRelativeNamedDayRange(dayOffset = 0) {
   const end = new Date(start);
   end.setHours(23, 59, 59, 999);
   return {
-    from: start.toISOString().slice(0, 10),
-    to: end.toISOString().slice(0, 10)
+    from: formatLocalDateKey(start),
+    to: formatLocalDateKey(end)
   };
 }
 
@@ -1777,21 +1786,22 @@ function getCurrentWeekRange() {
   end.setDate(start.getDate() + 6);
   end.setHours(23, 59, 59, 999);
   return {
-    from: start.toISOString().slice(0, 10),
-    to: end.toISOString().slice(0, 10)
+    from: formatLocalDateKey(start),
+    to: formatLocalDateKey(end)
   };
 }
 
 function getNextWeekRange() {
   const current = getCurrentWeekRange();
-  const start = new Date(`${current.from}T00:00:00.000Z`);
-  start.setUTCDate(start.getUTCDate() + 7);
+  const start = new Date(`${current.from}T00:00:00`);
+  start.setDate(start.getDate() + 7);
+  start.setHours(0, 0, 0, 0);
   const end = new Date(start);
-  end.setUTCDate(end.getUTCDate() + 6);
-  end.setUTCHours(23, 59, 59, 999);
+  end.setDate(end.getDate() + 6);
+  end.setHours(23, 59, 59, 999);
   return {
-    from: start.toISOString().slice(0, 10),
-    to: end.toISOString().slice(0, 10)
+    from: formatLocalDateKey(start),
+    to: formatLocalDateKey(end)
   };
 }
 
@@ -1802,8 +1812,8 @@ function getNamedMonthRange(monthName, year = new Date().getFullYear()) {
   const start = new Date(year, monthIndex, 1);
   const end = new Date(year, monthIndex + 1, 0, 23, 59, 59, 999);
   return {
-    from: start.toISOString().slice(0, 10),
-    to: end.toISOString().slice(0, 10)
+    from: formatLocalDateKey(start),
+    to: formatLocalDateKey(end)
   };
 }
 

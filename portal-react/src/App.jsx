@@ -4700,7 +4700,8 @@ function PortalApp({ token, onLogout }) {
       .map((section) => ({
         ...section,
         items: section.items.filter((item) => {
-          if ((item.to === "/login-settings" || item.to === "/intake-settings" || item.to === "/settings" || item.to.startsWith("/admin/payroll")) && !isSettingsAdmin) return false;
+          const itemTo = String(item?.to || "");
+          if ((itemTo === "/login-settings" || itemTo === "/intake-settings" || itemTo === "/settings" || itemTo.startsWith("/admin/payroll")) && !isSettingsAdmin) return false;
           return true;
         })
       }))
@@ -6135,6 +6136,10 @@ function PortalApp({ token, onLogout }) {
       const convertedAt = String(
         assessmentSharedAtMap.get(String(linkedAssessment?.id || assessmentId || "").trim())
           || statusHistoryConvertedAt
+          || linkedAssessment?.generatedAt
+          || linkedAssessment?.generated_at
+          || linkedAssessment?.createdAt
+          || linkedAssessment?.created_at
           || ""
       ).trim();
       const noticeDays = parseNoticePeriodToDays(item?.notice_period || item?.noticePeriod || "");
@@ -12772,6 +12777,11 @@ function PayrollLiteAdminPage({ token, employees = [] }) {
     const gratuityPctBasicAnnual = Number(templateConfig.gratuity_percent_of_basic_annual ?? 4.81);
     const fbpMonthly = Number(templateConfig.default_fbp_monthly ?? 0);
     const healthAnnual = Number(templateConfig.default_health_insurance_annual ?? 0);
+    const employeeEsiPctGross = Number(templateConfig.employee_esi_percent_of_gross ?? 0.75);
+    const employerEsiPctGross = Number(templateConfig.employer_esi_percent_of_gross ?? 3.25);
+    const employeeLwfMonthly = Number(templateConfig.employee_lwf_monthly ?? 10);
+    const employerLwfMonthly = Number(templateConfig.employer_lwf_monthly ?? 20);
+    const professionalTaxMonthly = Number(templateConfig.professional_tax_monthly ?? 200);
 
     const basicMonthly = round2(monthlyCtc * (basicPct / 100));
     const hraMonthly = round2(basicMonthly * (hraPctBasic / 100));
@@ -12782,6 +12792,9 @@ function PayrollLiteAdminPage({ token, employees = [] }) {
     const specialAllowanceMonthly = round2(
       monthlyCtc - basicMonthly - hraMonthly - fbpMonthly - healthInsuranceMonthly
     );
+    const provisionalGross = Math.max(0, round2(basicMonthly + hraMonthly + fbpMonthly + specialAllowanceMonthly));
+    const employeeEsiMonthly = round2(provisionalGross * (employeeEsiPctGross / 100));
+    const employerEsiMonthly = round2(provisionalGross * (employerEsiPctGross / 100));
 
     return {
       monthlyCtc,
@@ -12791,6 +12804,11 @@ function PayrollLiteAdminPage({ token, employees = [] }) {
       specialAllowanceMonthly: Math.max(0, specialAllowanceMonthly),
       employerPfMonthly,
       employeePfMonthly,
+      employerEsiMonthly,
+      employeeEsiMonthly,
+      employerLwfMonthly,
+      employeeLwfMonthly,
+      professionalTaxMonthly,
       gratuityMonthly,
       healthInsuranceMonthly,
       otherAllowanceMonthly: 0
@@ -12809,6 +12827,13 @@ function PayrollLiteAdminPage({ token, employees = [] }) {
   const [compItems, setCompItems] = useState([]);
   const [fbpHeads, setFbpHeads] = useState([]);
   const [salaryTemplates, setSalaryTemplates] = useState([]);
+  const now = new Date();
+  const [payrollMonth, setPayrollMonth] = useState(now.getMonth() + 1);
+  const [payrollYear, setPayrollYear] = useState(now.getFullYear());
+  const [payrollInputs, setPayrollInputs] = useState([]);
+  const [payrollRuns, setPayrollRuns] = useState([]);
+  const [selectedRunId, setSelectedRunId] = useState("");
+  const [selectedRunDetail, setSelectedRunDetail] = useState({ run: null, items: [] });
   const [status, setStatus] = useState("");
   const [compForm, setCompForm] = useState({
     employeeId: "",
@@ -12821,6 +12846,11 @@ function PayrollLiteAdminPage({ token, employees = [] }) {
     specialAllowanceMonthly: "",
     employerPfMonthly: "",
     employeePfMonthly: "",
+    employerEsiMonthly: "",
+    employeeEsiMonthly: "",
+    employerLwfMonthly: "",
+    employeeLwfMonthly: "",
+    professionalTaxMonthly: "",
     gratuityMonthly: "",
     healthInsuranceMonthly: "",
     otherAllowanceMonthly: "",
@@ -12846,6 +12876,11 @@ function PayrollLiteAdminPage({ token, employees = [] }) {
     hraPercentOfBasic: 50,
     employerPfPercentOfBasic: 12,
     employeePfPercentOfBasic: 12,
+    employerEsiPercentOfGross: 3.25,
+    employeeEsiPercentOfGross: 0.75,
+    employerLwfMonthly: 20,
+    employeeLwfMonthly: 10,
+    professionalTaxMonthly: 200,
     gratuityPercentOfBasicAnnual: 4.81,
     defaultFbpMonthly: 0,
     defaultHealthInsuranceAnnual: 0,
@@ -12864,10 +12899,29 @@ function PayrollLiteAdminPage({ token, employees = [] }) {
     setFbpHeads(Array.isArray(fbpResult?.items) ? fbpResult.items : []);
     setSalaryTemplates(Array.isArray(templateResult?.items) ? templateResult.items : []);
   }
+  async function loadPayrollExecutionData(nextMonth = payrollMonth, nextYear = payrollYear) {
+    const [inputResult, runResult] = await Promise.all([
+      api(`/company/payroll/inputs?payrollMonth=${Number(nextMonth)}&payrollYear=${Number(nextYear)}`, token).catch(() => ({ items: [] })),
+      api(`/company/payroll/runs?payrollMonth=${Number(nextMonth)}&payrollYear=${Number(nextYear)}`, token).catch(() => ({ items: [] }))
+    ]);
+    setPayrollInputs(Array.isArray(inputResult?.items) ? inputResult.items : []);
+    const runs = Array.isArray(runResult?.items) ? runResult.items : [];
+    setPayrollRuns(runs);
+    if (!selectedRunId && runs[0]?.id) setSelectedRunId(runs[0].id);
+  }
 
   useEffect(() => {
     void loadPayrollFoundation().catch((error) => setStatus(String(error?.message || error)));
   }, [token]);
+  useEffect(() => {
+    void loadPayrollExecutionData().catch((error) => setStatus(String(error?.message || error)));
+  }, [token, payrollMonth, payrollYear]);
+  useEffect(() => {
+    if (!selectedRunId) return;
+    void api(`/company/payroll/runs?runId=${encodeURIComponent(selectedRunId)}`, token)
+      .then((detail) => setSelectedRunDetail(detail || { run: null, items: [] }))
+      .catch((error) => setStatus(String(error?.message || error)));
+  }, [selectedRunId, token]);
 
   async function saveSettings() {
     try {
@@ -12887,14 +12941,33 @@ function PayrollLiteAdminPage({ token, employees = [] }) {
         annualCtc: Number(compForm.annualCtc || 0),
         monthlyCtc: Number(compForm.monthlyCtc || 0),
         basicMonthly: Number(compForm.basicMonthly || 0),
+        basicAnnual: Number(compForm.basicMonthly || 0) * 12,
         hraMonthly: Number(compForm.hraMonthly || 0),
+        hraAnnual: Number(compForm.hraMonthly || 0) * 12,
         fbpMonthly: Number(compForm.fbpMonthly || 0),
+        fbpAnnual: Number(compForm.fbpMonthly || 0) * 12,
         specialAllowanceMonthly: Number(compForm.specialAllowanceMonthly || 0),
+        specialAllowanceAnnual: Number(compForm.specialAllowanceMonthly || 0) * 12,
         employerPfMonthly: Number(compForm.employerPfMonthly || 0),
+        employerPfAnnual: Number(compForm.employerPfMonthly || 0) * 12,
         employeePfMonthly: Number(compForm.employeePfMonthly || 0),
+        employeePfAnnual: Number(compForm.employeePfMonthly || 0) * 12,
+        employerEsiMonthly: Number(compForm.employerEsiMonthly || 0),
+        employerEsiAnnual: Number(compForm.employerEsiMonthly || 0) * 12,
+        employeeEsiMonthly: Number(compForm.employeeEsiMonthly || 0),
+        employeeEsiAnnual: Number(compForm.employeeEsiMonthly || 0) * 12,
+        employerLwfMonthly: Number(compForm.employerLwfMonthly || 0),
+        employerLwfAnnual: Number(compForm.employerLwfMonthly || 0) * 12,
+        employeeLwfMonthly: Number(compForm.employeeLwfMonthly || 0),
+        employeeLwfAnnual: Number(compForm.employeeLwfMonthly || 0) * 12,
+        professionalTaxMonthly: Number(compForm.professionalTaxMonthly || 0),
+        professionalTaxAnnual: Number(compForm.professionalTaxMonthly || 0) * 12,
         gratuityMonthly: Number(compForm.gratuityMonthly || 0),
+        gratuityAnnual: Number(compForm.gratuityMonthly || 0) * 12,
         healthInsuranceMonthly: Number(compForm.healthInsuranceMonthly || 0),
+        healthInsuranceAnnual: Number(compForm.healthInsuranceMonthly || 0) * 12,
         otherAllowanceMonthly: Number(compForm.otherAllowanceMonthly || 0)
+        ,otherAllowanceAnnual: Number(compForm.otherAllowanceMonthly || 0) * 12
       });
       await loadPayrollFoundation();
       setStatus("Compensation saved.");
@@ -12918,6 +12991,11 @@ function PayrollLiteAdminPage({ token, employees = [] }) {
       specialAllowanceMonthly: auto.specialAllowanceMonthly,
       employerPfMonthly: auto.employerPfMonthly,
       employeePfMonthly: auto.employeePfMonthly,
+      employerEsiMonthly: auto.employerEsiMonthly,
+      employeeEsiMonthly: auto.employeeEsiMonthly,
+      employerLwfMonthly: auto.employerLwfMonthly,
+      employeeLwfMonthly: auto.employeeLwfMonthly,
+      professionalTaxMonthly: auto.professionalTaxMonthly,
       gratuityMonthly: auto.gratuityMonthly,
       healthInsuranceMonthly: auto.healthInsuranceMonthly,
       otherAllowanceMonthly: auto.otherAllowanceMonthly
@@ -12953,6 +13031,11 @@ function PayrollLiteAdminPage({ token, employees = [] }) {
           hra_percent_of_basic: Number(templateForm.hraPercentOfBasic || 0),
           employer_pf_percent_of_basic: Number(templateForm.employerPfPercentOfBasic || 0),
           employee_pf_percent_of_basic: Number(templateForm.employeePfPercentOfBasic || 0),
+          employer_esi_percent_of_gross: Number(templateForm.employerEsiPercentOfGross || 0),
+          employee_esi_percent_of_gross: Number(templateForm.employeeEsiPercentOfGross || 0),
+          employer_lwf_monthly: Number(templateForm.employerLwfMonthly || 0),
+          employee_lwf_monthly: Number(templateForm.employeeLwfMonthly || 0),
+          professional_tax_monthly: Number(templateForm.professionalTaxMonthly || 0),
           gratuity_percent_of_basic_annual: Number(templateForm.gratuityPercentOfBasicAnnual || 0),
           default_fbp_monthly: Number(templateForm.defaultFbpMonthly || 0),
           default_health_insurance_annual: Number(templateForm.defaultHealthInsuranceAnnual || 0)
@@ -12961,6 +13044,7 @@ function PayrollLiteAdminPage({ token, employees = [] }) {
       setTemplateForm({
         id: "", code: "", name: "", description: "",
         basicPercentOfCtc: 35, hraPercentOfBasic: 50, employerPfPercentOfBasic: 12, employeePfPercentOfBasic: 12,
+        employerEsiPercentOfGross: 3.25, employeeEsiPercentOfGross: 0.75, employerLwfMonthly: 20, employeeLwfMonthly: 10, professionalTaxMonthly: 200,
         gratuityPercentOfBasicAnnual: 4.81, defaultFbpMonthly: 0, defaultHealthInsuranceAnnual: 0, active: true
       });
       await loadPayrollFoundation();
@@ -12980,6 +13064,83 @@ function PayrollLiteAdminPage({ token, employees = [] }) {
       });
       await loadPayrollFoundation();
       setStatus("FBP head deactivated.");
+    } catch (error) {
+      setStatus(String(error?.message || error));
+    }
+  }
+  const inputByEmployee = useMemo(() => {
+    const map = new Map();
+    (payrollInputs || []).forEach((item) => map.set(String(item.employeeId || ""), item));
+    return map;
+  }, [payrollInputs]);
+  async function savePayrollInputRow(employeeId) {
+    try {
+      const existing = inputByEmployee.get(String(employeeId || "")) || {};
+      setStatus("Saving payroll input...");
+      await api("/company/payroll/inputs", token, "POST", {
+        ...existing,
+        employeeId,
+        payrollMonth,
+        payrollYear
+      });
+      await loadPayrollExecutionData(payrollMonth, payrollYear);
+      setStatus("Payroll input saved.");
+    } catch (error) {
+      setStatus(String(error?.message || error));
+    }
+  }
+  function setInputField(employeeId, key, value) {
+    const current = inputByEmployee.get(String(employeeId || "")) || {
+      employeeId,
+      payrollMonth,
+      payrollYear,
+      totalCalendarDays: 30,
+      workingDays: 22,
+      payableDays: 30,
+      paidLeaveDays: 0,
+      unpaidLeaveDays: 0,
+      absentDays: 0,
+      holidays: 0,
+      overtimeAmount: 0,
+      arrearsAmount: 0,
+      bonusAmount: 0,
+      otherEarnings: 0,
+      otherDeductions: 0,
+      professionalTax: 0,
+      tdsAmount: 0,
+      approvedReimbursements: 0,
+      remarks: ""
+    };
+    const next = { ...current, [key]: value };
+    setPayrollInputs((list) => {
+      const rest = (list || []).filter((item) => String(item.employeeId || "") !== String(employeeId || ""));
+      return [...rest, next];
+    });
+  }
+  async function createRunDraft() {
+    try {
+      setStatus("Creating payroll run draft...");
+      await api("/company/payroll/runs/draft", token, "POST", { payrollMonth, payrollYear });
+      await loadPayrollExecutionData(payrollMonth, payrollYear);
+      setStatus("Payroll run draft created.");
+    } catch (error) {
+      setStatus(String(error?.message || error));
+    }
+  }
+  async function runAction(action) {
+    try {
+      if (!selectedRunId) throw new Error("Select a payroll run first.");
+      const endpoint = action === "calculate"
+        ? "/company/payroll/runs/calculate"
+        : action === "approve"
+          ? "/company/payroll/runs/approve"
+          : "/company/payroll/runs/lock";
+      setStatus(`Running ${action}...`);
+      await api(endpoint, token, "POST", { payrollRunId: selectedRunId, reason: action === "lock" ? "Locked by admin action" : "" });
+      await loadPayrollExecutionData(payrollMonth, payrollYear);
+      const detail = await api(`/company/payroll/runs?runId=${encodeURIComponent(selectedRunId)}`, token);
+      setSelectedRunDetail(detail || { run: null, items: [] });
+      setStatus(`Payroll run ${action} complete.`);
     } catch (error) {
       setStatus(String(error?.message || error));
     }
@@ -13012,6 +13173,11 @@ function PayrollLiteAdminPage({ token, employees = [] }) {
           <label><span>HRA % of Basic</span><input type="number" value={templateForm.hraPercentOfBasic} onChange={(e) => setTemplateForm((c) => ({ ...c, hraPercentOfBasic: e.target.value }))} /></label>
           <label><span>Employer PF % of Basic</span><input type="number" value={templateForm.employerPfPercentOfBasic} onChange={(e) => setTemplateForm((c) => ({ ...c, employerPfPercentOfBasic: e.target.value }))} /></label>
           <label><span>Employee PF % of Basic</span><input type="number" value={templateForm.employeePfPercentOfBasic} onChange={(e) => setTemplateForm((c) => ({ ...c, employeePfPercentOfBasic: e.target.value }))} /></label>
+          <label><span>Employer ESI % of Gross</span><input type="number" value={templateForm.employerEsiPercentOfGross} onChange={(e) => setTemplateForm((c) => ({ ...c, employerEsiPercentOfGross: e.target.value }))} /></label>
+          <label><span>Employee ESI % of Gross</span><input type="number" value={templateForm.employeeEsiPercentOfGross} onChange={(e) => setTemplateForm((c) => ({ ...c, employeeEsiPercentOfGross: e.target.value }))} /></label>
+          <label><span>Employer LWF (monthly)</span><input type="number" value={templateForm.employerLwfMonthly} onChange={(e) => setTemplateForm((c) => ({ ...c, employerLwfMonthly: e.target.value }))} /></label>
+          <label><span>Employee LWF (monthly)</span><input type="number" value={templateForm.employeeLwfMonthly} onChange={(e) => setTemplateForm((c) => ({ ...c, employeeLwfMonthly: e.target.value }))} /></label>
+          <label><span>PT (monthly)</span><input type="number" value={templateForm.professionalTaxMonthly} onChange={(e) => setTemplateForm((c) => ({ ...c, professionalTaxMonthly: e.target.value }))} /></label>
           <label><span>Gratuity % of Basic (annual)</span><input type="number" value={templateForm.gratuityPercentOfBasicAnnual} onChange={(e) => setTemplateForm((c) => ({ ...c, gratuityPercentOfBasicAnnual: e.target.value }))} /></label>
           <label><span>Default FBP (monthly)</span><input type="number" value={templateForm.defaultFbpMonthly} onChange={(e) => setTemplateForm((c) => ({ ...c, defaultFbpMonthly: e.target.value }))} /></label>
           <label><span>Default health insurance (annual)</span><input type="number" value={templateForm.defaultHealthInsuranceAnnual} onChange={(e) => setTemplateForm((c) => ({ ...c, defaultHealthInsuranceAnnual: e.target.value }))} /></label>
@@ -13019,10 +13185,28 @@ function PayrollLiteAdminPage({ token, employees = [] }) {
         <div className="button-row"><button onClick={() => void saveTemplate()}>Save template</button></div>
         <div className="table-wrap">
           <table className="dashboard-table">
-            <thead><tr><th>Code</th><th>Name</th><th>Basic%</th><th>HRA%</th><th>PF%</th><th>FBP</th><th>Status</th></tr></thead>
+            <thead><tr><th>Code</th><th>Name</th><th>Basic%</th><th>HRA%</th><th>PF%</th><th>FBP</th><th>Status</th><th>Action</th></tr></thead>
             <tbody>
-              {salaryTemplates.map((item) => <tr key={item.id}><td>{item.code}</td><td>{item.name}</td><td>{item.config?.basic_percent_of_ctc ?? "-"}</td><td>{item.config?.hra_percent_of_basic ?? "-"}</td><td>{item.config?.employer_pf_percent_of_basic ?? "-"}</td><td>{item.config?.default_fbp_monthly ?? 0}</td><td>{item.active ? "Active" : "Inactive"}</td></tr>)}
-              {!salaryTemplates.length ? <tr><td colSpan="7"><div className="empty-state compact-empty">No salary templates yet.</div></td></tr> : null}
+              {salaryTemplates.map((item) => <tr key={item.id}><td>{item.code}</td><td>{item.name}</td><td>{item.config?.basic_percent_of_ctc ?? "-"}</td><td>{item.config?.hra_percent_of_basic ?? "-"}</td><td>{item.config?.employer_pf_percent_of_basic ?? "-"}</td><td>{item.config?.default_fbp_monthly ?? 0}</td><td>{item.active ? "Active" : "Inactive"}</td><td><button className="ghost-btn" onClick={() => setTemplateForm({
+                id: item.id,
+                code: item.code,
+                name: item.name,
+                description: item.description || "",
+                basicPercentOfCtc: item.config?.basic_percent_of_ctc ?? 35,
+                hraPercentOfBasic: item.config?.hra_percent_of_basic ?? 50,
+                employerPfPercentOfBasic: item.config?.employer_pf_percent_of_basic ?? 12,
+                employeePfPercentOfBasic: item.config?.employee_pf_percent_of_basic ?? 12,
+                employerEsiPercentOfGross: item.config?.employer_esi_percent_of_gross ?? 3.25,
+                employeeEsiPercentOfGross: item.config?.employee_esi_percent_of_gross ?? 0.75,
+                employerLwfMonthly: item.config?.employer_lwf_monthly ?? 20,
+                employeeLwfMonthly: item.config?.employee_lwf_monthly ?? 10,
+                professionalTaxMonthly: item.config?.professional_tax_monthly ?? 200,
+                gratuityPercentOfBasicAnnual: item.config?.gratuity_percent_of_basic_annual ?? 4.81,
+                defaultFbpMonthly: item.config?.default_fbp_monthly ?? 0,
+                defaultHealthInsuranceAnnual: item.config?.default_health_insurance_annual ?? 0,
+                active: item.active
+              })}>Edit</button></td></tr>)}
+              {!salaryTemplates.length ? <tr><td colSpan="8"><div className="empty-state compact-empty">No salary templates yet.</div></td></tr> : null}
             </tbody>
           </table>
         </div>
@@ -13041,6 +13225,11 @@ function PayrollLiteAdminPage({ token, employees = [] }) {
           <label><span>Special allowance</span><input type="number" value={compForm.specialAllowanceMonthly} onChange={(e) => setCompForm((c) => ({ ...c, specialAllowanceMonthly: e.target.value }))} /></label>
           <label><span>Employer PF</span><input type="number" value={compForm.employerPfMonthly} onChange={(e) => setCompForm((c) => ({ ...c, employerPfMonthly: e.target.value }))} /></label>
           <label><span>Employee PF</span><input type="number" value={compForm.employeePfMonthly} onChange={(e) => setCompForm((c) => ({ ...c, employeePfMonthly: e.target.value }))} /></label>
+          <label><span>Employer ESI</span><input type="number" value={compForm.employerEsiMonthly} onChange={(e) => setCompForm((c) => ({ ...c, employerEsiMonthly: e.target.value }))} /></label>
+          <label><span>Employee ESI</span><input type="number" value={compForm.employeeEsiMonthly} onChange={(e) => setCompForm((c) => ({ ...c, employeeEsiMonthly: e.target.value }))} /></label>
+          <label><span>Employer LWF</span><input type="number" value={compForm.employerLwfMonthly} onChange={(e) => setCompForm((c) => ({ ...c, employerLwfMonthly: e.target.value }))} /></label>
+          <label><span>Employee LWF</span><input type="number" value={compForm.employeeLwfMonthly} onChange={(e) => setCompForm((c) => ({ ...c, employeeLwfMonthly: e.target.value }))} /></label>
+          <label><span>Professional Tax (monthly)</span><input type="number" value={compForm.professionalTaxMonthly} onChange={(e) => setCompForm((c) => ({ ...c, professionalTaxMonthly: e.target.value }))} /></label>
           <label><span>Gratuity</span><input type="number" value={compForm.gratuityMonthly} onChange={(e) => setCompForm((c) => ({ ...c, gratuityMonthly: e.target.value }))} /></label>
           <label><span>Health insurance</span><input type="number" value={compForm.healthInsuranceMonthly} onChange={(e) => setCompForm((c) => ({ ...c, healthInsuranceMonthly: e.target.value }))} /></label>
           <label><span>Other allowance</span><input type="number" value={compForm.otherAllowanceMonthly} onChange={(e) => setCompForm((c) => ({ ...c, otherAllowanceMonthly: e.target.value }))} /></label>
@@ -13048,10 +13237,122 @@ function PayrollLiteAdminPage({ token, employees = [] }) {
         <div className="button-row"><button onClick={() => void saveComp()}>Save compensation</button></div>
         <div className="table-wrap">
           <table className="dashboard-table">
-            <thead><tr><th>Employee</th><th>Effective</th><th>Annual CTC</th><th>Status</th></tr></thead>
+            <thead><tr><th>Employee</th><th>Effective</th><th>Annual CTC</th><th>Status</th><th>Action</th></tr></thead>
             <tbody>
-              {compItems.map((item) => <tr key={item.id}><td>{employees.find((emp) => emp.id === item.employeeId)?.fullName || item.employeeId}</td><td>{item.effectiveFrom || "-"}</td><td>{item.annualCtc || 0}</td><td>{item.isActive ? "Active" : "Historical"}</td></tr>)}
-              {!compItems.length ? <tr><td colSpan="4"><div className="empty-state compact-empty">No compensation records yet.</div></td></tr> : null}
+              {compItems.map((item) => <tr key={item.id}><td>{employees.find((emp) => emp.id === item.employeeId)?.fullName || item.employeeId}</td><td>{item.effectiveFrom || "-"}</td><td>{item.annualCtc || 0}</td><td>{item.isActive ? "Active" : "Historical"}</td><td><button className="ghost-btn" onClick={() => setCompForm({
+                id: item.id,
+                employeeId: item.employeeId,
+                effectiveFrom: item.effectiveFrom || new Date().toISOString().slice(0, 10),
+                annualCtc: item.annualCtc || "",
+                monthlyCtc: item.monthlyCtc || "",
+                basicMonthly: item.basicMonthly || "",
+                hraMonthly: item.hraMonthly || "",
+                fbpMonthly: item.fbpMonthly || "",
+                specialAllowanceMonthly: item.specialAllowanceMonthly || "",
+                employerPfMonthly: item.employerPfMonthly || "",
+                employeePfMonthly: item.employeePfMonthly || "",
+                employerEsiMonthly: item.employerEsiMonthly || "",
+                employeeEsiMonthly: item.employeeEsiMonthly || "",
+                employerLwfMonthly: item.employerLwfMonthly || "",
+                employeeLwfMonthly: item.employeeLwfMonthly || "",
+                professionalTaxMonthly: item.professionalTaxMonthly || "",
+                gratuityMonthly: item.gratuityMonthly || "",
+                healthInsuranceMonthly: item.healthInsuranceMonthly || "",
+                otherAllowanceMonthly: item.otherAllowanceMonthly || "",
+                templateCode: item.templateCode || "custom",
+                isActive: item.isActive !== false,
+                notes: item.notes || ""
+              })}>Edit</button></td></tr>)}
+              {!compItems.length ? <tr><td colSpan="5"><div className="empty-state compact-empty">No compensation records yet.</div></td></tr> : null}
+            </tbody>
+          </table>
+        </div>
+      </Section>
+
+      <Section kicker="Payroll Inputs" title="Employee-wise Monthly Inputs">
+        <div className="form-grid three-col">
+          <label><span>Payroll month</span><input type="number" min="1" max="12" value={payrollMonth} onChange={(e) => setPayrollMonth(Number(e.target.value || 1))} /></label>
+          <label><span>Payroll year</span><input type="number" min="2000" max="2100" value={payrollYear} onChange={(e) => setPayrollYear(Number(e.target.value || new Date().getFullYear()))} /></label>
+          <div className="button-row align-end"><button className="ghost-btn" onClick={() => void loadPayrollExecutionData(payrollMonth, payrollYear)}>Refresh month data</button></div>
+        </div>
+        <div className="table-wrap">
+          <table className="dashboard-table">
+            <thead>
+              <tr>
+                <th>Employee</th>
+                <th>Total days</th>
+                <th>Payable</th>
+                <th>Unpaid/LOP</th>
+                <th>Other earnings</th>
+                <th>Other deductions</th>
+                <th>PT</th>
+                <th>TDS</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {employees.map((emp) => {
+                const row = inputByEmployee.get(String(emp.id || "")) || {};
+                return (
+                  <tr key={`pi-${emp.id}`}>
+                    <td>{emp.employeeCode} - {emp.fullName}</td>
+                    <td><input type="number" value={row.totalCalendarDays ?? 30} onChange={(e) => setInputField(emp.id, "totalCalendarDays", Number(e.target.value || 0))} /></td>
+                    <td><input type="number" value={row.payableDays ?? 30} onChange={(e) => setInputField(emp.id, "payableDays", Number(e.target.value || 0))} /></td>
+                    <td><input type="number" value={row.unpaidLeaveDays ?? 0} onChange={(e) => setInputField(emp.id, "unpaidLeaveDays", Number(e.target.value || 0))} /></td>
+                    <td><input type="number" value={row.otherEarnings ?? 0} onChange={(e) => setInputField(emp.id, "otherEarnings", Number(e.target.value || 0))} /></td>
+                    <td><input type="number" value={row.otherDeductions ?? 0} onChange={(e) => setInputField(emp.id, "otherDeductions", Number(e.target.value || 0))} /></td>
+                    <td><input type="number" value={row.professionalTax ?? 0} onChange={(e) => setInputField(emp.id, "professionalTax", Number(e.target.value || 0))} /></td>
+                    <td><input type="number" value={row.tdsAmount ?? 0} onChange={(e) => setInputField(emp.id, "tdsAmount", Number(e.target.value || 0))} /></td>
+                    <td><button className="ghost-btn" onClick={() => void savePayrollInputRow(emp.id)}>Save</button></td>
+                  </tr>
+                );
+              })}
+              {!employees.length ? <tr><td colSpan="9"><div className="empty-state compact-empty">No employees available.</div></td></tr> : null}
+            </tbody>
+          </table>
+        </div>
+      </Section>
+
+      <Section kicker="Payroll Run" title="Draft -> Calculate -> Approve -> Lock">
+        <div className="button-row">
+          <button onClick={() => void createRunDraft()}>Create Draft</button>
+          <button className="ghost-btn" onClick={() => void runAction("calculate")} disabled={!selectedRunId}>Calculate</button>
+          <button className="ghost-btn" onClick={() => void runAction("approve")} disabled={!selectedRunId}>Approve</button>
+          <button className="ghost-btn" onClick={() => void runAction("lock")} disabled={!selectedRunId}>Lock</button>
+        </div>
+        <div className="table-wrap">
+          <table className="dashboard-table">
+            <thead><tr><th>Run ID</th><th>Month</th><th>Status</th><th>Total Gross</th><th>Total Deductions</th><th>Total Net</th><th>Total Employer Cost</th></tr></thead>
+            <tbody>
+              {payrollRuns.map((run) => (
+                <tr key={String(run?.id || `${run?.payrollMonth || 0}-${run?.payrollYear || 0}`)} onClick={() => setSelectedRunId(String(run?.id || ""))} style={{ cursor: "pointer", background: selectedRunId === String(run?.id || "") ? "rgba(59,130,246,0.08)" : "transparent" }}>
+                  <td>{String(run?.id || "").slice(0, 8) || "-"}</td>
+                  <td>{run.payrollMonth}/{run.payrollYear}</td>
+                  <td>{run.status}</td>
+                  <td>{run.totalGross}</td>
+                  <td>{run.totalDeductions}</td>
+                  <td>{run.totalNetPay}</td>
+                  <td>{run.totalEmployerCost}</td>
+                </tr>
+              ))}
+              {!payrollRuns.length ? <tr><td colSpan="7"><div className="empty-state compact-empty">No payroll runs yet for selected month/year.</div></td></tr> : null}
+            </tbody>
+          </table>
+        </div>
+        <div className="table-wrap">
+          <table className="dashboard-table">
+            <thead><tr><th>Employee</th><th>Gross</th><th>Deductions</th><th>Net</th><th>Employer Cost</th></tr></thead>
+            <tbody>
+              {(selectedRunDetail?.items || []).map((item) => (
+                <tr key={item.id}>
+                  <td>{item.payload?.employeeCode || item.employeeId} - {item.payload?.employeeName || ""}</td>
+                  <td>{item.grossEarnings}</td>
+                  <td>{item.grossDeductions}</td>
+                  <td>{item.netSalary}</td>
+                  <td>{item.employerCost}</td>
+                </tr>
+              ))}
+              {!(selectedRunDetail?.items || []).length ? <tr><td colSpan="5"><div className="empty-state compact-empty">Select and calculate a run to view details.</div></td></tr> : null}
             </tbody>
           </table>
         </div>

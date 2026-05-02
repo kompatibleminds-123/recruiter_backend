@@ -800,6 +800,16 @@ function sanitizeEmployeeCompensation(raw) {
     employerPfAnnual: Number(raw.employerPfAnnual ?? raw.employer_pf_annual ?? 0) || 0,
     employeePfMonthly: Number(raw.employeePfMonthly ?? raw.employee_pf_monthly ?? 0) || 0,
     employeePfAnnual: Number(raw.employeePfAnnual ?? raw.employee_pf_annual ?? 0) || 0,
+    employerEsiMonthly: Number(raw.employerEsiMonthly ?? raw.employer_esi_monthly ?? 0) || 0,
+    employerEsiAnnual: Number(raw.employerEsiAnnual ?? raw.employer_esi_annual ?? 0) || 0,
+    employeeEsiMonthly: Number(raw.employeeEsiMonthly ?? raw.employee_esi_monthly ?? 0) || 0,
+    employeeEsiAnnual: Number(raw.employeeEsiAnnual ?? raw.employee_esi_annual ?? 0) || 0,
+    employerLwfMonthly: Number(raw.employerLwfMonthly ?? raw.employer_lwf_monthly ?? 0) || 0,
+    employerLwfAnnual: Number(raw.employerLwfAnnual ?? raw.employer_lwf_annual ?? 0) || 0,
+    employeeLwfMonthly: Number(raw.employeeLwfMonthly ?? raw.employee_lwf_monthly ?? 0) || 0,
+    employeeLwfAnnual: Number(raw.employeeLwfAnnual ?? raw.employee_lwf_annual ?? 0) || 0,
+    professionalTaxMonthly: Number(raw.professionalTaxMonthly ?? raw.professional_tax_monthly ?? 0) || 0,
+    professionalTaxAnnual: Number(raw.professionalTaxAnnual ?? raw.professional_tax_annual ?? 0) || 0,
     gratuityMonthly: Number(raw.gratuityMonthly ?? raw.gratuity_monthly ?? 0) || 0,
     gratuityAnnual: Number(raw.gratuityAnnual ?? raw.gratuity_annual ?? 0) || 0,
     healthInsuranceMonthly: Number(raw.healthInsuranceMonthly ?? raw.health_insurance_monthly ?? 0) || 0,
@@ -939,15 +949,19 @@ function calculatePayrollLine({ compensation, payrollInput, settings }) {
 
   const grossEarnings = roundMoney(basic + hra + fbp + special + otherAllowance + otherEarnings + approvedReimbursements);
   const employeePf = roundMoney(compensation?.employeePfMonthly || 0);
-  const professionalTax = roundMoney(payrollInput?.professionalTax || settings?.defaultMonthlyProfessionalTax || 0);
+  const employeeEsi = roundMoney(compensation?.employeeEsiMonthly || 0);
+  const employeeLwf = roundMoney(compensation?.employeeLwfMonthly || 0);
+  const professionalTax = roundMoney(payrollInput?.professionalTax || compensation?.professionalTaxMonthly || settings?.defaultMonthlyProfessionalTax || 0);
   const tds = roundMoney(payrollInput?.tdsAmount || 0);
   const otherDeductions = roundMoney(payrollInput?.otherDeductions || 0);
-  const grossDeductions = roundMoney(employeePf + professionalTax + tds + otherDeductions);
+  const grossDeductions = roundMoney(employeePf + employeeEsi + employeeLwf + professionalTax + tds + otherDeductions);
   const netSalary = roundMoney(grossEarnings - grossDeductions);
 
   const employerPf = roundMoney(compensation?.employerPfMonthly || 0);
+  const employerEsi = roundMoney(compensation?.employerEsiMonthly || 0);
+  const employerLwf = roundMoney(compensation?.employerLwfMonthly || 0);
   const gratuity = roundMoney(compensation?.gratuityMonthly || 0);
-  const employerCost = roundMoney(grossEarnings + employerPf + gratuity + healthInsurance);
+  const employerCost = roundMoney(grossEarnings + employerPf + employerEsi + employerLwf + gratuity + healthInsurance);
 
   return {
     proratedBasic: basic,
@@ -959,12 +973,16 @@ function calculatePayrollLine({ compensation, payrollInput, settings }) {
     approvedReimbursements,
     grossEarnings,
     employeePf,
+    employeeEsi,
+    employeeLwf,
     professionalTax,
     tds,
     otherDeductions,
     grossDeductions,
     netSalary,
     employerPf,
+    employerEsi,
+    employerLwf,
     gratuityProvision: gratuity,
     healthInsuranceBenefit: healthInsurance,
     totalEmployerCost: employerCost,
@@ -2245,6 +2263,16 @@ async function saveEmployeeCompensationStructure({ actorUserId, companyId, compe
     employer_pf_annual: safe.employerPfAnnual,
     employee_pf_monthly: safe.employeePfMonthly,
     employee_pf_annual: safe.employeePfAnnual,
+    employer_esi_monthly: safe.employerEsiMonthly,
+    employer_esi_annual: safe.employerEsiAnnual,
+    employee_esi_monthly: safe.employeeEsiMonthly,
+    employee_esi_annual: safe.employeeEsiAnnual,
+    employer_lwf_monthly: safe.employerLwfMonthly,
+    employer_lwf_annual: safe.employerLwfAnnual,
+    employee_lwf_monthly: safe.employeeLwfMonthly,
+    employee_lwf_annual: safe.employeeLwfAnnual,
+    professional_tax_monthly: safe.professionalTaxMonthly,
+    professional_tax_annual: safe.professionalTaxAnnual,
     gratuity_monthly: safe.gratuityMonthly,
     gratuity_annual: safe.gratuityAnnual,
     health_insurance_monthly: safe.healthInsuranceMonthly,
