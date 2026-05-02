@@ -13313,6 +13313,26 @@ function PayrollLiteAdminPage({ token, employees = [] }) {
 
   return (
     <div className="page-grid">
+      <div className="item-card compact-card payroll-lite-shell">
+        <div className="payroll-lite-shell__top">
+          <div>
+            <div className="section-kicker">Payroll</div>
+            <h3>Simple Payroll Workspace</h3>
+            <p className="muted">A clean path for setup, monthly input, pay run, and FBP policy.</p>
+          </div>
+          <div className="payroll-setup-progress">
+            <strong>Phase 3 in progress</strong>
+            <div className="muted">FBP + Payslip completion</div>
+          </div>
+        </div>
+        <div className="chip-row">
+          <span className="chip">Setup</span>
+          <span className="chip">Employees</span>
+          <span className="chip">Pay Inputs</span>
+          <span className="chip">Pay Runs</span>
+          <span className="chip">FBP Heads</span>
+        </div>
+      </div>
       <Section kicker="Payroll Lite" title="Foundation Settings">
         <p className="muted">Phase 1 scaffolding is enabled here. Recruiter/client modules remain untouched.</p>
         {status ? <div className="status">{status}</div> : null}
