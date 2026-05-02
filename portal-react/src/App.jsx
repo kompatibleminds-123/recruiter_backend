@@ -12786,6 +12786,11 @@ function getCurrentPositionAsync() {
 }
 
 function PayrollLiteAdminPage({ token, employees = [] }) {
+  const formatMoney = (value) => {
+    const n = Number(value || 0);
+    if (!Number.isFinite(n)) return "0.00";
+    return n.toFixed(2);
+  };
   function round2(value) {
     const n = Number(value || 0);
     return Number.isFinite(n) ? Math.round(n * 100) / 100 : 0;
@@ -13403,7 +13408,7 @@ function PayrollLiteAdminPage({ token, employees = [] }) {
         </div>
         <div className="table-wrap">
           <table className="dashboard-table">
-            <thead><tr><th>Employee</th><th>Gross</th><th>Deductions</th><th>Net</th><th>Employer Cost</th></tr></thead>
+            <thead><tr><th>Employee</th><th>Gross</th><th>Deductions</th><th>Net</th><th>Employer Cost</th><th>How Calculated</th></tr></thead>
             <tbody>
               {(selectedRunDetail?.items || []).map((item) => (
                 <tr key={item.id}>
@@ -13412,9 +13417,22 @@ function PayrollLiteAdminPage({ token, employees = [] }) {
                   <td>{item.grossDeductions}</td>
                   <td>{item.netSalary}</td>
                   <td>{item.employerCost}</td>
+                  <td>
+                    <div className="muted">
+                      Gross = {formatMoney(item.payload?.proratedBasic)} + {formatMoney(item.payload?.proratedHra)} + {formatMoney(item.payload?.proratedFbp)} + {formatMoney(item.payload?.proratedSpecialAllowance)} + {formatMoney(item.payload?.otherAllowance)} + {formatMoney(item.payload?.otherEarnings)} + {formatMoney(item.payload?.approvedReimbursements)}
+                    </div>
+                    <div className="muted">
+                      Deductions = PF {formatMoney(item.payload?.employeePf)} + ESI {formatMoney(item.payload?.employeeEsi)} + LWF {formatMoney(item.payload?.employeeLwf)} + PT {formatMoney(item.payload?.professionalTax)} + TDS {formatMoney(item.payload?.tds)} + Other {formatMoney(item.payload?.otherDeductions)}
+                    </div>
+                    <div className="muted">
+                      Employer Cost = {Number(item.payload?.configuredMonthlyCtc || 0) > 0
+                        ? `Configured Monthly CTC (${formatMoney(item.payload?.configuredMonthlyCtc)})`
+                        : `Computed (${formatMoney(item.payload?.grossEarnings)} + ${formatMoney(item.payload?.employerPf)} + ${formatMoney(item.payload?.employerEsi)} + ${formatMoney(item.payload?.employerLwf)} + ${formatMoney(item.payload?.gratuityProvision)} + ${formatMoney(item.payload?.healthInsuranceBenefit)}) = ${formatMoney(item.payload?.computedEmployerCost)}`}
+                    </div>
+                  </td>
                 </tr>
               ))}
-              {!(selectedRunDetail?.items || []).length ? <tr><td colSpan="5"><div className="empty-state compact-empty">Select and calculate a run to view details.</div></td></tr> : null}
+              {!(selectedRunDetail?.items || []).length ? <tr><td colSpan="6"><div className="empty-state compact-empty">Select and calculate a run to view details.</div></td></tr> : null}
             </tbody>
           </table>
         </div>

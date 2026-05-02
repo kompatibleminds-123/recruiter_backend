@@ -827,6 +827,21 @@ textarea { min-height: 92px; resize: vertical; }
 .form-grid.three-col { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .form-grid label, .form-field { display: grid; gap: 0.38rem; }
 .form-grid span, .form-field > span { font-size: 0.88rem; font-weight: 600; color: #2d3c5e; }
+.checkbox-row {
+  display: inline-flex !important;
+  align-items: center;
+  gap: 0.5rem;
+  align-self: end;
+}
+.checkbox-row input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  flex: 0 0 auto;
+}
+.checkbox-row span {
+  margin: 0;
+}
 .full { grid-column: 1 / -1; }
 .align-end { align-items: end; }
 .dashboard-group {

@@ -961,7 +961,15 @@ function calculatePayrollLine({ compensation, payrollInput, settings }) {
   const employerEsi = roundMoney(compensation?.employerEsiMonthly || 0);
   const employerLwf = roundMoney(compensation?.employerLwfMonthly || 0);
   const gratuity = roundMoney(compensation?.gratuityMonthly || 0);
-  const employerCost = roundMoney(grossEarnings + employerPf + employerEsi + employerLwf + gratuity + healthInsurance);
+  // Keep employer cost aligned with CTC semantics:
+  // - If monthly CTC exists, employer cost should come from monthly CTC (prorated if enabled)
+  // - Otherwise, fallback to computed gross + employer contributions
+  const configuredMonthlyCtcRaw = Number(compensation?.monthlyCtc || 0) || 0;
+  const configuredMonthlyCtc = configuredMonthlyCtcRaw > 0
+    ? roundMoney(configuredMonthlyCtcRaw * factor)
+    : 0;
+  const computedEmployerCost = roundMoney(grossEarnings + employerPf + employerEsi + employerLwf + gratuity + healthInsurance);
+  const employerCost = configuredMonthlyCtc > 0 ? configuredMonthlyCtc : computedEmployerCost;
 
   return {
     proratedBasic: basic,
@@ -986,6 +994,8 @@ function calculatePayrollLine({ compensation, payrollInput, settings }) {
     gratuityProvision: gratuity,
     healthInsuranceBenefit: healthInsurance,
     totalEmployerCost: employerCost,
+    configuredMonthlyCtc,
+    computedEmployerCost,
     payableDays,
     totalDays,
     prorationFactor: roundMoney(factor)
