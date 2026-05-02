@@ -14040,6 +14040,11 @@ function EmployeePortalApp({ token, onLogout }) {
     () => (payrollDocs || []).find((item) => String(item?.id || "") === String(selectedPayslipId || "")) || null,
     [payrollDocs, selectedPayslipId]
   );
+  const formatMoney = (value) => {
+    const n = Number(value || 0);
+    if (!Number.isFinite(n)) return "0.00";
+    return n.toFixed(2);
+  };
   async function uploadEmployeeFbpDoc(file) {
     try {
       if (!file) return;
@@ -14193,7 +14198,7 @@ function EmployeePortalApp({ token, onLogout }) {
                       <td>
                         <div className="button-row tight">
                           <button className="ghost-btn" onClick={() => setSelectedPayslipId(String(doc.id || ""))}>View Payslip</button>
-                          <button className="ghost-btn" onClick={() => window.open(`/employee/payroll/payslip?id=${encodeURIComponent(String(doc.id || ""))}`, "_blank", "noopener,noreferrer")}>Printable / PDF</button>
+                          <button className="ghost-btn" onClick={() => window.open(`/employee/payroll/payslip?id=${encodeURIComponent(String(doc.id || ""))}&access_token=${encodeURIComponent(token)}`, "_blank", "noopener,noreferrer")}>Printable / PDF</button>
                         </div>
                       </td>
                     </tr>

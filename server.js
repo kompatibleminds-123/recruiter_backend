@@ -7220,7 +7220,7 @@ const server = http.createServer(async (req, res) => {
 
   if (req.method === "GET" && requestUrl.pathname === "/employee/payroll/fbp-heads") {
     try {
-      const employeeUser = await requireEmployeeSessionUser(getBearerToken(req));
+      const employeeUser = await requireEmployeeSessionUser(getBearerTokenFromRequest(req, requestUrl));
       const items = await listEmployeeCompanyFbpHeads({ employeeUser, activeOnly: true });
       sendJson(res, 200, { ok: true, result: { items } });
     } catch (error) {
@@ -7231,7 +7231,7 @@ const server = http.createServer(async (req, res) => {
 
   if (req.method === "GET" && requestUrl.pathname === "/employee/payroll/payslip") {
     try {
-      const employeeUser = await requireEmployeeSessionUser(getBearerToken(req));
+      const employeeUser = await requireEmployeeSessionUser(getBearerTokenFromRequest(req, requestUrl));
       const payslipId = String(requestUrl.searchParams.get("id") || "").trim();
       if (!payslipId) throw new Error("Payslip id is required.");
       const items = await listPayrollPayslips({
