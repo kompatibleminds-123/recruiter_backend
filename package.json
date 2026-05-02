@@ -8,6 +8,8 @@
     "start": "node server.js",
     "portal:dev": "vite --config vite.portal.config.js",
     "portal:build": "vite build --config vite.portal.config.js",
+    "portal:stage-assets": "powershell -ExecutionPolicy Bypass -File scripts/portal-stage-assets.ps1",
+    "portal:release-check": "npm run portal:build && npm run portal:stage-assets && git status --short public/portal-app",
     "test": "node test/run.js"
   },
   "engines": {
