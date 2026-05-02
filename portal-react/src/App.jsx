@@ -393,6 +393,21 @@ function formatEmployeeCoordinatePair(latitude, longitude) {
   if (!Number.isFinite(lat) || !Number.isFinite(lng)) return "-";
   return `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
 }
+function formatDistanceFromOffice(value) {
+  const meters = Number(value);
+  if (!Number.isFinite(meters) || meters < 0) return "";
+  if (meters >= 1000) return `${(meters / 1000).toFixed(2)} km`;
+  return `${Math.round(meters)} m`;
+}
+function formatAccuracyWithOfficeDistance({ accuracyMeters, locationStatus, distanceFromSiteMeters }) {
+  const accuracy = Number(accuracyMeters);
+  const status = String(locationStatus || "").trim().toLowerCase();
+  const base = Number.isFinite(accuracy) ? `${Math.round(accuracy)} m` : "-";
+  if (status !== "outside_radius") return base;
+  const distanceLabel = formatDistanceFromOffice(distanceFromSiteMeters);
+  if (!distanceLabel) return `${base} | Outside geofence`;
+  return `${base} | ${distanceLabel} from office`;
+}
 
 function formatClientPortalStatusLabel(value) {
   const normalized = normalizeAssessmentStatusLabel(value);
@@ -12874,8 +12889,16 @@ function EmployeePortalApp({ token, onLogout }) {
                       <td>{item.checkOutAt ? new Date(item.checkOutAt).toLocaleString() : "-"}</td>
                       <td>{item.checkOutAt ? formatEmployeeLocationStatusLabel(item.checkOutLocationStatus || item.locationStatus) : "-"}</td>
                       <td>{formatEmployeeCoordinatePair(item.checkOutLatitude, item.checkOutLongitude)}</td>
-                      <td>{item.checkInAccuracyMeters ? `${item.checkInAccuracyMeters} m` : "-"}</td>
-                      <td>{item.checkOutAccuracyMeters ? `${item.checkOutAccuracyMeters} m` : "-"}</td>
+                      <td>{formatAccuracyWithOfficeDistance({
+                        accuracyMeters: item.checkInAccuracyMeters,
+                        locationStatus: item.checkInLocationStatus || item.locationStatus,
+                        distanceFromSiteMeters: item.checkInDistanceFromSiteMeters ?? item.distanceFromSiteMeters
+                      })}</td>
+                      <td>{formatAccuracyWithOfficeDistance({
+                        accuracyMeters: item.checkOutAccuracyMeters,
+                        locationStatus: item.checkOutLocationStatus || item.locationStatus,
+                        distanceFromSiteMeters: item.checkOutDistanceFromSiteMeters ?? item.distanceFromSiteMeters
+                      })}</td>
                     </tr>
                   ))}
                   {!attendanceItems.length ? <tr><td colSpan="9"><div className="empty-state compact-empty">No attendance records yet.</div></td></tr> : null}
