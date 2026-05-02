@@ -12974,6 +12974,7 @@ function PayrollLiteAdminPage({ token, employees = [] }) {
   const [payrollInputs, setPayrollInputs] = useState([]);
   const [payrollRuns, setPayrollRuns] = useState([]);
   const [fbpDeclarations, setFbpDeclarations] = useState([]);
+  const [fbpApprovalAmounts, setFbpApprovalAmounts] = useState({});
   const [payrollPayslips, setPayrollPayslips] = useState([]);
   const [selectedRunId, setSelectedRunId] = useState("");
   const [selectedRunDetail, setSelectedRunDetail] = useState({ run: null, items: [] });
@@ -13420,9 +13421,13 @@ function PayrollLiteAdminPage({ token, employees = [] }) {
       const item = (fbpDeclarations || []).find((row) => String(row.id || "") === String(id || ""));
       if (!item) throw new Error("Declaration not found.");
       if (action === "approve") {
+        const overrideAmountRaw = fbpApprovalAmounts[String(id || "")];
+        const overrideAmount = overrideAmountRaw == null || overrideAmountRaw === ""
+          ? Number(item.declaredAmount || 0) || 0
+          : Number(overrideAmountRaw || 0) || 0;
         await api("/company/payroll/fbp-declarations/approve", token, "POST", {
           declarationId: id,
-          approvedAmount: Number(item.declaredAmount || 0) || 0
+          approvedAmount: overrideAmount
         });
       } else {
         const rejectionReason = typeof window !== "undefined" ? (window.prompt("Rejection reason", "Insufficient proof") || "").trim() : "Rejected";
@@ -13433,6 +13438,11 @@ function PayrollLiteAdminPage({ token, employees = [] }) {
         });
       }
       await loadPayrollExecutionData(payrollMonth, payrollYear);
+      setFbpApprovalAmounts((current) => {
+        const next = { ...current };
+        delete next[String(id || "")];
+        return next;
+      });
       setStatus(`Declaration ${action}d.`);
     } catch (error) {
       setStatus(String(error?.message || error));
@@ -13790,7 +13800,15 @@ function PayrollLiteAdminPage({ token, employees = [] }) {
                     <td>{emp ? `${emp.employeeCode} - ${emp.fullName}` : item.employeeId}</td>
                     <td>{item.headName || "-"}</td>
                     <td>{item.declaredAmount || 0}</td>
-                    <td>{item.approvedAmount || 0}</td>
+                    <td>
+                      <input
+                        type="number"
+                        value={fbpApprovalAmounts[String(item.id || "")] ?? (item.approvedAmount ?? item.declaredAmount ?? 0)}
+                        onChange={(e) => setFbpApprovalAmounts((current) => ({ ...current, [String(item.id || "")]: e.target.value }))}
+                        disabled={String(item.status || "") === "rejected"}
+                        style={{ width: 110 }}
+                      />
+                    </td>
                     <td>{item.status || "-"}</td>
                     <td>{docs.length ? <a href={String(docs[0]?.url || "#")} target="_blank" rel="noreferrer">{String(docs[0]?.label || "Document")}</a> : "-"}</td>
                     <td>
