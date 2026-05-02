@@ -42,6 +42,7 @@ const {
   getCompanyApplicantIntakeSecret,
   getCompanyClientUsers,
   getCompanyPayrollSettings,
+  getCompanyPayrollAccessControl,
   getEmployeeProfile,
   getCompanyLicense,
   getClientSessionUser,
@@ -95,6 +96,7 @@ const {
   saveCompanyFbpHead,
   saveCompanySalaryTemplate,
   saveCompanyPayrollSettings,
+  saveCompanyPayrollAccessControl,
   savePayrollInput,
   saveEmployeeCompensationStructure,
   saveEmployeeProfile,
@@ -7390,6 +7392,40 @@ const server = http.createServer(async (req, res) => {
     } catch (error) {
       const message = String(error?.message || error);
       const status = /admin access required|forbidden|not allowed|403/i.test(message) ? 403 : 400;
+      sendJson(res, status, { ok: false, error: message });
+    }
+    return;
+  }
+
+  if (req.method === "GET" && req.url === "/company/payroll/access-control") {
+    try {
+      const actor = await requireSessionUser(getBearerToken(req));
+      const result = await getCompanyPayrollAccessControl({ actorUserId: actor.id, companyId: actor.companyId });
+      sendJson(res, 200, { ok: true, result });
+    } catch (error) {
+      const message = String(error?.message || error);
+      const status = /not authorized|restricted|admin access|required|403/i.test(message) ? 403 : 400;
+      sendJson(res, status, { ok: false, error: message });
+    }
+    return;
+  }
+
+  if (req.method === "POST" && req.url === "/company/payroll/access-control") {
+    try {
+      const actor = await requireSessionUser(getBearerToken(req));
+      const body = await readJsonBody(req);
+      const result = await saveCompanyPayrollAccessControl({
+        actorUserId: actor.id,
+        companyId: actor.companyId,
+        payrollLiteEnabled: Boolean(body?.payrollLiteEnabled),
+        payrollAuthorizedUserIds: Array.isArray(body?.payrollAuthorizedUserIds) ? body.payrollAuthorizedUserIds : [],
+        payrollApproverUserIds: Array.isArray(body?.payrollApproverUserIds) ? body.payrollApproverUserIds : [],
+        payrollAccessManagerUserIds: Array.isArray(body?.payrollAccessManagerUserIds) ? body.payrollAccessManagerUserIds : []
+      });
+      sendJson(res, 200, { ok: true, result });
+    } catch (error) {
+      const message = String(error?.message || error);
+      const status = /not authorized|restricted|admin access|required|403/i.test(message) ? 403 : 400;
       sendJson(res, status, { ok: false, error: message });
     }
     return;

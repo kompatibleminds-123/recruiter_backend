@@ -13042,18 +13042,35 @@ function PayrollLiteAdminPage({ token, employees = [], users = [] }) {
   });
   const [declarationDocUploading, setDeclarationDocUploading] = useState(false);
   const [suggestRecalculateAfterFbp, setSuggestRecalculateAfterFbp] = useState(false);
+  const [accessControl, setAccessControl] = useState({
+    payrollLiteEnabled: false,
+    ownerAdminUserId: "",
+    payrollAuthorizedUserIds: [],
+    payrollApproverUserIds: [],
+    payrollAccessManagerUserIds: []
+  });
 
   async function loadPayrollFoundation() {
-    const [settingsResult, compResult, fbpResult, templateResult] = await Promise.all([
+    const [settingsResult, compResult, fbpResult, templateResult, accessControlResult] = await Promise.all([
       api("/company/payroll/settings", token).catch(() => null),
       api("/company/payroll/compensation", token).catch(() => ({ items: [] })),
       api("/company/payroll/fbp-heads", token).catch(() => ({ items: [] })),
-      api("/company/payroll/templates", token).catch(() => ({ items: [] }))
+      api("/company/payroll/templates", token).catch(() => ({ items: [] })),
+      api("/company/payroll/access-control", token).catch(() => null)
     ]);
     if (settingsResult) setSettings((current) => ({ ...current, ...settingsResult }));
     setCompItems(Array.isArray(compResult?.items) ? compResult.items : []);
     setFbpHeads(Array.isArray(fbpResult?.items) ? fbpResult.items : []);
     setSalaryTemplates(Array.isArray(templateResult?.items) ? templateResult.items : []);
+    if (accessControlResult) {
+      setAccessControl({
+        payrollLiteEnabled: Boolean(accessControlResult.payrollLiteEnabled),
+        ownerAdminUserId: String(accessControlResult.ownerAdminUserId || "").trim(),
+        payrollAuthorizedUserIds: Array.isArray(accessControlResult.payrollAuthorizedUserIds) ? accessControlResult.payrollAuthorizedUserIds : [],
+        payrollApproverUserIds: Array.isArray(accessControlResult.payrollApproverUserIds) ? accessControlResult.payrollApproverUserIds : [],
+        payrollAccessManagerUserIds: Array.isArray(accessControlResult.payrollAccessManagerUserIds) ? accessControlResult.payrollAccessManagerUserIds : []
+      });
+    }
   }
   async function loadPayrollExecutionData(nextMonth = payrollMonth, nextYear = payrollYear) {
     const [inputResult, runResult, declarationResult, payslipResult] = await Promise.all([
@@ -13088,6 +13105,16 @@ function PayrollLiteAdminPage({ token, employees = [], users = [] }) {
       setStatus("Saving payroll settings...");
       await api("/company/payroll/settings", token, "POST", settings);
       setStatus("Payroll settings saved.");
+    } catch (error) {
+      setStatus(String(error?.message || error));
+    }
+  }
+  async function savePayrollAccessControl() {
+    try {
+      setStatus("Saving payroll access control...");
+      await api("/company/payroll/access-control", token, "POST", accessControl);
+      await loadPayrollFoundation();
+      setStatus("Payroll access control saved.");
     } catch (error) {
       setStatus(String(error?.message || error));
     }
@@ -13242,6 +13269,19 @@ function PayrollLiteAdminPage({ token, employees = [], users = [] }) {
     });
     return map;
   }, [users]);
+  const adminUsers = useMemo(
+    () => (users || []).filter((u) => String(u?.role || "").toLowerCase() === "admin"),
+    [users]
+  );
+  const toggleAccessId = (key, userId, checked) => {
+    const safeId = String(userId || "").trim();
+    if (!safeId) return;
+    setAccessControl((current) => {
+      const set = new Set((Array.isArray(current[key]) ? current[key] : []).map((id) => String(id || "").trim()).filter(Boolean));
+      if (checked) set.add(safeId); else set.delete(safeId);
+      return { ...current, [key]: Array.from(set) };
+    });
+  };
   async function savePayrollInputRow(employeeId) {
     try {
       const existing = inputByEmployee.get(String(employeeId || "")) || {};
@@ -13519,6 +13559,35 @@ function PayrollLiteAdminPage({ token, employees = [], users = [] }) {
           <label className="full"><span>Policy note</span><textarea rows={2} value={settings.policyNote} onChange={(e) => setSettings((c) => ({ ...c, policyNote: e.target.value }))} /></label>
         </div>
         <div className="button-row"><button onClick={() => void saveSettings()}>Save settings</button></div>
+      </Section>
+      <Section kicker="Payroll Lite" title="Access Control (Package + Authorization)">
+        <p className="muted">Recruitment admin access is separate. Only owner/payroll managers should grant payroll permissions.</p>
+        <div className="form-grid three-col">
+          <label className="checkbox-row">
+            <input type="checkbox" checked={Boolean(accessControl.payrollLiteEnabled)} onChange={(e) => setAccessControl((c) => ({ ...c, payrollLiteEnabled: e.target.checked }))} />
+            <span>Enable Payroll Lite for this company package</span>
+          </label>
+        </div>
+        <div className="table-wrap">
+          <table className="dashboard-table">
+            <thead><tr><th>Admin</th><th>Payroll Access</th><th>Payroll Approver</th><th>Can Manage Payroll Access</th></tr></thead>
+            <tbody>
+              {adminUsers.map((user) => {
+                const id = String(user?.id || "").trim();
+                return (
+                  <tr key={id || user.email}>
+                    <td>{user.name} ({user.email})</td>
+                    <td><input type="checkbox" checked={(accessControl.payrollAuthorizedUserIds || []).includes(id)} onChange={(e) => toggleAccessId("payrollAuthorizedUserIds", id, e.target.checked)} /></td>
+                    <td><input type="checkbox" checked={(accessControl.payrollApproverUserIds || []).includes(id)} onChange={(e) => toggleAccessId("payrollApproverUserIds", id, e.target.checked)} /></td>
+                    <td><input type="checkbox" checked={(accessControl.payrollAccessManagerUserIds || []).includes(id)} onChange={(e) => toggleAccessId("payrollAccessManagerUserIds", id, e.target.checked)} /></td>
+                  </tr>
+                );
+              })}
+              {!adminUsers.length ? <tr><td colSpan="4"><div className="empty-state compact-empty">No admin users found.</div></td></tr> : null}
+            </tbody>
+          </table>
+        </div>
+        <div className="button-row"><button onClick={() => void savePayrollAccessControl()}>Save payroll access control</button></div>
       </Section>
 
       <Section kicker="Salary Templates" title="Create Template Automation Rules">

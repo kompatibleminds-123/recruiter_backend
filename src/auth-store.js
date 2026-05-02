@@ -490,6 +490,14 @@ function sanitizeCompanyLicense(raw, company = null) {
   const isTrial = status === "trial" || plan === "trial";
   const trialActive = isTrial && Date.now() <= new Date(trialEndsAt).getTime() && capturesUsed < captureLimit;
   const unlimited = !isTrial || status === "active" || status === "legacy";
+  const ownerAdminUserId = String(payload.ownerAdminUserId || payload.owner_admin_user_id || "").trim();
+  const toIdList = (value) => {
+    const list = Array.isArray(value) ? value : [];
+    return Array.from(new Set(list.map((item) => String(item || "").trim()).filter(Boolean)));
+  };
+  const payrollAuthorizedUserIds = toIdList(payload.payrollAuthorizedUserIds || payload.payroll_authorized_user_ids);
+  const payrollApproverUserIds = toIdList(payload.payrollApproverUserIds || payload.payroll_approver_user_ids);
+  const payrollAccessManagerUserIds = toIdList(payload.payrollAccessManagerUserIds || payload.payroll_access_manager_user_ids);
   return {
     companyId,
     plan,
@@ -501,7 +509,12 @@ function sanitizeCompanyLicense(raw, company = null) {
     capturesRemaining: unlimited ? null : Math.max(0, captureLimit - capturesUsed),
     daysRemaining: unlimited ? null : Math.max(0, Math.ceil((new Date(trialEndsAt).getTime() - Date.now()) / 86400000)),
     canCapture: unlimited || trialActive,
-    updatedAt: String(payload.updatedAt || payload.updated_at || now).trim() || now
+    updatedAt: String(payload.updatedAt || payload.updated_at || now).trim() || now,
+    ownerAdminUserId,
+    payrollLiteEnabled: Boolean(payload.payrollLiteEnabled ?? payload.payroll_lite_enabled ?? false),
+    payrollAuthorizedUserIds,
+    payrollApproverUserIds,
+    payrollAccessManagerUserIds
   };
 }
 function sanitizeSharedExportPresetSettings(raw) {
@@ -1451,7 +1464,20 @@ async function createTrialCompanyWithAdmin({ companyName, adminName, email, pass
     store.companies.push(company);
     store.users.push(user);
     writeStore(store);
-    const license = await saveCompanyLicense(company.id, { companyId: company.id, plan: "trial", status: "trial", trialStartedAt: now, trialEndsAt: addDays(now, 14), captureLimit: 50, capturesUsed: 0 });
+    const license = await saveCompanyLicense(company.id, {
+      companyId: company.id,
+      plan: "trial",
+      status: "trial",
+      trialStartedAt: now,
+      trialEndsAt: addDays(now, 14),
+      captureLimit: 50,
+      capturesUsed: 0,
+      ownerAdminUserId: user.id,
+      payrollLiteEnabled: false,
+      payrollAuthorizedUserIds: [user.id],
+      payrollApproverUserIds: [user.id],
+      payrollAccessManagerUserIds: [user.id]
+    });
     return { company, user: sanitizeUser(user), license };
   }
   await ensureSeeded();
@@ -1468,7 +1494,20 @@ async function createTrialCompanyWithAdmin({ companyName, adminName, email, pass
     }
   }
   const inserted = await sbIns("users", [user], { conflict: "id", upsert: true });
-  const license = await saveCompanyLicense(company.id, { companyId: company.id, plan: "trial", status: "trial", trialStartedAt: now, trialEndsAt: addDays(now, 14), captureLimit: 50, capturesUsed: 0 });
+  const license = await saveCompanyLicense(company.id, {
+    companyId: company.id,
+    plan: "trial",
+    status: "trial",
+    trialStartedAt: now,
+    trialEndsAt: addDays(now, 14),
+    captureLimit: 50,
+    capturesUsed: 0,
+    ownerAdminUserId: String(inserted?.[0]?.id || user.id || "").trim(),
+    payrollLiteEnabled: false,
+    payrollAuthorizedUserIds: [String(inserted?.[0]?.id || user.id || "").trim()],
+    payrollApproverUserIds: [String(inserted?.[0]?.id || user.id || "").trim()],
+    payrollAccessManagerUserIds: [String(inserted?.[0]?.id || user.id || "").trim()]
+  });
   return { company: sanitizeCompany(company), user: sanitizeUser(inserted?.[0] || user), license };
 }
 async function createUser({ actorUserId, companyId, name, email, password, role }) {
@@ -2242,14 +2281,53 @@ async function getEmployeeProfile(companyId, employeeId) {
   const employees = await listCompanyEmployees(companyId);
   return employees.find((item) => String(item.id || "") === String(employeeId)) || null;
 }
-async function requireAdminForCompany({ actorUserId, companyId }) {
+function canBypassPayrollAccessByEmail(actor = {}) {
+  const email = normalizeEmail(actor?.email || "");
+  if (!email) return false;
+  return getPlatformCompanyCreatorEmails().includes(email);
+}
+function uniqueIdList(values = []) {
+  return Array.from(new Set((Array.isArray(values) ? values : []).map((item) => String(item || "").trim()).filter(Boolean)));
+}
+function isPayrollAllowedForActor({ actor, license, permission = "access" }) {
+  const safeActorId = String(actor?.id || "").trim();
+  if (!safeActorId) return false;
+  if (canBypassPayrollAccessByEmail(actor)) return true;
+  const ownerId = String(license?.ownerAdminUserId || "").trim();
+  const authorized = uniqueIdList(license?.payrollAuthorizedUserIds);
+  const approvers = uniqueIdList(license?.payrollApproverUserIds);
+  const managers = uniqueIdList(license?.payrollAccessManagerUserIds);
+  const ownerAllowed = ownerId && safeActorId === ownerId;
+  // Backward-compat mode: if ACL is not configured yet, owner/admin can still enter once.
+  const aclMissing = !ownerId && !authorized.length && !approvers.length && !managers.length;
+  const accessAllowed = authorized.includes(safeActorId) || ownerAllowed || aclMissing;
+  const approveAllowed = approvers.length ? approvers.includes(safeActorId) : accessAllowed;
+  const manageAllowed = managers.length ? managers.includes(safeActorId) : (ownerAllowed || aclMissing);
+  if (permission !== "manage" && !Boolean(license?.payrollLiteEnabled)) return false;
+  if (permission === "approve") return approveAllowed;
+  if (permission === "manage") return manageAllowed;
+  return accessAllowed;
+}
+async function requireAdminForCompany({ actorUserId, companyId, payrollPermission = "" }) {
   const actor = sanitizeUser(await getUserById(actorUserId, companyId));
   if (!actor) throw new Error("Authenticated recruiter not found for this company.");
   if (String(actor.role || "").toLowerCase() !== "admin") throw new Error("Admin access required.");
+  if (payrollPermission) {
+    const license = await getCompanyLicense(companyId);
+    if (!isPayrollAllowedForActor({ actor, license, permission: payrollPermission })) {
+      throw new Error(
+        payrollPermission === "manage"
+          ? "Payroll access management is restricted to owner/payroll managers."
+          : payrollPermission === "approve"
+            ? "You are not authorized to approve payroll actions."
+            : "You are not authorized to access Payroll Lite for this company package."
+      );
+    }
+  }
   return actor;
 }
 async function getCompanyPayrollSettings({ actorUserId, companyId }) {
-  await requireAdminForCompany({ actorUserId, companyId });
+  await requireAdminForCompany({ actorUserId, companyId, payrollPermission: "access" });
   if (!cfg().on) {
     const store = readStore();
     const row = (store.payrollSettings || []).find((item) => String(item.companyId || "") === String(companyId)) || null;
@@ -2294,7 +2372,7 @@ async function getCompanyPayrollSettings({ actorUserId, companyId }) {
   });
 }
 async function saveCompanyPayrollSettings({ actorUserId, companyId, settings = {} }) {
-  const actor = await requireAdminForCompany({ actorUserId, companyId });
+  const actor = await requireAdminForCompany({ actorUserId, companyId, payrollPermission: "access" });
   const now = new Date().toISOString();
   const payload = {
     payroll_enabled: Boolean(settings.payrollEnabled),
@@ -2347,8 +2425,57 @@ async function saveCompanyPayrollSettings({ actorUserId, companyId, settings = {
   }], { conflict: "company_id", upsert: true });
   return sanitizePayrollSettings(rows?.[0]);
 }
+async function getCompanyPayrollAccessControl({ actorUserId, companyId }) {
+  const actor = await requireAdminForCompany({ actorUserId, companyId, payrollPermission: "manage" });
+  const license = await getCompanyLicense(companyId);
+  const ownerAdminUserId = String(license?.ownerAdminUserId || "").trim() || String(actor.id || "").trim();
+  return {
+    companyId: String(companyId || "").trim(),
+    payrollLiteEnabled: Boolean(license?.payrollLiteEnabled),
+    ownerAdminUserId,
+    payrollAuthorizedUserIds: uniqueIdList(license?.payrollAuthorizedUserIds),
+    payrollApproverUserIds: uniqueIdList(license?.payrollApproverUserIds),
+    payrollAccessManagerUserIds: uniqueIdList(license?.payrollAccessManagerUserIds)
+  };
+}
+async function saveCompanyPayrollAccessControl({
+  actorUserId,
+  companyId,
+  payrollLiteEnabled = false,
+  payrollAuthorizedUserIds = [],
+  payrollApproverUserIds = [],
+  payrollAccessManagerUserIds = []
+}) {
+  const actor = await requireAdminForCompany({ actorUserId, companyId, payrollPermission: "manage" });
+  const current = await getCompanyLicense(companyId);
+  const ownerAdminUserId = String(current?.ownerAdminUserId || "").trim() || String(actor.id || "").trim();
+  const nextAccess = uniqueIdList(payrollAuthorizedUserIds);
+  const nextApprovers = uniqueIdList(payrollApproverUserIds);
+  const nextManagers = uniqueIdList(payrollAccessManagerUserIds);
+  if (!nextManagers.includes(ownerAdminUserId)) nextManagers.push(ownerAdminUserId);
+  if (!nextAccess.includes(ownerAdminUserId)) nextAccess.push(ownerAdminUserId);
+  if (!nextApprovers.includes(ownerAdminUserId)) nextApprovers.push(ownerAdminUserId);
+  const saved = await saveCompanyLicense(companyId, {
+    ...current,
+    companyId,
+    payrollLiteEnabled: Boolean(payrollLiteEnabled),
+    ownerAdminUserId,
+    payrollAuthorizedUserIds: nextAccess,
+    payrollApproverUserIds: nextApprovers,
+    payrollAccessManagerUserIds: nextManagers,
+    updatedAt: new Date().toISOString()
+  });
+  return {
+    companyId: String(companyId || "").trim(),
+    payrollLiteEnabled: Boolean(saved?.payrollLiteEnabled),
+    ownerAdminUserId: String(saved?.ownerAdminUserId || ownerAdminUserId).trim(),
+    payrollAuthorizedUserIds: uniqueIdList(saved?.payrollAuthorizedUserIds),
+    payrollApproverUserIds: uniqueIdList(saved?.payrollApproverUserIds),
+    payrollAccessManagerUserIds: uniqueIdList(saved?.payrollAccessManagerUserIds)
+  };
+}
 async function listEmployeeCompensationStructures({ actorUserId, companyId, employeeId = "", activeOnly = false }) {
-  await requireAdminForCompany({ actorUserId, companyId });
+  await requireAdminForCompany({ actorUserId, companyId, payrollPermission: "access" });
   const safeEmployeeId = String(employeeId || "").trim();
   if (!cfg().on) {
     const store = readStore();
@@ -2371,7 +2498,7 @@ async function listEmployeeCompensationStructures({ actorUserId, companyId, empl
   return (rows || []).map(sanitizeEmployeeCompensation).filter(Boolean);
 }
 async function saveEmployeeCompensationStructure({ actorUserId, companyId, compensation = {} }) {
-  const actor = await requireAdminForCompany({ actorUserId, companyId });
+  const actor = await requireAdminForCompany({ actorUserId, companyId, payrollPermission: "access" });
   const employeeId = String(compensation.employeeId || "").trim();
   if (!employeeId) throw new Error("employeeId is required.");
   const now = new Date().toISOString();
@@ -2463,7 +2590,7 @@ async function saveEmployeeCompensationStructure({ actorUserId, companyId, compe
   return sanitizeEmployeeCompensation(rows?.[0]);
 }
 async function listCompanyFbpHeads({ actorUserId, companyId, activeOnly = false }) {
-  await requireAdminForCompany({ actorUserId, companyId });
+  await requireAdminForCompany({ actorUserId, companyId, payrollPermission: "access" });
   if (!cfg().on) {
     const store = readStore();
     return (store.fbpHeads || [])
@@ -2483,7 +2610,7 @@ async function listCompanyFbpHeads({ actorUserId, companyId, activeOnly = false 
   return (rows || []).map(sanitizeFbpHead).filter(Boolean);
 }
 async function saveCompanyFbpHead({ actorUserId, companyId, head = {} }) {
-  const actor = await requireAdminForCompany({ actorUserId, companyId });
+  const actor = await requireAdminForCompany({ actorUserId, companyId, payrollPermission: "access" });
   const now = new Date().toISOString();
   const rowId = String(head.id || "").trim() || crypto.randomUUID();
   const name = String(head.headName || "").trim();
@@ -2518,7 +2645,7 @@ async function saveCompanyFbpHead({ actorUserId, companyId, head = {} }) {
   return sanitizeFbpHead(rows?.[0]);
 }
 async function removeCompanyFbpHead({ actorUserId, companyId, headId }) {
-  await requireAdminForCompany({ actorUserId, companyId });
+  await requireAdminForCompany({ actorUserId, companyId, payrollPermission: "access" });
   const safeHeadId = String(headId || "").trim();
   if (!safeHeadId) throw new Error("headId is required.");
   if (!cfg().on) {
@@ -2534,7 +2661,7 @@ async function removeCompanyFbpHead({ actorUserId, companyId, headId }) {
   return { deleted: true, headId: safeHeadId };
 }
 async function listCompanySalaryTemplates({ actorUserId, companyId, activeOnly = false }) {
-  await requireAdminForCompany({ actorUserId, companyId });
+  await requireAdminForCompany({ actorUserId, companyId, payrollPermission: "access" });
   if (!cfg().on) {
     const store = readStore();
     return (store.salaryTemplates || [])
@@ -2554,7 +2681,7 @@ async function listCompanySalaryTemplates({ actorUserId, companyId, activeOnly =
   return (rows || []).map(sanitizeSalaryTemplate).filter(Boolean);
 }
 async function saveCompanySalaryTemplate({ actorUserId, companyId, template = {} }) {
-  const actor = await requireAdminForCompany({ actorUserId, companyId });
+  const actor = await requireAdminForCompany({ actorUserId, companyId, payrollPermission: "access" });
   const now = new Date().toISOString();
   const name = String(template.name || "").trim();
   const code = String(template.code || "")
@@ -2594,7 +2721,7 @@ async function saveCompanySalaryTemplate({ actorUserId, companyId, template = {}
   return sanitizeSalaryTemplate(rows?.[0]);
 }
 async function listPayrollInputs({ actorUserId, companyId, payrollMonth, payrollYear, employeeId = "" }) {
-  await requireAdminForCompany({ actorUserId, companyId });
+  await requireAdminForCompany({ actorUserId, companyId, payrollPermission: "access" });
   const month = Number(payrollMonth || 0);
   const year = Number(payrollYear || 0);
   const safeEmployeeId = String(employeeId || "").trim();
@@ -2620,7 +2747,7 @@ async function listPayrollInputs({ actorUserId, companyId, payrollMonth, payroll
   return (rows || []).map(sanitizePayrollInput).filter(Boolean);
 }
 async function savePayrollInput({ actorUserId, companyId, input = {} }) {
-  const actor = await requireAdminForCompany({ actorUserId, companyId });
+  const actor = await requireAdminForCompany({ actorUserId, companyId, payrollPermission: "access" });
   const month = Number(input.payrollMonth || 0);
   const year = Number(input.payrollYear || 0);
   const employeeId = String(input.employeeId || "").trim();
@@ -2674,7 +2801,7 @@ async function savePayrollInput({ actorUserId, companyId, input = {} }) {
   return sanitizePayrollInput(rows?.[0]);
 }
 async function listPayrollRuns({ actorUserId, companyId, payrollMonth = 0, payrollYear = 0 }) {
-  await requireAdminForCompany({ actorUserId, companyId });
+  await requireAdminForCompany({ actorUserId, companyId, payrollPermission: "access" });
   const month = Number(payrollMonth || 0);
   const year = Number(payrollYear || 0);
   if (!cfg().on) {
@@ -2698,7 +2825,7 @@ async function listPayrollRuns({ actorUserId, companyId, payrollMonth = 0, payro
   return (rows || []).map(sanitizePayrollRun).filter(Boolean);
 }
 async function createPayrollRunDraft({ actorUserId, companyId, payrollMonth, payrollYear }) {
-  const actor = await requireAdminForCompany({ actorUserId, companyId });
+  const actor = await requireAdminForCompany({ actorUserId, companyId, payrollPermission: "access" });
   const month = Number(payrollMonth || 0);
   const year = Number(payrollYear || 0);
   if (!month || !year) throw new Error("payrollMonth and payrollYear are required.");
@@ -2733,7 +2860,7 @@ async function createPayrollRunDraft({ actorUserId, companyId, payrollMonth, pay
   return sanitizePayrollRun(rows?.[0]);
 }
 async function getPayrollRunDetail({ actorUserId, companyId, payrollRunId }) {
-  await requireAdminForCompany({ actorUserId, companyId });
+  await requireAdminForCompany({ actorUserId, companyId, payrollPermission: "access" });
   const runId = String(payrollRunId || "").trim();
   if (!runId) throw new Error("payrollRunId is required.");
   if (!cfg().on) {
@@ -2748,7 +2875,7 @@ async function getPayrollRunDetail({ actorUserId, companyId, payrollRunId }) {
   return { run: sanitizePayrollRun(runRows?.[0]), items: (itemRows || []).map(sanitizePayrollRunItem).filter(Boolean) };
 }
 async function calculatePayrollRun({ actorUserId, companyId, payrollRunId }) {
-  const actor = await requireAdminForCompany({ actorUserId, companyId });
+  const actor = await requireAdminForCompany({ actorUserId, companyId, payrollPermission: "access" });
   const { run } = await getPayrollRunDetail({ actorUserId, companyId, payrollRunId });
   if (!run) throw new Error("Payroll run not found.");
   if (["locked", "paid"].includes(run.status)) throw new Error("Locked/Paid payroll run cannot be recalculated.");
@@ -2850,7 +2977,7 @@ async function calculatePayrollRun({ actorUserId, companyId, payrollRunId }) {
   return getPayrollRunDetail({ actorUserId, companyId, payrollRunId: run.id });
 }
 async function approvePayrollRun({ actorUserId, companyId, payrollRunId }) {
-  const actor = await requireAdminForCompany({ actorUserId, companyId });
+  const actor = await requireAdminForCompany({ actorUserId, companyId, payrollPermission: "approve" });
   const { run } = await getPayrollRunDetail({ actorUserId, companyId, payrollRunId });
   if (!run) throw new Error("Payroll run not found.");
   if (!["calculated", "approved"].includes(run.status)) throw new Error("Only calculated payroll run can be approved.");
@@ -2872,7 +2999,7 @@ async function approvePayrollRun({ actorUserId, companyId, payrollRunId }) {
   return sanitizePayrollRun(rows?.[0]);
 }
 async function lockPayrollRun({ actorUserId, companyId, payrollRunId, reason = "" }) {
-  const actor = await requireAdminForCompany({ actorUserId, companyId });
+  const actor = await requireAdminForCompany({ actorUserId, companyId, payrollPermission: "approve" });
   const { run } = await getPayrollRunDetail({ actorUserId, companyId, payrollRunId });
   if (!run) throw new Error("Payroll run not found.");
   if (!["approved", "locked"].includes(run.status)) throw new Error("Only approved payroll run can be locked.");
@@ -2896,7 +3023,7 @@ async function lockPayrollRun({ actorUserId, companyId, payrollRunId, reason = "
   return sanitizePayrollRun(rows?.[0]);
 }
 async function setPayrollRunStatus({ actorUserId, companyId, payrollRunId, status, reason = "" }) {
-  const actor = await requireAdminForCompany({ actorUserId, companyId });
+  const actor = await requireAdminForCompany({ actorUserId, companyId, payrollPermission: "approve" });
   const { run } = await getPayrollRunDetail({ actorUserId, companyId, payrollRunId });
   if (!run) throw new Error("Payroll run not found.");
   const nextStatus = String(status || "").trim().toLowerCase();
@@ -2921,7 +3048,7 @@ async function setPayrollRunStatus({ actorUserId, companyId, payrollRunId, statu
   return sanitizePayrollRun(rows?.[0]);
 }
 async function deletePayrollRun({ actorUserId, companyId, payrollRunId }) {
-  await requireAdminForCompany({ actorUserId, companyId });
+  await requireAdminForCompany({ actorUserId, companyId, payrollPermission: "approve" });
   const runId = String(payrollRunId || "").trim();
   if (!runId) throw new Error("payrollRunId is required.");
   if (!cfg().on) {
@@ -2945,7 +3072,7 @@ async function deletePayrollRun({ actorUserId, companyId, payrollRunId }) {
   return { ok: true, deletedRunId: runId };
 }
 async function listFbpDeclarations({ actorUserId, companyId, payrollMonth = 0, payrollYear = 0, employeeId = "" }) {
-  const actor = sanitizeUser(await getUserById(actorUserId, companyId));
+  const actor = await requireAdminForCompany({ actorUserId, companyId, payrollPermission: "access" });
   if (!actor) throw new Error("Authenticated user not found.");
   const month = Number(payrollMonth || 0);
   const year = Number(payrollYear || 0);
@@ -2972,7 +3099,7 @@ async function listFbpDeclarations({ actorUserId, companyId, payrollMonth = 0, p
   return (rows || []).map(sanitizeFbpDeclaration).filter(Boolean);
 }
 async function saveFbpDeclaration({ actorUserId, companyId, declaration = {} }) {
-  const actor = sanitizeUser(await getUserById(actorUserId, companyId));
+  const actor = await requireAdminForCompany({ actorUserId, companyId, payrollPermission: "access" });
   if (!actor) throw new Error("Authenticated user not found.");
   const now = new Date().toISOString();
   const id = String(declaration.id || "").trim() || crypto.randomUUID();
@@ -3077,7 +3204,7 @@ async function saveEmployeeFbpDeclaration({ employeeUser, declaration = {} }) {
   });
 }
 async function reviewFbpDeclaration({ actorUserId, companyId, declarationId, action = "approve", approvedAmount = null, rejectionReason = "" }) {
-  const actor = await requireAdminForCompany({ actorUserId, companyId });
+  const actor = await requireAdminForCompany({ actorUserId, companyId, payrollPermission: "approve" });
   const id = String(declarationId || "").trim();
   if (!id) throw new Error("declarationId is required.");
   const nextStatus = action === "reject" ? "rejected" : "approved";
@@ -3116,7 +3243,7 @@ async function reviewFbpDeclaration({ actorUserId, companyId, declarationId, act
   return sanitizeFbpDeclaration(rows?.[0]);
 }
 async function publishPayrollPayslips({ actorUserId, companyId, payrollRunId, payrollMonth, payrollYear }) {
-  const actor = await requireAdminForCompany({ actorUserId, companyId });
+  const actor = await requireAdminForCompany({ actorUserId, companyId, payrollPermission: "approve" });
   const runId = String(payrollRunId || "").trim();
   if (!runId) throw new Error("payrollRunId is required.");
   const detail = await getPayrollRunDetail({ actorUserId, companyId, payrollRunId: runId });
@@ -3180,10 +3307,18 @@ async function publishPayrollPayslips({ actorUserId, companyId, payrollRunId, pa
 }
 async function listPayrollPayslips({ actorUserId, companyId, payrollMonth = 0, payrollYear = 0, employeeId = "" }) {
   const actor = sanitizeUser(await getUserById(actorUserId, companyId));
-  if (!actor) throw new Error("Authenticated user not found.");
   const month = Number(payrollMonth || 0);
   const year = Number(payrollYear || 0);
   const scopedEmployeeId = String(employeeId || "").trim();
+  if (actor) {
+    if (String(actor.role || "").toLowerCase() !== "admin") throw new Error("Admin access required.");
+    const license = await getCompanyLicense(companyId);
+    if (!isPayrollAllowedForActor({ actor, license, permission: "access" })) {
+      throw new Error("You are not authorized to access Payroll Lite for this company package.");
+    }
+  } else if (!scopedEmployeeId) {
+    throw new Error("Authenticated user not found.");
+  }
   if (!cfg().on) {
     const store = readStore();
     return (store.payrollPayslips || [])
@@ -4044,6 +4179,7 @@ module.exports = {
   getPlatformSessionUser,
   getCompanyClientUsers,
   getCompanyPayrollSettings,
+  getCompanyPayrollAccessControl,
   getCompanyEmployeeProfiles,
   getCompanyLicense,
   getClientSessionUser,
@@ -4102,6 +4238,7 @@ module.exports = {
   saveCompanyFbpHead,
   saveCompanySalaryTemplate,
   saveCompanyPayrollSettings,
+  saveCompanyPayrollAccessControl,
   savePayrollInput,
   saveEmployeeCompensationStructure,
   updateEmployeeProfileAndWorkSite,
