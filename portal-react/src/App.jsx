@@ -12834,6 +12834,7 @@ function PayrollLiteAdminPage({ token, employees = [] }) {
   const [payrollRuns, setPayrollRuns] = useState([]);
   const [selectedRunId, setSelectedRunId] = useState("");
   const [selectedRunDetail, setSelectedRunDetail] = useState({ run: null, items: [] });
+  const [runActionStatus, setRunActionStatus] = useState("");
   const [status, setStatus] = useState("");
   const [compForm, setCompForm] = useState({
     employeeId: "",
@@ -13083,10 +13084,20 @@ function PayrollLiteAdminPage({ token, employees = [] }) {
         payrollMonth,
         payrollYear
       });
+      if (selectedRunId) {
+        // Keep the currently selected run totals in sync with latest input edits.
+        await api("/company/payroll/runs/calculate", token, "POST", { payrollRunId: selectedRunId });
+      }
       await loadPayrollExecutionData(payrollMonth, payrollYear);
+      if (selectedRunId) {
+        const detail = await api(`/company/payroll/runs?runId=${encodeURIComponent(selectedRunId)}`, token).catch(() => null);
+        if (detail) setSelectedRunDetail(detail);
+      }
       setStatus("Payroll input saved.");
+      setRunActionStatus(selectedRunId ? "Inputs saved and selected run recalculated." : "Inputs saved.");
     } catch (error) {
       setStatus(String(error?.message || error));
+      setRunActionStatus("");
     }
   }
   function setInputField(employeeId, key, value) {
@@ -13120,11 +13131,14 @@ function PayrollLiteAdminPage({ token, employees = [] }) {
   async function createRunDraft() {
     try {
       setStatus("Creating payroll run draft...");
+      setRunActionStatus("Creating draft...");
       await api("/company/payroll/runs/draft", token, "POST", { payrollMonth, payrollYear });
       await loadPayrollExecutionData(payrollMonth, payrollYear);
       setStatus("Payroll run draft created.");
+      setRunActionStatus("Draft created.");
     } catch (error) {
       setStatus(String(error?.message || error));
+      setRunActionStatus("");
     }
   }
   async function runAction(action) {
@@ -13136,13 +13150,16 @@ function PayrollLiteAdminPage({ token, employees = [] }) {
           ? "/company/payroll/runs/approve"
           : "/company/payroll/runs/lock";
       setStatus(`Running ${action}...`);
+      setRunActionStatus(`Running ${action}...`);
       await api(endpoint, token, "POST", { payrollRunId: selectedRunId, reason: action === "lock" ? "Locked by admin action" : "" });
       await loadPayrollExecutionData(payrollMonth, payrollYear);
       const detail = await api(`/company/payroll/runs?runId=${encodeURIComponent(selectedRunId)}`, token);
       setSelectedRunDetail(detail || { run: null, items: [] });
       setStatus(`Payroll run ${action} complete.`);
+      setRunActionStatus(`Payroll run ${action} complete.`);
     } catch (error) {
       setStatus(String(error?.message || error));
+      setRunActionStatus("");
     }
   }
 
@@ -13320,6 +13337,7 @@ function PayrollLiteAdminPage({ token, employees = [] }) {
           <button className="ghost-btn" onClick={() => void runAction("approve")} disabled={!selectedRunId}>Approve</button>
           <button className="ghost-btn" onClick={() => void runAction("lock")} disabled={!selectedRunId}>Lock</button>
         </div>
+        {runActionStatus ? <div className="status">{runActionStatus}</div> : null}
         <div className="table-wrap">
           <table className="dashboard-table">
             <thead><tr><th>Run ID</th><th>Month</th><th>Status</th><th>Total Gross</th><th>Total Deductions</th><th>Total Net</th><th>Total Employer Cost</th></tr></thead>
