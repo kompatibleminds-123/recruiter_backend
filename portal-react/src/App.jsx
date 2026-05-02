@@ -13800,6 +13800,7 @@ function EmployeePortalApp({ token, onLogout }) {
   const [todayAttendance, setTodayAttendance] = useState(null);
   const [attendanceItems, setAttendanceItems] = useState([]);
   const [payrollDocs, setPayrollDocs] = useState([]);
+  const [selectedPayslipId, setSelectedPayslipId] = useState("");
   const [status, setStatus] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -13866,6 +13867,10 @@ function EmployeePortalApp({ token, onLogout }) {
 
   const isCheckedIn = Boolean(activeOpenAttendance);
   const displayAttendance = activeOpenAttendance || todayAttendance;
+  const selectedPayslip = useMemo(
+    () => (payrollDocs || []).find((item) => String(item?.id || "") === String(selectedPayslipId || "")) || null,
+    [payrollDocs, selectedPayslipId]
+  );
 
   return (
     <div className="app-shell app-shell--client">
@@ -13956,7 +13961,7 @@ function EmployeePortalApp({ token, onLogout }) {
           <Section kicker="Payroll" title="My Payroll Docs">
             <div className="table-wrap">
               <table className="dashboard-table">
-                <thead><tr><th>Month/Year</th><th>Status</th><th>Published At</th><th>Net Salary</th></tr></thead>
+                <thead><tr><th>Month/Year</th><th>Status</th><th>Published At</th><th>Net Salary</th><th>Action</th></tr></thead>
                 <tbody>
                   {(payrollDocs || []).map((doc) => (
                     <tr key={doc.id}>
@@ -13964,12 +13969,48 @@ function EmployeePortalApp({ token, onLogout }) {
                       <td>{doc.status || "-"}</td>
                       <td>{doc.publishedAt ? new Date(doc.publishedAt).toLocaleString() : "-"}</td>
                       <td>{Number(doc?.payload?.netSalary || doc?.payload?.net_salary || 0).toFixed(2)}</td>
+                      <td>
+                        <button className="ghost-btn" onClick={() => setSelectedPayslipId(String(doc.id || ""))}>
+                          View Payslip
+                        </button>
+                      </td>
                     </tr>
                   ))}
-                  {!payrollDocs.length ? <tr><td colSpan="4"><div className="empty-state compact-empty">No payroll documents published yet.</div></td></tr> : null}
+                  {!payrollDocs.length ? <tr><td colSpan="5"><div className="empty-state compact-empty">No payroll documents published yet.</div></td></tr> : null}
                 </tbody>
               </table>
             </div>
+            {selectedPayslip ? (
+              <div className="item-card compact-card" style={{ marginTop: 12 }}>
+                <div className="section-kicker">Payslip Preview</div>
+                <h3>{selectedPayslip.payrollMonth}/{selectedPayslip.payrollYear} | {employeeUser?.fullName || "Employee"}</h3>
+                <div className="muted">Published: {selectedPayslip.publishedAt ? new Date(selectedPayslip.publishedAt).toLocaleString() : "-"}</div>
+                <div className="table-wrap" style={{ marginTop: 10 }}>
+                  <table className="dashboard-table">
+                    <tbody>
+                      <tr><th>Total Days</th><td>{selectedPayslip?.payload?.totalDays ?? selectedPayslip?.payload?.total_days ?? "-"}</td><th>Payable Days</th><td>{selectedPayslip?.payload?.payableDays ?? selectedPayslip?.payload?.payable_days ?? "-"}</td></tr>
+                      <tr><th>Paid Leave Days</th><td>{selectedPayslip?.payload?.paidLeaveDays ?? selectedPayslip?.payload?.paid_leave_days ?? "-"}</td><th>LOP Days</th><td>{selectedPayslip?.payload?.lopDays ?? selectedPayslip?.payload?.lop_days ?? "-"}</td></tr>
+                      <tr><th>LOP Deduction</th><td>{formatMoney(selectedPayslip?.payload?.lopAmount ?? selectedPayslip?.payload?.lop_amount ?? 0)}</td><th>Net Salary</th><td>{formatMoney(selectedPayslip?.payload?.netSalary ?? 0)}</td></tr>
+                    </tbody>
+                  </table>
+                </div>
+                <div className="table-wrap" style={{ marginTop: 10 }}>
+                  <table className="dashboard-table">
+                    <thead><tr><th>Earnings</th><th>Amount</th><th>Deductions</th><th>Amount</th></tr></thead>
+                    <tbody>
+                      <tr><td>Basic</td><td>{formatMoney(selectedPayslip?.payload?.proratedBasic ?? 0)}</td><td>Employee PF</td><td>{formatMoney(selectedPayslip?.payload?.employeePf ?? 0)}</td></tr>
+                      <tr><td>HRA</td><td>{formatMoney(selectedPayslip?.payload?.proratedHra ?? 0)}</td><td>Employee ESI</td><td>{formatMoney(selectedPayslip?.payload?.employeeEsi ?? 0)}</td></tr>
+                      <tr><td>FBP</td><td>{formatMoney(selectedPayslip?.payload?.proratedFbp ?? 0)}</td><td>Employee LWF</td><td>{formatMoney(selectedPayslip?.payload?.employeeLwf ?? 0)}</td></tr>
+                      <tr><td>Special Allowance</td><td>{formatMoney(selectedPayslip?.payload?.proratedSpecialAllowance ?? 0)}</td><td>Professional Tax</td><td>{formatMoney(selectedPayslip?.payload?.professionalTax ?? 0)}</td></tr>
+                      <tr><td>Other Earnings</td><td>{formatMoney(selectedPayslip?.payload?.otherEarnings ?? 0)}</td><td>TDS</td><td>{formatMoney(selectedPayslip?.payload?.tds ?? 0)}</td></tr>
+                      <tr><td>Approved Reimbursements</td><td>{formatMoney(selectedPayslip?.payload?.approvedReimbursements ?? 0)}</td><td>Other Deductions</td><td>{formatMoney(selectedPayslip?.payload?.otherDeductions ?? 0)}</td></tr>
+                      <tr><th>Gross Earnings</th><th>{formatMoney(selectedPayslip?.payload?.grossEarnings ?? 0)}</th><th>Gross Deductions</th><th>{formatMoney(selectedPayslip?.payload?.grossDeductions ?? 0)}</th></tr>
+                      <tr><th colSpan="3">Net Pay</th><th>{formatMoney(selectedPayslip?.payload?.netSalary ?? 0)}</th></tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            ) : null}
           </Section>
           <footer className="portal-footer portal-footer--content">{COMPANY_ATTRIBUTION} | employee-mvp</footer>
         </div>
