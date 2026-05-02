@@ -5986,6 +5986,16 @@ function PortalApp({ token, onLogout }) {
   }, [candidateUniverse, candidatePage]);
   const totalCandidatePages = Math.max(1, Math.ceil((candidateUniverse.length || 0) / 10));
   const candidateSmartChipRows = useMemo(() => {
+    const emptyRows = {
+      aligned_interviews: [],
+      feedback_awaited: [],
+      quick_joiners: [],
+      shared_today: [],
+      shared_this_week: [],
+      offered_candidates: [],
+      cv_shared: []
+    };
+    try {
     const assessments = Array.isArray(state.assessments) ? state.assessments : [];
     const assessmentById = new Map(assessments.map((assessment) => [String(assessment?.id || "").trim(), assessment]));
     const assessmentByCandidateId = new Map();
@@ -6061,15 +6071,7 @@ function PortalApp({ token, onLogout }) {
       return ts >= weekStartTs && ts <= weekEndTs;
     };
     const normalizeStatus = (value) => normalizeAssessmentStatusLabel(String(value || "")).toLowerCase();
-    const rowsByChip = {
-      aligned_interviews: [],
-      feedback_awaited: [],
-      quick_joiners: [],
-      shared_today: [],
-      shared_this_week: [],
-      offered_candidates: [],
-      cv_shared: []
-    };
+    const rowsByChip = { ...emptyRows };
     const assessmentSharedAtMap = new Map();
     const eventRows = Array.isArray(state.assessmentEvents) ? state.assessmentEvents : [];
     eventRows.forEach((event) => {
@@ -6209,6 +6211,10 @@ function PortalApp({ token, onLogout }) {
       }
     });
     return rowsByChip;
+    } catch (error) {
+      console.error("candidateSmartChipRows failed", error);
+      return emptyRows;
+    }
   }, [candidateUniverse, candidateSmartDateFrom, candidateSmartDateTo, state.assessments, state.candidates, state.assessmentEvents]);
   const candidateHasSmartChipSelection = candidateAiQueryMode === "natural" && candidateQuickChipIds.length > 0;
 
