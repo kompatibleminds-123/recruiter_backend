@@ -50,7 +50,7 @@ create table if not exists public.employee_work_sites (
   client_name text,
   latitude numeric(10,7),
   longitude numeric(10,7),
-  radius_meters integer not null default 300,
+  radius_meters integer not null default 500,
   address_text text,
   is_primary boolean not null default true,
   created_at timestamptz not null default now(),

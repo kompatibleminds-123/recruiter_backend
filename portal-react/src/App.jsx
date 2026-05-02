@@ -378,6 +378,16 @@ const CLIENT_PORTAL_STATUS_LABELS = {
   interview_dropout: "Interview Dropout"
 };
 
+function formatEmployeeLocationStatusLabel(value) {
+  const key = String(value || "").trim().toLowerCase();
+  if (!key) return "-";
+  if (key === "on_site") return "Active";
+  if (key === "outside_radius") return "Outside Geofence";
+  if (key === "remote") return "Remote";
+  if (key === "unknown") return "Unknown";
+  return key.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
 function formatClientPortalStatusLabel(value) {
   const normalized = normalizeAssessmentStatusLabel(value);
   if (!normalized) return "";
@@ -4439,7 +4449,12 @@ function PortalApp({ token, onLogout }) {
     fullName: "",
     password: "",
     designation: "",
-    clientName: ""
+    clientName: "",
+    workSiteName: "",
+    workSiteAddress: "",
+    workSiteLatitude: "",
+    workSiteLongitude: "",
+    workSiteRadiusMeters: "500"
   });
   const [employeePasswordDrafts, setEmployeePasswordDrafts] = useState({});
   const [companyDraft, setCompanyDraft] = useState({ companyName: "", adminName: "", email: "", password: "", platformSecret: "" });
@@ -9390,6 +9405,20 @@ function PortalApp({ token, onLogout }) {
         designation: String(employeeUserDraft.designation || "").trim(),
         clientName: String(employeeUserDraft.clientName || "").trim()
       };
+      const latitude = Number(String(employeeUserDraft.workSiteLatitude || "").trim());
+      const longitude = Number(String(employeeUserDraft.workSiteLongitude || "").trim());
+      const radius = Number(String(employeeUserDraft.workSiteRadiusMeters || "").trim() || "500");
+      if (Number.isFinite(latitude) && Number.isFinite(longitude)) {
+        payload.workSite = {
+          siteName: String(employeeUserDraft.workSiteName || "Primary Work Site").trim(),
+          addressText: String(employeeUserDraft.workSiteAddress || "").trim(),
+          clientName: String(employeeUserDraft.clientName || "").trim(),
+          latitude,
+          longitude,
+          radiusMeters: Number.isFinite(radius) ? Math.max(50, radius) : 500,
+          isPrimary: true
+        };
+      }
       await api("/company/employees", token, "POST", payload);
       await reloadLoginSettingsWorkspace();
       setEmployeeUserDraft({
@@ -9398,7 +9427,12 @@ function PortalApp({ token, onLogout }) {
         fullName: "",
         password: "",
         designation: "",
-        clientName: ""
+        clientName: "",
+        workSiteName: "",
+        workSiteAddress: "",
+        workSiteLatitude: "",
+        workSiteLongitude: "",
+        workSiteRadiusMeters: "500"
       });
       setStatus("loginEmployee", "Employee login created.", "ok");
     } catch (error) {
@@ -12138,6 +12172,11 @@ function PortalApp({ token, onLogout }) {
                     <label><span>Temporary password</span><input disabled={!isSettingsAdmin} type="password" value={employeeUserDraft.password} onChange={(e) => setEmployeeUserDraft((current) => ({ ...current, password: e.target.value }))} placeholder="Set employee password" /></label>
                     <label><span>Designation (optional)</span><input disabled={!isSettingsAdmin} value={employeeUserDraft.designation} onChange={(e) => setEmployeeUserDraft((current) => ({ ...current, designation: e.target.value }))} placeholder="Software Engineer" /></label>
                     <label><span>Client name (optional)</span><input disabled={!isSettingsAdmin} value={employeeUserDraft.clientName} onChange={(e) => setEmployeeUserDraft((current) => ({ ...current, clientName: e.target.value }))} placeholder="Easyrewardz" /></label>
+                    <label><span>Work site name (optional)</span><input disabled={!isSettingsAdmin} value={employeeUserDraft.workSiteName} onChange={(e) => setEmployeeUserDraft((current) => ({ ...current, workSiteName: e.target.value }))} placeholder="Easyrewardz HQ" /></label>
+                    <label><span>Work site address (optional)</span><input disabled={!isSettingsAdmin} value={employeeUserDraft.workSiteAddress} onChange={(e) => setEmployeeUserDraft((current) => ({ ...current, workSiteAddress: e.target.value }))} placeholder="DLF Cyber City, Gurugram" /></label>
+                    <label><span>Work site latitude (optional)</span><input disabled={!isSettingsAdmin} value={employeeUserDraft.workSiteLatitude} onChange={(e) => setEmployeeUserDraft((current) => ({ ...current, workSiteLatitude: e.target.value }))} placeholder="28.4942" /></label>
+                    <label><span>Work site longitude (optional)</span><input disabled={!isSettingsAdmin} value={employeeUserDraft.workSiteLongitude} onChange={(e) => setEmployeeUserDraft((current) => ({ ...current, workSiteLongitude: e.target.value }))} placeholder="77.0890" /></label>
+                    <label><span>Allowed radius (meters)</span><input disabled={!isSettingsAdmin} value={employeeUserDraft.workSiteRadiusMeters} onChange={(e) => setEmployeeUserDraft((current) => ({ ...current, workSiteRadiusMeters: e.target.value }))} placeholder="500" /></label>
                   </div>
                   {isSettingsAdmin ? <div className="button-row"><button onClick={() => void createEmployeePortalUser()}>Create employee login</button></div> : null}
                   {statuses.loginEmployee ? <div className={`status ${statuses.loginEmployeeKind || ""}`}>{statuses.loginEmployee}</div> : null}
@@ -12710,7 +12749,7 @@ function EmployeePortalApp({ token, onLogout }) {
                       <td>{item.attendanceDate || "-"}</td>
                       <td>{item.checkInAt ? new Date(item.checkInAt).toLocaleString() : "-"}</td>
                       <td>{item.checkOutAt ? new Date(item.checkOutAt).toLocaleString() : "-"}</td>
-                      <td>{item.locationStatus || "-"}</td>
+                      <td>{formatEmployeeLocationStatusLabel(item.locationStatus)}</td>
                       <td>{item.checkInAccuracyMeters ? `${item.checkInAccuracyMeters} m` : "-"}</td>
                     </tr>
                   ))}

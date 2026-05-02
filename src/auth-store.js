@@ -1726,7 +1726,7 @@ async function getEmployeeWorkSites(companyId, employeeId) {
     clientName: String(item.client_name || "").trim(),
     latitude: item.latitude ?? null,
     longitude: item.longitude ?? null,
-    radiusMeters: Number(item.radius_meters || 300),
+    radiusMeters: Number(item.radius_meters || 500),
     addressText: String(item.address_text || "").trim(),
     isPrimary: item.is_primary !== false
   }));
@@ -1821,7 +1821,7 @@ async function upsertEmployeeWorkSite({ companyId, employeeId, workSite = {}, up
     clientName: String(source.clientName || source.client_name || "").trim(),
     latitude: source.latitude == null ? null : Number(source.latitude),
     longitude: source.longitude == null ? null : Number(source.longitude),
-    radiusMeters: Number(source.radiusMeters || source.radius_meters || 300),
+    radiusMeters: Number(source.radiusMeters || source.radius_meters || 500),
     addressText: String(source.addressText || source.address_text || "").trim(),
     isPrimary: source.isPrimary !== false
   };
@@ -2024,7 +2024,7 @@ async function markEmployeeAttendance({ employeeUser, action, latitude, longitud
     ? "unknown"
     : !primarySite || distance == null
       ? "remote"
-      : distance <= Number(primarySite.radiusMeters || 300)
+      : distance <= Number(primarySite.radiusMeters || 500)
         ? "on_site"
         : "outside_radius";
 
