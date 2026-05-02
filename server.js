@@ -41,6 +41,7 @@ const {
   saveUserSmtpSettings,
   getCompanyApplicantIntakeSecret,
   getCompanyClientUsers,
+  getCompanyPayrollSettings,
   getEmployeeProfile,
   getCompanyLicense,
   getClientSessionUser,
@@ -50,6 +51,8 @@ const {
   getCompanySharedExportPresets,
   getPublicCompanyJob,
   listCompanyEmployees,
+  listCompanyFbpHeads,
+  listEmployeeCompensationStructures,
   listCompaniesAndUsersSummary,
   listAssessments,
   listEmployeeAttendance,
@@ -70,7 +73,11 @@ const {
   resetClientUserPassword,
   resetEmployeeUserPassword,
   resetUserPassword,
+  removeCompanyFbpHead,
   saveAssessment,
+  saveCompanyFbpHead,
+  saveCompanyPayrollSettings,
+  saveEmployeeCompensationStructure,
   saveEmployeeProfile,
   updateEmployeeProfileAndWorkSite,
   patchAssessmentCandidateLink,
@@ -7242,6 +7249,121 @@ const server = http.createServer(async (req, res) => {
     } catch (error) {
       const message = String(error?.message || error);
       const status = /invalid|missing employee session|unauthorized|401/i.test(message) ? 401 : 500;
+      sendJson(res, status, { ok: false, error: message });
+    }
+    return;
+  }
+
+  if (req.method === "GET" && req.url === "/company/payroll/settings") {
+    try {
+      const actor = await requireSessionUser(getBearerToken(req));
+      const settings = await getCompanyPayrollSettings({ actorUserId: actor.id, companyId: actor.companyId });
+      sendJson(res, 200, { ok: true, result: settings });
+    } catch (error) {
+      const message = String(error?.message || error);
+      const status = /admin access required|forbidden|not allowed|403/i.test(message) ? 403 : 400;
+      sendJson(res, status, { ok: false, error: message });
+    }
+    return;
+  }
+
+  if (req.method === "POST" && req.url === "/company/payroll/settings") {
+    try {
+      const actor = await requireSessionUser(getBearerToken(req));
+      const body = await readJsonBody(req);
+      const settings = await saveCompanyPayrollSettings({
+        actorUserId: actor.id,
+        companyId: actor.companyId,
+        settings: body?.settings && typeof body.settings === "object" ? body.settings : body
+      });
+      sendJson(res, 200, { ok: true, result: settings });
+    } catch (error) {
+      const message = String(error?.message || error);
+      const status = /admin access required|forbidden|not allowed|403/i.test(message) ? 403 : 400;
+      sendJson(res, status, { ok: false, error: message });
+    }
+    return;
+  }
+
+  if (req.method === "GET" && requestUrl.pathname === "/company/payroll/compensation") {
+    try {
+      const actor = await requireSessionUser(getBearerToken(req));
+      const employeeId = String(requestUrl.searchParams.get("employeeId") || "").trim();
+      const activeOnly = String(requestUrl.searchParams.get("activeOnly") || "").trim() === "true";
+      const items = await listEmployeeCompensationStructures({
+        actorUserId: actor.id,
+        companyId: actor.companyId,
+        employeeId,
+        activeOnly
+      });
+      sendJson(res, 200, { ok: true, result: { items } });
+    } catch (error) {
+      const message = String(error?.message || error);
+      const status = /admin access required|forbidden|not allowed|403/i.test(message) ? 403 : 400;
+      sendJson(res, status, { ok: false, error: message });
+    }
+    return;
+  }
+
+  if (req.method === "POST" && req.url === "/company/payroll/compensation") {
+    try {
+      const actor = await requireSessionUser(getBearerToken(req));
+      const body = await readJsonBody(req);
+      const saved = await saveEmployeeCompensationStructure({
+        actorUserId: actor.id,
+        companyId: actor.companyId,
+        compensation: body?.compensation && typeof body.compensation === "object" ? body.compensation : body
+      });
+      sendJson(res, 200, { ok: true, result: saved });
+    } catch (error) {
+      const message = String(error?.message || error);
+      const status = /admin access required|forbidden|not allowed|403/i.test(message) ? 403 : 400;
+      sendJson(res, status, { ok: false, error: message });
+    }
+    return;
+  }
+
+  if (req.method === "GET" && requestUrl.pathname === "/company/payroll/fbp-heads") {
+    try {
+      const actor = await requireSessionUser(getBearerToken(req));
+      const activeOnly = String(requestUrl.searchParams.get("activeOnly") || "").trim() === "true";
+      const items = await listCompanyFbpHeads({ actorUserId: actor.id, companyId: actor.companyId, activeOnly });
+      sendJson(res, 200, { ok: true, result: { items } });
+    } catch (error) {
+      const message = String(error?.message || error);
+      const status = /admin access required|forbidden|not allowed|403/i.test(message) ? 403 : 400;
+      sendJson(res, status, { ok: false, error: message });
+    }
+    return;
+  }
+
+  if (req.method === "POST" && req.url === "/company/payroll/fbp-heads") {
+    try {
+      const actor = await requireSessionUser(getBearerToken(req));
+      const body = await readJsonBody(req);
+      const saved = await saveCompanyFbpHead({
+        actorUserId: actor.id,
+        companyId: actor.companyId,
+        head: body?.head && typeof body.head === "object" ? body.head : body
+      });
+      sendJson(res, 200, { ok: true, result: saved });
+    } catch (error) {
+      const message = String(error?.message || error);
+      const status = /admin access required|forbidden|not allowed|403/i.test(message) ? 403 : 400;
+      sendJson(res, status, { ok: false, error: message });
+    }
+    return;
+  }
+
+  if (req.method === "DELETE" && requestUrl.pathname === "/company/payroll/fbp-heads") {
+    try {
+      const actor = await requireSessionUser(getBearerToken(req));
+      const headId = String(requestUrl.searchParams.get("headId") || "").trim();
+      const result = await removeCompanyFbpHead({ actorUserId: actor.id, companyId: actor.companyId, headId });
+      sendJson(res, 200, { ok: true, result });
+    } catch (error) {
+      const message = String(error?.message || error);
+      const status = /admin access required|forbidden|not allowed|403/i.test(message) ? 403 : 400;
       sendJson(res, status, { ok: false, error: message });
     }
     return;

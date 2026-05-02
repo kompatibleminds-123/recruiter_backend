@@ -759,6 +759,78 @@ function sanitizeEmployeeAttendanceLog(raw) {
     updatedAt: String(raw.updatedAt || raw.updated_at || "").trim()
   };
 }
+function sanitizePayrollSettings(raw) {
+  if (!raw) return null;
+  return {
+    id: String(raw.id || "").trim(),
+    companyId: String(raw.companyId || raw.company_id || "").trim(),
+    payrollEnabled: Boolean(raw.payrollEnabled ?? raw.payroll_enabled),
+    defaultFbpProofCycle: String(raw.defaultFbpProofCycle || raw.default_fbp_proof_cycle || "quarterly").trim().toLowerCase(),
+    defaultMonthlyProfessionalTax: Number(raw.defaultMonthlyProfessionalTax ?? raw.default_monthly_professional_tax ?? 0) || 0,
+    applyLopProration: Boolean(raw.applyLopProration ?? raw.apply_lop_proration ?? true),
+    prorateHealthInsurance: Boolean(raw.prorateHealthInsurance ?? raw.prorate_health_insurance ?? false),
+    defaultSalaryTemplateCode: String(raw.defaultSalaryTemplateCode || raw.default_salary_template_code || "c2h_it_standard").trim() || "c2h_it_standard",
+    policyNote: String(raw.policyNote || raw.policy_note || "").trim(),
+    createdAt: String(raw.createdAt || raw.created_at || "").trim(),
+    updatedAt: String(raw.updatedAt || raw.updated_at || "").trim(),
+    createdBy: String(raw.createdBy || raw.created_by || "").trim(),
+    updatedBy: String(raw.updatedBy || raw.updated_by || "").trim()
+  };
+}
+function sanitizeEmployeeCompensation(raw) {
+  if (!raw) return null;
+  return {
+    id: String(raw.id || "").trim(),
+    companyId: String(raw.companyId || raw.company_id || "").trim(),
+    employeeId: String(raw.employeeId || raw.employee_id || "").trim(),
+    templateCode: String(raw.templateCode || raw.template_code || "custom").trim().toLowerCase(),
+    effectiveFrom: String(raw.effectiveFrom || raw.effective_from || "").trim(),
+    effectiveTo: String(raw.effectiveTo || raw.effective_to || "").trim(),
+    annualCtc: Number(raw.annualCtc ?? raw.annual_ctc ?? 0) || 0,
+    monthlyCtc: Number(raw.monthlyCtc ?? raw.monthly_ctc ?? 0) || 0,
+    basicMonthly: Number(raw.basicMonthly ?? raw.basic_monthly ?? 0) || 0,
+    basicAnnual: Number(raw.basicAnnual ?? raw.basic_annual ?? 0) || 0,
+    hraMonthly: Number(raw.hraMonthly ?? raw.hra_monthly ?? 0) || 0,
+    hraAnnual: Number(raw.hraAnnual ?? raw.hra_annual ?? 0) || 0,
+    fbpMonthly: Number(raw.fbpMonthly ?? raw.fbp_monthly ?? 0) || 0,
+    fbpAnnual: Number(raw.fbpAnnual ?? raw.fbp_annual ?? 0) || 0,
+    specialAllowanceMonthly: Number(raw.specialAllowanceMonthly ?? raw.special_allowance_monthly ?? 0) || 0,
+    specialAllowanceAnnual: Number(raw.specialAllowanceAnnual ?? raw.special_allowance_annual ?? 0) || 0,
+    employerPfMonthly: Number(raw.employerPfMonthly ?? raw.employer_pf_monthly ?? 0) || 0,
+    employerPfAnnual: Number(raw.employerPfAnnual ?? raw.employer_pf_annual ?? 0) || 0,
+    employeePfMonthly: Number(raw.employeePfMonthly ?? raw.employee_pf_monthly ?? 0) || 0,
+    employeePfAnnual: Number(raw.employeePfAnnual ?? raw.employee_pf_annual ?? 0) || 0,
+    gratuityMonthly: Number(raw.gratuityMonthly ?? raw.gratuity_monthly ?? 0) || 0,
+    gratuityAnnual: Number(raw.gratuityAnnual ?? raw.gratuity_annual ?? 0) || 0,
+    healthInsuranceMonthly: Number(raw.healthInsuranceMonthly ?? raw.health_insurance_monthly ?? 0) || 0,
+    healthInsuranceAnnual: Number(raw.healthInsuranceAnnual ?? raw.health_insurance_annual ?? 0) || 0,
+    otherAllowanceMonthly: Number(raw.otherAllowanceMonthly ?? raw.other_allowance_monthly ?? 0) || 0,
+    otherAllowanceAnnual: Number(raw.otherAllowanceAnnual ?? raw.other_allowance_annual ?? 0) || 0,
+    isActive: Boolean(raw.isActive ?? raw.is_active),
+    notes: String(raw.notes || "").trim(),
+    createdAt: String(raw.createdAt || raw.created_at || "").trim(),
+    updatedAt: String(raw.updatedAt || raw.updated_at || "").trim(),
+    createdBy: String(raw.createdBy || raw.created_by || "").trim(),
+    updatedBy: String(raw.updatedBy || raw.updated_by || "").trim()
+  };
+}
+function sanitizeFbpHead(raw) {
+  if (!raw) return null;
+  return {
+    id: String(raw.id || "").trim(),
+    companyId: String(raw.companyId || raw.company_id || "").trim(),
+    headName: String(raw.headName || raw.head_name || "").trim(),
+    monthlyLimit: Number(raw.monthlyLimit ?? raw.monthly_limit ?? 0) || 0,
+    annualLimit: Number(raw.annualLimit ?? raw.annual_limit ?? 0) || 0,
+    proofRequired: Boolean(raw.proofRequired ?? raw.proof_required),
+    taxableIfUnclaimed: Boolean(raw.taxableIfUnclaimed ?? raw.taxable_if_unclaimed),
+    active: Boolean(raw.active ?? true),
+    createdAt: String(raw.createdAt || raw.created_at || "").trim(),
+    updatedAt: String(raw.updatedAt || raw.updated_at || "").trim(),
+    createdBy: String(raw.createdBy || raw.created_by || "").trim(),
+    updatedBy: String(raw.updatedBy || raw.updated_by || "").trim()
+  };
+}
 function persistedAssessmentId(rawId) {
   const v = String(rawId || "").trim();
   if (!v || /^(quick-note|assessment)-/i.test(v)) return crypto.randomUUID();
@@ -1888,6 +1960,269 @@ async function getEmployeeProfile(companyId, employeeId) {
   const employees = await listCompanyEmployees(companyId);
   return employees.find((item) => String(item.id || "") === String(employeeId)) || null;
 }
+async function requireAdminForCompany({ actorUserId, companyId }) {
+  const actor = sanitizeUser(await getUserById(actorUserId, companyId));
+  if (!actor) throw new Error("Authenticated recruiter not found for this company.");
+  if (String(actor.role || "").toLowerCase() !== "admin") throw new Error("Admin access required.");
+  return actor;
+}
+async function getCompanyPayrollSettings({ actorUserId, companyId }) {
+  await requireAdminForCompany({ actorUserId, companyId });
+  if (!cfg().on) {
+    const store = readStore();
+    const row = (store.payrollSettings || []).find((item) => String(item.companyId || "") === String(companyId)) || null;
+    if (row) return sanitizePayrollSettings(row);
+    return sanitizePayrollSettings({
+      id: crypto.randomUUID(),
+      companyId,
+      payrollEnabled: false,
+      defaultFbpProofCycle: "quarterly",
+      defaultMonthlyProfessionalTax: 0,
+      applyLopProration: true,
+      prorateHealthInsurance: false,
+      defaultSalaryTemplateCode: "c2h_it_standard",
+      policyNote: ""
+    });
+  }
+  await ensureSeeded();
+  const rows = await sbSel("payroll_settings", `select=*&company_id=eq.${enc(companyId)}&limit=1`).catch(() => []);
+  if (rows?.[0]) return sanitizePayrollSettings(rows[0]);
+  return sanitizePayrollSettings({
+    id: crypto.randomUUID(),
+    companyId,
+    payrollEnabled: false,
+    defaultFbpProofCycle: "quarterly",
+    defaultMonthlyProfessionalTax: 0,
+    applyLopProration: true,
+    prorateHealthInsurance: false,
+    defaultSalaryTemplateCode: "c2h_it_standard",
+    policyNote: ""
+  });
+}
+async function saveCompanyPayrollSettings({ actorUserId, companyId, settings = {} }) {
+  const actor = await requireAdminForCompany({ actorUserId, companyId });
+  const now = new Date().toISOString();
+  const payload = {
+    payroll_enabled: Boolean(settings.payrollEnabled),
+    default_fbp_proof_cycle: String(settings.defaultFbpProofCycle || "quarterly").trim().toLowerCase() || "quarterly",
+    default_monthly_professional_tax: Number(settings.defaultMonthlyProfessionalTax || 0) || 0,
+    apply_lop_proration: settings.applyLopProration !== false,
+    prorate_health_insurance: Boolean(settings.prorateHealthInsurance),
+    default_salary_template_code: String(settings.defaultSalaryTemplateCode || "c2h_it_standard").trim().toLowerCase() || "c2h_it_standard",
+    policy_note: String(settings.policyNote || "").trim(),
+    updated_at: now,
+    updated_by: actor.id
+  };
+  if (!cfg().on) {
+    const store = readStore();
+    store.payrollSettings = Array.isArray(store.payrollSettings) ? store.payrollSettings : [];
+    const ix = store.payrollSettings.findIndex((item) => String(item.companyId || "") === String(companyId));
+    if (ix >= 0) {
+      store.payrollSettings[ix] = { ...store.payrollSettings[ix], ...payload, companyId };
+    } else {
+      store.payrollSettings.push({
+        id: crypto.randomUUID(),
+        companyId,
+        createdAt: now,
+        createdBy: actor.id,
+        ...payload
+      });
+    }
+    writeStore(store);
+    const row = store.payrollSettings.find((item) => String(item.companyId || "") === String(companyId));
+    return sanitizePayrollSettings(row);
+  }
+  await ensureSeeded();
+  const existing = await sbSel("payroll_settings", `select=id&company_id=eq.${enc(companyId)}&limit=1`).catch(() => []);
+  if (existing?.[0]?.id) {
+    const rows = await sbPatch("payroll_settings", `company_id=eq.${enc(companyId)}`, payload);
+    return sanitizePayrollSettings(rows?.[0]);
+  }
+  const rows = await sbIns("payroll_settings", [{
+    id: crypto.randomUUID(),
+    company_id: companyId,
+    created_at: now,
+    created_by: actor.id,
+    ...payload
+  }], { conflict: "company_id", upsert: true });
+  return sanitizePayrollSettings(rows?.[0]);
+}
+async function listEmployeeCompensationStructures({ actorUserId, companyId, employeeId = "", activeOnly = false }) {
+  await requireAdminForCompany({ actorUserId, companyId });
+  const safeEmployeeId = String(employeeId || "").trim();
+  if (!cfg().on) {
+    const store = readStore();
+    return (store.employeeCompensationStructures || [])
+      .filter((item) => String(item.companyId || "") === String(companyId))
+      .filter((item) => !safeEmployeeId || String(item.employeeId || "") === safeEmployeeId)
+      .filter((item) => !activeOnly || Boolean(item.isActive))
+      .map(sanitizeEmployeeCompensation)
+      .filter(Boolean)
+      .sort((a, b) => String(b.effectiveFrom || "").localeCompare(String(a.effectiveFrom || "")));
+  }
+  await ensureSeeded();
+  const filters = [
+    `company_id=eq.${enc(companyId)}`,
+    safeEmployeeId ? `employee_id=eq.${enc(safeEmployeeId)}` : "",
+    activeOnly ? "is_active=eq.true" : "",
+    "order=effective_from.desc"
+  ].filter(Boolean).join("&");
+  const rows = await sbSel("employee_compensation_structures", `select=*&${filters}`);
+  return (rows || []).map(sanitizeEmployeeCompensation).filter(Boolean);
+}
+async function saveEmployeeCompensationStructure({ actorUserId, companyId, compensation = {} }) {
+  const actor = await requireAdminForCompany({ actorUserId, companyId });
+  const employeeId = String(compensation.employeeId || "").trim();
+  if (!employeeId) throw new Error("employeeId is required.");
+  const now = new Date().toISOString();
+  const rowId = String(compensation.id || "").trim();
+  const safe = sanitizeEmployeeCompensation({
+    ...compensation,
+    companyId,
+    employeeId,
+    isActive: compensation.isActive !== false
+  });
+  const insertPayload = {
+    id: rowId || crypto.randomUUID(),
+    company_id: companyId,
+    employee_id: employeeId,
+    template_code: safe.templateCode || "custom",
+    effective_from: safe.effectiveFrom || new Date().toISOString().slice(0, 10),
+    effective_to: safe.effectiveTo || null,
+    annual_ctc: safe.annualCtc,
+    monthly_ctc: safe.monthlyCtc,
+    basic_monthly: safe.basicMonthly,
+    basic_annual: safe.basicAnnual,
+    hra_monthly: safe.hraMonthly,
+    hra_annual: safe.hraAnnual,
+    fbp_monthly: safe.fbpMonthly,
+    fbp_annual: safe.fbpAnnual,
+    special_allowance_monthly: safe.specialAllowanceMonthly,
+    special_allowance_annual: safe.specialAllowanceAnnual,
+    employer_pf_monthly: safe.employerPfMonthly,
+    employer_pf_annual: safe.employerPfAnnual,
+    employee_pf_monthly: safe.employeePfMonthly,
+    employee_pf_annual: safe.employeePfAnnual,
+    gratuity_monthly: safe.gratuityMonthly,
+    gratuity_annual: safe.gratuityAnnual,
+    health_insurance_monthly: safe.healthInsuranceMonthly,
+    health_insurance_annual: safe.healthInsuranceAnnual,
+    other_allowance_monthly: safe.otherAllowanceMonthly,
+    other_allowance_annual: safe.otherAllowanceAnnual,
+    is_active: safe.isActive,
+    notes: safe.notes,
+    updated_at: now,
+    updated_by: actor.id
+  };
+  if (!cfg().on) {
+    const store = readStore();
+    store.employeeCompensationStructures = Array.isArray(store.employeeCompensationStructures) ? store.employeeCompensationStructures : [];
+    if (safe.isActive) {
+      store.employeeCompensationStructures = store.employeeCompensationStructures.map((item) =>
+        String(item.companyId || "") === String(companyId) && String(item.employeeId || "") === String(employeeId)
+          ? { ...item, isActive: false, effectiveTo: item.effectiveTo || insertPayload.effective_from }
+          : item
+      );
+    }
+    const ix = store.employeeCompensationStructures.findIndex((item) => String(item.id || "") === insertPayload.id);
+    if (ix >= 0) {
+      store.employeeCompensationStructures[ix] = { ...store.employeeCompensationStructures[ix], ...insertPayload };
+    } else {
+      store.employeeCompensationStructures.push({
+        ...insertPayload,
+        createdAt: now,
+        createdBy: actor.id
+      });
+    }
+    writeStore(store);
+    return sanitizeEmployeeCompensation(store.employeeCompensationStructures.find((item) => String(item.id || "") === insertPayload.id));
+  }
+  await ensureSeeded();
+  if (safe.isActive) {
+    await sbPatch(
+      "employee_compensation_structures",
+      `company_id=eq.${enc(companyId)}&employee_id=eq.${enc(employeeId)}&is_active=eq.true`,
+      { is_active: false, updated_at: now, updated_by: actor.id, effective_to: insertPayload.effective_from }
+    ).catch(() => []);
+  }
+  const rows = await sbIns("employee_compensation_structures", [{
+    ...insertPayload,
+    created_at: now,
+    created_by: actor.id
+  }], { conflict: "id", upsert: true });
+  return sanitizeEmployeeCompensation(rows?.[0]);
+}
+async function listCompanyFbpHeads({ actorUserId, companyId, activeOnly = false }) {
+  await requireAdminForCompany({ actorUserId, companyId });
+  if (!cfg().on) {
+    const store = readStore();
+    return (store.fbpHeads || [])
+      .filter((item) => String(item.companyId || "") === String(companyId))
+      .filter((item) => !activeOnly || Boolean(item.active))
+      .map(sanitizeFbpHead)
+      .filter(Boolean)
+      .sort((a, b) => String(a.headName || "").localeCompare(String(b.headName || "")));
+  }
+  await ensureSeeded();
+  const filters = [
+    `company_id=eq.${enc(companyId)}`,
+    activeOnly ? "active=eq.true" : "",
+    "order=head_name.asc"
+  ].filter(Boolean).join("&");
+  const rows = await sbSel("fbp_heads", `select=*&${filters}`);
+  return (rows || []).map(sanitizeFbpHead).filter(Boolean);
+}
+async function saveCompanyFbpHead({ actorUserId, companyId, head = {} }) {
+  const actor = await requireAdminForCompany({ actorUserId, companyId });
+  const now = new Date().toISOString();
+  const rowId = String(head.id || "").trim() || crypto.randomUUID();
+  const name = String(head.headName || "").trim();
+  if (!name) throw new Error("headName is required.");
+  const payload = {
+    id: rowId,
+    company_id: companyId,
+    head_name: name,
+    monthly_limit: Number(head.monthlyLimit || 0) || 0,
+    annual_limit: Number(head.annualLimit || 0) || 0,
+    proof_required: head.proofRequired !== false,
+    taxable_if_unclaimed: Boolean(head.taxableIfUnclaimed),
+    active: head.active !== false,
+    updated_at: now,
+    updated_by: actor.id
+  };
+  if (!cfg().on) {
+    const store = readStore();
+    store.fbpHeads = Array.isArray(store.fbpHeads) ? store.fbpHeads : [];
+    const ix = store.fbpHeads.findIndex((item) => String(item.id || "") === rowId);
+    if (ix >= 0) store.fbpHeads[ix] = { ...store.fbpHeads[ix], ...payload };
+    else store.fbpHeads.push({ ...payload, createdAt: now, createdBy: actor.id });
+    writeStore(store);
+    return sanitizeFbpHead(store.fbpHeads.find((item) => String(item.id || "") === rowId));
+  }
+  await ensureSeeded();
+  const rows = await sbIns("fbp_heads", [{
+    ...payload,
+    created_at: now,
+    created_by: actor.id
+  }], { conflict: "id", upsert: true });
+  return sanitizeFbpHead(rows?.[0]);
+}
+async function removeCompanyFbpHead({ actorUserId, companyId, headId }) {
+  await requireAdminForCompany({ actorUserId, companyId });
+  const safeHeadId = String(headId || "").trim();
+  if (!safeHeadId) throw new Error("headId is required.");
+  if (!cfg().on) {
+    const store = readStore();
+    store.fbpHeads = Array.isArray(store.fbpHeads) ? store.fbpHeads : [];
+    const before = store.fbpHeads.length;
+    store.fbpHeads = store.fbpHeads.filter((item) => !(String(item.id || "") === safeHeadId && String(item.companyId || "") === String(companyId)));
+    writeStore(store);
+    return { deleted: before !== store.fbpHeads.length, headId: safeHeadId };
+  }
+  await ensureSeeded();
+  await sbDel("fbp_heads", `id=eq.${enc(safeHeadId)}&company_id=eq.${enc(companyId)}`);
+  return { deleted: true, headId: safeHeadId };
+}
 async function createEmployeeUser({ actorUserId, companyId, employeeCode, username, password, fullName, profile = {}, workSite = {} }) {
   const actor = sanitizeUser(await getUserById(actorUserId, companyId));
   if (!actor || actor.role !== "admin") throw new Error("Only an admin for this company can create employee accounts.");
@@ -2726,6 +3061,7 @@ module.exports = {
   createTrialCompanyWithAdmin,
   getPlatformSessionUser,
   getCompanyClientUsers,
+  getCompanyPayrollSettings,
   getCompanyEmployeeProfiles,
   getCompanyLicense,
   getClientSessionUser,
@@ -2742,6 +3078,8 @@ module.exports = {
   getSessionUser,
   incrementCompanyCaptureUsage,
   listCompanyEmployees,
+  listCompanyFbpHeads,
+  listEmployeeCompensationStructures,
   listCompaniesAndUsersSummary,
   listAssessments,
   listEmployeeAttendance,
@@ -2760,7 +3098,11 @@ module.exports = {
   resetClientUserPassword,
   resetEmployeeUserPassword,
   resetUserPassword,
+  removeCompanyFbpHead,
   saveEmployeeProfile,
+  saveCompanyFbpHead,
+  saveCompanyPayrollSettings,
+  saveEmployeeCompensationStructure,
   updateEmployeeProfileAndWorkSite,
   saveCompanySharedExportPresets,
   setCompanyApplicantIntakeSecret,
