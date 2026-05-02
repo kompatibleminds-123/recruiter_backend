@@ -13041,6 +13041,7 @@ function PayrollLiteAdminPage({ token, employees = [] }) {
     docNote: ""
   });
   const [declarationDocUploading, setDeclarationDocUploading] = useState(false);
+  const [suggestRecalculateAfterFbp, setSuggestRecalculateAfterFbp] = useState(false);
 
   async function loadPayrollFoundation() {
     const [settingsResult, compResult, fbpResult, templateResult] = await Promise.all([
@@ -13443,6 +13444,7 @@ function PayrollLiteAdminPage({ token, employees = [] }) {
         delete next[String(id || "")];
         return next;
       });
+      setSuggestRecalculateAfterFbp(Boolean(selectedRunId));
       setStatus(`Declaration ${action}d.`);
     } catch (error) {
       setStatus(String(error?.message || error));
@@ -13753,6 +13755,19 @@ function PayrollLiteAdminPage({ token, employees = [] }) {
         </div>
       </Section>
       <Section kicker="Phase 3" title="FBP Declarations & Approvals">
+        {suggestRecalculateAfterFbp && selectedRunId ? (
+          <div className="button-row" style={{ marginBottom: 8 }}>
+            <button
+              className="ghost-btn"
+              onClick={() => {
+                setSuggestRecalculateAfterFbp(false);
+                void runAction("calculate");
+              }}
+            >
+              Recalculate Selected Run Now
+            </button>
+          </div>
+        ) : null}
         <div className="form-grid three-col">
           <label>
             <span>Employee</span>
@@ -13790,7 +13805,7 @@ function PayrollLiteAdminPage({ token, employees = [] }) {
         <div className="button-row"><button onClick={() => void submitFbpDeclaration()}>Submit declaration</button></div>
         <div className="table-wrap">
           <table className="dashboard-table">
-            <thead><tr><th>Employee</th><th>Head</th><th>Declared</th><th>Approved</th><th>Status</th><th>Docs</th><th>Actions</th></tr></thead>
+            <thead><tr><th>Employee</th><th>Head</th><th>Declared</th><th>Approved</th><th>Status</th><th>Decided At</th><th>Decided By</th><th>Rejection Reason</th><th>Docs</th><th>Actions</th></tr></thead>
             <tbody>
               {(fbpDeclarations || []).map((item) => {
                 const emp = employees.find((e) => String(e.id || "") === String(item.employeeId || ""));
@@ -13810,6 +13825,9 @@ function PayrollLiteAdminPage({ token, employees = [] }) {
                       />
                     </td>
                     <td>{item.status || "-"}</td>
+                    <td>{item.decidedAt ? new Date(item.decidedAt).toLocaleString() : "-"}</td>
+                    <td>{item.decidedBy ? String(item.decidedBy).slice(0, 8) : "-"}</td>
+                    <td>{item.rejectionReason || "-"}</td>
                     <td>{docs.length ? <a href={String(docs[0]?.url || "#")} target="_blank" rel="noreferrer">{String(docs[0]?.label || "Document")}</a> : "-"}</td>
                     <td>
                       <div className="button-row tight">
@@ -13820,7 +13838,7 @@ function PayrollLiteAdminPage({ token, employees = [] }) {
                   </tr>
                 );
               })}
-              {!(fbpDeclarations || []).length ? <tr><td colSpan="7"><div className="empty-state compact-empty">No declarations for selected month/year.</div></td></tr> : null}
+              {!(fbpDeclarations || []).length ? <tr><td colSpan="10"><div className="empty-state compact-empty">No declarations for selected month/year.</div></td></tr> : null}
             </tbody>
           </table>
         </div>
