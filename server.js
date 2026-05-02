@@ -1713,10 +1713,10 @@ function getCandidateConvertedAt(_candidate = {}, assessment = {}) {
   // "Converted/shared at" must reflect when assessment got created, not when
   // candidate/assessment records were later updated in bulk.
   return String(
-    assessment.generatedAt ||
-      assessment.generated_at ||
-      assessment.created_at ||
+    assessment.created_at ||
       assessment.createdAt ||
+      assessment.generatedAt ||
+      assessment.generated_at ||
       ""
   ).trim();
 }

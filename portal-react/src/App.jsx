@@ -6007,6 +6007,8 @@ function PortalApp({ token, onLogout }) {
     );
     const universeAssessmentIds = new Set();
     const universeCandidateIds = new Set();
+    const universeConvertedAtByAssessmentId = new Map();
+    const universeConvertedAtByCandidateId = new Map();
     (candidateUniverse || []).forEach((item) => {
       const assessmentId = String(
         item?.assessment_id
@@ -6022,8 +6024,15 @@ function PortalApp({ token, onLogout }) {
         || item?.raw?.candidate?.id
         || ""
       ).trim();
+      const sharedAt = String(item?.sharedAt || "").trim();
       if (assessmentId) universeAssessmentIds.add(assessmentId);
       if (candidateId) universeCandidateIds.add(candidateId);
+      if (assessmentId && sharedAt && !universeConvertedAtByAssessmentId.has(assessmentId)) {
+        universeConvertedAtByAssessmentId.set(assessmentId, sharedAt);
+      }
+      if (candidateId && sharedAt && !universeConvertedAtByCandidateId.has(candidateId)) {
+        universeConvertedAtByCandidateId.set(candidateId, sharedAt);
+      }
     });
     const fromTs = candidateSmartDateFrom ? new Date(`${candidateSmartDateFrom}T00:00:00`).getTime() : null;
     const toTs = candidateSmartDateTo ? new Date(`${candidateSmartDateTo}T23:59:59`).getTime() : null;
@@ -6137,7 +6146,9 @@ function PortalApp({ token, onLogout }) {
         }
       });
       const convertedAt = String(
-        assessmentSharedAtMap.get(String(linkedAssessment?.id || assessmentId || "").trim())
+        universeConvertedAtByAssessmentId.get(String(linkedAssessment?.id || assessmentId || "").trim())
+          || universeConvertedAtByCandidateId.get(candidateId)
+          || assessmentSharedAtMap.get(String(linkedAssessment?.id || assessmentId || "").trim())
           || statusHistoryConvertedAt
           || linkedAssessment?.createdAt
           || linkedAssessment?.created_at
