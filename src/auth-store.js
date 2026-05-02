@@ -692,16 +692,24 @@ function sanitizeEmployeePortalUser(raw) {
   };
 }
 function sanitizeEmployeeSessionUser(raw) {
-  const profile = sanitizeEmployeeProfile(raw);
+  const employeeIdFromRaw = String(raw?.employeeId || raw?.employee_id || "").trim();
+  // In some call-sites raw may be merged as { ...profile, ...portalUser } where portalUser.id
+  // overwrites profile.id. Build a safe profile view anchored to employeeId when present.
+  const profile = sanitizeEmployeeProfile({
+    ...(raw || {}),
+    id: employeeIdFromRaw || String(raw?.id || "").trim()
+  });
   if (!profile) return null;
+  const employeeUserId = String(raw?.employeeUserId || raw?.employee_user_id || raw?.id || "").trim();
+  const employeeId = employeeIdFromRaw || String(profile.id || "").trim();
   return {
-    id: String(raw.employeeUserId || raw.id || "").trim(),
-    employeeUserId: String(raw.employeeUserId || raw.id || "").trim(),
-    employeeId: profile.id,
+    id: employeeUserId,
+    employeeUserId,
+    employeeId,
     companyId: profile.companyId,
-    companyName: String(raw.companyName || raw.company_name || "").trim(),
-    employeeCode: profile.employeeCode,
-    username: normalizeUsername(raw.username || ""),
+    companyName: String(raw.companyName || raw.company_name || "").trim() || profile.companyId,
+    employeeCode: String(raw.employeeCode || raw.employee_code || "").trim() || profile.employeeCode,
+    username: normalizeUsername(raw.username || raw.userName || ""),
     fullName: profile.fullName,
     personalEmail: profile.personalEmail,
     phone: profile.phone,
