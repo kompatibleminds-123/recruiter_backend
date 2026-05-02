@@ -12617,7 +12617,10 @@ function EmployeePortalApp({ token, onLogout }) {
   useEffect(() => {
     void loadEmployeePortal().catch((error) => {
       const message = String(error?.message || error);
-      // Do not force logout here; keep user on employee portal and surface exact error.
+      if (/invalid|missing employee session|unauthorized|401/i.test(message)) {
+        onLogout();
+        return;
+      }
       setStatus(message || "Unable to load employee portal data.");
     });
   }, [token]);
