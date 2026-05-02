@@ -7021,7 +7021,11 @@ const server = http.createServer(async (req, res) => {
       const employees = await listCompanyEmployees(actor.companyId);
       sendJson(res, 200, { ok: true, result: { companyId: actor.companyId, employees } });
     } catch (error) {
-      sendJson(res, 401, { ok: false, error: String(error.message || error) });
+      const message = String(error?.message || error);
+      let status = 500;
+      if (/invalid|missing session|unauthorized|401/i.test(message)) status = 401;
+      else if (/only an admin|not allowed|forbidden|403/i.test(message)) status = 403;
+      sendJson(res, status, { ok: false, error: message });
     }
     return;
   }
@@ -7053,7 +7057,12 @@ const server = http.createServer(async (req, res) => {
       });
       sendJson(res, 200, { ok: true, result });
     } catch (error) {
-      sendJson(res, 400, { ok: false, error: String(error.message || error) });
+      const message = String(error?.message || error);
+      let status = 400;
+      if (/invalid|missing session|unauthorized|401/i.test(message)) status = 401;
+      else if (/only an admin|not allowed|forbidden|403/i.test(message)) status = 403;
+      else if (/timed out|timeout|supabase.*failed|failed/i.test(message)) status = 500;
+      sendJson(res, status, { ok: false, error: message });
     }
     return;
   }
@@ -7189,7 +7198,9 @@ const server = http.createServer(async (req, res) => {
       const user = await requireEmployeeSessionUser(getBearerToken(req));
       sendJson(res, 200, { ok: true, result: { user } });
     } catch (error) {
-      sendJson(res, 401, { ok: false, error: String(error.message || error) });
+      const message = String(error?.message || error);
+      const status = /invalid|missing employee session|unauthorized|401/i.test(message) ? 401 : 500;
+      sendJson(res, status, { ok: false, error: message });
     }
     return;
   }
