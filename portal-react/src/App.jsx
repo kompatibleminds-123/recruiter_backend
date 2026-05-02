@@ -13035,7 +13035,9 @@ function PayrollLiteAdminPage({ token, employees = [] }) {
     headId: "",
     declaredAmount: "",
     notes: "",
-    docsJson: "[]"
+    docLabel: "",
+    docUrl: "",
+    docNote: ""
   });
 
   async function loadPayrollFoundation() {
@@ -13362,9 +13364,13 @@ function PayrollLiteAdminPage({ token, employees = [] }) {
       const selectedHead = (fbpHeads || []).find((item) => String(item.id || "") === String(declarationForm.headId || "")) || null;
       const headName = selectedHead?.headName || String(declarationForm.headId || "").trim();
       if (!headName) throw new Error("Select FBP head.");
-      const rawDocs = String(declarationForm.docsJson || "[]").trim() || "[]";
-      let docs = [];
-      try { docs = JSON.parse(rawDocs); } catch { throw new Error("Docs JSON is invalid. Use [] or valid JSON array."); }
+      const docs = String(declarationForm.docUrl || "").trim()
+        ? [{
+          label: String(declarationForm.docLabel || "Document").trim() || "Document",
+          url: String(declarationForm.docUrl || "").trim(),
+          note: String(declarationForm.docNote || "").trim()
+        }]
+        : [];
       await api("/company/payroll/fbp-declarations", token, "POST", {
         employeeId,
         payrollMonth,
@@ -13373,9 +13379,10 @@ function PayrollLiteAdminPage({ token, employees = [] }) {
         headName,
         declaredAmount: Number(declarationForm.declaredAmount || 0) || 0,
         notes: String(declarationForm.notes || "").trim(),
-        docs: Array.isArray(docs) ? docs : []
+        docs
       });
       await loadPayrollExecutionData(payrollMonth, payrollYear);
+      setDeclarationForm((current) => ({ ...current, declaredAmount: "", notes: "", docLabel: "", docUrl: "", docNote: "" }));
       setStatus("FBP declaration submitted.");
     } catch (error) {
       setStatus(String(error?.message || error));
@@ -13413,7 +13420,11 @@ function PayrollLiteAdminPage({ token, employees = [] }) {
         payrollYear
       });
       await loadPayrollExecutionData(payrollMonth, payrollYear);
-      setStatus(`Payslips published (${Number(result?.publishedCount || 0)} employees).`);
+      if (result?.alreadyPublished) {
+        setStatus("Payslips already published for this run. Create a new run version to republish.");
+      } else {
+        setStatus(`Payslips published (${Number(result?.publishedCount || 0)} employees).`);
+      }
     } catch (error) {
       setStatus(String(error?.message || error));
     }
@@ -13657,6 +13668,9 @@ function PayrollLiteAdminPage({ token, employees = [] }) {
                     <div className="muted">
                       Gross = {formatMoney(item.payload?.proratedBasic)} + {formatMoney(item.payload?.proratedHra)} + {formatMoney(item.payload?.proratedFbp)} + {formatMoney(item.payload?.proratedSpecialAllowance)} + {formatMoney(item.payload?.otherAllowance)} + {formatMoney(item.payload?.otherEarnings)} + {formatMoney(item.payload?.approvedReimbursements)}
                     </div>
+                    {Number(item.payload?.approvedFbpAmount || 0) > 0 ? (
+                      <div className="muted">FBP Approved for month: {formatMoney(item.payload?.approvedFbpAmount)}</div>
+                    ) : null}
                     <div className="muted">
                       LOP: Total Days {item.payload?.totalDays ?? item.payload?.total_days ?? 0} | Payable Days {item.payload?.payableDays ?? item.payload?.payable_days ?? 0} | Paid Leave {item.payload?.paidLeaveDays ?? item.payload?.paid_leave_days ?? 0} | LOP Days {item.payload?.lopDays ?? item.payload?.lop_days ?? 0} | LOP Deduction {formatMoney(item.payload?.lopAmount ?? item.payload?.lop_amount ?? 0)}
                     </div>
@@ -13719,7 +13733,9 @@ function PayrollLiteAdminPage({ token, employees = [] }) {
           </label>
           <label><span>Declared amount</span><input type="number" value={declarationForm.declaredAmount} onChange={(e) => setDeclarationForm((c) => ({ ...c, declaredAmount: e.target.value }))} /></label>
           <label className="full"><span>Notes</span><input value={declarationForm.notes} onChange={(e) => setDeclarationForm((c) => ({ ...c, notes: e.target.value }))} placeholder="Optional declaration note" /></label>
-          <label className="full"><span>Docs JSON (array)</span><textarea rows={2} value={declarationForm.docsJson} onChange={(e) => setDeclarationForm((c) => ({ ...c, docsJson: e.target.value }))} placeholder='[{"name":"rent-receipt-apr.pdf","url":"https://..."}]' /></label>
+          <label><span>Doc name</span><input value={declarationForm.docLabel} onChange={(e) => setDeclarationForm((c) => ({ ...c, docLabel: e.target.value }))} placeholder="Rent receipt Apr" /></label>
+          <label><span>Doc URL</span><input value={declarationForm.docUrl} onChange={(e) => setDeclarationForm((c) => ({ ...c, docUrl: e.target.value }))} placeholder="https://..." /></label>
+          <label><span>Doc note</span><input value={declarationForm.docNote} onChange={(e) => setDeclarationForm((c) => ({ ...c, docNote: e.target.value }))} placeholder="Optional" /></label>
         </div>
         <div className="button-row"><button onClick={() => void submitFbpDeclaration()}>Submit declaration</button></div>
         <div className="table-wrap">
@@ -13736,7 +13752,7 @@ function PayrollLiteAdminPage({ token, employees = [] }) {
                     <td>{item.declaredAmount || 0}</td>
                     <td>{item.approvedAmount || 0}</td>
                     <td>{item.status || "-"}</td>
-                    <td>{docs.length}</td>
+                    <td>{docs.length ? <a href={String(docs[0]?.url || "#")} target="_blank" rel="noreferrer">{String(docs[0]?.label || "Document")}</a> : "-"}</td>
                     <td>
                       <div className="button-row tight">
                         <button className="ghost-btn" onClick={() => void reviewDeclaration(item.id, "approve")} disabled={String(item.status || "") === "approved"}>Approve</button>

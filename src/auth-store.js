@@ -954,6 +954,15 @@ function sanitizeFbpDeclaration(raw) {
     docs: Array.isArray(raw.docs) ? raw.docs : []
   };
 }
+function sanitizeFbpDocs(rawDocs) {
+  return (Array.isArray(rawDocs) ? rawDocs : [])
+    .map((doc) => ({
+      label: String(doc?.label || doc?.name || "Document").trim() || "Document",
+      url: String(doc?.url || doc?.link || "").trim(),
+      note: String(doc?.note || "").trim()
+    }))
+    .filter((doc) => doc.url);
+}
 function sanitizePayslipDoc(raw) {
   if (!raw) return null;
   return {
@@ -2744,6 +2753,21 @@ async function calculatePayrollRun({ actorUserId, companyId, payrollRunId }) {
   const employees = await listCompanyEmployees(companyId);
   const inputs = await listPayrollInputs({ actorUserId, companyId, payrollMonth: run.payrollMonth, payrollYear: run.payrollYear });
   const activeComp = await listEmployeeCompensationStructures({ actorUserId, companyId, activeOnly: true });
+  const approvedFbpDeclarations = await listFbpDeclarations({
+    actorUserId,
+    companyId,
+    payrollMonth: run.payrollMonth,
+    payrollYear: run.payrollYear
+  });
+  const approvedFbpByEmployee = new Map();
+  (approvedFbpDeclarations || [])
+    .filter((item) => String(item?.status || "").toLowerCase() === "approved")
+    .forEach((item) => {
+      const employeeId = String(item?.employeeId || "").trim();
+      if (!employeeId) return;
+      const current = Number(approvedFbpByEmployee.get(employeeId) || 0) || 0;
+      approvedFbpByEmployee.set(employeeId, roundMoney(current + (Number(item?.approvedAmount || 0) || 0)));
+    });
   const byEmployeeInput = new Map(inputs.map((item) => [String(item.employeeId || ""), item]));
   const byEmployeeComp = new Map(activeComp.map((item) => [String(item.employeeId || ""), item]));
   const now = new Date().toISOString();
@@ -2762,7 +2786,14 @@ async function calculatePayrollRun({ actorUserId, companyId, payrollRunId }) {
     });
     const comp = byEmployeeComp.get(employeeId);
     if (!comp) continue;
-    const calc = calculatePayrollLine({ compensation: comp, payrollInput: input, settings });
+    const approvedFbpAmount = Number(approvedFbpByEmployee.get(employeeId) || 0) || 0;
+    const monthlyFbpBase = Number(comp?.fbpMonthly || 0) || 0;
+    const cappedFbpMonthly = approvedFbpAmount > 0 ? Math.min(monthlyFbpBase, approvedFbpAmount) : monthlyFbpBase;
+    const calc = calculatePayrollLine({
+      compensation: { ...comp, fbpMonthly: cappedFbpMonthly, fbpAnnual: roundMoney(cappedFbpMonthly * 12) },
+      payrollInput: input,
+      settings
+    });
     rows.push({
       id: crypto.randomUUID(),
       company_id: companyId,
@@ -2773,6 +2804,7 @@ async function calculatePayrollRun({ actorUserId, companyId, payrollRunId }) {
         employeeName: emp.fullName,
         compensationId: comp.id,
         payrollInputId: input.id || "",
+        approvedFbpAmount: roundMoney(approvedFbpAmount),
         ...calc
       },
       gross_earnings: calc.grossEarnings,
@@ -2949,7 +2981,7 @@ async function saveFbpDeclaration({ actorUserId, companyId, declaration = {} }) 
   const declaredAmount = Number(declaration.declaredAmount || declaration.declared_amount || 0) || 0;
   const status = String(declaration.status || "submitted").trim().toLowerCase();
   const notes = String(declaration.notes || "").trim();
-  const docs = Array.isArray(declaration.docs) ? declaration.docs : [];
+  const docs = sanitizeFbpDocs(declaration.docs);
   if (!employeeId || !payrollMonth || !payrollYear || !headName) {
     throw new Error("employeeId, payrollMonth, payrollYear, headName are required.");
   }
@@ -3030,6 +3062,10 @@ async function publishPayrollPayslips({ actorUserId, companyId, payrollRunId, pa
   const runId = String(payrollRunId || "").trim();
   if (!runId) throw new Error("payrollRunId is required.");
   const detail = await getPayrollRunDetail({ actorUserId, companyId, payrollRunId: runId });
+  if (!detail?.run) throw new Error("Payroll run not found.");
+  if (!["approved", "locked"].includes(String(detail.run.status || "").toLowerCase())) {
+    throw new Error("Only approved/locked payroll runs can be published.");
+  }
   const month = Number(payrollMonth || detail?.run?.payrollMonth || 0) || 0;
   const year = Number(payrollYear || detail?.run?.payrollYear || 0) || 0;
   const now = new Date().toISOString();
@@ -3050,6 +3086,14 @@ async function publishPayrollPayslips({ actorUserId, companyId, payrollRunId, pa
   if (!cfg().on) {
     const store = readStore();
     store.payrollPayslips = Array.isArray(store.payrollPayslips) ? store.payrollPayslips : [];
+    const existingPublished = store.payrollPayslips.filter((item) =>
+      String(item.companyId || item.company_id || "") === String(companyId)
+      && String(item.payrollRunId || item.payroll_run_id || "") === runId
+      && String(item.status || "published").toLowerCase() === "published"
+    );
+    if (existingPublished.length) {
+      return { runId, publishedCount: existingPublished.length, alreadyPublished: true };
+    }
     store.payrollPayslips = store.payrollPayslips.filter((item) => !(String(item.companyId || item.company_id || "") === String(companyId) && String(item.payrollRunId || item.payroll_run_id || "") === runId));
     store.payrollPayslips.push(...rows.map((row) => ({
       ...row,
@@ -3065,6 +3109,13 @@ async function publishPayrollPayslips({ actorUserId, companyId, payrollRunId, pa
     return { runId, publishedCount: rows.length };
   }
   await ensureSeeded();
+  const existingPublished = await sbSel(
+    "payroll_payslips",
+    `select=id&company_id=eq.${enc(companyId)}&payroll_run_id=eq.${enc(runId)}&status=eq.published&limit=1`
+  ).catch(() => []);
+  if (Array.isArray(existingPublished) && existingPublished.length) {
+    return { runId, publishedCount: 0, alreadyPublished: true };
+  }
   await sbDel("payroll_payslips", `company_id=eq.${enc(companyId)}&payroll_run_id=eq.${enc(runId)}`);
   if (rows.length) await sbIns("payroll_payslips", rows, { conflict: "id", upsert: true });
   return { runId, publishedCount: rows.length };
