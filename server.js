@@ -73,6 +73,7 @@ const {
   calculatePayrollRun,
   approvePayrollRun,
   lockPayrollRun,
+  setPayrollRunStatus,
   getPayrollRunDetail,
   requirePlatformSessionUser,
   requireClientSessionUser,
@@ -7539,6 +7540,26 @@ const server = http.createServer(async (req, res) => {
         actorUserId: actor.id,
         companyId: actor.companyId,
         payrollRunId: String(body?.payrollRunId || "").trim(),
+        reason: String(body?.reason || "").trim()
+      });
+      sendJson(res, 200, { ok: true, result: run });
+    } catch (error) {
+      const message = String(error?.message || error);
+      const status = /admin access required|forbidden|not allowed|403/i.test(message) ? 403 : 400;
+      sendJson(res, status, { ok: false, error: message });
+    }
+    return;
+  }
+
+  if (req.method === "POST" && requestUrl.pathname === "/company/payroll/runs/set-status") {
+    try {
+      const actor = await requireSessionUser(getBearerToken(req));
+      const body = await readJsonBody(req);
+      const run = await setPayrollRunStatus({
+        actorUserId: actor.id,
+        companyId: actor.companyId,
+        payrollRunId: String(body?.payrollRunId || "").trim(),
+        status: String(body?.status || "").trim(),
         reason: String(body?.reason || "").trim()
       });
       sendJson(res, 200, { ok: true, result: run });

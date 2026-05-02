@@ -2732,6 +2732,31 @@ async function lockPayrollRun({ actorUserId, companyId, payrollRunId, reason = "
   });
   return sanitizePayrollRun(rows?.[0]);
 }
+async function setPayrollRunStatus({ actorUserId, companyId, payrollRunId, status, reason = "" }) {
+  const actor = await requireAdminForCompany({ actorUserId, companyId });
+  const { run } = await getPayrollRunDetail({ actorUserId, companyId, payrollRunId });
+  if (!run) throw new Error("Payroll run not found.");
+  const nextStatus = String(status || "").trim().toLowerCase();
+  if (!["draft", "calculated", "approved", "locked"].includes(nextStatus)) throw new Error("Invalid target status.");
+  const now = new Date().toISOString();
+  const patch = {
+    status: nextStatus,
+    lock_reason: String(reason || "").trim(),
+    updated_at: now,
+    updated_by: actor.id
+  };
+  if (nextStatus !== "locked") patch.locked_at = null;
+  if (!cfg().on) {
+    const store = readStore();
+    const ix = (store.payrollRuns || []).findIndex((item) => String(item.id || "") === String(run.id || "") && String(item.companyId || "") === String(companyId));
+    if (ix >= 0) store.payrollRuns[ix] = { ...store.payrollRuns[ix], ...patch };
+    writeStore(store);
+    return sanitizePayrollRun(store.payrollRuns[ix]);
+  }
+  await ensureSeeded();
+  const rows = await sbPatch("payroll_runs", `id=eq.${enc(run.id)}&company_id=eq.${enc(companyId)}`, patch);
+  return sanitizePayrollRun(rows?.[0]);
+}
 async function createEmployeeUser({ actorUserId, companyId, employeeCode, username, password, fullName, profile = {}, workSite = {} }) {
   const actor = sanitizeUser(await getUserById(actorUserId, companyId));
   if (!actor || actor.role !== "admin") throw new Error("Only an admin for this company can create employee accounts.");
@@ -3607,6 +3632,7 @@ module.exports = {
   calculatePayrollRun,
   approvePayrollRun,
   lockPayrollRun,
+  setPayrollRunStatus,
   getPayrollRunDetail,
   requirePlatformSessionUser,
   requireClientSessionUser,
