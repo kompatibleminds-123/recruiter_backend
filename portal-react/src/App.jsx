@@ -12787,7 +12787,17 @@ function EmployeePortalApp({ token, onLogout }) {
     }
   }
 
-  const isCheckedIn = Boolean(todayAttendance?.checkInAt && !todayAttendance?.checkOutAt);
+  const activeOpenAttendance = useMemo(() => {
+    const openFromList = (attendanceItems || [])
+      .filter((item) => item?.checkInAt && !item?.checkOutAt)
+      .sort((a, b) => safeTime(b?.checkInAt) - safeTime(a?.checkInAt))[0];
+    if (openFromList) return openFromList;
+    if (todayAttendance?.checkInAt && !todayAttendance?.checkOutAt) return todayAttendance;
+    return null;
+  }, [attendanceItems, todayAttendance]);
+
+  const isCheckedIn = Boolean(activeOpenAttendance);
+  const displayAttendance = activeOpenAttendance || todayAttendance;
 
   return (
     <div className="app-shell app-shell--client">
@@ -12819,11 +12829,11 @@ function EmployeePortalApp({ token, onLogout }) {
               </div>
               <div className="metric-card">
                 <div className="metric-label">Check In</div>
-                <div className="metric-value">{todayAttendance?.checkInAt ? new Date(todayAttendance.checkInAt).toLocaleTimeString() : "-"}</div>
+                <div className="metric-value">{displayAttendance?.checkInAt ? new Date(displayAttendance.checkInAt).toLocaleTimeString() : "-"}</div>
               </div>
               <div className="metric-card">
                 <div className="metric-label">Check Out</div>
-                <div className="metric-value">{todayAttendance?.checkOutAt ? new Date(todayAttendance.checkOutAt).toLocaleTimeString() : "-"}</div>
+                <div className="metric-value">{displayAttendance?.checkOutAt ? new Date(displayAttendance.checkOutAt).toLocaleTimeString() : "-"}</div>
               </div>
             </div>
             <div className="button-row">
