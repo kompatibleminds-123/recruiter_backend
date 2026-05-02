@@ -518,6 +518,36 @@ function normalizeAssessmentStatusLabel(status) {
   return value;
 }
 
+class PayrollRouteBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false, errorMessage: "" };
+  }
+  static getDerivedStateFromError(error) {
+    return {
+      hasError: true,
+      errorMessage: String(error?.message || error || "Payroll page crashed.")
+    };
+  }
+  componentDidCatch(error) {
+    console.error("Payroll route render error", error);
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <Section kicker="Payroll Error" title="Payroll module temporarily unavailable">
+          <p className="muted">Blank screen avoid karne ke liye payroll-specific fallback dikhaya gaya hai.</p>
+          <div className="status error">{this.state.errorMessage || "Unknown payroll render error."}</div>
+          <div className="button-row">
+            <button onClick={() => window.location.reload()}>Reload portal</button>
+          </div>
+        </Section>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 function formatAssessmentStatusDisplay(status) {
   const label = normalizeAssessmentStatusLabel(status);
   if (!label) return "";
@@ -12398,7 +12428,9 @@ function PortalApp({ token, onLogout }) {
             } />
 
           <Route path="/admin/payroll/settings" element={
-            <PayrollLiteAdminPage token={token} employees={employeeUsers} />
+            <PayrollRouteBoundary>
+              <PayrollLiteAdminPage token={token} employees={employeeUsers} />
+            </PayrollRouteBoundary>
           } />
 
           <Route path="*" element={<Navigate to="/dashboard" replace />} />
@@ -12941,6 +12973,8 @@ function PayrollLiteAdminPage({ token, employees = [] }) {
   const [payrollYear, setPayrollYear] = useState(now.getFullYear());
   const [payrollInputs, setPayrollInputs] = useState([]);
   const [payrollRuns, setPayrollRuns] = useState([]);
+  const [fbpDeclarations, setFbpDeclarations] = useState([]);
+  const [payrollPayslips, setPayrollPayslips] = useState([]);
   const [selectedRunId, setSelectedRunId] = useState("");
   const [selectedRunDetail, setSelectedRunDetail] = useState({ run: null, items: [] });
   const [runActionStatus, setRunActionStatus] = useState("");
@@ -12996,6 +13030,13 @@ function PayrollLiteAdminPage({ token, employees = [] }) {
     defaultHealthInsuranceAnnual: 0,
     active: true
   });
+  const [declarationForm, setDeclarationForm] = useState({
+    employeeId: "",
+    headId: "",
+    declaredAmount: "",
+    notes: "",
+    docsJson: "[]"
+  });
 
   async function loadPayrollFoundation() {
     const [settingsResult, compResult, fbpResult, templateResult] = await Promise.all([
@@ -13010,13 +13051,17 @@ function PayrollLiteAdminPage({ token, employees = [] }) {
     setSalaryTemplates(Array.isArray(templateResult?.items) ? templateResult.items : []);
   }
   async function loadPayrollExecutionData(nextMonth = payrollMonth, nextYear = payrollYear) {
-    const [inputResult, runResult] = await Promise.all([
+    const [inputResult, runResult, declarationResult, payslipResult] = await Promise.all([
       api(`/company/payroll/inputs?payrollMonth=${Number(nextMonth)}&payrollYear=${Number(nextYear)}`, token).catch(() => ({ items: [] })),
-      api(`/company/payroll/runs?payrollMonth=${Number(nextMonth)}&payrollYear=${Number(nextYear)}`, token).catch(() => ({ items: [] }))
+      api(`/company/payroll/runs?payrollMonth=${Number(nextMonth)}&payrollYear=${Number(nextYear)}`, token).catch(() => ({ items: [] })),
+      api(`/company/payroll/fbp-declarations?payrollMonth=${Number(nextMonth)}&payrollYear=${Number(nextYear)}`, token).catch(() => ({ items: [] })),
+      api(`/company/payroll/payslips?payrollMonth=${Number(nextMonth)}&payrollYear=${Number(nextYear)}`, token).catch(() => ({ items: [] }))
     ]);
     setPayrollInputs(Array.isArray(inputResult?.items) ? inputResult.items : []);
     const runs = Array.isArray(runResult?.items) ? runResult.items : [];
     setPayrollRuns(runs);
+    setFbpDeclarations(Array.isArray(declarationResult?.items) ? declarationResult.items : []);
+    setPayrollPayslips(Array.isArray(payslipResult?.items) ? payslipResult.items : []);
     if (!selectedRunId && runs[0]?.id) setSelectedRunId(runs[0].id);
   }
 
@@ -13310,6 +13355,69 @@ function PayrollLiteAdminPage({ token, employees = [] }) {
       setStatus(String(error?.message || error));
     }
   }
+  async function submitFbpDeclaration() {
+    try {
+      const employeeId = String(declarationForm.employeeId || "").trim();
+      if (!employeeId) throw new Error("Select employee.");
+      const selectedHead = (fbpHeads || []).find((item) => String(item.id || "") === String(declarationForm.headId || "")) || null;
+      const headName = selectedHead?.headName || String(declarationForm.headId || "").trim();
+      if (!headName) throw new Error("Select FBP head.");
+      const rawDocs = String(declarationForm.docsJson || "[]").trim() || "[]";
+      let docs = [];
+      try { docs = JSON.parse(rawDocs); } catch { throw new Error("Docs JSON is invalid. Use [] or valid JSON array."); }
+      await api("/company/payroll/fbp-declarations", token, "POST", {
+        employeeId,
+        payrollMonth,
+        payrollYear,
+        headId: String(selectedHead?.id || "").trim(),
+        headName,
+        declaredAmount: Number(declarationForm.declaredAmount || 0) || 0,
+        notes: String(declarationForm.notes || "").trim(),
+        docs: Array.isArray(docs) ? docs : []
+      });
+      await loadPayrollExecutionData(payrollMonth, payrollYear);
+      setStatus("FBP declaration submitted.");
+    } catch (error) {
+      setStatus(String(error?.message || error));
+    }
+  }
+  async function reviewDeclaration(id, action) {
+    try {
+      const item = (fbpDeclarations || []).find((row) => String(row.id || "") === String(id || ""));
+      if (!item) throw new Error("Declaration not found.");
+      if (action === "approve") {
+        await api("/company/payroll/fbp-declarations/approve", token, "POST", {
+          declarationId: id,
+          approvedAmount: Number(item.declaredAmount || 0) || 0
+        });
+      } else {
+        const rejectionReason = typeof window !== "undefined" ? (window.prompt("Rejection reason", "Insufficient proof") || "").trim() : "Rejected";
+        if (!rejectionReason) throw new Error("Rejection reason required.");
+        await api("/company/payroll/fbp-declarations/reject", token, "POST", {
+          declarationId: id,
+          rejectionReason
+        });
+      }
+      await loadPayrollExecutionData(payrollMonth, payrollYear);
+      setStatus(`Declaration ${action}d.`);
+    } catch (error) {
+      setStatus(String(error?.message || error));
+    }
+  }
+  async function publishPayslipsForSelectedRun() {
+    try {
+      if (!selectedRunId) throw new Error("Select payroll run first.");
+      const result = await api("/company/payroll/payslips/publish", token, "POST", {
+        payrollRunId: selectedRunId,
+        payrollMonth,
+        payrollYear
+      });
+      await loadPayrollExecutionData(payrollMonth, payrollYear);
+      setStatus(`Payslips published (${Number(result?.publishedCount || 0)} employees).`);
+    } catch (error) {
+      setStatus(String(error?.message || error));
+    }
+  }
 
   return (
     <div className="page-grid">
@@ -13593,6 +13701,80 @@ function PayrollLiteAdminPage({ token, employees = [] }) {
           </table>
         </div>
       </Section>
+      <Section kicker="Phase 3" title="FBP Declarations & Approvals">
+        <div className="form-grid three-col">
+          <label>
+            <span>Employee</span>
+            <select value={declarationForm.employeeId} onChange={(e) => setDeclarationForm((c) => ({ ...c, employeeId: e.target.value }))}>
+              <option value="">Select employee</option>
+              {employees.map((emp) => <option key={emp.id} value={emp.id}>{emp.employeeCode} - {emp.fullName}</option>)}
+            </select>
+          </label>
+          <label>
+            <span>FBP head</span>
+            <select value={declarationForm.headId} onChange={(e) => setDeclarationForm((c) => ({ ...c, headId: e.target.value }))}>
+              <option value="">Select head</option>
+              {(fbpHeads || []).filter((item) => item.active !== false).map((item) => <option key={item.id} value={item.id}>{item.headName}</option>)}
+            </select>
+          </label>
+          <label><span>Declared amount</span><input type="number" value={declarationForm.declaredAmount} onChange={(e) => setDeclarationForm((c) => ({ ...c, declaredAmount: e.target.value }))} /></label>
+          <label className="full"><span>Notes</span><input value={declarationForm.notes} onChange={(e) => setDeclarationForm((c) => ({ ...c, notes: e.target.value }))} placeholder="Optional declaration note" /></label>
+          <label className="full"><span>Docs JSON (array)</span><textarea rows={2} value={declarationForm.docsJson} onChange={(e) => setDeclarationForm((c) => ({ ...c, docsJson: e.target.value }))} placeholder='[{"name":"rent-receipt-apr.pdf","url":"https://..."}]' /></label>
+        </div>
+        <div className="button-row"><button onClick={() => void submitFbpDeclaration()}>Submit declaration</button></div>
+        <div className="table-wrap">
+          <table className="dashboard-table">
+            <thead><tr><th>Employee</th><th>Head</th><th>Declared</th><th>Approved</th><th>Status</th><th>Docs</th><th>Actions</th></tr></thead>
+            <tbody>
+              {(fbpDeclarations || []).map((item) => {
+                const emp = employees.find((e) => String(e.id || "") === String(item.employeeId || ""));
+                const docs = Array.isArray(item.docs) ? item.docs : [];
+                return (
+                  <tr key={item.id}>
+                    <td>{emp ? `${emp.employeeCode} - ${emp.fullName}` : item.employeeId}</td>
+                    <td>{item.headName || "-"}</td>
+                    <td>{item.declaredAmount || 0}</td>
+                    <td>{item.approvedAmount || 0}</td>
+                    <td>{item.status || "-"}</td>
+                    <td>{docs.length}</td>
+                    <td>
+                      <div className="button-row tight">
+                        <button className="ghost-btn" onClick={() => void reviewDeclaration(item.id, "approve")} disabled={String(item.status || "") === "approved"}>Approve</button>
+                        <button className="ghost-btn" onClick={() => void reviewDeclaration(item.id, "reject")} disabled={String(item.status || "") === "rejected"}>Reject</button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+              {!(fbpDeclarations || []).length ? <tr><td colSpan="7"><div className="empty-state compact-empty">No declarations for selected month/year.</div></td></tr> : null}
+            </tbody>
+          </table>
+        </div>
+      </Section>
+      <Section kicker="Phase 3" title="Payslip Publish">
+        <div className="button-row">
+          <button onClick={() => void publishPayslipsForSelectedRun()} disabled={!selectedRunId}>Publish payslips for selected run</button>
+        </div>
+        <div className="table-wrap">
+          <table className="dashboard-table">
+            <thead><tr><th>Employee</th><th>Month/Year</th><th>Status</th><th>Published At</th></tr></thead>
+            <tbody>
+              {(payrollPayslips || []).map((item) => {
+                const emp = employees.find((e) => String(e.id || "") === String(item.employeeId || ""));
+                return (
+                  <tr key={item.id}>
+                    <td>{emp ? `${emp.employeeCode} - ${emp.fullName}` : item.employeeId}</td>
+                    <td>{item.payrollMonth}/{item.payrollYear}</td>
+                    <td>{item.status || "-"}</td>
+                    <td>{item.publishedAt ? new Date(item.publishedAt).toLocaleString() : "-"}</td>
+                  </tr>
+                );
+              })}
+              {!(payrollPayslips || []).length ? <tr><td colSpan="4"><div className="empty-state compact-empty">No published payslips yet.</div></td></tr> : null}
+            </tbody>
+          </table>
+        </div>
+      </Section>
     </div>
   );
 }
@@ -13601,6 +13783,7 @@ function EmployeePortalApp({ token, onLogout }) {
   const [employeeUser, setEmployeeUser] = useState(null);
   const [todayAttendance, setTodayAttendance] = useState(null);
   const [attendanceItems, setAttendanceItems] = useState([]);
+  const [payrollDocs, setPayrollDocs] = useState([]);
   const [status, setStatus] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -13610,14 +13793,17 @@ function EmployeePortalApp({ token, onLogout }) {
     // Session validity should be decided only by /employee-auth/me.
     // Attendance endpoints may fail due to partial setup and should not auto-logout the user.
     const meResult = await api("/employee-auth/me", token);
-    const [dashboardResult, attendanceResult] = await Promise.all([
+    const [dashboardResult, attendanceResult, payrollDocsResult] = await Promise.all([
       api("/employee/dashboard", token).catch(() => ({ todayAttendance: null })),
       api(`/employee/attendance?dateFrom=${encodeURIComponent(monthStart)}&dateTo=${encodeURIComponent(today)}`, token)
+        .catch(() => ({ items: [] })),
+      api("/employee/payroll-docs", token)
         .catch(() => ({ items: [] }))
     ]);
     setEmployeeUser(meResult.user || meResult);
     setTodayAttendance(dashboardResult.todayAttendance || null);
     setAttendanceItems(Array.isArray(attendanceResult.items) ? attendanceResult.items : []);
+    setPayrollDocs(Array.isArray(payrollDocsResult.items) ? payrollDocsResult.items : []);
   }
 
   useEffect(() => {
@@ -13747,6 +13933,24 @@ function EmployeePortalApp({ token, onLogout }) {
                     </tr>
                   ))}
                   {!attendanceItems.length ? <tr><td colSpan="9"><div className="empty-state compact-empty">No attendance records yet.</div></td></tr> : null}
+                </tbody>
+              </table>
+            </div>
+          </Section>
+          <Section kicker="Payroll" title="My Payroll Docs">
+            <div className="table-wrap">
+              <table className="dashboard-table">
+                <thead><tr><th>Month/Year</th><th>Status</th><th>Published At</th><th>Net Salary</th></tr></thead>
+                <tbody>
+                  {(payrollDocs || []).map((doc) => (
+                    <tr key={doc.id}>
+                      <td>{doc.payrollMonth}/{doc.payrollYear}</td>
+                      <td>{doc.status || "-"}</td>
+                      <td>{doc.publishedAt ? new Date(doc.publishedAt).toLocaleString() : "-"}</td>
+                      <td>{Number(doc?.payload?.netSalary || doc?.payload?.net_salary || 0).toFixed(2)}</td>
+                    </tr>
+                  ))}
+                  {!payrollDocs.length ? <tr><td colSpan="4"><div className="empty-state compact-empty">No payroll documents published yet.</div></td></tr> : null}
                 </tbody>
               </table>
             </div>

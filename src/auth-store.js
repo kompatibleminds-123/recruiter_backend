@@ -931,6 +931,46 @@ function sanitizePayrollRunItem(raw) {
     updatedAt: String(raw.updatedAt || raw.updated_at || "").trim()
   };
 }
+function sanitizeFbpDeclaration(raw) {
+  if (!raw) return null;
+  return {
+    id: String(raw.id || "").trim(),
+    companyId: String(raw.companyId || raw.company_id || "").trim(),
+    employeeId: String(raw.employeeId || raw.employee_id || "").trim(),
+    payrollMonth: Number(raw.payrollMonth ?? raw.payroll_month ?? 0) || 0,
+    payrollYear: Number(raw.payrollYear ?? raw.payroll_year ?? 0) || 0,
+    headId: String(raw.headId || raw.head_id || "").trim(),
+    headName: String(raw.headName || raw.head_name || "").trim(),
+    declaredAmount: Number(raw.declaredAmount ?? raw.declared_amount ?? 0) || 0,
+    approvedAmount: Number(raw.approvedAmount ?? raw.approved_amount ?? 0) || 0,
+    status: String(raw.status || "draft").trim().toLowerCase(),
+    notes: String(raw.notes || "").trim(),
+    rejectionReason: String(raw.rejectionReason || raw.rejection_reason || "").trim(),
+    submittedAt: String(raw.submittedAt || raw.submitted_at || "").trim(),
+    decidedAt: String(raw.decidedAt || raw.decided_at || "").trim(),
+    decidedBy: String(raw.decidedBy || raw.decided_by || "").trim(),
+    createdAt: String(raw.createdAt || raw.created_at || "").trim(),
+    updatedAt: String(raw.updatedAt || raw.updated_at || "").trim(),
+    docs: Array.isArray(raw.docs) ? raw.docs : []
+  };
+}
+function sanitizePayslipDoc(raw) {
+  if (!raw) return null;
+  return {
+    id: String(raw.id || "").trim(),
+    companyId: String(raw.companyId || raw.company_id || "").trim(),
+    employeeId: String(raw.employeeId || raw.employee_id || "").trim(),
+    payrollRunId: String(raw.payrollRunId || raw.payroll_run_id || "").trim(),
+    payrollMonth: Number(raw.payrollMonth ?? raw.payroll_month ?? 0) || 0,
+    payrollYear: Number(raw.payrollYear ?? raw.payroll_year ?? 0) || 0,
+    status: String(raw.status || "published").trim().toLowerCase(),
+    payload: raw.payload && typeof raw.payload === "object" ? raw.payload : {},
+    publishedAt: String(raw.publishedAt || raw.published_at || "").trim(),
+    publishedBy: String(raw.publishedBy || raw.published_by || "").trim(),
+    createdAt: String(raw.createdAt || raw.created_at || "").trim(),
+    updatedAt: String(raw.updatedAt || raw.updated_at || "").trim()
+  };
+}
 function roundMoney(value) {
   const n = Number(value || 0);
   if (!Number.isFinite(n)) return 0;
@@ -2869,6 +2909,193 @@ async function deletePayrollRun({ actorUserId, companyId, payrollRunId }) {
   await sbDel("payroll_runs", `company_id=eq.${enc(companyId)}&id=eq.${enc(runId)}`);
   return { ok: true, deletedRunId: runId };
 }
+async function listFbpDeclarations({ actorUserId, companyId, payrollMonth = 0, payrollYear = 0, employeeId = "" }) {
+  const actor = sanitizeUser(await getUserById(actorUserId, companyId));
+  if (!actor) throw new Error("Authenticated user not found.");
+  const month = Number(payrollMonth || 0);
+  const year = Number(payrollYear || 0);
+  const scopedEmployeeId = String(employeeId || "").trim();
+  if (!cfg().on) {
+    const store = readStore();
+    return (store.fbpDeclarations || [])
+      .filter((item) => String(item.companyId || item.company_id || "") === String(companyId))
+      .filter((item) => !month || Number(item.payrollMonth || item.payroll_month || 0) === month)
+      .filter((item) => !year || Number(item.payrollYear || item.payroll_year || 0) === year)
+      .filter((item) => !scopedEmployeeId || String(item.employeeId || item.employee_id || "") === scopedEmployeeId)
+      .map(sanitizeFbpDeclaration)
+      .filter(Boolean);
+  }
+  await ensureSeeded();
+  const filters = [
+    `company_id=eq.${enc(companyId)}`,
+    month ? `payroll_month=eq.${month}` : "",
+    year ? `payroll_year=eq.${year}` : "",
+    scopedEmployeeId ? `employee_id=eq.${enc(scopedEmployeeId)}` : "",
+    "order=updated_at.desc"
+  ].filter(Boolean).join("&");
+  const rows = await sbSel("fbp_declarations", `select=*&${filters}`).catch(() => []);
+  return (rows || []).map(sanitizeFbpDeclaration).filter(Boolean);
+}
+async function saveFbpDeclaration({ actorUserId, companyId, declaration = {} }) {
+  const actor = sanitizeUser(await getUserById(actorUserId, companyId));
+  if (!actor) throw new Error("Authenticated user not found.");
+  const now = new Date().toISOString();
+  const id = String(declaration.id || "").trim() || crypto.randomUUID();
+  const employeeId = String(declaration.employeeId || declaration.employee_id || "").trim();
+  const payrollMonth = Number(declaration.payrollMonth || declaration.payroll_month || 0);
+  const payrollYear = Number(declaration.payrollYear || declaration.payroll_year || 0);
+  const headId = String(declaration.headId || declaration.head_id || "").trim();
+  const headName = String(declaration.headName || declaration.head_name || "").trim();
+  const declaredAmount = Number(declaration.declaredAmount || declaration.declared_amount || 0) || 0;
+  const status = String(declaration.status || "submitted").trim().toLowerCase();
+  const notes = String(declaration.notes || "").trim();
+  const docs = Array.isArray(declaration.docs) ? declaration.docs : [];
+  if (!employeeId || !payrollMonth || !payrollYear || !headName) {
+    throw new Error("employeeId, payrollMonth, payrollYear, headName are required.");
+  }
+  const row = {
+    id,
+    company_id: companyId,
+    employee_id: employeeId,
+    payroll_month: payrollMonth,
+    payroll_year: payrollYear,
+    head_id: headId || null,
+    head_name: headName,
+    declared_amount: declaredAmount,
+    approved_amount: Number(declaration.approvedAmount || declaration.approved_amount || 0) || 0,
+    status,
+    notes,
+    rejection_reason: String(declaration.rejectionReason || declaration.rejection_reason || "").trim(),
+    submitted_at: status === "submitted" ? now : (String(declaration.submittedAt || declaration.submitted_at || "").trim() || null),
+    decided_at: String(declaration.decidedAt || declaration.decided_at || "").trim() || null,
+    decided_by: String(declaration.decidedBy || declaration.decided_by || "").trim() || null,
+    docs,
+    created_at: String(declaration.createdAt || declaration.created_at || "").trim() || now,
+    updated_at: now
+  };
+  if (!cfg().on) {
+    const store = readStore();
+    store.fbpDeclarations = Array.isArray(store.fbpDeclarations) ? store.fbpDeclarations : [];
+    const ix = store.fbpDeclarations.findIndex((item) => String(item.id || "") === id && String(item.companyId || item.company_id || "") === String(companyId));
+    if (ix >= 0) store.fbpDeclarations[ix] = { ...store.fbpDeclarations[ix], ...row, companyId, employeeId, payrollMonth, payrollYear };
+    else store.fbpDeclarations.push({ ...row, companyId, employeeId, payrollMonth, payrollYear });
+    writeStore(store);
+    return sanitizeFbpDeclaration(store.fbpDeclarations[ix >= 0 ? ix : store.fbpDeclarations.length - 1]);
+  }
+  await ensureSeeded();
+  const rows = await sbIns("fbp_declarations", [row], { conflict: "id", upsert: true });
+  return sanitizeFbpDeclaration(rows?.[0] || row);
+}
+async function reviewFbpDeclaration({ actorUserId, companyId, declarationId, action = "approve", approvedAmount = null, rejectionReason = "" }) {
+  const actor = await requireAdminForCompany({ actorUserId, companyId });
+  const id = String(declarationId || "").trim();
+  if (!id) throw new Error("declarationId is required.");
+  const nextStatus = action === "reject" ? "rejected" : "approved";
+  const now = new Date().toISOString();
+  if (!cfg().on) {
+    const store = readStore();
+    store.fbpDeclarations = Array.isArray(store.fbpDeclarations) ? store.fbpDeclarations : [];
+    const ix = store.fbpDeclarations.findIndex((item) => String(item.id || "") === id && String(item.companyId || item.company_id || "") === String(companyId));
+    if (ix < 0) throw new Error("FBP declaration not found.");
+    const current = store.fbpDeclarations[ix];
+    const declaredAmount = Number(current.declaredAmount || current.declared_amount || 0) || 0;
+    store.fbpDeclarations[ix] = {
+      ...current,
+      status: nextStatus,
+      approvedAmount: nextStatus === "approved" ? (approvedAmount == null ? declaredAmount : Number(approvedAmount || 0)) : 0,
+      rejectionReason: nextStatus === "rejected" ? String(rejectionReason || "").trim() : "",
+      decidedAt: now,
+      decidedBy: actor.id,
+      updatedAt: now
+    };
+    writeStore(store);
+    return sanitizeFbpDeclaration(store.fbpDeclarations[ix]);
+  }
+  await ensureSeeded();
+  const existing = await sbSel("fbp_declarations", `select=id,declared_amount&company_id=eq.${enc(companyId)}&id=eq.${enc(id)}&limit=1`);
+  const declaredAmount = Number(existing?.[0]?.declared_amount || 0) || 0;
+  const patch = {
+    status: nextStatus,
+    approved_amount: nextStatus === "approved" ? (approvedAmount == null ? declaredAmount : Number(approvedAmount || 0)) : 0,
+    rejection_reason: nextStatus === "rejected" ? String(rejectionReason || "").trim() : "",
+    decided_at: now,
+    decided_by: actor.id,
+    updated_at: now
+  };
+  const rows = await sbPatch("fbp_declarations", `id=eq.${enc(id)}&company_id=eq.${enc(companyId)}`, patch);
+  return sanitizeFbpDeclaration(rows?.[0]);
+}
+async function publishPayrollPayslips({ actorUserId, companyId, payrollRunId, payrollMonth, payrollYear }) {
+  const actor = await requireAdminForCompany({ actorUserId, companyId });
+  const runId = String(payrollRunId || "").trim();
+  if (!runId) throw new Error("payrollRunId is required.");
+  const detail = await getPayrollRunDetail({ actorUserId, companyId, payrollRunId: runId });
+  const month = Number(payrollMonth || detail?.run?.payrollMonth || 0) || 0;
+  const year = Number(payrollYear || detail?.run?.payrollYear || 0) || 0;
+  const now = new Date().toISOString();
+  const rows = (detail?.items || []).map((item) => ({
+    id: crypto.randomUUID(),
+    company_id: companyId,
+    employee_id: String(item?.employeeId || "").trim(),
+    payroll_run_id: runId,
+    payroll_month: month,
+    payroll_year: year,
+    status: "published",
+    payload: item?.payload && typeof item.payload === "object" ? item.payload : {},
+    published_at: now,
+    published_by: actor.id,
+    created_at: now,
+    updated_at: now
+  })).filter((item) => item.employee_id);
+  if (!cfg().on) {
+    const store = readStore();
+    store.payrollPayslips = Array.isArray(store.payrollPayslips) ? store.payrollPayslips : [];
+    store.payrollPayslips = store.payrollPayslips.filter((item) => !(String(item.companyId || item.company_id || "") === String(companyId) && String(item.payrollRunId || item.payroll_run_id || "") === runId));
+    store.payrollPayslips.push(...rows.map((row) => ({
+      ...row,
+      companyId,
+      employeeId: row.employee_id,
+      payrollRunId: runId,
+      payrollMonth: month,
+      payrollYear: year,
+      publishedAt: now,
+      publishedBy: actor.id
+    })));
+    writeStore(store);
+    return { runId, publishedCount: rows.length };
+  }
+  await ensureSeeded();
+  await sbDel("payroll_payslips", `company_id=eq.${enc(companyId)}&payroll_run_id=eq.${enc(runId)}`);
+  if (rows.length) await sbIns("payroll_payslips", rows, { conflict: "id", upsert: true });
+  return { runId, publishedCount: rows.length };
+}
+async function listPayrollPayslips({ actorUserId, companyId, payrollMonth = 0, payrollYear = 0, employeeId = "" }) {
+  const actor = sanitizeUser(await getUserById(actorUserId, companyId));
+  if (!actor) throw new Error("Authenticated user not found.");
+  const month = Number(payrollMonth || 0);
+  const year = Number(payrollYear || 0);
+  const scopedEmployeeId = String(employeeId || "").trim();
+  if (!cfg().on) {
+    const store = readStore();
+    return (store.payrollPayslips || [])
+      .filter((item) => String(item.companyId || item.company_id || "") === String(companyId))
+      .filter((item) => !month || Number(item.payrollMonth || item.payroll_month || 0) === month)
+      .filter((item) => !year || Number(item.payrollYear || item.payroll_year || 0) === year)
+      .filter((item) => !scopedEmployeeId || String(item.employeeId || item.employee_id || "") === scopedEmployeeId)
+      .map(sanitizePayslipDoc)
+      .filter(Boolean);
+  }
+  await ensureSeeded();
+  const filters = [
+    `company_id=eq.${enc(companyId)}`,
+    month ? `payroll_month=eq.${month}` : "",
+    year ? `payroll_year=eq.${year}` : "",
+    scopedEmployeeId ? `employee_id=eq.${enc(scopedEmployeeId)}` : "",
+    "order=updated_at.desc"
+  ].filter(Boolean).join("&");
+  const rows = await sbSel("payroll_payslips", `select=*&${filters}`).catch(() => []);
+  return (rows || []).map(sanitizePayslipDoc).filter(Boolean);
+}
 async function createEmployeeUser({ actorUserId, companyId, employeeCode, username, password, fullName, profile = {}, workSite = {} }) {
   const actor = sanitizeUser(await getUserById(actorUserId, companyId));
   if (!actor || actor.role !== "admin") throw new Error("Only an admin for this company can create employee accounts.");
@@ -3755,6 +3982,11 @@ module.exports = {
   resetEmployeeUserPassword,
   resetUserPassword,
   removeCompanyFbpHead,
+  listFbpDeclarations,
+  saveFbpDeclaration,
+  reviewFbpDeclaration,
+  publishPayrollPayslips,
+  listPayrollPayslips,
   saveEmployeeProfile,
   saveCompanyFbpHead,
   saveCompanySalaryTemplate,

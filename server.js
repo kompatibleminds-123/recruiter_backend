@@ -53,7 +53,9 @@ const {
   listCompanyEmployees,
   listCompanySalaryTemplates,
   listCompanyFbpHeads,
+  listFbpDeclarations,
   listPayrollInputs,
+  listPayrollPayslips,
   listPayrollRuns,
   listEmployeeCompensationStructures,
   listCompaniesAndUsersSummary,
@@ -76,6 +78,7 @@ const {
   setPayrollRunStatus,
   deletePayrollRun,
   getPayrollRunDetail,
+  publishPayrollPayslips,
   requirePlatformSessionUser,
   requireClientSessionUser,
   requireEmployeeSessionUser,
@@ -84,7 +87,9 @@ const {
   resetEmployeeUserPassword,
   resetUserPassword,
   removeCompanyFbpHead,
+  reviewFbpDeclaration,
   saveAssessment,
+  saveFbpDeclaration,
   saveCompanyFbpHead,
   saveCompanySalaryTemplate,
   saveCompanyPayrollSettings,
@@ -7189,6 +7194,25 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (req.method === "GET" && requestUrl.pathname === "/employee/payroll-docs") {
+    try {
+      const employeeUser = await requireEmployeeSessionUser(getBearerToken(req));
+      const payrollMonth = Number(requestUrl.searchParams.get("payrollMonth") || 0);
+      const payrollYear = Number(requestUrl.searchParams.get("payrollYear") || 0);
+      const items = await listPayrollPayslips({
+        actorUserId: employeeUser.id,
+        companyId: employeeUser.companyId,
+        payrollMonth,
+        payrollYear,
+        employeeId: employeeUser.employeeId
+      });
+      sendJson(res, 200, { ok: true, result: { items } });
+    } catch (error) {
+      sendJson(res, 401, { ok: false, error: String(error.message || error) });
+    }
+    return;
+  }
+
   if (req.method === "GET" && requestUrl.pathname === "/employee/attendance") {
     try {
       const employeeUser = await requireEmployeeSessionUser(getBearerToken(req));
@@ -7387,6 +7411,123 @@ const server = http.createServer(async (req, res) => {
       const message = String(error?.message || error);
       const status = /admin access required|forbidden|not allowed|403/i.test(message) ? 403 : 400;
       sendJson(res, status, { ok: false, error: message });
+    }
+    return;
+  }
+
+  if (req.method === "GET" && requestUrl.pathname === "/company/payroll/fbp-declarations") {
+    try {
+      const actor = await requireSessionUser(getBearerToken(req));
+      const payrollMonth = Number(requestUrl.searchParams.get("payrollMonth") || 0);
+      const payrollYear = Number(requestUrl.searchParams.get("payrollYear") || 0);
+      const employeeId = String(requestUrl.searchParams.get("employeeId") || "").trim();
+      const items = await listFbpDeclarations({
+        actorUserId: actor.id,
+        companyId: actor.companyId,
+        payrollMonth,
+        payrollYear,
+        employeeId
+      });
+      sendJson(res, 200, { ok: true, result: { items } });
+    } catch (error) {
+      const message = String(error?.message || error);
+      const status = /admin access required|forbidden|not allowed|403/i.test(message) ? 403 : 400;
+      sendJson(res, status, { ok: false, error: message });
+    }
+    return;
+  }
+
+  if (req.method === "POST" && requestUrl.pathname === "/company/payroll/fbp-declarations") {
+    try {
+      const actor = await requireSessionUser(getBearerToken(req));
+      const body = await readJsonBody(req);
+      const saved = await saveFbpDeclaration({
+        actorUserId: actor.id,
+        companyId: actor.companyId,
+        declaration: body?.declaration && typeof body.declaration === "object" ? body.declaration : body
+      });
+      sendJson(res, 200, { ok: true, result: saved });
+    } catch (error) {
+      const message = String(error?.message || error);
+      sendJson(res, 400, { ok: false, error: message });
+    }
+    return;
+  }
+
+  if (req.method === "POST" && requestUrl.pathname === "/company/payroll/fbp-declarations/approve") {
+    try {
+      const actor = await requireSessionUser(getBearerToken(req));
+      const body = await readJsonBody(req);
+      const saved = await reviewFbpDeclaration({
+        actorUserId: actor.id,
+        companyId: actor.companyId,
+        declarationId: String(body?.declarationId || "").trim(),
+        action: "approve",
+        approvedAmount: body?.approvedAmount
+      });
+      sendJson(res, 200, { ok: true, result: saved });
+    } catch (error) {
+      const message = String(error?.message || error);
+      sendJson(res, 400, { ok: false, error: message });
+    }
+    return;
+  }
+
+  if (req.method === "POST" && requestUrl.pathname === "/company/payroll/fbp-declarations/reject") {
+    try {
+      const actor = await requireSessionUser(getBearerToken(req));
+      const body = await readJsonBody(req);
+      const saved = await reviewFbpDeclaration({
+        actorUserId: actor.id,
+        companyId: actor.companyId,
+        declarationId: String(body?.declarationId || "").trim(),
+        action: "reject",
+        rejectionReason: String(body?.rejectionReason || "").trim()
+      });
+      sendJson(res, 200, { ok: true, result: saved });
+    } catch (error) {
+      const message = String(error?.message || error);
+      sendJson(res, 400, { ok: false, error: message });
+    }
+    return;
+  }
+
+  if (req.method === "POST" && requestUrl.pathname === "/company/payroll/payslips/publish") {
+    try {
+      const actor = await requireSessionUser(getBearerToken(req));
+      const body = await readJsonBody(req);
+      const result = await publishPayrollPayslips({
+        actorUserId: actor.id,
+        companyId: actor.companyId,
+        payrollRunId: String(body?.payrollRunId || "").trim(),
+        payrollMonth: Number(body?.payrollMonth || 0),
+        payrollYear: Number(body?.payrollYear || 0)
+      });
+      sendJson(res, 200, { ok: true, result });
+    } catch (error) {
+      const message = String(error?.message || error);
+      sendJson(res, 400, { ok: false, error: message });
+    }
+    return;
+  }
+
+  if (req.method === "GET" && requestUrl.pathname === "/company/payroll/payslips") {
+    try {
+      const actor = await requireSessionUser(getBearerToken(req));
+      const payrollMonth = Number(requestUrl.searchParams.get("payrollMonth") || 0);
+      const payrollYear = Number(requestUrl.searchParams.get("payrollYear") || 0);
+      const employeeId = String(requestUrl.searchParams.get("employeeId") || "").trim();
+      const items = await listPayrollPayslips({
+        actorUserId: actor.id,
+        companyId: actor.companyId,
+        payrollMonth,
+        payrollYear,
+        employeeId
+      });
+      sendJson(res, 200, { ok: true, result: { items } });
+    } catch (error) {
+      const message = String(error?.message || error);
+      sendJson(res, 400, { ok: false, error: message });
     }
     return;
   }
