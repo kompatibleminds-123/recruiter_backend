@@ -5019,17 +5019,23 @@ function PortalApp({ token, onLogout }) {
 
   async function reloadLoginSettingsWorkspace() {
     if (!token) return;
-    const [usersResult, clientUsersResult, employeesResult] = await Promise.all([
+    const [usersResult, clientUsersResult] = await Promise.all([
       api("/company/users", token).catch(() => ({ users: [] })),
-      api("/company/client-users", token).catch(() => ({ clientUsers: [] })),
-      api("/company/employees", token).catch(() => ({ result: { employees: [] } }))
+      api("/company/client-users", token).catch(() => ({ clientUsers: [] }))
     ]);
+    const employeesEnvelope = await api("/company/employees", token)
+      .then((data) => ({ ok: true, data }))
+      .catch((error) => ({ ok: false, error: String(error?.message || error) }));
     setState((current) => ({
       ...current,
       users: usersResult?.users || []
     }));
     setClientUsers(clientUsersResult?.clientUsers || []);
-    setEmployeeUsers(employeesResult?.result?.employees || []);
+    if (employeesEnvelope.ok) {
+      setEmployeeUsers(employeesEnvelope?.data?.result?.employees || []);
+    } else {
+      setStatus("loginEmployee", `Employee list refresh failed: ${employeesEnvelope.error}`, "error");
+    }
   }
 
   async function reloadCandidatesSlice({ includeDatabase = false } = {}) {
@@ -9420,8 +9426,17 @@ function PortalApp({ token, onLogout }) {
           isPrimary: true
         };
       }
-      await api("/company/employees", token, "POST", payload);
-      await reloadLoginSettingsWorkspace();
+      const createdEmployee = await api("/company/employees", token, "POST", payload);
+      if (createdEmployee && typeof createdEmployee === "object") {
+        setEmployeeUsers((current) => {
+          const incomingId = String(createdEmployee.id || "").trim();
+          const withoutDuplicate = incomingId
+            ? (current || []).filter((item) => String(item?.id || "").trim() !== incomingId)
+            : (current || []);
+          return [createdEmployee, ...withoutDuplicate];
+        });
+      }
+      await reloadLoginSettingsWorkspace().catch(() => {});
       setEmployeeUserDraft({
         employeeCode: "",
         username: "",
