@@ -6634,6 +6634,9 @@ const server = http.createServer(async (req, res) => {
         username: String(body.username || body.employeeCode || "").trim(),
         password: String(body.password || "")
       });
+      // Guardrail: ensure the token we issue is immediately verifiable on this server.
+      const probe = await getEmployeeSessionUser(result?.token || "");
+      if (!probe) throw new Error("Employee token verification failed right after login.");
       sendJson(res, 200, { ok: true, result });
     } catch (error) {
       sendJson(res, 400, { ok: false, error: String(error.message || error) });
