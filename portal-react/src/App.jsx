@@ -6092,7 +6092,6 @@ function PortalApp({ token, onLogout }) {
         }
       }
     });
-    const hasUniverseScope = universeAssessmentIds.size > 0 || universeCandidateIds.size > 0;
     assessments.forEach((assessment) => {
       const assessmentId = String(assessment?.id || "").trim();
       const candidateId = String(
@@ -6103,9 +6102,7 @@ function PortalApp({ token, onLogout }) {
         || ""
       ).trim();
       const hasAssessmentScope = universeAssessmentIds.size > 0;
-      const inScopedUniverse = !hasUniverseScope
-        ? true
-        : hasAssessmentScope
+      const inScopedUniverse = hasAssessmentScope
         ? (assessmentId && universeAssessmentIds.has(assessmentId))
         : (candidateId && universeCandidateIds.has(candidateId));
       if (!inScopedUniverse) return;
@@ -6159,12 +6156,7 @@ function PortalApp({ token, onLogout }) {
       const noticeDays = parseNoticePeriodToDays(item?.notice_period || item?.noticePeriod || "");
       const baseRow = {
         item: item || { assessmentId: linkedAssessment?.id, candidateId },
-        candidateName:
-          item?.name
-          || item?.candidateName
-          || linkedAssessment?.candidateName
-          || linkedAssessment?.payload?.candidateName
-          || "Candidate",
+        candidateName: item?.name || item?.candidateName || "Candidate",
         role: linkedAssessment?.jdTitle || item?.role || item?.currentDesignation || item?.jd_title || item?.jdTitle || "",
         client: linkedAssessment?.clientName || item?.client_name || item?.clientName || "",
         recruiter: item?.assigned_to_name || item?.ownerRecruiter || item?.recruiterName || "",
@@ -6210,6 +6202,50 @@ function PortalApp({ token, onLogout }) {
         rowsByChip.cv_shared.push({ ...baseRow, round: formatAssessmentStatusDisplay(assessmentStatus || "Active"), date: displayDate });
       }
     });
+    if (!rowsByChip.shared_today.length || !rowsByChip.shared_this_week.length) {
+      assessments.forEach((assessment) => {
+        const assessmentId = String(assessment?.id || "").trim();
+        if (!assessmentId) return;
+        const candidateId = String(
+          assessment?.candidateId
+          || assessment?.candidate_id
+          || assessment?.payload?.candidateId
+          || assessment?.payload?.candidate_id
+          || ""
+        ).trim();
+        const convertedAt = String(
+          universeConvertedAtByAssessmentId.get(assessmentId)
+          || universeConvertedAtByCandidateId.get(candidateId)
+          || assessmentSharedAtMap.get(assessmentId)
+          || assessment?.createdAt
+          || assessment?.created_at
+          || assessment?.generatedAt
+          || assessment?.generated_at
+          || ""
+        ).trim();
+        if (!convertedAt || !inDateRange(convertedAt)) return;
+        const candidate = (candidateId && candidateById.get(candidateId)) || null;
+        const fallbackRow = {
+          item: candidate || { id: candidateId || assessmentId, assessmentId, candidateId },
+          candidateName: candidate?.name || candidate?.candidateName || assessment?.candidateName || assessment?.payload?.candidateName || "Candidate",
+          role: assessment?.jdTitle || candidate?.role || candidate?.jd_title || candidate?.jdTitle || "",
+          client: assessment?.clientName || candidate?.client_name || candidate?.clientName || "",
+          recruiter: candidate?.assigned_to_name || candidate?.ownerRecruiter || candidate?.recruiterName || "",
+          currentCtc: candidate?.current_ctc || candidate?.currentCtc || "",
+          expectedCtc: candidate?.expected_ctc || candidate?.expectedCtc || "",
+          notice: candidate?.notice_period || candidate?.noticePeriod || "",
+          status: normalizeAssessmentStatusLabel(assessment?.candidateStatus || assessment?.status || ""),
+          round: "Converted to assessment",
+          date: convertedAt
+        };
+        if (inToday(convertedAt) && !rowsByChip.shared_today.some((row) => String(row?.item?.assessmentId || row?.item?.id || "") === assessmentId)) {
+          rowsByChip.shared_today.push(fallbackRow);
+        }
+        if (inThisWeek(convertedAt) && !rowsByChip.shared_this_week.some((row) => String(row?.item?.assessmentId || row?.item?.id || "") === assessmentId)) {
+          rowsByChip.shared_this_week.push(fallbackRow);
+        }
+      });
+    }
     return rowsByChip;
     } catch (error) {
       console.error("candidateSmartChipRows failed", error);
