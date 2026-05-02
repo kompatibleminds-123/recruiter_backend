@@ -941,22 +941,18 @@ function calculatePayrollLine({ compensation, payrollInput, settings }) {
   const basic = prorateField(compensation?.basicMonthly);
   const hra = prorateField(compensation?.hraMonthly);
   const fbp = prorateField(compensation?.fbpMonthly);
-  const special = prorateField(compensation?.specialAllowanceMonthly);
+  let special = prorateField(compensation?.specialAllowanceMonthly);
   const healthInsurance = prorateHealth ? prorateField(compensation?.healthInsuranceMonthly) : roundMoney(compensation?.healthInsuranceMonthly || 0);
   const otherAllowance = prorateField(compensation?.otherAllowanceMonthly);
   const otherEarnings = roundMoney(payrollInput?.otherEarnings || 0) + roundMoney(payrollInput?.overtimeAmount || 0) + roundMoney(payrollInput?.arrearsAmount || 0) + roundMoney(payrollInput?.bonusAmount || 0);
   const approvedReimbursements = roundMoney(payrollInput?.approvedReimbursements || 0);
 
-  const grossEarnings = roundMoney(basic + hra + fbp + special + otherAllowance + otherEarnings + approvedReimbursements);
   const employeePf = roundMoney(compensation?.employeePfMonthly || 0);
   const employeeEsi = roundMoney(compensation?.employeeEsiMonthly || 0);
   const employeeLwf = roundMoney(compensation?.employeeLwfMonthly || 0);
   const professionalTax = roundMoney(payrollInput?.professionalTax || compensation?.professionalTaxMonthly || settings?.defaultMonthlyProfessionalTax || 0);
   const tds = roundMoney(payrollInput?.tdsAmount || 0);
   const otherDeductions = roundMoney(payrollInput?.otherDeductions || 0);
-  const grossDeductions = roundMoney(employeePf + employeeEsi + employeeLwf + professionalTax + tds + otherDeductions);
-  const netSalary = roundMoney(grossEarnings - grossDeductions);
-
   const employerPf = roundMoney(compensation?.employerPfMonthly || 0);
   const employerEsi = roundMoney(compensation?.employerEsiMonthly || 0);
   const employerLwf = roundMoney(compensation?.employerLwfMonthly || 0);
@@ -968,8 +964,21 @@ function calculatePayrollLine({ compensation, payrollInput, settings }) {
   const configuredMonthlyCtc = configuredMonthlyCtcRaw > 0
     ? roundMoney(configuredMonthlyCtcRaw * factor)
     : 0;
+  const templateCode = String(compensation?.templateCode || "").trim().toLowerCase();
+  const isTemplateDriven = Boolean(templateCode) && templateCode !== "custom";
+  if (isTemplateDriven && configuredMonthlyCtc > 0) {
+    const fixedEmployerCost = roundMoney(employerPf + employerEsi + employerLwf + gratuity + healthInsurance);
+    const targetBaseGross = roundMoney(Math.max(0, configuredMonthlyCtc - fixedEmployerCost));
+    special = roundMoney(Math.max(0, targetBaseGross - basic - hra - fbp - otherAllowance));
+  }
+  const grossEarnings = roundMoney(basic + hra + fbp + special + otherAllowance + otherEarnings + approvedReimbursements);
+  const grossDeductions = roundMoney(employeePf + employeeEsi + employeeLwf + professionalTax + tds + otherDeductions);
+  const netSalary = roundMoney(grossEarnings - grossDeductions);
   const computedEmployerCost = roundMoney(grossEarnings + employerPf + employerEsi + employerLwf + gratuity + healthInsurance);
-  const employerCost = configuredMonthlyCtc > 0 ? configuredMonthlyCtc : computedEmployerCost;
+  const ctcWithVariableEarnings = configuredMonthlyCtc > 0
+    ? roundMoney(configuredMonthlyCtc + otherEarnings + approvedReimbursements)
+    : 0;
+  const employerCost = configuredMonthlyCtc > 0 ? ctcWithVariableEarnings : computedEmployerCost;
 
   return {
     proratedBasic: basic,
