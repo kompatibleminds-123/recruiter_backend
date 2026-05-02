@@ -6081,6 +6081,7 @@ function PortalApp({ token, onLogout }) {
         }
       }
     });
+    const hasUniverseScope = universeAssessmentIds.size > 0 || universeCandidateIds.size > 0;
     assessments.forEach((assessment) => {
       const assessmentId = String(assessment?.id || "").trim();
       const candidateId = String(
@@ -6091,7 +6092,9 @@ function PortalApp({ token, onLogout }) {
         || ""
       ).trim();
       const hasAssessmentScope = universeAssessmentIds.size > 0;
-      const inScopedUniverse = hasAssessmentScope
+      const inScopedUniverse = !hasUniverseScope
+        ? true
+        : hasAssessmentScope
         ? (assessmentId && universeAssessmentIds.has(assessmentId))
         : (candidateId && universeCandidateIds.has(candidateId));
       if (!inScopedUniverse) return;
@@ -6143,7 +6146,12 @@ function PortalApp({ token, onLogout }) {
       const noticeDays = parseNoticePeriodToDays(item?.notice_period || item?.noticePeriod || "");
       const baseRow = {
         item: item || { assessmentId: linkedAssessment?.id, candidateId },
-        candidateName: item?.name || item?.candidateName || "Candidate",
+        candidateName:
+          item?.name
+          || item?.candidateName
+          || linkedAssessment?.candidateName
+          || linkedAssessment?.payload?.candidateName
+          || "Candidate",
         role: linkedAssessment?.jdTitle || item?.role || item?.currentDesignation || item?.jd_title || item?.jdTitle || "",
         client: linkedAssessment?.clientName || item?.client_name || item?.clientName || "",
         recruiter: item?.assigned_to_name || item?.ownerRecruiter || item?.recruiterName || "",
