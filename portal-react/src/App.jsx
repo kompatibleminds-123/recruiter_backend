@@ -5032,7 +5032,7 @@ function PortalApp({ token, onLogout }) {
     }));
     setClientUsers(clientUsersResult?.clientUsers || []);
     if (employeesEnvelope.ok) {
-      setEmployeeUsers(employeesEnvelope?.data?.result?.employees || []);
+      setEmployeeUsers(employeesEnvelope?.data?.employees || []);
     } else {
       setStatus("loginEmployee", `Employee list refresh failed: ${employeesEnvelope.error}`, "error");
     }
