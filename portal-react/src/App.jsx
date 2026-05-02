@@ -4873,7 +4873,7 @@ function PortalApp({ token, onLogout }) {
         ? api("/company/client-users", token).catch(() => ({ clientUsers: [] }))
         : Promise.resolve(null),
       needsEmployeeUsers
-        ? api("/company/employees", token).catch(() => ({ result: { employees: [] } }))
+        ? api("/company/employees", token).catch(() => ({ employees: [] }))
         : Promise.resolve(null),
       needsCandidates ? api("/candidates?limit=5000", token).catch(() => []) : Promise.resolve(null),
       needsDatabaseCandidates ? api("/company/database-candidates?limit=5000", token).catch(() => []) : Promise.resolve(null),
@@ -4908,7 +4908,7 @@ function PortalApp({ token, onLogout }) {
       setClientUsers(clientUsersResult.clientUsers || []);
     }
     if (needsEmployeeUsers && employeeUsersResult) {
-      setEmployeeUsers(employeeUsersResult?.result?.employees || []);
+      setEmployeeUsers(employeeUsersResult?.employees || []);
     }
     if (includeSharedPresets && sharedPresetResult) {
       setCopySettings((current) => migrateCopySettings({ ...current, ...sharedPresetResult }));
