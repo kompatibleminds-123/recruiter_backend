@@ -13039,6 +13039,7 @@ function PayrollLiteAdminPage({ token, employees = [] }) {
     docUrl: "",
     docNote: ""
   });
+  const [declarationDocUploading, setDeclarationDocUploading] = useState(false);
 
   async function loadPayrollFoundation() {
     const [settingsResult, compResult, fbpResult, templateResult] = await Promise.all([
@@ -13388,6 +13389,32 @@ function PayrollLiteAdminPage({ token, employees = [] }) {
       setStatus(String(error?.message || error));
     }
   }
+  async function uploadDeclarationDoc(file) {
+    try {
+      if (!file) return;
+      setDeclarationDocUploading(true);
+      setStatus("Uploading FBP proof document...");
+      const fileData = await fileToBase64(file);
+      if (!fileData) throw new Error("Unable to read file data.");
+      const result = await api("/company/payroll/fbp-doc/upload", token, "POST", {
+        file: {
+          filename: file.name || "fbp-proof.bin",
+          mimeType: file.type || "application/octet-stream",
+          fileData
+        }
+      });
+      setDeclarationForm((current) => ({
+        ...current,
+        docLabel: current.docLabel || String(result?.filename || file.name || "Document"),
+        docUrl: String(result?.url || "").trim()
+      }));
+      setStatus("FBP proof uploaded.");
+    } catch (error) {
+      setStatus(String(error?.message || error));
+    } finally {
+      setDeclarationDocUploading(false);
+    }
+  }
   async function reviewDeclaration(id, action) {
     try {
       const item = (fbpDeclarations || []).find((row) => String(row.id || "") === String(id || ""));
@@ -13734,8 +13761,21 @@ function PayrollLiteAdminPage({ token, employees = [] }) {
           <label><span>Declared amount</span><input type="number" value={declarationForm.declaredAmount} onChange={(e) => setDeclarationForm((c) => ({ ...c, declaredAmount: e.target.value }))} /></label>
           <label className="full"><span>Notes</span><input value={declarationForm.notes} onChange={(e) => setDeclarationForm((c) => ({ ...c, notes: e.target.value }))} placeholder="Optional declaration note" /></label>
           <label><span>Doc name</span><input value={declarationForm.docLabel} onChange={(e) => setDeclarationForm((c) => ({ ...c, docLabel: e.target.value }))} placeholder="Rent receipt Apr" /></label>
-          <label><span>Doc URL</span><input value={declarationForm.docUrl} onChange={(e) => setDeclarationForm((c) => ({ ...c, docUrl: e.target.value }))} placeholder="https://..." /></label>
+          <label><span>Doc URL</span><input value={declarationForm.docUrl} onChange={(e) => setDeclarationForm((c) => ({ ...c, docUrl: e.target.value }))} placeholder="Auto after upload" /></label>
           <label><span>Doc note</span><input value={declarationForm.docNote} onChange={(e) => setDeclarationForm((c) => ({ ...c, docNote: e.target.value }))} placeholder="Optional" /></label>
+          <label className="full">
+            <span>Upload proof file</span>
+            <input
+              type="file"
+              accept=".pdf,.png,.jpg,.jpeg,.webp,.doc,.docx"
+              onChange={(e) => {
+                const file = e.target.files && e.target.files[0] ? e.target.files[0] : null;
+                if (file) void uploadDeclarationDoc(file);
+                e.currentTarget.value = "";
+              }}
+              disabled={declarationDocUploading}
+            />
+          </label>
         </div>
         <div className="button-row"><button onClick={() => void submitFbpDeclaration()}>Submit declaration</button></div>
         <div className="table-wrap">

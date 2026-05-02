@@ -7437,6 +7437,41 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (req.method === "POST" && requestUrl.pathname === "/company/payroll/fbp-doc/upload") {
+    try {
+      const actor = await requireSessionUser(getBearerToken(req));
+      if (String(actor?.role || "").toLowerCase() !== "admin") {
+        throw new Error("Admin access required.");
+      }
+      const body = await readJsonBody(req);
+      const uploadedFile = body?.file && typeof body.file === "object" ? body.file : null;
+      const fileData = String(uploadedFile?.fileData || "").trim();
+      if (!fileData) throw new Error("file.fileData is required.");
+      const filename = String(uploadedFile?.filename || uploadedFile?.name || "fbp-proof.bin").trim();
+      const mimeType = String(uploadedFile?.mimeType || uploadedFile?.type || "application/octet-stream").trim();
+      const stored = await storeUploadedFile(
+        { filename, mimeType, fileData },
+        { objectPrefix: `payroll-fbp/${String(actor.companyId || "").trim()}` }
+      );
+      sendJson(res, 200, {
+        ok: true,
+        result: {
+          provider: String(stored?.provider || "").trim(),
+          key: String(stored?.key || "").trim(),
+          url: String(stored?.url || "").trim(),
+          filename: String(stored?.filename || filename).trim(),
+          mimeType: String(stored?.mimeType || mimeType).trim(),
+          sizeBytes: Number(stored?.sizeBytes || 0) || 0
+        }
+      });
+    } catch (error) {
+      const message = String(error?.message || error);
+      const status = /admin access required|forbidden|not allowed|403/i.test(message) ? 403 : 400;
+      sendJson(res, status, { ok: false, error: message });
+    }
+    return;
+  }
+
   if (req.method === "POST" && requestUrl.pathname === "/company/payroll/fbp-declarations") {
     try {
       const actor = await requireSessionUser(getBearerToken(req));
