@@ -1611,12 +1611,18 @@ async function requireClientSessionUser(token) {
   if (!user) throw new Error("Invalid or missing client session.");
   return user;
 }
+function getEmployeeSessionSecrets() {
+  const primary = String(process.env.EMPLOYEE_PORTAL_SESSION_SECRET || "").trim();
+  const platformFallback = String(process.env.PLATFORM_SESSION_SECRET || "").trim();
+  const rotated = String(process.env.EMPLOYEE_PORTAL_SESSION_SECRET_PREVIOUS || "").trim();
+  const secrets = [primary, platformFallback, rotated, "employee-portal-session-secret"]
+    .map((item) => String(item || "").trim())
+    .filter(Boolean);
+  // Preserve order while removing duplicates.
+  return Array.from(new Set(secrets));
+}
 function getEmployeeSessionSecret() {
-  return (
-    String(process.env.EMPLOYEE_PORTAL_SESSION_SECRET || "").trim() ||
-    String(process.env.PLATFORM_SESSION_SECRET || "").trim() ||
-    "employee-portal-session-secret"
-  );
+  return getEmployeeSessionSecrets()[0];
 }
 function createSignedEmployeeToken(payload) {
   const encoded = Buffer.from(JSON.stringify(payload), "utf8").toString("base64url");
@@ -1628,8 +1634,11 @@ function readSignedEmployeeToken(token) {
   if (!raw) return null;
   const [encoded, signature] = raw.split(".");
   if (!encoded || !signature) return null;
-  const expected = crypto.createHmac("sha256", getEmployeeSessionSecret()).update(encoded).digest("base64url");
-  if (!timingSafeEqualString(signature, expected)) return null;
+  const matchedSecret = getEmployeeSessionSecrets().find((secret) => {
+    const expected = crypto.createHmac("sha256", secret).update(encoded).digest("base64url");
+    return timingSafeEqualString(signature, expected);
+  });
+  if (!matchedSecret) return null;
   try {
     const payload = JSON.parse(Buffer.from(encoded, "base64url").toString("utf8"));
     if (payload?.type !== "employee_portal") return null;
