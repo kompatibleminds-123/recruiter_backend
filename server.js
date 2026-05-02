@@ -54,6 +54,7 @@ const {
   listCompanySalaryTemplates,
   listCompanyFbpHeads,
   listFbpDeclarations,
+  listEmployeeFbpDeclarations,
   listPayrollInputs,
   listPayrollPayslips,
   listPayrollRuns,
@@ -90,6 +91,7 @@ const {
   reviewFbpDeclaration,
   saveAssessment,
   saveFbpDeclaration,
+  saveEmployeeFbpDeclaration,
   saveCompanyFbpHead,
   saveCompanySalaryTemplate,
   saveCompanyPayrollSettings,
@@ -7209,6 +7211,68 @@ const server = http.createServer(async (req, res) => {
       sendJson(res, 200, { ok: true, result: { items } });
     } catch (error) {
       sendJson(res, 401, { ok: false, error: String(error.message || error) });
+    }
+    return;
+  }
+
+  if (req.method === "GET" && requestUrl.pathname === "/employee/payroll/fbp-declarations") {
+    try {
+      const employeeUser = await requireEmployeeSessionUser(getBearerToken(req));
+      const payrollMonth = Number(requestUrl.searchParams.get("payrollMonth") || 0);
+      const payrollYear = Number(requestUrl.searchParams.get("payrollYear") || 0);
+      const items = await listEmployeeFbpDeclarations({
+        employeeUser,
+        payrollMonth,
+        payrollYear
+      });
+      sendJson(res, 200, { ok: true, result: { items } });
+    } catch (error) {
+      sendJson(res, 401, { ok: false, error: String(error.message || error) });
+    }
+    return;
+  }
+
+  if (req.method === "POST" && requestUrl.pathname === "/employee/payroll/fbp-declarations") {
+    try {
+      const employeeUser = await requireEmployeeSessionUser(getBearerToken(req));
+      const body = await readJsonBody(req);
+      const saved = await saveEmployeeFbpDeclaration({
+        employeeUser,
+        declaration: body?.declaration && typeof body.declaration === "object" ? body.declaration : body
+      });
+      sendJson(res, 200, { ok: true, result: saved });
+    } catch (error) {
+      sendJson(res, 400, { ok: false, error: String(error.message || error) });
+    }
+    return;
+  }
+
+  if (req.method === "POST" && requestUrl.pathname === "/employee/payroll/fbp-doc/upload") {
+    try {
+      const employeeUser = await requireEmployeeSessionUser(getBearerToken(req));
+      const body = await readJsonBody(req);
+      const uploadedFile = body?.file && typeof body.file === "object" ? body.file : null;
+      const fileData = String(uploadedFile?.fileData || "").trim();
+      if (!fileData) throw new Error("file.fileData is required.");
+      const filename = String(uploadedFile?.filename || uploadedFile?.name || "fbp-proof.bin").trim();
+      const mimeType = String(uploadedFile?.mimeType || uploadedFile?.type || "application/octet-stream").trim();
+      const stored = await storeUploadedFile(
+        { filename, mimeType, fileData },
+        { objectPrefix: `payroll-fbp/${String(employeeUser.companyId || "").trim()}/${String(employeeUser.employeeId || "").trim()}` }
+      );
+      sendJson(res, 200, {
+        ok: true,
+        result: {
+          provider: String(stored?.provider || "").trim(),
+          key: String(stored?.key || "").trim(),
+          url: String(stored?.url || "").trim(),
+          filename: String(stored?.filename || filename).trim(),
+          mimeType: String(stored?.mimeType || mimeType).trim(),
+          sizeBytes: Number(stored?.sizeBytes || 0) || 0
+        }
+      });
+    } catch (error) {
+      sendJson(res, 400, { ok: false, error: String(error.message || error) });
     }
     return;
   }

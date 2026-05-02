@@ -3021,6 +3021,61 @@ async function saveFbpDeclaration({ actorUserId, companyId, declaration = {} }) 
   const rows = await sbIns("fbp_declarations", [row], { conflict: "id", upsert: true });
   return sanitizeFbpDeclaration(rows?.[0] || row);
 }
+async function listEmployeeFbpDeclarations({ employeeUser, payrollMonth = 0, payrollYear = 0 }) {
+  const actor = sanitizeEmployeeSessionUser(employeeUser);
+  if (!actor?.companyId || !actor?.employeeId) throw new Error("Employee session is required.");
+  const month = Number(payrollMonth || 0);
+  const year = Number(payrollYear || 0);
+  if (!cfg().on) {
+    const store = readStore();
+    return (store.fbpDeclarations || [])
+      .filter((item) => String(item.companyId || item.company_id || "") === String(actor.companyId))
+      .filter((item) => String(item.employeeId || item.employee_id || "") === String(actor.employeeId))
+      .filter((item) => !month || Number(item.payrollMonth || item.payroll_month || 0) === month)
+      .filter((item) => !year || Number(item.payrollYear || item.payroll_year || 0) === year)
+      .map(sanitizeFbpDeclaration)
+      .filter(Boolean);
+  }
+  await ensureSeeded();
+  const filters = [
+    `company_id=eq.${enc(actor.companyId)}`,
+    `employee_id=eq.${enc(actor.employeeId)}`,
+    month ? `payroll_month=eq.${month}` : "",
+    year ? `payroll_year=eq.${year}` : "",
+    "order=updated_at.desc"
+  ].filter(Boolean).join("&");
+  const rows = await sbSel("fbp_declarations", `select=*&${filters}`).catch(() => []);
+  return (rows || []).map(sanitizeFbpDeclaration).filter(Boolean);
+}
+async function saveEmployeeFbpDeclaration({ employeeUser, declaration = {} }) {
+  const actor = sanitizeEmployeeSessionUser(employeeUser);
+  if (!actor?.companyId || !actor?.employeeId) throw new Error("Employee session is required.");
+  const headName = String(declaration.headName || declaration.head_name || "").trim();
+  const payrollMonth = Number(declaration.payrollMonth || declaration.payroll_month || 0);
+  const payrollYear = Number(declaration.payrollYear || declaration.payroll_year || 0);
+  const declaredAmount = Number(declaration.declaredAmount || declaration.declared_amount || 0) || 0;
+  if (!headName || !payrollMonth || !payrollYear) {
+    throw new Error("headName, payrollMonth and payrollYear are required.");
+  }
+  return saveFbpDeclaration({
+    actorUserId: actor.id,
+    companyId: actor.companyId,
+    declaration: {
+      id: declaration.id,
+      employeeId: actor.employeeId,
+      payrollMonth,
+      payrollYear,
+      headId: String(declaration.headId || declaration.head_id || "").trim(),
+      headName,
+      declaredAmount,
+      notes: String(declaration.notes || "").trim(),
+      docs: sanitizeFbpDocs(declaration.docs),
+      status: "submitted",
+      approvedAmount: 0,
+      rejectionReason: ""
+    }
+  });
+}
 async function reviewFbpDeclaration({ actorUserId, companyId, declarationId, action = "approve", approvedAmount = null, rejectionReason = "" }) {
   const actor = await requireAdminForCompany({ actorUserId, companyId });
   const id = String(declarationId || "").trim();
@@ -4037,7 +4092,9 @@ module.exports = {
   resetUserPassword,
   removeCompanyFbpHead,
   listFbpDeclarations,
+  listEmployeeFbpDeclarations,
   saveFbpDeclaration,
+  saveEmployeeFbpDeclaration,
   reviewFbpDeclaration,
   publishPayrollPayslips,
   listPayrollPayslips,

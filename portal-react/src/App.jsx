@@ -13840,6 +13840,16 @@ function EmployeePortalApp({ token, onLogout }) {
   const [todayAttendance, setTodayAttendance] = useState(null);
   const [attendanceItems, setAttendanceItems] = useState([]);
   const [payrollDocs, setPayrollDocs] = useState([]);
+  const [employeeFbpDeclarations, setEmployeeFbpDeclarations] = useState([]);
+  const [employeeFbpForm, setEmployeeFbpForm] = useState({
+    headName: "",
+    declaredAmount: "",
+    notes: "",
+    docLabel: "",
+    docUrl: "",
+    docNote: ""
+  });
+  const [employeeFbpDocUploading, setEmployeeFbpDocUploading] = useState(false);
   const [selectedPayslipId, setSelectedPayslipId] = useState("");
   const [status, setStatus] = useState("");
   const [busy, setBusy] = useState(false);
@@ -13850,17 +13860,20 @@ function EmployeePortalApp({ token, onLogout }) {
     // Session validity should be decided only by /employee-auth/me.
     // Attendance endpoints may fail due to partial setup and should not auto-logout the user.
     const meResult = await api("/employee-auth/me", token);
-    const [dashboardResult, attendanceResult, payrollDocsResult] = await Promise.all([
+    const now = new Date();
+    const [dashboardResult, attendanceResult, payrollDocsResult, fbpResult] = await Promise.all([
       api("/employee/dashboard", token).catch(() => ({ todayAttendance: null })),
       api(`/employee/attendance?dateFrom=${encodeURIComponent(monthStart)}&dateTo=${encodeURIComponent(today)}`, token)
         .catch(() => ({ items: [] })),
-      api("/employee/payroll-docs", token)
+      api("/employee/payroll-docs", token).catch(() => ({ items: [] })),
+      api(`/employee/payroll/fbp-declarations?payrollMonth=${now.getMonth() + 1}&payrollYear=${now.getFullYear()}`, token)
         .catch(() => ({ items: [] }))
     ]);
     setEmployeeUser(meResult.user || meResult);
     setTodayAttendance(dashboardResult.todayAttendance || null);
     setAttendanceItems(Array.isArray(attendanceResult.items) ? attendanceResult.items : []);
     setPayrollDocs(Array.isArray(payrollDocsResult.items) ? payrollDocsResult.items : []);
+    setEmployeeFbpDeclarations(Array.isArray(fbpResult.items) ? fbpResult.items : []);
   }
 
   useEffect(() => {
@@ -13911,6 +13924,58 @@ function EmployeePortalApp({ token, onLogout }) {
     () => (payrollDocs || []).find((item) => String(item?.id || "") === String(selectedPayslipId || "")) || null,
     [payrollDocs, selectedPayslipId]
   );
+  async function uploadEmployeeFbpDoc(file) {
+    try {
+      if (!file) return;
+      setEmployeeFbpDocUploading(true);
+      setStatus("Uploading FBP proof...");
+      const fileData = await fileToBase64(file);
+      const result = await api("/employee/payroll/fbp-doc/upload", token, "POST", {
+        file: {
+          filename: file.name || "fbp-proof.bin",
+          mimeType: file.type || "application/octet-stream",
+          fileData
+        }
+      });
+      setEmployeeFbpForm((current) => ({
+        ...current,
+        docLabel: current.docLabel || String(result?.filename || file.name || "Document"),
+        docUrl: String(result?.url || "").trim()
+      }));
+      setStatus("FBP proof uploaded.");
+    } catch (error) {
+      setStatus(String(error?.message || error));
+    } finally {
+      setEmployeeFbpDocUploading(false);
+    }
+  }
+  async function submitEmployeeFbpDeclaration() {
+    try {
+      const headName = String(employeeFbpForm.headName || "").trim();
+      if (!headName) throw new Error("Please enter FBP head.");
+      const now = new Date();
+      const docs = String(employeeFbpForm.docUrl || "").trim()
+        ? [{
+          label: String(employeeFbpForm.docLabel || "Document").trim() || "Document",
+          url: String(employeeFbpForm.docUrl || "").trim(),
+          note: String(employeeFbpForm.docNote || "").trim()
+        }]
+        : [];
+      await api("/employee/payroll/fbp-declarations", token, "POST", {
+        headName,
+        declaredAmount: Number(employeeFbpForm.declaredAmount || 0) || 0,
+        notes: String(employeeFbpForm.notes || "").trim(),
+        payrollMonth: now.getMonth() + 1,
+        payrollYear: now.getFullYear(),
+        docs
+      });
+      setEmployeeFbpForm({ headName: "", declaredAmount: "", notes: "", docLabel: "", docUrl: "", docNote: "" });
+      await loadEmployeePortal();
+      setStatus("FBP declaration submitted.");
+    } catch (error) {
+      setStatus(String(error?.message || error));
+    }
+  }
 
   return (
     <div className="app-shell app-shell--client">
@@ -14051,6 +14116,53 @@ function EmployeePortalApp({ token, onLogout }) {
                 </div>
               </div>
             ) : null}
+          </Section>
+          <Section kicker="Payroll" title="My FBP Declarations">
+            <div className="form-grid three-col">
+              <label><span>FBP Head</span><input value={employeeFbpForm.headName} onChange={(e) => setEmployeeFbpForm((c) => ({ ...c, headName: e.target.value }))} placeholder="Fuel / Internet / Meal" /></label>
+              <label><span>Declared Amount</span><input type="number" value={employeeFbpForm.declaredAmount} onChange={(e) => setEmployeeFbpForm((c) => ({ ...c, declaredAmount: e.target.value }))} /></label>
+              <label><span>Notes</span><input value={employeeFbpForm.notes} onChange={(e) => setEmployeeFbpForm((c) => ({ ...c, notes: e.target.value }))} placeholder="Optional" /></label>
+              <label><span>Doc name</span><input value={employeeFbpForm.docLabel} onChange={(e) => setEmployeeFbpForm((c) => ({ ...c, docLabel: e.target.value }))} placeholder="Bill Apr" /></label>
+              <label><span>Doc URL</span><input value={employeeFbpForm.docUrl} onChange={(e) => setEmployeeFbpForm((c) => ({ ...c, docUrl: e.target.value }))} placeholder="Auto after upload" /></label>
+              <label><span>Doc note</span><input value={employeeFbpForm.docNote} onChange={(e) => setEmployeeFbpForm((c) => ({ ...c, docNote: e.target.value }))} placeholder="Optional" /></label>
+              <label className="full">
+                <span>Upload proof file</span>
+                <input
+                  type="file"
+                  accept=".pdf,.png,.jpg,.jpeg,.webp,.doc,.docx"
+                  onChange={(e) => {
+                    const file = e.target.files && e.target.files[0] ? e.target.files[0] : null;
+                    if (file) void uploadEmployeeFbpDoc(file);
+                    e.currentTarget.value = "";
+                  }}
+                  disabled={employeeFbpDocUploading}
+                />
+              </label>
+            </div>
+            <div className="button-row">
+              <button onClick={() => void submitEmployeeFbpDeclaration()} disabled={employeeFbpDocUploading}>Submit FBP Declaration</button>
+            </div>
+            <div className="table-wrap">
+              <table className="dashboard-table">
+                <thead><tr><th>Head</th><th>Declared</th><th>Approved</th><th>Status</th><th>Doc</th><th>Remark</th></tr></thead>
+                <tbody>
+                  {(employeeFbpDeclarations || []).map((item) => {
+                    const docs = Array.isArray(item.docs) ? item.docs : [];
+                    return (
+                      <tr key={item.id}>
+                        <td>{item.headName || "-"}</td>
+                        <td>{Number(item.declaredAmount || 0).toFixed(2)}</td>
+                        <td>{Number(item.approvedAmount || 0).toFixed(2)}</td>
+                        <td>{item.status || "-"}</td>
+                        <td>{docs.length ? <a href={String(docs[0]?.url || "#")} target="_blank" rel="noreferrer">{String(docs[0]?.label || "Document")}</a> : "-"}</td>
+                        <td>{item.rejectionReason || item.notes || "-"}</td>
+                      </tr>
+                    );
+                  })}
+                  {!employeeFbpDeclarations.length ? <tr><td colSpan="6"><div className="empty-state compact-empty">No FBP declarations yet.</div></td></tr> : null}
+                </tbody>
+              </table>
+            </div>
           </Section>
           <footer className="portal-footer portal-footer--content">{COMPANY_ATTRIBUTION} | employee-mvp</footer>
         </div>
