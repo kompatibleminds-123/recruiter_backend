@@ -51,6 +51,7 @@ const {
   getCompanySharedExportPresets,
   getPublicCompanyJob,
   listCompanyEmployees,
+  listCompanySalaryTemplates,
   listCompanyFbpHeads,
   listEmployeeCompensationStructures,
   listCompaniesAndUsersSummary,
@@ -76,6 +77,7 @@ const {
   removeCompanyFbpHead,
   saveAssessment,
   saveCompanyFbpHead,
+  saveCompanySalaryTemplate,
   saveCompanyPayrollSettings,
   saveEmployeeCompensationStructure,
   saveEmployeeProfile,
@@ -7361,6 +7363,38 @@ const server = http.createServer(async (req, res) => {
       const headId = String(requestUrl.searchParams.get("headId") || "").trim();
       const result = await removeCompanyFbpHead({ actorUserId: actor.id, companyId: actor.companyId, headId });
       sendJson(res, 200, { ok: true, result });
+    } catch (error) {
+      const message = String(error?.message || error);
+      const status = /admin access required|forbidden|not allowed|403/i.test(message) ? 403 : 400;
+      sendJson(res, status, { ok: false, error: message });
+    }
+    return;
+  }
+
+  if (req.method === "GET" && requestUrl.pathname === "/company/payroll/templates") {
+    try {
+      const actor = await requireSessionUser(getBearerToken(req));
+      const activeOnly = String(requestUrl.searchParams.get("activeOnly") || "").trim() === "true";
+      const items = await listCompanySalaryTemplates({ actorUserId: actor.id, companyId: actor.companyId, activeOnly });
+      sendJson(res, 200, { ok: true, result: { items } });
+    } catch (error) {
+      const message = String(error?.message || error);
+      const status = /admin access required|forbidden|not allowed|403/i.test(message) ? 403 : 400;
+      sendJson(res, status, { ok: false, error: message });
+    }
+    return;
+  }
+
+  if (req.method === "POST" && requestUrl.pathname === "/company/payroll/templates") {
+    try {
+      const actor = await requireSessionUser(getBearerToken(req));
+      const body = await readJsonBody(req);
+      const saved = await saveCompanySalaryTemplate({
+        actorUserId: actor.id,
+        companyId: actor.companyId,
+        template: body?.template && typeof body.template === "object" ? body.template : body
+      });
+      sendJson(res, 200, { ok: true, result: saved });
     } catch (error) {
       const message = String(error?.message || error);
       const status = /admin access required|forbidden|not allowed|403/i.test(message) ? 403 : 400;

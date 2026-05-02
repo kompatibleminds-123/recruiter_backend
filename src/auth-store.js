@@ -831,6 +831,23 @@ function sanitizeFbpHead(raw) {
     updatedBy: String(raw.updatedBy || raw.updated_by || "").trim()
   };
 }
+function sanitizeSalaryTemplate(raw) {
+  if (!raw) return null;
+  const config = raw.config && typeof raw.config === "object" ? raw.config : {};
+  return {
+    id: String(raw.id || "").trim(),
+    companyId: String(raw.companyId || raw.company_id || "").trim(),
+    code: String(raw.code || "").trim().toLowerCase(),
+    name: String(raw.name || "").trim(),
+    description: String(raw.description || "").trim(),
+    config,
+    active: Boolean(raw.active ?? true),
+    createdAt: String(raw.createdAt || raw.created_at || "").trim(),
+    updatedAt: String(raw.updatedAt || raw.updated_at || "").trim(),
+    createdBy: String(raw.createdBy || raw.created_by || "").trim(),
+    updatedBy: String(raw.updatedBy || raw.updated_by || "").trim()
+  };
+}
 function persistedAssessmentId(rawId) {
   const v = String(rawId || "").trim();
   if (!v || /^(quick-note|assessment)-/i.test(v)) return crypto.randomUUID();
@@ -2223,6 +2240,66 @@ async function removeCompanyFbpHead({ actorUserId, companyId, headId }) {
   await sbDel("fbp_heads", `id=eq.${enc(safeHeadId)}&company_id=eq.${enc(companyId)}`);
   return { deleted: true, headId: safeHeadId };
 }
+async function listCompanySalaryTemplates({ actorUserId, companyId, activeOnly = false }) {
+  await requireAdminForCompany({ actorUserId, companyId });
+  if (!cfg().on) {
+    const store = readStore();
+    return (store.salaryTemplates || [])
+      .filter((item) => String(item.companyId || "") === String(companyId))
+      .filter((item) => !activeOnly || Boolean(item.active))
+      .map(sanitizeSalaryTemplate)
+      .filter(Boolean)
+      .sort((a, b) => String(a.name || "").localeCompare(String(b.name || "")));
+  }
+  await ensureSeeded();
+  const filters = [
+    `company_id=eq.${enc(companyId)}`,
+    activeOnly ? "active=eq.true" : "",
+    "order=name.asc"
+  ].filter(Boolean).join("&");
+  const rows = await sbSel("salary_templates", `select=*&${filters}`);
+  return (rows || []).map(sanitizeSalaryTemplate).filter(Boolean);
+}
+async function saveCompanySalaryTemplate({ actorUserId, companyId, template = {} }) {
+  const actor = await requireAdminForCompany({ actorUserId, companyId });
+  const now = new Date().toISOString();
+  const name = String(template.name || "").trim();
+  const code = String(template.code || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+  if (!name) throw new Error("Template name is required.");
+  if (!code) throw new Error("Template code is required.");
+  const config = template.config && typeof template.config === "object" ? template.config : {};
+  const payload = {
+    id: String(template.id || "").trim() || crypto.randomUUID(),
+    company_id: companyId,
+    code,
+    name,
+    description: String(template.description || "").trim(),
+    config,
+    active: template.active !== false,
+    updated_at: now,
+    updated_by: actor.id
+  };
+  if (!cfg().on) {
+    const store = readStore();
+    store.salaryTemplates = Array.isArray(store.salaryTemplates) ? store.salaryTemplates : [];
+    const ix = store.salaryTemplates.findIndex((item) => String(item.id || "") === payload.id);
+    if (ix >= 0) store.salaryTemplates[ix] = { ...store.salaryTemplates[ix], ...payload };
+    else store.salaryTemplates.push({ ...payload, createdAt: now, createdBy: actor.id, companyId });
+    writeStore(store);
+    return sanitizeSalaryTemplate(store.salaryTemplates.find((item) => String(item.id || "") === payload.id));
+  }
+  await ensureSeeded();
+  const rows = await sbIns("salary_templates", [{
+    ...payload,
+    created_at: now,
+    created_by: actor.id
+  }], { conflict: "id", upsert: true });
+  return sanitizeSalaryTemplate(rows?.[0]);
+}
 async function createEmployeeUser({ actorUserId, companyId, employeeCode, username, password, fullName, profile = {}, workSite = {} }) {
   const actor = sanitizeUser(await getUserById(actorUserId, companyId));
   if (!actor || actor.role !== "admin") throw new Error("Only an admin for this company can create employee accounts.");
@@ -3078,6 +3155,7 @@ module.exports = {
   getSessionUser,
   incrementCompanyCaptureUsage,
   listCompanyEmployees,
+  listCompanySalaryTemplates,
   listCompanyFbpHeads,
   listEmployeeCompensationStructures,
   listCompaniesAndUsersSummary,
@@ -3101,6 +3179,7 @@ module.exports = {
   removeCompanyFbpHead,
   saveEmployeeProfile,
   saveCompanyFbpHead,
+  saveCompanySalaryTemplate,
   saveCompanyPayrollSettings,
   saveEmployeeCompensationStructure,
   updateEmployeeProfileAndWorkSite,

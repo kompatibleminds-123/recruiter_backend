@@ -12758,6 +12758,45 @@ function getCurrentPositionAsync() {
 }
 
 function PayrollLiteAdminPage({ token, employees = [] }) {
+  function round2(value) {
+    const n = Number(value || 0);
+    return Number.isFinite(n) ? Math.round(n * 100) / 100 : 0;
+  }
+  function calculateCompFromTemplate({ annualCtc, templateConfig = {} }) {
+    const annual = Math.max(0, Number(annualCtc || 0));
+    const monthlyCtc = round2(annual / 12);
+    const basicPct = Number(templateConfig.basic_percent_of_ctc ?? 35);
+    const hraPctBasic = Number(templateConfig.hra_percent_of_basic ?? 50);
+    const employerPfPctBasic = Number(templateConfig.employer_pf_percent_of_basic ?? 12);
+    const employeePfPctBasic = Number(templateConfig.employee_pf_percent_of_basic ?? 12);
+    const gratuityPctBasicAnnual = Number(templateConfig.gratuity_percent_of_basic_annual ?? 4.81);
+    const fbpMonthly = Number(templateConfig.default_fbp_monthly ?? 0);
+    const healthAnnual = Number(templateConfig.default_health_insurance_annual ?? 0);
+
+    const basicMonthly = round2(monthlyCtc * (basicPct / 100));
+    const hraMonthly = round2(basicMonthly * (hraPctBasic / 100));
+    const employerPfMonthly = round2(basicMonthly * (employerPfPctBasic / 100));
+    const employeePfMonthly = round2(basicMonthly * (employeePfPctBasic / 100));
+    const gratuityMonthly = round2((basicMonthly * 12 * (gratuityPctBasicAnnual / 100)) / 12);
+    const healthInsuranceMonthly = round2(healthAnnual / 12);
+    const specialAllowanceMonthly = round2(
+      monthlyCtc - basicMonthly - hraMonthly - fbpMonthly - healthInsuranceMonthly
+    );
+
+    return {
+      monthlyCtc,
+      basicMonthly,
+      hraMonthly,
+      fbpMonthly,
+      specialAllowanceMonthly: Math.max(0, specialAllowanceMonthly),
+      employerPfMonthly,
+      employeePfMonthly,
+      gratuityMonthly,
+      healthInsuranceMonthly,
+      otherAllowanceMonthly: 0
+    };
+  }
+
   const [settings, setSettings] = useState({
     payrollEnabled: false,
     defaultFbpProofCycle: "quarterly",
@@ -12769,6 +12808,7 @@ function PayrollLiteAdminPage({ token, employees = [] }) {
   });
   const [compItems, setCompItems] = useState([]);
   const [fbpHeads, setFbpHeads] = useState([]);
+  const [salaryTemplates, setSalaryTemplates] = useState([]);
   const [status, setStatus] = useState("");
   const [compForm, setCompForm] = useState({
     employeeId: "",
@@ -12789,6 +12829,7 @@ function PayrollLiteAdminPage({ token, employees = [] }) {
     notes: ""
   });
   const [fbpForm, setFbpForm] = useState({
+    id: "",
     headName: "",
     monthlyLimit: "",
     annualLimit: "",
@@ -12796,16 +12837,32 @@ function PayrollLiteAdminPage({ token, employees = [] }) {
     taxableIfUnclaimed: true,
     active: true
   });
+  const [templateForm, setTemplateForm] = useState({
+    id: "",
+    code: "",
+    name: "",
+    description: "",
+    basicPercentOfCtc: 35,
+    hraPercentOfBasic: 50,
+    employerPfPercentOfBasic: 12,
+    employeePfPercentOfBasic: 12,
+    gratuityPercentOfBasicAnnual: 4.81,
+    defaultFbpMonthly: 0,
+    defaultHealthInsuranceAnnual: 0,
+    active: true
+  });
 
   async function loadPayrollFoundation() {
-    const [settingsResult, compResult, fbpResult] = await Promise.all([
+    const [settingsResult, compResult, fbpResult, templateResult] = await Promise.all([
       api("/company/payroll/settings", token).catch(() => null),
       api("/company/payroll/compensation", token).catch(() => ({ items: [] })),
-      api("/company/payroll/fbp-heads", token).catch(() => ({ items: [] }))
+      api("/company/payroll/fbp-heads", token).catch(() => ({ items: [] })),
+      api("/company/payroll/templates", token).catch(() => ({ items: [] }))
     ]);
     if (settingsResult) setSettings((current) => ({ ...current, ...settingsResult }));
     setCompItems(Array.isArray(compResult?.items) ? compResult.items : []);
     setFbpHeads(Array.isArray(fbpResult?.items) ? fbpResult.items : []);
+    setSalaryTemplates(Array.isArray(templateResult?.items) ? templateResult.items : []);
   }
 
   useEffect(() => {
@@ -12845,6 +12902,27 @@ function PayrollLiteAdminPage({ token, employees = [] }) {
       setStatus(String(error?.message || error));
     }
   }
+  function autoFillCompensation(templateCode, annualCtcValue) {
+    const annualCtc = Number(annualCtcValue || 0);
+    const template = salaryTemplates.find((item) => item.code === templateCode);
+    if (!template || !annualCtc || templateCode === "custom") return;
+    const auto = calculateCompFromTemplate({ annualCtc, templateConfig: template.config || {} });
+    setCompForm((c) => ({
+      ...c,
+      templateCode,
+      annualCtc,
+      monthlyCtc: auto.monthlyCtc,
+      basicMonthly: auto.basicMonthly,
+      hraMonthly: auto.hraMonthly,
+      fbpMonthly: auto.fbpMonthly,
+      specialAllowanceMonthly: auto.specialAllowanceMonthly,
+      employerPfMonthly: auto.employerPfMonthly,
+      employeePfMonthly: auto.employeePfMonthly,
+      gratuityMonthly: auto.gratuityMonthly,
+      healthInsuranceMonthly: auto.healthInsuranceMonthly,
+      otherAllowanceMonthly: auto.otherAllowanceMonthly
+    }));
+  }
 
   async function saveFbpHead() {
     try {
@@ -12854,9 +12932,54 @@ function PayrollLiteAdminPage({ token, employees = [] }) {
         monthlyLimit: Number(fbpForm.monthlyLimit || 0),
         annualLimit: Number(fbpForm.annualLimit || 0)
       });
-      setFbpForm({ headName: "", monthlyLimit: "", annualLimit: "", proofRequired: true, taxableIfUnclaimed: true, active: true });
+      setFbpForm({ id: "", headName: "", monthlyLimit: "", annualLimit: "", proofRequired: true, taxableIfUnclaimed: true, active: true });
       await loadPayrollFoundation();
       setStatus("FBP head saved.");
+    } catch (error) {
+      setStatus(String(error?.message || error));
+    }
+  }
+  async function saveTemplate() {
+    try {
+      setStatus("Saving salary template...");
+      await api("/company/payroll/templates", token, "POST", {
+        id: templateForm.id || undefined,
+        code: templateForm.code,
+        name: templateForm.name,
+        description: templateForm.description,
+        active: templateForm.active,
+        config: {
+          basic_percent_of_ctc: Number(templateForm.basicPercentOfCtc || 0),
+          hra_percent_of_basic: Number(templateForm.hraPercentOfBasic || 0),
+          employer_pf_percent_of_basic: Number(templateForm.employerPfPercentOfBasic || 0),
+          employee_pf_percent_of_basic: Number(templateForm.employeePfPercentOfBasic || 0),
+          gratuity_percent_of_basic_annual: Number(templateForm.gratuityPercentOfBasicAnnual || 0),
+          default_fbp_monthly: Number(templateForm.defaultFbpMonthly || 0),
+          default_health_insurance_annual: Number(templateForm.defaultHealthInsuranceAnnual || 0)
+        }
+      });
+      setTemplateForm({
+        id: "", code: "", name: "", description: "",
+        basicPercentOfCtc: 35, hraPercentOfBasic: 50, employerPfPercentOfBasic: 12, employeePfPercentOfBasic: 12,
+        gratuityPercentOfBasicAnnual: 4.81, defaultFbpMonthly: 0, defaultHealthInsuranceAnnual: 0, active: true
+      });
+      await loadPayrollFoundation();
+      setStatus("Salary template saved.");
+    } catch (error) {
+      setStatus(String(error?.message || error));
+    }
+  }
+  async function saveCompanyFbpHeadDeactivate(headId) {
+    try {
+      const row = fbpHeads.find((item) => item.id === headId);
+      if (!row) return;
+      setStatus("Updating FBP head...");
+      await api("/company/payroll/fbp-heads", token, "POST", {
+        ...row,
+        active: false
+      });
+      await loadPayrollFoundation();
+      setStatus("FBP head deactivated.");
     } catch (error) {
       setStatus(String(error?.message || error));
     }
@@ -12879,12 +13002,38 @@ function PayrollLiteAdminPage({ token, employees = [] }) {
         <div className="button-row"><button onClick={() => void saveSettings()}>Save settings</button></div>
       </Section>
 
+      <Section kicker="Salary Templates" title="Create Template Automation Rules">
+        <div className="form-grid three-col">
+          <label><span>Template code</span><input value={templateForm.code} onChange={(e) => setTemplateForm((c) => ({ ...c, code: e.target.value }))} placeholder="internal_standard" /></label>
+          <label><span>Template name</span><input value={templateForm.name} onChange={(e) => setTemplateForm((c) => ({ ...c, name: e.target.value }))} placeholder="Internal Employee Standard" /></label>
+          <label><span>Active</span><select value={templateForm.active ? "true" : "false"} onChange={(e) => setTemplateForm((c) => ({ ...c, active: e.target.value === "true" }))}><option value="true">Active</option><option value="false">Inactive</option></select></label>
+          <label className="full"><span>Description</span><input value={templateForm.description} onChange={(e) => setTemplateForm((c) => ({ ...c, description: e.target.value }))} placeholder="Used for internal payroll defaults" /></label>
+          <label><span>Basic % of CTC</span><input type="number" value={templateForm.basicPercentOfCtc} onChange={(e) => setTemplateForm((c) => ({ ...c, basicPercentOfCtc: e.target.value }))} /></label>
+          <label><span>HRA % of Basic</span><input type="number" value={templateForm.hraPercentOfBasic} onChange={(e) => setTemplateForm((c) => ({ ...c, hraPercentOfBasic: e.target.value }))} /></label>
+          <label><span>Employer PF % of Basic</span><input type="number" value={templateForm.employerPfPercentOfBasic} onChange={(e) => setTemplateForm((c) => ({ ...c, employerPfPercentOfBasic: e.target.value }))} /></label>
+          <label><span>Employee PF % of Basic</span><input type="number" value={templateForm.employeePfPercentOfBasic} onChange={(e) => setTemplateForm((c) => ({ ...c, employeePfPercentOfBasic: e.target.value }))} /></label>
+          <label><span>Gratuity % of Basic (annual)</span><input type="number" value={templateForm.gratuityPercentOfBasicAnnual} onChange={(e) => setTemplateForm((c) => ({ ...c, gratuityPercentOfBasicAnnual: e.target.value }))} /></label>
+          <label><span>Default FBP (monthly)</span><input type="number" value={templateForm.defaultFbpMonthly} onChange={(e) => setTemplateForm((c) => ({ ...c, defaultFbpMonthly: e.target.value }))} /></label>
+          <label><span>Default health insurance (annual)</span><input type="number" value={templateForm.defaultHealthInsuranceAnnual} onChange={(e) => setTemplateForm((c) => ({ ...c, defaultHealthInsuranceAnnual: e.target.value }))} /></label>
+        </div>
+        <div className="button-row"><button onClick={() => void saveTemplate()}>Save template</button></div>
+        <div className="table-wrap">
+          <table className="dashboard-table">
+            <thead><tr><th>Code</th><th>Name</th><th>Basic%</th><th>HRA%</th><th>PF%</th><th>FBP</th><th>Status</th></tr></thead>
+            <tbody>
+              {salaryTemplates.map((item) => <tr key={item.id}><td>{item.code}</td><td>{item.name}</td><td>{item.config?.basic_percent_of_ctc ?? "-"}</td><td>{item.config?.hra_percent_of_basic ?? "-"}</td><td>{item.config?.employer_pf_percent_of_basic ?? "-"}</td><td>{item.config?.default_fbp_monthly ?? 0}</td><td>{item.active ? "Active" : "Inactive"}</td></tr>)}
+              {!salaryTemplates.length ? <tr><td colSpan="7"><div className="empty-state compact-empty">No salary templates yet.</div></td></tr> : null}
+            </tbody>
+          </table>
+        </div>
+      </Section>
+
       <Section kicker="Compensation" title="Create Structure">
         <div className="form-grid three-col">
           <label><span>Employee</span><select value={compForm.employeeId} onChange={(e) => setCompForm((c) => ({ ...c, employeeId: e.target.value }))}><option value="">Select employee</option>{employees.map((emp) => <option key={emp.id} value={emp.id}>{emp.employeeCode} - {emp.fullName}</option>)}</select></label>
           <label><span>Effective from</span><input type="date" value={compForm.effectiveFrom} onChange={(e) => setCompForm((c) => ({ ...c, effectiveFrom: e.target.value }))} /></label>
-          <label><span>Template</span><select value={compForm.templateCode} onChange={(e) => setCompForm((c) => ({ ...c, templateCode: e.target.value }))}><option value="c2h_it_standard">C2H IT Standard</option><option value="custom">Custom</option></select></label>
-          <label><span>Annual CTC</span><input type="number" value={compForm.annualCtc} onChange={(e) => setCompForm((c) => ({ ...c, annualCtc: e.target.value }))} /></label>
+          <label><span>Template</span><select value={compForm.templateCode} onChange={(e) => { const next = e.target.value; setCompForm((c) => ({ ...c, templateCode: next })); autoFillCompensation(next, compForm.annualCtc); }}><option value="custom">Custom</option>{salaryTemplates.filter((item) => item.active).map((item) => <option key={item.id} value={item.code}>{item.name}</option>)}</select></label>
+          <label><span>Annual CTC</span><input type="number" value={compForm.annualCtc} onChange={(e) => { const next = e.target.value; setCompForm((c) => ({ ...c, annualCtc: next })); autoFillCompensation(compForm.templateCode, next); }} /></label>
           <label><span>Monthly CTC</span><input type="number" value={compForm.monthlyCtc} onChange={(e) => setCompForm((c) => ({ ...c, monthlyCtc: e.target.value }))} /></label>
           <label><span>Basic (monthly)</span><input type="number" value={compForm.basicMonthly} onChange={(e) => setCompForm((c) => ({ ...c, basicMonthly: e.target.value }))} /></label>
           <label><span>HRA (monthly)</span><input type="number" value={compForm.hraMonthly} onChange={(e) => setCompForm((c) => ({ ...c, hraMonthly: e.target.value }))} /></label>
@@ -12917,13 +13066,13 @@ function PayrollLiteAdminPage({ token, employees = [] }) {
           <label className="checkbox-row"><input type="checkbox" checked={fbpForm.taxableIfUnclaimed} onChange={(e) => setFbpForm((c) => ({ ...c, taxableIfUnclaimed: e.target.checked }))} /><span>Taxable if unclaimed</span></label>
           <label className="checkbox-row"><input type="checkbox" checked={fbpForm.active} onChange={(e) => setFbpForm((c) => ({ ...c, active: e.target.checked }))} /><span>Active</span></label>
         </div>
-        <div className="button-row"><button onClick={() => void saveFbpHead()}>Save FBP head</button></div>
+        <div className="button-row"><button onClick={() => void saveFbpHead()}>{fbpForm.id ? "Update FBP head" : "Save FBP head"}</button></div>
         <div className="table-wrap">
           <table className="dashboard-table">
-            <thead><tr><th>Head</th><th>Monthly</th><th>Annual</th><th>Proof</th><th>Status</th></tr></thead>
+            <thead><tr><th>Head</th><th>Monthly</th><th>Annual</th><th>Proof</th><th>Status</th><th>Actions</th></tr></thead>
             <tbody>
-              {fbpHeads.map((item) => <tr key={item.id}><td>{item.headName}</td><td>{item.monthlyLimit}</td><td>{item.annualLimit}</td><td>{item.proofRequired ? "Yes" : "No"}</td><td>{item.active ? "Active" : "Inactive"}</td></tr>)}
-              {!fbpHeads.length ? <tr><td colSpan="5"><div className="empty-state compact-empty">No FBP heads yet.</div></td></tr> : null}
+              {fbpHeads.map((item) => <tr key={item.id}><td>{item.headName}</td><td>{item.monthlyLimit}</td><td>{item.annualLimit}</td><td>{item.proofRequired ? "Yes" : "No"}</td><td>{item.active ? "Active" : "Inactive"}</td><td><div className="button-row tight"><button className="ghost-btn" onClick={() => setFbpForm({ id: item.id, headName: item.headName, monthlyLimit: item.monthlyLimit, annualLimit: item.annualLimit, proofRequired: item.proofRequired, taxableIfUnclaimed: item.taxableIfUnclaimed, active: item.active })}>Edit</button><button className="ghost-btn" onClick={() => void saveCompanyFbpHeadDeactivate(item.id)}>Deactivate</button></div></td></tr>)}
+              {!fbpHeads.length ? <tr><td colSpan="6"><div className="empty-state compact-empty">No FBP heads yet.</div></td></tr> : null}
             </tbody>
           </table>
         </div>
