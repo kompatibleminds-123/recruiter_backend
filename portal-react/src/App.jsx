@@ -13955,6 +13955,7 @@ function EmployeePortalApp({ token, onLogout }) {
   const [attendanceItems, setAttendanceItems] = useState([]);
   const [payrollDocs, setPayrollDocs] = useState([]);
   const [employeeFbpDeclarations, setEmployeeFbpDeclarations] = useState([]);
+  const [employeeFbpHeads, setEmployeeFbpHeads] = useState([]);
   const [employeeFbpForm, setEmployeeFbpForm] = useState({
     headName: "",
     declaredAmount: "",
@@ -13975,19 +13976,20 @@ function EmployeePortalApp({ token, onLogout }) {
     // Attendance endpoints may fail due to partial setup and should not auto-logout the user.
     const meResult = await api("/employee-auth/me", token);
     const now = new Date();
-    const [dashboardResult, attendanceResult, payrollDocsResult, fbpResult] = await Promise.all([
+    const [dashboardResult, attendanceResult, payrollDocsResult, fbpResult, fbpHeadsResult] = await Promise.all([
       api("/employee/dashboard", token).catch(() => ({ todayAttendance: null })),
       api(`/employee/attendance?dateFrom=${encodeURIComponent(monthStart)}&dateTo=${encodeURIComponent(today)}`, token)
         .catch(() => ({ items: [] })),
       api("/employee/payroll-docs", token).catch(() => ({ items: [] })),
-      api(`/employee/payroll/fbp-declarations?payrollMonth=${now.getMonth() + 1}&payrollYear=${now.getFullYear()}`, token)
-        .catch(() => ({ items: [] }))
+      api(`/employee/payroll/fbp-declarations?payrollMonth=${now.getMonth() + 1}&payrollYear=${now.getFullYear()}`, token).catch(() => ({ items: [] })),
+      api("/employee/payroll/fbp-heads", token).catch(() => ({ items: [] }))
     ]);
     setEmployeeUser(meResult.user || meResult);
     setTodayAttendance(dashboardResult.todayAttendance || null);
     setAttendanceItems(Array.isArray(attendanceResult.items) ? attendanceResult.items : []);
     setPayrollDocs(Array.isArray(payrollDocsResult.items) ? payrollDocsResult.items : []);
     setEmployeeFbpDeclarations(Array.isArray(fbpResult.items) ? fbpResult.items : []);
+    setEmployeeFbpHeads(Array.isArray(fbpHeadsResult.items) ? fbpHeadsResult.items : []);
   }
 
   useEffect(() => {
@@ -14189,9 +14191,10 @@ function EmployeePortalApp({ token, onLogout }) {
                       <td>{doc.publishedAt ? new Date(doc.publishedAt).toLocaleString() : "-"}</td>
                       <td>{Number(doc?.payload?.netSalary || doc?.payload?.net_salary || 0).toFixed(2)}</td>
                       <td>
-                        <button className="ghost-btn" onClick={() => setSelectedPayslipId(String(doc.id || ""))}>
-                          View Payslip
-                        </button>
+                        <div className="button-row tight">
+                          <button className="ghost-btn" onClick={() => setSelectedPayslipId(String(doc.id || ""))}>View Payslip</button>
+                          <button className="ghost-btn" onClick={() => window.open(`/employee/payroll/payslip?id=${encodeURIComponent(String(doc.id || ""))}`, "_blank", "noopener,noreferrer")}>Printable / PDF</button>
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -14233,7 +14236,12 @@ function EmployeePortalApp({ token, onLogout }) {
           </Section>
           <Section kicker="Payroll" title="My FBP Declarations">
             <div className="form-grid three-col">
-              <label><span>FBP Head</span><input value={employeeFbpForm.headName} onChange={(e) => setEmployeeFbpForm((c) => ({ ...c, headName: e.target.value }))} placeholder="Fuel / Internet / Meal" /></label>
+              <label><span>FBP Head</span>
+                <select value={employeeFbpForm.headName} onChange={(e) => setEmployeeFbpForm((c) => ({ ...c, headName: e.target.value }))}>
+                  <option value="">Select FBP head</option>
+                  {(employeeFbpHeads || []).map((h) => <option key={h.id || h.headName} value={h.headName}>{h.headName}</option>)}
+                </select>
+              </label>
               <label><span>Declared Amount</span><input type="number" value={employeeFbpForm.declaredAmount} onChange={(e) => setEmployeeFbpForm((c) => ({ ...c, declaredAmount: e.target.value }))} /></label>
               <label><span>Notes</span><input value={employeeFbpForm.notes} onChange={(e) => setEmployeeFbpForm((c) => ({ ...c, notes: e.target.value }))} placeholder="Optional" /></label>
               <label><span>Doc name</span><input value={employeeFbpForm.docLabel} onChange={(e) => setEmployeeFbpForm((c) => ({ ...c, docLabel: e.target.value }))} placeholder="Bill Apr" /></label>

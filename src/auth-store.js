@@ -2609,6 +2609,27 @@ async function listCompanyFbpHeads({ actorUserId, companyId, activeOnly = false 
   const rows = await sbSel("fbp_heads", `select=*&${filters}`);
   return (rows || []).map(sanitizeFbpHead).filter(Boolean);
 }
+async function listEmployeeCompanyFbpHeads({ employeeUser, activeOnly = true }) {
+  const actor = sanitizeEmployeeSessionUser(employeeUser);
+  if (!actor?.companyId) throw new Error("Employee session is required.");
+  if (!cfg().on) {
+    const store = readStore();
+    return (store.fbpHeads || [])
+      .filter((item) => String(item.companyId || item.company_id || "") === String(actor.companyId))
+      .filter((item) => !activeOnly || Boolean(item.active))
+      .map(sanitizeFbpHead)
+      .filter(Boolean)
+      .sort((a, b) => String(a.headName || "").localeCompare(String(b.headName || "")));
+  }
+  await ensureSeeded();
+  const filters = [
+    `company_id=eq.${enc(actor.companyId)}`,
+    activeOnly ? "active=eq.true" : "",
+    "order=head_name.asc"
+  ].filter(Boolean).join("&");
+  const rows = await sbSel("fbp_heads", `select=*&${filters}`);
+  return (rows || []).map(sanitizeFbpHead).filter(Boolean);
+}
 async function saveCompanyFbpHead({ actorUserId, companyId, head = {} }) {
   const actor = await requireAdminForCompany({ actorUserId, companyId, payrollPermission: "access" });
   const now = new Date().toISOString();
@@ -4198,6 +4219,7 @@ module.exports = {
   listCompanyEmployees,
   listCompanySalaryTemplates,
   listCompanyFbpHeads,
+  listEmployeeCompanyFbpHeads,
   listPayrollInputs,
   listPayrollRuns,
   listEmployeeCompensationStructures,

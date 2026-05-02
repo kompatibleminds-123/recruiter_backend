@@ -54,6 +54,7 @@ const {
   listCompanyEmployees,
   listCompanySalaryTemplates,
   listCompanyFbpHeads,
+  listEmployeeCompanyFbpHeads,
   listFbpDeclarations,
   listEmployeeFbpDeclarations,
   listPayrollInputs,
@@ -7213,6 +7214,63 @@ const server = http.createServer(async (req, res) => {
       sendJson(res, 200, { ok: true, result: { items } });
     } catch (error) {
       sendJson(res, 401, { ok: false, error: String(error.message || error) });
+    }
+    return;
+  }
+
+  if (req.method === "GET" && requestUrl.pathname === "/employee/payroll/fbp-heads") {
+    try {
+      const employeeUser = await requireEmployeeSessionUser(getBearerToken(req));
+      const items = await listEmployeeCompanyFbpHeads({ employeeUser, activeOnly: true });
+      sendJson(res, 200, { ok: true, result: { items } });
+    } catch (error) {
+      sendJson(res, 401, { ok: false, error: String(error.message || error) });
+    }
+    return;
+  }
+
+  if (req.method === "GET" && requestUrl.pathname === "/employee/payroll/payslip") {
+    try {
+      const employeeUser = await requireEmployeeSessionUser(getBearerToken(req));
+      const payslipId = String(requestUrl.searchParams.get("id") || "").trim();
+      if (!payslipId) throw new Error("Payslip id is required.");
+      const items = await listPayrollPayslips({
+        actorUserId: employeeUser.id,
+        companyId: employeeUser.companyId,
+        employeeId: employeeUser.employeeId
+      });
+      const doc = (items || []).find((item) => String(item.id || "") === payslipId);
+      if (!doc) throw new Error("Payslip not found.");
+      const p = doc.payload && typeof doc.payload === "object" ? doc.payload : {};
+      const currency = (n) => Number(n || 0).toFixed(2);
+      const html = `<!doctype html><html><head><meta charset="utf-8"/><title>Payslip ${doc.payrollMonth}/${doc.payrollYear}</title><style>
+      body{font-family:Arial,sans-serif;padding:20px;color:#111} h1{font-size:22px;margin:0 0 6px} .muted{color:#555;margin-bottom:12px}
+      table{border-collapse:collapse;width:100%;margin-top:10px} th,td{border:1px solid #ddd;padding:8px;text-align:left;font-size:13px}
+      th{background:#f7f9fc} .right{text-align:right}
+      </style></head><body>
+      <h1>Payslip</h1>
+      <div class="muted">${employeeUser.fullName || ""} | ${employeeUser.employeeCode || ""} | ${doc.payrollMonth}/${doc.payrollYear}</div>
+      <table><tbody>
+      <tr><th>Total Days</th><td>${p.totalDays ?? p.total_days ?? "-"}</td><th>Payable Days</th><td>${p.payableDays ?? p.payable_days ?? "-"}</td></tr>
+      <tr><th>Paid Leave</th><td>${p.paidLeaveDays ?? p.paid_leave_days ?? "-"}</td><th>LOP Days</th><td>${p.lopDays ?? p.lop_days ?? "-"}</td></tr>
+      <tr><th>LOP Deduction</th><td>${currency(p.lopAmount ?? p.lop_amount ?? 0)}</td><th>Net Salary</th><td>${currency(p.netSalary ?? p.net_salary ?? 0)}</td></tr>
+      </tbody></table>
+      <table><thead><tr><th>Earnings</th><th class="right">Amount</th><th>Deductions</th><th class="right">Amount</th></tr></thead><tbody>
+      <tr><td>Basic</td><td class="right">${currency(p.proratedBasic)}</td><td>Employee PF</td><td class="right">${currency(p.employeePf)}</td></tr>
+      <tr><td>HRA</td><td class="right">${currency(p.proratedHra)}</td><td>Employee ESI</td><td class="right">${currency(p.employeeEsi)}</td></tr>
+      <tr><td>FBP</td><td class="right">${currency(p.proratedFbp)}</td><td>Employee LWF</td><td class="right">${currency(p.employeeLwf)}</td></tr>
+      <tr><td>Special Allowance</td><td class="right">${currency(p.proratedSpecialAllowance)}</td><td>Professional Tax</td><td class="right">${currency(p.professionalTax)}</td></tr>
+      <tr><td>Other Earnings</td><td class="right">${currency(p.otherEarnings)}</td><td>TDS</td><td class="right">${currency(p.tds)}</td></tr>
+      <tr><td>Approved Reimbursements</td><td class="right">${currency(p.approvedReimbursements)}</td><td>Other Deductions</td><td class="right">${currency(p.otherDeductions)}</td></tr>
+      <tr><th>Gross Earnings</th><th class="right">${currency(p.grossEarnings)}</th><th>Gross Deductions</th><th class="right">${currency(p.grossDeductions)}</th></tr>
+      <tr><th colspan="3">Net Pay</th><th class="right">${currency(p.netSalary ?? p.net_salary ?? 0)}</th></tr>
+      </tbody></table>
+      <div class="muted" style="margin-top:10px">Use browser Print -> Save as PDF for PDF copy.</div>
+      </body></html>`;
+      res.writeHead(200, buildResponseHeaders(req, { "Content-Type": "text/html; charset=utf-8" }));
+      res.end(html);
+    } catch (error) {
+      sendJson(res, 400, { ok: false, error: String(error.message || error) });
     }
     return;
   }
