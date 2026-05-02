@@ -6136,8 +6136,6 @@ function PortalApp({ token, onLogout }) {
       const convertedAt = String(
         assessmentSharedAtMap.get(String(linkedAssessment?.id || assessmentId || "").trim())
           || statusHistoryConvertedAt
-          || linkedAssessment?.generatedAt
-          || linkedAssessment?.generated_at
           || linkedAssessment?.createdAt
           || linkedAssessment?.created_at
           || ""
@@ -12789,8 +12787,10 @@ function PayrollLiteAdminPage({ token, employees = [] }) {
     const employeePfMonthly = round2(basicMonthly * (employeePfPctBasic / 100));
     const gratuityMonthly = round2((basicMonthly * 12 * (gratuityPctBasicAnnual / 100)) / 12);
     const healthInsuranceMonthly = round2(healthAnnual / 12);
+    const fixedEmployerCost = round2(employerPfMonthly + gratuityMonthly + healthInsuranceMonthly + employerLwfMonthly);
+    const grossTarget = round2(Math.max(0, (monthlyCtc - fixedEmployerCost) / (1 + (employerEsiPctGross / 100))));
     const specialAllowanceMonthly = round2(
-      monthlyCtc - basicMonthly - hraMonthly - fbpMonthly - healthInsuranceMonthly
+      Math.max(0, grossTarget - basicMonthly - hraMonthly - fbpMonthly)
     );
     const provisionalGross = Math.max(0, round2(basicMonthly + hraMonthly + fbpMonthly + specialAllowanceMonthly));
     const employeeEsiMonthly = round2(provisionalGross * (employeeEsiPctGross / 100));
@@ -13162,6 +13162,24 @@ function PayrollLiteAdminPage({ token, employees = [] }) {
       setRunActionStatus("");
     }
   }
+  async function rollbackRunToCalculated() {
+    try {
+      if (!selectedRunId) throw new Error("Select a payroll run first.");
+      setRunActionStatus("Reverting run to calculated...");
+      await api("/company/payroll/runs/set-status", token, "POST", {
+        payrollRunId: selectedRunId,
+        status: "calculated",
+        reason: "Manual rollback by admin"
+      });
+      await loadPayrollExecutionData(payrollMonth, payrollYear);
+      const detail = await api(`/company/payroll/runs?runId=${encodeURIComponent(selectedRunId)}`, token).catch(() => null);
+      if (detail) setSelectedRunDetail(detail);
+      setRunActionStatus("Run moved back to calculated.");
+    } catch (error) {
+      setStatus(String(error?.message || error));
+      setRunActionStatus("");
+    }
+  }
 
   return (
     <div className="page-grid">
@@ -13336,6 +13354,7 @@ function PayrollLiteAdminPage({ token, employees = [] }) {
           <button className="ghost-btn" onClick={() => void runAction("calculate")} disabled={!selectedRunId}>Calculate</button>
           <button className="ghost-btn" onClick={() => void runAction("approve")} disabled={!selectedRunId}>Approve</button>
           <button className="ghost-btn" onClick={() => void runAction("lock")} disabled={!selectedRunId}>Lock</button>
+          <button className="ghost-btn" onClick={() => void rollbackRunToCalculated()} disabled={!selectedRunId}>Back to Calculated</button>
         </div>
         {runActionStatus ? <div className="status">{runActionStatus}</div> : null}
         <div className="table-wrap">
