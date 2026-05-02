@@ -4457,6 +4457,7 @@ function PortalApp({ token, onLogout }) {
     workSiteRadiusMeters: "500"
   });
   const [employeePasswordDrafts, setEmployeePasswordDrafts] = useState({});
+  const [employeeEditDrafts, setEmployeeEditDrafts] = useState({});
   const [companyDraft, setCompanyDraft] = useState({ companyName: "", adminName: "", email: "", password: "", platformSecret: "" });
   const [clientUsers, setClientUsers] = useState([]);
   const availablePresetClients = useMemo(() => {
@@ -9461,6 +9462,73 @@ function PortalApp({ token, onLogout }) {
     }
   }
 
+  function getEmployeeEditDraft(item) {
+    const employeeId = String(item?.id || "").trim();
+    const existing = employeeEditDrafts[employeeId];
+    if (existing) return existing;
+    return {
+      designation: String(item?.designation || "").trim(),
+      clientName: String(item?.clientName || "").trim(),
+      workSiteName: String(item?.workSite?.siteName || "").trim(),
+      workSiteAddress: String(item?.workSite?.addressText || "").trim(),
+      workSiteLatitude: item?.workSite?.latitude == null ? "" : String(item.workSite.latitude),
+      workSiteLongitude: item?.workSite?.longitude == null ? "" : String(item.workSite.longitude),
+      workSiteRadiusMeters: String(item?.workSite?.radiusMeters || 500)
+    };
+  }
+
+  function setEmployeeEditField(employeeId, key, value) {
+    setEmployeeEditDrafts((current) => ({
+      ...current,
+      [employeeId]: {
+        ...(current[employeeId] || {}),
+        [key]: value
+      }
+    }));
+  }
+
+  async function saveEmployeeEdits(item) {
+    if (!isSettingsAdmin) {
+      setStatus("loginEmployee", "Only admin can edit employee details.", "error");
+      return;
+    }
+    const employeeId = String(item?.id || "").trim();
+    if (!employeeId) {
+      setStatus("loginEmployee", "Employee id missing.", "error");
+      return;
+    }
+    const draft = getEmployeeEditDraft(item);
+    try {
+      setStatus("loginEmployee", "Saving employee details...");
+      const latitude = Number(String(draft.workSiteLatitude || "").trim());
+      const longitude = Number(String(draft.workSiteLongitude || "").trim());
+      const radiusMeters = Number(String(draft.workSiteRadiusMeters || "").trim() || "500");
+      const payload = {
+        employeeId,
+        employeeCode: String(item?.employeeCode || "").trim(),
+        fullName: String(item?.fullName || "").trim(),
+        designation: String(draft.designation || "").trim(),
+        clientName: String(draft.clientName || "").trim(),
+        workSite: Number.isFinite(latitude) && Number.isFinite(longitude)
+          ? {
+              siteName: String(draft.workSiteName || "Primary Work Site").trim(),
+              addressText: String(draft.workSiteAddress || "").trim(),
+              clientName: String(draft.clientName || item?.clientName || "").trim(),
+              latitude,
+              longitude,
+              radiusMeters: Number.isFinite(radiusMeters) ? Math.max(50, radiusMeters) : 500,
+              isPrimary: true
+            }
+          : {}
+      };
+      await api("/company/employees/update", token, "POST", payload);
+      await reloadLoginSettingsWorkspace();
+      setStatus("loginEmployee", "Employee details updated.", "ok");
+    } catch (error) {
+      setStatus("loginEmployee", String(error?.message || error), "error");
+    }
+  }
+
   async function resetClientPortalPassword(clientUserId) {
     if (!isSettingsAdmin) {
       setStatus("loginClient", "Only admin can reset client passwords.", "error");
@@ -12189,7 +12257,13 @@ function PortalApp({ token, onLogout }) {
                             <p className="muted">{`${item.employeeCode || "No code"} | ${item.username || "No username"}`}</p>
                             <div className="candidate-snippet">{[
                               item.designation ? `Designation: ${item.designation}` : "",
-                              item.clientName ? `Client: ${item.clientName}` : ""
+                              item.clientName ? `Client: ${item.clientName}` : "",
+                              item.workSite?.siteName ? `Site: ${item.workSite.siteName}` : "",
+                              item.workSite?.addressText ? `Address: ${item.workSite.addressText}` : "",
+                              item.workSite?.latitude != null && item.workSite?.longitude != null
+                                ? `Coordinates: ${item.workSite.latitude}, ${item.workSite.longitude}`
+                                : "",
+                              item.workSite?.radiusMeters ? `Radius: ${item.workSite.radiusMeters}m` : ""
                             ].filter(Boolean).join("\n") || "No optional employee details added yet."}</div>
                           </div>
                           {isSettingsAdmin && item.portalUserId ? (
@@ -12199,6 +12273,18 @@ function PortalApp({ token, onLogout }) {
                             </div>
                           ) : null}
                         </div>
+                        {isSettingsAdmin ? (
+                          <div className="form-grid two-col" style={{ marginTop: "0.75rem" }}>
+                            <label><span>Designation</span><input value={getEmployeeEditDraft(item).designation} onChange={(e) => setEmployeeEditField(item.id, "designation", e.target.value)} placeholder="Software Engineer" /></label>
+                            <label><span>Client name</span><input value={getEmployeeEditDraft(item).clientName} onChange={(e) => setEmployeeEditField(item.id, "clientName", e.target.value)} placeholder="Easyrewardz" /></label>
+                            <label><span>Work site name</span><input value={getEmployeeEditDraft(item).workSiteName} onChange={(e) => setEmployeeEditField(item.id, "workSiteName", e.target.value)} placeholder="Easyrewardz HQ" /></label>
+                            <label><span>Work site address</span><input value={getEmployeeEditDraft(item).workSiteAddress} onChange={(e) => setEmployeeEditField(item.id, "workSiteAddress", e.target.value)} placeholder="DLF Cyber City, Gurugram" /></label>
+                            <label><span>Latitude</span><input value={getEmployeeEditDraft(item).workSiteLatitude} onChange={(e) => setEmployeeEditField(item.id, "workSiteLatitude", e.target.value)} placeholder="28.4942" /></label>
+                            <label><span>Longitude</span><input value={getEmployeeEditDraft(item).workSiteLongitude} onChange={(e) => setEmployeeEditField(item.id, "workSiteLongitude", e.target.value)} placeholder="77.0890" /></label>
+                            <label><span>Radius (meters)</span><input value={getEmployeeEditDraft(item).workSiteRadiusMeters} onChange={(e) => setEmployeeEditField(item.id, "workSiteRadiusMeters", e.target.value)} placeholder="500" /></label>
+                            <div className="button-row align-end"><button onClick={() => void saveEmployeeEdits(item)}>Save details</button></div>
+                          </div>
+                        ) : null}
                       </article>
                     ))}
                   </div>

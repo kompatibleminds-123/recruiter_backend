@@ -72,6 +72,7 @@ const {
   resetUserPassword,
   saveAssessment,
   saveEmployeeProfile,
+  updateEmployeeProfileAndWorkSite,
   patchAssessmentCandidateLink,
   saveCompanyJob,
   saveCompanySharedExportPresets,
@@ -7045,6 +7046,44 @@ const server = http.createServer(async (req, res) => {
         password: String(body.password || ""),
         fullName: String(body.fullName || body.full_name || "").trim(),
         profile: {
+          personalEmail: String(body.personalEmail || body.personal_email || "").trim(),
+          phone: String(body.phone || "").trim(),
+          designation: String(body.designation || "").trim(),
+          employmentType: String(body.employmentType || body.employment_type || "c2h").trim(),
+          joiningDate: String(body.joiningDate || body.joining_date || "").trim(),
+          reportingManagerName: String(body.reportingManagerName || body.reporting_manager_name || "").trim(),
+          clientName: String(body.clientName || body.client_name || "").trim(),
+          workMode: String(body.workMode || body.work_mode || "").trim(),
+          status: String(body.status || "active").trim(),
+          payload: body.payload && typeof body.payload === "object" ? body.payload : {}
+        },
+        workSite: body.workSite && typeof body.workSite === "object" ? body.workSite : {}
+      });
+      sendJson(res, 200, { ok: true, result });
+    } catch (error) {
+      const message = String(error?.message || error);
+      let status = 400;
+      if (/invalid|missing session|unauthorized|401/i.test(message)) status = 401;
+      else if (/only an admin|not allowed|forbidden|403/i.test(message)) status = 403;
+      else if (/timed out|timeout|supabase.*failed|failed/i.test(message)) status = 500;
+      sendJson(res, status, { ok: false, error: message });
+    }
+    return;
+  }
+
+  if (req.method === "POST" && req.url === "/company/employees/update") {
+    try {
+      const actor = await requireSessionUser(getBearerToken(req));
+      const body = await readJsonBody(req);
+      const employeeId = String(body.employeeId || body.employee_id || "").trim();
+      const result = await updateEmployeeProfileAndWorkSite({
+        actorUserId: actor.id,
+        companyId: actor.companyId,
+        employeeId,
+        profile: {
+          id: employeeId,
+          employeeCode: String(body.employeeCode || body.employee_code || "").trim(),
+          fullName: String(body.fullName || body.full_name || "").trim(),
           personalEmail: String(body.personalEmail || body.personal_email || "").trim(),
           phone: String(body.phone || "").trim(),
           designation: String(body.designation || "").trim(),

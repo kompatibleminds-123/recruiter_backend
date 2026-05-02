@@ -1741,12 +1741,36 @@ async function listCompanyEmployees(companyId) {
       .filter((item) => String(item.companyId || "") === String(companyId))
       .map((item) => [String(item.employeeId || "").trim(), item])
   );
-  return profiles.map((profile) => ({
-    ...profile,
-    portalUserId: String(userMap.get(profile.id)?.id || "").trim(),
-    username: String(userMap.get(profile.id)?.username || "").trim(),
-    companyName: String(userMap.get(profile.id)?.companyName || "").trim()
+  const employees = await Promise.all(profiles.map(async (profile) => {
+    const sites = await getEmployeeWorkSites(companyId, profile.id).catch(() => []);
+    const primarySite = (sites || []).find((item) => item.isPrimary) || (sites || [])[0] || null;
+    return {
+      ...profile,
+      portalUserId: String(userMap.get(profile.id)?.id || "").trim(),
+      username: String(userMap.get(profile.id)?.username || "").trim(),
+      companyName: String(userMap.get(profile.id)?.companyName || "").trim(),
+      workSite: primarySite
+    };
   }));
+  return employees;
+}
+
+async function updateEmployeeProfileAndWorkSite({ actorUserId, companyId, employeeId, profile = {}, workSite = {} }) {
+  if (!employeeId) throw new Error("employeeId is required.");
+  const savedProfile = await saveEmployeeProfile({ actorUserId, companyId, employeeId, profile });
+  let savedSite = null;
+  if (workSite && typeof workSite === "object" && Object.keys(workSite).length) {
+    savedSite = await upsertEmployeeWorkSite({
+      companyId,
+      employeeId: savedProfile.id,
+      workSite,
+      updatedBy: String(savedProfile.updatedBy || "").trim()
+    });
+  }
+  return {
+    ...savedProfile,
+    workSite: savedSite
+  };
 }
 async function saveEmployeeProfile({ actorUserId, companyId, employeeId = "", profile = {} }) {
   const actor = sanitizeUser(await getUserById(actorUserId, companyId));
@@ -2669,6 +2693,7 @@ module.exports = {
   resetEmployeeUserPassword,
   resetUserPassword,
   saveEmployeeProfile,
+  updateEmployeeProfileAndWorkSite,
   saveCompanySharedExportPresets,
   setCompanyApplicantIntakeSecret,
   searchAssessments,
