@@ -12429,7 +12429,7 @@ function PortalApp({ token, onLogout }) {
 
           <Route path="/admin/payroll/settings" element={
             <PayrollRouteBoundary>
-              <PayrollLiteAdminPage token={token} employees={employeeUsers} />
+              <PayrollLiteAdminPage token={token} employees={employeeUsers} users={state.users} />
             </PayrollRouteBoundary>
           } />
 
@@ -12857,7 +12857,7 @@ function getCurrentPositionAsync() {
   });
 }
 
-function PayrollLiteAdminPage({ token, employees = [] }) {
+function PayrollLiteAdminPage({ token, employees = [], users = [] }) {
   const formatMoney = (value) => {
     const n = Number(value || 0);
     if (!Number.isFinite(n)) return "0.00";
@@ -13233,6 +13233,15 @@ function PayrollLiteAdminPage({ token, employees = [] }) {
     (payrollInputs || []).forEach((item) => map.set(String(item.employeeId || ""), item));
     return map;
   }, [payrollInputs]);
+  const userNameById = useMemo(() => {
+    const map = new Map();
+    (users || []).forEach((u) => {
+      const id = String(u?.id || "").trim();
+      if (!id) return;
+      map.set(id, String(u?.name || u?.email || "").trim() || id);
+    });
+    return map;
+  }, [users]);
   async function savePayrollInputRow(employeeId) {
     try {
       const existing = inputByEmployee.get(String(employeeId || "")) || {};
@@ -13826,7 +13835,7 @@ function PayrollLiteAdminPage({ token, employees = [] }) {
                     </td>
                     <td>{item.status || "-"}</td>
                     <td>{item.decidedAt ? new Date(item.decidedAt).toLocaleString() : "-"}</td>
-                    <td>{item.decidedBy ? String(item.decidedBy).slice(0, 8) : "-"}</td>
+                    <td>{item.decidedBy ? (userNameById.get(String(item.decidedBy || "").trim()) || String(item.decidedBy).slice(0, 8)) : "-"}</td>
                     <td>{item.rejectionReason || "-"}</td>
                     <td>{docs.length ? <a href={String(docs[0]?.url || "#")} target="_blank" rel="noreferrer">{String(docs[0]?.label || "Document")}</a> : "-"}</td>
                     <td>
