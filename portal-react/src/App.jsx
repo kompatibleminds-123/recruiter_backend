@@ -387,6 +387,12 @@ function formatEmployeeLocationStatusLabel(value) {
   if (key === "unknown") return "Unknown";
   return key.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 }
+function formatEmployeeCoordinatePair(latitude, longitude) {
+  const lat = Number(latitude);
+  const lng = Number(longitude);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return "-";
+  return `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
+}
 
 function formatClientPortalStatusLabel(value) {
   const normalized = normalizeAssessmentStatusLabel(value);
@@ -12849,9 +12855,13 @@ function EmployeePortalApp({ token, onLogout }) {
                   <tr>
                     <th>Date</th>
                     <th>Check In</th>
+                    <th>Check-In Status</th>
+                    <th>Check-In Location</th>
                     <th>Check Out</th>
-                    <th>Status</th>
-                    <th>Accuracy</th>
+                    <th>Check-Out Status</th>
+                    <th>Check-Out Location</th>
+                    <th>In Accuracy</th>
+                    <th>Out Accuracy</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -12859,12 +12869,16 @@ function EmployeePortalApp({ token, onLogout }) {
                     <tr key={item.id}>
                       <td>{item.attendanceDate || "-"}</td>
                       <td>{item.checkInAt ? new Date(item.checkInAt).toLocaleString() : "-"}</td>
+                      <td>{item.checkInAt ? formatEmployeeLocationStatusLabel(item.checkInLocationStatus || item.locationStatus) : "-"}</td>
+                      <td>{formatEmployeeCoordinatePair(item.checkInLatitude, item.checkInLongitude)}</td>
                       <td>{item.checkOutAt ? new Date(item.checkOutAt).toLocaleString() : "-"}</td>
-                      <td>{formatEmployeeLocationStatusLabel(item.locationStatus)}</td>
+                      <td>{item.checkOutAt ? formatEmployeeLocationStatusLabel(item.checkOutLocationStatus || item.locationStatus) : "-"}</td>
+                      <td>{formatEmployeeCoordinatePair(item.checkOutLatitude, item.checkOutLongitude)}</td>
                       <td>{item.checkInAccuracyMeters ? `${item.checkInAccuracyMeters} m` : "-"}</td>
+                      <td>{item.checkOutAccuracyMeters ? `${item.checkOutAccuracyMeters} m` : "-"}</td>
                     </tr>
                   ))}
-                  {!attendanceItems.length ? <tr><td colSpan="5"><div className="empty-state compact-empty">No attendance records yet.</div></td></tr> : null}
+                  {!attendanceItems.length ? <tr><td colSpan="9"><div className="empty-state compact-empty">No attendance records yet.</div></td></tr> : null}
                 </tbody>
               </table>
             </div>

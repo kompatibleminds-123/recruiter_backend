@@ -728,6 +728,8 @@ function sanitizeEmployeeSessionUser(raw) {
 }
 function sanitizeEmployeeAttendanceLog(raw) {
   if (!raw) return null;
+  const payload = raw.devicePayload || raw.device_payload || {};
+  const attendanceMeta = payload && typeof payload === "object" ? payload.attendanceMeta || {} : {};
   return {
     id: String(raw.id || "").trim(),
     companyId: String(raw.companyId || raw.company_id || "").trim(),
@@ -748,7 +750,11 @@ function sanitizeEmployeeAttendanceLog(raw) {
     siteId: String(raw.siteId || raw.site_id || "").trim(),
     locationStatus: String(raw.locationStatus || raw.location_status || "unknown").trim(),
     distanceFromSiteMeters: raw.distanceFromSiteMeters ?? raw.distance_from_site_meters ?? null,
-    devicePayload: raw.devicePayload || raw.device_payload || {},
+    checkInLocationStatus: String(raw.checkInLocationStatus || raw.check_in_location_status || attendanceMeta?.checkIn?.locationStatus || "").trim(),
+    checkOutLocationStatus: String(raw.checkOutLocationStatus || raw.check_out_location_status || attendanceMeta?.checkOut?.locationStatus || "").trim(),
+    checkInDistanceFromSiteMeters: raw.checkInDistanceFromSiteMeters ?? raw.check_in_distance_from_site_meters ?? attendanceMeta?.checkIn?.distanceFromSiteMeters ?? null,
+    checkOutDistanceFromSiteMeters: raw.checkOutDistanceFromSiteMeters ?? raw.check_out_distance_from_site_meters ?? attendanceMeta?.checkOut?.distanceFromSiteMeters ?? null,
+    devicePayload: payload && typeof payload === "object" ? payload : {},
     createdAt: String(raw.createdAt || raw.created_at || "").trim(),
     updatedAt: String(raw.updatedAt || raw.updated_at || "").trim()
   };
@@ -2054,6 +2060,7 @@ async function markEmployeeAttendance({ employeeUser, action, latitude, longitud
 
   if (safeAction === "check_in" && openLog) throw new Error("You are already checked in for today.");
   if (safeAction === "check_out" && !openLog) throw new Error("No open check-in found for today.");
+  const incomingDevicePayload = devicePayload && typeof devicePayload === "object" ? devicePayload : {};
 
   if (!cfg().on) {
     const store = readStore();
@@ -2079,7 +2086,20 @@ async function markEmployeeAttendance({ employeeUser, action, latitude, longitud
         siteId: String(primarySite?.id || "").trim(),
         locationStatus,
         distanceFromSiteMeters: distance,
-        devicePayload: devicePayload && typeof devicePayload === "object" ? devicePayload : {},
+        devicePayload: {
+          ...incomingDevicePayload,
+          attendanceMeta: {
+            ...(incomingDevicePayload.attendanceMeta && typeof incomingDevicePayload.attendanceMeta === "object" ? incomingDevicePayload.attendanceMeta : {}),
+            checkIn: {
+              capturedAt: now,
+              locationStatus,
+              distanceFromSiteMeters: distance,
+              latitude: Number.isFinite(Number(latitude)) ? Number(latitude) : null,
+              longitude: Number.isFinite(Number(longitude)) ? Number(longitude) : null,
+              accuracyMeters: Number.isFinite(Number(accuracyMeters)) ? Number(accuracyMeters) : null
+            }
+          }
+        },
         createdAt: now,
         updatedAt: now
       };
@@ -2099,7 +2119,23 @@ async function markEmployeeAttendance({ employeeUser, action, latitude, longitud
       checkOutNote: String(note || "").trim(),
       locationStatus,
       distanceFromSiteMeters: distance,
-      devicePayload: devicePayload && typeof devicePayload === "object" ? devicePayload : store.employeeAttendanceLogs[ix].devicePayload,
+      devicePayload: {
+        ...(store.employeeAttendanceLogs[ix].devicePayload && typeof store.employeeAttendanceLogs[ix].devicePayload === "object" ? store.employeeAttendanceLogs[ix].devicePayload : {}),
+        ...incomingDevicePayload,
+        attendanceMeta: {
+          ...((store.employeeAttendanceLogs[ix].devicePayload && typeof store.employeeAttendanceLogs[ix].devicePayload === "object" && store.employeeAttendanceLogs[ix].devicePayload.attendanceMeta && typeof store.employeeAttendanceLogs[ix].devicePayload.attendanceMeta === "object")
+            ? store.employeeAttendanceLogs[ix].devicePayload.attendanceMeta
+            : {}),
+          checkOut: {
+            capturedAt: now,
+            locationStatus,
+            distanceFromSiteMeters: distance,
+            latitude: Number.isFinite(Number(latitude)) ? Number(latitude) : null,
+            longitude: Number.isFinite(Number(longitude)) ? Number(longitude) : null,
+            accuracyMeters: Number.isFinite(Number(accuracyMeters)) ? Number(accuracyMeters) : null
+          }
+        }
+      },
       updatedAt: now
     };
     writeStore(store);
@@ -2108,6 +2144,20 @@ async function markEmployeeAttendance({ employeeUser, action, latitude, longitud
 
   await ensureSeeded();
   if (safeAction === "check_in") {
+    const nextDevicePayload = {
+      ...incomingDevicePayload,
+      attendanceMeta: {
+        ...(incomingDevicePayload.attendanceMeta && typeof incomingDevicePayload.attendanceMeta === "object" ? incomingDevicePayload.attendanceMeta : {}),
+        checkIn: {
+          capturedAt: now,
+          locationStatus,
+          distanceFromSiteMeters: distance,
+          latitude: Number.isFinite(Number(latitude)) ? Number(latitude) : null,
+          longitude: Number.isFinite(Number(longitude)) ? Number(longitude) : null,
+          accuracyMeters: Number.isFinite(Number(accuracyMeters)) ? Number(accuracyMeters) : null
+        }
+      }
+    };
     const rows = await sbIns("employee_attendance_logs", [{
       id: crypto.randomUUID(),
       company_id: actor.companyId,
@@ -2122,12 +2172,29 @@ async function markEmployeeAttendance({ employeeUser, action, latitude, longitud
       site_id: primarySite?.id || null,
       location_status: locationStatus,
       distance_from_site_meters: distance,
-      device_payload: devicePayload && typeof devicePayload === "object" ? devicePayload : {},
+      device_payload: nextDevicePayload,
       created_at: now,
       updated_at: now
     }], { conflict: "id", upsert: true });
     return sanitizeEmployeeAttendanceLog(rows?.[0]);
   }
+  const openPayload = openLog?.devicePayload && typeof openLog.devicePayload === "object" ? openLog.devicePayload : {};
+  const nextDevicePayload = {
+    ...openPayload,
+    ...incomingDevicePayload,
+    attendanceMeta: {
+      ...(openPayload.attendanceMeta && typeof openPayload.attendanceMeta === "object" ? openPayload.attendanceMeta : {}),
+      ...(incomingDevicePayload.attendanceMeta && typeof incomingDevicePayload.attendanceMeta === "object" ? incomingDevicePayload.attendanceMeta : {}),
+      checkOut: {
+        capturedAt: now,
+        locationStatus,
+        distanceFromSiteMeters: distance,
+        latitude: Number.isFinite(Number(latitude)) ? Number(latitude) : null,
+        longitude: Number.isFinite(Number(longitude)) ? Number(longitude) : null,
+        accuracyMeters: Number.isFinite(Number(accuracyMeters)) ? Number(accuracyMeters) : null
+      }
+    }
+  };
   const rows = await sbPatch("employee_attendance_logs", `id=eq.${enc(openLog.id)}&company_id=eq.${enc(actor.companyId)}`, {
     check_out_at: now,
     check_out_latitude: Number.isFinite(Number(latitude)) ? Number(latitude) : null,
@@ -2137,6 +2204,7 @@ async function markEmployeeAttendance({ employeeUser, action, latitude, longitud
     check_out_note: String(note || "").trim(),
     location_status: locationStatus,
     distance_from_site_meters: distance,
+    device_payload: nextDevicePayload,
     updated_at: now
   });
   return sanitizeEmployeeAttendanceLog(rows?.[0] || openLog);
