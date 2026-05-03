@@ -13914,15 +13914,12 @@ function PayrollAdminApp({ token, onLogout }) {
   const [status, setStatus] = useState("");
   async function loadPayrollAdminData() {
     await api("/payroll-auth/me", token);
-    const now = new Date();
-    const month = now.getMonth() + 1;
-    const year = now.getFullYear();
     const [employeesEnvelope, usersEnvelope, runsEnvelope, declarationsEnvelope, payslipsEnvelope] = await Promise.all([
       api("/company/employees", token).catch(() => ({ employees: [] })),
       api("/company/users", token).catch(() => ({ users: [] })),
-      api(`/company/payroll/runs?payrollMonth=${month}&payrollYear=${year}`, token).catch(() => ({ items: [] })),
-      api(`/company/payroll/fbp-declarations?payrollMonth=${month}&payrollYear=${year}`, token).catch(() => ({ items: [] })),
-      api(`/company/payroll/payslips?payrollMonth=${month}&payrollYear=${year}`, token).catch(() => ({ items: [] }))
+      api("/company/payroll/runs", token).catch(() => ({ items: [] })),
+      api("/company/payroll/fbp-declarations", token).catch(() => ({ items: [] })),
+      api("/company/payroll/payslips", token).catch(() => ({ items: [] }))
     ]);
     const employeeRows = Array.isArray(employeesEnvelope?.employees) ? employeesEnvelope.employees : [];
     const userRows = Array.isArray(usersEnvelope?.users) ? usersEnvelope.users : [];

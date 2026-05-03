@@ -138,9 +138,9 @@ export default function usePayrollAdminData({ token, employees = [], users = [],
   async function loadPayrollExecutionData(nextMonth = payrollMonth, nextYear = payrollYear) {
     const [inputResult, runResult, declarationResult, payslipResult] = await Promise.all([
       api(`/company/payroll/inputs?payrollMonth=${Number(nextMonth)}&payrollYear=${Number(nextYear)}`, token).catch(() => ({ items: [] })),
-      api(`/company/payroll/runs?payrollMonth=${Number(nextMonth)}&payrollYear=${Number(nextYear)}`, token).catch(() => ({ items: [] })),
-      api(`/company/payroll/fbp-declarations?payrollMonth=${Number(nextMonth)}&payrollYear=${Number(nextYear)}`, token).catch(() => ({ items: [] })),
-      api(`/company/payroll/payslips?payrollMonth=${Number(nextMonth)}&payrollYear=${Number(nextYear)}`, token).catch(() => ({ items: [] }))
+      api("/company/payroll/runs", token).catch(() => ({ items: [] })),
+      api("/company/payroll/fbp-declarations", token).catch(() => ({ items: [] })),
+      api("/company/payroll/payslips", token).catch(() => ({ items: [] }))
     ]);
     setPayrollInputs(Array.isArray(inputResult?.items) ? inputResult.items : []);
     const runs = Array.isArray(runResult?.items) ? runResult.items : [];
