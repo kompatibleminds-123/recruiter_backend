@@ -61,8 +61,7 @@
           <div><strong>Company ID:</strong> <span id="companyId">-</span></div>
           <div><strong>Email:</strong> <span id="email">-</span></div>
         </div>
-        <a id="contactBtn" class="btn" href="#" target="_blank" rel="noopener noreferrer">Continue on WhatsApp</a>
-        <button id="payBtn" class="btn" type="button" style="margin-left:8px; background:#1d4ed8;">Pay with Razorpay</button>
+        <button id="payBtn" class="btn" type="button" style="background:#1d4ed8;">Pay with Razorpay</button>
         <div class="muted small" id="expiresAt"></div>
         <div class="muted small">Payment checkout wiring can be plugged here (Razorpay/Stripe) in next step.</div>
       </div>
@@ -81,7 +80,6 @@
       const companyLabel = document.getElementById("companyId");
       const emailLabel = document.getElementById("email");
       const expiryLabel = document.getElementById("expiresAt");
-      const contactBtn = document.getElementById("contactBtn");
       const payBtn = document.getElementById("payBtn");
       let latestCtx = null;
 
@@ -111,10 +109,6 @@
             const d = new Date(Number(ctx.expiresAt));
             expiryLabel.textContent = Number.isFinite(d.getTime()) ? `Link expires: ${d.toLocaleString()}` : "";
           }
-          const msg = encodeURIComponent(
-            `Hi, I want to upgrade RecruitDesk.\nPlan: ${label}\nCompany ID: ${companyId || "-"}\nEmail: ${email || "-"}`
-          );
-          contactBtn.href = `https://wa.me/919999999999?text=${msg}`;
           if (!ctx.razorpayEnabled) {
             payBtn.style.display = "none";
           }
@@ -123,7 +117,6 @@
           planLabel.textContent = "Invalid";
           companyLabel.textContent = "-";
           emailLabel.textContent = "-";
-          contactBtn.style.display = "none";
           payBtn.style.display = "none";
           expiryLabel.textContent = String(error?.message || error);
         });
