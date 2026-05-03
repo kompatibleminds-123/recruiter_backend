@@ -12956,9 +12956,11 @@ function PayrollLiteAdminPage({ token, employees = [], users = [], viewMode = "a
       designation: String(employeeCreateDraft.designation || "").trim(),
       clientName: String(employeeCreateDraft.clientName || "").trim()
     };
-    if (!payload.employeeCode || !payload.username || !payload.fullName || !payload.password) {
+    if (!payload.employeeCode || !payload.username || !payload.fullName || (!employeeEditId && !payload.password)) {
       setEmployeeCreateStatusKind("error");
-      setEmployeeCreateStatus("Employee code, username, full name, and temporary password are required.");
+      setEmployeeCreateStatus(employeeEditId
+        ? "Employee code, username, and full name are required."
+        : "Employee code, username, full name, and temporary password are required.");
       return;
     }
     const latitudeRaw = String(employeeCreateDraft.workSiteLatitude || "").trim();
@@ -12992,7 +12994,8 @@ function PayrollLiteAdminPage({ token, employees = [], users = [], viewMode = "a
           fullName: payload.fullName,
           designation: payload.designation,
           clientName: payload.clientName,
-          status: "active"
+          status: "active",
+          workSite: payload.workSite || {}
         });
       } else {
         await api("/company/employees", token, "POST", payload);
@@ -13020,6 +13023,7 @@ function PayrollLiteAdminPage({ token, employees = [], users = [], viewMode = "a
     }
   }
   async function updateEmployeeFromPayroll(employee) {
+    const site = employee?.workSite && typeof employee.workSite === "object" ? employee.workSite : {};
     setEmployeeCreateDraft((current) => ({
       ...current,
       employeeCode: String(employee?.employeeCode || "").trim(),
@@ -13027,7 +13031,12 @@ function PayrollLiteAdminPage({ token, employees = [], users = [], viewMode = "a
       fullName: String(employee?.fullName || "").trim(),
       password: "",
       designation: String(employee?.designation || "").trim(),
-      clientName: String(employee?.clientName || "").trim()
+      clientName: String(employee?.clientName || "").trim(),
+      workSiteName: String(site?.siteName || "").trim(),
+      workSiteAddress: String(site?.addressText || "").trim(),
+      workSiteLatitude: site?.latitude == null ? "" : String(site.latitude),
+      workSiteLongitude: site?.longitude == null ? "" : String(site.longitude),
+      workSiteRadiusMeters: site?.radiusMeters == null ? "500" : String(site.radiusMeters)
     }));
     setEmployeeEditId(String(employee?.id || "").trim());
     setEmployeeCreateStatusKind("");
