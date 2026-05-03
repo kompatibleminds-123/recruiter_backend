@@ -14322,6 +14322,114 @@ function EmployeePortalApp({ token, onLogout }) {
   );
 }
 
+function PayrollAdminApp({ token, onLogout }) {
+  const location = useLocation();
+  const navigate = useNavigate();
+  const [employees, setEmployees] = useState([]);
+  const [users, setUsers] = useState([]);
+  const [summary, setSummary] = useState({
+    activeEmployees: 0,
+    monthlyPayrollAmount: 0,
+    pendingFbpClaims: 0,
+    pendingPayslips: 0,
+    missingCompliance: 0
+  });
+  const [status, setStatus] = useState("");
+
+  useEffect(() => {
+    const path = String(location?.pathname || "");
+    if (path === "/payroll" || path === "/payroll/") navigate("/payroll/dashboard", { replace: true });
+  }, [location?.pathname, navigate]);
+
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      try {
+        await api("/payroll-auth/me", token);
+        const now = new Date();
+        const month = now.getMonth() + 1;
+        const year = now.getFullYear();
+        const [employeesEnvelope, usersEnvelope, runsEnvelope, declarationsEnvelope, payslipsEnvelope] = await Promise.all([
+          api("/company/employees", token).catch(() => ({ employees: [] })),
+          api("/company/users", token).catch(() => ({ users: [] })),
+          api(`/company/payroll/runs?payrollMonth=${month}&payrollYear=${year}`, token).catch(() => ({ items: [] })),
+          api(`/company/payroll/fbp-declarations?payrollMonth=${month}&payrollYear=${year}`, token).catch(() => ({ items: [] })),
+          api(`/company/payroll/payslips?payrollMonth=${month}&payrollYear=${year}`, token).catch(() => ({ items: [] }))
+        ]);
+        if (!active) return;
+        const employeeRows = Array.isArray(employeesEnvelope?.employees) ? employeesEnvelope.employees : [];
+        const userRows = Array.isArray(usersEnvelope?.users) ? usersEnvelope.users : [];
+        const runRows = Array.isArray(runsEnvelope?.items) ? runsEnvelope.items : [];
+        const declarationRows = Array.isArray(declarationsEnvelope?.items) ? declarationsEnvelope.items : [];
+        const payslipRows = Array.isArray(payslipsEnvelope?.items) ? payslipsEnvelope.items : [];
+        setEmployees(employeeRows);
+        setUsers(userRows);
+        const latestRun = runRows[0] || null;
+        const monthlyPayrollAmount = Number(latestRun?.totals?.netSalary || latestRun?.totals?.net_salary || 0);
+        const pendingFbpClaims = declarationRows.filter((item) => String(item?.status || "").toLowerCase() === "pending").length;
+        const pendingPayslips = payslipRows.filter((item) => !item?.publishedAt && !item?.published_at).length;
+        const missingCompliance = employeeRows.filter((item) => !String(item?.pan || "").trim() || !String(item?.uan || "").trim() || !String(item?.bankAccountNumber || item?.bank_account_number || "").trim()).length;
+        setSummary({
+          activeEmployees: employeeRows.length,
+          monthlyPayrollAmount,
+          pendingFbpClaims,
+          pendingPayslips,
+          missingCompliance
+        });
+      } catch (error) {
+        if (!active) return;
+        setStatus(String(error?.message || error));
+      }
+    })();
+    return () => { active = false; };
+  }, [token]);
+
+  return (
+    <div className="portal-shell">
+      <aside className="sidebar">
+        <div>
+          <BrandLogo size="md" />
+          <p className="muted" style={{ margin: "0.35rem 0 1rem" }}>Payroll Admin</p>
+          <nav>
+            {PAYROLL_NAV_ITEMS.map((item) => (
+              <NavLink key={item.to} to={item.to}>{item.label}</NavLink>
+            ))}
+          </nav>
+        </div>
+        <button className="ghost-btn" onClick={onLogout}>Logout</button>
+      </aside>
+      <main className="main-panel">
+        {status ? <div className="status error">{status}</div> : null}
+        <Routes>
+          <Route path="/payroll/dashboard" element={
+            <div className="page-grid">
+              <Section kicker="Payroll Overview" title="Payroll Dashboard">
+                <div className="stats-grid">
+                  <article className="stat-card"><h3>Active Employees</h3><p>{summary.activeEmployees}</p></article>
+                  <article className="stat-card"><h3>Monthly Payroll Amount</h3><p>{Number(summary.monthlyPayrollAmount || 0).toFixed(2)}</p></article>
+                  <article className="stat-card"><h3>Pending FBP Claims</h3><p>{summary.pendingFbpClaims}</p></article>
+                  <article className="stat-card"><h3>Pending Payslips</h3><p>{summary.pendingPayslips}</p></article>
+                  <article className="stat-card"><h3>Missing PAN/UAN/Bank</h3><p>{summary.missingCompliance}</p></article>
+                </div>
+              </Section>
+            </div>
+          } />
+          <Route path="/payroll/runs" element={<PayrollLiteAdminPage token={token} employees={employees} users={users} />} />
+          <Route path="/payroll/employees" element={<Section kicker="Payroll Module" title="Employees"><div className="empty-state">Employees page is now under payroll shell. Detailed employee master wiring is next.</div></Section>} />
+          <Route path="/payroll/salary-structures" element={<Section kicker="Payroll Module" title="Salary Structures"><div className="empty-state">Salary structures module will be split here in next patch.</div></Section>} />
+          <Route path="/payroll/attendance-lop" element={<Section kicker="Payroll Module" title="Attendance / LOP Inputs"><div className="empty-state">Attendance and LOP input screen will be moved here in next patch.</div></Section>} />
+          <Route path="/payroll/fbp-claims" element={<Section kicker="Payroll Module" title="FBP Claims"><div className="empty-state">FBP approval and claims queue will be split here next.</div></Section>} />
+          <Route path="/payroll/payslips" element={<Section kicker="Payroll Module" title="Payslips"><div className="empty-state">Payslip publishing and archive view will be moved here next.</div></Section>} />
+          <Route path="/payroll/documents" element={<Section kicker="Payroll Module" title="Documents"><div className="empty-state">Payroll documents repository screen will be added here.</div></Section>} />
+          <Route path="/payroll/statutory-settings" element={<Section kicker="Payroll Module" title="Statutory Settings"><div className="empty-state">PF/ESI/LWF/PT settings split will be added here.</div></Section>} />
+          <Route path="/payroll/reports" element={<Section kicker="Payroll Module" title="Reports"><div className="empty-state">Payroll reports screen will be added here.</div></Section>} />
+          <Route path="*" element={<Navigate to="/payroll/dashboard" replace />} />
+        </Routes>
+      </main>
+    </div>
+  );
+}
+
 export default function App() {
   const clientPortalUrl = isClientPortalUrl();
   const employeePortalUrl = isEmployeePortalUrl();
@@ -14358,7 +14466,7 @@ export default function App() {
     if (authMode !== "payroll" || !token) return;
     const pathname = String(window.location.pathname || "");
     if (pathname === "/payroll" || pathname === "/payroll-login") {
-      window.history.replaceState({}, "", "/admin/payroll/settings");
+      window.history.replaceState({}, "", "/payroll/dashboard");
     }
   }, [authMode, token]);
 
@@ -14450,5 +14558,7 @@ export default function App() {
     ? <PortalErrorBoundary><ClientPortalApp token={token} onLogout={logout} /></PortalErrorBoundary>
     : authMode === "employee"
       ? <PortalErrorBoundary><EmployeePortalApp token={token} onLogout={logout} /></PortalErrorBoundary>
-      : <PortalErrorBoundary><PortalApp token={token} onLogout={logout} /></PortalErrorBoundary>;
+      : authMode === "payroll"
+        ? <PortalErrorBoundary><PayrollAdminApp token={token} onLogout={logout} /></PortalErrorBoundary>
+        : <PortalErrorBoundary><PortalApp token={token} onLogout={logout} /></PortalErrorBoundary>;
 }
