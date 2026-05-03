@@ -4522,6 +4522,7 @@ function PortalApp({ token, onLogout }) {
   const [activeCopyPresetId, setActiveCopyPresetId] = useState(copySettings.excelPreset || "compact_recruiter");
   const [newPresetDraft, setNewPresetDraft] = useState({ label: "", clientName: "", columns: "" });
   const [teamUserDraft, setTeamUserDraft] = useState({ name: "", email: "", password: "", role: "recruiter" });
+  const [payrollUserDraft, setPayrollUserDraft] = useState({ name: "", email: "", password: "", role: "payroll_owner" });
   const [teamPasswordDrafts, setTeamPasswordDrafts] = useState({});
   const [employeeUsers, setEmployeeUsers] = useState([]);
   const [employeeUserDraft, setEmployeeUserDraft] = useState({
@@ -4541,6 +4542,14 @@ function PortalApp({ token, onLogout }) {
   const [employeeEditDrafts, setEmployeeEditDrafts] = useState({});
   const [companyDraft, setCompanyDraft] = useState({ companyName: "", adminName: "", email: "", password: "", platformSecret: "" });
   const [clientUsers, setClientUsers] = useState([]);
+  const payrollWorkspaceUsers = useMemo(
+    () => (state.users || []).filter((item) => ["payroll_owner", "payroll_manager"].includes(String(item?.role || "").toLowerCase())),
+    [state.users]
+  );
+  const recruiterWorkspaceUsers = useMemo(
+    () => (state.users || []).filter((item) => !["payroll_owner", "payroll_manager"].includes(String(item?.role || "").toLowerCase())),
+    [state.users]
+  );
   const availablePresetClients = useMemo(() => {
     const values = new Set();
     (state.jobs || []).forEach((job) => {
@@ -12317,17 +12326,17 @@ function PortalApp({ token, onLogout }) {
                       <h2>Add Users</h2>
                     </div>
                   </summary>
-                  <p className="muted">Create admins, recruiters, and payroll users for this company workspace. Existing admin passwords are not reset from here for safety.</p>
+                  <p className="muted">Create admins and recruiters for this company workspace. Payroll users are managed in the separate Payroll Access section below.</p>
                   <div className="form-grid two-col">
                     <label><span>Member name</span><input disabled={!isSettingsAdmin} value={teamUserDraft.name} onChange={(e) => setTeamUserDraft((current) => ({ ...current, name: e.target.value }))} placeholder="Ankit Garg" /></label>
                     <label><span>Member email</span><input disabled={!isSettingsAdmin} type="email" value={teamUserDraft.email} onChange={(e) => setTeamUserDraft((current) => ({ ...current, email: e.target.value }))} placeholder="member@company.com" /></label>
-                    <label><span>Member role</span><select disabled={!isSettingsAdmin} value={teamUserDraft.role} onChange={(e) => setTeamUserDraft((current) => ({ ...current, role: e.target.value }))}><option value="recruiter">Recruiter</option><option value="admin">Admin</option><option value="payroll_owner">Payroll Owner</option><option value="payroll_manager">Payroll Manager</option></select></label>
+                    <label><span>Member role</span><select disabled={!isSettingsAdmin} value={teamUserDraft.role} onChange={(e) => setTeamUserDraft((current) => ({ ...current, role: e.target.value }))}><option value="recruiter">Recruiter</option><option value="admin">Admin</option></select></label>
                     <label><span>Temporary password</span><input disabled={!isSettingsAdmin} type="password" value={teamUserDraft.password} onChange={(e) => setTeamUserDraft((current) => ({ ...current, password: e.target.value }))} placeholder="Temporary password" /></label>
                   </div>
                   {isSettingsAdmin ? <div className="button-row"><button onClick={() => void createTeamUser()}>Create member</button></div> : null}
                   {statuses.loginTeam ? <div className={`status ${statuses.loginTeamKind || ""}`}>{statuses.loginTeam}</div> : null}
                   <div className="stack-list compact">
-                    {(state.users || []).map((item) => (
+                    {(recruiterWorkspaceUsers || []).map((item) => (
                       <article className="item-card compact-card" key={item.id}>
                         <div className="item-card__top">
                           <div>
@@ -12377,6 +12386,45 @@ function PortalApp({ token, onLogout }) {
                             <div className="form-grid" style={{ minWidth: "240px" }}>
                               <label><span>Reset password</span><input type="password" value={clientPasswordDrafts[item.id] || ""} onChange={(e) => setClientPasswordDrafts((current) => ({ ...current, [item.id]: e.target.value }))} placeholder="New password" /></label>
                               <div className="button-row"><button className="ghost-btn" onClick={() => void resetClientPortalPassword(item.id)}>Reset</button></div>
+                            </div>
+                          ) : null}
+                        </div>
+                      </article>
+                    ))}
+                  </div>
+                </details>
+
+                <details className="panel login-settings-collapse" open>
+                  <summary className="dashboard-group__summary">
+                    <div>
+                      <div className="section-kicker">Payroll Access</div>
+                      <h2>Add Payroll Users</h2>
+                    </div>
+                  </summary>
+                  <p className="muted">Payroll users login from `/payroll-login`. Payroll Owner can manage payroll access; Payroll Manager can operate payroll based on assigned permissions.</p>
+                  <div className="form-grid two-col">
+                    <label><span>Name</span><input disabled={!isSettingsAdmin} value={payrollUserDraft.name} onChange={(e) => setPayrollUserDraft((current) => ({ ...current, name: e.target.value }))} placeholder="Payroll user name" /></label>
+                    <label><span>Email</span><input disabled={!isSettingsAdmin} type="email" value={payrollUserDraft.email} onChange={(e) => setPayrollUserDraft((current) => ({ ...current, email: e.target.value }))} placeholder="payroll@company.com" /></label>
+                    <label><span>Role</span><select disabled={!isSettingsAdmin} value={payrollUserDraft.role} onChange={(e) => setPayrollUserDraft((current) => ({ ...current, role: e.target.value }))}><option value="payroll_owner">Payroll Owner</option><option value="payroll_manager">Payroll Manager</option></select></label>
+                    <label><span>Temporary password</span><input disabled={!isSettingsAdmin} type="password" value={payrollUserDraft.password} onChange={(e) => setPayrollUserDraft((current) => ({ ...current, password: e.target.value }))} placeholder="Temporary password" /></label>
+                  </div>
+                  {isSettingsAdmin ? <div className="button-row"><button onClick={() => void createPayrollUser()}>Create payroll user</button></div> : null}
+                  {statuses.loginPayroll ? <div className={`status ${statuses.loginPayrollKind || ""}`}>{statuses.loginPayroll}</div> : null}
+                  <div className="stack-list compact">
+                    {!payrollWorkspaceUsers.length ? <div className="empty-state">No payroll users yet.</div> : payrollWorkspaceUsers.map((item) => (
+                      <article className="item-card compact-card" key={item.id}>
+                        <div className="item-card__top">
+                          <div>
+                            <h3>{item.name}</h3>
+                            <p className="muted">{`${item.email} | ${formatWorkspaceUserRoleLabel(item.role)}`}</p>
+                          </div>
+                          {isSettingsAdmin ? (
+                            <div className="form-grid" style={{ minWidth: "260px" }}>
+                              <label><span>Reset password</span><input type="password" value={teamPasswordDrafts[item.id] || ""} onChange={(e) => setTeamPasswordDrafts((current) => ({ ...current, [item.id]: e.target.value }))} placeholder="New password" /></label>
+                              <div className="button-row tight">
+                                <button className="ghost-btn" onClick={() => void resetTeamUserPassword(item.id)}>Reset</button>
+                                <button className="ghost-btn" onClick={() => void deleteTeamUser(item.id)}>Remove</button>
+                              </div>
                             </div>
                           ) : null}
                         </div>
@@ -13375,6 +13423,27 @@ function EmployeePortalApp({ token, onLogout }) {
     setPayrollDocs(Array.isArray(payrollDocsResult.items) ? payrollDocsResult.items : []);
     setEmployeeFbpDeclarations(Array.isArray(fbpResult.items) ? fbpResult.items : []);
     setEmployeeFbpHeads(Array.isArray(fbpHeadsResult.items) ? fbpHeadsResult.items : []);
+  }
+  async function createPayrollUser() {
+    if (!isSettingsAdmin) {
+      setStatus("loginPayroll", "Only admin can add payroll users.", "error");
+      return;
+    }
+    try {
+      setStatus("loginPayroll", "Creating payroll user...");
+      const payload = {
+        name: String(payrollUserDraft.name || "").trim(),
+        email: String(payrollUserDraft.email || "").trim(),
+        password: String(payrollUserDraft.password || ""),
+        role: String(payrollUserDraft.role || "payroll_owner").trim()
+      };
+      await api("/company/users", token, "POST", payload);
+      await reloadLoginSettingsWorkspace();
+      setPayrollUserDraft({ name: "", email: "", password: "", role: "payroll_owner" });
+      setStatus("loginPayroll", "Payroll user created.", "ok");
+    } catch (error) {
+      setStatus("loginPayroll", String(error?.message || error), "error");
+    }
   }
 
   useEffect(() => {
