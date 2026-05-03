@@ -6493,7 +6493,12 @@ const server = http.createServer(async (req, res) => {
       const companyId = String(payload.companyId || "").trim();
       const planCode = String(payload.planCode || "").trim();
       const license = await getCompanyLicense(companyId);
-      const ownerAdminUserId = String(license?.ownerAdminUserId || "").trim();
+      let ownerAdminUserId = String(license?.ownerAdminUserId || "").trim();
+      if (!ownerAdminUserId) {
+        const users = await listCompanyUsers(companyId);
+        const admin = (users || []).find((item) => String(item?.role || "").trim().toLowerCase() === "admin") || null;
+        ownerAdminUserId = String(admin?.id || "").trim();
+      }
       if (!ownerAdminUserId) throw new Error("Could not identify company owner admin.");
       const upgraded = await setCompanyExtensionPlan({
         actorUserId: ownerAdminUserId,
