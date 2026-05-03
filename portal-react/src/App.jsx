@@ -12933,7 +12933,7 @@ function PayrollLiteAdminPage({ token, employees = [], users = [], viewMode = "a
     declarationDocUploading, suggestRecalculateAfterFbp, setSuggestRecalculateAfterFbp,
     accessControl, setAccessControl,
     showFoundation, showAccessControl, showTemplates, showCompensation, showInputs, showRuns, showFbpHeads, showFbpClaims, showPayslips,
-    loadPayrollExecutionData, saveSettings, savePayrollAccessControl, saveComp, autoFillCompensation, saveFbpHead, saveTemplate, saveCompanyFbpHeadDeactivate,
+    loadPayrollFoundation, loadPayrollExecutionData, saveSettings, savePayrollAccessControl, saveComp, autoFillCompensation, saveFbpHead, saveTemplate, saveCompanyFbpHeadDeactivate,
     inputByEmployee, userNameById, savePayrollInputRow, setInputField, createRunDraft, runAction, rollbackRunToCalculated, deleteSelectedRun, submitFbpDeclaration, uploadDeclarationDoc, reviewDeclaration, publishPayslipsForSelectedRun,
     updateCompField
   } = usePayrollAdminData({ token, employees, users, viewMode, api });
@@ -13001,6 +13001,78 @@ function PayrollLiteAdminPage({ token, employees = [], users = [], viewMode = "a
     } catch (error) {
       setEmployeeCreateStatusKind("error");
       setEmployeeCreateStatus(String(error?.message || error));
+    }
+  }
+  async function updateEmployeeFromPayroll(employee) {
+    try {
+      const payload = {
+        employeeId: String(employee?.id || "").trim(),
+        employeeCode: String(employee?.employeeCode || "").trim(),
+        fullName: String(employee?.fullName || "").trim(),
+        personalEmail: String(employee?.personalEmail || "").trim(),
+        phone: String(employee?.phone || "").trim(),
+        designation: String(employee?.designation || "").trim(),
+        employmentType: String(employee?.employmentType || "c2h").trim(),
+        joiningDate: String(employee?.joiningDate || "").trim(),
+        reportingManagerName: String(employee?.reportingManagerName || "").trim(),
+        clientName: String(employee?.clientName || "").trim(),
+        workMode: String(employee?.workMode || "").trim(),
+        status: String(employee?.status || "active").trim()
+      };
+      if (!payload.employeeId || !payload.employeeCode || !payload.fullName) throw new Error("Employee details missing.");
+      const nextName = typeof window !== "undefined" ? String(window.prompt("Edit full name", payload.fullName) || "").trim() : payload.fullName;
+      const nextDesignation = typeof window !== "undefined" ? String(window.prompt("Edit designation", payload.designation) || "").trim() : payload.designation;
+      const nextClientName = typeof window !== "undefined" ? String(window.prompt("Edit client name", payload.clientName) || "").trim() : payload.clientName;
+      if (!nextName) throw new Error("Full name is required.");
+      await api("/company/employees/update", token, "POST", {
+        ...payload,
+        fullName: nextName,
+        designation: nextDesignation,
+        clientName: nextClientName
+      });
+      setEmployeeCreateStatusKind("ok");
+      setEmployeeCreateStatus("Employee updated.");
+      if (typeof onEmployeesChanged === "function") await onEmployeesChanged();
+    } catch (error) {
+      setEmployeeCreateStatusKind("error");
+      setEmployeeCreateStatus(String(error?.message || error));
+    }
+  }
+  async function deactivateEmployeeFromPayroll(employee) {
+    try {
+      const yes = typeof window === "undefined" ? true : window.confirm(`Deactivate ${employee?.fullName || "employee"}?`);
+      if (!yes) return;
+      await api("/company/employees/update", token, "POST", {
+        employeeId: String(employee?.id || "").trim(),
+        employeeCode: String(employee?.employeeCode || "").trim(),
+        fullName: String(employee?.fullName || "").trim(),
+        personalEmail: String(employee?.personalEmail || "").trim(),
+        phone: String(employee?.phone || "").trim(),
+        designation: String(employee?.designation || "").trim(),
+        employmentType: String(employee?.employmentType || "c2h").trim(),
+        joiningDate: String(employee?.joiningDate || "").trim(),
+        reportingManagerName: String(employee?.reportingManagerName || "").trim(),
+        clientName: String(employee?.clientName || "").trim(),
+        workMode: String(employee?.workMode || "").trim(),
+        status: "inactive"
+      });
+      setEmployeeCreateStatusKind("ok");
+      setEmployeeCreateStatus("Employee deactivated.");
+      if (typeof onEmployeesChanged === "function") await onEmployeesChanged();
+    } catch (error) {
+      setEmployeeCreateStatusKind("error");
+      setEmployeeCreateStatus(String(error?.message || error));
+    }
+  }
+  async function deactivateCompensationFromPayroll(item) {
+    try {
+      const yes = typeof window === "undefined" ? true : window.confirm("Deactivate this salary structure?");
+      if (!yes) return;
+      await api("/company/payroll/compensation", token, "POST", { ...item, isActive: false });
+      await loadPayrollFoundation();
+      setStatus("Salary structure deactivated.");
+    } catch (error) {
+      setStatus(String(error?.message || error));
     }
   }
   return (
@@ -13131,7 +13203,7 @@ function PayrollLiteAdminPage({ token, employees = [], users = [], viewMode = "a
           <table className="dashboard-table">
             <thead><tr><th>Employee</th><th>Effective</th><th>Annual CTC</th><th>Status</th><th>Action</th></tr></thead>
             <tbody>
-              {compItems.map((item) => <tr key={item.id}><td>{employees.find((emp) => emp.id === item.employeeId)?.fullName || item.employeeId}</td><td>{item.effectiveFrom || "-"}</td><td>{item.annualCtc || 0}</td><td>{item.isActive ? "Active" : "Historical"}</td><td><button className="ghost-btn" onClick={() => setCompForm({
+              {compItems.map((item) => <tr key={item.id}><td>{employees.find((emp) => emp.id === item.employeeId)?.fullName || item.employeeId}</td><td>{item.effectiveFrom || "-"}</td><td>{item.annualCtc || 0}</td><td>{item.isActive ? "Active" : "Historical"}</td><td><div className="button-row tight"><button className="ghost-btn" onClick={() => setCompForm({
                 id: item.id,
                 employeeId: item.employeeId,
                 effectiveFrom: item.effectiveFrom || new Date().toISOString().slice(0, 10),
@@ -13154,7 +13226,7 @@ function PayrollLiteAdminPage({ token, employees = [], users = [], viewMode = "a
                 templateCode: item.templateCode || "custom",
                 isActive: item.isActive !== false,
                 notes: item.notes || ""
-              })}>Edit</button></td></tr>)}
+              })}>Edit</button><button className="ghost-btn" onClick={() => void deactivateCompensationFromPayroll(item)} disabled={item.isActive === false}>Deactivate</button></div></td></tr>)}
               {!compItems.length ? <tr><td colSpan="5"><div className="empty-state compact-empty">No compensation records yet.</div></td></tr> : null}
             </tbody>
           </table>
@@ -13179,7 +13251,7 @@ function PayrollLiteAdminPage({ token, employees = [], users = [], viewMode = "a
         {employeeCreateStatus ? <div className={`status ${employeeCreateStatusKind}`}>{employeeCreateStatus}</div> : null}
         <div className="table-wrap">
           <table className="dashboard-table">
-            <thead><tr><th>Employee</th><th>Code</th><th>Username</th><th>Designation</th><th>Client</th></tr></thead>
+            <thead><tr><th>Employee</th><th>Code</th><th>Username</th><th>Designation</th><th>Client</th><th>Status</th><th>Action</th></tr></thead>
             <tbody>
               {employees.map((item) => (
                 <tr key={item.id}>
@@ -13188,9 +13260,16 @@ function PayrollLiteAdminPage({ token, employees = [], users = [], viewMode = "a
                   <td>{item.username || "-"}</td>
                   <td>{item.designation || "-"}</td>
                   <td>{item.clientName || "-"}</td>
+                  <td>{String(item.status || "active")}</td>
+                  <td>
+                    <div className="button-row tight">
+                      <button className="ghost-btn" onClick={() => void updateEmployeeFromPayroll(item)}>Edit</button>
+                      <button className="ghost-btn" onClick={() => void deactivateEmployeeFromPayroll(item)} disabled={String(item.status || "").toLowerCase() === "inactive"}>Deactivate</button>
+                    </div>
+                  </td>
                 </tr>
               ))}
-              {!employees.length ? <tr><td colSpan="5"><div className="empty-state compact-empty">No employees found yet.</div></td></tr> : null}
+              {!employees.length ? <tr><td colSpan="7"><div className="empty-state compact-empty">No employees found yet.</div></td></tr> : null}
             </tbody>
           </table>
         </div>
