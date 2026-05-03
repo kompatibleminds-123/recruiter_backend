@@ -12444,74 +12444,6 @@ function PortalApp({ token, onLogout }) {
                 </details>
                 ) : null}
 
-                <details className="panel login-settings-collapse" open>
-                  <summary className="dashboard-group__summary">
-                    <div>
-                      <div className="section-kicker">Employee Access</div>
-                      <h2>Add Employee</h2>
-                    </div>
-                  </summary>
-                  <p className="muted">Create employee portal logins with the minimum required fields. Designation and client are optional helpers.</p>
-                  <div className="form-grid two-col">
-                    <label><span>Employee code</span><input disabled={!isSettingsAdmin} value={employeeUserDraft.employeeCode} onChange={(e) => setEmployeeUserDraft((current) => ({ ...current, employeeCode: e.target.value }))} placeholder="KM001" /></label>
-                    <label><span>Username</span><input disabled={!isSettingsAdmin} value={employeeUserDraft.username} onChange={(e) => setEmployeeUserDraft((current) => ({ ...current, username: e.target.value }))} placeholder="km001" /></label>
-                    <label><span>Full name</span><input disabled={!isSettingsAdmin} value={employeeUserDraft.fullName} onChange={(e) => setEmployeeUserDraft((current) => ({ ...current, fullName: e.target.value }))} placeholder="Rasel Ahmed" /></label>
-                    <label><span>Temporary password</span><input disabled={!isSettingsAdmin} type="password" value={employeeUserDraft.password} onChange={(e) => setEmployeeUserDraft((current) => ({ ...current, password: e.target.value }))} placeholder="Set employee password" /></label>
-                    <label><span>Designation (optional)</span><input disabled={!isSettingsAdmin} value={employeeUserDraft.designation} onChange={(e) => setEmployeeUserDraft((current) => ({ ...current, designation: e.target.value }))} placeholder="Software Engineer" /></label>
-                    <label><span>Client name (optional)</span><input disabled={!isSettingsAdmin} value={employeeUserDraft.clientName} onChange={(e) => setEmployeeUserDraft((current) => ({ ...current, clientName: e.target.value }))} placeholder="Easyrewardz" /></label>
-                    <label><span>Work site name (optional)</span><input disabled={!isSettingsAdmin} value={employeeUserDraft.workSiteName} onChange={(e) => setEmployeeUserDraft((current) => ({ ...current, workSiteName: e.target.value }))} placeholder="Easyrewardz HQ" /></label>
-                    <label><span>Work site address (optional)</span><input disabled={!isSettingsAdmin} value={employeeUserDraft.workSiteAddress} onChange={(e) => setEmployeeUserDraft((current) => ({ ...current, workSiteAddress: e.target.value }))} placeholder="DLF Cyber City, Gurugram" /></label>
-                    <label><span>Work site latitude (optional)</span><input disabled={!isSettingsAdmin} value={employeeUserDraft.workSiteLatitude} onChange={(e) => setEmployeeUserDraft((current) => ({ ...current, workSiteLatitude: e.target.value }))} placeholder="28.4942" /></label>
-                    <label><span>Work site longitude (optional)</span><input disabled={!isSettingsAdmin} value={employeeUserDraft.workSiteLongitude} onChange={(e) => setEmployeeUserDraft((current) => ({ ...current, workSiteLongitude: e.target.value }))} placeholder="77.0890" /></label>
-                    <label><span>Allowed radius (meters)</span><input disabled={!isSettingsAdmin} value={employeeUserDraft.workSiteRadiusMeters} onChange={(e) => setEmployeeUserDraft((current) => ({ ...current, workSiteRadiusMeters: e.target.value }))} placeholder="500" /></label>
-                  </div>
-                  {isSettingsAdmin ? <div className="button-row"><button onClick={() => void createEmployeePortalUser()}>Create employee login</button></div> : null}
-                  {statuses.loginEmployee ? <div className={`status ${statuses.loginEmployeeKind || ""}`}>{statuses.loginEmployee}</div> : null}
-                  <div className="stack-list compact">
-                    {!employeeUsers.length ? <div className="empty-state">No employee portal accounts created yet.</div> : employeeUsers.map((item) => (
-                      <details className="item-card compact-card login-settings-collapse" key={item.id}>
-                        <summary className="dashboard-group__summary">
-                          <div>
-                            <h3>{item.fullName || item.username || item.employeeCode}</h3>
-                            <p className="muted">{`${item.employeeCode || "No code"} | ${item.username || "No username"}`}</p>
-                          </div>
-                        </summary>
-                        <div className="item-card__top" style={{ marginTop: "0.6rem" }}>
-                          <div>
-                            <div className="candidate-snippet">{[
-                              item.designation ? `Designation: ${item.designation}` : "",
-                              item.clientName ? `Client: ${item.clientName}` : "",
-                              item.workSite?.siteName ? `Site: ${item.workSite.siteName}` : "",
-                              item.workSite?.addressText ? `Address: ${item.workSite.addressText}` : "",
-                              item.workSite?.latitude != null && item.workSite?.longitude != null
-                                ? `Coordinates: ${item.workSite.latitude}, ${item.workSite.longitude}`
-                                : "",
-                              item.workSite?.radiusMeters ? `Radius: ${item.workSite.radiusMeters}m` : ""
-                            ].filter(Boolean).join("\n") || "No optional employee details added yet."}</div>
-                          </div>
-                          {isSettingsAdmin && item.portalUserId ? (
-                            <div className="form-grid" style={{ minWidth: "240px" }}>
-                              <label><span>Reset password</span><input type="password" value={employeePasswordDrafts[item.portalUserId] || ""} onChange={(e) => setEmployeePasswordDrafts((current) => ({ ...current, [item.portalUserId]: e.target.value }))} placeholder="New password" /></label>
-                              <div className="button-row"><button className="ghost-btn" onClick={() => void resetEmployeePortalPassword(item.portalUserId)}>Reset</button></div>
-                            </div>
-                          ) : null}
-                        </div>
-                        {isSettingsAdmin ? (
-                          <div className="form-grid two-col" style={{ marginTop: "0.75rem" }}>
-                            <label><span>Designation</span><input value={getEmployeeEditDraft(item).designation} onChange={(e) => setEmployeeEditField(item.id, "designation", e.target.value)} placeholder="Software Engineer" /></label>
-                            <label><span>Client name</span><input value={getEmployeeEditDraft(item).clientName} onChange={(e) => setEmployeeEditField(item.id, "clientName", e.target.value)} placeholder="Easyrewardz" /></label>
-                            <label><span>Work site name</span><input value={getEmployeeEditDraft(item).workSiteName} onChange={(e) => setEmployeeEditField(item.id, "workSiteName", e.target.value)} placeholder="Easyrewardz HQ" /></label>
-                            <label><span>Work site address</span><input value={getEmployeeEditDraft(item).workSiteAddress} onChange={(e) => setEmployeeEditField(item.id, "workSiteAddress", e.target.value)} placeholder="DLF Cyber City, Gurugram" /></label>
-                            <label><span>Latitude</span><input value={getEmployeeEditDraft(item).workSiteLatitude} onChange={(e) => setEmployeeEditField(item.id, "workSiteLatitude", e.target.value)} placeholder="28.4942" /></label>
-                            <label><span>Longitude</span><input value={getEmployeeEditDraft(item).workSiteLongitude} onChange={(e) => setEmployeeEditField(item.id, "workSiteLongitude", e.target.value)} placeholder="77.0890" /></label>
-                            <label><span>Radius (meters)</span><input value={getEmployeeEditDraft(item).workSiteRadiusMeters} onChange={(e) => setEmployeeEditField(item.id, "workSiteRadiusMeters", e.target.value)} placeholder="500" /></label>
-                            <div className="button-row align-end"><button onClick={() => void saveEmployeeEdits(item)}>Save details</button></div>
-                          </div>
-                        ) : null}
-                      </details>
-                    ))}
-                  </div>
-                </details>
               </div>
             } />
 
@@ -12943,12 +12875,27 @@ function getCurrentPositionAsync() {
   });
 }
 
-function PayrollLiteAdminPage({ token, employees = [], users = [], viewMode = "all" }) {
+function PayrollLiteAdminPage({ token, employees = [], users = [], viewMode = "all", onEmployeesChanged }) {
   const formatMoney = (value) => {
     const n = Number(value || 0);
     if (!Number.isFinite(n)) return "0.00";
     return n.toFixed(2);
   };
+  const [employeeCreateDraft, setEmployeeCreateDraft] = useState({
+    employeeCode: "",
+    username: "",
+    fullName: "",
+    password: "",
+    designation: "",
+    clientName: "",
+    workSiteName: "",
+    workSiteAddress: "",
+    workSiteLatitude: "",
+    workSiteLongitude: "",
+    workSiteRadiusMeters: "500"
+  });
+  const [employeeCreateStatus, setEmployeeCreateStatus] = useState("");
+  const [employeeCreateStatusKind, setEmployeeCreateStatusKind] = useState("");
   const {
     settings, setSettings, compItems, fbpHeads, salaryTemplates,
     payrollMonth, setPayrollMonth, payrollYear, setPayrollYear, payrollInputs, payrollRuns,
@@ -12962,6 +12909,68 @@ function PayrollLiteAdminPage({ token, employees = [], users = [], viewMode = "a
     inputByEmployee, userNameById, savePayrollInputRow, setInputField, createRunDraft, runAction, rollbackRunToCalculated, deleteSelectedRun, submitFbpDeclaration, uploadDeclarationDoc, reviewDeclaration, publishPayslipsForSelectedRun,
     updateCompField
   } = usePayrollAdminData({ token, employees, users, viewMode, api });
+  const showEmployeeAccess = viewMode === "all" || viewMode === "employees";
+
+  async function createEmployeeFromPayroll() {
+    const payload = {
+      employeeCode: String(employeeCreateDraft.employeeCode || "").trim(),
+      username: String(employeeCreateDraft.username || "").trim(),
+      fullName: String(employeeCreateDraft.fullName || "").trim(),
+      password: String(employeeCreateDraft.password || ""),
+      designation: String(employeeCreateDraft.designation || "").trim(),
+      clientName: String(employeeCreateDraft.clientName || "").trim()
+    };
+    if (!payload.employeeCode || !payload.username || !payload.fullName || !payload.password) {
+      setEmployeeCreateStatusKind("error");
+      setEmployeeCreateStatus("Employee code, username, full name, and temporary password are required.");
+      return;
+    }
+    const latitudeRaw = String(employeeCreateDraft.workSiteLatitude || "").trim();
+    const longitudeRaw = String(employeeCreateDraft.workSiteLongitude || "").trim();
+    const radiusRaw = String(employeeCreateDraft.workSiteRadiusMeters || "").trim();
+    if (latitudeRaw || longitudeRaw || String(employeeCreateDraft.workSiteName || "").trim() || String(employeeCreateDraft.workSiteAddress || "").trim()) {
+      const latitude = Number(latitudeRaw);
+      const longitude = Number(longitudeRaw);
+      const radius = Number(radiusRaw || "500");
+      if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+        setEmployeeCreateStatusKind("error");
+        setEmployeeCreateStatus("Work site latitude and longitude must be valid numbers.");
+        return;
+      }
+      payload.workSite = {
+        siteName: String(employeeCreateDraft.workSiteName || "Primary Work Site").trim(),
+        addressText: String(employeeCreateDraft.workSiteAddress || "").trim(),
+        clientName: payload.clientName,
+        latitude,
+        longitude,
+        radiusMeters: Number.isFinite(radius) && radius > 0 ? radius : 500
+      };
+    }
+    try {
+      setEmployeeCreateStatusKind("");
+      setEmployeeCreateStatus("Creating employee...");
+      await api("/company/employees", token, "POST", payload);
+      setEmployeeCreateDraft({
+        employeeCode: "",
+        username: "",
+        fullName: "",
+        password: "",
+        designation: "",
+        clientName: "",
+        workSiteName: "",
+        workSiteAddress: "",
+        workSiteLatitude: "",
+        workSiteLongitude: "",
+        workSiteRadiusMeters: "500"
+      });
+      setEmployeeCreateStatusKind("ok");
+      setEmployeeCreateStatus("Employee created successfully.");
+      if (typeof onEmployeesChanged === "function") await onEmployeesChanged();
+    } catch (error) {
+      setEmployeeCreateStatusKind("error");
+      setEmployeeCreateStatus(String(error?.message || error));
+    }
+  }
   return (
     <div className="page-grid">
       <div className="item-card compact-card payroll-lite-shell">
@@ -13135,6 +13144,41 @@ function PayrollLiteAdminPage({ token, employees = [], users = [], viewMode = "a
                 notes: item.notes || ""
               })}>Edit</button></td></tr>)}
               {!compItems.length ? <tr><td colSpan="5"><div className="empty-state compact-empty">No compensation records yet.</div></td></tr> : null}
+            </tbody>
+          </table>
+        </div>
+      </PayrollCompensationSection>
+      <PayrollCompensationSection visible={showEmployeeAccess} kicker="Employee Access" title="Add Employee">
+        <p className="muted">Create employee login from payroll module. This is now separate from recruiter login settings.</p>
+        <div className="form-grid three-col">
+          <label><span>Employee code</span><input value={employeeCreateDraft.employeeCode} onChange={(e) => setEmployeeCreateDraft((c) => ({ ...c, employeeCode: e.target.value }))} placeholder="KM001" /></label>
+          <label><span>Username</span><input value={employeeCreateDraft.username} onChange={(e) => setEmployeeCreateDraft((c) => ({ ...c, username: e.target.value }))} placeholder="km001" /></label>
+          <label><span>Full name</span><input value={employeeCreateDraft.fullName} onChange={(e) => setEmployeeCreateDraft((c) => ({ ...c, fullName: e.target.value }))} placeholder="Rasel Ahmed" /></label>
+          <label><span>Temporary password</span><input type="password" value={employeeCreateDraft.password} onChange={(e) => setEmployeeCreateDraft((c) => ({ ...c, password: e.target.value }))} placeholder="Set employee password" /></label>
+          <label><span>Designation (optional)</span><input value={employeeCreateDraft.designation} onChange={(e) => setEmployeeCreateDraft((c) => ({ ...c, designation: e.target.value }))} placeholder="Software Engineer" /></label>
+          <label><span>Client name (optional)</span><input value={employeeCreateDraft.clientName} onChange={(e) => setEmployeeCreateDraft((c) => ({ ...c, clientName: e.target.value }))} placeholder="Easyrewardz" /></label>
+          <label><span>Work site name (optional)</span><input value={employeeCreateDraft.workSiteName} onChange={(e) => setEmployeeCreateDraft((c) => ({ ...c, workSiteName: e.target.value }))} placeholder="Easyrewardz HQ" /></label>
+          <label><span>Work site address (optional)</span><input value={employeeCreateDraft.workSiteAddress} onChange={(e) => setEmployeeCreateDraft((c) => ({ ...c, workSiteAddress: e.target.value }))} placeholder="DLF Cyber City, Gurugram" /></label>
+          <label><span>Work site latitude (optional)</span><input value={employeeCreateDraft.workSiteLatitude} onChange={(e) => setEmployeeCreateDraft((c) => ({ ...c, workSiteLatitude: e.target.value }))} placeholder="28.4942" /></label>
+          <label><span>Work site longitude (optional)</span><input value={employeeCreateDraft.workSiteLongitude} onChange={(e) => setEmployeeCreateDraft((c) => ({ ...c, workSiteLongitude: e.target.value }))} placeholder="77.0890" /></label>
+          <label><span>Allowed radius (meters)</span><input value={employeeCreateDraft.workSiteRadiusMeters} onChange={(e) => setEmployeeCreateDraft((c) => ({ ...c, workSiteRadiusMeters: e.target.value }))} placeholder="500" /></label>
+        </div>
+        <div className="button-row"><button onClick={() => void createEmployeeFromPayroll()}>Create employee</button></div>
+        {employeeCreateStatus ? <div className={`status ${employeeCreateStatusKind}`}>{employeeCreateStatus}</div> : null}
+        <div className="table-wrap">
+          <table className="dashboard-table">
+            <thead><tr><th>Employee</th><th>Code</th><th>Username</th><th>Designation</th><th>Client</th></tr></thead>
+            <tbody>
+              {employees.map((item) => (
+                <tr key={item.id}>
+                  <td>{item.fullName || "-"}</td>
+                  <td>{item.employeeCode || "-"}</td>
+                  <td>{item.username || "-"}</td>
+                  <td>{item.designation || "-"}</td>
+                  <td>{item.clientName || "-"}</td>
+                </tr>
+              ))}
+              {!employees.length ? <tr><td colSpan="5"><div className="empty-state compact-empty">No employees found yet.</div></td></tr> : null}
             </tbody>
           </table>
         </div>
@@ -13452,6 +13496,10 @@ function EmployeePortalApp({ token, onLogout }) {
         password: String(payrollUserDraft.password || ""),
         role: String(payrollUserDraft.role || "payroll_owner").trim()
       };
+      if (!payload.name || !payload.email || !payload.password) {
+        setStatus("loginPayroll", "Name, email, and temporary password are required.", "error");
+        return;
+      }
       await api("/company/users", token, "POST", payload);
       await reloadLoginSettingsWorkspace();
       setPayrollUserDraft({ name: "", email: "", password: "", role: "payroll_owner" });
@@ -13788,6 +13836,38 @@ function PayrollAdminApp({ token, onLogout }) {
     missingCompliance: 0
   });
   const [status, setStatus] = useState("");
+  async function loadPayrollAdminData() {
+    await api("/payroll-auth/me", token);
+    const now = new Date();
+    const month = now.getMonth() + 1;
+    const year = now.getFullYear();
+    const [employeesEnvelope, usersEnvelope, runsEnvelope, declarationsEnvelope, payslipsEnvelope] = await Promise.all([
+      api("/company/employees", token).catch(() => ({ employees: [] })),
+      api("/company/users", token).catch(() => ({ users: [] })),
+      api(`/company/payroll/runs?payrollMonth=${month}&payrollYear=${year}`, token).catch(() => ({ items: [] })),
+      api(`/company/payroll/fbp-declarations?payrollMonth=${month}&payrollYear=${year}`, token).catch(() => ({ items: [] })),
+      api(`/company/payroll/payslips?payrollMonth=${month}&payrollYear=${year}`, token).catch(() => ({ items: [] }))
+    ]);
+    const employeeRows = Array.isArray(employeesEnvelope?.employees) ? employeesEnvelope.employees : [];
+    const userRows = Array.isArray(usersEnvelope?.users) ? usersEnvelope.users : [];
+    const runRows = Array.isArray(runsEnvelope?.items) ? runsEnvelope.items : [];
+    const declarationRows = Array.isArray(declarationsEnvelope?.items) ? declarationsEnvelope.items : [];
+    const payslipRows = Array.isArray(payslipsEnvelope?.items) ? payslipsEnvelope.items : [];
+    setEmployees(employeeRows);
+    setUsers(userRows);
+    const latestRun = runRows[0] || null;
+    const monthlyPayrollAmount = Number(latestRun?.totals?.netSalary || latestRun?.totals?.net_salary || 0);
+    const pendingFbpClaims = declarationRows.filter((item) => String(item?.status || "").toLowerCase() === "pending").length;
+    const pendingPayslips = payslipRows.filter((item) => !item?.publishedAt && !item?.published_at).length;
+    const missingCompliance = employeeRows.filter((item) => !String(item?.pan || "").trim() || !String(item?.uan || "").trim() || !String(item?.bankAccountNumber || item?.bank_account_number || "").trim()).length;
+    setSummary({
+      activeEmployees: employeeRows.length,
+      monthlyPayrollAmount,
+      pendingFbpClaims,
+      pendingPayslips,
+      missingCompliance
+    });
+  }
 
   useEffect(() => {
     const path = String(location?.pathname || "");
@@ -13798,37 +13878,8 @@ function PayrollAdminApp({ token, onLogout }) {
     let active = true;
     (async () => {
       try {
-        await api("/payroll-auth/me", token);
-        const now = new Date();
-        const month = now.getMonth() + 1;
-        const year = now.getFullYear();
-        const [employeesEnvelope, usersEnvelope, runsEnvelope, declarationsEnvelope, payslipsEnvelope] = await Promise.all([
-          api("/company/employees", token).catch(() => ({ employees: [] })),
-          api("/company/users", token).catch(() => ({ users: [] })),
-          api(`/company/payroll/runs?payrollMonth=${month}&payrollYear=${year}`, token).catch(() => ({ items: [] })),
-          api(`/company/payroll/fbp-declarations?payrollMonth=${month}&payrollYear=${year}`, token).catch(() => ({ items: [] })),
-          api(`/company/payroll/payslips?payrollMonth=${month}&payrollYear=${year}`, token).catch(() => ({ items: [] }))
-        ]);
+        await loadPayrollAdminData();
         if (!active) return;
-        const employeeRows = Array.isArray(employeesEnvelope?.employees) ? employeesEnvelope.employees : [];
-        const userRows = Array.isArray(usersEnvelope?.users) ? usersEnvelope.users : [];
-        const runRows = Array.isArray(runsEnvelope?.items) ? runsEnvelope.items : [];
-        const declarationRows = Array.isArray(declarationsEnvelope?.items) ? declarationsEnvelope.items : [];
-        const payslipRows = Array.isArray(payslipsEnvelope?.items) ? payslipsEnvelope.items : [];
-        setEmployees(employeeRows);
-        setUsers(userRows);
-        const latestRun = runRows[0] || null;
-        const monthlyPayrollAmount = Number(latestRun?.totals?.netSalary || latestRun?.totals?.net_salary || 0);
-        const pendingFbpClaims = declarationRows.filter((item) => String(item?.status || "").toLowerCase() === "pending").length;
-        const pendingPayslips = payslipRows.filter((item) => !item?.publishedAt && !item?.published_at).length;
-        const missingCompliance = employeeRows.filter((item) => !String(item?.pan || "").trim() || !String(item?.uan || "").trim() || !String(item?.bankAccountNumber || item?.bank_account_number || "").trim()).length;
-        setSummary({
-          activeEmployees: employeeRows.length,
-          monthlyPayrollAmount,
-          pendingFbpClaims,
-          pendingPayslips,
-          missingCompliance
-        });
       } catch (error) {
         if (!active) return;
         setStatus(String(error?.message || error));
@@ -13867,15 +13918,15 @@ function PayrollAdminApp({ token, onLogout }) {
               </Section>
             </div>
           } />
-          <Route path="/payroll/runs" element={<PayrollLiteAdminPage token={token} employees={employees} users={users} viewMode="runs" />} />
-          <Route path="/payroll/employees" element={<PayrollLiteAdminPage token={token} employees={employees} users={users} viewMode="employees" />} />
-          <Route path="/payroll/salary-structures" element={<PayrollLiteAdminPage token={token} employees={employees} users={users} viewMode="salary" />} />
-          <Route path="/payroll/attendance-lop" element={<PayrollLiteAdminPage token={token} employees={employees} users={users} viewMode="attendance" />} />
-          <Route path="/payroll/fbp-claims" element={<PayrollLiteAdminPage token={token} employees={employees} users={users} viewMode="fbp" />} />
-          <Route path="/payroll/payslips" element={<PayrollLiteAdminPage token={token} employees={employees} users={users} viewMode="payslips" />} />
-          <Route path="/payroll/documents" element={<PayrollLiteAdminPage token={token} employees={employees} users={users} viewMode="documents" />} />
-          <Route path="/payroll/statutory-settings" element={<PayrollLiteAdminPage token={token} employees={employees} users={users} viewMode="statutory" />} />
-          <Route path="/payroll/reports" element={<PayrollLiteAdminPage token={token} employees={employees} users={users} viewMode="reports" />} />
+          <Route path="/payroll/runs" element={<PayrollLiteAdminPage token={token} employees={employees} users={users} viewMode="runs" onEmployeesChanged={loadPayrollAdminData} />} />
+          <Route path="/payroll/employees" element={<PayrollLiteAdminPage token={token} employees={employees} users={users} viewMode="employees" onEmployeesChanged={loadPayrollAdminData} />} />
+          <Route path="/payroll/salary-structures" element={<PayrollLiteAdminPage token={token} employees={employees} users={users} viewMode="salary" onEmployeesChanged={loadPayrollAdminData} />} />
+          <Route path="/payroll/attendance-lop" element={<PayrollLiteAdminPage token={token} employees={employees} users={users} viewMode="attendance" onEmployeesChanged={loadPayrollAdminData} />} />
+          <Route path="/payroll/fbp-claims" element={<PayrollLiteAdminPage token={token} employees={employees} users={users} viewMode="fbp" onEmployeesChanged={loadPayrollAdminData} />} />
+          <Route path="/payroll/payslips" element={<PayrollLiteAdminPage token={token} employees={employees} users={users} viewMode="payslips" onEmployeesChanged={loadPayrollAdminData} />} />
+          <Route path="/payroll/documents" element={<PayrollLiteAdminPage token={token} employees={employees} users={users} viewMode="documents" onEmployeesChanged={loadPayrollAdminData} />} />
+          <Route path="/payroll/statutory-settings" element={<PayrollLiteAdminPage token={token} employees={employees} users={users} viewMode="statutory" onEmployeesChanged={loadPayrollAdminData} />} />
+          <Route path="/payroll/reports" element={<PayrollLiteAdminPage token={token} employees={employees} users={users} viewMode="reports" onEmployeesChanged={loadPayrollAdminData} />} />
           <Route path="*" element={<Navigate to="/payroll/dashboard" replace />} />
         </Routes>
       </main>
