@@ -14069,7 +14069,7 @@ export default function App() {
     try {
       setBusy(true);
       setError("");
-      const result = await api("/auth/login", "", "POST", { email, password });
+      const result = await api("/auth/login", "", "POST", { email, password, accessContext: "portal" });
       localStorage.setItem(TOKEN_KEY, result.token || "");
       localStorage.removeItem(CLIENT_TOKEN_KEY);
       localStorage.setItem(AUTH_MODE_KEY, "recruiter");

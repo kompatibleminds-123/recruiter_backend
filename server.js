@@ -6777,7 +6777,10 @@ const server = http.createServer(async (req, res) => {
         email: String(body.email || "").trim(),
         password: String(body.password || "")
       });
-      ensurePortalCompanyApproved(result?.user?.companyId || "");
+      const accessContext = String(body.accessContext || body.access_context || "").trim().toLowerCase();
+      if (accessContext === "portal") {
+        ensurePortalCompanyApproved(result?.user?.companyId || "");
+      }
       sendJson(res, 200, { ok: true, result });
     } catch (error) {
       const message = String(error.message || error);
@@ -6856,12 +6859,10 @@ const server = http.createServer(async (req, res) => {
   if (req.method === "GET" && req.url === "/auth/me") {
     try {
       const user = await requireSessionUser(getBearerToken(req));
-      ensurePortalCompanyApproved(user?.companyId || "");
       sendJson(res, 200, { ok: true, result: { user } });
     } catch (error) {
       const message = String(error.message || error);
-      const status = /pending admin approval/i.test(message) ? 403 : 401;
-      sendJson(res, status, { ok: false, error: message });
+      sendJson(res, 401, { ok: false, error: message });
     }
     return;
   }
