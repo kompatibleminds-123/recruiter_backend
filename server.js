@@ -107,6 +107,7 @@ const {
   patchAssessmentCandidateLink,
   saveCompanyJob,
   saveCompanySharedExportPresets,
+  setCompanyExtensionPlan,
   setCompanyApplicantIntakeSecret
 } = require("./src/auth-store");
 
@@ -7089,6 +7090,24 @@ const server = http.createServer(async (req, res) => {
         settings: body.settings || body
       });
       sendJson(res, 200, { ok: true, result: saved });
+    } catch (error) {
+      sendJson(res, 400, { ok: false, error: String(error.message || error) });
+    }
+    return;
+  }
+
+  if (req.method === "POST" && req.url === "/company/license/plan") {
+    try {
+      const actor = await requireSessionUser(getBearerToken(req));
+      const body = await readJsonBody(req);
+      const license = await setCompanyExtensionPlan({
+        actorUserId: actor.id,
+        companyId: actor.companyId,
+        planCode: String(body.planCode || body.plan || "").trim(),
+        paidAt: String(body.paidAt || body.paid_at || "").trim(),
+        months: Number(body.months || 1)
+      });
+      sendJson(res, 200, { ok: true, result: { license } });
     } catch (error) {
       sendJson(res, 400, { ok: false, error: String(error.message || error) });
     }

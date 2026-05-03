@@ -489,6 +489,41 @@ function addDays(dateLike, days) {
   base.setDate(base.getDate() + Number(days || 0));
   return base.toISOString();
 }
+function addMonths(dateLike, months) {
+  const date = dateLike ? new Date(dateLike) : new Date();
+  const base = Number.isNaN(date.getTime()) ? new Date() : date;
+  base.setMonth(base.getMonth() + Number(months || 0));
+  return base.toISOString();
+}
+const LICENSE_PLAN_ALIASES = {
+  trial: "trial",
+  ext_499: "ext_499_1_user",
+  monthly_499: "ext_499_1_user",
+  starter_1: "ext_499_1_user",
+  solo_1: "ext_499_1_user",
+  paid_1: "ext_499_1_user",
+  ext_999: "ext_999_3_users",
+  monthly_999: "ext_999_3_users",
+  team_3: "ext_999_3_users",
+  pro_3: "ext_999_3_users",
+  ext_1999: "ext_1999_7_users",
+  monthly_1999: "ext_1999_7_users",
+  team_7: "ext_1999_7_users",
+  growth_7: "ext_1999_7_users",
+  saas_4999: "saas_4999_unlimited",
+  platform_4999: "saas_4999_unlimited",
+  enterprise: "saas_4999_unlimited",
+  legacy: "legacy"
+};
+function normalizeLicensePlanCode(rawPlan = "") {
+  const input = String(rawPlan || "").trim().toLowerCase();
+  if (!input) return "trial";
+  return LICENSE_PLAN_ALIASES[input] || input;
+}
+function isPaidExtensionPlan(planCode = "") {
+  const plan = normalizeLicensePlanCode(planCode);
+  return ["ext_499_1_user", "ext_999_3_users", "ext_1999_7_users", "saas_4999_unlimited"].includes(plan);
+}
 function sanitizeCompanyLicense(raw, company = null) {
   const source = raw && typeof raw === "object" ? raw : {};
   const payload = source.payload && typeof source.payload === "object" ? source.payload : source;
@@ -498,11 +533,29 @@ function sanitizeCompanyLicense(raw, company = null) {
   const trialEndsAt = String(payload.trialEndsAt || payload.trial_ends_at || addDays(startedAt, 14)).trim();
   const captureLimit = Math.max(0, Number(payload.captureLimit ?? payload.capture_limit ?? 50) || 50);
   const capturesUsed = Math.max(0, Number(payload.capturesUsed ?? payload.captures_used ?? 0) || 0);
-  const plan = String(payload.plan || "trial").trim().toLowerCase();
+  const plan = normalizeLicensePlanCode(payload.plan || "trial");
   const status = String(payload.status || "trial").trim().toLowerCase();
   const isTrial = status === "trial" || plan === "trial";
   const trialActive = isTrial && Date.now() <= new Date(trialEndsAt).getTime() && capturesUsed < captureLimit;
-  const unlimited = !isTrial || status === "active" || status === "legacy";
+  const paidPlan = isPaidExtensionPlan(plan);
+  const subscriptionStartedAt = String(
+    payload.subscriptionStartedAt || payload.subscription_started_at || payload.planActivatedAt || payload.plan_activated_at || ""
+  ).trim();
+  const subscriptionEndsAt = String(
+    payload.subscriptionEndsAt || payload.subscription_ends_at || (subscriptionStartedAt ? addMonths(subscriptionStartedAt, 1) : "")
+  ).trim();
+  const effectiveSubscriptionEndsAt = subscriptionEndsAt || (paidPlan && status === "active" ? addMonths(now, 1) : "");
+  const subscriptionActive = !paidPlan || status === "legacy" || (status === "active" && effectiveSubscriptionEndsAt && Date.now() <= new Date(effectiveSubscriptionEndsAt).getTime());
+  const unlimited = status === "legacy" || plan === "legacy";
+  const canCapture = unlimited || trialActive || (paidPlan && subscriptionActive);
+  const accessBlockedReason =
+    canCapture
+      ? ""
+      : isTrial
+        ? "Trial expired or capture limit reached. Upgrade required."
+        : paidPlan
+          ? "Subscription payment overdue. Renew plan to continue."
+          : "Workspace access is currently inactive.";
   const ownerAdminUserId = String(payload.ownerAdminUserId || payload.owner_admin_user_id || "").trim();
   const toIdList = (value) => {
     const list = Array.isArray(value) ? value : [];
@@ -519,9 +572,13 @@ function sanitizeCompanyLicense(raw, company = null) {
     trialEndsAt,
     captureLimit,
     capturesUsed,
-    capturesRemaining: unlimited ? null : Math.max(0, captureLimit - capturesUsed),
-    daysRemaining: unlimited ? null : Math.max(0, Math.ceil((new Date(trialEndsAt).getTime() - Date.now()) / 86400000)),
-    canCapture: unlimited || trialActive,
+    capturesRemaining: (unlimited || paidPlan) ? null : Math.max(0, captureLimit - capturesUsed),
+    daysRemaining: (unlimited || paidPlan) ? null : Math.max(0, Math.ceil((new Date(trialEndsAt).getTime() - Date.now()) / 86400000)),
+    canCapture,
+    subscriptionStartedAt: subscriptionStartedAt || null,
+    subscriptionEndsAt: effectiveSubscriptionEndsAt || null,
+    subscriptionActive: Boolean(paidPlan ? subscriptionActive : true),
+    accessBlockedReason,
     updatedAt: String(payload.updatedAt || payload.updated_at || now).trim() || now,
     ownerAdminUserId,
     payrollLiteEnabled: Boolean(payload.payrollLiteEnabled ?? payload.payroll_lite_enabled ?? false),
@@ -531,12 +588,13 @@ function sanitizeCompanyLicense(raw, company = null) {
   };
 }
 function getWorkspaceUserLimitForLicense(license = null) {
-  const plan = String(license?.plan || "").trim().toLowerCase();
+  const plan = normalizeLicensePlanCode(license?.plan || "");
   const status = String(license?.status || "").trim().toLowerCase();
   if (status === "trial" || plan === "trial") return 1;
-  if (["starter_1", "solo_1", "paid_1", "ext_499", "monthly_499"].includes(plan)) return 1;
-  if (["team_3", "pro_3", "ext_999", "monthly_999"].includes(plan)) return 3;
-  if (["team_7", "growth_7", "ext_1999", "monthly_1999"].includes(plan)) return 7;
+  if (plan === "ext_499_1_user") return 1;
+  if (plan === "ext_999_3_users") return 3;
+  if (plan === "ext_1999_7_users") return 7;
+  if (plan === "saas_4999_unlimited") return null;
   return null;
 }
 function getWorkspaceUserLimitMessage(limit) {
@@ -1485,6 +1543,36 @@ async function saveCompanyLicense(companyId, license) {
   const rows = await sbIns("company_jobs", [row], { conflict: "id", upsert: true });
   return sanitizeCompanyLicense(rows?.[0] || row);
 }
+async function setCompanyExtensionPlan({ actorUserId, companyId, planCode, paidAt = "", months = 1 }) {
+  const actor = sanitizeUser(await getUserById(actorUserId, companyId));
+  if (!actor || actor.role !== "admin") throw new Error("Only admin can update extension subscription.");
+  const current = await getCompanyLicense(companyId);
+  const normalizedPlan = normalizeLicensePlanCode(planCode || "");
+  if (!normalizedPlan) throw new Error("planCode is required.");
+  const safeMonths = Math.max(1, Number(months || 1) || 1);
+  const paidDate = String(paidAt || "").trim();
+  const paidDateIso = paidDate ? new Date(paidDate).toISOString() : new Date().toISOString();
+  const nextDue = addMonths(paidDateIso, safeMonths);
+  const nextStatus = normalizedPlan === "trial" ? "trial" : "active";
+  const nextPayload = {
+    ...current,
+    plan: normalizedPlan,
+    status: nextStatus,
+    updatedAt: new Date().toISOString()
+  };
+  if (normalizedPlan === "trial") {
+    nextPayload.trialStartedAt = paidDateIso;
+    nextPayload.trialEndsAt = addDays(paidDateIso, 14);
+    nextPayload.captureLimit = Number(current?.captureLimit || 50) || 50;
+    nextPayload.capturesUsed = Number(current?.capturesUsed || 0) || 0;
+    nextPayload.subscriptionStartedAt = null;
+    nextPayload.subscriptionEndsAt = null;
+  } else {
+    nextPayload.subscriptionStartedAt = paidDateIso;
+    nextPayload.subscriptionEndsAt = nextDue;
+  }
+  return saveCompanyLicense(companyId, nextPayload);
+}
 
 async function getCompanyLicense(companyId) {
   const scopedCompanyId = String(companyId || "").trim();
@@ -1602,6 +1690,9 @@ async function createUser({ actorUserId, companyId, name, email, password, role 
     throw new Error("A user with this email already exists.");
   }
   const license = await getCompanyLicense(companyId).catch(() => null);
+  if (license && license.canCapture === false) {
+    throw new Error(String(license.accessBlockedReason || "Workspace access is inactive until payment is completed."));
+  }
   const workspaceUserLimit = getWorkspaceUserLimitForLicense(license);
   if (!cfg().on) {
     const store = readStore(); const company = store.companies.find((c) => c.id === companyId); if (!company) throw new Error("Company not found.");
@@ -1774,6 +1865,10 @@ async function login({ email, password }) {
   const e = normalizeEmail(email); const user = await getUserByEmail(e);
   if (!user || !verifyPassword(password, user.passwordHash || user.password_hash)) throw new Error("Invalid email or password.");
   const sessionUser = sanitizeUser(user); const token = crypto.randomBytes(32).toString("hex");
+  const license = await getCompanyLicense(sessionUser.companyId).catch(() => null);
+  if (license && license.canCapture === false) {
+    throw new Error(String(license.accessBlockedReason || "Workspace access is inactive until payment is completed."));
+  }
   if (!cfg().on) {
     const store = readStore(); store.sessions = (store.sessions || []).filter((s) => s.token !== token); store.sessions.push({ token, userId: sessionUser.id, companyId: sessionUser.companyId, createdAt: new Date().toISOString() }); writeStore(store);
   } else {
@@ -1801,6 +1896,10 @@ async function loginPayrollAdmin({ email, password }) {
   if (!PAYROLL_AUTH_ROLES.has(role)) throw new Error("Invalid payroll login credentials.");
   if (!verifyPassword(password, user.passwordHash ?? user.password_hash)) throw new Error("Invalid payroll login credentials.");
   const sessionUser = sanitizePayrollUser(user);
+  const license = await getCompanyLicense(sessionUser.companyId).catch(() => null);
+  if (license && license.canCapture === false) {
+    throw new Error(String(license.accessBlockedReason || "Workspace access is inactive until payment is completed."));
+  }
   const token = crypto.randomBytes(32).toString("hex");
   if (!cfg().on) {
     const store = readStore();
@@ -4429,6 +4528,7 @@ module.exports = {
   getCompanyApplicantIntakeSecret,
   getCompanySharedExportPresets,
   getPublicCompanyJob,
+  setCompanyExtensionPlan,
   getSessionUser,
   incrementCompanyCaptureUsage,
   listCompanyEmployees,
