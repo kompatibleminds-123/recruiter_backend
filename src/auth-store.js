@@ -1524,6 +1524,13 @@ async function createUser({ actorUserId, companyId, name, email, password, role 
   if (!actorUserId || !companyId || !name || !e || !password) throw new Error("actorUserId, companyId, name, email, and password are required.");
   const actor = sanitizeUser(await getUserById(actorUserId, companyId));
   if (!actor || actor.role !== "admin") throw new Error("Only an admin for this company can create recruiter accounts.");
+  if (r === "payroll_owner" || r === "payroll_manager") {
+    const license = await getCompanyLicense(companyId).catch(() => null);
+    const ownerAdminUserId = String(license?.ownerAdminUserId || "").trim();
+    if (!ownerAdminUserId || String(actor.id || "").trim() !== ownerAdminUserId) {
+      throw new Error("Only the license owner admin can create payroll users.");
+    }
+  }
   if (await getUserByEmail(e)) throw new Error("A user with this email already exists.");
   const license = await getCompanyLicense(companyId).catch(() => null);
   const isTrial = license && (String(license.status || "").toLowerCase() === "trial" || String(license.plan || "").toLowerCase() === "trial");

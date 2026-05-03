@@ -4195,6 +4195,7 @@ function PortalApp({ token, onLogout }) {
     jobs: []
   });
   const [statuses, setStatuses] = useState({});
+  const [companyLicense, setCompanyLicense] = useState(null);
   const [assignApplicantId, setAssignApplicantId] = useState("");
   const [assignCandidateId, setAssignCandidateId] = useState("");
   const [hostedJobId, setHostedJobId] = useState("");
@@ -4763,6 +4764,10 @@ function PortalApp({ token, onLogout }) {
     }) || null;
   }, [quickUpdateCandidate, state.assessments]);
   const isSettingsAdmin = String(state.user?.role || "").toLowerCase() === "admin";
+  const isLicenseOwnerAdmin =
+    isSettingsAdmin &&
+    String(state.user?.id || "").trim() &&
+    String(state.user?.id || "").trim() === String(companyLicense?.ownerAdminUserId || "").trim();
   const navSections = useMemo(() => (
     BASE_NAV_SECTIONS
       .map((section) => ({
@@ -4947,7 +4952,7 @@ function PortalApp({ token, onLogout }) {
     if (clientPortalFilters.dateTo) clientPortalParams.set("dateTo", clientPortalFilters.dateTo);
     if (clientPortalFilters.clientLabel) clientPortalParams.set("clientLabel", clientPortalFilters.clientLabel);
 
-    const [userResult, dashboardResult, clientPortalResult, applicantsResult, intakeResult, jobsResult, usersResult, clientUsersResult, employeeUsersResult, candidatesResult, databaseCandidatesResult, assessmentsResult, assessmentEventsResult, sharedPresetResult, smtpSettingsResult] = await Promise.all([
+    const [userResult, dashboardResult, clientPortalResult, applicantsResult, intakeResult, jobsResult, usersResult, clientUsersResult, employeeUsersResult, candidatesResult, databaseCandidatesResult, assessmentsResult, assessmentEventsResult, sharedPresetResult, smtpSettingsResult, licenseResult] = await Promise.all([
       api("/auth/me", token),
       needsDashboard
         ? api(`/company/dashboard${dashboardParams.toString() ? `?${dashboardParams.toString()}` : ""}`, token)
@@ -4977,7 +4982,8 @@ function PortalApp({ token, onLogout }) {
         : Promise.resolve(null),
       needsEmailSettings
         ? api("/company/email-settings", token).catch(() => null)
-        : Promise.resolve(null)
+        : Promise.resolve(null),
+      api("/license/me", token).catch(() => null)
     ]);
     setState((current) => ({
       ...current,
@@ -5026,6 +5032,7 @@ function PortalApp({ token, onLogout }) {
         setSmtpSettingsLoaded(true);
       }
     }
+    setCompanyLicense(licenseResult?.license || null);
     setStatus("workspace", "Portal loaded.", "ok");
   }
 
@@ -5110,9 +5117,10 @@ function PortalApp({ token, onLogout }) {
 
   async function reloadLoginSettingsWorkspace() {
     if (!token) return;
-    const [usersResult, clientUsersResult] = await Promise.all([
+    const [usersResult, clientUsersResult, licenseResult] = await Promise.all([
       api("/company/users", token).catch(() => ({ users: [] })),
-      api("/company/client-users", token).catch(() => ({ clientUsers: [] }))
+      api("/company/client-users", token).catch(() => ({ clientUsers: [] })),
+      api("/license/me", token).catch(() => null)
     ]);
     const employeesEnvelope = await api("/company/employees", token)
       .then((data) => ({ ok: true, data }))
@@ -5122,6 +5130,7 @@ function PortalApp({ token, onLogout }) {
       users: usersResult?.users || []
     }));
     setClientUsers(clientUsersResult?.clientUsers || []);
+    setCompanyLicense(licenseResult?.license || null);
     if (employeesEnvelope.ok) {
       setEmployeeUsers(employeesEnvelope?.data?.employees || []);
     } else {
@@ -12394,6 +12403,7 @@ function PortalApp({ token, onLogout }) {
                   </div>
                 </details>
 
+                {isLicenseOwnerAdmin ? (
                 <details className="panel login-settings-collapse" open>
                   <summary className="dashboard-group__summary">
                     <div>
@@ -12403,12 +12413,12 @@ function PortalApp({ token, onLogout }) {
                   </summary>
                   <p className="muted">Payroll users login from `/payroll-login`. Payroll Owner can manage payroll access; Payroll Manager can operate payroll based on assigned permissions.</p>
                   <div className="form-grid two-col">
-                    <label><span>Name</span><input disabled={!isSettingsAdmin} value={payrollUserDraft.name} onChange={(e) => setPayrollUserDraft((current) => ({ ...current, name: e.target.value }))} placeholder="Payroll user name" /></label>
-                    <label><span>Email</span><input disabled={!isSettingsAdmin} type="email" value={payrollUserDraft.email} onChange={(e) => setPayrollUserDraft((current) => ({ ...current, email: e.target.value }))} placeholder="payroll@company.com" /></label>
-                    <label><span>Role</span><select disabled={!isSettingsAdmin} value={payrollUserDraft.role} onChange={(e) => setPayrollUserDraft((current) => ({ ...current, role: e.target.value }))}><option value="payroll_owner">Payroll Owner</option><option value="payroll_manager">Payroll Manager</option></select></label>
-                    <label><span>Temporary password</span><input disabled={!isSettingsAdmin} type="password" value={payrollUserDraft.password} onChange={(e) => setPayrollUserDraft((current) => ({ ...current, password: e.target.value }))} placeholder="Temporary password" /></label>
+                    <label><span>Name</span><input disabled={!isLicenseOwnerAdmin} value={payrollUserDraft.name} onChange={(e) => setPayrollUserDraft((current) => ({ ...current, name: e.target.value }))} placeholder="Payroll user name" /></label>
+                    <label><span>Email</span><input disabled={!isLicenseOwnerAdmin} type="email" value={payrollUserDraft.email} onChange={(e) => setPayrollUserDraft((current) => ({ ...current, email: e.target.value }))} placeholder="payroll@company.com" /></label>
+                    <label><span>Role</span><select disabled={!isLicenseOwnerAdmin} value={payrollUserDraft.role} onChange={(e) => setPayrollUserDraft((current) => ({ ...current, role: e.target.value }))}><option value="payroll_owner">Payroll Owner</option><option value="payroll_manager">Payroll Manager</option></select></label>
+                    <label><span>Temporary password</span><input disabled={!isLicenseOwnerAdmin} type="password" value={payrollUserDraft.password} onChange={(e) => setPayrollUserDraft((current) => ({ ...current, password: e.target.value }))} placeholder="Temporary password" /></label>
                   </div>
-                  {isSettingsAdmin ? <div className="button-row"><button onClick={() => void createPayrollUser()}>Create payroll user</button></div> : null}
+                  {isLicenseOwnerAdmin ? <div className="button-row"><button onClick={() => void createPayrollUser()}>Create payroll user</button></div> : null}
                   {statuses.loginPayroll ? <div className={`status ${statuses.loginPayrollKind || ""}`}>{statuses.loginPayroll}</div> : null}
                   <div className="stack-list compact">
                     {!payrollWorkspaceUsers.length ? <div className="empty-state">No payroll users yet.</div> : payrollWorkspaceUsers.map((item) => (
@@ -12418,7 +12428,7 @@ function PortalApp({ token, onLogout }) {
                             <h3>{item.name}</h3>
                             <p className="muted">{`${item.email} | ${formatWorkspaceUserRoleLabel(item.role)}`}</p>
                           </div>
-                          {isSettingsAdmin ? (
+                          {isLicenseOwnerAdmin ? (
                             <div className="form-grid" style={{ minWidth: "260px" }}>
                               <label><span>Reset password</span><input type="password" value={teamPasswordDrafts[item.id] || ""} onChange={(e) => setTeamPasswordDrafts((current) => ({ ...current, [item.id]: e.target.value }))} placeholder="New password" /></label>
                               <div className="button-row tight">
@@ -12432,6 +12442,7 @@ function PortalApp({ token, onLogout }) {
                     ))}
                   </div>
                 </details>
+                ) : null}
 
                 <details className="panel login-settings-collapse" open>
                   <summary className="dashboard-group__summary">
@@ -13427,6 +13438,10 @@ function EmployeePortalApp({ token, onLogout }) {
   async function createPayrollUser() {
     if (!isSettingsAdmin) {
       setStatus("loginPayroll", "Only admin can add payroll users.", "error");
+      return;
+    }
+    if (!isLicenseOwnerAdmin) {
+      setStatus("loginPayroll", "Only license owner admin can add payroll users.", "error");
       return;
     }
     try {
