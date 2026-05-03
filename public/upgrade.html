@@ -62,10 +62,12 @@
           <div><strong>Email:</strong> <span id="email">-</span></div>
         </div>
         <a id="contactBtn" class="btn" href="#" target="_blank" rel="noopener noreferrer">Continue on WhatsApp</a>
+        <button id="payBtn" class="btn" type="button" style="margin-left:8px; background:#1d4ed8;">Pay with Razorpay</button>
         <div class="muted small" id="expiresAt"></div>
         <div class="muted small">Payment checkout wiring can be plugged here (Razorpay/Stripe) in next step.</div>
       </div>
     </div>
+    <script src="https://checkout.razorpay.com/v1/checkout.js"></script>
     <script>
       const params = new URLSearchParams(window.location.search);
       const token = String(params.get("token") || "").trim();
@@ -80,6 +82,8 @@
       const emailLabel = document.getElementById("email");
       const expiryLabel = document.getElementById("expiresAt");
       const contactBtn = document.getElementById("contactBtn");
+      const payBtn = document.getElementById("payBtn");
+      let latestCtx = null;
 
       async function loadUpgradeContext() {
         if (!token) throw new Error("Missing token.");
@@ -95,6 +99,7 @@
 
       loadUpgradeContext()
         .then((ctx) => {
+          latestCtx = ctx;
           const planCode = String(ctx.planCode || "").trim();
           const companyId = String(ctx.companyId || "").trim();
           const email = String(ctx.email || "").trim();
@@ -110,14 +115,63 @@
             `Hi, I want to upgrade RecruitDesk.\nPlan: ${label}\nCompany ID: ${companyId || "-"}\nEmail: ${email || "-"}`
           );
           contactBtn.href = `https://wa.me/919999999999?text=${msg}`;
+          if (!ctx.razorpayEnabled) {
+            payBtn.style.display = "none";
+          }
         })
         .catch((error) => {
           planLabel.textContent = "Invalid";
           companyLabel.textContent = "-";
           emailLabel.textContent = "-";
           contactBtn.style.display = "none";
+          payBtn.style.display = "none";
           expiryLabel.textContent = String(error?.message || error);
         });
+
+      payBtn.addEventListener("click", async () => {
+        try {
+          if (!latestCtx) throw new Error("Upgrade context not loaded.");
+          const orderRes = await fetch("/upgrade/create-order", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ token })
+          });
+          const orderPayload = await orderRes.json();
+          if (!orderRes.ok || !orderPayload?.ok) {
+            throw new Error(String(orderPayload?.error || "Could not create payment order."));
+          }
+          const order = orderPayload.result || {};
+          const rzp = new window.Razorpay({
+            key: order.keyId,
+            amount: order.amount,
+            currency: order.currency || "INR",
+            name: "RecruitDesk",
+            description: `Plan upgrade (${order.planCode})`,
+            order_id: order.orderId,
+            handler: async function (response) {
+              const verifyRes = await fetch("/upgrade/verify-payment", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  token,
+                  razorpay_order_id: response.razorpay_order_id,
+                  razorpay_payment_id: response.razorpay_payment_id,
+                  razorpay_signature: response.razorpay_signature
+                })
+              });
+              const verifyPayload = await verifyRes.json();
+              if (!verifyRes.ok || !verifyPayload?.ok) {
+                throw new Error(String(verifyPayload?.error || "Payment verification failed."));
+              }
+              alert("Payment successful. Plan activated.");
+              window.location.reload();
+            }
+          });
+          rzp.open();
+        } catch (error) {
+          alert(String(error?.message || error));
+        }
+      });
     </script>
   </body>
 </html>

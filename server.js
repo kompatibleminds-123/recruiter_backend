@@ -715,15 +715,19 @@ function getPortalApprovedCompanyIds() {
   return parseCsvEnvSet(process.env.PORTAL_APPROVED_COMPANY_IDS || "");
 }
 
-function isPortalCompanyApproved(companyId = "") {
+async function isPortalCompanyApproved(companyId = "") {
+  const id = String(companyId || "").trim();
+  if (!id) return false;
   const approved = getPortalApprovedCompanyIds();
-  // Safe default: if allowlist is not configured, keep existing behavior.
-  if (!approved.size) return true;
-  return approved.has(String(companyId || "").trim());
+  if (approved.has(id)) return true;
+  const license = await getCompanyLicense(id).catch(() => null);
+  const plan = String(license?.plan || "").trim().toLowerCase();
+  const status = String(license?.status || "").trim().toLowerCase();
+  return plan === "saas_4999_unlimited" && (status === "active" || status === "legacy");
 }
 
-function ensurePortalCompanyApproved(companyId = "") {
-  if (!isPortalCompanyApproved(companyId)) {
+async function ensurePortalCompanyApproved(companyId = "") {
+  if (!(await isPortalCompanyApproved(companyId))) {
     throw new Error("Portal access pending admin approval.");
   }
 }
@@ -766,6 +770,13 @@ const UPGRADE_ALLOWED_PLANS = new Set([
   "saas_4999_unlimited"
 ]);
 
+const UPGRADE_PLAN_AMOUNT_INR = {
+  ext_499_1_user: 499,
+  ext_999_3_users: 999,
+  ext_1999_7_users: 1999,
+  saas_4999_unlimited: 4999
+};
+
 function getUpgradeTokenSecret() {
   return (
     String(process.env.UPGRADE_LINK_SECRET || "").trim() ||
@@ -802,6 +813,38 @@ function readSignedUpgradeToken(token) {
   } catch {
     return null;
   }
+}
+
+function isRazorpayConfigured() {
+  return Boolean(String(process.env.RAZORPAY_KEY_ID || "").trim() && String(process.env.RAZORPAY_KEY_SECRET || "").trim());
+}
+
+async function createRazorpayOrder({ amountInr, receipt, notes = {} }) {
+  const keyId = String(process.env.RAZORPAY_KEY_ID || "").trim();
+  const keySecret = String(process.env.RAZORPAY_KEY_SECRET || "").trim();
+  if (!keyId || !keySecret) throw new Error("Razorpay is not configured.");
+  const auth = Buffer.from(`${keyId}:${keySecret}`, "utf8").toString("base64");
+  const response = await fetch("https://api.razorpay.com/v1/orders", {
+    method: "POST",
+    headers: {
+      Authorization: `Basic ${auth}`,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      amount: Math.round(Number(amountInr || 0) * 100),
+      currency: "INR",
+      receipt: String(receipt || "").slice(0, 40),
+      payment_capture: 1,
+      notes
+    })
+  });
+  const raw = await response.text();
+  let parsed = null;
+  try { parsed = JSON.parse(raw); } catch {}
+  if (!response.ok) {
+    throw new Error(String(parsed?.error?.description || raw || "Could not create Razorpay order."));
+  }
+  return parsed;
 }
 
 function timingSafeEqualString(a, b) {
@@ -6382,9 +6425,84 @@ const server = http.createServer(async (req, res) => {
           companyId: String(payload.companyId || "").trim(),
           email: String(payload.email || "").trim(),
           source: String(payload.source || "extension").trim(),
-          expiresAt: payload.expiresAt || null
+          expiresAt: payload.expiresAt || null,
+          razorpayEnabled: isRazorpayConfigured()
         }
       });
+    } catch (error) {
+      sendJson(res, 400, { ok: false, error: String(error.message || error) });
+    }
+    return;
+  }
+
+  if (req.method === "POST" && requestUrl.pathname === "/upgrade/create-order") {
+    try {
+      const body = await readJsonBody(req);
+      const token = String(body.token || "").trim();
+      const payload = readSignedUpgradeToken(token);
+      if (!payload) throw new Error("Invalid or expired upgrade link.");
+      if (!isRazorpayConfigured()) throw new Error("Razorpay is not configured.");
+      const planCode = String(payload.planCode || "").trim();
+      const amountInr = Number(UPGRADE_PLAN_AMOUNT_INR[planCode] || 0);
+      if (!amountInr) throw new Error("Invalid plan amount.");
+      const receipt = `rd_${String(payload.companyId || "").slice(0, 8)}_${Date.now()}`;
+      const order = await createRazorpayOrder({
+        amountInr,
+        receipt,
+        notes: {
+          companyId: String(payload.companyId || "").trim(),
+          planCode,
+          source: "upgrade_link"
+        }
+      });
+      sendJson(res, 200, {
+        ok: true,
+        result: {
+          orderId: String(order.id || "").trim(),
+          amount: Number(order.amount || 0),
+          currency: String(order.currency || "INR").trim(),
+          keyId: String(process.env.RAZORPAY_KEY_ID || "").trim(),
+          companyId: String(payload.companyId || "").trim(),
+          planCode
+        }
+      });
+    } catch (error) {
+      sendJson(res, 400, { ok: false, error: String(error.message || error) });
+    }
+    return;
+  }
+
+  if (req.method === "POST" && requestUrl.pathname === "/upgrade/verify-payment") {
+    try {
+      const body = await readJsonBody(req);
+      const token = String(body.token || "").trim();
+      const payload = readSignedUpgradeToken(token);
+      if (!payload) throw new Error("Invalid or expired upgrade link.");
+      const orderId = String(body.razorpay_order_id || "").trim();
+      const paymentId = String(body.razorpay_payment_id || "").trim();
+      const signature = String(body.razorpay_signature || "").trim();
+      if (!orderId || !paymentId || !signature) throw new Error("Missing payment verification fields.");
+      const keySecret = String(process.env.RAZORPAY_KEY_SECRET || "").trim();
+      if (!keySecret) throw new Error("Razorpay is not configured.");
+      const signedPayload = `${orderId}|${paymentId}`;
+      const expected = crypto.createHmac("sha256", keySecret).update(signedPayload).digest("hex");
+      if (!timingSafeEqualString(signature, expected)) {
+        throw new Error("Payment signature verification failed.");
+      }
+
+      const companyId = String(payload.companyId || "").trim();
+      const planCode = String(payload.planCode || "").trim();
+      const license = await getCompanyLicense(companyId);
+      const ownerAdminUserId = String(license?.ownerAdminUserId || "").trim();
+      if (!ownerAdminUserId) throw new Error("Could not identify company owner admin.");
+      const upgraded = await setCompanyExtensionPlan({
+        actorUserId: ownerAdminUserId,
+        companyId,
+        planCode,
+        paidAt: new Date().toISOString(),
+        months: 1
+      });
+      sendJson(res, 200, { ok: true, result: { activated: true, license: upgraded } });
     } catch (error) {
       sendJson(res, 400, { ok: false, error: String(error.message || error) });
     }
@@ -6779,7 +6897,7 @@ const server = http.createServer(async (req, res) => {
       });
       const accessContext = String(body.accessContext || body.access_context || "").trim().toLowerCase();
       if (accessContext === "portal") {
-        ensurePortalCompanyApproved(result?.user?.companyId || "");
+        await ensurePortalCompanyApproved(result?.user?.companyId || "");
       }
       sendJson(res, 200, { ok: true, result });
     } catch (error) {
