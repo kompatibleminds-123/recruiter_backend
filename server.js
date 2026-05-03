@@ -698,6 +698,57 @@ function getBearerTokenFromRequest(req, requestUrl = null) {
   return queryToken;
 }
 
+function parseCsvEnvSet(value = "") {
+  return new Set(
+    String(value || "")
+      .split(/,|;|\r?\n/)
+      .map((item) => String(item || "").trim())
+      .filter(Boolean)
+  );
+}
+
+function normalizeEmail(value = "") {
+  return String(value || "").trim().toLowerCase();
+}
+
+function getPortalApprovedCompanyIds() {
+  return parseCsvEnvSet(process.env.PORTAL_APPROVED_COMPANY_IDS || "");
+}
+
+function isPortalCompanyApproved(companyId = "") {
+  const approved = getPortalApprovedCompanyIds();
+  // Safe default: if allowlist is not configured, keep existing behavior.
+  if (!approved.size) return true;
+  return approved.has(String(companyId || "").trim());
+}
+
+function ensurePortalCompanyApproved(companyId = "") {
+  if (!isPortalCompanyApproved(companyId)) {
+    throw new Error("Portal access pending admin approval.");
+  }
+}
+
+async function requireSaasAccess(actor, featureLabel = "this feature") {
+  const companyId = String(actor?.companyId || "").trim();
+  const email = normalizeEmail(actor?.email || "");
+  if (!companyId) throw new Error("Invalid company context.");
+
+  const approvedCompanyIds = parseCsvEnvSet(process.env.SAAS_APPROVED_COMPANY_IDS || "");
+  const approvedEmails = new Set(Array.from(parseCsvEnvSet(process.env.SAAS_APPROVED_EMAILS || "")).map((v) => normalizeEmail(v)));
+  if (approvedCompanyIds.has(companyId) || (email && approvedEmails.has(email))) {
+    return true;
+  }
+
+  const license = await getCompanyLicense(companyId).catch(() => null);
+  const plan = String(license?.plan || "").trim().toLowerCase();
+  const status = String(license?.status || "").trim().toLowerCase();
+  const isSaasPlan = plan === "saas_4999_unlimited" && (status === "active" || status === "legacy");
+  if (!isSaasPlan) {
+    throw new Error(`SaaS plan required for ${featureLabel}. Upgrade to Rs 4999 plan or request manual approval.`);
+  }
+  return true;
+}
+
 async function requireCompanySessionOrPayrollSession(token) {
   const rawToken = String(token || "").trim();
   if (!rawToken) throw new Error("Invalid or missing session.");
@@ -6726,9 +6777,12 @@ const server = http.createServer(async (req, res) => {
         email: String(body.email || "").trim(),
         password: String(body.password || "")
       });
+      ensurePortalCompanyApproved(result?.user?.companyId || "");
       sendJson(res, 200, { ok: true, result });
     } catch (error) {
-      sendJson(res, 400, { ok: false, error: String(error.message || error) });
+      const message = String(error.message || error);
+      const status = /pending admin approval/i.test(message) ? 403 : 400;
+      sendJson(res, status, { ok: false, error: message });
     }
     return;
   }
@@ -6802,9 +6856,12 @@ const server = http.createServer(async (req, res) => {
   if (req.method === "GET" && req.url === "/auth/me") {
     try {
       const user = await requireSessionUser(getBearerToken(req));
+      ensurePortalCompanyApproved(user?.companyId || "");
       sendJson(res, 200, { ok: true, result: { user } });
     } catch (error) {
-      sendJson(res, 401, { ok: false, error: String(error.message || error) });
+      const message = String(error.message || error);
+      const status = /pending admin approval/i.test(message) ? 403 : 401;
+      sendJson(res, status, { ok: false, error: message });
     }
     return;
   }
@@ -8443,6 +8500,7 @@ const server = http.createServer(async (req, res) => {
   if (req.method === "GET" && requestUrl.pathname === "/company/applicants") {
     try {
       const user = await requireSessionUser(getBearerToken(req));
+      await requireSaasAccess(user, "applied candidates pipeline");
       const q = String(requestUrl.searchParams.get("q") || "").trim();
       const items = await listApplicantsForUser(user, { q, limit: 500 });
       sendJson(res, 200, { ok: true, result: { total: items.length, items } });
@@ -8508,6 +8566,7 @@ const server = http.createServer(async (req, res) => {
   if (req.method === "GET" && requestUrl.pathname === "/company/applicant-intake-secret") {
     try {
       const actor = await requireSessionUser(getBearerToken(req));
+      await requireSaasAccess(actor, "job apply links");
       const result = await getCompanyApplicantIntakeSecret(actor.companyId);
       sendJson(res, 200, { ok: true, result });
     } catch (error) {
@@ -8548,6 +8607,7 @@ const server = http.createServer(async (req, res) => {
   if (req.method === "GET" && /^\/company\/jobs\/[^/]+\/apply-link-signatures$/.test(requestUrl.pathname)) {
     try {
       const actor = await requireSessionUser(getBearerToken(req));
+      await requireSaasAccess(actor, "job apply links");
       if (String(actor.role || "").toLowerCase() !== "admin") {
         throw new Error("Only an admin can generate recruiter-specific apply links.");
       }
@@ -8654,6 +8714,7 @@ const server = http.createServer(async (req, res) => {
   if (req.method === "POST" && requestUrl.pathname === "/company/applicant-intake-secret") {
     try {
       const actor = await requireSessionUser(getBearerToken(req));
+      await requireSaasAccess(actor, "job apply links");
       const body = await readJsonBody(req);
       const result = await setCompanyApplicantIntakeSecret({
         actorUserId: actor.id,
@@ -8670,6 +8731,7 @@ const server = http.createServer(async (req, res) => {
   if (req.method === "DELETE" && requestUrl.pathname === "/company/applicants") {
     try {
       const actor = await requireSessionUser(getBearerToken(req));
+      await requireSaasAccess(actor, "applied candidates pipeline");
       if (actor.role !== "admin") {
         throw new Error("Only an admin can remove applicants.");
       }
@@ -8697,6 +8759,7 @@ const server = http.createServer(async (req, res) => {
   if (req.method === "POST" && requestUrl.pathname === "/company/applicants/link-assessment") {
     try {
       const actor = await requireSessionUser(getBearerToken(req));
+      await requireSaasAccess(actor, "applied candidates pipeline");
       if (actor.role !== "admin") {
         throw new Error("Only an admin can convert applicants.");
       }
@@ -8712,6 +8775,7 @@ const server = http.createServer(async (req, res) => {
   if (req.method === "POST" && requestUrl.pathname === "/company/applicants/assign") {
     try {
       const actor = await requireSessionUser(getBearerToken(req));
+      await requireSaasAccess(actor, "applied candidates pipeline");
       if (actor.role !== "admin") {
         throw new Error("Only an admin can assign applicants.");
       }
@@ -8908,6 +8972,7 @@ const server = http.createServer(async (req, res) => {
   if (req.method === "GET" && requestUrl.pathname === "/company/candidates/search-natural") {
     try {
       const user = await requireSessionUser(getBearerToken(req));
+      await requireSaasAccess(user, "database save and search");
       const query = String(requestUrl.searchParams.get("q") || "").trim();
       const queryMode = String(requestUrl.searchParams.get("mode") || "natural").trim().toLowerCase();
       const debug = String(requestUrl.searchParams.get("debug") || "").trim() === "1";
@@ -9645,6 +9710,7 @@ const server = http.createServer(async (req, res) => {
   if (req.method === "POST" && requestUrl.pathname === "/company/candidates/search-jd-match") {
     try {
       const user = await requireSessionUser(getBearerToken(req));
+      await requireSaasAccess(user, "database save and search");
       const body = await readJsonBody(req);
       const [candidates, assessments, jobs] = await Promise.all([
         listCandidatesForUser(user, { limit: 5000 }),
