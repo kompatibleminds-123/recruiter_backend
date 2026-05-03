@@ -6276,6 +6276,17 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (req.method === "GET" && (
+    requestUrl.pathname === "/payroll" ||
+    requestUrl.pathname === "/payroll/" ||
+    requestUrl.pathname === "/payroll-login" ||
+    requestUrl.pathname === "/payroll-login/" ||
+    requestUrl.pathname.startsWith("/payroll/")
+  )) {
+    serveStaticFile(res, path.join(ROOT_PUBLIC_DIR, "portal-app", "index.html"));
+    return;
+  }
+
   if (req.method === "GET" && (requestUrl.pathname === "/apply" || requestUrl.pathname === "/apply/")) {
     serveStaticFile(res, path.join(ROOT_PUBLIC_DIR, "apply.html"));
     return;
