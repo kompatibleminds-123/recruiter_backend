@@ -1512,7 +1512,15 @@ async function createTrialCompanyWithAdmin({ companyName, adminName, email, pass
   return { company: sanitizeCompany(company), user: sanitizeUser(inserted?.[0] || user), license };
 }
 async function createUser({ actorUserId, companyId, name, email, password, role }) {
-  const e = normalizeEmail(email), r = role === "admin" ? "admin" : "team";
+  const e = normalizeEmail(email);
+  const rawRole = String(role || "").trim().toLowerCase();
+  const r = rawRole === "admin"
+    ? "admin"
+    : rawRole === "payroll_owner"
+      ? "payroll_owner"
+      : rawRole === "payroll_manager"
+        ? "payroll_manager"
+        : "team";
   if (!actorUserId || !companyId || !name || !e || !password) throw new Error("actorUserId, companyId, name, email, and password are required.");
   const actor = sanitizeUser(await getUserById(actorUserId, companyId));
   if (!actor || actor.role !== "admin") throw new Error("Only an admin for this company can create recruiter accounts.");
@@ -2345,7 +2353,11 @@ function isPayrollAllowedForActor({ actor, license, permission = "access" }) {
 async function requireAdminForCompany({ actorUserId, companyId, payrollPermission = "" }) {
   const actor = sanitizeUser(await getUserById(actorUserId, companyId));
   if (!actor) throw new Error("Authenticated recruiter not found for this company.");
-  if (String(actor.role || "").toLowerCase() !== "admin") throw new Error("Admin access required.");
+  const actorRole = String(actor.role || "").toLowerCase();
+  const actorIsAdmin = actorRole === "admin";
+  const actorIsPayrollRole = actorRole === "payroll_owner" || actorRole === "payroll_manager";
+  if (!payrollPermission && !actorIsAdmin) throw new Error("Admin access required.");
+  if (payrollPermission && !actorIsAdmin && !actorIsPayrollRole) throw new Error("Payroll access required.");
   if (payrollPermission) {
     const license = await getCompanyLicense(companyId);
     if (!isPayrollAllowedForActor({ actor, license, permission: payrollPermission })) {

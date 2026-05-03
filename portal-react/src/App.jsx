@@ -12317,11 +12317,11 @@ function PortalApp({ token, onLogout }) {
                       <h2>Add Users</h2>
                     </div>
                   </summary>
-                  <p className="muted">Create admins and recruiters for this company workspace. Existing admin passwords are not reset from here for safety.</p>
+                  <p className="muted">Create admins, recruiters, and payroll users for this company workspace. Existing admin passwords are not reset from here for safety.</p>
                   <div className="form-grid two-col">
                     <label><span>Member name</span><input disabled={!isSettingsAdmin} value={teamUserDraft.name} onChange={(e) => setTeamUserDraft((current) => ({ ...current, name: e.target.value }))} placeholder="Ankit Garg" /></label>
                     <label><span>Member email</span><input disabled={!isSettingsAdmin} type="email" value={teamUserDraft.email} onChange={(e) => setTeamUserDraft((current) => ({ ...current, email: e.target.value }))} placeholder="member@company.com" /></label>
-                    <label><span>Member role</span><select disabled={!isSettingsAdmin} value={teamUserDraft.role} onChange={(e) => setTeamUserDraft((current) => ({ ...current, role: e.target.value }))}><option value="recruiter">Recruiter</option><option value="admin">Admin</option></select></label>
+                    <label><span>Member role</span><select disabled={!isSettingsAdmin} value={teamUserDraft.role} onChange={(e) => setTeamUserDraft((current) => ({ ...current, role: e.target.value }))}><option value="recruiter">Recruiter</option><option value="admin">Admin</option><option value="payroll_owner">Payroll Owner</option><option value="payroll_manager">Payroll Manager</option></select></label>
                     <label><span>Temporary password</span><input disabled={!isSettingsAdmin} type="password" value={teamUserDraft.password} onChange={(e) => setTeamUserDraft((current) => ({ ...current, password: e.target.value }))} placeholder="Temporary password" /></label>
                   </div>
                   {isSettingsAdmin ? <div className="button-row"><button onClick={() => void createTeamUser()}>Create member</button></div> : null}
@@ -12332,7 +12332,7 @@ function PortalApp({ token, onLogout }) {
                         <div className="item-card__top">
                           <div>
                             <h3>{item.name}</h3>
-                            <p className="muted">{`${item.email} | ${String(item.role || "").toLowerCase() === "admin" ? "Admin" : "Recruiter"}`}</p>
+                            <p className="muted">{`${item.email} | ${formatWorkspaceUserRoleLabel(item.role)}`}</p>
                           </div>
                           {isSettingsAdmin && String(item.role || "").toLowerCase() !== "admin" ? (
                             <div className="form-grid" style={{ minWidth: "260px" }}>
@@ -13681,6 +13681,14 @@ function EmployeePortalApp({ token, onLogout }) {
       </main>
     </div>
   );
+}
+
+function formatWorkspaceUserRoleLabel(roleValue = "") {
+  const role = String(roleValue || "").trim().toLowerCase();
+  if (role === "admin") return "Admin";
+  if (role === "payroll_owner") return "Payroll Owner";
+  if (role === "payroll_manager") return "Payroll Manager";
+  return "Recruiter";
 }
 
 function PayrollAdminApp({ token, onLogout }) {
