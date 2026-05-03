@@ -6263,6 +6263,11 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (req.method === "GET" && (requestUrl.pathname === "/upgrade" || requestUrl.pathname === "/upgrade/")) {
+    serveStaticFile(res, path.join(ROOT_PUBLIC_DIR, "upgrade.html"));
+    return;
+  }
+
   if (req.method === "GET" && (
     requestUrl.pathname === "/client-portal" ||
     requestUrl.pathname === "/client-portal/" ||
