@@ -1865,10 +1865,8 @@ async function login({ email, password }) {
   const e = normalizeEmail(email); const user = await getUserByEmail(e);
   if (!user || !verifyPassword(password, user.passwordHash || user.password_hash)) throw new Error("Invalid email or password.");
   const sessionUser = sanitizeUser(user); const token = crypto.randomBytes(32).toString("hex");
-  const license = await getCompanyLicense(sessionUser.companyId).catch(() => null);
-  if (license && license.canCapture === false) {
-    throw new Error(String(license.accessBlockedReason || "Workspace access is inactive until payment is completed."));
-  }
+  // Keep authentication separate from plan enforcement.
+  // Expired trial / blocked plan should still allow login so UI can show upgrade state.
   if (!cfg().on) {
     const store = readStore(); store.sessions = (store.sessions || []).filter((s) => s.token !== token); store.sessions.push({ token, userId: sessionUser.id, companyId: sessionUser.companyId, createdAt: new Date().toISOString() }); writeStore(store);
   } else {
