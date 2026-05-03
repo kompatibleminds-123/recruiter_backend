@@ -9,6 +9,11 @@ import {
   RECRUITER_BROWSER_TITLE,
   RECRUITER_PORTAL_LABEL
 } from "./components/branding/brandConfig";
+import PayrollSettingsSection from "./payroll/PayrollSettingsSection";
+import PayrollCompensationSection from "./payroll/PayrollCompensationSection";
+import PayrollRunsSection from "./payroll/PayrollRunsSection";
+import PayrollFbpSection from "./payroll/PayrollFbpSection";
+import PayrollPayslipsSection from "./payroll/PayrollPayslipsSection";
 
 const TOKEN_KEY = "recruitdesk_portal_token";
 const CLIENT_TOKEN_KEY = "recruitdesk_client_portal_token";
@@ -13570,8 +13575,7 @@ function PayrollLiteAdminPage({ token, employees = [], users = [], viewMode = "a
           <span className="chip">FBP Heads</span>
         </div>
       </div>
-      {showFoundation ? (
-      <Section kicker="Payroll Lite" title="Foundation Settings">
+      <PayrollSettingsSection visible={showFoundation} kicker="Payroll Lite" title="Foundation Settings">
         <p className="muted">Phase 1 scaffolding is enabled here. Recruiter/client modules remain untouched.</p>
         {status ? <div className="status">{status}</div> : null}
         <div className="form-grid three-col">
@@ -13590,10 +13594,8 @@ function PayrollLiteAdminPage({ token, employees = [], users = [], viewMode = "a
           <label className="full"><span>Policy note</span><textarea rows={2} value={settings.policyNote} onChange={(e) => setSettings((c) => ({ ...c, policyNote: e.target.value }))} /></label>
         </div>
         <div className="button-row"><button onClick={() => void saveSettings()}>Save settings</button></div>
-      </Section>
-      ) : null}
-      {showAccessControl ? (
-      <Section kicker="Payroll Lite" title="Access Control (Package + Authorization)">
+      </PayrollSettingsSection>
+      <PayrollSettingsSection visible={showAccessControl} kicker="Payroll Lite" title="Access Control (Package + Authorization)">
         <p className="muted">Recruitment admin access is separate. Only payroll_owner/payroll_manager should grant payroll permissions.</p>
         <div className="form-grid three-col">
           <label className="checkbox-row">
@@ -13621,11 +13623,9 @@ function PayrollLiteAdminPage({ token, employees = [], users = [], viewMode = "a
           </table>
         </div>
         <div className="button-row"><button onClick={() => void savePayrollAccessControl()}>Save payroll access control</button></div>
-      </Section>
-      ) : null}
+      </PayrollSettingsSection>
 
-      {showTemplates ? (
-      <Section kicker="Salary Templates" title="Create Template Automation Rules">
+      <PayrollCompensationSection visible={showTemplates} kicker="Salary Templates" title="Create Template Automation Rules">
         <div className="form-grid three-col">
           <label><span>Template code</span><input value={templateForm.code} onChange={(e) => setTemplateForm((c) => ({ ...c, code: e.target.value }))} placeholder="internal_standard" /></label>
           <label><span>Template name</span><input value={templateForm.name} onChange={(e) => setTemplateForm((c) => ({ ...c, name: e.target.value }))} placeholder="Internal Employee Standard" /></label>
@@ -13672,11 +13672,9 @@ function PayrollLiteAdminPage({ token, employees = [], users = [], viewMode = "a
             </tbody>
           </table>
         </div>
-      </Section>
-      ) : null}
+      </PayrollCompensationSection>
 
-      {showCompensation ? (
-      <Section kicker="Compensation" title="Create Structure">
+      <PayrollCompensationSection visible={showCompensation} kicker="Compensation" title="Create Structure">
         <div className="form-grid three-col">
           <label><span>Employee</span><select value={compForm.employeeId} onChange={(e) => setCompForm((c) => ({ ...c, employeeId: e.target.value }))}><option value="">Select employee</option>{employees.map((emp) => <option key={emp.id} value={emp.id}>{emp.employeeCode} - {emp.fullName}</option>)}</select></label>
           <label><span>Effective from</span><input type="date" value={compForm.effectiveFrom} onChange={(e) => setCompForm((c) => ({ ...c, effectiveFrom: e.target.value }))} /></label>
@@ -13731,11 +13729,9 @@ function PayrollLiteAdminPage({ token, employees = [], users = [], viewMode = "a
             </tbody>
           </table>
         </div>
-      </Section>
-      ) : null}
+      </PayrollCompensationSection>
 
-      {showInputs ? (
-      <Section kicker="Payroll Inputs" title="Employee-wise Monthly Inputs">
+      <PayrollRunsSection visible={showInputs} kicker="Payroll Inputs" title="Employee-wise Monthly Inputs">
         <div className="form-grid three-col">
           <label><span>Payroll month</span><input type="number" min="1" max="12" value={payrollMonth} onChange={(e) => setPayrollMonth(Number(e.target.value || 1))} /></label>
           <label><span>Payroll year</span><input type="number" min="2000" max="2100" value={payrollYear} onChange={(e) => setPayrollYear(Number(e.target.value || new Date().getFullYear()))} /></label>
@@ -13777,11 +13773,9 @@ function PayrollLiteAdminPage({ token, employees = [], users = [], viewMode = "a
             </tbody>
           </table>
         </div>
-      </Section>
-      ) : null}
+      </PayrollRunsSection>
 
-      {showRuns ? (
-      <Section kicker="Payroll Run" title="Draft -> Calculate -> Approve -> Lock">
+      <PayrollRunsSection visible={showRuns} kicker="Payroll Run" title="Draft -> Calculate -> Approve -> Lock">
         <div className="button-row">
           <button onClick={() => void createRunDraft()}>Create Draft</button>
           <button className="ghost-btn" onClick={() => void runAction("calculate")} disabled={!selectedRunId}>Calculate</button>
@@ -13851,11 +13845,9 @@ function PayrollLiteAdminPage({ token, employees = [], users = [], viewMode = "a
             </tbody>
           </table>
         </div>
-      </Section>
-      ) : null}
+      </PayrollRunsSection>
 
-      {showFbpHeads ? (
-      <Section kicker="FBP Heads" title="Manage FBP Policy Heads">
+      <PayrollFbpSection visible={showFbpHeads} kicker="FBP Heads" title="Manage FBP Policy Heads">
         <div className="form-grid three-col">
           <label><span>Head name</span><input value={fbpForm.headName} onChange={(e) => setFbpForm((c) => ({ ...c, headName: e.target.value }))} /></label>
           <label><span>Monthly limit</span><input type="number" value={fbpForm.monthlyLimit} onChange={(e) => setFbpForm((c) => ({ ...c, monthlyLimit: e.target.value }))} /></label>
@@ -13874,10 +13866,8 @@ function PayrollLiteAdminPage({ token, employees = [], users = [], viewMode = "a
             </tbody>
           </table>
         </div>
-      </Section>
-      ) : null}
-      {showFbpClaims ? (
-      <Section kicker="Phase 3" title="FBP Declarations & Approvals">
+      </PayrollFbpSection>
+      <PayrollFbpSection visible={showFbpClaims} kicker="Phase 3" title="FBP Declarations & Approvals">
         {suggestRecalculateAfterFbp && selectedRunId ? (
           <div className="button-row" style={{ marginBottom: 8 }}>
             <button
@@ -13965,10 +13955,8 @@ function PayrollLiteAdminPage({ token, employees = [], users = [], viewMode = "a
             </tbody>
           </table>
         </div>
-      </Section>
-      ) : null}
-      {showPayslips ? (
-      <Section kicker="Phase 3" title="Payslip Publish">
+      </PayrollFbpSection>
+      <PayrollPayslipsSection visible={showPayslips} kicker="Phase 3" title="Payslip Publish">
         <div className="button-row">
           <button onClick={() => void publishPayslipsForSelectedRun()} disabled={!selectedRunId}>Publish payslips for selected run</button>
         </div>
@@ -13991,8 +13979,7 @@ function PayrollLiteAdminPage({ token, employees = [], users = [], viewMode = "a
             </tbody>
           </table>
         </div>
-      </Section>
-      ) : null}
+      </PayrollPayslipsSection>
     </div>
   );
 }
