@@ -47,7 +47,6 @@ const BASE_NAV_SECTIONS = [
     label: "Admin",
     items: [
       { to: "/login-settings", label: "Login Settings" },
-      { to: "/admin/payroll/settings", label: "Payroll Lite" },
       { to: "/intake-settings", label: "Job Apply Link" },
       { to: "/settings", label: "Preset Settings" }
     ]
@@ -12452,9 +12451,7 @@ function PortalApp({ token, onLogout }) {
             } />
 
           <Route path="/admin/payroll/settings" element={
-            <PayrollRouteBoundary>
-              <PayrollLiteAdminPage token={token} employees={employeeUsers} users={state.users} />
-            </PayrollRouteBoundary>
+            <Navigate to="/payroll/runs" replace />
           } />
 
           <Route path="*" element={<Navigate to="/dashboard" replace />} />
@@ -12881,7 +12878,7 @@ function getCurrentPositionAsync() {
   });
 }
 
-function PayrollLiteAdminPage({ token, employees = [], users = [] }) {
+function PayrollLiteAdminPage({ token, employees = [], users = [], viewMode = "all" }) {
   const formatMoney = (value) => {
     const n = Number(value || 0);
     if (!Number.isFinite(n)) return "0.00";
@@ -13073,6 +13070,15 @@ function PayrollLiteAdminPage({ token, employees = [], users = [] }) {
     payrollApproverUserIds: [],
     payrollAccessManagerUserIds: []
   });
+  const showFoundation = viewMode === "all" || viewMode === "statutory";
+  const showAccessControl = viewMode === "all" || viewMode === "statutory";
+  const showTemplates = viewMode === "all" || viewMode === "salary";
+  const showCompensation = viewMode === "all" || viewMode === "employees" || viewMode === "salary";
+  const showInputs = viewMode === "all" || viewMode === "attendance";
+  const showRuns = viewMode === "all" || viewMode === "runs" || viewMode === "reports";
+  const showFbpHeads = viewMode === "all" || viewMode === "fbp";
+  const showFbpClaims = viewMode === "all" || viewMode === "fbp";
+  const showPayslips = viewMode === "all" || viewMode === "payslips" || viewMode === "documents";
 
   async function loadPayrollFoundation() {
     const [settingsResult, compResult, fbpResult, templateResult, accessControlResult] = await Promise.all([
@@ -13564,6 +13570,7 @@ function PayrollLiteAdminPage({ token, employees = [], users = [] }) {
           <span className="chip">FBP Heads</span>
         </div>
       </div>
+      {showFoundation ? (
       <Section kicker="Payroll Lite" title="Foundation Settings">
         <p className="muted">Phase 1 scaffolding is enabled here. Recruiter/client modules remain untouched.</p>
         {status ? <div className="status">{status}</div> : null}
@@ -13584,6 +13591,8 @@ function PayrollLiteAdminPage({ token, employees = [], users = [] }) {
         </div>
         <div className="button-row"><button onClick={() => void saveSettings()}>Save settings</button></div>
       </Section>
+      ) : null}
+      {showAccessControl ? (
       <Section kicker="Payroll Lite" title="Access Control (Package + Authorization)">
         <p className="muted">Recruitment admin access is separate. Only payroll_owner/payroll_manager should grant payroll permissions.</p>
         <div className="form-grid three-col">
@@ -13613,7 +13622,9 @@ function PayrollLiteAdminPage({ token, employees = [], users = [] }) {
         </div>
         <div className="button-row"><button onClick={() => void savePayrollAccessControl()}>Save payroll access control</button></div>
       </Section>
+      ) : null}
 
+      {showTemplates ? (
       <Section kicker="Salary Templates" title="Create Template Automation Rules">
         <div className="form-grid three-col">
           <label><span>Template code</span><input value={templateForm.code} onChange={(e) => setTemplateForm((c) => ({ ...c, code: e.target.value }))} placeholder="internal_standard" /></label>
@@ -13662,7 +13673,9 @@ function PayrollLiteAdminPage({ token, employees = [], users = [] }) {
           </table>
         </div>
       </Section>
+      ) : null}
 
+      {showCompensation ? (
       <Section kicker="Compensation" title="Create Structure">
         <div className="form-grid three-col">
           <label><span>Employee</span><select value={compForm.employeeId} onChange={(e) => setCompForm((c) => ({ ...c, employeeId: e.target.value }))}><option value="">Select employee</option>{employees.map((emp) => <option key={emp.id} value={emp.id}>{emp.employeeCode} - {emp.fullName}</option>)}</select></label>
@@ -13719,7 +13732,9 @@ function PayrollLiteAdminPage({ token, employees = [], users = [] }) {
           </table>
         </div>
       </Section>
+      ) : null}
 
+      {showInputs ? (
       <Section kicker="Payroll Inputs" title="Employee-wise Monthly Inputs">
         <div className="form-grid three-col">
           <label><span>Payroll month</span><input type="number" min="1" max="12" value={payrollMonth} onChange={(e) => setPayrollMonth(Number(e.target.value || 1))} /></label>
@@ -13763,7 +13778,9 @@ function PayrollLiteAdminPage({ token, employees = [], users = [] }) {
           </table>
         </div>
       </Section>
+      ) : null}
 
+      {showRuns ? (
       <Section kicker="Payroll Run" title="Draft -> Calculate -> Approve -> Lock">
         <div className="button-row">
           <button onClick={() => void createRunDraft()}>Create Draft</button>
@@ -13835,7 +13852,9 @@ function PayrollLiteAdminPage({ token, employees = [], users = [] }) {
           </table>
         </div>
       </Section>
+      ) : null}
 
+      {showFbpHeads ? (
       <Section kicker="FBP Heads" title="Manage FBP Policy Heads">
         <div className="form-grid three-col">
           <label><span>Head name</span><input value={fbpForm.headName} onChange={(e) => setFbpForm((c) => ({ ...c, headName: e.target.value }))} /></label>
@@ -13856,6 +13875,8 @@ function PayrollLiteAdminPage({ token, employees = [], users = [] }) {
           </table>
         </div>
       </Section>
+      ) : null}
+      {showFbpClaims ? (
       <Section kicker="Phase 3" title="FBP Declarations & Approvals">
         {suggestRecalculateAfterFbp && selectedRunId ? (
           <div className="button-row" style={{ marginBottom: 8 }}>
@@ -13945,6 +13966,8 @@ function PayrollLiteAdminPage({ token, employees = [], users = [] }) {
           </table>
         </div>
       </Section>
+      ) : null}
+      {showPayslips ? (
       <Section kicker="Phase 3" title="Payslip Publish">
         <div className="button-row">
           <button onClick={() => void publishPayslipsForSelectedRun()} disabled={!selectedRunId}>Publish payslips for selected run</button>
@@ -13969,6 +13992,7 @@ function PayrollLiteAdminPage({ token, employees = [], users = [] }) {
           </table>
         </div>
       </Section>
+      ) : null}
     </div>
   );
 }
@@ -14414,15 +14438,15 @@ function PayrollAdminApp({ token, onLogout }) {
               </Section>
             </div>
           } />
-          <Route path="/payroll/runs" element={<PayrollLiteAdminPage token={token} employees={employees} users={users} />} />
-          <Route path="/payroll/employees" element={<Section kicker="Payroll Module" title="Employees"><div className="empty-state">Employees page is now under payroll shell. Detailed employee master wiring is next.</div></Section>} />
-          <Route path="/payroll/salary-structures" element={<Section kicker="Payroll Module" title="Salary Structures"><div className="empty-state">Salary structures module will be split here in next patch.</div></Section>} />
-          <Route path="/payroll/attendance-lop" element={<Section kicker="Payroll Module" title="Attendance / LOP Inputs"><div className="empty-state">Attendance and LOP input screen will be moved here in next patch.</div></Section>} />
-          <Route path="/payroll/fbp-claims" element={<Section kicker="Payroll Module" title="FBP Claims"><div className="empty-state">FBP approval and claims queue will be split here next.</div></Section>} />
-          <Route path="/payroll/payslips" element={<Section kicker="Payroll Module" title="Payslips"><div className="empty-state">Payslip publishing and archive view will be moved here next.</div></Section>} />
-          <Route path="/payroll/documents" element={<Section kicker="Payroll Module" title="Documents"><div className="empty-state">Payroll documents repository screen will be added here.</div></Section>} />
-          <Route path="/payroll/statutory-settings" element={<Section kicker="Payroll Module" title="Statutory Settings"><div className="empty-state">PF/ESI/LWF/PT settings split will be added here.</div></Section>} />
-          <Route path="/payroll/reports" element={<Section kicker="Payroll Module" title="Reports"><div className="empty-state">Payroll reports screen will be added here.</div></Section>} />
+          <Route path="/payroll/runs" element={<PayrollLiteAdminPage token={token} employees={employees} users={users} viewMode="runs" />} />
+          <Route path="/payroll/employees" element={<PayrollLiteAdminPage token={token} employees={employees} users={users} viewMode="employees" />} />
+          <Route path="/payroll/salary-structures" element={<PayrollLiteAdminPage token={token} employees={employees} users={users} viewMode="salary" />} />
+          <Route path="/payroll/attendance-lop" element={<PayrollLiteAdminPage token={token} employees={employees} users={users} viewMode="attendance" />} />
+          <Route path="/payroll/fbp-claims" element={<PayrollLiteAdminPage token={token} employees={employees} users={users} viewMode="fbp" />} />
+          <Route path="/payroll/payslips" element={<PayrollLiteAdminPage token={token} employees={employees} users={users} viewMode="payslips" />} />
+          <Route path="/payroll/documents" element={<PayrollLiteAdminPage token={token} employees={employees} users={users} viewMode="documents" />} />
+          <Route path="/payroll/statutory-settings" element={<PayrollLiteAdminPage token={token} employees={employees} users={users} viewMode="statutory" />} />
+          <Route path="/payroll/reports" element={<PayrollLiteAdminPage token={token} employees={employees} users={users} viewMode="reports" />} />
           <Route path="*" element={<Navigate to="/payroll/dashboard" replace />} />
         </Routes>
       </main>
