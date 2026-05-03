@@ -69,7 +69,7 @@ export default function usePayrollSettingsState({ viewMode = "all" } = {}) {
   });
 
   const showFoundation = viewMode === "all" || viewMode === "statutory";
-  const showAccessControl = viewMode === "all" || viewMode === "statutory";
+  const showAccessControl = false;
   const showTemplates = viewMode === "all" || viewMode === "salary";
   const showCompensation = viewMode === "all" || viewMode === "salary";
 

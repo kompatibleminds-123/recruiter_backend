@@ -2471,25 +2471,14 @@ function isPayrollAllowedForActor({ actor, license, permission = "access" }) {
   return accessAllowed;
 }
 async function requireAdminForCompany({ actorUserId, companyId, payrollPermission = "" }) {
-  const actor = sanitizeUser(await getUserById(actorUserId, companyId));
-  if (!actor) throw new Error("Authenticated recruiter not found for this company.");
+  const actor = sanitizeUser(await getUserById(actorUserId, companyId))
+    || sanitizePayrollUser(await getPayrollUserById(actorUserId, companyId));
+  if (!actor) throw new Error("Authenticated user not found for this company.");
   const actorRole = String(actor.role || "").toLowerCase();
   const actorIsAdmin = actorRole === "admin";
   const actorIsPayrollRole = actorRole === "payroll_owner" || actorRole === "payroll_manager";
   if (!payrollPermission && !actorIsAdmin) throw new Error("Admin access required.");
   if (payrollPermission && !actorIsAdmin && !actorIsPayrollRole) throw new Error("Payroll access required.");
-  if (payrollPermission) {
-    const license = await getCompanyLicense(companyId);
-    if (!isPayrollAllowedForActor({ actor, license, permission: payrollPermission })) {
-      throw new Error(
-        payrollPermission === "manage"
-          ? "Payroll access management is restricted to payroll_owner/payroll_manager users."
-          : payrollPermission === "approve"
-            ? "You are not authorized to approve payroll actions."
-            : "You are not authorized to access Payroll Lite for this company package."
-      );
-    }
-  }
   return actor;
 }
 async function getCompanyPayrollSettings({ actorUserId, companyId }) {

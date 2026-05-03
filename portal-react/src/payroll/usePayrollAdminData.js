@@ -124,26 +124,16 @@ export default function usePayrollAdminData({ token, employees = [], users = [],
   } = usePayrollFbpState({ viewMode });
 
   async function loadPayrollFoundation() {
-    const [settingsResult, compResult, fbpResult, templateResult, accessControlResult] = await Promise.all([
+    const [settingsResult, compResult, fbpResult, templateResult] = await Promise.all([
       api("/company/payroll/settings", token).catch(() => null),
       api("/company/payroll/compensation", token).catch(() => ({ items: [] })),
       api("/company/payroll/fbp-heads", token).catch(() => ({ items: [] })),
-      api("/company/payroll/templates", token).catch(() => ({ items: [] })),
-      api("/company/payroll/access-control", token).catch(() => null)
+      api("/company/payroll/templates", token).catch(() => ({ items: [] }))
     ]);
     if (settingsResult) setSettings((current) => ({ ...current, ...settingsResult }));
     setCompItems(Array.isArray(compResult?.items) ? compResult.items : []);
     setFbpHeads(Array.isArray(fbpResult?.items) ? fbpResult.items : []);
     setSalaryTemplates(Array.isArray(templateResult?.items) ? templateResult.items : []);
-    if (accessControlResult) {
-      setAccessControl({
-        payrollLiteEnabled: Boolean(accessControlResult.payrollLiteEnabled),
-        ownerAdminUserId: String(accessControlResult.ownerAdminUserId || "").trim(),
-        payrollAuthorizedUserIds: Array.isArray(accessControlResult.payrollAuthorizedUserIds) ? accessControlResult.payrollAuthorizedUserIds : [],
-        payrollApproverUserIds: Array.isArray(accessControlResult.payrollApproverUserIds) ? accessControlResult.payrollApproverUserIds : [],
-        payrollAccessManagerUserIds: Array.isArray(accessControlResult.payrollAccessManagerUserIds) ? accessControlResult.payrollAccessManagerUserIds : []
-      });
-    }
   }
   async function loadPayrollExecutionData(nextMonth = payrollMonth, nextYear = payrollYear) {
     const [inputResult, runResult, declarationResult, payslipResult] = await Promise.all([
@@ -182,16 +172,7 @@ export default function usePayrollAdminData({ token, employees = [], users = [],
       setStatus(String(error?.message || error));
     }
   }
-  async function savePayrollAccessControl() {
-    try {
-      setStatus("Saving payroll access control...");
-      await api("/company/payroll/access-control", token, "POST", accessControl);
-      await loadPayrollFoundation();
-      setStatus("Payroll access control saved.");
-    } catch (error) {
-      setStatus(String(error?.message || error));
-    }
-  }
+  async function savePayrollAccessControl() {}
 
   async function saveComp() {
     try {
