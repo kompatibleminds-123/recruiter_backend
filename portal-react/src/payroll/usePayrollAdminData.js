@@ -534,8 +534,8 @@ export default function usePayrollAdminData({ token, employees = [], users = [],
           approvedAmount: overrideAmount
         });
       } else {
-        const rejectionReason = typeof window !== "undefined" ? (window.prompt("Rejection reason", "Insufficient proof") || "").trim() : "Rejected";
-        if (!rejectionReason) throw new Error("Rejection reason required.");
+        const rejectionReasonRaw = typeof window !== "undefined" ? (window.prompt("Rejection reason", "Insufficient proof") || "").trim() : "";
+        const rejectionReason = rejectionReasonRaw || "Rejected by payroll admin";
         await api("/company/payroll/fbp-declarations/reject", token, "POST", {
           declarationId: id,
           rejectionReason

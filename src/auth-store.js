@@ -3498,19 +3498,10 @@ async function publishPayrollPayslips({ actorUserId, companyId, payrollRunId, pa
   return { runId, publishedCount: rows.length };
 }
 async function listPayrollPayslips({ actorUserId, companyId, payrollMonth = 0, payrollYear = 0, employeeId = "" }) {
-  const actor = sanitizeUser(await getUserById(actorUserId, companyId));
+  await requireAdminForCompany({ actorUserId, companyId, payrollPermission: "access" });
   const month = Number(payrollMonth || 0);
   const year = Number(payrollYear || 0);
   const scopedEmployeeId = String(employeeId || "").trim();
-  if (actor) {
-    if (String(actor.role || "").toLowerCase() !== "admin") throw new Error("Admin access required.");
-    const license = await getCompanyLicense(companyId);
-    if (!isPayrollAllowedForActor({ actor, license, permission: "access" })) {
-      throw new Error("You are not authorized to access Payroll Lite for this company package.");
-    }
-  } else if (!scopedEmployeeId) {
-    throw new Error("Authenticated user not found.");
-  }
   if (!cfg().on) {
     const store = readStore();
     return (store.payrollPayslips || [])
