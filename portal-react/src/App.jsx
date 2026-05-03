@@ -13871,7 +13871,7 @@ function PayrollAdminApp({ token, onLogout }) {
   }, [token]);
 
   return (
-    <div className="portal-shell">
+    <div className="app-shell">
       <aside className="sidebar">
         <div>
           <BrandLogo size="md" />
