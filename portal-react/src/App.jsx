@@ -67,13 +67,11 @@ const PAYROLL_NAV_ITEMS = [
   { to: "/payroll/dashboard", label: "Dashboard" },
   { to: "/payroll/employees", label: "Employees" },
   { to: "/payroll/salary-structures", label: "Salary Structures" },
-  { to: "/payroll/attendance-lop", label: "Attendance / LOP Inputs" },
-  { to: "/payroll/fbp-claims", label: "FBP Claims" },
+  { to: "/payroll/attendance-lop", label: "Employee Monthly Inputs" },
+  { to: "/payroll/fbp-claims", label: "Manage FBP" },
   { to: "/payroll/runs", label: "Payroll Runs" },
   { to: "/payroll/payslips", label: "Payslips" },
-  { to: "/payroll/documents", label: "Documents" },
-  { to: "/payroll/statutory-settings", label: "Statutory Settings" },
-  { to: "/payroll/reports", label: "Reports" }
+  { to: "/payroll/statutory-settings", label: "Statutory Settings" }
 ];
 
 	const DEFAULT_COPY_SETTINGS = {
@@ -13007,26 +13005,6 @@ function PayrollLiteAdminPage({ token, employees = [], users = [], viewMode = "a
   }
   return (
     <div className="page-grid">
-      <div className="item-card compact-card payroll-lite-shell">
-        <div className="payroll-lite-shell__top">
-          <div>
-            <div className="section-kicker">Payroll</div>
-            <h3>Simple Payroll Workspace</h3>
-            <p className="muted">A clean path for setup, monthly input, pay run, and FBP policy.</p>
-          </div>
-          <div className="payroll-setup-progress">
-            <strong>Phase 3 in progress</strong>
-            <div className="muted">FBP + Payslip completion</div>
-          </div>
-        </div>
-        <div className="chip-row">
-          <span className="chip">Setup</span>
-          <span className="chip">Employees</span>
-          <span className="chip">Pay Inputs</span>
-          <span className="chip">Pay Runs</span>
-          <span className="chip">FBP Heads</span>
-        </div>
-      </div>
       <PayrollSettingsSection visible={showFoundation} kicker="Payroll Lite" title="Foundation Settings">
         <p className="muted">Phase 1 scaffolding is enabled here. Recruiter/client modules remain untouched.</p>
         {status ? <div className="status">{status}</div> : null}
@@ -13354,7 +13332,7 @@ function PayrollLiteAdminPage({ token, employees = [], users = [], viewMode = "a
           </table>
         </div>
       </PayrollFbpSection>
-      <PayrollFbpSection visible={showFbpClaims} kicker="Phase 3" title="FBP Declarations & Approvals">
+      <PayrollFbpSection visible={showFbpClaims} kicker="FBP" title="FBP Declarations & Approvals">
         {suggestRecalculateAfterFbp && selectedRunId ? (
           <div className="button-row" style={{ marginBottom: 8 }}>
             <button
@@ -13443,7 +13421,7 @@ function PayrollLiteAdminPage({ token, employees = [], users = [], viewMode = "a
           </table>
         </div>
       </PayrollFbpSection>
-      <PayrollPayslipsSection visible={showPayslips} kicker="Phase 3" title="Payslip Publish">
+      <PayrollPayslipsSection visible={showPayslips} kicker="Payslips" title="Payslip Publish">
         <div className="button-row">
           <button onClick={() => void publishPayslipsForSelectedRun()} disabled={!selectedRunId}>Publish payslips for selected run</button>
         </div>
@@ -13898,9 +13876,9 @@ function PayrollAdminApp({ token, onLogout }) {
         <div>
           <BrandLogo size="md" />
           <p className="muted" style={{ margin: "0.35rem 0 1rem" }}>Payroll Admin</p>
-          <nav>
+          <nav className="nav">
             {PAYROLL_NAV_ITEMS.map((item) => (
-              <NavLink key={item.to} to={item.to}>{item.label}</NavLink>
+              <NavLink key={item.to} to={item.to} className={({ isActive }) => `nav-btn${isActive ? " active" : ""}`}>{item.label}</NavLink>
             ))}
           </nav>
         </div>
@@ -13928,9 +13906,7 @@ function PayrollAdminApp({ token, onLogout }) {
           <Route path="/payroll/attendance-lop" element={<PayrollLiteAdminPage token={token} employees={employees} users={users} viewMode="attendance" onEmployeesChanged={loadPayrollAdminData} />} />
           <Route path="/payroll/fbp-claims" element={<PayrollLiteAdminPage token={token} employees={employees} users={users} viewMode="fbp" onEmployeesChanged={loadPayrollAdminData} />} />
           <Route path="/payroll/payslips" element={<PayrollLiteAdminPage token={token} employees={employees} users={users} viewMode="payslips" onEmployeesChanged={loadPayrollAdminData} />} />
-          <Route path="/payroll/documents" element={<PayrollLiteAdminPage token={token} employees={employees} users={users} viewMode="documents" onEmployeesChanged={loadPayrollAdminData} />} />
           <Route path="/payroll/statutory-settings" element={<PayrollLiteAdminPage token={token} employees={employees} users={users} viewMode="statutory" onEmployeesChanged={loadPayrollAdminData} />} />
-          <Route path="/payroll/reports" element={<PayrollLiteAdminPage token={token} employees={employees} users={users} viewMode="reports" onEmployeesChanged={loadPayrollAdminData} />} />
           <Route path="*" element={<Navigate to="/payroll/dashboard" replace />} />
         </Routes>
       </main>

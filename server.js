@@ -697,6 +697,16 @@ function getBearerTokenFromRequest(req, requestUrl = null) {
   return queryToken;
 }
 
+async function requireCompanySessionOrPayrollSession(token) {
+  const rawToken = String(token || "").trim();
+  if (!rawToken) throw new Error("Invalid or missing session.");
+  try {
+    return await requireSessionUser(rawToken);
+  } catch {
+    return requirePayrollSessionUser(rawToken);
+  }
+}
+
 function timingSafeEqualString(a, b) {
   const left = String(a || "");
   const right = String(b || "");
@@ -7097,7 +7107,7 @@ const server = http.createServer(async (req, res) => {
 
   if (req.method === "GET" && req.url === "/company/employees") {
     try {
-      const actor = await requireSessionUser(getBearerToken(req));
+      const actor = await requireCompanySessionOrPayrollSession(getBearerToken(req));
       const employees = await listCompanyEmployees(actor.companyId);
       sendJson(res, 200, { ok: true, result: { companyId: actor.companyId, employees } });
     } catch (error) {
@@ -7112,7 +7122,7 @@ const server = http.createServer(async (req, res) => {
 
   if (req.method === "POST" && (req.url === "/company/employees" || req.url === "/company/createemployee")) {
     try {
-      const actor = await requireSessionUser(getBearerToken(req));
+      const actor = await requireCompanySessionOrPayrollSession(getBearerToken(req));
       const body = await readJsonBody(req);
       const result = await createEmployeeUser({
         actorUserId: actor.id,
@@ -7149,7 +7159,7 @@ const server = http.createServer(async (req, res) => {
 
   if (req.method === "POST" && req.url === "/company/employees/update") {
     try {
-      const actor = await requireSessionUser(getBearerToken(req));
+      const actor = await requireCompanySessionOrPayrollSession(getBearerToken(req));
       const body = await readJsonBody(req);
       const employeeId = String(body.employeeId || body.employee_id || "").trim();
       const result = await updateEmployeeProfileAndWorkSite({
@@ -7187,7 +7197,7 @@ const server = http.createServer(async (req, res) => {
 
   if (req.method === "POST" && req.url === "/company/employees/password") {
     try {
-      const actor = await requireSessionUser(getBearerToken(req));
+      const actor = await requireCompanySessionOrPayrollSession(getBearerToken(req));
       const body = await readJsonBody(req);
       const result = await resetEmployeeUserPassword({
         actorUserId: actor.id,
@@ -7436,7 +7446,7 @@ const server = http.createServer(async (req, res) => {
 
   if (req.method === "GET" && requestUrl.pathname === "/company/employee-attendance") {
     try {
-      const actor = await requireSessionUser(getBearerToken(req));
+      const actor = await requireCompanySessionOrPayrollSession(getBearerToken(req));
       const employeeId = String(requestUrl.searchParams.get("employeeId") || "").trim();
       const dateFrom = String(requestUrl.searchParams.get("dateFrom") || "").trim();
       const dateTo = String(requestUrl.searchParams.get("dateTo") || "").trim();
@@ -7463,7 +7473,7 @@ const server = http.createServer(async (req, res) => {
 
   if (req.method === "GET" && req.url === "/company/payroll/settings") {
     try {
-      const actor = await requireSessionUser(getBearerToken(req));
+      const actor = await requireCompanySessionOrPayrollSession(getBearerToken(req));
       const settings = await getCompanyPayrollSettings({ actorUserId: actor.id, companyId: actor.companyId });
       sendJson(res, 200, { ok: true, result: settings });
     } catch (error) {
@@ -7476,7 +7486,7 @@ const server = http.createServer(async (req, res) => {
 
   if (req.method === "POST" && req.url === "/company/payroll/settings") {
     try {
-      const actor = await requireSessionUser(getBearerToken(req));
+      const actor = await requireCompanySessionOrPayrollSession(getBearerToken(req));
       const body = await readJsonBody(req);
       const settings = await saveCompanyPayrollSettings({
         actorUserId: actor.id,
@@ -7494,7 +7504,7 @@ const server = http.createServer(async (req, res) => {
 
   if (req.method === "GET" && req.url === "/company/payroll/access-control") {
     try {
-      const actor = await requireSessionUser(getBearerToken(req));
+      const actor = await requireCompanySessionOrPayrollSession(getBearerToken(req));
       const result = await getCompanyPayrollAccessControl({ actorUserId: actor.id, companyId: actor.companyId });
       sendJson(res, 200, { ok: true, result });
     } catch (error) {
@@ -7507,7 +7517,7 @@ const server = http.createServer(async (req, res) => {
 
   if (req.method === "POST" && req.url === "/company/payroll/access-control") {
     try {
-      const actor = await requireSessionUser(getBearerToken(req));
+      const actor = await requireCompanySessionOrPayrollSession(getBearerToken(req));
       const body = await readJsonBody(req);
       const result = await saveCompanyPayrollAccessControl({
         actorUserId: actor.id,
@@ -7528,7 +7538,7 @@ const server = http.createServer(async (req, res) => {
 
   if (req.method === "GET" && requestUrl.pathname === "/company/payroll/compensation") {
     try {
-      const actor = await requireSessionUser(getBearerToken(req));
+      const actor = await requireCompanySessionOrPayrollSession(getBearerToken(req));
       const employeeId = String(requestUrl.searchParams.get("employeeId") || "").trim();
       const activeOnly = String(requestUrl.searchParams.get("activeOnly") || "").trim() === "true";
       const items = await listEmployeeCompensationStructures({
@@ -7548,7 +7558,7 @@ const server = http.createServer(async (req, res) => {
 
   if (req.method === "POST" && req.url === "/company/payroll/compensation") {
     try {
-      const actor = await requireSessionUser(getBearerToken(req));
+      const actor = await requireCompanySessionOrPayrollSession(getBearerToken(req));
       const body = await readJsonBody(req);
       const saved = await saveEmployeeCompensationStructure({
         actorUserId: actor.id,
@@ -7566,7 +7576,7 @@ const server = http.createServer(async (req, res) => {
 
   if (req.method === "GET" && requestUrl.pathname === "/company/payroll/fbp-heads") {
     try {
-      const actor = await requireSessionUser(getBearerToken(req));
+      const actor = await requireCompanySessionOrPayrollSession(getBearerToken(req));
       const activeOnly = String(requestUrl.searchParams.get("activeOnly") || "").trim() === "true";
       const items = await listCompanyFbpHeads({ actorUserId: actor.id, companyId: actor.companyId, activeOnly });
       sendJson(res, 200, { ok: true, result: { items } });
@@ -7580,7 +7590,7 @@ const server = http.createServer(async (req, res) => {
 
   if (req.method === "POST" && req.url === "/company/payroll/fbp-heads") {
     try {
-      const actor = await requireSessionUser(getBearerToken(req));
+      const actor = await requireCompanySessionOrPayrollSession(getBearerToken(req));
       const body = await readJsonBody(req);
       const saved = await saveCompanyFbpHead({
         actorUserId: actor.id,
@@ -7598,7 +7608,7 @@ const server = http.createServer(async (req, res) => {
 
   if (req.method === "DELETE" && requestUrl.pathname === "/company/payroll/fbp-heads") {
     try {
-      const actor = await requireSessionUser(getBearerToken(req));
+      const actor = await requireCompanySessionOrPayrollSession(getBearerToken(req));
       const headId = String(requestUrl.searchParams.get("headId") || "").trim();
       const result = await removeCompanyFbpHead({ actorUserId: actor.id, companyId: actor.companyId, headId });
       sendJson(res, 200, { ok: true, result });
@@ -7612,7 +7622,7 @@ const server = http.createServer(async (req, res) => {
 
   if (req.method === "GET" && requestUrl.pathname === "/company/payroll/fbp-declarations") {
     try {
-      const actor = await requireSessionUser(getBearerToken(req));
+      const actor = await requireCompanySessionOrPayrollSession(getBearerToken(req));
       const payrollMonth = Number(requestUrl.searchParams.get("payrollMonth") || 0);
       const payrollYear = Number(requestUrl.searchParams.get("payrollYear") || 0);
       const employeeId = String(requestUrl.searchParams.get("employeeId") || "").trim();
@@ -7634,7 +7644,7 @@ const server = http.createServer(async (req, res) => {
 
   if (req.method === "POST" && requestUrl.pathname === "/company/payroll/fbp-doc/upload") {
     try {
-      const actor = await requireSessionUser(getBearerToken(req));
+      const actor = await requireCompanySessionOrPayrollSession(getBearerToken(req));
       if (String(actor?.role || "").toLowerCase() !== "admin") {
         throw new Error("Admin access required.");
       }
@@ -7669,7 +7679,7 @@ const server = http.createServer(async (req, res) => {
 
   if (req.method === "POST" && requestUrl.pathname === "/company/payroll/fbp-declarations") {
     try {
-      const actor = await requireSessionUser(getBearerToken(req));
+      const actor = await requireCompanySessionOrPayrollSession(getBearerToken(req));
       const body = await readJsonBody(req);
       const saved = await saveFbpDeclaration({
         actorUserId: actor.id,
@@ -7686,7 +7696,7 @@ const server = http.createServer(async (req, res) => {
 
   if (req.method === "POST" && requestUrl.pathname === "/company/payroll/fbp-declarations/approve") {
     try {
-      const actor = await requireSessionUser(getBearerToken(req));
+      const actor = await requireCompanySessionOrPayrollSession(getBearerToken(req));
       const body = await readJsonBody(req);
       const saved = await reviewFbpDeclaration({
         actorUserId: actor.id,
@@ -7705,7 +7715,7 @@ const server = http.createServer(async (req, res) => {
 
   if (req.method === "POST" && requestUrl.pathname === "/company/payroll/fbp-declarations/reject") {
     try {
-      const actor = await requireSessionUser(getBearerToken(req));
+      const actor = await requireCompanySessionOrPayrollSession(getBearerToken(req));
       const body = await readJsonBody(req);
       const saved = await reviewFbpDeclaration({
         actorUserId: actor.id,
@@ -7724,7 +7734,7 @@ const server = http.createServer(async (req, res) => {
 
   if (req.method === "POST" && requestUrl.pathname === "/company/payroll/payslips/publish") {
     try {
-      const actor = await requireSessionUser(getBearerToken(req));
+      const actor = await requireCompanySessionOrPayrollSession(getBearerToken(req));
       const body = await readJsonBody(req);
       const result = await publishPayrollPayslips({
         actorUserId: actor.id,
@@ -7743,7 +7753,7 @@ const server = http.createServer(async (req, res) => {
 
   if (req.method === "GET" && requestUrl.pathname === "/company/payroll/payslips") {
     try {
-      const actor = await requireSessionUser(getBearerToken(req));
+      const actor = await requireCompanySessionOrPayrollSession(getBearerToken(req));
       const payrollMonth = Number(requestUrl.searchParams.get("payrollMonth") || 0);
       const payrollYear = Number(requestUrl.searchParams.get("payrollYear") || 0);
       const employeeId = String(requestUrl.searchParams.get("employeeId") || "").trim();
@@ -7764,7 +7774,7 @@ const server = http.createServer(async (req, res) => {
 
   if (req.method === "GET" && requestUrl.pathname === "/company/payroll/templates") {
     try {
-      const actor = await requireSessionUser(getBearerToken(req));
+      const actor = await requireCompanySessionOrPayrollSession(getBearerToken(req));
       const activeOnly = String(requestUrl.searchParams.get("activeOnly") || "").trim() === "true";
       const items = await listCompanySalaryTemplates({ actorUserId: actor.id, companyId: actor.companyId, activeOnly });
       sendJson(res, 200, { ok: true, result: { items } });
@@ -7778,7 +7788,7 @@ const server = http.createServer(async (req, res) => {
 
   if (req.method === "POST" && requestUrl.pathname === "/company/payroll/templates") {
     try {
-      const actor = await requireSessionUser(getBearerToken(req));
+      const actor = await requireCompanySessionOrPayrollSession(getBearerToken(req));
       const body = await readJsonBody(req);
       const saved = await saveCompanySalaryTemplate({
         actorUserId: actor.id,
@@ -7796,7 +7806,7 @@ const server = http.createServer(async (req, res) => {
 
   if (req.method === "GET" && requestUrl.pathname === "/company/payroll/inputs") {
     try {
-      const actor = await requireSessionUser(getBearerToken(req));
+      const actor = await requireCompanySessionOrPayrollSession(getBearerToken(req));
       const payrollMonth = Number(requestUrl.searchParams.get("payrollMonth") || 0);
       const payrollYear = Number(requestUrl.searchParams.get("payrollYear") || 0);
       const employeeId = String(requestUrl.searchParams.get("employeeId") || "").trim();
@@ -7812,7 +7822,7 @@ const server = http.createServer(async (req, res) => {
 
   if (req.method === "POST" && requestUrl.pathname === "/company/payroll/inputs") {
     try {
-      const actor = await requireSessionUser(getBearerToken(req));
+      const actor = await requireCompanySessionOrPayrollSession(getBearerToken(req));
       const body = await readJsonBody(req);
       const saved = await savePayrollInput({
         actorUserId: actor.id,
@@ -7830,7 +7840,7 @@ const server = http.createServer(async (req, res) => {
 
   if (req.method === "GET" && requestUrl.pathname === "/company/payroll/runs") {
     try {
-      const actor = await requireSessionUser(getBearerToken(req));
+      const actor = await requireCompanySessionOrPayrollSession(getBearerToken(req));
       const runId = String(requestUrl.searchParams.get("runId") || "").trim();
       if (runId) {
         const detail = await getPayrollRunDetail({ actorUserId: actor.id, companyId: actor.companyId, payrollRunId: runId });
@@ -7851,7 +7861,7 @@ const server = http.createServer(async (req, res) => {
 
   if (req.method === "POST" && requestUrl.pathname === "/company/payroll/runs/draft") {
     try {
-      const actor = await requireSessionUser(getBearerToken(req));
+      const actor = await requireCompanySessionOrPayrollSession(getBearerToken(req));
       const body = await readJsonBody(req);
       const run = await createPayrollRunDraft({
         actorUserId: actor.id,
@@ -7870,7 +7880,7 @@ const server = http.createServer(async (req, res) => {
 
   if (req.method === "POST" && requestUrl.pathname === "/company/payroll/runs/calculate") {
     try {
-      const actor = await requireSessionUser(getBearerToken(req));
+      const actor = await requireCompanySessionOrPayrollSession(getBearerToken(req));
       const body = await readJsonBody(req);
       const detail = await calculatePayrollRun({
         actorUserId: actor.id,
@@ -7888,7 +7898,7 @@ const server = http.createServer(async (req, res) => {
 
   if (req.method === "POST" && requestUrl.pathname === "/company/payroll/runs/approve") {
     try {
-      const actor = await requireSessionUser(getBearerToken(req));
+      const actor = await requireCompanySessionOrPayrollSession(getBearerToken(req));
       const body = await readJsonBody(req);
       const run = await approvePayrollRun({
         actorUserId: actor.id,
@@ -7906,7 +7916,7 @@ const server = http.createServer(async (req, res) => {
 
   if (req.method === "POST" && requestUrl.pathname === "/company/payroll/runs/lock") {
     try {
-      const actor = await requireSessionUser(getBearerToken(req));
+      const actor = await requireCompanySessionOrPayrollSession(getBearerToken(req));
       const body = await readJsonBody(req);
       const run = await lockPayrollRun({
         actorUserId: actor.id,
@@ -7925,7 +7935,7 @@ const server = http.createServer(async (req, res) => {
 
   if (req.method === "POST" && requestUrl.pathname === "/company/payroll/runs/set-status") {
     try {
-      const actor = await requireSessionUser(getBearerToken(req));
+      const actor = await requireCompanySessionOrPayrollSession(getBearerToken(req));
       const body = await readJsonBody(req);
       const run = await setPayrollRunStatus({
         actorUserId: actor.id,
@@ -8017,7 +8027,7 @@ const server = http.createServer(async (req, res) => {
   // This avoids relying on free-text notes inside status history and remains stable over time.
   if (req.method === "GET" && requestUrl.pathname === "/company/assessment-events") {
     try {
-      const user = await requireSessionUser(getBearerToken(req));
+      const user = await requireCompanySessionOrPayrollSession(getBearerToken(req));
       const kind = String(requestUrl.searchParams.get("kind") || "").trim();
       const dateFrom = String(requestUrl.searchParams.get("dateFrom") || "").trim();
       const dateTo = String(requestUrl.searchParams.get("dateTo") || "").trim();
