@@ -412,6 +412,18 @@ function sanitizeUser(user) {
   if (!user) return null;
   return { id: user.id, companyId: user.companyId ?? user.company_id ?? null, companyName: user.companyName ?? user.company_name ?? null, name: user.name, email: user.email, role: user.role, createdAt: user.createdAt ?? user.created_at ?? null };
 }
+function sanitizePayrollUser(user) {
+  if (!user) return null;
+  return {
+    id: user.id,
+    companyId: user.companyId ?? user.company_id ?? null,
+    companyName: user.companyName ?? user.company_name ?? null,
+    name: user.name,
+    email: user.email,
+    role: user.role,
+    createdAt: user.createdAt ?? user.created_at ?? null
+  };
+}
 const PAYROLL_AUTH_ROLES = new Set(["payroll_owner", "payroll_manager"]);
 function sanitizeCompany(company) {
   if (!company) return null;
@@ -1247,6 +1259,13 @@ async function getUserByEmail(email) {
   const rows = await sbSel("users", `select=*&email=eq.${enc(e)}&limit=1`);
   return rows[0] || null;
 }
+async function getPayrollUserByEmail(email) {
+  const e = normalizeEmail(email);
+  if (!cfg().on) return (readStore().payrollUsers || []).find((u) => normalizeEmail(u.email) === e) || null;
+  await ensureSeeded();
+  const rows = await sbSel("payroll_users", `select=*&email=eq.${enc(e)}&limit=1`);
+  return rows[0] || null;
+}
 async function getUserById(userId, companyId = "") {
   const id = String(userId || "").trim();
   if (!id) return null;
@@ -1255,6 +1274,16 @@ async function getUserById(userId, companyId = "") {
   const filters = [`id=eq.${enc(id)}`];
   if (companyId) filters.push(`company_id=eq.${enc(companyId)}`);
   const rows = await sbSel("users", `select=*&${filters.join("&")}&limit=1`);
+  return rows[0] || null;
+}
+async function getPayrollUserById(userId, companyId = "") {
+  const id = String(userId || "").trim();
+  if (!id) return null;
+  if (!cfg().on) return (readStore().payrollUsers || []).find((u) => u.id === id && (!companyId || u.companyId === companyId)) || null;
+  await ensureSeeded();
+  const filters = [`id=eq.${enc(id)}`];
+  if (companyId) filters.push(`company_id=eq.${enc(companyId)}`);
+  const rows = await sbSel("payroll_users", `select=*&${filters.join("&")}&limit=1`);
   return rows[0] || null;
 }
 
@@ -1531,7 +1560,11 @@ async function createUser({ actorUserId, companyId, name, email, password, role 
       throw new Error("Only the license owner admin can create payroll users.");
     }
   }
-  if (await getUserByEmail(e)) throw new Error("A user with this email already exists.");
+  if (r === "payroll_owner" || r === "payroll_manager") {
+    if (await getPayrollUserByEmail(e)) throw new Error("A payroll user with this email already exists.");
+  } else if (await getUserByEmail(e)) {
+    throw new Error("A user with this email already exists.");
+  }
   const license = await getCompanyLicense(companyId).catch(() => null);
   const isTrial = license && (String(license.status || "").toLowerCase() === "trial" || String(license.plan || "").toLowerCase() === "trial");
   if (!cfg().on) {
@@ -1543,6 +1576,12 @@ async function createUser({ actorUserId, companyId, name, email, password, role 
       }
     }
     const user = { id: crypto.randomUUID(), companyId, companyName: company.name, name: String(name).trim(), email: e, role: r, passwordHash: hashPassword(password), createdAt: new Date().toISOString() };
+    if (r === "payroll_owner" || r === "payroll_manager") {
+      store.payrollUsers = Array.isArray(store.payrollUsers) ? store.payrollUsers : [];
+      store.payrollUsers.push(user);
+      writeStore(store);
+      return sanitizePayrollUser(user);
+    }
     store.users.push(user); writeStore(store); return sanitizeUser(user);
   }
   const companies = await sbSel("companies", `select=*&id=eq.${enc(companyId)}&limit=1`);
@@ -1553,6 +1592,19 @@ async function createUser({ actorUserId, companyId, name, email, password, role 
     if (memberCount >= 3) {
       throw new Error("Trial workspaces can have at most 3 team users (1 admin + 2 recruiters).");
     }
+  }
+  if (r === "payroll_owner" || r === "payroll_manager") {
+    const rows = await sbIns("payroll_users", [{
+      id: crypto.randomUUID(),
+      company_id: companyId,
+      company_name: company.name,
+      name: String(name).trim(),
+      email: e,
+      role: r,
+      password_hash: hashPassword(password),
+      created_at: new Date().toISOString()
+    }], { conflict: "id", upsert: true });
+    return sanitizePayrollUser(rows[0]);
   }
   const rows = await sbIns("users", [{ id: crypto.randomUUID(), company_id: companyId, company_name: company.name, name: String(name).trim(), email: e, role: r, password_hash: hashPassword(password), created_at: new Date().toISOString() }], { conflict: "id", upsert: true });
   return sanitizeUser(rows[0]);
@@ -1626,26 +1678,60 @@ async function setCompanyApplicantIntakeSecret({ actorUserId, companyId, applica
 async function deleteUser({ actorUserId, companyId, userId }) {
   const actor = sanitizeUser(await getUserById(actorUserId, companyId));
   if (!actor || actor.role !== "admin") throw new Error("Only an admin for this company can delete recruiters.");
-  const target = sanitizeUser(await getUserById(userId, companyId));
+  const target = sanitizeUser(await getUserById(userId, companyId)) || sanitizePayrollUser(await getPayrollUserById(userId, companyId));
   if (!target) throw new Error("Recruiter not found.");
   if (target.role === "admin") throw new Error("Admin accounts cannot be deleted from this panel.");
+  const targetRole = String(target.role || "").toLowerCase();
   if (!cfg().on) {
-    const store = readStore(); store.users = store.users.filter((u) => u.id !== userId); store.sessions = (store.sessions || []).filter((s) => s.userId !== userId); writeStore(store);
+    const store = readStore();
+    if (PAYROLL_AUTH_ROLES.has(targetRole)) {
+      store.payrollUsers = (store.payrollUsers || []).filter((u) => u.id !== userId);
+      store.payrollSessions = (store.payrollSessions || []).filter((s) => s.userId !== userId);
+    } else {
+      store.users = store.users.filter((u) => u.id !== userId);
+      store.sessions = (store.sessions || []).filter((s) => s.userId !== userId);
+    }
+    writeStore(store);
   } else {
-    await sbDel("sessions", `user_id=eq.${enc(userId)}`); await sbDel("users", `id=eq.${enc(userId)}&company_id=eq.${enc(companyId)}`);
+    if (PAYROLL_AUTH_ROLES.has(targetRole)) {
+      await sbDel("payroll_sessions", `user_id=eq.${enc(userId)}`);
+      await sbDel("payroll_users", `id=eq.${enc(userId)}&company_id=eq.${enc(companyId)}`);
+    } else {
+      await sbDel("sessions", `user_id=eq.${enc(userId)}`);
+      await sbDel("users", `id=eq.${enc(userId)}&company_id=eq.${enc(companyId)}`);
+    }
   }
   return { deleted: true, userId };
 }
 async function resetUserPassword({ actorUserId, companyId, userId, newPassword }) {
   const actor = sanitizeUser(await getUserById(actorUserId, companyId));
   if (!actor || actor.role !== "admin") throw new Error("Only an admin for this company can reset recruiter passwords.");
-  const target = sanitizeUser(await getUserById(userId, companyId));
+  const target = sanitizeUser(await getUserById(userId, companyId)) || sanitizePayrollUser(await getPayrollUserById(userId, companyId));
   if (!target) throw new Error("Recruiter not found.");
   if (target.role === "admin") throw new Error("Admin passwords cannot be reset from this panel.");
+  const targetRole = String(target.role || "").toLowerCase();
   if (!cfg().on) {
-    const store = readStore(); const row = store.users.find((u) => u.id === userId && u.companyId === companyId); row.passwordHash = hashPassword(newPassword); store.sessions = (store.sessions || []).filter((s) => s.userId !== userId); writeStore(store);
+    const store = readStore();
+    if (PAYROLL_AUTH_ROLES.has(targetRole)) {
+      const row = (store.payrollUsers || []).find((u) => u.id === userId && u.companyId === companyId);
+      if (!row) throw new Error("Payroll user not found.");
+      row.passwordHash = hashPassword(newPassword);
+      store.payrollSessions = (store.payrollSessions || []).filter((s) => s.userId !== userId);
+    } else {
+      const row = store.users.find((u) => u.id === userId && u.companyId === companyId);
+      if (!row) throw new Error("Recruiter not found.");
+      row.passwordHash = hashPassword(newPassword);
+      store.sessions = (store.sessions || []).filter((s) => s.userId !== userId);
+    }
+    writeStore(store);
   } else {
-    await sbPatch("users", `id=eq.${enc(userId)}&company_id=eq.${enc(companyId)}`, { password_hash: hashPassword(newPassword) }); await sbDel("sessions", `user_id=eq.${enc(userId)}`);
+    if (PAYROLL_AUTH_ROLES.has(targetRole)) {
+      await sbPatch("payroll_users", `id=eq.${enc(userId)}&company_id=eq.${enc(companyId)}`, { password_hash: hashPassword(newPassword) });
+      await sbDel("payroll_sessions", `user_id=eq.${enc(userId)}`);
+    } else {
+      await sbPatch("users", `id=eq.${enc(userId)}&company_id=eq.${enc(companyId)}`, { password_hash: hashPassword(newPassword) });
+      await sbDel("sessions", `user_id=eq.${enc(userId)}`);
+    }
   }
   return { reset: true, userId };
 }
@@ -1674,30 +1760,41 @@ async function requireSessionUser(token) { const user = await getSessionUser(tok
 async function loginPayrollAdmin({ email, password }) {
   const e = normalizeEmail(email);
   if (!e || !password) throw new Error("Email and password are required.");
-  const user = await getUserByEmail(e);
+  const user = await getPayrollUserByEmail(e);
   if (!user) throw new Error("Invalid payroll login credentials.");
   const role = String(user.role || "").trim().toLowerCase();
   if (!PAYROLL_AUTH_ROLES.has(role)) throw new Error("Invalid payroll login credentials.");
   if (!verifyPassword(password, user.passwordHash ?? user.password_hash)) throw new Error("Invalid payroll login credentials.");
-  const sessionUser = sanitizeUser(user);
+  const sessionUser = sanitizePayrollUser(user);
   const token = crypto.randomBytes(32).toString("hex");
   if (!cfg().on) {
     const store = readStore();
-    store.sessions = (store.sessions || []).filter((s) => s.token !== token);
-    store.sessions.push({ token, userId: sessionUser.id, companyId: sessionUser.companyId, createdAt: new Date().toISOString() });
+    store.payrollSessions = (store.payrollSessions || []).filter((s) => s.token !== token);
+    store.payrollSessions.push({ token, userId: sessionUser.id, companyId: sessionUser.companyId, createdAt: new Date().toISOString() });
     writeStore(store);
   } else {
     await ensureSeeded();
-    await sbIns("sessions", [{ token, user_id: sessionUser.id, company_id: sessionUser.companyId, created_at: new Date().toISOString() }], { conflict: "token", upsert: true });
+    await sbIns("payroll_sessions", [{ token, user_id: sessionUser.id, company_id: sessionUser.companyId, created_at: new Date().toISOString() }], { conflict: "token", upsert: true });
   }
   return { token, user: sessionUser };
 }
 async function getPayrollSessionUser(token) {
-  const user = await getSessionUser(token);
+  const t = String(token || "").trim();
+  if (!t) return null;
+  if (!cfg().on) {
+    const store = readStore();
+    const session = (store.payrollSessions || []).find((s) => s.token === t);
+    if (!session) return null;
+    const user = (store.payrollUsers || []).find((u) => u.id === session.userId);
+    return sanitizePayrollUser(user);
+  }
+  await ensureSeeded();
+  const sessions = await sbSel("payroll_sessions", `select=*&token=eq.${enc(t)}&limit=1`);
+  const session = sessions[0];
+  if (!session) return null;
+  const user = await getPayrollUserById(session.user_id, session.company_id);
   if (!user) return null;
-  const role = String(user.role || "").trim().toLowerCase();
-  if (!PAYROLL_AUTH_ROLES.has(role)) return null;
-  return user;
+  return sanitizePayrollUser(user);
 }
 async function requirePayrollSessionUser(token) {
   const user = await getPayrollSessionUser(token);
@@ -1733,8 +1830,24 @@ function readSignedClientToken(token) {
   }
 }
 async function listCompanyUsers(companyId) {
-  if (!cfg().on) return readStore().users.filter((u) => u.companyId === companyId && String(u.role || "").toLowerCase() !== "client").map(sanitizeUser);
-  await ensureSeeded(); return (await sbSel("users", `select=*&company_id=eq.${enc(companyId)}&order=created_at.asc`)).filter((u) => String(u.role || "").toLowerCase() !== "client").map(sanitizeUser);
+  if (!cfg().on) {
+    const store = readStore();
+    const recruiterUsers = (store.users || [])
+      .filter((u) => u.companyId === companyId && String(u.role || "").toLowerCase() !== "client")
+      .map(sanitizeUser);
+    const payrollUsers = (store.payrollUsers || [])
+      .filter((u) => u.companyId === companyId)
+      .map(sanitizePayrollUser);
+    return [...recruiterUsers, ...payrollUsers].sort((a, b) => String(a.createdAt || "").localeCompare(String(b.createdAt || "")));
+  }
+  await ensureSeeded();
+  const [users, payrollUsers] = await Promise.all([
+    sbSel("users", `select=*&company_id=eq.${enc(companyId)}&order=created_at.asc`),
+    sbSel("payroll_users", `select=*&company_id=eq.${enc(companyId)}&order=created_at.asc`).catch(() => [])
+  ]);
+  const recruiterUsers = (users || []).filter((u) => String(u.role || "").toLowerCase() !== "client").map(sanitizeUser);
+  const sanitizedPayrollUsers = (payrollUsers || []).map(sanitizePayrollUser);
+  return [...recruiterUsers, ...sanitizedPayrollUsers].sort((a, b) => String(a.createdAt || "").localeCompare(String(b.createdAt || "")));
 }
 async function listCompanyJobs(companyId, recruiterId = "") {
   const scopedRecruiterId = String(recruiterId || "").trim();

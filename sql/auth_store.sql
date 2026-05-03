@@ -15,9 +15,28 @@ create table if not exists public.users (
   created_at timestamptz not null default now()
 );
 
+create table if not exists public.payroll_users (
+  id uuid primary key,
+  company_id uuid not null references public.companies(id) on delete cascade,
+  company_name text,
+  name text not null,
+  email text not null,
+  role text not null check (role in ('payroll_owner', 'payroll_manager')),
+  password_hash text not null,
+  created_at timestamptz not null default now(),
+  unique (company_id, email)
+);
+
 create table if not exists public.sessions (
   token text primary key,
   user_id uuid not null references public.users(id) on delete cascade,
+  company_id uuid not null references public.companies(id) on delete cascade,
+  created_at timestamptz not null default now()
+);
+
+create table if not exists public.payroll_sessions (
+  token text primary key,
+  user_id uuid not null references public.payroll_users(id) on delete cascade,
   company_id uuid not null references public.companies(id) on delete cascade,
   created_at timestamptz not null default now()
 );
