@@ -1,4 +1,7 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo } from "react";
+import usePayrollSettingsState from "./usePayrollSettingsState";
+import usePayrollRunsState from "./usePayrollRunsState";
+import usePayrollFbpState from "./usePayrollFbpState";
 
 export default function usePayrollAdminData({ token, employees = [], users = [], viewMode = "all", api }) {
   function round2(value) {
@@ -88,114 +91,37 @@ export default function usePayrollAdminData({ token, employees = [], users = [],
     });
   }
 
-  const [settings, setSettings] = useState({
-    payrollEnabled: false,
-    defaultFbpProofCycle: "quarterly",
-    defaultMonthlyProfessionalTax: 0,
-    applyLopProration: true,
-    prorateHealthInsurance: false,
-    prorateReimbursements: false,
-    gratuityOnFullMonthlyBasic: false,
-    lwfEnabled: true,
-    lwfEmployeeRatePercent: 0.2,
-    lwfEmployeeMonthlyCap: 34,
-    lwfEmployerMultiplier: 2,
-    defaultSalaryTemplateCode: "c2h_it_standard",
-    policyNote: ""
-  });
-  const [compItems, setCompItems] = useState([]);
-  const [fbpHeads, setFbpHeads] = useState([]);
-  const [salaryTemplates, setSalaryTemplates] = useState([]);
-  const now = new Date();
-  const [payrollMonth, setPayrollMonth] = useState(now.getMonth() + 1);
-  const [payrollYear, setPayrollYear] = useState(now.getFullYear());
-  const [payrollInputs, setPayrollInputs] = useState([]);
-  const [payrollRuns, setPayrollRuns] = useState([]);
-  const [fbpDeclarations, setFbpDeclarations] = useState([]);
-  const [fbpApprovalAmounts, setFbpApprovalAmounts] = useState({});
-  const [payrollPayslips, setPayrollPayslips] = useState([]);
-  const [selectedRunId, setSelectedRunId] = useState("");
-  const [selectedRunDetail, setSelectedRunDetail] = useState({ run: null, items: [] });
-  const [runActionStatus, setRunActionStatus] = useState("");
-  const [status, setStatus] = useState("");
-  const [compForm, setCompForm] = useState({
-    employeeId: "",
-    effectiveFrom: new Date().toISOString().slice(0, 10),
-    annualCtc: "",
-    monthlyCtc: "",
-    basicMonthly: "",
-    hraMonthly: "",
-    fbpMonthly: "",
-    specialAllowanceMonthly: "",
-    employerPfMonthly: "",
-    employeePfMonthly: "",
-    employerEsiMonthly: "",
-    employeeEsiMonthly: "",
-    employerLwfMonthly: "",
-    employeeLwfMonthly: "",
-    professionalTaxMonthly: "",
-    gratuityMonthly: "",
-    healthInsuranceMonthly: "",
-    otherAllowanceMonthly: "",
-    templateCode: "c2h_it_standard",
-    isActive: true,
-    notes: ""
-  });
-  const [fbpForm, setFbpForm] = useState({
-    id: "",
-    headName: "",
-    monthlyLimit: "",
-    annualLimit: "",
-    proofRequired: true,
-    taxableIfUnclaimed: true,
-    active: true
-  });
-  const [templateForm, setTemplateForm] = useState({
-    id: "",
-    code: "",
-    name: "",
-    description: "",
-    basicPercentOfCtc: 35,
-    hraPercentOfBasic: 50,
-    employerPfPercentOfBasic: 12,
-    employeePfPercentOfBasic: 12,
-    employerEsiPercentOfGross: 3.25,
-    employeeEsiPercentOfGross: 0.75,
-    employerLwfMonthly: 20,
-    employeeLwfMonthly: 10,
-    professionalTaxMonthly: 200,
-    gratuityPercentOfBasicAnnual: 4.81,
-    defaultFbpMonthly: 0,
-    defaultHealthInsuranceAnnual: 0,
-    active: true
-  });
-  const [declarationForm, setDeclarationForm] = useState({
-    employeeId: "",
-    headId: "",
-    declaredAmount: "",
-    notes: "",
-    docLabel: "",
-    docUrl: "",
-    docNote: ""
-  });
-  const [declarationDocUploading, setDeclarationDocUploading] = useState(false);
-  const [suggestRecalculateAfterFbp, setSuggestRecalculateAfterFbp] = useState(false);
-  const [accessControl, setAccessControl] = useState({
-    payrollLiteEnabled: false,
-    ownerAdminUserId: "",
-    payrollAuthorizedUserIds: [],
-    payrollApproverUserIds: [],
-    payrollAccessManagerUserIds: []
-  });
-  const showFoundation = viewMode === "all" || viewMode === "statutory";
-  const showAccessControl = viewMode === "all" || viewMode === "statutory";
-  const showTemplates = viewMode === "all" || viewMode === "salary";
-  const showCompensation = viewMode === "all" || viewMode === "employees" || viewMode === "salary";
-  const showInputs = viewMode === "all" || viewMode === "attendance";
-  const showRuns = viewMode === "all" || viewMode === "runs" || viewMode === "reports";
-  const showFbpHeads = viewMode === "all" || viewMode === "fbp";
-  const showFbpClaims = viewMode === "all" || viewMode === "fbp";
-  const showPayslips = viewMode === "all" || viewMode === "payslips" || viewMode === "documents";
+  const {
+    settings, setSettings,
+    compItems, setCompItems,
+    salaryTemplates, setSalaryTemplates,
+    compForm, setCompForm,
+    templateForm, setTemplateForm,
+    accessControl, setAccessControl,
+    showFoundation, showAccessControl, showTemplates, showCompensation
+  } = usePayrollSettingsState({ viewMode });
+  const {
+    payrollMonth, setPayrollMonth,
+    payrollYear, setPayrollYear,
+    payrollInputs, setPayrollInputs,
+    payrollRuns, setPayrollRuns,
+    selectedRunId, setSelectedRunId,
+    selectedRunDetail, setSelectedRunDetail,
+    runActionStatus, setRunActionStatus,
+    status, setStatus,
+    suggestRecalculateAfterFbp, setSuggestRecalculateAfterFbp,
+    showInputs, showRuns
+  } = usePayrollRunsState({ viewMode });
+  const {
+    fbpHeads, setFbpHeads,
+    fbpDeclarations, setFbpDeclarations,
+    fbpApprovalAmounts, setFbpApprovalAmounts,
+    payrollPayslips, setPayrollPayslips,
+    fbpForm, setFbpForm,
+    declarationForm, setDeclarationForm,
+    declarationDocUploading, setDeclarationDocUploading,
+    showFbpHeads, showFbpClaims, showPayslips
+  } = usePayrollFbpState({ viewMode });
 
   async function loadPayrollFoundation() {
     const [settingsResult, compResult, fbpResult, templateResult, accessControlResult] = await Promise.all([
