@@ -708,6 +708,51 @@ async function requireCompanySessionOrPayrollSession(token) {
   }
 }
 
+const UPGRADE_ALLOWED_PLANS = new Set([
+  "ext_499_1_user",
+  "ext_999_3_users",
+  "ext_1999_7_users",
+  "saas_4999_unlimited"
+]);
+
+function getUpgradeTokenSecret() {
+  return (
+    String(process.env.UPGRADE_LINK_SECRET || "").trim() ||
+    String(process.env.PLATFORM_SESSION_SECRET || "").trim() ||
+    getCvShareSecret()
+  );
+}
+
+function createSignedUpgradeToken(payload) {
+  const encoded = Buffer.from(JSON.stringify(payload), "utf8").toString("base64url");
+  const signature = crypto
+    .createHmac("sha256", getUpgradeTokenSecret())
+    .update(encoded)
+    .digest("base64url");
+  return `${encoded}.${signature}`;
+}
+
+function readSignedUpgradeToken(token) {
+  const raw = String(token || "").trim();
+  if (!raw) return null;
+  const [encoded, signature] = raw.split(".");
+  if (!encoded || !signature) return null;
+  const expected = crypto
+    .createHmac("sha256", getUpgradeTokenSecret())
+    .update(encoded)
+    .digest("base64url");
+  if (!timingSafeEqualString(signature, expected)) return null;
+  try {
+    const payload = JSON.parse(Buffer.from(encoded, "base64url").toString("utf8"));
+    if (payload?.type !== "shared_upgrade_link") return null;
+    if (!UPGRADE_ALLOWED_PLANS.has(String(payload?.planCode || "").trim())) return null;
+    if (payload.expiresAt && Date.now() > Number(payload.expiresAt)) return null;
+    return payload;
+  } catch {
+    return null;
+  }
+}
+
 function timingSafeEqualString(a, b) {
   const left = String(a || "");
   const right = String(b || "");
@@ -6264,7 +6309,34 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (req.method === "GET" && (requestUrl.pathname === "/upgrade" || requestUrl.pathname === "/upgrade/")) {
+    const token = String(requestUrl.searchParams.get("token") || "").trim();
+    const payload = readSignedUpgradeToken(token);
+    if (!payload) {
+      sendText(req, res, 403, "Invalid or expired upgrade link.");
+      return;
+    }
     serveStaticFile(res, path.join(ROOT_PUBLIC_DIR, "upgrade.html"));
+    return;
+  }
+
+  if (req.method === "GET" && requestUrl.pathname === "/upgrade/context") {
+    try {
+      const token = String(requestUrl.searchParams.get("token") || "").trim();
+      const payload = readSignedUpgradeToken(token);
+      if (!payload) throw new Error("Invalid or expired upgrade link.");
+      sendJson(res, 200, {
+        ok: true,
+        result: {
+          planCode: String(payload.planCode || "").trim(),
+          companyId: String(payload.companyId || "").trim(),
+          email: String(payload.email || "").trim(),
+          source: String(payload.source || "extension").trim(),
+          expiresAt: payload.expiresAt || null
+        }
+      });
+    } catch (error) {
+      sendJson(res, 400, { ok: false, error: String(error.message || error) });
+    }
     return;
   }
 
@@ -7113,6 +7185,36 @@ const server = http.createServer(async (req, res) => {
         months: Number(body.months || 1)
       });
       sendJson(res, 200, { ok: true, result: { license } });
+    } catch (error) {
+      sendJson(res, 400, { ok: false, error: String(error.message || error) });
+    }
+    return;
+  }
+
+  if (req.method === "POST" && req.url === "/company/license/upgrade-link") {
+    try {
+      const actor = await requireSessionUser(getBearerToken(req));
+      const body = await readJsonBody(req);
+      const planCode = String(body.planCode || body.plan || "").trim();
+      if (!UPGRADE_ALLOWED_PLANS.has(planCode)) {
+        throw new Error("Invalid plan selected.");
+      }
+      const now = Date.now();
+      const expiresAt = now + (10 * 60 * 1000);
+      const token = createSignedUpgradeToken({
+        type: "shared_upgrade_link",
+        companyId: String(actor.companyId || "").trim(),
+        userId: String(actor.id || "").trim(),
+        email: String(actor.email || "").trim(),
+        planCode,
+        source: "extension",
+        issuedAt: now,
+        expiresAt
+      });
+      const base = String(process.env.PUBLIC_PORTAL_BASE_URL || getRequestBaseUrl(req) || "").trim().replace(/\/+$/, "");
+      if (!base) throw new Error("Could not build upgrade URL.");
+      const upgradeUrl = `${base}/upgrade?token=${encodeURIComponent(token)}`;
+      sendJson(res, 200, { ok: true, result: { upgradeUrl, expiresAt } });
     } catch (error) {
       sendJson(res, 400, { ok: false, error: String(error.message || error) });
     }

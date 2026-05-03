@@ -62,29 +62,62 @@
           <div><strong>Email:</strong> <span id="email">-</span></div>
         </div>
         <a id="contactBtn" class="btn" href="#" target="_blank" rel="noopener noreferrer">Continue on WhatsApp</a>
+        <div class="muted small" id="expiresAt"></div>
         <div class="muted small">Payment checkout wiring can be plugged here (Razorpay/Stripe) in next step.</div>
       </div>
     </div>
     <script>
       const params = new URLSearchParams(window.location.search);
-      const plan = String(params.get("plan") || "").trim();
-      const companyId = String(params.get("companyId") || "").trim();
-      const email = String(params.get("email") || "").trim();
+      const token = String(params.get("token") || "").trim();
       const planMap = {
         ext_499_1_user: "Extension Lite - Rs 499",
         ext_999_3_users: "Extension Team - Rs 999",
         ext_1999_7_users: "Extension Pro - Rs 1999",
         saas_4999_unlimited: "SaaS - Rs 4999"
       };
-      const label = planMap[plan] || plan || "Not selected";
-      document.getElementById("planLabel").textContent = label;
-      document.getElementById("companyId").textContent = companyId || "-";
-      document.getElementById("email").textContent = email || "-";
+      const planLabel = document.getElementById("planLabel");
+      const companyLabel = document.getElementById("companyId");
+      const emailLabel = document.getElementById("email");
+      const expiryLabel = document.getElementById("expiresAt");
+      const contactBtn = document.getElementById("contactBtn");
 
-      const msg = encodeURIComponent(
-        `Hi, I want to upgrade RecruitDesk.\nPlan: ${label}\nCompany ID: ${companyId || "-"}\nEmail: ${email || "-"}`
-      );
-      document.getElementById("contactBtn").href = `https://wa.me/919999999999?text=${msg}`;
+      async function loadUpgradeContext() {
+        if (!token) throw new Error("Missing token.");
+        const response = await fetch(`/upgrade/context?token=${encodeURIComponent(token)}`);
+        if (!response.ok) {
+          const text = await response.text();
+          throw new Error(text || "Invalid or expired upgrade link.");
+        }
+        const payload = await response.json();
+        if (!payload?.ok) throw new Error(String(payload?.error || "Invalid upgrade link."));
+        return payload.result || {};
+      }
+
+      loadUpgradeContext()
+        .then((ctx) => {
+          const planCode = String(ctx.planCode || "").trim();
+          const companyId = String(ctx.companyId || "").trim();
+          const email = String(ctx.email || "").trim();
+          const label = planMap[planCode] || planCode || "Not selected";
+          planLabel.textContent = label;
+          companyLabel.textContent = companyId || "-";
+          emailLabel.textContent = email || "-";
+          if (ctx.expiresAt) {
+            const d = new Date(Number(ctx.expiresAt));
+            expiryLabel.textContent = Number.isFinite(d.getTime()) ? `Link expires: ${d.toLocaleString()}` : "";
+          }
+          const msg = encodeURIComponent(
+            `Hi, I want to upgrade RecruitDesk.\nPlan: ${label}\nCompany ID: ${companyId || "-"}\nEmail: ${email || "-"}`
+          );
+          contactBtn.href = `https://wa.me/919999999999?text=${msg}`;
+        })
+        .catch((error) => {
+          planLabel.textContent = "Invalid";
+          companyLabel.textContent = "-";
+          emailLabel.textContent = "-";
+          contactBtn.style.display = "none";
+          expiryLabel.textContent = String(error?.message || error);
+        });
     </script>
   </body>
 </html>
