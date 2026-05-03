@@ -13,6 +13,7 @@ import {
 const TOKEN_KEY = "recruitdesk_portal_token";
 const CLIENT_TOKEN_KEY = "recruitdesk_client_portal_token";
 const EMPLOYEE_TOKEN_KEY = "recruitdesk_employee_portal_token";
+const PAYROLL_TOKEN_KEY = "recruitdesk_payroll_portal_token";
 const AUTH_MODE_KEY = "recruitdesk_auth_mode";
 const COPY_SETTINGS_STORAGE_KEY = "recruitdesk_portal_copy_settings_v1";
 const DEFAULT_JD_EMAIL_CC = "ankit.garg@kompatibleminds.com";
@@ -56,6 +57,18 @@ const BASE_NAV_SECTIONS = [
 const STANDALONE_NAV_ITEMS = [
   { to: "/candidates", label: "Database" },
   { to: "/reports", label: "Reports & Analytics" }
+];
+const PAYROLL_NAV_ITEMS = [
+  { to: "/payroll/dashboard", label: "Dashboard" },
+  { to: "/payroll/employees", label: "Employees" },
+  { to: "/payroll/salary-structures", label: "Salary Structures" },
+  { to: "/payroll/attendance-lop", label: "Attendance / LOP Inputs" },
+  { to: "/payroll/fbp-claims", label: "FBP Claims" },
+  { to: "/payroll/runs", label: "Payroll Runs" },
+  { to: "/payroll/payslips", label: "Payslips" },
+  { to: "/payroll/documents", label: "Documents" },
+  { to: "/payroll/statutory-settings", label: "Statutory Settings" },
+  { to: "/payroll/reports", label: "Reports" }
 ];
 
 	const DEFAULT_COPY_SETTINGS = {
@@ -2954,7 +2967,14 @@ function isEmployeePortalUrl() {
   return ["/employee-portal", "/employee-login", "/employee"].some((path) => window.location.pathname.startsWith(path)) || mode === "employee";
 }
 
-function LoginScreen({ onRecruiterLogin, onClientLogin, onEmployeeLogin, onEmployerLogin, busy, error, forcedMode = "" }) {
+function isPayrollPortalUrl() {
+  if (typeof window === "undefined") return false;
+  const search = new URLSearchParams(window.location.search || "");
+  const mode = String(search.get("mode") || search.get("portal") || "").toLowerCase();
+  return ["/payroll", "/payroll-login"].some((path) => window.location.pathname.startsWith(path)) || mode === "payroll";
+}
+
+function LoginScreen({ onRecruiterLogin, onClientLogin, onEmployeeLogin, onEmployerLogin, onPayrollLogin, busy, error, forcedMode = "" }) {
   const [mode, setMode] = useState(() => forcedMode || "recruiter");
   const [email, setEmail] = useState("");
   const [username, setUsername] = useState("");
@@ -2977,14 +2997,16 @@ function LoginScreen({ onRecruiterLogin, onClientLogin, onEmployeeLogin, onEmplo
       <div className="auth-card">
         <BrandLogo size="lg" />
         <div className="section-kicker auth-kicker">
-          {mode === "client" ? "Client Login" : mode === "employee" ? "Employee Login" : "Company Login"}
+          {mode === "client" ? "Client Login" : mode === "employee" ? "Employee Login" : mode === "payroll" ? "Payroll Admin Login" : "Company Login"}
         </div>
-        <h1>{mode === "client" ? CLIENT_PORTAL_LABEL : mode === "employee" ? `${PRODUCT_NAME} Employee Portal` : RECRUITER_PORTAL_LABEL}</h1>
+        <h1>{mode === "client" ? CLIENT_PORTAL_LABEL : mode === "employee" ? `${PRODUCT_NAME} Employee Portal` : mode === "payroll" ? `${PRODUCT_NAME} Payroll Admin` : RECRUITER_PORTAL_LABEL}</h1>
         <p className="muted">
           {mode === "client"
             ? "Use the client username and password shared by your recruiter team."
             : mode === "employee"
               ? "Use your employee username or employee code and password."
+              : mode === "payroll"
+                ? "Use your payroll_owner or payroll_manager credentials."
               : "Use your existing company admin or recruiter credentials."}
         </p>
         {!forcedMode ? (
@@ -2992,12 +3014,14 @@ function LoginScreen({ onRecruiterLogin, onClientLogin, onEmployeeLogin, onEmplo
             <button type="button" className={mode === "recruiter" ? "" : "ghost-btn"} onClick={() => setMode("recruiter")}>Recruiter login</button>
             <button type="button" className={mode === "client" ? "" : "ghost-btn"} onClick={() => setMode("client")}>Client login</button>
             <button type="button" className={mode === "employee" ? "" : "ghost-btn"} onClick={() => setMode("employee")}>Employee login</button>
+            <button type="button" className={mode === "payroll" ? "" : "ghost-btn"} onClick={() => setMode("payroll")}>Payroll login</button>
           </div>
         ) : null}
         <form className="form-grid" onSubmit={(e) => {
           e.preventDefault();
           if (mode === "client") onClientLogin({ username, password });
           else if (mode === "employee") (onEmployeeLogin || onEmployerLogin)?.({ username, password });
+          else if (mode === "payroll") onPayrollLogin?.({ email, password });
           else onRecruiterLogin({ email, password });
         }}>
           {mode === "client" || mode === "employee"
@@ -14301,12 +14325,15 @@ function EmployeePortalApp({ token, onLogout }) {
 export default function App() {
   const clientPortalUrl = isClientPortalUrl();
   const employeePortalUrl = isEmployeePortalUrl();
-  const forcedMode = employeePortalUrl ? "employee" : clientPortalUrl ? "client" : "recruiter";
+  const payrollPortalUrl = isPayrollPortalUrl();
+  const forcedMode = payrollPortalUrl ? "payroll" : employeePortalUrl ? "employee" : clientPortalUrl ? "client" : "recruiter";
   const [authMode, setAuthMode] = useState(() => forcedMode);
   const [token, setToken] = useState(() => forcedMode === "client"
     ? (window.localStorage.getItem(CLIENT_TOKEN_KEY) || "")
     : forcedMode === "employee"
       ? (window.localStorage.getItem(EMPLOYEE_TOKEN_KEY) || "")
+      : forcedMode === "payroll"
+        ? (window.localStorage.getItem(PAYROLL_TOKEN_KEY) || "")
       : (window.localStorage.getItem(TOKEN_KEY) || ""));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -14317,12 +14344,23 @@ export default function App() {
       ? (window.localStorage.getItem(CLIENT_TOKEN_KEY) || "")
       : forcedMode === "employee"
         ? (window.localStorage.getItem(EMPLOYEE_TOKEN_KEY) || "")
+        : forcedMode === "payroll"
+          ? (window.localStorage.getItem(PAYROLL_TOKEN_KEY) || "")
         : (window.localStorage.getItem(TOKEN_KEY) || ""));
   }, [forcedMode]);
 
   useEffect(() => {
-    document.title = forcedMode === "client" ? CLIENT_BROWSER_TITLE : forcedMode === "employee" ? `${PRODUCT_NAME} Employee Portal` : RECRUITER_BROWSER_TITLE;
+    document.title = forcedMode === "client" ? CLIENT_BROWSER_TITLE : forcedMode === "employee" ? `${PRODUCT_NAME} Employee Portal` : forcedMode === "payroll" ? `${PRODUCT_NAME} Payroll Admin` : RECRUITER_BROWSER_TITLE;
   }, [forcedMode]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (authMode !== "payroll" || !token) return;
+    const pathname = String(window.location.pathname || "");
+    if (pathname === "/payroll" || pathname === "/payroll-login") {
+      window.history.replaceState({}, "", "/admin/payroll/settings");
+    }
+  }, [authMode, token]);
 
   async function loginRecruiter({ email, password }) {
     try {
@@ -14366,6 +14404,7 @@ export default function App() {
       localStorage.setItem(EMPLOYEE_TOKEN_KEY, result.token || "");
       localStorage.removeItem(TOKEN_KEY);
       localStorage.removeItem(CLIENT_TOKEN_KEY);
+      localStorage.removeItem(PAYROLL_TOKEN_KEY);
       localStorage.setItem(AUTH_MODE_KEY, "employee");
       setAuthMode("employee");
       setToken(result.token || "");
@@ -14377,20 +14416,39 @@ export default function App() {
   }
   const loginEmployee = loginEmployeeUser;
   const loginEmployer = loginEmployeeUser;
+  async function loginPayrollUser({ email, password }) {
+    try {
+      setBusy(true);
+      setError("");
+      const result = await api("/payroll-auth/login", "", "POST", { email, password });
+      localStorage.setItem(PAYROLL_TOKEN_KEY, result.token || "");
+      localStorage.removeItem(TOKEN_KEY);
+      localStorage.removeItem(CLIENT_TOKEN_KEY);
+      localStorage.removeItem(EMPLOYEE_TOKEN_KEY);
+      localStorage.setItem(AUTH_MODE_KEY, "payroll");
+      setAuthMode("payroll");
+      setToken(result.token || "");
+    } catch (loginError) {
+      setError(String(loginError?.message || loginError));
+    } finally {
+      setBusy(false);
+    }
+  }
 
   function logout() {
     localStorage.removeItem(TOKEN_KEY);
     localStorage.removeItem(CLIENT_TOKEN_KEY);
     localStorage.removeItem(EMPLOYEE_TOKEN_KEY);
+    localStorage.removeItem(PAYROLL_TOKEN_KEY);
     localStorage.removeItem(AUTH_MODE_KEY);
     setAuthMode(forcedMode);
     setToken("");
   }
 
-  if (!token) return <LoginScreen onRecruiterLogin={loginRecruiter} onClientLogin={loginClientUser} onEmployeeLogin={loginEmployee} onEmployerLogin={loginEmployer} busy={busy} error={error} forcedMode={forcedMode === "recruiter" ? "" : forcedMode} />;
+  if (!token) return <LoginScreen onRecruiterLogin={loginRecruiter} onClientLogin={loginClientUser} onEmployeeLogin={loginEmployee} onEmployerLogin={loginEmployer} onPayrollLogin={loginPayrollUser} busy={busy} error={error} forcedMode={forcedMode === "recruiter" ? "" : forcedMode} />;
   return authMode === "client"
     ? <PortalErrorBoundary><ClientPortalApp token={token} onLogout={logout} /></PortalErrorBoundary>
     : authMode === "employee"
       ? <PortalErrorBoundary><EmployeePortalApp token={token} onLogout={logout} /></PortalErrorBoundary>
-    : <PortalErrorBoundary><PortalApp token={token} onLogout={logout} /></PortalErrorBoundary>;
+      : <PortalErrorBoundary><PortalApp token={token} onLogout={logout} /></PortalErrorBoundary>;
 }
