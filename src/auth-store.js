@@ -1529,19 +1529,30 @@ async function saveCompanyLicense(companyId, license) {
     return nextLicense;
   }
   await ensureSeeded();
+  const companies = await sbSel("companies", `select=*&id=eq.${enc(scopedCompanyId)}&limit=1`).catch(() => []);
+  const company = sanitizeCompany(companies?.[0]);
   const row = {
-    id: systemJobRowId(scopedCompanyId, COMPANY_LICENSE_ROW_ID),
+    id: scopedCompanyId,
     company_id: scopedCompanyId,
-    title: COMPANY_LICENSE_ROW_TITLE,
-    client_name: "__system__",
-    job_description: "Company license and trial quota",
-    created_at: now,
-    updated_at: now,
-    updated_by: "system",
-    payload: nextLicense
+    company_name: String(company?.name || company?.companyName || "").trim(),
+    plan: String(nextLicense.plan || "").trim(),
+    status: String(nextLicense.status || "").trim(),
+    trial_started_at: nextLicense.trialStartedAt || null,
+    trial_ends_at: nextLicense.trialEndsAt || null,
+    capture_limit: Number(nextLicense.captureLimit || 0),
+    captures_used: Number(nextLicense.capturesUsed || 0),
+    subscription_started_at: nextLicense.subscriptionStartedAt || null,
+    subscription_ends_at: nextLicense.subscriptionEndsAt || null,
+    owner_admin_user_id: String(nextLicense.ownerAdminUserId || "").trim() || null,
+    payroll_lite_enabled: Boolean(nextLicense.payrollLiteEnabled || false),
+    payroll_authorized_user_ids: Array.isArray(nextLicense.payrollAuthorizedUserIds) ? nextLicense.payrollAuthorizedUserIds : [],
+    payroll_approver_user_ids: Array.isArray(nextLicense.payrollApproverUserIds) ? nextLicense.payrollApproverUserIds : [],
+    payroll_access_manager_user_ids: Array.isArray(nextLicense.payrollAccessManagerUserIds) ? nextLicense.payrollAccessManagerUserIds : [],
+    metadata: { updatedAt: now },
+    updated_at: now
   };
-  const rows = await sbIns("company_jobs", [row], { conflict: "id", upsert: true });
-  return sanitizeCompanyLicense(rows?.[0] || row);
+  const rows = await sbIns("company_subscriptions", [row], { conflict: "id", upsert: true });
+  return sanitizeCompanyLicense(rows?.[0] || row, company);
 }
 async function setCompanyExtensionPlan({ actorUserId, companyId, planCode, paidAt = "", months = 1 }) {
   const actor = sanitizeUser(await getUserById(actorUserId, companyId));
@@ -1584,12 +1595,13 @@ async function getCompanyLicense(companyId) {
     return row ? sanitizeCompanyLicense(row, company) : sanitizeCompanyLicense({ plan: "legacy", status: "legacy", captureLimit: 0, capturesUsed: 0, companyId: scopedCompanyId }, company);
   }
   await ensureSeeded();
-  const [companyRows, licenseRows] = await Promise.all([
+  const [companyRows, subscriptionRows, licenseRows] = await Promise.all([
     sbSel("companies", `select=*&id=eq.${enc(scopedCompanyId)}&limit=1`),
+    sbSel("company_subscriptions", `select=*&company_id=eq.${enc(scopedCompanyId)}&limit=1`).catch(() => []),
     sbSel("company_jobs", `select=*&company_id=eq.${enc(scopedCompanyId)}&title=eq.${enc(COMPANY_LICENSE_ROW_TITLE)}&limit=1`)
   ]);
   const company = sanitizeCompany(companyRows?.[0]);
-  const row = licenseRows?.[0] || null;
+  const row = (subscriptionRows && subscriptionRows[0]) ? subscriptionRows[0] : (licenseRows?.[0] || null);
   return row ? sanitizeCompanyLicense(row, company) : sanitizeCompanyLicense({ plan: "legacy", status: "legacy", captureLimit: 0, capturesUsed: 0, companyId: scopedCompanyId }, company);
 }
 
