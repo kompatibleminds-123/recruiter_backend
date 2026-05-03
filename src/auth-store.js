@@ -412,6 +412,7 @@ function sanitizeUser(user) {
   if (!user) return null;
   return { id: user.id, companyId: user.companyId ?? user.company_id ?? null, companyName: user.companyName ?? user.company_name ?? null, name: user.name, email: user.email, role: user.role, createdAt: user.createdAt ?? user.created_at ?? null };
 }
+const PAYROLL_AUTH_ROLES = new Set(["payroll_owner", "payroll_manager"]);
 function sanitizeCompany(company) {
   if (!company) return null;
   return {
@@ -1655,6 +1656,67 @@ async function getSessionUser(token) {
   const session = sessions[0]; if (!session) return null; return sanitizeUser(await getUserById(session.user_id, session.company_id));
 }
 async function requireSessionUser(token) { const user = await getSessionUser(token); if (!user) throw new Error("Invalid or missing session."); return user; }
+function getPayrollSessionSecret() {
+  return (
+    String(process.env.PAYROLL_ADMIN_SESSION_SECRET || "").trim() ||
+    String(process.env.PLATFORM_SESSION_SECRET || "").trim() ||
+    "payroll-admin-session-secret"
+  );
+}
+function createSignedPayrollToken(payload) {
+  const encoded = Buffer.from(JSON.stringify(payload), "utf8").toString("base64url");
+  const signature = crypto.createHmac("sha256", getPayrollSessionSecret()).update(encoded).digest("base64url");
+  return `${encoded}.${signature}`;
+}
+function readSignedPayrollToken(token) {
+  const raw = String(token || "").trim();
+  if (!raw) return null;
+  const [encoded, signature] = raw.split(".");
+  if (!encoded || !signature) return null;
+  const expected = crypto.createHmac("sha256", getPayrollSessionSecret()).update(encoded).digest("base64url");
+  if (!timingSafeEqualString(signature, expected)) return null;
+  try {
+    const payload = JSON.parse(Buffer.from(encoded, "base64url").toString("utf8"));
+    if (payload?.type !== "payroll_admin") return null;
+    if (!PAYROLL_AUTH_ROLES.has(String(payload?.role || "").trim().toLowerCase())) return null;
+    if (payload.expiresAt && Date.now() > Number(payload.expiresAt)) return null;
+    return payload;
+  } catch {
+    return null;
+  }
+}
+async function loginPayrollAdmin({ email, password }) {
+  const e = normalizeEmail(email);
+  if (!e || !password) throw new Error("Email and password are required.");
+  const user = await getUserByEmail(e);
+  if (!user) throw new Error("Invalid payroll login credentials.");
+  const role = String(user.role || "").trim().toLowerCase();
+  if (!PAYROLL_AUTH_ROLES.has(role)) throw new Error("Invalid payroll login credentials.");
+  if (!verifyPassword(password, user.passwordHash ?? user.password_hash)) throw new Error("Invalid payroll login credentials.");
+  const sessionUser = sanitizeUser(user);
+  const token = createSignedPayrollToken({
+    type: "payroll_admin",
+    userId: sessionUser.id,
+    companyId: sessionUser.companyId,
+    role,
+    expiresAt: Date.now() + 1000 * 60 * 60 * 12
+  });
+  return { token, user: sessionUser };
+}
+async function getPayrollSessionUser(token) {
+  const payload = readSignedPayrollToken(token);
+  if (!payload) return null;
+  const user = sanitizeUser(await getUserById(payload.userId, payload.companyId));
+  if (!user) return null;
+  const role = String(user.role || "").trim().toLowerCase();
+  if (!PAYROLL_AUTH_ROLES.has(role)) return null;
+  return user;
+}
+async function requirePayrollSessionUser(token) {
+  const user = await getPayrollSessionUser(token);
+  if (!user) throw new Error("Invalid or missing payroll session.");
+  return user;
+}
 function getClientSessionSecret() {
   return (
     String(process.env.CLIENT_PORTAL_SESSION_SECRET || "").trim() ||
@@ -2317,7 +2379,7 @@ async function requireAdminForCompany({ actorUserId, companyId, payrollPermissio
     if (!isPayrollAllowedForActor({ actor, license, permission: payrollPermission })) {
       throw new Error(
         payrollPermission === "manage"
-          ? "Payroll access management is restricted to owner/payroll managers."
+          ? "Payroll access management is restricted to payroll_owner/payroll_manager users."
           : payrollPermission === "approve"
             ? "You are not authorized to approve payroll actions."
             : "You are not authorized to access Payroll Lite for this company package."
@@ -4247,6 +4309,7 @@ module.exports = {
   listCompanyUsers,
   loginClient,
   loginEmployee,
+  loginPayrollAdmin,
   loginPlatformCreator,
   login,
   markEmployeeAttendance,
@@ -4260,6 +4323,7 @@ module.exports = {
   requirePlatformSessionUser,
   requireClientSessionUser,
   requireEmployeeSessionUser,
+  requirePayrollSessionUser,
   requireSessionUser,
   resetClientUserPassword,
   resetEmployeeUserPassword,

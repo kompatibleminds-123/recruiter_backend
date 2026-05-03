@@ -13561,7 +13561,7 @@ function PayrollLiteAdminPage({ token, employees = [], users = [] }) {
         <div className="button-row"><button onClick={() => void saveSettings()}>Save settings</button></div>
       </Section>
       <Section kicker="Payroll Lite" title="Access Control (Package + Authorization)">
-        <p className="muted">Recruitment admin access is separate. Only owner/payroll managers should grant payroll permissions.</p>
+        <p className="muted">Recruitment admin access is separate. Only payroll_owner/payroll_manager should grant payroll permissions.</p>
         <div className="form-grid three-col">
           <label className="checkbox-row">
             <input type="checkbox" checked={Boolean(accessControl.payrollLiteEnabled)} onChange={(e) => setAccessControl((c) => ({ ...c, payrollLiteEnabled: e.target.checked }))} />

@@ -70,6 +70,7 @@ const {
   listCompanyUsers,
   loginClient,
   loginEmployee,
+  loginPayrollAdmin,
   loginPlatformCreator,
   login,
   incrementCompanyCaptureUsage,
@@ -85,6 +86,7 @@ const {
   requirePlatformSessionUser,
   requireClientSessionUser,
   requireEmployeeSessionUser,
+  requirePayrollSessionUser,
   requireSessionUser,
   resetClientUserPassword,
   resetEmployeeUserPassword,
@@ -6667,6 +6669,20 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (req.method === "POST" && req.url === "/payroll-auth/login") {
+    try {
+      const body = await readJsonBody(req);
+      const result = await loginPayrollAdmin({
+        email: String(body.email || "").trim(),
+        password: String(body.password || "")
+      });
+      sendJson(res, 200, { ok: true, result });
+    } catch (error) {
+      sendJson(res, 400, { ok: false, error: String(error.message || error) });
+    }
+    return;
+  }
+
   if (req.method === "POST" && (req.url === "/employee-auth/login" || req.url === "/employer-auth/login")) {
     try {
       const body = await readJsonBody(req);
@@ -7054,6 +7070,16 @@ const server = http.createServer(async (req, res) => {
       sendJson(res, 200, { ok: true, result: saved });
     } catch (error) {
       sendJson(res, 400, { ok: false, error: String(error.message || error) });
+    }
+    return;
+  }
+
+  if (req.method === "GET" && req.url === "/payroll-auth/me") {
+    try {
+      const user = await requirePayrollSessionUser(getBearerToken(req));
+      sendJson(res, 200, { ok: true, result: { user } });
+    } catch (error) {
+      sendJson(res, 401, { ok: false, error: String(error.message || error) });
     }
     return;
   }
