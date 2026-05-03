@@ -12940,6 +12940,10 @@ function PayrollLiteAdminPage({ token, employees = [], users = [], viewMode = "a
     updateCompField
   } = usePayrollAdminData({ token, employees, users, viewMode, api });
   const showEmployeeAccess = viewMode === "all" || viewMode === "employees";
+  const adminUsers = useMemo(
+    () => (users || []).filter((item) => String(item?.role || "").trim().toLowerCase() === "admin"),
+    [users]
+  );
 
   async function createEmployeeFromPayroll() {
     const payload = {
