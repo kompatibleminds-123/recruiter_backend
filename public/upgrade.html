@@ -63,6 +63,7 @@
         </div>
         <button id="payBtn" class="btn" type="button" style="background:#1d4ed8;">Pay with Razorpay</button>
         <div class="muted small" id="expiresAt"></div>
+        <div class="muted small" id="paymentStatus"></div>
         <div class="muted small">Payment checkout wiring can be plugged here (Razorpay/Stripe) in next step.</div>
       </div>
     </div>
@@ -81,6 +82,7 @@
       const emailLabel = document.getElementById("email");
       const expiryLabel = document.getElementById("expiresAt");
       const payBtn = document.getElementById("payBtn");
+      const paymentStatus = document.getElementById("paymentStatus");
       let latestCtx = null;
 
       async function loadUpgradeContext() {
@@ -156,8 +158,12 @@
               if (!verifyRes.ok || !verifyPayload?.ok) {
                 throw new Error(String(verifyPayload?.error || "Payment verification failed."));
               }
-              alert("Payment successful. Plan activated.");
-              window.location.reload();
+              payBtn.disabled = true;
+              payBtn.style.display = "none";
+              paymentStatus.textContent = "Payment successful. Plan activated. You can close this tab and continue in extension.";
+              try {
+                setTimeout(() => window.close(), 800);
+              } catch {}
             }
           });
           rzp.open();
