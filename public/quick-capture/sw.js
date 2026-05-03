@@ -1,4 +1,4 @@
-const CACHE_NAME = "candidate-quick-capture-v4";
+const CACHE_NAME = "candidate-quick-capture-v5";
 const APP_SHELL = [
   "/quick-capture/",
   "/quick-capture/index.html",

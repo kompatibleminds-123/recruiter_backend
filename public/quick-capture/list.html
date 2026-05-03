@@ -44,11 +44,22 @@
 
       <section class="panel">
         <div class="panel-head">
-          <h2>Candidate cards</h2>
+          <h2>Records</h2>
           <button id="refreshButton" type="button" class="ghost-button">Refresh</button>
         </div>
+        <div class="capture-tabs" role="tablist" aria-label="Record type">
+          <button id="candidateTab" class="capture-tab active" type="button" aria-selected="true">Captured Notes</button>
+          <button id="assessmentTab" class="capture-tab" type="button" aria-selected="false">Assessments</button>
+        </div>
+        <label class="field field-full" for="recordStateFilter">
+          <span class="label">State</span>
+          <select id="recordStateFilter" class="text-input">
+            <option value="active">Active</option>
+            <option value="inactive">Inactive / Hidden</option>
+          </select>
+        </label>
         <label class="field field-full" for="searchInput">
-          <span class="label">Search drafts</span>
+          <span class="label">Search records</span>
           <input id="searchInput" class="text-input" type="search" placeholder="Search by candidate, company, role, phone, email..." />
         </label>
         <p id="listStatus" class="status-message" role="status" aria-live="polite"></p>
