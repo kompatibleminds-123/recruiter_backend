@@ -9620,6 +9620,36 @@ function PortalApp({ token, onLogout }) {
   }
   const createEmployeeUser = createEmployeePortalUser;
 
+  async function createPayrollUser() {
+    if (!isSettingsAdmin) {
+      setStatus("loginPayroll", "Only admin can add payroll users.", "error");
+      return;
+    }
+    if (!isLicenseOwnerAdmin) {
+      setStatus("loginPayroll", "Only license owner admin can add payroll users.", "error");
+      return;
+    }
+    try {
+      setStatus("loginPayroll", "Creating payroll user...");
+      const payload = {
+        name: String(payrollUserDraft.name || "").trim(),
+        email: String(payrollUserDraft.email || "").trim(),
+        password: String(payrollUserDraft.password || ""),
+        role: String(payrollUserDraft.role || "payroll_owner").trim()
+      };
+      if (!payload.name || !payload.email || !payload.password) {
+        setStatus("loginPayroll", "Name, email, and temporary password are required.", "error");
+        return;
+      }
+      await api("/company/users", token, "POST", payload);
+      await reloadLoginSettingsWorkspace();
+      setPayrollUserDraft({ name: "", email: "", password: "", role: "payroll_owner" });
+      setStatus("loginPayroll", "Payroll user created.", "ok");
+    } catch (error) {
+      setStatus("loginPayroll", String(error?.message || error), "error");
+    }
+  }
+
   async function resetEmployeePortalPassword(employeeUserId) {
     if (!isSettingsAdmin) {
       setStatus("loginEmployee", "Only admin can reset employee passwords.", "error");
@@ -13479,36 +13509,6 @@ function EmployeePortalApp({ token, onLogout }) {
     setEmployeeFbpDeclarations(Array.isArray(fbpResult.items) ? fbpResult.items : []);
     setEmployeeFbpHeads(Array.isArray(fbpHeadsResult.items) ? fbpHeadsResult.items : []);
   }
-  async function createPayrollUser() {
-    if (!isSettingsAdmin) {
-      setStatus("loginPayroll", "Only admin can add payroll users.", "error");
-      return;
-    }
-    if (!isLicenseOwnerAdmin) {
-      setStatus("loginPayroll", "Only license owner admin can add payroll users.", "error");
-      return;
-    }
-    try {
-      setStatus("loginPayroll", "Creating payroll user...");
-      const payload = {
-        name: String(payrollUserDraft.name || "").trim(),
-        email: String(payrollUserDraft.email || "").trim(),
-        password: String(payrollUserDraft.password || ""),
-        role: String(payrollUserDraft.role || "payroll_owner").trim()
-      };
-      if (!payload.name || !payload.email || !payload.password) {
-        setStatus("loginPayroll", "Name, email, and temporary password are required.", "error");
-        return;
-      }
-      await api("/company/users", token, "POST", payload);
-      await reloadLoginSettingsWorkspace();
-      setPayrollUserDraft({ name: "", email: "", password: "", role: "payroll_owner" });
-      setStatus("loginPayroll", "Payroll user created.", "ok");
-    } catch (error) {
-      setStatus("loginPayroll", String(error?.message || error), "error");
-    }
-  }
-
   useEffect(() => {
     void loadEmployeePortal().catch((error) => {
       const message = String(error?.message || error);
