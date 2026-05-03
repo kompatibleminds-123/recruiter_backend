@@ -12924,6 +12924,7 @@ function PayrollLiteAdminPage({ token, employees = [], users = [], viewMode = "a
   });
   const [employeeCreateStatus, setEmployeeCreateStatus] = useState("");
   const [employeeCreateStatusKind, setEmployeeCreateStatusKind] = useState("");
+  const [employeeEditId, setEmployeeEditId] = useState("");
   const {
     settings, setSettings, compItems, fbpHeads, salaryTemplates,
     payrollMonth, setPayrollMonth, payrollYear, setPayrollYear, payrollInputs, payrollRuns,
@@ -12981,7 +12982,18 @@ function PayrollLiteAdminPage({ token, employees = [], users = [], viewMode = "a
     try {
       setEmployeeCreateStatusKind("");
       setEmployeeCreateStatus("Creating employee...");
-      await api("/company/employees", token, "POST", payload);
+      if (employeeEditId) {
+        await api("/company/employees/update", token, "POST", {
+          employeeId: employeeEditId,
+          employeeCode: payload.employeeCode,
+          fullName: payload.fullName,
+          designation: payload.designation,
+          clientName: payload.clientName,
+          status: "active"
+        });
+      } else {
+        await api("/company/employees", token, "POST", payload);
+      }
       setEmployeeCreateDraft({
         employeeCode: "",
         username: "",
@@ -12996,7 +13008,8 @@ function PayrollLiteAdminPage({ token, employees = [], users = [], viewMode = "a
         workSiteRadiusMeters: "500"
       });
       setEmployeeCreateStatusKind("ok");
-      setEmployeeCreateStatus("Employee created successfully.");
+      setEmployeeCreateStatus(employeeEditId ? "Employee updated successfully." : "Employee created successfully.");
+      setEmployeeEditId("");
       if (typeof onEmployeesChanged === "function") await onEmployeesChanged();
     } catch (error) {
       setEmployeeCreateStatusKind("error");
@@ -13004,39 +13017,18 @@ function PayrollLiteAdminPage({ token, employees = [], users = [], viewMode = "a
     }
   }
   async function updateEmployeeFromPayroll(employee) {
-    try {
-      const payload = {
-        employeeId: String(employee?.id || "").trim(),
-        employeeCode: String(employee?.employeeCode || "").trim(),
-        fullName: String(employee?.fullName || "").trim(),
-        personalEmail: String(employee?.personalEmail || "").trim(),
-        phone: String(employee?.phone || "").trim(),
-        designation: String(employee?.designation || "").trim(),
-        employmentType: String(employee?.employmentType || "c2h").trim(),
-        joiningDate: String(employee?.joiningDate || "").trim(),
-        reportingManagerName: String(employee?.reportingManagerName || "").trim(),
-        clientName: String(employee?.clientName || "").trim(),
-        workMode: String(employee?.workMode || "").trim(),
-        status: String(employee?.status || "active").trim()
-      };
-      if (!payload.employeeId || !payload.employeeCode || !payload.fullName) throw new Error("Employee details missing.");
-      const nextName = typeof window !== "undefined" ? String(window.prompt("Edit full name", payload.fullName) || "").trim() : payload.fullName;
-      const nextDesignation = typeof window !== "undefined" ? String(window.prompt("Edit designation", payload.designation) || "").trim() : payload.designation;
-      const nextClientName = typeof window !== "undefined" ? String(window.prompt("Edit client name", payload.clientName) || "").trim() : payload.clientName;
-      if (!nextName) throw new Error("Full name is required.");
-      await api("/company/employees/update", token, "POST", {
-        ...payload,
-        fullName: nextName,
-        designation: nextDesignation,
-        clientName: nextClientName
-      });
-      setEmployeeCreateStatusKind("ok");
-      setEmployeeCreateStatus("Employee updated.");
-      if (typeof onEmployeesChanged === "function") await onEmployeesChanged();
-    } catch (error) {
-      setEmployeeCreateStatusKind("error");
-      setEmployeeCreateStatus(String(error?.message || error));
-    }
+    setEmployeeCreateDraft((current) => ({
+      ...current,
+      employeeCode: String(employee?.employeeCode || "").trim(),
+      username: String(employee?.username || "").trim(),
+      fullName: String(employee?.fullName || "").trim(),
+      password: "",
+      designation: String(employee?.designation || "").trim(),
+      clientName: String(employee?.clientName || "").trim()
+    }));
+    setEmployeeEditId(String(employee?.id || "").trim());
+    setEmployeeCreateStatusKind("");
+    setEmployeeCreateStatus("Editing employee. Update fields and click 'Update employee'.");
   }
   async function deactivateEmployeeFromPayroll(employee) {
     try {
@@ -13198,7 +13190,10 @@ function PayrollLiteAdminPage({ token, employees = [], users = [], viewMode = "a
           <label><span>Health insurance</span><input type="number" value={compForm.healthInsuranceMonthly} onChange={(e) => updateCompField("healthInsuranceMonthly", e.target.value, { rebalance: true })} /></label>
           <label><span>Other allowance</span><input type="number" value={compForm.otherAllowanceMonthly} onChange={(e) => updateCompField("otherAllowanceMonthly", e.target.value, { rebalance: true })} /></label>
         </div>
-        <div className="button-row"><button onClick={() => void saveComp()}>Save compensation</button></div>
+        <div className="button-row">
+          <button onClick={() => void saveComp()}>Save compensation</button>
+          <button className="ghost-btn" onClick={() => void loadPayrollFoundation()}>Refresh saved structures</button>
+        </div>
         <div className="table-wrap">
           <table className="dashboard-table">
             <thead><tr><th>Employee</th><th>Effective</th><th>Annual CTC</th><th>Status</th><th>Action</th></tr></thead>
@@ -13247,7 +13242,27 @@ function PayrollLiteAdminPage({ token, employees = [], users = [], viewMode = "a
           <label><span>Work site longitude (optional)</span><input value={employeeCreateDraft.workSiteLongitude} onChange={(e) => setEmployeeCreateDraft((c) => ({ ...c, workSiteLongitude: e.target.value }))} placeholder="77.0890" /></label>
           <label><span>Allowed radius (meters)</span><input value={employeeCreateDraft.workSiteRadiusMeters} onChange={(e) => setEmployeeCreateDraft((c) => ({ ...c, workSiteRadiusMeters: e.target.value }))} placeholder="500" /></label>
         </div>
-        <div className="button-row"><button onClick={() => void createEmployeeFromPayroll()}>Create employee</button></div>
+        <div className="button-row">
+          <button onClick={() => void createEmployeeFromPayroll()}>{employeeEditId ? "Update employee" : "Create employee"}</button>
+          {employeeEditId ? <button className="ghost-btn" onClick={() => {
+            setEmployeeEditId("");
+            setEmployeeCreateDraft({
+              employeeCode: "",
+              username: "",
+              fullName: "",
+              password: "",
+              designation: "",
+              clientName: "",
+              workSiteName: "",
+              workSiteAddress: "",
+              workSiteLatitude: "",
+              workSiteLongitude: "",
+              workSiteRadiusMeters: "500"
+            });
+            setEmployeeCreateStatus("");
+            setEmployeeCreateStatusKind("");
+          }}>Cancel edit</button> : null}
+        </div>
         {employeeCreateStatus ? <div className={`status ${employeeCreateStatusKind}`}>{employeeCreateStatus}</div> : null}
         <div className="table-wrap">
           <table className="dashboard-table">
