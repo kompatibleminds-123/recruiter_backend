@@ -3205,24 +3205,40 @@ async function saveEmployeeFbpDeclaration({ employeeUser, declaration = {} }) {
   if (!headName || !payrollMonth || !payrollYear) {
     throw new Error("headName, payrollMonth and payrollYear are required.");
   }
-  return saveFbpDeclaration({
-    actorUserId: actor.id,
-    companyId: actor.companyId,
-    declaration: {
-      id: declaration.id,
-      employeeId: actor.employeeId,
-      payrollMonth,
-      payrollYear,
-      headId: String(declaration.headId || declaration.head_id || "").trim(),
-      headName,
-      declaredAmount,
-      notes: String(declaration.notes || "").trim(),
-      docs: sanitizeFbpDocs(declaration.docs),
-      status: "submitted",
-      approvedAmount: 0,
-      rejectionReason: ""
-    }
-  });
+  const now = new Date().toISOString();
+  const id = String(declaration.id || "").trim() || crypto.randomUUID();
+  const row = {
+    id,
+    company_id: actor.companyId,
+    employee_id: actor.employeeId,
+    payroll_month: payrollMonth,
+    payroll_year: payrollYear,
+    head_id: String(declaration.headId || declaration.head_id || "").trim() || null,
+    head_name: headName,
+    declared_amount: declaredAmount,
+    approved_amount: 0,
+    status: "submitted",
+    notes: String(declaration.notes || "").trim(),
+    rejection_reason: "",
+    submitted_at: now,
+    decided_at: null,
+    decided_by: null,
+    docs: sanitizeFbpDocs(declaration.docs),
+    created_at: String(declaration.createdAt || declaration.created_at || "").trim() || now,
+    updated_at: now
+  };
+  if (!cfg().on) {
+    const store = readStore();
+    store.fbpDeclarations = Array.isArray(store.fbpDeclarations) ? store.fbpDeclarations : [];
+    const ix = store.fbpDeclarations.findIndex((item) => String(item.id || "") === id && String(item.companyId || item.company_id || "") === String(actor.companyId));
+    if (ix >= 0) store.fbpDeclarations[ix] = { ...store.fbpDeclarations[ix], ...row, companyId: actor.companyId, employeeId: actor.employeeId, payrollMonth, payrollYear };
+    else store.fbpDeclarations.push({ ...row, companyId: actor.companyId, employeeId: actor.employeeId, payrollMonth, payrollYear });
+    writeStore(store);
+    return sanitizeFbpDeclaration(store.fbpDeclarations[ix >= 0 ? ix : store.fbpDeclarations.length - 1]);
+  }
+  await ensureSeeded();
+  const rows = await sbIns("fbp_declarations", [row], { conflict: "id", upsert: true });
+  return sanitizeFbpDeclaration(rows?.[0] || row);
 }
 async function reviewFbpDeclaration({ actorUserId, companyId, declarationId, action = "approve", approvedAmount = null, rejectionReason = "" }) {
   const actor = await requireAdminForCompany({ actorUserId, companyId, payrollPermission: "approve" });
