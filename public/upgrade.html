@@ -162,6 +162,22 @@
               payBtn.style.display = "none";
               paymentStatus.textContent = "Payment successful. Plan activated. You can close this tab and continue in extension.";
               try {
+                localStorage.setItem("rd_upgrade_success", JSON.stringify({
+                  at: new Date().toISOString(),
+                  companyId: String(latestCtx?.companyId || ""),
+                  planCode: String(latestCtx?.planCode || "")
+                }));
+              } catch {}
+              try {
+                if (window.opener && !window.opener.closed) {
+                  window.opener.postMessage({
+                    type: "RSD_UPGRADE_SUCCESS",
+                    companyId: String(latestCtx?.companyId || ""),
+                    planCode: String(latestCtx?.planCode || "")
+                  }, "*");
+                }
+              } catch {}
+              try {
                 setTimeout(() => window.close(), 800);
               } catch {}
             }

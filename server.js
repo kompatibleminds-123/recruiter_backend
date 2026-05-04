@@ -6480,21 +6480,47 @@ const server = http.createServer(async (req, res) => {
 
       const companyId = String(payload.companyId || "").trim();
       const planCode = String(payload.planCode || "").trim();
-      const license = await getCompanyLicense(companyId);
-      let ownerAdminUserId = String(license?.ownerAdminUserId || "").trim();
-      if (!ownerAdminUserId) {
-        const users = await listCompanyUsers(companyId);
-        const admin = (users || []).find((item) => String(item?.role || "").trim().toLowerCase() === "admin") || null;
-        ownerAdminUserId = String(admin?.id || "").trim();
+      const license = await getCompanyLicense(companyId).catch(() => null);
+      const users = await listCompanyUsers(companyId).catch(() => []);
+      const tokenUserId = String(payload.userId || "").trim();
+      const ownerAdminUserId = String(license?.ownerAdminUserId || "").trim();
+      const adminUserIds = (users || [])
+        .filter((item) => String(item?.role || "").trim().toLowerCase() === "admin")
+        .map((item) => String(item?.id || "").trim())
+        .filter(Boolean);
+      const anyUserIds = (users || [])
+        .map((item) => String(item?.id || "").trim())
+        .filter(Boolean);
+
+      const actorCandidates = Array.from(
+        new Set([tokenUserId, ownerAdminUserId, ...adminUserIds, ...anyUserIds].filter(Boolean))
+      );
+      if (!actorCandidates.length) {
+        throw new Error("Could not identify any company user for plan activation.");
       }
-      if (!ownerAdminUserId) throw new Error("Could not identify company owner admin.");
-      const upgraded = await setCompanyExtensionPlan({
-        actorUserId: ownerAdminUserId,
-        companyId,
-        planCode,
-        paidAt: new Date().toISOString(),
-        months: 1
-      });
+
+      let upgraded = null;
+      let lastActivationError = null;
+      for (const actorUserId of actorCandidates) {
+        try {
+          upgraded = await setCompanyExtensionPlan({
+            actorUserId,
+            companyId,
+            planCode,
+            paidAt: new Date().toISOString(),
+            months: 1
+          });
+          lastActivationError = null;
+          break;
+        } catch (error) {
+          lastActivationError = error;
+        }
+      }
+      if (!upgraded) {
+        throw new Error(
+          `Payment verified but plan activation failed. ${String(lastActivationError?.message || "No eligible admin actor found.")}`
+        );
+      }
       sendJson(res, 200, { ok: true, result: { activated: true, license: upgraded } });
     } catch (error) {
       sendJson(res, 400, { ok: false, error: String(error.message || error) });
