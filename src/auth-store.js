@@ -472,13 +472,34 @@ const COMPANY_LICENSE_ROW_TITLE = "__company_license__";
 const MAX_SHARED_CUSTOM_EXPORT_PRESETS = 10;
 const { parseExperienceTimelineTextToStructured, normalizeTimelineRow } = require("./timeline-utils");
 function isSharedExportPresetRow(job) {
-  return String(job?.id || "").trim() === SHARED_EXPORT_PRESET_ROW_ID || String(job?.title || "").trim() === SHARED_EXPORT_PRESET_ROW_TITLE;
+  const id = String(job?.id || "").trim();
+  const title = String(job?.title || "").trim();
+  return (
+    id === SHARED_EXPORT_PRESET_ROW_ID ||
+    title === SHARED_EXPORT_PRESET_ROW_TITLE ||
+    /shared[_\s-]*export[_\s-]*presets?/i.test(id) ||
+    /shared[_\s-]*export[_\s-]*presets?/i.test(title)
+  );
 }
 function isClientUsersRow(job) {
-  return String(job?.id || "").trim() === CLIENT_USERS_ROW_ID || String(job?.title || "").trim() === CLIENT_USERS_ROW_TITLE;
+  const id = String(job?.id || "").trim();
+  const title = String(job?.title || "").trim();
+  return (
+    id === CLIENT_USERS_ROW_ID ||
+    title === CLIENT_USERS_ROW_TITLE ||
+    /client[_\s-]*users?/i.test(id) ||
+    /client[_\s-]*users?/i.test(title)
+  );
 }
 function isCompanyLicenseRow(job) {
-  return String(job?.id || "").trim() === COMPANY_LICENSE_ROW_ID || String(job?.title || "").trim() === COMPANY_LICENSE_ROW_TITLE;
+  const id = String(job?.id || "").trim();
+  const title = String(job?.title || "").trim();
+  return (
+    id === COMPANY_LICENSE_ROW_ID ||
+    title === COMPANY_LICENSE_ROW_TITLE ||
+    /company[_\s-]*license/i.test(id) ||
+    /company[_\s-]*license/i.test(title)
+  );
 }
 function isSystemJobRow(job) {
   return isSharedExportPresetRow(job) || isClientUsersRow(job) || isCompanyLicenseRow(job);
