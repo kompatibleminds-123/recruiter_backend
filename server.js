@@ -734,23 +734,11 @@ async function ensurePortalCompanyApproved(companyId = "") {
 
 async function requireSaasAccess(actor, featureLabel = "this feature") {
   const companyId = String(actor?.companyId || "").trim();
-  const email = normalizeEmail(actor?.email || "");
   if (!companyId) throw new Error("Invalid company context.");
-
-  const approvedCompanyIds = parseCsvEnvSet(process.env.SAAS_APPROVED_COMPANY_IDS || "");
-  const approvedEmails = new Set(Array.from(parseCsvEnvSet(process.env.SAAS_APPROVED_EMAILS || "")).map((v) => normalizeEmail(v)));
-  if (approvedCompanyIds.has(companyId) || (email && approvedEmails.has(email))) {
-    return true;
-  }
-
-  const license = await getCompanyLicense(companyId).catch(() => null);
-  const plan = String(license?.plan || "").trim().toLowerCase();
-  const status = String(license?.status || "").trim().toLowerCase();
-  const isSaasPlan = plan === "saas_4999_unlimited" && (status === "active" || status === "legacy");
-  if (!isSaasPlan) {
-    throw new Error(`SaaS plan required for ${featureLabel}. Upgrade to Rs 4999 plan or request manual approval.`);
-  }
-  return true;
+  // Portal login is already gated at auth time (approved company or active SaaS),
+  // so in-portal features should not re-block with a separate 4999 check.
+  if (await isPortalCompanyApproved(companyId)) return true;
+  throw new Error(`Portal access not enabled for ${featureLabel}.`);
 }
 
 async function requireCompanySessionOrPayrollSession(token) {
