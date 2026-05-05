@@ -214,6 +214,186 @@ function formatSmtpError(error) {
   return parts.filter(Boolean).join(" | ");
 }
 
+function isZohoApiMode(cfg = {}) {
+  const host = normalizeSmtpHost(cfg.host).toLowerCase();
+  return host.startsWith("zohoapi");
+}
+
+function resolveZohoBases(cfg = {}) {
+  const host = normalizeSmtpHost(cfg.host).toLowerCase();
+  const fromEmail = extractEmailAddress(cfg.from || "");
+  const userEmail = extractEmailAddress(cfg.user || "");
+  const tldHint = [host, fromEmail, userEmail].join(" ");
+  const tld =
+    tldHint.includes(".zoho.in") || tldHint.endsWith(".in") ? "in" :
+    tldHint.includes(".zoho.eu") || tldHint.endsWith(".eu") ? "eu" :
+    tldHint.includes(".zoho.com.au") || tldHint.endsWith(".com.au") ? "com.au" :
+    tldHint.includes(".zoho.jp") || tldHint.endsWith(".jp") ? "jp" :
+    tldHint.includes(".zohocloud.ca") || tldHint.endsWith(".ca") ? "ca" :
+    tldHint.includes(".zoho.ae") || tldHint.endsWith(".ae") ? "ae" :
+    tldHint.includes(".zoho.sa") || tldHint.endsWith(".sa") ? "sa" :
+    tldHint.includes(".zoho.com.cn") || tldHint.endsWith(".com.cn") ? "com.cn" :
+    "com";
+  const accountsBaseDefaultMap = {
+    com: "https://accounts.zoho.com",
+    eu: "https://accounts.zoho.eu",
+    in: "https://accounts.zoho.in",
+    "com.au": "https://accounts.zoho.com.au",
+    jp: "https://accounts.zoho.jp",
+    ca: "https://accounts.zohocloud.ca",
+    ae: "https://accounts.zoho.ae",
+    sa: "https://accounts.zoho.sa",
+    "com.cn": "https://accounts.zoho.com.cn"
+  };
+  const mailBaseDefaultMap = {
+    com: "https://mail.zoho.com",
+    eu: "https://mail.zoho.eu",
+    in: "https://mail.zoho.in",
+    "com.au": "https://mail.zoho.com.au",
+    jp: "https://mail.zoho.jp",
+    ca: "https://mail.zohocloud.ca",
+    ae: "https://mail.zoho.ae",
+    sa: "https://mail.zoho.sa",
+    "com.cn": "https://mail.zoho.com.cn"
+  };
+  const accountsBase = String(process.env.ZOHO_ACCOUNTS_BASE_URL || accountsBaseDefaultMap[tld] || accountsBaseDefaultMap.com).trim().replace(/\/+$/, "");
+  const mailBase = String(process.env.ZOHO_MAIL_API_BASE_URL || mailBaseDefaultMap[tld] || mailBaseDefaultMap.com).trim().replace(/\/+$/, "");
+  return { tld, accountsBase, mailBase };
+}
+
+async function fetchWithTimeout(url, options = {}, timeoutMs = 20000) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), Math.max(1000, Number(timeoutMs) || 20000));
+  try {
+    return await fetch(url, { ...options, signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function formatZohoApiError(error) {
+  const code = String(error?.code || "").trim();
+  const status = Number(error?.status || 0) || 0;
+  const body = String(error?.body || error?.message || error || "").trim();
+  const parts = [body];
+  if (status) parts.push(`status=${status}`);
+  if (code) parts.push(`code=${code}`);
+  return parts.filter(Boolean).join(" | ");
+}
+
+async function getZohoAccessToken(cfg = {}) {
+  const refreshToken = String(cfg.pass || "").trim();
+  const clientId = String(process.env.ZOHO_CLIENT_ID || "").trim();
+  const clientSecret = String(process.env.ZOHO_CLIENT_SECRET || "").trim();
+  if (!refreshToken) throw new Error("Zoho API mode requires a refresh token in SMTP app password field.");
+  if (!clientId || !clientSecret) throw new Error("ZOHO_CLIENT_ID and ZOHO_CLIENT_SECRET must be set on backend.");
+  const { accountsBase } = resolveZohoBases(cfg);
+  const form = new URLSearchParams();
+  form.set("refresh_token", refreshToken);
+  form.set("client_id", clientId);
+  form.set("client_secret", clientSecret);
+  form.set("grant_type", "refresh_token");
+  const response = await fetchWithTimeout(`${accountsBase}/oauth/v2/token`, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: form.toString()
+  }, 20000);
+  const raw = await response.text();
+  let parsed = {};
+  try {
+    parsed = raw ? JSON.parse(raw) : {};
+  } catch {
+    parsed = {};
+  }
+  if (!response.ok || !String(parsed?.access_token || "").trim()) {
+    const err = new Error(String(parsed?.error || parsed?.error_description || raw || "Failed to refresh Zoho access token."));
+    err.status = response.status;
+    err.body = raw;
+    throw err;
+  }
+  return String(parsed.access_token).trim();
+}
+
+async function sendZohoEmailWithCfg(cfg, { to, cc = "", subject, html = "", text = "", attachments = [] }) {
+  if (Array.isArray(attachments) && attachments.length) {
+    throw new Error("Zoho API mode does not support attachments in this release.");
+  }
+  const accessToken = await getZohoAccessToken(cfg);
+  const { mailBase } = resolveZohoBases(cfg);
+  const accountsRes = await fetchWithTimeout(`${mailBase}/api/accounts`, {
+    method: "GET",
+    headers: {
+      "Accept": "application/json",
+      "Content-Type": "application/json",
+      "Authorization": `Zoho-oauthtoken ${accessToken}`
+    }
+  }, 20000);
+  const accountsRaw = await accountsRes.text();
+  let accountsJson = {};
+  try {
+    accountsJson = accountsRaw ? JSON.parse(accountsRaw) : {};
+  } catch {
+    accountsJson = {};
+  }
+  if (!accountsRes.ok) {
+    const err = new Error("Failed to load Zoho accounts.");
+    err.status = accountsRes.status;
+    err.body = accountsRaw;
+    throw err;
+  }
+  const accounts = Array.isArray(accountsJson?.data) ? accountsJson.data : [];
+  const fromEmail = extractEmailAddress(cfg.from || "");
+  const userEmail = extractEmailAddress(cfg.user || "");
+  const findMatch = (acc) => {
+    const primary = String(acc?.primaryEmailAddress || "").trim().toLowerCase();
+    const mailbox = String(acc?.mailboxAddress || "").trim().toLowerCase();
+    const sendFroms = Array.isArray(acc?.sendMailDetails) ? acc.sendMailDetails : [];
+    const canSendFrom = sendFroms.some((entry) => {
+      if (entry?.status === false) return false;
+      return String(entry?.fromAddress || "").trim().toLowerCase() === fromEmail.toLowerCase();
+    });
+    return [primary, mailbox].includes(fromEmail.toLowerCase()) || [primary, mailbox].includes(userEmail.toLowerCase()) || canSendFrom;
+  };
+  const selected = accounts.find(findMatch) || accounts[0] || null;
+  const accountId = String(selected?.accountId || "").trim();
+  if (!accountId) throw new Error("No usable Zoho mail account found for this recruiter token.");
+  const toCsv = String(to || "").trim();
+  const ccCsv = String(cc || "").trim();
+  const payload = {
+    fromAddress: fromEmail || userEmail,
+    toAddress: toCsv,
+    ...(ccCsv ? { ccAddress: ccCsv } : {}),
+    subject: String(subject || "").trim(),
+    content: String(html || text || "").trim(),
+    mailFormat: html ? "html" : "plaintext"
+  };
+  const sendRes = await fetchWithTimeout(`${mailBase}/api/accounts/${encodeURIComponent(accountId)}/messages`, {
+    method: "POST",
+    headers: {
+      "Accept": "application/json",
+      "Content-Type": "application/json",
+      "Authorization": `Zoho-oauthtoken ${accessToken}`
+    },
+    body: JSON.stringify(payload)
+  }, 25000);
+  const sendRaw = await sendRes.text();
+  let sendJson = {};
+  try {
+    sendJson = sendRaw ? JSON.parse(sendRaw) : {};
+  } catch {
+    sendJson = {};
+  }
+  const statusCode = Number(sendJson?.status?.code || 0) || 0;
+  if (!sendRes.ok || (statusCode && statusCode >= 300)) {
+    const desc = String(sendJson?.status?.description || sendJson?.data?.error?.message || sendRaw || "Zoho send failed.");
+    const err = new Error(desc);
+    err.status = sendRes.status || statusCode || 400;
+    err.body = sendRaw;
+    throw err;
+  }
+  return { ok: true, accountId, fromAddress: payload.fromAddress };
+}
+
 function buildJobShareEmail({ job, introText = "", senderName = "", signatureText = "", signatureLinks = [] }) {
   const title = String(job?.title || "").trim();
   const client = String(job?.clientName || "").trim();
@@ -380,11 +560,14 @@ async function sendSmtpEmail({ to, subject, html, text }) {
 }
 
 async function createActorSmtpTransport(actor) {
-  if (!nodemailer) throw new Error("Email sending is not available.");
   const cfg = await getUserSmtpSettings({ companyId: actor.companyId, userId: actor.id });
   if (!cfg || !cfg.host || !cfg.user || !cfg.pass || !cfg.from) {
-    throw new Error("Email settings not configured. Go to Settings â†’ Email settings.");
+    throw new Error("Email settings not configured. Go to Settings -> Email settings.");
   }
+  if (isZohoApiMode(cfg)) {
+    return { transport: null, cfg: sanitizeSmtpConfig(cfg) };
+  }
+  if (!nodemailer) throw new Error("Email sending is not available.");
   const finalCfg = sanitizeSmtpConfig(cfg);
   const transport = nodemailer.createTransport({
     host: finalCfg.host,
@@ -409,6 +592,10 @@ async function createActorSmtpTransport(actor) {
 async function sendJdEmailAsActor(actor, { to, cc = "", subject, html, text, attachments = [] }) {
   const { transport, cfg } = await createActorSmtpTransport(actor);
   const ccValue = String(cc || "").trim();
+  if (isZohoApiMode(cfg)) {
+    await sendZohoEmailWithCfg(cfg, { to, cc: ccValue, subject, html, text, attachments });
+    return;
+  }
   await transport.sendMail({
     from: String(cfg.from || "").trim(),
     to,
@@ -8355,19 +8542,33 @@ const server = http.createServer(async (req, res) => {
       const sendTestMail = Boolean(body?.sendTestMail);
       const overrideTo = String(body?.to || "").trim();
       const { transport, cfg } = await createActorSmtpTransport(actor);
-      await transport.verify();
+      const usingZohoApi = isZohoApiMode(cfg);
+      if (!usingZohoApi) {
+        await transport.verify();
+      } else {
+        await getZohoAccessToken(cfg);
+      }
       let testMailSent = false;
       let sentTo = "";
       if (sendTestMail) {
         const to = overrideTo || String(actor?.email || cfg.user || "").trim();
         if (!to) throw new Error("No email address available for test mail.");
-        await transport.sendMail({
-          from: String(cfg.from || "").trim(),
-          to,
-          subject: "RecruitDesk SMTP test",
-          text: "SMTP test successful. Your RecruitDesk mail settings are working.",
-          html: "<p>SMTP test successful. Your RecruitDesk mail settings are working.</p>"
-        });
+        if (usingZohoApi) {
+          await sendZohoEmailWithCfg(cfg, {
+            to,
+            subject: "RecruitDesk Zoho API test",
+            text: "Zoho API test successful. Your RecruitDesk mail settings are working.",
+            html: "<p>Zoho API test successful. Your RecruitDesk mail settings are working.</p>"
+          });
+        } else {
+          await transport.sendMail({
+            from: String(cfg.from || "").trim(),
+            to,
+            subject: "RecruitDesk SMTP test",
+            text: "SMTP test successful. Your RecruitDesk mail settings are working.",
+            html: "<p>SMTP test successful. Your RecruitDesk mail settings are working.</p>"
+          });
+        }
         testMailSent = true;
         sentTo = to;
       }
@@ -8378,6 +8579,7 @@ const server = http.createServer(async (req, res) => {
           host: String(cfg.host || "").trim(),
           port: Number(cfg.port || 587),
           secure: Boolean(cfg.secure),
+          mode: usingZohoApi ? "zoho_api" : "smtp",
           user: String(cfg.user || "").trim(),
           from: String(cfg.from || "").trim(),
           testMailSent,
@@ -8385,7 +8587,8 @@ const server = http.createServer(async (req, res) => {
         }
       });
     } catch (error) {
-      sendJson(res, 400, { ok: false, error: formatSmtpError(error) });
+      const message = /zoho/i.test(String(error?.message || "")) ? formatZohoApiError(error) : formatSmtpError(error);
+      sendJson(res, 400, { ok: false, error: message });
     }
     return;
   }
@@ -11025,6 +11228,7 @@ const server = http.createServer(async (req, res) => {
 server.listen(PORT, () => {
   console.log(`Recruiter backend listening on http://localhost:${PORT}`);
 });
+
 
 
 
