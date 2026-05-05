@@ -410,7 +410,16 @@ async function saveUserSmtpSettings({ actorUserId, companyId, userId, settings }
 
 function sanitizeUser(user) {
   if (!user) return null;
-  return { id: user.id, companyId: user.companyId ?? user.company_id ?? null, companyName: user.companyName ?? user.company_name ?? null, name: user.name, email: user.email, role: user.role, createdAt: user.createdAt ?? user.created_at ?? null };
+  return {
+    id: user.id,
+    companyId: user.companyId ?? user.company_id ?? null,
+    companyName: user.companyName ?? user.company_name ?? null,
+    name: user.name,
+    email: user.email,
+    role: user.role,
+    emailVerified: Boolean(user.emailVerified ?? user.email_verified ?? false),
+    createdAt: user.createdAt ?? user.created_at ?? null
+  };
 }
 function sanitizePayrollUser(user) {
   if (!user) return null;
@@ -1647,7 +1656,7 @@ async function createTrialCompanyWithAdmin({ companyName, adminName, email, pass
   if (!cfg().on) {
     const store = readStore();
     const company = { id: crypto.randomUUID(), name: String(companyName).trim(), createdAt: now, applicantIntakeSecret: buildApplicantIntakeSecret(companyName) };
-    const user = { id: crypto.randomUUID(), companyId: company.id, companyName: company.name, name: String(adminName).trim(), email: e, role: "admin", passwordHash: hashPassword(password), createdAt: now };
+    const user = { id: crypto.randomUUID(), companyId: company.id, companyName: company.name, name: String(adminName).trim(), email: e, role: "admin", emailVerified: false, passwordHash: hashPassword(password), createdAt: now };
     store.companies.push(company);
     store.users.push(user);
     writeStore(store);
@@ -1669,7 +1678,7 @@ async function createTrialCompanyWithAdmin({ companyName, adminName, email, pass
   }
   await ensureSeeded();
   const company = { id: crypto.randomUUID(), name: String(companyName).trim(), created_at: now, applicant_intake_secret: buildApplicantIntakeSecret(companyName) };
-  const user = { id: crypto.randomUUID(), company_id: company.id, company_name: company.name, name: String(adminName).trim(), email: e, role: "admin", password_hash: hashPassword(password), created_at: now };
+  const user = { id: crypto.randomUUID(), company_id: company.id, company_name: company.name, name: String(adminName).trim(), email: e, role: "admin", email_verified: false, password_hash: hashPassword(password), created_at: now };
   try {
     await sbIns("companies", [company], { conflict: "id", upsert: true });
   } catch (error) {
@@ -1897,6 +1906,8 @@ async function resetUserPassword({ actorUserId, companyId, userId, newPassword }
 async function login({ email, password }) {
   const e = normalizeEmail(email); const user = await getUserByEmail(e);
   if (!user || !verifyPassword(password, user.passwordHash || user.password_hash)) throw new Error("Invalid email or password.");
+  const emailVerified = Boolean(user.emailVerified ?? user.email_verified ?? false);
+  if (!emailVerified) throw new Error("Please verify your email before logging in.");
   const sessionUser = sanitizeUser(user); const token = crypto.randomBytes(32).toString("hex");
   // Keep authentication separate from plan enforcement.
   // Expired trial / blocked plan should still allow login so UI can show upgrade state.
@@ -1906,6 +1917,36 @@ async function login({ email, password }) {
     await sbIns("sessions", [{ token, user_id: sessionUser.id, company_id: sessionUser.companyId, created_at: new Date().toISOString() }], { conflict: "token", upsert: true });
   }
   return { token, user: sessionUser };
+}
+
+async function verifyUserEmail({ userId, companyId, email }) {
+  const safeUserId = String(userId || "").trim();
+  const safeCompanyId = String(companyId || "").trim();
+  const safeEmail = normalizeEmail(email || "");
+  if (!safeUserId || !safeCompanyId || !safeEmail) throw new Error("Invalid verification payload.");
+  if (!cfg().on) {
+    const store = readStore();
+    const row = (store.users || []).find(
+      (u) =>
+        String(u?.id || "").trim() === safeUserId &&
+        String(u?.companyId || u?.company_id || "").trim() === safeCompanyId &&
+        normalizeEmail(u?.email || "") === safeEmail
+    );
+    if (!row) throw new Error("Verification user not found.");
+    row.emailVerified = true;
+    row.email_verified = true;
+    writeStore(store);
+    return sanitizeUser(row);
+  }
+  await ensureSeeded();
+  const rows = await sbPatch(
+    "users",
+    `id=eq.${enc(safeUserId)}&company_id=eq.${enc(safeCompanyId)}&email=eq.${enc(safeEmail)}`,
+    { email_verified: true }
+  );
+  const updated = rows?.[0] || null;
+  if (!updated) throw new Error("Verification user not found.");
+  return sanitizeUser(updated);
 }
 async function getSessionUser(token) {
   const t = String(token || "").trim();
@@ -4619,5 +4660,6 @@ module.exports = {
   patchAssessmentCandidateLink,
   saveCompanyJob,
   getUserSmtpSettings,
-  saveUserSmtpSettings
+  saveUserSmtpSettings,
+  verifyUserEmail
 };

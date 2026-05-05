@@ -108,7 +108,8 @@ const {
   saveCompanyJob,
   saveCompanySharedExportPresets,
   setCompanyExtensionPlan,
-  setCompanyApplicantIntakeSecret
+  setCompanyApplicantIntakeSecret,
+  verifyUserEmail
 } = require("./src/auth-store");
 
 const { DEFAULT_SYNONYMS, mapLocationAlias } = require("./src/search/synonyms");
@@ -259,6 +260,10 @@ function systemMailReady(cfg = {}) {
 
 async function sendPlatformTransactionalMail({ to, cc = "", subject, html = "", text = "" }) {
   const cfg = getSystemMailConfig();
+  const toEmail = String(to || "").trim();
+  if (!isValidEmail(toEmail)) {
+    throw new Error("Invalid recipient email for transactional mail.");
+  }
   if (!systemMailReady(cfg)) {
     console.log("[mail] Skipped transactional mail (system sender not configured).", { to, subject });
     return { skipped: true };
@@ -271,15 +276,15 @@ async function sendPlatformTransactionalMail({ to, cc = "", subject, html = "", 
       __zohoClientId: systemZohoClientId || undefined,
       __zohoClientSecret: systemZohoClientSecret || undefined
     };
-    await sendZohoEmailWithCfg(cfgWithSystemClient, { to, cc, subject, html, text, attachments: [] });
+    await sendZohoEmailWithCfg(cfgWithSystemClient, { to: toEmail, cc, subject, html, text, attachments: [] });
     return { mode: "zoho_api" };
   }
   if (isSendgridApiMode(cfg)) {
-    await sendSendgridEmailWithCfg(cfg, { to, cc, subject, html, text, attachments: [] });
+    await sendSendgridEmailWithCfg(cfg, { to: toEmail, cc, subject, html, text, attachments: [] });
     return { mode: "sendgrid_api" };
   }
   if (isPostmarkApiMode(cfg)) {
-    await sendPostmarkEmailWithCfg(cfg, { to, cc, subject, html, text, attachments: [] });
+    await sendPostmarkEmailWithCfg(cfg, { to: toEmail, cc, subject, html, text, attachments: [] });
     return { mode: "postmark_api" };
   }
   if (!nodemailer) throw new Error("Nodemailer dependency is missing for SMTP system mail mode.");
@@ -292,16 +297,17 @@ async function sendPlatformTransactionalMail({ to, cc = "", subject, html = "", 
     greetingTimeout: 15000,
     socketTimeout: 20000
   });
-  await transport.sendMail({ from: cfg.from, to, cc: cc || undefined, subject, text, html: html || undefined });
+  await transport.sendMail({ from: cfg.from, to: toEmail, cc: cc || undefined, subject, text, html: html || undefined });
   return { mode: "smtp" };
 }
 
-function buildSignupMail({ companyName = "", adminName = "" }) {
+function buildSignupMail({ companyName = "", adminName = "", verifyUrl = "" }) {
   const safeCompany = String(companyName || "").trim() || "your company";
   const safeName = String(adminName || "").trim() || "there";
-  const subject = `Welcome to RecruitDesk - ${safeCompany}`;
-  const text = `Hi ${safeName},\n\nYour RecruitDesk workspace is ready for ${safeCompany}.\nYour trial has started successfully.\n\nIf this was not you, reply to this mail immediately.\n\n- RecruitDesk Team`;
-  const html = `<p>Hi ${escapeHtml(safeName)},</p><p>Your RecruitDesk workspace is ready for <strong>${escapeHtml(safeCompany)}</strong>.<br/>Your trial has started successfully.</p><p>If this was not you, reply to this mail immediately.</p><p>- RecruitDesk Team</p>`;
+  const safeVerifyUrl = String(verifyUrl || "").trim();
+  const subject = `Welcome to RecruitDesk AI from Kompatible Minds - ${safeCompany}`;
+  const text = `Hi ${safeName},\n\nWelcome to RecruitDesk AI from Kompatible Minds.\nYour workspace for ${safeCompany} is almost ready.\n\nPlease verify your email to activate your account:\n${safeVerifyUrl}\n\nIf this signup was not done by you, please ignore this email.\n\nRegards,\nRecruitDesk AI from Kompatible Minds`;
+  const html = `<p>Hi ${escapeHtml(safeName)},</p><p>Welcome to <strong>RecruitDesk AI from Kompatible Minds</strong>.</p><p>Your workspace for <strong>${escapeHtml(safeCompany)}</strong> is almost ready.</p><p>Please verify your email to activate your account:</p><p><a href="${escapeHtml(safeVerifyUrl)}" target="_blank" rel="noopener noreferrer">Activate account</a></p><p>If this signup was not done by you, please ignore this email.</p><p>Regards,<br/>RecruitDesk AI from Kompatible Minds</p>`;
   return { subject, text, html };
 }
 
@@ -318,9 +324,9 @@ function buildPlanPurchaseMail({ companyName = "", planCode = "", subscriptionEn
   const safeCompany = String(companyName || "").trim() || "your company";
   const planName = planLabel(planCode);
   const endText = subscriptionEndsAt ? new Date(subscriptionEndsAt).toLocaleDateString("en-IN") : "N/A";
-  const subject = `RecruitDesk plan activated - ${planName}`;
-  const text = `Your plan has been activated for ${safeCompany}.\nPlan: ${planName}\nValid till: ${endText}\n\nThank you for your purchase.\n- RecruitDesk Billing`;
-  const html = `<p>Your plan has been activated for <strong>${escapeHtml(safeCompany)}</strong>.</p><p><strong>Plan:</strong> ${escapeHtml(planName)}<br/><strong>Valid till:</strong> ${escapeHtml(endText)}</p><p>Thank you for your purchase.<br/>- RecruitDesk Billing</p>`;
+  const subject = `RecruitDesk AI from Kompatible Minds - Plan Activated (${planName})`;
+  const text = `Your plan has been activated for ${safeCompany}.\nPlan: ${planName}\nValid till: ${endText}\n\nThank you for choosing RecruitDesk AI from Kompatible Minds.\n\nRegards,\nRecruitDesk AI from Kompatible Minds`;
+  const html = `<p>Your plan has been activated for <strong>${escapeHtml(safeCompany)}</strong>.</p><p><strong>Plan:</strong> ${escapeHtml(planName)}<br/><strong>Valid till:</strong> ${escapeHtml(endText)}</p><p>Thank you for choosing <strong>RecruitDesk AI from Kompatible Minds</strong>.</p><p>Regards,<br/>RecruitDesk AI from Kompatible Minds</p>`;
   return { subject, text, html };
 }
 
@@ -328,9 +334,9 @@ function buildPlanExpiryReminderMail({ companyName = "", daysLeft = 0, subscript
   const safeCompany = String(companyName || "").trim() || "your company";
   const endText = subscriptionEndsAt ? new Date(subscriptionEndsAt).toLocaleDateString("en-IN") : "soon";
   const dueText = daysLeft <= 0 ? "has expired" : `expires in ${daysLeft} day${daysLeft === 1 ? "" : "s"}`;
-  const subject = `Action needed: RecruitDesk plan ${dueText}`;
-  const text = `Your RecruitDesk plan for ${safeCompany} ${dueText}.\nExpiry date: ${endText}\nPlease renew to avoid interruption.\n\n- RecruitDesk Billing`;
-  const html = `<p>Your RecruitDesk plan for <strong>${escapeHtml(safeCompany)}</strong> ${escapeHtml(dueText)}.</p><p><strong>Expiry date:</strong> ${escapeHtml(endText)}<br/>Please renew to avoid interruption.</p><p>- RecruitDesk Billing</p>`;
+  const subject = `RecruitDesk AI from Kompatible Minds - Subscription ${dueText}`;
+  const text = `Your RecruitDesk AI subscription for ${safeCompany} ${dueText}.\nExpiry date: ${endText}\nPlease renew to avoid interruption.\n\nRegards,\nRecruitDesk AI from Kompatible Minds`;
+  const html = `<p>Your RecruitDesk AI subscription for <strong>${escapeHtml(safeCompany)}</strong> ${escapeHtml(dueText)}.</p><p><strong>Expiry date:</strong> ${escapeHtml(endText)}<br/>Please renew to avoid interruption.</p><p>Regards,<br/>RecruitDesk AI from Kompatible Minds</p>`;
   return { subject, text, html };
 }
 
@@ -1453,6 +1459,44 @@ function readSignedUpgradeToken(token) {
     const payload = JSON.parse(Buffer.from(encoded, "base64url").toString("utf8"));
     if (payload?.type !== "shared_upgrade_link") return null;
     if (!UPGRADE_ALLOWED_PLANS.has(String(payload?.planCode || "").trim())) return null;
+    if (payload.expiresAt && Date.now() > Number(payload.expiresAt)) return null;
+    return payload;
+  } catch {
+    return null;
+  }
+}
+
+function getEmailVerifyTokenSecret() {
+  return (
+    String(process.env.EMAIL_VERIFY_SECRET || "").trim() ||
+    String(process.env.PLATFORM_SESSION_SECRET || "").trim() ||
+    getCvShareSecret()
+  );
+}
+
+function createSignedEmailVerifyToken(payload) {
+  const encoded = Buffer.from(JSON.stringify(payload), "utf8").toString("base64url");
+  const signature = crypto
+    .createHmac("sha256", getEmailVerifyTokenSecret())
+    .update(encoded)
+    .digest("base64url");
+  return `${encoded}.${signature}`;
+}
+
+function readSignedEmailVerifyToken(token) {
+  const raw = String(token || "").trim();
+  if (!raw) return null;
+  const [encoded, signature] = raw.split(".");
+  if (!encoded || !signature) return null;
+  const expected = crypto
+    .createHmac("sha256", getEmailVerifyTokenSecret())
+    .update(encoded)
+    .digest("base64url");
+  if (!timingSafeEqualString(signature, expected)) return null;
+  try {
+    const payload = JSON.parse(Buffer.from(encoded, "base64url").toString("utf8"));
+    if (payload?.type !== "email_verify") return null;
+    if (!payload?.userId || !payload?.companyId || !payload?.email) return null;
     if (payload.expiresAt && Date.now() > Number(payload.expiresAt)) return null;
     return payload;
   } catch {
@@ -7032,6 +7076,27 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (req.method === "GET" && requestUrl.pathname === "/auth/verify-email") {
+    const token = String(requestUrl.searchParams.get("token") || "").trim();
+    const payload = readSignedEmailVerifyToken(token);
+    if (!payload) {
+      sendText(req, res, 400, "Invalid or expired verification link.");
+      return;
+    }
+    try {
+      await verifyUserEmail({
+        userId: String(payload.userId || "").trim(),
+        companyId: String(payload.companyId || "").trim(),
+        email: String(payload.email || "").trim()
+      });
+      const body = `<!doctype html><html><head><meta charset="utf-8"/><title>Email Verified</title></head><body style="font-family:Arial,sans-serif;padding:24px;"><h2>Email verified successfully</h2><p>Your RecruitDesk AI account is now activated.</p><p>You can close this tab and login in the app.</p></body></html>`;
+      sendText(req, res, 200, body, "text/html; charset=utf-8");
+    } catch (error) {
+      sendText(req, res, 400, `Verification failed: ${escapeHtml(String(error?.message || error))}`);
+    }
+    return;
+  }
+
   if (req.method === "GET" && (requestUrl.pathname === "/quick-capture" || requestUrl.pathname === "/quick-capture/")) {
     serveStaticFile(res, path.join(QUICK_CAPTURE_PUBLIC_DIR, "index.html"));
     return;
@@ -7613,20 +7678,24 @@ const server = http.createServer(async (req, res) => {
   if (req.method === "POST" && req.url === "/auth/trial-signup") {
     try {
       const body = await readJsonBody(req);
-      await createTrialCompanyWithAdmin({
+      const created = await createTrialCompanyWithAdmin({
         companyName: String(body.companyName || "").trim(),
         adminName: String(body.adminName || "").trim(),
         email: String(body.email || "").trim(),
         password: String(body.password || "")
       });
-      const result = await login({
+      const verifyToken = createSignedEmailVerifyToken({
+        type: "email_verify",
+        userId: String(created?.user?.id || "").trim(),
+        companyId: String(created?.company?.id || created?.user?.companyId || "").trim(),
         email: String(body.email || "").trim(),
-        password: String(body.password || "")
+        expiresAt: Date.now() + 24 * 60 * 60 * 1000
       });
-      const license = await getCompanyLicense(result.user.companyId);
+      const verifyUrl = `${requestUrl.origin}/auth/verify-email?token=${encodeURIComponent(verifyToken)}`;
       const signupMail = buildSignupMail({
         companyName: String(body.companyName || "").trim(),
-        adminName: String(body.adminName || "").trim()
+        adminName: String(body.adminName || "").trim(),
+        verifyUrl
       });
       await sendPlatformTransactionalMail({
         to: String(body.email || "").trim(),
@@ -7636,7 +7705,14 @@ const server = http.createServer(async (req, res) => {
       }).catch((error) => {
         console.log("[mail] trial signup mail failed:", String(error?.message || error));
       });
-      sendJson(res, 200, { ok: true, result: { ...result, license } });
+      sendJson(res, 200, {
+        ok: true,
+        result: {
+          pendingVerification: true,
+          message: "Verification email sent. Please verify email before login.",
+          email: String(body.email || "").trim()
+        }
+      });
     } catch (error) {
       sendJson(res, 400, { ok: false, error: String(error.message || error) });
     }
