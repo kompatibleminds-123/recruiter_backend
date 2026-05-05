@@ -271,6 +271,29 @@ async function fetchWithTimeout(url, options = {}, timeoutMs = 20000) {
   }
 }
 
+function toBufferContent(value) {
+  if (Buffer.isBuffer(value)) return value;
+  if (value == null) return Buffer.alloc(0);
+  if (value instanceof Uint8Array) return Buffer.from(value);
+  return Buffer.from(String(value), "utf8");
+}
+
+function collectZohoAttachmentRefs(node, acc = []) {
+  if (!node || typeof node !== "object") return acc;
+  if (Array.isArray(node)) {
+    for (const item of node) collectZohoAttachmentRefs(item, acc);
+    return acc;
+  }
+  const storeName = String(node.storeName || "").trim();
+  const attachmentPath = String(node.attachmentPath || "").trim();
+  const attachmentName = String(node.attachmentName || "").trim();
+  if (storeName && attachmentPath && attachmentName) {
+    acc.push({ storeName, attachmentPath, attachmentName });
+  }
+  for (const value of Object.values(node)) collectZohoAttachmentRefs(value, acc);
+  return acc;
+}
+
 function formatZohoApiError(error) {
   const code = String(error?.code || "").trim();
   const status = Number(error?.status || 0) || 0;
@@ -314,10 +337,47 @@ async function getZohoAccessToken(cfg = {}) {
   return String(parsed.access_token).trim();
 }
 
-async function sendZohoEmailWithCfg(cfg, { to, cc = "", subject, html = "", text = "", attachments = [] }) {
-  if (Array.isArray(attachments) && attachments.length) {
-    throw new Error("Zoho API mode does not support attachments in this release.");
+async function exchangeZohoAuthCode({ code = "", redirectUri = "", hostHint = "zohoapi.com" } = {}) {
+  const authCode = String(code || "").trim();
+  const clientId = String(process.env.ZOHO_CLIENT_ID || "").trim();
+  const clientSecret = String(process.env.ZOHO_CLIENT_SECRET || "").trim();
+  const callback = String(redirectUri || "").trim();
+  if (!authCode) throw new Error("Missing Zoho authorization code.");
+  if (!clientId || !clientSecret) throw new Error("ZOHO_CLIENT_ID and ZOHO_CLIENT_SECRET must be set on backend.");
+  if (!callback) throw new Error("Missing Zoho redirect URI.");
+  const { accountsBase } = resolveZohoBases({ host: hostHint, from: "", user: "" });
+  const form = new URLSearchParams();
+  form.set("code", authCode);
+  form.set("client_id", clientId);
+  form.set("client_secret", clientSecret);
+  form.set("redirect_uri", callback);
+  form.set("grant_type", "authorization_code");
+  const response = await fetchWithTimeout(`${accountsBase}/oauth/v2/token`, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: form.toString()
+  }, 20000);
+  const raw = await response.text();
+  let parsed = {};
+  try {
+    parsed = raw ? JSON.parse(raw) : {};
+  } catch {
+    parsed = {};
   }
+  if (!response.ok || !String(parsed?.refresh_token || "").trim()) {
+    const err = new Error(String(parsed?.error || parsed?.error_description || raw || "Failed to exchange Zoho authorization code."));
+    err.status = response.status;
+    err.body = raw;
+    throw err;
+  }
+  return {
+    accessToken: String(parsed?.access_token || "").trim(),
+    refreshToken: String(parsed?.refresh_token || "").trim(),
+    expiresIn: Number(parsed?.expires_in || 0) || 0
+  };
+}
+
+async function sendZohoEmailWithCfg(cfg, { to, cc = "", subject, html = "", text = "", attachments = [] }) {
   const accessToken = await getZohoAccessToken(cfg);
   const { mailBase } = resolveZohoBases(cfg);
   const accountsRes = await fetchWithTimeout(`${mailBase}/api/accounts`, {
@@ -357,6 +417,50 @@ async function sendZohoEmailWithCfg(cfg, { to, cc = "", subject, html = "", text
   const selected = accounts.find(findMatch) || accounts[0] || null;
   const accountId = String(selected?.accountId || "").trim();
   if (!accountId) throw new Error("No usable Zoho mail account found for this recruiter token.");
+  const attachmentRefs = [];
+  if (Array.isArray(attachments) && attachments.length) {
+    for (const attachment of attachments) {
+      const filename = String(attachment?.filename || "attachment").trim() || "attachment";
+      const bytes = toBufferContent(attachment?.content);
+      const form = new FormData();
+      const mime = String(attachment?.contentType || "application/octet-stream").trim() || "application/octet-stream";
+      const blob = new Blob([bytes], { type: mime });
+      form.append("attach", blob, filename);
+      const uploadRes = await fetchWithTimeout(
+        `${mailBase}/api/accounts/${encodeURIComponent(accountId)}/messages/attachments?uploadType=multipart`,
+        {
+          method: "POST",
+          headers: {
+            "Accept": "application/json",
+            "Authorization": `Zoho-oauthtoken ${accessToken}`
+          },
+          body: form
+        },
+        25000
+      );
+      const uploadRaw = await uploadRes.text();
+      let uploadJson = {};
+      try {
+        uploadJson = uploadRaw ? JSON.parse(uploadRaw) : {};
+      } catch {
+        uploadJson = {};
+      }
+      if (!uploadRes.ok) {
+        const err = new Error(`Zoho attachment upload failed for ${filename}.`);
+        err.status = uploadRes.status;
+        err.body = uploadRaw;
+        throw err;
+      }
+      const refs = collectZohoAttachmentRefs(uploadJson, []);
+      if (!refs.length) {
+        const err = new Error(`Zoho attachment upload response missing attachment reference for ${filename}.`);
+        err.status = uploadRes.status || 400;
+        err.body = uploadRaw;
+        throw err;
+      }
+      attachmentRefs.push(refs[0]);
+    }
+  }
   const toCsv = String(to || "").trim();
   const ccCsv = String(cc || "").trim();
   const payload = {
@@ -365,7 +469,8 @@ async function sendZohoEmailWithCfg(cfg, { to, cc = "", subject, html = "", text
     ...(ccCsv ? { ccAddress: ccCsv } : {}),
     subject: String(subject || "").trim(),
     content: String(html || text || "").trim(),
-    mailFormat: html ? "html" : "plaintext"
+    mailFormat: html ? "html" : "plaintext",
+    ...(attachmentRefs.length ? { attachments: attachmentRefs } : {})
   };
   const sendRes = await fetchWithTimeout(`${mailBase}/api/accounts/${encodeURIComponent(accountId)}/messages`, {
     method: "POST",
@@ -943,6 +1048,44 @@ function getBearerTokenFromRequest(req, requestUrl = null) {
   if (headerToken) return headerToken;
   const queryToken = String(requestUrl?.searchParams?.get("access_token") || "").trim();
   return queryToken;
+}
+
+function getZohoOauthStateSecret() {
+  return (
+    String(process.env.ZOHO_OAUTH_STATE_SECRET || "").trim() ||
+    String(process.env.PLATFORM_SESSION_SECRET || "").trim() ||
+    String(process.env.CV_SHARE_SECRET || "").trim() ||
+    "recruitdesk-zoho-oauth-state"
+  );
+}
+
+function createSignedZohoOauthState(payload) {
+  const encoded = Buffer.from(JSON.stringify(payload), "utf8").toString("base64url");
+  const signature = crypto
+    .createHmac("sha256", getZohoOauthStateSecret())
+    .update(encoded)
+    .digest("base64url");
+  return `${encoded}.${signature}`;
+}
+
+function readSignedZohoOauthState(token) {
+  const raw = String(token || "").trim();
+  if (!raw) return null;
+  const [encoded, signature] = raw.split(".");
+  if (!encoded || !signature) return null;
+  const expected = crypto
+    .createHmac("sha256", getZohoOauthStateSecret())
+    .update(encoded)
+    .digest("base64url");
+  if (!timingSafeEqualString(signature, expected)) return null;
+  try {
+    const payload = JSON.parse(Buffer.from(encoded, "base64url").toString("utf8"));
+    if (payload?.type !== "zoho_oauth_connect") return null;
+    if (payload.expiresAt && Date.now() > Number(payload.expiresAt)) return null;
+    return payload;
+  } catch {
+    return null;
+  }
 }
 
 function parseCsvEnvSet(value = "") {
@@ -7594,6 +7737,86 @@ const server = http.createServer(async (req, res) => {
       });
     } catch (error) {
       sendJson(res, 401, { ok: false, error: String(error.message || error) });
+    }
+    return;
+  }
+
+  if (req.method === "GET" && requestUrl.pathname === "/company/email-settings/zoho/connect-url") {
+    try {
+      const actor = await requireSessionUser(getBearerToken(req));
+      const hostHint = String(requestUrl.searchParams.get("host") || "zohoapi.com").trim() || "zohoapi.com";
+      const redirectUri = String(
+        process.env.ZOHO_REDIRECT_URI ||
+        `${String(getRequestBaseUrl(req) || "").trim().replace(/\/+$/, "")}/zoho/oauth/callback`
+      ).trim();
+      if (!redirectUri) throw new Error("Missing Zoho redirect URI.");
+      const clientId = String(process.env.ZOHO_CLIENT_ID || "").trim();
+      if (!clientId) throw new Error("ZOHO_CLIENT_ID is not set on backend.");
+      const now = Date.now();
+      const expiresAt = now + (15 * 60 * 1000);
+      const state = createSignedZohoOauthState({
+        type: "zoho_oauth_connect",
+        userId: String(actor.id || "").trim(),
+        companyId: String(actor.companyId || "").trim(),
+        email: String(actor.email || "").trim(),
+        hostHint,
+        redirectUri,
+        issuedAt: now,
+        expiresAt
+      });
+      const { accountsBase } = resolveZohoBases({ host: hostHint, from: actor.email || "", user: actor.email || "" });
+      const authUrl = `${accountsBase}/oauth/v2/auth?scope=${encodeURIComponent("ZohoMail.messages.CREATE,ZohoMail.accounts.READ")}&client_id=${encodeURIComponent(clientId)}&response_type=code&access_type=offline&prompt=consent&redirect_uri=${encodeURIComponent(redirectUri)}&state=${encodeURIComponent(state)}`;
+      sendJson(res, 200, { ok: true, result: { authUrl, expiresAt, hostHint, redirectUri } });
+    } catch (error) {
+      sendJson(res, 400, { ok: false, error: String(error.message || error) });
+    }
+    return;
+  }
+
+  if (req.method === "GET" && requestUrl.pathname === "/zoho/oauth/callback") {
+    const postResultPage = (ok, message) => {
+      const safeMessage = escapeHtml(String(message || "").trim());
+      const body = `<!doctype html><html><head><meta charset="utf-8"/><title>Zoho Connect</title></head><body style="font-family:Arial,sans-serif;padding:20px;"><h2>${ok ? "Zoho connected" : "Zoho connect failed"}</h2><p>${safeMessage}</p><script>try{if(window.opener){window.opener.postMessage({type:"RSD_ZOHO_CONNECTED",ok:${ok ? "true" : "false"},message:${JSON.stringify(String(message || ""))}}, "*");}}catch(_){ }try{window.close();}catch(_){ }</script></body></html>`;
+      sendText(req, res, 200, body, "text/html; charset=utf-8");
+    };
+    try {
+      const oauthError = String(requestUrl.searchParams.get("error") || "").trim();
+      if (oauthError) throw new Error(oauthError);
+      const code = String(requestUrl.searchParams.get("code") || "").trim();
+      const stateToken = String(requestUrl.searchParams.get("state") || "").trim();
+      const state = readSignedZohoOauthState(stateToken);
+      if (!state) throw new Error("Invalid or expired Zoho connect state.");
+      const exchanged = await exchangeZohoAuthCode({
+        code,
+        redirectUri: String(state.redirectUri || "").trim(),
+        hostHint: String(state.hostHint || "zohoapi.com").trim() || "zohoapi.com"
+      });
+      const existing = await getUserSmtpSettings({
+        companyId: String(state.companyId || "").trim(),
+        userId: String(state.userId || "").trim()
+      }).catch(() => null);
+      await saveUserSmtpSettings({
+        actorUserId: String(state.userId || "").trim(),
+        companyId: String(state.companyId || "").trim(),
+        userId: String(state.userId || "").trim(),
+        settings: {
+          host: String(state.hostHint || "zohoapi.com").trim() || "zohoapi.com",
+          port: 443,
+          secure: true,
+          user: String(state.email || "").trim(),
+          from: String(state.email || "").trim(),
+          pass: String(exchanged.refreshToken || "").trim(),
+          keepPass: false,
+          signatureText: String(existing?.signatureText || "").trim(),
+          signatureLinkLabel: String(existing?.signatureLinkLabel || "").trim(),
+          signatureLinkUrl: String(existing?.signatureLinkUrl || "").trim(),
+          signatureLinkLabel2: String(existing?.signatureLinkLabel2 || "").trim(),
+          signatureLinkUrl2: String(existing?.signatureLinkUrl2 || "").trim()
+        }
+      });
+      postResultPage(true, "Zoho mail connected successfully. You can go back to RecruitDesk.");
+    } catch (error) {
+      postResultPage(false, String(error?.message || error));
     }
     return;
   }
