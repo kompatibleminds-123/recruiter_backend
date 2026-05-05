@@ -264,7 +264,14 @@ async function sendPlatformTransactionalMail({ to, cc = "", subject, html = "", 
     return { skipped: true };
   }
   if (isZohoApiMode(cfg)) {
-    await sendZohoEmailWithCfg(cfg, { to, cc, subject, html, text, attachments: [] });
+    const systemZohoClientId = String(process.env.SYSTEM_ZOHO_CLIENT_ID || "").trim();
+    const systemZohoClientSecret = String(process.env.SYSTEM_ZOHO_CLIENT_SECRET || "").trim();
+    const cfgWithSystemClient = {
+      ...cfg,
+      __zohoClientId: systemZohoClientId || undefined,
+      __zohoClientSecret: systemZohoClientSecret || undefined
+    };
+    await sendZohoEmailWithCfg(cfgWithSystemClient, { to, cc, subject, html, text, attachments: [] });
     return { mode: "zoho_api" };
   }
   if (isSendgridApiMode(cfg)) {
@@ -458,8 +465,8 @@ function formatProviderApiError(error) {
 
 async function getZohoAccessToken(cfg = {}) {
   const refreshToken = String(cfg.pass || "").trim();
-  const clientId = String(process.env.ZOHO_CLIENT_ID || "").trim();
-  const clientSecret = String(process.env.ZOHO_CLIENT_SECRET || "").trim();
+  const clientId = String(cfg.__zohoClientId || process.env.ZOHO_CLIENT_ID || "").trim();
+  const clientSecret = String(cfg.__zohoClientSecret || process.env.ZOHO_CLIENT_SECRET || "").trim();
   if (!refreshToken) throw new Error("Zoho API mode requires a refresh token in SMTP app password field.");
   if (!clientId || !clientSecret) throw new Error("ZOHO_CLIENT_ID and ZOHO_CLIENT_SECRET must be set on backend.");
   const { accountsBase } = resolveZohoBases(cfg);
