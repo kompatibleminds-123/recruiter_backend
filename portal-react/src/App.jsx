@@ -11959,7 +11959,7 @@ function PortalApp({ token, onLogout }) {
             <div className="page-grid">
               <Section kicker="Email" title="Mail Settings">
                 {statuses.settings ? <div className={`status ${statuses.settingsKind || ""}`}>{statuses.settings}</div> : null}
-                <p className="muted">Configure your SMTP credentials here. JD emails from candidate cards will send using these settings (per recruiter).</p>
+                <p className="muted">Configure email delivery for JD sharing. You can use either SMTP credentials or API mode (per recruiter).</p>
                 <div className="form-grid two-col">
                   <label><span>SMTP host</span><input value={smtpSettings.host} onChange={(e) => { markSmtpSettingsDirty(); setSmtpSettings((c) => ({ ...c, host: e.target.value })); }} placeholder="smtppro.zoho.com" /></label>
                   <label><span>SMTP port</span><input type="number" value={smtpSettings.port} onChange={(e) => { markSmtpSettingsDirty(); setSmtpSettings((c) => ({ ...c, port: Number(e.target.value || 0) || 587 })); }} placeholder="587" /></label>
@@ -11994,13 +11994,22 @@ function PortalApp({ token, onLogout }) {
                   </button>
                 </div>
                 <p className="muted" style={{ marginTop: 8 }}>
-                  Recruiters can click <strong>Connect Zoho (1-click)</strong>. No manual code/token copy is required.
+                  <strong>Supported modes:</strong> SMTP mode (real SMTP host like <code>smtppro.zoho.com</code>, <code>smtp.gmail.com</code>, <code>smtp.office365.com</code>) or API mode via host keys.
                 </p>
                 <p className="muted" style={{ marginTop: 2 }}>
-                  Connection status: {String(smtpSettings.host || "").toLowerCase().startsWith("zohoapi") && smtpSettings.hasPassword ? "Zoho connected" : "Not connected"}
+                  <strong>API mode host keys:</strong> <code>zohoapi.com</code>, <code>sendgridapi</code>, <code>postmarkapi</code>.
                 </p>
                 <p className="muted" style={{ marginTop: 2 }}>
-                  Multi-provider API mode host keys: <code>zohoapi.com</code>, <code>sendgridapi</code>, <code>postmarkapi</code>. For SendGrid/Postmark, paste API key/server token in password field.
+                  <strong>Zoho:</strong> click <strong>Connect Zoho (1-click)</strong>. No manual code/token copy is required.
+                </p>
+                <p className="muted" style={{ marginTop: 2 }}>
+                  <strong>Password field meaning:</strong> SMTP mode = mailbox/app password. API mode = provider credential (Zoho refresh token auto-saved by Connect Zoho, SendGrid API key, Postmark Server Token).
+                </p>
+                <p className="muted" style={{ marginTop: 2 }}>
+                  <strong>Connection status:</strong> {String(smtpSettings.host || "").toLowerCase().startsWith("zohoapi") && smtpSettings.hasPassword ? "Zoho connected" : "Not connected"} for the current recruiter account.
+                </p>
+                <p className="muted" style={{ marginTop: 2 }}>
+                  <strong>Hosting note:</strong> SMTP mode may require paid hosting/network egress on some platforms. API mode usually avoids SMTP port blockers.
                 </p>
 
                 <div className="settings-subsection" style={{ marginTop: 18 }}>
