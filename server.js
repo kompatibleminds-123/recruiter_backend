@@ -264,6 +264,10 @@ async function sendPlatformTransactionalMail({ to, cc = "", subject, html = "", 
   if (!isValidEmail(toEmail)) {
     throw new Error("Invalid recipient email for transactional mail.");
   }
+  if (isEmailBounced(toEmail)) {
+    const info = getEmailBounceInfo(toEmail);
+    throw new Error(`Recipient email is marked bounced/blocked (${String(info?.reason || "bounce")}).`);
+  }
   if (!systemMailReady(cfg)) {
     console.log("[mail] Skipped transactional mail (system sender not configured).", { to, subject });
     return { skipped: true };
@@ -341,6 +345,32 @@ function buildPlanExpiryReminderMail({ companyName = "", daysLeft = 0, subscript
 }
 
 const PLAN_REMINDER_SENT_CACHE = new Map();
+const BOUNCED_EMAIL_CACHE = new Map();
+
+function normalizeEmailForBounce(value = "") {
+  return String(value || "").trim().toLowerCase();
+}
+
+function markEmailBounced(email = "", reason = "") {
+  const key = normalizeEmailForBounce(email);
+  if (!key || !isValidEmail(key)) return false;
+  BOUNCED_EMAIL_CACHE.set(key, {
+    email: key,
+    reason: String(reason || "bounce").trim() || "bounce",
+    updatedAt: new Date().toISOString()
+  });
+  return true;
+}
+
+function isEmailBounced(email = "") {
+  const key = normalizeEmailForBounce(email);
+  return key ? BOUNCED_EMAIL_CACHE.has(key) : false;
+}
+
+function getEmailBounceInfo(email = "") {
+  const key = normalizeEmailForBounce(email);
+  return key ? (BOUNCED_EMAIL_CACHE.get(key) || null) : null;
+}
 
 async function maybeSendPlanExpiryReminder(companyId = "") {
   const safeCompanyId = String(companyId || "").trim();
@@ -352,10 +382,10 @@ async function maybeSendPlanExpiryReminder(companyId = "") {
     if (!endsAt || status !== "active") return;
     const msLeft = new Date(endsAt).getTime() - Date.now();
     const daysLeft = Math.ceil(msLeft / 86400000);
-    const marker = daysLeft <= 0 ? 0 : daysLeft <= 1 ? 1 : daysLeft <= 3 ? 3 : daysLeft <= 7 ? 7 : null;
+    const marker = daysLeft <= 1 ? 1 : daysLeft <= 3 ? 3 : daysLeft <= 5 ? 5 : daysLeft <= 7 ? 7 : null;
     if (marker == null) return;
-    const today = new Date().toISOString().slice(0, 10);
-    const dedupeKey = `${safeCompanyId}:${marker}:${today}`;
+    const cycleKey = new Date(endsAt).toISOString().slice(0, 10);
+    const dedupeKey = `${safeCompanyId}:${cycleKey}:${marker}`;
     if (PLAN_REMINDER_SENT_CACHE.get(dedupeKey)) return;
     const users = await listCompanyUsers(safeCompanyId).catch(() => []);
     const admins = (users || [])
@@ -366,7 +396,7 @@ async function maybeSendPlanExpiryReminder(companyId = "") {
     if (!to) return;
     const cc = admins.slice(1).join(",");
     const companyName = String(users?.[0]?.companyName || "").trim();
-    const mail = buildPlanExpiryReminderMail({ companyName, daysLeft: marker === 0 ? 0 : daysLeft, subscriptionEndsAt: endsAt });
+    const mail = buildPlanExpiryReminderMail({ companyName, daysLeft: marker, subscriptionEndsAt: endsAt });
     await sendPlatformTransactionalMail({ to, cc, subject: mail.subject, html: mail.html, text: mail.text });
     PLAN_REMINDER_SENT_CACHE.set(dedupeKey, true);
   } catch (error) {
@@ -953,6 +983,10 @@ async function createActorSmtpTransport(actor) {
 }
 
 async function sendJdEmailAsActor(actor, { to, cc = "", subject, html, text, attachments = [] }) {
+  if (isEmailBounced(to)) {
+    const info = getEmailBounceInfo(to);
+    throw new Error(`Recipient email is marked bounced/blocked (${String(info?.reason || "bounce")}).`);
+  }
   const { transport, cfg } = await createActorSmtpTransport(actor);
   const ccValue = String(cc || "").trim();
   if (isZohoApiMode(cfg)) {
@@ -7675,6 +7709,39 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (req.method === "POST" && requestUrl.pathname === "/webhook/mail-events/sendgrid") {
+    try {
+      const body = await readJsonBody(req);
+      const events = Array.isArray(body) ? body : [];
+      let marked = 0;
+      for (const event of events) {
+        const type = String(event?.event || "").trim().toLowerCase();
+        const email = String(event?.email || "").trim();
+        if (["bounce", "blocked", "dropped", "spamreport", "invalid_email"].includes(type)) {
+          if (markEmailBounced(email, `sendgrid:${type}`)) marked += 1;
+        }
+      }
+      sendJson(res, 200, { ok: true, result: { received: events.length, marked } });
+    } catch (error) {
+      sendJson(res, 400, { ok: false, error: String(error?.message || error) });
+    }
+    return;
+  }
+
+  if (req.method === "POST" && requestUrl.pathname === "/webhook/mail-events/postmark") {
+    try {
+      const body = await readJsonBody(req);
+      const rawType = String(body?.Type || body?.RecordType || body?.type || "").trim().toLowerCase();
+      const email = String(body?.Email || body?.Recipient || body?.email || "").trim();
+      const isBounceLike = /bounce|dropped|blocked|spam/i.test(rawType);
+      const marked = isBounceLike && markEmailBounced(email, `postmark:${rawType}`) ? 1 : 0;
+      sendJson(res, 200, { ok: true, result: { marked } });
+    } catch (error) {
+      sendJson(res, 400, { ok: false, error: String(error?.message || error) });
+    }
+    return;
+  }
+
   if (req.method === "POST" && req.url === "/auth/trial-signup") {
     try {
       const body = await readJsonBody(req);
@@ -8119,6 +8186,17 @@ const server = http.createServer(async (req, res) => {
       });
     } catch (error) {
       sendJson(res, 401, { ok: false, error: String(error.message || error) });
+    }
+    return;
+  }
+
+  if (req.method === "GET" && req.url === "/company/email-bounces") {
+    try {
+      await requireSessionUser(getBearerToken(req));
+      const items = Array.from(BOUNCED_EMAIL_CACHE.values()).sort((a, b) => String(b.updatedAt || "").localeCompare(String(a.updatedAt || "")));
+      sendJson(res, 200, { ok: true, result: { total: items.length, items } });
+    } catch (error) {
+      sendJson(res, 401, { ok: false, error: String(error?.message || error) });
     }
     return;
   }
