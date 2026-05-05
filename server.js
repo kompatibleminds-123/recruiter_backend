@@ -229,6 +229,138 @@ function isPostmarkApiMode(cfg = {}) {
   return host.startsWith("postmarkapi");
 }
 
+function isTruthyEnv(value) {
+  const raw = String(value || "").trim().toLowerCase();
+  return raw === "1" || raw === "true" || raw === "yes" || raw === "on";
+}
+
+function getSystemMailConfig() {
+  const modeRaw = String(process.env.SYSTEM_MAIL_MODE || "").trim().toLowerCase();
+  const from = String(process.env.SYSTEM_MAIL_FROM || "contact@kompatibleminds.com").trim();
+  const user = String(process.env.SYSTEM_MAIL_USER || from).trim();
+  const pass = String(process.env.SYSTEM_MAIL_PASS || "").trim();
+  const host = normalizeSmtpHost(
+    process.env.SYSTEM_MAIL_HOST ||
+    (modeRaw === "zoho_api" ? "zohoapi.com" : modeRaw === "sendgrid_api" ? "sendgridapi" : modeRaw === "postmark_api" ? "postmarkapi" : "smtp.zoho.com")
+  );
+  const portDefault = modeRaw === "smtp" ? 587 : 443;
+  const port = Number(process.env.SYSTEM_MAIL_PORT || portDefault) || portDefault;
+  const secure = isTruthyEnv(process.env.SYSTEM_MAIL_SECURE);
+  return sanitizeSmtpConfig({ host, port, secure, user, from, pass });
+}
+
+function systemMailReady(cfg = {}) {
+  const hasFrom = Boolean(extractEmailAddress(cfg.from || ""));
+  if (isZohoApiMode(cfg) || isSendgridApiMode(cfg) || isPostmarkApiMode(cfg)) {
+    return hasFrom && Boolean(String(cfg.pass || "").trim());
+  }
+  return hasFrom && Boolean(cfg.host) && Boolean(cfg.user) && Boolean(String(cfg.pass || "").trim());
+}
+
+async function sendPlatformTransactionalMail({ to, cc = "", subject, html = "", text = "" }) {
+  const cfg = getSystemMailConfig();
+  if (!systemMailReady(cfg)) {
+    console.log("[mail] Skipped transactional mail (system sender not configured).", { to, subject });
+    return { skipped: true };
+  }
+  if (isZohoApiMode(cfg)) {
+    await sendZohoEmailWithCfg(cfg, { to, cc, subject, html, text, attachments: [] });
+    return { mode: "zoho_api" };
+  }
+  if (isSendgridApiMode(cfg)) {
+    await sendSendgridEmailWithCfg(cfg, { to, cc, subject, html, text, attachments: [] });
+    return { mode: "sendgrid_api" };
+  }
+  if (isPostmarkApiMode(cfg)) {
+    await sendPostmarkEmailWithCfg(cfg, { to, cc, subject, html, text, attachments: [] });
+    return { mode: "postmark_api" };
+  }
+  if (!nodemailer) throw new Error("Nodemailer dependency is missing for SMTP system mail mode.");
+  const transport = nodemailer.createTransport({
+    host: cfg.host,
+    port: cfg.port,
+    secure: cfg.secure,
+    auth: { user: cfg.user, pass: cfg.pass },
+    connectionTimeout: 15000,
+    greetingTimeout: 15000,
+    socketTimeout: 20000
+  });
+  await transport.sendMail({ from: cfg.from, to, cc: cc || undefined, subject, text, html: html || undefined });
+  return { mode: "smtp" };
+}
+
+function buildSignupMail({ companyName = "", adminName = "" }) {
+  const safeCompany = String(companyName || "").trim() || "your company";
+  const safeName = String(adminName || "").trim() || "there";
+  const subject = `Welcome to RecruitDesk - ${safeCompany}`;
+  const text = `Hi ${safeName},\n\nYour RecruitDesk workspace is ready for ${safeCompany}.\nYour trial has started successfully.\n\nIf this was not you, reply to this mail immediately.\n\n- RecruitDesk Team`;
+  const html = `<p>Hi ${escapeHtml(safeName)},</p><p>Your RecruitDesk workspace is ready for <strong>${escapeHtml(safeCompany)}</strong>.<br/>Your trial has started successfully.</p><p>If this was not you, reply to this mail immediately.</p><p>- RecruitDesk Team</p>`;
+  return { subject, text, html };
+}
+
+function planLabel(planCode = "") {
+  const code = String(planCode || "").trim().toLowerCase();
+  if (code === "ext_499_1_user") return "Extension - 1 User (₹499/month)";
+  if (code === "ext_999_3_users") return "Extension - 3 Users (₹999/month)";
+  if (code === "ext_1999_7_users") return "Extension - 7 Users (₹1999/month)";
+  if (code === "saas_4999_unlimited") return "SaaS - Unlimited (₹4999/month)";
+  return String(planCode || "Plan").trim();
+}
+
+function buildPlanPurchaseMail({ companyName = "", planCode = "", subscriptionEndsAt = "" }) {
+  const safeCompany = String(companyName || "").trim() || "your company";
+  const planName = planLabel(planCode);
+  const endText = subscriptionEndsAt ? new Date(subscriptionEndsAt).toLocaleDateString("en-IN") : "N/A";
+  const subject = `RecruitDesk plan activated - ${planName}`;
+  const text = `Your plan has been activated for ${safeCompany}.\nPlan: ${planName}\nValid till: ${endText}\n\nThank you for your purchase.\n- RecruitDesk Billing`;
+  const html = `<p>Your plan has been activated for <strong>${escapeHtml(safeCompany)}</strong>.</p><p><strong>Plan:</strong> ${escapeHtml(planName)}<br/><strong>Valid till:</strong> ${escapeHtml(endText)}</p><p>Thank you for your purchase.<br/>- RecruitDesk Billing</p>`;
+  return { subject, text, html };
+}
+
+function buildPlanExpiryReminderMail({ companyName = "", daysLeft = 0, subscriptionEndsAt = "" }) {
+  const safeCompany = String(companyName || "").trim() || "your company";
+  const endText = subscriptionEndsAt ? new Date(subscriptionEndsAt).toLocaleDateString("en-IN") : "soon";
+  const dueText = daysLeft <= 0 ? "has expired" : `expires in ${daysLeft} day${daysLeft === 1 ? "" : "s"}`;
+  const subject = `Action needed: RecruitDesk plan ${dueText}`;
+  const text = `Your RecruitDesk plan for ${safeCompany} ${dueText}.\nExpiry date: ${endText}\nPlease renew to avoid interruption.\n\n- RecruitDesk Billing`;
+  const html = `<p>Your RecruitDesk plan for <strong>${escapeHtml(safeCompany)}</strong> ${escapeHtml(dueText)}.</p><p><strong>Expiry date:</strong> ${escapeHtml(endText)}<br/>Please renew to avoid interruption.</p><p>- RecruitDesk Billing</p>`;
+  return { subject, text, html };
+}
+
+const PLAN_REMINDER_SENT_CACHE = new Map();
+
+async function maybeSendPlanExpiryReminder(companyId = "") {
+  const safeCompanyId = String(companyId || "").trim();
+  if (!safeCompanyId) return;
+  try {
+    const license = await getCompanyLicense(safeCompanyId).catch(() => null);
+    const endsAt = String(license?.subscriptionEndsAt || "").trim();
+    const status = String(license?.status || "").trim().toLowerCase();
+    if (!endsAt || status !== "active") return;
+    const msLeft = new Date(endsAt).getTime() - Date.now();
+    const daysLeft = Math.ceil(msLeft / 86400000);
+    const marker = daysLeft <= 0 ? 0 : daysLeft <= 1 ? 1 : daysLeft <= 3 ? 3 : daysLeft <= 7 ? 7 : null;
+    if (marker == null) return;
+    const today = new Date().toISOString().slice(0, 10);
+    const dedupeKey = `${safeCompanyId}:${marker}:${today}`;
+    if (PLAN_REMINDER_SENT_CACHE.get(dedupeKey)) return;
+    const users = await listCompanyUsers(safeCompanyId).catch(() => []);
+    const admins = (users || [])
+      .filter((u) => String(u?.role || "").trim().toLowerCase() === "admin")
+      .map((u) => String(u?.email || "").trim())
+      .filter(Boolean);
+    const to = admins[0] || "";
+    if (!to) return;
+    const cc = admins.slice(1).join(",");
+    const companyName = String(users?.[0]?.companyName || "").trim();
+    const mail = buildPlanExpiryReminderMail({ companyName, daysLeft: marker === 0 ? 0 : daysLeft, subscriptionEndsAt: endsAt });
+    await sendPlatformTransactionalMail({ to, cc, subject: mail.subject, html: mail.html, text: mail.text });
+    PLAN_REMINDER_SENT_CACHE.set(dedupeKey, true);
+  } catch (error) {
+    console.log("[mail] expiry reminder skipped:", String(error?.message || error));
+  }
+}
+
 function resolveZohoBases(cfg = {}) {
   const host = normalizeSmtpHost(cfg.host).toLowerCase();
   const fromEmail = extractEmailAddress(cfg.from || "");
@@ -7039,6 +7171,31 @@ const server = http.createServer(async (req, res) => {
           `Payment verified but plan activation failed. ${String(lastActivationError?.message || "No eligible admin actor found.")}`
         );
       }
+      try {
+        const adminEmails = (users || [])
+          .filter((item) => String(item?.role || "").trim().toLowerCase() === "admin")
+          .map((item) => String(item?.email || "").trim())
+          .filter(Boolean);
+        const to = String(payload.email || "").trim() || adminEmails[0] || "";
+        const cc = adminEmails.filter((email) => email && email !== to).join(",");
+        if (to) {
+          const companyName = String(users?.[0]?.companyName || "").trim();
+          const purchaseMail = buildPlanPurchaseMail({
+            companyName,
+            planCode,
+            subscriptionEndsAt: String(upgraded?.subscriptionEndsAt || "").trim()
+          });
+          await sendPlatformTransactionalMail({
+            to,
+            cc,
+            subject: purchaseMail.subject,
+            html: purchaseMail.html,
+            text: purchaseMail.text
+          });
+        }
+      } catch (error) {
+        console.log("[mail] plan purchase mail failed:", String(error?.message || error));
+      }
       sendJson(res, 200, { ok: true, result: { activated: true, license: upgraded } });
     } catch (error) {
       sendJson(res, 400, { ok: false, error: String(error.message || error) });
@@ -7436,6 +7593,7 @@ const server = http.createServer(async (req, res) => {
       if (accessContext === "portal") {
         await ensurePortalCompanyApproved(result?.user?.companyId || "");
       }
+      await maybeSendPlanExpiryReminder(result?.user?.companyId || "");
       sendJson(res, 200, { ok: true, result });
     } catch (error) {
       const message = String(error.message || error);
@@ -7459,6 +7617,18 @@ const server = http.createServer(async (req, res) => {
         password: String(body.password || "")
       });
       const license = await getCompanyLicense(result.user.companyId);
+      const signupMail = buildSignupMail({
+        companyName: String(body.companyName || "").trim(),
+        adminName: String(body.adminName || "").trim()
+      });
+      await sendPlatformTransactionalMail({
+        to: String(body.email || "").trim(),
+        subject: signupMail.subject,
+        html: signupMail.html,
+        text: signupMail.text
+      }).catch((error) => {
+        console.log("[mail] trial signup mail failed:", String(error?.message || error));
+      });
       sendJson(res, 200, { ok: true, result: { ...result, license } });
     } catch (error) {
       sendJson(res, 400, { ok: false, error: String(error.message || error) });
@@ -7526,6 +7696,7 @@ const server = http.createServer(async (req, res) => {
     try {
       const user = await requireSessionUser(getBearerToken(req));
       const license = await getCompanyLicense(user.companyId);
+      await maybeSendPlanExpiryReminder(user.companyId);
       sendJson(res, 200, { ok: true, result: { license } });
     } catch (error) {
       sendJson(res, 401, { ok: false, error: String(error.message || error) });
