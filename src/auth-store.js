@@ -1906,7 +1906,10 @@ async function resetUserPassword({ actorUserId, companyId, userId, newPassword }
 async function login({ email, password }) {
   const e = normalizeEmail(email); const user = await getUserByEmail(e);
   if (!user || !verifyPassword(password, user.passwordHash || user.password_hash)) throw new Error("Invalid email or password.");
-  const emailVerified = Boolean(user.emailVerified ?? user.email_verified ?? false);
+  // Backward compatibility: legacy users may not have email_verified stored.
+  // Only block login when value is explicitly false.
+  const rawEmailVerified = user.emailVerified ?? user.email_verified;
+  const emailVerified = rawEmailVerified === false ? false : true;
   if (!emailVerified) throw new Error("Please verify your email before logging in.");
   const sessionUser = sanitizeUser(user); const token = crypto.randomBytes(32).toString("hex");
   // Keep authentication separate from plan enforcement.
