@@ -162,6 +162,58 @@ function escapeHtml(value) {
     .replace(/'/g, "&#039;");
 }
 
+function extractEmailAddress(value = "") {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  const angle = raw.match(/<([^>]+)>/);
+  const candidate = angle?.[1] || raw;
+  const emailMatch = String(candidate).match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i);
+  return String(emailMatch?.[0] || "").trim();
+}
+
+function normalizeSmtpHost(host = "") {
+  return String(host || "")
+    .trim()
+    .replace(/^smtps?:\/\//i, "")
+    .replace(/\/.*$/, "")
+    .trim();
+}
+
+function sanitizeSmtpConfig(rawCfg = {}) {
+  const host = normalizeSmtpHost(rawCfg.host);
+  const secure = Boolean(rawCfg.secure);
+  const portRaw = Number(rawCfg.port || (secure ? 465 : 587));
+  const port = Number.isFinite(portRaw) && portRaw > 0 ? Math.round(portRaw) : (secure ? 465 : 587);
+  const from = String(rawCfg.from || "").trim();
+  let user = String(rawCfg.user || "").trim();
+  const fromEmail = extractEmailAddress(from);
+  const userLooksLikeEmail = /\S+@\S+\.\S+/.test(user);
+  const providerLikelyEmailLogin = /(zoho|gmail|google|outlook|office365|hotmail|yahoo)\./i.test(host.toLowerCase());
+  if (!userLooksLikeEmail && fromEmail && providerLikelyEmailLogin) {
+    user = fromEmail;
+  }
+  return {
+    host,
+    port,
+    secure,
+    user,
+    from,
+    pass: String(rawCfg.pass || "")
+  };
+}
+
+function formatSmtpError(error) {
+  const code = String(error?.code || "").trim();
+  const responseCode = Number(error?.responseCode || 0) || 0;
+  const command = String(error?.command || "").trim();
+  const response = String(error?.response || error?.message || error || "").trim();
+  const parts = [response];
+  if (code) parts.push(`code=${code}`);
+  if (responseCode) parts.push(`responseCode=${responseCode}`);
+  if (command) parts.push(`command=${command}`);
+  return parts.filter(Boolean).join(" | ");
+}
+
 function buildJobShareEmail({ job, introText = "", senderName = "", signatureText = "", signatureLinks = [] }) {
   const title = String(job?.title || "").trim();
   const client = String(job?.clientName || "").trim();
@@ -333,17 +385,25 @@ async function createActorSmtpTransport(actor) {
   if (!cfg || !cfg.host || !cfg.user || !cfg.pass || !cfg.from) {
     throw new Error("Email settings not configured. Go to Settings â†’ Email settings.");
   }
+  const finalCfg = sanitizeSmtpConfig(cfg);
   const transport = nodemailer.createTransport({
-    host: cfg.host,
-    port: Number(cfg.port || 587),
-    secure: Boolean(cfg.secure),
-    auth: { user: cfg.user, pass: cfg.pass },
+    host: finalCfg.host,
+    port: Number(finalCfg.port || 587),
+    secure: Boolean(finalCfg.secure),
+    requireTLS: !Boolean(finalCfg.secure) && Number(finalCfg.port) === 587,
+    auth: { user: finalCfg.user, pass: finalCfg.pass },
+    authMethod: "LOGIN",
+    name: "recruitdesk-mailer",
+    tls: {
+      servername: finalCfg.host,
+      minVersion: "TLSv1.2"
+    },
     connectionTimeout: 15000,
     greetingTimeout: 10000,
     socketTimeout: 20000,
     dnsTimeout: 10000
   });
-  return { transport, cfg };
+  return { transport, cfg: finalCfg };
 }
 
 async function sendJdEmailAsActor(actor, { to, cc = "", subject, html, text, attachments = [] }) {
@@ -8325,7 +8385,7 @@ const server = http.createServer(async (req, res) => {
         }
       });
     } catch (error) {
-      sendJson(res, 400, { ok: false, error: String(error.message || error) });
+      sendJson(res, 400, { ok: false, error: formatSmtpError(error) });
     }
     return;
   }
@@ -10965,3 +11025,6 @@ const server = http.createServer(async (req, res) => {
 server.listen(PORT, () => {
   console.log(`Recruiter backend listening on http://localhost:${PORT}`);
 });
+
+
+
