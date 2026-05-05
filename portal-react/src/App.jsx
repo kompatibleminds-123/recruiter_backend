@@ -4687,6 +4687,7 @@ function PortalApp({ token, onLogout }) {
   const [smtpSettingsLoaded, setSmtpSettingsLoaded] = useState(false);
   const [smtpSettingsKeepPass, setSmtpSettingsKeepPass] = useState(true);
   const [smtpTestBusy, setSmtpTestBusy] = useState(false);
+  const [zohoConnectBusy, setZohoConnectBusy] = useState(false);
   const smtpSettingsDirtyRef = useRef(false);
   const markSmtpSettingsDirty = () => { smtpSettingsDirtyRef.current = true; };
 
@@ -8959,6 +8960,53 @@ function PortalApp({ token, onLogout }) {
     }
   }
 
+  async function connectZohoMailbox() {
+    setZohoConnectBusy(true);
+    setStatus("settings", "Preparing Zoho connect...");
+    try {
+      const currentHost = String(smtpSettings.host || "").trim().toLowerCase();
+      const hostHint = currentHost.startsWith("zohoapi") ? currentHost : "zohoapi.com";
+      const query = new URLSearchParams({ host: hostHint });
+      const result = await api(`/company/email-settings/zoho/connect-url?${query.toString()}`, token);
+      const authUrl = String(result?.authUrl || "").trim();
+      if (!authUrl) throw new Error("Zoho auth URL could not be generated.");
+      const popup = window.open(authUrl, "rd-zoho-connect", "width=720,height=840,noopener,noreferrer");
+      if (!popup) throw new Error("Popup blocked. Please allow popups and try again.");
+      setStatus("settings", "Complete Zoho consent in popup window...", "ok");
+      await new Promise((resolve) => {
+        let done = false;
+        const finish = () => {
+          if (done) return;
+          done = true;
+          try { window.removeEventListener("message", onMessage); } catch {}
+          try { window.clearInterval(timer); } catch {}
+          resolve();
+        };
+        const onMessage = (event) => {
+          const data = event?.data || {};
+          if (data?.type !== "RSD_ZOHO_CONNECTED") return;
+          if (data?.ok) {
+            setStatus("settings", "Zoho connected successfully.", "ok");
+          } else {
+            setStatus("settings", `Zoho connect failed: ${String(data?.message || "Unknown error")}`, "error");
+          }
+          finish();
+        };
+        window.addEventListener("message", onMessage);
+        const timer = window.setInterval(() => {
+          if (!popup || popup.closed) finish();
+        }, 500);
+      });
+      setSmtpSettingsLoaded(false);
+      smtpSettingsDirtyRef.current = false;
+      await loadSmtpSettingsOnce();
+    } catch (error) {
+      setStatus("settings", `Zoho connect failed: ${String(error?.message || error)}`, "error");
+    } finally {
+      setZohoConnectBusy(false);
+    }
+  }
+
   function fillJdEmailTemplate(template, { candidateName, recruiterName, roleLabel }) {
     const tpl = String(template || "");
     return tpl
@@ -11940,7 +11988,19 @@ function PortalApp({ token, onLogout }) {
                   <button className="secondary" disabled={smtpTestBusy} onClick={() => void testSmtpSettings(true)}>
                     {smtpTestBusy ? "Testing..." : "Send test mail to self"}
                   </button>
+                  <button className="secondary" disabled={zohoConnectBusy} onClick={() => void connectZohoMailbox()}>
+                    {zohoConnectBusy ? "Connecting..." : "Connect Zoho (1-click)"}
+                  </button>
                 </div>
+                <p className="muted" style={{ marginTop: 8 }}>
+                  Recruiters can click <strong>Connect Zoho (1-click)</strong>. No manual code/token copy is required.
+                </p>
+                <p className="muted" style={{ marginTop: 2 }}>
+                  Connection status: {String(smtpSettings.host || "").toLowerCase().startsWith("zohoapi") && smtpSettings.hasPassword ? "Zoho connected" : "Not connected"}
+                </p>
+                <p className="muted" style={{ marginTop: 2 }}>
+                  Multi-provider API mode host keys: <code>zohoapi.com</code>, <code>sendgridapi</code>, <code>postmarkapi</code>. For SendGrid/Postmark, paste API key/server token in password field.
+                </p>
 
                 <div className="settings-subsection" style={{ marginTop: 18 }}>
                   <div className="section-kicker">Your Email Signature (per recruiter)</div>

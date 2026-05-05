@@ -219,6 +219,16 @@ function isZohoApiMode(cfg = {}) {
   return host.startsWith("zohoapi");
 }
 
+function isSendgridApiMode(cfg = {}) {
+  const host = normalizeSmtpHost(cfg.host).toLowerCase();
+  return host.startsWith("sendgridapi");
+}
+
+function isPostmarkApiMode(cfg = {}) {
+  const host = normalizeSmtpHost(cfg.host).toLowerCase();
+  return host.startsWith("postmarkapi");
+}
+
 function resolveZohoBases(cfg = {}) {
   const host = normalizeSmtpHost(cfg.host).toLowerCase();
   const fromEmail = extractEmailAddress(cfg.from || "");
@@ -297,6 +307,16 @@ function collectZohoAttachmentRefs(node, acc = []) {
 function formatZohoApiError(error) {
   const code = String(error?.code || "").trim();
   const status = Number(error?.status || 0) || 0;
+  const body = String(error?.body || error?.message || error || "").trim();
+  const parts = [body];
+  if (status) parts.push(`status=${status}`);
+  if (code) parts.push(`code=${code}`);
+  return parts.filter(Boolean).join(" | ");
+}
+
+function formatProviderApiError(error) {
+  const status = Number(error?.status || 0) || 0;
+  const code = String(error?.code || "").trim();
   const body = String(error?.body || error?.message || error || "").trim();
   const parts = [body];
   if (status) parts.push(`status=${status}`);
@@ -499,6 +519,96 @@ async function sendZohoEmailWithCfg(cfg, { to, cc = "", subject, html = "", text
   return { ok: true, accountId, fromAddress: payload.fromAddress };
 }
 
+async function sendSendgridEmailWithCfg(cfg, { to, cc = "", subject, html = "", text = "", attachments = [] }) {
+  const apiKey = String(cfg?.pass || "").trim();
+  if (!apiKey) throw new Error("SendGrid API mode requires API key in SMTP app password field.");
+  const toList = String(to || "").split(/,|;/).map((x) => String(x || "").trim()).filter(Boolean);
+  if (!toList.length) throw new Error("Recipient email is required.");
+  const ccList = String(cc || "").split(/,|;/).map((x) => String(x || "").trim()).filter(Boolean);
+  const fromEmail = extractEmailAddress(cfg?.from || cfg?.user || "");
+  if (!fromEmail) throw new Error("Valid From email is required for SendGrid.");
+  const fromName = String(cfg?.from || "").replace(/<[^>]+>/g, "").trim();
+  const payload = {
+    personalizations: [{
+      to: toList.map((email) => ({ email })),
+      ...(ccList.length ? { cc: ccList.map((email) => ({ email })) } : {})
+    }],
+    from: { email: fromEmail, ...(fromName ? { name: fromName } : {}) },
+    subject: String(subject || "").trim(),
+    content: [
+      ...(html ? [{ type: "text/html", value: String(html || "") }] : []),
+      ...(!html && text ? [{ type: "text/plain", value: String(text || "") }] : [])
+    ],
+    ...(Array.isArray(attachments) && attachments.length
+      ? {
+          attachments: attachments.map((a) => ({
+            content: toBufferContent(a?.content).toString("base64"),
+            filename: String(a?.filename || "attachment").trim() || "attachment",
+            type: String(a?.contentType || "application/octet-stream").trim() || "application/octet-stream",
+            disposition: "attachment"
+          }))
+        }
+      : {})
+  };
+  const res = await fetchWithTimeout("https://api.sendgrid.com/v3/mail/send", {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${apiKey}`,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify(payload)
+  }, 25000);
+  const raw = await res.text();
+  if (!res.ok) {
+    const err = new Error("SendGrid send failed.");
+    err.status = res.status;
+    err.body = raw;
+    throw err;
+  }
+  return { ok: true };
+}
+
+async function sendPostmarkEmailWithCfg(cfg, { to, cc = "", subject, html = "", text = "", attachments = [] }) {
+  const serverToken = String(cfg?.pass || "").trim();
+  if (!serverToken) throw new Error("Postmark API mode requires Server Token in SMTP app password field.");
+  const fromEmail = extractEmailAddress(cfg?.from || cfg?.user || "");
+  if (!fromEmail) throw new Error("Valid From email is required for Postmark.");
+  const payload = {
+    From: fromEmail,
+    To: String(to || "").trim(),
+    ...(String(cc || "").trim() ? { Cc: String(cc || "").trim() } : {}),
+    Subject: String(subject || "").trim(),
+    ...(html ? { HtmlBody: String(html || "") } : {}),
+    ...(!html && text ? { TextBody: String(text || "") } : {}),
+    ...(Array.isArray(attachments) && attachments.length
+      ? {
+          Attachments: attachments.map((a) => ({
+            Name: String(a?.filename || "attachment").trim() || "attachment",
+            Content: toBufferContent(a?.content).toString("base64"),
+            ContentType: String(a?.contentType || "application/octet-stream").trim() || "application/octet-stream"
+          }))
+        }
+      : {})
+  };
+  const res = await fetchWithTimeout("https://api.postmarkapp.com/email", {
+    method: "POST",
+    headers: {
+      "X-Postmark-Server-Token": serverToken,
+      "Content-Type": "application/json",
+      "Accept": "application/json"
+    },
+    body: JSON.stringify(payload)
+  }, 25000);
+  const raw = await res.text();
+  if (!res.ok) {
+    const err = new Error("Postmark send failed.");
+    err.status = res.status;
+    err.body = raw;
+    throw err;
+  }
+  return { ok: true };
+}
+
 function buildJobShareEmail({ job, introText = "", senderName = "", signatureText = "", signatureLinks = [] }) {
   const title = String(job?.title || "").trim();
   const client = String(job?.clientName || "").trim();
@@ -672,6 +782,9 @@ async function createActorSmtpTransport(actor) {
   if (isZohoApiMode(cfg)) {
     return { transport: null, cfg: sanitizeSmtpConfig(cfg) };
   }
+  if (isSendgridApiMode(cfg) || isPostmarkApiMode(cfg)) {
+    return { transport: null, cfg: sanitizeSmtpConfig(cfg) };
+  }
   if (!nodemailer) throw new Error("Email sending is not available.");
   const finalCfg = sanitizeSmtpConfig(cfg);
   const transport = nodemailer.createTransport({
@@ -699,6 +812,14 @@ async function sendJdEmailAsActor(actor, { to, cc = "", subject, html, text, att
   const ccValue = String(cc || "").trim();
   if (isZohoApiMode(cfg)) {
     await sendZohoEmailWithCfg(cfg, { to, cc: ccValue, subject, html, text, attachments });
+    return;
+  }
+  if (isSendgridApiMode(cfg)) {
+    await sendSendgridEmailWithCfg(cfg, { to, cc: ccValue, subject, html, text, attachments });
+    return;
+  }
+  if (isPostmarkApiMode(cfg)) {
+    await sendPostmarkEmailWithCfg(cfg, { to, cc: ccValue, subject, html, text, attachments });
     return;
   }
   await transport.sendMail({
@@ -8766,10 +8887,18 @@ const server = http.createServer(async (req, res) => {
       const overrideTo = String(body?.to || "").trim();
       const { transport, cfg } = await createActorSmtpTransport(actor);
       const usingZohoApi = isZohoApiMode(cfg);
-      if (!usingZohoApi) {
+      const usingSendgridApi = isSendgridApiMode(cfg);
+      const usingPostmarkApi = isPostmarkApiMode(cfg);
+      if (!usingZohoApi && !usingSendgridApi && !usingPostmarkApi) {
         await transport.verify();
       } else {
-        await getZohoAccessToken(cfg);
+        if (usingZohoApi) {
+          await getZohoAccessToken(cfg);
+        } else if (usingSendgridApi || usingPostmarkApi) {
+          if (!String(cfg?.pass || "").trim()) {
+            throw new Error(usingSendgridApi ? "SendGrid API key missing." : "Postmark server token missing.");
+          }
+        }
       }
       let testMailSent = false;
       let sentTo = "";
@@ -8782,6 +8911,20 @@ const server = http.createServer(async (req, res) => {
             subject: "RecruitDesk Zoho API test",
             text: "Zoho API test successful. Your RecruitDesk mail settings are working.",
             html: "<p>Zoho API test successful. Your RecruitDesk mail settings are working.</p>"
+          });
+        } else if (usingSendgridApi) {
+          await sendSendgridEmailWithCfg(cfg, {
+            to,
+            subject: "RecruitDesk SendGrid test",
+            text: "SendGrid API test successful. Your RecruitDesk mail settings are working.",
+            html: "<p>SendGrid API test successful. Your RecruitDesk mail settings are working.</p>"
+          });
+        } else if (usingPostmarkApi) {
+          await sendPostmarkEmailWithCfg(cfg, {
+            to,
+            subject: "RecruitDesk Postmark test",
+            text: "Postmark API test successful. Your RecruitDesk mail settings are working.",
+            html: "<p>Postmark API test successful. Your RecruitDesk mail settings are working.</p>"
           });
         } else {
           await transport.sendMail({
@@ -8802,7 +8945,7 @@ const server = http.createServer(async (req, res) => {
           host: String(cfg.host || "").trim(),
           port: Number(cfg.port || 587),
           secure: Boolean(cfg.secure),
-          mode: usingZohoApi ? "zoho_api" : "smtp",
+          mode: usingZohoApi ? "zoho_api" : usingSendgridApi ? "sendgrid_api" : usingPostmarkApi ? "postmark_api" : "smtp",
           user: String(cfg.user || "").trim(),
           from: String(cfg.from || "").trim(),
           testMailSent,
@@ -8810,7 +8953,12 @@ const server = http.createServer(async (req, res) => {
         }
       });
     } catch (error) {
-      const message = /zoho/i.test(String(error?.message || "")) ? formatZohoApiError(error) : formatSmtpError(error);
+      const rawMessage = String(error?.message || "");
+      const message = /zoho/i.test(rawMessage)
+        ? formatZohoApiError(error)
+        : /sendgrid|postmark/i.test(rawMessage)
+          ? formatProviderApiError(error)
+          : formatSmtpError(error);
       sendJson(res, 400, { ok: false, error: message });
     }
     return;
