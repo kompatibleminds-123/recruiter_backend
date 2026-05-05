@@ -1689,7 +1689,19 @@ async function createTrialCompanyWithAdmin({ companyName, adminName, email, pass
       throw error;
     }
   }
-  const inserted = await sbIns("users", [user], { conflict: "id", upsert: true });
+  let inserted = null;
+  try {
+    inserted = await sbIns("users", [user], { conflict: "id", upsert: true });
+  } catch (error) {
+    const message = String(error?.message || error);
+    if (/email_verified/i.test(message)) {
+      const fallbackUser = { ...user };
+      delete fallbackUser.email_verified;
+      inserted = await sbIns("users", [fallbackUser], { conflict: "id", upsert: true });
+    } else {
+      throw error;
+    }
+  }
   const license = await saveCompanyLicense(company.id, {
     companyId: company.id,
     plan: "trial",
@@ -1942,11 +1954,24 @@ async function verifyUserEmail({ userId, companyId, email }) {
     return sanitizeUser(row);
   }
   await ensureSeeded();
-  const rows = await sbPatch(
-    "users",
-    `id=eq.${enc(safeUserId)}&company_id=eq.${enc(safeCompanyId)}&email=eq.${enc(safeEmail)}`,
-    { email_verified: true }
-  );
+  let rows = null;
+  try {
+    rows = await sbPatch(
+      "users",
+      `id=eq.${enc(safeUserId)}&company_id=eq.${enc(safeCompanyId)}&email=eq.${enc(safeEmail)}`,
+      { email_verified: true }
+    );
+  } catch (error) {
+    const message = String(error?.message || error);
+    if (/email_verified/i.test(message)) {
+      rows = await sbSel(
+        "users",
+        `select=*&id=eq.${enc(safeUserId)}&company_id=eq.${enc(safeCompanyId)}&email=eq.${enc(safeEmail)}&limit=1`
+      );
+    } else {
+      throw error;
+    }
+  }
   const updated = rows?.[0] || null;
   if (!updated) throw new Error("Verification user not found.");
   return sanitizeUser(updated);
