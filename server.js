@@ -1171,6 +1171,13 @@ function getBearerTokenFromRequest(req, requestUrl = null) {
   return queryToken;
 }
 
+function getZohoRedirectUri(req) {
+  const configured = String(process.env.ZOHO_REDIRECT_URI || "").trim();
+  if (configured) return configured;
+  // Keep a stable default to avoid host-based mismatches during OAuth.
+  return "https://recruiter-backend-yvex.onrender.com/zoho/oauth/callback";
+}
+
 function getZohoOauthStateSecret() {
   return (
     String(process.env.ZOHO_OAUTH_STATE_SECRET || "").trim() ||
@@ -7866,10 +7873,7 @@ const server = http.createServer(async (req, res) => {
     try {
       const actor = await requireSessionUser(getBearerToken(req));
       const hostHint = String(requestUrl.searchParams.get("host") || "zohoapi.com").trim() || "zohoapi.com";
-      const redirectUri = String(
-        process.env.ZOHO_REDIRECT_URI ||
-        `${String(getRequestBaseUrl(req) || "").trim().replace(/\/+$/, "")}/zoho/oauth/callback`
-      ).trim();
+      const redirectUri = String(getZohoRedirectUri(req)).trim();
       if (!redirectUri) throw new Error("Missing Zoho redirect URI.");
       const clientId = String(process.env.ZOHO_CLIENT_ID || "").trim();
       if (!clientId) throw new Error("ZOHO_CLIENT_ID is not set on backend.");
