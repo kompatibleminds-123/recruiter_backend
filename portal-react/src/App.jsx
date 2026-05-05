@@ -8970,7 +8970,8 @@ function PortalApp({ token, onLogout }) {
       const result = await api(`/company/email-settings/zoho/connect-url?${query.toString()}`, token);
       const authUrl = String(result?.authUrl || "").trim();
       if (!authUrl) throw new Error("Zoho auth URL could not be generated.");
-      const popup = window.open(authUrl, "rd-zoho-connect", "width=720,height=840,noopener,noreferrer");
+      // Avoid noopener/noreferrer here: some browsers return null handle even when popup opened.
+      const popup = window.open(authUrl, "rd-zoho-connect", "width=720,height=840");
       if (!popup) throw new Error("Popup blocked. Please allow popups and try again.");
       setStatus("settings", "Complete Zoho consent in popup window...", "ok");
       await new Promise((resolve) => {
