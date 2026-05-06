@@ -7845,16 +7845,13 @@ const server = http.createServer(async (req, res) => {
         email: String(body.email || "").trim(),
         password: String(body.password || "")
       });
-      const accessContext = String(body.accessContext || body.access_context || "").trim().toLowerCase();
-      if (accessContext === "portal") {
-        await ensurePortalCompanyApproved(result?.user?.companyId || "");
-      }
+      // Global portal hard-gate removed: allow login for trial and extension plans.
+      // Feature-level restrictions are enforced separately where needed.
       await maybeSendPlanExpiryReminder(result?.user?.companyId || "");
       sendJson(res, 200, { ok: true, result });
     } catch (error) {
       const message = String(error.message || error);
-      const status = /pending admin approval/i.test(message) ? 403 : 400;
-      sendJson(res, status, { ok: false, error: message });
+      sendJson(res, 400, { ok: false, error: message });
     }
     return;
   }
