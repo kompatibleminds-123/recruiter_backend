@@ -4247,6 +4247,7 @@ function PortalApp({ token, onLogout }) {
   const [companyLicense, setCompanyLicense] = useState(null);
   const [billingOverview, setBillingOverview] = useState(null);
   const [billingPlans, setBillingPlans] = useState([]);
+  const [planUpgradeBusyCode, setPlanUpgradeBusyCode] = useState("");
   const [assignApplicantId, setAssignApplicantId] = useState("");
   const [assignCandidateId, setAssignCandidateId] = useState("");
   const [hostedJobId, setHostedJobId] = useState("");
@@ -4839,6 +4840,36 @@ function PortalApp({ token, onLogout }) {
       return true;
     })
   ), [isSettingsAdmin]);
+  const effectiveLicense = billingOverview?.license || companyLicense || null;
+  const currentPlanCode = String(effectiveLicense?.plan || "trial").trim().toLowerCase();
+  const trialDaysLeft = Number.isFinite(Number(effectiveLicense?.daysRemaining))
+    ? Math.max(0, Number(effectiveLicense?.daysRemaining))
+    : null;
+  const trialCapturesLeft = Number.isFinite(Number(effectiveLicense?.capturesRemaining))
+    ? Math.max(0, Number(effectiveLicense?.capturesRemaining))
+    : null;
+  const planRank = { trial: 0, ext_499_1_user: 1, ext_999_3_users: 2, ext_1999_7_users: 3, saas_4999_unlimited: 4, legacy: 5 };
+  const currentRank = Number(planRank[currentPlanCode] ?? 0);
+  const upgradePlans = useMemo(() => (
+    (billingPlans || []).filter((plan) => Number(planRank[String(plan.code || "").toLowerCase()] ?? 0) > currentRank)
+  ), [billingPlans, currentRank]);
+
+  async function openPlanUpgrade(planCode) {
+    try {
+      const code = String(planCode || "").trim();
+      if (!code) throw new Error("Invalid plan code.");
+      setPlanUpgradeBusyCode(code);
+      const result = await api("/company/license/upgrade-link", token, "POST", { planCode: code });
+      const upgradeUrl = String(result?.upgradeUrl || "").trim();
+      if (!upgradeUrl) throw new Error("Could not open upgrade URL.");
+      window.open(upgradeUrl, "_blank", "noopener,noreferrer");
+      setStatus("loginSettings", "Upgrade page opened in new tab.", "ok");
+    } catch (error) {
+      setStatus("loginSettings", String(error?.message || error), "error");
+    } finally {
+      setPlanUpgradeBusyCode("");
+    }
+  }
 
 	function setStatus(key, message, kind = "") {
 	  setStatuses((current) => ({ ...current, [key]: message, [`${key}Kind`]: kind }));
@@ -12504,7 +12535,7 @@ function PortalApp({ token, onLogout }) {
             <Route path="/plan" element={
               <div className="page-grid">
                 <Section kicker="Billing" title="Current Plan and Pricing">
-                  <p className="muted">Admin billing console for plan visibility and pricing reference.</p>
+                  <p className="muted">Track current plan, trial balance, and upgrade only to higher plans.</p>
                   {statuses.loginSettings ? <div className={`status ${statuses.loginSettingsKind || ""}`}>{statuses.loginSettings}</div> : null}
                 </Section>
                 {!isSettingsAdmin ? (
@@ -12517,41 +12548,115 @@ function PortalApp({ token, onLogout }) {
                       <article className="item-card compact-card">
                         <div className="item-card__top">
                           <div>
-                            <h3>{String(billingOverview?.currentPlan?.label || "Plan not loaded").trim()}</h3>
+                            <h3>{String(billingOverview?.currentPlan?.label || "Current plan").trim()}</h3>
                             <p className="muted">
                               {`Status: ${String(billingOverview?.billing?.status || companyLicense?.status || "unknown").trim()} | `}
                               {`Valid till: ${billingOverview?.billing?.subscriptionEndsAt ? new Date(billingOverview.billing.subscriptionEndsAt).toLocaleDateString() : "N/A"} | `}
                               {`Full access bypass: ${billingOverview?.fullAccessBypass ? "Enabled" : "No"}`}
                             </p>
+                            {currentPlanCode === "trial" ? (
+                              <p className="muted">
+                                {`Trial balance: ${trialDaysLeft == null ? "-" : `${trialDaysLeft} day(s) left`} | ${trialCapturesLeft == null ? "-" : `${trialCapturesLeft} capture(s) left`}`}
+                              </p>
+                            ) : null}
                           </div>
                         </div>
                       </article>
                     </div>
-                    <div className="table-wrap">
-                      <table className="dashboard-table">
-                        <thead>
-                          <tr>
-                            <th>Plan</th>
-                            <th>Price</th>
-                            <th>Billing cycle</th>
-                            <th>Seats</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {(billingPlans || []).map((plan) => (
-                            <tr key={plan.code}>
-                              <td>{plan.label || plan.code}</td>
-                              <td>{Number(plan.amountInr || 0) > 0 ? `Rs ${Number(plan.amountInr || 0)}` : "Free"}</td>
-                              <td>{plan.interval || "-"}</td>
-                              <td>{plan.seats == null ? "Unlimited" : plan.seats}</td>
+                    <Section kicker="Billing Details" title="Current Billing Snapshot">
+                      <div className="table-wrap">
+                        <table className="dashboard-table">
+                          <tbody>
+                            <tr>
+                              <th>Plan code</th>
+                              <td>{String(currentPlanCode || "-").trim() || "-"}</td>
                             </tr>
-                          ))}
-                          {!billingPlans.length ? (
-                            <tr><td colSpan={4}><div className="empty-state compact-empty">Billing plans are loading. Click Refresh if needed.</div></td></tr>
-                          ) : null}
-                        </tbody>
-                      </table>
-                    </div>
+                            <tr>
+                              <th>Billing status</th>
+                              <td>{String(billingOverview?.billing?.status || effectiveLicense?.status || "-").trim() || "-"}</td>
+                            </tr>
+                            <tr>
+                              <th>Subscription start</th>
+                              <td>{effectiveLicense?.subscriptionStartedAt ? new Date(effectiveLicense.subscriptionStartedAt).toLocaleString() : "-"}</td>
+                            </tr>
+                            <tr>
+                              <th>Subscription end</th>
+                              <td>{effectiveLicense?.subscriptionEndsAt ? new Date(effectiveLicense.subscriptionEndsAt).toLocaleString() : "-"}</td>
+                            </tr>
+                            <tr>
+                              <th>Last license update</th>
+                              <td>{effectiveLicense?.updatedAt ? new Date(effectiveLicense.updatedAt).toLocaleString() : "-"}</td>
+                            </tr>
+                            <tr>
+                              <th>Capture usage</th>
+                              <td>
+                                {effectiveLicense?.captureLimit == null
+                                  ? "-"
+                                  : `${Number(effectiveLicense?.capturesUsed || 0)} / ${Number(effectiveLicense?.captureLimit || 0)} used`}
+                              </td>
+                            </tr>
+                            <tr>
+                              <th>Access state</th>
+                              <td>{effectiveLicense?.canCapture ? "Active" : "Blocked"}</td>
+                            </tr>
+                            <tr>
+                              <th>Payment reference</th>
+                              <td>{String(effectiveLicense?.lastPaymentId || "-").trim() || "-"}</td>
+                            </tr>
+                            <tr>
+                              <th>Payment order id</th>
+                              <td>{String(effectiveLicense?.lastPaymentOrderId || "-").trim() || "-"}</td>
+                            </tr>
+                            <tr>
+                              <th>Last paid at</th>
+                              <td>{effectiveLicense?.lastPaidAt ? new Date(effectiveLicense.lastPaidAt).toLocaleString() : "-"}</td>
+                            </tr>
+                          </tbody>
+                        </table>
+                      </div>
+                    </Section>
+                    <Section kicker="Upgrade" title="Higher Plans">
+                      {!upgradePlans.length ? (
+                        <div className="empty-state compact-empty">No higher plan available. You are already on highest access.</div>
+                      ) : (
+                        <div className="stack-list compact">
+                          {upgradePlans.map((plan) => {
+                            const code = String(plan.code || "").trim().toLowerCase();
+                            const isSaas = code === "saas_4999_unlimited";
+                            return (
+                              <article className="item-card compact-card" key={plan.code}>
+                                <div className="item-card__top">
+                                  <div>
+                                    <h3>{plan.label || plan.code}</h3>
+                                    <p className="muted">{`${Number(plan.amountInr || 0) > 0 ? `Rs ${Number(plan.amountInr || 0)}` : "Free"} | ${plan.interval || "monthly"}`}</p>
+                                    {isSaas ? (
+                                      <ul className="muted" style={{ margin: "8px 0 0 18px" }}>
+                                        <li>Unlock full power of RecruitDesk productivity suite.</li>
+                                        <li>Database Save and Search.</li>
+                                        <li>Job apply public and private links.</li>
+                                        <li>Inbound applicants cycle.</li>
+                                        <li>JD share / Mail share with candidates.</li>
+                                        <li>Access to Client, Payroll and Employee portals.</li>
+                                      </ul>
+                                    ) : (
+                                      <p className="muted">{`Seats: ${plan.seats == null ? "Unlimited" : plan.seats}`}</p>
+                                    )}
+                                  </div>
+                                  <div className="button-row">
+                                    <button
+                                      onClick={() => void openPlanUpgrade(plan.code)}
+                                      disabled={planUpgradeBusyCode === plan.code}
+                                    >
+                                      {planUpgradeBusyCode === plan.code ? "Opening..." : "Upgrade"}
+                                    </button>
+                                  </div>
+                                </div>
+                              </article>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </Section>
                   </>
                 )}
               </div>

@@ -557,6 +557,11 @@ function isPaidExtensionPlan(planCode = "") {
 function sanitizeCompanyLicense(raw, company = null) {
   const source = raw && typeof raw === "object" ? raw : {};
   const payload = source.payload && typeof source.payload === "object" ? source.payload : source;
+  const metadata = payload.metadata && typeof payload.metadata === "object"
+    ? payload.metadata
+    : source.metadata && typeof source.metadata === "object"
+      ? source.metadata
+      : {};
   const now = new Date().toISOString();
   const companyId = String(payload.companyId || payload.company_id || company?.id || company?.companyId || "").trim();
   const startedAt = String(payload.trialStartedAt || payload.trial_started_at || company?.createdAt || company?.created_at || now).trim() || now;
@@ -587,6 +592,34 @@ function sanitizeCompanyLicense(raw, company = null) {
           ? "Subscription payment overdue. Renew plan to continue."
           : "Workspace access is currently inactive.";
   const ownerAdminUserId = String(payload.ownerAdminUserId || payload.owner_admin_user_id || "").trim();
+  const lastPaymentOrderId = String(
+    payload.lastPaymentOrderId ||
+    payload.last_payment_order_id ||
+    metadata.lastPaymentOrderId ||
+    metadata.last_payment_order_id ||
+    ""
+  ).trim();
+  const lastPaymentId = String(
+    payload.lastPaymentId ||
+    payload.last_payment_id ||
+    metadata.lastPaymentId ||
+    metadata.last_payment_id ||
+    ""
+  ).trim();
+  const lastPaymentSignature = String(
+    payload.lastPaymentSignature ||
+    payload.last_payment_signature ||
+    metadata.lastPaymentSignature ||
+    metadata.last_payment_signature ||
+    ""
+  ).trim();
+  const lastPaidAt = String(
+    payload.lastPaidAt ||
+    payload.last_paid_at ||
+    metadata.lastPaidAt ||
+    metadata.last_paid_at ||
+    ""
+  ).trim();
   const toIdList = (value) => {
     const list = Array.isArray(value) ? value : [];
     return Array.from(new Set(list.map((item) => String(item || "").trim()).filter(Boolean)));
@@ -610,6 +643,10 @@ function sanitizeCompanyLicense(raw, company = null) {
     subscriptionActive: Boolean(paidPlan ? subscriptionActive : true),
     accessBlockedReason,
     updatedAt: String(payload.updatedAt || payload.updated_at || now).trim() || now,
+    lastPaymentOrderId: lastPaymentOrderId || null,
+    lastPaymentId: lastPaymentId || null,
+    lastPaymentSignature: lastPaymentSignature || null,
+    lastPaidAt: lastPaidAt || null,
     ownerAdminUserId,
     payrollLiteEnabled: Boolean(payload.payrollLiteEnabled ?? payload.payroll_lite_enabled ?? false),
     payrollAuthorizedUserIds,
@@ -1578,13 +1615,28 @@ async function saveCompanyLicense(companyId, license) {
     payroll_authorized_user_ids: Array.isArray(nextLicense.payrollAuthorizedUserIds) ? nextLicense.payrollAuthorizedUserIds : [],
     payroll_approver_user_ids: Array.isArray(nextLicense.payrollApproverUserIds) ? nextLicense.payrollApproverUserIds : [],
     payroll_access_manager_user_ids: Array.isArray(nextLicense.payrollAccessManagerUserIds) ? nextLicense.payrollAccessManagerUserIds : [],
-    metadata: { updatedAt: now },
+    metadata: {
+      updatedAt: now,
+      ...(nextLicense?.lastPaymentOrderId ? { lastPaymentOrderId: String(nextLicense.lastPaymentOrderId).trim() } : {}),
+      ...(nextLicense?.lastPaymentId ? { lastPaymentId: String(nextLicense.lastPaymentId).trim() } : {}),
+      ...(nextLicense?.lastPaymentSignature ? { lastPaymentSignature: String(nextLicense.lastPaymentSignature).trim() } : {}),
+      ...(nextLicense?.lastPaidAt ? { lastPaidAt: String(nextLicense.lastPaidAt).trim() } : {})
+    },
     updated_at: now
   };
   const rows = await sbIns("company_subscriptions", [row], { conflict: "id", upsert: true });
   return sanitizeCompanyLicense(rows?.[0] || row, company);
 }
-async function setCompanyExtensionPlan({ actorUserId, companyId, planCode, paidAt = "", months = 1 }) {
+async function setCompanyExtensionPlan({
+  actorUserId,
+  companyId,
+  planCode,
+  paidAt = "",
+  months = 1,
+  paymentOrderId = "",
+  paymentId = "",
+  paymentSignature = ""
+}) {
   const actor = sanitizeUser(await getUserById(actorUserId, companyId));
   if (!actor || actor.role !== "admin") throw new Error("Only admin can update extension subscription.");
   const current = await getCompanyLicense(companyId);
@@ -1599,7 +1651,11 @@ async function setCompanyExtensionPlan({ actorUserId, companyId, planCode, paidA
     ...current,
     plan: normalizedPlan,
     status: nextStatus,
-    updatedAt: new Date().toISOString()
+    updatedAt: new Date().toISOString(),
+    lastPaymentOrderId: String(paymentOrderId || "").trim() || null,
+    lastPaymentId: String(paymentId || "").trim() || null,
+    lastPaymentSignature: String(paymentSignature || "").trim() || null,
+    lastPaidAt: paidDateIso || null
   };
   if (normalizedPlan === "trial") {
     nextPayload.trialStartedAt = paidDateIso;

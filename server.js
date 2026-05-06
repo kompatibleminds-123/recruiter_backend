@@ -7411,7 +7411,10 @@ const server = http.createServer(async (req, res) => {
             companyId,
             planCode,
             paidAt: new Date().toISOString(),
-            months: 1
+            months: 1,
+            paymentOrderId: orderId,
+            paymentId,
+            paymentSignature: signature
           });
           lastActivationError = null;
           break;
