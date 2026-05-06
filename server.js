@@ -324,6 +324,43 @@ function planLabel(planCode = "") {
   return String(planCode || "Plan").trim();
 }
 
+function getPlanCatalog() {
+  return [
+    { code: "trial", label: "14-day Trial", amountInr: 0, interval: "one_time_trial", seats: 1 },
+    { code: "ext_499_1_user", label: "Extension Lite - Rs 499", amountInr: 499, interval: "monthly", seats: 1 },
+    { code: "ext_999_3_users", label: "Extension Team - Rs 999", amountInr: 999, interval: "monthly", seats: 3 },
+    { code: "ext_1999_7_users", label: "Extension Pro - Rs 1999", amountInr: 1999, interval: "monthly", seats: 7 },
+    { code: "saas_4999_unlimited", label: "SaaS Unlimited - Rs 4999", amountInr: 4999, interval: "monthly", seats: null }
+  ];
+}
+
+function buildBillingOverview({ license = null, companyId = "", isFullAccess = false } = {}) {
+  const safeLicense = license && typeof license === "object" ? license : {};
+  const planCode = String(safeLicense.plan || "trial").trim().toLowerCase();
+  const catalog = getPlanCatalog();
+  const currentPlan = catalog.find((item) => String(item.code).toLowerCase() === planCode) || null;
+  const amountInr = Number(currentPlan?.amountInr || 0);
+  return {
+    companyId: String(companyId || "").trim(),
+    fullAccessBypass: Boolean(isFullAccess),
+    currentPlan: {
+      code: planCode,
+      label: currentPlan?.label || planLabel(planCode),
+      amountInr,
+      interval: currentPlan?.interval || "monthly"
+    },
+    license: safeLicense,
+    billing: {
+      amountInr,
+      currency: "INR",
+      subscriptionEndsAt: String(safeLicense.subscriptionEndsAt || "").trim() || null,
+      subscriptionStartedAt: String(safeLicense.subscriptionStartedAt || "").trim() || null,
+      status: String(safeLicense.status || "").trim().toLowerCase() || "trial"
+    },
+    plans: catalog
+  };
+}
+
 function buildPlanPurchaseMail({ companyName = "", planCode = "", subscriptionEndsAt = "" }) {
   const safeCompany = String(companyName || "").trim() || "your company";
   const planName = planLabel(planCode);
@@ -1409,7 +1446,9 @@ function normalizeEmail(value = "") {
 }
 
 function getPortalApprovedCompanyIds() {
-  return parseCsvEnvSet(process.env.PORTAL_APPROVED_COMPANY_IDS || "");
+  const legacy = parseCsvEnvSet(process.env.PORTAL_APPROVED_COMPANY_IDS || "");
+  const fullAccess = parseCsvEnvSet(process.env.FULL_ACCESS_COMPANY_IDS || "");
+  return new Set([...legacy, ...fullAccess]);
 }
 
 async function isPortalCompanyApproved(companyId = "") {
@@ -8294,6 +8333,38 @@ const server = http.createServer(async (req, res) => {
       });
     } catch (error) {
       sendJson(res, 401, { ok: false, error: String(error.message || error) });
+    }
+    return;
+  }
+
+  if (req.method === "GET" && req.url === "/company/billing/plans") {
+    try {
+      await requireSessionUser(getBearerToken(req));
+      sendJson(res, 200, { ok: true, result: { plans: getPlanCatalog() } });
+    } catch (error) {
+      sendJson(res, 401, { ok: false, error: String(error.message || error) });
+    }
+    return;
+  }
+
+  if (req.method === "GET" && req.url === "/company/billing/overview") {
+    try {
+      const actor = await requireSessionUser(getBearerToken(req));
+      if (String(actor?.role || "").toLowerCase() !== "admin") {
+        throw new Error("Only admin can view billing overview.");
+      }
+      const license = await getCompanyLicense(actor.companyId);
+      const isFullAccess = getPortalApprovedCompanyIds().has(String(actor.companyId || "").trim());
+      const overview = buildBillingOverview({
+        license,
+        companyId: actor.companyId,
+        isFullAccess
+      });
+      sendJson(res, 200, { ok: true, result: overview });
+    } catch (error) {
+      const message = String(error?.message || error);
+      const status = /only admin/i.test(message) ? 403 : 401;
+      sendJson(res, status, { ok: false, error: message });
     }
     return;
   }

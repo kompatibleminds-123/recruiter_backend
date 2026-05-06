@@ -52,6 +52,7 @@ const BASE_NAV_SECTIONS = [
   {
     label: "Admin",
     items: [
+      { to: "/plan", label: "Plan" },
       { to: "/login-settings", label: "Login Settings" },
       { to: "/intake-settings", label: "Job Apply Link" },
       { to: "/settings", label: "Preset Settings" }
@@ -4244,6 +4245,8 @@ function PortalApp({ token, onLogout }) {
   });
   const [statuses, setStatuses] = useState({});
   const [companyLicense, setCompanyLicense] = useState(null);
+  const [billingOverview, setBillingOverview] = useState(null);
+  const [billingPlans, setBillingPlans] = useState([]);
   const [assignApplicantId, setAssignApplicantId] = useState("");
   const [assignCandidateId, setAssignCandidateId] = useState("");
   const [hostedJobId, setHostedJobId] = useState("");
@@ -4824,7 +4827,7 @@ function PortalApp({ token, onLogout }) {
         ...section,
         items: section.items.filter((item) => {
           const itemTo = String(item?.to || "");
-          if ((itemTo === "/login-settings" || itemTo === "/intake-settings" || itemTo === "/settings" || itemTo.startsWith("/admin/payroll")) && !isSettingsAdmin) return false;
+          if ((itemTo === "/plan" || itemTo === "/login-settings" || itemTo === "/intake-settings" || itemTo === "/settings" || itemTo.startsWith("/admin/payroll")) && !isSettingsAdmin) return false;
           return true;
         })
       }))
@@ -4958,7 +4961,7 @@ function PortalApp({ token, onLogout }) {
     const needsDashboard = pathname === "/dashboard";
     const needsApplicants = pathname === "/dashboard" || pathname === "/applicants";
     const needsIntake = pathname === "/intake-settings" || pathname === "/jobs" || pathname === "/applicants";
-    const needsJobs = pathname !== "/mail-settings" && pathname !== "/settings" && pathname !== "/login-settings";
+    const needsJobs = pathname !== "/mail-settings" && pathname !== "/settings" && pathname !== "/login-settings" && pathname !== "/plan";
     const needsUsers = needsJobs || pathname === "/login-settings";
     const needsEmployeeUsers = includeEmployeeUsers && (pathname === "/login-settings" || pathname.startsWith("/admin/payroll"));
     const needsCandidates =
@@ -4977,6 +4980,7 @@ function PortalApp({ token, onLogout }) {
     // which are best sourced from assessment events.
     const needsAssessmentEvents = includeEvents && (pathname === "/dashboard" || pathname === "/assessments" || pathname === "/candidates");
     const needsEmailSettings = includeEmailSettings && pathname === "/mail-settings";
+    const needsBilling = pathname === "/plan";
     // Backfills mutate production candidate rows; keep them admin-only and manual.
     const dashboardKey = JSON.stringify({
       dateFrom: String(dashboardFilters?.dateFrom || ""),
@@ -5002,7 +5006,7 @@ function PortalApp({ token, onLogout }) {
     if (clientPortalFilters.dateTo) clientPortalParams.set("dateTo", clientPortalFilters.dateTo);
     if (clientPortalFilters.clientLabel) clientPortalParams.set("clientLabel", clientPortalFilters.clientLabel);
 
-    const [userResult, dashboardResult, clientPortalResult, applicantsResult, intakeResult, jobsResult, usersResult, clientUsersResult, employeeUsersResult, candidatesResult, databaseCandidatesResult, assessmentsResult, assessmentEventsResult, sharedPresetResult, smtpSettingsResult, licenseResult] = await Promise.all([
+    const [userResult, dashboardResult, clientPortalResult, applicantsResult, intakeResult, jobsResult, usersResult, clientUsersResult, employeeUsersResult, candidatesResult, databaseCandidatesResult, assessmentsResult, assessmentEventsResult, sharedPresetResult, smtpSettingsResult, licenseResult, billingOverviewResult, billingPlansResult] = await Promise.all([
       api("/auth/me", token),
       needsDashboard
         ? api(`/company/dashboard${dashboardParams.toString() ? `?${dashboardParams.toString()}` : ""}`, token)
@@ -5033,7 +5037,9 @@ function PortalApp({ token, onLogout }) {
       needsEmailSettings
         ? api("/company/email-settings", token).catch(() => null)
         : Promise.resolve(null),
-      api("/license/me", token).catch(() => null)
+      api("/license/me", token).catch(() => null),
+      needsBilling ? api("/company/billing/overview", token).catch(() => null) : Promise.resolve(null),
+      needsBilling ? api("/company/billing/plans", token).catch(() => ({ plans: [] })) : Promise.resolve(null)
     ]);
     setState((current) => ({
       ...current,
@@ -5083,6 +5089,10 @@ function PortalApp({ token, onLogout }) {
       }
     }
     setCompanyLicense(licenseResult?.license || null);
+    if (needsBilling) {
+      setBillingOverview(billingOverviewResult || null);
+      setBillingPlans(Array.isArray(billingPlansResult?.plans) ? billingPlansResult.plans : []);
+    }
     setStatus("workspace", "Portal loaded.", "ok");
   }
 
@@ -12488,6 +12498,62 @@ function PortalApp({ token, onLogout }) {
                     </div>
                   </div>
                 </Section>
+              </div>
+            } />
+
+            <Route path="/plan" element={
+              <div className="page-grid">
+                <Section kicker="Billing" title="Current Plan and Pricing">
+                  <p className="muted">Admin billing console for plan visibility and pricing reference.</p>
+                  {statuses.loginSettings ? <div className={`status ${statuses.loginSettingsKind || ""}`}>{statuses.loginSettings}</div> : null}
+                </Section>
+                {!isSettingsAdmin ? (
+                  <Section kicker="Access" title="Restricted">
+                    <p className="muted">Billing details are visible to admin users only.</p>
+                  </Section>
+                ) : (
+                  <>
+                    <div className="stack-list compact">
+                      <article className="item-card compact-card">
+                        <div className="item-card__top">
+                          <div>
+                            <h3>{String(billingOverview?.currentPlan?.label || "Plan not loaded").trim()}</h3>
+                            <p className="muted">
+                              {`Status: ${String(billingOverview?.billing?.status || companyLicense?.status || "unknown").trim()} | `}
+                              {`Valid till: ${billingOverview?.billing?.subscriptionEndsAt ? new Date(billingOverview.billing.subscriptionEndsAt).toLocaleDateString() : "N/A"} | `}
+                              {`Full access bypass: ${billingOverview?.fullAccessBypass ? "Enabled" : "No"}`}
+                            </p>
+                          </div>
+                        </div>
+                      </article>
+                    </div>
+                    <div className="table-wrap">
+                      <table className="dashboard-table">
+                        <thead>
+                          <tr>
+                            <th>Plan</th>
+                            <th>Price</th>
+                            <th>Billing cycle</th>
+                            <th>Seats</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {(billingPlans || []).map((plan) => (
+                            <tr key={plan.code}>
+                              <td>{plan.label || plan.code}</td>
+                              <td>{Number(plan.amountInr || 0) > 0 ? `Rs ${Number(plan.amountInr || 0)}` : "Free"}</td>
+                              <td>{plan.interval || "-"}</td>
+                              <td>{plan.seats == null ? "Unlimited" : plan.seats}</td>
+                            </tr>
+                          ))}
+                          {!billingPlans.length ? (
+                            <tr><td colSpan={4}><div className="empty-state compact-empty">Billing plans are loading. Click Refresh if needed.</div></td></tr>
+                          ) : null}
+                        </tbody>
+                      </table>
+                    </div>
+                  </>
+                )}
               </div>
             } />
 
