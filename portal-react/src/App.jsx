@@ -12587,14 +12587,16 @@ function PortalApp({ token, onLogout }) {
                               <th>Last license update</th>
                               <td>{effectiveLicense?.updatedAt ? new Date(effectiveLicense.updatedAt).toLocaleString() : "-"}</td>
                             </tr>
-                            <tr>
-                              <th>Capture usage</th>
-                              <td>
-                                {effectiveLicense?.captureLimit == null
-                                  ? "-"
-                                  : `${Number(effectiveLicense?.capturesUsed || 0)} / ${Number(effectiveLicense?.captureLimit || 0)} used`}
-                              </td>
-                            </tr>
+                            {currentPlanCode === "trial" ? (
+                              <tr>
+                                <th>Capture usage</th>
+                                <td>
+                                  {effectiveLicense?.captureLimit == null
+                                    ? "-"
+                                    : `${Number(effectiveLicense?.capturesUsed || 0)} / ${Number(effectiveLicense?.captureLimit || 0)} used`}
+                                </td>
+                              </tr>
+                            ) : null}
                             <tr>
                               <th>Access state</th>
                               <td>{effectiveLicense?.canCapture ? "Active" : "Blocked"}</td>
