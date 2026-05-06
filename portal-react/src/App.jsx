@@ -1114,7 +1114,7 @@ function extractFreeRecruiterLines(text) {
 function normalizeParsedRecruiterValue(value) {
   return String(value || "")
     .trim()
-    .replace(/^[\s\-–—:;]+/, "")
+    .replace(/^[\s\-â€“â€”:;]+/, "")
     .replace(/\s+/g, " ")
     .trim();
 }
@@ -1174,7 +1174,7 @@ function normalizeOtherPointersBody(rawText) {
     .map(polishStructuredBulletSentence)
     .filter(Boolean)
     .filter((line, index, array) => array.findIndex((item) => item.toLowerCase() === line.toLowerCase()) === index)
-    .map((line) => `• ${line.replace(/^•\s*/, "")}`)
+    .map((line) => `â€¢ ${line.replace(/^â€¢\s*/, "")}`)
     .join("\n");
 }
 
@@ -1665,7 +1665,7 @@ function normalizeRecruiterMergeBase(item) {
 function normalizeRecruiterConflictValue(key, value) {
   let normalized = String(value || "")
     .trim()
-    .replace(/^[\s\-–—:]+/, "")
+    .replace(/^[\s\-â€“â€”:]+/, "")
     .replace(/\s+/g, " ")
     .replace(/\s+\./g, ".")
     .toLowerCase();
@@ -1850,7 +1850,7 @@ function api(path, token, method = "GET", body = null) {
       return statusCode ? `Request failed (HTTP ${statusCode}). Please retry.` : "Request failed. Please retry.";
     }
     // Avoid dumping full HTML / stack traces into UI status banners.
-    if (raw.length > 350) return `${raw.slice(0, 350)}…`;
+    if (raw.length > 350) return `${raw.slice(0, 350)}â€¦`;
     return raw;
   }
   const headers = { "Content-Type": "application/json" };
@@ -2058,14 +2058,46 @@ function formatDateForCopy(value) {
 }
 
 function buildCombinedAssessmentInsightsForExportV2(item = {}) {
-  const parts = [];
+  const ctx = resolveCandidateContext(item);
+  const qaLines = [];
+  const seen = new Set();
+
+  const pushQa = (question, answer) => {
+    const q = String(question || "").trim();
+    const a = String(answer || "").trim();
+    if (!q || !a) return;
+    if (!/[a-z]/i.test(q)) return;
+    const key = `${q.toLowerCase()}::${a.toLowerCase()}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    qaLines.push(`**${q}**: **${a}**`);
+  };
+
+  if (ctx.screeningMap && typeof ctx.screeningMap === "object") {
+    Object.entries(ctx.screeningMap).forEach(([question, answer]) => pushQa(question, answer));
+  }
+
   const otherStandardQuestions = String(item.other_standard_questions || item.last_contact_notes || "").trim();
+  otherStandardQuestions
+    .split(/\r?\n+/)
+    .map((line) => String(line || "").trim())
+    .filter(Boolean)
+    .forEach((line) => {
+      if (/^\[[^\]]+\]\s*/.test(line)) return;
+      const cleaned = line.replace(/^[\d\.\-\)\s]+/, "").trim();
+      const separatorIndex = cleaned.indexOf(":");
+      if (separatorIndex <= 0) return;
+      const label = cleaned.slice(0, separatorIndex).trim();
+      const value = cleaned.slice(separatorIndex + 1).replace(/^[\s:\-]+/, "").trim();
+      pushQa(label, value);
+    });
+
   const otherPointers = String(item.other_pointers || "").trim();
-  if (otherStandardQuestions) parts.push(otherStandardQuestions);
-  if (otherPointers) parts.push(otherPointers.replace(/^•\s*/gm, ""));
+  const parts = [];
+  if (qaLines.length) parts.push(qaLines.join("\n"));
+  if (otherPointers) parts.push(otherPointers);
   return parts.filter(Boolean).join("\n");
 }
-
 function buildCombinedAssessmentInsightsForExport(item = {}) {
   const otherStandardQuestions = String(item.other_standard_questions || item.last_contact_notes || "").trim();
   const reasonOfChangeValue = String(item.reason_of_change || "").trim();
@@ -4183,7 +4215,7 @@ function JdEmailModal({ open, jobs, value, onChange, onClose, onSend, busy = fal
     <div className="overlay" onClick={() => { if (!busy) onClose(); }}>
       <div className="overlay-card" onClick={(e) => e.stopPropagation()}>
         <h3>Send JD Email</h3>
-        <p className="muted">Sends from your configured SMTP (Settings → Email settings). Use Zoho app password.</p>
+        <p className="muted">Sends from your configured SMTP (Settings â†’ Email settings). Use Zoho app password.</p>
         {status ? <div className={`status ${statusKind || ""}`} style={{ marginBottom: 12 }}>{status}</div> : null}
         <div className="form-grid">
           <label className="full">
@@ -11613,7 +11645,7 @@ function PortalApp({ token, onLogout }) {
                               className="ghost-btn more-menu__trigger"
                               onClick={() => setOpenAssessmentMoreId((current) => (current === String(item.id) ? "" : String(item.id)))}
                             >
-                              More <span className="muted">⋯</span>
+                              More <span className="muted">â‹¯</span>
                             </button>
                             {openAssessmentMoreId === String(item.id) ? (
                               <div className="more-menu__dropdown more-menu__dropdown--inline" role="menu">
@@ -11640,7 +11672,7 @@ function PortalApp({ token, onLogout }) {
                               className="ghost-btn more-menu__trigger"
                               onClick={() => setOpenAssessmentMoreId((current) => (current === String(item.id) ? "" : String(item.id)))}
                             >
-                              More <span className="muted">⋯</span>
+                              More <span className="muted">â‹¯</span>
                             </button>
                             {openAssessmentMoreId === String(item.id) ? (
                               <div className="more-menu__dropdown more-menu__dropdown--inline" role="menu">
@@ -12143,7 +12175,7 @@ function PortalApp({ token, onLogout }) {
 
                 <div className="settings-subsection" style={{ marginTop: 18 }}>
                   <div className="section-kicker">Your Email Signature (per recruiter)</div>
-                  <p className="muted">Used in JD emails and Direct Share by default. Tip: to make only part of link text clickable, write it as <code>LinkedIn || 7027xxxxxxx</code> (only “LinkedIn” becomes the hyperlink).</p>
+                  <p className="muted">Used in JD emails and Direct Share by default. Tip: to make only part of link text clickable, write it as <code>LinkedIn || 7027xxxxxxx</code> (only â€œLinkedInâ€ becomes the hyperlink).</p>
                   <div className="form-grid two-col">
                     <label className="full">
                       <span>Signature text</span>
@@ -12173,7 +12205,7 @@ function PortalApp({ token, onLogout }) {
 
                 <div className="settings-subsection" style={{ marginTop: 18 }}>
                   <div className="section-kicker">JD Email Template (Admin)</div>
-                  <p className="muted">Default subject/body in the “Email JD” modal. Placeholders: {`{Candidate} {Recruiter} {Role}`}</p>
+                  <p className="muted">Default subject/body in the â€œEmail JDâ€ modal. Placeholders: {`{Candidate} {Recruiter} {Role}`}</p>
                   <div className="form-grid">
                     <label className="full">
                       <span>Subject template</span>
@@ -14491,4 +14523,5 @@ export default function App() {
         ? <PortalErrorBoundary><PayrollAdminApp token={token} onLogout={logout} /></PortalErrorBoundary>
         : <PortalErrorBoundary><PortalApp token={token} onLogout={logout} /></PortalErrorBoundary>;
 }
+
 
