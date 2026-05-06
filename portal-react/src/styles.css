@@ -1466,6 +1466,37 @@ textarea { min-height: 92px; resize: vertical; }
   font-weight: 600;
 }
 
+.plan-matrix-price {
+  font-weight: 800;
+  color: #163056;
+}
+
+.plan-matrix-upgrade-btn {
+  margin-top: 0.3rem;
+  padding: 0.22rem 0.52rem;
+  border-radius: 999px;
+  font-size: 0.78rem;
+}
+
+.plan-matrix-badge {
+  display: inline-block;
+  margin-top: 0.3rem;
+  padding: 0.16rem 0.5rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: #0b6b4a;
+  background: #dcf7ec;
+  border: 1px solid #bcebd8;
+}
+
+.plan-matrix-muted {
+  display: inline-block;
+  margin-top: 0.3rem;
+  font-size: 0.75rem;
+  color: #6b7a92;
+}
+
 .plan-matrix-table tbody tr:nth-child(even),
 .plan-matrix-table tbody tr:hover {
   background: transparent;

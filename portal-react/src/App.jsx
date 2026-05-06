@@ -12741,30 +12741,47 @@ function PortalApp({ token, onLogout }) {
                         </tr>
                       </thead>
                       <tbody>
-                        <tr>
-                          <th>1 seat</th>
-                          <td>Rs 499</td>
-                          <td>Rs 999</td>
-                          <td>Rs 1499</td>
-                        </tr>
-                        <tr>
-                          <th>3 seats</th>
-                          <td>Rs 999</td>
-                          <td>Rs 1999</td>
-                          <td>Rs 2999</td>
-                        </tr>
-                        <tr>
-                          <th>7 seats</th>
-                          <td>Rs 1999</td>
-                          <td>Rs 3999</td>
-                          <td>Rs 5999</td>
-                        </tr>
-                        <tr>
-                          <th>7-15 seats</th>
-                          <td>Rs 2999</td>
-                          <td>Rs 4999</td>
-                          <td>Rs 6999</td>
-                        </tr>
+                        {[
+                          { seat: "1 seat", basic: "s1_basic_499", full: "s1_full_999", suite: "s1_suite_1499" },
+                          { seat: "3 seats", basic: "s3_basic_999", full: "s3_full_1999", suite: "s3_suite_2999" },
+                          { seat: "7 seats", basic: "s7_basic_1999", full: "s7_full_3999", suite: "s7_suite_5999" },
+                          { seat: "7-15 seats", basic: "s15_basic_2999", full: "s15_full_4999", suite: "s15_suite_6999" }
+                        ].map((row) => {
+                          const renderPlanCell = (planCode) => {
+                            const plan = (billingPlans || []).find((item) => String(item?.code || "").trim().toLowerCase() === planCode) || null;
+                            if (!plan) return <td>-</td>;
+                            const code = String(plan.code || "").trim().toLowerCase();
+                            const rank = Number(planRank[code] ?? 0);
+                            const isCurrent = code === currentPlanCode;
+                            const canUpgrade = rank > currentRank;
+                            return (
+                              <td key={planCode}>
+                                <div className="plan-matrix-price">{`Rs ${Number(plan.amountInr || 0)}`}</div>
+                                {isCurrent ? (
+                                  <span className="plan-matrix-badge">Current</span>
+                                ) : canUpgrade ? (
+                                  <button
+                                    className="plan-matrix-upgrade-btn"
+                                    onClick={() => void openPlanUpgrade(plan.code)}
+                                    disabled={planUpgradeBusyCode === plan.code}
+                                  >
+                                    {planUpgradeBusyCode === plan.code ? "Opening..." : "Upgrade"}
+                                  </button>
+                                ) : (
+                                  <span className="plan-matrix-muted">Not available</span>
+                                )}
+                              </td>
+                            );
+                          };
+                          return (
+                            <tr key={row.seat}>
+                              <th>{row.seat}</th>
+                              {renderPlanCell(row.basic)}
+                              {renderPlanCell(row.full)}
+                              {renderPlanCell(row.suite)}
+                            </tr>
+                          );
+                        })}
                         <tr>
                           <th>15+ seats</th>
                           <td colSpan="3">Contact Sales (Custom Enterprise)</td>
@@ -12866,48 +12883,7 @@ function PortalApp({ token, onLogout }) {
                         </table>
                       </div>
                     </Section>
-                    <Section kicker="Upgrade" title="Higher Plans">
-                      {!upgradePlans.length ? (
-                        <div className="empty-state compact-empty">No higher plan available. You are already on highest access.</div>
-                      ) : (
-                        <div className="stack-list compact">
-                          {upgradePlans.map((plan) => {
-                            const code = String(plan.code || "").trim().toLowerCase();
-                            const isSaas = String(plan.tier || "").trim().toLowerCase() === "full_recruiter_plus_modules";
-                            return (
-                              <article className="item-card compact-card" key={plan.code}>
-                                <div className="item-card__top">
-                                  <div>
-                                    <h3>{plan.label || plan.code}</h3>
-                                    <p className="muted">{`${Number(plan.amountInr || 0) > 0 ? `Rs ${Number(plan.amountInr || 0)}` : "Free"} | ${plan.interval || "monthly"}`}</p>
-                                    {isSaas ? (
-                                      <ul className="muted" style={{ margin: "8px 0 0 18px" }}>
-                                        <li>Unlock full power of RecruitDesk productivity suite.</li>
-                                        <li>Database Save and Search.</li>
-                                        <li>Job apply public and private links.</li>
-                                        <li>Inbound applicants cycle.</li>
-                                        <li>JD share / Mail share with candidates.</li>
-                                        <li>Access to Client, Payroll and Employee portals.</li>
-                                      </ul>
-                                    ) : (
-                                      <p className="muted">{`Seats: ${plan.seats == null ? "Unlimited" : plan.seats}`}</p>
-                                    )}
-                                  </div>
-                                  <div className="button-row">
-                                    <button
-                                      onClick={() => void openPlanUpgrade(plan.code)}
-                                      disabled={planUpgradeBusyCode === plan.code}
-                                    >
-                                      {planUpgradeBusyCode === plan.code ? "Opening..." : "Upgrade"}
-                                    </button>
-                                  </div>
-                                </div>
-                              </article>
-                            );
-                          })}
-                        </div>
-                      )}
-                    </Section>
+                    {!upgradePlans.length ? <div className="empty-state compact-empty">No higher plan available. You are already on highest access.</div> : null}
                   </>
                 )}
               </div>
