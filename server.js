@@ -1539,6 +1539,18 @@ async function requireSaasAccess(actor, featureLabel = "this feature") {
   throw new Error(`${featureLabel} is available on Full Recruiter plans.`);
 }
 
+async function requireSuiteModulesAccess(actor, featureLabel = "this feature") {
+  const companyId = String(actor?.companyId || "").trim();
+  if (!companyId) throw new Error("Invalid company context.");
+  const approved = getPortalApprovedCompanyIds();
+  if (approved.has(companyId)) return true;
+  const license = await getCompanyLicense(companyId).catch(() => null);
+  const status = String(license?.status || "").trim().toLowerCase();
+  const planDef = getPlanDefinition(String(license?.plan || "").trim().toLowerCase());
+  if ((status === "active" || status === "legacy" || status === "trial") && Boolean(planDef?.suiteModules)) return true;
+  throw new Error(`${featureLabel} is available on Full Recruiter + Other Modules plans.`);
+}
+
 async function requireCompanySessionOrPayrollSession(token) {
   const rawToken = String(token || "").trim();
   if (!rawToken) throw new Error("Invalid or missing session.");
@@ -8155,6 +8167,7 @@ const server = http.createServer(async (req, res) => {
   if (req.method === "GET" && req.url === "/company/client-users") {
     try {
       const actor = await requireSessionUser(getBearerToken(req));
+      await requireSuiteModulesAccess(actor, "Client module");
       const clientUsers = await getCompanyClientUsers(actor.companyId);
       sendJson(res, 200, { ok: true, result: { companyId: actor.companyId, clientUsers } });
     } catch (error) {
@@ -8166,6 +8179,7 @@ const server = http.createServer(async (req, res) => {
   if (req.method === "POST" && req.url === "/company/client-users") {
     try {
       const actor = await requireSessionUser(getBearerToken(req));
+      await requireSuiteModulesAccess(actor, "Client module");
       const body = await readJsonBody(req);
       const createdUser = await createClientUser({
         actorUserId: actor.id,
@@ -8185,6 +8199,7 @@ const server = http.createServer(async (req, res) => {
   if (req.method === "POST" && req.url === "/company/client-users/password") {
     try {
       const actor = await requireSessionUser(getBearerToken(req));
+      await requireSuiteModulesAccess(actor, "Client module");
       const body = await readJsonBody(req);
       const result = await resetClientUserPassword({
         actorUserId: actor.id,
@@ -8615,6 +8630,7 @@ const server = http.createServer(async (req, res) => {
   if (req.method === "GET" && req.url === "/company/employees") {
     try {
       const actor = await requireCompanySessionOrPayrollSession(getBearerToken(req));
+      await requireSuiteModulesAccess(actor, "Employee module");
       const employees = await listCompanyEmployees(actor.companyId);
       sendJson(res, 200, { ok: true, result: { companyId: actor.companyId, employees } });
     } catch (error) {
@@ -8630,6 +8646,7 @@ const server = http.createServer(async (req, res) => {
   if (req.method === "POST" && (req.url === "/company/employees" || req.url === "/company/createemployee")) {
     try {
       const actor = await requireCompanySessionOrPayrollSession(getBearerToken(req));
+      await requireSuiteModulesAccess(actor, "Employee module");
       const body = await readJsonBody(req);
       const result = await createEmployeeUser({
         actorUserId: actor.id,
@@ -8667,6 +8684,7 @@ const server = http.createServer(async (req, res) => {
   if (req.method === "POST" && req.url === "/company/employees/update") {
     try {
       const actor = await requireCompanySessionOrPayrollSession(getBearerToken(req));
+      await requireSuiteModulesAccess(actor, "Employee module");
       const body = await readJsonBody(req);
       const employeeId = String(body.employeeId || body.employee_id || "").trim();
       const result = await updateEmployeeProfileAndWorkSite({
@@ -8705,6 +8723,7 @@ const server = http.createServer(async (req, res) => {
   if (req.method === "POST" && req.url === "/company/employees/password") {
     try {
       const actor = await requireCompanySessionOrPayrollSession(getBearerToken(req));
+      await requireSuiteModulesAccess(actor, "Employee module");
       const body = await readJsonBody(req);
       const result = await resetEmployeeUserPassword({
         actorUserId: actor.id,
@@ -8976,6 +8995,18 @@ const server = http.createServer(async (req, res) => {
       sendJson(res, status, { ok: false, error: message });
     }
     return;
+  }
+
+  if (requestUrl.pathname.startsWith("/company/payroll") || requestUrl.pathname === "/company/employee-attendance") {
+    try {
+      const actor = await requireCompanySessionOrPayrollSession(getBearerToken(req));
+      await requireSuiteModulesAccess(actor, "Payroll and employee modules");
+    } catch (error) {
+      const message = String(error?.message || error);
+      const status = /invalid|missing session|unauthorized|401/i.test(message) ? 401 : 403;
+      sendJson(res, status, { ok: false, error: message });
+      return;
+    }
   }
 
   if (req.method === "GET" && req.url === "/company/payroll/settings") {
@@ -9839,6 +9870,7 @@ const server = http.createServer(async (req, res) => {
   if (req.method === "GET" && requestUrl.pathname === "/company/client-portal") {
     try {
       const user = await requireSessionUser(getBearerToken(req));
+      await requireSuiteModulesAccess(user, "Client module");
       const dateFrom = String(requestUrl.searchParams.get("dateFrom") || "").trim();
       const dateTo = String(requestUrl.searchParams.get("dateTo") || "").trim();
       const clientFilter = String(requestUrl.searchParams.get("clientLabel") || "").trim();
@@ -10796,6 +10828,7 @@ const server = http.createServer(async (req, res) => {
   if (req.method === "GET" && requestUrl.pathname === "/company/client-portal/drilldown") {
     try {
       const user = await requireSessionUser(getBearerToken(req));
+      await requireSuiteModulesAccess(user, "Client module");
       const metric = String(requestUrl.searchParams.get("metric") || "").trim();
       const groupType = String(requestUrl.searchParams.get("groupType") || "").trim();
       const dateFrom = String(requestUrl.searchParams.get("dateFrom") || "").trim();

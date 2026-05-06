@@ -59,6 +59,14 @@ const BASE_NAV_SECTIONS = [
       { to: "/intake-settings", label: "Job Apply Link" },
       { to: "/settings", label: "Preset Settings" }
     ]
+  },
+  {
+    label: "Modules",
+    items: [
+      { to: "/client-login", label: "Client Portal" },
+      { to: "/employee-login", label: "Employee Portal" },
+      { to: "/payroll-login", label: "Payroll Portal" }
+    ]
   }
 ];
 
@@ -4951,13 +4959,14 @@ function PortalApp({ token, onLogout }) {
         ...section,
         items: section.items.filter((item) => {
           const itemTo = String(item?.to || "");
+          if (section.label === "Modules" && !hasSuiteModulesAccess) return false;
           if ((itemTo === "/plan" || itemTo === "/login-settings" || itemTo === "/intake-settings" || itemTo === "/settings" || itemTo.startsWith("/admin/payroll")) && !isSettingsAdmin) return false;
           if (!hasSaasUnlimitedAccess && (itemTo === "/client-share" || itemTo === "/intake-settings" || itemTo === "/mail-settings" || itemTo === "/quick-update" || itemTo === "/applicants")) return false;
           return true;
         })
       }))
       .filter((section) => section.items.length)
-  ), [isSettingsAdmin, hasSaasUnlimitedAccess]);
+  ), [isSettingsAdmin, hasSaasUnlimitedAccess, hasSuiteModulesAccess]);
   const standaloneNavItems = useMemo(() => (
     STANDALONE_NAV_ITEMS.filter((item) => {
       if (!hasSaasUnlimitedAccess && item.to === "/reports") return false;
@@ -5003,6 +5012,21 @@ function PortalApp({ token, onLogout }) {
       setStatus("loginSettings", "This feature is available on SaaS Unlimited (Rs 4999).", "error");
     }
   }, [hasSaasUnlimitedAccess, location?.pathname, navigate]);
+
+  useEffect(() => {
+    const pathname = String(location?.pathname || "");
+    const isModulePath =
+      pathname === "/client-login" ||
+      pathname.startsWith("/client-portal") ||
+      pathname === "/employee-login" ||
+      pathname.startsWith("/employee-portal") ||
+      pathname === "/payroll-login" ||
+      pathname.startsWith("/payroll");
+    if (!hasSuiteModulesAccess && isModulePath) {
+      navigate("/plan", { replace: true });
+      setStatus("loginSettings", "Client, Employee, and Payroll modules are available on Full Recruiter + Other Modules plans.", "error");
+    }
+  }, [hasSuiteModulesAccess, location?.pathname, navigate]);
 
   async function openPlanUpgrade(planCode) {
     try {
@@ -12730,6 +12754,19 @@ function PortalApp({ token, onLogout }) {
                         </div>
                       </article>
                     </div>
+                    <Section kicker="Other Modules" title="Client, Employee, and Payroll">
+                      {hasSuiteModulesAccess ? (
+                        <div className="button-row">
+                          <button onClick={() => window.open("/client-login", "_blank", "noopener,noreferrer")}>Open Client Portal</button>
+                          <button onClick={() => window.open("/employee-login", "_blank", "noopener,noreferrer")}>Open Employee Portal</button>
+                          <button onClick={() => window.open("/payroll-login", "_blank", "noopener,noreferrer")}>Open Payroll Portal</button>
+                        </div>
+                      ) : (
+                        <div className="empty-state compact-empty">
+                          Upgrade to Full Recruiter + Other Modules to unlock Client, Employee, and Payroll portals.
+                        </div>
+                      )}
+                    </Section>
                     <Section kicker="Billing Details" title="Current Billing Snapshot">
                       <div className="table-wrap">
                         <table className="dashboard-table">
