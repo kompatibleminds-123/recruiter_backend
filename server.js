@@ -2147,6 +2147,19 @@ async function ingestApplicantSubmission(body, req) {
     screeningAnswers: payload.screeningAnswers,
     applicantState: "new"
   };
+  const cvResultForSearch =
+    normalized && typeof normalized === "object"
+      ? normalized
+      : parsed && typeof parsed === "object"
+        ? parsed
+        : null;
+  const inferredSearchTags = deriveInferredSearchTags({
+    cvResult: cvResultForSearch,
+    recruiterNotes: String(payload.screeningAnswers || "").trim(),
+    otherPointers: "",
+    tags: Array.isArray(merged?.skills) ? merged.skills : []
+  });
+  metadata.inferredSearchTags = inferredSearchTags;
 
   // Recruiter-specific public apply links (signed).
   // If present and valid, override the default JD owner assignment so the applicant appears under that recruiter.
@@ -2218,6 +2231,22 @@ async function ingestApplicantSubmission(body, req) {
       mergedFrom: "website_apply_duplicate",
       mergedAt: new Date().toISOString()
     };
+    nextMeta.searchDocV1 = deriveCandidateSearchDocV1FromParts({
+      candidate: {
+        ...(existing || {}),
+        source: appliedSource,
+        client_name: payload.clientName || existing?.client_name || "",
+        jd_title: payload.jdTitle || existing?.jd_title || "",
+        recruiter_context_notes: payload.screeningAnswers || existing?.recruiter_context_notes || "",
+        skills: Array.isArray(existing?.skills) && existing.skills.length ? existing.skills : (Array.isArray(merged?.skills) ? merged.skills : [])
+      },
+      meta: nextMeta,
+      draftPayload: existing?.draft_payload && typeof existing.draft_payload === "object" ? existing.draft_payload : {},
+      screeningAnswers: existing?.screening_answers && typeof existing.screening_answers === "object" ? existing.screening_answers : {},
+      cvResult: cvResultForSearch,
+      inferredSearchTags
+    });
+    nextMeta.searchDocUpdatedAt = new Date().toISOString();
     Object.keys(nextMeta).forEach((k) => nextMeta[k] === undefined && delete nextMeta[k]);
 
     // Keep candidates in one place:
@@ -2257,8 +2286,49 @@ async function ingestApplicantSubmission(body, req) {
     Object.keys(patch).forEach((k) => patch[k] === undefined && delete patch[k]);
 
     const updated = await patchCandidate(String(existing.id), patch, { companyId: payload.companyId });
+    try {
+      await upsertCandidateSearchDocV1({
+        companyId: payload.companyId,
+        candidateId: String(existing.id || "").trim(),
+        docV1: String(nextMeta.searchDocV1 || "").trim(),
+        cvTextFull: String(parsed?.rawText || "")
+      });
+    } catch (_) {}
     return sanitizeApplicantCandidate(updated);
   }
+
+  metadata.searchDocV1 = deriveCandidateSearchDocV1FromParts({
+    candidate: {
+      source: appliedSource,
+      name: merged.name,
+      company: merged.company,
+      role: merged.role,
+      experience: merged.experience,
+      skills: merged.skills,
+      phone: merged.phone,
+      email: merged.email,
+      location: merged.location,
+      highest_education: merged.highest_education,
+      current_ctc: merged.current_ctc,
+      expected_ctc: merged.expected_ctc,
+      notice_period: merged.notice_period,
+      notes: merged.notes,
+      recruiter_context_notes: payload.screeningAnswers || "",
+      next_action: merged.next_action,
+      client_name: payload.clientName || "",
+      jd_title: payload.jdTitle || "",
+      recruiter_name: defaultInboxOwner?.name || payload.recruiterName || "Website Apply",
+      assigned_to_name: defaultInboxOwner?.name || "",
+      assigned_jd_title: matchedJob?.title || payload.jdTitle || "",
+      linkedin: merged.linkedin || ""
+    },
+    meta: metadata,
+    draftPayload: {},
+    screeningAnswers: {},
+    cvResult: cvResultForSearch,
+    inferredSearchTags
+  });
+  metadata.searchDocUpdatedAt = new Date().toISOString();
 
   const candidate = await saveCandidate(
     {
@@ -2293,6 +2363,14 @@ async function ingestApplicantSubmission(body, req) {
     },
     { companyId: payload.companyId }
   );
+  try {
+    await upsertCandidateSearchDocV1({
+      companyId: payload.companyId,
+      candidateId: String(candidate?.id || "").trim(),
+      docV1: String(metadata.searchDocV1 || "").trim(),
+      cvTextFull: String(parsed?.rawText || "")
+    });
+  } catch (_) {}
 
   return sanitizeApplicantCandidate(candidate);
 }

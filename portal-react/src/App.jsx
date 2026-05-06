@@ -4241,6 +4241,7 @@ function PortalApp({ token, onLogout }) {
     dateTo: "",
     clients: [],
     jds: [],
+    locations: [],
     ownedBy: [],
     assignedTo: [],
     outcomes: [],
@@ -6759,6 +6760,7 @@ function PortalApp({ token, onLogout }) {
   const applicantOptions = useMemo(() => {
     const clients = new Set();
     const jds = new Set();
+    const locations = new Set();
     const ownedBy = new Set();
     const assignedTo = new Set();
     const outcomes = new Set();
@@ -6777,11 +6779,13 @@ function PortalApp({ token, onLogout }) {
       if (isApplicantConvertedToAssessment(item, linkedCandidate, linkedAssessment)) return;
       const clientValue = String(item.clientName || item.client_name || "Unassigned").trim();
       const jdValue = String(item.jdTitle || item.jd_title || "").trim();
+      const locationValue = String(item.location || linkedCandidate?.location || "").trim();
       const ownedValue = getApplicantOwnerLabel(item, linkedCandidate);
       const assignedValue = getApplicantManualAssigneeLabel(item, linkedCandidate);
       const outcomeValue = getApplicantWorkflowOutcome(item, linkedCandidate);
       if (clientValue) clients.add(clientValue);
       if (jdValue) jds.add(jdValue);
+      if (locationValue) locations.add(locationValue);
       if (ownedValue) ownedBy.add(ownedValue);
       if (assignedValue) assignedTo.add(assignedValue);
       if (outcomeValue) outcomes.add(outcomeValue);
@@ -6789,6 +6793,7 @@ function PortalApp({ token, onLogout }) {
     return {
       clients: Array.from(clients).sort((a, b) => a.localeCompare(b)),
       jds: Array.from(jds).sort((a, b) => a.localeCompare(b)),
+      locations: Array.from(locations).sort((a, b) => a.localeCompare(b)),
       ownedBy: Array.from(ownedBy).sort((a, b) => a.localeCompare(b)),
       assignedTo: Array.from(assignedTo).sort((a, b) => a.localeCompare(b)),
       outcomes: APPLIED_OUTCOME_FILTER_ORDER.concat(
@@ -6806,6 +6811,7 @@ function PortalApp({ token, onLogout }) {
       if (isApplicantConvertedToAssessment(item, linkedCandidate, linkedAssessment)) return false;
       const clientValue = String(item.clientName || item.client_name || "Unassigned").trim();
       const jdValue = String(item.jdTitle || item.jd_title || "").trim();
+      const locationValue = String(item.location || linkedCandidate?.location || "").trim();
       const ownedValue = getApplicantOwnerLabel(item, linkedCandidate);
       const assignedValue = getApplicantManualAssigneeLabel(item, linkedCandidate);
       const outcomeValue = getApplicantWorkflowOutcome(item, linkedCandidate);
@@ -6820,6 +6826,7 @@ function PortalApp({ token, onLogout }) {
         item.email,
         jdValue,
         clientValue,
+        locationValue,
         ownedValue,
         assignedValue,
         item.currentCompany,
@@ -6833,6 +6840,7 @@ function PortalApp({ token, onLogout }) {
       if (applicantFilters.dateTo && createdDate && createdDate > applicantFilters.dateTo) return false;
       if (applicantFilters.clients.length && !applicantFilters.clients.includes(clientValue)) return false;
       if (applicantFilters.jds.length && !applicantFilters.jds.includes(jdValue)) return false;
+      if (applicantFilters.locations.length && !applicantFilters.locations.includes(locationValue)) return false;
       if (applicantFilters.ownedBy.length && !applicantFilters.ownedBy.includes(ownedValue)) return false;
       if (applicantFilters.assignedTo.length && !applicantFilters.assignedTo.includes(assignedValue)) return false;
       if (applicantFilters.outcomes.length && !applicantFilters.outcomes.includes(outcomeValue)) return false;
@@ -6853,6 +6861,7 @@ function PortalApp({ token, onLogout }) {
       const linkedAssessment = applicantAssessmentMap.get(String(item.id)) || null;
       const clientValue = String(item.clientName || item.client_name || "Unassigned").trim();
       const jdValue = String(item.jdTitle || item.jd_title || "").trim();
+      const locationValue = String(item.location || linkedCandidate?.location || "").trim();
       const ownedValue = getApplicantOwnerLabel(item, linkedCandidate);
       const assignedValue = getApplicantManualAssigneeLabel(item, linkedCandidate);
       const outcomeValue = getApplicantWorkflowOutcome(item, linkedCandidate);
@@ -6867,6 +6876,7 @@ function PortalApp({ token, onLogout }) {
         item.email,
         jdValue,
         clientValue,
+        locationValue,
         ownedValue,
         assignedValue,
         item.currentCompany,
@@ -6880,6 +6890,7 @@ function PortalApp({ token, onLogout }) {
       if (applicantFilters.dateTo && createdDate && createdDate > applicantFilters.dateTo) return false;
       if (applicantFilters.clients.length && !applicantFilters.clients.includes(clientValue)) return false;
       if (applicantFilters.jds.length && !applicantFilters.jds.includes(jdValue)) return false;
+      if (applicantFilters.locations.length && !applicantFilters.locations.includes(locationValue)) return false;
       if (applicantFilters.ownedBy.length && !applicantFilters.ownedBy.includes(ownedValue)) return false;
       if (applicantFilters.assignedTo.length && !applicantFilters.assignedTo.includes(assignedValue)) return false;
       if (applicantFilters.outcomes.length && !applicantFilters.outcomes.includes(outcomeValue)) return false;
@@ -11189,6 +11200,7 @@ function PortalApp({ token, onLogout }) {
               <div className="captured-filter-grid">
                 <MultiSelectDropdown label="Clients" options={applicantOptions.clients} selected={applicantFilters.clients} onToggle={(value) => setApplicantFilters((current) => ({ ...current, clients: value === "__all__" ? [] : current.clients.includes(value) ? current.clients.filter((item) => item !== value) : [...current.clients, value] }))} />
                 <MultiSelectDropdown label="JD / Role" options={applicantOptions.jds} selected={applicantFilters.jds} onToggle={(value) => setApplicantFilters((current) => ({ ...current, jds: value === "__all__" ? [] : current.jds.includes(value) ? current.jds.filter((item) => item !== value) : [...current.jds, value] }))} />
+                <MultiSelectDropdown label="Location" options={applicantOptions.locations} selected={applicantFilters.locations} onToggle={(value) => setApplicantFilters((current) => ({ ...current, locations: value === "__all__" ? [] : current.locations.includes(value) ? current.locations.filter((item) => item !== value) : [...current.locations, value] }))} />
                 {String(state.user?.role || "").toLowerCase() === "admin" ? <MultiSelectDropdown label="Owned by" options={applicantOptions.ownedBy} selected={applicantFilters.ownedBy} onToggle={(value) => setApplicantFilters((current) => ({ ...current, ownedBy: value === "__all__" ? [] : current.ownedBy.includes(value) ? current.ownedBy.filter((item) => item !== value) : [...current.ownedBy, value] }))} /> : null}
                 {String(state.user?.role || "").toLowerCase() === "admin" ? <MultiSelectDropdown label="Assigned to" options={applicantOptions.assignedTo} selected={applicantFilters.assignedTo} onToggle={(value) => setApplicantFilters((current) => ({ ...current, assignedTo: value === "__all__" ? [] : current.assignedTo.includes(value) ? current.assignedTo.filter((item) => item !== value) : [...current.assignedTo, value] }))} /> : null}
                 <MultiSelectDropdown label="Outcome" options={applicantOptions.outcomes} selected={applicantFilters.outcomes} onToggle={(value) => setApplicantFilters((current) => ({ ...current, outcomes: value === "__all__" ? [] : current.outcomes.includes(value) ? current.outcomes.filter((item) => item !== value) : [...current.outcomes, value] }))} />
