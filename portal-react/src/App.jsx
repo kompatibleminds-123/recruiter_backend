@@ -12729,6 +12729,51 @@ function PortalApp({ token, onLogout }) {
                   <p className="muted">Track current plan, trial balance, and upgrade only to higher plans.</p>
                   {statuses.loginSettings ? <div className={`status ${statuses.loginSettingsKind || ""}`}>{statuses.loginSettings}</div> : null}
                 </Section>
+                <Section kicker="Pricing Matrix" title="Seat-wise Plan Grid">
+                  <div className="table-wrap plan-matrix-wrap">
+                    <table className="dashboard-table plan-matrix-table">
+                      <thead>
+                        <tr>
+                          <th>Seats</th>
+                          <th>Basic</th>
+                          <th>Full Recruiter</th>
+                          <th>Full + Modules</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <tr>
+                          <th>1 seat</th>
+                          <td>Rs 499</td>
+                          <td>Rs 999</td>
+                          <td>Rs 1499</td>
+                        </tr>
+                        <tr>
+                          <th>3 seats</th>
+                          <td>Rs 999</td>
+                          <td>Rs 1999</td>
+                          <td>Rs 2999</td>
+                        </tr>
+                        <tr>
+                          <th>7 seats</th>
+                          <td>Rs 1999</td>
+                          <td>Rs 3999</td>
+                          <td>Rs 5999</td>
+                        </tr>
+                        <tr>
+                          <th>7-15 seats</th>
+                          <td>Rs 2999</td>
+                          <td>Rs 4999</td>
+                          <td>Rs 6999</td>
+                        </tr>
+                        <tr>
+                          <th>15+ seats</th>
+                          <td colSpan="3">Contact Sales (Custom Enterprise)</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                  <p className="muted">Plan 3 unlocks Client, Employee, and Payroll modules.</p>
+                </Section>
                 {!isSettingsAdmin ? (
                   <Section kicker="Access" title="Restricted">
                     <p className="muted">Billing details are visible to admin users only.</p>

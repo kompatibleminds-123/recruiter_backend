@@ -1429,6 +1429,48 @@ textarea { min-height: 92px; resize: vertical; }
   background: #eef5ff;
 }
 
+.plan-matrix-wrap {
+  border: 1px solid #c9d8ef;
+  border-radius: 12px;
+  box-shadow: none;
+}
+
+.plan-matrix-table {
+  min-width: 620px;
+  border-collapse: collapse;
+}
+
+.plan-matrix-table th,
+.plan-matrix-table td {
+  border: 1px solid #d7e3f5;
+  border-bottom: 1px solid #d7e3f5;
+  padding: 0.5rem 0.6rem;
+  font-size: 0.93rem;
+  vertical-align: middle;
+}
+
+.plan-matrix-table thead th {
+  text-align: center;
+  background: #eaf1fd;
+  position: static;
+}
+
+.plan-matrix-table tbody th {
+  background: #f4f8ff;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.plan-matrix-table tbody td {
+  text-align: center;
+  font-weight: 600;
+}
+
+.plan-matrix-table tbody tr:nth-child(even),
+.plan-matrix-table tbody tr:hover {
+  background: transparent;
+}
+
 .candidate-smart-section {
   border: 1px solid #d7e4f7;
   background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
