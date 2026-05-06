@@ -4887,7 +4887,7 @@ function PortalApp({ token, onLogout }) {
         items: section.items.filter((item) => {
           const itemTo = String(item?.to || "");
           if ((itemTo === "/plan" || itemTo === "/login-settings" || itemTo === "/intake-settings" || itemTo === "/settings" || itemTo.startsWith("/admin/payroll")) && !isSettingsAdmin) return false;
-          if (!hasSaasUnlimitedAccess && (itemTo === "/client-share" || itemTo === "/intake-settings" || itemTo === "/mail-settings" || itemTo === "/quick-update")) return false;
+          if (!hasSaasUnlimitedAccess && (itemTo === "/client-share" || itemTo === "/intake-settings" || itemTo === "/mail-settings" || itemTo === "/quick-update" || itemTo === "/applicants")) return false;
           return true;
         })
       }))
@@ -4914,7 +4914,7 @@ function PortalApp({ token, onLogout }) {
   ), [billingPlans, currentRank]);
 
   useEffect(() => {
-    const blockedPaths = new Set(["/client-share", "/intake-settings", "/candidates", "/mail-settings", "/quick-update", "/reports"]);
+    const blockedPaths = new Set(["/client-share", "/intake-settings", "/candidates", "/mail-settings", "/quick-update", "/reports", "/applicants"]);
     if (!hasSaasUnlimitedAccess && blockedPaths.has(String(location?.pathname || ""))) {
       navigate("/plan", { replace: true });
       setStatus("loginSettings", "This feature is available on SaaS Unlimited (Rs 4999).", "error");
@@ -12325,7 +12325,7 @@ function PortalApp({ token, onLogout }) {
                   <label><span>Client</span><input value={jobDraft.clientName} onChange={(e) => setJobDraft((c) => ({ ...c, clientName: e.target.value }))} /></label>
                   <label><span>Location</span><input value={jobDraft.location} onChange={(e) => setJobDraft((c) => ({ ...c, location: e.target.value }))} placeholder="Mumbai / Bengaluru / Remote" /></label>
                   <label><span>Work mode</span><select value={jobDraft.workMode} onChange={(e) => setJobDraft((c) => ({ ...c, workMode: e.target.value }))}><option value="">Not specified</option><option value="Remote">Remote</option><option value="Hybrid">Hybrid</option><option value="Work from office">Work from office</option></select></label>
-                  {isSettingsAdmin ? (
+                  {isSettingsAdmin && hasSaasUnlimitedAccess ? (
                     <>
                       <label>
                         <span>Primary recruiter</span>
@@ -12391,23 +12391,27 @@ function PortalApp({ token, onLogout }) {
                       <input value={jobDraft.ownerRecruiterName || state.user?.name || ""} readOnly />
                     </label>
                   )}
-                  <label className="full"><span>About company</span><textarea value={jobDraft.aboutCompany} onChange={(e) => setJobDraft((c) => ({ ...c, aboutCompany: e.target.value }))} placeholder="Short company context shown on hosted apply link." /></label>
-                  <label className="full">
-                    <span>Public company line (anonymous apply link)</span>
-                    <textarea
-                      value={jobDraft.publicCompanyLine || ""}
-                      onChange={(e) => setJobDraft((c) => ({ ...c, publicCompanyLine: e.target.value }))}
-                      placeholder="Shown on /apply-public. Example: Leading company with all-in-one CRM stack for connected customer experience."
-                    />
-                  </label>
-                  <label className="full">
-                    <span>Public posting title (optional)</span>
-                    <input
-                      value={jobDraft.publicTitle || ""}
-                      onChange={(e) => setJobDraft((c) => ({ ...c, publicTitle: e.target.value }))}
-                      placeholder="If blank, public link will use JD title with client name redacted."
-                    />
-                  </label>
+                  {hasSaasUnlimitedAccess ? (
+                    <>
+                      <label className="full"><span>About company</span><textarea value={jobDraft.aboutCompany} onChange={(e) => setJobDraft((c) => ({ ...c, aboutCompany: e.target.value }))} placeholder="Short company context shown on hosted apply link." /></label>
+                      <label className="full">
+                        <span>Public company line (anonymous apply link)</span>
+                        <textarea
+                          value={jobDraft.publicCompanyLine || ""}
+                          onChange={(e) => setJobDraft((c) => ({ ...c, publicCompanyLine: e.target.value }))}
+                          placeholder="Shown on /apply-public. Example: Leading company with all-in-one CRM stack for connected customer experience."
+                        />
+                      </label>
+                      <label className="full">
+                        <span>Public posting title (optional)</span>
+                        <input
+                          value={jobDraft.publicTitle || ""}
+                          onChange={(e) => setJobDraft((c) => ({ ...c, publicTitle: e.target.value }))}
+                          placeholder="If blank, public link will use JD title with client name redacted."
+                        />
+                      </label>
+                    </>
+                  ) : null}
                   <label className="full"><span>Job description</span><textarea className="jd-editor" value={jobDraft.jobDescription} onChange={(e) => setJobDraft((c) => ({ ...c, jobDescription: e.target.value }))} placeholder="Paste the full JD here. Hosted apply link will show this as one clean block." /></label>
                   <label className="full"><span>Must-have skills</span><textarea value={jobDraft.mustHaveSkills} onChange={(e) => setJobDraft((c) => ({ ...c, mustHaveSkills: e.target.value }))} placeholder="Shown on hosted apply link only when filled." /></label>
                   <label className="full"><span>Red flags</span><textarea value={jobDraft.redFlags} onChange={(e) => setJobDraft((c) => ({ ...c, redFlags: e.target.value }))} /></label>
