@@ -12729,68 +12729,6 @@ function PortalApp({ token, onLogout }) {
                   <p className="muted">Track current plan, trial balance, and upgrade only to higher plans.</p>
                   {statuses.loginSettings ? <div className={`status ${statuses.loginSettingsKind || ""}`}>{statuses.loginSettings}</div> : null}
                 </Section>
-                <Section kicker="Pricing Matrix" title="Seat-wise Plan Grid">
-                  <div className="table-wrap plan-matrix-wrap">
-                    <table className="dashboard-table plan-matrix-table">
-                      <thead>
-                        <tr>
-                          <th>Seats</th>
-                          <th>Basic</th>
-                          <th>Full Recruiter</th>
-                          <th>Full + Modules</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {[
-                          { seat: "1 seat", basic: "s1_basic_499", full: "s1_full_999", suite: "s1_suite_1499" },
-                          { seat: "3 seats", basic: "s3_basic_999", full: "s3_full_1999", suite: "s3_suite_2999" },
-                          { seat: "7 seats", basic: "s7_basic_1999", full: "s7_full_3999", suite: "s7_suite_5999" },
-                          { seat: "7-15 seats", basic: "s15_basic_2999", full: "s15_full_4999", suite: "s15_suite_6999" }
-                        ].map((row) => {
-                          const renderPlanCell = (planCode) => {
-                            const plan = (billingPlans || []).find((item) => String(item?.code || "").trim().toLowerCase() === planCode) || null;
-                            if (!plan) return <td>-</td>;
-                            const code = String(plan.code || "").trim().toLowerCase();
-                            const rank = Number(planRank[code] ?? 0);
-                            const isCurrent = code === currentPlanCode;
-                            const canUpgrade = rank > currentRank;
-                            return (
-                              <td key={planCode}>
-                                <div className="plan-matrix-price">{`Rs ${Number(plan.amountInr || 0)}`}</div>
-                                {isCurrent ? (
-                                  <span className="plan-matrix-badge">Current</span>
-                                ) : canUpgrade ? (
-                                  <button
-                                    className="plan-matrix-upgrade-btn"
-                                    onClick={() => void openPlanUpgrade(plan.code)}
-                                    disabled={planUpgradeBusyCode === plan.code}
-                                  >
-                                    {planUpgradeBusyCode === plan.code ? "Opening..." : "Upgrade"}
-                                  </button>
-                                ) : (
-                                  <span className="plan-matrix-muted">Not available</span>
-                                )}
-                              </td>
-                            );
-                          };
-                          return (
-                            <tr key={row.seat}>
-                              <th>{row.seat}</th>
-                              {renderPlanCell(row.basic)}
-                              {renderPlanCell(row.full)}
-                              {renderPlanCell(row.suite)}
-                            </tr>
-                          );
-                        })}
-                        <tr>
-                          <th>15+ seats</th>
-                          <td colSpan="3">Contact Sales (Custom Enterprise)</td>
-                        </tr>
-                      </tbody>
-                    </table>
-                  </div>
-                  <p className="muted">Plan 3 unlocks Client, Employee, and Payroll modules.</p>
-                </Section>
                 {!isSettingsAdmin ? (
                   <Section kicker="Access" title="Restricted">
                     <p className="muted">Billing details are visible to admin users only.</p>
@@ -12882,6 +12820,68 @@ function PortalApp({ token, onLogout }) {
                           </tbody>
                         </table>
                       </div>
+                    </Section>
+                    <Section kicker="Pricing Matrix" title="Seat-wise Plan Grid">
+                      <div className="table-wrap plan-matrix-wrap">
+                        <table className="dashboard-table plan-matrix-table">
+                          <thead>
+                            <tr>
+                              <th>Seats</th>
+                              <th>Basic</th>
+                              <th>Full Recruiter</th>
+                              <th>Full + Modules</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {[
+                              { seat: "1 seat", basic: "s1_basic_499", full: "s1_full_999", suite: "s1_suite_1499" },
+                              { seat: "3 seats", basic: "s3_basic_999", full: "s3_full_1999", suite: "s3_suite_2999" },
+                              { seat: "7 seats", basic: "s7_basic_1999", full: "s7_full_3999", suite: "s7_suite_5999" },
+                              { seat: "7-15 seats", basic: "s15_basic_2999", full: "s15_full_4999", suite: "s15_suite_6999" }
+                            ].map((row) => {
+                              const renderPlanCell = (planCode) => {
+                                const plan = (billingPlans || []).find((item) => String(item?.code || "").trim().toLowerCase() === planCode) || null;
+                                if (!plan) return <td>-</td>;
+                                const code = String(plan.code || "").trim().toLowerCase();
+                                const rank = Number(planRank[code] ?? 0);
+                                const isCurrent = code === currentPlanCode;
+                                const canUpgrade = rank > currentRank;
+                                return (
+                                  <td key={planCode}>
+                                    <div className="plan-matrix-price">{`Rs ${Number(plan.amountInr || 0)}`}</div>
+                                    {isCurrent ? (
+                                      <span className="plan-matrix-badge">Current</span>
+                                    ) : canUpgrade ? (
+                                      <button
+                                        className="plan-matrix-upgrade-btn"
+                                        onClick={() => void openPlanUpgrade(plan.code)}
+                                        disabled={planUpgradeBusyCode === plan.code}
+                                      >
+                                        {planUpgradeBusyCode === plan.code ? "Opening..." : "Upgrade"}
+                                      </button>
+                                    ) : (
+                                      <span className="plan-matrix-muted">Not available</span>
+                                    )}
+                                  </td>
+                                );
+                              };
+                              return (
+                                <tr key={row.seat}>
+                                  <th>{row.seat}</th>
+                                  {renderPlanCell(row.basic)}
+                                  {renderPlanCell(row.full)}
+                                  {renderPlanCell(row.suite)}
+                                </tr>
+                              );
+                            })}
+                            <tr>
+                              <th>15+ seats</th>
+                              <td colSpan="3">Contact Sales (Custom Enterprise)</td>
+                            </tr>
+                          </tbody>
+                        </table>
+                      </div>
+                      <p className="muted">Plan 3 unlocks Client, Employee, and Payroll modules.</p>
                     </Section>
                     {!upgradePlans.length ? <div className="empty-state compact-empty">No higher plan available. You are already on highest access.</div> : null}
                   </>
