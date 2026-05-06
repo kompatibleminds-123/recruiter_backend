@@ -4937,7 +4937,14 @@ function PortalApp({ token, onLogout }) {
   const isKompatibleCompany = currentCompanyId === KOMPATIBLE_MINDS_COMPANY_ID;
   const defaultJdEmailCc = isKompatibleCompany ? DEFAULT_JD_EMAIL_CC : "";
   const currentPlanCode = String(effectiveLicense?.plan || "trial").trim().toLowerCase();
-  const hasSaasUnlimitedAccess = Boolean(billingOverview?.fullAccessBypass) || currentPlanCode === "saas_4999_unlimited" || currentPlanCode === "legacy";
+  const currentPlanTier = String(billingOverview?.currentPlan?.tier || "").trim().toLowerCase();
+  const hasSaasUnlimitedAccess = Boolean(billingOverview?.fullAccessBypass) || Boolean(billingOverview?.currentPlan?.fullRecruiter) || currentPlanTier === "full_recruiter_mode" || currentPlanTier === "full_recruiter_plus_modules";
+  const hasSuiteModulesAccess = Boolean(billingOverview?.fullAccessBypass) || Boolean(billingOverview?.currentPlan?.suiteModules) || currentPlanTier === "full_recruiter_plus_modules";
+  const isKompatibleAdminContext =
+    String(state.user?.companyId || "").trim() === KOMPATIBLE_MINDS_COMPANY_ID &&
+    String(state.user?.role || "").trim().toLowerCase() === "admin";
+  const isAnkitAdmin = String(state.user?.email || "").trim().toLowerCase() === "ankit.garg@kompatibleminds.com";
+  const canAddCompany = isSettingsAdmin && (isAnkitAdmin || isKompatibleAdminContext);
   const navSections = useMemo(() => (
     BASE_NAV_SECTIONS
       .map((section) => ({
@@ -4965,7 +4972,13 @@ function PortalApp({ token, onLogout }) {
   const trialCapturesLeft = Number.isFinite(Number(effectiveLicense?.capturesRemaining))
     ? Math.max(0, Number(effectiveLicense?.capturesRemaining))
     : null;
-  const planRank = { trial: 0, ext_499_1_user: 1, ext_999_3_users: 2, ext_1999_7_users: 3, saas_4999_unlimited: 4, legacy: 5 };
+  const planRank = {
+    trial: 0,
+    s1_basic_499: 1, s3_basic_999: 2, s7_basic_1999: 3, s15_basic_2999: 4,
+    s1_full_999: 5, s3_full_1999: 6, s7_full_3999: 7, s15_full_4999: 8,
+    s1_suite_1499: 9, s3_suite_2999: 10, s7_suite_5999: 11, s15_suite_6999: 12,
+    legacy: 13
+  };
   const currentRank = Number(planRank[currentPlanCode] ?? 0);
   const upgradePlans = useMemo(() => (
     (billingPlans || []).filter((plan) => Number(planRank[String(plan.code || "").toLowerCase()] ?? 0) > currentRank)
@@ -12778,7 +12791,7 @@ function PortalApp({ token, onLogout }) {
                         <div className="stack-list compact">
                           {upgradePlans.map((plan) => {
                             const code = String(plan.code || "").trim().toLowerCase();
-                            const isSaas = code === "saas_4999_unlimited";
+                            const isSaas = String(plan.tier || "").trim().toLowerCase() === "full_recruiter_plus_modules";
                             return (
                               <article className="item-card compact-card" key={plan.code}>
                                 <div className="item-card__top">
@@ -12826,7 +12839,7 @@ function PortalApp({ token, onLogout }) {
                   {statuses.loginSettings ? <div className={`status ${statuses.loginSettingsKind || ""}`}>{statuses.loginSettings}</div> : null}
                 </Section>
 
-                {hasSaasUnlimitedAccess ? (
+                {hasSaasUnlimitedAccess && canAddCompany ? (
                 <details className="panel login-settings-collapse">
                   <summary className="dashboard-group__summary">
                     <div>
@@ -12886,7 +12899,7 @@ function PortalApp({ token, onLogout }) {
                   </div>
                 </details>
 
-                {hasSaasUnlimitedAccess ? (
+                {hasSuiteModulesAccess ? (
                 <details className="panel login-settings-collapse" open>
                   <summary className="dashboard-group__summary">
                     <div>
@@ -12924,7 +12937,7 @@ function PortalApp({ token, onLogout }) {
                 </details>
                 ) : null}
 
-                {hasSaasUnlimitedAccess && isLicenseOwnerAdmin ? (
+                {hasSuiteModulesAccess && isLicenseOwnerAdmin ? (
                 <details className="panel login-settings-collapse" open>
                   <summary className="dashboard-group__summary">
                     <div>

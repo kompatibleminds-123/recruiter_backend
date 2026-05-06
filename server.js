@@ -317,28 +317,83 @@ function buildSignupMail({ companyName = "", adminName = "", verifyUrl = "" }) {
 
 function planLabel(planCode = "") {
   const code = String(planCode || "").trim().toLowerCase();
-  if (code === "ext_499_1_user") return "Extension - 1 User (₹499/month)";
-  if (code === "ext_999_3_users") return "Extension - 3 Users (₹999/month)";
-  if (code === "ext_1999_7_users") return "Extension - 7 Users (₹1999/month)";
-  if (code === "saas_4999_unlimited") return "SaaS - Unlimited (₹4999/month)";
+  if (code === "s1_basic_499") return "1 User - Basic Layout (Rs 499/month)";
+  if (code === "s1_full_999") return "1 User - Full Recruiter Mode (Rs 999/month)";
+  if (code === "s1_suite_1499") return "1 User - Full Recruiter + Other Modules (Rs 1499/month)";
+  if (code === "s3_basic_999") return "3 Users - Basic Layout (Rs 999/month)";
+  if (code === "s3_full_1999") return "3 Users - Full Recruiter Mode (Rs 1999/month)";
+  if (code === "s3_suite_2999") return "3 Users - Full Recruiter + Other Modules (Rs 2999/month)";
+  if (code === "s7_basic_1999") return "7 Users - Basic Layout (Rs 1999/month)";
+  if (code === "s7_full_3999") return "7 Users - Full Recruiter Mode (Rs 3999/month)";
+  if (code === "s7_suite_5999") return "7 Users - Full Recruiter + Other Modules (Rs 5999/month)";
+  if (code === "s15_basic_2999") return "7-15 Users - Basic Layout (Rs 2999/month)";
+  if (code === "s15_full_4999") return "7-15 Users - Full Recruiter Mode (Rs 4999/month)";
+  if (code === "s15_suite_6999") return "7-15 Users - Full Recruiter + Other Modules (Rs 6999/month)";
+  if (code === "enterprise_contact") return "Enterprise (15+ Users) - Contact Sales";
+  // Backward compatibility
+  if (code === "ext_499_1_user") return "Extension Lite - Rs 499";
+  if (code === "ext_999_3_users") return "Extension Team - Rs 999";
+  if (code === "ext_1999_7_users") return "Extension Pro - Rs 1999";
+  if (code === "saas_4999_unlimited") return "SaaS Unlimited - Rs 4999";
   return String(planCode || "Plan").trim();
+}
+
+const PLAN_DEFINITIONS = {
+  trial: { code: "trial", label: "14-day Trial", amountInr: 0, interval: "one_time_trial", seats: 1, tier: "basic_layout", fullRecruiter: false, suiteModules: false },
+  s1_basic_499: { code: "s1_basic_499", label: "1 User - Basic Layout (Rs 499)", amountInr: 499, interval: "monthly", seats: 1, tier: "basic_layout", fullRecruiter: false, suiteModules: false },
+  s1_full_999: { code: "s1_full_999", label: "1 User - Full Recruiter Mode (Rs 999)", amountInr: 999, interval: "monthly", seats: 1, tier: "full_recruiter_mode", fullRecruiter: true, suiteModules: false },
+  s1_suite_1499: { code: "s1_suite_1499", label: "1 User - Full Recruiter + Other Modules (Rs 1499)", amountInr: 1499, interval: "monthly", seats: 1, tier: "full_recruiter_plus_modules", fullRecruiter: true, suiteModules: true },
+  s3_basic_999: { code: "s3_basic_999", label: "3 Users - Basic Layout (Rs 999)", amountInr: 999, interval: "monthly", seats: 3, tier: "basic_layout", fullRecruiter: false, suiteModules: false },
+  s3_full_1999: { code: "s3_full_1999", label: "3 Users - Full Recruiter Mode (Rs 1999)", amountInr: 1999, interval: "monthly", seats: 3, tier: "full_recruiter_mode", fullRecruiter: true, suiteModules: false },
+  s3_suite_2999: { code: "s3_suite_2999", label: "3 Users - Full Recruiter + Other Modules (Rs 2999)", amountInr: 2999, interval: "monthly", seats: 3, tier: "full_recruiter_plus_modules", fullRecruiter: true, suiteModules: true },
+  s7_basic_1999: { code: "s7_basic_1999", label: "7 Users - Basic Layout (Rs 1999)", amountInr: 1999, interval: "monthly", seats: 7, tier: "basic_layout", fullRecruiter: false, suiteModules: false },
+  s7_full_3999: { code: "s7_full_3999", label: "7 Users - Full Recruiter Mode (Rs 3999)", amountInr: 3999, interval: "monthly", seats: 7, tier: "full_recruiter_mode", fullRecruiter: true, suiteModules: false },
+  s7_suite_5999: { code: "s7_suite_5999", label: "7 Users - Full Recruiter + Other Modules (Rs 5999)", amountInr: 5999, interval: "monthly", seats: 7, tier: "full_recruiter_plus_modules", fullRecruiter: true, suiteModules: true },
+  s15_basic_2999: { code: "s15_basic_2999", label: "7-15 Users - Basic Layout (Rs 2999)", amountInr: 2999, interval: "monthly", seats: 15, tier: "basic_layout", fullRecruiter: false, suiteModules: false },
+  s15_full_4999: { code: "s15_full_4999", label: "7-15 Users - Full Recruiter Mode (Rs 4999)", amountInr: 4999, interval: "monthly", seats: 15, tier: "full_recruiter_mode", fullRecruiter: true, suiteModules: false },
+  s15_suite_6999: { code: "s15_suite_6999", label: "7-15 Users - Full Recruiter + Other Modules (Rs 6999)", amountInr: 6999, interval: "monthly", seats: 15, tier: "full_recruiter_plus_modules", fullRecruiter: true, suiteModules: true },
+  enterprise_contact: { code: "enterprise_contact", label: "Enterprise (15+ Users) - Contact Sales", amountInr: 0, interval: "custom", seats: null, tier: "full_recruiter_plus_modules", fullRecruiter: true, suiteModules: true },
+  // Legacy compatibility
+  ext_499_1_user: { code: "ext_499_1_user", label: "Extension Lite - Rs 499", amountInr: 499, interval: "monthly", seats: 1, tier: "basic_layout", fullRecruiter: false, suiteModules: false },
+  ext_999_3_users: { code: "ext_999_3_users", label: "Extension Team - Rs 999", amountInr: 999, interval: "monthly", seats: 3, tier: "full_recruiter_mode", fullRecruiter: true, suiteModules: false },
+  ext_1999_7_users: { code: "ext_1999_7_users", label: "Extension Pro - Rs 1999", amountInr: 1999, interval: "monthly", seats: 7, tier: "full_recruiter_mode", fullRecruiter: true, suiteModules: false },
+  saas_4999_unlimited: { code: "saas_4999_unlimited", label: "SaaS Unlimited - Rs 4999", amountInr: 4999, interval: "monthly", seats: null, tier: "full_recruiter_plus_modules", fullRecruiter: true, suiteModules: true },
+  legacy: { code: "legacy", label: "Legacy", amountInr: 0, interval: "legacy", seats: null, tier: "full_recruiter_plus_modules", fullRecruiter: true, suiteModules: true }
+};
+
+function getPlanDefinition(planCode = "") {
+  const code = String(planCode || "").trim().toLowerCase();
+  return PLAN_DEFINITIONS[code] || PLAN_DEFINITIONS.trial;
 }
 
 function getPlanCatalog() {
   return [
-    { code: "trial", label: "14-day Trial", amountInr: 0, interval: "one_time_trial", seats: 1 },
-    { code: "ext_499_1_user", label: "Extension Lite - Rs 499", amountInr: 499, interval: "monthly", seats: 1 },
-    { code: "ext_999_3_users", label: "Extension Team - Rs 999", amountInr: 999, interval: "monthly", seats: 3 },
-    { code: "ext_1999_7_users", label: "Extension Pro - Rs 1999", amountInr: 1999, interval: "monthly", seats: 7 },
-    { code: "saas_4999_unlimited", label: "SaaS Unlimited - Rs 4999", amountInr: 4999, interval: "monthly", seats: null }
-  ];
+    "trial",
+    "s1_basic_499", "s1_full_999", "s1_suite_1499",
+    "s3_basic_999", "s3_full_1999", "s3_suite_2999",
+    "s7_basic_1999", "s7_full_3999", "s7_suite_5999",
+    "s15_basic_2999", "s15_full_4999", "s15_suite_6999",
+    "enterprise_contact"
+  ].map((code) => {
+    const def = getPlanDefinition(code);
+    return {
+      code: def.code,
+      label: def.label,
+      amountInr: def.amountInr,
+      interval: def.interval,
+      seats: def.seats,
+      tier: def.tier,
+      fullRecruiter: Boolean(def.fullRecruiter),
+      suiteModules: Boolean(def.suiteModules)
+    };
+  });
 }
 
 function buildBillingOverview({ license = null, companyId = "", isFullAccess = false } = {}) {
   const safeLicense = license && typeof license === "object" ? license : {};
   const planCode = String(safeLicense.plan || "trial").trim().toLowerCase();
   const catalog = getPlanCatalog();
-  const currentPlan = catalog.find((item) => String(item.code).toLowerCase() === planCode) || null;
+  const currentPlan = getPlanDefinition(planCode);
   const amountInr = Number(currentPlan?.amountInr || 0);
   return {
     companyId: String(companyId || "").trim(),
@@ -347,7 +402,11 @@ function buildBillingOverview({ license = null, companyId = "", isFullAccess = f
       code: planCode,
       label: currentPlan?.label || planLabel(planCode),
       amountInr,
-      interval: currentPlan?.interval || "monthly"
+      interval: currentPlan?.interval || "monthly",
+      tier: currentPlan?.tier || "basic_layout",
+      fullRecruiter: Boolean(currentPlan?.fullRecruiter) || Boolean(isFullAccess),
+      suiteModules: Boolean(currentPlan?.suiteModules) || Boolean(isFullAccess),
+      seats: currentPlan?.seats ?? null
     },
     license: safeLicense,
     billing: {
@@ -1457,9 +1516,9 @@ async function isPortalCompanyApproved(companyId = "") {
   const approved = getPortalApprovedCompanyIds();
   if (approved.has(id)) return true;
   const license = await getCompanyLicense(id).catch(() => null);
-  const plan = String(license?.plan || "").trim().toLowerCase();
   const status = String(license?.status || "").trim().toLowerCase();
-  return plan === "saas_4999_unlimited" && (status === "active" || status === "legacy");
+  const planDef = getPlanDefinition(String(license?.plan || "").trim().toLowerCase());
+  return (status === "active" || status === "legacy" || status === "trial") && Boolean(planDef?.code);
 }
 
 async function ensurePortalCompanyApproved(companyId = "") {
@@ -1471,10 +1530,13 @@ async function ensurePortalCompanyApproved(companyId = "") {
 async function requireSaasAccess(actor, featureLabel = "this feature") {
   const companyId = String(actor?.companyId || "").trim();
   if (!companyId) throw new Error("Invalid company context.");
-  // Portal login is already gated at auth time (approved company or active SaaS),
-  // so in-portal features should not re-block with a separate 4999 check.
-  if (await isPortalCompanyApproved(companyId)) return true;
-  throw new Error(`Portal access not enabled for ${featureLabel}.`);
+  const approved = getPortalApprovedCompanyIds();
+  if (approved.has(companyId)) return true;
+  const license = await getCompanyLicense(companyId).catch(() => null);
+  const status = String(license?.status || "").trim().toLowerCase();
+  const planDef = getPlanDefinition(String(license?.plan || "").trim().toLowerCase());
+  if ((status === "active" || status === "legacy" || status === "trial") && Boolean(planDef?.fullRecruiter)) return true;
+  throw new Error(`${featureLabel} is available on Full Recruiter plans.`);
 }
 
 async function requireCompanySessionOrPayrollSession(token) {
@@ -1488,17 +1550,33 @@ async function requireCompanySessionOrPayrollSession(token) {
 }
 
 const UPGRADE_ALLOWED_PLANS = new Set([
-  "ext_499_1_user",
-  "ext_999_3_users",
-  "ext_1999_7_users",
-  "saas_4999_unlimited"
+  "s1_basic_499",
+  "s1_full_999",
+  "s1_suite_1499",
+  "s3_basic_999",
+  "s3_full_1999",
+  "s3_suite_2999",
+  "s7_basic_1999",
+  "s7_full_3999",
+  "s7_suite_5999",
+  "s15_basic_2999",
+  "s15_full_4999",
+  "s15_suite_6999"
 ]);
 
 const UPGRADE_PLAN_AMOUNT_INR = {
-  ext_499_1_user: 499,
-  ext_999_3_users: 999,
-  ext_1999_7_users: 1999,
-  saas_4999_unlimited: 4999
+  s1_basic_499: 499,
+  s1_full_999: 999,
+  s1_suite_1499: 1499,
+  s3_basic_999: 999,
+  s3_full_1999: 1999,
+  s3_suite_2999: 2999,
+  s7_basic_1999: 1999,
+  s7_full_3999: 3999,
+  s7_suite_5999: 5999,
+  s15_basic_2999: 2999,
+  s15_full_4999: 4999,
+  s15_suite_6999: 6999
 };
 
 function getUpgradeTokenSecret() {
