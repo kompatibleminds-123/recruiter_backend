@@ -12457,9 +12457,10 @@ function PortalApp({ token, onLogout }) {
               <div className="page-grid">
                 <Section kicker="Copy Presets" title="Preset Settings">
                   <p className="muted">Set shared candidate tracker presets and direct-share email defaults. Admin saves them once; recruiters can choose the preset while copying or sharing.</p>
+                  {!hasSaasUnlimitedAccess ? <p className="muted">Current plan mode: preset edit only. New preset creation and advanced preset controls unlock on SaaS Unlimited (Rs 4999).</p> : null}
                   {!isSettingsAdmin ? <p className="muted">You can use shared presets here. Only admin can create, edit, or save shared preset settings.</p> : null}
                   {statuses.settings ? <div className={`status ${statuses.settingsKind || ""}`}>{statuses.settings}</div> : null}
-                  <div className="settings-subsection">
+                  {hasSaasUnlimitedAccess ? <div className="settings-subsection">
                     <div className="section-kicker">Search Settings</div>
                     <p className="muted">Controls apply to the Database AI Search for the whole workspace.</p>
                     <div className="form-grid">
@@ -12477,7 +12478,7 @@ function PortalApp({ token, onLogout }) {
                     <div className="button-row">
                       {isSettingsAdmin ? <button onClick={() => void saveSharedCopySettings()}>Save search settings</button> : null}
                     </div>
-                  </div>
+                  </div> : null}
 
                   {/* Email Settings moved to Mail Settings tab (visible to all recruiters). */}
                   <div className="settings-subsection">
@@ -12557,7 +12558,7 @@ function PortalApp({ token, onLogout }) {
                       ) : null}
                     </div>
                   </div>
-                  <div className="settings-subsection">
+                  {hasSaasUnlimitedAccess ? <div className="settings-subsection">
                     <div className="section-kicker">Create New Presets</div>
                     <p className="muted">Create a new candidate tracker preset and optionally map it to a client right away.</p>
                     <div className="form-grid">
@@ -12576,8 +12577,8 @@ function PortalApp({ token, onLogout }) {
                       <button onClick={() => void saveSharedCopySettings()}>Save new preset</button>
                     </div> : null}
                     <p className="muted">After creating a preset, select it from the dropdown above to view, edit, or remove it.</p>
-                  </div>
-                  <div className="settings-subsection">
+                  </div> : null}
+                  {hasSaasUnlimitedAccess ? <div className="settings-subsection">
                     <div className="section-kicker">Direct Share Email Preset</div>
                     <p className="muted">Default intro and signature used in Direct Share. Recruiters can still override them for one email draft.</p>
                     <div className="form-grid">
@@ -12599,7 +12600,7 @@ function PortalApp({ token, onLogout }) {
                       <button onClick={() => setCopySettings(DEFAULT_COPY_SETTINGS)}>Reset defaults</button>
                       {isSettingsAdmin ? <button onClick={() => void saveSharedCopySettings()}>Save direct share preset</button> : null}
                     </div>
-                  </div>
+                  </div> : null}
                 </Section>
               </div>
             } />
@@ -12740,9 +12741,11 @@ function PortalApp({ token, onLogout }) {
               <div className="page-grid">
                 <Section kicker="Admin Access" title="Login Settings">
                   <p className="muted">Manage company workspace users and client portal access from one place. Client portal URL: https://recruiter-backend-yvex.onrender.com/client-portal</p>
+                  {!hasSaasUnlimitedAccess ? <p className="muted">Current plan mode: team member management only. Company/client/payroll access controls unlock on SaaS Unlimited (Rs 4999).</p> : null}
                   {statuses.loginSettings ? <div className={`status ${statuses.loginSettingsKind || ""}`}>{statuses.loginSettings}</div> : null}
                 </Section>
 
+                {hasSaasUnlimitedAccess ? (
                 <details className="panel login-settings-collapse">
                   <summary className="dashboard-group__summary">
                     <div>
@@ -12761,6 +12764,7 @@ function PortalApp({ token, onLogout }) {
                   {isSettingsAdmin ? <div className="button-row"><button onClick={() => void createCompanyFromLoginSettings()}>Create company</button></div> : null}
                   {statuses.loginCompany ? <div className={`status ${statuses.loginCompanyKind || ""}`}>{statuses.loginCompany}</div> : null}
                 </details>
+                ) : null}
 
                 <details className="panel login-settings-collapse" open>
                   <summary className="dashboard-group__summary">
@@ -12801,6 +12805,7 @@ function PortalApp({ token, onLogout }) {
                   </div>
                 </details>
 
+                {hasSaasUnlimitedAccess ? (
                 <details className="panel login-settings-collapse" open>
                   <summary className="dashboard-group__summary">
                     <div>
@@ -12836,8 +12841,9 @@ function PortalApp({ token, onLogout }) {
                     ))}
                   </div>
                 </details>
+                ) : null}
 
-                {isLicenseOwnerAdmin ? (
+                {hasSaasUnlimitedAccess && isLicenseOwnerAdmin ? (
                 <details className="panel login-settings-collapse" open>
                   <summary className="dashboard-group__summary">
                     <div>
