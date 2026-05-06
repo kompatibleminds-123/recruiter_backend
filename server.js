@@ -7044,17 +7044,34 @@ function buildCandidateParseResponse(baseResult, normalizedResult, parseMeta = {
     phoneNumber,
     parseDebug
   });
-  const finalTotalExperience = validation.reasons.some((item) => item.field === "metrics")
+  const hasTimelineRisk = validation.reasons.some((item) => item.field === "timeline");
+  const hasMetricsRisk = validation.reasons.some((item) => item.field === "metrics");
+  const hasCurrentOrgRisk = validation.reasons.some((item) => item.field === "currentOrgTenure");
+  const hasAvgTenureRisk = validation.reasons.some((item) => item.field === "averageTenurePerCompany");
+  const timelineConfidenceLevel =
+    sourceType !== "cv"
+      ? "high"
+      : !finalTimeline.length || hasTimelineRisk
+        ? "low"
+        : finalTimeline.length >= 2
+          ? "high"
+          : "medium";
+  const timelineConfidenceLabel =
+    timelineConfidenceLevel === "high"
+      ? "Timeline confidence high"
+      : timelineConfidenceLevel === "medium"
+        ? "Timeline confidence medium"
+        : "Timeline confidence low";
+  parseDebug.timelineConfidence = timelineConfidenceLevel;
+  parseDebug.timelineConfidenceLabel = timelineConfidenceLabel;
+
+  const finalTotalExperience = hasMetricsRisk || hasTimelineRisk
     ? ""
     : candidateTotalExperience;
-  const finalAverageTenure = validation.reasons.some(
-    (item) => item.field === "averageTenurePerCompany" || item.field === "metrics" || item.field === "timeline"
-  )
+  const finalAverageTenure = hasAvgTenureRisk || hasMetricsRisk || hasTimelineRisk
     ? ""
     : averageTenurePerCompany;
-  const finalCurrentOrgTenure = validation.reasons.some(
-    (item) => item.field === "currentOrgTenure" || item.field === "metrics"
-  )
+  const finalCurrentOrgTenure = hasCurrentOrgRisk || hasMetricsRisk || hasTimelineRisk
     ? ""
     : candidateCurrentOrgTenure;
 
@@ -7107,6 +7124,10 @@ function buildCandidateParseResponse(baseResult, normalizedResult, parseMeta = {
     rawTextPreview,
     searchKeywords,
     parseDebug,
+    timelineConfidence: {
+      level: timelineConfidenceLevel,
+      label: timelineConfidenceLabel
+    },
     validation
   };
 }
@@ -7126,6 +7147,9 @@ function buildCvAutofillPatch(candidateRow, cvResult) {
   const nextEdu = String(result.highestEducation || "").trim();
   const nextLinkedIn = String(result.linkedinUrl || "").trim();
   const nextOrgTenure = String(result.currentOrgTenure || "").trim();
+  const timelineConfidence = String(
+    result?.timelineConfidence?.level || result?.parseDebug?.timelineConfidence || ""
+  ).trim().toLowerCase();
 
   if (isBlank(candidate.name) && nextName) patch.name = nextName;
   if (isBlank(candidate.email) && nextEmail) patch.email = nextEmail;
@@ -7148,10 +7172,16 @@ function buildCvAutofillPatch(candidateRow, cvResult) {
   setBlank("phoneNumber", nextPhone);
   setBlank("currentCompany", nextCompany);
   setBlank("currentDesignation", nextRole);
-  setBlank("totalExperience", nextExp);
+  if (timelineConfidence === "high") {
+    setBlank("totalExperience", nextExp);
+  }
   setBlank("highestEducation", nextEdu);
   setBlank("linkedin", nextLinkedIn);
-  setBlank("currentOrgTenure", nextOrgTenure);
+  // Guardrail: current org tenure is timeline-derived and error-prone on weak CV parses.
+  // Auto-fill it only when parser marks timeline confidence as high.
+  if (timelineConfidence === "high") {
+    setBlank("currentOrgTenure", nextOrgTenure);
+  }
 
   // Only write draft_payload when we actually changed something to avoid noisy updates.
   const draftChanged = JSON.stringify(existingDraft) !== JSON.stringify(nextDraft);
