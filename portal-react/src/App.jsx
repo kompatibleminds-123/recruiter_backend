@@ -23,6 +23,8 @@ const PAYROLL_TOKEN_KEY = "recruitdesk_payroll_portal_token";
 const AUTH_MODE_KEY = "recruitdesk_auth_mode";
 const COPY_SETTINGS_STORAGE_KEY = "recruitdesk_portal_copy_settings_v1";
 const DEFAULT_JD_EMAIL_CC = "ankit.garg@kompatibleminds.com";
+const JD_EMAIL_CC_HISTORY_KEY_PREFIX = "recruitdesk_portal_jd_email_cc_history_v1:";
+const KOMPATIBLE_MINDS_COMPANY_ID = "c0a7d2c9-4ddb-4add-9d4a-24cdd1caba7c";
 
 const BASE_NAV_SECTIONS = [
   {
@@ -2120,6 +2122,52 @@ function buildCombinedAssessmentInsightsForExportV2(item = {}) {
   if (qaLines.length) parts.push(qaLines.join("\n"));
   if (otherPointers) parts.push(otherPointers);
   return parts.filter(Boolean).join("\n");
+}
+
+function getJdCcHistoryStorageKey(companyId = "") {
+  return `${JD_EMAIL_CC_HISTORY_KEY_PREFIX}${String(companyId || "").trim()}`;
+}
+
+function readJdCcHistory(companyId = "") {
+  const id = String(companyId || "").trim();
+  if (!id) return [];
+  try {
+    const raw = window.localStorage.getItem(getJdCcHistoryStorageKey(id));
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed)
+      ? parsed.map((item) => String(item || "").trim()).filter(Boolean).slice(0, 20)
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveJdCcHistory(companyId = "", list = []) {
+  const id = String(companyId || "").trim();
+  if (!id) return;
+  const next = Array.isArray(list)
+    ? list.map((item) => String(item || "").trim()).filter(Boolean).slice(0, 20)
+    : [];
+  try {
+    window.localStorage.setItem(getJdCcHistoryStorageKey(id), JSON.stringify(next));
+  } catch {
+    // ignore storage errors
+  }
+}
+
+function normalizeCcTokens(value = "") {
+  return String(value || "")
+    .split(/,|;|\s+/)
+    .map((item) => String(item || "").trim().toLowerCase())
+    .filter(Boolean);
+}
+
+function buildNextCcHistory(companyId = "", value = "", fallback = "") {
+  const existing = readJdCcHistory(companyId);
+  const incoming = [...normalizeCcTokens(value), ...normalizeCcTokens(fallback)];
+  const merged = Array.from(new Set([...incoming, ...existing])).slice(0, 20);
+  saveJdCcHistory(companyId, merged);
+  return merged;
 }
 function buildCombinedAssessmentInsightsForExport(item = {}) {
   const otherStandardQuestions = String(item.other_standard_questions || item.last_contact_notes || "").trim();
@@ -4231,9 +4279,10 @@ function ClientProfileModal({ open, item, onClose, copySettings = DEFAULT_COPY_S
   );
 }
 
-function JdEmailModal({ open, jobs, value, onChange, onClose, onSend, busy = false, status = "", statusKind = "" }) {
+function JdEmailModal({ open, jobs, value, ccSuggestions = [], onChange, onClose, onSend, busy = false, status = "", statusKind = "" }) {
   if (!open) return null;
   const jobOptions = Array.isArray(jobs) ? jobs : [];
+  const suggestionList = Array.isArray(ccSuggestions) ? ccSuggestions : [];
   return (
     <div className="overlay" onClick={() => { if (!busy) onClose(); }}>
       <div className="overlay-card" onClick={(e) => e.stopPropagation()}>
@@ -4247,7 +4296,12 @@ function JdEmailModal({ open, jobs, value, onChange, onClose, onSend, busy = fal
           </label>
           <label className="full">
             <span>CC (optional)</span>
-            <input value={value.cc || ""} onChange={(e) => onChange("cc", e.target.value)} placeholder="manager@company.com, team@company.com" />
+            <input list="jdEmailCcSuggestions" value={value.cc || ""} onChange={(e) => onChange("cc", e.target.value)} placeholder="manager@company.com, team@company.com" />
+            {suggestionList.length ? (
+              <datalist id="jdEmailCcSuggestions">
+                {suggestionList.map((item) => <option key={item} value={item} />)}
+              </datalist>
+            ) : null}
           </label>
           <label className="full">
             <span>JD / role</span>
@@ -4805,7 +4859,7 @@ function PortalApp({ token, onLogout }) {
     open: false,
     candidate: null,
     to: "",
-    cc: DEFAULT_JD_EMAIL_CC,
+    cc: "",
     subject: "",
     introText: "",
     jobId: "",
@@ -4813,6 +4867,7 @@ function PortalApp({ token, onLogout }) {
     signatureText: "",
     signatureLinks: []
   });
+  const [jdEmailCcSuggestions, setJdEmailCcSuggestions] = useState([]);
   const [jdEmailBusy, setJdEmailBusy] = useState(false);
   const [jdEmailModalStatus, setJdEmailModalStatus] = useState({ message: "", kind: "" });
 
@@ -4878,6 +4933,9 @@ function PortalApp({ token, onLogout }) {
     String(state.user?.id || "").trim() &&
     String(state.user?.id || "").trim() === String(companyLicense?.ownerAdminUserId || "").trim();
   const effectiveLicense = billingOverview?.license || companyLicense || null;
+  const currentCompanyId = String(state.user?.companyId || "").trim();
+  const isKompatibleCompany = currentCompanyId === KOMPATIBLE_MINDS_COMPANY_ID;
+  const defaultJdEmailCc = isKompatibleCompany ? DEFAULT_JD_EMAIL_CC : "";
   const currentPlanCode = String(effectiveLicense?.plan || "trial").trim().toLowerCase();
   const hasSaasUnlimitedAccess = Boolean(billingOverview?.fullAccessBypass) || currentPlanCode === "saas_4999_unlimited" || currentPlanCode === "legacy";
   const navSections = useMemo(() => (
@@ -4912,6 +4970,18 @@ function PortalApp({ token, onLogout }) {
   const upgradePlans = useMemo(() => (
     (billingPlans || []).filter((plan) => Number(planRank[String(plan.code || "").toLowerCase()] ?? 0) > currentRank)
   ), [billingPlans, currentRank]);
+
+  useEffect(() => {
+    if (!currentCompanyId) {
+      setJdEmailCcSuggestions([]);
+      return;
+    }
+    const history = readJdCcHistory(currentCompanyId);
+    const merged = defaultJdEmailCc
+      ? Array.from(new Set([defaultJdEmailCc.toLowerCase(), ...history]))
+      : history;
+    setJdEmailCcSuggestions(merged);
+  }, [currentCompanyId, defaultJdEmailCc]);
 
   useEffect(() => {
     const blockedPaths = new Set(["/client-share", "/intake-settings", "/candidates", "/mail-settings", "/quick-update", "/reports", "/applicants"]);
@@ -9243,11 +9313,13 @@ function PortalApp({ token, onLogout }) {
       { label: String(smtpSettings.signatureLinkLabel2 || copySettings.clientShareSignatureLinkLabel2 || "").trim(), url: String(smtpSettings.signatureLinkUrl2 || copySettings.clientShareSignatureLinkUrl2 || "").trim() }
     ].filter((link) => link.url);
     const defaultIntro = baseIntro;
+    const rememberedCc = String((jdEmailCcSuggestions || [])[0] || "").trim();
+    const defaultCc = rememberedCc || defaultJdEmailCc;
     setJdEmailModal({
       open: true,
       candidate,
       to: candidateEmail,
-      cc: DEFAULT_JD_EMAIL_CC,
+      cc: defaultCc,
       subject: defaultSubject,
       introText: defaultIntro,
       jobId: suggestedJobId
@@ -9292,6 +9364,10 @@ function PortalApp({ token, onLogout }) {
         signatureLinks: Array.isArray(jdEmailModal.signatureLinks) ? jdEmailModal.signatureLinks : [],
         attachJdFile
       });
+      if (currentCompanyId) {
+        const nextCcHistory = buildNextCcHistory(currentCompanyId, cc, defaultJdEmailCc);
+        setJdEmailCcSuggestions(nextCcHistory);
+      }
       setStatus("workspace", "JD emailed.", "ok");
       setJdEmailModalStatus({ message: "JD emailed. Check your Zoho Sent folder to confirm.", kind: "ok" });
     } catch (error) {
@@ -12981,8 +13057,9 @@ function PortalApp({ token, onLogout }) {
         open={Boolean(jdEmailModal.open)}
         jobs={state.jobs}
         value={jdEmailModal}
+        ccSuggestions={jdEmailCcSuggestions}
         onChange={(key, val) => setJdEmailModal((current) => ({ ...current, [key]: val }))}
-        onClose={() => { setJdEmailModal({ open: false, candidate: null, to: "", cc: DEFAULT_JD_EMAIL_CC, subject: "", introText: "", jobId: "", attachJdFile: true, signatureText: "", signatureLinks: [] }); setJdEmailModalStatus({ message: "", kind: "" }); }}
+        onClose={() => { setJdEmailModal({ open: false, candidate: null, to: "", cc: String((jdEmailCcSuggestions || [])[0] || defaultJdEmailCc || "").trim(), subject: "", introText: "", jobId: "", attachJdFile: true, signatureText: "", signatureLinks: [] }); setJdEmailModalStatus({ message: "", kind: "" }); }}
         onSend={() => void sendCandidateJdEmail()}
         busy={jdEmailBusy}
         status={jdEmailModalStatus.message}
