@@ -4887,7 +4887,7 @@ function PortalApp({ token, onLogout }) {
         items: section.items.filter((item) => {
           const itemTo = String(item?.to || "");
           if ((itemTo === "/plan" || itemTo === "/login-settings" || itemTo === "/intake-settings" || itemTo === "/settings" || itemTo.startsWith("/admin/payroll")) && !isSettingsAdmin) return false;
-          if (!hasSaasUnlimitedAccess && (itemTo === "/client-share" || itemTo === "/intake-settings")) return false;
+          if (!hasSaasUnlimitedAccess && (itemTo === "/client-share" || itemTo === "/intake-settings" || itemTo === "/mail-settings" || itemTo === "/quick-update")) return false;
           return true;
         })
       }))
@@ -4895,6 +4895,7 @@ function PortalApp({ token, onLogout }) {
   ), [isSettingsAdmin, hasSaasUnlimitedAccess]);
   const standaloneNavItems = useMemo(() => (
     STANDALONE_NAV_ITEMS.filter((item) => {
+      if (!hasSaasUnlimitedAccess && item.to === "/reports") return false;
       if (item.to === "/reports") return isSettingsAdmin;
       if (item.to === "/candidates" && !hasSaasUnlimitedAccess) return false;
       return true;
@@ -4913,10 +4914,10 @@ function PortalApp({ token, onLogout }) {
   ), [billingPlans, currentRank]);
 
   useEffect(() => {
-    const blockedPaths = new Set(["/client-share", "/intake-settings", "/candidates"]);
+    const blockedPaths = new Set(["/client-share", "/intake-settings", "/candidates", "/mail-settings", "/quick-update", "/reports"]);
     if (!hasSaasUnlimitedAccess && blockedPaths.has(String(location?.pathname || ""))) {
       navigate("/plan", { replace: true });
-      setStatus("loginSettings", "Direct Share, Job Apply Link, and Database are available on SaaS Unlimited (Rs 4999).", "error");
+      setStatus("loginSettings", "This feature is available on SaaS Unlimited (Rs 4999).", "error");
     }
   }, [hasSaasUnlimitedAccess, location?.pathname, navigate]);
 
