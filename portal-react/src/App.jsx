@@ -691,6 +691,56 @@ function parseLocationFilterTokens(value) {
     .filter(Boolean);
 }
 
+function normalizeApplicantLocationLabel(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  const compact = raw
+    .replace(/\s+/g, " ")
+    .replace(/\s*,\s*/g, ", ")
+    .trim();
+  if (!compact) return "";
+  const lower = compact.toLowerCase();
+  if (lower.length <= 1) return "";
+  if (["engineer", "developer", "manager", "executive", "consultant", "analyst"].includes(lower)) return "";
+
+  const firstPart = compact.split(",")[0].trim();
+  const cityLike = firstPart
+    .replace(/\./g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+  if (!cityLike || cityLike.length <= 1) return "";
+
+  const cityMap = new Map([
+    ["bangalore", "Bengaluru"],
+    ["bengaluru", "Bengaluru"],
+    ["bengaluru urban", "Bengaluru"],
+    ["gurgaon", "Gurugram"],
+    ["gurugram", "Gurugram"],
+    ["bombay", "Mumbai"],
+    ["mumbai", "Mumbai"],
+    ["new delhi", "New Delhi"],
+    ["delhi", "Delhi"],
+    ["noida", "Noida"],
+    ["pune", "Pune"],
+    ["hyderabad", "Hyderabad"],
+    ["kolkata", "Kolkata"],
+    ["calcutta", "Kolkata"],
+    ["chennai", "Chennai"],
+    ["indore", "Indore"],
+    ["lucknow", "Lucknow"],
+    ["surat", "Surat"],
+    ["thane", "Thane"]
+  ]);
+  if (cityMap.has(cityLike)) return cityMap.get(cityLike) || "";
+
+  return cityLike
+    .split(" ")
+    .filter(Boolean)
+    .map((word) => word[0].toUpperCase() + word.slice(1))
+    .join(" ");
+}
+
 function parseMultiChipTokens(value) {
   return String(value || "")
     .split(",")
@@ -6779,7 +6829,7 @@ function PortalApp({ token, onLogout }) {
       if (isApplicantConvertedToAssessment(item, linkedCandidate, linkedAssessment)) return;
       const clientValue = String(item.clientName || item.client_name || "Unassigned").trim();
       const jdValue = String(item.jdTitle || item.jd_title || "").trim();
-      const locationValue = String(item.location || linkedCandidate?.location || "").trim();
+      const locationValue = normalizeApplicantLocationLabel(item.location || linkedCandidate?.location || "");
       const ownedValue = getApplicantOwnerLabel(item, linkedCandidate);
       const assignedValue = getApplicantManualAssigneeLabel(item, linkedCandidate);
       const outcomeValue = getApplicantWorkflowOutcome(item, linkedCandidate);
@@ -6811,7 +6861,7 @@ function PortalApp({ token, onLogout }) {
       if (isApplicantConvertedToAssessment(item, linkedCandidate, linkedAssessment)) return false;
       const clientValue = String(item.clientName || item.client_name || "Unassigned").trim();
       const jdValue = String(item.jdTitle || item.jd_title || "").trim();
-      const locationValue = String(item.location || linkedCandidate?.location || "").trim();
+      const locationValue = normalizeApplicantLocationLabel(item.location || linkedCandidate?.location || "");
       const ownedValue = getApplicantOwnerLabel(item, linkedCandidate);
       const assignedValue = getApplicantManualAssigneeLabel(item, linkedCandidate);
       const outcomeValue = getApplicantWorkflowOutcome(item, linkedCandidate);
@@ -6861,7 +6911,7 @@ function PortalApp({ token, onLogout }) {
       const linkedAssessment = applicantAssessmentMap.get(String(item.id)) || null;
       const clientValue = String(item.clientName || item.client_name || "Unassigned").trim();
       const jdValue = String(item.jdTitle || item.jd_title || "").trim();
-      const locationValue = String(item.location || linkedCandidate?.location || "").trim();
+      const locationValue = normalizeApplicantLocationLabel(item.location || linkedCandidate?.location || "");
       const ownedValue = getApplicantOwnerLabel(item, linkedCandidate);
       const assignedValue = getApplicantManualAssigneeLabel(item, linkedCandidate);
       const outcomeValue = getApplicantWorkflowOutcome(item, linkedCandidate);
