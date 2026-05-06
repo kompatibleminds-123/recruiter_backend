@@ -7099,7 +7099,7 @@ function buildCandidateParseResponse(baseResult, normalizedResult, parseMeta = {
     timelineConfidenceLevel === "high"
       ? "Timeline confidence high"
       : timelineConfidenceLevel === "medium"
-        ? "Timeline confidence medium"
+        ? "Timeline confidence mid"
         : "Timeline confidence low";
   parseDebug.timelineConfidence = timelineConfidenceLevel;
   parseDebug.timelineConfidenceLabel = timelineConfidenceLabel;
@@ -8178,6 +8178,7 @@ const server = http.createServer(async (req, res) => {
   if (req.method === "POST" && req.url === "/company/jds/send-email") {
     try {
       const actor = await requireSessionUser(getBearerToken(req));
+      await requireSaasAccess(actor, "JD share email");
       const body = await readJsonBody(req);
       const jobId = String(body.jobId || "").trim();
       const toRaw = String(body.to || "").trim();
@@ -8247,6 +8248,7 @@ const server = http.createServer(async (req, res) => {
   if (req.method === "POST" && req.url === "/company/email/send") {
     try {
       const actor = await requireSessionUser(getBearerToken(req));
+      await requireSaasAccess(actor, "Direct Share");
       const body = await readJsonBody(req);
       const toRaw = String(body.to || "").trim();
       const ccRaw = String(body.cc || "").trim();
@@ -9865,6 +9867,7 @@ const server = http.createServer(async (req, res) => {
   if (req.method === "POST" && /^\/company\/candidates\/[^/]+\/share-profile-link$/.test(requestUrl.pathname)) {
     try {
       const actor = await requireSessionUser(getBearerToken(req));
+      await requireSaasAccess(actor, "Direct Share");
       const candidateId = String(requestUrl.pathname.replace(/^\/company\/candidates\//, "").replace(/\/share-profile-link$/, "")).trim();
       const candidate = (await listCandidatesForUser(actor, { id: candidateId, limit: 1 }))[0] || null;
       if (!candidate) throw new Error("Candidate not found or not allowed.");
@@ -10218,6 +10221,11 @@ const server = http.createServer(async (req, res) => {
   if (req.method === "POST" && requestUrl.pathname === "/public/applicants/intake") {
     try {
       const body = await readJsonBody(req);
+      const companyId = String(body?.companyId || body?.company_id || "").trim();
+      if (!companyId) throw new Error("Company context missing.");
+      if (!(await isPortalCompanyApproved(companyId))) {
+        throw new Error("Job apply link is available on SaaS Unlimited (Rs 4999).");
+      }
       const result = await ingestApplicantSubmission(body, req);
       sendJson(res, 200, { ok: true, result });
     } catch (error) {
@@ -10231,6 +10239,9 @@ const server = http.createServer(async (req, res) => {
       const jobId = String(requestUrl.pathname.replace(/^\/public\/jobs\//, "").replace(/\/apply$/, "").replace(/\/+$/, "")).trim();
       if (!jobId) throw new Error("Job not found.");
       const job = await getPublicCompanyJob(jobId);
+      if (!(await isPortalCompanyApproved(job.companyId))) {
+        throw new Error("Job apply link is available on SaaS Unlimited (Rs 4999).");
+      }
       const body = await readJsonBody(req);
       const payload = {
         ...(body || {}),
@@ -11543,6 +11554,7 @@ const server = http.createServer(async (req, res) => {
   if (req.method === "GET" && requestUrl.pathname === "/company/database-candidates") {
     try {
       const sessionUser = await requireSessionUser(getBearerToken(req));
+      await requireSaasAccess(sessionUser, "database save and search");
       const listOptions = {
         limit: Number(requestUrl.searchParams.get("limit") || 100),
         q: String(requestUrl.searchParams.get("q") || "").trim(),

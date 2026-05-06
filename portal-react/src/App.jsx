@@ -75,6 +75,19 @@ const PAYROLL_NAV_ITEMS = [
   { to: "/payroll/statutory-settings", label: "Statutory Settings" }
 ];
 
+function FeatureLockedSection({ title = "Feature locked" }) {
+  return (
+    <div className="page-grid">
+      <Section kicker="Plan Required" title={title}>
+        <div className="empty-state compact-empty">
+          <div className="empty-state__title">Available on SaaS Unlimited (Rs 4999)</div>
+          <div className="muted">Upgrade to unlock this feature for your workspace.</div>
+        </div>
+      </Section>
+    </div>
+  );
+}
+
 	const DEFAULT_COPY_SETTINGS = {
 	  excelPreset: "compact_recruiter",
   // When enabled, /company/candidates/search-natural will use embeddings for semantic reranking.
@@ -4864,6 +4877,9 @@ function PortalApp({ token, onLogout }) {
     isSettingsAdmin &&
     String(state.user?.id || "").trim() &&
     String(state.user?.id || "").trim() === String(companyLicense?.ownerAdminUserId || "").trim();
+  const effectiveLicense = billingOverview?.license || companyLicense || null;
+  const currentPlanCode = String(effectiveLicense?.plan || "trial").trim().toLowerCase();
+  const hasSaasUnlimitedAccess = Boolean(billingOverview?.fullAccessBypass) || currentPlanCode === "saas_4999_unlimited" || currentPlanCode === "legacy";
   const navSections = useMemo(() => (
     BASE_NAV_SECTIONS
       .map((section) => ({
@@ -4871,19 +4887,19 @@ function PortalApp({ token, onLogout }) {
         items: section.items.filter((item) => {
           const itemTo = String(item?.to || "");
           if ((itemTo === "/plan" || itemTo === "/login-settings" || itemTo === "/intake-settings" || itemTo === "/settings" || itemTo.startsWith("/admin/payroll")) && !isSettingsAdmin) return false;
+          if (!hasSaasUnlimitedAccess && (itemTo === "/client-share" || itemTo === "/intake-settings")) return false;
           return true;
         })
       }))
       .filter((section) => section.items.length)
-  ), [isSettingsAdmin]);
+  ), [isSettingsAdmin, hasSaasUnlimitedAccess]);
   const standaloneNavItems = useMemo(() => (
     STANDALONE_NAV_ITEMS.filter((item) => {
       if (item.to === "/reports") return isSettingsAdmin;
+      if (item.to === "/candidates" && !hasSaasUnlimitedAccess) return false;
       return true;
     })
-  ), [isSettingsAdmin]);
-  const effectiveLicense = billingOverview?.license || companyLicense || null;
-  const currentPlanCode = String(effectiveLicense?.plan || "trial").trim().toLowerCase();
+  ), [isSettingsAdmin, hasSaasUnlimitedAccess]);
   const trialDaysLeft = Number.isFinite(Number(effectiveLicense?.daysRemaining))
     ? Math.max(0, Number(effectiveLicense?.daysRemaining))
     : null;
@@ -4895,6 +4911,14 @@ function PortalApp({ token, onLogout }) {
   const upgradePlans = useMemo(() => (
     (billingPlans || []).filter((plan) => Number(planRank[String(plan.code || "").toLowerCase()] ?? 0) > currentRank)
   ), [billingPlans, currentRank]);
+
+  useEffect(() => {
+    const blockedPaths = new Set(["/client-share", "/intake-settings", "/candidates"]);
+    if (!hasSaasUnlimitedAccess && blockedPaths.has(String(location?.pathname || ""))) {
+      navigate("/plan", { replace: true });
+      setStatus("loginSettings", "Direct Share, Job Apply Link, and Database are available on SaaS Unlimited (Rs 4999).", "error");
+    }
+  }, [hasSaasUnlimitedAccess, location?.pathname, navigate]);
 
   async function openPlanUpgrade(planCode) {
     try {
