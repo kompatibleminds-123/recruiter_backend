@@ -8954,6 +8954,32 @@ function PortalApp({ token, onLogout }) {
     }
   }
 
+  async function saveSignatureOnly() {
+    setStatus("settings", "Saving signature only...");
+    try {
+      const current = await api("/company/email-settings", token);
+      await api("/company/email-settings", token, "POST", {
+        settings: {
+          host: String(current?.host || "").trim(),
+          port: Number(current?.port || 587),
+          secure: Boolean(current?.secure),
+          user: String(current?.user || "").trim(),
+          from: String(current?.from || "").trim(),
+          pass: "",
+          keepPass: true,
+          signatureText: smtpSettings.signatureText,
+          signatureLinkLabel: smtpSettings.signatureLinkLabel,
+          signatureLinkUrl: smtpSettings.signatureLinkUrl,
+          signatureLinkLabel2: smtpSettings.signatureLinkLabel2,
+          signatureLinkUrl2: smtpSettings.signatureLinkUrl2
+        }
+      });
+      setStatus("settings", "Signature saved.", "ok");
+    } catch (error) {
+      setStatus("settings", `Signature save failed: ${String(error?.message || error)}`, "error");
+    }
+  }
+
   async function testSmtpSettings(sendTestMail = false) {
     setSmtpTestBusy(true);
     setStatus("settings", sendTestMail ? "Sending test email..." : "Verifying SMTP settings...");
@@ -12048,6 +12074,9 @@ function PortalApp({ token, onLogout }) {
                       <span>Signature link 2 URL</span>
                       <input value={smtpSettings.signatureLinkUrl2 || ""} onChange={(e) => { markSmtpSettingsDirty(); setSmtpSettings((c) => ({ ...c, signatureLinkUrl2: e.target.value })); }} placeholder="https://www.linkedin.com/in/..." />
                     </label>
+                  </div>
+                  <div className="button-row">
+                    <button className="secondary" onClick={() => void saveSignatureOnly()}>Save signature only</button>
                   </div>
                 </div>
 
