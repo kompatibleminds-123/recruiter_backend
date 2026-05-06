@@ -285,8 +285,97 @@ function isLikelyCompanyLine(line) {
   if (isNoiseLine(value) || looksLikeExperienceDate(value) || looksLikeBulletLine(value)) return false;
   if (value.length > 120) return false;
   if (/[.]$/.test(value) && !/,/.test(value)) return false;
-  if (/\bowned\b|\bachieved\b|\bdrove\b|\bbuilt\b|\bled\b|\bmanaged\b|\bexecuted\b|\bcollaborated\b/i.test(value)) return false;
+  if (/\bowned\b|\bachieved\b|\bdrove\b|\bbuilt\b|\bled\b|\bmanaged\b|\bexecuted\b|\bcollaborated\b|\bcollaborate\b/i.test(value)) return false;
   return true;
+}
+
+function looksLikeEducationText(value) {
+  return /\b(university|college|school|bachelor|master|b\.tech|m\.tech|mba|pgdm|degree|diploma|education)\b/i.test(String(value || ""));
+}
+
+function looksLikeSpacedCapsBanner(value) {
+  const text = String(value || "").trim();
+  if (!text) return false;
+  if (!/[A-Z]/.test(text) || /[a-z]/.test(text)) return false;
+  const compact = text.replace(/[^A-Z]/g, "");
+  const spaced = text.match(/[A-Z]\s+[A-Z]/g);
+  return compact.length >= 8 && Array.isArray(spaced) && spaced.length >= 2;
+}
+
+function countDateLikeLines(lines = []) {
+  return (lines || []).filter((line) => {
+    const text = String(line || "").trim();
+    return /\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*[\s,-]+(?:'\d{2}|\d{4})\b/i.test(text) ||
+      /\b(?:19|20)\d{2}\s*[-\u2013\u2014\u2212]\s*(?:present|current|till date|(?:19|20)\d{2})\b/i.test(text);
+  }).length;
+}
+
+function calculateMonthsFromTimeline(timeline = []) {
+  const ranges = [];
+  for (const item of timeline) {
+    const start = String(item?.start || "");
+    const end = String(item?.end || "");
+    const parsed = parseDateRange(`${start} - ${end}`);
+    const startIndex = monthIndex(parsed.start);
+    const endIndex = monthIndex(parsed.end);
+    if (startIndex === null || endIndex === null || endIndex < startIndex) continue;
+    ranges.push([startIndex, endIndex]);
+  }
+  if (!ranges.length) return 0;
+  ranges.sort((a, b) => a[0] - b[0]);
+  const merged = [ranges[0]];
+  for (let i = 1; i < ranges.length; i += 1) {
+    const [s, e] = ranges[i];
+    const last = merged[merged.length - 1];
+    if (s <= last[1] + 1) last[1] = Math.max(last[1], e);
+    else merged.push([s, e]);
+  }
+  return merged.reduce((sum, [s, e]) => sum + (e - s + 1), 0);
+}
+
+function pickBestTitleCompany(dateLineIndex, lines) {
+  const backwardContext = lines.slice(Math.max(0, dateLineIndex - 5), dateLineIndex).reverse();
+  const forwardContext = lines.slice(dateLineIndex + 1, Math.min(lines.length, dateLineIndex + 6));
+
+  const backward = parseTitleAndCompany(backwardContext);
+  const forward = parseTitleAndCompany(forwardContext);
+
+  const backwardCompanyOk = isLikelyCompanyLine(backward.company) && !looksLikeEducationText(backward.company);
+  const forwardCompanyOk = isLikelyCompanyLine(forward.company) && !looksLikeEducationText(forward.company);
+
+  if (backwardCompanyOk && !forwardCompanyOk) return backward;
+  if (!backwardCompanyOk && forwardCompanyOk) return forward;
+  if (backwardCompanyOk && forwardCompanyOk) {
+    const backScore = companyLineScore(backward.company);
+    const forwardScore = companyLineScore(forward.company);
+    return backScore >= forwardScore ? backward : forward;
+  }
+  return { title: "", company: "" };
+}
+
+function looksLikeSentenceLine(value) {
+  const text = String(value || "").trim();
+  if (!text) return false;
+  const words = text.split(/\s+/).filter(Boolean);
+  if (words.length >= 9) return true;
+  if (/[.,;:]/.test(text) && words.length >= 6) return true;
+  return false;
+}
+
+function pickBackwardLooseTitleCompany(dateLineIndex, lines) {
+  const minIndex = Math.max(1, dateLineIndex - 40);
+  for (let j = dateLineIndex - 1; j >= minIndex; j -= 1) {
+    const company = String(lines[j] || "").trim();
+    const title = String(lines[j - 1] || "").trim();
+    if (!title || !company) continue;
+    if (isNoiseLine(title) || isNoiseLine(company)) continue;
+    if (looksLikeExperienceDate(title) || looksLikeExperienceDate(company)) continue;
+    if (looksLikeEducationText(title) || looksLikeEducationText(company)) continue;
+    if (looksLikeSpacedCapsBanner(title) || looksLikeSpacedCapsBanner(company)) continue;
+    if (looksLikeSentenceLine(title) || looksLikeSentenceLine(company)) continue;
+    return { title, company };
+  }
+  return { title: "", company: "" };
 }
 
 function parseTitleAndCompany(windowLines) {
@@ -466,10 +555,50 @@ function extractTimeline(lines, rawText, structuredExperienceText) {
     const looksLikeYearOnlyDate = /\b(?:19|20)\d{2}\s*[-\u2013\u2014\u2212]\s*(?:present|current|till date|(?:19|20)\d{2})\b/i.test(dates);
     if (!looksLikeExperienceDate(dates) && !looksLikeYearOnlyDate) continue;
 
-    const context = lines.slice(Math.max(0, i - 4), i).reverse();
-    const { title, company } = parseTitleAndCompany(context);
+    let { title, company } = pickBestTitleCompany(i, lines);
+    if (looksLikeSentenceLine(title) || looksLikeSentenceLine(company)) {
+      const loose = pickBackwardLooseTitleCompany(i, lines);
+      title = loose.title || title;
+      company = loose.company || company;
+    }
     if (!company || !dates || !isLikelyCompanyLine(company)) continue;
+    if (looksLikeEducationText(title) || looksLikeEducationText(company)) continue;
+    if (looksLikeSpacedCapsBanner(title) || looksLikeSpacedCapsBanner(company)) continue;
 
+    const key = `${title}|${company}|${dates}`.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    entries.push({ title, company, dates, ...parseDateRange(dates) });
+  }
+
+  // Fallback pass for CVs where role/company are separated from date lines by layout noise.
+  for (let i = 0; i < lines.length; i += 1) {
+    const dates = String(lines[i] || "").trim();
+    const looksLikeYearOnlyDate = /\b(?:19|20)\d{2}\s*[-\u2013\u2014\u2212]\s*(?:present|current|till date|(?:19|20)\d{2})\b/i.test(dates);
+    if (!looksLikeExperienceDate(dates) && !looksLikeYearOnlyDate) continue;
+
+    const nextTitle = String(lines[i + 1] || "").trim();
+    const nextCompany = String(lines[i + 2] || "").trim();
+    let title = "";
+    let company = "";
+
+    if (
+      nextTitle && nextCompany &&
+      !isNoiseLine(nextTitle) && !isNoiseLine(nextCompany) &&
+      !looksLikeExperienceDate(nextTitle) && !looksLikeExperienceDate(nextCompany) &&
+      !looksLikeEducationText(nextTitle) && !looksLikeEducationText(nextCompany) &&
+      !looksLikeSpacedCapsBanner(nextTitle) && !looksLikeSpacedCapsBanner(nextCompany) &&
+      !looksLikeSentenceLine(nextTitle) && !looksLikeSentenceLine(nextCompany)
+    ) {
+      title = nextTitle;
+      company = nextCompany;
+    } else {
+      const loose = pickBackwardLooseTitleCompany(i, lines);
+      title = loose.title;
+      company = loose.company;
+    }
+
+    if (!title || !company) continue;
     const key = `${title}|${company}|${dates}`.toLowerCase();
     if (seen.has(key)) continue;
     seen.add(key);
@@ -498,6 +627,8 @@ function extractTimeline(lines, rawText, structuredExperienceText) {
       const company = String(entry.company || "").trim();
       const title = String(entry.title || "").trim();
       if (!company && !title) return false;
+      if (looksLikeEducationText(company) || looksLikeEducationText(title)) return false;
+      if (looksLikeSpacedCapsBanner(company) || looksLikeSpacedCapsBanner(title)) return false;
       return true;
     })
     .sort((a, b) => (b.startIndex || 0) - (a.startIndex || 0));
@@ -605,15 +736,20 @@ async function parseCandidatePayload(payload) {
   const experienceText = extractExperienceSection(rawText);
   const structuredExperienceText = sanitizeText(payload?.structuredExperience || "");
   const rawLines = splitLines(rawText);
-  const lines = splitLines(experienceText);
+  const experienceLines = splitLines(experienceText);
+  const lines = countDateLikeLines(experienceLines) >= 2 ? experienceLines : rawLines;
 
   if (!rawText && !structuredExperienceText) {
     throw new Error("Provide candidate text, page text, or structured experience to parse.");
   }
 
   const candidateName = extractCandidateName(rawLines, rawText, payload?.candidateName);
-  const totalExperience = extractTotalExperience(lines, rawText, payload?.totalExperience);
+  let totalExperience = extractTotalExperience(lines, rawText, payload?.totalExperience);
   const parsed = extractTimeline(lines, experienceText, structuredExperienceText);
+  const timelineMonths = calculateMonthsFromTimeline(parsed.timeline);
+  if (timelineMonths > 0) {
+    totalExperience = formatMonthCount(timelineMonths);
+  }
   const currentRole = extractCurrentRoleFromTimeline(parsed.timeline);
   const emailId = extractPrimaryEmail(rawText);
   const phoneNumber = extractPrimaryPhone(rawText);
