@@ -1021,6 +1021,14 @@ function parseTagInputValue(raw = "") {
 }
 
 function buildInterviewCvAnalysis(baseForm = {}, result = {}, storedFile = null) {
+  const rawConfidence = String(
+    result?.timelineConfidence?.level || result?.parseDebug?.timelineConfidence || ""
+  ).trim().toLowerCase();
+  const timelineConfidenceLevel =
+    rawConfidence === "medium" ? "mid" : (rawConfidence === "high" || rawConfidence === "low" ? rawConfidence : "");
+  const timelineConfidenceLabel =
+    String(result?.timelineConfidence?.label || result?.parseDebug?.timelineConfidenceLabel || "").trim()
+    || (timelineConfidenceLevel ? `Timeline confidence ${timelineConfidenceLevel}` : "");
   return {
     exactTotalExperience: result.totalExperience || "",
     currentCompany: result.currentCompany || "",
@@ -1030,6 +1038,8 @@ function buildInterviewCvAnalysis(baseForm = {}, result = {}, storedFile = null)
     candidateName: result.candidateName || "",
     emailId: result.emailId || "",
     phoneNumber: result.phoneNumber || "",
+    timelineConfidenceLevel,
+    timelineConfidenceLabel,
     storedFile: storedFile || result.storedFile || null,
     cached: Boolean(result.cached),
     contradictions: [
@@ -12033,6 +12043,9 @@ function PortalApp({ token, onLogout }) {
                   {interviewForm.cvAnalysis?.storedFile ? (
                     <div className="cv-analysis-meta">
                       <span className="status-note">{interviewForm.cvAnalysis.cached ? "Using cached parse" : "Parsed from uploaded CV"}</span>
+                      {interviewForm.cvAnalysis.timelineConfidenceLabel ? (
+                        <span className="status-note">{interviewForm.cvAnalysis.timelineConfidenceLabel}</span>
+                      ) : null}
                       <span className="status-note">{getInterviewCvStoredFileLabel(interviewForm.cvAnalysis)}</span>
                       <span className="status-note">{`Stored: ${getInterviewCvStoredFilePath(interviewForm.cvAnalysis)}`}</span>
                       {interviewMeta.candidateId ? <button className="ghost-btn" onClick={() => openInterviewStoredCv()}>Open uploaded CV</button> : null}
@@ -12042,6 +12055,9 @@ function PortalApp({ token, onLogout }) {
                   {interviewForm.cvAnalysis ? (
                     <div className="empty-state compact-empty">
                       <div className="empty-state__title">CV metadata saved</div>
+                      {interviewForm.cvAnalysis.timelineConfidenceLabel ? (
+                        <div className="muted" style={{ marginTop: 6 }}>{interviewForm.cvAnalysis.timelineConfidenceLabel}</div>
+                      ) : null}
                       <div className="muted">Parsed CV information is stored in candidate metadata for AI Search and later sharing workflows. It is intentionally hidden from the recruiter-facing panel.</div>
                     </div>
                   ) : (
