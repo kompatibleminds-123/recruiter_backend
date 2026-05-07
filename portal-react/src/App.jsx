@@ -4968,6 +4968,7 @@ function PortalApp({ token, onLogout }) {
         ...section,
         items: section.items.filter((item) => {
           const itemTo = String(item?.to || "");
+          if (section.label === "Modules" && !isSettingsAdmin) return false;
           if (section.label === "Modules" && !hasSuiteModulesAccess) return false;
           if ((itemTo === "/plan" || itemTo === "/login-settings" || itemTo === "/intake-settings" || itemTo === "/settings" || itemTo.startsWith("/admin/payroll")) && !isSettingsAdmin) return false;
           if (!hasSaasUnlimitedAccess && (itemTo === "/client-share" || itemTo === "/intake-settings" || itemTo === "/mail-settings" || itemTo === "/quick-update" || itemTo === "/applicants")) return false;
@@ -5194,7 +5195,9 @@ function PortalApp({ token, onLogout }) {
     // which are best sourced from assessment events.
     const needsAssessmentEvents = includeEvents && (pathname === "/dashboard" || pathname === "/assessments" || pathname === "/candidates");
     const needsEmailSettings = includeEmailSettings && pathname === "/mail-settings";
-    const needsBilling = pathname === "/plan";
+    // Billing/access flags are used in sidebar gating across the app,
+    // so fetch billing overview on all recruiter routes (plans list only needed on /plan).
+    const needsBilling = true;
     // Backfills mutate production candidate rows; keep them admin-only and manual.
     const dashboardKey = JSON.stringify({
       dateFrom: String(dashboardFilters?.dateFrom || ""),
@@ -5253,7 +5256,7 @@ function PortalApp({ token, onLogout }) {
         : Promise.resolve(null),
       api("/license/me", token).catch(() => null),
       needsBilling ? api("/company/billing/overview", token).catch(() => null) : Promise.resolve(null),
-      needsBilling ? api("/company/billing/plans", token).catch(() => ({ plans: [] })) : Promise.resolve(null)
+      pathname === "/plan" ? api("/company/billing/plans", token).catch(() => ({ plans: [] })) : Promise.resolve(null)
     ]);
     setState((current) => ({
       ...current,
@@ -5305,7 +5308,9 @@ function PortalApp({ token, onLogout }) {
     setCompanyLicense(licenseResult?.license || null);
     if (needsBilling) {
       setBillingOverview(billingOverviewResult || null);
-      setBillingPlans(Array.isArray(billingPlansResult?.plans) ? billingPlansResult.plans : []);
+      if (pathname === "/plan") {
+        setBillingPlans(Array.isArray(billingPlansResult?.plans) ? billingPlansResult.plans : []);
+      }
     }
     setStatus("workspace", "Portal loaded.", "ok");
   }
@@ -12785,7 +12790,7 @@ function PortalApp({ token, onLogout }) {
                 </Section>
                 {!isSettingsAdmin ? (
                   <Section kicker="Access" title="Restricted">
-                    <p className="muted">Billing details are visible to admin users only.</p>
+                    <p className="muted">Plan and billing details are visible to admin users only.</p>
                   </Section>
                 ) : (
                   <>
