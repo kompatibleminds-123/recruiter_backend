@@ -3794,7 +3794,12 @@ function NewDraftModal({
           <label><span>Email</span><input value={form.email} onChange={(e) => onChange("email", e.target.value)} /></label>
           <label><span>LinkedIn</span><input value={form.linkedin} onChange={(e) => onChange("linkedin", e.target.value)} /></label>
           <label><span>Current Company</span><input value={form.company} onChange={(e) => onChange("company", e.target.value)} /></label>
+          <label><span>Current designation</span><input value={form.current_designation} onChange={(e) => onChange("current_designation", e.target.value)} placeholder="Senior Portfolio Manager" /></label>
+          <label><span>Total experience</span><input value={form.total_experience} onChange={(e) => onChange("total_experience", e.target.value)} placeholder="7 years 5 months" /></label>
           <label><span>Location</span><input value={form.location} onChange={(e) => onChange("location", e.target.value)} /></label>
+          <label><span>Current CTC</span><input value={form.current_ctc} onChange={(e) => onChange("current_ctc", e.target.value)} placeholder="11.5 LPA" /></label>
+          <label><span>Notice period</span><input value={form.notice_period} onChange={(e) => onChange("notice_period", e.target.value)} placeholder="15 days / immediate" /></label>
+          <label><span>Highest qualification</span><input value={form.highest_education} onChange={(e) => onChange("highest_education", e.target.value)} placeholder="MBA / B.Tech / MCA" /></label>
           <label>
             <span>JD / Role</span>
             <select value={form.jd_title} onChange={(e) => {
@@ -4803,7 +4808,12 @@ function PortalApp({ token, onLogout }) {
     email: "",
     linkedin: "",
     company: "",
+    current_designation: "",
+    total_experience: "",
     location: "",
+    current_ctc: "",
+    notice_period: "",
+    highest_education: "",
     jd_title: "",
     client_name: "",
     tags: "",
@@ -8035,7 +8045,12 @@ function PortalApp({ token, onLogout }) {
       email: "",
       linkedin: "",
       company: "",
+      current_designation: "",
+      total_experience: "",
       location: "",
+      current_ctc: "",
+      notice_period: "",
+      highest_education: "",
       jd_title: "",
       client_name: "",
       tags: "",
@@ -8057,6 +8072,11 @@ function PortalApp({ token, onLogout }) {
     return {
       ...draftForm,
       source,
+      role: String(draftForm.current_designation || parsedResult?.currentDesignation || "").trim(),
+      experience: String(draftForm.total_experience || parsedResult?.totalExperience || "").trim(),
+      current_ctc: String(draftForm.current_ctc || parsedResult?.currentCtc || "").trim(),
+      notice_period: String(draftForm.notice_period || parsedResult?.noticePeriod || "").trim(),
+      highest_education: String(draftForm.highest_education || parsedResult?.highestEducation || "").trim(),
       recruiter_context_notes: "",
       other_pointers: parsedTimelineLabel || "",
       hidden_from_captured: false,
@@ -8069,13 +8089,13 @@ function PortalApp({ token, onLogout }) {
         linkedin: draftForm.linkedin || "",
         location: draftForm.location || "",
         currentCompany: draftForm.company || "",
-        currentDesignation: String(parsedResult?.currentDesignation || "").trim(),
-        totalExperience: String(parsedResult?.totalExperience || "").trim(),
+        currentDesignation: String(draftForm.current_designation || parsedResult?.currentDesignation || "").trim(),
+        totalExperience: String(draftForm.total_experience || parsedResult?.totalExperience || "").trim(),
         relevantExperience: "",
-        highestEducation: String(parsedResult?.highestEducation || "").trim(),
-        currentCtc: "",
+        highestEducation: String(draftForm.highest_education || parsedResult?.highestEducation || "").trim(),
+        currentCtc: String(draftForm.current_ctc || parsedResult?.currentCtc || "").trim(),
         expectedCtc: "",
-        noticePeriod: "",
+        noticePeriod: String(draftForm.notice_period || parsedResult?.noticePeriod || "").trim(),
         offerInHand: "",
         lwdOrDoj: "",
         currentOrgTenure: String(parsedResult?.currentOrgTenure || "").trim(),
@@ -8138,7 +8158,12 @@ function PortalApp({ token, onLogout }) {
             email: String(parsedResult?.emailId || "").trim(),
             linkedin: String(parsedResult?.linkedinUrl || "").trim(),
             company: String(parsedResult?.currentCompany || "").trim(),
-            location: String(parsedResult?.location || "").trim()
+            current_designation: String(parsedResult?.currentDesignation || "").trim(),
+            total_experience: String(parsedResult?.totalExperience || "").trim(),
+            location: String(parsedResult?.location || "").trim(),
+            current_ctc: String(parsedResult?.currentCtc || "").trim(),
+            notice_period: String(parsedResult?.noticePeriod || "").trim(),
+            highest_education: String(parsedResult?.highestEducation || "").trim()
           };
           const payload = buildManualDraftCandidatePayload({
             draftForm: candidateForm,
@@ -8250,9 +8275,16 @@ function PortalApp({ token, onLogout }) {
       const extracted = result?.extracted || {};
       applyNewDraftAutofillPatch({
         name: extracted?.name || "",
+        phone: extracted?.phone || "",
+        email: extracted?.email || "",
         company: extracted?.company || "",
+        current_designation: extracted?.role || "",
+        total_experience: extracted?.totalExperience || "",
         location: extracted?.location || "",
-        linkedin: extracted?.linkedin || ""
+        linkedin: extracted?.linkedin || "",
+        current_ctc: extracted?.currentCtc || "",
+        notice_period: extracted?.noticePeriod || "",
+        highest_education: extracted?.highestEducation || ""
       });
       setStatus("captured", "Screenshot parsed and form auto-filled.", "ok");
     } catch (error) {
@@ -13766,11 +13798,16 @@ function mapDraftAutofillFromSpreadsheetRows(rows = []) {
     email: getValue("email", "email id", "mail"),
     linkedin: getValue("linkedin", "linkedin url", "linkedin profile"),
     company: getValue("company", "current company", "organization"),
+    current_designation: getValue("designation", "role", "current designation", "position"),
+    total_experience: getValue("experience", "total experience", "work experience"),
     location: getValue("location", "city"),
     jd_title: getValue("jd", "role", "position", "job title"),
     client_name: getValue("client", "client name"),
     tags: getValue("skill", "skills", "keywords", "tags"),
-    notes: getValue("note", "notes", "remarks")
+    notes: getValue("note", "notes", "remarks"),
+    current_ctc: getValue("current ctc", "ctc"),
+    notice_period: getValue("notice", "notice period"),
+    highest_education: getValue("qualification", "education", "highest education")
   };
 }
 

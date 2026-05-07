@@ -9935,8 +9935,15 @@ const server = http.createServer(async (req, res) => {
       const role = String(extracted?.role || "").trim();
       const location = String(extracted?.location || "").trim();
       const linkedin = String(extracted?.linkedin || "").trim();
+      const email = String(extracted?.email || "").trim();
+      const phone = String(extracted?.phone || "").trim();
+      const currentCtc = String(extracted?.currentCtc || "").trim();
+      const expectedCtc = String(extracted?.expectedCtc || "").trim();
+      const noticePeriod = String(extracted?.noticePeriod || "").trim();
+      const highestEducation = String(extracted?.highestEducation || "").trim();
+      const totalExperience = String(extracted?.totalExperience || "").trim();
 
-      const query = [name, role, company, location].filter(Boolean).join(" ");
+      const query = [name, role, company, location, totalExperience].filter(Boolean).join(" ");
       const finalQuery = query ? `"${query.replace(/\"/g, " ").trim()}" site:linkedin.com/in` : "site:linkedin.com/in";
       const url = linkedin && /linkedin\.com\/in\//i.test(linkedin)
         ? String(linkedin).replace(/^http:\/\//i, "https://")
@@ -9950,7 +9957,14 @@ const server = http.createServer(async (req, res) => {
             company: extracted?.company ?? null,
             role: extracted?.role ?? null,
             location: extracted?.location ?? null,
-            linkedin: extracted?.linkedin ?? null
+            linkedin: extracted?.linkedin ?? null,
+            email: email || null,
+            phone: phone || null,
+            currentCtc: currentCtc || null,
+            expectedCtc: expectedCtc || null,
+            noticePeriod: noticePeriod || null,
+            highestEducation: highestEducation || null,
+            totalExperience: totalExperience || null
           },
           query: finalQuery,
           url

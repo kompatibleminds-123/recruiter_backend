@@ -476,13 +476,20 @@ function buildLinkedInAssistSchema() {
   return {
     type: "object",
     additionalProperties: false,
-    required: ["name", "company", "role", "location", "linkedin"],
+    required: ["name", "company", "role", "location", "linkedin", "email", "phone", "currentCtc", "expectedCtc", "noticePeriod", "highestEducation", "totalExperience"],
     properties: {
       name: { type: ["string", "null"] },
       company: { type: ["string", "null"] },
       role: { type: ["string", "null"] },
       location: { type: ["string", "null"] },
-      linkedin: { type: ["string", "null"] }
+      linkedin: { type: ["string", "null"] },
+      email: { type: ["string", "null"] },
+      phone: { type: ["string", "null"] },
+      currentCtc: { type: ["string", "null"] },
+      expectedCtc: { type: ["string", "null"] },
+      noticePeriod: { type: ["string", "null"] },
+      highestEducation: { type: ["string", "null"] },
+      totalExperience: { type: ["string", "null"] }
     }
   };
 }
@@ -495,7 +502,9 @@ function buildLinkedInAssistPrompt() {
     "Rules:",
     "- If linkedin profile URL is visible anywhere, return it in linkedin.",
     "- Otherwise set linkedin = null.",
-    "- Extract name, current company, role/designation, and location as visible on the card.",
+    "- Extract name, current company, role/designation, location, email, phone, CTC, expected CTC, notice period, highest qualification, and total experience when visible.",
+    "- CTC can be shown as one line like `11.5 lacs (expects 16 lacs)`; split into currentCtc and expectedCtc when possible.",
+    "- totalExperience can be forms like `11y` or `7 years 5 months`.",
     "- Do not guess missing fields; return null when not present.",
     "",
     "Output schema:",
