@@ -1502,6 +1502,37 @@ textarea { min-height: 92px; resize: vertical; }
   background: transparent;
 }
 
+@media (max-width: 720px) {
+  .plan-matrix-table {
+    min-width: 0;
+  }
+
+  .plan-matrix-table th,
+  .plan-matrix-table td {
+    padding: 0.38rem 0.34rem;
+    font-size: 0.79rem;
+  }
+
+  .plan-matrix-price {
+    font-size: 0.82rem;
+    line-height: 1.1;
+  }
+
+  .plan-matrix-upgrade-btn {
+    margin-top: 0.22rem;
+    padding: 0.16rem 0.34rem;
+    font-size: 0.68rem;
+    line-height: 1.1;
+  }
+
+  .plan-matrix-badge,
+  .plan-matrix-muted {
+    margin-top: 0.2rem;
+    font-size: 0.66rem;
+    line-height: 1.1;
+  }
+}
+
 .candidate-smart-section {
   border: 1px solid #d7e4f7;
   background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
