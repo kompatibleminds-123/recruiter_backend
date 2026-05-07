@@ -4948,6 +4948,15 @@ function PortalApp({ token, onLogout }) {
   const currentPlanTier = String(billingOverview?.currentPlan?.tier || "").trim().toLowerCase();
   const hasSaasUnlimitedAccess = Boolean(billingOverview?.fullAccessBypass) || Boolean(billingOverview?.currentPlan?.fullRecruiter) || currentPlanTier === "full_recruiter_mode" || currentPlanTier === "full_recruiter_plus_modules";
   const hasSuiteModulesAccess = Boolean(billingOverview?.fullAccessBypass) || Boolean(billingOverview?.currentPlan?.suiteModules) || currentPlanTier === "full_recruiter_plus_modules";
+  const accessStateLabel = billingOverview?.fullAccessBypass
+    ? "Full Access (Bypass)"
+    : hasSuiteModulesAccess
+      ? "Full + Modules Access"
+      : hasSaasUnlimitedAccess
+        ? "Full Recruiter Access"
+        : currentPlanCode === "trial"
+          ? "Trial Access"
+          : (effectiveLicense?.canCapture ? "Active" : "Blocked");
   const isKompatibleAdminContext =
     String(state.user?.companyId || "").trim() === KOMPATIBLE_MINDS_COMPANY_ID &&
     String(state.user?.role || "").trim().toLowerCase() === "admin";
@@ -5441,6 +5450,51 @@ function PortalApp({ token, onLogout }) {
     if (!token) return undefined;
     // Keep workspace refresh manual/lightweight to avoid burning Supabase egress on every tab focus/poll.
     return undefined;
+  }, [token]);
+
+  useEffect(() => {
+    if (!token) return undefined;
+    async function refreshAfterUpgrade(source = "upgrade") {
+      try {
+        const latestLoader = loadWorkspaceRef.current;
+        if (typeof latestLoader === "function") await latestLoader();
+        setStatus("loginSettings", "Plan upgraded successfully. Billing refreshed.", "ok");
+      } catch (error) {
+        setStatus("loginSettings", `Upgrade detected but refresh failed: ${String(error?.message || error)}`, "error");
+      }
+    }
+    function onStorage(event) {
+      if (String(event?.key || "") !== "rd_upgrade_success") return;
+      void refreshAfterUpgrade("storage");
+    }
+    function onMessage(event) {
+      const data = event?.data || {};
+      if (String(data?.type || "") !== "RSD_UPGRADE_SUCCESS") return;
+      void refreshAfterUpgrade("message");
+    }
+    function onFocus() {
+      try {
+        const raw = window.localStorage.getItem("rd_upgrade_success");
+        if (!raw) return;
+        const parsed = JSON.parse(raw);
+        const at = Date.parse(String(parsed?.at || ""));
+        if (Number.isFinite(at) && Date.now() - at <= 10 * 60 * 1000) {
+          void refreshAfterUpgrade("focus");
+        }
+      } catch {
+        // ignore parse/storage issues
+      }
+    }
+    window.addEventListener("storage", onStorage);
+    window.addEventListener("message", onMessage);
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onFocus);
+    return () => {
+      window.removeEventListener("storage", onStorage);
+      window.removeEventListener("message", onMessage);
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onFocus);
+    };
   }, [token]);
 
   useEffect(() => {
@@ -12803,7 +12857,7 @@ function PortalApp({ token, onLogout }) {
                             ) : null}
                             <tr>
                               <th>Access state</th>
-                              <td>{effectiveLicense?.canCapture ? "Active" : "Blocked"}</td>
+                              <td>{accessStateLabel}</td>
                             </tr>
                             <tr>
                               <th>Payment reference</th>

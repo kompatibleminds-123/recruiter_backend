@@ -62,6 +62,7 @@
           <div><strong>Email:</strong> <span id="email">-</span></div>
         </div>
         <button id="payBtn" class="btn" type="button" style="background:#1d4ed8;">Pay with Razorpay</button>
+        <a id="backBtn" class="btn" href="/plan" style="display:none; background:#0f766e;">Back to Plan</a>
         <div class="muted small" id="expiresAt"></div>
         <div class="muted small" id="paymentStatus"></div>
         <div class="muted small">Payment checkout wiring can be plugged here (Razorpay/Stripe) in next step.</div>
@@ -83,6 +84,7 @@
       const expiryLabel = document.getElementById("expiresAt");
       const payBtn = document.getElementById("payBtn");
       const paymentStatus = document.getElementById("paymentStatus");
+      const backBtn = document.getElementById("backBtn");
       let latestCtx = null;
 
       async function loadUpgradeContext() {
@@ -160,7 +162,8 @@
               }
               payBtn.disabled = true;
               payBtn.style.display = "none";
-              paymentStatus.textContent = "Payment successful. Plan activated. You can close this tab and continue in extension.";
+              backBtn.style.display = "inline-block";
+              paymentStatus.textContent = "Payment successful. Plan activated. Return to Plan to continue.";
               try {
                 localStorage.setItem("rd_upgrade_success", JSON.stringify({
                   at: new Date().toISOString(),
@@ -178,7 +181,7 @@
                 }
               } catch {}
               try {
-                setTimeout(() => window.close(), 800);
+                setTimeout(() => { window.location.href = "/plan"; }, 1200);
               } catch {}
             }
           });
