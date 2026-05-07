@@ -2088,14 +2088,25 @@ function buildCombinedAssessmentInsightsForExportV2(item = {}) {
   const seen = new Set();
 
   const pushQa = (question, answer) => {
-    const q = String(question || "").trim();
-    const a = String(answer || "").trim();
+    const q = String(question || "")
+      .replace(/<[^>]+>/g, "")
+      .replace(/\*/g, "")
+      .replace(/\s+/g, " ")
+      .trim()
+      .replace(/:+$/, "");
+    const a = String(answer || "")
+      .replace(/<[^>]+>/g, "")
+      .replace(/^\s*[:\-]+\s*/, "")
+      .replace(/\*/g, "")
+      .replace(/\s+/g, " ")
+      .trim();
     if (!q || !a) return;
     if (!/[a-z]/i.test(q)) return;
+    if (/^reason\s+of\s+change$/i.test(q)) return;
     const key = `${q.toLowerCase()}::${a.toLowerCase()}`;
     if (seen.has(key)) return;
     seen.add(key);
-    qaLines.push(`<b>${q}:</b> *${a}*`);
+    qaLines.push({ question: q, answer: a });
   };
 
   if (ctx.screeningMap && typeof ctx.screeningMap === "object") {
@@ -2127,12 +2138,26 @@ function buildCombinedAssessmentInsightsForExportV2(item = {}) {
     .slice(0, 3);
   const reasonOfChange = String(item.reason_of_change || "").trim();
   const parts = [];
-  if (qaLines.length) parts.push(qaLines.join("\n"));
   if (strongPoints.length) {
-    parts.push(strongPoints.map((value, index) => `${index + 1}. Strong point: ${value}`).join("\n"));
+    parts.push(
+      [
+        "Strong points:",
+        ...strongPoints.map((value, index) => `${index + 1}. *${value}*`)
+      ].join("\n")
+    );
   }
-  if (reasonOfChange) parts.push(`Reason of change: ${reasonOfChange}`);
-  return parts.filter(Boolean).join("\n");
+  if (qaLines.length) {
+    parts.push(
+      [
+        "Screening pointers:",
+        ...qaLines.map((entry, index) => `${index + 1}. ${entry.question} - *${entry.answer}*`)
+      ].join("\n")
+    );
+  }
+  if (reasonOfChange) {
+    parts.push(["Reason of change:", `*${reasonOfChange}*`].join("\n"));
+  }
+  return parts.filter(Boolean).join("\n\n");
 }
 
 function getJdCcHistoryStorageKey(companyId = "") {
