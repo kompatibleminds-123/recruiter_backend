@@ -547,6 +547,18 @@ const LICENSE_PLAN_ALIASES = {
   monthly_1999: "ext_1999_7_users",
   team_7: "ext_1999_7_users",
   growth_7: "ext_1999_7_users",
+  s1_basic_499: "s1_basic_499",
+  s1_full_999: "s1_full_999",
+  s1_suite_1499: "s1_suite_1499",
+  s3_basic_999: "s3_basic_999",
+  s3_full_1999: "s3_full_1999",
+  s3_suite_2999: "s3_suite_2999",
+  s7_basic_1999: "s7_basic_1999",
+  s7_full_3999: "s7_full_3999",
+  s7_suite_5999: "s7_suite_5999",
+  s15_basic_2999: "s15_basic_2999",
+  s15_full_4999: "s15_full_4999",
+  s15_suite_6999: "s15_suite_6999",
   saas_4999: "saas_4999_unlimited",
   platform_4999: "saas_4999_unlimited",
   enterprise: "saas_4999_unlimited",
@@ -559,7 +571,24 @@ function normalizeLicensePlanCode(rawPlan = "") {
 }
 function isPaidExtensionPlan(planCode = "") {
   const plan = normalizeLicensePlanCode(planCode);
-  return ["ext_499_1_user", "ext_999_3_users", "ext_1999_7_users", "saas_4999_unlimited"].includes(plan);
+  return [
+    "ext_499_1_user",
+    "ext_999_3_users",
+    "ext_1999_7_users",
+    "saas_4999_unlimited",
+    "s1_basic_499",
+    "s1_full_999",
+    "s1_suite_1499",
+    "s3_basic_999",
+    "s3_full_1999",
+    "s3_suite_2999",
+    "s7_basic_1999",
+    "s7_full_3999",
+    "s7_suite_5999",
+    "s15_basic_2999",
+    "s15_full_4999",
+    "s15_suite_6999"
+  ].includes(plan);
 }
 function sanitizeCompanyLicense(raw, company = null) {
   const source = raw && typeof raw === "object" ? raw : {};
@@ -669,6 +698,10 @@ function getWorkspaceUserLimitForLicense(license = null) {
   if (plan === "ext_999_3_users") return 3;
   if (plan === "ext_1999_7_users") return 7;
   if (plan === "saas_4999_unlimited") return null;
+  if (plan === "s1_basic_499" || plan === "s1_full_999" || plan === "s1_suite_1499") return 1;
+  if (plan === "s3_basic_999" || plan === "s3_full_1999" || plan === "s3_suite_2999") return 3;
+  if (plan === "s7_basic_1999" || plan === "s7_full_3999" || plan === "s7_suite_5999") return 7;
+  if (plan === "s15_basic_2999" || plan === "s15_full_4999" || plan === "s15_suite_6999") return 15;
   return null;
 }
 function getWorkspaceUserLimitMessage(limit) {
