@@ -4980,6 +4980,7 @@ function PortalApp({ token, onLogout }) {
     String(state.user?.role || "").trim().toLowerCase() === "admin";
   const isAnkitAdmin = String(state.user?.email || "").trim().toLowerCase() === "ankit.garg@kompatibleminds.com";
   const canAddCompany = isSettingsAdmin && (isAnkitAdmin || isKompatibleAdminContext);
+  const accessFlagsReady = Boolean(state.user?.id) && (Boolean(companyLicense) || Boolean(billingOverview));
   const navSections = useMemo(() => (
     BASE_NAV_SECTIONS
       .map((section) => ({
@@ -5034,14 +5035,16 @@ function PortalApp({ token, onLogout }) {
   }, [currentCompanyId, defaultJdEmailCc]);
 
   useEffect(() => {
+    if (!accessFlagsReady) return;
     const blockedPaths = new Set(["/client-share", "/intake-settings", "/candidates", "/mail-settings", "/quick-update", "/reports", "/applicants"]);
     if (!hasSaasUnlimitedAccess && blockedPaths.has(String(location?.pathname || ""))) {
       navigate("/plan", { replace: true });
       setStatus("loginSettings", "This feature is available on SaaS Unlimited (Rs 4999).", "error");
     }
-  }, [hasSaasUnlimitedAccess, location?.pathname, navigate]);
+  }, [accessFlagsReady, hasSaasUnlimitedAccess, location?.pathname, navigate]);
 
   useEffect(() => {
+    if (!accessFlagsReady) return;
     const pathname = String(location?.pathname || "");
     const isModulePath =
       pathname === "/client-login" ||
@@ -5054,7 +5057,7 @@ function PortalApp({ token, onLogout }) {
       navigate("/plan", { replace: true });
       setStatus("loginSettings", "Client, Employee, and Payroll modules are available on Full Recruiter + Other Modules plans.", "error");
     }
-  }, [hasSuiteModulesAccess, location?.pathname, navigate]);
+  }, [accessFlagsReady, hasSuiteModulesAccess, location?.pathname, navigate]);
 
   async function openPlanUpgrade(planCode) {
     try {
@@ -11870,7 +11873,7 @@ function PortalApp({ token, onLogout }) {
                               className="ghost-btn more-menu__trigger"
                               onClick={() => setOpenAssessmentMoreId((current) => (current === String(item.id) ? "" : String(item.id)))}
                             >
-                              More <span className="muted">â‹¯</span>
+                              More
                             </button>
                             {openAssessmentMoreId === String(item.id) ? (
                               <div className="more-menu__dropdown more-menu__dropdown--inline" role="menu">
@@ -11897,7 +11900,7 @@ function PortalApp({ token, onLogout }) {
                               className="ghost-btn more-menu__trigger"
                               onClick={() => setOpenAssessmentMoreId((current) => (current === String(item.id) ? "" : String(item.id)))}
                             >
-                              More <span className="muted">â‹¯</span>
+                              More
                             </button>
                             {openAssessmentMoreId === String(item.id) ? (
                               <div className="more-menu__dropdown more-menu__dropdown--inline" role="menu">
