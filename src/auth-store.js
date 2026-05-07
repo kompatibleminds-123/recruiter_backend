@@ -740,6 +740,10 @@ function sanitizeSharedExportPresetSettings(raw) {
     source.personalShortcutsByUser && typeof source.personalShortcutsByUser === "object"
       ? source.personalShortcutsByUser
       : {};
+  const rawCompanyWideShortcuts =
+    source.companyWideShortcuts && typeof source.companyWideShortcuts === "object"
+      ? source.companyWideShortcuts
+      : {};
   const normalizeShortcutMap = (value) => {
     if (!value || typeof value !== "object" || Array.isArray(value)) return {};
     const out = {};
@@ -759,6 +763,7 @@ function sanitizeSharedExportPresetSettings(raw) {
     const normalized = normalizeShortcutMap(shortcuts);
     if (Object.keys(normalized).length) personalShortcutsByUser[safeUserId] = normalized;
   });
+  const companyWideShortcuts = normalizeShortcutMap(rawCompanyWideShortcuts);
   return {
     semanticSearchEnabled: source.semanticSearchEnabled !== false && source.semantic_search_enabled !== false,
     exportPresetLabels: {
@@ -794,6 +799,7 @@ function sanitizeSharedExportPresetSettings(raw) {
       .filter((item) => item.id && item.label && item.columns)
       .slice(0, MAX_SHARED_CUSTOM_EXPORT_PRESETS),
     customExportColumns: String(source.customExportColumns || "").trim(),
+    companyWideShortcuts,
     personalShortcutsByUser,
     updatedAt: String(source.updatedAt || "").trim(),
     updatedBy: String(source.updatedBy || "").trim()
@@ -2236,7 +2242,16 @@ async function listCompanyJobs(companyId, recruiterId = "", options = {}) {
         .filter(([jobId]) => Boolean(jobId))
     );
 
-    return jobs.map((job) => (shortcutsMap.has(String(job?.id || "")) ? { ...job, jdShortcuts: shortcutsMap.get(String(job.id)) } : job));
+    return jobs.map((job) => {
+      const jobId = String(job?.id || "").trim();
+      if (!jobId) return { ...job, jdShortcuts: "" };
+      return {
+        ...job,
+        // Never fall back to legacy/global jdShortcuts for recruiter-scoped reads.
+        // Each recruiter should only receive their own shortcut payload.
+        jdShortcuts: shortcutsMap.has(jobId) ? String(shortcutsMap.get(jobId) || "") : ""
+      };
+    });
   }
 
   await ensureSeeded();
@@ -2255,7 +2270,16 @@ async function listCompanyJobs(companyId, recruiterId = "", options = {}) {
       .map((row) => [String(row?.job_id || "").trim(), String(row?.shortcuts || "")])
       .filter(([jobId]) => Boolean(jobId))
   );
-  return jobs.map((job) => (shortcutsMap.has(String(job?.id || "")) ? { ...job, jdShortcuts: shortcutsMap.get(String(job.id)) } : job));
+  return jobs.map((job) => {
+    const jobId = String(job?.id || "").trim();
+    if (!jobId) return { ...job, jdShortcuts: "" };
+    return {
+      ...job,
+      // Never fall back to legacy/global jdShortcuts for recruiter-scoped reads.
+      // Each recruiter should only receive their own shortcut payload.
+      jdShortcuts: shortcutsMap.has(jobId) ? String(shortcutsMap.get(jobId) || "") : ""
+    };
+  });
 }
 async function getPublicCompanyJob(jobId) {
   const id = String(jobId || "").trim();
