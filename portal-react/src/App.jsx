@@ -4946,8 +4946,26 @@ function PortalApp({ token, onLogout }) {
   const defaultJdEmailCc = isKompatibleCompany ? DEFAULT_JD_EMAIL_CC : "";
   const currentPlanCode = String(effectiveLicense?.plan || "trial").trim().toLowerCase();
   const currentPlanTier = String(billingOverview?.currentPlan?.tier || "").trim().toLowerCase();
-  const hasSaasUnlimitedAccess = Boolean(billingOverview?.fullAccessBypass) || Boolean(billingOverview?.currentPlan?.fullRecruiter) || currentPlanTier === "full_recruiter_mode" || currentPlanTier === "full_recruiter_plus_modules";
-  const hasSuiteModulesAccess = Boolean(billingOverview?.fullAccessBypass) || Boolean(billingOverview?.currentPlan?.suiteModules) || currentPlanTier === "full_recruiter_plus_modules";
+  const fullRecruiterPlanCodes = new Set([
+    "s1_full_999", "s3_full_1999", "s7_full_3999", "s15_full_4999",
+    "s1_suite_1499", "s3_suite_2999", "s7_suite_5999", "s15_suite_6999",
+    "ext_999_3_users", "ext_1999_7_users", "saas_4999_unlimited", "legacy", "enterprise_contact"
+  ]);
+  const suitePlanCodes = new Set([
+    "s1_suite_1499", "s3_suite_2999", "s7_suite_5999", "s15_suite_6999",
+    "saas_4999_unlimited", "legacy", "enterprise_contact"
+  ]);
+  const hasSaasUnlimitedAccess =
+    Boolean(billingOverview?.fullAccessBypass) ||
+    Boolean(billingOverview?.currentPlan?.fullRecruiter) ||
+    currentPlanTier === "full_recruiter_mode" ||
+    currentPlanTier === "full_recruiter_plus_modules" ||
+    fullRecruiterPlanCodes.has(currentPlanCode);
+  const hasSuiteModulesAccess =
+    Boolean(billingOverview?.fullAccessBypass) ||
+    Boolean(billingOverview?.currentPlan?.suiteModules) ||
+    currentPlanTier === "full_recruiter_plus_modules" ||
+    suitePlanCodes.has(currentPlanCode);
   const accessStateLabel = billingOverview?.fullAccessBypass
     ? "Full Access (Bypass)"
     : hasSuiteModulesAccess
