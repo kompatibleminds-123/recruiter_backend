@@ -59,14 +59,6 @@ const BASE_NAV_SECTIONS = [
       { to: "/intake-settings", label: "Job Apply Link" },
       { to: "/settings", label: "Preset Settings" }
     ]
-  },
-  {
-    label: "Modules",
-    items: [
-      { to: "/client-login", label: "Client Portal" },
-      { to: "/employee-login", label: "Employee Portal" },
-      { to: "/payroll-login", label: "Payroll Portal" }
-    ]
   }
 ];
 
@@ -4987,15 +4979,13 @@ function PortalApp({ token, onLogout }) {
         ...section,
         items: section.items.filter((item) => {
           const itemTo = String(item?.to || "");
-          if (section.label === "Modules" && !isSettingsAdmin) return false;
-          if (section.label === "Modules" && !hasSuiteModulesAccess) return false;
           if ((itemTo === "/plan" || itemTo === "/login-settings" || itemTo === "/intake-settings" || itemTo === "/settings" || itemTo.startsWith("/admin/payroll")) && !isSettingsAdmin) return false;
           if (!hasSaasUnlimitedAccess && (itemTo === "/client-share" || itemTo === "/intake-settings" || itemTo === "/mail-settings" || itemTo === "/quick-update" || itemTo === "/applicants")) return false;
           return true;
         })
       }))
       .filter((section) => section.items.length)
-  ), [isSettingsAdmin, hasSaasUnlimitedAccess, hasSuiteModulesAccess]);
+  ), [isSettingsAdmin, hasSaasUnlimitedAccess]);
   const standaloneNavItems = useMemo(() => (
     STANDALONE_NAV_ITEMS.filter((item) => {
       if (!hasSaasUnlimitedAccess && item.to === "/reports") return false;
