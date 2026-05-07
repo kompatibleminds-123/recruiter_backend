@@ -2095,7 +2095,7 @@ function buildCombinedAssessmentInsightsForExportV2(item = {}) {
     const key = `${q.toLowerCase()}::${a.toLowerCase()}`;
     if (seen.has(key)) return;
     seen.add(key);
-    qaLines.push(`**${q}**: **${a}**`);
+    qaLines.push(`<b>${q}:</b> *${a}*`);
   };
 
   if (ctx.screeningMap && typeof ctx.screeningMap === "object") {
@@ -2117,10 +2117,21 @@ function buildCombinedAssessmentInsightsForExportV2(item = {}) {
       pushQa(label, value);
     });
 
-  const otherPointers = String(item.other_pointers || "").trim();
+  const strongPoints = (
+    Array.isArray(item.topStrengths) ? item.topStrengths
+      : Array.isArray(item.result?.topStrengths) ? item.result.topStrengths
+      : []
+  )
+    .map((value) => String(value || "").trim())
+    .filter(Boolean)
+    .slice(0, 3);
+  const reasonOfChange = String(item.reason_of_change || "").trim();
   const parts = [];
   if (qaLines.length) parts.push(qaLines.join("\n"));
-  if (otherPointers) parts.push(otherPointers);
+  if (strongPoints.length) {
+    parts.push(strongPoints.map((value, index) => `${index + 1}. Strong point: ${value}`).join("\n"));
+  }
+  if (reasonOfChange) parts.push(`Reason of change: ${reasonOfChange}`);
   return parts.filter(Boolean).join("\n");
 }
 
