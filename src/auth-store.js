@@ -703,6 +703,29 @@ function sanitizeSharedExportPresetSettings(raw) {
   const rawLabels = source.exportPresetLabels && typeof source.exportPresetLabels === "object" ? source.exportPresetLabels : {};
   const rawColumns = source.exportPresetColumns && typeof source.exportPresetColumns === "object" ? source.exportPresetColumns : {};
   const rawCustomPresets = Array.isArray(source.customExportPresets) ? source.customExportPresets : [];
+  const rawPersonalShortcutsByUser =
+    source.personalShortcutsByUser && typeof source.personalShortcutsByUser === "object"
+      ? source.personalShortcutsByUser
+      : {};
+  const normalizeShortcutMap = (value) => {
+    if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+    const out = {};
+    Object.entries(value).forEach(([key, template]) => {
+      const safeKey = String(key || "").trim();
+      const safeTemplate = String(template || "").trim();
+      if (!safeKey || !safeTemplate) return;
+      const finalKey = safeKey.startsWith("/") ? safeKey : `/${safeKey}`;
+      out[finalKey] = safeTemplate;
+    });
+    return out;
+  };
+  const personalShortcutsByUser = {};
+  Object.entries(rawPersonalShortcutsByUser).forEach(([userId, shortcuts]) => {
+    const safeUserId = String(userId || "").trim();
+    if (!safeUserId) return;
+    const normalized = normalizeShortcutMap(shortcuts);
+    if (Object.keys(normalized).length) personalShortcutsByUser[safeUserId] = normalized;
+  });
   return {
     semanticSearchEnabled: source.semanticSearchEnabled !== false && source.semantic_search_enabled !== false,
     exportPresetLabels: {
@@ -738,9 +761,23 @@ function sanitizeSharedExportPresetSettings(raw) {
       .filter((item) => item.id && item.label && item.columns)
       .slice(0, MAX_SHARED_CUSTOM_EXPORT_PRESETS),
     customExportColumns: String(source.customExportColumns || "").trim(),
+    personalShortcutsByUser,
     updatedAt: String(source.updatedAt || "").trim(),
     updatedBy: String(source.updatedBy || "").trim()
   };
+}
+
+function sanitizeShortcutMapForPersistence(shortcuts) {
+  if (!shortcuts || typeof shortcuts !== "object" || Array.isArray(shortcuts)) return {};
+  const out = {};
+  Object.entries(shortcuts).forEach(([key, template]) => {
+    const safeKey = String(key || "").trim();
+    const safeTemplate = String(template || "").trim();
+    if (!safeKey || !safeTemplate) return;
+    const finalKey = safeKey.startsWith("/") ? safeKey : `/${safeKey}`;
+    out[finalKey] = safeTemplate;
+  });
+  return out;
 }
 function sanitizeAssessment(item) {
   if (!item) return null;
@@ -2379,6 +2416,92 @@ async function saveCompanySharedExportPresets({ actorUserId, companyId, settings
     payload
   }], { conflict: "id", upsert: true });
   return sanitizeSharedExportPresetSettings(rows?.[0]?.payload || payload);
+}
+async function getCompanyPersonalShortcuts({ companyId, userId }) {
+  const scopedCompanyId = String(companyId || "").trim();
+  const scopedUserId = String(userId || "").trim();
+  if (!scopedCompanyId || !scopedUserId) throw new Error("companyId and userId are required.");
+  const settings = await getCompanySharedExportPresets(scopedCompanyId).catch(() => ({}));
+  const map = settings?.personalShortcutsByUser && typeof settings.personalShortcutsByUser === "object"
+    ? settings.personalShortcutsByUser
+    : {};
+  return sanitizeShortcutMapForPersistence(map[scopedUserId] || {});
+}
+async function saveCompanyPersonalShortcuts({ actorUserId, companyId, shortcuts }) {
+  if (!actorUserId || !companyId) throw new Error("actorUserId and companyId are required.");
+  const actor = sanitizeUser(await getUserById(actorUserId, companyId));
+  if (!actor) throw new Error("Authenticated recruiter not found for this company.");
+  const scopedCompanyId = String(companyId || "").trim();
+  const scopedUserId = String(actor.id || "").trim();
+  const safeShortcuts = sanitizeShortcutMapForPersistence(shortcuts);
+  const existing = await getCompanySharedExportPresets(scopedCompanyId).catch(() => ({}));
+  const existingMap = existing?.personalShortcutsByUser && typeof existing.personalShortcutsByUser === "object"
+    ? { ...existing.personalShortcutsByUser }
+    : {};
+  if (Object.keys(safeShortcuts).length) existingMap[scopedUserId] = safeShortcuts;
+  else delete existingMap[scopedUserId];
+  const payload = {
+    ...existing,
+    personalShortcutsByUser: existingMap
+  };
+  const now = new Date().toISOString();
+  if (!cfg().on) {
+    const store = readStore();
+    store.jobs = Array.isArray(store.jobs) ? store.jobs : [];
+    const ix = store.jobs.findIndex((j) => j.companyId === scopedCompanyId && isSharedExportPresetRow(j));
+    const next = {
+      id: SHARED_EXPORT_PRESET_ROW_ID,
+      companyId: scopedCompanyId,
+      title: SHARED_EXPORT_PRESET_ROW_TITLE,
+      clientName: "__system__",
+      jobDescription: "Shared export presets",
+      mustHaveSkills: "",
+      redFlags: "",
+      recruiterNotes: "",
+      standardQuestions: "",
+      jdShortcuts: "",
+      createdAt: ix >= 0 ? store.jobs[ix].createdAt : now,
+      updatedAt: now,
+      updatedBy: actor.email,
+      payload: {
+        ...sanitizeSharedExportPresetSettings(payload),
+        id: SHARED_EXPORT_PRESET_ROW_ID,
+        title: SHARED_EXPORT_PRESET_ROW_TITLE,
+        companyId: scopedCompanyId,
+        updatedAt: now,
+        updatedBy: actor.email
+      }
+    };
+    if (ix >= 0) store.jobs[ix] = next; else store.jobs.push(next);
+    writeStore(store);
+    return sanitizeShortcutMapForPersistence(next.payload?.personalShortcutsByUser?.[scopedUserId] || {});
+  }
+  const rowPayload = {
+    ...sanitizeSharedExportPresetSettings(payload),
+    id: SHARED_EXPORT_PRESET_ROW_ID,
+    title: SHARED_EXPORT_PRESET_ROW_TITLE,
+    companyId: scopedCompanyId,
+    updatedAt: now,
+    updatedBy: actor.email
+  };
+  const rows = await sbIns("company_jobs", [{
+    id: systemJobRowId(scopedCompanyId, SHARED_EXPORT_PRESET_ROW_ID),
+    company_id: scopedCompanyId,
+    title: SHARED_EXPORT_PRESET_ROW_TITLE,
+    client_name: "__system__",
+    job_description: "Shared export presets",
+    must_have_skills: "",
+    red_flags: "",
+    recruiter_notes: "",
+    standard_questions: "",
+    jd_shortcuts: "",
+    created_at: now,
+    updated_at: now,
+    updated_by: actor.email,
+    payload: rowPayload
+  }], { conflict: "id", upsert: true });
+  const saved = sanitizeSharedExportPresetSettings(rows?.[0]?.payload || rowPayload);
+  return sanitizeShortcutMapForPersistence(saved?.personalShortcutsByUser?.[scopedUserId] || {});
 }
 async function getCompanyClientUsers(companyId) {
   if (!companyId) throw new Error("companyId is required.");
@@ -4706,6 +4829,7 @@ module.exports = {
   deleteCompanyJob,
   getCompanyApplicantIntakeSecret,
   getCompanySharedExportPresets,
+  getCompanyPersonalShortcuts,
   getPublicCompanyJob,
   setCompanyExtensionPlan,
   getSessionUser,
@@ -4761,6 +4885,7 @@ module.exports = {
   saveEmployeeCompensationStructure,
   updateEmployeeProfileAndWorkSite,
   saveCompanySharedExportPresets,
+  saveCompanyPersonalShortcuts,
   setCompanyApplicantIntakeSecret,
   searchAssessments,
   saveAssessment,

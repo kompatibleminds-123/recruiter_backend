@@ -19,7 +19,6 @@ const candidateNoticePeriodInput = document.getElementById("candidateNoticePerio
 const candidatePhoneInput = document.getElementById("candidatePhone");
 const candidateEmailInput = document.getElementById("candidateEmail");
 const candidateLinkedinInput = document.getElementById("candidateLinkedin");
-const candidateNextActionInput = document.getElementById("candidateNextAction");
 const newCandidateCvButton = document.getElementById("newCandidateCvButton");
 const newCandidateCvFile = document.getElementById("newCandidateCvFile");
 const existingRecruiterNoteInput = document.getElementById("existingRecruiterNoteInput");
@@ -115,7 +114,6 @@ function clearNewCandidateForm() {
     candidatePhoneInput,
     candidateEmailInput,
     candidateLinkedinInput,
-    candidateNextActionInput,
     noteInput
   ].forEach((input) => {
     if (input) input.value = "";
@@ -1167,7 +1165,6 @@ function populateFormFromParsedResult(data) {
   if (candidatePhoneInput) candidatePhoneInput.value = String(data.phone || "").trim();
   if (candidateEmailInput) candidateEmailInput.value = String(data.email || "").trim();
   if (candidateLinkedinInput) candidateLinkedinInput.value = String(data.linkedin || "").trim();
-  if (candidateNextActionInput) candidateNextActionInput.value = String(data.next_action || "").trim();
 }
 
 function setLatestParsedCandidateDraft(data) {
@@ -1218,7 +1215,7 @@ function buildCandidateFromReviewFields() {
     phone: candidatePhoneInput?.value.trim() || "",
     email: candidateEmailInput?.value.trim() || "",
     linkedin: candidateLinkedinInput?.value.trim() || "",
-    next_action: candidateNextActionInput?.value.trim() || "",
+    next_action: base.next_action || "",
     notes: notesValue,
     recruiter_id: currentQuickCaptureUser?.id || base.recruiter_id || "",
     recruiter_name: currentQuickCaptureUser?.name || base.recruiter_name || ""
@@ -1295,7 +1292,6 @@ function buildNoteFromForm() {
     candidatePhoneInput?.value.trim() ? `phone ${candidatePhoneInput.value.trim()}` : "",
     candidateEmailInput?.value.trim() ? `email ${candidateEmailInput.value.trim()}` : "",
     candidateLinkedinInput?.value.trim() ? `linkedin ${candidateLinkedinInput.value.trim()}` : "",
-    candidateNextActionInput?.value.trim() ? `next action ${candidateNextActionInput.value.trim()}` : "",
     noteInput.value.trim()
   ].filter(Boolean);
 
@@ -1759,7 +1755,6 @@ async function bootstrapAuthState() {
   candidatePhoneInput,
   candidateEmailInput,
   candidateLinkedinInput,
-  candidateNextActionInput,
   noteInput
 ].forEach((element) => {
   if (!element) return;

@@ -50,6 +50,7 @@ const {
   getSessionUser,
   getPlatformSessionUser,
   getCompanySharedExportPresets,
+  getCompanyPersonalShortcuts,
   getPublicCompanyJob,
   listCompanyEmployees,
   listCompanySalaryTemplates,
@@ -107,6 +108,7 @@ const {
   patchAssessmentCandidateLink,
   saveCompanyJob,
   saveCompanySharedExportPresets,
+  saveCompanyPersonalShortcuts,
   setCompanyExtensionPlan,
   setCompanyApplicantIntakeSecret,
   verifyUserEmail
@@ -8430,6 +8432,36 @@ const server = http.createServer(async (req, res) => {
       });
     } catch (error) {
       sendJson(res, 401, { ok: false, error: String(error.message || error) });
+    }
+    return;
+  }
+
+  if (req.method === "GET" && req.url === "/company/personal-shortcuts") {
+    try {
+      const user = await requireSessionUser(getBearerToken(req));
+      const shortcuts = await getCompanyPersonalShortcuts({
+        companyId: user.companyId,
+        userId: user.id
+      });
+      sendJson(res, 200, { ok: true, result: { shortcuts } });
+    } catch (error) {
+      sendJson(res, 401, { ok: false, error: String(error.message || error) });
+    }
+    return;
+  }
+
+  if (req.method === "POST" && req.url === "/company/personal-shortcuts") {
+    try {
+      const actor = await requireSessionUser(getBearerToken(req));
+      const body = await readJsonBody(req);
+      const shortcuts = await saveCompanyPersonalShortcuts({
+        actorUserId: actor.id,
+        companyId: actor.companyId,
+        shortcuts: body?.shortcuts || {}
+      });
+      sendJson(res, 200, { ok: true, result: { shortcuts } });
+    } catch (error) {
+      sendJson(res, 400, { ok: false, error: String(error.message || error) });
     }
     return;
   }
