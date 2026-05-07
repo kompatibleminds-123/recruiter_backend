@@ -3738,7 +3738,8 @@ function NewDraftModal({
   onPasteScreenshot,
   onImportSheet,
   onImportCvFiles,
-  importBusy = false
+  importBusy = false,
+  onOpenSheetImportPreview
 }) {
   if (!open) return null;
   const isAdmin = String(currentUser?.role || "").toLowerCase() === "admin";
@@ -3757,7 +3758,10 @@ function NewDraftModal({
               disabled={importBusy}
               onChange={(e) => {
                 const file = e.target.files?.[0] || null;
-                if (file) onImportSheet?.(file);
+                if (file) {
+                  onImportSheet?.(file);
+                  onOpenSheetImportPreview?.();
+                }
                 e.currentTarget.value = "";
               }}
             />
@@ -4819,7 +4823,29 @@ function PortalApp({ token, onLogout }) {
     tags: "",
     notes: ""
   });
+  const resetNewDraftForm = useCallback(() => {
+    setNewDraftForm({
+      assigned_to_user_id: "",
+      name: "",
+      phone: "",
+      email: "",
+      linkedin: "",
+      company: "",
+      current_designation: "",
+      total_experience: "",
+      location: "",
+      current_ctc: "",
+      notice_period: "",
+      highest_education: "",
+      jd_title: "",
+      client_name: "",
+      tags: "",
+      notes: ""
+    });
+  }, []);
   const [newDraftImportBusy, setNewDraftImportBusy] = useState(false);
+  const [newDraftSheetPreviewOpen, setNewDraftSheetPreviewOpen] = useState(false);
+  const [newDraftSheetRows, setNewDraftSheetRows] = useState([]);
   const [notesCandidateId, setNotesCandidateId] = useState("");
   const [attemptsCandidateId, setAttemptsCandidateId] = useState("");
   const [assessmentStatusId, setAssessmentStatusId] = useState("");
@@ -8049,24 +8075,7 @@ function PortalApp({ token, onLogout }) {
     await reloadCandidatesSlice({ includeDatabase: location?.pathname === "/candidates" });
     void refreshWorkspaceSilently("post-manual-draft");
     setNewDraftOpen(false);
-    setNewDraftForm({
-      assigned_to_user_id: "",
-      name: "",
-      phone: "",
-      email: "",
-      linkedin: "",
-      company: "",
-      current_designation: "",
-      total_experience: "",
-      location: "",
-      current_ctc: "",
-      notice_period: "",
-      highest_education: "",
-      jd_title: "",
-      client_name: "",
-      tags: "",
-      notes: ""
-    });
+    resetNewDraftForm();
     setStatus("captured", "Manual draft created.", "ok");
   }
 
@@ -8316,14 +8325,70 @@ function PortalApp({ token, onLogout }) {
       }
       const raw = await file.text();
       const rows = parseDelimitedRowsFromText(raw);
-      const patch = mapDraftAutofillFromSpreadsheetRows(rows);
-      if (!patch) {
+      const mappedRows = buildSheetDraftRows(rows).slice(0, 50);
+      if (!mappedRows.length) {
         throw new Error("Could not detect columns. Keep header row like Name, Email, Phone, Company, Location.");
       }
-      applyNewDraftAutofillPatch(patch);
-      setStatus("captured", "Sheet imported. First candidate row filled in draft.", "ok");
+      const existingRows = [...(state.candidates || []), ...(state.databaseCandidates || [])];
+      const validated = validateSheetDraftRows(mappedRows, existingRows);
+      setNewDraftSheetRows(validated);
+      setNewDraftSheetPreviewOpen(true);
+      setStatus("captured", `Sheet loaded for preview. ${validated.length} row(s) ready (max 50).`, "ok");
     } catch (error) {
       setStatus("captured", String(error?.message || error), "error");
+    } finally {
+      setNewDraftImportBusy(false);
+    }
+  }
+
+  function updateSheetPreviewRow(rowId, key, value) {
+    setNewDraftSheetRows((current) => {
+      const next = (current || []).map((row) => (
+        String(row.id) === String(rowId) ? { ...row, [key]: String(value || "") } : row
+      ));
+      const existingRows = [...(state.candidates || []), ...(state.databaseCandidates || [])];
+      return validateSheetDraftRows(next, existingRows);
+    });
+  }
+
+  async function importValidatedSheetRows() {
+    const validRows = (newDraftSheetRows || []).filter((row) => row.status === "valid");
+    if (!validRows.length) {
+      setStatus("captured", "No valid rows to import.", "error");
+      return;
+    }
+    const isAdmin = String(state.user?.role || "").toLowerCase() === "admin";
+    const assignedRecruiter = isAdmin
+      ? (state.users || []).find((user) => String(user.id) === String(newDraftForm.assigned_to_user_id))
+      : state.user;
+    let success = 0;
+    let failed = 0;
+    try {
+      setNewDraftImportBusy(true);
+      setStatus("captured", `Importing ${validRows.length} valid row(s)...`);
+      for (const row of validRows) {
+        try {
+          const payload = buildManualDraftCandidatePayload({
+            draftForm: {
+              ...newDraftForm,
+              ...row
+            },
+            assignedRecruiter,
+            parsedResult: null,
+            source: "sheet_bulk_import",
+            filename: ""
+          });
+          await api("/candidates", token, "POST", { candidate: payload });
+          success += 1;
+        } catch {
+          failed += 1;
+        }
+      }
+      await reloadCandidatesSlice({ includeDatabase: location?.pathname === "/candidates" });
+      void refreshWorkspaceSilently("post-sheet-bulk-import");
+      setNewDraftSheetPreviewOpen(false);
+      setNewDraftSheetRows([]);
+      setStatus("captured", `Sheet import done. Imported: ${success} | Failed: ${failed} | Skipped: ${(newDraftSheetRows || []).length - validRows.length}.`, failed ? "error" : "ok");
     } finally {
       setNewDraftImportBusy(false);
     }
@@ -11927,7 +11992,7 @@ function PortalApp({ token, onLogout }) {
             <Section kicker="Shared Workflow" title="Captured Notes">
               {statuses.captured ? <div className={`status ${statuses.capturedKind || ""}`}>{statuses.captured}</div> : null}
               <div className="button-row">
-                <button onClick={() => setNewDraftOpen(true)}>New Draft</button>
+                <button onClick={() => { resetNewDraftForm(); setNewDraftOpen(true); }}>New Draft</button>
               </div>
               <div className="form-grid three-col">
                 <label className="full"><span>Search</span><input placeholder="Search candidate name, company, phone, email, LinkedIn..." value={candidateFilters.q} onChange={(e) => setCandidateFilters((c) => ({ ...c, q: e.target.value }))} /></label>
@@ -13478,12 +13543,24 @@ function PortalApp({ token, onLogout }) {
         jobs={state.jobs}
         currentUser={state.user}
         onChange={(key, value) => setNewDraftForm((current) => ({ ...current, [key]: value }))}
-        onClose={() => setNewDraftOpen(false)}
+        onClose={() => { setNewDraftOpen(false); resetNewDraftForm(); }}
         onSave={() => void createManualDraft()}
         onPasteScreenshot={() => void importNewDraftFromPastedScreenshot()}
         onImportSheet={(file) => void importNewDraftFromSheet(file)}
         onImportCvFiles={(files) => void importBulkCvDrafts(files)}
         importBusy={newDraftImportBusy}
+        onOpenSheetImportPreview={() => setNewDraftSheetPreviewOpen(true)}
+      />
+      <NewDraftSheetImportPreviewModal
+        open={newDraftSheetPreviewOpen}
+        rows={newDraftSheetRows}
+        busy={newDraftImportBusy}
+        onClose={() => {
+          if (newDraftImportBusy) return;
+          setNewDraftSheetPreviewOpen(false);
+        }}
+        onCellChange={updateSheetPreviewRow}
+        onImportValid={() => void importValidatedSheetRows()}
       />
       <AttemptsModal open={Boolean(attemptsCandidateId)} candidate={attemptsCandidate} attempts={attempts} onClose={() => setAttemptsCandidateId("")} onRefresh={refreshAttempts} onSave={saveAttempt} />
       <AssessmentStatusModal open={Boolean(assessmentStatusId)} assessment={assessmentStatusItem} onClose={() => setAssessmentStatusId("")} onSave={(payload) => saveAssessmentStatusUpdate(assessmentStatusItem, payload)} />
@@ -13834,6 +13911,74 @@ function ClientPortalApp({ token, onLogout }) {
   );
 }
 
+function NewDraftSheetImportPreviewModal({
+  open,
+  rows = [],
+  busy = false,
+  onClose,
+  onCellChange,
+  onImportValid
+}) {
+  if (!open) return null;
+  const total = rows.length;
+  const valid = rows.filter((row) => row.status === "valid").length;
+  const warnings = rows.filter((row) => row.status === "warning").length;
+  const errors = rows.filter((row) => row.status === "error").length;
+  const duplicates = rows.filter((row) => row.status === "duplicate").length;
+  return (
+    <div className="overlay" onClick={busy ? undefined : onClose}>
+      <div className="overlay-card" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 1200, width: "96vw" }}>
+        <h3>Sheet Import Preview (Max 50 rows)</h3>
+        <p className="muted">Edit anything missing here. Only valid rows will be imported.</p>
+        <p className="muted">Total: {total} | Valid: {valid} | Warning: {warnings} | Error: {errors} | Duplicate: {duplicates}</p>
+        <div className="table-wrap" style={{ maxHeight: "56vh", overflow: "auto" }}>
+          <table className="dashboard-table">
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>Status</th>
+                <th>Name</th>
+                <th>Phone</th>
+                <th>Email</th>
+                <th>LinkedIn</th>
+                <th>Company</th>
+                <th>Role</th>
+                <th>Location</th>
+                <th>Notes</th>
+                <th>Issues</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row) => (
+                <tr key={row.id}>
+                  <td>{row.index}</td>
+                  <td>{row.status}</td>
+                  <td><input value={row.name} onChange={(e) => onCellChange?.(row.id, "name", e.target.value)} /></td>
+                  <td><input value={row.phone} onChange={(e) => onCellChange?.(row.id, "phone", e.target.value)} /></td>
+                  <td><input value={row.email} onChange={(e) => onCellChange?.(row.id, "email", e.target.value)} /></td>
+                  <td><input value={row.linkedin} onChange={(e) => onCellChange?.(row.id, "linkedin", e.target.value)} /></td>
+                  <td><input value={row.company} onChange={(e) => onCellChange?.(row.id, "company", e.target.value)} /></td>
+                  <td><input value={row.current_designation} onChange={(e) => onCellChange?.(row.id, "current_designation", e.target.value)} /></td>
+                  <td><input value={row.location} onChange={(e) => onCellChange?.(row.id, "location", e.target.value)} /></td>
+                  <td><input value={row.notes} onChange={(e) => onCellChange?.(row.id, "notes", e.target.value)} /></td>
+                  <td style={{ minWidth: 240 }}>{(row.issues || []).join("; ") || "-"}</td>
+                </tr>
+              ))}
+              {!rows.length ? (
+                <tr><td colSpan="11"><div className="empty-state compact-empty">No rows loaded yet.</div></td></tr>
+              ) : null}
+            </tbody>
+          </table>
+        </div>
+        <div className="button-row" style={{ marginTop: 12 }}>
+          <button onClick={onImportValid} disabled={busy || !valid}>{busy ? "Importing..." : "Import Valid Rows Only"}</button>
+          <button className="ghost-btn" onClick={onClose} disabled={busy}>Cancel</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function parseDelimitedRowsFromText(text = "") {
   const raw = String(text || "").replace(/\r\n/g, "\n").trim();
   if (!raw) return [];
@@ -13899,6 +14044,86 @@ function mapDraftAutofillFromSpreadsheetRows(rows = []) {
     notice_period: getValue("notice", "notice period"),
     highest_education: getValue("qualification", "education", "highest education")
   };
+}
+
+function normalizeSheetIdentityValue(value = "") {
+  return String(value || "").trim().toLowerCase();
+}
+
+function normalizeSheetPhone(value = "") {
+  return String(value || "").replace(/[^\d+]/g, "").trim();
+}
+
+function buildSheetDraftRows(rows = []) {
+  if (!Array.isArray(rows) || rows.length < 2) return [];
+  const headers = rows[0].map((item) => String(item || "").trim().toLowerCase());
+  const getValue = (values = [], ...aliases) => {
+    for (const alias of aliases) {
+      const idx = headers.findIndex((header) => header === alias || header.includes(alias));
+      if (idx >= 0) {
+        const value = String(values[idx] || "").trim();
+        if (value) return value;
+      }
+    }
+    return "";
+  };
+  return rows.slice(1).map((values, idx) => ({
+    id: `sheet-row-${idx + 1}`,
+    index: idx + 1,
+    name: getValue(values, "name", "candidate name", "full name"),
+    phone: getValue(values, "phone", "mobile", "contact", "phone number"),
+    email: getValue(values, "email", "email id", "mail"),
+    linkedin: getValue(values, "linkedin", "linkedin url", "linkedin profile"),
+    company: getValue(values, "company", "current company", "organization"),
+    current_designation: getValue(values, "designation", "role", "current designation", "position"),
+    total_experience: getValue(values, "experience", "total experience", "work experience"),
+    location: getValue(values, "location", "city"),
+    jd_title: getValue(values, "jd", "role", "position", "job title"),
+    client_name: getValue(values, "client", "client name"),
+    tags: getValue(values, "skill", "skills", "keywords", "tags"),
+    notes: getValue(values, "note", "notes", "remarks"),
+    current_ctc: getValue(values, "current ctc", "ctc"),
+    notice_period: getValue(values, "notice", "notice period"),
+    highest_education: getValue(values, "qualification", "education", "highest education")
+  })).filter((row) =>
+    Object.keys(row).some((key) => !["id", "index"].includes(key) && String(row[key] || "").trim())
+  );
+}
+
+function validateSheetDraftRows(rows = [], existingRows = []) {
+  const existingIdentitySet = new Set();
+  (existingRows || []).forEach((item) => {
+    const phone = normalizeSheetPhone(item?.phone || item?.phoneNumber || "");
+    const email = normalizeSheetIdentityValue(item?.email || item?.emailId || "");
+    const linkedin = normalizeSheetIdentityValue(item?.linkedin || item?.linkedinUrl || "");
+    if (phone) existingIdentitySet.add(`phone:${phone}`);
+    if (email) existingIdentitySet.add(`email:${email}`);
+    if (linkedin) existingIdentitySet.add(`linkedin:${linkedin}`);
+  });
+  const seenInFile = new Set();
+  return (rows || []).map((row) => {
+    const issues = [];
+    const name = String(row?.name || "").trim();
+    const phone = normalizeSheetPhone(row?.phone || "");
+    const email = normalizeSheetIdentityValue(row?.email || "");
+    const linkedin = normalizeSheetIdentityValue(row?.linkedin || "");
+    if (!name) issues.push("Missing name");
+    if (!(phone || email || linkedin)) issues.push("Need at least one contact: phone/email/linkedin");
+    const identities = [];
+    if (phone) identities.push(`phone:${phone}`);
+    if (email) identities.push(`email:${email}`);
+    if (linkedin) identities.push(`linkedin:${linkedin}`);
+    const isDuplicateExisting = identities.some((id) => existingIdentitySet.has(id));
+    const isDuplicateInFile = identities.some((id) => seenInFile.has(id));
+    identities.forEach((id) => seenInFile.add(id));
+    if (isDuplicateExisting || isDuplicateInFile) issues.push("Duplicate by phone/email/linkedin");
+    const hasError = issues.some((msg) => msg.includes("Missing") || msg.includes("Need at least one contact"));
+    let status = "valid";
+    if (issues.length && !hasError) status = "warning";
+    if (hasError) status = "error";
+    if (issues.some((msg) => msg.includes("Duplicate"))) status = "duplicate";
+    return { ...row, issues, status };
+  });
 }
 
 function getBrowserDevicePayload() {
