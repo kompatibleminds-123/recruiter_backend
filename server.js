@@ -8214,10 +8214,12 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  if (req.method === "GET" && req.url === "/company/jds") {
+  if (req.method === "GET" && requestUrl.pathname === "/company/jds") {
     try {
       const user = await requireSessionUser(getBearerToken(req));
-      const jobs = await listCompanyJobs(user.companyId, user.id);
+      const includeArchivedRaw = String(requestUrl.searchParams.get("includeArchived") || "").trim().toLowerCase();
+      const includeArchived = includeArchivedRaw === "1" || includeArchivedRaw === "true" || includeArchivedRaw === "yes";
+      const jobs = await listCompanyJobs(user.companyId, user.id, { includeArchived });
       sendJson(res, 200, { ok: true, result: { jobs } });
     } catch (error) {
       sendJson(res, 401, { ok: false, error: String(error.message || error) });

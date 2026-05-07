@@ -467,10 +467,17 @@ function sanitizeJob(job) {
     ownerRecruiterId: job.ownerRecruiterId ?? job.owner_recruiter_id ?? p.ownerRecruiterId ?? "",
     ownerRecruiterName: job.ownerRecruiterName ?? job.owner_recruiter_name ?? p.ownerRecruiterName ?? "",
     assignedRecruiters: Array.isArray(job.assignedRecruiters) ? job.assignedRecruiters : Array.isArray(job.assigned_recruiters) ? job.assigned_recruiters : Array.isArray(p.assignedRecruiters) ? p.assignedRecruiters : [],
+    isArchived: Boolean(job.isArchived ?? job.is_archived ?? p.isArchived ?? p.is_archived ?? false),
+    archivedAt: job.archivedAt ?? job.archived_at ?? p.archivedAt ?? p.archived_at ?? null,
+    archivedBy: job.archivedBy ?? job.archived_by ?? p.archivedBy ?? p.archived_by ?? "",
     createdAt: job.createdAt ?? job.created_at ?? p.createdAt ?? null,
     updatedAt: job.updatedAt ?? job.updated_at ?? p.updatedAt ?? null,
     updatedBy: job.updatedBy ?? job.updated_by ?? p.updatedBy ?? null
   };
+}
+function isJobArchived(job) {
+  if (!job) return false;
+  return Boolean(job.isArchived ?? job.is_archived ?? job.payload?.isArchived ?? job.payload?.is_archived ?? false);
 }
 const SHARED_EXPORT_PRESET_ROW_ID = "__shared_export_presets__";
 const SHARED_EXPORT_PRESET_ROW_TITLE = "__shared_export_presets__";
@@ -2139,12 +2146,14 @@ async function listCompanyUsers(companyId) {
   const sanitizedPayrollUsers = (payrollUsers || []).map(sanitizePayrollUser);
   return [...recruiterUsers, ...sanitizedPayrollUsers].sort((a, b) => String(a.createdAt || "").localeCompare(String(b.createdAt || "")));
 }
-async function listCompanyJobs(companyId, recruiterId = "") {
+async function listCompanyJobs(companyId, recruiterId = "", options = {}) {
   const scopedRecruiterId = String(recruiterId || "").trim();
+  const includeArchived = Boolean(options && options.includeArchived);
   if (!cfg().on) {
     const store = readStore();
     const jobs = (store.jobs || [])
       .filter((j) => j.companyId === companyId && !isSystemJobRow(j))
+      .filter((j) => includeArchived || !isJobArchived(j))
       .sort((a, b) => String(b.updatedAt || "").localeCompare(String(a.updatedAt || "")))
       .map(sanitizeJob);
     if (!scopedRecruiterId) return jobs;
@@ -2163,6 +2172,7 @@ async function listCompanyJobs(companyId, recruiterId = "") {
   await ensureSeeded();
   const jobs = (await sbSel("company_jobs", `select=*&company_id=eq.${enc(companyId)}&order=updated_at.desc`))
     .filter((row) => !isSystemJobRow(row))
+    .filter((row) => includeArchived || !isJobArchived(row))
     .map(sanitizeJob);
   if (!scopedRecruiterId) return jobs;
 
@@ -2207,6 +2217,11 @@ async function saveCompanyJob({ actorUserId, companyId, job }) {
     const ownerRecruiterId = actorIsAdmin ? String(job.ownerRecruiterId || job.owner_recruiter_id || "").trim() : String(actor.id || "").trim();
     const ownerRecruiterName = actorIsAdmin ? String(job.ownerRecruiterName || job.owner_recruiter_name || "").trim() : String(actor.name || "").trim();
     const assignedRecruiters = actorIsAdmin && Array.isArray(job.assignedRecruiters) ? job.assignedRecruiters : ownerRecruiterId ? [{ id: ownerRecruiterId, name: ownerRecruiterName, primary: true }] : [];
+    const requestedArchived = Boolean(job?.isArchived ?? job?.is_archived ?? false);
+    const existingArchivedAt = existingJob?.archivedAt ?? null;
+    const existingArchivedBy = String(existingJob?.archivedBy || "").trim();
+    const archivedAt = requestedArchived ? (existingArchivedAt || now) : null;
+    const archivedBy = requestedArchived ? (existingArchivedBy || actor.email || "") : "";
     const next = {
       id: persistedJobId(job.id),
       companyId,
@@ -2227,6 +2242,9 @@ async function saveCompanyJob({ actorUserId, companyId, job }) {
       ownerRecruiterId,
       ownerRecruiterName,
       assignedRecruiters,
+      isArchived: requestedArchived,
+      archivedAt,
+      archivedBy,
       createdAt: ix >= 0 ? store.jobs[ix].createdAt : now,
       updatedAt: now,
       updatedBy: actor.email
@@ -2260,10 +2278,15 @@ async function saveCompanyJob({ actorUserId, companyId, job }) {
   const ownerRecruiterName = actorIsAdmin ? String(job.ownerRecruiterName || job.owner_recruiter_name || "").trim() : String(actor.name || "").trim();
   const assignedRecruiters = actorIsAdmin && Array.isArray(job.assignedRecruiters) ? job.assignedRecruiters : ownerRecruiterId ? [{ id: ownerRecruiterId, name: ownerRecruiterName, primary: true }] : [];
   const now = new Date().toISOString();
+  const requestedArchived = Boolean(job?.isArchived ?? job?.is_archived ?? false);
+  const existingArchivedAt = existingJob?.archivedAt ?? null;
+  const existingArchivedBy = String(existingJob?.archivedBy || "").trim();
+  const archivedAt = requestedArchived ? (existingArchivedAt || now) : null;
+  const archivedBy = requestedArchived ? (existingArchivedBy || actor.email || "") : "";
   const persistedJob = persistedJobId(job.id);
   const rows = await sbIns(
     "company_jobs",
-    [jobRow({ ...job, jdShortcuts: globalShortcuts, ownerRecruiterId, ownerRecruiterName, assignedRecruiters, id: persistedJob, companyId, updatedBy: actor.email, createdAt: job.createdAt || existingJob?.createdAt || now, updatedAt: now })],
+    [jobRow({ ...job, jdShortcuts: globalShortcuts, ownerRecruiterId, ownerRecruiterName, assignedRecruiters, isArchived: requestedArchived, archivedAt, archivedBy, id: persistedJob, companyId, updatedBy: actor.email, createdAt: job.createdAt || existingJob?.createdAt || now, updatedAt: now })],
     { conflict: "id", upsert: true }
   );
 

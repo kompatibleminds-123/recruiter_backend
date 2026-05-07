@@ -4833,6 +4833,8 @@ function PortalApp({ token, onLogout }) {
 	const loadWorkspaceRef = useRef(null);
 	const linkedinSideWindowRef = useRef(null);
   const [selectedJobId, setSelectedJobId] = useState("");
+  const [jobListLane, setJobListLane] = useState("active");
+  const [jobsCatalog, setJobsCatalog] = useState([]);
   const [jobShortcutKey, setJobShortcutKey] = useState("");
   const [jobShortcutValue, setJobShortcutValue] = useState("");
   const [jobDraft, setJobDraft] = useState({
@@ -4852,7 +4854,10 @@ function PortalApp({ token, onLogout }) {
     redFlags: "",
     recruiterNotes: "",
     standardQuestions: "",
-    jdShortcuts: ""
+    jdShortcuts: "",
+    isArchived: false,
+    archivedAt: null,
+    archivedBy: ""
   });
   const [interviewMeta, setInterviewMeta] = useState({ candidateId: "", assessmentId: "" });
   const [interviewForm, setInterviewForm] = useState({
@@ -5290,7 +5295,7 @@ function PortalApp({ token, onLogout }) {
     if (clientPortalFilters.dateTo) clientPortalParams.set("dateTo", clientPortalFilters.dateTo);
     if (clientPortalFilters.clientLabel) clientPortalParams.set("clientLabel", clientPortalFilters.clientLabel);
 
-    const [userResult, dashboardResult, clientPortalResult, applicantsResult, intakeResult, jobsResult, usersResult, clientUsersResult, employeeUsersResult, candidatesResult, databaseCandidatesResult, assessmentsResult, assessmentEventsResult, sharedPresetResult, smtpSettingsResult, licenseResult, billingOverviewResult, billingPlansResult] = await Promise.all([
+    const [userResult, dashboardResult, clientPortalResult, applicantsResult, intakeResult, jobsResult, jobsManageResult, usersResult, clientUsersResult, employeeUsersResult, candidatesResult, databaseCandidatesResult, assessmentsResult, assessmentEventsResult, sharedPresetResult, smtpSettingsResult, licenseResult, billingOverviewResult, billingPlansResult] = await Promise.all([
       api("/auth/me", token),
       needsDashboard
         ? api(`/company/dashboard${dashboardParams.toString() ? `?${dashboardParams.toString()}` : ""}`, token)
@@ -5302,6 +5307,7 @@ function PortalApp({ token, onLogout }) {
       needsApplicants ? api("/company/applicants", token).catch(() => ({ items: [] })) : Promise.resolve(null),
       needsIntake ? api("/company/applicant-intake-secret", token).catch(() => null) : Promise.resolve(null),
       needsJobs ? api("/company/jds", token).catch(() => ({ jobs: [] })) : Promise.resolve(null),
+      needsJobs ? api("/company/jds?includeArchived=1", token).catch(() => ({ jobs: [] })) : Promise.resolve(null),
       needsUsers ? api("/company/users", token).catch(() => ({ users: [] })) : Promise.resolve(null),
       includeClientUsers
         ? api("/company/client-users", token).catch(() => ({ clientUsers: [] }))
@@ -5341,6 +5347,9 @@ function PortalApp({ token, onLogout }) {
       assessments: needsAssessments ? (assessmentsResult?.assessments || []) : current.assessments,
       assessmentEvents: needsAssessmentEvents ? (assessmentEventsResult?.result?.rows || []) : current.assessmentEvents
     }));
+    if (needsJobs) {
+      setJobsCatalog(Array.isArray(jobsManageResult?.jobs) ? jobsManageResult.jobs : []);
+    }
     if (includeClientUsers && clientUsersResult) {
       setClientUsers(clientUsersResult.clientUsers || []);
     }
@@ -5448,8 +5457,9 @@ function PortalApp({ token, onLogout }) {
 
   async function reloadJobsWorkspace() {
     if (!token) return;
-    const [jobsResult, usersResult, intakeResult] = await Promise.all([
+    const [jobsResult, jobsManageResult, usersResult, intakeResult] = await Promise.all([
       api("/company/jds", token).catch(() => ({ jobs: [] })),
+      api("/company/jds?includeArchived=1", token).catch(() => ({ jobs: [] })),
       api("/company/users", token).catch(() => ({ users: [] })),
       api("/company/applicant-intake-secret", token).catch(() => null)
     ]);
@@ -5459,6 +5469,7 @@ function PortalApp({ token, onLogout }) {
       users: usersResult?.users || [],
       intake: intakeResult || current.intake
     }));
+    setJobsCatalog(Array.isArray(jobsManageResult?.jobs) ? jobsManageResult.jobs : []);
   }
 
   async function reloadLoginSettingsWorkspace() {
@@ -8910,19 +8921,24 @@ function PortalApp({ token, onLogout }) {
       redFlags: "",
       recruiterNotes: "",
       standardQuestions: "",
-      jdShortcuts: ""
+      jdShortcuts: "",
+      isArchived: false,
+      archivedAt: null,
+      archivedBy: ""
     });
     setJobShortcutKey("");
     setJobShortcutValue("");
   }
 
   function loadJobIntoDraft(jobId) {
-    const job = (state.jobs || []).find((item) => String(item.id) === String(jobId));
+    const job = ((jobsCatalog || []).find((item) => String(item.id) === String(jobId)))
+      || ((state.jobs || []).find((item) => String(item.id) === String(jobId)));
     if (!job) {
       resetJobDraftBlank();
       return;
     }
     setSelectedJobId(String(job.id || ""));
+    setJobListLane(Boolean(job.isArchived) ? "archived" : "active");
     setJobDraft({
       id: String(job.id || ""),
       title: String(job.title || ""),
@@ -8940,7 +8956,10 @@ function PortalApp({ token, onLogout }) {
       redFlags: String(job.redFlags || ""),
       recruiterNotes: String(job.recruiterNotes || ""),
       standardQuestions: String(job.standardQuestions || ""),
-      jdShortcuts: String(job.jdShortcuts || "")
+      jdShortcuts: String(job.jdShortcuts || ""),
+      isArchived: Boolean(job.isArchived),
+      archivedAt: job.archivedAt || null,
+      archivedBy: String(job.archivedBy || "")
     });
     setJobShortcutKey("");
     setJobShortcutValue("");
@@ -8969,6 +8988,7 @@ function PortalApp({ token, onLogout }) {
       job: {
         ...jobDraft,
         id: String(selectedJobId || jobDraft.id || "").trim() || jobDraft.id,
+        isArchived: Boolean(jobDraft.isArchived),
         ownerRecruiterId,
         ownerRecruiterName,
         assignedRecruiters: Array.from(dedupedRecruiters.values())
@@ -9008,6 +9028,7 @@ function PortalApp({ token, onLogout }) {
         ...jobDraft,
         // Force-create a new JD even if user is currently editing an existing one.
         id: `jd-${Date.now()}`,
+        isArchived: false,
         ownerRecruiterId,
         ownerRecruiterName,
         assignedRecruiters: Array.from(dedupedRecruiters.values())
@@ -9033,6 +9054,47 @@ function PortalApp({ token, onLogout }) {
     await reloadJobsWorkspace();
     resetJobDraftBlank();
     setStatus("jobs", "JD deleted.", "ok");
+  }
+
+  async function setSelectedJobArchiveState(nextArchived) {
+    const jobId = String(selectedJobId || jobDraft.id || "").trim();
+    if (!jobId) return;
+    setStatus("jobs", nextArchived ? "Archiving JD..." : "Reactivating JD...");
+    const isAdmin = String(state.user?.role || "").toLowerCase() === "admin";
+    const ownerRecruiterId = isAdmin ? jobDraft.ownerRecruiterId : String(state.user?.id || "");
+    const ownerRecruiterName = isAdmin ? jobDraft.ownerRecruiterName : String(state.user?.name || "");
+    const primaryRecruiter = ownerRecruiterId
+      ? [{ id: ownerRecruiterId, name: ownerRecruiterName || "", primary: true }]
+      : [];
+    const additionalRecruiters = isAdmin && Array.isArray(jobDraft.assignedRecruiters) ? jobDraft.assignedRecruiters : [];
+    const dedupedRecruiters = new Map();
+    [...primaryRecruiter, ...additionalRecruiters].forEach((item) => {
+      const id = String(item?.id || "").trim();
+      if (!id) return;
+      dedupedRecruiters.set(id, {
+        id,
+        name: String(item?.name || "").trim(),
+        primary: id === String(ownerRecruiterId || "").trim()
+      });
+    });
+    await api("/company/jds", token, "POST", {
+      job: {
+        ...jobDraft,
+        id: jobId,
+        isArchived: Boolean(nextArchived),
+        ownerRecruiterId,
+        ownerRecruiterName,
+        assignedRecruiters: Array.from(dedupedRecruiters.values())
+      }
+    });
+    await reloadJobsWorkspace();
+    setJobDraft((current) => ({
+      ...current,
+      isArchived: Boolean(nextArchived),
+      archivedAt: nextArchived ? (current.archivedAt || new Date().toISOString()) : null,
+      archivedBy: nextArchived ? (current.archivedBy || String(state.user?.email || "")) : ""
+    }));
+    setStatus("jobs", nextArchived ? "JD archived." : "JD reactivated.", "ok");
   }
 
 	function downloadJobDraft() {
@@ -12690,9 +12752,18 @@ function PortalApp({ token, onLogout }) {
                 <div className="form-grid">
                   <label>
                     <span>Existing jobs</span>
+                    <select value={jobListLane} onChange={(e) => setJobListLane(e.target.value)}>
+                      <option value="active">Active JDs</option>
+                      <option value="archived">Archived JDs</option>
+                    </select>
+                  </label>
+                  <label>
+                    <span>Select JD</span>
                     <select value={selectedJobId} onChange={(e) => loadJobIntoDraft(e.target.value)}>
                       <option value="">Select JD</option>
-                      {state.jobs.map((job) => <option key={job.id} value={job.id}>{job.title || "Untitled JD"}</option>)}
+                      {jobsCatalog
+                        .filter((job) => (jobListLane === "archived" ? Boolean(job?.isArchived) : !Boolean(job?.isArchived)))
+                        .map((job) => <option key={job.id} value={job.id}>{job.title || "Untitled JD"}</option>)}
                     </select>
                   </label>
                 </div>
@@ -12725,6 +12796,25 @@ function PortalApp({ token, onLogout }) {
                     >
                       Delete JD
                     </button>
+                  ) : null}
+                  {isSettingsAdmin || String(jobDraft.ownerRecruiterId || "") === String(state.user?.id || "") ? (
+                    jobDraft.isArchived ? (
+                      <button
+                        className="ghost-btn"
+                        disabled={!selectedJobId}
+                        onClick={() => void setSelectedJobArchiveState(false)}
+                      >
+                        Reactivate JD
+                      </button>
+                    ) : (
+                      <button
+                        className="ghost-btn"
+                        disabled={!selectedJobId}
+                        onClick={() => void setSelectedJobArchiveState(true)}
+                      >
+                        Archive JD
+                      </button>
+                    )
                   ) : null}
                 </div>
 
