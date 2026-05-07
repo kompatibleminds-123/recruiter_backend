@@ -3726,7 +3726,19 @@ function AssessmentStatusModal({ open, assessment, onClose, onSave }) {
   );
 }
 
-function NewDraftModal({ open, form, users, jobs, currentUser, onChange, onClose, onSave }) {
+function NewDraftModal({
+  open,
+  form,
+  users,
+  jobs,
+  currentUser,
+  onChange,
+  onClose,
+  onSave,
+  onPasteScreenshot,
+  onImportSheet,
+  importBusy = false
+}) {
   if (!open) return null;
   const isAdmin = String(currentUser?.role || "").toLowerCase() === "admin";
   return (
@@ -3734,6 +3746,23 @@ function NewDraftModal({ open, form, users, jobs, currentUser, onChange, onClose
       <div className="overlay-card" onClick={(e) => e.stopPropagation()}>
         <h3>Create Draft</h3>
         <p className="muted">Add minimal details to create a draft without parsing.</p>
+        <div className="button-row" style={{ marginBottom: 10 }}>
+          <button type="button" className="ghost-btn" onClick={onPasteScreenshot} disabled={importBusy}>Paste screenshot (Ctrl+V)</button>
+          <label className="ghost-btn" style={{ display: "inline-flex", alignItems: "center", cursor: importBusy ? "not-allowed" : "pointer", opacity: importBusy ? 0.7 : 1 }}>
+            <input
+              type="file"
+              accept=".csv,.tsv,.txt,.xlsx,.xls"
+              style={{ display: "none" }}
+              disabled={importBusy}
+              onChange={(e) => {
+                const file = e.target.files?.[0] || null;
+                if (file) onImportSheet?.(file);
+                e.currentTarget.value = "";
+              }}
+            />
+            Upload Excel/CSV
+          </label>
+        </div>
         <div className="form-grid two-col">
           {isAdmin ? (
             <label>
@@ -4764,6 +4793,7 @@ function PortalApp({ token, onLogout }) {
     tags: "",
     notes: ""
   });
+  const [newDraftImportBusy, setNewDraftImportBusy] = useState(false);
   const [notesCandidateId, setNotesCandidateId] = useState("");
   const [attemptsCandidateId, setAttemptsCandidateId] = useState("");
   const [assessmentStatusId, setAssessmentStatusId] = useState("");
@@ -8091,6 +8121,81 @@ function PortalApp({ token, onLogout }) {
     const result = await api(`/contact-attempts?candidate_id=${encodeURIComponent(attemptsCandidateId)}&limit=20`, token).catch(() => []);
     setAttempts(Array.isArray(result) ? result : []);
     void refreshWorkspaceSilently("post-attempt-refresh");
+  }
+
+  function applyNewDraftAutofillPatch(patch = {}) {
+    setNewDraftForm((current) => {
+      const next = { ...current };
+      Object.entries(patch || {}).forEach(([key, value]) => {
+        const normalized = String(value || "").trim();
+        if (normalized) next[key] = normalized;
+      });
+      if (next.jd_title && !next.client_name) {
+        const matchedJob = (state.jobs || []).find((job) => String(job.title || "") === String(next.jd_title));
+        if (matchedJob?.clientName) next.client_name = String(matchedJob.clientName || "").trim();
+      }
+      return next;
+    });
+  }
+
+  async function importNewDraftFromPastedScreenshot() {
+    try {
+      setNewDraftImportBusy(true);
+      setStatus("captured", "Reading screenshot from clipboard...");
+      if (!navigator.clipboard?.read) {
+        throw new Error("Clipboard image access is not supported. Use latest Chrome and allow clipboard permissions.");
+      }
+      const clipboardItems = await navigator.clipboard.read();
+      const imageItem = (clipboardItems || []).find((item) => (item.types || []).some((type) => String(type).startsWith("image/")));
+      if (!imageItem) throw new Error("No image found in clipboard. Copy screenshot first, then click Paste screenshot.");
+      const imageType = (imageItem.types || []).find((type) => String(type).startsWith("image/")) || "image/png";
+      const blob = await imageItem.getType(imageType);
+      const file = new File([blob], "candidate-screenshot.png", { type: imageType });
+      const fileData = await fileToBase64(file);
+      const result = await api("/company/linkedin-assist/screenshot", token, "POST", {
+        file: {
+          filename: file.name,
+          mimeType: file.type || "image/png",
+          fileData
+        }
+      });
+      const extracted = result?.extracted || {};
+      applyNewDraftAutofillPatch({
+        name: extracted?.name || "",
+        company: extracted?.company || "",
+        location: extracted?.location || "",
+        linkedin: extracted?.linkedin || ""
+      });
+      setStatus("captured", "Screenshot parsed and form auto-filled.", "ok");
+    } catch (error) {
+      setStatus("captured", String(error?.message || error), "error");
+    } finally {
+      setNewDraftImportBusy(false);
+    }
+  }
+
+  async function importNewDraftFromSheet(file) {
+    if (!file) return;
+    const filename = String(file.name || "").toLowerCase();
+    try {
+      setNewDraftImportBusy(true);
+      setStatus("captured", "Reading sheet...");
+      if (!(filename.endsWith(".csv") || filename.endsWith(".tsv") || filename.endsWith(".txt"))) {
+        throw new Error("For now, upload CSV/TSV (save Excel as CSV once), then auto-fill will work.");
+      }
+      const raw = await file.text();
+      const rows = parseDelimitedRowsFromText(raw);
+      const patch = mapDraftAutofillFromSpreadsheetRows(rows);
+      if (!patch) {
+        throw new Error("Could not detect columns. Keep header row like Name, Email, Phone, Company, Location.");
+      }
+      applyNewDraftAutofillPatch(patch);
+      setStatus("captured", "Sheet imported. First candidate row filled in draft.", "ok");
+    } catch (error) {
+      setStatus("captured", String(error?.message || error), "error");
+    } finally {
+      setNewDraftImportBusy(false);
+    }
   }
 
   async function saveAttempt(patch) {
@@ -13165,6 +13270,9 @@ function PortalApp({ token, onLogout }) {
         onChange={(key, value) => setNewDraftForm((current) => ({ ...current, [key]: value }))}
         onClose={() => setNewDraftOpen(false)}
         onSave={() => void createManualDraft()}
+        onPasteScreenshot={() => void importNewDraftFromPastedScreenshot()}
+        onImportSheet={(file) => void importNewDraftFromSheet(file)}
+        importBusy={newDraftImportBusy}
       />
       <AttemptsModal open={Boolean(attemptsCandidateId)} candidate={attemptsCandidate} attempts={attempts} onClose={() => setAttemptsCandidateId("")} onRefresh={refreshAttempts} onSave={saveAttempt} />
       <AssessmentStatusModal open={Boolean(assessmentStatusId)} assessment={assessmentStatusItem} onClose={() => setAssessmentStatusId("")} onSave={(payload) => saveAssessmentStatusUpdate(assessmentStatusItem, payload)} />
@@ -13513,6 +13621,68 @@ function ClientPortalApp({ token, onLogout }) {
       </main>
     </div>
   );
+}
+
+function parseDelimitedRowsFromText(text = "") {
+  const raw = String(text || "").replace(/\r\n/g, "\n").trim();
+  if (!raw) return [];
+  const lines = raw.split("\n").map((line) => line.trim()).filter(Boolean);
+  if (!lines.length) return [];
+  const delimiter = lines[0].includes("\t") ? "\t" : ",";
+  const splitLine = (line) => {
+    if (delimiter === "\t") return line.split("\t").map((cell) => String(cell || "").trim());
+    const out = [];
+    let current = "";
+    let inQuotes = false;
+    for (let i = 0; i < line.length; i += 1) {
+      const ch = line[i];
+      if (ch === "\"") {
+        const next = line[i + 1];
+        if (inQuotes && next === "\"") {
+          current += "\"";
+          i += 1;
+        } else {
+          inQuotes = !inQuotes;
+        }
+      } else if (ch === "," && !inQuotes) {
+        out.push(current.trim());
+        current = "";
+      } else {
+        current += ch;
+      }
+    }
+    out.push(current.trim());
+    return out;
+  };
+  return lines.map(splitLine);
+}
+
+function mapDraftAutofillFromSpreadsheetRows(rows = []) {
+  if (!Array.isArray(rows) || rows.length < 2) return null;
+  const headers = rows[0].map((item) => String(item || "").trim().toLowerCase());
+  const values = rows[1] || [];
+  const getValue = (...aliases) => {
+    for (const alias of aliases) {
+      const idx = headers.findIndex((header) => header === alias || header.includes(alias));
+      if (idx >= 0) {
+        const value = String(values[idx] || "").trim();
+        if (value) return value;
+      }
+    }
+    return "";
+  };
+  return {
+    name: getValue("name", "candidate name", "full name"),
+    phone: getValue("phone", "mobile", "contact", "phone number"),
+    email: getValue("email", "email id", "mail"),
+    linkedin: getValue("linkedin", "linkedin url", "linkedin profile"),
+    company: getValue("company", "current company", "organization"),
+    location: getValue("location", "city"),
+    jd_title: getValue("jd", "role", "position", "job title"),
+    client_name: getValue("client", "client name"),
+    tags: getValue("skill", "skills", "keywords", "tags"),
+    notes: getValue("note", "notes", "remarks")
+  };
 }
 
 function getBrowserDevicePayload() {
