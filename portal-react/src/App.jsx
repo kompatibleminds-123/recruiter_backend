@@ -3737,6 +3737,7 @@ function NewDraftModal({
   onSave,
   onPasteScreenshot,
   onImportSheet,
+  onImportCvFiles,
   importBusy = false
 }) {
   if (!open) return null;
@@ -3761,6 +3762,21 @@ function NewDraftModal({
               }}
             />
             Upload Excel/CSV
+          </label>
+          <label className="ghost-btn" style={{ display: "inline-flex", alignItems: "center", cursor: importBusy ? "not-allowed" : "pointer", opacity: importBusy ? 0.7 : 1 }}>
+            <input
+              type="file"
+              accept=".pdf,.doc,.docx,.txt,.rtf"
+              multiple
+              style={{ display: "none" }}
+              disabled={importBusy}
+              onChange={(e) => {
+                const files = Array.from(e.target.files || []);
+                if (files.length) onImportCvFiles?.(files);
+                e.currentTarget.value = "";
+              }}
+            />
+            Bulk CV upload
           </label>
         </div>
         <div className="form-grid two-col">
@@ -8004,55 +8020,10 @@ function PortalApp({ token, onLogout }) {
     const assignedRecruiter = isAdmin
       ? (state.users || []).find((user) => String(user.id) === String(newDraftForm.assigned_to_user_id))
       : state.user;
-    const parsedSkills = String(newDraftForm.tags || "")
-      .split(/\r?\n|,|\||;/)
-      .map((item) => String(item || "").trim())
-      .filter(Boolean);
-    const payload = {
-      ...newDraftForm,
-      source: "manual_draft",
-      recruiter_context_notes: "",
-      other_pointers: "",
-      hidden_from_captured: false,
-      skills: parsedSkills,
-      screening_answers: {},
-      draft_payload: {
-        candidateName: newDraftForm.name || "",
-        phoneNumber: newDraftForm.phone || "",
-        emailId: newDraftForm.email || "",
-        linkedin: newDraftForm.linkedin || "",
-        location: newDraftForm.location || "",
-        currentCompany: newDraftForm.company || "",
-        currentDesignation: "",
-        totalExperience: "",
-        relevantExperience: "",
-        highestEducation: "",
-        currentCtc: "",
-        expectedCtc: "",
-        noticePeriod: "",
-        offerInHand: "",
-        lwdOrDoj: "",
-        currentOrgTenure: "",
-        reasonForChange: "",
-        clientName: newDraftForm.client_name || "",
-        jdTitle: newDraftForm.jd_title || "",
-        pipelineStage: "Under Interview Process",
-        candidateStatus: "Screening in progress",
-        followUpAt: "",
-        interviewAt: "",
-        recruiterNotes: "",
-        callbackNotes: newDraftForm.notes || "",
-        otherPointers: "",
-        tags: newDraftForm.tags || "",
-        jdScreeningAnswers: {},
-        cvAnalysis: null,
-        cvAnalysisApplied: false,
-        statusHistory: []
-      },
-      linkedin: newDraftForm.linkedin || "",
-      assigned_to_user_id: assignedRecruiter?.id || "",
-      assigned_to_name: assignedRecruiter?.name || ""
-    };
+    const payload = buildManualDraftCandidatePayload({
+      draftForm: newDraftForm,
+      assignedRecruiter
+    });
     await api("/candidates", token, "POST", { candidate: payload });
     await reloadCandidatesSlice({ includeDatabase: location?.pathname === "/candidates" });
     void refreshWorkspaceSilently("post-manual-draft");
@@ -8071,6 +8042,123 @@ function PortalApp({ token, onLogout }) {
       notes: ""
     });
     setStatus("captured", "Manual draft created.", "ok");
+  }
+
+  function buildManualDraftCandidatePayload({ draftForm, assignedRecruiter, parsedResult = null, source = "manual_draft", filename = "" }) {
+    const parsedSkills = String(draftForm.tags || "")
+      .split(/\r?\n|,|\||;/)
+      .map((item) => String(item || "").trim())
+      .filter(Boolean);
+    const parsedTimelineLabel = Array.isArray(parsedResult?.timeline) && parsedResult.timeline.length
+      ? `Timeline entries: ${parsedResult.timeline.length}`
+      : "";
+    const timelineConfidenceLabel = String(parsedResult?.timelineConfidence?.label || "").trim();
+    const notes = [String(draftForm.notes || "").trim(), timelineConfidenceLabel, parsedTimelineLabel].filter(Boolean).join(" | ");
+    return {
+      ...draftForm,
+      source,
+      recruiter_context_notes: "",
+      other_pointers: parsedTimelineLabel || "",
+      hidden_from_captured: false,
+      skills: parsedSkills,
+      screening_answers: {},
+      draft_payload: {
+        candidateName: draftForm.name || "",
+        phoneNumber: draftForm.phone || "",
+        emailId: draftForm.email || "",
+        linkedin: draftForm.linkedin || "",
+        location: draftForm.location || "",
+        currentCompany: draftForm.company || "",
+        currentDesignation: String(parsedResult?.currentDesignation || "").trim(),
+        totalExperience: String(parsedResult?.totalExperience || "").trim(),
+        relevantExperience: "",
+        highestEducation: String(parsedResult?.highestEducation || "").trim(),
+        currentCtc: "",
+        expectedCtc: "",
+        noticePeriod: "",
+        offerInHand: "",
+        lwdOrDoj: "",
+        currentOrgTenure: String(parsedResult?.currentOrgTenure || "").trim(),
+        reasonForChange: "",
+        clientName: draftForm.client_name || "",
+        jdTitle: draftForm.jd_title || "",
+        pipelineStage: "Under Interview Process",
+        candidateStatus: "Screening in progress",
+        followUpAt: "",
+        interviewAt: "",
+        recruiterNotes: "",
+        callbackNotes: notes,
+        otherPointers: "",
+        tags: draftForm.tags || "",
+        jdScreeningAnswers: {},
+        cvAnalysis: parsedResult || null,
+        cvAnalysisApplied: false,
+        statusHistory: []
+      },
+      linkedin: draftForm.linkedin || "",
+      assigned_to_user_id: assignedRecruiter?.id || "",
+      assigned_to_name: assignedRecruiter?.name || "",
+      cv_filename: filename || ""
+    };
+  }
+
+  async function importBulkCvDrafts(files = []) {
+    const isAdmin = String(state.user?.role || "").toLowerCase() === "admin";
+    const assignedRecruiter = isAdmin
+      ? (state.users || []).find((user) => String(user.id) === String(newDraftForm.assigned_to_user_id))
+      : state.user;
+    try {
+      setNewDraftImportBusy(true);
+      const safeFiles = Array.isArray(files) ? files.filter(Boolean) : [];
+      if (!safeFiles.length) {
+        setStatus("captured", "No CV files selected.", "error");
+        return;
+      }
+      setStatus("captured", `Parsing ${safeFiles.length} CV(s)...`);
+      let success = 0;
+      let failed = 0;
+      for (const file of safeFiles) {
+        try {
+          const fileData = await fileToBase64(file);
+          const parsed = await api("/parse-candidate", token, "POST", {
+            sourceType: "cv",
+            normalizeWithAi: true,
+            file: {
+              filename: file.name || "candidate-cv.pdf",
+              mimeType: file.type || "application/octet-stream",
+              fileData
+            }
+          });
+          const parsedResult = parsed?.result && typeof parsed.result === "object" ? parsed.result : parsed;
+          const candidateName = String(parsedResult?.candidateName || file.name?.replace(/\.[^.]+$/, "") || "").trim();
+          const candidateForm = {
+            ...newDraftForm,
+            name: candidateName,
+            phone: String(parsedResult?.phoneNumber || "").trim(),
+            email: String(parsedResult?.emailId || "").trim(),
+            linkedin: String(parsedResult?.linkedinUrl || "").trim(),
+            company: String(parsedResult?.currentCompany || "").trim(),
+            location: String(parsedResult?.location || "").trim()
+          };
+          const payload = buildManualDraftCandidatePayload({
+            draftForm: candidateForm,
+            assignedRecruiter,
+            parsedResult,
+            source: "bulk_cv_import",
+            filename: file.name || ""
+          });
+          await api("/candidates", token, "POST", { candidate: payload });
+          success += 1;
+        } catch {
+          failed += 1;
+        }
+      }
+      await reloadCandidatesSlice({ includeDatabase: location?.pathname === "/candidates" });
+      void refreshWorkspaceSilently("post-bulk-cv-import");
+      setStatus("captured", `Bulk CV import done. Success: ${success} | Failed: ${failed}.`, failed ? "error" : "ok");
+    } finally {
+      setNewDraftImportBusy(false);
+    }
   }
 
   async function completeAgendaFollowUp(candidate) {
@@ -13272,6 +13360,7 @@ function PortalApp({ token, onLogout }) {
         onSave={() => void createManualDraft()}
         onPasteScreenshot={() => void importNewDraftFromPastedScreenshot()}
         onImportSheet={(file) => void importNewDraftFromSheet(file)}
+        onImportCvFiles={(files) => void importBulkCvDrafts(files)}
         importBusy={newDraftImportBusy}
       />
       <AttemptsModal open={Boolean(attemptsCandidateId)} candidate={attemptsCandidate} attempts={attempts} onClose={() => setAttemptsCandidateId("")} onRefresh={refreshAttempts} onSave={saveAttempt} />
