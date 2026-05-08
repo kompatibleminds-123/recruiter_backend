@@ -1074,10 +1074,35 @@ async function exportCompanyQuickCaptureData(companyId) {
   };
 }
 
+async function getCandidateStatsForUser(user, options = {}) {
+  const q = String(options?.q || "").trim();
+  const scope = String(options?.scope || "").trim() || "company";
+  const rows = await listCandidatesForUser(user, { limit: 5000, q, scope });
+  const items = Array.isArray(rows) ? rows : [];
+  const todayKey = new Date().toISOString().slice(0, 10);
+  const isConverted = (item) =>
+    Boolean(item?.used_in_assessment) || Boolean(String(item?.assessment_id || item?.assessmentId || "").trim());
+  const isHidden = (item) => Boolean(item?.hidden_from_captured);
+  const createdKey = (item) => String(item?.created_at || "").slice(0, 10);
+  const total = items.length;
+  const today = items.filter((item) => createdKey(item) === todayKey).length;
+  const converted = items.filter((item) => isConverted(item)).length;
+  const hidden = items.filter((item) => isHidden(item)).length;
+  const active = items.filter((item) => !isHidden(item) && !isConverted(item)).length;
+  return {
+    today,
+    total,
+    active,
+    hidden,
+    converted
+  };
+}
+
 module.exports = {
   assignCandidate,
   deleteCandidate,
   exportCompanyQuickCaptureData,
+  getCandidateStatsForUser,
   findDuplicateCandidate,
   linkCandidateToAssessment,
   listDatabaseCandidatesForUser,

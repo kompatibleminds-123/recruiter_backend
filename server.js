@@ -10,6 +10,7 @@ const {
   assignCandidate,
   deleteCandidate,
   exportCompanyQuickCaptureData,
+  getCandidateStatsForUser,
   findDuplicateCandidate,
   linkCandidateToAssessment,
   listDatabaseCandidatesForUser,
@@ -11462,6 +11463,20 @@ const server = http.createServer(async (req, res) => {
         scope: String(requestUrl.searchParams.get("scope") || "").trim()
       };
       const result = await listCandidatesForUser(sessionUser, listOptions);
+      sendJson(res, 200, { ok: true, result });
+    } catch (error) {
+      sendJson(res, 400, { ok: false, error: String(error.message || error) });
+    }
+    return;
+  }
+
+  if (req.method === "GET" && requestUrl.pathname === "/candidates/stats") {
+    try {
+      const sessionUser = await requireSessionUser(getBearerToken(req));
+      const result = await getCandidateStatsForUser(sessionUser, {
+        q: String(requestUrl.searchParams.get("q") || "").trim(),
+        scope: String(requestUrl.searchParams.get("scope") || "").trim()
+      });
       sendJson(res, 200, { ok: true, result });
     } catch (error) {
       sendJson(res, 400, { ok: false, error: String(error.message || error) });

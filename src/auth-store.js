@@ -858,6 +858,16 @@ function sanitizeAssessment(item) {
     expectedCtc: item.expectedCtc ?? item.expected_ctc ?? p.expectedCtc ?? "",
     noticePeriod: item.noticePeriod ?? item.notice_period ?? p.noticePeriod ?? "",
     questionMode: item.questionMode ?? item.question_mode ?? p.questionMode ?? "",
+    jdScreeningAnswers:
+      item.jdScreeningAnswers
+      ?? item.jd_screening_answers
+      ?? item.screeningAnswers
+      ?? item.screening_answers
+      ?? p.jdScreeningAnswers
+      ?? p.jd_screening_answers
+      ?? p.screeningAnswers
+      ?? p.screening_answers
+      ?? {},
     sections: item.sections ?? p.sections ?? {},
     result: item.result ?? p.result ?? {},
     answers: item.answers ?? p.answers ?? [],
