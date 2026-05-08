@@ -4921,6 +4921,7 @@ function PortalApp({ token, onLogout }) {
     archivedAt: null,
     archivedBy: ""
   });
+  const [jobActionBusy, setJobActionBusy] = useState(false);
   const [interviewMeta, setInterviewMeta] = useState({ candidateId: "", assessmentId: "" });
   const [interviewForm, setInterviewForm] = useState({
     candidateName: "",
@@ -9067,82 +9068,97 @@ function PortalApp({ token, onLogout }) {
   }
 
   async function saveJobDraft() {
+    if (jobActionBusy) return;
+    setJobActionBusy(true);
     setStatus("jobs", "Saving JD...");
-    const isAdmin = String(state.user?.role || "").toLowerCase() === "admin";
-    const ownerRecruiterId = isAdmin ? jobDraft.ownerRecruiterId : String(state.user?.id || "");
-    const ownerRecruiterName = isAdmin ? jobDraft.ownerRecruiterName : String(state.user?.name || "");
-    const primaryRecruiter = ownerRecruiterId
-      ? [{ id: ownerRecruiterId, name: ownerRecruiterName || "", primary: true }]
-      : [];
-    const additionalRecruiters = isAdmin && Array.isArray(jobDraft.assignedRecruiters) ? jobDraft.assignedRecruiters : [];
-    const dedupedRecruiters = new Map();
-    [...primaryRecruiter, ...additionalRecruiters].forEach((item) => {
-      const id = String(item?.id || "").trim();
-      if (!id) return;
-      dedupedRecruiters.set(id, {
-        id,
-        name: String(item?.name || "").trim(),
-        primary: id === String(ownerRecruiterId || "").trim()
+    try {
+      const isAdmin = String(state.user?.role || "").toLowerCase() === "admin";
+      const ownerRecruiterId = isAdmin ? jobDraft.ownerRecruiterId : String(state.user?.id || "");
+      const ownerRecruiterName = isAdmin ? jobDraft.ownerRecruiterName : String(state.user?.name || "");
+      const primaryRecruiter = ownerRecruiterId
+        ? [{ id: ownerRecruiterId, name: ownerRecruiterName || "", primary: true }]
+        : [];
+      const additionalRecruiters = isAdmin && Array.isArray(jobDraft.assignedRecruiters) ? jobDraft.assignedRecruiters : [];
+      const dedupedRecruiters = new Map();
+      [...primaryRecruiter, ...additionalRecruiters].forEach((item) => {
+        const id = String(item?.id || "").trim();
+        if (!id) return;
+        dedupedRecruiters.set(id, {
+          id,
+          name: String(item?.name || "").trim(),
+          primary: id === String(ownerRecruiterId || "").trim()
+        });
       });
-    });
-    const result = await api("/company/jds", token, "POST", {
-      job: {
-        ...jobDraft,
-        id: String(selectedJobId || jobDraft.id || "").trim() || jobDraft.id,
-        isArchived: Boolean(jobDraft.isArchived),
-        ownerRecruiterId,
-        ownerRecruiterName,
-        assignedRecruiters: Array.from(dedupedRecruiters.values())
+      const result = await api("/company/jds", token, "POST", {
+        job: {
+          ...jobDraft,
+          id: String(selectedJobId || jobDraft.id || "").trim() || jobDraft.id,
+          isArchived: Boolean(jobDraft.isArchived),
+          ownerRecruiterId,
+          ownerRecruiterName,
+          assignedRecruiters: Array.from(dedupedRecruiters.values())
+        }
+      });
+      await reloadJobsWorkspace();
+      const nextId = String(result?.id || selectedJobId || jobDraft.id || "").trim();
+      if (nextId) {
+        setSelectedJobId(nextId);
+        setJobDraft((current) => ({ ...current, id: nextId }));
       }
-    });
-    await reloadJobsWorkspace();
-    const nextId = String(result?.id || selectedJobId || jobDraft.id || "").trim();
-    if (nextId) {
-      setSelectedJobId(nextId);
-      setJobDraft((current) => ({ ...current, id: nextId }));
+      setStatus("jobs", "JD saved.", "ok");
+    } catch (error) {
+      setStatus("jobs", `JD save failed: ${String(error?.message || error)}`, "error");
+    } finally {
+      setJobActionBusy(false);
     }
-    setStatus("jobs", "JD saved.", "ok");
   }
 
   async function saveJobDraftAsNew() {
+    if (jobActionBusy) return;
+    setJobActionBusy(true);
     setStatus("jobs", "Saving as new JD...");
-    const isAdmin = String(state.user?.role || "").toLowerCase() === "admin";
-    const ownerRecruiterId = isAdmin ? jobDraft.ownerRecruiterId : String(state.user?.id || "");
-    const ownerRecruiterName = isAdmin ? jobDraft.ownerRecruiterName : String(state.user?.name || "");
-    const primaryRecruiter = ownerRecruiterId
-      ? [{ id: ownerRecruiterId, name: ownerRecruiterName || "", primary: true }]
-      : [];
-    const additionalRecruiters = isAdmin && Array.isArray(jobDraft.assignedRecruiters) ? jobDraft.assignedRecruiters : [];
-    const dedupedRecruiters = new Map();
-    [...primaryRecruiter, ...additionalRecruiters].forEach((item) => {
-      const id = String(item?.id || "").trim();
-      if (!id) return;
-      dedupedRecruiters.set(id, {
-        id,
-        name: String(item?.name || "").trim(),
-        primary: id === String(ownerRecruiterId || "").trim()
+    try {
+      const isAdmin = String(state.user?.role || "").toLowerCase() === "admin";
+      const ownerRecruiterId = isAdmin ? jobDraft.ownerRecruiterId : String(state.user?.id || "");
+      const ownerRecruiterName = isAdmin ? jobDraft.ownerRecruiterName : String(state.user?.name || "");
+      const primaryRecruiter = ownerRecruiterId
+        ? [{ id: ownerRecruiterId, name: ownerRecruiterName || "", primary: true }]
+        : [];
+      const additionalRecruiters = isAdmin && Array.isArray(jobDraft.assignedRecruiters) ? jobDraft.assignedRecruiters : [];
+      const dedupedRecruiters = new Map();
+      [...primaryRecruiter, ...additionalRecruiters].forEach((item) => {
+        const id = String(item?.id || "").trim();
+        if (!id) return;
+        dedupedRecruiters.set(id, {
+          id,
+          name: String(item?.name || "").trim(),
+          primary: id === String(ownerRecruiterId || "").trim()
+        });
       });
-    });
-
-    const result = await api("/company/jds", token, "POST", {
-      job: {
-        ...jobDraft,
-        // Force-create a new JD even if user is currently editing an existing one.
-        id: `jd-${Date.now()}`,
-        isArchived: false,
-        ownerRecruiterId,
-        ownerRecruiterName,
-        assignedRecruiters: Array.from(dedupedRecruiters.values())
+      const result = await api("/company/jds", token, "POST", {
+        job: {
+          ...jobDraft,
+          // Force-create a new JD even if user is currently editing an existing one.
+          id: `jd-${Date.now()}`,
+          isArchived: false,
+          ownerRecruiterId,
+          ownerRecruiterName,
+          assignedRecruiters: Array.from(dedupedRecruiters.values())
+        }
+      });
+      await reloadJobsWorkspace();
+      const nextId = String(result?.id || "").trim();
+      if (nextId) {
+        loadJobIntoDraft(nextId);
+      } else {
+        resetJobDraftBlank();
       }
-    });
-    await reloadJobsWorkspace();
-    const nextId = String(result?.id || "").trim();
-    if (nextId) {
-      loadJobIntoDraft(nextId);
-    } else {
-      resetJobDraftBlank();
+      setStatus("jobs", "Saved as a new JD.", "ok");
+    } catch (error) {
+      setStatus("jobs", `Save as new failed: ${String(error?.message || error)}`, "error");
+    } finally {
+      setJobActionBusy(false);
     }
-    setStatus("jobs", "Saved as a new JD.", "ok");
   }
 
   async function deleteSelectedJobDraft() {
@@ -9150,52 +9166,68 @@ function PortalApp({ token, onLogout }) {
     if (!jobId) return;
     const confirmed = window.confirm("Delete this JD? This cannot be undone.");
     if (!confirmed) return;
+    if (jobActionBusy) return;
+    setJobActionBusy(true);
     setStatus("jobs", "Deleting JD...");
-    await api("/company/jds", token, "DELETE", { jobId });
-    await reloadJobsWorkspace();
-    resetJobDraftBlank();
-    setStatus("jobs", "JD deleted.", "ok");
+    try {
+      await api("/company/jds", token, "DELETE", { jobId });
+      await reloadJobsWorkspace();
+      resetJobDraftBlank();
+      setStatus("jobs", "JD deleted.", "ok");
+    } catch (error) {
+      setStatus("jobs", `Delete JD failed: ${String(error?.message || error)}`, "error");
+    } finally {
+      setJobActionBusy(false);
+    }
   }
 
   async function setSelectedJobArchiveState(nextArchived) {
     const jobId = String(selectedJobId || jobDraft.id || "").trim();
     if (!jobId) return;
+    if (jobActionBusy) return;
+    setJobActionBusy(true);
     setStatus("jobs", nextArchived ? "Archiving JD..." : "Reactivating JD...");
-    const isAdmin = String(state.user?.role || "").toLowerCase() === "admin";
-    const ownerRecruiterId = isAdmin ? jobDraft.ownerRecruiterId : String(state.user?.id || "");
-    const ownerRecruiterName = isAdmin ? jobDraft.ownerRecruiterName : String(state.user?.name || "");
-    const primaryRecruiter = ownerRecruiterId
-      ? [{ id: ownerRecruiterId, name: ownerRecruiterName || "", primary: true }]
-      : [];
-    const additionalRecruiters = isAdmin && Array.isArray(jobDraft.assignedRecruiters) ? jobDraft.assignedRecruiters : [];
-    const dedupedRecruiters = new Map();
-    [...primaryRecruiter, ...additionalRecruiters].forEach((item) => {
-      const id = String(item?.id || "").trim();
-      if (!id) return;
-      dedupedRecruiters.set(id, {
-        id,
-        name: String(item?.name || "").trim(),
-        primary: id === String(ownerRecruiterId || "").trim()
+    try {
+      const isAdmin = String(state.user?.role || "").toLowerCase() === "admin";
+      const ownerRecruiterId = isAdmin ? jobDraft.ownerRecruiterId : String(state.user?.id || "");
+      const ownerRecruiterName = isAdmin ? jobDraft.ownerRecruiterName : String(state.user?.name || "");
+      const primaryRecruiter = ownerRecruiterId
+        ? [{ id: ownerRecruiterId, name: ownerRecruiterName || "", primary: true }]
+        : [];
+      const additionalRecruiters = isAdmin && Array.isArray(jobDraft.assignedRecruiters) ? jobDraft.assignedRecruiters : [];
+      const dedupedRecruiters = new Map();
+      [...primaryRecruiter, ...additionalRecruiters].forEach((item) => {
+        const id = String(item?.id || "").trim();
+        if (!id) return;
+        dedupedRecruiters.set(id, {
+          id,
+          name: String(item?.name || "").trim(),
+          primary: id === String(ownerRecruiterId || "").trim()
+        });
       });
-    });
-    await api("/company/jds", token, "POST", {
-      job: {
-        ...jobDraft,
-        id: jobId,
+      await api("/company/jds", token, "POST", {
+        job: {
+          ...jobDraft,
+          id: jobId,
+          isArchived: Boolean(nextArchived),
+          ownerRecruiterId,
+          ownerRecruiterName,
+          assignedRecruiters: Array.from(dedupedRecruiters.values())
+        }
+      });
+      await reloadJobsWorkspace();
+      setJobDraft((current) => ({
+        ...current,
         isArchived: Boolean(nextArchived),
-        ownerRecruiterId,
-        ownerRecruiterName,
-        assignedRecruiters: Array.from(dedupedRecruiters.values())
-      }
-    });
-    await reloadJobsWorkspace();
-    setJobDraft((current) => ({
-      ...current,
-      isArchived: Boolean(nextArchived),
-      archivedAt: nextArchived ? (current.archivedAt || new Date().toISOString()) : null,
-      archivedBy: nextArchived ? (current.archivedBy || String(state.user?.email || "")) : ""
-    }));
-    setStatus("jobs", nextArchived ? "JD archived." : "JD reactivated.", "ok");
+        archivedAt: nextArchived ? (current.archivedAt || new Date().toISOString()) : null,
+        archivedBy: nextArchived ? (current.archivedBy || String(state.user?.email || "")) : ""
+      }));
+      setStatus("jobs", nextArchived ? "JD archived." : "JD reactivated.", "ok");
+    } catch (error) {
+      setStatus("jobs", `${nextArchived ? "Archive" : "Reactivate"} failed: ${String(error?.message || error)}`, "error");
+    } finally {
+      setJobActionBusy(false);
+    }
   }
 
 	function downloadJobDraft() {
@@ -12877,22 +12909,22 @@ function PortalApp({ token, onLogout }) {
 	                    <input type="file" accept=".txt,.md,.doc,.docx,.pdf" hidden onChange={(e) => { const file = e.target.files?.[0]; if (file) void handleJdUpload(file); }} />
 	                  </label>
 	                  <button className="ghost-btn" onClick={() => resetJobDraftBlank()}>New blank JD</button>
-	                  <button onClick={() => applySelectedJobToInterview()}>Apply generated JD</button>
-	                  <button onClick={() => generateJdFromText()}>Generate JD from text</button>
-	                  <button className="ghost-btn" onClick={() => downloadJobDraftWord()}>Download Word</button>
-	                  <button onClick={() => void saveJobDraft()}>{selectedJobId ? "Update JD" : "Save JD"}</button>
+	                  <button disabled={jobActionBusy} onClick={() => applySelectedJobToInterview()}>Apply generated JD</button>
+	                  <button disabled={jobActionBusy} onClick={() => generateJdFromText()}>Generate JD from text</button>
+	                  <button disabled={jobActionBusy} className="ghost-btn" onClick={() => downloadJobDraftWord()}>Download Word</button>
+	                  <button disabled={jobActionBusy} onClick={() => void saveJobDraft()}>{jobActionBusy ? "Saving..." : (selectedJobId ? "Update JD" : "Save JD")}</button>
 	                  <button
 	                    className="ghost-btn"
-	                    disabled={!String(jobDraft.title || "").trim() || !String(jobDraft.jobDescription || "").trim()}
+	                    disabled={jobActionBusy || !String(jobDraft.title || "").trim() || !String(jobDraft.jobDescription || "").trim()}
                     onClick={() => void saveJobDraftAsNew()}
                     title="Duplicate current JD as a new saved record"
                   >
-                    Save as new JD
+                    {jobActionBusy ? "Saving..." : "Save as new JD"}
                   </button>
                   {isSettingsAdmin || String(jobDraft.ownerRecruiterId || "") === String(state.user?.id || "") ? (
                     <button
                       className="ghost-btn"
-                      disabled={!selectedJobId}
+                      disabled={jobActionBusy || !selectedJobId}
                       onClick={() => void deleteSelectedJobDraft()}
                     >
                       Delete JD
@@ -12902,7 +12934,7 @@ function PortalApp({ token, onLogout }) {
                     jobDraft.isArchived ? (
                       <button
                         className="ghost-btn"
-                        disabled={!selectedJobId}
+                        disabled={jobActionBusy || !selectedJobId}
                         onClick={() => void setSelectedJobArchiveState(false)}
                       >
                         Reactivate JD
@@ -12910,7 +12942,7 @@ function PortalApp({ token, onLogout }) {
                     ) : (
                       <button
                         className="ghost-btn"
-                        disabled={!selectedJobId}
+                        disabled={jobActionBusy || !selectedJobId}
                         onClick={() => void setSelectedJobArchiveState(true)}
                       >
                         Archive JD
