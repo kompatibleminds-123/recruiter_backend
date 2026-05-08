@@ -2225,13 +2225,33 @@ async function listCompanyUsers(companyId) {
 async function listCompanyJobs(companyId, recruiterId = "", options = {}) {
   const scopedRecruiterId = String(recruiterId || "").trim();
   const includeArchived = Boolean(options && options.includeArchived);
+  let scopedUser = null;
+  let scopedIsAdmin = false;
+  if (scopedRecruiterId) {
+    scopedUser = sanitizeUser(await getUserById(scopedRecruiterId, companyId));
+    scopedIsAdmin = String(scopedUser?.role || "").toLowerCase() === "admin";
+  }
+  const canRecruiterSeeJob = (job) => {
+    if (!scopedRecruiterId) return true;
+    if (scopedIsAdmin) return true;
+    const ownerRecruiterId = String(job?.ownerRecruiterId || job?.owner_recruiter_id || "").trim();
+    if (ownerRecruiterId && ownerRecruiterId === scopedRecruiterId) return true;
+    const assignedRecruiters = Array.isArray(job?.assignedRecruiters)
+      ? job.assignedRecruiters
+      : Array.isArray(job?.assigned_recruiters)
+        ? job.assigned_recruiters
+        : [];
+    if (!assignedRecruiters.length) return false;
+    return assignedRecruiters.some((item) => String(item?.id || item?.userId || item?.user_id || "").trim() === scopedRecruiterId);
+  };
   if (!cfg().on) {
     const store = readStore();
     const jobs = (store.jobs || [])
       .filter((j) => j.companyId === companyId && !isSystemJobRow(j))
       .filter((j) => includeArchived || !isJobArchived(j))
       .sort((a, b) => String(b.updatedAt || "").localeCompare(String(a.updatedAt || "")))
-      .map(sanitizeJob);
+      .map(sanitizeJob)
+      .filter((job) => canRecruiterSeeJob(job));
     if (!scopedRecruiterId) return jobs;
 
     store.jobShortcuts = Array.isArray(store.jobShortcuts) ? store.jobShortcuts : [];
@@ -2258,7 +2278,8 @@ async function listCompanyJobs(companyId, recruiterId = "", options = {}) {
   const jobs = (await sbSel("company_jobs", `select=*&company_id=eq.${enc(companyId)}&order=updated_at.desc`))
     .filter((row) => !isSystemJobRow(row))
     .filter((row) => includeArchived || !isJobArchived(row))
-    .map(sanitizeJob);
+    .map(sanitizeJob)
+    .filter((job) => canRecruiterSeeJob(job));
   if (!scopedRecruiterId) return jobs;
 
   const shortcutRows = await sbSel(
