@@ -12090,9 +12090,12 @@ const server = http.createServer(async (req, res) => {
         throw new Error("Missing note text.");
       }
 
+      const fastModeRequested = body?.fast_mode === true || body?.fastMode === true;
+      const fastModel = String(process.env.QUICK_CAPTURE_FAST_MODEL || "").trim() || "gpt-4.1-nano";
+      const defaultModel = String(process.env.QUICK_CAPTURE_MODEL || "").trim() || "gpt-4.1-mini";
       const parsed = await parseCandidateQuickNote({
         apiKey: process.env.OPENAI_API_KEY || "",
-        model: String(process.env.QUICK_CAPTURE_MODEL || "").trim() || "gpt-4.1-mini",
+        model: fastModeRequested ? fastModel : defaultModel,
         noteText,
         metadata: {
           id: String(body.id || body.candidateId || "").trim() || null,

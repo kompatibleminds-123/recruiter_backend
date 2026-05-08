@@ -98,14 +98,12 @@ function FeatureLockedSection({ title = "Feature locked" }) {
   exportPresetLabels: {
     compact_recruiter: "Compact recruiter",
     client_tracker: "Client tracker",
-    attentive_tracker: "Attentive tracker",
     client_submission: "Client submission",
     screening_focus: "Screening focus"
   },
 	  exportPresetColumns: {
 	    compact_recruiter: "S.No.|s_no\nName|name\nPh|phone\nEmail|email\nCurrent Company|current_company\nCurrent Designation|current_designation\nTotal Experience|total_experience\nTenure in current company|current_org_tenure\nLocation|location\nReason of change|reason_of_change\nStatus|status\nCurrent CTC|current_ctc\nExpected CTC|expected_ctc\nNotice Period|notice_period\nOther Standard Questions|other_standard_questions\nRemarks|remarks\nLinkedIn|linkedin",
 	    client_tracker: "Client Name|client_name\nTarget Role / Open Position|jd_title\nKey Skills Required|key_skills_required\nRecruiter Name|recruiter_name\nDate Added|date_added\nCandidate Name|name\nStatus|status\nContact No.|phone\nEmail ID|email\nLocation|location\nCurrent Company|current_company\nCurrent Designation|current_designation\nDomain / Industry|domain_industry\nWork Exp (Total years/months)|total_experience\nHighest Education|highest_education\nCurrent CTC|current_ctc\nExpected CTC|expected_ctc\nNotice Period|notice_period\nRemarks / Notes|remarks\nLinkedIn Profile Link (Optional)|linkedin",
-	    attentive_tracker: "S.No.|s_no\nName|name\nStatus|assessment_status\nPh|phone\nEmail|email\nLocation|location\nCurrent Company|current_company\nCurrent Designation|current_designation\nWork Experience|total_experience\nHighest Education|highest_education\nCurrent CTC|current_ctc\nExpected CTC|expected_ctc\nNotice Period|notice_period\nScreening remarks|screening_remarks\nLinkedIn|linkedin",
 	    client_submission: "S.No.|s_no\nName|name\nPh|phone\nEmail|email\nCurrent Company|current_company\nCurrent Designation|current_designation\nTotal Experience|total_experience\nStrong Points|other_pointers\nRemarks|remarks",
 	    screening_focus: "S.No.|s_no\nName|name\nCurrent CTC|current_ctc\nExpected CTC|expected_ctc\nNotice Period|notice_period\nScreening Answers|other_standard_questions\nRemarks|remarks"
 	  },
@@ -4764,7 +4762,6 @@ function PortalApp({ token, onLogout }) {
   const exportPresetOptions = useMemo(() => [
     { id: "compact_recruiter", label: copySettings.exportPresetLabels?.compact_recruiter || "Compact recruiter" },
     { id: "client_tracker", label: copySettings.exportPresetLabels?.client_tracker || "Client tracker" },
-    { id: "attentive_tracker", label: copySettings.exportPresetLabels?.attentive_tracker || "Attentive tracker" },
     { id: "client_submission", label: copySettings.exportPresetLabels?.client_submission || "Client submission" },
     { id: "screening_focus", label: copySettings.exportPresetLabels?.screening_focus || "Screening focus" },
     ...((copySettings.customExportPresets || []).map((preset) => ({
@@ -13126,7 +13123,6 @@ function PortalApp({ token, onLogout }) {
                         <select value={copySettings.excelPreset} onChange={(e) => setCopySettings((current) => ({ ...current, excelPreset: e.target.value }))}>
                           <option value="compact_recruiter">{copySettings.exportPresetLabels?.compact_recruiter || "Compact recruiter"}</option>
                           <option value="client_tracker">{copySettings.exportPresetLabels?.client_tracker || "Client tracker"}</option>
-                          <option value="attentive_tracker">{copySettings.exportPresetLabels?.attentive_tracker || "Attentive tracker"}</option>
                           <option value="client_submission">{copySettings.exportPresetLabels?.client_submission || "Client submission"}</option>
                           <option value="screening_focus">{copySettings.exportPresetLabels?.screening_focus || "Screening focus"}</option>
                           {(copySettings.customExportPresets || []).map((preset) => (
@@ -13699,7 +13695,7 @@ function ClientPortalApp({ token, onLogout }) {
     const clientSpecificPreset = (nextCopySettings.customExportPresets || []).find((preset) => (
       String(preset.clientName || "").trim().toLowerCase() === String(nextUser?.clientName || "").trim().toLowerCase()
     ));
-    const builtInClientPreset = ["compact_recruiter", "client_tracker", "attentive_tracker", "client_submission", "screening_focus"].find((presetId) => (
+    const builtInClientPreset = ["compact_recruiter", "client_tracker", "client_submission", "screening_focus"].find((presetId) => (
       String(nextCopySettings.exportPresetClientMap?.[presetId] || "").trim().toLowerCase() === String(nextUser?.clientName || "").trim().toLowerCase()
     ));
     setClientUser(nextUser);
