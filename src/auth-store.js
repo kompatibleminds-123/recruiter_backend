@@ -470,6 +470,9 @@ function sanitizeJob(job) {
     isArchived: Boolean(job.isArchived ?? job.is_archived ?? p.isArchived ?? p.is_archived ?? false),
     archivedAt: job.archivedAt ?? job.archived_at ?? p.archivedAt ?? p.archived_at ?? null,
     archivedBy: job.archivedBy ?? job.archived_by ?? p.archivedBy ?? p.archived_by ?? "",
+    closeReason: job.closeReason ?? job.close_reason ?? p.closeReason ?? p.close_reason ?? "",
+    closedAt: job.closedAt ?? job.closed_at ?? p.closedAt ?? p.closed_at ?? null,
+    closedBy: job.closedBy ?? job.closed_by ?? p.closedBy ?? p.closed_by ?? "",
     createdAt: job.createdAt ?? job.created_at ?? p.createdAt ?? null,
     updatedAt: job.updatedAt ?? job.updated_at ?? p.updatedAt ?? null,
     updatedBy: job.updatedBy ?? job.updated_by ?? p.updatedBy ?? null
@@ -2389,6 +2392,9 @@ async function saveCompanyJob({ actorUserId, companyId, job }) {
     const existingArchivedBy = String(existingJob?.archivedBy || "").trim();
     const archivedAt = requestedArchived ? (existingArchivedAt || now) : null;
     const archivedBy = requestedArchived ? (existingArchivedBy || actor.email || "") : "";
+    const closeReason = requestedArchived ? String(job?.closeReason || job?.close_reason || existingJob?.closeReason || "").trim() : "";
+    const closedAt = requestedArchived ? (job?.closedAt || job?.closed_at || existingJob?.closedAt || archivedAt || now) : null;
+    const closedBy = requestedArchived ? String(job?.closedBy || job?.closed_by || existingJob?.closedBy || archivedBy || actor.email || "").trim() : "";
     const next = {
       id: persistedJobId(job.id),
       companyId,
@@ -2412,6 +2418,9 @@ async function saveCompanyJob({ actorUserId, companyId, job }) {
       isArchived: requestedArchived,
       archivedAt,
       archivedBy,
+      closeReason,
+      closedAt,
+      closedBy,
       createdAt: ix >= 0 ? store.jobs[ix].createdAt : now,
       updatedAt: now,
       updatedBy: actor.email
@@ -2449,10 +2458,13 @@ async function saveCompanyJob({ actorUserId, companyId, job }) {
   const existingArchivedBy = String(existingJob?.archivedBy || "").trim();
   const archivedAt = requestedArchived ? (existingArchivedAt || now) : null;
   const archivedBy = requestedArchived ? (existingArchivedBy || actor.email || "") : "";
+  const closeReason = requestedArchived ? String(job?.closeReason || job?.close_reason || existingJob?.closeReason || "").trim() : "";
+  const closedAt = requestedArchived ? (job?.closedAt || job?.closed_at || existingJob?.closedAt || archivedAt || now) : null;
+  const closedBy = requestedArchived ? String(job?.closedBy || job?.closed_by || existingJob?.closedBy || archivedBy || actor.email || "").trim() : "";
   const persistedJob = persistedJobId(job.id);
   const rows = await sbIns(
     "company_jobs",
-    [jobRow({ ...job, jdShortcuts: "", ownerRecruiterId, ownerRecruiterName, assignedRecruiters, isArchived: requestedArchived, archivedAt, archivedBy, id: persistedJob, companyId, updatedBy: actor.email, createdAt: job.createdAt || existingJob?.createdAt || now, updatedAt: now })],
+    [jobRow({ ...job, jdShortcuts: "", ownerRecruiterId, ownerRecruiterName, assignedRecruiters, isArchived: requestedArchived, archivedAt, archivedBy, closeReason, closedAt, closedBy, id: persistedJob, companyId, updatedBy: actor.email, createdAt: job.createdAt || existingJob?.createdAt || now, updatedAt: now })],
     { conflict: "id", upsert: true }
   );
 

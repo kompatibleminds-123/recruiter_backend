@@ -4897,6 +4897,11 @@ function PortalApp({ token, onLogout }) {
   const [jobsCatalog, setJobsCatalog] = useState([]);
   const [jobShortcutKey, setJobShortcutKey] = useState("");
   const [jobShortcutValue, setJobShortcutValue] = useState("");
+  const JOB_CLOSE_REASONS = [
+    "Position closed",
+    "Position put on hold",
+    "Position closed at company's end"
+  ];
   const [jobDraft, setJobDraft] = useState({
     id: "",
     title: "",
@@ -4917,7 +4922,10 @@ function PortalApp({ token, onLogout }) {
     jdShortcuts: "",
     isArchived: false,
     archivedAt: null,
-    archivedBy: ""
+    archivedBy: "",
+    closeReason: "",
+    closedAt: null,
+    closedBy: ""
   });
   const [jobActionBusy, setJobActionBusy] = useState(false);
   const [interviewMeta, setInterviewMeta] = useState({ candidateId: "", assessmentId: "" });
@@ -5223,6 +5231,33 @@ function PortalApp({ token, onLogout }) {
     });
     statusTimersRef.current = {};
   }, []);
+
+  useEffect(() => {
+    const message = String(statuses?.jobs || "").trim();
+    if (!message) return;
+    const hardClearMs = 8000;
+    const timer = setTimeout(() => {
+      setStatuses((current) => {
+        if (String(current?.jobs || "").trim() !== message) return current;
+        const next = { ...current };
+        delete next.jobs;
+        delete next.jobsKind;
+        return next;
+      });
+    }, hardClearMs);
+    return () => clearTimeout(timer);
+  }, [statuses?.jobs]);
+
+  function getTimeToFillDays(job) {
+    const createdAtRaw = String(job?.createdAt || "").trim();
+    const closedAtRaw = String(job?.closedAt || job?.archivedAt || "").trim();
+    if (!createdAtRaw || !closedAtRaw) return null;
+    const createdAt = new Date(createdAtRaw).getTime();
+    const closedAt = new Date(closedAtRaw).getTime();
+    if (!Number.isFinite(createdAt) || !Number.isFinite(closedAt) || closedAt < createdAt) return null;
+    const days = Math.ceil((closedAt - createdAt) / (1000 * 60 * 60 * 24));
+    return Math.max(0, days);
+  }
 
 	function normalizeLinkedinUrl(value) {
 	  const input = String(value || "");
@@ -9077,7 +9112,10 @@ function PortalApp({ token, onLogout }) {
       jdShortcuts: "",
       isArchived: false,
       archivedAt: null,
-      archivedBy: ""
+      archivedBy: "",
+      closeReason: "",
+      closedAt: null,
+      closedBy: ""
     });
     setJobShortcutKey("");
     setJobShortcutValue("");
@@ -9112,7 +9150,10 @@ function PortalApp({ token, onLogout }) {
       jdShortcuts: String(job.jdShortcuts || ""),
       isArchived: Boolean(job.isArchived),
       archivedAt: job.archivedAt || null,
-      archivedBy: String(job.archivedBy || "")
+      archivedBy: String(job.archivedBy || ""),
+      closeReason: String(job.closeReason || ""),
+      closedAt: job.closedAt || job.archivedAt || null,
+      closedBy: String(job.closedBy || job.archivedBy || "")
     });
     setJobShortcutKey("");
     setJobShortcutValue("");
@@ -9237,7 +9278,7 @@ function PortalApp({ token, onLogout }) {
     if (!jobId) return;
     if (jobActionBusy) return;
     setJobActionBusy(true);
-    setStatus("jobs", nextArchived ? "Archiving JD..." : "Reactivating JD...");
+    setStatus("jobs", nextArchived ? "Closing job..." : "Reactivating JD...");
     try {
       const isAdmin = String(state.user?.role || "").toLowerCase() === "admin";
       const ownerRecruiterId = isAdmin ? jobDraft.ownerRecruiterId : String(state.user?.id || "");
@@ -9261,6 +9302,9 @@ function PortalApp({ token, onLogout }) {
           ...jobDraft,
           id: jobId,
           isArchived: Boolean(nextArchived),
+          closeReason: nextArchived ? String(jobDraft.closeReason || JOB_CLOSE_REASONS[0]) : "",
+          closedAt: nextArchived ? (jobDraft.closedAt || new Date().toISOString()) : null,
+          closedBy: nextArchived ? (jobDraft.closedBy || String(state.user?.email || "")) : "",
           ownerRecruiterId,
           ownerRecruiterName,
           assignedRecruiters: Array.from(dedupedRecruiters.values())
@@ -9271,9 +9315,12 @@ function PortalApp({ token, onLogout }) {
         ...current,
         isArchived: Boolean(nextArchived),
         archivedAt: nextArchived ? (current.archivedAt || new Date().toISOString()) : null,
-        archivedBy: nextArchived ? (current.archivedBy || String(state.user?.email || "")) : ""
+        archivedBy: nextArchived ? (current.archivedBy || String(state.user?.email || "")) : "",
+        closeReason: nextArchived ? String(current.closeReason || JOB_CLOSE_REASONS[0]) : "",
+        closedAt: nextArchived ? (current.closedAt || new Date().toISOString()) : null,
+        closedBy: nextArchived ? (current.closedBy || String(state.user?.email || "")) : ""
       }));
-      setStatus("jobs", nextArchived ? "JD archived." : "JD reactivated.", "ok");
+      setStatus("jobs", nextArchived ? "Job closed and moved to Archived JDs." : "JD reactivated.", "ok");
     } catch (error) {
       setStatus("jobs", `${nextArchived ? "Archive" : "Reactivate"} failed: ${String(error?.message || error)}`, "error");
     } finally {
@@ -13002,8 +13049,25 @@ function PortalApp({ token, onLogout }) {
                       <option value="">Select JD</option>
                       {jobsCatalog
                         .filter((job) => (jobListLane === "archived" ? Boolean(job?.isArchived) : !Boolean(job?.isArchived)))
-                        .map((job) => <option key={job.id} value={job.id}>{job.title || "Untitled JD"}</option>)}
+                        .map((job) => {
+                          const ttfDays = getTimeToFillDays(job);
+                          const ttfLabel = jobListLane === "archived" && ttfDays !== null ? ` | TTF: ${ttfDays} day${ttfDays === 1 ? "" : "s"}` : "";
+                          return <option key={job.id} value={job.id}>{`${job.title || "Untitled JD"}${ttfLabel}`}</option>;
+                        })}
                     </select>
+                    {jobListLane === "archived" && selectedJobId ? (
+                      <small className="muted">
+                        {(() => {
+                          const selectedJob = (jobsCatalog || []).find((job) => String(job?.id || "") === String(selectedJobId || ""));
+                          if (!selectedJob) return "Time to fill not available.";
+                          const ttfDays = getTimeToFillDays(selectedJob);
+                          const closeReason = String(selectedJob?.closeReason || "").trim();
+                          const closeDate = String(selectedJob?.closedAt || selectedJob?.archivedAt || "").trim();
+                          if (ttfDays === null) return "Time to fill not available for this closed job.";
+                          return `Time to fill: ${ttfDays} day${ttfDays === 1 ? "" : "s"}${closeReason ? ` | Reason: ${closeReason}` : ""}${closeDate ? ` | Closed: ${new Date(closeDate).toLocaleDateString()}` : ""}`;
+                        })()}
+                      </small>
+                    ) : null}
                   </label>
                 </div>
               </Section>
@@ -13047,13 +13111,24 @@ function PortalApp({ token, onLogout }) {
                         Reactivate JD
                       </button>
                     ) : (
-                      <button
-                        className="ghost-btn"
-                        disabled={jobActionBusy || !selectedJobId}
-                        onClick={() => void setSelectedJobArchiveState(true)}
-                      >
-                        Archive JD
-                      </button>
+                      <>
+                        <select
+                          disabled={jobActionBusy || !selectedJobId || jobDraftReadOnly}
+                          value={String(jobDraft.closeReason || JOB_CLOSE_REASONS[0])}
+                          onChange={(e) => setJobDraft((c) => ({ ...c, closeReason: e.target.value }))}
+                        >
+                          {JOB_CLOSE_REASONS.map((reason) => (
+                            <option key={reason} value={reason}>{reason}</option>
+                          ))}
+                        </select>
+                        <button
+                          className="ghost-btn"
+                          disabled={jobActionBusy || !selectedJobId || jobDraftReadOnly}
+                          onClick={() => void setSelectedJobArchiveState(true)}
+                        >
+                          Close Job
+                        </button>
+                      </>
                     )
                   ) : null}
                 </div>
