@@ -4509,7 +4509,7 @@ function PortalApp({ token, onLogout }) {
     outcomes: []
   });
   const [assessmentLane, setAssessmentLane] = useState("active"); // active | archived
-  const [reportsTab, setReportsTab] = useState("overall");
+  const [reportsTab, setReportsTab] = useState("client");
   const [reportsFilters, setReportsFilters] = useState({
     dateFrom: "",
     dateTo: "",
@@ -11409,6 +11409,101 @@ function PortalApp({ token, onLogout }) {
   const interviewScreeningQuestions = parseQuestionList(interviewSelectedJob?.standardQuestions || "");
   const clientPositionRows = state.dashboard?.summary?.byClientPosition || [];
   const recruiterPositionRows = state.dashboard?.summary?.byClientRecruiter || [];
+  const dashboardOverall = state.dashboard?.summary?.overall || {};
+  const dashboardClientGroups = state.dashboard?.summary?.byClient || [];
+  const dashboardRecruiterGroups = state.dashboard?.summary?.byOwnerRecruiter || [];
+  const hasDashboardData = Boolean(
+    Object.keys(dashboardOverall || {}).length ||
+    dashboardClientGroups.length ||
+    dashboardRecruiterGroups.length
+  );
+  const safePct = (num, den) => (den > 0 ? Math.round((num / den) * 100) : 0);
+  const kpiCards = [
+    { key: "totalCandidates", label: "Total Candidates", value: Number(dashboardOverall.sourced || 0), icon: "TC" },
+    { key: "activeClients", label: "Active Clients", value: dashboardClientGroups.length, icon: "CL" },
+    { key: "activeRecruiters", label: "Active Recruiters", value: dashboardRecruiterGroups.length, icon: "RC" },
+    { key: "sharedProfiles", label: "Shared Profiles", value: Number(dashboardOverall.converted || 0), icon: "SH" },
+    { key: "interviews", label: "Interviews", value: Number(dashboardOverall.under_interview_process || 0), icon: "IN" },
+    { key: "offers", label: "Offers", value: Number(dashboardOverall.offered || 0), icon: "OF" },
+    { key: "overallConversion", label: "Overall Conversion %", value: `${safePct(Number(dashboardOverall.converted || 0), Number(dashboardOverall.sourced || 0))}%`, icon: "CV" }
+  ];
+  const clientLeaderboardShared = [...dashboardClientGroups]
+    .sort((a, b) => Number(b?.metrics?.converted || 0) - Number(a?.metrics?.converted || 0))
+    .slice(0, 3);
+  const clientLeaderboardInterviews = [...dashboardClientGroups]
+    .sort((a, b) => Number(b?.metrics?.under_interview_process || 0) - Number(a?.metrics?.under_interview_process || 0))
+    .slice(0, 3);
+  const clientLeaderboardLowConversion = [...dashboardClientGroups]
+    .map((group) => ({
+      ...group,
+      conversion: safePct(Number(group?.metrics?.converted || 0), Number(group?.metrics?.sourced || 0))
+    }))
+    .filter((group) => Number(group?.metrics?.sourced || 0) > 0)
+    .sort((a, b) => Number(a.conversion || 0) - Number(b.conversion || 0))
+    .slice(0, 3);
+  const clientChartRows = [...dashboardClientGroups]
+    .map((group) => ({
+      label: String(group?.label || "Client"),
+      sourced: Number(group?.metrics?.sourced || 0),
+      shared: Number(group?.metrics?.converted || 0),
+      interviews: Number(group?.metrics?.under_interview_process || 0),
+      conversion: safePct(Number(group?.metrics?.converted || 0), Number(group?.metrics?.sourced || 0))
+    }))
+    .sort((a, b) => b.sourced - a.sourced)
+    .slice(0, 8);
+  const maxClientSourced = Math.max(1, ...clientChartRows.map((row) => row.sourced));
+  const maxClientShared = Math.max(1, ...clientChartRows.map((row) => row.shared));
+  const maxClientInterview = Math.max(1, ...clientChartRows.map((row) => row.interviews));
+  const recruiterLeaderboardShared = [...dashboardRecruiterGroups]
+    .sort((a, b) => Number(b?.metrics?.converted || 0) - Number(a?.metrics?.converted || 0))
+    .slice(0, 5);
+  const recruiterInsights = [...dashboardRecruiterGroups].map((group) => {
+    const sourced = Number(group?.metrics?.sourced || 0);
+    const applied = Number(group?.metrics?.applied || 0);
+    const shared = Number(group?.metrics?.converted || 0);
+    const interviews = Number(group?.metrics?.under_interview_process || 0);
+    const shortlisted = Number(group?.metrics?.shortlisted || 0);
+    const offered = Number(group?.metrics?.offered || 0);
+    const selfSourced = Number(group?.ownership?.selfSourced || 0);
+    const assignedSourcing = Number(group?.ownership?.assignedSourcing || group?.ownership?.adminAssignedSourcing || 0);
+    const directApplicants = Number(group?.ownership?.directApplicants || group?.ownership?.websiteApply || 0);
+    const assignedApplicants = Number(group?.ownership?.assignedApplicants || group?.ownership?.adminAssignedApplicants || 0);
+    const conversionPct = safePct(shared, sourced);
+    const interviewPct = safePct(interviews, shared);
+    const selfAssignedPct = safePct(selfSourced, selfSourced + assignedSourcing);
+    const directAssignedPct = safePct(directApplicants, directApplicants + assignedApplicants);
+    const performanceScore = Math.max(0, Math.min(100, Math.round(
+      (conversionPct * 0.35) +
+      (interviewPct * 0.25) +
+      (safePct(offered, Math.max(1, interviews)) * 0.2) +
+      (safePct(shortlisted, Math.max(1, interviews)) * 0.1) +
+      (Math.min(shared, 100) * 0.1)
+    )));
+    return {
+      label: String(group?.label || "Recruiter"),
+      sourced,
+      applied,
+      shared,
+      interviews,
+      shortlisted,
+      offered,
+      selfSourced,
+      assignedSourcing,
+      directApplicants,
+      assignedApplicants,
+      conversionPct,
+      interviewPct,
+      selfAssignedPct,
+      directAssignedPct,
+      performanceScore
+    };
+  });
+  const recruiterLeaderboardRanked = [...recruiterInsights]
+    .sort((a, b) => b.performanceScore - a.performanceScore)
+    .map((row, idx) => ({ ...row, rank: idx + 1 }));
+  const maxRecruiterScore = Math.max(1, ...recruiterLeaderboardRanked.map((row) => row.performanceScore));
+  const maxRecruiterShared = Math.max(1, ...recruiterLeaderboardRanked.map((row) => row.shared));
+  const maxRecruiterInterview = Math.max(1, ...recruiterLeaderboardRanked.map((row) => row.interviews));
   const clientPortalSummary = state.clientPortal?.summary || { overall: {}, byClient: [], byClientPosition: [] };
   const selectedClientPortalGroup = (clientPortalSummary.byClient || []).find((group) => String(group.label || "") === String(clientPortalFilters.clientLabel || "")) || null;
   const clientPortalPositionRows = (clientPortalSummary.byClientPosition || []).filter((row) => String(row.clientLabel || "") === String(clientPortalFilters.clientLabel || ""));
@@ -11690,24 +11785,129 @@ function PortalApp({ token, onLogout }) {
                   <div className="button-row align-end"><button onClick={() => void applyDashboardFilters()}>Apply</button></div>
                 </div>
                 <p className="muted">Under Interview Process excludes shortlisted, offered, hold, not responding, dropped, screening reject, interview reject, duplicate, and joined.</p>
-                <div className="metric-grid dashboard-metric-grid">
-                  {DASHBOARD_METRIC_COLUMNS.map(([key, label]) => (
-                    <button key={key} className="metric-card metric-card--button" onClick={() => void openDashboardDrilldown({ title: `${label} candidates`, metric: key, groupType: "all" })}>
-                      <div className="metric-label">{label}</div>
-                      <div className="metric-value">{state.dashboard?.summary?.overall?.[key] || 0}</div>
-                    </button>
+                {!hasDashboardData ? (
+                  <div className="reports-skeleton-grid" aria-hidden="true">
+                    <div className="reports-skeleton-card" />
+                    <div className="reports-skeleton-card" />
+                    <div className="reports-skeleton-card" />
+                    <div className="reports-skeleton-card" />
+                  </div>
+                ) : null}
+                <div className="reports-kpi-grid">
+                  {kpiCards.map((item) => (
+                    <article key={item.key} className="reports-kpi-card">
+                      <div className="reports-kpi-card__top">
+                        <span className="reports-kpi-card__icon">{item.icon}</span>
+                        <span className="reports-kpi-card__trend">No trend data</span>
+                      </div>
+                      <div className="reports-kpi-card__value">{item.value}</div>
+                      <div className="reports-kpi-card__label">{item.label}</div>
+                    </article>
                   ))}
+                </div>
+                <div className="reports-view-tabs">
+                  <button className={reportsTab === "client" ? "active" : ""} onClick={() => setReportsTab("client")}>Client View</button>
+                  <button className={reportsTab === "recruiter" ? "active" : ""} onClick={() => setReportsTab("recruiter")}>Recruiter View</button>
                 </div>
               </Section>
               <div className="dashboard-breakdown-stack">
+                {reportsTab !== "recruiter" ? (
                 <Section kicker="Breakdown" title="Client Breakdown">
+                  <div className="reports-leaderboard-strip">
+                    <article className="reports-leaderboard-card">
+                      <h4>Top Clients by Shared</h4>
+                      <ol>
+                        {clientLeaderboardShared.map((item) => (
+                          <li key={`client-shared-${item.label}`}>
+                            <span>{item.label}</span>
+                            <strong>{item?.metrics?.converted || 0}</strong>
+                          </li>
+                        ))}
+                        {!clientLeaderboardShared.length ? <li><span>No data</span><strong>0</strong></li> : null}
+                      </ol>
+                    </article>
+                    <article className="reports-leaderboard-card">
+                      <h4>Top Clients by Interviews</h4>
+                      <ol>
+                        {clientLeaderboardInterviews.map((item) => (
+                          <li key={`client-int-${item.label}`}>
+                            <span>{item.label}</span>
+                            <strong>{item?.metrics?.under_interview_process || 0}</strong>
+                          </li>
+                        ))}
+                        {!clientLeaderboardInterviews.length ? <li><span>No data</span><strong>0</strong></li> : null}
+                      </ol>
+                    </article>
+                    <article className="reports-leaderboard-card">
+                      <h4>Lowest Conversion (Improve)</h4>
+                      <ol>
+                        {clientLeaderboardLowConversion.map((item) => (
+                          <li key={`client-low-${item.label}`}>
+                            <span>{item.label}</span>
+                            <strong>{item.conversion}%</strong>
+                          </li>
+                        ))}
+                        {!clientLeaderboardLowConversion.length ? <li><span>No data</span><strong>0%</strong></li> : null}
+                      </ol>
+                    </article>
+                  </div>
+                  <div className="reports-client-chart-grid">
+                    <article className="reports-chart-card">
+                      <h4>Client-wise Sourced vs Shared</h4>
+                      {!clientChartRows.length ? <div className="empty-state compact-empty">No chart data.</div> : (
+                        <div className="reports-bar-list">
+                          {clientChartRows.map((row) => (
+                            <div key={`client-bars-${row.label}`} className="reports-bar-row">
+                              <span className="reports-bar-label">{row.label}</span>
+                              <div className="reports-bar-track"><i style={{ width: `${Math.max(4, Math.round((row.sourced / maxClientSourced) * 100))}%` }} /></div>
+                              <div className="reports-bar-track reports-bar-track--alt"><i style={{ width: `${Math.max(4, Math.round((row.shared / maxClientShared) * 100))}%` }} /></div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </article>
+                    <article className="reports-chart-card">
+                      <h4>Client Pipeline Funnel (Shared → Interview)</h4>
+                      {!clientChartRows.length ? <div className="empty-state compact-empty">No funnel data.</div> : (
+                        <div className="reports-funnel-list">
+                          {clientChartRows.map((row) => (
+                            <div key={`client-funnel-${row.label}`} className="reports-funnel-item">
+                              <div className="reports-funnel-item__head"><span>{row.label}</span><strong>{row.interviews}</strong></div>
+                              <div className="reports-funnel-track"><i style={{ width: `${Math.max(4, Math.round((row.interviews / maxClientInterview) * 100))}%` }} /></div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </article>
+                    <article className="reports-chart-card">
+                      <h4>Client Conversion Comparison</h4>
+                      {!clientChartRows.length ? <div className="empty-state compact-empty">No conversion data.</div> : (
+                        <div className="reports-conversion-list">
+                          {clientChartRows.map((row) => (
+                            <div key={`client-conv-${row.label}`} className="reports-conversion-item">
+                              <span>{row.label}</span>
+                              <div className="reports-conversion-pill">{row.conversion}%</div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </article>
+                  </div>
                   <div className="stack-list">
-                    {!(state.dashboard?.summary?.byClient || []).length ? <div className="empty-state">No client breakdown available.</div> : (state.dashboard.summary.byClient || []).map((group) => (
+                    {!dashboardClientGroups.length ? <div className="empty-state">No client breakdown available.</div> : dashboardClientGroups.map((group) => (
                       <details className="dashboard-group" key={group.label}>
                         <summary className="dashboard-group__summary">
                           <div>
                             <h3>{group.label}</h3>
-                            <p className="muted">{`${group.metrics?.sourced || 0} sourced | ${group.metrics?.applied || 0} applied | ${group.metrics?.converted || 0} shared | ${group.metrics?.under_interview_process || 0} under interview`}</p>
+                            <p className="muted">{`${group.metrics?.sourced || 0} sourced | ${group.metrics?.applied || 0} applied | ${group.metrics?.converted || 0} shared | ${group.metrics?.under_interview_process || 0} under interview | ${safePct(Number(group.metrics?.converted || 0), Number(group.metrics?.sourced || 0))}% conversion`}</p>
+                            <div className="reports-inline-badges">
+                              <span className="reports-inline-badge">Conversion {safePct(Number(group.metrics?.converted || 0), Number(group.metrics?.sourced || 0))}%</span>
+                              <span className="reports-inline-badge reports-inline-badge--alt">Interview Ratio {safePct(Number(group.metrics?.under_interview_process || 0), Number(group.metrics?.converted || 0))}%</span>
+                            </div>
+                            <div className="reports-inline-progress">
+                              <div className="reports-inline-progress__bar"><i style={{ width: `${safePct(Number(group.metrics?.converted || 0), Number(group.metrics?.sourced || 0))}%` }} /></div>
+                              <div className="reports-inline-progress__bar reports-inline-progress__bar--alt"><i style={{ width: `${safePct(Number(group.metrics?.under_interview_process || 0), Number(group.metrics?.converted || 0))}%` }} /></div>
+                            </div>
                           </div>
                         </summary>
                         <div className="metric-grid metric-grid--tight">
@@ -11760,14 +11960,134 @@ function PortalApp({ token, onLogout }) {
                     ))}
                   </div>
                 </Section>
+                ) : null}
+                {reportsTab !== "client" ? (
                 <Section kicker="Breakdown" title="Recruiter Breakdown">
+                  <div className="reports-leaderboard-strip">
+                    <article className="reports-leaderboard-card">
+                      <h4>Top Recruiters by Shared</h4>
+                      <ol>
+                        {recruiterLeaderboardShared.map((item) => (
+                          <li key={`recruiter-shared-${item.label}`}>
+                            <span>{item.label}</span>
+                            <strong>{item?.metrics?.converted || 0}</strong>
+                          </li>
+                        ))}
+                        {!recruiterLeaderboardShared.length ? <li><span>No data</span><strong>0</strong></li> : null}
+                      </ol>
+                    </article>
+                  </div>
+                  <div className="table-wrap">
+                    <table className="dashboard-table">
+                      <thead>
+                        <tr>
+                          <th>Rank</th>
+                          <th>Recruiter</th>
+                          <th>Sourced</th>
+                          <th>Applied</th>
+                          <th>Shared</th>
+                          <th>Interviews</th>
+                          <th>Offers</th>
+                          <th>Conversion %</th>
+                          <th>Score</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {recruiterLeaderboardRanked.map((row) => (
+                          <tr key={`leaderboard-${row.label}`}>
+                            <td>{row.rank}</td>
+                            <td>{row.label}</td>
+                            <td>{row.sourced}</td>
+                            <td>{row.applied}</td>
+                            <td>{row.shared}</td>
+                            <td>{row.interviews}</td>
+                            <td>{row.offered}</td>
+                            <td>{row.conversionPct}%</td>
+                            <td>{row.performanceScore}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  <div className="reports-client-chart-grid">
+                    <article className="reports-chart-card">
+                      <h4>Recruiter Performance (Score)</h4>
+                      {!recruiterLeaderboardRanked.length ? <div className="empty-state compact-empty">No chart data.</div> : (
+                        <div className="reports-funnel-list">
+                          {recruiterLeaderboardRanked.map((row) => (
+                            <div key={`score-${row.label}`} className="reports-funnel-item">
+                              <div className="reports-funnel-item__head"><span>{row.label}</span><strong>{row.performanceScore}</strong></div>
+                              <div className="reports-funnel-track"><i style={{ width: `${Math.max(4, Math.round((row.performanceScore / maxRecruiterScore) * 100))}%` }} /></div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </article>
+                    <article className="reports-chart-card">
+                      <h4>Recruiter Conversion Funnel</h4>
+                      {!recruiterLeaderboardRanked.length ? <div className="empty-state compact-empty">No funnel data.</div> : (
+                        <div className="reports-bar-list">
+                          {recruiterLeaderboardRanked.map((row) => (
+                            <div key={`conv-funnel-${row.label}`} className="reports-bar-row">
+                              <span className="reports-bar-label">{row.label}</span>
+                              <div className="reports-bar-track"><i style={{ width: `${Math.max(4, Math.round((row.shared / maxRecruiterShared) * 100))}%` }} /></div>
+                              <div className="reports-bar-track reports-bar-track--alt"><i style={{ width: `${Math.max(4, Math.round((row.interviews / maxRecruiterInterview) * 100))}%` }} /></div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </article>
+                    <article className="reports-chart-card">
+                      <h4>Self Sourced vs Assigned</h4>
+                      {!recruiterLeaderboardRanked.length ? <div className="empty-state compact-empty">No ratio data.</div> : (
+                        <div className="reports-conversion-list">
+                          {recruiterLeaderboardRanked.map((row) => (
+                            <div key={`self-assigned-${row.label}`} className="reports-conversion-item">
+                              <span>{row.label}</span>
+                              <div className="reports-conversion-pill">{row.selfAssignedPct}% self</div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </article>
+                    <article className="reports-chart-card">
+                      <h4>Shared to Interview Ratio</h4>
+                      {!recruiterLeaderboardRanked.length ? <div className="empty-state compact-empty">No ratio data.</div> : (
+                        <div className="reports-conversion-list">
+                          {recruiterLeaderboardRanked.map((row) => (
+                            <div key={`shared-int-${row.label}`} className="reports-conversion-item">
+                              <span>{row.label}</span>
+                              <div className="reports-conversion-pill">{row.interviewPct}%</div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </article>
+                  </div>
                   <div className="stack-list">
-                    {!(state.dashboard?.summary?.byOwnerRecruiter || []).length ? <div className="empty-state">No recruiter breakdown available.</div> : (state.dashboard.summary.byOwnerRecruiter || []).map((group) => (
+                    {!dashboardRecruiterGroups.length ? <div className="empty-state">No recruiter breakdown available.</div> : dashboardRecruiterGroups.map((group) => (
                       <details className="dashboard-group" key={group.label}>
                         <summary className="dashboard-group__summary">
                           <div>
                             <h3>{group.label}</h3>
                             <p className="muted">{`${group.metrics?.sourced || 0} sourced | ${group.metrics?.applied || 0} applied | ${group.metrics?.converted || 0} shared | ${group.metrics?.under_interview_process || 0} under interview | ${group.metrics?.shortlisted || 0} shortlisted | ${group.metrics?.offered || 0} offered`}</p>
+                            {(() => {
+                              const insight = recruiterLeaderboardRanked.find((row) => String(row.label) === String(group.label));
+                              return insight ? (
+                                <>
+                                  <div className="reports-inline-badges">
+                                    <span className="reports-inline-badge">Rank #{insight.rank}</span>
+                                    <span className="reports-inline-badge">Score {insight.performanceScore}</span>
+                                    <span className="reports-inline-badge reports-inline-badge--alt">Conversion {insight.conversionPct}%</span>
+                                    <span className="reports-inline-badge reports-inline-badge--alt">Direct/Assigned {insight.directAssignedPct}%</span>
+                                  </div>
+                                  <div className="reports-inline-progress">
+                                    <div className="reports-inline-progress__bar"><i style={{ width: `${insight.performanceScore}%` }} /></div>
+                                    <div className="reports-inline-progress__bar reports-inline-progress__bar--alt"><i style={{ width: `${insight.interviewPct}%` }} /></div>
+                                  </div>
+                                </>
+                              ) : null;
+                            })()}
                             {String(state.user?.role || "").toLowerCase() === "admin" && String(state.user?.name || "").trim() === String(group.label || "").trim() ? (
                               <>
                                 <p className="muted">
@@ -11841,6 +12161,7 @@ function PortalApp({ token, onLogout }) {
                     ))}
                   </div>
                 </Section>
+                ) : null}
               </div>
             </div>
           } />
