@@ -12072,7 +12072,7 @@ function PortalApp({ token, onLogout }) {
                                   style={{ width: `${row.shared > 0 ? Math.max(2, Math.round((row.interviews / row.shared) * Math.max(4, Math.round((row.shared / maxRecruiterShared) * 100)))) : 0}%` }}
                                 />
                               </div>
-                              <span className="reports-bar-meta">{`S:${row.shared} | I:${row.interviews}`}</span>
+                              <span className="reports-bar-meta">{`So:${row.sourced} | Sh:${row.shared} | I:${row.interviews}`}</span>
                             </div>
                           ))}
                         </div>
