@@ -110,6 +110,7 @@ const {
   updateEmployeeProfileAndWorkSite,
   patchAssessmentCandidateLink,
   saveCompanyJob,
+  saveCompanyJobRecruiterShortcuts,
   saveCompanySharedExportPresets,
   saveCompanyPersonalShortcuts,
   setCompanyExtensionPlan,
@@ -8604,6 +8605,25 @@ const server = http.createServer(async (req, res) => {
       });
     } catch (error) {
       sendJson(res, 401, { ok: false, error: String(error.message || error) });
+    }
+    return;
+  }
+
+  if (req.method === "POST" && req.url === "/company/jds/shortcuts") {
+    try {
+      const actor = await requireSessionUser(getBearerToken(req));
+      const body = await readJsonBody(req);
+      const jobId = String(body?.jobId || "").trim();
+      const shortcuts = String(body?.shortcuts || "");
+      const savedShortcuts = await saveCompanyJobRecruiterShortcuts({
+        actorUserId: actor.id,
+        companyId: actor.companyId,
+        jobId,
+        shortcuts
+      });
+      sendJson(res, 200, { ok: true, result: { jobId, jdShortcuts: savedShortcuts } });
+    } catch (error) {
+      sendJson(res, 400, { ok: false, error: String(error.message || error) });
     }
     return;
   }

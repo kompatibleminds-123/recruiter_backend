@@ -5049,6 +5049,12 @@ function PortalApp({ token, onLogout }) {
     }) || null;
   }, [quickUpdateCandidate, state.assessments]);
   const isSettingsAdmin = String(state.user?.role || "").toLowerCase() === "admin";
+  const isExistingJobSelection = Boolean(String(selectedJobId || jobDraft.id || "").trim());
+  const canEditCurrentJob =
+    isSettingsAdmin ||
+    !isExistingJobSelection ||
+    String(jobDraft.ownerRecruiterId || "").trim() === String(state.user?.id || "").trim();
+  const jobDraftReadOnly = isExistingJobSelection && !canEditCurrentJob;
   const isLicenseOwnerAdmin =
     isSettingsAdmin &&
     String(state.user?.id || "").trim() &&
@@ -9390,7 +9396,32 @@ function PortalApp({ token, onLogout }) {
     }
   }
 
-  function saveShortcutDraft() {
+  async function persistCurrentJobShortcuts(nextMap, successMessage) {
+    const nextShortcuts = stringifyShortcutMap(nextMap);
+    setJobDraft((current) => ({ ...current, jdShortcuts: nextShortcuts }));
+    const jobId = String(selectedJobId || jobDraft.id || "").trim();
+    if (!jobId) {
+      setStatus("jobs", "Shortcut added in draft. Save JD once to persist it.", "ok");
+      return;
+    }
+    setStatus("jobs", "Saving shortcut...", "info");
+    try {
+      const result = await api("/company/jds/shortcuts", state.token, {
+        method: "POST",
+        body: JSON.stringify({
+          jobId,
+          shortcuts: nextShortcuts
+        })
+      });
+      const savedShortcuts = String(result?.jdShortcuts || nextShortcuts);
+      setJobDraft((current) => ({ ...current, jdShortcuts: savedShortcuts }));
+      setStatus("jobs", successMessage, "ok");
+    } catch (error) {
+      setStatus("jobs", `Shortcut save failed: ${String(error?.message || error)}`, "error");
+    }
+  }
+
+  async function saveShortcutDraft() {
     const key = normalizeShortcutKey(jobShortcutKey);
     const value = String(jobShortcutValue || "").trim();
     if (!key || !value) {
@@ -9399,10 +9430,9 @@ function PortalApp({ token, onLogout }) {
     }
     const parsed = parseShortcutMap(jobDraft.jdShortcuts);
     parsed[key] = value;
-    setJobDraft((current) => ({ ...current, jdShortcuts: stringifyShortcutMap(parsed) }));
     setJobShortcutKey("");
     setJobShortcutValue("");
-    setStatus("jobs", `Saved shortcut ${key}.`, "ok");
+    await persistCurrentJobShortcuts(parsed, `Saved shortcut ${key}.`);
   }
 
   function editShortcutDraft(key) {
@@ -10803,15 +10833,14 @@ function PortalApp({ token, onLogout }) {
     }));
   }
 
-  function deleteShortcutDraft(key) {
+  async function deleteShortcutDraft(key) {
     const parsed = parseShortcutMap(jobDraft.jdShortcuts);
     delete parsed[key];
-    setJobDraft((current) => ({ ...current, jdShortcuts: stringifyShortcutMap(parsed) }));
     if (normalizeShortcutKey(jobShortcutKey) === key) {
       setJobShortcutKey("");
       setJobShortcutValue("");
     }
-    setStatus("jobs", `Removed shortcut ${key}.`, "ok");
+    await persistCurrentJobShortcuts(parsed, `Removed shortcut ${key}.`);
   }
 
   async function copyInterviewTracker() {
@@ -12913,19 +12942,20 @@ function PortalApp({ token, onLogout }) {
               </Section>
 
               <Section kicker="JD Setup" title="JD Workspace">
+                  {jobDraftReadOnly ? <div className="status">View only: only Admin or Primary Owner can edit this JD.</div> : null}
 	                <div className="button-row">
 	                  <label className="file-btn">
 	                    Upload JD
-	                    <input type="file" accept=".txt,.md,.doc,.docx,.pdf" hidden onChange={(e) => { const file = e.target.files?.[0]; if (file) void handleJdUpload(file); }} />
+	                    <input disabled={jobDraftReadOnly || jobActionBusy} type="file" accept=".txt,.md,.doc,.docx,.pdf" hidden onChange={(e) => { const file = e.target.files?.[0]; if (file) void handleJdUpload(file); }} />
 	                  </label>
 	                  <button className="ghost-btn" onClick={() => resetJobDraftBlank()}>New blank JD</button>
-	                  <button disabled={jobActionBusy} onClick={() => applySelectedJobToInterview()}>Apply generated JD</button>
-	                  <button disabled={jobActionBusy} onClick={() => generateJdFromText()}>Generate JD from text</button>
+	                  <button disabled={jobActionBusy || jobDraftReadOnly} onClick={() => applySelectedJobToInterview()}>Apply generated JD</button>
+	                  <button disabled={jobActionBusy || jobDraftReadOnly} onClick={() => generateJdFromText()}>Generate JD from text</button>
 	                  <button disabled={jobActionBusy} className="ghost-btn" onClick={() => downloadJobDraftWord()}>Download Word</button>
-	                  <button disabled={jobActionBusy} onClick={() => void saveJobDraft()}>{jobActionBusy ? "Saving..." : (selectedJobId ? "Update JD" : "Save JD")}</button>
+	                  <button disabled={jobActionBusy || jobDraftReadOnly} onClick={() => void saveJobDraft()}>{jobActionBusy ? "Saving..." : (selectedJobId ? "Update JD" : "Save JD")}</button>
 	                  <button
 	                    className="ghost-btn"
-	                    disabled={jobActionBusy || !String(jobDraft.title || "").trim() || !String(jobDraft.jobDescription || "").trim()}
+	                    disabled={jobActionBusy || !String(jobDraft.title || "").trim() || !String(jobDraft.jobDescription || "").trim() || jobDraftReadOnly}
                     onClick={() => void saveJobDraftAsNew()}
                     title="Duplicate current JD as a new saved record"
                   >
@@ -12962,11 +12992,11 @@ function PortalApp({ token, onLogout }) {
                 </div>
 
                 <div className="form-grid two-col">
-                  <label><span>Job title</span><input value={jobDraft.title} onChange={(e) => setJobDraft((c) => ({ ...c, title: e.target.value }))} /></label>
-                  <label><span>Client</span><input value={jobDraft.clientName} onChange={(e) => setJobDraft((c) => ({ ...c, clientName: e.target.value }))} /></label>
-                  <label><span>Location</span><input value={jobDraft.location} onChange={(e) => setJobDraft((c) => ({ ...c, location: e.target.value }))} placeholder="Mumbai / Bengaluru / Remote" /></label>
-                  <label><span>Work mode</span><select value={jobDraft.workMode} onChange={(e) => setJobDraft((c) => ({ ...c, workMode: e.target.value }))}><option value="">Not specified</option><option value="Remote">Remote</option><option value="Hybrid">Hybrid</option><option value="Work from office">Work from office</option></select></label>
-                  {isSettingsAdmin && hasSaasUnlimitedAccess ? (
+                  <label><span>Job title</span><input disabled={jobDraftReadOnly || jobActionBusy} value={jobDraft.title} onChange={(e) => setJobDraft((c) => ({ ...c, title: e.target.value }))} /></label>
+                  <label><span>Client</span><input disabled={jobDraftReadOnly || jobActionBusy} value={jobDraft.clientName} onChange={(e) => setJobDraft((c) => ({ ...c, clientName: e.target.value }))} /></label>
+                  <label><span>Location</span><input disabled={jobDraftReadOnly || jobActionBusy} value={jobDraft.location} onChange={(e) => setJobDraft((c) => ({ ...c, location: e.target.value }))} placeholder="Mumbai / Bengaluru / Remote" /></label>
+                  <label><span>Work mode</span><select disabled={jobDraftReadOnly || jobActionBusy} value={jobDraft.workMode} onChange={(e) => setJobDraft((c) => ({ ...c, workMode: e.target.value }))}><option value="">Not specified</option><option value="Remote">Remote</option><option value="Hybrid">Hybrid</option><option value="Work from office">Work from office</option></select></label>
+                  {isSettingsAdmin && hasSaasUnlimitedAccess && !jobDraftReadOnly ? (
                     <>
                       <label>
                         <span>Primary recruiter</span>
@@ -13034,10 +13064,11 @@ function PortalApp({ token, onLogout }) {
                   )}
                   {hasSaasUnlimitedAccess ? (
                     <>
-                      <label className="full"><span>About company</span><textarea value={jobDraft.aboutCompany} onChange={(e) => setJobDraft((c) => ({ ...c, aboutCompany: e.target.value }))} placeholder="Short company context shown on hosted apply link." /></label>
+                      <label className="full"><span>About company</span><textarea disabled={jobDraftReadOnly || jobActionBusy} value={jobDraft.aboutCompany} onChange={(e) => setJobDraft((c) => ({ ...c, aboutCompany: e.target.value }))} placeholder="Short company context shown on hosted apply link." /></label>
                       <label className="full">
                         <span>Public company line (anonymous apply link)</span>
                         <textarea
+                          disabled={jobDraftReadOnly || jobActionBusy}
                           value={jobDraft.publicCompanyLine || ""}
                           onChange={(e) => setJobDraft((c) => ({ ...c, publicCompanyLine: e.target.value }))}
                           placeholder="Shown on /apply-public. Example: Leading company with all-in-one CRM stack for connected customer experience."
@@ -13046,6 +13077,7 @@ function PortalApp({ token, onLogout }) {
                       <label className="full">
                         <span>Public posting title (optional)</span>
                         <input
+                          disabled={jobDraftReadOnly || jobActionBusy}
                           value={jobDraft.publicTitle || ""}
                           onChange={(e) => setJobDraft((c) => ({ ...c, publicTitle: e.target.value }))}
                           placeholder="If blank, public link will use JD title with client name redacted."
@@ -13053,10 +13085,10 @@ function PortalApp({ token, onLogout }) {
                       </label>
                     </>
                   ) : null}
-                  <label className="full"><span>Job description</span><textarea className="jd-editor" value={jobDraft.jobDescription} onChange={(e) => setJobDraft((c) => ({ ...c, jobDescription: e.target.value }))} placeholder="Paste the full JD here. Hosted apply link will show this as one clean block." /></label>
-                  <label className="full"><span>Must-have skills</span><textarea value={jobDraft.mustHaveSkills} onChange={(e) => setJobDraft((c) => ({ ...c, mustHaveSkills: e.target.value }))} placeholder="Shown on hosted apply link only when filled." /></label>
-                  <label className="full"><span>Red flags</span><textarea value={jobDraft.redFlags} onChange={(e) => setJobDraft((c) => ({ ...c, redFlags: e.target.value }))} /></label>
-                  <label className="full"><span>Standard screening questions</span><textarea value={jobDraft.standardQuestions} onChange={(e) => setJobDraft((c) => ({ ...c, standardQuestions: e.target.value }))} placeholder="Recruiter-only. These are used in Interview Panel and will not show on hosted apply link." /></label>
+                  <label className="full"><span>Job description</span><textarea disabled={jobDraftReadOnly || jobActionBusy} className="jd-editor" value={jobDraft.jobDescription} onChange={(e) => setJobDraft((c) => ({ ...c, jobDescription: e.target.value }))} placeholder="Paste the full JD here. Hosted apply link will show this as one clean block." /></label>
+                  <label className="full"><span>Must-have skills</span><textarea disabled={jobDraftReadOnly || jobActionBusy} value={jobDraft.mustHaveSkills} onChange={(e) => setJobDraft((c) => ({ ...c, mustHaveSkills: e.target.value }))} placeholder="Shown on hosted apply link only when filled." /></label>
+                  <label className="full"><span>Red flags</span><textarea disabled={jobDraftReadOnly || jobActionBusy} value={jobDraft.redFlags} onChange={(e) => setJobDraft((c) => ({ ...c, redFlags: e.target.value }))} /></label>
+                  <label className="full"><span>Standard screening questions</span><textarea disabled={jobDraftReadOnly || jobActionBusy} value={jobDraft.standardQuestions} onChange={(e) => setJobDraft((c) => ({ ...c, standardQuestions: e.target.value }))} placeholder="Recruiter-only. These are used in Interview Panel and will not show on hosted apply link." /></label>
                 </div>
 
                 <div className="shortcut-builder">

@@ -2483,6 +2483,72 @@ async function saveCompanyJob({ actorUserId, companyId, job }) {
 
   return { ...sanitizeJob(rows[0]), jdShortcuts: incomingRecruiterShortcuts };
 }
+async function saveCompanyJobRecruiterShortcuts({ actorUserId, companyId, jobId, shortcuts }) {
+  if (!actorUserId || !companyId || !jobId) throw new Error("actorUserId, companyId, and jobId are required.");
+  const actor = sanitizeUser(await getUserById(actorUserId, companyId));
+  if (!actor) throw new Error("Authenticated recruiter not found for this company.");
+  const actorId = String(actor.id || "").trim();
+  const actorIsAdmin = String(actor.role || "").toLowerCase() === "admin";
+  const scopedJobId = String(jobId || "").trim();
+  const incomingRecruiterShortcuts = String(shortcuts || "").trim();
+  if (!cfg().on) {
+    const store = readStore();
+    store.jobs = Array.isArray(store.jobs) ? store.jobs : [];
+    const rawJob = store.jobs.find((j) => String(j?.id || "").trim() === scopedJobId && String(j?.companyId || "").trim() === String(companyId || "").trim() && !isSystemJobRow(j));
+    const job = sanitizeJob(rawJob);
+    if (!job) throw new Error("JD not found.");
+    const ownerRecruiterId = String(job?.ownerRecruiterId || "").trim();
+    const assignedRecruiters = Array.isArray(job?.assignedRecruiters) ? job.assignedRecruiters : [];
+    const isAssigned = assignedRecruiters.some((item) => String(item?.id || item?.userId || item?.user_id || "").trim() === actorId);
+    if (!actorIsAdmin && ownerRecruiterId !== actorId && !isAssigned) throw new Error("You can only save shortcuts for JDs assigned to you.");
+
+    store.jobShortcuts = Array.isArray(store.jobShortcuts) ? store.jobShortcuts : [];
+    const now = new Date().toISOString();
+    const shortcutIx = store.jobShortcuts.findIndex((row) =>
+      row &&
+      String(row.companyId || "").trim() === String(companyId || "").trim() &&
+      String(row.jobId || "").trim() === scopedJobId &&
+      String(row.recruiterId || "").trim() === actorId
+    );
+    const shortcutRow = {
+      companyId,
+      jobId: scopedJobId,
+      recruiterId: actorId,
+      shortcuts: incomingRecruiterShortcuts,
+      createdAt: shortcutIx >= 0 ? store.jobShortcuts[shortcutIx].createdAt : now,
+      updatedAt: now,
+      updatedBy: actor.email
+    };
+    if (shortcutIx >= 0) store.jobShortcuts[shortcutIx] = shortcutRow; else store.jobShortcuts.push(shortcutRow);
+    writeStore(store);
+    return incomingRecruiterShortcuts;
+  }
+
+  await ensureSeeded();
+  const existingRows = await sbSel("company_jobs", `select=id,company_id,owner_recruiter_id,assigned_recruiters&id=eq.${enc(scopedJobId)}&company_id=eq.${enc(companyId)}&limit=1`);
+  const job = sanitizeJob(existingRows?.[0]);
+  if (!job) throw new Error("JD not found.");
+  const ownerRecruiterId = String(job?.ownerRecruiterId || "").trim();
+  const assignedRecruiters = Array.isArray(job?.assignedRecruiters) ? job.assignedRecruiters : [];
+  const isAssigned = assignedRecruiters.some((item) => String(item?.id || item?.userId || item?.user_id || "").trim() === actorId);
+  if (!actorIsAdmin && ownerRecruiterId !== actorId && !isAssigned) throw new Error("You can only save shortcuts for JDs assigned to you.");
+
+  const now = new Date().toISOString();
+  await sbIns(
+    "company_job_shortcuts",
+    [{
+      company_id: companyId,
+      job_id: scopedJobId,
+      recruiter_id: actorId,
+      shortcuts: incomingRecruiterShortcuts,
+      created_at: now,
+      updated_at: now,
+      payload: { updatedBy: actor.email }
+    }],
+    { conflict: "job_id,recruiter_id", upsert: true, returning: "minimal" }
+  );
+  return incomingRecruiterShortcuts;
+}
 async function getCompanySharedExportPresets(companyId) {
   if (!companyId) throw new Error("companyId is required.");
   if (!cfg().on) {
@@ -5026,6 +5092,7 @@ module.exports = {
   saveAssessment,
   patchAssessmentCandidateLink,
   saveCompanyJob,
+  saveCompanyJobRecruiterShortcuts,
   getUserSmtpSettings,
   saveUserSmtpSettings,
   verifyUserEmail,
