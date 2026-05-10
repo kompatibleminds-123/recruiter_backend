@@ -5246,8 +5246,8 @@ function PortalApp({ token, onLogout }) {
       return;
     }
     try {
-      const width = 520;
-      const height = 900;
+      const width = Math.min(760, Math.max(640, (window.outerWidth || 1400) - 420));
+      const height = Math.min(980, Math.max(760, (window.outerHeight || 940) - 70));
       const left = Math.max(0, (window.screenX || 0) + (window.outerWidth || 1400) - width - 24);
       const top = Math.max(0, (window.screenY || 0) + 24);
       const url = `https://web.whatsapp.com/send?phone=${encodeURIComponent(phone)}`;
