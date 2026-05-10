@@ -777,6 +777,17 @@ textarea { min-height: 92px; resize: vertical; }
   padding: 1rem;
   margin-top: 1rem;
 }
+.mail-settings-shell {
+  background: linear-gradient(180deg, #ffffff 0%, #f7fbff 100%);
+  box-shadow: 0 8px 18px rgba(20, 41, 84, 0.06);
+}
+.mail-settings-notes {
+  display: grid;
+  gap: 0.2rem;
+}
+.mail-settings-notes p {
+  margin: 0;
+}
 .candidate-filter-head h3 {
   margin: 0 0 0.25rem;
 }

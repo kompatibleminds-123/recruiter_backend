@@ -10343,17 +10343,16 @@ function PortalApp({ token, onLogout }) {
   function getClientShareSignature() {
     const context = getClientShareContext();
     const perUserSignatureText = String(smtpSettings.signatureText || "").trim();
-    const signatureText = String(clientShareDraft.signatureText || "").trim()
-      || perUserSignatureText
+    const signatureText = perUserSignatureText
       || fillClientShareTemplate(copySettings.clientShareSignatureText || DEFAULT_COPY_SETTINGS.clientShareSignatureText || "", context).trim();
     const links = [
       {
-        label: String(clientShareDraft.signatureLinkLabel || smtpSettings.signatureLinkLabel || copySettings.clientShareSignatureLinkLabel || "").trim(),
-        url: String(clientShareDraft.signatureLinkUrl || smtpSettings.signatureLinkUrl || copySettings.clientShareSignatureLinkUrl || "").trim()
+        label: String(smtpSettings.signatureLinkLabel || copySettings.clientShareSignatureLinkLabel || "").trim(),
+        url: String(smtpSettings.signatureLinkUrl || copySettings.clientShareSignatureLinkUrl || "").trim()
       },
       {
-        label: String(clientShareDraft.signatureLinkLabel2 || smtpSettings.signatureLinkLabel2 || copySettings.clientShareSignatureLinkLabel2 || "").trim(),
-        url: String(clientShareDraft.signatureLinkUrl2 || smtpSettings.signatureLinkUrl2 || copySettings.clientShareSignatureLinkUrl2 || "").trim()
+        label: String(smtpSettings.signatureLinkLabel2 || copySettings.clientShareSignatureLinkLabel2 || "").trim(),
+        url: String(smtpSettings.signatureLinkUrl2 || copySettings.clientShareSignatureLinkUrl2 || "").trim()
       }
     ].filter((link) => link.url);
     return { signatureText, links };
@@ -13033,14 +13032,10 @@ function PortalApp({ token, onLogout }) {
                   </label>
                   <label className="full"><span>Extra message</span><textarea value={clientShareDraft.extraMessage} onChange={(e) => setClientShareDraft((current) => ({ ...current, extraMessage: e.target.value }))} placeholder="Optional note for the client." /></label>
                   <label className="full">
-                    <span>Signature text</span>
-                    <textarea value={clientShareDraft.signatureText || ""} onChange={(e) => setClientShareDraft((current) => ({ ...current, signatureText: e.target.value }))} placeholder={fillClientShareTemplate(copySettings.clientShareSignatureText || DEFAULT_COPY_SETTINGS.clientShareSignatureText, getClientShareContext())} />
-                    <span className="field-help">Normal text only. Font will be similar to the mail body.</span>
+                    <span>Signature source</span>
+                    <input value="Using Mail Settings signature (single source)" readOnly />
+                    <span className="field-help">To update signature, go to Mail Settings. Direct Share uses the same signature automatically.</span>
                   </label>
-                  <label><span>Signature link 1 text</span><input value={clientShareDraft.signatureLinkLabel || ""} onChange={(e) => setClientShareDraft((current) => ({ ...current, signatureLinkLabel: e.target.value }))} placeholder="Kompatible Minds" /></label>
-                  <label><span>Signature link 1 URL</span><input value={clientShareDraft.signatureLinkUrl || ""} onChange={(e) => setClientShareDraft((current) => ({ ...current, signatureLinkUrl: e.target.value }))} placeholder="https://kompatibleminds.com" /></label>
-                  <label><span>Signature link 2 text</span><input value={clientShareDraft.signatureLinkLabel2 || ""} onChange={(e) => setClientShareDraft((current) => ({ ...current, signatureLinkLabel2: e.target.value }))} placeholder="LinkedIn" /></label>
-                  <label><span>Signature link 2 URL</span><input value={clientShareDraft.signatureLinkUrl2 || ""} onChange={(e) => setClientShareDraft((current) => ({ ...current, signatureLinkUrl2: e.target.value }))} placeholder="https://www.linkedin.com/in/..." /></label>
                   <label className="full">
                     <span>Email preview</span>
                     <div className="client-share-preview" dangerouslySetInnerHTML={{ __html: buildClientShareHtml() }} />
@@ -13300,57 +13295,49 @@ function PortalApp({ token, onLogout }) {
               <Section kicker="Email" title="Mail Settings">
                 {statuses.settings ? <div className={`status ${statuses.settingsKind || ""}`}>{statuses.settings}</div> : null}
                 <p className="muted">Configure email delivery for JD sharing. You can use either SMTP credentials or API mode (per recruiter).</p>
-                <div className="form-grid two-col">
-                  <label><span>SMTP host</span><input value={smtpSettings.host} onChange={(e) => { markSmtpSettingsDirty(); setSmtpSettings((c) => ({ ...c, host: e.target.value })); }} placeholder="smtppro.zoho.com" /></label>
-                  <label><span>SMTP port</span><input type="number" value={smtpSettings.port} onChange={(e) => { markSmtpSettingsDirty(); setSmtpSettings((c) => ({ ...c, port: Number(e.target.value || 0) || 587 })); }} placeholder="587" /></label>
-                  <label className="checkbox-row" style={{ alignItems: "center" }}>
-                    <input type="checkbox" checked={smtpSettings.secure} onChange={(e) => { markSmtpSettingsDirty(); setSmtpSettings((c) => ({ ...c, secure: e.target.checked })); }} />
-                    <span>Use secure (SSL)</span>
-                  </label>
-                  <div />
-                  <label><span>SMTP user</span><input value={smtpSettings.user} onChange={(e) => { markSmtpSettingsDirty(); setSmtpSettings((c) => ({ ...c, user: e.target.value })); }} placeholder="you@yourdomain.com" /></label>
-                  <label><span>From</span><input value={smtpSettings.from} onChange={(e) => { markSmtpSettingsDirty(); setSmtpSettings((c) => ({ ...c, from: e.target.value })); }} placeholder="Your Name <you@yourdomain.com>" /></label>
-                  <label className="full">
-                    <span>{smtpSettings.hasPassword && smtpSettingsKeepPass ? "SMTP app password (kept)" : "SMTP app password"}</span>
-                    <input type="password" value={smtpSettings.pass} onChange={(e) => { markSmtpSettingsDirty(); setSmtpSettings((c) => ({ ...c, pass: e.target.value })); }} placeholder={smtpSettings.hasPassword ? "Leave blank to keep existing" : "App password"} />
-                  </label>
-                  {smtpSettings.hasPassword ? (
-                    <label className="checkbox-row full">
-                      <input type="checkbox" checked={smtpSettingsKeepPass} onChange={(e) => setSmtpSettingsKeepPass(e.target.checked)} />
-                      <span>Keep existing password if blank</span>
+                <div className="settings-subsection mail-settings-shell">
+                  <div className="form-grid two-col">
+                    <label><span>SMTP host</span><input value={smtpSettings.host} onChange={(e) => { markSmtpSettingsDirty(); setSmtpSettings((c) => ({ ...c, host: e.target.value })); }} placeholder="smtppro.zoho.com" /></label>
+                    <label><span>SMTP port</span><input type="number" value={smtpSettings.port} onChange={(e) => { markSmtpSettingsDirty(); setSmtpSettings((c) => ({ ...c, port: Number(e.target.value || 0) || 587 })); }} placeholder="587" /></label>
+                    <label className="checkbox-row" style={{ alignItems: "center" }}>
+                      <input type="checkbox" checked={smtpSettings.secure} onChange={(e) => { markSmtpSettingsDirty(); setSmtpSettings((c) => ({ ...c, secure: e.target.checked })); }} />
+                      <span>Use secure (SSL)</span>
                     </label>
-                  ) : null}
+                    <div />
+                    <label><span>SMTP user</span><input value={smtpSettings.user} onChange={(e) => { markSmtpSettingsDirty(); setSmtpSettings((c) => ({ ...c, user: e.target.value })); }} placeholder="you@yourdomain.com" /></label>
+                    <label><span>From</span><input value={smtpSettings.from} onChange={(e) => { markSmtpSettingsDirty(); setSmtpSettings((c) => ({ ...c, from: e.target.value })); }} placeholder="Your Name <you@yourdomain.com>" /></label>
+                    <label className="full">
+                      <span>{smtpSettings.hasPassword && smtpSettingsKeepPass ? "SMTP app password (kept)" : "SMTP app password"}</span>
+                      <input type="password" value={smtpSettings.pass} onChange={(e) => { markSmtpSettingsDirty(); setSmtpSettings((c) => ({ ...c, pass: e.target.value })); }} placeholder={smtpSettings.hasPassword ? "Leave blank to keep existing" : "App password"} />
+                    </label>
+                    {smtpSettings.hasPassword ? (
+                      <label className="checkbox-row full">
+                        <input type="checkbox" checked={smtpSettingsKeepPass} onChange={(e) => setSmtpSettingsKeepPass(e.target.checked)} />
+                        <span>Keep existing password if blank</span>
+                      </label>
+                    ) : null}
+                  </div>
+                  <div className="button-row">
+                    <button onClick={() => void saveSmtpSettings()}>Save email settings</button>
+                    <button className="secondary" disabled={smtpTestBusy} onClick={() => void testSmtpSettings(false)}>
+                      {smtpTestBusy ? "Testing..." : "Test SMTP settings"}
+                    </button>
+                    <button className="secondary" disabled={smtpTestBusy} onClick={() => void testSmtpSettings(true)}>
+                      {smtpTestBusy ? "Testing..." : "Send test mail to self"}
+                    </button>
+                    <button className="secondary" disabled={zohoConnectBusy} onClick={() => void connectZohoMailbox()}>
+                      {zohoConnectBusy ? "Connecting..." : "Connect Zoho (1-click)"}
+                    </button>
+                  </div>
                 </div>
-                <div className="button-row">
-                  <button onClick={() => void saveSmtpSettings()}>Save email settings</button>
-                  <button className="secondary" disabled={smtpTestBusy} onClick={() => void testSmtpSettings(false)}>
-                    {smtpTestBusy ? "Testing..." : "Test SMTP settings"}
-                  </button>
-                  <button className="secondary" disabled={smtpTestBusy} onClick={() => void testSmtpSettings(true)}>
-                    {smtpTestBusy ? "Testing..." : "Send test mail to self"}
-                  </button>
-                  <button className="secondary" disabled={zohoConnectBusy} onClick={() => void connectZohoMailbox()}>
-                    {zohoConnectBusy ? "Connecting..." : "Connect Zoho (1-click)"}
-                  </button>
+                <div className="settings-subsection mail-settings-notes">
+                  <p className="muted"><strong>Supported modes:</strong> SMTP mode (<code>smtppro.zoho.com</code>, <code>smtp.gmail.com</code>, <code>smtp.office365.com</code>) or API mode via host keys.</p>
+                  <p className="muted"><strong>API mode host keys:</strong> <code>zohoapi.com</code>, <code>sendgridapi</code>, <code>postmarkapi</code>.</p>
+                  <p className="muted"><strong>Zoho:</strong> click <strong>Connect Zoho (1-click)</strong>. No manual code/token copy required.</p>
+                  <p className="muted"><strong>Password meaning:</strong> SMTP = mailbox/app password. API = provider credential (Zoho refresh token / SendGrid key / Postmark token).</p>
+                  <p className="muted"><strong>Connection:</strong> {String(smtpSettings.host || "").toLowerCase().startsWith("zohoapi") && smtpSettings.hasPassword ? "Zoho connected" : "Not connected"} for current recruiter account.</p>
+                  <p className="muted"><strong>Hosting note:</strong> SMTP mode may need paid hosting/network egress; API mode often avoids SMTP port blockers.</p>
                 </div>
-                <p className="muted" style={{ marginTop: 8 }}>
-                  <strong>Supported modes:</strong> SMTP mode (real SMTP host like <code>smtppro.zoho.com</code>, <code>smtp.gmail.com</code>, <code>smtp.office365.com</code>) or API mode via host keys.
-                </p>
-                <p className="muted" style={{ marginTop: 2 }}>
-                  <strong>API mode host keys:</strong> <code>zohoapi.com</code>, <code>sendgridapi</code>, <code>postmarkapi</code>.
-                </p>
-                <p className="muted" style={{ marginTop: 2 }}>
-                  <strong>Zoho:</strong> click <strong>Connect Zoho (1-click)</strong>. No manual code/token copy is required.
-                </p>
-                <p className="muted" style={{ marginTop: 2 }}>
-                  <strong>Password field meaning:</strong> SMTP mode = mailbox/app password. API mode = provider credential (Zoho refresh token auto-saved by Connect Zoho, SendGrid API key, Postmark Server Token).
-                </p>
-                <p className="muted" style={{ marginTop: 2 }}>
-                  <strong>Connection status:</strong> {String(smtpSettings.host || "").toLowerCase().startsWith("zohoapi") && smtpSettings.hasPassword ? "Zoho connected" : "Not connected"} for the current recruiter account.
-                </p>
-                <p className="muted" style={{ marginTop: 2 }}>
-                  <strong>Hosting note:</strong> SMTP mode may require paid hosting/network egress on some platforms. API mode usually avoids SMTP port blockers.
-                </p>
 
                 <div className="settings-subsection" style={{ marginTop: 18 }}>
                   <div className="section-kicker">Your Email Signature (per recruiter)</div>
