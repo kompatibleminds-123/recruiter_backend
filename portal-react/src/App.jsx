@@ -12041,9 +12041,6 @@ function PortalApp({ token, onLogout }) {
                   <div className="reports-client-chart-grid">
                     <article className="reports-chart-card">
                       <h4>Recruiter Performance (Score)</h4>
-                      <p className="muted reports-formula-note">
-                        Score formula: 35% conversion (shared/sourced) + 25% interview ratio (interview/shared) + 20% offer ratio (offered/interview) + 10% shortlist ratio (shortlisted/interview) + 10% shared volume bonus (capped), bounded 0-100.
-                      </p>
                       {!recruiterLeaderboardRanked.length ? <div className="empty-state compact-empty">No chart data.</div> : (
                         <div className="reports-funnel-list">
                           {recruiterLeaderboardRanked.map((row) => (
@@ -12054,6 +12051,9 @@ function PortalApp({ token, onLogout }) {
                           ))}
                         </div>
                       )}
+                      <p className="muted reports-formula-note">
+                        Score = 35% conversion + 25% interview ratio + 20% offer ratio + 10% shortlist ratio + 10% shared volume bonus (capped), range 0-100.
+                      </p>
                     </article>
                     <article className="reports-chart-card">
                       <h4>Recruiter Conversion Funnel</h4>
@@ -12072,6 +12072,7 @@ function PortalApp({ token, onLogout }) {
                                   style={{ width: `${row.shared > 0 ? Math.max(2, Math.round((row.interviews / row.shared) * Math.max(4, Math.round((row.shared / maxRecruiterShared) * 100)))) : 0}%` }}
                                 />
                               </div>
+                              <span className="reports-bar-meta">{`S:${row.shared} | I:${row.interviews}`}</span>
                             </div>
                           ))}
                         </div>
