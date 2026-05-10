@@ -5233,6 +5233,27 @@ function PortalApp({ token, onLogout }) {
 	  }
 	}
 
+  function openWhatsappInSideWindow(phoneValue, statusKey = "workspace") {
+    const phone = String(phoneValue || "").replace(/[^\d]/g, "");
+    if (!phone) {
+      setStatus(statusKey, "No phone number available for WhatsApp.", "error");
+      return;
+    }
+    try {
+      const width = 520;
+      const height = 900;
+      const left = Math.max(0, (window.screenX || 0) + (window.outerWidth || 1400) - width - 24);
+      const top = Math.max(0, (window.screenY || 0) + 24);
+      const url = `https://web.whatsapp.com/send?phone=${encodeURIComponent(phone)}`;
+      const features = `popup=yes,width=${width},height=${height},left=${left},top=${top},resizable=yes,scrollbars=yes`;
+      const win = window.open(url, "whatsapp_side_window", features);
+      if (!win) return;
+      win.focus?.();
+    } catch {
+      // Ignore popup blocker/runtime window errors.
+    }
+  }
+
 	function openRecruiterNotes(candidateOrId) {
 	  const candidateId = String(candidateOrId?.id || candidateOrId || "").trim();
 	  if (!candidateId) return;
@@ -10845,12 +10866,7 @@ function PortalApp({ token, onLogout }) {
   }
 
   function copyInterviewWhatsapp() {
-    const phone = String(interviewForm.phoneNumber || "").replace(/[^\d]/g, "");
-    if (!phone) {
-      setStatus("interview", "No phone number available.", "error");
-      return;
-    }
-    window.open(`https://wa.me/${phone}`, "_blank", "noopener,noreferrer");
+    openWhatsappInSideWindow(interviewForm.phoneNumber || "", "interview");
   }
 
   function sendInterviewToSheets() {
@@ -11259,12 +11275,7 @@ function PortalApp({ token, onLogout }) {
   }
 
   function openAssessmentWhatsapp(assessment) {
-    const phone = String(assessment?.phoneNumber || "").replace(/[^\d]/g, "");
-    if (!phone) {
-      setStatus("assessments", "No phone number available for WhatsApp.", "error");
-      return;
-    }
-    window.open(`https://wa.me/${phone}`, "_blank", "noopener,noreferrer");
+    openWhatsappInSideWindow(assessment?.phoneNumber || "", "assessments");
   }
 
   const companyId = String(state.user?.companyId || state.intake?.company?.id || "").trim();
@@ -12027,6 +12038,7 @@ function PortalApp({ token, onLogout }) {
                         <button onClick={() => loadApplicantIntoInterview(item.id)}>Open draft</button>
                       ) : null}
 	                            <button onClick={() => openRecruiterNotes(item)}>Recruiter note</button>
+                      <button onClick={() => openWhatsappInSideWindow(item.phone || item.phoneNumber || "", "applicants")}>WhatsApp</button>
                       <button onClick={() => void openAttempts(item.id)}>Attempts</button>
                       {!item.hidden_from_captured ? (
                         <button className="ghost-btn" onClick={() => openJdEmailModalForCandidate(item, item.jdId || "")}>Email JD</button>
@@ -12142,6 +12154,7 @@ function PortalApp({ token, onLogout }) {
                         ) : null}
                         <button onClick={() => setAssignCandidateId(item.id)}>{item.assigned_to_name ? "Reassign" : "Assign"}</button>
 	                      <button onClick={() => openRecruiterNotes(item)}>Recruiter note</button>
+                        <button onClick={() => openWhatsappInSideWindow(item.phone || item.phoneNumber || "", "captured")}>WhatsApp</button>
                         <button onClick={() => void openAttempts(item.id)}>Attempts</button>
                         {!item.hidden_from_captured ? (
                           <button className="ghost-btn" onClick={() => openJdEmailModalForCandidate(item)}>Email JD</button>
