@@ -11452,7 +11452,6 @@ function PortalApp({ token, onLogout }) {
     .sort((a, b) => b.sourced - a.sourced)
     .slice(0, 8);
   const maxClientSourced = Math.max(1, ...clientChartRows.map((row) => row.sourced));
-  const maxClientShared = Math.max(1, ...clientChartRows.map((row) => row.shared));
   const maxClientInterview = Math.max(1, ...clientChartRows.map((row) => row.interviews));
   const recruiterLeaderboardShared = [...dashboardRecruiterGroups]
     .sort((a, b) => Number(b?.metrics?.converted || 0) - Number(a?.metrics?.converted || 0))
@@ -11860,7 +11859,7 @@ function PortalApp({ token, onLogout }) {
                             <div key={`client-bars-${row.label}`} className="reports-bar-row">
                               <span className="reports-bar-label">{row.label}</span>
                               <div className="reports-bar-track"><i style={{ width: `${Math.max(4, Math.round((row.sourced / maxClientSourced) * 100))}%` }} /></div>
-                              <div className="reports-bar-track reports-bar-track--alt"><i style={{ width: `${Math.max(4, Math.round((row.shared / maxClientShared) * 100))}%` }} /></div>
+                              <div className="reports-bar-track reports-bar-track--alt"><i style={{ width: `${row.sourced > 0 ? Math.max(2, Math.round((row.shared / row.sourced) * 100)) : 0}%` }} /></div>
                             </div>
                           ))}
                         </div>
