@@ -11477,11 +11477,14 @@ function PortalApp({ token, onLogout }) {
     const offered = Number(group?.metrics?.offered || 0);
     const selfSourced = Number(group?.ownership?.selfSourced || 0);
     const assignedSourcing = Number(group?.ownership?.assignedSourcing || group?.ownership?.adminAssignedSourcing || 0);
+    const adminAssignedSourcing = Number(group?.ownership?.adminAssignedSourcing || 0);
     const directApplicants = Number(group?.ownership?.directApplicants || group?.ownership?.websiteApply || 0);
     const assignedApplicants = Number(group?.ownership?.assignedApplicants || group?.ownership?.adminAssignedApplicants || 0);
     const conversionPct = safePct(shared, sourced);
     const interviewPct = safePct(interviews, shared);
-    const selfAssignedPct = safePct(selfSourced, selfSourced + assignedSourcing);
+    const selfAssignedPct = adminAssignedSourcing > 0
+      ? safePct(selfSourced, Math.max(selfSourced, adminAssignedSourcing))
+      : safePct(selfSourced, selfSourced + assignedSourcing);
     const directAssignedPct = safePct(directApplicants, directApplicants + assignedApplicants);
     const performanceScore = Math.max(0, Math.min(100, Math.round(
       (conversionPct * 0.35) +
@@ -11514,7 +11517,6 @@ function PortalApp({ token, onLogout }) {
     .map((row, idx) => ({ ...row, rank: idx + 1 }));
   const maxRecruiterScore = Math.max(1, ...recruiterLeaderboardRanked.map((row) => row.performanceScore));
   const maxRecruiterShared = Math.max(1, ...recruiterLeaderboardRanked.map((row) => row.shared));
-  const maxRecruiterInterview = Math.max(1, ...recruiterLeaderboardRanked.map((row) => row.interviews));
   const clientPortalSummary = state.clientPortal?.summary || { overall: {}, byClient: [], byClientPosition: [] };
   const selectedClientPortalGroup = (clientPortalSummary.byClient || []).find((group) => String(group.label || "") === String(clientPortalFilters.clientLabel || "")) || null;
   const clientPortalPositionRows = (clientPortalSummary.byClientPosition || []).filter((row) => String(row.clientLabel || "") === String(clientPortalFilters.clientLabel || ""));
@@ -12040,6 +12042,9 @@ function PortalApp({ token, onLogout }) {
                   <div className="reports-client-chart-grid">
                     <article className="reports-chart-card">
                       <h4>Recruiter Performance (Score)</h4>
+                      <p className="muted reports-formula-note">
+                        Score formula: 35% conversion (shared/sourced) + 25% interview ratio (interview/shared) + 20% offer ratio (offered/interview) + 10% shortlist ratio (shortlisted/interview) + 10% shared volume bonus (capped), bounded 0-100.
+                      </p>
                       {!recruiterLeaderboardRanked.length ? <div className="empty-state compact-empty">No chart data.</div> : (
                         <div className="reports-funnel-list">
                           {recruiterLeaderboardRanked.map((row) => (
@@ -12058,8 +12063,16 @@ function PortalApp({ token, onLogout }) {
                           {recruiterLeaderboardRanked.map((row) => (
                             <div key={`conv-funnel-${row.label}`} className="reports-bar-row">
                               <span className="reports-bar-label">{row.label}</span>
-                              <div className="reports-bar-track"><i style={{ width: `${Math.max(4, Math.round((row.shared / maxRecruiterShared) * 100))}%` }} /></div>
-                              <div className="reports-bar-track reports-bar-track--alt"><i style={{ width: `${Math.max(4, Math.round((row.interviews / maxRecruiterInterview) * 100))}%` }} /></div>
+                              <div className="reports-stacked-track">
+                                <i
+                                  className="reports-stacked-track__base"
+                                  style={{ width: `${Math.max(4, Math.round((row.shared / maxRecruiterShared) * 100))}%` }}
+                                />
+                                <i
+                                  className="reports-stacked-track__fill"
+                                  style={{ width: `${row.shared > 0 ? Math.max(2, Math.round((row.interviews / row.shared) * Math.max(4, Math.round((row.shared / maxRecruiterShared) * 100)))) : 0}%` }}
+                                />
+                              </div>
                             </div>
                           ))}
                         </div>
