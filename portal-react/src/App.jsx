@@ -9406,12 +9406,9 @@ function PortalApp({ token, onLogout }) {
     }
     setStatus("jobs", "Saving shortcut...", "info");
     try {
-      const result = await api("/company/jds/shortcuts", state.token, {
-        method: "POST",
-        body: JSON.stringify({
-          jobId,
-          shortcuts: nextShortcuts
-        })
+      const result = await api("/company/jds/shortcuts", state.token, "POST", {
+        jobId,
+        shortcuts: nextShortcuts
       });
       const savedShortcuts = String(result?.jdShortcuts || nextShortcuts);
       setJobDraft((current) => ({ ...current, jdShortcuts: savedShortcuts }));
