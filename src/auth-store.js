@@ -2324,8 +2324,6 @@ async function listCompanyJobs(companyId, recruiterId = "", options = {}) {
       if (!jobId) return { ...job, jdShortcuts: "" };
       return {
         ...job,
-        // Never fall back to legacy/global jdShortcuts for recruiter-scoped reads.
-        // Each recruiter should only receive their own shortcut payload.
         jdShortcuts: shortcutsMap.has(jobId) ? String(shortcutsMap.get(jobId) || "") : ""
       };
     });
@@ -2353,8 +2351,6 @@ async function listCompanyJobs(companyId, recruiterId = "", options = {}) {
     if (!jobId) return { ...job, jdShortcuts: "" };
     return {
       ...job,
-      // Never fall back to legacy/global jdShortcuts for recruiter-scoped reads.
-      // Each recruiter should only receive their own shortcut payload.
       jdShortcuts: shortcutsMap.has(jobId) ? String(shortcutsMap.get(jobId) || "") : ""
     };
   });
@@ -2385,7 +2381,6 @@ async function saveCompanyJob({ actorUserId, companyId, job }) {
     const store = readStore(); store.jobs = Array.isArray(store.jobs) ? store.jobs : []; const now = new Date().toISOString(); const ix = store.jobs.findIndex((i) => i.id === job.id && i.companyId === companyId);
     existingJob = ix >= 0 ? sanitizeJob(store.jobs[ix]) : null;
     if (!actorIsAdmin && existingJob?.ownerRecruiterId && String(existingJob.ownerRecruiterId) !== String(actor.id)) throw new Error("Only an admin or the owner recruiter can edit this JD.");
-    const globalShortcuts = existingJob ? String(existingJob.jdShortcuts || "").trim() : "";
     const ownerRecruiterId = actorIsAdmin ? String(job.ownerRecruiterId || job.owner_recruiter_id || "").trim() : String(actor.id || "").trim();
     const ownerRecruiterName = actorIsAdmin ? String(job.ownerRecruiterName || job.owner_recruiter_name || "").trim() : String(actor.name || "").trim();
     const assignedRecruiters = actorIsAdmin && Array.isArray(job.assignedRecruiters) ? job.assignedRecruiters : ownerRecruiterId ? [{ id: ownerRecruiterId, name: ownerRecruiterName, primary: true }] : [];
@@ -2410,7 +2405,7 @@ async function saveCompanyJob({ actorUserId, companyId, job }) {
       redFlags: String(job.redFlags || "").trim(),
       recruiterNotes: String(job.recruiterNotes || "").trim(),
       standardQuestions: String(job.standardQuestions || "").trim(),
-      jdShortcuts: globalShortcuts,
+      jdShortcuts: "",
       ownerRecruiterId,
       ownerRecruiterName,
       assignedRecruiters,
@@ -2445,7 +2440,6 @@ async function saveCompanyJob({ actorUserId, companyId, job }) {
     existingJob = sanitizeJob(existingRows?.[0]);
     if (!actorIsAdmin && existingJob?.ownerRecruiterId && String(existingJob.ownerRecruiterId) !== String(actor.id)) throw new Error("Only an admin or the owner recruiter can edit this JD.");
   }
-  const globalShortcuts = existingJob ? String(existingJob.jdShortcuts || "").trim() : "";
   const ownerRecruiterId = actorIsAdmin ? String(job.ownerRecruiterId || job.owner_recruiter_id || "").trim() : String(actor.id || "").trim();
   const ownerRecruiterName = actorIsAdmin ? String(job.ownerRecruiterName || job.owner_recruiter_name || "").trim() : String(actor.name || "").trim();
   const assignedRecruiters = actorIsAdmin && Array.isArray(job.assignedRecruiters) ? job.assignedRecruiters : ownerRecruiterId ? [{ id: ownerRecruiterId, name: ownerRecruiterName, primary: true }] : [];
@@ -2458,28 +2452,23 @@ async function saveCompanyJob({ actorUserId, companyId, job }) {
   const persistedJob = persistedJobId(job.id);
   const rows = await sbIns(
     "company_jobs",
-    [jobRow({ ...job, jdShortcuts: globalShortcuts, ownerRecruiterId, ownerRecruiterName, assignedRecruiters, isArchived: requestedArchived, archivedAt, archivedBy, id: persistedJob, companyId, updatedBy: actor.email, createdAt: job.createdAt || existingJob?.createdAt || now, updatedAt: now })],
+    [jobRow({ ...job, jdShortcuts: "", ownerRecruiterId, ownerRecruiterName, assignedRecruiters, isArchived: requestedArchived, archivedAt, archivedBy, id: persistedJob, companyId, updatedBy: actor.email, createdAt: job.createdAt || existingJob?.createdAt || now, updatedAt: now })],
     { conflict: "id", upsert: true }
   );
 
-  try {
-    await sbIns(
-      "company_job_shortcuts",
-      [{
-        company_id: companyId,
-        job_id: persistedJob,
-        recruiter_id: actor.id,
-        shortcuts: incomingRecruiterShortcuts,
-        created_at: now,
-        updated_at: now,
-        payload: { updatedBy: actor.email }
-      }],
-      { conflict: "job_id,recruiter_id", upsert: true, returning: "minimal" }
-    );
-  } catch (_) {
-    // Backward-compatible: some deployments might not have the recruiter-scoped shortcuts table yet.
-    // In that case, keep the JD save working and let the user apply the migration later.
-  }
+  await sbIns(
+    "company_job_shortcuts",
+    [{
+      company_id: companyId,
+      job_id: persistedJob,
+      recruiter_id: actor.id,
+      shortcuts: incomingRecruiterShortcuts,
+      created_at: now,
+      updated_at: now,
+      payload: { updatedBy: actor.email }
+    }],
+    { conflict: "job_id,recruiter_id", upsert: true, returning: "minimal" }
+  );
 
   return { ...sanitizeJob(rows[0]), jdShortcuts: incomingRecruiterShortcuts };
 }

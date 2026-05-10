@@ -9422,6 +9422,11 @@ function PortalApp({ token, onLogout }) {
   }
 
   async function saveShortcutDraft() {
+    const jobId = String(selectedJobId || jobDraft.id || "").trim();
+    if (!jobId) {
+      setStatus("jobs", "Select an existing JD first. JD shortcuts are saved per JD.", "error");
+      return;
+    }
     const key = normalizeShortcutKey(jobShortcutKey);
     const value = String(jobShortcutValue || "").trim();
     if (!key || !value) {
@@ -10834,6 +10839,11 @@ function PortalApp({ token, onLogout }) {
   }
 
   async function deleteShortcutDraft(key) {
+    const jobId = String(selectedJobId || jobDraft.id || "").trim();
+    if (!jobId) {
+      setStatus("jobs", "Select an existing JD first to delete JD shortcuts.", "error");
+      return;
+    }
     const parsed = parseShortcutMap(jobDraft.jdShortcuts);
     delete parsed[key];
     if (normalizeShortcutKey(jobShortcutKey) === key) {
@@ -13109,7 +13119,13 @@ function PortalApp({ token, onLogout }) {
                     </label>
                   </div>
                   <div className="button-row">
-                    <button onClick={() => saveShortcutDraft()}>{jobShortcutKey ? "Update shortcut" : "Add shortcut"}</button>
+                    <button
+                      disabled={!String(selectedJobId || jobDraft.id || "").trim()}
+                      title={!String(selectedJobId || jobDraft.id || "").trim() ? "Select an existing JD first" : ""}
+                      onClick={() => saveShortcutDraft()}
+                    >
+                      {jobShortcutKey ? "Update shortcut" : "Add shortcut"}
+                    </button>
                   </div>
                   <div className="shortcut-note">Saved format stays extension-compatible in backend. Recruiters only see this simplified editor.</div>
                   <div className="stack-list compact">
