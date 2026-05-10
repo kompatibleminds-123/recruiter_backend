@@ -11452,7 +11452,7 @@ function PortalApp({ token, onLogout }) {
     .sort((a, b) => b.sourced - a.sourced)
     .slice(0, 8);
   const maxClientSourced = Math.max(1, ...clientChartRows.map((row) => row.sourced));
-  const maxClientInterview = Math.max(1, ...clientChartRows.map((row) => row.interviews));
+  const maxClientSharedForFunnel = Math.max(1, ...clientChartRows.map((row) => row.shared));
   const recruiterLeaderboardShared = [...dashboardRecruiterGroups]
     .sort((a, b) => Number(b?.metrics?.converted || 0) - Number(a?.metrics?.converted || 0))
     .slice(0, 5);
@@ -11858,8 +11858,16 @@ function PortalApp({ token, onLogout }) {
                           {clientChartRows.map((row) => (
                             <div key={`client-bars-${row.label}`} className="reports-bar-row">
                               <span className="reports-bar-label">{row.label}</span>
-                              <div className="reports-bar-track"><i style={{ width: `${Math.max(4, Math.round((row.sourced / maxClientSourced) * 100))}%` }} /></div>
-                              <div className="reports-bar-track reports-bar-track--alt"><i style={{ width: `${row.sourced > 0 ? Math.max(2, Math.round((row.shared / row.sourced) * 100)) : 0}%` }} /></div>
+                              <div className="reports-stacked-track">
+                                <i
+                                  className="reports-stacked-track__base"
+                                  style={{ width: `${Math.max(4, Math.round((row.sourced / maxClientSourced) * 100))}%` }}
+                                />
+                                <i
+                                  className="reports-stacked-track__fill"
+                                  style={{ width: `${row.sourced > 0 ? Math.max(2, Math.round((row.shared / row.sourced) * Math.max(4, Math.round((row.sourced / maxClientSourced) * 100)))) : 0}%` }}
+                                />
+                              </div>
                             </div>
                           ))}
                         </div>
@@ -11872,7 +11880,16 @@ function PortalApp({ token, onLogout }) {
                           {clientChartRows.map((row) => (
                             <div key={`client-funnel-${row.label}`} className="reports-funnel-item">
                               <div className="reports-funnel-item__head"><span>{row.label}</span><strong>{row.interviews}</strong></div>
-                              <div className="reports-funnel-track"><i style={{ width: `${Math.max(4, Math.round((row.interviews / maxClientInterview) * 100))}%` }} /></div>
+                              <div className="reports-stacked-track">
+                                <i
+                                  className="reports-stacked-track__base"
+                                  style={{ width: `${Math.max(4, Math.round((row.shared / maxClientSharedForFunnel) * 100))}%` }}
+                                />
+                                <i
+                                  className="reports-stacked-track__fill"
+                                  style={{ width: `${row.shared > 0 ? Math.max(2, Math.round((row.interviews / row.shared) * Math.max(4, Math.round((row.shared / maxClientSharedForFunnel) * 100)))) : 0}%` }}
+                                />
+                              </div>
                             </div>
                           ))}
                         </div>
