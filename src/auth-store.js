@@ -2514,7 +2514,7 @@ async function saveCompanyJobRecruiterShortcuts({ actorUserId, companyId, jobId,
   }
 
   await ensureSeeded();
-  const existingRows = await sbSel("company_jobs", `select=id,company_id,owner_recruiter_id,assigned_recruiters&id=eq.${enc(scopedJobId)}&company_id=eq.${enc(companyId)}&limit=1`);
+  const existingRows = await sbSel("company_jobs", `select=*&id=eq.${enc(scopedJobId)}&company_id=eq.${enc(companyId)}&limit=1`);
   const job = sanitizeJob(existingRows?.[0]);
   if (!job) throw new Error("JD not found.");
   const ownerRecruiterId = String(job?.ownerRecruiterId || "").trim();
