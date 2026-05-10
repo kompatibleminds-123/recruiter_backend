@@ -1370,6 +1370,27 @@ textarea { min-height: 92px; resize: vertical; }
 }
 .overlay-card--wide { width: min(1320px, calc(100vw - 3rem)); }
 .overlay-card h3 { margin: 0; font-size: 1.25rem; }
+.inline-drilldown {
+  margin-top: 0.9rem;
+}
+.inline-drilldown__card {
+  border: 1px solid #dce6fb;
+  border-radius: 18px;
+  background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+  box-shadow: 0 10px 24px rgba(20, 41, 84, 0.08);
+}
+.drilldown-inline-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.7rem;
+}
+.drilldown-inline-head h3 {
+  margin: 0;
+}
+.inline-drilldown .drilldown-actions button {
+  font-size: 0.86rem;
+}
 .drilldown-actions {
   flex-wrap: nowrap;
   overflow-x: auto;

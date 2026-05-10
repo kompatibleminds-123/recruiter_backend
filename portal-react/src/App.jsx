@@ -3979,12 +3979,17 @@ function ClientPortalPieCard({ title, total, rows }) {
   );
 }
 
-function DrilldownModal({ open, title, items, onClose, onOpenCv, onOpenDraft, onOpenAssessment, onOpenNotes, onOpenStatus, onAddFeedback, extraActions = null }) {
+function DrilldownModal({ open, title, items, onClose, onOpenCv, onOpenDraft, onOpenAssessment, onOpenNotes, onOpenStatus, onAddFeedback, extraActions = null, inline = false, hideRoleClient = false }) {
   if (!open) return null;
+  const containerClass = inline ? "inline-drilldown" : "overlay";
+  const cardClass = inline ? "panel inline-drilldown__card" : "overlay-card overlay-card--wide";
   return (
-    <div className="overlay" onClick={onClose}>
-      <div className="overlay-card overlay-card--wide" onClick={(e) => e.stopPropagation()}>
-        <h3>{title}</h3>
+    <div className={containerClass} onClick={inline ? undefined : onClose}>
+      <div className={cardClass} onClick={(e) => !inline && e.stopPropagation()}>
+        <div className="drilldown-inline-head">
+          <h3>{title}</h3>
+          {inline ? <button className="ghost-btn" onClick={onClose}>Collapse</button> : null}
+        </div>
         <p className="muted">{items.length} candidate(s)</p>
         {extraActions ? <div className="drilldown-toolbar">{extraActions}</div> : null}
         <div className="stack-list compact">
@@ -3999,8 +4004,13 @@ function DrilldownModal({ open, title, items, onClose, onOpenCv, onOpenDraft, on
                 return (
               <div className="item-card__top">
                 <div>
-                  <h3>{item.name || item.candidateName || "Candidate"} | {item.position || item.jdTitle || item.role || "Untitled role"}</h3>
-                  <p className="muted">{[item.company || item.currentCompany || "", item.clientName ? `Client: ${item.clientName}` : "", item.ownerRecruiter ? `Recruiter: ${item.ownerRecruiter}` : "", item.source ? `Source: ${item.source}` : ""].filter(Boolean).join(" | ")}</p>
+                  <h3>{hideRoleClient ? (item.name || item.candidateName || "Candidate") : `${item.name || item.candidateName || "Candidate"} | ${item.position || item.jdTitle || item.role || "Untitled role"}`}</h3>
+                  <p className="muted">{[
+                    item.company || item.currentCompany || "",
+                    hideRoleClient ? "" : (item.clientName ? `Client: ${item.clientName}` : ""),
+                    item.ownerRecruiter ? `Recruiter: ${item.ownerRecruiter}` : "",
+                    item.source ? `Source: ${item.source}` : ""
+                  ].filter(Boolean).join(" | ")}</p>
                   <div className="candidate-snippet">{[item.candidateStatus ? `Assessment status: ${item.candidateStatus}` : "", item.followUpAt ? `Follow-up: ${new Date(item.followUpAt).toLocaleString()}` : "", item.interviewAt ? `Interview: ${new Date(item.interviewAt).toLocaleString()}` : ""].filter(Boolean).join("\n")}</div>
                   {feedbackMeta.feedback ? (
                     <div className="feedback-preview">
@@ -4014,7 +4024,7 @@ function DrilldownModal({ open, title, items, onClose, onOpenCv, onOpenDraft, on
                     {onOpenCv && (item.raw?.candidate?.id || item.id) && (item.raw?.candidate?.cv_filename || item.raw?.candidate?.cv_url) ? <button onClick={() => onOpenCv(item.raw?.candidate?.id || item.id)}>Open CV</button> : null}
                     {onOpenAssessment && (assessmentForAction || profileOnlyMode) ? <button onClick={() => onOpenAssessment(profileTarget)}>{profileOnlyMode ? "Open profile" : "Update Assessment"}</button> : null}
                     {assessmentForAction && onOpenStatus ? <button onClick={() => onOpenStatus(assessmentForAction)}>Update status</button> : null}
-                    {!assessmentForAction && onOpenNotes && candidateIdForAction ? <button onClick={() => onOpenNotes(candidateIdForAction)}>Update notes</button> : null}
+                    {onOpenNotes && candidateIdForAction ? <button onClick={() => onOpenNotes(candidateIdForAction)}>Update notes</button> : null}
                     {!assessmentForAction && !onOpenNotes && onOpenDraft && candidateIdForAction ? <button onClick={() => onOpenDraft(candidateIdForAction)}>Update details</button> : null}
                     {!assessmentForAction && onOpenStatus && candidateIdForAction ? <button onClick={() => onOpenStatus({ candidateId: candidateIdForAction, item })}>Update status</button> : null}
                     {onAddFeedback ? <button className="ghost-btn" onClick={() => onAddFeedback(item)}>{feedbackMeta.feedback ? "Add another feedback" : "Add feedback"}</button> : null}
@@ -4026,9 +4036,11 @@ function DrilldownModal({ open, title, items, onClose, onOpenCv, onOpenDraft, on
             </article>
           ))}
         </div>
-        <div className="button-row">
-          <button className="ghost-btn" onClick={onClose}>Close</button>
-        </div>
+        {inline ? null : (
+          <div className="button-row">
+            <button className="ghost-btn" onClick={onClose}>Close</button>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -12179,6 +12191,26 @@ function PortalApp({ token, onLogout }) {
                 </Section>
                 ) : null}
               </div>
+              {drilldownState.open ? (
+                <DrilldownModal
+                  open={drilldownState.open}
+                  inline
+                  hideRoleClient
+                  title={drilldownState.title}
+                  items={drilldownState.items}
+                  onClose={() => setDrilldownState({ open: false, title: "", items: [], request: null })}
+                  onOpenCv={(candidateId) => void openCv(candidateId)}
+                  onOpenNotes={(candidateId) => void openRecruiterNotes(candidateId)}
+                  onOpenStatus={(target) => {
+                    const assessmentId = String(target?.id || target?.assessmentId || "").trim();
+                    if (assessmentId) {
+                      setAssessmentStatusId(assessmentId);
+                      return;
+                    }
+                    if (target?.candidateId) void openAttempts(target.candidateId);
+                  }}
+                />
+              ) : null}
             </div>
           } />
 
@@ -14159,7 +14191,7 @@ function PortalApp({ token, onLogout }) {
       <AttemptsModal open={Boolean(attemptsCandidateId)} candidate={attemptsCandidate} attempts={attempts} onClose={() => setAttemptsCandidateId("")} onRefresh={refreshAttempts} onSave={saveAttempt} />
       <AssessmentStatusModal open={Boolean(assessmentStatusId)} assessment={assessmentStatusItem} onClose={() => setAssessmentStatusId("")} onSave={(payload) => saveAssessmentStatusUpdate(assessmentStatusItem, payload)} />
       <DrilldownModal
-        open={drilldownState.open}
+        open={drilldownState.open && String(location?.pathname || "") !== "/dashboard"}
         title={drilldownState.title}
         items={drilldownState.items}
         onClose={() => setDrilldownState({ open: false, title: "", items: [], request: null })}
