@@ -4441,6 +4441,7 @@ function PortalApp({ token, onLogout }) {
     jobs: []
   });
   const [statuses, setStatuses] = useState({});
+  const statusTimersRef = useRef({});
   const [companyLicense, setCompanyLicense] = useState(null);
   const [billingOverview, setBillingOverview] = useState(null);
   const [billingPlans, setBillingPlans] = useState([]);
@@ -5194,8 +5195,34 @@ function PortalApp({ token, onLogout }) {
   }
 
 	function setStatus(key, message, kind = "") {
-	  setStatuses((current) => ({ ...current, [key]: message, [`${key}Kind`]: kind }));
+	  const scopedKey = String(key || "").trim();
+	  if (!scopedKey) return;
+	  if (statusTimersRef.current[scopedKey]) {
+	    clearTimeout(statusTimersRef.current[scopedKey]);
+	    delete statusTimersRef.current[scopedKey];
+	  }
+	  setStatuses((current) => ({ ...current, [scopedKey]: message, [`${scopedKey}Kind`]: kind }));
+	  const hasMessage = String(message || "").trim().length > 0;
+	  if (!hasMessage) return;
+	  const timeoutMs = kind === "error" ? 7000 : 4000;
+	  statusTimersRef.current[scopedKey] = setTimeout(() => {
+	    setStatuses((current) => {
+	      if (String(current?.[scopedKey] || "") !== String(message || "")) return current;
+	      const next = { ...current };
+	      delete next[scopedKey];
+	      delete next[`${scopedKey}Kind`];
+	      return next;
+	    });
+	    delete statusTimersRef.current[scopedKey];
+	  }, timeoutMs);
 	}
+
+  useEffect(() => () => {
+    Object.values(statusTimersRef.current || {}).forEach((timerId) => {
+      try { clearTimeout(timerId); } catch { /* ignore */ }
+    });
+    statusTimersRef.current = {};
+  }, []);
 
 	function normalizeLinkedinUrl(value) {
 	  const input = String(value || "");
@@ -9412,6 +9439,18 @@ function PortalApp({ token, onLogout }) {
       });
       const savedShortcuts = String(result?.jdShortcuts || nextShortcuts);
       setJobDraft((current) => ({ ...current, jdShortcuts: savedShortcuts }));
+      const scopedJobId = String(jobId || "").trim();
+      if (scopedJobId) {
+        setJobsCatalog((current) => (Array.isArray(current)
+          ? current.map((item) => String(item?.id || "") === scopedJobId ? { ...item, jdShortcuts: savedShortcuts } : item)
+          : current));
+        setState((current) => ({
+          ...current,
+          jobs: Array.isArray(current.jobs)
+            ? current.jobs.map((item) => String(item?.id || "") === scopedJobId ? { ...item, jdShortcuts: savedShortcuts } : item)
+            : current.jobs
+        }));
+      }
       setStatus("jobs", successMessage, "ok");
     } catch (error) {
       setStatus("jobs", `Shortcut save failed: ${String(error?.message || error)}`, "error");
