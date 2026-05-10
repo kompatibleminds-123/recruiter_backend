@@ -90,8 +90,10 @@ const {
   requireEmployeeSessionUser,
   requirePayrollSessionUser,
   requireSessionUser,
+  getPortalUserByEmailForReset,
   resetClientUserPassword,
   resetEmployeeUserPassword,
+  resetPortalUserPasswordByToken,
   resetUserPassword,
   removeCompanyFbpHead,
   reviewFbpDeclaration,
@@ -315,6 +317,15 @@ function buildSignupMail({ companyName = "", adminName = "", verifyUrl = "" }) {
   const subject = `Welcome to RecruitDesk AI from Kompatible Minds - ${safeCompany}`;
   const text = `Hi ${safeName},\n\nWelcome to RecruitDesk AI from Kompatible Minds.\nYour workspace for ${safeCompany} is almost ready.\n\nPlease verify your email to activate your account:\n${safeVerifyUrl}\n\nIf this signup was not done by you, please ignore this email.\n\nRegards,\nRecruitDesk AI from Kompatible Minds`;
   const html = `<p>Hi ${escapeHtml(safeName)},</p><p>Welcome to <strong>RecruitDesk AI from Kompatible Minds</strong>.</p><p>Your workspace for <strong>${escapeHtml(safeCompany)}</strong> is almost ready.</p><p>Please verify your email to activate your account:</p><p><a href="${escapeHtml(safeVerifyUrl)}" target="_blank" rel="noopener noreferrer">Activate account</a></p><p>If this signup was not done by you, please ignore this email.</p><p>Regards,<br/>RecruitDesk AI from Kompatible Minds</p>`;
+  return { subject, text, html };
+}
+
+function buildPasswordResetMail({ adminName = "", resetUrl = "" }) {
+  const safeName = String(adminName || "").trim() || "there";
+  const safeResetUrl = String(resetUrl || "").trim();
+  const subject = "Reset your RecruitDesk AI password";
+  const text = `Hi ${safeName},\n\nWe received a request to reset your RecruitDesk AI password.\n\nUse this link to set a new password:\n${safeResetUrl}\n\nThis link expires in 30 minutes.\nIf you did not request this, you can ignore this email.\n\nRegards,\nRecruitDesk AI from Kompatible Minds`;
+  const html = `<p>Hi ${escapeHtml(safeName)},</p><p>We received a request to reset your <strong>RecruitDesk AI</strong> password.</p><p><a href="${escapeHtml(safeResetUrl)}" target="_blank" rel="noopener noreferrer">Reset password</a></p><p>This link expires in <strong>30 minutes</strong>.</p><p>If you did not request this, you can ignore this email.</p><p>Regards,<br/>RecruitDesk AI from Kompatible Minds</p>`;
   return { subject, text, html };
 }
 
@@ -1371,6 +1382,15 @@ function sendText(arg1, arg2, arg3, arg4, arg5 = "text/plain; charset=utf-8") {
   res.end(body);
 }
 
+function sendHtml(arg1, arg2, arg3, arg4) {
+  const hasExplicitReq = arguments.length >= 4;
+  const req = hasExplicitReq ? arg1 : null;
+  const res = hasExplicitReq ? arg2 : arg1;
+  const statusCode = hasExplicitReq ? arg3 : arg2;
+  const body = hasExplicitReq ? arg4 : arg3;
+  sendText(req, res, statusCode, String(body || ""), "text/html; charset=utf-8");
+}
+
 function sendBuffer(arg1, arg2, arg3, arg4, arg5 = {}) {
   const hasExplicitReq = arguments.length >= 4;
   const req = hasExplicitReq ? arg1 : null;
@@ -1447,6 +1467,21 @@ function getBearerTokenFromRequest(req, requestUrl = null) {
   if (headerToken) return headerToken;
   const queryToken = String(requestUrl?.searchParams?.get("access_token") || "").trim();
   return queryToken;
+}
+
+function readRawBody(req) {
+  return new Promise((resolve, reject) => {
+    let raw = "";
+    req.on("data", (chunk) => {
+      raw += chunk;
+      if (raw.length > 5 * 1024 * 1024) {
+        reject(new Error("Request body too large."));
+        req.destroy();
+      }
+    });
+    req.on("end", () => resolve(raw));
+    req.on("error", reject);
+  });
 }
 
 function getZohoRedirectUri(req) {
@@ -1662,6 +1697,44 @@ function readSignedEmailVerifyToken(token) {
   try {
     const payload = JSON.parse(Buffer.from(encoded, "base64url").toString("utf8"));
     if (payload?.type !== "email_verify") return null;
+    if (!payload?.userId || !payload?.companyId || !payload?.email) return null;
+    if (payload.expiresAt && Date.now() > Number(payload.expiresAt)) return null;
+    return payload;
+  } catch {
+    return null;
+  }
+}
+
+function getPasswordResetTokenSecret() {
+  return (
+    String(process.env.PASSWORD_RESET_SECRET || "").trim() ||
+    String(process.env.PLATFORM_SESSION_SECRET || "").trim() ||
+    getCvShareSecret()
+  );
+}
+
+function createSignedPasswordResetToken(payload) {
+  const encoded = Buffer.from(JSON.stringify(payload), "utf8").toString("base64url");
+  const signature = crypto
+    .createHmac("sha256", getPasswordResetTokenSecret())
+    .update(encoded)
+    .digest("base64url");
+  return `${encoded}.${signature}`;
+}
+
+function readSignedPasswordResetToken(token) {
+  const raw = String(token || "").trim();
+  if (!raw) return null;
+  const [encoded, signature] = raw.split(".");
+  if (!encoded || !signature) return null;
+  const expected = crypto
+    .createHmac("sha256", getPasswordResetTokenSecret())
+    .update(encoded)
+    .digest("base64url");
+  if (!timingSafeEqualString(signature, expected)) return null;
+  try {
+    const payload = JSON.parse(Buffer.from(encoded, "base64url").toString("utf8"));
+    if (payload?.type !== "password_reset") return null;
     if (!payload?.userId || !payload?.companyId || !payload?.email) return null;
     if (payload.expiresAt && Date.now() > Number(payload.expiresAt)) return null;
     return payload;
@@ -7945,6 +8018,104 @@ const server = http.createServer(async (req, res) => {
     } catch (error) {
       const message = String(error.message || error);
       sendJson(res, 400, { ok: false, error: message });
+    }
+    return;
+  }
+
+  if (req.method === "POST" && requestUrl.pathname === "/auth/forgot-password") {
+    try {
+      const body = await readJsonBody(req);
+      const email = String(body?.email || "").trim().toLowerCase();
+      if (!email || !email.includes("@")) {
+        sendJson(res, 200, {
+          ok: true,
+          result: { message: "If this email exists, a reset link has been sent." }
+        });
+        return;
+      }
+
+      const portalUser = await getPortalUserByEmailForReset(email).catch(() => null);
+      if (portalUser?.id && portalUser?.companyId) {
+        const token = createSignedPasswordResetToken({
+          type: "password_reset",
+          userId: String(portalUser.id || "").trim(),
+          companyId: String(portalUser.companyId || "").trim(),
+          email,
+          expiresAt: Date.now() + 30 * 60 * 1000
+        });
+        const resetUrl = `${requestUrl.origin}/auth/reset-password?token=${encodeURIComponent(token)}`;
+        const mail = buildPasswordResetMail({
+          adminName: portalUser.name || "",
+          resetUrl
+        });
+        await sendPlatformTransactionalMail({
+          to: email,
+          subject: mail.subject,
+          html: mail.html,
+          text: mail.text
+        }).catch((error) => {
+          console.log("[mail] password reset mail failed:", String(error?.message || error));
+        });
+      }
+
+      sendJson(res, 200, {
+        ok: true,
+        result: { message: "If this email exists, a reset link has been sent." }
+      });
+    } catch (error) {
+      sendJson(res, 200, {
+        ok: true,
+        result: { message: "If this email exists, a reset link has been sent." }
+      });
+    }
+    return;
+  }
+
+  if (req.method === "GET" && requestUrl.pathname === "/auth/reset-password") {
+    const token = String(requestUrl.searchParams.get("token") || "").trim();
+    const payload = readSignedPasswordResetToken(token);
+    const safeToken = escapeHtml(token);
+    const expired = !payload;
+    const html = `<!doctype html><html><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/><title>Reset Password</title><style>body{font-family:Arial,sans-serif;background:#f6f8fc;color:#0f172a;margin:0;padding:24px}.card{max-width:520px;margin:0 auto;background:#fff;border:1px solid #dbe3f3;border-radius:12px;padding:20px}.title{font-size:22px;font-weight:700;margin:0 0 8px}.sub{font-size:14px;color:#475569;margin:0 0 16px}label{display:block;margin:10px 0 6px;font-weight:600}input{width:100%;box-sizing:border-box;border:1px solid #cbd5e1;border-radius:8px;padding:10px}button{margin-top:14px;background:#2563eb;color:#fff;border:0;border-radius:8px;padding:10px 14px;font-weight:700;cursor:pointer}.msg{margin-top:12px;font-size:14px}.ok{color:#166534}.err{color:#b91c1c}</style></head><body><div class="card"><h1 class="title">Reset password</h1><p class="sub">Set a new password for your RecruitDesk AI account.</p>${expired ? '<p class="msg err">Reset link is invalid or expired. Request a new link from extension login.</p>' : `<form method="POST" action="/auth/reset-password"><input type="hidden" name="token" value="${safeToken}"/><label>New password</label><input name="password" type="password" minlength="8" required placeholder="Minimum 8 characters"/><button type="submit">Update password</button></form>`}<div id="result" class="msg"></div></div></body></html>`;
+    sendHtml(res, 200, html);
+    return;
+  }
+
+  if (req.method === "POST" && requestUrl.pathname === "/auth/reset-password") {
+    try {
+      const contentType = String(req.headers["content-type"] || "").toLowerCase();
+      let token = "";
+      let password = "";
+      if (contentType.includes("application/json")) {
+        const body = await readJsonBody(req);
+        token = String(body?.token || "").trim();
+        password = String(body?.password || "");
+      } else {
+        const raw = await readRawBody(req);
+        const params = new URLSearchParams(raw);
+        token = String(params.get("token") || "").trim();
+        password = String(params.get("password") || "");
+      }
+      const payload = readSignedPasswordResetToken(token);
+      if (!payload) throw new Error("Invalid or expired reset link.");
+      await resetPortalUserPasswordByToken({
+        userId: payload.userId,
+        companyId: payload.companyId,
+        email: payload.email,
+        newPassword: password
+      });
+      if (String(req.headers["content-type"] || "").toLowerCase().includes("application/json")) {
+        sendJson(res, 200, { ok: true, result: { message: "Password reset successful." } });
+      } else {
+        sendHtml(res, 200, `<!doctype html><html><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/><title>Password Updated</title><style>body{font-family:Arial,sans-serif;background:#f6f8fc;color:#0f172a;margin:0;padding:24px}.card{max-width:520px;margin:0 auto;background:#fff;border:1px solid #dbe3f3;border-radius:12px;padding:20px}.ok{color:#166534;font-weight:700}</style></head><body><div class="card"><p class="ok">Password updated successfully. You can now login from extension.</p></div></body></html>`);
+      }
+    } catch (error) {
+      const message = String(error?.message || error);
+      if (String(req.headers["content-type"] || "").toLowerCase().includes("application/json")) {
+        sendJson(res, 400, { ok: false, error: message });
+      } else {
+        sendHtml(res, 400, `<!doctype html><html><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/><title>Reset Failed</title><style>body{font-family:Arial,sans-serif;background:#f6f8fc;color:#0f172a;margin:0;padding:24px}.card{max-width:520px;margin:0 auto;background:#fff;border:1px solid #dbe3f3;border-radius:12px;padding:20px}.err{color:#b91c1c;font-weight:700}</style></head><body><div class="card"><p class="err">${escapeHtml(message)}</p></div></body></html>`);
+      }
     }
     return;
   }

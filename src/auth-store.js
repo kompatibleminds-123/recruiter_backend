@@ -2125,6 +2125,53 @@ async function verifyUserEmail({ userId, companyId, email }) {
   if (!updated) throw new Error("Verification user not found.");
   return sanitizeUser(updated);
 }
+
+async function getPortalUserByEmailForReset(email) {
+  const e = normalizeEmail(email || "");
+  if (!e) return null;
+  const user = await getUserByEmail(e);
+  const safe = sanitizeUser(user);
+  if (!safe) return null;
+  return {
+    id: safe.id,
+    companyId: safe.companyId,
+    email: safe.email,
+    name: safe.name || ""
+  };
+}
+
+async function resetPortalUserPasswordByToken({ userId, companyId, email, newPassword }) {
+  const safeUserId = String(userId || "").trim();
+  const safeCompanyId = String(companyId || "").trim();
+  const safeEmail = normalizeEmail(email || "");
+  const nextPassword = String(newPassword || "");
+  if (!safeUserId || !safeCompanyId || !safeEmail) throw new Error("Invalid password reset payload.");
+  if (!nextPassword || nextPassword.length < 8) throw new Error("Password must be at least 8 characters.");
+
+  const target = sanitizeUser(await getUserById(safeUserId, safeCompanyId));
+  if (!target) throw new Error("Account not found.");
+  if (normalizeEmail(target.email || "") !== safeEmail) throw new Error("Account mismatch.");
+
+  if (!cfg().on) {
+    const store = readStore();
+    const row = (store.users || []).find(
+      (u) =>
+        String(u?.id || "").trim() === safeUserId &&
+        String(u?.companyId || u?.company_id || "").trim() === safeCompanyId
+    );
+    if (!row) throw new Error("Account not found.");
+    row.passwordHash = hashPassword(nextPassword);
+    store.sessions = (store.sessions || []).filter((s) => String(s?.userId || "").trim() !== safeUserId);
+    writeStore(store);
+  } else {
+    await sbPatch("users", `id=eq.${enc(safeUserId)}&company_id=eq.${enc(safeCompanyId)}`, {
+      password_hash: hashPassword(nextPassword)
+    });
+    await sbDel("sessions", `user_id=eq.${enc(safeUserId)}`);
+  }
+
+  return { reset: true, userId: safeUserId };
+}
 async function getSessionUser(token) {
   const t = String(token || "").trim();
   if (!t) return null;
@@ -4981,5 +5028,7 @@ module.exports = {
   saveCompanyJob,
   getUserSmtpSettings,
   saveUserSmtpSettings,
-  verifyUserEmail
+  verifyUserEmail,
+  getPortalUserByEmailForReset,
+  resetPortalUserPasswordByToken
 };
