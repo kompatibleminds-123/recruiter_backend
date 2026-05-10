@@ -12331,7 +12331,14 @@ function PortalApp({ token, onLogout }) {
                           <button onClick={() => { closeAssessmentMoreMenu(); setAssessmentStatusId(item.id); }}>Update status</button>
                           <button onClick={() => { closeAssessmentMoreMenu(); void openAssessmentJourney(item); }}>Journey</button>
                           <button onClick={() => { closeAssessmentMoreMenu(); void openAssessmentCandidateCardModal(item); }}>Candidate card</button>
-                          <button onClick={() => { closeAssessmentMoreMenu(); openAssessmentWhatsapp(item); }}>WhatsApp</button>
+                          <button
+                            className="whatsapp-logo-btn"
+                            onClick={() => { closeAssessmentMoreMenu(); openAssessmentWhatsapp(item); }}
+                            title="Open WhatsApp"
+                            aria-label="Open WhatsApp"
+                          >
+                            <img src="https://web.whatsapp.com/favicon.ico" alt="" />
+                          </button>
                           <div
                             className={`more-menu ${openAssessmentMoreId === String(item.id) ? "more-menu--open" : ""}`}
                             ref={(node) => {
