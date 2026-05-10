@@ -9406,7 +9406,7 @@ function PortalApp({ token, onLogout }) {
     }
     setStatus("jobs", "Saving shortcut...", "info");
     try {
-      const result = await api("/company/jds/shortcuts", state.token, "POST", {
+      const result = await api("/company/jds/shortcuts", token, "POST", {
         jobId,
         shortcuts: nextShortcuts
       });
@@ -12074,7 +12074,14 @@ function PortalApp({ token, onLogout }) {
                         <button onClick={() => loadApplicantIntoInterview(item.id)}>Open draft</button>
                       ) : null}
 	                            <button onClick={() => openRecruiterNotes(item)}>Recruiter note</button>
-                      <button onClick={() => openWhatsappInSideWindow(item.phone || item.phoneNumber || "", "applicants")}>WhatsApp</button>
+                      <button
+                        className="whatsapp-logo-btn"
+                        onClick={() => openWhatsappInSideWindow(item.phone || item.phoneNumber || "", "applicants")}
+                        title="Open WhatsApp"
+                        aria-label="Open WhatsApp"
+                      >
+                        <img src="https://web.whatsapp.com/favicon.ico" alt="" />
+                      </button>
                       <button onClick={() => void openAttempts(item.id)}>Attempts</button>
                       {!item.hidden_from_captured ? (
                         <button className="ghost-btn" onClick={() => openJdEmailModalForCandidate(item, item.jdId || "")}>Email JD</button>
@@ -12190,7 +12197,14 @@ function PortalApp({ token, onLogout }) {
                         ) : null}
                         <button onClick={() => setAssignCandidateId(item.id)}>{item.assigned_to_name ? "Reassign" : "Assign"}</button>
 	                      <button onClick={() => openRecruiterNotes(item)}>Recruiter note</button>
-                        <button onClick={() => openWhatsappInSideWindow(item.phone || item.phoneNumber || "", "captured")}>WhatsApp</button>
+                        <button
+                          className="whatsapp-logo-btn"
+                          onClick={() => openWhatsappInSideWindow(item.phone || item.phoneNumber || "", "captured")}
+                          title="Open WhatsApp"
+                          aria-label="Open WhatsApp"
+                        >
+                          <img src="https://web.whatsapp.com/favicon.ico" alt="" />
+                        </button>
                         <button onClick={() => void openAttempts(item.id)}>Attempts</button>
                         {!item.hidden_from_captured ? (
                           <button className="ghost-btn" onClick={() => openJdEmailModalForCandidate(item)}>Email JD</button>

@@ -1623,3 +1623,19 @@ button:focus-visible {
     grid-template-columns: 1fr;
   }
 }
+
+.whatsapp-logo-btn {
+  min-width: 44px;
+  width: 44px;
+  height: 40px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.whatsapp-logo-btn img {
+  width: 22px;
+  height: 22px;
+  display: block;
+}
