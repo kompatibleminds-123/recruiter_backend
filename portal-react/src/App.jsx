@@ -5462,10 +5462,6 @@ function PortalApp({ token, onLogout }) {
   async function openWhatsappTemplatePicker(row = {}, phoneValue = "", statusKey = "workspace") {
     const latestPersonalShortcuts = await loadPersonalShortcuts();
     const options = getWhatsappTemplateOptions(row, latestPersonalShortcuts);
-    if (!options.length) {
-      setStatus(statusKey, "No shortcut template found. Create one using Customize + Save.", "error");
-      return;
-    }
     const selectedId = String(options[0]?.id || "");
     const selectedTemplate = String(options[0]?.template || "");
     setWhatsappTemplatePicker({
@@ -5475,7 +5471,9 @@ function PortalApp({ token, onLogout }) {
       row,
       phone: phoneValue,
       statusKey,
-      customText: renderWhatsappTemplatePreview(selectedTemplate, row),
+      customText: selectedTemplate
+        ? renderWhatsappTemplatePreview(selectedTemplate, row)
+        : "",
       newShortcutKey: "",
       saveScope: "all_jobs",
       assignJobId: resolveRowJobId(row)
@@ -14527,19 +14525,23 @@ function PortalApp({ token, onLogout }) {
             <div className="section-kicker">WhatsApp Template</div>
             <h3>Choose Template to Copy</h3>
             <div className="muted">Selected template will be copied first, then WhatsApp chat will open.</div>
-            <div className="whatsapp-template-picker__options">
-              {(whatsappTemplatePicker.options || []).map((option) => (
-                <label key={option.id} className="whatsapp-template-picker__option">
-                  <input
-                    type="radio"
-                    name="whatsapp_template_picker"
-                    checked={String(whatsappTemplatePicker.selectedId || "") === String(option.id || "")}
-                    onChange={() => setWhatsappTemplatePicker((current) => ({ ...current, selectedId: option.id, customText: renderWhatsappTemplatePreview(option.template || "", current.row || {}) }))}
-                  />
-                  <span>{option.label}</span>
-                </label>
-              ))}
-            </div>
+            {(whatsappTemplatePicker.options || []).length ? (
+              <div className="whatsapp-template-picker__options">
+                {(whatsappTemplatePicker.options || []).map((option) => (
+                  <label key={option.id} className="whatsapp-template-picker__option">
+                    <input
+                      type="radio"
+                      name="whatsapp_template_picker"
+                      checked={String(whatsappTemplatePicker.selectedId || "") === String(option.id || "")}
+                      onChange={() => setWhatsappTemplatePicker((current) => ({ ...current, selectedId: option.id, customText: renderWhatsappTemplatePreview(option.template || "", current.row || {}) }))}
+                    />
+                    <span>{option.label}</span>
+                  </label>
+                ))}
+              </div>
+            ) : (
+              <div className="status">No saved shortcuts yet. Write message below, add shortcut key, then click Save shortcut.</div>
+            )}
             <label className="full">
               <span>Customize message</span>
               <textarea value={whatsappTemplatePicker.customText || ""} onChange={(e) => setWhatsappTemplatePicker((current) => ({ ...current, customText: e.target.value }))} />
