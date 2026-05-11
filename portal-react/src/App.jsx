@@ -5455,7 +5455,7 @@ function PortalApp({ token, onLogout }) {
   async function loadPersonalShortcuts() {
     if (!token) return {};
     const result = await api("/company/personal-shortcuts", token).catch(() => null);
-    const shortcuts = result?.result?.shortcuts && typeof result.result.shortcuts === "object" ? result.result.shortcuts : {};
+    const shortcuts = result?.shortcuts && typeof result.shortcuts === "object" ? result.shortcuts : {};
     setPersonalShortcuts(shortcuts);
     return shortcuts;
   }
@@ -5515,7 +5515,7 @@ function PortalApp({ token, onLogout }) {
     if (whatsappTemplatePicker.saveScope === "all_jobs") {
       const next = { ...(personalShortcuts || {}), [shortcutKey]: templateText };
       const result = await api("/company/personal-shortcuts", token, "POST", { shortcuts: next });
-      const saved = result?.result?.shortcuts && typeof result.result.shortcuts === "object" ? result.result.shortcuts : next;
+      const saved = result?.shortcuts && typeof result.shortcuts === "object" ? result.shortcuts : next;
       setPersonalShortcuts(saved);
       setStatus(whatsappTemplatePicker.statusKey || "workspace", `Saved /${shortcutKey} for all jobs.`, "ok");
     } else {
