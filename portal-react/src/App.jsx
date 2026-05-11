@@ -5014,13 +5014,18 @@ function PortalApp({ token, onLogout }) {
   const [jdEmailCcSuggestions, setJdEmailCcSuggestions] = useState([]);
   const [jdEmailBusy, setJdEmailBusy] = useState(false);
   const [jdEmailModalStatus, setJdEmailModalStatus] = useState({ message: "", kind: "" });
+  const [personalShortcuts, setPersonalShortcuts] = useState({});
   const [whatsappTemplatePicker, setWhatsappTemplatePicker] = useState({
     open: false,
     options: [],
     selectedId: "",
     row: null,
     phone: "",
-    statusKey: "workspace"
+    statusKey: "workspace",
+    customText: "",
+    newShortcutKey: "",
+    saveScope: "all_jobs",
+    assignJobId: ""
   });
 
   const isAssessmentArchived = (assessment) => {
@@ -5357,30 +5362,70 @@ function PortalApp({ token, onLogout }) {
     }
   }
 
-  function getWhatsappTemplateOptions(row = {}) {
-    const options = [];
-    const defaultTemplate = String(copySettings.whatsappTemplate || DEFAULT_COPY_SETTINGS.whatsappTemplate || "").trim();
-    if (defaultTemplate) options.push({ id: "default", label: "Default WhatsApp template", template: defaultTemplate });
+  function resolveRowJobId(row = {}) {
     const jdId = String(row?.jd_id || row?.jdId || row?.jobId || "").trim();
+    if (jdId) return jdId;
     const jdTitle = String(row?.jd_title || row?.jdTitle || row?.role || "").trim().toLowerCase();
-    const matchedJob = (state.jobs || []).find((job) => {
-      if (jdId && String(job?.id || "").trim() === jdId) return true;
-      return jdTitle && String(job?.title || "").trim().toLowerCase() === jdTitle;
-    }) || null;
-    const shortcutMap = parseShortcutMap(matchedJob?.jdShortcuts || "");
-    Object.entries(shortcutMap).forEach(([key, template]) => {
+    if (!jdTitle) return "";
+    const matchedJob = (state.jobs || []).find((job) => String(job?.title || "").trim().toLowerCase() === jdTitle) || null;
+    return String(matchedJob?.id || "").trim();
+  }
+
+  function getWhatsappTemplateOptions(row = {}, incomingPersonalShortcuts = null) {
+    const options = [];
+    const personalMap = incomingPersonalShortcuts && typeof incomingPersonalShortcuts === "object" ? incomingPersonalShortcuts : personalShortcuts;
+    Object.entries(personalMap || {}).forEach(([key, template]) => {
       const safeKey = String(key || "").trim();
       const safeTemplate = String(template || "").trim();
       if (!safeKey || !safeTemplate) return;
-      options.push({ id: `shortcut:${safeKey}`, label: `/${safeKey}`, template: safeTemplate });
+      options.push({ id: `personal:${safeKey}`, label: `/${safeKey} (All jobs)`, template: safeTemplate, scope: "all_jobs" });
     });
+    const normalizeJdMatch = (value = "") => String(value || "").trim().toLowerCase().replace(/[\s\-_]+/g, " ");
+    const jdId = String(row?.jd_id || row?.jdId || row?.jobId || "").trim();
+    const jdTitle = normalizeJdMatch(row?.jd_title || row?.jdTitle || row?.role || "");
+    const jobs = Array.isArray(state.jobs) ? state.jobs : [];
+    const matchedJob = jobs.find((job) => {
+      const jobTitle = normalizeJdMatch(job?.title || "");
+      if (jdId && String(job?.id || "").trim() === jdId) return true;
+      if (jdTitle && jobTitle && jdTitle === jobTitle) return true;
+      if (jdTitle && jobTitle && (jdTitle.includes(jobTitle) || jobTitle.includes(jdTitle))) return true;
+      return false;
+    }) || null;
+
+    const addShortcutOptions = (map = {}, prefix = "shortcut", titleLabel = "") => {
+      Object.entries(map || {}).forEach(([key, template]) => {
+        const safeKey = String(key || "").trim();
+        const safeTemplate = String(template || "").trim();
+        if (!safeKey || !safeTemplate) return;
+        const label = titleLabel ? `/${safeKey} (${titleLabel})` : `/${safeKey}`;
+        options.push({ id: `${prefix}:${safeKey}:${titleLabel}`, label, template: safeTemplate, scope: "this_job" });
+      });
+    };
+
+    addShortcutOptions(parseShortcutMap(matchedJob?.jdShortcuts || ""), "shortcut", String(matchedJob?.title || "").trim());
+
+    // Fallback: if JD match is weak/missing, still show recruiter's saved shortcuts from other JDs.
+    if (!matchedJob) {
+      jobs.forEach((job) => {
+        const titleLabel = String(job?.title || "").trim();
+        addShortcutOptions(parseShortcutMap(job?.jdShortcuts || ""), "shortcut", titleLabel);
+      });
+    }
+
+    // Extra fallback: if user is editing a JD in Jobs tab, include draft shortcuts too.
+    addShortcutOptions(parseShortcutMap(jobDraft?.jdShortcuts || ""), "draft", String(jobDraft?.title || "").trim());
+
     return options.filter((item, index, arr) => (
       arr.findIndex((entry) => String(entry.template || "").trim() === String(item.template || "").trim()) === index
     ));
   }
 
   async function copyWhatsappDraftAndOpen(row = {}, phoneValue = "", statusKey = "workspace", templateOverride = "") {
-    const activeTemplate = String(templateOverride || copySettings.whatsappTemplate || DEFAULT_COPY_SETTINGS.whatsappTemplate || "").trim();
+    const activeTemplate = String(templateOverride || "").trim();
+    if (!activeTemplate) {
+      setStatus(statusKey, "No shortcut template found. Create one first.", "error");
+      return;
+    }
     const text = fillCandidateTemplate(activeTemplate, {
       ...row,
       index: 1,
@@ -5398,31 +5443,106 @@ function PortalApp({ token, onLogout }) {
     openWhatsappInSideWindow(phoneValue, statusKey);
   }
 
-  function openWhatsappTemplatePicker(row = {}, phoneValue = "", statusKey = "workspace") {
-    const options = getWhatsappTemplateOptions(row);
+  async function loadPersonalShortcuts() {
+    if (!token) return {};
+    const result = await api("/company/personal-shortcuts", token).catch(() => null);
+    const shortcuts = result?.result?.shortcuts && typeof result.result.shortcuts === "object" ? result.result.shortcuts : {};
+    setPersonalShortcuts(shortcuts);
+    return shortcuts;
+  }
+
+  function renderWhatsappTemplatePreview(template = "", row = {}) {
+    return fillCandidateTemplate(String(template || "").trim(), {
+      ...row,
+      index: 1,
+      follow_up_at: formatDateForCopy(row?.follow_up_at || row?.next_follow_up_at || "")
+    });
+  }
+
+  async function openWhatsappTemplatePicker(row = {}, phoneValue = "", statusKey = "workspace") {
+    const latestPersonalShortcuts = await loadPersonalShortcuts();
+    const options = getWhatsappTemplateOptions(row, latestPersonalShortcuts);
     if (!options.length) {
-      void copyWhatsappDraftAndOpen(row, phoneValue, statusKey);
+      setStatus(statusKey, "No shortcut template found. Create one using Customize + Save.", "error");
       return;
     }
+    const selectedId = String(options[0]?.id || "");
+    const selectedTemplate = String(options[0]?.template || "");
     setWhatsappTemplatePicker({
       open: true,
       options,
-      selectedId: String(options[0]?.id || ""),
+      selectedId,
       row,
       phone: phoneValue,
-      statusKey
+      statusKey,
+      customText: renderWhatsappTemplatePreview(selectedTemplate, row),
+      newShortcutKey: "",
+      saveScope: "all_jobs",
+      assignJobId: resolveRowJobId(row)
     });
   }
 
   async function applyWhatsappTemplatePickerSelection() {
-    const selected = (whatsappTemplatePicker.options || []).find((item) => String(item.id || "") === String(whatsappTemplatePicker.selectedId || ""));
-    await copyWhatsappDraftAndOpen(
-      whatsappTemplatePicker.row || {},
-      whatsappTemplatePicker.phone || "",
-      whatsappTemplatePicker.statusKey || "workspace",
-      selected?.template || ""
-    );
-    setWhatsappTemplatePicker({ open: false, options: [], selectedId: "", row: null, phone: "", statusKey: "workspace" });
+    const customText = String(whatsappTemplatePicker.customText || "").trim();
+    if (!customText) {
+      setStatus(whatsappTemplatePicker.statusKey || "workspace", "Template text is empty.", "error");
+      return;
+    }
+    try {
+      await copyText(customText);
+      setStatus(whatsappTemplatePicker.statusKey || "workspace", "WhatsApp draft copied. Paste in chat (Ctrl+V).", "ok");
+    } catch {
+      // ignore clipboard error and still open whatsapp
+    }
+    openWhatsappInSideWindow(whatsappTemplatePicker.phone || "", whatsappTemplatePicker.statusKey || "workspace");
+    setWhatsappTemplatePicker({ open: false, options: [], selectedId: "", row: null, phone: "", statusKey: "workspace", customText: "", newShortcutKey: "", saveScope: "all_jobs", assignJobId: "" });
+  }
+
+  async function saveWhatsappTemplateFromPicker() {
+    const shortcutKey = normalizeShortcutKey(whatsappTemplatePicker.newShortcutKey);
+    const templateText = String(whatsappTemplatePicker.customText || "").trim();
+    if (!shortcutKey || !templateText) {
+      setStatus(whatsappTemplatePicker.statusKey || "workspace", "Add shortcut key and template text.", "error");
+      return;
+    }
+    if (whatsappTemplatePicker.saveScope === "all_jobs") {
+      const next = { ...(personalShortcuts || {}), [shortcutKey]: templateText };
+      const result = await api("/company/personal-shortcuts", token, "POST", { shortcuts: next });
+      const saved = result?.result?.shortcuts && typeof result.result.shortcuts === "object" ? result.result.shortcuts : next;
+      setPersonalShortcuts(saved);
+      setStatus(whatsappTemplatePicker.statusKey || "workspace", `Saved /${shortcutKey} for all jobs.`, "ok");
+    } else {
+      const jobId = String(whatsappTemplatePicker.assignJobId || "").trim();
+      if (!jobId) {
+        setStatus(whatsappTemplatePicker.statusKey || "workspace", "Select a job for 'save for this job'.", "error");
+        return;
+      }
+      const job = (state.jobs || []).find((item) => String(item?.id || "") === jobId) || null;
+      const map = parseShortcutMap(job?.jdShortcuts || "");
+      map[shortcutKey] = templateText;
+      const payloadShortcuts = stringifyShortcutMap(map);
+      const result = await api("/company/jds/shortcuts", token, "POST", { jobId, shortcuts: payloadShortcuts });
+      const savedShortcuts = String(result?.result?.jdShortcuts || result?.jdShortcuts || payloadShortcuts);
+      setState((current) => ({
+        ...current,
+        jobs: Array.isArray(current.jobs)
+          ? current.jobs.map((item) => String(item?.id || "") === jobId ? { ...item, jdShortcuts: savedShortcuts } : item)
+          : current.jobs
+      }));
+      setStatus(whatsappTemplatePicker.statusKey || "workspace", `Saved /${shortcutKey} for this job.`, "ok");
+    }
+    const row = whatsappTemplatePicker.row || {};
+    const refreshedPersonal = whatsappTemplatePicker.saveScope === "all_jobs" ? { ...(personalShortcuts || {}), [shortcutKey]: templateText } : personalShortcuts;
+    const options = getWhatsappTemplateOptions(row, refreshedPersonal);
+    const selectedId = options.find((item) => String(item.label || "").toLowerCase().includes(`/${shortcutKey}`.toLowerCase()))?.id || String(options[0]?.id || "");
+    const selectedTemplate = options.find((item) => String(item.id || "") === String(selectedId || ""))?.template || "";
+    setWhatsappTemplatePicker((current) => ({
+      ...current,
+      options,
+      selectedId,
+      customText: renderWhatsappTemplatePreview(selectedTemplate, row),
+      newShortcutKey: ""
+    }));
   }
 
 	function openRecruiterNotes(candidateOrId) {
@@ -14402,7 +14522,7 @@ function PortalApp({ token, onLogout }) {
         onImportValid={() => void importValidatedSheetRows()}
       />
       {whatsappTemplatePicker.open ? (
-        <div className="overlay" onClick={() => setWhatsappTemplatePicker({ open: false, options: [], selectedId: "", row: null, phone: "", statusKey: "workspace" })}>
+        <div className="overlay" onClick={() => setWhatsappTemplatePicker({ open: false, options: [], selectedId: "", row: null, phone: "", statusKey: "workspace", customText: "", newShortcutKey: "", saveScope: "all_jobs", assignJobId: "" })}>
           <div className="overlay-card whatsapp-template-picker" onClick={(event) => event.stopPropagation()}>
             <div className="section-kicker">WhatsApp Template</div>
             <h3>Choose Template to Copy</h3>
@@ -14414,14 +14534,41 @@ function PortalApp({ token, onLogout }) {
                     type="radio"
                     name="whatsapp_template_picker"
                     checked={String(whatsappTemplatePicker.selectedId || "") === String(option.id || "")}
-                    onChange={() => setWhatsappTemplatePicker((current) => ({ ...current, selectedId: option.id }))}
+                    onChange={() => setWhatsappTemplatePicker((current) => ({ ...current, selectedId: option.id, customText: renderWhatsappTemplatePreview(option.template || "", current.row || {}) }))}
                   />
                   <span>{option.label}</span>
                 </label>
               ))}
             </div>
+            <label className="full">
+              <span>Customize message</span>
+              <textarea value={whatsappTemplatePicker.customText || ""} onChange={(e) => setWhatsappTemplatePicker((current) => ({ ...current, customText: e.target.value }))} />
+            </label>
+            <div className="form-grid two-col">
+              <label>
+                <span>New shortcut key</span>
+                <input value={whatsappTemplatePicker.newShortcutKey || ""} onChange={(e) => setWhatsappTemplatePicker((current) => ({ ...current, newShortcutKey: e.target.value }))} placeholder="followup_1" />
+              </label>
+              <label>
+                <span>Save scope</span>
+                <select value={whatsappTemplatePicker.saveScope || "all_jobs"} onChange={(e) => setWhatsappTemplatePicker((current) => ({ ...current, saveScope: e.target.value }))}>
+                  <option value="all_jobs">Save for all jobs (personal)</option>
+                  <option value="this_job">Save for this job</option>
+                </select>
+              </label>
+              {whatsappTemplatePicker.saveScope === "this_job" ? (
+                <label className="full">
+                  <span>Assign to job</span>
+                  <select value={whatsappTemplatePicker.assignJobId || ""} onChange={(e) => setWhatsappTemplatePicker((current) => ({ ...current, assignJobId: e.target.value }))}>
+                    <option value="">Select job</option>
+                    {(state.jobs || []).map((job) => <option key={job.id} value={job.id}>{job.title || "Untitled job"}</option>)}
+                  </select>
+                </label>
+              ) : null}
+            </div>
             <div className="button-row">
-              <button className="ghost-btn" onClick={() => setWhatsappTemplatePicker({ open: false, options: [], selectedId: "", row: null, phone: "", statusKey: "workspace" })}>Cancel</button>
+              <button className="ghost-btn" onClick={() => setWhatsappTemplatePicker({ open: false, options: [], selectedId: "", row: null, phone: "", statusKey: "workspace", customText: "", newShortcutKey: "", saveScope: "all_jobs", assignJobId: "" })}>Cancel</button>
+              <button className="ghost-btn" onClick={() => void saveWhatsappTemplateFromPicker()}>Save shortcut</button>
               <button onClick={() => void applyWhatsappTemplatePickerSelection()}>Copy and open WhatsApp</button>
             </div>
           </div>
