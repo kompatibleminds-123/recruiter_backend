@@ -93,10 +93,11 @@ async function refreshQuickCaptureWorkspaceCache() {
     throw new Error("Login required before refresh.");
   }
 
-  const [jobsPayload, candidatesPayload, assessmentsPayload] = await Promise.all([
+  const [jobsPayload, candidatesPayload, assessmentsPayload, personalShortcutsPayload] = await Promise.all([
     callQuickCaptureApi("/company/jds", { method: "GET" }),
     callQuickCaptureApi("/candidates?limit=1000", { method: "GET" }),
-    callQuickCaptureApi("/company/assessments", { method: "GET" })
+    callQuickCaptureApi("/company/assessments", { method: "GET" }),
+    callQuickCaptureApi("/company/personal-shortcuts", { method: "GET" }).catch(() => ({ result: { shortcuts: {} } }))
   ]);
 
   const jobs = Array.isArray(jobsPayload?.result?.jobs) ? jobsPayload.result.jobs : [];
@@ -106,13 +107,18 @@ async function refreshQuickCaptureWorkspaceCache() {
     : Array.isArray(assessmentsPayload?.result)
       ? assessmentsPayload.result
       : [];
+  const personalShortcuts =
+    personalShortcutsPayload?.result?.shortcuts && typeof personalShortcutsPayload.result.shortcuts === "object"
+      ? personalShortcutsPayload.result.shortcuts
+      : {};
   const cache = {
     syncedAt: new Date().toISOString(),
     userId: user.id || "",
     companyId: user.companyId || "",
     jobs,
     candidates,
-    assessments
+    assessments,
+    personalShortcuts
   };
   setQuickCaptureWorkspaceCache(cache);
   return {
@@ -120,14 +126,15 @@ async function refreshQuickCaptureWorkspaceCache() {
     counts: {
       jobs: jobs.length,
       candidates: candidates.length,
-      assessments: assessments.length
+      assessments: assessments.length,
+      personalShortcuts: Object.keys(personalShortcuts || {}).length
     }
   };
 }
 
 function formatQuickCaptureSyncMessage(cache) {
   if (!cache?.counts) return "Workspace refreshed.";
-  return `Workspace refreshed: ${cache.counts.jobs} job(s), ${cache.counts.candidates} candidate(s), ${cache.counts.assessments} assessment(s).`;
+  return `Workspace refreshed: ${cache.counts.jobs} job(s), ${cache.counts.candidates} candidate(s), ${cache.counts.assessments} assessment(s), ${cache.counts.personalShortcuts || 0} personal shortcut(s).`;
 }
 
 function wireQuickCaptureRefreshButton(button, statusElement) {

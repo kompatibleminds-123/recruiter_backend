@@ -8395,7 +8395,11 @@ const server = http.createServer(async (req, res) => {
       const includeArchivedRaw = String(requestUrl.searchParams.get("includeArchived") || "").trim().toLowerCase();
       const includeArchived = includeArchivedRaw === "1" || includeArchivedRaw === "true" || includeArchivedRaw === "yes";
       const jobs = await listCompanyJobs(user.companyId, user.id, { includeArchived });
-      sendJson(res, 200, { ok: true, result: { jobs } });
+      const personalShortcuts = await getCompanyPersonalShortcuts({
+        companyId: user.companyId,
+        userId: user.id
+      }).catch(() => ({}));
+      sendJson(res, 200, { ok: true, result: { jobs, personalShortcuts } });
     } catch (error) {
       sendJson(res, 401, { ok: false, error: String(error.message || error) });
     }

@@ -117,6 +117,7 @@ function FeatureLockedSection({ title = "Feature locked" }) {
   clientShareSignatureLinkUrl: "",
   clientShareSignatureLinkLabel2: "",
   clientShareSignatureLinkUrl2: "",
+  companyWideShortcuts: {},
   jdEmailSubjectTemplate: "Job Description - {Role}",
   jdEmailIntroTemplate: "Hello {Candidate}.\nGreetings !!\n\nThis is {Recruiter} from Kompatible Minds.\nIt was good to interact with you.\n\nAs discussed, please find the Job description for the {Role}.\nPlease acknowledge or confirm so we can take your candidature ahead."
 };
@@ -2032,7 +2033,11 @@ function fillCandidateTemplate(template, candidate) {
     phone: source.phone || "",
     email: source.email || "",
     source: source.source || "",
-    follow_up_at: source.follow_up_at || ""
+    follow_up_at: source.follow_up_at || "",
+    recruiter_name: source.recruiter_name || source.recruiterName || "",
+    interview_at: source.interview_at || source.interviewAt || "",
+    client_name: source.client_name || source.clientName || "",
+    company_name: source.company_name || source.companyName || ""
   };
   return String(template || "").replace(/\{\{\s*([a-z_]+)\s*\}\}/gi, (_, key) => String(map[key] || ""));
 }
@@ -5373,6 +5378,16 @@ function PortalApp({ token, onLogout }) {
 
   function getWhatsappTemplateOptions(row = {}, incomingPersonalShortcuts = null) {
     const options = [];
+    const companyWideMap = copySettings?.companyWideShortcuts && typeof copySettings.companyWideShortcuts === "object"
+      ? copySettings.companyWideShortcuts
+      : {};
+    Object.entries(companyWideMap || {}).forEach(([key, template]) => {
+      const safeKey = String(key || "").trim();
+      const displayKey = safeKey.replace(/^\/+/, "");
+      const safeTemplate = String(template || "").trim();
+      if (!displayKey || !safeTemplate) return;
+      options.push({ id: `company:${displayKey}`, label: `/${displayKey} (Company)`, template: safeTemplate, scope: "company_wide" });
+    });
     const personalMap = incomingPersonalShortcuts && typeof incomingPersonalShortcuts === "object" ? incomingPersonalShortcuts : personalShortcuts;
     Object.entries(personalMap || {}).forEach(([key, template]) => {
       const safeKey = String(key || "").trim();
@@ -5512,7 +5527,26 @@ function PortalApp({ token, onLogout }) {
       setStatus(whatsappTemplatePicker.statusKey || "workspace", "Add shortcut key and template text.", "error");
       return;
     }
-    if (whatsappTemplatePicker.saveScope === "all_jobs") {
+    if (whatsappTemplatePicker.saveScope === "company_wide") {
+      if (!isSettingsAdmin) {
+        setStatus(whatsappTemplatePicker.statusKey || "workspace", "Only admin can save company templates.", "error");
+        return;
+      }
+      const existingCompanyWide = copySettings?.companyWideShortcuts && typeof copySettings.companyWideShortcuts === "object"
+        ? copySettings.companyWideShortcuts
+        : {};
+      const nextCompanyWide = { ...existingCompanyWide, [`/${shortcutKey}`]: templateText };
+      const payload = {
+        ...copySettings,
+        companyWideShortcuts: nextCompanyWide,
+        exportPresetLabels: copySettings.exportPresetLabels || DEFAULT_COPY_SETTINGS.exportPresetLabels,
+        exportPresetClientMap: copySettings.exportPresetClientMap || DEFAULT_COPY_SETTINGS.exportPresetClientMap,
+        customExportPresets: copySettings.customExportPresets || []
+      };
+      const result = await api("/company/shared-export-presets", token, "POST", { settings: payload });
+      setCopySettings((current) => ({ ...DEFAULT_COPY_SETTINGS, ...current, ...result }));
+      setStatus(whatsappTemplatePicker.statusKey || "workspace", `Saved /${shortcutKey} for all recruiters.`, "ok");
+    } else if (whatsappTemplatePicker.saveScope === "all_jobs") {
       const next = { ...(personalShortcuts || {}), [shortcutKey]: templateText };
       const result = await api("/company/personal-shortcuts", token, "POST", { shortcuts: next });
       const saved = result?.shortcuts && typeof result.shortcuts === "object" ? result.shortcuts : next;
@@ -11281,12 +11315,15 @@ function PortalApp({ token, onLogout }) {
       name: interviewForm.candidateName || "",
       jd_title: interviewForm.jdTitle || "",
       company: interviewForm.currentCompany || "",
+      company_name: state.user?.companyName || "",
       outcome: interviewForm.candidateStatus || "",
+      recruiter_name: state.user?.name || "",
       recruiter_notes: interviewForm.recruiterNotes || interviewForm.callbackNotes || "",
       location: interviewForm.location || "",
       phone: interviewForm.phoneNumber || "",
       email: interviewForm.emailId || "",
-      source: "interview"
+      source: "interview",
+      interview_at: interviewForm.interviewAt || ""
     }, interviewForm.phoneNumber || "", "interview");
   }
 
@@ -11700,12 +11737,16 @@ function PortalApp({ token, onLogout }) {
       name: assessment?.candidateName || "",
       jd_title: assessment?.jdTitle || "",
       company: assessment?.currentCompany || "",
+      company_name: state.user?.companyName || "",
       outcome: normalizeAssessmentStatusLabel(assessment?.candidateStatus || ""),
+      recruiter_name: assessment?.recruiterName || state.user?.name || "",
       recruiter_notes: assessment?.recruiterNotes || "",
       location: assessment?.location || "",
       phone: assessment?.phoneNumber || "",
       email: assessment?.emailId || "",
       source: "assessment",
+      interview_at: assessment?.interviewAt || "",
+      client_name: assessment?.clientName || "",
       jd_id: assessment?.jobId || assessment?.jdId || ""
     }, assessment?.phoneNumber || "", "assessments");
   }
@@ -12858,12 +12899,15 @@ function PortalApp({ token, onLogout }) {
                           name: item.candidateName || "",
                           jd_title: item.jdTitle || "",
                           company: item.currentCompany || "",
+                          company_name: state.user?.companyName || "",
                           outcome: getApplicantOutcome(item),
+                          recruiter_name: item.assignedToName || state.user?.name || "",
                           recruiter_notes: item.screeningAnswers || "",
                           location: item.location || "",
                           phone: item.phone || item.phoneNumber || "",
                           email: item.email || "",
                           source: item.sourcePlatform || "",
+                          client_name: item.clientName || "",
                           jd_id: item.jdId || item.jobId || ""
                         }, item.phone || item.phoneNumber || "", "applicants")}
                         title="Open WhatsApp"
@@ -12992,12 +13036,15 @@ function PortalApp({ token, onLogout }) {
                             name: item.name || "",
                             jd_title: item.jd_title || item.role || "",
                             company: item.company || "",
+                            company_name: state.user?.companyName || "",
                             outcome: getCapturedOutcome(item, matchedAssessment),
+                            recruiter_name: item.assigned_to_name || item.recruiter_name || state.user?.name || "",
                             recruiter_notes: item.recruiter_context_notes || item.notes || "",
                             location: item.location || "",
                             phone: item.phone || item.phoneNumber || "",
                             email: item.email || "",
                             source: item.source || "",
+                            client_name: item.client_name || "",
                             jd_id: item.jd_id || item.jdId || item.jobId || ""
                           }, item.phone || item.phoneNumber || "", "captured")}
                           title="Open WhatsApp"
@@ -14554,6 +14601,7 @@ function PortalApp({ token, onLogout }) {
             <label className="full">
               <span>Customize message</span>
               <textarea value={whatsappTemplatePicker.customText || ""} onChange={(e) => setWhatsappTemplatePicker((current) => ({ ...current, customText: e.target.value }))} />
+              <span className="field-help">Placeholders: {`{{name}} {{recruiter_name}} {{interview_at}} {{jd_title}} {{client_name}} {{company_name}} {{phone}}`}</span>
             </label>
             <div className="form-grid two-col">
               <label>
@@ -14563,6 +14611,7 @@ function PortalApp({ token, onLogout }) {
               <label>
                 <span>Save scope</span>
                 <select value={whatsappTemplatePicker.saveScope || "all_jobs"} onChange={(e) => setWhatsappTemplatePicker((current) => ({ ...current, saveScope: e.target.value }))}>
+                  {isSettingsAdmin ? <option value="company_wide">Save for all recruiters (company)</option> : null}
                   <option value="all_jobs">Save for all jobs (personal)</option>
                   <option value="this_job">Save for this job</option>
                 </select>
@@ -14580,7 +14629,7 @@ function PortalApp({ token, onLogout }) {
             <div className="button-row">
               <button className="ghost-btn" onClick={() => setWhatsappTemplatePicker({ open: false, options: [], selectedId: "", row: null, phone: "", statusKey: "workspace", customText: "", newShortcutKey: "", saveScope: "all_jobs", assignJobId: "" })}>Cancel</button>
               <button className="ghost-btn" onClick={() => void saveWhatsappTemplateFromPicker()}>Save shortcut</button>
-              <button onClick={() => void applyWhatsappTemplatePickerSelection()}>Copy and open WhatsApp</button>
+              <button onClick={() => void applyWhatsappTemplatePickerSelection()}>Copy and open (without saving)</button>
             </div>
           </div>
         </div>
