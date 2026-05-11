@@ -11539,6 +11539,41 @@ function PortalApp({ token, onLogout }) {
     }
   }
 
+  function buildShortcutCopyContext(jobOverride = null) {
+    const job = jobOverride || selectedShortcutJob || null;
+    const jobId = String(job?.id || "").trim();
+    const recruiterName = String(state.user?.name || "").trim();
+    const companyName = String(state.user?.companyName || "").trim();
+    const jdTitle = String(job?.title || "").trim();
+    const clientName = String(job?.clientName || "").trim();
+    const jdLink = jobId ? getApplyLink(jobId) : "";
+    return {
+      recruiter_name: recruiterName,
+      company_name: companyName,
+      jd_title: jdTitle,
+      client_name: clientName,
+      jd_link: jdLink,
+      recruiter_jd_link: jdLink
+    };
+  }
+
+  function renderShortcutTemplateForCopy(template = "", jobOverride = null) {
+    const text = String(template || "");
+    const map = buildShortcutCopyContext(jobOverride);
+    return text.replace(/\{\{\s*([a-z_]+)\s*\}\}/gi, (match, token) => {
+      const key = String(token || "").trim().toLowerCase();
+      const value = String(map[key] || "").trim();
+      // Keep unresolved placeholders intact so recruiter can quickly edit them.
+      return value ? value : match;
+    });
+  }
+
+  async function copyShortcutTemplateWithValues(key, template, jobOverride = null) {
+    const rendered = renderShortcutTemplateForCopy(template, jobOverride);
+    await copyText(rendered);
+    setStatus("shortcuts", `Copied ${formatShortcutLabel(key)} with available values.`, "ok");
+  }
+
   function insertPlaceholderAtCursor(textareaRef, currentValue, setValue, token) {
     const nextToken = String(token || "").trim();
     if (!nextToken) return;
@@ -14422,7 +14457,7 @@ function PortalApp({ token, onLogout }) {
                               <strong>{formatShortcutLabel(key)}</strong>
                               <div className="button-row tight">
                                 <button className="ghost-btn" onClick={() => { setShortcutPersonalKey(String(key || "")); setShortcutPersonalValue(String(value || "")); }}>Edit</button>
-                                <button className="ghost-btn" onClick={() => void copyText(String(value || "")).then(() => setStatus("shortcuts", `Copied ${formatShortcutLabel(key)}.`, "ok"))}>Copy</button>
+                                <button className="ghost-btn" onClick={() => void copyShortcutTemplateWithValues(String(key || ""), String(value || ""), selectedShortcutJob)}>Copy</button>
                                 <button className="ghost-btn" onClick={() => void deletePersonalShortcutTemplate(String(key || ""))}>Delete</button>
                               </div>
                             </div>
@@ -14470,7 +14505,7 @@ function PortalApp({ token, onLogout }) {
                               <strong>{formatShortcutLabel(key)}</strong>
                               <div className="button-row tight">
                                 <button className="ghost-btn" onClick={() => { setShortcutJobKey(String(key || "")); setShortcutJobValue(String(value || "")); }}>Edit</button>
-                                <button className="ghost-btn" onClick={() => void copyText(String(value || "")).then(() => setStatus("shortcuts", `Copied ${formatShortcutLabel(key)}.`, "ok"))}>Copy</button>
+                                <button className="ghost-btn" onClick={() => void copyShortcutTemplateWithValues(String(key || ""), String(value || ""), selectedShortcutJob)}>Copy</button>
                                 <button className="ghost-btn" onClick={() => void deleteJobShortcutTemplate(String(key || ""))}>Delete</button>
                               </div>
                             </div>
@@ -14517,12 +14552,12 @@ function PortalApp({ token, onLogout }) {
                               {isSettingsAdmin ? (
                                 <div className="button-row tight">
                                   <button className="ghost-btn" onClick={() => { setShortcutCompanyKey(String(key || "")); setShortcutCompanyValue(String(value || "")); }}>Edit</button>
-                                  <button className="ghost-btn" onClick={() => void copyText(String(value || "")).then(() => setStatus("shortcuts", `Copied ${formatShortcutLabel(key)}.`, "ok"))}>Copy</button>
+                                  <button className="ghost-btn" onClick={() => void copyShortcutTemplateWithValues(String(key || ""), String(value || ""), selectedShortcutJob)}>Copy</button>
                                   <button className="ghost-btn" onClick={() => void deleteCompanyShortcutTemplate(String(key || ""))}>Delete</button>
                                 </div>
                               ) : (
                                 <div className="button-row tight">
-                                  <button className="ghost-btn" onClick={() => void copyText(String(value || "")).then(() => setStatus("shortcuts", `Copied ${formatShortcutLabel(key)}.`, "ok"))}>Copy</button>
+                                  <button className="ghost-btn" onClick={() => void copyShortcutTemplateWithValues(String(key || ""), String(value || ""), selectedShortcutJob)}>Copy</button>
                                 </div>
                               )}
                             </div>

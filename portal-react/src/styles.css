@@ -1593,29 +1593,43 @@ textarea { min-height: 92px; resize: vertical; }
   margin-top: 1rem;
   box-shadow: 0 8px 18px rgba(20, 41, 84, 0.06);
   background: linear-gradient(180deg, #ffffff 0%, #f7fbff 100%);
-  border-left: 4px solid #3b82f6;
+  position: relative;
+  overflow: hidden;
 }
 .panel.shortcuts-section {
   border-width: 1px;
   border-style: solid;
 }
+.shortcuts-section::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 8px;
+  bottom: 8px;
+  width: 5px;
+  border-radius: 0 999px 999px 0;
+  background: #3b82f6;
+}
 .shortcuts-section--personal {
   background: linear-gradient(180deg, #ffffff 0%, #f7fbff 100%);
   border-color: #c9ddff;
-  border-left: 4px solid #3b82f6;
   box-shadow: 0 10px 20px rgba(59, 130, 246, 0.08);
 }
 .shortcuts-section--job {
   border-color: #bfead8;
-  border-left: 4px solid #10b981;
   background: linear-gradient(180deg, #ffffff 0%, #f5fffb 100%);
   box-shadow: 0 10px 20px rgba(16, 185, 129, 0.08);
 }
 .shortcuts-section--company {
   border-color: #dfd0ff;
-  border-left: 4px solid #8b5cf6;
   background: linear-gradient(180deg, #ffffff 0%, #f8f6ff 100%);
   box-shadow: 0 10px 20px rgba(139, 92, 246, 0.08);
+}
+.shortcuts-section--job::before {
+  background: #10b981;
+}
+.shortcuts-section--company::before {
+  background: #8b5cf6;
 }
 .placeholder-selector {
   margin-top: 0.45rem;
