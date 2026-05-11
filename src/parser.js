@@ -52,11 +52,15 @@ function stripRtf(rtf) {
 function parseDateRange(text) {
   const normalized = String(text || "").replace(/[\u2013\u2014\u2212]/g, "-");
   const now = new Date();
+  const hasMonthToken = /\b(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*[\s,-]+(?:'\d{2}|\d{4})/i.test(normalized);
 
   // Prefer explicit year-only ranges like "2020-2023" or "2020 to 2023"
   // before falling back to "any year in the line" (which can be noisy in CV bullets).
+  // Important: do this ONLY when month-year tokens are absent.
+  // Otherwise text like "Jun 2025 - Present" gets incorrectly reduced to "2025 - Present"
+  // and inflates current-tenure by ~5 months.
   const yearRange = normalized.match(/\b(19\d{2}|20\d{2})\b\s*(?:-|to)\s*\b(19\d{2}|20\d{2}|present|current|till date)\b/i);
-  if (yearRange) {
+  if (yearRange && !hasMonthToken) {
     const startYear = Number(yearRange[1]);
     const endToken = String(yearRange[2] || "").toLowerCase();
     if (endToken === "present" || endToken === "current" || endToken === "till date") {
