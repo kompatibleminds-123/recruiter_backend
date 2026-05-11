@@ -13056,45 +13056,93 @@ function PortalApp({ token, onLogout }) {
               <Section kicker="Client Submission" title="Direct Share with Client">
                 <p className="muted">Prepare a clean email draft for the client using selected assessments only. Select profiles in the Assessments tab first, choose the client preset here, then copy this draft into your email client.</p>
                 {statuses.clientShare ? <div className={`status ${statuses.clientShareKind || ""}`}>{statuses.clientShare}</div> : null}
-                <div className="form-grid two-col">
-                  <label>
-                    <span>Selected profiles</span>
-                    <input value={`${selectedAssessmentRows.length} assessment profile(s)`} readOnly />
-                  </label>
-                  <label>
-                    <span>Client share preset</span>
-                    <select value={clientShareDraft.presetId} onChange={(e) => setClientShareDraft((current) => ({ ...current, presetId: e.target.value }))}>
-                      {exportPresetOptions.map((preset) => (
-                        <option key={preset.id} value={preset.id}>{preset.label}</option>
-                      ))}
-                    </select>
-                    <span className="field-help">Admin defines these presets; recruiters can choose the right client format for this share.</span>
-                  </label>
-                  <label><span>HR name</span><input value={clientShareDraft.hrName} onChange={(e) => setClientShareDraft((current) => ({ ...current, hrName: e.target.value }))} placeholder="Attentive HR Team" /></label>
-                  <label><span>Recruiter name</span><input value={clientShareDraft.recruiterName} onChange={(e) => setClientShareDraft((current) => ({ ...current, recruiterName: e.target.value }))} placeholder={state.user?.name || "Ankit Garg"} /></label>
-                  <label><span>Recipient email</span><input type="email" value={clientShareDraft.recipientEmail} onChange={(e) => setClientShareDraft((current) => ({ ...current, recipientEmail: e.target.value }))} placeholder="hr@client.com" /></label>
-                  <label><span>Email subject</span><input value={clientShareDraft.emailSubject} onChange={(e) => setClientShareDraft((current) => ({ ...current, emailSubject: e.target.value }))} placeholder={getClientShareEmailSubject()} /></label>
-                  <label><span>Client</span><input value={clientShareDraft.clientLabel} onChange={(e) => setClientShareDraft((current) => ({ ...current, clientLabel: e.target.value }))} placeholder="Attentive" /></label>
-                  <label><span>Role / requirement</span><input value={clientShareDraft.targetRole} onChange={(e) => setClientShareDraft((current) => ({ ...current, targetRole: e.target.value }))} placeholder="AE / Account Executive" /></label>
-                  <label className="full">
-                    <span>Email intro</span>
-                    <textarea value={clientShareDraft.introText || ""} onChange={(e) => setClientShareDraft((current) => ({ ...current, introText: e.target.value }))} placeholder={getClientShareIntroText()} />
-                    <span className="field-help">Default intro to be set by Admin.</span>
-                  </label>
-                  <label className="full">
-                    <span>Selected preset columns</span>
-                    <textarea value={(copySettings.customExportPresets || []).find((preset) => String(preset.id) === String(clientShareDraft.presetId))?.columns || copySettings.exportPresetColumns?.[clientShareDraft.presetId] || DEFAULT_COPY_SETTINGS.exportPresetColumns?.[clientShareDraft.presetId] || ""} readOnly />
-                  </label>
-                  <label className="full"><span>Extra message</span><textarea value={clientShareDraft.extraMessage} onChange={(e) => setClientShareDraft((current) => ({ ...current, extraMessage: e.target.value }))} placeholder="Optional note for the client." /></label>
-                  <label className="full">
-                    <span>Signature source</span>
-                    <input value="Using Mail Settings signature (single source)" readOnly />
-                    <span className="field-help">To update signature, go to Mail Settings. Direct Share uses the same signature automatically.</span>
-                  </label>
-                  <label className="full">
-                    <span>Email preview</span>
+                <div className="direct-share-sections">
+                  <div className="settings-subsection direct-share-section direct-share-meta-shell">
+                    <div className="section-kicker">Section 1</div>
+                    <h3>Recipient and Job Details</h3>
+                    <div className="form-grid two-col">
+                      <label>
+                        <span>Selected profiles</span>
+                        <input value={`${selectedAssessmentRows.length} assessment profile(s)`} readOnly />
+                      </label>
+                      <label>
+                        <span>Recipient email</span>
+                        <input type="email" value={clientShareDraft.recipientEmail} onChange={(e) => setClientShareDraft((current) => ({ ...current, recipientEmail: e.target.value }))} placeholder="hr@client.com" />
+                      </label>
+                      <label>
+                        <span>Email subject</span>
+                        <input value={clientShareDraft.emailSubject} onChange={(e) => setClientShareDraft((current) => ({ ...current, emailSubject: e.target.value }))} placeholder={getClientShareEmailSubject()} />
+                      </label>
+                      <label><span>Client</span><input value={clientShareDraft.clientLabel} onChange={(e) => setClientShareDraft((current) => ({ ...current, clientLabel: e.target.value }))} placeholder="Attentive" /></label>
+                      <label><span>Role / requirement</span><input value={clientShareDraft.targetRole} onChange={(e) => setClientShareDraft((current) => ({ ...current, targetRole: e.target.value }))} placeholder="AE / Account Executive" /></label>
+                      <label><span>HR name</span><input value={clientShareDraft.hrName} onChange={(e) => setClientShareDraft((current) => ({ ...current, hrName: e.target.value }))} placeholder="Attentive HR Team" /></label>
+                      <label><span>Recruiter name</span><input value={clientShareDraft.recruiterName} onChange={(e) => setClientShareDraft((current) => ({ ...current, recruiterName: e.target.value }))} placeholder={state.user?.name || "Ankit Garg"} /></label>
+                    </div>
+                  </div>
+
+                  <div className="settings-subsection direct-share-section direct-share-body-shell">
+                    <div className="section-kicker">Section 2</div>
+                    <h3>Mail Body and Preset</h3>
+                    <div className="form-grid two-col">
+                      <label>
+                        <span>Client share preset</span>
+                        <select value={clientShareDraft.presetId} onChange={(e) => setClientShareDraft((current) => ({ ...current, presetId: e.target.value }))}>
+                          {exportPresetOptions.map((preset) => (
+                            <option key={preset.id} value={preset.id}>{preset.label}</option>
+                          ))}
+                        </select>
+                        <span className="field-help">Admin defines these presets; recruiters can choose the right client format for this share.</span>
+                      </label>
+                      <label className="full">
+                        <span>Selected preset columns</span>
+                        <textarea value={(copySettings.customExportPresets || []).find((preset) => String(preset.id) === String(clientShareDraft.presetId))?.columns || copySettings.exportPresetColumns?.[clientShareDraft.presetId] || DEFAULT_COPY_SETTINGS.exportPresetColumns?.[clientShareDraft.presetId] || ""} readOnly />
+                      </label>
+                      <label className="full">
+                        <span>Email intro</span>
+                        <textarea value={clientShareDraft.introText || ""} onChange={(e) => setClientShareDraft((current) => ({ ...current, introText: e.target.value }))} placeholder={getClientShareIntroText()} />
+                        <span className="field-help">Default intro to be set by Admin.</span>
+                      </label>
+                      <label className="full"><span>Extra message</span><textarea value={clientShareDraft.extraMessage} onChange={(e) => setClientShareDraft((current) => ({ ...current, extraMessage: e.target.value }))} placeholder="Optional note for the client." /></label>
+                      <label className="full">
+                        <span>Signature source</span>
+                        <input value="Using Mail Settings signature (single source)" readOnly />
+                        <span className="field-help">To update signature, go to Mail Settings. Direct Share uses the same signature automatically.</span>
+                      </label>
+                    </div>
+                  </div>
+
+                  <div className="settings-subsection direct-share-section direct-share-preview-shell">
+                    <div className="section-kicker">Section 3</div>
+                    <h3>Email Preview</h3>
                     <div className="client-share-preview" dangerouslySetInnerHTML={{ __html: buildClientShareHtml() }} />
-                  </label>
+                  </div>
+
+                  {hasSaasUnlimitedAccess && isSettingsAdmin ? (
+                    <div className="settings-subsection direct-share-section direct-share-admin-preset">
+                      <div className="section-kicker">Section 4</div>
+                      <h3>Admin Settings for Email Template</h3>
+                      <p className="muted">Default intro and fallback signature used in Direct Share. Signature from Mail Settings remains the primary source.</p>
+                      <div className="form-grid">
+                        <label className="full">
+                          <span>Direct share default email intro</span>
+                          <textarea value={copySettings.clientShareIntroTemplate || DEFAULT_COPY_SETTINGS.clientShareIntroTemplate} onChange={(e) => setCopySettings((current) => ({ ...current, clientShareIntroTemplate: e.target.value }))} />
+                        </label>
+                        <label className="full">
+                          <span>Direct share default signature text (fallback)</span>
+                          <textarea value={copySettings.clientShareSignatureText || DEFAULT_COPY_SETTINGS.clientShareSignatureText} onChange={(e) => setCopySettings((current) => ({ ...current, clientShareSignatureText: e.target.value }))} />
+                        </label>
+                        <label><span>Signature link 1 text</span><input value={copySettings.clientShareSignatureLinkLabel || ""} onChange={(e) => setCopySettings((current) => ({ ...current, clientShareSignatureLinkLabel: e.target.value }))} placeholder="Kompatible Minds" /></label>
+                        <label><span>Signature link 1 URL</span><input value={copySettings.clientShareSignatureLinkUrl || ""} onChange={(e) => setCopySettings((current) => ({ ...current, clientShareSignatureLinkUrl: e.target.value }))} placeholder="https://kompatibleminds.com" /></label>
+                        <label><span>Signature link 2 text</span><input value={copySettings.clientShareSignatureLinkLabel2 || ""} onChange={(e) => setCopySettings((current) => ({ ...current, clientShareSignatureLinkLabel2: e.target.value }))} placeholder="LinkedIn" /></label>
+                        <label><span>Signature link 2 URL</span><input value={copySettings.clientShareSignatureLinkUrl2 || ""} onChange={(e) => setCopySettings((current) => ({ ...current, clientShareSignatureLinkUrl2: e.target.value }))} placeholder="https://www.linkedin.com/in/..." /></label>
+                      </div>
+                      <p className="muted">Placeholders: {`{{hr_name}} {{recruiter_name}} {{company_name}} {{client_name}} {{role}} {{role_line}}`}.</p>
+                      <div className="button-row">
+                        <button className="ghost-btn" onClick={() => setCopySettings(DEFAULT_COPY_SETTINGS)}>Reset defaults</button>
+                        <button onClick={() => void saveSharedCopySettings()}>Save direct share preset</button>
+                      </div>
+                    </div>
+                  ) : null}
                 </div>
                 {!selectedAssessmentRows.length ? <div className="empty-state">No assessment selected yet. Go to Assessments and tick `Select for client share` on the profiles you want to send.</div> : null}
                 <p className="muted">Current flow: copy the email draft from here, then paste it into Zoho/Gmail/Outlook and attach CVs manually.</p>
@@ -13103,31 +13151,6 @@ function PortalApp({ token, onLogout }) {
                   <button onClick={() => void sendClientShareEmail()}>Send email</button>
                   <button className="ghost-btn" onClick={() => void copyClientShareTracker()}>Copy tracker only</button>
                 </div>
-                {hasSaasUnlimitedAccess && isSettingsAdmin ? (
-                  <div className="settings-subsection direct-share-admin-preset">
-                    <div className="section-kicker">Direct Share Email Preset (Admin)</div>
-                    <p className="muted">Default intro and fallback signature used in Direct Share. Signature from Mail Settings remains the primary source.</p>
-                    <div className="form-grid">
-                      <label className="full">
-                        <span>Direct share default email intro</span>
-                        <textarea value={copySettings.clientShareIntroTemplate || DEFAULT_COPY_SETTINGS.clientShareIntroTemplate} onChange={(e) => setCopySettings((current) => ({ ...current, clientShareIntroTemplate: e.target.value }))} />
-                      </label>
-                      <label className="full">
-                        <span>Direct share default signature text (fallback)</span>
-                        <textarea value={copySettings.clientShareSignatureText || DEFAULT_COPY_SETTINGS.clientShareSignatureText} onChange={(e) => setCopySettings((current) => ({ ...current, clientShareSignatureText: e.target.value }))} />
-                      </label>
-                      <label><span>Signature link 1 text</span><input value={copySettings.clientShareSignatureLinkLabel || ""} onChange={(e) => setCopySettings((current) => ({ ...current, clientShareSignatureLinkLabel: e.target.value }))} placeholder="Kompatible Minds" /></label>
-                      <label><span>Signature link 1 URL</span><input value={copySettings.clientShareSignatureLinkUrl || ""} onChange={(e) => setCopySettings((current) => ({ ...current, clientShareSignatureLinkUrl: e.target.value }))} placeholder="https://kompatibleminds.com" /></label>
-                      <label><span>Signature link 2 text</span><input value={copySettings.clientShareSignatureLinkLabel2 || ""} onChange={(e) => setCopySettings((current) => ({ ...current, clientShareSignatureLinkLabel2: e.target.value }))} placeholder="LinkedIn" /></label>
-                      <label><span>Signature link 2 URL</span><input value={copySettings.clientShareSignatureLinkUrl2 || ""} onChange={(e) => setCopySettings((current) => ({ ...current, clientShareSignatureLinkUrl2: e.target.value }))} placeholder="https://www.linkedin.com/in/..." /></label>
-                    </div>
-                    <p className="muted">Placeholders: {`{{hr_name}} {{recruiter_name}} {{company_name}} {{client_name}} {{role}} {{role_line}}`}.</p>
-                    <div className="button-row">
-                      <button className="ghost-btn" onClick={() => setCopySettings(DEFAULT_COPY_SETTINGS)}>Reset defaults</button>
-                      <button onClick={() => void saveSharedCopySettings()}>Save direct share preset</button>
-                    </div>
-                  </div>
-                ) : null}
               </Section>
             </div>
           } />
