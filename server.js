@@ -10252,9 +10252,6 @@ const server = http.createServer(async (req, res) => {
     try {
       const actor = await requireSessionUser(getBearerToken(req));
       await requireSaasAccess(actor, "job apply links");
-      if (String(actor.role || "").toLowerCase() !== "admin") {
-        throw new Error("Only an admin can generate recruiter-specific apply links.");
-      }
       const jobId = String(requestUrl.pathname.replace(/^\/company\/jobs\//, "").replace(/\/apply-link-signatures$/, "")).trim();
       if (!jobId) throw new Error("Missing job id.");
       const jobs = await listCompanyJobs(actor.companyId, actor.id);
@@ -10270,6 +10267,14 @@ const server = http.createServer(async (req, res) => {
           ? [{ id: job.ownerRecruiterId, name: job.ownerRecruiterName || "", primary: true }]
           : [];
       const recruiterIds = recruiterSeeds.map((item) => String(item?.id || "").trim()).filter(Boolean);
+      const actorRole = String(actor.role || "").trim().toLowerCase();
+      const actorId = String(actor.id || "").trim();
+      if (actorRole !== "admin") {
+        const actorAllowed = actorId && recruiterIds.includes(actorId);
+        if (!actorAllowed) {
+          throw new Error("You are not assigned to this JD.");
+        }
+      }
       const allUsers = await listCompanyUsers(actor.companyId);
       const items = recruiterIds
         .map((rid) => {
@@ -10281,7 +10286,10 @@ const server = http.createServer(async (req, res) => {
           return { recruiterId: rid, recruiterName: String(user.name || "").trim(), sig };
         })
         .filter(Boolean);
-      sendJson(res, 200, { ok: true, result: { jobId, items } });
+      const filteredItems = actorRole === "admin"
+        ? items
+        : items.filter((item) => String(item?.recruiterId || "").trim() === actorId);
+      sendJson(res, 200, { ok: true, result: { jobId, items: filteredItems } });
     } catch (error) {
       sendJson(res, 400, { ok: false, error: String(error.message || error) });
     }

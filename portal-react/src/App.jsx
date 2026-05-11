@@ -33,6 +33,7 @@ const BASE_NAV_SECTIONS = [
       { to: "/dashboard", label: "Dashboard" },
       { to: "/quick-update", label: "Quick Update" },
       { to: "/jobs", label: "Jobs" },
+      { to: "/shortcuts", label: "Shortcut Templates" },
       { to: "/mail-settings", label: "Mail Settings" }
     ]
   },
@@ -2037,7 +2038,9 @@ function fillCandidateTemplate(template, candidate) {
     recruiter_name: source.recruiter_name || source.recruiterName || "",
     interview_at: source.interview_at || source.interviewAt || "",
     client_name: source.client_name || source.clientName || "",
-    company_name: source.company_name || source.companyName || ""
+    company_name: source.company_name || source.companyName || "",
+    jd_link: source.jd_link || source.jdLink || "",
+    recruiter_jd_link: source.recruiter_jd_link || source.recruiterJdLink || source.jd_link || source.jdLink || ""
   };
   return String(template || "").replace(/\{\{\s*([a-z_]+)\s*\}\}/gi, (_, key) => String(map[key] || ""));
 }
@@ -4916,6 +4919,13 @@ function PortalApp({ token, onLogout }) {
   const [jobsCatalog, setJobsCatalog] = useState([]);
   const [jobShortcutKey, setJobShortcutKey] = useState("");
   const [jobShortcutValue, setJobShortcutValue] = useState("");
+  const [shortcutPersonalKey, setShortcutPersonalKey] = useState("");
+  const [shortcutPersonalValue, setShortcutPersonalValue] = useState("");
+  const [shortcutJobId, setShortcutJobId] = useState("");
+  const [shortcutJobKey, setShortcutJobKey] = useState("");
+  const [shortcutJobValue, setShortcutJobValue] = useState("");
+  const [shortcutCompanyKey, setShortcutCompanyKey] = useState("");
+  const [shortcutCompanyValue, setShortcutCompanyValue] = useState("");
   const JOB_CLOSE_REASONS = [
     "Position closed",
     "Position put on hold",
@@ -5089,7 +5099,8 @@ function PortalApp({ token, onLogout }) {
       return String(item?.candidateName || "").trim().toLowerCase() === String(quickUpdateCandidate?.name || "").trim().toLowerCase();
     }) || null;
   }, [quickUpdateCandidate, state.assessments]);
-  const isSettingsAdmin = String(state.user?.role || "").toLowerCase() === "admin";
+  const normalizedUserRole = String(state.user?.role || "").trim().toLowerCase();
+  const isSettingsAdmin = ["admin", "owner_admin", "super_admin"].includes(normalizedUserRole);
   const isExistingJobSelection = Boolean(String(selectedJobId || jobDraft.id || "").trim());
   const canEditCurrentJob =
     isSettingsAdmin ||
@@ -5137,9 +5148,26 @@ function PortalApp({ token, onLogout }) {
           : (effectiveLicense?.canCapture ? "Active" : "Blocked");
   const isKompatibleAdminContext =
     String(state.user?.companyId || "").trim() === KOMPATIBLE_MINDS_COMPANY_ID &&
-    String(state.user?.role || "").trim().toLowerCase() === "admin";
+    isSettingsAdmin;
   const isAnkitAdmin = String(state.user?.email || "").trim().toLowerCase() === "ankit.garg@kompatibleminds.com";
   const canAddCompany = isSettingsAdmin && (isAnkitAdmin || isKompatibleAdminContext);
+  const shortcutJobOptions = useMemo(() => {
+    const source = Array.isArray(state.jobs) && state.jobs.length ? state.jobs : jobsCatalog;
+    return (source || []).map((job) => ({
+      id: String(job?.id || "").trim(),
+      title: String(job?.title || "Untitled job").trim(),
+      clientName: String(job?.clientName || job?.client_name || "").trim(),
+      jdShortcuts: String(job?.jdShortcuts || "")
+    })).filter((job) => job.id);
+  }, [state.jobs, jobsCatalog]);
+  const selectedShortcutJob = useMemo(
+    () => shortcutJobOptions.find((job) => String(job.id) === String(shortcutJobId || "")) || null,
+    [shortcutJobOptions, shortcutJobId]
+  );
+  const selectedShortcutJobMap = useMemo(
+    () => parseShortcutMap(selectedShortcutJob?.jdShortcuts || ""),
+    [selectedShortcutJob]
+  );
   const accessFlagsReady = Boolean(state.user?.id) && (Boolean(companyLicense) || Boolean(billingOverview));
   const navSections = useMemo(() => (
     BASE_NAV_SECTIONS
@@ -5476,15 +5504,41 @@ function PortalApp({ token, onLogout }) {
   }
 
   function renderWhatsappTemplatePreview(template = "", row = {}) {
+    const resolvedJobId = resolveRowJobId(row);
+    const baseJdLink = resolvedJobId ? getApplyLink(resolvedJobId) : "";
+    const recruiterJdLink = String(row?.recruiter_jd_link || row?.recruiterJdLink || "").trim() || baseJdLink;
     return fillCandidateTemplate(String(template || "").trim(), {
       ...row,
       index: 1,
-      follow_up_at: formatDateForCopy(row?.follow_up_at || row?.next_follow_up_at || "")
+      follow_up_at: formatDateForCopy(row?.follow_up_at || row?.next_follow_up_at || ""),
+      jd_link: baseJdLink,
+      recruiter_jd_link: recruiterJdLink
     });
+  }
+
+  async function fetchRecruiterApplyLinkForRow(row = {}) {
+    const jobId = resolveRowJobId(row);
+    if (!jobId || !token) return "";
+    try {
+      const result = await api(`/company/jobs/${encodeURIComponent(jobId)}/apply-link-signatures`, token);
+      const items = Array.isArray(result?.items) ? result.items : [];
+      const selfId = String(state.user?.id || "").trim();
+      const mine = items.find((item) => String(item?.recruiterId || "").trim() === selfId) || items[0] || null;
+      if (!mine?.sig) return getApplyLink(jobId);
+      return getRecruiterApplyLink(jobId, mine.recruiterId, mine.sig);
+    } catch {
+      return getApplyLink(jobId);
+    }
   }
 
   async function openWhatsappTemplatePicker(row = {}, phoneValue = "", statusKey = "workspace") {
     const latestPersonalShortcuts = await loadPersonalShortcuts();
+    const recruiterLink = await fetchRecruiterApplyLinkForRow(row);
+    const rowWithLinks = {
+      ...(row || {}),
+      recruiter_jd_link: recruiterLink,
+      jd_link: resolveRowJobId(row) ? getApplyLink(resolveRowJobId(row)) : ""
+    };
     const options = getWhatsappTemplateOptions(row, latestPersonalShortcuts);
     const selectedId = String(options[0]?.id || "");
     const selectedTemplate = String(options[0]?.template || "");
@@ -5492,15 +5546,15 @@ function PortalApp({ token, onLogout }) {
       open: true,
       options,
       selectedId,
-      row,
+      row: rowWithLinks,
       phone: phoneValue,
       statusKey,
       customText: selectedTemplate
-        ? renderWhatsappTemplatePreview(selectedTemplate, row)
+        ? renderWhatsappTemplatePreview(selectedTemplate, rowWithLinks)
         : "",
       newShortcutKey: "",
       saveScope: "all_jobs",
-      assignJobId: resolveRowJobId(row)
+      assignJobId: resolveRowJobId(rowWithLinks)
     });
   }
 
@@ -5949,8 +6003,18 @@ function PortalApp({ token, onLogout }) {
   }, [token]);
 
   useEffect(() => {
+    if (!token) return;
+    if (String(location?.pathname || "") !== "/shortcuts") return;
+    void loadPersonalShortcuts();
+    if (!String(shortcutJobId || "").trim()) {
+      const firstJobId = String((state.jobs || [])[0]?.id || "").trim();
+      if (firstJobId) setShortcutJobId(firstJobId);
+    }
+  }, [token, location?.pathname, state.jobs, shortcutJobId]);
+
+  useEffect(() => {
     if (!token) return undefined;
-    const templateSensitivePaths = new Set(["/jobs", "/settings", "/mail-settings", "/client-share", "/captured-notes", "/assessments", "/applicants"]);
+    const templateSensitivePaths = new Set(["/jobs", "/shortcuts", "/settings", "/mail-settings", "/client-share", "/captured-notes", "/assessments", "/applicants"]);
     function syncOnFocusLikeEvent() {
       if (document.visibilityState === "hidden") return;
       const includeSharedPresets = templateSensitivePaths.has(String(location?.pathname || ""));
@@ -11259,6 +11323,156 @@ function PortalApp({ token, onLogout }) {
     await persistCurrentJobShortcuts(parsed, `Removed shortcut ${key}.`);
   }
 
+  async function savePersonalShortcutTemplate() {
+    const key = normalizeShortcutKey(shortcutPersonalKey);
+    const value = String(shortcutPersonalValue || "").trim();
+    if (!key || !value) {
+      setStatus("shortcuts", "Enter personal shortcut key and template text.", "error");
+      return;
+    }
+    try {
+      const next = { ...(personalShortcuts || {}), [key]: value };
+      const result = await api("/company/personal-shortcuts", token, "POST", { shortcuts: next });
+      const saved = result?.shortcuts && typeof result.shortcuts === "object" ? result.shortcuts : next;
+      setPersonalShortcuts(saved);
+      setShortcutPersonalKey("");
+      setShortcutPersonalValue("");
+      setStatus("shortcuts", `Saved personal shortcut /${key}.`, "ok");
+    } catch (error) {
+      setStatus("shortcuts", String(error?.message || error), "error");
+    }
+  }
+
+  async function deletePersonalShortcutTemplate(key) {
+    const normalized = normalizeShortcutKey(key);
+    if (!normalized) return;
+    try {
+      const next = { ...(personalShortcuts || {}) };
+      delete next[normalized];
+      const result = await api("/company/personal-shortcuts", token, "POST", { shortcuts: next });
+      const saved = result?.shortcuts && typeof result.shortcuts === "object" ? result.shortcuts : next;
+      setPersonalShortcuts(saved);
+      if (normalizeShortcutKey(shortcutPersonalKey) === normalized) {
+        setShortcutPersonalKey("");
+        setShortcutPersonalValue("");
+      }
+      setStatus("shortcuts", `Deleted personal shortcut /${normalized}.`, "ok");
+    } catch (error) {
+      setStatus("shortcuts", String(error?.message || error), "error");
+    }
+  }
+
+  async function saveJobShortcutTemplate() {
+    const jobId = String(shortcutJobId || "").trim();
+    const key = normalizeShortcutKey(shortcutJobKey);
+    const value = String(shortcutJobValue || "").trim();
+    if (!jobId) {
+      setStatus("shortcuts", "Select a JD first for job-specific shortcut.", "error");
+      return;
+    }
+    if (!key || !value) {
+      setStatus("shortcuts", "Enter job shortcut key and template text.", "error");
+      return;
+    }
+    try {
+      const currentMap = parseShortcutMap(selectedShortcutJob?.jdShortcuts || "");
+      currentMap[key] = value;
+      const payload = stringifyShortcutMap(currentMap);
+      const result = await api("/company/jds/shortcuts", token, "POST", { jobId, shortcuts: payload });
+      const savedShortcuts = String(result?.jdShortcuts || payload);
+      setState((current) => ({
+        ...current,
+        jobs: Array.isArray(current.jobs)
+          ? current.jobs.map((item) => String(item?.id || "") === jobId ? { ...item, jdShortcuts: savedShortcuts } : item)
+          : current.jobs
+      }));
+      setJobsCatalog((current) => Array.isArray(current)
+        ? current.map((item) => String(item?.id || "") === jobId ? { ...item, jdShortcuts: savedShortcuts } : item)
+        : current);
+      setShortcutJobKey("");
+      setShortcutJobValue("");
+      setStatus("shortcuts", `Saved job shortcut /${key}.`, "ok");
+    } catch (error) {
+      setStatus("shortcuts", String(error?.message || error), "error");
+    }
+  }
+
+  async function deleteJobShortcutTemplate(key) {
+    const jobId = String(shortcutJobId || "").trim();
+    const normalized = normalizeShortcutKey(key);
+    if (!jobId || !normalized) return;
+    try {
+      const currentMap = parseShortcutMap(selectedShortcutJob?.jdShortcuts || "");
+      delete currentMap[normalized];
+      const payload = stringifyShortcutMap(currentMap);
+      const result = await api("/company/jds/shortcuts", token, "POST", { jobId, shortcuts: payload });
+      const savedShortcuts = String(result?.jdShortcuts || payload);
+      setState((current) => ({
+        ...current,
+        jobs: Array.isArray(current.jobs)
+          ? current.jobs.map((item) => String(item?.id || "") === jobId ? { ...item, jdShortcuts: savedShortcuts } : item)
+          : current.jobs
+      }));
+      setJobsCatalog((current) => Array.isArray(current)
+        ? current.map((item) => String(item?.id || "") === jobId ? { ...item, jdShortcuts: savedShortcuts } : item)
+        : current);
+      if (normalizeShortcutKey(shortcutJobKey) === normalized) {
+        setShortcutJobKey("");
+        setShortcutJobValue("");
+      }
+      setStatus("shortcuts", `Deleted job shortcut /${normalized}.`, "ok");
+    } catch (error) {
+      setStatus("shortcuts", String(error?.message || error), "error");
+    }
+  }
+
+  async function saveCompanyShortcutTemplate() {
+    if (!isSettingsAdmin) {
+      setStatus("shortcuts", "Only admin can save company templates.", "error");
+      return;
+    }
+    const key = normalizeShortcutKey(shortcutCompanyKey);
+    const value = String(shortcutCompanyValue || "").trim();
+    if (!key || !value) {
+      setStatus("shortcuts", "Enter company shortcut key and template text.", "error");
+      return;
+    }
+    try {
+      const existing = copySettings?.companyWideShortcuts && typeof copySettings.companyWideShortcuts === "object"
+        ? copySettings.companyWideShortcuts
+        : {};
+      const payload = { ...copySettings, companyWideShortcuts: { ...existing, [key]: value } };
+      const result = await api("/company/shared-export-presets", token, "POST", { settings: payload });
+      setCopySettings((current) => ({ ...DEFAULT_COPY_SETTINGS, ...current, ...result }));
+      setShortcutCompanyKey("");
+      setShortcutCompanyValue("");
+      setStatus("shortcuts", `Saved company shortcut /${key}.`, "ok");
+    } catch (error) {
+      setStatus("shortcuts", String(error?.message || error), "error");
+    }
+  }
+
+  async function deleteCompanyShortcutTemplate(key) {
+    if (!isSettingsAdmin) {
+      setStatus("shortcuts", "Only admin can delete company templates.", "error");
+      return;
+    }
+    const normalized = normalizeShortcutKey(key);
+    if (!normalized) return;
+    try {
+      const existing = copySettings?.companyWideShortcuts && typeof copySettings.companyWideShortcuts === "object"
+        ? { ...copySettings.companyWideShortcuts }
+        : {};
+      delete existing[normalized];
+      const payload = { ...copySettings, companyWideShortcuts: existing };
+      const result = await api("/company/shared-export-presets", token, "POST", { settings: payload });
+      setCopySettings((current) => ({ ...DEFAULT_COPY_SETTINGS, ...current, ...result }));
+      setStatus("shortcuts", `Deleted company shortcut /${normalized}.`, "ok");
+    } catch (error) {
+      setStatus("shortcuts", String(error?.message || error), "error");
+    }
+  }
+
   async function copyInterviewTracker() {
     const row = {
       index: 1,
@@ -14047,6 +14261,7 @@ function PortalApp({ token, onLogout }) {
                     <label>
                       <span>Shortcut text / template</span>
                       <textarea value={jobShortcutValue} onChange={(e) => setJobShortcutValue(e.target.value)} />
+                      <span className="field-help">Placeholders: {`{{name}} {{recruiter_name}} {{interview_at}} {{jd_title}} {{client_name}} {{company_name}} {{phone}} {{email}} {{jd_link}} {{recruiter_jd_link}}`}</span>
                     </label>
                   </div>
                   <div className="button-row">
@@ -14074,6 +14289,141 @@ function PortalApp({ token, onLogout }) {
                     )) : <div className="empty-state">No JD shortcuts yet.</div>}
                   </div>
                 </div>
+                </Section>
+              </div>
+            } />
+
+            <Route path="/shortcuts" element={
+              <div className="page-grid">
+                <Section kicker="Templates" title="Shortcut Templates">
+                  <p className="muted">Create shortcuts once and sync across portal + extension for WhatsApp, LinkedIn, and email copy workflows.</p>
+                  {statuses.shortcuts ? <div className={`status ${statuses.shortcutsKind || ""}`}>{statuses.shortcuts}</div> : null}
+                </Section>
+
+                <Section kicker="Personal" title="Personal Shortcuts (All Jobs)">
+                  <div className="form-grid two-col">
+                    <label>
+                      <span>Shortcut key</span>
+                      <input value={shortcutPersonalKey} onChange={(e) => setShortcutPersonalKey(e.target.value)} placeholder="/followup_1" />
+                    </label>
+                    <label className="full">
+                      <span>Template text</span>
+                      <textarea value={shortcutPersonalValue} onChange={(e) => setShortcutPersonalValue(e.target.value)} rows={4} />
+                      <span className="field-help">Placeholders: {`{{name}} {{recruiter_name}} {{interview_at}} {{jd_title}} {{client_name}} {{company_name}} {{phone}} {{email}} {{jd_link}} {{recruiter_jd_link}}`}</span>
+                    </label>
+                  </div>
+                  <div className="button-row">
+                    <button onClick={() => void savePersonalShortcutTemplate()}>{normalizeShortcutKey(shortcutPersonalKey) ? "Save personal shortcut" : "Add personal shortcut"}</button>
+                  </div>
+                  <div className="stack-list compact">
+                    {Object.entries(personalShortcuts || {}).length ? (
+                      Object.entries(personalShortcuts || {})
+                        .sort(([a], [b]) => String(a || "").localeCompare(String(b || "")))
+                        .map(([key, value]) => (
+                          <article className="item-card compact-card" key={`personal-${key}`}>
+                            <div className="item-card__top compact-top">
+                              <strong>/{String(key || "")}</strong>
+                              <div className="button-row tight">
+                                <button className="ghost-btn" onClick={() => { setShortcutPersonalKey(String(key || "")); setShortcutPersonalValue(String(value || "")); }}>Edit</button>
+                                <button className="ghost-btn" onClick={() => void copyText(String(value || "")).then(() => setStatus("shortcuts", `Copied /${String(key || "")}.`, "ok"))}>Copy</button>
+                                <button className="ghost-btn" onClick={() => void deletePersonalShortcutTemplate(String(key || ""))}>Delete</button>
+                              </div>
+                            </div>
+                            <div className="candidate-snippet no-top-border">{String(value || "")}</div>
+                          </article>
+                        ))
+                    ) : <div className="empty-state">No personal shortcuts yet.</div>}
+                  </div>
+                </Section>
+
+                <Section kicker="Job" title="Job-Specific Shortcuts">
+                  <div className="form-grid two-col">
+                    <label>
+                      <span>Select JD</span>
+                      <select value={shortcutJobId} onChange={(e) => setShortcutJobId(e.target.value)}>
+                        <option value="">Select JD / role</option>
+                        {shortcutJobOptions.map((job) => <option key={job.id} value={job.id}>{job.title}{job.clientName ? ` (${job.clientName})` : ""}</option>)}
+                      </select>
+                    </label>
+                    <label>
+                      <span>Shortcut key</span>
+                      <input value={shortcutJobKey} onChange={(e) => setShortcutJobKey(e.target.value)} placeholder="/interview" />
+                    </label>
+                    <label className="full">
+                      <span>Template text</span>
+                      <textarea value={shortcutJobValue} onChange={(e) => setShortcutJobValue(e.target.value)} rows={4} />
+                      <span className="field-help">Placeholders: {`{{name}} {{recruiter_name}} {{interview_at}} {{jd_title}} {{client_name}} {{company_name}} {{phone}} {{email}} {{jd_link}} {{recruiter_jd_link}}`}</span>
+                    </label>
+                  </div>
+                  <div className="button-row">
+                    <button onClick={() => void saveJobShortcutTemplate()}>{normalizeShortcutKey(shortcutJobKey) ? "Save job shortcut" : "Add job shortcut"}</button>
+                  </div>
+                  <div className="stack-list compact">
+                    {Object.entries(selectedShortcutJobMap || {}).length ? (
+                      Object.entries(selectedShortcutJobMap || {})
+                        .sort(([a], [b]) => String(a || "").localeCompare(String(b || "")))
+                        .map(([key, value]) => (
+                          <article className="item-card compact-card" key={`job-${selectedShortcutJob?.id || "none"}-${key}`}>
+                            <div className="item-card__top compact-top">
+                              <strong>/{String(key || "")}</strong>
+                              <div className="button-row tight">
+                                <button className="ghost-btn" onClick={() => { setShortcutJobKey(String(key || "")); setShortcutJobValue(String(value || "")); }}>Edit</button>
+                                <button className="ghost-btn" onClick={() => void copyText(String(value || "")).then(() => setStatus("shortcuts", `Copied /${String(key || "")}.`, "ok"))}>Copy</button>
+                                <button className="ghost-btn" onClick={() => void deleteJobShortcutTemplate(String(key || ""))}>Delete</button>
+                              </div>
+                            </div>
+                            <div className="candidate-snippet no-top-border">{String(value || "")}</div>
+                          </article>
+                        ))
+                    ) : <div className="empty-state">{shortcutJobId ? "No job-specific shortcuts yet." : "Select JD to view shortcuts."}</div>}
+                  </div>
+                </Section>
+
+                <Section kicker="Company" title="Company Shortcuts">
+                  {!isSettingsAdmin ? <p className="muted">Read-only for recruiters. Admin-defined company shortcuts appear automatically in your template pickers.</p> : null}
+                  {isSettingsAdmin ? (
+                    <>
+                      <div className="form-grid two-col">
+                        <label>
+                          <span>Shortcut key</span>
+                          <input value={shortcutCompanyKey} onChange={(e) => setShortcutCompanyKey(e.target.value)} placeholder="/nr" />
+                        </label>
+                        <label className="full">
+                          <span>Template text</span>
+                          <textarea value={shortcutCompanyValue} onChange={(e) => setShortcutCompanyValue(e.target.value)} rows={4} />
+                          <span className="field-help">Placeholders: {`{{name}} {{recruiter_name}} {{interview_at}} {{jd_title}} {{client_name}} {{company_name}} {{phone}} {{email}} {{jd_link}} {{recruiter_jd_link}}`}</span>
+                        </label>
+                      </div>
+                      <div className="button-row">
+                        <button onClick={() => void saveCompanyShortcutTemplate()}>{normalizeShortcutKey(shortcutCompanyKey) ? "Save company shortcut" : "Add company shortcut"}</button>
+                      </div>
+                    </>
+                  ) : null}
+                  <div className="stack-list compact">
+                    {Object.entries((copySettings?.companyWideShortcuts && typeof copySettings.companyWideShortcuts === "object") ? copySettings.companyWideShortcuts : {}).length ? (
+                      Object.entries(copySettings.companyWideShortcuts)
+                        .sort(([a], [b]) => String(a || "").localeCompare(String(b || "")))
+                        .map(([key, value]) => (
+                          <article className="item-card compact-card" key={`company-${key}`}>
+                            <div className="item-card__top compact-top">
+                              <strong>/{String(key || "")}</strong>
+                              {isSettingsAdmin ? (
+                                <div className="button-row tight">
+                                  <button className="ghost-btn" onClick={() => { setShortcutCompanyKey(String(key || "")); setShortcutCompanyValue(String(value || "")); }}>Edit</button>
+                                  <button className="ghost-btn" onClick={() => void copyText(String(value || "")).then(() => setStatus("shortcuts", `Copied /${String(key || "")}.`, "ok"))}>Copy</button>
+                                  <button className="ghost-btn" onClick={() => void deleteCompanyShortcutTemplate(String(key || ""))}>Delete</button>
+                                </div>
+                              ) : (
+                                <div className="button-row tight">
+                                  <button className="ghost-btn" onClick={() => void copyText(String(value || "")).then(() => setStatus("shortcuts", `Copied /${String(key || "")}.`, "ok"))}>Copy</button>
+                                </div>
+                              )}
+                            </div>
+                            <div className="candidate-snippet no-top-border">{String(value || "")}</div>
+                          </article>
+                        ))
+                    ) : <div className="empty-state">No company shortcuts yet.</div>}
+                  </div>
                 </Section>
               </div>
             } />
@@ -14601,7 +14951,7 @@ function PortalApp({ token, onLogout }) {
             <label className="full">
               <span>Customize message</span>
               <textarea value={whatsappTemplatePicker.customText || ""} onChange={(e) => setWhatsappTemplatePicker((current) => ({ ...current, customText: e.target.value }))} />
-              <span className="field-help">Placeholders: {`{{name}} {{recruiter_name}} {{interview_at}} {{jd_title}} {{client_name}} {{company_name}} {{phone}}`}</span>
+              <span className="field-help">Placeholders: {`{{name}} {{recruiter_name}} {{interview_at}} {{jd_title}} {{client_name}} {{company_name}} {{phone}} {{jd_link}} {{recruiter_jd_link}}`}</span>
             </label>
             <div className="form-grid two-col">
               <label>
