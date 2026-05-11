@@ -5376,9 +5376,10 @@ function PortalApp({ token, onLogout }) {
     const personalMap = incomingPersonalShortcuts && typeof incomingPersonalShortcuts === "object" ? incomingPersonalShortcuts : personalShortcuts;
     Object.entries(personalMap || {}).forEach(([key, template]) => {
       const safeKey = String(key || "").trim();
+      const displayKey = safeKey.replace(/^\/+/, "");
       const safeTemplate = String(template || "").trim();
-      if (!safeKey || !safeTemplate) return;
-      options.push({ id: `personal:${safeKey}`, label: `/${safeKey} (All jobs)`, template: safeTemplate, scope: "all_jobs" });
+      if (!displayKey || !safeTemplate) return;
+      options.push({ id: `personal:${displayKey}`, label: `/${displayKey} (All jobs)`, template: safeTemplate, scope: "all_jobs" });
     });
     const normalizeJdMatch = (value = "") => String(value || "").trim().toLowerCase().replace(/[\s\-_]+/g, " ");
     const jdId = String(row?.jd_id || row?.jdId || row?.jobId || "").trim();
@@ -5402,10 +5403,11 @@ function PortalApp({ token, onLogout }) {
     const addShortcutOptions = (map = {}, prefix = "shortcut", titleLabel = "") => {
       Object.entries(map || {}).forEach(([key, template]) => {
         const safeKey = String(key || "").trim();
+        const displayKey = safeKey.replace(/^\/+/, "");
         const safeTemplate = String(template || "").trim();
-        if (!safeKey || !safeTemplate) return;
-        const label = titleLabel ? `/${safeKey} (${titleLabel})` : `/${safeKey}`;
-        options.push({ id: `${prefix}:${safeKey}:${titleLabel}`, label, template: safeTemplate, scope: "this_job" });
+        if (!displayKey || !safeTemplate) return;
+        const label = titleLabel ? `/${displayKey} (${titleLabel})` : `/${displayKey}`;
+        options.push({ id: `${prefix}:${displayKey}:${titleLabel}`, label, template: safeTemplate, scope: "this_job" });
       });
     };
 
