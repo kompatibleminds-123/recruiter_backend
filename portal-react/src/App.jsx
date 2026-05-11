@@ -5014,6 +5014,14 @@ function PortalApp({ token, onLogout }) {
   const [jdEmailCcSuggestions, setJdEmailCcSuggestions] = useState([]);
   const [jdEmailBusy, setJdEmailBusy] = useState(false);
   const [jdEmailModalStatus, setJdEmailModalStatus] = useState({ message: "", kind: "" });
+  const [whatsappTemplatePicker, setWhatsappTemplatePicker] = useState({
+    open: false,
+    options: [],
+    selectedId: "",
+    row: null,
+    phone: "",
+    statusKey: "workspace"
+  });
 
   const isAssessmentArchived = (assessment) => {
     if (!assessment) return false;
@@ -5349,8 +5357,31 @@ function PortalApp({ token, onLogout }) {
     }
   }
 
-  async function copyWhatsappDraftAndOpen(row = {}, phoneValue = "", statusKey = "workspace") {
-    const text = fillCandidateTemplate(copySettings.whatsappTemplate || DEFAULT_COPY_SETTINGS.whatsappTemplate, {
+  function getWhatsappTemplateOptions(row = {}) {
+    const options = [];
+    const defaultTemplate = String(copySettings.whatsappTemplate || DEFAULT_COPY_SETTINGS.whatsappTemplate || "").trim();
+    if (defaultTemplate) options.push({ id: "default", label: "Default WhatsApp template", template: defaultTemplate });
+    const jdId = String(row?.jd_id || row?.jdId || row?.jobId || "").trim();
+    const jdTitle = String(row?.jd_title || row?.jdTitle || row?.role || "").trim().toLowerCase();
+    const matchedJob = (state.jobs || []).find((job) => {
+      if (jdId && String(job?.id || "").trim() === jdId) return true;
+      return jdTitle && String(job?.title || "").trim().toLowerCase() === jdTitle;
+    }) || null;
+    const shortcutMap = parseShortcutMap(matchedJob?.jdShortcuts || "");
+    Object.entries(shortcutMap).forEach(([key, template]) => {
+      const safeKey = String(key || "").trim();
+      const safeTemplate = String(template || "").trim();
+      if (!safeKey || !safeTemplate) return;
+      options.push({ id: `shortcut:${safeKey}`, label: `/${safeKey}`, template: safeTemplate });
+    });
+    return options.filter((item, index, arr) => (
+      arr.findIndex((entry) => String(entry.template || "").trim() === String(item.template || "").trim()) === index
+    ));
+  }
+
+  async function copyWhatsappDraftAndOpen(row = {}, phoneValue = "", statusKey = "workspace", templateOverride = "") {
+    const activeTemplate = String(templateOverride || copySettings.whatsappTemplate || DEFAULT_COPY_SETTINGS.whatsappTemplate || "").trim();
+    const text = fillCandidateTemplate(activeTemplate, {
       ...row,
       index: 1,
       follow_up_at: formatDateForCopy(row?.follow_up_at || row?.next_follow_up_at || "")
@@ -5365,6 +5396,33 @@ function PortalApp({ token, onLogout }) {
       }
     }
     openWhatsappInSideWindow(phoneValue, statusKey);
+  }
+
+  function openWhatsappTemplatePicker(row = {}, phoneValue = "", statusKey = "workspace") {
+    const options = getWhatsappTemplateOptions(row);
+    if (!options.length) {
+      void copyWhatsappDraftAndOpen(row, phoneValue, statusKey);
+      return;
+    }
+    setWhatsappTemplatePicker({
+      open: true,
+      options,
+      selectedId: String(options[0]?.id || ""),
+      row,
+      phone: phoneValue,
+      statusKey
+    });
+  }
+
+  async function applyWhatsappTemplatePickerSelection() {
+    const selected = (whatsappTemplatePicker.options || []).find((item) => String(item.id || "") === String(whatsappTemplatePicker.selectedId || ""));
+    await copyWhatsappDraftAndOpen(
+      whatsappTemplatePicker.row || {},
+      whatsappTemplatePicker.phone || "",
+      whatsappTemplatePicker.statusKey || "workspace",
+      selected?.template || ""
+    );
+    setWhatsappTemplatePicker({ open: false, options: [], selectedId: "", row: null, phone: "", statusKey: "workspace" });
   }
 
 	function openRecruiterNotes(candidateOrId) {
@@ -11092,7 +11150,17 @@ function PortalApp({ token, onLogout }) {
   }
 
   function copyInterviewWhatsapp() {
-    openWhatsappInSideWindow(interviewForm.phoneNumber || "", "interview");
+    openWhatsappTemplatePicker({
+      name: interviewForm.candidateName || "",
+      jd_title: interviewForm.jdTitle || "",
+      company: interviewForm.currentCompany || "",
+      outcome: interviewForm.candidateStatus || "",
+      recruiter_notes: interviewForm.recruiterNotes || interviewForm.callbackNotes || "",
+      location: interviewForm.location || "",
+      phone: interviewForm.phoneNumber || "",
+      email: interviewForm.emailId || "",
+      source: "interview"
+    }, interviewForm.phoneNumber || "", "interview");
   }
 
   function sendInterviewToSheets() {
@@ -11501,7 +11569,7 @@ function PortalApp({ token, onLogout }) {
   }
 
   function openAssessmentWhatsapp(assessment) {
-    void copyWhatsappDraftAndOpen({
+    openWhatsappTemplatePicker({
       name: assessment?.candidateName || "",
       jd_title: assessment?.jdTitle || "",
       company: assessment?.currentCompany || "",
@@ -11510,7 +11578,8 @@ function PortalApp({ token, onLogout }) {
       location: assessment?.location || "",
       phone: assessment?.phoneNumber || "",
       email: assessment?.emailId || "",
-      source: "assessment"
+      source: "assessment",
+      jd_id: assessment?.jobId || assessment?.jdId || ""
     }, assessment?.phoneNumber || "", "assessments");
   }
 
@@ -12658,7 +12727,7 @@ function PortalApp({ token, onLogout }) {
 	                            <button onClick={() => openRecruiterNotes(item)}>Recruiter note</button>
                       <button
                         className="whatsapp-logo-btn"
-                        onClick={() => void copyWhatsappDraftAndOpen({
+                        onClick={() => openWhatsappTemplatePicker({
                           name: item.candidateName || "",
                           jd_title: item.jdTitle || "",
                           company: item.currentCompany || "",
@@ -12667,7 +12736,8 @@ function PortalApp({ token, onLogout }) {
                           location: item.location || "",
                           phone: item.phone || item.phoneNumber || "",
                           email: item.email || "",
-                          source: item.sourcePlatform || ""
+                          source: item.sourcePlatform || "",
+                          jd_id: item.jdId || item.jobId || ""
                         }, item.phone || item.phoneNumber || "", "applicants")}
                         title="Open WhatsApp"
                         aria-label="Open WhatsApp"
@@ -12791,7 +12861,7 @@ function PortalApp({ token, onLogout }) {
 	                      <button onClick={() => openRecruiterNotes(item)}>Recruiter note</button>
                         <button
                           className="whatsapp-logo-btn"
-                          onClick={() => void copyWhatsappDraftAndOpen({
+                          onClick={() => openWhatsappTemplatePicker({
                             name: item.name || "",
                             jd_title: item.jd_title || item.role || "",
                             company: item.company || "",
@@ -12800,7 +12870,8 @@ function PortalApp({ token, onLogout }) {
                             location: item.location || "",
                             phone: item.phone || item.phoneNumber || "",
                             email: item.email || "",
-                            source: item.source || ""
+                            source: item.source || "",
+                            jd_id: item.jd_id || item.jdId || item.jobId || ""
                           }, item.phone || item.phoneNumber || "", "captured")}
                           title="Open WhatsApp"
                           aria-label="Open WhatsApp"
@@ -14330,6 +14401,32 @@ function PortalApp({ token, onLogout }) {
         onCellChange={updateSheetPreviewRow}
         onImportValid={() => void importValidatedSheetRows()}
       />
+      {whatsappTemplatePicker.open ? (
+        <div className="overlay" onClick={() => setWhatsappTemplatePicker({ open: false, options: [], selectedId: "", row: null, phone: "", statusKey: "workspace" })}>
+          <div className="overlay-card whatsapp-template-picker" onClick={(event) => event.stopPropagation()}>
+            <div className="section-kicker">WhatsApp Template</div>
+            <h3>Choose Template to Copy</h3>
+            <div className="muted">Selected template will be copied first, then WhatsApp chat will open.</div>
+            <div className="whatsapp-template-picker__options">
+              {(whatsappTemplatePicker.options || []).map((option) => (
+                <label key={option.id} className="whatsapp-template-picker__option">
+                  <input
+                    type="radio"
+                    name="whatsapp_template_picker"
+                    checked={String(whatsappTemplatePicker.selectedId || "") === String(option.id || "")}
+                    onChange={() => setWhatsappTemplatePicker((current) => ({ ...current, selectedId: option.id }))}
+                  />
+                  <span>{option.label}</span>
+                </label>
+              ))}
+            </div>
+            <div className="button-row">
+              <button className="ghost-btn" onClick={() => setWhatsappTemplatePicker({ open: false, options: [], selectedId: "", row: null, phone: "", statusKey: "workspace" })}>Cancel</button>
+              <button onClick={() => void applyWhatsappTemplatePickerSelection()}>Copy and open WhatsApp</button>
+            </div>
+          </div>
+        </div>
+      ) : null}
       <AttemptsModal open={Boolean(attemptsCandidateId)} candidate={attemptsCandidate} attempts={attempts} onClose={() => setAttemptsCandidateId("")} onRefresh={refreshAttempts} onSave={saveAttempt} />
       <AssessmentStatusModal open={Boolean(assessmentStatusId)} assessment={assessmentStatusItem} onClose={() => setAssessmentStatusId("")} onSave={(payload) => saveAssessmentStatusUpdate(assessmentStatusItem, payload)} />
       <DrilldownModal
