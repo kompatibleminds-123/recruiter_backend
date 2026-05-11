@@ -808,6 +808,11 @@ textarea { min-height: 92px; resize: vertical; }
   background: linear-gradient(180deg, #ffffff 0%, #f8f6ff 100%);
   border-left: 4px solid #8b5cf6;
 }
+.direct-share-admin-preset {
+  margin-top: 1rem;
+  background: linear-gradient(180deg, #ffffff 0%, #fff7ef 100%);
+  border-left: 4px solid #f59e0b;
+}
 .candidate-filter-head h3 {
   margin: 0 0 0.25rem;
 }

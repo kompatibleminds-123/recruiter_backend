@@ -13103,6 +13103,31 @@ function PortalApp({ token, onLogout }) {
                   <button onClick={() => void sendClientShareEmail()}>Send email</button>
                   <button className="ghost-btn" onClick={() => void copyClientShareTracker()}>Copy tracker only</button>
                 </div>
+                {hasSaasUnlimitedAccess && isSettingsAdmin ? (
+                  <div className="settings-subsection direct-share-admin-preset">
+                    <div className="section-kicker">Direct Share Email Preset (Admin)</div>
+                    <p className="muted">Default intro and fallback signature used in Direct Share. Signature from Mail Settings remains the primary source.</p>
+                    <div className="form-grid">
+                      <label className="full">
+                        <span>Direct share default email intro</span>
+                        <textarea value={copySettings.clientShareIntroTemplate || DEFAULT_COPY_SETTINGS.clientShareIntroTemplate} onChange={(e) => setCopySettings((current) => ({ ...current, clientShareIntroTemplate: e.target.value }))} />
+                      </label>
+                      <label className="full">
+                        <span>Direct share default signature text (fallback)</span>
+                        <textarea value={copySettings.clientShareSignatureText || DEFAULT_COPY_SETTINGS.clientShareSignatureText} onChange={(e) => setCopySettings((current) => ({ ...current, clientShareSignatureText: e.target.value }))} />
+                      </label>
+                      <label><span>Signature link 1 text</span><input value={copySettings.clientShareSignatureLinkLabel || ""} onChange={(e) => setCopySettings((current) => ({ ...current, clientShareSignatureLinkLabel: e.target.value }))} placeholder="Kompatible Minds" /></label>
+                      <label><span>Signature link 1 URL</span><input value={copySettings.clientShareSignatureLinkUrl || ""} onChange={(e) => setCopySettings((current) => ({ ...current, clientShareSignatureLinkUrl: e.target.value }))} placeholder="https://kompatibleminds.com" /></label>
+                      <label><span>Signature link 2 text</span><input value={copySettings.clientShareSignatureLinkLabel2 || ""} onChange={(e) => setCopySettings((current) => ({ ...current, clientShareSignatureLinkLabel2: e.target.value }))} placeholder="LinkedIn" /></label>
+                      <label><span>Signature link 2 URL</span><input value={copySettings.clientShareSignatureLinkUrl2 || ""} onChange={(e) => setCopySettings((current) => ({ ...current, clientShareSignatureLinkUrl2: e.target.value }))} placeholder="https://www.linkedin.com/in/..." /></label>
+                    </div>
+                    <p className="muted">Placeholders: {`{{hr_name}} {{recruiter_name}} {{company_name}} {{client_name}} {{role}} {{role_line}}`}.</p>
+                    <div className="button-row">
+                      <button className="ghost-btn" onClick={() => setCopySettings(DEFAULT_COPY_SETTINGS)}>Reset defaults</button>
+                      <button onClick={() => void saveSharedCopySettings()}>Save direct share preset</button>
+                    </div>
+                  </div>
+                ) : null}
               </Section>
             </div>
           } />
@@ -13426,33 +13451,33 @@ function PortalApp({ token, onLogout }) {
                   </div>
                 </div>
 
-                <div className="settings-subsection mail-template-shell" style={{ marginTop: 18 }}>
-                  <div className="section-kicker">JD Email Template (Admin)</div>
-                  <p className="muted">Default subject/body in the "Email JD" modal. Placeholders: {`{Candidate} {Recruiter} {Role}`}</p>
-                  <div className="form-grid">
-                    <label className="full">
-                      <span>Subject template</span>
-                      <input
-                        disabled={!isSettingsAdmin}
-                        value={copySettings.jdEmailSubjectTemplate || DEFAULT_COPY_SETTINGS.jdEmailSubjectTemplate}
-                        onChange={(e) => setCopySettings((current) => ({ ...current, jdEmailSubjectTemplate: e.target.value }))}
-                        placeholder="Job Description - {Role}"
-                      />
-                    </label>
-                    <label className="full">
-                      <span>Body template</span>
-                      <textarea
-                        disabled={!isSettingsAdmin}
-                        value={copySettings.jdEmailIntroTemplate || DEFAULT_COPY_SETTINGS.jdEmailIntroTemplate}
-                        onChange={(e) => setCopySettings((current) => ({ ...current, jdEmailIntroTemplate: e.target.value }))}
-                        rows={8}
-                      />
-                    </label>
+                {isSettingsAdmin ? (
+                  <div className="settings-subsection mail-template-shell" style={{ marginTop: 18 }}>
+                    <div className="section-kicker">JD Email Template (Admin)</div>
+                    <p className="muted">Default subject/body in the "Email JD" modal. Placeholders: {`{Candidate} {Recruiter} {Role}`}</p>
+                    <div className="form-grid">
+                      <label className="full">
+                        <span>Subject template</span>
+                        <input
+                          value={copySettings.jdEmailSubjectTemplate || DEFAULT_COPY_SETTINGS.jdEmailSubjectTemplate}
+                          onChange={(e) => setCopySettings((current) => ({ ...current, jdEmailSubjectTemplate: e.target.value }))}
+                          placeholder="Job Description - {Role}"
+                        />
+                      </label>
+                      <label className="full">
+                        <span>Body template</span>
+                        <textarea
+                          value={copySettings.jdEmailIntroTemplate || DEFAULT_COPY_SETTINGS.jdEmailIntroTemplate}
+                          onChange={(e) => setCopySettings((current) => ({ ...current, jdEmailIntroTemplate: e.target.value }))}
+                          rows={8}
+                        />
+                      </label>
+                    </div>
+                    <div className="button-row">
+                      <button onClick={() => void saveSharedCopySettings()}>Save JD email template</button>
+                    </div>
                   </div>
-                  <div className="button-row">
-                    {isSettingsAdmin ? <button onClick={() => void saveSharedCopySettings()}>Save JD email template</button> : null}
-                  </div>
-                </div>
+                ) : null}
               </Section>
             </div>
           } />
@@ -13808,29 +13833,6 @@ function PortalApp({ token, onLogout }) {
                       <button onClick={() => void saveSharedCopySettings()}>Save new preset</button>
                     </div> : null}
                     <p className="muted">After creating a preset, select it from the dropdown above to view, edit, or remove it.</p>
-                  </div> : null}
-                  {hasSaasUnlimitedAccess ? <div className="settings-subsection">
-                    <div className="section-kicker">Direct Share Email Preset</div>
-                    <p className="muted">Default intro and signature used in Direct Share. Recruiters can still override them for one email draft.</p>
-                    <div className="form-grid">
-                      <label className="full">
-                        <span>Direct share default email intro</span>
-                        <textarea disabled={!isSettingsAdmin} value={copySettings.clientShareIntroTemplate || DEFAULT_COPY_SETTINGS.clientShareIntroTemplate} onChange={(e) => setCopySettings((current) => ({ ...current, clientShareIntroTemplate: e.target.value }))} />
-                      </label>
-                      <label className="full">
-                        <span>Direct share default signature text</span>
-                        <textarea disabled={!isSettingsAdmin} value={copySettings.clientShareSignatureText || DEFAULT_COPY_SETTINGS.clientShareSignatureText} onChange={(e) => setCopySettings((current) => ({ ...current, clientShareSignatureText: e.target.value }))} />
-                      </label>
-                      <label><span>Signature link 1 text</span><input disabled={!isSettingsAdmin} value={copySettings.clientShareSignatureLinkLabel || ""} onChange={(e) => setCopySettings((current) => ({ ...current, clientShareSignatureLinkLabel: e.target.value }))} placeholder="Kompatible Minds" /></label>
-                      <label><span>Signature link 1 URL</span><input disabled={!isSettingsAdmin} value={copySettings.clientShareSignatureLinkUrl || ""} onChange={(e) => setCopySettings((current) => ({ ...current, clientShareSignatureLinkUrl: e.target.value }))} placeholder="https://kompatibleminds.com" /></label>
-                      <label><span>Signature link 2 text</span><input disabled={!isSettingsAdmin} value={copySettings.clientShareSignatureLinkLabel2 || ""} onChange={(e) => setCopySettings((current) => ({ ...current, clientShareSignatureLinkLabel2: e.target.value }))} placeholder="LinkedIn" /></label>
-                      <label><span>Signature link 2 URL</span><input disabled={!isSettingsAdmin} value={copySettings.clientShareSignatureLinkUrl2 || ""} onChange={(e) => setCopySettings((current) => ({ ...current, clientShareSignatureLinkUrl2: e.target.value }))} placeholder="https://www.linkedin.com/in/..." /></label>
-                    </div>
-                    <p className="muted">Direct share intro/signature placeholders use {`{{hr_name}} {{recruiter_name}} {{company_name}} {{client_name}} {{role}} {{role_line}}`}.</p>
-                    <div className="button-row">
-                      <button onClick={() => setCopySettings(DEFAULT_COPY_SETTINGS)}>Reset defaults</button>
-                      {isSettingsAdmin ? <button onClick={() => void saveSharedCopySettings()}>Save direct share preset</button> : null}
-                    </div>
                   </div> : null}
                 </Section>
               </div>
