@@ -51,6 +51,7 @@ function stripRtf(rtf) {
 
 function parseDateRange(text) {
   const normalized = String(text || "").replace(/[\u2013\u2014\u2212]/g, "-");
+  const now = new Date();
 
   // Prefer explicit year-only ranges like "2020-2023" or "2020 to 2023"
   // before falling back to "any year in the line" (which can be noisy in CV bullets).
@@ -59,7 +60,6 @@ function parseDateRange(text) {
     const startYear = Number(yearRange[1]);
     const endToken = String(yearRange[2] || "").toLowerCase();
     if (endToken === "present" || endToken === "current" || endToken === "till date") {
-      const now = new Date();
       return {
         start: { year: startYear, month: 0 },
         end: { year: now.getFullYear(), month: now.getMonth() },
@@ -91,9 +91,25 @@ function parseDateRange(text) {
     end = { year: yearOnlyMatches[1], month: 11 };
   }
 
+  const sinceMonthMatch = normalized.match(/\bsince\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*[\s,-]+(?:'(\d{2})|(\d{4}))/i);
+  if (sinceMonthMatch) {
+    start = {
+      month: MONTH_INDEX[String(sinceMonthMatch[1] || "").toLowerCase()],
+      year: sinceMonthMatch[2] ? 2000 + Number(sinceMonthMatch[2]) : Number(sinceMonthMatch[3])
+    };
+    end = { year: now.getFullYear(), month: now.getMonth() };
+    isCurrent = true;
+  }
+
+  const sinceYearMatch = normalized.match(/\bsince\s+(19\d{2}|20\d{2})\b/i);
+  if (sinceYearMatch && !sinceMonthMatch) {
+    start = { year: Number(sinceYearMatch[1]), month: 0 };
+    end = { year: now.getFullYear(), month: now.getMonth() };
+    isCurrent = true;
+  }
+
   if (/\bpresent\b|\bcurrent\b|\btill date\b/i.test(normalized)) {
     isCurrent = true;
-    const now = new Date();
     end = { year: now.getFullYear(), month: now.getMonth() };
   }
 
@@ -273,7 +289,7 @@ function isNoiseLine(line) {
 
 function looksLikeExperienceDate(line) {
   return /\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*[\s,-]+(?:'\d{2}|\d{4})\b/i.test(line) &&
-    (/\bpresent\b|\bcurrent\b|\btill date\b/i.test(line) || /[-\u2013\u2014\u2212]/.test(line) || /\b\d+\s+(?:yr|yrs|year|years|mo|mos|month|months)\b/i.test(line));
+    (/\bpresent\b|\bcurrent\b|\btill date\b|\bsince\b/i.test(line) || /[-\u2013\u2014\u2212]/.test(line) || /\b\d+\s+(?:yr|yrs|year|years|mo|mos|month|months)\b/i.test(line));
 }
 
 function cleanCompanyLine(line) {
@@ -328,6 +344,25 @@ function looksLikeSpacedCapsBanner(value) {
   const compact = text.replace(/[^A-Z]/g, "");
   const spaced = text.match(/[A-Z]\s+[A-Z]/g);
   return compact.length >= 8 && Array.isArray(spaced) && spaced.length >= 2;
+}
+
+function looksLikeSectionHeading(value) {
+  const text = String(value || "").trim();
+  if (!text) return false;
+  const compact = text.replace(/[^A-Za-z]/g, "").toLowerCase();
+  if (!compact) return false;
+  const headingLike = new Set([
+    "internship",
+    "internships",
+    "experience",
+    "workexperience",
+    "professionalexperience",
+    "education",
+    "projects",
+    "certifications",
+    "skills"
+  ]);
+  return headingLike.has(compact);
 }
 
 function countDateLikeLines(lines = []) {
@@ -497,6 +532,32 @@ function extractTitleDateCompany(lines, index) {
   const line = String(lines[index] || "").trim();
   const previousLine = String(lines[index - 1] || "").trim();
   const nextLine = String(lines[index + 1] || "").trim();
+
+  // Handle date-first formats:
+  // - "Since Aug 2024 | Amply ... "
+  // - "Sep 2023 - Mar 2024 | Signeasy | Business Development Representative"
+  const dateFirstMatch = line.match(
+    /^(?:(since)\s+)?((?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*[\s,-]+(?:'\d{2}|\d{4})|\b(?:19|20)\d{2}\b)\s*(?:[-\u2013\u2014\u2212]|to)?\s*((?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*[\s,-]+(?:'\d{2}|\d{4})|\b(?:19|20)\d{2}\b|present|current|till date)?\s*\|\s*(.+)$/i
+  );
+  if (dateFirstMatch) {
+    const sinceWord = String(dateFirstMatch[1] || "").trim();
+    const startToken = String(dateFirstMatch[2] || "").trim();
+    const endToken = String(dateFirstMatch[3] || "").trim();
+    const trailing = String(dateFirstMatch[4] || "").trim();
+    const parts = trailing.split("|").map((part) => String(part || "").trim()).filter(Boolean);
+    const company = cleanCompanyLine(parts[0] || "");
+    let title = parts.length > 1 ? String(parts[parts.length - 1] || "").trim() : "";
+    if (!title && nextLine && !looksLikeExperienceDate(nextLine) && !isNoiseLine(nextLine) && !looksLikeBulletLine(nextLine)) {
+      title = nextLine;
+    }
+    const dates = sinceWord
+      ? `Since ${startToken}`
+      : `${startToken}${endToken ? ` - ${endToken}` : ""}`.trim();
+    if (company && title) {
+      return { title, company, dates };
+    }
+  }
+
   const dateMatch = line.match(/^(.*?)(\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*[\s,-]+(?:'\d{2}|\d{4}).*)$/i);
   if (!dateMatch) return null;
 
@@ -717,16 +778,33 @@ function extractTimeline(lines, rawText, structuredExperienceText) {
       const company = String(entry.company || "").trim();
       const title = String(entry.title || "").trim();
       if (!company && !title) return false;
+      if (looksLikeSectionHeading(company) || looksLikeSectionHeading(title)) return false;
+      if (isNoiseLine(company) || isNoiseLine(title)) return false;
       if (looksLikeEducationText(company) || looksLikeEducationText(title)) return false;
       if (looksLikeSpacedCapsBanner(company) || looksLikeSpacedCapsBanner(title)) return false;
       return true;
     })
     .sort((a, b) => (b.startIndex || 0) - (a.startIndex || 0));
 
+  const deduped = [];
+  const dedupeSeen = new Set();
+  for (const entry of normalized) {
+    const key = [
+      String(entry.company || "").toLowerCase().trim(),
+      String(entry.title || "").toLowerCase().trim(),
+      Number.isFinite(entry.startIndex) ? String(entry.startIndex) : "",
+      Number.isFinite(entry.endIndex) ? String(entry.endIndex) : "",
+      String(entry.isCurrent ? "1" : "0")
+    ].join("|");
+    if (dedupeSeen.has(key)) continue;
+    dedupeSeen.add(key);
+    deduped.push(entry);
+  }
+
   const gaps = [];
-  for (let i = 0; i < normalized.length - 1; i += 1) {
-    const newer = normalized[i];
-    const older = normalized[i + 1];
+  for (let i = 0; i < deduped.length - 1; i += 1) {
+    const newer = deduped[i];
+    const older = deduped[i + 1];
     if (newer.startIndex === null || older.endIndex === null) continue;
     const gapMonths = newer.startIndex - older.endIndex - 1;
     if (gapMonths < 3) continue;
@@ -739,7 +817,7 @@ function extractTimeline(lines, rawText, structuredExperienceText) {
     });
   }
 
-  const shortStints = normalized
+  const shortStints = deduped
     .filter((entry) => {
       const monthsMatch = entry.duration.match(/(\d+)\s+month/i);
       const yearsMatch = entry.duration.match(/(\d+)\s+year/i);
@@ -761,7 +839,7 @@ function extractTimeline(lines, rawText, structuredExperienceText) {
   if (/\bquota\b|\btarget\b|\bpipeline\b|\barr\b|\bconversion\b/i.test(rawTextPreview)) highlights.push("Commercial metrics mentioned");
 
   return {
-    timeline: normalized.map(({ startIndex, endIndex, ...entry }) => entry),
+    timeline: deduped.map(({ startIndex, endIndex, ...entry }) => entry),
     gaps,
     shortStints,
     highlights
