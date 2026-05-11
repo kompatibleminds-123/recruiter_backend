@@ -790,13 +790,23 @@ textarea { min-height: 92px; resize: vertical; }
 .mail-settings-shell {
   background: linear-gradient(180deg, #ffffff 0%, #f7fbff 100%);
   box-shadow: 0 8px 18px rgba(20, 41, 84, 0.06);
+  border-left: 4px solid #3b82f6;
 }
 .mail-settings-notes {
   display: grid;
   gap: 0.2rem;
+  border-left: 4px solid #94a3b8;
 }
 .mail-settings-notes p {
   margin: 0;
+}
+.mail-signature-shell {
+  background: linear-gradient(180deg, #ffffff 0%, #f5fffb 100%);
+  border-left: 4px solid #10b981;
+}
+.mail-template-shell {
+  background: linear-gradient(180deg, #ffffff 0%, #f8f6ff 100%);
+  border-left: 4px solid #8b5cf6;
 }
 .candidate-filter-head h3 {
   margin: 0 0 0.25rem;

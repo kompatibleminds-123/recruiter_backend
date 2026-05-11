@@ -13324,6 +13324,7 @@ function PortalApp({ token, onLogout }) {
                 {statuses.settings ? <div className={`status ${statuses.settingsKind || ""}`}>{statuses.settings}</div> : null}
                 <p className="muted">Configure email delivery for JD sharing. You can use either SMTP credentials or API mode (per recruiter).</p>
                 <div className="settings-subsection mail-settings-shell">
+                  <div className="section-kicker">Mail Share Settings (SMTP / API)</div>
                   <div className="form-grid two-col">
                     <label><span>SMTP host</span><input value={smtpSettings.host} onChange={(e) => { markSmtpSettingsDirty(); setSmtpSettings((c) => ({ ...c, host: e.target.value })); }} placeholder="smtppro.zoho.com" /></label>
                     <label><span>SMTP port</span><input type="number" value={smtpSettings.port} onChange={(e) => { markSmtpSettingsDirty(); setSmtpSettings((c) => ({ ...c, port: Number(e.target.value || 0) || 587 })); }} placeholder="587" /></label>
@@ -13359,6 +13360,7 @@ function PortalApp({ token, onLogout }) {
                   </div>
                 </div>
                 <div className="settings-subsection mail-settings-notes">
+                  <div className="section-kicker">Mail Share Notes</div>
                   <p className="muted"><strong>Supported modes:</strong> SMTP mode (<code>smtppro.zoho.com</code>, <code>smtp.gmail.com</code>, <code>smtp.office365.com</code>) or API mode via host keys.</p>
                   <p className="muted"><strong>API mode host keys:</strong> <code>zohoapi.com</code>, <code>sendgridapi</code>, <code>postmarkapi</code>.</p>
                   <p className="muted"><strong>Zoho:</strong> click <strong>Connect Zoho (1-click)</strong>. No manual code/token copy required.</p>
@@ -13367,9 +13369,9 @@ function PortalApp({ token, onLogout }) {
                   <p className="muted"><strong>Hosting note:</strong> SMTP mode may need paid hosting/network egress; API mode often avoids SMTP port blockers.</p>
                 </div>
 
-                <div className="settings-subsection" style={{ marginTop: 18 }}>
+                <div className="settings-subsection mail-signature-shell" style={{ marginTop: 18 }}>
                   <div className="section-kicker">Your Email Signature (per recruiter)</div>
-                  <p className="muted">Used in JD emails and Direct Share by default. Tip: to make only part of link text clickable, write it as <code>LinkedIn || 7027xxxxxxx</code> (only â€œLinkedInâ€ becomes the hyperlink).</p>
+                  <p className="muted">Used in JD emails and Direct Share by default. Tip: to make only part of link text clickable, write it as <code>LinkedIn || 7027xxxxxxx</code> (only "LinkedIn" becomes the hyperlink).</p>
                   <div className="form-grid two-col">
                     <label className="full">
                       <span>Signature text</span>
@@ -13397,9 +13399,9 @@ function PortalApp({ token, onLogout }) {
                   </div>
                 </div>
 
-                <div className="settings-subsection" style={{ marginTop: 18 }}>
+                <div className="settings-subsection mail-template-shell" style={{ marginTop: 18 }}>
                   <div className="section-kicker">JD Email Template (Admin)</div>
-                  <p className="muted">Default subject/body in the â€œEmail JDâ€ modal. Placeholders: {`{Candidate} {Recruiter} {Role}`}</p>
+                  <p className="muted">Default subject/body in the "Email JD" modal. Placeholders: {`{Candidate} {Recruiter} {Role}`}</p>
                   <div className="form-grid">
                     <label className="full">
                       <span>Subject template</span>
@@ -16057,5 +16059,8 @@ export default function App() {
         ? <PortalErrorBoundary><PayrollAdminApp token={token} onLogout={logout} /></PortalErrorBoundary>
         : <PortalErrorBoundary><PortalApp token={token} onLogout={logout} /></PortalErrorBoundary>;
 }
+
+
+
 
 
