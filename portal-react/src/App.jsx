@@ -4896,6 +4896,8 @@ function PortalApp({ token, onLogout }) {
   const [attemptsCandidateId, setAttemptsCandidateId] = useState("");
   const [assessmentStatusId, setAssessmentStatusId] = useState("");
   const [drilldownState, setDrilldownState] = useState({ open: false, title: "", items: [], request: null });
+  const inlineDrilldownRef = useRef(null);
+  const [inlineDrilldownPulse, setInlineDrilldownPulse] = useState(false);
   const [clientFeedbackItem, setClientFeedbackItem] = useState(null);
 	const [attempts, setAttempts] = useState([]);
 	const workspaceRefreshInFlightRef = useRef(false);
@@ -9622,6 +9624,20 @@ function PortalApp({ token, onLogout }) {
     await openClientPortalDrilldown(drilldownState.request);
   }
 
+  useEffect(() => {
+    if (!drilldownState.open) return;
+    if (String(location?.pathname || "") !== "/dashboard") return;
+    const timer = setTimeout(() => {
+      try {
+        inlineDrilldownRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+        inlineDrilldownRef.current?.focus?.();
+      } catch { /* ignore scroll/focus issues */ }
+      setInlineDrilldownPulse(true);
+      setTimeout(() => setInlineDrilldownPulse(false), 1100);
+    }, 30);
+    return () => clearTimeout(timer);
+  }, [drilldownState.open, drilldownState.title, location?.pathname]);
+
   async function saveClientFeedback({ status, feedback, interviewAt }) {
     if (!clientFeedbackItem) return;
     const assessment = clientFeedbackItem.raw?.assessment || (clientFeedbackItem.sourceType === "assessment_only" ? clientFeedbackItem : null);
@@ -12210,24 +12226,30 @@ function PortalApp({ token, onLogout }) {
                 ) : null}
               </div>
               {drilldownState.open ? (
-                <DrilldownModal
-                  open={drilldownState.open}
-                  inline
-                  hideRoleClient
-                  title={drilldownState.title}
-                  items={drilldownState.items}
-                  onClose={() => setDrilldownState({ open: false, title: "", items: [], request: null })}
-                  onOpenCv={(candidateId) => void openCv(candidateId)}
-                  onOpenNotes={(candidateId) => void openRecruiterNotes(candidateId)}
-                  onOpenStatus={(target) => {
-                    const assessmentId = String(target?.id || target?.assessmentId || "").trim();
-                    if (assessmentId) {
-                      setAssessmentStatusId(assessmentId);
-                      return;
-                    }
-                    if (target?.candidateId) void openAttempts(target.candidateId);
-                  }}
-                />
+                <div
+                  ref={inlineDrilldownRef}
+                  tabIndex={-1}
+                  className={`inline-drilldown-anchor${inlineDrilldownPulse ? " is-active" : ""}`}
+                >
+                  <DrilldownModal
+                    open={drilldownState.open}
+                    inline
+                    hideRoleClient
+                    title={drilldownState.title}
+                    items={drilldownState.items}
+                    onClose={() => setDrilldownState({ open: false, title: "", items: [], request: null })}
+                    onOpenCv={(candidateId) => void openCv(candidateId)}
+                    onOpenNotes={(candidateId) => void openRecruiterNotes(candidateId)}
+                    onOpenStatus={(target) => {
+                      const assessmentId = String(target?.id || target?.assessmentId || "").trim();
+                      if (assessmentId) {
+                        setAssessmentStatusId(assessmentId);
+                        return;
+                      }
+                      if (target?.candidateId) void openAttempts(target.candidateId);
+                    }}
+                  />
+                </div>
               ) : null}
             </div>
           } />

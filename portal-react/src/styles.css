@@ -1402,6 +1402,13 @@ textarea { min-height: 92px; resize: vertical; }
 .inline-drilldown {
   margin-top: 0.9rem;
 }
+.inline-drilldown-anchor {
+  outline: none;
+  border-radius: 18px;
+}
+.inline-drilldown-anchor.is-active .inline-drilldown__card {
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.28), 0 12px 28px rgba(20, 41, 84, 0.14);
+}
 .inline-drilldown__card {
   border: 1px solid #dce6fb;
   border-radius: 18px;
