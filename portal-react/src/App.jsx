@@ -13712,26 +13712,6 @@ function PortalApp({ token, onLogout }) {
                   {!hasSaasUnlimitedAccess ? <p className="muted">Current plan mode: preset edit only. New preset creation and advanced preset controls unlock on SaaS Unlimited (Rs 4999).</p> : null}
                   {!isSettingsAdmin ? <p className="muted">You can use shared presets here. Only admin can create, edit, or save shared preset settings.</p> : null}
                   {statuses.settings ? <div className={`status ${statuses.settingsKind || ""}`}>{statuses.settings}</div> : null}
-                  {hasSaasUnlimitedAccess ? <div className="settings-subsection">
-                    <div className="section-kicker">Search Settings</div>
-                    <p className="muted">Controls apply to the Database AI Search for the whole workspace.</p>
-                    <div className="form-grid">
-                      <label className="checkbox-row">
-                        <input
-                          type="checkbox"
-                          disabled={!isSettingsAdmin}
-                          checked={copySettings.semanticSearchEnabled !== false}
-                          onChange={(e) => setCopySettings((current) => ({ ...current, semanticSearchEnabled: e.target.checked }))}
-                        />
-                        <span>Enable semantic (embeddings) reranking</span>
-                      </label>
-                    </div>
-                    <p className="muted">When disabled, search remains structured/boolean only (no OpenAI embedding calls per query).</p>
-                    <div className="button-row">
-                      {isSettingsAdmin ? <button onClick={() => void saveSharedCopySettings()}>Save search settings</button> : null}
-                    </div>
-                  </div> : null}
-
                   {/* Email Settings moved to Mail Settings tab (visible to all recruiters). */}
                   <div className="settings-subsection">
                     <div className="section-kicker">Edit Existing Presets</div>
