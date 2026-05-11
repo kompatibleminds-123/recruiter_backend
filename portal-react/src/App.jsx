@@ -614,6 +614,18 @@ function formatShortcutLabel(raw) {
   return normalized;
 }
 
+function normalizeShortcutMapKeys(map = {}) {
+  const source = map && typeof map === "object" ? map : {};
+  const next = {};
+  Object.entries(source).forEach(([rawKey, rawValue]) => {
+    const key = normalizeShortcutKey(rawKey);
+    const value = String(rawValue || "").trim();
+    if (!key || !value) return;
+    next[key] = value;
+  });
+  return next;
+}
+
 function parseAmountToLpa(value) {
   const raw = String(value || "").trim().toLowerCase();
   if (!raw) return null;
@@ -4946,6 +4958,9 @@ function PortalApp({ token, onLogout }) {
   const [shortcutJobValue, setShortcutJobValue] = useState("");
   const [shortcutCompanyKey, setShortcutCompanyKey] = useState("");
   const [shortcutCompanyValue, setShortcutCompanyValue] = useState("");
+  const personalTemplateTextareaRef = useRef(null);
+  const jobTemplateTextareaRef = useRef(null);
+  const companyTemplateTextareaRef = useRef(null);
   const JOB_CLOSE_REASONS = [
     "Position closed",
     "Position put on hold",
@@ -5185,7 +5200,7 @@ function PortalApp({ token, onLogout }) {
     [shortcutJobOptions, shortcutJobId]
   );
   const selectedShortcutJobMap = useMemo(
-    () => parseShortcutMap(selectedShortcutJob?.jdShortcuts || ""),
+    () => normalizeShortcutMapKeys(parseShortcutMap(selectedShortcutJob?.jdShortcuts || "")),
     [selectedShortcutJob]
   );
   const accessFlagsReady = Boolean(state.user?.id) && (Boolean(companyLicense) || Boolean(billingOverview));
@@ -5518,7 +5533,7 @@ function PortalApp({ token, onLogout }) {
   async function loadPersonalShortcuts() {
     if (!token) return {};
     const result = await api("/company/personal-shortcuts", token).catch(() => null);
-    const shortcuts = result?.shortcuts && typeof result.shortcuts === "object" ? result.shortcuts : {};
+    const shortcuts = normalizeShortcutMapKeys(result?.shortcuts && typeof result.shortcuts === "object" ? result.shortcuts : {});
     setPersonalShortcuts(shortcuts);
     return shortcuts;
   }
@@ -11351,9 +11366,10 @@ function PortalApp({ token, onLogout }) {
       return;
     }
     try {
-      const next = { ...(personalShortcuts || {}), [key]: value };
+      const next = { ...normalizeShortcutMapKeys(personalShortcuts || {}), [key]: value };
       const result = await api("/company/personal-shortcuts", token, "POST", { shortcuts: next });
-      const saved = result?.shortcuts && typeof result.shortcuts === "object" ? result.shortcuts : next;
+      const savedRaw = result?.shortcuts && typeof result.shortcuts === "object" ? result.shortcuts : next;
+      const saved = normalizeShortcutMapKeys(savedRaw);
       setPersonalShortcuts(saved);
       setShortcutPersonalKey("");
       setShortcutPersonalValue("");
@@ -11367,10 +11383,11 @@ function PortalApp({ token, onLogout }) {
     const normalized = normalizeShortcutKey(key);
     if (!normalized) return;
     try {
-      const next = { ...(personalShortcuts || {}) };
+      const next = { ...normalizeShortcutMapKeys(personalShortcuts || {}) };
       delete next[normalized];
       const result = await api("/company/personal-shortcuts", token, "POST", { shortcuts: next });
-      const saved = result?.shortcuts && typeof result.shortcuts === "object" ? result.shortcuts : next;
+      const savedRaw = result?.shortcuts && typeof result.shortcuts === "object" ? result.shortcuts : next;
+      const saved = normalizeShortcutMapKeys(savedRaw);
       setPersonalShortcuts(saved);
       if (normalizeShortcutKey(shortcutPersonalKey) === normalized) {
         setShortcutPersonalKey("");
@@ -11395,7 +11412,7 @@ function PortalApp({ token, onLogout }) {
       return;
     }
     try {
-      const currentMap = parseShortcutMap(selectedShortcutJob?.jdShortcuts || "");
+      const currentMap = normalizeShortcutMapKeys(parseShortcutMap(selectedShortcutJob?.jdShortcuts || ""));
       currentMap[key] = value;
       const payload = stringifyShortcutMap(currentMap);
       const result = await api("/company/jds/shortcuts", token, "POST", { jobId, shortcuts: payload });
@@ -11422,7 +11439,7 @@ function PortalApp({ token, onLogout }) {
     const normalized = normalizeShortcutKey(key);
     if (!jobId || !normalized) return;
     try {
-      const currentMap = parseShortcutMap(selectedShortcutJob?.jdShortcuts || "");
+      const currentMap = normalizeShortcutMapKeys(parseShortcutMap(selectedShortcutJob?.jdShortcuts || ""));
       delete currentMap[normalized];
       const payload = stringifyShortcutMap(currentMap);
       const result = await api("/company/jds/shortcuts", token, "POST", { jobId, shortcuts: payload });
@@ -11458,9 +11475,11 @@ function PortalApp({ token, onLogout }) {
       return;
     }
     try {
-      const existing = copySettings?.companyWideShortcuts && typeof copySettings.companyWideShortcuts === "object"
-        ? copySettings.companyWideShortcuts
-        : {};
+      const existing = normalizeShortcutMapKeys(
+        copySettings?.companyWideShortcuts && typeof copySettings.companyWideShortcuts === "object"
+          ? copySettings.companyWideShortcuts
+          : {}
+      );
       const payload = { ...copySettings, companyWideShortcuts: { ...existing, [key]: value } };
       const result = await api("/company/shared-export-presets", token, "POST", { settings: payload });
       setCopySettings((current) => ({ ...DEFAULT_COPY_SETTINGS, ...current, ...result }));
@@ -11480,9 +11499,11 @@ function PortalApp({ token, onLogout }) {
     const normalized = normalizeShortcutKey(key);
     if (!normalized) return;
     try {
-      const existing = copySettings?.companyWideShortcuts && typeof copySettings.companyWideShortcuts === "object"
-        ? { ...copySettings.companyWideShortcuts }
-        : {};
+      const existing = normalizeShortcutMapKeys(
+        copySettings?.companyWideShortcuts && typeof copySettings.companyWideShortcuts === "object"
+          ? { ...copySettings.companyWideShortcuts }
+          : {}
+      );
       delete existing[normalized];
       const payload = { ...copySettings, companyWideShortcuts: existing };
       const result = await api("/company/shared-export-presets", token, "POST", { settings: payload });
@@ -11493,13 +11514,30 @@ function PortalApp({ token, onLogout }) {
     }
   }
 
-  function appendPlaceholderToken(currentValue, token) {
-    const text = String(currentValue || "");
+  function insertPlaceholderAtCursor(textareaRef, currentValue, setValue, token) {
     const nextToken = String(token || "").trim();
-    if (!nextToken) return text;
-    if (!text) return nextToken;
-    const joiner = text.endsWith(" ") || text.endsWith("\n") ? "" : " ";
-    return `${text}${joiner}${nextToken}`;
+    if (!nextToken) return;
+    const text = String(currentValue || "");
+    const textarea = textareaRef?.current || null;
+    if (!textarea) {
+      setValue((prev) => `${String(prev || "")}${nextToken}`);
+      return;
+    }
+    const start = Number.isFinite(textarea.selectionStart) ? textarea.selectionStart : text.length;
+    const end = Number.isFinite(textarea.selectionEnd) ? textarea.selectionEnd : start;
+    const before = text.slice(0, start);
+    const after = text.slice(end);
+    const nextText = `${before}${nextToken}${after}`;
+    const nextCursor = before.length + nextToken.length;
+    setValue(nextText);
+    requestAnimationFrame(() => {
+      try {
+        textarea.focus();
+        textarea.setSelectionRange(nextCursor, nextCursor);
+      } catch {
+        // ignore selection errors
+      }
+    });
   }
 
   async function copyInterviewTracker() {
@@ -14329,7 +14367,7 @@ function PortalApp({ token, onLogout }) {
                   {statuses.shortcuts ? <div className={`status ${statuses.shortcutsKind || ""}`}>{statuses.shortcuts}</div> : null}
                 </Section>
 
-                <Section kicker="Personal" title="Personal Shortcuts (All Jobs)" className="shortcuts-section shortcuts-section--personal">
+                <Section kicker="Personal" title="Personal Shortcuts (All Jobs)" className="shortcuts-section shortcuts-section--personal mail-settings-shell">
                   <div className="form-grid two-col">
                     <label>
                       <span>Shortcut key</span>
@@ -14337,11 +14375,11 @@ function PortalApp({ token, onLogout }) {
                     </label>
                     <label className="full">
                       <span>Template text</span>
-                      <textarea value={shortcutPersonalValue} onChange={(e) => setShortcutPersonalValue(e.target.value)} rows={4} />
+                      <textarea ref={personalTemplateTextareaRef} value={shortcutPersonalValue} onChange={(e) => setShortcutPersonalValue(e.target.value)} rows={4} />
                       <span className="field-help">Click placeholders to insert:</span>
                       <div className="placeholder-selector">
                         {SHORTCUT_TEMPLATE_PLACEHOLDERS.map((token) => (
-                          <button key={`personal-${token}`} type="button" className="ghost-btn placeholder-chip" onClick={() => setShortcutPersonalValue((current) => appendPlaceholderToken(current, token))}>{token}</button>
+                          <button key={`personal-${token}`} type="button" className="ghost-btn placeholder-chip" onClick={() => insertPlaceholderAtCursor(personalTemplateTextareaRef, shortcutPersonalValue, setShortcutPersonalValue, token)}>{token}</button>
                         ))}
                       </div>
                     </label>
@@ -14370,7 +14408,7 @@ function PortalApp({ token, onLogout }) {
                   </div>
                 </Section>
 
-                <Section kicker="Job" title="Job-Specific Shortcuts" className="shortcuts-section shortcuts-section--job">
+                <Section kicker="Job" title="Job-Specific Shortcuts" className="shortcuts-section shortcuts-section--job mail-signature-shell">
                   <div className="form-grid two-col">
                     <label>
                       <span>Select JD</span>
@@ -14385,11 +14423,11 @@ function PortalApp({ token, onLogout }) {
                     </label>
                     <label className="full">
                       <span>Template text</span>
-                      <textarea value={shortcutJobValue} onChange={(e) => setShortcutJobValue(e.target.value)} rows={4} />
+                      <textarea ref={jobTemplateTextareaRef} value={shortcutJobValue} onChange={(e) => setShortcutJobValue(e.target.value)} rows={4} />
                       <span className="field-help">Click placeholders to insert:</span>
                       <div className="placeholder-selector">
                         {SHORTCUT_TEMPLATE_PLACEHOLDERS.map((token) => (
-                          <button key={`job-${token}`} type="button" className="ghost-btn placeholder-chip" onClick={() => setShortcutJobValue((current) => appendPlaceholderToken(current, token))}>{token}</button>
+                          <button key={`job-${token}`} type="button" className="ghost-btn placeholder-chip" onClick={() => insertPlaceholderAtCursor(jobTemplateTextareaRef, shortcutJobValue, setShortcutJobValue, token)}>{token}</button>
                         ))}
                       </div>
                     </label>
@@ -14418,7 +14456,7 @@ function PortalApp({ token, onLogout }) {
                   </div>
                 </Section>
 
-                <Section kicker="Company" title="Company Shortcuts" className="shortcuts-section shortcuts-section--company">
+                <Section kicker="Company" title="Company Shortcuts" className="shortcuts-section shortcuts-section--company mail-template-shell">
                   {!isSettingsAdmin ? <p className="muted">Read-only for recruiters. Admin-defined company shortcuts appear automatically in your template pickers.</p> : null}
                   {isSettingsAdmin ? (
                     <>
@@ -14429,11 +14467,11 @@ function PortalApp({ token, onLogout }) {
                         </label>
                         <label className="full">
                           <span>Template text</span>
-                          <textarea value={shortcutCompanyValue} onChange={(e) => setShortcutCompanyValue(e.target.value)} rows={4} />
+                          <textarea ref={companyTemplateTextareaRef} value={shortcutCompanyValue} onChange={(e) => setShortcutCompanyValue(e.target.value)} rows={4} />
                           <span className="field-help">Click placeholders to insert:</span>
                           <div className="placeholder-selector">
                             {SHORTCUT_TEMPLATE_PLACEHOLDERS.map((token) => (
-                              <button key={`company-${token}`} type="button" className="ghost-btn placeholder-chip" onClick={() => setShortcutCompanyValue((current) => appendPlaceholderToken(current, token))}>{token}</button>
+                              <button key={`company-${token}`} type="button" className="ghost-btn placeholder-chip" onClick={() => insertPlaceholderAtCursor(companyTemplateTextareaRef, shortcutCompanyValue, setShortcutCompanyValue, token)}>{token}</button>
                             ))}
                           </div>
                         </label>

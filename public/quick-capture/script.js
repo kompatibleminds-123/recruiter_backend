@@ -34,6 +34,7 @@ const existingStatusMicButton = document.getElementById("existingStatusMicButton
 const existingStatusMessage = document.getElementById("existingStatusMessage");
 const workspaceRefreshButton = document.getElementById("workspaceRefreshButton");
 const workspaceRefreshStatus = document.getElementById("workspaceRefreshStatus");
+const quickShortcutList = document.getElementById("quickShortcutList");
 const existingCandidateSummary = document.getElementById("existingCandidateSummary");
 const voiceLanguageSelect = document.getElementById("voiceLanguageSelect");
 const existingConflictSummary = document.getElementById("existingConflictSummary");
@@ -64,6 +65,126 @@ let latestExistingParsedResult = null;
 let latestExistingMergedResult = null;
 const VOICE_SILENCE_STOP_MS = 5000;
 let voiceLanguage = "en-IN";
+
+function normalizeShortcutKey(raw) {
+  const value = String(raw || "").trim();
+  if (!value) return "";
+  const stripped = value.replace(/^\/+/, "");
+  if (!stripped) return "";
+  return `/${stripped}`;
+}
+
+function parseShortcutMap(value) {
+  if (!String(value || "").trim()) return {};
+  try {
+    const parsed = JSON.parse(String(value || ""));
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+    return parsed;
+  } catch {
+    return {};
+  }
+}
+
+function normalizeShortcutMapKeys(map = {}) {
+  const source = map && typeof map === "object" ? map : {};
+  const next = {};
+  Object.entries(source).forEach(([rawKey, rawValue]) => {
+    const key = normalizeShortcutKey(rawKey);
+    const value = String(rawValue || "").trim();
+    if (!key || !value) return;
+    next[key] = value;
+  });
+  return next;
+}
+
+async function copyShortcutTemplateText(text) {
+  const value = String(text || "");
+  if (!value) return;
+  try {
+    if (navigator?.clipboard?.writeText) {
+      await navigator.clipboard.writeText(value);
+      return;
+    }
+  } catch {
+    // fallback below
+  }
+  const temp = document.createElement("textarea");
+  temp.value = value;
+  temp.setAttribute("readonly", "");
+  temp.style.position = "absolute";
+  temp.style.left = "-9999px";
+  document.body.appendChild(temp);
+  temp.select();
+  document.execCommand("copy");
+  document.body.removeChild(temp);
+}
+
+function buildMergedShortcuts(cache = {}) {
+  const merged = [];
+  const personal = normalizeShortcutMapKeys(cache?.personalShortcuts || {});
+  Object.entries(personal).forEach(([key, template]) => {
+    merged.push({ key, template, source: "Personal", scope: "all_jobs", sortGroup: 2 });
+  });
+  const jobs = Array.isArray(cache?.jobs) ? cache.jobs : [];
+  jobs.forEach((job) => {
+    const jobMap = normalizeShortcutMapKeys(parseShortcutMap(job?.jdShortcuts || ""));
+    Object.entries(jobMap).forEach(([key, template]) => {
+      merged.push({
+        key,
+        template,
+        source: `JD: ${String(job?.title || "Untitled job").trim()}`,
+        scope: "job",
+        jobId: String(job?.id || "").trim(),
+        sortGroup: 1
+      });
+    });
+  });
+  const company = normalizeShortcutMapKeys(cache?.companyWideShortcuts || {});
+  Object.entries(company).forEach(([key, template]) => {
+    merged.push({ key, template, source: "Company", scope: "company", sortGroup: 3 });
+  });
+  return merged.sort((a, b) => {
+    if (a.sortGroup !== b.sortGroup) return a.sortGroup - b.sortGroup;
+    return String(a.key || "").localeCompare(String(b.key || ""));
+  });
+}
+
+function renderMergedShortcuts(cache = null) {
+  if (!quickShortcutList) return;
+  const workspace = cache || getQuickCaptureWorkspaceCache() || {};
+  const items = buildMergedShortcuts(workspace);
+  if (!items.length) {
+    quickShortcutList.innerHTML = '<div class="candidate-summary empty">No shortcuts found. Click Refresh to sync latest templates.</div>';
+    return;
+  }
+  quickShortcutList.innerHTML = items
+    .map((item, index) => `
+      <article class="shortcut-item">
+        <div class="shortcut-item__head">
+          <strong>${escapeHtml(item.key)}</strong>
+          <span class="shortcut-source">${escapeHtml(item.source)}</span>
+        </div>
+        <div class="shortcut-item__body">${escapeHtml(item.template || "").replace(/\n/g, "<br/>")}</div>
+        <div class="shortcut-item__actions">
+          <button type="button" class="ghost-button" data-action="copy-shortcut" data-index="${index}">Copy</button>
+        </div>
+      </article>
+    `)
+    .join("");
+  quickShortcutList.querySelectorAll('button[data-action="copy-shortcut"]').forEach((button) => {
+    button.addEventListener("click", async () => {
+      const index = Number(button.getAttribute("data-index") || -1);
+      const entry = items[index] || null;
+      if (!entry) return;
+      try {
+        await copyShortcutTemplateText(entry.template || "");
+        setStatus(`Copied ${entry.key} (${entry.source}).`, "success");
+      } catch (error) {
+        setStatus(String(error?.message || error), "error");
+      }
+    });
+  });
+}
 
 function applyVoiceLanguage(recognitionInstance) {
   if (!recognitionInstance) return;
@@ -1717,6 +1838,9 @@ if (newCandidateCvFile) {
   });
 }
 wireQuickCaptureRefreshButton(workspaceRefreshButton, workspaceRefreshStatus);
+window.addEventListener("quickCaptureWorkspaceRefreshed", (event) => {
+  renderMergedShortcuts(event?.detail || null);
+});
 
 async function bootstrapAuthState() {
   const user = await getQuickCaptureCurrentUser();
@@ -1740,6 +1864,7 @@ async function bootstrapAuthState() {
       return;
     }
   }
+  renderMergedShortcuts();
   setStatus("Quick capture is ready.", "success");
 }
 
@@ -1783,4 +1908,5 @@ bootstrapAuthState().catch(() => {
   window.location.href = "/quick-capture/";
 });
 
+renderMergedShortcuts();
 setCaptureTab("existing");

@@ -93,11 +93,12 @@ async function refreshQuickCaptureWorkspaceCache() {
     throw new Error("Login required before refresh.");
   }
 
-  const [jobsPayload, candidatesPayload, assessmentsPayload, personalShortcutsPayload] = await Promise.all([
+  const [jobsPayload, candidatesPayload, assessmentsPayload, personalShortcutsPayload, sharedPresetsPayload] = await Promise.all([
     callQuickCaptureApi("/company/jds", { method: "GET" }),
     callQuickCaptureApi("/candidates?limit=1000", { method: "GET" }),
     callQuickCaptureApi("/company/assessments", { method: "GET" }),
-    callQuickCaptureApi("/company/personal-shortcuts", { method: "GET" }).catch(() => ({ result: { shortcuts: {} } }))
+    callQuickCaptureApi("/company/personal-shortcuts", { method: "GET" }).catch(() => ({ result: { shortcuts: {} } })),
+    callQuickCaptureApi("/company/shared-export-presets", { method: "GET" }).catch(() => ({ result: { companyWideShortcuts: {} } }))
   ]);
 
   const jobs = Array.isArray(jobsPayload?.result?.jobs) ? jobsPayload.result.jobs : [];
@@ -111,6 +112,10 @@ async function refreshQuickCaptureWorkspaceCache() {
     personalShortcutsPayload?.result?.shortcuts && typeof personalShortcutsPayload.result.shortcuts === "object"
       ? personalShortcutsPayload.result.shortcuts
       : {};
+  const companyWideShortcuts =
+    sharedPresetsPayload?.result?.companyWideShortcuts && typeof sharedPresetsPayload.result.companyWideShortcuts === "object"
+      ? sharedPresetsPayload.result.companyWideShortcuts
+      : {};
   const cache = {
     syncedAt: new Date().toISOString(),
     userId: user.id || "",
@@ -118,7 +123,8 @@ async function refreshQuickCaptureWorkspaceCache() {
     jobs,
     candidates,
     assessments,
-    personalShortcuts
+    personalShortcuts,
+    companyWideShortcuts
   };
   setQuickCaptureWorkspaceCache(cache);
   return {
@@ -127,14 +133,15 @@ async function refreshQuickCaptureWorkspaceCache() {
       jobs: jobs.length,
       candidates: candidates.length,
       assessments: assessments.length,
-      personalShortcuts: Object.keys(personalShortcuts || {}).length
+      personalShortcuts: Object.keys(personalShortcuts || {}).length,
+      companyWideShortcuts: Object.keys(companyWideShortcuts || {}).length
     }
   };
 }
 
 function formatQuickCaptureSyncMessage(cache) {
   if (!cache?.counts) return "Workspace refreshed.";
-  return `Workspace refreshed: ${cache.counts.jobs} job(s), ${cache.counts.candidates} candidate(s), ${cache.counts.assessments} assessment(s), ${cache.counts.personalShortcuts || 0} personal shortcut(s).`;
+  return `Workspace refreshed: ${cache.counts.jobs} job(s), ${cache.counts.candidates} candidate(s), ${cache.counts.assessments} assessment(s), ${cache.counts.personalShortcuts || 0} personal shortcut(s), ${cache.counts.companyWideShortcuts || 0} company shortcut(s).`;
 }
 
 function wireQuickCaptureRefreshButton(button, statusElement) {
@@ -147,6 +154,7 @@ function wireQuickCaptureRefreshButton(button, statusElement) {
     button.disabled = true;
     try {
       const cache = await refreshQuickCaptureWorkspaceCache();
+      window.dispatchEvent(new CustomEvent("quickCaptureWorkspaceRefreshed", { detail: cache }));
       if (statusElement) {
         statusElement.textContent = formatQuickCaptureSyncMessage(cache);
         statusElement.className = "status-message success";

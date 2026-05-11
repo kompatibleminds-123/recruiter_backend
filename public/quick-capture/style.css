@@ -128,6 +128,54 @@ h2 {
   font-size: 0.96rem;
 }
 
+.quick-shortcuts-panel {
+  border-left: 4px solid #3b82f6;
+  background: linear-gradient(180deg, #ffffff 0%, #f7fbff 100%);
+}
+
+.shortcut-merged-list {
+  display: grid;
+  gap: 0.6rem;
+}
+
+.shortcut-item {
+  border: 1px solid #dbe5f5;
+  border-radius: 14px;
+  background: #ffffff;
+  padding: 0.7rem 0.8rem;
+  display: grid;
+  gap: 0.45rem;
+}
+
+.shortcut-item__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.shortcut-source {
+  font-size: 0.76rem;
+  font-weight: 700;
+  color: #355a98;
+  background: #edf4ff;
+  border: 1px solid #cfe0ff;
+  border-radius: 999px;
+  padding: 0.2rem 0.5rem;
+}
+
+.shortcut-item__body {
+  color: #334e68;
+  font-size: 0.88rem;
+  line-height: 1.45;
+  white-space: normal;
+}
+
+.shortcut-item__actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
 .topbar-link {
   min-width: 92px;
 }
