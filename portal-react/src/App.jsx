@@ -10374,6 +10374,24 @@ function PortalApp({ token, onLogout }) {
     return { signatureText, links };
   }
 
+  function splitSignatureLinkLabel(rawLabel) {
+    const raw = String(rawLabel || "").trim();
+    if (!raw) return { clickLabel: "Link", tail: "" };
+    if (/linkedin/i.test(raw)) {
+      const tail = raw
+        .replace(/linkedin/ig, "")
+        .replace(/^[\s|:-]+/, "")
+        .replace(/[\s|:-]+$/, "")
+        .replace(/\s{2,}/g, " ")
+        .trim();
+      return { clickLabel: "LinkedIn", tail };
+    }
+    const [primary, secondary] = raw.split("||");
+    const clickLabel = String(primary || raw).trim() || "Link";
+    const tail = String(secondary || "").trim();
+    return { clickLabel, tail };
+  }
+
   function buildClientShareBody() {
     const introText = String(clientShareDraft.introText || "").trim()
       || getClientShareIntroText();
@@ -10401,7 +10419,10 @@ function PortalApp({ token, onLogout }) {
       ...profileLines,
       String(clientShareDraft.extraMessage || "").trim(),
       signature.signatureText,
-      ...signature.links.map((link) => `${link.label || "Link"}: ${link.url}`)
+      ...signature.links.map((link) => {
+        const parts = splitSignatureLinkLabel(link.label || link.url || "");
+        return `${parts.clickLabel}: ${link.url}${parts.tail ? ` ${parts.tail}` : ""}`;
+      })
     ].filter((line, index, array) => line || (index > 0 && array[index - 1] !== "")).join("\n");
   }
 
@@ -10428,7 +10449,13 @@ function PortalApp({ token, onLogout }) {
     const introHtml = escapeHtml(introText).replace(/\n/g, "<br/>");
     const signature = getClientShareSignature();
     const signatureLinksHtml = signature.links
-      .map((link) => `<a href="${escapeHtml(link.url)}" target="_blank" rel="noopener noreferrer" style="color:#0b57d0;text-decoration:none;">${escapeHtml(link.label || link.url)}</a>`)
+      .map((link) => {
+        const parts = splitSignatureLinkLabel(link.label || link.url || "");
+        const clickLabel = parts.clickLabel;
+        const tail = parts.tail;
+        const anchor = `<a href="${escapeHtml(link.url)}" target="_blank" rel="noopener noreferrer" style="color:#0b57d0;text-decoration:none;">${escapeHtml(clickLabel || link.url)}</a>`;
+        return tail ? `${anchor} ${escapeHtml(tail)}` : anchor;
+      })
       .join("<br/>");
     const signatureHtml = [
       signature.signatureText ? escapeHtml(signature.signatureText).replace(/\n/g, "<br/>") : "",
