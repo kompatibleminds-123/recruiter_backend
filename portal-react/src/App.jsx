@@ -11515,6 +11515,7 @@ function PortalApp({ token, onLogout }) {
     .sort((a, b) => b.performanceScore - a.performanceScore)
     .map((row, idx) => ({ ...row, rank: idx + 1 }));
   const maxRecruiterScore = Math.max(1, ...recruiterLeaderboardRanked.map((row) => row.performanceScore));
+  const maxRecruiterSourced = Math.max(1, ...recruiterLeaderboardRanked.map((row) => row.sourced));
   const maxRecruiterShared = Math.max(1, ...recruiterLeaderboardRanked.map((row) => row.shared));
   const clientPortalSummary = state.clientPortal?.summary || { overall: {}, byClient: [], byClientPosition: [] };
   const selectedClientPortalGroup = (clientPortalSummary.byClient || []).find((group) => String(group.label || "") === String(clientPortalFilters.clientLabel || "")) || null;
@@ -12065,11 +12066,15 @@ function PortalApp({ token, onLogout }) {
                               <div className="reports-stacked-track">
                                 <i
                                   className="reports-stacked-track__base"
-                                  style={{ width: `${Math.max(4, Math.round((row.shared / maxRecruiterShared) * 100))}%` }}
+                                  style={{ width: `${Math.max(4, Math.round((row.sourced / maxRecruiterSourced) * 100))}%` }}
+                                />
+                                <i
+                                  className="reports-stacked-track__mid"
+                                  style={{ width: `${row.sourced > 0 ? Math.max(2, Math.round((row.shared / row.sourced) * Math.max(4, Math.round((row.sourced / maxRecruiterSourced) * 100)))) : 0}%` }}
                                 />
                                 <i
                                   className="reports-stacked-track__fill"
-                                  style={{ width: `${row.shared > 0 ? Math.max(2, Math.round((row.interviews / row.shared) * Math.max(4, Math.round((row.shared / maxRecruiterShared) * 100)))) : 0}%` }}
+                                  style={{ width: `${row.sourced > 0 ? Math.max(2, Math.round((row.interviews / row.sourced) * Math.max(4, Math.round((row.sourced / maxRecruiterSourced) * 100)))) : 0}%` }}
                                 />
                               </div>
                               <span className="reports-bar-meta">{`So:${row.sourced} | Sh:${row.shared} | I:${row.interviews}`}</span>

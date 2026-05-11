@@ -365,6 +365,7 @@ textarea { min-height: 92px; resize: vertical; }
   position: relative;
 }
 .reports-stacked-track__base,
+.reports-stacked-track__mid,
 .reports-stacked-track__fill {
   position: absolute;
   left: 0;
@@ -375,8 +376,11 @@ textarea { min-height: 92px; resize: vertical; }
 .reports-stacked-track__base {
   background: linear-gradient(90deg, #2563eb, #3b82f6);
 }
-.reports-stacked-track__fill {
+.reports-stacked-track__mid {
   background: linear-gradient(90deg, #14b8a6, #0ea5e9);
+}
+.reports-stacked-track__fill {
+  background: linear-gradient(90deg, #8b5cf6, #7c3aed);
 }
 .reports-funnel-item__head {
   display: flex;
