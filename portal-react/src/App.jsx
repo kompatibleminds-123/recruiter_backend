@@ -5349,6 +5349,24 @@ function PortalApp({ token, onLogout }) {
     }
   }
 
+  async function copyWhatsappDraftAndOpen(row = {}, phoneValue = "", statusKey = "workspace") {
+    const text = fillCandidateTemplate(copySettings.whatsappTemplate || DEFAULT_COPY_SETTINGS.whatsappTemplate, {
+      ...row,
+      index: 1,
+      follow_up_at: formatDateForCopy(row?.follow_up_at || row?.next_follow_up_at || "")
+    });
+    const hasTemplateText = String(text || "").trim().length > 0;
+    if (hasTemplateText) {
+      try {
+        await copyText(text);
+        setStatus(statusKey, "WhatsApp draft copied. Paste in chat (Ctrl+V).", "ok");
+      } catch {
+        // ignore clipboard errors and still open WhatsApp
+      }
+    }
+    openWhatsappInSideWindow(phoneValue, statusKey);
+  }
+
 	function openRecruiterNotes(candidateOrId) {
 	  const candidateId = String(candidateOrId?.id || candidateOrId || "").trim();
 	  if (!candidateId) return;
@@ -5569,7 +5587,7 @@ function PortalApp({ token, onLogout }) {
 
   loadWorkspaceRef.current = loadWorkspace;
 
-  async function refreshWorkspaceSilently(reason = "manual") {
+  async function refreshWorkspaceSilently(reason = "manual", options = {}) {
     if (!token || workspaceRefreshInFlightRef.current) return;
     if (suspendWorkspaceRefreshRef.current) return;
     const now = Date.now();
@@ -5583,8 +5601,8 @@ function PortalApp({ token, onLogout }) {
         await latestLoader({
           includeEvents: false,
           includeClientUsers: false,
-          includeSharedPresets: false,
-          includeEmailSettings: false
+          includeSharedPresets: Boolean(options?.includeSharedPresets),
+          includeEmailSettings: Boolean(options?.includeEmailSettings)
         });
       }
     } catch (error) {
@@ -5710,6 +5728,25 @@ function PortalApp({ token, onLogout }) {
     // Keep workspace refresh manual/lightweight to avoid burning Supabase egress on every tab focus/poll.
     return undefined;
   }, [token]);
+
+  useEffect(() => {
+    if (!token) return undefined;
+    const templateSensitivePaths = new Set(["/jobs", "/settings", "/mail-settings", "/client-share", "/captured-notes", "/assessments", "/applicants"]);
+    function syncOnFocusLikeEvent() {
+      if (document.visibilityState === "hidden") return;
+      const includeSharedPresets = templateSensitivePaths.has(String(location?.pathname || ""));
+      const includeEmailSettings = String(location?.pathname || "") === "/mail-settings";
+      void refreshWorkspaceSilently("focus-sync", { includeSharedPresets, includeEmailSettings });
+    }
+    window.addEventListener("focus", syncOnFocusLikeEvent);
+    window.addEventListener("pageshow", syncOnFocusLikeEvent);
+    document.addEventListener("visibilitychange", syncOnFocusLikeEvent);
+    return () => {
+      window.removeEventListener("focus", syncOnFocusLikeEvent);
+      window.removeEventListener("pageshow", syncOnFocusLikeEvent);
+      document.removeEventListener("visibilitychange", syncOnFocusLikeEvent);
+    };
+  }, [token, location?.pathname]);
 
   useEffect(() => {
     if (!token) return undefined;
@@ -11464,7 +11501,17 @@ function PortalApp({ token, onLogout }) {
   }
 
   function openAssessmentWhatsapp(assessment) {
-    openWhatsappInSideWindow(assessment?.phoneNumber || "", "assessments");
+    void copyWhatsappDraftAndOpen({
+      name: assessment?.candidateName || "",
+      jd_title: assessment?.jdTitle || "",
+      company: assessment?.currentCompany || "",
+      outcome: normalizeAssessmentStatusLabel(assessment?.candidateStatus || ""),
+      recruiter_notes: assessment?.recruiterNotes || "",
+      location: assessment?.location || "",
+      phone: assessment?.phoneNumber || "",
+      email: assessment?.emailId || "",
+      source: "assessment"
+    }, assessment?.phoneNumber || "", "assessments");
   }
 
   const companyId = String(state.user?.companyId || state.intake?.company?.id || "").trim();
@@ -12611,7 +12658,17 @@ function PortalApp({ token, onLogout }) {
 	                            <button onClick={() => openRecruiterNotes(item)}>Recruiter note</button>
                       <button
                         className="whatsapp-logo-btn"
-                        onClick={() => openWhatsappInSideWindow(item.phone || item.phoneNumber || "", "applicants")}
+                        onClick={() => void copyWhatsappDraftAndOpen({
+                          name: item.candidateName || "",
+                          jd_title: item.jdTitle || "",
+                          company: item.currentCompany || "",
+                          outcome: getApplicantOutcome(item),
+                          recruiter_notes: item.screeningAnswers || "",
+                          location: item.location || "",
+                          phone: item.phone || item.phoneNumber || "",
+                          email: item.email || "",
+                          source: item.sourcePlatform || ""
+                        }, item.phone || item.phoneNumber || "", "applicants")}
                         title="Open WhatsApp"
                         aria-label="Open WhatsApp"
                       >
@@ -12734,7 +12791,17 @@ function PortalApp({ token, onLogout }) {
 	                      <button onClick={() => openRecruiterNotes(item)}>Recruiter note</button>
                         <button
                           className="whatsapp-logo-btn"
-                          onClick={() => openWhatsappInSideWindow(item.phone || item.phoneNumber || "", "captured")}
+                          onClick={() => void copyWhatsappDraftAndOpen({
+                            name: item.name || "",
+                            jd_title: item.jd_title || item.role || "",
+                            company: item.company || "",
+                            outcome: getCapturedOutcome(item, matchedAssessment),
+                            recruiter_notes: item.recruiter_context_notes || item.notes || "",
+                            location: item.location || "",
+                            phone: item.phone || item.phoneNumber || "",
+                            email: item.email || "",
+                            source: item.source || ""
+                          }, item.phone || item.phoneNumber || "", "captured")}
                           title="Open WhatsApp"
                           aria-label="Open WhatsApp"
                         >
