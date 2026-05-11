@@ -1595,19 +1595,27 @@ textarea { min-height: 92px; resize: vertical; }
   background: linear-gradient(180deg, #ffffff 0%, #f7fbff 100%);
   border-left: 4px solid #3b82f6;
 }
+.panel.shortcuts-section {
+  border-width: 1px;
+  border-style: solid;
+}
 .shortcuts-section--personal {
   background: linear-gradient(180deg, #ffffff 0%, #f7fbff 100%);
-  border-left-color: #3b82f6;
+  border-color: #c9ddff;
+  border-left: 4px solid #3b82f6;
+  box-shadow: 0 10px 20px rgba(59, 130, 246, 0.08);
 }
 .shortcuts-section--job {
+  border-color: #bfead8;
   border-left: 4px solid #10b981;
-  border-left-color: #10b981;
   background: linear-gradient(180deg, #ffffff 0%, #f5fffb 100%);
+  box-shadow: 0 10px 20px rgba(16, 185, 129, 0.08);
 }
 .shortcuts-section--company {
+  border-color: #dfd0ff;
   border-left: 4px solid #8b5cf6;
-  border-left-color: #8b5cf6;
   background: linear-gradient(180deg, #ffffff 0%, #f8f6ff 100%);
+  box-shadow: 0 10px 20px rgba(139, 92, 246, 0.08);
 }
 .placeholder-selector {
   margin-top: 0.45rem;

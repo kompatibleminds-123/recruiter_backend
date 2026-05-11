@@ -5439,10 +5439,12 @@ function PortalApp({ token, onLogout }) {
     return String(matchedJob?.id || "").trim();
   }
 
-  function getWhatsappTemplateOptions(row = {}, incomingPersonalShortcuts = null) {
+  function getWhatsappTemplateOptions(row = {}, incomingPersonalShortcuts = null, incomingCompanyWideShortcuts = null) {
     const options = [];
-    const companyWideMap = copySettings?.companyWideShortcuts && typeof copySettings.companyWideShortcuts === "object"
-      ? copySettings.companyWideShortcuts
+    const companyWideMap = incomingCompanyWideShortcuts && typeof incomingCompanyWideShortcuts === "object"
+      ? incomingCompanyWideShortcuts
+      : copySettings?.companyWideShortcuts && typeof copySettings.companyWideShortcuts === "object"
+        ? copySettings.companyWideShortcuts
       : {};
     Object.entries(companyWideMap || {}).forEach(([key, template]) => {
       const safeKey = String(key || "").trim();
@@ -5568,13 +5570,30 @@ function PortalApp({ token, onLogout }) {
 
   async function openWhatsappTemplatePicker(row = {}, phoneValue = "", statusKey = "workspace") {
     const latestPersonalShortcuts = await loadPersonalShortcuts();
+    let latestCompanyWideShortcuts =
+      copySettings?.companyWideShortcuts && typeof copySettings.companyWideShortcuts === "object"
+        ? copySettings.companyWideShortcuts
+        : {};
+    try {
+      const sharedPresetResult = await api("/company/shared-export-presets", token).catch(() => null);
+      if (sharedPresetResult && typeof sharedPresetResult === "object") {
+        const merged = migrateCopySettings({ ...copySettings, ...sharedPresetResult });
+        latestCompanyWideShortcuts =
+          merged?.companyWideShortcuts && typeof merged.companyWideShortcuts === "object"
+            ? merged.companyWideShortcuts
+            : latestCompanyWideShortcuts;
+        setCopySettings((current) => migrateCopySettings({ ...current, ...sharedPresetResult }));
+      }
+    } catch {
+      // Keep existing in-memory shortcuts if refresh fails.
+    }
     const recruiterLink = await fetchRecruiterApplyLinkForRow(row);
     const rowWithLinks = {
       ...(row || {}),
       recruiter_jd_link: recruiterLink,
       jd_link: resolveRowJobId(row) ? getApplyLink(resolveRowJobId(row)) : ""
     };
-    const options = getWhatsappTemplateOptions(row, latestPersonalShortcuts);
+    const options = getWhatsappTemplateOptions(row, latestPersonalShortcuts, latestCompanyWideShortcuts);
     const selectedId = String(options[0]?.id || "");
     const selectedTemplate = String(options[0]?.template || "");
     setWhatsappTemplatePicker({
@@ -5616,6 +5635,7 @@ function PortalApp({ token, onLogout }) {
       setStatus(whatsappTemplatePicker.statusKey || "workspace", "Add shortcut key and template text.", "error");
       return;
     }
+    let refreshedCompanyWideForPicker = null;
     if (whatsappTemplatePicker.saveScope === "company_wide") {
       if (!isSettingsAdmin) {
         setStatus(whatsappTemplatePicker.statusKey || "workspace", "Only admin can save company templates.", "error");
@@ -5624,7 +5644,7 @@ function PortalApp({ token, onLogout }) {
       const existingCompanyWide = copySettings?.companyWideShortcuts && typeof copySettings.companyWideShortcuts === "object"
         ? copySettings.companyWideShortcuts
         : {};
-      const nextCompanyWide = { ...existingCompanyWide, [`/${shortcutKey}`]: templateText };
+      const nextCompanyWide = { ...existingCompanyWide, [shortcutKey]: templateText };
       const payload = {
         ...copySettings,
         companyWideShortcuts: nextCompanyWide,
@@ -5634,6 +5654,7 @@ function PortalApp({ token, onLogout }) {
       };
       const result = await api("/company/shared-export-presets", token, "POST", { settings: payload });
       setCopySettings((current) => ({ ...DEFAULT_COPY_SETTINGS, ...current, ...result }));
+      refreshedCompanyWideForPicker = nextCompanyWide;
       setStatus(whatsappTemplatePicker.statusKey || "workspace", `Saved /${shortcutKey} for all recruiters.`, "ok");
     } else if (whatsappTemplatePicker.saveScope === "all_jobs") {
       const next = { ...(personalShortcuts || {}), [shortcutKey]: templateText };
@@ -5663,7 +5684,11 @@ function PortalApp({ token, onLogout }) {
     }
     const row = whatsappTemplatePicker.row || {};
     const refreshedPersonal = whatsappTemplatePicker.saveScope === "all_jobs" ? { ...(personalShortcuts || {}), [shortcutKey]: templateText } : personalShortcuts;
-    const options = getWhatsappTemplateOptions(row, refreshedPersonal);
+    const options = getWhatsappTemplateOptions(
+      row,
+      refreshedPersonal,
+      refreshedCompanyWideForPicker || undefined
+    );
     const selectedId = options.find((item) => String(item.label || "").toLowerCase().includes(`/${shortcutKey}`.toLowerCase()))?.id || String(options[0]?.id || "");
     const selectedTemplate = options.find((item) => String(item.id || "") === String(selectedId || ""))?.template || "";
     setWhatsappTemplatePicker((current) => ({
