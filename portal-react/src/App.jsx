@@ -183,6 +183,18 @@ const SMART_CHIP_INTERVIEW_ALIGNED_STATUSES = new Set([
   "l3 aligned",
   "hr interview aligned"
 ]);
+const SHORTCUT_TEMPLATE_PLACEHOLDERS = [
+  "{{name}}",
+  "{{recruiter_name}}",
+  "{{interview_at}}",
+  "{{jd_title}}",
+  "{{client_name}}",
+  "{{company_name}}",
+  "{{phone}}",
+  "{{email}}",
+  "{{jd_link}}",
+  "{{recruiter_jd_link}}"
+];
 
 const REPORT_PENDING_FEEDBACK_STATUSES = new Set([
   "cv shared",
@@ -592,6 +604,12 @@ function normalizeShortcutKey(raw) {
   const value = String(raw || "").trim();
   if (!value) return "";
   return value.startsWith("/") ? value : `/${value.replace(/^\/+/, "")}`;
+}
+
+function formatShortcutLabel(raw) {
+  const normalized = normalizeShortcutKey(raw);
+  if (!normalized) return "/";
+  return normalized;
 }
 
 function parseAmountToLpa(value) {
@@ -3142,9 +3160,9 @@ function normalizedAssessmentState(assessment, candidate) {
   };
 }
 
-function Section({ kicker, title, children }) {
+function Section({ kicker, title, children, className = "" }) {
   return (
-    <section className="panel">
+    <section className={`panel ${className}`.trim()}>
       <div className="section-kicker">{kicker}</div>
       <h2>{title}</h2>
       {children}
@@ -11337,7 +11355,7 @@ function PortalApp({ token, onLogout }) {
       setPersonalShortcuts(saved);
       setShortcutPersonalKey("");
       setShortcutPersonalValue("");
-      setStatus("shortcuts", `Saved personal shortcut /${key}.`, "ok");
+      setStatus("shortcuts", `Saved personal shortcut ${formatShortcutLabel(key)}.`, "ok");
     } catch (error) {
       setStatus("shortcuts", String(error?.message || error), "error");
     }
@@ -11356,7 +11374,7 @@ function PortalApp({ token, onLogout }) {
         setShortcutPersonalKey("");
         setShortcutPersonalValue("");
       }
-      setStatus("shortcuts", `Deleted personal shortcut /${normalized}.`, "ok");
+      setStatus("shortcuts", `Deleted personal shortcut ${formatShortcutLabel(normalized)}.`, "ok");
     } catch (error) {
       setStatus("shortcuts", String(error?.message || error), "error");
     }
@@ -11391,7 +11409,7 @@ function PortalApp({ token, onLogout }) {
         : current);
       setShortcutJobKey("");
       setShortcutJobValue("");
-      setStatus("shortcuts", `Saved job shortcut /${key}.`, "ok");
+      setStatus("shortcuts", `Saved job shortcut ${formatShortcutLabel(key)}.`, "ok");
     } catch (error) {
       setStatus("shortcuts", String(error?.message || error), "error");
     }
@@ -11420,7 +11438,7 @@ function PortalApp({ token, onLogout }) {
         setShortcutJobKey("");
         setShortcutJobValue("");
       }
-      setStatus("shortcuts", `Deleted job shortcut /${normalized}.`, "ok");
+      setStatus("shortcuts", `Deleted job shortcut ${formatShortcutLabel(normalized)}.`, "ok");
     } catch (error) {
       setStatus("shortcuts", String(error?.message || error), "error");
     }
@@ -11446,7 +11464,7 @@ function PortalApp({ token, onLogout }) {
       setCopySettings((current) => ({ ...DEFAULT_COPY_SETTINGS, ...current, ...result }));
       setShortcutCompanyKey("");
       setShortcutCompanyValue("");
-      setStatus("shortcuts", `Saved company shortcut /${key}.`, "ok");
+      setStatus("shortcuts", `Saved company shortcut ${formatShortcutLabel(key)}.`, "ok");
     } catch (error) {
       setStatus("shortcuts", String(error?.message || error), "error");
     }
@@ -11467,10 +11485,19 @@ function PortalApp({ token, onLogout }) {
       const payload = { ...copySettings, companyWideShortcuts: existing };
       const result = await api("/company/shared-export-presets", token, "POST", { settings: payload });
       setCopySettings((current) => ({ ...DEFAULT_COPY_SETTINGS, ...current, ...result }));
-      setStatus("shortcuts", `Deleted company shortcut /${normalized}.`, "ok");
+      setStatus("shortcuts", `Deleted company shortcut ${formatShortcutLabel(normalized)}.`, "ok");
     } catch (error) {
       setStatus("shortcuts", String(error?.message || error), "error");
     }
+  }
+
+  function appendPlaceholderToken(currentValue, token) {
+    const text = String(currentValue || "");
+    const nextToken = String(token || "").trim();
+    if (!nextToken) return text;
+    if (!text) return nextToken;
+    const joiner = text.endsWith(" ") || text.endsWith("\n") ? "" : " ";
+    return `${text}${joiner}${nextToken}`;
   }
 
   async function copyInterviewTracker() {
@@ -14300,7 +14327,7 @@ function PortalApp({ token, onLogout }) {
                   {statuses.shortcuts ? <div className={`status ${statuses.shortcutsKind || ""}`}>{statuses.shortcuts}</div> : null}
                 </Section>
 
-                <Section kicker="Personal" title="Personal Shortcuts (All Jobs)">
+                <Section kicker="Personal" title="Personal Shortcuts (All Jobs)" className="shortcuts-section shortcuts-section--personal">
                   <div className="form-grid two-col">
                     <label>
                       <span>Shortcut key</span>
@@ -14309,7 +14336,12 @@ function PortalApp({ token, onLogout }) {
                     <label className="full">
                       <span>Template text</span>
                       <textarea value={shortcutPersonalValue} onChange={(e) => setShortcutPersonalValue(e.target.value)} rows={4} />
-                      <span className="field-help">Placeholders: {`{{name}} {{recruiter_name}} {{interview_at}} {{jd_title}} {{client_name}} {{company_name}} {{phone}} {{email}} {{jd_link}} {{recruiter_jd_link}}`}</span>
+                      <span className="field-help">Click placeholders to insert:</span>
+                      <div className="placeholder-selector">
+                        {SHORTCUT_TEMPLATE_PLACEHOLDERS.map((token) => (
+                          <button key={`personal-${token}`} type="button" className="ghost-btn placeholder-chip" onClick={() => setShortcutPersonalValue((current) => appendPlaceholderToken(current, token))}>{token}</button>
+                        ))}
+                      </div>
                     </label>
                   </div>
                   <div className="button-row">
@@ -14322,10 +14354,10 @@ function PortalApp({ token, onLogout }) {
                         .map(([key, value]) => (
                           <article className="item-card compact-card" key={`personal-${key}`}>
                             <div className="item-card__top compact-top">
-                              <strong>/{String(key || "")}</strong>
+                              <strong>{formatShortcutLabel(key)}</strong>
                               <div className="button-row tight">
                                 <button className="ghost-btn" onClick={() => { setShortcutPersonalKey(String(key || "")); setShortcutPersonalValue(String(value || "")); }}>Edit</button>
-                                <button className="ghost-btn" onClick={() => void copyText(String(value || "")).then(() => setStatus("shortcuts", `Copied /${String(key || "")}.`, "ok"))}>Copy</button>
+                                <button className="ghost-btn" onClick={() => void copyText(String(value || "")).then(() => setStatus("shortcuts", `Copied ${formatShortcutLabel(key)}.`, "ok"))}>Copy</button>
                                 <button className="ghost-btn" onClick={() => void deletePersonalShortcutTemplate(String(key || ""))}>Delete</button>
                               </div>
                             </div>
@@ -14336,7 +14368,7 @@ function PortalApp({ token, onLogout }) {
                   </div>
                 </Section>
 
-                <Section kicker="Job" title="Job-Specific Shortcuts">
+                <Section kicker="Job" title="Job-Specific Shortcuts" className="shortcuts-section shortcuts-section--job">
                   <div className="form-grid two-col">
                     <label>
                       <span>Select JD</span>
@@ -14352,7 +14384,12 @@ function PortalApp({ token, onLogout }) {
                     <label className="full">
                       <span>Template text</span>
                       <textarea value={shortcutJobValue} onChange={(e) => setShortcutJobValue(e.target.value)} rows={4} />
-                      <span className="field-help">Placeholders: {`{{name}} {{recruiter_name}} {{interview_at}} {{jd_title}} {{client_name}} {{company_name}} {{phone}} {{email}} {{jd_link}} {{recruiter_jd_link}}`}</span>
+                      <span className="field-help">Click placeholders to insert:</span>
+                      <div className="placeholder-selector">
+                        {SHORTCUT_TEMPLATE_PLACEHOLDERS.map((token) => (
+                          <button key={`job-${token}`} type="button" className="ghost-btn placeholder-chip" onClick={() => setShortcutJobValue((current) => appendPlaceholderToken(current, token))}>{token}</button>
+                        ))}
+                      </div>
                     </label>
                   </div>
                   <div className="button-row">
@@ -14365,10 +14402,10 @@ function PortalApp({ token, onLogout }) {
                         .map(([key, value]) => (
                           <article className="item-card compact-card" key={`job-${selectedShortcutJob?.id || "none"}-${key}`}>
                             <div className="item-card__top compact-top">
-                              <strong>/{String(key || "")}</strong>
+                              <strong>{formatShortcutLabel(key)}</strong>
                               <div className="button-row tight">
                                 <button className="ghost-btn" onClick={() => { setShortcutJobKey(String(key || "")); setShortcutJobValue(String(value || "")); }}>Edit</button>
-                                <button className="ghost-btn" onClick={() => void copyText(String(value || "")).then(() => setStatus("shortcuts", `Copied /${String(key || "")}.`, "ok"))}>Copy</button>
+                                <button className="ghost-btn" onClick={() => void copyText(String(value || "")).then(() => setStatus("shortcuts", `Copied ${formatShortcutLabel(key)}.`, "ok"))}>Copy</button>
                                 <button className="ghost-btn" onClick={() => void deleteJobShortcutTemplate(String(key || ""))}>Delete</button>
                               </div>
                             </div>
@@ -14379,7 +14416,7 @@ function PortalApp({ token, onLogout }) {
                   </div>
                 </Section>
 
-                <Section kicker="Company" title="Company Shortcuts">
+                <Section kicker="Company" title="Company Shortcuts" className="shortcuts-section shortcuts-section--company">
                   {!isSettingsAdmin ? <p className="muted">Read-only for recruiters. Admin-defined company shortcuts appear automatically in your template pickers.</p> : null}
                   {isSettingsAdmin ? (
                     <>
@@ -14391,7 +14428,12 @@ function PortalApp({ token, onLogout }) {
                         <label className="full">
                           <span>Template text</span>
                           <textarea value={shortcutCompanyValue} onChange={(e) => setShortcutCompanyValue(e.target.value)} rows={4} />
-                          <span className="field-help">Placeholders: {`{{name}} {{recruiter_name}} {{interview_at}} {{jd_title}} {{client_name}} {{company_name}} {{phone}} {{email}} {{jd_link}} {{recruiter_jd_link}}`}</span>
+                          <span className="field-help">Click placeholders to insert:</span>
+                          <div className="placeholder-selector">
+                            {SHORTCUT_TEMPLATE_PLACEHOLDERS.map((token) => (
+                              <button key={`company-${token}`} type="button" className="ghost-btn placeholder-chip" onClick={() => setShortcutCompanyValue((current) => appendPlaceholderToken(current, token))}>{token}</button>
+                            ))}
+                          </div>
                         </label>
                       </div>
                       <div className="button-row">
@@ -14406,16 +14448,16 @@ function PortalApp({ token, onLogout }) {
                         .map(([key, value]) => (
                           <article className="item-card compact-card" key={`company-${key}`}>
                             <div className="item-card__top compact-top">
-                              <strong>/{String(key || "")}</strong>
+                              <strong>{formatShortcutLabel(key)}</strong>
                               {isSettingsAdmin ? (
                                 <div className="button-row tight">
                                   <button className="ghost-btn" onClick={() => { setShortcutCompanyKey(String(key || "")); setShortcutCompanyValue(String(value || "")); }}>Edit</button>
-                                  <button className="ghost-btn" onClick={() => void copyText(String(value || "")).then(() => setStatus("shortcuts", `Copied /${String(key || "")}.`, "ok"))}>Copy</button>
+                                  <button className="ghost-btn" onClick={() => void copyText(String(value || "")).then(() => setStatus("shortcuts", `Copied ${formatShortcutLabel(key)}.`, "ok"))}>Copy</button>
                                   <button className="ghost-btn" onClick={() => void deleteCompanyShortcutTemplate(String(key || ""))}>Delete</button>
                                 </div>
                               ) : (
                                 <div className="button-row tight">
-                                  <button className="ghost-btn" onClick={() => void copyText(String(value || "")).then(() => setStatus("shortcuts", `Copied /${String(key || "")}.`, "ok"))}>Copy</button>
+                                  <button className="ghost-btn" onClick={() => void copyText(String(value || "")).then(() => setStatus("shortcuts", `Copied ${formatShortcutLabel(key)}.`, "ok"))}>Copy</button>
                                 </div>
                               )}
                             </div>
