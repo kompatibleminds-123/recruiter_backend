@@ -5315,8 +5315,21 @@ function PortalApp({ token, onLogout }) {
 	  }
 	}
 
+  function normalizeWhatsappPhone(phoneValue) {
+    const digits = String(phoneValue || "").replace(/[^\d]/g, "");
+    if (!digits) return "";
+    // India-first normalization:
+    // - 10 digits => prepend 91
+    // - 11 digits starting with 0 => strip 0, prepend 91
+    // - already 91 + 10 digits => keep
+    if (digits.length === 10) return `91${digits}`;
+    if (digits.length === 11 && digits.startsWith("0")) return `91${digits.slice(1)}`;
+    if (digits.length === 12 && digits.startsWith("91")) return digits;
+    return digits;
+  }
+
   function openWhatsappInSideWindow(phoneValue, statusKey = "workspace") {
-    const phone = String(phoneValue || "").replace(/[^\d]/g, "");
+    const phone = normalizeWhatsappPhone(phoneValue);
     if (!phone) {
       setStatus(statusKey, "No phone number available for WhatsApp.", "error");
       return;
