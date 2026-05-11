@@ -127,6 +127,34 @@ function formatMonthCount(totalMonths) {
   return months === 1 ? "1 month" : `${months} months`;
 }
 
+function parseDurationTextToMonths(value) {
+  const text = String(value || "").toLowerCase();
+  if (!text) return 0;
+  const yearMatch = text.match(/(\d+(?:\.\d+)?)\s*(?:years?|yrs?)/i);
+  const monthMatch = text.match(/(\d+)\s*(?:months?|mos?)/i);
+  const plusMatch = text.match(/(\d+)\+\s*(?:years?|yrs?)/i);
+
+  if (plusMatch?.[1]) {
+    const years = Number(plusMatch[1]);
+    return Number.isFinite(years) ? years * 12 : 0;
+  }
+
+  let months = 0;
+  if (yearMatch?.[1]) {
+    const yearsValue = Number(yearMatch[1]);
+    if (Number.isFinite(yearsValue) && yearsValue > 0) {
+      const fullYears = Math.floor(yearsValue);
+      const remainderMonths = Math.round((yearsValue - fullYears) * 12);
+      months += (fullYears * 12) + remainderMonths;
+    }
+  }
+  if (monthMatch?.[1]) {
+    const m = Number(monthMatch[1]);
+    if (Number.isFinite(m) && m > 0) months += m;
+  }
+  return months;
+}
+
 function extractCandidateName(lines, rawText, hint) {
   const hintName = sanitizeText(hint);
   if (hintName && hintName.length <= 80) return hintName;
@@ -331,6 +359,68 @@ function calculateMonthsFromTimeline(timeline = []) {
     else merged.push([s, e]);
   }
   return merged.reduce((sum, [s, e]) => sum + (e - s + 1), 0);
+}
+
+function calculateTimelineSpanMonths(timeline = []) {
+  let minStart = null;
+  let maxEnd = null;
+  for (const item of timeline) {
+    const start = String(item?.start || "");
+    const end = String(item?.end || "");
+    const parsed = parseDateRange(`${start} - ${end}`);
+    const startIndex = monthIndex(parsed.start);
+    const endIndex = monthIndex(parsed.end);
+    if (startIndex === null || endIndex === null || endIndex < startIndex) continue;
+    if (minStart === null || startIndex < minStart) minStart = startIndex;
+    if (maxEnd === null || endIndex > maxEnd) maxEnd = endIndex;
+  }
+  if (minStart === null || maxEnd === null || maxEnd < minStart) return 0;
+  return (maxEnd - minStart + 1);
+}
+
+function calculateCurrentRoleMonths(timeline = []) {
+  for (const item of timeline) {
+    const end = String(item?.end || "").toLowerCase();
+    if (end !== "present") continue;
+    const parsed = parseDateRange(`${String(item?.start || "")} - Present`);
+    const startIndex = monthIndex(parsed.start);
+    const endIndex = monthIndex(parsed.end);
+    if (startIndex === null || endIndex === null || endIndex < startIndex) continue;
+    return endIndex - startIndex + 1;
+  }
+  return 0;
+}
+
+function buildTimelineConfidence({
+  timeline = [],
+  activeMonths = 0,
+  spanMonths = 0,
+  currentMonths = 0,
+  claimedMonths = 0
+}) {
+  const timelineCount = Array.isArray(timeline) ? timeline.length : 0;
+  const hasTimeline = timelineCount > 0;
+  const hasCurrent = currentMonths > 0;
+  const hasSpan = spanMonths > 0;
+  const discrepancy = claimedMonths > 0 && hasSpan ? Math.abs(claimedMonths - spanMonths) : 0;
+
+  let level = "high";
+  let reason = "Timeline evidence is weak or missing in CV text.";
+
+  if (hasTimeline && hasSpan && hasCurrent && (claimedMonths === 0 || discrepancy <= 18)) {
+    level = "low";
+    reason = "Timeline parsing is complete with current role and consistent dates.";
+  } else if (hasTimeline && (hasSpan || hasCurrent)) {
+    level = "medium";
+    reason = discrepancy > 18
+      ? "Timeline and claimed experience differ; verify manually."
+      : "Timeline is partial or missing current-role clarity.";
+  }
+
+  return {
+    level,
+    label: `${level.toUpperCase()} risk: ${reason}`
+  };
 }
 
 function pickBestTitleCompany(dateLineIndex, lines) {
@@ -744,13 +834,27 @@ async function parseCandidatePayload(payload) {
   }
 
   const candidateName = extractCandidateName(rawLines, rawText, payload?.candidateName);
-  let totalExperience = extractTotalExperience(lines, rawText, payload?.totalExperience);
+  const claimedTotalExperience = extractTotalExperience(lines, rawText, payload?.totalExperience);
   const parsed = extractTimeline(lines, experienceText, structuredExperienceText);
-  const timelineMonths = calculateMonthsFromTimeline(parsed.timeline);
-  if (timelineMonths > 0) {
-    totalExperience = formatMonthCount(timelineMonths);
+  const timelineActiveMonths = calculateMonthsFromTimeline(parsed.timeline);
+  const timelineSpanMonths = calculateTimelineSpanMonths(parsed.timeline);
+  const currentOrgTenureMonths = calculateCurrentRoleMonths(parsed.timeline);
+  const claimedTotalMonths = parseDurationTextToMonths(claimedTotalExperience);
+  const timelineConfidence = buildTimelineConfidence({
+    timeline: parsed.timeline,
+    activeMonths: timelineActiveMonths,
+    spanMonths: timelineSpanMonths,
+    currentMonths: currentOrgTenureMonths,
+    claimedMonths: claimedTotalMonths
+  });
+  let totalExperience = claimedTotalExperience;
+  if (timelineSpanMonths > 0) {
+    totalExperience = formatMonthCount(timelineSpanMonths);
+  } else if (timelineActiveMonths > 0) {
+    totalExperience = formatMonthCount(timelineActiveMonths);
   }
   const currentRole = extractCurrentRoleFromTimeline(parsed.timeline);
+  const currentOrgTenure = currentOrgTenureMonths > 0 ? formatMonthCount(currentOrgTenureMonths) : "";
   const emailId = extractPrimaryEmail(rawText);
   const phoneNumber = extractPrimaryPhone(rawText);
   const linkedinUrl = extractPrimaryLinkedIn(rawText);
@@ -760,6 +864,7 @@ async function parseCandidatePayload(payload) {
     totalExperience,
     currentCompany: currentRole.currentCompany,
     currentDesignation: currentRole.currentDesignation,
+    currentOrgTenure,
     emailId,
     phoneNumber,
     linkedinUrl,
@@ -768,6 +873,14 @@ async function parseCandidatePayload(payload) {
     timeline: parsed.timeline,
     gaps: parsed.gaps,
     shortStints: parsed.shortStints,
+    timelineConfidence,
+    experienceMetrics: {
+      claimedTotalExperience,
+      claimedTotalMonths,
+      timelineSpanMonths,
+      timelineActiveMonths,
+      currentOrgTenureMonths
+    },
     highlights: parsed.highlights,
     rawTextPreview: rawText.slice(0, 2000),
     rawText
