@@ -5383,7 +5383,14 @@ function PortalApp({ token, onLogout }) {
     const normalizeJdMatch = (value = "") => String(value || "").trim().toLowerCase().replace(/[\s\-_]+/g, " ");
     const jdId = String(row?.jd_id || row?.jdId || row?.jobId || "").trim();
     const jdTitle = normalizeJdMatch(row?.jd_title || row?.jdTitle || row?.role || "");
-    const jobs = Array.isArray(state.jobs) ? state.jobs : [];
+    const jobs = Array.from(
+      new Map(
+        [
+          ...(Array.isArray(state.jobs) ? state.jobs : []),
+          ...(Array.isArray(jobsCatalog) ? jobsCatalog : [])
+        ].map((job) => [String(job?.id || `${job?.title || ""}`), job])
+      ).values()
+    );
     const matchedJob = jobs.find((job) => {
       const jobTitle = normalizeJdMatch(job?.title || "");
       if (jdId && String(job?.id || "").trim() === jdId) return true;
