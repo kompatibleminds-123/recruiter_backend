@@ -1587,19 +1587,27 @@ textarea { min-height: 92px; resize: vertical; }
   line-height: 1.45;
 }
 .shortcuts-section {
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  padding: 1rem;
+  margin-top: 1rem;
+  box-shadow: 0 8px 18px rgba(20, 41, 84, 0.06);
+  background: linear-gradient(180deg, #ffffff 0%, #f7fbff 100%);
   border-left: 4px solid #3b82f6;
-  background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
 }
 .shortcuts-section--personal {
+  background: linear-gradient(180deg, #ffffff 0%, #f7fbff 100%);
   border-left-color: #3b82f6;
 }
 .shortcuts-section--job {
+  border-left: 4px solid #10b981;
   border-left-color: #10b981;
-  background: linear-gradient(180deg, #ffffff 0%, #f4fffb 100%);
+  background: linear-gradient(180deg, #ffffff 0%, #f5fffb 100%);
 }
 .shortcuts-section--company {
-  border-left-color: #f59e0b;
-  background: linear-gradient(180deg, #ffffff 0%, #fff9ef 100%);
+  border-left: 4px solid #8b5cf6;
+  border-left-color: #8b5cf6;
+  background: linear-gradient(180deg, #ffffff 0%, #f8f6ff 100%);
 }
 .placeholder-selector {
   margin-top: 0.45rem;

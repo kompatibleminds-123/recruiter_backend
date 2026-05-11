@@ -603,7 +603,9 @@ function formatAssessmentStatusDisplay(status) {
 function normalizeShortcutKey(raw) {
   const value = String(raw || "").trim();
   if (!value) return "";
-  return value.startsWith("/") ? value : `/${value.replace(/^\/+/, "")}`;
+  const stripped = value.replace(/^\/+/, "");
+  if (!stripped) return "";
+  return `/${stripped}`;
 }
 
 function formatShortcutLabel(raw) {
