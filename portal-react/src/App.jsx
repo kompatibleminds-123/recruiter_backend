@@ -7501,9 +7501,8 @@ function PortalApp({ token, onLogout }) {
       const fallbackByName = String(item?.assigned_by_name || "").trim().toLowerCase();
       return Boolean(fallbackByName === "admin");
     };
-    // Keep stats aligned with the same filters as the visible list (clients/JD/recruiter/outcome/state/date/query).
-    // We do not exclude converted rows here because we show both Active + Converted counts.
-    const universe = capturedNotesUniverse.filter((item) => {
+    // Build one common filtered base for captured notes metrics.
+    const filteredBase = capturedNotesUniverse.filter((item) => {
       const matchedAssessment = resolveCapturedAssessment(item);
       const sourceValue = String(item.source || "").trim();
       const clientValue = String(item.client_name || matchedAssessment?.clientName || "Unassigned").trim();
@@ -7557,28 +7556,34 @@ function PortalApp({ token, onLogout }) {
         return true;
       })();
 
-      // State filter rules:
-      // - Default (no selection): Active only, but allow finding Inactive rows when searching by name.
-      // - If user selects Active/Inactive (or both): respect selection, but still allow name search to surface Inactive even when "Active" is selected.
+      return viewOk && queryOk && dateFromOk && dateToOk && clientOk && jdOk && assignedToOk && capturedByOk && sourceOk && outcomeOk;
+    });
+
+    // Converted is a separate metric (same filter scope), not part of captured list totals.
+    const convertedCount = filteredBase.filter((item) => Boolean(resolveCapturedAssessment(item))).length;
+
+    // Captured totals are strictly non-converted rows only.
+    const nonConvertedBase = filteredBase.filter((item) => !resolveCapturedAssessment(item));
+    const stateScopedRows = nonConvertedBase.filter((item) => {
+      const manuallyHidden = item.hidden_from_captured === true;
+      const activeValue = manuallyHidden ? "Inactive" : "Active";
+      const searchNameMatch = Boolean(queryText && String(item?.name || "").toLowerCase().includes(queryText));
       const wantsActive = candidateFilters.activeStates.includes("Active");
       const defaultActiveOnly = !candidateFilters.activeStates.length;
       const activeOk = defaultActiveOnly
         ? (activeValue === "Active" || searchNameMatch)
         : (candidateFilters.activeStates.includes(activeValue) || (searchNameMatch && wantsActive));
-
       const inactiveBlockedByDefault = defaultActiveOnly && activeValue === "Inactive" && !searchNameMatch;
-      return !inactiveBlockedByDefault && viewOk && queryOk && dateFromOk && dateToOk && clientOk && jdOk && assignedToOk && capturedByOk && sourceOk && outcomeOk && activeOk;
+      return !inactiveBlockedByDefault && activeOk;
     });
-    const convertedCount = universe.filter((item) => Boolean(resolveCapturedAssessment(item))).length;
-    const activeCount = universe.filter((item) => {
-      const matchedAssessment = resolveCapturedAssessment(item);
-      if (matchedAssessment) return false;
-      return !item.hidden_from_captured;
-    }).length;
+
+    const activeCount = stateScopedRows.filter((item) => !item.hidden_from_captured).length;
+    const inactiveCount = stateScopedRows.filter((item) => item.hidden_from_captured === true).length;
     return {
-      today: universe.filter((item) => activityDateKey(item) === todayKey).length,
-      total: universe.length,
+      today: stateScopedRows.filter((item) => activityDateKey(item) === todayKey).length,
+      total: activeCount + inactiveCount + convertedCount,
       active: activeCount,
+      inactive: inactiveCount,
       converted: convertedCount
     };
   }, [candidateFilters, capturedAssessmentMap, capturedNotesUniverse, state.user]);
@@ -13483,6 +13488,7 @@ function PortalApp({ token, onLogout }) {
                 <div className="metric-card compact-metric"><div className="metric-label">Today</div><div className="metric-value">{capturedNotesStats.today}</div></div>
                 <div className="metric-card compact-metric"><div className="metric-label">Total notes captured</div><div className="metric-value">{capturedNotesStats.total}</div></div>
                 <div className="metric-card compact-metric"><div className="metric-label">Active</div><div className="metric-value">{capturedNotesStats.active}</div></div>
+                <div className="metric-card compact-metric"><div className="metric-label">Inactive</div><div className="metric-value">{capturedNotesStats.inactive || 0}</div></div>
                 <div className="metric-card compact-metric"><div className="metric-label">Converted</div><div className="metric-value">{capturedNotesStats.converted}</div></div>
               </div>
               <div className="form-grid three-col" style={{ marginTop: 10 }}>
