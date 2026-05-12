@@ -4979,6 +4979,7 @@ function PortalApp({ token, onLogout }) {
 	const [attempts, setAttempts] = useState([]);
 	const workspaceRefreshInFlightRef = useRef(false);
 	const lastWorkspaceRefreshAtRef = useRef(0);
+  const lastWorkspaceRefreshByPathRef = useRef({});
   // Prevent background refresh from clobbering in-flight actions (e.g. SMTP send).
   const suspendWorkspaceRefreshRef = useRef(false);
 	const loadWorkspaceRef = useRef(null);
@@ -6120,9 +6121,15 @@ function PortalApp({ token, onLogout }) {
 
   useEffect(() => {
     if (!token) return;
+    const pathname = String(location?.pathname || "/dashboard").trim() || "/dashboard";
     const now = Date.now();
     const ttlMs = 30000;
-    if (now - lastWorkspaceRefreshAtRef.current < ttlMs) return;
+    const lastForPath = Number(lastWorkspaceRefreshByPathRef.current?.[pathname] || 0);
+    if (now - lastForPath < ttlMs) return;
+    lastWorkspaceRefreshByPathRef.current = {
+      ...(lastWorkspaceRefreshByPathRef.current || {}),
+      [pathname]: now
+    };
     lastWorkspaceRefreshAtRef.current = now;
     void loadWorkspace().catch((error) => setStatus("workspace", String(error?.message || error), "error"));
   }, [token, location?.pathname]);
