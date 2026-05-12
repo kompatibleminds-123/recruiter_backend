@@ -4995,6 +4995,7 @@ function PortalApp({ token, onLogout }) {
   const personalTemplateTextareaRef = useRef(null);
   const jobTemplateTextareaRef = useRef(null);
   const companyTemplateTextareaRef = useRef(null);
+  const jdWorkspaceShortcutTextareaRef = useRef(null);
   const JOB_CLOSE_REASONS = [
     "Position closed",
     "Position put on hold",
@@ -9860,6 +9861,49 @@ function PortalApp({ token, onLogout }) {
 	  URL.revokeObjectURL(url);
 	}
 
+  function buildShortJdShareText(channel = "whatsapp") {
+    const title = String(jobDraft.title || "Role").trim();
+    const client = String(jobDraft.clientName || "").trim();
+    const location = String(jobDraft.location || "").trim();
+    const workMode = String(jobDraft.workMode || "").trim();
+    const skills = String(jobDraft.mustHaveSkills || "").trim();
+    const jdText = String(jobDraft.jobDescription || "").trim();
+    const highlights = jdText
+      .split(/\r?\n/)
+      .map((line) => String(line || "").trim())
+      .filter(Boolean)
+      .filter((line) => line.length >= 25)
+      .slice(0, 3);
+    if (channel === "linkedin") {
+      return [
+        `Hiring: ${title}${client ? ` | ${client}` : ""}`,
+        location ? `Location: ${location}` : "",
+        workMode ? `Work Mode: ${workMode}` : "",
+        skills ? `Must-have skills: ${skills}` : "",
+        ...highlights.map((line, idx) => `${idx + 1}. ${line}`),
+        "Interested candidates can reach out in DM or share resume."
+      ].filter(Boolean).join("\n");
+    }
+    return [
+      `*${title}*${client ? ` | ${client}` : ""}`,
+      location ? `Location: ${location}` : "",
+      workMode ? `Mode: ${workMode}` : "",
+      skills ? `Skills: ${skills}` : "",
+      ...highlights.map((line) => `- ${line}`),
+      "Please share your updated CV if interested."
+    ].filter(Boolean).join("\n");
+  }
+
+  async function copyJobFormatForShare(channel = "whatsapp") {
+    const text = buildShortJdShareText(channel);
+    if (!String(text || "").trim()) {
+      setStatus("jobs", "Add JD details first.", "error");
+      return;
+    }
+    await copyText(text);
+    setStatus("jobs", `${channel === "linkedin" ? "LinkedIn" : "WhatsApp"} format copied.`, "ok");
+  }
+
   function applySelectedJobToInterview() {
     setInterviewForm((current) => ({
       ...current,
@@ -13268,24 +13312,16 @@ function PortalApp({ token, onLogout }) {
                 <button onClick={() => void copyApplicantsEmail()}>Copy Email</button>
                 {String(state.user?.role || "").toLowerCase() === "admin" ? (
                   <>
-                    <button
-                      className="ghost-btn"
-                      onClick={() => {
-                        const ids = visibleApplicants.map((item) => String(item?.id || "")).filter(Boolean);
-                        setBulkAssignApplicantIds((current) => (current.length === ids.length ? [] : ids));
-                      }}
-                    >
-                      {bulkAssignApplicantIds.length && bulkAssignApplicantIds.length === visibleApplicants.length ? "Clear selection" : "Select all visible"}
-                    </button>
-                    <button
-                      disabled={!bulkAssignApplicantIds.length}
-                      onClick={() => {
-                        if (!bulkAssignApplicantIds.length) return;
-                        setAssignApplicantId("");
-                      }}
-                    >
-                      {`Assign selected (${bulkAssignApplicantIds.length})`}
-                    </button>
+                    {bulkAssignApplicantIds.length ? (
+                      <button
+                        onClick={() => {
+                          if (!bulkAssignApplicantIds.length) return;
+                          setAssignApplicantId("");
+                        }}
+                      >
+                        {`Assign selected (${bulkAssignApplicantIds.length})`}
+                      </button>
+                    ) : null}
                   </>
                 ) : null}
               </div>
@@ -13431,24 +13467,16 @@ function PortalApp({ token, onLogout }) {
                   <button onClick={() => void copyCapturedEmail()}>Copy Email</button>
                   {String(state.user?.role || "").toLowerCase() === "admin" ? (
                     <>
-                      <button
-                        className="ghost-btn"
-                        onClick={() => {
-                          const ids = capturedCandidates.map((item) => String(item?.id || "")).filter(Boolean);
-                          setBulkAssignCandidateIds((current) => (current.length === ids.length ? [] : ids));
-                        }}
-                      >
-                        {bulkAssignCandidateIds.length && bulkAssignCandidateIds.length === capturedCandidates.length ? "Clear selection" : "Select all visible"}
-                      </button>
-                      <button
-                        disabled={!bulkAssignCandidateIds.length}
-                        onClick={() => {
-                          if (!bulkAssignCandidateIds.length) return;
-                          setAssignCandidateId("");
-                        }}
-                      >
-                        {`Assign selected (${bulkAssignCandidateIds.length})`}
-                      </button>
+                      {bulkAssignCandidateIds.length ? (
+                        <button
+                          onClick={() => {
+                            if (!bulkAssignCandidateIds.length) return;
+                            setAssignCandidateId("");
+                          }}
+                        >
+                          {`Assign selected (${bulkAssignCandidateIds.length})`}
+                        </button>
+                      ) : null}
                     </>
                   ) : null}
                 </div>
@@ -14349,66 +14377,78 @@ function PortalApp({ token, onLogout }) {
 
               <Section kicker="JD Setup" title="JD Workspace">
                   {jobDraftReadOnly ? <div className="status">View only: only Admin or Primary Owner can edit this JD.</div> : null}
-	                <div className="button-row">
-	                  <label className="file-btn">
-	                    Upload JD
-	                    <input disabled={jobDraftReadOnly || jobActionBusy} type="file" accept=".txt,.md,.doc,.docx,.pdf" hidden onChange={(e) => { const file = e.target.files?.[0]; if (file) void handleJdUpload(file); }} />
-	                  </label>
-	                  <button className="ghost-btn" onClick={() => resetJobDraftBlank()}>New blank JD</button>
-	                  <button disabled={jobActionBusy || jobDraftReadOnly} onClick={() => applySelectedJobToInterview()}>Apply generated JD</button>
-	                  <button disabled={jobActionBusy || jobDraftReadOnly} onClick={() => generateJdFromText()}>Generate JD from text</button>
-	                  <button disabled={jobActionBusy} className="ghost-btn" onClick={() => downloadJobDraftWord()}>Download Word</button>
-	                  <button disabled={jobActionBusy || jobDraftReadOnly} onClick={() => void saveJobDraft()}>{jobActionBusy ? "Saving..." : (selectedJobId ? "Update JD" : "Save JD")}</button>
-	                  <button
-	                    className="ghost-btn"
-	                    disabled={jobActionBusy || !String(jobDraft.title || "").trim() || !String(jobDraft.jobDescription || "").trim() || jobDraftReadOnly}
-                    onClick={() => void saveJobDraftAsNew()}
-                    title="Duplicate current JD as a new saved record"
-                  >
-                    {jobActionBusy ? "Saving..." : "Save as new JD"}
-                  </button>
-                  {isSettingsAdmin || String(jobDraft.ownerRecruiterId || "") === String(state.user?.id || "") ? (
+                <div className="settings-subsection mail-settings-shell">
+                  <div className="section-kicker">Create Job</div>
+                  <div className="button-row">
+                    <label className="file-btn">
+                      Upload JD
+                      <input disabled={jobDraftReadOnly || jobActionBusy} type="file" accept=".txt,.md,.doc,.docx,.pdf" hidden onChange={(e) => { const file = e.target.files?.[0]; if (file) void handleJdUpload(file); }} />
+                    </label>
+                    <button className="ghost-btn" onClick={() => resetJobDraftBlank()}>New blank JD</button>
+                    <button disabled={jobActionBusy || jobDraftReadOnly} onClick={() => generateJdFromText()}>Generate JD from text</button>
+                  </div>
+                </div>
+
+                <div className="settings-subsection mail-signature-shell">
+                  <div className="section-kicker">Job Actions (Selected Existing JD)</div>
+                  <div className="button-row">
+                    <button disabled={jobActionBusy} className="ghost-btn" onClick={() => downloadJobDraftWord()}>Download Word</button>
+                    <button disabled={jobActionBusy} className="ghost-btn" onClick={() => void copyJobFormatForShare("linkedin")}>Generate LinkedIn format</button>
+                    <button disabled={jobActionBusy} className="ghost-btn" onClick={() => void copyJobFormatForShare("whatsapp")}>Generate WhatsApp format</button>
+                    <button disabled={jobActionBusy || jobDraftReadOnly} onClick={() => void saveJobDraft()}>{jobActionBusy ? "Saving..." : (selectedJobId ? "Update JD" : "Save JD")}</button>
                     <button
                       className="ghost-btn"
-                      disabled={jobActionBusy || !selectedJobId}
-                      onClick={() => void deleteSelectedJobDraft()}
+                      disabled={jobActionBusy || !String(jobDraft.title || "").trim() || !String(jobDraft.jobDescription || "").trim() || jobDraftReadOnly}
+                      onClick={() => void saveJobDraftAsNew()}
+                      title="Duplicate current JD as a new saved record"
                     >
-                      Delete JD
+                      {jobActionBusy ? "Saving..." : "Save as new JD"}
                     </button>
-                  ) : null}
-                  {isSettingsAdmin || String(jobDraft.ownerRecruiterId || "") === String(state.user?.id || "") ? (
-                    jobDraft.isArchived ? (
+                    {isSettingsAdmin || String(jobDraft.ownerRecruiterId || "") === String(state.user?.id || "") ? (
                       <button
                         className="ghost-btn"
                         disabled={jobActionBusy || !selectedJobId}
-                        onClick={() => void setSelectedJobArchiveState(false)}
+                        onClick={() => void deleteSelectedJobDraft()}
                       >
-                        Reactivate JD
+                        Delete JD
                       </button>
-                    ) : (
-                      <>
-                        <select
-                          disabled={jobActionBusy || !selectedJobId || jobDraftReadOnly}
-                          value={String(jobDraft.closeReason || JOB_CLOSE_REASONS[0])}
-                          onChange={(e) => setJobDraft((c) => ({ ...c, closeReason: e.target.value }))}
-                        >
-                          {JOB_CLOSE_REASONS.map((reason) => (
-                            <option key={reason} value={reason}>{reason}</option>
-                          ))}
-                        </select>
+                    ) : null}
+                    {isSettingsAdmin || String(jobDraft.ownerRecruiterId || "") === String(state.user?.id || "") ? (
+                      jobDraft.isArchived ? (
                         <button
                           className="ghost-btn"
-                          disabled={jobActionBusy || !selectedJobId || jobDraftReadOnly}
-                          onClick={() => void setSelectedJobArchiveState(true)}
+                          disabled={jobActionBusy || !selectedJobId}
+                          onClick={() => void setSelectedJobArchiveState(false)}
                         >
-                          Close Job
+                          Reactivate JD
                         </button>
-                      </>
-                    )
-                  ) : null}
+                      ) : (
+                        <>
+                          <select
+                            disabled={jobActionBusy || !selectedJobId || jobDraftReadOnly}
+                            value={String(jobDraft.closeReason || JOB_CLOSE_REASONS[0])}
+                            onChange={(e) => setJobDraft((c) => ({ ...c, closeReason: e.target.value }))}
+                          >
+                            {JOB_CLOSE_REASONS.map((reason) => (
+                              <option key={reason} value={reason}>{reason}</option>
+                            ))}
+                          </select>
+                          <button
+                            className="ghost-btn"
+                            disabled={jobActionBusy || !selectedJobId || jobDraftReadOnly}
+                            onClick={() => void setSelectedJobArchiveState(true)}
+                          >
+                            Close Job
+                          </button>
+                        </>
+                      )
+                    ) : null}
+                  </div>
                 </div>
 
-                <div className="form-grid two-col">
+                <div className="settings-subsection mail-settings-notes">
+                  <div className="section-kicker">Basic Job Setup</div>
+                  <div className="form-grid two-col">
                   <label><span>Job title</span><input disabled={jobDraftReadOnly || jobActionBusy} value={jobDraft.title} onChange={(e) => setJobDraft((c) => ({ ...c, title: e.target.value }))} /></label>
                   <label><span>Client</span><input disabled={jobDraftReadOnly || jobActionBusy} value={jobDraft.clientName} onChange={(e) => setJobDraft((c) => ({ ...c, clientName: e.target.value }))} /></label>
                   <label><span>Location</span><input disabled={jobDraftReadOnly || jobActionBusy} value={jobDraft.location} onChange={(e) => setJobDraft((c) => ({ ...c, location: e.target.value }))} placeholder="Mumbai / Bengaluru / Remote" /></label>
@@ -14479,6 +14519,12 @@ function PortalApp({ token, onLogout }) {
                       <input value={jobDraft.ownerRecruiterName || state.user?.name || ""} readOnly />
                     </label>
                   )}
+                  </div>
+                </div>
+
+                <div className="settings-subsection mail-template-shell">
+                  <div className="section-kicker">Job Content</div>
+                  <div className="form-grid two-col">
                   {hasSaasUnlimitedAccess ? (
                     <>
                       <label className="full"><span>About company</span><textarea disabled={jobDraftReadOnly || jobActionBusy} value={jobDraft.aboutCompany} onChange={(e) => setJobDraft((c) => ({ ...c, aboutCompany: e.target.value }))} placeholder="Short company context shown on hosted apply link." /></label>
@@ -14507,8 +14553,9 @@ function PortalApp({ token, onLogout }) {
                   <label className="full"><span>Red flags</span><textarea disabled={jobDraftReadOnly || jobActionBusy} value={jobDraft.redFlags} onChange={(e) => setJobDraft((c) => ({ ...c, redFlags: e.target.value }))} /></label>
                   <label className="full"><span>Standard screening questions</span><textarea disabled={jobDraftReadOnly || jobActionBusy} value={jobDraft.standardQuestions} onChange={(e) => setJobDraft((c) => ({ ...c, standardQuestions: e.target.value }))} placeholder="Recruiter-only. These are used in Interview Panel and will not show on hosted apply link." /></label>
                 </div>
+                </div>
 
-                <div className="shortcut-builder">
+                <div className="settings-subsection direct-share-admin-preset shortcut-builder">
                   <div className="shortcut-builder__head">
                     <div>
                       <div className="info-label">JD shortcuts</div>
@@ -14522,8 +14569,20 @@ function PortalApp({ token, onLogout }) {
                     </label>
                     <label>
                       <span>Shortcut text / template</span>
-                      <textarea value={jobShortcutValue} onChange={(e) => setJobShortcutValue(e.target.value)} />
-                      <span className="field-help">Placeholders: {`{{name}} {{recruiter_name}} {{interview_at}} {{jd_title}} {{client_name}} {{company_name}} {{phone}} {{email}} {{jd_link}} {{recruiter_jd_link}}`}</span>
+                      <textarea ref={jdWorkspaceShortcutTextareaRef} value={jobShortcutValue} onChange={(e) => setJobShortcutValue(e.target.value)} />
+                      <span className="field-help">Click placeholders to insert:</span>
+                      <div className="placeholder-selector">
+                        {SHORTCUT_TEMPLATE_PLACEHOLDERS.map((token) => (
+                          <button
+                            key={`job-workspace-${token}`}
+                            type="button"
+                            className="ghost-btn placeholder-chip"
+                            onClick={() => insertPlaceholderAtCursor(jdWorkspaceShortcutTextareaRef, jobShortcutValue, setJobShortcutValue, token)}
+                          >
+                            {token}
+                          </button>
+                        ))}
+                      </div>
                     </label>
                   </div>
                   <div className="button-row">
@@ -14562,7 +14621,7 @@ function PortalApp({ token, onLogout }) {
                   {statuses.shortcuts ? <div className={`status ${statuses.shortcutsKind || ""}`}>{statuses.shortcuts}</div> : null}
                 </Section>
 
-                <Section kicker="Personal" title="Personal Shortcuts (All Jobs)" className="shortcuts-section shortcuts-section--personal mail-settings-shell">
+                <Section kicker="Personal" title="Personal Shortcuts (All Jobs)" className="shortcuts-section shortcuts-section--personal">
                   <div className="form-grid two-col">
                     <label>
                       <span>Shortcut key</span>
@@ -14603,7 +14662,7 @@ function PortalApp({ token, onLogout }) {
                   </div>
                 </Section>
 
-                <Section kicker="Job" title="Job-Specific Shortcuts" className="shortcuts-section shortcuts-section--job mail-signature-shell">
+                <Section kicker="Job" title="Job-Specific Shortcuts" className="shortcuts-section shortcuts-section--job">
                   <div className="form-grid two-col">
                     <label>
                       <span>Select JD</span>
@@ -14651,7 +14710,7 @@ function PortalApp({ token, onLogout }) {
                   </div>
                 </Section>
 
-                <Section kicker="Company" title="Company Shortcuts" className="shortcuts-section shortcuts-section--company mail-template-shell">
+                <Section kicker="Company" title="Company Shortcuts" className="shortcuts-section shortcuts-section--company">
                   {!isSettingsAdmin ? <p className="muted">Read-only for recruiters. Admin-defined company shortcuts appear automatically in your template pickers.</p> : null}
                   {isSettingsAdmin ? (
                     <>
