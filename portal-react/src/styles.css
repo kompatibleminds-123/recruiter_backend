@@ -1529,6 +1529,7 @@ textarea { min-height: 92px; resize: vertical; }
 .runbook-block,
 .shortcut-builder {
   border: 1px solid var(--border);
+  border-left: 4px solid #3b82f6;
   border-radius: var(--radius-xl);
   background: var(--panel-strong);
   padding: 1rem;
@@ -1600,6 +1601,7 @@ textarea { min-height: 92px; resize: vertical; }
 .panel.shortcuts-section {
   border-width: 1px;
   border-style: solid;
+  border-left-width: 4px;
 }
 .shortcuts-section--personal {
   background: linear-gradient(180deg, #ffffff 0%, #f7fbff 100%);
