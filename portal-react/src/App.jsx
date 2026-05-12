@@ -4534,6 +4534,8 @@ function PortalApp({ token, onLogout }) {
   const [assignCandidateId, setAssignCandidateId] = useState("");
   const [bulkAssignApplicantIds, setBulkAssignApplicantIds] = useState([]);
   const [bulkAssignCandidateIds, setBulkAssignCandidateIds] = useState([]);
+  const [bulkAssignApplicantModalOpen, setBulkAssignApplicantModalOpen] = useState(false);
+  const [bulkAssignCandidateModalOpen, setBulkAssignCandidateModalOpen] = useState(false);
   const [hostedJobId, setHostedJobId] = useState("");
   const [hostedRecruiterApplyLinks, setHostedRecruiterApplyLinks] = useState([]);
   const [dashboardFilters, setDashboardFilters] = useState(() => {
@@ -8260,6 +8262,7 @@ function PortalApp({ token, onLogout }) {
     }
     setAssignApplicantId("");
     setBulkAssignApplicantIds([]);
+    setBulkAssignApplicantModalOpen(false);
     await reloadApplicantsSlice();
     void refreshWorkspaceSilently("post-applicant-assign");
     setStatus("workspace", ids.length > 1 ? `${ids.length} applicants assigned.` : "Applicant assigned into recruiter workflow.", "ok");
@@ -8334,6 +8337,7 @@ function PortalApp({ token, onLogout }) {
       }
       setAssignCandidateId("");
       setBulkAssignCandidateIds([]);
+      setBulkAssignCandidateModalOpen(false);
       setStatus("captured", ids.length > 1 ? `${ids.length} drafts assigned to recruiter.` : "Draft assigned to recruiter.", "ok");
       return;
     }
@@ -8347,6 +8351,7 @@ function PortalApp({ token, onLogout }) {
     });
     setAssignCandidateId("");
     setBulkAssignCandidateIds([]);
+    setBulkAssignCandidateModalOpen(false);
     setStatus("captured", "Draft assigned to recruiter.", "ok");
     void refreshWorkspaceSilently("post-claim");
   }
@@ -13317,6 +13322,7 @@ function PortalApp({ token, onLogout }) {
                         onClick={() => {
                           if (!bulkAssignApplicantIds.length) return;
                           setAssignApplicantId("");
+                          setBulkAssignApplicantModalOpen(true);
                         }}
                       >
                         {`Assign selected (${bulkAssignApplicantIds.length})`}
@@ -13397,7 +13403,7 @@ function PortalApp({ token, onLogout }) {
                         <button onClick={() => void createAssessmentFromCandidate(item.id)}>Create assessment</button>
                       ) : null}
                       {item.cvFilename ? <button onClick={() => void openCv(item.id)}>Open CV</button> : null}
-                      {state.user?.role === "admin" ? <button onClick={() => setAssignApplicantId(item.id)}>{item.assignedToName ? "Reassign" : "Assign"}</button> : null}
+                      {state.user?.role === "admin" ? <button onClick={() => { setBulkAssignApplicantModalOpen(false); setBulkAssignApplicantIds([]); setAssignApplicantId(item.id); }}>{item.assignedToName ? "Reassign" : "Assign"}</button> : null}
                       {item.hidden_from_captured ? (
                         <button className="ghost-btn" onClick={() => void restoreApplicant(item.id)}>Restore to active</button>
                       ) : (
@@ -13472,6 +13478,7 @@ function PortalApp({ token, onLogout }) {
                           onClick={() => {
                             if (!bulkAssignCandidateIds.length) return;
                             setAssignCandidateId("");
+                            setBulkAssignCandidateModalOpen(true);
                           }}
                         >
                           {`Assign selected (${bulkAssignCandidateIds.length})`}
@@ -13532,7 +13539,7 @@ function PortalApp({ token, onLogout }) {
                         {!item.hidden_from_captured ? (
                           <button onClick={() => loadCandidateIntoInterview(item.id)}>Open draft</button>
                         ) : null}
-                        <button onClick={() => setAssignCandidateId(item.id)}>{item.assigned_to_name ? "Reassign" : "Assign"}</button>
+                        <button onClick={() => { setBulkAssignCandidateModalOpen(false); setBulkAssignCandidateIds([]); setAssignCandidateId(item.id); }}>{item.assigned_to_name ? "Reassign" : "Assign"}</button>
 	                      <button onClick={() => openRecruiterNotes(item)}>Recruiter note</button>
                         <button
                           className="whatsapp-logo-btn"
@@ -14562,8 +14569,8 @@ function PortalApp({ token, onLogout }) {
                       <div className="muted">These save per recruiter for this JD (so one recruiter's shortcuts don't overwrite others). Extension templates use the same shortcuts.</div>
                     </div>
                   </div>
-                  <div className="form-grid two-col">
-                    <label>
+                  <div className="form-grid two-col shortcut-builder__form">
+                    <label className="shortcut-builder__key-field">
                       <span>Shortcut key</span>
                       <input placeholder="/intro" value={jobShortcutKey} onChange={(e) => setJobShortcutKey(e.target.value)} />
                     </label>
@@ -15199,21 +15206,21 @@ function PortalApp({ token, onLogout }) {
       </main>
 
       <AssignModal
-        open={Boolean(assignApplicantId) || bulkAssignApplicantIds.length > 0}
+        open={Boolean(assignApplicantId) || (bulkAssignApplicantModalOpen && bulkAssignApplicantIds.length > 0)}
         applicant={assignApplicant}
         users={state.users}
         jobs={state.jobs}
         title={bulkAssignApplicantIds.length > 1 ? `Assign ${bulkAssignApplicantIds.length} Applicants` : (assignApplicant?.assignedToName ? "Reassign Applicant" : "Assign Applicant")}
         description={bulkAssignApplicantIds.length > 1 ? "Assign selected applicants to a recruiter and JD." : (assignApplicant?.assignedToName ? "Reassign this record to a recruiter and JD." : "Assign this record to a recruiter and JD.")}
-        onClose={() => { setAssignApplicantId(""); setBulkAssignApplicantIds([]); }}
+        onClose={() => { setAssignApplicantId(""); setBulkAssignApplicantIds([]); setBulkAssignApplicantModalOpen(false); }}
         onSave={(payload) => saveApplicantAssignment({ ...payload, targetIds: bulkAssignApplicantIds })}
       />
       <AssignModal
-        open={Boolean(assignCandidateId) || bulkAssignCandidateIds.length > 0}
+        open={Boolean(assignCandidateId) || (bulkAssignCandidateModalOpen && bulkAssignCandidateIds.length > 0)}
         applicant={assignCandidate}
         users={state.users}
         jobs={state.jobs}
-        onClose={() => { setAssignCandidateId(""); setBulkAssignCandidateIds([]); }}
+        onClose={() => { setAssignCandidateId(""); setBulkAssignCandidateIds([]); setBulkAssignCandidateModalOpen(false); }}
         onSave={(payload) => saveCapturedAssignment({ ...payload, targetIds: bulkAssignCandidateIds })}
         title={bulkAssignCandidateIds.length > 1 ? `Assign ${bulkAssignCandidateIds.length} Drafts` : (assignCandidate?.assigned_to_name ? "Reassign Draft" : "Assign Draft")}
         description={bulkAssignCandidateIds.length > 1 ? "Assign selected captured drafts to a recruiter and JD." : (assignCandidate?.assigned_to_name ? "Reassign {name} to a recruiter and JD." : "Assign {name} to a recruiter and JD. Recruiters can map the role for themselves; admins can also assign another recruiter.")}

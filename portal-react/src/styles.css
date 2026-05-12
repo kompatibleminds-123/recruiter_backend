@@ -1588,52 +1588,45 @@ textarea { min-height: 92px; resize: vertical; }
 }
 .shortcuts-section {
   border: 1px solid var(--border);
-  border-left: 0;
+  border-left: 4px solid #3b82f6;
   border-radius: 18px;
   padding: 1rem 1rem 1rem 1.2rem;
   margin-top: 1rem;
-  box-shadow: 0 8px 18px rgba(20, 41, 84, 0.06);
+  box-shadow: 0 6px 14px rgba(20, 41, 84, 0.05);
   background: linear-gradient(180deg, #ffffff 0%, #f7fbff 100%);
   position: relative;
-  overflow: hidden;
+  overflow: visible;
 }
 .panel.shortcuts-section {
   border-width: 1px;
   border-style: solid;
 }
-.shortcuts-section::before {
-  content: "";
-  position: absolute;
-  left: 0;
-  top: 8px;
-  bottom: 8px;
-  width: 8px;
-  border-radius: 0 999px 999px 0;
-  background: linear-gradient(180deg, #93c5fd 0%, #3b82f6 45%, #1d4ed8 100%);
-  box-shadow: 0 0 0 1px rgba(37, 99, 235, 0.1), 0 6px 14px rgba(37, 99, 235, 0.28);
-}
 .shortcuts-section--personal {
   background: linear-gradient(180deg, #ffffff 0%, #f7fbff 100%);
   border-color: #c9ddff;
-  box-shadow: 0 10px 20px rgba(59, 130, 246, 0.08);
+  border-left-color: #3b82f6;
+  box-shadow: 0 6px 14px rgba(59, 130, 246, 0.06);
 }
 .shortcuts-section--job {
   border-color: #bfead8;
+  border-left-color: #10b981;
   background: linear-gradient(180deg, #ffffff 0%, #f5fffb 100%);
-  box-shadow: 0 10px 20px rgba(16, 185, 129, 0.08);
+  box-shadow: 0 6px 14px rgba(16, 185, 129, 0.06);
 }
 .shortcuts-section--company {
   border-color: #dfd0ff;
+  border-left-color: #8b5cf6;
   background: linear-gradient(180deg, #ffffff 0%, #f8f6ff 100%);
-  box-shadow: 0 10px 20px rgba(139, 92, 246, 0.08);
+  box-shadow: 0 6px 14px rgba(139, 92, 246, 0.06);
 }
-.shortcuts-section--job::before {
-  background: linear-gradient(180deg, #6ee7b7 0%, #10b981 50%, #047857 100%);
-  box-shadow: 0 0 0 1px rgba(5, 150, 105, 0.1), 0 6px 14px rgba(5, 150, 105, 0.24);
+.shortcut-builder__form {
+  align-items: start;
 }
-.shortcuts-section--company::before {
-  background: linear-gradient(180deg, #ddd6fe 0%, #a78bfa 50%, #7c3aed 100%);
-  box-shadow: 0 0 0 1px rgba(124, 58, 237, 0.1), 0 6px 14px rgba(124, 58, 237, 0.24);
+.shortcut-builder__key-field {
+  align-self: start;
+}
+.shortcut-builder__key-field input {
+  max-width: 320px;
 }
 .placeholder-selector {
   margin-top: 0.45rem;
