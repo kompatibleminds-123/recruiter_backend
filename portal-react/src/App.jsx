@@ -4973,6 +4973,7 @@ function PortalApp({ token, onLogout }) {
   const [assessmentStatusId, setAssessmentStatusId] = useState("");
   const [drilldownState, setDrilldownState] = useState({ open: false, title: "", items: [], request: null });
   const inlineDrilldownRef = useRef(null);
+  const loginSettingsSectionRef = useRef(null);
   const [inlineDrilldownPulse, setInlineDrilldownPulse] = useState(false);
   const [clientFeedbackItem, setClientFeedbackItem] = useState(null);
 	const [attempts, setAttempts] = useState([]);
@@ -5334,6 +5335,18 @@ function PortalApp({ token, onLogout }) {
       setLoginSettingsPanel(loginSettingsOptions[0]?.id || "team");
     }
   }, [loginSettingsPanel, loginSettingsOptions]);
+
+  useEffect(() => {
+    if (String(location?.pathname || "") !== "/login-settings") return;
+    const sectionTop = loginSettingsSectionRef.current?.offsetTop;
+    if (!Number.isFinite(sectionTop)) return;
+    window.requestAnimationFrame(() => {
+      window.scrollTo({
+        top: Math.max(0, Number(sectionTop) - 16),
+        behavior: "auto"
+      });
+    });
+  }, [loginSettingsPanel, location?.pathname]);
 
   async function openPlanUpgrade(planCode) {
     try {
@@ -5969,7 +5982,6 @@ function PortalApp({ token, onLogout }) {
         setBillingPlans(Array.isArray(billingPlansResult?.plans) ? billingPlansResult.plans : []);
       }
     }
-    setStatus("workspace", "Portal loaded.", "ok");
   }
 
   loadWorkspaceRef.current = loadWorkspace;
@@ -6107,6 +6119,11 @@ function PortalApp({ token, onLogout }) {
   }
 
   useEffect(() => {
+    if (!token) return;
+    const now = Date.now();
+    const ttlMs = 30000;
+    if (now - lastWorkspaceRefreshAtRef.current < ttlMs) return;
+    lastWorkspaceRefreshAtRef.current = now;
     void loadWorkspace().catch((error) => setStatus("workspace", String(error?.message || error), "error"));
   }, [token, location?.pathname]);
 
@@ -14663,7 +14680,7 @@ function PortalApp({ token, onLogout }) {
                   {!isSettingsAdmin ? <p className="muted">You can use shared presets here. Only admin can create, edit, or save shared preset settings.</p> : null}
                   {statuses.settings ? <div className={`status ${statuses.settingsKind || ""}`}>{statuses.settings}</div> : null}
                   {/* Email Settings moved to Mail Settings tab (visible to all recruiters). */}
-                  <div className="settings-subsection">
+                  <div className="settings-subsection preset-edit-shell">
                     <div className="section-kicker">Edit Existing Presets</div>
                     <p className="muted">Edit any existing candidate tracker preset, attach it to a specific client if needed, and save shared usage defaults.</p>
                     <div className="form-grid">
@@ -14739,7 +14756,7 @@ function PortalApp({ token, onLogout }) {
                       ) : null}
                     </div>
                   </div>
-                  {hasSaasUnlimitedAccess ? <div className="settings-subsection">
+                  {hasSaasUnlimitedAccess ? <div className="settings-subsection preset-create-shell">
                     <div className="section-kicker">Create New Presets</div>
                     <p className="muted">Create a new candidate tracker preset and optionally map it to a client right away.</p>
                     <div className="form-grid">
@@ -14950,7 +14967,7 @@ function PortalApp({ token, onLogout }) {
                 </Section>
 
                 {loginSettingsPanel === "company" && canAddCompany ? (
-                <details className="panel login-settings-collapse">
+                <details className="panel login-settings-collapse" open ref={loginSettingsSectionRef}>
                   <summary className="dashboard-group__summary">
                     <div>
                       <div className="section-kicker">Company Workspace</div>
@@ -14971,7 +14988,7 @@ function PortalApp({ token, onLogout }) {
                 ) : null}
 
                 {loginSettingsPanel === "team" ? (
-                <details className="panel login-settings-collapse" open>
+                <details className="panel login-settings-collapse" open ref={loginSettingsSectionRef}>
                   <summary className="dashboard-group__summary">
                     <div>
                       <div className="section-kicker">Team Access</div>
@@ -15012,7 +15029,7 @@ function PortalApp({ token, onLogout }) {
                 ) : null}
 
                 {loginSettingsPanel === "client" && canViewClientPayrollInLoginSettings ? (
-                <details className="panel login-settings-collapse" open>
+                <details className="panel login-settings-collapse" open ref={loginSettingsSectionRef}>
                   <summary className="dashboard-group__summary">
                     <div>
                       <div className="section-kicker">Client Access</div>
@@ -15050,7 +15067,7 @@ function PortalApp({ token, onLogout }) {
                 ) : null}
 
                 {loginSettingsPanel === "payroll" && canViewClientPayrollInLoginSettings ? (
-                <details className="panel login-settings-collapse" open>
+                <details className="panel login-settings-collapse" open ref={loginSettingsSectionRef}>
                   <summary className="dashboard-group__summary">
                     <div>
                       <div className="section-kicker">Payroll Access</div>
