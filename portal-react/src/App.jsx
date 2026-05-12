@@ -14678,7 +14678,7 @@ function PortalApp({ token, onLogout }) {
                         {shortcutJobOptions.map((job) => <option key={job.id} value={job.id}>{job.title}{job.clientName ? ` (${job.clientName})` : ""}</option>)}
                       </select>
                     </label>
-                    <label>
+                    <label className="shortcuts-key-field">
                       <span>Shortcut key</span>
                       <input value={shortcutJobKey} onChange={(e) => setShortcutJobKey(e.target.value)} placeholder="/interview" />
                     </label>

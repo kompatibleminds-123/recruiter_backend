@@ -1588,34 +1588,45 @@ textarea { min-height: 92px; resize: vertical; }
 }
 .shortcuts-section {
   border: 1px solid var(--border);
-  border-left: 4px solid #3b82f6;
+  border-left: 0;
   border-radius: 18px;
   padding: 1rem 1rem 1rem 1.2rem;
   margin-top: 1rem;
   box-shadow: 0 6px 14px rgba(20, 41, 84, 0.05);
   background: linear-gradient(180deg, #ffffff 0%, #f7fbff 100%);
   position: relative;
-  overflow: visible;
+  overflow: hidden;
+  --shortcut-accent: #3b82f6;
 }
 .panel.shortcuts-section {
   border-width: 1px;
   border-style: solid;
 }
+.shortcuts-section::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 10px;
+  bottom: 10px;
+  width: 4px;
+  border-radius: 0 999px 999px 0;
+  background: var(--shortcut-accent);
+}
 .shortcuts-section--personal {
   background: linear-gradient(180deg, #ffffff 0%, #f7fbff 100%);
   border-color: #c9ddff;
-  border-left-color: #3b82f6;
+  --shortcut-accent: #3b82f6;
   box-shadow: 0 6px 14px rgba(59, 130, 246, 0.06);
 }
 .shortcuts-section--job {
   border-color: #bfead8;
-  border-left-color: #10b981;
+  --shortcut-accent: #10b981;
   background: linear-gradient(180deg, #ffffff 0%, #f5fffb 100%);
   box-shadow: 0 6px 14px rgba(16, 185, 129, 0.06);
 }
 .shortcuts-section--company {
   border-color: #dfd0ff;
-  border-left-color: #8b5cf6;
+  --shortcut-accent: #8b5cf6;
   background: linear-gradient(180deg, #ffffff 0%, #f8f6ff 100%);
   box-shadow: 0 6px 14px rgba(139, 92, 246, 0.06);
 }
@@ -1626,6 +1637,12 @@ textarea { min-height: 92px; resize: vertical; }
   align-self: start;
 }
 .shortcut-builder__key-field input {
+  max-width: 320px;
+}
+.shortcuts-key-field {
+  align-self: start;
+}
+.shortcuts-key-field input {
   max-width: 320px;
 }
 .placeholder-selector {
