@@ -809,12 +809,12 @@ textarea { min-height: 92px; resize: vertical; }
   border-left: 4px solid #8b5cf6;
 }
 .preset-edit-shell {
-  background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
-  border-left: 4px solid #94a3b8;
-}
-.preset-create-shell {
   background: linear-gradient(180deg, #ffffff 0%, #f7fbff 100%);
   border-left: 4px solid #3b82f6;
+}
+.preset-create-shell {
+  background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+  border-left: 4px solid #94a3b8;
 }
 .direct-share-admin-preset {
   margin-top: 1rem;
@@ -1802,6 +1802,21 @@ textarea { min-height: 92px; resize: vertical; }
 }
 .login-settings-collapse .section-kicker {
   margin-bottom: 0.22rem;
+}
+.captured-metric-row {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 0.6rem;
+}
+.captured-metric-row .compact-metric {
+  min-height: 68px;
+  padding: 0.56rem 0.7rem;
+}
+.captured-metric-row .metric-label {
+  font-size: 0.72rem;
+  letter-spacing: 0.11em;
+}
+.captured-metric-row .metric-value {
+  font-size: 2.05rem;
 }
 
 /* ---------- Premium UI Polish Layer (CSS-only, no logic changes) ---------- */

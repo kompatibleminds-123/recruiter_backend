@@ -13484,7 +13484,7 @@ function PortalApp({ token, onLogout }) {
                   </select>
                 </label>
               </div>
-              <div className="metric-grid metric-grid--tight">
+              <div className="metric-grid metric-grid--tight captured-metric-row">
                 <div className="metric-card compact-metric"><div className="metric-label">Today</div><div className="metric-value">{capturedNotesStats.today}</div></div>
                 <div className="metric-card compact-metric"><div className="metric-label">Total notes captured</div><div className="metric-value">{capturedNotesStats.total}</div></div>
                 <div className="metric-card compact-metric"><div className="metric-label">Active</div><div className="metric-value">{capturedNotesStats.active}</div></div>
