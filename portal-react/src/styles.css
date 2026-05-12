@@ -1588,29 +1588,19 @@ textarea { min-height: 92px; resize: vertical; }
 }
 .shortcuts-section {
   border: 1px solid var(--border);
-  border-left: 0;
+  border-left: 4px solid var(--shortcut-accent);
   border-radius: 18px;
   padding: 1rem 1rem 1rem 1.2rem;
   margin-top: 1rem;
   box-shadow: 0 6px 14px rgba(20, 41, 84, 0.05);
   background: linear-gradient(180deg, #ffffff 0%, #f7fbff 100%);
   position: relative;
-  overflow: hidden;
+  overflow: visible;
   --shortcut-accent: #3b82f6;
 }
 .panel.shortcuts-section {
   border-width: 1px;
   border-style: solid;
-}
-.shortcuts-section::before {
-  content: "";
-  position: absolute;
-  left: 0;
-  top: 6px;
-  bottom: 6px;
-  width: 4px;
-  border-radius: 999px;
-  background: var(--shortcut-accent);
 }
 .shortcuts-section--personal {
   background: linear-gradient(180deg, #ffffff 0%, #f7fbff 100%);

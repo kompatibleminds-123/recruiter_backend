@@ -31,7 +31,6 @@ const BASE_NAV_SECTIONS = [
     label: "Core",
     items: [
       { to: "/dashboard", label: "Dashboard" },
-      { to: "/quick-update", label: "Quick Update" },
       { to: "/jobs", label: "Jobs" },
       { to: "/shortcuts", label: "Shortcut Templates" },
       { to: "/mail-settings", label: "Mail Settings" }
@@ -5252,7 +5251,7 @@ function PortalApp({ token, onLogout }) {
         items: section.items.filter((item) => {
           const itemTo = String(item?.to || "");
           if ((itemTo === "/plan" || itemTo === "/login-settings" || itemTo === "/intake-settings" || itemTo === "/settings" || itemTo.startsWith("/admin/payroll")) && !isSettingsAdmin) return false;
-          if (!hasSaasUnlimitedAccess && (itemTo === "/client-share" || itemTo === "/intake-settings" || itemTo === "/mail-settings" || itemTo === "/quick-update" || itemTo === "/applicants")) return false;
+          if (!hasSaasUnlimitedAccess && (itemTo === "/client-share" || itemTo === "/intake-settings" || itemTo === "/mail-settings" || itemTo === "/applicants")) return false;
           return true;
         })
       }))
@@ -5298,7 +5297,7 @@ function PortalApp({ token, onLogout }) {
 
   useEffect(() => {
     if (!accessFlagsReady) return;
-    const blockedPaths = new Set(["/client-share", "/intake-settings", "/candidates", "/mail-settings", "/quick-update", "/reports", "/applicants"]);
+    const blockedPaths = new Set(["/client-share", "/intake-settings", "/candidates", "/mail-settings", "/reports", "/applicants"]);
     if (!hasSaasUnlimitedAccess && blockedPaths.has(String(location?.pathname || ""))) {
       navigate("/plan", { replace: true });
       setStatus("loginSettings", "This feature is available on SaaS Unlimited (Rs 4999).", "error");
@@ -5823,7 +5822,6 @@ function PortalApp({ token, onLogout }) {
       pathname === "/dashboard" ||
       pathname === "/captured-notes" ||
       pathname === "/assessments" ||
-      pathname === "/quick-update" ||
       pathname === "/interview";
     const needsDatabaseCandidates = pathname === "/candidates";
     const needsAssessments =
@@ -13756,136 +13754,7 @@ function PortalApp({ token, onLogout }) {
             </Section>
           } />
 
-          <Route path="/quick-update" element={
-            <div className="page-grid">
-              <Section kicker="Fast Lane" title="Quick Update">
-                <p className="muted">Use this for already saved candidates when details change later. Pick the candidate once, then either merge recruiter details or apply a quick status/timeline update.</p>
-                <div className="form-grid">
-                  <label className="full">
-                    <span>Search existing candidate</span>
-                    <input
-                      placeholder="Type candidate name, phone, email, LinkedIn, JD..."
-                      value={quickUpdateCandidateQuery}
-                      onChange={(e) => setQuickUpdateCandidateQuery(e.target.value)}
-                    />
-                  </label>
-                </div>
-                <div className="stack-list compact">
-                  {!quickUpdateCandidateQuery.trim()
-                    ? <div className="empty-state">Search by name or phone to pick an existing candidate.</div>
-                    : quickUpdateMatches.map((item) => (
-                      <article className={`item-card compact-card${String(quickUpdateCandidateId) === String(item.id) ? " selected-card" : ""}`} key={item.id}>
-                        <div className="item-card__top">
-                          <div>
-                            <h3>{item.name || "Candidate"} | {item.jd_title || item.role || "Untitled role"}</h3>
-                            <p className="muted">{[item.company || "", item.client_name ? `Client: ${item.client_name}` : "", item.phone || "", item.email || ""].filter(Boolean).join(" | ")}</p>
-                          </div>
-                          <div className="button-row">
-                            <button className={String(quickUpdateCandidateId) === String(item.id) ? "" : "ghost-btn"} onClick={() => setQuickUpdateCandidateId(String(item.id))}>
-                              {String(quickUpdateCandidateId) === String(item.id) ? "Selected" : "Select"}
-                            </button>
-                          </div>
-                        </div>
-                      </article>
-                    ))}
-                </div>
-              </Section>
-
-              <Section kicker="Existing Candidate" title="Update Workspace">
-                {!quickUpdateCandidate ? (
-                  <div className="empty-state">Select a candidate above to start a quick update.</div>
-                ) : (
-                  <>
-                    <div className="info-grid">
-                      {[["Candidate", quickUpdateCandidate.name],["Phone", quickUpdateCandidate.phone],["Email", quickUpdateCandidate.email],["Client", quickUpdateCandidate.client_name],["JD / role", quickUpdateCandidate.jd_title || quickUpdateCandidate.role],["Current outcome", quickUpdateCandidate.last_contact_outcome || "-"],["Linked assessment", quickUpdateLinkedAssessment ? `${quickUpdateLinkedAssessment.jdTitle || "Assessment"} | ${quickUpdateLinkedAssessment.candidateStatus || "Saved"}` : "No"]].map(([label, value]) => (
-                        <div className="info-card" key={label}>
-                          <div className="info-label">{label}</div>
-                          <div className="info-value">{value || "-"}</div>
-                        </div>
-                      ))}
-                    </div>
-                    <div className="form-grid">
-                      <div className="form-grid two-col">
-                        <label><span>Current CTC</span><input value={quickUpdateRecruiterSections.current_ctc} onChange={(e) => setQuickUpdateRecruiterSections((current) => ({ ...current, current_ctc: e.target.value }))} placeholder="Got a hike, now 20 L" /></label>
-                        <label><span>Expected CTC</span><input value={quickUpdateRecruiterSections.expected_ctc} onChange={(e) => setQuickUpdateRecruiterSections((current) => ({ ...current, expected_ctc: e.target.value }))} placeholder="Looking for 27 L" /></label>
-                        <label><span>Notice period</span><input value={quickUpdateRecruiterSections.notice_period} onChange={(e) => setQuickUpdateRecruiterSections((current) => ({ ...current, notice_period: e.target.value }))} placeholder="30 days / serving notice" /></label>
-                        <label><span>If serving, offer amount</span><input value={quickUpdateRecruiterSections.offer_in_hand} onChange={(e) => setQuickUpdateRecruiterSections((current) => ({ ...current, offer_in_hand: e.target.value }))} placeholder="Offer in hand 25 L" /></label>
-                        <label className="full"><span>LWD / DOJ</span><input value={quickUpdateRecruiterSections.lwd_or_doj} onChange={(e) => setQuickUpdateRecruiterSections((current) => ({ ...current, lwd_or_doj: e.target.value }))} placeholder="8th June / 1st July" /></label>
-                        <label className="full"><span>Tags / searchable keywords</span><textarea value={quickUpdateRecruiterSections.tags} onChange={(e) => setQuickUpdateRecruiterSections((current) => ({ ...current, tags: e.target.value }))} placeholder="B2B corporate sales, SaaS, enterprise sales, node dev, react + java" /></label>
-                      </div>
-                      <label className="full">
-                        <span>Other pointers</span>
-                        <textarea
-                          value={quickUpdateText}
-                          onChange={(e) => setQuickUpdateText(e.target.value)}
-                          placeholder="Good communication. Okay with remote setup."
-                        />
-                      </label>
-                      <div className="full form-field">
-                        <span>Status update</span>
-                        <div className="form-grid three-col nested-status-grid">
-                          {quickUpdateLinkedAssessment ? (
-                            <label>
-                              <span>Assessment status</span>
-                              <select value={quickUpdateAssessmentStatus} onChange={(e) => setQuickUpdateAssessmentStatus(e.target.value)}>
-                                <option value="">Select status</option>
-                                {DEFAULT_STATUS_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}
-                              </select>
-                            </label>
-                          ) : (
-                            <label>
-                              <span>Attempt outcome</span>
-                              <select value={quickUpdateAttemptOutcome} onChange={(e) => setQuickUpdateAttemptOutcome(e.target.value)}>
-                                <option value="">Select outcome</option>
-                                {ATTEMPT_OUTCOME_OPTIONS.filter((option) => option !== "No outcome").map((option) => <option key={option} value={option}>{option}</option>)}
-                              </select>
-                            </label>
-                          )}
-                          {quickUpdateLinkedAssessment && quickUpdateAssessmentStatus === "Offered" ? (
-                            <label>
-                              <span>Offer amount</span>
-                              <input value={quickUpdateOfferAmount} onChange={(e) => setQuickUpdateOfferAmount(e.target.value)} placeholder="25 LPA" />
-                            </label>
-                          ) : null}
-                          {quickUpdateLinkedAssessment && (quickUpdateAssessmentStatus === "Offered" || quickUpdateAssessmentStatus === "Joined" || isInterviewAlignedStatus(quickUpdateAssessmentStatus)) ? (
-                            <label>
-                              <span>{quickUpdateAssessmentStatus === "Offered" ? "Expected DOJ" : quickUpdateAssessmentStatus === "Joined" ? "Date of joining" : "Interview / status date"}</span>
-                              <input type="datetime-local" value={quickUpdateStatusAt} onChange={(e) => setQuickUpdateStatusAt(e.target.value)} />
-                            </label>
-                          ) : null}
-                          {!quickUpdateLinkedAssessment && quickUpdateAttemptOutcome === "Call later" ? (
-                            <label>
-                              <span>Next follow-up</span>
-                              <input type="datetime-local" value={quickUpdateStatusAt} onChange={(e) => setQuickUpdateStatusAt(e.target.value)} />
-                            </label>
-                          ) : null}
-                        </div>
-                      </div>
-                    </div>
-                    <p className="muted">
-                      {quickUpdateLinkedAssessment
-                        ? "This candidate is already in Assessments. Use the fixed recruiter-note boxes for detail changes, then pick the assessment status/date from the dropdown controls."
-                        : "For captured or applied candidates, use the fixed recruiter-note boxes for detail changes, then pick the attempt outcome/follow-up date from the dropdown controls."}
-                    </p>
-                    <div className="button-row">
-                      {quickUpdateLinkedAssessment ? (
-                        <>
-                          <button onClick={() => void applyQuickUpdateAssessmentDetails()}>Update Assessment details</button>
-                          <button onClick={() => void applyQuickAssessmentStatusUpdate()}>Update status</button>
-                        </>
-                      ) : (
-                        <>
-                          <button onClick={() => void applyQuickUpdateRecruiterNote()}>Update Captured notes</button>
-                          <button onClick={() => void applyQuickCandidateUpdate()}>Update status</button>
-                        </>
-                      )}
-                    </div>
-                    {statuses.quickUpdate ? <div className={`status action-status ${statuses.quickUpdateKind || ""}`}>{statuses.quickUpdate}</div> : null}
-                  </>
-                )}
-              </Section>
-            </div>
-          } />
+          <Route path="/quick-update" element={<Navigate to="/dashboard" replace />} />
 
           <Route path="/client-share" element={
             <div className="page-grid">
