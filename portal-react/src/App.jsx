@@ -3338,7 +3338,19 @@ function AssignModal({ open, applicant, users, jobs, onClose, onSave, title = "A
       setJdId(match?.id ? String(match.id) : "");
     }
     setStatus("");
-  }, [open, applicant?.id, jobs]);
+  }, [
+    open,
+    applicant?.id,
+    applicant?.assigned_to_user_id,
+    applicant?.assignedToUserId,
+    applicant?.assigned_to,
+    applicant?.assigned_jd_id,
+    applicant?.assignedJdId,
+    applicant?.assigned_jd_title,
+    applicant?.assignedJdTitle,
+    applicant?.jd_title,
+    applicant?.jdTitle
+  ]);
 
   if (!open) return null;
 
@@ -4033,8 +4045,16 @@ function DrilldownModal({ open, title, items, onClose, onOpenCv, onOpenDraft, on
         <p className="muted">{items.length} candidate(s)</p>
         {extraActions ? <div className="drilldown-toolbar">{extraActions}</div> : null}
         <div className="stack-list compact">
-          {!items.length ? <div className="empty-state">No matching candidates found.</div> : items.map((item, index) => (
-            <article className="item-card compact-card" key={`${item.id || item.assessmentId || index}`}>
+          {!items.length ? <div className="empty-state">No matching candidates found.</div> : items.map((item, index) => {
+            const stableItemKey = String(
+              item?.id ||
+              item?.assessmentId ||
+              item?.candidateId ||
+              item?.raw?.candidate?.id ||
+              `${item?.name || item?.candidateName || "candidate"}-${item?.phone || item?.email || index}`
+            );
+            return (
+            <article className="item-card compact-card" key={stableItemKey}>
               {(() => {
                 const feedbackMeta = readItemClientFeedback(item);
                 const assessmentForAction = item.raw?.assessment || item.assessment || (item.assessmentId || item.sourceType === "assessment_only" ? item : null);
@@ -4074,7 +4094,8 @@ function DrilldownModal({ open, title, items, onClose, onOpenCv, onOpenDraft, on
                 );
               })()}
             </article>
-          ))}
+          );
+          })}
         </div>
         {inline ? null : (
           <div className="button-row">
@@ -8163,6 +8184,10 @@ function PortalApp({ token, onLogout }) {
   }
 
   async function hideApplicant(applicantId) {
+    if (!String(applicantId || "").trim()) {
+      setStatus("applicants", "Cannot hide: missing applicant id.", "error");
+      return;
+    }
     await api(`/company/candidates/${encodeURIComponent(applicantId)}`, token, "PATCH", { patch: { hidden_from_captured: true } });
     setState((current) => {
       const applyPatch = (items) => Array.isArray(items)
@@ -8346,6 +8371,10 @@ function PortalApp({ token, onLogout }) {
   }
 
   async function hideCapturedCandidate(candidateId) {
+    if (!String(candidateId || "").trim()) {
+      setStatus("captured", "Cannot hide: missing candidate id.", "error");
+      return;
+    }
     await patchCandidate(candidateId, { hidden_from_captured: true }, "Candidate hidden from captured notes.");
   }
 
