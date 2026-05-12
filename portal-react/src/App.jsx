@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+﻿import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { NavLink, Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import BrandLogo from "./components/branding/BrandLogo";
 import {
@@ -1132,8 +1132,19 @@ function toSentenceCasePreservingContent(text) {
   return value.charAt(0).toUpperCase() + value.slice(1);
 }
 
+function normalizeMojibakeSymbols(text) {
+  return String(text || "")
+    .replace(/Ã¢â‚¬Â¢|â€¢/g, "•")
+    .replace(/Ã¢â‚¬â€œ|â€“/g, "-")
+    .replace(/Ã¢â‚¬â€|â€”/g, "-")
+    .replace(/Ã¢â‚¬Ëœ|â€˜/g, "'")
+    .replace(/Ã¢â‚¬â„¢|â€™/g, "'")
+    .replace(/Ã¢â‚¬Å“|â€œ/g, "\"")
+    .replace(/Ã¢â‚¬Â|â€/g, "\"")
+    .replace(/Ã‚/g, "");
+}
 function polishStructuredBulletSentence(line) {
-  const text = String(line || "").trim().replace(/\s+/g, " ");
+  const text = normalizeMojibakeSymbols(line).trim().replace(/\s+/g, " ");
   if (!text) return "";
   const sentence = toSentenceCasePreservingContent(text);
   return /[.!?]$/.test(sentence) ? sentence : `${sentence}.`;
@@ -1169,9 +1180,9 @@ function extractFreeRecruiterLines(text) {
 }
 
 function normalizeParsedRecruiterValue(value) {
-  return String(value || "")
+  return normalizeMojibakeSymbols(value)
     .trim()
-    .replace(/^[\s\-â€“â€”:;]+/, "")
+    .replace(/^[\s\-:;]+/, "")
     .replace(/\s+/g, " ")
     .trim();
 }
@@ -1203,7 +1214,7 @@ function buildCanonicalRecruiterNotes(baseText, currentText, mergedValues = {}) 
 
 function normalizeRecruiterNotesBody(rawText) {
   const normalizedLines = splitStructuredDraftLines(rawText)
-    .map((line) => String(line || "").replace(/^[\-\*]\s*/, "").trim())
+    .map((line) => normalizeMojibakeSymbols(line).replace(/^[\-\*•]\s*/, "").trim())
     .map((line) => line.replace(/^recruiter notes\s*:?\s*/i, "").trim())
     .map((line) => line.replace(/^[.:;-]+/, "").trim())
     .map(polishStructuredBulletSentence)
@@ -1221,17 +1232,17 @@ function normalizeRecruiterNotesBody(rawText) {
 }
 
 function normalizeOtherPointersBody(rawText) {
-  const prepared = String(rawText || "")
+  const prepared = normalizeMojibakeSymbols(rawText)
     .replace(/\bother pointers\s*:?\s*/gi, "\n")
     .replace(/\.\s+(?=[A-Z])/g, ".\n");
 
   return splitStructuredDraftLines(prepared)
-    .map((line) => String(line || "").replace(/^[\-\*]\s*/, "").trim())
+    .map((line) => normalizeMojibakeSymbols(line).replace(/^[\-\*•]\s*/, "").trim())
     .map((line) => line.replace(/^[.:;-]+/, "").trim())
     .map(polishStructuredBulletSentence)
     .filter(Boolean)
     .filter((line, index, array) => array.findIndex((item) => item.toLowerCase() === line.toLowerCase()) === index)
-    .map((line) => `â€¢ ${line.replace(/^â€¢\s*/, "")}`)
+    .map((line) => `• ${line.replace(/^•\s*/, "")}`)
     .join("\n");
 }
 
@@ -1722,7 +1733,7 @@ function normalizeRecruiterMergeBase(item) {
 function normalizeRecruiterConflictValue(key, value) {
   let normalized = String(value || "")
     .trim()
-    .replace(/^[\s\-â€“â€”:]+/, "")
+    .replace(/^[\s\-Ã¢â‚¬â€œÃ¢â‚¬â€:]+/, "")
     .replace(/\s+/g, " ")
     .replace(/\s+\./g, ".")
     .toLowerCase();
@@ -1907,7 +1918,7 @@ function api(path, token, method = "GET", body = null) {
       return statusCode ? `Request failed (HTTP ${statusCode}). Please retry.` : "Request failed. Please retry.";
     }
     // Avoid dumping full HTML / stack traces into UI status banners.
-    if (raw.length > 350) return `${raw.slice(0, 350)}â€¦`;
+    if (raw.length > 350) return `${raw.slice(0, 350)}Ã¢â‚¬Â¦`;
     return raw;
   }
   const headers = { "Content-Type": "application/json" };
@@ -4448,7 +4459,7 @@ function JdEmailModal({ open, jobs, value, ccSuggestions = [], onChange, onClose
     <div className="overlay" onClick={() => { if (!busy) onClose(); }}>
       <div className="overlay-card" onClick={(e) => e.stopPropagation()}>
         <h3>Send JD Email</h3>
-        <p className="muted">Sends from your configured SMTP (Settings â†’ Email settings). Use Zoho app password.</p>
+        <p className="muted">Sends from your configured SMTP (Settings Ã¢â€ â€™ Email settings). Use Zoho app password.</p>
         {status ? <div className={`status ${statusKind || ""}`} style={{ marginBottom: 12 }}>{status}</div> : null}
         <div className="form-grid">
           <label className="full">
@@ -12598,7 +12609,7 @@ function PortalApp({ token, onLogout }) {
                       )}
                     </article>
                     <article className="reports-chart-card">
-                      <h4>Client Pipeline Funnel (Shared → Interview)</h4>
+                      <h4>Client Pipeline Funnel (Shared â†’ Interview)</h4>
                       {!clientChartRows.length ? <div className="empty-state compact-empty">No funnel data.</div> : (
                         <div className="reports-funnel-list">
                           {clientChartRows.map((row) => (
@@ -16996,6 +17007,7 @@ export default function App() {
         ? <PortalErrorBoundary><PayrollAdminApp token={token} onLogout={logout} /></PortalErrorBoundary>
         : <PortalErrorBoundary><PortalApp token={token} onLogout={logout} /></PortalErrorBoundary>;
 }
+
 
 
 
