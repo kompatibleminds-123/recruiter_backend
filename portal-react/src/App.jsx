@@ -4532,6 +4532,8 @@ function PortalApp({ token, onLogout }) {
   const [planUpgradeBusyCode, setPlanUpgradeBusyCode] = useState("");
   const [assignApplicantId, setAssignApplicantId] = useState("");
   const [assignCandidateId, setAssignCandidateId] = useState("");
+  const [bulkAssignApplicantIds, setBulkAssignApplicantIds] = useState([]);
+  const [bulkAssignCandidateIds, setBulkAssignCandidateIds] = useState([]);
   const [hostedJobId, setHostedJobId] = useState("");
   const [hostedRecruiterApplyLinks, setHostedRecruiterApplyLinks] = useState([]);
   const [dashboardFilters, setDashboardFilters] = useState(() => {
@@ -5153,8 +5155,12 @@ function PortalApp({ token, onLogout }) {
   }, []);
   const [editCautiousIndicators, setEditCautiousIndicators] = useState(false);
 
-  const assignApplicant = (state.applicants || []).find((item) => String(item.id) === String(assignApplicantId)) || null;
-  const assignCandidate = (state.candidates || []).find((item) => String(item.id) === String(assignCandidateId)) || null;
+  const assignApplicant = (state.applicants || []).find((item) => String(item.id) === String(assignApplicantId))
+    || ((bulkAssignApplicantIds || []).length ? (state.applicants || []).find((item) => String(item.id) === String(bulkAssignApplicantIds[0])) : null)
+    || null;
+  const assignCandidate = (state.candidates || []).find((item) => String(item.id) === String(assignCandidateId))
+    || ((bulkAssignCandidateIds || []).length ? (state.candidates || []).find((item) => String(item.id) === String(bulkAssignCandidateIds[0])) : null)
+    || null;
   const notesCandidate = (state.candidates || []).find((item) => String(item.id) === String(notesCandidateId)) || null;
   const attemptsCandidate = (state.candidates || []).find((item) => String(item.id) === String(attemptsCandidateId)) || null;
   const assessmentStatusItem = (state.assessments || []).find((item) => String(item.id) === String(assessmentStatusId)) || null;
@@ -8234,22 +8240,28 @@ function PortalApp({ token, onLogout }) {
     setStatus("applicants", "Applicant restored to active list.", "ok");
   }
 
-  async function saveApplicantAssignment({ recruiterId, jdId, jdTitle, clientName }) {
+  async function saveApplicantAssignment({ recruiterId, jdId, jdTitle, clientName, targetIds = [] }) {
     const user = (state.users || []).find((item) => String(item.id || "") === String(recruiterId || "")) || null;
-    await api("/company/applicants/assign", token, "POST", {
-      id: assignApplicantId,
-      assignedToUserId: recruiterId,
-      assignedToName: user?.name || "",
-      assignedJdId: jdId,
-      assignedJdTitle: jdTitle,
-      clientName,
-      client_name: clientName,
-      jdTitle
-    });
+    const ids = (Array.isArray(targetIds) && targetIds.length ? targetIds : [assignApplicantId])
+      .map((id) => String(id || "").trim())
+      .filter(Boolean);
+    for (const id of ids) {
+      await api("/company/applicants/assign", token, "POST", {
+        id,
+        assignedToUserId: recruiterId,
+        assignedToName: user?.name || "",
+        assignedJdId: jdId,
+        assignedJdTitle: jdTitle,
+        clientName,
+        client_name: clientName,
+        jdTitle
+      });
+    }
     setAssignApplicantId("");
+    setBulkAssignApplicantIds([]);
     await reloadApplicantsSlice();
     void refreshWorkspaceSilently("post-applicant-assign");
-    setStatus("workspace", "Applicant assigned into recruiter workflow.", "ok");
+    setStatus("workspace", ids.length > 1 ? `${ids.length} applicants assigned.` : "Applicant assigned into recruiter workflow.", "ok");
   }
 
   function loadApplicantIntoInterview(applicantId) {
@@ -8298,24 +8310,30 @@ function PortalApp({ token, onLogout }) {
     setStatus("interview", `Loaded ${applicant.candidateName || "applicant"} into Interview Panel.`, "ok");
   }
 
-  async function saveCapturedAssignment({ recruiterId, jdId, jdTitle, clientName }) {
+  async function saveCapturedAssignment({ recruiterId, jdId, jdTitle, clientName, targetIds = [] }) {
     const isAdmin = String(state.user?.role || "").toLowerCase() === "admin";
     const effectiveRecruiterId = isAdmin ? String(recruiterId || "").trim() : String(state.user?.id || "").trim();
     const recruiter = (state.users || []).find((user) => String(user.id) === String(effectiveRecruiterId));
     const nextAssigneeName = recruiter?.name || state.user?.name || "";
+    const ids = (Array.isArray(targetIds) && targetIds.length ? targetIds : [assignCandidateId])
+      .map((id) => String(id || "").trim())
+      .filter(Boolean);
     if (isAdmin) {
-      await api("/candidates/assign", token, "POST", {
-        id: assignCandidateId,
-        assignedToUserId: effectiveRecruiterId,
-        assignedToName: nextAssigneeName,
-        assignedJdId: jdId,
-        assignedJdTitle: jdTitle,
-        clientName,
-        client_name: clientName
-      });
-      await patchCandidateQuiet(assignCandidateId, { hidden_from_captured: false });
+      for (const id of ids) {
+        await api("/candidates/assign", token, "POST", {
+          id,
+          assignedToUserId: effectiveRecruiterId,
+          assignedToName: nextAssigneeName,
+          assignedJdId: jdId,
+          assignedJdTitle: jdTitle,
+          clientName,
+          client_name: clientName
+        });
+        await patchCandidateQuiet(id, { hidden_from_captured: false });
+      }
       setAssignCandidateId("");
-      setStatus("captured", "Draft assigned to recruiter.", "ok");
+      setBulkAssignCandidateIds([]);
+      setStatus("captured", ids.length > 1 ? `${ids.length} drafts assigned to recruiter.` : "Draft assigned to recruiter.", "ok");
       return;
     }
     await api("/candidates/claim", token, "POST", {
@@ -8327,6 +8345,7 @@ function PortalApp({ token, onLogout }) {
       client_name: clientName
     });
     setAssignCandidateId("");
+    setBulkAssignCandidateIds([]);
     setStatus("captured", "Draft assigned to recruiter.", "ok");
     void refreshWorkspaceSilently("post-claim");
   }
@@ -13247,6 +13266,28 @@ function PortalApp({ token, onLogout }) {
                 <button onClick={() => void copyApplicantsExcel()}>Copy Excel</button>
                 <button onClick={() => void copyApplicantsWhatsapp()}>Copy WhatsApp</button>
                 <button onClick={() => void copyApplicantsEmail()}>Copy Email</button>
+                {String(state.user?.role || "").toLowerCase() === "admin" ? (
+                  <>
+                    <button
+                      className="ghost-btn"
+                      onClick={() => {
+                        const ids = visibleApplicants.map((item) => String(item?.id || "")).filter(Boolean);
+                        setBulkAssignApplicantIds((current) => (current.length === ids.length ? [] : ids));
+                      }}
+                    >
+                      {bulkAssignApplicantIds.length && bulkAssignApplicantIds.length === visibleApplicants.length ? "Clear selection" : "Select all visible"}
+                    </button>
+                    <button
+                      disabled={!bulkAssignApplicantIds.length}
+                      onClick={() => {
+                        if (!bulkAssignApplicantIds.length) return;
+                        setAssignApplicantId("");
+                      }}
+                    >
+                      {`Assign selected (${bulkAssignApplicantIds.length})`}
+                    </button>
+                  </>
+                ) : null}
               </div>
               <div className="stack-list">
                 {!visibleApplicants.length ? <div className="empty-state">No applied candidates right now.</div> : visibleApplicants.map((item) => (
@@ -13264,6 +13305,22 @@ function PortalApp({ token, onLogout }) {
                         {item.assignedToName ? <div className="status-note">{`Already assigned to ${item.assignedToName}`}</div> : null}
                       </div>
                       <div className="chip-row">
+                        {String(state.user?.role || "").toLowerCase() === "admin" ? (
+                          <label className="checkbox-row" style={{ marginRight: 6 }}>
+                            <input
+                              type="checkbox"
+                              checked={bulkAssignApplicantIds.includes(String(item?.id || ""))}
+                              onChange={(e) => {
+                                const id = String(item?.id || "");
+                                if (!id) return;
+                                setBulkAssignApplicantIds((current) => e.target.checked
+                                  ? Array.from(new Set([...current, id]))
+                                  : current.filter((entry) => entry !== id));
+                              }}
+                            />
+                            <span>Select</span>
+                          </label>
+                        ) : null}
                         {item.cvFilename ? <span className="chip">CV: {item.cvFilename}</span> : null}
                         {item.location ? <span className="chip">{item.location}</span> : null}
                         {item.totalExperience ? <span className="chip">{item.totalExperience}</span> : null}
@@ -13372,6 +13429,28 @@ function PortalApp({ token, onLogout }) {
                   <button onClick={() => void copyCapturedExcel()}>Copy Excel</button>
                   <button onClick={() => void copyCapturedWhatsapp()}>Copy WhatsApp</button>
                   <button onClick={() => void copyCapturedEmail()}>Copy Email</button>
+                  {String(state.user?.role || "").toLowerCase() === "admin" ? (
+                    <>
+                      <button
+                        className="ghost-btn"
+                        onClick={() => {
+                          const ids = capturedCandidates.map((item) => String(item?.id || "")).filter(Boolean);
+                          setBulkAssignCandidateIds((current) => (current.length === ids.length ? [] : ids));
+                        }}
+                      >
+                        {bulkAssignCandidateIds.length && bulkAssignCandidateIds.length === capturedCandidates.length ? "Clear selection" : "Select all visible"}
+                      </button>
+                      <button
+                        disabled={!bulkAssignCandidateIds.length}
+                        onClick={() => {
+                          if (!bulkAssignCandidateIds.length) return;
+                          setAssignCandidateId("");
+                        }}
+                      >
+                        {`Assign selected (${bulkAssignCandidateIds.length})`}
+                      </button>
+                    </>
+                  ) : null}
                 </div>
                 <div className="stack-list">
                 {!capturedCandidates.length ? <div className="empty-state">No captured notes or recruiter-owned candidates yet.</div> : capturedCandidates.map((item) => {
@@ -13395,6 +13474,22 @@ function PortalApp({ token, onLogout }) {
                           {statusState.summary ? <div className="status-line">{statusState.summary}</div> : null}
                           {statusState.note ? <div className="status-note">{statusState.note}</div> : null}
                           <div className="chip-row">
+                            {String(state.user?.role || "").toLowerCase() === "admin" ? (
+                              <label className="checkbox-row" style={{ marginRight: 6 }}>
+                                <input
+                                  type="checkbox"
+                                  checked={bulkAssignCandidateIds.includes(String(item?.id || ""))}
+                                  onChange={(e) => {
+                                    const id = String(item?.id || "");
+                                    if (!id) return;
+                                    setBulkAssignCandidateIds((current) => e.target.checked
+                                      ? Array.from(new Set([...current, id]))
+                                      : current.filter((entry) => entry !== id));
+                                  }}
+                                />
+                                <span>Select</span>
+                              </label>
+                            ) : null}
                             {statusState.followUp ? <span className="chip">Follow-up: {new Date(statusState.followUp).toLocaleString()}</span> : null}
                             {statusState.interviewAt ? <span className="chip">Interview: {new Date(statusState.interviewAt).toLocaleString()}</span> : null}
                           </div>
@@ -15045,24 +15140,24 @@ function PortalApp({ token, onLogout }) {
       </main>
 
       <AssignModal
-        open={Boolean(assignApplicantId)}
+        open={Boolean(assignApplicantId) || bulkAssignApplicantIds.length > 0}
         applicant={assignApplicant}
         users={state.users}
         jobs={state.jobs}
-        title={assignApplicant?.assignedToName ? "Reassign Applicant" : "Assign Applicant"}
-        description={assignApplicant?.assignedToName ? "Reassign this record to a recruiter and JD." : "Assign this record to a recruiter and JD."}
-        onClose={() => setAssignApplicantId("")}
-        onSave={saveApplicantAssignment}
+        title={bulkAssignApplicantIds.length > 1 ? `Assign ${bulkAssignApplicantIds.length} Applicants` : (assignApplicant?.assignedToName ? "Reassign Applicant" : "Assign Applicant")}
+        description={bulkAssignApplicantIds.length > 1 ? "Assign selected applicants to a recruiter and JD." : (assignApplicant?.assignedToName ? "Reassign this record to a recruiter and JD." : "Assign this record to a recruiter and JD.")}
+        onClose={() => { setAssignApplicantId(""); setBulkAssignApplicantIds([]); }}
+        onSave={(payload) => saveApplicantAssignment({ ...payload, targetIds: bulkAssignApplicantIds })}
       />
       <AssignModal
-        open={Boolean(assignCandidateId)}
+        open={Boolean(assignCandidateId) || bulkAssignCandidateIds.length > 0}
         applicant={assignCandidate}
         users={state.users}
         jobs={state.jobs}
-        onClose={() => setAssignCandidateId("")}
-        onSave={saveCapturedAssignment}
-        title={assignCandidate?.assigned_to_name ? "Reassign Draft" : "Assign Draft"}
-        description={assignCandidate?.assigned_to_name ? "Reassign {name} to a recruiter and JD." : "Assign {name} to a recruiter and JD. Recruiters can map the role for themselves; admins can also assign another recruiter."}
+        onClose={() => { setAssignCandidateId(""); setBulkAssignCandidateIds([]); }}
+        onSave={(payload) => saveCapturedAssignment({ ...payload, targetIds: bulkAssignCandidateIds })}
+        title={bulkAssignCandidateIds.length > 1 ? `Assign ${bulkAssignCandidateIds.length} Drafts` : (assignCandidate?.assigned_to_name ? "Reassign Draft" : "Assign Draft")}
+        description={bulkAssignCandidateIds.length > 1 ? "Assign selected captured drafts to a recruiter and JD." : (assignCandidate?.assigned_to_name ? "Reassign {name} to a recruiter and JD." : "Assign {name} to a recruiter and JD. Recruiters can map the role for themselves; admins can also assign another recruiter.")}
         nameKey="name"
         allowRecruiterSelect={String(state.user?.role || "").toLowerCase() === "admin"}
         lockedRecruiterName={state.user?.name || ""}
