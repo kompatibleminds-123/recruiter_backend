@@ -7559,8 +7559,18 @@ function PortalApp({ token, onLogout }) {
       return viewOk && queryOk && dateFromOk && dateToOk && clientOk && jdOk && assignedToOk && capturedByOk && sourceOk && outcomeOk;
     });
 
-    // Converted is a separate metric (same filter scope), not part of captured list totals.
-    const convertedCount = filteredBase.filter((item) => Boolean(resolveCapturedAssessment(item))).length;
+    const wantsActive = candidateFilters.activeStates.includes("Active");
+    const wantsInactive = candidateFilters.activeStates.includes("Inactive");
+    const defaultActiveOnly = !candidateFilters.activeStates.length;
+
+    // Converted metric now follows selected state:
+    // - default/Active: include converted
+    // - Inactive only: converted = 0
+    // - Active+Inactive: include converted
+    const includeConvertedForState = defaultActiveOnly || wantsActive || (wantsActive && wantsInactive);
+    const convertedCount = includeConvertedForState
+      ? filteredBase.filter((item) => Boolean(resolveCapturedAssessment(item))).length
+      : 0;
 
     // Captured totals are strictly non-converted rows only.
     const nonConvertedBase = filteredBase.filter((item) => !resolveCapturedAssessment(item));
@@ -7568,8 +7578,6 @@ function PortalApp({ token, onLogout }) {
       const manuallyHidden = item.hidden_from_captured === true;
       const activeValue = manuallyHidden ? "Inactive" : "Active";
       const searchNameMatch = Boolean(queryText && String(item?.name || "").toLowerCase().includes(queryText));
-      const wantsActive = candidateFilters.activeStates.includes("Active");
-      const defaultActiveOnly = !candidateFilters.activeStates.length;
       const activeOk = defaultActiveOnly
         ? (activeValue === "Active" || searchNameMatch)
         : (candidateFilters.activeStates.includes(activeValue) || (searchNameMatch && wantsActive));
@@ -14148,7 +14156,7 @@ function PortalApp({ token, onLogout }) {
               <Section kicker="Email" title="Mail Settings">
                 {statuses.settings ? <div className={`status ${statuses.settingsKind || ""}`}>{statuses.settings}</div> : null}
                 <p className="muted">Configure email delivery for JD sharing. You can use either SMTP credentials or API mode (per recruiter).</p>
-                <div className="settings-subsection mail-settings-shell">
+                <div className="settings-subsection mail-settings-shell jd-shell-create">
                   <div className="section-kicker">Mail Share Settings (SMTP / API)</div>
                   <div className="form-grid two-col">
                     <label><span>SMTP host</span><input value={smtpSettings.host} onChange={(e) => { markSmtpSettingsDirty(); setSmtpSettings((c) => ({ ...c, host: e.target.value })); }} placeholder="smtppro.zoho.com" /></label>
@@ -14310,7 +14318,7 @@ function PortalApp({ token, onLogout }) {
                   </div>
                 </div>
 
-                <div className="settings-subsection mail-signature-shell">
+                <div className="settings-subsection mail-signature-shell jd-shell-actions">
                   <div className="section-kicker">Job Actions (Selected Existing JD)</div>
                   <div className="button-row">
                     <button disabled={jobActionBusy} className="ghost-btn" onClick={() => downloadJobDraftWord()}>Download Word</button>
@@ -14367,7 +14375,7 @@ function PortalApp({ token, onLogout }) {
                   </div>
                 </div>
 
-                <div className="settings-subsection mail-settings-notes">
+                <div className="settings-subsection mail-settings-notes jd-shell-basic">
                   <div className="section-kicker">Basic Job Setup</div>
                   <div className="form-grid two-col">
                   <label><span>Job title</span><input disabled={jobDraftReadOnly || jobActionBusy} value={jobDraft.title} onChange={(e) => setJobDraft((c) => ({ ...c, title: e.target.value }))} /></label>

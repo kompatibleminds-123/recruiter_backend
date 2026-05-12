@@ -838,12 +838,12 @@ textarea { min-height: 92px; resize: vertical; }
   border-left: 4px solid #3b82f6;
 }
 .direct-share-body-shell {
-  background: linear-gradient(180deg, #ffffff 0%, #f5fffb 100%);
-  border-left: 4px solid #10b981;
+  background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+  border-left: 4px solid #94a3b8;
 }
 .direct-share-preview-shell {
-  background: linear-gradient(180deg, #ffffff 0%, #f8f6ff 100%);
-  border-left: 4px solid #8b5cf6;
+  background: linear-gradient(180deg, #ffffff 0%, #f5fffb 100%);
+  border-left: 4px solid #10b981;
 }
 .candidate-filter-head h3 {
   margin: 0 0 0.25rem;
@@ -1618,16 +1618,16 @@ textarea { min-height: 92px; resize: vertical; }
   box-shadow: 0 6px 14px rgba(59, 130, 246, 0.06);
 }
 .shortcuts-section--job {
+  border-color: #d7dee9;
+  border-left-color: #94a3b8;
+  background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+  box-shadow: 0 6px 14px rgba(148, 163, 184, 0.08);
+}
+.shortcuts-section--company {
   border-color: #bfead8;
   border-left-color: #10b981;
   background: linear-gradient(180deg, #ffffff 0%, #f5fffb 100%);
   box-shadow: 0 6px 14px rgba(16, 185, 129, 0.06);
-}
-.shortcuts-section--company {
-  border-color: #dfd0ff;
-  border-left-color: #8b5cf6;
-  background: linear-gradient(180deg, #ffffff 0%, #f8f6ff 100%);
-  box-shadow: 0 6px 14px rgba(139, 92, 246, 0.06);
 }
 .shortcut-builder__form {
   align-items: start;
@@ -1812,11 +1812,11 @@ textarea { min-height: 92px; resize: vertical; }
   padding: 0.56rem 0.7rem;
 }
 .captured-metric-row .metric-label {
-  font-size: 0.72rem;
+  font-size: 0.74rem;
   letter-spacing: 0.11em;
 }
 .captured-metric-row .metric-value {
-  font-size: 2.05rem;
+  font-size: 1.5rem;
 }
 
 /* ---------- Premium UI Polish Layer (CSS-only, no logic changes) ---------- */
@@ -1835,10 +1835,24 @@ textarea { min-height: 92px; resize: vertical; }
   border-left-color: #3b82f6;
 }
 .panel.shortcuts-section.shortcuts-section--job {
-  border-left-color: #10b981;
+  border-left-color: #94a3b8;
 }
 .panel.shortcuts-section.shortcuts-section--company {
-  border-left-color: #8b5cf6;
+  border-left-color: #10b981;
+}
+
+/* JD Workspace: first 3 sections should be Blue, Grey, Green */
+.jd-shell-create {
+  background: linear-gradient(180deg, #ffffff 0%, #f7fbff 100%);
+  border-left: 4px solid #3b82f6;
+}
+.jd-shell-actions {
+  background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+  border-left: 4px solid #94a3b8;
+}
+.jd-shell-basic {
+  background: linear-gradient(180deg, #ffffff 0%, #f5fffb 100%);
+  border-left: 4px solid #10b981;
 }
 
 .panel h2 {
