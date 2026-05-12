@@ -4906,6 +4906,7 @@ function PortalApp({ token, onLogout }) {
   }, [state.jobs, state.clientPortal, clientUsers]);
   const [clientUserDraft, setClientUserDraft] = useState({ username: "", password: "", clientName: "", allowedPositions: "" });
   const [clientPasswordDrafts, setClientPasswordDrafts] = useState({});
+  const [loginSettingsPanel, setLoginSettingsPanel] = useState("team");
   const [quickUpdateCandidateQuery, setQuickUpdateCandidateQuery] = useState("");
   const [quickUpdateCandidateId, setQuickUpdateCandidateId] = useState("");
   const [quickUpdateText, setQuickUpdateText] = useState("");
@@ -5225,7 +5226,14 @@ function PortalApp({ token, onLogout }) {
     String(state.user?.companyId || "").trim() === KOMPATIBLE_MINDS_COMPANY_ID &&
     isSettingsAdmin;
   const isAnkitAdmin = String(state.user?.email || "").trim().toLowerCase() === "ankit.garg@kompatibleminds.com";
-  const canAddCompany = isSettingsAdmin && (isAnkitAdmin || isKompatibleAdminContext);
+  const canAddCompany = isSettingsAdmin && isAnkitAdmin;
+  const canViewClientPayrollInLoginSettings = hasSuiteModulesAccess || isKompatibleCompany;
+  const loginSettingsOptions = [
+    { id: "team", label: "Add Recruitment Team", visible: true },
+    { id: "client", label: "Add Client", visible: canViewClientPayrollInLoginSettings },
+    { id: "payroll", label: "Add Payroll", visible: canViewClientPayrollInLoginSettings },
+    { id: "company", label: "Add Company", visible: canAddCompany }
+  ].filter((item) => item.visible);
   const shortcutJobOptions = useMemo(() => {
     const source = Array.isArray(state.jobs) && state.jobs.length ? state.jobs : jobsCatalog;
     return (source || []).map((job) => ({
@@ -5319,6 +5327,13 @@ function PortalApp({ token, onLogout }) {
       setStatus("loginSettings", "Client, Employee, and Payroll modules are available on Full Recruiter + Other Modules plans.", "error");
     }
   }, [accessFlagsReady, hasSuiteModulesAccess, location?.pathname, navigate]);
+
+  useEffect(() => {
+    const visibleIds = new Set(loginSettingsOptions.map((item) => item.id));
+    if (!visibleIds.has(loginSettingsPanel)) {
+      setLoginSettingsPanel(loginSettingsOptions[0]?.id || "team");
+    }
+  }, [loginSettingsPanel, loginSettingsOptions]);
 
   async function openPlanUpgrade(planCode) {
     try {
@@ -14917,12 +14932,24 @@ function PortalApp({ token, onLogout }) {
             <Route path="/login-settings" element={
               <div className="page-grid">
                 <Section kicker="Admin Access" title="Login Settings">
-                  <p className="muted">Manage company workspace users and client portal access from one place. Client portal URL: https://recruiter-backend-yvex.onrender.com/client-portal</p>
-                  {!hasSaasUnlimitedAccess ? <p className="muted">Current plan mode: team member management only. Company/client/payroll access controls unlock on SaaS Unlimited (Rs 4999).</p> : null}
+                  <p className="muted">Manage company workspace users and client portal access from one place.</p>
+                  {!hasSaasUnlimitedAccess ? <p className="muted">Current plan mode: Add Recruitment Team only.</p> : null}
                   {statuses.loginSettings ? <div className={`status ${statuses.loginSettingsKind || ""}`}>{statuses.loginSettings}</div> : null}
+                  <div className="login-settings-switch">
+                    {loginSettingsOptions.map((option) => (
+                      <button
+                        key={option.id}
+                        type="button"
+                        className={loginSettingsPanel === option.id ? "" : "ghost-btn"}
+                        onClick={() => setLoginSettingsPanel(option.id)}
+                      >
+                        {option.label}
+                      </button>
+                    ))}
+                  </div>
                 </Section>
 
-                {hasSaasUnlimitedAccess && canAddCompany ? (
+                {loginSettingsPanel === "company" && canAddCompany ? (
                 <details className="panel login-settings-collapse">
                   <summary className="dashboard-group__summary">
                     <div>
@@ -14943,11 +14970,12 @@ function PortalApp({ token, onLogout }) {
                 </details>
                 ) : null}
 
+                {loginSettingsPanel === "team" ? (
                 <details className="panel login-settings-collapse" open>
                   <summary className="dashboard-group__summary">
                     <div>
                       <div className="section-kicker">Team Access</div>
-                      <h2>Add Users</h2>
+                      <h2>Add Recruitment Team</h2>
                     </div>
                   </summary>
                   <p className="muted">Create admins and recruiters for this company workspace. Payroll users are managed in the separate Payroll Access section below.</p>
@@ -14957,7 +14985,7 @@ function PortalApp({ token, onLogout }) {
                     <label><span>Member role</span><select disabled={!isSettingsAdmin} value={teamUserDraft.role} onChange={(e) => setTeamUserDraft((current) => ({ ...current, role: e.target.value }))}><option value="recruiter">Recruiter</option><option value="admin">Admin</option></select></label>
                     <label><span>Temporary password</span><input disabled={!isSettingsAdmin} type="password" value={teamUserDraft.password} onChange={(e) => setTeamUserDraft((current) => ({ ...current, password: e.target.value }))} placeholder="Temporary password" /></label>
                   </div>
-                  {isSettingsAdmin ? <div className="button-row"><button onClick={() => void createTeamUser()}>Create member</button></div> : null}
+                  {isSettingsAdmin ? <div className="button-row"><button onClick={() => void createTeamUser()}>Add recruitment team</button></div> : null}
                   {statuses.loginTeam ? <div className={`status ${statuses.loginTeamKind || ""}`}>{statuses.loginTeam}</div> : null}
                   <div className="stack-list compact">
                     {(recruiterWorkspaceUsers || []).map((item) => (
@@ -14981,8 +15009,9 @@ function PortalApp({ token, onLogout }) {
                     ))}
                   </div>
                 </details>
+                ) : null}
 
-                {hasSuiteModulesAccess ? (
+                {loginSettingsPanel === "client" && canViewClientPayrollInLoginSettings ? (
                 <details className="panel login-settings-collapse" open>
                   <summary className="dashboard-group__summary">
                     <div>
@@ -15020,12 +15049,12 @@ function PortalApp({ token, onLogout }) {
                 </details>
                 ) : null}
 
-                {hasSuiteModulesAccess && isLicenseOwnerAdmin ? (
+                {loginSettingsPanel === "payroll" && canViewClientPayrollInLoginSettings ? (
                 <details className="panel login-settings-collapse" open>
                   <summary className="dashboard-group__summary">
                     <div>
                       <div className="section-kicker">Payroll Access</div>
-                      <h2>Add Payroll Users</h2>
+                      <h2>Add Payroll</h2>
                     </div>
                   </summary>
                   <p className="muted">Payroll users login from `/payroll-login`. Payroll Owner can manage payroll access; Payroll Manager can operate payroll based on assigned permissions.</p>
@@ -15035,7 +15064,8 @@ function PortalApp({ token, onLogout }) {
                     <label><span>Role</span><select disabled={!isLicenseOwnerAdmin} value={payrollUserDraft.role} onChange={(e) => setPayrollUserDraft((current) => ({ ...current, role: e.target.value }))}><option value="payroll_owner">Payroll Owner</option><option value="payroll_manager">Payroll Manager</option></select></label>
                     <label><span>Temporary password</span><input disabled={!isLicenseOwnerAdmin} type="password" value={payrollUserDraft.password} onChange={(e) => setPayrollUserDraft((current) => ({ ...current, password: e.target.value }))} placeholder="Temporary password" /></label>
                   </div>
-                  {isLicenseOwnerAdmin ? <div className="button-row"><button onClick={() => void createPayrollUser()}>Create payroll user</button></div> : null}
+                  {isLicenseOwnerAdmin ? <div className="button-row"><button onClick={() => void createPayrollUser()}>Add payroll</button></div> : null}
+                  {!isLicenseOwnerAdmin ? <p className="muted">Only license owner admin can add payroll users.</p> : null}
                   {statuses.loginPayroll ? <div className={`status ${statuses.loginPayrollKind || ""}`}>{statuses.loginPayroll}</div> : null}
                   <div className="stack-list compact">
                     {!payrollWorkspaceUsers.length ? <div className="empty-state">No payroll users yet.</div> : payrollWorkspaceUsers.map((item) => (

@@ -1765,6 +1765,15 @@ textarea { min-height: 92px; resize: vertical; }
   background: #fff;
   overflow: auto;
 }
+.login-settings-switch {
+  margin-top: 0.8rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+}
+.login-settings-switch > button {
+  border-radius: 999px;
+}
 
 /* ---------- Premium UI Polish Layer (CSS-only, no logic changes) ---------- */
 .content {
@@ -1775,6 +1784,17 @@ textarea { min-height: 92px; resize: vertical; }
 .panel {
   border-color: #ccdaee;
   box-shadow: 0 14px 34px rgba(15, 23, 42, 0.09);
+}
+
+/* Keep shortcut left accent colors from being overridden by global panel border color. */
+.panel.shortcuts-section.shortcuts-section--personal {
+  border-left-color: #3b82f6;
+}
+.panel.shortcuts-section.shortcuts-section--job {
+  border-left-color: #10b981;
+}
+.panel.shortcuts-section.shortcuts-section--company {
+  border-left-color: #8b5cf6;
 }
 
 .panel h2 {
