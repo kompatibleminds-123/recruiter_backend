@@ -1606,10 +1606,10 @@ textarea { min-height: 92px; resize: vertical; }
   content: "";
   position: absolute;
   left: 0;
-  top: 10px;
-  bottom: 10px;
+  top: 6px;
+  bottom: 6px;
   width: 4px;
-  border-radius: 0 999px 999px 0;
+  border-radius: 999px;
   background: var(--shortcut-accent);
 }
 .shortcuts-section--personal {
