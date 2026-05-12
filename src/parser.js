@@ -21,6 +21,7 @@ function sanitizeText(value) {
   return String(value || "")
     .replace(/\r/g, "\n")
     .replace(/\u00a0/g, " ")
+    .replace(/[’‘`´]/g, "'")
     .replace(/[\u2013\u2014\u2212]/g, "-")
     .replace(/\s\?\s/g, " - ")
     .replace(/[ \t]+/g, " ")
@@ -52,7 +53,7 @@ function stripRtf(rtf) {
 function parseDateRange(text) {
   const normalized = String(text || "").replace(/[\u2013\u2014\u2212]/g, "-");
   const now = new Date();
-  const hasMonthToken = /\b(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*[\s,-]+(?:'\d{2}|\d{4})/i.test(normalized);
+  const hasMonthToken = /\b(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*[\s,-]*(?:'\d{2}|'?\d{4})/i.test(normalized);
 
   // Prefer explicit year-only ranges like "2020-2023" or "2020 to 2023"
   // before falling back to "any year in the line" (which can be noisy in CV bullets).
@@ -77,10 +78,10 @@ function parseDateRange(text) {
   }
 
   const matches = Array.from(
-    normalized.matchAll(/\b(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*[\s,-]+(?:'(\d{2})|(\d{4}))/ig)
+    normalized.matchAll(/\b(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*[\s,-]*(?:'?(\d{4})|'(\d{2}))/ig)
   ).map((match) => ({
     month: MONTH_INDEX[String(match[1] || "").toLowerCase()],
-    year: match[2] ? 2000 + Number(match[2]) : Number(match[3])
+    year: match[2] ? Number(match[2]) : (match[3] ? 2000 + Number(match[3]) : NaN)
   }));
 
   let start = matches[0] || null;
@@ -95,11 +96,11 @@ function parseDateRange(text) {
     end = { year: yearOnlyMatches[1], month: 11 };
   }
 
-  const sinceMonthMatch = normalized.match(/\bsince\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*[\s,-]+(?:'(\d{2})|(\d{4}))/i);
+  const sinceMonthMatch = normalized.match(/\bsince\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*[\s,-]*(?:'?(\d{4})|'(\d{2}))/i);
   if (sinceMonthMatch) {
     start = {
       month: MONTH_INDEX[String(sinceMonthMatch[1] || "").toLowerCase()],
-      year: sinceMonthMatch[2] ? 2000 + Number(sinceMonthMatch[2]) : Number(sinceMonthMatch[3])
+      year: sinceMonthMatch[2] ? Number(sinceMonthMatch[2]) : (sinceMonthMatch[3] ? 2000 + Number(sinceMonthMatch[3]) : NaN)
     };
     end = { year: now.getFullYear(), month: now.getMonth() };
     isCurrent = true;
@@ -292,13 +293,14 @@ function isNoiseLine(line) {
 }
 
 function looksLikeExperienceDate(line) {
-  return /\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*[\s,-]+(?:'\d{2}|\d{4})\b/i.test(line) &&
+  return /\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*[\s,-]*(?:'\d{2}|'?\d{4})\b/i.test(line) &&
     (/\bpresent\b|\bcurrent\b|\btill date\b|\bsince\b/i.test(line) || /[-\u2013\u2014\u2212]/.test(line) || /\b\d+\s+(?:yr|yrs|year|years|mo|mos|month|months)\b/i.test(line));
 }
 
 function cleanCompanyLine(line) {
   return String(line || "")
     .split("|")[0]
+    .replace(/\s*\((?:(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[^)]*|[^)]*\b(?:19|20)\d{2}\b[^)]*)\)\s*$/i, "")
     .replace(/\s+\d+\s+years?(?:\s+\d+\s+months?)?$/i, "")
     .replace(/\s+\d+\s+months?$/i, "")
     .replace(/^[^A-Za-z0-9(]+/, "")
@@ -536,12 +538,52 @@ function extractTitleDateCompany(lines, index) {
   const line = String(lines[index] || "").trim();
   const previousLine = String(lines[index - 1] || "").trim();
   const nextLine = String(lines[index + 1] || "").trim();
+  const next2Line = String(lines[index + 2] || "").trim();
+  const companyLabelPattern = /^(?:\d+\.\s*)?company(?:\s*\([^)]*\))?\s*[:\-]\s*(.+)$/i;
+
+  const findNearbyCompanyLabel = () => {
+    for (let offset = 1; offset <= 3; offset += 1) {
+      const prev = String(lines[index - offset] || "").trim();
+      const prevMatch = prev.match(companyLabelPattern);
+      if (prevMatch?.[1]) return cleanCompanyLine(prevMatch[1]);
+    }
+    for (let offset = 1; offset <= 2; offset += 1) {
+      const next = String(lines[index + offset] || "").trim();
+      const nextMatch = next.match(companyLabelPattern);
+      if (nextMatch?.[1]) return cleanCompanyLine(nextMatch[1]);
+    }
+    return "";
+  };
+
+  // Handle "Job Profile- <Role> (<Date - Date>)" with company on nearby line.
+  const jobProfileDateMatch = line.match(/^job\s*profile\s*[-:]\s*(.+?)\s*\(([^)]+)\)\s*$/i);
+  if (jobProfileDateMatch) {
+    const title = String(jobProfileDateMatch[1] || "").trim();
+    const dates = String(jobProfileDateMatch[2] || "").trim();
+    const company = findNearbyCompanyLabel();
+    if (title && company && dates) return { title, company, dates };
+  }
+
+  // Handle explicit "Company: X (Date - Date)" lines in numbered CV timelines.
+  // Example: "3. Company: Expertrons Academy (Sept'2021 - April'2022)"
+  const companyDateParenMatch = line.match(/^(?:\d+\.\s*)?company\s*[:\-]\s*(.+?)\s*\(([^)]+)\)\s*$/i);
+  if (companyDateParenMatch) {
+    const company = cleanCompanyLine(companyDateParenMatch[1]);
+    const dates = String(companyDateParenMatch[2] || "").trim();
+    let title = "";
+    const titleFromNext = nextLine.match(/^(?:job\s*profile)\s*[-:]\s*(.+)$/i);
+    const titleFromNext2 = next2Line.match(/^(?:job\s*profile)\s*[-:]\s*(.+)$/i);
+    if (titleFromNext?.[1]) title = String(titleFromNext[1]).trim();
+    else if (titleFromNext2?.[1]) title = String(titleFromNext2[1]).trim();
+    if (!title) title = "Role";
+    if (company && dates) return { title, company, dates };
+  }
 
   // Handle date-first formats:
   // - "Since Aug 2024 | Amply ... "
   // - "Sep 2023 - Mar 2024 | Signeasy | Business Development Representative"
   const dateFirstMatch = line.match(
-    /^(?:(since)\s+)?((?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*[\s,-]+(?:'\d{2}|\d{4})|\b(?:19|20)\d{2}\b)\s*(?:[-\u2013\u2014\u2212]|to)?\s*((?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*[\s,-]+(?:'\d{2}|\d{4})|\b(?:19|20)\d{2}\b|present|current|till date)?\s*\|\s*(.+)$/i
+    /^(?:(since)\s+)?((?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*[\s,-]*(?:'\d{2}|'?\d{4})|\b(?:19|20)\d{2}\b)\s*(?:[-\u2013\u2014\u2212]|to)?\s*((?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*[\s,-]*(?:'\d{2}|'?\d{4})|\b(?:19|20)\d{2}\b|present|current|till date)?\s*\|\s*(.+)$/i
   );
   if (dateFirstMatch) {
     const sinceWord = String(dateFirstMatch[1] || "").trim();
@@ -562,7 +604,7 @@ function extractTitleDateCompany(lines, index) {
     }
   }
 
-  const dateMatch = line.match(/^(.*?)(\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*[\s,-]+(?:'\d{2}|\d{4}).*)$/i);
+  const dateMatch = line.match(/^(.*?)(\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*[\s,-]*(?:'\d{2}|'?\d{4}).*)$/i);
   if (!dateMatch) return null;
 
   const prefix = dateMatch[1]
@@ -611,6 +653,15 @@ function extractTitleDateCompany(lines, index) {
       companyInline = cleanCompanyLine(parts[0]);
       title = parts[parts.length - 1];
     }
+  }
+
+  // Job-profile lines often contain the date while company is on previous line:
+  // "Company- Whitehat Jr..."
+  // "Job Profile- Sales Manager (May 2021 - Sep 2021)"
+  const companyLabelPrev = previousLine.match(companyLabelPattern);
+  if (/^job\s*profile\b/i.test(prefix) && companyLabelPrev?.[1]) {
+    companyInline = cleanCompanyLine(companyLabelPrev[1]);
+    title = String(prefix).replace(/^job\s*profile\s*[-:]\s*/i, "").trim() || title;
   }
 
   const prevScore = isLikelyCompanyLine(previousLine) ? companyLineScore(previousLine) : -100;
@@ -782,6 +833,7 @@ function extractTimeline(lines, rawText, structuredExperienceText) {
       const company = String(entry.company || "").trim();
       const title = String(entry.title || "").trim();
       if (!company && !title) return false;
+      if (/^job\s*profile\b/i.test(company) && /^job\s*profile\b/i.test(title)) return false;
       if (looksLikeSectionHeading(company) || looksLikeSectionHeading(title)) return false;
       if (isNoiseLine(company) || isNoiseLine(title)) return false;
       if (looksLikeEducationText(company) || looksLikeEducationText(title)) return false;
@@ -805,10 +857,30 @@ function extractTimeline(lines, rawText, structuredExperienceText) {
     deduped.push(entry);
   }
 
+  // Remove likely duplicate sub-roles where a shorter stint is fully covered by a broader
+  // same-company range extracted from nearby lines (common in CVs with promoted-role sub-lines).
+  const cleaned = deduped.filter((entry, idx, array) => {
+    const companyKey = String(entry.company || "").toLowerCase().trim();
+    if (!companyKey || !Number.isFinite(entry.startIndex) || !Number.isFinite(entry.endIndex)) return true;
+    const coveredBySibling = array.some((other, otherIdx) => {
+      if (otherIdx === idx) return false;
+      if (String(other.company || "").toLowerCase().trim() !== companyKey) return false;
+      if (!Number.isFinite(other.startIndex) || !Number.isFinite(other.endIndex)) return false;
+      const fullyCovered = other.startIndex <= entry.startIndex && other.endIndex >= entry.endIndex;
+      if (!fullyCovered) return false;
+      const otherSpan = other.endIndex - other.startIndex;
+      const thisSpan = entry.endIndex - entry.startIndex;
+      if (otherSpan < thisSpan) return false;
+      // Prefer keeping the broader one when this row looks like a year-only sub-line.
+      return /\b(?:19|20)\d{2}\s*\)?\s*$/i.test(String(entry.rawDates || ""));
+    });
+    return !coveredBySibling;
+  });
+
   const gaps = [];
-  for (let i = 0; i < deduped.length - 1; i += 1) {
-    const newer = deduped[i];
-    const older = deduped[i + 1];
+  for (let i = 0; i < cleaned.length - 1; i += 1) {
+    const newer = cleaned[i];
+    const older = cleaned[i + 1];
     if (newer.startIndex === null || older.endIndex === null) continue;
     const gapMonths = newer.startIndex - older.endIndex - 1;
     if (gapMonths < 3) continue;
@@ -821,7 +893,7 @@ function extractTimeline(lines, rawText, structuredExperienceText) {
     });
   }
 
-  const shortStints = deduped
+  const shortStints = cleaned
     .filter((entry) => {
       const monthsMatch = entry.duration.match(/(\d+)\s+month/i);
       const yearsMatch = entry.duration.match(/(\d+)\s+year/i);
@@ -843,7 +915,7 @@ function extractTimeline(lines, rawText, structuredExperienceText) {
   if (/\bquota\b|\btarget\b|\bpipeline\b|\barr\b|\bconversion\b/i.test(rawTextPreview)) highlights.push("Commercial metrics mentioned");
 
   return {
-    timeline: deduped.map(({ startIndex, endIndex, ...entry }) => entry),
+    timeline: cleaned.map(({ startIndex, endIndex, ...entry }) => entry),
     gaps,
     shortStints,
     highlights
@@ -930,10 +1002,11 @@ async function parseCandidatePayload(payload) {
     claimedMonths: claimedTotalMonths
   });
   let totalExperience = claimedTotalExperience;
-  if (timelineSpanMonths > 0) {
-    totalExperience = formatMonthCount(timelineSpanMonths);
-  } else if (timelineActiveMonths > 0) {
+  // Prefer summed active months across parsed roles (gap-safe), not just career span.
+  if (timelineActiveMonths > 0) {
     totalExperience = formatMonthCount(timelineActiveMonths);
+  } else if (timelineSpanMonths > 0) {
+    totalExperience = formatMonthCount(timelineSpanMonths);
   }
   const currentRole = extractCurrentRoleFromTimeline(parsed.timeline);
   const currentOrgTenure = currentOrgTenureMonths > 0 ? formatMonthCount(currentOrgTenureMonths) : "";
