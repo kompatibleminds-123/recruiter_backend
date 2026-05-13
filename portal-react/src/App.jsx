@@ -4626,7 +4626,6 @@ function PortalApp({ token, onLogout }) {
     outcomes: []
   });
   const [assessmentLane, setAssessmentLane] = useState("active"); // active | archived
-  const [assessmentsLoadedOnce, setAssessmentsLoadedOnce] = useState(false);
   const [reportsTab, setReportsTab] = useState("client");
   const [reportsFilters, setReportsFilters] = useState({
     dateFrom: "",
@@ -6040,7 +6039,6 @@ function PortalApp({ token, onLogout }) {
       assessments: needsAssessments ? (assessmentsResult?.assessments || []) : current.assessments,
       assessmentEvents: needsAssessmentEvents ? (assessmentEventsResult?.result?.rows || []) : current.assessmentEvents
     }));
-    if (needsAssessments) setAssessmentsLoadedOnce(true);
     if (needsJobs) {
       setJobsCatalog(Array.isArray(jobsManageResult?.jobs) ? jobsManageResult.jobs : []);
     }
@@ -6217,7 +6215,6 @@ function PortalApp({ token, onLogout }) {
       assessments: assessmentsResult?.assessments || current.assessments,
       assessmentEvents: includeEvents ? (assessmentEventsResult?.result?.rows || current.assessmentEvents) : current.assessmentEvents
     }));
-    setAssessmentsLoadedOnce(true);
   }
 
   useEffect(() => {
@@ -6269,11 +6266,6 @@ function PortalApp({ token, onLogout }) {
       document.removeEventListener("visibilitychange", syncOnFocusLikeEvent);
     };
   }, [token, location?.pathname]);
-
-  useEffect(() => {
-    if (token) return;
-    setAssessmentsLoadedOnce(false);
-  }, [token]);
 
   useEffect(() => {
     if (!token) return undefined;
@@ -13889,13 +13881,7 @@ function PortalApp({ token, onLogout }) {
               </div>
               <div className="status-note">Selected for client share: {selectedAssessmentIds.length}</div>
               <div className="stack-list">
-                {!assessmentsLoadedOnce ? (
-                  <div className="assessments-skeleton-list" aria-hidden="true">
-                    <div className="assessments-skeleton-card" />
-                    <div className="assessments-skeleton-card" />
-                    <div className="assessments-skeleton-card" />
-                  </div>
-                ) : !(Array.isArray(filteredAssessments) && filteredAssessments.length) ? <div className="empty-state">No assessments saved yet.</div> : filteredAssessments.map((item) => (
+                {!(Array.isArray(filteredAssessments) && filteredAssessments.length) ? <div className="empty-state">No assessments saved yet.</div> : filteredAssessments.map((item) => (
                   <article className={`item-card compact-card assessment-card ${selectedAssessmentIds.includes(String(item.id)) ? "selected-card" : ""}`} key={item.id}>
                     {(() => {
                       const latestStatusPreview = getLatestAssessmentStatusPreview(item);
