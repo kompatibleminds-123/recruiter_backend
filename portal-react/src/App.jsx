@@ -4664,7 +4664,7 @@ function PortalApp({ token, onLogout }) {
         </div>
       </div>
       <div className="candidate-filter-layout">
-        <div className="candidate-filter-column candidate-filter-column--wide">
+        <div className="candidate-filter-column">
           <div className="candidate-filter-group">
             <div className="candidate-filter-label">Experience</div>
             <div className="range-row">
@@ -4694,7 +4694,11 @@ function PortalApp({ token, onLogout }) {
           </div>
         </div>
         <div className="candidate-filter-column">
+          <label><span>Current company</span><input value={candidateStructuredFiltersDraft.currentCompany} onChange={(e) => setCandidateStructuredFiltersDraft((current) => ({ ...current, currentCompany: e.target.value }))} placeholder="Infosys" /></label>
+          <label><span>Qualification</span><input value={candidateStructuredFiltersDraft.qualification} onChange={(e) => setCandidateStructuredFiltersDraft((current) => ({ ...current, qualification: e.target.value }))} placeholder="B.Tech / MBA" /></label>
           <label><span>Locations</span><input value={candidateStructuredFiltersDraft.location} onChange={(e) => setCandidateStructuredFiltersDraft((current) => ({ ...current, location: e.target.value }))} placeholder="Mumbai, Hyderabad" /></label>
+        </div>
+        <div className="candidate-filter-column">
           <div className="filter-block">
             <div className="candidate-filter-label">Notice period</div>
             <MultiSelectDropdown
@@ -4719,26 +4723,6 @@ function PortalApp({ token, onLogout }) {
               emptySummary="Any notice period"
             />
           </div>
-        </div>
-        <div className="candidate-filter-column">
-          <label><span>Current company</span><input value={candidateStructuredFiltersDraft.currentCompany} onChange={(e) => setCandidateStructuredFiltersDraft((current) => ({ ...current, currentCompany: e.target.value }))} placeholder="Infosys" /></label>
-          <label><span>Qualification</span><input value={candidateStructuredFiltersDraft.qualification} onChange={(e) => setCandidateStructuredFiltersDraft((current) => ({ ...current, qualification: e.target.value }))} placeholder="B.Tech / MBA" /></label>
-          <div className="filter-block">
-            <div className="candidate-filter-label">Client</div>
-            <MultiSelectDropdown
-              label="Client"
-              summaryLabel="Select"
-              options={candidateSearchOptions.clients}
-              selected={parseMultiChipTokens(candidateStructuredFiltersDraft.client)}
-              onToggle={(option) => setCandidateStructuredFiltersDraft((current) => ({
-                ...current,
-                client: toggleMultiChipValue(current.client, option)
-              }))}
-              emptySummary="All clients"
-            />
-          </div>
-        </div>
-        <div className="candidate-filter-column">
           <div className="filter-block">
             <div className="candidate-filter-label">Recruiter</div>
             <MultiSelectDropdown
@@ -4765,6 +4749,22 @@ function PortalApp({ token, onLogout }) {
                 gender: toggleMultiChipValue(current.gender, option)
               }))}
               emptySummary="All genders"
+            />
+          </div>
+        </div>
+        <div className="candidate-filter-column">
+          <div className="filter-block">
+            <div className="candidate-filter-label">Client</div>
+            <MultiSelectDropdown
+              label="Client"
+              summaryLabel="Select"
+              options={candidateSearchOptions.clients}
+              selected={parseMultiChipTokens(candidateStructuredFiltersDraft.client)}
+              onToggle={(option) => setCandidateStructuredFiltersDraft((current) => ({
+                ...current,
+                client: toggleMultiChipValue(current.client, option)
+              }))}
+              emptySummary="All clients"
             />
           </div>
           <div className="filter-block">
@@ -5331,6 +5331,11 @@ function PortalApp({ token, onLogout }) {
   }, [accessFlagsReady, hasSuiteModulesAccess, location?.pathname, navigate]);
 
   useEffect(() => {
+    // Keep every route landing at top to avoid blank-gap feel while async tab data hydrates.
+    window.scrollTo({ top: 0, left: 0, behavior: "auto" });
+  }, [location?.pathname]);
+
+  useEffect(() => {
     const visibleIds = new Set(loginSettingsOptions.map((item) => item.id));
     if (!visibleIds.has(loginSettingsPanel)) {
       setLoginSettingsPanel(loginSettingsOptions[0]?.id || "team");
@@ -5339,13 +5344,13 @@ function PortalApp({ token, onLogout }) {
 
   useEffect(() => {
     if (String(location?.pathname || "") !== "/login-settings") return;
-    const sectionTop = loginSettingsSectionRef.current?.offsetTop;
-    if (!Number.isFinite(sectionTop)) return;
+    const sectionEl = loginSettingsSectionRef.current;
+    if (!sectionEl || typeof sectionEl.getBoundingClientRect !== "function") return;
+    const rect = sectionEl.getBoundingClientRect();
+    // Keep tab switch stable: only auto-scroll when the target section is actually above viewport.
+    if (rect.top >= 16) return;
     window.requestAnimationFrame(() => {
-      window.scrollTo({
-        top: Math.max(0, Number(sectionTop) - 16),
-        behavior: "auto"
-      });
+      sectionEl.scrollIntoView({ block: "start", behavior: "auto" });
     });
   }, [loginSettingsPanel, location?.pathname]);
 
@@ -5971,11 +5976,28 @@ function PortalApp({ token, onLogout }) {
       needsBilling ? api("/company/billing/overview", token).catch(() => null) : Promise.resolve(null),
       pathname === "/plan" ? api("/company/billing/plans", token).catch(() => ({ plans: [] })) : Promise.resolve(null)
     ]);
+    const nextDashboard =
+      needsDashboard && latestDashboardKeyRef.current === dashboardKey
+        ? (
+            dashboardResult && typeof dashboardResult === "object" && Object.keys(dashboardResult).length
+              ? dashboardResult
+              : (current => current.dashboard)
+          )
+        : (current => current.dashboard);
+    const nextClientPortal =
+      needsDashboard && latestClientPortalKeyRef.current === clientPortalKey
+        ? (
+            clientPortalResult && typeof clientPortalResult === "object" && Object.keys(clientPortalResult).length
+              ? clientPortalResult
+              : (current => current.clientPortal)
+          )
+        : (current => current.clientPortal);
+
     setState((current) => ({
       ...current,
       user: userResult.user || userResult,
-      dashboard: needsDashboard && latestDashboardKeyRef.current === dashboardKey ? (dashboardResult || {}) : current.dashboard,
-      clientPortal: needsDashboard && latestClientPortalKeyRef.current === clientPortalKey ? (clientPortalResult || {}) : current.clientPortal,
+      dashboard: nextDashboard(current),
+      clientPortal: nextClientPortal(current),
       applicants: needsApplicants ? (applicantsResult?.items || []) : current.applicants,
       intake: needsIntake ? (intakeResult || {}) : current.intake,
       jobs: needsJobs ? (jobsResult?.jobs || []) : current.jobs,
@@ -6037,7 +6059,8 @@ function PortalApp({ token, onLogout }) {
     if (suspendWorkspaceRefreshRef.current) return;
     const now = Date.now();
     const throttleMs = 15000;
-    if (now - lastWorkspaceRefreshAtRef.current < throttleMs) return;
+    const force = Boolean(options?.force);
+    if (!force && now - lastWorkspaceRefreshAtRef.current < throttleMs) return;
     workspaceRefreshInFlightRef.current = true;
     lastWorkspaceRefreshAtRef.current = now;
     try {
@@ -6202,7 +6225,7 @@ function PortalApp({ token, onLogout }) {
       if (document.visibilityState === "hidden") return;
       const includeSharedPresets = templateSensitivePaths.has(String(location?.pathname || ""));
       const includeEmailSettings = String(location?.pathname || "") === "/mail-settings";
-      void refreshWorkspaceSilently("focus-sync", { includeSharedPresets, includeEmailSettings });
+      void refreshWorkspaceSilently("focus-sync", { includeSharedPresets, includeEmailSettings, force: true });
     }
     window.addEventListener("focus", syncOnFocusLikeEvent);
     window.addEventListener("pageshow", syncOnFocusLikeEvent);

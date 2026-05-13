@@ -853,7 +853,7 @@ textarea { min-height: 92px; resize: vertical; }
 }
 .candidate-filter-layout {
   display: grid;
-  grid-template-columns: minmax(360px, 1.25fr) repeat(3, minmax(190px, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 0.9rem;
   align-items: start;
 }
