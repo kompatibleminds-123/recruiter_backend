@@ -2380,6 +2380,7 @@ async function saveCompanyJob({ actorUserId, companyId, job }) {
   const incomingRecruiterShortcuts = String(job?.jdShortcuts || "").trim();
   let existingJob = null;
   const incomingJobId = String(job?.id || "").trim();
+  const incomingIsTemporaryJobId = /^jd-/i.test(incomingJobId);
   if (!cfg().on) {
     const store = readStore(); store.jobs = Array.isArray(store.jobs) ? store.jobs : []; const now = new Date().toISOString(); const ix = store.jobs.findIndex((i) => i.id === job.id && i.companyId === companyId);
     existingJob = ix >= 0 ? sanitizeJob(store.jobs[ix]) : null;
@@ -2444,7 +2445,9 @@ async function saveCompanyJob({ actorUserId, companyId, job }) {
     return { ...sanitizeJob(next), jdShortcuts: incomingRecruiterShortcuts };
   }
   await ensureSeeded();
-  if (incomingJobId) {
+  // Only query existing row for real persisted UUID ids.
+  // "Save as new JD" uses temporary ids like jd-<timestamp> which are not UUIDs.
+  if (incomingJobId && !incomingIsTemporaryJobId) {
     const existingRows = await sbSel("company_jobs", `select=*&id=eq.${enc(incomingJobId)}&company_id=eq.${enc(companyId)}&limit=1`);
     existingJob = sanitizeJob(existingRows?.[0]);
     if (!actorIsAdmin && existingJob?.ownerRecruiterId && String(existingJob.ownerRecruiterId) !== String(actor.id)) throw new Error("Only an admin or the owner recruiter can edit this JD.");

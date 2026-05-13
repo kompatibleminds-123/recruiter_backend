@@ -9793,8 +9793,12 @@ function PortalApp({ token, onLogout }) {
     setStatus("jobs", "Saving as new JD...");
     try {
       const isAdmin = String(state.user?.role || "").toLowerCase() === "admin";
-      const ownerRecruiterId = isAdmin ? jobDraft.ownerRecruiterId : String(state.user?.id || "");
-      const ownerRecruiterName = isAdmin ? jobDraft.ownerRecruiterName : String(state.user?.name || "");
+      const ownerRecruiterId = isAdmin
+        ? String(jobDraft.ownerRecruiterId || state.user?.id || "").trim()
+        : String(state.user?.id || "");
+      const ownerRecruiterName = isAdmin
+        ? String(jobDraft.ownerRecruiterName || state.user?.name || "").trim()
+        : String(state.user?.name || "");
       const primaryRecruiter = ownerRecruiterId
         ? [{ id: ownerRecruiterId, name: ownerRecruiterName || "", primary: true }]
         : [];
@@ -9809,17 +9813,27 @@ function PortalApp({ token, onLogout }) {
           primary: id === String(ownerRecruiterId || "").trim()
         });
       });
-      const result = await api("/company/jds", token, "POST", {
-        job: {
-          ...jobDraft,
-          // Force-create a new JD even if user is currently editing an existing one.
-          id: `jd-${Date.now()}`,
-          isArchived: false,
-          ownerRecruiterId,
-          ownerRecruiterName,
-          assignedRecruiters: Array.from(dedupedRecruiters.values())
-        }
+      const buildNewJobPayload = (forceFresh = false) => ({
+        ...jobDraft,
+        // Force-create a new JD even if user is currently editing an existing one.
+        id: forceFresh ? "" : `jd-${Date.now()}`,
+        isArchived: false,
+        ownerRecruiterId,
+        ownerRecruiterName,
+        assignedRecruiters: Array.from(dedupedRecruiters.values()),
+        archivedAt: null,
+        archivedBy: "",
+        closeReason: "",
+        closedAt: null,
+        closedBy: ""
       });
+      let result;
+      try {
+        result = await api("/company/jds", token, "POST", { job: buildNewJobPayload(false) });
+      } catch {
+        // Fallback: force a fully fresh insert payload if first attempt fails.
+        result = await api("/company/jds", token, "POST", { job: buildNewJobPayload(true) });
+      }
       await reloadJobsWorkspace();
       const nextId = String(result?.id || "").trim();
       if (nextId) {
