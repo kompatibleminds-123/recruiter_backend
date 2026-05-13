@@ -2582,6 +2582,22 @@ async function ingestApplicantSubmission(body, req) {
 }
 
 function sanitizeTimelineRows(timeline) {
+  function hasContactLikeNoise(value) {
+    const text = String(value || "").trim();
+    if (!text) return false;
+    if (/@/.test(text)) return true;
+    if (/\b(e-?mail|email|contact\s*(no|number)?|phone|mobile|mob|linkedin)\b/i.test(text)) return true;
+    if (/\+?\d[\d\s().-]{8,}/.test(text)) return true;
+    return false;
+  }
+  function isBadRoleOrCompany(value) {
+    const text = String(value || "").trim();
+    if (!text) return false;
+    if (hasContactLikeNoise(text)) return true;
+    if (/^(exact\s+responsibilities?|responsibilities?)\s*:?\s*$/i.test(text)) return true;
+    if (/\b(academic qualification|education|declaration|career objective)\b/i.test(text)) return true;
+    return false;
+  }
   if (!Array.isArray(timeline)) return [];
   return timeline
     .map((item) => ({
@@ -2591,7 +2607,8 @@ function sanitizeTimelineRows(timeline) {
       end: String(item?.end || "").trim(),
       duration: String(item?.duration || "").trim()
     }))
-    .filter((item) => item.company || item.title || item.start || item.end || item.duration);
+    .filter((item) => item.company || item.title || item.start || item.end || item.duration)
+    .filter((item) => !isBadRoleOrCompany(item.company) && !isBadRoleOrCompany(item.title));
 }
 
 function sanitizeGapRows(gaps) {
@@ -6688,6 +6705,80 @@ function choosePreferredScalar(...args) {
   return "";
 }
 
+function isValidCurrentCompanyValue(value) {
+  const text = String(value || "").trim();
+  if (!text) return false;
+  if (/@/.test(text)) return false;
+  if (/\b(e-?mail|email|contact\s*(no|number)?|phone|mobile|mob|linkedin)\b/i.test(text)) return false;
+  if (/\+?\d[\d\s().-]{8,}/.test(text)) return false;
+  if (/^(exact\s+responsibilities?|responsibilities?)\s*:?\s*$/i.test(text)) return false;
+  return true;
+}
+
+function isValidCurrentDesignationValue(value) {
+  const text = String(value || "").trim();
+  if (!text) return false;
+  if (/@/.test(text)) return false;
+  if (/\b(e-?mail|email|contact\s*(no|number)?|phone|mobile|mob|linkedin)\b/i.test(text)) return false;
+  if (/\+?\d[\d\s().-]{8,}/.test(text)) return false;
+  if (/^(exact\s+responsibilities?|responsibilities?)\s*:?\s*$/i.test(text)) return false;
+  return true;
+}
+
+function isGenericDesignationValue(value) {
+  const text = String(value || "").trim().toLowerCase();
+  if (!text) return true;
+  return [
+    /^role$/,
+    /^position$/,
+    /^designation$/,
+    /^profile$/,
+    /^job$/,
+    /^employee$/,
+    /^team member$/,
+    /^member$/,
+    /^staff$/,
+    /^professional$/,
+    /^consultant$/,
+    /^executive$/
+  ].some((pattern) => pattern.test(text));
+}
+
+function choosePreferredDesignation(...args) {
+  const candidates = args
+    .map((value) => String(value || "").trim())
+    .filter((value) => value && isValidCurrentDesignationValue(value));
+  if (!candidates.length) return "";
+  const nonGeneric = candidates.find((value) => !isGenericDesignationValue(value));
+  return nonGeneric || candidates[0];
+}
+
+function extractHighestEducationFromRawText(rawText) {
+  const text = String(rawText || "");
+  if (!text.trim()) return "";
+  const lines = text
+    .split(/\r?\n/)
+    .map((line) => line.replace(/^[\s\-•*]+/, "").trim())
+    .filter(Boolean);
+  const educationLine = lines.find((line) =>
+    /\b(m\.?\s*b\.?\s*a|b\.?\s*b\.?\s*a|b\.?\s*com|m\.?\s*sc|b\.?\s*tech|m\.?\s*tech|b\.?\s*e|m\.?\s*e|b\.?\s*a|m\.?\s*a|ph\.?\s*d)\b/i.test(line)
+  );
+  if (!educationLine) return "";
+  return educationLine.replace(/\s+/g, " ").trim();
+}
+
+function applyEmailTldSafeguard(email, rawText) {
+  const source = String(email || "").trim();
+  if (!source) return "";
+  if (!/\.co$/i.test(source)) return source;
+  const upgraded = source.replace(/\.co$/i, ".com");
+  const raw = String(rawText || "");
+  if (raw && raw.toLowerCase().includes(upgraded.toLowerCase())) {
+    return upgraded;
+  }
+  return source;
+}
+
 function parseMonthYear(text, allowPresent = false) {
   const value = String(text || "").trim();
   if (!value) return null;
@@ -6791,18 +6882,20 @@ function getRowMonths(item) {
 
 function calculateTotalExperienceMonths(timeline) {
   const ranges = [];
-  let fallbackDurationMonths = 0;
+  let hasAmbiguousRange = false;
   for (const item of timeline || []) {
     const start = monthIndex(parseMonthYear(item?.start));
     const end = monthIndex(parseMonthYear(item?.end, true));
     if (start === null || end === null || end < start) {
-      fallbackDurationMonths += parseDurationMonths(item?.duration);
+      hasAmbiguousRange = true;
       continue;
     }
     ranges.push([start, end]);
   }
 
-  if (!ranges.length) return fallbackDurationMonths;
+  if (!ranges.length) {
+    return { months: 0, hasAmbiguousRange };
+  }
 
   ranges.sort((a, b) => a[0] - b[0]);
   const merged = [ranges[0]];
@@ -6817,11 +6910,11 @@ function calculateTotalExperienceMonths(timeline) {
   }
 
   const mergedMonths = merged.reduce((sum, [start, end]) => sum + (end - start + 1), 0);
-  return Math.max(mergedMonths, fallbackDurationMonths);
+  return { months: mergedMonths, hasAmbiguousRange };
 }
 
 function calculateTotalExperienceFromTimeline(timeline) {
-  const totalMonths = calculateTotalExperienceMonths(timeline);
+  const totalMonths = calculateTotalExperienceMonths(timeline)?.months || 0;
   if (!totalMonths) return "";
   return formatTotalExperience(totalMonths);
 }
@@ -7125,6 +7218,15 @@ function validateParseResult({
     });
   }
 
+  if ((parseDebug?.sourceType || "") === "cv" && parseDebug?.hasAmbiguousTimelineRange) {
+    reasons.push({
+      field: "timeline",
+      level: "warning",
+      code: "timeline_ambiguous_range",
+      message: "Some job date ranges were ambiguous, so total experience was kept conservative."
+    });
+  }
+
   if (totalMonths && currentOrgMonths && currentOrgMonths > totalMonths) {
     reasons.push({
       field: "currentOrgTenure",
@@ -7186,15 +7288,18 @@ function buildCandidateParseResponse(baseResult, normalizedResult, parseMeta = {
     currentRole?.company,
     normalizedResult?.currentCompany,
     baseResult?.currentCompany,
-    (value) => Boolean(String(value || "").trim()) && !/[|,]/.test(String(value || "").trim())
+    isValidCurrentCompanyValue
   );
   const currentDesignation = choosePreferredScalar(
+    choosePreferredDesignation(currentRole?.title, normalizedResult?.currentDesignation, baseResult?.currentDesignation),
     currentRole?.title,
     normalizedResult?.currentDesignation,
-    baseResult?.currentDesignation
+    baseResult?.currentDesignation,
+    isValidCurrentDesignationValue
   );
   const metricTimeline = sourceType === "cv" ? getCvMetricTimeline(finalTimeline, fallbackTimeline) : finalTimeline;
-  const computedTotalExperience = calculateTotalExperienceFromTimeline(metricTimeline);
+  const totalMonthsInfo = calculateTotalExperienceMonths(metricTimeline);
+  const computedTotalExperience = totalMonthsInfo?.months ? formatTotalExperience(totalMonthsInfo.months) : "";
   const averageTenurePerCompany = calculateAverageTenurePerCompany(metricTimeline);
   const computedCurrentOrgTenure = calculateCurrentOrgTenure(metricTimeline, currentCompany);
   const aiTotalExperience = String(normalizedResult?.totalExperience || "").trim();
@@ -7207,7 +7312,11 @@ function buildCandidateParseResponse(baseResult, normalizedResult, parseMeta = {
     sourceType === "cv"
       ? (String(computedCurrentOrgTenure || "").trim() || choosePreferredScalar("", aiCurrentOrgTenure))
       : choosePreferredScalar(computedCurrentOrgTenure, aiCurrentOrgTenure);
-  const emailId = choosePreferredScalar(normalizedResult?.emailId, baseResult?.emailId, isValidEmail);
+  const rawTextForSearch = String(baseResult?.rawText || "").trim();
+  const emailId = applyEmailTldSafeguard(
+    choosePreferredScalar(normalizedResult?.emailId, baseResult?.emailId, isValidEmail),
+    rawTextForSearch
+  );
   const phoneNumber = choosePreferredScalar(
     normalizedResult?.phoneNumber,
     baseResult?.phoneNumber,
@@ -7218,7 +7327,11 @@ function buildCandidateParseResponse(baseResult, normalizedResult, parseMeta = {
     baseResult?.linkedinUrl,
     (value) => /linkedin\.com\/in\//i.test(String(value || ""))
   );
-  const highestEducation = choosePreferredScalar(normalizedResult?.highestEducation, baseResult?.highestEducation);
+  const highestEducation = choosePreferredScalar(
+    normalizedResult?.highestEducation,
+    baseResult?.highestEducation,
+    extractHighestEducationFromRawText(rawTextForSearch)
+  );
   const parseDebug = {
     sourceType,
     aiNormalizationUsed: Boolean(normalizedResult),
@@ -7237,7 +7350,8 @@ function buildCandidateParseResponse(baseResult, normalizedResult, parseMeta = {
     contactSource:
       emailId === String(normalizedResult?.emailId || "").trim() || phoneNumber === String(normalizedResult?.phoneNumber || "").trim()
         ? "ai"
-        : "fallback"
+        : "fallback",
+    hasAmbiguousTimelineRange: Boolean(totalMonthsInfo?.hasAmbiguousRange)
   };
   const validation = validateParseResult({
     finalTimeline,
@@ -7281,7 +7395,6 @@ function buildCandidateParseResponse(baseResult, normalizedResult, parseMeta = {
     ? ""
     : candidateCurrentOrgTenure;
 
-  const rawTextForSearch = String(baseResult?.rawText || "").trim();
   const rawTextPreview = rawTextForSearch ? rawTextForSearch.slice(0, 2200) : "";
   const searchKeywords = (() => {
     if (!rawTextForSearch) return "";

@@ -294,7 +294,16 @@ function isNoiseLine(line) {
 
 function looksLikeExperienceDate(line) {
   return /\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*[\s,-]*(?:'\d{2}|'?\d{4})\b/i.test(line) &&
-    (/\bpresent\b|\bcurrent\b|\btill date\b|\bsince\b/i.test(line) || /[-\u2013\u2014\u2212]/.test(line) || /\b\d+\s+(?:yr|yrs|year|years|mo|mos|month|months)\b/i.test(line));
+    (/\bpresent\b|\bcurrent\b|\btill date\b|\bsince\b|\bfrom\b|\bto\b/i.test(line) || /[-\u2013\u2014\u2212]/.test(line) || /\b\d+\s+(?:yr|yrs|year|years|mo|mos|month|months)\b/i.test(line));
+}
+
+function hasContactLikeNoise(value) {
+  const text = String(value || "").trim();
+  if (!text) return false;
+  if (/@/.test(text)) return true;
+  if (/\b(e-?mail|email|contact\s*(no|number)?|phone|mobile|mob|linkedin)\b/i.test(text)) return true;
+  if (/\+?\d[\d\s().-]{8,}/.test(text)) return true;
+  return false;
 }
 
 function cleanCompanyLine(line) {
@@ -333,6 +342,8 @@ function isLikelyCompanyLine(line) {
   const value = cleanCompanyLine(line);
   if (!value) return false;
   if (isNoiseLine(value) || looksLikeExperienceDate(value) || looksLikeBulletLine(value)) return false;
+  if (hasContactLikeNoise(value)) return false;
+  if (/^(exact\s+responsibilities?|responsibilities?)\s*:?\s*$/i.test(value)) return false;
   if (value.length > 120) return false;
   if (/[.]$/.test(value) && !/,/.test(value)) return false;
   if (/\bowned\b|\bachieved\b|\bdrove\b|\bbuilt\b|\bled\b|\bmanaged\b|\bexecuted\b|\bcollaborated\b|\bcollaborate\b/i.test(value)) return false;
@@ -833,7 +844,10 @@ function extractTimeline(lines, rawText, structuredExperienceText) {
       const company = String(entry.company || "").trim();
       const title = String(entry.title || "").trim();
       if (!company && !title) return false;
+      if (hasContactLikeNoise(company) || hasContactLikeNoise(title)) return false;
       if (/^job\s*profile\b/i.test(company) && /^job\s*profile\b/i.test(title)) return false;
+      if (/^(exact\s+responsibilities?|responsibilities?)\s*:?\s*$/i.test(company)) return false;
+      if (/^(exact\s+responsibilities?|responsibilities?)\s*:?\s*$/i.test(title)) return false;
       if (looksLikeSectionHeading(company) || looksLikeSectionHeading(title)) return false;
       if (isNoiseLine(company) || isNoiseLine(title)) return false;
       if (looksLikeEducationText(company) || looksLikeEducationText(title)) return false;
