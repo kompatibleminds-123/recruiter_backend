@@ -1,0 +1,667 @@
+[
+  {
+    "sheet": "Estimator",
+    "excel_row": 2,
+    "expected": {
+      "sheet": "Estimator",
+      "excel_row": 2,
+      "cv_url": "https://recruit.kompatibleminds.com/shared/cv?token=eyJ0eXBlIjoic2hhcmVkX2N2IiwiY29tcGFueUlkIjoiYzBhN2QyYzktNGRkYi00YWRkLTlkNGEtMjRjZGQxY2FiYTdjIiwiY2FuZGlkYXRlSWQiOiJkZTgyNWVlOC03NWIyLTRiNjctYmU5ZS0zZTkxNWZmOGU2ZjgiLCJjYW5kaWRhdGVOYW1lIjoiU0lSQU5KRUVWSSBBLiIsImZpbGVQcm92aWRlciI6InMzIiwiZmlsZUtleSI6ImNhbmRpZGF0ZXMvYzBhN2QyYzktNGRkYi00YWRkLTlkNGEtMjRjZGQxY2FiYTdjL2RlODI1ZWU4LTc1YjItNGI2Ny1iZTllLTNlOTE1ZmY4ZTZmOC8xNzc3ODk4MTQ5ODE4LWE1OGM2NjBkLTFlODAtNDEzNy05NTQ0LWRhYzliYmIxNWY5Ny1TaXJhbmplZXZpLUFfQ1YucGRmIiwiZmlsZVVybCI6Imh0dHBzOi8va20tcmVjcnVpdGRlc2stY3Ytc3RvcmFnZS5zMy5hcC1zb3V0aC0xLmFtYXpvbmF3cy5jb20vY2FuZGlkYXRlcy9jMGE3ZDJjOS00ZGRiLTRhZGQtOWQ0YS0yNGNkZDFjYWJhN2MvZGU4MjVlZTgtNzViMi00YjY3LWJlOWUtM2U5MTVmZjhlNmY4LzE3Nzc4OTgxNDk4MTgtYTU4YzY2MGQtMWU4MC00MTM3LTk1NDQtZGFjOWJiYjE1Zjk3LVNpcmFuamVldmktQV9DVi5wZGYiLCJmaWxlbmFtZSI6IlNpcmFuamVldmktQV9DVi5wZGYiLCJtaW1lVHlwZSI6ImFwcGxpY2F0aW9uL29jdGV0LXN0cmVhbSIsImV4cGlyZXNBdCI6MTc4MTc4NzYwNjcxMn0.pqQYoGLNxChl3cakr4-817ymmRzQyLTHnOXqZoxuOLg",
+      "name": "SIRANJEEVI A.",
+      "phone": 7667838236,
+      "email": "jeevisiran06@gmail.com",
+      "location": "Hyderabad",
+      "current_company": "Digital Minds Solutions Pvt Ltd, (Part of) Burbank Group Company",
+      "current_designation": "Associate Estimator",
+      "work_experience": "8 years ",
+      "highest_education": "M.Tech"
+    },
+    "got": {
+      "name": "SIRANJEEVI",
+      "phone": "+917667838236",
+      "email": "jeevisiran06@gmail.com",
+      "current_company": "Digital Minds Solution Pvt Ltd (Part of Burbank Group, Australia)",
+      "current_designation": "Associate Estimator",
+      "total_experience": "8 years 6 months",
+      "current_org_tenure": "1 years 5 months"
+    },
+    "checks": {
+      "name": false,
+      "phone": true,
+      "email": true,
+      "current_company": false,
+      "current_designation": true,
+      "total_experience": false
+    },
+    "error": ""
+  },
+  {
+    "sheet": "Estimator",
+    "excel_row": 3,
+    "expected": {
+      "sheet": "Estimator",
+      "excel_row": 3,
+      "cv_url": "https://recruit.kompatibleminds.com/shared/cv?token=eyJ0eXBlIjoic2hhcmVkX2N2IiwiY29tcGFueUlkIjoiYzBhN2QyYzktNGRkYi00YWRkLTlkNGEtMjRjZGQxY2FiYTdjIiwiY2FuZGlkYXRlSWQiOiIzYThlYTk1ZC01MzUyLTQyYTUtOTQ3Zi1iYjg1NDlmM2E3MjMiLCJjYW5kaWRhdGVOYW1lIjoiUHJhc2FudGgiLCJmaWxlUHJvdmlkZXIiOiJzMyIsImZpbGVLZXkiOiJjYW5kaWRhdGVzL2MwYTdkMmM5LTRkZGItNGFkZC05ZDRhLTI0Y2RkMWNhYmE3Yy8zYThlYTk1ZC01MzUyLTQyYTUtOTQ3Zi1iYjg1NDlmM2E3MjMvMTc3Nzg5NzUwODgwNi0wYzU2YmZiZC00NmY4LTQ2ZGYtOThmMC01MTJkNzJhMWEyOTktUHJhc2FudGhfQ1YucGRmIiwiZmlsZVVybCI6Imh0dHBzOi8va20tcmVjcnVpdGRlc2stY3Ytc3RvcmFnZS5zMy5hcC1zb3V0aC0xLmFtYXpvbmF3cy5jb20vY2FuZGlkYXRlcy9jMGE3ZDJjOS00ZGRiLTRhZGQtOWQ0YS0yNGNkZDFjYWJhN2MvM2E4ZWE5NWQtNTM1Mi00MmE1LTk0N2YtYmI4NTQ5ZjNhNzIzLzE3Nzc4OTc1MDg4MDYtMGM1NmJmYmQtNDZmOC00NmRmLTk4ZjAtNTEyZDcyYTFhMjk5LVByYXNhbnRoX0NWLnBkZiIsImZpbGVuYW1lIjoiUHJhc2FudGhfQ1YucGRmIiwibWltZVR5cGUiOiJhcHBsaWNhdGlvbi9vY3RldC1zdHJlYW0iLCJleHBpcmVzQXQiOjE3ODE3ODc2MDY4NzN9.NS-nlK_bgbAJFbfc4rdI4-6LyTYBvtbfJFtOXqiW-hw",
+      "name": "Prasanth",
+      "phone": 9524381432,
+      "email": "prazanthpsv@gmail.com",
+      "location": "Chennai",
+      "current_company": "Nucor Rebar Fabrication",
+      "current_designation": "Project Leader",
+      "work_experience": "8.5 years ",
+      "highest_education": "B.Tech / B.E."
+    },
+    "got": {
+      "name": "PRASANTH DURAISAMY",
+      "phone": "+919524381432",
+      "email": "prazanthpsv@gmail.com",
+      "current_company": "Project Leader",
+      "current_designation": "Nucor Rebar Fabrication - Detailing & Estimation",
+      "total_experience": "11 years 10 months",
+      "current_org_tenure": "4 years 1 months"
+    },
+    "checks": {
+      "name": false,
+      "phone": true,
+      "email": true,
+      "current_company": false,
+      "current_designation": false,
+      "total_experience": false
+    },
+    "error": ""
+  },
+  {
+    "sheet": "Estimator",
+    "excel_row": 4,
+    "expected": {
+      "sheet": "Estimator",
+      "excel_row": 4,
+      "cv_url": "https://recruit.kompatibleminds.com/shared/cv?token=eyJ0eXBlIjoic2hhcmVkX2N2IiwiY29tcGFueUlkIjoiYzBhN2QyYzktNGRkYi00YWRkLTlkNGEtMjRjZGQxY2FiYTdjIiwiY2FuZGlkYXRlSWQiOiJhZGI4NjZhNi03YTRmLTQ1ZDUtYWMxOS0xYTZiNDc1YmI0ODAiLCJjYW5kaWRhdGVOYW1lIjoiUG9vamEgQmFsYWppIiwiZmlsZVByb3ZpZGVyIjoiczMiLCJmaWxlS2V5IjoiY2FuZGlkYXRlcy9jMGE3ZDJjOS00ZGRiLTRhZGQtOWQ0YS0yNGNkZDFjYWJhN2MvYWRiODY2YTYtN2E0Zi00NWQ1LWFjMTktMWE2YjQ3NWJiNDgwLzE3Nzc5ODEyODkzNjMtNDZmNjJiNDEtOWFmMS00Y2ZiLWE3MTItOWY2OTcwMzNmOWJmLVBvb2phLUJhbGFqaV9DVi5wZGYiLCJmaWxlVXJsIjoiaHR0cHM6Ly9rbS1yZWNydWl0ZGVzay1jdi1zdG9yYWdlLnMzLmFwLXNvdXRoLTEuYW1hem9uYXdzLmNvbS9jYW5kaWRhdGVzL2MwYTdkMmM5LTRkZGItNGFkZC05ZDRhLTI0Y2RkMWNhYmE3Yy9hZGI4NjZhNi03YTRmLTQ1ZDUtYWMxOS0xYTZiNDc1YmI0ODAvMTc3Nzk4MTI4OTM2My00NmY2MmI0MS05YWYxLTRjZmItYTcxMi05ZjY5NzAzM2Y5YmYtUG9vamEtQmFsYWppX0NWLnBkZiIsImZpbGVuYW1lIjoiUG9vamEtQmFsYWppX0NWLnBkZiIsIm1pbWVUeXBlIjoiYXBwbGljYXRpb24vb2N0ZXQtc3RyZWFtIiwiZXhwaXJlc0F0IjoxNzgxODY5Mzk4Njk3fQ.66hp6u9Gzm2RTgtoQolpEcKzgTxEPbYeweqefvjqZZI",
+      "name": "Pooja Balaji",
+      "phone": 9945692125,
+      "email": "poojahazare7@gmail.com",
+      "location": "Remote",
+      "current_company": "JSR Architects",
+      "current_designation": "Construction Estimator",
+      "work_experience": "4 years 3 months",
+      "highest_education": "B.Tech / B.E."
+    },
+    "got": {
+      "name": "POOJA BALAJI",
+      "phone": "+919945692125",
+      "email": "poojahazare7@gmail.com",
+      "current_company": "",
+      "current_designation": "",
+      "total_experience": "4 years",
+      "current_org_tenure": ""
+    },
+    "checks": {
+      "name": true,
+      "phone": true,
+      "email": true,
+      "current_company": false,
+      "current_designation": false,
+      "total_experience": false
+    },
+    "error": ""
+  },
+  {
+    "sheet": "Estimator",
+    "excel_row": 5,
+    "expected": {
+      "sheet": "Estimator",
+      "excel_row": 5,
+      "cv_url": "https://recruit.kompatibleminds.com/shared/cv?token=eyJ0eXBlIjoic2hhcmVkX2N2IiwiY29tcGFueUlkIjoiYzBhN2QyYzktNGRkYi00YWRkLTlkNGEtMjRjZGQxY2FiYTdjIiwiY2FuZGlkYXRlSWQiOiJiZTcwNmNlOS1mZjUxLTQ0YzMtODY1Ni02ZWY1MGJkNTYwZWIiLCJjYW5kaWRhdGVOYW1lIjoiQXJhdmluZGFuIiwiZmlsZVByb3ZpZGVyIjoiczMiLCJmaWxlS2V5IjoiY2FuZGlkYXRlcy9jMGE3ZDJjOS00ZGRiLTRhZGQtOWQ0YS0yNGNkZDFjYWJhN2MvYmU3MDZjZTktZmY1MS00NGMzLTg2NTYtNmVmNTBiZDU2MGViLzE3Nzc5ODEwNzE4MjEtZTAxNTlmNGQtODBlZS00ODk5LTkwMDItNDEyOGEzODk1NGU0LUFyYXZpbmRhbi1TX0NWLnBkZiIsImZpbGVVcmwiOiJodHRwczovL2ttLXJlY3J1aXRkZXNrLWN2LXN0b3JhZ2UuczMuYXAtc291dGgtMS5hbWF6b25hd3MuY29tL2NhbmRpZGF0ZXMvYzBhN2QyYzktNGRkYi00YWRkLTlkNGEtMjRjZGQxY2FiYTdjL2JlNzA2Y2U5LWZmNTEtNDRjMy04NjU2LTZlZjUwYmQ1NjBlYi8xNzc3OTgxMDcxODIxLWUwMTU5ZjRkLTgwZWUtNDg5OS05MDAyLTQxMjhhMzg5NTRlNC1BcmF2aW5kYW4tU19DVi5wZGYiLCJmaWxlbmFtZSI6IkFyYXZpbmRhbi1TX0NWLnBkZiIsIm1pbWVUeXBlIjoiYXBwbGljYXRpb24vb2N0ZXQtc3RyZWFtIiwiZXhwaXJlc0F0IjoxNzgxODY5NDAwMjAyfQ.D33u27Rbd5VpN1wY8JHkZtH6ox0j3F-tw_izwwk7mxc",
+      "name": "Aravindan",
+      "phone": 9566993781,
+      "email": "aravi92sampath@gmail.com",
+      "location": "Bangalore",
+      "current_company": "RSP cost consultant",
+      "current_designation": "Quantity Surveyor",
+      "work_experience": "9 years",
+      "highest_education": "B.Tech / B.E."
+    },
+    "got": {
+      "name": "SOFT SKILLS",
+      "phone": "+919566993781",
+      "email": "aravi92sampath@gmail.com",
+      "current_company": "",
+      "current_designation": "",
+      "total_experience": "14 years 10 months",
+      "current_org_tenure": ""
+    },
+    "checks": {
+      "name": false,
+      "phone": true,
+      "email": true,
+      "current_company": false,
+      "current_designation": false,
+      "total_experience": false
+    },
+    "error": ""
+  },
+  {
+    "sheet": "Estimator",
+    "excel_row": 6,
+    "expected": {
+      "sheet": "Estimator",
+      "excel_row": 6,
+      "cv_url": "https://recruit.kompatibleminds.com/shared/cv?token=eyJ0eXBlIjoic2hhcmVkX2N2IiwiY29tcGFueUlkIjoiYzBhN2QyYzktNGRkYi00YWRkLTlkNGEtMjRjZGQxY2FiYTdjIiwiY2FuZGlkYXRlSWQiOiJhMjNkMTY0NS1mMTRlLTRiNzMtOWI4NC1kNDc4MDNjZGQ3ZDEiLCJjYW5kaWRhdGVOYW1lIjoiTW9oaXQgTGF4bWFuIFNlbHVrYXIiLCJmaWxlUHJvdmlkZXIiOiJzMyIsImZpbGVLZXkiOiJjYW5kaWRhdGVzL2MwYTdkMmM5LTRkZGItNGFkZC05ZDRhLTI0Y2RkMWNhYmE3Yy9hMjNkMTY0NS1mMTRlLTRiNzMtOWI4NC1kNDc4MDNjZGQ3ZDEvMTc3Nzk4MzA5MDE3NS1hN2FhNDBkNC0wYjQ5LTRhMTgtOWY0My0yOTEzNWNmMDgyNjUtTW9oaXQtU2VsdWthcl9DVi5wZGYiLCJmaWxlVXJsIjoiaHR0cHM6Ly9rbS1yZWNydWl0ZGVzay1jdi1zdG9yYWdlLnMzLmFwLXNvdXRoLTEuYW1hem9uYXdzLmNvbS9jYW5kaWRhdGVzL2MwYTdkMmM5LTRkZGItNGFkZC05ZDRhLTI0Y2RkMWNhYmE3Yy9hMjNkMTY0NS1mMTRlLTRiNzMtOWI4NC1kNDc4MDNjZGQ3ZDEvMTc3Nzk4MzA5MDE3NS1hN2FhNDBkNC0wYjQ5LTRhMTgtOWY0My0yOTEzNWNmMDgyNjUtTW9oaXQtU2VsdWthcl9DVi5wZGYiLCJmaWxlbmFtZSI6Ik1vaGl0LVNlbHVrYXJfQ1YucGRmIiwibWltZVR5cGUiOiJhcHBsaWNhdGlvbi9vY3RldC1zdHJlYW0iLCJleHBpcmVzQXQiOjE3ODE4NzEzNzIwMDV9.NfyaEUbRoM9aimInnNqTLYz9mSLvFK00IrASMG-aXg4",
+      "name": "Mohit Laxman Selukar",
+      "phone": 9545285332,
+      "email": "mohitselukar57@gmail.com",
+      "location": "Pune",
+      "current_company": "Precon Service Pvt ltd",
+      "current_designation": "Project Estimator",
+      "work_experience": "3 years 5 months",
+      "highest_education": "B.Tech / B.E."
+    },
+    "got": {
+      "name": "Mohit Selukar",
+      "phone": "+919545285332",
+      "email": "selukarmohit@gmail.com",
+      "current_company": "",
+      "current_designation": "",
+      "total_experience": "",
+      "current_org_tenure": ""
+    },
+    "checks": {
+      "name": false,
+      "phone": true,
+      "email": false,
+      "current_company": false,
+      "current_designation": false,
+      "total_experience": false
+    },
+    "error": ""
+  },
+  {
+    "sheet": "Estimator",
+    "excel_row": 7,
+    "expected": {
+      "sheet": "Estimator",
+      "excel_row": 7,
+      "cv_url": "https://recruit.kompatibleminds.com/shared/cv?token=eyJ0eXBlIjoic2hhcmVkX2N2IiwiY29tcGFueUlkIjoiYzBhN2QyYzktNGRkYi00YWRkLTlkNGEtMjRjZGQxY2FiYTdjIiwiY2FuZGlkYXRlSWQiOiI2Njk1NjI2MS05MTFhLTQzYzMtOWIwMS04ZTI5ZjgwMmI0NmEiLCJjYW5kaWRhdGVOYW1lIjoiTW9oYW1tZWQgYW1lZXIgTW9oYW1tZWQgc2hhYmJpciIsImZpbGVQcm92aWRlciI6InMzIiwiZmlsZUtleSI6ImNhbmRpZGF0ZXMvYzBhN2QyYzktNGRkYi00YWRkLTlkNGEtMjRjZGQxY2FiYTdjLzY2OTU2MjYxLTkxMWEtNDNjMy05YjAxLThlMjlmODAyYjQ2YS8xNzc3OTgwMDI3ODkzLWUwNmI5OTIyLWEyOGUtNDdhMy1hNjU0LWE3OTQ0NThkMzc1NC1Nb2hhbW1lZC1BbWVlcl9DVi5wZGYiLCJmaWxlVXJsIjoiaHR0cHM6Ly9rbS1yZWNydWl0ZGVzay1jdi1zdG9yYWdlLnMzLmFwLXNvdXRoLTEuYW1hem9uYXdzLmNvbS9jYW5kaWRhdGVzL2MwYTdkMmM5LTRkZGItNGFkZC05ZDRhLTI0Y2RkMWNhYmE3Yy82Njk1NjI2MS05MTFhLTQzYzMtOWIwMS04ZTI5ZjgwMmI0NmEvMTc3Nzk4MDAyNzg5My1lMDZiOTkyMi1hMjhlLTQ3YTMtYTY1NC1hNzk0NDU4ZDM3NTQtTW9oYW1tZWQtQW1lZXJfQ1YucGRmIiwiZmlsZW5hbWUiOiJNb2hhbW1lZC1BbWVlcl9DVi5wZGYiLCJtaW1lVHlwZSI6ImFwcGxpY2F0aW9uL29jdGV0LXN0cmVhbSIsImV4cGlyZXNBdCI6MTc4MTg3MTM3NDUzNn0.WilyRD8x6XmkK5aWx0Ylx7RX_eLh6rnnNEUOV_prmV4",
+      "name": "Mohammed Ameer",
+      "phone": 9673227344,
+      "email": "ameermohammed44650@gmail.com",
+      "location": "Nanded",
+      "current_company": "Alfbeta Estimators",
+      "current_designation": "Project Estimator",
+      "work_experience": "3 years",
+      "highest_education": "B.Tech / B.E."
+    },
+    "got": {
+      "name": "Teamwork\nLeadership\nCaring",
+      "phone": "3601",
+      "email": "ameermohammed44650@gmail.com",
+      "current_company": "Alf-Beta Estimators",
+      "current_designation": "(PROJECT ESTIMATOR)- REMOTE",
+      "total_experience": "3 years 5 months",
+      "current_org_tenure": "1 years 5 months"
+    },
+    "checks": {
+      "name": false,
+      "phone": false,
+      "email": true,
+      "current_company": false,
+      "current_designation": false,
+      "total_experience": false
+    },
+    "error": ""
+  },
+  {
+    "sheet": "Estimator",
+    "excel_row": 8,
+    "expected": {
+      "sheet": "Estimator",
+      "excel_row": 8,
+      "cv_url": "https://recruit.kompatibleminds.com/shared/cv?token=eyJ0eXBlIjoic2hhcmVkX2N2IiwiY29tcGFueUlkIjoiYzBhN2QyYzktNGRkYi00YWRkLTlkNGEtMjRjZGQxY2FiYTdjIiwiY2FuZGlkYXRlSWQiOiIwZjUwNDAyZC04NTJiLTQ1YzctOGMyMC1mMjY5MmVhNGMxMTEiLCJjYW5kaWRhdGVOYW1lIjoiRGhlZXJhaiBNYXl3YWQiLCJmaWxlUHJvdmlkZXIiOiJzMyIsImZpbGVLZXkiOiJjYW5kaWRhdGVzL2MwYTdkMmM5LTRkZGItNGFkZC05ZDRhLTI0Y2RkMWNhYmE3Yy8wZjUwNDAyZC04NTJiLTQ1YzctOGMyMC1mMjY5MmVhNGMxMTEvMTc3ODA2NDkyNjk4OC05ZTc2MTc1Zi04ZjA3LTQ1MjktOThjMS1jNDJjNzQ1NmI0NzktRGhlZXJhai1NYXl3YWRfQ1YucGRmIiwiZmlsZVVybCI6Imh0dHBzOi8va20tcmVjcnVpdGRlc2stY3Ytc3RvcmFnZS5zMy5hcC1zb3V0aC0xLmFtYXpvbmF3cy5jb20vY2FuZGlkYXRlcy9jMGE3ZDJjOS00ZGRiLTRhZGQtOWQ0YS0yNGNkZDFjYWJhN2MvMGY1MDQwMmQtODUyYi00NWM3LThjMjAtZjI2OTJlYTRjMTExLzE3NzgwNjQ5MjY5ODgtOWU3NjE3NWYtOGYwNy00NTI5LTk4YzEtYzQyYzc0NTZiNDc5LURoZWVyYWotTWF5d2FkX0NWLnBkZiIsImZpbGVuYW1lIjoiRGhlZXJhai1NYXl3YWRfQ1YucGRmIiwibWltZVR5cGUiOiJhcHBsaWNhdGlvbi9vY3RldC1zdHJlYW0iLCJleHBpcmVzQXQiOjE3ODE5NTUzMzMzMzh9.ZlJrN9YZo-BURm298zVqYh3U6DKn91nEL7BjrO2xEnc",
+      "name": "Dheeraj Maywad",
+      "phone": 7999029088,
+      "email": "dheerajmaywad03@gmail.com",
+      "location": "Betul (MP) ",
+      "current_company": "Kiledar Constructions",
+      "current_designation": "Project Estimator",
+      "work_experience": "3 Years",
+      "highest_education": "B.Tech / B.E."
+    },
+    "got": {
+      "name": "DHEERAJ MAYWAD",
+      "phone": "7999029088",
+      "email": "dheerajmaywad03@gmail.com",
+      "current_company": "",
+      "current_designation": "",
+      "total_experience": "2 months",
+      "current_org_tenure": ""
+    },
+    "checks": {
+      "name": true,
+      "phone": true,
+      "email": true,
+      "current_company": false,
+      "current_designation": false,
+      "total_experience": false
+    },
+    "error": ""
+  },
+  {
+    "sheet": "Estimator",
+    "excel_row": 9,
+    "expected": {
+      "sheet": "Estimator",
+      "excel_row": 9,
+      "cv_url": "https://recruit.kompatibleminds.com/shared/cv?token=eyJ0eXBlIjoic2hhcmVkX2N2IiwiY29tcGFueUlkIjoiYzBhN2QyYzktNGRkYi00YWRkLTlkNGEtMjRjZGQxY2FiYTdjIiwiY2FuZGlkYXRlSWQiOiJhZjQ0Y2RlNy1jZmNiLTRlNzAtOTllMS0yYTgzZThjZTFlOTUiLCJjYW5kaWRhdGVOYW1lIjoiUmFodWwgQ2hhdWRoYXJpIiwiZmlsZVByb3ZpZGVyIjoiczMiLCJmaWxlS2V5IjoiY2FuZGlkYXRlcy9jMGE3ZDJjOS00ZGRiLTRhZGQtOWQ0YS0yNGNkZDFjYWJhN2MvYWY0NGNkZTctY2ZjYi00ZTcwLTk5ZTEtMmE4M2U4Y2UxZTk1LzE3NzgwNjc5ODY3MzYtM2U5MjBiZWEtMjU5Yi00ZGRkLTgwZTEtNjM3MWZlNmY0NTZlLVJhaHVsLUNoYXVkaGFyaV9DVi5wZGYiLCJmaWxlVXJsIjoiaHR0cHM6Ly9rbS1yZWNydWl0ZGVzay1jdi1zdG9yYWdlLnMzLmFwLXNvdXRoLTEuYW1hem9uYXdzLmNvbS9jYW5kaWRhdGVzL2MwYTdkMmM5LTRkZGItNGFkZC05ZDRhLTI0Y2RkMWNhYmE3Yy9hZjQ0Y2RlNy1jZmNiLTRlNzAtOTllMS0yYTgzZThjZTFlOTUvMTc3ODA2Nzk4NjczNi0zZTkyMGJlYS0yNTliLTRkZGQtODBlMS02MzcxZmU2ZjQ1NmUtUmFodWwtQ2hhdWRoYXJpX0NWLnBkZiIsImZpbGVuYW1lIjoiUmFodWwtQ2hhdWRoYXJpX0NWLnBkZiIsIm1pbWVUeXBlIjoiYXBwbGljYXRpb24vb2N0ZXQtc3RyZWFtIiwiZXhwaXJlc0F0IjoxNzgxOTU2MDI0ODU1fQ.dt92dDJ2vnxPHbZgMrDtGpHxLQCPuZoUjIKDh1-HNkc",
+      "name": "Rahul Chaudhari",
+      "phone": 8624089690,
+      "email": "rahulchaudhari8624@gmail.com",
+      "location": "Mumbai",
+      "current_company": "Nucor Rebar Fabrication Detailing & Estimating Services Pvt Ltd",
+      "current_designation": "Rebar Detailer",
+      "work_experience": "4 years 8 months",
+      "highest_education": "B.Tech / B.E."
+    },
+    "got": {
+      "name": "",
+      "phone": "",
+      "email": "",
+      "current_company": "",
+      "current_designation": "",
+      "total_experience": "",
+      "current_org_tenure": ""
+    },
+    "checks": {
+      "name": false,
+      "phone": false,
+      "email": false,
+      "current_company": false,
+      "current_designation": false,
+      "total_experience": false
+    },
+    "error": ""
+  },
+  {
+    "sheet": "Estimator",
+    "excel_row": 10,
+    "expected": {
+      "sheet": "Estimator",
+      "excel_row": 10,
+      "cv_url": "https://recruit.kompatibleminds.com/shared/cv?token=eyJ0eXBlIjoic2hhcmVkX2N2IiwiY29tcGFueUlkIjoiYzBhN2QyYzktNGRkYi00YWRkLTlkNGEtMjRjZGQxY2FiYTdjIiwiY2FuZGlkYXRlSWQiOiJiOWU3MWZhZS1iMzU3LTRhMDUtODJiYi0xZWU5YWQwMDQyYjMiLCJjYW5kaWRhdGVOYW1lIjoiWXVnYW5zaHUgS3VtYXIiLCJmaWxlUHJvdmlkZXIiOiJzMyIsImZpbGVLZXkiOiJjYW5kaWRhdGVzL2MwYTdkMmM5LTRkZGItNGFkZC05ZDRhLTI0Y2RkMWNhYmE3Yy9iOWU3MWZhZS1iMzU3LTRhMDUtODJiYi0xZWU5YWQwMDQyYjMvMTc3ODA2NzgwNzg2Ny0wMGVkNTYyNC1kYTBjLTRkN2YtOTc5Ni00OGNhMGJkOWY0YmItWXVnYW5zaHUtS3VtYXJfQ1YucGRmIiwiZmlsZVVybCI6Imh0dHBzOi8va20tcmVjcnVpdGRlc2stY3Ytc3RvcmFnZS5zMy5hcC1zb3V0aC0xLmFtYXpvbmF3cy5jb20vY2FuZGlkYXRlcy9jMGE3ZDJjOS00ZGRiLTRhZGQtOWQ0YS0yNGNkZDFjYWJhN2MvYjllNzFmYWUtYjM1Ny00YTA1LTgyYmItMWVlOWFkMDA0MmIzLzE3NzgwNjc4MDc4NjctMDBlZDU2MjQtZGEwYy00ZDdmLTk3OTYtNDhjYTBiZDlmNGJiLVl1Z2Fuc2h1LUt1bWFyX0NWLnBkZiIsImZpbGVuYW1lIjoiWXVnYW5zaHUtS3VtYXJfQ1YucGRmIiwibWltZVR5cGUiOiJhcHBsaWNhdGlvbi9vY3RldC1zdHJlYW0iLCJleHBpcmVzQXQiOjE3ODE5NTYwMjc5NjB9.ore9yAPfzj-if3MGQyKNOQFFEQSSicksl5OdGzGYIRQ",
+      "name": "Yuganshu Kumar",
+      "phone": 9958029762,
+      "email": "yuganshugeng@gmail.com",
+      "location": "Gurugram",
+      "current_company": "Frontline General Construction",
+      "current_designation": "Estimator- Remote USA",
+      "work_experience": "10 years",
+      "highest_education": "B.Tech / B.E."
+    },
+    "got": {
+      "name": "YUGANSHU KUMAR",
+      "phone": "+919958029762",
+      "email": "yuganshugadai@gmail.com",
+      "current_company": "",
+      "current_designation": "",
+      "total_experience": "2 years 1 months",
+      "current_org_tenure": ""
+    },
+    "checks": {
+      "name": true,
+      "phone": true,
+      "email": false,
+      "current_company": false,
+      "current_designation": false,
+      "total_experience": false
+    },
+    "error": ""
+  },
+  {
+    "sheet": "Estimator",
+    "excel_row": 11,
+    "expected": {
+      "sheet": "Estimator",
+      "excel_row": 11,
+      "cv_url": "https://recruit.kompatibleminds.com/shared/cv?token=eyJ0eXBlIjoic2hhcmVkX2N2IiwiY29tcGFueUlkIjoiYzBhN2QyYzktNGRkYi00YWRkLTlkNGEtMjRjZGQxY2FiYTdjIiwiY2FuZGlkYXRlSWQiOiI2NDFlMDg0Mi0zYWE4LTQ0NzctYjQ0Ni0xMGU5ZDA4ZjhjNjMiLCJjYW5kaWRhdGVOYW1lIjoiQU5JVEhBIEJNIiwiZmlsZVByb3ZpZGVyIjoiczMiLCJmaWxlS2V5IjoiY2FuZGlkYXRlcy9jMGE3ZDJjOS00ZGRiLTRhZGQtOWQ0YS0yNGNkZDFjYWJhN2MvNjQxZTA4NDItM2FhOC00NDc3LWI0NDYtMTBlOWQwOGY4YzYzLzE3NzgxNTIyNDA0MDUtNWJhNmNiNmItNTQzZS00OWNiLWFlZDctZjk2ZGFiNmMyYzlhLUFuaXRoYS1CTV9DVi5wZGYiLCJmaWxlVXJsIjoiaHR0cHM6Ly9rbS1yZWNydWl0ZGVzay1jdi1zdG9yYWdlLnMzLmFwLXNvdXRoLTEuYW1hem9uYXdzLmNvbS9jYW5kaWRhdGVzL2MwYTdkMmM5LTRkZGItNGFkZC05ZDRhLTI0Y2RkMWNhYmE3Yy82NDFlMDg0Mi0zYWE4LTQ0NzctYjQ0Ni0xMGU5ZDA4ZjhjNjMvMTc3ODE1MjI0MDQwNS01YmE2Y2I2Yi01NDNlLTQ5Y2ItYWVkNy1mOTZkYWI2YzJjOWEtQW5pdGhhLUJNX0NWLnBkZiIsImZpbGVuYW1lIjoiQW5pdGhhLUJNX0NWLnBkZiIsIm1pbWVUeXBlIjoiYXBwbGljYXRpb24vb2N0ZXQtc3RyZWFtIiwiZXhwaXJlc0F0IjoxNzgyMDQwMzE0NTM3fQ.ikpCTXHS3M-ZVR72UUsinR5k_NhujxKfE2DkXdPwB38",
+      "name": "ANITHA BM",
+      "phone": 9886532956,
+      "email": "anithabm1994@gmail.com",
+      "location": "Bangalore",
+      "current_company": "Turner International India",
+      "current_designation": "Quantity Surveyor - Remote USA",
+      "work_experience": "4.8 Years",
+      "highest_education": "B.Tech / B.E."
+    },
+    "got": {
+      "name": "ANITHA BM",
+      "phone": "9886532956",
+      "email": "anithabm1994@gmail.com",
+      "current_company": "Turner International India",
+      "current_designation": "Time Period: From",
+      "total_experience": "6 years 10 months",
+      "current_org_tenure": "3 years 9 months"
+    },
+    "checks": {
+      "name": true,
+      "phone": true,
+      "email": true,
+      "current_company": true,
+      "current_designation": false,
+      "total_experience": false
+    },
+    "error": ""
+  },
+  {
+    "sheet": "Estimator",
+    "excel_row": 12,
+    "expected": {
+      "sheet": "Estimator",
+      "excel_row": 12,
+      "cv_url": "https://recruit.kompatibleminds.com/shared/cv?token=eyJ0eXBlIjoic2hhcmVkX2N2IiwiY29tcGFueUlkIjoiYzBhN2QyYzktNGRkYi00YWRkLTlkNGEtMjRjZGQxY2FiYTdjIiwiY2FuZGlkYXRlSWQiOiI0OTQ4YWY0Zi1hODVmLTRmZGQtYTcwOC0wYWRhODYwODg0NTQiLCJjYW5kaWRhdGVOYW1lIjoiQXJ1bmt1bWFyIFMuIiwiZmlsZVByb3ZpZGVyIjoiczMiLCJmaWxlS2V5IjoiY2FuZGlkYXRlcy9jMGE3ZDJjOS00ZGRiLTRhZGQtOWQ0YS0yNGNkZDFjYWJhN2MvNDk0OGFmNGYtYTg1Zi00ZmRkLWE3MDgtMGFkYTg2MDg4NDU0LzE3NzgxNTY1NDEzNDItNjdmYWMxYjYtZGNhYi00YjI2LWE4NWUtOGMyYmJmOWMwOTExLUFydW5rdW1hci1TX0NWLnBkZiIsImZpbGVVcmwiOiJodHRwczovL2ttLXJlY3J1aXRkZXNrLWN2LXN0b3JhZ2UuczMuYXAtc291dGgtMS5hbWF6b25hd3MuY29tL2NhbmRpZGF0ZXMvYzBhN2QyYzktNGRkYi00YWRkLTlkNGEtMjRjZGQxY2FiYTdjLzQ5NDhhZjRmLWE4NWYtNGZkZC1hNzA4LTBhZGE4NjA4ODQ1NC8xNzc4MTU2NTQxMzQyLTY3ZmFjMWI2LWRjYWItNGIyNi1hODVlLThjMmJiZjljMDkxMS1BcnVua3VtYXItU19DVi5wZGYiLCJmaWxlbmFtZSI6IkFydW5rdW1hci1TX0NWLnBkZiIsIm1pbWVUeXBlIjoiYXBwbGljYXRpb24vb2N0ZXQtc3RyZWFtIiwiZXhwaXJlc0F0IjoxNzgyMDQ0NTc3NTY1fQ.tcnx8C5QHiaTw4E0enGJohanibaWBBt92RY7F78ER_I",
+      "name": "Arunkumar S.",
+      "phone": 9980389009,
+      "email": "apujari994@gmail.com",
+      "location": "Bengaluru",
+      "current_company": "King Rose Construction",
+      "current_designation": "Estimating coordinator",
+      "work_experience": "10 years",
+      "highest_education": "B.Tech / B.E."
+    },
+    "got": {
+      "name": "A R U NK U MAR S",
+      "phone": "9980389009",
+      "email": "apujari994@gmail.com",
+      "current_company": "ESTIMATING COORDINATOR",
+      "current_designation": "Percentage: 71 . 5 %",
+      "total_experience": "11 years 1 months",
+      "current_org_tenure": "9 months"
+    },
+    "checks": {
+      "name": false,
+      "phone": true,
+      "email": true,
+      "current_company": false,
+      "current_designation": false,
+      "total_experience": false
+    },
+    "error": ""
+  },
+  {
+    "sheet": "Estimator",
+    "excel_row": 13,
+    "expected": {
+      "sheet": "Estimator",
+      "excel_row": 13,
+      "cv_url": "https://recruit.kompatibleminds.com/shared/cv?token=eyJ0eXBlIjoic2hhcmVkX2N2IiwiY29tcGFueUlkIjoiYzBhN2QyYzktNGRkYi00YWRkLTlkNGEtMjRjZGQxY2FiYTdjIiwiY2FuZGlkYXRlSWQiOiI5MjljZjVlOS0wNGQ0LTQzY2UtYTFiYi00ZTJkYWY4MzNkZGUiLCJjYW5kaWRhdGVOYW1lIjoiR3VudHVrdSBBbXJ1dGhhIEdvcGlrYSIsImZpbGVQcm92aWRlciI6InMzIiwiZmlsZUtleSI6ImNhbmRpZGF0ZXMvYzBhN2QyYzktNGRkYi00YWRkLTlkNGEtMjRjZGQxY2FiYTdjLzkyOWNmNWU5LTA0ZDQtNDNjZS1hMWJiLTRlMmRhZjgzM2RkZS8xNzc4MTU2NDk2NDM4LTE0OTBiNWU3LThjNzMtNDY5MC1hMDA2LTJlODAzMzZiNTY3Ni1HdW50dWt1LUFtcnV0aGEtR29waWthX0NWLnBkZiIsImZpbGVVcmwiOiJodHRwczovL2ttLXJlY3J1aXRkZXNrLWN2LXN0b3JhZ2UuczMuYXAtc291dGgtMS5hbWF6b25hd3MuY29tL2NhbmRpZGF0ZXMvYzBhN2QyYzktNGRkYi00YWRkLTlkNGEtMjRjZGQxY2FiYTdjLzkyOWNmNWU5LTA0ZDQtNDNjZS1hMWJiLTRlMmRhZjgzM2RkZS8xNzc4MTU2NDk2NDM4LTE0OTBiNWU3LThjNzMtNDY5MC1hMDA2LTJlODAzMzZiNTY3Ni1HdW50dWt1LUFtcnV0aGEtR29waWthX0NWLnBkZiIsImZpbGVuYW1lIjoiR3VudHVrdS1BbXJ1dGhhLUdvcGlrYV9DVi5wZGYiLCJtaW1lVHlwZSI6ImFwcGxpY2F0aW9uL29jdGV0LXN0cmVhbSIsImV4cGlyZXNBdCI6MTc4MjA0NDU3ODk2MH0.dbpCIvul-3FSKGmt06XvqMuEMhUzbWeNA1SpMCktPps",
+      "name": "Guntuku Amrutha Gopika",
+      "phone": 8500395838,
+      "email": "gamrutha16@gmail.com",
+      "location": "Hyderabad",
+      "current_company": "Graniti Vicentia",
+      "current_designation": "Project Management Team Manager",
+      "work_experience": "2 years 9 months",
+      "highest_education": "B.Tech / B.E."
+    },
+    "got": {
+      "name": "E D U C A T I O N",
+      "phone": "+918500395838",
+      "email": "gamrutha16@gmail.com",
+      "current_company": "Recipient of GV Excellence Award 2025 - “Go the Extra Mile” for leadership, ownership,",
+      "current_designation": "and operational impact.",
+      "total_experience": "7 years 8 months",
+      "current_org_tenure": "2 years 3 months"
+    },
+    "checks": {
+      "name": false,
+      "phone": true,
+      "email": true,
+      "current_company": false,
+      "current_designation": false,
+      "total_experience": false
+    },
+    "error": ""
+  },
+  {
+    "sheet": "Estimator",
+    "excel_row": 14,
+    "expected": {
+      "sheet": "Estimator",
+      "excel_row": 14,
+      "cv_url": "https://recruit.kompatibleminds.com/shared/cv?token=eyJ0eXBlIjoic2hhcmVkX2N2IiwiY29tcGFueUlkIjoiYzBhN2QyYzktNGRkYi00YWRkLTlkNGEtMjRjZGQxY2FiYTdjIiwiY2FuZGlkYXRlSWQiOiI4YjRhMWMzYy0yMDNkLTQ2YWItOTgzOS00NWUzM2JjNTQ0NzIiLCJjYW5kaWRhdGVOYW1lIjoiQmhhZ3lhc2hyZWUgUm91dCIsImZpbGVQcm92aWRlciI6InMzIiwiZmlsZUtleSI6ImNhbmRpZGF0ZXMvYzBhN2QyYzktNGRkYi00YWRkLTlkNGEtMjRjZGQxY2FiYTdjLzhiNGExYzNjLTIwM2QtNDZhYi05ODM5LTQ1ZTMzYmM1NDQ3Mi8xNzc4MjQzNjA3MDAyLWVkYjBmNmM0LTI4NzQtNGY4ZC04YmM4LTIyYzVjY2Y4OTE5Yi1CaGFneWFzaHJlZS1Sb3V0X0NWLnBkZiIsImZpbGVVcmwiOiJodHRwczovL2ttLXJlY3J1aXRkZXNrLWN2LXN0b3JhZ2UuczMuYXAtc291dGgtMS5hbWF6b25hd3MuY29tL2NhbmRpZGF0ZXMvYzBhN2QyYzktNGRkYi00YWRkLTlkNGEtMjRjZGQxY2FiYTdjLzhiNGExYzNjLTIwM2QtNDZhYi05ODM5LTQ1ZTMzYmM1NDQ3Mi8xNzc4MjQzNjA3MDAyLWVkYjBmNmM0LTI4NzQtNGY4ZC04YmM4LTIyYzVjY2Y4OTE5Yi1CaGFneWFzaHJlZS1Sb3V0X0NWLnBkZiIsImZpbGVuYW1lIjoiQmhhZ3lhc2hyZWUtUm91dF9DVi5wZGYiLCJtaW1lVHlwZSI6ImFwcGxpY2F0aW9uL29jdGV0LXN0cmVhbSIsImV4cGlyZXNBdCI6MTc4MjEzMTcwMTc3MX0.EE_I-Lc9dUOZIXjs4rSHv6c7sRAns-8hPTY46d5lTyA",
+      "name": "Bhagyashree Rout",
+      "phone": 6370912699,
+      "email": "routbhagyashree8@gmail.com",
+      "location": "New Delhi",
+      "current_company": "PSP Projects",
+      "current_designation": "Asst. Billing Engineer",
+      "work_experience": "4 years",
+      "highest_education": "B.Tech / B.E"
+    },
+    "got": {
+      "name": "Bhagyashree Rout",
+      "phone": "+916370912699",
+      "email": "routbhagyashree8@gmail.com",
+      "current_company": "R5A Bellrosa Residential High Rise Buildings - 4 highrise buildings consisting of 3 Basement and G+32 storeys, STP,",
+      "current_designation": "Assistant Billing Engineer (Civil) https://www.pspprojects.com",
+      "total_experience": "6 months",
+      "current_org_tenure": "6 months"
+    },
+    "checks": {
+      "name": true,
+      "phone": true,
+      "email": true,
+      "current_company": false,
+      "current_designation": false,
+      "total_experience": false
+    },
+    "error": ""
+  },
+  {
+    "sheet": "SDR",
+    "excel_row": 2,
+    "expected": {
+      "sheet": "SDR",
+      "excel_row": 2,
+      "cv_url": "https://recruit.kompatibleminds.com/shared/cv?token=eyJ0eXBlIjoic2hhcmVkX2N2IiwiY29tcGFueUlkIjoiYzBhN2QyYzktNGRkYi00YWRkLTlkNGEtMjRjZGQxY2FiYTdjIiwiY2FuZGlkYXRlSWQiOiIwYjI0MjA0MS1mYzM0LTQ2NWQtYWI3OC0wYTMzZDI0YTE3MDEiLCJjYW5kaWRhdGVOYW1lIjoiQmhhbnUgUHJhdGFwIFNpbmdoIiwiZmlsZVByb3ZpZGVyIjoiczMiLCJmaWxlS2V5IjoiY2FuZGlkYXRlcy9jMGE3ZDJjOS00ZGRiLTRhZGQtOWQ0YS0yNGNkZDFjYWJhN2MvMGIyNDIwNDEtZmMzNC00NjVkLWFiNzgtMGEzM2QyNGExNzAxLzE3NzgwNjg4MjgxNDItMzgxMGMxNTEtMTY5NC00OWFjLWIzOWUtOWYyYjMyNjcyMmM0LU5hdWtyaV9CaGFudVByYXRhcFNpbmdoLTd5XzBtLS5wZGYiLCJmaWxlVXJsIjoiaHR0cHM6Ly9rbS1yZWNydWl0ZGVzay1jdi1zdG9yYWdlLnMzLmFwLXNvdXRoLTEuYW1hem9uYXdzLmNvbS9jYW5kaWRhdGVzL2MwYTdkMmM5LTRkZGItNGFkZC05ZDRhLTI0Y2RkMWNhYmE3Yy8wYjI0MjA0MS1mYzM0LTQ2NWQtYWI3OC0wYTMzZDI0YTE3MDEvMTc3ODA2ODgyODE0Mi0zODEwYzE1MS0xNjk0LTQ5YWMtYjM5ZS05ZjJiMzI2NzIyYzQtTmF1a3JpX0JoYW51UHJhdGFwU2luZ2gtN3lfMG0tLnBkZiIsImZpbGVuYW1lIjoiTmF1a3JpX0JoYW51UHJhdGFwU2luZ2gtN3lfMG0tLnBkZiIsIm1pbWVUeXBlIjoiYXBwbGljYXRpb24vb2N0ZXQtc3RyZWFtIiwiZXhwaXJlc0F0IjoxNzgxOTU5NDM4NDEyfQ.az6y3ucndq6TzZfFynkUFqr3mGVBfW7fugzpxdfSovg",
+      "name": "Bhanu Pratap Singh",
+      "phone": 9217137602,
+      "email": "connect.bhanu47@gmail.com",
+      "location": "Noida",
+      "current_company": "Globestar Software",
+      "current_designation": "Senior Sales Development Representative",
+      "work_experience": "7.6 years",
+      "highest_education": "B.Tech / B.E."
+    },
+    "got": {
+      "name": "Bhanu Pratap",
+      "phone": "9217137602",
+      "email": "connect.bhanu47@gmail.com",
+      "current_company": "",
+      "current_designation": "",
+      "total_experience": "7+ years",
+      "current_org_tenure": ""
+    },
+    "checks": {
+      "name": false,
+      "phone": true,
+      "email": true,
+      "current_company": false,
+      "current_designation": false,
+      "total_experience": false
+    },
+    "error": ""
+  },
+  {
+    "sheet": "SDR",
+    "excel_row": 3,
+    "expected": {
+      "sheet": "SDR",
+      "excel_row": 3,
+      "cv_url": "https://recruit.kompatibleminds.com/shared/cv?token=eyJ0eXBlIjoic2hhcmVkX2N2IiwiY29tcGFueUlkIjoiYzBhN2QyYzktNGRkYi00YWRkLTlkNGEtMjRjZGQxY2FiYTdjIiwiY2FuZGlkYXRlSWQiOiI1MzhmZGRmNy0xNzNjLTQ0YmQtODRjNy03OTQwMjhjMTc3YTgiLCJjYW5kaWRhdGVOYW1lIjoiUHVsa2l0IEhhbnMiLCJmaWxlUHJvdmlkZXIiOiJzMyIsImZpbGVLZXkiOiJjYW5kaWRhdGVzL2MwYTdkMmM5LTRkZGItNGFkZC05ZDRhLTI0Y2RkMWNhYmE3Yy81MzhmZGRmNy0xNzNjLTQ0YmQtODRjNy03OTQwMjhjMTc3YTgvMTc3ODA3MDMwNDAxNC0yNDYyNjBmOC03MTUxLTQxZTItYTQzZC0xYmVlYTdjZTZkYzEtUHVsa2l0LUhhbnNfQ1YucGRmIiwiZmlsZVVybCI6Imh0dHBzOi8va20tcmVjcnVpdGRlc2stY3Ytc3RvcmFnZS5zMy5hcC1zb3V0aC0xLmFtYXpvbmF3cy5jb20vY2FuZGlkYXRlcy9jMGE3ZDJjOS00ZGRiLTRhZGQtOWQ0YS0yNGNkZDFjYWJhN2MvNTM4ZmRkZjctMTczYy00NGJkLTg0YzctNzk0MDI4YzE3N2E4LzE3NzgwNzAzMDQwMTQtMjQ2MjYwZjgtNzE1MS00MWUyLWE0M2QtMWJlZWE3Y2U2ZGMxLVB1bGtpdC1IYW5zX0NWLnBkZiIsImZpbGVuYW1lIjoiUHVsa2l0LUhhbnNfQ1YucGRmIiwibWltZVR5cGUiOiJhcHBsaWNhdGlvbi9vY3RldC1zdHJlYW0iLCJleHBpcmVzQXQiOjE3ODE5NTk0Mzc0Mzd9.FSwj_q46SdHEpZjn7D-FrntyeugrZHRZGxTVOTcle6A",
+      "name": "Pulkit Hans",
+      "phone": 7417200189,
+      "email": "pulkithans08@gmail.com",
+      "location": "Noida",
+      "current_company": "Cloud Analogy",
+      "current_designation": "Senior Business Development Executive",
+      "work_experience": "3 years 7 months",
+      "highest_education": "B.Tech / B.E."
+    },
+    "got": {
+      "name": "Sales Development",
+      "phone": "+917417200189",
+      "email": "pulkithans08@gmail.com",
+      "current_company": "solution alignment.",
+      "current_designation": "requirement validation, multi-stakeholder coordination, and",
+      "total_experience": "6 years 6 months",
+      "current_org_tenure": "1 years 6 months"
+    },
+    "checks": {
+      "name": false,
+      "phone": true,
+      "email": true,
+      "current_company": false,
+      "current_designation": false,
+      "total_experience": false
+    },
+    "error": ""
+  },
+  {
+    "sheet": "SDR",
+    "excel_row": 4,
+    "expected": {
+      "sheet": "SDR",
+      "excel_row": 4,
+      "cv_url": "https://recruit.kompatibleminds.com/shared/cv?token=eyJ0eXBlIjoic2hhcmVkX2N2IiwiY29tcGFueUlkIjoiYzBhN2QyYzktNGRkYi00YWRkLTlkNGEtMjRjZGQxY2FiYTdjIiwiY2FuZGlkYXRlSWQiOiI1MmM4MjVmMi1lMzNiLTRjOTItOGYxMi0wMWU5YzdiMzAxODciLCJjYW5kaWRhdGVOYW1lIjoiU3dhcm5pa2EgSmFpbiIsImZpbGVQcm92aWRlciI6InMzIiwiZmlsZUtleSI6ImNhbmRpZGF0ZXMvYzBhN2QyYzktNGRkYi00YWRkLTlkNGEtMjRjZGQxY2FiYTdjLzUyYzgyNWYyLWUzM2ItNGM5Mi04ZjEyLTAxZTljN2IzMDE4Ny8xNzc4MTU2MzU2MDMwLWRkYmM3NDk3LTg5NzQtNDhiMi1hNzljLTMyNWJhMDAyMDExOC1TV0FSTklLQUpBSU5fQ1YucGRmIiwiZmlsZVVybCI6Imh0dHBzOi8va20tcmVjcnVpdGRlc2stY3Ytc3RvcmFnZS5zMy5hcC1zb3V0aC0xLmFtYXpvbmF3cy5jb20vY2FuZGlkYXRlcy9jMGE3ZDJjOS00ZGRiLTRhZGQtOWQ0YS0yNGNkZDFjYWJhN2MvNTJjODI1ZjItZTMzYi00YzkyLThmMTItMDFlOWM3YjMwMTg3LzE3NzgxNTYzNTYwMzAtZGRiYzc0OTctODk3NC00OGIyLWE3OWMtMzI1YmEwMDIwMTE4LVNXQVJOSUtBSkFJTl9DVi5wZGYiLCJmaWxlbmFtZSI6IlNXQVJOSUtBSkFJTl9DVi5wZGYiLCJtaW1lVHlwZSI6ImFwcGxpY2F0aW9uL29jdGV0LXN0cmVhbSIsImV4cGlyZXNBdCI6MTc4MjA0NDU3NjY5N30.4YPSlIsHsMlPqRdjDJ3mYPzE_tYZjrHjfrXu1sUJoMM",
+      "name": "Swarnika Jain",
+      "phone": 8630734319,
+      "email": "jainswarnika.21@gmail.com",
+      "location": "Noida",
+      "current_company": "Tangence",
+      "current_designation": "Sales Development Representative",
+      "work_experience": "4 years 10 months",
+      "highest_education": "MBA/PGDM Jaipuria Institute of Management, Noida, 2021"
+    },
+    "got": {
+      "name": "SWARNIKA JAIN",
+      "phone": "+918630734319",
+      "email": "jainswarnika.21@gmail.com",
+      "current_company": "",
+      "current_designation": "",
+      "total_experience": "6 years",
+      "current_org_tenure": ""
+    },
+    "checks": {
+      "name": true,
+      "phone": true,
+      "email": true,
+      "current_company": false,
+      "current_designation": false,
+      "total_experience": false
+    },
+    "error": ""
+  },
+  {
+    "sheet": "SDR",
+    "excel_row": 5,
+    "expected": {
+      "sheet": "SDR",
+      "excel_row": 5,
+      "cv_url": "https://recruit.kompatibleminds.com/shared/cv?token=eyJ0eXBlIjoic2hhcmVkX2N2IiwiY29tcGFueUlkIjoiYzBhN2QyYzktNGRkYi00YWRkLTlkNGEtMjRjZGQxY2FiYTdjIiwiY2FuZGlkYXRlSWQiOiIzNmI0YjYzNy1hMzM0LTQ3MjMtYTVlYy02MjQ3M2RkNTVlZDIiLCJjYW5kaWRhdGVOYW1lIjoiQWRpdHlhIHNpbmdoIiwiZmlsZVByb3ZpZGVyIjoiczMiLCJmaWxlS2V5IjoiY2FuZGlkYXRlcy9jMGE3ZDJjOS00ZGRiLTRhZGQtOWQ0YS0yNGNkZDFjYWJhN2MvMzZiNGI2MzctYTMzNC00NzIzLWE1ZWMtNjI0NzNkZDU1ZWQyLzE3NzgyMzkyMDUzMzctN2M3MjdhMWYtYWQxMi00ZjVlLWFiYjMtZTRmODk5MWMxZThlLU5hdWtyaV9BZGl0eWFzaW5naC0yeV84bS0ucGRmIiwiZmlsZVVybCI6Imh0dHBzOi8va20tcmVjcnVpdGRlc2stY3Ytc3RvcmFnZS5zMy5hcC1zb3V0aC0xLmFtYXpvbmF3cy5jb20vY2FuZGlkYXRlcy9jMGE3ZDJjOS00ZGRiLTRhZGQtOWQ0YS0yNGNkZDFjYWJhN2MvMzZiNGI2MzctYTMzNC00NzIzLWE1ZWMtNjI0NzNkZDU1ZWQyLzE3NzgyMzkyMDUzMzctN2M3MjdhMWYtYWQxMi00ZjVlLWFiYjMtZTRmODk5MWMxZThlLU5hdWtyaV9BZGl0eWFzaW5naC0yeV84bS0ucGRmIiwiZmlsZW5hbWUiOiJOYXVrcmlfQWRpdHlhc2luZ2gtMnlfOG0tLnBkZiIsIm1pbWVUeXBlIjoiYXBwbGljYXRpb24vb2N0ZXQtc3RyZWFtIiwiZXhwaXJlc0F0IjoxNzgyMTMyMTIyNTM5fQ.Oq9MbB1s4eX6doRpTJgIFugPp3cmSL_h9dul4DUuJSU",
+      "name": "Aditya singh",
+      "phone": 8853845305,
+      "email": "adityasingh.tlb@gmail.com",
+      "location": "New Delhi",
+      "current_company": "Spog.ai ",
+      "current_designation": "Senior Business Development Representative",
+      "work_experience": "2 years 8 months",
+      "highest_education": "MBA/PGDM"
+    },
+    "got": {
+      "name": "Goenka University",
+      "phone": "+918853845305",
+      "email": "ADITYASINGH.TLB@GMAIL.COM",
+      "current_company": "BDR - ENTERPRISE GROWTH",
+      "current_designation": "SPOG.AI, NOIDA. (",
+      "total_experience": "7 years 5 months",
+      "current_org_tenure": "9 months"
+    },
+    "checks": {
+      "name": false,
+      "phone": true,
+      "email": true,
+      "current_company": false,
+      "current_designation": false,
+      "total_experience": false
+    },
+    "error": ""
+  },
+  {
+    "sheet": "SDR",
+    "excel_row": 6,
+    "expected": {
+      "sheet": "SDR",
+      "excel_row": 6,
+      "cv_url": "https://recruit.kompatibleminds.com/shared/cv?token=eyJ0eXBlIjoic2hhcmVkX2N2IiwiY29tcGFueUlkIjoiYzBhN2QyYzktNGRkYi00YWRkLTlkNGEtMjRjZGQxY2FiYTdjIiwiY2FuZGlkYXRlSWQiOiIzNzdjMTVlZS1hYmU3LTQ3MzMtYTBhOS00YWIwMTNiNzU1MWUiLCJjYW5kaWRhdGVOYW1lIjoiTml0aW4gWWFkYXYiLCJmaWxlUHJvdmlkZXIiOiJzMyIsImZpbGVLZXkiOiJjYW5kaWRhdGVzL2MwYTdkMmM5LTRkZGItNGFkZC05ZDRhLTI0Y2RkMWNhYmE3Yy8zNzdjMTVlZS1hYmU3LTQ3MzMtYTBhOS00YWIwMTNiNzU1MWUvMTc3ODMxNDkwMTg4Ni1kZjA4MWMxZi1kYjcyLTRhOGUtYjkzMS01N2JmYzI2NDNhMWEtTmF1a3JpX05pdGluWWFkYXYtM3lfMG0tLnBkZiIsImZpbGVVcmwiOiJodHRwczovL2ttLXJlY3J1aXRkZXNrLWN2LXN0b3JhZ2UuczMuYXAtc291dGgtMS5hbWF6b25hd3MuY29tL2NhbmRpZGF0ZXMvYzBhN2QyYzktNGRkYi00YWRkLTlkNGEtMjRjZGQxY2FiYTdjLzM3N2MxNWVlLWFiZTctNDczMy1hMGE5LTRhYjAxM2I3NTUxZS8xNzc4MzE0OTAxODg2LWRmMDgxYzFmLWRiNzItNGE4ZS1iOTMxLTU3YmZjMjY0M2ExYS1OYXVrcmlfTml0aW5ZYWRhdi0zeV8wbS0ucGRmIiwiZmlsZW5hbWUiOiJOYXVrcmlfTml0aW5ZYWRhdi0zeV8wbS0ucGRmIiwibWltZVR5cGUiOiJhcHBsaWNhdGlvbi9vY3RldC1zdHJlYW0iLCJleHBpcmVzQXQiOjE3ODIyMDQ5NTA4NzJ9.Us4r0LbcoqwAszvXNxqEiRpFbGVEJTeMuUr-bZXim74",
+      "name": "Nitin Yadav",
+      "phone": 9019663139,
+      "email": "nitinyadav3139@gmail.com",
+      "location": "Gurugram",
+      "current_company": "Amply (Backed by Google)",
+      "current_designation": "Senior Sales Development Representative",
+      "work_experience": "3 years",
+      "highest_education": "MBA/PGDM Chandigarh University, Mohali, 2023"
+    },
+    "got": {
+      "name": "NITIN YADAV",
+      "phone": "+919019663139",
+      "email": "nitinyadav3139@gmail.com",
+      "current_company": "Amply (backed by Google), Gurugram, Haryana, India",
+      "current_designation": "Senior Sales Development Representative",
+      "total_experience": "2 years 8 months",
+      "current_org_tenure": "1 years 10 months"
+    },
+    "checks": {
+      "name": true,
+      "phone": true,
+      "email": true,
+      "current_company": false,
+      "current_designation": true,
+      "total_experience": false
+    },
+    "error": ""
+  },
+  {
+    "sheet": "SDR",
+    "excel_row": 7,
+    "expected": {
+      "sheet": "SDR",
+      "excel_row": 7,
+      "cv_url": "https://recruit.kompatibleminds.com/shared/cv?token=eyJ0eXBlIjoic2hhcmVkX2N2IiwiY29tcGFueUlkIjoiYzBhN2QyYzktNGRkYi00YWRkLTlkNGEtMjRjZGQxY2FiYTdjIiwiY2FuZGlkYXRlSWQiOiJhNzdkMDQ2Mi04MDFhLTQ2YjgtODNjNS02MTA1N2E5ODRhZWUiLCJjYW5kaWRhdGVOYW1lIjoiRGV2IFNoYXJtYSIsImZpbGVQcm92aWRlciI6InMzIiwiZmlsZUtleSI6ImNhbmRpZGF0ZXMvYzBhN2QyYzktNGRkYi00YWRkLTlkNGEtMjRjZGQxY2FiYTdjL2E3N2QwNDYyLTgwMWEtNDZiOC04M2M1LTYxMDU3YTk4NGFlZS8xNzc4MzE0MDYwODcyLTU3YmQ1NDI0LWQ5OGItNDg4NS1iOTE4LTFjMThlYmZlZjU3MS1EZXZTaGFybWFfQ1YucGRmIiwiZmlsZVVybCI6Imh0dHBzOi8va20tcmVjcnVpdGRlc2stY3Ytc3RvcmFnZS5zMy5hcC1zb3V0aC0xLmFtYXpvbmF3cy5jb20vY2FuZGlkYXRlcy9jMGE3ZDJjOS00ZGRiLTRhZGQtOWQ0YS0yNGNkZDFjYWJhN2MvYTc3ZDA0NjItODAxYS00NmI4LTgzYzUtNjEwNTdhOTg0YWVlLzE3NzgzMTQwNjA4NzItNTdiZDU0MjQtZDk4Yi00ODg1LWI5MTgtMWMxOGViZmVmNTcxLURldlNoYXJtYV9DVi5wZGYiLCJmaWxlbmFtZSI6IkRldlNoYXJtYV9DVi5wZGYiLCJtaW1lVHlwZSI6ImFwcGxpY2F0aW9uL29jdGV0LXN0cmVhbSIsImV4cGlyZXNBdCI6MTc4MjIwNDk1MjkzMH0.E2_BR36lxFtN5ZudjPjeKlb7RxwrByYUaRddpW5rLPE",
+      "name": "Dev Sharma",
+      "phone": 9760036113,
+      "email": "work.dev13@gmail.com",
+      "location": "Noida",
+      "current_company": "Compunnel",
+      "current_designation": "Business Development Consultant",
+      "work_experience": "4 years 1 month",
+      "highest_education": "B.A - Bachelor of Arts"
+    },
+    "got": {
+      "name": "Summary\nDev Sharma",
+      "phone": "+919760036113",
+      "email": "work.dev13@gmail.com",
+      "current_company": "2025",
+      "current_designation": "2020",
+      "total_experience": "1 years 6 months",
+      "current_org_tenure": "1 years 2 months"
+    },
+    "checks": {
+      "name": false,
+      "phone": true,
+      "email": true,
+      "current_company": false,
+      "current_designation": false,
+      "total_experience": false
+    },
+    "error": ""
+  }
+]
