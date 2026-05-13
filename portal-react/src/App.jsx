@@ -6006,22 +6006,24 @@ function PortalApp({ token, onLogout }) {
       needsBilling ? api("/company/billing/overview", token).catch(() => null) : Promise.resolve(null),
       pathname === "/plan" ? api("/company/billing/plans", token).catch(() => ({ plans: [] })) : Promise.resolve(null)
     ]);
-    const nextDashboard =
+    const nextDashboard = (current) => (
       needsDashboard && latestDashboardKeyRef.current === dashboardKey
         ? (
             dashboardResult && typeof dashboardResult === "object" && Object.keys(dashboardResult).length
               ? dashboardResult
-              : (current => current.dashboard)
+              : current.dashboard
           )
-        : (current => current.dashboard);
-    const nextClientPortal =
+        : current.dashboard
+    );
+    const nextClientPortal = (current) => (
       needsDashboard && latestClientPortalKeyRef.current === clientPortalKey
         ? (
             clientPortalResult && typeof clientPortalResult === "object" && Object.keys(clientPortalResult).length
               ? clientPortalResult
-              : (current => current.clientPortal)
+              : current.clientPortal
           )
-        : (current => current.clientPortal);
+        : current.clientPortal
+    );
 
     setState((current) => ({
       ...current,
