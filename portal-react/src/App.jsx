@@ -4041,7 +4041,7 @@ function ClientPortalPieCard({ title, total, rows }) {
   );
 }
 
-function DrilldownModal({ open, title, items, onClose, onOpenCv, onOpenDraft, onOpenAssessment, onOpenNotes, onOpenStatus, onAddFeedback, extraActions = null, inline = false, hideRoleClient = false }) {
+function DrilldownModal({ open, title, items, onClose, onOpenCv, onOpenDraft, onOpenAssessment, onOpenNotes, onOpenStatus, onAddFeedback, extraActions = null, inline = false, hideRoleClient = false, loading = false }) {
   if (!open) return null;
   const containerClass = inline ? "inline-drilldown" : "overlay";
   const cardClass = inline ? "panel inline-drilldown__card" : "overlay-card overlay-card--wide";
@@ -4052,10 +4052,10 @@ function DrilldownModal({ open, title, items, onClose, onOpenCv, onOpenDraft, on
           <h3>{title}</h3>
           {inline ? <button className="ghost-btn" onClick={onClose}>Collapse</button> : null}
         </div>
-        <p className="muted">{items.length} candidate(s)</p>
+        <p className="muted">{loading ? "Loading candidates..." : `${items.length} candidate(s)`}</p>
         {extraActions ? <div className="drilldown-toolbar">{extraActions}</div> : null}
         <div className="stack-list compact">
-          {!items.length ? <div className="empty-state">No matching candidates found.</div> : items.map((item, index) => {
+          {loading ? <div className="empty-state">Loading candidates...</div> : (!items.length ? <div className="empty-state">No matching candidates found.</div> : items.map((item, index) => {
             const stableItemKey = String(
               item?.id ||
               item?.assessmentId ||
@@ -4105,7 +4105,7 @@ function DrilldownModal({ open, title, items, onClose, onOpenCv, onOpenDraft, on
               })()}
             </article>
           );
-          })}
+          }))}
         </div>
         {inline ? null : (
           <div className="button-row">
@@ -4971,7 +4971,7 @@ function PortalApp({ token, onLogout }) {
   const [notesCandidateId, setNotesCandidateId] = useState("");
   const [attemptsCandidateId, setAttemptsCandidateId] = useState("");
   const [assessmentStatusId, setAssessmentStatusId] = useState("");
-  const [drilldownState, setDrilldownState] = useState({ open: false, title: "", items: [], request: null });
+  const [drilldownState, setDrilldownState] = useState({ open: false, title: "", items: [], request: null, loading: false });
   const inlineDrilldownRef = useRef(null);
   const loginSettingsSectionRef = useRef(null);
   const [inlineDrilldownPulse, setInlineDrilldownPulse] = useState(false);
@@ -5638,31 +5638,16 @@ function PortalApp({ token, onLogout }) {
   }
 
   async function openWhatsappTemplatePicker(row = {}, phoneValue = "", statusKey = "workspace") {
-    const latestPersonalShortcuts = await loadPersonalShortcuts();
-    let latestCompanyWideShortcuts =
+    const cachedCompanyWideShortcuts =
       copySettings?.companyWideShortcuts && typeof copySettings.companyWideShortcuts === "object"
         ? copySettings.companyWideShortcuts
         : {};
-    try {
-      const sharedPresetResult = await api("/company/shared-export-presets", token).catch(() => null);
-      if (sharedPresetResult && typeof sharedPresetResult === "object") {
-        const merged = migrateCopySettings({ ...copySettings, ...sharedPresetResult });
-        latestCompanyWideShortcuts =
-          merged?.companyWideShortcuts && typeof merged.companyWideShortcuts === "object"
-            ? merged.companyWideShortcuts
-            : latestCompanyWideShortcuts;
-        setCopySettings((current) => migrateCopySettings({ ...current, ...sharedPresetResult }));
-      }
-    } catch {
-      // Keep existing in-memory shortcuts if refresh fails.
-    }
-    const recruiterLink = await fetchRecruiterApplyLinkForRow(row);
     const rowWithLinks = {
       ...(row || {}),
-      recruiter_jd_link: recruiterLink,
+      recruiter_jd_link: String(row?.recruiter_jd_link || row?.recruiterJdLink || "").trim(),
       jd_link: resolveRowJobId(row) ? getApplyLink(resolveRowJobId(row)) : ""
     };
-    const options = getWhatsappTemplateOptions(row, latestPersonalShortcuts, latestCompanyWideShortcuts);
+    const options = getWhatsappTemplateOptions(row, personalShortcuts, cachedCompanyWideShortcuts);
     const selectedId = String(options[0]?.id || "");
     const selectedTemplate = String(options[0]?.template || "");
     setWhatsappTemplatePicker({
@@ -5679,6 +5664,42 @@ function PortalApp({ token, onLogout }) {
       saveScope: "all_jobs",
       assignJobId: resolveRowJobId(rowWithLinks)
     });
+
+    // Keep popup instant; hydrate latest shortcuts and recruiter apply link in background.
+    void (async () => {
+      const [latestPersonalShortcuts, sharedPresetResult, recruiterLink] = await Promise.all([
+        loadPersonalShortcuts().catch(() => personalShortcuts || {}),
+        api("/company/shared-export-presets", token).catch(() => null),
+        fetchRecruiterApplyLinkForRow(row).catch(() => "")
+      ]);
+      let latestCompanyWideShortcuts = cachedCompanyWideShortcuts;
+      if (sharedPresetResult && typeof sharedPresetResult === "object") {
+        const merged = migrateCopySettings({ ...copySettings, ...sharedPresetResult });
+        latestCompanyWideShortcuts =
+          merged?.companyWideShortcuts && typeof merged.companyWideShortcuts === "object"
+            ? merged.companyWideShortcuts
+            : latestCompanyWideShortcuts;
+        setCopySettings((current) => migrateCopySettings({ ...current, ...sharedPresetResult }));
+      }
+      const hydratedRow = {
+        ...rowWithLinks,
+        recruiter_jd_link: recruiterLink || rowWithLinks.recruiter_jd_link || "",
+        jd_link: rowWithLinks.jd_link || (resolveRowJobId(row) ? getApplyLink(resolveRowJobId(row)) : "")
+      };
+      const hydratedOptions = getWhatsappTemplateOptions(hydratedRow, latestPersonalShortcuts, latestCompanyWideShortcuts);
+      const hydratedSelectedTemplate = String(hydratedOptions[0]?.template || "");
+      setWhatsappTemplatePicker((current) => {
+        if (!current.open) return current;
+        return {
+          ...current,
+          row: hydratedRow,
+          options: hydratedOptions,
+          customText:
+            String(current.customText || "").trim() ||
+            (hydratedSelectedTemplate ? renderWhatsappTemplatePreview(hydratedSelectedTemplate, hydratedRow) : "")
+        };
+      });
+    })();
   }
 
   async function applyWhatsappTemplatePickerSelection() {
@@ -8373,7 +8394,7 @@ function PortalApp({ token, onLogout }) {
       .map((id) => String(id || "").trim())
       .filter(Boolean);
     if (isAdmin) {
-      for (const id of ids) {
+      const results = await Promise.allSettled(ids.map(async (id) => {
         await api("/candidates/assign", token, "POST", {
           id,
           assignedToUserId: effectiveRecruiterId,
@@ -8384,25 +8405,40 @@ function PortalApp({ token, onLogout }) {
           client_name: clientName
         });
         await patchCandidateQuiet(id, { hidden_from_captured: false });
-      }
+      }));
+      const successCount = results.filter((entry) => entry.status === "fulfilled").length;
+      const failCount = Math.max(0, ids.length - successCount);
       setAssignCandidateId("");
       setBulkAssignCandidateIds([]);
       setBulkAssignCandidateModalOpen(false);
-      setStatus("captured", ids.length > 1 ? `${ids.length} drafts assigned to recruiter.` : "Draft assigned to recruiter.", "ok");
+      if (failCount > 0) {
+        setStatus("captured", `${successCount}/${ids.length} drafts assigned. ${failCount} failed, retry once.`, "error");
+      } else {
+        setStatus("captured", ids.length > 1 ? `${ids.length} drafts assigned to recruiter.` : "Draft assigned to recruiter.", "ok");
+      }
+      void refreshWorkspaceSilently("post-captured-bulk-assign");
       return;
     }
-    await api("/candidates/claim", token, "POST", {
-      id: assignCandidateId,
-      assignedJdId: jdId,
-      assignedJdTitle: jdTitle,
-      jdTitle,
-      clientName,
-      client_name: clientName
-    });
+    const results = await Promise.allSettled(ids.map(async (id) => {
+      await api("/candidates/claim", token, "POST", {
+        id,
+        assignedJdId: jdId,
+        assignedJdTitle: jdTitle,
+        jdTitle,
+        clientName,
+        client_name: clientName
+      });
+    }));
+    const successCount = results.filter((entry) => entry.status === "fulfilled").length;
+    const failCount = Math.max(0, ids.length - successCount);
     setAssignCandidateId("");
     setBulkAssignCandidateIds([]);
     setBulkAssignCandidateModalOpen(false);
-    setStatus("captured", "Draft assigned to recruiter.", "ok");
+    if (failCount > 0) {
+      setStatus("captured", `${successCount}/${ids.length} drafts assigned. ${failCount} failed, retry once.`, "error");
+    } else {
+      setStatus("captured", ids.length > 1 ? `${ids.length} drafts assigned to recruiter.` : "Draft assigned to recruiter.", "ok");
+    }
     void refreshWorkspaceSilently("post-claim");
   }
 
@@ -10133,13 +10169,32 @@ function PortalApp({ token, onLogout }) {
       recruiterLabel: params.recruiterLabel || "",
       positionLabel: params.positionLabel || ""
     });
-    const result = await api(`/company/dashboard/drilldown?${query.toString()}`, token);
     setDrilldownState({
       open: true,
       title,
-      items: result.items || [],
+      items: [],
+      loading: true,
       request: { mode: "dashboard", title, metric, groupType, params }
     });
+    try {
+      const result = await api(`/company/dashboard/drilldown?${query.toString()}`, token);
+      setDrilldownState({
+        open: true,
+        title,
+        items: result.items || [],
+        loading: false,
+        request: { mode: "dashboard", title, metric, groupType, params }
+      });
+    } catch (error) {
+      setDrilldownState({
+        open: true,
+        title,
+        items: [],
+        loading: false,
+        request: { mode: "dashboard", title, metric, groupType, params }
+      });
+      setStatus("workspace", String(error?.message || error || "Unable to load drilldown"), "error");
+    }
   }
 
   async function applyClientPortalFilters() {
@@ -10157,13 +10212,32 @@ function PortalApp({ token, onLogout }) {
       clientLabel: params.clientLabel || "",
       positionLabel: params.positionLabel || ""
     });
-    const result = await api(`/company/client-portal/drilldown?${query.toString()}`, token);
     setDrilldownState({
       open: true,
       title,
-      items: result.items || [],
+      items: [],
+      loading: true,
       request: { mode: "clientPortal", title, metric, groupType, params }
     });
+    try {
+      const result = await api(`/company/client-portal/drilldown?${query.toString()}`, token);
+      setDrilldownState({
+        open: true,
+        title,
+        items: result.items || [],
+        loading: false,
+        request: { mode: "clientPortal", title, metric, groupType, params }
+      });
+    } catch (error) {
+      setDrilldownState({
+        open: true,
+        title,
+        items: [],
+        loading: false,
+        request: { mode: "clientPortal", title, metric, groupType, params }
+      });
+      setStatus("workspace", String(error?.message || error || "Unable to load drilldown"), "error");
+    }
   }
 
   async function refreshOpenDrilldown() {
@@ -13056,11 +13130,12 @@ function PortalApp({ token, onLogout }) {
                 >
                   <DrilldownModal
                     open={drilldownState.open}
+                    loading={Boolean(drilldownState.loading)}
                     inline
                     hideRoleClient
                     title={drilldownState.title}
                     items={drilldownState.items}
-                    onClose={() => setDrilldownState({ open: false, title: "", items: [], request: null })}
+                    onClose={() => setDrilldownState({ open: false, title: "", items: [], request: null, loading: false })}
                     onOpenCv={(candidateId) => void openCv(candidateId)}
                     onOpenNotes={(candidateId) => void openRecruiterNotes(candidateId)}
                     onOpenStatus={(target) => {
@@ -15268,9 +15343,10 @@ function PortalApp({ token, onLogout }) {
       <AssessmentStatusModal open={Boolean(assessmentStatusId)} assessment={assessmentStatusItem} onClose={() => setAssessmentStatusId("")} onSave={(payload) => saveAssessmentStatusUpdate(assessmentStatusItem, payload)} />
       <DrilldownModal
         open={drilldownState.open && String(location?.pathname || "") !== "/dashboard"}
+        loading={Boolean(drilldownState.loading)}
         title={drilldownState.title}
         items={drilldownState.items}
-        onClose={() => setDrilldownState({ open: false, title: "", items: [], request: null })}
+        onClose={() => setDrilldownState({ open: false, title: "", items: [], request: null, loading: false })}
         onOpenCv={(candidateId) => void openCv(candidateId)}
         onOpenAssessment={(assessment) => { setDrilldownState({ open: false, title: "", items: [], request: null }); openSavedAssessment(assessment); }}
 	        onOpenNotes={(candidateId) => { setDrilldownState({ open: false, title: "", items: [], request: null }); openRecruiterNotes(candidateId); }}
