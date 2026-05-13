@@ -5478,18 +5478,40 @@ function PortalApp({ token, onLogout }) {
     return digits;
   }
 
-  function openWhatsappInSideWindow(phoneValue, statusKey = "workspace") {
+  function isMobileDevice() {
+    if (typeof navigator === "undefined") return false;
+    const ua = String(navigator.userAgent || "").toLowerCase();
+    return /android|iphone|ipad|ipod|mobile/i.test(ua);
+  }
+
+  function buildWhatsappUrl(phoneValue, textValue = "") {
+    const phone = normalizeWhatsappPhone(phoneValue);
+    if (!phone) return "";
+    const encodedText = String(textValue || "").trim() ? `?text=${encodeURIComponent(String(textValue || "").trim())}` : "";
+    if (isMobileDevice()) return `https://wa.me/${encodeURIComponent(phone)}${encodedText}`;
+    return `https://web.whatsapp.com/send?phone=${encodeURIComponent(phone)}${encodedText}`;
+  }
+
+  function openWhatsappInSideWindow(phoneValue, statusKey = "workspace", textValue = "") {
     const phone = normalizeWhatsappPhone(phoneValue);
     if (!phone) {
       setStatus(statusKey, "No phone number available for WhatsApp.", "error");
       return;
     }
     try {
+      const url = buildWhatsappUrl(phone, textValue);
+      if (!url) {
+        setStatus(statusKey, "WhatsApp link unavailable for this number.", "error");
+        return;
+      }
+      if (isMobileDevice()) {
+        window.location.href = url;
+        return;
+      }
       const width = Math.min(760, Math.max(640, (window.outerWidth || 1400) - 420));
       const height = Math.min(980, Math.max(760, (window.outerHeight || 940) - 70));
       const left = Math.max(0, (window.screenX || 0) + (window.outerWidth || 1400) - width - 24);
       const top = Math.max(0, (window.screenY || 0) + 24);
-      const url = `https://web.whatsapp.com/send?phone=${encodeURIComponent(phone)}`;
       const features = `popup=yes,width=${width},height=${height},left=${left},top=${top},resizable=yes,scrollbars=yes`;
       const win = window.open(url, "whatsapp_side_window", features);
       if (!win) return;
@@ -5708,13 +5730,15 @@ function PortalApp({ token, onLogout }) {
       setStatus(whatsappTemplatePicker.statusKey || "workspace", "Template text is empty.", "error");
       return;
     }
+    const phone = whatsappTemplatePicker.phone || "";
+    // Open immediately in user gesture context to avoid popup blocking on mobile browsers.
+    openWhatsappInSideWindow(phone, whatsappTemplatePicker.statusKey || "workspace", customText);
     try {
       await copyText(customText);
       setStatus(whatsappTemplatePicker.statusKey || "workspace", "WhatsApp draft copied. Paste in chat (Ctrl+V).", "ok");
     } catch {
       // ignore clipboard error and still open whatsapp
     }
-    openWhatsappInSideWindow(whatsappTemplatePicker.phone || "", whatsappTemplatePicker.statusKey || "workspace");
     setWhatsappTemplatePicker({ open: false, options: [], selectedId: "", row: null, phone: "", statusKey: "workspace", customText: "", newShortcutKey: "", saveScope: "all_jobs", assignJobId: "" });
   }
 
