@@ -475,6 +475,15 @@ class PortalErrorBoundary extends React.Component {
 
   componentDidCatch(error) {
     console.error("Portal render error", error);
+    try {
+      const payload = {
+        ts: new Date().toISOString(),
+        scope: "portal",
+        message: String(error?.message || error || ""),
+        stack: String(error?.stack || "")
+      };
+      window.localStorage.setItem("rd_last_render_error", JSON.stringify(payload));
+    } catch {}
   }
 
   render() {
@@ -510,8 +519,19 @@ class RouteErrorBoundary extends React.Component {
     };
   }
 
-  componentDidCatch(error) {
-    console.error("Portal route render error", error);
+  componentDidCatch(error, info) {
+    console.error("Portal route render error", error, info);
+    try {
+      const payload = {
+        ts: new Date().toISOString(),
+        scope: "route",
+        routeKey: String(this.props?.routeKey || ""),
+        message: String(error?.message || error || ""),
+        stack: String(error?.stack || ""),
+        componentStack: String(info?.componentStack || "")
+      };
+      window.localStorage.setItem("rd_last_render_error", JSON.stringify(payload));
+    } catch {}
   }
 
   componentDidUpdate(prevProps) {
@@ -572,8 +592,18 @@ class PayrollRouteBoundary extends React.Component {
       errorMessage: String(error?.message || error || "Payroll page crashed.")
     };
   }
-  componentDidCatch(error) {
-    console.error("Payroll route render error", error);
+  componentDidCatch(error, info) {
+    console.error("Payroll route render error", error, info);
+    try {
+      const payload = {
+        ts: new Date().toISOString(),
+        scope: "payroll",
+        message: String(error?.message || error || ""),
+        stack: String(error?.stack || ""),
+        componentStack: String(info?.componentStack || "")
+      };
+      window.localStorage.setItem("rd_last_render_error", JSON.stringify(payload));
+    } catch {}
   }
   render() {
     if (this.state.hasError) {
@@ -13865,7 +13895,7 @@ function PortalApp({ token, onLogout }) {
                     <div className="assessments-skeleton-card" />
                     <div className="assessments-skeleton-card" />
                   </div>
-                ) : !filteredAssessments.length ? <div className="empty-state">No assessments saved yet.</div> : filteredAssessments.map((item) => (
+                ) : !(Array.isArray(filteredAssessments) && filteredAssessments.length) ? <div className="empty-state">No assessments saved yet.</div> : filteredAssessments.map((item) => (
                   <article className={`item-card compact-card assessment-card ${selectedAssessmentIds.includes(String(item.id)) ? "selected-card" : ""}`} key={item.id}>
                     {(() => {
                       const latestStatusPreview = getLatestAssessmentStatusPreview(item);
