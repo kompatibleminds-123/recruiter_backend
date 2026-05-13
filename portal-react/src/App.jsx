@@ -484,7 +484,7 @@ class PortalErrorBoundary extends React.Component {
           <main className="content">
             <Section kicker="Portal Error" title="Screen crashed">
               <p className="muted">Portal blank screen avoid karne ke liye fallback dikhaya gaya hai. Page refresh karke ya latest deploy ke baad dubara try karo.</p>
-              <div className="status error">{this.state.errorMessage || "Unknown portal error."}</div>
+              <div className="status error">Temporary screen error. Please reload once.</div>
               <div className="button-row">
                 <button onClick={() => window.location.reload()}>Reload portal</button>
               </div>
@@ -525,7 +525,7 @@ class RouteErrorBoundary extends React.Component {
       return (
         <Section kicker="Page Error" title="This page crashed">
           <p className="muted">Portal baaki pages ke saath working rehna chahiye. Kisi aur tab par ja sakte ho, aur is page ko baad me retry kar sakte ho.</p>
-          <div className="status error">{this.state.errorMessage || "Unknown page error."}</div>
+          <div className="status error">Temporary page error. Please reload once.</div>
           <div className="button-row">
             <button onClick={() => window.location.reload()}>Reload portal</button>
           </div>
@@ -580,7 +580,7 @@ class PayrollRouteBoundary extends React.Component {
       return (
         <Section kicker="Payroll Error" title="Payroll module temporarily unavailable">
           <p className="muted">Blank screen avoid karne ke liye payroll-specific fallback dikhaya gaya hai.</p>
-          <div className="status error">{this.state.errorMessage || "Unknown payroll render error."}</div>
+          <div className="status error">Temporary payroll screen error. Please reload once.</div>
           <div className="button-row">
             <button onClick={() => window.location.reload()}>Reload portal</button>
           </div>
@@ -4596,6 +4596,7 @@ function PortalApp({ token, onLogout }) {
     outcomes: []
   });
   const [assessmentLane, setAssessmentLane] = useState("active"); // active | archived
+  const [assessmentsLoadedOnce, setAssessmentsLoadedOnce] = useState(false);
   const [reportsTab, setReportsTab] = useState("client");
   const [reportsFilters, setReportsFilters] = useState({
     dateFrom: "",
@@ -6009,6 +6010,7 @@ function PortalApp({ token, onLogout }) {
       assessments: needsAssessments ? (assessmentsResult?.assessments || []) : current.assessments,
       assessmentEvents: needsAssessmentEvents ? (assessmentEventsResult?.result?.rows || []) : current.assessmentEvents
     }));
+    if (needsAssessments) setAssessmentsLoadedOnce(true);
     if (needsJobs) {
       setJobsCatalog(Array.isArray(jobsManageResult?.jobs) ? jobsManageResult.jobs : []);
     }
@@ -6185,6 +6187,7 @@ function PortalApp({ token, onLogout }) {
       assessments: assessmentsResult?.assessments || current.assessments,
       assessmentEvents: includeEvents ? (assessmentEventsResult?.result?.rows || current.assessmentEvents) : current.assessmentEvents
     }));
+    setAssessmentsLoadedOnce(true);
   }
 
   useEffect(() => {
@@ -6236,6 +6239,11 @@ function PortalApp({ token, onLogout }) {
       document.removeEventListener("visibilitychange", syncOnFocusLikeEvent);
     };
   }, [token, location?.pathname]);
+
+  useEffect(() => {
+    if (token) return;
+    setAssessmentsLoadedOnce(false);
+  }, [token]);
 
   useEffect(() => {
     if (!token) return undefined;
@@ -7404,6 +7412,11 @@ function PortalApp({ token, onLogout }) {
           || assessment?.generated_at
           || ""
         ).trim();
+        const hasAssessmentScope = universeAssessmentIds.size > 0;
+        const inScopedUniverse = hasAssessmentScope
+          ? universeAssessmentIds.has(assessmentId)
+          : (candidateId && universeCandidateIds.has(candidateId));
+        if (!inScopedUniverse) return;
         if (!convertedAt || !inDateRange(convertedAt)) return;
         const candidate = (candidateId && candidateById.get(candidateId)) || null;
         const fallbackRow = {
@@ -8266,6 +8279,28 @@ function PortalApp({ token, onLogout }) {
       return;
     }
     setStatus("workspace", "Candidate link not available for this row.", "error");
+  }
+
+  function openAssessmentStatusFromSearch(item) {
+    const assessmentId = String(item?.assessment_id || item?.assessmentId || item?.raw?.assessment?.id || item?.assessment?.id || "").trim();
+    if (assessmentId) {
+      setAssessmentStatusId(assessmentId);
+      return;
+    }
+    const candidateId = String(item?.id || item?.candidate_id || item?.candidateId || "").trim();
+    if (!candidateId) {
+      setStatus("workspace", "Assessment status update is not available for this row.", "error");
+      return;
+    }
+    const matchedAssessment = (state.assessments || []).find((assessment) => {
+      const linkedCandidateId = String(assessment?.candidateId || "").trim();
+      return linkedCandidateId && linkedCandidateId === candidateId;
+    });
+    if (matchedAssessment?.id) {
+      setAssessmentStatusId(String(matchedAssessment.id));
+      return;
+    }
+    setStatus("workspace", "No linked assessment found for this candidate yet.", "error");
   }
 
   function openInterviewStoredCv() {
@@ -13383,6 +13418,7 @@ function PortalApp({ token, onLogout }) {
                                       <th>Current CTC</th>
                                       <th>Expected CTC</th>
                                       <th>Notice</th>
+                                      <th>Action</th>
                                     </tr>
                                   </thead>
                                   <tbody>
@@ -13403,6 +13439,15 @@ function PortalApp({ token, onLogout }) {
                                         <td>{row.currentCtc || "-"}</td>
                                         <td>{row.expectedCtc || "-"}</td>
                                         <td>{row.notice || "-"}</td>
+                                        <td>
+                                          <button
+                                            className="ghost-btn"
+                                            type="button"
+                                            onClick={() => openAssessmentStatusFromSearch(row.item)}
+                                          >
+                                            Update status
+                                          </button>
+                                        </td>
                                       </tr>
                                     ))}
                                   </tbody>
@@ -13814,7 +13859,13 @@ function PortalApp({ token, onLogout }) {
               </div>
               <div className="status-note">Selected for client share: {selectedAssessmentIds.length}</div>
               <div className="stack-list">
-                {!filteredAssessments.length ? <div className="empty-state">No assessments saved yet.</div> : filteredAssessments.map((item) => (
+                {!assessmentsLoadedOnce ? (
+                  <div className="assessments-skeleton-list" aria-hidden="true">
+                    <div className="assessments-skeleton-card" />
+                    <div className="assessments-skeleton-card" />
+                    <div className="assessments-skeleton-card" />
+                  </div>
+                ) : !filteredAssessments.length ? <div className="empty-state">No assessments saved yet.</div> : filteredAssessments.map((item) => (
                   <article className={`item-card compact-card assessment-card ${selectedAssessmentIds.includes(String(item.id)) ? "selected-card" : ""}`} key={item.id}>
                     {(() => {
                       const latestStatusPreview = getLatestAssessmentStatusPreview(item);
