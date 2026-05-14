@@ -1851,6 +1851,34 @@ function normalizeJsonObjectInput(value) {
   }
 }
 
+function mergeDraftPayloadPreservingExisting(existingDraftValue, incomingDraftValue) {
+  const existing = normalizeJsonObjectInput(existingDraftValue);
+  const incoming = normalizeJsonObjectInput(incomingDraftValue);
+  const merged = { ...existing };
+  const protectedKeys = [
+    "candidateName",
+    "currentCompany",
+    "currentDesignation",
+    "totalExperience",
+    "highestEducation"
+  ];
+  const isBlank = (value) => !String(value == null ? "" : value).trim();
+
+  Object.keys(incoming).forEach((key) => {
+    const nextValue = incoming[key];
+    if (protectedKeys.includes(key)) {
+      if (!isBlank(nextValue)) {
+        merged[key] = nextValue;
+      } else if (!(key in merged)) {
+        merged[key] = nextValue;
+      }
+      return;
+    }
+    merged[key] = nextValue;
+  });
+  return merged;
+}
+
 function screeningAnswersToSearchText(obj) {
   const input = obj && typeof obj === "object" ? obj : {};
   const pairs = Object.entries(input)
@@ -12377,6 +12405,12 @@ const server = http.createServer(async (req, res) => {
       Object.keys(patch).forEach((key) => patch[key] === undefined && delete patch[key]);
       const existing = (await listCandidatesForUser(actor, { id: candidateId, limit: 1 }))[0] || null;
       if (existing) {
+        if (Object.prototype.hasOwnProperty.call(patch, "draft_payload")) {
+          patch.draft_payload = mergeDraftPayloadPreservingExisting(
+            existing?.draft_payload || existing?.draftPayload || {},
+            patch.draft_payload || {}
+          );
+        }
         const existingMeta = decodeApplicantMetadata(existing);
         const incomingMeta = Object.prototype.hasOwnProperty.call(patch, "raw_note")
           ? decodeApplicantMetadata({ raw_note: patch.raw_note })
