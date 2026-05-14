@@ -8,8 +8,8 @@ try {
   const path = String(window.location.pathname || "").trim().toLowerCase();
   const hash = String(window.location.hash || "").trim().toLowerCase();
   const needsMarketingHash = path === "/marketing" || path === "/marketing/" || path === "/marketing-module" || path === "/marketing-module/";
-  if (needsMarketingHash && hash !== "#/marketing") {
-    window.location.replace(`${window.location.origin}${window.location.pathname}${window.location.search}#/marketing`);
+  if (needsMarketingHash && hash !== "#/marketing/prospects") {
+    window.location.replace(`${window.location.origin}${window.location.pathname}${window.location.search}#/marketing/prospects`);
   }
 } catch (_) {}
 

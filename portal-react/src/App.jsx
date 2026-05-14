@@ -3245,6 +3245,13 @@ function isPayrollPortalUrl() {
   return ["/payroll", "/payroll-login"].some((path) => window.location.pathname.startsWith(path)) || mode === "payroll";
 }
 
+function isMarketingPortalUrl() {
+  if (typeof window === "undefined") return false;
+  const search = new URLSearchParams(window.location.search || "");
+  const mode = String(search.get("mode") || search.get("portal") || "").toLowerCase();
+  return ["/marketing", "/marketing-module"].some((path) => window.location.pathname.startsWith(path)) || mode === "marketing";
+}
+
 function LoginScreen({ onRecruiterLogin, onClientLogin, onEmployeeLogin, onEmployerLogin, onPayrollLogin, busy, error, forcedMode = "" }) {
   const [mode, setMode] = useState(() => forcedMode || "recruiter");
   const [email, setEmail] = useState("");
@@ -4537,14 +4544,14 @@ function JdEmailModal({ open, jobs, value, ccSuggestions = [], onChange, onClose
 
 const DASHBOARD_FILTER_STORAGE_KEY = "recruitdesk_portal_dashboard_filters_v1";
 
-function MarketingModulePage({ token }) {
+function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs = true }) {
   const MARKETING_TABS = [
     { key: "prospects", label: "Prospects" },
     { key: "templates", label: "Email Templates" },
     { key: "campaigns", label: "Campaigns" },
     { key: "queue", label: "Queue" }
   ];
-  const [activeTab, setActiveTab] = useState("prospects");
+  const [activeTab, setActiveTab] = useState(initialTab || "prospects");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [overview, setOverview] = useState(null);
@@ -4563,6 +4570,11 @@ function MarketingModulePage({ token }) {
   const [selectedProspectIds, setSelectedProspectIds] = useState([]);
   const [status, setStatus] = useState({ message: "", kind: "" });
   const csvFileInputRef = useRef(null);
+
+  useEffect(() => {
+    if (!initialTab) return;
+    setActiveTab(initialTab);
+  }, [initialTab]);
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -4689,14 +4701,16 @@ function MarketingModulePage({ token }) {
         <div className="metric-card"><div className="metric-label">Events</div><div className="metric-value">{overview?.events?.total || 0}</div></div>
       </div>
 
-      <div className="two-pane-grid">
-        <Section kicker="Marketing Module" title="Tabs">
-          <div className="stack-list compact">
-            {MARKETING_TABS.map((tab) => (
-              <button key={tab.key} className={activeTab === tab.key ? "" : "ghost-btn"} onClick={() => setActiveTab(tab.key)}>{tab.label}</button>
-            ))}
-          </div>
-        </Section>
+      <div className={showInternalTabs ? "two-pane-grid" : ""}>
+        {showInternalTabs ? (
+          <Section kicker="Marketing Module" title="Tabs">
+            <div className="stack-list compact">
+              {MARKETING_TABS.map((tab) => (
+                <button key={tab.key} className={activeTab === tab.key ? "" : "ghost-btn"} onClick={() => setActiveTab(tab.key)}>{tab.label}</button>
+              ))}
+            </div>
+          </Section>
+        ) : null}
 
         <div className="page-grid">
       {activeTab === "prospects" ? (
@@ -17584,6 +17598,52 @@ function formatWorkspaceUserRoleLabel(roleValue = "") {
   return "Recruiter";
 }
 
+const MARKETING_NAV_ITEMS = [
+  { to: "/marketing/prospects", label: "Prospects", tab: "prospects" },
+  { to: "/marketing/templates", label: "Email Templates", tab: "templates" },
+  { to: "/marketing/campaigns", label: "Campaigns", tab: "campaigns" },
+  { to: "/marketing/queue", label: "Queue", tab: "queue" }
+];
+
+function MarketingPortalApp({ token, onLogout }) {
+  const location = useLocation();
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    const path = String(location?.pathname || "");
+    if (path === "/marketing" || path === "/marketing/" || path === "/marketing-module" || path === "/marketing-module/") {
+      navigate("/marketing/prospects", { replace: true });
+    }
+  }, [location?.pathname, navigate]);
+
+  return (
+    <div className="app-shell">
+      <aside className="sidebar">
+        <div>
+          <BrandLogo size="md" />
+          <p className="muted" style={{ margin: "0.35rem 0 1rem" }}>Marketing Portal</p>
+          <nav className="nav">
+            {MARKETING_NAV_ITEMS.map((item) => (
+              <NavLink key={item.to} to={item.to} className={({ isActive }) => `nav-btn${isActive ? " active" : ""}`}>{item.label}</NavLink>
+            ))}
+          </nav>
+        </div>
+        <button className="ghost-btn" onClick={onLogout}>Logout</button>
+      </aside>
+      <main className="main-panel">
+        <Routes>
+          <Route path="/marketing/prospects" element={<MarketingModulePage token={token} initialTab="prospects" showInternalTabs={false} />} />
+          <Route path="/marketing/templates" element={<MarketingModulePage token={token} initialTab="templates" showInternalTabs={false} />} />
+          <Route path="/marketing/campaigns" element={<MarketingModulePage token={token} initialTab="campaigns" showInternalTabs={false} />} />
+          <Route path="/marketing/queue" element={<MarketingModulePage token={token} initialTab="queue" showInternalTabs={false} />} />
+          <Route path="/marketing-module" element={<Navigate to="/marketing/prospects" replace />} />
+          <Route path="*" element={<Navigate to="/marketing/prospects" replace />} />
+        </Routes>
+      </main>
+    </div>
+  );
+}
+
 function PayrollAdminApp({ token, onLogout }) {
   const location = useLocation();
   const navigate = useNavigate();
@@ -17694,6 +17754,7 @@ export default function App() {
   const clientPortalUrl = isClientPortalUrl();
   const employeePortalUrl = isEmployeePortalUrl();
   const payrollPortalUrl = isPayrollPortalUrl();
+  const marketingPortalUrl = isMarketingPortalUrl();
   const forcedMode = payrollPortalUrl ? "payroll" : employeePortalUrl ? "employee" : clientPortalUrl ? "client" : "recruiter";
   const [authMode, setAuthMode] = useState(() => forcedMode);
   const [token, setToken] = useState(() => forcedMode === "client"
@@ -17820,6 +17881,8 @@ export default function App() {
       ? <PortalErrorBoundary><EmployeePortalApp token={token} onLogout={logout} /></PortalErrorBoundary>
       : authMode === "payroll"
         ? <PortalErrorBoundary><PayrollAdminApp token={token} onLogout={logout} /></PortalErrorBoundary>
+        : marketingPortalUrl
+          ? <PortalErrorBoundary><MarketingPortalApp token={token} onLogout={logout} /></PortalErrorBoundary>
         : <PortalErrorBoundary><PortalApp token={token} onLogout={logout} /></PortalErrorBoundary>;
 }
 
