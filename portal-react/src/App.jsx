@@ -8656,6 +8656,11 @@ function PortalApp({ token, onLogout }) {
       setStatus("applicants", "Applicant not found for draft view.", "error");
       return;
     }
+    const linkedCandidate = (state.candidates || []).find((item) => String(item.id) === String(applicant.id || "")) || null;
+    if (linkedCandidate) {
+      loadCandidateIntoInterview(String(linkedCandidate.id || ""));
+      return;
+    }
     setInterviewMeta({
       candidateId: String(applicant.id || ""),
       assessmentId: ""
@@ -8672,10 +8677,9 @@ function PortalApp({ token, onLogout }) {
       noticePeriod: applicant.noticePeriod || "",
       offerInHand: applicant.offerInHand || "",
       lwdOrDoj: applicant.lwdOrDoj || "",
-      // Keep applicant-open draft clean for CV parsing; do not prefill legacy parsed values.
-      currentCompany: "",
-      currentDesignation: "",
-      totalExperience: "",
+      currentCompany: applicant.currentCompany || "",
+      currentDesignation: applicant.currentDesignation || "",
+      totalExperience: applicant.totalExperience || "",
       currentOrgTenure: "",
       experienceTimeline: "",
       reasonForChange: applicant.reasonForChange || "",
@@ -9486,13 +9490,11 @@ function PortalApp({ token, onLogout }) {
       noticePeriod: candidateDraft.noticePeriod || matched?.noticePeriod || candidate?.notice_period || parsedRecruiterBase.notice_period || "",
       offerInHand: candidateDraft.offerInHand || matched?.offerInHand || parsedRecruiterBase.offer_in_hand || "",
       lwdOrDoj: sanitizeLwdOrDojValue(candidateDraft.lwdOrDoj || matched?.lwdOrDoj || candidate?.lwd_or_doj || parsedRecruiterBase.lwd_or_doj || ""),
-      // Keep fresh drafts clean: do not inject stale parsed values from candidate table.
-      // Only use explicit draft/assessment values; CV parse can then fill blanks safely.
-      currentCompany: matched?.currentCompany || "",
-      currentDesignation: matched?.currentDesignation || "",
-      totalExperience: matched?.totalExperience || "",
+      currentCompany: candidateDraft.currentCompany || matched?.currentCompany || candidate?.company || candidateCvAnalysis?.currentCompany || "",
+      currentDesignation: candidateDraft.currentDesignation || matched?.currentDesignation || candidate?.role || candidateCvAnalysis?.currentDesignation || "",
+      totalExperience: candidateDraft.totalExperience || matched?.totalExperience || candidate?.experience || candidateCvAnalysis?.exactTotalExperience || candidateCvAnalysis?.totalExperience || "",
       relevantExperience: candidateDraft.relevantExperience || matched?.relevantExperience || "",
-      highestEducation: matched?.highestEducation || "",
+      highestEducation: candidateDraft.highestEducation || matched?.highestEducation || candidate?.highest_education || candidate?.highestEducation || candidateCvAnalysis?.highestEducation || "",
       currentOrgTenure: matched?.currentOrgTenure || "",
       experienceTimeline: candidateDraft.experienceTimeline || matched?.experienceTimeline || matched?.experience_timeline || "",
       reasonForChange: candidateDraft.reasonForChange || matched?.reasonForChange || "",
