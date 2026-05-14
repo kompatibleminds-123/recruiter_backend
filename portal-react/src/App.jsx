@@ -6350,7 +6350,7 @@ function PortalApp({ token, onLogout }) {
       includeEmailSettings = true
     } = options || {};
     const pathname = String(location?.pathname || "/dashboard").trim() || "/dashboard";
-    const isMarketingRoute = pathname === "/marketing-module";
+    const isMarketingRoute = pathname === "/marketing" || pathname === "/marketing-module";
     const needsDashboard = pathname === "/dashboard";
     const needsApplicants = pathname === "/dashboard" || pathname === "/applicants";
     const needsIntake = pathname === "/intake-settings" || pathname === "/jobs" || pathname === "/applicants";
@@ -15849,7 +15849,8 @@ function PortalApp({ token, onLogout }) {
             <Navigate to="/payroll/runs" replace />
           } />
 
-          <Route path="/marketing-module" element={isMarketingOwner ? <MarketingModulePage token={token} /> : <Navigate to="/dashboard" replace />} />
+          <Route path="/marketing" element={<MarketingModulePage token={token} />} />
+          <Route path="/marketing-module" element={<Navigate to="/marketing" replace />} />
 
           <Route path="*" element={<Navigate to="/dashboard" replace />} />
           </Routes>
