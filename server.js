@@ -2163,6 +2163,15 @@ function normalizeMarketingEmail(value = "") {
   return String(value || "").trim().toLowerCase();
 }
 
+function normalizeMarketingCategories(value) {
+  if (Array.isArray(value)) {
+    return Array.from(new Set(value.map((item) => String(item || "").trim()).filter(Boolean)));
+  }
+  const raw = String(value || "").trim();
+  if (!raw) return [];
+  return Array.from(new Set(raw.split(",").map((item) => String(item || "").trim()).filter(Boolean)));
+}
+
 function isMarketingOwnerEmail(value = "") {
   const email = normalizeMarketingEmail(value);
   return email === "ankit.garg@kompatibleminds.com" || email === "rasel.mazumder@kompatibleminds.com";
@@ -2193,7 +2202,8 @@ function renderMarketingTemplate(template = "", prospect = {}) {
     company: String(prospect?.company_name || prospect?.companyName || "").trim(),
     company_name: String(prospect?.company_name || prospect?.companyName || "").trim(),
     designation: String(prospect?.designation || "").trim(),
-    category: String(prospect?.category || "").trim()
+    category: String(prospect?.category || "").trim(),
+    categories: Array.isArray(prospect?.categories) ? prospect.categories.join(", ") : String(prospect?.categories || "").trim()
   };
   return source.replace(/\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g, (_match, key) => {
     const needle = String(key || "").trim().toLowerCase();
@@ -8829,6 +8839,7 @@ const server = http.createServer(async (req, res) => {
         company_name: String(body.companyName || body.company_name || "").trim(),
         designation: String(body.designation || "").trim(),
         category: String(body.category || "").trim(),
+        categories: normalizeMarketingCategories(body.categories || body.category || ""),
         source: String(body.source || "manual").trim() || "manual",
         status: "active",
         tags: Array.isArray(body.tags) ? body.tags : [],
@@ -8863,6 +8874,7 @@ const server = http.createServer(async (req, res) => {
           company_name: String(row.company || row.company_name || "").trim(),
           designation: String(row.designation || row.role || "").trim(),
           category: String(row.category || row.segment || "").trim(),
+          categories: normalizeMarketingCategories(row.categories || row.category || row.segment || ""),
           source: "csv_import",
           status: "active",
           tags: [],
@@ -8998,6 +9010,7 @@ const server = http.createServer(async (req, res) => {
         campaign_id: campaignId,
         subject: String(body.subject || "").trim(),
         body_text: String(body.bodyText || body.body_text || "").trim(),
+        target_categories: normalizeMarketingCategories(body.targetCategories || body.target_categories || ""),
         updated_by: actor.id,
         created_at: now,
         updated_at: now
@@ -9039,6 +9052,77 @@ const server = http.createServer(async (req, res) => {
         prefer: "return=representation"
       });
       sendJson(res, 200, { ok: true, result: Array.isArray(updated) && updated.length ? updated[0] : null });
+    } catch (error) {
+      sendJson(res, 400, { ok: false, error: String(error?.message || error) });
+    }
+    return;
+  }
+
+  if (req.method === "POST" && /^\/company\/marketing\/campaigns\/[^/]+\/followups$/.test(requestUrl.pathname)) {
+    try {
+      const actor = await requireSessionUser(getBearerToken(req));
+      const campaignId = String(requestUrl.pathname.replace(/^\/company\/marketing\/campaigns\//, "").replace(/\/followups$/, "")).trim();
+      const body = await readJsonBody(req);
+      const waitDays = Math.max(1, Number(body.waitDays || 7));
+      const maxFollowups = Math.max(1, Number(body.maxFollowups || 2));
+      const companyId = encodeURIComponent(String(actor.companyId || "").trim());
+      const cutoffMs = Date.now() - (waitDays * 24 * 60 * 60 * 1000);
+
+      const queueRows = await supabaseTableFetch(
+        "marketing_campaign_prospects",
+        `?select=id,prospect_id,state,last_sent_at,updated_at,marketing_prospects!inner(id,status)&company_id=eq.${companyId}&campaign_id=eq.${encodeURIComponent(campaignId)}&state=eq.sent&limit=5000`
+      );
+      const candidateRows = Array.isArray(queueRows) ? queueRows : [];
+      if (!candidateRows.length) {
+        sendJson(res, 200, { ok: true, result: { queued: 0, examined: 0 } });
+        return;
+      }
+
+      const events = await supabaseTableFetch(
+        "marketing_message_events",
+        `?select=prospect_id,event_type,event_at&company_id=eq.${companyId}&campaign_id=eq.${encodeURIComponent(campaignId)}&limit=10000`
+      );
+      const eventRows = Array.isArray(events) ? events : [];
+      const eventMap = new Map();
+      eventRows.forEach((row) => {
+        const pid = String(row?.prospect_id || "").trim();
+        if (!pid) return;
+        if (!eventMap.has(pid)) eventMap.set(pid, []);
+        eventMap.get(pid).push({
+          type: String(row?.event_type || "").trim().toLowerCase(),
+          at: String(row?.event_at || "").trim()
+        });
+      });
+
+      const rowsToQueue = [];
+      for (const row of candidateRows) {
+        const pid = String(row?.prospect_id || "").trim();
+        if (!pid) continue;
+        const prospectStatus = String(row?.marketing_prospects?.status || "").trim().toLowerCase();
+        if (prospectStatus !== "active") continue;
+        const lastSentAt = String(row?.last_sent_at || row?.updated_at || "").trim();
+        const lastSentMs = lastSentAt ? Date.parse(lastSentAt) : NaN;
+        if (!Number.isFinite(lastSentMs) || lastSentMs > cutoffMs) continue;
+        const history = eventMap.get(pid) || [];
+        const hasReply = history.some((item) => item.type === "reply" || item.type === "replied");
+        const hasBounce = history.some((item) => item.type === "bounce" || item.type === "bounced" || item.type === "failed");
+        const sentCount = history.filter((item) => item.type === "sent").length;
+        if (hasReply || hasBounce) continue;
+        if (sentCount >= (maxFollowups + 1)) continue;
+        rowsToQueue.push(String(row?.id || "").trim());
+      }
+
+      let queued = 0;
+      for (const rowId of rowsToQueue) {
+        if (!rowId) continue;
+        await supabaseTableFetch("marketing_campaign_prospects", `?id=eq.${encodeURIComponent(rowId)}&company_id=eq.${companyId}&select=*`, {
+          method: "PATCH",
+          body: { state: "ready", updated_at: toIsoNow() },
+          prefer: "return=minimal"
+        });
+        queued += 1;
+      }
+      sendJson(res, 200, { ok: true, result: { queued, examined: candidateRows.length, waitDays, maxFollowups } });
     } catch (error) {
       sendJson(res, 400, { ok: false, error: String(error?.message || error) });
     }

@@ -4538,6 +4538,13 @@ function JdEmailModal({ open, jobs, value, ccSuggestions = [], onChange, onClose
 const DASHBOARD_FILTER_STORAGE_KEY = "recruitdesk_portal_dashboard_filters_v1";
 
 function MarketingModulePage({ token }) {
+  const MARKETING_TABS = [
+    { key: "prospects", label: "Prospects" },
+    { key: "templates", label: "Email Templates" },
+    { key: "campaigns", label: "Campaigns" },
+    { key: "queue", label: "Queue" }
+  ];
+  const [activeTab, setActiveTab] = useState("prospects");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [overview, setOverview] = useState(null);
@@ -4546,8 +4553,8 @@ function MarketingModulePage({ token }) {
   const [templates, setTemplates] = useState([]);
   const [campaignProspects, setCampaignProspects] = useState([]);
   const [selectedCampaignId, setSelectedCampaignId] = useState("");
-  const [templateDraft, setTemplateDraft] = useState({ subject: "", bodyText: "Hi {{name}},\n\n\nRegards,\nTeam" });
-  const [prospectDraft, setProspectDraft] = useState({ name: "", email: "", phone: "", companyName: "", designation: "", category: "" });
+  const [templateDraft, setTemplateDraft] = useState({ subject: "", bodyText: "Hi {{name}},\n\n\nRegards,\nTeam", targetCategoriesText: "" });
+  const [prospectDraft, setProspectDraft] = useState({ name: "", email: "", phone: "", companyName: "", designation: "", category: "", categoriesText: "" });
   const [campaignDraft, setCampaignDraft] = useState({ name: "", category: "", sendGapMinutes: 5, dailyCap: 50 });
   const [csvText, setCsvText] = useState("");
   const [csvFileName, setCsvFileName] = useState("");
@@ -4591,13 +4598,23 @@ function MarketingModulePage({ token }) {
     void api(`/company/marketing/campaigns/${encodeURIComponent(selectedCampaignId)}/template`, token)
       .then((row) => {
         if (!row) return;
-        setTemplateDraft({ subject: String(row.subject || ""), bodyText: String(row.body_text || "") });
+        setTemplateDraft({
+          subject: String(row.subject || ""),
+          bodyText: String(row.body_text || ""),
+          targetCategoriesText: Array.isArray(row.target_categories) ? row.target_categories.join(", ") : String(row.target_categories || "")
+        });
       })
       .catch(() => {});
   }, [selectedCampaignId, token]);
 
   const activeCampaign = campaigns.find((item) => String(item.id) === String(selectedCampaignId)) || null;
-  const categories = Array.from(new Set(prospects.map((item) => String(item?.category || "").trim()).filter(Boolean))).sort((a, b) => a.localeCompare(b));
+  const categories = Array.from(new Set(
+    prospects.flatMap((item) => {
+      const primary = String(item?.category || "").trim();
+      const multi = Array.isArray(item?.categories) ? item.categories.map((c) => String(c || "").trim()).filter(Boolean) : [];
+      return [primary, ...multi].filter(Boolean);
+    })
+  )).sort((a, b) => a.localeCompare(b));
   const filteredProspects = prospects.filter((item) => {
     if (prospectCategoryFilter && String(item?.category || "").trim().toLowerCase() !== String(prospectCategoryFilter || "").trim().toLowerCase()) {
       return false;
@@ -4644,13 +4661,22 @@ function MarketingModulePage({ token }) {
     await api("/company/marketing/prospects/import", token, "POST", { csv: trimmed });
   }
 
+  async function queueFollowups() {
+    if (!selectedCampaignId) return;
+    await api(`/company/marketing/campaigns/${encodeURIComponent(selectedCampaignId)}/followups`, token, "POST", {
+      waitDays: 7,
+      maxFollowups: 2
+    });
+  }
+
   return (
     <div className="page-grid">
       <Section kicker="Marketing" title="Campaign Control">
-        <p className="muted">Recruitment product se isolated MVP: prospects, campaigns, templates, drip sends.</p>
+        <p className="muted">Standalone marketing module: prospects, templates, campaigns, queue and follow-ups.</p>
         <div className="button-row tight">
           <button className="ghost-btn" onClick={() => void refresh().catch(setErr)} disabled={loading}>Refresh</button>
           <button onClick={() => void api("/company/marketing/worker/tick", token, "POST", {}).then(() => { setOk("Send tick executed."); return refresh(); }).catch(setErr)} disabled={loading}>Run send tick</button>
+          <button className="ghost-btn" disabled={!selectedCampaignId} onClick={() => void queueFollowups().then(() => { setOk("1-week follow-up queue prepared."); return refresh(); }).catch(setErr)}>Queue 7-day follow-ups</button>
         </div>
         {status.message ? <div className={`status ${status.kind}`}>{status.message}</div> : null}
         {loading ? <div className="empty-state">Loading marketing module...</div> : null}
@@ -4663,6 +4689,18 @@ function MarketingModulePage({ token }) {
         <div className="metric-card"><div className="metric-label">Events</div><div className="metric-value">{overview?.events?.total || 0}</div></div>
       </div>
 
+      <div className="two-pane-grid">
+        <Section kicker="Marketing Module" title="Tabs">
+          <div className="stack-list compact">
+            {MARKETING_TABS.map((tab) => (
+              <button key={tab.key} className={activeTab === tab.key ? "" : "ghost-btn"} onClick={() => setActiveTab(tab.key)}>{tab.label}</button>
+            ))}
+          </div>
+        </Section>
+
+        <div className="page-grid">
+      {activeTab === "prospects" ? (
+        <>
       <Section kicker="Prospects" title="Add Prospect">
         <div className="form-grid two-col">
           <label><span>Name</span><input value={prospectDraft.name} onChange={(e) => setProspectDraft((c) => ({ ...c, name: e.target.value }))} /></label>
@@ -4671,13 +4709,17 @@ function MarketingModulePage({ token }) {
           <label><span>Company</span><input value={prospectDraft.companyName} onChange={(e) => setProspectDraft((c) => ({ ...c, companyName: e.target.value }))} /></label>
           <label><span>Designation</span><input value={prospectDraft.designation} onChange={(e) => setProspectDraft((c) => ({ ...c, designation: e.target.value }))} /></label>
           <label><span>Category</span><input value={prospectDraft.category} onChange={(e) => setProspectDraft((c) => ({ ...c, category: e.target.value }))} placeholder="e.g. CTO, HR, Agency, Startup" /></label>
+          <label className="full"><span>Categories (comma separated)</span><input value={prospectDraft.categoriesText} onChange={(e) => setProspectDraft((c) => ({ ...c, categoriesText: e.target.value }))} placeholder="Sales HR, Finance HR, Fintech HR" /></label>
         </div>
         <div className="button-row">
           <button disabled={saving} onClick={() => void (async () => {
             setSaving(true);
             try {
-              await api("/company/marketing/prospects", token, "POST", prospectDraft);
-              setProspectDraft({ name: "", email: "", phone: "", companyName: "", designation: "", category: "" });
+              await api("/company/marketing/prospects", token, "POST", {
+                ...prospectDraft,
+                categories: String(prospectDraft.categoriesText || "").split(",").map((item) => item.trim()).filter(Boolean)
+              });
+              setProspectDraft({ name: "", email: "", phone: "", companyName: "", designation: "", category: "", categoriesText: "" });
               await refresh();
               setOk("Prospect added.");
             } catch (error) {
@@ -4784,7 +4826,54 @@ function MarketingModulePage({ token }) {
           </table>
         </div>
       </Section>
+        </>
+      ) : null}
 
+      {activeTab === "templates" ? (
+      <Section kicker="Email Templates" title="Template Library">
+        <div className="form-grid">
+          <label><span>Subject</span><input value={templateDraft.subject} onChange={(e) => setTemplateDraft((c) => ({ ...c, subject: e.target.value }))} /></label>
+          <label><span>Body</span><textarea rows={8} value={templateDraft.bodyText} onChange={(e) => setTemplateDraft((c) => ({ ...c, bodyText: e.target.value }))} /></label>
+          <label><span>Target Categories (multi-select by comma)</span><input value={templateDraft.targetCategoriesText} onChange={(e) => setTemplateDraft((c) => ({ ...c, targetCategoriesText: e.target.value }))} placeholder="Finance HR, Logistics HR, Real Estate HR" /></label>
+        </div>
+        <div className="button-row tight">
+          <button disabled={!selectedCampaignId} onClick={() => void api(`/company/marketing/campaigns/${encodeURIComponent(selectedCampaignId)}/template`, token, "POST", {
+            subject: templateDraft.subject,
+            bodyText: templateDraft.bodyText,
+            targetCategories: String(templateDraft.targetCategoriesText || "").split(",").map((item) => item.trim()).filter(Boolean)
+          }).then(() => { setOk("Template saved."); return refresh(); }).catch(setErr)}>Save template</button>
+        </div>
+        <div className="table-wrap">
+          <table className="dashboard-table">
+            <thead>
+              <tr>
+                <th>Campaign</th>
+                <th>Subject</th>
+                <th>Target Categories</th>
+                <th>Updated</th>
+              </tr>
+            </thead>
+            <tbody>
+              {templates.map((item) => {
+                const campaign = campaigns.find((row) => String(row?.id || "") === String(item?.campaign_id || ""));
+                const targetCategories = Array.isArray(item?.target_categories) ? item.target_categories.join(", ") : String(item?.target_categories || "-");
+                return (
+                  <tr key={String(item?.id || "")}>
+                    <td>{campaign?.name || item?.campaign_id || "-"}</td>
+                    <td>{item?.subject || "-"}</td>
+                    <td>{targetCategories || "-"}</td>
+                    <td>{item?.updated_at ? new Date(item.updated_at).toLocaleString() : "-"}</td>
+                  </tr>
+                );
+              })}
+              {!templates.length ? <tr><td colSpan="4"><div className="empty-state compact-empty">No templates saved yet.</div></td></tr> : null}
+            </tbody>
+          </table>
+        </div>
+      </Section>
+      ) : null}
+
+      {activeTab === "campaigns" ? (
       <Section kicker="Campaigns" title="Build Campaign">
         <div className="form-grid two-col">
           <label><span>Campaign name</span><input value={campaignDraft.name} onChange={(e) => setCampaignDraft((c) => ({ ...c, name: e.target.value }))} /></label>
@@ -4821,21 +4910,14 @@ function MarketingModulePage({ token }) {
             <button className="ghost-btn" onClick={() => void api(`/company/marketing/campaigns/${activeCampaign.id}/start`, token, "POST", {}).then(() => { setOk("Campaign started."); return refresh(); }).catch(setErr)}>Start</button>
             <button className="ghost-btn" onClick={() => void api(`/company/marketing/campaigns/${activeCampaign.id}/pause`, token, "POST", {}).then(() => { setOk("Campaign paused."); return refresh(); }).catch(setErr)}>Pause</button>
             <button className="ghost-btn" onClick={() => void api(`/company/marketing/campaigns/${activeCampaign.id}/resume`, token, "POST", {}).then(() => { setOk("Campaign resumed."); return refresh(); }).catch(setErr)}>Resume</button>
+            <button className="ghost-btn" disabled={!selectedProspectIds.length} onClick={() => void api(`/company/marketing/campaigns/${encodeURIComponent(selectedCampaignId)}/prospects`, token, "POST", { prospectIds: selectedProspectIds }).then(() => { setOk("Selected prospects attached."); return refresh(); }).catch(setErr)}>Attach selected prospects</button>
           </div>
         ) : null}
       </Section>
+      ) : null}
 
-      <Section kicker="Template" title="Campaign Template">
-        <div className="form-grid">
-          <label><span>Subject</span><input value={templateDraft.subject} onChange={(e) => setTemplateDraft((c) => ({ ...c, subject: e.target.value }))} /></label>
-          <label><span>Body</span><textarea rows={6} value={templateDraft.bodyText} onChange={(e) => setTemplateDraft((c) => ({ ...c, bodyText: e.target.value }))} /></label>
-        </div>
-        <div className="button-row tight">
-          <button disabled={!selectedCampaignId} onClick={() => void api(`/company/marketing/campaigns/${encodeURIComponent(selectedCampaignId)}/template`, token, "POST", templateDraft).then(() => { setOk("Template saved."); return refresh(); }).catch(setErr)}>Save template</button>
-          <button className="ghost-btn" disabled={!selectedCampaignId || !selectedProspectIds.length} onClick={() => void api(`/company/marketing/campaigns/${encodeURIComponent(selectedCampaignId)}/prospects`, token, "POST", { prospectIds: selectedProspectIds }).then(() => { setOk("Selected prospects attached to campaign."); return refresh(); }).catch(setErr)}>Attach selected prospects</button>
-        </div>
-      </Section>
-
+      {activeTab === "queue" ? (
+      <>
       <Section kicker="Campaign Prospects" title="Campaign Prospect Queue">
         <div className="table-wrap">
           <table className="dashboard-table">
@@ -4865,35 +4947,18 @@ function MarketingModulePage({ token }) {
           </table>
         </div>
       </Section>
-
-      <Section kicker="Templates" title="All Email Templates">
-        <div className="table-wrap">
-          <table className="dashboard-table">
-            <thead>
-              <tr>
-                <th>Campaign</th>
-                <th>Subject</th>
-                <th>Updated</th>
-              </tr>
-            </thead>
-            <tbody>
-              {templates.map((item) => {
-                const campaign = campaigns.find((row) => String(row?.id || "") === String(item?.campaign_id || ""));
-                return (
-                  <tr key={String(item?.id || "")}>
-                    <td>{campaign?.name || item?.campaign_id || "-"}</td>
-                    <td>{item?.subject || "-"}</td>
-                    <td>{item?.updated_at ? new Date(item.updated_at).toLocaleString() : "-"}</td>
-                  </tr>
-                );
-              })}
-              {!templates.length ? (
-                <tr><td colSpan="3"><div className="empty-state compact-empty">No templates saved yet.</div></td></tr>
-              ) : null}
-            </tbody>
-          </table>
+      <Section kicker="Tracking" title="Delivery + Follow-up Snapshot">
+        <div className="metric-grid compact">
+          <div className="metric-card"><div className="metric-label">Sent</div><div className="metric-value">{overview?.events?.byType?.sent || 0}</div></div>
+          <div className="metric-card"><div className="metric-label">Bounced</div><div className="metric-value">{overview?.events?.byType?.bounce || overview?.events?.byType?.bounced || 0}</div></div>
+          <div className="metric-card"><div className="metric-label">Replies</div><div className="metric-value">{overview?.events?.byType?.reply || overview?.events?.byType?.replied || 0}</div></div>
+          <div className="metric-card"><div className="metric-label">Ready Queue</div><div className="metric-value">{overview?.queue?.byStatus?.ready || 0}</div></div>
         </div>
       </Section>
+      </>
+      ) : null}
+        </div>
+      </div>
     </div>
   );
 }
