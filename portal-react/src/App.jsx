@@ -4548,6 +4548,8 @@ function MarketingModulePage({ token }) {
   const [prospectDraft, setProspectDraft] = useState({ name: "", email: "", phone: "", companyName: "", designation: "" });
   const [campaignDraft, setCampaignDraft] = useState({ name: "", category: "", sendGapMinutes: 5, dailyCap: 50 });
   const [csvText, setCsvText] = useState("");
+  const [csvFileName, setCsvFileName] = useState("");
+  const [status, setStatus] = useState({ message: "", kind: "" });
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -4582,15 +4584,27 @@ function MarketingModulePage({ token }) {
   }, [selectedCampaignId, token]);
 
   const activeCampaign = campaigns.find((item) => String(item.id) === String(selectedCampaignId)) || null;
+  const setOk = (message) => setStatus({ message: String(message || ""), kind: "ok" });
+  const setErr = (error) => setStatus({ message: String(error?.message || error || "Request failed"), kind: "error" });
+
+  async function handleCsvFileImport(file) {
+    const picked = file || null;
+    if (!picked) return;
+    const text = await picked.text();
+    const trimmed = String(text || "").trim();
+    if (!trimmed) throw new Error("Selected CSV file is empty.");
+    await api("/company/marketing/prospects/import", token, "POST", { csv: trimmed });
+  }
 
   return (
     <div className="page-grid">
       <Section kicker="Marketing" title="Campaign Control">
         <p className="muted">Recruitment product se isolated MVP: prospects, campaigns, templates, drip sends.</p>
         <div className="button-row tight">
-          <button className="ghost-btn" onClick={() => void refresh()} disabled={loading}>Refresh</button>
-          <button onClick={() => void api("/company/marketing/worker/tick", token, "POST", {}).then(() => refresh())} disabled={loading}>Run send tick</button>
+          <button className="ghost-btn" onClick={() => void refresh().catch(setErr)} disabled={loading}>Refresh</button>
+          <button onClick={() => void api("/company/marketing/worker/tick", token, "POST", {}).then(() => { setOk("Send tick executed."); return refresh(); }).catch(setErr)} disabled={loading}>Run send tick</button>
         </div>
+        {status.message ? <div className={`status ${status.kind}`}>{status.message}</div> : null}
         {loading ? <div className="empty-state">Loading marketing module...</div> : null}
       </Section>
 
@@ -4616,6 +4630,9 @@ function MarketingModulePage({ token }) {
               await api("/company/marketing/prospects", token, "POST", prospectDraft);
               setProspectDraft({ name: "", email: "", phone: "", companyName: "", designation: "" });
               await refresh();
+              setOk("Prospect added.");
+            } catch (error) {
+              setErr(error);
             } finally {
               setSaving(false);
             }
@@ -4623,12 +4640,44 @@ function MarketingModulePage({ token }) {
         </div>
         <label><span>CSV import (name,email,phone,company,designation)</span><textarea rows={4} value={csvText} onChange={(e) => setCsvText(e.target.value)} /></label>
         <div className="button-row tight">
+          <label className="ghost-btn" style={{ display: "inline-flex", alignItems: "center", cursor: "pointer" }}>
+            Upload CSV file
+            <input
+              type="file"
+              accept=".csv,text/csv"
+              style={{ display: "none" }}
+              onChange={(e) => {
+                const file = e.target.files && e.target.files[0] ? e.target.files[0] : null;
+                setCsvFileName(file ? String(file.name || "") : "");
+                if (!file) return;
+                void (async () => {
+                  setSaving(true);
+                  try {
+                    await handleCsvFileImport(file);
+                    await refresh();
+                    setOk("CSV file imported.");
+                  } catch (error) {
+                    setErr(error);
+                  } finally {
+                    setSaving(false);
+                    e.target.value = "";
+                  }
+                })();
+              }}
+            />
+          </label>
+          {csvFileName ? <span className="muted">{csvFileName}</span> : null}
+        </div>
+        <div className="button-row tight">
           <button className="ghost-btn" disabled={saving || !csvText.trim()} onClick={() => void (async () => {
             setSaving(true);
             try {
               await api("/company/marketing/prospects/import", token, "POST", { csv: csvText });
               setCsvText("");
               await refresh();
+              setOk("CSV text imported.");
+            } catch (error) {
+              setErr(error);
             } finally {
               setSaving(false);
             }
@@ -4650,6 +4699,9 @@ function MarketingModulePage({ token }) {
               await api("/company/marketing/campaigns", token, "POST", campaignDraft);
               setCampaignDraft({ name: "", category: "", sendGapMinutes: 5, dailyCap: 50 });
               await refresh();
+              setOk("Campaign created.");
+            } catch (error) {
+              setErr(error);
             } finally {
               setSaving(false);
             }
@@ -4661,9 +4713,9 @@ function MarketingModulePage({ token }) {
         </select></label>
         {activeCampaign ? (
           <div className="button-row tight">
-            <button className="ghost-btn" onClick={() => void api(`/company/marketing/campaigns/${activeCampaign.id}/start`, token, "POST", {}).then(() => refresh())}>Start</button>
-            <button className="ghost-btn" onClick={() => void api(`/company/marketing/campaigns/${activeCampaign.id}/pause`, token, "POST", {}).then(() => refresh())}>Pause</button>
-            <button className="ghost-btn" onClick={() => void api(`/company/marketing/campaigns/${activeCampaign.id}/resume`, token, "POST", {}).then(() => refresh())}>Resume</button>
+            <button className="ghost-btn" onClick={() => void api(`/company/marketing/campaigns/${activeCampaign.id}/start`, token, "POST", {}).then(() => { setOk("Campaign started."); return refresh(); }).catch(setErr)}>Start</button>
+            <button className="ghost-btn" onClick={() => void api(`/company/marketing/campaigns/${activeCampaign.id}/pause`, token, "POST", {}).then(() => { setOk("Campaign paused."); return refresh(); }).catch(setErr)}>Pause</button>
+            <button className="ghost-btn" onClick={() => void api(`/company/marketing/campaigns/${activeCampaign.id}/resume`, token, "POST", {}).then(() => { setOk("Campaign resumed."); return refresh(); }).catch(setErr)}>Resume</button>
           </div>
         ) : null}
       </Section>
@@ -4674,8 +4726,8 @@ function MarketingModulePage({ token }) {
           <label><span>Body</span><textarea rows={6} value={templateDraft.bodyText} onChange={(e) => setTemplateDraft((c) => ({ ...c, bodyText: e.target.value }))} /></label>
         </div>
         <div className="button-row tight">
-          <button disabled={!selectedCampaignId} onClick={() => void api(`/company/marketing/campaigns/${encodeURIComponent(selectedCampaignId)}/template`, token, "POST", templateDraft).then(() => refresh())}>Save template</button>
-          <button className="ghost-btn" disabled={!selectedCampaignId || !prospects.length} onClick={() => void api(`/company/marketing/campaigns/${encodeURIComponent(selectedCampaignId)}/prospects`, token, "POST", { prospectIds: prospects.slice(0, 100).map((item) => item.id) }).then(() => refresh())}>Attach top 100 prospects</button>
+          <button disabled={!selectedCampaignId} onClick={() => void api(`/company/marketing/campaigns/${encodeURIComponent(selectedCampaignId)}/template`, token, "POST", templateDraft).then(() => { setOk("Template saved."); return refresh(); }).catch(setErr)}>Save template</button>
+          <button className="ghost-btn" disabled={!selectedCampaignId || !prospects.length} onClick={() => void api(`/company/marketing/campaigns/${encodeURIComponent(selectedCampaignId)}/prospects`, token, "POST", { prospectIds: prospects.slice(0, 100).map((item) => item.id) }).then(() => { setOk("Prospects attached to campaign."); return refresh(); }).catch(setErr)}>Attach top 100 prospects</button>
         </div>
       </Section>
     </div>
