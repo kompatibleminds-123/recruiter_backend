@@ -2135,6 +2135,10 @@ function normalizeMarketingEmail(value = "") {
   return String(value || "").trim().toLowerCase();
 }
 
+function isMarketingOwnerEmail(value = "") {
+  return normalizeMarketingEmail(value) === "ankit.garg@kompatibleminds.com";
+}
+
 function parseMarketingCsv(content = "") {
   const raw = String(content || "").trim();
   if (!raw) return [];
@@ -8599,6 +8603,19 @@ const server = http.createServer(async (req, res) => {
       sendJson(res, 401, { ok: false, error: String(error.message || error) });
     }
     return;
+  }
+
+  if (requestUrl.pathname.startsWith("/company/marketing")) {
+    try {
+      const actor = await requireSessionUser(getBearerToken(req));
+      if (!isMarketingOwnerEmail(actor?.email)) {
+        sendJson(res, 403, { ok: false, error: "Marketing module is restricted." });
+        return;
+      }
+    } catch (error) {
+      sendJson(res, 401, { ok: false, error: String(error?.message || error) });
+      return;
+    }
   }
 
   if (req.method === "GET" && req.url === "/company/users") {

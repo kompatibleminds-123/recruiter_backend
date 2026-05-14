@@ -64,7 +64,6 @@ const BASE_NAV_SECTIONS = [
 
 const STANDALONE_NAV_ITEMS = [
   { to: "/candidates", label: "Database" },
-  { to: "/marketing-module", label: "Marketing Module" },
   { to: "/reports", label: "Reports & Analytics" }
 ];
 const PAYROLL_NAV_ITEMS = [
@@ -5430,6 +5429,7 @@ function PortalApp({ token, onLogout }) {
     [selectedShortcutJob]
   );
   const accessFlagsReady = Boolean(state.user?.id) && (Boolean(companyLicense) || Boolean(billingOverview));
+  const isMarketingOwner = String(state.user?.email || "").trim().toLowerCase() === "ankit.garg@kompatibleminds.com";
   const navSections = useMemo(() => (
     BASE_NAV_SECTIONS
       .map((section) => ({
@@ -15492,7 +15492,7 @@ function PortalApp({ token, onLogout }) {
             <Navigate to="/payroll/runs" replace />
           } />
 
-          <Route path="/marketing-module" element={<MarketingModulePage token={token} />} />
+          <Route path="/marketing-module" element={isMarketingOwner ? <MarketingModulePage token={token} /> : <Navigate to="/dashboard" replace />} />
 
           <Route path="*" element={<Navigate to="/dashboard" replace />} />
           </Routes>
