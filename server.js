@@ -6722,6 +6722,13 @@ function isValidCurrentDesignationValue(value) {
   if (/\b(e-?mail|email|contact\s*(no|number)?|phone|mobile|mob|linkedin)\b/i.test(text)) return false;
   if (/\+?\d[\d\s().-]{8,}/.test(text)) return false;
   if (/^(exact\s+responsibilities?|responsibilities?)\s*:?\s*$/i.test(text)) return false;
+  // Reject bullet-like action sentences that are not role titles.
+  if (/[.!?]$/.test(text) && /\s/.test(text)) return false;
+  if (/\b(reducing|handling|managed|managing|responsible\s+for|worked\s+on|onboarded|built|acted\s+as|provided)\b/i.test(text) && /\s/.test(text)) {
+    return false;
+  }
+  // Reject overly long sentence-style values.
+  if (text.split(/\s+/).length > 8) return false;
   return true;
 }
 
@@ -6751,6 +6758,21 @@ function choosePreferredDesignation(...args) {
   if (!candidates.length) return "";
   const nonGeneric = candidates.find((value) => !isGenericDesignationValue(value));
   return nonGeneric || candidates[0];
+}
+
+function looksLikeCompanyText(value) {
+  const text = String(value || "").trim();
+  if (!text) return false;
+  if (/\b(pvt|private|ltd|limited|llp|inc|corp|corporation|technologies|solutions|labs|consulting|systems)\b/i.test(text)) return true;
+  return text.split(/\s+/).length <= 5;
+}
+
+function splitRoleCompanyComposite(value) {
+  const raw = String(value || "").trim();
+  if (!raw || !raw.includes("|")) return null;
+  const parts = raw.split("|").map((item) => String(item || "").trim()).filter(Boolean);
+  if (parts.length < 2) return null;
+  return { left: parts[0], right: parts[1] };
 }
 
 function extractHighestEducationFromRawText(rawText) {
@@ -7297,11 +7319,29 @@ function buildCandidateParseResponse(baseResult, normalizedResult, parseMeta = {
     baseResult?.currentDesignation,
     isValidCurrentDesignationValue
   );
+  let normalizedCurrentCompany = currentCompany;
+  let normalizedCurrentDesignation = currentDesignation;
+
+  // Fix composite leaks like "Technical Lead | Pine Labs" landing in a single field.
+  const companyComposite = splitRoleCompanyComposite(normalizedCurrentCompany);
+  if (companyComposite && isValidCurrentDesignationValue(companyComposite.left) && isValidCurrentCompanyValue(companyComposite.right)) {
+    normalizedCurrentCompany = companyComposite.right;
+    if (!isValidCurrentDesignationValue(normalizedCurrentDesignation)) {
+      normalizedCurrentDesignation = companyComposite.left;
+    }
+  }
+  const designationComposite = splitRoleCompanyComposite(normalizedCurrentDesignation);
+  if (designationComposite && looksLikeCompanyText(designationComposite.right) && isValidCurrentDesignationValue(designationComposite.left)) {
+    normalizedCurrentDesignation = designationComposite.left;
+    if (!isValidCurrentCompanyValue(normalizedCurrentCompany)) {
+      normalizedCurrentCompany = designationComposite.right;
+    }
+  }
   const metricTimeline = sourceType === "cv" ? getCvMetricTimeline(finalTimeline, fallbackTimeline) : finalTimeline;
   const totalMonthsInfo = calculateTotalExperienceMonths(metricTimeline);
   const computedTotalExperience = totalMonthsInfo?.months ? formatTotalExperience(totalMonthsInfo.months) : "";
   const averageTenurePerCompany = calculateAverageTenurePerCompany(metricTimeline);
-  const computedCurrentOrgTenure = calculateCurrentOrgTenure(metricTimeline, currentCompany);
+  const computedCurrentOrgTenure = calculateCurrentOrgTenure(metricTimeline, normalizedCurrentCompany);
   const aiTotalExperience = String(normalizedResult?.totalExperience || "").trim();
   const aiCurrentOrgTenure = String(normalizedResult?.currentOrgTenure || "").trim();
   const candidateTotalExperience =
@@ -7353,10 +7393,27 @@ function buildCandidateParseResponse(baseResult, normalizedResult, parseMeta = {
         : "fallback",
     hasAmbiguousTimelineRange: Boolean(totalMonthsInfo?.hasAmbiguousRange)
   };
+  const guardrailChanges = [];
+  const pushGuardrailChange = (field, originalValue, correctedValue, reason, evidence) => {
+    if (String(originalValue || "") === String(correctedValue || "")) return;
+    guardrailChanges.push({
+      field,
+      original_value: originalValue ?? null,
+      corrected_value: correctedValue ?? null,
+      reason,
+      raw_evidence: evidence || null
+    });
+  };
+  if (currentCompany !== normalizedCurrentCompany) {
+    pushGuardrailChange("current_company", currentCompany, normalizedCurrentCompany, "split_role_company_composite", String(currentCompany || ""));
+  }
+  if (currentDesignation !== normalizedCurrentDesignation) {
+    pushGuardrailChange("current_designation", currentDesignation, normalizedCurrentDesignation, "split_role_company_composite", String(currentDesignation || ""));
+  }
   const validation = validateParseResult({
     finalTimeline,
     fallbackTimeline,
-    currentCompany,
+    currentCompany: normalizedCurrentCompany,
     totalExperience: candidateTotalExperience,
     averageTenurePerCompany,
     currentOrgTenure: candidateCurrentOrgTenure,
@@ -7394,6 +7451,34 @@ function buildCandidateParseResponse(baseResult, normalizedResult, parseMeta = {
   const finalCurrentOrgTenure = hasCurrentOrgRisk || hasMetricsRisk || hasTimelineRisk
     ? ""
     : candidateCurrentOrgTenure;
+  const totalMonthsSafe = totalMonthsInfo?.months || 0;
+  const totalExperienceObject = {
+    years: Math.floor(totalMonthsSafe / 12),
+    months: totalMonthsSafe % 12,
+    calculation_source: "backend_date_ranges",
+    warnings: [
+      ...(totalMonthsInfo?.hasAmbiguousRange ? ["ambiguous_ranges_ignored"] : []),
+      ...(validation.reasons || []).filter((item) => item.field === "timeline").map((item) => String(item.code || "timeline_warning"))
+    ]
+  };
+
+  const currentRoleForCurrentExp = getCurrentRoleFromTimeline(metricTimeline);
+  const currentRoleStart = parseMonthYear(currentRoleForCurrentExp?.start || "");
+  const now = new Date();
+  const currentIdx = now.getFullYear() * 12 + now.getMonth();
+  const currentStartIdx = monthIndex(currentRoleStart);
+  const currentMonths = currentStartIdx != null ? Math.max(0, currentIdx - currentStartIdx + 1) : 0;
+  const currentExperienceObject = {
+    company_name: normalizedCurrentCompany || null,
+    designation: normalizedCurrentDesignation || null,
+    years: Math.floor(currentMonths / 12),
+    months: currentMonths % 12,
+    start_date:
+      currentRoleStart && Number.isInteger(currentRoleStart.year) && Number.isInteger(currentRoleStart.month)
+        ? `${currentRoleStart.year}-${String(currentRoleStart.month + 1).padStart(2, "0")}`
+        : null,
+    warnings: currentMonths ? [] : ["current_experience_unresolved"]
+  };
 
   const rawTextPreview = rawTextForSearch ? rawTextForSearch.slice(0, 2200) : "";
   const searchKeywords = (() => {
@@ -7418,6 +7503,25 @@ function buildCandidateParseResponse(baseResult, normalizedResult, parseMeta = {
     }
     return kept.join(" ");
   })();
+  const parserConfidence = {
+    company_designation: normalizedCurrentCompany && normalizedCurrentDesignation ? 0.88 : 0.52,
+    experience: timelineConfidenceLevel === "high" ? 0.9 : (timelineConfidenceLevel === "medium" ? 0.74 : 0.45),
+    education: highestEducation ? 0.82 : 0.45
+  };
+  parserConfidence.overall = Number(
+    (((parserConfidence.company_designation + parserConfidence.experience + parserConfidence.education) / 3).toFixed(2))
+  );
+  const manualReviewRequired =
+    parserConfidence.company_designation < 0.75
+    || parserConfidence.experience < 0.75
+    || parserConfidence.education < 0.7
+    || !normalizedCurrentCompany
+    || !totalMonthsSafe;
+  parseDebug.guardrailChanges = guardrailChanges;
+  parseDebug.detectedSections = baseResult?.detectedSections || {};
+  parseDebug.workExperienceSection = String(baseResult?.workExperienceSection || "");
+  parseDebug.rawJobBlocks = Array.isArray(baseResult?.rawJobBlocks) ? baseResult.rawJobBlocks : [];
+  parseDebug.parsedEmploymentHistory = Array.isArray(baseResult?.employmentHistory) ? baseResult.employmentHistory : [];
 
     return {
       candidateName: String(
@@ -7426,8 +7530,8 @@ function buildCandidateParseResponse(baseResult, normalizedResult, parseMeta = {
     totalExperience: String(
       finalTotalExperience || normalizedResult?.totalExperience || baseResult?.totalExperience || ""
     ).trim(),
-    currentCompany,
-      currentDesignation,
+    currentCompany: normalizedCurrentCompany,
+    currentDesignation: normalizedCurrentDesignation,
       emailId,
       phoneNumber: normalizePhone(phoneNumber),
       linkedinUrl,
@@ -7435,9 +7539,14 @@ function buildCandidateParseResponse(baseResult, normalizedResult, parseMeta = {
       sourceType: String(baseResult?.sourceType || "").trim(),
     filename: String(baseResult?.filename || "").trim(),
     timeline: sourceType === "cv" ? cvCareerTimeline : finalTimeline,
+    employmentHistory: Array.isArray(baseResult?.employmentHistory) ? baseResult.employmentHistory : [],
     gaps: normalizedGaps.length ? normalizedGaps : fallbackGaps,
     averageTenurePerCompany: finalAverageTenure,
     currentOrgTenure: finalCurrentOrgTenure,
+    total_experience: totalExperienceObject,
+    current_experience: currentExperienceObject,
+    parser_confidence: parserConfidence,
+    manual_review_required: manualReviewRequired,
     shortStints: Array.isArray(baseResult?.shortStints) ? baseResult.shortStints : [],
     highlights: Array.isArray(baseResult?.highlights) ? baseResult.highlights : [],
     rawTextPreview,
@@ -7447,7 +7556,27 @@ function buildCandidateParseResponse(baseResult, normalizedResult, parseMeta = {
       level: timelineConfidenceLevel,
       label: timelineConfidenceLabel
     },
-    validation
+    validation,
+    parser_warnings: (validation.reasons || []).map((item) => item.message).filter(Boolean),
+    debug: {
+      raw_cv_text: String(baseResult?.rawText || ""),
+      detected_sections: baseResult?.detectedSections || {},
+      work_experience_section: String(baseResult?.workExperienceSection || ""),
+      raw_job_blocks: Array.isArray(baseResult?.rawJobBlocks) ? baseResult.rawJobBlocks : [],
+      parsed_employment_history: Array.isArray(baseResult?.employmentHistory) ? baseResult.employmentHistory : [],
+      parsed_education: highestEducation ? [{ degree: highestEducation }] : [],
+      guardrail_changes: guardrailChanges,
+      backend_experience_calculation: totalExperienceObject,
+      final_parsed_output: {
+        current_company: normalizedCurrentCompany || null,
+        current_designation: normalizedCurrentDesignation || null,
+        total_experience: totalExperienceObject,
+        current_experience: currentExperienceObject,
+        highest_qualification: highestEducation || null
+      },
+      parser_warnings: (validation.reasons || []).map((item) => item.message).filter(Boolean),
+      openai_raw_response: parseMeta?.openAiRawResponse || null
+    }
   };
 }
 

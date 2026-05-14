@@ -36,6 +36,84 @@ function splitLines(text) {
     .filter(Boolean);
 }
 
+function findEvidenceSpan(haystack, needle, section = "raw_cv_text") {
+  const source = String(haystack || "");
+  const token = String(needle || "").trim();
+  if (!source || !token) return null;
+  const idx = source.toLowerCase().indexOf(token.toLowerCase());
+  if (idx < 0) return null;
+  return {
+    start_offset: idx,
+    end_offset: idx + token.length,
+    text: source.slice(idx, idx + token.length),
+    section
+  };
+}
+
+function detectCvSections(rawText) {
+  const text = String(rawText || "");
+  const lines = splitLines(text);
+  if (!lines.length) {
+    return {
+      contact: "",
+      summary_profile: "",
+      skills: "",
+      work_experience: "",
+      projects: "",
+      education_qualification: "",
+      certifications: ""
+    };
+  }
+
+  const sectionOrder = [
+    "contact",
+    "summary_profile",
+    "skills",
+    "work_experience",
+    "projects",
+    "education_qualification",
+    "certifications"
+  ];
+  const starts = [];
+  const mapHeading = (line) => {
+    const key = normalizeHeadingLikeText(line).replace(/[^a-z]/g, "");
+    if (!key) return "";
+    if (/^(contact|contactdetails|personaldetails|profile|aboutme)$/.test(key)) return "contact";
+    if (/^(summary|careerobjective|objective|profilesummary|professionalsummary)$/.test(key)) return "summary_profile";
+    if (/^(skills|technicalskills|keyskills|competencies)$/.test(key)) return "skills";
+    if (/^(experience|workexperience|professionalexperience|employmenthistory|workhistory)$/.test(key)) return "work_experience";
+    if (/^(projects|projectexperience)$/.test(key)) return "projects";
+    if (/^(education|qualification|educationqualification|academics)$/.test(key)) return "education_qualification";
+    if (/^(certification|certifications|licenses|license)$/.test(key)) return "certifications";
+    return "";
+  };
+
+  lines.forEach((line, index) => {
+    const section = mapHeading(line);
+    if (section) starts.push({ section, index });
+  });
+
+  const out = {};
+  for (const key of sectionOrder) out[key] = "";
+  if (!starts.length) {
+    out.work_experience = extractExperienceSection(text);
+    return out;
+  }
+
+  for (let i = 0; i < starts.length; i += 1) {
+    const curr = starts[i];
+    const next = starts[i + 1];
+    const from = curr.index + 1;
+    const to = next ? next.index : lines.length;
+    const chunk = lines.slice(from, to).join("\n").trim();
+    if (!out[curr.section]) out[curr.section] = chunk;
+  }
+  if (!out.work_experience) {
+    out.work_experience = extractExperienceSection(text);
+  }
+  return out;
+}
+
 function base64ToBuffer(base64) {
   return Buffer.from(String(base64 || ""), "base64");
 }
@@ -119,6 +197,27 @@ function parseDateRange(text) {
   }
 
   return { start, end, isCurrent };
+}
+
+function parseMonthYearLoose(text) {
+  const value = String(text || "").trim();
+  if (!value) return null;
+  if (/^present$/i.test(value)) {
+    const now = new Date();
+    return { year: now.getFullYear(), month: now.getMonth() };
+  }
+  const monthMatch = value.match(/\b(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\s+(\d{4})\b/i);
+  if (monthMatch) {
+    return {
+      year: Number(monthMatch[2]),
+      month: MONTH_INDEX[String(monthMatch[1]).toLowerCase()]
+    };
+  }
+  const yearMatch = value.match(/\b(19\d{2}|20\d{2})\b/);
+  if (yearMatch) {
+    return { year: Number(yearMatch[1]), month: 0 };
+  }
+  return null;
 }
 
 function normalizeDateSeparatorText(value) {
@@ -309,11 +408,66 @@ function hasContactLikeNoise(value) {
 function cleanCompanyLine(line) {
   return String(line || "")
     .split("|")[0]
+    .replace(/^(?:company|employer|organization)\s*[:\-]\s*/i, "")
     .replace(/\s*\((?:(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[^)]*|[^)]*\b(?:19|20)\d{2}\b[^)]*)\)\s*$/i, "")
     .replace(/\s+\d+\s+years?(?:\s+\d+\s+months?)?$/i, "")
     .replace(/\s+\d+\s+months?$/i, "")
     .replace(/^[^A-Za-z0-9(]+/, "")
     .trim();
+}
+
+function cleanRoleLine(line) {
+  return String(line || "")
+    .replace(/^(?:role|designation|job\s*profile|position|title)\s*[:\-]\s*/i, "")
+    .trim();
+}
+
+function looksLikeRoleLine(value) {
+  const text = cleanRoleLine(value);
+  if (!text) return false;
+  if (looksLikeExperienceDate(text) || hasContactLikeNoise(text)) return false;
+  return /\b(manager|engineer|developer|executive|lead|analyst|consultant|specialist|associate|director|officer|architect|intern|trainee|coordinator|administrator|bdr|sdr|account executive|business development)\b/i.test(text);
+}
+
+function normalizeTitleCompanyPair(rawTitle, rawCompany) {
+  let title = cleanRoleLine(rawTitle);
+  let company = cleanCompanyLine(rawCompany);
+
+  if (title.includes("|")) {
+    const parts = title.split("|").map((p) => p.trim()).filter(Boolean);
+    if (parts.length >= 2) {
+      const left = cleanCompanyLine(parts[0]);
+      const right = cleanRoleLine(parts[parts.length - 1]);
+      if (isLikelyCompanyLine(left) && looksLikeRoleLine(right)) {
+        company = left;
+        title = right;
+      }
+    }
+  }
+
+  if (!title && company.includes("|")) {
+    const parts = company.split("|").map((p) => p.trim()).filter(Boolean);
+    if (parts.length >= 2) {
+      company = cleanCompanyLine(parts[0]);
+      title = cleanRoleLine(parts[parts.length - 1]);
+    }
+  }
+  if (!company && title.includes("|")) {
+    const parts = title.split("|").map((p) => p.trim()).filter(Boolean);
+    if (parts.length >= 2) {
+      company = cleanCompanyLine(parts[0]);
+      title = cleanRoleLine(parts[parts.length - 1]);
+    }
+  }
+
+  // If parser inverted values, swap back.
+  if (isLikelyCompanyLine(title) && looksLikeRoleLine(company) && !isLikelyCompanyLine(company)) {
+    const prevTitle = title;
+    title = cleanRoleLine(company);
+    company = cleanCompanyLine(prevTitle);
+  }
+
+  return { title, company };
 }
 
 function companyLineScore(line) {
@@ -342,8 +496,13 @@ function isLikelyCompanyLine(line) {
   const value = cleanCompanyLine(line);
   if (!value) return false;
   if (isNoiseLine(value) || looksLikeExperienceDate(value) || looksLikeBulletLine(value)) return false;
+  if (/^(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)\s+\d{2,4}\s*[-\u2013\u2014\u2212]\s*(?:present|current|till date|\d{2,4})$/i.test(value)) return false;
   if (hasContactLikeNoise(value)) return false;
   if (/^(exact\s+responsibilities?|responsibilities?)\s*:?\s*$/i.test(value)) return false;
+  if (/\b(manager|engineer|developer|executive|lead|analyst|consultant|specialist|associate|director|officer|architect|intern|trainee|coordinator|administrator|bdr|sdr)\b/i.test(value)
+      && !/\b(pvt|private|ltd|limited|inc|llc|corp|co\.|company|technologies|services|solutions|systems|consulting|group|labs)\b/i.test(value)) {
+    return false;
+  }
   if (value.length > 120) return false;
   if (/[.]$/.test(value) && !/,/.test(value)) return false;
   if (/\bowned\b|\bachieved\b|\bdrove\b|\bbuilt\b|\bled\b|\bmanaged\b|\bexecuted\b|\bcollaborated\b|\bcollaborate\b/i.test(value)) return false;
@@ -539,10 +698,7 @@ function parseTitleAndCompany(windowLines) {
     };
   }
 
-  return {
-    title: first,
-    company: second
-  };
+  return normalizeTitleCompanyPair(first, second);
 }
 
 function extractTitleDateCompany(lines, index) {
@@ -751,19 +907,21 @@ function extractTimeline(lines, rawText, structuredExperienceText) {
     const company = line.match(/Company:\s*([^|]+)/i)?.[1]?.trim() || "";
     const dates = line.match(/Dates:\s*([^|]+)/i)?.[1]?.trim() || "";
     if (!company || !dates) continue;
-    const key = `${title}|${company}|${dates}`.toLowerCase();
+    const normalizedPair = normalizeTitleCompanyPair(title, company);
+    const key = `${normalizedPair.title}|${normalizedPair.company}|${dates}`.toLowerCase();
     if (seen.has(key)) continue;
     seen.add(key);
-    entries.push({ title, company, dates, ...parseDateRange(dates) });
+    entries.push({ title: normalizedPair.title, company: normalizedPair.company, dates, ...parseDateRange(dates) });
   }
 
   for (let i = 0; i < lines.length; i += 1) {
     const direct = extractTitleDateCompany(lines, i);
     if (direct) {
-      const key = `${direct.title}|${direct.company}|${direct.dates}`.toLowerCase();
+      const normalizedPair = normalizeTitleCompanyPair(direct.title, direct.company);
+      const key = `${normalizedPair.title}|${normalizedPair.company}|${direct.dates}`.toLowerCase();
       if (!seen.has(key)) {
         seen.add(key);
-        entries.push({ ...direct, ...parseDateRange(direct.dates) });
+        entries.push({ title: normalizedPair.title, company: normalizedPair.company, dates: direct.dates, ...parseDateRange(direct.dates) });
       }
       continue;
     }
@@ -782,10 +940,11 @@ function extractTimeline(lines, rawText, structuredExperienceText) {
     if (looksLikeEducationText(title) || looksLikeEducationText(company)) continue;
     if (looksLikeSpacedCapsBanner(title) || looksLikeSpacedCapsBanner(company)) continue;
 
-    const key = `${title}|${company}|${dates}`.toLowerCase();
+    const normalizedPair = normalizeTitleCompanyPair(title, company);
+    const key = `${normalizedPair.title}|${normalizedPair.company}|${dates}`.toLowerCase();
     if (seen.has(key)) continue;
     seen.add(key);
-    entries.push({ title, company, dates, ...parseDateRange(dates) });
+    entries.push({ title: normalizedPair.title, company: normalizedPair.company, dates, ...parseDateRange(dates) });
   }
 
   // Fallback pass for CVs where role/company are separated from date lines by layout noise.
@@ -816,10 +975,11 @@ function extractTimeline(lines, rawText, structuredExperienceText) {
     }
 
     if (!title || !company) continue;
-    const key = `${title}|${company}|${dates}`.toLowerCase();
+    const normalizedPair = normalizeTitleCompanyPair(title, company);
+    const key = `${normalizedPair.title}|${normalizedPair.company}|${dates}`.toLowerCase();
     if (seen.has(key)) continue;
     seen.add(key);
-    entries.push({ title, company, dates, ...parseDateRange(dates) });
+    entries.push({ title: normalizedPair.title, company: normalizedPair.company, dates, ...parseDateRange(dates) });
   }
 
   const normalized = entries
@@ -936,6 +1096,43 @@ function extractTimeline(lines, rawText, structuredExperienceText) {
   };
 }
 
+function buildEmploymentHistoryFromTimeline(timeline = [], rawWorkExperience = "", fullRawText = "") {
+  return (timeline || []).map((item) => {
+    const rawDates = String(item?.rawDates || "").trim();
+    const anchor = [String(item?.title || "").trim(), String(item?.company || "").trim(), rawDates].filter(Boolean).join(" | ");
+    const blockEvidence = findEvidenceSpan(rawWorkExperience, rawDates, "work_experience")
+      || findEvidenceSpan(rawWorkExperience, String(item?.company || ""), "work_experience")
+      || findEvidenceSpan(fullRawText, anchor, "raw_cv_text")
+      || findEvidenceSpan(fullRawText, rawDates, "raw_cv_text")
+      || findEvidenceSpan(fullRawText, String(item?.company || ""), "raw_cv_text");
+    const startDate = parseMonthYearLoose(String(item?.start || ""));
+    const endText = String(item?.end || "").trim();
+    const endDate = /present/i.test(endText) ? "Present" : parseMonthYearLoose(endText);
+    const normalizedStart = startDate ? `${startDate.year}-${String(startDate.month + 1).padStart(2, "0")}` : null;
+    const normalizedEnd = endDate === "Present"
+      ? "Present"
+      : (endDate ? `${endDate.year}-${String(endDate.month + 1).padStart(2, "0")}` : null);
+    const roleConfidence = String(item?.title || "").trim() && !looksLikeSentenceLine(String(item?.title || "").trim()) ? 0.86 : 0.45;
+    const companyConfidence = String(item?.company || "").trim() && isLikelyCompanyLine(String(item?.company || "").trim()) ? 0.88 : 0.45;
+    const confidence = Math.max(0.2, Math.min(0.99, (roleConfidence + companyConfidence) / 2));
+    return {
+      company_name: String(item?.company || "").trim() || null,
+      designation: String(item?.title || "").trim() || null,
+      start_date: normalizedStart,
+      end_date: normalizedEnd,
+      is_current: /present/i.test(endText),
+      raw_duration_text: rawDates || String(item?.duration || "").trim() || "",
+      raw_block_text: blockEvidence?.text || anchor || "",
+      confidence,
+      evidence: {
+        company_name: findEvidenceSpan(fullRawText, String(item?.company || ""), "raw_cv_text"),
+        designation: findEvidenceSpan(fullRawText, String(item?.title || ""), "raw_cv_text"),
+        date_range: blockEvidence
+      }
+    };
+  });
+}
+
 function extractCurrentRoleFromTimeline(timeline) {
   const current = (timeline || []).find((entry) => String(entry.end || "").toLowerCase() === "present");
   if (current) {
@@ -991,7 +1188,8 @@ async function parseCandidatePayload(payload) {
   const sourceType = sanitizeText(payload?.sourceType || "manual") || "manual";
   const extractedFileText = await extractTextFromUploadedFile(payload?.file || null);
   const rawText = sanitizeText(payload?.rawText || payload?.pageText || payload?.text || extractedFileText || "");
-  const experienceText = extractExperienceSection(rawText);
+  const detectedSections = detectCvSections(rawText);
+  const experienceText = detectedSections.work_experience || extractExperienceSection(rawText);
   const structuredExperienceText = sanitizeText(payload?.structuredExperience || "");
   const rawLines = splitLines(rawText);
   const experienceLines = splitLines(experienceText);
@@ -1004,6 +1202,7 @@ async function parseCandidatePayload(payload) {
   const candidateName = extractCandidateName(rawLines, rawText, payload?.candidateName);
   const claimedTotalExperience = extractTotalExperience(lines, rawText, payload?.totalExperience);
   const parsed = extractTimeline(lines, experienceText, structuredExperienceText);
+  const employmentHistory = buildEmploymentHistoryFromTimeline(parsed.timeline, experienceText, rawText);
   const timelineActiveMonths = calculateMonthsFromTimeline(parsed.timeline);
   const timelineSpanMonths = calculateTimelineSpanMonths(parsed.timeline);
   const currentOrgTenureMonths = calculateCurrentRoleMonths(parsed.timeline);
@@ -1040,6 +1239,10 @@ async function parseCandidatePayload(payload) {
     sourceType,
     filename: sanitizeText(payload?.file?.filename || ""),
     timeline: parsed.timeline,
+    employmentHistory,
+    detectedSections,
+    workExperienceSection: experienceText,
+    rawJobBlocks: employmentHistory.map((item) => item.raw_block_text).filter(Boolean),
     gaps: parsed.gaps,
     shortStints: parsed.shortStints,
     timelineConfidence,
