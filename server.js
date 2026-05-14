@@ -2225,10 +2225,17 @@ async function processMarketingWorkerTickForActor(actor) {
     if (!template?.subject || !template?.body_text) continue;
     const queueRows = await supabaseTableFetch(
       "marketing_campaign_prospects",
-      `?select=id,prospect_id,state,updated_at,marketing_prospects!inner(id,name,email,phone,company_name,designation,category,categories,status)&company_id=eq.${companyId}&campaign_id=eq.${encodeURIComponent(campaignId)}&state=eq.ready&order=updated_at.asc&limit=1`
+      `?select=id,prospect_id,state,updated_at&company_id=eq.${companyId}&campaign_id=eq.${encodeURIComponent(campaignId)}&state=eq.ready&order=updated_at.asc&limit=1`
     );
     const row = Array.isArray(queueRows) && queueRows.length ? queueRows[0] : null;
-    const prospect = row?.marketing_prospects || null;
+    const prospectId = String(row?.prospect_id || "").trim();
+    const prospectRows = prospectId
+      ? await supabaseTableFetch(
+          "marketing_prospects",
+          `?select=id,name,email,phone,company_name,designation,category,categories,status&company_id=eq.${companyId}&id=eq.${encodeURIComponent(prospectId)}&limit=1`
+        )
+      : [];
+    const prospect = Array.isArray(prospectRows) && prospectRows.length ? prospectRows[0] : null;
     if (!row || !prospect || String(prospect?.status || "").toLowerCase() !== "active") continue;
     const rawGap = Math.max(1, Number(campaign?.send_gap_minutes || 5));
     const lastAt = row?.updated_at ? new Date(row.updated_at) : null;
@@ -9192,9 +9199,23 @@ const server = http.createServer(async (req, res) => {
 
       const queueRows = await supabaseTableFetch(
         "marketing_campaign_prospects",
-        `?select=id,prospect_id,state,last_sent_at,updated_at,marketing_prospects!inner(id,status)&company_id=eq.${companyId}&campaign_id=eq.${encodeURIComponent(campaignId)}&state=eq.sent&limit=5000`
+        `?select=id,prospect_id,state,last_sent_at,updated_at&company_id=eq.${companyId}&campaign_id=eq.${encodeURIComponent(campaignId)}&state=eq.sent&limit=5000`
       );
       const candidateRows = Array.isArray(queueRows) ? queueRows : [];
+      const prospectIds = Array.from(new Set(candidateRows.map((row) => String(row?.prospect_id || "").trim()).filter(Boolean)));
+      const prospectStatusMap = new Map();
+      if (prospectIds.length) {
+        const inClause = prospectIds.map((id) => `"${id.replace(/"/g, "")}"`).join(",");
+        const prospectRows = await supabaseTableFetch(
+          "marketing_prospects",
+          `?select=id,status&company_id=eq.${companyId}&id=in.(${inClause})&limit=5000`
+        );
+        (Array.isArray(prospectRows) ? prospectRows : []).forEach((row) => {
+          const pid = String(row?.id || "").trim();
+          if (!pid) return;
+          prospectStatusMap.set(pid, String(row?.status || "").trim().toLowerCase());
+        });
+      }
       if (!candidateRows.length) {
         sendJson(res, 200, { ok: true, result: { queued: 0, examined: 0 } });
         return;
@@ -9220,7 +9241,7 @@ const server = http.createServer(async (req, res) => {
       for (const row of candidateRows) {
         const pid = String(row?.prospect_id || "").trim();
         if (!pid) continue;
-        const prospectStatus = String(row?.marketing_prospects?.status || "").trim().toLowerCase();
+        const prospectStatus = String(prospectStatusMap.get(pid) || "").trim().toLowerCase();
         if (prospectStatus !== "active") continue;
         const lastSentAt = String(row?.last_sent_at || row?.updated_at || "").trim();
         const lastSentMs = lastSentAt ? Date.parse(lastSentAt) : NaN;
