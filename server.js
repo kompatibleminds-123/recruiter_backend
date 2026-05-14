@@ -8739,7 +8739,7 @@ const server = http.createServer(async (req, res) => {
       const [prospects, campaigns, queue, events] = await Promise.all([
         supabaseTableFetch("marketing_prospects", `?select=id,status&company_id=eq.${companyId}&limit=5000`),
         supabaseTableFetch("marketing_campaigns", `?select=id,status&company_id=eq.${companyId}&limit=5000`),
-        supabaseTableFetch("marketing_send_queue", `?select=id,status&company_id=eq.${companyId}&limit=5000`),
+        supabaseTableFetch("marketing_campaign_prospects", `?select=id,state&company_id=eq.${companyId}&limit=5000`),
         supabaseTableFetch("marketing_message_events", `?select=id,event_type&company_id=eq.${companyId}&limit=5000`)
       ]);
       const summarize = (rows = [], key = "status") => (Array.isArray(rows) ? rows : []).reduce((acc, item) => {
@@ -8752,7 +8752,7 @@ const server = http.createServer(async (req, res) => {
         result: {
           prospects: { total: Array.isArray(prospects) ? prospects.length : 0, byStatus: summarize(prospects, "status") },
           campaigns: { total: Array.isArray(campaigns) ? campaigns.length : 0, byStatus: summarize(campaigns, "status") },
-          queue: { total: Array.isArray(queue) ? queue.length : 0, byStatus: summarize(queue, "status") },
+          queue: { total: Array.isArray(queue) ? queue.length : 0, byStatus: summarize(queue, "state") },
           events: { total: Array.isArray(events) ? events.length : 0, byType: summarize(events, "event_type") }
         }
       });

@@ -4550,6 +4550,7 @@ function MarketingModulePage({ token }) {
   const [csvText, setCsvText] = useState("");
   const [csvFileName, setCsvFileName] = useState("");
   const [status, setStatus] = useState({ message: "", kind: "" });
+  const csvFileInputRef = useRef(null);
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -4590,6 +4591,10 @@ function MarketingModulePage({ token }) {
   async function handleCsvFileImport(file) {
     const picked = file || null;
     if (!picked) return;
+    const lowerName = String(picked.name || "").trim().toLowerCase();
+    if (lowerName.endsWith(".xlsx") || lowerName.endsWith(".xls")) {
+      throw new Error("Excel upload coming next. Please export/save as CSV and upload that file.");
+    }
     const text = await picked.text();
     const trimmed = String(text || "").trim();
     if (!trimmed) throw new Error("Selected CSV file is empty.");
@@ -4640,32 +4645,31 @@ function MarketingModulePage({ token }) {
         </div>
         <label><span>CSV import (name,email,phone,company,designation)</span><textarea rows={4} value={csvText} onChange={(e) => setCsvText(e.target.value)} /></label>
         <div className="button-row tight">
-          <label className="ghost-btn" style={{ display: "inline-flex", alignItems: "center", cursor: "pointer" }}>
-            Upload CSV file
-            <input
-              type="file"
-              accept=".csv,text/csv"
-              style={{ display: "none" }}
-              onChange={(e) => {
-                const file = e.target.files && e.target.files[0] ? e.target.files[0] : null;
-                setCsvFileName(file ? String(file.name || "") : "");
-                if (!file) return;
-                void (async () => {
-                  setSaving(true);
-                  try {
-                    await handleCsvFileImport(file);
-                    await refresh();
-                    setOk("CSV file imported.");
-                  } catch (error) {
-                    setErr(error);
-                  } finally {
-                    setSaving(false);
-                    e.target.value = "";
-                  }
-                })();
-              }}
-            />
-          </label>
+          <button className="ghost-btn" type="button" onClick={() => csvFileInputRef.current?.click()} disabled={saving}>Upload CSV/Excel</button>
+          <input
+            ref={csvFileInputRef}
+            type="file"
+            accept=".csv,.xlsx,.xls,text/csv,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            style={{ display: "none" }}
+            onChange={(e) => {
+              const file = e.target.files && e.target.files[0] ? e.target.files[0] : null;
+              setCsvFileName(file ? String(file.name || "") : "");
+              if (!file) return;
+              void (async () => {
+                setSaving(true);
+                try {
+                  await handleCsvFileImport(file);
+                  await refresh();
+                  setOk("CSV file imported.");
+                } catch (error) {
+                  setErr(error);
+                } finally {
+                  setSaving(false);
+                  e.target.value = "";
+                }
+              })();
+            }}
+          />
           {csvFileName ? <span className="muted">{csvFileName}</span> : null}
         </div>
         <div className="button-row tight">
@@ -4823,6 +4827,7 @@ function PortalApp({ token, onLogout }) {
     outcomes: []
   });
   const [assessmentLane, setAssessmentLane] = useState("active"); // active | archived
+  const [agendaBusyIds, setAgendaBusyIds] = useState({});
   const [reportsTab, setReportsTab] = useState("client");
   const [reportsFilters, setReportsFilters] = useState({
     dateFrom: "",
@@ -9394,12 +9399,6 @@ function PortalApp({ token, onLogout }) {
       followUpAt: patch.next_follow_up_at,
       atValue: savedAt
     });
-    await api("/contact-attempts", token, "POST", {
-      candidateId: attemptsCandidateId,
-      outcome: finalOutcome,
-      notes: storedNote,
-      next_follow_up_at: patch.next_follow_up_at
-    });
     const candidatePatch = {
       last_contact_outcome: finalOutcome,
       last_contact_notes: appendAttemptHistory(attemptsCandidate?.last_contact_notes || "", historyLine),
@@ -9410,12 +9409,46 @@ function PortalApp({ token, onLogout }) {
     } else if (finalOutcome && finalOutcome !== "Call later") {
       candidatePatch.next_follow_up_at = "";
     }
+    const optimisticAttempt = {
+      id: `tmp-${Date.now()}`,
+      candidate_id: attemptsCandidateId,
+      outcome: finalOutcome,
+      notes: storedNote,
+      next_follow_up_at: patch.next_follow_up_at ? new Date(patch.next_follow_up_at).toISOString() : "",
+      at: savedAt,
+      created_at: savedAt
+    };
+    setAttempts((current) => [optimisticAttempt, ...(Array.isArray(current) ? current : [])]);
     if (Object.keys(candidatePatch).length) {
-      await patchCandidate(attemptsCandidateId, candidatePatch, "Attempt logged.");
-    } else {
-      void refreshWorkspaceSilently("post-attempt-save");
-      setStatus("captured", "Attempt logged.", "ok");
+      setState((current) => {
+        const applyPatch = (items) => Array.isArray(items)
+          ? items.map((item) => String(item?.id || "") === String(attemptsCandidateId) ? { ...item, ...candidatePatch } : item)
+          : items;
+        return {
+          ...current,
+          candidates: applyPatch(current.candidates),
+          databaseCandidates: applyPatch(current.databaseCandidates)
+        };
+      });
     }
+    void (async () => {
+      try {
+        await api("/contact-attempts", token, "POST", {
+          candidateId: attemptsCandidateId,
+          outcome: finalOutcome,
+          notes: storedNote,
+          next_follow_up_at: patch.next_follow_up_at
+        });
+        if (Object.keys(candidatePatch).length) {
+          await patchCandidateQuiet(attemptsCandidateId, candidatePatch);
+        } else {
+          void refreshWorkspaceSilently("post-attempt-save");
+        }
+        await refreshAttempts();
+      } catch (error) {
+        setStatus("captured", `Attempt sync failed: ${String(error?.message || error)}`, "error");
+      }
+    })();
     setStatus("captured", "Attempt logged.", "ok");
   }
 
@@ -12345,16 +12378,15 @@ function PortalApp({ token, onLogout }) {
       nextAssessment.followUpAt = "";
     }
 
-    await api("/company/assessments", token, "POST", {
-      assessment: {
-        ...nextAssessment,
-        generatedAt: assessment?.generatedAt || new Date().toISOString()
-      }
-    });
     const linkedCandidateId = String(assessment?.candidateId || "").trim();
+    const currentCandidate = linkedCandidateId
+      ? ((state.candidates || []).find((item) => String(item.id || "") === linkedCandidateId) || {})
+      : {};
+    let candidatePatch = null;
+    let nextDraftPayload = null;
+    let nextScreeningAnswers = null;
     if (linkedCandidateId) {
-      const currentCandidate = (state.candidates || []).find((item) => String(item.id || "") === linkedCandidateId) || {};
-      const candidatePatch = {
+      candidatePatch = {
         assessment_status: nextStatus,
         notes: appendReadableUpdateNote(
           currentCandidate?.notes || "",
@@ -12364,7 +12396,7 @@ function PortalApp({ token, onLogout }) {
       if (isInterviewStatus || isOffered || isJoined) {
         candidatePatch.next_follow_up_at = atIso || "";
       }
-      const nextDraftPayload = buildCandidateDraftPayloadPatch(currentCandidate, {
+      nextDraftPayload = buildCandidateDraftPayloadPatch(currentCandidate, {
         candidateStatus: nextStatus,
         callbackNotes: candidatePatch.notes,
         followUpAt: candidatePatch.next_follow_up_at,
@@ -12373,17 +12405,15 @@ function PortalApp({ token, onLogout }) {
         pipelineStage: nextAssessment.pipelineStage
       });
       const currentDraft = getCandidateDraftState(currentCandidate);
-      await api(`/company/candidates/${encodeURIComponent(linkedCandidateId)}`, token, "PATCH", {
-        patch: {
-          ...candidatePatch,
-          draft_payload: nextDraftPayload,
-          screening_answers: currentDraft.jdScreeningAnswers || parsePortalObjectField(currentCandidate?.screening_answers || currentCandidate?.screeningAnswers)
-        }
-      }).catch(() => null);
-      // Optimistically reflect the status write on the local candidate row for instant UI feedback.
+      nextScreeningAnswers = currentDraft.jdScreeningAnswers || parsePortalObjectField(currentCandidate?.screening_answers || currentCandidate?.screeningAnswers);
+    }
+
+    // Optimistic UI first: reflect status immediately everywhere.
+    upsertAssessmentInState(nextAssessment);
+    if (candidatePatch && linkedCandidateId) {
       setState((current) => {
         const applyPatch = (items) => Array.isArray(items)
-          ? items.map((item) => String(item?.id || "") === linkedCandidateId ? { ...item, ...candidatePatch } : item)
+          ? items.map((item) => String(item?.id || "") === linkedCandidateId ? { ...item, ...candidatePatch, draft_payload: nextDraftPayload } : item)
           : items;
         return {
           ...current,
@@ -12392,10 +12422,33 @@ function PortalApp({ token, onLogout }) {
         };
       });
     }
-    upsertAssessmentInState(nextAssessment);
-    void refreshWorkspaceSilently("post-status");
     if (options.closeModal !== false) setAssessmentStatusId("");
     setStatus(statusTarget, `Updated status for ${assessment?.candidateName || "candidate"}.`, "ok");
+
+    // Persist in background; if fails, surface error and refresh to resync.
+    void (async () => {
+      try {
+        await api("/company/assessments", token, "POST", {
+          assessment: {
+            ...nextAssessment,
+            generatedAt: assessment?.generatedAt || new Date().toISOString()
+          }
+        });
+        if (linkedCandidateId && candidatePatch) {
+          await api(`/company/candidates/${encodeURIComponent(linkedCandidateId)}`, token, "PATCH", {
+            patch: {
+              ...candidatePatch,
+              draft_payload: nextDraftPayload,
+              screening_answers: nextScreeningAnswers
+            }
+          });
+        }
+        void refreshWorkspaceSilently("post-status");
+      } catch (error) {
+        setStatus(statusTarget, `Status sync failed: ${String(error?.message || error)}`, "error");
+        void refreshWorkspaceSilently("post-status-sync-fail");
+      }
+    })();
   }
 
   async function deleteAssessmentItem(assessment) {
@@ -12515,13 +12568,31 @@ function PortalApp({ token, onLogout }) {
   }
 
   async function completeAgendaInterview(assessment) {
+    const assessmentId = String(assessment?.id || "").trim();
+    if (!assessmentId) {
+      setStatus("workspace", "Assessment id missing.", "error");
+      return;
+    }
+    if (agendaBusyIds[assessmentId]) return;
     const confirmed = typeof window === "undefined" || window.confirm(`Mark interview done for ${assessment?.candidateName || "this candidate"}?`);
     if (!confirmed) return;
-    await saveAssessmentStatusUpdate(assessment, {
-      candidateStatus: "Feedback Awaited",
-      atValue: "",
-      notes: "Interview completed from Today's Agenda."
-    });
+    setAgendaBusyIds((current) => ({ ...current, [assessmentId]: true }));
+    try {
+      await saveAssessmentStatusUpdate(assessment, {
+        candidateStatus: "Feedback Awaited",
+        atValue: "",
+        notes: "Interview completed from Today's Agenda."
+      }, {
+        clearAgendaSchedule: true,
+        statusTarget: "workspace"
+      });
+    } finally {
+      setAgendaBusyIds((current) => {
+        const next = { ...current };
+        delete next[assessmentId];
+        return next;
+      });
+    }
   }
 
   async function completeAgendaJoining(assessment) {
@@ -12990,7 +13061,13 @@ function PortalApp({ token, onLogout }) {
                             </div>
                             <div className="button-row tight">
                               <button onClick={item.action}>Update</button>
-                              <button className="ghost-btn" onClick={() => void completeAgendaInterview(item.raw)}>Done</button>
+                              <button
+                                className="ghost-btn"
+                                disabled={Boolean(agendaBusyIds[String(item.raw?.id || "")])}
+                                onClick={() => void completeAgendaInterview(item.raw)}
+                              >
+                                {agendaBusyIds[String(item.raw?.id || "")] ? "Saving..." : "Done"}
+                              </button>
                             </div>
                           </article>
                         ))}
