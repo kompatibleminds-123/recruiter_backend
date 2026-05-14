@@ -4545,6 +4545,16 @@ function JdEmailModal({ open, jobs, value, ccSuggestions = [], onChange, onClose
 const DASHBOARD_FILTER_STORAGE_KEY = "recruitdesk_portal_dashboard_filters_v1";
 
 function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs = true }) {
+  const templatePlaceholderTokens = [
+    "{{name}}",
+    "{{email}}",
+    "{{phone}}",
+    "{{company}}",
+    "{{company_name}}",
+    "{{designation}}",
+    "{{category}}",
+    "{{categories}}"
+  ];
   const MARKETING_TABS = [
     { key: "prospects", label: "Prospects" },
     { key: "templates", label: "Email Templates" },
@@ -4570,6 +4580,8 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
   const [selectedProspectIds, setSelectedProspectIds] = useState([]);
   const [status, setStatus] = useState({ message: "", kind: "" });
   const csvFileInputRef = useRef(null);
+  const templateSubjectInputRef = useRef(null);
+  const templateBodyInputRef = useRef(null);
   const defaultSuggestedProspectCategories = [
     "Sales HR",
     "Finance HR",
@@ -4692,6 +4704,26 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
       if (set.has(safe)) set.delete(safe);
       else set.add(safe);
       return { ...current, categoriesText: Array.from(set).join(", ") };
+    });
+  }
+
+  function insertTemplatePlaceholder(field, tokenValue) {
+    const token = String(tokenValue || "").trim();
+    if (!token) return;
+    const isSubject = field === "subject";
+    const input = isSubject ? templateSubjectInputRef.current : templateBodyInputRef.current;
+    const draftKey = isSubject ? "subject" : "bodyText";
+    const currentText = String(templateDraft?.[draftKey] || "");
+    const start = Number.isFinite(input?.selectionStart) ? input.selectionStart : currentText.length;
+    const end = Number.isFinite(input?.selectionEnd) ? input.selectionEnd : currentText.length;
+    const nextText = `${currentText.slice(0, start)}${token}${currentText.slice(end)}`;
+    const nextCaret = start + token.length;
+    setTemplateDraft((current) => ({ ...current, [draftKey]: nextText }));
+    requestAnimationFrame(() => {
+      const node = isSubject ? templateSubjectInputRef.current : templateBodyInputRef.current;
+      if (!node) return;
+      node.focus();
+      node.setSelectionRange(nextCaret, nextCaret);
     });
   }
 
@@ -4929,9 +4961,26 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
       {activeTab === "templates" ? (
       <Section kicker="Email Templates" title="Template Library">
         <div className="form-grid">
-          <label><span>Subject</span><input value={templateDraft.subject} onChange={(e) => setTemplateDraft((c) => ({ ...c, subject: e.target.value }))} /></label>
-          <label><span>Body</span><textarea rows={8} value={templateDraft.bodyText} onChange={(e) => setTemplateDraft((c) => ({ ...c, bodyText: e.target.value }))} /></label>
+          <label><span>Subject</span><input ref={templateSubjectInputRef} value={templateDraft.subject} onChange={(e) => setTemplateDraft((c) => ({ ...c, subject: e.target.value }))} /></label>
+          <label><span>Body</span><textarea ref={templateBodyInputRef} rows={8} value={templateDraft.bodyText} onChange={(e) => setTemplateDraft((c) => ({ ...c, bodyText: e.target.value }))} /></label>
           <label><span>Target Categories (multi-select by comma)</span><input value={templateDraft.targetCategoriesText} onChange={(e) => setTemplateDraft((c) => ({ ...c, targetCategoriesText: e.target.value }))} placeholder="Finance HR, Logistics HR, Real Estate HR" /></label>
+        </div>
+        <div className="item-card compact-card" style={{ marginTop: 12 }}>
+          <div className="item-subtitle">Click placeholders to insert</div>
+          <div className="button-row tight" style={{ marginTop: 8, flexWrap: "wrap" }}>
+            {templatePlaceholderTokens.map((token) => (
+              <button key={`subject-${token}`} type="button" className="ghost-btn" onClick={() => insertTemplatePlaceholder("subject", token)}>
+                {`Subject + ${token}`}
+              </button>
+            ))}
+          </div>
+          <div className="button-row tight" style={{ marginTop: 8, flexWrap: "wrap" }}>
+            {templatePlaceholderTokens.map((token) => (
+              <button key={`body-${token}`} type="button" className="ghost-btn" onClick={() => insertTemplatePlaceholder("bodyText", token)}>
+                {`Body + ${token}`}
+              </button>
+            ))}
+          </div>
         </div>
         <div className="button-row tight">
           <button disabled={!selectedCampaignId} onClick={() => void api(`/company/marketing/campaigns/${encodeURIComponent(selectedCampaignId)}/template`, token, "POST", {
