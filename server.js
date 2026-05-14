@@ -7480,8 +7480,10 @@ function buildCandidateParseResponse(baseResult, normalizedResult, parseMeta = {
     warnings: currentMonths ? [] : ["current_experience_unresolved"]
   };
 
-  const rawTextPreview = rawTextForSearch ? rawTextForSearch.slice(0, 2200) : "";
+  const includeVerboseParseDebug = String(process.env.CV_PARSE_VERBOSE_DEBUG || "").trim().toLowerCase() === "true";
+  const rawTextPreview = rawTextForSearch ? rawTextForSearch.slice(0, includeVerboseParseDebug ? 2200 : 300) : "";
   const searchKeywords = (() => {
+    if (!includeVerboseParseDebug) return "";
     if (!rawTextForSearch) return "";
     const normalized = rawTextForSearch
       .toLowerCase()
@@ -7518,10 +7520,12 @@ function buildCandidateParseResponse(baseResult, normalizedResult, parseMeta = {
     || !normalizedCurrentCompany
     || !totalMonthsSafe;
   parseDebug.guardrailChanges = guardrailChanges;
-  parseDebug.detectedSections = baseResult?.detectedSections || {};
-  parseDebug.workExperienceSection = String(baseResult?.workExperienceSection || "");
-  parseDebug.rawJobBlocks = Array.isArray(baseResult?.rawJobBlocks) ? baseResult.rawJobBlocks : [];
-  parseDebug.parsedEmploymentHistory = Array.isArray(baseResult?.employmentHistory) ? baseResult.employmentHistory : [];
+  if (includeVerboseParseDebug) {
+    parseDebug.detectedSections = baseResult?.detectedSections || {};
+    parseDebug.workExperienceSection = String(baseResult?.workExperienceSection || "");
+    parseDebug.rawJobBlocks = Array.isArray(baseResult?.rawJobBlocks) ? baseResult.rawJobBlocks : [];
+    parseDebug.parsedEmploymentHistory = Array.isArray(baseResult?.employmentHistory) ? baseResult.employmentHistory : [];
+  }
 
     return {
       candidateName: String(
@@ -7539,7 +7543,7 @@ function buildCandidateParseResponse(baseResult, normalizedResult, parseMeta = {
       sourceType: String(baseResult?.sourceType || "").trim(),
     filename: String(baseResult?.filename || "").trim(),
     timeline: sourceType === "cv" ? cvCareerTimeline : finalTimeline,
-    employmentHistory: Array.isArray(baseResult?.employmentHistory) ? baseResult.employmentHistory : [],
+    employmentHistory: includeVerboseParseDebug ? (Array.isArray(baseResult?.employmentHistory) ? baseResult.employmentHistory : []) : [],
     gaps: normalizedGaps.length ? normalizedGaps : fallbackGaps,
     averageTenurePerCompany: finalAverageTenure,
     currentOrgTenure: finalCurrentOrgTenure,
@@ -7558,25 +7562,31 @@ function buildCandidateParseResponse(baseResult, normalizedResult, parseMeta = {
     },
     validation,
     parser_warnings: (validation.reasons || []).map((item) => item.message).filter(Boolean),
-    debug: {
-      raw_cv_text: String(baseResult?.rawText || ""),
-      detected_sections: baseResult?.detectedSections || {},
-      work_experience_section: String(baseResult?.workExperienceSection || ""),
-      raw_job_blocks: Array.isArray(baseResult?.rawJobBlocks) ? baseResult.rawJobBlocks : [],
-      parsed_employment_history: Array.isArray(baseResult?.employmentHistory) ? baseResult.employmentHistory : [],
-      parsed_education: highestEducation ? [{ degree: highestEducation }] : [],
-      guardrail_changes: guardrailChanges,
-      backend_experience_calculation: totalExperienceObject,
-      final_parsed_output: {
-        current_company: normalizedCurrentCompany || null,
-        current_designation: normalizedCurrentDesignation || null,
-        total_experience: totalExperienceObject,
-        current_experience: currentExperienceObject,
-        highest_qualification: highestEducation || null
-      },
-      parser_warnings: (validation.reasons || []).map((item) => item.message).filter(Boolean),
-      openai_raw_response: parseMeta?.openAiRawResponse || null
-    }
+    debug: includeVerboseParseDebug
+      ? {
+          raw_cv_text: String(baseResult?.rawText || ""),
+          detected_sections: baseResult?.detectedSections || {},
+          work_experience_section: String(baseResult?.workExperienceSection || ""),
+          raw_job_blocks: Array.isArray(baseResult?.rawJobBlocks) ? baseResult.rawJobBlocks : [],
+          parsed_employment_history: Array.isArray(baseResult?.employmentHistory) ? baseResult.employmentHistory : [],
+          parsed_education: highestEducation ? [{ degree: highestEducation }] : [],
+          guardrail_changes: guardrailChanges,
+          backend_experience_calculation: totalExperienceObject,
+          final_parsed_output: {
+            current_company: normalizedCurrentCompany || null,
+            current_designation: normalizedCurrentDesignation || null,
+            total_experience: totalExperienceObject,
+            current_experience: currentExperienceObject,
+            highest_qualification: highestEducation || null
+          },
+          parser_warnings: (validation.reasons || []).map((item) => item.message).filter(Boolean),
+          openai_raw_response: parseMeta?.openAiRawResponse || null
+        }
+      : {
+          guardrail_changes: guardrailChanges,
+          backend_experience_calculation: totalExperienceObject,
+          parser_warnings: (validation.reasons || []).map((item) => item.message).filter(Boolean)
+        }
   };
 }
 
