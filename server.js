@@ -2192,7 +2192,8 @@ function renderMarketingTemplate(template = "", prospect = {}) {
     phone: String(prospect?.phone || "").trim(),
     company: String(prospect?.company_name || prospect?.companyName || "").trim(),
     company_name: String(prospect?.company_name || prospect?.companyName || "").trim(),
-    designation: String(prospect?.designation || "").trim()
+    designation: String(prospect?.designation || "").trim(),
+    category: String(prospect?.category || "").trim()
   };
   return source.replace(/\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g, (_match, key) => {
     const needle = String(key || "").trim().toLowerCase();
@@ -8796,10 +8797,15 @@ const server = http.createServer(async (req, res) => {
       const companyId = encodeURIComponent(String(actor.companyId || "").trim());
       const limit = Math.max(1, Math.min(5000, Number(requestUrl.searchParams.get("limit") || 500)));
       const q = String(requestUrl.searchParams.get("q") || "").trim().toLowerCase();
+      const categoryFilter = String(requestUrl.searchParams.get("category") || "").trim().toLowerCase();
       const rows = await supabaseTableFetch("marketing_prospects", `?select=*&company_id=eq.${companyId}&order=updated_at.desc&limit=${limit}`);
       const items = (Array.isArray(rows) ? rows : []).filter((item) => {
+        if (categoryFilter) {
+          const currentCategory = String(item?.category || "").trim().toLowerCase();
+          if (currentCategory !== categoryFilter) return false;
+        }
         if (!q) return true;
-        const hay = `${item?.name || ""} ${item?.email || ""} ${item?.company_name || ""} ${item?.designation || ""}`.toLowerCase();
+        const hay = `${item?.name || ""} ${item?.email || ""} ${item?.company_name || ""} ${item?.designation || ""} ${item?.category || ""}`.toLowerCase();
         return hay.includes(q);
       });
       sendJson(res, 200, { ok: true, result: { items } });
@@ -8822,6 +8828,7 @@ const server = http.createServer(async (req, res) => {
         phone: String(body.phone || "").trim(),
         company_name: String(body.companyName || body.company_name || "").trim(),
         designation: String(body.designation || "").trim(),
+        category: String(body.category || "").trim(),
         source: String(body.source || "manual").trim() || "manual",
         status: "active",
         tags: Array.isArray(body.tags) ? body.tags : [],
@@ -8855,6 +8862,7 @@ const server = http.createServer(async (req, res) => {
           phone: String(row.phone || row.mobile || "").trim(),
           company_name: String(row.company || row.company_name || "").trim(),
           designation: String(row.designation || row.role || "").trim(),
+          category: String(row.category || row.segment || "").trim(),
           source: "csv_import",
           status: "active",
           tags: [],
@@ -8918,8 +8926,9 @@ const server = http.createServer(async (req, res) => {
       const body = await readJsonBody(req);
       const prospectIds = Array.isArray(body.prospectIds) ? body.prospectIds.map((id) => String(id || "").trim()).filter(Boolean) : [];
       if (!prospectIds.length) throw new Error("prospectIds required.");
+      const uniqueProspectIds = Array.from(new Set(prospectIds));
       const now = toIsoNow();
-      const links = prospectIds.map((prospectId) => ({
+      const links = uniqueProspectIds.map((prospectId) => ({
         id: crypto.randomUUID(),
         company_id: actor.companyId,
         campaign_id: campaignId,
@@ -8934,6 +8943,30 @@ const server = http.createServer(async (req, res) => {
         prefer: "resolution=merge-duplicates,return=representation"
       });
       sendJson(res, 200, { ok: true, result: { linked: Array.isArray(saved) ? saved.length : 0 } });
+    } catch (error) {
+      sendJson(res, 400, { ok: false, error: String(error?.message || error) });
+    }
+    return;
+  }
+
+  if (req.method === "GET" && /^\/company\/marketing\/campaigns\/[^/]+\/prospects$/.test(requestUrl.pathname)) {
+    try {
+      const actor = await requireSessionUser(getBearerToken(req));
+      const campaignId = encodeURIComponent(String(requestUrl.pathname.replace(/^\/company\/marketing\/campaigns\//, "").replace(/\/prospects$/, "")).trim());
+      const companyId = encodeURIComponent(String(actor.companyId || "").trim());
+      const rows = await supabaseTableFetch(
+        "marketing_campaign_prospects",
+        `?select=id,state,last_sent_at,updated_at,prospect_id,marketing_prospects!inner(id,name,email,phone,company_name,designation,category,status)&company_id=eq.${companyId}&campaign_id=eq.${campaignId}&order=updated_at.desc&limit=5000`
+      );
+      const items = (Array.isArray(rows) ? rows : []).map((row) => ({
+        id: row?.id,
+        state: String(row?.state || "").trim(),
+        lastSentAt: String(row?.last_sent_at || "").trim(),
+        updatedAt: String(row?.updated_at || "").trim(),
+        prospectId: String(row?.prospect_id || "").trim(),
+        prospect: row?.marketing_prospects && typeof row.marketing_prospects === "object" ? row.marketing_prospects : null
+      }));
+      sendJson(res, 200, { ok: true, result: { items } });
     } catch (error) {
       sendJson(res, 400, { ok: false, error: String(error?.message || error) });
     }
@@ -8976,6 +9009,18 @@ const server = http.createServer(async (req, res) => {
         prefer: "resolution=merge-duplicates,return=representation"
       });
       sendJson(res, 200, { ok: true, result: (Array.isArray(saved) ? saved[0] : saved) || item });
+    } catch (error) {
+      sendJson(res, 400, { ok: false, error: String(error?.message || error) });
+    }
+    return;
+  }
+
+  if (req.method === "GET" && requestUrl.pathname === "/company/marketing/templates") {
+    try {
+      const actor = await requireSessionUser(getBearerToken(req));
+      const companyId = encodeURIComponent(String(actor.companyId || "").trim());
+      const rows = await supabaseTableFetch("marketing_templates", `?select=*&company_id=eq.${companyId}&order=updated_at.desc&limit=500`);
+      sendJson(res, 200, { ok: true, result: { items: Array.isArray(rows) ? rows : [] } });
     } catch (error) {
       sendJson(res, 400, { ok: false, error: String(error?.message || error) });
     }

@@ -4543,27 +4543,34 @@ function MarketingModulePage({ token }) {
   const [overview, setOverview] = useState(null);
   const [prospects, setProspects] = useState([]);
   const [campaigns, setCampaigns] = useState([]);
+  const [templates, setTemplates] = useState([]);
+  const [campaignProspects, setCampaignProspects] = useState([]);
   const [selectedCampaignId, setSelectedCampaignId] = useState("");
   const [templateDraft, setTemplateDraft] = useState({ subject: "", bodyText: "Hi {{name}},\n\n\nRegards,\nTeam" });
-  const [prospectDraft, setProspectDraft] = useState({ name: "", email: "", phone: "", companyName: "", designation: "" });
+  const [prospectDraft, setProspectDraft] = useState({ name: "", email: "", phone: "", companyName: "", designation: "", category: "" });
   const [campaignDraft, setCampaignDraft] = useState({ name: "", category: "", sendGapMinutes: 5, dailyCap: 50 });
   const [csvText, setCsvText] = useState("");
   const [csvFileName, setCsvFileName] = useState("");
+  const [prospectSearch, setProspectSearch] = useState("");
+  const [prospectCategoryFilter, setProspectCategoryFilter] = useState("");
+  const [selectedProspectIds, setSelectedProspectIds] = useState([]);
   const [status, setStatus] = useState({ message: "", kind: "" });
   const csvFileInputRef = useRef(null);
 
   const refresh = useCallback(async () => {
     setLoading(true);
     try {
-      const [overviewResult, prospectsResult, campaignsResult] = await Promise.all([
+      const [overviewResult, prospectsResult, campaignsResult, templatesResult] = await Promise.all([
         api("/company/marketing/overview", token),
         api("/company/marketing/prospects?limit=500", token),
-        api("/company/marketing/campaigns", token)
+        api("/company/marketing/campaigns", token),
+        api("/company/marketing/templates", token)
       ]);
       setOverview(overviewResult || null);
       setProspects(Array.isArray(prospectsResult?.items) ? prospectsResult.items : []);
       const rows = Array.isArray(campaignsResult?.items) ? campaignsResult.items : [];
       setCampaigns(rows);
+      setTemplates(Array.isArray(templatesResult?.items) ? templatesResult.items : []);
       setSelectedCampaignId((current) => current || String(rows?.[0]?.id || ""));
     } finally {
       setLoading(false);
@@ -4576,6 +4583,11 @@ function MarketingModulePage({ token }) {
 
   useEffect(() => {
     if (!selectedCampaignId) return;
+    void api(`/company/marketing/campaigns/${encodeURIComponent(selectedCampaignId)}/prospects`, token)
+      .then((result) => {
+        setCampaignProspects(Array.isArray(result?.items) ? result.items : []);
+      })
+      .catch(() => setCampaignProspects([]));
     void api(`/company/marketing/campaigns/${encodeURIComponent(selectedCampaignId)}/template`, token)
       .then((row) => {
         if (!row) return;
@@ -4585,8 +4597,39 @@ function MarketingModulePage({ token }) {
   }, [selectedCampaignId, token]);
 
   const activeCampaign = campaigns.find((item) => String(item.id) === String(selectedCampaignId)) || null;
+  const categories = Array.from(new Set(prospects.map((item) => String(item?.category || "").trim()).filter(Boolean))).sort((a, b) => a.localeCompare(b));
+  const filteredProspects = prospects.filter((item) => {
+    if (prospectCategoryFilter && String(item?.category || "").trim().toLowerCase() !== String(prospectCategoryFilter || "").trim().toLowerCase()) {
+      return false;
+    }
+    if (!prospectSearch) return true;
+    const hay = `${item?.name || ""} ${item?.email || ""} ${item?.phone || ""} ${item?.company_name || ""} ${item?.designation || ""} ${item?.category || ""}`.toLowerCase();
+    return hay.includes(String(prospectSearch || "").trim().toLowerCase());
+  });
+  const selectedProspectsCount = selectedProspectIds.filter((id) => prospects.some((item) => String(item?.id || "") === String(id))).length;
   const setOk = (message) => setStatus({ message: String(message || ""), kind: "ok" });
   const setErr = (error) => setStatus({ message: String(error?.message || error || "Request failed"), kind: "error" });
+
+  function toggleProspectSelection(id) {
+    const safeId = String(id || "").trim();
+    if (!safeId) return;
+    setSelectedProspectIds((current) => current.includes(safeId) ? current.filter((item) => item !== safeId) : [...current, safeId]);
+  }
+
+  function selectFilteredProspects() {
+    setSelectedProspectIds((current) => {
+      const next = new Set(current);
+      filteredProspects.forEach((item) => {
+        const id = String(item?.id || "").trim();
+        if (id) next.add(id);
+      });
+      return Array.from(next);
+    });
+  }
+
+  function clearProspectSelection() {
+    setSelectedProspectIds([]);
+  }
 
   async function handleCsvFileImport(file) {
     const picked = file || null;
@@ -4627,13 +4670,14 @@ function MarketingModulePage({ token }) {
           <label><span>Phone</span><input value={prospectDraft.phone} onChange={(e) => setProspectDraft((c) => ({ ...c, phone: e.target.value }))} /></label>
           <label><span>Company</span><input value={prospectDraft.companyName} onChange={(e) => setProspectDraft((c) => ({ ...c, companyName: e.target.value }))} /></label>
           <label><span>Designation</span><input value={prospectDraft.designation} onChange={(e) => setProspectDraft((c) => ({ ...c, designation: e.target.value }))} /></label>
+          <label><span>Category</span><input value={prospectDraft.category} onChange={(e) => setProspectDraft((c) => ({ ...c, category: e.target.value }))} placeholder="e.g. CTO, HR, Agency, Startup" /></label>
         </div>
         <div className="button-row">
           <button disabled={saving} onClick={() => void (async () => {
             setSaving(true);
             try {
               await api("/company/marketing/prospects", token, "POST", prospectDraft);
-              setProspectDraft({ name: "", email: "", phone: "", companyName: "", designation: "" });
+              setProspectDraft({ name: "", email: "", phone: "", companyName: "", designation: "", category: "" });
               await refresh();
               setOk("Prospect added.");
             } catch (error) {
@@ -4689,6 +4733,58 @@ function MarketingModulePage({ token }) {
         </div>
       </Section>
 
+      <Section kicker="Prospects" title="Prospect List + Selection">
+        <div className="form-grid three-col">
+          <label><span>Search</span><input value={prospectSearch} onChange={(e) => setProspectSearch(e.target.value)} placeholder="name, email, company..." /></label>
+          <label><span>Category filter</span>
+            <select value={prospectCategoryFilter} onChange={(e) => setProspectCategoryFilter(e.target.value)}>
+              <option value="">All categories</option>
+              {categories.map((item) => <option key={item} value={item}>{item}</option>)}
+            </select>
+          </label>
+          <label><span>Selected</span><input readOnly value={`${selectedProspectsCount}`} /></label>
+        </div>
+        <div className="button-row tight">
+          <button className="ghost-btn" onClick={selectFilteredProspects}>Select filtered</button>
+          <button className="ghost-btn" onClick={clearProspectSelection}>Clear selection</button>
+        </div>
+        <div className="table-wrap">
+          <table className="dashboard-table">
+            <thead>
+              <tr>
+                <th>Select</th>
+                <th>Name</th>
+                <th>Email</th>
+                <th>Company</th>
+                <th>Designation</th>
+                <th>Category</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredProspects.map((item) => {
+                const id = String(item?.id || "");
+                const checked = selectedProspectIds.includes(id);
+                return (
+                  <tr key={id}>
+                    <td><input type="checkbox" checked={checked} onChange={() => toggleProspectSelection(id)} /></td>
+                    <td>{item?.name || "-"}</td>
+                    <td>{item?.email || "-"}</td>
+                    <td>{item?.company_name || "-"}</td>
+                    <td>{item?.designation || "-"}</td>
+                    <td>{item?.category || "-"}</td>
+                    <td>{item?.status || "-"}</td>
+                  </tr>
+                );
+              })}
+              {!filteredProspects.length ? (
+                <tr><td colSpan="7"><div className="empty-state compact-empty">No prospects found.</div></td></tr>
+              ) : null}
+            </tbody>
+          </table>
+        </div>
+      </Section>
+
       <Section kicker="Campaigns" title="Build Campaign">
         <div className="form-grid two-col">
           <label><span>Campaign name</span><input value={campaignDraft.name} onChange={(e) => setCampaignDraft((c) => ({ ...c, name: e.target.value }))} /></label>
@@ -4716,6 +4812,11 @@ function MarketingModulePage({ token }) {
           {campaigns.map((item) => <option key={item.id} value={item.id}>{item.name} ({item.status})</option>)}
         </select></label>
         {activeCampaign ? (
+          <div className="item-card compact-card">
+            <div className="item-subtitle">{`Category: ${activeCampaign.category || "-"} | Gap: ${activeCampaign.send_gap_minutes || 0} mins | Daily cap: ${activeCampaign.daily_cap || 0}`}</div>
+          </div>
+        ) : null}
+        {activeCampaign ? (
           <div className="button-row tight">
             <button className="ghost-btn" onClick={() => void api(`/company/marketing/campaigns/${activeCampaign.id}/start`, token, "POST", {}).then(() => { setOk("Campaign started."); return refresh(); }).catch(setErr)}>Start</button>
             <button className="ghost-btn" onClick={() => void api(`/company/marketing/campaigns/${activeCampaign.id}/pause`, token, "POST", {}).then(() => { setOk("Campaign paused."); return refresh(); }).catch(setErr)}>Pause</button>
@@ -4731,7 +4832,66 @@ function MarketingModulePage({ token }) {
         </div>
         <div className="button-row tight">
           <button disabled={!selectedCampaignId} onClick={() => void api(`/company/marketing/campaigns/${encodeURIComponent(selectedCampaignId)}/template`, token, "POST", templateDraft).then(() => { setOk("Template saved."); return refresh(); }).catch(setErr)}>Save template</button>
-          <button className="ghost-btn" disabled={!selectedCampaignId || !prospects.length} onClick={() => void api(`/company/marketing/campaigns/${encodeURIComponent(selectedCampaignId)}/prospects`, token, "POST", { prospectIds: prospects.slice(0, 100).map((item) => item.id) }).then(() => { setOk("Prospects attached to campaign."); return refresh(); }).catch(setErr)}>Attach top 100 prospects</button>
+          <button className="ghost-btn" disabled={!selectedCampaignId || !selectedProspectIds.length} onClick={() => void api(`/company/marketing/campaigns/${encodeURIComponent(selectedCampaignId)}/prospects`, token, "POST", { prospectIds: selectedProspectIds }).then(() => { setOk("Selected prospects attached to campaign."); return refresh(); }).catch(setErr)}>Attach selected prospects</button>
+        </div>
+      </Section>
+
+      <Section kicker="Campaign Prospects" title="Campaign Prospect Queue">
+        <div className="table-wrap">
+          <table className="dashboard-table">
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Email</th>
+                <th>Category</th>
+                <th>State</th>
+                <th>Last sent</th>
+              </tr>
+            </thead>
+            <tbody>
+              {campaignProspects.map((item) => (
+                <tr key={String(item?.id || "")}>
+                  <td>{item?.prospect?.name || "-"}</td>
+                  <td>{item?.prospect?.email || "-"}</td>
+                  <td>{item?.prospect?.category || "-"}</td>
+                  <td>{item?.state || "-"}</td>
+                  <td>{item?.lastSentAt ? new Date(item.lastSentAt).toLocaleString() : "-"}</td>
+                </tr>
+              ))}
+              {!campaignProspects.length ? (
+                <tr><td colSpan="5"><div className="empty-state compact-empty">No prospects linked to selected campaign yet.</div></td></tr>
+              ) : null}
+            </tbody>
+          </table>
+        </div>
+      </Section>
+
+      <Section kicker="Templates" title="All Email Templates">
+        <div className="table-wrap">
+          <table className="dashboard-table">
+            <thead>
+              <tr>
+                <th>Campaign</th>
+                <th>Subject</th>
+                <th>Updated</th>
+              </tr>
+            </thead>
+            <tbody>
+              {templates.map((item) => {
+                const campaign = campaigns.find((row) => String(row?.id || "") === String(item?.campaign_id || ""));
+                return (
+                  <tr key={String(item?.id || "")}>
+                    <td>{campaign?.name || item?.campaign_id || "-"}</td>
+                    <td>{item?.subject || "-"}</td>
+                    <td>{item?.updated_at ? new Date(item.updated_at).toLocaleString() : "-"}</td>
+                  </tr>
+                );
+              })}
+              {!templates.length ? (
+                <tr><td colSpan="3"><div className="empty-state compact-empty">No templates saved yet.</div></td></tr>
+              ) : null}
+            </tbody>
+          </table>
         </div>
       </Section>
     </div>
