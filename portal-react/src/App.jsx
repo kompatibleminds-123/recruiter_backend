@@ -4570,6 +4570,14 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
   const [selectedProspectIds, setSelectedProspectIds] = useState([]);
   const [status, setStatus] = useState({ message: "", kind: "" });
   const csvFileInputRef = useRef(null);
+  const suggestedProspectCategories = [
+    "Sales HR",
+    "Finance HR",
+    "Fintech HR",
+    "Logistics HR",
+    "Real Estate HR",
+    "Semiconductor HR"
+  ];
 
   useEffect(() => {
     if (!initialTab) return;
@@ -4664,6 +4672,21 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
     setSelectedProspectIds([]);
   }
 
+  function toggleSuggestedProspectCategory(categoryLabel) {
+    const safe = String(categoryLabel || "").trim();
+    if (!safe) return;
+    setProspectDraft((current) => {
+      const existing = String(current.categoriesText || "")
+        .split(",")
+        .map((item) => item.trim())
+        .filter(Boolean);
+      const set = new Set(existing);
+      if (set.has(safe)) set.delete(safe);
+      else set.add(safe);
+      return { ...current, categoriesText: Array.from(set).join(", ") };
+    });
+  }
+
   async function handleCsvFileImport(file) {
     const picked = file || null;
     if (!picked) return;
@@ -4727,6 +4750,24 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
           <label><span>Company</span><input value={prospectDraft.companyName} onChange={(e) => setProspectDraft((c) => ({ ...c, companyName: e.target.value }))} /></label>
           <label><span>Designation</span><input value={prospectDraft.designation} onChange={(e) => setProspectDraft((c) => ({ ...c, designation: e.target.value }))} /></label>
           <label className="full"><span>Categories (comma separated)</span><input value={prospectDraft.categoriesText} onChange={(e) => setProspectDraft((c) => ({ ...c, categoriesText: e.target.value }))} placeholder="Sales HR, Finance HR, Fintech HR" /></label>
+          <div className="full">
+            <span className="muted">Quick categories</span>
+            <div className="button-row tight" style={{ marginTop: 8, flexWrap: "wrap" }}>
+              {suggestedProspectCategories.map((item) => {
+                const selected = String(prospectDraft.categoriesText || "").toLowerCase().split(",").map((v) => v.trim()).includes(String(item).toLowerCase());
+                return (
+                  <button
+                    key={item}
+                    type="button"
+                    className={selected ? "" : "ghost-btn"}
+                    onClick={() => toggleSuggestedProspectCategory(item)}
+                  >
+                    {item}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
         </div>
         <div className="button-row">
           <button disabled={saving} onClick={() => void (async () => {
