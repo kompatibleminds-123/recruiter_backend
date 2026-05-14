@@ -5429,7 +5429,8 @@ function PortalApp({ token, onLogout }) {
     [selectedShortcutJob]
   );
   const accessFlagsReady = Boolean(state.user?.id) && (Boolean(companyLicense) || Boolean(billingOverview));
-  const isMarketingOwner = String(state.user?.email || "").trim().toLowerCase() === "ankit.garg@kompatibleminds.com";
+  const marketingOwnerEmail = String(state.user?.email || "").trim().toLowerCase();
+  const isMarketingOwner = marketingOwnerEmail === "ankit.garg@kompatibleminds.com" || marketingOwnerEmail === "rasel.mazumder@kompatibleminds.com";
   const navSections = useMemo(() => (
     BASE_NAV_SECTIONS
       .map((section) => ({

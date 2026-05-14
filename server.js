@@ -2136,7 +2136,8 @@ function normalizeMarketingEmail(value = "") {
 }
 
 function isMarketingOwnerEmail(value = "") {
-  return normalizeMarketingEmail(value) === "ankit.garg@kompatibleminds.com";
+  const email = normalizeMarketingEmail(value);
+  return email === "ankit.garg@kompatibleminds.com" || email === "rasel.mazumder@kompatibleminds.com";
 }
 
 function parseMarketingCsv(content = "") {
