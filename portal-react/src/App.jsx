@@ -64,6 +64,7 @@ const BASE_NAV_SECTIONS = [
 
 const STANDALONE_NAV_ITEMS = [
   { to: "/candidates", label: "Database" },
+  { to: "/marketing-module", label: "Marketing Module" },
   { to: "/reports", label: "Reports & Analytics" }
 ];
 const PAYROLL_NAV_ITEMS = [
@@ -4537,6 +4538,151 @@ function JdEmailModal({ open, jobs, value, ccSuggestions = [], onChange, onClose
 
 const DASHBOARD_FILTER_STORAGE_KEY = "recruitdesk_portal_dashboard_filters_v1";
 
+function MarketingModulePage({ token }) {
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [overview, setOverview] = useState(null);
+  const [prospects, setProspects] = useState([]);
+  const [campaigns, setCampaigns] = useState([]);
+  const [selectedCampaignId, setSelectedCampaignId] = useState("");
+  const [templateDraft, setTemplateDraft] = useState({ subject: "", bodyText: "Hi {{name}},\n\n\nRegards,\nTeam" });
+  const [prospectDraft, setProspectDraft] = useState({ name: "", email: "", phone: "", companyName: "", designation: "" });
+  const [campaignDraft, setCampaignDraft] = useState({ name: "", category: "", sendGapMinutes: 5, dailyCap: 50 });
+  const [csvText, setCsvText] = useState("");
+
+  const refresh = useCallback(async () => {
+    setLoading(true);
+    try {
+      const [overviewResult, prospectsResult, campaignsResult] = await Promise.all([
+        api("/company/marketing/overview", token),
+        api("/company/marketing/prospects?limit=500", token),
+        api("/company/marketing/campaigns", token)
+      ]);
+      setOverview(overviewResult || null);
+      setProspects(Array.isArray(prospectsResult?.items) ? prospectsResult.items : []);
+      const rows = Array.isArray(campaignsResult?.items) ? campaignsResult.items : [];
+      setCampaigns(rows);
+      setSelectedCampaignId((current) => current || String(rows?.[0]?.id || ""));
+    } finally {
+      setLoading(false);
+    }
+  }, [token]);
+
+  useEffect(() => {
+    void refresh();
+  }, [refresh]);
+
+  useEffect(() => {
+    if (!selectedCampaignId) return;
+    void api(`/company/marketing/campaigns/${encodeURIComponent(selectedCampaignId)}/template`, token)
+      .then((row) => {
+        if (!row) return;
+        setTemplateDraft({ subject: String(row.subject || ""), bodyText: String(row.body_text || "") });
+      })
+      .catch(() => {});
+  }, [selectedCampaignId, token]);
+
+  const activeCampaign = campaigns.find((item) => String(item.id) === String(selectedCampaignId)) || null;
+
+  return (
+    <div className="page-grid">
+      <Section kicker="Marketing" title="Campaign Control">
+        <p className="muted">Recruitment product se isolated MVP: prospects, campaigns, templates, drip sends.</p>
+        <div className="button-row tight">
+          <button className="ghost-btn" onClick={() => void refresh()} disabled={loading}>Refresh</button>
+          <button onClick={() => void api("/company/marketing/worker/tick", token, "POST", {}).then(() => refresh())} disabled={loading}>Run send tick</button>
+        </div>
+        {loading ? <div className="empty-state">Loading marketing module...</div> : null}
+      </Section>
+
+      <div className="metric-grid compact">
+        <div className="metric-card"><div className="metric-label">Prospects</div><div className="metric-value">{overview?.prospects?.total || 0}</div></div>
+        <div className="metric-card"><div className="metric-label">Campaigns</div><div className="metric-value">{overview?.campaigns?.total || 0}</div></div>
+        <div className="metric-card"><div className="metric-label">Queue</div><div className="metric-value">{overview?.queue?.total || 0}</div></div>
+        <div className="metric-card"><div className="metric-label">Events</div><div className="metric-value">{overview?.events?.total || 0}</div></div>
+      </div>
+
+      <Section kicker="Prospects" title="Add Prospect">
+        <div className="form-grid two-col">
+          <label><span>Name</span><input value={prospectDraft.name} onChange={(e) => setProspectDraft((c) => ({ ...c, name: e.target.value }))} /></label>
+          <label><span>Email</span><input value={prospectDraft.email} onChange={(e) => setProspectDraft((c) => ({ ...c, email: e.target.value }))} /></label>
+          <label><span>Phone</span><input value={prospectDraft.phone} onChange={(e) => setProspectDraft((c) => ({ ...c, phone: e.target.value }))} /></label>
+          <label><span>Company</span><input value={prospectDraft.companyName} onChange={(e) => setProspectDraft((c) => ({ ...c, companyName: e.target.value }))} /></label>
+          <label><span>Designation</span><input value={prospectDraft.designation} onChange={(e) => setProspectDraft((c) => ({ ...c, designation: e.target.value }))} /></label>
+        </div>
+        <div className="button-row">
+          <button disabled={saving} onClick={() => void (async () => {
+            setSaving(true);
+            try {
+              await api("/company/marketing/prospects", token, "POST", prospectDraft);
+              setProspectDraft({ name: "", email: "", phone: "", companyName: "", designation: "" });
+              await refresh();
+            } finally {
+              setSaving(false);
+            }
+          })()}>Add prospect</button>
+        </div>
+        <label><span>CSV import (name,email,phone,company,designation)</span><textarea rows={4} value={csvText} onChange={(e) => setCsvText(e.target.value)} /></label>
+        <div className="button-row tight">
+          <button className="ghost-btn" disabled={saving || !csvText.trim()} onClick={() => void (async () => {
+            setSaving(true);
+            try {
+              await api("/company/marketing/prospects/import", token, "POST", { csv: csvText });
+              setCsvText("");
+              await refresh();
+            } finally {
+              setSaving(false);
+            }
+          })()}>Import CSV text</button>
+        </div>
+      </Section>
+
+      <Section kicker="Campaigns" title="Build Campaign">
+        <div className="form-grid two-col">
+          <label><span>Campaign name</span><input value={campaignDraft.name} onChange={(e) => setCampaignDraft((c) => ({ ...c, name: e.target.value }))} /></label>
+          <label><span>Category</span><input value={campaignDraft.category} onChange={(e) => setCampaignDraft((c) => ({ ...c, category: e.target.value }))} /></label>
+          <label><span>Send gap (mins)</span><input type="number" min="1" value={campaignDraft.sendGapMinutes} onChange={(e) => setCampaignDraft((c) => ({ ...c, sendGapMinutes: e.target.value }))} /></label>
+          <label><span>Daily cap</span><input type="number" min="10" value={campaignDraft.dailyCap} onChange={(e) => setCampaignDraft((c) => ({ ...c, dailyCap: e.target.value }))} /></label>
+        </div>
+        <div className="button-row">
+          <button disabled={saving} onClick={() => void (async () => {
+            setSaving(true);
+            try {
+              await api("/company/marketing/campaigns", token, "POST", campaignDraft);
+              setCampaignDraft({ name: "", category: "", sendGapMinutes: 5, dailyCap: 50 });
+              await refresh();
+            } finally {
+              setSaving(false);
+            }
+          })()}>Create campaign</button>
+        </div>
+        <label><span>Select campaign</span><select value={selectedCampaignId} onChange={(e) => setSelectedCampaignId(e.target.value)}>
+          <option value="">Select</option>
+          {campaigns.map((item) => <option key={item.id} value={item.id}>{item.name} ({item.status})</option>)}
+        </select></label>
+        {activeCampaign ? (
+          <div className="button-row tight">
+            <button className="ghost-btn" onClick={() => void api(`/company/marketing/campaigns/${activeCampaign.id}/start`, token, "POST", {}).then(() => refresh())}>Start</button>
+            <button className="ghost-btn" onClick={() => void api(`/company/marketing/campaigns/${activeCampaign.id}/pause`, token, "POST", {}).then(() => refresh())}>Pause</button>
+            <button className="ghost-btn" onClick={() => void api(`/company/marketing/campaigns/${activeCampaign.id}/resume`, token, "POST", {}).then(() => refresh())}>Resume</button>
+          </div>
+        ) : null}
+      </Section>
+
+      <Section kicker="Template" title="Campaign Template">
+        <div className="form-grid">
+          <label><span>Subject</span><input value={templateDraft.subject} onChange={(e) => setTemplateDraft((c) => ({ ...c, subject: e.target.value }))} /></label>
+          <label><span>Body</span><textarea rows={6} value={templateDraft.bodyText} onChange={(e) => setTemplateDraft((c) => ({ ...c, bodyText: e.target.value }))} /></label>
+        </div>
+        <div className="button-row tight">
+          <button disabled={!selectedCampaignId} onClick={() => void api(`/company/marketing/campaigns/${encodeURIComponent(selectedCampaignId)}/template`, token, "POST", templateDraft).then(() => refresh())}>Save template</button>
+          <button className="ghost-btn" disabled={!selectedCampaignId || !prospects.length} onClick={() => void api(`/company/marketing/campaigns/${encodeURIComponent(selectedCampaignId)}/prospects`, token, "POST", { prospectIds: prospects.slice(0, 100).map((item) => item.id) }).then(() => refresh())}>Attach top 100 prospects</button>
+        </div>
+      </Section>
+    </div>
+  );
+}
+
 function PortalApp({ token, onLogout }) {
   const location = useLocation();
   const navigate = useNavigate();
@@ -5921,10 +6067,11 @@ function PortalApp({ token, onLogout }) {
       includeEmailSettings = true
     } = options || {};
     const pathname = String(location?.pathname || "/dashboard").trim() || "/dashboard";
+    const isMarketingRoute = pathname === "/marketing-module";
     const needsDashboard = pathname === "/dashboard";
     const needsApplicants = pathname === "/dashboard" || pathname === "/applicants";
     const needsIntake = pathname === "/intake-settings" || pathname === "/jobs" || pathname === "/applicants";
-    const needsJobs = pathname !== "/mail-settings" && pathname !== "/settings" && pathname !== "/login-settings" && pathname !== "/plan";
+    const needsJobs = !isMarketingRoute && pathname !== "/mail-settings" && pathname !== "/settings" && pathname !== "/login-settings" && pathname !== "/plan";
     const needsUsers = needsJobs || pathname === "/login-settings";
     const needsEmployeeUsers = includeEmployeeUsers && (pathname === "/login-settings" || pathname.startsWith("/admin/payroll"));
     const needsCandidates =
@@ -15344,6 +15491,8 @@ function PortalApp({ token, onLogout }) {
           <Route path="/admin/payroll/settings" element={
             <Navigate to="/payroll/runs" replace />
           } />
+
+          <Route path="/marketing-module" element={<MarketingModulePage token={token} />} />
 
           <Route path="*" element={<Navigate to="/dashboard" replace />} />
           </Routes>

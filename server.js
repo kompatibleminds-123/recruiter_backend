@@ -2127,6 +2127,79 @@ function getSupabaseServiceConfig() {
   return { on: Boolean(url && key), url, key };
 }
 
+function toIsoNow() {
+  return new Date().toISOString();
+}
+
+function normalizeMarketingEmail(value = "") {
+  return String(value || "").trim().toLowerCase();
+}
+
+function parseMarketingCsv(content = "") {
+  const raw = String(content || "").trim();
+  if (!raw) return [];
+  const lines = raw.split(/\r?\n/).filter((line) => String(line || "").trim());
+  if (!lines.length) return [];
+  const headers = lines[0].split(",").map((part) => String(part || "").trim().toLowerCase());
+  return lines.slice(1).map((line) => {
+    const cells = line.split(",").map((part) => String(part || "").trim());
+    const row = {};
+    headers.forEach((key, idx) => {
+      row[key] = String(cells[idx] || "").trim();
+    });
+    return row;
+  });
+}
+
+function renderMarketingTemplate(template = "", prospect = {}) {
+  const source = String(template || "");
+  const replacementMap = {
+    name: String(prospect?.name || "").trim(),
+    email: String(prospect?.email || "").trim(),
+    phone: String(prospect?.phone || "").trim(),
+    company: String(prospect?.company_name || prospect?.companyName || "").trim(),
+    company_name: String(prospect?.company_name || prospect?.companyName || "").trim(),
+    designation: String(prospect?.designation || "").trim()
+  };
+  return source.replace(/\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g, (_match, key) => {
+    const needle = String(key || "").trim().toLowerCase();
+    return Object.prototype.hasOwnProperty.call(replacementMap, needle) ? replacementMap[needle] : "";
+  });
+}
+
+async function supabaseTableFetch(tableName, query = "", options = {}) {
+  const { method = "GET", body = null, prefer = "", extraHeaders = {} } = options || {};
+  const { on, url, key } = getSupabaseServiceConfig();
+  if (!on) throw new Error("Supabase service role is not configured.");
+  const rel = `/rest/v1/${tableName}${String(query || "")}`;
+  const headers = {
+    apikey: key,
+    Authorization: `Bearer ${key}`,
+    ...extraHeaders
+  };
+  if (prefer) headers.Prefer = prefer;
+  if (body !== null) headers["Content-Type"] = "application/json";
+  const response = await fetch(`${url}${rel}`, {
+    method: String(method || "GET").toUpperCase(),
+    headers,
+    body: body !== null ? JSON.stringify(body) : null
+  });
+  const text = await response.text();
+  let parsed = null;
+  try {
+    parsed = text ? JSON.parse(text) : null;
+  } catch {
+    parsed = text;
+  }
+  if (!response.ok) {
+    const message = typeof parsed === "string"
+      ? parsed
+      : String(parsed?.message || parsed?.error_description || parsed?.error || `Supabase request failed (${response.status}).`);
+    throw new Error(message);
+  }
+  return parsed;
+}
+
 function normalizeApplicantPhoneForMatch(value) {
   const digits = String(value || "").replace(/\D/g, "");
   if (digits.length < 10) return "";
@@ -8637,6 +8710,302 @@ const server = http.createServer(async (req, res) => {
       sendJson(res, 200, { ok: true, result });
     } catch (error) {
       sendJson(res, 400, { ok: false, error: String(error.message || error) });
+    }
+    return;
+  }
+
+  if (req.method === "GET" && requestUrl.pathname === "/company/marketing/overview") {
+    try {
+      const actor = await requireSessionUser(getBearerToken(req));
+      const companyId = encodeURIComponent(String(actor.companyId || "").trim());
+      const [prospects, campaigns, queue, events] = await Promise.all([
+        supabaseTableFetch("marketing_prospects", `?select=id,status&company_id=eq.${companyId}&limit=5000`),
+        supabaseTableFetch("marketing_campaigns", `?select=id,status&company_id=eq.${companyId}&limit=5000`),
+        supabaseTableFetch("marketing_send_queue", `?select=id,status&company_id=eq.${companyId}&limit=5000`),
+        supabaseTableFetch("marketing_message_events", `?select=id,event_type&company_id=eq.${companyId}&limit=5000`)
+      ]);
+      const summarize = (rows = [], key = "status") => (Array.isArray(rows) ? rows : []).reduce((acc, item) => {
+        const label = String(item?.[key] || "unknown").trim().toLowerCase() || "unknown";
+        acc[label] = Number(acc[label] || 0) + 1;
+        return acc;
+      }, {});
+      sendJson(res, 200, {
+        ok: true,
+        result: {
+          prospects: { total: Array.isArray(prospects) ? prospects.length : 0, byStatus: summarize(prospects, "status") },
+          campaigns: { total: Array.isArray(campaigns) ? campaigns.length : 0, byStatus: summarize(campaigns, "status") },
+          queue: { total: Array.isArray(queue) ? queue.length : 0, byStatus: summarize(queue, "status") },
+          events: { total: Array.isArray(events) ? events.length : 0, byType: summarize(events, "event_type") }
+        }
+      });
+    } catch (error) {
+      sendJson(res, 400, { ok: false, error: String(error?.message || error) });
+    }
+    return;
+  }
+
+  if (req.method === "GET" && requestUrl.pathname === "/company/marketing/prospects") {
+    try {
+      const actor = await requireSessionUser(getBearerToken(req));
+      const companyId = encodeURIComponent(String(actor.companyId || "").trim());
+      const limit = Math.max(1, Math.min(5000, Number(requestUrl.searchParams.get("limit") || 500)));
+      const q = String(requestUrl.searchParams.get("q") || "").trim().toLowerCase();
+      const rows = await supabaseTableFetch("marketing_prospects", `?select=*&company_id=eq.${companyId}&order=updated_at.desc&limit=${limit}`);
+      const items = (Array.isArray(rows) ? rows : []).filter((item) => {
+        if (!q) return true;
+        const hay = `${item?.name || ""} ${item?.email || ""} ${item?.company_name || ""} ${item?.designation || ""}`.toLowerCase();
+        return hay.includes(q);
+      });
+      sendJson(res, 200, { ok: true, result: { items } });
+    } catch (error) {
+      sendJson(res, 400, { ok: false, error: String(error?.message || error) });
+    }
+    return;
+  }
+
+  if (req.method === "POST" && requestUrl.pathname === "/company/marketing/prospects") {
+    try {
+      const actor = await requireSessionUser(getBearerToken(req));
+      const body = await readJsonBody(req);
+      const now = toIsoNow();
+      const item = {
+        id: crypto.randomUUID(),
+        company_id: actor.companyId,
+        name: String(body.name || "").trim(),
+        email: normalizeMarketingEmail(body.email),
+        phone: String(body.phone || "").trim(),
+        company_name: String(body.companyName || body.company_name || "").trim(),
+        designation: String(body.designation || "").trim(),
+        source: String(body.source || "manual").trim() || "manual",
+        status: "active",
+        tags: Array.isArray(body.tags) ? body.tags : [],
+        notes: String(body.notes || "").trim(),
+        created_by: actor.id,
+        created_at: now,
+        updated_at: now
+      };
+      if (!item.name || !item.email) throw new Error("Name and email are required.");
+      const saved = await supabaseTableFetch("marketing_prospects", "?select=*", { method: "POST", body: item, prefer: "return=representation" });
+      sendJson(res, 200, { ok: true, result: (Array.isArray(saved) ? saved[0] : saved) || item });
+    } catch (error) {
+      sendJson(res, 400, { ok: false, error: String(error?.message || error) });
+    }
+    return;
+  }
+
+  if (req.method === "POST" && requestUrl.pathname === "/company/marketing/prospects/import") {
+    try {
+      const actor = await requireSessionUser(getBearerToken(req));
+      const body = await readJsonBody(req);
+      const rows = parseMarketingCsv(String(body.csv || ""));
+      if (!rows.length) throw new Error("CSV content is empty.");
+      const now = toIsoNow();
+      const payload = rows
+        .map((row) => ({
+          id: crypto.randomUUID(),
+          company_id: actor.companyId,
+          name: String(row.name || row.full_name || "").trim(),
+          email: normalizeMarketingEmail(row.email || row.email_id || ""),
+          phone: String(row.phone || row.mobile || "").trim(),
+          company_name: String(row.company || row.company_name || "").trim(),
+          designation: String(row.designation || row.role || "").trim(),
+          source: "csv_import",
+          status: "active",
+          tags: [],
+          notes: "",
+          created_by: actor.id,
+          created_at: now,
+          updated_at: now
+        }))
+        .filter((item) => item.name && item.email);
+      if (!payload.length) throw new Error("No valid rows found (need name + email).");
+      const saved = await supabaseTableFetch("marketing_prospects", "?select=*", { method: "POST", body: payload, prefer: "return=representation" });
+      sendJson(res, 200, { ok: true, result: { inserted: Array.isArray(saved) ? saved.length : 0 } });
+    } catch (error) {
+      sendJson(res, 400, { ok: false, error: String(error?.message || error) });
+    }
+    return;
+  }
+
+  if (req.method === "GET" && requestUrl.pathname === "/company/marketing/campaigns") {
+    try {
+      const actor = await requireSessionUser(getBearerToken(req));
+      const companyId = encodeURIComponent(String(actor.companyId || "").trim());
+      const items = await supabaseTableFetch("marketing_campaigns", `?select=*&company_id=eq.${companyId}&order=updated_at.desc&limit=500`);
+      sendJson(res, 200, { ok: true, result: { items: Array.isArray(items) ? items : [] } });
+    } catch (error) {
+      sendJson(res, 400, { ok: false, error: String(error?.message || error) });
+    }
+    return;
+  }
+
+  if (req.method === "POST" && requestUrl.pathname === "/company/marketing/campaigns") {
+    try {
+      const actor = await requireSessionUser(getBearerToken(req));
+      const body = await readJsonBody(req);
+      const now = toIsoNow();
+      const item = {
+        id: crypto.randomUUID(),
+        company_id: actor.companyId,
+        name: String(body.name || "").trim(),
+        category: String(body.category || "").trim(),
+        status: "draft",
+        sender_user_id: actor.id,
+        send_gap_minutes: Math.max(1, Number(body.sendGapMinutes || 5)),
+        daily_cap: Math.max(10, Number(body.dailyCap || 50)),
+        created_at: now,
+        updated_at: now
+      };
+      if (!item.name) throw new Error("Campaign name is required.");
+      const saved = await supabaseTableFetch("marketing_campaigns", "?select=*", { method: "POST", body: item, prefer: "return=representation" });
+      sendJson(res, 200, { ok: true, result: (Array.isArray(saved) ? saved[0] : saved) || item });
+    } catch (error) {
+      sendJson(res, 400, { ok: false, error: String(error?.message || error) });
+    }
+    return;
+  }
+
+  if (req.method === "POST" && /^\/company\/marketing\/campaigns\/[^/]+\/prospects$/.test(requestUrl.pathname)) {
+    try {
+      const actor = await requireSessionUser(getBearerToken(req));
+      const campaignId = String(requestUrl.pathname.replace(/^\/company\/marketing\/campaigns\//, "").replace(/\/prospects$/, "")).trim();
+      const body = await readJsonBody(req);
+      const prospectIds = Array.isArray(body.prospectIds) ? body.prospectIds.map((id) => String(id || "").trim()).filter(Boolean) : [];
+      if (!prospectIds.length) throw new Error("prospectIds required.");
+      const now = toIsoNow();
+      const links = prospectIds.map((prospectId) => ({
+        id: crypto.randomUUID(),
+        company_id: actor.companyId,
+        campaign_id: campaignId,
+        prospect_id: prospectId,
+        state: "ready",
+        created_at: now,
+        updated_at: now
+      }));
+      const saved = await supabaseTableFetch("marketing_campaign_prospects", "?select=*", {
+        method: "POST",
+        body: links,
+        prefer: "resolution=merge-duplicates,return=representation"
+      });
+      sendJson(res, 200, { ok: true, result: { linked: Array.isArray(saved) ? saved.length : 0 } });
+    } catch (error) {
+      sendJson(res, 400, { ok: false, error: String(error?.message || error) });
+    }
+    return;
+  }
+
+  if (req.method === "GET" && /^\/company\/marketing\/campaigns\/[^/]+\/template$/.test(requestUrl.pathname)) {
+    try {
+      const actor = await requireSessionUser(getBearerToken(req));
+      const campaignId = encodeURIComponent(String(requestUrl.pathname.replace(/^\/company\/marketing\/campaigns\//, "").replace(/\/template$/, "")).trim());
+      const companyId = encodeURIComponent(String(actor.companyId || "").trim());
+      const rows = await supabaseTableFetch("marketing_templates", `?select=*&company_id=eq.${companyId}&campaign_id=eq.${campaignId}&limit=1`);
+      sendJson(res, 200, { ok: true, result: Array.isArray(rows) && rows.length ? rows[0] : null });
+    } catch (error) {
+      sendJson(res, 400, { ok: false, error: String(error?.message || error) });
+    }
+    return;
+  }
+
+  if (req.method === "POST" && /^\/company\/marketing\/campaigns\/[^/]+\/template$/.test(requestUrl.pathname)) {
+    try {
+      const actor = await requireSessionUser(getBearerToken(req));
+      const campaignId = String(requestUrl.pathname.replace(/^\/company\/marketing\/campaigns\//, "").replace(/\/template$/, "")).trim();
+      const body = await readJsonBody(req);
+      const now = toIsoNow();
+      const item = {
+        id: crypto.randomUUID(),
+        company_id: actor.companyId,
+        campaign_id: campaignId,
+        subject: String(body.subject || "").trim(),
+        body_text: String(body.bodyText || body.body_text || "").trim(),
+        updated_by: actor.id,
+        created_at: now,
+        updated_at: now
+      };
+      if (!item.subject || !item.body_text) throw new Error("Template subject and body are required.");
+      const saved = await supabaseTableFetch("marketing_templates", "?on_conflict=campaign_id&select=*", {
+        method: "POST",
+        body: item,
+        prefer: "resolution=merge-duplicates,return=representation"
+      });
+      sendJson(res, 200, { ok: true, result: (Array.isArray(saved) ? saved[0] : saved) || item });
+    } catch (error) {
+      sendJson(res, 400, { ok: false, error: String(error?.message || error) });
+    }
+    return;
+  }
+
+  if (req.method === "POST" && /^\/company\/marketing\/campaigns\/[^/]+\/(start|pause|resume)$/.test(requestUrl.pathname)) {
+    try {
+      const actor = await requireSessionUser(getBearerToken(req));
+      const action = String((requestUrl.pathname.match(/(start|pause|resume)$/) || [])[1] || "").trim();
+      const campaignId = String(requestUrl.pathname.replace(/^\/company\/marketing\/campaigns\//, "").replace(/\/(start|pause|resume)$/, "")).trim();
+      const status = action === "pause" ? "paused" : action === "resume" ? "active" : "active";
+      const updated = await supabaseTableFetch("marketing_campaigns", `?id=eq.${encodeURIComponent(campaignId)}&company_id=eq.${encodeURIComponent(actor.companyId)}&select=*`, {
+        method: "PATCH",
+        body: { status, updated_at: toIsoNow() },
+        prefer: "return=representation"
+      });
+      sendJson(res, 200, { ok: true, result: Array.isArray(updated) && updated.length ? updated[0] : null });
+    } catch (error) {
+      sendJson(res, 400, { ok: false, error: String(error?.message || error) });
+    }
+    return;
+  }
+
+  if (req.method === "POST" && requestUrl.pathname === "/company/marketing/worker/tick") {
+    try {
+      const actor = await requireSessionUser(getBearerToken(req));
+      const companyId = encodeURIComponent(String(actor.companyId || "").trim());
+      const now = new Date();
+      const campaigns = await supabaseTableFetch("marketing_campaigns", `?select=*&company_id=eq.${companyId}&status=eq.active&limit=50`);
+      let sent = 0;
+      for (const campaign of Array.isArray(campaigns) ? campaigns : []) {
+        const campaignId = String(campaign?.id || "").trim();
+        if (!campaignId) continue;
+        const templateRows = await supabaseTableFetch("marketing_templates", `?select=*&campaign_id=eq.${encodeURIComponent(campaignId)}&company_id=eq.${companyId}&limit=1`);
+        const template = Array.isArray(templateRows) && templateRows.length ? templateRows[0] : null;
+        if (!template?.subject || !template?.body_text) continue;
+        const queueRows = await supabaseTableFetch(
+          "marketing_campaign_prospects",
+          `?select=id,prospect_id,state,updated_at,marketing_prospects!inner(id,name,email,phone,company_name,designation,status)&company_id=eq.${companyId}&campaign_id=eq.${encodeURIComponent(campaignId)}&state=eq.ready&order=updated_at.asc&limit=1`
+        );
+        const row = Array.isArray(queueRows) && queueRows.length ? queueRows[0] : null;
+        const prospect = row?.marketing_prospects || null;
+        if (!row || !prospect || String(prospect?.status || "").toLowerCase() !== "active") continue;
+        const rawGap = Math.max(1, Number(campaign?.send_gap_minutes || 5));
+        const lastAt = row?.updated_at ? new Date(row.updated_at) : null;
+        if (lastAt && (now.getTime() - lastAt.getTime()) < (rawGap * 60 * 1000)) continue;
+        const to = normalizeMarketingEmail(prospect?.email);
+        if (!to) continue;
+        const subject = renderMarketingTemplate(template.subject, prospect);
+        const text = renderMarketingTemplate(template.body_text, prospect);
+        const html = `<pre style="font-family:Arial,sans-serif;white-space:pre-wrap;">${escapeHtml(text)}</pre>`;
+        await sendJdEmailAsActor(actor, { to, subject, text, html, cc: "", attachments: [] });
+        await supabaseTableFetch("marketing_campaign_prospects", `?id=eq.${encodeURIComponent(String(row.id || ""))}&select=*`, {
+          method: "PATCH",
+          body: { state: "sent", updated_at: toIsoNow(), last_sent_at: toIsoNow() },
+          prefer: "return=minimal"
+        });
+        await supabaseTableFetch("marketing_message_events", "?select=id", {
+          method: "POST",
+          body: {
+            id: crypto.randomUUID(),
+            company_id: actor.companyId,
+            campaign_id: campaignId,
+            prospect_id: prospect.id,
+            event_type: "sent",
+            event_at: toIsoNow(),
+            meta: { subject }
+          },
+          prefer: "return=minimal"
+        });
+        sent += 1;
+      }
+      sendJson(res, 200, { ok: true, result: { sent } });
+    } catch (error) {
+      sendJson(res, 400, { ok: false, error: String(error?.message || error) });
     }
     return;
   }
