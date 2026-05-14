@@ -4561,7 +4561,7 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
   const [campaignProspects, setCampaignProspects] = useState([]);
   const [selectedCampaignId, setSelectedCampaignId] = useState("");
   const [templateDraft, setTemplateDraft] = useState({ subject: "", bodyText: "Hi {{name}},\n\n\nRegards,\nTeam", targetCategoriesText: "" });
-  const [prospectDraft, setProspectDraft] = useState({ name: "", email: "", phone: "", companyName: "", designation: "", category: "", categoriesText: "" });
+  const [prospectDraft, setProspectDraft] = useState({ name: "", email: "", phone: "", companyName: "", designation: "", categoriesText: "" });
   const [campaignDraft, setCampaignDraft] = useState({ name: "", category: "", sendGapMinutes: 5, dailyCap: 50 });
   const [csvText, setCsvText] = useState("");
   const [csvFileName, setCsvFileName] = useState("");
@@ -4628,8 +4628,12 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
     })
   )).sort((a, b) => a.localeCompare(b));
   const filteredProspects = prospects.filter((item) => {
-    if (prospectCategoryFilter && String(item?.category || "").trim().toLowerCase() !== String(prospectCategoryFilter || "").trim().toLowerCase()) {
-      return false;
+    if (prospectCategoryFilter) {
+      const primary = String(item?.category || "").trim().toLowerCase();
+      const multi = Array.isArray(item?.categories) ? item.categories.map((c) => String(c || "").trim().toLowerCase()) : [];
+      if (primary !== String(prospectCategoryFilter || "").trim().toLowerCase() && !multi.includes(String(prospectCategoryFilter || "").trim().toLowerCase())) {
+        return false;
+      }
     }
     if (!prospectSearch) return true;
     const hay = `${item?.name || ""} ${item?.email || ""} ${item?.phone || ""} ${item?.company_name || ""} ${item?.designation || ""} ${item?.category || ""}`.toLowerCase();
@@ -4722,7 +4726,6 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
           <label><span>Phone</span><input value={prospectDraft.phone} onChange={(e) => setProspectDraft((c) => ({ ...c, phone: e.target.value }))} /></label>
           <label><span>Company</span><input value={prospectDraft.companyName} onChange={(e) => setProspectDraft((c) => ({ ...c, companyName: e.target.value }))} /></label>
           <label><span>Designation</span><input value={prospectDraft.designation} onChange={(e) => setProspectDraft((c) => ({ ...c, designation: e.target.value }))} /></label>
-          <label><span>Category</span><input value={prospectDraft.category} onChange={(e) => setProspectDraft((c) => ({ ...c, category: e.target.value }))} placeholder="e.g. CTO, HR, Agency, Startup" /></label>
           <label className="full"><span>Categories (comma separated)</span><input value={prospectDraft.categoriesText} onChange={(e) => setProspectDraft((c) => ({ ...c, categoriesText: e.target.value }))} placeholder="Sales HR, Finance HR, Fintech HR" /></label>
         </div>
         <div className="button-row">
@@ -4731,9 +4734,10 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
             try {
               await api("/company/marketing/prospects", token, "POST", {
                 ...prospectDraft,
-                categories: String(prospectDraft.categoriesText || "").split(",").map((item) => item.trim()).filter(Boolean)
+                categories: String(prospectDraft.categoriesText || "").split(",").map((item) => item.trim()).filter(Boolean),
+                category: String(prospectDraft.categoriesText || "").split(",").map((item) => item.trim()).filter(Boolean)[0] || ""
               });
-              setProspectDraft({ name: "", email: "", phone: "", companyName: "", designation: "", category: "", categoriesText: "" });
+              setProspectDraft({ name: "", email: "", phone: "", companyName: "", designation: "", categoriesText: "" });
               await refresh();
               setOk("Prospect added.");
             } catch (error) {
@@ -4828,7 +4832,7 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
                     <td>{item?.email || "-"}</td>
                     <td>{item?.company_name || "-"}</td>
                     <td>{item?.designation || "-"}</td>
-                    <td>{item?.category || "-"}</td>
+                    <td>{Array.isArray(item?.categories) && item.categories.length ? item.categories.join(", ") : (item?.category || "-")}</td>
                     <td>{item?.status || "-"}</td>
                   </tr>
                 );

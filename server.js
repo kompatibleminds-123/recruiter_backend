@@ -8960,7 +8960,7 @@ const server = http.createServer(async (req, res) => {
         created_at: now,
         updated_at: now
       }));
-      const saved = await supabaseTableFetch("marketing_campaign_prospects", "?select=*", {
+      const saved = await supabaseTableFetch("marketing_campaign_prospects", "?on_conflict=campaign_id,prospect_id&select=*", {
         method: "POST",
         body: links,
         prefer: "resolution=merge-duplicates,return=representation"
@@ -8979,15 +8979,30 @@ const server = http.createServer(async (req, res) => {
       const companyId = encodeURIComponent(String(actor.companyId || "").trim());
       const rows = await supabaseTableFetch(
         "marketing_campaign_prospects",
-        `?select=id,state,last_sent_at,updated_at,prospect_id,marketing_prospects!inner(id,name,email,phone,company_name,designation,category,status)&company_id=eq.${companyId}&campaign_id=eq.${campaignId}&order=updated_at.desc&limit=5000`
+        `?select=id,state,last_sent_at,updated_at,prospect_id&company_id=eq.${companyId}&campaign_id=eq.${campaignId}&order=updated_at.desc&limit=5000`
       );
-      const items = (Array.isArray(rows) ? rows : []).map((row) => ({
+      const queueRows = Array.isArray(rows) ? rows : [];
+      const prospectIds = Array.from(new Set(queueRows.map((row) => String(row?.prospect_id || "").trim()).filter(Boolean)));
+      const prospectMap = new Map();
+      if (prospectIds.length) {
+        const inClause = prospectIds.map((id) => `"${id.replace(/"/g, "")}"`).join(",");
+        const prospects = await supabaseTableFetch(
+          "marketing_prospects",
+          `?select=id,name,email,phone,company_name,designation,category,categories,status&company_id=eq.${companyId}&id=in.(${inClause})&limit=5000`
+        );
+        (Array.isArray(prospects) ? prospects : []).forEach((item) => {
+          const id = String(item?.id || "").trim();
+          if (!id) return;
+          prospectMap.set(id, item);
+        });
+      }
+      const items = queueRows.map((row) => ({
         id: row?.id,
         state: String(row?.state || "").trim(),
         lastSentAt: String(row?.last_sent_at || "").trim(),
         updatedAt: String(row?.updated_at || "").trim(),
         prospectId: String(row?.prospect_id || "").trim(),
-        prospect: row?.marketing_prospects && typeof row.marketing_prospects === "object" ? row.marketing_prospects : null
+        prospect: prospectMap.get(String(row?.prospect_id || "").trim()) || null
       }));
       sendJson(res, 200, { ok: true, result: { items } });
     } catch (error) {
