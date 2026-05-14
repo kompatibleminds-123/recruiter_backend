@@ -4570,7 +4570,7 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
   const [selectedProspectIds, setSelectedProspectIds] = useState([]);
   const [status, setStatus] = useState({ message: "", kind: "" });
   const csvFileInputRef = useRef(null);
-  const suggestedProspectCategories = [
+  const defaultSuggestedProspectCategories = [
     "Sales HR",
     "Finance HR",
     "Fintech HR",
@@ -4578,6 +4578,14 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
     "Real Estate HR",
     "Semiconductor HR"
   ];
+  const suggestedProspectCategories = Array.from(new Set([
+    ...defaultSuggestedProspectCategories,
+    ...prospects.flatMap((item) => (
+      Array.isArray(item?.categories) && item.categories.length
+        ? item.categories.map((c) => String(c || "").trim()).filter(Boolean)
+        : [String(item?.category || "").trim()].filter(Boolean)
+    ))
+  ]));
 
   useEffect(() => {
     if (!initialTab) return;
@@ -4692,12 +4700,41 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
     if (!picked) return;
     const lowerName = String(picked.name || "").trim().toLowerCase();
     if (lowerName.endsWith(".xlsx") || lowerName.endsWith(".xls")) {
-      throw new Error("Excel upload coming next. Please export/save as CSV and upload that file.");
+      const buffer = await picked.arrayBuffer();
+      const bytes = new Uint8Array(buffer);
+      let binary = "";
+      const chunkSize = 0x8000;
+      for (let i = 0; i < bytes.length; i += chunkSize) {
+        binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
+      }
+      const fileData = btoa(binary);
+      await api("/company/marketing/prospects/import", token, "POST", {
+        filename: picked.name || "",
+        fileData
+      });
+      return;
     }
     const text = await picked.text();
     const trimmed = String(text || "").trim();
     if (!trimmed) throw new Error("Selected CSV file is empty.");
     await api("/company/marketing/prospects/import", token, "POST", { csv: trimmed });
+  }
+
+  function downloadProspectCsvSample() {
+    const sample = [
+      "name,email,phone,company,designation,category,categories",
+      "\"Ravi Kumar\",ravi@abc.com,9876543210,\"ABC Pvt Ltd\",\"HR Manager\",\"Finance HR\",\"Finance HR, Fintech HR\"",
+      "\"Neha Singh\",neha@xyz.com,9898989898,\"XYZ Logistics\",\"Talent Partner\",\"Logistics HR\",\"Logistics HR, Real Estate HR\""
+    ].join("\n");
+    const blob = new Blob([sample], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = "marketing_prospects_sample.csv";
+    document.body.appendChild(anchor);
+    anchor.click();
+    document.body.removeChild(anchor);
+    URL.revokeObjectURL(url);
   }
 
   async function queueFollowups() {
@@ -4791,6 +4828,7 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
         <label><span>CSV import (name,email,phone,company,designation)</span><textarea rows={4} value={csvText} onChange={(e) => setCsvText(e.target.value)} /></label>
         <div className="button-row tight">
           <button className="ghost-btn" type="button" onClick={() => csvFileInputRef.current?.click()} disabled={saving}>Upload CSV/Excel</button>
+          <button className="ghost-btn" type="button" onClick={downloadProspectCsvSample}>Download CSV sample</button>
           <input
             ref={csvFileInputRef}
             type="file"

@@ -139,6 +139,12 @@ try {
 } catch (_) {
   docxLib = null;
 }
+let xlsxLib = null;
+try {
+  xlsxLib = require("xlsx");
+} catch (_) {
+  xlsxLib = null;
+}
 
 const PORT = Number(process.env.PORT || 8787);
 const WHATSAPP_VERIFY_TOKEN = String(process.env.WHATSAPP_VERIFY_TOKEN || "").trim();
@@ -2165,11 +2171,11 @@ function normalizeMarketingEmail(value = "") {
 
 function normalizeMarketingCategories(value) {
   if (Array.isArray(value)) {
-    return Array.from(new Set(value.map((item) => String(item || "").trim()).filter(Boolean)));
+    return Array.from(new Set(value.map((item) => String(item || "").trim().replace(/^"+|"+$/g, "")).filter(Boolean)));
   }
   const raw = String(value || "").trim();
   if (!raw) return [];
-  return Array.from(new Set(raw.split(",").map((item) => String(item || "").trim()).filter(Boolean)));
+  return Array.from(new Set(raw.split(",").map((item) => String(item || "").trim().replace(/^"+|"+$/g, "")).filter(Boolean)));
 }
 
 function isMarketingOwnerEmail(value = "") {
@@ -2182,14 +2188,62 @@ function parseMarketingCsv(content = "") {
   if (!raw) return [];
   const lines = raw.split(/\r?\n/).filter((line) => String(line || "").trim());
   if (!lines.length) return [];
-  const headers = lines[0].split(",").map((part) => String(part || "").trim().toLowerCase());
+  function parseCsvRow(line = "") {
+    const out = [];
+    let current = "";
+    let inQuotes = false;
+    for (let i = 0; i < line.length; i += 1) {
+      const ch = line[i];
+      if (ch === '"') {
+        const next = line[i + 1];
+        if (inQuotes && next === '"') {
+          current += '"';
+          i += 1;
+        } else {
+          inQuotes = !inQuotes;
+        }
+        continue;
+      }
+      if (ch === "," && !inQuotes) {
+        out.push(current);
+        current = "";
+        continue;
+      }
+      current += ch;
+    }
+    out.push(current);
+    return out.map((cell) => String(cell || "").trim());
+  }
+  const headers = parseCsvRow(lines[0]).map((part) => String(part || "").trim().toLowerCase());
   return lines.slice(1).map((line) => {
-    const cells = line.split(",").map((part) => String(part || "").trim());
+    const cells = parseCsvRow(line);
     const row = {};
     headers.forEach((key, idx) => {
       row[key] = String(cells[idx] || "").trim();
     });
     return row;
+  });
+}
+
+function parseMarketingSpreadsheetBase64(fileData = "", filename = "") {
+  if (!xlsxLib) {
+    throw new Error("Excel parser is not installed on server. Please install dependency `xlsx`.");
+  }
+  const safeData = String(fileData || "").trim();
+  if (!safeData) return [];
+  const ext = String(filename || "").trim().toLowerCase();
+  const type = ext.endsWith(".xls") || ext.endsWith(".xlsx") ? "buffer" : "buffer";
+  const workbook = xlsxLib.read(Buffer.from(safeData, "base64"), { type });
+  const firstSheetName = Array.isArray(workbook?.SheetNames) && workbook.SheetNames.length ? workbook.SheetNames[0] : null;
+  if (!firstSheetName) return [];
+  const sheet = workbook.Sheets[firstSheetName];
+  const rows = xlsxLib.utils.sheet_to_json(sheet, { defval: "" });
+  return (Array.isArray(rows) ? rows : []).map((row) => {
+    const out = {};
+    Object.keys(row || {}).forEach((key) => {
+      out[String(key || "").trim().toLowerCase()] = String(row[key] == null ? "" : row[key]).trim();
+    });
+    return out;
   });
 }
 
@@ -8975,7 +9029,11 @@ const server = http.createServer(async (req, res) => {
     try {
       const actor = await requireSessionUser(getBearerToken(req));
       const body = await readJsonBody(req);
-      const rows = parseMarketingCsv(String(body.csv || ""));
+      const filename = String(body.filename || "").trim().toLowerCase();
+      const fileData = String(body.fileData || "").trim();
+      const rows = fileData
+        ? parseMarketingSpreadsheetBase64(fileData, filename)
+        : parseMarketingCsv(String(body.csv || ""));
       if (!rows.length) throw new Error("CSV content is empty.");
       const now = toIsoNow();
       const payload = rows
