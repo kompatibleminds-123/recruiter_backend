@@ -8030,6 +8030,17 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (req.method === "GET" && (
+    requestUrl.pathname === "/marketing" ||
+    requestUrl.pathname === "/marketing/" ||
+    requestUrl.pathname === "/marketing-module" ||
+    requestUrl.pathname === "/marketing-module/" ||
+    requestUrl.pathname.startsWith("/marketing/")
+  )) {
+    serveStaticFile(res, path.join(ROOT_PUBLIC_DIR, "portal-app", "index.html"));
+    return;
+  }
+
   if (req.method === "GET" && (requestUrl.pathname === "/apply" || requestUrl.pathname === "/apply/")) {
     serveStaticFile(res, path.join(ROOT_PUBLIC_DIR, "apply.html"));
     return;
