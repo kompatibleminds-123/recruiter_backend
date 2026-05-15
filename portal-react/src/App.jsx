@@ -4604,25 +4604,52 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
     setActiveTab(initialTab);
   }, [initialTab]);
 
+  const loadOverview = useCallback(async () => {
+    const result = await api("/company/marketing/overview", token);
+    setOverview(result || null);
+  }, [token]);
+
+  const loadProspects = useCallback(async () => {
+    const result = await api("/company/marketing/prospects?limit=500", token);
+    setProspects(Array.isArray(result?.items) ? result.items : []);
+  }, [token]);
+
+  const loadCampaigns = useCallback(async () => {
+    const result = await api("/company/marketing/campaigns", token);
+    const rows = Array.isArray(result?.items) ? result.items : [];
+    setCampaigns(rows);
+    setSelectedCampaignId((current) => current || String(rows?.[0]?.id || ""));
+    return rows;
+  }, [token]);
+
+  const loadTemplates = useCallback(async () => {
+    const result = await api("/company/marketing/templates", token);
+    setTemplates(Array.isArray(result?.items) ? result.items : []);
+  }, [token]);
+
   const refresh = useCallback(async () => {
     setLoading(true);
     try {
-      const [overviewResult, prospectsResult, campaignsResult, templatesResult] = await Promise.all([
-        api("/company/marketing/overview", token),
-        api("/company/marketing/prospects?limit=500", token),
-        api("/company/marketing/campaigns", token),
-        api("/company/marketing/templates", token)
-      ]);
-      setOverview(overviewResult || null);
-      setProspects(Array.isArray(prospectsResult?.items) ? prospectsResult.items : []);
-      const rows = Array.isArray(campaignsResult?.items) ? campaignsResult.items : [];
-      setCampaigns(rows);
-      setTemplates(Array.isArray(templatesResult?.items) ? templatesResult.items : []);
-      setSelectedCampaignId((current) => current || String(rows?.[0]?.id || ""));
+      await loadOverview();
+      if (activeTab === "prospects") {
+        await loadProspects();
+        return;
+      }
+      if (activeTab === "templates") {
+        await Promise.all([loadCampaigns(), loadTemplates()]);
+        return;
+      }
+      if (activeTab === "campaigns") {
+        await loadCampaigns();
+        return;
+      }
+      if (activeTab === "queue") {
+        await loadCampaigns();
+      }
     } finally {
       setLoading(false);
     }
-  }, [token]);
+  }, [activeTab, loadCampaigns, loadOverview, loadProspects, loadTemplates]);
 
   useEffect(() => {
     void refresh();
@@ -4630,22 +4657,26 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
 
   useEffect(() => {
     if (!selectedCampaignId) return;
-    void api(`/company/marketing/campaigns/${encodeURIComponent(selectedCampaignId)}/prospects`, token)
-      .then((result) => {
-        setCampaignProspects(Array.isArray(result?.items) ? result.items : []);
-      })
-      .catch(() => setCampaignProspects([]));
-    void api(`/company/marketing/campaigns/${encodeURIComponent(selectedCampaignId)}/template`, token)
-      .then((row) => {
-        if (!row) return;
-        setTemplateDraft({
-          subject: String(row.subject || ""),
-          bodyText: String(row.body_text || ""),
-          targetCategoriesText: Array.isArray(row.target_categories) ? row.target_categories.join(", ") : String(row.target_categories || "")
-        });
-      })
-      .catch(() => {});
-  }, [selectedCampaignId, token]);
+    if (activeTab === "queue") {
+      void api(`/company/marketing/campaigns/${encodeURIComponent(selectedCampaignId)}/prospects`, token)
+        .then((result) => {
+          setCampaignProspects(Array.isArray(result?.items) ? result.items : []);
+        })
+        .catch(() => setCampaignProspects([]));
+    }
+    if (activeTab === "templates") {
+      void api(`/company/marketing/campaigns/${encodeURIComponent(selectedCampaignId)}/template`, token)
+        .then((row) => {
+          if (!row) return;
+          setTemplateDraft({
+            subject: String(row.subject || ""),
+            bodyText: String(row.body_text || ""),
+            targetCategoriesText: Array.isArray(row.target_categories) ? row.target_categories.join(", ") : String(row.target_categories || "")
+          });
+        })
+        .catch(() => {});
+    }
+  }, [activeTab, selectedCampaignId, token]);
 
   const activeCampaign = campaigns.find((item) => String(item.id) === String(selectedCampaignId)) || null;
   const categories = Array.from(new Set(
