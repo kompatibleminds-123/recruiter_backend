@@ -9124,41 +9124,45 @@ function PortalApp({ token, onLogout }) {
       loadCandidateIntoInterview(String(linkedCandidate.id || ""));
       return;
     }
+    const applicantDraft = getCandidateDraftState(applicant || {});
     setInterviewMeta({
       candidateId: String(applicant.id || ""),
       assessmentId: ""
     });
     setInterviewForm({
-      candidateName: applicant.candidateName || "",
-      phoneNumber: applicant.phone || "",
-      emailId: applicant.email || "",
-      linkedin: applicant.linkedin || "",
-      location: applicant.location || "",
-      gender: applicant.gender || "",
-      currentCtc: applicant.currentCtc || "",
-      expectedCtc: applicant.expectedCtc || "",
-      noticePeriod: applicant.noticePeriod || "",
-      offerInHand: applicant.offerInHand || "",
-      lwdOrDoj: applicant.lwdOrDoj || "",
-      currentCompany: applicant.currentCompany || "",
-      currentDesignation: applicant.currentDesignation || "",
-      totalExperience: applicant.totalExperience || "",
-      currentOrgTenure: "",
+      candidateName: applicantDraft.candidateName || applicant.candidateName || "",
+      phoneNumber: applicantDraft.phoneNumber || applicant.phone || "",
+      emailId: applicantDraft.emailId || applicant.email || "",
+      linkedin: applicantDraft.linkedin || applicant.linkedin || "",
+      location: applicantDraft.location || applicant.location || "",
+      gender: applicantDraft.gender || applicant.gender || "",
+      currentCtc: applicantDraft.currentCtc || applicant.currentCtc || "",
+      expectedCtc: applicantDraft.expectedCtc || applicant.expectedCtc || "",
+      noticePeriod: applicantDraft.noticePeriod || applicant.noticePeriod || "",
+      offerInHand: applicantDraft.offerInHand || applicant.offerInHand || "",
+      lwdOrDoj: applicantDraft.lwdOrDoj || applicant.lwdOrDoj || "",
+      currentCompany: applicantDraft.currentCompany || applicant.currentCompany || "",
+      currentDesignation: applicantDraft.currentDesignation || applicant.currentDesignation || "",
+      totalExperience: applicantDraft.totalExperience || applicant.totalExperience || "",
+      relevantExperience: applicantDraft.relevantExperience || applicant.relevantExperience || "",
+      highestEducation: applicantDraft.highestEducation || applicant.highestEducation || "",
+      currentOrgTenure: applicantDraft.currentOrgTenure || applicant.current_org_tenure || applicant.currentOrgTenure || "",
       experienceTimeline: "",
-      reasonForChange: applicant.reasonForChange || "",
-      cautiousIndicators: "",
-      clientName: applicant.clientName || "",
-      jdTitle: applicant.jdTitle || "",
+      reasonForChange: applicantDraft.reasonForChange || applicant.reasonForChange || "",
+      cautiousIndicators: applicantDraft.cautiousIndicators || "",
+      clientName: applicantDraft.clientName || applicant.clientName || "",
+      jdTitle: applicantDraft.jdTitle || applicant.jdTitle || "",
       pipelineStage: "Submitted",
       candidateStatus: applicant.parseStatus || "Applied",
-      followUpAt: "",
+      followUpAt: toDateInputValue(applicantDraft.followUpAt || ""),
       interviewAt: "",
       recruiterNotes: "",
-      callbackNotes: applicant.screeningAnswers || "",
+      callbackNotes: applicantDraft.callbackNotes || applicant.screeningAnswers || "",
       otherPointers: "",
-      jdScreeningAnswers: {},
-      cvAnalysis: null,
-      cvAnalysisApplied: false
+      tags: applicantDraft.tags || "",
+      jdScreeningAnswers: applicantDraft.jdScreeningAnswers || {},
+      cvAnalysis: applicantDraft.cvAnalysis || null,
+      cvAnalysisApplied: Boolean(applicantDraft.cvAnalysisApplied)
     });
     navigate("/interview");
     setStatus("interview", `Loaded ${applicant.candidateName || "applicant"} into Interview Panel.`, "ok");

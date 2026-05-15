@@ -2114,6 +2114,14 @@ function verifyRecruiterApplyLinkSignature({ companyId, jobId, recruiterId, secr
 
 function sanitizeApplicantCandidate(candidate = {}) {
   const meta = decodeApplicantMetadata(candidate);
+  const draftPayload = normalizeJsonObjectInput(candidate?.draft_payload || candidate?.draftPayload);
+  const normalizedCurrentOrgTenure = String(
+    draftPayload?.currentOrgTenure
+    || draftPayload?.current_org_tenure
+    || candidate?.current_org_tenure
+    || candidate?.currentOrgTenure
+    || ""
+  ).trim();
   return {
     id: String(candidate?.id || "").trim(),
     candidateName: String(candidate?.name || "").trim(),
@@ -2137,6 +2145,9 @@ function sanitizeApplicantCandidate(candidate = {}) {
     sourceLabel: String(meta.sourceLabel || "").trim(),
     jobPageUrl: String(meta.jobPageUrl || "").trim(),
     screeningAnswers: String(meta.screeningAnswers || "").trim(),
+    currentOrgTenure: normalizedCurrentOrgTenure,
+    current_org_tenure: normalizedCurrentOrgTenure,
+    draft_payload: draftPayload,
     createdAt: String(candidate?.created_at || "").trim(),
     updatedAt: String(candidate?.updated_at || "").trim(),
     usedInAssessment: Boolean(candidate?.used_in_assessment),
