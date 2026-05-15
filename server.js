@@ -12620,7 +12620,7 @@ const server = http.createServer(async (req, res) => {
   if (req.method === "GET" && requestUrl.pathname === "/candidates") {
     try {
       const sessionUser = await requireSessionUser(getBearerToken(req));
-      const limit = Math.max(1, Math.min(500, Number(requestUrl.searchParams.get("limit") || 100)));
+      const limit = Math.max(1, Math.min(5000, Number(requestUrl.searchParams.get("limit") || 100)));
       const page = Math.max(1, Number(requestUrl.searchParams.get("page") || 1));
       const includeMeta = String(requestUrl.searchParams.get("includeMeta") || "").trim() === "1";
       const listOptions = {
