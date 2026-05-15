@@ -12671,6 +12671,17 @@ const server = http.createServer(async (req, res) => {
       const draftPayload = Object.prototype.hasOwnProperty.call(input, "draft_payload") || Object.prototype.hasOwnProperty.call(input, "draftPayload")
         ? normalizeJsonObjectInput(input.draft_payload || input.draftPayload)
         : undefined;
+      if (draftPayload && typeof draftPayload === "object") {
+        const tenureValue = String(
+          draftPayload.currentOrgTenure
+          || draftPayload.current_org_tenure
+          || ""
+        ).trim();
+        if (tenureValue) {
+          draftPayload.currentOrgTenure = tenureValue;
+          draftPayload.current_org_tenure = tenureValue;
+        }
+      }
       const patch = {
         name: String(input.name || input.candidateName || "").trim() || undefined,
         notes: String(input.notes || "").trim() || undefined,
