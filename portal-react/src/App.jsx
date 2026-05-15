@@ -4580,6 +4580,8 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
   const [campaigns, setCampaigns] = useState([]);
   const [templates, setTemplates] = useState([]);
   const [campaignProspects, setCampaignProspects] = useState([]);
+  const [marketingDateFrom, setMarketingDateFrom] = useState("");
+  const [marketingDateTo, setMarketingDateTo] = useState("");
   const [prospectsPage, setProspectsPage] = useState(1);
   const [prospectsHasMore, setProspectsHasMore] = useState(false);
   const [queuePage, setQueuePage] = useState(1);
@@ -4588,6 +4590,8 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
   const [templateDraft, setTemplateDraft] = useState({ subject: "", bodyText: "Hi {{name}},\n\n\nRegards,\nTeam", targetCategoriesText: "" });
   const [prospectDraft, setProspectDraft] = useState({ name: "", email: "", phone: "", companyName: "", designation: "", categoriesText: "" });
   const [campaignDraft, setCampaignDraft] = useState({ name: "", category: "", sendGapMinutes: 5, dailyCap: 50 });
+  const [editingProspectId, setEditingProspectId] = useState("");
+  const [editingCampaignId, setEditingCampaignId] = useState("");
   const [csvText, setCsvText] = useState("");
   const [csvFileName, setCsvFileName] = useState("");
   const [prospectSearch, setProspectSearch] = useState("");
@@ -4620,9 +4624,12 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
   }, [initialTab]);
 
   const loadOverview = useCallback(async () => {
-    const result = await api("/company/marketing/overview", token);
+    const params = new URLSearchParams();
+    if (marketingDateFrom) params.set("dateFrom", marketingDateFrom);
+    if (marketingDateTo) params.set("dateTo", marketingDateTo);
+    const result = await api(`/company/marketing/overview${params.toString() ? `?${params.toString()}` : ""}`, token);
     setOverview(result || null);
-  }, [token]);
+  }, [marketingDateFrom, marketingDateTo, token]);
 
   const loadProspects = useCallback(async () => {
     const result = await api(`/company/marketing/prospects?limit=100&page=${prospectsPage}`, token);
@@ -4632,12 +4639,15 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
   }, [prospectsPage, token]);
 
   const loadCampaigns = useCallback(async () => {
-    const result = await api("/company/marketing/campaigns", token);
+    const params = new URLSearchParams();
+    if (marketingDateFrom) params.set("dateFrom", marketingDateFrom);
+    if (marketingDateTo) params.set("dateTo", marketingDateTo);
+    const result = await api(`/company/marketing/campaigns${params.toString() ? `?${params.toString()}` : ""}`, token);
     const rows = Array.isArray(result?.items) ? result.items : [];
     setCampaigns(rows);
     setSelectedCampaignId((current) => current || String(rows?.[0]?.id || ""));
     return rows;
-  }, [token]);
+  }, [marketingDateFrom, marketingDateTo, token]);
 
   const loadTemplates = useCallback(async () => {
     const result = await api("/company/marketing/templates", token);
@@ -4840,6 +4850,43 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
     });
   }
 
+  function startProspectEdit(item) {
+    if (!item) return;
+    setEditingProspectId(String(item.id || ""));
+    setProspectDraft({
+      name: String(item.name || ""),
+      email: String(item.email || ""),
+      phone: String(item.phone || ""),
+      companyName: String(item.company_name || ""),
+      designation: String(item.designation || ""),
+      categoriesText: Array.isArray(item.categories) && item.categories.length
+        ? item.categories.join(", ")
+        : String(item.category || "")
+    });
+  }
+
+  function cancelProspectEdit() {
+    setEditingProspectId("");
+    setProspectDraft({ name: "", email: "", phone: "", companyName: "", designation: "", categoriesText: "" });
+  }
+
+  function startCampaignEdit(item) {
+    if (!item) return;
+    setEditingCampaignId(String(item.id || ""));
+    setCampaignDraft({
+      name: String(item.name || ""),
+      category: String(item.category || ""),
+      sendGapMinutes: Number(item.send_gap_minutes || 5),
+      dailyCap: Number(item.daily_cap || 50)
+    });
+    setSelectedCampaignId(String(item.id || ""));
+  }
+
+  function cancelCampaignEdit() {
+    setEditingCampaignId("");
+    setCampaignDraft({ name: "", category: "", sendGapMinutes: 5, dailyCap: 50 });
+  }
+
   return (
     <div className="page-grid">
       <Section kicker="Marketing" title="Campaign Control">
@@ -4848,6 +4895,16 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
           <button className="ghost-btn" onClick={() => void refresh().catch(setErr)} disabled={loading}>Refresh</button>
           <button onClick={() => void api("/company/marketing/worker/tick", token, "POST", {}).then(() => { setOk("Send tick executed."); return refresh(); }).catch(setErr)} disabled={loading}>Run send tick</button>
           <button className="ghost-btn" disabled={!selectedCampaignId} onClick={() => void queueFollowups().then(() => { setOk("1-week follow-up queue prepared."); return refresh(); }).catch(setErr)}>Queue 7-day follow-ups</button>
+        </div>
+        <div className="form-grid two-col" style={{ marginTop: 10 }}>
+          <label>
+            <span>Date from</span>
+            <input type="date" value={marketingDateFrom} onChange={(e) => setMarketingDateFrom(e.target.value)} />
+          </label>
+          <label>
+            <span>Date to</span>
+            <input type="date" value={marketingDateTo} onChange={(e) => setMarketingDateTo(e.target.value)} />
+          </label>
         </div>
         {status.message ? <div className={`status ${status.kind}`}>{status.message}</div> : null}
         {loading ? <div className="empty-state">Loading marketing module...</div> : null}
@@ -4905,21 +4962,27 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
           <button disabled={saving} onClick={() => void (async () => {
             setSaving(true);
             try {
-              await api("/company/marketing/prospects", token, "POST", {
+              const payload = {
                 ...prospectDraft,
                 categories: String(prospectDraft.categoriesText || "").split(",").map((item) => item.trim()).filter(Boolean),
                 category: String(prospectDraft.categoriesText || "").split(",").map((item) => item.trim()).filter(Boolean)[0] || ""
-              });
-              setProspectDraft({ name: "", email: "", phone: "", companyName: "", designation: "", categoriesText: "" });
+              };
+              if (editingProspectId) {
+                await api(`/company/marketing/prospects/${encodeURIComponent(editingProspectId)}`, token, "PATCH", payload);
+              } else {
+                await api("/company/marketing/prospects", token, "POST", payload);
+              }
+              cancelProspectEdit();
               setProspectsPage(1);
               await refresh();
-              setOk("Prospect added.");
+              setOk(editingProspectId ? "Prospect updated." : "Prospect added.");
             } catch (error) {
               setErr(error);
             } finally {
               setSaving(false);
             }
-          })()}>Add prospect</button>
+          })()}>{editingProspectId ? "Update prospect" : "Add prospect"}</button>
+          {editingProspectId ? <button className="ghost-btn" type="button" onClick={cancelProspectEdit}>Cancel edit</button> : null}
         </div>
         <label><span>CSV import (name,email,phone,company,designation)</span><textarea rows={4} value={csvText} onChange={(e) => setCsvText(e.target.value)} /></label>
         <div className="button-row tight">
@@ -4940,7 +5003,7 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
                   await handleCsvFileImport(file);
                   setProspectsPage(1);
                   await refresh();
-                  setOk("CSV file imported.");
+                  setOk("CSV/XLSX file imported.");
                 } catch (error) {
                   setErr(error);
                 } finally {
@@ -4996,6 +5059,7 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
                 <th>Designation</th>
                 <th>Category</th>
                 <th>Status</th>
+                <th>Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -5011,11 +5075,28 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
                     <td>{item?.designation || "-"}</td>
                     <td>{Array.isArray(item?.categories) && item.categories.length ? item.categories.join(", ") : (item?.category || "-")}</td>
                     <td>{item?.status || "-"}</td>
+                    <td>
+                      <div className="button-row tight">
+                        <button className="ghost-btn" type="button" onClick={() => startProspectEdit(item)}>Edit</button>
+                        <button className="ghost-btn" type="button" onClick={() => void (async () => {
+                          if (!window.confirm(`Delete prospect ${item?.name || ""}?`)) return;
+                          try {
+                            await api(`/company/marketing/prospects/${encodeURIComponent(id)}`, token, "DELETE");
+                            setSelectedProspectIds((current) => current.filter((rowId) => rowId !== id));
+                            setProspectsPage(1);
+                            await refresh();
+                            setOk("Prospect deleted.");
+                          } catch (error) {
+                            setErr(error);
+                          }
+                        })()}>Delete</button>
+                      </div>
+                    </td>
                   </tr>
                 );
               })}
               {!filteredProspects.length ? (
-                <tr><td colSpan="7"><div className="empty-state compact-empty">No prospects found.</div></td></tr>
+                <tr><td colSpan="8"><div className="empty-state compact-empty">No prospects found.</div></td></tr>
               ) : null}
             </tbody>
           </table>
@@ -5107,16 +5188,21 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
           <button disabled={saving} onClick={() => void (async () => {
             setSaving(true);
             try {
-              await api("/company/marketing/campaigns", token, "POST", campaignDraft);
-              setCampaignDraft({ name: "", category: "", sendGapMinutes: 5, dailyCap: 50 });
+              if (editingCampaignId) {
+                await api(`/company/marketing/campaigns/${encodeURIComponent(editingCampaignId)}`, token, "PATCH", campaignDraft);
+              } else {
+                await api("/company/marketing/campaigns", token, "POST", campaignDraft);
+              }
+              cancelCampaignEdit();
               await refresh();
-              setOk("Campaign created.");
+              setOk(editingCampaignId ? "Campaign updated." : "Campaign created.");
             } catch (error) {
               setErr(error);
             } finally {
               setSaving(false);
             }
-          })()}>Create campaign</button>
+          })()}>{editingCampaignId ? "Update campaign" : "Create campaign"}</button>
+          {editingCampaignId ? <button className="ghost-btn" type="button" onClick={cancelCampaignEdit}>Cancel edit</button> : null}
         </div>
         <label><span>Select campaign</span><select value={selectedCampaignId} onChange={(e) => setSelectedCampaignId(e.target.value)}>
           <option value="">Select</option>
@@ -5135,6 +5221,52 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
             <button className="ghost-btn" disabled={!selectedProspectIds.length} onClick={() => void api(`/company/marketing/campaigns/${encodeURIComponent(selectedCampaignId)}/prospects`, token, "POST", { prospectIds: selectedProspectIds }).then(() => { setOk("Selected prospects attached."); return refresh(); }).catch(setErr)}>Attach selected prospects</button>
           </div>
         ) : null}
+        <div className="table-wrap">
+          <table className="dashboard-table">
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Category</th>
+                <th>Status</th>
+                <th>Sent</th>
+                <th>Bounced</th>
+                <th>Replies</th>
+                <th>Updated</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {campaigns.map((item) => (
+                <tr key={String(item?.id || "")}>
+                  <td>{item?.name || "-"}</td>
+                  <td>{item?.category || "-"}</td>
+                  <td>{item?.status || "-"}</td>
+                  <td>{Number(item?.stats?.sent || 0)}</td>
+                  <td>{Number(item?.stats?.bounced || 0)}</td>
+                  <td>{Number(item?.stats?.replies || 0)}</td>
+                  <td>{item?.updated_at ? new Date(item.updated_at).toLocaleString() : "-"}</td>
+                  <td>
+                    <div className="button-row tight">
+                      <button className="ghost-btn" type="button" onClick={() => startCampaignEdit(item)}>Edit</button>
+                      <button className="ghost-btn" type="button" onClick={() => void (async () => {
+                        if (!window.confirm(`Delete campaign ${item?.name || ""}?`)) return;
+                        try {
+                          await api(`/company/marketing/campaigns/${encodeURIComponent(String(item?.id || ""))}`, token, "DELETE");
+                          if (String(selectedCampaignId || "") === String(item?.id || "")) setSelectedCampaignId("");
+                          await refresh();
+                          setOk("Campaign deleted.");
+                        } catch (error) {
+                          setErr(error);
+                        }
+                      })()}>Delete</button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+              {!campaigns.length ? <tr><td colSpan="8"><div className="empty-state compact-empty">No campaigns yet.</div></td></tr> : null}
+            </tbody>
+          </table>
+        </div>
       </Section>
       ) : null}
 

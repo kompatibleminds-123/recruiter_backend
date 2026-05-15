@@ -8954,11 +8954,23 @@ const server = http.createServer(async (req, res) => {
     try {
       const actor = await requireSessionUser(getBearerToken(req));
       const companyId = encodeURIComponent(String(actor.companyId || "").trim());
+      const dateFrom = String(requestUrl.searchParams.get("dateFrom") || "").trim();
+      const dateTo = String(requestUrl.searchParams.get("dateTo") || "").trim();
+      const fromIso = dateFrom ? `${dateFrom}T00:00:00.000Z` : "";
+      const toIso = dateTo ? `${dateTo}T23:59:59.999Z` : "";
+      const queueDateFilters = [
+        fromIso ? `updated_at=gte.${encodeURIComponent(fromIso)}` : "",
+        toIso ? `updated_at=lte.${encodeURIComponent(toIso)}` : ""
+      ].filter(Boolean).join("&");
+      const eventDateFilters = [
+        fromIso ? `event_at=gte.${encodeURIComponent(fromIso)}` : "",
+        toIso ? `event_at=lte.${encodeURIComponent(toIso)}` : ""
+      ].filter(Boolean).join("&");
       const [prospects, campaigns, queue, events] = await Promise.all([
         supabaseTableFetch("marketing_prospects", `?select=id,status&company_id=eq.${companyId}&limit=5000`),
         supabaseTableFetch("marketing_campaigns", `?select=id,status&company_id=eq.${companyId}&limit=5000`),
-        supabaseTableFetch("marketing_campaign_prospects", `?select=id,state&company_id=eq.${companyId}&limit=5000`),
-        supabaseTableFetch("marketing_message_events", `?select=id,event_type&company_id=eq.${companyId}&limit=5000`)
+        supabaseTableFetch("marketing_campaign_prospects", `?select=id,state&company_id=eq.${companyId}${queueDateFilters ? `&${queueDateFilters}` : ""}&limit=5000`),
+        supabaseTableFetch("marketing_message_events", `?select=id,event_type&company_id=eq.${companyId}${eventDateFilters ? `&${eventDateFilters}` : ""}&limit=5000`)
       ]);
       const summarize = (rows = [], key = "status") => (Array.isArray(rows) ? rows : []).reduce((acc, item) => {
         const label = String(item?.[key] || "unknown").trim().toLowerCase() || "unknown";
@@ -8971,7 +8983,8 @@ const server = http.createServer(async (req, res) => {
           prospects: { total: Array.isArray(prospects) ? prospects.length : 0, byStatus: summarize(prospects, "status") },
           campaigns: { total: Array.isArray(campaigns) ? campaigns.length : 0, byStatus: summarize(campaigns, "status") },
           queue: { total: Array.isArray(queue) ? queue.length : 0, byStatus: summarize(queue, "state") },
-          events: { total: Array.isArray(events) ? events.length : 0, byType: summarize(events, "event_type") }
+          events: { total: Array.isArray(events) ? events.length : 0, byType: summarize(events, "event_type") },
+          dateFilter: { dateFrom, dateTo }
         }
       });
     } catch (error) {
@@ -9041,6 +9054,65 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (req.method === "PATCH" && /^\/company\/marketing\/prospects\/[^/]+$/.test(requestUrl.pathname)) {
+    try {
+      const actor = await requireSessionUser(getBearerToken(req));
+      const prospectId = String(requestUrl.pathname.replace(/^\/company\/marketing\/prospects\//, "")).trim();
+      if (!prospectId) throw new Error("Prospect id is required.");
+      const body = await readJsonBody(req);
+      const patch = {
+        name: String(body.name || "").trim() || undefined,
+        email: body.email !== undefined ? normalizeMarketingEmail(body.email) : undefined,
+        phone: body.phone !== undefined ? String(body.phone || "").trim() : undefined,
+        company_name: body.companyName !== undefined || body.company_name !== undefined ? String(body.companyName || body.company_name || "").trim() : undefined,
+        designation: body.designation !== undefined ? String(body.designation || "").trim() : undefined,
+        category: body.category !== undefined ? String(body.category || "").trim() : undefined,
+        categories: body.categories !== undefined ? normalizeMarketingCategories(body.categories) : undefined,
+        status: body.status !== undefined ? String(body.status || "").trim() : undefined,
+        notes: body.notes !== undefined ? String(body.notes || "").trim() : undefined,
+        updated_at: toIsoNow()
+      };
+      Object.keys(patch).forEach((key) => patch[key] === undefined && delete patch[key]);
+      if (!Object.keys(patch).length) throw new Error("Nothing to update.");
+      const updated = await supabaseTableFetch(
+        "marketing_prospects",
+        `?id=eq.${encodeURIComponent(prospectId)}&company_id=eq.${encodeURIComponent(actor.companyId)}&select=*`,
+        { method: "PATCH", body: patch, prefer: "return=representation" }
+      );
+      sendJson(res, 200, { ok: true, result: Array.isArray(updated) && updated.length ? updated[0] : null });
+    } catch (error) {
+      sendJson(res, 400, { ok: false, error: String(error?.message || error) });
+    }
+    return;
+  }
+
+  if (req.method === "DELETE" && /^\/company\/marketing\/prospects\/[^/]+$/.test(requestUrl.pathname)) {
+    try {
+      const actor = await requireSessionUser(getBearerToken(req));
+      const prospectId = String(requestUrl.pathname.replace(/^\/company\/marketing\/prospects\//, "")).trim();
+      if (!prospectId) throw new Error("Prospect id is required.");
+      await supabaseTableFetch(
+        "marketing_campaign_prospects",
+        `?prospect_id=eq.${encodeURIComponent(prospectId)}&company_id=eq.${encodeURIComponent(actor.companyId)}&select=id`,
+        { method: "DELETE", prefer: "return=minimal" }
+      );
+      await supabaseTableFetch(
+        "marketing_message_events",
+        `?prospect_id=eq.${encodeURIComponent(prospectId)}&company_id=eq.${encodeURIComponent(actor.companyId)}&select=id`,
+        { method: "DELETE", prefer: "return=minimal" }
+      );
+      await supabaseTableFetch(
+        "marketing_prospects",
+        `?id=eq.${encodeURIComponent(prospectId)}&company_id=eq.${encodeURIComponent(actor.companyId)}&select=id`,
+        { method: "DELETE", prefer: "return=minimal" }
+      );
+      sendJson(res, 200, { ok: true, result: { deleted: true } });
+    } catch (error) {
+      sendJson(res, 400, { ok: false, error: String(error?.message || error) });
+    }
+    return;
+  }
+
   if (req.method === "POST" && requestUrl.pathname === "/company/marketing/prospects/import") {
     try {
       const actor = await requireSessionUser(getBearerToken(req));
@@ -9086,7 +9158,34 @@ const server = http.createServer(async (req, res) => {
       const actor = await requireSessionUser(getBearerToken(req));
       const companyId = encodeURIComponent(String(actor.companyId || "").trim());
       const items = await supabaseTableFetch("marketing_campaigns", `?select=id,name,category,status,sender_user_id,send_gap_minutes,daily_cap,updated_at,created_at&company_id=eq.${companyId}&order=updated_at.desc&limit=100`);
-      sendJson(res, 200, { ok: true, result: { items: Array.isArray(items) ? items : [] } });
+      const dateFrom = String(requestUrl.searchParams.get("dateFrom") || "").trim();
+      const dateTo = String(requestUrl.searchParams.get("dateTo") || "").trim();
+      const fromIso = dateFrom ? `${dateFrom}T00:00:00.000Z` : "";
+      const toIso = dateTo ? `${dateTo}T23:59:59.999Z` : "";
+      const eventDateFilters = [
+        fromIso ? `event_at=gte.${encodeURIComponent(fromIso)}` : "",
+        toIso ? `event_at=lte.${encodeURIComponent(toIso)}` : ""
+      ].filter(Boolean).join("&");
+      const events = await supabaseTableFetch(
+        "marketing_message_events",
+        `?select=campaign_id,event_type&company_id=eq.${companyId}${eventDateFilters ? `&${eventDateFilters}` : ""}&limit=10000`
+      ).catch(() => []);
+      const byCampaign = {};
+      (Array.isArray(events) ? events : []).forEach((row) => {
+        const id = String(row?.campaign_id || "").trim();
+        if (!id) return;
+        const type = String(row?.event_type || "").trim().toLowerCase();
+        if (!byCampaign[id]) byCampaign[id] = { sent: 0, bounced: 0, replies: 0, total: 0 };
+        byCampaign[id].total += 1;
+        if (type === "sent") byCampaign[id].sent += 1;
+        if (type === "bounce" || type === "bounced" || type === "failed") byCampaign[id].bounced += 1;
+        if (type === "reply" || type === "replied") byCampaign[id].replies += 1;
+      });
+      const nextItems = (Array.isArray(items) ? items : []).map((item) => ({
+        ...item,
+        stats: byCampaign[String(item?.id || "").trim()] || { sent: 0, bounced: 0, replies: 0, total: 0 }
+      }));
+      sendJson(res, 200, { ok: true, result: { items: nextItems, dateFilter: { dateFrom, dateTo } } });
     } catch (error) {
       sendJson(res, 400, { ok: false, error: String(error?.message || error) });
     }
@@ -9113,6 +9212,66 @@ const server = http.createServer(async (req, res) => {
       if (!item.name) throw new Error("Campaign name is required.");
       const saved = await supabaseTableFetch("marketing_campaigns", "?select=*", { method: "POST", body: item, prefer: "return=representation" });
       sendJson(res, 200, { ok: true, result: (Array.isArray(saved) ? saved[0] : saved) || item });
+    } catch (error) {
+      sendJson(res, 400, { ok: false, error: String(error?.message || error) });
+    }
+    return;
+  }
+
+  if (req.method === "PATCH" && /^\/company\/marketing\/campaigns\/[^/]+$/.test(requestUrl.pathname)) {
+    try {
+      const actor = await requireSessionUser(getBearerToken(req));
+      const campaignId = String(requestUrl.pathname.replace(/^\/company\/marketing\/campaigns\//, "")).trim();
+      if (!campaignId) throw new Error("Campaign id is required.");
+      const body = await readJsonBody(req);
+      const patch = {
+        name: body.name !== undefined ? String(body.name || "").trim() : undefined,
+        category: body.category !== undefined ? String(body.category || "").trim() : undefined,
+        status: body.status !== undefined ? String(body.status || "").trim() : undefined,
+        send_gap_minutes: body.sendGapMinutes !== undefined ? Math.max(1, Number(body.sendGapMinutes || 5)) : undefined,
+        daily_cap: body.dailyCap !== undefined ? Math.max(10, Number(body.dailyCap || 50)) : undefined,
+        updated_at: toIsoNow()
+      };
+      Object.keys(patch).forEach((key) => patch[key] === undefined && delete patch[key]);
+      if (!Object.keys(patch).length) throw new Error("Nothing to update.");
+      const updated = await supabaseTableFetch(
+        "marketing_campaigns",
+        `?id=eq.${encodeURIComponent(campaignId)}&company_id=eq.${encodeURIComponent(actor.companyId)}&select=*`,
+        { method: "PATCH", body: patch, prefer: "return=representation" }
+      );
+      sendJson(res, 200, { ok: true, result: Array.isArray(updated) && updated.length ? updated[0] : null });
+    } catch (error) {
+      sendJson(res, 400, { ok: false, error: String(error?.message || error) });
+    }
+    return;
+  }
+
+  if (req.method === "DELETE" && /^\/company\/marketing\/campaigns\/[^/]+$/.test(requestUrl.pathname)) {
+    try {
+      const actor = await requireSessionUser(getBearerToken(req));
+      const campaignId = String(requestUrl.pathname.replace(/^\/company\/marketing\/campaigns\//, "")).trim();
+      if (!campaignId) throw new Error("Campaign id is required.");
+      await supabaseTableFetch(
+        "marketing_campaign_prospects",
+        `?campaign_id=eq.${encodeURIComponent(campaignId)}&company_id=eq.${encodeURIComponent(actor.companyId)}&select=id`,
+        { method: "DELETE", prefer: "return=minimal" }
+      );
+      await supabaseTableFetch(
+        "marketing_templates",
+        `?campaign_id=eq.${encodeURIComponent(campaignId)}&company_id=eq.${encodeURIComponent(actor.companyId)}&select=id`,
+        { method: "DELETE", prefer: "return=minimal" }
+      );
+      await supabaseTableFetch(
+        "marketing_message_events",
+        `?campaign_id=eq.${encodeURIComponent(campaignId)}&company_id=eq.${encodeURIComponent(actor.companyId)}&select=id`,
+        { method: "DELETE", prefer: "return=minimal" }
+      );
+      await supabaseTableFetch(
+        "marketing_campaigns",
+        `?id=eq.${encodeURIComponent(campaignId)}&company_id=eq.${encodeURIComponent(actor.companyId)}&select=id`,
+        { method: "DELETE", prefer: "return=minimal" }
+      );
+      sendJson(res, 200, { ok: true, result: { deleted: true } });
     } catch (error) {
       sendJson(res, 400, { ok: false, error: String(error?.message || error) });
     }
