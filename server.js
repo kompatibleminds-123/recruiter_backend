@@ -8973,10 +8973,15 @@ const server = http.createServer(async (req, res) => {
     try {
       const actor = await requireSessionUser(getBearerToken(req));
       const companyId = encodeURIComponent(String(actor.companyId || "").trim());
-      const limit = Math.max(1, Math.min(5000, Number(requestUrl.searchParams.get("limit") || 500)));
+      const limit = Math.max(1, Math.min(100, Number(requestUrl.searchParams.get("limit") || 100)));
+      const page = Math.max(1, Number(requestUrl.searchParams.get("page") || 1));
+      const offset = (page - 1) * limit;
       const q = String(requestUrl.searchParams.get("q") || "").trim().toLowerCase();
       const categoryFilter = String(requestUrl.searchParams.get("category") || "").trim().toLowerCase();
-      const rows = await supabaseTableFetch("marketing_prospects", `?select=*&company_id=eq.${companyId}&order=updated_at.desc&limit=${limit}`);
+      const rows = await supabaseTableFetch(
+        "marketing_prospects",
+        `?select=id,name,email,phone,company_name,designation,category,categories,status,updated_at&company_id=eq.${companyId}&order=updated_at.desc&offset=${offset}&limit=${limit}`
+      );
       const items = (Array.isArray(rows) ? rows : []).filter((item) => {
         if (categoryFilter) {
           const currentCategory = String(item?.category || "").trim().toLowerCase();
@@ -8986,7 +8991,7 @@ const server = http.createServer(async (req, res) => {
         const hay = `${item?.name || ""} ${item?.email || ""} ${item?.company_name || ""} ${item?.designation || ""} ${item?.category || ""}`.toLowerCase();
         return hay.includes(q);
       });
-      sendJson(res, 200, { ok: true, result: { items } });
+      sendJson(res, 200, { ok: true, result: { items, page, limit, hasMore: items.length >= limit } });
     } catch (error) {
       sendJson(res, 400, { ok: false, error: String(error?.message || error) });
     }
@@ -9069,7 +9074,7 @@ const server = http.createServer(async (req, res) => {
     try {
       const actor = await requireSessionUser(getBearerToken(req));
       const companyId = encodeURIComponent(String(actor.companyId || "").trim());
-      const items = await supabaseTableFetch("marketing_campaigns", `?select=*&company_id=eq.${companyId}&order=updated_at.desc&limit=500`);
+      const items = await supabaseTableFetch("marketing_campaigns", `?select=id,name,category,status,sender_user_id,send_gap_minutes,daily_cap,updated_at,created_at&company_id=eq.${companyId}&order=updated_at.desc&limit=100`);
       sendJson(res, 200, { ok: true, result: { items: Array.isArray(items) ? items : [] } });
     } catch (error) {
       sendJson(res, 400, { ok: false, error: String(error?.message || error) });
@@ -9138,9 +9143,12 @@ const server = http.createServer(async (req, res) => {
       const actor = await requireSessionUser(getBearerToken(req));
       const campaignId = encodeURIComponent(String(requestUrl.pathname.replace(/^\/company\/marketing\/campaigns\//, "").replace(/\/prospects$/, "")).trim());
       const companyId = encodeURIComponent(String(actor.companyId || "").trim());
+      const limit = Math.max(1, Math.min(100, Number(requestUrl.searchParams.get("limit") || 100)));
+      const page = Math.max(1, Number(requestUrl.searchParams.get("page") || 1));
+      const offset = (page - 1) * limit;
       const rows = await supabaseTableFetch(
         "marketing_campaign_prospects",
-        `?select=id,state,last_sent_at,updated_at,prospect_id&company_id=eq.${companyId}&campaign_id=eq.${campaignId}&order=updated_at.desc&limit=5000`
+        `?select=id,state,last_sent_at,updated_at,prospect_id&company_id=eq.${companyId}&campaign_id=eq.${campaignId}&order=updated_at.desc&offset=${offset}&limit=${limit}`
       );
       const queueRows = Array.isArray(rows) ? rows : [];
       const prospectIds = Array.from(new Set(queueRows.map((row) => String(row?.prospect_id || "").trim()).filter(Boolean)));
@@ -9149,7 +9157,7 @@ const server = http.createServer(async (req, res) => {
         const inClause = prospectIds.map((id) => `"${id.replace(/"/g, "")}"`).join(",");
         const prospects = await supabaseTableFetch(
           "marketing_prospects",
-          `?select=id,name,email,phone,company_name,designation,category,categories,status&company_id=eq.${companyId}&id=in.(${inClause})&limit=5000`
+          `?select=id,name,email,phone,company_name,designation,category,categories,status&company_id=eq.${companyId}&id=in.(${inClause})&limit=100`
         );
         (Array.isArray(prospects) ? prospects : []).forEach((item) => {
           const id = String(item?.id || "").trim();
@@ -9165,7 +9173,7 @@ const server = http.createServer(async (req, res) => {
         prospectId: String(row?.prospect_id || "").trim(),
         prospect: prospectMap.get(String(row?.prospect_id || "").trim()) || null
       }));
-      sendJson(res, 200, { ok: true, result: { items } });
+      sendJson(res, 200, { ok: true, result: { items, page, limit, hasMore: items.length >= limit } });
     } catch (error) {
       sendJson(res, 400, { ok: false, error: String(error?.message || error) });
     }
@@ -9219,7 +9227,7 @@ const server = http.createServer(async (req, res) => {
     try {
       const actor = await requireSessionUser(getBearerToken(req));
       const companyId = encodeURIComponent(String(actor.companyId || "").trim());
-      const rows = await supabaseTableFetch("marketing_templates", `?select=*&company_id=eq.${companyId}&order=updated_at.desc&limit=500`);
+      const rows = await supabaseTableFetch("marketing_templates", `?select=id,campaign_id,subject,body_text,target_categories,updated_at,created_at&company_id=eq.${companyId}&order=updated_at.desc&limit=100`);
       sendJson(res, 200, { ok: true, result: { items: Array.isArray(rows) ? rows : [] } });
     } catch (error) {
       sendJson(res, 400, { ok: false, error: String(error?.message || error) });
@@ -12612,13 +12620,23 @@ const server = http.createServer(async (req, res) => {
   if (req.method === "GET" && requestUrl.pathname === "/candidates") {
     try {
       const sessionUser = await requireSessionUser(getBearerToken(req));
+      const limit = Math.max(1, Math.min(500, Number(requestUrl.searchParams.get("limit") || 100)));
+      const page = Math.max(1, Number(requestUrl.searchParams.get("page") || 1));
+      const includeMeta = String(requestUrl.searchParams.get("includeMeta") || "").trim() === "1";
       const listOptions = {
-        limit: Number(requestUrl.searchParams.get("limit") || 100),
+        limit: includeMeta ? limit + 1 : limit,
+        page,
         q: String(requestUrl.searchParams.get("q") || "").trim(),
         id: String(requestUrl.searchParams.get("id") || "").trim(),
         scope: String(requestUrl.searchParams.get("scope") || "").trim()
       };
       const result = await listCandidatesForUser(sessionUser, listOptions);
+      if (includeMeta) {
+        const rows = Array.isArray(result) ? result : [];
+        const hasMore = rows.length > limit;
+        sendJson(res, 200, { ok: true, result: { items: hasMore ? rows.slice(0, limit) : rows, page, limit, hasMore } });
+        return;
+      }
       sendJson(res, 200, { ok: true, result });
     } catch (error) {
       sendJson(res, 400, { ok: false, error: String(error.message || error) });

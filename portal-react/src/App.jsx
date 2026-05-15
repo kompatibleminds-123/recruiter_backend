@@ -4569,6 +4569,10 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
   const [campaigns, setCampaigns] = useState([]);
   const [templates, setTemplates] = useState([]);
   const [campaignProspects, setCampaignProspects] = useState([]);
+  const [prospectsPage, setProspectsPage] = useState(1);
+  const [prospectsHasMore, setProspectsHasMore] = useState(false);
+  const [queuePage, setQueuePage] = useState(1);
+  const [queueHasMore, setQueueHasMore] = useState(false);
   const [selectedCampaignId, setSelectedCampaignId] = useState("");
   const [templateDraft, setTemplateDraft] = useState({ subject: "", bodyText: "Hi {{name}},\n\n\nRegards,\nTeam", targetCategoriesText: "" });
   const [prospectDraft, setProspectDraft] = useState({ name: "", email: "", phone: "", companyName: "", designation: "", categoriesText: "" });
@@ -4610,9 +4614,11 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
   }, [token]);
 
   const loadProspects = useCallback(async () => {
-    const result = await api("/company/marketing/prospects?limit=500", token);
-    setProspects(Array.isArray(result?.items) ? result.items : []);
-  }, [token]);
+    const result = await api(`/company/marketing/prospects?limit=100&page=${prospectsPage}`, token);
+    const items = Array.isArray(result?.items) ? result.items : [];
+    setProspects((current) => prospectsPage === 1 ? items : [...current, ...items]);
+    setProspectsHasMore(Boolean(result?.hasMore));
+  }, [prospectsPage, token]);
 
   const loadCampaigns = useCallback(async () => {
     const result = await api("/company/marketing/campaigns", token);
@@ -4658,11 +4664,16 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
   useEffect(() => {
     if (!selectedCampaignId) return;
     if (activeTab === "queue") {
-      void api(`/company/marketing/campaigns/${encodeURIComponent(selectedCampaignId)}/prospects`, token)
+      void api(`/company/marketing/campaigns/${encodeURIComponent(selectedCampaignId)}/prospects?limit=100&page=${queuePage}`, token)
         .then((result) => {
-          setCampaignProspects(Array.isArray(result?.items) ? result.items : []);
+          const items = Array.isArray(result?.items) ? result.items : [];
+          setCampaignProspects((current) => queuePage === 1 ? items : [...current, ...items]);
+          setQueueHasMore(Boolean(result?.hasMore));
         })
-        .catch(() => setCampaignProspects([]));
+        .catch(() => {
+          setCampaignProspects([]);
+          setQueueHasMore(false);
+        });
     }
     if (activeTab === "templates") {
       void api(`/company/marketing/campaigns/${encodeURIComponent(selectedCampaignId)}/template`, token)
@@ -4676,7 +4687,17 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
         })
         .catch(() => {});
     }
-  }, [activeTab, selectedCampaignId, token]);
+  }, [activeTab, queuePage, selectedCampaignId, token]);
+
+  useEffect(() => {
+    if (activeTab !== "prospects") return;
+    setProspectsPage(1);
+  }, [activeTab, prospectSearch, prospectCategoryFilter]);
+
+  useEffect(() => {
+    if (activeTab !== "queue") return;
+    setQueuePage(1);
+  }, [activeTab, selectedCampaignId]);
 
   const activeCampaign = campaigns.find((item) => String(item.id) === String(selectedCampaignId)) || null;
   const categories = Array.from(new Set(
@@ -4879,6 +4900,7 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
                 category: String(prospectDraft.categoriesText || "").split(",").map((item) => item.trim()).filter(Boolean)[0] || ""
               });
               setProspectDraft({ name: "", email: "", phone: "", companyName: "", designation: "", categoriesText: "" });
+              setProspectsPage(1);
               await refresh();
               setOk("Prospect added.");
             } catch (error) {
@@ -4905,6 +4927,7 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
                 setSaving(true);
                 try {
                   await handleCsvFileImport(file);
+                  setProspectsPage(1);
                   await refresh();
                   setOk("CSV file imported.");
                 } catch (error) {
@@ -4924,6 +4947,7 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
             try {
               await api("/company/marketing/prospects/import", token, "POST", { csv: csvText });
               setCsvText("");
+              setProspectsPage(1);
               await refresh();
               setOk("CSV text imported.");
             } catch (error) {
@@ -4985,6 +5009,11 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
             </tbody>
           </table>
         </div>
+        {prospectsHasMore ? (
+          <div className="button-row tight">
+            <button className="ghost-btn" onClick={() => setProspectsPage((current) => current + 1)}>Load more prospects</button>
+          </div>
+        ) : null}
       </Section>
         </>
       ) : null}
@@ -5047,6 +5076,11 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
             </tbody>
           </table>
         </div>
+        {queueHasMore ? (
+          <div className="button-row tight">
+            <button className="ghost-btn" onClick={() => setQueuePage((current) => current + 1)}>Load more queue items</button>
+          </div>
+        ) : null}
       </Section>
       ) : null}
 
@@ -5166,6 +5200,9 @@ function PortalApp({ token, onLogout }) {
   const [assignCandidateId, setAssignCandidateId] = useState("");
   const [bulkAssignApplicantIds, setBulkAssignApplicantIds] = useState([]);
   const [bulkAssignCandidateIds, setBulkAssignCandidateIds] = useState([]);
+  const [applicantsVisibleCount, setApplicantsVisibleCount] = useState(50);
+  const [capturedCandidatesPage, setCapturedCandidatesPage] = useState(1);
+  const [capturedCandidatesHasMore, setCapturedCandidatesHasMore] = useState(false);
   const [bulkAssignApplicantModalOpen, setBulkAssignApplicantModalOpen] = useState(false);
   const [bulkAssignCandidateModalOpen, setBulkAssignCandidateModalOpen] = useState(false);
   const [hostedJobId, setHostedJobId] = useState("");
@@ -6539,6 +6576,10 @@ function PortalApp({ token, onLogout }) {
       pathname === "/captured-notes" ||
       pathname === "/assessments" ||
       pathname === "/interview";
+    const isCapturedNotesRoute = pathname === "/captured-notes";
+    const candidateLimit = isCapturedNotesRoute ? 50 : 5000;
+    const candidatePage = isCapturedNotesRoute ? capturedCandidatesPage : 1;
+    const candidateMetaFlag = isCapturedNotesRoute ? "&includeMeta=1" : "";
     const needsDatabaseCandidates = pathname === "/candidates";
     const needsAssessments =
       pathname === "/dashboard" ||
@@ -6597,7 +6638,7 @@ function PortalApp({ token, onLogout }) {
       needsEmployeeUsers
         ? api("/company/employees", token).catch(() => ({ employees: [] }))
         : Promise.resolve(null),
-      needsCandidates ? api("/candidates?limit=5000", token).catch(() => []) : Promise.resolve(null),
+      needsCandidates ? api(`/candidates?limit=${candidateLimit}&page=${candidatePage}${candidateMetaFlag}`, token).catch(() => (isCapturedNotesRoute ? { items: [], hasMore: false } : [])) : Promise.resolve(null),
       needsDatabaseCandidates ? api("/company/database-candidates?limit=5000", token).catch(() => []) : Promise.resolve(null),
       needsAssessments ? api("/company/assessments", token).catch(() => ({ assessments: [] })) : Promise.resolve(null),
       needsAssessmentEvents
@@ -6641,7 +6682,17 @@ function PortalApp({ token, onLogout }) {
       intake: needsIntake ? (intakeResult || {}) : current.intake,
       jobs: needsJobs ? (jobsResult?.jobs || []) : current.jobs,
       users: needsUsers ? (usersResult?.users || []) : current.users,
-      candidates: needsCandidates ? (Array.isArray(candidatesResult) ? candidatesResult : []) : current.candidates,
+      candidates: needsCandidates
+        ? (
+            isCapturedNotesRoute
+              ? (
+                  capturedCandidatesPage === 1
+                    ? (Array.isArray(candidatesResult?.items) ? candidatesResult.items : [])
+                    : [...current.candidates, ...(Array.isArray(candidatesResult?.items) ? candidatesResult.items : [])]
+                )
+              : (Array.isArray(candidatesResult) ? candidatesResult : [])
+          )
+        : current.candidates,
       databaseCandidates: needsDatabaseCandidates
         ? (Array.isArray(databaseCandidatesResult) ? databaseCandidatesResult : [])
         : current.databaseCandidates,
@@ -6650,6 +6701,11 @@ function PortalApp({ token, onLogout }) {
     }));
     if (needsJobs) {
       setJobsCatalog(Array.isArray(jobsManageResult?.jobs) ? jobsManageResult.jobs : []);
+    }
+    if (isCapturedNotesRoute) {
+      setCapturedCandidatesHasMore(Boolean(candidatesResult?.hasMore));
+    } else {
+      setCapturedCandidatesHasMore(false);
     }
     if (includeClientUsers && clientUsersResult) {
       setClientUsers(clientUsersResult.clientUsers || []);
@@ -6798,17 +6854,31 @@ function PortalApp({ token, onLogout }) {
 
   async function reloadCandidatesSlice({ includeDatabase = false } = {}) {
     if (!token) return;
+    const pathname = String(location?.pathname || "/dashboard").trim() || "/dashboard";
+    const isCapturedNotesRoute = pathname === "/captured-notes";
+    const candidateLimit = isCapturedNotesRoute ? 50 : 5000;
+    const candidatePage = isCapturedNotesRoute ? capturedCandidatesPage : 1;
+    const candidateMetaFlag = isCapturedNotesRoute ? "&includeMeta=1" : "";
     const [candidatesResult, databaseCandidatesResult] = await Promise.all([
-      api("/candidates?limit=5000", token).catch(() => []),
+      api(`/candidates?limit=${candidateLimit}&page=${candidatePage}${candidateMetaFlag}`, token).catch(() => (isCapturedNotesRoute ? { items: [], hasMore: false } : [])),
       includeDatabase ? api("/company/database-candidates?limit=5000", token).catch(() => []) : Promise.resolve(null)
     ]);
     setState((current) => ({
       ...current,
-      candidates: Array.isArray(candidatesResult) ? candidatesResult : current.candidates,
+      candidates: isCapturedNotesRoute
+        ? (
+            capturedCandidatesPage === 1
+              ? (Array.isArray(candidatesResult?.items) ? candidatesResult.items : current.candidates)
+              : [...current.candidates, ...(Array.isArray(candidatesResult?.items) ? candidatesResult.items : [])]
+          )
+        : (Array.isArray(candidatesResult) ? candidatesResult : current.candidates),
       databaseCandidates: includeDatabase
         ? (Array.isArray(databaseCandidatesResult) ? databaseCandidatesResult : current.databaseCandidates)
         : current.databaseCandidates
     }));
+    if (isCapturedNotesRoute) {
+      setCapturedCandidatesHasMore(Boolean(candidatesResult?.hasMore));
+    }
   }
 
   async function reloadAssessmentsSlice({ includeEvents = false } = {}) {
@@ -6839,7 +6909,15 @@ function PortalApp({ token, onLogout }) {
     };
     lastWorkspaceRefreshAtRef.current = now;
     void loadWorkspace().catch((error) => setStatus("workspace", String(error?.message || error), "error"));
-  }, [token, location?.pathname]);
+  }, [token, location?.pathname, capturedCandidatesPage]);
+
+  useEffect(() => {
+    const pathname = String(location?.pathname || "/dashboard").trim() || "/dashboard";
+    if (pathname !== "/captured-notes") {
+      setCapturedCandidatesPage(1);
+      setCapturedCandidatesHasMore(false);
+    }
+  }, [location?.pathname]);
 
   useEffect(() => {
     if (!token) return undefined;
@@ -8608,6 +8686,7 @@ function PortalApp({ token, onLogout }) {
       return true;
     });
   }, [filteredApplicants, applicantFilters, applicantCandidateMap, applicantAssessmentMap]);
+  const pagedApplicants = useMemo(() => visibleApplicants.slice(0, applicantsVisibleCount), [visibleApplicants, applicantsVisibleCount]);
   const applicantStats = useMemo(() => {
     const todayKey = new Date().toISOString().slice(0, 10);
     const currentUserId = String(state.user?.id || "").trim();
@@ -8715,6 +8794,21 @@ function PortalApp({ token, onLogout }) {
       total: universe.length
     };
   }, [applicantAssessmentMap, applicantCandidateMap, filteredApplicants, state.user, applicantFilters]);
+
+  useEffect(() => {
+    setApplicantsVisibleCount(50);
+  }, [
+    applicantFilters.q,
+    applicantFilters.dateFrom,
+    applicantFilters.dateTo,
+    applicantFilters.clients,
+    applicantFilters.jds,
+    applicantFilters.locations,
+    applicantFilters.ownedBy,
+    applicantFilters.assignedTo,
+    applicantFilters.outcomes,
+    applicantFilters.activeStates
+  ]);
 
   const quickUpdateMatches = useMemo(() => {
     const query = String(quickUpdateCandidateQuery || "").trim().toLowerCase();
@@ -14272,7 +14366,7 @@ function PortalApp({ token, onLogout }) {
                 ) : null}
               </div>
               <div className="stack-list">
-                {!visibleApplicants.length ? <div className="empty-state">No applied candidates right now.</div> : visibleApplicants.map((item) => (
+                {!visibleApplicants.length ? <div className="empty-state">No applied candidates right now.</div> : pagedApplicants.map((item) => (
                   <article className="item-card compact-card" key={item.id}>
                     <div className="item-card__top">
                       <div>
@@ -14358,6 +14452,12 @@ function PortalApp({ token, onLogout }) {
                   </article>
                 ))}
               </div>
+              {visibleApplicants.length > applicantsVisibleCount ? (
+                <div className="button-row tight">
+                  <button className="ghost-btn" onClick={() => setApplicantsVisibleCount((current) => current + 50)}>Load more applicants</button>
+                  <div className="muted">{`Showing ${Math.min(applicantsVisibleCount, visibleApplicants.length)} of ${visibleApplicants.length}`}</div>
+                </div>
+              ) : null}
             </Section>
           } />
 
@@ -14523,6 +14623,11 @@ function PortalApp({ token, onLogout }) {
                   );
                 })}
               </div>
+              {capturedCandidatesHasMore ? (
+                <div className="button-row tight">
+                  <button className="ghost-btn" onClick={() => setCapturedCandidatesPage((current) => current + 1)}>Load more captured notes</button>
+                </div>
+              ) : null}
             </Section>
           } />
 

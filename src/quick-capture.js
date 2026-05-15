@@ -360,7 +360,7 @@ async function findDuplicateCandidate(candidate, options = {}) {
 
   const { url, serviceRoleKey } = getSupabaseConfig();
   if (url && serviceRoleKey) {
-    const filters = ["select=*", "order=created_at.desc", "limit=2000"];
+    const filters = ["select=id,phone,email,linkedin,company_id", "order=created_at.desc", "limit=2000"];
     if (companyId) {
       filters.push(`company_id=eq.${encodeURIComponent(companyId)}`);
     }
@@ -529,12 +529,17 @@ function normalizeListOptions(input) {
   if (typeof input === "number") {
     return {
       limit: Math.max(1, Number(input) || 100),
+      page: 1,
       q: "",
       companyId: ""
     };
   }
+  const limit = Math.max(1, Number(input?.limit) || 100);
+  const page = Math.max(1, Number(input?.page) || 1);
   return {
-    limit: Math.max(1, Number(input?.limit) || 100),
+    limit,
+    page,
+    offset: Math.max(0, (page - 1) * limit),
     q: String(input?.q || "").trim().toLowerCase(),
     companyId: normalizeCompanyId(input?.companyId || input?.company_id)
   };
@@ -617,18 +622,43 @@ const DATABASE_CANDIDATE_SELECT_FIELDS = [
   "updated_at"
 ];
 
+const CANDIDATE_LIST_SELECT_FIELDS = Array.from(new Set([
+  ...DATABASE_CANDIDATE_SELECT_FIELDS,
+  "current_company",
+  "current_designation",
+  "total_experience",
+  "relevant_experience",
+  "qualification",
+  "current_ctc",
+  "expected_ctc",
+  "notice_period",
+  "location",
+  "linkedin",
+  "status",
+  "remarks",
+  "other_standard_questions",
+  "cv_url",
+  "cv_key",
+  "cv_filename",
+  "cv_provider",
+  "cv_highlights",
+  "cv_analysis"
+]));
+
 function buildCandidateSelectParam(fields) {
   return `select=${fields.join(",")}`;
 }
 
 async function listCandidates(options = 100) {
-  const { limit, q, companyId } = normalizeListOptions(options);
+  const { limit, page, offset, q, companyId } = normalizeListOptions(options);
   const id = String(options?.id || "").trim();
   const { url, serviceRoleKey } = getSupabaseConfig();
   if (url && serviceRoleKey) {
+    const selectParam = buildCandidateSelectParam(CANDIDATE_LIST_SELECT_FIELDS);
     // If querying for a specific id, filter at the API level (UUID ordering + limit=1 would otherwise miss).
     const fetchLimit = id ? Math.max(limit, 50) : (q ? Math.max(limit, 2000) : limit);
-    const filters = ["select=*", "order=created_at.desc", `limit=${fetchLimit}`];
+    const filters = [id ? "select=*" : selectParam, "order=created_at.desc", `limit=${fetchLimit}`];
+    if (!id && Number.isFinite(offset) && offset > 0) filters.push(`offset=${offset}`);
     if (companyId) {
       filters.push(`company_id=eq.${encodeURIComponent(companyId)}`);
     }
@@ -651,7 +681,11 @@ async function listCandidates(options = 100) {
     }
 
     const rows = await response.json();
-    return rows.filter((item) => matchesCandidateId(item, id)).filter((item) => matchesCandidateSearch(item, q)).slice(0, limit);
+    if (id) {
+      return rows.filter((item) => matchesCandidateId(item, id)).filter((item) => matchesCandidateSearch(item, q)).slice(0, limit);
+    }
+    const filtered = rows.filter((item) => matchesCandidateSearch(item, q));
+    return filtered.slice(0, limit);
   }
 
   const store = readLocalStore();
@@ -659,11 +693,11 @@ async function listCandidates(options = 100) {
     .filter((item) => !companyId || getCandidateCompanyId(item) === companyId)
     .filter((item) => matchesCandidateId(item, id))
     .filter((item) => matchesCandidateSearch(item, q))
-    .slice(0, limit);
+    .slice(Math.max(0, (page - 1) * limit), Math.max(0, (page - 1) * limit) + limit);
 }
 
 async function listCandidatesForUser(user, options = 100) {
-  const { limit, q } = normalizeListOptions(options);
+  const { limit, page, offset, q } = normalizeListOptions(options);
   const id = String(options?.id || "").trim();
   const companyWide = options?.companyWide === true || options?.scope === "company";
   const maxRows = limit;
@@ -682,12 +716,14 @@ async function listCandidatesForUser(user, options = 100) {
   const { url, serviceRoleKey } = getSupabaseConfig();
   const companyId = normalizeCompanyId(user.companyId);
   if (url && serviceRoleKey) {
+    const selectParam = buildCandidateSelectParam(CANDIDATE_LIST_SELECT_FIELDS);
     const recruiterId = encodeURIComponent(String(user.id).trim());
     // If querying for a specific id, filter at the API level (otherwise limit=1 often misses).
     const fetchLimit = id ? Math.max(maxRows, 50) : (q ? Math.max(maxRows, 2000) : maxRows);
     const idFilter = id ? `&id=eq.${encodeURIComponent(id)}` : "";
+    const offsetFilter = !id && Number.isFinite(offset) && offset > 0 ? `&offset=${offset}` : "";
     const response = await fetch(
-      `${url}/rest/v1/candidates?select=*&company_id=eq.${encodeURIComponent(companyId)}&or=(recruiter_id.eq.${recruiterId},assigned_to_user_id.eq.${recruiterId})${idFilter}&order=created_at.desc&limit=${fetchLimit}`,
+      `${url}/rest/v1/candidates?${id ? "select=*" : selectParam}&company_id=eq.${encodeURIComponent(companyId)}&or=(recruiter_id.eq.${recruiterId},assigned_to_user_id.eq.${recruiterId})${idFilter}${offsetFilter}&order=created_at.desc&limit=${fetchLimit}`,
       {
         headers: {
           apikey: serviceRoleKey,
@@ -702,7 +738,11 @@ async function listCandidatesForUser(user, options = 100) {
     }
 
     const rows = await response.json();
-    return rows.filter((item) => matchesCandidateId(item, id)).filter((item) => matchesCandidateSearch(item, q)).slice(0, maxRows);
+    if (id) {
+      return rows.filter((item) => matchesCandidateId(item, id)).filter((item) => matchesCandidateSearch(item, q)).slice(0, maxRows);
+    }
+    const filtered = rows.filter((item) => matchesCandidateSearch(item, q));
+    return filtered.slice(0, maxRows);
   }
 
   const store = readLocalStore();
@@ -711,7 +751,7 @@ async function listCandidatesForUser(user, options = 100) {
     .filter((item) => item?.recruiter_id === user.id || item?.assigned_to_user_id === user.id)
     .filter((item) => matchesCandidateId(item, id))
     .filter((item) => matchesCandidateSearch(item, q))
-    .slice(0, maxRows);
+    .slice(Math.max(0, (page - 1) * maxRows), Math.max(0, (page - 1) * maxRows) + maxRows);
 }
 
 async function listDatabaseCandidatesForUser(user, options = 100) {
