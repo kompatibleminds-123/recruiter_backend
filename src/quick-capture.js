@@ -360,7 +360,7 @@ async function findDuplicateCandidate(candidate, options = {}) {
 
   const { url, serviceRoleKey } = getSupabaseConfig();
   if (url && serviceRoleKey) {
-    const filters = ["select=id,phone,email,linkedin,company_id", "order=created_at.desc", "limit=2000"];
+    const filters = ["select=*", "order=created_at.desc", "limit=2000"];
     if (companyId) {
       filters.push(`company_id=eq.${encodeURIComponent(companyId)}`);
     }
@@ -581,69 +581,12 @@ function matchesCandidateId(candidate, rawId) {
   return String(candidate?.id || "").trim() === id;
 }
 
-const DATABASE_CANDIDATE_SELECT_FIELDS = [
-  "id",
-  "company_id",
-  "name",
-  "company",
-  "role",
-  "experience",
-  "skills",
-  "current_ctc",
-  "expected_ctc",
-  "notice_period",
-  "lwd_or_doj",
-  "notes",
-  "raw_note",
-  "linkedin",
-  "email",
-  "phone",
-  "location",
-  "highest_education",
-  "recruiter_context_notes",
-  "other_pointers",
-  "assessment_id",
-  "used_in_assessment",
-  "assigned_to_user_id",
-  "assigned_to_name",
-  "recruiter_id",
-  "recruiter_name",
-  "assigned_jd_title",
-  "jd_title",
-  "client_name",
-  "draft_payload",
-  "screening_answers",
-  "last_contact_outcome",
-  "source",
-  "hidden_from_captured",
-  "created_at",
-  "updated_at"
-];
-
-const CANDIDATE_LIST_SELECT_FIELDS = Array.from(new Set([
-  ...DATABASE_CANDIDATE_SELECT_FIELDS,
-  "current_company",
-  "current_designation",
-  "total_experience",
-  "relevant_experience",
-  "qualification",
-  "current_ctc",
-  "expected_ctc",
-  "notice_period",
-  "location",
-  "linkedin",
-  "status",
-  "remarks",
-  "other_standard_questions",
-  "cv_url",
-  "cv_key",
-  "cv_filename",
-  "cv_provider",
-  "cv_highlights",
-  "cv_analysis"
-]));
+const DATABASE_CANDIDATE_SELECT_FIELDS = ["*"];
+const CANDIDATE_LIST_SELECT_FIELDS = ["*"];
 
 function buildCandidateSelectParam(fields) {
+  if (!Array.isArray(fields) || !fields.length) return "select=*";
+  if (fields.length === 1 && String(fields[0] || "").trim() === "*") return "select=*";
   return `select=${fields.join(",")}`;
 }
 
