@@ -9958,7 +9958,12 @@ function PortalApp({ token, onLogout }) {
       totalExperience: candidateDraft.totalExperience || matched?.totalExperience || candidate?.experience || candidateCvAnalysis?.exactTotalExperience || candidateCvAnalysis?.totalExperience || "",
       relevantExperience: candidateDraft.relevantExperience || matched?.relevantExperience || "",
       highestEducation: candidateDraft.highestEducation || matched?.highestEducation || candidate?.highest_education || candidate?.highestEducation || candidateCvAnalysis?.highestEducation || "",
-      currentOrgTenure: matched?.currentOrgTenure || "",
+      currentOrgTenure:
+        candidateDraft.currentOrgTenure
+        || matched?.currentOrgTenure
+        || candidate?.current_org_tenure
+        || candidate?.currentOrgTenure
+        || "",
       experienceTimeline: candidateDraft.experienceTimeline || matched?.experienceTimeline || matched?.experience_timeline || "",
       reasonForChange: candidateDraft.reasonForChange || matched?.reasonForChange || "",
       cautiousIndicators: candidateDraft.cautiousIndicators || "",
@@ -10090,7 +10095,11 @@ function PortalApp({ token, onLogout }) {
           currentCompany: candidate?.company || sourceApplicant?.currentCompany || "",
           currentDesignation: candidate?.role || sourceApplicant?.currentDesignation || "",
           totalExperience: candidate?.experience || sourceApplicant?.totalExperience || "",
-          currentOrgTenure: candidate?.current_org_tenure || ""
+          currentOrgTenure:
+            candidateDraft.currentOrgTenure
+            || candidate?.current_org_tenure
+            || candidate?.currentOrgTenure
+            || ""
         }, cvMeta.cvAnalysisCache.result, cvMeta.cvAnalysisCache.storedFile || null)
       : null;
     const assessment = {
@@ -13131,7 +13140,11 @@ function PortalApp({ token, onLogout }) {
       currentDesignation: candidate?.current_designation || candidate?.currentDesignation || candidate?.role || "",
       totalExperience: candidate?.total_experience || candidate?.totalExperience || candidate?.experience || "",
       relevantExperience: candidate?.relevant_experience || candidate?.relevantExperience || "",
-      currentOrgTenure: candidate?.current_org_tenure || candidate?.currentOrgTenure || "",
+      currentOrgTenure:
+        candidateDraft.currentOrgTenure
+        || candidate?.current_org_tenure
+        || candidate?.currentOrgTenure
+        || "",
       experienceTimeline: candidate?.experience_timeline || candidate?.experienceTimeline || "",
       reasonForChange: candidate?.reason_of_change || candidate?.reasonForChange || "",
       clientName: candidate?.client_name || candidate?.clientName || "",
