@@ -938,6 +938,13 @@ function getCandidateDraftState(candidate = {}) {
   const meta = decodePortalApplicantMetadata(source);
   const draftPayload = parsePortalObjectField(source?.draft_payload || source?.draftPayload);
   const screeningAnswers = parsePortalObjectField(source?.screening_answers || source?.screeningAnswers);
+  const normalizedCurrentOrgTenure = String(
+    draftPayload?.currentOrgTenure
+      || draftPayload?.current_org_tenure
+      || source?.current_org_tenure
+      || source?.currentOrgTenure
+      || ""
+  ).trim();
   const cautiousIndicatorsFallback = String(
     draftPayload?.cautiousIndicators
       || meta?.cautiousIndicators
@@ -948,6 +955,10 @@ function getCandidateDraftState(candidate = {}) {
   ).trim();
   return {
     ...draftPayload,
+    ...(normalizedCurrentOrgTenure ? {
+      currentOrgTenure: normalizedCurrentOrgTenure,
+      current_org_tenure: normalizedCurrentOrgTenure
+    } : {}),
     ...(cautiousIndicatorsFallback ? { cautiousIndicators: cautiousIndicatorsFallback } : {}),
     jdScreeningAnswers: Object.keys(screeningAnswers).length
       ? screeningAnswers
@@ -10224,6 +10235,7 @@ function PortalApp({ token, onLogout }) {
         screening_answers: interviewForm.jdScreeningAnswers || {},
         draft_payload: {
           ...interviewForm,
+          current_org_tenure: String(interviewForm.currentOrgTenure || "").trim(),
           jdScreeningAnswers: interviewForm.jdScreeningAnswers || {}
         },
         raw_note: encodePortalApplicantMetadata({
@@ -10276,6 +10288,7 @@ function PortalApp({ token, onLogout }) {
 	        screening_answers: interviewForm.jdScreeningAnswers || {},
 	        draft_payload: {
 	          ...interviewForm,
+	          current_org_tenure: String(interviewForm.currentOrgTenure || "").trim(),
 	          jdScreeningAnswers: interviewForm.jdScreeningAnswers || {}
 	        },
 	        raw_note: encodePortalApplicantMetadata({
