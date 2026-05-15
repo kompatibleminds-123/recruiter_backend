@@ -12680,8 +12680,6 @@ const server = http.createServer(async (req, res) => {
         role: String(input.role || input.currentDesignation || "").trim() || undefined,
         experience: String(input.experience || input.totalExperience || "").trim() || undefined,
         relevant_experience: String(input.relevant_experience || input.relevantExperience || "").trim() || undefined,
-        current_org_tenure: String(input.current_org_tenure || input.currentOrgTenure || "").trim() || undefined,
-        gender: String(input.gender || "").trim() || undefined,
         location: String(input.location || "").trim() || undefined,
         current_ctc: String(input.current_ctc || input.currentCtc || "").trim() || undefined,
         expected_ctc: String(input.expected_ctc || input.expectedCtc || "").trim() || undefined,
