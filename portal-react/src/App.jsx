@@ -10261,6 +10261,8 @@ function PortalApp({ token, onLogout }) {
 	        role: interviewForm.currentDesignation,
 	        experience: interviewForm.totalExperience,
 	        relevant_experience: interviewForm.relevantExperience,
+	        current_org_tenure: interviewForm.currentOrgTenure,
+	        gender: interviewForm.gender,
 	        highest_education: interviewForm.highestEducation,
 	        current_ctc: interviewForm.currentCtc,
 	        expected_ctc: interviewForm.expectedCtc,
