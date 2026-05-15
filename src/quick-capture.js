@@ -494,26 +494,34 @@ async function patchCandidate(candidateId, patch, options = {}) {
 
   const { url, serviceRoleKey } = getSupabaseConfig();
   if (url && serviceRoleKey) {
-    const response = await fetch(
-      `${url}/rest/v1/candidates?id=eq.${encodeURIComponent(id)}${companyId ? `&company_id=eq.${encodeURIComponent(companyId)}` : ""}`,
-      {
-      method: "PATCH",
-      headers: {
-        "Content-Type": "application/json",
-        apikey: serviceRoleKey,
-        Authorization: `Bearer ${serviceRoleKey}`,
-        Prefer: "return=representation"
-      },
-      body: JSON.stringify(payload)
-    });
-
-    if (!response.ok) {
+    const requestUrl = `${url}/rest/v1/candidates?id=eq.${encodeURIComponent(id)}${companyId ? `&company_id=eq.${encodeURIComponent(companyId)}` : ""}`;
+    const headers = {
+      "Content-Type": "application/json",
+      apikey: serviceRoleKey,
+      Authorization: `Bearer ${serviceRoleKey}`,
+      Prefer: "return=representation"
+    };
+    const nextPayload = { ...payload };
+    for (let attempt = 0; attempt < 8; attempt += 1) {
+      const response = await fetch(requestUrl, {
+        method: "PATCH",
+        headers,
+        body: JSON.stringify(nextPayload)
+      });
+      if (response.ok) {
+        const rows = await response.json();
+        return rows?.[0] || { id, ...nextPayload };
+      }
       const errorText = await response.text();
+      const missing = String(errorText || "").match(/Could not find the '([^']+)' column/i);
+      const missingColumn = String(missing?.[1] || "").trim();
+      if (response.status === 400 && missingColumn && Object.prototype.hasOwnProperty.call(nextPayload, missingColumn)) {
+        delete nextPayload[missingColumn];
+        continue;
+      }
       throw new Error(`Supabase update failed: ${response.status} ${errorText}`);
     }
-
-    const rows = await response.json();
-    return rows?.[0] || { id, ...payload };
+    throw new Error("Supabase update failed: repeated schema mismatch while patching candidate.");
   }
 
   const store = readLocalStore();

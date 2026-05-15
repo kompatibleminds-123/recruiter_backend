@@ -12679,7 +12679,6 @@ const server = http.createServer(async (req, res) => {
         company: String(input.company || input.currentCompany || "").trim() || undefined,
         role: String(input.role || input.currentDesignation || "").trim() || undefined,
         experience: String(input.experience || input.totalExperience || "").trim() || undefined,
-        relevant_experience: String(input.relevant_experience || input.relevantExperience || "").trim() || undefined,
         location: String(input.location || "").trim() || undefined,
         current_ctc: String(input.current_ctc || input.currentCtc || "").trim() || undefined,
         expected_ctc: String(input.expected_ctc || input.expectedCtc || "").trim() || undefined,
