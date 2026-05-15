@@ -5203,7 +5203,7 @@ function PortalApp({ token, onLogout }) {
   const [applicantsVisibleCount, setApplicantsVisibleCount] = useState(50);
   const [capturedCandidatesPage, setCapturedCandidatesPage] = useState(1);
   const [capturedCandidatesHasMore, setCapturedCandidatesHasMore] = useState(false);
-  const [capturedNotesFixedStats, setCapturedNotesFixedStats] = useState(null);
+  const [capturedStatsCandidates, setCapturedStatsCandidates] = useState([]);
   const [bulkAssignApplicantModalOpen, setBulkAssignApplicantModalOpen] = useState(false);
   const [bulkAssignCandidateModalOpen, setBulkAssignCandidateModalOpen] = useState(false);
   const [hostedJobId, setHostedJobId] = useState("");
@@ -6917,7 +6917,7 @@ function PortalApp({ token, onLogout }) {
     if (pathname !== "/captured-notes") {
       setCapturedCandidatesPage(1);
       setCapturedCandidatesHasMore(false);
-      setCapturedNotesFixedStats(null);
+      setCapturedStatsCandidates([]);
     }
   }, [location?.pathname]);
 
@@ -6925,9 +6925,9 @@ function PortalApp({ token, onLogout }) {
     if (!token) return;
     const pathname = String(location?.pathname || "/dashboard").trim() || "/dashboard";
     if (pathname !== "/captured-notes") return;
-    void api("/candidates/stats?scope=company&source=captured", token)
-      .then((result) => setCapturedNotesFixedStats(result || null))
-      .catch(() => setCapturedNotesFixedStats(null));
+    void api("/candidates?limit=5000&scope=company", token)
+      .then((result) => setCapturedStatsCandidates(Array.isArray(result) ? result : []))
+      .catch(() => setCapturedStatsCandidates([]));
   }, [token, location?.pathname]);
 
   useEffect(() => {
@@ -8252,6 +8252,35 @@ function PortalApp({ token, onLogout }) {
     });
   }, [state.candidates, state.user]);
 
+  const capturedNotesStatsUniverse = useMemo(() => {
+    const isAdmin = String(state.user?.role || "").toLowerCase() === "admin";
+    const currentUserName = String(state.user?.name || "").trim().toLowerCase();
+    const currentUserId = String(state.user?.id || "").trim();
+    const sourceRows = Array.isArray(capturedStatsCandidates) && capturedStatsCandidates.length ? capturedStatsCandidates : (state.candidates || []);
+    const isMine = (item) => {
+      const capturedId = String(item?.recruiter_id || "").trim();
+      const capturedName = String(item?.recruiter_name || "").trim().toLowerCase();
+      const assignedId = String(item?.assigned_to_user_id || "").trim();
+      const assignedName = String(item?.assigned_to_name || "").trim().toLowerCase();
+      if (currentUserId && (capturedId || assignedId)) {
+        if (capturedId && capturedId === currentUserId) return true;
+        if (assignedId && assignedId === currentUserId) return true;
+      }
+      if (currentUserName) {
+        if (capturedName && capturedName === currentUserName) return true;
+        if (assignedName && assignedName === currentUserName) return true;
+      }
+      return false;
+    };
+    return sourceRows.filter((item) => {
+      const sourceValue = String(item.source || "").trim();
+      const isInboundApplicant = sourceValue === "website_apply" || sourceValue === "hosted_apply" || sourceValue === "google_sheet";
+      if (isInboundApplicant) return false;
+      if (isAdmin) return true;
+      return isMine(item);
+    });
+  }, [capturedStatsCandidates, state.candidates, state.user]);
+
   const capturedNotesStats = useMemo(() => {
     const todayKey = new Date().toISOString().slice(0, 10);
     const queryText = String(candidateFilters.q || "").trim().toLowerCase();
@@ -8303,7 +8332,7 @@ function PortalApp({ token, onLogout }) {
       return Boolean(fallbackByName === "admin");
     };
     // Build one common filtered base for captured notes metrics.
-    const filteredBase = capturedNotesUniverse.filter((item) => {
+    const filteredBase = capturedNotesStatsUniverse.filter((item) => {
       const matchedAssessment = resolveCapturedAssessment(item);
       const sourceValue = String(item.source || "").trim();
       const clientValue = String(item.client_name || matchedAssessment?.clientName || "Unassigned").trim();
@@ -8395,8 +8424,7 @@ function PortalApp({ token, onLogout }) {
       inactive: inactiveCount,
       converted: convertedCount
     };
-  }, [candidateFilters, capturedAssessmentMap, capturedNotesUniverse, state.user]);
-  const capturedMetricStats = capturedNotesFixedStats || capturedNotesStats;
+  }, [candidateFilters, capturedAssessmentMap, capturedNotesStatsUniverse, state.user]);
 
   const assessmentStats = useMemo(() => {
     const todayKey = new Date().toISOString().slice(0, 10);
@@ -14495,11 +14523,11 @@ function PortalApp({ token, onLogout }) {
                 </label>
               </div>
               <div className="metric-grid metric-grid--tight captured-metric-row">
-                <div className="metric-card compact-metric"><div className="metric-label">Today</div><div className="metric-value">{capturedMetricStats.today}</div></div>
-                <div className="metric-card compact-metric"><div className="metric-label">Total notes captured</div><div className="metric-value">{capturedMetricStats.total}</div></div>
-                <div className="metric-card compact-metric"><div className="metric-label">Active</div><div className="metric-value">{capturedMetricStats.active}</div></div>
-                <div className="metric-card compact-metric"><div className="metric-label">Inactive</div><div className="metric-value">{capturedMetricStats.inactive || capturedMetricStats.hidden || 0}</div></div>
-                <div className="metric-card compact-metric"><div className="metric-label">Converted</div><div className="metric-value">{capturedMetricStats.converted}</div></div>
+                <div className="metric-card compact-metric"><div className="metric-label">Today</div><div className="metric-value">{capturedNotesStats.today}</div></div>
+                <div className="metric-card compact-metric"><div className="metric-label">Total notes captured</div><div className="metric-value">{capturedNotesStats.total}</div></div>
+                <div className="metric-card compact-metric"><div className="metric-label">Active</div><div className="metric-value">{capturedNotesStats.active}</div></div>
+                <div className="metric-card compact-metric"><div className="metric-label">Inactive</div><div className="metric-value">{capturedNotesStats.inactive || 0}</div></div>
+                <div className="metric-card compact-metric"><div className="metric-label">Converted</div><div className="metric-value">{capturedNotesStats.converted}</div></div>
               </div>
               <div className="form-grid three-col" style={{ marginTop: 10 }}>
                 <label><span>Date from</span><input type="date" value={candidateFilters.dateFrom} onChange={(e) => setCandidateFilters((c) => ({ ...c, dateFrom: e.target.value }))} /></label>
