@@ -613,7 +613,6 @@ const DATABASE_CANDIDATE_SELECT_FIELDS = [
   "client_name",
   "draft_payload",
   "screening_answers",
-  "gender",
   "last_contact_outcome",
   "source",
   "hidden_from_captured",
