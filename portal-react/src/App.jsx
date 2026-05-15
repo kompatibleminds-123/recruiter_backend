@@ -5201,9 +5201,6 @@ function PortalApp({ token, onLogout }) {
   const [bulkAssignApplicantIds, setBulkAssignApplicantIds] = useState([]);
   const [bulkAssignCandidateIds, setBulkAssignCandidateIds] = useState([]);
   const [applicantsVisibleCount, setApplicantsVisibleCount] = useState(50);
-  const [capturedCandidatesPage, setCapturedCandidatesPage] = useState(1);
-  const [capturedCandidatesHasMore, setCapturedCandidatesHasMore] = useState(false);
-  const [capturedStatsCandidates, setCapturedStatsCandidates] = useState([]);
   const [bulkAssignApplicantModalOpen, setBulkAssignApplicantModalOpen] = useState(false);
   const [bulkAssignCandidateModalOpen, setBulkAssignCandidateModalOpen] = useState(false);
   const [hostedJobId, setHostedJobId] = useState("");
@@ -6577,10 +6574,6 @@ function PortalApp({ token, onLogout }) {
       pathname === "/captured-notes" ||
       pathname === "/assessments" ||
       pathname === "/interview";
-    const isCapturedNotesRoute = pathname === "/captured-notes";
-    const candidateLimit = isCapturedNotesRoute ? 50 : 5000;
-    const candidatePage = isCapturedNotesRoute ? capturedCandidatesPage : 1;
-    const candidateMetaFlag = isCapturedNotesRoute ? "&includeMeta=1" : "";
     const needsDatabaseCandidates = pathname === "/candidates";
     const needsAssessments =
       pathname === "/dashboard" ||
@@ -6639,7 +6632,7 @@ function PortalApp({ token, onLogout }) {
       needsEmployeeUsers
         ? api("/company/employees", token).catch(() => ({ employees: [] }))
         : Promise.resolve(null),
-      needsCandidates ? api(`/candidates?limit=${candidateLimit}&page=${candidatePage}${candidateMetaFlag}`, token).catch(() => (isCapturedNotesRoute ? { items: [], hasMore: false } : [])) : Promise.resolve(null),
+      needsCandidates ? api("/candidates?limit=5000", token).catch(() => []) : Promise.resolve(null),
       needsDatabaseCandidates ? api("/company/database-candidates?limit=5000", token).catch(() => []) : Promise.resolve(null),
       needsAssessments ? api("/company/assessments", token).catch(() => ({ assessments: [] })) : Promise.resolve(null),
       needsAssessmentEvents
@@ -6683,17 +6676,7 @@ function PortalApp({ token, onLogout }) {
       intake: needsIntake ? (intakeResult || {}) : current.intake,
       jobs: needsJobs ? (jobsResult?.jobs || []) : current.jobs,
       users: needsUsers ? (usersResult?.users || []) : current.users,
-      candidates: needsCandidates
-        ? (
-            isCapturedNotesRoute
-              ? (
-                  capturedCandidatesPage === 1
-                    ? (Array.isArray(candidatesResult?.items) ? candidatesResult.items : [])
-                    : [...current.candidates, ...(Array.isArray(candidatesResult?.items) ? candidatesResult.items : [])]
-                )
-              : (Array.isArray(candidatesResult) ? candidatesResult : [])
-          )
-        : current.candidates,
+      candidates: needsCandidates ? (Array.isArray(candidatesResult) ? candidatesResult : []) : current.candidates,
       databaseCandidates: needsDatabaseCandidates
         ? (Array.isArray(databaseCandidatesResult) ? databaseCandidatesResult : [])
         : current.databaseCandidates,
@@ -6702,11 +6685,6 @@ function PortalApp({ token, onLogout }) {
     }));
     if (needsJobs) {
       setJobsCatalog(Array.isArray(jobsManageResult?.jobs) ? jobsManageResult.jobs : []);
-    }
-    if (isCapturedNotesRoute) {
-      setCapturedCandidatesHasMore(Boolean(candidatesResult?.hasMore));
-    } else {
-      setCapturedCandidatesHasMore(false);
     }
     if (includeClientUsers && clientUsersResult) {
       setClientUsers(clientUsersResult.clientUsers || []);
@@ -6855,31 +6833,17 @@ function PortalApp({ token, onLogout }) {
 
   async function reloadCandidatesSlice({ includeDatabase = false } = {}) {
     if (!token) return;
-    const pathname = String(location?.pathname || "/dashboard").trim() || "/dashboard";
-    const isCapturedNotesRoute = pathname === "/captured-notes";
-    const candidateLimit = isCapturedNotesRoute ? 50 : 5000;
-    const candidatePage = isCapturedNotesRoute ? capturedCandidatesPage : 1;
-    const candidateMetaFlag = isCapturedNotesRoute ? "&includeMeta=1" : "";
     const [candidatesResult, databaseCandidatesResult] = await Promise.all([
-      api(`/candidates?limit=${candidateLimit}&page=${candidatePage}${candidateMetaFlag}`, token).catch(() => (isCapturedNotesRoute ? { items: [], hasMore: false } : [])),
+      api("/candidates?limit=5000", token).catch(() => []),
       includeDatabase ? api("/company/database-candidates?limit=5000", token).catch(() => []) : Promise.resolve(null)
     ]);
     setState((current) => ({
       ...current,
-      candidates: isCapturedNotesRoute
-        ? (
-            capturedCandidatesPage === 1
-              ? (Array.isArray(candidatesResult?.items) ? candidatesResult.items : current.candidates)
-              : [...current.candidates, ...(Array.isArray(candidatesResult?.items) ? candidatesResult.items : [])]
-          )
-        : (Array.isArray(candidatesResult) ? candidatesResult : current.candidates),
+      candidates: Array.isArray(candidatesResult) ? candidatesResult : current.candidates,
       databaseCandidates: includeDatabase
         ? (Array.isArray(databaseCandidatesResult) ? databaseCandidatesResult : current.databaseCandidates)
         : current.databaseCandidates
     }));
-    if (isCapturedNotesRoute) {
-      setCapturedCandidatesHasMore(Boolean(candidatesResult?.hasMore));
-    }
   }
 
   async function reloadAssessmentsSlice({ includeEvents = false } = {}) {
@@ -6910,30 +6874,6 @@ function PortalApp({ token, onLogout }) {
     };
     lastWorkspaceRefreshAtRef.current = now;
     void loadWorkspace().catch((error) => setStatus("workspace", String(error?.message || error), "error"));
-  }, [token, location?.pathname, capturedCandidatesPage]);
-
-  useEffect(() => {
-    const pathname = String(location?.pathname || "/dashboard").trim() || "/dashboard";
-    if (pathname !== "/captured-notes") {
-      setCapturedCandidatesPage(1);
-      setCapturedCandidatesHasMore(false);
-      setCapturedStatsCandidates([]);
-    }
-  }, [location?.pathname]);
-
-  useEffect(() => {
-    const pathname = String(location?.pathname || "/dashboard").trim() || "/dashboard";
-    if (pathname !== "/captured-notes") return;
-    setCapturedCandidatesPage(1);
-  }, [location?.pathname, candidateFilters]);
-
-  useEffect(() => {
-    if (!token) return;
-    const pathname = String(location?.pathname || "/dashboard").trim() || "/dashboard";
-    if (pathname !== "/captured-notes") return;
-    void api("/candidates?limit=5000", token)
-      .then((result) => setCapturedStatsCandidates(Array.isArray(result) ? result : []))
-      .catch(() => setCapturedStatsCandidates([]));
   }, [token, location?.pathname]);
 
   useEffect(() => {
@@ -8249,44 +8189,14 @@ function PortalApp({ token, onLogout }) {
       return false;
     };
 
-    const sourceRows = Array.isArray(capturedStatsCandidates) && capturedStatsCandidates.length ? capturedStatsCandidates : (state.candidates || []);
-    return sourceRows.filter((item) => {
+    return (state.candidates || []).filter((item) => {
       const sourceValue = String(item.source || "").trim();
       const isInboundApplicant = sourceValue === "website_apply" || sourceValue === "hosted_apply" || sourceValue === "google_sheet";
       if (isInboundApplicant) return false;
       if (isAdmin) return true;
       return isMine(item);
     });
-  }, [capturedStatsCandidates, state.candidates, state.user]);
-
-  const capturedNotesStatsUniverse = useMemo(() => {
-    const isAdmin = String(state.user?.role || "").toLowerCase() === "admin";
-    const currentUserName = String(state.user?.name || "").trim().toLowerCase();
-    const currentUserId = String(state.user?.id || "").trim();
-    const sourceRows = Array.isArray(capturedStatsCandidates) && capturedStatsCandidates.length ? capturedStatsCandidates : (state.candidates || []);
-    const isMine = (item) => {
-      const capturedId = String(item?.recruiter_id || "").trim();
-      const capturedName = String(item?.recruiter_name || "").trim().toLowerCase();
-      const assignedId = String(item?.assigned_to_user_id || "").trim();
-      const assignedName = String(item?.assigned_to_name || "").trim().toLowerCase();
-      if (currentUserId && (capturedId || assignedId)) {
-        if (capturedId && capturedId === currentUserId) return true;
-        if (assignedId && assignedId === currentUserId) return true;
-      }
-      if (currentUserName) {
-        if (capturedName && capturedName === currentUserName) return true;
-        if (assignedName && assignedName === currentUserName) return true;
-      }
-      return false;
-    };
-    return sourceRows.filter((item) => {
-      const sourceValue = String(item.source || "").trim();
-      const isInboundApplicant = sourceValue === "website_apply" || sourceValue === "hosted_apply" || sourceValue === "google_sheet";
-      if (isInboundApplicant) return false;
-      if (isAdmin) return true;
-      return isMine(item);
-    });
-  }, [capturedStatsCandidates, state.candidates, state.user]);
+  }, [state.candidates, state.user]);
 
   const capturedNotesStats = useMemo(() => {
     const todayKey = new Date().toISOString().slice(0, 10);
@@ -8340,7 +8250,7 @@ function PortalApp({ token, onLogout }) {
     };
     const isConvertedCandidate = (item) => Boolean(item?.used_in_assessment) || Boolean(String(item?.assessment_id || item?.assessmentId || "").trim());
     // Build one common filtered base for captured notes metrics.
-    const filteredBase = capturedNotesStatsUniverse.filter((item) => {
+    const filteredBase = capturedNotesUniverse.filter((item) => {
       const sourceValue = String(item.source || "").trim();
       const clientValue = String(item.client_name || "Unassigned").trim();
       const jdValue = String(item.jd_title || item.role || "").trim();
@@ -8431,7 +8341,7 @@ function PortalApp({ token, onLogout }) {
       inactive: inactiveCount,
       converted: convertedCount
     };
-  }, [candidateFilters, capturedAssessmentMap, capturedNotesStatsUniverse, state.user]);
+  }, [candidateFilters, capturedAssessmentMap, capturedNotesUniverse, state.user]);
 
   const assessmentStats = useMemo(() => {
     const todayKey = new Date().toISOString().slice(0, 10);
@@ -8595,11 +8505,6 @@ function PortalApp({ token, onLogout }) {
       return String(b?.created_at || "").localeCompare(String(a?.created_at || ""));
     });
   }, [candidateFilters, capturedAssessmentMap, capturedNotesUniverse, state.user]);
-  const visibleCapturedCandidates = useMemo(
-    () => capturedCandidates.slice(0, Math.max(1, capturedCandidatesPage) * 50),
-    [capturedCandidates, capturedCandidatesPage]
-  );
-
   const filteredApplicants = useMemo(() => {
     const isAdmin = String(state.user?.role || "").toLowerCase() === "admin";
     const currentUserName = String(state.user?.name || "").trim().toLowerCase();
@@ -14580,7 +14485,7 @@ function PortalApp({ token, onLogout }) {
                   ) : null}
                 </div>
                 <div className="stack-list">
-                {!capturedCandidates.length ? <div className="empty-state">No captured notes or recruiter-owned candidates yet.</div> : visibleCapturedCandidates.map((item) => {
+                {!capturedCandidates.length ? <div className="empty-state">No captured notes or recruiter-owned candidates yet.</div> : capturedCandidates.map((item) => {
                   const matchedAssessment = resolveCapturedAssessment(item);
                   const statusState = normalizedAssessmentState(matchedAssessment, item);
                   const latestAttemptLine = extractLatestAttemptLine(item.last_contact_notes || "");
@@ -14674,11 +14579,6 @@ function PortalApp({ token, onLogout }) {
                   );
                 })}
               </div>
-              {capturedCandidates.length > visibleCapturedCandidates.length ? (
-                <div className="button-row tight">
-                  <button className="ghost-btn" onClick={() => setCapturedCandidatesPage((current) => current + 1)}>Load more captured notes</button>
-                </div>
-              ) : null}
             </Section>
           } />
 
