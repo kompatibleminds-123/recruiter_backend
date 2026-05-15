@@ -5203,6 +5203,7 @@ function PortalApp({ token, onLogout }) {
   const [applicantsVisibleCount, setApplicantsVisibleCount] = useState(50);
   const [capturedCandidatesPage, setCapturedCandidatesPage] = useState(1);
   const [capturedCandidatesHasMore, setCapturedCandidatesHasMore] = useState(false);
+  const [capturedNotesFixedStats, setCapturedNotesFixedStats] = useState(null);
   const [bulkAssignApplicantModalOpen, setBulkAssignApplicantModalOpen] = useState(false);
   const [bulkAssignCandidateModalOpen, setBulkAssignCandidateModalOpen] = useState(false);
   const [hostedJobId, setHostedJobId] = useState("");
@@ -6916,8 +6917,18 @@ function PortalApp({ token, onLogout }) {
     if (pathname !== "/captured-notes") {
       setCapturedCandidatesPage(1);
       setCapturedCandidatesHasMore(false);
+      setCapturedNotesFixedStats(null);
     }
   }, [location?.pathname]);
+
+  useEffect(() => {
+    if (!token) return;
+    const pathname = String(location?.pathname || "/dashboard").trim() || "/dashboard";
+    if (pathname !== "/captured-notes") return;
+    void api("/candidates/stats?scope=company&source=captured", token)
+      .then((result) => setCapturedNotesFixedStats(result || null))
+      .catch(() => setCapturedNotesFixedStats(null));
+  }, [token, location?.pathname]);
 
   useEffect(() => {
     if (!token) return undefined;
@@ -8385,6 +8396,7 @@ function PortalApp({ token, onLogout }) {
       converted: convertedCount
     };
   }, [candidateFilters, capturedAssessmentMap, capturedNotesUniverse, state.user]);
+  const capturedMetricStats = capturedNotesFixedStats || capturedNotesStats;
 
   const assessmentStats = useMemo(() => {
     const todayKey = new Date().toISOString().slice(0, 10);
@@ -14483,11 +14495,11 @@ function PortalApp({ token, onLogout }) {
                 </label>
               </div>
               <div className="metric-grid metric-grid--tight captured-metric-row">
-                <div className="metric-card compact-metric"><div className="metric-label">Today</div><div className="metric-value">{capturedNotesStats.today}</div></div>
-                <div className="metric-card compact-metric"><div className="metric-label">Total notes captured</div><div className="metric-value">{capturedNotesStats.total}</div></div>
-                <div className="metric-card compact-metric"><div className="metric-label">Active</div><div className="metric-value">{capturedNotesStats.active}</div></div>
-                <div className="metric-card compact-metric"><div className="metric-label">Inactive</div><div className="metric-value">{capturedNotesStats.inactive || 0}</div></div>
-                <div className="metric-card compact-metric"><div className="metric-label">Converted</div><div className="metric-value">{capturedNotesStats.converted}</div></div>
+                <div className="metric-card compact-metric"><div className="metric-label">Today</div><div className="metric-value">{capturedMetricStats.today}</div></div>
+                <div className="metric-card compact-metric"><div className="metric-label">Total notes captured</div><div className="metric-value">{capturedMetricStats.total}</div></div>
+                <div className="metric-card compact-metric"><div className="metric-label">Active</div><div className="metric-value">{capturedMetricStats.active}</div></div>
+                <div className="metric-card compact-metric"><div className="metric-label">Inactive</div><div className="metric-value">{capturedMetricStats.inactive || capturedMetricStats.hidden || 0}</div></div>
+                <div className="metric-card compact-metric"><div className="metric-label">Converted</div><div className="metric-value">{capturedMetricStats.converted}</div></div>
               </div>
               <div className="form-grid three-col" style={{ marginTop: 10 }}>
                 <label><span>Date from</span><input type="date" value={candidateFilters.dateFrom} onChange={(e) => setCandidateFilters((c) => ({ ...c, dateFrom: e.target.value }))} /></label>

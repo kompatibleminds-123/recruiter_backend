@@ -1058,8 +1058,13 @@ async function exportCompanyQuickCaptureData(companyId) {
 async function getCandidateStatsForUser(user, options = {}) {
   const q = String(options?.q || "").trim();
   const scope = String(options?.scope || "").trim() || "company";
+  const sourceScope = String(options?.sourceScope || options?.source || "").trim().toLowerCase();
   const rows = await listCandidatesForUser(user, { limit: 5000, q, scope });
-  const items = Array.isArray(rows) ? rows : [];
+  const items = (Array.isArray(rows) ? rows : []).filter((item) => {
+    if (sourceScope !== "captured") return true;
+    const sourceValue = String(item?.source || "").trim().toLowerCase();
+    return sourceValue !== "website_apply" && sourceValue !== "hosted_apply" && sourceValue !== "google_sheet";
+  });
   const todayKey = new Date().toISOString().slice(0, 10);
   const isConverted = (item) =>
     Boolean(item?.used_in_assessment) || Boolean(String(item?.assessment_id || item?.assessmentId || "").trim());

@@ -12649,7 +12649,8 @@ const server = http.createServer(async (req, res) => {
       const sessionUser = await requireSessionUser(getBearerToken(req));
       const result = await getCandidateStatsForUser(sessionUser, {
         q: String(requestUrl.searchParams.get("q") || "").trim(),
-        scope: String(requestUrl.searchParams.get("scope") || "").trim()
+        scope: String(requestUrl.searchParams.get("scope") || "").trim(),
+        sourceScope: String(requestUrl.searchParams.get("source") || "").trim()
       });
       sendJson(res, 200, { ok: true, result });
     } catch (error) {
