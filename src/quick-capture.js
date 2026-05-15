@@ -584,7 +584,6 @@ function matchesCandidateId(candidate, rawId) {
 const DATABASE_CANDIDATE_SELECT_FIELDS = [
   "id",
   "company_id",
-  "candidate_name",
   "name",
   "company",
   "role",
