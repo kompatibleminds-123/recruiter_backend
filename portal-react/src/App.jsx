@@ -6922,10 +6922,16 @@ function PortalApp({ token, onLogout }) {
   }, [location?.pathname]);
 
   useEffect(() => {
+    const pathname = String(location?.pathname || "/dashboard").trim() || "/dashboard";
+    if (pathname !== "/captured-notes") return;
+    setCapturedCandidatesPage(1);
+  }, [location?.pathname, candidateFilters]);
+
+  useEffect(() => {
     if (!token) return;
     const pathname = String(location?.pathname || "/dashboard").trim() || "/dashboard";
     if (pathname !== "/captured-notes") return;
-    void api("/candidates?limit=5000&scope=company", token)
+    void api("/candidates?limit=5000", token)
       .then((result) => setCapturedStatsCandidates(Array.isArray(result) ? result : []))
       .catch(() => setCapturedStatsCandidates([]));
   }, [token, location?.pathname]);
@@ -8243,14 +8249,15 @@ function PortalApp({ token, onLogout }) {
       return false;
     };
 
-    return (state.candidates || []).filter((item) => {
+    const sourceRows = Array.isArray(capturedStatsCandidates) && capturedStatsCandidates.length ? capturedStatsCandidates : (state.candidates || []);
+    return sourceRows.filter((item) => {
       const sourceValue = String(item.source || "").trim();
       const isInboundApplicant = sourceValue === "website_apply" || sourceValue === "hosted_apply" || sourceValue === "google_sheet";
       if (isInboundApplicant) return false;
       if (isAdmin) return true;
       return isMine(item);
     });
-  }, [state.candidates, state.user]);
+  }, [capturedStatsCandidates, state.candidates, state.user]);
 
   const capturedNotesStatsUniverse = useMemo(() => {
     const isAdmin = String(state.user?.role || "").toLowerCase() === "admin";
@@ -8588,6 +8595,10 @@ function PortalApp({ token, onLogout }) {
       return String(b?.created_at || "").localeCompare(String(a?.created_at || ""));
     });
   }, [candidateFilters, capturedAssessmentMap, capturedNotesUniverse, state.user]);
+  const visibleCapturedCandidates = useMemo(
+    () => capturedCandidates.slice(0, Math.max(1, capturedCandidatesPage) * 50),
+    [capturedCandidates, capturedCandidatesPage]
+  );
 
   const filteredApplicants = useMemo(() => {
     const isAdmin = String(state.user?.role || "").toLowerCase() === "admin";
@@ -14569,7 +14580,7 @@ function PortalApp({ token, onLogout }) {
                   ) : null}
                 </div>
                 <div className="stack-list">
-                {!capturedCandidates.length ? <div className="empty-state">No captured notes or recruiter-owned candidates yet.</div> : capturedCandidates.map((item) => {
+                {!capturedCandidates.length ? <div className="empty-state">No captured notes or recruiter-owned candidates yet.</div> : visibleCapturedCandidates.map((item) => {
                   const matchedAssessment = resolveCapturedAssessment(item);
                   const statusState = normalizedAssessmentState(matchedAssessment, item);
                   const latestAttemptLine = extractLatestAttemptLine(item.last_contact_notes || "");
@@ -14663,7 +14674,7 @@ function PortalApp({ token, onLogout }) {
                   );
                 })}
               </div>
-              {capturedCandidatesHasMore ? (
+              {capturedCandidates.length > visibleCapturedCandidates.length ? (
                 <div className="button-row tight">
                   <button className="ghost-btn" onClick={() => setCapturedCandidatesPage((current) => current + 1)}>Load more captured notes</button>
                 </div>
