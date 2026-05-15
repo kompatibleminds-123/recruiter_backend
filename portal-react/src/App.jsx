@@ -8331,15 +8331,15 @@ function PortalApp({ token, onLogout }) {
       const fallbackByName = String(item?.assigned_by_name || "").trim().toLowerCase();
       return Boolean(fallbackByName === "admin");
     };
+    const isConvertedCandidate = (item) => Boolean(item?.used_in_assessment) || Boolean(String(item?.assessment_id || item?.assessmentId || "").trim());
     // Build one common filtered base for captured notes metrics.
     const filteredBase = capturedNotesStatsUniverse.filter((item) => {
-      const matchedAssessment = resolveCapturedAssessment(item);
       const sourceValue = String(item.source || "").trim();
-      const clientValue = String(item.client_name || matchedAssessment?.clientName || "Unassigned").trim();
-      const jdValue = String(item.jd_title || matchedAssessment?.jdTitle || item.role || "").trim();
+      const clientValue = String(item.client_name || "Unassigned").trim();
+      const jdValue = String(item.jd_title || item.role || "").trim();
       const assignedToValue = String(item.assigned_to_name || "Unassigned").trim();
       const capturedByValue = String(item.recruiter_name || item.assigned_by_name || "Unknown").trim();
-      const outcomeValue = getCapturedOutcome(item, matchedAssessment);
+      const outcomeValue = getCapturedOutcome(item, null);
       const activityKey = activityDateKey(item);
       const manuallyHidden = item.hidden_from_captured === true;
       const activeValue = manuallyHidden ? "Inactive" : "Active";
@@ -8399,11 +8399,11 @@ function PortalApp({ token, onLogout }) {
     // - Active+Inactive: include converted
     const includeConvertedForState = defaultActiveOnly || wantsActive || (wantsActive && wantsInactive);
     const convertedCount = includeConvertedForState
-      ? filteredBase.filter((item) => Boolean(resolveCapturedAssessment(item))).length
+      ? filteredBase.filter((item) => isConvertedCandidate(item)).length
       : 0;
 
     // Captured totals are strictly non-converted rows only.
-    const nonConvertedBase = filteredBase.filter((item) => !resolveCapturedAssessment(item));
+    const nonConvertedBase = filteredBase.filter((item) => !isConvertedCandidate(item));
     const stateScopedRows = nonConvertedBase.filter((item) => {
       const manuallyHidden = item.hidden_from_captured === true;
       const activeValue = manuallyHidden ? "Inactive" : "Active";
