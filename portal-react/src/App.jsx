@@ -4850,6 +4850,27 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
     });
   }
 
+  async function attachSelectedProspectsWithCategory() {
+    if (!selectedCampaignId) throw new Error("Select campaign first.");
+    if (!selectedProspectIds.length) throw new Error("Select prospects first.");
+    const categoryInput = window.prompt("Category name for selected prospects (e.g. Fintech Sales, Lending Sales):", "");
+    if (categoryInput === null) return;
+    const category = String(categoryInput || "").trim();
+    if (!category) throw new Error("Category is required.");
+    const selectedRows = prospects.filter((item) => selectedProspectIds.includes(String(item?.id || "")));
+    for (const item of selectedRows) {
+      const id = String(item?.id || "").trim();
+      if (!id) continue;
+      const existing = Array.isArray(item?.categories) ? item.categories.map((v) => String(v || "").trim()).filter(Boolean) : [];
+      const next = Array.from(new Set([...existing, category]));
+      await api(`/company/marketing/prospects/${encodeURIComponent(id)}`, token, "PATCH", {
+        category,
+        categories: next
+      });
+    }
+    await api(`/company/marketing/campaigns/${encodeURIComponent(selectedCampaignId)}/prospects`, token, "POST", { prospectIds: selectedProspectIds });
+  }
+
   function startProspectEdit(item) {
     if (!item) return;
     setEditingProspectId(String(item.id || ""));
@@ -5218,7 +5239,7 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
             <button className="ghost-btn" onClick={() => void api(`/company/marketing/campaigns/${activeCampaign.id}/start`, token, "POST", {}).then(() => { setOk("Campaign started."); return refresh(); }).catch(setErr)}>Start</button>
             <button className="ghost-btn" onClick={() => void api(`/company/marketing/campaigns/${activeCampaign.id}/pause`, token, "POST", {}).then(() => { setOk("Campaign paused."); return refresh(); }).catch(setErr)}>Pause</button>
             <button className="ghost-btn" onClick={() => void api(`/company/marketing/campaigns/${activeCampaign.id}/resume`, token, "POST", {}).then(() => { setOk("Campaign resumed."); return refresh(); }).catch(setErr)}>Resume</button>
-            <button className="ghost-btn" disabled={!selectedProspectIds.length} onClick={() => void api(`/company/marketing/campaigns/${encodeURIComponent(selectedCampaignId)}/prospects`, token, "POST", { prospectIds: selectedProspectIds }).then(() => { setOk("Selected prospects attached."); return refresh(); }).catch(setErr)}>Attach selected prospects</button>
+            <button className="ghost-btn" disabled={!selectedProspectIds.length} onClick={() => void attachSelectedProspectsWithCategory().then(() => { setOk("Selected prospects attached with category."); return refresh(); }).catch(setErr)}>Attach selected prospects</button>
           </div>
         ) : null}
         <div className="table-wrap">
