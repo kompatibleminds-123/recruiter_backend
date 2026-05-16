@@ -4783,6 +4783,12 @@ async function saveAssessment({ actorUserId, companyId, assessment }) {
         }
       } catch (_) {}
 
+      const savedStatusHistory = Array.isArray(saved?.statusHistory) ? saved.statusHistory : [];
+      const latestStatusEntry = [...savedStatusHistory].reverse().find((entry) => {
+        const statusValue = String(entry?.status || "").trim().toLowerCase();
+        return statusValue && statusValue === nextStatusLower;
+      }) || (savedStatusHistory.length ? savedStatusHistory[savedStatusHistory.length - 1] : null);
+
       const normalized = (value) => String(value || "").trim().toLowerCase();
       const stageIndex = (valueLower) => {
         if (valueLower === "screening call aligned") return 0;
@@ -4837,7 +4843,9 @@ async function saveAssessment({ actorUserId, companyId, assessment }) {
           updatedByName: actor.name,
           interviewAt: String(saved?.interviewAt || "").trim(),
           offerDoj: String(saved?.offerDoj || "").trim(),
-          offerAmount: String(saved?.offerAmount || "").trim()
+          offerAmount: String(saved?.offerAmount || "").trim(),
+          manualRemarks: String(latestStatusEntry?.manualRemarks || "").trim(),
+          inferText: String(latestStatusEntry?.notes || "").trim()
         }
       };
 
