@@ -1625,10 +1625,22 @@ function buildAssessmentJourneyEntries(assessment, contactAttempts = [], candida
 function getLatestAssessmentStatusPreview(assessment = {}) {
   const statusHistory = Array.isArray(assessment?.statusHistory) ? assessment.statusHistory : [];
   const latest = statusHistory.length ? statusHistory[statusHistory.length - 1] : null;
+  const status = String(latest?.status || assessment?.candidateStatus || "").trim();
+  const statusLower = status.toLowerCase();
+  const alignedAt = String(assessment?.interviewAt || "").trim();
+  const offeredAt = String(assessment?.expectedDoj || "").trim();
+  const joinedAt = String(assessment?.dateOfJoining || "").trim();
   return {
-    status: String(latest?.status || assessment?.candidateStatus || "").trim(),
+    status,
     remarks: String(latest?.manualRemarks || "").trim(),
-    at: String(latest?.at || assessment?.updatedAt || "").trim()
+    at: String(
+      (isInterviewAlignedStatus(status) ? alignedAt : "")
+      || (statusLower === "offered" ? offeredAt : "")
+      || (statusLower === "joined" ? joinedAt : "")
+      || latest?.at
+      || assessment?.updatedAt
+      || ""
+    ).trim()
   };
 }
 
@@ -3416,7 +3428,7 @@ function AssignModal({ open, applicant, users, jobs, onClose, onSave, title = "A
   if (!open) return null;
 
   return (
-    <div className="overlay" onClick={onClose}>
+    <div className="overlay">
       <div className="overlay-card" onClick={(e) => e.stopPropagation()}>
         <h3>{title}</h3>
         <p className="muted">{description.replace("{name}", applicant?.[nameKey] || applicant?.name || "this candidate")}</p>
@@ -3743,6 +3755,7 @@ function AssessmentStatusModal({ open, assessment, onClose, onSave }) {
   const [expectedDoj, setExpectedDoj] = useState("");
   const [dateOfJoining, setDateOfJoining] = useState("");
   const [status, setStatus] = useState("");
+  const [saving, setSaving] = useState(false);
   const inferSyncModeRef = useRef("manual");
 
   useEffect(() => {
@@ -3755,6 +3768,7 @@ function AssessmentStatusModal({ open, assessment, onClose, onSave }) {
     setExpectedDoj(toDateInputValue(assessment.expectedDoj || assessment.followUpAt || ""));
     setDateOfJoining(toDateInputValue(assessment.dateOfJoining || assessment.followUpAt || ""));
     setStatus("");
+    setSaving(false);
     inferSyncModeRef.current = "programmatic";
   }, [open, assessment?.id]);
 
@@ -3855,7 +3869,8 @@ function AssessmentStatusModal({ open, assessment, onClose, onSave }) {
         <p className="muted">Last line in infer box is the final source of truth for current status.</p>
         {status ? <div className="status">{status}</div> : null}
         <div className="button-row">
-          <button onClick={async () => {
+          <button disabled={saving} onClick={async () => {
+            if (saving) return;
             if (!candidateStatus) {
               setStatus("Select a status first.");
               return;
@@ -3865,6 +3880,7 @@ function AssessmentStatusModal({ open, assessment, onClose, onSave }) {
               return;
             }
             setStatus("Saving status update...");
+            setSaving(true);
             try {
               await onSave({
                 candidateStatus,
@@ -3878,8 +3894,10 @@ function AssessmentStatusModal({ open, assessment, onClose, onSave }) {
               });
             } catch (error) {
               setStatus(String(error?.message || error));
+            } finally {
+              setSaving(false);
             }
-          }}>Save update</button>
+          }}>{saving ? "Saving..." : "Save update"}</button>
           <button className="ghost-btn" onClick={onClose}>Cancel</button>
         </div>
       </div>
@@ -5818,6 +5836,7 @@ function PortalApp({ token, onLogout }) {
   const [newDraftImportBusy, setNewDraftImportBusy] = useState(false);
   const [newDraftSheetPreviewOpen, setNewDraftSheetPreviewOpen] = useState(false);
   const [newDraftSheetRows, setNewDraftSheetRows] = useState([]);
+  const assessmentStatusSaveLockRef = useRef(new Set());
   const [notesCandidateId, setNotesCandidateId] = useState("");
   const [notesCandidateSnapshot, setNotesCandidateSnapshot] = useState(null);
   const [attemptsCandidateId, setAttemptsCandidateId] = useState("");
@@ -12945,6 +12964,13 @@ function PortalApp({ token, onLogout }) {
 
   async function saveAssessmentStatusUpdate(assessment, payload, options = {}) {
     const statusTarget = options.statusTarget || "assessments";
+    const lockKey = String(assessment?.id || assessment?.candidateId || "").trim();
+    if (lockKey && assessmentStatusSaveLockRef.current.has(lockKey)) {
+      setStatus(statusTarget, "Status update already in progress for this candidate.", "error");
+      return;
+    }
+    if (lockKey) assessmentStatusSaveLockRef.current.add(lockKey);
+    try {
     const inferText = String(payload?.inferText || payload?.notes || "").trim();
     const manualRemarks = String(payload?.manualRemarks || "").trim();
     const combinedNotes = [inferText, manualRemarks ? `Remarks: ${manualRemarks}` : ""].filter(Boolean).join("\n");
@@ -13109,6 +13135,13 @@ function PortalApp({ token, onLogout }) {
         void refreshWorkspaceSilently("post-status-sync-fail");
       }
     })();
+    } finally {
+      if (lockKey) {
+        window.setTimeout(() => {
+          assessmentStatusSaveLockRef.current.delete(lockKey);
+        }, 1500);
+      }
+    }
   }
 
   async function deleteAssessmentItem(assessment) {
