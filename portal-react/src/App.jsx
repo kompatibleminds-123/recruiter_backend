@@ -3790,10 +3790,12 @@ function AssessmentStatusModal({ open, assessment, onClose, onSave }) {
 
   useEffect(() => {
     if (!open || !assessment) return;
+    const history = Array.isArray(assessment?.statusHistory) ? assessment.statusHistory : [];
+    const latestWithRemarks = [...history].reverse().find((item) => String(item?.manualRemarks || "").trim());
     setCandidateStatus(normalizeAssessmentStatusLabel(assessment.candidateStatus));
     setAtValue(toDateInputValue(assessment.interviewAt || assessment.followUpAt || ""));
     setInferText("");
-    setManualRemarks("");
+    setManualRemarks(String(latestWithRemarks?.manualRemarks || "").trim());
     setOfferAmount(String(assessment.offerAmount || "").trim());
     setExpectedDoj(toDateInputValue(assessment.expectedDoj || assessment.followUpAt || ""));
     setDateOfJoining(toDateInputValue(assessment.dateOfJoining || assessment.followUpAt || ""));
