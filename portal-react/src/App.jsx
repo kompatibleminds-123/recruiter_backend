@@ -3488,12 +3488,46 @@ function MultiSelectDropdown({ label, options, selected, onToggle, allowAll = tr
   );
 }
 
+let modalBodyLockCount = 0;
+let modalBodyPrevOverflow = "";
+let modalBodyPrevPaddingRight = "";
+let modalDocPrevScrollBehavior = "";
+
+function useModalBodyScrollLock(open) {
+  useEffect(() => {
+    if (!open) return;
+    if (typeof window === "undefined" || typeof document === "undefined") return;
+    const body = document.body;
+    const docEl = document.documentElement;
+    if (modalBodyLockCount === 0) {
+      modalBodyPrevOverflow = body.style.overflow;
+      modalBodyPrevPaddingRight = body.style.paddingRight;
+      modalDocPrevScrollBehavior = docEl.style.scrollBehavior;
+      const scrollbarWidth = Math.max(0, window.innerWidth - docEl.clientWidth);
+      body.style.overflow = "hidden";
+      if (scrollbarWidth > 0) {
+        body.style.paddingRight = `${scrollbarWidth}px`;
+      }
+      docEl.style.scrollBehavior = "auto";
+    }
+    modalBodyLockCount += 1;
+    return () => {
+      modalBodyLockCount = Math.max(0, modalBodyLockCount - 1);
+      if (modalBodyLockCount === 0) {
+        body.style.overflow = modalBodyPrevOverflow;
+        body.style.paddingRight = modalBodyPrevPaddingRight;
+        docEl.style.scrollBehavior = modalDocPrevScrollBehavior;
+      }
+    };
+  }, [open]);
+}
+
 function AssignModal({ open, applicant, users, jobs, onClose, onSave, title = "Assign Applicant", description = "Assign this record to a recruiter and JD.", nameKey = "candidateName", allowRecruiterSelect = true, lockedRecruiterName = "" }) {
   const [recruiterId, setRecruiterId] = useState("");
   const [jdId, setJdId] = useState("");
   const [status, setStatus] = useState("");
   const [saving, setSaving] = useState(false);
-  const bodyScrollLockRef = useRef({ y: 0, locked: false });
+  useModalBodyScrollLock(open);
 
   useEffect(() => {
     if (!open) return;
@@ -3521,35 +3555,6 @@ function AssignModal({ open, applicant, users, jobs, onClose, onSave, title = "A
     applicant?.jd_title,
     applicant?.jdTitle
   ]);
-
-  useEffect(() => {
-    if (!open) return;
-    if (typeof window === "undefined" || typeof document === "undefined") return;
-    const body = document.body;
-    const docEl = document.documentElement;
-    const scrollY = window.scrollY || window.pageYOffset || 0;
-    bodyScrollLockRef.current = { y: scrollY, locked: true };
-    const prevBodyOverflow = body.style.overflow;
-    const prevBodyPosition = body.style.position;
-    const prevBodyTop = body.style.top;
-    const prevBodyWidth = body.style.width;
-    const prevDocScrollBehavior = docEl.style.scrollBehavior;
-    body.style.overflow = "hidden";
-    body.style.position = "fixed";
-    body.style.top = `-${scrollY}px`;
-    body.style.width = "100%";
-    docEl.style.scrollBehavior = "auto";
-    return () => {
-      body.style.overflow = prevBodyOverflow;
-      body.style.position = prevBodyPosition;
-      body.style.top = prevBodyTop;
-      body.style.width = prevBodyWidth;
-      docEl.style.scrollBehavior = prevDocScrollBehavior;
-      const restoreY = Number(bodyScrollLockRef.current?.y || 0);
-      bodyScrollLockRef.current = { y: 0, locked: false };
-      window.scrollTo(0, restoreY);
-    };
-  }, [open]);
 
   if (!open) return null;
 
@@ -3610,7 +3615,7 @@ function NotesModal({ open, candidate, onClose, onPatch, onParse, onOpenLinkedin
   const [structuredDirty, setStructuredDirty] = useState(false);
   const [parseApplied, setParseApplied] = useState(false);
   const [status, setStatus] = useState("");
-  const bodyScrollLockRef = useRef({ y: 0, locked: false });
+  useModalBodyScrollLock(open);
 
   useEffect(() => {
     if (!open || !candidate) return;
@@ -3633,35 +3638,6 @@ function NotesModal({ open, candidate, onClose, onPatch, onParse, onOpenLinkedin
     setParseApplied(false);
     setStatus("");
   }, [open, candidate?.id]);
-
-  useEffect(() => {
-    if (!open) return;
-    if (typeof window === "undefined" || typeof document === "undefined") return;
-    const body = document.body;
-    const docEl = document.documentElement;
-    const scrollY = window.scrollY || window.pageYOffset || 0;
-    bodyScrollLockRef.current = { y: scrollY, locked: true };
-    const prevBodyOverflow = body.style.overflow;
-    const prevBodyPosition = body.style.position;
-    const prevBodyTop = body.style.top;
-    const prevBodyWidth = body.style.width;
-    const prevDocScrollBehavior = docEl.style.scrollBehavior;
-    body.style.overflow = "hidden";
-    body.style.position = "fixed";
-    body.style.top = `-${scrollY}px`;
-    body.style.width = "100%";
-    docEl.style.scrollBehavior = "auto";
-    return () => {
-      body.style.overflow = prevBodyOverflow;
-      body.style.position = prevBodyPosition;
-      body.style.top = prevBodyTop;
-      body.style.width = prevBodyWidth;
-      docEl.style.scrollBehavior = prevDocScrollBehavior;
-      const restoreY = Number(bodyScrollLockRef.current?.y || 0);
-      bodyScrollLockRef.current = { y: 0, locked: false };
-      window.scrollTo(0, restoreY);
-    };
-  }, [open]);
 
   if (!open || !candidate) return null;
 
@@ -3805,36 +3781,7 @@ function AttemptsModal({ open, candidate, attempts, onClose, onRefresh, onSave }
   const [status, setStatus] = useState("");
   const [saving, setSaving] = useState(false);
   const inferSyncModeRef = useRef("manual");
-  const bodyScrollLockRef = useRef({ y: 0, locked: false });
-
-  useEffect(() => {
-    if (!open) return;
-    if (typeof window === "undefined" || typeof document === "undefined") return;
-    const body = document.body;
-    const docEl = document.documentElement;
-    const scrollY = window.scrollY || window.pageYOffset || 0;
-    bodyScrollLockRef.current = { y: scrollY, locked: true };
-    const prevBodyOverflow = body.style.overflow;
-    const prevBodyPosition = body.style.position;
-    const prevBodyTop = body.style.top;
-    const prevBodyWidth = body.style.width;
-    const prevDocScrollBehavior = docEl.style.scrollBehavior;
-    body.style.overflow = "hidden";
-    body.style.position = "fixed";
-    body.style.top = `-${scrollY}px`;
-    body.style.width = "100%";
-    docEl.style.scrollBehavior = "auto";
-    return () => {
-      body.style.overflow = prevBodyOverflow;
-      body.style.position = prevBodyPosition;
-      body.style.top = prevBodyTop;
-      body.style.width = prevBodyWidth;
-      docEl.style.scrollBehavior = prevDocScrollBehavior;
-      const restoreY = Number(bodyScrollLockRef.current?.y || 0);
-      bodyScrollLockRef.current = { y: 0, locked: false };
-      window.scrollTo(0, restoreY);
-    };
-  }, [open]);
+  useModalBodyScrollLock(open);
 
   useEffect(() => {
     if (!open || !candidate) return;
@@ -3979,7 +3926,7 @@ function AssessmentStatusModal({ open, assessment, onClose, onSave }) {
   const [status, setStatus] = useState("");
   const [saving, setSaving] = useState(false);
   const inferSyncModeRef = useRef("manual");
-  const bodyScrollLockRef = useRef({ y: 0, locked: false });
+  useModalBodyScrollLock(open);
 
   useEffect(() => {
     if (!open || !assessment) return;
@@ -4016,35 +3963,6 @@ function AssessmentStatusModal({ open, assessment, onClose, onSave }) {
     }
     if (parsed.offerAmount && parsed.offerAmount !== offerAmount) setOfferAmount(parsed.offerAmount);
   }, [inferText]);
-
-  useEffect(() => {
-    if (!open) return;
-    if (typeof window === "undefined" || typeof document === "undefined") return;
-    const body = document.body;
-    const docEl = document.documentElement;
-    const scrollY = window.scrollY || window.pageYOffset || 0;
-    bodyScrollLockRef.current = { y: scrollY, locked: true };
-    const prevBodyOverflow = body.style.overflow;
-    const prevBodyPosition = body.style.position;
-    const prevBodyTop = body.style.top;
-    const prevBodyWidth = body.style.width;
-    const prevDocScrollBehavior = docEl.style.scrollBehavior;
-    body.style.overflow = "hidden";
-    body.style.position = "fixed";
-    body.style.top = `-${scrollY}px`;
-    body.style.width = "100%";
-    docEl.style.scrollBehavior = "auto";
-    return () => {
-      body.style.overflow = prevBodyOverflow;
-      body.style.position = prevBodyPosition;
-      body.style.top = prevBodyTop;
-      body.style.width = prevBodyWidth;
-      docEl.style.scrollBehavior = prevDocScrollBehavior;
-      const restoreY = Number(bodyScrollLockRef.current?.y || 0);
-      bodyScrollLockRef.current = { y: 0, locked: false };
-      window.scrollTo(0, restoreY);
-    };
-  }, [open]);
 
   if (!open || !assessment) return null;
 
