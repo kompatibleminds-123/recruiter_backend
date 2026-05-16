@@ -1539,21 +1539,7 @@ function buildAssessmentStatusNoteLine(statusValue, atValue = "", extra = {}) {
   return buildAssessmentStatusCalendarNote(status, atValue);
 }
 
-function getAssessmentStatusUpdatedEvents(assessmentId, allAssessmentEvents = []) {
-  const safeAssessmentId = String(assessmentId || "").trim();
-  if (!safeAssessmentId) return [];
-  const rows = Array.isArray(allAssessmentEvents) ? allAssessmentEvents : [];
-  return rows
-    .filter((event) => {
-      const eventAssessmentId = String(event?.assessment_id || event?.assessmentId || "").trim();
-      const eventType = String(event?.event_type || event?.eventType || "").trim().toLowerCase();
-      return eventAssessmentId === safeAssessmentId && eventType === "status_updated";
-    })
-    .slice()
-    .sort((a, b) => new Date(a?.event_at || a?.created_at || 0) - new Date(b?.event_at || b?.created_at || 0));
-}
-
-function buildAssessmentJourneyEntries(assessment, contactAttempts = [], candidate = null, allAssessmentEvents = []) {
+function buildAssessmentJourneyEntries(assessment, contactAttempts = [], candidate = null) {
   const entries = [];
   const normalizeJourneyText = (value = "") => String(value || "").toLowerCase().replace(/\s+/g, " ").trim();
   const isDuplicateJourneyEntry = (list, next) => {
@@ -1619,39 +1605,22 @@ function buildAssessmentJourneyEntries(assessment, contactAttempts = [], candida
     });
   }
 
-  const statusEvents = getAssessmentStatusUpdatedEvents(assessment?.id, allAssessmentEvents);
-  if (statusEvents.length) {
-    statusEvents.forEach((event) => {
-      const payload = event?.payload && typeof event.payload === "object" ? event.payload : {};
-      const statusText = String(event?.status || "Status update").trim();
-      const manual = String(payload?.manualRemarks || "").trim();
-      const bits = [statusText];
-      if (manual && normalizeJourneyText(manual) !== normalizeJourneyText(statusText)) bits.push(`Remarks: ${manual}`);
-      if (payload?.offerAmount) bits.push(`Offer amount ${String(payload.offerAmount).trim()}`);
-      if (payload?.interviewAt && isInterviewAlignedStatus(statusText)) bits.push(buildAssessmentStatusCalendarNote(statusText, payload.interviewAt));
-      pushJourneyEntry({
-        at: event?.event_at || event?.created_at || "",
-        text: `Assessment | ${bits.filter(Boolean).join(" | ")}`
-      });
+  const statusHistory = Array.isArray(assessment?.statusHistory) ? assessment.statusHistory : [];
+  statusHistory.forEach((item) => {
+    if (!item?.at) return;
+    const statusText = String(item?.status || "Status update").trim();
+    const bits = [statusText];
+    const manual = String(item?.manualRemarks || "").trim();
+    const manualNorm = normalizeJourneyText(manual);
+    const statusNorm = normalizeJourneyText(statusText);
+    if (manual && manualNorm !== statusNorm) bits.push(`Remarks: ${manual}`);
+    if (item?.offerAmount) bits.push(`Offer amount ${item.offerAmount}`);
+    if (item?.atLabel) bits.push(item.atLabel);
+    pushJourneyEntry({
+      at: item.at,
+      text: `Assessment | ${bits.filter(Boolean).join(" | ")}`
     });
-  } else {
-    const statusHistory = Array.isArray(assessment?.statusHistory) ? assessment.statusHistory : [];
-    statusHistory.forEach((item) => {
-      if (!item?.at) return;
-      const statusText = String(item?.status || "Status update").trim();
-      const bits = [statusText];
-      const manual = String(item?.manualRemarks || "").trim();
-      const manualNorm = normalizeJourneyText(manual);
-      const statusNorm = normalizeJourneyText(statusText);
-      if (manual && manualNorm !== statusNorm) bits.push(`Remarks: ${manual}`);
-      if (item?.offerAmount) bits.push(`Offer amount ${item.offerAmount}`);
-      if (item?.atLabel) bits.push(item.atLabel);
-      pushJourneyEntry({
-        at: item.at,
-        text: `Assessment | ${bits.filter(Boolean).join(" | ")}`
-      });
-    });
-  }
+  });
 
   const interviewAttempts = Array.isArray(assessment?.interviewAttempts) ? assessment.interviewAttempts : [];
   interviewAttempts.forEach((item) => {
@@ -1678,30 +1647,7 @@ function buildAssessmentJourneyEntries(assessment, contactAttempts = [], candida
     .sort((a, b) => new Date(a.at) - new Date(b.at));
 }
 
-function getLatestAssessmentStatusPreview(assessment = {}, allAssessmentEvents = []) {
-  const statusEvents = getAssessmentStatusUpdatedEvents(assessment?.id, allAssessmentEvents);
-  if (statusEvents.length) {
-    const latestEvent = statusEvents[statusEvents.length - 1];
-    const payload = latestEvent?.payload && typeof latestEvent.payload === "object" ? latestEvent.payload : {};
-    const status = String(latestEvent?.status || assessment?.candidateStatus || "").trim();
-    const statusLower = status.toLowerCase();
-    const alignedAt = String(payload?.interviewAt || assessment?.interviewAt || "").trim();
-    const offeredAt = String(payload?.offerDoj || assessment?.expectedDoj || "").trim();
-    const joinedAt = String(assessment?.dateOfJoining || "").trim();
-    return {
-      status,
-      remarks: String(payload?.manualRemarks || "").trim(),
-      at: String(
-        (isInterviewAlignedStatus(status) ? alignedAt : "")
-        || (statusLower === "offered" ? offeredAt : "")
-        || (statusLower === "joined" ? joinedAt : "")
-        || latestEvent?.event_at
-        || latestEvent?.created_at
-        || assessment?.updatedAt
-        || ""
-      ).trim()
-    };
-  }
+function getLatestAssessmentStatusPreview(assessment = {}) {
   const statusHistory = Array.isArray(assessment?.statusHistory) ? assessment.statusHistory : [];
   const latest = statusHistory.length ? statusHistory[statusHistory.length - 1] : null;
   const status = String(latest?.status || assessment?.candidateStatus || "").trim();
@@ -3862,7 +3808,7 @@ function AttemptsModal({ open, candidate, attempts, onClose, onRefresh, onSave }
   );
 }
 
-function AssessmentStatusModal({ open, assessment, assessmentEvents = [], onClose, onSave }) {
+function AssessmentStatusModal({ open, assessment, onClose, onSave }) {
   const [candidateStatus, setCandidateStatus] = useState("");
   const [atValue, setAtValue] = useState("");
   const [inferText, setInferText] = useState("");
@@ -3915,23 +3861,10 @@ function AssessmentStatusModal({ open, assessment, assessmentEvents = [], onClos
   const normalizedStatus = String(candidateStatus || "").trim().toLowerCase();
   const shouldShowCalendar = isInterviewAlignedStatus(candidateStatus) || normalizedStatus === "offered" || normalizedStatus === "joined";
   const effectiveAtValue = normalizedStatus === "offered" ? expectedDoj : normalizedStatus === "joined" ? dateOfJoining : atValue;
-  const statusEventPreview = getAssessmentStatusUpdatedEvents(assessment?.id, assessmentEvents)
+  const statusHistoryPreview = (Array.isArray(assessment?.statusHistory) ? assessment.statusHistory : [])
     .slice()
-    .sort((a, b) => new Date(b?.event_at || b?.created_at || 0) - new Date(a?.event_at || a?.created_at || 0))
+    .sort((a, b) => new Date(b?.at || 0) - new Date(a?.at || 0))
     .slice(0, 5);
-  const statusHistoryPreview = statusEventPreview.length
-    ? statusEventPreview.map((event) => {
-        const payload = event?.payload && typeof event.payload === "object" ? event.payload : {};
-        return {
-          at: String(event?.event_at || event?.created_at || "").trim(),
-          status: String(event?.status || "").trim(),
-          manualRemarks: String(payload?.manualRemarks || "").trim()
-        };
-      })
-    : (Array.isArray(assessment?.statusHistory) ? assessment.statusHistory : [])
-        .slice()
-        .sort((a, b) => new Date(b?.at || 0) - new Date(a?.at || 0))
-        .slice(0, 5);
 
   return (
     <div className="overlay" onClick={onClose}>
@@ -7758,7 +7691,7 @@ function PortalApp({ token, onLogout }) {
             if (dateFrom && interviewDate && interviewDate < dateFrom) return null;
             if (dateTo && interviewDate && interviewDate > dateTo) return null;
 
-            const latest = getLatestAssessmentStatusPreview(assessment, state.assessmentEvents);
+            const latest = getLatestAssessmentStatusPreview(assessment);
             const status = normalizeAssessmentStatusLabel(latest.status) || latest.status || "";
             const round = inferInterviewRoundFromStatus(status) || inferInterviewRoundFromStatus(assessment?.candidateStatus || "");
             const recruiter = getAssessmentOwnerLabel(assessment, linkedCandidate);
@@ -7794,7 +7727,7 @@ function PortalApp({ token, onLogout }) {
         const rows = filteredAssessments
           .map((assessment) => {
             const linkedCandidate = assessmentLinkedCandidateMap.get(String(assessment?.id || "")) || null;
-            const latest = getLatestAssessmentStatusPreview(assessment, state.assessmentEvents);
+            const latest = getLatestAssessmentStatusPreview(assessment);
             const status = normalizeAssessmentStatusLabel(latest.status) || normalizeAssessmentStatusLabel(assessment?.candidateStatus || "") || "";
             if (status.toLowerCase() !== "offered") return null;
 
@@ -8613,11 +8546,7 @@ function PortalApp({ token, onLogout }) {
       const fallbackByName = String(item?.assigned_by_name || "").trim().toLowerCase();
       return Boolean(fallbackByName === "admin");
     };
-    const isConvertedCandidate = (item) => {
-      const linkedAssessment = resolveCapturedAssessment(item);
-      if (!linkedAssessment) return false;
-      return !isAssessmentArchived(linkedAssessment);
-    };
+    const isConvertedCandidate = (item) => Boolean(resolveCapturedAssessment(item));
     // Build one common filtered base for captured notes metrics.
     const filteredBase = capturedNotesUniverse.filter((item) => {
       const sourceValue = String(item.source || "").trim();
@@ -13116,7 +13045,7 @@ function PortalApp({ token, onLogout }) {
       assessment?.jdTitle ? `JD: ${assessment.jdTitle}` : "",
       assessment?.candidateStatus ? `Current status: ${assessment.candidateStatus}` : ""
     ].filter(Boolean);
-    const timeline = buildAssessmentJourneyEntries(assessment, contactAttempts, candidate, state.assessmentEvents)
+    const timeline = buildAssessmentJourneyEntries(assessment, contactAttempts, candidate)
       .map((item) => `${new Date(item.at).toLocaleString()} | ${item.text}`);
     return [...header, "", "Journey:", ...timeline].filter(Boolean).join("\n");
   }
@@ -15030,7 +14959,7 @@ function PortalApp({ token, onLogout }) {
                 {!(Array.isArray(filteredAssessments) && filteredAssessments.length) ? <div className="empty-state">No assessments saved yet.</div> : filteredAssessments.map((item) => (
                   <article className={`item-card compact-card assessment-card ${selectedAssessmentIds.includes(String(item.id)) ? "selected-card" : ""}`} key={item.id}>
                     {(() => {
-                      const latestStatusPreview = getLatestAssessmentStatusPreview(item, state.assessmentEvents);
+                      const latestStatusPreview = getLatestAssessmentStatusPreview(item);
                       const isArchived = isAssessmentArchived(item);
                       return (
                         <>
@@ -16620,7 +16549,7 @@ function PortalApp({ token, onLogout }) {
         </div>
       ) : null}
       <AttemptsModal open={Boolean(attemptsCandidateId)} candidate={attemptsCandidate} attempts={attempts} onClose={() => setAttemptsCandidateId("")} onRefresh={refreshAttempts} onSave={saveAttempt} />
-      <AssessmentStatusModal open={Boolean(assessmentStatusId)} assessment={assessmentStatusItem} assessmentEvents={state.assessmentEvents} onClose={() => setAssessmentStatusId("")} onSave={(payload) => saveAssessmentStatusUpdate(assessmentStatusItem, payload)} />
+      <AssessmentStatusModal open={Boolean(assessmentStatusId)} assessment={assessmentStatusItem} onClose={() => setAssessmentStatusId("")} onSave={(payload) => saveAssessmentStatusUpdate(assessmentStatusItem, payload)} />
       <DrilldownModal
         open={drilldownState.open && String(location?.pathname || "") !== "/dashboard"}
         loading={Boolean(drilldownState.loading)}
