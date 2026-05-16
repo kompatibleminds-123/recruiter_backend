@@ -7303,22 +7303,10 @@ function PortalApp({ token, onLogout }) {
 
   useEffect(() => {
     if (!token) return undefined;
-    const templateSensitivePaths = new Set(["/jobs", "/shortcuts", "/settings", "/mail-settings", "/client-share", "/captured-notes", "/assessments", "/applicants"]);
-    function syncOnFocusLikeEvent() {
-      if (document.visibilityState === "hidden") return;
-      const includeSharedPresets = templateSensitivePaths.has(String(location?.pathname || ""));
-      const includeEmailSettings = String(location?.pathname || "") === "/mail-settings";
-      void refreshWorkspaceSilently("focus-sync", { includeSharedPresets, includeEmailSettings, force: true });
-    }
-    window.addEventListener("focus", syncOnFocusLikeEvent);
-    window.addEventListener("pageshow", syncOnFocusLikeEvent);
-    document.addEventListener("visibilitychange", syncOnFocusLikeEvent);
-    return () => {
-      window.removeEventListener("focus", syncOnFocusLikeEvent);
-      window.removeEventListener("pageshow", syncOnFocusLikeEvent);
-      document.removeEventListener("visibilitychange", syncOnFocusLikeEvent);
-    };
-  }, [token, location?.pathname]);
+    // Disabled intentionally: focus/pageshow/visibility sync caused delayed viewport jumps
+    // and unnecessary egress. Workspace still refreshes on route load and manual actions.
+    return undefined;
+  }, [token]);
 
   useEffect(() => {
     if (!token) return undefined;
