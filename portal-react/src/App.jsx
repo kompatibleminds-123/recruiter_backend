@@ -9501,6 +9501,35 @@ function PortalApp({ token, onLogout }) {
     const ids = (Array.isArray(targetIds) && targetIds.length ? targetIds : [assignApplicantId])
       .map((id) => String(id || "").trim())
       .filter(Boolean);
+    const assignAtIso = new Date().toISOString();
+    const applyLocalAssignPatch = (candidateId) => {
+      const safeId = String(candidateId || "").trim();
+      if (!safeId) return;
+      setState((current) => {
+        const applyPatch = (items) => Array.isArray(items)
+          ? items.map((item) => String(item?.id || "").trim() === safeId
+            ? {
+              ...item,
+              assigned_to_user_id: String(recruiterId || "").trim() || item?.assigned_to_user_id || "",
+              assigned_to_name: String(user?.name || "").trim() || item?.assigned_to_name || "",
+              assigned_jd_id: String(jdId || "").trim() || item?.assigned_jd_id || "",
+              assigned_jd_title: String(jdTitle || "").trim() || item?.assigned_jd_title || "",
+              jd_title: String(jdTitle || "").trim() || item?.jd_title || "",
+              client_name: String(clientName || "").trim() || item?.client_name || "",
+              assigned_at: assignAtIso,
+              updated_at: assignAtIso,
+              updatedAt: assignAtIso
+            }
+            : item)
+          : items;
+        return {
+          ...current,
+          applicants: applyPatch(current.applicants),
+          candidates: applyPatch(current.candidates),
+          databaseCandidates: applyPatch(current.databaseCandidates)
+        };
+      });
+    };
     for (const id of ids) {
       await api("/company/applicants/assign", token, "POST", {
         id,
@@ -9512,6 +9541,7 @@ function PortalApp({ token, onLogout }) {
         client_name: clientName,
         jdTitle
       });
+      applyLocalAssignPatch(id);
     }
     setAssignApplicantId("");
     setBulkAssignApplicantIds([]);
@@ -9600,7 +9630,9 @@ function PortalApp({ token, onLogout }) {
               assigned_jd_title: String(jdTitle || "").trim() || item?.assigned_jd_title || "",
               jd_title: String(jdTitle || "").trim() || item?.jd_title || "",
               client_name: String(clientName || "").trim() || item?.client_name || "",
-              assigned_at: assignAtIso
+              assigned_at: assignAtIso,
+              updated_at: assignAtIso,
+              updatedAt: assignAtIso
             };
             if (!String(item?.first_assigned_at || "").trim()) next.first_assigned_at = assignAtIso;
             if (!String(item?.first_assigned_to_user_id || "").trim()) next.first_assigned_to_user_id = effectiveRecruiterId || "";
@@ -9680,10 +9712,11 @@ function PortalApp({ token, onLogout }) {
       nextPatch.screening_answers = currentDraft.jdScreeningAnswers || parsePortalObjectField(currentCandidate?.screening_answers || currentCandidate?.screeningAnswers);
     }
     await api(`/company/candidates/${encodeURIComponent(candidateId)}`, token, "PATCH", { patch: nextPatch });
+    const optimisticUpdatedAt = new Date().toISOString();
     // Optimistic local patch to avoid blocking the UI on a full workspace refresh.
     setState((current) => {
       const applyPatch = (items) => Array.isArray(items)
-        ? items.map((item) => String(item?.id || "") === String(candidateId) ? { ...item, ...nextPatch } : item)
+        ? items.map((item) => String(item?.id || "") === String(candidateId) ? { ...item, ...nextPatch, updated_at: optimisticUpdatedAt, updatedAt: optimisticUpdatedAt } : item)
         : items;
       return {
         ...current,
@@ -9707,9 +9740,10 @@ function PortalApp({ token, onLogout }) {
       nextPatch.screening_answers = currentDraft.jdScreeningAnswers || parsePortalObjectField(currentCandidate?.screening_answers || currentCandidate?.screeningAnswers);
     }
     await api(`/company/candidates/${encodeURIComponent(candidateId)}`, token, "PATCH", { patch: nextPatch });
+    const optimisticUpdatedAt = new Date().toISOString();
     setState((current) => {
       const applyPatch = (items) => Array.isArray(items)
-        ? items.map((item) => String(item?.id || "") === String(candidateId) ? { ...item, ...nextPatch } : item)
+        ? items.map((item) => String(item?.id || "") === String(candidateId) ? { ...item, ...nextPatch, updated_at: optimisticUpdatedAt, updatedAt: optimisticUpdatedAt } : item)
         : items;
       return {
         ...current,
@@ -10337,9 +10371,12 @@ function PortalApp({ token, onLogout }) {
     };
     setAttempts((current) => [optimisticAttempt, ...(Array.isArray(current) ? current : [])]);
     if (Object.keys(candidatePatch).length) {
+      const optimisticUpdatedAt = new Date().toISOString();
       setState((current) => {
         const applyPatch = (items) => Array.isArray(items)
-          ? items.map((item) => String(item?.id || "") === String(attemptsCandidateId) ? { ...item, ...candidatePatch } : item)
+          ? items.map((item) => String(item?.id || "") === String(attemptsCandidateId)
+            ? { ...item, ...candidatePatch, updated_at: optimisticUpdatedAt, updatedAt: optimisticUpdatedAt }
+            : item)
           : items;
         return {
           ...current,
@@ -13342,9 +13379,12 @@ function PortalApp({ token, onLogout }) {
     // Optimistic UI first: reflect status immediately everywhere.
     upsertAssessmentInState(nextAssessment);
     if (candidatePatch && linkedCandidateId) {
+      const optimisticUpdatedAt = new Date().toISOString();
       setState((current) => {
         const applyPatch = (items) => Array.isArray(items)
-          ? items.map((item) => String(item?.id || "") === linkedCandidateId ? { ...item, ...candidatePatch, draft_payload: nextDraftPayload } : item)
+          ? items.map((item) => String(item?.id || "") === linkedCandidateId
+            ? { ...item, ...candidatePatch, draft_payload: nextDraftPayload, updated_at: optimisticUpdatedAt, updatedAt: optimisticUpdatedAt }
+            : item)
           : items;
         return {
           ...current,
