@@ -8613,7 +8613,11 @@ function PortalApp({ token, onLogout }) {
       const fallbackByName = String(item?.assigned_by_name || "").trim().toLowerCase();
       return Boolean(fallbackByName === "admin");
     };
-    const isConvertedCandidate = (item) => Boolean(item?.used_in_assessment) || Boolean(String(item?.assessment_id || item?.assessmentId || "").trim());
+    const isConvertedCandidate = (item) => {
+      const linkedAssessment = resolveCapturedAssessment(item);
+      if (!linkedAssessment) return false;
+      return !isAssessmentArchived(linkedAssessment);
+    };
     // Build one common filtered base for captured notes metrics.
     const filteredBase = capturedNotesUniverse.filter((item) => {
       const sourceValue = String(item.source || "").trim();
