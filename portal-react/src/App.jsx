@@ -3863,7 +3863,6 @@ function AttemptsModal({ open, candidate, attempts, onClose, onRefresh, onSave }
                   setInferText("");
                   setRemarks("");
                   setNextFollowUpAt("");
-                  await onRefresh();
                 } catch (error) {
                   setStatus(String(error?.message || error));
                 } finally {
