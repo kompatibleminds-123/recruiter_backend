@@ -1541,11 +1541,35 @@ function buildAssessmentStatusNoteLine(statusValue, atValue = "", extra = {}) {
 
 function buildAssessmentJourneyEntries(assessment, contactAttempts = [], candidate = null) {
   const entries = [];
+  const normalizeJourneyText = (value = "") => String(value || "").toLowerCase().replace(/\s+/g, " ").trim();
+  const isDuplicateJourneyEntry = (list, next) => {
+    const nextAt = Date.parse(String(next?.at || ""));
+    const nextTextNorm = normalizeJourneyText(next?.text || "");
+    if (!Number.isFinite(nextAt) || !nextTextNorm) return false;
+    return list.some((existing) => {
+      const existingAt = Date.parse(String(existing?.at || ""));
+      if (!Number.isFinite(existingAt)) return false;
+      const withinWindow = Math.abs(existingAt - nextAt) <= 2 * 60 * 1000; // 2 minutes
+      if (!withinWindow) return false;
+      const existingTextNorm = normalizeJourneyText(existing?.text || "");
+      if (!existingTextNorm) return false;
+      // Collapse exact duplicates and repeated same "log attempt"/"assessment movement" records.
+      if (existingTextNorm === nextTextNorm) return true;
+      const bothLogAttempt = existingTextNorm.startsWith("log attempt |") && nextTextNorm.startsWith("log attempt |");
+      const bothAssessmentMove = existingTextNorm.startsWith("assessment movement |") && nextTextNorm.startsWith("assessment movement |");
+      return bothLogAttempt || bothAssessmentMove;
+    });
+  };
+  const pushJourneyEntry = (entry) => {
+    if (!entry?.at || !entry?.text) return;
+    if (isDuplicateJourneyEntry(entries, entry)) return;
+    entries.push(entry);
+  };
   const candidateCreatedAt = candidate?.created_at || candidate?.createdAt || "";
   if (candidateCreatedAt) {
     const sourceValue = String(candidate?.source || "").trim();
     const isApplied = ["website_apply", "hosted_apply", "google_sheet"].includes(sourceValue);
-    entries.push({
+    pushJourneyEntry({
       at: candidateCreatedAt,
       text: `${isApplied ? "Applied" : "Captured note created"}${sourceValue ? ` | ${sourceValue}` : ""}`
     });
@@ -1558,7 +1582,7 @@ function buildAssessmentJourneyEntries(assessment, contactAttempts = [], candida
       .map((line) => line.trim())
       .filter(Boolean)
       .join(" | ");
-    entries.push({
+    pushJourneyEntry({
       at: when,
       text: `Log attempt | ${item?.outcome || "Attempt"}${noteLines ? ` | ${noteLines}` : ""}`
     });
@@ -1571,14 +1595,14 @@ function buildAssessmentJourneyEntries(assessment, contactAttempts = [], candida
       .map((line) => line.trim())
       .filter(Boolean)
       .join(" | ");
-    entries.push({
+    pushJourneyEntry({
       at: candidate.last_contact_at,
       text: `Log attempt | ${candidate?.last_contact_outcome || "Attempt"}${noteLines ? ` | ${noteLines}` : ""}`
     });
   }
 
   if (assessment?.generatedAt) {
-    entries.push({
+    pushJourneyEntry({
       at: assessment.generatedAt,
       text: `Assessment created | ${normalizeAssessmentStatusLabel(assessment?.candidateStatus) || "CV shared"}`
     });
@@ -1591,7 +1615,7 @@ function buildAssessmentJourneyEntries(assessment, contactAttempts = [], candida
     if (item?.notes) bits.push(item.notes);
     if (item?.offerAmount) bits.push(`Offer amount ${item.offerAmount}`);
     if (item?.atLabel) bits.push(item.atLabel);
-    entries.push({
+    pushJourneyEntry({
       at: item.at,
       text: `Assessment | ${bits.filter(Boolean).join(" | ")}`
     });
@@ -1601,7 +1625,7 @@ function buildAssessmentJourneyEntries(assessment, contactAttempts = [], candida
   interviewAttempts.forEach((item) => {
     const when = item?.at || item?.createdAt || "";
     if (!when) return;
-    entries.push({
+    pushJourneyEntry({
       at: when,
       text: `Assessment movement | ${[item?.round, item?.outcome, item?.notes].filter(Boolean).join(" | ")}`
     });
@@ -1611,7 +1635,7 @@ function buildAssessmentJourneyEntries(assessment, contactAttempts = [], candida
   feedbackHistory.forEach((item) => {
     const when = item?.updatedAt || item?.at || "";
     if (!when) return;
-    entries.push({
+    pushJourneyEntry({
       at: when,
       text: `Client feedback | ${[item?.status, item?.feedback, item?.interviewAt ? `Interview ${new Date(item.interviewAt).toLocaleString()}` : "", item?.updatedBy].filter(Boolean).join(" | ")}`
     });
