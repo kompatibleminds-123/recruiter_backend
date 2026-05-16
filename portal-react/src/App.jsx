@@ -1824,7 +1824,10 @@ function extractLatestAttemptLine(text) {
 function extractAttemptRemarks(text) {
   const value = String(text || "").trim();
   if (!value) return "";
-  const remarksMatch = value.match(/(?:^|\|)\s*remarks:\s*(.+?)(?:\s*\|\s*follow-up:|\s*$)/i);
+  // Support both pipe-separated and newline-separated storage:
+  // "Outcome | Remarks: ... | Follow-up: ..."
+  // "Outcome\nRemarks: ...\nFollow-up: ..."
+  const remarksMatch = value.match(/(?:^|\||\n)\s*remarks:\s*(.+?)(?:\s*(?:\|\s*follow-up:|\n\s*follow-up:)|\s*$)/i);
   return String(remarksMatch?.[1] || "").trim();
 }
 
