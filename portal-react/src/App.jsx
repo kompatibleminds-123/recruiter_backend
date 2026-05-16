@@ -1547,16 +1547,18 @@ function buildAssessmentJourneyEntries(assessment, contactAttempts = [], candida
     const nextTextNorm = normalizeJourneyText(next?.text || "");
     if (!Number.isFinite(nextAt) || !nextTextNorm) return false;
     return list.some((existing) => {
+      const existingTextNorm = normalizeJourneyText(existing?.text || "");
+      if (!existingTextNorm) return false;
+      // Global dedupe for same assessment-movement text (even if repeated at later times).
+      const bothAssessmentMove = existingTextNorm.startsWith("assessment movement |") && nextTextNorm.startsWith("assessment movement |");
+      if (bothAssessmentMove && existingTextNorm === nextTextNorm) return true;
       const existingAt = Date.parse(String(existing?.at || ""));
       if (!Number.isFinite(existingAt)) return false;
       const withinWindow = Math.abs(existingAt - nextAt) <= 2 * 60 * 1000; // 2 minutes
       if (!withinWindow) return false;
-      const existingTextNorm = normalizeJourneyText(existing?.text || "");
-      if (!existingTextNorm) return false;
       // Collapse exact duplicates and repeated same "log attempt"/"assessment movement" records.
       if (existingTextNorm === nextTextNorm) return true;
       const bothLogAttempt = existingTextNorm.startsWith("log attempt |") && nextTextNorm.startsWith("log attempt |");
-      const bothAssessmentMove = existingTextNorm.startsWith("assessment movement |") && nextTextNorm.startsWith("assessment movement |");
       return bothLogAttempt || bothAssessmentMove;
     });
   };
@@ -13061,9 +13063,10 @@ function PortalApp({ token, onLogout }) {
       dateOfJoining: isJoined ? atIso : (assessment?.dateOfJoining || ""),
       updatedAt: new Date().toISOString()
     };
+    const statusUpdatedAt = new Date().toISOString();
     nextAssessment.statusHistory.push({
       status: nextStatus,
-      at: atIso || new Date().toISOString(),
+      at: statusUpdatedAt,
       notes: readableNotes || "",
       inferText,
       manualRemarks,
@@ -13075,9 +13078,9 @@ function PortalApp({ token, onLogout }) {
       nextAssessment.interviewAttempts.push({
         round: deriveInterviewRoundFromStatus(nextStatus) || "Interview",
         outcome: "Scheduled",
-        at: atIso || new Date().toISOString(),
+        at: statusUpdatedAt,
         notes: readableNotes || nextStatus,
-        createdAt: new Date().toISOString()
+        createdAt: statusUpdatedAt
       });
     } else if (nextStatusLower === "not responding" || nextStatusLower === "did not attend") {
       nextAssessment.interviewAttempts.push({
