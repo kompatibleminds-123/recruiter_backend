@@ -1242,7 +1242,8 @@ function buildCanonicalRecruiterNotes(baseText, currentText, mergedValues = {}) 
   pushStructured("Offer in hand", mergedValues.offer_in_hand);
   pushStructured("Location", mergedValues.location);
 
-  const freeLines = [...extractFreeRecruiterLines(baseText), ...extractFreeRecruiterLines(currentText)];
+  // Keep free-text lines strictly from current editor content so removed legacy lines do not reappear.
+  const freeLines = [...extractFreeRecruiterLines(currentText)];
   freeLines.forEach((line) => {
     if (!lines.some((existing) => existing.toLowerCase() === line.toLowerCase())) {
       lines.push(line);
@@ -1313,16 +1314,12 @@ function buildStructuredRecruiterSectionOverrides(sections = {}) {
     return clean;
   };
   const direct = {};
-  const currentCtc = normalizeSectionValue(sections.current_ctc);
-  const expectedCtc = normalizeSectionValue(sections.expected_ctc);
-  const noticePeriod = normalizeSectionValue(sections.notice_period);
-  const offerInHand = normalizeSectionValue(sections.offer_in_hand);
-  const lwdOrDoj = normalizeSectionValue(sections.lwd_or_doj);
-  if (currentCtc) direct.current_ctc = currentCtc;
-  if (expectedCtc) direct.expected_ctc = expectedCtc;
-  if (noticePeriod) direct.notice_period = noticePeriod;
-  if (offerInHand) direct.offer_in_hand = offerInHand;
-  if (lwdOrDoj) direct.lwd_or_doj = lwdOrDoj;
+  // Always emit structured keys so blanking a field is treated as an explicit clear.
+  direct.current_ctc = normalizeSectionValue(sections.current_ctc);
+  direct.expected_ctc = normalizeSectionValue(sections.expected_ctc);
+  direct.notice_period = normalizeSectionValue(sections.notice_period);
+  direct.offer_in_hand = normalizeSectionValue(sections.offer_in_hand);
+  direct.lwd_or_doj = normalizeSectionValue(sections.lwd_or_doj);
   return direct;
 }
 
@@ -1903,24 +1900,16 @@ function buildRecruiterMerge(item, parsed, rawNote = "") {
 
 function buildRecruiterFieldPatchFromMerge(mergedPatch) {
   const extractedFieldPatch = {};
-  [
-    "company",
-    "role",
-    "experience",
-    "location",
-    "current_ctc",
-    "expected_ctc",
-    "notice_period",
-    "lwd_or_doj",
-    "offer_in_hand",
-    "phone",
-    "email",
-    "linkedin",
-    "highest_education"
-  ].forEach((key) => {
-    const value = mergedPatch?.incoming?.[key] || mergedPatch?.fallbacks?.[key] || "";
-    if (!String(value || "").trim()) return;
+  // Structured fields are authoritative in recruiter-note modal, including explicit clears.
+  ["current_ctc", "expected_ctc", "notice_period", "lwd_or_doj", "offer_in_hand"].forEach((key) => {
+    const value = String(mergedPatch?.merged?.[key] ?? "").trim();
     extractedFieldPatch[key] = key === "lwd_or_doj" ? sanitizeLwdOrDojValue(value) : value;
+  });
+  // Keep non-structured extracted fields only when parser has a value.
+  ["company", "role", "experience", "location", "phone", "email", "linkedin", "highest_education"].forEach((key) => {
+    const value = String(mergedPatch?.incoming?.[key] || mergedPatch?.fallbacks?.[key] || "").trim();
+    if (!value) return;
+    extractedFieldPatch[key] = value;
   });
   return extractedFieldPatch;
 }
