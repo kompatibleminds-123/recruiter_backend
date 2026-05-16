@@ -1615,10 +1615,19 @@ function buildAssessmentJourneyEntries(assessment, contactAttempts = [], candida
     });
   }
 
-  statusHistory.forEach((item) => {
+  const generatedAtTs = Date.parse(String(assessment?.generatedAt || ""));
+  statusHistory.forEach((item, historyIndex) => {
     if (!item?.at) return;
     const statusText = String(item?.status || "Status update").trim();
     const statusNorm = normalizeJourneyText(statusText);
+    // Avoid duplicate opener:
+    // "Assessment created | CV shared" + immediate first statusHistory "Assessment | CV shared".
+    if (historyIndex === 0 && Number.isFinite(generatedAtTs)) {
+      const itemTs = Date.parse(String(item?.at || ""));
+      const sameInitialStatus = statusNorm === normalizeJourneyText(initialStatusText);
+      const nearCreatedAt = Number.isFinite(itemTs) && Math.abs(itemTs - generatedAtTs) <= 5 * 60 * 1000;
+      if (sameInitialStatus && nearCreatedAt) return;
+    }
     const bits = [statusText];
     const manual = String(item?.manualRemarks || "").trim();
     const manualNorm = normalizeJourneyText(manual);
