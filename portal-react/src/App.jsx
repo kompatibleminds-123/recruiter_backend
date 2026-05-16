@@ -1539,7 +1539,7 @@ function buildAssessmentStatusNoteLine(statusValue, atValue = "", extra = {}) {
   return buildAssessmentStatusCalendarNote(status, atValue);
 }
 
-function buildAssessmentJourneyEntries(assessment, contactAttempts = [], candidate = null) {
+function buildAssessmentJourneyEntries(assessment, contactAttempts = [], candidate = null, assessmentEvents = []) {
   const entries = [];
   const normalizeJourneyText = (value = "") => String(value || "").toLowerCase().replace(/\s+/g, " ").trim();
   const isDuplicateJourneyEntry = (list, next) => {
@@ -1643,6 +1643,30 @@ function buildAssessmentJourneyEntries(assessment, contactAttempts = [], candida
     if (scheduleText) bits.push(scheduleText);
     pushJourneyEntry({
       at: item.at,
+      text: `Assessment | ${bits.filter(Boolean).join(" | ")}`
+    });
+  });
+
+  // Fallback: when statusHistory is missing/stale after refresh, read factual assessment_events.
+  (Array.isArray(assessmentEvents) ? assessmentEvents : []).forEach((row) => {
+    const rowAssessmentId = String(row?.assessment_id || row?.assessmentId || "").trim();
+    const currentAssessmentId = String(assessment?.id || "").trim();
+    if (!rowAssessmentId || !currentAssessmentId || rowAssessmentId !== currentAssessmentId) return;
+    const eventType = String(row?.event_type || row?.eventType || "").trim().toLowerCase();
+    if (eventType !== "status_updated") return;
+    const statusText = String(row?.status || "").trim();
+    if (!statusText) return;
+    const payload = row?.payload && typeof row.payload === "object" ? row.payload : {};
+    const manual = String(payload?.manualRemarks || "").trim();
+    const interviewAt = String(payload?.interviewAt || "").trim();
+    const bits = [statusText];
+    if (manual) bits.push(`Remarks: ${manual}`);
+    if (interviewAt) {
+      const parsedAt = Date.parse(interviewAt);
+      if (Number.isFinite(parsedAt)) bits.push(new Date(parsedAt).toLocaleString());
+    }
+    pushJourneyEntry({
+      at: String(row?.created_at || row?.event_at || row?.eventAt || "").trim(),
       text: `Assessment | ${bits.filter(Boolean).join(" | ")}`
     });
   });
@@ -13211,13 +13235,13 @@ function PortalApp({ token, onLogout }) {
     URL.revokeObjectURL(url);
   }
 
-  function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
+function buildJourneyText(assessment, contactAttempts = [], candidate = null, assessmentEvents = []) {
     const header = [
       assessment?.candidateName || "Candidate",
       assessment?.jdTitle ? `JD: ${assessment.jdTitle}` : "",
       assessment?.candidateStatus ? `Current status: ${assessment.candidateStatus}` : ""
     ].filter(Boolean);
-    const timeline = buildAssessmentJourneyEntries(assessment, contactAttempts, candidate)
+    const timeline = buildAssessmentJourneyEntries(assessment, contactAttempts, candidate, assessmentEvents)
       .map((item) => `${new Date(item.at).toLocaleString()} | ${item.text}`);
     return [...header, "", "Journey:", ...timeline].filter(Boolean).join("\n");
   }
@@ -13656,7 +13680,15 @@ function PortalApp({ token, onLogout }) {
     const contactAttempts = candidate?.id
       ? await api(`/contact-attempts?candidate_id=${encodeURIComponent(candidate.id)}&limit=100`, token).catch(() => [])
       : [];
-    const text = buildJourneyText(assessment, Array.isArray(contactAttempts) ? contactAttempts : [], candidate);
+    const assessmentEvents = await api("/company/assessment-events?kind=status_updated&limit=5000", token)
+      .then((res) => Array.isArray(res?.rows) ? res.rows : [])
+      .catch(() => []);
+    const text = buildJourneyText(
+      assessment,
+      Array.isArray(contactAttempts) ? contactAttempts : [],
+      candidate,
+      Array.isArray(assessmentEvents) ? assessmentEvents : []
+    );
     await copyText(text);
     window.alert(text);
     setStatus("assessments", "Journey copied.", "ok");
