@@ -3463,6 +3463,10 @@ function NotesModal({ open, candidate, onClose, onPatch, onParse, onOpenLinkedin
   const [parsedSummary, setParsedSummary] = useState(null);
   const [conflicts, setConflicts] = useState([]);
   const [mergedPatch, setMergedPatch] = useState(null);
+  const [noteDirty, setNoteDirty] = useState(false);
+  const [otherPointersDirty, setOtherPointersDirty] = useState(false);
+  const [structuredDirty, setStructuredDirty] = useState(false);
+  const [parseApplied, setParseApplied] = useState(false);
   const [status, setStatus] = useState("");
 
   useEffect(() => {
@@ -3480,6 +3484,10 @@ function NotesModal({ open, candidate, onClose, onPatch, onParse, onOpenLinkedin
     setParsedSummary(base);
     setConflicts([]);
     setMergedPatch(null);
+    setNoteDirty(false);
+    setOtherPointersDirty(false);
+    setStructuredDirty(false);
+    setParseApplied(false);
     setStatus("");
   }, [open, candidate?.id]);
 
@@ -3503,11 +3511,15 @@ function NotesModal({ open, candidate, onClose, onPatch, onParse, onOpenLinkedin
         recruiterNote,
         mergeForSave?.merged || normalizeRecruiterMergeBase(candidate)
       );
-      await onPatch({
-        recruiter_context_notes: canonicalRecruiterNotes,
-        other_pointers: normalizeOtherPointersBody(otherPointers),
-        ...extractedFieldPatch
-      }, "Recruiter note applied and saved.");
+      const patchPayload = {};
+      if (noteDirty || parseApplied) patchPayload.recruiter_context_notes = canonicalRecruiterNotes;
+      if (otherPointersDirty) patchPayload.other_pointers = normalizeOtherPointersBody(otherPointers);
+      if (structuredDirty || parseApplied) Object.assign(patchPayload, extractedFieldPatch);
+      if (!Object.keys(patchPayload).length) {
+        setStatus("No changes to save.");
+        return;
+      }
+      await onPatch(patchPayload, "Recruiter note applied and saved.");
       setStatus("Recruiter note applied and saved.");
       onClose();
     } catch (error) {
@@ -3527,13 +3539,13 @@ function NotesModal({ open, candidate, onClose, onPatch, onParse, onOpenLinkedin
           </div>
         ) : null}
         <div className="form-grid two-col">
-          <label><span>Current CTC</span><input value={rawRecruiterSections.current_ctc} onChange={(e) => setRawRecruiterSections((current) => ({ ...current, current_ctc: e.target.value }))} placeholder="Recruiter can type in any style here" /></label>
-          <label><span>Expected CTC</span><input value={rawRecruiterSections.expected_ctc} onChange={(e) => setRawRecruiterSections((current) => ({ ...current, expected_ctc: e.target.value }))} placeholder="Expected / expectation" /></label>
-          <label><span>Notice period</span><input value={rawRecruiterSections.notice_period} onChange={(e) => setRawRecruiterSections((current) => ({ ...current, notice_period: e.target.value }))} placeholder="15 days / immediate / 30 days" /></label>
-          <label><span>If serving, offer amount</span><input value={rawRecruiterSections.offer_in_hand} onChange={(e) => setRawRecruiterSections((current) => ({ ...current, offer_in_hand: e.target.value }))} placeholder="Offer amount / in hand offer" /></label>
-          <label className="full"><span>LWD or DOJ</span><input value={rawRecruiterSections.lwd_or_doj} onChange={(e) => setRawRecruiterSections((current) => ({ ...current, lwd_or_doj: e.target.value }))} placeholder="8th June / 1st July / DOJ if offered" /></label>
+          <label><span>Current CTC</span><input value={rawRecruiterSections.current_ctc} onChange={(e) => { setStructuredDirty(true); setRawRecruiterSections((current) => ({ ...current, current_ctc: e.target.value })); }} placeholder="Recruiter can type in any style here" /></label>
+          <label><span>Expected CTC</span><input value={rawRecruiterSections.expected_ctc} onChange={(e) => { setStructuredDirty(true); setRawRecruiterSections((current) => ({ ...current, expected_ctc: e.target.value })); }} placeholder="Expected / expectation" /></label>
+          <label><span>Notice period</span><input value={rawRecruiterSections.notice_period} onChange={(e) => { setStructuredDirty(true); setRawRecruiterSections((current) => ({ ...current, notice_period: e.target.value })); }} placeholder="15 days / immediate / 30 days" /></label>
+          <label><span>If serving, offer amount</span><input value={rawRecruiterSections.offer_in_hand} onChange={(e) => { setStructuredDirty(true); setRawRecruiterSections((current) => ({ ...current, offer_in_hand: e.target.value })); }} placeholder="Offer amount / in hand offer" /></label>
+          <label className="full"><span>LWD or DOJ</span><input value={rawRecruiterSections.lwd_or_doj} onChange={(e) => { setStructuredDirty(true); setRawRecruiterSections((current) => ({ ...current, lwd_or_doj: e.target.value })); }} placeholder="8th June / 1st July / DOJ if offered" /></label>
         </div>
-        <label><span>Other pointers</span><textarea value={otherPointers} onChange={(e) => setOtherPointers(e.target.value)} /></label>
+        <label><span>Other pointers</span><textarea value={otherPointers} onChange={(e) => { setOtherPointersDirty(true); setOtherPointers(e.target.value); }} /></label>
         <div className="button-row">
           <button onClick={async () => {
             if (!String(effectiveRawRecruiterNote || "").trim()) {
@@ -3557,6 +3569,8 @@ function NotesModal({ open, candidate, onClose, onPatch, onParse, onOpenLinkedin
               setConflicts(merge.overwritten || []);
               setParsedSummary(mergedWithStructuredPriority || null);
               setRecruiterNote(normalizeRecruiterNotesBody(effectiveRawRecruiterNote));
+              setParseApplied(true);
+              setNoteDirty(true);
               setStatus(
                 merge.overwritten?.length
                   ? `Recruiter note parsed. Conflicts found in ${merge.overwritten.map((entry) => formatRecruiterOverwriteLabel(entry.key)).join(", ")}.`
@@ -3600,7 +3614,7 @@ function NotesModal({ open, candidate, onClose, onPatch, onParse, onOpenLinkedin
             </ul>
           </div>
         ) : null}
-        <label><span>Recruiter note</span><textarea value={recruiterNote} onChange={(e) => setRecruiterNote(e.target.value)} /></label>
+        <label><span>Recruiter note</span><textarea value={recruiterNote} onChange={(e) => { setNoteDirty(true); setRecruiterNote(e.target.value); }} /></label>
         {status ? <div className="status">{status}</div> : null}
         <div className="button-row">
           <button onClick={saveAll}>Save all</button>
