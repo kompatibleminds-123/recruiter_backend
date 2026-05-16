@@ -3466,7 +3466,7 @@ function NotesModal({ open, candidate, onClose, onPatch, onParse, onOpenLinkedin
     if (!open || !candidate) return;
     const base = normalizeRecruiterMergeBase(candidate);
     setRecruiterNote(String(candidate.recruiter_context_notes || ""));
-    setOtherPointers(String(candidate.other_pointers || ""));
+    setOtherPointers(normalizeMojibakeSymbols(String(candidate.other_pointers || "")));
     setRawRecruiterSections({
       current_ctc: String(base.current_ctc || ""),
       expected_ctc: String(base.expected_ctc || ""),
@@ -5802,6 +5802,7 @@ function PortalApp({ token, onLogout }) {
   const [newDraftSheetPreviewOpen, setNewDraftSheetPreviewOpen] = useState(false);
   const [newDraftSheetRows, setNewDraftSheetRows] = useState([]);
   const [notesCandidateId, setNotesCandidateId] = useState("");
+  const [notesCandidateSnapshot, setNotesCandidateSnapshot] = useState(null);
   const [attemptsCandidateId, setAttemptsCandidateId] = useState("");
   const [assessmentStatusId, setAssessmentStatusId] = useState("");
   const [drilldownState, setDrilldownState] = useState({ open: false, title: "", items: [], request: null, loading: false });
@@ -5999,7 +6000,8 @@ function PortalApp({ token, onLogout }) {
   const assignCandidate = (state.candidates || []).find((item) => String(item.id) === String(assignCandidateId))
     || ((bulkAssignCandidateIds || []).length ? (state.candidates || []).find((item) => String(item.id) === String(bulkAssignCandidateIds[0])) : null)
     || null;
-  const notesCandidate = (state.candidates || []).find((item) => String(item.id) === String(notesCandidateId)) || null;
+  const notesCandidateLive = (state.candidates || []).find((item) => String(item.id) === String(notesCandidateId)) || null;
+  const notesCandidate = notesCandidateLive || notesCandidateSnapshot || null;
   const attemptsCandidate = (state.candidates || []).find((item) => String(item.id) === String(attemptsCandidateId)) || null;
   const assessmentStatusItem = (state.assessments || []).find((item) => String(item.id) === String(assessmentStatusId)) || null;
   const quickUpdateCandidate = (state.candidates || []).find((item) => String(item.id) === String(quickUpdateCandidateId)) || null;
@@ -6657,8 +6659,16 @@ function PortalApp({ token, onLogout }) {
 	function openRecruiterNotes(candidateOrId) {
 	  const candidateId = String(candidateOrId?.id || candidateOrId || "").trim();
 	  if (!candidateId) return;
+    const liveCandidate = (state.candidates || []).find((item) => String(item.id) === candidateId) || null;
+    setNotesCandidateSnapshot(liveCandidate || (candidateOrId && typeof candidateOrId === "object" ? { ...candidateOrId } : null));
 	  setNotesCandidateId(candidateId);
 	}
+
+  useEffect(() => {
+    if (!notesCandidateId) return;
+    if (!notesCandidateLive) return;
+    setNotesCandidateSnapshot(notesCandidateLive);
+  }, [notesCandidateId, notesCandidateLive]);
 
   useEffect(() => {
     if (!hostedJobId) {
@@ -16300,8 +16310,11 @@ function PortalApp({ token, onLogout }) {
 	      <NotesModal
 	        open={Boolean(notesCandidateId)}
 	        candidate={notesCandidate}
-	        onClose={() => setNotesCandidateId("")}
-	        onPatch={async (patch, message) => { await patchCandidate(notesCandidateId, patch, message || "Recruiter note updated."); setNotesCandidateId(""); }}
+	        onClose={() => { setNotesCandidateId(""); setNotesCandidateSnapshot(null); }}
+	        onPatch={async (patch, message) => {
+            await patchCandidate(notesCandidateId, patch, message || "Recruiter note updated.");
+            setNotesCandidateSnapshot((current) => (current ? { ...current, ...patch } : current));
+          }}
 	        onParse={async (rawText) => api("/parse-note", token, "POST", {
 	          note: rawText,
 	          source: "portal_manual",
