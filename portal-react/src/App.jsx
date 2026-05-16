@@ -9600,7 +9600,8 @@ function PortalApp({ token, onLogout }) {
       } else {
         setStatus("captured", ids.length > 1 ? `${ids.length} drafts assigned to recruiter.` : "Draft assigned to recruiter.", "ok");
       }
-      await refreshWorkspaceSilently("post-captured-bulk-assign", { force: true });
+      // Keep reassignment visually stable; local optimistic patch already reflects latest values.
+      // Background workspace refresh is intentionally skipped here to avoid full-list flicker.
       return;
     }
     const results = await Promise.allSettled(ids.map(async (id) => {
@@ -9624,7 +9625,8 @@ function PortalApp({ token, onLogout }) {
     } else {
       setStatus("captured", ids.length > 1 ? `${ids.length} drafts assigned to recruiter.` : "Draft assigned to recruiter.", "ok");
     }
-    await refreshWorkspaceSilently("post-claim", { force: true });
+    // Keep reassignment visually stable; local optimistic patch already reflects latest values.
+    // Background workspace refresh is intentionally skipped here to avoid full-list flicker.
   }
 
   async function patchCandidate(candidateId, patch, okMessage) {
@@ -9653,7 +9655,8 @@ function PortalApp({ token, onLogout }) {
     setStatus("captured", okMessage, "ok");
   }
 
-  async function patchCandidateQuiet(candidateId, patch) {
+  async function patchCandidateQuiet(candidateId, patch, options = {}) {
+    const skipRefresh = options?.skipRefresh === true;
     const currentCandidate = (state.candidates || []).find((item) => String(item.id) === String(candidateId)) || {};
     const nextPatch = { ...patch };
     if (!Object.prototype.hasOwnProperty.call(nextPatch, "draft_payload")) {
@@ -9674,7 +9677,9 @@ function PortalApp({ token, onLogout }) {
         databaseCandidates: applyPatch(current.databaseCandidates)
       };
     });
-    void refreshWorkspaceSilently("post-patch");
+    if (!skipRefresh) {
+      void refreshWorkspaceSilently("post-patch");
+    }
   }
 
   async function hideCapturedCandidate(candidateId) {
@@ -10119,7 +10124,6 @@ function PortalApp({ token, onLogout }) {
     if (!attemptsCandidateId) return;
     const result = await api(`/contact-attempts?candidate_id=${encodeURIComponent(attemptsCandidateId)}&limit=20`, token).catch(() => []);
     setAttempts(Array.isArray(result) ? result : []);
-    void refreshWorkspaceSilently("post-attempt-refresh");
   }
 
   function applyNewDraftAutofillPatch(patch = {}) {
@@ -10312,9 +10316,7 @@ function PortalApp({ token, onLogout }) {
         next_follow_up_at: patch.next_follow_up_at
       });
       if (Object.keys(candidatePatch).length) {
-        await patchCandidateQuiet(attemptsCandidateId, candidatePatch);
-      } else {
-        await refreshWorkspaceSilently("post-attempt-save");
+        await patchCandidateQuiet(attemptsCandidateId, candidatePatch, { skipRefresh: true });
       }
       await refreshAttempts();
       setStatus("captured", "Attempt logged.", "ok");
