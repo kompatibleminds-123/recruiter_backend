@@ -3493,6 +3493,7 @@ function AssignModal({ open, applicant, users, jobs, onClose, onSave, title = "A
   const [jdId, setJdId] = useState("");
   const [status, setStatus] = useState("");
   const [saving, setSaving] = useState(false);
+  const bodyScrollLockRef = useRef({ y: 0, locked: false });
 
   useEffect(() => {
     if (!open) return;
@@ -3521,11 +3522,40 @@ function AssignModal({ open, applicant, users, jobs, onClose, onSave, title = "A
     applicant?.jdTitle
   ]);
 
+  useEffect(() => {
+    if (!open) return;
+    if (typeof window === "undefined" || typeof document === "undefined") return;
+    const body = document.body;
+    const docEl = document.documentElement;
+    const scrollY = window.scrollY || window.pageYOffset || 0;
+    bodyScrollLockRef.current = { y: scrollY, locked: true };
+    const prevBodyOverflow = body.style.overflow;
+    const prevBodyPosition = body.style.position;
+    const prevBodyTop = body.style.top;
+    const prevBodyWidth = body.style.width;
+    const prevDocScrollBehavior = docEl.style.scrollBehavior;
+    body.style.overflow = "hidden";
+    body.style.position = "fixed";
+    body.style.top = `-${scrollY}px`;
+    body.style.width = "100%";
+    docEl.style.scrollBehavior = "auto";
+    return () => {
+      body.style.overflow = prevBodyOverflow;
+      body.style.position = prevBodyPosition;
+      body.style.top = prevBodyTop;
+      body.style.width = prevBodyWidth;
+      docEl.style.scrollBehavior = prevDocScrollBehavior;
+      const restoreY = Number(bodyScrollLockRef.current?.y || 0);
+      bodyScrollLockRef.current = { y: 0, locked: false };
+      window.scrollTo(0, restoreY);
+    };
+  }, [open]);
+
   if (!open) return null;
 
   return (
     <div className="overlay">
-      <div className="overlay-card" onClick={(e) => e.stopPropagation()}>
+      <div className="overlay-card overlay-card--assign" onClick={(e) => e.stopPropagation()}>
         <h3>{title}</h3>
         <p className="muted">{description.replace("{name}", applicant?.[nameKey] || applicant?.name || "this candidate")}</p>
         {allowRecruiterSelect ? (
@@ -3580,6 +3610,7 @@ function NotesModal({ open, candidate, onClose, onPatch, onParse, onOpenLinkedin
   const [structuredDirty, setStructuredDirty] = useState(false);
   const [parseApplied, setParseApplied] = useState(false);
   const [status, setStatus] = useState("");
+  const bodyScrollLockRef = useRef({ y: 0, locked: false });
 
   useEffect(() => {
     if (!open || !candidate) return;
@@ -3602,6 +3633,35 @@ function NotesModal({ open, candidate, onClose, onPatch, onParse, onOpenLinkedin
     setParseApplied(false);
     setStatus("");
   }, [open, candidate?.id]);
+
+  useEffect(() => {
+    if (!open) return;
+    if (typeof window === "undefined" || typeof document === "undefined") return;
+    const body = document.body;
+    const docEl = document.documentElement;
+    const scrollY = window.scrollY || window.pageYOffset || 0;
+    bodyScrollLockRef.current = { y: scrollY, locked: true };
+    const prevBodyOverflow = body.style.overflow;
+    const prevBodyPosition = body.style.position;
+    const prevBodyTop = body.style.top;
+    const prevBodyWidth = body.style.width;
+    const prevDocScrollBehavior = docEl.style.scrollBehavior;
+    body.style.overflow = "hidden";
+    body.style.position = "fixed";
+    body.style.top = `-${scrollY}px`;
+    body.style.width = "100%";
+    docEl.style.scrollBehavior = "auto";
+    return () => {
+      body.style.overflow = prevBodyOverflow;
+      body.style.position = prevBodyPosition;
+      body.style.top = prevBodyTop;
+      body.style.width = prevBodyWidth;
+      docEl.style.scrollBehavior = prevDocScrollBehavior;
+      const restoreY = Number(bodyScrollLockRef.current?.y || 0);
+      bodyScrollLockRef.current = { y: 0, locked: false };
+      window.scrollTo(0, restoreY);
+    };
+  }, [open]);
 
   if (!open || !candidate) return null;
 
@@ -3641,7 +3701,7 @@ function NotesModal({ open, candidate, onClose, onPatch, onParse, onOpenLinkedin
 
   return (
     <div className="overlay">
-      <div className="overlay-card" onClick={(e) => e.stopPropagation()}>
+      <div className="overlay-card overlay-card--recruiter-note" onClick={(e) => e.stopPropagation()}>
         <h3>Recruiter Note</h3>
         <p className="muted">{candidate.name || "Candidate"} | {candidate.jd_title || candidate.role || "No role set"}</p>
         {cautiousIndicatorsText ? (
@@ -3745,6 +3805,36 @@ function AttemptsModal({ open, candidate, attempts, onClose, onRefresh, onSave }
   const [status, setStatus] = useState("");
   const [saving, setSaving] = useState(false);
   const inferSyncModeRef = useRef("manual");
+  const bodyScrollLockRef = useRef({ y: 0, locked: false });
+
+  useEffect(() => {
+    if (!open) return;
+    if (typeof window === "undefined" || typeof document === "undefined") return;
+    const body = document.body;
+    const docEl = document.documentElement;
+    const scrollY = window.scrollY || window.pageYOffset || 0;
+    bodyScrollLockRef.current = { y: scrollY, locked: true };
+    const prevBodyOverflow = body.style.overflow;
+    const prevBodyPosition = body.style.position;
+    const prevBodyTop = body.style.top;
+    const prevBodyWidth = body.style.width;
+    const prevDocScrollBehavior = docEl.style.scrollBehavior;
+    body.style.overflow = "hidden";
+    body.style.position = "fixed";
+    body.style.top = `-${scrollY}px`;
+    body.style.width = "100%";
+    docEl.style.scrollBehavior = "auto";
+    return () => {
+      body.style.overflow = prevBodyOverflow;
+      body.style.position = prevBodyPosition;
+      body.style.top = prevBodyTop;
+      body.style.width = prevBodyWidth;
+      docEl.style.scrollBehavior = prevDocScrollBehavior;
+      const restoreY = Number(bodyScrollLockRef.current?.y || 0);
+      bodyScrollLockRef.current = { y: 0, locked: false };
+      window.scrollTo(0, restoreY);
+    };
+  }, [open]);
 
   useEffect(() => {
     if (!open || !candidate) return;
@@ -3783,7 +3873,7 @@ function AttemptsModal({ open, candidate, attempts, onClose, onRefresh, onSave }
 
   return (
     <div className="overlay" onClick={onClose}>
-      <div className="overlay-card overlay-card--wide" onClick={(e) => e.stopPropagation()}>
+      <div className="overlay-card overlay-card--wide overlay-card--attempts" onClick={(e) => e.stopPropagation()}>
         <h3>Attempts</h3>
         <p className="muted">{candidate.name || "Candidate"} | {candidate.jd_title || candidate.role || "No role set"}</p>
         <div className="attempt-grid">
@@ -3889,6 +3979,7 @@ function AssessmentStatusModal({ open, assessment, onClose, onSave }) {
   const [status, setStatus] = useState("");
   const [saving, setSaving] = useState(false);
   const inferSyncModeRef = useRef("manual");
+  const bodyScrollLockRef = useRef({ y: 0, locked: false });
 
   useEffect(() => {
     if (!open || !assessment) return;
@@ -3926,6 +4017,35 @@ function AssessmentStatusModal({ open, assessment, onClose, onSave }) {
     if (parsed.offerAmount && parsed.offerAmount !== offerAmount) setOfferAmount(parsed.offerAmount);
   }, [inferText]);
 
+  useEffect(() => {
+    if (!open) return;
+    if (typeof window === "undefined" || typeof document === "undefined") return;
+    const body = document.body;
+    const docEl = document.documentElement;
+    const scrollY = window.scrollY || window.pageYOffset || 0;
+    bodyScrollLockRef.current = { y: scrollY, locked: true };
+    const prevBodyOverflow = body.style.overflow;
+    const prevBodyPosition = body.style.position;
+    const prevBodyTop = body.style.top;
+    const prevBodyWidth = body.style.width;
+    const prevDocScrollBehavior = docEl.style.scrollBehavior;
+    body.style.overflow = "hidden";
+    body.style.position = "fixed";
+    body.style.top = `-${scrollY}px`;
+    body.style.width = "100%";
+    docEl.style.scrollBehavior = "auto";
+    return () => {
+      body.style.overflow = prevBodyOverflow;
+      body.style.position = prevBodyPosition;
+      body.style.top = prevBodyTop;
+      body.style.width = prevBodyWidth;
+      docEl.style.scrollBehavior = prevDocScrollBehavior;
+      const restoreY = Number(bodyScrollLockRef.current?.y || 0);
+      bodyScrollLockRef.current = { y: 0, locked: false };
+      window.scrollTo(0, restoreY);
+    };
+  }, [open]);
+
   if (!open || !assessment) return null;
 
   const normalizedStatus = String(candidateStatus || "").trim().toLowerCase();
@@ -3938,7 +4058,7 @@ function AssessmentStatusModal({ open, assessment, onClose, onSave }) {
 
   return (
     <div className="overlay" onClick={onClose}>
-      <div className="overlay-card" onClick={(e) => e.stopPropagation()}>
+      <div className="overlay-card overlay-card--assessment-status" onClick={(e) => e.stopPropagation()}>
         <h3>Update assessment status</h3>
         <p className="muted">{assessment.candidateName || "Candidate"} | {assessment.jdTitle || "Untitled role"}</p>
         <label>

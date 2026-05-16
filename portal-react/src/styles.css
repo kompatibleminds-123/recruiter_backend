@@ -1445,6 +1445,22 @@ textarea { min-height: 92px; resize: vertical; }
   box-shadow: var(--shadow-md);
 }
 .overlay-card--wide { width: min(1320px, calc(100vw - 3rem)); }
+.overlay-card--attempts {
+  height: min(82vh, 860px);
+  overflow: hidden;
+}
+.overlay-card--assessment-status {
+  height: min(84vh, 880px);
+  overflow-y: auto;
+}
+.overlay-card--assign {
+  max-height: min(72vh, 560px);
+  overflow-y: auto;
+}
+.overlay-card--recruiter-note {
+  height: min(86vh, 920px);
+  overflow-y: auto;
+}
 .overlay-card h3 { margin: 0; font-size: 1.25rem; }
 .whatsapp-template-picker {
   width: min(520px, 100%);
@@ -1515,6 +1531,16 @@ textarea { min-height: 92px; resize: vertical; }
 .attempt-grid { display: grid; gap: 1rem; grid-template-columns: 1.2fr 0.9fr; }
 .attempt-history, .attempt-form { display: grid; gap: 0.75rem; }
 .attempt-history h4, .attempt-form h4 { margin: 0; font-size: 1rem; }
+.overlay-card--attempts .attempt-grid {
+  height: 100%;
+  min-height: 0;
+}
+.overlay-card--attempts .attempt-history,
+.overlay-card--attempts .attempt-form {
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 0.2rem;
+}
 .code-box { min-height: 220px; font-family: ui-monospace, "Cascadia Code", monospace; font-size: 0.85rem; }
 .jd-editor { min-height: 260px; }
 .file-btn {
