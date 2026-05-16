@@ -1695,6 +1695,35 @@ function mergeAssessmentsByFreshness(currentList = [], incomingList = []) {
   return Array.from(byId.values());
 }
 
+function mergeCandidatesByFreshness(currentList = [], incomingList = []) {
+  const current = Array.isArray(currentList) ? currentList : [];
+  const incoming = Array.isArray(incomingList) ? incomingList : [];
+  const byId = new Map();
+  const rowTs = (row) => {
+    const t1 = Date.parse(String(row?.updated_at || row?.updatedAt || ""));
+    const t2 = Date.parse(String(row?.last_contact_at || row?.lastContactAt || ""));
+    const t3 = Date.parse(String(row?.assigned_at || row?.assignedAt || ""));
+    return Math.max(Number.isFinite(t1) ? t1 : 0, Number.isFinite(t2) ? t2 : 0, Number.isFinite(t3) ? t3 : 0);
+  };
+  current.forEach((item) => {
+    const id = String(item?.id || "").trim();
+    if (id) byId.set(id, item);
+  });
+  incoming.forEach((item) => {
+    const id = String(item?.id || "").trim();
+    if (!id) return;
+    const existing = byId.get(id);
+    if (!existing) {
+      byId.set(id, item);
+      return;
+    }
+    const existingTs = rowTs(existing);
+    const incomingTs = rowTs(item);
+    if (incomingTs >= existingTs) byId.set(id, { ...existing, ...item });
+  });
+  return Array.from(byId.values());
+}
+
 function syncAssessmentNotesWithStatus(currentNotes, statusValue, atValue = "", extra = {}) {
   const lines = String(currentNotes || "").split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
   const nextLine = buildAssessmentStatusNoteLine(statusValue, atValue, extra).trim();
@@ -3705,6 +3734,8 @@ function AttemptsModal({ open, candidate, attempts, onClose, onRefresh, onSave }
   const [remarks, setRemarks] = useState("");
   const [nextFollowUpAt, setNextFollowUpAt] = useState("");
   const [status, setStatus] = useState("");
+  const [saving, setSaving] = useState(false);
+  const inferSyncModeRef = useRef("manual");
 
   useEffect(() => {
     if (!open || !candidate) return;
@@ -3713,9 +3744,16 @@ function AttemptsModal({ open, candidate, attempts, onClose, onRefresh, onSave }
     setRemarks("");
     setNextFollowUpAt("");
     setStatus("");
+    setSaving(false);
+    inferSyncModeRef.current = "programmatic";
   }, [open, candidate?.id]);
 
   useEffect(() => {
+    const mode = inferSyncModeRef.current;
+    if (mode !== "manual") {
+      inferSyncModeRef.current = "manual";
+      return;
+    }
     const parsed = inferAttemptOutcomeAndFollowUp(inferText);
     if (parsed.outcome && parsed.outcome !== outcome) setOutcome(parsed.outcome);
     if (parsed.outcome === "Call later" && parsed.followUpAt) {
@@ -3728,6 +3766,11 @@ function AttemptsModal({ open, candidate, attempts, onClose, onRefresh, onSave }
   }, [inferText]);
 
   if (!open || !candidate) return null;
+  const attemptsForCandidate = (Array.isArray(attempts) ? attempts : [])
+    .filter((item) => String(item?.candidate_id || item?.candidateId || "").trim() === String(candidate?.id || "").trim())
+    .slice()
+    .sort((a, b) => new Date(b?.created_at || b?.at || 0) - new Date(a?.created_at || a?.at || 0))
+    .slice(0, 5);
 
   return (
     <div className="overlay" onClick={onClose}>
@@ -3738,7 +3781,7 @@ function AttemptsModal({ open, candidate, attempts, onClose, onRefresh, onSave }
         <div className="attempt-history">
             <h4>History</h4>
             <div className="stack-list compact">
-              {candidate?.last_contact_outcome || candidate?.last_contact_notes || candidate?.next_follow_up_at ? (
+              {attemptsForCandidate.length || candidate?.last_contact_outcome || candidate?.last_contact_notes || candidate?.next_follow_up_at ? (
                 <article className="item-card compact-card">
                   <div className="item-card__top compact-top">
                     <strong>Latest saved status</strong>
@@ -3746,11 +3789,21 @@ function AttemptsModal({ open, candidate, attempts, onClose, onRefresh, onSave }
                   </div>
                   <p className="muted">{candidate?.last_contact_outcome || "No outcome"}</p>
                   {extractAttemptRemarks(extractLatestAttemptLine(candidate?.last_contact_notes || "")) ? <div className="candidate-snippet">{extractAttemptRemarks(extractLatestAttemptLine(candidate?.last_contact_notes || ""))}</div> : null}
-                  {candidate?.last_contact_notes ? <div className="candidate-snippet">{formatAttemptLinesWithTimestamp(candidate.last_contact_notes, candidate.last_contact_at)}</div> : null}
+                  {attemptsForCandidate.length ? (
+                    <div className="candidate-snippet">
+                      {attemptsForCandidate.map((item, index) => {
+                        const atText = item?.created_at || item?.at ? new Date(item.created_at || item.at).toLocaleString() : "-";
+                        const outcomeText = String(item?.outcome || "").trim() || "Attempt";
+                        const remarksText = extractAttemptManualRemarksFromNotes(item?.notes || "", outcomeText);
+                        const followUpText = item?.next_follow_up_at ? ` | Follow-up: ${new Date(item.next_follow_up_at).toLocaleString()}` : "";
+                        return `${index + 1}. ${atText} | ${outcomeText}${remarksText ? ` | Remarks: ${remarksText}` : ""}${followUpText}`;
+                      }).join("\n")}
+                    </div>
+                  ) : candidate?.last_contact_notes ? <div className="candidate-snippet">{formatAttemptLinesWithTimestamp(candidate.last_contact_notes, candidate.last_contact_at)}</div> : null}
                   {candidate?.next_follow_up_at ? <div className="chip-row"><span className="chip">Next follow-up: {new Date(candidate.next_follow_up_at).toLocaleString()}</span></div> : null}
                 </article>
               ) : null}
-              {!(candidate?.last_contact_outcome || candidate?.last_contact_notes || candidate?.next_follow_up_at)
+              {!(attemptsForCandidate.length || candidate?.last_contact_outcome || candidate?.last_contact_notes || candidate?.next_follow_up_at)
                 ? <div className="empty-state">No attempts logged yet.</div>
                 : null}
             </div>
@@ -3760,17 +3813,24 @@ function AttemptsModal({ open, candidate, attempts, onClose, onRefresh, onSave }
             <label><span>Outcome</span><select value={outcome} onChange={(e) => {
               const selected = e.target.value;
               setOutcome(selected);
+              inferSyncModeRef.current = "programmatic";
               setInferText(selected || "");
+              if (selected !== "Call later") setNextFollowUpAt("");
             }}>{[
               <option key="" value="">Select outcome</option>,
               ...ATTEMPT_OUTCOME_OPTIONS.filter((option) => option !== "No outcome").map((option) => <option key={option} value={option}>{option}</option>)
             ]}</select></label>
-            <label><span>Infer Box</span><textarea value={inferText} onChange={(e) => setInferText(e.target.value)} placeholder="Busy, call tomorrow 5 PM, duplicate, screening reject..." /></label>
+            <label><span>Infer Box</span><textarea value={inferText} onChange={(e) => {
+              inferSyncModeRef.current = "manual";
+              setInferText(e.target.value);
+            }} placeholder="Busy, call tomorrow 5 PM, duplicate, screening reject..." /></label>
             <label><span>Manual Remarks</span><textarea value={remarks} onChange={(e) => setRemarks(e.target.value)} placeholder="Busy in production, communication bad, asked to call tomorrow..." /></label>
             <label><span>Next follow-up</span><input type="datetime-local" value={nextFollowUpAt} onChange={(e) => setNextFollowUpAt(e.target.value)} disabled={outcome !== "Call later"} /></label>
             {status ? <div className="status">{status}</div> : null}
             <div className="button-row">
                 <button onClick={async () => {
+                  if (saving) return;
+                  setSaving(true);
                   setStatus("Saving attempt...");
                   try {
                     const parsed = inferAttemptOutcomeAndFollowUp(inferText);
@@ -3797,8 +3857,10 @@ function AttemptsModal({ open, candidate, attempts, onClose, onRefresh, onSave }
                   await onRefresh();
                 } catch (error) {
                   setStatus(String(error?.message || error));
+                } finally {
+                  setSaving(false);
                 }
-              }}>Save attempt</button>
+              }}>{saving ? "Saving..." : "Save attempt"}</button>
               <button className="ghost-btn" onClick={onClose}>Close</button>
             </div>
           </div>
@@ -6983,9 +7045,11 @@ function PortalApp({ token, onLogout }) {
       intake: needsIntake ? (intakeResult || {}) : current.intake,
       jobs: needsJobs ? (jobsResult?.jobs || []) : current.jobs,
       users: needsUsers ? (usersResult?.users || []) : current.users,
-      candidates: needsCandidates ? (Array.isArray(candidatesResult) ? candidatesResult : []) : current.candidates,
+      candidates: needsCandidates
+        ? mergeCandidatesByFreshness(current.candidates, Array.isArray(candidatesResult) ? candidatesResult : [])
+        : current.candidates,
       databaseCandidates: needsDatabaseCandidates
-        ? (Array.isArray(databaseCandidatesResult) ? databaseCandidatesResult : [])
+        ? mergeCandidatesByFreshness(current.databaseCandidates, Array.isArray(databaseCandidatesResult) ? databaseCandidatesResult : [])
         : current.databaseCandidates,
       assessments: needsAssessments
         ? mergeAssessmentsByFreshness(current.assessments, assessmentsResult?.assessments || [])
@@ -7148,9 +7212,9 @@ function PortalApp({ token, onLogout }) {
     ]);
     setState((current) => ({
       ...current,
-      candidates: Array.isArray(candidatesResult) ? candidatesResult : current.candidates,
+      candidates: mergeCandidatesByFreshness(current.candidates, Array.isArray(candidatesResult) ? candidatesResult : []),
       databaseCandidates: includeDatabase
-        ? (Array.isArray(databaseCandidatesResult) ? databaseCandidatesResult : current.databaseCandidates)
+        ? mergeCandidatesByFreshness(current.databaseCandidates, Array.isArray(databaseCandidatesResult) ? databaseCandidatesResult : [])
         : current.databaseCandidates
     }));
   }
@@ -10200,25 +10264,24 @@ function PortalApp({ token, onLogout }) {
         };
       });
     }
-    void (async () => {
-      try {
-        await api("/contact-attempts", token, "POST", {
-          candidateId: attemptsCandidateId,
-          outcome: finalOutcome,
-          notes: storedNote,
-          next_follow_up_at: patch.next_follow_up_at
-        });
-        if (Object.keys(candidatePatch).length) {
-          await patchCandidateQuiet(attemptsCandidateId, candidatePatch);
-        } else {
-          void refreshWorkspaceSilently("post-attempt-save");
-        }
-        await refreshAttempts();
-      } catch (error) {
-        setStatus("captured", `Attempt sync failed: ${String(error?.message || error)}`, "error");
+    try {
+      await api("/contact-attempts", token, "POST", {
+        candidateId: attemptsCandidateId,
+        outcome: finalOutcome,
+        notes: storedNote,
+        next_follow_up_at: patch.next_follow_up_at
+      });
+      if (Object.keys(candidatePatch).length) {
+        await patchCandidateQuiet(attemptsCandidateId, candidatePatch);
+      } else {
+        await refreshWorkspaceSilently("post-attempt-save");
       }
-    })();
-    setStatus("captured", "Attempt logged.", "ok");
+      await refreshAttempts();
+      setStatus("captured", "Attempt logged.", "ok");
+    } catch (error) {
+      setStatus("captured", `Attempt sync failed: ${String(error?.message || error)}`, "error");
+      throw error;
+    }
   }
 
   function loadCandidateIntoInterview(candidateId) {
