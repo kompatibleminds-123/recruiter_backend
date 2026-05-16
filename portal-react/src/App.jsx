@@ -1577,27 +1577,22 @@ function buildAssessmentJourneyEntries(assessment, contactAttempts = [], candida
   (contactAttempts || []).forEach((item) => {
     const when = item?.created_at || item?.at || "";
     if (!when) return;
-    const noteLines = String(item?.notes || "")
-      .split(/\r?\n/)
-      .map((line) => line.trim())
-      .filter(Boolean)
-      .join(" | ");
+    const outcomeLabel = String(item?.outcome || "Attempt").trim();
+    const manualRemarks = extractAttemptManualRemarksFromNotes(item?.notes || "", outcomeLabel);
     pushJourneyEntry({
       at: when,
-      text: `Log attempt | ${item?.outcome || "Attempt"}${noteLines ? ` | ${noteLines}` : ""}`
+      text: `Log attempt | ${outcomeLabel}${manualRemarks ? ` | Remarks: ${manualRemarks}` : ""}`
     });
   });
 
   const latestAttemptMissing = candidate?.last_contact_at && !(contactAttempts || []).some((item) => String(item?.created_at || "") === String(candidate.last_contact_at || ""));
   if (latestAttemptMissing) {
-    const noteLines = String(candidate?.last_contact_notes || "")
-      .split(/\r?\n/)
-      .map((line) => line.trim())
-      .filter(Boolean)
-      .join(" | ");
+    const outcomeLabel = String(candidate?.last_contact_outcome || "Attempt").trim();
+    const latestLine = extractLatestAttemptLine(candidate?.last_contact_notes || "");
+    const manualRemarks = extractAttemptRemarks(latestLine);
     pushJourneyEntry({
       at: candidate.last_contact_at,
-      text: `Log attempt | ${candidate?.last_contact_outcome || "Attempt"}${noteLines ? ` | ${noteLines}` : ""}`
+      text: `Log attempt | ${outcomeLabel}${manualRemarks ? ` | Remarks: ${manualRemarks}` : ""}`
     });
   }
 
@@ -1770,6 +1765,17 @@ function extractAttemptRemarks(text) {
   if (!value) return "";
   const remarksMatch = value.match(/(?:^|\|)\s*remarks:\s*(.+?)(?:\s*\|\s*follow-up:|\s*$)/i);
   return String(remarksMatch?.[1] || "").trim();
+}
+
+function extractAttemptManualRemarksFromNotes(notes, outcome = "") {
+  const raw = String(notes || "").trim();
+  if (!raw) return "";
+  const explicit = extractAttemptRemarks(raw);
+  if (explicit) return explicit;
+  const firstLine = raw.split(/\r?\n/).map((line) => line.trim()).find(Boolean) || "";
+  if (!firstLine) return "";
+  if (firstLine.toLowerCase() === String(outcome || "").trim().toLowerCase()) return "";
+  return "";
 }
 
 function normalizeRecruiterMergeBase(item) {
@@ -6811,6 +6817,7 @@ function PortalApp({ token, onLogout }) {
     const needsDatabaseCandidates = pathname === "/candidates";
     const needsAssessments =
       pathname === "/dashboard" ||
+      pathname === "/captured-notes" ||
       pathname === "/assessments" ||
       pathname === "/client-share" ||
       pathname === "/interview";
