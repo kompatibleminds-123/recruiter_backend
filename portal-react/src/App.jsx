@@ -4698,10 +4698,11 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
     setOverview(result || null);
   }, [marketingDateFrom, marketingDateTo, token]);
 
-  const loadProspects = useCallback(async () => {
-    const result = await api(`/company/marketing/prospects?limit=100&page=${prospectsPage}`, token);
+  const loadProspects = useCallback(async (pageOverride = null) => {
+    const pageToLoad = Number.isFinite(Number(pageOverride)) ? Number(pageOverride) : prospectsPage;
+    const result = await api(`/company/marketing/prospects?limit=100&page=${pageToLoad}`, token);
     const items = Array.isArray(result?.items) ? result.items : [];
-    setProspects((current) => prospectsPage === 1 ? items : [...current, ...items]);
+    setProspects((current) => pageToLoad === 1 ? items : [...current, ...items]);
     setProspectsHasMore(Boolean(result?.hasMore));
   }, [prospectsPage, token]);
 
@@ -5090,7 +5091,10 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
                 try {
                   await handleCsvFileImport(file);
                   setProspectsPage(1);
-                  await refresh();
+                  setProspectSearch("");
+                  setProspectCategoryFilter("");
+                  await loadProspects(1);
+                  await loadOverview();
                   setOk("CSV/XLSX file imported.");
                 } catch (error) {
                   setErr(error);
@@ -5110,7 +5114,10 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
               await api("/company/marketing/prospects/import", token, "POST", { csv: csvText });
               setCsvText("");
               setProspectsPage(1);
-              await refresh();
+              setProspectSearch("");
+              setProspectCategoryFilter("");
+              await loadProspects(1);
+              await loadOverview();
               setOk("CSV text imported.");
             } catch (error) {
               setErr(error);
