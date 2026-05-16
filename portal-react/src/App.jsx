@@ -1608,8 +1608,12 @@ function buildAssessmentJourneyEntries(assessment, contactAttempts = [], candida
   const statusHistory = Array.isArray(assessment?.statusHistory) ? assessment.statusHistory : [];
   statusHistory.forEach((item) => {
     if (!item?.at) return;
-    const bits = [item?.status || "Status update"];
-    if (item?.notes) bits.push(item.notes);
+    const statusText = String(item?.status || "Status update").trim();
+    const bits = [statusText];
+    const manual = String(item?.manualRemarks || "").trim();
+    const manualNorm = normalizeJourneyText(manual);
+    const statusNorm = normalizeJourneyText(statusText);
+    if (manual && manualNorm !== statusNorm) bits.push(`Remarks: ${manual}`);
     if (item?.offerAmount) bits.push(`Offer amount ${item.offerAmount}`);
     if (item?.atLabel) bits.push(item.atLabel);
     pushJourneyEntry({
@@ -1663,6 +1667,32 @@ function getLatestAssessmentStatusPreview(assessment = {}) {
       || ""
     ).trim()
   };
+}
+
+function mergeAssessmentsByFreshness(currentList = [], incomingList = []) {
+  const current = Array.isArray(currentList) ? currentList : [];
+  const incoming = Array.isArray(incomingList) ? incomingList : [];
+  const byId = new Map();
+  current.forEach((item) => {
+    const id = String(item?.id || "").trim();
+    if (!id) return;
+    byId.set(id, item);
+  });
+  incoming.forEach((item) => {
+    const id = String(item?.id || "").trim();
+    if (!id) return;
+    const existing = byId.get(id);
+    if (!existing) {
+      byId.set(id, item);
+      return;
+    }
+    const existingAt = Date.parse(String(existing?.updatedAt || existing?.updated_at || existing?.generatedAt || ""));
+    const incomingAt = Date.parse(String(item?.updatedAt || item?.updated_at || item?.generatedAt || ""));
+    if (!Number.isFinite(existingAt) || (Number.isFinite(incomingAt) && incomingAt >= existingAt)) {
+      byId.set(id, { ...existing, ...item });
+    }
+  });
+  return Array.from(byId.values());
 }
 
 function syncAssessmentNotesWithStatus(currentNotes, statusValue, atValue = "", extra = {}) {
@@ -3792,12 +3822,10 @@ function AssessmentStatusModal({ open, assessment, onClose, onSave }) {
 
   useEffect(() => {
     if (!open || !assessment) return;
-    const history = Array.isArray(assessment?.statusHistory) ? assessment.statusHistory : [];
-    const latestWithRemarks = [...history].reverse().find((item) => String(item?.manualRemarks || "").trim());
     setCandidateStatus(normalizeAssessmentStatusLabel(assessment.candidateStatus));
     setAtValue(toDateInputValue(assessment.interviewAt || assessment.followUpAt || ""));
     setInferText("");
-    setManualRemarks(String(latestWithRemarks?.manualRemarks || "").trim());
+    setManualRemarks("");
     setOfferAmount(String(assessment.offerAmount || "").trim());
     setExpectedDoj(toDateInputValue(assessment.expectedDoj || assessment.followUpAt || ""));
     setDateOfJoining(toDateInputValue(assessment.dateOfJoining || assessment.followUpAt || ""));
@@ -3833,6 +3861,10 @@ function AssessmentStatusModal({ open, assessment, onClose, onSave }) {
   const normalizedStatus = String(candidateStatus || "").trim().toLowerCase();
   const shouldShowCalendar = isInterviewAlignedStatus(candidateStatus) || normalizedStatus === "offered" || normalizedStatus === "joined";
   const effectiveAtValue = normalizedStatus === "offered" ? expectedDoj : normalizedStatus === "joined" ? dateOfJoining : atValue;
+  const statusHistoryPreview = (Array.isArray(assessment?.statusHistory) ? assessment.statusHistory : [])
+    .slice()
+    .sort((a, b) => new Date(b?.at || 0) - new Date(a?.at || 0))
+    .slice(0, 5);
 
   return (
     <div className="overlay" onClick={onClose}>
@@ -3900,7 +3932,19 @@ function AssessmentStatusModal({ open, assessment, onClose, onSave }) {
           <span>Manual remarks</span>
           <textarea value={manualRemarks} onChange={(e) => setManualRemarks(e.target.value)} placeholder="Add recruiter remarks here, e.g. candidate asked to reconnect after release, communication good, salary flexibility possible." />
         </label>
-        <p className="muted">Last line in infer box is the final source of truth for current status.</p>
+        {statusHistoryPreview.length ? (
+          <div className="muted" style={{ whiteSpace: "pre-wrap" }}>
+            Last updates:
+            {"\n"}
+            {statusHistoryPreview.map((item, index) => {
+              const when = item?.at ? new Date(item.at).toLocaleString() : "-";
+              const statusText = String(item?.status || "Status update").trim();
+              const manual = String(item?.manualRemarks || "").trim();
+              return `${index + 1}. ${when} | ${statusText}${manual ? ` | Remarks: ${manual}` : ""}`;
+            }).join("\n")}
+          </div>
+        ) : null}
+        <p className="muted">Status dropdown + manual remarks are treated as final saved update.</p>
         {status ? <div className="status">{status}</div> : null}
         <div className="button-row">
           <button disabled={saving} onClick={async () => {
@@ -6932,7 +6976,9 @@ function PortalApp({ token, onLogout }) {
       databaseCandidates: needsDatabaseCandidates
         ? (Array.isArray(databaseCandidatesResult) ? databaseCandidatesResult : [])
         : current.databaseCandidates,
-      assessments: needsAssessments ? (assessmentsResult?.assessments || []) : current.assessments,
+      assessments: needsAssessments
+        ? mergeAssessmentsByFreshness(current.assessments, assessmentsResult?.assessments || [])
+        : current.assessments,
       assessmentEvents: needsAssessmentEvents ? (assessmentEventsResult?.result?.rows || []) : current.assessmentEvents
     }));
     if (needsJobs) {
@@ -7108,7 +7154,7 @@ function PortalApp({ token, onLogout }) {
     ]);
     setState((current) => ({
       ...current,
-      assessments: assessmentsResult?.assessments || current.assessments,
+      assessments: mergeAssessmentsByFreshness(current.assessments, assessmentsResult?.assessments || []),
       assessmentEvents: includeEvents ? (assessmentEventsResult?.result?.rows || current.assessmentEvents) : current.assessmentEvents
     }));
   }
