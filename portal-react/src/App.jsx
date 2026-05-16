@@ -16616,7 +16616,7 @@ function PortalApp({ token, onLogout }) {
         </div>
       ) : null}
       <AttemptsModal open={Boolean(attemptsCandidateId)} candidate={attemptsCandidate} attempts={attempts} onClose={() => setAttemptsCandidateId("")} onRefresh={refreshAttempts} onSave={saveAttempt} />
-      <AssessmentStatusModal open={Boolean(assessmentStatusId)} assessment={assessmentStatusItem} onClose={() => setAssessmentStatusId("")} onSave={(payload) => saveAssessmentStatusUpdate(assessmentStatusItem, payload)} />
+      <AssessmentStatusModal open={Boolean(assessmentStatusId)} assessment={assessmentStatusItem} assessmentEvents={state.assessmentEvents} onClose={() => setAssessmentStatusId("")} onSave={(payload) => saveAssessmentStatusUpdate(assessmentStatusItem, payload)} />
       <DrilldownModal
         open={drilldownState.open && String(location?.pathname || "") !== "/dashboard"}
         loading={Boolean(drilldownState.loading)}
