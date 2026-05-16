@@ -1,4 +1,4 @@
-﻿import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { NavLink, Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import BrandLogo from "./components/branding/BrandLogo";
 import {
@@ -1174,14 +1174,14 @@ function toSentenceCasePreservingContent(text) {
 
 function normalizeMojibakeSymbols(text) {
   return String(text || "")
-    .replace(/Ã¢â‚¬Â¢|â€¢/g, "•")
-    .replace(/Ã¢â‚¬â€œ|â€“/g, "-")
-    .replace(/Ã¢â‚¬â€|â€”/g, "-")
-    .replace(/Ã¢â‚¬Ëœ|â€˜/g, "'")
-    .replace(/Ã¢â‚¬â„¢|â€™/g, "'")
-    .replace(/Ã¢â‚¬Å“|â€œ/g, "\"")
-    .replace(/Ã¢â‚¬Â|â€/g, "\"")
-    .replace(/Ã‚/g, "");
+    .replace(/ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢|Ã¢â‚¬Â¢/g, "â€¢")
+    .replace(/ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Å“|Ã¢â‚¬â€œ/g, "-")
+    .replace(/ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â|Ã¢â‚¬â€/g, "-")
+    .replace(/ÃƒÂ¢Ã¢â€šÂ¬Ã‹Å“|Ã¢â‚¬Ëœ/g, "'")
+    .replace(/ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢|Ã¢â‚¬â„¢/g, "'")
+    .replace(/ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œ|Ã¢â‚¬Å“/g, "\"")
+    .replace(/ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â|Ã¢â‚¬Â/g, "\"")
+    .replace(/Ãƒâ€š/g, "");
 }
 function polishStructuredBulletSentence(line) {
   const text = normalizeMojibakeSymbols(line).trim().replace(/\s+/g, " ");
@@ -1255,7 +1255,7 @@ function buildCanonicalRecruiterNotes(baseText, currentText, mergedValues = {}) 
 
 function normalizeRecruiterNotesBody(rawText) {
   const normalizedLines = splitStructuredDraftLines(rawText)
-    .map((line) => normalizeMojibakeSymbols(line).replace(/^[\-\*•]\s*/, "").trim())
+    .map((line) => normalizeMojibakeSymbols(line).replace(/^[\-\*â€¢]\s*/, "").trim())
     .map((line) => line.replace(/^recruiter notes\s*:?\s*/i, "").trim())
     .map((line) => line.replace(/^[.:;-]+/, "").trim())
     .map(polishStructuredBulletSentence)
@@ -1278,12 +1278,12 @@ function normalizeOtherPointersBody(rawText) {
     .replace(/\.\s+(?=[A-Z])/g, ".\n");
 
   return splitStructuredDraftLines(prepared)
-    .map((line) => normalizeMojibakeSymbols(line).replace(/^[\-\*•]\s*/, "").trim())
+    .map((line) => normalizeMojibakeSymbols(line).replace(/^[\-\*â€¢]\s*/, "").trim())
     .map((line) => line.replace(/^[.:;-]+/, "").trim())
     .map(polishStructuredBulletSentence)
     .filter(Boolean)
     .filter((line, index, array) => array.findIndex((item) => item.toLowerCase() === line.toLowerCase()) === index)
-    .map((line) => `• ${line.replace(/^•\s*/, "")}`)
+    .map((line) => `â€¢ ${line.replace(/^â€¢\s*/, "")}`)
     .join("\n");
 }
 
@@ -1598,37 +1598,52 @@ function buildAssessmentJourneyEntries(assessment, contactAttempts = [], candida
     });
   }
 
+  const statusHistory = Array.isArray(assessment?.statusHistory) ? assessment.statusHistory : [];
+  const statusHistoryAsc = statusHistory
+    .slice()
+    .filter((item) => item?.at)
+    .sort((a, b) => new Date(a?.at || 0) - new Date(b?.at || 0));
+  const initialStatusText = String(
+    statusHistoryAsc.find((item) => String(item?.status || "").trim())?.status
+    || "CV shared"
+  ).trim();
+
   if (assessment?.generatedAt) {
     pushJourneyEntry({
       at: assessment.generatedAt,
-      text: `Assessment created | ${normalizeAssessmentStatusLabel(assessment?.candidateStatus) || "CV shared"}`
+      text: `Assessment created | ${normalizeAssessmentStatusLabel(initialStatusText) || "CV shared"}`
     });
   }
 
-  const statusHistory = Array.isArray(assessment?.statusHistory) ? assessment.statusHistory : [];
   statusHistory.forEach((item) => {
     if (!item?.at) return;
     const statusText = String(item?.status || "Status update").trim();
+    const statusNorm = normalizeJourneyText(statusText);
     const bits = [statusText];
     const manual = String(item?.manualRemarks || "").trim();
     const manualNorm = normalizeJourneyText(manual);
-    const statusNorm = normalizeJourneyText(statusText);
     if (manual && manualNorm !== statusNorm) bits.push(`Remarks: ${manual}`);
     if (item?.offerAmount) bits.push(`Offer amount ${item.offerAmount}`);
-    if (item?.atLabel) bits.push(item.atLabel);
+    const statusAt = String(item?.statusAt || item?.atValue || "").trim();
+    let scheduleText = "";
+    if (statusAt) {
+      const parsedAt = Date.parse(statusAt);
+      scheduleText = Number.isFinite(parsedAt) ? new Date(parsedAt).toLocaleString() : "";
+    } else {
+      const atLabel = String(item?.atLabel || "").trim();
+      if (atLabel) {
+        const lowerLabel = atLabel.toLowerCase();
+        if (lowerLabel.startsWith(`${statusNorm} on `)) {
+          scheduleText = atLabel.slice(`${statusText} on `.length).trim().replace(/\.$/, "");
+        } else if (lowerLabel !== statusNorm) {
+          scheduleText = atLabel.replace(/\.$/, "").trim();
+        }
+      }
+    }
+    if (scheduleText) bits.push(scheduleText);
     pushJourneyEntry({
       at: item.at,
       text: `Assessment | ${bits.filter(Boolean).join(" | ")}`
-    });
-  });
-
-  const interviewAttempts = Array.isArray(assessment?.interviewAttempts) ? assessment.interviewAttempts : [];
-  interviewAttempts.forEach((item) => {
-    const when = item?.at || item?.createdAt || "";
-    if (!when) return;
-    pushJourneyEntry({
-      at: when,
-      text: `Assessment movement | ${[item?.round, item?.outcome, item?.notes].filter(Boolean).join(" | ")}`
     });
   });
 
@@ -1876,7 +1891,7 @@ function normalizeRecruiterMergeBase(item) {
 function normalizeRecruiterConflictValue(key, value) {
   let normalized = String(value || "")
     .trim()
-    .replace(/^[\s\-Ã¢â‚¬â€œÃ¢â‚¬â€:]+/, "")
+    .replace(/^[\s\-ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Å“ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â:]+/, "")
     .replace(/\s+/g, " ")
     .replace(/\s+\./g, ".")
     .toLowerCase();
@@ -2053,7 +2068,7 @@ function api(path, token, method = "GET", body = null) {
       return statusCode ? `Request failed (HTTP ${statusCode}). Please retry.` : "Request failed. Please retry.";
     }
     // Avoid dumping full HTML / stack traces into UI status banners.
-    if (raw.length > 350) return `${raw.slice(0, 350)}Ã¢â‚¬Â¦`;
+    if (raw.length > 350) return `${raw.slice(0, 350)}ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦`;
     return raw;
   }
   const headers = { "Content-Type": "application/json" };
@@ -4012,14 +4027,27 @@ function AssessmentStatusModal({ open, assessment, onClose, onSave }) {
               const statusText = String(item?.status || "Status update").trim();
               const manual = String(item?.manualRemarks || "").trim();
               const atLabel = String(item?.atLabel || "").trim();
-              const scheduleLabelRaw = atLabel || (whenRaw && isInterviewAlignedStatus(statusText) ? buildAssessmentStatusCalendarNote(statusText, whenRaw) : "");
+              const statusAtRaw = String(item?.statusAt || item?.atValue || "").trim();
+              const scheduleLabelRaw = atLabel
+                || (statusAtRaw ? buildAssessmentStatusCalendarNote(statusText, statusAtRaw) : "")
+                || (whenRaw && isInterviewAlignedStatus(statusText) ? buildAssessmentStatusCalendarNote(statusText, whenRaw) : "");
               const statusNorm = String(statusText || "").trim().toLowerCase().replace(/\.+$/, "");
               const scheduleNorm = String(scheduleLabelRaw || "").trim().toLowerCase().replace(/\.+$/, "");
+              const keepSchedule = Boolean(
+                scheduleLabelRaw
+                && (
+                  isInterviewAlignedStatus(statusText)
+                  || statusNorm === "offered"
+                  || statusNorm === "joined"
+                )
+              );
               const scheduleLooksDuplicate =
                 !scheduleNorm
-                || scheduleNorm === statusNorm
-                || scheduleNorm.startsWith(`${statusNorm} |`)
-                || scheduleNorm.startsWith(`${statusNorm} on `);
+                || (!keepSchedule && (
+                  scheduleNorm === statusNorm
+                  || scheduleNorm.startsWith(`${statusNorm} |`)
+                  || scheduleNorm.startsWith(`${statusNorm} on `)
+                ));
               const scheduleLabel = scheduleLooksDuplicate ? "" : scheduleLabelRaw;
               return `${index + 1}. ${when} | ${statusText}${scheduleLabel ? ` | ${scheduleLabel}` : ""}${manual ? ` | Remarks: ${manual}` : ""}`;
             }).join("\n")}
@@ -4700,7 +4728,7 @@ function JdEmailModal({ open, jobs, value, ccSuggestions = [], onChange, onClose
     <div className="overlay" onClick={() => { if (!busy) onClose(); }}>
       <div className="overlay-card" onClick={(e) => e.stopPropagation()}>
         <h3>Send JD Email</h3>
-        <p className="muted">Sends from your configured SMTP (Settings Ã¢â€ â€™ Email settings). Use Zoho app password.</p>
+        <p className="muted">Sends from your configured SMTP (Settings ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ Email settings). Use Zoho app password.</p>
         {status ? <div className={`status ${statusKind || ""}`} style={{ marginBottom: 12 }}>{status}</div> : null}
         <div className="form-grid">
           <label className="full">
@@ -13269,6 +13297,7 @@ function PortalApp({ token, onLogout }) {
     nextAssessment.statusHistory.push({
       status: nextStatus,
       at: statusUpdatedAt,
+      statusAt: atIso || "",
       notes: readableNotes || "",
       inferText,
       manualRemarks,
@@ -13641,7 +13670,6 @@ function PortalApp({ token, onLogout }) {
       : [];
     const text = buildJourneyText(assessment, Array.isArray(contactAttempts) ? contactAttempts : [], candidate);
     await copyText(text);
-    window.alert(text);
     setStatus("assessments", "Journey copied.", "ok");
   }
 
@@ -14147,7 +14175,7 @@ function PortalApp({ token, onLogout }) {
                       )}
                     </article>
                     <article className="reports-chart-card">
-                      <h4>Client Pipeline Funnel (Shared â†’ Interview)</h4>
+                      <h4>Client Pipeline Funnel (Shared Ã¢â€ â€™ Interview)</h4>
                       {!clientChartRows.length ? <div className="empty-state compact-empty">No funnel data.</div> : (
                         <div className="reports-funnel-list">
                           {clientChartRows.map((row) => (
@@ -18598,6 +18626,7 @@ export default function App() {
           ? <PortalErrorBoundary><MarketingPortalApp token={token} onLogout={logout} /></PortalErrorBoundary>
         : <PortalErrorBoundary><PortalApp token={token} onLogout={logout} /></PortalErrorBoundary>;
 }
+
 
 
 
