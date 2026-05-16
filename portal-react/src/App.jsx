@@ -1174,14 +1174,14 @@ function toSentenceCasePreservingContent(text) {
 
 function normalizeMojibakeSymbols(text) {
   return String(text || "")
-    .replace(/ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢|Ã¢â‚¬Â¢/g, "â€¢")
-    .replace(/ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Å“|Ã¢â‚¬â€œ/g, "-")
-    .replace(/ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â|Ã¢â‚¬â€/g, "-")
-    .replace(/ÃƒÂ¢Ã¢â€šÂ¬Ã‹Å“|Ã¢â‚¬Ëœ/g, "'")
-    .replace(/ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢|Ã¢â‚¬â„¢/g, "'")
-    .replace(/ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œ|Ã¢â‚¬Å“/g, "\"")
-    .replace(/ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â|Ã¢â‚¬Â/g, "\"")
-    .replace(/Ãƒâ€š/g, "");
+    .replace(/â€¢|Ã¢â‚¬Â¢|ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¢|ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢/g, "\u2022")
+    .replace(/ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œ|ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Å“/g, "-")
+    .replace(/ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â|ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â/g, "-")
+    .replace(/ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¹Ã…â€œ|ÃƒÂ¢Ã¢â€šÂ¬Ã‹Å“/g, "'")
+    .replace(/ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢|ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢/g, "'")
+    .replace(/ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã¢â‚¬Å“|ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œ/g, '"')
+    .replace(/ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â|ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â/g, '"')
+    .replace(/ÃƒÆ’Ã¢â‚¬Å¡/g, "");
 }
 function polishStructuredBulletSentence(line) {
   const text = normalizeMojibakeSymbols(line).trim().replace(/\s+/g, " ");
@@ -1255,7 +1255,7 @@ function buildCanonicalRecruiterNotes(baseText, currentText, mergedValues = {}) 
 
 function normalizeRecruiterNotesBody(rawText) {
   const normalizedLines = splitStructuredDraftLines(rawText)
-    .map((line) => normalizeMojibakeSymbols(line).replace(/^[\-\*â€¢]\s*/, "").trim())
+    .map((line) => normalizeMojibakeSymbols(line).replace(/^[\-\*\u2022]\s*/, "").trim())
     .map((line) => line.replace(/^recruiter notes\s*:?\s*/i, "").trim())
     .map((line) => line.replace(/^[.:;-]+/, "").trim())
     .map(polishStructuredBulletSentence)
@@ -1278,12 +1278,12 @@ function normalizeOtherPointersBody(rawText) {
     .replace(/\.\s+(?=[A-Z])/g, ".\n");
 
   return splitStructuredDraftLines(prepared)
-    .map((line) => normalizeMojibakeSymbols(line).replace(/^[\-\*â€¢]\s*/, "").trim())
+    .map((line) => normalizeMojibakeSymbols(line).replace(/^[\-\*\u2022]\s*/, "").trim())
     .map((line) => line.replace(/^[.:;-]+/, "").trim())
     .map(polishStructuredBulletSentence)
     .filter(Boolean)
     .filter((line, index, array) => array.findIndex((item) => item.toLowerCase() === line.toLowerCase()) === index)
-    .map((line) => `â€¢ ${line.replace(/^â€¢\s*/, "")}`)
+    .map((line) => `\u2022 ${line.replace(/^\u2022\s*/, "")}`)
     .join("\n");
 }
 
@@ -4092,22 +4092,6 @@ function AssessmentStatusModal({ open, assessment, onClose, onSave }) {
   );
 }
 
-function JourneyModal({ open, title = "Journey", text = "", onClose, onCopy }) {
-  if (!open) return null;
-  return (
-    <div className="overlay" onClick={onClose}>
-      <div className="overlay-card overlay-card--wide" onClick={(e) => e.stopPropagation()}>
-        <h3>{title}</h3>
-        <textarea value={text} readOnly style={{ minHeight: "52vh", whiteSpace: "pre-wrap" }} />
-        <div className="button-row">
-          <button className="ghost-btn" onClick={onClose}>Close</button>
-          <button onClick={onCopy}>Copy journey</button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 function NewDraftModal({
   open,
   form,
@@ -6051,7 +6035,6 @@ function PortalApp({ token, onLogout }) {
   const [notesCandidateSnapshot, setNotesCandidateSnapshot] = useState(null);
   const [attemptsCandidateId, setAttemptsCandidateId] = useState("");
   const [assessmentStatusId, setAssessmentStatusId] = useState("");
-  const [journeyModal, setJourneyModal] = useState({ open: false, title: "", text: "" });
   const [drilldownState, setDrilldownState] = useState({ open: false, title: "", items: [], request: null, loading: false });
   const inlineDrilldownRef = useRef(null);
   const loginSettingsSectionRef = useRef(null);
@@ -13675,11 +13658,7 @@ function PortalApp({ token, onLogout }) {
       : [];
     const text = buildJourneyText(assessment, Array.isArray(contactAttempts) ? contactAttempts : [], candidate);
     await copyText(text);
-    setJourneyModal({
-      open: true,
-      title: `${assessment?.candidateName || "Candidate"} | Journey`,
-      text
-    });
+    window.alert(text);
     setStatus("assessments", "Journey copied.", "ok");
   }
 
@@ -15103,7 +15082,7 @@ function PortalApp({ token, onLogout }) {
                         )}
                         <button className="ghost-btn" onClick={() => void deleteCapturedCandidate(item.id).catch((error) => setStatus("captured", String(error?.message || error), "error"))}>Delete</button>
                       </div>
-                      <div className="candidate-snippet">{[item.notes ? `Initial notes:\n${item.notes}` : "", item.recruiter_context_notes, item.other_pointers].filter(Boolean).join("\n\n") || "No recruiter note or pointers yet."}</div>
+                      <div className="candidate-snippet">{normalizeMojibakeSymbols([item.notes ? `Initial notes:\n${item.notes}` : "", item.recruiter_context_notes, item.other_pointers].filter(Boolean).join("\n\n") || "No recruiter note or pointers yet.")}</div>
                     </article>
                   );
                 })}
@@ -16747,16 +16726,6 @@ function PortalApp({ token, onLogout }) {
       ) : null}
       <AttemptsModal open={Boolean(attemptsCandidateId)} candidate={attemptsCandidate} attempts={attempts} onClose={() => setAttemptsCandidateId("")} onRefresh={refreshAttempts} onSave={saveAttempt} />
       <AssessmentStatusModal open={Boolean(assessmentStatusId)} assessment={assessmentStatusItem} onClose={() => setAssessmentStatusId("")} onSave={(payload) => saveAssessmentStatusUpdate(assessmentStatusItem, payload)} />
-      <JourneyModal
-        open={Boolean(journeyModal?.open)}
-        title={journeyModal?.title || "Journey"}
-        text={journeyModal?.text || ""}
-        onClose={() => setJourneyModal({ open: false, title: "", text: "" })}
-        onCopy={async () => {
-          await copyText(journeyModal?.text || "");
-          setStatus("assessments", "Journey copied.", "ok");
-        }}
-      />
       <DrilldownModal
         open={drilldownState.open && String(location?.pathname || "") !== "/dashboard"}
         loading={Boolean(drilldownState.loading)}
