@@ -3489,6 +3489,7 @@ function AssignModal({ open, applicant, users, jobs, onClose, onSave, title = "A
   const [recruiterId, setRecruiterId] = useState("");
   const [jdId, setJdId] = useState("");
   const [status, setStatus] = useState("");
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     if (!open) return;
@@ -3502,6 +3503,7 @@ function AssignModal({ open, applicant, users, jobs, onClose, onSave, title = "A
       setJdId(match?.id ? String(match.id) : "");
     }
     setStatus("");
+    setSaving(false);
   }, [
     open,
     applicant?.id,
@@ -3531,7 +3533,8 @@ function AssignModal({ open, applicant, users, jobs, onClose, onSave, title = "A
         <label><span>JD / role</span><select value={jdId} onChange={(e) => setJdId(e.target.value)}><option value="">Select JD / role</option>{jobs.map((job) => <option key={job.id} value={job.id}>{job.title}</option>)}</select></label>
         {status ? <div className="status">{status}</div> : null}
         <div className="button-row">
-          <button onClick={async () => {
+          <button disabled={saving} onClick={async () => {
+            if (saving) return;
             if ((allowRecruiterSelect && !recruiterId) || !jdId) {
               setStatus(allowRecruiterSelect ? "Select recruiter and JD first." : "Select JD first.");
               return;
@@ -3539,13 +3542,16 @@ function AssignModal({ open, applicant, users, jobs, onClose, onSave, title = "A
             const job = (Array.isArray(jobs) ? jobs : []).find((item) => String(item?.id || "") === String(jdId || "")) || null;
             const jdTitle = String(job?.title || "").trim();
             const clientName = String(job?.clientName || job?.client_name || "").trim();
+            setSaving(true);
             setStatus("Saving assignment...");
             try {
               await onSave({ recruiterId, jdId, jdTitle, clientName });
             } catch (error) {
               setStatus(String(error?.message || error));
+            } finally {
+              setSaving(false);
             }
-          }}>Save assignment</button>
+          }}>{saving ? "Saving..." : "Save assignment"}</button>
           <button className="ghost-btn" onClick={onClose}>Cancel</button>
         </div>
       </div>
@@ -9538,6 +9544,39 @@ function PortalApp({ token, onLogout }) {
     const ids = (Array.isArray(targetIds) && targetIds.length ? targetIds : [assignCandidateId])
       .map((id) => String(id || "").trim())
       .filter(Boolean);
+    const assignAtIso = new Date().toISOString();
+    const applyLocalAssignPatch = (candidateId) => {
+      const safeCandidateId = String(candidateId || "").trim();
+      if (!safeCandidateId) return;
+      setState((current) => {
+        const applyPatch = (items) => Array.isArray(items)
+          ? items.map((item) => {
+            if (String(item?.id || "").trim() !== safeCandidateId) return item;
+            const next = {
+              ...item,
+              assigned_to_user_id: effectiveRecruiterId || item?.assigned_to_user_id || "",
+              assigned_to_name: nextAssigneeName || item?.assigned_to_name || "",
+              assigned_jd_id: String(jdId || "").trim() || item?.assigned_jd_id || "",
+              assigned_jd_title: String(jdTitle || "").trim() || item?.assigned_jd_title || "",
+              jd_title: String(jdTitle || "").trim() || item?.jd_title || "",
+              client_name: String(clientName || "").trim() || item?.client_name || "",
+              assigned_at: assignAtIso
+            };
+            if (!String(item?.first_assigned_at || "").trim()) next.first_assigned_at = assignAtIso;
+            if (!String(item?.first_assigned_to_user_id || "").trim()) next.first_assigned_to_user_id = effectiveRecruiterId || "";
+            if (!String(item?.first_assigned_to_name || "").trim()) next.first_assigned_to_name = nextAssigneeName || "";
+            if (!String(item?.first_assigned_by_user_id || "").trim()) next.first_assigned_by_user_id = String(state.user?.id || "").trim();
+            if (!String(item?.first_assigned_by_name || "").trim()) next.first_assigned_by_name = String(state.user?.name || "").trim();
+            return next;
+          })
+          : items;
+        return {
+          ...current,
+          candidates: applyPatch(current.candidates),
+          databaseCandidates: applyPatch(current.databaseCandidates)
+        };
+      });
+    };
     if (isAdmin) {
       const results = await Promise.allSettled(ids.map(async (id) => {
         await api("/candidates/assign", token, "POST", {
@@ -9549,7 +9588,7 @@ function PortalApp({ token, onLogout }) {
           clientName,
           client_name: clientName
         });
-        await patchCandidateQuiet(id, { hidden_from_captured: false });
+        applyLocalAssignPatch(id);
       }));
       const successCount = results.filter((entry) => entry.status === "fulfilled").length;
       const failCount = Math.max(0, ids.length - successCount);
@@ -9561,7 +9600,7 @@ function PortalApp({ token, onLogout }) {
       } else {
         setStatus("captured", ids.length > 1 ? `${ids.length} drafts assigned to recruiter.` : "Draft assigned to recruiter.", "ok");
       }
-      void refreshWorkspaceSilently("post-captured-bulk-assign");
+      await refreshWorkspaceSilently("post-captured-bulk-assign", { force: true });
       return;
     }
     const results = await Promise.allSettled(ids.map(async (id) => {
@@ -9573,6 +9612,7 @@ function PortalApp({ token, onLogout }) {
         clientName,
         client_name: clientName
       });
+      applyLocalAssignPatch(id);
     }));
     const successCount = results.filter((entry) => entry.status === "fulfilled").length;
     const failCount = Math.max(0, ids.length - successCount);
@@ -9584,7 +9624,7 @@ function PortalApp({ token, onLogout }) {
     } else {
       setStatus("captured", ids.length > 1 ? `${ids.length} drafts assigned to recruiter.` : "Draft assigned to recruiter.", "ok");
     }
-    void refreshWorkspaceSilently("post-claim");
+    await refreshWorkspaceSilently("post-claim", { force: true });
   }
 
   async function patchCandidate(candidateId, patch, okMessage) {
