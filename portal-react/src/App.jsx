@@ -3488,46 +3488,11 @@ function MultiSelectDropdown({ label, options, selected, onToggle, allowAll = tr
   );
 }
 
-let modalBodyLockCount = 0;
-let modalBodyPrevOverflow = "";
-let modalBodyPrevPaddingRight = "";
-let modalDocPrevScrollBehavior = "";
-
-function useModalBodyScrollLock(open) {
-  useEffect(() => {
-    if (!open) return;
-    if (typeof window === "undefined" || typeof document === "undefined") return;
-    const body = document.body;
-    const docEl = document.documentElement;
-    if (modalBodyLockCount === 0) {
-      modalBodyPrevOverflow = body.style.overflow;
-      modalBodyPrevPaddingRight = body.style.paddingRight;
-      modalDocPrevScrollBehavior = docEl.style.scrollBehavior;
-      const scrollbarWidth = Math.max(0, window.innerWidth - docEl.clientWidth);
-      body.style.overflow = "hidden";
-      if (scrollbarWidth > 0) {
-        body.style.paddingRight = `${scrollbarWidth}px`;
-      }
-      docEl.style.scrollBehavior = "auto";
-    }
-    modalBodyLockCount += 1;
-    return () => {
-      modalBodyLockCount = Math.max(0, modalBodyLockCount - 1);
-      if (modalBodyLockCount === 0) {
-        body.style.overflow = modalBodyPrevOverflow;
-        body.style.paddingRight = modalBodyPrevPaddingRight;
-        docEl.style.scrollBehavior = modalDocPrevScrollBehavior;
-      }
-    };
-  }, [open]);
-}
-
 function AssignModal({ open, applicant, users, jobs, onClose, onSave, title = "Assign Applicant", description = "Assign this record to a recruiter and JD.", nameKey = "candidateName", allowRecruiterSelect = true, lockedRecruiterName = "" }) {
   const [recruiterId, setRecruiterId] = useState("");
   const [jdId, setJdId] = useState("");
   const [status, setStatus] = useState("");
   const [saving, setSaving] = useState(false);
-  useModalBodyScrollLock(open);
 
   useEffect(() => {
     if (!open) return;
@@ -3560,7 +3525,7 @@ function AssignModal({ open, applicant, users, jobs, onClose, onSave, title = "A
 
   return (
     <div className="overlay">
-      <div className="overlay-card overlay-card--assign" onClick={(e) => e.stopPropagation()}>
+      <div className="overlay-card" onClick={(e) => e.stopPropagation()}>
         <h3>{title}</h3>
         <p className="muted">{description.replace("{name}", applicant?.[nameKey] || applicant?.name || "this candidate")}</p>
         {allowRecruiterSelect ? (
@@ -3615,7 +3580,6 @@ function NotesModal({ open, candidate, onClose, onPatch, onParse, onOpenLinkedin
   const [structuredDirty, setStructuredDirty] = useState(false);
   const [parseApplied, setParseApplied] = useState(false);
   const [status, setStatus] = useState("");
-  useModalBodyScrollLock(open);
 
   useEffect(() => {
     if (!open || !candidate) return;
@@ -3677,7 +3641,7 @@ function NotesModal({ open, candidate, onClose, onPatch, onParse, onOpenLinkedin
 
   return (
     <div className="overlay">
-      <div className="overlay-card overlay-card--recruiter-note" onClick={(e) => e.stopPropagation()}>
+      <div className="overlay-card" onClick={(e) => e.stopPropagation()}>
         <h3>Recruiter Note</h3>
         <p className="muted">{candidate.name || "Candidate"} | {candidate.jd_title || candidate.role || "No role set"}</p>
         {cautiousIndicatorsText ? (
@@ -3781,7 +3745,6 @@ function AttemptsModal({ open, candidate, attempts, onClose, onRefresh, onSave }
   const [status, setStatus] = useState("");
   const [saving, setSaving] = useState(false);
   const inferSyncModeRef = useRef("manual");
-  useModalBodyScrollLock(open);
 
   useEffect(() => {
     if (!open || !candidate) return;
@@ -3820,7 +3783,7 @@ function AttemptsModal({ open, candidate, attempts, onClose, onRefresh, onSave }
 
   return (
     <div className="overlay" onClick={onClose}>
-      <div className="overlay-card overlay-card--wide overlay-card--attempts" onClick={(e) => e.stopPropagation()}>
+      <div className="overlay-card overlay-card--wide" onClick={(e) => e.stopPropagation()}>
         <h3>Attempts</h3>
         <p className="muted">{candidate.name || "Candidate"} | {candidate.jd_title || candidate.role || "No role set"}</p>
         <div className="attempt-grid">
@@ -3926,7 +3889,6 @@ function AssessmentStatusModal({ open, assessment, onClose, onSave }) {
   const [status, setStatus] = useState("");
   const [saving, setSaving] = useState(false);
   const inferSyncModeRef = useRef("manual");
-  useModalBodyScrollLock(open);
 
   useEffect(() => {
     if (!open || !assessment) return;
@@ -3976,7 +3938,7 @@ function AssessmentStatusModal({ open, assessment, onClose, onSave }) {
 
   return (
     <div className="overlay" onClick={onClose}>
-      <div className="overlay-card overlay-card--assessment-status" onClick={(e) => e.stopPropagation()}>
+      <div className="overlay-card" onClick={(e) => e.stopPropagation()}>
         <h3>Update assessment status</h3>
         <p className="muted">{assessment.candidateName || "Candidate"} | {assessment.jdTitle || "Untitled role"}</p>
         <label>
@@ -9724,7 +9686,8 @@ function PortalApp({ token, onLogout }) {
         databaseCandidates: applyPatch(current.databaseCandidates)
       };
     });
-    void refreshWorkspaceSilently("post-patch");
+    // No immediate workspace refresh here: optimistic + timestamped local state is source of truth.
+    // This avoids delayed viewport jump while preserving correct saved values.
     setStatus("captured", okMessage, "ok");
   }
 
@@ -10658,7 +10621,7 @@ function PortalApp({ token, onLogout }) {
       });
       navigate("/assessments");
       setStatus("assessments", `Converted ${candidateName || "candidate"} into assessment.`, "ok");
-      void refreshWorkspaceSilently("manual");
+      // Skip immediate workspace refresh to keep viewport stable after conversion.
     } catch (error) {
       setStatus(statusKey, String(error?.message || error), "error");
     }
@@ -10740,7 +10703,7 @@ function PortalApp({ token, onLogout }) {
     } else {
       setStatus("interview", "Assessment saved.", "ok");
     }
-    void refreshWorkspaceSilently("post-save");
+    // Skip immediate workspace refresh to keep viewport stable after assessment save.
   }
 
 	  async function saveInterviewDraft() {
@@ -10806,7 +10769,7 @@ function PortalApp({ token, onLogout }) {
 	              : []
 	        } });
 	      }
-	      void refreshWorkspaceSilently("post-save");
+	      // Skip immediate workspace refresh to keep viewport stable after draft save.
 	      setStatus("interview", "Draft saved.", "ok");
 	    } catch (error) {
 	      setStatus("interview", `Draft save failed: ${String(error?.message || error)}`, "error");
@@ -13414,7 +13377,7 @@ function PortalApp({ token, onLogout }) {
             }
           });
         }
-        void refreshWorkspaceSilently("post-status");
+        // Skip immediate workspace refresh to keep viewport stable after status update.
       } catch (error) {
         setStatus(statusTarget, `Status sync failed: ${String(error?.message || error)}`, "error");
         void refreshWorkspaceSilently("post-status-sync-fail");
