@@ -3942,7 +3942,15 @@ function AssessmentStatusModal({ open, assessment, onClose, onSave }) {
               const statusText = String(item?.status || "Status update").trim();
               const manual = String(item?.manualRemarks || "").trim();
               const atLabel = String(item?.atLabel || "").trim();
-              const scheduleLabel = atLabel || (whenRaw && isInterviewAlignedStatus(statusText) ? buildAssessmentStatusCalendarNote(statusText, whenRaw) : "");
+              const scheduleLabelRaw = atLabel || (whenRaw && isInterviewAlignedStatus(statusText) ? buildAssessmentStatusCalendarNote(statusText, whenRaw) : "");
+              const statusNorm = String(statusText || "").trim().toLowerCase().replace(/\.+$/, "");
+              const scheduleNorm = String(scheduleLabelRaw || "").trim().toLowerCase().replace(/\.+$/, "");
+              const scheduleLooksDuplicate =
+                !scheduleNorm
+                || scheduleNorm === statusNorm
+                || scheduleNorm.startsWith(`${statusNorm} |`)
+                || scheduleNorm.startsWith(`${statusNorm} on `);
+              const scheduleLabel = scheduleLooksDuplicate ? "" : scheduleLabelRaw;
               return `${index + 1}. ${when} | ${statusText}${scheduleLabel ? ` | ${scheduleLabel}` : ""}${manual ? ` | Remarks: ${manual}` : ""}`;
             }).join("\n")}
           </div>
