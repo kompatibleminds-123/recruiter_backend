@@ -2106,9 +2106,9 @@ function fillCandidateTemplate(template, candidate) {
     phone: source.phone || "",
     email: source.email || "",
     source: source.source || "",
-    follow_up_at: source.follow_up_at || "",
+    follow_up_at: formatDateForCopy(source.follow_up_at || ""),
     recruiter_name: source.recruiter_name || source.recruiterName || "",
-    interview_at: source.interview_at || source.interviewAt || "",
+    interview_at: formatDateForCopy(source.interview_at || source.interviewAt || ""),
     client_name: source.client_name || source.clientName || "",
     company_name: source.company_name || source.companyName || "",
     jd_link: source.jd_link || source.jdLink || "",
@@ -2157,7 +2157,21 @@ function fileToBase64(file) {
 function formatDateForCopy(value) {
   if (!value) return "";
   const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? "" : date.toLocaleString();
+  if (Number.isNaN(date.getTime())) return "";
+  try {
+    const formatted = new Intl.DateTimeFormat("en-IN", {
+      timeZone: "Asia/Kolkata",
+      day: "2-digit",
+      month: "short",
+      year: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+      hour12: true
+    }).format(date);
+    return `${formatted} IST`;
+  } catch {
+    return date.toLocaleString("en-IN");
+  }
 }
 
 function buildCombinedAssessmentInsightsForExportV2(item = {}) {
