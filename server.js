@@ -12852,26 +12852,33 @@ const server = http.createServer(async (req, res) => {
           draftPayload.current_org_tenure = tenureValue;
         }
       }
+      const fieldValueOrUndefined = (...keys) => {
+        const hasAny = keys.some((key) => Object.prototype.hasOwnProperty.call(input, key));
+        if (!hasAny) return undefined;
+        const first = keys.find((key) => Object.prototype.hasOwnProperty.call(input, key));
+        return String(input[first] ?? "").trim();
+      };
+
       const patch = {
-        name: String(input.name || input.candidateName || "").trim() || undefined,
-        notes: String(input.notes || "").trim() || undefined,
-        recruiter_context_notes: String(input.recruiter_context_notes || input.recruiterContextNotes || "").trim() || undefined,
-        other_pointers: String(input.other_pointers || input.otherPointers || "").trim() || undefined,
-        company: String(input.company || input.currentCompany || "").trim() || undefined,
-        role: String(input.role || input.currentDesignation || "").trim() || undefined,
-        experience: String(input.experience || input.totalExperience || "").trim() || undefined,
-        location: String(input.location || "").trim() || undefined,
-        current_ctc: String(input.current_ctc || input.currentCtc || "").trim() || undefined,
-        expected_ctc: String(input.expected_ctc || input.expectedCtc || "").trim() || undefined,
-        notice_period: String(input.notice_period || input.noticePeriod || "").trim() || undefined,
-        lwd_or_doj: String(input.lwd_or_doj || input.lwdOrDoj || "").trim() || undefined,
-        phone: String(input.phone || input.phoneNumber || "").trim() || undefined,
-        email: String(input.email || input.emailId || "").trim() || undefined,
-        linkedin: String(input.linkedin || input.linkedinUrl || "").trim() || undefined,
-        highest_education: String(input.highest_education || input.highestEducation || "").trim() || undefined,
-        last_contact_outcome: String(input.last_contact_outcome || input.lastContactOutcome || "").trim() || undefined,
-        last_contact_notes: String(input.last_contact_notes || input.lastContactNotes || "").trim() || undefined,
-        last_contact_at: String(input.last_contact_at || input.lastContactAt || "").trim() || undefined,
+        name: fieldValueOrUndefined("name", "candidateName"),
+        notes: fieldValueOrUndefined("notes"),
+        recruiter_context_notes: fieldValueOrUndefined("recruiter_context_notes", "recruiterContextNotes"),
+        other_pointers: fieldValueOrUndefined("other_pointers", "otherPointers"),
+        company: fieldValueOrUndefined("company", "currentCompany"),
+        role: fieldValueOrUndefined("role", "currentDesignation"),
+        experience: fieldValueOrUndefined("experience", "totalExperience"),
+        location: fieldValueOrUndefined("location"),
+        current_ctc: fieldValueOrUndefined("current_ctc", "currentCtc"),
+        expected_ctc: fieldValueOrUndefined("expected_ctc", "expectedCtc"),
+        notice_period: fieldValueOrUndefined("notice_period", "noticePeriod"),
+        lwd_or_doj: fieldValueOrUndefined("lwd_or_doj", "lwdOrDoj"),
+        phone: fieldValueOrUndefined("phone", "phoneNumber"),
+        email: fieldValueOrUndefined("email", "emailId"),
+        linkedin: fieldValueOrUndefined("linkedin", "linkedinUrl"),
+        highest_education: fieldValueOrUndefined("highest_education", "highestEducation"),
+        last_contact_outcome: fieldValueOrUndefined("last_contact_outcome", "lastContactOutcome"),
+        last_contact_notes: fieldValueOrUndefined("last_contact_notes", "lastContactNotes"),
+        last_contact_at: fieldValueOrUndefined("last_contact_at", "lastContactAt"),
         next_follow_up_at: Object.prototype.hasOwnProperty.call(input, "next_follow_up_at")
           ? normalizeNullableTimestampInput(input.next_follow_up_at)
           : Object.prototype.hasOwnProperty.call(input, "nextFollowUpAt")
@@ -12880,13 +12887,13 @@ const server = http.createServer(async (req, res) => {
         hidden_from_captured: input.hidden_from_captured === true ? true : input.hidden_from_captured === false ? false : undefined,
         screening_answers: screeningAnswers,
         draft_payload: draftPayload,
-        jd_title: String(input.jd_title || input.jdTitle || "").trim() || undefined,
-        client_name: String(input.client_name || input.clientName || "").trim() || undefined,
-        assigned_to_user_id: String(input.assigned_to_user_id || input.assignedToUserId || "").trim() || undefined,
-        assigned_to_name: String(input.assigned_to_name || input.assignedToName || "").trim() || undefined,
-        assigned_jd_id: String(input.assigned_jd_id || input.assignedJdId || "").trim() || undefined,
-        assigned_jd_title: String(input.assigned_jd_title || input.assignedJdTitle || "").trim() || undefined,
-        raw_note: String(input.raw_note || input.rawNote || "").trim() || undefined
+        jd_title: fieldValueOrUndefined("jd_title", "jdTitle"),
+        client_name: fieldValueOrUndefined("client_name", "clientName"),
+        assigned_to_user_id: fieldValueOrUndefined("assigned_to_user_id", "assignedToUserId"),
+        assigned_to_name: fieldValueOrUndefined("assigned_to_name", "assignedToName"),
+        assigned_jd_id: fieldValueOrUndefined("assigned_jd_id", "assignedJdId"),
+        assigned_jd_title: fieldValueOrUndefined("assigned_jd_title", "assignedJdTitle"),
+        raw_note: fieldValueOrUndefined("raw_note", "rawNote")
       };
       Object.keys(patch).forEach((key) => patch[key] === undefined && delete patch[key]);
       const existing = (await listCandidatesForUser(actor, { id: candidateId, limit: 1 }))[0] || null;
