@@ -4092,6 +4092,22 @@ function AssessmentStatusModal({ open, assessment, onClose, onSave }) {
   );
 }
 
+function JourneyModal({ open, title = "Journey", text = "", onClose, onCopy }) {
+  if (!open) return null;
+  return (
+    <div className="overlay" onClick={onClose}>
+      <div className="overlay-card overlay-card--wide" onClick={(e) => e.stopPropagation()}>
+        <h3>{title}</h3>
+        <textarea value={text} readOnly style={{ minHeight: "52vh", whiteSpace: "pre-wrap" }} />
+        <div className="button-row">
+          <button className="ghost-btn" onClick={onClose}>Close</button>
+          <button onClick={onCopy}>Copy journey</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function NewDraftModal({
   open,
   form,
@@ -6035,6 +6051,7 @@ function PortalApp({ token, onLogout }) {
   const [notesCandidateSnapshot, setNotesCandidateSnapshot] = useState(null);
   const [attemptsCandidateId, setAttemptsCandidateId] = useState("");
   const [assessmentStatusId, setAssessmentStatusId] = useState("");
+  const [journeyModal, setJourneyModal] = useState({ open: false, title: "", text: "" });
   const [drilldownState, setDrilldownState] = useState({ open: false, title: "", items: [], request: null, loading: false });
   const inlineDrilldownRef = useRef(null);
   const loginSettingsSectionRef = useRef(null);
@@ -13658,6 +13675,11 @@ function PortalApp({ token, onLogout }) {
       : [];
     const text = buildJourneyText(assessment, Array.isArray(contactAttempts) ? contactAttempts : [], candidate);
     await copyText(text);
+    setJourneyModal({
+      open: true,
+      title: `${assessment?.candidateName || "Candidate"} | Journey`,
+      text
+    });
     setStatus("assessments", "Journey copied.", "ok");
   }
 
@@ -16725,6 +16747,16 @@ function PortalApp({ token, onLogout }) {
       ) : null}
       <AttemptsModal open={Boolean(attemptsCandidateId)} candidate={attemptsCandidate} attempts={attempts} onClose={() => setAttemptsCandidateId("")} onRefresh={refreshAttempts} onSave={saveAttempt} />
       <AssessmentStatusModal open={Boolean(assessmentStatusId)} assessment={assessmentStatusItem} onClose={() => setAssessmentStatusId("")} onSave={(payload) => saveAssessmentStatusUpdate(assessmentStatusItem, payload)} />
+      <JourneyModal
+        open={Boolean(journeyModal?.open)}
+        title={journeyModal?.title || "Journey"}
+        text={journeyModal?.text || ""}
+        onClose={() => setJourneyModal({ open: false, title: "", text: "" })}
+        onCopy={async () => {
+          await copyText(journeyModal?.text || "");
+          setStatus("assessments", "Journey copied.", "ok");
+        }}
+      />
       <DrilldownModal
         open={drilldownState.open && String(location?.pathname || "") !== "/dashboard"}
         loading={Boolean(drilldownState.loading)}
