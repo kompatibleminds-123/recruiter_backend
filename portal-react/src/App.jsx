@@ -3937,10 +3937,13 @@ function AssessmentStatusModal({ open, assessment, onClose, onSave }) {
             Last updates:
             {"\n"}
             {statusHistoryPreview.map((item, index) => {
-              const when = item?.at ? new Date(item.at).toLocaleString() : "-";
+              const whenRaw = String(item?.at || item?.updatedAt || "").trim();
+              const when = whenRaw ? new Date(whenRaw).toLocaleString() : "-";
               const statusText = String(item?.status || "Status update").trim();
               const manual = String(item?.manualRemarks || "").trim();
-              return `${index + 1}. ${when} | ${statusText}${manual ? ` | Remarks: ${manual}` : ""}`;
+              const atLabel = String(item?.atLabel || "").trim();
+              const scheduleLabel = atLabel || (whenRaw && isInterviewAlignedStatus(statusText) ? buildAssessmentStatusCalendarNote(statusText, whenRaw) : "");
+              return `${index + 1}. ${when} | ${statusText}${scheduleLabel ? ` | ${scheduleLabel}` : ""}${manual ? ` | Remarks: ${manual}` : ""}`;
             }).join("\n")}
           </div>
         ) : null}
