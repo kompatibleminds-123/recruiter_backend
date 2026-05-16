@@ -3564,7 +3564,7 @@ function NotesModal({ open, candidate, onClose, onPatch, onParse, onOpenLinkedin
   };
 
   return (
-    <div className="overlay" onClick={onClose}>
+    <div className="overlay">
       <div className="overlay-card" onClick={(e) => e.stopPropagation()}>
         <h3>Recruiter Note</h3>
         <p className="muted">{candidate.name || "Candidate"} | {candidate.jd_title || candidate.role || "No role set"}</p>
