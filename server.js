@@ -7029,6 +7029,49 @@ function extractHighestEducationFromRawText(rawText) {
   return educationLine.replace(/\s+/g, " ").trim();
 }
 
+function buildDeterministicEducationHistory(rawText = "", highestEducation = "") {
+  const text = String(rawText || "");
+  if (!text.trim()) {
+    return highestEducation
+      ? [{ degree: String(highestEducation || "").trim(), institution: "", start_date: "", end_date: "", grade: "", confidence: 0.55 }]
+      : [];
+  }
+  const lines = text
+    .split(/\r?\n/)
+    .map((line) => String(line || "").replace(/^[\s\-•*]+/, "").trim())
+    .filter(Boolean);
+  const degreeRegex = /\b(b\.?\s*tech|b\.?\s*e\.?|m\.?\s*tech|m\.?\s*e\.?|b\.?\s*sc|m\.?\s*sc|b\.?\s*com|m\.?\s*com|b\.?\s*a|m\.?\s*a|mba|pgdm|diploma|ph\.?\s*d)\b/i;
+  const yearRegex = /\b(19\d{2}|20\d{2})\b/g;
+  const history = [];
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i];
+    if (!degreeRegex.test(line)) continue;
+    const years = Array.from(line.matchAll(yearRegex)).map((m) => Number(m[1])).filter(Number.isFinite);
+    const next = String(lines[i + 1] || "").trim();
+    const institution = /\b(university|college|institute|school|iit|nit)\b/i.test(next) ? next : "";
+    history.push({
+      degree: line.replace(/\s+/g, " ").trim(),
+      institution: institution.replace(/\s+/g, " ").trim(),
+      start_date: years.length >= 2 ? `${years[0]}-01` : "",
+      end_date: years.length >= 1 ? `${years[years.length - 1]}-12` : "",
+      grade: "",
+      confidence: institution ? 0.82 : 0.68
+    });
+    if (history.length >= 6) break;
+  }
+  if (!history.length && highestEducation) {
+    history.push({
+      degree: String(highestEducation || "").trim(),
+      institution: "",
+      start_date: "",
+      end_date: "",
+      grade: "",
+      confidence: 0.6
+    });
+  }
+  return history;
+}
+
 function applyEmailTldSafeguard(email, rawText) {
   const source = String(email || "").trim();
   if (!source) return "";
@@ -7767,6 +7810,34 @@ function buildCandidateParseResponse(baseResult, normalizedResult, parseMeta = {
     parseDebug.parsedEmploymentHistory = Array.isArray(baseResult?.employmentHistory) ? baseResult.employmentHistory : [];
   }
 
+  const experienceHistory = (Array.isArray(baseResult?.employmentHistory) ? baseResult.employmentHistory : [])
+    .map((item) => ({
+      designation: String(item?.designation || "").trim(),
+      company_name: String(item?.company_name || "").trim(),
+      start_date: String(item?.start_date || "").trim(),
+      end_date: String(item?.end_date || "").trim(),
+      duration: String(item?.raw_duration_text || "").trim(),
+      location: "",
+      description: "",
+      confidence: Number(item?.confidence || 0) || 0
+    }))
+    .filter((item) => item.designation || item.company_name || item.start_date || item.end_date);
+  const educationHistory = buildDeterministicEducationHistory(rawTextForSearch, highestEducation);
+  const fixedSchema = {
+    summary: {
+      candidate_name: String(normalizedResult?.candidateName || baseResult?.candidateName || "").trim(),
+      email: emailId,
+      phone: normalizePhone(phoneNumber),
+      linkedin: linkedinUrl,
+      current_company: normalizedCurrentCompany,
+      current_designation: normalizedCurrentDesignation,
+      total_experience: String(finalTotalExperience || normalizedResult?.totalExperience || baseResult?.totalExperience || "").trim(),
+      highest_education: highestEducation
+    },
+    experience_history: experienceHistory,
+    education_history: educationHistory
+  };
+
     return {
       candidateName: String(
         normalizedResult?.candidateName || baseResult?.candidateName || ""
@@ -7796,6 +7867,9 @@ function buildCandidateParseResponse(baseResult, normalizedResult, parseMeta = {
     rawTextPreview,
     searchKeywords,
     parseDebug,
+    fixed_schema: fixedSchema,
+    experience_history: experienceHistory,
+    education_history: educationHistory,
     timelineConfidence: {
       level: timelineConfidenceLevel,
       label: timelineConfidenceLabel

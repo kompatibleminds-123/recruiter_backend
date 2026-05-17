@@ -13674,14 +13674,34 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
       const fileData = await fileToBase64(file);
       const parsed = await api("/parse-candidate", token, "POST", {
         sourceType: "cv",
-        normalizeWithAi: true,
+        normalizeWithAi: false,
         file: {
           filename: file.name || "candidate-cv.pdf",
           mimeType: file.type || "application/octet-stream",
           fileData
         }
       });
-      const parsedResult = parsed?.result && typeof parsed.result === "object" ? parsed.result : parsed;
+      let parsedResult = parsed?.result && typeof parsed.result === "object" ? parsed.result : parsed;
+      const weakDeterministic =
+        Boolean(parsedResult?.manual_review_required)
+        || Number(parsedResult?.parser_confidence?.overall || 0) < 0.65
+        || !String(parsedResult?.candidateName || "").trim()
+        || (!String(parsedResult?.emailId || "").trim() && !String(parsedResult?.phoneNumber || "").trim());
+      if (weakDeterministic) {
+        const aiParsed = await api("/parse-candidate", token, "POST", {
+          sourceType: "cv",
+          normalizeWithAi: true,
+          file: {
+            filename: file.name || "candidate-cv.pdf",
+            mimeType: file.type || "application/octet-stream",
+            fileData
+          }
+        }).catch(() => null);
+        const aiResult = aiParsed?.result && typeof aiParsed.result === "object" ? aiParsed.result : aiParsed;
+        if (aiResult && typeof aiResult === "object") {
+          parsedResult = aiResult;
+        }
+      }
       applyNewDraftAutofillPatch({
         name: String(parsedResult?.candidateName || file.name?.replace(/\.[^.]+$/, "") || "").trim(),
         phone: String(parsedResult?.phoneNumber || "").trim(),
