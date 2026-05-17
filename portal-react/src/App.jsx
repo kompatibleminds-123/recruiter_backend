@@ -4107,6 +4107,7 @@ function AssessmentStatusModal({ open, assessment, onClose, onSave }) {
 function NewDraftModal({
   open,
   form,
+  cvParsePreview,
   users,
   jobs,
   currentUser,
@@ -4120,6 +4121,9 @@ function NewDraftModal({
 }) {
   if (!open) return null;
   const isAdmin = String(currentUser?.role || "").toLowerCase() === "admin";
+  const summary = cvParsePreview?.summary || {};
+  const experienceRows = Array.isArray(cvParsePreview?.experience) ? cvParsePreview.experience : [];
+  const educationRows = Array.isArray(cvParsePreview?.education) ? cvParsePreview.education : [];
   return (
     <div className="overlay" onClick={onClose}>
       <div className="overlay-card" onClick={(e) => e.stopPropagation()}>
@@ -4145,6 +4149,45 @@ function NewDraftModal({
             Upload Excel/CSV
           </label>
         </div>
+        {cvParsePreview ? (
+          <div className="panel" style={{ marginBottom: 12, padding: 12 }}>
+            <div className="section-kicker">CV Parse Preview</div>
+            <h4 style={{ marginTop: 6, marginBottom: 8 }}>Summary</h4>
+            <div className="form-grid two-col" style={{ marginBottom: 10 }}>
+              <label><span>Name</span><input value={String(summary.candidateName || "")} readOnly /></label>
+              <label><span>Phone</span><input value={String(summary.phoneNumber || "")} readOnly /></label>
+              <label><span>Email</span><input value={String(summary.emailId || "")} readOnly /></label>
+              <label><span>LinkedIn</span><input value={String(summary.linkedinUrl || "")} readOnly /></label>
+              <label><span>Current company</span><input value={String(summary.currentCompany || "")} readOnly /></label>
+              <label><span>Current designation</span><input value={String(summary.currentDesignation || "")} readOnly /></label>
+              <label><span>Total experience</span><input value={String(summary.totalExperience || "")} readOnly /></label>
+              <label><span>Highest qualification</span><input value={String(summary.highestEducation || "")} readOnly /></label>
+            </div>
+            <h4 style={{ marginTop: 8, marginBottom: 8 }}>Experience Timeline</h4>
+            {experienceRows.length ? (
+              <div style={{ maxHeight: 180, overflow: "auto", marginBottom: 10 }}>
+                {experienceRows.map((row, index) => (
+                  <div key={`exp-${index}`} className="status-note" style={{ marginBottom: 8 }}>
+                    <div><strong>{String(row?.designation || "-")}</strong> @ {String(row?.company || "-")}</div>
+                    <div>{String(row?.start || "-")} - {String(row?.end || "-")} {row?.duration ? `| ${row.duration}` : ""}</div>
+                  </div>
+                ))}
+              </div>
+            ) : <div className="status-note" style={{ marginBottom: 10 }}>No experience rows detected.</div>}
+            <h4 style={{ marginTop: 8, marginBottom: 8 }}>Education</h4>
+            {educationRows.length ? (
+              <div style={{ maxHeight: 160, overflow: "auto" }}>
+                {educationRows.map((row, index) => (
+                  <div key={`edu-${index}`} className="status-note" style={{ marginBottom: 8 }}>
+                    <div><strong>{String(row?.degree || "-")}</strong></div>
+                    <div>{String(row?.institution || "-")}</div>
+                    <div>{String(row?.start || "-")} - {String(row?.end || "-")} {row?.year ? `| ${row.year}` : ""}</div>
+                  </div>
+                ))}
+              </div>
+            ) : <div className="status-note">No education rows detected.</div>}
+          </div>
+        ) : null}
         <div className="form-grid two-col">
           {isAdmin ? (
             <label>
@@ -6003,6 +6046,7 @@ function PortalApp({ token, onLogout }) {
     tags: "",
     notes: ""
   });
+  const [newDraftCvParsePreview, setNewDraftCvParsePreview] = useState(null);
   const resetNewDraftForm = useCallback(() => {
     setNewDraftForm({
       assigned_to_user_id: "",
@@ -6022,6 +6066,7 @@ function PortalApp({ token, onLogout }) {
       tags: "",
       notes: ""
     });
+    setNewDraftCvParsePreview(null);
   }, []);
   const [newDraftImportBusy, setNewDraftImportBusy] = useState(false);
   const [newDraftSheetPreviewOpen, setNewDraftSheetPreviewOpen] = useState(false);
@@ -13702,6 +13747,23 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
           parsedResult = aiResult;
         }
       }
+      const fixedSchema = parsedResult?.fixed_schema && typeof parsedResult.fixed_schema === "object"
+        ? parsedResult.fixed_schema
+        : parsedResult;
+      setNewDraftCvParsePreview({
+        summary: {
+          candidateName: String(fixedSchema?.candidateName || parsedResult?.candidateName || "").trim(),
+          phoneNumber: String(fixedSchema?.phoneNumber || parsedResult?.phoneNumber || "").trim(),
+          emailId: String(fixedSchema?.emailId || parsedResult?.emailId || "").trim(),
+          linkedinUrl: String(fixedSchema?.linkedinUrl || parsedResult?.linkedinUrl || "").trim(),
+          currentCompany: String(fixedSchema?.currentCompany || parsedResult?.currentCompany || "").trim(),
+          currentDesignation: String(fixedSchema?.currentDesignation || parsedResult?.currentDesignation || "").trim(),
+          totalExperience: String(fixedSchema?.totalExperience || parsedResult?.totalExperience || "").trim(),
+          highestEducation: String(fixedSchema?.highestEducation || parsedResult?.highestEducation || "").trim()
+        },
+        experience: Array.isArray(parsedResult?.experience_history) ? parsedResult.experience_history : [],
+        education: Array.isArray(parsedResult?.education_history) ? parsedResult.education_history : []
+      });
       applyNewDraftAutofillPatch({
         name: String(parsedResult?.candidateName || file.name?.replace(/\.[^.]+$/, "") || "").trim(),
         phone: String(parsedResult?.phoneNumber || "").trim(),
@@ -16728,6 +16790,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
       <NewDraftModal
         open={newDraftOpen}
         form={newDraftForm}
+        cvParsePreview={newDraftCvParsePreview}
         users={state.users}
         jobs={state.jobs}
         currentUser={state.user}
