@@ -4283,6 +4283,7 @@ function NewDraftModal({
               <label><span>Current company</span><input value={String(summary.currentCompany || "")} readOnly /></label>
               <label><span>Current designation</span><input value={String(summary.currentDesignation || "")} readOnly /></label>
               <label><span>Total experience</span><input value={String(summary.totalExperience || "")} readOnly /></label>
+              <label><span>Tenure in current org</span><input value={String(summary.currentOrgTenure || "")} readOnly /></label>
               <label><span>Highest qualification</span><input value={String(summary.highestEducation || "")} readOnly /></label>
             </div>
             <h4 style={{ marginTop: 8, marginBottom: 8 }}>Experience Timeline</h4>
@@ -4292,7 +4293,6 @@ function NewDraftModal({
                   <div key={`exp-${index}`} className="status-note" style={{ marginBottom: 8 }}>
                     <div><strong>{String(row?.designation || "-")}</strong> @ {String(row?.company_name || "-")}</div>
                     <div>{String(row?.start_date || "-")} - {String(row?.end_date || "-")} {row?.duration ? `| ${row.duration}` : ""}</div>
-                    {String(row?.raw_line || "").trim() ? <div>{String(row.raw_line).trim()}</div> : null}
                   </div>
                 ))}
               </div>
@@ -4304,8 +4304,7 @@ function NewDraftModal({
                   <div key={`edu-${index}`} className="status-note" style={{ marginBottom: 8 }}>
                     <div><strong>{String(row?.degree || "-")}</strong></div>
                     <div>{String(row?.institution || "-")}</div>
-                    <div>{String(row?.start_date || "-")} - {String(row?.end_date || "-")} {row?.year ? `| ${row.year}` : ""}</div>
-                    {String(row?.raw_line || "").trim() ? <div>{String(row.raw_line).trim()}</div> : null}
+                    <div>{String(row?.start_date || "-")} - {String(row?.end_date || "-")} {row?.year ? `| ${row.year}` : ""} {row?.grade ? `| ${row.grade}` : ""}</div>
                   </div>
                 ))}
               </div>
@@ -4329,6 +4328,7 @@ function NewDraftModal({
           <label><span>Current Company</span><input value={form.company} onChange={(e) => onChange("company", e.target.value)} /></label>
           <label><span>Current designation</span><input value={form.current_designation} onChange={(e) => onChange("current_designation", e.target.value)} placeholder="Senior Portfolio Manager" /></label>
           <label><span>Total experience</span><input value={form.total_experience} onChange={(e) => onChange("total_experience", e.target.value)} placeholder="7 years 5 months" /></label>
+          <label><span>Tenure in current org</span><input value={form.current_org_tenure} onChange={(e) => onChange("current_org_tenure", e.target.value)} placeholder="2 years 3 months" /></label>
           <label><span>Location</span><input value={form.location} onChange={(e) => onChange("location", e.target.value)} /></label>
           <label><span>Current CTC</span><input value={form.current_ctc} onChange={(e) => onChange("current_ctc", e.target.value)} placeholder="11.5 LPA" /></label>
           <label><span>Notice period</span><input value={form.notice_period} onChange={(e) => onChange("notice_period", e.target.value)} placeholder="15 days / immediate" /></label>
@@ -6162,6 +6162,7 @@ function PortalApp({ token, onLogout }) {
     company: "",
     current_designation: "",
     total_experience: "",
+    current_org_tenure: "",
     location: "",
     current_ctc: "",
     notice_period: "",
@@ -6182,6 +6183,7 @@ function PortalApp({ token, onLogout }) {
       company: "",
       current_designation: "",
       total_experience: "",
+      current_org_tenure: "",
       location: "",
       current_ctc: "",
       notice_period: "",
@@ -10190,6 +10192,7 @@ function PortalApp({ token, onLogout }) {
       current_ctc: String(draftForm.current_ctc || parsedResult?.currentCtc || "").trim(),
       notice_period: String(draftForm.notice_period || parsedResult?.noticePeriod || "").trim(),
       highest_education: String(draftForm.highest_education || parsedResult?.highestEducation || "").trim(),
+      current_org_tenure: String(draftForm.current_org_tenure || parsedResult?.currentOrgTenure || "").trim(),
       recruiter_context_notes: "",
       other_pointers: parsedTimelineLabel || "",
       hidden_from_captured: false,
@@ -10211,7 +10214,7 @@ function PortalApp({ token, onLogout }) {
         noticePeriod: String(draftForm.notice_period || parsedResult?.noticePeriod || "").trim(),
         offerInHand: "",
         lwdOrDoj: "",
-        currentOrgTenure: String(parsedResult?.currentOrgTenure || "").trim(),
+        currentOrgTenure: String(draftForm.current_org_tenure || parsedResult?.currentOrgTenure || "").trim(),
         reasonForChange: "",
         clientName: draftForm.client_name || "",
         jdTitle: draftForm.jd_title || "",
@@ -13861,12 +13864,13 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
     const ranked = rows
       .map((row) => {
         const degree = String(row?.degree || "").trim();
-        const institution = String(row?.institution || "").trim();
-        const text = [degree, institution].filter(Boolean).join(" - ");
-        return { text, score: rankDegree(degree) };
+        return { text: degree, score: rankDegree(degree), year: String(row?.end_date || row?.year || row?.start_date || "").trim() };
       })
       .filter((item) => item.text && item.score > 0 && !isGarbageCvFieldValue(item.text))
-      .sort((a, b) => b.score - a.score);
+      .sort((a, b) => {
+        if (b.score !== a.score) return b.score - a.score;
+        return Number(b.year || 0) - Number(a.year || 0);
+      });
     if (ranked.length) return ranked[0].text;
     const fallback = String(fallbackText || "").trim();
     if (!fallback || isGarbageCvFieldValue(fallback)) return "";
@@ -13921,8 +13925,31 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
       const fixedSummary = fixedSchema?.summary && typeof fixedSchema.summary === "object"
         ? fixedSchema.summary
         : {};
-      const normalizedExperience = Array.isArray(parsedResult?.experience_history) ? parsedResult.experience_history : [];
-      const normalizedEducation = Array.isArray(parsedResult?.education_history) ? parsedResult.education_history : [];
+      const normalizedExperience = Array.isArray(parsedResult?.experience_history) && parsedResult.experience_history.length
+        ? parsedResult.experience_history
+        : (Array.isArray(parsedResult?.experienceTimeline)
+          ? parsedResult.experienceTimeline.map((item) => ({
+              designation: String(item?.designation || "").trim(),
+              company_name: String(item?.company || "").trim(),
+              start_date: String(item?.startDate || "").trim(),
+              end_date: String(item?.endDate || "").trim(),
+              duration: "",
+              raw_line: String(item?.sourceText || "").trim()
+            }))
+          : []);
+      const normalizedEducation = Array.isArray(parsedResult?.education_history) && parsedResult.education_history.length
+        ? parsedResult.education_history
+        : (Array.isArray(parsedResult?.education)
+          ? parsedResult.education.map((item) => ({
+              degree: String(item?.degree || "").trim(),
+              institution: String(item?.institution || "").trim(),
+              start_date: String(item?.startDate || "").trim(),
+              end_date: String(item?.endDate || "").trim(),
+              year: String(item?.year || "").trim(),
+              grade: String(item?.score || "").trim(),
+              raw_line: String(item?.rawText || "").trim()
+            }))
+          : []);
       const latestExperience = normalizedExperience[0] || null;
       let resolvedCompany = String(fixedSummary?.current_company || parsedResult?.currentCompany || "").trim();
       let resolvedDesignation = String(fixedSummary?.current_designation || parsedResult?.currentDesignation || "").trim();
@@ -13949,7 +13976,8 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
           currentCompany: resolvedCompany,
           currentDesignation: resolvedDesignation,
           totalExperience: resolvedTotalExperience,
-          highestEducation: resolvedQualification
+          highestEducation: resolvedQualification,
+          currentOrgTenure: String(parsedResult?.currentOrgTenure || "").trim()
         },
         experience: normalizedExperience,
         education: normalizedEducation,
@@ -13964,6 +13992,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
         company: resolvedCompany || String(parsedResult?.currentCompany || "").trim(),
         current_designation: resolvedDesignation || String(parsedResult?.currentDesignation || "").trim(),
         total_experience: resolvedTotalExperience,
+        current_org_tenure: String(parsedResult?.currentOrgTenure || "").trim(),
         location: String(parsedResult?.location || "").trim(),
         current_ctc: String(parsedResult?.currentCtc || "").trim(),
         notice_period: String(parsedResult?.noticePeriod || "").trim(),

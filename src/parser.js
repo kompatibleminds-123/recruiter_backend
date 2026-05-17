@@ -208,28 +208,59 @@ function parseEducationScore(value = "") {
   return "";
 }
 
+function degreeRank(value = "") {
+  const text = String(value || "").toLowerCase();
+  if (/\b(ph\.?\s*d|doctorate)\b/.test(text)) return 9;
+  if (/\b(mba|pgdm|m\.?\s*tech|mca|master|m\.?\s*e\.?|m\.?\s*sc|m\.?\s*com|m\.?\s*a|mph)\b/.test(text)) return 8;
+  if (/\b(b\.?\s*tech|b\.?\s*e\.?|bachelor|bds|b\.?\s*b\.?\s*a|bba|b\.?\s*m\.?\s*s|b\.?\s*sc|b\.?\s*com|bca|ba)\b/.test(text)) return 7;
+  if (/\b(diploma)\b/.test(text)) return 6;
+  if (/\b(12th|xii|hsc)\b/.test(text)) return 5;
+  if (/\b(10th|ssc|matric)\b/.test(text)) return 4;
+  return 0;
+}
+
+function looksLikeEducationNoiseLine(value = "") {
+  const text = normalizeLooseText(value);
+  if (!text) return true;
+  if (isProjectNoiseLine(text)) return true;
+  if (/\b(to work with an organization|career objective|objective|summary|scope of this project|project highlights?|job responsibilities|roles?\s*&?\s*responsibilities|projects involved)\b/i.test(text)) return true;
+  if (/\b(organized|reviewed|prepared|checked|conducted|created|managed|coordinated|submitted|trained|mentored|developed|estimated|completed|led|working|worked)\b/i.test(text) && !isLikelyDegreeText(text)) return true;
+  const words = text.split(/\s+/).filter(Boolean);
+  if (words.length > 14 && !isLikelyDegreeText(text) && !isLikelyInstitutionText(text)) return true;
+  return false;
+}
+
+function looksLikeEducationYearOrScoreLine(value = "") {
+  const text = String(value || "").trim();
+  if (!text) return false;
+  return /\b(19\d{2}|20\d{2})\b/.test(text) || /\bCGPA\b/i.test(text) || /\b\d+(?:\.\d+)?\s*%/.test(text);
+}
+
 function buildEducationHistoryFromSection(educationSectionText = "") {
   const lines = splitLines(educationSectionText)
     .map((line) => String(line || "").replace(/^[\s\-•◆]+/, "").trim())
     .filter(Boolean)
     .filter((line) => !/^--\s*\d+\s+of\s+\d+\s*--$/i.test(line))
-    .filter((line) => !isLikelySectionBoundaryLine(line) || isLikelyEducationHeadingLine(line));
+    .filter((line) => !isLikelySectionBoundaryLine(line) || isLikelyEducationHeadingLine(line))
+    .filter((line) => !looksLikeEducationNoiseLine(line));
 
   const rows = [];
   for (let i = 0; i < lines.length; i += 1) {
     const line = lines[i];
     if (!isLikelyDegreeText(line)) continue;
-    if (/\bto work with an organization|scope of this project|project highlights?|job responsibilities\b/i.test(line)) continue;
+    if (degreeRank(line) <= 0) continue;
 
     const prev = String(lines[i - 1] || "").trim();
     const next = String(lines[i + 1] || "").trim();
     const nextTwo = String(lines[i + 2] || "").trim();
-    const nextLooksLikeOwnEducationRow = isLikelyDegreeText(next);
-    const nextTwoLooksLikeOwnEducationRow = isLikelyDegreeText(nextTwo);
+    const nextLooksLikeOwnEducationRow = isLikelyDegreeText(next) && degreeRank(next) > 0;
+    const nextTwoLooksLikeOwnEducationRow = isLikelyDegreeText(nextTwo) && degreeRank(nextTwo) > 0;
+    const extraLines = [];
+    if (next && !nextLooksLikeOwnEducationRow && !looksLikeEducationNoiseLine(next) && (isLikelyInstitutionText(next) || looksLikeEducationYearOrScoreLine(next))) extraLines.push(next);
+    if (nextTwo && !nextLooksLikeOwnEducationRow && !nextTwoLooksLikeOwnEducationRow && !looksLikeEducationNoiseLine(nextTwo) && (isLikelyInstitutionText(nextTwo) || looksLikeEducationYearOrScoreLine(nextTwo))) extraLines.push(nextTwo);
     const combined = [
       line,
-      next && !nextLooksLikeOwnEducationRow ? next : "",
-      nextTwo && !nextLooksLikeOwnEducationRow && !nextTwoLooksLikeOwnEducationRow ? nextTwo : ""
+      ...extraLines
     ].filter(Boolean).join(" ");
     let degree = normalizeLooseText(line);
     degree = normalizeLooseText(
@@ -240,6 +271,7 @@ function buildEducationHistoryFromSection(educationSectionText = "") {
         .replace(/\b(19\d{2}|20\d{2})\b.*$/i, "")
         .replace(/\s+-\s+$/g, "")
     );
+    if (degreeRank(degree) <= 0) continue;
 
     let institution = "";
     const fromInline = combined.match(/\bfrom\s+([^|]+?)(?:\s*-\s*with|\s+with|\s+in\s+\d{4}\b|$)/i);
@@ -252,6 +284,7 @@ function buildEducationHistoryFromSection(educationSectionText = "") {
     } else if (isLikelyInstitutionText(combined)) {
       institution = extractInstitutionPhrase(combined);
     }
+    if (looksLikeEducationNoiseLine(institution)) institution = "";
     const years = parseEducationYearSpan(combined);
     const score = parseEducationScore(combined);
     rows.push({
@@ -274,23 +307,47 @@ function buildEducationHistoryFromSection(educationSectionText = "") {
     seen.add(key);
     deduped.push(row);
   }
-  return deduped;
+  return deduped.sort((a, b) => {
+    const rankDiff = degreeRank(b.degree) - degreeRank(a.degree);
+    if (rankDiff) return rankDiff;
+    const aYear = Number(a.endDate || a.year || a.startDate || 0);
+    const bYear = Number(b.endDate || b.year || b.startDate || 0);
+    return bYear - aYear;
+  });
+}
+
+function buildEducationHistoryFallback(rawText = "") {
+  const lines = splitLines(rawText)
+    .map((line) => String(line || "").replace(/^[\s\-â€¢â—†ïƒ˜ïµ]+/, "").trim())
+    .filter(Boolean);
+  const startIndexes = [];
+  for (let i = 0; i < lines.length; i += 1) {
+    if (isLikelyEducationHeadingLine(lines[i])) startIndexes.push(i);
+  }
+  if (!startIndexes.length) return [];
+  for (const startIndex of startIndexes) {
+    const bucket = [];
+    for (let i = startIndex + 1; i < lines.length; i += 1) {
+      const line = lines[i];
+      if (i > startIndex + 1 && isLikelySectionBoundaryLine(line) && !isLikelyEducationHeadingLine(line)) break;
+      bucket.push(line);
+    }
+    const parsed = buildEducationHistoryFromSection(bucket.join("\n"));
+    if (parsed.length) return parsed;
+  }
+  return [];
 }
 
 function pickHighestQualificationFromEducationRows(rows = []) {
-  const degreeRank = (value = "") => {
-    const text = String(value || "").toLowerCase();
-    if (/\b(ph\.?\s*d|doctorate)\b/.test(text)) return 8;
-    if (/\b(mba|pgdm|m\.?\s*tech|mca|master|m\.?\s*e\.?|m\.?\s*sc|m\.?\s*com|m\.?\s*a|mph)\b/.test(text)) return 7;
-    if (/\b(b\.?\s*tech|b\.?\s*e\.?|bachelor|bds|b\.?\s*b\.?\s*a|bba|b\.?\s*m\.?\s*s|b\.?\s*sc|b\.?\s*com|bca|ba)\b/.test(text)) return 6;
-    if (/\b(diploma)\b/.test(text)) return 5;
-    if (/\b(12th|xii|hsc)\b/.test(text)) return 4;
-    if (/\b(10th|ssc|matric)\b/.test(text)) return 3;
-    return 0;
-  };
   const sorted = [...rows]
     .filter((row) => isLikelyDegreeText(row?.degree || ""))
-    .sort((a, b) => degreeRank(b.degree) - degreeRank(a.degree));
+    .sort((a, b) => {
+      const rankDiff = degreeRank(b.degree) - degreeRank(a.degree);
+      if (rankDiff) return rankDiff;
+      const aYear = Number(a.endDate || a.year || a.startDate || 0);
+      const bYear = Number(b.endDate || b.year || b.startDate || 0);
+      return bYear - aYear;
+    });
   return String(sorted[0]?.degree || "").trim();
 }
 
@@ -1929,6 +1986,7 @@ async function parseCandidatePayload(payload) {
   const claimedTotalExperience = extractTotalExperience(lines, rawText, payload?.totalExperience);
   const parsed = extractTimeline(lines, experienceText, structuredExperienceText);
   const parserV2Timeline = parseExperienceTimelineV2(experienceText, rawText);
+  const parserV2TimelineFallback = parseExperienceTimelineV2(rawText, rawText);
   parsed.timeline = applyDateAnchoredCompanyHints(parsed.timeline, experienceLines);
   if (sourceType === "cv" && (!Array.isArray(parsed.timeline) || !parsed.timeline.length)) {
     parsed.timeline = extractCompanyDesignationTimeline(experienceLines);
@@ -1962,6 +2020,17 @@ async function parseCandidatePayload(payload) {
       }));
     }
   }
+  if (sourceType === "cv" && (!Array.isArray(parsed.timeline) || !parsed.timeline.length) && Array.isArray(parserV2TimelineFallback) && parserV2TimelineFallback.length) {
+    parsed.timeline = parserV2TimelineFallback.map((item) => ({
+      title: item.designation,
+      company: item.company,
+      start: item.startDate,
+      end: item.endDate,
+      duration: "",
+      rawDates: `${item.startDate} - ${item.endDate}`,
+      isCurrent: /present/i.test(String(item.endDate || ""))
+    }));
+  }
   const employmentHistory = buildEmploymentHistoryFromTimeline(parsed.timeline, experienceText, rawText);
   const timelineActiveMonths = calculateMonthsFromTimeline(parsed.timeline);
   const timelineSpanMonths = calculateTimelineSpanMonths(parsed.timeline);
@@ -1988,14 +2057,16 @@ async function parseCandidatePayload(payload) {
   const phoneNumber = extractPrimaryPhone(rawText);
   const linkedinUrl = extractPrimaryLinkedIn(rawText);
   const location = extractPrimaryLocation(rawLines, rawText);
-  const education = buildEducationHistoryFromSection(detectedSections.education || detectedSections.education_qualification || "");
-  const highestQualification = pickHighestQualificationFromEducationRows(education);
+  const educationSectionText = detectedSections.education || detectedSections.education_qualification || "";
+  const education = buildEducationHistoryFromSection(educationSectionText);
+  const finalEducation = education.length ? education : buildEducationHistoryFallback(rawText);
+  const highestQualification = pickHighestQualificationFromEducationRows(finalEducation);
   const skills = extractSkillsFromSections(detectedSections, rawText);
   const parserWarnings = [];
-  if (!education.length) {
+  if (!educationSectionText && !finalEducation.length) {
     parserWarnings.push("No explicit education section found; do not fill education from objective/projects/responsibilities.");
   }
-  if ((detectedSections.education || detectedSections.education_qualification || "") && !highestQualification) {
+  if (educationSectionText && !highestQualification) {
     parserWarnings.push("Education section found but no reliable degree could be validated.");
   }
   if (/silver lake villa/i.test(rawText)) {
@@ -2009,7 +2080,7 @@ async function parseCandidatePayload(payload) {
   }
   const confidence = computeParserConfidenceSummary({
     timeline: parsed.timeline,
-    education,
+    education: finalEducation,
     currentCompany: currentRole.currentCompany,
     currentDesignation: currentRole.currentDesignation,
     phoneNumber,
@@ -2048,7 +2119,7 @@ async function parseCandidatePayload(payload) {
     shortStints: parsed.shortStints,
     timelineConfidence,
     experienceTimeline,
-    education,
+    education: finalEducation,
     highestQualification,
     skills,
     parserWarnings,
