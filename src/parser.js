@@ -111,6 +111,7 @@ function detectCvSections(rawText) {
   if (!out.work_experience) {
     out.work_experience = extractExperienceSection(text);
   }
+  out.education = out.education_qualification || "";
   return out;
 }
 
@@ -448,6 +449,7 @@ function cleanCompanyLine(line) {
     .replace(/\s+\d+\s+years?(?:\s+\d+\s+months?)?$/i, "")
     .replace(/\s+\d+\s+months?$/i, "")
     .replace(/^[^A-Za-z0-9(]+/, "")
+    .replace(/\s*[:\-]\s*$/g, "")
     .trim();
 }
 
@@ -462,7 +464,7 @@ function looksLikeRoleLine(value) {
   if (!text) return false;
   if (looksLikeExperienceDate(text) || hasContactLikeNoise(text)) return false;
   if (looksLikeResponsibilityNoise(text)) return false;
-  return /\b(manager|engineer|developer|executive|lead|analyst|consultant|specialist|associate|director|officer|architect|intern|trainee|coordinator|administrator|bdr|sdr|account executive|business development)\b/i.test(text);
+  return /\b(manager|engineer|developer|executive|lead|analyst|consultant|specialist|associate|director|officer|architect|intern|trainee|coordinator|administrator|bdr|sdr|account executive|business development|estimator|surveyor|planner)\b/i.test(text);
 }
 
 function normalizeTitleCompanyPair(rawTitle, rawCompany) {
@@ -536,6 +538,7 @@ function looksLikeBulletLine(line) {
 function isLikelyCompanyLine(line) {
   const value = cleanCompanyLine(line);
   if (!value) return false;
+  if (/:\s*$/.test(String(line || "").trim())) return false;
   if (isNoiseLine(value) || looksLikeExperienceDate(value) || looksLikeBulletLine(value)) return false;
   if (looksLikeResponsibilityNoise(value)) return false;
   if (/^(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)\s+\d{2,4}\s*[-\u2013\u2014\u2212]\s*(?:present|current|till date|\d{2,4})$/i.test(value)) return false;
@@ -904,9 +907,23 @@ function extractExperienceSection(rawText) {
   const rawLines = splitLines(text);
   if (!rawLines.length) return text;
 
-  const START_HEADINGS = new Set(["experience", "workexperience", "professionalexperience", "employmenthistory", "workhistory", "employmentprofile"]);
+  const START_HEADINGS = new Set([
+    "experience",
+    "workexperience",
+    "professionalexperience",
+    "employmenthistory",
+    "workhistory",
+    "employmentprofile",
+    "professionalprofile"
+  ]);
   const END_HEADINGS = new Set([
     "education",
+    "educationhistory",
+    "academicdetails",
+    "academicprofile",
+    "qualification",
+    "qualifications",
+    "academics",
     "projects",
     "certifications",
     "volunteering",
@@ -973,6 +990,40 @@ function extractTimeline(lines, rawText, structuredExperienceText) {
   }
 
   for (let i = 0; i < lines.length; i += 1) {
+    // Common CV layout:
+    // Company
+    // Date range
+    // Designation
+    const dateLine = String(lines[i] || "").trim();
+    const prevLine = String(lines[i - 1] || "").trim();
+    const nextLine = String(lines[i + 1] || "").trim();
+    const looksLikeDateLine =
+      /\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*[\s,-]*(?:'\d{2}|'?\d{4})\b/i.test(dateLine) ||
+      /\b(?:19|20)\d{2}\s*[-\u2013\u2014\u2212]\s*(?:present|current|till date|(?:19|20)\d{2})\b/i.test(dateLine);
+    if (looksLikeDateLine && prevLine && nextLine) {
+      const companyCandidate = cleanCompanyLine(prevLine);
+      const titleCandidate = cleanRoleLine(nextLine);
+      if (
+        companyCandidate &&
+        !looksLikeExperienceDate(companyCandidate) &&
+        !looksLikeEducationText(companyCandidate) &&
+        !looksLikeSentenceLine(companyCandidate) &&
+        !looksLikeResponsibilityNoise(companyCandidate) &&
+        looksLikeRoleLine(titleCandidate) &&
+        !looksLikeEducationText(titleCandidate) &&
+        !looksLikeSentenceLine(titleCandidate) &&
+        !looksLikeResponsibilityNoise(titleCandidate)
+      ) {
+        const normalizedPair = normalizeTitleCompanyPair(titleCandidate, companyCandidate);
+        const key = `${normalizedPair.title}|${normalizedPair.company}|${dateLine}`.toLowerCase();
+        if (!seen.has(key)) {
+          seen.add(key);
+          entries.push({ title: normalizedPair.title, company: normalizedPair.company, dates: dateLine, ...parseDateRange(dateLine) });
+        }
+        continue;
+      }
+    }
+
     const direct = extractTitleDateCompany(lines, i);
     if (direct) {
       const normalizedPair = normalizeTitleCompanyPair(direct.title, direct.company);
@@ -1023,7 +1074,8 @@ function extractTimeline(lines, rawText, structuredExperienceText) {
       !looksLikeExperienceDate(nextTitle) && !looksLikeExperienceDate(nextCompany) &&
       !looksLikeEducationText(nextTitle) && !looksLikeEducationText(nextCompany) &&
       !looksLikeSpacedCapsBanner(nextTitle) && !looksLikeSpacedCapsBanner(nextCompany) &&
-      !looksLikeSentenceLine(nextTitle) && !looksLikeSentenceLine(nextCompany)
+      !looksLikeSentenceLine(nextTitle) && !looksLikeSentenceLine(nextCompany) &&
+      looksLikeRoleLine(nextTitle) && isLikelyCompanyLine(nextCompany)
     ) {
       title = nextTitle;
       company = nextCompany;
@@ -1034,6 +1086,8 @@ function extractTimeline(lines, rawText, structuredExperienceText) {
     }
 
     if (!title || !company) continue;
+    if (!looksLikeRoleLine(title) || !isLikelyCompanyLine(company)) continue;
+    if (looksLikeResponsibilityNoise(title) || looksLikeResponsibilityNoise(company)) continue;
     const normalizedPair = normalizeTitleCompanyPair(title, company);
     const key = `${normalizedPair.title}|${normalizedPair.company}|${dates}`.toLowerCase();
     if (seen.has(key)) continue;
@@ -1258,6 +1312,37 @@ async function extractTextFromUploadedFile(file) {
   throw new Error("Unsupported CV file type. Please upload PDF, DOCX, RTF, or TXT.");
 }
 
+function applyDateAnchoredCompanyHints(timeline = [], experienceLines = []) {
+  if (!Array.isArray(timeline) || !timeline.length || !Array.isArray(experienceLines) || !experienceLines.length) {
+    return timeline;
+  }
+  return timeline.map((row) => {
+    const rawDates = String(row?.rawDates || "").trim();
+    if (!rawDates) return row;
+    const dateIdx = experienceLines.findIndex((line) => {
+      const t = String(line || "").trim().toLowerCase();
+      const d = rawDates.toLowerCase();
+      return t === d || t.includes(d) || d.includes(t);
+    });
+    if (dateIdx <= 0) return row;
+    const prev = cleanCompanyLine(experienceLines[dateIdx - 1] || "");
+    const next = cleanRoleLine(experienceLines[dateIdx + 1] || "");
+    if (!prev || !next) return row;
+    if (!looksLikeRoleLine(next)) return row;
+    if (looksLikeExperienceDate(prev) || isNoiseLine(prev)) return row;
+    const titleNow = String(row?.title || "").trim().toLowerCase();
+    const titleHint = String(next || "").trim().toLowerCase();
+    const canUseHint =
+      !titleNow ||
+      !titleHint ||
+      titleNow === titleHint ||
+      titleNow.includes(titleHint) ||
+      titleHint.includes(titleNow);
+    if (!canUseHint) return row;
+    return { ...row, company: prev, title: next || row.title };
+  });
+}
+
 async function parseCandidatePayload(payload) {
   const sourceType = sanitizeText(payload?.sourceType || "manual") || "manual";
   const extractedFileText = await extractTextFromUploadedFile(payload?.file || null);
@@ -1267,7 +1352,9 @@ async function parseCandidatePayload(payload) {
   const structuredExperienceText = sanitizeText(payload?.structuredExperience || "");
   const rawLines = splitLines(rawText);
   const experienceLines = splitLines(experienceText);
-  const lines = Array.from(new Set([...(experienceLines || []), ...(rawLines || [])]));
+  const lines = (experienceLines || []).length >= 3
+    ? experienceLines
+    : Array.from(new Set([...(experienceLines || []), ...(rawLines || [])]));
 
   if (!rawText && !structuredExperienceText) {
     throw new Error("Provide candidate text, page text, or structured experience to parse.");
@@ -1276,6 +1363,7 @@ async function parseCandidatePayload(payload) {
   const candidateName = extractCandidateName(rawLines, rawText, payload?.candidateName);
   const claimedTotalExperience = extractTotalExperience(lines, rawText, payload?.totalExperience);
   const parsed = extractTimeline(lines, experienceText, structuredExperienceText);
+  parsed.timeline = applyDateAnchoredCompanyHints(parsed.timeline, experienceLines);
   const employmentHistory = buildEmploymentHistoryFromTimeline(parsed.timeline, experienceText, rawText);
   const timelineActiveMonths = calculateMonthsFromTimeline(parsed.timeline);
   const timelineSpanMonths = calculateTimelineSpanMonths(parsed.timeline);

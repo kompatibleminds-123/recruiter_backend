@@ -7029,6 +7029,14 @@ function extractHighestEducationFromRawText(rawText) {
   return educationLine.replace(/\s+/g, " ").trim();
 }
 
+function isValidHighestEducationText(value) {
+  const text = String(value || "").trim();
+  if (!text) return false;
+  if (text.split(/\s+/).length > 12) return false;
+  if (/(scope\s+of\s+(the\s+)?project|roles?\s*&?\s*responsibilities?|to\s+work\s+with|career\s+objective|reviewed|managed|developed|prepared)/i.test(text)) return false;
+  return /\b(b\.?\s*tech|b\.?\s*e\.?|m\.?\s*tech|m\.?\s*e\.?|bachelor|master|mba|mca|bca|b\.?\s*sc|m\.?\s*sc|b\.?\s*com|m\.?\s*com|diploma|ph\.?\s*d|hsc|ssc|12th|10th)\b/i.test(text);
+}
+
 function buildDeterministicEducationHistory(rawText = "", highestEducation = "", educationSectionText = "") {
   const sectionText = String(educationSectionText || "").trim();
   const text = sectionText || String(rawText || "");
@@ -7041,15 +7049,23 @@ function buildDeterministicEducationHistory(rawText = "", highestEducation = "",
     .split(/\r?\n/)
     .map((line) => String(line || "").replace(/^[\s\-•*]+/, "").trim())
     .filter(Boolean);
+  const looksLikeEducationNoise = (value = "") => {
+    const v = String(value || "").trim().toLowerCase();
+    if (!v) return true;
+    if (/(scope\s+of\s+(the\s+)?project|roles?\s*&?\s*responsibilities?|business\s+growth|market\s+expansion|demolished|replaced|facilities|manufacturing)/i.test(v)) return true;
+    if (/^(managed|handling|working|worked|executed|execution|created|building|supporting)\b/i.test(v)) return true;
+    return false;
+  };
   const degreeRegex = /\b(b\.?\s*tech|b\.?\s*e\.?|m\.?\s*tech|m\.?\s*e\.?|b\.?\s*sc|m\.?\s*sc|b\.?\s*com|m\.?\s*com|b\.?\s*a|m\.?\s*a|mba|pgdm|diploma|ph\.?\s*d)\b/i;
   const yearRegex = /\b(19\d{2}|20\d{2})\b/g;
   const history = [];
   for (let i = 0; i < lines.length; i += 1) {
     const line = lines[i];
+    if (looksLikeEducationNoise(line)) continue;
     if (!degreeRegex.test(line)) continue;
     const years = Array.from(line.matchAll(yearRegex)).map((m) => Number(m[1])).filter(Number.isFinite);
     const next = String(lines[i + 1] || "").trim();
-    const institution = /\b(university|college|institute|school|iit|nit)\b/i.test(next) ? next : "";
+    const institution = (!looksLikeEducationNoise(next) && /\b(university|college|institute|school|iit|nit)\b/i.test(next)) ? next : "";
     history.push({
       degree: line.replace(/\s+/g, " ").trim(),
       institution: institution.replace(/\s+/g, " ").trim(),
@@ -7653,11 +7669,12 @@ function buildCandidateParseResponse(baseResult, normalizedResult, parseMeta = {
     baseResult?.linkedinUrl,
     (value) => /linkedin\.com\/in\//i.test(String(value || ""))
   );
-  const highestEducation = choosePreferredScalar(
+  const highestEducationRaw = choosePreferredScalar(
     normalizedResult?.highestEducation,
     baseResult?.highestEducation,
     extractHighestEducationFromRawText(rawTextForSearch)
   );
+  const highestEducation = isValidHighestEducationText(highestEducationRaw) ? String(highestEducationRaw || "").trim() : "";
   const parseDebug = {
     sourceType,
     aiNormalizationUsed: Boolean(normalizedResult),
@@ -7826,7 +7843,7 @@ function buildCandidateParseResponse(baseResult, normalizedResult, parseMeta = {
       confidence: Number(item?.confidence || 0) || 0
     }))
     .filter((item) => item.designation || item.company_name || item.start_date || item.end_date);
-  const educationSectionText = String(baseResult?.detectedSections?.education || "").trim();
+  const educationSectionText = String(baseResult?.detectedSections?.education || baseResult?.detectedSections?.education_qualification || "").trim();
   const educationHistory = buildDeterministicEducationHistory(rawTextForSearch, highestEducation, educationSectionText);
   const fixedSchema = {
     summary: {
