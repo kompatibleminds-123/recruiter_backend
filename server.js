@@ -7029,8 +7029,9 @@ function extractHighestEducationFromRawText(rawText) {
   return educationLine.replace(/\s+/g, " ").trim();
 }
 
-function buildDeterministicEducationHistory(rawText = "", highestEducation = "") {
-  const text = String(rawText || "");
+function buildDeterministicEducationHistory(rawText = "", highestEducation = "", educationSectionText = "") {
+  const sectionText = String(educationSectionText || "").trim();
+  const text = sectionText || String(rawText || "");
   if (!text.trim()) {
     return highestEducation
       ? [{ degree: String(highestEducation || "").trim(), institution: "", start_date: "", end_date: "", grade: "", raw_line: String(highestEducation || "").trim(), confidence: 0.55 }]
@@ -7825,7 +7826,8 @@ function buildCandidateParseResponse(baseResult, normalizedResult, parseMeta = {
       confidence: Number(item?.confidence || 0) || 0
     }))
     .filter((item) => item.designation || item.company_name || item.start_date || item.end_date);
-  const educationHistory = buildDeterministicEducationHistory(rawTextForSearch, highestEducation);
+  const educationSectionText = String(baseResult?.detectedSections?.education || "").trim();
+  const educationHistory = buildDeterministicEducationHistory(rawTextForSearch, highestEducation, educationSectionText);
   const fixedSchema = {
     summary: {
       candidate_name: String(normalizedResult?.candidateName || baseResult?.candidateName || "").trim(),

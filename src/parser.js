@@ -391,6 +391,15 @@ function isNoiseLine(line) {
   );
 }
 
+function looksLikeResponsibilityNoise(value) {
+  const text = String(value || "").trim();
+  if (!text) return false;
+  if (/^(roles?\s*&?\s*responsibilities?|key\s+responsibilities?|scope\s+of\s+(?:the\s+)?project|business\s+growth\s*&?\s*market\s+expansion|profile\s+summary|employment\s+profile)\b/i.test(text)) return true;
+  if (/^(managed|managing|handling|led|leading|responsible|working|worked|executed|execution|created|building|supporting)\b/i.test(text)) return true;
+  if (/^[a-z].*[.]$/.test(text) && text.split(/\s+/).length <= 6) return true;
+  return false;
+}
+
 function looksLikeExperienceDate(line) {
   return /\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*[\s,-]*(?:'\d{2}|'?\d{4})\b/i.test(line) &&
     (/\bpresent\b|\bcurrent\b|\btill date\b|\bsince\b|\bfrom\b|\bto\b/i.test(line) || /[-\u2013\u2014\u2212]/.test(line) || /\b\d+\s+(?:yr|yrs|year|years|mo|mos|month|months)\b/i.test(line));
@@ -426,6 +435,7 @@ function looksLikeRoleLine(value) {
   const text = cleanRoleLine(value);
   if (!text) return false;
   if (looksLikeExperienceDate(text) || hasContactLikeNoise(text)) return false;
+  if (looksLikeResponsibilityNoise(text)) return false;
   return /\b(manager|engineer|developer|executive|lead|analyst|consultant|specialist|associate|director|officer|architect|intern|trainee|coordinator|administrator|bdr|sdr|account executive|business development)\b/i.test(text);
 }
 
@@ -496,6 +506,7 @@ function isLikelyCompanyLine(line) {
   const value = cleanCompanyLine(line);
   if (!value) return false;
   if (isNoiseLine(value) || looksLikeExperienceDate(value) || looksLikeBulletLine(value)) return false;
+  if (looksLikeResponsibilityNoise(value)) return false;
   if (/^(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)\s+\d{2,4}\s*[-\u2013\u2014\u2212]\s*(?:present|current|till date|\d{2,4})$/i.test(value)) return false;
   if (hasContactLikeNoise(value)) return false;
   if (/^(exact\s+responsibilities?|responsibilities?)\s*:?\s*$/i.test(value)) return false;
@@ -506,6 +517,7 @@ function isLikelyCompanyLine(line) {
   if (value.length > 120) return false;
   if (/[.]$/.test(value) && !/,/.test(value)) return false;
   if (/\bowned\b|\bachieved\b|\bdrove\b|\bbuilt\b|\bled\b|\bmanaged\b|\bexecuted\b|\bcollaborated\b|\bcollaborate\b/i.test(value)) return false;
+  if (/\b(business\s+growth|market\s+expansion|roles?\s*&?\s*responsibilities?|scope\s+of\s+(?:the\s+)?project)\b/i.test(value)) return false;
   return true;
 }
 
@@ -758,8 +770,18 @@ function extractTitleDateCompany(lines, index) {
     const endToken = String(dateFirstMatch[3] || "").trim();
     const trailing = String(dateFirstMatch[4] || "").trim();
     const parts = trailing.split("|").map((part) => String(part || "").trim()).filter(Boolean);
-    const company = cleanCompanyLine(parts[0] || "");
+    let company = cleanCompanyLine(parts[0] || "");
     let title = parts.length > 1 ? String(parts[parts.length - 1] || "").trim() : "";
+    if (parts.length >= 2) {
+      const head = cleanCompanyLine(parts[0] || "");
+      const tail = cleanRoleLine(parts[parts.length - 1] || "");
+      if (!isLikelyCompanyLine(head) && isLikelyCompanyLine(tail)) {
+        company = cleanCompanyLine(tail);
+        title = cleanRoleLine(parts[0] || "");
+      } else if (isLikelyCompanyLine(head) && !looksLikeRoleLine(tail)) {
+        title = "";
+      }
+    }
     if (!title && nextLine && !looksLikeExperienceDate(nextLine) && !isNoiseLine(nextLine) && !looksLikeBulletLine(nextLine)) {
       title = nextLine;
     }
@@ -938,6 +960,7 @@ function extractTimeline(lines, rawText, structuredExperienceText) {
     }
     if (!company || !dates || !isLikelyCompanyLine(company)) continue;
     if (looksLikeEducationText(title) || looksLikeEducationText(company)) continue;
+    if (looksLikeResponsibilityNoise(title) || looksLikeResponsibilityNoise(company)) continue;
     if (looksLikeSpacedCapsBanner(title) || looksLikeSpacedCapsBanner(company)) continue;
 
     const normalizedPair = normalizeTitleCompanyPair(title, company);
@@ -1011,6 +1034,7 @@ function extractTimeline(lines, rawText, structuredExperienceText) {
       if (looksLikeSectionHeading(company) || looksLikeSectionHeading(title)) return false;
       if (isNoiseLine(company) || isNoiseLine(title)) return false;
       if (looksLikeEducationText(company) || looksLikeEducationText(title)) return false;
+      if (looksLikeResponsibilityNoise(company) || looksLikeResponsibilityNoise(title)) return false;
       if (looksLikeSpacedCapsBanner(company) || looksLikeSpacedCapsBanner(title)) return false;
       return true;
     })
