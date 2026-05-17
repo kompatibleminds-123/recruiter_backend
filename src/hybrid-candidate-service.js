@@ -89,6 +89,17 @@ function mapTimelineRows(timeline = []) {
   }));
 }
 
+function looksLikeTableStyleCompositeRow(row = {}) {
+  const src = String(row?.sourceText || "").trim();
+  if (!src || !src.includes("|")) return false;
+  const parts = src.split("|").map((x) => x.trim()).filter(Boolean);
+  if (parts.length < 3) return false;
+  const hasEducation = parts.some((p) => looksLikeEducationLine(p));
+  const hasContact = parts.some((p) => looksLikeContactLine(p));
+  const hasDate = parts.some((p) => toYmScore(p) > 0 || /\b(19|20)\d{2}\b/.test(p));
+  return hasDate && (hasEducation || hasContact);
+}
+
 function toYmScore(value = "") {
   const raw = String(value || "").trim();
   if (!raw) return -1;
@@ -313,6 +324,14 @@ function validateAndCleanOutput(candidate = {}, context = {}) {
       );
 
     const nextRow = { ...row };
+    if (looksLikeTableStyleCompositeRow(nextRow)) {
+      // Table/export rows mixing degree/contact/date are not valid experience rows.
+      nextRow.company = "";
+      nextRow.designation = "";
+      nextRow.startDate = "";
+      nextRow.endDate = "";
+      flags.push("table_row_non_experience_filtered");
+    }
     if (dropAsFakeCompany) {
       nextRow.company = "";
       flags.push("company_invalid_shape");
