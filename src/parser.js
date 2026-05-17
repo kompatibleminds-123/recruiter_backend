@@ -81,9 +81,9 @@ function detectCvSections(rawText) {
     if (/^(contact|contactdetails|personaldetails|profile|aboutme)$/.test(key)) return "contact";
     if (/^(summary|careerobjective|objective|profilesummary|professionalsummary)$/.test(key)) return "summary_profile";
     if (/^(skills|technicalskills|keyskills|competencies)$/.test(key)) return "skills";
-    if (/^(experience|workexperience|professionalexperience|employmenthistory|workhistory)$/.test(key)) return "work_experience";
+    if (/^(experience|workexperience|professionalexperience|employmenthistory|workhistory|employmentprofile|professionalprofile)$/.test(key)) return "work_experience";
     if (/^(projects|projectexperience)$/.test(key)) return "projects";
-    if (/^(education|qualification|educationqualification|academics)$/.test(key)) return "education_qualification";
+    if (/^(education|qualification|educationqualification|academics|educationhistory|academicdetails|academicprofile)$/.test(key)) return "education_qualification";
     if (/^(certification|certifications|licenses|license)$/.test(key)) return "certifications";
     return "";
   };
@@ -421,7 +421,7 @@ function looksLikeResponsibilityNoise(value) {
   const text = String(value || "").trim();
   if (!text) return false;
   if (/^(roles?\s*&?\s*responsibilities?|key\s+responsibilities?|scope\s+of\s+(?:the\s+)?project|business\s+growth\s*&?\s*market\s+expansion|profile\s+summary|employment\s+profile)\b/i.test(text)) return true;
-  if (/^(managed|managing|handling|led|leading|responsible|working|worked|executed|execution|created|building|supporting)\b/i.test(text)) return true;
+  if (/^(managed|managing|handling|led|leading|responsible|working|worked|executed|execution|created|building|supporting|reviewed|extract(?:ed|ing)?|prepared|coordinated)\b/i.test(text)) return true;
   if (/^[a-z].*[.]$/.test(text) && text.split(/\s+/).length <= 6) return true;
   return false;
 }
@@ -498,6 +498,11 @@ function normalizeTitleCompanyPair(rawTitle, rawCompany) {
 
   // If parser inverted values, swap back.
   if (isLikelyCompanyLine(title) && looksLikeRoleLine(company) && !isLikelyCompanyLine(company)) {
+    const prevTitle = title;
+    title = cleanRoleLine(company);
+    company = cleanCompanyLine(prevTitle);
+  }
+  if (!looksLikeRoleLine(title) && isLikelyCompanyLine(title) && looksLikeRoleLine(company)) {
     const prevTitle = title;
     title = cleanRoleLine(company);
     company = cleanCompanyLine(prevTitle);
@@ -801,9 +806,14 @@ function extractTitleDateCompany(lines, index) {
     if (parts.length >= 2) {
       const head = cleanCompanyLine(parts[0] || "");
       const tail = cleanRoleLine(parts[parts.length - 1] || "");
+      const maybeRole = cleanRoleLine(parts[0] || "");
+      const maybeCompany = cleanCompanyLine(parts[parts.length - 1] || "");
       if (!isLikelyCompanyLine(head) && isLikelyCompanyLine(tail)) {
         company = cleanCompanyLine(tail);
         title = cleanRoleLine(parts[0] || "");
+      } else if (looksLikeRoleLine(maybeRole) && isLikelyCompanyLine(maybeCompany)) {
+        title = maybeRole;
+        company = maybeCompany;
       } else if (isLikelyCompanyLine(head) && !looksLikeRoleLine(tail)) {
         title = "";
       }
@@ -894,7 +904,7 @@ function extractExperienceSection(rawText) {
   const rawLines = splitLines(text);
   if (!rawLines.length) return text;
 
-  const START_HEADINGS = new Set(["experience", "workexperience", "professionalexperience"]);
+  const START_HEADINGS = new Set(["experience", "workexperience", "professionalexperience", "employmenthistory", "workhistory", "employmentprofile"]);
   const END_HEADINGS = new Set([
     "education",
     "projects",
@@ -1100,11 +1110,25 @@ function extractTimeline(lines, rawText, structuredExperienceText) {
     });
     return !coveredBySibling;
   });
+  const bestByCompanyRange = new Map();
+  for (const entry of cleaned) {
+    const key = [
+      String(entry.company || "").toLowerCase().trim(),
+      String(entry.start || "").toLowerCase().trim(),
+      String(entry.end || "").toLowerCase().trim()
+    ].join("|");
+    const current = bestByCompanyRange.get(key);
+    const score = (looksLikeRoleLine(entry.title) ? 2 : 0) + (looksLikeSentenceLine(entry.title) ? -2 : 0) + (looksLikeResponsibilityNoise(entry.title) ? -2 : 0);
+    if (!current || score > current._score) {
+      bestByCompanyRange.set(key, { ...entry, _score: score });
+    }
+  }
+  const finalCleaned = Array.from(bestByCompanyRange.values()).map(({ _score, ...row }) => row);
 
   const gaps = [];
-  for (let i = 0; i < cleaned.length - 1; i += 1) {
-    const newer = cleaned[i];
-    const older = cleaned[i + 1];
+  for (let i = 0; i < finalCleaned.length - 1; i += 1) {
+    const newer = finalCleaned[i];
+    const older = finalCleaned[i + 1];
     if (newer.startIndex === null || older.endIndex === null) continue;
     const gapMonths = newer.startIndex - older.endIndex - 1;
     if (gapMonths < 3) continue;
@@ -1117,7 +1141,7 @@ function extractTimeline(lines, rawText, structuredExperienceText) {
     });
   }
 
-  const shortStints = cleaned
+  const shortStints = finalCleaned
     .filter((entry) => {
       const monthsMatch = entry.duration.match(/(\d+)\s+month/i);
       const yearsMatch = entry.duration.match(/(\d+)\s+year/i);
@@ -1139,7 +1163,7 @@ function extractTimeline(lines, rawText, structuredExperienceText) {
   if (/\bquota\b|\btarget\b|\bpipeline\b|\barr\b|\bconversion\b/i.test(rawTextPreview)) highlights.push("Commercial metrics mentioned");
 
   return {
-    timeline: cleaned.map(({ startIndex, endIndex, ...entry }) => entry),
+    timeline: finalCleaned.map(({ startIndex, endIndex, ...entry }) => entry),
     gaps,
     shortStints,
     highlights
@@ -1243,7 +1267,7 @@ async function parseCandidatePayload(payload) {
   const structuredExperienceText = sanitizeText(payload?.structuredExperience || "");
   const rawLines = splitLines(rawText);
   const experienceLines = splitLines(experienceText);
-  const lines = countDateLikeLines(experienceLines) >= 2 ? experienceLines : rawLines;
+  const lines = Array.from(new Set([...(experienceLines || []), ...(rawLines || [])]));
 
   if (!rawText && !structuredExperienceText) {
     throw new Error("Provide candidate text, page text, or structured experience to parse.");
