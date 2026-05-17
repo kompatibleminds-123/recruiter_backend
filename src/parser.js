@@ -370,13 +370,39 @@ function extractPrimaryPhone(rawText) {
 
 function extractPrimaryLinkedIn(rawText) {
   const text = String(rawText || "");
-  const match = text.match(/\b(?:https?:\/\/)?(?:www\.)?linkedin\.com\/in\/[a-z0-9-_%/]+\b/i);
+  const compact = text.replace(/[\r\n\t]+/g, " ").replace(/\s{2,}/g, " ");
+  const match = compact.match(/\b(?:https?:\/\/)?(?:www\.)?linkedin\.com\/in\/\s*[a-z0-9-_%/]+\b/i);
   if (!match?.[0]) return "";
-  let value = match[0].trim().replace(/[),.;]+$/, "");
+  let value = match[0].replace(/\s+/g, "").trim().replace(/[),.;]+$/, "");
   if (!/^https?:\/\//i.test(value)) {
     value = `https://${value}`;
   }
   return value;
+}
+
+function extractPrimaryLocation(lines, rawText) {
+  const text = String(rawText || "");
+  const labeled =
+    text.match(/\b(?:location|current\s*location|address|residing\s*at)\s*[:|-]\s*([A-Za-z][A-Za-z\s,.-]{1,80})/i) ||
+    text.match(/\b(?:city)\s*[:|-]\s*([A-Za-z][A-Za-z\s,.-]{1,60})/i);
+  if (labeled?.[1]) return String(labeled[1] || "").trim().replace(/\s{2,}/g, " ");
+
+  const cityHints = new Set([
+    "mumbai", "pune", "bengaluru", "bangalore", "hyderabad", "delhi", "gurugram", "noida", "chennai",
+    "kolkata", "ahmedabad", "jaipur", "indore", "nagpur", "lucknow", "surat", "kochi", "coimbatore"
+  ]);
+  const rawLines = Array.isArray(lines) ? lines : [];
+  for (const line of rawLines.slice(0, 35)) {
+    const value = String(line || "").trim().replace(/[|•]+/g, " ");
+    if (!value || value.length > 40) continue;
+    if (/@/.test(value) || /\d{4,}/.test(value) || /linkedin\.com/i.test(value)) continue;
+    if (/^(experience|education|skills|projects|profile|summary|objective)$/i.test(value)) continue;
+    const normalized = value.toLowerCase().replace(/\s+/g, " ").trim();
+    if (cityHints.has(normalized) || cityHints.has(normalized.split(",")[0])) {
+      return value;
+    }
+  }
+  return "";
 }
 
 function normalizeHeadingLikeText(line) {
@@ -1250,6 +1276,7 @@ async function parseCandidatePayload(payload) {
   const emailId = extractPrimaryEmail(rawText);
   const phoneNumber = extractPrimaryPhone(rawText);
   const linkedinUrl = extractPrimaryLinkedIn(rawText);
+  const location = extractPrimaryLocation(rawLines, rawText);
 
   return {
     candidateName,
@@ -1260,6 +1287,7 @@ async function parseCandidatePayload(payload) {
     emailId,
     phoneNumber,
     linkedinUrl,
+    location,
     sourceType,
     filename: sanitizeText(payload?.file?.filename || ""),
     timeline: parsed.timeline,
