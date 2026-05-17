@@ -4108,6 +4108,7 @@ function NewDraftModal({
   open,
   form,
   cvParsePreview,
+  mode = "manual",
   users,
   jobs,
   currentUser,
@@ -4121,6 +4122,7 @@ function NewDraftModal({
 }) {
   if (!open) return null;
   const isAdmin = String(currentUser?.role || "").toLowerCase() === "admin";
+  const isCvMode = mode === "cv";
   const summary = cvParsePreview?.summary || {};
   const experienceRows = Array.isArray(cvParsePreview?.experience) ? cvParsePreview.experience : [];
   const educationRows = Array.isArray(cvParsePreview?.education) ? cvParsePreview.education : [];
@@ -4128,27 +4130,29 @@ function NewDraftModal({
     <div className="overlay" onClick={onClose}>
       <div className="overlay-card" onClick={(e) => e.stopPropagation()}>
         <h3>Create Draft</h3>
-        <p className="muted">Add minimal details to create a draft without parsing.</p>
-        <div className="button-row" style={{ marginBottom: 10 }}>
-          <button type="button" className="ghost-btn" onClick={onPasteScreenshot} disabled={importBusy}>Paste screenshot (Ctrl+V)</button>
-          <label className="ghost-btn" style={{ display: "inline-flex", alignItems: "center", cursor: importBusy ? "not-allowed" : "pointer", opacity: importBusy ? 0.7 : 1 }}>
-            <input
-              type="file"
-              accept=".csv,.tsv,.txt,.xlsx,.xls"
-              style={{ display: "none" }}
-              disabled={importBusy}
-              onChange={(e) => {
-                const file = e.target.files?.[0] || null;
-                if (file) {
-                  onImportSheet?.(file);
-                  onOpenSheetImportPreview?.();
-                }
-                e.currentTarget.value = "";
-              }}
-            />
-            Upload Excel/CSV
-          </label>
-        </div>
+        <p className="muted">{isCvMode ? "Review parsed CV sections, edit fields if needed, then save draft." : "Add minimal details to create a draft without parsing."}</p>
+        {!isCvMode ? (
+          <div className="button-row" style={{ marginBottom: 10 }}>
+            <button type="button" className="ghost-btn" onClick={onPasteScreenshot} disabled={importBusy}>Paste screenshot (Ctrl+V)</button>
+            <label className="ghost-btn" style={{ display: "inline-flex", alignItems: "center", cursor: importBusy ? "not-allowed" : "pointer", opacity: importBusy ? 0.7 : 1 }}>
+              <input
+                type="file"
+                accept=".csv,.tsv,.txt,.xlsx,.xls"
+                style={{ display: "none" }}
+                disabled={importBusy}
+                onChange={(e) => {
+                  const file = e.target.files?.[0] || null;
+                  if (file) {
+                    onImportSheet?.(file);
+                    onOpenSheetImportPreview?.();
+                  }
+                  e.currentTarget.value = "";
+                }}
+              />
+              Upload Excel/CSV
+            </label>
+          </div>
+        ) : null}
         {cvParsePreview ? (
           <div className="panel" style={{ marginBottom: 12, padding: 12 }}>
             <div className="section-kicker">CV Parse Preview</div>
@@ -6031,6 +6035,7 @@ function PortalApp({ token, onLogout }) {
   const [quickUpdateConflicts, setQuickUpdateConflicts] = useState([]);
   const [quickUpdateMergedPatch, setQuickUpdateMergedPatch] = useState(null);
   const [newDraftOpen, setNewDraftOpen] = useState(false);
+  const [newDraftMode, setNewDraftMode] = useState("manual");
   const [newDraftForm, setNewDraftForm] = useState({
     assigned_to_user_id: "",
     name: "",
@@ -13718,6 +13723,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
       setNewDraftImportBusy(true);
       setStatus("captured", "Parsing CV for draft...");
       resetNewDraftForm();
+      setNewDraftMode("cv");
       setNewDraftOpen(true);
       const fileData = await fileToBase64(file);
       const parsed = await api("/parse-candidate", token, "POST", {
@@ -13756,6 +13762,16 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
       const fixedSummary = fixedSchema?.summary && typeof fixedSchema.summary === "object"
         ? fixedSchema.summary
         : {};
+      const normalizedExperience = Array.isArray(parsedResult?.experience_history) ? parsedResult.experience_history : [];
+      const latestExperience = normalizedExperience[0] || null;
+      let resolvedCompany = String(fixedSummary?.current_company || parsedResult?.currentCompany || "").trim();
+      let resolvedDesignation = String(fixedSummary?.current_designation || parsedResult?.currentDesignation || "").trim();
+      if (!resolvedCompany || /^(employment|work|professional)\s+profile$/i.test(resolvedCompany)) {
+        resolvedCompany = String(latestExperience?.company_name || "").trim() || resolvedCompany;
+      }
+      if (!resolvedDesignation || /^company\b/i.test(resolvedDesignation)) {
+        resolvedDesignation = String(latestExperience?.designation || "").trim() || resolvedDesignation;
+      }
       setNewDraftCvParsePreview({
         summary: {
           candidateName: String(fixedSummary?.candidate_name || parsedResult?.candidateName || "").trim(),
@@ -13763,12 +13779,12 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
           emailId: String(fixedSummary?.email || parsedResult?.emailId || "").trim(),
           linkedinUrl: String(fixedSummary?.linkedin || parsedResult?.linkedinUrl || "").trim(),
           location: String(fixedSummary?.location || parsedResult?.location || "").trim(),
-          currentCompany: String(fixedSummary?.current_company || parsedResult?.currentCompany || "").trim(),
-          currentDesignation: String(fixedSummary?.current_designation || parsedResult?.currentDesignation || "").trim(),
+          currentCompany: resolvedCompany,
+          currentDesignation: resolvedDesignation,
           totalExperience: String(fixedSummary?.total_experience || parsedResult?.totalExperience || "").trim(),
           highestEducation: String(fixedSummary?.highest_education || parsedResult?.highestEducation || "").trim()
         },
-        experience: Array.isArray(parsedResult?.experience_history) ? parsedResult.experience_history : [],
+        experience: normalizedExperience,
         education: Array.isArray(parsedResult?.education_history) ? parsedResult.education_history : []
       });
       applyNewDraftAutofillPatch({
@@ -13776,8 +13792,8 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
         phone: String(parsedResult?.phoneNumber || "").trim(),
         email: String(parsedResult?.emailId || "").trim(),
         linkedin: String(parsedResult?.linkedinUrl || "").trim(),
-        company: String(parsedResult?.currentCompany || "").trim(),
-        current_designation: String(parsedResult?.currentDesignation || "").trim(),
+        company: resolvedCompany || String(parsedResult?.currentCompany || "").trim(),
+        current_designation: resolvedDesignation || String(parsedResult?.currentDesignation || "").trim(),
         total_experience: String(parsedResult?.totalExperience || "").trim(),
         location: String(parsedResult?.location || "").trim(),
         current_ctc: String(parsedResult?.currentCtc || "").trim(),
@@ -15059,7 +15075,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
             <Section kicker="Shared Workflow" title="Captured Notes">
               {statuses.captured ? <div className={`status ${statuses.capturedKind || ""}`}>{statuses.captured}</div> : null}
               <div className="button-row">
-                <button onClick={() => { resetNewDraftForm(); setNewDraftOpen(true); }}>New Draft</button>
+                <button onClick={() => { resetNewDraftForm(); setNewDraftMode("manual"); setNewDraftOpen(true); }}>New Draft</button>
                 <input
                   ref={capturedSingleCvInputRef}
                   type="file"
@@ -16798,11 +16814,12 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
         open={newDraftOpen}
         form={newDraftForm}
         cvParsePreview={newDraftCvParsePreview}
+        mode={newDraftMode}
         users={state.users}
         jobs={state.jobs}
         currentUser={state.user}
         onChange={(key, value) => setNewDraftForm((current) => ({ ...current, [key]: value }))}
-        onClose={() => { setNewDraftOpen(false); resetNewDraftForm(); }}
+        onClose={() => { setNewDraftOpen(false); setNewDraftMode("manual"); resetNewDraftForm(); }}
         onSave={() => void createManualDraft()}
         onPasteScreenshot={() => void importNewDraftFromPastedScreenshot()}
         onImportSheet={(file) => void importNewDraftFromSheet(file)}
