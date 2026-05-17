@@ -7234,11 +7234,11 @@ function calculateAverageTenurePerCompany(timeline) {
 }
 
 function calculateCurrentOrgTenure(timeline, currentCompany = "") {
-  const orderedTimeline = sortTimelineByRecency(timeline);
+  const orderedTimeline = mergeConsecutiveSameCompanyRows(sortTimelineByRecency(timeline));
   const currentRow =
     orderedTimeline.find((item) => /^(present|current|till date|to date)$/i.test(String(item?.end || "").trim())) ||
     (currentCompany
-      ? orderedTimeline.find((item) => String(item?.company || "").trim().toLowerCase() === String(currentCompany).trim().toLowerCase())
+      ? orderedTimeline.find((item) => getTimelineRowCompany(item).toLowerCase() === String(currentCompany).trim().toLowerCase())
       : null);
   const latestRow = currentRow || (orderedTimeline.length ? orderedTimeline[0] : null);
   if (!latestRow) return "";
@@ -7256,9 +7256,10 @@ function calculateCurrentOrgTenure(timeline, currentCompany = "") {
 
 function getCurrentRoleFromTimeline(timeline) {
   const orderedTimeline = sortTimelineByRecency(timeline);
+  const mergedTimeline = mergeConsecutiveSameCompanyRows(orderedTimeline);
   return (
-    orderedTimeline.find((item) => /^(present|current|till date|to date)$/i.test(String(item?.end || "").trim())) ||
-    (orderedTimeline.length ? orderedTimeline[0] : null)
+    mergedTimeline.find((item) => /^(present|current|till date|to date)$/i.test(String(item?.end || "").trim())) ||
+    (mergedTimeline.length ? mergedTimeline[0] : null)
   );
 }
 
@@ -7905,6 +7906,67 @@ function buildCandidateParseResponse(baseResult, normalizedResult, parseMeta = {
           parser_warnings: (validation.reasons || []).map((item) => item.message).filter(Boolean)
         }
   };
+}
+
+function getTimelineRowCompany(item) {
+  return String(item?.company || item?.company_name || "").trim();
+}
+
+function getTimelineRowTitle(item) {
+  return String(item?.title || item?.designation || "").trim();
+}
+
+function mergeConsecutiveSameCompanyRows(timeline) {
+  const rows = Array.isArray(timeline) ? timeline : [];
+  if (!rows.length) return [];
+  const merged = [];
+  for (const row of rows) {
+    const prev = merged[merged.length - 1] || null;
+    if (!prev) {
+      merged.push(row);
+      continue;
+    }
+    const prevCompany = normalizeTimelineIdentity(getTimelineRowCompany(prev));
+    const rowCompany = normalizeTimelineIdentity(getTimelineRowCompany(row));
+    if (!prevCompany || !rowCompany || prevCompany !== rowCompany) {
+      merged.push(row);
+      continue;
+    }
+    const prevStart = parseMonthYear(prev.start);
+    const rowStart = parseMonthYear(row.start);
+    const prevEnd = parseMonthYear(prev.end, true);
+    const rowEnd = parseMonthYear(row.end, true);
+    const prevStartIdx = monthIndex(prevStart);
+    const rowStartIdx = monthIndex(rowStart);
+    const prevEndIdx = monthIndex(prevEnd);
+    const rowEndIdx = monthIndex(rowEnd);
+    const shouldMerge =
+      (prevStartIdx != null && rowEndIdx != null && rowEndIdx <= prevStartIdx + 1) ||
+      (rowStartIdx != null && prevEndIdx != null && prevEndIdx >= rowStartIdx - 1) ||
+      (!rowStartIdx && !prevEndIdx) ||
+      (!prevStartIdx && !rowEndIdx);
+    if (!shouldMerge) {
+      merged.push(row);
+      continue;
+    }
+    const earlierStart = (rowStartIdx != null && (prevStartIdx == null || rowStartIdx < prevStartIdx)) ? row.start : prev.start;
+    const laterEnd = (() => {
+      const prevPresent = isPresentLikeEnd(prev.end);
+      const rowPresent = isPresentLikeEnd(row.end);
+      if (prevPresent || rowPresent) return "Present";
+      if (prevEndIdx == null) return row.end;
+      if (rowEndIdx == null) return prev.end;
+      return rowEndIdx > prevEndIdx ? row.end : prev.end;
+    })();
+    merged[merged.length - 1] = {
+      ...prev,
+      start: String(earlierStart || prev.start || row.start || "").trim(),
+      end: String(laterEnd || prev.end || row.end || "").trim(),
+      title: getTimelineRowTitle(prev) || getTimelineRowTitle(row),
+      company: getTimelineRowCompany(prev) || getTimelineRowCompany(row)
+    };
+  }
+  return merged;
 }
 
 function buildCvAutofillPatch(candidateRow, cvResult) {
