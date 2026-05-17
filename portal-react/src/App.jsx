@@ -4115,7 +4115,6 @@ function NewDraftModal({
   onSave,
   onPasteScreenshot,
   onImportSheet,
-  onImportCvFiles,
   importBusy = false,
   onOpenSheetImportPreview
 }) {
@@ -4144,21 +4143,6 @@ function NewDraftModal({
               }}
             />
             Upload Excel/CSV
-          </label>
-          <label className="ghost-btn" style={{ display: "inline-flex", alignItems: "center", cursor: importBusy ? "not-allowed" : "pointer", opacity: importBusy ? 0.7 : 1 }}>
-            <input
-              type="file"
-              accept=".pdf,.doc,.docx,.txt,.rtf"
-              multiple
-              style={{ display: "none" }}
-              disabled={importBusy}
-              onChange={(e) => {
-                const files = Array.from(e.target.files || []);
-                if (files.length) onImportCvFiles?.(files);
-                e.currentTarget.value = "";
-              }}
-            />
-            Bulk CV upload
           </label>
         </div>
         <div className="form-grid two-col">
@@ -6042,6 +6026,8 @@ function PortalApp({ token, onLogout }) {
   const [newDraftImportBusy, setNewDraftImportBusy] = useState(false);
   const [newDraftSheetPreviewOpen, setNewDraftSheetPreviewOpen] = useState(false);
   const [newDraftSheetRows, setNewDraftSheetRows] = useState([]);
+  const capturedSingleCvInputRef = useRef(null);
+  const draftCvInputRef = useRef(null);
   const assessmentStatusSaveLockRef = useRef(new Set());
   const [notesCandidateId, setNotesCandidateId] = useState("");
   const [notesCandidateSnapshot, setNotesCandidateSnapshot] = useState(null);
@@ -13678,6 +13664,45 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
     setStatus("assessments", "Journey copied.", "ok");
   }
 
+  async function importNewDraftFromCv(file) {
+    if (!file) return;
+    try {
+      setNewDraftImportBusy(true);
+      setStatus("captured", "Parsing CV for draft...");
+      resetNewDraftForm();
+      setNewDraftOpen(true);
+      const fileData = await fileToBase64(file);
+      const parsed = await api("/parse-candidate", token, "POST", {
+        sourceType: "cv",
+        normalizeWithAi: true,
+        file: {
+          filename: file.name || "candidate-cv.pdf",
+          mimeType: file.type || "application/octet-stream",
+          fileData
+        }
+      });
+      const parsedResult = parsed?.result && typeof parsed.result === "object" ? parsed.result : parsed;
+      applyNewDraftAutofillPatch({
+        name: String(parsedResult?.candidateName || file.name?.replace(/\.[^.]+$/, "") || "").trim(),
+        phone: String(parsedResult?.phoneNumber || "").trim(),
+        email: String(parsedResult?.emailId || "").trim(),
+        linkedin: String(parsedResult?.linkedinUrl || "").trim(),
+        company: String(parsedResult?.currentCompany || "").trim(),
+        current_designation: String(parsedResult?.currentDesignation || "").trim(),
+        total_experience: String(parsedResult?.totalExperience || "").trim(),
+        location: String(parsedResult?.location || "").trim(),
+        current_ctc: String(parsedResult?.currentCtc || "").trim(),
+        notice_period: String(parsedResult?.noticePeriod || "").trim(),
+        highest_education: String(parsedResult?.highestEducation || "").trim()
+      });
+      setStatus("captured", "CV parsed. Review auto-filled draft and click Save draft.", "ok");
+    } catch (error) {
+      setStatus("captured", String(error?.message || error), "error");
+    } finally {
+      setNewDraftImportBusy(false);
+    }
+  }
+
   function openAssessmentWhatsapp(assessment) {
     openWhatsappTemplatePicker({
       name: assessment?.candidateName || "",
@@ -14946,6 +14971,20 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
               {statuses.captured ? <div className={`status ${statuses.capturedKind || ""}`}>{statuses.captured}</div> : null}
               <div className="button-row">
                 <button onClick={() => { resetNewDraftForm(); setNewDraftOpen(true); }}>New Draft</button>
+                <input
+                  ref={capturedSingleCvInputRef}
+                  type="file"
+                  accept=".pdf,.doc,.docx,.txt,.rtf"
+                  hidden
+                  onClick={(e) => { e.target.value = ""; }}
+                  onChange={(e) => {
+                    const file = e.target.files?.[0] || null;
+                    if (file) void importNewDraftFromCv(file);
+                  }}
+                />
+                <button className="ghost-btn" onClick={() => capturedSingleCvInputRef.current?.click()} disabled={newDraftImportBusy}>
+                  Upload CV
+                </button>
               </div>
               <div className="form-grid three-col">
                 <label className="full"><span>Search</span><input placeholder="Search candidate name, company, phone, email, LinkedIn..." value={candidateFilters.q} onChange={(e) => setCandidateFilters((c) => ({ ...c, q: e.target.value }))} /></label>
@@ -15401,6 +15440,17 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
               </Section>
 
               <Section kicker="Recruiter Inputs" title="Draft Notes">
+                <div className="button-row" style={{ marginBottom: 10 }}>
+                  <input
+                    ref={draftCvInputRef}
+                    type="file"
+                    accept=".pdf,.doc,.docx"
+                    hidden
+                    onClick={(e) => { e.target.value = ""; }}
+                    onChange={handleInterviewCvSelection}
+                  />
+                  <button type="button" onClick={() => draftCvInputRef.current?.click()}>Upload CV (Auto-fill Draft)</button>
+                </div>
                 <form className="form-grid two-col" onSubmit={(e) => { e.preventDefault(); }}>
                   {[["candidateName", "Candidate name"], ["phoneNumber", "Phone"], ["emailId", "Email", "email"], ["linkedin", "LinkedIn"], ["location", "Location"], ["currentCompany", "Current company"], ["currentDesignation", "Current designation"], ["totalExperience", "Total experience"], ["relevantExperience", "Relevant experience"], ["highestEducation", "Qualification"]].map(([name, label, type]) => (
                     <label key={name}><span>{label}</span><input type={type || "text"} value={interviewForm[name]} onChange={(e) => setInterviewForm((c) => ({ ...c, [name]: e.target.value }))} /></label>
@@ -16666,7 +16716,6 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
         onSave={() => void createManualDraft()}
         onPasteScreenshot={() => void importNewDraftFromPastedScreenshot()}
         onImportSheet={(file) => void importNewDraftFromSheet(file)}
-        onImportCvFiles={(files) => void importBulkCvDrafts(files)}
         importBusy={newDraftImportBusy}
         onOpenSheetImportPreview={() => setNewDraftSheetPreviewOpen(true)}
       />
