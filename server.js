@@ -7033,7 +7033,7 @@ function buildDeterministicEducationHistory(rawText = "", highestEducation = "")
   const text = String(rawText || "");
   if (!text.trim()) {
     return highestEducation
-      ? [{ degree: String(highestEducation || "").trim(), institution: "", start_date: "", end_date: "", grade: "", confidence: 0.55 }]
+      ? [{ degree: String(highestEducation || "").trim(), institution: "", start_date: "", end_date: "", grade: "", raw_line: String(highestEducation || "").trim(), confidence: 0.55 }]
       : [];
   }
   const lines = text
@@ -7055,9 +7055,9 @@ function buildDeterministicEducationHistory(rawText = "", highestEducation = "")
       start_date: years.length >= 2 ? `${years[0]}-01` : "",
       end_date: years.length >= 1 ? `${years[years.length - 1]}-12` : "",
       grade: "",
+      raw_line: line,
       confidence: institution ? 0.82 : 0.68
     });
-    if (history.length >= 6) break;
   }
   if (!history.length && highestEducation) {
     history.push({
@@ -7066,6 +7066,7 @@ function buildDeterministicEducationHistory(rawText = "", highestEducation = "")
       start_date: "",
       end_date: "",
       grade: "",
+      raw_line: String(highestEducation || "").trim(),
       confidence: 0.6
     });
   }
@@ -7819,6 +7820,7 @@ function buildCandidateParseResponse(baseResult, normalizedResult, parseMeta = {
       duration: String(item?.raw_duration_text || "").trim(),
       location: "",
       description: "",
+      raw_line: String(item?.raw_line || item?.source_line || "").trim(),
       confidence: Number(item?.confidence || 0) || 0
     }))
     .filter((item) => item.designation || item.company_name || item.start_date || item.end_date);
@@ -7829,6 +7831,7 @@ function buildCandidateParseResponse(baseResult, normalizedResult, parseMeta = {
       email: emailId,
       phone: normalizePhone(phoneNumber),
       linkedin: linkedinUrl,
+      location: String(normalizedResult?.location || baseResult?.location || "").trim(),
       current_company: normalizedCurrentCompany,
       current_designation: normalizedCurrentDesignation,
       total_experience: String(finalTotalExperience || normalizedResult?.totalExperience || baseResult?.totalExperience || "").trim(),
