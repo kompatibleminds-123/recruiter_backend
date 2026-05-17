@@ -13717,6 +13717,47 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
     setStatus("assessments", "Journey copied.", "ok");
   }
 
+  function isGarbageCvFieldValue(value = "") {
+    const text = String(value || "").trim().toLowerCase();
+    if (!text) return true;
+    if (/(employment\s+profile|to\s+work\s+with|career\s+objective)/i.test(text)) return true;
+    const words = text.split(/\s+/).filter(Boolean);
+    if (words.length > 10 && !/\b(b\.?\s*tech|b\.?\s*e\.?|mba|m\.?\s*tech|mca|bca|b\.?\s*sc|m\.?\s*sc|b\.?\s*com|m\.?\s*com|ph\.?\s*d|diploma)\b/i.test(text)) {
+      return true;
+    }
+    return false;
+  }
+
+  function pickQualificationFromEducation(educationRows = [], fallbackText = "") {
+    const rows = Array.isArray(educationRows) ? educationRows : [];
+    const rankDegree = (degree = "") => {
+      const d = String(degree || "").toLowerCase();
+      if (/\b(ph\.?\s*d|doctorate)\b/.test(d)) return 6;
+      if (/\b(mba|pgdm|m\.?\s*tech|mca|master|m\.?\s*e\.?|m\.?\s*sc|m\.?\s*com|m\.?\s*a)\b/.test(d)) return 5;
+      if (/\b(b\.?\s*tech|b\.?\s*e\.?|bca|bachelor|b\.?\s*sc|b\.?\s*com|b\.?\s*a)\b/.test(d)) return 4;
+      if (/\b(diploma)\b/.test(d)) return 3;
+      if (/\b(12th|xii|hsc)\b/.test(d)) return 2;
+      if (/\b(10th|ssc|matric)\b/.test(d)) return 1;
+      return 0;
+    };
+    const ranked = rows
+      .map((row) => {
+        const degree = String(row?.degree || "").trim();
+        const institution = String(row?.institution || "").trim();
+        const text = [degree, institution].filter(Boolean).join(" - ");
+        return { text, score: rankDegree(degree) };
+      })
+      .filter((item) => item.text && item.score > 0 && !isGarbageCvFieldValue(item.text))
+      .sort((a, b) => b.score - a.score);
+    if (ranked.length) return ranked[0].text;
+    const fallback = String(fallbackText || "").trim();
+    if (!fallback || isGarbageCvFieldValue(fallback)) return "";
+    if (!/\b(b\.?\s*tech|b\.?\s*e\.?|mba|m\.?\s*tech|mca|bca|bachelor|master|b\.?\s*sc|m\.?\s*sc|b\.?\s*com|m\.?\s*com|ph\.?\s*d|diploma)\b/i.test(fallback)) {
+      return "";
+    }
+    return fallback;
+  }
+
   async function importNewDraftFromCv(file) {
     if (!file) return;
     try {
@@ -13763,15 +13804,23 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
         ? fixedSchema.summary
         : {};
       const normalizedExperience = Array.isArray(parsedResult?.experience_history) ? parsedResult.experience_history : [];
+      const normalizedEducation = Array.isArray(parsedResult?.education_history) ? parsedResult.education_history : [];
       const latestExperience = normalizedExperience[0] || null;
       let resolvedCompany = String(fixedSummary?.current_company || parsedResult?.currentCompany || "").trim();
       let resolvedDesignation = String(fixedSummary?.current_designation || parsedResult?.currentDesignation || "").trim();
-      if (!resolvedCompany || /^(employment|work|professional)\s+profile$/i.test(resolvedCompany)) {
+      if (!resolvedCompany || isGarbageCvFieldValue(resolvedCompany)) {
         resolvedCompany = String(latestExperience?.company_name || "").trim() || resolvedCompany;
       }
-      if (!resolvedDesignation || /^company\b/i.test(resolvedDesignation)) {
+      if (!resolvedDesignation || /^company\b/i.test(resolvedDesignation) || isGarbageCvFieldValue(resolvedDesignation)) {
         resolvedDesignation = String(latestExperience?.designation || "").trim() || resolvedDesignation;
       }
+      if (isGarbageCvFieldValue(resolvedCompany)) resolvedCompany = "";
+      if (isGarbageCvFieldValue(resolvedDesignation)) resolvedDesignation = "";
+      const resolvedTotalExperience = String(parsedResult?.totalExperience || fixedSummary?.total_experience || "").trim();
+      const resolvedQualification = pickQualificationFromEducation(
+        normalizedEducation,
+        String(fixedSummary?.highest_education || parsedResult?.highestEducation || "").trim()
+      );
       setNewDraftCvParsePreview({
         summary: {
           candidateName: String(fixedSummary?.candidate_name || parsedResult?.candidateName || "").trim(),
@@ -13781,11 +13830,11 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
           location: String(fixedSummary?.location || parsedResult?.location || "").trim(),
           currentCompany: resolvedCompany,
           currentDesignation: resolvedDesignation,
-          totalExperience: String(fixedSummary?.total_experience || parsedResult?.totalExperience || "").trim(),
-          highestEducation: String(fixedSummary?.highest_education || parsedResult?.highestEducation || "").trim()
+          totalExperience: resolvedTotalExperience,
+          highestEducation: resolvedQualification
         },
         experience: normalizedExperience,
-        education: Array.isArray(parsedResult?.education_history) ? parsedResult.education_history : []
+        education: normalizedEducation
       });
       applyNewDraftAutofillPatch({
         name: String(parsedResult?.candidateName || file.name?.replace(/\.[^.]+$/, "") || "").trim(),
@@ -13794,11 +13843,11 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
         linkedin: String(parsedResult?.linkedinUrl || "").trim(),
         company: resolvedCompany || String(parsedResult?.currentCompany || "").trim(),
         current_designation: resolvedDesignation || String(parsedResult?.currentDesignation || "").trim(),
-        total_experience: String(parsedResult?.totalExperience || "").trim(),
+        total_experience: resolvedTotalExperience,
         location: String(parsedResult?.location || "").trim(),
         current_ctc: String(parsedResult?.currentCtc || "").trim(),
         notice_period: String(parsedResult?.noticePeriod || "").trim(),
-        highest_education: String(parsedResult?.highestEducation || "").trim()
+        highest_education: resolvedQualification
       });
       setStatus("captured", "CV parsed. Review auto-filled draft and click Save draft.", "ok");
     } catch (error) {
