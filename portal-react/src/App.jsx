@@ -1649,6 +1649,9 @@ function buildAssessmentJourneyEntries(assessment, contactAttempts = [], candida
         }
       }
     }
+    if (scheduleText && normalizeJourneyText(scheduleText) === statusNorm) {
+      scheduleText = "";
+    }
     if (scheduleText) bits.push(scheduleText);
     pushJourneyEntry({
       at: item.at,
