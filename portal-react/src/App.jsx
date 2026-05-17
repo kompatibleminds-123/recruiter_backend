@@ -25,6 +25,7 @@ const COPY_SETTINGS_STORAGE_KEY = "recruitdesk_portal_copy_settings_v1";
 const DEFAULT_JD_EMAIL_CC = "ankit.garg@kompatibleminds.com";
 const JD_EMAIL_CC_HISTORY_KEY_PREFIX = "recruitdesk_portal_jd_email_cc_history_v1:";
 const KOMPATIBLE_MINDS_COMPANY_ID = "c0a7d2c9-4ddb-4add-9d4a-24cdd1caba7c";
+const SIDEBAR_PREF_KEY = "recruitdesk_sidebar_collapsed_v1";
 
 const BASE_NAV_SECTIONS = [
   {
@@ -76,6 +77,111 @@ const PAYROLL_NAV_ITEMS = [
   { to: "/payroll/payslips", label: "Payslips" },
   { to: "/payroll/statutory-settings", label: "Statutory Settings" }
 ];
+
+const NAV_ICON_MAP = {
+  "/dashboard": "dashboard",
+  "/jobs": "briefcase",
+  "/shortcuts": "template",
+  "/mail-settings": "mail",
+  "/captured-notes": "clipboard",
+  "/applicants": "users",
+  "/interview": "calendar",
+  "/assessments": "checklist",
+  "/client-share": "share",
+  "/plan": "coins",
+  "/login-settings": "team",
+  "/intake-settings": "link",
+  "/settings": "settings",
+  "/candidates": "database",
+  "/reports": "chart",
+  "/marketing/prospects": "users",
+  "/marketing/templates": "template",
+  "/marketing/campaigns": "mail",
+  "/marketing/queue": "chart",
+  "/payroll/dashboard": "dashboard",
+  "/payroll/employees": "users",
+  "/payroll/salary-structures": "database",
+  "/payroll/attendance-lop": "clipboard",
+  "/payroll/fbp-claims": "coins",
+  "/payroll/runs": "calendar",
+  "/payroll/payslips": "mail",
+  "/payroll/statutory-settings": "settings"
+};
+
+function PortalIcon({ name = "dashboard" }) {
+  const common = { width: 18, height: 18, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 1.9, strokeLinecap: "round", strokeLinejoin: "round", "aria-hidden": true };
+  switch (name) {
+    case "briefcase":
+      return <svg {...common}><rect x="3" y="7" width="18" height="13" rx="2" /><path d="M9 7V5a1.5 1.5 0 0 1 1.5-1.5h3A1.5 1.5 0 0 1 15 5v2" /><path d="M3 11h18" /></svg>;
+    case "template":
+      return <svg {...common}><rect x="4" y="4" width="16" height="16" rx="2" /><path d="M8 8h8M8 12h8M8 16h5" /></svg>;
+    case "mail":
+      return <svg {...common}><rect x="3" y="5" width="18" height="14" rx="2" /><path d="m4 7 8 6 8-6" /></svg>;
+    case "clipboard":
+      return <svg {...common}><rect x="6" y="4" width="12" height="16" rx="2" /><path d="M9 4.5h6M9 9h6M9 13h6" /></svg>;
+    case "users":
+      return <svg {...common}><path d="M16 19a4 4 0 0 0-8 0" /><circle cx="12" cy="11" r="3.2" /><path d="M18.5 18a3.5 3.5 0 0 0-2.5-3.35" /><path d="M8 14.65A3.5 3.5 0 0 0 5.5 18" /></svg>;
+    case "calendar":
+      return <svg {...common}><rect x="3" y="5" width="18" height="16" rx="2" /><path d="M16 3v4M8 3v4M3 10h18" /></svg>;
+    case "checklist":
+      return <svg {...common}><path d="M9 6h10M9 12h10M9 18h10" /><path d="m4 6 1.5 1.5L7.5 5" /><path d="m4 12 1.5 1.5L7.5 11" /><path d="m4 18 1.5 1.5L7.5 17" /></svg>;
+    case "share":
+      return <svg {...common}><circle cx="18" cy="5" r="2.5" /><circle cx="6" cy="12" r="2.5" /><circle cx="18" cy="19" r="2.5" /><path d="m8.3 10.9 7-4.1M8.3 13.1l7 4.1" /></svg>;
+    case "coins":
+      return <svg {...common}><ellipse cx="12" cy="6" rx="6.5" ry="2.8" /><path d="M5.5 6v6c0 1.55 2.9 2.8 6.5 2.8s6.5-1.25 6.5-2.8V6" /><path d="M5.5 12v6c0 1.55 2.9 2.8 6.5 2.8s6.5-1.25 6.5-2.8v-6" /></svg>;
+    case "team":
+      return <svg {...common}><circle cx="9" cy="9" r="3" /><circle cx="17" cy="10" r="2.5" /><path d="M4 19a5 5 0 0 1 10 0" /><path d="M14.5 18a4 4 0 0 1 5.5-3.7" /></svg>;
+    case "link":
+      return <svg {...common}><path d="M10 14 8.2 15.8a3 3 0 1 1-4.2-4.2L7 8.6" /><path d="m14 10 1.8-1.8a3 3 0 1 1 4.2 4.2L17 15.4" /><path d="M8.5 15.5 15.5 8.5" /></svg>;
+    case "database":
+      return <svg {...common}><ellipse cx="12" cy="5.5" rx="7" ry="2.8" /><path d="M5 5.5v5c0 1.55 3.13 2.8 7 2.8s7-1.25 7-2.8v-5" /><path d="M5 10.5v5c0 1.55 3.13 2.8 7 2.8s7-1.25 7-2.8v-5" /></svg>;
+    case "chart":
+      return <svg {...common}><path d="M4 19V5" /><path d="M20 19H4" /><path d="M8 16v-5" /><path d="M12 16V8" /><path d="M16 16v-9" /></svg>;
+    case "settings":
+      return <svg {...common}><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1 1 0 0 0 .2 1.1l.1.1a1.9 1.9 0 1 1-2.7 2.7l-.1-.1a1 1 0 0 0-1.1-.2 1 1 0 0 0-.6.9V20a1.9 1.9 0 1 1-3.8 0v-.2a1 1 0 0 0-.6-.9 1 1 0 0 0-1.1.2l-.1.1a1.9 1.9 0 1 1-2.7-2.7l.1-.1a1 1 0 0 0 .2-1.1 1 1 0 0 0-.9-.6H4a1.9 1.9 0 1 1 0-3.8h.2a1 1 0 0 0 .9-.6 1 1 0 0 0-.2-1.1l-.1-.1a1.9 1.9 0 1 1 2.7-2.7l.1.1a1 1 0 0 0 1.1.2h.1a1 1 0 0 0 .6-.9V4a1.9 1.9 0 1 1 3.8 0v.2a1 1 0 0 0 .6.9h.1a1 1 0 0 0 1.1-.2l.1-.1a1.9 1.9 0 1 1 2.7 2.7l-.1.1a1 1 0 0 0-.2 1.1v.1a1 1 0 0 0 .9.6h.2a1.9 1.9 0 1 1 0 3.8h-.2a1 1 0 0 0-.9.6Z" /></svg>;
+    default:
+      return <svg {...common}><rect x="4" y="4" width="7" height="7" rx="1.5" /><rect x="13" y="4" width="7" height="5" rx="1.5" /><rect x="4" y="13" width="7" height="7" rx="1.5" /><rect x="13" y="11" width="7" height="9" rx="1.5" /></svg>;
+  }
+}
+
+function getNavIconName(to = "") {
+  return NAV_ICON_MAP[String(to || "").trim()] || "dashboard";
+}
+
+function useSidebarCollapsed(storageKey = SIDEBAR_PREF_KEY) {
+  const [collapsed, setCollapsed] = useState(() => {
+    if (typeof window === "undefined") return false;
+    try {
+      return window.localStorage.getItem(storageKey) === "1";
+    } catch {
+      return false;
+    }
+  });
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      window.localStorage.setItem(storageKey, collapsed ? "1" : "0");
+    } catch {}
+  }, [collapsed, storageKey]);
+
+  return [collapsed, setCollapsed];
+}
+
+function SidebarNavLink({ to, label, collapsed = false }) {
+  const iconName = getNavIconName(to);
+  return (
+    <NavLink
+      key={to}
+      to={to}
+      title={collapsed ? label : undefined}
+      className={({ isActive }) => `nav-btn${collapsed ? " nav-btn--collapsed" : ""}${isActive ? " active" : ""}`}
+    >
+      <span className="nav-btn__icon"><PortalIcon name={iconName} /></span>
+      <span className="nav-btn__label">{label}</span>
+    </NavLink>
+  );
+}
 
 function FeatureLockedSection({ title = "Feature locked" }) {
   return (
@@ -6383,6 +6489,7 @@ function PortalApp({ token, onLogout }) {
   const accessFlagsReady = Boolean(state.user?.id) && (Boolean(companyLicense) || Boolean(billingOverview));
   const marketingOwnerEmail = String(state.user?.email || "").trim().toLowerCase();
   const isMarketingOwner = marketingOwnerEmail === "ankit.garg@kompatibleminds.com" || marketingOwnerEmail === "rasel.mazumder@kompatibleminds.com";
+  const [sidebarCollapsed, setSidebarCollapsed] = useSidebarCollapsed(`${SIDEBAR_PREF_KEY}:recruiter`);
   const navSections = useMemo(() => (
     BASE_NAV_SECTIONS
       .map((section) => ({
@@ -14090,36 +14197,41 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
     .slice(0, 5);
 
   return (
-    <div className="app-shell">
-      <aside className="sidebar">
+    <div className={`app-shell${sidebarCollapsed ? " app-shell--sidebar-collapsed" : ""}`}>
+      <aside className={`sidebar${sidebarCollapsed ? " sidebar--collapsed" : ""}`}>
         <div className="brand">
           <BrandLogo size="md" />
         </div>
         <nav className="nav">
           {navSections.map((section) => (
             <div key={section.label} className="nav-section">
-              <div className="nav-section__label">{section.label}</div>
+              {!sidebarCollapsed ? <div className="nav-section__label">{section.label}</div> : null}
               <div className="nav-section__items">
                 {section.items.map((item) => (
-                  <NavLink key={item.to} to={item.to} className={({ isActive }) => `nav-btn${isActive ? " active" : ""}`}>
-                    {item.label}
-                  </NavLink>
+                  <SidebarNavLink key={item.to} to={item.to} label={item.label} collapsed={sidebarCollapsed} />
                 ))}
               </div>
             </div>
           ))}
           <div className="nav-standalone">
             {standaloneNavItems.map((item) => (
-              <NavLink key={item.to} to={item.to} className={({ isActive }) => `nav-btn${isActive ? " active" : ""}`}>
-                {item.label}
-              </NavLink>
+              <SidebarNavLink key={item.to} to={item.to} label={item.label} collapsed={sidebarCollapsed} />
             ))}
           </div>
         </nav>
         <div className="sidebar-footer">
-          <div className="muted">{state.user ? `${state.user.name} | ${state.user.role} | ${state.user.companyName || "Company"}` : "Not logged in"}</div>
-          <div className="portal-footer">{COMPANY_ATTRIBUTION}</div>
-          <button className="ghost-btn" onClick={onLogout}>Logout</button>
+          {!sidebarCollapsed ? <div className="muted">{state.user ? `${state.user.name} | ${state.user.role} | ${state.user.companyName || "Company"}` : "Not logged in"}</div> : null}
+          {!sidebarCollapsed ? <div className="portal-footer">{COMPANY_ATTRIBUTION}</div> : null}
+          <button className={`ghost-btn${sidebarCollapsed ? " ghost-btn--icon" : ""}`} onClick={onLogout} title={sidebarCollapsed ? "Logout" : undefined}>{sidebarCollapsed ? "↗" : "Logout"}</button>
+          <button
+            type="button"
+            className="sidebar-toggle"
+            onClick={() => setSidebarCollapsed((value) => !value)}
+            aria-label={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+            title={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+          >
+            {sidebarCollapsed ? "›" : "‹"}
+          </button>
         </div>
       </aside>
 
@@ -18572,6 +18684,7 @@ const MARKETING_NAV_ITEMS = [
 function MarketingPortalApp({ token, onLogout }) {
   const location = useLocation();
   const navigate = useNavigate();
+  const [sidebarCollapsed, setSidebarCollapsed] = useSidebarCollapsed(`${SIDEBAR_PREF_KEY}:marketing`);
 
   useEffect(() => {
     const path = String(location?.pathname || "");
@@ -18581,18 +18694,29 @@ function MarketingPortalApp({ token, onLogout }) {
   }, [location?.pathname, navigate]);
 
   return (
-    <div className="app-shell">
-      <aside className="sidebar">
+    <div className={`app-shell${sidebarCollapsed ? " app-shell--sidebar-collapsed" : ""}`}>
+      <aside className={`sidebar${sidebarCollapsed ? " sidebar--collapsed" : ""}`}>
         <div>
           <BrandLogo size="md" />
-          <p className="muted" style={{ margin: "0.35rem 0 1rem" }}>Marketing Portal</p>
+          {!sidebarCollapsed ? <p className="muted" style={{ margin: "0.35rem 0 1rem" }}>Marketing Portal</p> : null}
           <nav className="nav">
             {MARKETING_NAV_ITEMS.map((item) => (
-              <NavLink key={item.to} to={item.to} className={({ isActive }) => `nav-btn${isActive ? " active" : ""}`}>{item.label}</NavLink>
+              <SidebarNavLink key={item.to} to={item.to} label={item.label} collapsed={sidebarCollapsed} />
             ))}
           </nav>
         </div>
-        <button className="ghost-btn" onClick={onLogout}>Logout</button>
+        <div className="sidebar-footer">
+          <button className={`ghost-btn${sidebarCollapsed ? " ghost-btn--icon" : ""}`} onClick={onLogout} title={sidebarCollapsed ? "Logout" : undefined}>{sidebarCollapsed ? "↗" : "Logout"}</button>
+          <button
+            type="button"
+            className="sidebar-toggle"
+            onClick={() => setSidebarCollapsed((value) => !value)}
+            aria-label={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+            title={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+          >
+            {sidebarCollapsed ? "›" : "‹"}
+          </button>
+        </div>
       </aside>
       <main className="main-panel">
         <Routes>
@@ -18611,6 +18735,7 @@ function MarketingPortalApp({ token, onLogout }) {
 function PayrollAdminApp({ token, onLogout }) {
   const location = useLocation();
   const navigate = useNavigate();
+  const [sidebarCollapsed, setSidebarCollapsed] = useSidebarCollapsed(`${SIDEBAR_PREF_KEY}:payroll`);
   const [employees, setEmployees] = useState([]);
   const [users, setUsers] = useState([]);
   const [summary, setSummary] = useState({
@@ -18671,18 +18796,29 @@ function PayrollAdminApp({ token, onLogout }) {
   }, [token]);
 
   return (
-    <div className="app-shell">
-      <aside className="sidebar">
+    <div className={`app-shell${sidebarCollapsed ? " app-shell--sidebar-collapsed" : ""}`}>
+      <aside className={`sidebar${sidebarCollapsed ? " sidebar--collapsed" : ""}`}>
         <div>
           <BrandLogo size="md" />
-          <p className="muted" style={{ margin: "0.35rem 0 1rem" }}>Payroll Admin</p>
+          {!sidebarCollapsed ? <p className="muted" style={{ margin: "0.35rem 0 1rem" }}>Payroll Admin</p> : null}
           <nav className="nav">
             {PAYROLL_NAV_ITEMS.map((item) => (
-              <NavLink key={item.to} to={item.to} className={({ isActive }) => `nav-btn${isActive ? " active" : ""}`}>{item.label}</NavLink>
+              <SidebarNavLink key={item.to} to={item.to} label={item.label} collapsed={sidebarCollapsed} />
             ))}
           </nav>
         </div>
-        <button className="ghost-btn" onClick={onLogout}>Logout</button>
+        <div className="sidebar-footer">
+          <button className={`ghost-btn${sidebarCollapsed ? " ghost-btn--icon" : ""}`} onClick={onLogout} title={sidebarCollapsed ? "Logout" : undefined}>{sidebarCollapsed ? "↗" : "Logout"}</button>
+          <button
+            type="button"
+            className="sidebar-toggle"
+            onClick={() => setSidebarCollapsed((value) => !value)}
+            aria-label={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+            title={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+          >
+            {sidebarCollapsed ? "›" : "‹"}
+          </button>
+        </div>
       </aside>
       <main className="main-panel">
         {status ? <div className="status error">{status}</div> : null}

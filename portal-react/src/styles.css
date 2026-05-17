@@ -118,6 +118,8 @@ textarea { min-height: 92px; resize: vertical; }
 .app-shell { display: grid; grid-template-columns: 280px 1fr; min-height: 100vh; }
 .app-shell--client { display: block; }
 .sidebar {
+  width: 100%;
+  min-width: 0;
   padding: 1.35rem 1rem;
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.72) 0%, rgba(248, 251, 255, 0.86) 100%);
   border-right: 1px solid rgba(217, 222, 232, 0.8);
@@ -152,7 +154,9 @@ textarea { min-height: 92px; resize: vertical; }
 .nav-section__items { display: grid; gap: 0.55rem; }
 .nav-btn {
   text-decoration: none;
-  display: block;
+  display: flex;
+  align-items: center;
+  gap: 0.78rem;
   padding: 0.76rem 0.9rem;
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
@@ -162,6 +166,17 @@ textarea { min-height: 92px; resize: vertical; }
   font-weight: 600;
   transition: transform 130ms ease, box-shadow 160ms ease, border-color 160ms ease, background-color 160ms ease;
 }
+.nav-btn__icon {
+  width: 1.2rem;
+  height: 1.2rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+}
+.nav-btn__label {
+  min-width: 0;
+}
 .nav-btn:hover {
   background: #f7faff;
   border-color: #c7d5eb;
@@ -170,6 +185,69 @@ textarea { min-height: 92px; resize: vertical; }
 }
 .nav-btn.active { background: linear-gradient(135deg, #2563eb, #38bdf8); color: white; border-color: transparent; }
 .sidebar-footer { margin-top: auto; display: grid; gap: 0.85rem; }
+.ghost-btn--icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 46px;
+  padding-inline: 0.9rem;
+}
+.sidebar-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 42px;
+  height: 42px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.88);
+  color: var(--accent-strong);
+  font-size: 1.35rem;
+  font-weight: 800;
+  cursor: pointer;
+  transition: transform 130ms ease, box-shadow 160ms ease, border-color 160ms ease, background-color 160ms ease;
+}
+.sidebar-toggle:hover {
+  background: #f7faff;
+  border-color: #c7d5eb;
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-sm);
+}
+.app-shell--sidebar-collapsed {
+  grid-template-columns: 92px minmax(0, 1fr);
+}
+.sidebar--collapsed {
+  padding-inline: 0.7rem;
+  align-items: center;
+}
+.sidebar--collapsed .brand,
+.sidebar--collapsed > div:first-child,
+.sidebar--collapsed .nav,
+.sidebar--collapsed .sidebar-footer {
+  width: 100%;
+}
+.sidebar--collapsed .brand {
+  display: flex;
+  justify-content: center;
+}
+.sidebar--collapsed .nav {
+  gap: 0.7rem;
+}
+.sidebar--collapsed .nav-section,
+.sidebar--collapsed .nav-section__items,
+.sidebar--collapsed .nav-standalone {
+  gap: 0.45rem;
+}
+.sidebar--collapsed .nav-btn {
+  justify-content: center;
+  padding: 0.82rem;
+}
+.sidebar--collapsed .nav-btn__label {
+  display: none;
+}
+.sidebar--collapsed .sidebar-footer {
+  justify-items: center;
+}
 .content { padding: 1.25rem; display: grid; gap: 1rem; }
 .workspace-header { display: flex; justify-content: space-between; gap: 1rem; align-items: flex-start; }
 .workspace-header > div:first-child {
@@ -1445,22 +1523,6 @@ textarea { min-height: 92px; resize: vertical; }
   box-shadow: var(--shadow-md);
 }
 .overlay-card--wide { width: min(1320px, calc(100vw - 3rem)); }
-.overlay-card--attempts {
-  height: min(82vh, 860px);
-  overflow: hidden;
-}
-.overlay-card--assessment-status {
-  height: min(84vh, 880px);
-  overflow-y: auto;
-}
-.overlay-card--assign {
-  max-height: min(72vh, 560px);
-  overflow-y: auto;
-}
-.overlay-card--recruiter-note {
-  height: min(86vh, 920px);
-  overflow-y: auto;
-}
 .overlay-card h3 { margin: 0; font-size: 1.25rem; }
 .whatsapp-template-picker {
   width: min(520px, 100%);
@@ -1531,16 +1593,6 @@ textarea { min-height: 92px; resize: vertical; }
 .attempt-grid { display: grid; gap: 1rem; grid-template-columns: 1.2fr 0.9fr; }
 .attempt-history, .attempt-form { display: grid; gap: 0.75rem; }
 .attempt-history h4, .attempt-form h4 { margin: 0; font-size: 1rem; }
-.overlay-card--attempts .attempt-grid {
-  height: 100%;
-  min-height: 0;
-}
-.overlay-card--attempts .attempt-history,
-.overlay-card--attempts .attempt-form {
-  min-height: 0;
-  overflow-y: auto;
-  padding-right: 0.2rem;
-}
 .code-box { min-height: 220px; font-family: ui-monospace, "Cascadia Code", monospace; font-size: 0.85rem; }
 .jd-editor { min-height: 260px; }
 .file-btn {
