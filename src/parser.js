@@ -997,8 +997,14 @@ function calculateTimelineSpanMonths(timeline = []) {
 
 function calculateCurrentRoleMonths(timeline = []) {
   for (const item of timeline) {
-    const end = String(item?.end || "").toLowerCase();
-    if (end !== "present") continue;
+    const end = String(item?.end || "").trim().toLowerCase();
+    const rawDates = String(item?.rawDates || "").trim().toLowerCase();
+    const isCurrent =
+      end === "present" ||
+      end === "current" ||
+      /present|current|till date|ongoing/.test(rawDates) ||
+      Boolean(item?.isCurrent);
+    if (!isCurrent) continue;
     const parsed = parseDateRange(`${String(item?.start || "")} - Present`);
     const startIndex = monthIndex(parsed.start);
     const endIndex = monthIndex(parsed.end);
@@ -1415,6 +1421,8 @@ function parseExperienceTimelineV2(experienceSectionText = "", rawText = "") {
     const prev = String(lines[i - 1] || "").trim();
     const next = String(lines[i + 1] || "").trim();
     const nextTwo = String(lines[i + 2] || "").trim();
+    const nextThree = String(lines[i + 3] || "").trim();
+    const nextFour = String(lines[i + 4] || "").trim();
 
     const companyDesignationPattern = line.match(/^(?:\d+\.\s*)?company\s+(.+?)\s*\(([^)]+)\)\s*$/i);
     if (companyDesignationPattern) {
@@ -1479,6 +1487,31 @@ function parseExperienceTimelineV2(experienceSectionText = "", rawText = "") {
         designation: line,
         rawDates: nextTwo,
         sourceText: [line, next, nextTwo].join(" | "),
+        confidence: "high"
+      });
+      continue;
+    }
+
+    if (
+      line &&
+      looksLikeCompanyName(line) &&
+      !looksLikeRoleLine(line) &&
+      !isProjectNoiseLine(line) &&
+      next &&
+      looksLikeSentenceLine(next) &&
+      !looksLikeRoleLine(next) &&
+      (
+        (nextTwo && looksLikeRoleLine(nextTwo) && nextThree && /(?:present|current|till date|to date|\d{4}|\d{1,2}[/-]\d{4}|[A-Za-z]{3,9}\.?'?\d{2,4})/i.test(nextThree)) ||
+        (nextTwo && looksLikeSentenceLine(nextTwo) && nextThree && looksLikeRoleLine(nextThree) && nextFour && /(?:present|current|till date|to date|\d{4}|\d{1,2}[/-]\d{4}|[A-Za-z]{3,9}\.?'?\d{2,4})/i.test(nextFour))
+      )
+    ) {
+      const designation = nextTwo && looksLikeRoleLine(nextTwo) ? nextTwo : nextThree;
+      const rawDates = nextTwo && looksLikeRoleLine(nextTwo) ? nextThree : nextFour;
+      pushRow({
+        company: line,
+        designation,
+        rawDates,
+        sourceText: [line, next, designation, rawDates].filter(Boolean).join(" | "),
         confidence: "high"
       });
       continue;
@@ -1602,6 +1635,35 @@ function extractTimeline(lines, rawText, structuredExperienceText) {
         if (!seen.has(key)) {
           seen.add(key);
           entries.push({ title: normalizedPair.title, company: normalizedPair.company, dates: dateLine, ...parseDateRange(dateLine) });
+        }
+        continue;
+      }
+    }
+
+    const deepLine = String(lines[i] || "").trim();
+    const deepNext1 = String(lines[i + 1] || "").trim();
+    const deepNext2 = String(lines[i + 2] || "").trim();
+    const deepNext3 = String(lines[i + 3] || "").trim();
+    const deepNext4 = String(lines[i + 4] || "").trim();
+    const deepLayoutDateRegex = /(?:present|current|till date|to date|\d{4}|\d{1,2}[/-]\d{4}|[A-Za-z]{3,9}\.?'?\d{2,4})/i;
+    if (
+      deepLine &&
+      looksLikeCompanyName(deepLine) &&
+      !looksLikeRoleLine(deepLine) &&
+      !isProjectNoiseLine(deepLine) &&
+      (
+        (deepNext1 && looksLikeSentenceLine(deepNext1) && deepNext2 && looksLikeRoleLine(deepNext2) && deepNext3 && deepLayoutDateRegex.test(deepNext3)) ||
+        (deepNext1 && looksLikeSentenceLine(deepNext1) && deepNext2 && looksLikeSentenceLine(deepNext2) && deepNext3 && looksLikeRoleLine(deepNext3) && deepNext4 && deepLayoutDateRegex.test(deepNext4))
+      )
+    ) {
+      const title = deepNext2 && looksLikeRoleLine(deepNext2) ? cleanRoleLine(deepNext2) : cleanRoleLine(deepNext3);
+      const dates = deepNext2 && looksLikeRoleLine(deepNext2) ? deepNext3 : deepNext4;
+      if (title && dates) {
+        const normalizedPair = normalizeTitleCompanyPair(title, cleanCompanyLine(deepLine));
+        const key = `${normalizedPair.title}|${normalizedPair.company}|${dates}`.toLowerCase();
+        if (!seen.has(key)) {
+          seen.add(key);
+          entries.push({ title: normalizedPair.title, company: normalizedPair.company, dates, ...parseDateRange(dates) });
         }
         continue;
       }
@@ -1848,7 +1910,11 @@ function buildEmploymentHistoryFromTimeline(timeline = [], rawWorkExperience = "
 }
 
 function extractCurrentRoleFromTimeline(timeline) {
-  const current = (timeline || []).find((entry) => String(entry.end || "").toLowerCase() === "present");
+  const current = (timeline || []).find((entry) => {
+    const end = String(entry?.end || "").trim().toLowerCase();
+    const rawDates = String(entry?.rawDates || "").trim().toLowerCase();
+    return end === "present" || end === "current" || /present|current|till date|ongoing/.test(rawDates) || Boolean(entry?.isCurrent);
+  });
   if (current) {
     return {
       currentCompany: current.company || "",
