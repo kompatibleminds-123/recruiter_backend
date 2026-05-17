@@ -4158,6 +4158,7 @@ function NewDraftModal({
               <label><span>Phone</span><input value={String(summary.phoneNumber || "")} readOnly /></label>
               <label><span>Email</span><input value={String(summary.emailId || "")} readOnly /></label>
               <label><span>LinkedIn</span><input value={String(summary.linkedinUrl || "")} readOnly /></label>
+              <label><span>Location</span><input value={String(summary.location || "")} readOnly /></label>
               <label><span>Current company</span><input value={String(summary.currentCompany || "")} readOnly /></label>
               <label><span>Current designation</span><input value={String(summary.currentDesignation || "")} readOnly /></label>
               <label><span>Total experience</span><input value={String(summary.totalExperience || "")} readOnly /></label>
@@ -4168,8 +4169,9 @@ function NewDraftModal({
               <div style={{ maxHeight: 180, overflow: "auto", marginBottom: 10 }}>
                 {experienceRows.map((row, index) => (
                   <div key={`exp-${index}`} className="status-note" style={{ marginBottom: 8 }}>
-                    <div><strong>{String(row?.designation || "-")}</strong> @ {String(row?.company || "-")}</div>
-                    <div>{String(row?.start || "-")} - {String(row?.end || "-")} {row?.duration ? `| ${row.duration}` : ""}</div>
+                    <div><strong>{String(row?.designation || "-")}</strong> @ {String(row?.company_name || "-")}</div>
+                    <div>{String(row?.start_date || "-")} - {String(row?.end_date || "-")} {row?.duration ? `| ${row.duration}` : ""}</div>
+                    {String(row?.raw_line || "").trim() ? <div>{String(row.raw_line).trim()}</div> : null}
                   </div>
                 ))}
               </div>
@@ -4181,7 +4183,8 @@ function NewDraftModal({
                   <div key={`edu-${index}`} className="status-note" style={{ marginBottom: 8 }}>
                     <div><strong>{String(row?.degree || "-")}</strong></div>
                     <div>{String(row?.institution || "-")}</div>
-                    <div>{String(row?.start || "-")} - {String(row?.end || "-")} {row?.year ? `| ${row.year}` : ""}</div>
+                    <div>{String(row?.start_date || "-")} - {String(row?.end_date || "-")} {row?.year ? `| ${row.year}` : ""}</div>
+                    {String(row?.raw_line || "").trim() ? <div>{String(row.raw_line).trim()}</div> : null}
                   </div>
                 ))}
               </div>
@@ -13750,16 +13753,20 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
       const fixedSchema = parsedResult?.fixed_schema && typeof parsedResult.fixed_schema === "object"
         ? parsedResult.fixed_schema
         : parsedResult;
+      const fixedSummary = fixedSchema?.summary && typeof fixedSchema.summary === "object"
+        ? fixedSchema.summary
+        : {};
       setNewDraftCvParsePreview({
         summary: {
-          candidateName: String(fixedSchema?.candidateName || parsedResult?.candidateName || "").trim(),
-          phoneNumber: String(fixedSchema?.phoneNumber || parsedResult?.phoneNumber || "").trim(),
-          emailId: String(fixedSchema?.emailId || parsedResult?.emailId || "").trim(),
-          linkedinUrl: String(fixedSchema?.linkedinUrl || parsedResult?.linkedinUrl || "").trim(),
-          currentCompany: String(fixedSchema?.currentCompany || parsedResult?.currentCompany || "").trim(),
-          currentDesignation: String(fixedSchema?.currentDesignation || parsedResult?.currentDesignation || "").trim(),
-          totalExperience: String(fixedSchema?.totalExperience || parsedResult?.totalExperience || "").trim(),
-          highestEducation: String(fixedSchema?.highestEducation || parsedResult?.highestEducation || "").trim()
+          candidateName: String(fixedSummary?.candidate_name || parsedResult?.candidateName || "").trim(),
+          phoneNumber: String(fixedSummary?.phone || parsedResult?.phoneNumber || "").trim(),
+          emailId: String(fixedSummary?.email || parsedResult?.emailId || "").trim(),
+          linkedinUrl: String(fixedSummary?.linkedin || parsedResult?.linkedinUrl || "").trim(),
+          location: String(fixedSummary?.location || parsedResult?.location || "").trim(),
+          currentCompany: String(fixedSummary?.current_company || parsedResult?.currentCompany || "").trim(),
+          currentDesignation: String(fixedSummary?.current_designation || parsedResult?.currentDesignation || "").trim(),
+          totalExperience: String(fixedSummary?.total_experience || parsedResult?.totalExperience || "").trim(),
+          highestEducation: String(fixedSummary?.highest_education || parsedResult?.highestEducation || "").trim()
         },
         experience: Array.isArray(parsedResult?.experience_history) ? parsedResult.experience_history : [],
         education: Array.isArray(parsedResult?.education_history) ? parsedResult.education_history : []
