@@ -4156,6 +4156,17 @@ function NewDraftModal({
         {cvParsePreview ? (
           <div className="panel" style={{ marginBottom: 12, padding: 12 }}>
             <div className="section-kicker">CV Parse Preview</div>
+            {cvParsePreview?.confidence ? (
+              <div className="status-note" style={{ marginBottom: 10 }}>
+                Confidence: overall {String(cvParsePreview.confidence?.overall || "-")} | experience {String(cvParsePreview.confidence?.experience || "-")} | education {String(cvParsePreview.confidence?.education || "-")}
+              </div>
+            ) : null}
+            {Array.isArray(cvParsePreview?.warnings) && cvParsePreview.warnings.length ? (
+              <div className="status-note" style={{ marginBottom: 10 }}>
+                <strong>Warnings</strong>
+                <div>{cvParsePreview.warnings.join(" | ")}</div>
+              </div>
+            ) : null}
             <h4 style={{ marginTop: 6, marginBottom: 8 }}>Summary</h4>
             <div className="form-grid two-col" style={{ marginBottom: 10 }}>
               <label><span>Name</span><input value={String(summary.candidateName || "")} readOnly /></label>
@@ -13834,7 +13845,9 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
           highestEducation: resolvedQualification
         },
         experience: normalizedExperience,
-        education: normalizedEducation
+        education: normalizedEducation,
+        warnings: Array.isArray(parsedResult?.parser_warnings) ? parsedResult.parser_warnings : (Array.isArray(parsedResult?.parserWarnings) ? parsedResult.parserWarnings : []),
+        confidence: parsedResult?.parser_confidence || parsedResult?.confidence || null
       });
       applyNewDraftAutofillPatch({
         name: String(parsedResult?.candidateName || file.name?.replace(/\.[^.]+$/, "") || "").trim(),

@@ -3,7 +3,8 @@ const path = require("path");
 const specs = [
   "./search-normalize.spec.js",
   "./search-query-parser.spec.js",
-  "./search-hybrid.spec.js"
+  "./search-hybrid.spec.js",
+  "./cv-golden.spec.js"
 ];
 
 async function main() {

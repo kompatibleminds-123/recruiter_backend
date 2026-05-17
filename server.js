@@ -7670,6 +7670,7 @@ function buildCandidateParseResponse(baseResult, normalizedResult, parseMeta = {
     (value) => /linkedin\.com\/in\//i.test(String(value || ""))
   );
   const highestEducationRaw = choosePreferredScalar(
+    baseResult?.highestQualification,
     normalizedResult?.highestEducation,
     baseResult?.highestEducation,
     extractHighestEducationFromRawText(rawTextForSearch)
@@ -7830,7 +7831,18 @@ function buildCandidateParseResponse(baseResult, normalizedResult, parseMeta = {
     parseDebug.parsedEmploymentHistory = Array.isArray(baseResult?.employmentHistory) ? baseResult.employmentHistory : [];
   }
 
-  const experienceHistory = (Array.isArray(baseResult?.employmentHistory) ? baseResult.employmentHistory : [])
+  const experienceHistorySource = Array.isArray(baseResult?.experienceTimeline) && baseResult.experienceTimeline.length
+    ? baseResult.experienceTimeline.map((item) => ({
+        designation: String(item?.designation || "").trim(),
+        company_name: String(item?.company || "").trim(),
+        start_date: String(item?.startDate || "").trim(),
+        end_date: String(item?.endDate || "").trim(),
+        duration: "",
+        raw_line: String(item?.sourceText || "").trim(),
+        confidence: String(item?.confidence || "").toLowerCase() === "high" ? 0.9 : 0.68
+      }))
+    : (Array.isArray(baseResult?.employmentHistory) ? baseResult.employmentHistory : []);
+  const experienceHistory = experienceHistorySource
     .map((item) => ({
       designation: String(item?.designation || "").trim(),
       company_name: String(item?.company_name || "").trim(),
@@ -7844,7 +7856,18 @@ function buildCandidateParseResponse(baseResult, normalizedResult, parseMeta = {
     }))
     .filter((item) => item.designation || item.company_name || item.start_date || item.end_date);
   const educationSectionText = String(baseResult?.detectedSections?.education || baseResult?.detectedSections?.education_qualification || "").trim();
-  const educationHistory = buildDeterministicEducationHistory(rawTextForSearch, highestEducation, educationSectionText);
+  const educationHistory = Array.isArray(baseResult?.education) && baseResult.education.length
+    ? baseResult.education.map((item) => ({
+        degree: String(item?.degree || "").trim(),
+        institution: String(item?.institution || "").trim(),
+        start_date: String(item?.startDate || "").trim(),
+        end_date: String(item?.endDate || "").trim(),
+        year: String(item?.year || "").trim(),
+        grade: String(item?.score || "").trim(),
+        raw_line: String(item?.rawText || "").trim(),
+        confidence: String(item?.confidence || "").toLowerCase() === "high" ? 0.9 : 0.68
+      }))
+    : buildDeterministicEducationHistory(rawTextForSearch, highestEducation, educationSectionText);
   const fixedSchema = {
     summary: {
       candidate_name: String(normalizedResult?.candidateName || baseResult?.candidateName || "").trim(),
@@ -7898,7 +7921,10 @@ function buildCandidateParseResponse(baseResult, normalizedResult, parseMeta = {
       label: timelineConfidenceLabel
     },
     validation,
-    parser_warnings: (validation.reasons || []).map((item) => item.message).filter(Boolean),
+    parser_warnings: [
+      ...(Array.isArray(baseResult?.parserWarnings) ? baseResult.parserWarnings : []),
+      ...(validation.reasons || []).map((item) => item.message).filter(Boolean)
+    ].filter(Boolean),
     debug: includeVerboseParseDebug
       ? {
           raw_cv_text: String(baseResult?.rawText || ""),
