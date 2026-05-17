@@ -57,11 +57,11 @@ function looksLikeResponsibilityText(value = "") {
 }
 
 function looksLikeEducationLine(value = "") {
-  return /\b(bachelor|master|b\.?tech|m\.?tech|bca|mca|mba|diploma|university|college|cgpa|percentage)\b/i.test(String(value || ""));
+  return /\b(bachelor|master|b\.?tech|m\.?tech|bca|mca|mba|mph|diploma|university|college|cgpa|percentage)\b/i.test(String(value || ""));
 }
 
 function looksLikeEducationCompanyText(value = "") {
-  return /\b(master|masters|bachelor|b\.?tech|b\.?e\.?|mba|mca|geography|university|college|school|degree|diploma|cgpa|percentage)\b/i.test(String(value || ""));
+  return /\b(master|masters|bachelor|b\.?tech|b\.?e\.?|mba|mca|mph|geography|university|college|school|degree|diploma|cgpa|percentage)\b/i.test(String(value || ""));
 }
 
 function looksLikeContactLine(value = "") {
@@ -92,7 +92,7 @@ function mapTimelineRows(timeline = []) {
 function toYmScore(value = "") {
   const raw = String(value || "").trim();
   if (!raw) return -1;
-  if (/^(present|current|ongoing|till date)$/i.test(raw)) return 999999;
+  if (isPresentEndDateLike(raw)) return 999999;
   const iso = raw.match(/^(\d{4})-(\d{2})$/);
   if (iso) return Number(iso[1]) * 12 + Number(iso[2]);
   const m = raw.match(/^(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\s+(\d{4})$/i);
@@ -118,7 +118,19 @@ function pickCurrentFromTimeline(timeline = []) {
 }
 
 function isPresentLike(value = "") {
-  return /^(present|current|ongoing|till date)$/i.test(String(value || "").trim());
+  return isPresentEndDateLike(value);
+}
+
+function isPresentEndDateLike(value = "") {
+  const text = String(value || "").trim();
+  if (!text) return false;
+  if (!/\b(present|current|ongoing|till date)\b/i.test(text)) return false;
+  const tokens = text.split(/\s+/).filter(Boolean);
+  if (tokens.length <= 4) return true;
+  if (/(\d{1,2}[/-]\d{4}|\d{4}[/-]\d{1,2}|(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\s+\d{4})\s*[-–—]\s*(present|current|ongoing|till date)/i.test(text)) {
+    return true;
+  }
+  return false;
 }
 
 function isSuspiciousCompanyCandidate(value = "") {
@@ -134,7 +146,10 @@ function isSuspiciousCompanyCandidate(value = "") {
 }
 
 function resolveCurrentRoleDeterministically(rows = []) {
-  const cleaned = (rows || []).filter((row) => !isSuspiciousCompanyCandidate(row?.company || ""));
+  const cleaned = (rows || []).filter((row) =>
+    !isSuspiciousCompanyCandidate(row?.company || "") &&
+    !looksLikeContactLine(row?.designation || "")
+  );
   if (!cleaned.length) {
     return { row: null, unclear: true, reason: "no_valid_rows" };
   }
@@ -143,24 +158,66 @@ function resolveCurrentRoleDeterministically(rows = []) {
   if (presentRows.length === 1) {
     return { row: presentRows[0], unclear: false, reason: "single_present" };
   }
+  const designationRank = (value = "") => {
+    const t = String(value || "").toLowerCase();
+    if (/\b(founder|head|director|vice president|vp|avp|principal)\b/.test(t)) return 6;
+    if (/\b(account executive|manager|lead|architect|senior|team lead)\b/.test(t)) return 5;
+    if (/\b(executive|engineer|developer|analyst|consultant|specialist)\b/.test(t)) return 4;
+    if (/\b(associate|coordinator|assistant)\b/.test(t)) return 3;
+    if (/\b(csr|customer support|support)\b/.test(t)) return 1;
+    return 2;
+  };
+
+  const sortByCurrentPriority = (a, b) => {
+    const startDelta = toYmScore(b?.startDate) - toYmScore(a?.startDate);
+    if (startDelta !== 0) return startDelta;
+    const endDelta = toYmScore(b?.endDate) - toYmScore(a?.endDate);
+    if (endDelta !== 0) return endDelta;
+    const rankDelta = designationRank(b?.designation) - designationRank(a?.designation);
+    if (rankDelta !== 0) return rankDelta;
+    return 0;
+  };
+
   if (presentRows.length > 1) {
-    const sorted = [...presentRows].sort((a, b) => toYmScore(b?.startDate) - toYmScore(a?.startDate));
+    const sorted = [...presentRows].sort(sortByCurrentPriority);
     const top = sorted[0];
     const second = sorted[1];
-    if (!second || toYmScore(top?.startDate) !== toYmScore(second?.startDate)) {
+    if (!second) {
       return { row: top, unclear: false, reason: "multi_present_latest_start" };
+    }
+    const sameStart = toYmScore(top?.startDate) === toYmScore(second?.startDate);
+    const sameEnd = toYmScore(top?.endDate) === toYmScore(second?.endDate);
+    const sameRank = designationRank(top?.designation) === designationRank(second?.designation);
+    if (!(sameStart && sameEnd && sameRank)) {
+      return { row: top, unclear: false, reason: "multi_present_priority_pick" };
     }
     return { row: top, unclear: true, reason: "multi_present_tie" };
   }
 
-  const sorted = [...cleaned].sort((a, b) => {
-    const endDelta = toYmScore(b?.endDate) - toYmScore(a?.endDate);
-    if (endDelta !== 0) return endDelta;
-    return toYmScore(b?.startDate) - toYmScore(a?.startDate);
-  });
+  const sorted = [...cleaned].sort(sortByCurrentPriority);
   const top = sorted[0];
   const second = sorted[1];
-  if (second && toYmScore(top?.endDate) === toYmScore(second?.endDate) && toYmScore(top?.startDate) === toYmScore(second?.startDate)) {
+  if (second) {
+    const sameStart = toYmScore(top?.startDate) === toYmScore(second?.startDate);
+    const sameEnd = toYmScore(top?.endDate) === toYmScore(second?.endDate);
+    const sameRank = designationRank(top?.designation) === designationRank(second?.designation);
+    if (sameStart && sameEnd && sameRank) {
+      return { row: top, unclear: true, reason: "latest_date_tie" };
+    }
+  }
+  if (second && toYmScore(top?.startDate) < toYmScore(second?.startDate)) {
+    return { row: second, unclear: false, reason: "latest_start_guard" };
+  }
+  if (second && toYmScore(top?.endDate) < toYmScore(second?.endDate)) {
+    return { row: second, unclear: false, reason: "latest_end_guard" };
+  }
+  if (second && designationRank(top?.designation) < designationRank(second?.designation) && toYmScore(top?.startDate) === toYmScore(second?.startDate)) {
+    return { row: second, unclear: false, reason: "role_rank_guard" };
+  }
+  if (second && toYmScore(top?.endDate) === toYmScore(second?.endDate) && toYmScore(top?.startDate) === toYmScore(second?.startDate) && designationRank(top?.designation) !== designationRank(second?.designation)) {
+    return { row: top, unclear: false, reason: "role_rank_tiebreak" };
+  }
+  if (second && toYmScore(top?.endDate) === toYmScore(second?.endDate) && toYmScore(top?.startDate) === toYmScore(second?.startDate) && designationRank(top?.designation) === designationRank(second?.designation)) {
     return { row: top, unclear: true, reason: "latest_date_tie" };
   }
   return { row: top, unclear: false, reason: "latest_end_date" };
@@ -290,8 +347,12 @@ function validateAndCleanOutput(candidate = {}, context = {}) {
   const resolvedCurrent = resolveCurrentRoleDeterministically(dedupedTimeline);
   const currentFromTimeline = resolvedCurrent.row || {};
   const currentCompany = normalizeCompanyName(String(currentFromTimeline.company || candidate.currentCompany || "").trim());
-  const currentDesignation = normalizeDesignationText(String(currentFromTimeline.designation || candidate.currentDesignation || "").trim());
+  let currentDesignation = normalizeDesignationText(String(currentFromTimeline.designation || candidate.currentDesignation || "").trim());
 
+  if (looksLikeContactLine(currentDesignation)) {
+    currentDesignation = "";
+    flags.push("current_designation_contact_like");
+  }
   if (!currentCompany) flags.push("current_company_missing");
   if (!currentDesignation) flags.push("current_designation_missing");
   if (!dedupedTimeline.length) flags.push("experience_empty");
