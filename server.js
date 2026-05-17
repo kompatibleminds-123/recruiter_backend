@@ -5,6 +5,7 @@ const path = require("path");
 const crypto = require("crypto");
 const { parseCandidatePayload } = require("./src/parser");
 const { callOpenAiJsonSchema, callOpenAiQuestions, normalizeCandidateFileWithAi, normalizeCandidateWithAi, extractLinkedInAssistFromScreenshotWithAi } = require("./src/ai");
+const { parseCandidateHybrid } = require("./src/hybrid-candidate-service");
 const { storeUploadedFile, loadStoredFile } = require("./src/storage");
 const {
   assignCandidate,
@@ -7953,6 +7954,83 @@ function buildCandidateParseResponse(baseResult, normalizedResult, parseMeta = {
   };
 }
 
+function looksLikeDateMetaText(value = "") {
+  const text = String(value || "").trim();
+  if (!text) return false;
+  if (/^\d{4}\s*[-\u2013\u2014\u2212]\s*(\d{4}|present|current)$/i.test(text)) return true;
+  if (/^\d{1,2}[/-]\d{4}\s*[-\u2013\u2014\u2212]\s*(\d{1,2}[/-]\d{4}|present|current)$/i.test(text)) return true;
+  if (/^(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)/i.test(text) && /present|current|\d{2,4}/i.test(text)) return true;
+  if (/present|current/.test(text.toLowerCase()) && /\b(19|20)\d{2}\b/.test(text)) return true;
+  return false;
+}
+
+function looksLikeTaglineText(value = "") {
+  const text = String(value || "").trim().toLowerCase();
+  if (!text) return false;
+  if (/\b(b2b saas platform serving|global font and brand technology company|marketing automation saas platform|edtech platform connecting)\b/.test(text)) return true;
+  if (text.split(/\s+/).length >= 8 && /\b(platform|serving|technology company|brand technology|market segment|business summary|product)\b/.test(text)) return true;
+  return false;
+}
+
+function looksLikeResponsibilityText(value = "") {
+  return /^(built|led|managed|developed|created|executed|driving|working|maintaining|collaborating|generated|achieved|provided|used|implemented|designed|delivered|owned|applied|partnered)\b/i.test(String(value || "").trim());
+}
+
+function detectParseRedFlags(parsedResult = {}) {
+  const flags = [];
+  const currentCompany = String(parsedResult?.currentCompany || "").trim();
+  const currentDesignation = String(parsedResult?.currentDesignation || "").trim();
+  const timeline = Array.isArray(parsedResult?.experienceTimeline) ? parsedResult.experienceTimeline : [];
+  const warnings = Array.isArray(parsedResult?.parserWarnings) ? parsedResult.parserWarnings : [];
+  const education = Array.isArray(parsedResult?.education) ? parsedResult.education : [];
+  const educationSection = String(parsedResult?.detectedSections?.education || parsedResult?.detectedSections?.education_qualification || "").trim();
+
+  if (!currentCompany) flags.push("current_company_missing");
+  if (!currentDesignation) flags.push("current_designation_missing");
+  if (!timeline.length) flags.push("experience_empty");
+  if (warnings.length) flags.push("parser_warnings_present");
+
+  let blankCompanies = 0;
+  for (const row of timeline) {
+    const company = String(row?.company || "").trim();
+    if (!company) blankCompanies += 1;
+    if (looksLikeDateMetaText(company)) flags.push("company_looks_like_date_line");
+    if (looksLikeTaglineText(company)) flags.push("company_looks_like_tagline");
+    if (looksLikeResponsibilityText(company)) flags.push("company_looks_like_responsibility");
+  }
+  if (timeline.length && blankCompanies >= Math.max(2, Math.ceil(timeline.length * 0.5))) {
+    flags.push("too_many_blank_companies");
+  }
+
+  const presentRows = timeline.filter((row) => String(row?.endDate || "").trim().toLowerCase() === "present");
+  if (presentRows.length > 1) flags.push("multiple_current_tenures");
+
+  const parseYm = (value = "") => {
+    const m = String(value || "").match(/^(\d{4})-(\d{2})$/);
+    if (!m) return null;
+    const y = Number(m[1]); const mo = Number(m[2]);
+    if (!Number.isFinite(y) || !Number.isFinite(mo)) return null;
+    return y * 12 + mo;
+  };
+  let dateOrderMismatch = false;
+  for (const row of timeline) {
+    const s = parseYm(row?.startDate);
+    const eRaw = String(row?.endDate || "").trim();
+    const e = eRaw.toLowerCase() === "present" ? null : parseYm(eRaw);
+    if (s != null && e != null && e < s) {
+      dateOrderMismatch = true;
+      break;
+    }
+  }
+  if (dateOrderMismatch) flags.push("date_range_mismatch");
+
+  if (!educationSection && education.length > 0) {
+    flags.push("education_section_suspicious");
+  }
+
+  return Array.from(new Set(flags));
+}
+
 function getTimelineRowCompany(item) {
   return String(item?.company || item?.company_name || "").trim();
 }
@@ -13770,88 +13848,39 @@ const server = http.createServer(async (req, res) => {
   if (req.method === "POST" && requestUrl.pathname === "/parse-candidate") {
     try {
       const body = await readJsonBody(req);
-      const parsed = await parseCandidatePayload(body);
-      const apiKey = body.apiKey || process.env.OPENAI_API_KEY || "";
-      let normalized = null;
-      let aiParseMode = "fallback_only";
-      let aiParseReason = "AI normalization was not used.";
-
-      if (apiKey && body.normalizeWithAi !== false) {
-        const fallbackFields = {
-          candidateName: parsed.candidateName,
-          totalExperience: parsed.totalExperience,
-          currentCompany: parsed.currentCompany,
-          currentDesignation: parsed.currentDesignation,
-          emailId: parsed.emailId,
-          phoneNumber: parsed.phoneNumber,
-          timeline: parsed.timeline,
-          gaps: parsed.gaps
-        };
-
-        const canUseFileAi =
-          parsed.sourceType === "cv" &&
-          body.file?.fileData &&
-          supportsOpenAiFileParse(body.file);
-
-        const shouldUsePrimaryFileAiForCv = canUseFileAi && !parsed.rawText;
-
-        if (parsed.rawText) {
-          aiParseMode = "fast_text_ai";
-          aiParseReason = "Fast text-based AI normalization was used first.";
-          normalized = await normalizeCandidateWithAi({
-            apiKey,
-            model: String(body.model || "").trim(),
-            rawText: parsed.rawText,
-            sourceType: parsed.sourceType,
-            filename: parsed.filename,
-            fallbackFields
-          });
-        } else if (shouldUsePrimaryFileAiForCv) {
-          aiParseMode = "deep_file_ai_primary";
-          aiParseReason = "Direct file-based AI parsing was used because no usable raw CV text was available.";
-          normalized = await normalizeCandidateFileWithAi({
-            apiKey,
-            model: String(body.model || "").trim(),
-            uploadedFile: body.file,
-            sourceType: parsed.sourceType,
-            filename: parsed.filename,
-            fallbackFields
-          });
-        }
-
-        const normalizedTimelineCount = Array.isArray(normalized?.timeline) ? normalized.timeline.length : 0;
-        const fallbackTimelineCount = Array.isArray(parsed.timeline) ? parsed.timeline.length : 0;
-        const shouldUseFileAiForCv =
-          !shouldUsePrimaryFileAiForCv &&
-          parsed.sourceType === "cv" &&
-          body.file?.fileData &&
-          canUseFileAi &&
-          (
-            !normalized ||
-            normalizedTimelineCount < 2 ||
-            !String(normalized?.currentCompany || "").trim() ||
-            !String(normalized?.currentDesignation || "").trim() ||
-            (fallbackTimelineCount >= 4 && normalizedTimelineCount + 1 < fallbackTimelineCount)
-          );
-
-        if (shouldUseFileAiForCv) {
-          aiParseMode = "deep_file_ai";
-          aiParseReason = "Deep file-based AI fallback was used because the fast parse looked incomplete or missed visible experience rows.";
-          normalized = await normalizeCandidateFileWithAi({
-            apiKey,
-            model: String(body.model || "").trim(),
-            uploadedFile: body.file,
-            sourceType: parsed.sourceType,
-            filename: parsed.filename,
-            fallbackFields
-          });
-        }
-      }
-
-      const result = buildCandidateParseResponse(parsed, normalized, {
-        aiParseMode,
-        aiParseReason
+      const hybrid = await parseCandidateHybrid({
+        payload: body,
+        apiKey: body.apiKey || process.env.OPENAI_API_KEY || "",
+        model: String(body.model || "").trim(),
+        normalizeWithAi: body.normalizeWithAi !== false
       });
+      const parsed = hybrid.parsed;
+      const normalized = hybrid.normalized;
+      const aiParseMode = hybrid.meta.aiMode;
+      const aiParseReason = hybrid.meta.aiPrimaryUsed
+        ? "AI primary parse used with deterministic validation."
+        : (hybrid.meta.aiParseAttempted
+          ? "AI output failed deterministic checks, rule parser fallback/reference used."
+          : "OpenAI key unavailable, rule parser used with deterministic validation.");
+      const result = buildCandidateParseResponse(parsed, normalized, { aiParseMode, aiParseReason });
+      result.currentCompany = hybrid.finalOutput.currentCompany || result.currentCompany || "";
+      result.currentDesignation = hybrid.finalOutput.currentDesignation || result.currentDesignation || "";
+      result.totalExperience = hybrid.finalOutput.totalExperience || result.totalExperience || "";
+      result.highestQualification = hybrid.finalOutput.highestQualification || result.highestQualification || "";
+      result.experience_history = Array.isArray(hybrid.finalOutput.experienceTimeline)
+        ? hybrid.finalOutput.experienceTimeline.map((item) => ({
+            company_name: item?.company || "",
+            designation: item?.designation || "",
+            start_date: item?.startDate || "",
+            end_date: item?.endDate || "",
+            source_text: item?.sourceText || ""
+          }))
+        : (result.experience_history || []);
+      result.education_history = Array.isArray(hybrid.finalOutput.education)
+        ? hybrid.finalOutput.education
+        : (result.education_history || []);
+      result.needsReview = hybrid.finalOutput.needsReview;
+      result.reviewReasons = hybrid.finalOutput.reviewReasons;
       sendJson(res, 200, { ok: true, result });
     } catch (error) {
       sendJson(res, 400, { ok: false, error: String(error.message || error) });

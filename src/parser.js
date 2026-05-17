@@ -138,6 +138,8 @@ function normalizeCompanyDisplay(value) {
 function looksLikeCompanyName(value = "") {
   const text = String(value || "").trim();
   if (!text) return false;
+  if (looksLikeResponsibilityNoise(text)) return false;
+  if (/\b(focused on|providing|including|specialize in|specialized in|covering|improving|resulted in)\b/i.test(text)) return false;
   if (/\b(pvt|private|ltd|limited|inc|llc|corp|co\.|company|technologies|services|solutions|systems|consulting|group|projects|india)\b/i.test(text)) {
     return true;
   }
@@ -188,7 +190,10 @@ function extractInstitutionPhrase(value = "") {
   const text = normalizeLooseText(value);
   if (!text) return "";
   const match = text.match(/([A-Z][A-Za-z()'.&-]+(?:\s+[A-Z][A-Za-z0-9()'.&-]+){0,10}\s+(?:University|College|Institute|School|Polytechnic|Board|Academy)(?:[^|]{0,40})?)/i);
-  return normalizeLooseText(match?.[1] || "");
+  return normalizeLooseText(match?.[1] || "")
+    .replace(/\b\d+(?:\.\d+)?\s*%.*$/i, "")
+    .replace(/\b\d+(?:\.\d+)?\s*CGPA.*$/i, "")
+    .trim();
 }
 
 function parseEducationYearSpan(value = "") {
@@ -225,6 +230,7 @@ function looksLikeEducationNoiseLine(value = "") {
   if (isProjectNoiseLine(text)) return true;
   if (/\b(to work with an organization|career objective|objective|summary|scope of this project|project highlights?|job responsibilities|roles?\s*&?\s*responsibilities|projects involved)\b/i.test(text)) return true;
   if (/\b(organized|reviewed|prepared|checked|conducted|created|managed|coordinated|submitted|trained|mentored|developed|estimated|completed|led|working|worked)\b/i.test(text) && !isLikelyDegreeText(text)) return true;
+  if (/\b(final package|fabricator|procurement|submittals?|rfi|project engineer|quantity takeoffs?|monorail beams|cat ladder|data base center)\b/i.test(text)) return true;
   const words = text.split(/\s+/).filter(Boolean);
   if (words.length > 14 && !isLikelyDegreeText(text) && !isLikelyInstitutionText(text)) return true;
   return false;
@@ -270,6 +276,8 @@ function buildEducationHistoryFromSection(educationSectionText = "") {
         .replace(/\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\.?[\s,'/-]*\d{2,4}.*$/i, "")
         .replace(/\b(19\d{2}|20\d{2})\b.*$/i, "")
         .replace(/\s+-\s+$/g, "")
+        .replace(/[,(]+$/g, "")
+        .replace(/,\s*$/g, "")
     );
     if (degreeRank(degree) <= 0) continue;
 
@@ -307,7 +315,15 @@ function buildEducationHistoryFromSection(educationSectionText = "") {
     seen.add(key);
     deduped.push(row);
   }
-  return deduped.sort((a, b) => {
+  const strictRows = deduped.filter((row) => {
+    const degree = String(row.degree || "").trim();
+    if (!degree || degreeRank(degree) <= 0) return false;
+    const supportCount = [row.institution, row.year, row.startDate, row.endDate, row.score].filter(Boolean).length;
+    if (supportCount <= 0) return false;
+    if (looksLikeEducationNoiseLine(degree)) return false;
+    return true;
+  });
+  return strictRows.sort((a, b) => {
     const rankDiff = degreeRank(b.degree) - degreeRank(a.degree);
     if (rankDiff) return rankDiff;
     const aYear = Number(a.endDate || a.year || a.startDate || 0);
@@ -341,6 +357,10 @@ function buildEducationHistoryFallback(rawText = "") {
 function pickHighestQualificationFromEducationRows(rows = []) {
   const sorted = [...rows]
     .filter((row) => isLikelyDegreeText(row?.degree || ""))
+    .filter((row) => {
+      const supportCount = [row?.institution, row?.year, row?.startDate, row?.endDate, row?.score].filter(Boolean).length;
+      return supportCount > 0 && !looksLikeEducationNoiseLine(row?.degree || "");
+    })
     .sort((a, b) => {
       const rankDiff = degreeRank(b.degree) - degreeRank(a.degree);
       if (rankDiff) return rankDiff;
@@ -479,9 +499,37 @@ function parseDateRange(text) {
     year: match[3] ? Number(match[3]) : (match[4] ? 2000 + Number(match[4]) : NaN)
   }));
 
+  const numericMonthYearMatches = Array.from(
+    normalized.matchAll(/\b(\d{1,2})[/-](\d{4})\b/g)
+  ).map((match) => ({
+    month: Number(match[1]) - 1,
+    year: Number(match[2])
+  })).filter((item) => item.month >= 0 && item.month <= 11 && Number.isInteger(item.year));
+
+  const isoMonthYearMatches = Array.from(
+    normalized.matchAll(/\b(\d{4})[/-](\d{1,2})\b/g)
+  ).map((match) => ({
+    year: Number(match[1]),
+    month: Number(match[2]) - 1
+  })).filter((item) => item.month >= 0 && item.month <= 11 && Number.isInteger(item.year));
+
   let start = matches[0] || null;
   let end = matches[1] || null;
   let isCurrent = false;
+
+  if (!start && numericMonthYearMatches.length) {
+    start = numericMonthYearMatches[0];
+  }
+  if (!end && numericMonthYearMatches.length >= 2) {
+    end = numericMonthYearMatches[1];
+  }
+
+  if (!start && isoMonthYearMatches.length) {
+    start = isoMonthYearMatches[0];
+  }
+  if (!end && isoMonthYearMatches.length >= 2) {
+    end = isoMonthYearMatches[1];
+  }
 
   const yearOnlyMatches = Array.from(normalized.matchAll(/\b(19\d{2}|20\d{2})\b/g)).map((match) => Number(match[1]));
   if (!start && yearOnlyMatches.length >= 1) {
@@ -737,14 +785,20 @@ function extractPrimaryLocation(lines, rawText) {
       .replace(/\b(time required for joining|nationality|date of birth|passport number)\b.*$/i, "")
       .trim()
       .replace(/\s{2,}/g, " ");
-    if (locationValue && !/^(indian\.?)$/i.test(locationValue)) return locationValue;
+    if (locationValue && !/^(indian\.?)$/i.test(locationValue)) return locationValue.replace(/^present\s+/i, "");
   }
 
   const compact = text.replace(/\s*\n\s*/g, " ").replace(/\s{2,}/g, " ");
+  const linkedCompact = compact.match(/\b(?:linkedin\.com\/\S+)\s+([A-Za-z][A-Za-z\s]+,\s*[A-Za-z][A-Za-z\s]+)\b/i);
+  if (linkedCompact?.[1]) {
+    const candidate = normalizeLooseText(linkedCompact[1]).replace(/\bpresent\s+/i, "");
+    if (!/^(india)$/i.test(candidate) && !/\b(summary|skills|experience|education)\b/i.test(candidate)) return candidate.replace(/^present\s+/i, "");
+  }
   const inline = compact.match(/\b(?:location|city)\s+([A-Za-z][A-Za-z\s,.-]{1,40})/i);
   if (inline?.[1]) {
     return String(inline[1] || "")
       .replace(/\b(experience|education|skills|projects|profile|summary)\b.*$/i, "")
+      .replace(/^present\s+/i, "")
       .trim();
   }
 
@@ -754,14 +808,15 @@ function extractPrimaryLocation(lines, rawText) {
   ]);
   const rawLines = Array.isArray(lines) ? lines : [];
   for (const line of rawLines.slice(0, 35)) {
-    const value = String(line || "").trim().replace(/[|•]+/g, " ");
-    if (!value || value.length > 40) continue;
-    if (/@/.test(value) || /\d{4,}/.test(value) || /linkedin\.com/i.test(value)) continue;
+    const value = String(line || "").trim().replace(/[|?]+/g, " ");
+    if (!value || value.length > 60) continue;
     if (/^(experience|education|skills|projects|profile|summary|objective)$/i.test(value)) continue;
     const normalized = value.toLowerCase().replace(/\s+/g, " ").trim();
     if (cityHints.has(normalized) || cityHints.has(normalized.split(",")[0])) {
-      return value;
+      return value.replace(/^present\s+/i, "");
     }
+    const locationMatch = value.match(/\b([A-Z][A-Za-z]+(?:\s+[A-Z][A-Za-z]+)?),\s*(India|Haryana|Maharashtra|Karnataka|Delhi NCR|United Kingdom)\b/);
+    if (locationMatch?.[0]) return locationMatch[0].replace(/^present\s+/i, "");
   }
   return "";
 }
@@ -783,6 +838,7 @@ function looksLikeResponsibilityNoise(value) {
   if (!text) return false;
   if (/^(roles?\s*&?\s*responsibilities?|key\s+responsibilities?|scope\s+of\s+(?:the\s+)?project|business\s+growth\s*&?\s*market\s+expansion|profile\s+summary|employment\s+profile)\b/i.test(text)) return true;
   if (/^(managed|managing|handling|led|leading|responsible|working|worked|executed|execution|created|building|supporting|reviewed|extract(?:ed|ing)?|prepared|coordinated)\b/i.test(text)) return true;
+  if (/\b(construction services company|engineering firm focused on|providing quality driven|project management and coordination|procurement services)\b/i.test(text)) return true;
   if (/^[a-z].*[.]$/.test(text) && text.split(/\s+/).length <= 6) return true;
   return false;
 }
@@ -806,6 +862,9 @@ function cleanCompanyLine(line) {
     .split("|")[0]
     .replace(/^(?:company|employer|organization)\s*[:\-]\s*/i, "")
     .replace(/\s*\((?:(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[^)]*|[^)]*\b(?:19|20)\d{2}\b[^)]*)\)\s*$/i, "")
+    .replace(/\s+(?:(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)\s*['.]?\d{2,4}|\d{1,2}[/-]\d{4}|\d{4})\s*[-\u2013\u2014\u2212]\s*(?:present|current|(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)\s*['.]?\d{2,4}|\d{1,2}[/-]\d{4}|\d{4})\s*$/i, "")
+    .replace(/\b(?:gurugram|gurgaon|noida|delhi|mumbai|pune|hyderabad|bengaluru|bangalore|chennai|kolkata|haryana|maharashtra|india)\b[\s,]*$/i, "")
+    .replace(/\s+\b(?:gurugram|gurgaon|noida|delhi|mumbai|pune|hyderabad|bengaluru|bangalore|chennai|kolkata|haryana|maharashtra|india)\b(?:\s*,\s*\b(?:gurugram|gurgaon|noida|delhi|mumbai|pune|hyderabad|bengaluru|bangalore|chennai|kolkata|haryana|maharashtra|india)\b)*$/i, "")
     .replace(/\s+\d+\s+years?(?:\s+\d+\s+months?)?$/i, "")
     .replace(/\s+\d+\s+months?$/i, "")
     .replace(/^[^A-Za-z0-9(]+/, "")
@@ -824,12 +883,108 @@ function looksLikeRoleLine(value) {
   if (!text) return false;
   if (looksLikeExperienceDate(text) || hasContactLikeNoise(text)) return false;
   if (looksLikeResponsibilityNoise(text)) return false;
-  return /\b(manager|engineer|developer|executive|lead|analyst|consultant|specialist|associate|director|officer|architect|intern|trainee|coordinator|administrator|bdr|sdr|account executive|business development|estimator|surveyor|planner|designer|draftsman|detailer)\b/i.test(text);
+  return /\b(manager|engineer|developer|executive|lead|analyst|consultant|specialist|associate|director|officer|architect|intern|trainee|coordinator|administrator|bdr|sdr|account executive|business development|estimator|surveyor|planner|designer|draftsman|detailer|representative|staff)\b/i.test(text);
+}
+
+function hasDesignationKeyword(value = "") {
+  return /\b(engineer|developer|lead|architect|manager|executive|analyst|consultant|recruiter|designer|associate|director|specialist|intern|sdr|bdr|coordinator|administrator|qa|tester|devops|data engineer|technical lead|member of technical staff|surveyor|estimator|account executive|representative)\b/i.test(String(value || ""));
+}
+
+function looksLikeDateMetaLine(value = "") {
+  const text = String(value || "").trim();
+  if (!text) return false;
+  if (/\b(present|current)\b/i.test(text) && /\b(19|20)\d{2}\b/.test(text)) return true;
+  if (/^(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)\b/i.test(text)) return true;
+  if (/^\d{1,2}[/-]\d{4}\b/.test(text)) return true;
+  if (/^\d{4}\s*[-\u2013\u2014\u2212]\s*\d{4}$/.test(text)) return true;
+  if (/^\d{4}\s*[-\u2013\u2014\u2212]\s*(present|current)$/i.test(text)) return true;
+  return false;
+}
+
+function looksLikeCompanyTagline(value = "") {
+  const text = String(value || "").trim();
+  if (!text) return false;
+  if (/\b(b2b saas platform serving|global font and brand technology company|marketing automation saas platform|edtech platform connecting|platform serving|brand technology company)\b/i.test(text)) return true;
+  if (text.split(/\s+/).length > 8 && /\b(platform|serving|technology company|saas platform|market segment|global brand|automation platform)\b/i.test(text)) return true;
+  return false;
+}
+
+function splitStructuredRoleCompanyLine(value = "") {
+  const line = normalizeLooseText(value);
+  if (!line) return null;
+  if (looksLikeDateMetaLine(line)) return null;
+
+  // Pattern D: Designation @ Company
+  if (/@/.test(line)) {
+    const parts = line.split("@").map((p) => p.trim()).filter(Boolean);
+    if (parts.length >= 2) {
+      const left = parts[0];
+      const right = parts.slice(1).join(" @ ");
+      if (hasDesignationKeyword(left) && !looksLikeDateMetaLine(right) && !looksLikeCompanyTagline(right)) {
+        return { title: left, company: right };
+      }
+    }
+  }
+
+  // Pattern A: Designation | Company
+  if (line.includes("|")) {
+    const parts = line.split("|").map((p) => p.trim()).filter(Boolean);
+    if (parts.length >= 2) {
+      const left = parts[0];
+      const right = parts[parts.length - 1];
+      if (hasDesignationKeyword(left) && !looksLikeDateMetaLine(right) && !looksLikeCompanyTagline(right)) {
+        return { title: left, company: right };
+      }
+      if (!hasDesignationKeyword(left) && hasDesignationKeyword(right) && !looksLikeDateMetaLine(left) && !looksLikeCompanyTagline(left)) {
+        return { title: right, company: left };
+      }
+    }
+  }
+
+  // Pattern B/C: hyphen-separated
+  if (/\s-\s/.test(line)) {
+    const parts = line.split(/\s-\s/).map((p) => p.trim()).filter(Boolean);
+    if (parts.length >= 2) {
+      const first = parts[0];
+      const rest = parts.slice(1).join(" - ");
+      if (!looksLikeDateMetaLine(first) && !hasDesignationKeyword(first) && hasDesignationKeyword(rest) && !looksLikeCompanyTagline(first)) {
+        return { company: first, title: rest };
+      }
+    }
+  }
+  return null;
+}
+
+function parseInlineHeaderWithDate(line = "") {
+  const raw = normalizeLooseText(line);
+  if (!raw) return null;
+  const dateMatch = raw.match(/((?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\s*['.]?\d{2,4}|\d{1,2}[/-]\d{4}|\b\d{4}\b)\s*[-\u2013\u2014\u2212]\s*(present|current|(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\s*['.]?\d{2,4}|\d{1,2}[/-]\d{4}|\b\d{4}\b)/i);
+  if (!dateMatch) return null;
+  const head = normalizeLooseText(raw.slice(0, dateMatch.index)).replace(/[•|,-\s]+$/g, "").trim();
+  if (!head) return null;
+  const structured = splitStructuredRoleCompanyLine(head);
+  if (!structured) return null;
+  return {
+    company: cleanCompanyLine(structured.company || ""),
+    title: cleanRoleLine(structured.title || ""),
+    dateText: dateMatch[0]
+  };
 }
 
 function normalizeTitleCompanyPair(rawTitle, rawCompany) {
   let title = cleanRoleLine(rawTitle);
   let company = cleanCompanyLine(rawCompany);
+
+  const structuredFromTitle = splitStructuredRoleCompanyLine(title);
+  if (structuredFromTitle) {
+    title = cleanRoleLine(structuredFromTitle.title);
+    company = cleanCompanyLine(structuredFromTitle.company);
+  }
+  const structuredFromCompany = splitStructuredRoleCompanyLine(company);
+  if (structuredFromCompany) {
+    title = cleanRoleLine(structuredFromCompany.title);
+    company = cleanCompanyLine(structuredFromCompany.company);
+  }
 
   if (title.includes("|")) {
     const parts = title.split("|").map((p) => p.trim()).filter(Boolean);
@@ -870,7 +1025,37 @@ function normalizeTitleCompanyPair(rawTitle, rawCompany) {
     company = cleanCompanyLine(prevTitle);
   }
 
+  if (looksLikeDateMetaLine(company) || looksLikeCompanyTagline(company)) {
+    company = "";
+  }
+  if (looksLikeDateMetaLine(title) && company) {
+    title = "";
+  }
+
   return { title, company };
+}
+
+function extractCompanyFromDateAnchoredLine(value = "") {
+  const text = String(value || "").trim();
+  if (!text) return "";
+  const beforeDate = text.split(/(?:\(|\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)\b|\d{1,2}[/-]\d{4}|\b\d{4}\b)/i)[0] || "";
+  const cleaned = cleanCompanyLine(beforeDate)
+    .replace(/\s+\b(?:gurugram|gurgaon|noida|delhi|mumbai|pune|hyderabad|bengaluru|bangalore|chennai|kolkata|haryana|maharashtra|india)\b(?:\s*,\s*\b(?:gurugram|gurgaon|noida|delhi|mumbai|pune|hyderabad|bengaluru|bangalore|chennai|kolkata|haryana|maharashtra|india)\b)*$/i, "")
+    .replace(/,\s*$/g, "")
+    .trim();
+  return cleaned;
+}
+
+function extractDesignationFromSourceText(value = "", knownCompany = "") {
+  const parts = String(value || "").split("|").map((p) => cleanExperienceTitle(normalizeLooseText(p))).filter(Boolean);
+  for (const part of parts) {
+    if (looksLikeDateMetaLine(part)) continue;
+    if (knownCompany && normalizeLooseText(part).toLowerCase().includes(normalizeLooseText(knownCompany).toLowerCase())) continue;
+    if (looksLikeCompanyTagline(part)) continue;
+    if (looksLikeResponsibilityNoise(part) && !hasDesignationKeyword(part)) continue;
+    if (hasDesignationKeyword(part) || looksLikeRoleLine(part)) return part;
+  }
+  return "";
 }
 
 function companyLineScore(line) {
@@ -901,6 +1086,7 @@ function isLikelyCompanyLine(line) {
   if (/:\s*$/.test(String(line || "").trim())) return false;
   if (isNoiseLine(value) || looksLikeExperienceDate(value) || looksLikeBulletLine(value)) return false;
   if (looksLikeResponsibilityNoise(value)) return false;
+  if (/\b(focused on|providing|including|specialize in|specialized in|covering|improving|resulted in)\b/i.test(value)) return false;
   if (/^(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)\s+\d{2,4}\s*[-\u2013\u2014\u2212]\s*(?:present|current|till date|\d{2,4})$/i.test(value)) return false;
   if (hasContactLikeNoise(value)) return false;
   if (/^(exact\s+responsibilities?|responsibilities?)\s*:?\s*$/i.test(value)) return false;
@@ -1397,6 +1583,7 @@ function parseExperienceTimelineV2(experienceSectionText = "", rawText = "") {
     const designation = cleanExperienceTitle(row.designation || row.title || "");
     const sourceText = normalizeLooseText(row.sourceText || "");
     if (!company && !designation) return;
+    if (looksLikeEducationText(company) || looksLikeEducationText(designation)) return;
     if (isProjectNoiseLine(company) || isProjectNoiseLine(designation)) return;
     if (/\b(villa|database center|gigafactory|school building|office building|hospital building|miscellaneous projects|project highlights?)\b/i.test(company)) return;
     if (/^company\b/i.test(designation)) return;
@@ -1423,6 +1610,39 @@ function parseExperienceTimelineV2(experienceSectionText = "", rawText = "") {
     const nextTwo = String(lines[i + 2] || "").trim();
     const nextThree = String(lines[i + 3] || "").trim();
     const nextFour = String(lines[i + 4] || "").trim();
+
+    // Company+date header row (authoritative), with designation on next lines.
+    // Example:
+    // "Majorel India Pvt Ltd Gurugram, Haryana 12/2021 - 05/2023"
+    // "Inside Sales Representative (ISR) - Microsoft Cloud Consultant"
+    if (!looksLikeEducationText(line)) {
+      const dateInlineMatch = line.match(/((?:\d{1,2}[/-]\d{4}|(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)\s*['.]?\d{2,4}|\b\d{4}\b)\s*[-\u2013\u2014\u2212]\s*(?:present|current|\d{1,2}[/-]\d{4}|(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)\s*['.]?\d{2,4}|\b\d{4}\b))/i);
+      if (dateInlineMatch?.[1]) {
+        const companyFromHeader = extractCompanyFromDateAnchoredLine(line);
+        if (companyFromHeader && !looksLikeEducationText(companyFromHeader) && !looksLikeCompanyTagline(companyFromHeader) && !looksLikeDateMetaLine(companyFromHeader)) {
+          let roleLine = "";
+          for (let j = i + 1; j <= Math.min(i + 3, lines.length - 1); j += 1) {
+            const probe = cleanExperienceTitle(String(lines[j] || "").trim());
+            if (!probe) continue;
+            if (looksLikeEducationText(probe) || looksLikeDateMetaLine(probe) || looksLikeCompanyTagline(probe)) continue;
+            if (hasDesignationKeyword(probe) || looksLikeRoleLine(probe)) {
+              roleLine = probe;
+              break;
+            }
+          }
+          if (roleLine) {
+            pushRow({
+              company: companyFromHeader,
+              designation: roleLine,
+              rawDates: dateInlineMatch[1],
+              sourceText: [line, roleLine].join(" | "),
+              confidence: "high"
+            });
+            continue;
+          }
+        }
+      }
+    }
 
     const companyDesignationPattern = line.match(/^(?:\d+\.\s*)?company\s+(.+?)\s*\(([^)]+)\)\s*$/i);
     if (companyDesignationPattern) {
@@ -1492,6 +1712,18 @@ function parseExperienceTimelineV2(experienceSectionText = "", rawText = "") {
       continue;
     }
 
+    const companyCommaTitleDate = line.match(/^(.+?),\s*(.+?)\s+((?:\d{1,2}[/-]\d{4}|[A-Za-z]{3,9}\.?'?\d{2,4}).*(?:Present|Current|\d{2,4}))(?:\s*\|\s*.+)?$/i);
+    if (companyCommaTitleDate && !isProjectNoiseLine(companyCommaTitleDate[1]) && !isProjectNoiseLine(companyCommaTitleDate[2])) {
+      pushRow({
+        company: companyCommaTitleDate[1],
+        designation: companyCommaTitleDate[2],
+        rawDates: companyCommaTitleDate[3],
+        sourceText: line,
+        confidence: "high"
+      });
+      continue;
+    }
+
     if (
       line &&
       looksLikeCompanyName(line) &&
@@ -1515,6 +1747,29 @@ function parseExperienceTimelineV2(experienceSectionText = "", rawText = "") {
         confidence: "high"
       });
       continue;
+    }
+
+    if (
+      line &&
+      looksLikeCompanyName(line) &&
+      next &&
+      looksLikeSentenceLine(next) &&
+      nextTwo &&
+      /^(.+?)\s+((?:\d{1,2}[/-]\d{4}|[A-Za-z]{3,9}\.?'?\d{2,4}).*(?:Present|Current|\d{2,4}))$/i.test(nextTwo)
+    ) {
+      const m = nextTwo.match(/^(.+?)\s+((?:\d{1,2}[/-]\d{4}|[A-Za-z]{3,9}\.?'?\d{2,4}).*(?:Present|Current|\d{2,4}))$/i);
+      const designation = cleanExperienceTitle(m?.[1] || "");
+      const rawDates = String(m?.[2] || "").trim();
+      if (looksLikeRoleLine(designation)) {
+        pushRow({
+          company: line,
+          designation,
+          rawDates,
+          sourceText: [line, next, nextTwo].join(" | "),
+          confidence: "high"
+        });
+        continue;
+      }
     }
 
     const companyTitleDate = line.match(/^(.+?)\s*[|]\s*(.+?)\s+((?:[A-Za-z]{3,9}\.?'?\d{2,4}|\d{1,2}[/-]\d{4}).*(?:Present|Current|\d{2,4}))$/i);
@@ -1556,6 +1811,194 @@ function parseExperienceTimelineV2(experienceSectionText = "", rawText = "") {
   return rows;
 }
 
+function isHardRejectedExperienceLine(value = "") {
+  const text = normalizeLooseText(value).toLowerCase();
+  if (!text) return true;
+  if (/^page\s+\d+\s+of\s+\d+/.test(text)) return true;
+  if (/^declaration$/.test(text)) return true;
+  if (/^ongoing\s*\/\s*preliminary projects/.test(text)) return true;
+  if (/^(project highlights?|key projects?|responsibilities?|personal details|education|qualification)$/.test(text)) return true;
+  if (/^(projects?|responsibilities?)\s*[:|-]/.test(text)) return true;
+  if (/\b\d+(?:\.\d+)?\s*%/.test(text) && !/\b(sales|engineer|developer|manager|analyst)\b/.test(text)) return true;
+  if (/^--\s*\d+\s+of\s+\d+\s*--$/i.test(text)) return true;
+  return false;
+}
+
+function scoreCompanyCandidate(line = "") {
+  const value = normalizeLooseText(line);
+  if (!value || isHardRejectedExperienceLine(value)) return -999;
+  if (looksLikeResponsibilityNoise(value)) return -999;
+  if (looksLikeCompanyTagline(value)) return -999;
+  if (looksLikeDateMetaLine(value)) return -999;
+  if (looksLikeSentenceLine(value) && value.split(/\s+/).length > 14) return -999;
+  if (value.length > 90) return -999;
+  let score = 0;
+  if (isLikelyCompanyLine(value) || looksLikeCompanyName(value)) score += 3;
+  if (/\b(pvt|ltd|private limited|technologies|solutions|services|india|corporation|corp|llp|inc|ai|labs|systems|projects|international)\b/i.test(value)) score += 5;
+  if (/\./.test(value) && /\bai\b/i.test(value)) score += 1;
+  if (looksLikeRoleLine(value)) score -= 3;
+  if (hasDesignationKeyword(value) && !/\b(pvt|ltd|private limited|inc|corp|technologies|solutions|services|labs|systems)\b/i.test(value)) score -= 5;
+  if (/\b(excel|word|powerpoint|autocad|revit|tekla|python|java|react|node)\b/i.test(value)) score -= 3;
+  return score;
+}
+
+function scoreDesignationCandidate(line = "") {
+  const value = cleanExperienceTitle(line);
+  if (!value || isHardRejectedExperienceLine(value)) return -999;
+  if (String(value).toLowerCase().startsWith("company")) return -999;
+  if (looksLikeCompanyName(value) && !looksLikeRoleLine(value)) return -999;
+  if (looksLikeSentenceLine(value) && value.split(/\s+/).length > 10) return -999;
+  let score = 0;
+  if (looksLikeRoleLine(value)) score += 4;
+  if (/\b(engineer|developer|designer|manager|executive|analyst|consultant|lead|architect|estimator|surveyor|intern|sdr|bdr|account executive|sales|quantity surveyor)\b/i.test(value)) score += 6;
+  if (/\b(role|designation|position|title)\b/i.test(value)) score += 1;
+  if (looksLikeCompanyName(value)) score -= 4;
+  return score;
+}
+
+function buildDateAnchoredExperienceBlocks(experienceSectionText = "", rawText = "") {
+  const baseLines = splitLines(experienceSectionText || rawText)
+    .map((line) => normalizeLooseText(String(line || "").replace(/^[-•◆]\s*/, "")))
+    .filter(Boolean);
+  if (!baseLines.length) return [];
+
+  const cutoffHeadings = /^(education|skills?|projects?|certifications?|personal details|declaration|academic)/i;
+  const lines = [];
+  for (const line of baseLines) {
+    if (cutoffHeadings.test(line)) break;
+    lines.push(line);
+  }
+  const workLines = lines.length ? lines : baseLines;
+
+  const dateIndexes = [];
+  for (let i = 0; i < workLines.length; i += 1) {
+    if (normalizeExperienceDate(workLines[i]).startDate) dateIndexes.push(i);
+  }
+  if (!dateIndexes.length) return [];
+
+  const out = [];
+  const seen = new Set();
+
+  for (let k = 0; k < dateIndexes.length; k += 1) {
+    const i = dateIndexes[k];
+    const dateLine = workLines[i];
+    const normalizedDates = normalizeExperienceDate(dateLine);
+    if (!normalizedDates.startDate) continue;
+    const inlineHeader = parseInlineHeaderWithDate(dateLine);
+
+    const prevDateIdx = k > 0 ? dateIndexes[k - 1] : -1;
+    const nextDateIdx = k < dateIndexes.length - 1 ? dateIndexes[k + 1] : workLines.length;
+    const from = Math.max(prevDateIdx + 1, i - 5, 0);
+    const to = Math.min(nextDateIdx - 1, i + 8, workLines.length - 1);
+    const block = workLines.slice(from, to + 1);
+    const dateLocalIdx = i - from;
+
+    let bestCompany = "";
+    let bestCompanyScore = -999;
+    let bestDesignation = "";
+    let bestDesignationScore = -999;
+
+    for (let j = 0; j < block.length; j += 1) {
+      const line = block[j];
+      const dist = Math.abs(j - dateLocalIdx);
+      const cScore = scoreCompanyCandidate(line) - dist + (j <= dateLocalIdx ? 1 : 0);
+      const dScore = scoreDesignationCandidate(line) - Math.max(0, dist - 1);
+      if (cScore > bestCompanyScore) {
+        bestCompanyScore = cScore;
+        bestCompany = cleanCompanyLine(line);
+      }
+      if (dScore > bestDesignationScore) {
+        bestDesignationScore = dScore;
+        bestDesignation = cleanRoleLine(line);
+      }
+    }
+
+    if (inlineHeader?.company || inlineHeader?.title) {
+      if (inlineHeader.company) {
+        bestCompany = inlineHeader.company;
+        bestCompanyScore = 100;
+      }
+      if (inlineHeader.title) {
+        bestDesignation = inlineHeader.title;
+        bestDesignationScore = 100;
+      }
+    }
+
+    if (bestDesignation && (!bestCompany || bestCompanyScore < 0)) {
+      for (let j = dateLocalIdx; j >= 0; j -= 1) {
+        const probe = block[j];
+        const score = scoreCompanyCandidate(probe);
+        if (score >= 0) {
+          bestCompany = cleanCompanyLine(probe);
+          bestCompanyScore = score;
+          break;
+        }
+      }
+      if (!bestCompany) {
+        for (let j = dateLocalIdx + 1; j < block.length; j += 1) {
+          const probe = block[j];
+          const score = scoreCompanyCandidate(probe);
+          if (score >= 0) {
+            bestCompany = cleanCompanyLine(probe);
+            bestCompanyScore = score;
+            break;
+          }
+        }
+      }
+    }
+
+    const descLines = [];
+    for (let j = i + 1; j < nextDateIdx; j += 1) {
+      const probe = workLines[j];
+      if (!probe || isHardRejectedExperienceLine(probe) || looksLikeEducationText(probe)) continue;
+      descLines.push(probe);
+    }
+
+    const startDate = normalizedDates.startDate;
+    const endDate = normalizedDates.endDate || "";
+    const isCurrent = /present|current|ongoing|till date/i.test(dateLine) || normalizeLooseText(endDate).toLowerCase() === "present";
+    const confidence = (bestCompanyScore >= 2 && bestDesignationScore >= 3) ? "high" : "low";
+    const needsReview = confidence === "low" || !bestCompany || !bestDesignation;
+
+    const sourceLines = [dateLine];
+    if (bestCompany) sourceLines.push(bestCompany);
+    if (bestDesignation) sourceLines.push(bestDesignation);
+    sourceLines.push(...descLines.slice(0, 2));
+    const sourceText = normalizeLooseText(sourceLines.join(" | "));
+
+    if (isHardRejectedExperienceLine(bestCompany) || isHardRejectedExperienceLine(bestDesignation)) continue;
+
+    const key = [normalizeLooseText(bestCompany).toLowerCase(), normalizeLooseText(bestDesignation).toLowerCase(), startDate, endDate].join("|");
+    if (seen.has(key)) continue;
+    seen.add(key);
+
+    out.push({
+      company: bestCompanyScore >= -1 ? bestCompany : "",
+      title: bestDesignationScore >= -1 ? bestDesignation : "",
+      start: startDate,
+      end: endDate || (isCurrent ? "Present" : ""),
+      rawDates: dateLine,
+      duration: "",
+      isCurrent,
+      confidence,
+      needsReview,
+      sourceText
+    });
+  }
+
+  const deduped = out.filter((row, idx, arr) => {
+    const key = [normalizeLooseText(row.company).toLowerCase(), row.start || "", row.end || ""].join("|");
+    return arr.findIndex((x) => [normalizeLooseText(x.company).toLowerCase(), x.start || "", x.end || ""].join("|") === key) === idx;
+  });
+
+  return deduped.sort((a, b) => {
+    if (a.isCurrent && !b.isCurrent) return -1;
+    if (!a.isCurrent && b.isCurrent) return 1;
+    const aEnd = normalizeExperienceDate(a.rawDates || "").endDate || a.end || "";
+    const bEnd = normalizeExperienceDate(b.rawDates || "").endDate || b.end || "";
+    return normalizeLooseText(bEnd).toLowerCase().localeCompare(normalizeLooseText(aEnd).toLowerCase());
+  });
+}
 function extractTimeline(lines, rawText, structuredExperienceText) {
   const entries = [];
   const seen = new Set();
@@ -1640,11 +2083,44 @@ function extractTimeline(lines, rawText, structuredExperienceText) {
       }
     }
 
+    const inlineCompanyCommaTitleDate = String(lines[i] || "").trim().match(/^(.+?),\s*(.+?)\s+((?:\d{1,2}[/-]\d{4}|[A-Za-z]{3,9}\.?'?\d{2,4}).*(?:Present|Current|\d{2,4}))(?:\s*\|\s*.+)?$/i);
+    if (inlineCompanyCommaTitleDate) {
+      const normalizedPair = normalizeTitleCompanyPair(inlineCompanyCommaTitleDate[2], inlineCompanyCommaTitleDate[1]);
+      const dates = inlineCompanyCommaTitleDate[3];
+      const key = `${normalizedPair.title}|${normalizedPair.company}|${dates}`.toLowerCase();
+      if (!seen.has(key) && normalizedPair.company && normalizedPair.title) {
+        seen.add(key);
+        entries.push({ title: normalizedPair.title, company: normalizedPair.company, dates, ...parseDateRange(dates) });
+        continue;
+      }
+    }
+
     const deepLine = String(lines[i] || "").trim();
     const deepNext1 = String(lines[i + 1] || "").trim();
     const deepNext2 = String(lines[i + 2] || "").trim();
     const deepNext3 = String(lines[i + 3] || "").trim();
     const deepNext4 = String(lines[i + 4] || "").trim();
+    if (
+      deepLine &&
+      looksLikeCompanyName(deepLine) &&
+      deepNext1 &&
+      looksLikeSentenceLine(deepNext1) &&
+      deepNext2 &&
+      /^(.+?)\s+((?:\d{1,2}[/-]\d{4}|[A-Za-z]{3,9}\.?'?\d{2,4}).*(?:Present|Current|\d{2,4}))$/i.test(deepNext2)
+    ) {
+      const m = deepNext2.match(/^(.+?)\s+((?:\d{1,2}[/-]\d{4}|[A-Za-z]{3,9}\.?'?\d{2,4}).*(?:Present|Current|\d{2,4}))$/i);
+      const title = cleanRoleLine(m?.[1] || "");
+      const dates = String(m?.[2] || "").trim();
+      if (looksLikeRoleLine(title)) {
+        const normalizedPair = normalizeTitleCompanyPair(title, cleanCompanyLine(deepLine));
+        const key = `${normalizedPair.title}|${normalizedPair.company}|${dates}`.toLowerCase();
+        if (!seen.has(key)) {
+          seen.add(key);
+          entries.push({ title: normalizedPair.title, company: normalizedPair.company, dates, ...parseDateRange(dates) });
+        }
+        continue;
+      }
+    }
     const deepLayoutDateRegex = /(?:present|current|till date|to date|\d{4}|\d{1,2}[/-]\d{4}|[A-Za-z]{3,9}\.?'?\d{2,4})/i;
     if (
       deepLine &&
@@ -1927,6 +2403,53 @@ function extractCurrentRoleFromTimeline(timeline) {
   };
 }
 
+function repairTimelineRowsFromExperienceLines(timeline = [], experienceLines = []) {
+  if (!Array.isArray(timeline) || !timeline.length || !Array.isArray(experienceLines) || !experienceLines.length) {
+    return timeline;
+  }
+  return timeline
+    .map((row) => {
+      let title = String(row?.title || "").trim();
+      let company = String(row?.company || "").trim();
+      const rawDates = String(row?.rawDates || "").trim();
+
+      if ((!company || looksLikeResponsibilityNoise(company) || !isLikelyCompanyLine(company) || looksLikeSentenceLine(company) || String(company).split(/\s+/).length > 8) && /,/.test(title)) {
+        const commaIdx = title.indexOf(",");
+        const left = cleanCompanyLine(title.slice(0, commaIdx));
+        const right = cleanRoleLine(title.slice(commaIdx + 1));
+        if (left && right && looksLikeCompanyName(left) && looksLikeRoleLine(right)) {
+          company = left;
+          title = right;
+        }
+      }
+
+      if (!company || looksLikeResponsibilityNoise(company) || !isLikelyCompanyLine(company) || looksLikeSentenceLine(company) || String(company).split(/\s+/).length > 8) {
+        const anchorIdx = experienceLines.findIndex((line) => {
+          const probe = String(line || "").trim();
+          return (rawDates && probe.includes(rawDates)) || (title && probe.includes(title));
+        });
+        if (anchorIdx >= 0) {
+          for (let offset = 1; offset <= 3; offset += 1) {
+            const probe = cleanCompanyLine(experienceLines[anchorIdx - offset] || "");
+            if (!probe) continue;
+            if (looksLikeCompanyName(probe) && !looksLikeResponsibilityNoise(probe) && !looksLikeRoleLine(probe)) {
+              company = probe;
+              break;
+            }
+          }
+        }
+      }
+
+      return { ...row, title, company };
+    })
+    .filter((row, idx, arr) => {
+      const company = String(row?.company || "").trim().toLowerCase();
+      if (!company || /^1 of \d+\s*-*$/i.test(company)) return false;
+      const key = [company, String(row?.title || "").trim().toLowerCase(), String(row?.start || "").trim(), String(row?.end || "").trim()].join("|");
+      return arr.findIndex((item) => [String(item?.company || "").trim().toLowerCase(), String(item?.title || "").trim().toLowerCase(), String(item?.start || "").trim(), String(item?.end || "").trim()].join("|") === key) === idx;
+    });
+}
+
 async function extractTextFromUploadedFile(file) {
   if (!file?.fileData) return "";
 
@@ -2031,6 +2554,77 @@ function extractCompanyDesignationTimeline(lines = []) {
   return out;
 }
 
+function hasDateEvidenceInText(text = "") {
+  const value = String(text || "");
+  if (!value) return false;
+  return /\b(19\d{2}|20\d{2})\b/.test(value)
+    || /\b(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\b/i.test(value)
+    || /\b(present|current|ongoing|till date)\b/i.test(value);
+}
+
+function hasCompanyEvidenceInText(text = "", company = "") {
+  const source = normalizeLooseText(text).toLowerCase();
+  const token = normalizeLooseText(company).toLowerCase();
+  if (!source || !token) return false;
+  return source.includes(token);
+}
+
+function enforceExperienceSourceProof(timeline = [], experienceText = "", rawText = "") {
+  if (!Array.isArray(timeline) || !timeline.length) return [];
+  return timeline
+    .map((entry) => {
+      const sourceText = normalizeLooseText(String(entry?.sourceText || entry?.rawDates || ""));
+      const company = cleanCompanyLine(String(entry?.company || ""));
+      const title = cleanRoleLine(String(entry?.title || ""));
+      const rawDates = String(entry?.rawDates || "").trim();
+      const dateSeed = sourceText || rawDates || [String(entry?.start || ""), String(entry?.end || "")].filter(Boolean).join(" - ");
+      const companyEvidence = hasCompanyEvidenceInText(sourceText, company)
+        || Boolean(findEvidenceSpan(experienceText, company, "work_experience"))
+        || Boolean(findEvidenceSpan(rawText, company, "raw_cv_text"));
+      const dateEvidence = hasDateEvidenceInText(dateSeed)
+        || Boolean(findEvidenceSpan(experienceText, rawDates, "work_experience"))
+        || Boolean(findEvidenceSpan(rawText, rawDates, "raw_cv_text"));
+      const designationEvidence = title
+        ? (sourceText.toLowerCase().includes(title.toLowerCase())
+          || Boolean(findEvidenceSpan(experienceText, title, "work_experience"))
+          || Boolean(findEvidenceSpan(rawText, title, "raw_cv_text")))
+        : false;
+      const weakLink = !companyEvidence || !dateEvidence || (title && !designationEvidence);
+      const isNoisyCompany =
+        (looksLikeResponsibilityNoise(company) && String(company).split(/\s+/).length > 6) ||
+        (looksLikeSentenceLine(company) && String(company).split(/\s+/).length > 10) ||
+        isLikelyEducationHeadingLine(company) ||
+        looksLikeEducationText(company);
+      const isNoisyTitle =
+        title && (looksLikeResponsibilityNoise(title) || looksLikeEducationText(title));
+      const confidence = weakLink || isNoisyCompany || isNoisyTitle ? "low" : "high";
+      return {
+        ...entry,
+        company: (isNoisyCompany || isProjectNoiseLine(company) || isHardRejectedExperienceLine(company)) ? "" : company,
+        title: isNoisyTitle ? "" : title,
+        sourceText: sourceText || rawDates || [company, title].filter(Boolean).join(" | "),
+        confidence,
+        needsReview: weakLink || isNoisyCompany || isNoisyTitle
+      };
+    })
+    .filter((row, idx, arr) => {
+      const key = [
+        String(row?.company || "").toLowerCase(),
+        String(row?.title || "").toLowerCase(),
+        String(row?.start || "").toLowerCase(),
+        String(row?.end || "").toLowerCase(),
+        String(row?.rawDates || "").toLowerCase()
+      ].join("|");
+      return arr.findIndex((x) => [
+        String(x?.company || "").toLowerCase(),
+        String(x?.title || "").toLowerCase(),
+        String(x?.start || "").toLowerCase(),
+        String(x?.end || "").toLowerCase(),
+        String(x?.rawDates || "").toLowerCase()
+      ].join("|") === key) === idx;
+    });
+}
+
 async function parseCandidatePayload(payload) {
   const sourceType = sanitizeText(payload?.sourceType || "manual") || "manual";
   const extractedFileText = await extractTextFromUploadedFile(payload?.file || null);
@@ -2051,9 +2645,14 @@ async function parseCandidatePayload(payload) {
   const candidateName = extractCandidateName(rawLines, rawText, payload?.candidateName);
   const claimedTotalExperience = extractTotalExperience(lines, rawText, payload?.totalExperience);
   const parsed = extractTimeline(lines, experienceText, structuredExperienceText);
+  const dateAnchoredTimeline = buildDateAnchoredExperienceBlocks(experienceText, rawText);
   const parserV2Timeline = parseExperienceTimelineV2(experienceText, rawText);
   const parserV2TimelineFallback = parseExperienceTimelineV2(rawText, rawText);
+  if (Array.isArray(dateAnchoredTimeline) && dateAnchoredTimeline.length) {
+    parsed.timeline = dateAnchoredTimeline;
+  }
   parsed.timeline = applyDateAnchoredCompanyHints(parsed.timeline, experienceLines);
+  parsed.timeline = repairTimelineRowsFromExperienceLines(parsed.timeline, experienceLines);
   if (sourceType === "cv" && (!Array.isArray(parsed.timeline) || !parsed.timeline.length)) {
     parsed.timeline = extractCompanyDesignationTimeline(experienceLines);
   }
@@ -2082,7 +2681,9 @@ async function parseCandidatePayload(payload) {
         end: item.endDate,
         duration: "",
         rawDates: `${item.startDate} - ${item.endDate}`,
-        isCurrent: /present/i.test(String(item.endDate || ""))
+        isCurrent: /present/i.test(String(item.endDate || "")),
+        sourceText: String(item.sourceText || "").trim(),
+        confidence: String(item.confidence || "medium")
       }));
     }
   }
@@ -2094,9 +2695,13 @@ async function parseCandidatePayload(payload) {
       end: item.endDate,
       duration: "",
       rawDates: `${item.startDate} - ${item.endDate}`,
-      isCurrent: /present/i.test(String(item.endDate || ""))
+      isCurrent: /present/i.test(String(item.endDate || "")),
+      sourceText: String(item.sourceText || "").trim(),
+      confidence: String(item.confidence || "medium")
     }));
   }
+  parsed.timeline = repairTimelineRowsFromExperienceLines(parsed.timeline, experienceLines);
+  parsed.timeline = enforceExperienceSourceProof(parsed.timeline, experienceText, rawText);
   const employmentHistory = buildEmploymentHistoryFromTimeline(parsed.timeline, experienceText, rawText);
   const timelineActiveMonths = calculateMonthsFromTimeline(parsed.timeline);
   const timelineSpanMonths = calculateTimelineSpanMonths(parsed.timeline);
@@ -2124,8 +2729,7 @@ async function parseCandidatePayload(payload) {
   const linkedinUrl = extractPrimaryLinkedIn(rawText);
   const location = extractPrimaryLocation(rawLines, rawText);
   const educationSectionText = detectedSections.education || detectedSections.education_qualification || "";
-  const education = buildEducationHistoryFromSection(educationSectionText);
-  const finalEducation = education.length ? education : buildEducationHistoryFallback(rawText);
+  const finalEducation = buildEducationHistoryFromSection(educationSectionText);
   const highestQualification = pickHighestQualificationFromEducationRows(finalEducation);
   const skills = extractSkillsFromSections(detectedSections, rawText);
   const parserWarnings = [];
@@ -2144,6 +2748,10 @@ async function parseCandidatePayload(payload) {
   if (parsed.timeline.some((item) => !String(item?.title || "").trim())) {
     parserWarnings.push("Some designations are missing/unclear in extracted text; keep them blank instead of inventing.");
   }
+  if (parsed.timeline.some((item) => item?.needsReview)) {
+    parserWarnings.push("Some experience rows lack strict company/date/designation source proof; marked as needsReview.");
+  }
+  const needsReview = parsed.timeline.some((item) => item?.needsReview);
   const confidence = computeParserConfidenceSummary({
     timeline: parsed.timeline,
     education: finalEducation,
@@ -2153,22 +2761,35 @@ async function parseCandidatePayload(payload) {
     emailId
   });
   const experienceTimeline = parsed.timeline.map((item) => {
+    const normalizedPair = normalizeTitleCompanyPair(String(item?.title || ""), String(item?.company || ""));
+    const rawDatesText = String(item?.rawDates || "");
+    const sourceText = String(item?.sourceText || "").trim() || rawDatesText || [item?.company, item?.title].filter(Boolean).join(" | ");
+    const fallbackCompany = extractCompanyFromDateAnchoredLine(rawDatesText);
+    let finalCompany = normalizedPair.company || String(item?.company || "") || fallbackCompany || "";
+    let finalDesignation = normalizeLooseText(normalizedPair.title || String(item?.title || "")) || String(item?.title || "");
+    if (!finalCompany && finalDesignation && isLikelyCompanyLine(finalDesignation) && !hasDesignationKeyword(finalDesignation)) {
+      finalCompany = cleanCompanyLine(finalDesignation);
+      const recoveredDesignation = extractDesignationFromSourceText(sourceText, finalCompany);
+      if (recoveredDesignation) finalDesignation = recoveredDesignation;
+    }
     const normalizedDates = normalizeExperienceDate(String(item?.rawDates || ""));
     return {
-      company: normalizeCompanyDisplay(String(item?.company || "")),
-      designation: cleanExperienceTitle(String(item?.title || "")),
+      company: normalizeCompanyDisplay(String(finalCompany)),
+      designation: cleanExperienceTitle(String(finalDesignation)),
       startDate: normalizedDates.startDate || String(item?.start || ""),
       endDate: normalizedDates.endDate || String(item?.end || ""),
-      sourceText: String(item?.rawDates || "").trim() || [item?.company, item?.title].filter(Boolean).join(" | "),
-      confidence: "high"
+      sourceText
     };
   });
+  const currentFromExperience = experienceTimeline.find((row) => normalizeLooseText(row?.endDate || "").toLowerCase() === "present") || experienceTimeline[0] || {};
+  const outputCurrentCompany = normalizeCompanyDisplay(String(currentFromExperience.company || currentRole.currentCompany || ""));
+  const outputCurrentDesignation = cleanExperienceTitle(String(currentFromExperience.designation || currentRole.currentDesignation || ""));
 
   return {
     candidateName,
     totalExperience,
-    currentCompany: normalizeCompanyDisplay(currentRole.currentCompany),
-    currentDesignation: cleanExperienceTitle(currentRole.currentDesignation),
+    currentCompany: outputCurrentCompany,
+    currentDesignation: outputCurrentDesignation,
     currentOrgTenure,
     emailId,
     phoneNumber,
@@ -2189,6 +2810,7 @@ async function parseCandidatePayload(payload) {
     highestQualification,
     skills,
     parserWarnings,
+    needsReview,
     confidence,
     experienceMetrics: {
       claimedTotalExperience,
@@ -2206,3 +2828,4 @@ async function parseCandidatePayload(payload) {
 module.exports = {
   parseCandidatePayload
 };
+
