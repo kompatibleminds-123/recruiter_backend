@@ -7883,7 +7883,7 @@ function buildCandidateParseResponse(baseResult, normalizedResult, parseMeta = {
       start_date: String(item?.start_date || "").trim(),
       end_date: String(item?.end_date || "").trim(),
       duration: String(item?.raw_duration_text || "").trim(),
-      location: "",
+      location: String(item?.location || "").trim(),
       description: "",
       raw_line: String(item?.raw_line || item?.source_line || "").trim(),
       confidence: Number(item?.confidence || 0) || 0
@@ -7902,13 +7902,18 @@ function buildCandidateParseResponse(baseResult, normalizedResult, parseMeta = {
         confidence: String(item?.confidence || "").toLowerCase() === "high" ? 0.9 : 0.68
       }))
     : buildDeterministicEducationHistory(rawTextForSearch, highestEducation, educationSectionText);
+  const resolvedCvLocation = resolveCandidateLocationFromCv({
+    experienceHistory,
+    normalizedLocation: String(normalizedResult?.location || baseResult?.location || "").trim(),
+    rawText: rawTextForSearch
+  });
   const fixedSchema = {
     summary: {
       candidate_name: String(normalizedResult?.candidateName || baseResult?.candidateName || "").trim(),
       email: emailId,
       phone: normalizePhone(phoneNumber),
       linkedin: linkedinUrl,
-      location: String(normalizedResult?.location || baseResult?.location || "").trim(),
+      location: resolvedCvLocation,
       current_company: normalizedCurrentCompany,
       current_designation: normalizedCurrentDesignation,
       total_experience: String(finalTotalExperience || normalizedResult?.totalExperience || baseResult?.totalExperience || "").trim(),
@@ -7956,6 +7961,7 @@ function buildCandidateParseResponse(baseResult, normalizedResult, parseMeta = {
       emailId,
       phoneNumber: normalizePhone(phoneNumber),
       linkedinUrl,
+      location: resolvedCvLocation,
       highestEducation,
       sourceType: String(baseResult?.sourceType || "").trim(),
     filename: String(baseResult?.filename || "").trim(),
@@ -8021,6 +8027,62 @@ function looksLikeDateMetaText(value = "") {
   if (/^(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)/i.test(text) && /present|current|\d{2,4}/i.test(text)) return true;
   if (/present|current/.test(text.toLowerCase()) && /\b(19|20)\d{2}\b/.test(text)) return true;
   return false;
+}
+
+function sanitizeCvCandidateLocation(value = "") {
+  const text = String(value || "").trim();
+  if (!text) return "";
+  const lower = text.toLowerCase();
+  // Reject responsibility/project fragments often captured after the word "location".
+  if (/(scouting|set\s+design|post-?production|production|responsib|collaborat|coordinat|managed|developed|worked|assisted)/i.test(lower)) {
+    return "";
+  }
+  if (/[.!?]/.test(text)) return "";
+  if (text.length > 48) return "";
+  // Keep practical city-like values only.
+  if (!/^[a-zA-Z][a-zA-Z\s,/-]{1,47}$/.test(text)) return "";
+  const words = text.split(/\s+/).filter(Boolean);
+  if (words.length > 5) return "";
+  return text;
+}
+
+function extractHeaderFooterLocation(rawText = "") {
+  const lines = String(rawText || "").replace(/\r/g, "").split("\n").map((line) => String(line || "").trim()).filter(Boolean);
+  if (!lines.length) return "";
+  const scope = [...lines.slice(0, 40), ...lines.slice(-20)];
+  for (const line of scope) {
+    const match = line.match(/\blocation\s*[:\-]\s*([A-Za-z][A-Za-z\s,/-]{1,48})/i);
+    if (!match) continue;
+    const location = sanitizeCvCandidateLocation(String(match[1] || "").trim());
+    if (location) return location;
+  }
+  return "";
+}
+
+function resolveCandidateLocationFromCv({ experienceHistory = [], normalizedLocation = "", rawText = "" }) {
+  const current = getCurrentRoleFromTimeline(
+    (Array.isArray(experienceHistory) ? experienceHistory : [])
+      .map((item) => ({
+        company: String(item?.company_name || "").trim(),
+        title: String(item?.designation || "").trim(),
+        start: String(item?.start_date || "").trim(),
+        end: String(item?.end_date || "").trim()
+      }))
+      .filter((row) => row.company || row.title || row.start || row.end)
+  );
+  if (current) {
+    const match = (Array.isArray(experienceHistory) ? experienceHistory : []).find((item) =>
+      String(item?.company_name || "").trim() === String(current.company || "").trim()
+      && String(item?.designation || "").trim() === String(current.title || "").trim()
+      && String(item?.start_date || "").trim() === String(current.start || "").trim()
+      && String(item?.end_date || "").trim() === String(current.end || "").trim()
+    );
+    const fromCurrentRow = sanitizeCvCandidateLocation(String(match?.location || "").trim());
+    if (fromCurrentRow) return fromCurrentRow;
+  }
+  const explicit = sanitizeCvCandidateLocation(String(normalizedLocation || "").trim());
+  if (explicit) return explicit;
+  return extractHeaderFooterLocation(rawText);
 }
 
 function looksLikeTaglineText(value = "") {
