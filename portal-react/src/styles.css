@@ -181,12 +181,34 @@ textarea { min-height: 92px; resize: vertical; }
 }
 
 .parse-progress-spinner {
+  display: inline-block;
   width: 16px;
   height: 16px;
   border-radius: 50%;
   border: 2px solid #9fc0ff;
   border-top-color: #2f6fff;
   animation: parse-spin 0.85s linear infinite;
+}
+
+.parse-progress-spinner--lg {
+  width: 26px;
+  height: 26px;
+  border-width: 3px;
+}
+
+.parse-progress-block {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  min-height: 120px;
+  margin: 8px 0 12px;
+  border: 1px dashed #c8d9ff;
+  border-radius: 14px;
+  background: #f8fbff;
+  color: #2b4a8d;
+  font-weight: 600;
 }
 
 @keyframes parse-spin {
