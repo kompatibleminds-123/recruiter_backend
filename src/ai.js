@@ -184,33 +184,24 @@ async function callOpenAiJsonSchema({ apiKey, prompt, model, schemaName, schema 
   }
   assertStrictSchemaCompatibility(schema, schemaName || "json_schema");
 
-  const response = await fetch("https://api.openai.com/v1/responses", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${apiKey}`
-    },
-    body: JSON.stringify({
-      model: model || "gpt-4.1-mini",
-      input: prompt,
-      text: {
-        format: {
-          type: "json_schema",
-          name: schemaName,
-          strict: true,
-          schema
-        }
+  const requestBody = {
+    model: model || "gpt-4.1-mini",
+    input: prompt,
+    text: {
+      format: {
+        type: "json_schema",
+        name: schemaName,
+        strict: true,
+        schema
       }
-    })
+    }
+  };
+
+  return callOpenAiResponsesJsonWithRetry({
+    apiKey,
+    requestBody,
+    errorPrefix: "OpenAI request failed"
   });
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`OpenAI request failed: ${response.status} ${errorText}`);
-  }
-
-  const data = await response.json();
-  return parseStructuredOutput(data);
 }
 
 async function uploadFileToOpenAi({ apiKey, uploadedFile }) {
@@ -251,47 +242,38 @@ async function uploadFileToOpenAi({ apiKey, uploadedFile }) {
 async function callOpenAiFileJsonSchema({ apiKey, prompt, model, schemaName, schema, uploadedFile }) {
   assertStrictSchemaCompatibility(schema, schemaName || "json_schema");
   const uploaded = await uploadFileToOpenAi({ apiKey, uploadedFile });
-  const response = await fetch("https://api.openai.com/v1/responses", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${apiKey}`
-    },
-    body: JSON.stringify({
-      model: model || "gpt-4o-mini",
-      input: [
-        {
-          role: "user",
-          content: [
-            {
-              type: "input_file",
-              file_id: uploaded.id
-            },
-            {
-              type: "input_text",
-              text: prompt
-            }
-          ]
-        }
-      ],
-      text: {
-        format: {
-          type: "json_schema",
-          name: schemaName,
-          strict: true,
-          schema
-        }
+  const requestBody = {
+    model: model || "gpt-4o-mini",
+    input: [
+      {
+        role: "user",
+        content: [
+          {
+            type: "input_file",
+            file_id: uploaded.id
+          },
+          {
+            type: "input_text",
+            text: prompt
+          }
+        ]
       }
-    })
+    ],
+    text: {
+      format: {
+        type: "json_schema",
+        name: schemaName,
+        strict: true,
+        schema
+      }
+    }
+  };
+
+  return callOpenAiResponsesJsonWithRetry({
+    apiKey,
+    requestBody,
+    errorPrefix: "OpenAI file request failed"
   });
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`OpenAI file request failed: ${response.status} ${errorText}`);
-  }
-
-  const data = await response.json();
-  return parseStructuredOutput(data);
 }
 
 async function callOpenAiImageJsonSchema({ apiKey, prompt, model, schemaName, schema, image }) {
@@ -306,41 +288,81 @@ async function callOpenAiImageJsonSchema({ apiKey, prompt, model, schemaName, sc
   const base64 = String(image.fileData || "").trim().replace(/^data:[^;]+;base64,/i, "");
   const dataUrl = `data:${mimeType};base64,${base64}`;
 
-  const response = await fetch("https://api.openai.com/v1/responses", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${apiKey}`
-    },
-    body: JSON.stringify({
-      model: model || "gpt-4o-mini",
-      input: [
-        {
-          role: "user",
-          content: [
-            { type: "input_image", image_url: dataUrl },
-            { type: "input_text", text: prompt }
-          ]
-        }
-      ],
-      text: {
-        format: {
-          type: "json_schema",
-          name: schemaName,
-          strict: true,
-          schema
-        }
+  const requestBody = {
+    model: model || "gpt-4o-mini",
+    input: [
+      {
+        role: "user",
+        content: [
+          { type: "input_image", image_url: dataUrl },
+          { type: "input_text", text: prompt }
+        ]
       }
-    })
+    ],
+    text: {
+      format: {
+        type: "json_schema",
+        name: schemaName,
+        strict: true,
+        schema
+      }
+    }
+  };
+
+  return callOpenAiResponsesJsonWithRetry({
+    apiKey,
+    requestBody,
+    errorPrefix: "OpenAI image request failed"
   });
+}
 
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`OpenAI image request failed: ${response.status} ${errorText}`);
+function isRetriableOpenAiStatus(status) {
+  return status === 408 || status === 409 || status === 429 || (status >= 500 && status <= 599);
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function callOpenAiResponsesJsonWithRetry({ apiKey, requestBody, errorPrefix = "OpenAI request failed" }) {
+  const maxAttempts = 3;
+  let lastError = null;
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      const response = await fetch("https://api.openai.com/v1/responses", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${apiKey}`
+        },
+        body: JSON.stringify(requestBody)
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        const error = new Error(`${errorPrefix}: ${response.status} ${errorText}`);
+        error.status = response.status;
+        if (attempt < maxAttempts && isRetriableOpenAiStatus(response.status)) {
+          await sleep(450 * attempt);
+          continue;
+        }
+        throw error;
+      }
+
+      const data = await response.json();
+      return parseStructuredOutput(data);
+    } catch (error) {
+      lastError = error;
+      const status = Number(error?.status || 0);
+      const isNetworkLike = !status && /fetch|network|timeout|socket|ECONN|ENOTFOUND|EAI_AGAIN/i.test(String(error?.message || ""));
+      if (attempt < maxAttempts && (isRetriableOpenAiStatus(status) || isNetworkLike)) {
+        await sleep(450 * attempt);
+        continue;
+      }
+      throw error;
+    }
   }
-
-  const data = await response.json();
-  return parseStructuredOutput(data);
+  throw lastError || new Error(`${errorPrefix}: unknown error`);
 }
 
 async function callOpenAiQuestions({ apiKey, prompt, model }) {
