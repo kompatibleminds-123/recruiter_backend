@@ -10991,8 +10991,8 @@ function PortalApp({ token, onLogout }) {
         emailId: interviewForm.emailId,
         phoneNumber: interviewForm.phoneNumber,
         totalExperience: interviewForm.totalExperience,
-        // Keep AI parsing off from the portal to avoid confusion/cost. Backend still runs deterministic parsing.
-        normalizeWithAi: false,
+        // Keep hybrid pipeline aligned with backend defaults; AI parse is validated server-side.
+        normalizeWithAi: true,
         deferParse: true,
         file: {
           filename: file.name,
@@ -13907,7 +13907,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
       const fileData = await fileToBase64(file);
       const parsed = await api("/parse-candidate", token, "POST", {
         sourceType: "cv",
-        normalizeWithAi: false,
+        normalizeWithAi: true,
         file: {
           filename: file.name || "candidate-cv.pdf",
           mimeType: file.type || "application/octet-stream",
@@ -13920,7 +13920,8 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
         || Number(parsedResult?.parser_confidence?.overall || 0) < 0.65
         || !String(parsedResult?.candidateName || "").trim()
         || (!String(parsedResult?.emailId || "").trim() && !String(parsedResult?.phoneNumber || "").trim());
-      if (weakDeterministic) {
+      const alreadyAiAttempted = Boolean(parsedResult?.parseMeta?.aiParseAttempted);
+      if (weakDeterministic && !alreadyAiAttempted) {
         const aiParsed = await api("/parse-candidate", token, "POST", {
           sourceType: "cv",
           normalizeWithAi: true,
