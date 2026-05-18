@@ -35,6 +35,28 @@ function normalizeDesignationText(value = "") {
   return normalizeDashAndSpace(String(value || "").replace(/[|,;:.]+$/g, "").trim());
 }
 
+function looksLikeGenericCompanyText(value = "") {
+  const text = String(value || "").trim().toLowerCase();
+  if (!text) return false;
+  return /\b(framework|platform|tool|technology|automation|rpa|solution|process)\b/.test(text);
+}
+
+function extractCompanyCandidateFromDesignation(value = "") {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  // Split by common separators and pick shortest title-cased chunk likely to be a company token.
+  const parts = raw.split(/[@|,()/&\-]+/).map((p) => String(p || "").trim()).filter(Boolean);
+  const deny = /\b(senior|software|engineer|developer|manager|lead|architect|consultant|analyst|executive|associate|intern|framework|platform|automation|rpa)\b/i;
+  for (const p of parts) {
+    if (p.length < 3 || p.length > 32) continue;
+    if (deny.test(p)) continue;
+    if (/^[A-Z][A-Za-z0-9.&\-\s]*$/.test(p) || /^[A-Za-z][A-Za-z0-9.&\-]*$/.test(p)) {
+      return p;
+    }
+  }
+  return "";
+}
+
 function looksLikeDateMetaText(value = "") {
   const text = String(value || "").trim();
   if (!text) return false;
@@ -382,8 +404,18 @@ function validateAndCleanOutput(candidate = {}, context = {}) {
 
   const resolvedCurrent = resolveCurrentRoleDeterministically(dedupedTimeline);
   const currentFromTimeline = resolvedCurrent.row || {};
-  const currentCompany = normalizeCompanyName(String(currentFromTimeline.company || candidate.currentCompany || "").trim());
+  let currentCompany = normalizeCompanyName(String(currentFromTimeline.company || candidate.currentCompany || "").trim());
   let currentDesignation = normalizeDesignationText(String(currentFromTimeline.designation || candidate.currentDesignation || "").trim());
+
+  // Generic guard: if current-row company is generic meta text but designation contains a company-like token,
+  // prefer designation-derived company token to avoid "Framework/Platform" as current company.
+  if (looksLikeGenericCompanyText(currentCompany)) {
+    const fromDesignation = normalizeCompanyName(extractCompanyCandidateFromDesignation(currentDesignation));
+    if (fromDesignation && !looksLikeGenericCompanyText(fromDesignation) && !isSuspiciousCompanyCandidate(fromDesignation)) {
+      currentCompany = fromDesignation;
+      flags.push("current_company_resolved_from_designation_token");
+    }
+  }
 
   if (looksLikeContactLine(currentDesignation)) {
     currentDesignation = "";
