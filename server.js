@@ -7918,6 +7918,32 @@ function buildCandidateParseResponse(baseResult, normalizedResult, parseMeta = {
     education_history: educationHistory
   };
 
+  // Canonical current-role/tenure must come from final repaired experience_history,
+  // not from intermediate fallback timeline variants.
+  const canonicalTimelineForCurrent = experienceHistory
+    .map((item) => ({
+      company: String(item?.company_name || "").trim(),
+      title: String(item?.designation || "").trim(),
+      start: String(item?.start_date || "").trim(),
+      end: String(item?.end_date || "").trim()
+    }))
+    .filter((row) => row.company || row.title || row.start || row.end);
+  const canonicalCurrentRole = getCurrentRoleFromTimeline(canonicalTimelineForCurrent) || null;
+  const canonicalCurrentMonths = canonicalCurrentRole ? getRowMonths(canonicalCurrentRole) : 0;
+  const canonicalCurrentOrgTenure = canonicalCurrentMonths ? formatTotalExperience(canonicalCurrentMonths) : finalCurrentOrgTenure;
+  const canonicalCurrentRoleStart = parseMonthYear(canonicalCurrentRole?.start || "");
+  const canonicalCurrentExperienceObject = {
+    company_name: String(canonicalCurrentRole?.company || normalizedCurrentCompany || "").trim() || null,
+    designation: String(canonicalCurrentRole?.title || normalizedCurrentDesignation || "").trim() || null,
+    years: Math.floor((canonicalCurrentMonths || 0) / 12),
+    months: (canonicalCurrentMonths || 0) % 12,
+    start_date:
+      canonicalCurrentRoleStart && Number.isInteger(canonicalCurrentRoleStart.year) && Number.isInteger(canonicalCurrentRoleStart.month)
+        ? `${canonicalCurrentRoleStart.year}-${String(canonicalCurrentRoleStart.month + 1).padStart(2, "0")}`
+        : null,
+    warnings: canonicalCurrentMonths ? [] : ["current_experience_unresolved"]
+  };
+
     return {
       candidateName: String(
         normalizedResult?.candidateName || baseResult?.candidateName || ""
@@ -7937,9 +7963,9 @@ function buildCandidateParseResponse(baseResult, normalizedResult, parseMeta = {
     employmentHistory: includeVerboseParseDebug ? (Array.isArray(baseResult?.employmentHistory) ? baseResult.employmentHistory : []) : [],
     gaps: normalizedGaps.length ? normalizedGaps : fallbackGaps,
     averageTenurePerCompany: finalAverageTenure,
-    currentOrgTenure: finalCurrentOrgTenure,
+    currentOrgTenure: canonicalCurrentOrgTenure,
     total_experience: totalExperienceObject,
-    current_experience: currentExperienceObject,
+    current_experience: canonicalCurrentExperienceObject,
     parser_confidence: parserConfidence,
     manual_review_required: manualReviewRequired,
     shortStints: Array.isArray(baseResult?.shortStints) ? baseResult.shortStints : [],
@@ -7973,7 +7999,7 @@ function buildCandidateParseResponse(baseResult, normalizedResult, parseMeta = {
             current_company: normalizedCurrentCompany || null,
             current_designation: normalizedCurrentDesignation || null,
             total_experience: totalExperienceObject,
-            current_experience: currentExperienceObject,
+            current_experience: canonicalCurrentExperienceObject,
             highest_qualification: highestEducation || null
           },
           parser_warnings: (validation.reasons || []).map((item) => item.message).filter(Boolean),
