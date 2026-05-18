@@ -4378,6 +4378,76 @@ function NewDraftModal({
   );
 }
 
+function InterviewCvParseModal({
+  open,
+  busy = false,
+  preview = null,
+  onClose,
+  onApply
+}) {
+  if (!open) return null;
+  const summary = preview?.summary || {};
+  const experienceRows = Array.isArray(preview?.experience) ? preview.experience : [];
+  const educationRows = Array.isArray(preview?.education) ? preview.education : [];
+  return (
+    <div className="overlay" onClick={busy ? undefined : onClose}>
+      <div className="overlay-card" onClick={(e) => e.stopPropagation()}>
+        <h3>CV Parse Preview</h3>
+        <p className="muted">Review parsed CV sections, then apply values to Interview Draft.</p>
+        {busy ? (
+          <div className="parse-progress-block" role="status" aria-live="polite">
+            <span className="parse-progress-spinner parse-progress-spinner--lg" aria-hidden="true" />
+            <div>Parsing CV, please wait...</div>
+          </div>
+        ) : null}
+        {!busy && preview ? (
+          <div className="panel" style={{ marginBottom: 12, padding: 12 }}>
+            <h4 style={{ marginTop: 6, marginBottom: 8 }}>Summary</h4>
+            <div className="form-grid two-col" style={{ marginBottom: 10 }}>
+              <label><span>Name</span><input value={String(summary.candidateName || "")} readOnly /></label>
+              <label><span>Phone</span><input value={String(summary.phoneNumber || "")} readOnly /></label>
+              <label><span>Email</span><input value={String(summary.emailId || "")} readOnly /></label>
+              <label><span>LinkedIn</span><input value={String(summary.linkedinUrl || "")} readOnly /></label>
+              <label><span>Current company</span><input value={String(summary.currentCompany || "")} readOnly /></label>
+              <label><span>Current designation</span><input value={String(summary.currentDesignation || "")} readOnly /></label>
+              <label><span>Total experience</span><input value={String(summary.totalExperience || "")} readOnly /></label>
+              <label><span>Tenure in current org</span><input value={String(summary.currentOrgTenure || "")} readOnly /></label>
+              <label><span>Highest qualification</span><input value={String(summary.highestEducation || "")} readOnly /></label>
+            </div>
+            <h4 style={{ marginTop: 8, marginBottom: 8 }}>Experience Timeline</h4>
+            {experienceRows.length ? (
+              <div style={{ maxHeight: 170, overflow: "auto", marginBottom: 10 }}>
+                {experienceRows.map((row, index) => (
+                  <div key={`interview-exp-${index}`} className="status-note" style={{ marginBottom: 8 }}>
+                    <div><strong>{String(row?.designation || "-")}</strong> @ {String(row?.company_name || "-")}</div>
+                    <div>{String(row?.start_date || "-")} - {String(row?.end_date || "-")}</div>
+                  </div>
+                ))}
+              </div>
+            ) : <div className="status-note" style={{ marginBottom: 10 }}>No experience rows detected.</div>}
+            <h4 style={{ marginTop: 8, marginBottom: 8 }}>Education</h4>
+            {educationRows.length ? (
+              <div style={{ maxHeight: 130, overflow: "auto" }}>
+                {educationRows.map((row, index) => (
+                  <div key={`interview-edu-${index}`} className="status-note" style={{ marginBottom: 8 }}>
+                    <div><strong>{String(row?.degree || "-")}</strong></div>
+                    <div>{String(row?.institution || "-")}</div>
+                    <div>{String(row?.year || "-")}</div>
+                  </div>
+                ))}
+              </div>
+            ) : <div className="status-note">No education rows detected.</div>}
+          </div>
+        ) : null}
+        <div className="button-row">
+          <button onClick={onApply} disabled={busy || !preview}>Apply To Draft</button>
+          <button className="ghost-btn" onClick={onClose} disabled={busy}>Close</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function readItemClientFeedback(item) {
   const assessment = item?.raw?.assessment || (item?.sourceType === "assessment_only" ? item : null);
   const candidate = item?.raw?.candidate || null;
@@ -6295,6 +6365,9 @@ function PortalApp({ token, onLogout }) {
   });
   const [jobActionBusy, setJobActionBusy] = useState(false);
   const [interviewMeta, setInterviewMeta] = useState({ candidateId: "", assessmentId: "" });
+  const [interviewCvParseModalOpen, setInterviewCvParseModalOpen] = useState(false);
+  const [interviewCvParseBusy, setInterviewCvParseBusy] = useState(false);
+  const [interviewCvParsePreview, setInterviewCvParsePreview] = useState(null);
   const [interviewForm, setInterviewForm] = useState({
     candidateName: "",
     phoneNumber: "",
@@ -10995,18 +11068,19 @@ function PortalApp({ token, onLogout }) {
 
   async function parseInterviewCvFile(file) {
     if (!file) return;
-    setStatus("interview", "Uploading CV... (parsing will continue in the background)");
+    setInterviewCvParsePreview(null);
+    setInterviewCvParseModalOpen(true);
+    setInterviewCvParseBusy(true);
+    setStatus("interview", "Parsing CV for interview draft...");
     try {
       const fileData = await fileToBase64(file);
-      const isBlank = (value) => !String(value || "").trim();
       const payload = {
         candidateName: interviewForm.candidateName,
         emailId: interviewForm.emailId,
         phoneNumber: interviewForm.phoneNumber,
         totalExperience: interviewForm.totalExperience,
-        // Keep hybrid pipeline aligned with backend defaults; AI parse is validated server-side.
         normalizeWithAi: true,
-        deferParse: true,
+        deferParse: false,
         file: {
           filename: file.name,
           mimeType: file.type || "application/octet-stream",
@@ -11021,73 +11095,54 @@ function PortalApp({ token, onLogout }) {
           });
       const result = parsed?.result || parsed || {};
       const nextStoredFile = result.storedFile || interviewForm.cvAnalysis?.storedFile || null;
+      const normalizedExperience = Array.isArray(result?.experience_history) && result.experience_history.length
+        ? result.experience_history
+        : (Array.isArray(result?.experienceTimeline)
+          ? result.experienceTimeline.map((item) => ({
+              company_name: String(item?.company || "").trim(),
+              designation: String(item?.designation || "").trim(),
+              start_date: String(item?.startDate || "").trim(),
+              end_date: String(item?.endDate || "").trim()
+            }))
+          : []);
+      const normalizedEducation = Array.isArray(result?.education_history) && result.education_history.length
+        ? result.education_history
+        : (Array.isArray(result?.education)
+          ? result.education.map((item) => ({
+              degree: String(item?.degree || "").trim(),
+              institution: String(item?.institution || "").trim(),
+              year: String(item?.year || "").trim()
+            }))
+          : []);
       setInterviewForm((current) => {
         const analysis = buildInterviewCvAnalysis(current, result, nextStoredFile);
-        const next = { ...current, cvAnalysis: analysis, cvAnalysisApplied: false };
-        const fillBlank = (key, value) => {
-          if (!value) return;
-          if (isBlank(next[key])) next[key] = value;
-        };
-        // Never override typed fields; fill only blanks.
-        fillBlank("candidateName", analysis.candidateName);
-        fillBlank("emailId", analysis.emailId);
-        fillBlank("phoneNumber", analysis.phoneNumber);
-        fillBlank("totalExperience", analysis.exactTotalExperience || analysis.totalExperience);
-        fillBlank("currentCompany", analysis.currentCompany);
-        fillBlank("currentDesignation", analysis.currentDesignation);
-        fillBlank("currentOrgTenure", analysis.currentOrgTenure);
-        fillBlank("highestEducation", analysis.highestEducation);
-        return next;
+        return { ...current, cvAnalysis: analysis, cvAnalysisApplied: false };
       });
+      setInterviewCvParsePreview({
+        summary: {
+          candidateName: String(result?.candidateName || "").trim(),
+          phoneNumber: String(result?.phoneNumber || "").trim(),
+          emailId: String(result?.emailId || "").trim(),
+          linkedinUrl: String(result?.linkedinUrl || "").trim(),
+          currentCompany: String(result?.currentCompany || "").trim(),
+          currentDesignation: String(result?.currentDesignation || "").trim(),
+          totalExperience: String(result?.totalExperience || "").trim(),
+          currentOrgTenure: String(result?.currentOrgTenure || "").trim(),
+          highestEducation: String(result?.highestQualification || result?.highestEducation || "").trim()
+        },
+        experience: normalizedExperience,
+        education: normalizedEducation
+      });
+      setInterviewCvParseBusy(false);
       setStatus(
         "interview",
         result.cached
-          ? "Loaded cached CV data from the stored upload."
-          : interviewMeta.candidateId
-            ? "CV uploaded to storage. Parsing is running in the background. CV link is available immediately."
-            : "CV parsed and saved in hidden metadata for later search use.",
+          ? "Loaded cached CV parse preview."
+          : "CV parsed. Review preview and apply values.",
         "ok"
       );
-
-      // If we uploaded in candidate context with background parsing, poll for completion and then auto-fill blanks.
-      if (interviewMeta.candidateId && payload.deferParse === true && result && result.queued === true) {
-        const candidateId = interviewMeta.candidateId;
-        (async () => {
-          for (let attempt = 0; attempt < 10; attempt += 1) {
-            await new Promise((r) => setTimeout(r, 2000));
-            try {
-              const latest = await api(`/company/candidates/${encodeURIComponent(candidateId)}/cv-analysis`, token).catch(() => null);
-              const latestResult = latest?.analysis || latest?.result?.analysis || null;
-              const parsePending = Boolean(latest?.parsePending || latest?.result?.parsePending);
-              const storedFile = latest?.storedFile || latest?.result?.storedFile || null;
-              if (parsePending) continue;
-              if (!latestResult) continue;
-              setInterviewForm((current) => {
-                const analysis = buildInterviewCvAnalysis(current, latestResult, storedFile || current.cvAnalysis?.storedFile || null);
-                const next = { ...current, cvAnalysis: analysis };
-                const fill = (key, value) => {
-                  if (!value) return;
-                  if (isBlank(next[key])) next[key] = value;
-                };
-                fill("candidateName", analysis.candidateName);
-                fill("emailId", analysis.emailId);
-                fill("phoneNumber", analysis.phoneNumber);
-                fill("totalExperience", analysis.exactTotalExperience || analysis.totalExperience);
-                fill("currentCompany", analysis.currentCompany);
-                fill("currentDesignation", analysis.currentDesignation);
-                fill("currentOrgTenure", analysis.currentOrgTenure);
-                fill("highestEducation", analysis.highestEducation);
-                return next;
-              });
-              setStatus("interview", "CV parsed in background. Blank fields auto-filled.", "ok");
-              break;
-            } catch {
-              // ignore
-            }
-          }
-        })();
-      }
     } catch (error) {
+      setInterviewCvParseBusy(false);
       setStatus("interview", String(error?.message || error), "error");
     }
   }
@@ -17096,6 +17151,19 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
         }}
         onCellChange={updateSheetPreviewRow}
         onImportValid={() => void importValidatedSheetRows()}
+      />
+      <InterviewCvParseModal
+        open={interviewCvParseModalOpen}
+        busy={interviewCvParseBusy}
+        preview={interviewCvParsePreview}
+        onClose={() => {
+          if (interviewCvParseBusy) return;
+          setInterviewCvParseModalOpen(false);
+        }}
+        onApply={() => {
+          applyCvAnalysisToDraft();
+          setInterviewCvParseModalOpen(false);
+        }}
       />
       {whatsappTemplatePicker.open ? (
         <div className="overlay" onClick={() => setWhatsappTemplatePicker({ open: false, options: [], selectedId: "", row: null, phone: "", statusKey: "workspace", customText: "", newShortcutKey: "", saveScope: "all_jobs", assignJobId: "" })}>
