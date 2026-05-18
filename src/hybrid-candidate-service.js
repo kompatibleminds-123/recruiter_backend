@@ -363,8 +363,14 @@ function toYmScore(value = "") {
   const raw = String(value || "").trim();
   if (!raw) return -1;
   if (isPresentEndDateLike(raw)) return 999999;
-  const iso = raw.match(/^(\d{4})-(\d{2})$/);
+  const iso = raw.match(/^(\d{4})\s*-\s*(\d{2})$/);
   if (iso) return Number(iso[1]) * 12 + Number(iso[2]);
+  const slash = raw.match(/^(\d{4})\s*\/\s*(\d{2})$/);
+  if (slash) return Number(slash[1]) * 12 + Number(slash[2]);
+  const mmY = raw.match(/^(\d{2})\s*-\s*(\d{4})$/);
+  if (mmY) return Number(mmY[2]) * 12 + Number(mmY[1]);
+  const mmYSlash = raw.match(/^(\d{2})\s*\/\s*(\d{4})$/);
+  if (mmYSlash) return Number(mmYSlash[2]) * 12 + Number(mmYSlash[1]);
   const m = raw.match(/^(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\s+(\d{4})$/i);
   if (m) {
     const monthMap = { jan: 1, feb: 2, mar: 3, apr: 4, may: 5, jun: 6, jul: 7, aug: 8, sep: 9, sept: 9, oct: 10, nov: 11, dec: 12 };

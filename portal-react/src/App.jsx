@@ -13969,8 +13969,8 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
             }))
           : []);
       const latestExperience = normalizedExperience[0] || null;
-      let resolvedCompany = String(fixedSummary?.current_company || parsedResult?.currentCompany || "").trim();
-      let resolvedDesignation = String(fixedSummary?.current_designation || parsedResult?.currentDesignation || "").trim();
+      let resolvedCompany = String(parsedResult?.currentCompany || fixedSummary?.current_company || "").trim();
+      let resolvedDesignation = String(parsedResult?.currentDesignation || fixedSummary?.current_designation || "").trim();
       if (!resolvedCompany || isGarbageCvFieldValue(resolvedCompany)) {
         resolvedCompany = String(latestExperience?.company_name || "").trim() || resolvedCompany;
       }
