@@ -13929,27 +13929,6 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
         }
       });
       let parsedResult = parsed?.result && typeof parsed.result === "object" ? parsed.result : parsed;
-      const weakDeterministic =
-        Boolean(parsedResult?.manual_review_required)
-        || Number(parsedResult?.parser_confidence?.overall || 0) < 0.65
-        || !String(parsedResult?.candidateName || "").trim()
-        || (!String(parsedResult?.emailId || "").trim() && !String(parsedResult?.phoneNumber || "").trim());
-      const alreadyAiAttempted = Boolean(parsedResult?.parseMeta?.aiParseAttempted);
-      if (weakDeterministic && !alreadyAiAttempted) {
-        const aiParsed = await api("/parse-candidate", token, "POST", {
-          sourceType: "cv",
-          normalizeWithAi: true,
-          file: {
-            filename: file.name || "candidate-cv.pdf",
-            mimeType: file.type || "application/octet-stream",
-            fileData
-          }
-        }).catch(() => null);
-        const aiResult = aiParsed?.result && typeof aiParsed.result === "object" ? aiParsed.result : aiParsed;
-        if (aiResult && typeof aiResult === "object") {
-          parsedResult = aiResult;
-        }
-      }
       const fixedSchema = parsedResult?.fixed_schema && typeof parsedResult.fixed_schema === "object"
         ? parsedResult.fixed_schema
         : parsedResult;
