@@ -567,6 +567,50 @@ function dedupeExperienceRows(rows = []) {
   return out;
 }
 
+function formatExactDurationFromMonths(totalMonths = 0) {
+  const months = Math.max(0, Number(totalMonths) || 0);
+  if (!months) return "";
+  const years = Math.floor(months / 12);
+  const rem = months % 12;
+  if (years > 0 && rem > 0) return `${years} years ${rem} months`;
+  if (years > 0) return `${years} years`;
+  return `${rem} months`;
+}
+
+function computeTotalExperienceFromTimeline(rows = []) {
+  const now = new Date();
+  const nowYm = (now.getFullYear() * 12) + (now.getMonth() + 1);
+  const intervals = [];
+
+  for (const row of (rows || [])) {
+    const s = toYmScore(String(row?.startDate || "").trim());
+    let e = toYmScore(String(row?.endDate || "").trim());
+    if (isPresentLike(String(row?.endDate || "").trim()) || e >= 999999) e = nowYm;
+    if (s > 0 && e > 0 && e >= s) intervals.push([s, e]);
+  }
+  if (!intervals.length) return "";
+
+  intervals.sort((a, b) => a[0] - b[0]);
+  const merged = [];
+  for (const [s, e] of intervals) {
+    const last = merged[merged.length - 1];
+    if (!last) {
+      merged.push([s, e]);
+      continue;
+    }
+    // Merge overlaps/adjacent ranges to avoid double counting.
+    if (s <= last[1] + 1) {
+      if (e > last[1]) last[1] = e;
+    } else {
+      merged.push([s, e]);
+    }
+  }
+
+  let months = 0;
+  for (const [s, e] of merged) months += (e - s + 1); // inclusive months
+  return formatExactDurationFromMonths(months);
+}
+
 function isBadValidationFailure(flags = []) {
   const set = new Set(Array.isArray(flags) ? flags : []);
   const critical = [
@@ -708,7 +752,7 @@ function validateAndCleanOutput(candidate = {}, context = {}) {
   return {
     cleaned: {
       ...candidate,
-      totalExperience: String(candidate?.totalExperience || "").trim(),
+      totalExperience: computeTotalExperienceFromTimeline(dedupedTimeline) || String(candidate?.totalExperience || "").trim(),
       currentCompany,
       currentDesignation,
       experienceTimeline: dedupedTimeline
