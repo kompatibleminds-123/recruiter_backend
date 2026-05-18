@@ -4322,7 +4322,9 @@ function buildCandidateSearchInterpretationSchema() {
     additionalProperties: false,
     required: [
       "role",
+      "roleFamilies",
       "skills",
+      "domainKeywords",
       "locations",
       "minExperienceYears",
       "maxExperienceYears",
@@ -4333,6 +4335,8 @@ function buildCandidateSearchInterpretationSchema() {
       "maxNoticeDays",
       "statuses",
       "detailedStatuses",
+      "assessmentStatus",
+      "attemptOutcome",
       "client",
       "recruiterName",
       "recruiterScope",
@@ -4344,7 +4348,7 @@ function buildCandidateSearchInterpretationSchema() {
       "currentCompany"
     ],
     properties: {
-      role: { type: "string" },
+      role: { type: ["string", "null"] },
       roleFamilies: { type: "array", items: { type: "string" }, maxItems: 6 },
       skills: { type: "array", items: { type: "string" }, maxItems: 12 },
       domainKeywords: { type: "array", items: { type: "string" }, maxItems: 12 },
@@ -4360,17 +4364,17 @@ function buildCandidateSearchInterpretationSchema() {
       detailedStatuses: { type: "array", items: { type: "string" }, maxItems: 12 },
       // Optional: when the recruiter explicitly names a single status/outcome,
       // set these so UI can map directly to dropdown filters.
-      assessmentStatus: { type: "string" },
-      attemptOutcome: { type: "string" },
-      client: { type: "string" },
-      recruiterName: { type: "string" },
-      recruiterScope: { type: "string", enum: ["", "me"] },
-      recruiterField: { type: "string", enum: ["", "sourced", "owner"] },
-      sourceTypeFilter: { type: "string", enum: ["", "captured", "converted", "applied", "assessment"] },
-      dateFrom: { type: "string" },
-      dateTo: { type: "string" },
-      dateField: { type: "string", enum: ["", "captured", "shared", "interview", "joined"] },
-      currentCompany: { type: "string" }
+      assessmentStatus: { type: ["string", "null"] },
+      attemptOutcome: { type: ["string", "null"] },
+      client: { type: ["string", "null"] },
+      recruiterName: { type: ["string", "null"] },
+      recruiterScope: { type: ["string", "null"], enum: ["", "me", null] },
+      recruiterField: { type: ["string", "null"], enum: ["", "sourced", "owner", null] },
+      sourceTypeFilter: { type: ["string", "null"], enum: ["", "captured", "converted", "applied", "assessment", null] },
+      dateFrom: { type: ["string", "null"] },
+      dateTo: { type: ["string", "null"] },
+      dateField: { type: ["string", "null"], enum: ["", "captured", "shared", "interview", "joined", null] },
+      currentCompany: { type: ["string", "null"] }
     }
   };
 }
@@ -4402,41 +4406,73 @@ function buildRecruiterQueryParserSchema() {
         additionalProperties: false,
         required: [
           "role", "skills", "location", "locations", "client", "company", "jobTitleKeywords",
-          "statuses", "detailedStatuses", "attemptOutcome", "assessmentStatus", "sourceTypeFilter",
+          "statuses", "detailedStatuses", "skillsMatch", "mustHaveSkills", "attemptOutcome", "assessmentStatus", "sourceTypeFilter",
           "sharedOnly", "interviewScheduled", "upcomingJoinings", "minExperienceYears", "maxExperienceYears",
           "maxNoticeDays", "dateFrom", "dateTo", "dateField", "recruiterName", "recruiterScope", "fallbackKeywords"
         ],
         properties: {
-          role: { type: "string" },
+          role: { type: ["string", "null"] },
           skills: { type: "array", items: { type: "string" }, maxItems: 20 },
-          skillsMatch: { type: "string", enum: ["all", "any"] },
-          mustHaveSkills: { type: "boolean" },
-          location: { type: "string" },
+          skillsMatch: { type: ["string", "null"], enum: ["all", "any", null] },
+          mustHaveSkills: { type: ["boolean", "null"] },
+          location: { type: ["string", "null"] },
           locations: { type: "array", items: { type: "string" }, maxItems: 12 },
-          client: { type: "string" },
-          company: { type: "string" },
+          client: { type: ["string", "null"] },
+          company: { type: ["string", "null"] },
           jobTitleKeywords: { type: "array", items: { type: "string" }, maxItems: 12 },
           statuses: { type: "array", items: { type: "string" }, maxItems: 12 },
           detailedStatuses: { type: "array", items: { type: "string" }, maxItems: 20 },
-          attemptOutcome: { type: "string" },
-          assessmentStatus: { type: "string" },
-          sourceTypeFilter: { type: "string" },
-          sharedOnly: { type: "boolean" },
-          interviewScheduled: { type: "boolean" },
-          upcomingJoinings: { type: "boolean" },
+          attemptOutcome: { type: ["string", "null"] },
+          assessmentStatus: { type: ["string", "null"] },
+          sourceTypeFilter: { type: ["string", "null"] },
+          sharedOnly: { type: ["boolean", "null"] },
+          interviewScheduled: { type: ["boolean", "null"] },
+          upcomingJoinings: { type: ["boolean", "null"] },
           minExperienceYears: { type: ["number", "null"] },
           maxExperienceYears: { type: ["number", "null"] },
           maxNoticeDays: { type: ["number", "null"] },
-          dateFrom: { type: "string" },
-          dateTo: { type: "string" },
-          dateField: { type: "string" },
-          recruiterName: { type: "string" },
-          recruiterScope: { type: "string" },
+          dateFrom: { type: ["string", "null"] },
+          dateTo: { type: ["string", "null"] },
+          dateField: { type: ["string", "null"] },
+          recruiterName: { type: ["string", "null"] },
+          recruiterScope: { type: ["string", "null"] },
           fallbackKeywords: { type: "array", items: { type: "string" }, maxItems: 20 }
         }
       }
     }
   };
+}
+
+function assertStrictSchemaCompatibility(schema, path = "root") {
+  if (!schema || typeof schema !== "object") return;
+  const type = schema.type;
+  const isObjectSchema = type === "object" || (Array.isArray(type) && type.includes("object"));
+  if (isObjectSchema && schema.properties) {
+    const propKeys = Object.keys(schema.properties || {});
+    const required = Array.isArray(schema.required) ? schema.required : [];
+    const missing = propKeys.filter((key) => !required.includes(key));
+    if (missing.length) {
+      throw new Error(`Strict schema mismatch at ${path}: required is missing keys: ${missing.join(", ")}`);
+    }
+    if (schema.additionalProperties !== false) {
+      throw new Error(`Strict schema mismatch at ${path}: additionalProperties must be false`);
+    }
+  }
+
+  if (schema.properties && typeof schema.properties === "object") {
+    Object.entries(schema.properties).forEach(([key, child]) => {
+      assertStrictSchemaCompatibility(child, `${path}.properties.${key}`);
+    });
+  }
+  if (schema.items) {
+    assertStrictSchemaCompatibility(schema.items, `${path}.items`);
+  }
+  if (Array.isArray(schema.anyOf)) {
+    schema.anyOf.forEach((child, idx) => assertStrictSchemaCompatibility(child, `${path}.anyOf[${idx}]`));
+  }
+  if (Array.isArray(schema.oneOf)) {
+    schema.oneOf.forEach((child, idx) => assertStrictSchemaCompatibility(child, `${path}.oneOf[${idx}]`));
+  }
 }
 
 async function parseRecruiterQueryWithOpenAI(rawQuery, { apiKey, actor } = {}) {
@@ -4472,12 +4508,15 @@ async function parseRecruiterQueryWithOpenAI(rawQuery, { apiKey, actor } = {}) {
     `Query: ${norm}`
   ].join("\n");
 
+  const recruiterQuerySchema = buildRecruiterQueryParserSchema();
+  assertStrictSchemaCompatibility(recruiterQuerySchema, "recruiter_query_parser");
+
   const result = await callOpenAiJsonSchema({
     apiKey,
     prompt,
     model: "gpt-4.1-mini",
     schemaName: "recruiter_query_parser",
-    schema: buildRecruiterQueryParserSchema()
+    schema: recruiterQuerySchema
   });
 
   const toArray = (value) =>
@@ -13881,6 +13920,7 @@ const server = http.createServer(async (req, res) => {
         : (result.education_history || []);
       result.needsReview = hybrid.finalOutput.needsReview;
       result.reviewReasons = hybrid.finalOutput.reviewReasons;
+      result.parseMeta = hybrid.meta || {};
       sendJson(res, 200, { ok: true, result });
     } catch (error) {
       sendJson(res, 400, { ok: false, error: String(error.message || error) });

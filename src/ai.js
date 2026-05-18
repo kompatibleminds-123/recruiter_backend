@@ -144,10 +144,45 @@ function parseStructuredOutput(data) {
   return JSON.parse(outputText);
 }
 
+function assertStrictSchemaCompatibility(schema, path = "root") {
+  if (!schema || typeof schema !== "object") return;
+  const rawType = schema.type;
+  const typeList = Array.isArray(rawType) ? rawType : [rawType];
+  const isObjectSchema = typeList.includes("object");
+
+  if (isObjectSchema && schema.properties) {
+    const propertyKeys = Object.keys(schema.properties || {});
+    const required = Array.isArray(schema.required) ? schema.required : [];
+    const missingRequired = propertyKeys.filter((key) => !required.includes(key));
+    if (missingRequired.length) {
+      throw new Error(`Strict schema mismatch at ${path}: required is missing keys: ${missingRequired.join(", ")}`);
+    }
+    if (schema.additionalProperties !== false) {
+      throw new Error(`Strict schema mismatch at ${path}: additionalProperties must be false`);
+    }
+  }
+
+  if (schema.properties && typeof schema.properties === "object") {
+    Object.entries(schema.properties).forEach(([key, child]) => {
+      assertStrictSchemaCompatibility(child, `${path}.properties.${key}`);
+    });
+  }
+  if (schema.items) {
+    assertStrictSchemaCompatibility(schema.items, `${path}.items`);
+  }
+  if (Array.isArray(schema.anyOf)) {
+    schema.anyOf.forEach((child, idx) => assertStrictSchemaCompatibility(child, `${path}.anyOf[${idx}]`));
+  }
+  if (Array.isArray(schema.oneOf)) {
+    schema.oneOf.forEach((child, idx) => assertStrictSchemaCompatibility(child, `${path}.oneOf[${idx}]`));
+  }
+}
+
 async function callOpenAiJsonSchema({ apiKey, prompt, model, schemaName, schema }) {
   if (!apiKey) {
     throw new Error("Missing OpenAI API key for backend generation.");
   }
+  assertStrictSchemaCompatibility(schema, schemaName || "json_schema");
 
   const response = await fetch("https://api.openai.com/v1/responses", {
     method: "POST",
@@ -214,6 +249,7 @@ async function uploadFileToOpenAi({ apiKey, uploadedFile }) {
 }
 
 async function callOpenAiFileJsonSchema({ apiKey, prompt, model, schemaName, schema, uploadedFile }) {
+  assertStrictSchemaCompatibility(schema, schemaName || "json_schema");
   const uploaded = await uploadFileToOpenAi({ apiKey, uploadedFile });
   const response = await fetch("https://api.openai.com/v1/responses", {
     method: "POST",
@@ -262,6 +298,7 @@ async function callOpenAiImageJsonSchema({ apiKey, prompt, model, schemaName, sc
   if (!apiKey) {
     throw new Error("Missing OpenAI API key for backend image parsing.");
   }
+  assertStrictSchemaCompatibility(schema, schemaName || "json_schema");
   if (!image?.fileData) {
     throw new Error("Missing image data for backend image parsing.");
   }
