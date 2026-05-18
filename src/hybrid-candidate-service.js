@@ -78,6 +78,13 @@ function looksLikeResponsibilityText(value = "") {
   return /^(built|led|managed|developed|created|executed|driving|working|maintaining|collaborating|generated|achieved|provided|used|implemented|designed|delivered|owned|applied|partnered)\b/i.test(String(value || "").trim());
 }
 
+function looksLikeProjectDomainHeading(value = "") {
+  const text = String(value || "").trim();
+  if (!text) return false;
+  return /\b(framework|platform|project|application|system|product|module|tool|engine|service)\b/i.test(text)
+    || /\b(intelligent document processing|ai agent framework|rpa)\b/i.test(text);
+}
+
 function looksLikeEducationLine(value = "") {
   return /\b(bachelor|master|b\.?tech|m\.?tech|bca|mca|mba|mph|diploma|university|college|cgpa|percentage)\b/i.test(String(value || ""));
 }
@@ -109,6 +116,236 @@ function mapTimelineRows(timeline = []) {
     endDate: String(row?.endDate || row?.end_date || row?.end || "").trim(),
     sourceText: String(row?.sourceText || row?.raw_line || "").trim()
   }));
+}
+
+const PROJECT_DOMAIN_WORDS = /\b(framework|platform|project|product|application|system|module|tool|engine|service|rpa|ai agent|idp|automation framework|enterprise application)\b/i;
+const ROLE_WORDS = /\b(engineer|developer|manager|lead|architect|consultant|analyst|executive|associate|specialist|intern|estimator|surveyor|account executive|sdr|bdr)\b/i;
+const SECTION_END_WORDS = /\b(education|academic|qualification|skills|projects|achievements|certifications|declaration|personal details)\b/i;
+const EXPERIENCE_START_WORDS = /\b(professional experience|work experience|employment history|experience)\b/i;
+
+function hasDateRangeLike(text = "") {
+  const t = String(text || "").trim();
+  if (!t) return false;
+  if (/\b(present|current|ongoing|till date)\b/i.test(t) && /\b(19|20)\d{2}\b/.test(t)) return true;
+  if (/\b(19|20)\d{2}\b.*[-–—].*\b(19|20)\d{2}\b/.test(t)) return true;
+  if (/\b(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\s+\d{4}\b.*[-–—].*/i.test(t)) return true;
+  if (/\b\d{1,2}[/-]\d{4}\b.*[-–—].*/.test(t)) return true;
+  return false;
+}
+
+function looksLikeHeaderRow(line = "") {
+  const t = String(line || "").trim();
+  if (!t) return false;
+  if (t.startsWith("•") || t.startsWith("-")) return false;
+  if (looksLikeContactLine(t) || looksLikeEducationLine(t)) return false;
+  const hasSep = /[|]|[—–-]/.test(t);
+  return hasDateRangeLike(t) && hasSep && (ROLE_WORDS.test(t) || /[A-Z][A-Za-z0-9.&]+\s/.test(t));
+}
+
+function parseDateRangeFromText(text = "") {
+  const t = String(text || "").trim();
+  if (!t) return { startDate: "", endDate: "" };
+  const cleaned = t.replace(/\s+/g, " ");
+  const tokens = cleaned.split(/\s*[–—-]\s*/).map((x) => String(x || "").trim()).filter(Boolean);
+  if (tokens.length < 2) return { startDate: "", endDate: "" };
+  const looksDateish = (x = "") =>
+    /\b(present|current|ongoing|till date|(?:19|20)\d{2}|\d{1,2}[/-]\d{4}|(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\s+\d{4}|\d{4}-\d{2})\b/i.test(x);
+  let startTok = "";
+  let endTok = "";
+  for (let i = 0; i + 1 < tokens.length; i += 1) {
+    if (looksDateish(tokens[i]) && looksDateish(tokens[i + 1])) {
+      startTok = tokens[i];
+      endTok = tokens[i + 1];
+      break;
+    }
+  }
+  if (!startTok) return { startDate: "", endDate: "" };
+  const startDate = normalizeDashAndSpace(parseHeaderDateTokenToYm(startTok) || startTok || "");
+  const endDateRaw = endTok || "";
+  const endDate = /present|current|ongoing|till date/i.test(endDateRaw)
+    ? "Present"
+    : normalizeDashAndSpace(parseHeaderDateTokenToYm(endDateRaw) || endDateRaw);
+  return { startDate, endDate };
+}
+
+function extractCompanyFromHeader(line = "") {
+  const t = String(line || "").trim();
+  if (!t) return "";
+  const pipeParts = t.split("|").map((x) => String(x || "").trim()).filter(Boolean);
+  if (pipeParts.length >= 2) {
+    const first = pipeParts[0];
+    const mid = pipeParts[1];
+    // pattern: <designation> <company> | <location> | <date>
+    const candidate = first.split(/\s+/).slice(-3).join(" ").trim();
+    if (candidate && !PROJECT_DOMAIN_WORDS.test(candidate) && !ROLE_WORDS.test(candidate)) return candidate;
+    if (mid && !looksLikeDateMetaText(mid) && !looksLikeEducationLine(mid) && !PROJECT_DOMAIN_WORDS.test(mid)) return mid;
+  }
+  const atMatch = t.match(/\bat\s+([A-Z][A-Za-z0-9.&\-\s]{1,80})/i);
+  if (atMatch) return atMatch[1].trim();
+  return "";
+}
+
+function extractDesignationFromHeader(line = "", company = "") {
+  let t = String(line || "").trim();
+  if (!t) return "";
+  if (company) {
+    const c = company.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    t = t.replace(new RegExp(`\\b${c}\\b`, "i"), " ").replace(/\s+/g, " ").trim();
+  }
+  if (t.includes("|")) t = t.split("|")[0].trim();
+  t = t.replace(/\bat\s+[A-Z][A-Za-z0-9.&\-\s]{1,80}/i, "").trim();
+  t = t.replace(/\s*[-–—]\s*(present|current|ongoing|till date|(?:19|20)\d{2}|(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\s+\d{4}).*$/i, "").trim();
+  return t;
+}
+
+function buildExperienceRowsFromBlocks(rawText = "") {
+  const lines = String(rawText || "").split(/\r?\n/).map((l) => String(l || "").trim()).filter(Boolean);
+  if (!lines.length) return [];
+  let start = lines.findIndex((l) => EXPERIENCE_START_WORDS.test(l));
+  if (start < 0) start = 0;
+  let end = lines.length;
+  for (let i = start + 1; i < lines.length; i += 1) {
+    if (SECTION_END_WORDS.test(lines[i])) {
+      end = i;
+      break;
+    }
+  }
+  const slice = lines.slice(start, end);
+  const headers = [];
+  for (let i = 0; i < slice.length; i += 1) {
+    const line = slice[i];
+    const next = slice[i + 1] || "";
+    let headerLine = "";
+    if (looksLikeHeaderRow(line)) {
+      headerLine = line;
+    } else if ((ROLE_WORDS.test(line) || /[|]/.test(line)) && hasDateRangeLike(next)) {
+      headerLine = `${line} | ${next}`;
+    } else if (hasDateRangeLike(line) && ROLE_WORDS.test(next)) {
+      headerLine = `${next} | ${line}`;
+    }
+    if (!headerLine) continue;
+    const { startDate, endDate } = parseDateRangeFromText(headerLine);
+    if (!startDate && !endDate) continue;
+    const company = normalizeCompanyName(extractCompanyFromHeader(headerLine));
+    const designation = normalizeDesignationText(extractDesignationFromHeader(headerLine, company));
+    headers.push({
+      headerIndex: i,
+      headerLine,
+      company,
+      designation,
+      startDate,
+      endDate
+    });
+  }
+  const rows = [];
+  for (let i = 0; i < headers.length; i += 1) {
+    const h = headers[i];
+    const nextIdx = headers[i + 1] ? headers[i + 1].headerIndex : slice.length;
+    const body = slice.slice(h.headerIndex + 1, nextIdx).join(" | ");
+    const firstBody = String(slice[h.headerIndex + 1] || "").trim();
+    const company = h.company && !PROJECT_DOMAIN_WORDS.test(h.company) ? h.company : "";
+    rows.push({
+      company,
+      designation: h.designation,
+      startDate: h.startDate,
+      endDate: h.endDate,
+      sourceText: `${h.headerLine}${body ? ` | ${body}` : ""}`,
+      _firstBodyLine: firstBody
+    });
+  }
+  return rows;
+}
+
+function parseHeaderDateTokenToYm(text = "") {
+  const t = String(text || "").trim();
+  if (!t) return "";
+  const m1 = t.match(/^(\w+)\s+(\d{4})$/i); // July 2019
+  if (m1) {
+    const mm = toYmScore(`${m1[1]} ${m1[2]}`);
+    if (mm > 0) {
+      const y = Math.floor(mm / 12);
+      const mo = String(mm % 12).padStart(2, "0");
+      return `${y}-${mo}`;
+    }
+  }
+  const m2 = t.match(/^(\d{1,2})[/-](\d{4})$/); // 07/2019
+  if (m2) return `${m2[2]}-${String(m2[1]).padStart(2, "0")}`;
+  const m3 = t.match(/^(\d{4})-(\d{2})$/); // 2019-07
+  if (m3) return `${m3[1]}-${m3[2]}`;
+  return "";
+}
+
+function extractHeaderRowsFromRawText(rawText = "") {
+  const lines = String(rawText || "").split(/\r?\n/).map((l) => String(l || "").trim()).filter(Boolean);
+  const out = [];
+  for (const line of lines) {
+    if (!line.includes("|")) continue;
+    const parts = line.split("|").map((x) => String(x || "").trim()).filter(Boolean);
+    if (parts.length < 3) continue;
+    const left = parts[0];
+    const middle = parts[1];
+    const right = parts[parts.length - 1];
+    if (!/(present|current|ongoing|till date|19\d{2}|20\d{2}|jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)/i.test(right)) continue;
+    // Right side date range split
+    const dateParts = right.split(/\s*[–—-]\s*/).map((x) => String(x || "").trim()).filter(Boolean);
+    if (!dateParts.length) continue;
+    const start = parseHeaderDateTokenToYm(dateParts[0]) || dateParts[0];
+    const end = /present|current|ongoing|till date/i.test(dateParts.slice(1).join(" "))
+      ? "Present"
+      : (parseHeaderDateTokenToYm(dateParts.slice(1).join(" ")) || dateParts.slice(1).join(" "));
+    // Try to split left as "<designation> <company>" using role cue.
+    const tokens = left.split(/\s+/);
+    const roleCue = /\b(engineer|developer|manager|lead|architect|consultant|analyst|executive|associate|specialist|intern)\b/i;
+    let designation = left;
+    let company = "";
+    if (roleCue.test(left) && tokens.length >= 3) {
+      // Find probable company tail token: last title-case token chunk
+      const tail = [];
+      for (let i = tokens.length - 1; i >= 0; i -= 1) {
+        const tk = tokens[i];
+        if (/^[A-Z][A-Za-z0-9.&-]*$/.test(tk) && !roleCue.test(tk)) {
+          tail.unshift(tk);
+        } else {
+          break;
+        }
+      }
+      if (tail.length) {
+        company = tail.join(" ");
+        designation = left.slice(0, Math.max(0, left.length - company.length)).trim().replace(/[,\-|]+$/g, "").trim();
+      }
+    }
+    out.push({
+      raw: line,
+      designation: designation.trim(),
+      company: company.trim(),
+      location: middle,
+      startDate: normalizeDashAndSpace(start),
+      endDate: normalizeDashAndSpace(end)
+    });
+  }
+  return out;
+}
+
+function findBestHeaderRepair(row = {}, headerRows = []) {
+  if (!Array.isArray(headerRows) || !headerRows.length) return null;
+  const rowStart = normalizeDashAndSpace(String(row?.startDate || "").trim());
+  const rowEnd = normalizeDashAndSpace(String(row?.endDate || "").trim());
+  const rowDesig = normalizeText(String(row?.designation || ""));
+  // Prefer exact date match first.
+  let match = headerRows.find((h) =>
+    normalizeDashAndSpace(String(h.startDate || "")) === rowStart &&
+    normalizeDashAndSpace(String(h.endDate || "")) === rowEnd &&
+    String(h.company || "").trim()
+  );
+  if (match) return match;
+  // Then by startDate + designation overlap
+  match = headerRows.find((h) =>
+    normalizeDashAndSpace(String(h.startDate || "")) === rowStart &&
+    rowDesig &&
+    normalizeText(String(h.designation || "")).includes(rowDesig.slice(0, 20))
+  );
+  if (match && String(match.company || "").trim()) return match;
+  return null;
 }
 
 function looksLikeTableStyleCompositeRow(row = {}) {
@@ -350,6 +587,7 @@ function isBadValidationFailure(flags = []) {
 function validateAndCleanOutput(candidate = {}, context = {}) {
   const flags = [];
   const timelineRaw = mapTimelineRows(candidate.experienceTimeline || []);
+  const headerRows = extractHeaderRowsFromRawText(String(context?.rawText || ""));
   const cleanedTimeline = [];
   for (const row of timelineRaw) {
     const company = String(row.company || "").trim();
@@ -392,6 +630,19 @@ function validateAndCleanOutput(candidate = {}, context = {}) {
       const e = toYmScore(nextRow.endDate);
       if (s > 0 && e > 0 && e < s) flags.push("date_range_mismatch");
     }
+    if (looksLikeProjectDomainHeading(nextRow.company)) {
+      const repair = findBestHeaderRepair(nextRow, headerRows);
+      if (repair?.company) {
+        nextRow.company = normalizeCompanyName(repair.company);
+        if (repair.designation && (!nextRow.designation || looksLikeProjectDomainHeading(nextRow.designation))) {
+          nextRow.designation = normalizeDesignationText(repair.designation);
+        }
+        flags.push("company_repaired_from_header_line");
+      } else {
+        flags.push("company_project_domain_like");
+      }
+    }
+
     if (nextRow.company || nextRow.designation || nextRow.startDate || nextRow.endDate) {
       cleanedTimeline.push(nextRow);
     }
@@ -566,6 +817,27 @@ async function parseCandidateHybrid({ payload, apiKey = "", model = "", normaliz
       aiPrimaryUsed = true;
       aiMode = `${aiMode}_kept_with_review`;
     }
+  }
+
+  // Phase-1 block repair: build experience blocks from raw text and prefer them when meaningful.
+  const blockRows = buildExperienceRowsFromBlocks(parsed.rawText || "");
+  if (normalized && blockRows.length >= 1) {
+    normalized.timeline = blockRows.map((r) => ({
+      company: r.company || null,
+      designation: r.designation || null,
+      start: r.startDate || null,
+      end: r.endDate || null,
+      duration: null,
+      sourceText: r.sourceText || null
+    }));
+  } else if (!normalized && blockRows.length >= 1) {
+    parsed.experienceTimeline = blockRows.map((r) => ({
+      company: r.company || "",
+      designation: r.designation || "",
+      startDate: r.startDate || "",
+      endDate: r.endDate || "",
+      sourceText: r.sourceText || ""
+    }));
   }
 
   // Hard education-like company rejection and safe fallback chain.
