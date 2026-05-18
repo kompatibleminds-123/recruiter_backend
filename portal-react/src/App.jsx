@@ -4238,6 +4238,12 @@ function NewDraftModal({
       <div className="overlay-card" onClick={(e) => e.stopPropagation()}>
         <h3>Create Draft</h3>
         <p className="muted">{isCvMode ? "Review parsed CV sections, edit fields if needed, then save draft." : "Add minimal details to create a draft without parsing."}</p>
+        {importBusy ? (
+          <div className="parse-progress-banner" role="status" aria-live="polite">
+            <span className="parse-progress-spinner" aria-hidden="true" />
+            <span>Parsing CV, please wait...</span>
+          </div>
+        ) : null}
         {!isCvMode ? (
           <div className="button-row" style={{ marginBottom: 10 }}>
             <button type="button" className="ghost-btn" onClick={onPasteScreenshot} disabled={importBusy}>Paste screenshot (Ctrl+V)</button>
@@ -4358,8 +4364,8 @@ function NewDraftModal({
           <label className="full"><span>Notes</span><textarea value={form.notes} onChange={(e) => onChange("notes", e.target.value)} /></label>
         </div>
         <div className="button-row">
-          <button onClick={onSave}>Save draft</button>
-          <button className="ghost-btn" onClick={onClose}>Cancel</button>
+          <button onClick={onSave} disabled={importBusy}>{importBusy ? "Parsing..." : "Save draft"}</button>
+          <button className="ghost-btn" onClick={onClose} disabled={importBusy}>Cancel</button>
         </div>
       </div>
     </div>

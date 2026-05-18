@@ -166,6 +166,32 @@ textarea { min-height: 92px; resize: vertical; }
   font-weight: 600;
   transition: transform 130ms ease, box-shadow 160ms ease, border-color 160ms ease, background-color 160ms ease;
 }
+
+.parse-progress-banner {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  margin: 2px 0 12px;
+  border: 1px solid #cfe0ff;
+  border-radius: 999px;
+  background: #f1f6ff;
+  color: #23407f;
+  font-weight: 600;
+}
+
+.parse-progress-spinner {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 2px solid #9fc0ff;
+  border-top-color: #2f6fff;
+  animation: parse-spin 0.85s linear infinite;
+}
+
+@keyframes parse-spin {
+  to { transform: rotate(360deg); }
+}
 .nav-btn__icon {
   width: 1.2rem;
   height: 1.2rem;
