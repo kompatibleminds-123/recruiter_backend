@@ -7301,14 +7301,8 @@ function calculateCurrentOrgTenure(timeline, currentCompany = "") {
   if (!latestRow) return "";
   const months = getRowMonths(latestRow);
   if (!months) return "";
-  const base = formatTotalExperience(months);
-  const endText = String(latestRow.end || "").trim();
-  if (/^(present|current|till date|to date)$/i.test(endText)) {
-    return base;
-  }
-  const endValue = parseMonthYear(endText);
-  const leftLabel = formatMonthYearLabel(endValue);
-  return leftLabel ? `${base}, left in ${leftLabel}` : base;
+  // Keep tenure as pure duration only; do not append "left in ..." style text.
+  return formatTotalExperience(months);
 }
 
 function getCurrentRoleFromTimeline(timeline) {
@@ -7692,7 +7686,7 @@ function buildCandidateParseResponse(baseResult, normalizedResult, parseMeta = {
       : choosePreferredScalar(computedTotalExperience, aiTotalExperience);
   const candidateCurrentOrgTenure =
     sourceType === "cv"
-      ? (String(computedCurrentOrgTenure || "").trim() || choosePreferredScalar("", aiCurrentOrgTenure))
+      ? String(computedCurrentOrgTenure || "").trim()
       : choosePreferredScalar(computedCurrentOrgTenure, aiCurrentOrgTenure);
   const rawTextForSearch = String(baseResult?.rawText || "").trim();
   const emailId = applyEmailTldSafeguard(
