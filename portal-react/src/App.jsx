@@ -5064,6 +5064,22 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
     }
   }, [activeTab, loadCampaigns, loadOverview, loadProspects, loadTemplates]);
 
+  const refreshLight = useCallback(async (tabOverride = "") => {
+    const tab = String(tabOverride || activeTab || "").trim();
+    await loadOverview();
+    if (tab === "prospects") {
+      await loadProspects(1);
+      return;
+    }
+    if (tab === "templates") {
+      await Promise.all([loadCampaigns(), loadTemplates()]);
+      return;
+    }
+    if (tab === "campaigns" || tab === "queue") {
+      await loadCampaigns();
+    }
+  }, [activeTab, loadCampaigns, loadOverview, loadProspects, loadTemplates]);
+
   useEffect(() => {
     void refresh();
   }, [refresh]);
@@ -5300,8 +5316,8 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
         <p className="muted">Standalone marketing module: prospects, templates, campaigns, queue and follow-ups.</p>
         <div className="button-row tight">
           <button className="ghost-btn" onClick={() => void refresh().catch(setErr)} disabled={loading}>Refresh</button>
-          <button onClick={() => void api("/company/marketing/worker/tick", token, "POST", {}).then(() => { setOk("Send tick executed."); return refresh(); }).catch(setErr)} disabled={loading}>Run send tick</button>
-          <button className="ghost-btn" disabled={!selectedCampaignId} onClick={() => void queueFollowups().then(() => { setOk("1-week follow-up queue prepared."); return refresh(); }).catch(setErr)}>Queue 7-day follow-ups</button>
+          <button onClick={() => void api("/company/marketing/worker/tick", token, "POST", {}).then(() => { setOk("Send tick executed."); return refreshLight(activeTab); }).catch(setErr)} disabled={loading}>Run send tick</button>
+          <button className="ghost-btn" disabled={!selectedCampaignId} onClick={() => void queueFollowups().then(() => { setOk("1-week follow-up queue prepared."); return refreshLight(activeTab); }).catch(setErr)}>Queue 7-day follow-ups</button>
         </div>
         <div className="form-grid two-col" style={{ marginTop: 10 }}>
           <label>
@@ -5381,7 +5397,7 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
               }
               cancelProspectEdit();
               setProspectsPage(1);
-              await refresh();
+              await refreshLight("prospects");
               setOk(editingProspectId ? "Prospect updated." : "Prospect added.");
             } catch (error) {
               setErr(error);
@@ -5497,7 +5513,7 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
                             await api(`/company/marketing/prospects/${encodeURIComponent(id)}`, token, "DELETE");
                             setSelectedProspectIds((current) => current.filter((rowId) => rowId !== id));
                             setProspectsPage(1);
-                            await refresh();
+                            await refreshLight("prospects");
                             setOk("Prospect deleted.");
                           } catch (error) {
                             setErr(error);
@@ -5552,7 +5568,7 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
             subject: templateDraft.subject,
             bodyText: templateDraft.bodyText,
             targetCategories: String(templateDraft.targetCategoriesText || "").split(",").map((item) => item.trim()).filter(Boolean)
-          }).then(() => { setOk("Template saved."); return refresh(); }).catch(setErr)}>Save template</button>
+          }).then(() => { setOk("Template saved."); return refreshLight("templates"); }).catch(setErr)}>Save template</button>
         </div>
         <div className="table-wrap">
           <table className="dashboard-table">
@@ -5607,7 +5623,7 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
                 await api("/company/marketing/campaigns", token, "POST", campaignDraft);
               }
               cancelCampaignEdit();
-              await refresh();
+              await refreshLight("campaigns");
               setOk(editingCampaignId ? "Campaign updated." : "Campaign created.");
             } catch (error) {
               setErr(error);
@@ -5628,10 +5644,10 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
         ) : null}
         {activeCampaign ? (
           <div className="button-row tight">
-            <button className="ghost-btn" onClick={() => void api(`/company/marketing/campaigns/${activeCampaign.id}/start`, token, "POST", {}).then(() => { setOk("Campaign started."); return refresh(); }).catch(setErr)}>Start</button>
-            <button className="ghost-btn" onClick={() => void api(`/company/marketing/campaigns/${activeCampaign.id}/pause`, token, "POST", {}).then(() => { setOk("Campaign paused."); return refresh(); }).catch(setErr)}>Pause</button>
-            <button className="ghost-btn" onClick={() => void api(`/company/marketing/campaigns/${activeCampaign.id}/resume`, token, "POST", {}).then(() => { setOk("Campaign resumed."); return refresh(); }).catch(setErr)}>Resume</button>
-            <button className="ghost-btn" disabled={!selectedProspectIds.length} onClick={() => void attachSelectedProspectsWithCategory().then(() => { setOk("Selected prospects attached with category."); return refresh(); }).catch(setErr)}>Attach selected prospects</button>
+            <button className="ghost-btn" onClick={() => void api(`/company/marketing/campaigns/${activeCampaign.id}/start`, token, "POST", {}).then(() => { setOk("Campaign started."); return refreshLight("campaigns"); }).catch(setErr)}>Start</button>
+            <button className="ghost-btn" onClick={() => void api(`/company/marketing/campaigns/${activeCampaign.id}/pause`, token, "POST", {}).then(() => { setOk("Campaign paused."); return refreshLight("campaigns"); }).catch(setErr)}>Pause</button>
+            <button className="ghost-btn" onClick={() => void api(`/company/marketing/campaigns/${activeCampaign.id}/resume`, token, "POST", {}).then(() => { setOk("Campaign resumed."); return refreshLight("campaigns"); }).catch(setErr)}>Resume</button>
+            <button className="ghost-btn" disabled={!selectedProspectIds.length} onClick={() => void attachSelectedProspectsWithCategory().then(() => { setOk("Selected prospects attached with category."); return refreshLight("campaigns"); }).catch(setErr)}>Attach selected prospects</button>
           </div>
         ) : null}
         <div className="table-wrap">
@@ -5666,7 +5682,7 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
                         try {
                           await api(`/company/marketing/campaigns/${encodeURIComponent(String(item?.id || ""))}`, token, "DELETE");
                           if (String(selectedCampaignId || "") === String(item?.id || "")) setSelectedCampaignId("");
-                          await refresh();
+                          await refreshLight("campaigns");
                           setOk("Campaign deleted.");
                         } catch (error) {
                           setErr(error);
