@@ -422,10 +422,12 @@ function isSuspiciousCompanyCandidate(value = "") {
 }
 
 function resolveCurrentRoleDeterministically(rows = []) {
-  const cleaned = (rows || []).filter((row) =>
-    !isSuspiciousCompanyCandidate(row?.company || "") &&
-    !looksLikeContactLine(row?.designation || "")
-  );
+  const cleaned = (rows || []).filter((row) => {
+    const company = String(row?.company || "").trim();
+    const allowPresentBlankCompany = isPresentLike(row?.endDate) && !company;
+    return (allowPresentBlankCompany || !isSuspiciousCompanyCandidate(company))
+      && !looksLikeContactLine(row?.designation || "");
+  });
   if (!cleaned.length) {
     return { row: null, unclear: true, reason: "no_valid_rows" };
   }
@@ -497,6 +499,30 @@ function resolveCurrentRoleDeterministically(rows = []) {
     return { row: top, unclear: true, reason: "latest_date_tie" };
   }
   return { row: top, unclear: false, reason: "latest_end_date" };
+}
+
+function findNearestPreviousValidEmployer(rows = [], presentRow = null) {
+  if (!presentRow) return null;
+  const presentStart = toYmScore(String(presentRow?.startDate || "").trim());
+  if (presentStart <= 0) return null;
+  const candidates = (rows || [])
+    .filter((row) => !isPresentLike(row?.endDate))
+    .filter((row) => {
+      const company = String(row?.company || "").trim();
+      return company && !isSuspiciousCompanyCandidate(company);
+    })
+    .map((row) => ({
+      row,
+      endYm: toYmScore(String(row?.endDate || "").trim()),
+      startYm: toYmScore(String(row?.startDate || "").trim())
+    }))
+    .filter((x) => x.endYm > 0 && x.endYm <= presentStart + 1)
+    .sort((a, b) => {
+      const endDelta = b.endYm - a.endYm;
+      if (endDelta !== 0) return endDelta;
+      return b.startYm - a.startYm;
+    });
+  return candidates[0]?.row || null;
 }
 
 function detectTimelineConflicts(rows = [], resolvedCurrent = null) {
@@ -708,6 +734,16 @@ function validateAndCleanOutput(candidate = {}, context = {}) {
   let currentCompany = normalizeCompanyName(String(currentFromTimeline.company || candidate.currentCompany || "").trim());
   let currentDesignation = normalizeDesignationText(String(currentFromTimeline.designation || candidate.currentDesignation || "").trim());
 
+  if (isPresentLike(currentFromTimeline?.endDate || "") && !String(currentCompany || "").trim()) {
+    const inferred = findNearestPreviousValidEmployer(dedupedTimeline, currentFromTimeline);
+    if (inferred?.company) {
+      currentCompany = normalizeCompanyName(String(inferred.company || "").trim());
+      flags.push("current_company_inferred_from_previous_employer_present_blank");
+    } else {
+      flags.push("present_row_company_blank");
+    }
+  }
+
   // Generic guard: if current-row company is generic meta text but designation contains a company-like token,
   // prefer designation-derived company token to avoid "Framework/Platform" as current company.
   if (looksLikeGenericCompanyText(currentCompany)) {
@@ -888,6 +924,23 @@ async function parseCandidateHybrid({ payload, apiKey = "", model = "", normaliz
       endDate: r.endDate || "",
       sourceText: r.sourceText || ""
     }));
+  }
+
+  // Recompute final shape after block repair so repaired timeline/header anchoring
+  // actually flows into current company/designation/tenure fields.
+  {
+    const selectedNormalized = aiPrimaryUsed ? normalized : null;
+    const recomputedCandidate = buildFinalCandidateShape({ parsed, normalized: selectedNormalized });
+    const recomputedValidation = validateAndCleanOutput(recomputedCandidate, {
+      detectedSections: parsed.detectedSections || {},
+      rawText: parsed.rawText || "",
+      detectedDateRangeCount: Array.isArray(parsed.timeline) ? parsed.timeline.length : 0
+    });
+    finalCandidate = recomputedValidation.cleaned;
+    finalFlags = recomputedValidation.flags;
+    if (aiMode === "rule_fallback_after_ai_validation_fail") {
+      finalFlags = [...finalFlags, "ai_validation_fallback_used"];
+    }
   }
 
   // Hard education-like company rejection and safe fallback chain.
