@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+﻿import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { NavLink, Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import BrandLogo from "./components/branding/BrandLogo";
 import {
@@ -1280,14 +1280,15 @@ function toSentenceCasePreservingContent(text) {
 
 function normalizeMojibakeSymbols(text) {
   return String(text || "")
-    .replace(/â€¢|Ã¢â‚¬Â¢|ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¢|ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢/g, "\u2022")
-    .replace(/ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œ|ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Å“/g, "-")
-    .replace(/ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â|ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â/g, "-")
-    .replace(/ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¹Ã…â€œ|ÃƒÂ¢Ã¢â€šÂ¬Ã‹Å“/g, "'")
-    .replace(/ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢|ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢/g, "'")
-    .replace(/ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã¢â‚¬Å“|ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œ/g, '"')
-    .replace(/ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â|ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â/g, '"')
-    .replace(/ÃƒÆ’Ã¢â‚¬Å¡/g, "");
+    .replace(/Â€¢|Â·|â€¢/g, "\u2022")
+    .replace(/Ã¢â‚¬Â¢|ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢|ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢|ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¢/g, "\u2022")
+    .replace(/ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã¢â‚¬Å“|ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œ/g, "-")
+    .replace(/ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â|ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â/g, "-")
+    .replace(/ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¹Ãƒâ€¦Ã¢â‚¬Å“|ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¹Ã…â€œ/g, "'")
+    .replace(/ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¾Ãƒâ€šÃ‚Â¢|ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢/g, "'")
+    .replace(/ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œ|ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã¢â‚¬Å“/g, '"')
+    .replace(/ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â|ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â/g, '"')
+    .replace(/ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡/g, "").replace(/Â(?=[•"'`.,:;!?()\-\s])/g, "");
 }
 function polishStructuredBulletSentence(line) {
   const text = normalizeMojibakeSymbols(line).trim().replace(/\s+/g, " ");
@@ -2009,7 +2010,7 @@ function normalizeRecruiterMergeBase(item) {
 function normalizeRecruiterConflictValue(key, value) {
   let normalized = String(value || "")
     .trim()
-    .replace(/^[\s\-ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Å“ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â:]+/, "")
+    .replace(/^[\s\-ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â:]+/, "")
     .replace(/\s+/g, " ")
     .replace(/\s+\./g, ".")
     .toLowerCase();
@@ -2186,7 +2187,7 @@ function api(path, token, method = "GET", body = null) {
       return statusCode ? `Request failed (HTTP ${statusCode}). Please retry.` : "Request failed. Please retry.";
     }
     // Avoid dumping full HTML / stack traces into UI status banners.
-    if (raw.length > 350) return `${raw.slice(0, 350)}ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦`;
+    if (raw.length > 350) return `${raw.slice(0, 350)}ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¦`;
     return raw;
   }
   const headers = { "Content-Type": "application/json" };
@@ -4891,7 +4892,7 @@ function JdEmailModal({ open, jobs, value, ccSuggestions = [], onChange, onClose
     <div className="overlay" onClick={() => { if (!busy) onClose(); }}>
       <div className="overlay-card" onClick={(e) => e.stopPropagation()}>
         <h3>Send JD Email</h3>
-        <p className="muted">Sends from your configured SMTP (Settings ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ Email settings). Use Zoho app password.</p>
+        <p className="muted">Sends from your configured SMTP (Settings ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ Email settings). Use Zoho app password.</p>
         {status ? <div className={`status ${statusKind || ""}`} style={{ marginBottom: 12 }}>{status}</div> : null}
         <div className="form-grid">
           <label className="full">
@@ -14268,7 +14269,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
         <div className="sidebar-footer">
           {!sidebarCollapsed ? <div className="muted">{state.user ? `${state.user.name} | ${state.user.role} | ${state.user.companyName || "Company"}` : "Not logged in"}</div> : null}
           {!sidebarCollapsed ? <div className="portal-footer">{COMPANY_ATTRIBUTION}</div> : null}
-          <button className={`ghost-btn${sidebarCollapsed ? " ghost-btn--icon" : ""}`} onClick={onLogout} title={sidebarCollapsed ? "Logout" : undefined}>{sidebarCollapsed ? "↗" : "Logout"}</button>
+          <button className={`ghost-btn${sidebarCollapsed ? " ghost-btn--icon" : ""}`} onClick={onLogout} title={sidebarCollapsed ? "Logout" : undefined}>{sidebarCollapsed ? "â†—" : "Logout"}</button>
           <button
             type="button"
             className="sidebar-toggle"
@@ -14276,7 +14277,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
             aria-label={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
             title={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
           >
-            {sidebarCollapsed ? "›" : "‹"}
+            {sidebarCollapsed ? "â€º" : "â€¹"}
           </button>
         </div>
       </aside>
@@ -14530,7 +14531,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                       )}
                     </article>
                     <article className="reports-chart-card">
-                      <h4>Client Pipeline Funnel (Shared Ã¢â€ â€™ Interview)</h4>
+                      <h4>Client Pipeline Funnel (Shared ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ Interview)</h4>
                       {!clientChartRows.length ? <div className="empty-state compact-empty">No funnel data.</div> : (
                         <div className="reports-funnel-list">
                           {clientChartRows.map((row) => (
@@ -18752,7 +18753,7 @@ function MarketingPortalApp({ token, onLogout }) {
           </nav>
         </div>
         <div className="sidebar-footer">
-          <button className={`ghost-btn${sidebarCollapsed ? " ghost-btn--icon" : ""}`} onClick={onLogout} title={sidebarCollapsed ? "Logout" : undefined}>{sidebarCollapsed ? "↗" : "Logout"}</button>
+          <button className={`ghost-btn${sidebarCollapsed ? " ghost-btn--icon" : ""}`} onClick={onLogout} title={sidebarCollapsed ? "Logout" : undefined}>{sidebarCollapsed ? "â†—" : "Logout"}</button>
           <button
             type="button"
             className="sidebar-toggle"
@@ -18760,7 +18761,7 @@ function MarketingPortalApp({ token, onLogout }) {
             aria-label={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
             title={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
           >
-            {sidebarCollapsed ? "›" : "‹"}
+            {sidebarCollapsed ? "â€º" : "â€¹"}
           </button>
         </div>
       </aside>
@@ -18854,7 +18855,7 @@ function PayrollAdminApp({ token, onLogout }) {
           </nav>
         </div>
         <div className="sidebar-footer">
-          <button className={`ghost-btn${sidebarCollapsed ? " ghost-btn--icon" : ""}`} onClick={onLogout} title={sidebarCollapsed ? "Logout" : undefined}>{sidebarCollapsed ? "↗" : "Logout"}</button>
+          <button className={`ghost-btn${sidebarCollapsed ? " ghost-btn--icon" : ""}`} onClick={onLogout} title={sidebarCollapsed ? "Logout" : undefined}>{sidebarCollapsed ? "â†—" : "Logout"}</button>
           <button
             type="button"
             className="sidebar-toggle"
@@ -18862,7 +18863,7 @@ function PayrollAdminApp({ token, onLogout }) {
             aria-label={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
             title={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
           >
-            {sidebarCollapsed ? "›" : "‹"}
+            {sidebarCollapsed ? "â€º" : "â€¹"}
           </button>
         </div>
       </aside>
