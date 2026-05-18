@@ -7305,6 +7305,34 @@ function calculateCurrentOrgTenure(timeline, currentCompany = "") {
   return formatTotalExperience(months);
 }
 
+function getCurrentCompanyContiguousSpan(timeline) {
+  const ordered = sortTimelineByRecency(timeline);
+  if (!ordered.length) return { months: 0, start: "", row: null };
+  const currentIndex = ordered.findIndex((item) => /^(present|current|till date|to date)$/i.test(String(item?.end || "").trim()));
+  const seedIndex = currentIndex >= 0 ? currentIndex : 0;
+  const seed = ordered[seedIndex] || null;
+  if (!seed) return { months: 0, start: "", row: null };
+  const seedCompany = normalizeTimelineIdentity(getTimelineRowCompany(seed));
+  if (!seedCompany) return { months: 0, start: String(seed?.start || "").trim(), row: seed };
+
+  let totalMonths = 0;
+  let earliestStart = String(seed?.start || "").trim();
+  for (let idx = seedIndex; idx < ordered.length; idx += 1) {
+    const row = ordered[idx];
+    const rowCompany = normalizeTimelineIdentity(getTimelineRowCompany(row));
+    if (!rowCompany || rowCompany !== seedCompany) break;
+    totalMonths += getRowMonths(row);
+    const rowStart = parseMonthYear(row?.start);
+    const bestStart = parseMonthYear(earliestStart);
+    const rowStartIdx = monthIndex(rowStart);
+    const bestStartIdx = monthIndex(bestStart);
+    if (rowStartIdx != null && (bestStartIdx == null || rowStartIdx < bestStartIdx)) {
+      earliestStart = String(row?.start || earliestStart || "").trim();
+    }
+  }
+  return { months: totalMonths, start: earliestStart, row: seed };
+}
+
 function getCurrentRoleFromTimeline(timeline) {
   const orderedTimeline = sortTimelineByRecency(timeline);
   const mergedTimeline = mergeConsecutiveSameCompanyRows(orderedTimeline);
@@ -7925,18 +7953,19 @@ function buildCandidateParseResponse(baseResult, normalizedResult, parseMeta = {
 
   // Canonical current-role/tenure must come from final repaired experience_history,
   // not from intermediate fallback timeline variants.
-  const canonicalTimelineForCurrent = experienceHistory
+  const canonicalTimelineForCurrent = (sourceType === "cv" ? cvCareerTimeline : finalTimeline)
     .map((item) => ({
-      company: String(item?.company_name || "").trim(),
-      title: String(item?.designation || "").trim(),
-      start: String(item?.start_date || "").trim(),
-      end: String(item?.end_date || "").trim()
+      company: String(item?.company || item?.company_name || "").trim(),
+      title: String(item?.title || item?.designation || "").trim(),
+      start: String(item?.start || item?.start_date || "").trim(),
+      end: String(item?.end || item?.end_date || "").trim()
     }))
     .filter((row) => row.company || row.title || row.start || row.end);
-  const canonicalCurrentRole = getCurrentRoleFromTimeline(canonicalTimelineForCurrent) || null;
-  const canonicalCurrentMonths = canonicalCurrentRole ? getRowMonths(canonicalCurrentRole) : 0;
+  const canonicalSpan = getCurrentCompanyContiguousSpan(canonicalTimelineForCurrent);
+  const canonicalCurrentRole = canonicalSpan.row || getCurrentRoleFromTimeline(canonicalTimelineForCurrent) || null;
+  const canonicalCurrentMonths = Number(canonicalSpan.months || 0);
   const canonicalCurrentOrgTenure = canonicalCurrentMonths ? formatTotalExperience(canonicalCurrentMonths) : finalCurrentOrgTenure;
-  const canonicalCurrentRoleStart = parseMonthYear(canonicalCurrentRole?.start || "");
+  const canonicalCurrentRoleStart = parseMonthYear(canonicalSpan.start || canonicalCurrentRole?.start || "");
   const canonicalCurrentExperienceObject = {
     company_name: String(canonicalCurrentRole?.company || normalizedCurrentCompany || "").trim() || null,
     designation: String(canonicalCurrentRole?.title || normalizedCurrentDesignation || "").trim() || null,
