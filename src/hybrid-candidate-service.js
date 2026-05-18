@@ -308,6 +308,23 @@ function dedupeExperienceRows(rows = []) {
   return out;
 }
 
+function isBadValidationFailure(flags = []) {
+  const set = new Set(Array.isArray(flags) ? flags : []);
+  const critical = [
+    "current_company_missing",
+    "current_designation_missing",
+    "experience_empty",
+    "company_looks_like_date_line",
+    "company_looks_like_tagline",
+    "company_looks_like_responsibility",
+    "current_company_education_like",
+    "date_range_impossible",
+    "multiple_present_roles_conflict"
+  ];
+  if (critical.some((code) => set.has(code))) return true;
+  return set.size >= 5;
+}
+
 function validateAndCleanOutput(candidate = {}, context = {}) {
   const flags = [];
   const timelineRaw = mapTimelineRows(candidate.experienceTimeline || []);
@@ -408,6 +425,7 @@ function validateAndCleanOutput(candidate = {}, context = {}) {
   return {
     cleaned: {
       ...candidate,
+      totalExperience: String(candidate?.totalExperience || "").trim(),
       currentCompany,
       currentDesignation,
       experienceTimeline: dedupedTimeline
@@ -433,7 +451,9 @@ function buildFinalCandidateShape({ parsed, normalized }) {
     education: Array.isArray(normalized?.education) && normalized.education.length
       ? normalized.education
       : (Array.isArray(parsed?.education) ? parsed.education : []),
-    skills: Array.isArray(parsed?.skills) ? parsed.skills : [],
+    skills: Array.isArray(normalized?.skills) && normalized.skills.length
+      ? normalized.skills
+      : (Array.isArray(parsed?.skills) ? parsed.skills : []),
     parserWarnings: Array.isArray(parsed?.parserWarnings) ? parsed.parserWarnings : []
   };
 }
@@ -506,11 +526,12 @@ async function parseCandidateHybrid({ payload, apiKey = "", model = "", normaliz
       finalCandidate = ruleValidation.cleaned;
       finalFlags = ruleValidation.flags;
       aiMode = "rule_only_no_api_key";
-    } else if (ruleValidation.flags.length < aiValidation.flags.length) {
+    } else if (isBadValidationFailure(aiValidation.flags) && ruleValidation.flags.length < aiValidation.flags.length) {
       finalCandidate = ruleValidation.cleaned;
-      finalFlags = ruleValidation.flags;
+      finalFlags = [...ruleValidation.flags, "ai_validation_fallback_used"];
       aiMode = "rule_fallback_after_ai_validation_fail";
     } else {
+      aiPrimaryUsed = true;
       aiMode = `${aiMode}_kept_with_review`;
     }
   }
