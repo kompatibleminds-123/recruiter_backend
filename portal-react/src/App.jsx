@@ -13914,6 +13914,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
     try {
       setNewDraftImportBusy(true);
       setStatus("captured", "Parsing CV for draft...");
+      setNewDraftCvParsePreview(null);
       resetNewDraftForm();
       setNewDraftMode("cv");
       setNewDraftOpen(true);
