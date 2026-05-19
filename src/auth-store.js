@@ -9,7 +9,7 @@ const STORE_PATH = path.join(DATA_DIR, "store.json");
 function ensureStore() {
   if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
   if (!fs.existsSync(STORE_PATH)) {
-    fs.writeFileSync(STORE_PATH, JSON.stringify({ companies: [], users: [], sessions: [], jobs: [], assessments: [], clientUsers: [] }, null, 2), "utf8");
+    fs.writeFileSync(STORE_PATH, JSON.stringify({ companies: [], users: [], sessions: [], jobs: [], assessments: [], clientUsers: [], emailThreads: [] }, null, 2), "utf8");
   }
 }
 function readStore() { ensureStore(); return JSON.parse(fs.readFileSync(STORE_PATH, "utf8")); }
@@ -2564,6 +2564,68 @@ async function getCompanySharedExportPresets(companyId) {
   const rows = await sbSel("company_jobs", `select=*&company_id=eq.${enc(companyId)}&title=eq.${enc(SHARED_EXPORT_PRESET_ROW_TITLE)}&limit=1`);
   return sanitizeSharedExportPresetSettings(rows?.[0]?.payload || rows?.[0] || {});
 }
+
+async function getCompanyEmailThreadByKey(companyId, conversationKey) {
+  const scopedCompanyId = String(companyId || "").trim();
+  const scopedKey = String(conversationKey || "").trim();
+  if (!scopedCompanyId || !scopedKey) return null;
+  if (!cfg().on) {
+    const store = readStore();
+    const rows = Array.isArray(store.emailThreads) ? store.emailThreads : [];
+    return rows.find((row) => String(row?.companyId || row?.company_id || "").trim() === scopedCompanyId && String(row?.conversationKey || row?.conversation_key || "").trim() === scopedKey) || null;
+  }
+  const rows = await sbSel(
+    "company_email_threads",
+    `select=*&company_id=eq.${enc(scopedCompanyId)}&conversation_key=eq.${enc(scopedKey)}&limit=1`
+  ).catch(() => []);
+  return rows[0] || null;
+}
+
+async function upsertCompanyEmailThread({ companyId, actorUserId, conversationKey, providerMode = "", subject = "", to = "", cc = "", messageId = "", threadId = "" }) {
+  const scopedCompanyId = String(companyId || "").trim();
+  const scopedActorUserId = String(actorUserId || "").trim();
+  const scopedKey = String(conversationKey || "").trim();
+  if (!scopedCompanyId || !scopedActorUserId || !scopedKey) throw new Error("Missing companyId, actorUserId, or conversationKey.");
+  const now = new Date().toISOString();
+  if (!cfg().on) {
+    const store = readStore();
+    store.emailThreads = Array.isArray(store.emailThreads) ? store.emailThreads : [];
+    const idx = store.emailThreads.findIndex((row) => String(row?.companyId || row?.company_id || "").trim() === scopedCompanyId && String(row?.conversationKey || row?.conversation_key || "").trim() === scopedKey);
+    const base = idx >= 0 ? (store.emailThreads[idx] || {}) : {};
+    const next = {
+      id: base.id || crypto.randomUUID(),
+      companyId: scopedCompanyId,
+      conversationKey: scopedKey,
+      providerMode: String(providerMode || base.providerMode || "").trim(),
+      lastSubject: String(subject || base.lastSubject || "").trim(),
+      lastMessageId: String(messageId || base.lastMessageId || "").trim(),
+      lastThreadId: String(threadId || base.lastThreadId || "").trim(),
+      lastTo: String(to || base.lastTo || "").trim(),
+      lastCc: String(cc || base.lastCc || "").trim(),
+      updatedBy: scopedActorUserId,
+      updatedAt: now
+    };
+    if (idx >= 0) store.emailThreads[idx] = next;
+    else store.emailThreads.push(next);
+    writeStore(store);
+    return next;
+  }
+  const payload = {
+    company_id: scopedCompanyId,
+    conversation_key: scopedKey,
+    provider_mode: String(providerMode || "").trim(),
+    last_subject: String(subject || "").trim(),
+    last_message_id: String(messageId || "").trim() || null,
+    last_thread_id: String(threadId || "").trim() || null,
+    last_to: String(to || "").trim(),
+    last_cc: String(cc || "").trim(),
+    updated_by: scopedActorUserId,
+    updated_at: now
+  };
+  await sbIns("company_email_threads", [payload], { conflict: "company_id,conversation_key", upsert: true, returning: "minimal" });
+  const row = await getCompanyEmailThreadByKey(scopedCompanyId, scopedKey);
+  return row || payload;
+}
 async function saveCompanySharedExportPresets({ actorUserId, companyId, settings }) {
   if (!actorUserId || !companyId) throw new Error("actorUserId and companyId are required.");
   const actor = sanitizeUser(await getUserById(actorUserId, companyId));
@@ -5043,6 +5105,7 @@ module.exports = {
   deleteCompanyJob,
   getCompanyApplicantIntakeSecret,
   getCompanySharedExportPresets,
+  getCompanyEmailThreadByKey,
   getCompanyPersonalShortcuts,
   getPublicCompanyJob,
   setCompanyExtensionPlan,
@@ -5099,6 +5162,7 @@ module.exports = {
   saveEmployeeCompensationStructure,
   updateEmployeeProfileAndWorkSite,
   saveCompanySharedExportPresets,
+  upsertCompanyEmailThread,
   saveCompanyPersonalShortcuts,
   setCompanyApplicantIntakeSecret,
   searchAssessments,

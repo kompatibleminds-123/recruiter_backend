@@ -22,6 +22,7 @@ const EMPLOYEE_TOKEN_KEY = "recruitdesk_employee_portal_token";
 const PAYROLL_TOKEN_KEY = "recruitdesk_payroll_portal_token";
 const AUTH_MODE_KEY = "recruitdesk_auth_mode";
 const COPY_SETTINGS_STORAGE_KEY = "recruitdesk_portal_copy_settings_v1";
+const DIRECT_SHARE_HISTORY_KEY = "recruitdesk_direct_share_history_v1";
 const DEFAULT_JD_EMAIL_CC = "ankit.garg@kompatibleminds.com";
 const JD_EMAIL_CC_HISTORY_KEY_PREFIX = "recruitdesk_portal_jd_email_cc_history_v1:";
 const KOMPATIBLE_MINDS_COMPANY_ID = "c0a7d2c9-4ddb-4add-9d4a-24cdd1caba7c";
@@ -318,6 +319,26 @@ const SHORTCUT_TEMPLATE_PLACEHOLDERS = [
   "{{jd_link}}",
   "{{recruiter_jd_link}}"
 ];
+
+function parseEmailTokens(value = "") {
+  return String(value || "")
+    .split(/[;,]/)
+    .map((item) => String(item || "").trim())
+    .filter(Boolean)
+    .filter((item) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(item));
+}
+
+function uniqueEmails(values = []) {
+  const seen = new Set();
+  const out = [];
+  (values || []).forEach((value) => {
+    const email = String(value || "").trim().toLowerCase();
+    if (!email || seen.has(email)) return;
+    seen.add(email);
+    out.push(email);
+  });
+  return out;
+}
 
 const PRESET_INDICATOR_LIBRARY = [
   { key: "s_no", label: "S.No." },
@@ -6218,23 +6239,31 @@ function PortalApp({ token, onLogout }) {
     hrName: "",
     recruiterName: "",
     recipientEmail: "",
+    ccEmails: "",
     emailSubject: "",
     clientLabel: "",
     targetRole: "",
     presetId: "client_submission",
     introText: "",
-    extraMessage: "",
+    richBodyHtml: "",
     signatureText: "",
     signatureLinkLabel: "",
     signatureLinkUrl: "",
     signatureLinkLabel2: "",
     signatureLinkUrl2: ""
   });
+  const clientShareEditorRef = useRef(null);
+  const [directShareHistory, setDirectShareHistory] = useState({ to: [], cc: [] });
   const [selectedAssessmentIds, setSelectedAssessmentIds] = useState([]);
   const [databaseProfileItem, setDatabaseProfileItem] = useState(null);
   const [clientShareCvLinks, setClientShareCvLinks] = useState({});
   const [clientShareCvLinkState, setClientShareCvLinkState] = useState({});
   const [clientShareCvLinkFingerprint, setClientShareCvLinkFingerprint] = useState({});
+  const [clientShareSendQueue, setClientShareSendQueue] = useState({ pending: false, executeAt: 0, to: "", subject: "" });
+  const [clientShareQueueSeconds, setClientShareQueueSeconds] = useState(0);
+  const clientShareQueueTimeoutRef = useRef(null);
+  const clientShareQueuePayloadRef = useRef(null);
+  const clientShareQueueIntervalRef = useRef(null);
   const [agendaRange, setAgendaRange] = useState("today");
   const [openAssessmentMoreId, setOpenAssessmentMoreId] = useState("");
   const assessmentMoreMenuRef = useRef(null);
@@ -6665,6 +6694,19 @@ function PortalApp({ token, onLogout }) {
   const selectedShortcutJobMap = useMemo(
     () => normalizeShortcutMapKeys(parseShortcutMap(selectedShortcutJob?.jdShortcuts || "")),
     [selectedShortcutJob]
+  );
+  const directShareEmailSuggestions = useMemo(() => {
+    const sources = [
+      ...((directShareHistory.to || [])),
+      ...((directShareHistory.cc || [])),
+      ...((state.clientPortal?.contacts || []).map((item) => item?.email)),
+      ...((state.users || []).map((item) => item?.email))
+    ];
+    return uniqueEmails(sources);
+  }, [directShareHistory, state.clientPortal, state.users]);
+  const recruiterNameOptions = useMemo(
+    () => uniqueNonEmpty((recruiterWorkspaceUsers || []).map((item) => String(item?.name || "").trim())),
+    [recruiterWorkspaceUsers]
   );
   const accessFlagsReady = Boolean(state.user?.id) && (Boolean(companyLicense) || Boolean(billingOverview));
   const marketingOwnerEmail = String(state.user?.email || "").trim().toLowerCase();
@@ -7720,12 +7762,57 @@ function PortalApp({ token, onLogout }) {
   }, [copySettings]);
 
   useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem(DIRECT_SHARE_HISTORY_KEY);
+      if (!raw) return;
+      const parsed = JSON.parse(raw);
+      setDirectShareHistory({
+        to: uniqueEmails(parsed?.to || []),
+        cc: uniqueEmails(parsed?.cc || [])
+      });
+    } catch {
+      setDirectShareHistory({ to: [], cc: [] });
+    }
+  }, []);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(DIRECT_SHARE_HISTORY_KEY, JSON.stringify({
+        to: uniqueEmails(directShareHistory.to || []).slice(0, 40),
+        cc: uniqueEmails(directShareHistory.cc || []).slice(0, 60)
+      }));
+    } catch {}
+  }, [directShareHistory]);
+
+  useEffect(() => {
     if (!exportPresetOptions.length) return;
     const selectedPresetExists = exportPresetOptions.some((preset) => String(preset.id) === String(clientShareDraft.presetId));
     if (!selectedPresetExists) {
       setClientShareDraft((current) => ({ ...current, presetId: exportPresetOptions[0].id }));
     }
   }, [exportPresetOptions, clientShareDraft.presetId]);
+
+  useEffect(() => {
+    if (String(clientShareDraft.richBodyHtml || "").trim()) return;
+    const context = getClientShareContext();
+    const template = String(copySettings.clientShareIntroTemplate || DEFAULT_COPY_SETTINGS.clientShareIntroTemplate || "").trim();
+    const nextHtml = escapeHtml(fillClientShareTemplate(template, context)).replace(/\n/g, "<br/>");
+    setClientShareDraft((current) => ({ ...current, richBodyHtml: nextHtml }));
+  }, [
+    clientShareDraft.richBodyHtml,
+    clientShareDraft.hrName,
+    clientShareDraft.clientLabel,
+    clientShareDraft.targetRole,
+    clientShareDraft.recruiterName,
+    copySettings.clientShareIntroTemplate,
+    state.user?.companyName,
+    state.user?.company_name
+  ]);
+
+  useEffect(() => (() => {
+    if (clientShareQueueTimeoutRef.current) clearTimeout(clientShareQueueTimeoutRef.current);
+    if (clientShareQueueIntervalRef.current) clearInterval(clientShareQueueIntervalRef.current);
+  }), []);
 
   useEffect(() => {
     if (!exportPresetOptions.length) return;
@@ -12607,7 +12694,25 @@ function PortalApp({ token, onLogout }) {
   function getClientShareIntroText() {
     const context = getClientShareContext();
     const template = String(copySettings.clientShareIntroTemplate || DEFAULT_COPY_SETTINGS.clientShareIntroTemplate || "").trim();
-    return String(clientShareDraft.introText || "").trim() || fillClientShareTemplate(template, context);
+    return fillClientShareTemplate(template, context);
+  }
+
+  function getClientShareRichBodyHtml() {
+    const saved = String(clientShareDraft.richBodyHtml || "").trim();
+    if (saved) return saved;
+    return escapeHtml(getClientShareIntroText()).replace(/\n/g, "<br/>");
+  }
+
+  function runClientShareEditorCommand(command, value = null) {
+    try {
+      if (!clientShareEditorRef.current) return;
+      clientShareEditorRef.current.focus();
+      document.execCommand(command, false, value);
+      setClientShareDraft((current) => ({
+        ...current,
+        richBodyHtml: String(clientShareEditorRef.current?.innerHTML || "").trim()
+      }));
+    } catch {}
   }
 
   function getClientShareSignature() {
@@ -12647,8 +12752,7 @@ function PortalApp({ token, onLogout }) {
   }
 
   function buildClientShareBody() {
-    const introText = String(clientShareDraft.introText || "").trim()
-      || getClientShareIntroText();
+    const introText = String(clientShareEditorRef.current?.innerText || "").trim() || getClientShareIntroText();
     const signature = getClientShareSignature();
     const presetColumns = getClientSharePresetColumns();
     const rows = getClientShareRows();
@@ -12671,7 +12775,6 @@ function PortalApp({ token, onLogout }) {
       `${getClientShareRows().length} selected profile(s) are listed below.`,
       "",
       ...profileLines,
-      String(clientShareDraft.extraMessage || "").trim(),
       signature.signatureText,
       ...signature.links.map((link) => {
         const parts = splitSignatureLinkLabel(link.label || link.url || "");
@@ -12698,9 +12801,7 @@ function PortalApp({ token, onLogout }) {
           : (clientShareCvLinkState[shareKey] === "missing" ? "CV link not available yet" : "Generating secure CV link..."));
       return `<tr>${cells}<td style="border:1px solid #d8dee8;padding:10px 12px;vertical-align:top;font-size:13px;line-height:1.45;">${cvCell}</td></tr>`;
     }).join("");
-    const extraMessage = String(clientShareDraft.extraMessage || "").trim();
-    const introText = getClientShareIntroText();
-    const introHtml = escapeHtml(introText).replace(/\n/g, "<br/>");
+    const introHtml = getClientShareRichBodyHtml();
     const signature = getClientShareSignature();
     const signatureLinksHtml = signature.links
       .map((link) => {
@@ -12717,7 +12818,7 @@ function PortalApp({ token, onLogout }) {
     ].filter(Boolean).join("<br/>");
     return `
       <div style="font-family:Arial, sans-serif;color:#1f2a44;line-height:1.6;">
-        <p>${introHtml}</p>
+        <div>${introHtml}</div>
         <p>${rows.length} selected profile(s) are listed below.</p>
         <table style="border-collapse:collapse;width:100%;margin-top:12px;">
           <thead>
@@ -12727,7 +12828,6 @@ function PortalApp({ token, onLogout }) {
             ${tableRows}
           </tbody>
         </table>
-        ${extraMessage ? `<p style="margin-top:16px;">${escapeHtml(extraMessage).replace(/\n/g, "<br/>")}</p>` : ""}
         ${signatureHtml ? `<div style="margin-top:18px;">${signatureHtml}</div>` : ""}
       </div>
     `.trim();
@@ -12743,29 +12843,103 @@ function PortalApp({ token, onLogout }) {
     return fallback ? `Job profiles: ${fallback}` : "Job profiles";
   }
 
+  async function dispatchClientShareEmail(payload) {
+    const to = String(payload?.to || "").trim();
+    const cc = String(payload?.cc || "").trim();
+    const subject = String(payload?.subject || "").trim();
+    const html = String(payload?.html || "").trim();
+    const text = String(payload?.text || "").trim();
+    await api("/company/email/send", token, "POST", {
+      to,
+      cc,
+      subject,
+      html,
+      text,
+      threadContext: {
+        clientLabel: String(clientShareDraft.clientLabel || "").trim(),
+        role: String(clientShareDraft.targetRole || "").trim()
+      }
+    });
+    setDirectShareHistory((current) => ({
+      to: uniqueEmails([to, ...(current.to || [])]).slice(0, 40),
+      cc: uniqueEmails([...(cc ? parseEmailTokens(cc) : []), ...(current.cc || [])]).slice(0, 60)
+    }));
+  }
+
+  function clearClientShareQueueTimers() {
+    if (clientShareQueueTimeoutRef.current) {
+      clearTimeout(clientShareQueueTimeoutRef.current);
+      clientShareQueueTimeoutRef.current = null;
+    }
+    if (clientShareQueueIntervalRef.current) {
+      clearInterval(clientShareQueueIntervalRef.current);
+      clientShareQueueIntervalRef.current = null;
+    }
+  }
+
+  function cancelQueuedClientShareEmail() {
+    clearClientShareQueueTimers();
+    clientShareQueuePayloadRef.current = null;
+    setClientShareSendQueue({ pending: false, executeAt: 0, to: "", subject: "" });
+    setClientShareQueueSeconds(0);
+    setStatus("clientShare", "Send cancelled before dispatch.", "ok");
+  }
+
+  async function flushQueuedClientShareEmail() {
+    const payload = clientShareQueuePayloadRef.current;
+    clearClientShareQueueTimers();
+    setClientShareSendQueue({ pending: false, executeAt: 0, to: "", subject: "" });
+    setClientShareQueueSeconds(0);
+    clientShareQueuePayloadRef.current = null;
+    if (!payload) return;
+    try {
+      setStatus("clientShare", "Sending email...", "ok");
+      await dispatchClientShareEmail(payload);
+      setStatus("clientShare", "Email sent. Check your Sent folder to confirm.", "ok");
+    } catch (error) {
+      setStatus("clientShare", `Email failed: ${String(error?.message || error)}`, "error");
+    }
+  }
+
+  function queueClientShareEmail(payload) {
+    clearClientShareQueueTimers();
+    clientShareQueuePayloadRef.current = payload;
+    const executeAt = Date.now() + 10000;
+    setClientShareSendQueue({
+      pending: true,
+      executeAt,
+      to: String(payload?.to || ""),
+      subject: String(payload?.subject || "")
+    });
+    setClientShareQueueSeconds(10);
+    clientShareQueueIntervalRef.current = setInterval(() => {
+      const seconds = Math.max(0, Math.ceil((executeAt - Date.now()) / 1000));
+      setClientShareQueueSeconds(seconds);
+    }, 250);
+    clientShareQueueTimeoutRef.current = setTimeout(() => {
+      void flushQueuedClientShareEmail();
+    }, 10000);
+    setStatus("clientShare", "Email queued. You can undo within 10 seconds.", "ok");
+  }
+
   async function sendClientShareEmail() {
     if (!getClientShareRows().length) {
       setStatus("clientShare", "Select assessment profiles first from the Assessments tab.", "error");
       return;
     }
     const to = String(clientShareDraft.recipientEmail || "").trim();
+    const cc = uniqueEmails(parseEmailTokens(clientShareDraft.ccEmails || "")).join(", ");
     if (!to) {
       setStatus("clientShare", "Recipient email is required.", "error");
       return;
     }
-    setStatus("clientShare", "Sending email...", "ok");
-    try {
-      const subject = getClientShareEmailSubject();
-      await api("/company/email/send", token, "POST", {
-        to,
-        subject,
-        html: buildClientShareHtml(),
-        text: buildClientShareBody()
-      });
-      setStatus("clientShare", "Email sent. Check your Sent folder to confirm.", "ok");
-    } catch (error) {
-      setStatus("clientShare", `Email failed: ${String(error?.message || error)}`, "error");
-    }
+    queueClientShareEmail({
+      to,
+      cc,
+      subject: getClientShareEmailSubject(),
+      html: buildClientShareHtml(),
+      text: buildClientShareBody()
+    });
   }
 
   async function copyClientShareEmailDraft() {
@@ -15985,17 +16159,48 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                       </label>
                       <label>
                         <span>Recipient email</span>
-                        <input type="email" value={clientShareDraft.recipientEmail} onChange={(e) => setClientShareDraft((current) => ({ ...current, recipientEmail: e.target.value }))} placeholder="hr@client.com" />
+                        <input
+                          type="email"
+                          list="client-share-email-suggestions"
+                          value={clientShareDraft.recipientEmail}
+                          onChange={(e) => setClientShareDraft((current) => ({ ...current, recipientEmail: e.target.value }))}
+                          placeholder="hr@client.com"
+                        />
+                      </label>
+                      <label>
+                        <span>CC (optional)</span>
+                        <input
+                          list="client-share-email-suggestions"
+                          value={clientShareDraft.ccEmails || ""}
+                          onChange={(e) => setClientShareDraft((current) => ({ ...current, ccEmails: e.target.value }))}
+                          placeholder="manager@client.com, hiring@client.com"
+                        />
+                        <span className="field-help">Use comma-separated emails.</span>
                       </label>
                       <label>
                         <span>Email subject</span>
                         <input value={clientShareDraft.emailSubject} onChange={(e) => setClientShareDraft((current) => ({ ...current, emailSubject: e.target.value }))} placeholder={getClientShareEmailSubject()} />
                       </label>
-                      <label><span>Client</span><input value={clientShareDraft.clientLabel} onChange={(e) => setClientShareDraft((current) => ({ ...current, clientLabel: e.target.value }))} placeholder="Attentive" /></label>
+                      <label>
+                        <span>Client</span>
+                        <select value={clientShareDraft.clientLabel} onChange={(e) => setClientShareDraft((current) => ({ ...current, clientLabel: e.target.value }))}>
+                          <option value="">Select client</option>
+                          {availablePresetClients.map((clientName) => <option key={`share-client-${clientName}`} value={clientName}>{clientName}</option>)}
+                        </select>
+                      </label>
                       <label><span>Role / requirement</span><input value={clientShareDraft.targetRole} onChange={(e) => setClientShareDraft((current) => ({ ...current, targetRole: e.target.value }))} placeholder="AE / Account Executive" /></label>
                       <label><span>HR name</span><input value={clientShareDraft.hrName} onChange={(e) => setClientShareDraft((current) => ({ ...current, hrName: e.target.value }))} placeholder="Attentive HR Team" /></label>
-                      <label><span>Recruiter name</span><input value={clientShareDraft.recruiterName} onChange={(e) => setClientShareDraft((current) => ({ ...current, recruiterName: e.target.value }))} placeholder={state.user?.name || "Ankit Garg"} /></label>
+                      <label>
+                        <span>Recruiter name</span>
+                        <select value={clientShareDraft.recruiterName} onChange={(e) => setClientShareDraft((current) => ({ ...current, recruiterName: e.target.value }))}>
+                          <option value="">{state.user?.name || "Select recruiter"}</option>
+                          {recruiterNameOptions.map((name) => <option key={`share-rec-${name}`} value={name}>{name}</option>)}
+                        </select>
+                      </label>
                     </div>
+                    <datalist id="client-share-email-suggestions">
+                      {directShareEmailSuggestions.map((email) => <option key={`share-email-${email}`} value={email} />)}
+                    </datalist>
                   </div>
 
                   <div className="settings-subsection direct-share-section direct-share-body-shell">
@@ -16016,22 +16221,35 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                         <textarea value={(copySettings.customExportPresets || []).find((preset) => String(preset.id) === String(clientShareDraft.presetId))?.columns || copySettings.exportPresetColumns?.[clientShareDraft.presetId] || DEFAULT_COPY_SETTINGS.exportPresetColumns?.[clientShareDraft.presetId] || ""} readOnly />
                       </label>
                       <label className="full">
-                        <span>Email intro</span>
-                        <textarea value={clientShareDraft.introText || ""} onChange={(e) => setClientShareDraft((current) => ({ ...current, introText: e.target.value }))} placeholder={getClientShareIntroText()} />
-                        <span className="field-help">Default intro to be set by Admin.</span>
-                      </label>
-                      <label className="full"><span>Extra message</span><textarea value={clientShareDraft.extraMessage} onChange={(e) => setClientShareDraft((current) => ({ ...current, extraMessage: e.target.value }))} placeholder="Optional note for the client." /></label>
-                      <label className="full">
-                        <span>Signature source</span>
-                        <input value="Using Mail Settings signature (single source)" readOnly />
-                        <span className="field-help">To update signature, go to Mail Settings. Direct Share uses the same signature automatically.</span>
+                        <span>Email body (rich editor)</span>
+                        <div className="button-row tight">
+                          <button type="button" className="ghost-btn" onClick={() => runClientShareEditorCommand("bold")}><strong>B</strong></button>
+                          <button type="button" className="ghost-btn" onClick={() => runClientShareEditorCommand("italic")}><em>I</em></button>
+                          <button type="button" className="ghost-btn" onClick={() => runClientShareEditorCommand("underline")}><u>U</u></button>
+                          <button type="button" className="ghost-btn" onClick={() => runClientShareEditorCommand("insertUnorderedList")}>List</button>
+                          <button type="button" className="ghost-btn" onClick={() => {
+                            const url = window.prompt("Enter hyperlink URL");
+                            if (!url) return;
+                            runClientShareEditorCommand("createLink", url);
+                          }}>Link</button>
+                          <button type="button" className="ghost-btn" onClick={() => runClientShareEditorCommand("removeFormat")}>Clear</button>
+                        </div>
+                        <div
+                          ref={clientShareEditorRef}
+                          className="client-share-rich-editor"
+                          contentEditable
+                          suppressContentEditableWarning
+                          onInput={(e) => setClientShareDraft((current) => ({ ...current, richBodyHtml: String(e.currentTarget.innerHTML || "") }))}
+                          dangerouslySetInnerHTML={{ __html: getClientShareRichBodyHtml() }}
+                        />
+                        <span className="field-help">Base intro comes from Admin default. Recruiter can format message here.</span>
                       </label>
                     </div>
                   </div>
 
                   <div className="settings-subsection direct-share-section direct-share-preview-shell">
                     <div className="section-kicker">Section 3</div>
-                    <h3>Email Preview</h3>
+                    <h3>Email Output</h3>
                     <div className="client-share-preview" dangerouslySetInnerHTML={{ __html: buildClientShareHtml() }} />
                   </div>
 
@@ -16064,9 +16282,19 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                 </div>
                 {!selectedAssessmentRows.length ? <div className="empty-state">No assessment selected yet. Go to Assessments and tick `Select for client share` on the profiles you want to send.</div> : null}
                 <p className="muted">Current flow: copy the email draft from here, then paste it into Zoho/Gmail/Outlook and attach CVs manually.</p>
+                {clientShareSendQueue.pending ? (
+                  <div className="status">
+                    {`Queued to ${clientShareSendQueue.to || "recipient"} in ${clientShareQueueSeconds}s.`}
+                    <div className="button-row tight">
+                      <button className="ghost-btn" onClick={() => cancelQueuedClientShareEmail()}>Undo send</button>
+                    </div>
+                  </div>
+                ) : null}
                 <div className="button-row">
                   <button onClick={() => void copyClientShareEmailDraft()}>Copy email draft</button>
-                  <button onClick={() => void sendClientShareEmail()}>Send email</button>
+                  <button onClick={() => void sendClientShareEmail()} disabled={clientShareSendQueue.pending}>
+                    {clientShareSendQueue.pending ? "Queued..." : "Send email"}
+                  </button>
                   <button className="ghost-btn" onClick={() => void copyClientShareTracker()}>Copy tracker only</button>
                 </div>
               </Section>

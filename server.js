@@ -52,6 +52,7 @@ const {
   getSessionUser,
   getPlatformSessionUser,
   getCompanySharedExportPresets,
+  getCompanyEmailThreadByKey,
   getCompanyPersonalShortcuts,
   getPublicCompanyJob,
   listCompanyEmployees,
@@ -113,6 +114,7 @@ const {
   saveCompanyJob,
   saveCompanyJobRecruiterShortcuts,
   saveCompanySharedExportPresets,
+  upsertCompanyEmailThread,
   saveCompanyPersonalShortcuts,
   setCompanyExtensionPlan,
   setCompanyApplicantIntakeSecret,
@@ -1100,7 +1102,7 @@ async function createActorSmtpTransport(actor) {
   return { transport, cfg: finalCfg };
 }
 
-async function sendJdEmailAsActor(actor, { to, cc = "", subject, html, text, attachments = [] }) {
+async function sendJdEmailAsActor(actor, { to, cc = "", subject, html, text, attachments = [], threading = {} }) {
   if (isEmailBounced(to)) {
     const info = getEmailBounceInfo(to);
     throw new Error(`Recipient email is marked bounced/blocked (${String(info?.reason || "bounce")}).`);
@@ -1109,25 +1111,43 @@ async function sendJdEmailAsActor(actor, { to, cc = "", subject, html, text, att
   const ccValue = String(cc || "").trim();
   if (isZohoApiMode(cfg)) {
     await sendZohoEmailWithCfg(cfg, { to, cc: ccValue, subject, html, text, attachments });
-    return;
+    return { providerMode: "zoho_api", messageId: "", threadId: "" };
   }
   if (isSendgridApiMode(cfg)) {
     await sendSendgridEmailWithCfg(cfg, { to, cc: ccValue, subject, html, text, attachments });
-    return;
+    return { providerMode: "sendgrid_api", messageId: "", threadId: "" };
   }
   if (isPostmarkApiMode(cfg)) {
     await sendPostmarkEmailWithCfg(cfg, { to, cc: ccValue, subject, html, text, attachments });
-    return;
+    return { providerMode: "postmark_api", messageId: "", threadId: "" };
   }
-  await transport.sendMail({
+  const info = await transport.sendMail({
     from: String(cfg.from || "").trim(),
     to,
     ...(ccValue ? { cc: ccValue } : {}),
     subject,
     text,
     html,
+    ...(threading?.inReplyTo ? { inReplyTo: String(threading.inReplyTo || "").trim() } : {}),
+    ...(Array.isArray(threading?.references) && threading.references.length ? { references: threading.references } : {}),
     attachments: Array.isArray(attachments) ? attachments : []
   });
+  return {
+    providerMode: "smtp",
+    messageId: String(info?.messageId || "").trim(),
+    threadId: ""
+  };
+}
+
+function normalizeThreadToken(value = "") {
+  return String(value || "").trim().toLowerCase().replace(/\s+/g, " ");
+}
+
+function buildConversationKey({ to = "", clientLabel = "", role = "" } = {}) {
+  const toKey = normalizeThreadToken(String(to || "").split(/,|;/)[0] || "");
+  const clientKey = normalizeThreadToken(clientLabel);
+  const roleKey = normalizeThreadToken(role);
+  return [toKey, clientKey, roleKey].filter(Boolean).join("|");
 }
 
 const STATIC_MIME_TYPES = {
@@ -10117,6 +10137,7 @@ const server = http.createServer(async (req, res) => {
       const subject = String(body.subject || "").trim();
       const html = String(body.html || "").trim();
       const text = String(body.text || "").trim();
+      const threadContext = body.threadContext && typeof body.threadContext === "object" ? body.threadContext : {};
       if (!toRaw) throw new Error("Recipient email is required.");
       if (!subject) throw new Error("Subject is required.");
       if (!html && !text) throw new Error("Email content missing.");
@@ -10131,14 +10152,50 @@ const server = http.createServer(async (req, res) => {
             .map((item) => String(item || "").trim())
             .filter(Boolean)
         : [];
-      await sendJdEmailAsActor(actor, {
+      const conversationKey = buildConversationKey({
+        to: recipients.join(", "),
+        clientLabel: String(threadContext.clientLabel || "").trim(),
+        role: String(threadContext.role || "").trim()
+      });
+      const existingThread = conversationKey
+        ? await getCompanyEmailThreadByKey(actor.companyId, conversationKey).catch(() => null)
+        : null;
+      const inReplyTo = String(existingThread?.last_message_id || existingThread?.lastMessageId || "").trim();
+      const references = inReplyTo ? [inReplyTo] : [];
+      const sendMeta = await sendJdEmailAsActor(actor, {
         to: recipients.join(", "),
         cc: ccRecipients.join(", "),
         subject,
         html: html || `<pre>${escapeHtml(text).replace(/\n/g, "<br/>")}</pre>`,
-        text: text || ""
+        text: text || "",
+        threading: {
+          inReplyTo: inReplyTo || "",
+          references
+        }
       });
-      sendJson(res, 200, { ok: true, result: { sent: true, to: recipients, subject } });
+      if (conversationKey) {
+        await upsertCompanyEmailThread({
+          companyId: actor.companyId,
+          actorUserId: actor.id,
+          conversationKey,
+          providerMode: String(sendMeta?.providerMode || "").trim(),
+          subject,
+          to: recipients.join(", "),
+          cc: ccRecipients.join(", "),
+          messageId: String(sendMeta?.messageId || "").trim(),
+          threadId: String(sendMeta?.threadId || "").trim()
+        }).catch(() => null);
+      }
+      sendJson(res, 200, {
+        ok: true,
+        result: {
+          sent: true,
+          to: recipients,
+          subject,
+          threaded: Boolean(inReplyTo),
+          conversationKey: conversationKey || ""
+        }
+      });
     } catch (error) {
       sendJson(res, 400, { ok: false, error: String(error.message || error) });
     }
