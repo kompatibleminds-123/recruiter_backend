@@ -1979,6 +1979,63 @@ function normalizeCandidateSearchDocText(value) {
     .trim();
 }
 
+function buildCuratedCvSearchText(cvResult = {}) {
+  const safeCv = cvResult && typeof cvResult === "object" ? cvResult : {};
+  if (!Object.keys(safeCv).length) return "";
+  const TECH_TOKEN_RULES = [
+    { token: "sql", patterns: [/\bsql\b/i, /\bmysql\b/i, /\bpostgres(?:ql)?\b/i, /\bms\s*sql\b/i, /\bsql\s*server\b/i, /\bpl\/sql\b/i] },
+    { token: "azure", patterns: [/\bazure\b/i, /\baz[- ]?900\b/i, /\bpower\s*platform\b/i, /\bdynamics\s*365\b/i] },
+    { token: "mongodb", patterns: [/\bmongodb\b/i, /\bmongo\b/i] },
+    { token: "nodejs", patterns: [/\bnode\.?js\b/i, /\bnode js\b/i, /\bexpress\.?js\b/i, /\bnest\.?js\b/i] },
+    { token: "react", patterns: [/\breact\.?js\b/i, /\breact js\b/i, /\breact\b/i] },
+    { token: "java", patterns: [/\bjava\b/i, /\bspring\b/i, /\bspringboot\b/i, /\bspring boot\b/i] },
+    { token: "python", patterns: [/\bpython\b/i, /\bdjango\b/i, /\bflask\b/i, /\bfastapi\b/i] },
+    { token: "aws", patterns: [/\baws\b/i, /\bamazon web services\b/i, /\bec2\b/i, /\bs3\b/i, /\blambda\b/i] },
+    { token: "gcp", patterns: [/\bgcp\b/i, /\bgoogle cloud\b/i, /\bbigquery\b/i] },
+    { token: "docker", patterns: [/\bdocker\b/i, /\bkubernetes\b/i, /\bk8s\b/i] },
+    { token: "salesforce", patterns: [/\bsalesforce\b/i, /\bcrm\b/i] }
+  ];
+  const denyKeyPattern = /(raw|full|content|text|resume|cv_text|ocr|markdown|html|body|blob)/i;
+  const allowKeyPattern = /(skill|skills|tool|tools|tech|technology|stack|domain|industry|role|designation|title|company|employer|experience|education|degree|cert|certificate|qualification|location|city|state|summary|highlight|keyword|keywords|project|projects)/i;
+  const chunks = [];
+  const longTextForTokenScan = [];
+  const walk = (value, keyPath = "") => {
+    if (value == null) return;
+    if (Array.isArray(value)) {
+      value.forEach((item) => walk(item, keyPath));
+      return;
+    }
+    if (typeof value === "object") {
+      Object.entries(value).forEach(([key, nested]) => walk(nested, keyPath ? `${keyPath}.${key}` : key));
+      return;
+    }
+    const raw = String(value || "").trim();
+    if (!raw) return;
+    const keyTail = String((keyPath || "").split(".").slice(-1)[0] || "");
+    const keyFull = String(keyPath || "");
+    // Keep long text only for token scanning (not direct indexing).
+    if (raw.length > 180) {
+      longTextForTokenScan.push(raw);
+      return;
+    }
+    // Prevent full CV / OCR dumps from entering search doc.
+    if ((denyKeyPattern.test(keyTail) || denyKeyPattern.test(keyFull)) && !allowKeyPattern.test(keyFull)) return;
+    // Keep short/medium signals only.
+    // Mostly textual signals; drop noisy numeric-only blobs.
+    if (!/[A-Za-z]/.test(raw)) return;
+    chunks.push(raw);
+  };
+  walk(safeCv, "");
+  const tokenHaystack = longTextForTokenScan.join("\n");
+  const extractedTechTokens = TECH_TOKEN_RULES
+    .filter((rule) => rule.patterns.some((pattern) => pattern.test(tokenHaystack)))
+    .map((rule) => rule.token);
+  extractedTechTokens.forEach((token) => chunks.push(token));
+  if (!chunks.length) return "";
+  const unique = Array.from(new Set(chunks.map((item) => item.toLowerCase())));
+  return unique.slice(0, 500).join(" ");
+}
+
 function deriveCandidateSearchDocV1FromParts({
   candidate = {},
   meta = {},
@@ -2031,7 +2088,7 @@ function deriveCandidateSearchDocV1FromParts({
     screeningAnswersToSearchText(safeScreening),
     screeningAnswersToSearchText(draftScreening),
     screeningAnswersToSearchText(metaScreening),
-    Object.keys(safeCv).length ? JSON.stringify(safeCv) : ""
+    buildCuratedCvSearchText(safeCv)
   ].filter(Boolean);
 
   // Keep a hard cap to avoid raw_note metadata blowups.

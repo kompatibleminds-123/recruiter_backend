@@ -1295,6 +1295,8 @@ function buildInterviewCvAnalysis(baseForm = {}, result = {}, storedFile = null)
     candidateName: result.candidateName || "",
     emailId: result.emailId || "",
     phoneNumber: result.phoneNumber || "",
+    linkedin: result.linkedinUrl || "",
+    location: result.location || "",
     timelineConfidenceLevel,
     timelineConfidenceLabel,
     storedFile: storedFile || result.storedFile || null,
@@ -4480,13 +4482,37 @@ function InterviewCvParseModal({
   open,
   busy = false,
   preview = null,
+  draft = null,
   onClose,
   onApply
 }) {
+  const [selectedOverwriteKeys, setSelectedOverwriteKeys] = useState({});
+  useEffect(() => {
+    if (!open) return;
+    setSelectedOverwriteKeys({});
+  }, [open, preview]);
   if (!open) return null;
   const summary = preview?.summary || {};
+  const draftSummary = draft || {};
   const experienceRows = Array.isArray(preview?.experience) ? preview.experience : [];
   const educationRows = Array.isArray(preview?.education) ? preview.education : [];
+  const compareRows = [
+    { key: "candidateName", label: "Name", draft: String(draftSummary?.candidateName || "").trim(), parsed: String(summary?.candidateName || "").trim() },
+    { key: "phoneNumber", label: "Phone", draft: String(draftSummary?.phoneNumber || "").trim(), parsed: String(summary?.phoneNumber || "").trim() },
+    { key: "emailId", label: "Email", draft: String(draftSummary?.emailId || "").trim(), parsed: String(summary?.emailId || "").trim() },
+    { key: "linkedin", label: "LinkedIn", draft: String(draftSummary?.linkedin || "").trim(), parsed: String(summary?.linkedinUrl || "").trim() },
+    { key: "currentCompany", label: "Current company", draft: String(draftSummary?.currentCompany || "").trim(), parsed: String(summary?.currentCompany || "").trim() },
+    { key: "currentDesignation", label: "Current designation", draft: String(draftSummary?.currentDesignation || "").trim(), parsed: String(summary?.currentDesignation || "").trim() },
+    { key: "totalExperience", label: "Total experience", draft: String(draftSummary?.totalExperience || "").trim(), parsed: String(summary?.totalExperience || "").trim() },
+    { key: "currentOrgTenure", label: "Tenure in current org", draft: String(draftSummary?.currentOrgTenure || "").trim(), parsed: String(summary?.currentOrgTenure || "").trim() },
+    { key: "highestEducation", label: "Highest qualification", draft: String(draftSummary?.highestEducation || "").trim(), parsed: String(summary?.highestEducation || "").trim() }
+  ].map((row) => ({
+    ...row,
+    isEmptyDraft: !row.draft,
+    hasParsed: Boolean(row.parsed),
+    isConflict: Boolean(row.draft && row.parsed && row.draft.toLowerCase() !== row.parsed.toLowerCase())
+  })).filter((row) => row.hasParsed);
+  const conflictRows = compareRows.filter((row) => row.isConflict);
   return (
     <div className="overlay" onClick={busy ? undefined : onClose}>
       <div className="overlay-card" onClick={(e) => e.stopPropagation()}>
@@ -4500,6 +4526,53 @@ function InterviewCvParseModal({
         ) : null}
         {!busy && preview ? (
           <div className="panel" style={{ marginBottom: 12, padding: 12 }}>
+            {compareRows.length ? (
+              <>
+                <h4 style={{ marginTop: 6, marginBottom: 8 }}>Field merge review</h4>
+                <div className="table-wrap" style={{ marginBottom: 10 }}>
+                  <table className="dashboard-table">
+                    <thead>
+                      <tr>
+                        <th>Field</th>
+                        <th>Existing value</th>
+                        <th>CV value</th>
+                        <th>Apply CV?</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {compareRows.map((row) => (
+                        <tr key={`cv-merge-${row.key}`}>
+                          <td>{row.label}</td>
+                          <td>{row.draft || "-"}</td>
+                          <td>{row.parsed || "-"}</td>
+                          <td>
+                            {row.isEmptyDraft ? (
+                              <span className="status-note">Auto-fill empty</span>
+                            ) : row.isConflict ? (
+                              <label className="checkbox-row">
+                                <input
+                                  type="checkbox"
+                                  checked={Boolean(selectedOverwriteKeys[row.key])}
+                                  onChange={(e) => setSelectedOverwriteKeys((current) => ({ ...current, [row.key]: e.target.checked }))}
+                                />
+                                <span>Use CV value</span>
+                              </label>
+                            ) : (
+                              <span className="status-note">Same value</span>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                {conflictRows.length ? (
+                  <div className="status-note" style={{ marginBottom: 10 }}>
+                    {`${conflictRows.length} conflict field(s) found. Select only the changes you want to apply.`}
+                  </div>
+                ) : null}
+              </>
+            ) : null}
             <h4 style={{ marginTop: 6, marginBottom: 8 }}>Summary</h4>
             <div className="form-grid two-col" style={{ marginBottom: 10 }}>
               <label><span>Name</span><input value={String(summary.candidateName || "")} readOnly /></label>
@@ -4538,7 +4611,7 @@ function InterviewCvParseModal({
           </div>
         ) : null}
         <div className="button-row">
-          <button onClick={onApply} disabled={busy || !preview}>Apply To Draft</button>
+          <button onClick={() => onApply(selectedOverwriteKeys)} disabled={busy || !preview}>Apply To Draft</button>
           <button className="ghost-btn" onClick={onClose} disabled={busy}>Close</button>
         </div>
       </div>
@@ -11429,23 +11502,28 @@ function PortalApp({ token, onLogout }) {
     event.target.value = "";
   }
 
-  function applyCvAnalysisToDraft() {
+  function applyCvAnalysisToDraft(selectedOverwriteKeys = {}) {
     const analysis = interviewForm.cvAnalysis;
     if (!analysis) {
       setStatus("interview", "No CV analysis available yet.", "error");
       return;
     }
     const isBlank = (value) => !String(value || "").trim();
+    const shouldUseCvValue = (fieldKey, currentValue) => (
+      isBlank(currentValue) || Boolean(selectedOverwriteKeys?.[fieldKey])
+    );
     setInterviewForm((current) => ({
       ...current,
-      candidateName: isBlank(current.candidateName) ? (analysis.candidateName || current.candidateName) : current.candidateName,
-      emailId: isBlank(current.emailId) ? (analysis.emailId || current.emailId) : current.emailId,
-      phoneNumber: isBlank(current.phoneNumber) ? (analysis.phoneNumber || current.phoneNumber) : current.phoneNumber,
-      totalExperience: isBlank(current.totalExperience) ? (analysis.exactTotalExperience || analysis.totalExperience || current.totalExperience) : current.totalExperience,
-      currentCompany: isBlank(current.currentCompany) ? (analysis.currentCompany || current.currentCompany) : current.currentCompany,
-      currentDesignation: isBlank(current.currentDesignation) ? (analysis.currentDesignation || current.currentDesignation) : current.currentDesignation,
-      currentOrgTenure: isBlank(current.currentOrgTenure) ? (analysis.currentOrgTenure || current.currentOrgTenure) : current.currentOrgTenure,
-      highestEducation: isBlank(current.highestEducation) ? (analysis.highestEducation || current.highestEducation) : current.highestEducation,
+      candidateName: shouldUseCvValue("candidateName", current.candidateName) ? (analysis.candidateName || current.candidateName) : current.candidateName,
+      emailId: shouldUseCvValue("emailId", current.emailId) ? (analysis.emailId || current.emailId) : current.emailId,
+      phoneNumber: shouldUseCvValue("phoneNumber", current.phoneNumber) ? (analysis.phoneNumber || current.phoneNumber) : current.phoneNumber,
+      linkedin: shouldUseCvValue("linkedin", current.linkedin) ? (analysis.linkedin || current.linkedin) : current.linkedin,
+      location: shouldUseCvValue("location", current.location) ? (analysis.location || current.location) : current.location,
+      totalExperience: shouldUseCvValue("totalExperience", current.totalExperience) ? (analysis.exactTotalExperience || analysis.totalExperience || current.totalExperience) : current.totalExperience,
+      currentCompany: shouldUseCvValue("currentCompany", current.currentCompany) ? (analysis.currentCompany || current.currentCompany) : current.currentCompany,
+      currentDesignation: shouldUseCvValue("currentDesignation", current.currentDesignation) ? (analysis.currentDesignation || current.currentDesignation) : current.currentDesignation,
+      currentOrgTenure: shouldUseCvValue("currentOrgTenure", current.currentOrgTenure) ? (analysis.currentOrgTenure || current.currentOrgTenure) : current.currentOrgTenure,
+      highestEducation: shouldUseCvValue("highestEducation", current.highestEducation) ? (analysis.highestEducation || current.highestEducation) : current.highestEducation,
       cvAnalysisApplied: true
     }));
     setStatus("interview", "Applied CV analysis values to draft.", "ok");
@@ -16640,19 +16718,13 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                   <p className="muted">Upload CV here when you want to keep it ready for later sharing. The file will be stored, parsed once, and the parsed metadata will stay hidden in the backend for AI search and future client-sharing flows.</p>
                   <div className="cv-upload-card">
                     <div className="cv-upload-card__copy">
-                      <div className="info-label">Upload CV</div>
-                      <div className="muted">Upload once, save to storage, and reuse the cached parse later without repeated AI calls.</div>
+                      <div className="info-label">Single CV upload flow</div>
+                      <div className="muted">Use `Upload CV (Auto-fill Draft)` above. The same upload stores CV metadata for search and opens conflict-based draft autofill.</div>
                       <div className="muted">
                         {interviewMeta.candidateId
-                          ? "Candidate-linked upload is active. This CV should store against the current candidate."
-                          : "Open a real candidate draft first if you want this CV stored in S3 for later sharing."}
+                          ? "Candidate-linked storage is active for current candidate."
+                          : "Open a real candidate draft first if you want this CV linked to a candidate."}
                       </div>
-                    </div>
-                    <div className="button-row">
-                      <label className="file-btn">
-                        <input type="file" accept=".pdf,.doc,.docx" hidden onClick={(e) => { e.target.value = ""; }} onChange={handleInterviewCvSelection} />
-                        Upload CV
-                      </label>
                     </div>
                   </div>
                   {interviewForm.cvAnalysis?.storedFile ? (
@@ -17974,12 +18046,13 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
         open={interviewCvParseModalOpen}
         busy={interviewCvParseBusy}
         preview={interviewCvParsePreview}
+        draft={interviewForm}
         onClose={() => {
           if (interviewCvParseBusy) return;
           setInterviewCvParseModalOpen(false);
         }}
-        onApply={() => {
-          applyCvAnalysisToDraft();
+        onApply={(selectedOverwriteKeys) => {
+          applyCvAnalysisToDraft(selectedOverwriteKeys || {});
           setInterviewCvParseModalOpen(false);
         }}
       />
