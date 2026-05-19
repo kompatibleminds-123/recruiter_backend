@@ -4233,6 +4233,16 @@ function NewDraftModal({
   const summary = cvParsePreview?.summary || {};
   const experienceRows = Array.isArray(cvParsePreview?.experience) ? cvParsePreview.experience : [];
   const educationRows = Array.isArray(cvParsePreview?.education) ? cvParsePreview.education : [];
+  const confidence = cvParsePreview?.confidence || null;
+  const experienceLow = Number(confidence?.experience || 0) > 0 && Number(confidence?.experience || 0) < 0.85;
+  const educationLow = Number(confidence?.education || 0) > 0 && Number(confidence?.education || 0) < 0.85;
+  const reviewHint = experienceLow && educationLow
+    ? "Review details"
+    : experienceLow
+      ? "Review experience"
+      : educationLow
+        ? "Review education"
+        : "";
   return (
     <div className="overlay" onClick={onClose}>
       <div className="overlay-card" onClick={(e) => e.stopPropagation()}>
@@ -4275,9 +4285,9 @@ function NewDraftModal({
         {cvParsePreview ? (
           <div className="panel" style={{ marginBottom: 12, padding: 12 }}>
             <div className="section-kicker">CV Parse Preview</div>
-            {cvParsePreview?.confidence ? (
+            {reviewHint ? (
               <div className="status-note" style={{ marginBottom: 10 }}>
-                Confidence: overall {String(cvParsePreview.confidence?.overall || "-")} | experience {String(cvParsePreview.confidence?.experience || "-")} | education {String(cvParsePreview.confidence?.education || "-")}
+                <strong>{reviewHint}</strong>
               </div>
             ) : null}
             <h4 style={{ marginTop: 6, marginBottom: 8 }}>Summary</h4>
