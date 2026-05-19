@@ -10261,11 +10261,35 @@ function PortalApp({ token, onLogout }) {
       setStatus("captured", "Cannot hide: missing candidate id.", "error");
       return;
     }
-    await patchCandidate(candidateId, { hidden_from_captured: true }, "Candidate hidden from captured notes.");
+    await api(`/company/candidates/${encodeURIComponent(candidateId)}`, token, "PATCH", { patch: { hidden_from_captured: true } });
+    const optimisticUpdatedAt = new Date().toISOString();
+    setState((current) => {
+      const applyPatch = (items) => Array.isArray(items)
+        ? items.map((item) => String(item?.id || "") === String(candidateId) ? { ...item, hidden_from_captured: true, updated_at: optimisticUpdatedAt, updatedAt: optimisticUpdatedAt } : item)
+        : items;
+      return {
+        ...current,
+        candidates: applyPatch(current.candidates),
+        databaseCandidates: applyPatch(current.databaseCandidates)
+      };
+    });
+    setStatus("captured", "Candidate hidden from captured notes.", "ok");
   }
 
   async function restoreCapturedCandidate(candidateId) {
-    await patchCandidate(candidateId, { hidden_from_captured: false }, "Candidate restored to active captured notes.");
+    await api(`/company/candidates/${encodeURIComponent(candidateId)}`, token, "PATCH", { patch: { hidden_from_captured: false } });
+    const optimisticUpdatedAt = new Date().toISOString();
+    setState((current) => {
+      const applyPatch = (items) => Array.isArray(items)
+        ? items.map((item) => String(item?.id || "") === String(candidateId) ? { ...item, hidden_from_captured: false, updated_at: optimisticUpdatedAt, updatedAt: optimisticUpdatedAt } : item)
+        : items;
+      return {
+        ...current,
+        candidates: applyPatch(current.candidates),
+        databaseCandidates: applyPatch(current.databaseCandidates)
+      };
+    });
+    setStatus("captured", "Candidate restored to active captured notes.", "ok");
   }
 
   async function deleteCapturedCandidate(candidateId) {
@@ -16397,16 +16421,6 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                     <label className="full">
                       <span>Final email editor (with table)</span>
                       <div className="button-row tight">
-                        <button type="button" className="ghost-btn" onClick={() => runClientShareEditorCommand("bold")}><strong>B</strong></button>
-                        <button type="button" className="ghost-btn" onClick={() => runClientShareEditorCommand("italic")}><em>I</em></button>
-                        <button type="button" className="ghost-btn" onClick={() => runClientShareEditorCommand("underline")}><u>U</u></button>
-                        <button type="button" className="ghost-btn" onClick={() => runClientShareEditorCommand("insertUnorderedList")}>List</button>
-                        <button type="button" className="ghost-btn" onClick={() => {
-                          const url = window.prompt("Enter hyperlink URL");
-                          if (!url) return;
-                          runClientShareEditorCommand("createLink", url);
-                        }}>Link</button>
-                        <button type="button" className="ghost-btn" onClick={() => runClientShareEditorCommand("removeFormat")}>Clear</button>
                         <button
                           type="button"
                           className="ghost-btn"

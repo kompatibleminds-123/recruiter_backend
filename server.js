@@ -13412,6 +13412,13 @@ const server = http.createServer(async (req, res) => {
         raw_note: fieldValueOrUndefined("raw_note", "rawNote")
       };
       Object.keys(patch).forEach((key) => patch[key] === undefined && delete patch[key]);
+      const patchKeys = Object.keys(patch);
+      const hideOnlyPatch = patchKeys.length === 1 && patchKeys[0] === "hidden_from_captured";
+      if (hideOnlyPatch) {
+        const result = await patchCandidate(candidateId, patch, { companyId: actor.companyId });
+        sendJson(res, 200, { ok: true, result });
+        return;
+      }
       const existing = (await listCandidatesForUser(actor, { id: candidateId, limit: 1 }))[0] || null;
       if (existing) {
         if (Object.prototype.hasOwnProperty.call(patch, "draft_payload")) {
