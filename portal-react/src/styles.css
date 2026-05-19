@@ -2125,8 +2125,8 @@ textarea { min-height: 92px; resize: vertical; }
 }
 
 .workspace-header h1 {
-  font-size: 2.1rem;
-  letter-spacing: -0.02em;
+  font-size: 1.78rem;
+  letter-spacing: -0.015em;
 }
 
 .workspace-header .muted {
@@ -2515,6 +2515,77 @@ button:focus-visible {
 
 .portal-footer--content {
   color: #5c7399;
+}
+
+/* ---------- Batch 1 Structural QA: Dashboard + Candidates + Assessments ---------- */
+.dashboard-page,
+.candidates-page {
+  gap: 1.05rem;
+}
+
+.dashboard-page .panel,
+.candidates-page .panel,
+.assessments-page {
+  border-radius: 20px;
+}
+
+.dashboard-page .agenda-block {
+  border-radius: 18px;
+  padding: 1rem 1.05rem;
+}
+
+.dashboard-page .agenda-item {
+  border-radius: 14px;
+  padding: 0.78rem 0.88rem;
+}
+
+.dashboard-page .metric-card.compact-metric,
+.assessments-page .metric-card.compact-metric {
+  min-height: 76px;
+}
+
+.candidates-page .candidate-search-toolbar,
+.assessments-page .button-row {
+  align-items: center;
+}
+
+.candidates-page .candidate-search-toolbar > input {
+  min-height: 46px;
+}
+
+.candidates-page .candidate-search-content {
+  gap: 1.1rem;
+}
+
+.candidates-page .candidate-filter-card {
+  border-radius: 18px;
+  padding: 1.08rem;
+}
+
+.candidates-page .candidate-search-results .item-card {
+  border-radius: 18px;
+}
+
+.assessments-page .form-grid.three-col {
+  align-items: end;
+}
+
+.assessments-page .captured-filter-grid {
+  margin-top: 0.8rem;
+}
+
+.assessments-page .assessment-card {
+  border-radius: 18px;
+  padding: 0.78rem 0.86rem;
+}
+
+.assessments-page .assessment-select-row {
+  margin-bottom: 0.35rem;
+}
+
+.assessments-page .copy-preset-control {
+  min-height: 42px;
+  padding: 0.3rem 0.48rem;
 }
 
 .payroll-lite-shell {
