@@ -6336,6 +6336,44 @@ function PortalApp({ token, onLogout }) {
     });
     return Array.from(values).sort((a, b) => a.localeCompare(b));
   }, [state.jobs]);
+  const clientJobContentDefaults = useMemo(() => {
+    const scoreRow = (job) => {
+      const aboutCompany = String(job?.aboutCompany || "").trim();
+      const publicCompanyLine = String(job?.publicCompanyLine || job?.public_company_line || "").trim();
+      const publicTitle = String(job?.publicTitle || job?.public_title || "").trim();
+      return (aboutCompany ? 1 : 0) + (publicCompanyLine ? 1 : 0) + (publicTitle ? 1 : 0);
+    };
+    const byClient = new Map();
+    (Array.isArray(state.jobs) ? state.jobs : []).forEach((job) => {
+      const clientName = String(job?.client_name || job?.clientName || "").trim();
+      if (!clientName || clientName.startsWith("__")) return;
+      const currentBest = byClient.get(clientName) || null;
+      if (!currentBest) {
+        byClient.set(clientName, job);
+        return;
+      }
+      const currentScore = scoreRow(currentBest);
+      const nextScore = scoreRow(job);
+      if (nextScore > currentScore) {
+        byClient.set(clientName, job);
+        return;
+      }
+      if (nextScore === currentScore) {
+        const currentTime = new Date(currentBest?.updatedAt || currentBest?.updated_at || currentBest?.createdAt || currentBest?.created_at || 0).getTime();
+        const nextTime = new Date(job?.updatedAt || job?.updated_at || job?.createdAt || job?.created_at || 0).getTime();
+        if (nextTime > currentTime) byClient.set(clientName, job);
+      }
+    });
+    const defaults = {};
+    byClient.forEach((job, clientName) => {
+      defaults[clientName] = {
+        aboutCompany: String(job?.aboutCompany || "").trim(),
+        publicCompanyLine: String(job?.publicCompanyLine || job?.public_company_line || "").trim(),
+        publicTitle: String(job?.publicTitle || job?.public_title || "").trim()
+      };
+    });
+    return defaults;
+  }, [state.jobs]);
   const [clientUserDraft, setClientUserDraft] = useState({ username: "", password: "", clientName: "", allowedPositions: "" });
   const [clientPasswordDrafts, setClientPasswordDrafts] = useState({});
   const [loginSettingsPanel, setLoginSettingsPanel] = useState("team");
@@ -12726,6 +12764,22 @@ function PortalApp({ token, onLogout }) {
     return fillClientShareTemplate(template, context);
   }
 
+  function applyClientJobContentDefaults(nextClientName = "") {
+    const clientName = String(nextClientName || "").trim();
+    if (!clientName) return;
+    const defaults = clientJobContentDefaults[clientName];
+    if (!defaults) return;
+    setJobDraft((current) => {
+      if (String(selectedJobId || current?.id || "").trim()) return current;
+      return {
+        ...current,
+        aboutCompany: String(defaults.aboutCompany || current.aboutCompany || "").trim(),
+        publicCompanyLine: String(defaults.publicCompanyLine || current.publicCompanyLine || "").trim(),
+        publicTitle: String(defaults.publicTitle || current.publicTitle || "").trim()
+      };
+    });
+  }
+
   function getClientShareRichBodyHtml() {
     const saved = String(clientShareDraft.richBodyHtml || "").trim();
     if (saved) return saved;
@@ -16865,7 +16919,22 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                   <div className="section-kicker">Basic Job Setup</div>
                   <div className="form-grid two-col">
                   <label><span>Job title</span><input disabled={jobDraftReadOnly || jobActionBusy} value={jobDraft.title} onChange={(e) => setJobDraft((c) => ({ ...c, title: e.target.value }))} /></label>
-                  <label><span>Client</span><input disabled={jobDraftReadOnly || jobActionBusy} value={jobDraft.clientName} onChange={(e) => setJobDraft((c) => ({ ...c, clientName: e.target.value }))} /></label>
+                  <label>
+                    <span>Client</span>
+                    <input
+                      disabled={jobDraftReadOnly || jobActionBusy}
+                      list="job-client-name-options"
+                      value={jobDraft.clientName}
+                      onChange={(e) => {
+                        const nextClient = e.target.value;
+                        setJobDraft((c) => ({ ...c, clientName: nextClient }));
+                        applyClientJobContentDefaults(nextClient);
+                      }}
+                    />
+                    <datalist id="job-client-name-options">
+                      {availablePresetClients.map((clientName) => <option key={`job-client-${clientName}`} value={clientName} />)}
+                    </datalist>
+                  </label>
                   <label><span>Location</span><input disabled={jobDraftReadOnly || jobActionBusy} value={jobDraft.location} onChange={(e) => setJobDraft((c) => ({ ...c, location: e.target.value }))} placeholder="Mumbai / Bengaluru / Remote" /></label>
                   <label><span>Work mode</span><select disabled={jobDraftReadOnly || jobActionBusy} value={jobDraft.workMode} onChange={(e) => setJobDraft((c) => ({ ...c, workMode: e.target.value }))}><option value="">Not specified</option><option value="Remote">Remote</option><option value="Hybrid">Hybrid</option><option value="Work from office">Work from office</option></select></label>
                   {isSettingsAdmin && hasSaasUnlimitedAccess && !jobDraftReadOnly ? (
