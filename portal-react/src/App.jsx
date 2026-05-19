@@ -17399,29 +17399,29 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                   <p className="muted">Choose a category to open its dedicated settings workspace.</p>
                   <div className="settings-subsection">
                     <div className="section-kicker">Admin Categories</div>
-                    <div className="stack-list compact">
-                      <article className="item-card compact-card" role="button" tabIndex={0} onClick={() => navigate("/admin-settings/email-templates")} onKeyDown={(e) => { if (e.key === "Enter") navigate("/admin-settings/email-templates"); }}>
-                        <div className="item-card__top compact-top"><strong>Email Templates</strong><span><PortalIcon name="mail" /></span></div>
+                    <div className="admin-cats-grid">
+                      <article className="item-card compact-card admin-cat-card" role="button" tabIndex={0} onClick={() => navigate("/admin-settings/email-templates")} onKeyDown={(e) => { if (e.key === "Enter") navigate("/admin-settings/email-templates"); }}>
+                        <div className="admin-cat-head"><span className="admin-cat-icon"><PortalIcon name="mail" /></span><strong>Email Templates</strong></div>
                         <div className="muted">JD share template, Direct share template, and Admin signature defaults.</div>
                       </article>
-                      <article className="item-card compact-card" role="button" tabIndex={0} onClick={() => navigate("/login-settings")} onKeyDown={(e) => { if (e.key === "Enter") navigate("/login-settings"); }}>
-                        <div className="item-card__top compact-top"><strong>Account Management</strong><span><PortalIcon name="team" /></span></div>
+                      <article className="item-card compact-card admin-cat-card" role="button" tabIndex={0} onClick={() => navigate("/login-settings")} onKeyDown={(e) => { if (e.key === "Enter") navigate("/login-settings"); }}>
+                        <div className="admin-cat-head"><span className="admin-cat-icon"><PortalIcon name="team" /></span><strong>Account Management</strong></div>
                         <div className="muted">Users, recruiter/client login settings.</div>
                       </article>
-                      <article className="item-card compact-card" role="button" tabIndex={0} onClick={() => navigate("/intake-settings")} onKeyDown={(e) => { if (e.key === "Enter") navigate("/intake-settings"); }}>
-                        <div className="item-card__top compact-top"><strong>Job Settings</strong><span><PortalIcon name="link" /></span></div>
+                      <article className="item-card compact-card admin-cat-card" role="button" tabIndex={0} onClick={() => navigate("/intake-settings")} onKeyDown={(e) => { if (e.key === "Enter") navigate("/intake-settings"); }}>
+                        <div className="admin-cat-head"><span className="admin-cat-icon"><PortalIcon name="link" /></span><strong>Job Settings</strong></div>
                         <div className="muted">Public apply link and intake configuration.</div>
                       </article>
-                      <article className="item-card compact-card" role="button" tabIndex={0} onClick={() => navigate("/settings")} onKeyDown={(e) => { if (e.key === "Enter") navigate("/settings"); }}>
-                        <div className="item-card__top compact-top"><strong>Preset Settings</strong><span><PortalIcon name="template" /></span></div>
+                      <article className="item-card compact-card admin-cat-card" role="button" tabIndex={0} onClick={() => navigate("/settings")} onKeyDown={(e) => { if (e.key === "Enter") navigate("/settings"); }}>
+                        <div className="admin-cat-head"><span className="admin-cat-icon"><PortalIcon name="template" /></span><strong>Preset Settings</strong></div>
                         <div className="muted">Tracker presets and indicator builder.</div>
                       </article>
-                      <article className="item-card compact-card" role="button" tabIndex={0} onClick={() => navigate("/admin-settings/ai")} onKeyDown={(e) => { if (e.key === "Enter") navigate("/admin-settings/ai"); }}>
-                        <div className="item-card__top compact-top"><strong>AI Settings</strong><span><PortalIcon name="settings" /></span></div>
+                      <article className="item-card compact-card admin-cat-card" role="button" tabIndex={0} onClick={() => navigate("/admin-settings/ai")} onKeyDown={(e) => { if (e.key === "Enter") navigate("/admin-settings/ai"); }}>
+                        <div className="admin-cat-head"><span className="admin-cat-icon"><PortalIcon name="settings" /></span><strong>AI Settings</strong></div>
                         <div className="muted">Interview panel AI parsing controls.</div>
                       </article>
-                      <article className="item-card compact-card" role="button" tabIndex={0} onClick={() => navigate("/plan")} onKeyDown={(e) => { if (e.key === "Enter") navigate("/plan"); }}>
-                        <div className="item-card__top compact-top"><strong>Plan & Billing</strong><span><PortalIcon name="coins" /></span></div>
+                      <article className="item-card compact-card admin-cat-card" role="button" tabIndex={0} onClick={() => navigate("/plan")} onKeyDown={(e) => { if (e.key === "Enter") navigate("/plan"); }}>
+                        <div className="admin-cat-head"><span className="admin-cat-icon"><PortalIcon name="coins" /></span><strong>Plan & Billing</strong></div>
                         <div className="muted">Subscription, plan, and usage controls.</div>
                       </article>
                     </div>

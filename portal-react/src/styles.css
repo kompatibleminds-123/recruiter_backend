@@ -828,6 +828,39 @@ textarea { min-height: 92px; resize: vertical; }
 .item-card__top > * { min-width: 0; }
 .item-card__top > .chip-row { flex: 0 1 320px; justify-content: flex-end; }
 .compact-top { align-items: center; }
+.admin-cats-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.65rem;
+}
+.admin-cat-card {
+  padding: 0.62rem 0.75rem;
+  cursor: pointer;
+  min-height: 86px;
+}
+.admin-cat-head {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin-bottom: 0.18rem;
+}
+.admin-cat-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  color: #2b5fb8;
+}
+.admin-cat-card:hover {
+  border-color: #c6d8f7;
+  transform: translateY(-1px);
+}
+@media (max-width: 900px) {
+  .admin-cats-grid {
+    grid-template-columns: 1fr;
+  }
+}
 .item-card h3 { margin: 0 0 0.2rem; font-size: 1rem; line-height: 1.28; overflow-wrap: anywhere; }
 .muted { color: var(--muted); font-size: 0.86rem; line-height: 1.45; }
 .chip-row, .button-row, .toolbar { display: flex; flex-wrap: wrap; gap: 0.55rem; min-width: 0; }
