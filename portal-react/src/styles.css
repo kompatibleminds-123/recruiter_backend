@@ -2082,16 +2082,6 @@ textarea { min-height: 92px; resize: vertical; }
     radial-gradient(circle at 100% 100%, rgba(15, 23, 42, 0.05), transparent 30%);
 }
 
-/* ---------- UX Refresh Pass (Global, CSS-only) ---------- */
-:root {
-  --ux-primary: #1f4db8;
-  --ux-primary-hover: #163d95;
-  --ux-primary-soft: #eaf1ff;
-  --ux-neutral-btn-bg: #f8fbff;
-  --ux-neutral-btn-border: #cedbef;
-  --ux-focus-ring: 0 0 0 3px rgba(31, 77, 184, 0.22);
-}
-
 .content {
   padding: 1.45rem;
   gap: 1.15rem;
@@ -2101,18 +2091,6 @@ textarea { min-height: 92px; resize: vertical; }
   border-color: #ccdaee;
   box-shadow: 0 14px 34px rgba(15, 23, 42, 0.09);
   backdrop-filter: blur(4px);
-}
-
-.workspace-header {
-  position: sticky;
-  top: 0;
-  z-index: 22;
-  margin: -0.25rem -0.25rem 0;
-  padding: 0.72rem 0.75rem 0.58rem;
-  border-radius: 14px;
-  background: linear-gradient(180deg, rgba(252, 254, 255, 0.96) 0%, rgba(246, 250, 255, 0.86) 100%);
-  border: 1px solid rgba(206, 220, 240, 0.8);
-  backdrop-filter: blur(8px);
 }
 
 /* Keep shortcut left accent colors from being overridden by global panel border color. */
@@ -2162,20 +2140,10 @@ button {
   font-weight: 700;
 }
 
-button {
-  background: linear-gradient(180deg, var(--ux-primary) 0%, #1a46aa 100%);
-  box-shadow: 0 5px 14px rgba(31, 77, 184, 0.24);
-}
-
-button:hover {
-  background: linear-gradient(180deg, #2257cd 0%, var(--ux-primary-hover) 100%);
-  box-shadow: 0 9px 20px rgba(31, 77, 184, 0.28);
-}
-
 .secondary {
-  background: var(--ux-neutral-btn-bg);
+  background: #f8fbff;
   color: #1f3760;
-  border: 1px solid var(--ux-neutral-btn-border);
+  border: 1px solid #cddcf2;
   box-shadow: 0 2px 10px rgba(15, 23, 42, 0.05);
 }
 
@@ -2187,26 +2155,16 @@ button:hover {
 
 .ghost-btn {
   background: #fff;
-  border-color: #d4e0f2;
-  color: #1b2c4d;
 }
 
 .ghost-btn:hover {
-  background: #f1f6ff;
-  border-color: #bfd0ea;
+  background: #f8fbff;
 }
 
 .item-card {
   border-color: #d1deef;
   border-radius: 20px;
   box-shadow: 0 12px 30px rgba(15, 23, 42, 0.1);
-  transition: transform 150ms ease, box-shadow 180ms ease, border-color 180ms ease;
-}
-
-.item-card:hover {
-  transform: translateY(-1px);
-  border-color: #bfd0ea;
-  box-shadow: 0 14px 28px rgba(15, 23, 42, 0.12);
 }
 
 .item-card h3 {
@@ -2251,8 +2209,6 @@ button:hover {
   border-radius: 16px;
   background: linear-gradient(180deg, #ffffff 0%, #f6f9ff 100%);
   box-shadow: 0 4px 10px rgba(15, 23, 42, 0.05);
-  position: relative;
-  overflow: hidden;
 }
 
 .sidebar {
@@ -2262,18 +2218,6 @@ button:hover {
 
 .nav-btn.active {
   box-shadow: 0 11px 26px rgba(37, 99, 235, 0.35);
-  background: linear-gradient(180deg, #2f66d7 0%, #2452bb 100%);
-}
-
-.nav-btn.active::before {
-  content: "";
-  position: absolute;
-  left: 0;
-  top: 8px;
-  bottom: 8px;
-  width: 4px;
-  border-radius: 6px;
-  background: rgba(255, 255, 255, 0.9);
 }
 
 .nav-section__label {
@@ -2571,42 +2515,6 @@ button:focus-visible {
 
 .portal-footer--content {
   color: #5c7399;
-}
-
-input,
-select,
-textarea {
-  min-height: 42px;
-  border-color: #c8d7ee;
-}
-
-textarea {
-  min-height: 102px;
-}
-
-input:focus-visible,
-select:focus-visible,
-textarea:focus-visible,
-button:focus-visible {
-  box-shadow: var(--ux-focus-ring);
-}
-
-.table-wrap,
-.candidate-smart-table-wrap {
-  border-radius: 20px;
-  overflow: hidden;
-}
-
-.dashboard-table th,
-.candidate-smart-table th {
-  font-size: 0.82rem;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-}
-
-.dashboard-table td,
-.candidate-smart-table td {
-  font-size: 0.9rem;
 }
 
 /* ---------- Batch 1 Structural QA: Dashboard + Candidates + Assessments ---------- */
