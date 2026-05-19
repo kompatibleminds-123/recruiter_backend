@@ -217,6 +217,7 @@ function FeatureLockedSection({ title = "Feature locked" }) {
   whatsappTemplate: "{{index}}. {{name}}\nRole: {{jd_title}}\nCompany: {{company}}\nOutcome: {{outcome}}\nRecruiter note: {{recruiter_notes}}",
   emailTemplate: "{{index}}. {{name}}\nCompany: {{company}}\nRole: {{jd_title}}\nLocation: {{location}}\nOutcome: {{outcome}}\nEmail: {{email}}\nPhone: {{phone}}\nNotes: {{recruiter_notes}}",
   clientShareIntroTemplate: "Hello {{hr_name}},\n\nGreetings !!\n\nThis is {{recruiter_name}} from {{company_name}}.\nPFA the profiles{{role_line}}.\nKindly review and share your feedback.",
+  clientShareSubjectTemplate: "{{client_name}} - Candidate Profiles for {{role}}",
   clientShareSignatureText: "Regards,\n{{recruiter_name}}\n{{company_name}}",
   clientShareSignatureLinkLabel: "",
   clientShareSignatureLinkUrl: "",
@@ -257,6 +258,7 @@ function migrateCopySettings(settings = {}) {
   next.whatsappTemplate = normalizeMojibakeSymbols(next.whatsappTemplate || DEFAULT_COPY_SETTINGS.whatsappTemplate || "");
   next.emailTemplate = normalizeMojibakeSymbols(next.emailTemplate || DEFAULT_COPY_SETTINGS.emailTemplate || "");
   next.clientShareIntroTemplate = normalizeMojibakeSymbols(next.clientShareIntroTemplate || DEFAULT_COPY_SETTINGS.clientShareIntroTemplate || "");
+  next.clientShareSubjectTemplate = normalizeMojibakeSymbols(next.clientShareSubjectTemplate || DEFAULT_COPY_SETTINGS.clientShareSubjectTemplate || "");
   next.clientShareSignatureText = normalizeMojibakeSymbols(next.clientShareSignatureText || DEFAULT_COPY_SETTINGS.clientShareSignatureText || "");
   next.jdEmailSubjectTemplate = normalizeMojibakeSymbols(next.jdEmailSubjectTemplate || DEFAULT_COPY_SETTINGS.jdEmailSubjectTemplate || "");
   next.jdEmailIntroTemplate = normalizeMojibakeSymbols(next.jdEmailIntroTemplate || DEFAULT_COPY_SETTINGS.jdEmailIntroTemplate || "");
@@ -13087,13 +13089,27 @@ function PortalApp({ token, onLogout }) {
   function getClientShareEmailSubject() {
     const context = getClientShareContext();
     const explicit = String(clientShareDraft.emailSubject || "").trim();
-    if (explicit) return explicit;
+    if (explicit) return fillClientShareTemplate(explicit, context).trim();
+    const subjectTemplate = String(copySettings.clientShareSubjectTemplate || DEFAULT_COPY_SETTINGS.clientShareSubjectTemplate || "").trim();
+    if (subjectTemplate) {
+      const rendered = fillClientShareTemplate(subjectTemplate, context).trim();
+      if (rendered) return rendered;
+    }
     const companyName = String(context.clientLabel || "").trim();
     const roleLine = String(context.targetRole || context.roleLine || "").trim();
     if (companyName && roleLine) return `${companyName} - Candidate Profiles for ${roleLine}`;
     if (companyName) return `${companyName} - Candidate Profiles`;
     if (roleLine) return `Candidate Profiles for ${roleLine}`;
     return "Candidate Profiles";
+  }
+
+  function getClientShareSendHtml() {
+    const composed = String(getClientShareComposedHtml() || "").trim();
+    const plain = htmlToPlainText(composed);
+    const hasTable = /<table[\s>]/i.test(composed);
+    if (!composed || plain.length < 20) return buildClientShareHtml();
+    if (!hasTable) return buildClientShareHtml();
+    return composed;
   }
 
   async function dispatchClientShareEmail(payload) {
@@ -13195,12 +13211,13 @@ function PortalApp({ token, onLogout }) {
       setStatus("clientShare", "Recipient email is required.", "error");
       return;
     }
+    const sendHtml = getClientShareSendHtml();
     queueClientShareEmail({
       to,
       cc,
       subject: getClientShareEmailSubject(),
-      html: getClientShareComposedHtml(),
-      text: getClientShareComposedText(),
+      html: sendHtml,
+      text: htmlToPlainText(sendHtml),
       forceNewThread: String(clientShareDraft.deliveryMode || "threaded") === "new"
     });
   }
@@ -15073,8 +15090,9 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
           </div>
         </header>
 
-        <RouteErrorBoundary routeKey={location.pathname}>
-        <Routes>
+        <div className="workspace-body">
+          <RouteErrorBoundary routeKey={location.pathname}>
+            <Routes>
           <Route path="/dashboard" element={
             <div className="page-grid">
               <Section kicker="Today" title="Today's Agenda">
@@ -16480,6 +16498,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                       <label>
                         <span>Email subject</span>
                         <input value={clientShareDraft.emailSubject} onChange={(e) => setClientShareDraft((current) => ({ ...current, emailSubject: e.target.value }))} placeholder={getClientShareEmailSubject()} />
+                        <span className="field-help">Supports placeholders: {`{{client_name}} {{role}} {{hr_name}} {{recruiter_name}} {{company_name}}`}.</span>
                       </label>
                       <label>
                         <span>Delivery mode</span>
@@ -17445,6 +17464,11 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                   <div className="settings-subsection">
                     <div className="section-kicker">Direct Share Template</div>
                     <div className="form-grid">
+                      <label className="full">
+                        <span>Subject template</span>
+                        <input value={copySettings.clientShareSubjectTemplate || DEFAULT_COPY_SETTINGS.clientShareSubjectTemplate} onChange={(e) => setCopySettings((current) => ({ ...current, clientShareSubjectTemplate: e.target.value }))} />
+                        <span className="field-help">Use placeholders: {`{{client_name}} {{role}} {{hr_name}} {{recruiter_name}} {{company_name}}`}.</span>
+                      </label>
                       <label className="full"><span>Email intro template</span><textarea rows={8} value={copySettings.clientShareIntroTemplate || DEFAULT_COPY_SETTINGS.clientShareIntroTemplate} onChange={(e) => setCopySettings((current) => ({ ...current, clientShareIntroTemplate: e.target.value }))} /></label>
                     </div>
                     <div className="button-row"><button onClick={() => void saveCopySettingsWithMessage("Direct share template saved.")}>Save direct share template</button></div>
@@ -18084,8 +18108,9 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
           <Route path="/marketing-module" element={<Navigate to="/marketing" replace />} />
 
           <Route path="*" element={<Navigate to="/dashboard" replace />} />
-          </Routes>
-        </RouteErrorBoundary>
+            </Routes>
+          </RouteErrorBoundary>
+        </div>
         <footer className="portal-footer portal-footer--content">{PRODUCT_NAME} {COMPANY_ATTRIBUTION} | build-126c8d5</footer>
       </main>
 
