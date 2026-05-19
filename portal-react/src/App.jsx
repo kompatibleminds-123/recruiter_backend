@@ -6330,6 +6330,7 @@ function PortalApp({ token, onLogout }) {
     signatureLinkUrl2: ""
   });
   const clientShareEditorRef = useRef(null);
+  const clientShareSelectionRef = useRef(null);
   const [directShareHistory, setDirectShareHistory] = useState({ to: [], cc: [] });
   const [selectedAssessmentIds, setSelectedAssessmentIds] = useState([]);
   const [databaseProfileItem, setDatabaseProfileItem] = useState(null);
@@ -7983,6 +7984,20 @@ function PortalApp({ token, onLogout }) {
       clientShareEditorLastHtmlRef.current = normalizedNext;
     } catch {}
   }, [clientShareDraft.richBodyHtml, clientShareBodyTouched, copySettings.clientShareIntroTemplate, selectedAssessmentIds, clientShareCvLinks, clientShareCvLinkState, clientShareDraft.presetId]);
+
+  useEffect(() => {
+    const editor = clientShareEditorRef.current;
+    if (!editor) return undefined;
+    const rememberSelection = () => captureClientShareSelection();
+    editor.addEventListener("mouseup", rememberSelection);
+    editor.addEventListener("keyup", rememberSelection);
+    editor.addEventListener("focus", rememberSelection);
+    return () => {
+      editor.removeEventListener("mouseup", rememberSelection);
+      editor.removeEventListener("keyup", rememberSelection);
+      editor.removeEventListener("focus", rememberSelection);
+    };
+  }, []);
 
   useEffect(() => (() => {
     if (clientShareQueueTimeoutRef.current) clearTimeout(clientShareQueueTimeoutRef.current);
@@ -12962,17 +12977,58 @@ function PortalApp({ token, onLogout }) {
     return escapeHtml(template).replace(/\n/g, "<br/>");
   }
 
+  function captureClientShareSelection() {
+    try {
+      const editor = clientShareEditorRef.current;
+      if (!editor) return;
+      const selection = window.getSelection?.();
+      if (!selection || selection.rangeCount < 1) return;
+      const range = selection.getRangeAt(0);
+      const anchorNode = selection.anchorNode;
+      if (!anchorNode || !editor.contains(anchorNode)) return;
+      clientShareSelectionRef.current = range.cloneRange();
+    } catch {}
+  }
+
+  function restoreClientShareSelection() {
+    try {
+      const editor = clientShareEditorRef.current;
+      const savedRange = clientShareSelectionRef.current;
+      if (!editor || !savedRange) return false;
+      const selection = window.getSelection?.();
+      if (!selection) return false;
+      selection.removeAllRanges();
+      selection.addRange(savedRange);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  function syncClientShareEditorHtml() {
+    const nextHtml = String(clientShareEditorRef.current?.innerHTML || "").trim();
+    clientShareEditorLastHtmlRef.current = nextHtml;
+    setClientShareDraft((current) => ({ ...current, richBodyHtml: nextHtml }));
+    setClientShareBodyTouched(true);
+  }
+
   function runClientShareEditorCommand(command, value = null) {
     try {
       if (!clientShareEditorRef.current) return;
       clientShareEditorRef.current.focus();
+      restoreClientShareSelection();
       document.execCommand(command, false, value);
-      setClientShareDraft((current) => ({
-        ...current,
-        richBodyHtml: String(clientShareEditorRef.current?.innerHTML || "").trim()
-      }));
-      setClientShareBodyTouched(true);
+      captureClientShareSelection();
+      syncClientShareEditorHtml();
     } catch {}
+  }
+
+  function applyClientShareLink() {
+    const raw = window.prompt("Enter link URL");
+    const url = String(raw || "").trim();
+    if (!url) return;
+    const normalized = /^https?:\/\//i.test(url) ? url : `https://${url}`;
+    runClientShareEditorCommand("createLink", normalized);
   }
 
   function getClientShareSignature() {
@@ -16575,6 +16631,45 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                     <label className="full">
                       <span>Final email editor (with table)</span>
                       <div className="button-row tight">
+                        <select
+                          className="editor-select"
+                          defaultValue=""
+                          onChange={(e) => {
+                            const value = String(e.target.value || "").trim();
+                            if (!value) return;
+                            runClientShareEditorCommand("fontName", value);
+                            e.target.value = "";
+                          }}
+                        >
+                          <option value="">Font</option>
+                          <option value="Arial">Arial</option>
+                          <option value="Calibri">Calibri</option>
+                          <option value="Georgia">Georgia</option>
+                          <option value="Tahoma">Tahoma</option>
+                          <option value="Times New Roman">Times New Roman</option>
+                        </select>
+                        <select
+                          className="editor-select"
+                          defaultValue=""
+                          onChange={(e) => {
+                            const value = String(e.target.value || "").trim();
+                            if (!value) return;
+                            runClientShareEditorCommand("fontSize", value);
+                            e.target.value = "";
+                          }}
+                        >
+                          <option value="">Size</option>
+                          <option value="2">Small</option>
+                          <option value="3">Normal</option>
+                          <option value="4">Large</option>
+                          <option value="5">XL</option>
+                        </select>
+                        <button type="button" className="ghost-btn" onClick={() => runClientShareEditorCommand("bold")}><strong>B</strong></button>
+                        <button type="button" className="ghost-btn" onClick={() => runClientShareEditorCommand("italic")}><em>I</em></button>
+                        <button type="button" className="ghost-btn" onClick={() => runClientShareEditorCommand("underline")}><u>U</u></button>
+                        <button type="button" className="ghost-btn" onClick={() => runClientShareEditorCommand("insertUnorderedList")}>List</button>
+                        <button type="button" className="ghost-btn" onClick={() => applyClientShareLink()}>Link</button>
+                        <button type="button" className="ghost-btn" onClick={() => runClientShareEditorCommand("removeFormat")}>Clear</button>
                         <button
                           type="button"
                           className="ghost-btn"
@@ -16598,7 +16693,8 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                         if (target && typeof target.closest === "function" && target.closest("a")) e.preventDefault();
                       }}
                       onInput={(e) => {
-                        setClientShareBodyTouched(true);
+                        captureClientShareSelection();
+                        syncClientShareEditorHtml();
                       }}
                       onBlur={(e) => {
                         const nextHtml = String(e.currentTarget.innerHTML || "").trim();
