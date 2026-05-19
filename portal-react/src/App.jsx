@@ -6337,6 +6337,7 @@ function PortalApp({ token, onLogout }) {
   const [clientShareSendQueue, setClientShareSendQueue] = useState({ pending: false, executeAt: 0, to: "", subject: "" });
   const [clientShareQueueSeconds, setClientShareQueueSeconds] = useState(0);
   const [clientShareBodyTouched, setClientShareBodyTouched] = useState(false);
+  const clientShareEditorLastHtmlRef = useRef("");
   const clientShareQueueTimeoutRef = useRef(null);
   const clientShareQueuePayloadRef = useRef(null);
   const clientShareQueueIntervalRef = useRef(null);
@@ -7965,6 +7966,21 @@ function PortalApp({ token, onLogout }) {
     clientShareDraft.richBodyHtml,
     copySettings.clientShareIntroTemplate,
   ]);
+
+  useEffect(() => {
+    try {
+      const editor = clientShareEditorRef.current;
+      if (!editor) return;
+      const nextHtml = getClientShareComposedHtml();
+      const normalizedNext = String(nextHtml || "").trim();
+      const currentHtml = String(editor.innerHTML || "").trim();
+      const lastSynced = String(clientShareEditorLastHtmlRef.current || "").trim();
+      if (currentHtml === normalizedNext && lastSynced === normalizedNext) return;
+      if (document.activeElement === editor && clientShareBodyTouched) return;
+      editor.innerHTML = normalizedNext;
+      clientShareEditorLastHtmlRef.current = normalizedNext;
+    } catch {}
+  }, [clientShareDraft.richBodyHtml, clientShareBodyTouched, copySettings.clientShareIntroTemplate, selectedAssessmentIds, clientShareCvLinks, clientShareCvLinkState, clientShareDraft.presetId]);
 
   useEffect(() => (() => {
     if (clientShareQueueTimeoutRef.current) clearTimeout(clientShareQueueTimeoutRef.current);
@@ -13055,6 +13071,10 @@ function PortalApp({ token, onLogout }) {
   }
 
   function getClientShareComposedHtml() {
+    try {
+      const liveEditorHtml = String(clientShareEditorRef.current?.innerHTML || "").trim();
+      if (clientShareBodyTouched && liveEditorHtml) return liveEditorHtml;
+    } catch {}
     const saved = String(clientShareDraft.richBodyHtml || "").trim();
     if (clientShareBodyTouched && saved) return saved;
     return buildClientShareHtml();
@@ -16542,6 +16562,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                           onClick={() => {
                             setClientShareDraft((current) => ({ ...current, richBodyHtml: "" }));
                             setClientShareBodyTouched(false);
+                            clientShareEditorLastHtmlRef.current = "";
                           }}
                         >
                           Reset to admin default
@@ -16558,10 +16579,13 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                         if (target && typeof target.closest === "function" && target.closest("a")) e.preventDefault();
                       }}
                       onInput={(e) => {
-                        setClientShareDraft((current) => ({ ...current, richBodyHtml: String(e.currentTarget.innerHTML || "") }));
                         setClientShareBodyTouched(true);
                       }}
-                      dangerouslySetInnerHTML={{ __html: getClientShareComposedHtml() }}
+                      onBlur={(e) => {
+                        const nextHtml = String(e.currentTarget.innerHTML || "").trim();
+                        clientShareEditorLastHtmlRef.current = nextHtml;
+                        setClientShareDraft((current) => ({ ...current, richBodyHtml: nextHtml }));
+                      }}
                     />
                   </div>
 
@@ -17372,143 +17396,93 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
             <Route path="/admin-settings" element={
               !isSettingsAdmin ? <FeatureLockedSection title="Admin Settings" /> : <div className="page-grid">
                 <Section kicker="Control Center" title="Admin Settings">
-                  <p className="muted">All admin controls are grouped here in clean categories. Open a category to manage its detailed settings.</p>
-                  {statuses.settings ? <div className={`status ${statuses.settingsKind || ""}`}>{statuses.settings}</div> : null}
-
+                  <p className="muted">Choose a category to open its dedicated settings workspace.</p>
                   <div className="settings-subsection">
-                    <div className="section-kicker">Email Templates</div>
-                    <p className="muted">Manage admin-defined templates in separate blocks.</p>
+                    <div className="section-kicker">Admin Categories</div>
                     <div className="stack-list compact">
-                      <article className="item-card compact-card">
-                        <div className="item-card__top compact-top">
-                          <strong>JD Share Template</strong>
-                        </div>
-                        <label className="full">
-                          <span>Subject template</span>
-                          <input
-                            value={copySettings.jdEmailSubjectTemplate || DEFAULT_COPY_SETTINGS.jdEmailSubjectTemplate}
-                            onChange={(e) => setCopySettings((current) => ({ ...current, jdEmailSubjectTemplate: e.target.value }))}
-                            placeholder="Job Description - {Role}"
-                          />
-                        </label>
-                        <label className="full">
-                          <span>Body template</span>
-                          <textarea
-                            value={copySettings.jdEmailIntroTemplate || DEFAULT_COPY_SETTINGS.jdEmailIntroTemplate}
-                            onChange={(e) => setCopySettings((current) => ({ ...current, jdEmailIntroTemplate: e.target.value }))}
-                            rows={8}
-                          />
-                        </label>
-                        <div className="button-row">
-                          <button onClick={() => void saveCopySettingsWithMessage("JD share template saved.")}>Save JD share template</button>
-                        </div>
+                      <article className="item-card compact-card" role="button" tabIndex={0} onClick={() => navigate("/admin-settings/email-templates")} onKeyDown={(e) => { if (e.key === "Enter") navigate("/admin-settings/email-templates"); }}>
+                        <div className="item-card__top compact-top"><strong>Email Templates</strong><span><PortalIcon name="mail" /></span></div>
+                        <div className="muted">JD share template, Direct share template, and Admin signature defaults.</div>
                       </article>
-
-                      <article className="item-card compact-card">
-                        <div className="item-card__top compact-top">
-                          <strong>Direct Share Template</strong>
-                        </div>
-                        <label className="full">
-                          <span>Email intro template</span>
-                          <textarea
-                            value={copySettings.clientShareIntroTemplate || DEFAULT_COPY_SETTINGS.clientShareIntroTemplate}
-                            onChange={(e) => setCopySettings((current) => ({ ...current, clientShareIntroTemplate: e.target.value }))}
-                            rows={8}
-                          />
-                        </label>
-                        <div className="button-row">
-                          <button onClick={() => void saveCopySettingsWithMessage("Direct share template saved.")}>Save direct share template</button>
-                        </div>
-                      </article>
-
-                      <article className="item-card compact-card">
-                        <div className="item-card__top compact-top">
-                          <strong>Signature Settings (Admin Default)</strong>
-                        </div>
-                        <label className="full">
-                          <span>Signature text</span>
-                          <textarea
-                            value={copySettings.clientShareSignatureText || DEFAULT_COPY_SETTINGS.clientShareSignatureText}
-                            onChange={(e) => setCopySettings((current) => ({ ...current, clientShareSignatureText: e.target.value }))}
-                            rows={5}
-                          />
-                        </label>
-                        <div className="form-grid two-col">
-                          <label>
-                            <span>Link 1 text</span>
-                            <input value={copySettings.clientShareSignatureLinkLabel || ""} onChange={(e) => setCopySettings((current) => ({ ...current, clientShareSignatureLinkLabel: e.target.value }))} />
-                          </label>
-                          <label>
-                            <span>Link 1 URL</span>
-                            <input value={copySettings.clientShareSignatureLinkUrl || ""} onChange={(e) => setCopySettings((current) => ({ ...current, clientShareSignatureLinkUrl: e.target.value }))} />
-                          </label>
-                          <label>
-                            <span>Link 2 text</span>
-                            <input value={copySettings.clientShareSignatureLinkLabel2 || ""} onChange={(e) => setCopySettings((current) => ({ ...current, clientShareSignatureLinkLabel2: e.target.value }))} />
-                          </label>
-                          <label>
-                            <span>Link 2 URL</span>
-                            <input value={copySettings.clientShareSignatureLinkUrl2 || ""} onChange={(e) => setCopySettings((current) => ({ ...current, clientShareSignatureLinkUrl2: e.target.value }))} />
-                          </label>
-                        </div>
-                        <div className="button-row">
-                          <button onClick={() => void saveCopySettingsWithMessage("Admin signature settings saved.")}>Save signature settings</button>
-                        </div>
-                      </article>
-                    </div>
-                    <div className="button-row">
-                      <button className="secondary" onClick={() => navigate("/mail-settings")}>Open Recruiter Mail Connect</button>
-                    </div>
-                  </div>
-
-                  <div className="settings-subsection">
-                    <div className="section-kicker">Account Management</div>
-                    <p className="muted">Users, client/recruiter login settings, and plans.</p>
-                    <div className="stack-list compact">
                       <article className="item-card compact-card" role="button" tabIndex={0} onClick={() => navigate("/login-settings")} onKeyDown={(e) => { if (e.key === "Enter") navigate("/login-settings"); }}>
-                        <div className="item-card__top compact-top"><strong>Users & Login Settings</strong><span>👥</span></div>
+                        <div className="item-card__top compact-top"><strong>Account Management</strong><span><PortalIcon name="team" /></span></div>
+                        <div className="muted">Users, recruiter/client login settings.</div>
+                      </article>
+                      <article className="item-card compact-card" role="button" tabIndex={0} onClick={() => navigate("/intake-settings")} onKeyDown={(e) => { if (e.key === "Enter") navigate("/intake-settings"); }}>
+                        <div className="item-card__top compact-top"><strong>Job Settings</strong><span><PortalIcon name="link" /></span></div>
+                        <div className="muted">Public apply link and intake configuration.</div>
+                      </article>
+                      <article className="item-card compact-card" role="button" tabIndex={0} onClick={() => navigate("/settings")} onKeyDown={(e) => { if (e.key === "Enter") navigate("/settings"); }}>
+                        <div className="item-card__top compact-top"><strong>Preset Settings</strong><span><PortalIcon name="template" /></span></div>
+                        <div className="muted">Tracker presets and indicator builder.</div>
+                      </article>
+                      <article className="item-card compact-card" role="button" tabIndex={0} onClick={() => navigate("/admin-settings/ai")} onKeyDown={(e) => { if (e.key === "Enter") navigate("/admin-settings/ai"); }}>
+                        <div className="item-card__top compact-top"><strong>AI Settings</strong><span><PortalIcon name="settings" /></span></div>
+                        <div className="muted">Interview panel AI parsing controls.</div>
                       </article>
                       <article className="item-card compact-card" role="button" tabIndex={0} onClick={() => navigate("/plan")} onKeyDown={(e) => { if (e.key === "Enter") navigate("/plan"); }}>
-                        <div className="item-card__top compact-top"><strong>Plan & Billing</strong><span>💳</span></div>
+                        <div className="item-card__top compact-top"><strong>Plan & Billing</strong><span><PortalIcon name="coins" /></span></div>
+                        <div className="muted">Subscription, plan, and usage controls.</div>
                       </article>
                     </div>
                   </div>
+                </Section>
+              </div>
+            } />
 
+            <Route path="/admin-settings/email-templates" element={
+              !isSettingsAdmin ? <FeatureLockedSection title="Email Templates" /> : <div className="page-grid">
+                <Section kicker="Admin Settings" title="Email Templates">
+                  {statuses.settings ? <div className={`status ${statuses.settingsKind || ""}`}>{statuses.settings}</div> : null}
                   <div className="settings-subsection">
-                    <div className="section-kicker">Job Settings</div>
-                    <p className="muted">Hosted job apply links and public apply configuration.</p>
-                    <div className="stack-list compact">
-                      <article className="item-card compact-card" role="button" tabIndex={0} onClick={() => navigate("/intake-settings")} onKeyDown={(e) => { if (e.key === "Enter") navigate("/intake-settings"); }}>
-                        <div className="item-card__top compact-top"><strong>Job Apply Link</strong><span>🔗</span></div>
-                      </article>
+                    <div className="section-kicker">JD Share Template</div>
+                    <div className="form-grid">
+                      <label className="full"><span>Subject template</span><input value={copySettings.jdEmailSubjectTemplate || DEFAULT_COPY_SETTINGS.jdEmailSubjectTemplate} onChange={(e) => setCopySettings((current) => ({ ...current, jdEmailSubjectTemplate: e.target.value }))} /></label>
+                      <label className="full"><span>Body template</span><textarea rows={8} value={copySettings.jdEmailIntroTemplate || DEFAULT_COPY_SETTINGS.jdEmailIntroTemplate} onChange={(e) => setCopySettings((current) => ({ ...current, jdEmailIntroTemplate: e.target.value }))} /></label>
                     </div>
+                    <div className="button-row"><button onClick={() => void saveCopySettingsWithMessage("JD share template saved.")}>Save JD share template</button></div>
                   </div>
-
                   <div className="settings-subsection">
-                    <div className="section-kicker">Preset Settings</div>
-                    <p className="muted">Tracker preset builder, indicator sequencing, and shared preset management.</p>
-                    <div className="stack-list compact">
-                      <article className="item-card compact-card" role="button" tabIndex={0} onClick={() => navigate("/settings")} onKeyDown={(e) => { if (e.key === "Enter") navigate("/settings"); }}>
-                        <div className="item-card__top compact-top"><strong>Preset Settings</strong><span>📋</span></div>
-                      </article>
+                    <div className="section-kicker">Direct Share Template</div>
+                    <div className="form-grid">
+                      <label className="full"><span>Email intro template</span><textarea rows={8} value={copySettings.clientShareIntroTemplate || DEFAULT_COPY_SETTINGS.clientShareIntroTemplate} onChange={(e) => setCopySettings((current) => ({ ...current, clientShareIntroTemplate: e.target.value }))} /></label>
                     </div>
+                    <div className="button-row"><button onClick={() => void saveCopySettingsWithMessage("Direct share template saved.")}>Save direct share template</button></div>
                   </div>
-
                   <div className="settings-subsection">
-                    <div className="section-kicker">AI Settings</div>
-                    <p className="muted">Interview panel AI parsing mode and CV conflict-compare behavior.</p>
+                    <div className="section-kicker">Signature Settings (Admin Default)</div>
+                    <div className="form-grid two-col">
+                      <label className="full"><span>Signature text</span><textarea rows={5} value={copySettings.clientShareSignatureText || DEFAULT_COPY_SETTINGS.clientShareSignatureText} onChange={(e) => setCopySettings((current) => ({ ...current, clientShareSignatureText: e.target.value }))} /></label>
+                      <label><span>Link 1 text</span><input value={copySettings.clientShareSignatureLinkLabel || ""} onChange={(e) => setCopySettings((current) => ({ ...current, clientShareSignatureLinkLabel: e.target.value }))} /></label>
+                      <label><span>Link 1 URL</span><input value={copySettings.clientShareSignatureLinkUrl || ""} onChange={(e) => setCopySettings((current) => ({ ...current, clientShareSignatureLinkUrl: e.target.value }))} /></label>
+                      <label><span>Link 2 text</span><input value={copySettings.clientShareSignatureLinkLabel2 || ""} onChange={(e) => setCopySettings((current) => ({ ...current, clientShareSignatureLinkLabel2: e.target.value }))} /></label>
+                      <label><span>Link 2 URL</span><input value={copySettings.clientShareSignatureLinkUrl2 || ""} onChange={(e) => setCopySettings((current) => ({ ...current, clientShareSignatureLinkUrl2: e.target.value }))} /></label>
+                    </div>
+                    <div className="button-row"><button onClick={() => void saveCopySettingsWithMessage("Admin signature settings saved.")}>Save signature settings</button></div>
+                  </div>
+                  <div className="button-row">
+                    <button className="secondary" onClick={() => navigate("/mail-settings")}>Open Recruiter Mail Connect</button>
+                    <button className="ghost-btn" onClick={() => navigate("/admin-settings")}>Back to Admin Settings</button>
+                  </div>
+                </Section>
+              </div>
+            } />
+
+            <Route path="/admin-settings/ai" element={
+              !isSettingsAdmin ? <FeatureLockedSection title="AI Settings" /> : <div className="page-grid">
+                <Section kicker="Admin Settings" title="AI Settings">
+                  {statuses.settings ? <div className={`status ${statuses.settingsKind || ""}`}>{statuses.settings}</div> : null}
+                  <div className="settings-subsection">
+                    <div className="section-kicker">Interview CV Parsing</div>
                     <div className="form-grid">
                       <label className="checkbox-row">
-                        <input
-                          type="checkbox"
-                          checked={copySettings.interviewAiParsingEnabled !== false}
-                          onChange={(e) => setCopySettings((current) => ({ ...current, interviewAiParsingEnabled: e.target.checked }))}
-                        />
-                        <span>Enable AI parsing in Interview Panel CV upload</span>
+                        <input type="checkbox" checked={copySettings.interviewAiParsingEnabled !== false} onChange={(e) => setCopySettings((current) => ({ ...current, interviewAiParsingEnabled: e.target.checked }))} />
+                        <span>Enable AI parsing in Interview Panel CV upload (conflict compare mode)</span>
                       </label>
                     </div>
                     <div className="button-row">
                       <button onClick={() => void saveCopySettingsWithMessage("AI settings saved.")}>Save AI Settings</button>
+                      <button className="ghost-btn" onClick={() => navigate("/admin-settings")}>Back to Admin Settings</button>
                     </div>
                   </div>
                 </Section>
