@@ -6264,20 +6264,18 @@ function PortalApp({ token, onLogout }) {
   );
   const availablePresetClients = useMemo(() => {
     const values = new Set();
-    (state.jobs || []).forEach((job) => {
-      const clientName = String(job?.clientName || job?.client_name || "").trim();
-      if (clientName) values.add(clientName);
-    });
-    (clientUsers || []).forEach((client) => {
-      const clientName = String(client?.clientName || "").trim();
-      if (clientName) values.add(clientName);
-    });
-    (((state.clientPortal || {}).availableClients) || []).forEach((clientName) => {
-      const value = String(clientName || "").trim();
-      if (value) values.add(value);
+    const source = [
+      ...(Array.isArray(state.jobs) ? state.jobs : []),
+      ...(Array.isArray(jobsCatalog) ? jobsCatalog : [])
+    ];
+    source.forEach((job) => {
+      const clientName = String(job?.client_name || job?.clientName || "").trim();
+      if (!clientName) return;
+      if (clientName.startsWith("__")) return;
+      values.add(clientName);
     });
     return Array.from(values).sort((a, b) => a.localeCompare(b));
-  }, [state.jobs, state.clientPortal, clientUsers]);
+  }, [state.jobs, jobsCatalog]);
   const [clientUserDraft, setClientUserDraft] = useState({ username: "", password: "", clientName: "", allowedPositions: "" });
   const [clientPasswordDrafts, setClientPasswordDrafts] = useState({});
   const [loginSettingsPanel, setLoginSettingsPanel] = useState("team");
@@ -16848,6 +16846,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                   <div className="settings-subsection preset-edit-shell">
                     <div className="section-kicker">Edit Existing Presets</div>
                     <p className="muted">Edit any existing candidate tracker preset, attach it to a specific client if needed, and save shared usage defaults.</p>
+                    <p className="muted">Advanced mode also works: you can directly type one-line `Label|field` rows in the generated columns box.</p>
                     <div className="form-grid">
                       <label>
                         <span>Select preset to edit</span>
@@ -16899,12 +16898,12 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                         </select>
                       </label>
                       <div className="full">
-                        <span className="field-label">Selected indicators ({editPresetIndicators.length}/10)</span>
+                        <span className="field-label">Selected indicators ({editPresetIndicators.length})</span>
                         <div className="stack-list compact preset-indicator-list">
                           {editPresetIndicators.length ? editPresetIndicators.map((indicator) => (
                             <article
                               key={indicator.id}
-                              className="item-card compact-card preset-indicator-card"
+                              className="item-card compact-card preset-indicator-row"
                               draggable={isSettingsAdmin}
                               onDragStart={() => setEditDragPresetIndicatorId(String(indicator.id))}
                               onDragOver={(e) => e.preventDefault()}
@@ -16914,11 +16913,12 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                                 setEditDragPresetIndicatorId("");
                               }}
                             >
-                              <div className="item-card__top compact-top">
-                                <strong>{indicator.title}</strong>
+                              <div className="preset-indicator-row__drag" aria-hidden="true">⋮⋮</div>
+                              <div className="preset-indicator-row__field">{indicator.title}</div>
+                              <div className="preset-indicator-row__value">{(indicator.fields || []).join(" + ")}</div>
+                              <div className="preset-indicator-row__actions">
                                 {isSettingsAdmin ? <button className="ghost-btn" onClick={() => removeEditPresetIndicator(indicator.id)}>Remove</button> : null}
                               </div>
-                              <div className="candidate-snippet no-top-border">{(indicator.fields || []).join(" + ")}</div>
                             </article>
                           )) : <div className="empty-state compact-empty">No indicators selected yet.</div>}
                         </div>
@@ -17027,7 +17027,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                           {newPresetIndicators.length ? newPresetIndicators.map((indicator) => (
                             <article
                               key={indicator.id}
-                              className="item-card compact-card preset-indicator-card"
+                              className="item-card compact-card preset-indicator-row"
                               draggable={isSettingsAdmin}
                               onDragStart={() => setDragPresetIndicatorId(String(indicator.id))}
                               onDragOver={(e) => e.preventDefault()}
@@ -17037,11 +17037,12 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                                 setDragPresetIndicatorId("");
                               }}
                             >
-                              <div className="item-card__top compact-top">
-                                <strong>{indicator.title}</strong>
+                              <div className="preset-indicator-row__drag" aria-hidden="true">⋮⋮</div>
+                              <div className="preset-indicator-row__field">{indicator.title}</div>
+                              <div className="preset-indicator-row__value">{(indicator.fields || []).join(" + ")}</div>
+                              <div className="preset-indicator-row__actions">
                                 {isSettingsAdmin ? <button className="ghost-btn" onClick={() => removePresetIndicator(indicator.id)}>Remove</button> : null}
                               </div>
-                              <div className="candidate-snippet no-top-border">{(indicator.fields || []).join(" + ")}</div>
                             </article>
                           )) : <div className="empty-state compact-empty">No indicators selected yet.</div>}
                         </div>
