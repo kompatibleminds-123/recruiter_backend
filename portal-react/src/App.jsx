@@ -16554,7 +16554,6 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                       <label>
                         <span>Email subject</span>
                         <input value={clientShareDraft.emailSubject} onChange={(e) => setClientShareDraft((current) => ({ ...current, emailSubject: e.target.value }))} placeholder={getClientShareEmailSubject()} />
-                        <span className="field-help">Supports placeholders: {`{{client_name}} {{role}} {{hr_name}} {{recruiter_name}} {{company_name}}`}.</span>
                       </label>
                       <label>
                         <span>Delivery mode</span>
@@ -16562,11 +16561,6 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                           <option value="threaded">Threaded reply (default)</option>
                           <option value="new">Start new thread</option>
                         </select>
-                        <span className="field-help">
-                          {String(clientShareDraft.deliveryMode || "threaded") === "new"
-                            ? "Will start a fresh email thread."
-                            : "Will use existing mail chain when available. If no previous thread exists, first email will start a new one automatically."}
-                        </span>
                       </label>
                       <label>
                         <span>Client</span>
@@ -16594,6 +16588,11 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                           {clientRoleOptions.map((role) => <option key={`share-role-${role}`} value={role}>{role}</option>)}
                         </select>
                       </label>
+                      <div className="field-help full">
+                        {String(clientShareDraft.deliveryMode || "threaded") === "new"
+                          ? "Will start a fresh email thread."
+                          : "Will use existing mail chain when available. If no previous thread exists, first email will start a new one automatically."}
+                      </div>
                       <label><span>HR name</span><input value={clientShareDraft.hrName} onChange={(e) => setClientShareDraft((current) => ({ ...current, hrName: e.target.value }))} placeholder="Type HR name (optional)" /></label>
                       <label>
                         <span>Recruiter name</span>
