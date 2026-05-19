@@ -226,12 +226,14 @@ function FeatureLockedSection({ title = "Feature locked" }) {
   clientShareSignatureLinkUrl2: "",
   companyWideShortcuts: {},
   jdEmailSubjectTemplate: "Job Description - {Role}",
-  jdEmailIntroTemplate: "Hello {Candidate}.\nGreetings !!\n\nThis is {Recruiter} from Kompatible Minds.\nIt was good to interact with you.\n\nAs discussed, please find the Job description for the {Role}.\nPlease acknowledge or confirm so we can take your candidature ahead."
+  jdEmailIntroTemplate: "Hello {Candidate}.\nGreetings !!\n\nThis is {Recruiter} from Kompatible Minds.\nIt was good to interact with you.\n\nAs discussed, please find the Job description for the {Role}.\nPlease acknowledge or confirm so we can take your candidature ahead.",
+  interviewAiParsingEnabled: true
 };
 
 function migrateCopySettings(settings = {}) {
   const next = { ...DEFAULT_COPY_SETTINGS, ...(settings || {}) };
 	  next.semanticSearchEnabled = next.semanticSearchEnabled !== false;
+  next.interviewAiParsingEnabled = next.interviewAiParsingEnabled !== false;
 	  const presetColumns = { ...(next.exportPresetColumns || {}) };
 	  const attentive = String(presetColumns.attentive_tracker || "").trim();
 	  if (attentive) {
@@ -11413,10 +11415,12 @@ function PortalApp({ token, onLogout }) {
 
   async function parseInterviewCvFile(file) {
     if (!file) return;
+    const aiParsingEnabled = copySettings.interviewAiParsingEnabled !== false;
+    const canUseDeferredMode = !aiParsingEnabled && Boolean(interviewMeta.candidateId);
     setInterviewCvParsePreview(null);
-    setInterviewCvParseModalOpen(true);
-    setInterviewCvParseBusy(true);
-    setStatus("interview", "Parsing CV for interview draft...");
+    setInterviewCvParseModalOpen(aiParsingEnabled);
+    setInterviewCvParseBusy(aiParsingEnabled);
+    setStatus("interview", canUseDeferredMode ? "Uploading CV and attaching it to candidate..." : "Parsing CV for interview draft...");
     try {
       const fileData = await fileToBase64(file);
       const payload = {
@@ -11424,8 +11428,8 @@ function PortalApp({ token, onLogout }) {
         emailId: interviewForm.emailId,
         phoneNumber: interviewForm.phoneNumber,
         totalExperience: interviewForm.totalExperience,
-        normalizeWithAi: true,
-        deferParse: false,
+        normalizeWithAi: aiParsingEnabled,
+        deferParse: canUseDeferredMode,
         file: {
           filename: file.name,
           mimeType: file.type || "application/octet-stream",
@@ -11438,6 +11442,24 @@ function PortalApp({ token, onLogout }) {
             sourceType: "cv",
             ...payload
           });
+      if (canUseDeferredMode) {
+        const nextStoredFile = parsed?.result?.storedFile || parsed?.storedFile || interviewForm.cvAnalysis?.storedFile || null;
+        if (nextStoredFile) {
+          setInterviewForm((current) => ({
+            ...current,
+            cvAnalysis: {
+              ...(current.cvAnalysis && typeof current.cvAnalysis === "object" ? current.cvAnalysis : {}),
+              storedFile: nextStoredFile,
+              parsePending: true
+            },
+            cvAnalysisApplied: false
+          }));
+        }
+        setInterviewCvParseBusy(false);
+        setInterviewCvParseModalOpen(false);
+        setStatus("interview", "CV attached. Background parsing started for search metadata.", "ok");
+        return;
+      }
       const result = parsed?.result || parsed || {};
       const nextStoredFile = result.storedFile || interviewForm.cvAnalysis?.storedFile || null;
       const normalizedExperience = Array.isArray(result?.experience_history) && result.experience_history.length
@@ -11488,6 +11510,7 @@ function PortalApp({ token, onLogout }) {
       );
     } catch (error) {
       setInterviewCvParseBusy(false);
+      setInterviewCvParseModalOpen(false);
       setStatus("interview", String(error?.message || error), "error");
     }
   }
@@ -16594,17 +16617,6 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
               </Section>
 
               <Section kicker="Recruiter Inputs" title="Draft Notes">
-                <div className="button-row" style={{ marginBottom: 10 }}>
-                  <input
-                    ref={draftCvInputRef}
-                    type="file"
-                    accept=".pdf,.doc,.docx"
-                    hidden
-                    onClick={(e) => { e.target.value = ""; }}
-                    onChange={handleInterviewCvSelection}
-                  />
-                  <button type="button" onClick={() => draftCvInputRef.current?.click()}>Upload CV (Auto-fill Draft)</button>
-                </div>
                 <form className="form-grid two-col" onSubmit={(e) => { e.preventDefault(); }}>
                   {[["candidateName", "Candidate name"], ["phoneNumber", "Phone"], ["emailId", "Email", "email"], ["linkedin", "LinkedIn"], ["location", "Location"], ["currentCompany", "Current company"], ["currentDesignation", "Current designation"], ["totalExperience", "Total experience"], ["relevantExperience", "Relevant experience"], ["highestEducation", "Qualification"]].map(([name, label, type]) => (
                     <label key={name}><span>{label}</span><input type={type || "text"} value={interviewForm[name]} onChange={(e) => setInterviewForm((c) => ({ ...c, [name]: e.target.value }))} /></label>
@@ -16714,22 +16726,40 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
 
               <Section kicker="CV Upload" title="Candidate CV Storage">
                 <div className="cv-analysis-box">
+                  {copySettings.interviewAiParsingEnabled !== false
+                    ? <div className="muted">Mode: AI parsing with conflict review</div>
+                    : <div className="muted">Mode: Manual fast attach (background parse for search)</div>}
                   {statuses.interview ? <div className={`status ${statuses.interviewKind || ""}`}>{statuses.interview}</div> : null}
                   <p className="muted">Upload CV here when you want to keep it ready for later sharing. The file will be stored, parsed once, and the parsed metadata will stay hidden in the backend for AI search and future client-sharing flows.</p>
                   <div className="cv-upload-card">
                     <div className="cv-upload-card__copy">
                       <div className="info-label">Single CV upload flow</div>
-                      <div className="muted">Use `Upload CV (Auto-fill Draft)` above. The same upload stores CV metadata for search and opens conflict-based draft autofill.</div>
+                      <div className="muted">Use `Upload CV (Auto-fill Draft)` here. Same upload stores CV metadata for search. If AI mode is ON, conflict-based draft autofill opens automatically.</div>
                       <div className="muted">
                         {interviewMeta.candidateId
                           ? "Candidate-linked storage is active for current candidate."
                           : "Open a real candidate draft first if you want this CV linked to a candidate."}
                       </div>
                     </div>
+                    <div className="button-row">
+                      <input
+                        ref={draftCvInputRef}
+                        type="file"
+                        accept=".pdf,.doc,.docx"
+                        hidden
+                        onClick={(e) => { e.target.value = ""; }}
+                        onChange={handleInterviewCvSelection}
+                      />
+                      <button type="button" onClick={() => draftCvInputRef.current?.click()}>Upload CV (Auto-fill Draft)</button>
+                      <span className="status-note">
+                        {copySettings.interviewAiParsingEnabled !== false ? "AI Compare Mode: ON" : "AI Compare Mode: OFF"}
+                      </span>
+                    </div>
                   </div>
                   {interviewForm.cvAnalysis?.storedFile ? (
                     <div className="cv-analysis-meta">
                       <span className="status-note">{interviewForm.cvAnalysis.cached ? "Using cached parse" : "Parsed from uploaded CV"}</span>
+                      {interviewForm.cvAnalysis.parsePending ? <span className="status-note">Background parsing in progress</span> : null}
                       {interviewForm.cvAnalysis.timelineConfidenceLabel ? (
                         <span className="status-note">{interviewForm.cvAnalysis.timelineConfidenceLabel}</span>
                       ) : null}
@@ -17384,6 +17414,21 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                   {!isSettingsAdmin ? <p className="muted">You can use shared presets here. Only admin can create, edit, or save shared preset settings.</p> : null}
                   {statuses.settings ? <div className={`status ${statuses.settingsKind || ""}`}>{statuses.settings}</div> : null}
                   {/* Email Settings moved to Mail Settings tab (visible to all recruiters). */}
+                  <div className="settings-subsection">
+                    <div className="section-kicker">Interview CV Parsing</div>
+                    <div className="form-grid">
+                      <label className="checkbox-row">
+                        <input
+                          type="checkbox"
+                          disabled={!isSettingsAdmin}
+                          checked={copySettings.interviewAiParsingEnabled !== false}
+                          onChange={(e) => setCopySettings((current) => ({ ...current, interviewAiParsingEnabled: e.target.checked }))}
+                        />
+                        <span>Enable AI parsing in Interview Panel CV upload (shows conflict-apply modal)</span>
+                      </label>
+                    </div>
+                    <p className="muted">If disabled, CV will attach instantly and parsing/tokens run in background without blocking recruiter flow.</p>
+                  </div>
                   <div className="settings-subsection preset-edit-shell">
                     <div className="section-kicker">Edit Existing Presets</div>
                     <p className="muted">Edit any existing candidate tracker preset, attach it to a specific client if needed, and save shared usage defaults.</p>

@@ -1921,6 +1921,31 @@ function buildUploadedFileFingerprint(file = {}) {
   return crypto.createHash("sha1").update(fileData).digest("hex");
 }
 
+const PARSE_CANDIDATE_CACHE = new Map();
+const PARSE_CANDIDATE_CACHE_MAX = 3000;
+
+function buildParseCandidateCacheKey(body = {}, companyId = "") {
+  const sourceType = String(body?.sourceType || "").trim().toLowerCase();
+  const fingerprint = buildUploadedFileFingerprint(body?.file || {});
+  if (!fingerprint) return "";
+  const aiMode = body?.normalizeWithAi !== false ? "ai" : "manual";
+  const scope = String(companyId || "global").trim().toLowerCase();
+  return `${scope}|${sourceType}|${aiMode}|${fingerprint}`;
+}
+
+function setParseCandidateCache(cacheKey = "", payload = null) {
+  if (!cacheKey || !payload) return;
+  if (PARSE_CANDIDATE_CACHE.has(cacheKey)) PARSE_CANDIDATE_CACHE.delete(cacheKey);
+  PARSE_CANDIDATE_CACHE.set(cacheKey, {
+    payload,
+    createdAt: Date.now()
+  });
+  if (PARSE_CANDIDATE_CACHE.size > PARSE_CANDIDATE_CACHE_MAX) {
+    const oldestKey = PARSE_CANDIDATE_CACHE.keys().next().value;
+    if (oldestKey) PARSE_CANDIDATE_CACHE.delete(oldestKey);
+  }
+}
+
 const INFERRED_SEARCH_TAG_RULES = [
   { tag: "saas", patterns: [/\bsaas\b/i, /\bsoftware as a service\b/i, /\bcrm\b/i, /\bproduct company\b/i] },
   { tag: "b2b", patterns: [/\bb2b\b/i, /\benterprise\b/i, /\bcorporate sales\b/i, /\bchannel partner\b/i, /\bbusiness development\b/i] },
@@ -14121,6 +14146,17 @@ const server = http.createServer(async (req, res) => {
   if (req.method === "POST" && requestUrl.pathname === "/parse-candidate") {
     try {
       const body = await readJsonBody(req);
+      let cacheCompanyId = "";
+      try {
+        const actor = await requireSessionUser(getBearerToken(req));
+        cacheCompanyId = String(actor?.companyId || "").trim();
+      } catch (_) {}
+      const cacheKey = buildParseCandidateCacheKey(body, cacheCompanyId);
+      const cachedEntry = cacheKey ? PARSE_CANDIDATE_CACHE.get(cacheKey) : null;
+      if (cachedEntry?.payload) {
+        sendJson(res, 200, { ok: true, result: { ...cachedEntry.payload, cached: true } });
+        return;
+      }
       const hybrid = await parseCandidateHybrid({
         payload: body,
         apiKey: body.apiKey || process.env.OPENAI_API_KEY || "",
@@ -14155,6 +14191,7 @@ const server = http.createServer(async (req, res) => {
       result.needsReview = hybrid.finalOutput.needsReview;
       result.reviewReasons = hybrid.finalOutput.reviewReasons;
       result.parseMeta = hybrid.meta || {};
+      if (cacheKey) setParseCandidateCache(cacheKey, result);
       sendJson(res, 200, { ok: true, result });
     } catch (error) {
       sendJson(res, 400, { ok: false, error: String(error.message || error) });
