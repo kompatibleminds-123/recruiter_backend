@@ -6264,18 +6264,14 @@ function PortalApp({ token, onLogout }) {
   );
   const availablePresetClients = useMemo(() => {
     const values = new Set();
-    const source = [
-      ...(Array.isArray(state.jobs) ? state.jobs : []),
-      ...(Array.isArray(jobsCatalog) ? jobsCatalog : [])
-    ];
-    source.forEach((job) => {
+    (Array.isArray(state.jobs) ? state.jobs : []).forEach((job) => {
       const clientName = String(job?.client_name || job?.clientName || "").trim();
       if (!clientName) return;
       if (clientName.startsWith("__")) return;
       values.add(clientName);
     });
     return Array.from(values).sort((a, b) => a.localeCompare(b));
-  }, [state.jobs, jobsCatalog]);
+  }, [state.jobs]);
   const [clientUserDraft, setClientUserDraft] = useState({ username: "", password: "", clientName: "", allowedPositions: "" });
   const [clientPasswordDrafts, setClientPasswordDrafts] = useState({});
   const [loginSettingsPanel, setLoginSettingsPanel] = useState("team");
