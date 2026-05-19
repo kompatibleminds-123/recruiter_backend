@@ -2076,6 +2076,12 @@ textarea { min-height: 92px; resize: vertical; }
 }
 
 /* ---------- Premium UI Polish Layer (CSS-only, no logic changes) ---------- */
+.app-shell {
+  background:
+    radial-gradient(circle at 0% 0%, rgba(37, 99, 235, 0.06), transparent 24%),
+    radial-gradient(circle at 100% 100%, rgba(15, 23, 42, 0.05), transparent 30%);
+}
+
 .content {
   padding: 1.45rem;
   gap: 1.15rem;
@@ -2084,6 +2090,7 @@ textarea { min-height: 92px; resize: vertical; }
 .panel {
   border-color: #ccdaee;
   box-shadow: 0 14px 34px rgba(15, 23, 42, 0.09);
+  backdrop-filter: blur(4px);
 }
 
 /* Keep shortcut left accent colors from being overridden by global panel border color. */
@@ -2117,6 +2124,43 @@ textarea { min-height: 92px; resize: vertical; }
   letter-spacing: -0.01em;
 }
 
+.workspace-header h1 {
+  font-size: 2.1rem;
+  letter-spacing: -0.02em;
+}
+
+.workspace-header .muted {
+  font-size: 0.95rem;
+}
+
+.button-row > button,
+.toolbar > button,
+button {
+  min-height: 40px;
+  font-weight: 700;
+}
+
+.secondary {
+  background: #f8fbff;
+  color: #1f3760;
+  border: 1px solid #cddcf2;
+  box-shadow: 0 2px 10px rgba(15, 23, 42, 0.05);
+}
+
+.secondary:hover {
+  background: #eef5ff;
+  border-color: #baceec;
+  box-shadow: 0 6px 14px rgba(37, 99, 235, 0.12);
+}
+
+.ghost-btn {
+  background: #fff;
+}
+
+.ghost-btn:hover {
+  background: #f8fbff;
+}
+
 .item-card {
   border-color: #d1deef;
   border-radius: 20px;
@@ -2131,6 +2175,17 @@ textarea { min-height: 92px; resize: vertical; }
 
 .muted {
   color: #5b6f8f;
+}
+
+.form-grid label > span {
+  color: #1d3358;
+  font-weight: 700;
+  margin-bottom: 0.28rem;
+}
+
+.field-help {
+  font-size: 0.8rem;
+  color: #63799d;
 }
 
 .metric-card {
@@ -2163,6 +2218,10 @@ textarea { min-height: 92px; resize: vertical; }
 
 .nav-btn.active {
   box-shadow: 0 11px 26px rgba(37, 99, 235, 0.35);
+}
+
+.nav-section__label {
+  color: #4f668f;
 }
 
 .toolbar {
@@ -2245,6 +2304,7 @@ textarea { min-height: 92px; resize: vertical; }
   border-color: #d3e0f5;
   background: #eef4ff;
   color: #1f3862;
+  font-weight: 700;
 }
 
 .chip-toggle.active {
@@ -2429,6 +2489,32 @@ button:focus-visible {
 .status {
   border-radius: 16px;
   box-shadow: 0 6px 14px rgba(15, 23, 42, 0.06);
+  font-weight: 700;
+}
+
+.status.ok {
+  background: linear-gradient(180deg, #effcf6 0%, #e6f8ef 100%);
+  border-color: #b7e8d0;
+}
+
+.status.error {
+  background: linear-gradient(180deg, #fff5f3 0%, #ffede9 100%);
+  border-color: #f3c5bc;
+}
+
+.stack-list.compact .ghost-btn {
+  width: 100%;
+  justify-content: flex-start;
+  text-align: left;
+}
+
+.direct-share-sections .settings-subsection,
+.settings-subsection {
+  border-radius: 18px;
+}
+
+.portal-footer--content {
+  color: #5c7399;
 }
 
 .payroll-lite-shell {
