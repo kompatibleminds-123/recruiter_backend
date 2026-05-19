@@ -663,6 +663,7 @@ class PortalErrorBoundary extends React.Component {
             <Section kicker="Portal Error" title="Screen crashed">
               <p className="muted">A temporary UI error occurred. Please reload and try again.</p>
               <div className="status error">Temporary screen error. Please reload once.</div>
+              {this.state.errorMessage ? <div className="muted">{`Error: ${this.state.errorMessage}`}</div> : null}
               <div className="button-row">
                 <button onClick={() => window.location.reload()}>Reload portal</button>
               </div>
@@ -6792,6 +6793,10 @@ function PortalApp({ token, onLogout }) {
     () => uniqueNonEmpty((recruiterWorkspaceUsers || []).map((item) => String(item?.name || "").trim())),
     [recruiterWorkspaceUsers]
   );
+  const customExportPresetList = useMemo(
+    () => (Array.isArray(copySettings?.customExportPresets) ? copySettings.customExportPresets : []),
+    [copySettings?.customExportPresets]
+  );
   const accessFlagsReady = Boolean(state.user?.id) && (Boolean(companyLicense) || Boolean(billingOverview));
   const marketingOwnerEmail = String(state.user?.email || "").trim().toLowerCase();
   const isMarketingOwner = marketingOwnerEmail === "ankit.garg@kompatibleminds.com" || marketingOwnerEmail === "rasel.mazumder@kompatibleminds.com";
@@ -12741,7 +12746,7 @@ function PortalApp({ token, onLogout }) {
   }
 
   function getClientShareRows() {
-    return selectedAssessmentRows;
+    return Array.isArray(selectedAssessmentRows) ? selectedAssessmentRows : [];
   }
 
   function getClientShareCvText(item = {}) {
@@ -12752,12 +12757,13 @@ function PortalApp({ token, onLogout }) {
   }
 
   function getClientSharePresetColumns() {
-    const customPreset = (copySettings.customExportPresets || []).find((preset) => String(preset.id) === String(clientShareDraft.presetId));
+    const customPreset = customExportPresetList.find((preset) => String(preset.id) === String(clientShareDraft.presetId));
     const columnsText = customPreset?.columns
       || copySettings.exportPresetColumns?.[clientShareDraft.presetId]
       || DEFAULT_COPY_SETTINGS.exportPresetColumns?.[clientShareDraft.presetId]
       || "";
-    return parsePresetColumns(columnsText);
+    const parsed = parsePresetColumns(columnsText);
+    return Array.isArray(parsed) ? parsed : [];
   }
 
   function getClientShareContext() {
@@ -12815,10 +12821,6 @@ function PortalApp({ token, onLogout }) {
     return escapeHtml(template).replace(/\n/g, "<br/>");
   }
 
-  function getClientShareResolvedRichBodyHtml() {
-    return replaceClientSharePlaceholdersInHtml(getClientShareRichBodyHtml(), getClientShareContext());
-  }
-
   function runClientShareEditorCommand(command, value = null) {
     try {
       if (!clientShareEditorRef.current) return;
@@ -12868,37 +12870,14 @@ function PortalApp({ token, onLogout }) {
     return { clickLabel, tail };
   }
 
-  function buildClientShareBody() {
-    const rawIntroText = String(clientShareEditorRef.current?.innerText || "").trim() || String(copySettings.clientShareIntroTemplate || DEFAULT_COPY_SETTINGS.clientShareIntroTemplate || "").trim();
-    const introText = fillClientShareTemplate(rawIntroText, getClientShareContext());
-    const signature = getClientShareSignature();
-    const presetColumns = getClientSharePresetColumns();
-    const rows = getClientShareRows();
-    const profileLines = rows.flatMap((item, index) => {
-      const cells = presetColumns.map((column) => `${column.header}: ${getCapturedExportFieldValue({ index: index + 1, ...item }, column.field) || "-"}`);
-      const shareKey = String(item.candidate_id || item.id || "");
-      const cvLinkText = !shareKey
-        ? "Linked candidate not found for this assessment"
-        : clientShareCvLinks[shareKey]
-          || (clientShareCvLinkState[shareKey] === "missing" ? "CV link not available yet" : "Generating secure CV link...");
-      return [
-        `${index + 1}. ${item.name || "Candidate"}`,
-        ...cells,
-        `CV Link: ${cvLinkText}`,
-        ""
-      ];
-    });
-    return [
-      introText,
-      `${getClientShareRows().length} selected profile(s) are listed below.`,
-      "",
-      ...profileLines,
-      signature.signatureText,
-      ...signature.links.map((link) => {
-        const parts = splitSignatureLinkLabel(link.label || link.url || "");
-        return `${parts.clickLabel}: ${link.url}${parts.tail ? ` ${parts.tail}` : ""}`;
-      })
-    ].filter((line, index, array) => line || (index > 0 && array[index - 1] !== "")).join("\n");
+  function htmlToPlainText(html) {
+    try {
+      const container = document.createElement("div");
+      container.innerHTML = String(html || "");
+      return String(container.textContent || container.innerText || "").trim();
+    } catch {
+      return String(html || "").replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
+    }
   }
 
   function buildClientShareHtml() {
@@ -12919,7 +12898,8 @@ function PortalApp({ token, onLogout }) {
           : (clientShareCvLinkState[shareKey] === "missing" ? "CV link not available yet" : "Generating secure CV link..."));
       return `<tr>${cells}<td style="border:1px solid #d8dee8;padding:10px 12px;vertical-align:top;font-size:13px;line-height:1.45;">${cvCell}</td></tr>`;
     }).join("");
-    const introHtml = getClientShareResolvedRichBodyHtml();
+    const template = String(copySettings.clientShareIntroTemplate || DEFAULT_COPY_SETTINGS.clientShareIntroTemplate || "").trim();
+    const introHtml = replaceClientSharePlaceholdersInHtml(escapeHtml(template).replace(/\n/g, "<br/>"), getClientShareContext());
     const signature = getClientShareSignature();
     const signatureLinksHtml = signature.links
       .map((link) => {
@@ -12949,6 +12929,16 @@ function PortalApp({ token, onLogout }) {
         ${signatureHtml ? `<div style="margin-top:18px;">${signatureHtml}</div>` : ""}
       </div>
     `.trim();
+  }
+
+  function getClientShareComposedHtml() {
+    const saved = String(clientShareDraft.richBodyHtml || "").trim();
+    if (clientShareBodyTouched && saved) return saved;
+    return buildClientShareHtml();
+  }
+
+  function getClientShareComposedText() {
+    return htmlToPlainText(getClientShareComposedHtml());
   }
 
   function getClientShareEmailSubject() {
@@ -13066,8 +13056,8 @@ function PortalApp({ token, onLogout }) {
       to,
       cc,
       subject: getClientShareEmailSubject(),
-      html: buildClientShareHtml(),
-      text: buildClientShareBody(),
+      html: getClientShareComposedHtml(),
+      text: getClientShareComposedText(),
       forceNewThread: String(clientShareDraft.deliveryMode || "threaded") === "new"
     });
   }
@@ -13077,7 +13067,7 @@ function PortalApp({ token, onLogout }) {
       setStatus("clientShare", "Select assessment profiles first from the Assessments tab.", "error");
       return;
     }
-    await copyHtmlAndText(buildClientShareHtml(), buildClientShareBody());
+    await copyHtmlAndText(getClientShareComposedHtml(), getClientShareComposedText());
     setStatus("clientShare", "Client email draft copied in table format.", "ok");
   }
 
@@ -16285,7 +16275,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                     <div className="form-grid two-col">
                       <label>
                         <span>Selected profiles</span>
-                        <input value={`${selectedAssessmentRows.length} assessment profile(s)`} readOnly />
+                        <input value={`${Array.isArray(selectedAssessmentRows) ? selectedAssessmentRows.length : 0} assessment profile(s)`} readOnly />
                       </label>
                       <label>
                         <span>Recipient email</span>
@@ -16396,7 +16386,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                       </label>
                       <label className="full">
                         <span>Selected preset columns</span>
-                        <textarea value={(copySettings.customExportPresets || []).find((preset) => String(preset.id) === String(clientShareDraft.presetId))?.columns || copySettings.exportPresetColumns?.[clientShareDraft.presetId] || DEFAULT_COPY_SETTINGS.exportPresetColumns?.[clientShareDraft.presetId] || ""} readOnly />
+                        <textarea value={customExportPresetList.find((preset) => String(preset.id) === String(clientShareDraft.presetId))?.columns || copySettings.exportPresetColumns?.[clientShareDraft.presetId] || DEFAULT_COPY_SETTINGS.exportPresetColumns?.[clientShareDraft.presetId] || ""} readOnly />
                       </label>
                     </div>
                   </div>
@@ -16405,7 +16395,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                     <div className="section-kicker">Section 3</div>
                     <h3>Email Output</h3>
                     <label className="full">
-                      <span>Email intro/output editor</span>
+                      <span>Final email editor (with table)</span>
                       <div className="button-row tight">
                         <button type="button" className="ghost-btn" onClick={() => runClientShareEditorCommand("bold")}><strong>B</strong></button>
                         <button type="button" className="ghost-btn" onClick={() => runClientShareEditorCommand("italic")}><em>I</em></button>
@@ -16421,29 +16411,29 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                           type="button"
                           className="ghost-btn"
                           onClick={() => {
-                            const template = String(copySettings.clientShareIntroTemplate || DEFAULT_COPY_SETTINGS.clientShareIntroTemplate || "").trim();
-                            const nextHtml = escapeHtml(template).replace(/\n/g, "<br/>");
-                            setClientShareDraft((current) => ({ ...current, richBodyHtml: nextHtml }));
+                            setClientShareDraft((current) => ({ ...current, richBodyHtml: "" }));
                             setClientShareBodyTouched(false);
                           }}
                         >
                           Reset to admin default
                         </button>
                       </div>
-                      <div
-                        ref={clientShareEditorRef}
-                        className="client-share-rich-editor"
-                        contentEditable
-                        suppressContentEditableWarning
-                        onInput={(e) => {
-                          setClientShareDraft((current) => ({ ...current, richBodyHtml: String(e.currentTarget.innerHTML || "") }));
-                          setClientShareBodyTouched(true);
-                        }}
-                        dangerouslySetInnerHTML={{ __html: getClientShareRichBodyHtml() }}
-                      />
-                      <span className="field-help">Supports placeholders like {`{{hr_name}} {{recruiter_name}} {{client_name}} {{role}}`} which are resolved in final email.</span>
                     </label>
-                    <div className="client-share-preview" dangerouslySetInnerHTML={{ __html: buildClientShareHtml() }} />
+                    <div
+                      ref={clientShareEditorRef}
+                      className="client-share-preview"
+                      contentEditable
+                      suppressContentEditableWarning
+                      onClick={(e) => {
+                        const target = e.target;
+                        if (target && typeof target.closest === "function" && target.closest("a")) e.preventDefault();
+                      }}
+                      onInput={(e) => {
+                        setClientShareDraft((current) => ({ ...current, richBodyHtml: String(e.currentTarget.innerHTML || "") }));
+                        setClientShareBodyTouched(true);
+                      }}
+                      dangerouslySetInnerHTML={{ __html: getClientShareComposedHtml() }}
+                    />
                   </div>
 
                   {hasSaasUnlimitedAccess && isSettingsAdmin ? (
