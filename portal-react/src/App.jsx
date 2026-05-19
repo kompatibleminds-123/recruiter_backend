@@ -13244,6 +13244,22 @@ function PortalApp({ token, onLogout }) {
     setStatus("settings", "Shared copy presets saved for all recruiters.", "ok");
   }
 
+  async function saveCopySettingsWithMessage(successMessage = "Settings saved.") {
+    if (!isSettingsAdmin) {
+      setStatus("settings", "Only admin can save shared settings.", "error");
+      return;
+    }
+    const payload = migrateCopySettings({
+      ...copySettings,
+      exportPresetLabels: copySettings.exportPresetLabels || DEFAULT_COPY_SETTINGS.exportPresetLabels,
+      exportPresetClientMap: copySettings.exportPresetClientMap || DEFAULT_COPY_SETTINGS.exportPresetClientMap,
+      customExportPresets: copySettings.customExportPresets || []
+    });
+    const result = await api("/company/shared-export-presets", token, "POST", { settings: payload });
+    setCopySettings((current) => ({ ...DEFAULT_COPY_SETTINGS, ...current, ...result }));
+    setStatus("settings", successMessage, "ok");
+  }
+
   async function createClientPortalUser() {
     if (!isSettingsAdmin) {
       setStatus("loginClient", "Only admin can create client accounts.", "error");
@@ -16549,32 +16565,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                     />
                   </div>
 
-                  {hasSaasUnlimitedAccess && isSettingsAdmin ? (
-                    <div className="settings-subsection direct-share-section direct-share-admin-preset">
-                      <div className="section-kicker">Section 4</div>
-                      <h3>Admin Settings for Email Template</h3>
-                      <p className="muted">Default intro and fallback signature used in Direct Share. Signature from Mail Settings remains the primary source.</p>
-                      <div className="form-grid">
-                        <label className="full">
-                          <span>Direct share default email intro</span>
-                          <textarea value={copySettings.clientShareIntroTemplate || DEFAULT_COPY_SETTINGS.clientShareIntroTemplate} onChange={(e) => setCopySettings((current) => ({ ...current, clientShareIntroTemplate: e.target.value }))} />
-                        </label>
-                        <label className="full">
-                          <span>Direct share default signature text (fallback)</span>
-                          <textarea value={copySettings.clientShareSignatureText || DEFAULT_COPY_SETTINGS.clientShareSignatureText} onChange={(e) => setCopySettings((current) => ({ ...current, clientShareSignatureText: e.target.value }))} />
-                        </label>
-                        <label><span>Signature link 1 text</span><input value={copySettings.clientShareSignatureLinkLabel || ""} onChange={(e) => setCopySettings((current) => ({ ...current, clientShareSignatureLinkLabel: e.target.value }))} placeholder="Kompatible Minds" /></label>
-                        <label><span>Signature link 1 URL</span><input value={copySettings.clientShareSignatureLinkUrl || ""} onChange={(e) => setCopySettings((current) => ({ ...current, clientShareSignatureLinkUrl: e.target.value }))} placeholder="https://kompatibleminds.com" /></label>
-                        <label><span>Signature link 2 text</span><input value={copySettings.clientShareSignatureLinkLabel2 || ""} onChange={(e) => setCopySettings((current) => ({ ...current, clientShareSignatureLinkLabel2: e.target.value }))} placeholder="LinkedIn" /></label>
-                        <label><span>Signature link 2 URL</span><input value={copySettings.clientShareSignatureLinkUrl2 || ""} onChange={(e) => setCopySettings((current) => ({ ...current, clientShareSignatureLinkUrl2: e.target.value }))} placeholder="https://www.linkedin.com/in/..." /></label>
-                      </div>
-                      <p className="muted">Placeholders: {`{{hr_name}} {{recruiter_name}} {{company_name}} {{client_name}} {{role}} {{role_line}}`}.</p>
-                      <div className="button-row">
-                        <button className="ghost-btn" onClick={() => setCopySettings(DEFAULT_COPY_SETTINGS)}>Reset defaults</button>
-                        <button onClick={() => void saveSharedCopySettings()}>Save direct share preset</button>
-                      </div>
-                    </div>
-                  ) : null}
+                  {null}
                 </div>
                 {!selectedAssessmentRows.length ? <div className="empty-state">No assessment selected yet. Go to Assessments and tick `Select for client share` on the profiles you want to send.</div> : null}
                 <p className="muted">Current flow: copy the email draft from here, then paste it into Zoho/Gmail/Outlook and attach CVs manually.</p>
@@ -16928,33 +16919,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                   </div>
                 </div>
 
-                {isSettingsAdmin ? (
-                  <div className="settings-subsection mail-template-shell" style={{ marginTop: 18 }}>
-                    <div className="section-kicker">JD Email Template (Admin)</div>
-                    <p className="muted">Default subject/body in the "Email JD" modal. Placeholders: {`{Candidate} {Recruiter} {Role}`}</p>
-                    <div className="form-grid">
-                      <label className="full">
-                        <span>Subject template</span>
-                        <input
-                          value={copySettings.jdEmailSubjectTemplate || DEFAULT_COPY_SETTINGS.jdEmailSubjectTemplate}
-                          onChange={(e) => setCopySettings((current) => ({ ...current, jdEmailSubjectTemplate: e.target.value }))}
-                          placeholder="Job Description - {Role}"
-                        />
-                      </label>
-                      <label className="full">
-                        <span>Body template</span>
-                        <textarea
-                          value={copySettings.jdEmailIntroTemplate || DEFAULT_COPY_SETTINGS.jdEmailIntroTemplate}
-                          onChange={(e) => setCopySettings((current) => ({ ...current, jdEmailIntroTemplate: e.target.value }))}
-                          rows={8}
-                        />
-                      </label>
-                    </div>
-                    <div className="button-row">
-                      <button onClick={() => void saveSharedCopySettings()}>Save JD email template</button>
-                    </div>
-                  </div>
-                ) : null}
+                {null}
               </Section>
             </div>
           } />
@@ -17412,35 +17377,120 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
 
                   <div className="settings-subsection">
                     <div className="section-kicker">Email Templates</div>
-                    <p className="muted">JD share template, Direct Share template, and Signature settings.</p>
+                    <p className="muted">Manage admin-defined templates in separate blocks.</p>
+                    <div className="stack-list compact">
+                      <article className="item-card compact-card">
+                        <div className="item-card__top compact-top">
+                          <strong>JD Share Template</strong>
+                        </div>
+                        <label className="full">
+                          <span>Subject template</span>
+                          <input
+                            value={copySettings.jdEmailSubjectTemplate || DEFAULT_COPY_SETTINGS.jdEmailSubjectTemplate}
+                            onChange={(e) => setCopySettings((current) => ({ ...current, jdEmailSubjectTemplate: e.target.value }))}
+                            placeholder="Job Description - {Role}"
+                          />
+                        </label>
+                        <label className="full">
+                          <span>Body template</span>
+                          <textarea
+                            value={copySettings.jdEmailIntroTemplate || DEFAULT_COPY_SETTINGS.jdEmailIntroTemplate}
+                            onChange={(e) => setCopySettings((current) => ({ ...current, jdEmailIntroTemplate: e.target.value }))}
+                            rows={8}
+                          />
+                        </label>
+                        <div className="button-row">
+                          <button onClick={() => void saveCopySettingsWithMessage("JD share template saved.")}>Save JD share template</button>
+                        </div>
+                      </article>
+
+                      <article className="item-card compact-card">
+                        <div className="item-card__top compact-top">
+                          <strong>Direct Share Template</strong>
+                        </div>
+                        <label className="full">
+                          <span>Email intro template</span>
+                          <textarea
+                            value={copySettings.clientShareIntroTemplate || DEFAULT_COPY_SETTINGS.clientShareIntroTemplate}
+                            onChange={(e) => setCopySettings((current) => ({ ...current, clientShareIntroTemplate: e.target.value }))}
+                            rows={8}
+                          />
+                        </label>
+                        <div className="button-row">
+                          <button onClick={() => void saveCopySettingsWithMessage("Direct share template saved.")}>Save direct share template</button>
+                        </div>
+                      </article>
+
+                      <article className="item-card compact-card">
+                        <div className="item-card__top compact-top">
+                          <strong>Signature Settings (Admin Default)</strong>
+                        </div>
+                        <label className="full">
+                          <span>Signature text</span>
+                          <textarea
+                            value={copySettings.clientShareSignatureText || DEFAULT_COPY_SETTINGS.clientShareSignatureText}
+                            onChange={(e) => setCopySettings((current) => ({ ...current, clientShareSignatureText: e.target.value }))}
+                            rows={5}
+                          />
+                        </label>
+                        <div className="form-grid two-col">
+                          <label>
+                            <span>Link 1 text</span>
+                            <input value={copySettings.clientShareSignatureLinkLabel || ""} onChange={(e) => setCopySettings((current) => ({ ...current, clientShareSignatureLinkLabel: e.target.value }))} />
+                          </label>
+                          <label>
+                            <span>Link 1 URL</span>
+                            <input value={copySettings.clientShareSignatureLinkUrl || ""} onChange={(e) => setCopySettings((current) => ({ ...current, clientShareSignatureLinkUrl: e.target.value }))} />
+                          </label>
+                          <label>
+                            <span>Link 2 text</span>
+                            <input value={copySettings.clientShareSignatureLinkLabel2 || ""} onChange={(e) => setCopySettings((current) => ({ ...current, clientShareSignatureLinkLabel2: e.target.value }))} />
+                          </label>
+                          <label>
+                            <span>Link 2 URL</span>
+                            <input value={copySettings.clientShareSignatureLinkUrl2 || ""} onChange={(e) => setCopySettings((current) => ({ ...current, clientShareSignatureLinkUrl2: e.target.value }))} />
+                          </label>
+                        </div>
+                        <div className="button-row">
+                          <button onClick={() => void saveCopySettingsWithMessage("Admin signature settings saved.")}>Save signature settings</button>
+                        </div>
+                      </article>
+                    </div>
                     <div className="button-row">
-                      <button onClick={() => navigate("/mail-settings")}>Open Email Settings</button>
+                      <button className="secondary" onClick={() => navigate("/mail-settings")}>Open Recruiter Mail Connect</button>
                     </div>
                   </div>
 
                   <div className="settings-subsection">
                     <div className="section-kicker">Account Management</div>
-                    <p className="muted">Users, client/recruiter login settings, payroll login setup, and plans.</p>
-                    <div className="button-row">
-                      <button onClick={() => navigate("/login-settings")}>Users & Login Settings</button>
-                      <button className="secondary" onClick={() => navigate("/plan")}>Plan & Billing</button>
-                      <button className="secondary" onClick={() => navigate("/admin/payroll/settings")}>Payroll Settings</button>
+                    <p className="muted">Users, client/recruiter login settings, and plans.</p>
+                    <div className="stack-list compact">
+                      <article className="item-card compact-card" role="button" tabIndex={0} onClick={() => navigate("/login-settings")} onKeyDown={(e) => { if (e.key === "Enter") navigate("/login-settings"); }}>
+                        <div className="item-card__top compact-top"><strong>Users & Login Settings</strong><span>👥</span></div>
+                      </article>
+                      <article className="item-card compact-card" role="button" tabIndex={0} onClick={() => navigate("/plan")} onKeyDown={(e) => { if (e.key === "Enter") navigate("/plan"); }}>
+                        <div className="item-card__top compact-top"><strong>Plan & Billing</strong><span>💳</span></div>
+                      </article>
                     </div>
                   </div>
 
                   <div className="settings-subsection">
                     <div className="section-kicker">Job Settings</div>
                     <p className="muted">Hosted job apply links and public apply configuration.</p>
-                    <div className="button-row">
-                      <button onClick={() => navigate("/intake-settings")}>Job Apply Link</button>
+                    <div className="stack-list compact">
+                      <article className="item-card compact-card" role="button" tabIndex={0} onClick={() => navigate("/intake-settings")} onKeyDown={(e) => { if (e.key === "Enter") navigate("/intake-settings"); }}>
+                        <div className="item-card__top compact-top"><strong>Job Apply Link</strong><span>🔗</span></div>
+                      </article>
                     </div>
                   </div>
 
                   <div className="settings-subsection">
                     <div className="section-kicker">Preset Settings</div>
                     <p className="muted">Tracker preset builder, indicator sequencing, and shared preset management.</p>
-                    <div className="button-row">
-                      <button onClick={() => navigate("/settings")}>Open Preset Settings</button>
+                    <div className="stack-list compact">
+                      <article className="item-card compact-card" role="button" tabIndex={0} onClick={() => navigate("/settings")} onKeyDown={(e) => { if (e.key === "Enter") navigate("/settings"); }}>
+                        <div className="item-card__top compact-top"><strong>Preset Settings</strong><span>📋</span></div>
+                      </article>
                     </div>
                   </div>
 
@@ -17458,7 +17508,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                       </label>
                     </div>
                     <div className="button-row">
-                      <button onClick={() => void saveSharedCopySettings()}>Save AI Settings</button>
+                      <button onClick={() => void saveCopySettingsWithMessage("AI settings saved.")}>Save AI Settings</button>
                     </div>
                   </div>
                 </Section>
@@ -17473,21 +17523,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                   {!isSettingsAdmin ? <p className="muted">You can use shared presets here. Only admin can create, edit, or save shared preset settings.</p> : null}
                   {statuses.settings ? <div className={`status ${statuses.settingsKind || ""}`}>{statuses.settings}</div> : null}
                   {/* Email Settings moved to Mail Settings tab (visible to all recruiters). */}
-                  <div className="settings-subsection">
-                    <div className="section-kicker">Interview CV Parsing</div>
-                    <div className="form-grid">
-                      <label className="checkbox-row">
-                        <input
-                          type="checkbox"
-                          disabled={!isSettingsAdmin}
-                          checked={copySettings.interviewAiParsingEnabled !== false}
-                          onChange={(e) => setCopySettings((current) => ({ ...current, interviewAiParsingEnabled: e.target.checked }))}
-                        />
-                        <span>Enable AI parsing in Interview Panel CV upload (shows conflict-apply modal)</span>
-                      </label>
-                    </div>
-                    <p className="muted">If disabled, CV will attach instantly and parsing/tokens run in background without blocking recruiter flow.</p>
-                  </div>
+                  {null}
                   <div className="settings-subsection preset-edit-shell">
                     <div className="section-kicker">Edit Existing Presets</div>
                     <p className="muted">Edit any existing candidate tracker preset, attach it to a specific client if needed, and save shared usage defaults.</p>
