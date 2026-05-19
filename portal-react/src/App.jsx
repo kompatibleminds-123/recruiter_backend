@@ -6336,6 +6336,25 @@ function PortalApp({ token, onLogout }) {
     });
     return Array.from(values).sort((a, b) => a.localeCompare(b));
   }, [state.jobs]);
+  const clientRoleOptionsByClient = useMemo(() => {
+    const byClient = new Map();
+    (Array.isArray(state.jobs) ? state.jobs : []).forEach((job) => {
+      const clientName = String(job?.client_name || job?.clientName || "").trim();
+      const role = String(job?.title || "").trim();
+      if (!clientName || !role || clientName.startsWith("__")) return;
+      if (!byClient.has(clientName)) byClient.set(clientName, new Set());
+      byClient.get(clientName).add(role);
+    });
+    const output = {};
+    byClient.forEach((roles, clientName) => {
+      output[clientName] = Array.from(roles).sort((a, b) => a.localeCompare(b));
+    });
+    return output;
+  }, [state.jobs]);
+  const clientRoleOptions = useMemo(
+    () => clientRoleOptionsByClient[String(clientShareDraft.clientLabel || "").trim()] || [],
+    [clientRoleOptionsByClient, clientShareDraft.clientLabel]
+  );
   const clientJobContentDefaults = useMemo(() => {
     const scoreRow = (job) => {
       const aboutCompany = String(job?.aboutCompany || "").trim();
@@ -7859,21 +7878,14 @@ function PortalApp({ token, onLogout }) {
 
   useEffect(() => {
     if (clientShareBodyTouched) return;
-    const context = getClientShareContext();
     const template = String(copySettings.clientShareIntroTemplate || DEFAULT_COPY_SETTINGS.clientShareIntroTemplate || "").trim();
-    const nextHtml = escapeHtml(fillClientShareTemplate(template, context)).replace(/\n/g, "<br/>");
+    const nextHtml = escapeHtml(template).replace(/\n/g, "<br/>");
     if (String(clientShareDraft.richBodyHtml || "").trim() === String(nextHtml || "").trim()) return;
     setClientShareDraft((current) => ({ ...current, richBodyHtml: nextHtml }));
   }, [
     clientShareBodyTouched,
     clientShareDraft.richBodyHtml,
-    clientShareDraft.hrName,
-    clientShareDraft.clientLabel,
-    clientShareDraft.targetRole,
-    clientShareDraft.recruiterName,
     copySettings.clientShareIntroTemplate,
-    state.user?.companyName,
-    state.user?.company_name
   ]);
 
   useEffect(() => (() => {
@@ -12764,6 +12776,22 @@ function PortalApp({ token, onLogout }) {
     return fillClientShareTemplate(template, context);
   }
 
+  function replaceClientSharePlaceholdersInHtml(rawHtml, context) {
+    let output = String(rawHtml || "");
+    const tokens = {
+      hr_name: String(context?.hrName || "").trim() || "Team",
+      recruiter_name: String(context?.recruiterName || "").trim(),
+      company_name: String(context?.companyName || "").trim(),
+      client_name: String(context?.clientLabel || "").trim(),
+      role: String(context?.targetRole || "").trim(),
+      role_line: String(context?.roleLine || "").trim()
+    };
+    Object.entries(tokens).forEach(([key, value]) => {
+      output = output.replace(new RegExp(`\\{\\{\\s*${key}\\s*\\}\\}`, "gi"), escapeHtml(value));
+    });
+    return output;
+  }
+
   function applyClientJobContentDefaults(nextClientName = "") {
     const clientName = String(nextClientName || "").trim();
     if (!clientName) return;
@@ -12783,7 +12811,12 @@ function PortalApp({ token, onLogout }) {
   function getClientShareRichBodyHtml() {
     const saved = String(clientShareDraft.richBodyHtml || "").trim();
     if (saved) return saved;
-    return escapeHtml(getClientShareIntroText()).replace(/\n/g, "<br/>");
+    const template = String(copySettings.clientShareIntroTemplate || DEFAULT_COPY_SETTINGS.clientShareIntroTemplate || "").trim();
+    return escapeHtml(template).replace(/\n/g, "<br/>");
+  }
+
+  function getClientShareResolvedRichBodyHtml() {
+    return replaceClientSharePlaceholdersInHtml(getClientShareRichBodyHtml(), getClientShareContext());
   }
 
   function runClientShareEditorCommand(command, value = null) {
@@ -12836,7 +12869,8 @@ function PortalApp({ token, onLogout }) {
   }
 
   function buildClientShareBody() {
-    const introText = String(clientShareEditorRef.current?.innerText || "").trim() || getClientShareIntroText();
+    const rawIntroText = String(clientShareEditorRef.current?.innerText || "").trim() || String(copySettings.clientShareIntroTemplate || DEFAULT_COPY_SETTINGS.clientShareIntroTemplate || "").trim();
+    const introText = fillClientShareTemplate(rawIntroText, getClientShareContext());
     const signature = getClientShareSignature();
     const presetColumns = getClientSharePresetColumns();
     const rows = getClientShareRows();
@@ -12885,7 +12919,7 @@ function PortalApp({ token, onLogout }) {
           : (clientShareCvLinkState[shareKey] === "missing" ? "CV link not available yet" : "Generating secure CV link..."));
       return `<tr>${cells}<td style="border:1px solid #d8dee8;padding:10px 12px;vertical-align:top;font-size:13px;line-height:1.45;">${cvCell}</td></tr>`;
     }).join("");
-    const introHtml = getClientShareRichBodyHtml();
+    const introHtml = getClientShareResolvedRichBodyHtml();
     const signature = getClientShareSignature();
     const signatureLinksHtml = signature.links
       .map((link) => {
@@ -16307,18 +16341,36 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                         <span className="field-help">
                           {String(clientShareDraft.deliveryMode || "threaded") === "new"
                             ? "Will start a fresh email thread."
-                            : "Will use existing mail chain when available."}
+                            : "Will use existing mail chain when available. If no previous thread exists, first email will start a new one automatically."}
                         </span>
                       </label>
                       <label>
                         <span>Client</span>
-                        <select value={clientShareDraft.clientLabel} onChange={(e) => setClientShareDraft((current) => ({ ...current, clientLabel: e.target.value }))}>
+                        <select
+                          value={clientShareDraft.clientLabel}
+                          onChange={(e) => {
+                            const nextClient = e.target.value;
+                            const roleOptions = clientRoleOptionsByClient[String(nextClient || "").trim()] || [];
+                            setClientShareDraft((current) => ({
+                              ...current,
+                              clientLabel: nextClient,
+                              targetRole: roleOptions.includes(String(current.targetRole || "").trim()) ? current.targetRole : "",
+                              hrName: ""
+                            }));
+                          }}
+                        >
                           <option value="">Select client</option>
                           {availablePresetClients.map((clientName) => <option key={`share-client-${clientName}`} value={clientName}>{clientName}</option>)}
                         </select>
                       </label>
-                      <label><span>Role / requirement</span><input value={clientShareDraft.targetRole} onChange={(e) => setClientShareDraft((current) => ({ ...current, targetRole: e.target.value }))} placeholder="AE / Account Executive" /></label>
-                      <label><span>HR name</span><input value={clientShareDraft.hrName} onChange={(e) => setClientShareDraft((current) => ({ ...current, hrName: e.target.value }))} placeholder="Attentive HR Team" /></label>
+                      <label>
+                        <span>Role / requirement</span>
+                        <select value={clientShareDraft.targetRole} onChange={(e) => setClientShareDraft((current) => ({ ...current, targetRole: e.target.value }))}>
+                          <option value="">{clientShareDraft.clientLabel ? "Select role for this client" : "Select client first"}</option>
+                          {clientRoleOptions.map((role) => <option key={`share-role-${role}`} value={role}>{role}</option>)}
+                        </select>
+                      </label>
+                      <label><span>HR name</span><input value={clientShareDraft.hrName} onChange={(e) => setClientShareDraft((current) => ({ ...current, hrName: e.target.value }))} placeholder="Type HR name (optional)" /></label>
                       <label>
                         <span>Recruiter name</span>
                         <select value={clientShareDraft.recruiterName} onChange={(e) => setClientShareDraft((current) => ({ ...current, recruiterName: e.target.value }))}>
@@ -16346,51 +16398,51 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                         <span>Selected preset columns</span>
                         <textarea value={(copySettings.customExportPresets || []).find((preset) => String(preset.id) === String(clientShareDraft.presetId))?.columns || copySettings.exportPresetColumns?.[clientShareDraft.presetId] || DEFAULT_COPY_SETTINGS.exportPresetColumns?.[clientShareDraft.presetId] || ""} readOnly />
                       </label>
-                      <label className="full">
-                        <span>Email body (rich editor)</span>
-                        <div className="button-row tight">
-                          <button type="button" className="ghost-btn" onClick={() => runClientShareEditorCommand("bold")}><strong>B</strong></button>
-                          <button type="button" className="ghost-btn" onClick={() => runClientShareEditorCommand("italic")}><em>I</em></button>
-                          <button type="button" className="ghost-btn" onClick={() => runClientShareEditorCommand("underline")}><u>U</u></button>
-                          <button type="button" className="ghost-btn" onClick={() => runClientShareEditorCommand("insertUnorderedList")}>List</button>
-                          <button type="button" className="ghost-btn" onClick={() => {
-                            const url = window.prompt("Enter hyperlink URL");
-                            if (!url) return;
-                            runClientShareEditorCommand("createLink", url);
-                          }}>Link</button>
-                          <button type="button" className="ghost-btn" onClick={() => runClientShareEditorCommand("removeFormat")}>Clear</button>
-                          <button
-                            type="button"
-                            className="ghost-btn"
-                            onClick={() => {
-                              const template = String(copySettings.clientShareIntroTemplate || DEFAULT_COPY_SETTINGS.clientShareIntroTemplate || "").trim();
-                              const nextHtml = escapeHtml(fillClientShareTemplate(template, getClientShareContext())).replace(/\n/g, "<br/>");
-                              setClientShareDraft((current) => ({ ...current, richBodyHtml: nextHtml }));
-                              setClientShareBodyTouched(false);
-                            }}
-                          >
-                            Reset to admin default
-                          </button>
-                        </div>
-                        <div
-                          ref={clientShareEditorRef}
-                          className="client-share-rich-editor"
-                          contentEditable
-                          suppressContentEditableWarning
-                          onInput={(e) => {
-                            setClientShareDraft((current) => ({ ...current, richBodyHtml: String(e.currentTarget.innerHTML || "") }));
-                            setClientShareBodyTouched(true);
-                          }}
-                          dangerouslySetInnerHTML={{ __html: getClientShareRichBodyHtml() }}
-                        />
-                        <span className="field-help">Base intro comes from Admin default. Recruiter can format message here.</span>
-                      </label>
                     </div>
                   </div>
 
                   <div className="settings-subsection direct-share-section direct-share-preview-shell">
                     <div className="section-kicker">Section 3</div>
                     <h3>Email Output</h3>
+                    <label className="full">
+                      <span>Email intro/output editor</span>
+                      <div className="button-row tight">
+                        <button type="button" className="ghost-btn" onClick={() => runClientShareEditorCommand("bold")}><strong>B</strong></button>
+                        <button type="button" className="ghost-btn" onClick={() => runClientShareEditorCommand("italic")}><em>I</em></button>
+                        <button type="button" className="ghost-btn" onClick={() => runClientShareEditorCommand("underline")}><u>U</u></button>
+                        <button type="button" className="ghost-btn" onClick={() => runClientShareEditorCommand("insertUnorderedList")}>List</button>
+                        <button type="button" className="ghost-btn" onClick={() => {
+                          const url = window.prompt("Enter hyperlink URL");
+                          if (!url) return;
+                          runClientShareEditorCommand("createLink", url);
+                        }}>Link</button>
+                        <button type="button" className="ghost-btn" onClick={() => runClientShareEditorCommand("removeFormat")}>Clear</button>
+                        <button
+                          type="button"
+                          className="ghost-btn"
+                          onClick={() => {
+                            const template = String(copySettings.clientShareIntroTemplate || DEFAULT_COPY_SETTINGS.clientShareIntroTemplate || "").trim();
+                            const nextHtml = escapeHtml(template).replace(/\n/g, "<br/>");
+                            setClientShareDraft((current) => ({ ...current, richBodyHtml: nextHtml }));
+                            setClientShareBodyTouched(false);
+                          }}
+                        >
+                          Reset to admin default
+                        </button>
+                      </div>
+                      <div
+                        ref={clientShareEditorRef}
+                        className="client-share-rich-editor"
+                        contentEditable
+                        suppressContentEditableWarning
+                        onInput={(e) => {
+                          setClientShareDraft((current) => ({ ...current, richBodyHtml: String(e.currentTarget.innerHTML || "") }));
+                          setClientShareBodyTouched(true);
+                        }}
+                        dangerouslySetInnerHTML={{ __html: getClientShareRichBodyHtml() }}
+                      />
+                      <span className="field-help">Supports placeholders like {`{{hr_name}} {{recruiter_name}} {{client_name}} {{role}}`} which are resolved in final email.</span>
+                    </label>
                     <div className="client-share-preview" dangerouslySetInnerHTML={{ __html: buildClientShareHtml() }} />
                   </div>
 
