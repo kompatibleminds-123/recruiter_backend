@@ -15150,7 +15150,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
           <RouteErrorBoundary routeKey={location.pathname}>
             <Routes>
           <Route path="/dashboard" element={
-            <div className="page-grid dashboard-page">
+            <div className="page-grid">
               <Section kicker="Today" title="Today's Agenda">
                 <div className="agenda-header">
                   <p className="muted">
@@ -15735,7 +15735,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
           } />
 
           <Route path="/candidates" element={
-            <div className="page-grid candidates-page">
+            <div className="page-grid">
               <Section kicker="Candidate Universe" title="Database">
                 <p className="muted">This view can surface captured, applied, and assessment-linked candidates together. Candidates without CV uploads still remain searchable through saved structured fields, recruiter notes, attempts, and assessment data. Hidden CV metadata is used only by search and not shown in the UI.</p>
                 <div className="item-card compact-card">
@@ -16324,7 +16324,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
           } />
 
           <Route path="/assessments" element={
-            <Section kicker="Structured Workflow" title="Assessments" className="assessments-page">
+            <Section kicker="Structured Workflow" title="Assessments">
               {statuses.assessments ? <div className={`status ${statuses.assessmentsKind || ""}`}>{statuses.assessments}</div> : null}
               <div className="form-grid three-col">
                 <label className="full"><span>Search</span><input placeholder="Search by candidate, phone, email, JD..." value={assessmentFilters.q} onChange={(e) => setAssessmentFilters((current) => ({ ...current, q: e.target.value }))} /></label>
