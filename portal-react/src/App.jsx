@@ -4280,12 +4280,6 @@ function NewDraftModal({
                 Confidence: overall {String(cvParsePreview.confidence?.overall || "-")} | experience {String(cvParsePreview.confidence?.experience || "-")} | education {String(cvParsePreview.confidence?.education || "-")}
               </div>
             ) : null}
-            {Array.isArray(cvParsePreview?.warnings) && cvParsePreview.warnings.length ? (
-              <div className="status-note" style={{ marginBottom: 10 }}>
-                <strong>Warnings</strong>
-                <div>{cvParsePreview.warnings.join(" | ")}</div>
-              </div>
-            ) : null}
             <h4 style={{ marginTop: 6, marginBottom: 8 }}>Summary</h4>
             <div className="form-grid two-col" style={{ marginBottom: 10 }}>
               <label><span>Name</span><input value={String(summary.candidateName || "")} readOnly /></label>
@@ -13938,7 +13932,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
     const rankDegree = (degree = "") => {
       const d = String(degree || "").toLowerCase();
       if (/\b(ph\.?\s*d|doctorate)\b/.test(d)) return 6;
-      if (/\b(mba|pgdm|m\.?\s*tech|mca|master|m\.?\s*e\.?|m\.?\s*sc|m\.?\s*com|m\.?\s*a)\b/.test(d)) return 5;
+      if (/\b(post\s*graduation|post\s*graduate|pg|mba|pgdm|m\.?\s*tech|mca|master|m\.?\s*e\.?|m\.?\s*sc|m\.?\s*com|m\.?\s*a)\b/.test(d)) return 5;
       if (/\b(b\.?\s*tech|b\.?\s*e\.?|bca|bachelor|b\.?\s*sc|b\.?\s*com|b\.?\s*a)\b/.test(d)) return 4;
       if (/\b(diploma)\b/.test(d)) return 3;
       if (/\b(12th|xii|hsc)\b/.test(d)) return 2;
