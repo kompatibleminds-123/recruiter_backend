@@ -622,7 +622,7 @@ class PortalErrorBoundary extends React.Component {
         <div className="app-shell">
           <main className="content">
             <Section kicker="Portal Error" title="Screen crashed">
-              <p className="muted">Portal blank screen avoid karne ke liye fallback dikhaya gaya hai. Page refresh karke ya latest deploy ke baad dubara try karo.</p>
+              <p className="muted">A temporary UI error occurred. Please reload and try again.</p>
               <div className="status error">Temporary screen error. Please reload once.</div>
               <div className="button-row">
                 <button onClick={() => window.location.reload()}>Reload portal</button>
@@ -7287,7 +7287,7 @@ function PortalApp({ token, onLogout }) {
     const needsDashboard = pathname === "/dashboard";
     const needsApplicants = pathname === "/dashboard" || pathname === "/applicants";
     const needsIntake = pathname === "/intake-settings" || pathname === "/jobs" || pathname === "/applicants";
-    const needsJobs = !isMarketingRoute && pathname !== "/mail-settings" && pathname !== "/settings" && pathname !== "/login-settings" && pathname !== "/plan";
+    const needsJobs = !isMarketingRoute && pathname !== "/mail-settings" && pathname !== "/login-settings" && pathname !== "/plan";
     const needsUsers = needsJobs || pathname === "/login-settings";
     const needsEmployeeUsers = includeEmployeeUsers && (pathname === "/login-settings" || pathname.startsWith("/admin/payroll"));
     const needsCandidates =
