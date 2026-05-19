@@ -6243,6 +6243,7 @@ function PortalApp({ token, onLogout }) {
     emailSubject: "",
     clientLabel: "",
     targetRole: "",
+    deliveryMode: "threaded",
     presetId: "client_submission",
     introText: "",
     richBodyHtml: "",
@@ -6261,12 +6262,14 @@ function PortalApp({ token, onLogout }) {
   const [clientShareCvLinkFingerprint, setClientShareCvLinkFingerprint] = useState({});
   const [clientShareSendQueue, setClientShareSendQueue] = useState({ pending: false, executeAt: 0, to: "", subject: "" });
   const [clientShareQueueSeconds, setClientShareQueueSeconds] = useState(0);
+  const [clientShareBodyTouched, setClientShareBodyTouched] = useState(false);
   const clientShareQueueTimeoutRef = useRef(null);
   const clientShareQueuePayloadRef = useRef(null);
   const clientShareQueueIntervalRef = useRef(null);
   const [agendaRange, setAgendaRange] = useState("today");
   const [openAssessmentMoreId, setOpenAssessmentMoreId] = useState("");
   const assessmentMoreMenuRef = useRef(null);
+  const [clientShareSuggestOpen, setClientShareSuggestOpen] = useState({ to: false, cc: false });
   // Assessment event exports are available via dedicated buttons (no modal).
   const [copySettings, setCopySettings] = useState(() => {
     try {
@@ -6704,6 +6707,30 @@ function PortalApp({ token, onLogout }) {
     ];
     return uniqueEmails(sources);
   }, [directShareHistory, state.clientPortal, state.users]);
+  const getActiveEmailToken = useCallback((rawValue = "") => {
+    const value = String(rawValue || "");
+    const parts = value.split(",");
+    return String(parts[parts.length - 1] || "").trim().toLowerCase();
+  }, []);
+  const getEmailTokenSuggestions = useCallback((rawValue = "") => {
+    const token = getActiveEmailToken(rawValue);
+    if (!token || token.length < 2) return [];
+    return directShareEmailSuggestions
+      .filter((email) => String(email || "").toLowerCase().includes(token))
+      .slice(0, 8);
+  }, [directShareEmailSuggestions, getActiveEmailToken]);
+  const applyEmailTokenSuggestion = useCallback((field, selectedEmail) => {
+    const safeEmail = String(selectedEmail || "").trim();
+    if (!safeEmail) return;
+    setClientShareDraft((current) => {
+      const currentValue = String(current?.[field] || "");
+      const chunks = currentValue.split(",");
+      chunks[chunks.length - 1] = ` ${safeEmail}`;
+      const merged = chunks.join(",").replace(/^,\s*/, "").replace(/\s{2,}/g, " ");
+      return { ...current, [field]: merged.replace(/\s+,/g, ",").trim().replace(/,$/, ", ") };
+    });
+    setClientShareSuggestOpen((current) => ({ ...current, [field === "recipientEmail" ? "to" : "cc"]: false }));
+  }, []);
   const recruiterNameOptions = useMemo(
     () => uniqueNonEmpty((recruiterWorkspaceUsers || []).map((item) => String(item?.name || "").trim())),
     [recruiterWorkspaceUsers]
@@ -7793,12 +7820,14 @@ function PortalApp({ token, onLogout }) {
   }, [exportPresetOptions, clientShareDraft.presetId]);
 
   useEffect(() => {
-    if (String(clientShareDraft.richBodyHtml || "").trim()) return;
+    if (clientShareBodyTouched) return;
     const context = getClientShareContext();
     const template = String(copySettings.clientShareIntroTemplate || DEFAULT_COPY_SETTINGS.clientShareIntroTemplate || "").trim();
     const nextHtml = escapeHtml(fillClientShareTemplate(template, context)).replace(/\n/g, "<br/>");
+    if (String(clientShareDraft.richBodyHtml || "").trim() === String(nextHtml || "").trim()) return;
     setClientShareDraft((current) => ({ ...current, richBodyHtml: nextHtml }));
   }, [
+    clientShareBodyTouched,
     clientShareDraft.richBodyHtml,
     clientShareDraft.hrName,
     clientShareDraft.clientLabel,
@@ -12712,6 +12741,7 @@ function PortalApp({ token, onLogout }) {
         ...current,
         richBodyHtml: String(clientShareEditorRef.current?.innerHTML || "").trim()
       }));
+      setClientShareBodyTouched(true);
     } catch {}
   }
 
@@ -12837,10 +12867,12 @@ function PortalApp({ token, onLogout }) {
     const context = getClientShareContext();
     const explicit = String(clientShareDraft.emailSubject || "").trim();
     if (explicit) return explicit;
-    const roleLine = String(context.roleLine || "").trim();
-    if (roleLine) return `Job profiles for ${roleLine}`;
-    const fallback = [context.targetRole, context.clientLabel].filter(Boolean).join(" | ");
-    return fallback ? `Job profiles: ${fallback}` : "Job profiles";
+    const companyName = String(context.clientLabel || "").trim();
+    const roleLine = String(context.targetRole || context.roleLine || "").trim();
+    if (companyName && roleLine) return `${companyName} - Candidate Profiles for ${roleLine}`;
+    if (companyName) return `${companyName} - Candidate Profiles`;
+    if (roleLine) return `Candidate Profiles for ${roleLine}`;
+    return "Candidate Profiles";
   }
 
   async function dispatchClientShareEmail(payload) {
@@ -12849,12 +12881,13 @@ function PortalApp({ token, onLogout }) {
     const subject = String(payload?.subject || "").trim();
     const html = String(payload?.html || "").trim();
     const text = String(payload?.text || "").trim();
-    await api("/company/email/send", token, "POST", {
+    const result = await api("/company/email/send", token, "POST", {
       to,
       cc,
       subject,
       html,
       text,
+      forceNewThread: Boolean(payload?.forceNewThread),
       threadContext: {
         clientLabel: String(clientShareDraft.clientLabel || "").trim(),
         role: String(clientShareDraft.targetRole || "").trim()
@@ -12864,6 +12897,7 @@ function PortalApp({ token, onLogout }) {
       to: uniqueEmails([to, ...(current.to || [])]).slice(0, 40),
       cc: uniqueEmails([...(cc ? parseEmailTokens(cc) : []), ...(current.cc || [])]).slice(0, 60)
     }));
+    return result;
   }
 
   function clearClientShareQueueTimers() {
@@ -12894,8 +12928,15 @@ function PortalApp({ token, onLogout }) {
     if (!payload) return;
     try {
       setStatus("clientShare", "Sending email...", "ok");
-      await dispatchClientShareEmail(payload);
-      setStatus("clientShare", "Email sent. Check your Sent folder to confirm.", "ok");
+      const result = await dispatchClientShareEmail(payload);
+      const isThreaded = Boolean(result?.threaded);
+      setStatus(
+        "clientShare",
+        isThreaded
+          ? "Email sent in existing mail chain. Check your Sent folder to confirm."
+          : "Email sent as a new thread. Check your Sent folder to confirm.",
+        "ok"
+      );
     } catch (error) {
       setStatus("clientShare", `Email failed: ${String(error?.message || error)}`, "error");
     }
@@ -12938,7 +12979,8 @@ function PortalApp({ token, onLogout }) {
       cc,
       subject: getClientShareEmailSubject(),
       html: buildClientShareHtml(),
-      text: buildClientShareBody()
+      text: buildClientShareBody(),
+      forceNewThread: String(clientShareDraft.deliveryMode || "threaded") === "new"
     });
   }
 
@@ -16161,25 +16203,58 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                         <span>Recipient email</span>
                         <input
                           type="email"
-                          list="client-share-email-suggestions"
                           value={clientShareDraft.recipientEmail}
-                          onChange={(e) => setClientShareDraft((current) => ({ ...current, recipientEmail: e.target.value }))}
+                          onChange={(e) => {
+                            setClientShareDraft((current) => ({ ...current, recipientEmail: e.target.value }));
+                            setClientShareSuggestOpen((current) => ({ ...current, to: true }));
+                          }}
+                          onFocus={() => setClientShareSuggestOpen((current) => ({ ...current, to: true }))}
+                          onBlur={() => setTimeout(() => setClientShareSuggestOpen((current) => ({ ...current, to: false })), 120)}
                           placeholder="hr@client.com"
                         />
+                        {clientShareSuggestOpen.to && getEmailTokenSuggestions(clientShareDraft.recipientEmail).length ? (
+                          <div className="stack-list compact">
+                            {getEmailTokenSuggestions(clientShareDraft.recipientEmail).map((email) => (
+                              <button key={`to-suggest-${email}`} type="button" className="ghost-btn" onMouseDown={() => applyEmailTokenSuggestion("recipientEmail", email)}>{email}</button>
+                            ))}
+                          </div>
+                        ) : null}
                       </label>
                       <label>
                         <span>CC (optional)</span>
                         <input
-                          list="client-share-email-suggestions"
                           value={clientShareDraft.ccEmails || ""}
-                          onChange={(e) => setClientShareDraft((current) => ({ ...current, ccEmails: e.target.value }))}
+                          onChange={(e) => {
+                            setClientShareDraft((current) => ({ ...current, ccEmails: e.target.value }));
+                            setClientShareSuggestOpen((current) => ({ ...current, cc: true }));
+                          }}
+                          onFocus={() => setClientShareSuggestOpen((current) => ({ ...current, cc: true }))}
+                          onBlur={() => setTimeout(() => setClientShareSuggestOpen((current) => ({ ...current, cc: false })), 120)}
                           placeholder="manager@client.com, hiring@client.com"
                         />
-                        <span className="field-help">Use comma-separated emails.</span>
+                        {clientShareSuggestOpen.cc && getEmailTokenSuggestions(clientShareDraft.ccEmails || "").length ? (
+                          <div className="stack-list compact">
+                            {getEmailTokenSuggestions(clientShareDraft.ccEmails || "").map((email) => (
+                              <button key={`cc-suggest-${email}`} type="button" className="ghost-btn" onMouseDown={() => applyEmailTokenSuggestion("ccEmails", email)}>{email}</button>
+                            ))}
+                          </div>
+                        ) : null}
                       </label>
                       <label>
                         <span>Email subject</span>
                         <input value={clientShareDraft.emailSubject} onChange={(e) => setClientShareDraft((current) => ({ ...current, emailSubject: e.target.value }))} placeholder={getClientShareEmailSubject()} />
+                      </label>
+                      <label>
+                        <span>Delivery mode</span>
+                        <select value={clientShareDraft.deliveryMode || "threaded"} onChange={(e) => setClientShareDraft((current) => ({ ...current, deliveryMode: e.target.value }))}>
+                          <option value="threaded">Threaded reply (default)</option>
+                          <option value="new">Start new thread</option>
+                        </select>
+                        <span className="field-help">
+                          {String(clientShareDraft.deliveryMode || "threaded") === "new"
+                            ? "Will start a fresh email thread."
+                            : "Will use existing mail chain when available."}
+                        </span>
                       </label>
                       <label>
                         <span>Client</span>
@@ -16198,9 +16273,6 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                         </select>
                       </label>
                     </div>
-                    <datalist id="client-share-email-suggestions">
-                      {directShareEmailSuggestions.map((email) => <option key={`share-email-${email}`} value={email} />)}
-                    </datalist>
                   </div>
 
                   <div className="settings-subsection direct-share-section direct-share-body-shell">
@@ -16233,13 +16305,28 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                             runClientShareEditorCommand("createLink", url);
                           }}>Link</button>
                           <button type="button" className="ghost-btn" onClick={() => runClientShareEditorCommand("removeFormat")}>Clear</button>
+                          <button
+                            type="button"
+                            className="ghost-btn"
+                            onClick={() => {
+                              const template = String(copySettings.clientShareIntroTemplate || DEFAULT_COPY_SETTINGS.clientShareIntroTemplate || "").trim();
+                              const nextHtml = escapeHtml(fillClientShareTemplate(template, getClientShareContext())).replace(/\n/g, "<br/>");
+                              setClientShareDraft((current) => ({ ...current, richBodyHtml: nextHtml }));
+                              setClientShareBodyTouched(false);
+                            }}
+                          >
+                            Reset to admin default
+                          </button>
                         </div>
                         <div
                           ref={clientShareEditorRef}
                           className="client-share-rich-editor"
                           contentEditable
                           suppressContentEditableWarning
-                          onInput={(e) => setClientShareDraft((current) => ({ ...current, richBodyHtml: String(e.currentTarget.innerHTML || "") }))}
+                          onInput={(e) => {
+                            setClientShareDraft((current) => ({ ...current, richBodyHtml: String(e.currentTarget.innerHTML || "") }));
+                            setClientShareBodyTouched(true);
+                          }}
                           dangerouslySetInnerHTML={{ __html: getClientShareRichBodyHtml() }}
                         />
                         <span className="field-help">Base intro comes from Admin default. Recruiter can format message here.</span>

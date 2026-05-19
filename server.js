@@ -10137,6 +10137,7 @@ const server = http.createServer(async (req, res) => {
       const subject = String(body.subject || "").trim();
       const html = String(body.html || "").trim();
       const text = String(body.text || "").trim();
+      const forceNewThread = Boolean(body.forceNewThread);
       const threadContext = body.threadContext && typeof body.threadContext === "object" ? body.threadContext : {};
       if (!toRaw) throw new Error("Recipient email is required.");
       if (!subject) throw new Error("Subject is required.");
@@ -10157,7 +10158,7 @@ const server = http.createServer(async (req, res) => {
         clientLabel: String(threadContext.clientLabel || "").trim(),
         role: String(threadContext.role || "").trim()
       });
-      const existingThread = conversationKey
+      const existingThread = !forceNewThread && conversationKey
         ? await getCompanyEmailThreadByKey(actor.companyId, conversationKey).catch(() => null)
         : null;
       const inReplyTo = String(existingThread?.last_message_id || existingThread?.lastMessageId || "").trim();
@@ -10192,6 +10193,7 @@ const server = http.createServer(async (req, res) => {
           sent: true,
           to: recipients,
           subject,
+          forceNewThread,
           threaded: Boolean(inReplyTo),
           conversationKey: conversationKey || ""
         }
