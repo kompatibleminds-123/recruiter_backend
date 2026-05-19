@@ -2807,6 +2807,14 @@ function parsePresetColumns(columnsText = "") {
     .filter((item) => item.header && item.field);
 }
 
+function presetColumnsToIndicators(columnsText = "") {
+  return parsePresetColumns(columnsText).map((column, index) => ({
+    id: `existing_${index}_${String(column.header || "").replace(/\s+/g, "_").toLowerCase()}`,
+    title: String(column.header || "").trim(),
+    fields: String(column.field || "").split("+").map((item) => String(item || "").trim()).filter(Boolean).slice(0, 3)
+  }));
+}
+
 function getCapturedExportFieldValue(item = {}, field = "") {
   const key = String(field || "").trim();
   if (key.includes("+")) {
@@ -6222,6 +6230,9 @@ function PortalApp({ token, onLogout }) {
   const [newPresetIndicators, setNewPresetIndicators] = useState([]);
   const [dragPresetIndicatorId, setDragPresetIndicatorId] = useState("");
   const [newIndicatorDraft, setNewIndicatorDraft] = useState({ title: "", fieldA: "", fieldB: "", fieldC: "" });
+  const [editPresetIndicators, setEditPresetIndicators] = useState([]);
+  const [editDragPresetIndicatorId, setEditDragPresetIndicatorId] = useState("");
+  const [editIndicatorDraft, setEditIndicatorDraft] = useState({ title: "", fieldA: "", fieldB: "", fieldC: "" });
   const [teamUserDraft, setTeamUserDraft] = useState({ name: "", email: "", password: "", role: "recruiter" });
   const [payrollUserDraft, setPayrollUserDraft] = useState({ name: "", email: "", password: "", role: "payroll_owner" });
   const [teamPasswordDrafts, setTeamPasswordDrafts] = useState({});
@@ -13128,6 +13139,19 @@ function PortalApp({ token, onLogout }) {
     setNewPresetDraft((current) => ({ ...current, columns: nextColumns }));
   }
 
+  function buildPresetColumnsFromIndicators(nextIndicators = []) {
+    const nextColumns = nextIndicators
+      .map((item) => {
+        const header = String(item?.title || "").trim().replace(/\|/g, "/");
+        const fields = Array.from(new Set((item?.fields || []).map((fieldKey) => String(fieldKey || "").trim()).filter(Boolean))).slice(0, 3);
+        if (!header || !fields.length) return "";
+        return `${header}|${fields.join("+")}`;
+      })
+      .filter(Boolean)
+      .join("\n");
+    return nextColumns;
+  }
+
   function addIndicatorFromLibrary(fieldKey) {
     if (!isSettingsAdmin) return;
     if ((newPresetIndicators || []).length >= 10) {
@@ -13210,6 +13234,73 @@ function PortalApp({ token, onLogout }) {
   const selectedPresetClientName = selectedCustomPreset
     ? String(selectedCustomPreset.clientName || "").trim()
     : String(copySettings.exportPresetClientMap?.[selectedBuiltInPresetId] || "").trim();
+
+  useEffect(() => {
+    setEditPresetIndicators(presetColumnsToIndicators(selectedPresetColumns));
+    setEditIndicatorDraft({ title: "", fieldA: "", fieldB: "", fieldC: "" });
+  }, [selectedPresetColumns, copySettings.excelPreset]);
+
+  function refreshSelectedPresetColumnsFromIndicators(nextIndicators = []) {
+    updateSelectedPresetColumns(buildPresetColumnsFromIndicators(nextIndicators));
+  }
+
+  function addEditIndicatorFromLibrary(fieldKey) {
+    if (!isSettingsAdmin) return;
+    if ((editPresetIndicators || []).length >= 10) {
+      setStatus("settings", "You can keep up to 10 indicators in one tracker.", "error");
+      return;
+    }
+    const matched = PRESET_INDICATOR_LIBRARY.find((item) => String(item.key) === String(fieldKey));
+    if (!matched) return;
+    const next = [
+      ...(editPresetIndicators || []),
+      { id: `edit_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`, title: matched.label, fields: [matched.key] }
+    ];
+    setEditPresetIndicators(next);
+    refreshSelectedPresetColumnsFromIndicators(next);
+  }
+
+  function removeEditPresetIndicator(indicatorId) {
+    const next = (editPresetIndicators || []).filter((item) => String(item.id) !== String(indicatorId));
+    setEditPresetIndicators(next);
+    refreshSelectedPresetColumnsFromIndicators(next);
+  }
+
+  function moveEditPresetIndicator(dragId, dropId) {
+    const dragIndex = (editPresetIndicators || []).findIndex((item) => String(item.id) === String(dragId));
+    const dropIndex = (editPresetIndicators || []).findIndex((item) => String(item.id) === String(dropId));
+    if (dragIndex < 0 || dropIndex < 0 || dragIndex === dropIndex) return;
+    const next = [...(editPresetIndicators || [])];
+    const [moved] = next.splice(dragIndex, 1);
+    next.splice(dropIndex, 0, moved);
+    setEditPresetIndicators(next);
+    refreshSelectedPresetColumnsFromIndicators(next);
+  }
+
+  function addEditMixedIndicator() {
+    if (!isSettingsAdmin) return;
+    if ((editPresetIndicators || []).length >= 10) {
+      setStatus("settings", "You can keep up to 10 indicators in one tracker.", "error");
+      return;
+    }
+    const title = String(editIndicatorDraft.title || "").trim();
+    const fields = Array.from(new Set([
+      String(editIndicatorDraft.fieldA || "").trim(),
+      String(editIndicatorDraft.fieldB || "").trim(),
+      String(editIndicatorDraft.fieldC || "").trim()
+    ].filter(Boolean))).slice(0, 3);
+    if (!title || !fields.length) {
+      setStatus("settings", "Mixed indicator needs title + at least one field.", "error");
+      return;
+    }
+    const next = [
+      ...(editPresetIndicators || []),
+      { id: `edit_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`, title, fields }
+    ];
+    setEditPresetIndicators(next);
+    refreshSelectedPresetColumnsFromIndicators(next);
+    setEditIndicatorDraft({ title: "", fieldA: "", fieldB: "", fieldC: "" });
+  }
 
   function updateSelectedPresetLabel(value) {
     if (selectedCustomPreset) {
@@ -16792,7 +16883,79 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                         </select>
                       </label>
                       <label className="full">
-                        <span>{isSettingsAdmin ? "Preset columns" : "Selected preset columns"}</span>
+                        <span>Pick indicator</span>
+                        <select
+                          disabled={!isSettingsAdmin}
+                          value=""
+                          onChange={(e) => {
+                            const value = String(e.target.value || "").trim();
+                            if (!value) return;
+                            addEditIndicatorFromLibrary(value);
+                            e.target.value = "";
+                          }}
+                        >
+                          <option value="">Choose from indicator library</option>
+                          {PRESET_INDICATOR_LIBRARY.map((item) => <option key={`edit-lib-${item.key}`} value={item.key}>{item.label}</option>)}
+                        </select>
+                      </label>
+                      <div className="full">
+                        <span className="field-label">Selected indicators ({editPresetIndicators.length}/10)</span>
+                        <div className="stack-list compact preset-indicator-list">
+                          {editPresetIndicators.length ? editPresetIndicators.map((indicator) => (
+                            <article
+                              key={indicator.id}
+                              className="item-card compact-card preset-indicator-card"
+                              draggable={isSettingsAdmin}
+                              onDragStart={() => setEditDragPresetIndicatorId(String(indicator.id))}
+                              onDragOver={(e) => e.preventDefault()}
+                              onDrop={() => {
+                                if (!editDragPresetIndicatorId) return;
+                                moveEditPresetIndicator(editDragPresetIndicatorId, indicator.id);
+                                setEditDragPresetIndicatorId("");
+                              }}
+                            >
+                              <div className="item-card__top compact-top">
+                                <strong>{indicator.title}</strong>
+                                {isSettingsAdmin ? <button className="ghost-btn" onClick={() => removeEditPresetIndicator(indicator.id)}>Remove</button> : null}
+                              </div>
+                              <div className="candidate-snippet no-top-border">{(indicator.fields || []).join(" + ")}</div>
+                            </article>
+                          )) : <div className="empty-state compact-empty">No indicators selected yet.</div>}
+                        </div>
+                      </div>
+                      <div className="full">
+                        <span className="field-label">Create mixed indicator (2-3 outputs)</span>
+                        <div className="form-grid three-col">
+                          <label>
+                            <span>Indicator title</span>
+                            <input disabled={!isSettingsAdmin} value={editIndicatorDraft.title} onChange={(e) => setEditIndicatorDraft((current) => ({ ...current, title: e.target.value }))} placeholder="Status context" />
+                          </label>
+                          <label>
+                            <span>Field 1</span>
+                            <select disabled={!isSettingsAdmin} value={editIndicatorDraft.fieldA} onChange={(e) => setEditIndicatorDraft((current) => ({ ...current, fieldA: e.target.value }))}>
+                              <option value="">Choose field</option>
+                              {PRESET_INDICATOR_LIBRARY.map((item) => <option key={`edit-mix-a-${item.key}`} value={item.key}>{item.label}</option>)}
+                            </select>
+                          </label>
+                          <label>
+                            <span>Field 2</span>
+                            <select disabled={!isSettingsAdmin} value={editIndicatorDraft.fieldB} onChange={(e) => setEditIndicatorDraft((current) => ({ ...current, fieldB: e.target.value }))}>
+                              <option value="">Optional</option>
+                              {PRESET_INDICATOR_LIBRARY.map((item) => <option key={`edit-mix-b-${item.key}`} value={item.key}>{item.label}</option>)}
+                            </select>
+                          </label>
+                          <label>
+                            <span>Field 3</span>
+                            <select disabled={!isSettingsAdmin} value={editIndicatorDraft.fieldC} onChange={(e) => setEditIndicatorDraft((current) => ({ ...current, fieldC: e.target.value }))}>
+                              <option value="">Optional</option>
+                              {PRESET_INDICATOR_LIBRARY.map((item) => <option key={`edit-mix-c-${item.key}`} value={item.key}>{item.label}</option>)}
+                            </select>
+                          </label>
+                          {isSettingsAdmin ? <div className="button-row align-end"><button className="ghost-btn" onClick={addEditMixedIndicator}>Add mixed indicator</button></div> : null}
+                        </div>
+                      </div>
+                      <label className="full">
+                        <span>{isSettingsAdmin ? "Generated preset columns (advanced view)" : "Selected preset columns"}</span>
                         <textarea
                           className="preset-editor"
                           disabled={!isSettingsAdmin}
