@@ -228,8 +228,8 @@ function FeatureLockedSection({ title = "Feature locked" }) {
   jdEmailIntroTemplate: "Hello {Candidate}.\nGreetings !!\n\nThis is {Recruiter} from Kompatible Minds.\nIt was good to interact with you.\n\nAs discussed, please find the Job description for the {Role}.\nPlease acknowledge or confirm so we can take your candidature ahead."
 };
 
-	function migrateCopySettings(settings = {}) {
-	  const next = { ...DEFAULT_COPY_SETTINGS, ...(settings || {}) };
+function migrateCopySettings(settings = {}) {
+  const next = { ...DEFAULT_COPY_SETTINGS, ...(settings || {}) };
 	  next.semanticSearchEnabled = next.semanticSearchEnabled !== false;
 	  const presetColumns = { ...(next.exportPresetColumns || {}) };
 	  const attentive = String(presetColumns.attentive_tracker || "").trim();
@@ -251,10 +251,28 @@ function FeatureLockedSection({ title = "Feature locked" }) {
 	    const cleanedLines = migratedLines.filter((line) => !String(line).includes("|reason_of_change_indicator"));
 	    if (cleanedLines.length !== beforeCount) didChange = true;
 	    if (didChange) presetColumns.attentive_tracker = cleanedLines.join("\n");
-	  }
-	  next.exportPresetColumns = presetColumns;
-	  return next;
-	}
+  }
+  // Auto-clean known mojibake from persisted templates/labels so symbols do not reappear.
+  next.whatsappTemplate = normalizeMojibakeSymbols(next.whatsappTemplate || DEFAULT_COPY_SETTINGS.whatsappTemplate || "");
+  next.emailTemplate = normalizeMojibakeSymbols(next.emailTemplate || DEFAULT_COPY_SETTINGS.emailTemplate || "");
+  next.clientShareIntroTemplate = normalizeMojibakeSymbols(next.clientShareIntroTemplate || DEFAULT_COPY_SETTINGS.clientShareIntroTemplate || "");
+  next.clientShareSignatureText = normalizeMojibakeSymbols(next.clientShareSignatureText || DEFAULT_COPY_SETTINGS.clientShareSignatureText || "");
+  next.jdEmailSubjectTemplate = normalizeMojibakeSymbols(next.jdEmailSubjectTemplate || DEFAULT_COPY_SETTINGS.jdEmailSubjectTemplate || "");
+  next.jdEmailIntroTemplate = normalizeMojibakeSymbols(next.jdEmailIntroTemplate || DEFAULT_COPY_SETTINGS.jdEmailIntroTemplate || "");
+  next.clientShareSignatureLinkLabel = normalizeMojibakeSymbols(next.clientShareSignatureLinkLabel || "");
+  next.clientShareSignatureLinkLabel2 = normalizeMojibakeSymbols(next.clientShareSignatureLinkLabel2 || "");
+  next.exportPresetLabels = Object.fromEntries(
+    Object.entries(next.exportPresetLabels || {}).map(([key, value]) => [key, normalizeMojibakeSymbols(value || "")])
+  );
+  next.customExportPresets = (next.customExportPresets || []).map((preset) => ({
+    ...preset,
+    label: normalizeMojibakeSymbols(preset?.label || ""),
+    clientName: normalizeMojibakeSymbols(preset?.clientName || ""),
+    columns: normalizeMojibakeSymbols(preset?.columns || "")
+  }));
+  next.exportPresetColumns = presetColumns;
+  return next;
+}
 
 const AI_SEARCH_EXAMPLE_PROMPTS = [
   "AE in Bangalore",
@@ -1314,6 +1332,20 @@ function normalizeMojibakeSymbols(text) {
     .replace(/ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â|ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â/g, '"')
     .replace(/ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡/g, "").replace(/Â(?=[•"'`.,:;!?()\-\s])/g, "");
 }
+
+function sanitizeMojibakeDeep(value) {
+  if (value == null) return value;
+  if (typeof value === "string") return normalizeMojibakeSymbols(value);
+  if (Array.isArray(value)) return value.map((item) => sanitizeMojibakeDeep(item));
+  if (typeof value === "object") {
+    const next = {};
+    Object.entries(value).forEach(([key, val]) => {
+      next[key] = sanitizeMojibakeDeep(val);
+    });
+    return next;
+  }
+  return value;
+}
 function polishStructuredBulletSentence(line) {
   const text = normalizeMojibakeSymbols(line).trim().replace(/\s+/g, " ");
   if (!text) return "";
@@ -2201,7 +2233,7 @@ function formatRecruiterOverwriteLabel(key) {
 
 function api(path, token, method = "GET", body = null) {
   function sanitizeApiErrorMessage(message, statusCode) {
-    const raw = String(message || "").trim();
+    const raw = normalizeMojibakeSymbols(String(message || "").trim());
     if (!raw) return statusCode ? `HTTP ${statusCode}` : "Request failed.";
     const lowered = raw.toLowerCase();
     const looksLikeHtml = lowered.includes("<!doctype") || lowered.includes("<html") || lowered.includes("<head") || lowered.includes("<body");
@@ -2211,7 +2243,7 @@ function api(path, token, method = "GET", body = null) {
       return statusCode ? `Request failed (HTTP ${statusCode}). Please retry.` : "Request failed. Please retry.";
     }
     // Avoid dumping full HTML / stack traces into UI status banners.
-    if (raw.length > 350) return `${raw.slice(0, 350)}ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¦`;
+    if (raw.length > 350) return `${raw.slice(0, 350)}...`;
     return raw;
   }
   const headers = { "Content-Type": "application/json" };
@@ -2243,13 +2275,13 @@ function api(path, token, method = "GET", body = null) {
       if (!response.ok || data?.ok === false) {
         throw new Error(sanitizeApiErrorMessage(data?.error || `HTTP ${response.status}`, response.status));
       }
-      return data.result || data;
+      return sanitizeMojibakeDeep(data.result || data);
     })
     .catch((error) => {
       if (String(error?.name || "") === "AbortError") {
         throw new Error(`Request timed out (${Math.round(timeoutMs / 1000)}s). Please refresh and try again.`);
       }
-      throw error;
+      throw new Error(normalizeMojibakeSymbols(String(error?.message || error || "Request failed")));
     })
     .finally(() => clearTimeout(timer));
 }
@@ -5018,7 +5050,7 @@ function JdEmailModal({ open, jobs, value, ccSuggestions = [], onChange, onClose
     <div className="overlay" onClick={() => { if (!busy) onClose(); }}>
       <div className="overlay-card" onClick={(e) => e.stopPropagation()}>
         <h3>Send JD Email</h3>
-        <p className="muted">Sends from your configured SMTP (Settings ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ Email settings). Use Zoho app password.</p>
+        <p className="muted">Sends from your configured SMTP (Settings {" > "} Email settings). Use Zoho app password.</p>
         {status ? <div className={`status ${statusKind || ""}`} style={{ marginBottom: 12 }}>{status}</div> : null}
         <div className="form-grid">
           <label className="full">
@@ -6758,17 +6790,18 @@ function PortalApp({ token, onLogout }) {
 	function setStatus(key, message, kind = "") {
 	  const scopedKey = String(key || "").trim();
 	  if (!scopedKey) return;
+	  const safeMessage = normalizeMojibakeSymbols(String(message || ""));
 	  if (statusTimersRef.current[scopedKey]) {
 	    clearTimeout(statusTimersRef.current[scopedKey]);
 	    delete statusTimersRef.current[scopedKey];
 	  }
-	  setStatuses((current) => ({ ...current, [scopedKey]: message, [`${scopedKey}Kind`]: kind }));
-	  const hasMessage = String(message || "").trim().length > 0;
+	  setStatuses((current) => ({ ...current, [scopedKey]: safeMessage, [`${scopedKey}Kind`]: kind }));
+	  const hasMessage = String(safeMessage || "").trim().length > 0;
 	  if (!hasMessage) return;
 	  const timeoutMs = kind === "error" ? 7000 : 4000;
 	  statusTimersRef.current[scopedKey] = setTimeout(() => {
 	    setStatuses((current) => {
-	      if (String(current?.[scopedKey] || "") !== String(message || "")) return current;
+	      if (String(current?.[scopedKey] || "") !== String(safeMessage || "")) return current;
 	      const next = { ...current };
 	      delete next[scopedKey];
 	      delete next[`${scopedKey}Kind`];
@@ -12783,12 +12816,12 @@ function PortalApp({ token, onLogout }) {
       setStatus("settings", "Only admin can save shared settings.", "error");
       return;
     }
-    const payload = {
+    const payload = migrateCopySettings({
       ...copySettings,
       exportPresetLabels: copySettings.exportPresetLabels || DEFAULT_COPY_SETTINGS.exportPresetLabels,
       exportPresetClientMap: copySettings.exportPresetClientMap || DEFAULT_COPY_SETTINGS.exportPresetClientMap,
       customExportPresets: copySettings.customExportPresets || []
-    };
+    });
     const result = await api("/company/shared-export-presets", token, "POST", { settings: payload });
     setCopySettings((current) => ({ ...DEFAULT_COPY_SETTINGS, ...current, ...result }));
     setStatus("settings", "Shared copy presets saved for all recruiters.", "ok");
@@ -14561,7 +14594,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
         <div className="sidebar-footer">
           {!sidebarCollapsed ? <div className="muted">{state.user ? `${state.user.name} | ${state.user.role} | ${state.user.companyName || "Company"}` : "Not logged in"}</div> : null}
           {!sidebarCollapsed ? <div className="portal-footer">{COMPANY_ATTRIBUTION}</div> : null}
-          <button className={`ghost-btn${sidebarCollapsed ? " ghost-btn--icon" : ""}`} onClick={onLogout} title={sidebarCollapsed ? "Logout" : undefined}>{sidebarCollapsed ? "â†—" : "Logout"}</button>
+          <button className={`ghost-btn${sidebarCollapsed ? " ghost-btn--icon" : ""}`} onClick={onLogout} title={sidebarCollapsed ? "Logout" : undefined}>{sidebarCollapsed ? "->" : "Logout"}</button>
           <button
             type="button"
             className="sidebar-toggle"
@@ -14569,7 +14602,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
             aria-label={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
             title={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
           >
-            {sidebarCollapsed ? "â€º" : "â€¹"}
+            {sidebarCollapsed ? ">" : "<"}
           </button>
         </div>
       </aside>
@@ -14823,7 +14856,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                       )}
                     </article>
                     <article className="reports-chart-card">
-                      <h4>Client Pipeline Funnel (Shared ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ Interview)</h4>
+                      <h4>Client Pipeline Funnel (Shared to Interview)</h4>
                       {!clientChartRows.length ? <div className="empty-state compact-empty">No funnel data.</div> : (
                         <div className="reports-funnel-list">
                           {clientChartRows.map((row) => (
@@ -19205,7 +19238,7 @@ function MarketingPortalApp({ token, onLogout }) {
           </nav>
         </div>
         <div className="sidebar-footer">
-          <button className={`ghost-btn${sidebarCollapsed ? " ghost-btn--icon" : ""}`} onClick={onLogout} title={sidebarCollapsed ? "Logout" : undefined}>{sidebarCollapsed ? "â†—" : "Logout"}</button>
+          <button className={`ghost-btn${sidebarCollapsed ? " ghost-btn--icon" : ""}`} onClick={onLogout} title={sidebarCollapsed ? "Logout" : undefined}>{sidebarCollapsed ? "->" : "Logout"}</button>
           <button
             type="button"
             className="sidebar-toggle"
@@ -19213,7 +19246,7 @@ function MarketingPortalApp({ token, onLogout }) {
             aria-label={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
             title={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
           >
-            {sidebarCollapsed ? "â€º" : "â€¹"}
+            {sidebarCollapsed ? ">" : "<"}
           </button>
         </div>
       </aside>
@@ -19307,7 +19340,7 @@ function PayrollAdminApp({ token, onLogout }) {
           </nav>
         </div>
         <div className="sidebar-footer">
-          <button className={`ghost-btn${sidebarCollapsed ? " ghost-btn--icon" : ""}`} onClick={onLogout} title={sidebarCollapsed ? "Logout" : undefined}>{sidebarCollapsed ? "â†—" : "Logout"}</button>
+          <button className={`ghost-btn${sidebarCollapsed ? " ghost-btn--icon" : ""}`} onClick={onLogout} title={sidebarCollapsed ? "Logout" : undefined}>{sidebarCollapsed ? "->" : "Logout"}</button>
           <button
             type="button"
             className="sidebar-toggle"
@@ -19315,7 +19348,7 @@ function PayrollAdminApp({ token, onLogout }) {
             aria-label={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
             title={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
           >
-            {sidebarCollapsed ? "â€º" : "â€¹"}
+            {sidebarCollapsed ? ">" : "<"}
           </button>
         </div>
       </aside>
