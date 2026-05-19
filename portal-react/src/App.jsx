@@ -14594,7 +14594,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
         <div className="sidebar-footer">
           {!sidebarCollapsed ? <div className="muted">{state.user ? `${state.user.name} | ${state.user.role} | ${state.user.companyName || "Company"}` : "Not logged in"}</div> : null}
           {!sidebarCollapsed ? <div className="portal-footer">{COMPANY_ATTRIBUTION}</div> : null}
-          <button className={`ghost-btn${sidebarCollapsed ? " ghost-btn--icon" : ""}`} onClick={onLogout} title={sidebarCollapsed ? "Logout" : undefined}>{sidebarCollapsed ? "->" : "Logout"}</button>
+          <button className={`ghost-btn${sidebarCollapsed ? " ghost-btn--icon" : ""}`} onClick={onLogout} title={sidebarCollapsed ? "Logout" : undefined}>{sidebarCollapsed ? "=>" : "Logout"}</button>
           <button
             type="button"
             className="sidebar-toggle"
@@ -14602,7 +14602,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
             aria-label={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
             title={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
           >
-            {sidebarCollapsed ? ">" : "<"}
+            {sidebarCollapsed ? ">>" : "<<"}
           </button>
         </div>
       </aside>
@@ -19238,7 +19238,7 @@ function MarketingPortalApp({ token, onLogout }) {
           </nav>
         </div>
         <div className="sidebar-footer">
-          <button className={`ghost-btn${sidebarCollapsed ? " ghost-btn--icon" : ""}`} onClick={onLogout} title={sidebarCollapsed ? "Logout" : undefined}>{sidebarCollapsed ? "->" : "Logout"}</button>
+          <button className={`ghost-btn${sidebarCollapsed ? " ghost-btn--icon" : ""}`} onClick={onLogout} title={sidebarCollapsed ? "Logout" : undefined}>{sidebarCollapsed ? "=>" : "Logout"}</button>
           <button
             type="button"
             className="sidebar-toggle"
@@ -19246,7 +19246,7 @@ function MarketingPortalApp({ token, onLogout }) {
             aria-label={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
             title={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
           >
-            {sidebarCollapsed ? ">" : "<"}
+            {sidebarCollapsed ? ">>" : "<<"}
           </button>
         </div>
       </aside>
@@ -19340,7 +19340,7 @@ function PayrollAdminApp({ token, onLogout }) {
           </nav>
         </div>
         <div className="sidebar-footer">
-          <button className={`ghost-btn${sidebarCollapsed ? " ghost-btn--icon" : ""}`} onClick={onLogout} title={sidebarCollapsed ? "Logout" : undefined}>{sidebarCollapsed ? "->" : "Logout"}</button>
+          <button className={`ghost-btn${sidebarCollapsed ? " ghost-btn--icon" : ""}`} onClick={onLogout} title={sidebarCollapsed ? "Logout" : undefined}>{sidebarCollapsed ? "=>" : "Logout"}</button>
           <button
             type="button"
             className="sidebar-toggle"
@@ -19348,7 +19348,7 @@ function PayrollAdminApp({ token, onLogout }) {
             aria-label={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
             title={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
           >
-            {sidebarCollapsed ? ">" : "<"}
+            {sidebarCollapsed ? ">>" : "<<"}
           </button>
         </div>
       </aside>
