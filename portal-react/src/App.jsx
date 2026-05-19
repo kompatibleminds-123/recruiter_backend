@@ -56,10 +56,7 @@ const BASE_NAV_SECTIONS = [
   {
     label: "Admin",
     items: [
-      { to: "/plan", label: "Plan" },
-      { to: "/login-settings", label: "Login Settings" },
-      { to: "/intake-settings", label: "Job Apply Link" },
-      { to: "/settings", label: "Preset Settings" }
+      { to: "/admin-settings", label: "Admin Settings" }
     ]
   }
 ];
@@ -89,6 +86,7 @@ const NAV_ICON_MAP = {
   "/interview": "calendar",
   "/assessments": "checklist",
   "/client-share": "share",
+  "/admin-settings": "settings",
   "/plan": "coins",
   "/login-settings": "team",
   "/intake-settings": "link",
@@ -6882,7 +6880,7 @@ function PortalApp({ token, onLogout }) {
         ...section,
         items: section.items.filter((item) => {
           const itemTo = String(item?.to || "");
-          if ((itemTo === "/plan" || itemTo === "/login-settings" || itemTo === "/intake-settings" || itemTo === "/settings" || itemTo.startsWith("/admin/payroll")) && !isSettingsAdmin) return false;
+          if ((itemTo === "/admin-settings" || itemTo === "/plan" || itemTo === "/login-settings" || itemTo === "/intake-settings" || itemTo === "/settings" || itemTo.startsWith("/admin/payroll")) && !isSettingsAdmin) return false;
           if (!hasSaasUnlimitedAccess && (itemTo === "/client-share" || itemTo === "/intake-settings" || itemTo === "/mail-settings" || itemTo === "/applicants")) return false;
           return true;
         })
@@ -17401,6 +17399,67 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                           </article>
                         ))
                     ) : <div className="empty-state">No company shortcuts yet.</div>}
+                  </div>
+                </Section>
+              </div>
+            } />
+
+            <Route path="/admin-settings" element={
+              !isSettingsAdmin ? <FeatureLockedSection title="Admin Settings" /> : <div className="page-grid">
+                <Section kicker="Control Center" title="Admin Settings">
+                  <p className="muted">All admin controls are grouped here in clean categories. Open a category to manage its detailed settings.</p>
+                  {statuses.settings ? <div className={`status ${statuses.settingsKind || ""}`}>{statuses.settings}</div> : null}
+
+                  <div className="settings-subsection">
+                    <div className="section-kicker">Email Templates</div>
+                    <p className="muted">JD share template, Direct Share template, and Signature settings.</p>
+                    <div className="button-row">
+                      <button onClick={() => navigate("/mail-settings")}>Open Email Settings</button>
+                    </div>
+                  </div>
+
+                  <div className="settings-subsection">
+                    <div className="section-kicker">Account Management</div>
+                    <p className="muted">Users, client/recruiter login settings, payroll login setup, and plans.</p>
+                    <div className="button-row">
+                      <button onClick={() => navigate("/login-settings")}>Users & Login Settings</button>
+                      <button className="secondary" onClick={() => navigate("/plan")}>Plan & Billing</button>
+                      <button className="secondary" onClick={() => navigate("/admin/payroll/settings")}>Payroll Settings</button>
+                    </div>
+                  </div>
+
+                  <div className="settings-subsection">
+                    <div className="section-kicker">Job Settings</div>
+                    <p className="muted">Hosted job apply links and public apply configuration.</p>
+                    <div className="button-row">
+                      <button onClick={() => navigate("/intake-settings")}>Job Apply Link</button>
+                    </div>
+                  </div>
+
+                  <div className="settings-subsection">
+                    <div className="section-kicker">Preset Settings</div>
+                    <p className="muted">Tracker preset builder, indicator sequencing, and shared preset management.</p>
+                    <div className="button-row">
+                      <button onClick={() => navigate("/settings")}>Open Preset Settings</button>
+                    </div>
+                  </div>
+
+                  <div className="settings-subsection">
+                    <div className="section-kicker">AI Settings</div>
+                    <p className="muted">Interview panel AI parsing mode and CV conflict-compare behavior.</p>
+                    <div className="form-grid">
+                      <label className="checkbox-row">
+                        <input
+                          type="checkbox"
+                          checked={copySettings.interviewAiParsingEnabled !== false}
+                          onChange={(e) => setCopySettings((current) => ({ ...current, interviewAiParsingEnabled: e.target.checked }))}
+                        />
+                        <span>Enable AI parsing in Interview Panel CV upload</span>
+                      </label>
+                    </div>
+                    <div className="button-row">
+                      <button onClick={() => void saveSharedCopySettings()}>Save AI Settings</button>
+                    </div>
                   </div>
                 </Section>
               </div>

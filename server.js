@@ -13849,45 +13849,45 @@ const server = http.createServer(async (req, res) => {
 
         setImmediate(async () => {
           try {
-            const parsed = await parseCandidatePayload({
-              sourceType: "cv",
-              candidateName: body.candidateName || candidate.name || "",
-              totalExperience: body.totalExperience || candidate.experience || "",
-              file: uploadedFile
+            const hybrid = await parseCandidateHybrid({
+              payload: {
+                sourceType: "cv",
+                candidateName: body.candidateName || candidate.name || "",
+                totalExperience: body.totalExperience || candidate.experience || "",
+                file: uploadedFile
+              },
+              apiKey: body.apiKey || process.env.OPENAI_API_KEY || "",
+              model: String(body.model || "").trim(),
+              normalizeWithAi: body.normalizeWithAi !== false
             });
-
-            const apiKey = body.apiKey || process.env.OPENAI_API_KEY || "";
-            let normalized = null;
-            let aiParseMode = "fallback_only";
-            let aiParseReason = "AI normalization was not used.";
-
-            if (apiKey && body.normalizeWithAi !== false) {
-              const fallbackFields = {
-                candidateName: parsed.candidateName,
-                totalExperience: parsed.totalExperience,
-                currentCompany: parsed.currentCompany,
-                currentDesignation: parsed.currentDesignation,
-                emailId: parsed.emailId,
-                phoneNumber: parsed.phoneNumber,
-                timeline: parsed.timeline,
-                gaps: parsed.gaps
-              };
-              const canUseFileAi = uploadedFile?.fileData && supportsOpenAiFileParse(uploadedFile);
-              if (canUseFileAi) {
-                aiParseMode = "deep_file_ai";
-                aiParseReason = "Direct file-based AI parsing was used for interview-panel CV upload (background).";
-                normalized = await normalizeCandidateFileWithAi({
-                  apiKey,
-                  model: String(body.model || "").trim(),
-                  uploadedFile,
-                  sourceType: parsed.sourceType,
-                  filename: parsed.filename,
-                  fallbackFields
-                });
-              }
-            }
-
+            const parsed = hybrid.parsed;
+            const normalized = hybrid.normalized;
+            const aiParseMode = hybrid.meta.aiMode;
+            const aiParseReason = hybrid.meta.aiPrimaryUsed
+              ? "AI primary parse used with deterministic validation."
+              : (hybrid.meta.aiParseAttempted
+                ? "AI output failed deterministic checks, rule parser fallback/reference used."
+                : "OpenAI key unavailable, rule parser used with deterministic validation.");
             const result = buildCandidateParseResponse(parsed, normalized, { aiParseMode, aiParseReason });
+            result.currentCompany = hybrid.finalOutput.currentCompany || result.currentCompany || "";
+            result.currentDesignation = hybrid.finalOutput.currentDesignation || result.currentDesignation || "";
+            result.totalExperience = hybrid.finalOutput.totalExperience || result.totalExperience || "";
+            result.highestQualification = hybrid.finalOutput.highestQualification || result.highestQualification || "";
+            result.experience_history = Array.isArray(hybrid.finalOutput.experienceTimeline)
+              ? hybrid.finalOutput.experienceTimeline.map((item) => ({
+                  company_name: item?.company || "",
+                  designation: item?.designation || "",
+                  start_date: item?.startDate || "",
+                  end_date: item?.endDate || "",
+                  source_text: item?.sourceText || ""
+                }))
+              : (result.experience_history || []);
+            result.education_history = Array.isArray(hybrid.finalOutput.education)
+              ? hybrid.finalOutput.education
+              : (result.education_history || []);
+            result.needsReview = hybrid.finalOutput.needsReview;
+            result.reviewReasons = hybrid.finalOutput.reviewReasons;
+            result.parseMeta = hybrid.meta || {};
             const refreshed = (await listCandidatesForUser(actor, { id: candidate.id, limit: 1 }))[0] || null;
             const refreshedMeta = refreshed ? decodeApplicantMetadata(refreshed) : immediateMeta;
             const nextMeta = {
@@ -13925,9 +13925,10 @@ const server = http.createServer(async (req, res) => {
             });
             nextMeta.searchDocUpdatedAt = new Date().toISOString();
 
+            const shouldApplyAutofill = body.normalizeWithAi !== false;
             await patchCandidate(candidate.id, {
               raw_note: encodeApplicantMetadata(nextMeta),
-              ...buildCvAutofillPatch(refreshed || candidate, result)
+              ...(shouldApplyAutofill ? buildCvAutofillPatch(refreshed || candidate, result) : {})
             }, { companyId: actor.companyId });
 
             // Best-effort persistence of unified search-doc + full CV text (if table exists).
@@ -13964,49 +13965,48 @@ const server = http.createServer(async (req, res) => {
         return;
       }
 
-      const parsed = await parseCandidatePayload({
-        sourceType: "cv",
-        candidateName: body.candidateName || candidate.name || "",
-        totalExperience: body.totalExperience || candidate.experience || "",
-        file: uploadedFile
+      const hybrid = await parseCandidateHybrid({
+        payload: {
+          sourceType: "cv",
+          candidateName: body.candidateName || candidate.name || "",
+          totalExperience: body.totalExperience || candidate.experience || "",
+          file: uploadedFile
+        },
+        apiKey: body.apiKey || process.env.OPENAI_API_KEY || "",
+        model: String(body.model || "").trim(),
+        normalizeWithAi: body.normalizeWithAi !== false
       });
-
-      const apiKey = body.apiKey || process.env.OPENAI_API_KEY || "";
-      let normalized = null;
-      let aiParseMode = "fallback_only";
-      let aiParseReason = "AI normalization was not used.";
-
-      if (apiKey && body.normalizeWithAi !== false) {
-        const fallbackFields = {
-          candidateName: parsed.candidateName,
-          totalExperience: parsed.totalExperience,
-          currentCompany: parsed.currentCompany,
-          currentDesignation: parsed.currentDesignation,
-          emailId: parsed.emailId,
-          phoneNumber: parsed.phoneNumber,
-          timeline: parsed.timeline,
-          gaps: parsed.gaps
-        };
-
-        const canUseFileAi = uploadedFile?.fileData && supportsOpenAiFileParse(uploadedFile);
-        if (canUseFileAi) {
-          aiParseMode = "deep_file_ai";
-          aiParseReason = "Direct file-based AI parsing was used for interview-panel CV upload.";
-          normalized = await normalizeCandidateFileWithAi({
-            apiKey,
-            model: String(body.model || "").trim(),
-            uploadedFile,
-            sourceType: parsed.sourceType,
-            filename: parsed.filename,
-            fallbackFields
-          });
-        }
-      }
-
+      const parsed = hybrid.parsed;
+      const normalized = hybrid.normalized;
+      const aiParseMode = hybrid.meta.aiMode;
+      const aiParseReason = hybrid.meta.aiPrimaryUsed
+        ? "AI primary parse used with deterministic validation."
+        : (hybrid.meta.aiParseAttempted
+          ? "AI output failed deterministic checks, rule parser fallback/reference used."
+          : "OpenAI key unavailable, rule parser used with deterministic validation.");
       const result = buildCandidateParseResponse(parsed, normalized, {
         aiParseMode,
         aiParseReason
       });
+      result.currentCompany = hybrid.finalOutput.currentCompany || result.currentCompany || "";
+      result.currentDesignation = hybrid.finalOutput.currentDesignation || result.currentDesignation || "";
+      result.totalExperience = hybrid.finalOutput.totalExperience || result.totalExperience || "";
+      result.highestQualification = hybrid.finalOutput.highestQualification || result.highestQualification || "";
+      result.experience_history = Array.isArray(hybrid.finalOutput.experienceTimeline)
+        ? hybrid.finalOutput.experienceTimeline.map((item) => ({
+            company_name: item?.company || "",
+            designation: item?.designation || "",
+            start_date: item?.startDate || "",
+            end_date: item?.endDate || "",
+            source_text: item?.sourceText || ""
+          }))
+        : (result.experience_history || []);
+      result.education_history = Array.isArray(hybrid.finalOutput.education)
+        ? hybrid.finalOutput.education
+        : (result.education_history || []);
+      result.needsReview = hybrid.finalOutput.needsReview;
+      result.reviewReasons = hybrid.finalOutput.reviewReasons;
+      result.parseMeta = hybrid.meta || {};
 
       const inferredSearchTags = deriveInferredSearchTags({
         cvResult: result,
@@ -14042,9 +14042,10 @@ const server = http.createServer(async (req, res) => {
       });
       nextMeta.searchDocUpdatedAt = new Date().toISOString();
 
+      const shouldApplyAutofill = body.normalizeWithAi !== false;
       await patchCandidate(candidate.id, {
         raw_note: encodeApplicantMetadata(nextMeta),
-        ...buildCvAutofillPatch(candidate, result)
+        ...(shouldApplyAutofill ? buildCvAutofillPatch(candidate, result) : {})
       }, { companyId: actor.companyId });
 
       // Best-effort persistence of unified search-doc + full CV text (if table exists).
