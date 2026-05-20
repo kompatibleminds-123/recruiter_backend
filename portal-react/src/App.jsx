@@ -13146,10 +13146,54 @@ function PortalApp({ token, onLogout }) {
     const selected = Array.isArray(copySettings?.resumeFormatting?.headerShowFields)
       ? copySettings.resumeFormatting.headerShowFields
       : [];
+    const sample = Array.isArray(selectedAssessmentRows) && selectedAssessmentRows.length ? selectedAssessmentRows[0] : null;
+    const context = sample ? resolveCandidateContext(sample) : null;
+    const candidate = context?.candidate || {};
+    const draft = context?.draft || {};
+    const assessment = context?.assessment || {};
+    const byKey = {
+      name: String(candidate?.name || draft?.candidateName || assessment?.candidateName || "Candidate Name").trim(),
+      role: String(draft?.currentDesignation || candidate?.role || assessment?.jdTitle || "").trim(),
+      email: String(context?.email || draft?.emailId || "").trim(),
+      phone: String(context?.phone || draft?.phoneNumber || "").trim(),
+      location: String(draft?.location || candidate?.location || "").trim(),
+      notice_period: String(draft?.noticePeriod || candidate?.notice_period || "").trim(),
+      total_experience: String(draft?.totalExperience || candidate?.total_experience || "").trim(),
+      current_company: String(draft?.currentCompany || candidate?.company || "").trim()
+    };
+    const values = selected
+      .map((key) => String(byKey[key] || "").trim())
+      .filter(Boolean);
+    if (values.length) return values.join(" | ");
     const labels = resumeHeaderFieldOptions
       .filter((item) => selected.includes(item.key))
       .map((item) => item.label);
     return labels.length ? labels.join(" | ") : "No header fields selected";
+  }
+
+  function openResumeBrandedPreview() {
+    if (!resumeSampleFileUrl) return;
+    const rf = copySettings?.resumeFormatting || {};
+    const footerText = (String(rf.footerText || "Confidential candidate profile shared by {{company_name}}")
+      .replace(/\{\{\s*company_name\s*\}\}/gi, String(state.user?.companyName || state.user?.company_name || "Your Company").trim()));
+    const watermarkText = String(rf.watermarkText || "CONFIDENTIAL").trim() || "CONFIDENTIAL";
+    const watermarkOpacity = Number(rf.watermarkOpacity || 0.12);
+    const headerLine = getResumeHeaderPreviewLine();
+    const logo = String(rf.logoDataUrl || "").trim();
+    const showPdf = String(resumeSampleFile?.type || "").toLowerCase().includes("pdf") || /\.pdf$/i.test(String(resumeSampleFile?.name || ""));
+    const html = `<!doctype html><html><head><meta charset="utf-8"/><title>Branded CV Preview</title>
+      <style>body{margin:0;background:#f1f5fb;font-family:Arial,sans-serif}.wrap{max-width:1100px;margin:16px auto;background:#fff;border:1px solid #dbe4f2;border-radius:10px;overflow:hidden;position:relative}.wm{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%) rotate(-24deg);font-size:48px;font-weight:800;color:#1f3760;opacity:${watermarkOpacity};pointer-events:none;white-space:nowrap}.head{display:grid;grid-template-columns:72px 1fr;gap:10px;align-items:center;padding:10px 12px;border-bottom:1px solid #dbe4f2;background:#f7faff}.logo{width:56px;height:38px;border:1px dashed #9fb2d4;border-radius:8px;display:flex;align-items:center;justify-content:center;color:#4f6da0;font-size:11px;overflow:hidden}.logo img{max-width:100%;max-height:100%;object-fit:contain}.meta strong{display:block;color:#1f3760;font-size:18px}.meta span{color:#4f6286;font-size:12px}.body{padding:10px}.pdf{width:100%;height:70vh;border:1px solid #dbe4f2;border-radius:8px}.foot{display:flex;justify-content:space-between;padding:8px 12px;border-top:1px solid #dbe4f2;background:#f7faff;color:#4f6286;font-size:12px}</style></head><body>
+      <div class="wrap">${rf.watermarkEnabled ? `<div class="wm">${escapeHtml(watermarkText)}</div>` : ""}
+      ${rf.headerEnabled !== false ? `<div class="head"><div class="logo">${logo ? `<img src="${logo}" alt="logo"/>` : "LOGO"}</div><div class="meta"><strong>Candidate Name</strong><span>${escapeHtml(headerLine)}</span></div></div>` : ""}
+      <div class="body">${showPdf ? `<iframe class="pdf" src="${resumeSampleFileUrl}"></iframe>` : `<div>Word preview is not rendered in-browser. Open sample CV to verify source file.</div>`}</div>
+      ${rf.footerEnabled !== false ? `<div class="foot"><span>${escapeHtml(footerText)}</span><span>Page 1/1</span></div>` : ""}
+      </div></body></html>`;
+    const blob = new Blob([html], { type: "text/html" });
+    const url = URL.createObjectURL(blob);
+    window.open(url, "_blank", "noopener,noreferrer");
+    setTimeout(() => {
+      try { URL.revokeObjectURL(url); } catch {}
+    }, 120000);
   }
 
   function replaceClientSharePlaceholdersInHtml(rawHtml, context) {
@@ -17939,7 +17983,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                             e.target.value = "";
                           }}
                         />
-                        <span className="field-help">Preview-only logo for now. Export renderer integration next step.</span>
+                        <span className="field-help">Logo appears in branded CV preview and export-render flow.</span>
                       </label>
                       <label><span>Header layout</span><select value={copySettings.resumeFormatting?.headerLayout || "executive"} onChange={(e) => setCopySettings((c) => ({ ...c, resumeFormatting: { ...(c.resumeFormatting || {}), headerLayout: e.target.value } }))}><option value="executive">Executive</option><option value="compact">Compact</option></select></label>
                       <label><span>Header max height (56-90)</span><input type="number" min={56} max={90} value={copySettings.resumeFormatting?.headerMaxHeightPx ?? 90} onChange={(e) => setCopySettings((c) => ({ ...c, resumeFormatting: { ...(c.resumeFormatting || {}), headerMaxHeightPx: Number(e.target.value || 90) } }))} /></label>
@@ -17973,7 +18017,8 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                       <div className="button-row tight" style={{ marginBottom: 8 }}>
                         <button className="secondary" onClick={() => pickResumeSampleFile()}>Use selected CV as sample</button>
                         {resumeSampleFile ? <span className="muted">{resumeSampleFile.name}</span> : null}
-                        {resumeSampleFileUrl ? <button className="ghost-btn" onClick={() => window.open(resumeSampleFileUrl, "_blank", "noopener,noreferrer")}>Open sample CV</button> : null}
+                        {resumeSampleFileUrl ? <button className="ghost-btn" onClick={() => openResumeBrandedPreview()}>Open branded preview</button> : null}
+                        {resumeSampleFileUrl ? <button className="ghost-btn" onClick={() => window.open(resumeSampleFileUrl, "_blank", "noopener,noreferrer")}>Open source CV</button> : null}
                       </div>
                       <div className="resume-preview-page">
                         {copySettings.resumeFormatting?.watermarkEnabled ? (
