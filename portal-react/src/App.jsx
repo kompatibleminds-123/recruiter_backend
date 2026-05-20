@@ -10009,6 +10009,96 @@ function PortalApp({ token, onLogout }) {
     }
   }
 
+  async function downloadOriginalCandidateCv(candidateInput) {
+    const item = normalizeCvCandidateInput(candidateInput);
+    const meta = getCandidateProfileCvMeta(item);
+    if (!meta.candidateId || !candidateHasStoredCv(item)) {
+      setStatus("workspace", "No uploaded CV available for this profile.", "error");
+      return;
+    }
+    try {
+      const params = new URLSearchParams({ access_token: token });
+      if (meta.url) params.set("cv_url", String(meta.url));
+      if (meta.filename) params.set("cv_filename", String(meta.filename));
+      if (meta.key) params.set("cv_key", String(meta.key));
+      if (meta.provider) params.set("cv_provider", String(meta.provider));
+      const response = await fetch(`/company/candidates/${encodeURIComponent(meta.candidateId)}/cv?${params.toString()}`);
+      if (!response.ok) throw new Error("Could not load CV.");
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = String(meta.filename || "candidate-cv");
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => { try { URL.revokeObjectURL(url); } catch {} }, 120000);
+      setStatus("workspace", "Original CV downloaded.", "ok");
+    } catch (error) {
+      setStatus("workspace", String(error?.message || error || "Could not download original CV."), "error");
+    }
+  }
+
+  async function downloadBrandedCandidateCv(candidateInput) {
+    const item = normalizeCvCandidateInput(candidateInput);
+    const meta = getCandidateProfileCvMeta(item);
+    if (!meta.candidateId || !candidateHasStoredCv(item)) {
+      setStatus("workspace", "No uploaded CV available for this profile.", "error");
+      return;
+    }
+    try {
+      const params = new URLSearchParams({ access_token: token });
+      if (meta.url) params.set("cv_url", String(meta.url));
+      if (meta.filename) params.set("cv_filename", String(meta.filename));
+      if (meta.key) params.set("cv_key", String(meta.key));
+      if (meta.provider) params.set("cv_provider", String(meta.provider));
+      const response = await fetch(`/company/candidates/${encodeURIComponent(meta.candidateId)}/cv?${params.toString()}`);
+      if (!response.ok) throw new Error("Could not load source CV.");
+      const sourceBlob = await response.blob();
+      const sourceIsPdf = String(sourceBlob.type || "").toLowerCase().includes("pdf") || /\.pdf$/i.test(String(meta.filename || ""));
+      if (!sourceIsPdf) {
+        setStatus("workspace", "Branded download is PDF-only right now.", "error");
+        return;
+      }
+      const arr = await sourceBlob.arrayBuffer();
+      const bytes = new Uint8Array(arr);
+      let bin = "";
+      for (let i = 0; i < bytes.length; i += 1) bin += String.fromCharCode(bytes[i]);
+      const pdfBase64 = window.btoa(bin);
+      const branded = await fetch("/company/resume-formatting/branded-pdf", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {})
+        },
+        body: JSON.stringify({
+          pdfBase64,
+          filename: String(meta.filename || "branded-cv.pdf"),
+          candidateId: String(meta.candidateId || "").trim(),
+          candidateName: buildResumeCandidateName(item),
+          headerLine: buildResumeHeaderLineForCandidate(item),
+          copySettings
+        })
+      });
+      if (!branded.ok) {
+        const text = await branded.text();
+        throw new Error(normalizeMojibakeSymbols(text || "Could not generate branded CV."));
+      }
+      const blob = await branded.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = String(meta.filename || "candidate-cv").replace(/\.pdf$/i, "") + "-branded.pdf";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => { try { URL.revokeObjectURL(url); } catch {} }, 120000);
+      setStatus("workspace", "Branded CV downloaded.", "ok");
+    } catch (error) {
+      setStatus("workspace", String(error?.message || error || "Could not download branded CV."), "error");
+    }
+  }
+
   async function copyCandidateProfileShareLink(candidateId) {
     const safeId = String(candidateId || "").trim();
     if (!safeId) {
@@ -13838,6 +13928,37 @@ function PortalApp({ token, onLogout }) {
     setSelectedAssessmentIds((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id]);
   }
 
+  function isAssessmentShareBrandedCvEnabled(assessment = {}) {
+    return Boolean(
+      assessment?.shareBrandedCv
+      || assessment?.share_branded_cv
+      || assessment?.payload?.shareBrandedCv
+      || assessment?.payload?.share_branded_cv
+    );
+  }
+
+  async function setAssessmentShareBrandedCv(assessment, enabled) {
+    const current = assessment && typeof assessment === "object" ? assessment : null;
+    const assessmentId = String(current?.id || "").trim();
+    if (!assessmentId) return;
+    try {
+      const next = {
+        ...current,
+        shareBrandedCv: Boolean(enabled),
+        updatedAt: new Date().toISOString()
+      };
+      const saved = await api("/company/assessments", token, "POST", { assessment: next });
+      const savedId = String(saved?.id || assessmentId).trim();
+      setState((stateCurrent) => ({
+        ...stateCurrent,
+        assessments: (stateCurrent.assessments || []).map((item) => (String(item?.id || "").trim() === savedId ? { ...item, ...saved } : item))
+      }));
+      setStatus("assessments", enabled ? "Share Branded CV enabled for this profile." : "Share Branded CV disabled for this profile.", "ok");
+    } catch (error) {
+      setStatus("assessments", String(error?.message || error || "Could not update branded CV preference."), "error");
+    }
+  }
+
   async function saveSharedCopySettings() {
     if (!isSettingsAdmin) {
       setStatus("settings", "Only admin can save shared settings.", "error");
@@ -16896,10 +17017,16 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                         <>
                     <div className="assessment-select-row">
                       {assessmentLane === "active" && !isArchived ? (
-                        <label className="checkbox-pill">
-                          <input type="checkbox" checked={selectedAssessmentIds.includes(String(item.id))} onChange={() => toggleAssessmentSelection(item.id)} />
-                          <span>Select for client share</span>
-                        </label>
+                        <div className="assessment-select-row__checks">
+                          <label className="checkbox-pill">
+                            <input type="checkbox" checked={selectedAssessmentIds.includes(String(item.id))} onChange={() => toggleAssessmentSelection(item.id)} />
+                            <span>Select for client share</span>
+                          </label>
+                          <label className="checkbox-pill checkbox-pill--soft">
+                            <input type="checkbox" checked={isAssessmentShareBrandedCvEnabled(item)} onChange={(e) => { void setAssessmentShareBrandedCv(item, e.target.checked); }} />
+                            <span>Share Branded CV</span>
+                          </label>
+                        </div>
                       ) : (
                         <span className="muted">Archived</span>
                       )}
@@ -16972,6 +17099,68 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                             </button>
                             {openAssessmentMoreId === String(item.id) ? (
                               <div className="more-menu__dropdown more-menu__dropdown--inline" role="menu">
+                                <button
+                                  type="button"
+                                  className="more-menu__item"
+                                  onClick={() => {
+                                    closeAssessmentMoreMenu();
+                                    const linkedCandidate = assessmentLinkedCandidateMap.get(String(item.id || "")) || null;
+                                    if (!linkedCandidate) {
+                                      setStatus("assessments", "Linked candidate not found for this assessment.", "error");
+                                      return;
+                                    }
+                                    if (isAssessmentShareBrandedCvEnabled(item)) {
+                                      void openBrandedCandidateCv(linkedCandidate);
+                                    } else {
+                                      openDatabaseCandidateCv(linkedCandidate);
+                                    }
+                                  }}
+                                >
+                                  Open CV (default)
+                                </button>
+                                <button
+                                  type="button"
+                                  className="more-menu__item"
+                                  onClick={() => {
+                                    closeAssessmentMoreMenu();
+                                    const linkedCandidate = assessmentLinkedCandidateMap.get(String(item.id || "")) || null;
+                                    if (!linkedCandidate) {
+                                      setStatus("assessments", "Linked candidate not found for this assessment.", "error");
+                                      return;
+                                    }
+                                    if (isAssessmentShareBrandedCvEnabled(item)) {
+                                      void downloadBrandedCandidateCv(linkedCandidate);
+                                    } else {
+                                      void downloadOriginalCandidateCv(linkedCandidate);
+                                    }
+                                  }}
+                                >
+                                  Download CV (default)
+                                </button>
+                                <button type="button" className="more-menu__item" onClick={() => {
+                                  closeAssessmentMoreMenu();
+                                  const linkedCandidate = assessmentLinkedCandidateMap.get(String(item.id || "")) || null;
+                                  if (!linkedCandidate) return setStatus("assessments", "Linked candidate not found for this assessment.", "error");
+                                  openDatabaseCandidateCv(linkedCandidate);
+                                }}>Open Original CV</button>
+                                <button type="button" className="more-menu__item" onClick={() => {
+                                  closeAssessmentMoreMenu();
+                                  const linkedCandidate = assessmentLinkedCandidateMap.get(String(item.id || "")) || null;
+                                  if (!linkedCandidate) return setStatus("assessments", "Linked candidate not found for this assessment.", "error");
+                                  void openBrandedCandidateCv(linkedCandidate);
+                                }}>Open Branded CV</button>
+                                <button type="button" className="more-menu__item" onClick={() => {
+                                  closeAssessmentMoreMenu();
+                                  const linkedCandidate = assessmentLinkedCandidateMap.get(String(item.id || "")) || null;
+                                  if (!linkedCandidate) return setStatus("assessments", "Linked candidate not found for this assessment.", "error");
+                                  void downloadOriginalCandidateCv(linkedCandidate);
+                                }}>Download Original CV</button>
+                                <button type="button" className="more-menu__item" onClick={() => {
+                                  closeAssessmentMoreMenu();
+                                  const linkedCandidate = assessmentLinkedCandidateMap.get(String(item.id || "")) || null;
+                                  if (!linkedCandidate) return setStatus("assessments", "Linked candidate not found for this assessment.", "error");
+                                  void downloadBrandedCandidateCv(linkedCandidate);
+                                }}>Download Branded CV</button>
                                 <button type="button" className="more-menu__item" onClick={() => { closeAssessmentMoreMenu(); void moveAssessmentBackToCaptured(item); }}>Move back to captured</button>
                                 <button type="button" className="more-menu__item" onClick={() => { closeAssessmentMoreMenu(); void setAssessmentArchivedState(item, true); }}>Hide</button>
                                 <button type="button" className="more-menu__item" onClick={() => { closeAssessmentMoreMenu(); reuseAssessmentAsNew(item); }}>Reuse as new</button>

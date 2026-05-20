@@ -1453,13 +1453,22 @@ async function buildBrandedPdfBuffer({
         page.drawText("BRANDED", { x: 6, y: headY + 10, size: 6, font: fontBold, color: rgb(0.96, 0.98, 1), rotate: degrees(90) });
       }
       if (logoImage) {
-        page.drawImage(logoImage, { x: 20, y: headY + 14, width: 54, height: 30 });
+        const maxW = 66;
+        const maxH = 34;
+        const iw = Number(logoImage.width || maxW) || maxW;
+        const ih = Number(logoImage.height || maxH) || maxH;
+        const ratio = Math.min(maxW / iw, maxH / ih);
+        const drawW = Math.max(12, iw * ratio);
+        const drawH = Math.max(12, ih * ratio);
+        const x = 20 + ((maxW - drawW) / 2);
+        const y = headY + 12 + ((maxH - drawH) / 2);
+        page.drawImage(logoImage, { x, y, width: drawW, height: drawH });
       } else {
-        page.drawRectangle({ x: 20, y: headY + 14, width: 54, height: 30, borderColor: rgb(0.67, 0.74, 0.84), borderWidth: 1 });
+        page.drawRectangle({ x: 20, y: headY + 12, width: 66, height: 34, borderColor: rgb(0.67, 0.74, 0.84), borderWidth: 1 });
       }
-      page.drawText(displayName, { x: 86, y: headY + 34, size: 11, font: fontBold, color: textColor });
+      page.drawText(displayName, { x: 94, y: headY + 34, size: 11, font: fontBold, color: textColor });
       if (displayLine) {
-        page.drawText(displayLine, { x: 86, y: headY + 18, size: 9, font: fontRegular, color: subTextColor, maxWidth: width - 110 });
+        page.drawText(displayLine, { x: 94, y: headY + 18, size: 9, font: fontRegular, color: subTextColor, maxWidth: width - 118 });
       }
     }
     if (footerEnabled) {
