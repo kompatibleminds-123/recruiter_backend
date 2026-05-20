@@ -795,28 +795,45 @@ async function sendZohoEmailWithCfg(cfg, { to, cc = "", subject, html = "", text
     payload.replyToMessageId = inReplyTo;
     if (references.length) payload.references = references;
   }
-  const sendRes = await fetchWithTimeout(`${mailBase}/api/accounts/${encodeURIComponent(accountId)}/messages`, {
-    method: "POST",
-    headers: {
-      "Accept": "application/json",
-      "Content-Type": "application/json",
-      "Authorization": `Zoho-oauthtoken ${accessToken}`
-    },
-    body: JSON.stringify(payload)
-  }, 25000);
-  const sendRaw = await sendRes.text();
-  let sendJson = {};
-  try {
-    sendJson = sendRaw ? JSON.parse(sendRaw) : {};
-  } catch {
-    sendJson = {};
+  async function postZohoMessage(requestPayload) {
+    const response = await fetchWithTimeout(`${mailBase}/api/accounts/${encodeURIComponent(accountId)}/messages`, {
+      method: "POST",
+      headers: {
+        "Accept": "application/json",
+        "Content-Type": "application/json",
+        "Authorization": `Zoho-oauthtoken ${accessToken}`
+      },
+      body: JSON.stringify(requestPayload)
+    }, 25000);
+    const raw = await response.text();
+    let json = {};
+    try {
+      json = raw ? JSON.parse(raw) : {};
+    } catch {
+      json = {};
+    }
+    const statusCode = Number(json?.status?.code || 0) || 0;
+    const ok = response.ok && (!statusCode || statusCode < 300);
+    return { response, raw, json, statusCode, ok };
   }
-  const statusCode = Number(sendJson?.status?.code || 0) || 0;
-  if (!sendRes.ok || (statusCode && statusCode >= 300)) {
-    const desc = String(sendJson?.status?.description || sendJson?.data?.error?.message || sendRaw || "Zoho send failed.");
+
+  let sendResult = await postZohoMessage(payload);
+  if (!sendResult.ok) {
+    const desc = String(sendResult?.json?.status?.description || sendResult?.json?.data?.error?.message || sendResult?.raw || "Zoho send failed.");
+    const looksInvalidInput = /invalid input/i.test(desc);
+    if (allowThreading && inReplyTo && looksInvalidInput) {
+      const retryPayload = { ...payload };
+      delete retryPayload.inReplyToMessageId;
+      delete retryPayload.replyToMessageId;
+      delete retryPayload.references;
+      sendResult = await postZohoMessage(retryPayload);
+    }
+  }
+  if (!sendResult.ok) {
+    const desc = String(sendResult?.json?.status?.description || sendResult?.json?.data?.error?.message || sendResult?.raw || "Zoho send failed.");
     const err = new Error(desc);
-    err.status = sendRes.status || statusCode || 400;
-    err.body = sendRaw;
+    err.status = sendResult?.response?.status || sendResult?.statusCode || 400;
+    err.body = sendResult?.raw || "";
     throw err;
   }
   const candidateData = sendJson?.data;
@@ -1186,6 +1203,21 @@ async function sendJdEmailAsActor(actor, { to, cc = "", subject, html, text, att
     messageId: String(info?.messageId || "").trim(),
     threadId: "",
     threadedApplied: Boolean(String(threading?.inReplyTo || "").trim())
+  };
+}
+
+async function loadAttachmentFromUrl(url = "", fallbackName = "cv.pdf", mimeType = "") {
+  const targetUrl = String(url || "").trim();
+  if (!targetUrl) throw new Error("Attachment URL missing.");
+  const safeName = String(fallbackName || "cv.pdf").trim().replace(/[^a-z0-9._-]+/gi, "-") || "cv.pdf";
+  const res = await fetchWithTimeout(targetUrl, { method: "GET" }, 30000);
+  if (!res.ok) throw new Error(`Attachment download failed (${res.status}).`);
+  const arr = await res.arrayBuffer();
+  const buffer = Buffer.from(arr);
+  return {
+    buffer,
+    filename: safeName,
+    mimeType: String(res.headers.get("content-type") || mimeType || "application/octet-stream").trim()
   };
 }
 
@@ -7113,6 +7145,35 @@ function isValidEmail(value) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 }
 
+function sanitizeEmailToken(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  let token = raw
+    .replace(/^[<(\[{'"`]+/, "")
+    .replace(/[>)\]}'"`.,;:]+$/, "")
+    .trim();
+  if (!token) return "";
+  const angleMatch = token.match(/<([^<>@\s]+@[^<>@\s]+)>/);
+  if (angleMatch && angleMatch[1]) token = String(angleMatch[1] || "").trim();
+  return token;
+}
+
+function parseEmailListOrThrow(raw, { label = "Email", required = false } = {}) {
+  const input = String(raw || "").trim();
+  if (!input) {
+    if (required) throw new Error(`${label} is required.`);
+    return [];
+  }
+  const list = input
+    .split(/[,\n;]+/)
+    .map((item) => sanitizeEmailToken(item))
+    .filter(Boolean);
+  if (required && !list.length) throw new Error(`${label} is required.`);
+  const invalid = list.filter((email) => !isValidEmail(email));
+  if (invalid.length) throw new Error(`Invalid ${label.toLowerCase()}: ${invalid.join(", ")}`);
+  return Array.from(new Set(list.map((email) => email.toLowerCase())));
+}
+
 function normalizePhone(value) {
   const raw = String(value || "").trim();
   if (!raw) return "";
@@ -10203,18 +10264,9 @@ const server = http.createServer(async (req, res) => {
       const signatureLinks = Array.isArray(body.signatureLinks) ? body.signatureLinks : [];
       const attachJdFile = Boolean(body.attachJdFile);
       if (!jobId) throw new Error("jobId is required.");
-      if (!toRaw) throw new Error("Recipient email is required.");
-      const recipients = toRaw
-        .split(/,|;|\s+/)
-        .map((item) => String(item || "").trim())
-        .filter(Boolean);
+      const recipients = parseEmailListOrThrow(toRaw, { label: "Recipient email", required: true });
       if (!recipients.length) throw new Error("Recipient email is required.");
-      const ccRecipients = ccRaw
-        ? ccRaw
-            .split(/,|;|\s+/)
-            .map((item) => String(item || "").trim())
-            .filter(Boolean)
-        : [];
+      const ccRecipients = parseEmailListOrThrow(ccRaw, { label: "CC email", required: false });
       const jobs = await listCompanyJobs(actor.companyId, actor.id);
       const job = (Array.isArray(jobs) ? jobs : []).find((item) => String(item?.id || "").trim() === jobId) || null;
       if (!job) throw new Error("JD not found.");
@@ -10272,20 +10324,12 @@ const server = http.createServer(async (req, res) => {
       const text = String(body.text || "").trim();
       const forceNewThread = Boolean(body.forceNewThread);
       const threadContext = body.threadContext && typeof body.threadContext === "object" ? body.threadContext : {};
-      if (!toRaw) throw new Error("Recipient email is required.");
+      const cvAttachmentsRaw = Array.isArray(body.cvAttachments) ? body.cvAttachments : [];
       if (!subject) throw new Error("Subject is required.");
       if (!html && !text) throw new Error("Email content missing.");
-      const recipients = toRaw
-        .split(/,|;|\s+/)
-        .map((item) => String(item || "").trim())
-        .filter(Boolean);
+      const recipients = parseEmailListOrThrow(toRaw, { label: "Recipient email", required: true });
       if (!recipients.length) throw new Error("Recipient email is required.");
-      const ccRecipients = ccRaw
-        ? ccRaw
-            .split(/,|;|\s+/)
-            .map((item) => String(item || "").trim())
-            .filter(Boolean)
-        : [];
+      const ccRecipients = parseEmailListOrThrow(ccRaw, { label: "CC email", required: false });
       const conversationKey = buildConversationKey({
         to: recipients.join(", "),
         clientLabel: String(threadContext.clientLabel || "").trim(),
@@ -10296,12 +10340,43 @@ const server = http.createServer(async (req, res) => {
         : null;
       const inReplyTo = String(existingThread?.last_message_id || existingThread?.lastMessageId || "").trim();
       const references = inReplyTo ? [inReplyTo] : [];
+      const attachmentLimitBytes = 20 * 1024 * 1024;
+      let attachmentBytes = 0;
+      const resolvedAttachments = [];
+      for (const row of cvAttachmentsRaw.slice(0, 20)) {
+        try {
+          const provider = String(row?.provider || "").trim();
+          const key = String(row?.key || "").trim();
+          const url = String(row?.url || "").trim();
+          const signedUrl = String(row?.signedUrl || "").trim();
+          const filename = String(row?.filename || "").trim() || `candidate-${String(row?.candidateId || "cv").trim()}.pdf`;
+          const mimeType = String(row?.mimeType || "").trim() || "application/pdf";
+          let loaded = null;
+          if (provider && key) {
+            loaded = await loadStoredFile({ provider, key, filename, mimeType, url: signedUrl || url || "" });
+          } else if (signedUrl || url) {
+            loaded = await loadAttachmentFromUrl(signedUrl || url, filename, mimeType);
+          }
+          if (!loaded?.buffer || !Buffer.isBuffer(loaded.buffer)) continue;
+          const nextBytes = attachmentBytes + loaded.buffer.length;
+          if (nextBytes > attachmentLimitBytes) break;
+          attachmentBytes = nextBytes;
+          resolvedAttachments.push({
+            filename: String(loaded.filename || filename || "cv.pdf").trim() || "cv.pdf",
+            content: loaded.buffer,
+            contentType: String(loaded.mimeType || mimeType || "application/octet-stream").trim() || "application/octet-stream"
+          });
+        } catch {
+          // Skip problematic attachment, keep mail send resilient.
+        }
+      }
       const sendMeta = await sendJdEmailAsActor(actor, {
         to: recipients.join(", "),
         cc: ccRecipients.join(", "),
         subject,
         html: html || `<pre>${escapeHtml(text).replace(/\n/g, "<br/>")}</pre>`,
         text: text || "",
+        attachments: resolvedAttachments,
         allowZohoApiThreading,
         threading: {
           inReplyTo: inReplyTo || "",
@@ -10329,6 +10404,7 @@ const server = http.createServer(async (req, res) => {
           subject,
           forceNewThread,
           threaded: Boolean(sendMeta?.threadedApplied),
+          attachedCvCount: resolvedAttachments.length,
           conversationKey: conversationKey || ""
         }
       });

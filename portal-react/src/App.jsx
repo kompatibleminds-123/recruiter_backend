@@ -13080,11 +13080,18 @@ function PortalApp({ token, onLogout }) {
   function buildClientShareHtml() {
     const rows = getClientShareRows();
     const presetColumns = getClientSharePresetColumns();
+    const compactFields = new Set(["s_no", "phone", "email", "current_ctc", "expected_ctc", "notice_period", "total_experience"]);
+    const wideFields = new Set(["screening_remarks", "reason_of_change", "remarks", "other_standard_questions", "linkedin"]);
+    const tableColGroup = presetColumns.map((column) => {
+      const key = String(column?.field || "").trim().toLowerCase();
+      const width = compactFields.has(key) ? "120px" : (wideFields.has(key) ? "220px" : "170px");
+      return `<col style="width:${width};min-width:${width};" />`;
+    }).join("");
     const tableHeaders = presetColumns.map((column) => `<th style="border:1px solid #d8dee8;padding:10px 12px;background:#f6f8fb;text-align:left;font-size:13px;">${escapeHtml(column.header)}</th>`).join("");
     const tableRows = rows.map((item, index) => {
       const cells = presetColumns.map((column) => {
         const value = getCapturedExportFieldValue({ index: index + 1, ...item }, column.field) || "-";
-        return `<td style="border:1px solid #d8dee8;padding:10px 12px;vertical-align:top;font-size:13px;line-height:1.45;">${escapeHtml(value).replace(/\n/g, "<br/>")}</td>`;
+        return `<td style="border:1px solid #d8dee8;padding:10px 12px;vertical-align:top;font-size:13px;line-height:1.45;white-space:normal;word-break:break-word;overflow-wrap:anywhere;">${escapeHtml(value).replace(/\n/g, "<br/>")}</td>`;
       }).join("");
       const shareKey = String(item.candidate_id || item.id || "");
       const cvLink = clientShareCvLinks[shareKey];
@@ -13093,7 +13100,7 @@ function PortalApp({ token, onLogout }) {
         : (!shareKey
           ? "Linked candidate not found"
           : (clientShareCvLinkState[shareKey] === "missing" ? "CV link not available yet" : "Generating secure CV link..."));
-      return `<tr>${cells}<td style="border:1px solid #d8dee8;padding:10px 12px;vertical-align:top;font-size:13px;line-height:1.45;">${cvCell}</td></tr>`;
+      return `<tr>${cells}<td style="border:1px solid #d8dee8;padding:10px 12px;vertical-align:top;font-size:13px;line-height:1.45;white-space:normal;word-break:break-word;overflow-wrap:anywhere;">${cvCell}</td></tr>`;
     }).join("");
     const template = String(copySettings.clientShareIntroTemplate || DEFAULT_COPY_SETTINGS.clientShareIntroTemplate || "").trim();
     const introHtml = replaceClientSharePlaceholdersInHtml(escapeHtml(template).replace(/\n/g, "<br/>"), getClientShareContext());
@@ -13115,7 +13122,8 @@ function PortalApp({ token, onLogout }) {
       <div style="font-family:Arial, sans-serif;color:#1f2a44;line-height:1.6;">
         <div>${introHtml}</div>
         <p>${rows.length} selected profile(s) are listed below.</p>
-        <table style="border-collapse:collapse;width:100%;margin-top:12px;">
+        <table style="border-collapse:collapse;width:100%;margin-top:12px;table-layout:fixed;">
+          <colgroup>${tableColGroup}<col style="width:110px;min-width:110px;" /></colgroup>
           <thead>
             <tr>${tableHeaders}<th style="border:1px solid #d8dee8;padding:10px 12px;background:#f6f8fb;text-align:left;font-size:13px;">CV Link</th></tr>
           </thead>
@@ -13174,12 +13182,14 @@ function PortalApp({ token, onLogout }) {
     const subject = String(payload?.subject || "").trim();
     const html = String(payload?.html || "").trim();
     const text = String(payload?.text || "").trim();
+    const cvAttachments = Array.isArray(payload?.cvAttachments) ? payload.cvAttachments : [];
     const result = await api("/company/email/send", token, "POST", {
       to,
       cc,
       subject,
       html,
       text,
+      cvAttachments,
       forceNewThread: Boolean(payload?.forceNewThread),
       threadContext: {
         clientLabel: String(clientShareDraft.clientLabel || "").trim(),
@@ -13268,12 +13278,33 @@ function PortalApp({ token, onLogout }) {
       return;
     }
     const sendHtml = getClientShareSendHtml();
+    const cvAttachments = getClientShareRows()
+      .map((item) => {
+        const shareKey = String(item.candidate_id || item.id || "");
+        const signedUrl = String(clientShareCvLinks[shareKey] || "").trim();
+        const provider = String(item.cv_provider || "").trim();
+        const key = String(item.cv_key || "").trim();
+        const directUrl = String(item.cv_url || "").trim();
+        const filename = String(item.cv_filename || "").trim();
+        if (!signedUrl && !key && !directUrl) return null;
+        return {
+          candidateId: String(item.candidate_id || "").trim(),
+          signedUrl,
+          provider,
+          key,
+          url: directUrl,
+          filename,
+          mimeType: ""
+        };
+      })
+      .filter(Boolean);
     queueClientShareEmail({
       to,
       cc,
       subject: getClientShareEmailSubject(),
       html: sendHtml,
       text: htmlToPlainText(sendHtml),
+      cvAttachments,
       forceNewThread: String(clientShareDraft.deliveryMode || "threaded") === "new"
     });
   }
