@@ -14914,7 +14914,6 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
   const safePct = (num, den) => (den > 0 ? Math.round((num / den) * 100) : 0);
   const kpiCards = [
     { key: "totalCandidates", label: "Total Candidates", value: Number(dashboardOverall.sourced || 0), icon: "TC" },
-    { key: "activeClients", label: "Active Clients", value: dashboardClientGroups.length, icon: "CL" },
     { key: "activeRecruiters", label: "Active Recruiters", value: dashboardRecruiterGroups.length, icon: "RC" },
     { key: "sharedProfiles", label: "Shared Profiles", value: Number(dashboardOverall.converted || 0), icon: "SH" },
     { key: "interviews", label: "Interviews", value: Number(dashboardOverall.under_interview_process || 0), icon: "IN" },
