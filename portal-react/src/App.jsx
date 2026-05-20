@@ -13043,6 +13043,27 @@ function PortalApp({ token, onLogout }) {
     } catch {}
   }
 
+  function clearClientShareFormatting() {
+    try {
+      const editor = clientShareEditorRef.current;
+      if (!editor) return;
+      editor.focus();
+      const selection = window.getSelection?.();
+      const hadRange = restoreClientShareSelection();
+      if (!hadRange) {
+        const range = document.createRange();
+        range.selectNodeContents(editor);
+        selection?.removeAllRanges();
+        selection?.addRange(range);
+      }
+      document.execCommand("styleWithCSS", false, false);
+      document.execCommand("removeFormat", false, null);
+      document.execCommand("unlink", false, null);
+      captureClientShareSelection();
+      syncClientShareEditorHtml();
+    } catch {}
+  }
+
   function applyClientShareLink() {
     const raw = window.prompt("Enter link URL");
     const url = String(raw || "").trim();
@@ -16698,7 +16719,6 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                         <select
                           className="editor-select"
                           defaultValue=""
-                          onMouseDown={(e) => e.preventDefault()}
                           onChange={(e) => {
                             const value = String(e.target.value || "").trim();
                             if (!value) return;
@@ -16716,7 +16736,6 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                         <select
                           className="editor-select"
                           defaultValue=""
-                          onMouseDown={(e) => e.preventDefault()}
                           onChange={(e) => {
                             const value = String(e.target.value || "").trim();
                             if (!value) return;
@@ -16735,7 +16754,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                         <button type="button" className="ghost-btn" onMouseDown={(e) => e.preventDefault()} onClick={() => runClientShareEditorCommand("underline")}><u>U</u></button>
                         <button type="button" className="ghost-btn" onMouseDown={(e) => e.preventDefault()} onClick={() => runClientShareEditorCommand("insertUnorderedList")}>List</button>
                         <button type="button" className="ghost-btn" onMouseDown={(e) => e.preventDefault()} onClick={() => applyClientShareLink()}>Link</button>
-                        <button type="button" className="ghost-btn" onMouseDown={(e) => e.preventDefault()} onClick={() => runClientShareEditorCommand("removeFormat")}>Clear</button>
+                        <button type="button" className="ghost-btn" onMouseDown={(e) => e.preventDefault()} onClick={() => clearClientShareFormatting()}>Clear</button>
                         <button
                           type="button"
                           className="ghost-btn"
