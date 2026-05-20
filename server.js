@@ -1384,13 +1384,24 @@ async function buildBrandedPdfBuffer({
   const footerText = String(rf.footerText || "Confidential candidate profile shared by {{company_name}}")
     .replace(/\{\{\s*company_name\s*\}\}/gi, String(companyName || "Your Company").trim());
   const templateStyle = String(rf.templateStyle || "minimal_corporate").trim() || "minimal_corporate";
-  const headerHeight = Math.max(56, Math.min(90, Number(rf.headerMaxHeightPx || 72) || 72));
-  const footerHeight = Math.max(40, Math.min(70, Number(rf.footerMaxHeightPx || 52) || 52));
+  const headerLayout = String(rf.headerLayout || "executive").trim().toLowerCase() === "compact" ? "compact" : "executive";
+  // Keep header slimmer (~15%) and elegant.
+  const requestedHeaderHeight = Math.max(56, Math.min(90, Number(rf.headerMaxHeightPx || 72) || 72));
+  const headerHeight = Math.max(46, Math.round(requestedHeaderHeight * 0.85));
+  const footerHeight = Math.max(34, Math.min(70, Number(rf.footerMaxHeightPx || 50) || 50));
   const wmOpacity = Math.max(0.05, Math.min(0.15, Number(rf.watermarkOpacity || 0.12) || 0.12));
+  const primaryColor = String(rf.primaryColor || "#243B6B").trim() || "#243B6B";
   const displayName = String(candidateName || "Candidate Name").trim() || "Candidate Name";
   const displayLine = String(headerLine || "").trim();
   const fontRegular = await outDoc.embedFont(StandardFonts.Helvetica);
   const fontBold = await outDoc.embedFont(StandardFonts.HelveticaBold);
+  const navy = hexToRgb01(primaryColor) || { r: 0.14, g: 0.23, b: 0.42 };
+  const darkNavy = { r: Math.max(0, navy.r - 0.1), g: Math.max(0, navy.g - 0.1), b: Math.max(0, navy.b - 0.1) };
+  const slateText = { r: 0.28, g: 0.33, b: 0.42 };
+  const divider = { r: 0.85, g: 0.88, b: 0.93 };
+  const softPanel = { r: 0.96, g: 0.97, b: 0.99 };
+  const footerCaps = footerText.toUpperCase();
+  const safeMarginX = 10;
 
   let logoImage = null;
   const logoBuf = readImageBufferFromDataUrl(String(rf.logoDataUrl || "").trim());
@@ -1411,77 +1422,124 @@ async function buildBrandedPdfBuffer({
     const { width, height } = srcPage.getSize();
     const page = outDoc.addPage([width, height]);
     const embedded = await outDoc.embedPage(srcPage);
-    const headerOnAllPages = templateStyle === "side_ribbon_branding";
-    const showHeaderOnThisPage = headerEnabled && (headerOnAllPages || index === 0) && templateStyle !== "watermark_footer_only";
+    const showHeaderOnThisPage = headerEnabled && index === 0 && templateStyle !== "watermark_footer_only";
+    const showSideRibbon = templateStyle === "side_ribbon_branding";
     const topPad = showHeaderOnThisPage ? headerHeight : 0;
     const bottomPad = footerEnabled ? footerHeight : 0;
+    const innerTopGap = showHeaderOnThisPage ? 6 : 4;
+    const innerBottomGap = footerEnabled ? 6 : 4;
+    const bodyLeftInset = showSideRibbon ? 20 : 0;
+    const bodyRightInset = 0;
     const availableHeight = Math.max(40, height - topPad - bottomPad);
+    const renderHeight = Math.max(40, availableHeight - innerTopGap - innerBottomGap);
     page.drawPage(embedded, {
-      x: 0,
-      y: bottomPad,
-      width,
-      height: availableHeight
+      x: bodyLeftInset,
+      y: bottomPad + innerBottomGap,
+      width: Math.max(80, width - bodyLeftInset - bodyRightInset),
+      height: renderHeight
     });
 
-    if (watermarkEnabled || templateStyle === "watermark_footer_only") {
+    if (watermarkEnabled || templateStyle === "watermark_footer_only" || templateStyle === "side_ribbon_branding") {
       page.drawText(watermarkText, {
         x: width * 0.26,
         y: height * 0.5,
-        size: 52,
+        size: templateStyle === "watermark_footer_only" ? 50 : 44,
         font: fontBold,
-        color: rgb(0.12, 0.22, 0.38),
-        opacity: wmOpacity,
+        color: rgb(navy.r, navy.g, navy.b),
+        opacity: templateStyle === "watermark_footer_only" ? Math.min(0.11, wmOpacity) : Math.min(0.08, wmOpacity),
         rotate: degrees(-24)
+      });
+    }
+    if (showSideRibbon) {
+      const ribbonWidth = 12;
+      page.drawRectangle({
+        x: 0,
+        y: footerEnabled ? footerHeight : 0,
+        width: ribbonWidth,
+        height: height - (footerEnabled ? footerHeight : 0),
+        color: rgb(darkNavy.r, darkNavy.g, darkNavy.b),
+        opacity: 0.88
+      });
+      page.drawText("Shared by Kompatible Minds", {
+        x: 3.5,
+        y: (height / 2) - 34,
+        size: 6.6,
+        font: fontRegular,
+        color: rgb(0.94, 0.96, 0.99),
+        rotate: degrees(90)
       });
     }
     if (showHeaderOnThisPage) {
       const headY = height - headerHeight;
-      let headBg = rgb(0.97, 0.98, 1);
-      let textColor = rgb(0.1, 0.22, 0.4);
-      let subTextColor = rgb(0.31, 0.39, 0.53);
+      let headBg = rgb(0.982, 0.986, 0.994);
+      let textColor = rgb(navy.r, navy.g, navy.b);
+      let subTextColor = rgb(slateText.r, slateText.g, slateText.b);
       if (templateStyle === "premium_blue_bar") {
-        headBg = rgb(0.07, 0.26, 0.62);
+        headBg = rgb(darkNavy.r, darkNavy.g, darkNavy.b);
         textColor = rgb(0.97, 0.99, 1);
-        subTextColor = rgb(0.88, 0.93, 1);
+        subTextColor = rgb(0.87, 0.91, 0.97);
       } else if (templateStyle === "client_submission_style") {
-        headBg = rgb(0.93, 0.96, 1);
+        headBg = rgb(0.955, 0.968, 0.99);
+      } else if (templateStyle === "watermark_footer_only") {
+        headBg = rgb(1, 1, 1);
       }
       page.drawRectangle({ x: 0, y: headY, width, height: headerHeight, color: headBg });
-      page.drawLine({ start: { x: 0, y: headY }, end: { x: width, y: headY }, thickness: 1, color: rgb(0.86, 0.9, 0.96) });
-      if (templateStyle === "side_ribbon_branding") {
-        page.drawRectangle({ x: 0, y: headY, width: 18, height: headerHeight, color: rgb(0.07, 0.26, 0.62) });
-        page.drawText("BRANDED", { x: 6, y: headY + 10, size: 6, font: fontBold, color: rgb(0.96, 0.98, 1), rotate: degrees(90) });
-      }
+      // subtle divider below header
+      page.drawLine({ start: { x: safeMarginX, y: headY + 0.5 }, end: { x: width - safeMarginX, y: headY + 0.5 }, thickness: 0.8, color: rgb(divider.r, divider.g, divider.b) });
+      const logoMaxW = headerLayout === "compact" ? 52 : 62;
+      const logoMaxH = headerLayout === "compact" ? 24 : 30;
+      const logoX = 20;
+      const logoY = headY + (headerLayout === "compact" ? 11 : 10);
       if (logoImage) {
-        const maxW = 66;
-        const maxH = 34;
-        const iw = Number(logoImage.width || maxW) || maxW;
-        const ih = Number(logoImage.height || maxH) || maxH;
-        const ratio = Math.min(maxW / iw, maxH / ih);
+        const iw = Number(logoImage.width || logoMaxW) || logoMaxW;
+        const ih = Number(logoImage.height || logoMaxH) || logoMaxH;
+        const ratio = Math.min(logoMaxW / iw, logoMaxH / ih);
         const drawW = Math.max(12, iw * ratio);
         const drawH = Math.max(12, ih * ratio);
-        const x = 20 + ((maxW - drawW) / 2);
-        const y = headY + 12 + ((maxH - drawH) / 2);
+        const x = logoX + ((logoMaxW - drawW) / 2);
+        const y = logoY + ((logoMaxH - drawH) / 2);
         page.drawImage(logoImage, { x, y, width: drawW, height: drawH });
       } else {
-        page.drawRectangle({ x: 20, y: headY + 12, width: 66, height: 34, borderColor: rgb(0.67, 0.74, 0.84), borderWidth: 1 });
+        page.drawRectangle({ x: logoX, y: logoY, width: logoMaxW, height: logoMaxH, borderColor: rgb(divider.r, divider.g, divider.b), borderWidth: 0.8 });
       }
-      page.drawText(displayName, { x: 94, y: headY + 34, size: 11, font: fontBold, color: textColor });
+      const textX = headerLayout === "compact" ? 82 : 94;
+      const titleSize = headerLayout === "compact" ? 11.8 : 13.2;
+      page.drawText(displayName, { x: textX, y: headY + (headerLayout === "compact" ? 26 : 31), size: titleSize, font: fontBold, color: textColor, maxWidth: width - textX - 20 });
       if (displayLine) {
-        page.drawText(displayLine, { x: 94, y: headY + 18, size: 9, font: fontRegular, color: subTextColor, maxWidth: width - 118 });
+        page.drawText(displayLine, { x: textX, y: headY + (headerLayout === "compact" ? 13 : 14), size: 8.4, font: fontRegular, color: subTextColor, maxWidth: width - textX - 20 });
+      }
+
+      if (templateStyle === "client_submission_style") {
+        const metaY = headY - 16;
+        const chips = displayLine ? displayLine.split("|").map((v) => String(v || "").trim()).filter(Boolean).slice(0, 5) : [];
+        let cursorX = 20;
+        chips.forEach((chip) => {
+          const text = chip.slice(0, 34);
+          const tw = fontRegular.widthOfTextAtSize(text, 7.4);
+          const chipW = Math.min(140, tw + 18);
+          page.drawRoundedRectangle?.({ x: cursorX, y: metaY, width: chipW, height: 11, borderRadius: 6, color: rgb(softPanel.r, softPanel.g, softPanel.b), borderColor: rgb(divider.r, divider.g, divider.b), borderWidth: 0.6 });
+          if (!page.drawRoundedRectangle) {
+            page.drawRectangle({ x: cursorX, y: metaY, width: chipW, height: 11, color: rgb(softPanel.r, softPanel.g, softPanel.b), borderColor: rgb(divider.r, divider.g, divider.b), borderWidth: 0.6 });
+          }
+          page.drawText(text, { x: cursorX + 8, y: metaY + 2.3, size: 7.4, font: fontRegular, color: rgb(slateText.r, slateText.g, slateText.b) });
+          cursorX += chipW + 6;
+        });
       }
     }
     if (footerEnabled) {
-      let footBg = rgb(0.97, 0.98, 1);
-      let footText = rgb(0.31, 0.39, 0.53);
+      let footBg = rgb(0.985, 0.988, 0.995);
+      let footText = rgb(slateText.r, slateText.g, slateText.b);
       if (templateStyle === "premium_blue_bar") {
-        footBg = rgb(0.07, 0.26, 0.62);
-        footText = rgb(0.92, 0.96, 1);
+        footBg = rgb(0.965, 0.972, 0.986);
+        footText = rgb(0.15, 0.2, 0.32);
+      } else if (templateStyle === "watermark_footer_only") {
+        footBg = rgb(0.99, 0.992, 0.996);
+        footText = rgb(0.33, 0.37, 0.46);
       }
       page.drawRectangle({ x: 0, y: 0, width, height: footerHeight, color: footBg });
-      page.drawLine({ start: { x: 0, y: footerHeight }, end: { x: width, y: footerHeight }, thickness: 1, color: rgb(0.86, 0.9, 0.96) });
-      page.drawText(footerText, { x: 20, y: 14, size: 9, font: fontRegular, color: footText, maxWidth: width - 130 });
-      page.drawText(`Page ${index + 1}/${srcPages.length}`, { x: width - 84, y: 14, size: 9, font: fontRegular, color: footText });
+      page.drawLine({ start: { x: safeMarginX, y: footerHeight - 0.5 }, end: { x: width - safeMarginX, y: footerHeight - 0.5 }, thickness: 0.8, color: rgb(divider.r, divider.g, divider.b) });
+      page.drawText(footerCaps, { x: 20, y: 11.8, size: 8, font: fontRegular, color: footText, maxWidth: width - 140 });
+      page.drawText(`PAGE ${index + 1}/${srcPages.length}`, { x: width - 86, y: 11.8, size: 8, font: fontRegular, color: footText });
     }
   }
 
