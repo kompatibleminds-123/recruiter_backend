@@ -3314,7 +3314,7 @@ function downloadCandidateCardExcelFile(filename, { title, subtitle, sections })
   downloadTextFile(filename, html, "application/vnd.ms-excel;charset=utf-8");
 }
 
-function downloadTextFile(filename, text, mimeType = "text/tab-separated-values;charset=utf-8") {
+  function downloadTextFile(filename, text, mimeType = "text/tab-separated-values;charset=utf-8") {
   const blob = new Blob([String(text || "")], { type: mimeType });
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
@@ -12970,6 +12970,72 @@ function PortalApp({ token, onLogout }) {
     return fillClientShareTemplate(template, context);
   }
 
+  function buildResumeFormattingSampleHtml() {
+    const rf = { ...(DEFAULT_COPY_SETTINGS.resumeFormatting || {}), ...(copySettings.resumeFormatting || {}) };
+    const watermarkOpacity = Math.max(0.05, Math.min(0.15, Number(rf.watermarkOpacity || 0.12) || 0.12));
+    const footerText = String(rf.footerText || "Confidential candidate profile shared by {{company_name}}").trim();
+    const watermarkText = String(rf.watermarkText || "CONFIDENTIAL").trim() || "CONFIDENTIAL";
+    const logoDataUrl = String(rf.logoDataUrl || "").trim();
+    return `
+      <html>
+        <head>
+          <meta charset="utf-8" />
+          <style>
+            body { font-family: Arial, sans-serif; color: #1f2a44; margin: 0; }
+            .page { position: relative; padding: 26px 26px 72px; min-height: 900px; }
+            .wm { position:absolute; top:46%; left:50%; transform:translate(-50%,-50%) rotate(-22deg); font-size:44px; font-weight:700; color:#1f3760; opacity:${watermarkOpacity}; }
+            .header { border-bottom:1px solid #d7dfeb; padding-bottom:10px; margin-bottom:14px; display:grid; grid-template-columns:72px 1fr; gap:10px; align-items:center; }
+            .logo { width:68px; height:42px; border:1px dashed #a9b8d3; border-radius:8px; display:flex; align-items:center; justify-content:center; font-size:11px; color:#4a628f; overflow:hidden; }
+            .logo img { max-width:100%; max-height:100%; object-fit:contain; }
+            .meta strong { font-size:18px; display:block; margin-bottom:4px; }
+            .meta span { font-size:12px; color:#4a628f; }
+            .line { height:10px; background:#e6edf8; border-radius:999px; margin:9px 0; }
+            .w80 { width:80%; } .w90 { width:90%; } .w70 { width:70%; }
+            .footer { position:absolute; left:26px; right:26px; bottom:20px; border-top:1px solid #d7dfeb; padding-top:8px; color:#4a628f; font-size:12px; display:flex; justify-content:space-between; gap:8px; }
+          </style>
+        </head>
+        <body>
+          <div class="page">
+            ${rf.watermarkEnabled ? `<div class="wm">${escapeHtml(watermarkText)}</div>` : ""}
+            ${rf.headerEnabled !== false ? `
+              <div class="header">
+                <div class="logo">${logoDataUrl ? `<img src="${logoDataUrl}" alt="Logo" />` : "LOGO"}</div>
+                <div class="meta">
+                  <strong>Candidate Name</strong>
+                  <span>Role | Email | Phone | Notice | Experience</span>
+                </div>
+              </div>
+            ` : ""}
+            <div class="line"></div>
+            <div class="line w90"></div>
+            <div class="line w80"></div>
+            <div class="line w70"></div>
+            <div class="line w90"></div>
+            <div class="line w80"></div>
+            ${rf.footerEnabled !== false ? `
+              <div class="footer">
+                <span>${escapeHtml(footerText)}</span>
+                <span>${rf.footerShowPageNumber !== false ? "Page 1/1" : ""}</span>
+              </div>
+            ` : ""}
+          </div>
+        </body>
+      </html>
+    `.trim();
+  }
+
+  function downloadResumeFormattingSampleWord() {
+    const html = buildResumeFormattingSampleHtml();
+    const blob = new Blob([html], { type: "application/msword;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `resume-format-sample-${new Date().toISOString().slice(0, 10)}.doc`;
+    link.click();
+    URL.revokeObjectURL(url);
+    setStatus("settings", "Sample Word downloaded. Review header/footer/watermark look.", "ok");
+  }
+
   function replaceClientSharePlaceholdersInHtml(rawHtml, context) {
     let output = String(rawHtml || "");
     const tokens = {
@@ -17804,6 +17870,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                     </div>
                     <div className="button-row">
                       <button onClick={() => void saveCopySettingsWithMessage("Resume formatting settings saved.")}>Save Resume Formatting</button>
+                      <button className="secondary" onClick={() => downloadResumeFormattingSampleWord()}>Download Sample Word</button>
                       <button className="ghost-btn" onClick={() => navigate("/admin-settings")}>Back to Admin Settings</button>
                     </div>
                   </div>
