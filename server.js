@@ -10522,8 +10522,37 @@ const server = http.createServer(async (req, res) => {
         : {};
       const companyName = String(actor?.companyName || actor?.company_name || "").trim() || "Your Company";
       const filenameRaw = String(body?.filename || "branded-cv.pdf").trim() || "branded-cv.pdf";
-      const candidateName = String(body?.candidateName || "Candidate Name").trim() || "Candidate Name";
-      const headerLine = String(body?.headerLine || "").trim();
+      const candidateId = String(body?.candidateId || "").trim();
+      let candidateName = String(body?.candidateName || "").trim();
+      let headerLine = String(body?.headerLine || "").trim();
+      if (candidateId && (!candidateName || !headerLine)) {
+        const candidate = (await listCandidatesForUser(actor, { id: candidateId, limit: 1 }))[0] || null;
+        if (candidate && !candidateName) {
+          candidateName = String(candidate?.name || "").trim();
+        }
+        if (candidate && !headerLine) {
+          const role = String(candidate?.role || candidate?.jd_title || "").trim();
+          const email = String(candidate?.email || "").trim();
+          const phone = String(candidate?.phone || "").trim();
+          const location = String(candidate?.location || "").trim();
+          const notice = String(candidate?.notice_period || "").trim();
+          const exp = String(candidate?.experience || "").trim();
+          const company = String(candidate?.company || "").trim();
+          const fields = Array.isArray(resumeFormatting?.headerShowFields) ? resumeFormatting.headerShowFields : [];
+          const map = {
+            candidate_name: String(candidate?.name || "").trim(),
+            candidate_role: role,
+            email,
+            phone,
+            location,
+            notice_period: notice,
+            total_experience: exp,
+            current_company: company
+          };
+          headerLine = fields.map((key) => String(map[key] || "").trim()).filter(Boolean).join(" | ");
+        }
+      }
+      candidateName = candidateName || "Candidate Name";
       const buffer = await buildBrandedPdfBuffer({
         pdfBase64: body?.pdfBase64 || "",
         companyName,

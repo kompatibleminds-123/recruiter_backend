@@ -4755,7 +4755,20 @@ function ClientPortalPieCard({ title, total, rows }) {
   );
 }
 
-function DrilldownModal({ open, title, items, onClose, onOpenCv, onOpenDraft, onOpenAssessment, onOpenNotes, onOpenStatus, onAddFeedback, extraActions = null, inline = false, hideRoleClient = false, loading = false }) {
+function CvOpenActions({ onOpenOriginal, onOpenBranded, summaryLabel = "Open CV" }) {
+  if (!onOpenOriginal && !onOpenBranded) return null;
+  return (
+    <details className="cv-open-menu">
+      <summary>{summaryLabel}</summary>
+      <div className="cv-open-menu__body">
+        {onOpenOriginal ? <button type="button" className="ghost-btn" onClick={onOpenOriginal}>Open original CV</button> : null}
+        {onOpenBranded ? <button type="button" className="ghost-btn" onClick={onOpenBranded}>Open branded CV</button> : null}
+      </div>
+    </details>
+  );
+}
+
+function DrilldownModal({ open, title, items, onClose, onOpenCvOriginal, onOpenCvBranded, onOpenDraft, onOpenAssessment, onOpenNotes, onOpenStatus, onAddFeedback, extraActions = null, inline = false, hideRoleClient = false, loading = false }) {
   if (!open) return null;
   const containerClass = inline ? "inline-drilldown" : "overlay";
   const cardClass = inline ? "panel inline-drilldown__card" : "overlay-card overlay-card--wide";
@@ -4805,7 +4818,12 @@ function DrilldownModal({ open, title, items, onClose, onOpenCv, onOpenDraft, on
                     </div>
                   ) : null}
                   <div className="button-row drilldown-actions">
-                    {onOpenCv && (item.raw?.candidate?.id || item.id) && (item.raw?.candidate?.cv_filename || item.raw?.candidate?.cv_url) ? <button onClick={() => onOpenCv(item.raw?.candidate?.id || item.id)}>Open CV</button> : null}
+                    {(onOpenCvOriginal || onOpenCvBranded) && (item.raw?.candidate?.id || item.id) && (item.raw?.candidate?.cv_filename || item.raw?.candidate?.cv_url) ? (
+                      <CvOpenActions
+                        onOpenOriginal={onOpenCvOriginal ? () => onOpenCvOriginal(item) : null}
+                        onOpenBranded={onOpenCvBranded ? () => onOpenCvBranded(item) : null}
+                      />
+                    ) : null}
                     {onOpenAssessment && (assessmentForAction || profileOnlyMode) ? <button onClick={() => onOpenAssessment(profileTarget)}>{profileOnlyMode ? "Open profile" : "Update Assessment"}</button> : null}
                     {assessmentForAction && onOpenStatus ? <button onClick={() => onOpenStatus(assessmentForAction)}>Update status</button> : null}
                     {onOpenNotes && candidateIdForAction ? <button onClick={() => onOpenNotes(candidateIdForAction)}>Update notes</button> : null}
@@ -4831,7 +4849,7 @@ function DrilldownModal({ open, title, items, onClose, onOpenCv, onOpenDraft, on
   );
 }
 
-function CandidateProfileModal({ open, candidate, onClose, onOpenCv, onReuse, onCopyShareLink }) {
+function CandidateProfileModal({ open, candidate, onClose, onOpenCvOriginal, onOpenCvBranded, onReuse, onCopyShareLink }) {
   if (!open || !candidate) return null;
   const ctx = resolveCandidateContext(candidate);
   const baseCandidate = ctx.candidate || candidate;
@@ -5001,7 +5019,12 @@ function CandidateProfileModal({ open, candidate, onClose, onOpenCv, onReuse, on
           {onReuse ? <button onClick={() => onReuse(candidate)}>Reuse profile</button> : null}
           <button className="ghost-btn" onClick={() => downloadCandidateCardExcelFile(`candidate-card-${new Date().toISOString().slice(0, 10)}.xls`, { title: modalTitle, subtitle: modalSubtitle, sections: excelSections })}>Download card (Excel)</button>
           {onCopyShareLink && baseCandidate?.id ? <button className="ghost-btn" onClick={() => onCopyShareLink(baseCandidate.id)}>Copy share link</button> : null}
-          {candidateHasStoredCv(baseCandidate) ? <button onClick={() => onOpenCv(candidate)}>Open CV</button> : null}
+          {candidateHasStoredCv(baseCandidate) ? (
+            <CvOpenActions
+              onOpenOriginal={onOpenCvOriginal ? () => onOpenCvOriginal(candidate) : null}
+              onOpenBranded={onOpenCvBranded ? () => onOpenCvBranded(candidate) : null}
+            />
+          ) : null}
           <button className="ghost-btn" onClick={onClose}>Close</button>
         </div>
       </div>
@@ -5009,7 +5032,7 @@ function CandidateProfileModal({ open, candidate, onClose, onOpenCv, onReuse, on
   );
 }
 
-function ClientProfileModal({ open, item, onClose, copySettings = DEFAULT_COPY_SETTINGS, presetId = "client_submission", onOpenCv }) {
+function ClientProfileModal({ open, item, onClose, copySettings = DEFAULT_COPY_SETTINGS, presetId = "client_submission", onOpenCvOriginal, onOpenCvBranded }) {
   if (!open || !item) return null;
   const assessment = item.raw?.assessment || item;
   const candidate = item.raw?.candidate || {};
@@ -5155,7 +5178,13 @@ function ClientProfileModal({ open, item, onClose, copySettings = DEFAULT_COPY_S
           </div>
         </div>
         <div className="button-row">
-          {hasCv ? <button onClick={() => onOpenCv?.(item)}>Download / Open CV</button> : null}
+          {hasCv ? (
+            <CvOpenActions
+              summaryLabel="Open CV"
+              onOpenOriginal={onOpenCvOriginal ? () => onOpenCvOriginal(item) : null}
+              onOpenBranded={onOpenCvBranded ? () => onOpenCvBranded(item) : null}
+            />
+          ) : null}
           <button className="ghost-btn" onClick={() => downloadCandidateCardExcelFile(`candidate-card-${new Date().toISOString().slice(0, 10)}.xls`, { title: modalTitle, subtitle: modalSubtitle, sections: excelSections })}>Download card (Excel)</button>
           <button className="ghost-btn" onClick={onClose}>Close</button>
         </div>
@@ -6367,6 +6396,7 @@ function PortalApp({ token, onLogout }) {
   const [clientShareBodyTouched, setClientShareBodyTouched] = useState(false);
   const [resumeSampleFile, setResumeSampleFile] = useState(null);
   const [resumeSampleFileUrl, setResumeSampleFileUrl] = useState("");
+  const [resumeSampleCandidate, setResumeSampleCandidate] = useState(null);
   const resumeSampleFileInputRef = useRef(null);
   const clientShareEditorLastHtmlRef = useRef("");
   const clientShareQueueTimeoutRef = useRef(null);
@@ -9855,13 +9885,56 @@ function PortalApp({ token, onLogout }) {
     setStatus("applicants", "Opening CV...", "ok");
   }
 
+  function normalizeCvCandidateInput(input) {
+    if (typeof input === "string" || typeof input === "number") {
+      const id = String(input || "").trim();
+      return (state.candidates || []).find((item) => String(item?.id || "").trim() === id) || null;
+    }
+    return input || null;
+  }
+
+  function buildHeaderValueByField(candidateInput) {
+    const item = normalizeCvCandidateInput(candidateInput);
+    const ctx = item ? resolveCandidateContext(item) : { candidate: {}, draft: {}, assessment: null, phone: "", email: "", linkedin: "" };
+    const candidate = ctx?.candidate || {};
+    const draft = ctx?.draft || {};
+    const assessment = ctx?.assessment || {};
+    return {
+      candidate_name: String(candidate?.name || draft?.candidateName || assessment?.candidateName || "").trim(),
+      candidate_role: String(draft?.currentDesignation || candidate?.role || assessment?.jdTitle || candidate?.jd_title || "").trim(),
+      email: String(ctx?.email || draft?.emailId || candidate?.email || "").trim(),
+      phone: String(ctx?.phone || draft?.phoneNumber || candidate?.phone || "").trim(),
+      location: String(draft?.location || candidate?.location || "").trim(),
+      notice_period: String(draft?.noticePeriod || candidate?.notice_period || "").trim(),
+      total_experience: String(draft?.totalExperience || candidate?.total_experience || candidate?.experience || "").trim(),
+      current_company: String(draft?.currentCompany || candidate?.company || candidate?.currentCompany || "").trim()
+    };
+  }
+
+  function buildResumeHeaderLineForCandidate(candidateInput) {
+    const selected = Array.isArray(copySettings?.resumeFormatting?.headerShowFields)
+      ? copySettings.resumeFormatting.headerShowFields
+      : [];
+    const byField = buildHeaderValueByField(candidateInput);
+    return selected
+      .map((key) => String(byField[key] || "").trim())
+      .filter(Boolean)
+      .join(" | ");
+  }
+
+  function buildResumeCandidateName(candidateInput) {
+    const byField = buildHeaderValueByField(candidateInput);
+    return String(byField.candidate_name || "Candidate Name").trim() || "Candidate Name";
+  }
+
   function openDatabaseCandidateCv(candidate) {
-    const meta = getCandidateProfileCvMeta(candidate);
+    const item = normalizeCvCandidateInput(candidate);
+    const meta = getCandidateProfileCvMeta(item);
     if (!meta.candidateId) {
       setStatus("workspace", "Linked candidate not found for this CV.", "error");
       return;
     }
-    if (!candidateHasStoredCv(candidate)) {
+    if (!candidateHasStoredCv(item)) {
       setStatus("workspace", "No uploaded CV available for this profile.", "error");
       return;
     }
@@ -9872,6 +9945,67 @@ function PortalApp({ token, onLogout }) {
     if (meta.provider) params.set("cv_provider", String(meta.provider));
     window.open(`/company/candidates/${encodeURIComponent(meta.candidateId)}/cv?${params.toString()}`, "_blank", "noopener,noreferrer");
     setStatus("workspace", "Opening CV...", "ok");
+  }
+
+  async function openBrandedCandidateCv(candidate) {
+    const item = normalizeCvCandidateInput(candidate);
+    const meta = getCandidateProfileCvMeta(item);
+    if (!meta.candidateId) {
+      setStatus("workspace", "Linked candidate not found for this CV.", "error");
+      return;
+    }
+    if (!candidateHasStoredCv(item)) {
+      setStatus("workspace", "No uploaded CV available for this profile.", "error");
+      return;
+    }
+    try {
+      const params = new URLSearchParams({ access_token: token });
+      if (meta.url) params.set("cv_url", String(meta.url));
+      if (meta.filename) params.set("cv_filename", String(meta.filename));
+      if (meta.key) params.set("cv_key", String(meta.key));
+      if (meta.provider) params.set("cv_provider", String(meta.provider));
+      const response = await fetch(`/company/candidates/${encodeURIComponent(meta.candidateId)}/cv?${params.toString()}`);
+      if (!response.ok) throw new Error("Could not load source CV.");
+      const sourceBlob = await response.blob();
+      const sourceIsPdf = String(sourceBlob.type || "").toLowerCase().includes("pdf") || /\.pdf$/i.test(String(meta.filename || ""));
+      if (!sourceIsPdf) {
+        setStatus("workspace", "Branded open is PDF-only right now. Open original CV for non-PDF files.", "error");
+        return;
+      }
+      const arr = await sourceBlob.arrayBuffer();
+      const bytes = new Uint8Array(arr);
+      let bin = "";
+      for (let i = 0; i < bytes.length; i += 1) bin += String.fromCharCode(bytes[i]);
+      const pdfBase64 = window.btoa(bin);
+      const branded = await fetch("/company/resume-formatting/branded-pdf", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {})
+        },
+        body: JSON.stringify({
+          pdfBase64,
+          filename: String(meta.filename || "branded-cv.pdf"),
+          candidateId: String(meta.candidateId || "").trim(),
+          candidateName: buildResumeCandidateName(item),
+          headerLine: buildResumeHeaderLineForCandidate(item),
+          copySettings
+        })
+      });
+      if (!branded.ok) {
+        const text = await branded.text();
+        throw new Error(normalizeMojibakeSymbols(text || "Could not generate branded CV."));
+      }
+      const outBlob = await branded.blob();
+      const outUrl = URL.createObjectURL(outBlob);
+      window.open(outUrl, "_blank", "noopener,noreferrer");
+      setTimeout(() => {
+        try { URL.revokeObjectURL(outUrl); } catch {}
+      }, 120000);
+      setStatus("workspace", "Opening branded CV...", "ok");
+    } catch (error) {
+      setStatus("workspace", String(error?.message || error || "Could not open branded CV."), "error");
+    }
   }
 
   async function copyCandidateProfileShareLink(candidateId) {
@@ -13108,8 +13242,40 @@ function PortalApp({ token, onLogout }) {
     const objectUrl = URL.createObjectURL(file);
     setResumeSampleFile(file);
     setResumeSampleFileUrl(objectUrl);
+    setResumeSampleCandidate(null);
     setStatus("settings", `Sample selected: ${file.name}. Preview styling shown below.`, "ok");
     event.target.value = "";
+  }
+
+  async function useSelectedAssessmentCvAsSample() {
+    try {
+      const selected = Array.isArray(selectedAssessmentRows) ? selectedAssessmentRows : [];
+      if (!selected.length) throw new Error("Select at least one assessment profile first.");
+      const item = selected[0];
+      const candidate = item?.raw?.candidate || item || null;
+      const meta = getCandidateProfileCvMeta(candidate);
+      if (!meta.candidateId || !candidateHasStoredCv(candidate)) throw new Error("Selected profile has no uploaded CV.");
+      const params = new URLSearchParams({ access_token: token });
+      if (meta.url) params.set("cv_url", String(meta.url));
+      if (meta.filename) params.set("cv_filename", String(meta.filename));
+      if (meta.key) params.set("cv_key", String(meta.key));
+      if (meta.provider) params.set("cv_provider", String(meta.provider));
+      const response = await fetch(`/company/candidates/${encodeURIComponent(meta.candidateId)}/cv?${params.toString()}`);
+      if (!response.ok) throw new Error("Could not load selected CV file.");
+      const blob = await response.blob();
+      const name = String(meta.filename || candidate?.cvFilename || "selected-cv.pdf").trim() || "selected-cv.pdf";
+      const file = new File([blob], name, { type: blob.type || "application/pdf" });
+      if (resumeSampleFileUrl) {
+        try { URL.revokeObjectURL(resumeSampleFileUrl); } catch {}
+      }
+      const objectUrl = URL.createObjectURL(file);
+      setResumeSampleFile(file);
+      setResumeSampleFileUrl(objectUrl);
+      setResumeSampleCandidate(candidate);
+      setStatus("settings", `Sample selected from profile CV: ${name}`, "ok");
+    } catch (error) {
+      setStatus("settings", normalizeMojibakeSymbols(String(error?.message || error || "Could not use selected CV.")), "error");
+    }
   }
 
   const resumeHeaderFieldOptions = [
@@ -13143,31 +13309,12 @@ function PortalApp({ token, onLogout }) {
   }
 
   function getResumeHeaderPreviewLine() {
+    const line = buildResumeHeaderLineForCandidate(resumeSampleCandidate);
+    if (line) return line;
     const selected = Array.isArray(copySettings?.resumeFormatting?.headerShowFields)
       ? copySettings.resumeFormatting.headerShowFields
       : [];
-    const sample = Array.isArray(selectedAssessmentRows) && selectedAssessmentRows.length ? selectedAssessmentRows[0] : null;
-    const context = sample ? resolveCandidateContext(sample) : null;
-    const candidate = context?.candidate || {};
-    const draft = context?.draft || {};
-    const assessment = context?.assessment || {};
-    const byKey = {
-      name: String(candidate?.name || draft?.candidateName || assessment?.candidateName || "Candidate Name").trim(),
-      role: String(draft?.currentDesignation || candidate?.role || assessment?.jdTitle || "").trim(),
-      email: String(context?.email || draft?.emailId || "").trim(),
-      phone: String(context?.phone || draft?.phoneNumber || "").trim(),
-      location: String(draft?.location || candidate?.location || "").trim(),
-      notice_period: String(draft?.noticePeriod || candidate?.notice_period || "").trim(),
-      total_experience: String(draft?.totalExperience || candidate?.total_experience || "").trim(),
-      current_company: String(draft?.currentCompany || candidate?.company || "").trim()
-    };
-    const values = selected
-      .map((key) => String(byKey[key] || "").trim())
-      .filter(Boolean);
-    if (values.length) return values.join(" | ");
-    const labels = resumeHeaderFieldOptions
-      .filter((item) => selected.includes(item.key))
-      .map((item) => item.label);
+    const labels = resumeHeaderFieldOptions.filter((item) => selected.includes(item.key)).map((item) => item.label);
     return labels.length ? labels.join(" | ") : "No header fields selected";
   }
 
@@ -13180,9 +13327,8 @@ function PortalApp({ token, onLogout }) {
     let bin = "";
     for (let i = 0; i < bytes.length; i += 1) bin += String.fromCharCode(bytes[i]);
     const pdfBase64 = window.btoa(bin);
-    const sample = Array.isArray(selectedAssessmentRows) && selectedAssessmentRows.length ? selectedAssessmentRows[0] : null;
-    const context = sample ? resolveCandidateContext(sample) : null;
-    const candidateName = String(context?.candidate?.name || context?.draft?.candidateName || "Candidate Name").trim() || "Candidate Name";
+    const candidateName = buildResumeCandidateName(resumeSampleCandidate);
+    const candidateMeta = getCandidateProfileCvMeta(resumeSampleCandidate || {});
     const response = await fetch("/company/resume-formatting/branded-pdf", {
       method: "POST",
       headers: {
@@ -13192,8 +13338,9 @@ function PortalApp({ token, onLogout }) {
       body: JSON.stringify({
         pdfBase64,
         filename: String(resumeSampleFile.name || "branded-cv.pdf"),
+        candidateId: String(candidateMeta?.candidateId || "").trim(),
         candidateName,
-        headerLine: getResumeHeaderPreviewLine(),
+        headerLine: buildResumeHeaderLineForCandidate(resumeSampleCandidate),
         copySettings
       })
     });
@@ -16086,7 +16233,8 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                     title={drilldownState.title}
                     items={drilldownState.items}
                     onClose={() => setDrilldownState({ open: false, title: "", items: [], request: null, loading: false })}
-                    onOpenCv={(candidateId) => void openCv(candidateId)}
+                    onOpenCvOriginal={(item) => openDatabaseCandidateCv(item?.raw?.candidate || item)}
+                    onOpenCvBranded={(item) => void openBrandedCandidateCv(item?.raw?.candidate || item)}
                     onOpenNotes={(candidateId) => void openRecruiterNotes(candidateId)}
                     onOpenStatus={(target) => {
                       const assessmentId = String(target?.id || target?.assessmentId || "").trim();
@@ -16342,7 +16490,12 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                               ) : null}
                               <div className="button-row">
                                 <button onClick={() => setDatabaseProfileItem(item)}>Open profile</button>
-                                {candidateHasStoredCv(item) ? <button className="ghost-btn" onClick={() => openDatabaseCandidateCv(item)}>Open CV</button> : null}
+                                {candidateHasStoredCv(item) ? (
+                                  <CvOpenActions
+                                    onOpenOriginal={() => openDatabaseCandidateCv(item)}
+                                    onOpenBranded={() => void openBrandedCandidateCv(item)}
+                                  />
+                                ) : null}
                               </div>
                             </div>
                           </div>
@@ -18056,7 +18209,8 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                       <div className="resume-preview-head">Live preview</div>
                       <input ref={resumeSampleFileInputRef} type="file" accept=".pdf,.doc,.docx" hidden onChange={(e) => onResumeSampleFileChange(e)} />
                       <div className="button-row tight" style={{ marginBottom: 8 }}>
-                        <button className="secondary" onClick={() => pickResumeSampleFile()}>Use selected CV as sample</button>
+                        <button className="secondary" onClick={() => void useSelectedAssessmentCvAsSample()}>Use selected CV as sample</button>
+                        <button className="ghost-btn" onClick={() => pickResumeSampleFile()}>Upload sample file</button>
                         {resumeSampleFile ? <span className="muted">{resumeSampleFile.name}</span> : null}
                         {resumeSampleFileUrl ? <button className="ghost-btn" onClick={() => openResumeBrandedPreview()}>Open branded preview</button> : null}
                         {resumeSampleFileUrl ? <button className="ghost-btn" onClick={() => void downloadBrandedResumePdf()}>Download branded PDF</button> : null}
@@ -18076,7 +18230,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                                 : "LOGO"}
                             </div>
                             <div className="resume-preview-meta">
-                              <strong>Candidate Name</strong>
+                              <strong>{buildResumeCandidateName(resumeSampleCandidate)}</strong>
                               <span>{getResumeHeaderPreviewLine()}</span>
                             </div>
                           </div>
@@ -18864,7 +19018,8 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
         title={drilldownState.title}
         items={drilldownState.items}
         onClose={() => setDrilldownState({ open: false, title: "", items: [], request: null, loading: false })}
-        onOpenCv={(candidateId) => void openCv(candidateId)}
+        onOpenCvOriginal={(item) => openDatabaseCandidateCv(item?.raw?.candidate || item)}
+        onOpenCvBranded={(item) => void openBrandedCandidateCv(item?.raw?.candidate || item)}
         onOpenAssessment={(assessment) => { setDrilldownState({ open: false, title: "", items: [], request: null }); openSavedAssessment(assessment); }}
 	        onOpenNotes={(candidateId) => { setDrilldownState({ open: false, title: "", items: [], request: null }); openRecruiterNotes(candidateId); }}
         onOpenStatus={(target) => {
@@ -18881,7 +19036,8 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
         open={Boolean(databaseProfileItem)}
         candidate={databaseProfileItem}
         onClose={() => setDatabaseProfileItem(null)}
-        onOpenCv={(candidate) => openDatabaseCandidateCv(candidate)}
+        onOpenCvOriginal={(candidate) => openDatabaseCandidateCv(candidate)}
+        onOpenCvBranded={(candidate) => void openBrandedCandidateCv(candidate)}
         onReuse={(candidate) => reuseDatabaseCandidate(candidate)}
         onCopyShareLink={(candidateId) => void copyCandidateProfileShareLink(candidateId)}
       />
@@ -19199,7 +19355,8 @@ function ClientPortalApp({ token, onLogout }) {
           onClose={() => setProfileItem(null)}
           copySettings={clientCopySettings}
           presetId={clientTrackerPresetId}
-          onOpenCv={(item) => openClientCv(item)}
+          onOpenCvOriginal={(item) => openClientCv(item)}
+          onOpenCvBranded={null}
         />
       </main>
     </div>

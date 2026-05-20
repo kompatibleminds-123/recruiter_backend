@@ -2171,6 +2171,41 @@ textarea { min-height: 92px; resize: vertical; }
   font-size: 12px;
   color: #4f6286;
 }
+.cv-open-menu {
+  position: relative;
+  display: inline-block;
+}
+.cv-open-menu summary {
+  list-style: none;
+  cursor: pointer;
+  border: 1px solid var(--border);
+  background: var(--panel-strong);
+  color: var(--text);
+  border-radius: 12px;
+  padding: 0.48rem 0.78rem;
+  font-weight: 700;
+}
+.cv-open-menu summary::-webkit-details-marker {
+  display: none;
+}
+.cv-open-menu__body {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 6px);
+  left: 0;
+  min-width: 190px;
+  display: grid;
+  gap: 0.38rem;
+  padding: 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--panel-strong);
+  box-shadow: 0 14px 30px rgba(15, 23, 42, 0.16);
+}
+.cv-open-menu__body .ghost-btn {
+  width: 100%;
+  text-align: left;
+}
 .placeholder-chip.active {
   background: #e7f0ff;
   border-color: #9ebcf7;
