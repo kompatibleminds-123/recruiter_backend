@@ -1411,7 +1411,9 @@ async function buildBrandedPdfBuffer({
     const { width, height } = srcPage.getSize();
     const page = outDoc.addPage([width, height]);
     const embedded = await outDoc.embedPage(srcPage);
-    const topPad = headerEnabled ? headerHeight : 0;
+    const headerOnAllPages = templateStyle === "side_ribbon_branding";
+    const showHeaderOnThisPage = headerEnabled && (headerOnAllPages || index === 0) && templateStyle !== "watermark_footer_only";
+    const topPad = showHeaderOnThisPage ? headerHeight : 0;
     const bottomPad = footerEnabled ? footerHeight : 0;
     const availableHeight = Math.max(40, height - topPad - bottomPad);
     page.drawPage(embedded, {
@@ -1432,7 +1434,7 @@ async function buildBrandedPdfBuffer({
         rotate: degrees(-24)
       });
     }
-    if (headerEnabled && templateStyle !== "watermark_footer_only") {
+    if (showHeaderOnThisPage) {
       const headY = height - headerHeight;
       let headBg = rgb(0.97, 0.98, 1);
       let textColor = rgb(0.1, 0.22, 0.4);
