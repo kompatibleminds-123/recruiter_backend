@@ -2043,6 +2043,13 @@ textarea { min-height: 92px; resize: vertical; }
   padding: 12px;
   background: #f8fbff;
 }
+.resume-toggle-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 18px;
+  align-items: center;
+  margin-bottom: 10px;
+}
 .resume-preview-head {
   font-size: 12px;
   font-weight: 700;
@@ -2093,6 +2100,13 @@ textarea { min-height: 92px; resize: vertical; }
   align-items: center;
   justify-content: center;
   color: #4f6da0;
+  overflow: hidden;
+}
+.resume-preview-logo img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  display: block;
 }
 .resume-preview-meta {
   display: grid;

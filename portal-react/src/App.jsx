@@ -228,6 +228,7 @@ function FeatureLockedSection({ title = "Feature locked" }) {
     headerEnabled: true,
     footerEnabled: true,
     watermarkEnabled: false,
+    logoDataUrl: "",
     headerLayout: "executive",
     headerShowFields: ["candidate_name", "candidate_role", "email", "phone", "notice_period", "total_experience"],
     footerText: "Confidential candidate profile shared by {{company_name}}",
@@ -286,6 +287,7 @@ function migrateCopySettings(settings = {}) {
   resumeFormatting.headerMaxHeightPx = Math.max(56, Math.min(90, Number(resumeFormatting.headerMaxHeightPx || 90) || 90));
   resumeFormatting.footerMaxHeightPx = Math.max(40, Math.min(70, Number(resumeFormatting.footerMaxHeightPx || 70) || 70));
   resumeFormatting.headerShowFields = Array.isArray(resumeFormatting.headerShowFields) ? resumeFormatting.headerShowFields : DEFAULT_COPY_SETTINGS.resumeFormatting.headerShowFields;
+  resumeFormatting.logoDataUrl = String(resumeFormatting.logoDataUrl || "").trim();
   next.resumeFormatting = resumeFormatting;
   next.exportPresetLabels = Object.fromEntries(
     Object.entries(next.exportPresetLabels || {}).map(([key, value]) => [key, normalizeMojibakeSymbols(value || "")])
@@ -17730,10 +17732,31 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                   {statuses.settings ? <div className={`status ${statuses.settingsKind || ""}`}>{statuses.settings}</div> : null}
                   <div className="settings-subsection">
                     <div className="section-kicker">Template Controls</div>
-                    <div className="form-grid two-col">
+                    <div className="resume-toggle-row">
                       <label className="checkbox-row"><input type="checkbox" checked={copySettings.resumeFormatting?.headerEnabled !== false} onChange={(e) => setCopySettings((c) => ({ ...c, resumeFormatting: { ...(c.resumeFormatting || {}), headerEnabled: e.target.checked } }))} /><span>Enable header</span></label>
                       <label className="checkbox-row"><input type="checkbox" checked={copySettings.resumeFormatting?.footerEnabled !== false} onChange={(e) => setCopySettings((c) => ({ ...c, resumeFormatting: { ...(c.resumeFormatting || {}), footerEnabled: e.target.checked } }))} /><span>Enable footer</span></label>
                       <label className="checkbox-row"><input type="checkbox" checked={copySettings.resumeFormatting?.watermarkEnabled === true} onChange={(e) => setCopySettings((c) => ({ ...c, resumeFormatting: { ...(c.resumeFormatting || {}), watermarkEnabled: e.target.checked } }))} /><span>Enable watermark</span></label>
+                    </div>
+                    <div className="form-grid two-col">
+                      <label>
+                        <span>Header logo</span>
+                        <input
+                          type="file"
+                          accept=".png,.jpg,.jpeg,.webp,.svg"
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            if (!file) return;
+                            const reader = new FileReader();
+                            reader.onload = () => {
+                              const dataUrl = String(reader.result || "");
+                              setCopySettings((c) => ({ ...c, resumeFormatting: { ...(c.resumeFormatting || {}), logoDataUrl: dataUrl } }));
+                            };
+                            reader.readAsDataURL(file);
+                            e.target.value = "";
+                          }}
+                        />
+                        <span className="field-help">Preview-only logo for now. Export renderer integration next step.</span>
+                      </label>
                       <label><span>Header layout</span><select value={copySettings.resumeFormatting?.headerLayout || "executive"} onChange={(e) => setCopySettings((c) => ({ ...c, resumeFormatting: { ...(c.resumeFormatting || {}), headerLayout: e.target.value } }))}><option value="executive">Executive</option><option value="compact">Compact</option></select></label>
                       <label><span>Header max height (56-90)</span><input type="number" min={56} max={90} value={copySettings.resumeFormatting?.headerMaxHeightPx ?? 90} onChange={(e) => setCopySettings((c) => ({ ...c, resumeFormatting: { ...(c.resumeFormatting || {}), headerMaxHeightPx: Number(e.target.value || 90) } }))} /></label>
                       <label><span>Footer max height (40-70)</span><input type="number" min={40} max={70} value={copySettings.resumeFormatting?.footerMaxHeightPx ?? 70} onChange={(e) => setCopySettings((c) => ({ ...c, resumeFormatting: { ...(c.resumeFormatting || {}), footerMaxHeightPx: Number(e.target.value || 70) } }))} /></label>
@@ -17752,7 +17775,11 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                         ) : null}
                         {copySettings.resumeFormatting?.headerEnabled !== false ? (
                           <div className={`resume-preview-header ${String(copySettings.resumeFormatting?.headerLayout || "executive") === "compact" ? "compact" : ""}`}>
-                            <div className="resume-preview-logo">LOGO</div>
+                            <div className="resume-preview-logo">
+                              {String(copySettings.resumeFormatting?.logoDataUrl || "").trim()
+                                ? <img src={String(copySettings.resumeFormatting.logoDataUrl)} alt="Logo" />
+                                : "LOGO"}
+                            </div>
                             <div className="resume-preview-meta">
                               <strong>Candidate Name</strong>
                               <span>Role | Email | Phone | Notice | Experience</span>
