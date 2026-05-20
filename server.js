@@ -1299,6 +1299,11 @@ function normalizeThreadToken(value = "") {
   return String(value || "").trim().toLowerCase().replace(/\s+/g, " ");
 }
 
+function isInternetMessageId(value = "") {
+  const text = String(value || "").trim();
+  return Boolean(text) && text.includes("@");
+}
+
 function buildConversationKey({ to = "", clientLabel = "", role = "" } = {}) {
   const toKey = normalizeThreadToken(String(to || "").split(/,|;/)[0] || "");
   const clientKey = normalizeThreadToken(clientLabel);
@@ -10419,13 +10424,8 @@ const server = http.createServer(async (req, res) => {
         existingThread?.lastMessageId ||
         ""
       ).trim();
-      const anchorMailId = String(
-        existingThread?.last_mail_id ||
-        existingThread?.lastMailId ||
-        existingThread?.last_message_id ||
-        existingThread?.lastMessageId ||
-        ""
-      ).trim();
+      const anchorMailIdRaw = String(existingThread?.last_mail_id || existingThread?.lastMailId || "").trim();
+      const anchorMailId = isInternetMessageId(anchorMailIdRaw) ? "" : anchorMailIdRaw;
       const references = inReplyTo ? [inReplyTo] : [];
       const attachmentLimitBytes = 20 * 1024 * 1024;
       let attachmentBytes = 0;
@@ -10478,12 +10478,18 @@ const server = http.createServer(async (req, res) => {
         const persistedThreadId =
           String(sendMeta?.threadId || "").trim() ||
           String(existingThread?.last_thread_id || existingThread?.lastThreadId || "").trim();
-        const persistedMailId =
-          String(sendMeta?.mailId || "").trim() ||
-          String(existingThread?.last_mail_id || existingThread?.lastMailId || "").trim() ||
-          persistedMessageId;
+        const candidateMailId = String(sendMeta?.mailId || "").trim();
+        const fallbackMailId = String(existingThread?.last_mail_id || existingThread?.lastMailId || "").trim();
+        const persistedMailId = isInternetMessageId(candidateMailId)
+          ? (isInternetMessageId(fallbackMailId) ? "" : fallbackMailId)
+          : (candidateMailId || (isInternetMessageId(fallbackMailId) ? "" : fallbackMailId));
         const persistedInternetMessageId =
-          String(sendMeta?.internetMessageId || "").trim() ||
+          (isInternetMessageId(String(sendMeta?.internetMessageId || "").trim())
+            ? String(sendMeta?.internetMessageId || "").trim()
+            : "") ||
+          (isInternetMessageId(String(sendMeta?.messageId || "").trim())
+            ? String(sendMeta?.messageId || "").trim()
+            : "") ||
           String(existingThread?.last_internet_message_id || existingThread?.lastInternetMessageId || "").trim();
         await upsertCompanyEmailThread({
           companyId: actor.companyId,
