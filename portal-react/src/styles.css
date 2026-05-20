@@ -2100,6 +2100,46 @@ textarea { min-height: 92px; resize: vertical; }
 .resume-preview-header.compact .resume-preview-meta span {
   font-size: 11px;
 }
+.resume-template-premium_blue_bar {
+  background: linear-gradient(90deg, #11439b 0%, #0a2d6b 100%);
+  border-bottom-color: #0a2d6b;
+}
+.resume-template-premium_blue_bar .resume-preview-meta strong,
+.resume-template-premium_blue_bar .resume-preview-meta span,
+.resume-template-premium_blue_bar .resume-preview-logo {
+  color: #f8fbff;
+}
+.resume-template-premium_blue_bar .resume-preview-logo {
+  border-color: rgba(255,255,255,0.45);
+}
+.resume-template-side_ribbon_branding {
+  position: relative;
+  padding-left: 26px;
+}
+.resume-template-side_ribbon_branding::before {
+  content: "BRANDED";
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 18px;
+  background: #11439b;
+  color: #fff;
+  font-size: 8px;
+  letter-spacing: 0.12em;
+  writing-mode: vertical-rl;
+  transform: rotate(180deg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.resume-template-client_submission_style {
+  background: linear-gradient(180deg, #eef5ff 0%, #f9fbff 100%);
+  border-bottom-color: #c2d4f2;
+}
+.resume-template-watermark_footer_only {
+  background: #f7faff;
+}
 .resume-preview-logo {
   width: 56px;
   height: 38px;

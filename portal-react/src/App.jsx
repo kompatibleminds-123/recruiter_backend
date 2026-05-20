@@ -229,6 +229,7 @@ function FeatureLockedSection({ title = "Feature locked" }) {
     footerEnabled: true,
     watermarkEnabled: false,
     logoDataUrl: "",
+    templateStyle: "minimal_corporate",
     headerLayout: "executive",
     headerShowFields: ["candidate_name", "candidate_role", "email", "phone", "notice_period", "total_experience"],
     footerText: "Confidential candidate profile shared by {{company_name}}",
@@ -283,6 +284,7 @@ function migrateCopySettings(settings = {}) {
   const resumeFormatting = { ...(DEFAULT_COPY_SETTINGS.resumeFormatting || {}), ...(next.resumeFormatting || {}) };
   resumeFormatting.footerText = normalizeMojibakeSymbols(String(resumeFormatting.footerText || DEFAULT_COPY_SETTINGS.resumeFormatting.footerText || ""));
   resumeFormatting.watermarkText = normalizeMojibakeSymbols(String(resumeFormatting.watermarkText || DEFAULT_COPY_SETTINGS.resumeFormatting.watermarkText || ""));
+  resumeFormatting.templateStyle = String(resumeFormatting.templateStyle || DEFAULT_COPY_SETTINGS.resumeFormatting.templateStyle || "minimal_corporate").trim() || "minimal_corporate";
   resumeFormatting.watermarkOpacity = Math.max(0.05, Math.min(0.15, Number(resumeFormatting.watermarkOpacity || 0.12) || 0.12));
   resumeFormatting.headerMaxHeightPx = Math.max(56, Math.min(90, Number(resumeFormatting.headerMaxHeightPx || 90) || 90));
   resumeFormatting.footerMaxHeightPx = Math.max(40, Math.min(70, Number(resumeFormatting.footerMaxHeightPx || 70) || 70));
@@ -9898,12 +9900,11 @@ function PortalApp({ token, onLogout }) {
     const ctx = item ? resolveCandidateContext(item) : { candidate: {}, draft: {}, assessment: null, phone: "", email: "", linkedin: "" };
     const candidate = ctx?.candidate || {};
     const draft = ctx?.draft || {};
-    const assessment = ctx?.assessment || {};
     return {
-      candidate_name: String(candidate?.name || draft?.candidateName || assessment?.candidateName || "").trim(),
-      candidate_role: String(draft?.currentDesignation || candidate?.role || assessment?.jdTitle || candidate?.jd_title || "").trim(),
-      email: String(ctx?.email || draft?.emailId || candidate?.email || "").trim(),
-      phone: String(ctx?.phone || draft?.phoneNumber || candidate?.phone || "").trim(),
+      candidate_name: String(candidate?.name || draft?.candidateName || "").trim(),
+      candidate_role: String(draft?.currentDesignation || candidate?.role || candidate?.jd_title || "").trim(),
+      email: String(draft?.emailId || candidate?.email || ctx?.email || "").trim(),
+      phone: String(draft?.phoneNumber || candidate?.phone || ctx?.phone || "").trim(),
       location: String(draft?.location || candidate?.location || "").trim(),
       notice_period: String(draft?.noticePeriod || candidate?.notice_period || "").trim(),
       total_experience: String(draft?.totalExperience || candidate?.total_experience || candidate?.experience || "").trim(),
@@ -18179,6 +18180,19 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                         />
                         <span className="field-help">Logo appears in branded CV preview and export-render flow.</span>
                       </label>
+                      <label>
+                        <span>Brand template</span>
+                        <select
+                          value={copySettings.resumeFormatting?.templateStyle || "minimal_corporate"}
+                          onChange={(e) => setCopySettings((c) => ({ ...c, resumeFormatting: { ...(c.resumeFormatting || {}), templateStyle: e.target.value } }))}
+                        >
+                          <option value="minimal_corporate">1. Minimal Corporate</option>
+                          <option value="premium_blue_bar">2. Premium Blue Bar</option>
+                          <option value="side_ribbon_branding">3. Side Ribbon Branding</option>
+                          <option value="client_submission_style">4. Client Submission Style</option>
+                          <option value="watermark_footer_only">5. Watermark + Footer</option>
+                        </select>
+                      </label>
                       <label><span>Header layout</span><select value={copySettings.resumeFormatting?.headerLayout || "executive"} onChange={(e) => setCopySettings((c) => ({ ...c, resumeFormatting: { ...(c.resumeFormatting || {}), headerLayout: e.target.value } }))}><option value="executive">Executive</option><option value="compact">Compact</option></select></label>
                       <label><span>Header max height (56-90)</span><input type="number" min={56} max={90} value={copySettings.resumeFormatting?.headerMaxHeightPx ?? 90} onChange={(e) => setCopySettings((c) => ({ ...c, resumeFormatting: { ...(c.resumeFormatting || {}), headerMaxHeightPx: Number(e.target.value || 90) } }))} /></label>
                       <label><span>Footer max height (40-70)</span><input type="number" min={40} max={70} value={copySettings.resumeFormatting?.footerMaxHeightPx ?? 70} onChange={(e) => setCopySettings((c) => ({ ...c, resumeFormatting: { ...(c.resumeFormatting || {}), footerMaxHeightPx: Number(e.target.value || 70) } }))} /></label>
@@ -18223,7 +18237,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                           </div>
                         ) : null}
                         {copySettings.resumeFormatting?.headerEnabled !== false ? (
-                          <div className={`resume-preview-header ${String(copySettings.resumeFormatting?.headerLayout || "executive") === "compact" ? "compact" : ""}`}>
+                          <div className={`resume-preview-header resume-template-${String(copySettings.resumeFormatting?.templateStyle || "minimal_corporate")} ${String(copySettings.resumeFormatting?.headerLayout || "executive") === "compact" ? "compact" : ""}`}>
                             <div className="resume-preview-logo">
                               {String(copySettings.resumeFormatting?.logoDataUrl || "").trim()
                                 ? <img src={String(copySettings.resumeFormatting.logoDataUrl)} alt="Logo" />
