@@ -10431,6 +10431,12 @@ const server = http.createServer(async (req, res) => {
         }
       });
       if (conversationKey) {
+        const persistedMessageId =
+          String(sendMeta?.messageId || "").trim() ||
+          String(existingThread?.last_message_id || existingThread?.lastMessageId || "").trim();
+        const persistedThreadId =
+          String(sendMeta?.threadId || "").trim() ||
+          String(existingThread?.last_thread_id || existingThread?.lastThreadId || "").trim();
         await upsertCompanyEmailThread({
           companyId: actor.companyId,
           actorUserId: actor.id,
@@ -10439,8 +10445,8 @@ const server = http.createServer(async (req, res) => {
           subject,
           to: recipients.join(", "),
           cc: ccRecipients.join(", "),
-          messageId: String(sendMeta?.messageId || "").trim(),
-          threadId: String(sendMeta?.threadId || "").trim()
+          messageId: persistedMessageId,
+          threadId: persistedThreadId
         }).catch(() => null);
       }
       sendJson(res, 200, {
