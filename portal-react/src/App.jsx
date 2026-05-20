@@ -13112,6 +13112,46 @@ function PortalApp({ token, onLogout }) {
     event.target.value = "";
   }
 
+  const resumeHeaderFieldOptions = [
+    { key: "candidate_name", label: "Name" },
+    { key: "candidate_role", label: "Role" },
+    { key: "email", label: "Email" },
+    { key: "phone", label: "Phone" },
+    { key: "location", label: "Location" },
+    { key: "notice_period", label: "Notice" },
+    { key: "total_experience", label: "Experience" },
+    { key: "current_company", label: "Current Company" }
+  ];
+
+  function toggleResumeHeaderField(fieldKey) {
+    const key = String(fieldKey || "").trim();
+    if (!key) return;
+    setCopySettings((current) => {
+      const currentList = Array.isArray(current?.resumeFormatting?.headerShowFields)
+        ? current.resumeFormatting.headerShowFields
+        : [];
+      const exists = currentList.includes(key);
+      const nextList = exists ? currentList.filter((item) => item !== key) : [...currentList, key];
+      return {
+        ...current,
+        resumeFormatting: {
+          ...(current.resumeFormatting || {}),
+          headerShowFields: nextList
+        }
+      };
+    });
+  }
+
+  function getResumeHeaderPreviewLine() {
+    const selected = Array.isArray(copySettings?.resumeFormatting?.headerShowFields)
+      ? copySettings.resumeFormatting.headerShowFields
+      : [];
+    const labels = resumeHeaderFieldOptions
+      .filter((item) => selected.includes(item.key))
+      .map((item) => item.label);
+    return labels.length ? labels.join(" | ") : "No header fields selected";
+  }
+
   function replaceClientSharePlaceholdersInHtml(rawHtml, context) {
     let output = String(rawHtml || "");
     const tokens = {
@@ -17907,6 +17947,24 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                       <label className="full"><span>Footer text</span><input value={copySettings.resumeFormatting?.footerText || ""} onChange={(e) => setCopySettings((c) => ({ ...c, resumeFormatting: { ...(c.resumeFormatting || {}), footerText: e.target.value } }))} /></label>
                       <label><span>Watermark text</span><input value={copySettings.resumeFormatting?.watermarkText || ""} onChange={(e) => setCopySettings((c) => ({ ...c, resumeFormatting: { ...(c.resumeFormatting || {}), watermarkText: e.target.value } }))} /></label>
                       <label><span>Watermark opacity (0.05-0.15)</span><input type="number" step="0.01" min={0.05} max={0.15} value={copySettings.resumeFormatting?.watermarkOpacity ?? 0.12} onChange={(e) => setCopySettings((c) => ({ ...c, resumeFormatting: { ...(c.resumeFormatting || {}), watermarkOpacity: Number(e.target.value || 0.12) } }))} /></label>
+                      <label className="full">
+                        <span>Header fields (choose what to show)</span>
+                        <div className="placeholder-selector">
+                          {resumeHeaderFieldOptions.map((field) => {
+                            const active = (copySettings.resumeFormatting?.headerShowFields || []).includes(field.key);
+                            return (
+                              <button
+                                key={`resume-header-field-${field.key}`}
+                                type="button"
+                                className={`ghost-btn placeholder-chip ${active ? "active" : ""}`}
+                                onClick={() => toggleResumeHeaderField(field.key)}
+                              >
+                                {field.label}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </label>
                     </div>
                     <p className="muted">Safety guard active: if values exceed limits, they are auto-clamped to avoid CV content overlap in PDF/Word.</p>
                     <div className="resume-preview-shell">
@@ -17932,15 +17990,23 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                             </div>
                             <div className="resume-preview-meta">
                               <strong>Candidate Name</strong>
-                              <span>Role | Email | Phone | Notice | Experience</span>
+                              <span>{getResumeHeaderPreviewLine()}</span>
                             </div>
                           </div>
                         ) : null}
                         <div className="resume-preview-body">
-                          <div className="resume-preview-line" />
-                          <div className="resume-preview-line w80" />
-                          <div className="resume-preview-line w90" />
-                          <div className="resume-preview-line w70" />
+                          {resumeSampleFileUrl ? (
+                            String(resumeSampleFile?.type || "").toLowerCase().includes("pdf") || /\.pdf$/i.test(String(resumeSampleFile?.name || ""))
+                              ? <iframe className="resume-preview-file" title="Selected CV sample" src={resumeSampleFileUrl} />
+                              : <div className="resume-preview-fallback">Word preview not rendered in-browser yet. Open sample CV to verify source file, branding overlay preview shown here.</div>
+                          ) : (
+                            <>
+                              <div className="resume-preview-line" />
+                              <div className="resume-preview-line w80" />
+                              <div className="resume-preview-line w90" />
+                              <div className="resume-preview-line w70" />
+                            </>
+                          )}
                         </div>
                         {copySettings.resumeFormatting?.footerEnabled !== false ? (
                           <div className="resume-preview-footer">
