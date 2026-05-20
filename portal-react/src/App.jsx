@@ -13041,7 +13041,13 @@ function PortalApp({ token, onLogout }) {
         const text = await response.text();
         throw new Error(text || `HTTP ${response.status}`);
       }
+      const contentType = String(response.headers.get("content-type") || "").toLowerCase();
+      if (!contentType.includes("officedocument.wordprocessingml.document")) {
+        const text = await response.text();
+        throw new Error(text || "Invalid DOCX response.");
+      }
       const blob = await response.blob();
+      if (!blob || blob.size < 1200) throw new Error("DOCX output is empty/corrupt.");
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = url;
@@ -13050,24 +13056,40 @@ function PortalApp({ token, onLogout }) {
       URL.revokeObjectURL(url);
       setStatus("settings", "Sample DOCX downloaded.", "ok");
     } catch (error) {
-      setStatus("settings", `DOCX sample failed: ${String(error?.message || error)}`, "error");
+      downloadResumeFormattingSampleDocFallback();
+      setStatus("settings", `DOCX sample fallback used (.doc): ${String(error?.message || error)}`, "ok");
     }
+  }
+
+  function downloadResumeFormattingSampleDocFallback() {
+    const html = buildResumeFormattingSampleHtml();
+    const blob = new Blob([html], { type: "application/msword;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `resume-format-sample-${new Date().toISOString().slice(0, 10)}.doc`;
+    link.click();
+    URL.revokeObjectURL(url);
   }
 
   function printResumeFormattingSamplePdf() {
     const html = buildResumeFormattingSampleHtml();
-    const popup = window.open("", "_blank", "noopener,noreferrer,width=980,height=760");
+    const blob = new Blob([html], { type: "text/html;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const popup = window.open(url, "_blank", "noopener,noreferrer,width=980,height=760");
     if (!popup) {
       setStatus("settings", "Allow popups to open PDF print preview.", "error");
       return;
     }
-    popup.document.open();
-    popup.document.write(html);
-    popup.document.close();
-    popup.focus();
-    setTimeout(() => {
-      try { popup.print(); } catch {}
-    }, 250);
+    const runPrint = () => {
+      try {
+        popup.focus();
+        popup.print();
+      } catch {}
+      setTimeout(() => URL.revokeObjectURL(url), 10000);
+    };
+    popup.onload = runPrint;
+    setTimeout(runPrint, 900);
   }
 
   function replaceClientSharePlaceholdersInHtml(rawHtml, context) {
