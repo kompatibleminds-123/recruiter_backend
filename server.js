@@ -1372,8 +1372,9 @@ async function buildBrandedPdfBuffer({
   const raw = String(pdfBase64 || "").trim();
   if (!raw) throw new Error("PDF payload missing.");
   const src = Buffer.from(raw, "base64");
-  const pdfDoc = await PDFDocument.load(src);
-  const pages = pdfDoc.getPages();
+  const srcDoc = await PDFDocument.load(src);
+  const outDoc = await PDFDocument.create();
+  const srcPages = srcDoc.getPages();
   const rf = resumeFormatting && typeof resumeFormatting === "object" ? resumeFormatting : {};
 
   const headerEnabled = rf.headerEnabled !== false;
@@ -1387,25 +1388,38 @@ async function buildBrandedPdfBuffer({
   const wmOpacity = Math.max(0.05, Math.min(0.15, Number(rf.watermarkOpacity || 0.12) || 0.12));
   const displayName = String(candidateName || "Candidate Name").trim() || "Candidate Name";
   const displayLine = String(headerLine || "").trim();
-  const fontRegular = await pdfDoc.embedFont(StandardFonts.Helvetica);
-  const fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+  const fontRegular = await outDoc.embedFont(StandardFonts.Helvetica);
+  const fontBold = await outDoc.embedFont(StandardFonts.HelveticaBold);
 
   let logoImage = null;
   const logoBuf = readImageBufferFromDataUrl(String(rf.logoDataUrl || "").trim());
   if (logoBuf) {
     try {
-      logoImage = await pdfDoc.embedPng(logoBuf);
+      logoImage = await outDoc.embedPng(logoBuf);
     } catch {
       try {
-        logoImage = await pdfDoc.embedJpg(logoBuf);
+        logoImage = await outDoc.embedJpg(logoBuf);
       } catch {
         logoImage = null;
       }
     }
   }
 
-  pages.forEach((page, index) => {
-    const { width, height } = page.getSize();
+  for (let index = 0; index < srcPages.length; index += 1) {
+    const srcPage = srcPages[index];
+    const { width, height } = srcPage.getSize();
+    const page = outDoc.addPage([width, height]);
+    const embedded = await outDoc.embedPage(srcPage);
+    const topPad = headerEnabled ? headerHeight : 0;
+    const bottomPad = footerEnabled ? footerHeight : 0;
+    const availableHeight = Math.max(40, height - topPad - bottomPad);
+    page.drawPage(embedded, {
+      x: 0,
+      y: bottomPad,
+      width,
+      height: availableHeight
+    });
+
     if (watermarkEnabled) {
       page.drawText(watermarkText, {
         x: width * 0.26,
@@ -1435,11 +1449,11 @@ async function buildBrandedPdfBuffer({
       page.drawRectangle({ x: 0, y: 0, width, height: footerHeight, color: rgb(0.97, 0.98, 1) });
       page.drawLine({ start: { x: 0, y: footerHeight }, end: { x: width, y: footerHeight }, thickness: 1, color: rgb(0.86, 0.9, 0.96) });
       page.drawText(footerText, { x: 20, y: 14, size: 9, font: fontRegular, color: rgb(0.31, 0.39, 0.53), maxWidth: width - 130 });
-      page.drawText(`Page ${index + 1}/${pages.length}`, { x: width - 84, y: 14, size: 9, font: fontRegular, color: rgb(0.31, 0.39, 0.53) });
+      page.drawText(`Page ${index + 1}/${srcPages.length}`, { x: width - 84, y: 14, size: 9, font: fontRegular, color: rgb(0.31, 0.39, 0.53) });
     }
-  });
+  }
 
-  const bytes = await pdfDoc.save();
+  const bytes = await outDoc.save();
   return Buffer.from(bytes);
 }
 
