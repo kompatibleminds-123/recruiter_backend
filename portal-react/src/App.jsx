@@ -13196,6 +13196,54 @@ function PortalApp({ token, onLogout }) {
     }, 120000);
   }
 
+  async function downloadBrandedResumePdf() {
+    try {
+      if (!resumeSampleFile) throw new Error("Select a sample CV first.");
+      const isPdf = String(resumeSampleFile.type || "").toLowerCase().includes("pdf") || /\.pdf$/i.test(String(resumeSampleFile.name || ""));
+      if (!isPdf) throw new Error("Only PDF sample supports branded export right now.");
+      const arr = await resumeSampleFile.arrayBuffer();
+      const bytes = new Uint8Array(arr);
+      let bin = "";
+      for (let i = 0; i < bytes.length; i += 1) bin += String.fromCharCode(bytes[i]);
+      const pdfBase64 = window.btoa(bin);
+      const sample = Array.isArray(selectedAssessmentRows) && selectedAssessmentRows.length ? selectedAssessmentRows[0] : null;
+      const context = sample ? resolveCandidateContext(sample) : null;
+      const candidateName = String(context?.candidate?.name || context?.draft?.candidateName || "Candidate Name").trim() || "Candidate Name";
+      const response = await fetch("/company/resume-formatting/branded-pdf", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {})
+        },
+        body: JSON.stringify({
+          pdfBase64,
+          filename: String(resumeSampleFile.name || "branded-cv.pdf"),
+          candidateName,
+          headerLine: getResumeHeaderPreviewLine(),
+          copySettings
+        })
+      });
+      if (!response.ok) {
+        const text = await response.text();
+        throw new Error(normalizeMojibakeSymbols(text || "Branded PDF generation failed."));
+      }
+      const blob = await response.blob();
+      const outUrl = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = outUrl;
+      a.download = String(resumeSampleFile.name || "branded-cv.pdf").replace(/\.pdf$/i, "") + "-branded.pdf";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => {
+        try { URL.revokeObjectURL(outUrl); } catch {}
+      }, 120000);
+      setStatus("settings", "Branded PDF generated and downloaded.", "ok");
+    } catch (error) {
+      setStatus("settings", normalizeMojibakeSymbols(String(error?.message || error || "Branded PDF generation failed.")), "error");
+    }
+  }
+
   function replaceClientSharePlaceholdersInHtml(rawHtml, context) {
     let output = String(rawHtml || "");
     const tokens = {
@@ -18018,6 +18066,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                         <button className="secondary" onClick={() => pickResumeSampleFile()}>Use selected CV as sample</button>
                         {resumeSampleFile ? <span className="muted">{resumeSampleFile.name}</span> : null}
                         {resumeSampleFileUrl ? <button className="ghost-btn" onClick={() => openResumeBrandedPreview()}>Open branded preview</button> : null}
+                        {resumeSampleFileUrl ? <button className="ghost-btn" onClick={() => void downloadBrandedResumePdf()}>Download branded PDF</button> : null}
                         {resumeSampleFileUrl ? <button className="ghost-btn" onClick={() => window.open(resumeSampleFileUrl, "_blank", "noopener,noreferrer")}>Open source CV</button> : null}
                       </div>
                       <div className="resume-preview-page">

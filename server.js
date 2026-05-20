@@ -148,6 +148,12 @@ try {
 } catch (_) {
   xlsxLib = null;
 }
+let pdfLib = null;
+try {
+  pdfLib = require("pdf-lib");
+} catch (_) {
+  pdfLib = null;
+}
 
 const PORT = Number(process.env.PORT || 8787);
 const WHATSAPP_VERIFY_TOKEN = String(process.env.WHATSAPP_VERIFY_TOKEN || "").trim();
@@ -1352,6 +1358,89 @@ async function buildResumeFormattingSampleDocxBuffer({ companyName = "Your Compa
     }]
   });
   return Packer.toBuffer(doc);
+}
+
+async function buildBrandedPdfBuffer({
+  pdfBase64 = "",
+  companyName = "Your Company",
+  resumeFormatting = {},
+  candidateName = "Candidate Name",
+  headerLine = ""
+} = {}) {
+  if (!pdfLib) throw new Error("PDF branding dependency missing.");
+  const { PDFDocument, StandardFonts, rgb, degrees } = pdfLib;
+  const raw = String(pdfBase64 || "").trim();
+  if (!raw) throw new Error("PDF payload missing.");
+  const src = Buffer.from(raw, "base64");
+  const pdfDoc = await PDFDocument.load(src);
+  const pages = pdfDoc.getPages();
+  const rf = resumeFormatting && typeof resumeFormatting === "object" ? resumeFormatting : {};
+
+  const headerEnabled = rf.headerEnabled !== false;
+  const footerEnabled = rf.footerEnabled !== false;
+  const watermarkEnabled = rf.watermarkEnabled === true;
+  const watermarkText = String(rf.watermarkText || "CONFIDENTIAL").trim() || "CONFIDENTIAL";
+  const footerText = String(rf.footerText || "Confidential candidate profile shared by {{company_name}}")
+    .replace(/\{\{\s*company_name\s*\}\}/gi, String(companyName || "Your Company").trim());
+  const headerHeight = Math.max(56, Math.min(90, Number(rf.headerMaxHeightPx || 72) || 72));
+  const footerHeight = Math.max(40, Math.min(70, Number(rf.footerMaxHeightPx || 52) || 52));
+  const wmOpacity = Math.max(0.05, Math.min(0.15, Number(rf.watermarkOpacity || 0.12) || 0.12));
+  const displayName = String(candidateName || "Candidate Name").trim() || "Candidate Name";
+  const displayLine = String(headerLine || "").trim();
+  const fontRegular = await pdfDoc.embedFont(StandardFonts.Helvetica);
+  const fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+
+  let logoImage = null;
+  const logoBuf = readImageBufferFromDataUrl(String(rf.logoDataUrl || "").trim());
+  if (logoBuf) {
+    try {
+      logoImage = await pdfDoc.embedPng(logoBuf);
+    } catch {
+      try {
+        logoImage = await pdfDoc.embedJpg(logoBuf);
+      } catch {
+        logoImage = null;
+      }
+    }
+  }
+
+  pages.forEach((page, index) => {
+    const { width, height } = page.getSize();
+    if (watermarkEnabled) {
+      page.drawText(watermarkText, {
+        x: width * 0.26,
+        y: height * 0.5,
+        size: 52,
+        font: fontBold,
+        color: rgb(0.12, 0.22, 0.38),
+        opacity: wmOpacity,
+        rotate: degrees(-24)
+      });
+    }
+    if (headerEnabled) {
+      const headY = height - headerHeight;
+      page.drawRectangle({ x: 0, y: headY, width, height: headerHeight, color: rgb(0.97, 0.98, 1) });
+      page.drawLine({ start: { x: 0, y: headY }, end: { x: width, y: headY }, thickness: 1, color: rgb(0.86, 0.9, 0.96) });
+      if (logoImage) {
+        page.drawImage(logoImage, { x: 20, y: headY + 14, width: 54, height: 30 });
+      } else {
+        page.drawRectangle({ x: 20, y: headY + 14, width: 54, height: 30, borderColor: rgb(0.67, 0.74, 0.84), borderWidth: 1 });
+      }
+      page.drawText(displayName, { x: 86, y: headY + 34, size: 11, font: fontBold, color: rgb(0.1, 0.22, 0.4) });
+      if (displayLine) {
+        page.drawText(displayLine, { x: 86, y: headY + 18, size: 9, font: fontRegular, color: rgb(0.31, 0.39, 0.53), maxWidth: width - 110 });
+      }
+    }
+    if (footerEnabled) {
+      page.drawRectangle({ x: 0, y: 0, width, height: footerHeight, color: rgb(0.97, 0.98, 1) });
+      page.drawLine({ start: { x: 0, y: footerHeight }, end: { x: width, y: footerHeight }, thickness: 1, color: rgb(0.86, 0.9, 0.96) });
+      page.drawText(footerText, { x: 20, y: 14, size: 9, font: fontRegular, color: rgb(0.31, 0.39, 0.53), maxWidth: width - 130 });
+      page.drawText(`Page ${index + 1}/${pages.length}`, { x: width - 84, y: 14, size: 9, font: fontRegular, color: rgb(0.31, 0.39, 0.53) });
+    }
+  });
+
+  const bytes = await pdfDoc.save();
+  return Buffer.from(bytes);
 }
 
 async function loadAttachmentFromUrl(url = "", fallbackName = "cv.pdf", mimeType = "") {
@@ -10402,6 +10491,36 @@ const server = http.createServer(async (req, res) => {
       sendBuffer(req, res, 200, buffer, {
         "Content-Type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         "Content-Disposition": `attachment; filename=\"${filename}\"`
+      });
+    } catch (error) {
+      sendJson(res, 400, { ok: false, error: String(error.message || error) });
+    }
+    return;
+  }
+
+  if (req.method === "POST" && req.url === "/company/resume-formatting/branded-pdf") {
+    try {
+      const actor = await requireSessionUser(getBearerToken(req));
+      const body = await readJsonBody(req);
+      const copySettings = body?.copySettings && typeof body.copySettings === "object" ? body.copySettings : {};
+      const resumeFormatting = copySettings?.resumeFormatting && typeof copySettings.resumeFormatting === "object"
+        ? copySettings.resumeFormatting
+        : {};
+      const companyName = String(actor?.companyName || actor?.company_name || "").trim() || "Your Company";
+      const filenameRaw = String(body?.filename || "branded-cv.pdf").trim() || "branded-cv.pdf";
+      const candidateName = String(body?.candidateName || "Candidate Name").trim() || "Candidate Name";
+      const headerLine = String(body?.headerLine || "").trim();
+      const buffer = await buildBrandedPdfBuffer({
+        pdfBase64: body?.pdfBase64 || "",
+        companyName,
+        resumeFormatting,
+        candidateName,
+        headerLine
+      });
+      const downloadName = filenameRaw.toLowerCase().endsWith(".pdf") ? filenameRaw : `${filenameRaw}.pdf`;
+      sendBuffer(req, res, 200, buffer, {
+        "Content-Type": "application/pdf",
+        "Content-Disposition": `attachment; filename=\"${downloadName.replace(/"/g, "")}\"`
       });
     } catch (error) {
       sendJson(res, 400, { ok: false, error: String(error.message || error) });
