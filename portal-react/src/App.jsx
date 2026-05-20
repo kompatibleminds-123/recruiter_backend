@@ -6735,8 +6735,10 @@ function PortalApp({ token, onLogout }) {
   }, [assessmentLane]);
 
   useEffect(() => {
-    // Load per-recruiter SMTP settings when user opens mail settings (or admin settings).
-    if (location?.pathname === "/mail-settings" || location?.pathname === "/settings") void loadSmtpSettingsOnce();
+    // Load per-recruiter SMTP/signature settings where mail content is composed.
+    if (location?.pathname === "/mail-settings" || location?.pathname === "/settings" || location?.pathname === "/client-share") {
+      void loadSmtpSettingsOnce();
+    }
   }, [location?.pathname]);
 
   useEffect(() => {
