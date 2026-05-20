@@ -816,6 +816,7 @@ async function sendZohoEmailWithCfg(cfg, { to, cc = "", subject, html = "", text
     ...(attachmentRefs.length ? { attachments: attachmentRefs } : {})
   };
   const inReplyTo = String(threading?.inReplyTo || "").trim();
+  const anchorMailId = String(threading?.anchorMailId || "").trim();
   const references = Array.isArray(threading?.references) ? threading.references.map((item) => String(item || "").trim()).filter(Boolean) : [];
   if (allowThreading && inReplyTo) {
     // Zoho API support can vary by tenant/region. We send best-effort threading hints.
@@ -823,8 +824,11 @@ async function sendZohoEmailWithCfg(cfg, { to, cc = "", subject, html = "", text
     payload.replyToMessageId = inReplyTo;
     if (references.length) payload.references = references;
   }
-  async function postZohoMessage(requestPayload) {
-    const response = await fetchWithTimeout(`${mailBase}/api/accounts/${encodeURIComponent(accountId)}/messages`, {
+  async function postZohoMessage(requestPayload, { replyMailId = "" } = {}) {
+    const targetUrl = String(replyMailId || "").trim()
+      ? `${mailBase}/api/accounts/${encodeURIComponent(accountId)}/messages/${encodeURIComponent(String(replyMailId || "").trim())}`
+      : `${mailBase}/api/accounts/${encodeURIComponent(accountId)}/messages`;
+    const response = await fetchWithTimeout(targetUrl, {
       method: "POST",
       headers: {
         "Accept": "application/json",
@@ -845,7 +849,8 @@ async function sendZohoEmailWithCfg(cfg, { to, cc = "", subject, html = "", text
     return { response, raw, json, statusCode, ok };
   }
 
-  let sendResult = await postZohoMessage(payload);
+  const replyAnchor = allowThreading ? anchorMailId : "";
+  let sendResult = await postZohoMessage(payload, { replyMailId: replyAnchor });
   let threadedPayloadUsed = Boolean(allowThreading && inReplyTo);
   if (!sendResult.ok) {
     const desc = String(sendResult?.json?.status?.description || sendResult?.json?.data?.error?.message || sendResult?.raw || "Zoho send failed.");
@@ -855,7 +860,7 @@ async function sendZohoEmailWithCfg(cfg, { to, cc = "", subject, html = "", text
       delete retryPayload.inReplyToMessageId;
       delete retryPayload.replyToMessageId;
       delete retryPayload.references;
-      sendResult = await postZohoMessage(retryPayload);
+      sendResult = await postZohoMessage(retryPayload, { replyMailId: replyAnchor });
       threadedPayloadUsed = false;
     }
   }
@@ -875,7 +880,7 @@ async function sendZohoEmailWithCfg(cfg, { to, cc = "", subject, html = "", text
     responseHeaders?.get?.("x-zm-message-id"),
     responseHeaders?.get?.("x-zm-mailid")
   );
-  const messageId = readString(
+  const extractedMessageId = readString(
     headerMessageId,
     sendJson?.messageId,
     sendJson?.message_id,
@@ -890,6 +895,22 @@ async function sendZohoEmailWithCfg(cfg, { to, cc = "", subject, html = "", text
     Array.isArray(candidateData) ? candidateData?.[0]?.message_id : "",
     Array.isArray(candidateData) ? candidateData?.[0]?.mailId : ""
   );
+  const mailId = readString(
+    sendJson?.mailId,
+    sendJson?.mail_id,
+    candidateData?.mailId,
+    candidateData?.mail_id,
+    findKeyDeep(sendJson, ["mailId", "mail_id", "id"])
+  );
+  const internetMessageId = readString(
+    sendJson?.internetMessageId,
+    sendJson?.internet_message_id,
+    candidateData?.internetMessageId,
+    candidateData?.internet_message_id,
+    findKeyDeep(sendJson, ["internetMessageId", "internet_message_id", "messageHeaderId", "message_header_id"]),
+    /@/.test(extractedMessageId) ? extractedMessageId : ""
+  );
+  const messageId = readString(mailId, extractedMessageId, internetMessageId);
   const threadId = readString(
     sendJson?.threadId,
     sendJson?.thread_id,
@@ -908,6 +929,8 @@ async function sendZohoEmailWithCfg(cfg, { to, cc = "", subject, html = "", text
     accountId,
     fromAddress: payload.fromAddress,
     messageId,
+    mailId,
+    internetMessageId,
     threadId,
     threadedApplied: Boolean(threadedPayloadUsed && inReplyTo)
   };
@@ -1222,17 +1245,19 @@ async function sendJdEmailAsActor(actor, { to, cc = "", subject, html, text, att
     return {
       providerMode: "zoho_api",
       messageId: String(meta?.messageId || "").trim(),
+      mailId: String(meta?.mailId || "").trim(),
+      internetMessageId: String(meta?.internetMessageId || "").trim(),
       threadId: String(meta?.threadId || "").trim(),
       threadedApplied: Boolean(meta?.threadedApplied)
     };
   }
   if (isSendgridApiMode(cfg)) {
     await sendSendgridEmailWithCfg(cfg, { to, cc: ccValue, subject, html, text, attachments });
-    return { providerMode: "sendgrid_api", messageId: "", threadId: "" };
+    return { providerMode: "sendgrid_api", messageId: "", mailId: "", internetMessageId: "", threadId: "" };
   }
   if (isPostmarkApiMode(cfg)) {
     await sendPostmarkEmailWithCfg(cfg, { to, cc: ccValue, subject, html, text, attachments });
-    return { providerMode: "postmark_api", messageId: "", threadId: "" };
+    return { providerMode: "postmark_api", messageId: "", mailId: "", internetMessageId: "", threadId: "" };
   }
   const info = await transport.sendMail({
     from: String(cfg.from || "").trim(),
@@ -1248,6 +1273,8 @@ async function sendJdEmailAsActor(actor, { to, cc = "", subject, html, text, att
   return {
     providerMode: "smtp",
     messageId: String(info?.messageId || "").trim(),
+    mailId: "",
+    internetMessageId: String(info?.messageId || "").trim(),
     threadId: "",
     threadedApplied: Boolean(String(threading?.inReplyTo || "").trim())
   };
@@ -10385,7 +10412,20 @@ const server = http.createServer(async (req, res) => {
       const existingThread = !forceNewThread && conversationKey
         ? await getCompanyEmailThreadByKey(actor.companyId, conversationKey).catch(() => null)
         : null;
-      const inReplyTo = String(existingThread?.last_message_id || existingThread?.lastMessageId || "").trim();
+      const inReplyTo = String(
+        existingThread?.last_internet_message_id ||
+        existingThread?.lastInternetMessageId ||
+        existingThread?.last_message_id ||
+        existingThread?.lastMessageId ||
+        ""
+      ).trim();
+      const anchorMailId = String(
+        existingThread?.last_mail_id ||
+        existingThread?.lastMailId ||
+        existingThread?.last_message_id ||
+        existingThread?.lastMessageId ||
+        ""
+      ).trim();
       const references = inReplyTo ? [inReplyTo] : [];
       const attachmentLimitBytes = 20 * 1024 * 1024;
       let attachmentBytes = 0;
@@ -10426,6 +10466,7 @@ const server = http.createServer(async (req, res) => {
         attachments: resolvedAttachments,
         allowZohoApiThreading,
         threading: {
+          anchorMailId: anchorMailId || "",
           inReplyTo: inReplyTo || "",
           references
         }
@@ -10437,6 +10478,13 @@ const server = http.createServer(async (req, res) => {
         const persistedThreadId =
           String(sendMeta?.threadId || "").trim() ||
           String(existingThread?.last_thread_id || existingThread?.lastThreadId || "").trim();
+        const persistedMailId =
+          String(sendMeta?.mailId || "").trim() ||
+          String(existingThread?.last_mail_id || existingThread?.lastMailId || "").trim() ||
+          persistedMessageId;
+        const persistedInternetMessageId =
+          String(sendMeta?.internetMessageId || "").trim() ||
+          String(existingThread?.last_internet_message_id || existingThread?.lastInternetMessageId || "").trim();
         await upsertCompanyEmailThread({
           companyId: actor.companyId,
           actorUserId: actor.id,
@@ -10446,7 +10494,9 @@ const server = http.createServer(async (req, res) => {
           to: recipients.join(", "),
           cc: ccRecipients.join(", "),
           messageId: persistedMessageId,
-          threadId: persistedThreadId
+          threadId: persistedThreadId,
+          mailId: persistedMailId,
+          internetMessageId: persistedInternetMessageId
         }).catch(() => null);
       }
       sendJson(res, 200, {

@@ -2581,7 +2581,19 @@ async function getCompanyEmailThreadByKey(companyId, conversationKey) {
   return rows[0] || null;
 }
 
-async function upsertCompanyEmailThread({ companyId, actorUserId, conversationKey, providerMode = "", subject = "", to = "", cc = "", messageId = "", threadId = "" }) {
+async function upsertCompanyEmailThread({
+  companyId,
+  actorUserId,
+  conversationKey,
+  providerMode = "",
+  subject = "",
+  to = "",
+  cc = "",
+  messageId = "",
+  threadId = "",
+  mailId = "",
+  internetMessageId = ""
+}) {
   const scopedCompanyId = String(companyId || "").trim();
   const scopedActorUserId = String(actorUserId || "").trim();
   const scopedKey = String(conversationKey || "").trim();
@@ -2600,6 +2612,8 @@ async function upsertCompanyEmailThread({ companyId, actorUserId, conversationKe
       lastSubject: String(subject || base.lastSubject || "").trim(),
       lastMessageId: String(messageId || base.lastMessageId || "").trim(),
       lastThreadId: String(threadId || base.lastThreadId || "").trim(),
+      lastMailId: String(mailId || base.lastMailId || "").trim(),
+      lastInternetMessageId: String(internetMessageId || base.lastInternetMessageId || "").trim(),
       lastTo: String(to || base.lastTo || "").trim(),
       lastCc: String(cc || base.lastCc || "").trim(),
       updatedBy: scopedActorUserId,
@@ -2617,6 +2631,8 @@ async function upsertCompanyEmailThread({ companyId, actorUserId, conversationKe
     last_subject: String(subject || "").trim(),
     last_message_id: String(messageId || "").trim() || null,
     last_thread_id: String(threadId || "").trim() || null,
+    last_mail_id: String(mailId || "").trim() || null,
+    last_internet_message_id: String(internetMessageId || "").trim() || null,
     last_to: String(to || "").trim(),
     last_cc: String(cc || "").trim(),
     updated_by: scopedActorUserId,
