@@ -693,6 +693,34 @@ async function exchangeZohoAuthCode({ code = "", redirectUri = "", hostHint = "z
 }
 
 async function sendZohoEmailWithCfg(cfg, { to, cc = "", subject, html = "", text = "", attachments = [], threading = {}, allowThreading = false }) {
+  const readString = (...values) => values.map((value) => String(value || "").trim()).find(Boolean) || "";
+  const findKeyDeep = (root, keyNames = [], maxDepth = 6) => {
+    const wanted = new Set(keyNames.map((k) => String(k || "").toLowerCase()).filter(Boolean));
+    if (!wanted.size || root == null) return "";
+    const queue = [{ node: root, depth: 0 }];
+    const seen = new Set();
+    while (queue.length) {
+      const { node, depth } = queue.shift();
+      if (!node || depth > maxDepth) continue;
+      if (typeof node === "object") {
+        if (seen.has(node)) continue;
+        seen.add(node);
+      }
+      if (Array.isArray(node)) {
+        for (const child of node) queue.push({ node: child, depth: depth + 1 });
+        continue;
+      }
+      if (typeof node !== "object") continue;
+      for (const [key, value] of Object.entries(node)) {
+        if (wanted.has(String(key || "").toLowerCase())) {
+          const picked = readString(value);
+          if (picked) return picked;
+        }
+        if (value && typeof value === "object") queue.push({ node: value, depth: depth + 1 });
+      }
+    }
+    return "";
+  };
   const accessToken = await getZohoAccessToken(cfg);
   const { mailBase } = resolveZohoBases(cfg);
   const accountsRes = await fetchWithTimeout(`${mailBase}/api/accounts`, {
@@ -818,6 +846,7 @@ async function sendZohoEmailWithCfg(cfg, { to, cc = "", subject, html = "", text
   }
 
   let sendResult = await postZohoMessage(payload);
+  let threadedPayloadUsed = Boolean(allowThreading && inReplyTo);
   if (!sendResult.ok) {
     const desc = String(sendResult?.json?.status?.description || sendResult?.json?.data?.error?.message || sendResult?.raw || "Zoho send failed.");
     const looksInvalidInput = /invalid input/i.test(desc);
@@ -827,6 +856,7 @@ async function sendZohoEmailWithCfg(cfg, { to, cc = "", subject, html = "", text
       delete retryPayload.replyToMessageId;
       delete retryPayload.references;
       sendResult = await postZohoMessage(retryPayload);
+      threadedPayloadUsed = false;
     }
   }
   if (!sendResult.ok) {
@@ -836,23 +866,40 @@ async function sendZohoEmailWithCfg(cfg, { to, cc = "", subject, html = "", text
     err.body = sendResult?.raw || "";
     throw err;
   }
+  const sendJson = sendResult?.json || {};
   const candidateData = sendJson?.data;
-  const readString = (...values) => values.map((value) => String(value || "").trim()).find(Boolean) || "";
+  const responseHeaders = sendResult?.response?.headers;
+  const headerMessageId = readString(
+    responseHeaders?.get?.("message-id"),
+    responseHeaders?.get?.("x-message-id"),
+    responseHeaders?.get?.("x-zm-message-id"),
+    responseHeaders?.get?.("x-zm-mailid")
+  );
   const messageId = readString(
+    headerMessageId,
     sendJson?.messageId,
     sendJson?.message_id,
+    sendJson?.mailId,
+    sendJson?.mail_id,
     candidateData?.messageId,
     candidateData?.message_id,
+    candidateData?.mailId,
+    candidateData?.mail_id,
+    findKeyDeep(sendJson, ["messageId", "message_id", "mailId", "mail_id", "internetMessageId", "internet_message_id"]),
     Array.isArray(candidateData) ? candidateData?.[0]?.messageId : "",
     Array.isArray(candidateData) ? candidateData?.[0]?.message_id : "",
-    Array.isArray(candidateData) ? candidateData?.[0]?.mailId : "",
-    candidateData?.mailId
+    Array.isArray(candidateData) ? candidateData?.[0]?.mailId : ""
   );
   const threadId = readString(
     sendJson?.threadId,
     sendJson?.thread_id,
+    sendJson?.conversationId,
+    sendJson?.conversation_id,
     candidateData?.threadId,
     candidateData?.thread_id,
+    candidateData?.conversationId,
+    candidateData?.conversation_id,
+    findKeyDeep(sendJson, ["threadId", "thread_id", "conversationId", "conversation_id"]),
     Array.isArray(candidateData) ? candidateData?.[0]?.threadId : "",
     Array.isArray(candidateData) ? candidateData?.[0]?.thread_id : ""
   );
@@ -862,7 +909,7 @@ async function sendZohoEmailWithCfg(cfg, { to, cc = "", subject, html = "", text
     fromAddress: payload.fromAddress,
     messageId,
     threadId,
-    threadedApplied: Boolean(allowThreading && inReplyTo)
+    threadedApplied: Boolean(threadedPayloadUsed && inReplyTo)
   };
 }
 
