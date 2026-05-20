@@ -1280,6 +1280,80 @@ async function sendJdEmailAsActor(actor, { to, cc = "", subject, html, text, att
   };
 }
 
+function readImageBufferFromDataUrl(dataUrl = "") {
+  const raw = String(dataUrl || "").trim();
+  const match = raw.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/);
+  if (!match) return null;
+  try {
+    return Buffer.from(match[2], "base64");
+  } catch {
+    return null;
+  }
+}
+
+async function buildResumeFormattingSampleDocxBuffer({ companyName = "Your Company", resumeFormatting = {} } = {}) {
+  if (!docxLib) return null;
+  const { Document, Packer, Paragraph, TextRun, HeadingLevel, Header, Footer, AlignmentType, ImageRun } = docxLib;
+  const rf = resumeFormatting && typeof resumeFormatting === "object" ? resumeFormatting : {};
+  const watermarkEnabled = Boolean(rf.watermarkEnabled);
+  const watermarkText = String(rf.watermarkText || "CONFIDENTIAL").trim() || "CONFIDENTIAL";
+  const footerText = String(rf.footerText || "Confidential candidate profile shared by {{company_name}}")
+    .replace(/\{\{\s*company_name\s*\}\}/gi, String(companyName || "Your Company").trim())
+    .trim();
+  const logoBuf = readImageBufferFromDataUrl(rf.logoDataUrl || "");
+
+  const headerChildren = [];
+  if (logoBuf) {
+    try {
+      headerChildren.push(
+        new Paragraph({
+          children: [new ImageRun({ data: logoBuf, transformation: { width: 96, height: 40 } })]
+        })
+      );
+    } catch {
+      headerChildren.push(new Paragraph({ text: "LOGO" }));
+    }
+  } else {
+    headerChildren.push(new Paragraph({ text: "LOGO" }));
+  }
+  headerChildren.push(
+    new Paragraph({ text: "Candidate Name", heading: HeadingLevel.HEADING_2 }),
+    new Paragraph({ text: "Role | Email | Phone | Notice | Experience" })
+  );
+
+  const footerChildren = [
+    new Paragraph({
+      children: [
+        new TextRun({ text: footerText }),
+        new TextRun({ text: "    Page 1/1" }),
+      ],
+      alignment: AlignmentType.LEFT
+    })
+  ];
+
+  const bodyChildren = [];
+  if (watermarkEnabled) {
+    bodyChildren.push(new Paragraph({ text: watermarkText, alignment: AlignmentType.CENTER }));
+  }
+  bodyChildren.push(
+    new Paragraph({ text: "" }),
+    new Paragraph({ text: "Sample profile content line 1." }),
+    new Paragraph({ text: "Sample profile content line 2." }),
+    new Paragraph({ text: "Sample profile content line 3." }),
+    new Paragraph({ text: "Sample profile content line 4." }),
+    new Paragraph({ text: "Sample profile content line 5." })
+  );
+
+  const doc = new Document({
+    sections: [{
+      headers: { default: new Header({ children: headerChildren }) },
+      footers: { default: new Footer({ children: footerChildren }) },
+      children: bodyChildren
+    }]
+  });
+  return Packer.toBuffer(doc);
+}
+
 async function loadAttachmentFromUrl(url = "", fallbackName = "cv.pdf", mimeType = "") {
   const targetUrl = String(url || "").trim();
   if (!targetUrl) throw new Error("Attachment URL missing.");
@@ -10307,6 +10381,28 @@ const server = http.createServer(async (req, res) => {
         settings: body.settings || body
       });
       sendJson(res, 200, { ok: true, result: settings });
+    } catch (error) {
+      sendJson(res, 400, { ok: false, error: String(error.message || error) });
+    }
+    return;
+  }
+
+  if (req.method === "POST" && req.url === "/company/resume-formatting/sample-docx") {
+    try {
+      const actor = await requireSessionUser(getBearerToken(req));
+      const body = await readJsonBody(req);
+      const copySettings = body?.copySettings && typeof body.copySettings === "object" ? body.copySettings : {};
+      const resumeFormatting = copySettings?.resumeFormatting && typeof copySettings.resumeFormatting === "object"
+        ? copySettings.resumeFormatting
+        : {};
+      const companyName = String(actor?.companyName || actor?.company_name || "").trim() || "Your Company";
+      const buffer = await buildResumeFormattingSampleDocxBuffer({ companyName, resumeFormatting });
+      if (!buffer || !Buffer.isBuffer(buffer)) throw new Error("DOCX generator is not available.");
+      const filename = `resume-format-sample-${new Date().toISOString().slice(0, 10)}.docx`;
+      sendBuffer(req, res, 200, buffer, {
+        "Content-Type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "Content-Disposition": `attachment; filename=\"${filename}\"`
+      });
     } catch (error) {
       sendJson(res, 400, { ok: false, error: String(error.message || error) });
     }

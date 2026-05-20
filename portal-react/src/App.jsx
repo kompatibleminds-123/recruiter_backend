@@ -12973,7 +12973,10 @@ function PortalApp({ token, onLogout }) {
   function buildResumeFormattingSampleHtml() {
     const rf = { ...(DEFAULT_COPY_SETTINGS.resumeFormatting || {}), ...(copySettings.resumeFormatting || {}) };
     const watermarkOpacity = Math.max(0.05, Math.min(0.15, Number(rf.watermarkOpacity || 0.12) || 0.12));
-    const footerText = String(rf.footerText || "Confidential candidate profile shared by {{company_name}}").trim();
+    const companyName = String(state.user?.companyName || state.user?.company_name || "Your Company").trim();
+    const footerText = String(rf.footerText || "Confidential candidate profile shared by {{company_name}}")
+      .replace(/\{\{\s*company_name\s*\}\}/gi, companyName)
+      .trim();
     const watermarkText = String(rf.watermarkText || "CONFIDENTIAL").trim() || "CONFIDENTIAL";
     const logoDataUrl = String(rf.logoDataUrl || "").trim();
     return `
@@ -13024,16 +13027,47 @@ function PortalApp({ token, onLogout }) {
     `.trim();
   }
 
-  function downloadResumeFormattingSampleWord() {
+  async function downloadResumeFormattingSampleWord() {
+    try {
+      const response = await fetch("/company/resume-formatting/sample-docx", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {})
+        },
+        body: JSON.stringify({ copySettings })
+      });
+      if (!response.ok) {
+        const text = await response.text();
+        throw new Error(text || `HTTP ${response.status}`);
+      }
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `resume-format-sample-${new Date().toISOString().slice(0, 10)}.docx`;
+      link.click();
+      URL.revokeObjectURL(url);
+      setStatus("settings", "Sample DOCX downloaded.", "ok");
+    } catch (error) {
+      setStatus("settings", `DOCX sample failed: ${String(error?.message || error)}`, "error");
+    }
+  }
+
+  function printResumeFormattingSamplePdf() {
     const html = buildResumeFormattingSampleHtml();
-    const blob = new Blob([html], { type: "application/msword;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = `resume-format-sample-${new Date().toISOString().slice(0, 10)}.doc`;
-    link.click();
-    URL.revokeObjectURL(url);
-    setStatus("settings", "Sample Word downloaded. Review header/footer/watermark look.", "ok");
+    const popup = window.open("", "_blank", "noopener,noreferrer,width=980,height=760");
+    if (!popup) {
+      setStatus("settings", "Allow popups to open PDF print preview.", "error");
+      return;
+    }
+    popup.document.open();
+    popup.document.write(html);
+    popup.document.close();
+    popup.focus();
+    setTimeout(() => {
+      try { popup.print(); } catch {}
+    }, 250);
   }
 
   function replaceClientSharePlaceholdersInHtml(rawHtml, context) {
@@ -17862,7 +17896,10 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                         </div>
                         {copySettings.resumeFormatting?.footerEnabled !== false ? (
                           <div className="resume-preview-footer">
-                            <span>{String(copySettings.resumeFormatting?.footerText || "").trim() || "Confidential candidate profile shared by Company"}</span>
+                            <span>{
+                              (String(copySettings.resumeFormatting?.footerText || "").trim() || "Confidential candidate profile shared by {{company_name}}")
+                                .replace(/\{\{\s*company_name\s*\}\}/gi, String(state.user?.companyName || state.user?.company_name || "Your Company").trim())
+                            }</span>
                             {copySettings.resumeFormatting?.footerShowPageNumber !== false ? <span>Page 1/1</span> : null}
                           </div>
                         ) : null}
@@ -17870,7 +17907,8 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                     </div>
                     <div className="button-row">
                       <button onClick={() => void saveCopySettingsWithMessage("Resume formatting settings saved.")}>Save Resume Formatting</button>
-                      <button className="secondary" onClick={() => downloadResumeFormattingSampleWord()}>Download Sample Word</button>
+                      <button className="secondary" onClick={() => void downloadResumeFormattingSampleWord()}>Download Sample DOCX</button>
+                      <button className="secondary" onClick={() => printResumeFormattingSamplePdf()}>Print / Save as PDF</button>
                       <button className="ghost-btn" onClick={() => navigate("/admin-settings")}>Back to Admin Settings</button>
                     </div>
                   </div>
