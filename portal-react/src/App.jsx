@@ -13171,63 +13171,56 @@ function PortalApp({ token, onLogout }) {
     return labels.length ? labels.join(" | ") : "No header fields selected";
   }
 
-  function openResumeBrandedPreview() {
-    if (!resumeSampleFileUrl) return;
-    const rf = copySettings?.resumeFormatting || {};
-    const footerText = (String(rf.footerText || "Confidential candidate profile shared by {{company_name}}")
-      .replace(/\{\{\s*company_name\s*\}\}/gi, String(state.user?.companyName || state.user?.company_name || "Your Company").trim()));
-    const watermarkText = String(rf.watermarkText || "CONFIDENTIAL").trim() || "CONFIDENTIAL";
-    const watermarkOpacity = Number(rf.watermarkOpacity || 0.12);
-    const headerLine = getResumeHeaderPreviewLine();
-    const logo = String(rf.logoDataUrl || "").trim();
-    const showPdf = String(resumeSampleFile?.type || "").toLowerCase().includes("pdf") || /\.pdf$/i.test(String(resumeSampleFile?.name || ""));
-    const html = `<!doctype html><html><head><meta charset="utf-8"/><title>Branded CV Preview</title>
-      <style>body{margin:0;background:#f1f5fb;font-family:Arial,sans-serif}.wrap{max-width:1100px;margin:16px auto;background:#fff;border:1px solid #dbe4f2;border-radius:10px;overflow:hidden;position:relative}.wm{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%) rotate(-24deg);font-size:48px;font-weight:800;color:#1f3760;opacity:${watermarkOpacity};pointer-events:none;white-space:nowrap}.head{display:grid;grid-template-columns:72px 1fr;gap:10px;align-items:center;padding:10px 12px;border-bottom:1px solid #dbe4f2;background:#f7faff}.logo{width:56px;height:38px;border:1px dashed #9fb2d4;border-radius:8px;display:flex;align-items:center;justify-content:center;color:#4f6da0;font-size:11px;overflow:hidden}.logo img{max-width:100%;max-height:100%;object-fit:contain}.meta strong{display:block;color:#1f3760;font-size:18px}.meta span{color:#4f6286;font-size:12px}.body{padding:10px}.pdf{width:100%;height:70vh;border:1px solid #dbe4f2;border-radius:8px}.foot{display:flex;justify-content:space-between;padding:8px 12px;border-top:1px solid #dbe4f2;background:#f7faff;color:#4f6286;font-size:12px}</style></head><body>
-      <div class="wrap">${rf.watermarkEnabled ? `<div class="wm">${escapeHtml(watermarkText)}</div>` : ""}
-      ${rf.headerEnabled !== false ? `<div class="head"><div class="logo">${logo ? `<img src="${logo}" alt="logo"/>` : "LOGO"}</div><div class="meta"><strong>Candidate Name</strong><span>${escapeHtml(headerLine)}</span></div></div>` : ""}
-      <div class="body">${showPdf ? `<iframe class="pdf" src="${resumeSampleFileUrl}"></iframe>` : `<div>Word preview is not rendered in-browser. Open sample CV to verify source file.</div>`}</div>
-      ${rf.footerEnabled !== false ? `<div class="foot"><span>${escapeHtml(footerText)}</span><span>Page 1/1</span></div>` : ""}
-      </div></body></html>`;
-    const blob = new Blob([html], { type: "text/html" });
-    const url = URL.createObjectURL(blob);
-    window.open(url, "_blank", "noopener,noreferrer");
-    setTimeout(() => {
-      try { URL.revokeObjectURL(url); } catch {}
-    }, 120000);
+  async function requestBrandedResumePdfBlob() {
+    if (!resumeSampleFile) throw new Error("Select a sample CV first.");
+    const isPdf = String(resumeSampleFile.type || "").toLowerCase().includes("pdf") || /\.pdf$/i.test(String(resumeSampleFile.name || ""));
+    if (!isPdf) throw new Error("Only PDF sample supports branded export right now.");
+    const arr = await resumeSampleFile.arrayBuffer();
+    const bytes = new Uint8Array(arr);
+    let bin = "";
+    for (let i = 0; i < bytes.length; i += 1) bin += String.fromCharCode(bytes[i]);
+    const pdfBase64 = window.btoa(bin);
+    const sample = Array.isArray(selectedAssessmentRows) && selectedAssessmentRows.length ? selectedAssessmentRows[0] : null;
+    const context = sample ? resolveCandidateContext(sample) : null;
+    const candidateName = String(context?.candidate?.name || context?.draft?.candidateName || "Candidate Name").trim() || "Candidate Name";
+    const response = await fetch("/company/resume-formatting/branded-pdf", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {})
+      },
+      body: JSON.stringify({
+        pdfBase64,
+        filename: String(resumeSampleFile.name || "branded-cv.pdf"),
+        candidateName,
+        headerLine: getResumeHeaderPreviewLine(),
+        copySettings
+      })
+    });
+    if (!response.ok) {
+      const text = await response.text();
+      throw new Error(normalizeMojibakeSymbols(text || "Branded PDF generation failed."));
+    }
+    return response.blob();
+  }
+
+  async function openResumeBrandedPreview() {
+    try {
+      const blob = await requestBrandedResumePdfBlob();
+      const url = URL.createObjectURL(blob);
+      window.open(url, "_blank", "noopener,noreferrer");
+      setTimeout(() => {
+        try { URL.revokeObjectURL(url); } catch {}
+      }, 120000);
+      setStatus("settings", "Branded preview opened.", "ok");
+    } catch (error) {
+      setStatus("settings", normalizeMojibakeSymbols(String(error?.message || error || "Branded preview failed.")), "error");
+    }
   }
 
   async function downloadBrandedResumePdf() {
     try {
-      if (!resumeSampleFile) throw new Error("Select a sample CV first.");
-      const isPdf = String(resumeSampleFile.type || "").toLowerCase().includes("pdf") || /\.pdf$/i.test(String(resumeSampleFile.name || ""));
-      if (!isPdf) throw new Error("Only PDF sample supports branded export right now.");
-      const arr = await resumeSampleFile.arrayBuffer();
-      const bytes = new Uint8Array(arr);
-      let bin = "";
-      for (let i = 0; i < bytes.length; i += 1) bin += String.fromCharCode(bytes[i]);
-      const pdfBase64 = window.btoa(bin);
-      const sample = Array.isArray(selectedAssessmentRows) && selectedAssessmentRows.length ? selectedAssessmentRows[0] : null;
-      const context = sample ? resolveCandidateContext(sample) : null;
-      const candidateName = String(context?.candidate?.name || context?.draft?.candidateName || "Candidate Name").trim() || "Candidate Name";
-      const response = await fetch("/company/resume-formatting/branded-pdf", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...(token ? { Authorization: `Bearer ${token}` } : {})
-        },
-        body: JSON.stringify({
-          pdfBase64,
-          filename: String(resumeSampleFile.name || "branded-cv.pdf"),
-          candidateName,
-          headerLine: getResumeHeaderPreviewLine(),
-          copySettings
-        })
-      });
-      if (!response.ok) {
-        const text = await response.text();
-        throw new Error(normalizeMojibakeSymbols(text || "Branded PDF generation failed."));
-      }
-      const blob = await response.blob();
+      const blob = await requestBrandedResumePdfBlob();
       const outUrl = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = outUrl;
