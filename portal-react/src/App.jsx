@@ -13028,7 +13028,15 @@ function PortalApp({ token, onLogout }) {
     try {
       if (!clientShareEditorRef.current) return;
       clientShareEditorRef.current.focus();
-      restoreClientShareSelection();
+      const restored = restoreClientShareSelection();
+      if (!restored) {
+        const selection = window.getSelection?.();
+        const range = document.createRange();
+        range.selectNodeContents(clientShareEditorRef.current);
+        range.collapse(false);
+        selection?.removeAllRanges();
+        selection?.addRange(range);
+      }
       document.execCommand(command, false, value);
       captureClientShareSelection();
       syncClientShareEditorHtml();
@@ -16602,7 +16610,11 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                           </label>
                         </>
                       ) : (
-                        <div className="field-help full">Thread mail mode is manual-copy only. Portal will not send mail directly in this mode.</div>
+                        <div className="field-help full">
+                          Thread mail mode is manual-copy only. Portal will not send mail directly in this mode.
+                          <br />
+                          Use your mailbox Reply for the same chain. You can copy the email content or copy the tracker from here.
+                        </div>
                       )}
                       <label>
                         <span>Email subject</span>
@@ -16686,6 +16698,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                         <select
                           className="editor-select"
                           defaultValue=""
+                          onMouseDown={(e) => e.preventDefault()}
                           onChange={(e) => {
                             const value = String(e.target.value || "").trim();
                             if (!value) return;
@@ -16703,6 +16716,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                         <select
                           className="editor-select"
                           defaultValue=""
+                          onMouseDown={(e) => e.preventDefault()}
                           onChange={(e) => {
                             const value = String(e.target.value || "").trim();
                             if (!value) return;
@@ -16716,12 +16730,12 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                           <option value="4">Large</option>
                           <option value="5">XL</option>
                         </select>
-                        <button type="button" className="ghost-btn" onClick={() => runClientShareEditorCommand("bold")}><strong>B</strong></button>
-                        <button type="button" className="ghost-btn" onClick={() => runClientShareEditorCommand("italic")}><em>I</em></button>
-                        <button type="button" className="ghost-btn" onClick={() => runClientShareEditorCommand("underline")}><u>U</u></button>
-                        <button type="button" className="ghost-btn" onClick={() => runClientShareEditorCommand("insertUnorderedList")}>List</button>
-                        <button type="button" className="ghost-btn" onClick={() => applyClientShareLink()}>Link</button>
-                        <button type="button" className="ghost-btn" onClick={() => runClientShareEditorCommand("removeFormat")}>Clear</button>
+                        <button type="button" className="ghost-btn" onMouseDown={(e) => e.preventDefault()} onClick={() => runClientShareEditorCommand("bold")}><strong>B</strong></button>
+                        <button type="button" className="ghost-btn" onMouseDown={(e) => e.preventDefault()} onClick={() => runClientShareEditorCommand("italic")}><em>I</em></button>
+                        <button type="button" className="ghost-btn" onMouseDown={(e) => e.preventDefault()} onClick={() => runClientShareEditorCommand("underline")}><u>U</u></button>
+                        <button type="button" className="ghost-btn" onMouseDown={(e) => e.preventDefault()} onClick={() => runClientShareEditorCommand("insertUnorderedList")}>List</button>
+                        <button type="button" className="ghost-btn" onMouseDown={(e) => e.preventDefault()} onClick={() => applyClientShareLink()}>Link</button>
+                        <button type="button" className="ghost-btn" onMouseDown={(e) => e.preventDefault()} onClick={() => runClientShareEditorCommand("removeFormat")}>Clear</button>
                         <button
                           type="button"
                           className="ghost-btn"
@@ -16740,6 +16754,8 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                       className="client-share-preview"
                       contentEditable
                       suppressContentEditableWarning
+                      onMouseUp={() => captureClientShareSelection()}
+                      onKeyUp={() => captureClientShareSelection()}
                       onClick={(e) => {
                         const target = e.target;
                         if (target && typeof target.closest === "function" && target.closest("a")) e.preventDefault();
