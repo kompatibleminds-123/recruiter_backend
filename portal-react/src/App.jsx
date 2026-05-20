@@ -6406,6 +6406,7 @@ function PortalApp({ token, onLogout }) {
   const clientShareQueueIntervalRef = useRef(null);
   const [agendaRange, setAgendaRange] = useState("today");
   const [openAssessmentMoreId, setOpenAssessmentMoreId] = useState("");
+  const [brandedCvOpeningId, setBrandedCvOpeningId] = useState("");
   const assessmentMoreMenuRef = useRef(null);
   const [clientShareSuggestOpen, setClientShareSuggestOpen] = useState({ to: false, cc: false });
   // Assessment event exports are available via dedicated buttons (no modal).
@@ -9959,7 +9960,15 @@ function PortalApp({ token, onLogout }) {
       setStatus("workspace", "No uploaded CV available for this profile.", "error");
       return;
     }
+    const openingKey = String(meta.candidateId || meta.filename || Date.now());
+    let pendingTab = null;
     try {
+      setBrandedCvOpeningId(openingKey);
+      pendingTab = window.open("", "_blank", "noopener,noreferrer");
+      if (pendingTab && pendingTab.document) {
+        pendingTab.document.write("<title>Opening branded CV...</title><body style='font-family:Arial,sans-serif;padding:24px;color:#1f3760'>Generating branded CV, please wait...</body>");
+        pendingTab.document.close();
+      }
       const params = new URLSearchParams({ access_token: token });
       if (meta.url) params.set("cv_url", String(meta.url));
       if (meta.filename) params.set("cv_filename", String(meta.filename));
@@ -9999,13 +10008,17 @@ function PortalApp({ token, onLogout }) {
       }
       const outBlob = await branded.blob();
       const outUrl = URL.createObjectURL(outBlob);
-      window.open(outUrl, "_blank", "noopener,noreferrer");
+      if (pendingTab) pendingTab.location.href = outUrl;
+      else window.open(outUrl, "_blank", "noopener,noreferrer");
       setTimeout(() => {
         try { URL.revokeObjectURL(outUrl); } catch {}
       }, 120000);
       setStatus("workspace", "Opening branded CV...", "ok");
     } catch (error) {
+      try { if (pendingTab && !pendingTab.closed) pendingTab.close(); } catch {}
       setStatus("workspace", String(error?.message || error || "Could not open branded CV."), "error");
+    } finally {
+      setBrandedCvOpeningId("");
     }
   }
 
@@ -17022,8 +17035,19 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                             <input type="checkbox" checked={selectedAssessmentIds.includes(String(item.id))} onChange={() => toggleAssessmentSelection(item.id)} />
                             <span>Select for client share</span>
                           </label>
-                          <label className="checkbox-pill checkbox-pill--soft">
-                            <input type="checkbox" checked={isAssessmentShareBrandedCvEnabled(item)} onChange={(e) => { void setAssessmentShareBrandedCv(item, e.target.checked); }} />
+                          <label
+                            className="checkbox-pill checkbox-pill--soft"
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              void setAssessmentShareBrandedCv(item, !isAssessmentShareBrandedCvEnabled(item));
+                            }}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={isAssessmentShareBrandedCvEnabled(item)}
+                              readOnly
+                            />
                             <span>Share Branded CV</span>
                           </label>
                         </div>
@@ -17093,74 +17117,36 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                             <button
                               type="button"
                               className="ghost-btn more-menu__trigger"
-                              onClick={() => setOpenAssessmentMoreId((current) => (current === String(item.id) ? "" : String(item.id)))}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setOpenAssessmentMoreId((current) => (current === String(item.id) ? "" : String(item.id)));
+                              }}
                             >
                               More
                             </button>
                             {openAssessmentMoreId === String(item.id) ? (
                               <div className="more-menu__dropdown more-menu__dropdown--inline" role="menu">
-                                <button
-                                  type="button"
-                                  className="more-menu__item"
-                                  onClick={() => {
-                                    closeAssessmentMoreMenu();
-                                    const linkedCandidate = assessmentLinkedCandidateMap.get(String(item.id || "")) || null;
-                                    if (!linkedCandidate) {
-                                      setStatus("assessments", "Linked candidate not found for this assessment.", "error");
-                                      return;
-                                    }
-                                    if (isAssessmentShareBrandedCvEnabled(item)) {
-                                      void openBrandedCandidateCv(linkedCandidate);
-                                    } else {
-                                      openDatabaseCandidateCv(linkedCandidate);
-                                    }
-                                  }}
-                                >
-                                  Open CV (default)
-                                </button>
-                                <button
-                                  type="button"
-                                  className="more-menu__item"
-                                  onClick={() => {
-                                    closeAssessmentMoreMenu();
-                                    const linkedCandidate = assessmentLinkedCandidateMap.get(String(item.id || "")) || null;
-                                    if (!linkedCandidate) {
-                                      setStatus("assessments", "Linked candidate not found for this assessment.", "error");
-                                      return;
-                                    }
-                                    if (isAssessmentShareBrandedCvEnabled(item)) {
-                                      void downloadBrandedCandidateCv(linkedCandidate);
-                                    } else {
-                                      void downloadOriginalCandidateCv(linkedCandidate);
-                                    }
-                                  }}
-                                >
-                                  Download CV (default)
-                                </button>
-                                <button type="button" className="more-menu__item" onClick={() => {
-                                  closeAssessmentMoreMenu();
+                                {(() => {
                                   const linkedCandidate = assessmentLinkedCandidateMap.get(String(item.id || "")) || null;
-                                  if (!linkedCandidate) return setStatus("assessments", "Linked candidate not found for this assessment.", "error");
-                                  openDatabaseCandidateCv(linkedCandidate);
-                                }}>Open Original CV</button>
-                                <button type="button" className="more-menu__item" onClick={() => {
-                                  closeAssessmentMoreMenu();
-                                  const linkedCandidate = assessmentLinkedCandidateMap.get(String(item.id || "")) || null;
-                                  if (!linkedCandidate) return setStatus("assessments", "Linked candidate not found for this assessment.", "error");
-                                  void openBrandedCandidateCv(linkedCandidate);
-                                }}>Open Branded CV</button>
-                                <button type="button" className="more-menu__item" onClick={() => {
-                                  closeAssessmentMoreMenu();
-                                  const linkedCandidate = assessmentLinkedCandidateMap.get(String(item.id || "")) || null;
-                                  if (!linkedCandidate) return setStatus("assessments", "Linked candidate not found for this assessment.", "error");
-                                  void downloadOriginalCandidateCv(linkedCandidate);
-                                }}>Download Original CV</button>
-                                <button type="button" className="more-menu__item" onClick={() => {
-                                  closeAssessmentMoreMenu();
-                                  const linkedCandidate = assessmentLinkedCandidateMap.get(String(item.id || "")) || null;
-                                  if (!linkedCandidate) return setStatus("assessments", "Linked candidate not found for this assessment.", "error");
-                                  void downloadBrandedCandidateCv(linkedCandidate);
-                                }}>Download Branded CV</button>
+                                  const hasCv = candidateHasStoredCv(linkedCandidate);
+                                  if (!hasCv) return null;
+                                  return (
+                                    <>
+                                      <button type="button" className="more-menu__item" onClick={() => {
+                                        closeAssessmentMoreMenu();
+                                        if (!linkedCandidate) return setStatus("assessments", "Linked candidate not found for this assessment.", "error");
+                                        openDatabaseCandidateCv(linkedCandidate);
+                                      }}>Open Original CV</button>
+                                      <button type="button" className="more-menu__item" onClick={() => {
+                                        closeAssessmentMoreMenu();
+                                        if (!linkedCandidate) return setStatus("assessments", "Linked candidate not found for this assessment.", "error");
+                                        void openBrandedCandidateCv(linkedCandidate);
+                                      }}>
+                                        {brandedCvOpeningId && linkedCandidate && brandedCvOpeningId === String(getCandidateProfileCvMeta(linkedCandidate)?.candidateId || "") ? "Opening Branded CV..." : "Open Branded CV"}
+                                      </button>
+                                    </>
+                                  );
+                                })()}
                                 <button type="button" className="more-menu__item" onClick={() => { closeAssessmentMoreMenu(); void moveAssessmentBackToCaptured(item); }}>Move back to captured</button>
                                 <button type="button" className="more-menu__item" onClick={() => { closeAssessmentMoreMenu(); void setAssessmentArchivedState(item, true); }}>Hide</button>
                                 <button type="button" className="more-menu__item" onClick={() => { closeAssessmentMoreMenu(); reuseAssessmentAsNew(item); }}>Reuse as new</button>
