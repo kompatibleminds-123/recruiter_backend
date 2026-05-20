@@ -6365,6 +6365,9 @@ function PortalApp({ token, onLogout }) {
   const [clientShareSendQueue, setClientShareSendQueue] = useState({ pending: false, executeAt: 0, to: "", subject: "" });
   const [clientShareQueueSeconds, setClientShareQueueSeconds] = useState(0);
   const [clientShareBodyTouched, setClientShareBodyTouched] = useState(false);
+  const [resumeSampleFile, setResumeSampleFile] = useState(null);
+  const [resumeSampleFileUrl, setResumeSampleFileUrl] = useState("");
+  const resumeSampleFileInputRef = useRef(null);
   const clientShareEditorLastHtmlRef = useRef("");
   const clientShareQueueTimeoutRef = useRef(null);
   const clientShareQueuePayloadRef = useRef(null);
@@ -13092,6 +13095,23 @@ function PortalApp({ token, onLogout }) {
     setTimeout(runPrint, 900);
   }
 
+  function pickResumeSampleFile() {
+    resumeSampleFileInputRef.current?.click?.();
+  }
+
+  function onResumeSampleFileChange(event) {
+    const file = event?.target?.files?.[0];
+    if (!file) return;
+    if (resumeSampleFileUrl) {
+      try { URL.revokeObjectURL(resumeSampleFileUrl); } catch {}
+    }
+    const objectUrl = URL.createObjectURL(file);
+    setResumeSampleFile(file);
+    setResumeSampleFileUrl(objectUrl);
+    setStatus("settings", `Sample selected: ${file.name}. Preview styling shown below.`, "ok");
+    event.target.value = "";
+  }
+
   function replaceClientSharePlaceholdersInHtml(rawHtml, context) {
     let output = String(rawHtml || "");
     const tokens = {
@@ -17891,6 +17911,12 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                     <p className="muted">Safety guard active: if values exceed limits, they are auto-clamped to avoid CV content overlap in PDF/Word.</p>
                     <div className="resume-preview-shell">
                       <div className="resume-preview-head">Live preview</div>
+                      <input ref={resumeSampleFileInputRef} type="file" accept=".pdf,.doc,.docx" hidden onChange={(e) => onResumeSampleFileChange(e)} />
+                      <div className="button-row tight" style={{ marginBottom: 8 }}>
+                        <button className="secondary" onClick={() => pickResumeSampleFile()}>Use selected CV as sample</button>
+                        {resumeSampleFile ? <span className="muted">{resumeSampleFile.name}</span> : null}
+                        {resumeSampleFileUrl ? <button className="ghost-btn" onClick={() => window.open(resumeSampleFileUrl, "_blank", "noopener,noreferrer")}>Open sample CV</button> : null}
+                      </div>
                       <div className="resume-preview-page">
                         {copySettings.resumeFormatting?.watermarkEnabled ? (
                           <div className="resume-preview-watermark" style={{ opacity: Number(copySettings.resumeFormatting?.watermarkOpacity || 0.12) }}>
@@ -17929,8 +17955,6 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                     </div>
                     <div className="button-row">
                       <button onClick={() => void saveCopySettingsWithMessage("Resume formatting settings saved.")}>Save Resume Formatting</button>
-                      <button className="secondary" onClick={() => void downloadResumeFormattingSampleWord()}>Download Sample DOCX</button>
-                      <button className="secondary" onClick={() => printResumeFormattingSamplePdf()}>Print / Save as PDF</button>
                       <button className="ghost-btn" onClick={() => navigate("/admin-settings")}>Back to Admin Settings</button>
                     </div>
                   </div>
