@@ -224,6 +224,19 @@ function FeatureLockedSection({ title = "Feature locked" }) {
   clientShareSignatureLinkUrl: "",
   clientShareSignatureLinkLabel2: "",
   clientShareSignatureLinkUrl2: "",
+  resumeFormatting: {
+    headerEnabled: true,
+    footerEnabled: true,
+    watermarkEnabled: false,
+    headerLayout: "executive",
+    headerShowFields: ["candidate_name", "candidate_role", "email", "phone", "notice_period", "total_experience"],
+    footerText: "Confidential candidate profile shared by {{company_name}}",
+    footerShowPageNumber: true,
+    watermarkText: "CONFIDENTIAL",
+    watermarkOpacity: 0.12,
+    headerMaxHeightPx: 90,
+    footerMaxHeightPx: 70
+  },
   companyWideShortcuts: {},
   jdEmailSubjectTemplate: "Job Description - {Role}",
   jdEmailIntroTemplate: "Hello {Candidate}.\nGreetings !!\n\nThis is {Recruiter} from Kompatible Minds.\nIt was good to interact with you.\n\nAs discussed, please find the Job description for the {Role}.\nPlease acknowledge or confirm so we can take your candidature ahead.",
@@ -266,6 +279,14 @@ function migrateCopySettings(settings = {}) {
   next.jdEmailIntroTemplate = normalizeMojibakeSymbols(next.jdEmailIntroTemplate || DEFAULT_COPY_SETTINGS.jdEmailIntroTemplate || "");
   next.clientShareSignatureLinkLabel = normalizeMojibakeSymbols(next.clientShareSignatureLinkLabel || "");
   next.clientShareSignatureLinkLabel2 = normalizeMojibakeSymbols(next.clientShareSignatureLinkLabel2 || "");
+  const resumeFormatting = { ...(DEFAULT_COPY_SETTINGS.resumeFormatting || {}), ...(next.resumeFormatting || {}) };
+  resumeFormatting.footerText = normalizeMojibakeSymbols(String(resumeFormatting.footerText || DEFAULT_COPY_SETTINGS.resumeFormatting.footerText || ""));
+  resumeFormatting.watermarkText = normalizeMojibakeSymbols(String(resumeFormatting.watermarkText || DEFAULT_COPY_SETTINGS.resumeFormatting.watermarkText || ""));
+  resumeFormatting.watermarkOpacity = Math.max(0.05, Math.min(0.15, Number(resumeFormatting.watermarkOpacity || 0.12) || 0.12));
+  resumeFormatting.headerMaxHeightPx = Math.max(56, Math.min(90, Number(resumeFormatting.headerMaxHeightPx || 90) || 90));
+  resumeFormatting.footerMaxHeightPx = Math.max(40, Math.min(70, Number(resumeFormatting.footerMaxHeightPx || 70) || 70));
+  resumeFormatting.headerShowFields = Array.isArray(resumeFormatting.headerShowFields) ? resumeFormatting.headerShowFields : DEFAULT_COPY_SETTINGS.resumeFormatting.headerShowFields;
+  next.resumeFormatting = resumeFormatting;
   next.exportPresetLabels = Object.fromEntries(
     Object.entries(next.exportPresetLabels || {}).map(([key, value]) => [key, normalizeMojibakeSymbols(value || "")])
   );
@@ -17624,6 +17645,10 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                         <div className="admin-cat-head"><span className="admin-cat-icon"><PortalIcon name="settings" /></span><strong>AI Settings</strong></div>
                         <div className="muted">Interview panel AI parsing controls.</div>
                       </article>
+                      <article className="item-card compact-card admin-cat-card" role="button" tabIndex={0} onClick={() => navigate("/admin-settings/resume-formatting")} onKeyDown={(e) => { if (e.key === "Enter") navigate("/admin-settings/resume-formatting"); }}>
+                        <div className="admin-cat-head"><span className="admin-cat-icon"><PortalIcon name="template" /></span><strong>Resume Formatting</strong></div>
+                        <div className="muted">Header, footer, and watermark defaults with overlap-safe limits.</div>
+                      </article>
                       <article className="item-card compact-card admin-cat-card" role="button" tabIndex={0} onClick={() => navigate("/plan")} onKeyDown={(e) => { if (e.key === "Enter") navigate("/plan"); }}>
                         <div className="admin-cat-head"><span className="admin-cat-icon"><PortalIcon name="coins" /></span><strong>Plan & Billing</strong></div>
                         <div className="muted">Subscription, plan, and usage controls.</div>
@@ -17692,6 +17717,64 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                     </div>
                     <div className="button-row">
                       <button onClick={() => void saveCopySettingsWithMessage("AI settings saved.")}>Save AI Settings</button>
+                      <button className="ghost-btn" onClick={() => navigate("/admin-settings")}>Back to Admin Settings</button>
+                    </div>
+                  </div>
+                </Section>
+              </div>
+            } />
+
+            <Route path="/admin-settings/resume-formatting" element={
+              !isSettingsAdmin ? <FeatureLockedSection title="Resume Formatting" /> : <div className="page-grid">
+                <Section kicker="Admin Settings" title="Resume Formatting">
+                  {statuses.settings ? <div className={`status ${statuses.settingsKind || ""}`}>{statuses.settings}</div> : null}
+                  <div className="settings-subsection">
+                    <div className="section-kicker">Template Controls</div>
+                    <div className="form-grid two-col">
+                      <label className="checkbox-row"><input type="checkbox" checked={copySettings.resumeFormatting?.headerEnabled !== false} onChange={(e) => setCopySettings((c) => ({ ...c, resumeFormatting: { ...(c.resumeFormatting || {}), headerEnabled: e.target.checked } }))} /><span>Enable header</span></label>
+                      <label className="checkbox-row"><input type="checkbox" checked={copySettings.resumeFormatting?.footerEnabled !== false} onChange={(e) => setCopySettings((c) => ({ ...c, resumeFormatting: { ...(c.resumeFormatting || {}), footerEnabled: e.target.checked } }))} /><span>Enable footer</span></label>
+                      <label className="checkbox-row"><input type="checkbox" checked={copySettings.resumeFormatting?.watermarkEnabled === true} onChange={(e) => setCopySettings((c) => ({ ...c, resumeFormatting: { ...(c.resumeFormatting || {}), watermarkEnabled: e.target.checked } }))} /><span>Enable watermark</span></label>
+                      <label><span>Header layout</span><select value={copySettings.resumeFormatting?.headerLayout || "executive"} onChange={(e) => setCopySettings((c) => ({ ...c, resumeFormatting: { ...(c.resumeFormatting || {}), headerLayout: e.target.value } }))}><option value="executive">Executive</option><option value="compact">Compact</option></select></label>
+                      <label><span>Header max height (56-90)</span><input type="number" min={56} max={90} value={copySettings.resumeFormatting?.headerMaxHeightPx ?? 90} onChange={(e) => setCopySettings((c) => ({ ...c, resumeFormatting: { ...(c.resumeFormatting || {}), headerMaxHeightPx: Number(e.target.value || 90) } }))} /></label>
+                      <label><span>Footer max height (40-70)</span><input type="number" min={40} max={70} value={copySettings.resumeFormatting?.footerMaxHeightPx ?? 70} onChange={(e) => setCopySettings((c) => ({ ...c, resumeFormatting: { ...(c.resumeFormatting || {}), footerMaxHeightPx: Number(e.target.value || 70) } }))} /></label>
+                      <label className="full"><span>Footer text</span><input value={copySettings.resumeFormatting?.footerText || ""} onChange={(e) => setCopySettings((c) => ({ ...c, resumeFormatting: { ...(c.resumeFormatting || {}), footerText: e.target.value } }))} /></label>
+                      <label><span>Watermark text</span><input value={copySettings.resumeFormatting?.watermarkText || ""} onChange={(e) => setCopySettings((c) => ({ ...c, resumeFormatting: { ...(c.resumeFormatting || {}), watermarkText: e.target.value } }))} /></label>
+                      <label><span>Watermark opacity (0.05-0.15)</span><input type="number" step="0.01" min={0.05} max={0.15} value={copySettings.resumeFormatting?.watermarkOpacity ?? 0.12} onChange={(e) => setCopySettings((c) => ({ ...c, resumeFormatting: { ...(c.resumeFormatting || {}), watermarkOpacity: Number(e.target.value || 0.12) } }))} /></label>
+                    </div>
+                    <p className="muted">Safety guard active: if values exceed limits, they are auto-clamped to avoid CV content overlap in PDF/Word.</p>
+                    <div className="resume-preview-shell">
+                      <div className="resume-preview-head">Live preview</div>
+                      <div className="resume-preview-page">
+                        {copySettings.resumeFormatting?.watermarkEnabled ? (
+                          <div className="resume-preview-watermark" style={{ opacity: Number(copySettings.resumeFormatting?.watermarkOpacity || 0.12) }}>
+                            {String(copySettings.resumeFormatting?.watermarkText || "CONFIDENTIAL").trim() || "CONFIDENTIAL"}
+                          </div>
+                        ) : null}
+                        {copySettings.resumeFormatting?.headerEnabled !== false ? (
+                          <div className={`resume-preview-header ${String(copySettings.resumeFormatting?.headerLayout || "executive") === "compact" ? "compact" : ""}`}>
+                            <div className="resume-preview-logo">LOGO</div>
+                            <div className="resume-preview-meta">
+                              <strong>Candidate Name</strong>
+                              <span>Role | Email | Phone | Notice | Experience</span>
+                            </div>
+                          </div>
+                        ) : null}
+                        <div className="resume-preview-body">
+                          <div className="resume-preview-line" />
+                          <div className="resume-preview-line w80" />
+                          <div className="resume-preview-line w90" />
+                          <div className="resume-preview-line w70" />
+                        </div>
+                        {copySettings.resumeFormatting?.footerEnabled !== false ? (
+                          <div className="resume-preview-footer">
+                            <span>{String(copySettings.resumeFormatting?.footerText || "").trim() || "Confidential candidate profile shared by Company"}</span>
+                            {copySettings.resumeFormatting?.footerShowPageNumber !== false ? <span>Page 1/1</span> : null}
+                          </div>
+                        ) : null}
+                      </div>
+                    </div>
+                    <div className="button-row">
+                      <button onClick={() => void saveCopySettingsWithMessage("Resume formatting settings saved.")}>Save Resume Formatting</button>
                       <button className="ghost-btn" onClick={() => navigate("/admin-settings")}>Back to Admin Settings</button>
                     </div>
                   </div>

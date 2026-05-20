@@ -2036,6 +2036,100 @@ textarea { min-height: 92px; resize: vertical; }
   width: 100%;
   table-layout: fixed;
 }
+.resume-preview-shell {
+  margin-top: 12px;
+  border: 1px solid #d8e2f1;
+  border-radius: 14px;
+  padding: 12px;
+  background: #f8fbff;
+}
+.resume-preview-head {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #325daa;
+  margin-bottom: 8px;
+}
+.resume-preview-page {
+  position: relative;
+  border: 1px solid #cfd9ea;
+  border-radius: 10px;
+  background: #fff;
+  min-height: 260px;
+  overflow: hidden;
+}
+.resume-preview-watermark {
+  position: absolute;
+  top: 48%;
+  left: 50%;
+  transform: translate(-50%, -50%) rotate(-24deg);
+  font-size: 34px;
+  font-weight: 800;
+  color: #1f3760;
+  pointer-events: none;
+  white-space: nowrap;
+}
+.resume-preview-header {
+  display: grid;
+  grid-template-columns: 72px 1fr;
+  gap: 10px;
+  align-items: center;
+  padding: 10px 12px;
+  border-bottom: 1px solid #dbe4f2;
+  background: #f7faff;
+}
+.resume-preview-header.compact {
+  grid-template-columns: 56px 1fr;
+  padding: 8px 10px;
+}
+.resume-preview-logo {
+  width: 56px;
+  height: 38px;
+  border: 1px dashed #9fb2d4;
+  border-radius: 8px;
+  font-size: 11px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #4f6da0;
+}
+.resume-preview-meta {
+  display: grid;
+  gap: 4px;
+  color: #1f3760;
+}
+.resume-preview-meta span {
+  font-size: 12px;
+  color: #4f6286;
+}
+.resume-preview-body {
+  padding: 12px;
+  display: grid;
+  gap: 8px;
+}
+.resume-preview-line {
+  height: 8px;
+  background: #e7eef9;
+  border-radius: 999px;
+}
+.resume-preview-line.w80 { width: 80%; }
+.resume-preview-line.w90 { width: 90%; }
+.resume-preview-line.w70 { width: 70%; }
+.resume-preview-footer {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 12px;
+  border-top: 1px solid #dbe4f2;
+  background: #f7faff;
+  font-size: 12px;
+  color: #4f6286;
+}
 .login-settings-switch {
   margin-top: 0.95rem;
   display: flex;
