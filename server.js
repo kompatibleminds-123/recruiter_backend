@@ -1401,6 +1401,7 @@ async function buildBrandedPdfBuffer({
   const divider = { r: 0.85, g: 0.88, b: 0.93 };
   const softPanel = { r: 0.96, g: 0.97, b: 0.99 };
   const footerCaps = footerText.toUpperCase();
+  const headerFieldOrder = Array.isArray(rf.headerShowFields) ? rf.headerShowFields.map((v) => String(v || "").trim()) : [];
   const safeMarginX = 10;
 
   let logoImage = null;
@@ -1512,16 +1513,36 @@ async function buildBrandedPdfBuffer({
       if (templateStyle === "client_submission_style") {
         const metaY = headY - 16;
         const chips = displayLine ? displayLine.split("|").map((v) => String(v || "").trim()).filter(Boolean).slice(0, 5) : [];
+        const fallbackLabels = ["Company", "Designation", "Experience", "Notice", "Location"];
+        const fieldToLabel = {
+          current_company: "Company",
+          candidate_role: "Designation",
+          total_experience: "Experience",
+          notice_period: "Notice",
+          location: "Location",
+          email: "Email",
+          phone: "Phone",
+          candidate_name: "Name"
+        };
         let cursorX = 20;
-        chips.forEach((chip) => {
-          const text = chip.slice(0, 34);
-          const tw = fontRegular.widthOfTextAtSize(text, 7.4);
-          const chipW = Math.min(140, tw + 18);
-          page.drawRoundedRectangle?.({ x: cursorX, y: metaY, width: chipW, height: 11, borderRadius: 6, color: rgb(softPanel.r, softPanel.g, softPanel.b), borderColor: rgb(divider.r, divider.g, divider.b), borderWidth: 0.6 });
+        chips.forEach((chip, chipIdx) => {
+          const label = fieldToLabel[headerFieldOrder[chipIdx]] || fallbackLabels[chipIdx] || "Field";
+          const iconText = String(label || "F").slice(0, 1).toUpperCase();
+          const iconR = 3.2;
+          const iconY = metaY + 5.6;
+          const valueText = chip.slice(0, 22);
+          const labelText = label.slice(0, 14);
+          const valueW = fontRegular.widthOfTextAtSize(valueText, 7.2);
+          const labelW = fontBold.widthOfTextAtSize(labelText, 6.6);
+          const chipW = Math.min(168, Math.max(76, valueW + labelW + 30));
+          page.drawRoundedRectangle?.({ x: cursorX, y: metaY, width: chipW, height: 12.5, borderRadius: 6, color: rgb(softPanel.r, softPanel.g, softPanel.b), borderColor: rgb(divider.r, divider.g, divider.b), borderWidth: 0.6 });
           if (!page.drawRoundedRectangle) {
-            page.drawRectangle({ x: cursorX, y: metaY, width: chipW, height: 11, color: rgb(softPanel.r, softPanel.g, softPanel.b), borderColor: rgb(divider.r, divider.g, divider.b), borderWidth: 0.6 });
+            page.drawRectangle({ x: cursorX, y: metaY, width: chipW, height: 12.5, color: rgb(softPanel.r, softPanel.g, softPanel.b), borderColor: rgb(divider.r, divider.g, divider.b), borderWidth: 0.6 });
           }
-          page.drawText(text, { x: cursorX + 8, y: metaY + 2.3, size: 7.4, font: fontRegular, color: rgb(slateText.r, slateText.g, slateText.b) });
+          page.drawCircle({ x: cursorX + 8.5, y: iconY, size: iconR, color: rgb(navy.r, navy.g, navy.b), opacity: 0.92 });
+          page.drawText(iconText, { x: cursorX + 7.4, y: metaY + 3.2, size: 5.6, font: fontBold, color: rgb(0.98, 0.99, 1) });
+          page.drawText(labelText, { x: cursorX + 14.8, y: metaY + 3.8, size: 6.6, font: fontBold, color: rgb(0.25, 0.31, 0.43) });
+          page.drawText(valueText, { x: cursorX + 14.8 + labelW + 4.2, y: metaY + 3.2, size: 7.2, font: fontRegular, color: rgb(slateText.r, slateText.g, slateText.b) });
           cursorX += chipW + 6;
         });
       }
