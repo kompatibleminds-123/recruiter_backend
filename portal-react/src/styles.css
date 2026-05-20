@@ -1066,9 +1066,11 @@ textarea { min-height: 92px; resize: vertical; }
 .direct-share-sections {
   display: grid;
   gap: 0.9rem;
+  min-width: 0;
 }
 .direct-share-section {
   margin-top: 0;
+  min-width: 0;
 }
 .direct-share-section h3 {
   margin: 0.22rem 0 0.75rem;
@@ -2028,6 +2030,11 @@ textarea { min-height: 92px; resize: vertical; }
   border-radius: 18px;
   background: #fff;
   overflow: auto;
+  max-width: 100%;
+}
+.client-share-preview table {
+  width: 100%;
+  table-layout: fixed;
 }
 .login-settings-switch {
   margin-top: 0.95rem;
