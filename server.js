@@ -1419,6 +1419,7 @@ async function buildBrandedPdfBuffer({
   const softPanel = { r: 0.96, g: 0.97, b: 0.99 };
   const footerCaps = footerText.toUpperCase();
   const headerFieldOrder = Array.isArray(rf.headerShowFields) ? rf.headerShowFields.map((v) => String(v || "").trim()) : [];
+  const sharedByText = `Shared by ${String(companyName || "Your Company").trim() || "Your Company"}`;
   const safeMarginX = 10;
 
   let logoImage = null;
@@ -1469,25 +1470,31 @@ async function buildBrandedPdfBuffer({
       });
     }
     if (showSideRibbon) {
-      const ribbonWidth = 12;
+      const ribbonWidth = 18;
+      const ribbonBottom = footerEnabled ? footerHeight : 0;
+      const ribbonHeight = height - ribbonBottom;
       page.drawRectangle({
         x: 0,
-        y: footerEnabled ? footerHeight : 0,
+        y: ribbonBottom,
         width: ribbonWidth,
-        height: height - (footerEnabled ? footerHeight : 0),
+        height: ribbonHeight,
         color: rgb(darkNavy.r, darkNavy.g, darkNavy.b),
         opacity: 0.88
       });
-      const ribbonText = "Shared by Kompatible Minds";
-      const ribbonFontSize = 6.6;
-      const textWidth = fontRegular.widthOfTextAtSize(ribbonText, ribbonFontSize);
-      const ribbonCenterY = ((height - (footerEnabled ? footerHeight : 0)) / 2) + (footerEnabled ? footerHeight : 0);
-      page.drawText("Shared by Kompatible Minds", {
-        x: 3.5,
-        y: ribbonCenterY - (textWidth / 2),
+      // Keep text centered vertically and readable for variable company names.
+      let ribbonFontSize = 6.4;
+      const minFontSize = 5.1;
+      while (ribbonFontSize > minFontSize && fontRegular.widthOfTextAtSize(sharedByText, ribbonFontSize) > (ribbonHeight - 14)) {
+        ribbonFontSize -= 0.2;
+      }
+      const textWidth = fontRegular.widthOfTextAtSize(sharedByText, ribbonFontSize);
+      const ribbonTextY = ribbonBottom + Math.max(4, ((ribbonHeight - textWidth) / 2));
+      page.drawText(sharedByText, {
+        x: 6.2,
+        y: ribbonTextY,
         size: ribbonFontSize,
         font: fontRegular,
-        color: rgb(0.94, 0.96, 0.99),
+        color: rgb(0.965, 0.975, 0.995),
         rotate: degrees(90)
       });
     }
@@ -1528,7 +1535,8 @@ async function buildBrandedPdfBuffer({
       const titleSize = headerLayout === "compact" ? 11.8 : 13.2;
       page.drawText(displayName, { x: textX, y: headY + (headerLayout === "compact" ? 26 : 31), size: titleSize, font: fontBold, color: textColor, maxWidth: width - textX - 20 });
       if (displayLine) {
-        page.drawText(displayLine, { x: textX, y: headY + (headerLayout === "compact" ? 13 : 14), size: 8.4, font: fontRegular, color: subTextColor, maxWidth: width - textX - 20 });
+        const headerMetaSize = headerLayout === "compact" ? 9.0 : 9.2;
+        page.drawText(displayLine, { x: textX, y: headY + (headerLayout === "compact" ? 13 : 14), size: headerMetaSize, font: fontRegular, color: subTextColor, maxWidth: width - textX - 20 });
       }
 
       if (templateStyle === "client_submission_style") {

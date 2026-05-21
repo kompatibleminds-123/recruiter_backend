@@ -890,6 +890,8 @@ function sanitizeAssessment(item) {
     clientFeedbackUpdatedBy: item.clientFeedbackUpdatedBy ?? item.client_feedback_updated_by ?? p.clientFeedbackUpdatedBy ?? "",
     clientFeedbackHistory: item.clientFeedbackHistory ?? item.client_feedback_history ?? p.clientFeedbackHistory ?? [],
     status: item.status ?? p.status ?? "",
+    shareBrandedCv: Boolean(item.shareBrandedCv ?? item.share_branded_cv ?? p.shareBrandedCv ?? p.share_branded_cv ?? false),
+    share_branded_cv: Boolean(item.share_branded_cv ?? item.shareBrandedCv ?? p.share_branded_cv ?? p.shareBrandedCv ?? false),
     // Archive / hide support (stored in payload for backwards-compatible schema).
     archived: Boolean(item.archived ?? item.isArchived ?? item.archived_flag ?? p.archived ?? p.isArchived ?? false),
     archivedAt: String(item.archivedAt ?? item.archived_at ?? p.archivedAt ?? p.archived_at ?? "").trim(),
@@ -1427,7 +1429,9 @@ function assessmentRow(assessment, actor, companyId) {
     recruiterName: actor.name,
     recruiterEmail: actor.email,
     generatedAt: a.generatedAt || now,
-    updatedAt: now
+    updatedAt: now,
+    shareBrandedCv: Boolean(a.shareBrandedCv ?? a.share_branded_cv ?? a.payload?.shareBrandedCv ?? a.payload?.share_branded_cv ?? false),
+    share_branded_cv: Boolean(a.share_branded_cv ?? a.shareBrandedCv ?? a.payload?.share_branded_cv ?? a.payload?.shareBrandedCv ?? false)
   };
   const candidateId = String(next.candidateId || "").trim();
   return {

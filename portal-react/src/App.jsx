@@ -13977,20 +13977,77 @@ function PortalApp({ token, onLogout }) {
     const current = assessment && typeof assessment === "object" ? assessment : null;
     const assessmentId = String(current?.id || "").trim();
     if (!assessmentId) return;
+    // Optimistic UI: reflect checkbox state immediately.
+    setState((stateCurrent) => ({
+      ...stateCurrent,
+      assessments: (stateCurrent.assessments || []).map((item) => (
+        String(item?.id || "").trim() === assessmentId
+          ? {
+              ...item,
+              shareBrandedCv: Boolean(enabled),
+              share_branded_cv: Boolean(enabled),
+              payload: {
+                ...((item && item.payload && typeof item.payload === "object") ? item.payload : {}),
+                shareBrandedCv: Boolean(enabled),
+                share_branded_cv: Boolean(enabled)
+              }
+            }
+          : item
+      ))
+    }));
     try {
       const next = {
         ...current,
         shareBrandedCv: Boolean(enabled),
+        share_branded_cv: Boolean(enabled),
+        payload: {
+          ...((current && current.payload && typeof current.payload === "object") ? current.payload : {}),
+          shareBrandedCv: Boolean(enabled),
+          share_branded_cv: Boolean(enabled)
+        },
         updatedAt: new Date().toISOString()
       };
       const saved = await api("/company/assessments", token, "POST", { assessment: next });
       const savedId = String(saved?.id || assessmentId).trim();
       setState((stateCurrent) => ({
         ...stateCurrent,
-        assessments: (stateCurrent.assessments || []).map((item) => (String(item?.id || "").trim() === savedId ? { ...item, ...saved } : item))
+        assessments: (stateCurrent.assessments || []).map((item) => (
+          String(item?.id || "").trim() === savedId
+            ? {
+                ...item,
+                ...saved,
+                shareBrandedCv: Boolean(saved?.shareBrandedCv ?? saved?.share_branded_cv ?? enabled),
+                share_branded_cv: Boolean(saved?.share_branded_cv ?? saved?.shareBrandedCv ?? enabled),
+                payload: {
+                  ...((item && item.payload && typeof item.payload === "object") ? item.payload : {}),
+                  ...((saved && saved.payload && typeof saved.payload === "object") ? saved.payload : {}),
+                  shareBrandedCv: Boolean(saved?.payload?.shareBrandedCv ?? saved?.shareBrandedCv ?? saved?.share_branded_cv ?? enabled),
+                  share_branded_cv: Boolean(saved?.payload?.share_branded_cv ?? saved?.share_branded_cv ?? saved?.shareBrandedCv ?? enabled)
+                }
+              }
+            : item
+        ))
       }));
       setStatus("assessments", enabled ? "Share Branded CV enabled for this profile." : "Share Branded CV disabled for this profile.", "ok");
     } catch (error) {
+      // Revert optimistic toggle on failure.
+      setState((stateCurrent) => ({
+        ...stateCurrent,
+        assessments: (stateCurrent.assessments || []).map((item) => (
+          String(item?.id || "").trim() === assessmentId
+            ? {
+                ...item,
+                shareBrandedCv: !Boolean(enabled),
+                share_branded_cv: !Boolean(enabled),
+                payload: {
+                  ...((item && item.payload && typeof item.payload === "object") ? item.payload : {}),
+                  shareBrandedCv: !Boolean(enabled),
+                  share_branded_cv: !Boolean(enabled)
+                }
+              }
+            : item
+        ))
+      }));
       setStatus("assessments", String(error?.message || error || "Could not update branded CV preference."), "error");
     }
   }
