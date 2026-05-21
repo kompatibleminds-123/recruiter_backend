@@ -8042,9 +8042,33 @@ function PortalApp({ token, onLogout }) {
 
   useEffect(() => {
     if (!token) return undefined;
-    // Disabled intentionally: focus/pageshow/visibility sync caused delayed viewport jumps
-    // and unnecessary egress. Workspace still refreshes on route load and manual actions.
-    return undefined;
+    const MIN_FOCUS_REFRESH_GAP_MS = 45000;
+    const HEARTBEAT_MS = 90000;
+
+    function shouldRefreshNow() {
+      if (document.visibilityState !== "visible") return false;
+      return (Date.now() - Number(lastWorkspaceRefreshAtRef.current || 0)) > MIN_FOCUS_REFRESH_GAP_MS;
+    }
+
+    function onFocusLikeEvent() {
+      if (!shouldRefreshNow()) return;
+      void refreshWorkspaceSilently("focus-sync");
+    }
+
+    const heartbeat = window.setInterval(() => {
+      if (document.visibilityState !== "visible") return;
+      void refreshWorkspaceSilently("heartbeat");
+    }, HEARTBEAT_MS);
+
+    window.addEventListener("focus", onFocusLikeEvent);
+    window.addEventListener("pageshow", onFocusLikeEvent);
+    document.addEventListener("visibilitychange", onFocusLikeEvent);
+    return () => {
+      try { window.clearInterval(heartbeat); } catch {}
+      window.removeEventListener("focus", onFocusLikeEvent);
+      window.removeEventListener("pageshow", onFocusLikeEvent);
+      document.removeEventListener("visibilitychange", onFocusLikeEvent);
+    };
   }, [token]);
 
   useEffect(() => {
