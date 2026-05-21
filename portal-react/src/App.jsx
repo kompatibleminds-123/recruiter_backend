@@ -9964,7 +9964,7 @@ function PortalApp({ token, onLogout }) {
     let pendingTab = null;
     try {
       setBrandedCvOpeningId(openingKey);
-      pendingTab = window.open("", "_blank", "noopener,noreferrer");
+      pendingTab = window.open("about:blank", "_blank");
       if (pendingTab && pendingTab.document) {
         pendingTab.document.write("<title>Opening branded CV...</title><body style='font-family:Arial,sans-serif;padding:24px;color:#1f3760'>Generating branded CV, please wait...</body>");
         pendingTab.document.close();
@@ -10013,10 +10013,10 @@ function PortalApp({ token, onLogout }) {
       setTimeout(() => {
         try { URL.revokeObjectURL(outUrl); } catch {}
       }, 120000);
-      setStatus("workspace", "Opening branded CV...", "ok");
+      setStatus("assessments", "Opening branded CV...", "ok");
     } catch (error) {
       try { if (pendingTab && !pendingTab.closed) pendingTab.close(); } catch {}
-      setStatus("workspace", String(error?.message || error || "Could not open branded CV."), "error");
+      setStatus("assessments", String(error?.message || error || "Could not open branded CV."), "error");
     } finally {
       setBrandedCvOpeningId("");
     }
@@ -17035,18 +17035,12 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                             <input type="checkbox" checked={selectedAssessmentIds.includes(String(item.id))} onChange={() => toggleAssessmentSelection(item.id)} />
                             <span>Select for client share</span>
                           </label>
-                          <label
-                            className="checkbox-pill checkbox-pill--soft"
-                            onClick={(e) => {
-                              e.preventDefault();
-                              e.stopPropagation();
-                              void setAssessmentShareBrandedCv(item, !isAssessmentShareBrandedCvEnabled(item));
-                            }}
-                          >
+                          <label className="checkbox-pill checkbox-pill--soft">
                             <input
                               type="checkbox"
                               checked={isAssessmentShareBrandedCvEnabled(item)}
-                              readOnly
+                              onClick={(e) => e.stopPropagation()}
+                              onChange={(e) => { void setAssessmentShareBrandedCv(item, e.target.checked); }}
                             />
                             <span>Share Branded CV</span>
                           </label>
