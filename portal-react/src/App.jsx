@@ -1377,7 +1377,7 @@ function buildInterviewCvAnalysis(baseForm = {}, result = {}, storedFile = null)
     currentCompany: result.currentCompany || "",
     currentDesignation: result.currentDesignation || "",
     currentOrgTenure: result.currentOrgTenure || "",
-    highestEducation: result.highestEducation || "",
+    highestEducation: result.highestQualification || result.highestEducation || "",
     candidateName: result.candidateName || "",
     emailId: result.emailId || "",
     phoneNumber: result.phoneNumber || "",
@@ -6790,6 +6790,10 @@ function PortalApp({ token, onLogout }) {
     cvAnalysis: null,
     cvAnalysisApplied: false
   });
+  const interviewFormRef = useRef(interviewForm);
+  useEffect(() => {
+    interviewFormRef.current = interviewForm;
+  }, [interviewForm]);
   const [smtpSettings, setSmtpSettings] = useState({
     host: "",
     port: 587,
@@ -11654,7 +11658,8 @@ function PortalApp({ token, onLogout }) {
   }
 
   async function saveAssessment() {
-    const canonicalInitialStatus = normalizeAssessmentStatusLabel(interviewForm.candidateStatus);
+    const form = interviewFormRef.current || interviewForm;
+    const canonicalInitialStatus = normalizeAssessmentStatusLabel(form.candidateStatus);
     const normalizedInitialStatus = canonicalInitialStatus.toLowerCase();
     const initialStatus = !normalizedInitialStatus || normalizedInitialStatus === "screening in progress"
       ? "CV shared"
@@ -11662,11 +11667,11 @@ function PortalApp({ token, onLogout }) {
     const assessment = {
       id: interviewMeta.assessmentId || `assessment-${Date.now()}`,
       ...(interviewMeta.candidateId ? { candidateId: String(interviewMeta.candidateId) } : {}),
-      ...interviewForm,
+      ...form,
       candidateStatus: initialStatus,
       pipelineStage: "",
-      statusHistory: Array.isArray(interviewForm.statusHistory) && interviewForm.statusHistory.length
-        ? interviewForm.statusHistory
+      statusHistory: Array.isArray(form.statusHistory) && form.statusHistory.length
+        ? form.statusHistory
         : [{
             status: initialStatus,
             at: new Date().toISOString(),
@@ -11692,37 +11697,37 @@ function PortalApp({ token, onLogout }) {
     if (interviewMeta.candidateId) {
       const existingCandidate = (state.candidates || []).find((item) => String(item.id) === String(interviewMeta.candidateId));
       const existingMeta = decodePortalApplicantMetadata(existingCandidate || {});
-      const nextMeta = mergeStoredCvIntoApplicantMeta(existingMeta, interviewForm.cvAnalysis || null);
+      const nextMeta = mergeStoredCvIntoApplicantMeta(existingMeta, form.cvAnalysis || null);
       await patchCandidateQuiet(interviewMeta.candidateId, {
-        name: interviewForm.candidateName,
-        phone: interviewForm.phoneNumber,
-        email: interviewForm.emailId,
-        linkedin: interviewForm.linkedin,
-        location: interviewForm.location,
-        company: interviewForm.currentCompany,
-        role: interviewForm.currentDesignation,
-        experience: interviewForm.totalExperience,
-        relevant_experience: interviewForm.relevantExperience,
-        highest_education: interviewForm.highestEducation,
-        current_ctc: interviewForm.currentCtc,
-        expected_ctc: interviewForm.expectedCtc,
-        notice_period: interviewForm.noticePeriod,
-        recruiter_context_notes: interviewForm.recruiterNotes,
-        other_pointers: interviewForm.otherPointers,
-        skills: parseTagInputValue(interviewForm.tags),
-        lwd_or_doj: sanitizeLwdOrDojValue(interviewForm.lwdOrDoj),
-        jd_title: interviewForm.jdTitle,
-        client_name: interviewForm.clientName,
-        next_follow_up_at: interviewForm.followUpAt,
-        screening_answers: interviewForm.jdScreeningAnswers || {},
+        name: form.candidateName,
+        phone: form.phoneNumber,
+        email: form.emailId,
+        linkedin: form.linkedin,
+        location: form.location,
+        company: form.currentCompany,
+        role: form.currentDesignation,
+        experience: form.totalExperience,
+        relevant_experience: form.relevantExperience,
+        highest_education: form.highestEducation,
+        current_ctc: form.currentCtc,
+        expected_ctc: form.expectedCtc,
+        notice_period: form.noticePeriod,
+        recruiter_context_notes: form.recruiterNotes,
+        other_pointers: form.otherPointers,
+        skills: parseTagInputValue(form.tags),
+        lwd_or_doj: sanitizeLwdOrDojValue(form.lwdOrDoj),
+        jd_title: form.jdTitle,
+        client_name: form.clientName,
+        next_follow_up_at: form.followUpAt,
+        screening_answers: form.jdScreeningAnswers || {},
         draft_payload: {
-          ...interviewForm,
-          current_org_tenure: String(interviewForm.currentOrgTenure || "").trim(),
-          jdScreeningAnswers: interviewForm.jdScreeningAnswers || {}
+          ...form,
+          current_org_tenure: String(form.currentOrgTenure || "").trim(),
+          jdScreeningAnswers: form.jdScreeningAnswers || {}
         },
         raw_note: encodePortalApplicantMetadata({
           ...nextMeta,
-          jdScreeningAnswers: interviewForm.jdScreeningAnswers || {}
+          jdScreeningAnswers: form.jdScreeningAnswers || {}
         })
       });
       setStatus("interview", "Assessment saved and candidate details updated.", "ok");
@@ -11733,6 +11738,7 @@ function PortalApp({ token, onLogout }) {
   }
 
 	  async function saveInterviewDraft() {
+      const form = interviewFormRef.current || interviewForm;
 	    if (!interviewMeta.candidateId) {
 	      setStatus("interview", "Open an existing draft first to save recruiter edits.", "error");
 	      return;
@@ -11741,55 +11747,55 @@ function PortalApp({ token, onLogout }) {
 	    try {
 	      const existingCandidate = (state.candidates || []).find((item) => String(item.id) === String(interviewMeta.candidateId));
 	      const existingMeta = decodePortalApplicantMetadata(existingCandidate || {});
-	      const nextMeta = mergeStoredCvIntoApplicantMeta(existingMeta, interviewForm.cvAnalysis || null);
+	      const nextMeta = mergeStoredCvIntoApplicantMeta(existingMeta, form.cvAnalysis || null);
 	      const linkedAssessment = interviewMeta.assessmentId
 	        ? (state.assessments || []).find((item) => String(item.id || "") === String(interviewMeta.assessmentId || ""))
 	        : null;
 	      await api(`/company/candidates/${encodeURIComponent(interviewMeta.candidateId)}`, token, "PATCH", { patch: {
-	        name: interviewForm.candidateName,
-	        phone: interviewForm.phoneNumber,
-	        email: interviewForm.emailId,
-	        linkedin: interviewForm.linkedin,
-	        location: interviewForm.location,
-	        company: interviewForm.currentCompany,
-	        role: interviewForm.currentDesignation,
-	        experience: interviewForm.totalExperience,
-	        relevant_experience: interviewForm.relevantExperience,
-	        highest_education: interviewForm.highestEducation,
-	        current_ctc: interviewForm.currentCtc,
-	        expected_ctc: interviewForm.expectedCtc,
-	        notice_period: interviewForm.noticePeriod,
-	        recruiter_context_notes: interviewForm.recruiterNotes,
-	        notes: interviewForm.callbackNotes,
-	        other_pointers: interviewForm.otherPointers,
-	        skills: parseTagInputValue(interviewForm.tags),
-	        lwd_or_doj: sanitizeLwdOrDojValue(interviewForm.lwdOrDoj),
-	        jd_title: interviewForm.jdTitle,
-	        client_name: interviewForm.clientName,
-	        next_follow_up_at: interviewForm.followUpAt,
-	        screening_answers: interviewForm.jdScreeningAnswers || {},
+	        name: form.candidateName,
+	        phone: form.phoneNumber,
+	        email: form.emailId,
+	        linkedin: form.linkedin,
+	        location: form.location,
+	        company: form.currentCompany,
+	        role: form.currentDesignation,
+	        experience: form.totalExperience,
+	        relevant_experience: form.relevantExperience,
+	        highest_education: form.highestEducation,
+	        current_ctc: form.currentCtc,
+	        expected_ctc: form.expectedCtc,
+	        notice_period: form.noticePeriod,
+	        recruiter_context_notes: form.recruiterNotes,
+	        notes: form.callbackNotes,
+	        other_pointers: form.otherPointers,
+	        skills: parseTagInputValue(form.tags),
+	        lwd_or_doj: sanitizeLwdOrDojValue(form.lwdOrDoj),
+	        jd_title: form.jdTitle,
+	        client_name: form.clientName,
+	        next_follow_up_at: form.followUpAt,
+	        screening_answers: form.jdScreeningAnswers || {},
 	        draft_payload: {
-	          ...interviewForm,
-	          current_org_tenure: String(interviewForm.currentOrgTenure || "").trim(),
-	          jdScreeningAnswers: interviewForm.jdScreeningAnswers || {}
+	          ...form,
+	          current_org_tenure: String(form.currentOrgTenure || "").trim(),
+	          jdScreeningAnswers: form.jdScreeningAnswers || {}
 	        },
 	        raw_note: encodePortalApplicantMetadata({
 	          ...nextMeta,
-	          jdScreeningAnswers: interviewForm.jdScreeningAnswers || {}
+	          jdScreeningAnswers: form.jdScreeningAnswers || {}
 	        })
 	      } });
 	      if (linkedAssessment?.id) {
 	        await api("/company/assessments", token, "POST", { assessment: {
 	          ...linkedAssessment,
-	          ...interviewForm,
+	          ...form,
 	          id: linkedAssessment.id,
 	          candidateId: interviewMeta.candidateId,
-	          candidateName: interviewForm.candidateName,
+	          candidateName: form.candidateName,
 	          questionMode: linkedAssessment.questionMode || "basic",
 	          generatedAt: linkedAssessment.generatedAt || new Date().toISOString(),
 	          updatedAt: new Date().toISOString(),
-	          statusHistory: Array.isArray(interviewForm.statusHistory) && interviewForm.statusHistory.length
-	            ? interviewForm.statusHistory
+	          statusHistory: Array.isArray(form.statusHistory) && form.statusHistory.length
+	            ? form.statusHistory
 	            : Array.isArray(linkedAssessment.statusHistory)
 	              ? linkedAssessment.statusHistory
 	              : []
@@ -11915,7 +11921,8 @@ function PortalApp({ token, onLogout }) {
   }
 
   function applyCvAnalysisToDraft(selectedOverwriteKeys = {}) {
-    const analysis = interviewForm.cvAnalysis;
+    const currentForm = interviewFormRef.current || interviewForm;
+    const analysis = currentForm.cvAnalysis;
     if (!analysis) {
       setStatus("interview", "No CV analysis available yet.", "error");
       return;
@@ -11924,20 +11931,24 @@ function PortalApp({ token, onLogout }) {
     const shouldUseCvValue = (fieldKey, currentValue) => (
       isBlank(currentValue) || Boolean(selectedOverwriteKeys?.[fieldKey])
     );
-    setInterviewForm((current) => ({
-      ...current,
-      candidateName: shouldUseCvValue("candidateName", current.candidateName) ? (analysis.candidateName || current.candidateName) : current.candidateName,
-      emailId: shouldUseCvValue("emailId", current.emailId) ? (analysis.emailId || current.emailId) : current.emailId,
-      phoneNumber: shouldUseCvValue("phoneNumber", current.phoneNumber) ? (analysis.phoneNumber || current.phoneNumber) : current.phoneNumber,
-      linkedin: shouldUseCvValue("linkedin", current.linkedin) ? (analysis.linkedin || current.linkedin) : current.linkedin,
-      location: shouldUseCvValue("location", current.location) ? (analysis.location || current.location) : current.location,
-      totalExperience: shouldUseCvValue("totalExperience", current.totalExperience) ? (analysis.exactTotalExperience || analysis.totalExperience || current.totalExperience) : current.totalExperience,
-      currentCompany: shouldUseCvValue("currentCompany", current.currentCompany) ? (analysis.currentCompany || current.currentCompany) : current.currentCompany,
-      currentDesignation: shouldUseCvValue("currentDesignation", current.currentDesignation) ? (analysis.currentDesignation || current.currentDesignation) : current.currentDesignation,
-      currentOrgTenure: shouldUseCvValue("currentOrgTenure", current.currentOrgTenure) ? (analysis.currentOrgTenure || current.currentOrgTenure) : current.currentOrgTenure,
-      highestEducation: shouldUseCvValue("highestEducation", current.highestEducation) ? (analysis.highestEducation || current.highestEducation) : current.highestEducation,
-      cvAnalysisApplied: true
-    }));
+    setInterviewForm((current) => {
+      const next = {
+        ...current,
+        candidateName: shouldUseCvValue("candidateName", current.candidateName) ? (analysis.candidateName || current.candidateName) : current.candidateName,
+        emailId: shouldUseCvValue("emailId", current.emailId) ? (analysis.emailId || current.emailId) : current.emailId,
+        phoneNumber: shouldUseCvValue("phoneNumber", current.phoneNumber) ? (analysis.phoneNumber || current.phoneNumber) : current.phoneNumber,
+        linkedin: shouldUseCvValue("linkedin", current.linkedin) ? (analysis.linkedin || current.linkedin) : current.linkedin,
+        location: shouldUseCvValue("location", current.location) ? (analysis.location || current.location) : current.location,
+        totalExperience: shouldUseCvValue("totalExperience", current.totalExperience) ? (analysis.exactTotalExperience || analysis.totalExperience || current.totalExperience) : current.totalExperience,
+        currentCompany: shouldUseCvValue("currentCompany", current.currentCompany) ? (analysis.currentCompany || current.currentCompany) : current.currentCompany,
+        currentDesignation: shouldUseCvValue("currentDesignation", current.currentDesignation) ? (analysis.currentDesignation || current.currentDesignation) : current.currentDesignation,
+        currentOrgTenure: shouldUseCvValue("currentOrgTenure", current.currentOrgTenure) ? (analysis.currentOrgTenure || current.currentOrgTenure) : current.currentOrgTenure,
+        highestEducation: shouldUseCvValue("highestEducation", current.highestEducation) ? (analysis.highestEducation || current.highestEducation) : current.highestEducation,
+        cvAnalysisApplied: true
+      };
+      interviewFormRef.current = next;
+      return next;
+    });
     setStatus("interview", "Applied CV analysis values to draft.", "ok");
   }
 
