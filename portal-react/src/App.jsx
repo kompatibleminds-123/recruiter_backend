@@ -147,6 +147,40 @@ function getNavIconName(to = "") {
   return NAV_ICON_MAP[String(to || "").trim()] || "dashboard";
 }
 
+function isPdfEmbeddableLogoDataUrl(dataUrl = "") {
+  const raw = String(dataUrl || "").trim();
+  return /^data:image\/(?:png|jpe?g);base64,/i.test(raw);
+}
+
+async function convertLogoDataUrlToPng(dataUrl = "") {
+  const raw = String(dataUrl || "").trim();
+  if (!raw) return "";
+  return await new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      try {
+        const canvas = document.createElement("canvas");
+        const w = Math.max(1, Number(img.naturalWidth || img.width || 1));
+        const h = Math.max(1, Number(img.naturalHeight || img.height || 1));
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) {
+          reject(new Error("Canvas context unavailable"));
+          return;
+        }
+        ctx.clearRect(0, 0, w, h);
+        ctx.drawImage(img, 0, 0, w, h);
+        resolve(canvas.toDataURL("image/png"));
+      } catch (error) {
+        reject(error);
+      }
+    };
+    img.onerror = () => reject(new Error("Could not decode logo image"));
+    img.src = raw;
+  });
+}
+
 function useSidebarCollapsed(storageKey = SIDEBAR_PREF_KEY) {
   const [collapsed, setCollapsed] = useState(() => {
     if (typeof window === "undefined") return false;
@@ -10107,47 +10141,15 @@ function PortalApp({ token, onLogout }) {
       if (meta.filename) params.set("cv_filename", String(meta.filename));
       if (meta.key) params.set("cv_key", String(meta.key));
       if (meta.provider) params.set("cv_provider", String(meta.provider));
-      const response = await fetch(`/company/candidates/${encodeURIComponent(meta.candidateId)}/cv?${params.toString()}`);
-      if (!response.ok) throw new Error("Could not load source CV.");
-      const sourceBlob = await response.blob();
-      const sourceIsPdf = String(sourceBlob.type || "").toLowerCase().includes("pdf") || /\.pdf$/i.test(String(meta.filename || ""));
-      if (!sourceIsPdf) {
-        setStatus("workspace", "Branded download is PDF-only right now.", "error");
-        return;
-      }
-      const arr = await sourceBlob.arrayBuffer();
-      const bytes = new Uint8Array(arr);
-      let bin = "";
-      for (let i = 0; i < bytes.length; i += 1) bin += String.fromCharCode(bytes[i]);
-      const pdfBase64 = window.btoa(bin);
-      const branded = await fetch("/company/resume-formatting/branded-pdf", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...(token ? { Authorization: `Bearer ${token}` } : {})
-        },
-        body: JSON.stringify({
-          pdfBase64,
-          filename: String(meta.filename || "branded-cv.pdf"),
-          candidateId: String(meta.candidateId || "").trim(),
-          candidateName: buildResumeCandidateName(item),
-          headerLine: buildResumeHeaderLineForCandidate(item),
-          copySettings
-        })
-      });
-      if (!branded.ok) {
-        const text = await branded.text();
-        throw new Error(normalizeMojibakeSymbols(text || "Could not generate branded CV."));
-      }
-      const blob = await branded.blob();
-      const url = URL.createObjectURL(blob);
+      params.set("mode", "branded");
+      params.set("download", "1");
+      const directUrl = `/company/candidates/${encodeURIComponent(meta.candidateId)}/cv?${params.toString()}`;
       const a = document.createElement("a");
-      a.href = url;
-      a.download = String(meta.filename || "candidate-cv").replace(/\.pdf$/i, "") + "-branded.pdf";
+      a.href = directUrl;
+      a.rel = "noopener noreferrer";
       document.body.appendChild(a);
       a.click();
       a.remove();
-      setTimeout(() => { try { URL.revokeObjectURL(url); } catch {} }, 120000);
       setStatus("workspace", "Branded CV downloaded.", "ok");
     } catch (error) {
       setStatus("workspace", String(error?.message || error || "Could not download branded CV."), "error");
@@ -14077,12 +14079,33 @@ function PortalApp({ token, onLogout }) {
       setStatus("settings", "Only admin can save shared settings.", "error");
       return;
     }
-    const payload = migrateCopySettings({
+    const draftSettings = {
       ...copySettings,
       exportPresetLabels: copySettings.exportPresetLabels || DEFAULT_COPY_SETTINGS.exportPresetLabels,
       exportPresetClientMap: copySettings.exportPresetClientMap || DEFAULT_COPY_SETTINGS.exportPresetClientMap,
       customExportPresets: copySettings.customExportPresets || []
-    });
+    };
+    const existingLogo = String(draftSettings?.resumeFormatting?.logoDataUrl || "").trim();
+    if (existingLogo && !isPdfEmbeddableLogoDataUrl(existingLogo)) {
+      try {
+        const pngDataUrl = await convertLogoDataUrlToPng(existingLogo);
+        draftSettings.resumeFormatting = {
+          ...(draftSettings.resumeFormatting || {}),
+          logoDataUrl: pngDataUrl
+        };
+        setCopySettings((current) => ({
+          ...current,
+          resumeFormatting: {
+            ...(current.resumeFormatting || {}),
+            logoDataUrl: pngDataUrl
+          }
+        }));
+      } catch {
+        setStatus("settings", "Saved logo format is not PDF-compatible. Please re-upload logo as PNG or JPG.", "error");
+        return;
+      }
+    }
+    const payload = migrateCopySettings(draftSettings);
     const result = await api("/company/shared-export-presets", token, "POST", { settings: payload });
     setCopySettings((current) => ({ ...DEFAULT_COPY_SETTINGS, ...current, ...result }));
     setStatus("settings", "Shared copy presets saved for all recruiters.", "ok");
@@ -14093,12 +14116,33 @@ function PortalApp({ token, onLogout }) {
       setStatus("settings", "Only admin can save shared settings.", "error");
       return;
     }
-    const payload = migrateCopySettings({
+    const draftSettings = {
       ...copySettings,
       exportPresetLabels: copySettings.exportPresetLabels || DEFAULT_COPY_SETTINGS.exportPresetLabels,
       exportPresetClientMap: copySettings.exportPresetClientMap || DEFAULT_COPY_SETTINGS.exportPresetClientMap,
       customExportPresets: copySettings.customExportPresets || []
-    });
+    };
+    const existingLogo = String(draftSettings?.resumeFormatting?.logoDataUrl || "").trim();
+    if (existingLogo && !isPdfEmbeddableLogoDataUrl(existingLogo)) {
+      try {
+        const pngDataUrl = await convertLogoDataUrlToPng(existingLogo);
+        draftSettings.resumeFormatting = {
+          ...(draftSettings.resumeFormatting || {}),
+          logoDataUrl: pngDataUrl
+        };
+        setCopySettings((current) => ({
+          ...current,
+          resumeFormatting: {
+            ...(current.resumeFormatting || {}),
+            logoDataUrl: pngDataUrl
+          }
+        }));
+      } catch {
+        setStatus("settings", "Saved logo format is not PDF-compatible. Please re-upload logo as PNG or JPG.", "error");
+        return;
+      }
+    }
+    const payload = migrateCopySettings(draftSettings);
     const result = await api("/company/shared-export-presets", token, "POST", { settings: payload });
     setCopySettings((current) => ({ ...DEFAULT_COPY_SETTINGS, ...current, ...result }));
     setStatus("settings", successMessage, "ok");
@@ -18441,7 +18485,36 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                             const reader = new FileReader();
                             reader.onload = () => {
                               const dataUrl = String(reader.result || "");
-                              setCopySettings((c) => ({ ...c, resumeFormatting: { ...(c.resumeFormatting || {}), logoDataUrl: dataUrl } }));
+                              const mime = String(file.type || "").toLowerCase();
+                              const useDirect = mime.includes("png") || mime.includes("jpeg") || mime.includes("jpg");
+                              if (useDirect) {
+                                setCopySettings((c) => ({ ...c, resumeFormatting: { ...(c.resumeFormatting || {}), logoDataUrl: dataUrl } }));
+                                return;
+                              }
+                              // pdf-lib embedding supports PNG/JPG. Convert WEBP/SVG/other image types to PNG here.
+                              const img = new Image();
+                              img.onload = () => {
+                                try {
+                                  const canvas = document.createElement("canvas");
+                                  const w = Math.max(1, Number(img.naturalWidth || img.width || 1));
+                                  const h = Math.max(1, Number(img.naturalHeight || img.height || 1));
+                                  canvas.width = w;
+                                  canvas.height = h;
+                                  const ctx = canvas.getContext("2d");
+                                  if (!ctx) throw new Error("Canvas context unavailable");
+                                  ctx.clearRect(0, 0, w, h);
+                                  ctx.drawImage(img, 0, 0, w, h);
+                                  const pngDataUrl = canvas.toDataURL("image/png");
+                                  setCopySettings((c) => ({ ...c, resumeFormatting: { ...(c.resumeFormatting || {}), logoDataUrl: pngDataUrl } }));
+                                  setStatus("settings", "Logo converted to PNG for branded CV compatibility.", "ok");
+                                } catch {
+                                  setStatus("settings", "Logo format not supported for PDF branding. Please upload PNG/JPG.", "error");
+                                }
+                              };
+                              img.onerror = () => {
+                                setStatus("settings", "Could not read this logo. Please upload PNG/JPG.", "error");
+                              };
+                              img.src = dataUrl;
                             };
                             reader.readAsDataURL(file);
                             e.target.value = "";

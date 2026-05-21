@@ -1445,8 +1445,8 @@ async function buildBrandedPdfBuffer({
     const showSideRibbon = templateStyle === "side_ribbon_branding";
     const topPad = showHeaderOnThisPage ? headerHeight : 0;
     const bottomPad = footerEnabled ? footerHeight : 0;
-    const innerTopGap = showHeaderOnThisPage ? 6 : 4;
-    const innerBottomGap = footerEnabled ? 6 : 4;
+    const innerTopGap = 0;
+    const innerBottomGap = 0;
     const bodyLeftInset = showSideRibbon ? 20 : 0;
     const bodyRightInset = 0;
     const availableHeight = Math.max(40, height - topPad - bottomPad);
@@ -1529,10 +1529,10 @@ async function buildBrandedPdfBuffer({
         const x = logoX + ((logoMaxW - drawW) / 2);
         const y = logoY + ((logoMaxH - drawH) / 2);
         page.drawImage(logoImage, { x, y, width: drawW, height: drawH });
-      } else {
-        page.drawRectangle({ x: logoX, y: logoY, width: logoMaxW, height: logoMaxH, borderColor: rgb(divider.r, divider.g, divider.b), borderWidth: 0.8 });
       }
-      const textX = headerLayout === "compact" ? 82 : 94;
+      const textX = logoImage
+        ? (headerLayout === "compact" ? 82 : 94)
+        : 20;
       const titleSize = headerLayout === "compact" ? 11.8 : 13.2;
       page.drawText(displayName, { x: textX, y: headY + (headerLayout === "compact" ? 26 : 31), size: titleSize, font: fontBold, color: textColor, maxWidth: width - textX - 20 });
       // In client-submission mode, role/experience/location/notice is represented via chips.
@@ -12699,6 +12699,8 @@ const server = http.createServer(async (req, res) => {
     try {
       const actor = await requireSessionUser(getBearerTokenFromRequest(req, requestUrl));
       const candidateId = String(requestUrl.pathname.replace(/^\/company\/candidates\//, "").replace(/\/cv$/, "")).trim();
+      const wantBranded = ["1", "true", "yes", "branded"].includes(String(requestUrl.searchParams.get("mode") || "").trim().toLowerCase());
+      const forceDownload = ["1", "true", "yes", "download", "attachment"].includes(String(requestUrl.searchParams.get("download") || "").trim().toLowerCase());
       const candidate = (await listCandidatesForUser(actor, { id: candidateId, limit: 1 }))[0] || null;
       const meta = candidate ? decodeApplicantMetadata(candidate) : {};
       const cachedStoredFile = meta?.cvAnalysisCache?.storedFile && typeof meta.cvAnalysisCache.storedFile === "object"
@@ -12727,10 +12729,33 @@ const server = http.createServer(async (req, res) => {
         throw new Error("CV file not available for this candidate.");
       }
       const file = await loadStoredFile(fileRef);
+      const isPdf = String(file.mimeType || "").toLowerCase().includes("pdf") || /\.pdf$/i.test(String(file.filename || ""));
+      if (wantBranded) {
+        if (!isPdf) throw new Error("Branded CV is available only for PDF files.");
+        const sharedSettings = await getCompanySharedExportPresets(String(actor.companyId || "").trim()).catch(() => ({}));
+        const resumeFormatting = sharedSettings?.resumeFormatting && typeof sharedSettings.resumeFormatting === "object"
+          ? sharedSettings.resumeFormatting
+          : {};
+        const candidateName = String(candidate?.name || "").trim() || "Candidate Name";
+        const headerLine = buildResumeHeaderLineFromCandidate(candidate || {}, resumeFormatting);
+        const brandedBuffer = await buildBrandedPdfBuffer({
+          pdfBase64: file.buffer.toString("base64"),
+          companyName: String(actor?.companyName || actor?.company_name || "").trim() || "Your Company",
+          resumeFormatting,
+          candidateName,
+          headerLine
+        });
+        const brandedName = String(file.filename || "resume.pdf").replace(/\.pdf$/i, "") + "-branded.pdf";
+        sendBuffer(req, res, 200, brandedBuffer, {
+          "Content-Type": "application/pdf",
+          "Content-Disposition": `${forceDownload ? "attachment" : "inline"}; filename="${brandedName.replace(/"/g, "")}"`
+        });
+        return;
+      }
       const downloadName = String(file.filename || "resume.pdf").replace(/"/g, "");
       sendBuffer(req, res, 200, file.buffer, {
         "Content-Type": String(file.mimeType || "application/octet-stream").trim(),
-        "Content-Disposition": `inline; filename="${downloadName}"`
+        "Content-Disposition": `${forceDownload ? "attachment" : "inline"}; filename="${downloadName}"`
       });
     } catch (error) {
       sendJson(res, 400, { ok: false, error: String(error.message || error) });
