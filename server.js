@@ -1297,6 +1297,22 @@ function readImageBufferFromDataUrl(dataUrl = "") {
   }
 }
 
+function hexToRgb01(hex = "") {
+  const raw = String(hex || "").trim().replace(/^#/, "");
+  if (!raw) return null;
+  const normalized = raw.length === 3
+    ? raw.split("").map((ch) => ch + ch).join("")
+    : raw;
+  if (!/^[0-9a-f]{6}$/i.test(normalized)) return null;
+  const n = Number.parseInt(normalized, 16);
+  if (!Number.isFinite(n)) return null;
+  return {
+    r: ((n >> 16) & 255) / 255,
+    g: ((n >> 8) & 255) / 255,
+    b: (n & 255) / 255
+  };
+}
+
 async function buildResumeFormattingSampleDocxBuffer({ companyName = "Your Company", resumeFormatting = {} } = {}) {
   if (!docxLib) return null;
   const { Document, Packer, Paragraph, TextRun, HeadingLevel, Header, Footer, AlignmentType, ImageRun } = docxLib;
