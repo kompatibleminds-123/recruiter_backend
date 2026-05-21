@@ -1655,19 +1655,47 @@ function buildConversationKey({ to = "", clientLabel = "", role = "" } = {}) {
 
 function buildResumeHeaderLineFromCandidate(candidate = {}, resumeFormatting = {}) {
   const fields = Array.isArray(resumeFormatting?.headerShowFields) ? resumeFormatting.headerShowFields : [];
-  const role = String(candidate?.role || candidate?.jd_title || "").trim();
-  const currentDesignation = String(candidate?.current_designation || candidate?.currentDesignation || "").trim();
+  const role = String(
+    candidate?.role
+    || candidate?.jd_title
+    || candidate?.jdTitle
+    || candidate?.target_role
+    || candidate?.targetRole
+    || ""
+  ).trim();
+  const currentDesignation = String(
+    candidate?.current_designation
+    || candidate?.currentDesignation
+    || candidate?.designation
+    || ""
+  ).trim();
+  const email = String(candidate?.email || candidate?.email_id || candidate?.emailId || "").trim();
+  const phone = String(candidate?.phone || candidate?.phone_number || candidate?.phoneNumber || candidate?.mobile || "").trim();
+  const location = String(candidate?.location || candidate?.city || "").trim();
+  const noticePeriod = String(candidate?.notice_period || candidate?.noticePeriod || "").trim();
+  const totalExperience = String(
+    candidate?.total_experience
+    || candidate?.experience
+    || candidate?.totalExperience
+    || ""
+  ).trim();
+  const currentCompany = String(
+    candidate?.current_company
+    || candidate?.currentCompany
+    || candidate?.company
+    || ""
+  ).trim();
   const map = {
     candidate_name: String(candidate?.name || "").trim(),
     candidate_role: role,
     target_role: role,
     current_designation: currentDesignation,
-    email: String(candidate?.email || "").trim(),
-    phone: String(candidate?.phone || "").trim(),
-    location: String(candidate?.location || "").trim(),
-    notice_period: String(candidate?.notice_period || "").trim(),
-    total_experience: String(candidate?.experience || "").trim(),
-    current_company: String(candidate?.company || "").trim()
+    email,
+    phone,
+    location,
+    notice_period: noticePeriod,
+    total_experience: totalExperience,
+    current_company: currentCompany
   };
   return fields.map((key) => String(map[key] || "").trim()).filter(Boolean).join(" | ");
 }
