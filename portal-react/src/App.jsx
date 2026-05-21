@@ -6732,6 +6732,8 @@ function PortalApp({ token, onLogout }) {
 	const lastWorkspaceRefreshAtRef = useRef(0);
   const lastWorkspaceRefreshByPathRef = useRef({});
   const workspaceLoadSeqRef = useRef(0);
+  const candidatesSliceLoadSeqRef = useRef(0);
+  const assessmentsSliceLoadSeqRef = useRef(0);
   // Prevent background refresh from clobbering in-flight actions (e.g. SMTP send).
   const suspendWorkspaceRefreshRef = useRef(false);
 	const loadWorkspaceRef = useRef(null);
@@ -8008,10 +8010,13 @@ function PortalApp({ token, onLogout }) {
 
   async function reloadCandidatesSlice({ includeDatabase = false } = {}) {
     if (!token) return;
+    const seq = (candidatesSliceLoadSeqRef.current || 0) + 1;
+    candidatesSliceLoadSeqRef.current = seq;
     const [candidatesResult, databaseCandidatesResult] = await Promise.all([
       api("/candidates?limit=5000", token).catch(() => []),
       includeDatabase ? api("/company/database-candidates?limit=5000", token).catch(() => []) : Promise.resolve(null)
     ]);
+    if (seq !== candidatesSliceLoadSeqRef.current) return;
     setState((current) => ({
       ...current,
       candidates: mergeCandidatesByFreshness(current.candidates, Array.isArray(candidatesResult) ? candidatesResult : []),
@@ -8023,12 +8028,15 @@ function PortalApp({ token, onLogout }) {
 
   async function reloadAssessmentsSlice({ includeEvents = false } = {}) {
     if (!token) return;
+    const seq = (assessmentsSliceLoadSeqRef.current || 0) + 1;
+    assessmentsSliceLoadSeqRef.current = seq;
     const [assessmentsResult, assessmentEventsResult] = await Promise.all([
       api("/company/assessments", token).catch(() => ({ assessments: [] })),
       includeEvents
         ? api("/company/assessment-events?limit=10000", token).catch(() => ({ result: { rows: [] } }))
         : Promise.resolve(null)
     ]);
+    if (seq !== assessmentsSliceLoadSeqRef.current) return;
     setState((current) => ({
       ...current,
       assessments: mergeAssessmentsByFreshness(current.assessments, assessmentsResult?.assessments || []),
