@@ -1989,7 +1989,38 @@ function mergeAssessmentsByFreshness(currentList = [], incomingList = []) {
     const existingAt = Date.parse(String(existing?.updatedAt || existing?.updated_at || existing?.generatedAt || ""));
     const incomingAt = Date.parse(String(item?.updatedAt || item?.updated_at || item?.generatedAt || ""));
     if (!Number.isFinite(existingAt) || (Number.isFinite(incomingAt) && incomingAt >= existingAt)) {
-      byId.set(id, { ...existing, ...item });
+      const merged = { ...existing, ...item };
+      const preferNonEmpty = (key) => {
+        const incomingVal = merged?.[key];
+        const existingVal = existing?.[key];
+        if ((incomingVal === "" || incomingVal == null) && existingVal !== "" && existingVal != null) {
+          merged[key] = existingVal;
+        }
+      };
+      [
+        "candidateName",
+        "phoneNumber",
+        "emailId",
+        "linkedinUrl",
+        "location",
+        "currentCompany",
+        "currentDesignation",
+        "totalExperience",
+        "currentOrgTenure",
+        "highestEducation",
+        "currentCtc",
+        "expectedCtc",
+        "noticePeriod",
+        "offerInHand",
+        "lwdOrDoj",
+        "clientName",
+        "jdTitle",
+        "recruiterNotes",
+        "otherPointers",
+        "candidateStatus",
+        "status"
+      ].forEach(preferNonEmpty);
+      byId.set(id, merged);
     }
   });
   return Array.from(byId.values());
