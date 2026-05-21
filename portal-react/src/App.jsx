@@ -13980,10 +13980,18 @@ function PortalApp({ token, onLogout }) {
     setStatus("clientShare", "Selected profiles copied as tracker in the chosen preset.", "ok");
   }
 
-  function toggleAssessmentSelection(assessmentId) {
-    const id = String(assessmentId || "");
+  async function toggleAssessmentSelectionWithBranding(assessment = {}) {
+    const id = String(assessment?.id || "").trim();
     if (!id) return;
-    setSelectedAssessmentIds((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id]);
+    const currentlySelected = selectedAssessmentIds.includes(id);
+    if (currentlySelected) {
+      setSelectedAssessmentIds((current) => current.filter((item) => item !== id));
+      if (isAssessmentShareBrandedCvEnabled(assessment)) {
+        await setAssessmentShareBrandedCv(assessment, false);
+      }
+      return;
+    }
+    setSelectedAssessmentIds((current) => (current.includes(id) ? current : [...current, id]));
   }
 
   function isAssessmentShareBrandedCvEnabled(assessment = {}) {
@@ -17176,13 +17184,14 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                       {assessmentLane === "active" && !isArchived ? (
                         <div className="assessment-select-row__checks">
                           <label className="checkbox-pill">
-                            <input type="checkbox" checked={selectedAssessmentIds.includes(String(item.id))} onChange={() => toggleAssessmentSelection(item.id)} />
+                            <input type="checkbox" checked={selectedAssessmentIds.includes(String(item.id))} onChange={() => { void toggleAssessmentSelectionWithBranding(item); }} />
                             <span>Select for client share</span>
                           </label>
                           <label className="checkbox-pill checkbox-pill--soft">
                             <input
                               type="checkbox"
                               checked={isAssessmentShareBrandedCvEnabled(item)}
+                              disabled={!selectedAssessmentIds.includes(String(item.id))}
                               onClick={(e) => e.stopPropagation()}
                               onChange={(e) => { void setAssessmentShareBrandedCv(item, e.target.checked); }}
                             />

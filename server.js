@@ -1470,7 +1470,7 @@ async function buildBrandedPdfBuffer({
       });
     }
     if (showSideRibbon) {
-      const ribbonWidth = 18;
+      const ribbonWidth = 24;
       const ribbonBottom = footerEnabled ? footerHeight : 0;
       const ribbonHeight = height - ribbonBottom;
       page.drawRectangle({
@@ -1482,8 +1482,8 @@ async function buildBrandedPdfBuffer({
         opacity: 0.88
       });
       // Keep text centered vertically and readable for variable company names.
-      let ribbonFontSize = 6.4;
-      const minFontSize = 5.1;
+      let ribbonFontSize = 8.2;
+      const minFontSize = 6.4;
       while (ribbonFontSize > minFontSize && fontRegular.widthOfTextAtSize(sharedByText, ribbonFontSize) > (ribbonHeight - 14)) {
         ribbonFontSize -= 0.2;
       }
@@ -1491,10 +1491,10 @@ async function buildBrandedPdfBuffer({
       const ribbonTextY = ribbonBottom + Math.max(4, ((ribbonHeight - textWidth) / 2));
       page.drawText(sharedByText, {
         // Rotate-90 anchor: keep baseline centered in ribbon width.
-        x: Math.max(2.4, ((ribbonWidth - ribbonFontSize) / 2) + 0.6),
+        x: Math.max(3.1, ((ribbonWidth - ribbonFontSize) / 2) + 0.9),
         y: ribbonTextY,
         size: ribbonFontSize,
-        font: fontRegular,
+        font: fontBold,
         color: rgb(0.965, 0.975, 0.995),
         rotate: degrees(90)
       });
@@ -1542,7 +1542,7 @@ async function buildBrandedPdfBuffer({
       }
 
       if (templateStyle === "client_submission_style") {
-        const metaY = headY - 16;
+        const metaY = headY - 21;
         const chips = displayLine ? displayLine.split("|").map((v) => String(v || "").trim()).filter(Boolean).slice(0, 5) : [];
         const fallbackLabels = ["Company", "Target Role", "Current Designation", "Experience", "Notice"];
         const fieldToLabel = {
@@ -1563,28 +1563,27 @@ async function buildBrandedPdfBuffer({
         chips.forEach((chip, chipIdx) => {
           const label = fieldToLabel[headerFieldOrder[chipIdx]] || fallbackLabels[chipIdx] || "Field";
           const iconText = String(label || "F").slice(0, 1).toUpperCase();
-          const iconR = 3.6;
-          const iconY = metaY + rowOffset + 6.3;
+          const iconR = 4.2;
           const isRoleChip = /target role|designation/i.test(label);
           const valueText = chip.slice(0, isRoleChip ? 40 : 24);
           const labelText = label.slice(0, 14);
-          const valueW = fontRegular.widthOfTextAtSize(valueText, 8.1);
-          const labelW = fontBold.widthOfTextAtSize(labelText, 7.1);
-          const chipMaxW = isRoleChip ? 320 : 186;
-          const chipW = Math.min(chipMaxW, Math.max(88, valueW + labelW + 34));
+          const valueW = fontRegular.widthOfTextAtSize(valueText, 9.2);
+          const labelW = fontBold.widthOfTextAtSize(labelText, 8.2);
+          const chipMaxW = isRoleChip ? 348 : 200;
+          const chipW = Math.min(chipMaxW, Math.max(104, valueW + labelW + 42));
           if ((cursorX + chipW) > rightLimit) {
             cursorX = 20;
-            rowOffset += 17;
+            rowOffset += 21;
           }
           const chipY = metaY + rowOffset;
-          page.drawRoundedRectangle?.({ x: cursorX, y: chipY, width: chipW, height: 14.2, borderRadius: 7, color: rgb(0.962, 0.976, 0.998), borderColor: rgb(0.79, 0.84, 0.93), borderWidth: 0.7 });
+          page.drawRoundedRectangle?.({ x: cursorX, y: chipY, width: chipW, height: 17.4, borderRadius: 8.6, color: rgb(0.962, 0.976, 0.998), borderColor: rgb(0.79, 0.84, 0.93), borderWidth: 0.8 });
           if (!page.drawRoundedRectangle) {
-            page.drawRectangle({ x: cursorX, y: chipY, width: chipW, height: 14.2, color: rgb(0.962, 0.976, 0.998), borderColor: rgb(0.79, 0.84, 0.93), borderWidth: 0.7 });
+            page.drawRectangle({ x: cursorX, y: chipY, width: chipW, height: 17.4, color: rgb(0.962, 0.976, 0.998), borderColor: rgb(0.79, 0.84, 0.93), borderWidth: 0.8 });
           }
-          page.drawCircle({ x: cursorX + 8.5, y: iconY, size: iconR, color: rgb(navy.r, navy.g, navy.b), opacity: 0.92 });
-          page.drawText(iconText, { x: cursorX + 7.2, y: chipY + 3.7, size: 5.9, font: fontBold, color: rgb(0.98, 0.99, 1) });
-          page.drawText(labelText, { x: cursorX + 15.2, y: chipY + 4.6, size: 7.1, font: fontBold, color: rgb(0.18, 0.25, 0.38) });
-          page.drawText(valueText, { x: cursorX + 15.2 + labelW + 4.8, y: chipY + 3.9, size: 8.1, font: fontRegular, color: rgb(0.24, 0.3, 0.42) });
+          page.drawCircle({ x: cursorX + 9.8, y: chipY + 8.7, size: iconR, color: rgb(navy.r, navy.g, navy.b), opacity: 0.94 });
+          page.drawText(iconText, { x: cursorX + 8.1, y: chipY + 5.6, size: 6.8, font: fontBold, color: rgb(0.98, 0.99, 1) });
+          page.drawText(labelText, { x: cursorX + 17.6, y: chipY + 6.4, size: 8.2, font: fontBold, color: rgb(0.18, 0.25, 0.38) });
+          page.drawText(valueText, { x: cursorX + 17.6 + labelW + 5.6, y: chipY + 5.4, size: 9.2, font: fontRegular, color: rgb(0.24, 0.3, 0.42) });
           cursorX += chipW + 6;
         });
       }
