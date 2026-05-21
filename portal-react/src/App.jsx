@@ -6728,8 +6728,10 @@ function PortalApp({ token, onLogout }) {
   const [clientFeedbackItem, setClientFeedbackItem] = useState(null);
 	const [attempts, setAttempts] = useState([]);
 	const workspaceRefreshInFlightRef = useRef(false);
+  const workspaceRefreshPendingRef = useRef(false);
 	const lastWorkspaceRefreshAtRef = useRef(0);
   const lastWorkspaceRefreshByPathRef = useRef({});
+  const workspaceLoadSeqRef = useRef(0);
   // Prevent background refresh from clobbering in-flight actions (e.g. SMTP send).
   const suspendWorkspaceRefreshRef = useRef(false);
 	const loadWorkspaceRef = useRef(null);
@@ -7697,6 +7699,8 @@ function PortalApp({ token, onLogout }) {
   }
 
   async function loadWorkspace(options = {}) {
+    const seq = (workspaceLoadSeqRef.current || 0) + 1;
+    workspaceLoadSeqRef.current = seq;
     const {
       includeEvents = true,
       includeClientUsers = true,
@@ -7811,6 +7815,7 @@ function PortalApp({ token, onLogout }) {
         : current.clientPortal
     );
 
+    if (seq !== workspaceLoadSeqRef.current) return;
     setState((current) => ({
       ...current,
       user: userResult.user || userResult,
@@ -7831,18 +7836,23 @@ function PortalApp({ token, onLogout }) {
         : current.assessments,
       assessmentEvents: needsAssessmentEvents ? (assessmentEventsResult?.result?.rows || []) : current.assessmentEvents
     }));
+    if (seq !== workspaceLoadSeqRef.current) return;
     if (needsJobs) {
       setJobsCatalog(Array.isArray(jobsManageResult?.jobs) ? jobsManageResult.jobs : []);
     }
+    if (seq !== workspaceLoadSeqRef.current) return;
     if (includeClientUsers && clientUsersResult) {
       setClientUsers(clientUsersResult.clientUsers || []);
     }
+    if (seq !== workspaceLoadSeqRef.current) return;
     if (needsEmployeeUsers && employeeUsersResult) {
       setEmployeeUsers(employeeUsersResult?.employees || []);
     }
+    if (seq !== workspaceLoadSeqRef.current) return;
     if (includeSharedPresets && sharedPresetResult) {
       setCopySettings((current) => migrateCopySettings({ ...current, ...sharedPresetResult }));
     }
+    if (seq !== workspaceLoadSeqRef.current) return;
     if (needsEmailSettings && smtpSettingsResult) {
       const isEditingMailSettings = location?.pathname === "/mail-settings";
       if (!isEditingMailSettings || !smtpSettingsDirtyRef.current) {
@@ -7865,6 +7875,7 @@ function PortalApp({ token, onLogout }) {
         setSmtpSettingsLoaded(true);
       }
     }
+    if (seq !== workspaceLoadSeqRef.current) return;
     setCompanyLicense(licenseResult?.license || null);
     if (needsBilling) {
       setBillingOverview(billingOverviewResult || null);
@@ -7877,7 +7888,11 @@ function PortalApp({ token, onLogout }) {
   loadWorkspaceRef.current = loadWorkspace;
 
   async function refreshWorkspaceSilently(reason = "manual", options = {}) {
-    if (!token || workspaceRefreshInFlightRef.current) return;
+    if (!token) return;
+    if (workspaceRefreshInFlightRef.current) {
+      workspaceRefreshPendingRef.current = true;
+      return;
+    }
     if (suspendWorkspaceRefreshRef.current) return;
     const now = Date.now();
     const throttleMs = 15000;
@@ -7899,11 +7914,19 @@ function PortalApp({ token, onLogout }) {
       setStatus("workspace", String(error?.message || error), "error");
     } finally {
       workspaceRefreshInFlightRef.current = false;
+      if (workspaceRefreshPendingRef.current) {
+        workspaceRefreshPendingRef.current = false;
+        void refreshWorkspaceSilently("pending-retry", { ...options, force: true });
+      }
     }
   }
 
   async function refreshWorkspaceNow() {
-    if (!token || workspaceRefreshInFlightRef.current) return;
+    if (!token) return;
+    if (workspaceRefreshInFlightRef.current) {
+      workspaceRefreshPendingRef.current = true;
+      return;
+    }
     if (suspendWorkspaceRefreshRef.current) return;
     workspaceRefreshInFlightRef.current = true;
     lastWorkspaceRefreshAtRef.current = Date.now();
@@ -7918,6 +7941,10 @@ function PortalApp({ token, onLogout }) {
       setStatus("workspace", String(error?.message || error), "error");
     } finally {
       workspaceRefreshInFlightRef.current = false;
+      if (workspaceRefreshPendingRef.current) {
+        workspaceRefreshPendingRef.current = false;
+        void refreshWorkspaceSilently("pending-retry", { force: true });
+      }
     }
   }
 
@@ -8013,7 +8040,8 @@ function PortalApp({ token, onLogout }) {
     if (!token) return;
     const pathname = String(location?.pathname || "/dashboard").trim() || "/dashboard";
     const now = Date.now();
-    const ttlMs = 30000;
+    const fastTabs = new Set(["/dashboard", "/captured-notes", "/assessments", "/interview", "/candidates"]);
+    const ttlMs = fastTabs.has(pathname) ? 5000 : 30000;
     const lastForPath = Number(lastWorkspaceRefreshByPathRef.current?.[pathname] || 0);
     if (now - lastForPath < ttlMs) return;
     lastWorkspaceRefreshByPathRef.current = {
