@@ -1460,6 +1460,42 @@ function systemJobRowId(companyId, key) {
   const variant = ((parseInt(hex.slice(16, 18), 16) & 0x3f) | 0x80).toString(16).padStart(2, "0");
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-5${hex.slice(13, 16)}-${variant}${hex.slice(18, 20)}-${hex.slice(20, 32)}`;
 }
+function toStandardQuestionList(rawQuestions, rawScreeningAnswers) {
+  if (Array.isArray(rawQuestions)) {
+    return rawQuestions
+      .map((q) => {
+        if (typeof q === "string") return q.trim();
+        if (q && typeof q === "object") return String(q.question || q.label || q.title || "").trim();
+        return "";
+      })
+      .filter(Boolean);
+  }
+  const text = String(rawQuestions || "").trim();
+  if (text) {
+    return text
+      .split(/\r?\n|[,;]+/g)
+      .map((s) => s.trim())
+      .filter(Boolean);
+  }
+  if (rawScreeningAnswers && typeof rawScreeningAnswers === "object" && !Array.isArray(rawScreeningAnswers)) {
+    return Object.keys(rawScreeningAnswers).map((k) => String(k || "").trim()).filter(Boolean);
+  }
+  return [];
+}
+function toStandardAnswerList(rawQuestions, rawScreeningAnswers) {
+  if (Array.isArray(rawScreeningAnswers)) return rawScreeningAnswers;
+  if (rawScreeningAnswers && typeof rawScreeningAnswers === "object") {
+    const questionList = toStandardQuestionList(rawQuestions, rawScreeningAnswers);
+    const keys = questionList.length ? questionList : Object.keys(rawScreeningAnswers);
+    return keys
+      .map((question) => ({
+        question: String(question || "").trim(),
+        answer: String(rawScreeningAnswers?.[question] ?? "").trim()
+      }))
+      .filter((row) => row.question);
+  }
+  return [];
+}
 function assessmentRow(assessment, actor, companyId) {
   const a = sanitizeAssessment(assessment);
   const id = persistedAssessmentId(a.id);
@@ -1476,6 +1512,8 @@ function assessmentRow(assessment, actor, companyId) {
     shareBrandedCv: Boolean(a.shareBrandedCv ?? a.share_branded_cv ?? a.payload?.shareBrandedCv ?? a.payload?.share_branded_cv ?? false),
     share_branded_cv: Boolean(a.share_branded_cv ?? a.shareBrandedCv ?? a.payload?.share_branded_cv ?? a.payload?.shareBrandedCv ?? false)
   };
+  const standardQuestions = toStandardQuestionList(next.standardQuestions, next.jdScreeningAnswers);
+  const standardAnswers = toStandardAnswerList(next.standardQuestions, next.jdScreeningAnswers);
   const candidateId = String(next.candidateId || "").trim();
   return {
     id,
@@ -1500,7 +1538,7 @@ function assessmentRow(assessment, actor, companyId) {
     must_have_skills: next.mustHaveSkills || "",
     red_flags: next.redFlags || "",
     jd_shortcuts: next.jdShortcuts || "",
-    standard_questions: next.standardQuestions || "",
+    standard_questions: standardQuestions,
     recruiter_notes: next.recruiterNotes || "",
     reason_of_change: next.reasonForChange || "",
     current_ctc: next.currentCtc || "",
@@ -1528,6 +1566,7 @@ function assessmentRow(assessment, actor, companyId) {
     sections: next.sections || {},
     result: next.result || {},
     answers: next.answers || [],
+    standard_answers: standardAnswers,
     question_answer_pairs: next.questionAnswerPairs || [],
     payload: next
   };
