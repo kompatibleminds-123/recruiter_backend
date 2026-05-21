@@ -1317,7 +1317,8 @@ function sanitizeLwdOrDojValue(value) {
 }
 
 function candidateHasStoredCv(item = {}) {
-  const candidate = item?.raw?.candidate || item;
+  const candidateRaw = item?.raw?.candidate || item;
+  const candidate = candidateRaw && typeof candidateRaw === "object" ? candidateRaw : {};
   const meta = decodePortalApplicantMetadata(candidate);
   const storedFile = candidate.cvAnalysis?.storedFile || candidate.cv_analysis?.storedFile || meta?.cvAnalysisCache?.storedFile || {};
   return Boolean(
@@ -1336,7 +1337,8 @@ function candidateHasStoredCv(item = {}) {
 }
 
 function getCandidateProfileCvMeta(item = {}) {
-  const candidate = item?.raw?.candidate || item;
+  const candidateRaw = item?.raw?.candidate || item;
+  const candidate = candidateRaw && typeof candidateRaw === "object" ? candidateRaw : {};
   const meta = decodePortalApplicantMetadata(candidate);
   const storedFile = candidate.cvAnalysis?.storedFile || candidate.cv_analysis?.storedFile || meta?.cvAnalysisCache?.storedFile || {};
   return {
