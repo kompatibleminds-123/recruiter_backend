@@ -2470,7 +2470,23 @@ async function getPublicCompanyJobsBySlug(companySlug) {
   if (!cfg().on) {
     const store = readStore();
     const companies = Array.isArray(store.companies) ? store.companies : [];
-    const matchedCompany = companies.find((company) => toCompanySlug(company?.name || "") === scopedSlug);
+    let matchedCompany = companies.find((company) => toCompanySlug(company?.name || "") === scopedSlug);
+    if (!matchedCompany?.id) {
+      const jobs = Array.isArray(store.jobs) ? store.jobs : [];
+      for (const company of companies) {
+        const presetRow = jobs.find((job) => (
+          String(job?.companyId || "").trim() === String(company?.id || "").trim()
+          && isSharedExportPresetRow(job)
+        ));
+        if (!presetRow) continue;
+        const settings = sanitizeSharedExportPresetSettings(presetRow?.payload || presetRow || {});
+        const configuredSlug = String(settings?.jobBoard?.slug || "").trim().toLowerCase();
+        if (configuredSlug && configuredSlug === scopedSlug) {
+          matchedCompany = company;
+          break;
+        }
+      }
+    }
     if (!matchedCompany?.id) throw new Error("Company not found.");
     const jobs = (Array.isArray(store.jobs) ? store.jobs : [])
       .filter((job) => String(job?.companyId || "").trim() === String(matchedCompany.id || "").trim())
@@ -2485,7 +2501,22 @@ async function getPublicCompanyJobsBySlug(companySlug) {
   }
   await ensureSeeded();
   const companyRows = await sbSel("companies", `select=id,name&limit=1000`);
-  const matchedCompany = (companyRows || []).find((company) => toCompanySlug(company?.name || "") === scopedSlug);
+  let matchedCompany = (companyRows || []).find((company) => toCompanySlug(company?.name || "") === scopedSlug);
+  if (!matchedCompany?.id) {
+    const presetRows = await sbSel(
+      "company_jobs",
+      `select=company_id,payload&title=eq.${enc(SHARED_EXPORT_PRESET_ROW_TITLE)}&limit=5000`
+    ).catch(() => []);
+    const matchedPreset = (presetRows || []).find((row) => {
+      const settings = sanitizeSharedExportPresetSettings(row?.payload || row || {});
+      const configuredSlug = String(settings?.jobBoard?.slug || "").trim().toLowerCase();
+      return Boolean(configuredSlug) && configuredSlug === scopedSlug;
+    });
+    if (matchedPreset?.company_id) {
+      const targetId = String(matchedPreset.company_id || "").trim();
+      matchedCompany = (companyRows || []).find((company) => String(company?.id || "").trim() === targetId) || null;
+    }
+  }
   if (!matchedCompany?.id) throw new Error("Company not found.");
   const rows = await sbSel("company_jobs", `select=*&company_id=eq.${enc(String(matchedCompany.id || "").trim())}&order=updated_at.desc`);
   const jobs = (rows || [])
