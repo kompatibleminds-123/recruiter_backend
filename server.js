@@ -9058,7 +9058,7 @@ function buildCvAutofillPatch(candidateRow, cvResult) {
   const nextCompany = String(result.currentCompany || "").trim();
   const nextRole = String(result.currentDesignation || "").trim();
   const nextExp = String(result.totalExperience || "").trim();
-  const nextEdu = String(result.highestEducation || "").trim();
+  const nextEdu = String(result.highestEducation || result.highestQualification || "").trim();
   const nextLinkedIn = String(result.linkedinUrl || "").trim();
   const nextOrgTenure = String(result.currentOrgTenure || "").trim();
   const timelineConfidence = String(
@@ -14483,7 +14483,7 @@ const server = http.createServer(async (req, res) => {
         phone: fieldValueOrUndefined("phone", "phoneNumber"),
         email: fieldValueOrUndefined("email", "emailId"),
         linkedin: fieldValueOrUndefined("linkedin", "linkedinUrl"),
-        highest_education: fieldValueOrUndefined("highest_education", "highestEducation"),
+        highest_education: fieldValueOrUndefined("highest_education", "highestEducation", "highestQualification"),
         last_contact_outcome: fieldValueOrUndefined("last_contact_outcome", "lastContactOutcome"),
         last_contact_notes: fieldValueOrUndefined("last_contact_notes", "lastContactNotes"),
         last_contact_at: fieldValueOrUndefined("last_contact_at", "lastContactAt"),
