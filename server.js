@@ -1628,6 +1628,16 @@ function normalizeThreadToken(value = "") {
   return String(value || "").trim().toLowerCase().replace(/\s+/g, " ");
 }
 
+function toSafeCvFilenameBase(value = "") {
+  const raw = String(value || "").trim();
+  if (!raw) return "Candidate";
+  const cleaned = raw
+    .replace(/[\\/:*?"<>|]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  return cleaned || "Candidate";
+}
+
 function isInternetMessageId(value = "") {
   const text = String(value || "").trim();
   return Boolean(text) && text.includes("@");
@@ -12744,7 +12754,7 @@ const server = http.createServer(async (req, res) => {
           candidateName,
           headerLine
         });
-        const brandedName = String(file.filename || "resume.pdf").replace(/\.pdf$/i, "") + "-branded.pdf";
+        const brandedName = `${toSafeCvFilenameBase(candidateName)}_CV.pdf`;
         sendBuffer(req, res, 200, brandedBuffer, {
           "Content-Type": "application/pdf",
           "Content-Disposition": `${forceDownload ? "attachment" : "inline"}; filename="${brandedName.replace(/"/g, "")}"`

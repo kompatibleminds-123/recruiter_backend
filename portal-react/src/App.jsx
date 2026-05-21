@@ -8068,13 +8068,20 @@ function PortalApp({ token, onLogout }) {
         ? (copySettings.clientShareThreadIntroTemplate || DEFAULT_COPY_SETTINGS.clientShareThreadIntroTemplate || "")
         : (copySettings.clientShareIntroTemplate || DEFAULT_COPY_SETTINGS.clientShareIntroTemplate || "")
     ).trim();
-    const nextHtml = escapeHtml(template).replace(/\n/g, "<br/>");
+    const nextHtml = replaceClientSharePlaceholdersInHtml(
+      escapeHtml(template).replace(/\n/g, "<br/>"),
+      getClientShareContext()
+    );
     if (String(clientShareDraft.richBodyHtml || "").trim() === String(nextHtml || "").trim()) return;
     setClientShareDraft((current) => ({ ...current, richBodyHtml: nextHtml }));
   }, [
     clientShareBodyTouched,
     clientShareDraft.deliveryMode,
     clientShareDraft.richBodyHtml,
+    clientShareDraft.clientLabel,
+    clientShareDraft.targetRole,
+    clientShareDraft.hrName,
+    clientShareDraft.recruiterName,
     copySettings.clientShareIntroTemplate,
     copySettings.clientShareThreadIntroTemplate,
   ]);
@@ -8096,9 +8103,21 @@ function PortalApp({ token, onLogout }) {
     clientShareDraft.richBodyHtml,
     clientShareBodyTouched,
     clientShareDraft.deliveryMode,
+    clientShareDraft.clientLabel,
+    clientShareDraft.targetRole,
+    clientShareDraft.hrName,
+    clientShareDraft.recruiterName,
     copySettings.clientShareIntroTemplate,
     copySettings.clientShareThreadIntroTemplate,
+    copySettings.clientShareSignatureText,
+    copySettings.clientShareSignatureLinkLabel,
+    copySettings.clientShareSignatureLinkUrl,
+    copySettings.clientShareSignatureLinkLabel2,
+    copySettings.clientShareSignatureLinkUrl2,
+    copySettings.exportPresetColumns,
+    copySettings.customExportPresets,
     selectedAssessmentIds,
+    state.assessments,
     clientShareCvLinks,
     clientShareCvLinkState,
     clientShareDraft.presetId
