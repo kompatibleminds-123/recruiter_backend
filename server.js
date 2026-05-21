@@ -55,6 +55,7 @@ const {
   getCompanyEmailThreadByKey,
   getCompanyPersonalShortcuts,
   getPublicCompanyJob,
+  getPublicCompanyJobsBySlug,
   listCompanyEmployees,
   listCompanySalaryTemplates,
   listCompanyFbpHeads,
@@ -1389,6 +1390,16 @@ async function buildBrandedPdfBuffer({
   if (!raw) throw new Error("PDF payload missing.");
   const src = Buffer.from(raw, "base64");
   const srcDoc = await PDFDocument.load(src);
+  // Some CV PDFs store contact details in AcroForm fields.
+  // Flatten ensures field appearances become normal page content before overlay embedding.
+  try {
+    const form = srcDoc.getForm?.();
+    if (form && typeof form.flatten === "function") {
+      form.flatten({ updateFieldAppearances: true });
+    }
+  } catch {
+    // Not a form PDF (or malformed form) - safe to continue without flatten.
+  }
   const outDoc = await PDFDocument.create();
   const srcPages = srcDoc.getPages();
   const rf = resumeFormatting && typeof resumeFormatting === "object" ? resumeFormatting : {};
@@ -9524,6 +9535,10 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (req.method === "GET" && (requestUrl.pathname === "/jobs" || requestUrl.pathname === "/jobs/" || requestUrl.pathname.startsWith("/jobs/"))) {
+    if (requestUrl.pathname.startsWith("/jobs/company/")) {
+      serveStaticFile(res, path.join(ROOT_PUBLIC_DIR, "jobs-board.html"));
+      return;
+    }
     serveStaticFile(res, path.join(ROOT_PUBLIC_DIR, "apply.html"));
     return;
   }
@@ -10838,6 +10853,39 @@ const server = http.createServer(async (req, res) => {
       sendJson(res, 200, { ok: true, result: settings });
     } catch (error) {
       sendJson(res, 400, { ok: false, error: String(error.message || error) });
+    }
+    return;
+  }
+
+  if (req.method === "GET" && requestUrl.pathname.startsWith("/public/company-jobs/")) {
+    try {
+      const companySlug = String(requestUrl.pathname.replace(/^\/public\/company-jobs\//, "").replace(/\/+$/, "")).trim().toLowerCase();
+      if (!companySlug) throw new Error("Company slug is required.");
+      const result = await getPublicCompanyJobsBySlug(companySlug);
+      const sharedSettings = await getCompanySharedExportPresets(String(result?.companyId || "").trim()).catch(() => ({}));
+      const boardSettings = sharedSettings?.jobBoard && typeof sharedSettings.jobBoard === "object" ? sharedSettings.jobBoard : {};
+      const jobs = (Array.isArray(result?.jobs) ? result.jobs : []).map((job) => ({
+        id: String(job?.id || "").trim(),
+        title: String(job?.title || "").trim(),
+        location: String(job?.location || "").trim(),
+        workMode: String(job?.workMode || "").trim(),
+        clientName: String(job?.clientName || "").trim(),
+        applyLink: `${getRequestBaseUrl(req)}/apply/${encodeURIComponent(String(job?.id || "").trim())}`,
+        publicApplyLink: `${getRequestBaseUrl(req)}/apply-public/${encodeURIComponent(String(job?.id || "").trim())}`
+      })).filter((job) => job.id && job.title);
+      sendJson(res, 200, {
+        ok: true,
+        result: {
+          companyId: String(result?.companyId || "").trim(),
+          companyName: String(result?.companyName || "").trim(),
+          companySlug: String(result?.companySlug || companySlug).trim(),
+          pageTitle: String(boardSettings.pageTitle || "Jobs").trim(),
+          pageSubtitle: String(boardSettings.pageSubtitle || "Explore active openings and apply directly.").trim(),
+          jobs
+        }
+      });
+    } catch (error) {
+      sendJson(res, 404, { ok: false, error: String(error?.message || error) });
     }
     return;
   }

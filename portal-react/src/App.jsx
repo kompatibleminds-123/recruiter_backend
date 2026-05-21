@@ -277,7 +277,13 @@ function FeatureLockedSection({ title = "Feature locked" }) {
   companyWideShortcuts: {},
   jdEmailSubjectTemplate: "Job Description - {Role}",
   jdEmailIntroTemplate: "Hello {Candidate}.\nGreetings !!\n\nThis is {Recruiter} from Kompatible Minds.\nIt was good to interact with you.\n\nAs discussed, please find the Job description for the {Role}.\nPlease acknowledge or confirm so we can take your candidature ahead.",
-  interviewAiParsingEnabled: true
+  interviewAiParsingEnabled: true,
+  jobBoard: {
+    slug: "",
+    pageTitle: "Jobs",
+    pageSubtitle: "Explore active openings and apply directly.",
+    embedHeightPx: 900
+  }
 };
 
 function migrateCopySettings(settings = {}) {
@@ -341,6 +347,14 @@ function migrateCopySettings(settings = {}) {
     clientName: normalizeMojibakeSymbols(preset?.clientName || ""),
     columns: normalizeMojibakeSymbols(preset?.columns || "")
   }));
+  next.jobBoard = {
+    ...(DEFAULT_COPY_SETTINGS.jobBoard || {}),
+    ...((next.jobBoard && typeof next.jobBoard === "object") ? next.jobBoard : {})
+  };
+  next.jobBoard.slug = String(next.jobBoard.slug || "").trim().toLowerCase();
+  next.jobBoard.pageTitle = String(next.jobBoard.pageTitle || DEFAULT_COPY_SETTINGS.jobBoard.pageTitle || "Jobs").trim();
+  next.jobBoard.pageSubtitle = String(next.jobBoard.pageSubtitle || DEFAULT_COPY_SETTINGS.jobBoard.pageSubtitle || "").trim();
+  next.jobBoard.embedHeightPx = Math.max(480, Math.min(1400, Number(next.jobBoard.embedHeightPx || 900) || 900));
   next.exportPresetColumns = presetColumns;
   return next;
 }
@@ -3511,6 +3525,31 @@ function buildClientPortalTrackerRows(items = [], cvTextByAssessmentId = {}) {
 
 function getPublicApplyLink(jobId) {
   return jobId ? `${window.location.origin}/apply-public/${encodeURIComponent(jobId)}` : "";
+}
+
+function toUrlSlug(value) {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+function getPublicJobsCompanySlug(copySettings, companyName) {
+  const configured = String(copySettings?.jobBoard?.slug || "").trim().toLowerCase();
+  if (configured) return configured;
+  return toUrlSlug(companyName) || "jobs";
+}
+
+function getPublicJobsCompanyLink(copySettings, companyName) {
+  const slug = getPublicJobsCompanySlug(copySettings, companyName);
+  return `${window.location.origin}/jobs/company/${encodeURIComponent(slug)}`;
+}
+
+function getPublicJobsEmbedCode(copySettings, companyName) {
+  const url = getPublicJobsCompanyLink(copySettings, companyName);
+  const height = Math.max(480, Math.min(1400, Number(copySettings?.jobBoard?.embedHeightPx || 900) || 900));
+  return `<iframe src="${url}" style="width:100%;height:${height}px;border:0;border-radius:12px;" loading="lazy"></iframe>`;
 }
 
 function getRecruiterApplyLink(jobId, recruiterId, sig) {
@@ -10132,15 +10171,29 @@ function PortalApp({ token, onLogout }) {
       if (meta.filename) params.set("cv_filename", String(meta.filename));
       if (meta.key) params.set("cv_key", String(meta.key));
       if (meta.provider) params.set("cv_provider", String(meta.provider));
+      const previewCandidateName = buildResumeCandidateName(item);
+      const previewHeaderLine = buildResumeHeaderLineForCandidate(item);
+      if (previewCandidateName) params.set("candidate_name", previewCandidateName);
+      if (previewHeaderLine) params.set("header_line", previewHeaderLine);
       params.set("mode", "branded");
       params.set("download", "1");
-      const directUrl = `/company/candidates/${encodeURIComponent(meta.candidateId)}/cv?${params.toString()}`;
+      const response = await fetch(`/company/candidates/${encodeURIComponent(meta.candidateId)}/cv?${params.toString()}`);
+      if (!response.ok) throw new Error("Could not load branded CV.");
+      const blob = await response.blob();
+      const objectUrl = URL.createObjectURL(blob);
+      const nameBase = String(previewCandidateName || item?.name || "Candidate")
+        .replace(/[\\/:*?"<>|]+/g, " ")
+        .replace(/\s+/g, " ")
+        .trim()
+        .replace(/\s+/g, "-") || "Candidate";
+      const fileName = `${nameBase}_CV.pdf`;
       const a = document.createElement("a");
-      a.href = directUrl;
-      a.rel = "noopener noreferrer";
+      a.href = objectUrl;
+      a.download = fileName;
       document.body.appendChild(a);
       a.click();
       a.remove();
+      setTimeout(() => { try { URL.revokeObjectURL(objectUrl); } catch {} }, 120000);
       setStatus("workspace", "Branded CV downloaded.", "ok");
     } catch (error) {
       setStatus("workspace", String(error?.message || error || "Could not download branded CV."), "error");
@@ -17887,6 +17940,77 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                   </div>
                 ) : null}
               </Section>
+              {isSettingsAdmin ? (
+                <Section kicker="Job Page Integration" title="Public Jobs Page & Embed">
+                  {statuses.settings ? <div className={`status ${statuses.settingsKind || ""}`}>{statuses.settings}</div> : null}
+                  <p className="muted">Create company jobs page link and iframe embed snippet for website integration.</p>
+                  <div className="form-grid two-col">
+                    <label>
+                      <span>Company jobs slug</span>
+                      <input
+                        value={copySettings?.jobBoard?.slug || ""}
+                        onChange={(e) => {
+                          const nextSlug = toUrlSlug(e.target.value);
+                          setCopySettings((current) => ({
+                            ...current,
+                            jobBoard: { ...(current.jobBoard || {}), slug: nextSlug }
+                          }));
+                        }}
+                        placeholder="kompatible-minds"
+                      />
+                    </label>
+                    <label>
+                      <span>Embed height (px)</span>
+                      <input
+                        type="number"
+                        min={480}
+                        max={1400}
+                        value={copySettings?.jobBoard?.embedHeightPx ?? 900}
+                        onChange={(e) => {
+                          const nextHeight = Math.max(480, Math.min(1400, Number(e.target.value || 900) || 900));
+                          setCopySettings((current) => ({
+                            ...current,
+                            jobBoard: { ...(current.jobBoard || {}), embedHeightPx: nextHeight }
+                          }));
+                        }}
+                      />
+                    </label>
+                    <label className="full">
+                      <span>Jobs page title</span>
+                      <input
+                        value={copySettings?.jobBoard?.pageTitle || ""}
+                        onChange={(e) => setCopySettings((current) => ({
+                          ...current,
+                          jobBoard: { ...(current.jobBoard || {}), pageTitle: e.target.value }
+                        }))}
+                      />
+                    </label>
+                    <label className="full">
+                      <span>Jobs page subtitle</span>
+                      <input
+                        value={copySettings?.jobBoard?.pageSubtitle || ""}
+                        onChange={(e) => setCopySettings((current) => ({
+                          ...current,
+                          jobBoard: { ...(current.jobBoard || {}), pageSubtitle: e.target.value }
+                        }))}
+                      />
+                    </label>
+                    <label className="full">
+                      <span>Company jobs link</span>
+                      <textarea readOnly value={getPublicJobsCompanyLink(copySettings, state.user?.companyName || state.user?.company_name || "")} />
+                    </label>
+                    <label className="full">
+                      <span>Website embed code</span>
+                      <textarea readOnly value={getPublicJobsEmbedCode(copySettings, state.user?.companyName || state.user?.company_name || "")} />
+                    </label>
+                  </div>
+                  <div className="button-row">
+                    <button onClick={() => void saveCopySettingsWithMessage("Public jobs integration settings saved.")}>Save job page settings</button>
+                    <button className="ghost-btn" onClick={() => void copyText(getPublicJobsCompanyLink(copySettings, state.user?.companyName || state.user?.company_name || "")).then(() => setStatus("intake", "Company jobs link copied.", "ok"))}>Copy jobs link</button>
+                    <button className="ghost-btn" onClick={() => void copyText(getPublicJobsEmbedCode(copySettings, state.user?.companyName || state.user?.company_name || "")).then(() => setStatus("intake", "Embed code copied.", "ok"))}>Copy embed code</button>
+                  </div>
+                </Section>
+              ) : null}
             </div>
           } />
 

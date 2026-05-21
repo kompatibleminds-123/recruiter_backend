@@ -1,0 +1,72 @@
+body {
+  margin: 0;
+  font-family: "Segoe UI", Tahoma, sans-serif;
+  background: #f4f7fb;
+  color: #102243;
+}
+
+.jobs-shell {
+  max-width: 980px;
+  margin: 0 auto;
+  padding: 24px 16px 32px;
+}
+
+.jobs-head h1 {
+  margin: 0 0 6px;
+  font-size: 28px;
+  line-height: 1.2;
+}
+
+.jobs-head p {
+  margin: 0 0 18px;
+  color: #4c6388;
+}
+
+.jobs-status {
+  margin-bottom: 14px;
+  color: #26416f;
+}
+
+.jobs-list {
+  display: grid;
+  gap: 12px;
+}
+
+.job-card {
+  background: #fff;
+  border: 1px solid #d8e2f2;
+  border-radius: 14px;
+  padding: 14px;
+}
+
+.job-card h3 {
+  margin: 0 0 8px;
+  font-size: 18px;
+}
+
+.job-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.chip {
+  background: #f1f5fd;
+  color: #274372;
+  border: 1px solid #d5e0f2;
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-size: 12px;
+}
+
+.job-actions a {
+  display: inline-block;
+  text-decoration: none;
+  background: #2459d3;
+  color: #fff;
+  border-radius: 10px;
+  padding: 8px 14px;
+  font-weight: 600;
+}
+

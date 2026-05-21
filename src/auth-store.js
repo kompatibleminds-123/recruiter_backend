@@ -24,6 +24,14 @@ function buildApplicantIntakeSecret(companyName = "") {
     .slice(0, 24) || "company";
   return `${slug}_intake_${crypto.randomBytes(12).toString("hex")}`;
 }
+function toCompanySlug(companyName = "") {
+  return String(companyName || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 64);
+}
 function hashPassword(password, salt = crypto.randomBytes(16).toString("hex")) {
   const hash = crypto.pbkdf2Sync(String(password || ""), salt, 100000, 64, "sha512").toString("hex");
   return `${salt}:${hash}`;
@@ -2410,6 +2418,40 @@ async function getPublicCompanyJob(jobId) {
   const job = sanitizeJob((rows || []).find((row) => !isSystemJobRow(row)));
   if (!job) throw new Error("Job not found.");
   return job;
+}
+async function getPublicCompanyJobsBySlug(companySlug) {
+  const scopedSlug = String(companySlug || "").trim().toLowerCase();
+  if (!scopedSlug) throw new Error("Company slug is required.");
+  if (!cfg().on) {
+    const store = readStore();
+    const companies = Array.isArray(store.companies) ? store.companies : [];
+    const matchedCompany = companies.find((company) => toCompanySlug(company?.name || "") === scopedSlug);
+    if (!matchedCompany?.id) throw new Error("Company not found.");
+    const jobs = (Array.isArray(store.jobs) ? store.jobs : [])
+      .filter((job) => String(job?.companyId || "").trim() === String(matchedCompany.id || "").trim())
+      .map(sanitizeJob)
+      .filter((job) => !isSystemJobRow(job) && !isJobArchived(job));
+    return {
+      companyId: String(matchedCompany.id || "").trim(),
+      companyName: String(matchedCompany.name || "").trim(),
+      companySlug: scopedSlug,
+      jobs
+    };
+  }
+  await ensureSeeded();
+  const companyRows = await sbSel("companies", `select=id,name&limit=1000`);
+  const matchedCompany = (companyRows || []).find((company) => toCompanySlug(company?.name || "") === scopedSlug);
+  if (!matchedCompany?.id) throw new Error("Company not found.");
+  const rows = await sbSel("company_jobs", `select=*&company_id=eq.${enc(String(matchedCompany.id || "").trim())}&order=updated_at.desc`);
+  const jobs = (rows || [])
+    .map(sanitizeJob)
+    .filter((job) => !isSystemJobRow(job) && !isJobArchived(job));
+  return {
+    companyId: String(matchedCompany.id || "").trim(),
+    companyName: String(matchedCompany.name || "").trim(),
+    companySlug: scopedSlug,
+    jobs
+  };
 }
 async function saveCompanyJob({ actorUserId, companyId, job }) {
   if (!actorUserId || !companyId || !job?.title || !job?.jobDescription) throw new Error("actorUserId, companyId, job title, and job description are required.");
@@ -5163,6 +5205,7 @@ module.exports = {
   getCompanyEmailThreadByKey,
   getCompanyPersonalShortcuts,
   getPublicCompanyJob,
+  getPublicCompanyJobsBySlug,
   setCompanyExtensionPlan,
   getSessionUser,
   incrementCompanyCaptureUsage,
