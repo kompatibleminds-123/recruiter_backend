@@ -10071,6 +10071,10 @@ function PortalApp({ token, onLogout }) {
       if (meta.filename) params.set("cv_filename", String(meta.filename));
       if (meta.key) params.set("cv_key", String(meta.key));
       if (meta.provider) params.set("cv_provider", String(meta.provider));
+      const previewCandidateName = buildResumeCandidateName(item);
+      const previewHeaderLine = buildResumeHeaderLineForCandidate(item);
+      if (previewCandidateName) params.set("candidate_name", previewCandidateName);
+      if (previewHeaderLine) params.set("header_line", previewHeaderLine);
       params.set("mode", "branded");
       const brandedUrl = `/company/candidates/${encodeURIComponent(meta.candidateId)}/cv?${params.toString()}`;
       if (pendingTab) pendingTab.location.href = brandedUrl;

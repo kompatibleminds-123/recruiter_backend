@@ -1545,8 +1545,7 @@ async function buildBrandedPdfBuffer({
       }
 
       if (templateStyle === "client_submission_style") {
-        const metaY = headY - 21;
-        const chips = displayLine ? displayLine.split("|").map((v) => String(v || "").trim()).filter(Boolean).slice(0, 5) : [];
+        const chips = displayLine ? displayLine.split("|").map((v) => String(v || "").trim()).filter(Boolean).slice(0, 4) : [];
         const fallbackLabels = ["Company", "Target Role", "Current Designation", "Experience", "Notice"];
         const fieldToLabel = {
           current_company: "Company",
@@ -1560,8 +1559,8 @@ async function buildBrandedPdfBuffer({
           phone: "Phone",
           candidate_name: "Name"
         };
-        let cursorX = 20;
-        let rowOffset = 0;
+        let cursorX = textX;
+        const chipY = headY + 7;
         const rightLimit = width - 20;
         chips.forEach((chip, chipIdx) => {
           const label = fieldToLabel[headerFieldOrder[chipIdx]] || fallbackLabels[chipIdx] || "Field";
@@ -1572,13 +1571,9 @@ async function buildBrandedPdfBuffer({
           const labelText = label.slice(0, 14);
           const valueW = fontRegular.widthOfTextAtSize(valueText, 8.8);
           const labelW = fontBold.widthOfTextAtSize(labelText, 7.8);
-          const chipMaxW = isRoleChip ? 336 : 194;
+          const chipMaxW = isRoleChip ? 300 : 178;
           const chipW = Math.min(chipMaxW, Math.max(96, valueW + labelW + 38));
-          if ((cursorX + chipW) > rightLimit) {
-            cursorX = 20;
-            rowOffset += 21;
-          }
-          const chipY = metaY - rowOffset;
+          if ((cursorX + chipW) > rightLimit) return;
           page.drawRoundedRectangle?.({ x: cursorX, y: chipY, width: chipW, height: 16.2, borderRadius: 8, color: rgb(0.962, 0.976, 0.998), borderColor: rgb(0.79, 0.84, 0.93), borderWidth: 0.8 });
           if (!page.drawRoundedRectangle) {
             page.drawRectangle({ x: cursorX, y: chipY, width: chipW, height: 16.2, color: rgb(0.962, 0.976, 0.998), borderColor: rgb(0.79, 0.84, 0.93), borderWidth: 0.8 });
@@ -12741,6 +12736,8 @@ const server = http.createServer(async (req, res) => {
       const candidateId = String(requestUrl.pathname.replace(/^\/company\/candidates\//, "").replace(/\/cv$/, "")).trim();
       const wantBranded = ["1", "true", "yes", "branded"].includes(String(requestUrl.searchParams.get("mode") || "").trim().toLowerCase());
       const forceDownload = ["1", "true", "yes", "download", "attachment"].includes(String(requestUrl.searchParams.get("download") || "").trim().toLowerCase());
+      const requestedCandidateName = String(requestUrl.searchParams.get("candidate_name") || "").trim();
+      const requestedHeaderLine = String(requestUrl.searchParams.get("header_line") || "").trim();
       const candidate = (await listCandidatesForUser(actor, { id: candidateId, limit: 1 }))[0] || null;
       const meta = candidate ? decodeApplicantMetadata(candidate) : {};
       const cachedStoredFile = meta?.cvAnalysisCache?.storedFile && typeof meta.cvAnalysisCache.storedFile === "object"
@@ -12776,8 +12773,9 @@ const server = http.createServer(async (req, res) => {
         const resumeFormatting = sharedSettings?.resumeFormatting && typeof sharedSettings.resumeFormatting === "object"
           ? sharedSettings.resumeFormatting
           : {};
-        const candidateName = String(candidate?.name || "").trim() || "Candidate Name";
-        const headerLine = buildResumeHeaderLineFromCandidate(candidate || {}, resumeFormatting);
+        const candidateName = String(candidate?.name || requestedCandidateName || "").trim() || "Candidate Name";
+        let headerLine = buildResumeHeaderLineFromCandidate(candidate || {}, resumeFormatting);
+        if (!headerLine && requestedHeaderLine) headerLine = requestedHeaderLine;
         const brandedBuffer = await buildBrandedPdfBuffer({
           pdfBase64: file.buffer.toString("base64"),
           companyName: String(actor?.companyName || actor?.company_name || "").trim() || "Your Company",
