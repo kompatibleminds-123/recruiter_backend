@@ -903,6 +903,7 @@ function sanitizeAssessment(item) {
     currentCtc: item.currentCtc ?? item.current_ctc ?? p.currentCtc ?? "",
     expectedCtc: item.expectedCtc ?? item.expected_ctc ?? p.expectedCtc ?? "",
     noticePeriod: item.noticePeriod ?? item.notice_period ?? p.noticePeriod ?? "",
+    gender: item.gender ?? p.gender ?? "",
     questionMode: item.questionMode ?? item.question_mode ?? p.questionMode ?? "",
     jdScreeningAnswers:
       item.jdScreeningAnswers

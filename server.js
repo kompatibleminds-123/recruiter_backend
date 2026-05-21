@@ -7601,6 +7601,10 @@ function sanitizeCandidateSavePayload(rawCandidate, actor) {
   const input = rawCandidate && typeof rawCandidate === "object" ? rawCandidate : {};
   const screeningAnswers = normalizeJsonObjectInput(input.screening_answers || input.screeningAnswers);
   const draftPayload = normalizeJsonObjectInput(input.draft_payload || input.draftPayload);
+  const normalizedGender = String(input.gender || input.candidate_gender || "").trim();
+  if (normalizedGender) {
+    draftPayload.gender = normalizedGender;
+  }
   const candidate = {
     id: String(input.id || "").trim() || undefined,
     company_id: String(actor.companyId || "").trim() || undefined,
