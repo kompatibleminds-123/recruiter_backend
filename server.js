@@ -1473,7 +1473,7 @@ async function buildBrandedPdfBuffer({
       });
     }
     if (showSideRibbon) {
-      const ribbonWidth = 24;
+      const ribbonWidth = 28;
       const ribbonBottom = footerEnabled ? footerHeight : 0;
       const ribbonHeight = height - ribbonBottom;
       page.drawRectangle({
@@ -1485,8 +1485,8 @@ async function buildBrandedPdfBuffer({
         opacity: 0.88
       });
       // Keep text centered vertically and readable for variable company names.
-      let ribbonFontSize = 9.6;
-      const minFontSize = 7.2;
+      let ribbonFontSize = 10.6;
+      const minFontSize = 8.0;
       while (ribbonFontSize > minFontSize && fontRegular.widthOfTextAtSize(sharedByText, ribbonFontSize) > (ribbonHeight - 14)) {
         ribbonFontSize -= 0.2;
       }
@@ -1494,7 +1494,7 @@ async function buildBrandedPdfBuffer({
       const ribbonTextY = ribbonBottom + ((ribbonHeight - textWidth) / 2);
       page.drawText(sharedByText, {
         // Rotate-90 anchor: keep baseline centered in ribbon width.
-        x: Math.max(5.2, ((ribbonWidth - ribbonFontSize) / 2) + 2.4),
+        x: Math.max(9.0, ((ribbonWidth - ribbonFontSize) / 2) + 5.0),
         y: ribbonTextY,
         size: ribbonFontSize,
         font: fontBold,

@@ -13490,7 +13490,22 @@ function PortalApp({ token, onLogout }) {
     try {
       const blob = await requestBrandedResumePdfBlob();
       const url = URL.createObjectURL(blob);
-      window.open(url, "_blank", "noopener,noreferrer");
+      const candidateName = buildResumeCandidateName(resumeSampleCandidate) || "Candidate";
+      const safeName = String(candidateName)
+        .replace(/[\\/:*?"<>|]+/g, " ")
+        .replace(/\s+/g, " ")
+        .trim()
+        .replace(/\s+/g, "-");
+      const downloadName = `${safeName || "Candidate"}_CV.pdf`;
+      const previewTab = window.open("", "_blank");
+      if (previewTab && previewTab.document) {
+        const safeUrl = String(url).replace(/"/g, "&quot;");
+        const safeDownload = String(downloadName).replace(/"/g, "");
+        previewTab.document.write(`<!doctype html><html><head><meta charset="utf-8"/><title>Branded CV Preview</title></head><body style="margin:0;font-family:Arial,sans-serif;background:#111827;color:#fff;"><div style="display:flex;align-items:center;gap:10px;padding:10px 12px;background:#1f2937;border-bottom:1px solid #374151;"><a href="${safeUrl}" download="${safeDownload}" style="background:#2563eb;color:#fff;text-decoration:none;padding:8px 12px;border-radius:8px;font-weight:600;">Download PDF</a><span style="font-size:13px;color:#cbd5e1;">Preview + Download</span></div><iframe src="${safeUrl}" style="width:100%;height:calc(100vh - 52px);border:0;background:#111827;"></iframe></body></html>`);
+        previewTab.document.close();
+      } else {
+        window.open(url, "_blank", "noopener,noreferrer");
+      }
       setTimeout(() => {
         try { URL.revokeObjectURL(url); } catch {}
       }, 120000);
@@ -13504,9 +13519,15 @@ function PortalApp({ token, onLogout }) {
     try {
       const blob = await requestBrandedResumePdfBlob();
       const outUrl = URL.createObjectURL(blob);
+      const candidateName = buildResumeCandidateName(resumeSampleCandidate) || "Candidate";
+      const safeName = String(candidateName)
+        .replace(/[\\/:*?"<>|]+/g, " ")
+        .replace(/\s+/g, " ")
+        .trim()
+        .replace(/\s+/g, "-");
       const a = document.createElement("a");
       a.href = outUrl;
-      a.download = String(resumeSampleFile.name || "branded-cv.pdf").replace(/\.pdf$/i, "") + "-branded.pdf";
+      a.download = `${safeName || "Candidate"}_CV.pdf`;
       document.body.appendChild(a);
       a.click();
       a.remove();
