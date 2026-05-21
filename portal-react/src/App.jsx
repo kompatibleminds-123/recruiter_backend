@@ -6697,6 +6697,7 @@ function PortalApp({ token, onLogout }) {
     workMode: "",
     jobDescription: "",
     mustHaveSkills: "",
+    generatedBooleanHints: "",
     redFlags: "",
     recruiterNotes: "",
     standardQuestions: "",
@@ -11908,6 +11909,7 @@ function PortalApp({ token, onLogout }) {
       workMode: "",
       jobDescription: "",
       mustHaveSkills: "",
+      generatedBooleanHints: "",
       redFlags: "",
       recruiterNotes: "",
       standardQuestions: "",
@@ -11946,6 +11948,7 @@ function PortalApp({ token, onLogout }) {
       workMode: String(job.workMode || ""),
       jobDescription: String(job.jobDescription || ""),
       mustHaveSkills: String(job.mustHaveSkills || ""),
+      generatedBooleanHints: String(job.generatedBooleanHints || ""),
       redFlags: String(job.redFlags || ""),
       recruiterNotes: String(job.recruiterNotes || ""),
       standardQuestions: String(job.standardQuestions || ""),
@@ -13243,6 +13246,47 @@ function PortalApp({ token, onLogout }) {
         : (copySettings.clientShareIntroTemplate || DEFAULT_COPY_SETTINGS.clientShareIntroTemplate || "")
     ).trim();
     return fillClientShareTemplate(template, context);
+  }
+
+  function generateBooleanHintsFromJd() {
+    const title = String(jobDraft.title || "").trim();
+    const location = String(jobDraft.location || "").trim();
+    const mustHave = String(jobDraft.mustHaveSkills || "").trim();
+    const jdText = String(jobDraft.jobDescription || "").trim();
+    if (!title && !mustHave && !jdText) {
+      setStatus("jobs", "Add title/JD text first, then generate boolean hints.", "error");
+      return;
+    }
+    const hay = `${mustHave}\n${jdText}`;
+    const extractedSkills = Array.from(new Set(
+      (hay.match(/\b(JavaScript|TypeScript|React|Node(?:\.js)?|Next(?:\.js)?|Python|Java|SQL|PostgreSQL|MySQL|MongoDB|AWS|Azure|GCP|Excel|Power\s?BI|Tableau|Salesforce|Recruitment|Sourcing|Boolean|LinkedIn)\b/gi) || [])
+        .map((value) => String(value || "").trim())
+        .filter(Boolean)
+    ));
+    const roleLineParts = [title, location ? `Location: ${location}` : ""].filter(Boolean);
+    const mustHaveList = mustHave
+      .split(/[,\n|]/)
+      .map((item) => String(item || "").trim())
+      .filter(Boolean)
+      .slice(0, 8);
+    const skillsForBoolean = Array.from(new Set([...(mustHaveList || []), ...(extractedSkills || [])]))
+      .slice(0, 12)
+      .map((item) => `"${item.replace(/"/g, "")}"`);
+    const queryRole = roleLineParts.length ? roleLineParts.join(" | ") : "Role focus";
+    const queryMustHave = skillsForBoolean.length ? skillsForBoolean.join(" AND ") : "\"must have\"";
+    const queryBroad = skillsForBoolean.length
+      ? `(${skillsForBoolean.slice(0, 4).join(" OR ")})`
+      : "\"relevant experience\"";
+    const generated = [
+      `1) Strict: "${queryRole}" AND ${queryMustHave}`,
+      `2) Balanced: "${title || "target role"}" AND ${queryBroad}`,
+      `3) Broad: "${title || "target role"}" AND ("${location || "india"}" OR remote)`
+    ].join("\n");
+    setJobDraft((current) => ({
+      ...current,
+      generatedBooleanHints: generated
+    }));
+    setStatus("jobs", "Boolean hints generated. You can now edit and save.", "ok");
   }
 
   function buildResumeFormattingSampleHtml() {
@@ -18163,6 +18207,21 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                   ) : null}
                   <label className="full"><span>Job description</span><textarea disabled={jobDraftReadOnly || jobActionBusy} className="jd-editor" value={jobDraft.jobDescription} onChange={(e) => setJobDraft((c) => ({ ...c, jobDescription: e.target.value }))} placeholder="Paste the full JD here. Hosted apply link will show this as one clean block." /></label>
                   <label className="full"><span>Must-have skills</span><textarea disabled={jobDraftReadOnly || jobActionBusy} value={jobDraft.mustHaveSkills} onChange={(e) => setJobDraft((c) => ({ ...c, mustHaveSkills: e.target.value }))} placeholder="Shown on hosted apply link only when filled." /></label>
+                  <label className="full">
+                    <span>Generated boolean hints (internal only)</span>
+                    <textarea
+                      disabled={jobDraftReadOnly || jobActionBusy}
+                      value={jobDraft.generatedBooleanHints || ""}
+                      onChange={(e) => setJobDraft((c) => ({ ...c, generatedBooleanHints: e.target.value }))}
+                      placeholder="System-generated boolean lines will appear here. Admin can edit before save."
+                    />
+                    <span className="field-help">Internal recruiter helper only. This does not show in JD share mail or public apply link.</span>
+                  </label>
+                  <div className="button-row">
+                    <button type="button" className="ghost-btn" disabled={jobDraftReadOnly || jobActionBusy} onClick={generateBooleanHintsFromJd}>
+                      Generate boolean hints
+                    </button>
+                  </div>
                   <label className="full"><span>Red flags</span><textarea disabled={jobDraftReadOnly || jobActionBusy} value={jobDraft.redFlags} onChange={(e) => setJobDraft((c) => ({ ...c, redFlags: e.target.value }))} /></label>
                   <label className="full"><span>Standard screening questions</span><textarea disabled={jobDraftReadOnly || jobActionBusy} value={jobDraft.standardQuestions} onChange={(e) => setJobDraft((c) => ({ ...c, standardQuestions: e.target.value }))} placeholder="Recruiter-only. These are used in Interview Panel and will not show on hosted apply link." /></label>
                 </div>
