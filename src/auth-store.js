@@ -736,6 +736,10 @@ async function countCompanyWorkspaceUsers(companyId) {
 }
 function sanitizeSharedExportPresetSettings(raw) {
   const source = raw && typeof raw === "object" ? raw : {};
+  const rawResumeFormatting =
+    source.resumeFormatting && typeof source.resumeFormatting === "object"
+      ? source.resumeFormatting
+      : {};
   const rawLabels = source.exportPresetLabels && typeof source.exportPresetLabels === "object" ? source.exportPresetLabels : {};
   const rawColumns = source.exportPresetColumns && typeof source.exportPresetColumns === "object" ? source.exportPresetColumns : {};
   const rawCustomPresets = Array.isArray(source.customExportPresets) ? source.customExportPresets : [];
@@ -802,6 +806,24 @@ function sanitizeSharedExportPresetSettings(raw) {
       .filter((item) => item.id && item.label && item.columns)
       .slice(0, MAX_SHARED_CUSTOM_EXPORT_PRESETS),
     customExportColumns: String(source.customExportColumns || "").trim(),
+    resumeFormatting: {
+      headerEnabled: rawResumeFormatting.headerEnabled !== false,
+      footerEnabled: rawResumeFormatting.footerEnabled !== false,
+      watermarkEnabled: rawResumeFormatting.watermarkEnabled === true,
+      watermarkText: String(rawResumeFormatting.watermarkText || "").trim(),
+      sideRibbonText: String(rawResumeFormatting.sideRibbonText || "").trim(),
+      footerText: String(rawResumeFormatting.footerText || "").trim(),
+      primaryColor: String(rawResumeFormatting.primaryColor || "").trim(),
+      templateStyle: String(rawResumeFormatting.templateStyle || "").trim(),
+      headerLayout: String(rawResumeFormatting.headerLayout || "").trim(),
+      headerMaxHeightPx: Number(rawResumeFormatting.headerMaxHeightPx || 0) || 0,
+      footerMaxHeightPx: Number(rawResumeFormatting.footerMaxHeightPx || 0) || 0,
+      watermarkOpacity: Number(rawResumeFormatting.watermarkOpacity || 0) || 0,
+      logoDataUrl: String(rawResumeFormatting.logoDataUrl || "").trim(),
+      headerShowFields: Array.isArray(rawResumeFormatting.headerShowFields)
+        ? rawResumeFormatting.headerShowFields.map((v) => String(v || "").trim()).filter(Boolean).slice(0, 12)
+        : []
+    },
     companyWideShortcuts,
     personalShortcutsByUser,
     updatedAt: String(source.updatedAt || "").trim(),
