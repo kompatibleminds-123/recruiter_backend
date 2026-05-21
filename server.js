@@ -1695,6 +1695,15 @@ function buildResumeHeaderLineFromCandidate(candidate = {}, resumeFormatting = {
   return fields.map((key) => String(map[key] || "").trim()).filter(Boolean).join(" | ");
 }
 
+function buildResumeHeaderLineFromValues(values = {}, resumeFormatting = {}) {
+  const fields = Array.isArray(resumeFormatting?.headerShowFields) ? resumeFormatting.headerShowFields : [];
+  const safe = values && typeof values === "object" ? values : {};
+  return fields
+    .map((key) => String(safe[key] || "").trim())
+    .filter(Boolean)
+    .join(" | ");
+}
+
 const STATIC_MIME_TYPES = {
   ".html": "text/html; charset=utf-8",
   ".css": "text/css; charset=utf-8",
@@ -9338,12 +9347,44 @@ const server = http.createServer(async (req, res) => {
       const mimeType = meta.mimeType || cachedStoredFile?.mimeType || "application/octet-stream";
       let cvShareUrl = "";
       if (fileProvider || fileKey || fileUrl) {
+        const sharedSettings = await getCompanySharedExportPresets(companyId).catch(() => ({}));
+        const resumeFormatting = sharedSettings?.resumeFormatting && typeof sharedSettings.resumeFormatting === "object"
+          ? sharedSettings.resumeFormatting
+          : {};
+        const profile = buildSharedCandidateProfile({ candidate, assessment });
+        const roleForHeader = String(
+          profile?.jdTitle
+          || profile?.currentDesignation
+          || ""
+        ).trim();
+        const headerValues = {
+          candidate_name: String(profile?.candidateName || candidate?.name || "").trim(),
+          target_role: roleForHeader,
+          current_designation: String(profile?.currentDesignation || "").trim(),
+          email: String(profile?.email || candidate?.email || "").trim(),
+          phone: String(profile?.phone || candidate?.phone || "").trim(),
+          location: String(profile?.location || candidate?.location || "").trim(),
+          notice_period: String(profile?.noticePeriod || candidate?.notice_period || "").trim(),
+          total_experience: String(profile?.totalExperience || candidate?.experience || "").trim(),
+          current_company: String(profile?.currentCompany || candidate?.company || "").trim()
+        };
+        const requestedHeaderLine = buildResumeHeaderLineFromValues(headerValues, resumeFormatting)
+          || buildResumeHeaderLineFromCandidate(candidate || {}, resumeFormatting);
         const expiresAt = Date.now() + 1000 * 60 * 60 * 24 * 7;
         const cvToken = createSignedCvShareToken({
           type: "shared_cv",
           companyId,
           candidateId: String(candidate?.id || candidateId || "").trim(),
-          candidateName: String(candidate?.name || "").trim(),
+          candidateName: String(profile?.candidateName || candidate?.name || "").trim(),
+          headerLine: requestedHeaderLine,
+          headerValues,
+          companyName: String(candidate?.company_name || candidate?.companyName || "Your Company").trim() || "Your Company",
+          branded: Boolean(
+            assessment?.shareBrandedCv
+            || assessment?.share_branded_cv
+            || candidate?.shareBrandedCv
+            || candidate?.share_branded_cv
+          ),
           fileProvider,
           fileKey,
           fileUrl,
@@ -12822,6 +12863,12 @@ const server = http.createServer(async (req, res) => {
           : {};
         let resolvedCandidateName = String(payload.candidateName || "Candidate Name").trim() || "Candidate Name";
         let resolvedHeaderLine = String(payload.headerLine || "").trim();
+        const payloadHeaderValues = payload?.headerValues && typeof payload.headerValues === "object"
+          ? payload.headerValues
+          : null;
+        if ((!resolvedHeaderLine || resolvedHeaderLine.split("|").filter((v) => String(v || "").trim()).length <= 1) && payloadHeaderValues) {
+          resolvedHeaderLine = buildResumeHeaderLineFromValues(payloadHeaderValues, resumeFormatting);
+        }
         const payloadCandidateId = String(payload.candidateId || "").trim();
         if (payloadCandidateId && String(payload.companyId || "").trim()) {
           const candidate = (await listCandidates({
