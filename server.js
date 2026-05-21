@@ -1485,8 +1485,8 @@ async function buildBrandedPdfBuffer({
         opacity: 0.88
       });
       // Keep text centered vertically and readable for variable company names.
-      let ribbonFontSize = 8.2;
-      const minFontSize = 6.4;
+      let ribbonFontSize = 9.6;
+      const minFontSize = 7.2;
       while (ribbonFontSize > minFontSize && fontRegular.widthOfTextAtSize(sharedByText, ribbonFontSize) > (ribbonHeight - 14)) {
         ribbonFontSize -= 0.2;
       }
@@ -1494,7 +1494,7 @@ async function buildBrandedPdfBuffer({
       const ribbonTextY = ribbonBottom + ((ribbonHeight - textWidth) / 2);
       page.drawText(sharedByText, {
         // Rotate-90 anchor: keep baseline centered in ribbon width.
-        x: Math.max(3.1, ((ribbonWidth - ribbonFontSize) / 2) + 0.9),
+        x: Math.max(5.2, ((ribbonWidth - ribbonFontSize) / 2) + 2.4),
         y: ribbonTextY,
         size: ribbonFontSize,
         font: fontBold,
@@ -12794,14 +12794,33 @@ const server = http.createServer(async (req, res) => {
         const resumeFormatting = sharedSettings?.resumeFormatting && typeof sharedSettings.resumeFormatting === "object"
           ? sharedSettings.resumeFormatting
           : {};
+        let resolvedCandidateName = String(payload.candidateName || "Candidate Name").trim() || "Candidate Name";
+        let resolvedHeaderLine = String(payload.headerLine || "").trim();
+        const payloadCandidateId = String(payload.candidateId || "").trim();
+        if (payloadCandidateId && String(payload.companyId || "").trim()) {
+          const candidate = (await listCandidates({
+            id: payloadCandidateId,
+            companyId: String(payload.companyId || "").trim(),
+            limit: 1
+          }).catch(() => []))[0] || null;
+          if (candidate) {
+            if (!resolvedCandidateName || /^candidate name$/i.test(resolvedCandidateName)) {
+              resolvedCandidateName = String(candidate?.name || "").trim() || resolvedCandidateName;
+            }
+            // If signed payload line is empty/weak, recompute from latest candidate + current formatting fields.
+            if (!resolvedHeaderLine || resolvedHeaderLine.split("|").filter((v) => String(v || "").trim()).length <= 1) {
+              resolvedHeaderLine = buildResumeHeaderLineFromCandidate(candidate, resumeFormatting);
+            }
+          }
+        }
         const brandedBuffer = await buildBrandedPdfBuffer({
           pdfBase64: file.buffer.toString("base64"),
           companyName: String(payload.companyName || "Your Company").trim() || "Your Company",
           resumeFormatting,
-          candidateName: String(payload.candidateName || "Candidate Name").trim() || "Candidate Name",
-          headerLine: String(payload.headerLine || "").trim()
+          candidateName: resolvedCandidateName,
+          headerLine: resolvedHeaderLine
         });
-        const brandedName = `${toSafeCvFilenameBase(String(payload.candidateName || "Candidate").trim())}_CV.pdf`;
+        const brandedName = `${toSafeCvFilenameBase(resolvedCandidateName)}_CV.pdf`;
         sendBuffer(req, res, 200, brandedBuffer, {
           "Content-Type": "application/pdf",
           "Content-Disposition": `inline; filename="${brandedName.replace(/"/g, "")}"`,
