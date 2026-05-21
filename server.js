@@ -12801,11 +12801,11 @@ const server = http.createServer(async (req, res) => {
           candidateName: String(payload.candidateName || "Candidate Name").trim() || "Candidate Name",
           headerLine: String(payload.headerLine || "").trim()
         });
-        const brandedName = String(file.filename || payload.filename || "resume.pdf").replace(/\.pdf$/i, "") + "-branded.pdf";
+        const brandedName = `${toSafeCvFilenameBase(String(payload.candidateName || "Candidate").trim())}_CV.pdf`;
         sendBuffer(req, res, 200, brandedBuffer, {
           "Content-Type": "application/pdf",
           "Content-Disposition": `inline; filename="${brandedName.replace(/"/g, "")}"`,
-          "Cache-Control": "private, max-age=300"
+          "Cache-Control": "no-store"
         });
         return;
       }
