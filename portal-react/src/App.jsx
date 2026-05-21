@@ -6380,7 +6380,7 @@ function PortalApp({ token, onLogout }) {
     emailSubject: "",
     clientLabel: "",
     targetRole: "",
-    deliveryMode: "threaded",
+    deliveryMode: "new",
     presetId: "client_submission",
     introText: "",
     richBodyHtml: "",
@@ -8028,14 +8028,21 @@ function PortalApp({ token, onLogout }) {
 
   useEffect(() => {
     if (clientShareBodyTouched) return;
-    const template = String(copySettings.clientShareIntroTemplate || DEFAULT_COPY_SETTINGS.clientShareIntroTemplate || "").trim();
+    const isThreadMode = String(clientShareDraft.deliveryMode || "new") === "threaded";
+    const template = String(
+      isThreadMode
+        ? (copySettings.clientShareThreadIntroTemplate || DEFAULT_COPY_SETTINGS.clientShareThreadIntroTemplate || "")
+        : (copySettings.clientShareIntroTemplate || DEFAULT_COPY_SETTINGS.clientShareIntroTemplate || "")
+    ).trim();
     const nextHtml = escapeHtml(template).replace(/\n/g, "<br/>");
     if (String(clientShareDraft.richBodyHtml || "").trim() === String(nextHtml || "").trim()) return;
     setClientShareDraft((current) => ({ ...current, richBodyHtml: nextHtml }));
   }, [
     clientShareBodyTouched,
+    clientShareDraft.deliveryMode,
     clientShareDraft.richBodyHtml,
     copySettings.clientShareIntroTemplate,
+    copySettings.clientShareThreadIntroTemplate,
   ]);
 
   useEffect(() => {
@@ -8051,7 +8058,17 @@ function PortalApp({ token, onLogout }) {
       editor.innerHTML = normalizedNext;
       clientShareEditorLastHtmlRef.current = normalizedNext;
     } catch {}
-  }, [clientShareDraft.richBodyHtml, clientShareBodyTouched, copySettings.clientShareIntroTemplate, selectedAssessmentIds, clientShareCvLinks, clientShareCvLinkState, clientShareDraft.presetId]);
+  }, [
+    clientShareDraft.richBodyHtml,
+    clientShareBodyTouched,
+    clientShareDraft.deliveryMode,
+    copySettings.clientShareIntroTemplate,
+    copySettings.clientShareThreadIntroTemplate,
+    selectedAssessmentIds,
+    clientShareCvLinks,
+    clientShareCvLinkState,
+    clientShareDraft.presetId
+  ]);
 
   useEffect(() => {
     const editor = clientShareEditorRef.current;
@@ -17341,9 +17358,9 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                       </label>
                       <label>
                         <span>Delivery mode</span>
-                        <select value={clientShareDraft.deliveryMode || "threaded"} onChange={(e) => setClientShareDraft((current) => ({ ...current, deliveryMode: e.target.value }))}>
-                          <option value="threaded">Threaded reply (default)</option>
-                          <option value="new">Start new thread</option>
+                        <select value={clientShareDraft.deliveryMode || "new"} onChange={(e) => setClientShareDraft((current) => ({ ...current, deliveryMode: e.target.value }))}>
+                          <option value="new">Start new thread (default)</option>
+                          <option value="threaded">Threaded reply</option>
                         </select>
                       </label>
                       <label>
