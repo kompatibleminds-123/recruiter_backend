@@ -1537,7 +1537,9 @@ async function buildBrandedPdfBuffer({
         ? (headerLayout === "compact" ? 82 : 94)
         : 20;
       const titleSize = headerLayout === "compact" ? 11.8 : 13.2;
-      page.drawText(displayName, { x: textX, y: headY + (headerLayout === "compact" ? 26 : 31), size: titleSize, font: fontBold, color: textColor, maxWidth: width - textX - 20 });
+      if (templateStyle !== "client_submission_style") {
+        page.drawText(displayName, { x: textX, y: headY + (headerLayout === "compact" ? 26 : 31), size: titleSize, font: fontBold, color: textColor, maxWidth: width - textX - 20 });
+      }
       // In client-submission mode, role/experience/location/notice is represented via chips.
       if (displayLine && templateStyle !== "client_submission_style") {
         const headerMetaSize = headerLayout === "compact" ? 9.0 : 9.2;
@@ -1571,32 +1573,47 @@ async function buildBrandedPdfBuffer({
         let chipY = headY + 7;
         const rightLimit = width - 20;
 
+        // Line 1: candidate name + target-role chip (same line).
+        const line1Y = headY + 27.2;
+        const nameText = String(displayName || "Candidate Name").trim() || "Candidate Name";
+        const nameW = fontBold.widthOfTextAtSize(nameText, titleSize);
+        page.drawText(nameText, {
+          x: textX,
+          y: line1Y,
+          size: titleSize,
+          font: fontBold,
+          color: textColor,
+          maxWidth: Math.max(120, rightLimit - textX - 40)
+        });
+
         if (roleEntry) {
-          const roleX = textX;
-          const roleW = Math.max(160, rightLimit - roleX);
-          const roleH = 16.8;
           const roleLabel = String(roleEntry.label || "Target Role").slice(0, 16);
           const roleValue = String(roleEntry.value || "");
           const roleLabelW = fontBold.widthOfTextAtSize(roleLabel, 7.8);
-          const roleValueSize = roleValue.length > 52 ? 8.0 : 8.8;
-          page.drawRoundedRectangle?.({ x: roleX, y: chipY + 18.8, width: roleW, height: roleH, borderRadius: 8, color: rgb(0.962, 0.976, 0.998), borderColor: rgb(0.79, 0.84, 0.93), borderWidth: 0.8 });
+          const roleValueSize = roleValue.length > 56 ? 8.0 : 8.8;
+          const roleValueW = fontRegular.widthOfTextAtSize(roleValue.slice(0, 80), roleValueSize);
+          const roleChipX = Math.min(rightLimit - 170, textX + Math.min(nameW + 14, 250));
+          const roleChipW = Math.max(170, Math.min(rightLimit - roleChipX, roleLabelW + roleValueW + 36));
+          const roleChipY = line1Y - 3.2;
+          page.drawRoundedRectangle?.({ x: roleChipX, y: roleChipY, width: roleChipW, height: 16.8, borderRadius: 8, color: rgb(0.962, 0.976, 0.998), borderColor: rgb(0.79, 0.84, 0.93), borderWidth: 0.8 });
           if (!page.drawRoundedRectangle) {
-            page.drawRectangle({ x: roleX, y: chipY + 18.8, width: roleW, height: roleH, color: rgb(0.962, 0.976, 0.998), borderColor: rgb(0.79, 0.84, 0.93), borderWidth: 0.8 });
+            page.drawRectangle({ x: roleChipX, y: roleChipY, width: roleChipW, height: 16.8, color: rgb(0.962, 0.976, 0.998), borderColor: rgb(0.79, 0.84, 0.93), borderWidth: 0.8 });
           }
-          page.drawCircle({ x: roleX + 9.4, y: chipY + 26.9, size: 4.2, color: rgb(navy.r, navy.g, navy.b), opacity: 0.94 });
-          page.drawText("T", { x: roleX + 7.8, y: chipY + 24.0, size: 6.2, font: fontBold, color: rgb(0.98, 0.99, 1) });
-          page.drawText(roleLabel, { x: roleX + 16.8, y: chipY + 24.7, size: 7.8, font: fontBold, color: rgb(0.18, 0.25, 0.38) });
+          page.drawCircle({ x: roleChipX + 9.4, y: roleChipY + 8.4, size: 4.2, color: rgb(navy.r, navy.g, navy.b), opacity: 0.94 });
+          page.drawText("T", { x: roleChipX + 7.8, y: roleChipY + 5.5, size: 6.2, font: fontBold, color: rgb(0.98, 0.99, 1) });
+          page.drawText(roleLabel, { x: roleChipX + 16.8, y: roleChipY + 6.2, size: 7.8, font: fontBold, color: rgb(0.18, 0.25, 0.38) });
           page.drawText(roleValue, {
-            x: roleX + 16.8 + roleLabelW + 5.1,
-            y: chipY + (roleValue.length > 52 ? 23.8 : 23.9),
+            x: roleChipX + 16.8 + roleLabelW + 5.1,
+            y: roleChipY + (roleValue.length > 56 ? 5.2 : 5.3),
             size: roleValueSize,
             font: fontRegular,
             color: rgb(0.24, 0.3, 0.42),
-            maxWidth: Math.max(80, roleW - (24 + roleLabelW + 8))
+            maxWidth: Math.max(80, roleChipW - (24 + roleLabelW + 8))
           });
         }
 
         compactEntries.forEach((entry) => {
+          if (/target role/i.test(entry.label)) return;
           const label = entry.label;
           const valueText = String(entry.value || "").slice(0, 28);
           const iconText = String(label || "F").slice(0, 1).toUpperCase();
