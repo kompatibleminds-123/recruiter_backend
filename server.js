@@ -1490,7 +1490,8 @@ async function buildBrandedPdfBuffer({
       const textWidth = fontRegular.widthOfTextAtSize(sharedByText, ribbonFontSize);
       const ribbonTextY = ribbonBottom + Math.max(4, ((ribbonHeight - textWidth) / 2));
       page.drawText(sharedByText, {
-        x: 6.2,
+        // Rotate-90 anchor: keep baseline centered in ribbon width.
+        x: Math.max(2.4, ((ribbonWidth - ribbonFontSize) / 2) + 0.6),
         y: ribbonTextY,
         size: ribbonFontSize,
         font: fontRegular,
@@ -1534,7 +1535,8 @@ async function buildBrandedPdfBuffer({
       const textX = headerLayout === "compact" ? 82 : 94;
       const titleSize = headerLayout === "compact" ? 11.8 : 13.2;
       page.drawText(displayName, { x: textX, y: headY + (headerLayout === "compact" ? 26 : 31), size: titleSize, font: fontBold, color: textColor, maxWidth: width - textX - 20 });
-      if (displayLine) {
+      // In client-submission mode, role/experience/location/notice is represented via chips.
+      if (displayLine && templateStyle !== "client_submission_style") {
         const headerMetaSize = headerLayout === "compact" ? 9.0 : 9.2;
         page.drawText(displayLine, { x: textX, y: headY + (headerLayout === "compact" ? 13 : 14), size: headerMetaSize, font: fontRegular, color: subTextColor, maxWidth: width - textX - 20 });
       }
@@ -1637,6 +1639,25 @@ function buildConversationKey({ to = "", clientLabel = "", role = "" } = {}) {
   const clientKey = normalizeThreadToken(clientLabel);
   const roleKey = normalizeThreadToken(role);
   return [toKey, clientKey, roleKey].filter(Boolean).join("|");
+}
+
+function buildResumeHeaderLineFromCandidate(candidate = {}, resumeFormatting = {}) {
+  const fields = Array.isArray(resumeFormatting?.headerShowFields) ? resumeFormatting.headerShowFields : [];
+  const role = String(candidate?.role || candidate?.jd_title || "").trim();
+  const currentDesignation = String(candidate?.current_designation || candidate?.currentDesignation || "").trim();
+  const map = {
+    candidate_name: String(candidate?.name || "").trim(),
+    candidate_role: role,
+    target_role: role,
+    current_designation: currentDesignation,
+    email: String(candidate?.email || "").trim(),
+    phone: String(candidate?.phone || "").trim(),
+    location: String(candidate?.location || "").trim(),
+    notice_period: String(candidate?.notice_period || "").trim(),
+    total_experience: String(candidate?.experience || "").trim(),
+    current_company: String(candidate?.company || "").trim()
+  };
+  return fields.map((key) => String(map[key] || "").trim()).filter(Boolean).join(" | ");
 }
 
 const STATIC_MIME_TYPES = {
@@ -12722,6 +12743,8 @@ const server = http.createServer(async (req, res) => {
       const token = String(requestUrl.searchParams.get("token") || "").trim();
       const payload = readSignedCvShareToken(token);
       if (!payload) throw new Error("Invalid or expired CV share link.");
+      const wantBranded = ["1", "true", "yes", "branded"].includes(String(requestUrl.searchParams.get("mode") || "").trim().toLowerCase())
+        || payload?.branded === true;
       const file = await loadStoredFile({
         provider: payload.fileProvider,
         key: payload.fileKey,
@@ -12729,6 +12752,26 @@ const server = http.createServer(async (req, res) => {
         filename: payload.filename,
         mimeType: payload.mimeType
       });
+      if (wantBranded && String(file.mimeType || payload.mimeType || "").toLowerCase().includes("pdf")) {
+        const sharedSettings = await getCompanySharedExportPresets(String(payload.companyId || "").trim()).catch(() => ({}));
+        const resumeFormatting = sharedSettings?.resumeFormatting && typeof sharedSettings.resumeFormatting === "object"
+          ? sharedSettings.resumeFormatting
+          : {};
+        const brandedBuffer = await buildBrandedPdfBuffer({
+          pdfBase64: file.buffer.toString("base64"),
+          companyName: String(payload.companyName || "Your Company").trim() || "Your Company",
+          resumeFormatting,
+          candidateName: String(payload.candidateName || "Candidate Name").trim() || "Candidate Name",
+          headerLine: String(payload.headerLine || "").trim()
+        });
+        const brandedName = String(file.filename || payload.filename || "resume.pdf").replace(/\.pdf$/i, "") + "-branded.pdf";
+        sendBuffer(req, res, 200, brandedBuffer, {
+          "Content-Type": "application/pdf",
+          "Content-Disposition": `inline; filename="${brandedName.replace(/"/g, "")}"`,
+          "Cache-Control": "private, max-age=300"
+        });
+        return;
+      }
       const downloadName = String(file.filename || payload.filename || "resume.pdf").replace(/"/g, "");
       sendBuffer(req, res, 200, file.buffer, {
         "Content-Type": String(file.mimeType || payload.mimeType || "application/octet-stream").trim(),
@@ -12736,7 +12779,7 @@ const server = http.createServer(async (req, res) => {
         "Cache-Control": "private, max-age=300"
       });
     } catch (error) {
-      sendJson(req, res, 400, { ok: false, error: String(error.message || error) });
+      sendJson(res, 400, { ok: false, error: String(error.message || error) });
     }
     return;
   }
@@ -12845,12 +12888,20 @@ const server = http.createServer(async (req, res) => {
       if (!fileProvider && !fileKey && !fileUrl) {
         throw new Error("CV file not available for this candidate.");
       }
+      const wantBranded = ["1", "true", "yes"].includes(String(requestUrl.searchParams.get("branded") || "").trim().toLowerCase());
+      const sharedSettings = wantBranded ? await getCompanySharedExportPresets(actor.companyId).catch(() => ({})) : {};
+      const resumeFormatting = sharedSettings?.resumeFormatting && typeof sharedSettings.resumeFormatting === "object"
+        ? sharedSettings.resumeFormatting
+        : {};
       const expiresAt = Date.now() + 1000 * 60 * 60 * 24 * 45;
       const token = createSignedCvShareToken({
         type: "shared_cv",
         companyId: actor.companyId,
         candidateId: String(candidate?.id || candidateId || "").trim(),
         candidateName: String(candidate?.name || requestUrl.searchParams.get("candidate_name") || "").trim(),
+        headerLine: buildResumeHeaderLineFromCandidate(candidate || {}, resumeFormatting),
+        companyName: String(actor?.companyName || actor?.company_name || "Your Company").trim() || "Your Company",
+        branded: wantBranded,
         fileProvider,
         fileKey,
         fileUrl,
@@ -12864,7 +12915,7 @@ const server = http.createServer(async (req, res) => {
         result: {
           token,
           expiresAt: new Date(expiresAt).toISOString(),
-          url: `${baseUrl}/shared/cv?token=${encodeURIComponent(token)}`
+          url: `${baseUrl}/shared/cv?token=${encodeURIComponent(token)}${wantBranded ? "&mode=branded" : ""}`
         }
       });
     } catch (error) {
@@ -12905,12 +12956,20 @@ const server = http.createServer(async (req, res) => {
       if (!fileProvider && !fileKey && !fileUrl) {
         throw new Error("CV file not available for sharing.");
       }
+      const wantBranded = ["1", "true", "yes"].includes(String(requestUrl.searchParams.get("branded") || "").trim().toLowerCase());
+      const sharedSettings = wantBranded ? await getCompanySharedExportPresets(actor.companyId).catch(() => ({})) : {};
+      const resumeFormatting = sharedSettings?.resumeFormatting && typeof sharedSettings.resumeFormatting === "object"
+        ? sharedSettings.resumeFormatting
+        : {};
       const expiresAt = Date.now() + 1000 * 60 * 60 * 24 * 45;
       const token = createSignedCvShareToken({
         type: "shared_cv",
         companyId: actor.companyId,
         candidateId: String(matchedCandidate?.id || candidateId || "").trim(),
         candidateName: String(matchedCandidate?.name || candidateName || "").trim(),
+        headerLine: buildResumeHeaderLineFromCandidate(matchedCandidate || {}, resumeFormatting),
+        companyName: String(actor?.companyName || actor?.company_name || "Your Company").trim() || "Your Company",
+        branded: wantBranded,
         fileProvider,
         fileKey,
         fileUrl,
@@ -12924,7 +12983,7 @@ const server = http.createServer(async (req, res) => {
         result: {
           token,
           expiresAt: new Date(expiresAt).toISOString(),
-          url: `${baseUrl}/shared/cv?token=${encodeURIComponent(token)}`
+          url: `${baseUrl}/shared/cv?token=${encodeURIComponent(token)}${wantBranded ? "&mode=branded" : ""}`
         }
       });
     } catch (error) {

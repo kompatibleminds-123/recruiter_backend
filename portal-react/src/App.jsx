@@ -8673,6 +8673,8 @@ function PortalApp({ token, onLogout }) {
       outcome: item.candidateStatus || "",
       assessment_status: item.candidateStatus || "",
       follow_up_at: formatDateForCopy(item.followUpAt || item.interviewAt || ""),
+      shareBrandedCv: Boolean(item.shareBrandedCv || item.share_branded_cv || item?.payload?.shareBrandedCv || item?.payload?.share_branded_cv),
+      share_branded_cv: Boolean(item.shareBrandedCv || item.share_branded_cv || item?.payload?.shareBrandedCv || item?.payload?.share_branded_cv),
       candidate_id: linkedCandidate?.id || item.candidateId || "",
       cv_provider: linkedMeta.fileProvider
         || linkedMeta?.cvAnalysisCache?.storedFile?.provider
@@ -8708,7 +8710,7 @@ function PortalApp({ token, onLogout }) {
 	        if (!shareKey) return false;
 	        const hasCvRef = Boolean(item.cv_key || item.cv_url || item.cv_provider || item.cv_filename);
 	        if (!hasCvRef) return false;
-	        const fingerprint = [item.cv_provider || "", item.cv_key || "", item.cv_url || "", item.cv_filename || ""].join("|");
+	        const fingerprint = [item.cv_provider || "", item.cv_key || "", item.cv_url || "", item.cv_filename || "", isAssessmentShareBrandedCvEnabled(item) ? "branded" : "original"].join("|");
 	        return clientShareCvLinkFingerprint[shareKey] !== fingerprint;
 	      });
 	      if (!rowsNeedingLinks.length) return;
@@ -8733,10 +8735,11 @@ function PortalApp({ token, onLogout }) {
           if (item.cv_url) params.set("cv_url", String(item.cv_url));
           if (item.cv_filename) params.set("cv_filename", String(item.cv_filename));
           if (item.name) params.set("candidate_name", String(item.name));
+          if (isAssessmentShareBrandedCvEnabled(item)) params.set("branded", "1");
 	          const result = await api(`/company/share-cv-link${params.toString() ? `?${params.toString()}` : ""}`, token);
-	          return [shareKey, result.url, "ready", [item.cv_provider || "", item.cv_key || "", item.cv_url || "", item.cv_filename || ""].join("|")];
+	          return [shareKey, result.url, "ready", [item.cv_provider || "", item.cv_key || "", item.cv_url || "", item.cv_filename || "", isAssessmentShareBrandedCvEnabled(item) ? "branded" : "original"].join("|")];
 	        } catch {
-	          return [shareKey, "", "missing", [item.cv_provider || "", item.cv_key || "", item.cv_url || "", item.cv_filename || ""].join("|")];
+	          return [shareKey, "", "missing", [item.cv_provider || "", item.cv_key || "", item.cv_url || "", item.cv_filename || "", isAssessmentShareBrandedCvEnabled(item) ? "branded" : "original"].join("|")];
 	        }
 	      }));
 	      setClientShareCvLinks((current) => {
