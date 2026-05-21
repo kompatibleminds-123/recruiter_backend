@@ -231,7 +231,7 @@ function FeatureLockedSection({ title = "Feature locked" }) {
     logoDataUrl: "",
     templateStyle: "minimal_corporate",
     headerLayout: "executive",
-    headerShowFields: ["candidate_name", "candidate_role", "email", "phone", "notice_period", "total_experience"],
+    headerShowFields: ["candidate_name", "target_role", "current_designation", "email", "phone", "notice_period", "total_experience"],
     footerText: "Confidential candidate profile shared by {{company_name}}",
     footerShowPageNumber: true,
     watermarkText: "CONFIDENTIAL",
@@ -289,6 +289,11 @@ function migrateCopySettings(settings = {}) {
   resumeFormatting.headerMaxHeightPx = Math.max(56, Math.min(90, Number(resumeFormatting.headerMaxHeightPx || 90) || 90));
   resumeFormatting.footerMaxHeightPx = Math.max(40, Math.min(70, Number(resumeFormatting.footerMaxHeightPx || 70) || 70));
   resumeFormatting.headerShowFields = Array.isArray(resumeFormatting.headerShowFields) ? resumeFormatting.headerShowFields : DEFAULT_COPY_SETTINGS.resumeFormatting.headerShowFields;
+  resumeFormatting.headerShowFields = resumeFormatting.headerShowFields.map((key) => {
+    const k = String(key || "").trim();
+    if (k === "candidate_role") return "target_role";
+    return k;
+  });
   resumeFormatting.logoDataUrl = String(resumeFormatting.logoDataUrl || "").trim();
   next.resumeFormatting = resumeFormatting;
   next.exportPresetLabels = Object.fromEntries(
@@ -9901,9 +9906,26 @@ function PortalApp({ token, onLogout }) {
     const ctx = item ? resolveCandidateContext(item) : { candidate: {}, draft: {}, assessment: null, phone: "", email: "", linkedin: "" };
     const candidate = ctx?.candidate || {};
     const draft = ctx?.draft || {};
+    const targetRole = String(
+      candidate?.jd_title
+      || candidate?.role
+      || draft?.jdTitle
+      || draft?.targetRole
+      || ctx?.assessment?.jdTitle
+      || ctx?.assessment?.jd_title
+      || ""
+    ).trim();
+    const currentDesignation = String(
+      draft?.currentDesignation
+      || candidate?.current_designation
+      || candidate?.currentDesignation
+      || ""
+    ).trim();
     return {
       candidate_name: String(candidate?.name || draft?.candidateName || "").trim(),
-      candidate_role: String(draft?.currentDesignation || candidate?.role || candidate?.jd_title || "").trim(),
+      candidate_role: targetRole, // backward compatibility for older saved settings
+      target_role: targetRole,
+      current_designation: currentDesignation,
       email: String(draft?.emailId || candidate?.email || ctx?.email || "").trim(),
       phone: String(draft?.phoneNumber || candidate?.phone || ctx?.phone || "").trim(),
       location: String(draft?.location || candidate?.location || "").trim(),
@@ -13384,7 +13406,8 @@ function PortalApp({ token, onLogout }) {
 
   const resumeHeaderFieldOptions = [
     { key: "candidate_name", label: "Name" },
-    { key: "candidate_role", label: "Role" },
+    { key: "target_role", label: "Target Role" },
+    { key: "current_designation", label: "Current Designation" },
     { key: "email", label: "Email" },
     { key: "phone", label: "Phone" },
     { key: "location", label: "Location" },

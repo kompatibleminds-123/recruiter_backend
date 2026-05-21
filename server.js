@@ -1413,6 +1413,7 @@ async function buildBrandedPdfBuffer({
   const fontBold = await outDoc.embedFont(StandardFonts.HelveticaBold);
   const navy = hexToRgb01(primaryColor) || { r: 0.14, g: 0.23, b: 0.42 };
   const darkNavy = { r: Math.max(0, navy.r - 0.1), g: Math.max(0, navy.g - 0.1), b: Math.max(0, navy.b - 0.1) };
+  const blueJay = { r: 43 / 255, g: 84 / 255, b: 126 / 255 }; // #2B547E
   const slateText = { r: 0.28, g: 0.33, b: 0.42 };
   const divider = { r: 0.85, g: 0.88, b: 0.93 };
   const softPanel = { r: 0.96, g: 0.97, b: 0.99 };
@@ -1477,10 +1478,14 @@ async function buildBrandedPdfBuffer({
         color: rgb(darkNavy.r, darkNavy.g, darkNavy.b),
         opacity: 0.88
       });
+      const ribbonText = "Shared by Kompatible Minds";
+      const ribbonFontSize = 6.6;
+      const textWidth = fontRegular.widthOfTextAtSize(ribbonText, ribbonFontSize);
+      const ribbonCenterY = ((height - (footerEnabled ? footerHeight : 0)) / 2) + (footerEnabled ? footerHeight : 0);
       page.drawText("Shared by Kompatible Minds", {
         x: 3.5,
-        y: (height / 2) - 34,
-        size: 6.6,
+        y: ribbonCenterY - (textWidth / 2),
+        size: ribbonFontSize,
         font: fontRegular,
         color: rgb(0.94, 0.96, 0.99),
         rotate: degrees(90)
@@ -1492,7 +1497,7 @@ async function buildBrandedPdfBuffer({
       let textColor = rgb(navy.r, navy.g, navy.b);
       let subTextColor = rgb(slateText.r, slateText.g, slateText.b);
       if (templateStyle === "premium_blue_bar") {
-        headBg = rgb(darkNavy.r, darkNavy.g, darkNavy.b);
+        headBg = rgb(blueJay.r, blueJay.g, blueJay.b);
         textColor = rgb(0.97, 0.99, 1);
         subTextColor = rgb(0.87, 0.91, 0.97);
       } else if (templateStyle === "client_submission_style") {
@@ -1529,10 +1534,12 @@ async function buildBrandedPdfBuffer({
       if (templateStyle === "client_submission_style") {
         const metaY = headY - 16;
         const chips = displayLine ? displayLine.split("|").map((v) => String(v || "").trim()).filter(Boolean).slice(0, 5) : [];
-        const fallbackLabels = ["Company", "Designation", "Experience", "Notice", "Location"];
+        const fallbackLabels = ["Company", "Target Role", "Current Designation", "Experience", "Notice"];
         const fieldToLabel = {
           current_company: "Company",
-          candidate_role: "Designation",
+          candidate_role: "Target Role",
+          target_role: "Target Role",
+          current_designation: "Current Designation",
           total_experience: "Experience",
           notice_period: "Notice",
           location: "Location",
@@ -10659,6 +10666,7 @@ const server = http.createServer(async (req, res) => {
         }
         if (candidate && !headerLine) {
           const role = String(candidate?.role || candidate?.jd_title || "").trim();
+          const currentDesignation = String(candidate?.current_designation || candidate?.currentDesignation || "").trim();
           const email = String(candidate?.email || "").trim();
           const phone = String(candidate?.phone || "").trim();
           const location = String(candidate?.location || "").trim();
@@ -10669,6 +10677,8 @@ const server = http.createServer(async (req, res) => {
           const map = {
             candidate_name: String(candidate?.name || "").trim(),
             candidate_role: role,
+            target_role: role,
+            current_designation: currentDesignation,
             email,
             phone,
             location,
