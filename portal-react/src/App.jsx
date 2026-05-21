@@ -10069,45 +10069,10 @@ function PortalApp({ token, onLogout }) {
       if (meta.filename) params.set("cv_filename", String(meta.filename));
       if (meta.key) params.set("cv_key", String(meta.key));
       if (meta.provider) params.set("cv_provider", String(meta.provider));
-      const response = await fetch(`/company/candidates/${encodeURIComponent(meta.candidateId)}/cv?${params.toString()}`);
-      if (!response.ok) throw new Error("Could not load source CV.");
-      const sourceBlob = await response.blob();
-      const sourceIsPdf = String(sourceBlob.type || "").toLowerCase().includes("pdf") || /\.pdf$/i.test(String(meta.filename || ""));
-      if (!sourceIsPdf) {
-        setStatus("workspace", "Branded open is PDF-only right now. Open original CV for non-PDF files.", "error");
-        return;
-      }
-      const arr = await sourceBlob.arrayBuffer();
-      const bytes = new Uint8Array(arr);
-      let bin = "";
-      for (let i = 0; i < bytes.length; i += 1) bin += String.fromCharCode(bytes[i]);
-      const pdfBase64 = window.btoa(bin);
-      const branded = await fetch("/company/resume-formatting/branded-pdf", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...(token ? { Authorization: `Bearer ${token}` } : {})
-        },
-        body: JSON.stringify({
-          pdfBase64,
-          filename: String(meta.filename || "branded-cv.pdf"),
-          candidateId: String(meta.candidateId || "").trim(),
-          candidateName: buildResumeCandidateName(item),
-          headerLine: buildResumeHeaderLineForCandidate(item),
-          copySettings
-        })
-      });
-      if (!branded.ok) {
-        const text = await branded.text();
-        throw new Error(normalizeMojibakeSymbols(text || "Could not generate branded CV."));
-      }
-      const outBlob = await branded.blob();
-      const outUrl = URL.createObjectURL(outBlob);
-      if (pendingTab) pendingTab.location.href = outUrl;
-      else window.open(outUrl, "_blank", "noopener,noreferrer");
-      setTimeout(() => {
-        try { URL.revokeObjectURL(outUrl); } catch {}
-      }, 120000);
+      params.set("mode", "branded");
+      const brandedUrl = `/company/candidates/${encodeURIComponent(meta.candidateId)}/cv?${params.toString()}`;
+      if (pendingTab) pendingTab.location.href = brandedUrl;
+      else window.open(brandedUrl, "_blank", "noopener,noreferrer");
       setStatus("assessments", "Opening branded CV...", "ok");
     } catch (error) {
       try { if (pendingTab && !pendingTab.closed) pendingTab.close(); } catch {}
