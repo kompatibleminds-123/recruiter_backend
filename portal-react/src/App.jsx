@@ -267,6 +267,7 @@ function FeatureLockedSection({ title = "Feature locked" }) {
     headerLayout: "executive",
     headerShowFields: ["candidate_name", "target_role", "current_designation", "email", "phone", "notice_period", "total_experience"],
     footerText: "Confidential candidate profile shared by {{company_name}}",
+    sideRibbonText: "Shared by {{company_name}}",
     footerShowPageNumber: true,
     watermarkText: "CONFIDENTIAL",
     watermarkOpacity: 0.12,
@@ -317,6 +318,7 @@ function migrateCopySettings(settings = {}) {
   next.clientShareSignatureLinkLabel2 = normalizeMojibakeSymbols(next.clientShareSignatureLinkLabel2 || "");
   const resumeFormatting = { ...(DEFAULT_COPY_SETTINGS.resumeFormatting || {}), ...(next.resumeFormatting || {}) };
   resumeFormatting.footerText = normalizeMojibakeSymbols(String(resumeFormatting.footerText || DEFAULT_COPY_SETTINGS.resumeFormatting.footerText || ""));
+  resumeFormatting.sideRibbonText = normalizeMojibakeSymbols(String(resumeFormatting.sideRibbonText || DEFAULT_COPY_SETTINGS.resumeFormatting.sideRibbonText || ""));
   resumeFormatting.watermarkText = normalizeMojibakeSymbols(String(resumeFormatting.watermarkText || DEFAULT_COPY_SETTINGS.resumeFormatting.watermarkText || ""));
   resumeFormatting.templateStyle = String(resumeFormatting.templateStyle || DEFAULT_COPY_SETTINGS.resumeFormatting.templateStyle || "minimal_corporate").trim() || "minimal_corporate";
   resumeFormatting.watermarkOpacity = Math.max(0.05, Math.min(0.15, Number(resumeFormatting.watermarkOpacity || 0.12) || 0.12));
@@ -17171,16 +17173,17 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                             <input type="checkbox" checked={selectedAssessmentIds.includes(String(item.id))} onChange={() => { void toggleAssessmentSelectionWithBranding(item); }} />
                             <span>Select for client share</span>
                           </label>
-                          <label className="checkbox-pill checkbox-pill--soft">
-                            <input
-                              type="checkbox"
-                              checked={isAssessmentShareBrandedCvEnabled(item)}
-                              disabled={!selectedAssessmentIds.includes(String(item.id))}
-                              onClick={(e) => e.stopPropagation()}
-                              onChange={(e) => { void setAssessmentShareBrandedCv(item, e.target.checked); }}
-                            />
-                            <span>Share Branded CV</span>
-                          </label>
+                          {selectedAssessmentIds.includes(String(item.id)) ? (
+                            <label className="checkbox-pill checkbox-pill--soft">
+                              <input
+                                type="checkbox"
+                                checked={isAssessmentShareBrandedCvEnabled(item)}
+                                onClick={(e) => e.stopPropagation()}
+                                onChange={(e) => { void setAssessmentShareBrandedCv(item, e.target.checked); }}
+                              />
+                              <span>Share Branded CV</span>
+                            </label>
+                          ) : null}
                         </div>
                       ) : (
                         <span className="muted">Archived</span>
@@ -18532,6 +18535,16 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                       <label><span>Header max height (56-90)</span><input type="number" min={56} max={90} value={copySettings.resumeFormatting?.headerMaxHeightPx ?? 90} onChange={(e) => setCopySettings((c) => ({ ...c, resumeFormatting: { ...(c.resumeFormatting || {}), headerMaxHeightPx: Number(e.target.value || 90) } }))} /></label>
                       <label><span>Footer max height (40-70)</span><input type="number" min={40} max={70} value={copySettings.resumeFormatting?.footerMaxHeightPx ?? 70} onChange={(e) => setCopySettings((c) => ({ ...c, resumeFormatting: { ...(c.resumeFormatting || {}), footerMaxHeightPx: Number(e.target.value || 70) } }))} /></label>
                       <label className="full"><span>Footer text</span><input value={copySettings.resumeFormatting?.footerText || ""} onChange={(e) => setCopySettings((c) => ({ ...c, resumeFormatting: { ...(c.resumeFormatting || {}), footerText: e.target.value } }))} /></label>
+                      {String(copySettings.resumeFormatting?.templateStyle || "minimal_corporate") === "side_ribbon_branding" ? (
+                        <label className="full">
+                          <span>Side ribbon text</span>
+                          <input
+                            value={copySettings.resumeFormatting?.sideRibbonText || ""}
+                            onChange={(e) => setCopySettings((c) => ({ ...c, resumeFormatting: { ...(c.resumeFormatting || {}), sideRibbonText: e.target.value } }))}
+                            placeholder="Shared by {{company_name}}"
+                          />
+                        </label>
+                      ) : null}
                       <label><span>Watermark text</span><input value={copySettings.resumeFormatting?.watermarkText || ""} onChange={(e) => setCopySettings((c) => ({ ...c, resumeFormatting: { ...(c.resumeFormatting || {}), watermarkText: e.target.value } }))} /></label>
                       <label><span>Watermark opacity (0.05-0.15)</span><input type="number" step="0.01" min={0.05} max={0.15} value={copySettings.resumeFormatting?.watermarkOpacity ?? 0.12} onChange={(e) => setCopySettings((c) => ({ ...c, resumeFormatting: { ...(c.resumeFormatting || {}), watermarkOpacity: Number(e.target.value || 0.12) } }))} /></label>
                       <label className="full">

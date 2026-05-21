@@ -1399,6 +1399,9 @@ async function buildBrandedPdfBuffer({
   const watermarkText = String(rf.watermarkText || "CONFIDENTIAL").trim() || "CONFIDENTIAL";
   const footerText = String(rf.footerText || "Confidential candidate profile shared by {{company_name}}")
     .replace(/\{\{\s*company_name\s*\}\}/gi, String(companyName || "Your Company").trim());
+  const sideRibbonText = String(rf.sideRibbonText || "Shared by {{company_name}}")
+    .replace(/\{\{\s*company_name\s*\}\}/gi, String(companyName || "Your Company").trim())
+    .trim();
   const templateStyle = String(rf.templateStyle || "minimal_corporate").trim() || "minimal_corporate";
   const headerLayout = String(rf.headerLayout || "executive").trim().toLowerCase() === "compact" ? "compact" : "executive";
   // Keep header slimmer (~15%) and elegant.
@@ -1419,7 +1422,7 @@ async function buildBrandedPdfBuffer({
   const softPanel = { r: 0.96, g: 0.97, b: 0.99 };
   const footerCaps = footerText.toUpperCase();
   const headerFieldOrder = Array.isArray(rf.headerShowFields) ? rf.headerShowFields.map((v) => String(v || "").trim()) : [];
-  const sharedByText = `Shared by ${String(companyName || "Your Company").trim() || "Your Company"}`;
+  const sharedByText = String(sideRibbonText || `Shared by ${String(companyName || "Your Company").trim() || "Your Company"}`).trim();
   const safeMarginX = 10;
 
   let logoImage = null;
@@ -1488,7 +1491,7 @@ async function buildBrandedPdfBuffer({
         ribbonFontSize -= 0.2;
       }
       const textWidth = fontRegular.widthOfTextAtSize(sharedByText, ribbonFontSize);
-      const ribbonTextY = ribbonBottom + Math.max(4, ((ribbonHeight - textWidth) / 2));
+      const ribbonTextY = ribbonBottom + ((ribbonHeight - textWidth) / 2);
       page.drawText(sharedByText, {
         // Rotate-90 anchor: keep baseline centered in ribbon width.
         x: Math.max(3.1, ((ribbonWidth - ribbonFontSize) / 2) + 0.9),
@@ -1567,23 +1570,23 @@ async function buildBrandedPdfBuffer({
           const isRoleChip = /target role|designation/i.test(label);
           const valueText = chip.slice(0, isRoleChip ? 40 : 24);
           const labelText = label.slice(0, 14);
-          const valueW = fontRegular.widthOfTextAtSize(valueText, 9.2);
-          const labelW = fontBold.widthOfTextAtSize(labelText, 8.2);
-          const chipMaxW = isRoleChip ? 348 : 200;
-          const chipW = Math.min(chipMaxW, Math.max(104, valueW + labelW + 42));
+          const valueW = fontRegular.widthOfTextAtSize(valueText, 8.8);
+          const labelW = fontBold.widthOfTextAtSize(labelText, 7.8);
+          const chipMaxW = isRoleChip ? 336 : 194;
+          const chipW = Math.min(chipMaxW, Math.max(96, valueW + labelW + 38));
           if ((cursorX + chipW) > rightLimit) {
             cursorX = 20;
             rowOffset += 21;
           }
-          const chipY = metaY + rowOffset;
-          page.drawRoundedRectangle?.({ x: cursorX, y: chipY, width: chipW, height: 17.4, borderRadius: 8.6, color: rgb(0.962, 0.976, 0.998), borderColor: rgb(0.79, 0.84, 0.93), borderWidth: 0.8 });
+          const chipY = metaY - rowOffset;
+          page.drawRoundedRectangle?.({ x: cursorX, y: chipY, width: chipW, height: 16.2, borderRadius: 8, color: rgb(0.962, 0.976, 0.998), borderColor: rgb(0.79, 0.84, 0.93), borderWidth: 0.8 });
           if (!page.drawRoundedRectangle) {
-            page.drawRectangle({ x: cursorX, y: chipY, width: chipW, height: 17.4, color: rgb(0.962, 0.976, 0.998), borderColor: rgb(0.79, 0.84, 0.93), borderWidth: 0.8 });
+            page.drawRectangle({ x: cursorX, y: chipY, width: chipW, height: 16.2, color: rgb(0.962, 0.976, 0.998), borderColor: rgb(0.79, 0.84, 0.93), borderWidth: 0.8 });
           }
-          page.drawCircle({ x: cursorX + 9.8, y: chipY + 8.7, size: iconR, color: rgb(navy.r, navy.g, navy.b), opacity: 0.94 });
-          page.drawText(iconText, { x: cursorX + 8.1, y: chipY + 5.6, size: 6.8, font: fontBold, color: rgb(0.98, 0.99, 1) });
-          page.drawText(labelText, { x: cursorX + 17.6, y: chipY + 6.4, size: 8.2, font: fontBold, color: rgb(0.18, 0.25, 0.38) });
-          page.drawText(valueText, { x: cursorX + 17.6 + labelW + 5.6, y: chipY + 5.4, size: 9.2, font: fontRegular, color: rgb(0.24, 0.3, 0.42) });
+          page.drawCircle({ x: cursorX + 9.4, y: chipY + 8.1, size: iconR, color: rgb(navy.r, navy.g, navy.b), opacity: 0.94 });
+          page.drawText(iconText, { x: cursorX + 7.8, y: chipY + 5.2, size: 6.2, font: fontBold, color: rgb(0.98, 0.99, 1) });
+          page.drawText(labelText, { x: cursorX + 16.8, y: chipY + 5.9, size: 7.8, font: fontBold, color: rgb(0.18, 0.25, 0.38) });
+          page.drawText(valueText, { x: cursorX + 16.8 + labelW + 5.1, y: chipY + 5.0, size: 8.8, font: fontRegular, color: rgb(0.24, 0.3, 0.42) });
           cursorX += chipW + 6;
         });
       }
