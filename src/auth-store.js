@@ -771,6 +771,19 @@ function sanitizeSharedExportPresetSettings(raw) {
     if (Object.keys(normalized).length) personalShortcutsByUser[safeUserId] = normalized;
   });
   const companyWideShortcuts = normalizeShortcutMap(rawCompanyWideShortcuts);
+  const defaultHeaderFields = [
+    "candidate_name",
+    "target_role",
+    "current_designation",
+    "email",
+    "phone",
+    "notice_period",
+    "total_experience"
+  ];
+  const normalizedHeaderFields = Array.isArray(rawResumeFormatting.headerShowFields)
+    ? rawResumeFormatting.headerShowFields.map((v) => String(v || "").trim()).filter(Boolean).slice(0, 12)
+    : [];
+  const safeHeaderFields = normalizedHeaderFields.length ? normalizedHeaderFields : defaultHeaderFields;
   return {
     semanticSearchEnabled: source.semanticSearchEnabled !== false && source.semantic_search_enabled !== false,
     exportPresetLabels: {
@@ -810,19 +823,17 @@ function sanitizeSharedExportPresetSettings(raw) {
       headerEnabled: rawResumeFormatting.headerEnabled !== false,
       footerEnabled: rawResumeFormatting.footerEnabled !== false,
       watermarkEnabled: rawResumeFormatting.watermarkEnabled === true,
-      watermarkText: String(rawResumeFormatting.watermarkText || "").trim(),
-      sideRibbonText: String(rawResumeFormatting.sideRibbonText || "").trim(),
-      footerText: String(rawResumeFormatting.footerText || "").trim(),
-      primaryColor: String(rawResumeFormatting.primaryColor || "").trim(),
-      templateStyle: String(rawResumeFormatting.templateStyle || "").trim(),
-      headerLayout: String(rawResumeFormatting.headerLayout || "").trim(),
-      headerMaxHeightPx: Number(rawResumeFormatting.headerMaxHeightPx || 0) || 0,
-      footerMaxHeightPx: Number(rawResumeFormatting.footerMaxHeightPx || 0) || 0,
-      watermarkOpacity: Number(rawResumeFormatting.watermarkOpacity || 0) || 0,
+      watermarkText: String(rawResumeFormatting.watermarkText || "CONFIDENTIAL").trim(),
+      sideRibbonText: String(rawResumeFormatting.sideRibbonText || "Shared by {{company_name}}").trim(),
+      footerText: String(rawResumeFormatting.footerText || "Confidential candidate profile shared by {{company_name}}").trim(),
+      primaryColor: String(rawResumeFormatting.primaryColor || "#243B6B").trim(),
+      templateStyle: String(rawResumeFormatting.templateStyle || "minimal_corporate").trim(),
+      headerLayout: String(rawResumeFormatting.headerLayout || "executive").trim(),
+      headerMaxHeightPx: Math.max(56, Math.min(90, Number(rawResumeFormatting.headerMaxHeightPx || 90) || 90)),
+      footerMaxHeightPx: Math.max(40, Math.min(70, Number(rawResumeFormatting.footerMaxHeightPx || 70) || 70)),
+      watermarkOpacity: Math.max(0.05, Math.min(0.15, Number(rawResumeFormatting.watermarkOpacity || 0.12) || 0.12)),
       logoDataUrl: String(rawResumeFormatting.logoDataUrl || "").trim(),
-      headerShowFields: Array.isArray(rawResumeFormatting.headerShowFields)
-        ? rawResumeFormatting.headerShowFields.map((v) => String(v || "").trim()).filter(Boolean).slice(0, 12)
-        : []
+      headerShowFields: safeHeaderFields
     },
     companyWideShortcuts,
     personalShortcutsByUser,

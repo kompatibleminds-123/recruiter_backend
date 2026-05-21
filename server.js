@@ -1684,7 +1684,9 @@ function buildConversationKey({ to = "", clientLabel = "", role = "" } = {}) {
 }
 
 function buildResumeHeaderLineFromCandidate(candidate = {}, resumeFormatting = {}) {
-  const fields = Array.isArray(resumeFormatting?.headerShowFields) ? resumeFormatting.headerShowFields : [];
+  const fields = Array.isArray(resumeFormatting?.headerShowFields) && resumeFormatting.headerShowFields.length
+    ? resumeFormatting.headerShowFields
+    : ["candidate_name", "target_role", "current_designation", "email", "phone", "notice_period", "total_experience"];
   const role = String(
     candidate?.role
     || candidate?.jd_title
@@ -1731,12 +1733,62 @@ function buildResumeHeaderLineFromCandidate(candidate = {}, resumeFormatting = {
 }
 
 function buildResumeHeaderLineFromValues(values = {}, resumeFormatting = {}) {
-  const fields = Array.isArray(resumeFormatting?.headerShowFields) ? resumeFormatting.headerShowFields : [];
+  const fields = Array.isArray(resumeFormatting?.headerShowFields) && resumeFormatting.headerShowFields.length
+    ? resumeFormatting.headerShowFields
+    : ["candidate_name", "target_role", "current_designation", "email", "phone", "notice_period", "total_experience"];
   const safe = values && typeof values === "object" ? values : {};
   return fields
     .map((key) => String(safe[key] || "").trim())
     .filter(Boolean)
     .join(" | ");
+}
+
+function buildBrandedHeaderValues({ candidate = {}, assessment = null } = {}) {
+  const c = candidate && typeof candidate === "object" ? candidate : {};
+  const a = assessment && typeof assessment === "object" ? assessment : null;
+  return {
+    candidate_name: String(a?.candidateName || c?.name || "").trim(),
+    target_role: String(a?.jdTitle || c?.jd_title || c?.jdTitle || c?.target_role || c?.targetRole || c?.role || "").trim(),
+    current_designation: String(a?.currentDesignation || c?.current_designation || c?.currentDesignation || c?.designation || "").trim(),
+    email: String(a?.emailId || c?.email || c?.email_id || c?.emailId || "").trim(),
+    phone: String(a?.phoneNumber || c?.phone || c?.phone_number || c?.phoneNumber || c?.mobile || "").trim(),
+    location: String(a?.location || c?.location || c?.city || "").trim(),
+    notice_period: String(a?.noticePeriod || c?.notice_period || c?.noticePeriod || "").trim(),
+    total_experience: String(a?.totalExperience || c?.total_experience || c?.totalExperience || c?.experience || "").trim(),
+    current_company: String(a?.currentCompany || c?.current_company || c?.currentCompany || c?.company || "").trim()
+  };
+}
+
+async function resolveBrandedCvContext({
+  companyId = "",
+  companyName = "",
+  candidate = null,
+  assessment = null
+} = {}) {
+  const scopedCompanyId = String(companyId || "").trim();
+  if (!scopedCompanyId) throw new Error("companyId is required for branded CV context.");
+  const sharedSettings = await getCompanySharedExportPresets(scopedCompanyId).catch(() => ({}));
+  const resumeFormatting = sharedSettings?.resumeFormatting && typeof sharedSettings.resumeFormatting === "object"
+    ? sharedSettings.resumeFormatting
+    : {};
+  let resolvedAssessment = assessment && typeof assessment === "object" ? assessment : null;
+  if (!resolvedAssessment) {
+    const assessmentId = String(candidate?.assessment_id || candidate?.assessmentId || "").trim();
+    if (assessmentId) {
+      resolvedAssessment = await getAssessmentById({ companyId: scopedCompanyId, assessmentId }).catch(() => null);
+    }
+  }
+  const headerValues = buildBrandedHeaderValues({ candidate, assessment: resolvedAssessment });
+  const resolvedCandidateName = String(headerValues.candidate_name || candidate?.name || "Candidate Name").trim() || "Candidate Name";
+  const resolvedHeaderLine = buildResumeHeaderLineFromValues(headerValues, resumeFormatting)
+    || buildResumeHeaderLineFromCandidate(candidate || {}, resumeFormatting);
+  return {
+    resumeFormatting,
+    candidateName: resolvedCandidateName,
+    headerValues,
+    headerLine: resolvedHeaderLine,
+    companyName: String(companyName || "Your Company").trim() || "Your Company"
+  };
 }
 
 const STATIC_MIME_TYPES = {
@@ -12845,24 +12897,27 @@ const server = http.createServer(async (req, res) => {
       const isPdf = String(file.mimeType || "").toLowerCase().includes("pdf") || /\.pdf$/i.test(String(file.filename || ""));
       if (wantBranded) {
         if (!isPdf) throw new Error("Branded CV is available only for PDF files.");
-        const sharedSettings = await getCompanySharedExportPresets(String(actor.companyId || "").trim()).catch(() => ({}));
-        const resumeFormatting = sharedSettings?.resumeFormatting && typeof sharedSettings.resumeFormatting === "object"
-          ? sharedSettings.resumeFormatting
-          : {};
-        const candidateName = String(candidate?.name || requestedCandidateName || "").trim() || "Candidate Name";
-        let headerLine = buildResumeHeaderLineFromCandidate(candidate || {}, resumeFormatting);
+        const brandedCtx = await resolveBrandedCvContext({
+          companyId: String(actor.companyId || "").trim(),
+          companyName: String(actor?.companyName || actor?.company_name || "").trim() || "Your Company",
+          candidate,
+          assessment: null
+        });
+        let headerLine = String(brandedCtx.headerLine || "").trim();
         if (!headerLine && requestedHeaderLine) headerLine = requestedHeaderLine;
+        const candidateName = String(brandedCtx.candidateName || requestedCandidateName || "").trim() || "Candidate Name";
         const brandedBuffer = await buildBrandedPdfBuffer({
           pdfBase64: file.buffer.toString("base64"),
-          companyName: String(actor?.companyName || actor?.company_name || "").trim() || "Your Company",
-          resumeFormatting,
+          companyName: brandedCtx.companyName,
+          resumeFormatting: brandedCtx.resumeFormatting,
           candidateName,
           headerLine
         });
         const brandedName = `${toSafeCvFilenameBase(candidateName)}_CV.pdf`;
         sendBuffer(req, res, 200, brandedBuffer, {
           "Content-Type": "application/pdf",
-          "Content-Disposition": `${forceDownload ? "attachment" : "inline"}; filename="${brandedName.replace(/"/g, "")}"`
+          "Content-Disposition": `${forceDownload ? "attachment" : "inline"}; filename="${brandedName.replace(/"/g, "")}"`,
+          "Cache-Control": "no-store"
         });
         return;
       }
@@ -12892,39 +12947,36 @@ const server = http.createServer(async (req, res) => {
         mimeType: payload.mimeType
       });
       if (wantBranded && String(file.mimeType || payload.mimeType || "").toLowerCase().includes("pdf")) {
-        const sharedSettings = await getCompanySharedExportPresets(String(payload.companyId || "").trim()).catch(() => ({}));
-        const resumeFormatting = sharedSettings?.resumeFormatting && typeof sharedSettings.resumeFormatting === "object"
-          ? sharedSettings.resumeFormatting
-          : {};
+        const scopedCompanyId = String(payload.companyId || "").trim();
         let resolvedCandidateName = String(payload.candidateName || "Candidate Name").trim() || "Candidate Name";
         let resolvedHeaderLine = String(payload.headerLine || "").trim();
-        const payloadHeaderValues = payload?.headerValues && typeof payload.headerValues === "object"
-          ? payload.headerValues
-          : null;
-        if ((!resolvedHeaderLine || resolvedHeaderLine.split("|").filter((v) => String(v || "").trim()).length <= 1) && payloadHeaderValues) {
-          resolvedHeaderLine = buildResumeHeaderLineFromValues(payloadHeaderValues, resumeFormatting);
-        }
+        let resolvedResumeFormatting = {};
         const payloadCandidateId = String(payload.candidateId || "").trim();
-        if (payloadCandidateId && String(payload.companyId || "").trim()) {
+        if (payloadCandidateId && scopedCompanyId) {
           const candidate = (await listCandidates({
             id: payloadCandidateId,
-            companyId: String(payload.companyId || "").trim(),
+            companyId: scopedCompanyId,
             limit: 1
           }).catch(() => []))[0] || null;
-          if (candidate) {
-            if (!resolvedCandidateName || /^candidate name$/i.test(resolvedCandidateName)) {
-              resolvedCandidateName = String(candidate?.name || "").trim() || resolvedCandidateName;
-            }
-            // If signed payload line is empty/weak, recompute from latest candidate + current formatting fields.
-            if (!resolvedHeaderLine || resolvedHeaderLine.split("|").filter((v) => String(v || "").trim()).length <= 1) {
-              resolvedHeaderLine = buildResumeHeaderLineFromCandidate(candidate, resumeFormatting);
-            }
-          }
+          const brandedCtx = await resolveBrandedCvContext({
+            companyId: scopedCompanyId,
+            companyName: String(payload.companyName || "Your Company").trim() || "Your Company",
+            candidate,
+            assessment: null
+          });
+          resolvedResumeFormatting = brandedCtx.resumeFormatting;
+          resolvedCandidateName = String(brandedCtx.candidateName || resolvedCandidateName).trim() || resolvedCandidateName;
+          resolvedHeaderLine = String(brandedCtx.headerLine || resolvedHeaderLine).trim() || resolvedHeaderLine;
+        } else {
+          const sharedSettings = await getCompanySharedExportPresets(scopedCompanyId).catch(() => ({}));
+          resolvedResumeFormatting = sharedSettings?.resumeFormatting && typeof sharedSettings.resumeFormatting === "object"
+            ? sharedSettings.resumeFormatting
+            : {};
         }
         const brandedBuffer = await buildBrandedPdfBuffer({
           pdfBase64: file.buffer.toString("base64"),
           companyName: String(payload.companyName || "Your Company").trim() || "Your Company",
-          resumeFormatting,
+          resumeFormatting: resolvedResumeFormatting,
           candidateName: resolvedCandidateName,
           headerLine: resolvedHeaderLine
         });
