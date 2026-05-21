@@ -1545,7 +1545,7 @@ async function buildBrandedPdfBuffer({
       }
 
       if (templateStyle === "client_submission_style") {
-        const chips = displayLine ? displayLine.split("|").map((v) => String(v || "").trim()).filter(Boolean).slice(0, 4) : [];
+        const chipValues = displayLine ? displayLine.split("|").map((v) => String(v || "").trim()).filter(Boolean).slice(0, 6) : [];
         const fallbackLabels = ["Company", "Target Role", "Current Designation", "Experience", "Notice"];
         const fieldToLabel = {
           current_company: "Company",
@@ -1559,21 +1559,56 @@ async function buildBrandedPdfBuffer({
           phone: "Phone",
           candidate_name: "Name"
         };
+        const chipEntries = chipValues.map((value, chipIdx) => ({
+          label: String(fieldToLabel[headerFieldOrder[chipIdx]] || fallbackLabels[chipIdx] || "Field").trim(),
+          value: String(value || "").trim()
+        })).filter((entry) => entry.value);
+        const roleIdx = chipEntries.findIndex((entry) => /target role/i.test(entry.label));
+        const roleEntry = roleIdx >= 0 ? chipEntries[roleIdx] : null;
+        const compactEntries = chipEntries.filter((_, idx) => idx !== roleIdx).slice(0, 4);
+
         let cursorX = textX;
-        const chipY = headY + 7;
+        let chipY = headY + 7;
         const rightLimit = width - 20;
-        chips.forEach((chip, chipIdx) => {
-          const label = fieldToLabel[headerFieldOrder[chipIdx]] || fallbackLabels[chipIdx] || "Field";
+
+        if (roleEntry) {
+          const roleX = textX;
+          const roleW = Math.max(160, rightLimit - roleX);
+          const roleH = 16.8;
+          const roleLabel = String(roleEntry.label || "Target Role").slice(0, 16);
+          const roleValue = String(roleEntry.value || "");
+          const roleLabelW = fontBold.widthOfTextAtSize(roleLabel, 7.8);
+          const roleValueSize = roleValue.length > 52 ? 8.0 : 8.8;
+          page.drawRoundedRectangle?.({ x: roleX, y: chipY + 18.8, width: roleW, height: roleH, borderRadius: 8, color: rgb(0.962, 0.976, 0.998), borderColor: rgb(0.79, 0.84, 0.93), borderWidth: 0.8 });
+          if (!page.drawRoundedRectangle) {
+            page.drawRectangle({ x: roleX, y: chipY + 18.8, width: roleW, height: roleH, color: rgb(0.962, 0.976, 0.998), borderColor: rgb(0.79, 0.84, 0.93), borderWidth: 0.8 });
+          }
+          page.drawCircle({ x: roleX + 9.4, y: chipY + 26.9, size: 4.2, color: rgb(navy.r, navy.g, navy.b), opacity: 0.94 });
+          page.drawText("T", { x: roleX + 7.8, y: chipY + 24.0, size: 6.2, font: fontBold, color: rgb(0.98, 0.99, 1) });
+          page.drawText(roleLabel, { x: roleX + 16.8, y: chipY + 24.7, size: 7.8, font: fontBold, color: rgb(0.18, 0.25, 0.38) });
+          page.drawText(roleValue, {
+            x: roleX + 16.8 + roleLabelW + 5.1,
+            y: chipY + (roleValue.length > 52 ? 23.8 : 23.9),
+            size: roleValueSize,
+            font: fontRegular,
+            color: rgb(0.24, 0.3, 0.42),
+            maxWidth: Math.max(80, roleW - (24 + roleLabelW + 8))
+          });
+        }
+
+        compactEntries.forEach((entry) => {
+          const label = entry.label;
+          const valueText = String(entry.value || "").slice(0, 28);
           const iconText = String(label || "F").slice(0, 1).toUpperCase();
           const iconR = 4.2;
-          const isRoleChip = /target role|designation/i.test(label);
-          const valueText = chip.slice(0, isRoleChip ? 40 : 24);
           const labelText = label.slice(0, 14);
           const valueW = fontRegular.widthOfTextAtSize(valueText, 8.8);
           const labelW = fontBold.widthOfTextAtSize(labelText, 7.8);
-          const chipMaxW = isRoleChip ? 300 : 178;
-          const chipW = Math.min(chipMaxW, Math.max(96, valueW + labelW + 38));
-          if ((cursorX + chipW) > rightLimit) return;
+          const chipW = Math.min(210, Math.max(104, valueW + labelW + 38));
+          if ((cursorX + chipW) > rightLimit) {
+            cursorX = textX;
+            chipY -= 18.8;
+          }
           page.drawRoundedRectangle?.({ x: cursorX, y: chipY, width: chipW, height: 16.2, borderRadius: 8, color: rgb(0.962, 0.976, 0.998), borderColor: rgb(0.79, 0.84, 0.93), borderWidth: 0.8 });
           if (!page.drawRoundedRectangle) {
             page.drawRectangle({ x: cursorX, y: chipY, width: chipW, height: 16.2, color: rgb(0.962, 0.976, 0.998), borderColor: rgb(0.79, 0.84, 0.93), borderWidth: 0.8 });
