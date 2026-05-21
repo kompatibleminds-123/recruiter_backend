@@ -13065,6 +13065,23 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (req.method === "GET" && requestUrl.pathname === "/company/assessments/by-id") {
+    try {
+      const user = await requireSessionUser(getBearerToken(req));
+      const assessmentId = String(requestUrl.searchParams.get("assessmentId") || "").trim();
+      if (!assessmentId) throw new Error("assessmentId is required.");
+      const assessment = await getAssessmentById({
+        companyId: user.companyId,
+        assessmentId
+      });
+      if (!assessment) throw new Error("Assessment not found.");
+      sendJson(res, 200, { ok: true, result: assessment });
+    } catch (error) {
+      sendJson(res, 400, { ok: false, error: String(error.message || error) });
+    }
+    return;
+  }
+
   if (req.method === "POST" && requestUrl.pathname === "/company/applicant-intake-secret") {
     try {
       const actor = await requireSessionUser(getBearerToken(req));

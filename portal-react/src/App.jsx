@@ -11463,7 +11463,21 @@ function PortalApp({ token, onLogout }) {
     setStatus("interview", `Loaded ${candidate.name || "candidate"} into Interview Panel.`, "ok");
   }
 
-  function openSavedAssessment(assessment) {
+  async function openSavedAssessment(assessmentInput) {
+    const requestedId = String(assessmentInput?.id || "").trim();
+    let assessment = assessmentInput;
+    if (requestedId) {
+      try {
+        const fresh = await api(`/company/assessments/by-id?assessmentId=${encodeURIComponent(requestedId)}`, token);
+        if (fresh && typeof fresh === "object" && String(fresh.id || "").trim() === requestedId) {
+          assessment = fresh;
+          // keep local cache fresh too
+          upsertAssessmentInState(fresh);
+        }
+      } catch (_) {
+        // fallback to cached assessment object when fetch fails
+      }
+    }
     const normalizeEmail = (value) => String(value || "").trim().toLowerCase();
     const normalizePhone = (value) => {
       const digits = String(value || "").replace(/[^\d]/g, "");
