@@ -11520,18 +11520,20 @@ function PortalApp({ token, onLogout }) {
 
   async function openSavedAssessment(assessmentInput) {
     const requestedId = String(assessmentInput?.id || "").trim();
-    let assessment = assessmentInput;
+    const assessment = assessmentInput;
+    // Keep edit action instant: open from in-memory row first.
+    // Refresh latest assessment snapshot in background (no UI blocking).
     if (requestedId) {
-      try {
-        const fresh = await api(`/company/assessments/by-id?assessmentId=${encodeURIComponent(requestedId)}`, token);
-        if (fresh && typeof fresh === "object" && String(fresh.id || "").trim() === requestedId) {
-          assessment = fresh;
-          // keep local cache fresh too
-          upsertAssessmentInState(fresh);
+      void (async () => {
+        try {
+          const fresh = await api(`/company/assessments/by-id?assessmentId=${encodeURIComponent(requestedId)}`, token);
+          if (fresh && typeof fresh === "object" && String(fresh.id || "").trim() === requestedId) {
+            upsertAssessmentInState(fresh);
+          }
+        } catch {
+          // best-effort only
         }
-      } catch (_) {
-        // fallback to cached assessment object when fetch fails
-      }
+      })();
     }
     const normalizeEmail = (value) => String(value || "").trim().toLowerCase();
     const normalizePhone = (value) => {
