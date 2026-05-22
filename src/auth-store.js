@@ -745,6 +745,10 @@ async function countCompanyWorkspaceUsers(companyId) {
 }
 function sanitizeSharedExportPresetSettings(raw) {
   const source = raw && typeof raw === "object" ? raw : {};
+  const rawJobBoard =
+    source.jobBoard && typeof source.jobBoard === "object"
+      ? source.jobBoard
+      : {};
   const rawResumeFormatting =
     source.resumeFormatting && typeof source.resumeFormatting === "object"
       ? source.resumeFormatting
@@ -843,6 +847,12 @@ function sanitizeSharedExportPresetSettings(raw) {
       watermarkOpacity: Math.max(0.05, Math.min(0.15, Number(rawResumeFormatting.watermarkOpacity || 0.12) || 0.12)),
       logoDataUrl: String(rawResumeFormatting.logoDataUrl || "").trim(),
       headerShowFields: safeHeaderFields
+    },
+    jobBoard: {
+      slug: toCompanySlug(rawJobBoard.slug || rawJobBoard.companySlug || ""),
+      pageTitle: String(rawJobBoard.pageTitle || "Jobs").trim(),
+      pageSubtitle: String(rawJobBoard.pageSubtitle || "Explore active openings and apply directly.").trim(),
+      embedHeightPx: Math.max(480, Math.min(1400, Number(rawJobBoard.embedHeightPx || 900) || 900))
     },
     companyWideShortcuts,
     personalShortcutsByUser,
