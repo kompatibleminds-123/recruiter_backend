@@ -10870,11 +10870,17 @@ const server = http.createServer(async (req, res) => {
       const boardSettings = sharedSettings?.jobBoard && typeof sharedSettings.jobBoard === "object" ? sharedSettings.jobBoard : {};
       const jobs = (Array.isArray(result?.jobs) ? result.jobs : []).map((job) => ({
         id: String(job?.id || "").trim(),
-        title: String(job?.title || "").trim(),
+        title: String(job?.publicTitle || job?.public_title || job?.title || "").trim(),
+        companyLine: String(
+          job?.publicCompanyLine
+          || job?.public_company_line
+          || job?.aboutCompany
+          || job?.about_company
+          || "Confidential hiring partner"
+        ).trim(),
         location: String(job?.location || "").trim(),
         workMode: String(job?.workMode || "").trim(),
-        clientName: String(job?.clientName || "").trim(),
-        applyLink: `${getRequestBaseUrl(req)}/apply/${encodeURIComponent(String(job?.id || "").trim())}`,
+        applyLink: `${getRequestBaseUrl(req)}/apply-public/${encodeURIComponent(String(job?.id || "").trim())}`,
         publicApplyLink: `${getRequestBaseUrl(req)}/apply-public/${encodeURIComponent(String(job?.id || "").trim())}`
       })).filter((job) => job.id && job.title);
       sendJson(res, 200, {

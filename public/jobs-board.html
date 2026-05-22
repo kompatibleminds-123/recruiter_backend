@@ -12,8 +12,24 @@
         <h1 id="jobsTitle">Open Jobs</h1>
         <p id="jobsSubtitle">Explore active openings and apply directly.</p>
       </header>
+      <section class="jobs-search" aria-label="Search jobs">
+        <label>
+          <span>Keyword</span>
+          <input id="keywordSearch" type="search" placeholder="Search by role, skill, keyword..." autocomplete="off" />
+        </label>
+        <label>
+          <span>Location</span>
+          <input id="locationSearch" type="search" placeholder="City, remote, anywhere..." autocomplete="off" />
+        </label>
+      </section>
       <div id="jobsStatus" class="jobs-status"></div>
-      <section id="jobsList" class="jobs-list"></section>
+      <section class="jobs-layout">
+        <div>
+          <div class="jobs-section-title">Recent Jobs</div>
+          <section id="jobsList" class="jobs-list"></section>
+        </div>
+        <aside class="job-spotlight" id="jobSpotlight" aria-label="Job spotlight"></aside>
+      </section>
     </main>
     <script src="/public/jobs-board.js"></script>
   </body>
