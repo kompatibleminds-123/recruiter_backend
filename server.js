@@ -3659,10 +3659,10 @@ function sanitizeTimelineRows(timeline) {
   if (!Array.isArray(timeline)) return [];
   return timeline
     .map((item) => ({
-      company: String(item?.company || "").trim(),
-      title: String(item?.designation || item?.title || "").trim(),
-      start: String(item?.start || "").trim(),
-      end: String(item?.end || "").trim(),
+      company: String(item?.company || item?.employer || item?.organization || item?.currentCompany || "").trim(),
+      title: String(item?.designation || item?.title || item?.role || item?.jobTitle || item?.currentDesignation || "").trim(),
+      start: String(item?.start || item?.startDate || item?.start_date || item?.from || "").trim(),
+      end: String(item?.end || item?.endDate || item?.end_date || item?.to || "").trim(),
       duration: String(item?.duration || "").trim()
     }))
     .filter((item) => item.company || item.title || item.start || item.end || item.duration)
@@ -7913,7 +7913,7 @@ function extractHighestEducationFromRawText(rawText) {
     .map((line) => line.replace(/^[\s\-•*]+/, "").trim())
     .filter(Boolean);
   const educationLine = lines.find((line) =>
-    /\b(m\.?\s*b\.?\s*a|b\.?\s*b\.?\s*a|b\.?\s*com|m\.?\s*sc|b\.?\s*tech|m\.?\s*tech|b\.?\s*e|m\.?\s*e|b\.?\s*a|m\.?\s*a|ph\.?\s*d)\b/i.test(line)
+    /\b(m\.?\s*b\.?\s*a|b\.?\s*b\.?\s*a|b\.?\s*com|m\.?\s*sc|b\.?\s*tech|m\.?\s*tech|b\.?\s*e|m\.?\s*e|b\.?\s*a|m\.?\s*a|ph\.?\s*d|graduat(?:ion)?)\b/i.test(line)
   );
   if (!educationLine) return "";
   return educationLine.replace(/\s+/g, " ").trim();
@@ -8804,13 +8804,13 @@ function buildCandidateParseResponse(baseResult, normalizedResult, parseMeta = {
   const educationSectionText = String(baseResult?.detectedSections?.education || baseResult?.detectedSections?.education_qualification || "").trim();
   const educationHistory = Array.isArray(baseResult?.education) && baseResult.education.length
     ? baseResult.education.map((item) => ({
-        degree: String(item?.degree || "").trim(),
-        institution: String(item?.institution || "").trim(),
-        start_date: String(item?.startDate || "").trim(),
-        end_date: String(item?.endDate || "").trim(),
+        degree: String(item?.degree || item?.qualification || item?.course || "").trim(),
+        institution: String(item?.institution || item?.university || item?.school || "").trim(),
+        start_date: String(item?.startDate || item?.start_date || "").trim(),
+        end_date: String(item?.endDate || item?.end_date || "").trim(),
         year: String(item?.year || "").trim(),
-        grade: String(item?.score || "").trim(),
-        raw_line: String(item?.rawText || "").trim(),
+        grade: String(item?.score || item?.grade || "").trim(),
+        raw_line: String(item?.rawText || item?.raw_line || "").trim(),
         confidence: String(item?.confidence || "").toLowerCase() === "high" ? 0.9 : 0.68
       }))
     : buildDeterministicEducationHistory(rawTextForSearch, highestEducationInitial, educationSectionText);
