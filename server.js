@@ -1422,7 +1422,7 @@ async function buildBrandedPdfBuffer({
   // Runtime-safe fallback:
   // For unsupported/fragile form PDFs, avoid branded transformation that can render masked fields.
   if ((hasXfaForm || (hasForm && !formFlattened)) && src?.length) {
-    return Buffer.from(src);
+    return { buffer: Buffer.from(src), brandedFallbackUsed: true };
   }
   const outDoc = await PDFDocument.create();
   const srcPages = srcDoc.getPages();
@@ -1691,7 +1691,7 @@ async function buildBrandedPdfBuffer({
   }
 
   const bytes = await outDoc.save();
-  return Buffer.from(bytes);
+  return { buffer: Buffer.from(bytes), brandedFallbackUsed: false };
 }
 
 async function loadAttachmentFromUrl(url = "", fallbackName = "cv.pdf", mimeType = "") {
@@ -11116,17 +11116,21 @@ const server = http.createServer(async (req, res) => {
         }
       }
       candidateName = candidateName || "Candidate Name";
-      const buffer = await buildBrandedPdfBuffer({
+      const brandedPdf = await buildBrandedPdfBuffer({
         pdfBase64: body?.pdfBase64 || "",
         companyName,
         resumeFormatting,
         candidateName,
         headerLine
       });
+      if (brandedPdf?.brandedFallbackUsed) {
+        console.warn("[branded-cv] branded_fallback_used=true route=/company/resume-formatting/branded-pdf");
+      }
       const downloadName = filenameRaw.toLowerCase().endsWith(".pdf") ? filenameRaw : `${filenameRaw}.pdf`;
-      sendBuffer(req, res, 200, buffer, {
+      sendBuffer(req, res, 200, brandedPdf.buffer, {
         "Content-Type": "application/pdf",
-        "Content-Disposition": `attachment; filename=\"${downloadName.replace(/"/g, "")}\"`
+        "Content-Disposition": `attachment; filename=\"${downloadName.replace(/"/g, "")}\"`,
+        "X-Branded-Fallback-Used": brandedPdf?.brandedFallbackUsed ? "1" : "0"
       });
     } catch (error) {
       sendJson(res, 400, { ok: false, error: String(error.message || error) });
@@ -13131,18 +13135,22 @@ const server = http.createServer(async (req, res) => {
         let headerLine = String(brandedCtx.headerLine || "").trim();
         if (!headerLine && requestedHeaderLine) headerLine = requestedHeaderLine;
         const candidateName = String(brandedCtx.candidateName || requestedCandidateName || "").trim() || "Candidate Name";
-        const brandedBuffer = await buildBrandedPdfBuffer({
+        const brandedPdf = await buildBrandedPdfBuffer({
           pdfBase64: file.buffer.toString("base64"),
           companyName: brandedCtx.companyName,
           resumeFormatting: brandedCtx.resumeFormatting,
           candidateName,
           headerLine
         });
+        if (brandedPdf?.brandedFallbackUsed) {
+          console.warn("[branded-cv] branded_fallback_used=true route=/company/candidates/cv");
+        }
         const brandedName = `${toSafeCvFilenameBase(candidateName)}_CV.pdf`;
-        sendBuffer(req, res, 200, brandedBuffer, {
+        sendBuffer(req, res, 200, brandedPdf.buffer, {
           "Content-Type": "application/pdf",
           "Content-Disposition": `${forceDownload ? "attachment" : "inline"}; filename="${brandedName.replace(/"/g, "")}"`,
-          "Cache-Control": "no-store"
+          "Cache-Control": "no-store",
+          "X-Branded-Fallback-Used": brandedPdf?.brandedFallbackUsed ? "1" : "0"
         });
         return;
       }
@@ -13198,18 +13206,22 @@ const server = http.createServer(async (req, res) => {
             ? sharedSettings.resumeFormatting
             : {};
         }
-        const brandedBuffer = await buildBrandedPdfBuffer({
+        const brandedPdf = await buildBrandedPdfBuffer({
           pdfBase64: file.buffer.toString("base64"),
           companyName: String(payload.companyName || "Your Company").trim() || "Your Company",
           resumeFormatting: resolvedResumeFormatting,
           candidateName: resolvedCandidateName,
           headerLine: resolvedHeaderLine
         });
+        if (brandedPdf?.brandedFallbackUsed) {
+          console.warn("[branded-cv] branded_fallback_used=true route=/shared/cv");
+        }
         const brandedName = `${toSafeCvFilenameBase(resolvedCandidateName)}_CV.pdf`;
-        sendBuffer(req, res, 200, brandedBuffer, {
+        sendBuffer(req, res, 200, brandedPdf.buffer, {
           "Content-Type": "application/pdf",
           "Content-Disposition": `inline; filename="${brandedName.replace(/"/g, "")}"`,
-          "Cache-Control": "no-store"
+          "Cache-Control": "no-store",
+          "X-Branded-Fallback-Used": brandedPdf?.brandedFallbackUsed ? "1" : "0"
         });
         return;
       }
