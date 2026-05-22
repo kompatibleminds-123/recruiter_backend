@@ -2599,6 +2599,7 @@ function buildUploadedFileFingerprint(file = {}) {
 
 const PARSE_CANDIDATE_CACHE = new Map();
 const PARSE_CANDIDATE_CACHE_MAX = 3000;
+const CV_PARSE_RESULT_VERSION = "2026-05-23-unified-v1";
 
 function buildParseCandidateCacheKey(body = {}, companyId = "") {
   const sourceType = String(body?.sourceType || "").trim().toLowerCase();
@@ -2606,7 +2607,7 @@ function buildParseCandidateCacheKey(body = {}, companyId = "") {
   if (!fingerprint) return "";
   const aiMode = body?.normalizeWithAi !== false ? "ai" : "manual";
   const scope = String(companyId || "global").trim().toLowerCase();
-  return `${scope}|${sourceType}|${aiMode}|${fingerprint}`;
+  return `${CV_PARSE_RESULT_VERSION}|${scope}|${sourceType}|${aiMode}|${fingerprint}`;
 }
 
 function setParseCandidateCache(cacheKey = "", payload = null) {
@@ -14980,6 +14981,7 @@ const server = http.createServer(async (req, res) => {
         fileFingerprint &&
         cachedCvAnalysis &&
         String(cachedCvAnalysis.fingerprint || "").trim() === fileFingerprint &&
+        String(cachedCvAnalysis.parseVersion || "").trim() === CV_PARSE_RESULT_VERSION &&
         cachedCvAnalysis.result
       ) {
         sendJson(res, 200, {
@@ -15077,6 +15079,7 @@ const server = http.createServer(async (req, res) => {
             result.needsReview = hybrid.finalOutput.needsReview;
             result.reviewReasons = hybrid.finalOutput.reviewReasons;
             result.parseMeta = hybrid.meta || {};
+            result.parseVersion = CV_PARSE_RESULT_VERSION;
             const refreshed = (await listCandidatesForUser(actor, { id: candidate.id, limit: 1 }))[0] || null;
             const refreshedMeta = refreshed ? decodeApplicantMetadata(refreshed) : immediateMeta;
             const nextMeta = {
@@ -15088,6 +15091,7 @@ const server = http.createServer(async (req, res) => {
               fileUrl: storedFilePayload.url || refreshedMeta?.fileUrl || "",
               cvAnalysisCache: {
                 fingerprint: fileFingerprint,
+                parseVersion: CV_PARSE_RESULT_VERSION,
                 storedAt: new Date().toISOString(),
                 storedFile: storedFilePayload,
                 result,
@@ -15196,6 +15200,7 @@ const server = http.createServer(async (req, res) => {
       result.needsReview = hybrid.finalOutput.needsReview;
       result.reviewReasons = hybrid.finalOutput.reviewReasons;
       result.parseMeta = hybrid.meta || {};
+      result.parseVersion = CV_PARSE_RESULT_VERSION;
 
       const inferredSearchTags = deriveInferredSearchTags({
         cvResult: result,
@@ -15213,6 +15218,7 @@ const server = http.createServer(async (req, res) => {
         fileUrl: storedFilePayload.url || existingMeta.fileUrl || "",
         cvAnalysisCache: {
           fingerprint: fileFingerprint,
+          parseVersion: CV_PARSE_RESULT_VERSION,
           storedAt: new Date().toISOString(),
           storedFile: storedFilePayload,
           result,
@@ -15381,6 +15387,7 @@ const server = http.createServer(async (req, res) => {
       result.needsReview = hybrid.finalOutput.needsReview;
       result.reviewReasons = hybrid.finalOutput.reviewReasons;
       result.parseMeta = hybrid.meta || {};
+      result.parseVersion = CV_PARSE_RESULT_VERSION;
       if (cacheKey) setParseCandidateCache(cacheKey, result);
       sendJson(res, 200, { ok: true, result });
     } catch (error) {
