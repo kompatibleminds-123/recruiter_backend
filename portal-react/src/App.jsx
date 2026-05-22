@@ -8433,6 +8433,56 @@ function PortalApp({ token, onLogout }) {
     return null;
   }
   const capturedSources = useMemo(() => Array.from(new Set((state.candidates || []).map((item) => String(item.source || "").trim()).filter(Boolean))), [state.candidates]);
+  const activeJobTitlesForFilters = useMemo(
+    () => (state.jobs || [])
+      .filter((job) => !Boolean(job?.isArchived))
+      .map((job) => ({ id: String(job?.id || "").trim(), title: String(job?.title || "").trim() }))
+      .filter((job) => job.title),
+    [state.jobs]
+  );
+  const activeJobTitleById = useMemo(
+    () => new Map(activeJobTitlesForFilters.filter((job) => job.id).map((job) => [job.id, job.title])),
+    [activeJobTitlesForFilters]
+  );
+  const normalizeJobTitleKey = useCallback((value = "") => String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[–—]/g, "-")
+    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim(), []);
+  const resolveCanonicalJdTitle = useCallback((...rows) => {
+    const ids = [];
+    const titles = [];
+    rows.forEach((row) => {
+      if (!row || typeof row !== "object") return;
+      ids.push(row.jd_id, row.jdId, row.jobId, row.job_id, row.assigned_jd_id, row.assignedJdId);
+      titles.push(row.jdTitle, row.jd_title, row.assigned_jd_title, row.assignedJdTitle, row.role, row.position);
+      const draft = getCandidateDraftState(row);
+      if (draft && typeof draft === "object") titles.push(draft.jdTitle, draft.jd_title);
+    });
+    for (const id of ids) {
+      const key = String(id || "").trim();
+      if (key && activeJobTitleById.has(key)) return activeJobTitleById.get(key);
+    }
+    const cleanTitles = titles.map((title) => String(title || "").trim()).filter(Boolean);
+    const activeByKey = new Map(activeJobTitlesForFilters.map((job) => [normalizeJobTitleKey(job.title), job.title]));
+    for (const title of cleanTitles) {
+      const exact = activeByKey.get(normalizeJobTitleKey(title));
+      if (exact) return exact;
+    }
+    for (const title of cleanTitles) {
+      const titleKey = normalizeJobTitleKey(title);
+      if (!titleKey) continue;
+      const matched = activeJobTitlesForFilters.find((job) => {
+        const jobKey = normalizeJobTitleKey(job.title);
+        if (!jobKey || jobKey.length < 10) return false;
+        return titleKey.includes(jobKey) || jobKey.includes(titleKey);
+      });
+      if (matched?.title) return matched.title;
+    }
+    return cleanTitles[0] || "";
+  }, [activeJobTitleById, activeJobTitlesForFilters, normalizeJobTitleKey]);
   const assessmentOptions = useMemo(() => {
     const clients = new Set();
     const jds = new Set();
@@ -8453,7 +8503,7 @@ function PortalApp({ token, onLogout }) {
         String(candidate.name || "").trim().toLowerCase() === String(item?.candidateName || "").trim().toLowerCase()
       );
       const clientValue = String(item?.clientName || matchedCandidate?.client_name || "").trim();
-      const jdValue = String(item?.jdTitle || matchedCandidate?.jd_title || "").trim();
+      const jdValue = resolveCanonicalJdTitle(item, matchedCandidate);
       // Always display the assigned recruiter (not assessment creator/last editor).
       const recruiterValue = String(matchedCandidate?.assigned_to_name || item?.recruiterName || matchedCandidate?.recruiter_name || "").trim();
       const outcomeValue = normalizeAssessmentStatusLabel(item?.candidateStatus || item?.candidate_status || "") || "No outcome";
@@ -8469,7 +8519,7 @@ function PortalApp({ token, onLogout }) {
       recruiters: Array.from(recruiters).sort((a, b) => a.localeCompare(b)),
       outcomes: DEFAULT_STATUS_OPTIONS
     };
-  }, [state.assessments, state.candidates, state.user, state.users]);
+  }, [state.assessments, state.candidates, state.user, state.users, resolveCanonicalJdTitle]);
 
   const filteredAssessments = useMemo(() => {
     const query = String(assessmentFilters.q || "").trim().toLowerCase();
@@ -8482,7 +8532,7 @@ function PortalApp({ token, onLogout }) {
         String(candidate.name || "").trim().toLowerCase() === String(item?.candidateName || "").trim().toLowerCase()
       );
       const clientValue = String(item?.clientName || matchedCandidate?.client_name || "").trim();
-      const jdValue = String(item?.jdTitle || matchedCandidate?.jd_title || "").trim();
+      const jdValue = resolveCanonicalJdTitle(item, matchedCandidate);
       // Always filter by assigned recruiter (not assessment creator/last editor).
       const recruiterValue = String(matchedCandidate?.assigned_to_name || item?.recruiterName || matchedCandidate?.recruiter_name || "").trim();
       const outcomeValue = normalizeAssessmentStatusLabel(item?.candidateStatus || item?.candidate_status || "") || "No outcome";
@@ -8504,7 +8554,7 @@ function PortalApp({ token, onLogout }) {
       if (assessmentFilters.outcomes.length && !assessmentFilters.outcomes.includes(outcomeValue)) return false;
       return true;
     });
-  }, [state.assessments, state.candidates, assessmentFilters, assessmentLane]);
+  }, [state.assessments, state.candidates, assessmentFilters, assessmentLane, resolveCanonicalJdTitle]);
 
   function inferInterviewRoundFromStatus(value) {
     const raw = String(value || "").trim().toLowerCase();
@@ -9422,9 +9472,6 @@ function PortalApp({ token, onLogout }) {
 
   const capturedCandidateOptions = useMemo(() => {
     const meta = { clients: new Set(), jds: new Set(), sources: new Set(), outcomes: new Set(), assignedTo: new Set(), capturedBy: new Set() };
-    const allowedJds = new Set([
-      ...(state.jobs || []).map((job) => String(job.title || "").trim()).filter(Boolean)
-    ]);
     const currentUserName = String(state.user?.name || "").trim();
     const isAdmin = String(state.user?.role || "").toLowerCase() === "admin";
     if (isAdmin) {
@@ -9449,12 +9496,12 @@ function PortalApp({ token, onLogout }) {
       if (isInboundApplicant) continue;
       if (matchedAssessment) continue;
       const clientValue = String(item.client_name || matchedAssessment?.clientName || "Unassigned").trim();
-      const jdValue = String(item.jd_title || matchedAssessment?.jdTitle || item.role || "").trim();
+      const jdValue = resolveCanonicalJdTitle(item, matchedAssessment);
       const outcomeValue = getCapturedOutcome(item, matchedAssessment);
       const assignedToValue = String(item.assigned_to_name || "Unassigned").trim();
       const capturedByValue = String(item.recruiter_name || item.assigned_by_name || "Unknown").trim();
       if (clientValue) meta.clients.add(clientValue);
-      if (jdValue && allowedJds.has(jdValue)) meta.jds.add(jdValue);
+      if (jdValue) meta.jds.add(jdValue);
       if (sourceValue) meta.sources.add(sourceValue);
       if (outcomeValue) meta.outcomes.add(outcomeValue);
       if (assignedToValue) meta.assignedTo.add(assignedToValue);
@@ -9473,7 +9520,7 @@ function PortalApp({ token, onLogout }) {
       ),
       activeStates: ["Active", "Inactive"]
     };
-  }, [capturedAssessmentMap, state.candidates, state.jobs, state.user]);
+  }, [capturedAssessmentMap, state.candidates, state.user, state.users, resolveCapturedAssessment, resolveCanonicalJdTitle]);
 
   const capturedNotesUniverse = useMemo(() => {
     const isAdmin = String(state.user?.role || "").toLowerCase() === "admin";
@@ -9559,7 +9606,8 @@ function PortalApp({ token, onLogout }) {
     const filteredBase = capturedNotesUniverse.filter((item) => {
       const sourceValue = String(item.source || "").trim();
       const clientValue = String(item.client_name || "Unassigned").trim();
-      const jdValue = String(item.jd_title || item.role || "").trim();
+      const matchedAssessment = resolveCapturedAssessment(item);
+      const jdValue = resolveCanonicalJdTitle(item, matchedAssessment);
       const assignedToValue = String(item.assigned_to_name || "Unassigned").trim();
       const capturedByValue = String(item.recruiter_name || item.assigned_by_name || "Unknown").trim();
       const outcomeValue = getCapturedOutcome(item, null);
@@ -9572,6 +9620,7 @@ function PortalApp({ token, onLogout }) {
         item.company,
         item.role,
         item.jd_title,
+        jdValue,
         item.client_name,
         item.assigned_to_name,
         item.source,
@@ -9647,7 +9696,7 @@ function PortalApp({ token, onLogout }) {
       inactive: inactiveCount,
       converted: convertedCount
     };
-  }, [candidateFilters, capturedAssessmentMap, capturedNotesUniverse, state.user]);
+  }, [candidateFilters, capturedAssessmentMap, capturedNotesUniverse, state.user, state.users, resolveCapturedAssessment, resolveCanonicalJdTitle]);
 
   const assessmentStats = useMemo(() => {
     const todayKey = new Date().toISOString().slice(0, 10);
@@ -9660,7 +9709,7 @@ function PortalApp({ token, onLogout }) {
         String(candidate.name || "").trim().toLowerCase() === String(item?.candidateName || "").trim().toLowerCase()
       );
       const clientValue = String(item?.clientName || matchedCandidate?.client_name || "").trim();
-      const jdValue = String(item?.jdTitle || matchedCandidate?.jd_title || "").trim();
+      const jdValue = resolveCanonicalJdTitle(item, matchedCandidate);
       const recruiterValue = String(matchedCandidate?.assigned_to_name || item?.recruiterName || matchedCandidate?.recruiter_name || "").trim();
       const outcomeValue = normalizeAssessmentStatusLabel(item?.candidateStatus || item?.candidate_status || "") || "No outcome";
       const createdKey = String(item?.generatedAt || item?.createdAt || item?.created_at || item?.updatedAt || "").slice(0, 10);
@@ -9689,7 +9738,7 @@ function PortalApp({ token, onLogout }) {
       active: activeCount,
       archived: archivedCount
     };
-  }, [assessmentFilters, state.assessments, state.candidates]);
+  }, [assessmentFilters, state.assessments, state.candidates, resolveCanonicalJdTitle]);
 
   const capturedCandidates = useMemo(() => {
     const queryText = candidateFilters.q.trim().toLowerCase();
@@ -9745,7 +9794,7 @@ function PortalApp({ token, onLogout }) {
       if (matchedAssessment) return false;
       const sourceValue = String(item.source || "").trim();
       const clientValue = String(item.client_name || matchedAssessment?.clientName || "Unassigned").trim();
-      const jdValue = String(item.jd_title || matchedAssessment?.jdTitle || item.role || "").trim();
+      const jdValue = resolveCanonicalJdTitle(item, matchedAssessment);
       const assignedToValue = String(item.assigned_to_name || "Unassigned").trim();
       const capturedByValue = String(item.recruiter_name || item.assigned_by_name || "Unknown").trim();
       const outcomeValue = getCapturedOutcome(item, matchedAssessment);
@@ -9758,6 +9807,7 @@ function PortalApp({ token, onLogout }) {
         item.company,
         item.role,
         item.jd_title,
+        jdValue,
         item.client_name,
         item.assigned_to_name,
         item.source,
@@ -9810,7 +9860,7 @@ function PortalApp({ token, onLogout }) {
       if (delta !== 0) return delta;
       return String(b?.created_at || "").localeCompare(String(a?.created_at || ""));
     });
-  }, [candidateFilters, capturedAssessmentMap, capturedNotesUniverse, state.user]);
+  }, [candidateFilters, capturedAssessmentMap, capturedNotesUniverse, state.user, state.users, resolveCapturedAssessment, resolveCanonicalJdTitle]);
   const filteredApplicants = useMemo(() => {
     const isAdmin = String(state.user?.role || "").toLowerCase() === "admin";
     const currentUserName = String(state.user?.name || "").trim().toLowerCase();
