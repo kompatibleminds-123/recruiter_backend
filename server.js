@@ -1390,15 +1390,39 @@ async function buildBrandedPdfBuffer({
   if (!raw) throw new Error("PDF payload missing.");
   const src = Buffer.from(raw, "base64");
   const srcDoc = await PDFDocument.load(src);
+  let hasForm = false;
+  let hasXfaForm = false;
+  let formFlattened = false;
   // Some CV PDFs store contact details in AcroForm fields.
   // Flatten first so field values become normal page content before overlay rendering.
   try {
     const form = srcDoc.getForm?.();
+    if (form) {
+      hasForm = true;
+      try {
+        hasXfaForm = typeof form.hasXFA === "function" ? Boolean(form.hasXFA()) : false;
+      } catch {
+        hasXfaForm = false;
+      }
+    }
     if (form && typeof form.flatten === "function") {
+      try {
+        if (typeof form.updateFieldAppearances === "function") {
+          form.updateFieldAppearances();
+        }
+      } catch {
+        // Some PDFs have partial/invalid appearance metadata; continue to flatten attempt.
+      }
       form.flatten({ updateFieldAppearances: true });
+      formFlattened = true;
     }
   } catch {
     // Not a form PDF (or malformed form) - continue without flatten.
+  }
+  // Runtime-safe fallback:
+  // For unsupported/fragile form PDFs, avoid branded transformation that can render masked fields.
+  if ((hasXfaForm || (hasForm && !formFlattened)) && src?.length) {
+    return Buffer.from(src);
   }
   const outDoc = await PDFDocument.create();
   const srcPages = srcDoc.getPages();
@@ -8734,7 +8758,7 @@ function buildCandidateParseResponse(baseResult, normalizedResult, parseMeta = {
   const parserConfidence = {
     company_designation: normalizedCurrentCompany && normalizedCurrentDesignation ? 0.88 : 0.52,
     experience: timelineConfidenceLevel === "high" ? 0.9 : (timelineConfidenceLevel === "medium" ? 0.74 : 0.45),
-    education: highestEducation ? 0.82 : 0.45
+    education: highestEducationInitial ? 0.82 : 0.45
   };
   parserConfidence.overall = Number(
     (((parserConfidence.company_designation + parserConfidence.experience + parserConfidence.education) / 3).toFixed(2))
