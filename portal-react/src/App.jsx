@@ -6769,9 +6769,9 @@ function PortalApp({ token, onLogout }) {
   const companyTemplateTextareaRef = useRef(null);
   const jdWorkspaceShortcutTextareaRef = useRef(null);
   const JOB_CLOSE_REASONS = [
-    "Position closed",
+    "Position closed by us",
     "Position put on hold",
-    "Position closed at company's end"
+    "Position closed at client's end"
   ];
   const [jobDraft, setJobDraft] = useState({
     id: "",
@@ -7250,6 +7250,30 @@ function PortalApp({ token, onLogout }) {
     if (!Number.isFinite(createdAt) || !Number.isFinite(closedAt) || closedAt < createdAt) return null;
     const days = Math.ceil((closedAt - createdAt) / (1000 * 60 * 60 * 24));
     return Math.max(0, days);
+  }
+
+  function normalizeJobCloseReason(value) {
+    const reason = String(value || "").trim();
+    if (/^position closed$/i.test(reason)) return "Position closed by us";
+    if (/company'?s end/i.test(reason)) return "Position closed at client's end";
+    return reason || "Position closed by us";
+  }
+
+  function getArchivedJobStatusLabel(job) {
+    const reason = normalizeJobCloseReason(job?.closeReason || "");
+    if (/hold/i.test(reason)) return "Hold";
+    if (/client/i.test(reason)) return "Closed at client's end";
+    if (/closed by us/i.test(reason)) {
+      const ttfDays = getTimeToFillDays(job);
+      const ttfText = ttfDays !== null ? `TTF: ${ttfDays} day${ttfDays === 1 ? "" : "s"}` : "TTF: n/a";
+      return `${ttfText} | Closed by us`;
+    }
+    return reason || "Archived";
+  }
+
+  function getArchivedJobOptionLabel(job) {
+    const title = String(job?.title || "Untitled JD").trim();
+    return Boolean(job?.isArchived) ? `${title} | ${getArchivedJobStatusLabel(job)}` : title;
   }
 
 	function normalizeLinkedinUrl(value) {
@@ -12414,7 +12438,7 @@ function PortalApp({ token, onLogout }) {
           ...jobDraft,
           id: jobId,
           isArchived: Boolean(nextArchived),
-          closeReason: nextArchived ? String(jobDraft.closeReason || JOB_CLOSE_REASONS[0]) : "",
+          closeReason: nextArchived ? normalizeJobCloseReason(jobDraft.closeReason || JOB_CLOSE_REASONS[0]) : "",
           closedAt: nextArchived ? (jobDraft.closedAt || new Date().toISOString()) : null,
           closedBy: nextArchived ? (jobDraft.closedBy || String(state.user?.email || "")) : "",
           ownerRecruiterId,
@@ -12428,7 +12452,7 @@ function PortalApp({ token, onLogout }) {
         isArchived: Boolean(nextArchived),
         archivedAt: nextArchived ? (current.archivedAt || new Date().toISOString()) : null,
         archivedBy: nextArchived ? (current.archivedBy || String(state.user?.email || "")) : "",
-        closeReason: nextArchived ? String(current.closeReason || JOB_CLOSE_REASONS[0]) : "",
+        closeReason: nextArchived ? normalizeJobCloseReason(current.closeReason || JOB_CLOSE_REASONS[0]) : "",
         closedAt: nextArchived ? (current.closedAt || new Date().toISOString()) : null,
         closedBy: nextArchived ? (current.closedBy || String(state.user?.email || "")) : ""
       }));
@@ -13543,43 +13567,70 @@ function PortalApp({ token, onLogout }) {
 
   function generateBooleanHintsFromJd() {
     const title = String(jobDraft.title || "").trim();
-    const location = String(jobDraft.location || "").trim();
     const mustHave = String(jobDraft.mustHaveSkills || "").trim();
     const jdText = String(jobDraft.jobDescription || "").trim();
     if (!title && !mustHave && !jdText) {
-      setStatus("jobs", "Add title/JD text first, then generate boolean hints.", "error");
+      setStatus("jobs", "Add title/JD text first, then generate Boolean.", "error");
       return;
     }
-    const hay = `${mustHave}\n${jdText}`;
-    const extractedSkills = Array.from(new Set(
-      (hay.match(/\b(JavaScript|TypeScript|React|Node(?:\.js)?|Next(?:\.js)?|Python|Java|SQL|PostgreSQL|MySQL|MongoDB|AWS|Azure|GCP|Excel|Power\s?BI|Tableau|Salesforce|Recruitment|Sourcing|Boolean|LinkedIn)\b/gi) || [])
-        .map((value) => String(value || "").trim())
-        .filter(Boolean)
-    ));
-    const roleLineParts = [title, location ? `Location: ${location}` : ""].filter(Boolean);
-    const mustHaveList = mustHave
+    const sourceText = `${title}\n${mustHave}\n${jdText}`.toLowerCase();
+    const clean = (value) => String(value || "").replace(/"/g, "").trim();
+    const unique = (items) => Array.from(new Set(items.map(clean).filter(Boolean)));
+    const pickTerms = (dictionary) => unique(dictionary.filter((item) => {
+      const pattern = new RegExp(`\\b${String(item || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/\\s+/g, "\\s+")}\\b`, "i");
+      return pattern.test(sourceText);
+    }));
+    const roleBuckets = [
+      {
+        keys: ["sales", "business development", "account executive", "inside sales", "sdr", "relationship manager"],
+        terms: ["Sales", "Business Development", "Account Executive", "Inside Sales", "SDR", "Relationship Manager"]
+      },
+      {
+        keys: ["bim", "revit", "mep", "mechanical", "hvac", "quantity surveyor", "estimator"],
+        terms: ["BIM", "Revit", "MEP", "Mechanical", "HVAC", "Quantity Surveyor", "Estimator"]
+      },
+      {
+        keys: ["marketing", "performance marketing", "seo", "sem", "google ads", "meta ads", "social media"],
+        terms: ["Marketing", "Performance Marketing", "SEO", "SEM", "Google Ads", "Meta Ads", "Social Media"]
+      },
+      {
+        keys: ["software", "developer", "engineer", "full stack", "backend", "frontend"],
+        terms: ["Software Engineer", "Developer", "Full Stack", "Backend", "Frontend"]
+      },
+      {
+        keys: ["recruiter", "talent acquisition", "sourcing", "hr"],
+        terms: ["Recruiter", "Talent Acquisition", "Sourcing", "HR"]
+      }
+    ];
+    const matchedBucket = roleBuckets.find((bucket) => bucket.keys.some((key) => sourceText.includes(key))) || null;
+    const roleTerms = unique([
+      ...(matchedBucket?.terms || []),
+      ...pickTerms(["Sales", "Business Development", "Account Executive", "Inside Sales", "SDR", "BIM", "Revit", "MEP", "HVAC", "Estimator", "Quantity Surveyor", "Software Engineer", "Full Stack", "Recruiter", "Talent Acquisition", "Marketing"])
+    ]).slice(0, 6);
+    const skillTerms = pickTerms([
+      "Fintech", "NBFC", "BFSI", "Lending", "SaaS", "CRM", "Enterprise Sales", "Lead Generation", "Client Acquisition", "Revenue", "Pipeline",
+      "Revit", "AutoCAD", "Navisworks", "Clash Detection", "Shop Drawings", "MEP", "HVAC", "BOQ", "CostX", "Bluebeam",
+      "SEO", "SEM", "Google Ads", "Meta Ads", "LinkedIn Ads", "Performance Marketing", "Social Media", "GA4", "CRO",
+      "React", "Node", "JavaScript", "TypeScript", "Python", "Java", "SQL", "MongoDB", "AWS", "Azure"
+    ]).slice(0, 10);
+    const fallbackMustHave = mustHave
       .split(/[,\n|]/)
-      .map((item) => String(item || "").trim())
-      .filter(Boolean)
-      .slice(0, 8);
-    const skillsForBoolean = Array.from(new Set([...(mustHaveList || []), ...(extractedSkills || [])]))
-      .slice(0, 12)
-      .map((item) => `"${item.replace(/"/g, "")}"`);
-    const queryRole = roleLineParts.length ? roleLineParts.join(" | ") : "Role focus";
-    const queryMustHave = skillsForBoolean.length ? skillsForBoolean.join(" AND ") : "\"must have\"";
-    const queryBroad = skillsForBoolean.length
-      ? `(${skillsForBoolean.slice(0, 4).join(" OR ")})`
-      : "\"relevant experience\"";
-    const generated = [
-      `1) Strict: "${queryRole}" AND ${queryMustHave}`,
-      `2) Balanced: "${title || "target role"}" AND ${queryBroad}`,
-      `3) Broad: "${title || "target role"}" AND ("${location || "india"}" OR remote)`
-    ].join("\n");
+      .map(clean)
+      .filter((item) => item && !/remote|hybrid|work from office|location|ctc|salary|notice|noida|gurugram|mumbai|bengaluru|bangalore|delhi/i.test(item))
+      .slice(0, 6);
+    const finalRoleTerms = roleTerms.length ? roleTerms : unique([title.replace(/\s+-\s+.*/, "")]).slice(0, 3);
+    const finalSkillTerms = skillTerms.length ? skillTerms : fallbackMustHave;
+    const quoteGroup = (terms) => `(${terms.map((term) => `"${term}"`).join(" OR ")})`;
+    const parts = [
+      finalRoleTerms.length ? quoteGroup(finalRoleTerms) : "",
+      finalSkillTerms.length ? quoteGroup(finalSkillTerms.slice(0, 6)) : ""
+    ].filter(Boolean);
+    const generated = parts.join("\nAND\n") || `"${clean(title || "Relevant profile")}"`;
     setJobDraft((current) => ({
       ...current,
       generatedBooleanHints: generated
     }));
-    setStatus("jobs", "Boolean hints generated. You can now edit and save.", "ok");
+    setStatus("jobs", "Clean Boolean generated. Admin can edit and save final version.", "ok");
   }
 
   function buildResumeFormattingSampleHtml() {
@@ -18404,22 +18455,15 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                       <option value="">Select JD</option>
                       {jobsCatalog
                         .filter((job) => (jobListLane === "archived" ? Boolean(job?.isArchived) : !Boolean(job?.isArchived)))
-                        .map((job) => {
-                          const ttfDays = getTimeToFillDays(job);
-                          const ttfLabel = jobListLane === "archived" && ttfDays !== null ? ` | TTF: ${ttfDays} day${ttfDays === 1 ? "" : "s"}` : "";
-                          return <option key={job.id} value={job.id}>{`${job.title || "Untitled JD"}${ttfLabel}`}</option>;
-                        })}
+                        .map((job) => <option key={job.id} value={job.id}>{getArchivedJobOptionLabel(job)}</option>)}
                     </select>
                     {jobListLane === "archived" && selectedJobId ? (
                       <small className="muted">
                         {(() => {
                           const selectedJob = (jobsCatalog || []).find((job) => String(job?.id || "") === String(selectedJobId || ""));
-                          if (!selectedJob) return "Time to fill not available.";
-                          const ttfDays = getTimeToFillDays(selectedJob);
-                          const closeReason = String(selectedJob?.closeReason || "").trim();
+                          if (!selectedJob) return "Archive status not available.";
                           const closeDate = String(selectedJob?.closedAt || selectedJob?.archivedAt || "").trim();
-                          if (ttfDays === null) return "Time to fill not available for this closed job.";
-                          return `Time to fill: ${ttfDays} day${ttfDays === 1 ? "" : "s"}${closeReason ? ` | Reason: ${closeReason}` : ""}${closeDate ? ` | Closed: ${new Date(closeDate).toLocaleDateString()}` : ""}`;
+                          return `${getArchivedJobStatusLabel(selectedJob)}${closeDate ? ` | Closed: ${new Date(closeDate).toLocaleDateString()}` : ""}`;
                         })()}
                       </small>
                     ) : null}
@@ -18618,18 +18662,18 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                   <label className="full"><span>Job description</span><textarea disabled={jobDraftReadOnly || jobActionBusy} className="jd-editor" value={jobDraft.jobDescription} onChange={(e) => setJobDraft((c) => ({ ...c, jobDescription: e.target.value }))} placeholder="Paste the full JD here. Hosted apply link will show this as one clean block." /></label>
                   <label className="full"><span>Must-have skills</span><textarea disabled={jobDraftReadOnly || jobActionBusy} value={jobDraft.mustHaveSkills} onChange={(e) => setJobDraft((c) => ({ ...c, mustHaveSkills: e.target.value }))} placeholder="Shown on hosted apply link only when filled." /></label>
                   <label className="full">
-                    <span>Generated boolean hints (internal only)</span>
+                    <span>Final Boolean search string (internal only)</span>
                     <textarea
                       disabled={jobDraftReadOnly || jobActionBusy}
                       value={jobDraft.generatedBooleanHints || ""}
                       onChange={(e) => setJobDraft((c) => ({ ...c, generatedBooleanHints: e.target.value }))}
-                      placeholder="System-generated boolean lines will appear here. Admin can edit before save."
+                      placeholder={'Example: ("Sales" OR "Business Development") AND ("Fintech" OR "NBFC" OR "BFSI")'}
                     />
-                    <span className="field-help">Internal recruiter helper only. This does not show in JD share mail or public apply link.</span>
+                    <span className="field-help">Internal recruiter helper only. Avoid location, company name, salary, or work mode. This does not show in JD share mail or public apply link.</span>
                   </label>
                   <div className="button-row">
                     <button type="button" className="ghost-btn" disabled={jobDraftReadOnly || jobActionBusy} onClick={generateBooleanHintsFromJd}>
-                      Generate boolean hints
+                      Generate clean Boolean
                     </button>
                   </div>
                   <label className="full"><span>Red flags</span><textarea disabled={jobDraftReadOnly || jobActionBusy} value={jobDraft.redFlags} onChange={(e) => setJobDraft((c) => ({ ...c, redFlags: e.target.value }))} /></label>
