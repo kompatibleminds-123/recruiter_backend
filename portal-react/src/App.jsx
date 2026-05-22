@@ -1465,7 +1465,19 @@ function rankEducationDegree(value = "") {
 }
 
 function deriveStrictCvSummaryFromRows(experienceRows = [], educationRows = []) {
-  const rows = (Array.isArray(experienceRows) ? experienceRows : []).filter((row) => !shouldExcludeFromCvExperience(row));
+  const rawRows = Array.isArray(experienceRows) ? experienceRows : [];
+  // Recover missing company on adjacent role rows within the same timeline block.
+  // Many CVs list one company heading followed by multiple role stints.
+  const rowsWithCompany = rawRows.map((row, index) => {
+    const ownCompany = String(row?.company_name || row?.company || "").trim();
+    if (ownCompany) return row;
+    const prevCompany = String(rawRows[index - 1]?.company_name || rawRows[index - 1]?.company || "").trim();
+    const nextCompany = String(rawRows[index + 1]?.company_name || rawRows[index + 1]?.company || "").trim();
+    const fallbackCompany = prevCompany || nextCompany;
+    if (!fallbackCompany) return row;
+    return { ...row, company_name: fallbackCompany };
+  });
+  const rows = rowsWithCompany.filter((row) => !shouldExcludeFromCvExperience(row));
   const datedRows = rows
     .map((row) => {
       const start = parseCvYm(row?.start_date || row?.startDate || "");
@@ -1486,7 +1498,26 @@ function deriveStrictCvSummaryFromRows(experienceRows = [], educationRows = []) 
   const currentRow = datedRows.filter((item) => item.hasPresent).sort((a, b) => (cvMonthIndex(b.start) || 0) - (cvMonthIndex(a.start) || 0))[0]
     || datedRows.sort((a, b) => (cvMonthIndex(b.end) || 0) - (cvMonthIndex(a.end) || 0))[0]
     || null;
-  const currentOrgMonths = currentRow ? ((cvMonthIndex(currentRow.end) - cvMonthIndex(currentRow.start)) + 1) : 0;
+  // Current tenure should include contiguous stints in the same company
+  // (e.g., Trainee -> Assistant Manager -> Manager in one org).
+  let currentOrgMonths = 0;
+  if (currentRow) {
+    const companyKey = String(currentRow?.row?.company_name || "").trim().toLowerCase();
+    const companyRows = datedRows
+      .filter((item) => String(item?.row?.company_name || "").trim().toLowerCase() === companyKey)
+      .sort((a, b) => (cvMonthIndex(b.start) || 0) - (cvMonthIndex(a.start) || 0));
+    if (companyRows.length) {
+      const mergedCompany = [];
+      for (const item of companyRows) {
+        const s = cvMonthIndex(item.start);
+        const e = cvMonthIndex(item.end);
+        if (s == null || e == null || e < s) continue;
+        if (!mergedCompany.length || s > mergedCompany[mergedCompany.length - 1][1] + 1) mergedCompany.push([s, e]);
+        else mergedCompany[mergedCompany.length - 1][1] = Math.max(mergedCompany[mergedCompany.length - 1][1], e);
+      }
+      currentOrgMonths = mergedCompany.reduce((sum, [s, e]) => sum + (e - s + 1), 0);
+    }
+  }
 
   const eduRanked = (Array.isArray(educationRows) ? educationRows : [])
     .map((row) => {
