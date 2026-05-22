@@ -15042,7 +15042,7 @@ const server = http.createServer(async (req, res) => {
               payload: {
                 sourceType: "cv",
                 candidateName: body.candidateName || candidate.name || "",
-                totalExperience: body.totalExperience || candidate.experience || "",
+                totalExperience: "",
                 file: uploadedFile
               },
               apiKey: body.apiKey || process.env.OPENAI_API_KEY || "",
@@ -15158,7 +15158,7 @@ const server = http.createServer(async (req, res) => {
         payload: {
           sourceType: "cv",
           candidateName: body.candidateName || candidate.name || "",
-          totalExperience: body.totalExperience || candidate.experience || "",
+          totalExperience: "",
           file: uploadedFile
         },
         apiKey: body.apiKey || process.env.OPENAI_API_KEY || "",
