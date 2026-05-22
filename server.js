@@ -9006,8 +9006,19 @@ function extractHeaderFooterLocation(rawText = "") {
 }
 
 function resolveCandidateLocationFromCv({ experienceHistory = [], normalizedLocation = "", rawText = "" }) {
+  const rows = Array.isArray(experienceHistory) ? experienceHistory : [];
+  const companyTokens = new Set(
+    rows
+      .map((item) => String(item?.company_name || "").trim().toLowerCase())
+      .filter(Boolean)
+  );
+  const designationTokens = new Set(
+    rows
+      .map((item) => String(item?.designation || "").trim().toLowerCase())
+      .filter(Boolean)
+  );
   const current = getCurrentRoleFromTimeline(
-    (Array.isArray(experienceHistory) ? experienceHistory : [])
+    rows
       .map((item) => ({
         company: String(item?.company_name || "").trim(),
         title: String(item?.designation || "").trim(),
@@ -9017,7 +9028,7 @@ function resolveCandidateLocationFromCv({ experienceHistory = [], normalizedLoca
       .filter((row) => row.company || row.title || row.start || row.end)
   );
   if (current) {
-    const match = (Array.isArray(experienceHistory) ? experienceHistory : []).find((item) =>
+    const match = rows.find((item) =>
       String(item?.company_name || "").trim() === String(current.company || "").trim()
       && String(item?.designation || "").trim() === String(current.title || "").trim()
       && String(item?.start_date || "").trim() === String(current.start || "").trim()
@@ -9028,12 +9039,17 @@ function resolveCandidateLocationFromCv({ experienceHistory = [], normalizedLoca
     const fromCurrentRawLine = extractLocationFromExperienceRawLine(String(match?.raw_line || "").trim());
     if (fromCurrentRawLine) return fromCurrentRawLine;
   }
-  for (const row of (Array.isArray(experienceHistory) ? experienceHistory : [])) {
+  for (const row of rows) {
     const fromRowRaw = extractLocationFromExperienceRawLine(String(row?.raw_line || "").trim());
     if (fromRowRaw) return fromRowRaw;
   }
   const explicit = sanitizeCvCandidateLocation(String(normalizedLocation || "").trim());
-  if (explicit) return explicit;
+  if (explicit) {
+    const token = explicit.toLowerCase();
+    if (!companyTokens.has(token) && !designationTokens.has(token)) {
+      return explicit;
+    }
+  }
   return extractHeaderFooterLocation(rawText);
 }
 
