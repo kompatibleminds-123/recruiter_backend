@@ -7907,7 +7907,7 @@ function isValidHighestEducationText(value) {
   if (!text) return false;
   if (text.split(/\s+/).length > 12) return false;
   if (/(scope\s+of\s+(the\s+)?project|roles?\s*&?\s*responsibilities?|to\s+work\s+with|career\s+objective|reviewed|managed|developed|prepared)/i.test(text)) return false;
-  return /\b(b\.?\s*tech|b\.?\s*e\.?|m\.?\s*tech|m\.?\s*e\.?|bachelor|master|mba|mca|bca|b\.?\s*sc|m\.?\s*sc|b\.?\s*com|m\.?\s*com|diploma|ph\.?\s*d|hsc|ssc|12th|10th)\b/i.test(text);
+  return /\b(b\.?\s*tech|b\.?\s*e\.?|m\.?\s*tech|m\.?\s*e\.?|bachelor|master|mba|mca|bca|b\.?\s*sc|m\.?\s*sc|b\.?\s*com|m\.?\s*com|graduat(?:ion)?|diploma|ph\.?\s*d|hsc|ssc|12th|10th)\b/i.test(text);
 }
 
 function scoreEducationLevel(value = "") {
@@ -7924,15 +7924,28 @@ function scoreEducationLevel(value = "") {
 
 function pickHighestEducationFromHistory(educationHistory = [], fallbackValue = "") {
   const rows = Array.isArray(educationHistory) ? educationHistory : [];
+  const getRowYear = (row = {}) => {
+    const candidates = [
+      String(row?.end_date || "").trim(),
+      String(row?.year || "").trim(),
+      String(row?.start_date || "").trim(),
+      String(row?.raw_line || "").trim()
+    ].join(" ");
+    const years = Array.from(candidates.matchAll(/\b(19\d{2}|20\d{2})\b/g)).map((m) => Number(m[1])).filter(Number.isFinite);
+    return years.length ? Math.max(...years) : 0;
+  };
   let best = String(fallbackValue || "").trim();
   let bestScore = scoreEducationLevel(best);
+  let bestYear = 0;
   for (const row of rows) {
     const degree = String(row?.degree || "").trim();
     if (!degree || !isValidHighestEducationText(degree)) continue;
     const score = scoreEducationLevel(degree);
-    if (score > bestScore) {
+    const year = getRowYear(row);
+    if (score > bestScore || (score === bestScore && year > bestYear)) {
       best = degree;
       bestScore = score;
+      bestYear = year;
     }
   }
   return best;
