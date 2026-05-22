@@ -15043,7 +15043,7 @@ const server = http.createServer(async (req, res) => {
             const hybrid = await parseCandidateHybrid({
               payload: {
                 sourceType: "cv",
-                candidateName: body.candidateName || candidate.name || "",
+                candidateName: "",
                 totalExperience: "",
                 file: uploadedFile
               },
@@ -15161,7 +15161,7 @@ const server = http.createServer(async (req, res) => {
       const hybrid = await parseCandidateHybrid({
         payload: {
           sourceType: "cv",
-          candidateName: body.candidateName || candidate.name || "",
+          candidateName: "",
           totalExperience: "",
           file: uploadedFile
         },
@@ -15354,7 +15354,13 @@ const server = http.createServer(async (req, res) => {
         return;
       }
       const hybrid = await parseCandidateHybrid({
-        payload: body,
+        payload: String(body?.sourceType || "").trim().toLowerCase() === "cv"
+          ? {
+              ...body,
+              candidateName: "",
+              totalExperience: ""
+            }
+          : body,
         apiKey: body.apiKey || process.env.OPENAI_API_KEY || "",
         model: String(body.model || "").trim(),
         normalizeWithAi: body.normalizeWithAi !== false
