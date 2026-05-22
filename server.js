@@ -1944,7 +1944,7 @@ function buildSharedCandidateProfile({ candidate = {}, assessment = null } = {})
   const draftPayload = normalizeJsonObjectInput(c.draft_payload || c.draftPayload);
   const screeningAnswers = normalizeJsonObjectInput(c.screening_answers || c.screeningAnswers);
 
-  const cvResult = meta?.cvAnalysisCache?.result && typeof meta.cvAnalysisCache.result === "object" ? meta.cvAnalysisCache.result : {};
+  const cvResult = getVersionedCvAnalysisResult(meta) || {};
   const highlights = Array.isArray(c?.cv_highlights)
     ? c.cv_highlights
     : Array.isArray(cvResult?.highlights)
@@ -2600,6 +2600,15 @@ function buildUploadedFileFingerprint(file = {}) {
 const PARSE_CANDIDATE_CACHE = new Map();
 const PARSE_CANDIDATE_CACHE_MAX = 3000;
 const CV_PARSE_RESULT_VERSION = "2026-05-23-unified-v1";
+
+function getVersionedCvAnalysisResult(meta = {}) {
+  const cache = meta?.cvAnalysisCache && typeof meta.cvAnalysisCache === "object" ? meta.cvAnalysisCache : null;
+  const result = cache?.result && typeof cache.result === "object" ? cache.result : null;
+  if (!result) return null;
+  const version = String(cache?.parseVersion || result?.parseVersion || "").trim();
+  if (version !== CV_PARSE_RESULT_VERSION) return null;
+  return result;
+}
 
 function buildParseCandidateCacheKey(body = {}, companyId = "") {
   const sourceType = String(body?.sourceType || "").trim().toLowerCase();
@@ -4764,7 +4773,7 @@ async function backfillCandidateSkillsFromMetadata(user) {
     const meta = decodeApplicantMetadata(candidate);
     const inferredFromMeta = Array.isArray(meta?.inferredSearchTags) ? meta.inferredSearchTags : [];
     const inferred = deriveInferredSearchTags({
-      cvResult: meta?.cvAnalysisCache?.result || null,
+      cvResult: getVersionedCvAnalysisResult(meta) || null,
       recruiterNotes: candidate?.recruiter_context_notes || "",
       otherPointers: candidate?.other_pointers || "",
       tags: Array.isArray(candidate?.skills) ? candidate.skills : inferredFromMeta
@@ -6782,9 +6791,7 @@ function buildCandidateSearchUniverse(candidates = [], assessments = [], jobs = 
       screeningAnswersToSearchText(draftScreeningAnswers),
       screeningAnswersToSearchText(metaScreeningAnswers)
     ].filter(Boolean).join("\n");
-    const cachedCvResult = candidateMeta?.cvAnalysisCache?.result && typeof candidateMeta.cvAnalysisCache.result === "object"
-      ? candidateMeta.cvAnalysisCache.result
-      : {};
+    const cachedCvResult = getVersionedCvAnalysisResult(candidateMeta) || {};
     const linkedAssessment = getCanonicalLinkedAssessmentForCandidate(candidate, assessmentsById) || null;
     const assessmentId = String(linkedAssessment?.id || "").trim();
     const isConverted = Boolean(assessmentId);
