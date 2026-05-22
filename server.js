@@ -1390,16 +1390,10 @@ async function buildBrandedPdfBuffer({
   if (!raw) throw new Error("PDF payload missing.");
   const src = Buffer.from(raw, "base64");
   const srcDoc = await PDFDocument.load(src);
-  // Some CV PDFs store contact details in AcroForm fields.
-  // Flatten ensures field appearances become normal page content before overlay embedding.
-  try {
-    const form = srcDoc.getForm?.();
-    if (form && typeof form.flatten === "function") {
-      form.flatten({ updateFieldAppearances: true });
-    }
-  } catch {
-    // Not a form PDF (or malformed form) - safe to continue without flatten.
-  }
+  // NOTE:
+  // Some template CVs keep contact details inside AcroForm fields.
+  // Flattening can drop/blank those values for certain PDFs, which appears as masked bars.
+  // Keep source rendering untouched by default so branded mode never auto-masks fields.
   const outDoc = await PDFDocument.create();
   const srcPages = srcDoc.getPages();
   const rf = resumeFormatting && typeof resumeFormatting === "object" ? resumeFormatting : {};
@@ -8385,7 +8379,7 @@ function validateParseResult({
       field: "emailId",
       level: emailId ? "warning" : "info",
       code: "email_needs_review",
-      message: emailId ? "Email looked unreliable, so it was cleared for review." : "Email was not confidently found in this CV."
+      message: emailId ? "Email may need manual review." : "Email was not confidently found in this CV."
     });
   }
 
@@ -8394,7 +8388,7 @@ function validateParseResult({
       field: "phoneNumber",
       level: phoneNumber ? "warning" : "info",
       code: "phone_needs_review",
-      message: phoneNumber ? "Phone number looked unreliable, so it was cleared for review." : "Phone number was not confidently found in this CV."
+      message: phoneNumber ? "Phone number may need manual review." : "Phone number was not confidently found in this CV."
     });
   }
 
@@ -8543,19 +8537,19 @@ function buildCandidateParseResponse(baseResult, normalizedResult, parseMeta = {
       ? String(computedCurrentOrgTenure || "").trim()
       : choosePreferredScalar(computedCurrentOrgTenure, aiCurrentOrgTenure);
   const rawTextForSearch = String(baseResult?.rawText || "").trim();
+  // Do not auto-hide/blank contact details. Keep best available value;
+  // reviewers can still see warning flags from validateParseResult.
   const emailId = applyEmailTldSafeguard(
-    choosePreferredScalar(normalizedResult?.emailId, baseResult?.emailId, isValidEmail),
+    choosePreferredScalar(normalizedResult?.emailId, baseResult?.emailId),
     rawTextForSearch
   );
   const phoneNumber = choosePreferredScalar(
     normalizedResult?.phoneNumber,
-    baseResult?.phoneNumber,
-    (value) => Boolean(normalizePhone(value))
+    baseResult?.phoneNumber
   );
   const linkedinUrl = choosePreferredScalar(
     normalizedResult?.linkedinUrl,
-    baseResult?.linkedinUrl,
-    (value) => /linkedin\.com\/in\//i.test(String(value || ""))
+    baseResult?.linkedinUrl
   );
   const highestEducationRaw = choosePreferredScalar(
     baseResult?.highestQualification,
