@@ -2487,7 +2487,22 @@ async function getPublicCompanyJobsBySlug(companySlug) {
         }
       }
     }
-    if (!matchedCompany?.id) throw new Error("Company not found.");
+    if (!matchedCompany?.id) {
+      const slugJobs = (Array.isArray(store.jobs) ? store.jobs : [])
+        .map(sanitizeJob)
+        .filter((job) => !isSystemJobRow(job) && !isJobArchived(job))
+        .filter((job) => toCompanySlug(job?.clientName || "") === scopedSlug);
+      if (slugJobs.length) {
+        const inferredName = String(slugJobs[0]?.clientName || "").trim() || scopedSlug;
+        return {
+          companyId: "",
+          companyName: inferredName,
+          companySlug: scopedSlug,
+          jobs: slugJobs
+        };
+      }
+      throw new Error("Company not found.");
+    }
     const jobs = (Array.isArray(store.jobs) ? store.jobs : [])
       .filter((job) => String(job?.companyId || "").trim() === String(matchedCompany.id || "").trim())
       .map(sanitizeJob)
@@ -2527,7 +2542,23 @@ async function getPublicCompanyJobsBySlug(companySlug) {
       }
     }
   }
-  if (!matchedCompany?.id) throw new Error("Company not found.");
+  if (!matchedCompany?.id) {
+    const slugRows = await sbSel("company_jobs", `select=*&order=updated_at.desc&limit=5000`).catch(() => []);
+    const slugJobs = (slugRows || [])
+      .map(sanitizeJob)
+      .filter((job) => !isSystemJobRow(job) && !isJobArchived(job))
+      .filter((job) => toCompanySlug(job?.clientName || "") === scopedSlug);
+    if (slugJobs.length) {
+      const inferredName = String(slugJobs[0]?.clientName || "").trim() || scopedSlug;
+      return {
+        companyId: "",
+        companyName: inferredName,
+        companySlug: scopedSlug,
+        jobs: slugJobs
+      };
+    }
+    throw new Error("Company not found.");
+  }
   const rows = await sbSel("company_jobs", `select=*&company_id=eq.${enc(String(matchedCompany.id || "").trim())}&order=updated_at.desc`);
   let jobs = (rows || [])
     .map(sanitizeJob)
