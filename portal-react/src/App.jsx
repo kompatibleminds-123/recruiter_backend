@@ -282,6 +282,7 @@ function FeatureLockedSection({ title = "Feature locked" }) {
     slug: "",
     pageTitle: "Jobs",
     pageSubtitle: "Explore active openings and apply directly.",
+    logoDataUrl: "",
     embedHeightPx: 900
   }
 };
@@ -354,6 +355,7 @@ function migrateCopySettings(settings = {}) {
   next.jobBoard.slug = String(next.jobBoard.slug || "").trim().toLowerCase();
   next.jobBoard.pageTitle = String(next.jobBoard.pageTitle || DEFAULT_COPY_SETTINGS.jobBoard.pageTitle || "Jobs").trim();
   next.jobBoard.pageSubtitle = String(next.jobBoard.pageSubtitle || DEFAULT_COPY_SETTINGS.jobBoard.pageSubtitle || "").trim();
+  next.jobBoard.logoDataUrl = String(next.jobBoard.logoDataUrl || "").trim();
   next.jobBoard.embedHeightPx = Math.max(480, Math.min(1400, Number(next.jobBoard.embedHeightPx || 900) || 900));
   next.exportPresetColumns = presetColumns;
   return next;
@@ -2593,6 +2595,15 @@ function fileToBase64(file) {
   });
 }
 
+function fileToDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ""));
+    reader.onerror = () => reject(reader.error || new Error("Failed to read file."));
+    reader.readAsDataURL(file);
+  });
+}
+
 function formatDateForCopy(value) {
   if (!value) return "";
   const date = new Date(value);
@@ -3576,13 +3587,14 @@ function getPublicJobsCompanySlug(copySettings, companyName) {
   return toUrlSlug(companyName) || "jobs";
 }
 
-function getPublicJobsCompanyLink(copySettings, companyName) {
+function getPublicJobsCompanyLink(copySettings, companyName, mode = "anonymous") {
   const slug = getPublicJobsCompanySlug(copySettings, companyName);
-  return `${window.location.origin}/jobs/company/${encodeURIComponent(slug)}`;
+  const base = `${window.location.origin}/jobs/company/${encodeURIComponent(slug)}`;
+  return mode === "client" ? `${base}?mode=client` : base;
 }
 
-function getPublicJobsEmbedCode(copySettings, companyName) {
-  const url = getPublicJobsCompanyLink(copySettings, companyName);
+function getPublicJobsEmbedCode(copySettings, companyName, mode = "anonymous") {
+  const url = getPublicJobsCompanyLink(copySettings, companyName, mode);
   const height = Math.max(480, Math.min(1400, Number(copySettings?.jobBoard?.embedHeightPx || 900) || 900));
   return `<iframe src="${url}" style="width:100%;height:${height}px;border:0;border-radius:12px;" loading="lazy"></iframe>`;
 }
@@ -18216,6 +18228,30 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                       />
                     </label>
                     <label className="full">
+                      <span>Job board logo</span>
+                      <input
+                        type="file"
+                        accept="image/png,image/jpeg,image/webp,image/svg+xml"
+                        onChange={async (e) => {
+                          const file = e.target.files?.[0];
+                          if (!file) return;
+                          try {
+                            const dataUrl = await fileToDataUrl(file);
+                            setCopySettings((current) => ({
+                              ...current,
+                              jobBoard: { ...(current.jobBoard || {}), logoDataUrl: dataUrl }
+                            }));
+                            setStatus("settings", "Job board logo ready. Save settings to publish it.", "ok");
+                          } catch {
+                            setStatus("settings", "Could not read this logo. Please upload PNG/JPG/WebP/SVG.", "error");
+                          } finally {
+                            e.target.value = "";
+                          }
+                        }}
+                      />
+                      <small className="muted">Used on public jobs page. If blank, resume branding logo is used as fallback.</small>
+                    </label>
+                    <label className="full">
                       <span>Jobs page title</span>
                       <input
                         value={copySettings?.jobBoard?.pageTitle || ""}
@@ -18236,18 +18272,28 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                       />
                     </label>
                     <label className="full">
-                      <span>Company jobs link</span>
+                      <span>Anonymous jobs link</span>
                       <textarea readOnly value={getPublicJobsCompanyLink(copySettings, state.user?.companyName || state.user?.company_name || "")} />
                     </label>
                     <label className="full">
-                      <span>Website embed code</span>
+                      <span>Client-name jobs link</span>
+                      <textarea readOnly value={getPublicJobsCompanyLink(copySettings, state.user?.companyName || state.user?.company_name || "", "client")} />
+                    </label>
+                    <label className="full">
+                      <span>Anonymous website embed code</span>
                       <textarea readOnly value={getPublicJobsEmbedCode(copySettings, state.user?.companyName || state.user?.company_name || "")} />
+                    </label>
+                    <label className="full">
+                      <span>Client-name website embed code</span>
+                      <textarea readOnly value={getPublicJobsEmbedCode(copySettings, state.user?.companyName || state.user?.company_name || "", "client")} />
                     </label>
                   </div>
                   <div className="button-row">
                     <button onClick={() => void saveCopySettingsWithMessage("Public jobs integration settings saved.")}>Save job page settings</button>
-                    <button className="ghost-btn" onClick={() => void copyText(getPublicJobsCompanyLink(copySettings, state.user?.companyName || state.user?.company_name || "")).then(() => setStatus("intake", "Company jobs link copied.", "ok"))}>Copy jobs link</button>
-                    <button className="ghost-btn" onClick={() => void copyText(getPublicJobsEmbedCode(copySettings, state.user?.companyName || state.user?.company_name || "")).then(() => setStatus("intake", "Embed code copied.", "ok"))}>Copy embed code</button>
+                    <button className="ghost-btn" onClick={() => void copyText(getPublicJobsCompanyLink(copySettings, state.user?.companyName || state.user?.company_name || "")).then(() => setStatus("intake", "Anonymous jobs link copied.", "ok"))}>Copy anonymous link</button>
+                    <button className="ghost-btn" onClick={() => void copyText(getPublicJobsCompanyLink(copySettings, state.user?.companyName || state.user?.company_name || "", "client")).then(() => setStatus("intake", "Client-name jobs link copied.", "ok"))}>Copy client-name link</button>
+                    <button className="ghost-btn" onClick={() => void copyText(getPublicJobsEmbedCode(copySettings, state.user?.companyName || state.user?.company_name || "")).then(() => setStatus("intake", "Anonymous embed code copied.", "ok"))}>Copy anonymous embed</button>
+                    <button className="ghost-btn" onClick={() => void copyText(getPublicJobsEmbedCode(copySettings, state.user?.companyName || state.user?.company_name || "", "client")).then(() => setStatus("intake", "Client-name embed code copied.", "ok"))}>Copy client-name embed</button>
                   </div>
                 </Section>
               ) : null}

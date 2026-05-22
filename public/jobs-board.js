@@ -2,11 +2,19 @@
   const $ = (id) => document.getElementById(id);
   let allJobs = [];
   let activeJobId = "";
+  let boardLogoUrl = "/portal-app/favicon.png";
+  let spotlightTimer = null;
 
   function readSlug() {
     const parts = String(window.location.pathname || "").split("/").filter(Boolean);
     if (parts[0] === "jobs" && parts[1] === "company" && parts[2]) return decodeURIComponent(parts[2]);
     return String(new URLSearchParams(window.location.search).get("slug") || "").trim();
+  }
+
+  function readMode() {
+    return String(new URLSearchParams(window.location.search).get("mode") || "").trim().toLowerCase() === "client"
+      ? "client"
+      : "anonymous";
   }
 
   async function readJson(response) {
@@ -42,6 +50,23 @@
     ].join(" ").toLowerCase();
   }
 
+  function stopSpotlightRotation() {
+    if (spotlightTimer) window.clearInterval(spotlightTimer);
+    spotlightTimer = null;
+  }
+
+  function startSpotlightRotation(jobs) {
+    stopSpotlightRotation();
+    const rotatingJobs = (Array.isArray(jobs) ? jobs : []).slice(0, 7);
+    if (rotatingJobs.length <= 1) return;
+    spotlightTimer = window.setInterval(() => {
+      const currentIndex = rotatingJobs.findIndex((job) => String(job.id) === activeJobId);
+      const nextJob = rotatingJobs[(currentIndex + 1 + rotatingJobs.length) % rotatingJobs.length] || rotatingJobs[0];
+      activeJobId = String(nextJob?.id || "");
+      renderJobs({ restartRotation: false });
+    }, 5500);
+  }
+
   function renderSpotlight(job) {
     const target = $("jobSpotlight");
     if (!target) return;
@@ -55,7 +80,6 @@
       return;
     }
     target.innerHTML = `
-      <div class="spotlight-label">Job Spotlight</div>
       <h2>${escapeHtml(job.title)}</h2>
       <div class="job-meta spotlight-meta">
         ${job.workMode ? `<span class="chip">${escapeHtml(job.workMode)}</span>` : ""}
@@ -66,7 +90,8 @@
     `;
   }
 
-  function renderJobs() {
+  function renderJobs(options = {}) {
+    const restartRotation = options.restartRotation !== false;
     const status = $("jobsStatus");
     const list = $("jobsList");
     const keyword = String($("keywordSearch")?.value || "").trim().toLowerCase();
@@ -80,12 +105,12 @@
     if (!list) return;
     list.innerHTML = jobs.map((job) => `
       <article class="job-card${String(job.id) === activeJobId ? " active" : ""}" data-job-id="${escapeHtml(job.id)}">
-        <div class="job-logo" aria-hidden="true"><img src="/portal-app/favicon.png" alt="" /></div>
+        <div class="job-logo" aria-hidden="true"><img src="${escapeHtml(boardLogoUrl)}" alt="" /></div>
         <div class="job-main">
           <h3>${escapeHtml(job.title)}</h3>
           ${job.companyLine ? `<p class="job-company">${escapeHtml(compactText(job.companyLine, 110))}</p>` : ""}
           <div class="job-meta">
-            ${job.location ? `<span class="meta-line"><span class="meta-icon">⌖</span>${escapeHtml(job.location)}</span>` : ""}
+            ${job.location ? `<span class="meta-line"><span class="meta-icon">LOC</span>${escapeHtml(job.location)}</span>` : ""}
             ${job.workMode ? `<span class="chip">${escapeHtml(job.workMode)}</span>` : ""}
           </div>
         </div>
@@ -97,16 +122,19 @@
         if (event.target && event.target.closest("a")) return;
         const id = String(card.getAttribute("data-job-id") || "");
         activeJobId = id;
-        renderJobs();
+        renderJobs({ restartRotation: false });
+        startSpotlightRotation(jobs);
         renderSpotlight(jobs.find((job) => String(job.id) === id) || jobs[0] || null);
       });
     });
     if (!jobs.some((job) => String(job.id) === activeJobId)) activeJobId = String(jobs[0]?.id || "");
     renderSpotlight(jobs.find((job) => String(job.id) === activeJobId) || jobs[0] || null);
+    if (restartRotation) startSpotlightRotation(jobs);
   }
 
   async function init() {
     const slug = readSlug();
+    const mode = readMode();
     const status = $("jobsStatus");
     if (!slug) {
       status.textContent = "Missing company slug.";
@@ -114,7 +142,7 @@
     }
     status.textContent = "Loading jobs...";
     try {
-      const response = await fetch(`/public/company-jobs/${encodeURIComponent(slug)}`);
+      const response = await fetch(`/public/company-jobs/${encodeURIComponent(slug)}?mode=${encodeURIComponent(mode)}`);
       const data = await readJson(response);
       if (!response.ok || !data?.ok) throw new Error(data?.error || "Could not load jobs.");
       const result = data.result || {};
@@ -122,11 +150,12 @@
       const pageSubtitle = String(result.pageSubtitle || "").trim();
       $("jobsTitle").textContent = pageTitle || `${result.companyName || "Company"} Jobs`;
       $("jobsSubtitle").textContent = pageSubtitle || "Active openings";
+      boardLogoUrl = String(result.logoDataUrl || "").trim() || "/portal-app/favicon.png";
       allJobs = Array.isArray(result.jobs) ? result.jobs : [];
       activeJobId = String(allJobs[0]?.id || "");
       ["keywordSearch", "locationSearch"].forEach((id) => {
         const input = $(id);
-        if (input) input.addEventListener("input", renderJobs);
+        if (input) input.addEventListener("input", () => renderJobs());
       });
       renderJobs();
     } catch (error) {

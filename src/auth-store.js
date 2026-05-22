@@ -852,6 +852,7 @@ function sanitizeSharedExportPresetSettings(raw) {
       slug: toCompanySlug(rawJobBoard.slug || rawJobBoard.companySlug || ""),
       pageTitle: String(rawJobBoard.pageTitle || "Jobs").trim(),
       pageSubtitle: String(rawJobBoard.pageSubtitle || "Explore active openings and apply directly.").trim(),
+      logoDataUrl: String(rawJobBoard.logoDataUrl || "").trim(),
       embedHeightPx: Math.max(480, Math.min(1400, Number(rawJobBoard.embedHeightPx || 900) || 900))
     },
     companyWideShortcuts,

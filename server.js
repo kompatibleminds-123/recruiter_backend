@@ -10865,30 +10865,59 @@ const server = http.createServer(async (req, res) => {
     try {
       const companySlug = String(requestUrl.pathname.replace(/^\/public\/company-jobs\//, "").replace(/\/+$/, "")).trim().toLowerCase();
       if (!companySlug) throw new Error("Company slug is required.");
+      const displayMode = String(requestUrl.searchParams.get("mode") || "").trim().toLowerCase() === "client" ? "client" : "anonymous";
       const result = await getPublicCompanyJobsBySlug(companySlug);
       const sharedSettings = await getCompanySharedExportPresets(String(result?.companyId || "").trim()).catch(() => ({}));
       const boardSettings = sharedSettings?.jobBoard && typeof sharedSettings.jobBoard === "object" ? sharedSettings.jobBoard : {};
-      const jobs = (Array.isArray(result?.jobs) ? result.jobs : []).map((job) => ({
-        id: String(job?.id || "").trim(),
-        title: String(job?.publicTitle || job?.public_title || job?.title || "").trim(),
-        companyLine: String(
+      const resumeSettings = sharedSettings?.resumeFormatting && typeof sharedSettings.resumeFormatting === "object" ? sharedSettings.resumeFormatting : {};
+      const boardLogoDataUrl = String(boardSettings.logoDataUrl || resumeSettings.logoDataUrl || "").trim();
+      const jobs = (Array.isArray(result?.jobs) ? result.jobs : []).map((job) => {
+        const clientName = String(job?.clientName || job?.client_name || "").trim();
+        const rawTitle = String(job?.title || "").trim();
+        const redactClientName = (text) => {
+          const value = String(text || "").trim();
+          if (displayMode !== "anonymous" || !clientName) return value;
+          try {
+            const variants = Array.from(new Set([
+              clientName,
+              clientName.replace(/\.(ai|com|in|co|io)$/i, ""),
+              clientName.split(/\s+/)[0] || ""
+            ].map((item) => String(item || "").trim()).filter((item) => item.length >= 3)));
+            let output = value;
+            variants.forEach((variant) => {
+              const escaped = variant.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+              output = output.replace(new RegExp(escaped, "gi"), "");
+            });
+            return output.replace(/\s{2,}/g, " ").replace(/\s+-\s+$/g, "").replace(/^\s+-\s+/g, "").replace(/\(\s*\)/g, "").trim();
+          } catch {
+            return value;
+          }
+        };
+        const anonymousLine = String(
           job?.publicCompanyLine
           || job?.public_company_line
           || job?.aboutCompany
           || job?.about_company
           || "Confidential hiring partner"
-        ).trim(),
-        location: String(job?.location || "").trim(),
-        workMode: String(job?.workMode || "").trim(),
-        applyLink: `${getRequestBaseUrl(req)}/apply-public/${encodeURIComponent(String(job?.id || "").trim())}`,
-        publicApplyLink: `${getRequestBaseUrl(req)}/apply-public/${encodeURIComponent(String(job?.id || "").trim())}`
-      })).filter((job) => job.id && job.title);
+        ).trim();
+        return {
+          id: String(job?.id || "").trim(),
+          title: redactClientName(rawTitle) || String(job?.publicTitle || job?.public_title || rawTitle).trim(),
+          companyLine: displayMode === "client" ? (clientName || anonymousLine) : anonymousLine,
+          location: String(job?.location || "").trim(),
+          workMode: String(job?.workMode || "").trim(),
+          applyLink: `${getRequestBaseUrl(req)}/apply-public/${encodeURIComponent(String(job?.id || "").trim())}`,
+          publicApplyLink: `${getRequestBaseUrl(req)}/apply-public/${encodeURIComponent(String(job?.id || "").trim())}`
+        };
+      }).filter((job) => job.id && job.title);
       sendJson(res, 200, {
         ok: true,
         result: {
           companyId: String(result?.companyId || "").trim(),
           companyName: String(result?.companyName || "").trim(),
           companySlug: String(result?.companySlug || companySlug).trim(),
+          displayMode,
+          logoDataUrl: boardLogoDataUrl,
           pageTitle: String(boardSettings.pageTitle || "Jobs").trim(),
           pageSubtitle: String(boardSettings.pageSubtitle || "Explore active openings and apply directly.").trim(),
           jobs
