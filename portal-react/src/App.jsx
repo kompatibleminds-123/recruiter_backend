@@ -14205,7 +14205,14 @@ function PortalApp({ token, onLogout }) {
       const editor = jdDescriptionEditorRef.current;
       if (!editor || jobDraftReadOnly || jobActionBusy) return;
       editor.focus();
-      const restored = restoreJdDescriptionSelection();
+      const selection = window.getSelection?.();
+      const hasLiveEditorSelection = Boolean(
+        selection
+        && selection.rangeCount > 0
+        && selection.anchorNode
+        && editor.contains(selection.anchorNode)
+      );
+      const restored = hasLiveEditorSelection ? true : restoreJdDescriptionSelection();
       if (!restored) {
         const selection = window.getSelection?.();
         const range = document.createRange();
@@ -14214,7 +14221,27 @@ function PortalApp({ token, onLogout }) {
         selection?.removeAllRanges();
         selection?.addRange(range);
       }
+      const beforeHtml = String(editor.innerHTML || "");
       document.execCommand(command, false, value);
+      if (command === "bold") {
+        const afterHtml = String(editor.innerHTML || "");
+        const sel = window.getSelection?.();
+        const range = sel && sel.rangeCount ? sel.getRangeAt(0) : null;
+        if (
+          beforeHtml === afterHtml
+          && range
+          && !range.collapsed
+          && editor.contains(range.commonAncestorContainer)
+        ) {
+          const node = document.createElement("strong");
+          node.appendChild(range.extractContents());
+          range.insertNode(node);
+          sel.removeAllRanges();
+          const nextRange = document.createRange();
+          nextRange.selectNodeContents(node);
+          sel.addRange(nextRange);
+        }
+      }
       captureJdDescriptionSelection();
       syncJdDescriptionEditorHtml();
     } catch {}

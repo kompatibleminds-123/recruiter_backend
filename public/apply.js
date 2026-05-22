@@ -122,11 +122,57 @@
   function applyBranding(job) {
     const board = job?.jobBoard && typeof job.jobBoard === "object" ? job.jobBoard : {};
     const root = document.documentElement;
+    const hexToRgb = (hex) => {
+      const raw = String(hex || "").trim().replace(/^#/, "");
+      if (!/^[0-9a-f]{3,8}$/i.test(raw)) return null;
+      const normalized = raw.length === 3
+        ? raw.split("").map((ch) => ch + ch).join("")
+        : raw.slice(0, 6);
+      const int = Number.parseInt(normalized, 16);
+      if (!Number.isFinite(int)) return null;
+      return {
+        r: (int >> 16) & 255,
+        g: (int >> 8) & 255,
+        b: int & 255
+      };
+    };
+    const rgba = (hex, alpha) => {
+      const rgb = hexToRgb(hex);
+      if (!rgb) return "";
+      return `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${alpha})`;
+    };
+    const mixHex = (hexA, hexB, weight = 0.5) => {
+      const a = hexToRgb(hexA);
+      const b = hexToRgb(hexB);
+      if (!a || !b) return "";
+      const w = Math.min(1, Math.max(0, Number(weight) || 0));
+      const toHex = (n) => Math.round(n).toString(16).padStart(2, "0");
+      const r = a.r + (b.r - a.r) * w;
+      const g = a.g + (b.g - a.g) * w;
+      const bl = a.b + (b.b - a.b) * w;
+      return `#${toHex(r)}${toHex(g)}${toHex(bl)}`;
+    };
+    const bgColor = String(board.backgroundColor || "").trim();
+    const cardColor = String(board.cardBackgroundColor || "").trim();
+    const primaryColor = String(board.primaryColor || board.buttonColor || "").trim();
+    const buttonColor = String(board.buttonColor || board.primaryColor || "").trim();
+    const lineColor = mixHex(cardColor || bgColor, buttonColor || primaryColor, 0.22);
+    const softColor = rgba(cardColor || "#ffffff", 0.72);
+    const glowColor = rgba(primaryColor || buttonColor, 0.12);
+    const ringColor = rgba(buttonColor || primaryColor, 0.24);
+    const fieldBg = mixHex(cardColor || "#ffffff", "#ffffff", 0.55) || "#ffffff";
+    const topBg = mixHex(bgColor || "#f6f1e8", "#ffffff", 0.45);
     const map = {
-      "--brand": board.buttonColor || board.primaryColor,
-      "--brand-dark": board.primaryColor || board.buttonColor,
-      "--bg": board.backgroundColor,
-      "--card": board.cardBackgroundColor,
+      "--brand": buttonColor,
+      "--brand-dark": primaryColor,
+      "--bg": bgColor,
+      "--bg-top": topBg,
+      "--bg-glow": glowColor,
+      "--card": cardColor,
+      "--soft": softColor,
+      "--line": lineColor,
+      "--field-bg": fieldBg,
+      "--ring": ringColor,
       "--ink": board.textColor,
       "--muted": board.mutedTextColor
     };
