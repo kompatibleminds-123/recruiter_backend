@@ -17546,7 +17546,6 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                                 })()}
                                 <button type="button" className="more-menu__item" onClick={() => { closeAssessmentMoreMenu(); void moveAssessmentBackToCaptured(item); }}>Move back to captured</button>
                                 <button type="button" className="more-menu__item" onClick={() => { closeAssessmentMoreMenu(); void setAssessmentArchivedState(item, true); }}>Hide</button>
-                                <button type="button" className="more-menu__item" onClick={() => { closeAssessmentMoreMenu(); reuseAssessmentAsNew(item); }}>Reuse as new</button>
                                 <button type="button" className="more-menu__item more-menu__danger" onClick={() => { closeAssessmentMoreMenu(); void deleteAssessmentItem(item); }}>Delete</button>
                               </div>
                             ) : null}
@@ -17571,7 +17570,6 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                             </button>
                             {openAssessmentMoreId === String(item.id) ? (
                               <div className="more-menu__dropdown more-menu__dropdown--inline" role="menu">
-                                <button type="button" className="more-menu__item" onClick={() => { closeAssessmentMoreMenu(); reuseAssessmentAsNew(item); }}>Reuse as new</button>
                                 <button type="button" className="more-menu__item more-menu__danger" onClick={() => { closeAssessmentMoreMenu(); void deleteAssessmentItem(item); }}>Delete</button>
                               </div>
                             ) : null}
