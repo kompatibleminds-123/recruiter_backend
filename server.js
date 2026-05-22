@@ -1445,11 +1445,26 @@ async function buildBrandedPdfBuffer({
   }
 
   for (let index = 0; index < srcPages.length; index += 1) {
-    const [page] = await outDoc.copyPages(srcDoc, [index]);
-    outDoc.addPage(page);
-    const { width, height } = page.getSize();
+    const srcPage = srcPages[index];
+    const { width, height } = srcPage.getSize();
+    const page = outDoc.addPage([width, height]);
+    const embedded = await outDoc.embedPage(srcPage);
     const showHeaderOnThisPage = headerEnabled && index === 0 && templateStyle !== "watermark_footer_only";
     const showSideRibbon = templateStyle === "side_ribbon_branding";
+    const topPad = showHeaderOnThisPage ? headerHeight : 0;
+    const bottomPad = footerEnabled ? footerHeight : 0;
+    const innerTopGap = 0;
+    const innerBottomGap = 0;
+    const bodyLeftInset = showSideRibbon ? 20 : 0;
+    const bodyRightInset = 0;
+    const availableHeight = Math.max(40, height - topPad - bottomPad);
+    const renderHeight = Math.max(40, availableHeight - innerTopGap - innerBottomGap);
+    page.drawPage(embedded, {
+      x: bodyLeftInset,
+      y: bottomPad + innerBottomGap,
+      width: Math.max(80, width - bodyLeftInset - bodyRightInset),
+      height: renderHeight
+    });
 
     if (watermarkEnabled || templateStyle === "watermark_footer_only") {
       page.drawText(watermarkText, {
