@@ -4,6 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Apply | RecruitDesk AI</title>
+    <link id="applyFavicon" rel="icon" href="/portal-app/favicon.png" />
     <style>
       :root {
         --bg: #f6f1e8;
@@ -149,6 +150,9 @@
         color: var(--muted);
         font: 13px/1.5 ui-sans-serif, system-ui, sans-serif;
       }
+      .custom-fields {
+        display: contents;
+      }
       @media (max-width: 760px) {
         .grid { grid-template-columns: 1fr; }
       }
@@ -206,6 +210,7 @@
               <label for="screeningAnswers">Additional Message</label>
               <textarea id="screeningAnswers" placeholder="Share anything you want the recruiter to know."></textarea>
             </div>
+            <div id="customFieldsWrap" class="custom-fields"></div>
             <div class="full">
               <label for="cvFile">Upload CV</label>
               <input id="cvFile" type="file" accept=".pdf,.doc,.docx,.rtf,.txt,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/rtf,text/plain" />

@@ -280,12 +280,49 @@ function FeatureLockedSection({ title = "Feature locked" }) {
   interviewAiParsingEnabled: true,
   jobBoard: {
     slug: "",
-    pageTitle: "Jobs",
+    pageTitle: "{{company_name}} Jobs",
     pageSubtitle: "Explore active openings and apply directly.",
     logoDataUrl: "",
+    faviconDataUrl: "",
+    primaryColor: "#2485a5",
+    buttonColor: "#2485a5",
+    backgroundColor: "#ffffff",
+    cardBackgroundColor: "#fffef8",
+    textColor: "#112143",
+    mutedTextColor: "#7a8496",
     embedHeightPx: 900
-  }
+  },
+  jobApplyFields: []
 };
+
+const JOB_APPLY_FIELD_TYPES = ["text", "textarea", "select", "checkbox"];
+
+function normalizeJobApplyField(field, index = 0) {
+  const source = field && typeof field === "object" ? field : {};
+  const label = normalizeMojibakeSymbols(String(source.label || source.name || `Custom field ${index + 1}`).trim());
+  const rawId = String(source.id || source.key || label || `custom_field_${index + 1}`).trim();
+  const id = rawId
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .slice(0, 48) || `custom_field_${index + 1}`;
+  const type = JOB_APPLY_FIELD_TYPES.includes(String(source.type || "").trim()) ? String(source.type || "").trim() : "text";
+  const rawOptions = Array.isArray(source.options) ? source.options.join("\n") : String(source.options || "");
+  return {
+    id,
+    label,
+    type,
+    placeholder: normalizeMojibakeSymbols(String(source.placeholder || "").trim()),
+    required: source.required === true,
+    enabled: source.enabled !== false,
+    options: rawOptions
+      .split(/\r?\n|,/)
+      .map((item) => normalizeMojibakeSymbols(String(item || "").trim()))
+      .filter(Boolean)
+      .slice(0, 30)
+      .join("\n")
+  };
+}
 
 function migrateCopySettings(settings = {}) {
   const next = { ...DEFAULT_COPY_SETTINGS, ...(settings || {}) };
@@ -356,7 +393,18 @@ function migrateCopySettings(settings = {}) {
   next.jobBoard.pageTitle = String(next.jobBoard.pageTitle || DEFAULT_COPY_SETTINGS.jobBoard.pageTitle || "Jobs").trim();
   next.jobBoard.pageSubtitle = String(next.jobBoard.pageSubtitle || DEFAULT_COPY_SETTINGS.jobBoard.pageSubtitle || "").trim();
   next.jobBoard.logoDataUrl = String(next.jobBoard.logoDataUrl || "").trim();
+  next.jobBoard.faviconDataUrl = String(next.jobBoard.faviconDataUrl || "").trim();
+  next.jobBoard.primaryColor = String(next.jobBoard.primaryColor || DEFAULT_COPY_SETTINGS.jobBoard.primaryColor || "#2485a5").trim();
+  next.jobBoard.buttonColor = String(next.jobBoard.buttonColor || next.jobBoard.primaryColor || "#2485a5").trim();
+  next.jobBoard.backgroundColor = String(next.jobBoard.backgroundColor || DEFAULT_COPY_SETTINGS.jobBoard.backgroundColor || "#ffffff").trim();
+  next.jobBoard.cardBackgroundColor = String(next.jobBoard.cardBackgroundColor || DEFAULT_COPY_SETTINGS.jobBoard.cardBackgroundColor || "#fffef8").trim();
+  next.jobBoard.textColor = String(next.jobBoard.textColor || DEFAULT_COPY_SETTINGS.jobBoard.textColor || "#112143").trim();
+  next.jobBoard.mutedTextColor = String(next.jobBoard.mutedTextColor || DEFAULT_COPY_SETTINGS.jobBoard.mutedTextColor || "#7a8496").trim();
   next.jobBoard.embedHeightPx = Math.max(480, Math.min(1400, Number(next.jobBoard.embedHeightPx || 900) || 900));
+  next.jobApplyFields = (Array.isArray(next.jobApplyFields) ? next.jobApplyFields : [])
+    .map((field, index) => normalizeJobApplyField(field, index))
+    .filter((field) => field.id && field.label)
+    .slice(0, 12);
   next.exportPresetColumns = presetColumns;
   return next;
 }
@@ -6768,6 +6816,9 @@ function PortalApp({ token, onLogout }) {
   const jobTemplateTextareaRef = useRef(null);
   const companyTemplateTextareaRef = useRef(null);
   const jdWorkspaceShortcutTextareaRef = useRef(null);
+  const jdDescriptionEditorRef = useRef(null);
+  const jdDescriptionSelectionRef = useRef(null);
+  const jdDescriptionEditorLastHtmlRef = useRef("");
   const JOB_CLOSE_REASONS = [
     "Position closed by us",
     "Position put on hold",
@@ -8313,6 +8364,35 @@ function PortalApp({ token, onLogout }) {
       editor.removeEventListener("focus", rememberSelection);
     };
   }, []);
+
+  useEffect(() => {
+    try {
+      const editor = jdDescriptionEditorRef.current;
+      if (!editor) return;
+      const nextHtml = jdDescriptionToEditorHtml(jobDraft.jobDescription || "");
+      const normalizedNext = String(nextHtml || "").trim();
+      const currentHtml = String(editor.innerHTML || "").trim();
+      const lastSynced = String(jdDescriptionEditorLastHtmlRef.current || "").trim();
+      if (currentHtml === normalizedNext && lastSynced === normalizedNext) return;
+      if (document.activeElement === editor) return;
+      editor.innerHTML = normalizedNext;
+      jdDescriptionEditorLastHtmlRef.current = normalizedNext;
+    } catch {}
+  }, [jobDraft.id, jobDraft.jobDescription]);
+
+  useEffect(() => {
+    const editor = jdDescriptionEditorRef.current;
+    if (!editor) return undefined;
+    const rememberSelection = () => captureJdDescriptionSelection();
+    editor.addEventListener("mouseup", rememberSelection);
+    editor.addEventListener("keyup", rememberSelection);
+    editor.addEventListener("focus", rememberSelection);
+    return () => {
+      editor.removeEventListener("mouseup", rememberSelection);
+      editor.removeEventListener("keyup", rememberSelection);
+      editor.removeEventListener("focus", rememberSelection);
+    };
+  }, [selectedJobId]);
 
   useEffect(() => (() => {
     if (clientShareQueueTimeoutRef.current) clearTimeout(clientShareQueueTimeoutRef.current);
@@ -14059,6 +14139,99 @@ function PortalApp({ token, onLogout }) {
     runClientShareEditorCommand("createLink", normalized);
   }
 
+  function looksLikeHtml(value = "") {
+    return /<\/?[a-z][\s\S]*>/i.test(String(value || ""));
+  }
+
+  function jdDescriptionToEditorHtml(value = "") {
+    const raw = String(value || "");
+    if (looksLikeHtml(raw)) return raw;
+    return escapeHtml(raw).replace(/\n/g, "<br/>");
+  }
+
+  function captureJdDescriptionSelection() {
+    try {
+      const editor = jdDescriptionEditorRef.current;
+      if (!editor) return;
+      const selection = window.getSelection?.();
+      if (!selection || selection.rangeCount < 1) return;
+      const range = selection.getRangeAt(0);
+      const anchorNode = selection.anchorNode;
+      if (!anchorNode || !editor.contains(anchorNode)) return;
+      jdDescriptionSelectionRef.current = range.cloneRange();
+    } catch {}
+  }
+
+  function restoreJdDescriptionSelection() {
+    try {
+      const editor = jdDescriptionEditorRef.current;
+      const savedRange = jdDescriptionSelectionRef.current;
+      if (!editor || !savedRange) return false;
+      const selection = window.getSelection?.();
+      if (!selection) return false;
+      selection.removeAllRanges();
+      selection.addRange(savedRange);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  function syncJdDescriptionEditorHtml() {
+    const nextHtml = String(jdDescriptionEditorRef.current?.innerHTML || "").trim();
+    jdDescriptionEditorLastHtmlRef.current = nextHtml;
+    setJobDraft((current) => ({ ...current, jobDescription: nextHtml }));
+  }
+
+  function runJdDescriptionCommand(command, value = null) {
+    try {
+      const editor = jdDescriptionEditorRef.current;
+      if (!editor || jobDraftReadOnly || jobActionBusy) return;
+      editor.focus();
+      const restored = restoreJdDescriptionSelection();
+      if (!restored) {
+        const selection = window.getSelection?.();
+        const range = document.createRange();
+        range.selectNodeContents(editor);
+        range.collapse(false);
+        selection?.removeAllRanges();
+        selection?.addRange(range);
+      }
+      document.execCommand(command, false, value);
+      captureJdDescriptionSelection();
+      syncJdDescriptionEditorHtml();
+    } catch {}
+  }
+
+  function clearJdDescriptionFormatting() {
+    try {
+      const editor = jdDescriptionEditorRef.current;
+      if (!editor || jobDraftReadOnly || jobActionBusy) return;
+      editor.focus();
+      const selection = window.getSelection?.();
+      const hadRange = restoreJdDescriptionSelection();
+      if (!hadRange) {
+        const range = document.createRange();
+        range.selectNodeContents(editor);
+        selection?.removeAllRanges();
+        selection?.addRange(range);
+      }
+      document.execCommand("styleWithCSS", false, false);
+      document.execCommand("removeFormat", false, null);
+      document.execCommand("unlink", false, null);
+      captureJdDescriptionSelection();
+      syncJdDescriptionEditorHtml();
+    } catch {}
+  }
+
+  function applyJdDescriptionLink() {
+    const raw = window.prompt("Enter link URL");
+    const url = String(raw || "").trim();
+    if (!url) return;
+    const normalized = /^https?:\/\//i.test(url) ? url : `https://${url}`;
+    runJdDescriptionCommand("createLink", normalized);
+  }
+
   function getClientShareSignature() {
     const context = getClientShareContext();
     const perUserSignatureText = String(smtpSettings.signatureText || "").trim();
@@ -18303,6 +18476,30 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                       <small className="muted">Used on public jobs page. If blank, resume branding logo is used as fallback.</small>
                     </label>
                     <label className="full">
+                      <span>Browser tab favicon</span>
+                      <input
+                        type="file"
+                        accept="image/png,image/jpeg,image/webp,image/svg+xml,image/x-icon"
+                        onChange={async (e) => {
+                          const file = e.target.files?.[0];
+                          if (!file) return;
+                          try {
+                            const dataUrl = await fileToDataUrl(file);
+                            setCopySettings((current) => ({
+                              ...current,
+                              jobBoard: { ...(current.jobBoard || {}), faviconDataUrl: dataUrl }
+                            }));
+                            setStatus("settings", "Job page favicon ready. Save settings to publish it.", "ok");
+                          } catch {
+                            setStatus("settings", "Could not read this favicon.", "error");
+                          } finally {
+                            e.target.value = "";
+                          }
+                        }}
+                      />
+                      <small className="muted">Used in the browser tab for public jobs and apply pages.</small>
+                    </label>
+                    <label className="full">
                       <span>Jobs page title</span>
                       <input
                         value={copySettings?.jobBoard?.pageTitle || ""}
@@ -18311,6 +18508,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                           jobBoard: { ...(current.jobBoard || {}), pageTitle: e.target.value }
                         }))}
                       />
+                      <small className="muted">Use {"{{company_name}}"} to show the agency name. Example: {"{{company_name}}"} Jobs.</small>
                     </label>
                     <label className="full">
                       <span>Jobs page subtitle</span>
@@ -18322,6 +18520,94 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                         }))}
                       />
                     </label>
+                    <label>
+                      <span>Primary color</span>
+                      <input type="color" value={copySettings?.jobBoard?.primaryColor || "#2485a5"} onChange={(e) => setCopySettings((current) => ({ ...current, jobBoard: { ...(current.jobBoard || {}), primaryColor: e.target.value } }))} />
+                    </label>
+                    <label>
+                      <span>Button color</span>
+                      <input type="color" value={copySettings?.jobBoard?.buttonColor || "#2485a5"} onChange={(e) => setCopySettings((current) => ({ ...current, jobBoard: { ...(current.jobBoard || {}), buttonColor: e.target.value } }))} />
+                    </label>
+                    <label>
+                      <span>Page background</span>
+                      <input type="color" value={copySettings?.jobBoard?.backgroundColor || "#ffffff"} onChange={(e) => setCopySettings((current) => ({ ...current, jobBoard: { ...(current.jobBoard || {}), backgroundColor: e.target.value } }))} />
+                    </label>
+                    <label>
+                      <span>Job card background</span>
+                      <input type="color" value={copySettings?.jobBoard?.cardBackgroundColor || "#fffef8"} onChange={(e) => setCopySettings((current) => ({ ...current, jobBoard: { ...(current.jobBoard || {}), cardBackgroundColor: e.target.value } }))} />
+                    </label>
+                    <label>
+                      <span>Text color</span>
+                      <input type="color" value={copySettings?.jobBoard?.textColor || "#112143"} onChange={(e) => setCopySettings((current) => ({ ...current, jobBoard: { ...(current.jobBoard || {}), textColor: e.target.value } }))} />
+                    </label>
+                    <label>
+                      <span>Muted text color</span>
+                      <input type="color" value={copySettings?.jobBoard?.mutedTextColor || "#7a8496"} onChange={(e) => setCopySettings((current) => ({ ...current, jobBoard: { ...(current.jobBoard || {}), mutedTextColor: e.target.value } }))} />
+                    </label>
+                    <div className="full settings-subsection compact-card">
+                      <div className="section-kicker">Job Application Form Fields</div>
+                      <p className="muted">Add extra fields for the hosted apply form, like referral name. Responses are saved in applicant metadata and search text.</p>
+                      <div className="stack-list compact">
+                        {(copySettings.jobApplyFields || []).map((field, index) => (
+                          <article className="item-card compact-card" key={`${field.id}-${index}`}>
+                            <div className="form-grid two-col">
+                              <label><span>Label</span><input value={field.label || ""} onChange={(e) => setCopySettings((current) => {
+                                const fields = [...(current.jobApplyFields || [])];
+                                fields[index] = normalizeJobApplyField({ ...fields[index], label: e.target.value, id: fields[index]?.id || e.target.value }, index);
+                                return { ...current, jobApplyFields: fields };
+                              })} /></label>
+                              <label><span>Field key</span><input value={field.id || ""} onChange={(e) => setCopySettings((current) => {
+                                const fields = [...(current.jobApplyFields || [])];
+                                fields[index] = normalizeJobApplyField({ ...fields[index], id: e.target.value }, index);
+                                return { ...current, jobApplyFields: fields };
+                              })} /></label>
+                              <label><span>Type</span><select value={field.type || "text"} onChange={(e) => setCopySettings((current) => {
+                                const fields = [...(current.jobApplyFields || [])];
+                                fields[index] = normalizeJobApplyField({ ...fields[index], type: e.target.value }, index);
+                                return { ...current, jobApplyFields: fields };
+                              })}>{JOB_APPLY_FIELD_TYPES.map((type) => <option key={type} value={type}>{type}</option>)}</select></label>
+                              <label><span>Placeholder</span><input value={field.placeholder || ""} onChange={(e) => setCopySettings((current) => {
+                                const fields = [...(current.jobApplyFields || [])];
+                                fields[index] = normalizeJobApplyField({ ...fields[index], placeholder: e.target.value }, index);
+                                return { ...current, jobApplyFields: fields };
+                              })} /></label>
+                              <label className="full"><span>Options (select only, one per line)</span><textarea rows={3} value={field.options || ""} onChange={(e) => setCopySettings((current) => {
+                                const fields = [...(current.jobApplyFields || [])];
+                                fields[index] = normalizeJobApplyField({ ...fields[index], options: e.target.value }, index);
+                                return { ...current, jobApplyFields: fields };
+                              })} /></label>
+                              <label className="checkbox-row"><input type="checkbox" checked={field.required === true} onChange={(e) => setCopySettings((current) => {
+                                const fields = [...(current.jobApplyFields || [])];
+                                fields[index] = normalizeJobApplyField({ ...fields[index], required: e.target.checked }, index);
+                                return { ...current, jobApplyFields: fields };
+                              })} /><span>Required</span></label>
+                              <label className="checkbox-row"><input type="checkbox" checked={field.enabled !== false} onChange={(e) => setCopySettings((current) => {
+                                const fields = [...(current.jobApplyFields || [])];
+                                fields[index] = normalizeJobApplyField({ ...fields[index], enabled: e.target.checked }, index);
+                                return { ...current, jobApplyFields: fields };
+                              })} /><span>Enabled</span></label>
+                            </div>
+                            <div className="button-row tight"><button className="ghost-btn" type="button" onClick={() => setCopySettings((current) => ({ ...current, jobApplyFields: (current.jobApplyFields || []).filter((_item, idx) => idx !== index) }))}>Remove field</button></div>
+                          </article>
+                        ))}
+                      </div>
+                      <div className="button-row">
+                        <button type="button" className="ghost-btn" onClick={() => setCopySettings((current) => ({
+                          ...current,
+                          jobApplyFields: [
+                            ...(current.jobApplyFields || []),
+                            normalizeJobApplyField({ label: "Referral name", id: "referral_name", type: "text", placeholder: "Who referred you?" }, (current.jobApplyFields || []).length)
+                          ].slice(0, 12)
+                        }))}>Add referral field</button>
+                        <button type="button" className="ghost-btn" onClick={() => setCopySettings((current) => ({
+                          ...current,
+                          jobApplyFields: [
+                            ...(current.jobApplyFields || []),
+                            normalizeJobApplyField({ label: "Custom question", id: `custom_question_${(current.jobApplyFields || []).length + 1}`, type: "textarea" }, (current.jobApplyFields || []).length)
+                          ].slice(0, 12)
+                        }))}>Add custom field</button>
+                      </div>
+                    </div>
                     <label className="full">
                       <span>Anonymous jobs link</span>
                       <textarea readOnly value={getPublicJobsCompanyLink(copySettings, state.user?.companyName || state.user?.company_name || "")} />
@@ -18659,7 +18945,27 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                       </label>
                     </>
                   ) : null}
-                  <label className="full"><span>Job description</span><textarea disabled={jobDraftReadOnly || jobActionBusy} className="jd-editor" value={jobDraft.jobDescription} onChange={(e) => setJobDraft((c) => ({ ...c, jobDescription: e.target.value }))} placeholder="Paste the full JD here. Hosted apply link will show this as one clean block." /></label>
+                  <div className="full">
+                    <span className="form-label">Job description</span>
+                    <div className="rich-editor-toolbar">
+                      <button type="button" className="ghost-btn" disabled={jobDraftReadOnly || jobActionBusy} onMouseDown={(e) => e.preventDefault()} onClick={() => runJdDescriptionCommand("bold")}>B</button>
+                      <button type="button" className="ghost-btn" disabled={jobDraftReadOnly || jobActionBusy} onMouseDown={(e) => e.preventDefault()} onClick={() => runJdDescriptionCommand("italic")}>I</button>
+                      <button type="button" className="ghost-btn" disabled={jobDraftReadOnly || jobActionBusy} onMouseDown={(e) => e.preventDefault()} onClick={() => runJdDescriptionCommand("underline")}>U</button>
+                      <button type="button" className="ghost-btn" disabled={jobDraftReadOnly || jobActionBusy} onMouseDown={(e) => e.preventDefault()} onClick={() => runJdDescriptionCommand("insertUnorderedList")}>List</button>
+                      <button type="button" className="ghost-btn" disabled={jobDraftReadOnly || jobActionBusy} onMouseDown={(e) => e.preventDefault()} onClick={applyJdDescriptionLink}>Link</button>
+                      <button type="button" className="ghost-btn" disabled={jobDraftReadOnly || jobActionBusy} onMouseDown={(e) => e.preventDefault()} onClick={clearJdDescriptionFormatting}>Clear format</button>
+                    </div>
+                    <div
+                      ref={jdDescriptionEditorRef}
+                      className="client-share-rich-editor jd-rich-editor"
+                      contentEditable={!jobDraftReadOnly && !jobActionBusy}
+                      suppressContentEditableWarning
+                      onInput={syncJdDescriptionEditorHtml}
+                      onBlur={syncJdDescriptionEditorHtml}
+                      data-placeholder="Paste the full JD here. Hosted apply link will show this as one clean block."
+                    />
+                    <span className="field-help">Rich JD is shown on hosted apply link. JD share email still uses the admin JD mail template.</span>
+                  </div>
                   <label className="full"><span>Must-have skills</span><textarea disabled={jobDraftReadOnly || jobActionBusy} value={jobDraft.mustHaveSkills} onChange={(e) => setJobDraft((c) => ({ ...c, mustHaveSkills: e.target.value }))} placeholder="Shown on hosted apply link only when filled." /></label>
                   <label className="full">
                     <span>Final Boolean search string (internal only)</span>

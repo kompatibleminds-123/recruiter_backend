@@ -1103,6 +1103,28 @@ textarea { min-height: 92px; resize: vertical; }
   box-shadow: var(--ring);
   border-color: #8fb3ff;
 }
+.jd-rich-editor {
+  min-height: 260px;
+}
+.rich-editor-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  margin: 0.45rem 0 0.55rem;
+}
+.rich-editor-toolbar > button {
+  flex: 0 0 auto;
+  min-width: 48px;
+}
+.form-label {
+  display: inline-block;
+  font-weight: 700;
+  margin-bottom: 0.25rem;
+}
+.client-share-rich-editor:empty::before {
+  content: attr(data-placeholder);
+  color: #94a3b8;
+}
 .candidate-filter-head h3 {
   margin: 0 0 0.25rem;
 }

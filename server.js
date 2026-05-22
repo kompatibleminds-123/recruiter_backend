@@ -2792,10 +2792,12 @@ function deriveCandidateSearchDocV1FromParts({
 }
 
 function summarizeApplicantNotes(payload = {}) {
+  const customFieldText = screeningAnswersToSearchText(payload?.customFields || {});
   return [
     payload?.sourcePlatform ? `Source: ${payload.sourcePlatform}` : "",
     payload?.jobPageUrl ? `Apply URL: ${payload.jobPageUrl}` : "",
-    payload?.screeningAnswers ? `Screening: ${payload.screeningAnswers}` : ""
+    payload?.screeningAnswers ? `Screening: ${payload.screeningAnswers}` : "",
+    customFieldText ? `Custom fields:\n${customFieldText}` : ""
   ]
     .filter(Boolean)
     .join("\n");
@@ -2848,6 +2850,7 @@ function normalizeApplicantBody(body = {}) {
     linkedinUrl: String(input.linkedinUrl || input.linkedin || "").trim(),
     highestEducation: String(input.highestEducation || input.highest_education || "").trim(),
     screeningAnswers: String(input.screeningAnswers || input.screening_answers || "").trim(),
+    customFields: normalizeJsonObjectInput(input.customFields || input.custom_fields || {}),
     recruiterName: String(input.recruiterName || input.recruiter_name || "Website Apply").trim(),
     file: input.file || null,
     parseWithAi: input.parseWithAi !== false,
@@ -3363,6 +3366,7 @@ async function ingestApplicantSubmission(body, req) {
     jobId: payload.jobId,
     jobPageUrl: payload.jobPageUrl,
     screeningAnswers: payload.screeningAnswers,
+    customFields: payload.customFields || {},
     applicantState: "new"
   };
   const cvResultForSearch =
@@ -3373,7 +3377,10 @@ async function ingestApplicantSubmission(body, req) {
         : null;
   const inferredSearchTags = deriveInferredSearchTags({
     cvResult: cvResultForSearch,
-    recruiterNotes: String(payload.screeningAnswers || "").trim(),
+    recruiterNotes: [
+      String(payload.screeningAnswers || "").trim(),
+      screeningAnswersToSearchText(payload.customFields || {})
+    ].filter(Boolean).join("\n"),
     otherPointers: "",
     tags: Array.isArray(merged?.skills) ? merged.skills : []
   });
@@ -3455,12 +3462,18 @@ async function ingestApplicantSubmission(body, req) {
         source: appliedSource,
         client_name: payload.clientName || existing?.client_name || "",
         jd_title: payload.jdTitle || existing?.jd_title || "",
-        recruiter_context_notes: payload.screeningAnswers || existing?.recruiter_context_notes || "",
+        recruiter_context_notes: [
+          payload.screeningAnswers || existing?.recruiter_context_notes || "",
+          screeningAnswersToSearchText(payload.customFields || {})
+        ].filter(Boolean).join("\n"),
         skills: Array.isArray(existing?.skills) && existing.skills.length ? existing.skills : (Array.isArray(merged?.skills) ? merged.skills : [])
       },
       meta: nextMeta,
       draftPayload: existing?.draft_payload && typeof existing.draft_payload === "object" ? existing.draft_payload : {},
-      screeningAnswers: existing?.screening_answers && typeof existing.screening_answers === "object" ? existing.screening_answers : {},
+      screeningAnswers: {
+        ...(existing?.screening_answers && typeof existing.screening_answers === "object" ? existing.screening_answers : {}),
+        ...(payload.customFields || {})
+      },
       cvResult: cvResultForSearch,
       inferredSearchTags
     });
@@ -3486,7 +3499,10 @@ async function ingestApplicantSubmission(body, req) {
       assigned_to_name: defaultInboxOwner?.name || existing.assigned_to_name || null,
       assigned_jd_id: matchedJob?.id || existing.assigned_jd_id || null,
       assigned_jd_title: matchedJob?.title || payload.jdTitle || existing.assigned_jd_title || null,
-      recruiter_context_notes: payload.screeningAnswers || existing.recruiter_context_notes || null,
+      recruiter_context_notes: [
+        payload.screeningAnswers || existing.recruiter_context_notes || "",
+        screeningAnswersToSearchText(payload.customFields || {})
+      ].filter(Boolean).join("\n") || null,
       // Fill missing contact fields if they were empty in the captured record.
       phone: existing.phone ? undefined : (merged.phone || undefined),
       email: existing.email ? undefined : (merged.email || undefined),
@@ -3531,7 +3547,10 @@ async function ingestApplicantSubmission(body, req) {
       expected_ctc: merged.expected_ctc,
       notice_period: merged.notice_period,
       notes: merged.notes,
-      recruiter_context_notes: payload.screeningAnswers || "",
+      recruiter_context_notes: [
+        payload.screeningAnswers || "",
+        screeningAnswersToSearchText(payload.customFields || {})
+      ].filter(Boolean).join("\n"),
       next_action: merged.next_action,
       client_name: payload.clientName || "",
       jd_title: payload.jdTitle || "",
@@ -3542,7 +3561,7 @@ async function ingestApplicantSubmission(body, req) {
     },
     meta: metadata,
     draftPayload: {},
-    screeningAnswers: {},
+    screeningAnswers: payload.customFields || {},
     cvResult: cvResultForSearch,
     inferredSearchTags
   });
@@ -3566,7 +3585,10 @@ async function ingestApplicantSubmission(body, req) {
       expected_ctc: merged.expected_ctc,
       notice_period: merged.notice_period,
       notes: merged.notes,
-      recruiter_context_notes: payload.screeningAnswers || null,
+      recruiter_context_notes: [
+        payload.screeningAnswers || "",
+        screeningAnswersToSearchText(payload.customFields || {})
+      ].filter(Boolean).join("\n") || null,
       other_pointers: normalized?.timeline?.length ? `Timeline entries: ${normalized.timeline.length}` : null,
       next_action: merged.next_action,
       client_name: payload.clientName || null,
@@ -9570,6 +9592,8 @@ const server = http.createServer(async (req, res) => {
       const job = await getPublicCompanyJob(jobId);
       const mode = String(requestUrl.searchParams.get("mode") || "").trim().toLowerCase();
       const isPublic = mode === "public" || mode === "anonymous";
+      const sharedSettings = await getCompanySharedExportPresets(String(job?.companyId || "").trim()).catch(() => ({}));
+      const boardSettings = sharedSettings?.jobBoard && typeof sharedSettings.jobBoard === "object" ? sharedSettings.jobBoard : {};
 
       const rawClientName = String(job.clientName || "").trim();
       const publicCompanyLine = String(
@@ -9605,7 +9629,9 @@ const server = http.createServer(async (req, res) => {
           workMode: job.workMode || "",
           jobDescription: isPublic ? redactClientName(job.jobDescription || "") : (job.jobDescription || ""),
           mustHaveSkills: job.mustHaveSkills || "",
-          redFlags: job.redFlags || ""
+          redFlags: job.redFlags || "",
+          jobApplyFields: Array.isArray(sharedSettings?.jobApplyFields) ? sharedSettings.jobApplyFields : [],
+          jobBoard: boardSettings
         }
       });
     } catch (error) {
@@ -10871,6 +10897,16 @@ const server = http.createServer(async (req, res) => {
       const boardSettings = sharedSettings?.jobBoard && typeof sharedSettings.jobBoard === "object" ? sharedSettings.jobBoard : {};
       const resumeSettings = sharedSettings?.resumeFormatting && typeof sharedSettings.resumeFormatting === "object" ? sharedSettings.resumeFormatting : {};
       const boardLogoDataUrl = String(boardSettings.logoDataUrl || resumeSettings.logoDataUrl || "").trim();
+      const companyName = String(result?.companyName || "").trim();
+      const formatBoardText = (template, fallback) => {
+        const raw = String(template || "").trim();
+        const source = raw && raw.toLowerCase() !== "jobs" ? raw : fallback;
+        return String(source || fallback || "")
+          .replace(/\{\{\s*company_name\s*\}\}/gi, companyName || "Company")
+          .replace(/\{\s*company_name\s*\}/gi, companyName || "Company")
+          .replace(/\[COMPANY NAME\]/gi, companyName || "Company")
+          .trim();
+      };
       const jobs = (Array.isArray(result?.jobs) ? result.jobs : []).map((job) => {
         const clientName = String(job?.clientName || job?.client_name || "").trim();
         const rawTitle = String(job?.title || "").trim();
@@ -10918,7 +10954,14 @@ const server = http.createServer(async (req, res) => {
           companySlug: String(result?.companySlug || companySlug).trim(),
           displayMode,
           logoDataUrl: boardLogoDataUrl,
-          pageTitle: String(boardSettings.pageTitle || "Jobs").trim(),
+          faviconDataUrl: String(boardSettings.faviconDataUrl || boardLogoDataUrl || "").trim(),
+          primaryColor: String(boardSettings.primaryColor || "#2485a5").trim(),
+          buttonColor: String(boardSettings.buttonColor || boardSettings.primaryColor || "#2485a5").trim(),
+          backgroundColor: String(boardSettings.backgroundColor || "#ffffff").trim(),
+          cardBackgroundColor: String(boardSettings.cardBackgroundColor || "#fffef8").trim(),
+          textColor: String(boardSettings.textColor || "#112143").trim(),
+          mutedTextColor: String(boardSettings.mutedTextColor || "#7a8496").trim(),
+          pageTitle: formatBoardText(boardSettings.pageTitle, "{{company_name}} Jobs"),
           pageSubtitle: String(boardSettings.pageSubtitle || "Explore active openings and apply directly.").trim(),
           jobs
         }

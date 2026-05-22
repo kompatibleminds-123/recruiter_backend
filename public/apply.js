@@ -87,6 +87,57 @@
       .trim();
   }
 
+  function isHtmlLike(value) {
+    return /<\/?[a-z][\s\S]*>/i.test(String(value || ""));
+  }
+
+  function sanitizeAllowedHtml(html) {
+    const template = document.createElement("template");
+    template.innerHTML = String(html || "");
+    const blocked = new Set(["script", "style", "iframe", "object", "embed", "form", "input", "button", "meta", "link"]);
+    const walker = document.createTreeWalker(template.content, NodeFilter.SHOW_ELEMENT);
+    const remove = [];
+    while (walker.nextNode()) {
+      const el = walker.currentNode;
+      const tag = String(el.tagName || "").toLowerCase();
+      if (blocked.has(tag)) {
+        remove.push(el);
+        continue;
+      }
+      Array.from(el.attributes || []).forEach((attr) => {
+        const name = String(attr.name || "").toLowerCase();
+        const value = String(attr.value || "");
+        if (name.startsWith("on")) el.removeAttribute(attr.name);
+        if ((name === "href" || name === "src") && /^\s*javascript:/i.test(value)) el.removeAttribute(attr.name);
+      });
+    }
+    remove.forEach((el) => el.remove());
+    return template.innerHTML;
+  }
+
+  function applyBranding(job) {
+    const board = job?.jobBoard && typeof job.jobBoard === "object" ? job.jobBoard : {};
+    const root = document.documentElement;
+    const map = {
+      "--brand": board.buttonColor || board.primaryColor,
+      "--brand-dark": board.primaryColor || board.buttonColor,
+      "--bg": board.backgroundColor,
+      "--card": board.cardBackgroundColor,
+      "--ink": board.textColor,
+      "--muted": board.mutedTextColor
+    };
+    Object.entries(map).forEach(([key, value]) => {
+      const safe = String(value || "").trim();
+      if (/^#[0-9a-f]{3,8}$/i.test(safe)) root.style.setProperty(key, safe);
+    });
+    const favicon = String(board.faviconDataUrl || board.logoDataUrl || "").trim();
+    if (favicon) {
+      const node = $("applyFavicon");
+      if (node) node.setAttribute("href", favicon);
+    }
+    document.title = `${job?.title || "Apply"} | RecruitDesk`;
+  }
+
   function buildStructuredSections(job) {
     const description = normalizeJobText(job.jobDescription || "");
     return [
@@ -111,16 +162,79 @@
         ${sections.map((section) => `
           <section class="job-copy-section">
             <h3>${escapeHtml(section.heading)}</h3>
-            <p>${escapeHtml(section.body)}</p>
+            ${isHtmlLike(section.body) ? `<div>${sanitizeAllowedHtml(section.body)}</div>` : `<p>${escapeHtml(section.body)}</p>`}
           </section>
         `).join("")}
       </div>
     `;
   }
 
+  function normalizeApplyFields(fields) {
+    return (Array.isArray(fields) ? fields : [])
+      .filter((field) => field && field.enabled !== false)
+      .map((field, index) => {
+        const label = String(field.label || `Custom field ${index + 1}`).trim();
+        const id = String(field.id || label || `custom_field_${index + 1}`)
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, "_")
+          .replace(/^_+|_+$/g, "") || `custom_field_${index + 1}`;
+        const type = ["text", "textarea", "select", "checkbox"].includes(String(field.type || "").trim())
+          ? String(field.type || "").trim()
+          : "text";
+        const options = Array.isArray(field.options)
+          ? field.options
+          : String(field.options || "").split(/\r?\n|,/);
+        return {
+          id,
+          label,
+          type,
+          placeholder: String(field.placeholder || "").trim(),
+          required: field.required === true,
+          options: options.map((item) => String(item || "").trim()).filter(Boolean)
+        };
+      })
+      .filter((field) => field.id && field.label)
+      .slice(0, 12);
+  }
+
+  function renderCustomFields(job) {
+    const wrap = $("customFieldsWrap");
+    if (!wrap) return;
+    const fields = normalizeApplyFields(job.jobApplyFields || []);
+    wrap.innerHTML = fields.map((field) => {
+      const domId = `custom_${field.id}`;
+      const required = field.required ? "required" : "";
+      const common = `id="${escapeHtml(domId)}" data-custom-field="${escapeHtml(field.id)}" data-custom-label="${escapeHtml(field.label)}" ${required}`;
+      if (field.type === "textarea") {
+        return `<div class="full"><label for="${escapeHtml(domId)}">${escapeHtml(field.label)}</label><textarea ${common} placeholder="${escapeHtml(field.placeholder)}"></textarea></div>`;
+      }
+      if (field.type === "select") {
+        return `<div><label for="${escapeHtml(domId)}">${escapeHtml(field.label)}</label><select ${common}><option value="">Select</option>${field.options.map((option) => `<option value="${escapeHtml(option)}">${escapeHtml(option)}</option>`).join("")}</select></div>`;
+      }
+      if (field.type === "checkbox") {
+        return `<div class="full"><label style="display:flex;align-items:center;gap:10px;"><input style="width:auto;" type="checkbox" ${common} /> ${escapeHtml(field.label)}</label></div>`;
+      }
+      return `<div><label for="${escapeHtml(domId)}">${escapeHtml(field.label)}</label><input ${common} placeholder="${escapeHtml(field.placeholder)}" /></div>`;
+    }).join("");
+  }
+
+  function readCustomFields() {
+    const out = {};
+    document.querySelectorAll("[data-custom-field]").forEach((node) => {
+      const key = String(node.getAttribute("data-custom-field") || "").trim();
+      const label = String(node.getAttribute("data-custom-label") || key).trim();
+      if (!key) return;
+      const value = node.type === "checkbox" ? Boolean(node.checked) : String(node.value || "").trim();
+      out[label || key] = value;
+    });
+    return out;
+  }
+
   function renderJob(job) {
+    applyBranding(job);
     $("jobTitle").textContent = job.title || "Apply";
     renderJobDescription(job);
+    renderCustomFields(job);
     const meta = $("jobMeta");
     if (!meta) return;
     const chips = [];
@@ -174,6 +288,7 @@
           totalExperience: $("totalExperience").value.trim(),
           noticePeriod: $("noticePeriod").value.trim(),
           screeningAnswers: $("screeningAnswers").value.trim(),
+          customFields: readCustomFields(),
           skills: $("skills").value.split(",").map((item) => item.trim()).filter(Boolean),
           file
         };

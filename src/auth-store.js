@@ -764,6 +764,35 @@ function sanitizeSharedExportPresetSettings(raw) {
     source.companyWideShortcuts && typeof source.companyWideShortcuts === "object"
       ? source.companyWideShortcuts
       : {};
+  const rawJobApplyFields = Array.isArray(source.jobApplyFields) ? source.jobApplyFields : [];
+  const normalizeJobApplyField = (field, index = 0) => {
+    const item = field && typeof field === "object" ? field : {};
+    const label = String(item.label || item.name || `Custom field ${index + 1}`).trim();
+    const rawId = String(item.id || item.key || label || `custom_field_${index + 1}`).trim();
+    const id = rawId
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "_")
+      .replace(/^_+|_+$/g, "")
+      .slice(0, 48) || `custom_field_${index + 1}`;
+    const type = ["text", "textarea", "select", "checkbox"].includes(String(item.type || "").trim())
+      ? String(item.type || "").trim()
+      : "text";
+    const rawOptions = Array.isArray(item.options) ? item.options.join("\n") : String(item.options || "");
+    return {
+      id,
+      label,
+      type,
+      placeholder: String(item.placeholder || "").trim(),
+      required: item.required === true,
+      enabled: item.enabled !== false,
+      options: rawOptions
+        .split(/\r?\n|,/)
+        .map((option) => String(option || "").trim())
+        .filter(Boolean)
+        .slice(0, 30)
+        .join("\n")
+    };
+  };
   const normalizeShortcutMap = (value) => {
     if (!value || typeof value !== "object" || Array.isArray(value)) return {};
     const out = {};
@@ -850,11 +879,22 @@ function sanitizeSharedExportPresetSettings(raw) {
     },
     jobBoard: {
       slug: toCompanySlug(rawJobBoard.slug || rawJobBoard.companySlug || ""),
-      pageTitle: String(rawJobBoard.pageTitle || "Jobs").trim(),
+      pageTitle: String(rawJobBoard.pageTitle || "{{company_name}} Jobs").trim(),
       pageSubtitle: String(rawJobBoard.pageSubtitle || "Explore active openings and apply directly.").trim(),
       logoDataUrl: String(rawJobBoard.logoDataUrl || "").trim(),
+      faviconDataUrl: String(rawJobBoard.faviconDataUrl || "").trim(),
+      primaryColor: String(rawJobBoard.primaryColor || "#2485a5").trim(),
+      buttonColor: String(rawJobBoard.buttonColor || rawJobBoard.primaryColor || "#2485a5").trim(),
+      backgroundColor: String(rawJobBoard.backgroundColor || "#ffffff").trim(),
+      cardBackgroundColor: String(rawJobBoard.cardBackgroundColor || "#fffef8").trim(),
+      textColor: String(rawJobBoard.textColor || "#112143").trim(),
+      mutedTextColor: String(rawJobBoard.mutedTextColor || "#7a8496").trim(),
       embedHeightPx: Math.max(480, Math.min(1400, Number(rawJobBoard.embedHeightPx || 900) || 900))
     },
+    jobApplyFields: rawJobApplyFields
+      .map((field, index) => normalizeJobApplyField(field, index))
+      .filter((field) => field.id && field.label)
+      .slice(0, 12),
     companyWideShortcuts,
     personalShortcutsByUser,
     updatedAt: String(source.updatedAt || "").trim(),

@@ -50,6 +50,27 @@
     ].join(" ").toLowerCase();
   }
 
+  function applyBoardTheme(result) {
+    const root = document.documentElement;
+    const themeMap = {
+      "--brand": result.buttonColor || result.primaryColor,
+      "--brand-dark": result.primaryColor || result.buttonColor,
+      "--paper": result.backgroundColor,
+      "--panel": result.cardBackgroundColor,
+      "--ink": result.textColor,
+      "--muted": result.mutedTextColor
+    };
+    Object.entries(themeMap).forEach(([key, value]) => {
+      const safe = String(value || "").trim();
+      if (/^#[0-9a-f]{3,8}$/i.test(safe)) root.style.setProperty(key, safe);
+    });
+    const favicon = String(result.faviconDataUrl || result.logoDataUrl || "").trim();
+    if (favicon) {
+      const node = $("jobsFavicon");
+      if (node) node.setAttribute("href", favicon);
+    }
+  }
+
   function stopSpotlightRotation() {
     if (spotlightTimer) window.clearInterval(spotlightTimer);
     spotlightTimer = null;
@@ -148,8 +169,10 @@
       const result = data.result || {};
       const pageTitle = String(result.pageTitle || "").trim();
       const pageSubtitle = String(result.pageSubtitle || "").trim();
+      applyBoardTheme(result);
       $("jobsTitle").textContent = pageTitle || `${result.companyName || "Company"} Jobs`;
       $("jobsSubtitle").textContent = pageSubtitle || "Active openings";
+      document.title = `${pageTitle || `${result.companyName || "Company"} Jobs`}`;
       boardLogoUrl = String(result.logoDataUrl || "").trim() || "/portal-app/favicon.png";
       allJobs = Array.isArray(result.jobs) ? result.jobs : [];
       activeJobId = String(allJobs[0]?.id || "");
