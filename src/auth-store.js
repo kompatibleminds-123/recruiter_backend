@@ -469,6 +469,7 @@ function sanitizeJob(job) {
     jobDescription: job.jobDescription ?? job.job_description ?? p.jobDescription ?? "",
     mustHaveSkills: job.mustHaveSkills ?? job.must_have_skills ?? p.mustHaveSkills ?? "",
     generatedBooleanHints: job.generatedBooleanHints ?? job.generated_boolean_hints ?? p.generatedBooleanHints ?? "",
+    generatedBooleanSuggestion: job.generatedBooleanSuggestion ?? job.generated_boolean_suggestion ?? p.generatedBooleanSuggestion ?? "",
     redFlags: job.redFlags ?? job.red_flags ?? p.redFlags ?? "",
     recruiterNotes: job.recruiterNotes ?? job.recruiter_notes ?? p.recruiterNotes ?? "",
     standardQuestions: job.standardQuestions ?? job.standard_questions ?? p.standardQuestions ?? "",
@@ -785,6 +786,8 @@ function sanitizeSharedExportPresetSettings(raw) {
       placeholder: String(item.placeholder || "").trim(),
       required: item.required === true,
       enabled: item.enabled !== false,
+      conditionalOnId: String(item.conditionalOnId || item.conditional_on_id || "").trim(),
+      conditionalValue: String(item.conditionalValue || item.conditional_value || "").trim(),
       options: rawOptions
         .split(/\r?\n|,/)
         .map((option) => String(option || "").trim())
@@ -2666,6 +2669,7 @@ async function saveCompanyJob({ actorUserId, companyId, job }) {
       jobDescription: String(job.jobDescription || "").trim(),
       mustHaveSkills: String(job.mustHaveSkills || "").trim(),
       generatedBooleanHints: String(job.generatedBooleanHints || job.generated_boolean_hints || "").trim(),
+      generatedBooleanSuggestion: String(job.generatedBooleanSuggestion || job.generated_boolean_suggestion || "").trim(),
       redFlags: String(job.redFlags || "").trim(),
       recruiterNotes: String(job.recruiterNotes || "").trim(),
       standardQuestions: String(job.standardQuestions || "").trim(),

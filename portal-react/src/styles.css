@@ -80,6 +80,12 @@ input:focus-visible, select:focus-visible, textarea:focus-visible, button:focus-
   box-shadow: var(--ring);
   border-color: #8fb3ff;
 }
+input[type="color"] {
+  width: 76px;
+  height: 42px;
+  padding: 4px;
+  cursor: pointer;
+}
 textarea { min-height: 92px; resize: vertical; }
 .preset-editor {
   min-height: 96px;
@@ -1469,6 +1475,21 @@ textarea { min-height: 92px; resize: vertical; }
 }
 .checkbox-row span {
   margin: 0;
+}
+.tiny-link-btn {
+  width: fit-content;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--accent);
+  box-shadow: none;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+.tiny-link-btn:hover {
+  background: transparent;
+  box-shadow: none;
+  text-decoration: underline;
 }
 .full { grid-column: 1 / -1; }
 .align-end { align-items: end; }

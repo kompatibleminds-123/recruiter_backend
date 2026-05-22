@@ -315,6 +315,8 @@ function normalizeJobApplyField(field, index = 0) {
     placeholder: normalizeMojibakeSymbols(String(source.placeholder || "").trim()),
     required: source.required === true,
     enabled: source.enabled !== false,
+    conditionalOnId: String(source.conditionalOnId || source.conditional_on_id || "").trim(),
+    conditionalValue: normalizeMojibakeSymbols(String(source.conditionalValue || source.conditional_value || "").trim()),
     options: rawOptions
       .split(/\r?\n|,/)
       .map((item) => normalizeMojibakeSymbols(String(item || "").trim()))
@@ -6839,6 +6841,7 @@ function PortalApp({ token, onLogout }) {
     jobDescription: "",
     mustHaveSkills: "",
     generatedBooleanHints: "",
+    generatedBooleanSuggestion: "",
     redFlags: "",
     recruiterNotes: "",
     standardQuestions: "",
@@ -12307,6 +12310,7 @@ function PortalApp({ token, onLogout }) {
       jobDescription: "",
       mustHaveSkills: "",
       generatedBooleanHints: "",
+      generatedBooleanSuggestion: "",
       redFlags: "",
       recruiterNotes: "",
       standardQuestions: "",
@@ -12346,6 +12350,7 @@ function PortalApp({ token, onLogout }) {
       jobDescription: String(job.jobDescription || ""),
       mustHaveSkills: String(job.mustHaveSkills || ""),
       generatedBooleanHints: String(job.generatedBooleanHints || ""),
+      generatedBooleanSuggestion: String(job.generatedBooleanSuggestion || job.generated_boolean_suggestion || ""),
       redFlags: String(job.redFlags || ""),
       recruiterNotes: String(job.recruiterNotes || ""),
       standardQuestions: String(job.standardQuestions || ""),
@@ -13708,9 +13713,16 @@ function PortalApp({ token, onLogout }) {
     const generated = parts.join("\nAND\n") || `"${clean(title || "Relevant profile")}"`;
     setJobDraft((current) => ({
       ...current,
-      generatedBooleanHints: generated
+      generatedBooleanSuggestion: generated,
+      generatedBooleanHints: String(current.generatedBooleanHints || "").trim() ? current.generatedBooleanHints : ""
     }));
-    setStatus("jobs", "Clean Boolean generated. Admin can edit and save final version.", "ok");
+    setStatus(
+      "jobs",
+      String(jobDraft.generatedBooleanHints || "").trim()
+        ? "Generated a suggestion. Admin-approved Boolean is locked and was not changed."
+        : "Generated a suggestion. Review it and paste/save as final Boolean if approved.",
+      "ok"
+    );
   }
 
   function buildResumeFormattingSampleHtml() {
@@ -14197,7 +14209,21 @@ function PortalApp({ token, onLogout }) {
         selection?.removeAllRanges();
         selection?.addRange(range);
       }
-      document.execCommand(command, false, value);
+      const ok = document.execCommand(command, false, value);
+      if (!ok && ["bold", "italic", "underline"].includes(command)) {
+        const selection = window.getSelection?.();
+        const range = selection && selection.rangeCount ? selection.getRangeAt(0) : null;
+        if (range && !range.collapsed && editor.contains(range.commonAncestorContainer)) {
+          const tag = command === "bold" ? "strong" : command === "italic" ? "em" : "u";
+          const node = document.createElement(tag);
+          node.appendChild(range.extractContents());
+          range.insertNode(node);
+          selection.removeAllRanges();
+          const nextRange = document.createRange();
+          nextRange.selectNodeContents(node);
+          selection.addRange(nextRange);
+        }
+      }
       captureJdDescriptionSelection();
       syncJdDescriptionEditorHtml();
     } catch {}
@@ -18450,6 +18476,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                           }));
                         }}
                       />
+                      <small className="muted">Only controls iframe height when you embed this jobs page on your website.</small>
                     </label>
                     <label className="full">
                       <span>Job board logo</span>
@@ -18473,6 +18500,9 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                           }
                         }}
                       />
+                      {String(copySettings?.jobBoard?.logoDataUrl || "").trim() ? (
+                        <small className="muted">Logo uploaded. Save settings if you just changed it.</small>
+                      ) : null}
                       <small className="muted">Used on public jobs page. If blank, resume branding logo is used as fallback.</small>
                     </label>
                     <label className="full">
@@ -18497,6 +18527,9 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                           }
                         }}
                       />
+                      {String(copySettings?.jobBoard?.faviconDataUrl || "").trim() ? (
+                        <small className="muted">Favicon uploaded. Save settings if you just changed it.</small>
+                      ) : null}
                       <small className="muted">Used in the browser tab for public jobs and apply pages.</small>
                     </label>
                     <label className="full">
@@ -18523,26 +18556,32 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                     <label>
                       <span>Primary color</span>
                       <input type="color" value={copySettings?.jobBoard?.primaryColor || "#2485a5"} onChange={(e) => setCopySettings((current) => ({ ...current, jobBoard: { ...(current.jobBoard || {}), primaryColor: e.target.value } }))} />
+                      <button type="button" className="tiny-link-btn" onClick={() => setCopySettings((current) => ({ ...current, jobBoard: { ...(current.jobBoard || {}), primaryColor: DEFAULT_COPY_SETTINGS.jobBoard.primaryColor } }))}>Reset</button>
                     </label>
                     <label>
                       <span>Button color</span>
                       <input type="color" value={copySettings?.jobBoard?.buttonColor || "#2485a5"} onChange={(e) => setCopySettings((current) => ({ ...current, jobBoard: { ...(current.jobBoard || {}), buttonColor: e.target.value } }))} />
+                      <button type="button" className="tiny-link-btn" onClick={() => setCopySettings((current) => ({ ...current, jobBoard: { ...(current.jobBoard || {}), buttonColor: DEFAULT_COPY_SETTINGS.jobBoard.buttonColor } }))}>Reset</button>
                     </label>
                     <label>
                       <span>Page background</span>
                       <input type="color" value={copySettings?.jobBoard?.backgroundColor || "#ffffff"} onChange={(e) => setCopySettings((current) => ({ ...current, jobBoard: { ...(current.jobBoard || {}), backgroundColor: e.target.value } }))} />
+                      <button type="button" className="tiny-link-btn" onClick={() => setCopySettings((current) => ({ ...current, jobBoard: { ...(current.jobBoard || {}), backgroundColor: DEFAULT_COPY_SETTINGS.jobBoard.backgroundColor } }))}>Reset</button>
                     </label>
                     <label>
                       <span>Job card background</span>
                       <input type="color" value={copySettings?.jobBoard?.cardBackgroundColor || "#fffef8"} onChange={(e) => setCopySettings((current) => ({ ...current, jobBoard: { ...(current.jobBoard || {}), cardBackgroundColor: e.target.value } }))} />
+                      <button type="button" className="tiny-link-btn" onClick={() => setCopySettings((current) => ({ ...current, jobBoard: { ...(current.jobBoard || {}), cardBackgroundColor: DEFAULT_COPY_SETTINGS.jobBoard.cardBackgroundColor } }))}>Reset</button>
                     </label>
                     <label>
                       <span>Text color</span>
                       <input type="color" value={copySettings?.jobBoard?.textColor || "#112143"} onChange={(e) => setCopySettings((current) => ({ ...current, jobBoard: { ...(current.jobBoard || {}), textColor: e.target.value } }))} />
+                      <button type="button" className="tiny-link-btn" onClick={() => setCopySettings((current) => ({ ...current, jobBoard: { ...(current.jobBoard || {}), textColor: DEFAULT_COPY_SETTINGS.jobBoard.textColor } }))}>Reset</button>
                     </label>
                     <label>
                       <span>Muted text color</span>
                       <input type="color" value={copySettings?.jobBoard?.mutedTextColor || "#7a8496"} onChange={(e) => setCopySettings((current) => ({ ...current, jobBoard: { ...(current.jobBoard || {}), mutedTextColor: e.target.value } }))} />
+                      <button type="button" className="tiny-link-btn" onClick={() => setCopySettings((current) => ({ ...current, jobBoard: { ...(current.jobBoard || {}), mutedTextColor: DEFAULT_COPY_SETTINGS.jobBoard.mutedTextColor } }))}>Reset</button>
                     </label>
                     <div className="full settings-subsection compact-card">
                       <div className="section-kicker">Job Application Form Fields</div>
@@ -18553,12 +18592,12 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                             <div className="form-grid two-col">
                               <label><span>Label</span><input value={field.label || ""} onChange={(e) => setCopySettings((current) => {
                                 const fields = [...(current.jobApplyFields || [])];
-                                fields[index] = normalizeJobApplyField({ ...fields[index], label: e.target.value, id: fields[index]?.id || e.target.value }, index);
+                                fields[index] = { ...fields[index], label: e.target.value };
                                 return { ...current, jobApplyFields: fields };
                               })} /></label>
                               <label><span>Field key</span><input value={field.id || ""} onChange={(e) => setCopySettings((current) => {
                                 const fields = [...(current.jobApplyFields || [])];
-                                fields[index] = normalizeJobApplyField({ ...fields[index], id: e.target.value }, index);
+                                fields[index] = { ...fields[index], id: e.target.value };
                                 return { ...current, jobApplyFields: fields };
                               })} /></label>
                               <label><span>Type</span><select value={field.type || "text"} onChange={(e) => setCopySettings((current) => {
@@ -18574,6 +18613,16 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                               <label className="full"><span>Options (select only, one per line)</span><textarea rows={3} value={field.options || ""} onChange={(e) => setCopySettings((current) => {
                                 const fields = [...(current.jobApplyFields || [])];
                                 fields[index] = normalizeJobApplyField({ ...fields[index], options: e.target.value }, index);
+                                return { ...current, jobApplyFields: fields };
+                              })} /></label>
+                              <label><span>Show only when field key is</span><input value={field.conditionalOnId || ""} placeholder="Optional, e.g. how_did_you_hear" onChange={(e) => setCopySettings((current) => {
+                                const fields = [...(current.jobApplyFields || [])];
+                                fields[index] = normalizeJobApplyField({ ...fields[index], conditionalOnId: e.target.value }, index);
+                                return { ...current, jobApplyFields: fields };
+                              })} /></label>
+                              <label><span>And selected value is</span><input value={field.conditionalValue || ""} placeholder="Optional, e.g. Referral" onChange={(e) => setCopySettings((current) => {
+                                const fields = [...(current.jobApplyFields || [])];
+                                fields[index] = normalizeJobApplyField({ ...fields[index], conditionalValue: e.target.value }, index);
                                 return { ...current, jobApplyFields: fields };
                               })} /></label>
                               <label className="checkbox-row"><input type="checkbox" checked={field.required === true} onChange={(e) => setCopySettings((current) => {
@@ -18599,6 +18648,28 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                             normalizeJobApplyField({ label: "Referral name", id: "referral_name", type: "text", placeholder: "Who referred you?" }, (current.jobApplyFields || []).length)
                           ].slice(0, 12)
                         }))}>Add referral field</button>
+                        <button type="button" className="ghost-btn" onClick={() => setCopySettings((current) => {
+                          const existing = current.jobApplyFields || [];
+                          const nextFields = [
+                            ...existing,
+                            normalizeJobApplyField({
+                              label: "How did you hear about us?",
+                              id: "how_did_you_hear",
+                              type: "select",
+                              placeholder: "Select source",
+                              options: "LinkedIn\nNaukri\nReferral\nCompany website\nOther"
+                            }, existing.length),
+                            normalizeJobApplyField({
+                              label: "Who referred you?",
+                              id: "referral_name",
+                              type: "text",
+                              placeholder: "Referral name",
+                              conditionalOnId: "how_did_you_hear",
+                              conditionalValue: "Referral"
+                            }, existing.length + 1)
+                          ].slice(0, 12);
+                          return { ...current, jobApplyFields: nextFields };
+                        })}>Add source + referral dropdown</button>
                         <button type="button" className="ghost-btn" onClick={() => setCopySettings((current) => ({
                           ...current,
                           jobApplyFields: [
@@ -18961,6 +19032,8 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                       contentEditable={!jobDraftReadOnly && !jobActionBusy}
                       suppressContentEditableWarning
                       onInput={syncJdDescriptionEditorHtml}
+                      onKeyUp={captureJdDescriptionSelection}
+                      onMouseUp={captureJdDescriptionSelection}
                       onBlur={syncJdDescriptionEditorHtml}
                       data-placeholder="Paste the full JD here. Hosted apply link will show this as one clean block."
                     />
@@ -18968,14 +19041,34 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                   </div>
                   <label className="full"><span>Must-have skills</span><textarea disabled={jobDraftReadOnly || jobActionBusy} value={jobDraft.mustHaveSkills} onChange={(e) => setJobDraft((c) => ({ ...c, mustHaveSkills: e.target.value }))} placeholder="Shown on hosted apply link only when filled." /></label>
                   <label className="full">
-                    <span>Final Boolean search string (internal only)</span>
+                    <span>Admin approved Boolean search string (internal only)</span>
                     <textarea
                       disabled={jobDraftReadOnly || jobActionBusy}
                       value={jobDraft.generatedBooleanHints || ""}
                       onChange={(e) => setJobDraft((c) => ({ ...c, generatedBooleanHints: e.target.value }))}
                       placeholder={'Example: ("Sales" OR "Business Development") AND ("Fintech" OR "NBFC" OR "BFSI")'}
                     />
-                    <span className="field-help">Internal recruiter helper only. Avoid location, company name, salary, or work mode. This does not show in JD share mail or public apply link.</span>
+                    {String(jobDraft.generatedBooleanHints || "").trim() ? (
+                      <span className="field-help">Admin has locked the Boolean. Generate button will create a suggestion below, but will not overwrite this final value.</span>
+                    ) : (
+                      <span className="field-help">Internal recruiter helper only. This does not show in JD share mail or public apply link.</span>
+                    )}
+                  </label>
+                  <label className="full">
+                    <span>Generated Boolean suggestion</span>
+                    <textarea
+                      readOnly
+                      value={jobDraft.generatedBooleanSuggestion || ""}
+                      placeholder="Click Generate clean Boolean to create a suggestion without changing admin-approved Boolean."
+                    />
+                    <button
+                      type="button"
+                      className="tiny-link-btn"
+                      disabled={jobDraftReadOnly || jobActionBusy || !String(jobDraft.generatedBooleanSuggestion || "").trim()}
+                      onClick={() => setJobDraft((current) => ({ ...current, generatedBooleanHints: current.generatedBooleanSuggestion || "" }))}
+                    >
+                      Use suggestion as final
+                    </button>
                   </label>
                   <div className="button-row">
                     <button type="button" className="ghost-btn" disabled={jobDraftReadOnly || jobActionBusy} onClick={generateBooleanHintsFromJd}>

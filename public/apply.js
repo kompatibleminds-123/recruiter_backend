@@ -1,5 +1,9 @@
 (function () {
   const $ = (id) => document.getElementById(id);
+  const cssEscape = (value) => {
+    if (window.CSS && typeof window.CSS.escape === "function") return window.CSS.escape(String(value || ""));
+    return String(value || "").replace(/["\\]/g, "\\$&");
+  };
 
   async function readJsonSafely(response) {
     const text = await response.text();
@@ -190,6 +194,8 @@
           type,
           placeholder: String(field.placeholder || "").trim(),
           required: field.required === true,
+          conditionalOnId: String(field.conditionalOnId || field.conditional_on_id || "").trim(),
+          conditionalValue: String(field.conditionalValue || field.conditional_value || "").trim(),
           options: options.map((item) => String(item || "").trim()).filter(Boolean)
         };
       })
@@ -204,18 +210,44 @@
     wrap.innerHTML = fields.map((field) => {
       const domId = `custom_${field.id}`;
       const required = field.required ? "required" : "";
-      const common = `id="${escapeHtml(domId)}" data-custom-field="${escapeHtml(field.id)}" data-custom-label="${escapeHtml(field.label)}" ${required}`;
+      const conditionalAttrs = field.conditionalOnId
+        ? ` data-conditional-on="${escapeHtml(field.conditionalOnId)}" data-conditional-value="${escapeHtml(field.conditionalValue)}"`
+        : "";
+      const hiddenStyle = field.conditionalOnId ? ` style="display:none;"` : "";
+      const common = `id="${escapeHtml(domId)}" data-custom-field="${escapeHtml(field.id)}" data-custom-label="${escapeHtml(field.label)}"${conditionalAttrs} ${required}`;
       if (field.type === "textarea") {
-        return `<div class="full"><label for="${escapeHtml(domId)}">${escapeHtml(field.label)}</label><textarea ${common} placeholder="${escapeHtml(field.placeholder)}"></textarea></div>`;
+        return `<div class="full" data-custom-field-wrap="${escapeHtml(field.id)}"${hiddenStyle}><label for="${escapeHtml(domId)}">${escapeHtml(field.label)}</label><textarea ${common} placeholder="${escapeHtml(field.placeholder)}"></textarea></div>`;
       }
       if (field.type === "select") {
-        return `<div><label for="${escapeHtml(domId)}">${escapeHtml(field.label)}</label><select ${common}><option value="">Select</option>${field.options.map((option) => `<option value="${escapeHtml(option)}">${escapeHtml(option)}</option>`).join("")}</select></div>`;
+        return `<div data-custom-field-wrap="${escapeHtml(field.id)}"${hiddenStyle}><label for="${escapeHtml(domId)}">${escapeHtml(field.label)}</label><select ${common}><option value="">Select</option>${field.options.map((option) => `<option value="${escapeHtml(option)}">${escapeHtml(option)}</option>`).join("")}</select></div>`;
       }
       if (field.type === "checkbox") {
-        return `<div class="full"><label style="display:flex;align-items:center;gap:10px;"><input style="width:auto;" type="checkbox" ${common} /> ${escapeHtml(field.label)}</label></div>`;
+        return `<div class="full" data-custom-field-wrap="${escapeHtml(field.id)}"${hiddenStyle}><label style="display:flex;align-items:center;gap:10px;"><input style="width:auto;" type="checkbox" ${common} /> ${escapeHtml(field.label)}</label></div>`;
       }
-      return `<div><label for="${escapeHtml(domId)}">${escapeHtml(field.label)}</label><input ${common} placeholder="${escapeHtml(field.placeholder)}" /></div>`;
+      return `<div data-custom-field-wrap="${escapeHtml(field.id)}"${hiddenStyle}><label for="${escapeHtml(domId)}">${escapeHtml(field.label)}</label><input ${common} placeholder="${escapeHtml(field.placeholder)}" /></div>`;
     }).join("");
+    updateConditionalCustomFields();
+    wrap.querySelectorAll("[data-custom-field]").forEach((node) => {
+      node.addEventListener("change", updateConditionalCustomFields);
+      node.addEventListener("input", updateConditionalCustomFields);
+    });
+  }
+
+  function updateConditionalCustomFields() {
+    document.querySelectorAll("[data-conditional-on]").forEach((node) => {
+      const dependsOn = String(node.getAttribute("data-conditional-on") || "").trim();
+      const expected = String(node.getAttribute("data-conditional-value") || "").trim().toLowerCase();
+      const wrap = document.querySelector(`[data-custom-field-wrap="${cssEscape(String(node.getAttribute("data-custom-field") || ""))}"]`);
+      const source = document.querySelector(`[data-custom-field="${cssEscape(dependsOn)}"]`);
+      const current = source?.type === "checkbox" ? (source.checked ? "true" : "false") : String(source?.value || "").trim();
+      const visible = Boolean(source) && (!expected || current.toLowerCase() === expected);
+      if (wrap) wrap.style.display = visible ? "" : "none";
+      node.disabled = !visible;
+      if (!visible) {
+        if (node.type === "checkbox") node.checked = false;
+        else node.value = "";
+      }
+    });
   }
 
   function readCustomFields() {
@@ -224,6 +256,8 @@
       const key = String(node.getAttribute("data-custom-field") || "").trim();
       const label = String(node.getAttribute("data-custom-label") || key).trim();
       if (!key) return;
+      const wrap = document.querySelector(`[data-custom-field-wrap="${cssEscape(key)}"]`);
+      if (wrap && wrap.style.display === "none") return;
       const value = node.type === "checkbox" ? Boolean(node.checked) : String(node.value || "").trim();
       out[label || key] = value;
     });
