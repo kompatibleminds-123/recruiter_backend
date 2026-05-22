@@ -2492,11 +2492,17 @@ async function getPublicCompanyJobsBySlug(companySlug) {
       .filter((job) => String(job?.companyId || "").trim() === String(matchedCompany.id || "").trim())
       .map(sanitizeJob)
       .filter((job) => !isSystemJobRow(job) && !isJobArchived(job));
+    const fallbackJobs = jobs.length
+      ? jobs
+      : (Array.isArray(store.jobs) ? store.jobs : [])
+          .map(sanitizeJob)
+          .filter((job) => !isSystemJobRow(job) && !isJobArchived(job))
+          .filter((job) => toCompanySlug(job?.clientName || "") === scopedSlug);
     return {
       companyId: String(matchedCompany.id || "").trim(),
       companyName: String(matchedCompany.name || "").trim(),
       companySlug: scopedSlug,
-      jobs
+      jobs: fallbackJobs
     };
   }
   await ensureSeeded();
@@ -2523,9 +2529,16 @@ async function getPublicCompanyJobsBySlug(companySlug) {
   }
   if (!matchedCompany?.id) throw new Error("Company not found.");
   const rows = await sbSel("company_jobs", `select=*&company_id=eq.${enc(String(matchedCompany.id || "").trim())}&order=updated_at.desc`);
-  const jobs = (rows || [])
+  let jobs = (rows || [])
     .map(sanitizeJob)
     .filter((job) => !isSystemJobRow(job) && !isJobArchived(job));
+  if (!jobs.length) {
+    const fallbackRows = await sbSel("company_jobs", `select=*&order=updated_at.desc&limit=5000`).catch(() => []);
+    jobs = (fallbackRows || [])
+      .map(sanitizeJob)
+      .filter((job) => !isSystemJobRow(job) && !isJobArchived(job))
+      .filter((job) => toCompanySlug(job?.clientName || "") === scopedSlug);
+  }
   return {
     companyId: String(matchedCompany.id || "").trim(),
     companyName: String(matchedCompany.name || "").trim(),
