@@ -16287,54 +16287,10 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
               raw_line: String(item?.rawText || "").trim()
             }))
           : []);
-      const parseYm = (value = "") => {
-        const text = String(value || "").trim();
-        if (!text) return null;
-        if (/present|current|ongoing|till\s*date/i.test(text)) {
-          const now = new Date();
-          return { y: now.getFullYear(), m: now.getMonth() + 1, present: true };
-        }
-        const iso = text.match(/(\d{4})\s*[-/]\s*(\d{1,2})/);
-        if (iso) return { y: Number(iso[1]), m: Math.min(12, Math.max(1, Number(iso[2]))), present: false };
-        const rev = text.match(/(\d{1,2})\s*[-/]\s*(\d{4})/);
-        if (rev) return { y: Number(rev[2]), m: Math.min(12, Math.max(1, Number(rev[1]))), present: false };
-        return null;
-      };
-      const monthsDiff = (start, end) => {
-        if (!start || !end) return null;
-        return ((end.y - start.y) * 12) + (end.m - start.m);
-      };
-      const formatMonths = (months) => {
-        if (months == null || months < 0) return "";
-        const years = Math.floor(months / 12);
-        const rem = months % 12;
-        if (years && rem) return `${years} years ${rem} months`;
-        if (years) return `${years} years`;
-        return `${rem} months`;
-      };
-      const resolveCurrentTenureFromTimeline = (rows = []) => {
-        if (!Array.isArray(rows) || !rows.length) return "";
-        const mapped = rows.map((row) => {
-          const start = parseYm(row?.start_date || row?.startDate || "");
-          const end = parseYm(row?.end_date || row?.endDate || "");
-          return { row, start, end, hasPresent: /present|current|ongoing|till\s*date/i.test(String(row?.end_date || row?.endDate || "")) };
-        });
-        const presentRows = mapped.filter((item) => item.hasPresent && item.start);
-        const selected = presentRows.length
-          ? presentRows.sort((a, b) => ((b.start?.y || 0) - (a.start?.y || 0)) || ((b.start?.m || 0) - (a.start?.m || 0)))[0]
-          : mapped
-              .filter((item) => item.start && item.end)
-              .sort((a, b) => ((b.end?.y || 0) - (a.end?.y || 0)) || ((b.end?.m || 0) - (a.end?.m || 0)))[0];
-        if (!selected?.start) return "";
-        const end = selected.hasPresent
-          ? { y: new Date().getFullYear(), m: new Date().getMonth() + 1 }
-          : selected.end;
-        const months = monthsDiff(selected.start, end);
-        return formatMonths(months);
-      };
+      const strictSummary = deriveStrictCvSummaryFromRows(normalizedExperience, normalizedEducation);
       const latestExperience = normalizedExperience[0] || null;
-      let resolvedCompany = String(parsedResult?.currentCompany || fixedSummary?.current_company || "").trim();
-      let resolvedDesignation = String(parsedResult?.currentDesignation || fixedSummary?.current_designation || "").trim();
+      let resolvedCompany = String(strictSummary.currentCompany || "").trim();
+      let resolvedDesignation = String(strictSummary.currentDesignation || "").trim();
       if (!resolvedCompany || isGarbageCvFieldValue(resolvedCompany)) {
         resolvedCompany = String(latestExperience?.company_name || "").trim() || resolvedCompany;
       }
@@ -16343,13 +16299,9 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
       }
       if (isGarbageCvFieldValue(resolvedCompany)) resolvedCompany = "";
       if (isGarbageCvFieldValue(resolvedDesignation)) resolvedDesignation = "";
-      const resolvedTotalExperience = String(parsedResult?.totalExperience || fixedSummary?.total_experience || "").trim();
-      const resolvedCurrentOrgTenure = resolveCurrentTenureFromTimeline(normalizedExperience)
-        || String(parsedResult?.currentOrgTenure || "").trim();
-      const resolvedQualification = pickQualificationFromEducation(
-        normalizedEducation,
-        String(fixedSummary?.highest_education || parsedResult?.highestEducation || "").trim()
-      );
+      const resolvedTotalExperience = String(strictSummary.totalExperience || "").trim();
+      const resolvedCurrentOrgTenure = String(strictSummary.currentOrgTenure || "").trim();
+      const resolvedQualification = String(strictSummary.highestEducation || "").trim();
       setNewDraftCvParsePreview({
         summary: {
           candidateName: String(fixedSummary?.candidate_name || parsedResult?.candidateName || "").trim(),
