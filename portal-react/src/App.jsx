@@ -8436,7 +8436,11 @@ function PortalApp({ token, onLogout }) {
   const activeJobTitlesForFilters = useMemo(
     () => (state.jobs || [])
       .filter((job) => !Boolean(job?.isArchived))
-      .map((job) => ({ id: String(job?.id || "").trim(), title: String(job?.title || "").trim() }))
+      .map((job) => ({
+        id: String(job?.id || "").trim(),
+        title: String(job?.title || "").trim(),
+        clientName: String(job?.clientName || job?.client_name || "").trim()
+      }))
       .filter((job) => job.title),
     [state.jobs]
   );
@@ -8450,6 +8454,11 @@ function PortalApp({ token, onLogout }) {
     .replace(/[–—]/g, "-")
     .replace(/[^a-z0-9]+/g, " ")
     .replace(/\s+/g, " ")
+    .trim(), []);
+  const normalizeClientFilterKey = useCallback((value = "") => String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "")
     .trim(), []);
   const resolveCanonicalJdTitle = useCallback((...rows) => {
     const ids = [];
@@ -8483,9 +8492,23 @@ function PortalApp({ token, onLogout }) {
     }
     return cleanTitles[0] || "";
   }, [activeJobTitleById, activeJobTitlesForFilters, normalizeJobTitleKey]);
+  const getClientScopedActiveJobTitles = useCallback((selectedClients = []) => {
+    const clientKeys = (Array.isArray(selectedClients) ? selectedClients : [])
+      .map((value) => normalizeClientFilterKey(value))
+      .filter(Boolean);
+    if (!clientKeys.length) return [];
+    const titles = new Set();
+    activeJobTitlesForFilters.forEach((job) => {
+      if (!job?.title) return;
+      const jobClientKey = normalizeClientFilterKey(job.clientName);
+      if (!jobClientKey) return;
+      const isClientMatch = clientKeys.some((key) => key === jobClientKey || key.includes(jobClientKey) || jobClientKey.includes(key));
+      if (isClientMatch) titles.add(job.title);
+    });
+    return Array.from(titles).sort((a, b) => a.localeCompare(b));
+  }, [activeJobTitlesForFilters, normalizeClientFilterKey]);
   const assessmentOptions = useMemo(() => {
     const clients = new Set();
-    const jds = new Set();
     const recruiters = new Set();
     const outcomes = new Set();
     const isAdmin = String(state.user?.role || "").toLowerCase() === "admin";
@@ -8503,23 +8526,21 @@ function PortalApp({ token, onLogout }) {
         String(candidate.name || "").trim().toLowerCase() === String(item?.candidateName || "").trim().toLowerCase()
       );
       const clientValue = String(item?.clientName || matchedCandidate?.client_name || "").trim();
-      const jdValue = resolveCanonicalJdTitle(item, matchedCandidate);
       // Always display the assigned recruiter (not assessment creator/last editor).
       const recruiterValue = String(matchedCandidate?.assigned_to_name || item?.recruiterName || matchedCandidate?.recruiter_name || "").trim();
       const outcomeValue = normalizeAssessmentStatusLabel(item?.candidateStatus || item?.candidate_status || "") || "No outcome";
       if (clientValue) clients.add(clientValue);
-      if (jdValue) jds.add(jdValue);
       if (recruiterValue) recruiters.add(recruiterValue);
       if (outcomeValue) outcomes.add(outcomeValue);
     });
     allowedRecruiterNames.forEach((name) => recruiters.add(name));
     return {
       clients: Array.from(clients).sort((a, b) => a.localeCompare(b)),
-      jds: Array.from(jds).sort((a, b) => a.localeCompare(b)),
+      jds: getClientScopedActiveJobTitles(assessmentFilters.clients),
       recruiters: Array.from(recruiters).sort((a, b) => a.localeCompare(b)),
       outcomes: DEFAULT_STATUS_OPTIONS
     };
-  }, [state.assessments, state.candidates, state.user, state.users, resolveCanonicalJdTitle]);
+  }, [state.assessments, state.candidates, state.user, state.users, resolveCanonicalJdTitle, getClientScopedActiveJobTitles, assessmentFilters.clients]);
 
   const filteredAssessments = useMemo(() => {
     const query = String(assessmentFilters.q || "").trim().toLowerCase();
@@ -9471,7 +9492,7 @@ function PortalApp({ token, onLogout }) {
   const candidateHasSmartChipSelection = candidateAiQueryMode === "natural" && candidateQuickChipIds.length > 0;
 
   const capturedCandidateOptions = useMemo(() => {
-    const meta = { clients: new Set(), jds: new Set(), sources: new Set(), outcomes: new Set(), assignedTo: new Set(), capturedBy: new Set() };
+    const meta = { clients: new Set(), sources: new Set(), outcomes: new Set(), assignedTo: new Set(), capturedBy: new Set() };
     const currentUserName = String(state.user?.name || "").trim();
     const isAdmin = String(state.user?.role || "").toLowerCase() === "admin";
     if (isAdmin) {
@@ -9496,12 +9517,10 @@ function PortalApp({ token, onLogout }) {
       if (isInboundApplicant) continue;
       if (matchedAssessment) continue;
       const clientValue = String(item.client_name || matchedAssessment?.clientName || "Unassigned").trim();
-      const jdValue = resolveCanonicalJdTitle(item, matchedAssessment);
       const outcomeValue = getCapturedOutcome(item, matchedAssessment);
       const assignedToValue = String(item.assigned_to_name || "Unassigned").trim();
       const capturedByValue = String(item.recruiter_name || item.assigned_by_name || "Unknown").trim();
       if (clientValue) meta.clients.add(clientValue);
-      if (jdValue) meta.jds.add(jdValue);
       if (sourceValue) meta.sources.add(sourceValue);
       if (outcomeValue) meta.outcomes.add(outcomeValue);
       if (assignedToValue) meta.assignedTo.add(assignedToValue);
@@ -9511,7 +9530,7 @@ function PortalApp({ token, onLogout }) {
     }
     return {
       clients: Array.from(meta.clients).sort(),
-      jds: Array.from(meta.jds).sort(),
+      jds: getClientScopedActiveJobTitles(candidateFilters.clients),
       sources: Array.from(meta.sources).sort(),
       assignedTo: Array.from(meta.assignedTo).sort(),
       capturedBy: Array.from(meta.capturedBy).sort(),
@@ -9520,7 +9539,25 @@ function PortalApp({ token, onLogout }) {
       ),
       activeStates: ["Active", "Inactive"]
     };
-  }, [capturedAssessmentMap, state.candidates, state.user, state.users, resolveCapturedAssessment, resolveCanonicalJdTitle]);
+  }, [capturedAssessmentMap, state.candidates, state.user, state.users, resolveCapturedAssessment, getClientScopedActiveJobTitles, candidateFilters.clients]);
+
+  useEffect(() => {
+    setAssessmentFilters((current) => {
+      if (!current.jds.length) return current;
+      const allowed = new Set(assessmentOptions.jds || []);
+      const nextJds = current.jds.filter((item) => allowed.has(item));
+      return nextJds.length === current.jds.length ? current : { ...current, jds: nextJds };
+    });
+  }, [assessmentOptions.jds]);
+
+  useEffect(() => {
+    setCandidateFilters((current) => {
+      if (!current.jds.length) return current;
+      const allowed = new Set(capturedCandidateOptions.jds || []);
+      const nextJds = current.jds.filter((item) => allowed.has(item));
+      return nextJds.length === current.jds.length ? current : { ...current, jds: nextJds };
+    });
+  }, [capturedCandidateOptions.jds]);
 
   const capturedNotesUniverse = useMemo(() => {
     const isAdmin = String(state.user?.role || "").toLowerCase() === "admin";
@@ -17299,7 +17336,14 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
               </div>
                 <div className="captured-filter-grid">
                   <MultiSelectDropdown label="Clients" options={capturedCandidateOptions.clients} selected={candidateFilters.clients} onToggle={(value) => setCandidateFilters((current) => ({ ...current, clients: value === "__all__" ? [] : current.clients.includes(value) ? current.clients.filter((item) => item !== value) : [...current.clients, value] }))} />
-                  <MultiSelectDropdown label="JD / Role" options={capturedCandidateOptions.jds} selected={candidateFilters.jds} onToggle={(value) => setCandidateFilters((current) => ({ ...current, jds: value === "__all__" ? [] : current.jds.includes(value) ? current.jds.filter((item) => item !== value) : [...current.jds, value] }))} />
+                  <MultiSelectDropdown
+                    label="JD / Role"
+                    options={capturedCandidateOptions.jds}
+                    selected={candidateFilters.jds}
+                    allowAll={candidateFilters.clients.length > 0}
+                    emptySummary={candidateFilters.clients.length ? "No active jobs" : "Choose client first"}
+                    onToggle={(value) => setCandidateFilters((current) => ({ ...current, jds: value === "__all__" ? [] : current.jds.includes(value) ? current.jds.filter((item) => item !== value) : [...current.jds, value] }))}
+                  />
                   {String(state.user?.role || "").toLowerCase() === "admin" ? <MultiSelectDropdown label="Assigned to" options={capturedCandidateOptions.assignedTo} selected={candidateFilters.assignedTo} onToggle={(value) => setCandidateFilters((current) => ({ ...current, assignedTo: value === "__all__" ? [] : current.assignedTo.includes(value) ? current.assignedTo.filter((item) => item !== value) : [...current.assignedTo, value] }))} /> : null}
                   <MultiSelectDropdown label="Captured by" options={capturedCandidateOptions.capturedBy} selected={candidateFilters.capturedBy} onToggle={(value) => setCandidateFilters((current) => ({ ...current, capturedBy: value === "__all__" ? [] : current.capturedBy.includes(value) ? current.capturedBy.filter((item) => item !== value) : [...current.capturedBy, value] }))} />
                   <MultiSelectDropdown label="Sources" options={capturedCandidateOptions.sources} selected={candidateFilters.sources} onToggle={(value) => setCandidateFilters((current) => ({ ...current, sources: value === "__all__" ? [] : current.sources.includes(value) ? current.sources.filter((item) => item !== value) : [...current.sources, value] }))} />
@@ -17455,7 +17499,14 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
               </div>
               <div className="captured-filter-grid">
                 <MultiSelectDropdown label="Clients" options={assessmentOptions.clients} selected={assessmentFilters.clients} onToggle={(value) => setAssessmentFilters((current) => ({ ...current, clients: value === "__all__" ? [] : current.clients.includes(value) ? current.clients.filter((item) => item !== value) : [...current.clients, value] }))} />
-                <MultiSelectDropdown label="JD / Role" options={assessmentOptions.jds} selected={assessmentFilters.jds} onToggle={(value) => setAssessmentFilters((current) => ({ ...current, jds: value === "__all__" ? [] : current.jds.includes(value) ? current.jds.filter((item) => item !== value) : [...current.jds, value] }))} />
+                <MultiSelectDropdown
+                  label="JD / Role"
+                  options={assessmentOptions.jds}
+                  selected={assessmentFilters.jds}
+                  allowAll={assessmentFilters.clients.length > 0}
+                  emptySummary={assessmentFilters.clients.length ? "No active jobs" : "Choose client first"}
+                  onToggle={(value) => setAssessmentFilters((current) => ({ ...current, jds: value === "__all__" ? [] : current.jds.includes(value) ? current.jds.filter((item) => item !== value) : [...current.jds, value] }))}
+                />
                 <MultiSelectDropdown label="Recruiters" options={assessmentOptions.recruiters} selected={assessmentFilters.recruiters} onToggle={(value) => setAssessmentFilters((current) => ({ ...current, recruiters: value === "__all__" ? [] : current.recruiters.includes(value) ? current.recruiters.filter((item) => item !== value) : [...current.recruiters, value] }))} />
                 <MultiSelectDropdown label="Outcome" options={assessmentOptions.outcomes} selected={assessmentFilters.outcomes} onToggle={(value) => setAssessmentFilters((current) => ({ ...current, outcomes: value === "__all__" ? [] : current.outcomes.includes(value) ? current.outcomes.filter((item) => item !== value) : [...current.outcomes, value] }))} />
               </div>
