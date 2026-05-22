@@ -9050,6 +9050,27 @@ function resolveCandidateLocationFromCv({ experienceHistory = [], normalizedLoca
       return explicit;
     }
   }
+  // Multi-column CV fallback:
+  // try to recover city shown near current company block even when it is not attached to role raw line.
+  const raw = String(rawText || "");
+  if (raw && current?.company) {
+    const companyNeedle = String(current.company || "").trim();
+    if (companyNeedle) {
+      const lines = raw.replace(/\r/g, "").split("\n").map((line) => String(line || "").trim()).filter(Boolean);
+      const idx = lines.findIndex((line) => line.toLowerCase().includes(companyNeedle.toLowerCase()));
+      if (idx >= 0) {
+        const window = lines.slice(Math.max(0, idx - 3), Math.min(lines.length, idx + 8));
+        for (const line of window) {
+          const candidate = sanitizeCvCandidateLocation(line);
+          if (!candidate) continue;
+          const token = candidate.toLowerCase();
+          if (companyTokens.has(token) || designationTokens.has(token)) continue;
+          if (/\b(india|remote)\b/i.test(candidate) || /,/.test(candidate)) return candidate;
+          if (/^[A-Za-z]+$/.test(candidate) && candidate.length >= 4) return candidate;
+        }
+      }
+    }
+  }
   return extractHeaderFooterLocation(rawText);
 }
 
