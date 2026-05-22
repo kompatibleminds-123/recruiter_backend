@@ -176,7 +176,7 @@ function isLikelyDegreeText(value = "") {
   const text = String(value || "").trim();
   if (!text) return false;
   if (isProjectNoiseLine(text)) return false;
-  return /\b(b\.?\s*tech|b\.?\s*e\.?|bachelor|m\.?\s*b\.?\s*a|mba|pgdm|b\.?\s*b\.?\s*a|bba|b\.?\s*com|b\.?\s*m\.?\s*s|bds|mph|diploma|12th|10th|mca|m\.?\s*tech|m\.?\s*sc|ba|ma|civil engineering|computer science|management|science)\b/i.test(text);
+  return /\b(b\.?\s*tech|b\.?\s*e\.?|bachelor|graduat(?:ion)?|m\.?\s*b\.?\s*a|mba|pgdm|b\.?\s*b\.?\s*a|bba|b\.?\s*com|b\.?\s*m\.?\s*s|bds|mph|diploma|12th|10th|mca|m\.?\s*tech|m\.?\s*sc|ba|ma|civil engineering|computer science|management|science)\b/i.test(text);
 }
 
 function isLikelyInstitutionText(value = "") {
@@ -217,7 +217,7 @@ function degreeRank(value = "") {
   const text = String(value || "").toLowerCase();
   if (/\b(ph\.?\s*d|doctorate)\b/.test(text)) return 9;
   if (/\b(mba|pgdm|m\.?\s*tech|mca|master|m\.?\s*e\.?|m\.?\s*sc|m\.?\s*com|m\.?\s*a|mph)\b/.test(text)) return 8;
-  if (/\b(b\.?\s*tech|b\.?\s*e\.?|bachelor|bds|b\.?\s*b\.?\s*a|bba|b\.?\s*m\.?\s*s|b\.?\s*sc|b\.?\s*com|bca|ba)\b/.test(text)) return 7;
+  if (/\b(b\.?\s*tech|b\.?\s*e\.?|bachelor|graduat(?:ion)?|bds|b\.?\s*b\.?\s*a|bba|b\.?\s*m\.?\s*s|b\.?\s*sc|b\.?\s*com|bca|ba)\b/.test(text)) return 7;
   if (/\b(diploma)\b/.test(text)) return 6;
   if (/\b(12th|xii|hsc)\b/.test(text)) return 5;
   if (/\b(10th|ssc|matric)\b/.test(text)) return 4;
@@ -456,6 +456,37 @@ function parseDateRange(text) {
     }
     return null;
   };
+
+  // Deterministic numeric day-range:
+  // YYYY-MM-DD - YYYY-MM-DD (or ending in Present/Current).
+  // This avoids ambiguous token splitting in dashed CV lines.
+  const strictNumericRange = normalized.match(
+    /\b(19\d{2}|20\d{2})\s*-\s*(\d{1,2})\s*-\s*(\d{1,2})\s*-\s*(19\d{2}|20\d{2})\s*-\s*(\d{1,2})\s*-\s*(\d{1,2}|present|current)\b/i
+  );
+  if (strictNumericRange) {
+    const startYear = Number(strictNumericRange[1]);
+    const startMonth = Number(strictNumericRange[2]) - 1;
+    const endYear = Number(strictNumericRange[4]);
+    const endMonth = Number(strictNumericRange[5]) - 1;
+    const endToken = String(strictNumericRange[6] || "").toLowerCase();
+    if (
+      Number.isInteger(startYear) && startMonth >= 0 && startMonth <= 11 &&
+      Number.isInteger(endYear) && endMonth >= 0 && endMonth <= 11
+    ) {
+      if (endToken === "present" || endToken === "current") {
+        return {
+          start: { year: startYear, month: startMonth },
+          end: { year: now.getFullYear(), month: now.getMonth() },
+          isCurrent: true
+        };
+      }
+      return {
+        start: { year: startYear, month: startMonth },
+        end: { year: endYear, month: endMonth },
+        isCurrent: false
+      };
+    }
+  }
 
   const splitRange = normalized.match(/(.+?)\s(?:-|to)\s(present|current|till date|to date|ongoing|.+)$/i);
   if (splitRange) {
@@ -1610,6 +1641,30 @@ function parseExperienceTimelineV2(experienceSectionText = "", rawText = "") {
     const nextTwo = String(lines[i + 2] || "").trim();
     const nextThree = String(lines[i + 3] || "").trim();
     const nextFour = String(lines[i + 4] || "").trim();
+
+    // Strict CV pattern:
+    // "<Role> @ <Company>"
+    // "YYYY - MM - DD - YYYY - MM - DD" (or ending in Present/Current).
+    // Keep this deterministic and narrow so other CV formats are unaffected.
+    const roleCompanyMatch = line.match(/^(.+?)\s*@\s*(.+)$/);
+    if (roleCompanyMatch && next) {
+      const dateLineNormalized = String(next || "")
+        .replace(/[\u2013\u2014\u2212]/g, "-")
+        .replace(/\s+/g, " ")
+        .trim();
+      const strictDateRange = /^(\d{4})\s*-\s*(\d{1,2})\s*-\s*(\d{1,2})\s*-\s*(\d{4})\s*-\s*(\d{1,2})\s*-\s*(\d{1,2}|present|current)$/i;
+      if (strictDateRange.test(dateLineNormalized)) {
+        pushRow({
+          company: roleCompanyMatch[2],
+          designation: roleCompanyMatch[1],
+          rawDates: dateLineNormalized,
+          sourceText: [line, next].join(" | "),
+          confidence: "high"
+        });
+        i += 1;
+        continue;
+      }
+    }
 
     // Company+date header row (authoritative), with designation on next lines.
     // Example:
