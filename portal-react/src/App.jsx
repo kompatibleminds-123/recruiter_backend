@@ -2050,7 +2050,9 @@ function mergeCandidatesByFreshness(currentList = [], incomingList = []) {
     }
     const existingTs = rowTs(existing);
     const incomingTs = rowTs(item);
-    if (incomingTs >= existingTs) byId.set(id, { ...existing, ...item });
+    // Important: on equal timestamps keep current in-memory row to avoid stale flicker/race
+    // during rapid tab switches where an older fetch can arrive with same-second updated_at.
+    if (incomingTs > existingTs) byId.set(id, { ...existing, ...item });
   });
   return Array.from(byId.values());
 }
@@ -11877,7 +11879,7 @@ function PortalApp({ token, onLogout }) {
 	      const linkedAssessment = interviewMeta.assessmentId
 	        ? (state.assessments || []).find((item) => String(item.id || "") === String(interviewMeta.assessmentId || ""))
 	        : null;
-	      await api(`/company/candidates/${encodeURIComponent(interviewMeta.candidateId)}`, token, "PATCH", { patch: {
+	      await patchCandidateQuiet(interviewMeta.candidateId, {
 	        name: form.candidateName,
 	        phone: form.phoneNumber,
 	        email: form.emailId,
@@ -11909,7 +11911,7 @@ function PortalApp({ token, onLogout }) {
 	          ...nextMeta,
 	          jdScreeningAnswers: form.jdScreeningAnswers || {}
 	        })
-	      } });
+	      }, { skipRefresh: true });
 	      if (linkedAssessment?.id) {
 	        await api("/company/assessments", token, "POST", { assessment: {
 	          ...linkedAssessment,
