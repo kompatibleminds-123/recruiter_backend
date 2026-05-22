@@ -1390,10 +1390,16 @@ async function buildBrandedPdfBuffer({
   if (!raw) throw new Error("PDF payload missing.");
   const src = Buffer.from(raw, "base64");
   const srcDoc = await PDFDocument.load(src);
-  // NOTE:
-  // Some template CVs keep contact details inside AcroForm fields.
-  // Flattening can drop/blank those values for certain PDFs, which appears as masked bars.
-  // Keep source rendering untouched by default so branded mode never auto-masks fields.
+  // Some CV PDFs store contact details in AcroForm fields.
+  // Flatten first so field values become normal page content before overlay rendering.
+  try {
+    const form = srcDoc.getForm?.();
+    if (form && typeof form.flatten === "function") {
+      form.flatten({ updateFieldAppearances: true });
+    }
+  } catch {
+    // Not a form PDF (or malformed form) - continue without flatten.
+  }
   const outDoc = await PDFDocument.create();
   const srcPages = srcDoc.getPages();
   const rf = resumeFormatting && typeof resumeFormatting === "object" ? resumeFormatting : {};
