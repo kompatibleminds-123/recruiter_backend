@@ -9614,7 +9614,7 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  if (req.method === "GET" && requestUrl.pathname.startsWith("/public/")) {
+  if (req.method === "GET" && requestUrl.pathname.startsWith("/public/") && !requestUrl.pathname.startsWith("/public/company-jobs/")) {
     const assetPath = requestUrl.pathname.replace(/^\/public\//, "");
     const safeRelativePath = path.normalize(assetPath).replace(/^(\.\.(\/|\\|$))+/, "");
     const resolvedPath = path.join(ROOT_PUBLIC_DIR, safeRelativePath);
