@@ -11490,22 +11490,23 @@ function PortalApp({ token, onLogout }) {
   async function loadCandidateIntoInterview(candidateId) {
     const scopedCandidateId = String(candidateId || "").trim();
     let candidate = (state.candidates || []).find((item) => String(item.id) === scopedCandidateId) || null;
-    // Always prefer a fresh-by-id fetch to avoid stale reopen right after save.
+    // Fast-open UX: use local state immediately; hydrate freshest row in background.
     if (scopedCandidateId && token) {
-      try {
-        const fresh = await api(`/candidates?id=${encodeURIComponent(scopedCandidateId)}&limit=1`, token).catch(() => null);
-        const freshRow = Array.isArray(fresh) ? fresh[0] : null;
-        if (freshRow && String(freshRow.id || "").trim() === scopedCandidateId) {
-          candidate = freshRow;
-          setState((current) => ({
-            ...current,
-            candidates: mergeCandidatesByFreshness(current.candidates, [freshRow]),
-            databaseCandidates: mergeCandidatesByFreshness(current.databaseCandidates, [freshRow])
-          }));
+      void (async () => {
+        try {
+          const fresh = await api(`/candidates?id=${encodeURIComponent(scopedCandidateId)}&limit=1`, token).catch(() => null);
+          const freshRow = Array.isArray(fresh) ? fresh[0] : null;
+          if (freshRow && String(freshRow.id || "").trim() === scopedCandidateId) {
+            setState((current) => ({
+              ...current,
+              candidates: mergeCandidatesByFreshness(current.candidates, [freshRow]),
+              databaseCandidates: mergeCandidatesByFreshness(current.databaseCandidates, [freshRow])
+            }));
+          }
+        } catch {
+          // best effort only
         }
-      } catch {
-        // best effort; fallback to current in-memory candidate
-      }
+      })();
     }
     if (!candidate) {
       setStatus("captured", "Candidate not found for interview panel.", "error");
