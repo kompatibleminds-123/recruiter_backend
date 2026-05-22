@@ -7903,6 +7903,34 @@ function isValidHighestEducationText(value) {
   return /\b(b\.?\s*tech|b\.?\s*e\.?|m\.?\s*tech|m\.?\s*e\.?|bachelor|master|mba|mca|bca|b\.?\s*sc|m\.?\s*sc|b\.?\s*com|m\.?\s*com|diploma|ph\.?\s*d|hsc|ssc|12th|10th)\b/i.test(text);
 }
 
+function scoreEducationLevel(value = "") {
+  const text = String(value || "").trim().toLowerCase();
+  if (!text) return 0;
+  if (/\b(ph\.?\s*d|doctorate)\b/.test(text)) return 90;
+  if (/\b(master|m\.?\s*tech|m\.?\s*e\.?|m\.?\s*sc|m\.?\s*com|m\.?\s*a|mba|mca|pgdm|post\s*graduat)\b/.test(text)) return 80;
+  if (/\b(bachelor|b\.?\s*tech|b\.?\s*e\.?|b\.?\s*sc|b\.?\s*com|b\.?\s*a|graduat(?:ion)?|be\b|btech)\b/.test(text)) return 70;
+  if (/\b(diploma|polytechnic|iti)\b/.test(text)) return 55;
+  if (/\b(12th|hsc|intermediate)\b/.test(text)) return 35;
+  if (/\b(10th|ssc|matric)\b/.test(text)) return 25;
+  return 10;
+}
+
+function pickHighestEducationFromHistory(educationHistory = [], fallbackValue = "") {
+  const rows = Array.isArray(educationHistory) ? educationHistory : [];
+  let best = String(fallbackValue || "").trim();
+  let bestScore = scoreEducationLevel(best);
+  for (const row of rows) {
+    const degree = String(row?.degree || "").trim();
+    if (!degree || !isValidHighestEducationText(degree)) continue;
+    const score = scoreEducationLevel(degree);
+    if (score > bestScore) {
+      best = degree;
+      bestScore = score;
+    }
+  }
+  return best;
+}
+
 function buildDeterministicEducationHistory(rawText = "", highestEducation = "", educationSectionText = "") {
   const sectionText = String(educationSectionText || "").trim();
   const text = sectionText || String(rawText || "");
@@ -7976,7 +8004,13 @@ function parseMonthYear(text, allowPresent = false) {
     return { year: now.getFullYear(), month: now.getMonth() };
   }
 
-  const monthNameMatch = value.match(/\b(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*[\s,'/-]*((\d{4})|(\d{2}))/i);
+  const normalizedValue = value
+    .replace(/\s*-\s*/g, "-")
+    .replace(/\s*\/\s*/g, "/")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  const monthNameMatch = normalizedValue.match(/\b(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*[\s,'/-]*((\d{4})|(\d{2}))/i);
   if (monthNameMatch) {
     const month = MONTH_INDEX[String(monthNameMatch[1] || "").toLowerCase()];
     const year = monthNameMatch[4] ? 2000 + Number(monthNameMatch[4]) : Number(monthNameMatch[3] || monthNameMatch[2]);
@@ -7985,7 +8019,7 @@ function parseMonthYear(text, allowPresent = false) {
     }
   }
 
-  const monthNumericMatch = value.match(/\b(\d{1,2})[/-](\d{4})\b/);
+  const monthNumericMatch = normalizedValue.match(/\b(\d{1,2})[/-](\d{4})\b/);
   if (monthNumericMatch) {
     const month = Number(monthNumericMatch[1]) - 1;
     const year = Number(monthNumericMatch[2]);
@@ -7994,7 +8028,7 @@ function parseMonthYear(text, allowPresent = false) {
     }
   }
 
-  const isoLikeMatch = value.match(/\b(\d{4})[/-](\d{1,2})\b/);
+  const isoLikeMatch = normalizedValue.match(/\b(\d{4})[/-](\d{1,2})(?:[/-]\d{1,2})?\b/);
   if (isoLikeMatch) {
     const year = Number(isoLikeMatch[1]);
     const month = Number(isoLikeMatch[2]) - 1;
@@ -8003,7 +8037,7 @@ function parseMonthYear(text, allowPresent = false) {
     }
   }
 
-  const yearOnlyMatch = value.match(/\b(19\d{2}|20\d{2})\b/);
+  const yearOnlyMatch = normalizedValue.match(/\b(19\d{2}|20\d{2})\b/);
   if (yearOnlyMatch) {
     const year = Number(yearOnlyMatch[1]);
     return { year, month: allowPresent ? 11 : 0 };
@@ -8563,7 +8597,7 @@ function buildCandidateParseResponse(baseResult, normalizedResult, parseMeta = {
     baseResult?.highestEducation,
     extractHighestEducationFromRawText(rawTextForSearch)
   );
-  const highestEducation = isValidHighestEducationText(highestEducationRaw) ? String(highestEducationRaw || "").trim() : "";
+  const highestEducationInitial = isValidHighestEducationText(highestEducationRaw) ? String(highestEducationRaw || "").trim() : "";
   const parseDebug = {
     sourceType,
     aiNormalizationUsed: Boolean(normalizedResult),
@@ -8755,7 +8789,8 @@ function buildCandidateParseResponse(baseResult, normalizedResult, parseMeta = {
         raw_line: String(item?.rawText || "").trim(),
         confidence: String(item?.confidence || "").toLowerCase() === "high" ? 0.9 : 0.68
       }))
-    : buildDeterministicEducationHistory(rawTextForSearch, highestEducation, educationSectionText);
+    : buildDeterministicEducationHistory(rawTextForSearch, highestEducationInitial, educationSectionText);
+  const highestEducation = pickHighestEducationFromHistory(educationHistory, highestEducationInitial);
   const resolvedCvLocation = resolveCandidateLocationFromCv({
     experienceHistory,
     normalizedLocation: String(normalizedResult?.location || baseResult?.location || "").trim(),
@@ -8901,6 +8936,19 @@ function sanitizeCvCandidateLocation(value = "") {
   return text;
 }
 
+function extractLocationFromExperienceRawLine(rawLine = "") {
+  const raw = String(rawLine || "").trim();
+  if (!raw) return "";
+  const pieces = raw.split(/\s+[|@,-]\s+|\s{2,}/).map((part) => String(part || "").trim()).filter(Boolean);
+  for (let i = pieces.length - 1; i >= 0; i -= 1) {
+    const candidate = sanitizeCvCandidateLocation(pieces[i]);
+    if (!candidate) continue;
+    if (/\b(india|private|pvt|ltd|limited|llp|inc|corp|technologies|solutions)\b/i.test(candidate)) continue;
+    return candidate;
+  }
+  return "";
+}
+
 function extractHeaderFooterLocation(rawText = "") {
   const lines = String(rawText || "").replace(/\r/g, "").split("\n").map((line) => String(line || "").trim()).filter(Boolean);
   if (!lines.length) return "";
@@ -8934,6 +8982,12 @@ function resolveCandidateLocationFromCv({ experienceHistory = [], normalizedLoca
     );
     const fromCurrentRow = sanitizeCvCandidateLocation(String(match?.location || "").trim());
     if (fromCurrentRow) return fromCurrentRow;
+    const fromCurrentRawLine = extractLocationFromExperienceRawLine(String(match?.raw_line || "").trim());
+    if (fromCurrentRawLine) return fromCurrentRawLine;
+  }
+  for (const row of (Array.isArray(experienceHistory) ? experienceHistory : [])) {
+    const fromRowRaw = extractLocationFromExperienceRawLine(String(row?.raw_line || "").trim());
+    if (fromRowRaw) return fromRowRaw;
   }
   const explicit = sanitizeCvCandidateLocation(String(normalizedLocation || "").trim());
   if (explicit) return explicit;
