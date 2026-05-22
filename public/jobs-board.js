@@ -53,8 +53,9 @@
   function applyBoardTheme(result) {
     const root = document.documentElement;
     const themeMap = {
-      "--brand": result.buttonColor || result.primaryColor,
+      "--brand": result.primaryColor || result.buttonColor,
       "--brand-dark": result.primaryColor || result.buttonColor,
+      "--button": result.buttonColor || result.primaryColor,
       "--paper": result.backgroundColor,
       "--panel": result.cardBackgroundColor,
       "--ink": result.textColor,

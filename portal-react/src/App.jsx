@@ -6854,6 +6854,7 @@ function PortalApp({ token, onLogout }) {
     closedBy: ""
   });
   const [jobActionBusy, setJobActionBusy] = useState(false);
+  const [jobCloseMenuOpen, setJobCloseMenuOpen] = useState(false);
   const [interviewMeta, setInterviewMeta] = useState({ candidateId: "", assessmentId: "" });
   const [interviewCvParseModalOpen, setInterviewCvParseModalOpen] = useState(false);
   const [interviewCvParseBusy, setInterviewCvParseBusy] = useState(false);
@@ -8396,6 +8397,10 @@ function PortalApp({ token, onLogout }) {
       editor.removeEventListener("focus", rememberSelection);
     };
   }, [selectedJobId]);
+
+  useEffect(() => {
+    setJobCloseMenuOpen(false);
+  }, [selectedJobId, jobDraft.isArchived]);
 
   useEffect(() => (() => {
     if (clientShareQueueTimeoutRef.current) clearTimeout(clientShareQueueTimeoutRef.current);
@@ -14209,21 +14214,7 @@ function PortalApp({ token, onLogout }) {
         selection?.removeAllRanges();
         selection?.addRange(range);
       }
-      const ok = document.execCommand(command, false, value);
-      if (!ok && ["bold", "italic", "underline"].includes(command)) {
-        const selection = window.getSelection?.();
-        const range = selection && selection.rangeCount ? selection.getRangeAt(0) : null;
-        if (range && !range.collapsed && editor.contains(range.commonAncestorContainer)) {
-          const tag = command === "bold" ? "strong" : command === "italic" ? "em" : "u";
-          const node = document.createElement(tag);
-          node.appendChild(range.extractContents());
-          range.insertNode(node);
-          selection.removeAllRanges();
-          const nextRange = document.createRange();
-          nextRange.selectNodeContents(node);
-          selection.addRange(nextRange);
-        }
-      }
+      document.execCommand(command, false, value);
       captureJdDescriptionSelection();
       syncJdDescriptionEditorHtml();
     } catch {}
@@ -18877,22 +18868,45 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                         </button>
                       ) : (
                         <>
-                          <select
-                            disabled={jobActionBusy || !selectedJobId || jobDraftReadOnly}
-                            value={String(jobDraft.closeReason || JOB_CLOSE_REASONS[0])}
-                            onChange={(e) => setJobDraft((c) => ({ ...c, closeReason: e.target.value }))}
-                          >
-                            {JOB_CLOSE_REASONS.map((reason) => (
-                              <option key={reason} value={reason}>{reason}</option>
-                            ))}
-                          </select>
-                          <button
-                            className="ghost-btn"
-                            disabled={jobActionBusy || !selectedJobId || jobDraftReadOnly}
-                            onClick={() => void setSelectedJobArchiveState(true)}
-                          >
-                            Close Job
-                          </button>
+                          {jobCloseMenuOpen ? (
+                            <>
+                              <select
+                                disabled={jobActionBusy || !selectedJobId || jobDraftReadOnly}
+                                value={String(jobDraft.closeReason || JOB_CLOSE_REASONS[0])}
+                                onChange={(e) => setJobDraft((c) => ({ ...c, closeReason: e.target.value }))}
+                              >
+                                {JOB_CLOSE_REASONS.map((reason) => (
+                                  <option key={reason} value={reason}>{reason}</option>
+                                ))}
+                              </select>
+                              <button
+                                className="ghost-btn"
+                                disabled={jobActionBusy || !selectedJobId || jobDraftReadOnly}
+                                onClick={() => void setSelectedJobArchiveState(true)}
+                              >
+                                Confirm Close Job
+                              </button>
+                              <button
+                                type="button"
+                                className="ghost-btn"
+                                disabled={jobActionBusy || !selectedJobId || jobDraftReadOnly}
+                                onClick={() => setJobCloseMenuOpen(false)}
+                              >
+                                Cancel
+                              </button>
+                            </>
+                          ) : (
+                            <button
+                              className="ghost-btn"
+                              disabled={jobActionBusy || !selectedJobId || jobDraftReadOnly}
+                              onClick={() => {
+                                setJobDraft((current) => ({ ...current, closeReason: String(current.closeReason || JOB_CLOSE_REASONS[0]) }));
+                                setJobCloseMenuOpen(true);
+                              }}
+                            >
+                              Close Job
+                            </button>
+                          )}
                         </>
                       )
                     ) : null}
