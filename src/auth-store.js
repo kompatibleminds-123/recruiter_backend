@@ -2515,6 +2515,10 @@ async function getPublicCompanyJobsBySlug(companySlug) {
     if (matchedPreset?.company_id) {
       const targetId = String(matchedPreset.company_id || "").trim();
       matchedCompany = (companyRows || []).find((company) => String(company?.id || "").trim() === targetId) || null;
+      if (!matchedCompany?.id) {
+        const singleCompany = await sbSel("companies", `select=id,name&id=eq.${enc(targetId)}&limit=1`).catch(() => []);
+        matchedCompany = (singleCompany || [])[0] || null;
+      }
     }
   }
   if (!matchedCompany?.id) throw new Error("Company not found.");
