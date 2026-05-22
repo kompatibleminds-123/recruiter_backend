@@ -1415,7 +1415,102 @@ function parseTagInputValue(raw = "") {
     .filter(Boolean);
 }
 
-function buildInterviewCvAnalysis(baseForm = {}, result = {}, storedFile = null) {
+function parseCvYm(value = "") {
+  const text = String(value || "").trim();
+  if (!text) return null;
+  if (/present|current|ongoing|till\s*date/i.test(text)) {
+    const now = new Date();
+    return { y: now.getFullYear(), m: now.getMonth() + 1, present: true };
+  }
+  const iso = text.match(/(\d{4})\s*[-/]\s*(\d{1,2})/);
+  if (iso) return { y: Number(iso[1]), m: Math.min(12, Math.max(1, Number(iso[2]))), present: false };
+  const rev = text.match(/(\d{1,2})\s*[-/]\s*(\d{4})/);
+  if (rev) return { y: Number(rev[2]), m: Math.min(12, Math.max(1, Number(rev[1]))), present: false };
+  return null;
+}
+
+function cvMonthIndex(parsed = null) {
+  if (!parsed || !Number.isInteger(parsed.y) || !Number.isInteger(parsed.m)) return null;
+  return (parsed.y * 12) + (parsed.m - 1);
+}
+
+function formatCvMonths(totalMonths = 0) {
+  const months = Number(totalMonths || 0);
+  if (!Number.isFinite(months) || months <= 0) return "";
+  const years = Math.floor(months / 12);
+  const rem = months % 12;
+  if (years && rem) return `${years} years ${rem} months`;
+  if (years) return `${years} years`;
+  return `${rem} months`;
+}
+
+function shouldExcludeFromCvExperience(row = {}) {
+  const text = `${String(row?.designation || "").trim()} ${String(row?.company_name || "").trim()}`.toLowerCase();
+  if (!text) return false;
+  if (/\bintern(ship)?\b/.test(text)) return true;
+  if (/\bfreelanc(?:e|er|ing)\b/.test(text)) return true;
+  return false;
+}
+
+function rankEducationDegree(value = "") {
+  const d = String(value || "").trim().toLowerCase();
+  if (!d) return 0;
+  if (/\b(ph\.?\s*d|doctorate)\b/.test(d)) return 9;
+  if (/\b(master|mba|mca|m\.?\s*tech|m\.?\s*e\.?|m\.?\s*sc|m\.?\s*com|m\.?\s*a|pgdm)\b/.test(d)) return 8;
+  if (/\b(bachelor|graduat(?:ion)?|b\.?\s*tech|b\.?\s*e\.?|bca|b\.?\s*sc|b\.?\s*com|b\.?\s*a)\b/.test(d)) return 7;
+  if (/\b(diploma|iti|polytechnic)\b/.test(d)) return 6;
+  if (/\b(12th|hsc|intermediate)\b/.test(d)) return 5;
+  if (/\b(10th|ssc|matric)\b/.test(d)) return 4;
+  return 0;
+}
+
+function deriveStrictCvSummaryFromRows(experienceRows = [], educationRows = []) {
+  const rows = (Array.isArray(experienceRows) ? experienceRows : []).filter((row) => !shouldExcludeFromCvExperience(row));
+  const datedRows = rows
+    .map((row) => {
+      const start = parseCvYm(row?.start_date || row?.startDate || "");
+      const end = parseCvYm(row?.end_date || row?.endDate || "");
+      const hasPresent = /present|current|ongoing|till\s*date/i.test(String(row?.end_date || row?.endDate || ""));
+      return { row, start, end, hasPresent };
+    })
+    .filter((item) => item.start && item.end && cvMonthIndex(item.end) != null && cvMonthIndex(item.start) != null && cvMonthIndex(item.end) >= cvMonthIndex(item.start));
+
+  const ranges = datedRows.map((item) => [cvMonthIndex(item.start), cvMonthIndex(item.end)]).sort((a, b) => a[0] - b[0]);
+  const merged = [];
+  for (const [s, e] of ranges) {
+    if (!merged.length || s > merged[merged.length - 1][1] + 1) merged.push([s, e]);
+    else merged[merged.length - 1][1] = Math.max(merged[merged.length - 1][1], e);
+  }
+  const totalMonths = merged.reduce((sum, [s, e]) => sum + (e - s + 1), 0);
+
+  const currentRow = datedRows.filter((item) => item.hasPresent).sort((a, b) => (cvMonthIndex(b.start) || 0) - (cvMonthIndex(a.start) || 0))[0]
+    || datedRows.sort((a, b) => (cvMonthIndex(b.end) || 0) - (cvMonthIndex(a.end) || 0))[0]
+    || null;
+  const currentOrgMonths = currentRow ? ((cvMonthIndex(currentRow.end) - cvMonthIndex(currentRow.start)) + 1) : 0;
+
+  const eduRanked = (Array.isArray(educationRows) ? educationRows : [])
+    .map((row) => {
+      const degree = String(row?.degree || "").trim();
+      const rank = rankEducationDegree(degree);
+      const yrText = `${String(row?.end_date || row?.endDate || "").trim()} ${String(row?.year || "").trim()} ${String(row?.start_date || row?.startDate || "").trim()}`;
+      const years = Array.from(String(yrText).matchAll(/\b(19\d{2}|20\d{2})\b/g)).map((m) => Number(m[1])).filter(Number.isFinite);
+      const year = years.length ? Math.max(...years) : 0;
+      return { degree, rank, year };
+    })
+    .filter((item) => item.degree && item.rank > 0)
+    .sort((a, b) => (b.rank - a.rank) || (b.year - a.year));
+
+  return {
+    currentCompany: String(currentRow?.row?.company_name || "").trim(),
+    currentDesignation: String(currentRow?.row?.designation || "").trim(),
+    totalExperience: formatCvMonths(totalMonths),
+    currentOrgTenure: formatCvMonths(currentOrgMonths),
+    highestEducation: String(eduRanked[0]?.degree || "").trim()
+  };
+}
+
+function buildInterviewCvAnalysis(baseForm = {}, result = {}, storedFile = null, normalizedExperience = [], normalizedEducation = []) {
+  const strictSummary = deriveStrictCvSummaryFromRows(normalizedExperience, normalizedEducation);
   const rawConfidence = String(
     result?.timelineConfidence?.level || result?.parseDebug?.timelineConfidence || ""
   ).trim().toLowerCase();
@@ -1425,11 +1520,11 @@ function buildInterviewCvAnalysis(baseForm = {}, result = {}, storedFile = null)
     String(result?.timelineConfidence?.label || result?.parseDebug?.timelineConfidenceLabel || "").trim()
     || (timelineConfidenceLevel ? `Timeline confidence ${timelineConfidenceLevel}` : "");
   return {
-    exactTotalExperience: result.totalExperience || "",
-    currentCompany: result.currentCompany || "",
-    currentDesignation: result.currentDesignation || "",
-    currentOrgTenure: result.currentOrgTenure || "",
-    highestEducation: result.highestQualification || result.highestEducation || "",
+    exactTotalExperience: strictSummary.totalExperience || "",
+    currentCompany: strictSummary.currentCompany || "",
+    currentDesignation: strictSummary.currentDesignation || "",
+    currentOrgTenure: strictSummary.currentOrgTenure || "",
+    highestEducation: strictSummary.highestEducation || "",
     candidateName: result.candidateName || "",
     emailId: result.emailId || "",
     phoneNumber: result.phoneNumber || "",
@@ -1440,17 +1535,17 @@ function buildInterviewCvAnalysis(baseForm = {}, result = {}, storedFile = null)
     storedFile: storedFile || result.storedFile || null,
     cached: Boolean(result.cached),
     contradictions: [
-      baseForm.currentCompany && result.currentCompany && String(baseForm.currentCompany).trim().toLowerCase() !== String(result.currentCompany).trim().toLowerCase()
-        ? `Current company: existing "${baseForm.currentCompany}" vs CV "${result.currentCompany}"`
+      baseForm.currentCompany && strictSummary.currentCompany && String(baseForm.currentCompany).trim().toLowerCase() !== String(strictSummary.currentCompany).trim().toLowerCase()
+        ? `Current company: existing "${baseForm.currentCompany}" vs CV "${strictSummary.currentCompany}"`
         : "",
-      baseForm.currentDesignation && result.currentDesignation && String(baseForm.currentDesignation).trim().toLowerCase() !== String(result.currentDesignation).trim().toLowerCase()
-        ? `Current designation: existing "${baseForm.currentDesignation}" vs CV "${result.currentDesignation}"`
+      baseForm.currentDesignation && strictSummary.currentDesignation && String(baseForm.currentDesignation).trim().toLowerCase() !== String(strictSummary.currentDesignation).trim().toLowerCase()
+        ? `Current designation: existing "${baseForm.currentDesignation}" vs CV "${strictSummary.currentDesignation}"`
         : "",
-      baseForm.totalExperience && result.totalExperience && String(baseForm.totalExperience).trim().toLowerCase() !== String(result.totalExperience).trim().toLowerCase()
-        ? `Total experience: existing "${baseForm.totalExperience}" vs CV "${result.totalExperience}"`
+      baseForm.totalExperience && strictSummary.totalExperience && String(baseForm.totalExperience).trim().toLowerCase() !== String(strictSummary.totalExperience).trim().toLowerCase()
+        ? `Total experience: existing "${baseForm.totalExperience}" vs CV "${strictSummary.totalExperience}"`
         : "",
-      baseForm.currentOrgTenure && result.currentOrgTenure && String(baseForm.currentOrgTenure).trim().toLowerCase() !== String(result.currentOrgTenure).trim().toLowerCase()
-        ? `Tenure in current org: existing "${baseForm.currentOrgTenure}" vs CV "${result.currentOrgTenure}"`
+      baseForm.currentOrgTenure && strictSummary.currentOrgTenure && String(baseForm.currentOrgTenure).trim().toLowerCase() !== String(strictSummary.currentOrgTenure).trim().toLowerCase()
+        ? `Tenure in current org: existing "${baseForm.currentOrgTenure}" vs CV "${strictSummary.currentOrgTenure}"`
         : ""
     ].filter(Boolean)
   };
@@ -12215,8 +12310,9 @@ function PortalApp({ token, onLogout }) {
               year: String(item?.year || "").trim()
             }))
           : []);
+      const strictSummary = deriveStrictCvSummaryFromRows(normalizedExperience, normalizedEducation);
       setInterviewForm((current) => {
-        const analysis = buildInterviewCvAnalysis(current, result, nextStoredFile);
+        const analysis = buildInterviewCvAnalysis(current, result, nextStoredFile, normalizedExperience, normalizedEducation);
         return { ...current, cvAnalysis: analysis, cvAnalysisApplied: false };
       });
       setInterviewCvParsePreview({
@@ -12225,11 +12321,11 @@ function PortalApp({ token, onLogout }) {
           phoneNumber: String(result?.phoneNumber || "").trim(),
           emailId: String(result?.emailId || "").trim(),
           linkedinUrl: String(result?.linkedinUrl || "").trim(),
-          currentCompany: String(result?.currentCompany || "").trim(),
-          currentDesignation: String(result?.currentDesignation || "").trim(),
-          totalExperience: String(result?.totalExperience || "").trim(),
-          currentOrgTenure: String(result?.currentOrgTenure || "").trim(),
-          highestEducation: String(result?.highestQualification || result?.highestEducation || "").trim()
+          currentCompany: String(strictSummary.currentCompany || "").trim(),
+          currentDesignation: String(strictSummary.currentDesignation || "").trim(),
+          totalExperience: String(strictSummary.totalExperience || "").trim(),
+          currentOrgTenure: String(strictSummary.currentOrgTenure || "").trim(),
+          highestEducation: String(strictSummary.highestEducation || "").trim()
         },
         experience: normalizedExperience,
         education: normalizedEducation
