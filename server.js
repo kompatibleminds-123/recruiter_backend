@@ -9081,6 +9081,14 @@ function resolveCandidateLocationFromCv({ experienceHistory = [], normalizedLoca
       if (idx >= 0) {
         const window = lines.slice(Math.max(0, idx - 3), Math.min(lines.length, idx + 8));
         for (const line of window) {
+          const pipeLocation = line.match(/\|\s*([A-Za-z][A-Za-z\s,/-]{2,})$/);
+          if (pipeLocation?.[1]) {
+            const candidate = sanitizeCvCandidateLocation(String(pipeLocation[1] || "").trim());
+            if (candidate) {
+              const token = candidate.toLowerCase();
+              if (!companyTokens.has(token) && !designationTokens.has(token)) return candidate;
+            }
+          }
           const candidate = sanitizeCvCandidateLocation(line);
           if (!candidate) continue;
           const token = candidate.toLowerCase();
