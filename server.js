@@ -2599,7 +2599,12 @@ function buildUploadedFileFingerprint(file = {}) {
 
 const PARSE_CANDIDATE_CACHE = new Map();
 const PARSE_CANDIDATE_CACHE_MAX = 3000;
-const CV_PARSE_RESULT_VERSION = "2026-05-23-unified-v1";
+const CV_PARSE_RESULT_VERSION = "2026-05-23-unified-v2";
+const CV_EXPERIENCE_POLICY = Object.freeze({
+  excludeIntern: true,
+  excludeFreelance: true,
+  includeTrainee: true
+});
 
 function getVersionedCvAnalysisResult(meta = {}) {
   const cache = meta?.cvAnalysisCache && typeof meta.cvAnalysisCache === "object" ? meta.cvAnalysisCache : null;
@@ -2630,6 +2635,195 @@ function setParseCandidateCache(cacheKey = "", payload = null) {
     const oldestKey = PARSE_CANDIDATE_CACHE.keys().next().value;
     if (oldestKey) PARSE_CANDIDATE_CACHE.delete(oldestKey);
   }
+}
+
+function shouldIncludeCvExperienceForSummary(row = {}) {
+  const policy = CV_EXPERIENCE_POLICY;
+  const text = `${String(row?.designation || "").trim()} ${String(row?.company_name || "").trim()}`.toLowerCase();
+  if (!text) return true;
+  if (policy.excludeIntern && /\bintern(ship)?\b/.test(text)) return false;
+  if (policy.excludeFreelance && /\bfreelanc(?:e|er|ing)\b/.test(text)) return false;
+  if (/\btrainee\b/.test(text)) return Boolean(policy.includeTrainee);
+  return true;
+}
+
+function normalizeCvExperienceRowsForContract(result = {}, finalOutput = {}) {
+  const fromFinal = Array.isArray(finalOutput?.experienceTimeline) ? finalOutput.experienceTimeline : [];
+  const fromResult = Array.isArray(result?.experience_history) ? result.experience_history : [];
+  const fallbackTimeline = Array.isArray(result?.experienceTimeline) ? result.experienceTimeline : [];
+  const selected = fromFinal.length ? fromFinal : (fromResult.length ? fromResult : fallbackTimeline);
+  const mapped = selected.map((item) => ({
+    company_name: String(item?.company_name || item?.company || "").trim(),
+    designation: String(item?.designation || item?.title || "").trim(),
+    start_date: String(item?.start_date || item?.startDate || item?.start || "").trim(),
+    end_date: String(item?.end_date || item?.endDate || item?.end || "").trim(),
+    source_text: String(item?.source_text || item?.sourceText || item?.raw_line || "").trim()
+  }));
+  return mapped.filter((row) => row.company_name || row.designation || row.start_date || row.end_date);
+}
+
+function normalizeCvEducationRowsForContract(result = {}, finalOutput = {}) {
+  const fromFinal = Array.isArray(finalOutput?.education) ? finalOutput.education : [];
+  const fromResult = Array.isArray(result?.education_history) ? result.education_history : [];
+  const selected = fromFinal.length ? fromFinal : fromResult;
+  const mapped = selected.map((item) => ({
+    degree: String(item?.degree || item?.qualification || "").trim(),
+    institution: String(item?.institution || item?.university || item?.school || "").trim(),
+    start_date: String(item?.start_date || item?.startDate || "").trim(),
+    end_date: String(item?.end_date || item?.endDate || "").trim(),
+    year: String(item?.year || "").trim()
+  }));
+  return mapped.filter((row) => row.degree || row.institution || row.start_date || row.end_date || row.year);
+}
+
+function parseCvMonthIndex(value = "") {
+  const text = String(value || "").trim();
+  if (!text) return null;
+  if (/present|current|ongoing|till\s*date/i.test(text)) {
+    const now = new Date();
+    return (now.getFullYear() * 12) + now.getMonth();
+  }
+  const m = text.match(/(19\d{2}|20\d{2})[-/](0?[1-9]|1[0-2])/);
+  if (m) {
+    const y = Number(m[1]);
+    const mo = Number(m[2]);
+    if (Number.isFinite(y) && Number.isFinite(mo)) return (y * 12) + (mo - 1);
+  }
+  const parsed = parseMonthYear(text, /present|current|ongoing|till\s*date/i.test(text));
+  const idx = monthIndex(parsed);
+  return Number.isInteger(idx) ? idx : null;
+}
+
+function rankCvEducationDegree(value = "") {
+  const d = String(value || "").trim().toLowerCase();
+  if (!d) return 0;
+  if (/\b(ph\.?\s*d|doctorate)\b/.test(d)) return 9;
+  if (/\b(master|mba|mca|m\.?\s*tech|m\.?\s*e\.?|m\.?\s*sc|m\.?\s*com|m\.?\s*a|pgdm)\b/.test(d)) return 8;
+  if (/\b(bachelor|graduat(?:ion)?|b\.?\s*tech|b\.?\s*e\.?|bca|b\.?\s*sc|b\.?\s*com|b\.?\s*a)\b/.test(d)) return 7;
+  if (/\b(diploma|iti|polytechnic)\b/.test(d)) return 6;
+  if (/\b(12th|hsc|intermediate)\b/.test(d)) return 5;
+  if (/\b(10th|ssc|matric)\b/.test(d)) return 4;
+  return 0;
+}
+
+function deriveDeterministicCvSummary({ experienceHistory = [], educationHistory = [], rawText = "", normalizedLocation = "" }) {
+  const rows = (Array.isArray(experienceHistory) ? experienceHistory : []).filter(shouldIncludeCvExperienceForSummary);
+  const timelineRows = rows
+    .map((row) => ({
+      company: String(row?.company_name || "").trim(),
+      title: String(row?.designation || "").trim(),
+      start: String(row?.start_date || "").trim(),
+      end: String(row?.end_date || "").trim()
+    }))
+    .filter((row) => row.company || row.title || row.start || row.end);
+
+  const intervals = [];
+  for (const row of timelineRows) {
+    const s = parseCvMonthIndex(row.start);
+    const e = parseCvMonthIndex(row.end);
+    if (s == null || e == null || e < s) continue;
+    intervals.push([s, e]);
+  }
+  intervals.sort((a, b) => a[0] - b[0]);
+  const merged = [];
+  for (const [s, e] of intervals) {
+    const last = merged[merged.length - 1];
+    if (!last || s > last[1] + 1) merged.push([s, e]);
+    else last[1] = Math.max(last[1], e);
+  }
+  const totalMonths = merged.reduce((sum, [s, e]) => sum + (e - s + 1), 0);
+  const totalExperience = totalMonths > 0 ? formatTotalExperience(totalMonths) : "";
+
+  const currentSpan = getCurrentCompanyContiguousSpan(timelineRows);
+  const currentRole = currentSpan.row || getCurrentRoleFromTimeline(timelineRows) || null;
+  const currentOrgMonths = Number(currentSpan.months || 0);
+
+  const rankedEducation = (Array.isArray(educationHistory) ? educationHistory : [])
+    .map((row) => {
+      const degree = String(row?.degree || "").trim();
+      const rank = rankCvEducationDegree(degree);
+      const yrText = `${String(row?.end_date || "").trim()} ${String(row?.year || "").trim()} ${String(row?.start_date || "").trim()}`;
+      const years = Array.from(String(yrText).matchAll(/\b(19\d{2}|20\d{2})\b/g)).map((m) => Number(m[1])).filter(Number.isFinite);
+      const year = years.length ? Math.max(...years) : 0;
+      return { degree, rank, year };
+    })
+    .filter((item) => item.degree && item.rank > 0)
+    .sort((a, b) => (b.rank - a.rank) || (b.year - a.year));
+
+  const location = resolveCandidateLocationFromCv({
+    experienceHistory: rows,
+    normalizedLocation: String(normalizedLocation || "").trim(),
+    rawText: String(rawText || "")
+  });
+
+  return {
+    currentCompany: String(currentRole?.company || "").trim(),
+    currentDesignation: String(currentRole?.title || "").trim(),
+    totalExperience: String(totalExperience || "").trim(),
+    currentOrgTenure: currentOrgMonths > 0 ? formatTotalExperience(currentOrgMonths) : "",
+    highestQualification: String(rankedEducation[0]?.degree || "").trim(),
+    location: String(location || "").trim(),
+    policy: {
+      ...CV_EXPERIENCE_POLICY
+    }
+  };
+}
+
+function finalizeCvParseResult({ hybrid, aiParseMode = "", aiParseReason = "" }) {
+  const parsed = hybrid?.parsed || {};
+  const normalized = hybrid?.normalized || {};
+  const finalOutput = hybrid?.finalOutput || {};
+  const result = buildCandidateParseResponse(parsed, normalized, { aiParseMode, aiParseReason });
+  const experience_history = normalizeCvExperienceRowsForContract(result, finalOutput);
+  const education_history = normalizeCvEducationRowsForContract(result, finalOutput);
+  const deterministicSummary = deriveDeterministicCvSummary({
+    experienceHistory: experience_history,
+    educationHistory: education_history,
+    rawText: String(parsed?.rawText || ""),
+    normalizedLocation: String(result?.location || "").trim()
+  });
+
+  result.experience_history = experience_history;
+  result.education_history = education_history;
+  result.currentCompany = deterministicSummary.currentCompany || "";
+  result.currentDesignation = deterministicSummary.currentDesignation || "";
+  result.totalExperience = deterministicSummary.totalExperience || "";
+  result.currentOrgTenure = deterministicSummary.currentOrgTenure || "";
+  result.highestQualification = deterministicSummary.highestQualification || "";
+  result.location = deterministicSummary.location || "";
+  result.needsReview = finalOutput.needsReview;
+  result.reviewReasons = finalOutput.reviewReasons;
+  result.parseMeta = hybrid?.meta || {};
+  result.parseVersion = CV_PARSE_RESULT_VERSION;
+  result.deterministic_summary = deterministicSummary;
+  result.parse_contract = {
+    timeline: result.experience_history,
+    education: result.education_history,
+    contact: {
+      candidateName: String(result?.candidateName || "").trim(),
+      phoneNumber: String(result?.phoneNumber || "").trim(),
+      emailId: String(result?.emailId || "").trim(),
+      linkedinUrl: String(result?.linkedinUrl || "").trim(),
+      location: String(result?.location || "").trim()
+    },
+    summaryText: String(parsed?.rawText || "").trim().slice(0, 2000)
+  };
+  if (result.fixed_schema && typeof result.fixed_schema === "object") {
+    result.fixed_schema = {
+      ...result.fixed_schema,
+      summary: {
+        ...(result.fixed_schema.summary && typeof result.fixed_schema.summary === "object" ? result.fixed_schema.summary : {}),
+        location: result.location,
+        current_company: result.currentCompany,
+        current_designation: result.currentDesignation,
+        total_experience: result.totalExperience,
+        highest_education: result.highestQualification
+      },
+      experience_history: result.experience_history,
+      education_history: result.education_history
+    };
+  }
+  return result;
 }
 
 const INFERRED_SEARCH_TAG_RULES = [
@@ -15167,35 +15361,13 @@ const server = http.createServer(async (req, res) => {
               model: String(body.model || "").trim(),
               normalizeWithAi: body.normalizeWithAi !== false
             });
-            const parsed = hybrid.parsed;
-            const normalized = hybrid.normalized;
             const aiParseMode = hybrid.meta.aiMode;
             const aiParseReason = hybrid.meta.aiPrimaryUsed
               ? "AI primary parse used with deterministic validation."
               : (hybrid.meta.aiParseAttempted
                 ? "AI output failed deterministic checks, rule parser fallback/reference used."
                 : "OpenAI key unavailable, rule parser used with deterministic validation.");
-            const result = buildCandidateParseResponse(parsed, normalized, { aiParseMode, aiParseReason });
-            result.currentCompany = hybrid.finalOutput.currentCompany || result.currentCompany || "";
-            result.currentDesignation = hybrid.finalOutput.currentDesignation || result.currentDesignation || "";
-            result.totalExperience = hybrid.finalOutput.totalExperience || result.totalExperience || "";
-            result.highestQualification = hybrid.finalOutput.highestQualification || result.highestQualification || "";
-            result.experience_history = Array.isArray(hybrid.finalOutput.experienceTimeline)
-              ? hybrid.finalOutput.experienceTimeline.map((item) => ({
-                  company_name: item?.company || "",
-                  designation: item?.designation || "",
-                  start_date: item?.startDate || "",
-                  end_date: item?.endDate || "",
-                  source_text: item?.sourceText || ""
-                }))
-              : (result.experience_history || []);
-            result.education_history = Array.isArray(hybrid.finalOutput.education)
-              ? hybrid.finalOutput.education
-              : (result.education_history || []);
-            result.needsReview = hybrid.finalOutput.needsReview;
-            result.reviewReasons = hybrid.finalOutput.reviewReasons;
-            result.parseMeta = hybrid.meta || {};
-            result.parseVersion = CV_PARSE_RESULT_VERSION;
+            const result = finalizeCvParseResult({ hybrid, aiParseMode, aiParseReason });
             const refreshed = (await listCandidatesForUser(actor, { id: candidate.id, limit: 1 }))[0] || null;
             const refreshedMeta = refreshed ? decodeApplicantMetadata(refreshed) : immediateMeta;
             const nextMeta = {
@@ -15245,8 +15417,8 @@ const server = http.createServer(async (req, res) => {
               await upsertCandidateSearchDocV1({
                 companyId: actor.companyId,
                 candidateId: candidate.id,
-                docV1: nextMeta.searchDocV1,
-                cvTextFull: String(parsed?.rawText || "")
+          docV1: nextMeta.searchDocV1,
+          cvTextFull: String(hybrid?.parsed?.rawText || "")
               });
             } catch (_) {}
           } catch (error) {
@@ -15285,38 +15457,13 @@ const server = http.createServer(async (req, res) => {
         model: String(body.model || "").trim(),
         normalizeWithAi: body.normalizeWithAi !== false
       });
-      const parsed = hybrid.parsed;
-      const normalized = hybrid.normalized;
       const aiParseMode = hybrid.meta.aiMode;
       const aiParseReason = hybrid.meta.aiPrimaryUsed
         ? "AI primary parse used with deterministic validation."
         : (hybrid.meta.aiParseAttempted
           ? "AI output failed deterministic checks, rule parser fallback/reference used."
           : "OpenAI key unavailable, rule parser used with deterministic validation.");
-      const result = buildCandidateParseResponse(parsed, normalized, {
-        aiParseMode,
-        aiParseReason
-      });
-      result.currentCompany = hybrid.finalOutput.currentCompany || result.currentCompany || "";
-      result.currentDesignation = hybrid.finalOutput.currentDesignation || result.currentDesignation || "";
-      result.totalExperience = hybrid.finalOutput.totalExperience || result.totalExperience || "";
-      result.highestQualification = hybrid.finalOutput.highestQualification || result.highestQualification || "";
-      result.experience_history = Array.isArray(hybrid.finalOutput.experienceTimeline)
-        ? hybrid.finalOutput.experienceTimeline.map((item) => ({
-            company_name: item?.company || "",
-            designation: item?.designation || "",
-            start_date: item?.startDate || "",
-            end_date: item?.endDate || "",
-            source_text: item?.sourceText || ""
-          }))
-        : (result.experience_history || []);
-      result.education_history = Array.isArray(hybrid.finalOutput.education)
-        ? hybrid.finalOutput.education
-        : (result.education_history || []);
-      result.needsReview = hybrid.finalOutput.needsReview;
-      result.reviewReasons = hybrid.finalOutput.reviewReasons;
-      result.parseMeta = hybrid.meta || {};
-      result.parseVersion = CV_PARSE_RESULT_VERSION;
+      const result = finalizeCvParseResult({ hybrid, aiParseMode, aiParseReason });
 
       const inferredSearchTags = deriveInferredSearchTags({
         cvResult: result,
@@ -15365,7 +15512,7 @@ const server = http.createServer(async (req, res) => {
           companyId: actor.companyId,
           candidateId: candidate.id,
           docV1: nextMeta.searchDocV1,
-          cvTextFull: String(parsed?.rawText || "")
+          cvTextFull: String(hybrid?.parsed?.rawText || "")
         });
       } catch (_) {}
 
@@ -15481,35 +15628,13 @@ const server = http.createServer(async (req, res) => {
         model: String(body.model || "").trim(),
         normalizeWithAi: body.normalizeWithAi !== false
       });
-      const parsed = hybrid.parsed;
-      const normalized = hybrid.normalized;
       const aiParseMode = hybrid.meta.aiMode;
       const aiParseReason = hybrid.meta.aiPrimaryUsed
         ? "AI primary parse used with deterministic validation."
         : (hybrid.meta.aiParseAttempted
           ? "AI output failed deterministic checks, rule parser fallback/reference used."
           : "OpenAI key unavailable, rule parser used with deterministic validation.");
-      const result = buildCandidateParseResponse(parsed, normalized, { aiParseMode, aiParseReason });
-      result.currentCompany = hybrid.finalOutput.currentCompany || result.currentCompany || "";
-      result.currentDesignation = hybrid.finalOutput.currentDesignation || result.currentDesignation || "";
-      result.totalExperience = hybrid.finalOutput.totalExperience || result.totalExperience || "";
-      result.highestQualification = hybrid.finalOutput.highestQualification || result.highestQualification || "";
-      result.experience_history = Array.isArray(hybrid.finalOutput.experienceTimeline)
-        ? hybrid.finalOutput.experienceTimeline.map((item) => ({
-            company_name: item?.company || "",
-            designation: item?.designation || "",
-            start_date: item?.startDate || "",
-            end_date: item?.endDate || "",
-            source_text: item?.sourceText || ""
-          }))
-        : (result.experience_history || []);
-      result.education_history = Array.isArray(hybrid.finalOutput.education)
-        ? hybrid.finalOutput.education
-        : (result.education_history || []);
-      result.needsReview = hybrid.finalOutput.needsReview;
-      result.reviewReasons = hybrid.finalOutput.reviewReasons;
-      result.parseMeta = hybrid.meta || {};
-      result.parseVersion = CV_PARSE_RESULT_VERSION;
+      const result = finalizeCvParseResult({ hybrid, aiParseMode, aiParseReason });
       if (cacheKey) setParseCandidateCache(cacheKey, result);
       sendJson(res, 200, { ok: true, result });
     } catch (error) {

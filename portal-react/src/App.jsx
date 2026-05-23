@@ -1549,8 +1549,24 @@ function deriveStrictCvSummaryFromRows(experienceRows = [], educationRows = []) 
   };
 }
 
+function getDeterministicSummaryFromResult(result = null) {
+  const s = result?.deterministic_summary && typeof result.deterministic_summary === "object"
+    ? result.deterministic_summary
+    : null;
+  if (!s) return null;
+  return {
+    currentCompany: String(s.currentCompany || "").trim(),
+    currentDesignation: String(s.currentDesignation || "").trim(),
+    totalExperience: String(s.totalExperience || "").trim(),
+    currentOrgTenure: String(s.currentOrgTenure || "").trim(),
+    highestEducation: String(s.highestQualification || s.highestEducation || "").trim(),
+    location: String(s.location || "").trim()
+  };
+}
+
 function buildInterviewCvAnalysis(baseForm = {}, result = {}, storedFile = null, normalizedExperience = [], normalizedEducation = []) {
-  const strictSummary = deriveStrictCvSummaryFromRows(normalizedExperience, normalizedEducation);
+  const strictSummary = getDeterministicSummaryFromResult(result)
+    || deriveStrictCvSummaryFromRows(normalizedExperience, normalizedEducation);
   const rawConfidence = String(
     result?.timelineConfidence?.level || result?.parseDebug?.timelineConfidence || ""
   ).trim().toLowerCase();
@@ -1569,7 +1585,7 @@ function buildInterviewCvAnalysis(baseForm = {}, result = {}, storedFile = null,
     emailId: result.emailId || "",
     phoneNumber: result.phoneNumber || "",
     linkedin: result.linkedinUrl || "",
-    location: result.location || "",
+    location: strictSummary.location || result.location || "",
     timelineConfidenceLevel,
     timelineConfidenceLabel,
     storedFile: storedFile || result.storedFile || null,
@@ -12350,7 +12366,8 @@ function PortalApp({ token, onLogout }) {
               year: String(item?.year || "").trim()
             }))
           : []);
-      const strictSummary = deriveStrictCvSummaryFromRows(normalizedExperience, normalizedEducation);
+      const strictSummary = getDeterministicSummaryFromResult(result)
+        || deriveStrictCvSummaryFromRows(normalizedExperience, normalizedEducation);
       setInterviewForm((current) => {
         const analysis = buildInterviewCvAnalysis(current, result, nextStoredFile, normalizedExperience, normalizedEducation);
         return { ...current, cvAnalysis: analysis, cvAnalysisApplied: false };
@@ -16327,7 +16344,8 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
               raw_line: String(item?.rawText || "").trim()
             }))
           : []);
-      const strictSummary = deriveStrictCvSummaryFromRows(normalizedExperience, normalizedEducation);
+      const strictSummary = getDeterministicSummaryFromResult(parsedResult)
+        || deriveStrictCvSummaryFromRows(normalizedExperience, normalizedEducation);
       const latestExperience = normalizedExperience[0] || null;
       let resolvedCompany = String(strictSummary.currentCompany || "").trim();
       let resolvedDesignation = String(strictSummary.currentDesignation || "").trim();
