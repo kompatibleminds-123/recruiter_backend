@@ -8996,11 +8996,31 @@ function extractHeaderFooterLocation(rawText = "") {
   const lines = String(rawText || "").replace(/\r/g, "").split("\n").map((line) => String(line || "").trim()).filter(Boolean);
   if (!lines.length) return "";
   const scope = [...lines.slice(0, 40), ...lines.slice(-20)];
+  const knownCityPatterns = [
+    /\bnew\s*delhi\b/i, /\bdelhi\b/i, /\bgurugram\b/i, /\bgurgaon\b/i, /\bnoida\b/i, /\bghaziabad\b/i,
+    /\bbangalore\b/i, /\bbengaluru\b/i, /\bbangaluru\b/i, /\bhyderabad\b/i, /\bchennai\b/i, /\bkolkata\b/i,
+    /\bmumbai\b/i, /\bpune\b/i, /\bahmedabad\b/i, /\bjaipur\b/i, /\bindore\b/i, /\blucknow\b/i
+  ];
+  const pickKnownCity = (line = "") => {
+    const text = String(line || "").trim();
+    if (!text) return "";
+    for (const pattern of knownCityPatterns) {
+      const m = text.match(pattern);
+      if (!m) continue;
+      const city = sanitizeCvCandidateLocation(String(m[0] || "").trim());
+      if (city) return city;
+    }
+    return "";
+  };
   for (const line of scope) {
     const match = line.match(/\blocation\s*[:\-]\s*([A-Za-z][A-Za-z\s,/-]{1,48})/i);
     if (!match) continue;
     const location = sanitizeCvCandidateLocation(String(match[1] || "").trim());
     if (location) return location;
+  }
+  for (const line of scope) {
+    const city = pickKnownCity(line);
+    if (city) return city;
   }
   return "";
 }
