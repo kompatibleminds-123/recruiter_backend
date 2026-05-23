@@ -4891,8 +4891,8 @@ function InterviewCvParseModal({
                     <thead>
                       <tr>
                         <th>Field</th>
-                        <th>Existing value</th>
-                        <th>CV value</th>
+                        <th>Existing value (saved)</th>
+                        <th>Parsed from CV (new)</th>
                         <th>Apply CV?</th>
                       </tr>
                     </thead>
@@ -20441,7 +20441,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
         open={interviewCvParseModalOpen}
         busy={interviewCvParseBusy}
         preview={interviewCvParsePreview}
-        draft={null}
+        draft={interviewForm}
         onClose={() => {
           if (interviewCvParseBusy) return;
           setInterviewCvParseModalOpen(false);

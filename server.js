@@ -9284,6 +9284,14 @@ function resolveCandidateLocationFromCv({ experienceHistory = [], normalizedLoca
       if (known) return known;
     }
   }
+  // If parser attached city inside company/location fields of experience rows
+  // (common in compact CVs), prefer those before header/footer fallback.
+  for (const row of rows) {
+    const fromCompanyField = extractKnownIndianCity(String(row?.company_name || "").trim());
+    if (fromCompanyField) return fromCompanyField;
+    const fromLocationField = extractKnownIndianCity(String(row?.location || "").trim());
+    if (fromLocationField) return fromLocationField;
+  }
   for (const row of rows) {
     const fromRowRaw = extractLocationFromExperienceRawLine(String(row?.raw_line || "").trim());
     if (!fromRowRaw) continue;
