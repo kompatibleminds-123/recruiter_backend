@@ -8291,11 +8291,15 @@ function PortalApp({ token, onLogout }) {
   useEffect(() => {
     if (!token) return;
     const pathname = String(location?.pathname || "/dashboard").trim() || "/dashboard";
+    const refreshGateTabs = new Set(["/captured-notes", "/dashboard", "/candidates", "/assessments", "/applicants"]);
+    if (!refreshGateTabs.has(pathname)) return;
+
     const now = Date.now();
-    const fastTabs = new Set(["/dashboard", "/captured-notes", "/assessments", "/interview", "/candidates"]);
-    const ttlMs = fastTabs.has(pathname) ? 5000 : 30000;
-    const lastForPath = Number(lastWorkspaceRefreshByPathRef.current?.[pathname] || 0);
-    if (now - lastForPath < ttlMs) return;
+    const TEN_MIN_MS = 10 * 60 * 1000;
+    const lastFullRefreshAt = Number(lastWorkspaceRefreshAtRef.current || 0);
+    const isStale = !lastFullRefreshAt || (now - lastFullRefreshAt) > TEN_MIN_MS;
+    if (!isStale) return;
+
     lastWorkspaceRefreshByPathRef.current = {
       ...(lastWorkspaceRefreshByPathRef.current || {}),
       [pathname]: now
