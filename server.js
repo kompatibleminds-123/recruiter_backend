@@ -9334,6 +9334,26 @@ function resolveCandidateLocationFromCv({ experienceHistory = [], normalizedLoca
   return knownFromHeaderFooter || "";
 }
 
+function normalizeMarketingHeaderKey(value = "") {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "");
+}
+
+function pickMarketingRowValue(row = {}, aliases = []) {
+  const source = row && typeof row === "object" ? row : {};
+  const aliasSet = new Set((Array.isArray(aliases) ? aliases : []).map((item) => normalizeMarketingHeaderKey(item)).filter(Boolean));
+  if (!aliasSet.size) return "";
+  const entries = Object.entries(source || {});
+  for (const [key, value] of entries) {
+    if (!aliasSet.has(normalizeMarketingHeaderKey(key))) continue;
+    const text = String(value == null ? "" : value).trim();
+    if (text) return text;
+  }
+  return "";
+}
+
 function looksLikeTaglineText(value = "") {
   const text = String(value || "").trim().toLowerCase();
   if (!text) return false;
@@ -10797,20 +10817,73 @@ const server = http.createServer(async (req, res) => {
       if (!rows.length) throw new Error("CSV content is empty.");
       const now = toIsoNow();
       const normalizedRows = rows
-        .map((row) => ({
-          name: String(row.name || row.full_name || "").trim(),
-          email: normalizeMarketingEmail(row.email || row.email_id || ""),
-          phone: String(row.phone || row.mobile || "").trim(),
-          company_name: String(row.company || row.company_name || "").trim(),
-          designation: String(row.designation || row.role || "").trim(),
-          category: String(row.category || row.segment || "").trim(),
-          categories: normalizeMarketingCategories(row.categories || row.category || row.segment || ""),
-          source: "csv_import",
-          status: "active",
-          tags: [],
-          notes: "",
-          created_by: actor.id
-        }))
+        .map((row) => {
+          const nameValue = pickMarketingRowValue(row, [
+            "name",
+            "full name",
+            "candidate name",
+            "prospect name",
+            "contact name"
+          ]);
+          const emailValue = pickMarketingRowValue(row, [
+            "email",
+            "email id",
+            "email address",
+            "mail",
+            "work email"
+          ]);
+          const phoneValue = pickMarketingRowValue(row, [
+            "phone",
+            "mobile",
+            "mobile number",
+            "phone number",
+            "contact number",
+            "whatsapp",
+            "whatsapp number"
+          ]);
+          const companyValue = pickMarketingRowValue(row, [
+            "company",
+            "company name",
+            "organization",
+            "organisation",
+            "current company"
+          ]);
+          const designationValue = pickMarketingRowValue(row, [
+            "designation",
+            "role",
+            "title",
+            "job title",
+            "current designation"
+          ]);
+          const categoryValue = pickMarketingRowValue(row, [
+            "category",
+            "segment",
+            "vertical",
+            "industry",
+            "function"
+          ]);
+          const categoriesValue = pickMarketingRowValue(row, [
+            "categories",
+            "category list",
+            "segments",
+            "segment list",
+            "tags"
+          ]);
+          return {
+            name: String(nameValue || "").trim(),
+            email: normalizeMarketingEmail(emailValue || ""),
+            phone: String(phoneValue || "").trim(),
+            company_name: String(companyValue || "").trim(),
+            designation: String(designationValue || "").trim(),
+            category: String(categoryValue || "").trim(),
+            categories: normalizeMarketingCategories(categoriesValue || categoryValue || ""),
+            source: "csv_import",
+            status: "active",
+            tags: [],
+            notes: "",
+            created_by: actor.id
+          };
+        })
         .filter((item) => item.name && item.email);
       if (!normalizedRows.length) throw new Error("No valid rows found (need name + email).");
 
