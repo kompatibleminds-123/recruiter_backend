@@ -7952,12 +7952,14 @@ function PortalApp({ token, onLogout }) {
       includeClientUsers = true,
       includeEmployeeUsers = true,
       includeSharedPresets = true,
-      includeEmailSettings = true
+      includeEmailSettings = true,
+      forceFiveTabsRefresh = false
     } = options || {};
     const pathname = String(location?.pathname || "/dashboard").trim() || "/dashboard";
+    const forceCore = Boolean(forceFiveTabsRefresh);
     const isMarketingRoute = pathname === "/marketing" || pathname === "/marketing-module";
-    const needsDashboard = pathname === "/dashboard";
-    const needsApplicants = pathname === "/dashboard" || pathname === "/applicants";
+    const needsDashboard = pathname === "/dashboard" || forceCore;
+    const needsApplicants = pathname === "/dashboard" || pathname === "/applicants" || forceCore;
     const needsIntake = pathname === "/intake-settings" || pathname === "/jobs" || pathname === "/applicants";
     const needsJobs = !isMarketingRoute && pathname !== "/mail-settings" && pathname !== "/login-settings" && pathname !== "/plan";
     const needsUsers = needsJobs || pathname === "/login-settings";
@@ -7966,17 +7968,19 @@ function PortalApp({ token, onLogout }) {
       pathname === "/dashboard" ||
       pathname === "/captured-notes" ||
       pathname === "/assessments" ||
-      pathname === "/interview";
-    const needsDatabaseCandidates = pathname === "/candidates";
+      pathname === "/interview" ||
+      forceCore;
+    const needsDatabaseCandidates = pathname === "/candidates" || forceCore;
     const needsAssessments =
       pathname === "/dashboard" ||
       pathname === "/captured-notes" ||
       pathname === "/assessments" ||
       pathname === "/client-share" ||
-      pathname === "/interview";
+      pathname === "/interview" ||
+      forceCore;
     // Candidate smart-search chips (Shared this week/today) need conversion timestamps,
     // which are best sourced from assessment events.
-    const needsAssessmentEvents = includeEvents && (pathname === "/dashboard" || pathname === "/assessments" || pathname === "/candidates");
+    const needsAssessmentEvents = includeEvents && (pathname === "/dashboard" || pathname === "/assessments" || pathname === "/candidates" || forceCore);
     const needsEmailSettings = includeEmailSettings && pathname === "/mail-settings";
     // Billing/access flags are used in sidebar gating across the app,
     // so fetch billing overview on all recruiter routes (plans list only needed on /plan).
@@ -8305,7 +8309,7 @@ function PortalApp({ token, onLogout }) {
       [pathname]: now
     };
     lastWorkspaceRefreshAtRef.current = now;
-    void loadWorkspace().catch((error) => setStatus("workspace", String(error?.message || error), "error"));
+    void loadWorkspace({ forceFiveTabsRefresh: true }).catch((error) => setStatus("workspace", String(error?.message || error), "error"));
   }, [token, location?.pathname]);
 
   useEffect(() => {

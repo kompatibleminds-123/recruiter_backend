@@ -598,9 +598,37 @@ function parseDateRange(text) {
 function parseMonthYearLoose(text) {
   const value = String(text || "").trim();
   if (!value) return null;
-  if (/^present$/i.test(value)) {
+  if (/^(present|current|ongoing|till date|to date|now)$/i.test(value)) {
     const now = new Date();
     return { year: now.getFullYear(), month: now.getMonth() };
+  }
+  // DD-MM-YYYY / DD/MM/YYYY
+  const dmy = value.match(/\b(\d{1,2})[/-](\d{1,2})[/-](19\d{2}|20\d{2})\b/);
+  if (dmy) {
+    const month = Number(dmy[2]) - 1;
+    const year = Number(dmy[3]);
+    if (month >= 0 && month <= 11) return { year, month };
+  }
+  // YYYY-MM-DD / YYYY/MM/DD
+  const ymd = value.match(/\b(19\d{2}|20\d{2})[/-](\d{1,2})[/-](\d{1,2})\b/);
+  if (ymd) {
+    const year = Number(ymd[1]);
+    const month = Number(ymd[2]) - 1;
+    if (month >= 0 && month <= 11) return { year, month };
+  }
+  // MM-YYYY / MM/YYYY
+  const monthYear = value.match(/\b(\d{1,2})[/-](19\d{2}|20\d{2})\b/);
+  if (monthYear) {
+    const month = Number(monthYear[1]) - 1;
+    const year = Number(monthYear[2]);
+    if (month >= 0 && month <= 11) return { year, month };
+  }
+  // YYYY-MM / YYYY/MM
+  const yearMonth = value.match(/\b(19\d{2}|20\d{2})[/-](\d{1,2})\b/);
+  if (yearMonth) {
+    const year = Number(yearMonth[1]);
+    const month = Number(yearMonth[2]) - 1;
+    if (month >= 0 && month <= 11) return { year, month };
   }
   const monthMatch = value.match(/\b(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\.?\s+(\d{4})\b/i);
   if (monthMatch) {
@@ -805,8 +833,187 @@ function extractPrimaryLinkedIn(rawText) {
   return value;
 }
 
+const INDIA_CITY_CANONICAL_MAP = new Map([
+  ["delhi", "Delhi"],
+  ["new delhi", "New Delhi"],
+  ["delhi ncr", "Delhi NCR"],
+  ["noida", "Noida"],
+  ["greater noida", "Greater Noida"],
+  ["ghaziabad", "Ghaziabad"],
+  ["gurgaon", "Gurugram"],
+  ["gurugram", "Gurugram"],
+  ["faridabad", "Faridabad"],
+  ["sonipat", "Sonipat"],
+  ["panipat", "Panipat"],
+  ["karnal", "Karnal"],
+  ["manesar", "Manesar"],
+  ["mumbai", "Mumbai"],
+  ["navi mumbai", "Navi Mumbai"],
+  ["thane", "Thane"],
+  ["pune", "Pune"],
+  ["nagpur", "Nagpur"],
+  ["nashik", "Nashik"],
+  ["aurangabad", "Aurangabad"],
+  ["kolhapur", "Kolhapur"],
+  ["bangalore", "Bengaluru"],
+  ["bengaluru", "Bengaluru"],
+  ["mysore", "Mysuru"],
+  ["mysuru", "Mysuru"],
+  ["mangalore", "Mangalore"],
+  ["hubli", "Hubli"],
+  ["belgaum", "Belagavi"],
+  ["belagavi", "Belagavi"],
+  ["hyderabad", "Hyderabad"],
+  ["secunderabad", "Secunderabad"],
+  ["warangal", "Warangal"],
+  ["vijayawada", "Vijayawada"],
+  ["visakhapatnam", "Visakhapatnam"],
+  ["vizag", "Visakhapatnam"],
+  ["guntur", "Guntur"],
+  ["tirupati", "Tirupati"],
+  ["chennai", "Chennai"],
+  ["coimbatore", "Coimbatore"],
+  ["madurai", "Madurai"],
+  ["salem", "Salem"],
+  ["trichy", "Tiruchirappalli"],
+  ["tiruchirappalli", "Tiruchirappalli"],
+  ["tirunelveli", "Tirunelveli"],
+  ["kolkata", "Kolkata"],
+  ["howrah", "Howrah"],
+  ["durgapur", "Durgapur"],
+  ["siliguri", "Siliguri"],
+  ["asansol", "Asansol"],
+  ["ahmedabad", "Ahmedabad"],
+  ["gandhinagar", "Gandhinagar"],
+  ["surat", "Surat"],
+  ["vadodara", "Vadodara"],
+  ["rajkot", "Rajkot"],
+  ["bhavnagar", "Bhavnagar"],
+  ["jaipur", "Jaipur"],
+  ["udaipur", "Udaipur"],
+  ["jodhpur", "Jodhpur"],
+  ["kota", "Kota"],
+  ["ajmer", "Ajmer"],
+  ["indore", "Indore"],
+  ["bhopal", "Bhopal"],
+  ["gwalior", "Gwalior"],
+  ["jabalpur", "Jabalpur"],
+  ["lucknow", "Lucknow"],
+  ["kanpur", "Kanpur"],
+  ["varanasi", "Varanasi"],
+  ["prayagraj", "Prayagraj"],
+  ["allahabad", "Prayagraj"],
+  ["agra", "Agra"],
+  ["meerut", "Meerut"],
+  ["aligarh", "Aligarh"],
+  ["chandigarh", "Chandigarh"],
+  ["mohali", "Mohali"],
+  ["panchkula", "Panchkula"],
+  ["zirakpur", "Zirakpur"],
+  ["patna", "Patna"],
+  ["ranchi", "Ranchi"],
+  ["jamshedpur", "Jamshedpur"],
+  ["dhanbad", "Dhanbad"],
+  ["bhubaneswar", "Bhubaneswar"],
+  ["cuttack", "Cuttack"],
+  ["rourkela", "Rourkela"],
+  ["raipur", "Raipur"],
+  ["bilaspur", "Bilaspur"],
+  ["kochi", "Kochi"],
+  ["cochin", "Kochi"],
+  ["trivandrum", "Thiruvananthapuram"],
+  ["thiruvananthapuram", "Thiruvananthapuram"],
+  ["kozhikode", "Kozhikode"],
+  ["calicut", "Kozhikode"],
+  ["goa", "Goa"],
+  ["panaji", "Panaji"],
+  ["margao", "Margao"],
+  ["dehradun", "Dehradun"],
+  ["haridwar", "Haridwar"],
+  ["shimla", "Shimla"],
+  ["jammu", "Jammu"],
+  ["srinagar", "Srinagar"],
+  ["amritsar", "Amritsar"],
+  ["ludhiana", "Ludhiana"],
+  ["jalandhar", "Jalandhar"],
+  ["patiala", "Patiala"],
+  ["guwahati", "Guwahati"],
+  ["shillong", "Shillong"],
+  ["imphal", "Imphal"],
+  ["agartala", "Agartala"],
+  ["bikaner", "Bikaner"],
+  ["hisar", "Hisar"],
+  ["rohtak", "Rohtak"],
+  ["ambala", "Ambala"],
+  ["anand", "Anand"],
+  ["nadiad", "Nadiad"],
+  ["mehsana", "Mehsana"],
+  ["vapi", "Vapi"],
+  ["ankleshwar", "Ankleshwar"],
+  ["tiruppur", "Tiruppur"],
+  ["erode", "Erode"],
+  ["hosur", "Hosur"],
+  ["tumkur", "Tumkur"],
+  ["vellore", "Vellore"],
+  ["kanchipuram", "Kanchipuram"],
+  ["satara", "Satara"],
+  ["sangli", "Sangli"],
+  ["solapur", "Solapur"],
+  ["ujjain", "Ujjain"],
+  ["ratlam", "Ratlam"],
+  ["bareilly", "Bareilly"],
+  ["moradabad", "Moradabad"],
+  ["mathura", "Mathura"],
+  ["jhansi", "Jhansi"],
+  ["rewari", "Rewari"],
+  ["bhiwadi", "Bhiwadi"],
+  ["neemrana", "Neemrana"],
+  ["kharagpur", "Kharagpur"],
+  ["silvassa", "Silvassa"],
+  ["pondicherry", "Puducherry"],
+  ["puducherry", "Puducherry"],
+  ["bombay", "Mumbai"],
+  ["calcutta", "Kolkata"],
+  ["madras", "Chennai"]
+]);
+
+const INDIA_CITY_ALIAS_KEYS = Array.from(INDIA_CITY_CANONICAL_MAP.keys()).sort((a, b) => b.length - a.length);
+
+function escapeRegexLiteral(value = "") {
+  return String(value || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function detectWhitelistedCity(text = "") {
+  const source = String(text || "").toLowerCase();
+  if (!source) return "";
+  for (const alias of INDIA_CITY_ALIAS_KEYS) {
+    const pattern = new RegExp(`(^|[^a-z])${escapeRegexLiteral(alias)}([^a-z]|$)`, "i");
+    if (!pattern.test(source)) continue;
+    return INDIA_CITY_CANONICAL_MAP.get(alias) || "";
+  }
+  return "";
+}
+
 function extractPrimaryLocation(lines, rawText) {
   const text = String(rawText || "");
+  const rawLines = Array.isArray(lines) ? lines : [];
+
+  // Deterministic location priority:
+  // 1) Current experience block
+  // 2) Top of CV
+  // 3) Bottom of CV
+  const currentExperienceText = extractExperienceSection(text);
+  const topBlock = rawLines.slice(0, 40).join("\n");
+  const bottomBlock = rawLines.slice(Math.max(0, rawLines.length - 40)).join("\n");
+
+  const cityFromCurrentExperience = detectWhitelistedCity(currentExperienceText);
+  if (cityFromCurrentExperience) return cityFromCurrentExperience;
+  const cityFromTop = detectWhitelistedCity(topBlock);
+  if (cityFromTop) return cityFromTop;
+  const cityFromBottom = detectWhitelistedCity(bottomBlock);
+  if (cityFromBottom) return cityFromBottom;
+
+  // Fallback to legacy heuristics if whitelist match is unavailable.
   const labeled =
     text.match(/\b(?:location|current\s*location|residing\s*at)\s*[:|-]\s*([A-Za-z][A-Za-z\s,.-]{1,80})/i) ||
     text.match(/\b(?:city)\s*[:|-]\s*([A-Za-z][A-Za-z\s,.-]{1,60})/i);
@@ -837,7 +1044,6 @@ function extractPrimaryLocation(lines, rawText) {
     "mumbai", "pune", "bengaluru", "bangalore", "hyderabad", "delhi", "gurugram", "noida", "chennai",
     "kolkata", "ahmedabad", "jaipur", "indore", "nagpur", "lucknow", "surat", "kochi", "coimbatore"
   ]);
-  const rawLines = Array.isArray(lines) ? lines : [];
   for (const line of rawLines.slice(0, 35)) {
     const value = String(line || "").trim().replace(/[|?]+/g, " ");
     if (!value || value.length > 60) continue;
@@ -2458,6 +2664,189 @@ function extractCurrentRoleFromTimeline(timeline) {
   };
 }
 
+function normalizeCompanyIdentity(value = "") {
+  return normalizeLooseText(String(value || ""))
+    .toLowerCase()
+    .replace(/\b(private|pvt|ltd|limited|llp|inc|corp|corporation|co|company|technologies|technology|solutions|systems|consulting|group|labs)\b/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function isPresentLikeText(value = "") {
+  return /\b(present|current|ongoing|till date|to date|now)\b/i.test(String(value || ""));
+}
+
+function parseTimelinePoint(value = "", preferEnd = false) {
+  const raw = String(value || "").trim();
+  if (!raw) return null;
+  if (isPresentLikeText(raw)) {
+    const now = new Date();
+    return { year: now.getFullYear(), month: now.getMonth() };
+  }
+  const parsed = parseMonthYearLoose(raw);
+  if (!parsed) return null;
+  if (/^\d{4}$/.test(raw)) {
+    return { year: parsed.year, month: preferEnd ? 11 : 0 };
+  }
+  return parsed;
+}
+
+function postProcessCareerTimelineRows(experienceTimeline = []) {
+  const rows = Array.isArray(experienceTimeline)
+    ? experienceTimeline.map((row) => ({
+      ...row,
+      company: normalizeCompanyDisplay(String(row?.company || "")),
+      designation: cleanExperienceTitle(String(row?.designation || "")),
+      startDate: String(row?.startDate || "").trim(),
+      endDate: String(row?.endDate || "").trim(),
+      sourceText: String(row?.sourceText || "").trim()
+    }))
+    : [];
+  if (!rows.length) {
+    return {
+      timeline: [],
+      currentCompany: "",
+      currentDesignation: "",
+      currentOrgTenureMonths: 0,
+      needsReview: false,
+      warnings: []
+    };
+  }
+
+  // Rule 4: project/domain headings should never become company.
+  for (const row of rows) {
+    const company = String(row.company || "").trim();
+    if (
+      isProjectNoiseLine(company) ||
+      isHardRejectedExperienceLine(company) ||
+      looksLikeEducationText(company) ||
+      looksLikeSentenceLine(company)
+    ) {
+      row.company = "";
+    }
+  }
+
+  // Rule 3 (grouped company heading): carry company downward for role rows with missing company.
+  let lastCompany = "";
+  for (const row of rows) {
+    const company = String(row.company || "").trim();
+    const hasStart = Boolean(parseTimelinePoint(row.startDate, false));
+    if (company) {
+      lastCompany = company;
+      continue;
+    }
+    if (lastCompany && hasStart && String(row.designation || "").trim()) {
+      row.company = lastCompany;
+    }
+  }
+
+  const validIndices = rows
+    .map((row, idx) => ({ idx, start: parseTimelinePoint(row.startDate, false) }))
+    .filter((item) => Boolean(item.start))
+    .map((item) => item.idx);
+
+  if (!validIndices.length) {
+    return {
+      timeline: rows,
+      currentCompany: "",
+      currentDesignation: "",
+      currentOrgTenureMonths: 0,
+      needsReview: true,
+      warnings: ["No reliable timeline start dates found for current-role resolution."]
+    };
+  }
+
+  const warnings = [];
+  let selectedIdx = -1;
+
+  // Rule 2.1: explicit present/current row.
+  const explicitPresentIdx = validIndices.find((idx) => {
+    const row = rows[idx];
+    return isPresentLikeText(row.endDate) || isPresentLikeText(row.sourceText);
+  });
+  if (explicitPresentIdx >= 0) {
+    selectedIdx = explicitPresentIdx;
+  }
+
+  // Rule 1 + Rule 2.2: latest open-ended start-only row (top/latest, no newer above).
+  if (selectedIdx < 0) {
+    const topValidIdx = validIndices[0];
+    const topRow = rows[topValidIdx];
+    const topHasEnd = Boolean(parseTimelinePoint(topRow.endDate, true));
+    const topHasPresentText = isPresentLikeText(topRow.endDate) || isPresentLikeText(topRow.sourceText);
+    if (!topHasEnd && !topHasPresentText) {
+      topRow.endDate = "Present";
+      selectedIdx = topValidIdx;
+    }
+  }
+
+  // Rule 2.3 + 2.4: latest end date, tie-break by higher appearance.
+  if (selectedIdx < 0) {
+    let best = null;
+    for (const idx of validIndices) {
+      const row = rows[idx];
+      const end = parseTimelinePoint(row.endDate, true) || parseTimelinePoint(row.startDate, true);
+      const endKey = monthIndex(end);
+      if (endKey === null) continue;
+      if (!best || endKey > best.endKey || (endKey === best.endKey && idx < best.idx)) {
+        best = { idx, endKey };
+      }
+    }
+    if (best) selectedIdx = best.idx;
+  }
+
+  const currentRow = selectedIdx >= 0 ? rows[selectedIdx] : null;
+  const currentCompany = String(currentRow?.company || "").trim();
+  const currentDesignation = String(currentRow?.designation || "").trim();
+
+  let currentOrgTenureMonths = 0;
+  if (currentRow && currentCompany) {
+    const target = normalizeCompanyIdentity(currentCompany);
+    const startCurrent = parseTimelinePoint(currentRow.startDate, false);
+    const endCurrent = parseTimelinePoint(currentRow.endDate || "Present", true);
+    let minStartIdx = monthIndex(startCurrent);
+    let prevStartIdx = monthIndex(startCurrent);
+    let prevEndIdx = monthIndex(endCurrent);
+    currentOrgTenureMonths = (minStartIdx !== null && prevEndIdx !== null && prevEndIdx >= minStartIdx)
+      ? (prevEndIdx - minStartIdx + 1)
+      : 0;
+
+    for (let i = selectedIdx + 1; i < rows.length; i += 1) {
+      const row = rows[i];
+      const companyNorm = normalizeCompanyIdentity(row.company || "");
+      if (!companyNorm) break;
+      if (companyNorm !== target) break;
+      const start = parseTimelinePoint(row.startDate, false);
+      const end = parseTimelinePoint(row.endDate, true) || start;
+      const sIdx = monthIndex(start);
+      const eIdx = monthIndex(end);
+      if (sIdx === null || eIdx === null) break;
+      if (prevStartIdx !== null) {
+        const gapMonths = prevStartIdx - eIdx - 1;
+        if (gapMonths > 1) break; // allow contiguous/overlap/<=1 month gap only
+      }
+      minStartIdx = minStartIdx === null ? sIdx : Math.min(minStartIdx, sIdx);
+      prevStartIdx = sIdx;
+      prevEndIdx = eIdx;
+    }
+    if (minStartIdx !== null && prevEndIdx !== null && prevEndIdx >= minStartIdx) {
+      currentOrgTenureMonths = prevEndIdx - minStartIdx + 1;
+    }
+  }
+
+  const needsReview = !currentCompany || !currentDesignation;
+  if (needsReview) warnings.push("Current role inferred but company/designation is incomplete; review timeline rows.");
+
+  return {
+    timeline: rows,
+    currentCompany,
+    currentDesignation,
+    currentOrgTenureMonths: Math.max(0, Number(currentOrgTenureMonths || 0)),
+    needsReview,
+    warnings
+  };
+}
+
 function repairTimelineRowsFromExperienceLines(timeline = [], experienceLines = []) {
   if (!Array.isArray(timeline) || !timeline.length || !Array.isArray(experienceLines) || !experienceLines.length) {
     return timeline;
@@ -2836,16 +3225,22 @@ async function parseCandidatePayload(payload) {
       sourceText
     };
   });
-  const currentFromExperience = experienceTimeline.find((row) => normalizeLooseText(row?.endDate || "").toLowerCase() === "present") || experienceTimeline[0] || {};
-  const outputCurrentCompany = normalizeCompanyDisplay(String(currentFromExperience.company || currentRole.currentCompany || ""));
-  const outputCurrentDesignation = cleanExperienceTitle(String(currentFromExperience.designation || currentRole.currentDesignation || ""));
+  const timelinePostProcessed = postProcessCareerTimelineRows(experienceTimeline);
+  const finalExperienceTimeline = Array.isArray(timelinePostProcessed.timeline) ? timelinePostProcessed.timeline : experienceTimeline;
+  const outputCurrentCompany = normalizeCompanyDisplay(String(timelinePostProcessed.currentCompany || currentRole.currentCompany || ""));
+  const outputCurrentDesignation = cleanExperienceTitle(String(timelinePostProcessed.currentDesignation || currentRole.currentDesignation || ""));
+  const outputCurrentOrgTenureMonths = timelinePostProcessed.currentOrgTenureMonths > 0
+    ? timelinePostProcessed.currentOrgTenureMonths
+    : currentOrgTenureMonths;
+  const outputCurrentOrgTenure = outputCurrentOrgTenureMonths > 0 ? formatMonthCount(outputCurrentOrgTenureMonths) : "";
+  const outputNeedsReview = Boolean(needsReview || timelinePostProcessed.needsReview);
 
   return {
     candidateName,
     totalExperience,
     currentCompany: outputCurrentCompany,
     currentDesignation: outputCurrentDesignation,
-    currentOrgTenure,
+    currentOrgTenure: outputCurrentOrgTenure,
     emailId,
     phoneNumber,
     linkedinUrl,
@@ -2860,19 +3255,19 @@ async function parseCandidatePayload(payload) {
     gaps: parsed.gaps,
     shortStints: parsed.shortStints,
     timelineConfidence,
-    experienceTimeline,
+    experienceTimeline: finalExperienceTimeline,
     education: finalEducation,
     highestQualification,
     skills,
-    parserWarnings,
-    needsReview,
+    parserWarnings: [...parserWarnings, ...(timelinePostProcessed.warnings || [])],
+    needsReview: outputNeedsReview,
     confidence,
     experienceMetrics: {
       claimedTotalExperience,
       claimedTotalMonths,
       timelineSpanMonths,
       timelineActiveMonths,
-      currentOrgTenureMonths
+      currentOrgTenureMonths: outputCurrentOrgTenureMonths
     },
     highlights: parsed.highlights,
     rawTextPreview: rawText.slice(0, 2000),
