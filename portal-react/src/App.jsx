@@ -1415,6 +1415,15 @@ function parseTagInputValue(raw = "") {
     .filter(Boolean);
 }
 
+function isLikelyRoleLikeLocation(value = "") {
+  const text = String(value || "").trim().toLowerCase();
+  if (!text) return false;
+  if (/\b(assistant|manager|engineer|developer|estimator|executive|analyst|technician|consultant|specialist|trainee|intern|head|lead)\b/.test(text)) {
+    return true;
+  }
+  return false;
+}
+
 function parseCvYm(value = "") {
   const text = String(value || "").trim();
   if (!text) return null;
@@ -16333,13 +16342,25 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
       const resolvedTotalExperience = String(strictSummary.totalExperience || "").trim();
       const resolvedCurrentOrgTenure = String(strictSummary.currentOrgTenure || "").trim();
       const resolvedQualification = String(strictSummary.highestEducation || "").trim();
+      let resolvedLocation = String(fixedSummary?.location || parsedResult?.location || "").trim();
+      const lcResolvedCompany = String(resolvedCompany || "").trim().toLowerCase();
+      const lcResolvedDesignation = String(resolvedDesignation || "").trim().toLowerCase();
+      const lcResolvedLocation = resolvedLocation.toLowerCase();
+      if (
+        !resolvedLocation ||
+        isLikelyRoleLikeLocation(resolvedLocation) ||
+        lcResolvedLocation === lcResolvedCompany ||
+        lcResolvedLocation === lcResolvedDesignation
+      ) {
+        resolvedLocation = "";
+      }
       setNewDraftCvParsePreview({
         summary: {
           candidateName: String(fixedSummary?.candidate_name || parsedResult?.candidateName || "").trim(),
           phoneNumber: String(fixedSummary?.phone || parsedResult?.phoneNumber || "").trim(),
           emailId: String(fixedSummary?.email || parsedResult?.emailId || "").trim(),
           linkedinUrl: String(fixedSummary?.linkedin || parsedResult?.linkedinUrl || "").trim(),
-          location: String(fixedSummary?.location || parsedResult?.location || "").trim(),
+          location: resolvedLocation,
           currentCompany: resolvedCompany,
           currentDesignation: resolvedDesignation,
           totalExperience: resolvedTotalExperience,
@@ -16360,7 +16381,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
         current_designation: resolvedDesignation || String(parsedResult?.currentDesignation || "").trim(),
         total_experience: resolvedTotalExperience,
         current_org_tenure: resolvedCurrentOrgTenure,
-        location: String(parsedResult?.location || "").trim(),
+        location: resolvedLocation,
         current_ctc: String(parsedResult?.currentCtc || "").trim(),
         notice_period: String(parsedResult?.noticePeriod || "").trim(),
         highest_education: resolvedQualification
