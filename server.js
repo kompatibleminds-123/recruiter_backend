@@ -9160,6 +9160,7 @@ function sanitizeCvCandidateLocation(value = "") {
   const text = String(value || "").trim();
   if (!text) return "";
   const lower = text.toLowerCase();
+  if (/^(present|current|ongoing|till\s*date|to\s*date|now)$/i.test(text)) return "";
   // Reject responsibility/project fragments often captured after the word "location".
   if (/(scouting|set\s+design|post-?production|production|responsib|collaborat|coordinat|managed|developed|worked|assisted)/i.test(lower)) {
     return "";
@@ -9283,25 +9284,27 @@ function resolveCandidateLocationFromCv({ experienceHistory = [], normalizedLoca
       && String(item?.end_date || "").trim() === String(current.end || "").trim()
     );
     const fromCurrentRow = sanitizeCvCandidateLocation(String(match?.location || "").trim());
-    if (fromCurrentRow) return fromCurrentRow;
+    if (fromCurrentRow) {
+      const known = extractKnownIndianCity(fromCurrentRow);
+      if (known) return known;
+    }
     const fromCurrentRawLine = extractLocationFromExperienceRawLine(String(match?.raw_line || "").trim());
-    if (fromCurrentRawLine) return fromCurrentRawLine;
+    if (fromCurrentRawLine) {
+      const known = extractKnownIndianCity(fromCurrentRawLine);
+      if (known) return known;
+    }
   }
   for (const row of rows) {
     const fromRowRaw = extractLocationFromExperienceRawLine(String(row?.raw_line || "").trim());
-    if (fromRowRaw) return fromRowRaw;
+    if (!fromRowRaw) continue;
+    const known = extractKnownIndianCity(fromRowRaw);
+    if (known) return known;
   }
   const explicit = pickCityFromCompoundLocation(
     sanitizeCvCandidateLocation(String(normalizedLocation || "").trim())
   );
   const explicitKnownCity = extractKnownIndianCity(explicit);
   if (explicitKnownCity) return explicitKnownCity;
-  if (explicit) {
-    const token = explicit.toLowerCase();
-    if (!companyTokens.has(token) && !designationTokens.has(token)) {
-      return explicit;
-    }
-  }
   // Multi-column CV fallback:
   // try to recover city shown near current company block even when it is not attached to role raw line.
   const raw = String(rawText || "");
@@ -9320,24 +9323,17 @@ function resolveCandidateLocationFromCv({ experienceHistory = [], normalizedLoca
             );
             const known = extractKnownIndianCity(candidate);
             if (known) return known;
-            if (candidate) {
-              const token = candidate.toLowerCase();
-              if (!companyTokens.has(token) && !designationTokens.has(token)) return candidate;
-            }
           }
           const candidate = pickCityFromCompoundLocation(sanitizeCvCandidateLocation(line));
           const known = extractKnownIndianCity(candidate);
           if (known) return known;
-          if (!candidate) continue;
-          const token = candidate.toLowerCase();
-          if (companyTokens.has(token) || designationTokens.has(token)) continue;
-          if (/\b(india|remote)\b/i.test(candidate) || /,/.test(candidate)) return candidate;
-          if (/^[A-Za-z]+$/.test(candidate) && candidate.length >= 4) return candidate;
         }
       }
     }
   }
-  return extractHeaderFooterLocation(rawText);
+  const headerFooter = extractHeaderFooterLocation(rawText);
+  const knownFromHeaderFooter = extractKnownIndianCity(headerFooter);
+  return knownFromHeaderFooter || "";
 }
 
 function looksLikeTaglineText(value = "") {
@@ -15286,12 +15282,16 @@ const server = http.createServer(async (req, res) => {
       const cachedCvAnalysis = existingMeta?.cvAnalysisCache && typeof existingMeta.cvAnalysisCache === "object"
         ? existingMeta.cvAnalysisCache
         : null;
+      const cachedFingerprint = String(cachedCvAnalysis?.fingerprint || "").trim();
+      const cachedVersion = String(cachedCvAnalysis?.parseVersion || "").trim();
+      const sameFingerprintAsCached = Boolean(fileFingerprint) && cachedFingerprint === fileFingerprint;
+      const isCurrentParserVersionCached = cachedVersion === CV_PARSE_RESULT_VERSION;
 
       if (
         fileFingerprint &&
         cachedCvAnalysis &&
-        String(cachedCvAnalysis.fingerprint || "").trim() === fileFingerprint &&
-        String(cachedCvAnalysis.parseVersion || "").trim() === CV_PARSE_RESULT_VERSION &&
+        sameFingerprintAsCached &&
+        isCurrentParserVersionCached &&
         cachedCvAnalysis.result
       ) {
         sendJson(res, 200, {
@@ -15334,12 +15334,25 @@ const server = http.createServer(async (req, res) => {
         cvAnalysisCache: {
           ...(existingMeta?.cvAnalysisCache && typeof existingMeta.cvAnalysisCache === "object" ? existingMeta.cvAnalysisCache : {}),
           fingerprint: fileFingerprint,
+          // Keep parser version stamp on pending cache so UI/backend know this upload targets current parser contract.
+          parseVersion: CV_PARSE_RESULT_VERSION,
           storedAt: new Date().toISOString(),
           storedFile: storedFilePayload,
           parsePending: true,
           updatedAt: new Date().toISOString()
         }
       };
+      if (
+        immediateMeta?.cvAnalysisCache &&
+        (sameFingerprintAsCached || !isCurrentParserVersionCached)
+      ) {
+        // Force one fresh parse chance:
+        // do not carry forward old cached result when parser version changed
+        // (or when same fingerprint is explicitly re-uploaded).
+        delete immediateMeta.cvAnalysisCache.result;
+        delete immediateMeta.cvAnalysisCache.timelineConfidence;
+        delete immediateMeta.cvAnalysisCache.timelineConfidenceLabel;
+      }
       await patchCandidate(candidate.id, {
         raw_note: encodeApplicantMetadata(immediateMeta)
       }, { companyId: actor.companyId });
