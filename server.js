@@ -8798,21 +8798,9 @@ function buildCandidateParseResponse(baseResult, normalizedResult, parseMeta = {
     sourceType === "cv"
       ? String(computedCurrentOrgTenure || "").trim()
       : choosePreferredScalar(computedCurrentOrgTenure, aiCurrentOrgTenure);
-  const claimedTotalExperience = String(baseResult?.totalExperience || "").trim();
-  if (sourceType === "cv" && claimedTotalExperience && candidateTotalExperience) {
-    const claimedMonths = Math.round(parseExperienceToYears(claimedTotalExperience) * 12);
-    const computedMonths = Math.round(parseExperienceToYears(candidateTotalExperience) * 12);
-    const timelineRows = Array.isArray(metricTimeline) ? metricTimeline.length : 0;
-    // If timeline is sparse and differs significantly from claimed total, trust claimed value.
-    if (
-      claimedMonths > 0 &&
-      computedMonths > 0 &&
-      timelineRows <= 2 &&
-      Math.abs(claimedMonths - computedMonths) >= 24
-    ) {
-      candidateTotalExperience = claimedTotalExperience;
-    }
-  }
+  // Cross-channel deterministic contract:
+  // for CV source we always keep timeline-derived total experience
+  // so Captured Notes and Interview Panel produce identical totals.
   const rawTextForSearch = String(baseResult?.rawText || "").trim();
   // Do not auto-hide/blank contact details. Keep best available value;
   // reviewers can still see warning flags from validateParseResult.

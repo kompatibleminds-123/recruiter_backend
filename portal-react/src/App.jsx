@@ -12334,10 +12334,11 @@ function PortalApp({ token, onLogout }) {
     try {
       const fileData = await fileToBase64(file);
       const payload = {
-        candidateName: interviewForm.candidateName,
-        emailId: interviewForm.emailId,
-        phoneNumber: interviewForm.phoneNumber,
-        totalExperience: interviewForm.totalExperience,
+        // Keep interview CV parsing isolated from prefilled draft values.
+        candidateName: "",
+        emailId: "",
+        phoneNumber: "",
+        totalExperience: "",
         normalizeWithAi: aiParsingEnabled,
         deferParse: canUseDeferredMode,
         file: {
@@ -12403,7 +12404,7 @@ function PortalApp({ token, onLogout }) {
       const strictSummary = getDeterministicSummaryFromResult(result)
         || deriveStrictCvSummaryFromRows(normalizedExperience, normalizedEducation);
       setInterviewForm((current) => {
-        const analysis = buildInterviewCvAnalysis(current, result, nextStoredFile, normalizedExperience, normalizedEducation);
+        const analysis = buildInterviewCvAnalysis({}, result, nextStoredFile, normalizedExperience, normalizedEducation);
         return { ...current, cvAnalysis: analysis, cvAnalysisApplied: false };
       });
       setInterviewCvParsePreview({
@@ -20440,7 +20441,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
         open={interviewCvParseModalOpen}
         busy={interviewCvParseBusy}
         preview={interviewCvParsePreview}
-        draft={interviewForm}
+        draft={null}
         onClose={() => {
           if (interviewCvParseBusy) return;
           setInterviewCvParseModalOpen(false);
