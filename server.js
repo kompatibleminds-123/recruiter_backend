@@ -8979,6 +8979,41 @@ function sanitizeCvCandidateLocation(value = "") {
   return text;
 }
 
+const KNOWN_INDIAN_CITY_ALIASES = [
+  { canonical: "New Delhi", variants: ["new delhi", "delhi"] },
+  { canonical: "Gurugram", variants: ["gurugram", "gurgaon"] },
+  { canonical: "Noida", variants: ["noida"] },
+  { canonical: "Ghaziabad", variants: ["ghaziabad"] },
+  { canonical: "Bengaluru", variants: ["bengaluru", "bangalore", "bangaluru"] },
+  { canonical: "Hyderabad", variants: ["hyderabad"] },
+  { canonical: "Chennai", variants: ["chennai"] },
+  { canonical: "Kolkata", variants: ["kolkata", "calcutta"] },
+  { canonical: "Mumbai", variants: ["mumbai", "bombay"] },
+  { canonical: "Pune", variants: ["pune"] },
+  { canonical: "Ahmedabad", variants: ["ahmedabad"] },
+  { canonical: "Jaipur", variants: ["jaipur"] },
+  { canonical: "Indore", variants: ["indore"] },
+  { canonical: "Lucknow", variants: ["lucknow"] },
+  { canonical: "Noida", variants: ["noida, uttar pradesh"] },
+  { canonical: "Ghaziabad", variants: ["ghaziabad, uttar pradesh"] }
+];
+
+function extractKnownIndianCity(value = "") {
+  const text = String(value || "").trim().toLowerCase();
+  if (!text) return "";
+  for (const city of KNOWN_INDIAN_CITY_ALIASES) {
+    const variants = Array.isArray(city?.variants) ? city.variants : [];
+    for (const variant of variants) {
+      const token = String(variant || "").trim().toLowerCase();
+      if (!token) continue;
+      const safe = token.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      const pattern = new RegExp(`(^|[^a-z])${safe}([^a-z]|$)`, "i");
+      if (pattern.test(text)) return String(city.canonical || "").trim();
+    }
+  }
+  return "";
+}
+
 function extractLocationFromExperienceRawLine(rawLine = "") {
   const raw = String(rawLine || "").trim();
   if (!raw) return "";
@@ -8996,30 +9031,16 @@ function extractHeaderFooterLocation(rawText = "") {
   const lines = String(rawText || "").replace(/\r/g, "").split("\n").map((line) => String(line || "").trim()).filter(Boolean);
   if (!lines.length) return "";
   const scope = [...lines.slice(0, 40), ...lines.slice(-20)];
-  const knownCityPatterns = [
-    /\bnew\s*delhi\b/i, /\bdelhi\b/i, /\bgurugram\b/i, /\bgurgaon\b/i, /\bnoida\b/i, /\bghaziabad\b/i,
-    /\bbangalore\b/i, /\bbengaluru\b/i, /\bbangaluru\b/i, /\bhyderabad\b/i, /\bchennai\b/i, /\bkolkata\b/i,
-    /\bmumbai\b/i, /\bpune\b/i, /\bahmedabad\b/i, /\bjaipur\b/i, /\bindore\b/i, /\blucknow\b/i
-  ];
-  const pickKnownCity = (line = "") => {
-    const text = String(line || "").trim();
-    if (!text) return "";
-    for (const pattern of knownCityPatterns) {
-      const m = text.match(pattern);
-      if (!m) continue;
-      const city = sanitizeCvCandidateLocation(String(m[0] || "").trim());
-      if (city) return city;
-    }
-    return "";
-  };
   for (const line of scope) {
     const match = line.match(/\blocation\s*[:\-]\s*([A-Za-z][A-Za-z\s,/-]{1,48})/i);
     if (!match) continue;
+    const fromKnown = extractKnownIndianCity(String(match[1] || "").trim());
+    if (fromKnown) return fromKnown;
     const location = sanitizeCvCandidateLocation(String(match[1] || "").trim());
     if (location) return location;
   }
   for (const line of scope) {
-    const city = pickKnownCity(line);
+    const city = extractKnownIndianCity(line);
     if (city) return city;
   }
   return "";
@@ -9037,6 +9058,19 @@ function resolveCandidateLocationFromCv({ experienceHistory = [], normalizedLoca
       .map((item) => String(item?.designation || "").trim().toLowerCase())
       .filter(Boolean)
   );
+  const pickCityFromCompoundLocation = (value = "") => {
+    const rawValue = String(value || "").trim();
+    if (!rawValue) return "";
+    const parts = rawValue.split(",").map((part) => String(part || "").trim()).filter(Boolean);
+    if (parts.length < 2) return rawValue;
+    const left = parts[0].toLowerCase();
+    const right = parts.slice(1).join(", ").trim();
+    if (!right) return rawValue;
+    if (companyTokens.has(left) || designationTokens.has(left)) {
+      return right;
+    }
+    return rawValue;
+  };
   const current = getCurrentRoleFromTimeline(
     rows
       .map((item) => ({
@@ -9063,7 +9097,11 @@ function resolveCandidateLocationFromCv({ experienceHistory = [], normalizedLoca
     const fromRowRaw = extractLocationFromExperienceRawLine(String(row?.raw_line || "").trim());
     if (fromRowRaw) return fromRowRaw;
   }
-  const explicit = sanitizeCvCandidateLocation(String(normalizedLocation || "").trim());
+  const explicit = pickCityFromCompoundLocation(
+    sanitizeCvCandidateLocation(String(normalizedLocation || "").trim())
+  );
+  const explicitKnownCity = extractKnownIndianCity(explicit);
+  if (explicitKnownCity) return explicitKnownCity;
   if (explicit) {
     const token = explicit.toLowerCase();
     if (!companyTokens.has(token) && !designationTokens.has(token)) {
@@ -9083,13 +9121,19 @@ function resolveCandidateLocationFromCv({ experienceHistory = [], normalizedLoca
         for (const line of window) {
           const pipeLocation = line.match(/\|\s*([A-Za-z][A-Za-z\s,/-]{2,})$/);
           if (pipeLocation?.[1]) {
-            const candidate = sanitizeCvCandidateLocation(String(pipeLocation[1] || "").trim());
+            const candidate = pickCityFromCompoundLocation(
+              sanitizeCvCandidateLocation(String(pipeLocation[1] || "").trim())
+            );
+            const known = extractKnownIndianCity(candidate);
+            if (known) return known;
             if (candidate) {
               const token = candidate.toLowerCase();
               if (!companyTokens.has(token) && !designationTokens.has(token)) return candidate;
             }
           }
-          const candidate = sanitizeCvCandidateLocation(line);
+          const candidate = pickCityFromCompoundLocation(sanitizeCvCandidateLocation(line));
+          const known = extractKnownIndianCity(candidate);
+          if (known) return known;
           if (!candidate) continue;
           const token = candidate.toLowerCase();
           if (companyTokens.has(token) || designationTokens.has(token)) continue;
