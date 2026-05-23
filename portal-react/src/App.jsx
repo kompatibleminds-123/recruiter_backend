@@ -7007,9 +7007,14 @@ function PortalApp({ token, onLogout }) {
   const [jobActionBusy, setJobActionBusy] = useState(false);
   const [jobCloseMenuOpen, setJobCloseMenuOpen] = useState(false);
   const [interviewMeta, setInterviewMeta] = useState({ candidateId: "", assessmentId: "" });
+  const interviewMetaRef = useRef(interviewMeta);
+  useEffect(() => {
+    interviewMetaRef.current = interviewMeta;
+  }, [interviewMeta]);
   const [interviewCvParseModalOpen, setInterviewCvParseModalOpen] = useState(false);
   const [interviewCvParseBusy, setInterviewCvParseBusy] = useState(false);
   const [interviewCvParsePreview, setInterviewCvParsePreview] = useState(null);
+  const interviewCvParseSessionRef = useRef({ requestId: 0, candidateId: "" });
   const [interviewForm, setInterviewForm] = useState({
     candidateName: "",
     phoneNumber: "",
@@ -7049,6 +7054,13 @@ function PortalApp({ token, onLogout }) {
   useEffect(() => {
     interviewFormRef.current = interviewForm;
   }, [interviewForm]);
+
+  function resetInterviewCvParseTransientState() {
+    interviewCvParseSessionRef.current = { requestId: 0, candidateId: "" };
+    setInterviewCvParseBusy(false);
+    setInterviewCvParseModalOpen(false);
+    setInterviewCvParsePreview(null);
+  }
   const [smtpSettings, setSmtpSettings] = useState({
     host: "",
     port: 587,
@@ -11884,6 +11896,7 @@ function PortalApp({ token, onLogout }) {
       setStatus("captured", "Candidate not found for interview panel.", "error");
       return;
     }
+    resetInterviewCvParseTransientState();
     const candidateDraft = getCandidateDraftState(candidate);
     const matched = resolveCapturedAssessment(candidate);
     setInterviewMeta({
@@ -11976,6 +11989,7 @@ function PortalApp({ token, onLogout }) {
       const phone = normalizePhone(item?.phone || item?.phoneNumber || "");
       return (wantedEmail && email && wantedEmail === email) || (wantedPhone && phone && wantedPhone === phone);
     }) || null;
+    resetInterviewCvParseTransientState();
     const candidateDraft = getCandidateDraftState(matchedCandidate || {});
     setInterviewMeta({
       candidateId: String(matchedCandidate?.id || assessment?.candidateId || ""),
@@ -12309,7 +12323,10 @@ function PortalApp({ token, onLogout }) {
   async function parseInterviewCvFile(file) {
     if (!file) return;
     const aiParsingEnabled = copySettings.interviewAiParsingEnabled !== false;
-    const canUseDeferredMode = !aiParsingEnabled && Boolean(interviewMeta.candidateId);
+    const canUseDeferredMode = !aiParsingEnabled && Boolean(interviewMetaRef.current?.candidateId);
+    const parseCandidateIdSnapshot = String(interviewMetaRef.current?.candidateId || "").trim();
+    const parseRequestId = Number(interviewCvParseSessionRef.current?.requestId || 0) + 1;
+    interviewCvParseSessionRef.current = { requestId: parseRequestId, candidateId: parseCandidateIdSnapshot };
     setInterviewCvParsePreview(null);
     setInterviewCvParseModalOpen(aiParsingEnabled);
     setInterviewCvParseBusy(aiParsingEnabled);
@@ -12329,12 +12346,21 @@ function PortalApp({ token, onLogout }) {
           fileData
         }
       };
-      const parsed = interviewMeta.candidateId
-        ? await api(`/company/candidates/${encodeURIComponent(interviewMeta.candidateId)}/interview-cv`, token, "POST", payload)
+      const parsed = parseCandidateIdSnapshot
+        ? await api(`/company/candidates/${encodeURIComponent(parseCandidateIdSnapshot)}/interview-cv`, token, "POST", payload)
         : await api("/parse-candidate", token, "POST", {
             sourceType: "cv",
             ...payload
           });
+      const latestSession = interviewCvParseSessionRef.current || { requestId: 0, candidateId: "" };
+      const currentCandidateId = String(interviewMetaRef.current?.candidateId || "").trim();
+      const candidateSwitched = Boolean(parseCandidateIdSnapshot) && parseCandidateIdSnapshot !== currentCandidateId;
+      if (latestSession.requestId !== parseRequestId || candidateSwitched) {
+        setInterviewCvParseBusy(false);
+        setInterviewCvParseModalOpen(false);
+        setStatus("interview", "Ignored stale CV parse result from previous candidate.", "ok");
+        return;
+      }
       if (canUseDeferredMode) {
         const nextStoredFile = parsed?.result?.storedFile || parsed?.storedFile || interviewForm.cvAnalysis?.storedFile || null;
         if (nextStoredFile) {
@@ -12381,6 +12407,7 @@ function PortalApp({ token, onLogout }) {
         return { ...current, cvAnalysis: analysis, cvAnalysisApplied: false };
       });
       setInterviewCvParsePreview({
+        sourceCandidateId: parseCandidateIdSnapshot,
         summary: {
           candidateName: String(result?.candidateName || "").trim(),
           phoneNumber: String(result?.phoneNumber || "").trim(),
@@ -12422,6 +12449,12 @@ function PortalApp({ token, onLogout }) {
 
   function applyCvAnalysisToDraft(selectedOverwriteKeys = {}) {
     const currentForm = interviewFormRef.current || interviewForm;
+    const previewCandidateId = String(interviewCvParsePreview?.sourceCandidateId || "").trim();
+    const currentCandidateId = String(interviewMetaRef.current?.candidateId || "").trim();
+    if (previewCandidateId && previewCandidateId !== currentCandidateId) {
+      setStatus("interview", "Preview belongs to a different candidate. Re-parse CV for this candidate.", "error");
+      return;
+    }
     const analysis = currentForm.cvAnalysis;
     if (!analysis) {
       setStatus("interview", "No CV analysis available yet.", "error");
@@ -20411,6 +20444,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
         onClose={() => {
           if (interviewCvParseBusy) return;
           setInterviewCvParseModalOpen(false);
+          setInterviewCvParsePreview(null);
         }}
         onApply={(selectedOverwriteKeys) => {
           applyCvAnalysisToDraft(selectedOverwriteKeys || {});
