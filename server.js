@@ -9212,6 +9212,8 @@ function extractKnownIndianCity(value = "") {
 function extractLocationFromExperienceRawLine(rawLine = "") {
   const raw = String(rawLine || "").trim();
   if (!raw) return "";
+  const knownDirect = extractKnownIndianCity(raw);
+  if (knownDirect) return knownDirect;
   const pieces = raw.split(/\s+[|@,-]\s+|\s{2,}/).map((part) => String(part || "").trim()).filter(Boolean);
   for (let i = pieces.length - 1; i >= 0; i -= 1) {
     const candidate = sanitizeCvCandidateLocation(pieces[i]);
