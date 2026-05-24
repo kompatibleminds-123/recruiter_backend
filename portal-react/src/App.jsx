@@ -7614,6 +7614,8 @@ function PortalApp({ token, onLogout }) {
   const [smtpTestBusy, setSmtpTestBusy] = useState(false);
   const [zohoConnectBusy, setZohoConnectBusy] = useState(false);
   const [mailConnectProvider, setMailConnectProvider] = useState("zoho");
+  const [mailProviderPickerOpen, setMailProviderPickerOpen] = useState(false);
+  const [mailProviderSearch, setMailProviderSearch] = useState("");
   const smtpSettingsDirtyRef = useRef(false);
   const markSmtpSettingsDirty = () => { smtpSettingsDirtyRef.current = true; };
 
@@ -13967,20 +13969,26 @@ function PortalApp({ token, onLogout }) {
     }
   }
 
-  async function connectZohoMailbox() {
+  async function connectZohoMailbox(provider = "zoho") {
     setZohoConnectBusy(true);
-    setStatus("settings", "Preparing Zoho connect...");
+    const providerNorm = String(provider || "zoho").trim().toLowerCase();
+    const providerLabel = providerNorm === "google" ? "Google" : providerNorm === "microsoft" ? "Microsoft" : "Zoho";
+    setStatus("settings", `Preparing ${providerLabel} connect...`);
     try {
       const currentHost = String(smtpSettings.host || "").trim().toLowerCase();
-      const hostHint = currentHost.startsWith("zohoapi") ? currentHost : "zohoapi.com";
-      const query = new URLSearchParams({ host: hostHint });
-      const result = await api(`/company/email-settings/zoho/connect-url?${query.toString()}`, token);
+      const hostHint = providerNorm === "zoho"
+        ? (currentHost.startsWith("zohoapi") ? currentHost : "zohoapi.com")
+        : providerNorm === "google"
+          ? "googleapi.com"
+          : "microsoftapi.com";
+      const query = new URLSearchParams({ host: hostHint, provider: providerNorm });
+      const result = await api(`/company/email-settings/oauth/connect-url?${query.toString()}`, token);
       const authUrl = String(result?.authUrl || "").trim();
-      if (!authUrl) throw new Error("Zoho auth URL could not be generated.");
+      if (!authUrl) throw new Error(`${providerLabel} auth URL could not be generated.`);
       // Avoid noopener/noreferrer here: some browsers return null handle even when popup opened.
       const popup = window.open(authUrl, "rd-zoho-connect", "width=720,height=840");
       if (!popup) throw new Error("Popup blocked. Please allow popups and try again.");
-      setStatus("settings", "Complete Zoho consent in popup window...", "ok");
+      setStatus("settings", `Complete ${providerLabel} consent in popup window...`, "ok");
       await new Promise((resolve) => {
         let done = false;
         const finish = () => {
@@ -13992,11 +14000,11 @@ function PortalApp({ token, onLogout }) {
         };
         const onMessage = (event) => {
           const data = event?.data || {};
-          if (data?.type !== "RSD_ZOHO_CONNECTED") return;
+          if (data?.type !== "RSD_MAIL_CONNECTED") return;
           if (data?.ok) {
-            setStatus("settings", "Zoho connected successfully.", "ok");
+            setStatus("settings", `${providerLabel} connected successfully.`, "ok");
           } else {
-            setStatus("settings", `Zoho connect failed: ${String(data?.message || "Unknown error")}`, "error");
+            setStatus("settings", `${providerLabel} connect failed: ${String(data?.message || "Unknown error")}`, "error");
           }
           finish();
         };
@@ -14009,7 +14017,7 @@ function PortalApp({ token, onLogout }) {
       smtpSettingsDirtyRef.current = false;
       await loadSmtpSettingsOnce();
     } catch (error) {
-      setStatus("settings", `Zoho connect failed: ${String(error?.message || error)}`, "error");
+      setStatus("settings", `${providerLabel} connect failed: ${String(error?.message || error)}`, "error");
     } finally {
       setZohoConnectBusy(false);
     }
@@ -14343,15 +14351,23 @@ function PortalApp({ token, onLogout }) {
 
   async function connectMailByProvider() {
     const provider = String(mailConnectProvider || "zoho").trim().toLowerCase();
-    if (provider === "zoho") {
-      await connectZohoMailbox();
-      return;
-    }
-    if (provider === "google" || provider === "microsoft") {
-      setStatus("settings", `${provider === "google" ? "Google" : "Microsoft"} one-click connect is coming soon. Use manual SMTP/API fallback for now.`, "error");
+    if (provider === "zoho" || provider === "google" || provider === "microsoft") {
+      await connectZohoMailbox(provider);
       return;
     }
     setStatus("settings", "Please select a mail provider first.", "error");
+  }
+
+  const mailProviderOptions = [
+    { id: "zoho", label: "Zoho Mail", hint: "Recommended for current setup" },
+    { id: "google", label: "Google (Gmail)", hint: "Connect Gmail with OAuth" },
+    { id: "microsoft", label: "Microsoft", hint: "Connect Outlook / Office 365" }
+  ];
+
+  function getMailProviderLabel(providerId = "") {
+    const id = String(providerId || "").trim().toLowerCase();
+    const hit = mailProviderOptions.find((item) => item.id === id);
+    return hit?.label || "Select provider";
   }
 
   async function attachCurrentDatabasePageToCampaign() {
@@ -19534,9 +19550,55 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
             <div className="page-grid">
               <Section kicker="Email" title="Mail Settings">
                 {statuses.settings ? <div className={`status ${statuses.settingsKind || ""}`}>{statuses.settings}</div> : null}
-                <p className="muted">Connect Mail for Zoho API first. Manual SMTP/API fields stay available as fallback (per recruiter).</p>
+                <p className="muted">One-click mail connect saves automatically after consent. Manual SMTP/API save is only fallback.</p>
                 <div className="settings-subsection mail-settings-shell jd-shell-create">
                   <div className="section-kicker">Mail Share Settings (SMTP / API)</div>
+                  <div className="mail-connect-card">
+                    <div className="mail-connect-card__left">
+                      <div className="mail-connect-card__title">Connect Your Email Account</div>
+                      <div className="muted">Connect once, then send from your own mailbox identity.</div>
+                    </div>
+                    <div className="mail-connect-card__right">
+                      <button className="secondary" disabled={zohoConnectBusy} onClick={() => setMailProviderPickerOpen(true)}>
+                        {zohoConnectBusy ? "Connecting..." : "Connect"}
+                      </button>
+                    </div>
+                  </div>
+                  {mailProviderPickerOpen ? (
+                    <div className="mail-provider-picker">
+                      <div className="mail-provider-picker__head">
+                        <button className="ghost-btn" onClick={() => setMailProviderPickerOpen(false)}>Back</button>
+                        <strong>Select your provider</strong>
+                      </div>
+                      <input
+                        value={mailProviderSearch}
+                        onChange={(e) => setMailProviderSearch(e.target.value)}
+                        placeholder="Search by provider name"
+                      />
+                      <div className="mail-provider-picker__list">
+                        {mailProviderOptions
+                          .filter((item) => {
+                            const q = String(mailProviderSearch || "").trim().toLowerCase();
+                            if (!q) return true;
+                            return item.label.toLowerCase().includes(q) || item.id.toLowerCase().includes(q);
+                          })
+                          .map((item) => (
+                            <button
+                              key={item.id}
+                              className={`mail-provider-picker__item ${mailConnectProvider === item.id ? "active" : ""}`}
+                              onClick={() => {
+                                setMailConnectProvider(item.id);
+                                setMailProviderPickerOpen(false);
+                                void connectZohoMailbox(item.id);
+                              }}
+                            >
+                              <span>{item.label}</span>
+                              <small>{item.hint}</small>
+                            </button>
+                          ))}
+                      </div>
+                    </div>
+                  ) : null}
                   <div className="form-grid two-col">
                     <label><span>SMTP host</span><input value={smtpSettings.host} onChange={(e) => { markSmtpSettingsDirty(); setSmtpSettings((c) => ({ ...c, host: e.target.value })); }} placeholder="smtppro.zoho.com" /></label>
                     <label><span>SMTP port</span><input type="number" value={smtpSettings.port} onChange={(e) => { markSmtpSettingsDirty(); setSmtpSettings((c) => ({ ...c, port: Number(e.target.value || 0) || 587 })); }} placeholder="587" /></label>
@@ -19560,17 +19622,10 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                   </div>
                   <div className="button-row">
                     <label className="copy-preset-control">
-                      <span>Connect provider</span>
-                      <select value={mailConnectProvider} onChange={(e) => setMailConnectProvider(e.target.value)}>
-                        <option value="zoho">Zoho</option>
-                        <option value="google">Google</option>
-                        <option value="microsoft">Microsoft</option>
-                      </select>
+                      <span>Selected provider</span>
+                      <input value={getMailProviderLabel(mailConnectProvider)} readOnly />
                     </label>
-                    <button className="secondary" disabled={zohoConnectBusy} onClick={() => void connectMailByProvider()}>
-                      {zohoConnectBusy ? "Connecting..." : "Connect Mail"}
-                    </button>
-                    <button onClick={() => void saveSmtpSettings()}>Save email settings</button>
+                    <button onClick={() => void saveSmtpSettings()}>Save manual SMTP/API settings</button>
                     <button className="secondary" disabled={smtpTestBusy} onClick={() => void testSmtpSettings(false)}>
                       {smtpTestBusy ? "Testing..." : "Test SMTP settings"}
                     </button>
@@ -19583,10 +19638,19 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                   <div className="section-kicker">Mail Share Notes</div>
                   <p className="muted"><strong>Recommended:</strong> use <strong>Connect Mail</strong> first, then keep manual SMTP/API as fallback.</p>
                   <p className="muted"><strong>Supported modes:</strong> SMTP mode (<code>smtppro.zoho.com</code>, <code>smtp.gmail.com</code>, <code>smtp.office365.com</code>) or API mode via host keys.</p>
-                  <p className="muted"><strong>API mode host keys:</strong> <code>zohoapi.com</code>, <code>sendgridapi</code>, <code>postmarkapi</code>.</p>
-                  <p className="muted"><strong>Zoho:</strong> click <strong>Connect Mail</strong> with provider set to Zoho. No manual code/token copy required.</p>
-                  <p className="muted"><strong>Password meaning:</strong> SMTP = mailbox/app password. API = provider credential (Zoho refresh token / SendGrid key / Postmark token).</p>
-                  <p className="muted"><strong>Connection:</strong> {String(smtpSettings.host || "").toLowerCase().startsWith("zohoapi") && smtpSettings.hasPassword ? "Zoho connected" : "Not connected"} for current recruiter account.</p>
+                  <p className="muted"><strong>API mode host keys:</strong> <code>zohoapi.com</code>, <code>googleapi.com</code>, <code>microsoftapi.com</code>, <code>sendgridapi</code>, <code>postmarkapi</code>.</p>
+                  <p className="muted"><strong>One-click providers:</strong> Zoho, Google, Microsoft. Choose provider and click <strong>Connect Mail</strong>.</p>
+                  <p className="muted"><strong>Password meaning:</strong> SMTP = mailbox/app password. API = provider credential (refresh token or provider API key).</p>
+                  <p className="muted"><strong>Connection:</strong> {(() => {
+                    const host = String(smtpSettings.host || "").toLowerCase();
+                    if (!smtpSettings.hasPassword) return "Not connected";
+                    if (host.startsWith("zohoapi")) return "Zoho connected";
+                    if (host.startsWith("googleapi")) return "Google connected";
+                    if (host.startsWith("microsoftapi")) return "Microsoft connected";
+                    if (host.startsWith("sendgridapi")) return "SendGrid connected";
+                    if (host.startsWith("postmarkapi")) return "Postmark connected";
+                    return "Configured";
+                  })()} for current recruiter account.</p>
                   <p className="muted"><strong>Hosting note:</strong> SMTP mode may need paid hosting/network egress; API mode often avoids SMTP port blockers.</p>
                 </div>
 

@@ -252,6 +252,16 @@ function isPostmarkApiMode(cfg = {}) {
   return host.startsWith("postmarkapi");
 }
 
+function isGoogleApiMode(cfg = {}) {
+  const host = normalizeSmtpHost(cfg.host).toLowerCase();
+  return host.startsWith("googleapi");
+}
+
+function isMicrosoftApiMode(cfg = {}) {
+  const host = normalizeSmtpHost(cfg.host).toLowerCase();
+  return host.startsWith("microsoftapi");
+}
+
 function isTruthyEnv(value) {
   const raw = String(value || "").trim().toLowerCase();
   return raw === "1" || raw === "true" || raw === "yes" || raw === "on";
@@ -274,7 +284,7 @@ function getSystemMailConfig() {
 
 function systemMailReady(cfg = {}) {
   const hasFrom = Boolean(extractEmailAddress(cfg.from || ""));
-  if (isZohoApiMode(cfg) || isSendgridApiMode(cfg) || isPostmarkApiMode(cfg)) {
+  if (isZohoApiMode(cfg) || isSendgridApiMode(cfg) || isPostmarkApiMode(cfg) || isGoogleApiMode(cfg) || isMicrosoftApiMode(cfg)) {
     return hasFrom && Boolean(String(cfg.pass || "").trim());
   }
   return hasFrom && Boolean(cfg.host) && Boolean(cfg.user) && Boolean(String(cfg.pass || "").trim());
@@ -312,6 +322,14 @@ async function sendPlatformTransactionalMail({ to, cc = "", subject, html = "", 
   if (isPostmarkApiMode(cfg)) {
     await sendPostmarkEmailWithCfg(cfg, { to: toEmail, cc, subject, html, text, attachments: [] });
     return { mode: "postmark_api" };
+  }
+  if (isGoogleApiMode(cfg)) {
+    await sendGoogleEmailWithCfg(cfg, { to: toEmail, cc, subject, html, text, attachments: [] });
+    return { mode: "google_api" };
+  }
+  if (isMicrosoftApiMode(cfg)) {
+    await sendMicrosoftEmailWithCfg(cfg, { to: toEmail, cc, subject, html, text, attachments: [] });
+    return { mode: "microsoft_api" };
   }
   if (!nodemailer) throw new Error("Nodemailer dependency is missing for SMTP system mail mode.");
   const transport = nodemailer.createTransport({
@@ -1206,7 +1224,7 @@ async function createActorSmtpTransport(actor) {
   if (isZohoApiMode(cfg)) {
     return { transport: null, cfg: sanitizeSmtpConfig(cfg) };
   }
-  if (isSendgridApiMode(cfg) || isPostmarkApiMode(cfg)) {
+  if (isSendgridApiMode(cfg) || isPostmarkApiMode(cfg) || isGoogleApiMode(cfg) || isMicrosoftApiMode(cfg)) {
     return { transport: null, cfg: sanitizeSmtpConfig(cfg) };
   }
   if (!nodemailer) throw new Error("Email sending is not available.");
@@ -1265,6 +1283,14 @@ async function sendJdEmailAsActor(actor, { to, cc = "", subject, html, text, att
   if (isPostmarkApiMode(cfg)) {
     await sendPostmarkEmailWithCfg(cfg, { to, cc: ccValue, subject, html, text, attachments });
     return { providerMode: "postmark_api", messageId: "", mailId: "", internetMessageId: "", threadId: "" };
+  }
+  if (isGoogleApiMode(cfg)) {
+    const meta = await sendGoogleEmailWithCfg(cfg, { to, cc: ccValue, subject, html, text, attachments });
+    return { providerMode: "google_api", messageId: String(meta?.messageId || "").trim(), mailId: "", internetMessageId: String(meta?.messageId || "").trim(), threadId: String(meta?.threadId || "").trim() };
+  }
+  if (isMicrosoftApiMode(cfg)) {
+    const meta = await sendMicrosoftEmailWithCfg(cfg, { to, cc: ccValue, subject, html, text, attachments });
+    return { providerMode: "microsoft_api", messageId: String(meta?.messageId || "").trim(), mailId: "", internetMessageId: "", threadId: String(meta?.threadId || "").trim() };
   }
   const info = await transport.sendMail({
     from: String(cfg.from || "").trim(),
@@ -2191,41 +2217,52 @@ function readRawBody(req) {
 function getZohoRedirectUri(req) {
   const configured = String(process.env.ZOHO_REDIRECT_URI || "").trim();
   if (configured) return configured;
-  // Keep a stable default to avoid host-based mismatches during OAuth.
   return "https://recruiter-backend-yvex.onrender.com/zoho/oauth/callback";
 }
 
-function getZohoOauthStateSecret() {
+function getEmailOauthRedirectUri(provider = "", req = null) {
+  const p = String(provider || "").trim().toLowerCase();
+  if (p === "zoho") return getZohoRedirectUri(req);
+  if (p === "google") {
+    return String(process.env.GOOGLE_OAUTH_REDIRECT_URI || "").trim() || "https://recruiter-backend-yvex.onrender.com/email/oauth/callback";
+  }
+  if (p === "microsoft") {
+    return String(process.env.MICROSOFT_OAUTH_REDIRECT_URI || "").trim() || "https://recruiter-backend-yvex.onrender.com/email/oauth/callback";
+  }
+  return "";
+}
+
+function getEmailOauthStateSecret() {
   return (
     String(process.env.ZOHO_OAUTH_STATE_SECRET || "").trim() ||
     String(process.env.PLATFORM_SESSION_SECRET || "").trim() ||
     String(process.env.CV_SHARE_SECRET || "").trim() ||
-    "recruitdesk-zoho-oauth-state"
+    "recruitdesk-email-oauth-state"
   );
 }
 
-function createSignedZohoOauthState(payload) {
+function createSignedEmailOauthState(payload) {
   const encoded = Buffer.from(JSON.stringify(payload), "utf8").toString("base64url");
   const signature = crypto
-    .createHmac("sha256", getZohoOauthStateSecret())
+    .createHmac("sha256", getEmailOauthStateSecret())
     .update(encoded)
     .digest("base64url");
   return `${encoded}.${signature}`;
 }
 
-function readSignedZohoOauthState(token) {
+function readSignedEmailOauthState(token) {
   const raw = String(token || "").trim();
   if (!raw) return null;
   const [encoded, signature] = raw.split(".");
   if (!encoded || !signature) return null;
   const expected = crypto
-    .createHmac("sha256", getZohoOauthStateSecret())
+    .createHmac("sha256", getEmailOauthStateSecret())
     .update(encoded)
     .digest("base64url");
   if (!timingSafeEqualString(signature, expected)) return null;
   try {
     const payload = JSON.parse(Buffer.from(encoded, "base64url").toString("utf8"));
-    if (payload?.type !== "zoho_oauth_connect") return null;
+    if (payload?.type !== "email_oauth_connect") return null;
     if (payload.expiresAt && Date.now() > Number(payload.expiresAt)) return null;
     return payload;
   } catch {
@@ -3268,6 +3305,186 @@ function renderMarketingTemplate(template = "", prospect = {}, context = {}) {
     const needle = String(key || "").trim().toLowerCase();
     return Object.prototype.hasOwnProperty.call(replacementMap, needle) ? replacementMap[needle] : "";
   });
+}
+
+async function getGoogleAccessToken(cfg = {}) {
+  const refreshToken = String(cfg.pass || "").trim();
+  const clientId = String(process.env.GOOGLE_OAUTH_CLIENT_ID || "").trim();
+  const clientSecret = String(process.env.GOOGLE_OAUTH_CLIENT_SECRET || "").trim();
+  if (!refreshToken) throw new Error("Google API mode requires a refresh token in SMTP app password field.");
+  if (!clientId || !clientSecret) throw new Error("GOOGLE_OAUTH_CLIENT_ID and GOOGLE_OAUTH_CLIENT_SECRET must be set on backend.");
+  const form = new URLSearchParams();
+  form.set("client_id", clientId);
+  form.set("client_secret", clientSecret);
+  form.set("refresh_token", refreshToken);
+  form.set("grant_type", "refresh_token");
+  const response = await fetchWithTimeout("https://oauth2.googleapis.com/token", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: form.toString()
+  }, 20000);
+  const raw = await response.text();
+  let parsed = {};
+  try { parsed = raw ? JSON.parse(raw) : {}; } catch { parsed = {}; }
+  if (!response.ok || !String(parsed?.access_token || "").trim()) {
+    const err = new Error(String(parsed?.error_description || parsed?.error || raw || "Failed to refresh Google access token."));
+    err.status = response.status;
+    err.body = raw;
+    throw err;
+  }
+  return String(parsed.access_token).trim();
+}
+
+async function getMicrosoftAccessToken(cfg = {}) {
+  const refreshToken = String(cfg.pass || "").trim();
+  const clientId = String(process.env.MICROSOFT_OAUTH_CLIENT_ID || "").trim();
+  const clientSecret = String(process.env.MICROSOFT_OAUTH_CLIENT_SECRET || "").trim();
+  const tenant = String(process.env.MICROSOFT_OAUTH_TENANT_ID || "common").trim() || "common";
+  if (!refreshToken) throw new Error("Microsoft API mode requires a refresh token in SMTP app password field.");
+  if (!clientId || !clientSecret) throw new Error("MICROSOFT_OAUTH_CLIENT_ID and MICROSOFT_OAUTH_CLIENT_SECRET must be set on backend.");
+  const form = new URLSearchParams();
+  form.set("client_id", clientId);
+  form.set("client_secret", clientSecret);
+  form.set("refresh_token", refreshToken);
+  form.set("grant_type", "refresh_token");
+  form.set("scope", "offline_access openid profile email https://graph.microsoft.com/Mail.Send");
+  const response = await fetchWithTimeout(`https://login.microsoftonline.com/${encodeURIComponent(tenant)}/oauth2/v2.0/token`, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: form.toString()
+  }, 20000);
+  const raw = await response.text();
+  let parsed = {};
+  try { parsed = raw ? JSON.parse(raw) : {}; } catch { parsed = {}; }
+  if (!response.ok || !String(parsed?.access_token || "").trim()) {
+    const err = new Error(String(parsed?.error_description || parsed?.error || raw || "Failed to refresh Microsoft access token."));
+    err.status = response.status;
+    err.body = raw;
+    throw err;
+  }
+  return String(parsed.access_token).trim();
+}
+
+function buildRawMimeEmail({ from = "", to = "", cc = "", subject = "", html = "", text = "", attachments = [] } = {}) {
+  const lines = [];
+  const boundaryMixed = `mixed_${crypto.randomBytes(8).toString("hex")}`;
+  const boundaryAlt = `alt_${crypto.randomBytes(8).toString("hex")}`;
+  lines.push(`From: ${from}`);
+  lines.push(`To: ${to}`);
+  if (String(cc || "").trim()) lines.push(`Cc: ${cc}`);
+  lines.push(`Subject: ${String(subject || "").replace(/\r?\n/g, " ")}`);
+  lines.push("MIME-Version: 1.0");
+  lines.push(`Content-Type: multipart/mixed; boundary="${boundaryMixed}"`);
+  lines.push("");
+  lines.push(`--${boundaryMixed}`);
+  lines.push(`Content-Type: multipart/alternative; boundary="${boundaryAlt}"`);
+  lines.push("");
+  lines.push(`--${boundaryAlt}`);
+  lines.push('Content-Type: text/plain; charset="UTF-8"');
+  lines.push("Content-Transfer-Encoding: 7bit");
+  lines.push("");
+  lines.push(String(text || htmlToPlainText(String(html || "")) || ""));
+  lines.push("");
+  lines.push(`--${boundaryAlt}`);
+  lines.push('Content-Type: text/html; charset="UTF-8"');
+  lines.push("Content-Transfer-Encoding: 7bit");
+  lines.push("");
+  lines.push(String(html || "").trim() || `<p>${escapeHtml(String(text || ""))}</p>`);
+  lines.push("");
+  lines.push(`--${boundaryAlt}--`);
+  for (const attachment of Array.isArray(attachments) ? attachments : []) {
+    const filename = String(attachment?.filename || "attachment").trim() || "attachment";
+    const contentType = String(attachment?.contentType || "application/octet-stream").trim() || "application/octet-stream";
+    const bytes = toBufferContent(attachment?.content);
+    const b64 = bytes.toString("base64").replace(/(.{76})/g, "$1\r\n");
+    lines.push(`--${boundaryMixed}`);
+    lines.push(`Content-Type: ${contentType}; name="${filename.replace(/"/g, "")}"`);
+    lines.push("Content-Transfer-Encoding: base64");
+    lines.push(`Content-Disposition: attachment; filename="${filename.replace(/"/g, "")}"`);
+    lines.push("");
+    lines.push(b64);
+    lines.push("");
+  }
+  lines.push(`--${boundaryMixed}--`);
+  return lines.join("\r\n");
+}
+
+async function sendGoogleEmailWithCfg(cfg, { to, cc = "", subject, html = "", text = "", attachments = [] }) {
+  const accessToken = await getGoogleAccessToken(cfg);
+  const rawMime = buildRawMimeEmail({
+    from: String(cfg.from || cfg.user || "").trim(),
+    to: String(to || "").trim(),
+    cc: String(cc || "").trim(),
+    subject,
+    html,
+    text,
+    attachments
+  });
+  const raw = Buffer.from(rawMime, "utf8").toString("base64url");
+  const response = await fetchWithTimeout("https://gmail.googleapis.com/gmail/v1/users/me/messages/send", {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${accessToken}`,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({ raw })
+  }, 25000);
+  const responseRaw = await response.text();
+  let parsed = {};
+  try { parsed = responseRaw ? JSON.parse(responseRaw) : {}; } catch { parsed = {}; }
+  if (!response.ok) {
+    const err = new Error(String(parsed?.error?.message || responseRaw || "Google send failed."));
+    err.status = response.status;
+    err.body = responseRaw;
+    throw err;
+  }
+  return { messageId: String(parsed?.id || "").trim(), threadId: String(parsed?.threadId || "").trim() };
+}
+
+async function sendMicrosoftEmailWithCfg(cfg, { to, cc = "", subject, html = "", text = "", attachments = [] }) {
+  const accessToken = await getMicrosoftAccessToken(cfg);
+  const toRecipients = String(to || "").split(",").map((v) => String(v || "").trim()).filter(Boolean).map((address) => ({ emailAddress: { address } }));
+  const ccRecipients = String(cc || "").split(",").map((v) => String(v || "").trim()).filter(Boolean).map((address) => ({ emailAddress: { address } }));
+  const msAttachments = (Array.isArray(attachments) ? attachments : []).map((attachment) => {
+    const filename = String(attachment?.filename || "attachment").trim() || "attachment";
+    const contentType = String(attachment?.contentType || "application/octet-stream").trim() || "application/octet-stream";
+    const contentBytes = toBufferContent(attachment?.content).toString("base64");
+    return {
+      "@odata.type": "#microsoft.graph.fileAttachment",
+      name: filename,
+      contentType,
+      contentBytes
+    };
+  });
+  const bodyHtml = String(html || "").trim() || `<p>${escapeHtml(String(text || ""))}</p>`;
+  const payload = {
+    message: {
+      subject: String(subject || "").trim(),
+      body: { contentType: "HTML", content: bodyHtml },
+      toRecipients,
+      ...(ccRecipients.length ? { ccRecipients } : {}),
+      ...(msAttachments.length ? { attachments: msAttachments } : {})
+    },
+    saveToSentItems: true
+  };
+  const response = await fetchWithTimeout("https://graph.microsoft.com/v1.0/me/sendMail", {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${accessToken}`,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify(payload)
+  }, 25000);
+  const responseRaw = await response.text();
+  if (!response.ok) {
+    let parsed = {};
+    try { parsed = responseRaw ? JSON.parse(responseRaw) : {}; } catch { parsed = {}; }
+    const err = new Error(String(parsed?.error?.message || responseRaw || "Microsoft send failed."));
+    err.status = response.status;
+    err.body = responseRaw;
+    throw err;
+  }
+  return { messageId: "", threadId: "" };
 }
 
 function stripHtmlForText(value = "") {
@@ -12482,39 +12699,91 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  if (req.method === "GET" && requestUrl.pathname === "/company/email-settings/zoho/connect-url") {
+  if (req.method === "GET" && (requestUrl.pathname === "/company/email-settings/zoho/connect-url" || requestUrl.pathname === "/company/email-settings/oauth/connect-url")) {
     try {
       const actor = await requireSessionUser(getBearerToken(req));
+      const provider = String(requestUrl.searchParams.get("provider") || "zoho").trim().toLowerCase();
       const hostHint = String(requestUrl.searchParams.get("host") || "zohoapi.com").trim() || "zohoapi.com";
-      const redirectUri = String(getZohoRedirectUri(req)).trim();
-      if (!redirectUri) throw new Error("Missing Zoho redirect URI.");
-      const clientId = String(process.env.ZOHO_CLIENT_ID || "").trim();
-      if (!clientId) throw new Error("ZOHO_CLIENT_ID is not set on backend.");
-      const now = Date.now();
-      const expiresAt = now + (15 * 60 * 1000);
-      const state = createSignedZohoOauthState({
-        type: "zoho_oauth_connect",
-        userId: String(actor.id || "").trim(),
-        companyId: String(actor.companyId || "").trim(),
-        email: String(actor.email || "").trim(),
-        hostHint,
-        redirectUri,
-        issuedAt: now,
-        expiresAt
-      });
-      const { accountsBase } = resolveZohoBases({ host: hostHint, from: actor.email || "", user: actor.email || "" });
-      const authUrl = `${accountsBase}/oauth/v2/auth?scope=${encodeURIComponent("ZohoMail.messages.CREATE,ZohoMail.accounts.READ")}&client_id=${encodeURIComponent(clientId)}&response_type=code&access_type=offline&prompt=consent&redirect_uri=${encodeURIComponent(redirectUri)}&state=${encodeURIComponent(state)}`;
-      sendJson(res, 200, { ok: true, result: { authUrl, expiresAt, hostHint, redirectUri } });
+      const redirectUri = String(getEmailOauthRedirectUri(provider, req)).trim();
+      if (!redirectUri) throw new Error(`Missing ${provider} redirect URI.`);
+      let authUrl = "";
+      let providerHost = "";
+      if (provider === "zoho") {
+        const clientId = String(process.env.ZOHO_CLIENT_ID || "").trim();
+        if (!clientId) throw new Error("ZOHO_CLIENT_ID is not set on backend.");
+        const { accountsBase } = resolveZohoBases({ host: hostHint, from: actor.email || "", user: actor.email || "" });
+        providerHost = String(hostHint || "zohoapi.com").trim() || "zohoapi.com";
+        const now = Date.now();
+        const expiresAt = now + (15 * 60 * 1000);
+        const state = createSignedEmailOauthState({
+          type: "email_oauth_connect",
+          provider: "zoho",
+          userId: String(actor.id || "").trim(),
+          companyId: String(actor.companyId || "").trim(),
+          email: String(actor.email || "").trim(),
+          hostHint: providerHost,
+          redirectUri,
+          issuedAt: now,
+          expiresAt
+        });
+        authUrl = `${accountsBase}/oauth/v2/auth?scope=${encodeURIComponent("ZohoMail.messages.CREATE,ZohoMail.accounts.READ")}&client_id=${encodeURIComponent(clientId)}&response_type=code&access_type=offline&prompt=consent&redirect_uri=${encodeURIComponent(redirectUri)}&state=${encodeURIComponent(state)}`;
+        sendJson(res, 200, { ok: true, result: { authUrl, expiresAt, hostHint: providerHost, redirectUri, provider: "zoho" } });
+        return;
+      }
+      if (provider === "google") {
+        const clientId = String(process.env.GOOGLE_OAUTH_CLIENT_ID || "").trim();
+        if (!clientId) throw new Error("GOOGLE_OAUTH_CLIENT_ID is not set on backend.");
+        providerHost = "googleapi.com";
+        const now = Date.now();
+        const expiresAt = now + (15 * 60 * 1000);
+        const state = createSignedEmailOauthState({
+          type: "email_oauth_connect",
+          provider: "google",
+          userId: String(actor.id || "").trim(),
+          companyId: String(actor.companyId || "").trim(),
+          email: String(actor.email || "").trim(),
+          hostHint: providerHost,
+          redirectUri,
+          issuedAt: now,
+          expiresAt
+        });
+        authUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${encodeURIComponent(clientId)}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code&scope=${encodeURIComponent("openid email profile https://mail.google.com/")}&access_type=offline&prompt=consent&state=${encodeURIComponent(state)}`;
+        sendJson(res, 200, { ok: true, result: { authUrl, expiresAt, hostHint: providerHost, redirectUri, provider: "google" } });
+        return;
+      }
+      if (provider === "microsoft") {
+        const clientId = String(process.env.MICROSOFT_OAUTH_CLIENT_ID || "").trim();
+        const tenant = String(process.env.MICROSOFT_OAUTH_TENANT_ID || "common").trim() || "common";
+        if (!clientId) throw new Error("MICROSOFT_OAUTH_CLIENT_ID is not set on backend.");
+        providerHost = "microsoftapi.com";
+        const now = Date.now();
+        const expiresAt = now + (15 * 60 * 1000);
+        const state = createSignedEmailOauthState({
+          type: "email_oauth_connect",
+          provider: "microsoft",
+          userId: String(actor.id || "").trim(),
+          companyId: String(actor.companyId || "").trim(),
+          email: String(actor.email || "").trim(),
+          hostHint: providerHost,
+          redirectUri,
+          issuedAt: now,
+          expiresAt
+        });
+        authUrl = `https://login.microsoftonline.com/${encodeURIComponent(tenant)}/oauth2/v2.0/authorize?client_id=${encodeURIComponent(clientId)}&response_type=code&redirect_uri=${encodeURIComponent(redirectUri)}&response_mode=query&scope=${encodeURIComponent("offline_access openid profile email https://graph.microsoft.com/Mail.Send")}&prompt=select_account&state=${encodeURIComponent(state)}`;
+        sendJson(res, 200, { ok: true, result: { authUrl, expiresAt, hostHint: providerHost, redirectUri, provider: "microsoft" } });
+        return;
+      }
+      throw new Error("Unsupported provider for one-click connect.");
     } catch (error) {
       sendJson(res, 400, { ok: false, error: String(error.message || error) });
     }
     return;
   }
 
-  if (req.method === "GET" && requestUrl.pathname === "/zoho/oauth/callback") {
+  if (req.method === "GET" && (requestUrl.pathname === "/zoho/oauth/callback" || requestUrl.pathname === "/email/oauth/callback")) {
     const postResultPage = (ok, message) => {
       const safeMessage = escapeHtml(String(message || "").trim());
-      const body = `<!doctype html><html><head><meta charset="utf-8"/><title>Zoho Connect</title></head><body style="font-family:Arial,sans-serif;padding:20px;"><h2>${ok ? "Zoho connected" : "Zoho connect failed"}</h2><p>${safeMessage}</p><script>try{if(window.opener){window.opener.postMessage({type:"RSD_ZOHO_CONNECTED",ok:${ok ? "true" : "false"},message:${JSON.stringify(String(message || ""))}}, "*");}}catch(_){ }try{window.close();}catch(_){ }</script></body></html>`;
+      const body = `<!doctype html><html><head><meta charset="utf-8"/><title>Mail Connect</title></head><body style="font-family:Arial,sans-serif;padding:20px;"><h2>${ok ? "Mail connected" : "Mail connect failed"}</h2><p>${safeMessage}</p><script>try{if(window.opener){window.opener.postMessage({type:"RSD_MAIL_CONNECTED",ok:${ok ? "true" : "false"},message:${JSON.stringify(String(message || ""))}}, "*");}}catch(_){ }try{window.close();}catch(_){ }</script></body></html>`;
       sendText(req, res, 200, body, "text/html; charset=utf-8");
     };
     try {
@@ -12522,13 +12791,72 @@ const server = http.createServer(async (req, res) => {
       if (oauthError) throw new Error(oauthError);
       const code = String(requestUrl.searchParams.get("code") || "").trim();
       const stateToken = String(requestUrl.searchParams.get("state") || "").trim();
-      const state = readSignedZohoOauthState(stateToken);
-      if (!state) throw new Error("Invalid or expired Zoho connect state.");
-      const exchanged = await exchangeZohoAuthCode({
-        code,
-        redirectUri: String(state.redirectUri || "").trim(),
-        hostHint: String(state.hostHint || "zohoapi.com").trim() || "zohoapi.com"
-      });
+      const state = readSignedEmailOauthState(stateToken);
+      if (!state) throw new Error("Invalid or expired connect state.");
+      const provider = String(state.provider || "zoho").trim().toLowerCase();
+      let resolvedHost = "zohoapi.com";
+      let refreshToken = "";
+      if (provider === "zoho") {
+        const exchanged = await exchangeZohoAuthCode({
+          code,
+          redirectUri: String(state.redirectUri || "").trim(),
+          hostHint: String(state.hostHint || "zohoapi.com").trim() || "zohoapi.com"
+        });
+        resolvedHost = String(state.hostHint || "zohoapi.com").trim() || "zohoapi.com";
+        refreshToken = String(exchanged.refreshToken || "").trim();
+      } else if (provider === "google") {
+        const clientId = String(process.env.GOOGLE_OAUTH_CLIENT_ID || "").trim();
+        const clientSecret = String(process.env.GOOGLE_OAUTH_CLIENT_SECRET || "").trim();
+        const redirectUri = String(state.redirectUri || "").trim();
+        if (!clientId || !clientSecret) throw new Error("Google OAuth client is not configured.");
+        const form = new URLSearchParams();
+        form.set("code", code);
+        form.set("client_id", clientId);
+        form.set("client_secret", clientSecret);
+        form.set("redirect_uri", redirectUri);
+        form.set("grant_type", "authorization_code");
+        const tokenRes = await fetchWithTimeout("https://oauth2.googleapis.com/token", {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          body: form.toString()
+        }, 20000);
+        const tokenRaw = await tokenRes.text();
+        let tokenJson = {};
+        try { tokenJson = tokenRaw ? JSON.parse(tokenRaw) : {}; } catch { tokenJson = {}; }
+        if (!tokenRes.ok || !String(tokenJson?.refresh_token || "").trim()) {
+          throw new Error(String(tokenJson?.error_description || tokenJson?.error || tokenRaw || "Google token exchange failed."));
+        }
+        resolvedHost = "googleapi.com";
+        refreshToken = String(tokenJson.refresh_token || "").trim();
+      } else if (provider === "microsoft") {
+        const clientId = String(process.env.MICROSOFT_OAUTH_CLIENT_ID || "").trim();
+        const clientSecret = String(process.env.MICROSOFT_OAUTH_CLIENT_SECRET || "").trim();
+        const tenant = String(process.env.MICROSOFT_OAUTH_TENANT_ID || "common").trim() || "common";
+        const redirectUri = String(state.redirectUri || "").trim();
+        if (!clientId || !clientSecret) throw new Error("Microsoft OAuth client is not configured.");
+        const form = new URLSearchParams();
+        form.set("code", code);
+        form.set("client_id", clientId);
+        form.set("client_secret", clientSecret);
+        form.set("redirect_uri", redirectUri);
+        form.set("grant_type", "authorization_code");
+        form.set("scope", "offline_access openid profile email https://graph.microsoft.com/Mail.Send");
+        const tokenRes = await fetchWithTimeout(`https://login.microsoftonline.com/${encodeURIComponent(tenant)}/oauth2/v2.0/token`, {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          body: form.toString()
+        }, 20000);
+        const tokenRaw = await tokenRes.text();
+        let tokenJson = {};
+        try { tokenJson = tokenRaw ? JSON.parse(tokenRaw) : {}; } catch { tokenJson = {}; }
+        if (!tokenRes.ok || !String(tokenJson?.refresh_token || "").trim()) {
+          throw new Error(String(tokenJson?.error_description || tokenJson?.error || tokenRaw || "Microsoft token exchange failed."));
+        }
+        resolvedHost = "microsoftapi.com";
+        refreshToken = String(tokenJson.refresh_token || "").trim();
+      } else {
+        throw new Error("Unsupported provider in callback.");
+      }
       const existing = await getUserSmtpSettings({
         companyId: String(state.companyId || "").trim(),
         userId: String(state.userId || "").trim()
@@ -12538,12 +12866,12 @@ const server = http.createServer(async (req, res) => {
         companyId: String(state.companyId || "").trim(),
         userId: String(state.userId || "").trim(),
         settings: {
-          host: String(state.hostHint || "zohoapi.com").trim() || "zohoapi.com",
+          host: resolvedHost,
           port: 443,
           secure: true,
           user: String(state.email || "").trim(),
           from: String(state.email || "").trim(),
-          pass: String(exchanged.refreshToken || "").trim(),
+          pass: refreshToken,
           keepPass: false,
           signatureText: String(existing?.signatureText || "").trim(),
           signatureHtml: String(existing?.signatureHtml || "").trim(),
@@ -12553,7 +12881,7 @@ const server = http.createServer(async (req, res) => {
           signatureLinkUrl2: String(existing?.signatureLinkUrl2 || "").trim()
         }
       });
-      postResultPage(true, "Zoho mail connected successfully. You can go back to RecruitDesk.");
+      postResultPage(true, `${provider[0].toUpperCase()}${provider.slice(1)} mail connected successfully. You can go back to RecruitDesk.`);
     } catch (error) {
       postResultPage(false, String(error?.message || error));
     }
@@ -13523,11 +13851,17 @@ const server = http.createServer(async (req, res) => {
       const usingZohoApi = isZohoApiMode(cfg);
       const usingSendgridApi = isSendgridApiMode(cfg);
       const usingPostmarkApi = isPostmarkApiMode(cfg);
-      if (!usingZohoApi && !usingSendgridApi && !usingPostmarkApi) {
+      const usingGoogleApi = isGoogleApiMode(cfg);
+      const usingMicrosoftApi = isMicrosoftApiMode(cfg);
+      if (!usingZohoApi && !usingSendgridApi && !usingPostmarkApi && !usingGoogleApi && !usingMicrosoftApi) {
         await transport.verify();
       } else {
         if (usingZohoApi) {
           await getZohoAccessToken(cfg);
+        } else if (usingGoogleApi) {
+          await getGoogleAccessToken(cfg);
+        } else if (usingMicrosoftApi) {
+          await getMicrosoftAccessToken(cfg);
         } else if (usingSendgridApi || usingPostmarkApi) {
           if (!String(cfg?.pass || "").trim()) {
             throw new Error(usingSendgridApi ? "SendGrid API key missing." : "Postmark server token missing.");
@@ -13560,6 +13894,20 @@ const server = http.createServer(async (req, res) => {
             text: "Postmark API test successful. Your RecruitDesk mail settings are working.",
             html: "<p>Postmark API test successful. Your RecruitDesk mail settings are working.</p>"
           });
+        } else if (usingGoogleApi) {
+          await sendGoogleEmailWithCfg(cfg, {
+            to,
+            subject: "RecruitDesk Google API test",
+            text: "Google API test successful. Your RecruitDesk mail settings are working.",
+            html: "<p>Google API test successful. Your RecruitDesk mail settings are working.</p>"
+          });
+        } else if (usingMicrosoftApi) {
+          await sendMicrosoftEmailWithCfg(cfg, {
+            to,
+            subject: "RecruitDesk Microsoft API test",
+            text: "Microsoft API test successful. Your RecruitDesk mail settings are working.",
+            html: "<p>Microsoft API test successful. Your RecruitDesk mail settings are working.</p>"
+          });
         } else {
           await transport.sendMail({
             from: String(cfg.from || "").trim(),
@@ -13579,7 +13927,7 @@ const server = http.createServer(async (req, res) => {
           host: String(cfg.host || "").trim(),
           port: Number(cfg.port || 587),
           secure: Boolean(cfg.secure),
-          mode: usingZohoApi ? "zoho_api" : usingSendgridApi ? "sendgrid_api" : usingPostmarkApi ? "postmark_api" : "smtp",
+          mode: usingZohoApi ? "zoho_api" : usingSendgridApi ? "sendgrid_api" : usingPostmarkApi ? "postmark_api" : usingGoogleApi ? "google_api" : usingMicrosoftApi ? "microsoft_api" : "smtp",
           user: String(cfg.user || "").trim(),
           from: String(cfg.from || "").trim(),
           testMailSent,
@@ -13590,7 +13938,7 @@ const server = http.createServer(async (req, res) => {
       const rawMessage = String(error?.message || "");
       const message = /zoho/i.test(rawMessage)
         ? formatZohoApiError(error)
-        : /sendgrid|postmark/i.test(rawMessage)
+        : /sendgrid|postmark|google|microsoft|graph/i.test(rawMessage)
           ? formatProviderApiError(error)
           : formatSmtpError(error);
       sendJson(res, 400, { ok: false, error: message });
