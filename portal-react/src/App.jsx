@@ -5697,6 +5697,8 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
   const [templatePreviewResult, setTemplatePreviewResult] = useState(null);
   const [templateSearchText, setTemplateSearchText] = useState("");
   const [templateLabelFilter, setTemplateLabelFilter] = useState("");
+  const [campaignSearchText, setCampaignSearchText] = useState("");
+  const [campaignLabelFilter, setCampaignLabelFilter] = useState("");
   const [prospectDraft, setProspectDraft] = useState({ name: "", email: "", phone: "", companyName: "", designation: "", categoriesText: "" });
   const [campaignDraft, setCampaignDraft] = useState({ name: "", category: "", sendGapMinutes: 5, dailyCap: 50 });
   const [editingProspectId, setEditingProspectId] = useState("");
@@ -5870,6 +5872,14 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
     const q = String(templateSearchText || "").trim().toLowerCase();
     if (!q) return true;
     const hay = `${campaign?.name || ""} ${campaign?.category || ""} ${item?.subject || ""}`.toLowerCase();
+    return hay.includes(q);
+  });
+  const filteredCampaigns = campaigns.filter((item) => {
+    const label = String(item?.category || "").trim().toLowerCase();
+    if (campaignLabelFilter && label !== String(campaignLabelFilter || "").trim().toLowerCase()) return false;
+    const q = String(campaignSearchText || "").trim().toLowerCase();
+    if (!q) return true;
+    const hay = `${item?.name || ""} ${item?.category || ""} ${item?.status || ""}`.toLowerCase();
     return hay.includes(q);
   });
   const categories = Array.from(new Set(
@@ -6590,6 +6600,15 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
       {activeTab === "campaigns" ? (
       <Section kicker="Campaigns" title="Build Campaign">
         <p className="muted">Campaign label is for reporting only and does not overwrite prospect segments.</p>
+        <div className="form-grid two-col" style={{ marginBottom: 10 }}>
+          <label><span>Search campaigns</span><input value={campaignSearchText} onChange={(e) => setCampaignSearchText(e.target.value)} placeholder="name, label, status..." /></label>
+          <label><span>Filter by label</span>
+            <select value={campaignLabelFilter} onChange={(e) => setCampaignLabelFilter(e.target.value)}>
+              <option value="">All labels</option>
+              {templateLabelOptions.map((label) => <option key={`cmp-label-${label}`} value={label}>{label}</option>)}
+            </select>
+          </label>
+        </div>
         <div className="form-grid two-col">
           <label><span>Campaign name</span><input value={campaignDraft.name} onChange={(e) => setCampaignDraft((c) => ({ ...c, name: e.target.value }))} /></label>
           <label><span>Campaign label (optional)</span><input value={campaignDraft.category} onChange={(e) => setCampaignDraft((c) => ({ ...c, category: e.target.value }))} /></label>
@@ -6658,7 +6677,7 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
               </tr>
             </thead>
             <tbody>
-              {campaigns.map((item) => (
+          {filteredCampaigns.map((item) => (
                 <tr key={String(item?.id || "")}>
                   <td>{item?.name || "-"}</td>
                   <td>{item?.category || "-"}</td>
@@ -6685,7 +6704,7 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
                   </td>
                 </tr>
               ))}
-              {!campaigns.length ? <tr><td colSpan="8"><div className="empty-state compact-empty">No campaigns yet.</div></td></tr> : null}
+              {!filteredCampaigns.length ? <tr><td colSpan="8"><div className="empty-state compact-empty">{campaigns.length ? "No campaigns match this filter." : "No campaigns yet."}</div></td></tr> : null}
             </tbody>
           </table>
         </div>
