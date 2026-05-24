@@ -63,7 +63,6 @@ const BASE_NAV_SECTIONS = [
 
 const STANDALONE_NAV_ITEMS = [
   { to: "/candidates", label: "Database" },
-  { to: "/marketing/prospects", label: "Marketing Portal" },
   { to: "/reports", label: "Reports & Analytics" }
 ];
 const PAYROLL_NAV_ITEMS = [
@@ -14382,8 +14381,14 @@ function PortalApp({ token, onLogout }) {
     const created = Number(result?.createdCampaignOnlyProspects || 0);
     const reused = Number(result?.reusedExistingProspects || 0);
     const selectedCampaign = (dbCampaignAttachModal?.campaigns || []).find((item) => String(item?.id || "") === selectedCampaignId);
-    setStatus("workspace", `Attached to "${selectedCampaign?.name || "campaign"}": linked ${linked}, created ${created}, reused ${reused}.`, "ok");
+    setStatus("workspace", `Attached to "${selectedCampaign?.name || "campaign"}": linked ${linked}, created ${created}, reused ${reused}. No send triggered.`, "ok");
     setDbCampaignAttachModal({ open: false, campaigns: [], selectedCampaignId: "", busy: false, totalCandidates: 0 });
+    const openMarketingNow = window.confirm(
+      `Attached successfully.\nNo email has been sent yet.\n\nOpen Marketing Campaigns now to click Launch manually?`
+    );
+    if (openMarketingNow) {
+      navigate("/marketing/campaigns");
+    }
   }
 
   function downloadCandidateSmartChipRows(chipId) {
