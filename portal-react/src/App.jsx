@@ -14013,13 +14013,38 @@ function PortalApp({ token, onLogout }) {
           if (!popup || popup.closed) finish();
         }, 500);
       });
-      setSmtpSettingsLoaded(false);
-      smtpSettingsDirtyRef.current = false;
-      await loadSmtpSettingsOnce();
+      await refreshSmtpSettingsNow();
     } catch (error) {
       setStatus("settings", `${providerLabel} connect failed: ${String(error?.message || error)}`, "error");
     } finally {
       setZohoConnectBusy(false);
+    }
+  }
+
+  async function refreshSmtpSettingsNow() {
+    try {
+      const result = await api("/company/email-settings", token);
+      setSmtpSettings((current) => ({
+        ...current,
+        host: String(result?.host || "").trim(),
+        port: Number(result?.port || 587),
+        secure: Boolean(result?.secure),
+        user: String(result?.user || "").trim(),
+        from: String(result?.from || "").trim(),
+        signatureText: String(result?.signatureText || "").trim(),
+        signatureHtml: String(result?.signatureHtml || "").trim(),
+        signatureLinkLabel: String(result?.signatureLinkLabel || "").trim(),
+        signatureLinkUrl: String(result?.signatureLinkUrl || "").trim(),
+        signatureLinkLabel2: String(result?.signatureLinkLabel2 || "").trim(),
+        signatureLinkUrl2: String(result?.signatureLinkUrl2 || "").trim(),
+        hasPassword: Boolean(result?.hasPassword),
+        pass: ""
+      }));
+      setSmtpSettingsKeepPass(Boolean(result?.hasPassword));
+      setSmtpSettingsLoaded(true);
+      smtpSettingsDirtyRef.current = false;
+    } catch {
+      // no-op
     }
   }
 
