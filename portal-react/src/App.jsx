@@ -6452,7 +6452,7 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
 
       {activeTab === "templates" ? (
       <Section kicker="Email Templates" title="Template Library">
-        <p className="muted">Campaign is required to save template.</p>
+        <p className="muted">Select campaign, then create template. Template filters below are only for templates list.</p>
         <div className="form-grid two-col">
           <label>
             <span>Select campaign</span>
@@ -6510,7 +6510,7 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
             cancelTemplateEdit();
             setOk(editingTemplateId ? "Template updated." : "Template saved.");
             await refreshLight("templates");
-          })().catch(setErr)}>{editingTemplateId ? "Update template" : "Save template"}</button>
+          })().catch(setErr)}>{editingTemplateId ? "Update template" : "Create template"}</button>
           {editingTemplateId ? <button className="ghost-btn" type="button" onClick={cancelTemplateEdit}>Cancel edit</button> : null}
           <button className="ghost-btn" type="button" onClick={() => void generateTemplatePreview().catch(setErr)}>Preview email</button>
         </div>
@@ -6608,19 +6608,10 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
 
       {activeTab === "campaigns" ? (
       <Section kicker="Campaigns" title="Build Campaign">
-        <p className="muted">Campaign label is for reporting only and does not overwrite prospect segments.</p>
-        <div className="form-grid two-col" style={{ marginBottom: 10 }}>
-          <label><span>Search campaigns</span><input value={campaignSearchText} onChange={(e) => setCampaignSearchText(e.target.value)} placeholder="name, label, status..." /></label>
-          <label><span>Filter by label</span>
-            <select value={campaignLabelFilter} onChange={(e) => setCampaignLabelFilter(e.target.value)}>
-              <option value="">All labels</option>
-              {templateLabelOptions.map((label) => <option key={`cmp-label-${label}`} value={label}>{label}</option>)}
-            </select>
-          </label>
-        </div>
+        <p className="muted">Campaign tag is for reporting/filtering only and does not overwrite prospect segments.</p>
         <div className="form-grid two-col">
           <label><span>Campaign name</span><input value={campaignDraft.name} onChange={(e) => setCampaignDraft((c) => ({ ...c, name: e.target.value }))} /></label>
-          <label><span>Campaign label (optional)</span><input value={campaignDraft.category} onChange={(e) => setCampaignDraft((c) => ({ ...c, category: e.target.value }))} /></label>
+          <label><span>Campaign tag (optional)</span><input value={campaignDraft.category} onChange={(e) => setCampaignDraft((c) => ({ ...c, category: e.target.value }))} /></label>
           <label><span>Send gap (mins)</span><input type="number" min="1" value={campaignDraft.sendGapMinutes} onChange={(e) => setCampaignDraft((c) => ({ ...c, sendGapMinutes: e.target.value }))} /></label>
           <label><span>Daily cap</span><input type="number" min="10" value={campaignDraft.dailyCap} onChange={(e) => setCampaignDraft((c) => ({ ...c, dailyCap: e.target.value }))} /></label>
         </div>
@@ -6644,9 +6635,18 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
           })()}>{editingCampaignId ? "Update campaign" : "Create campaign"}</button>
           {editingCampaignId ? <button className="ghost-btn" type="button" onClick={cancelCampaignEdit}>Cancel edit</button> : null}
         </div>
+        <div className="form-grid two-col" style={{ marginTop: 10 }}>
+          <label><span>Search campaign</span><input value={campaignSearchText} onChange={(e) => setCampaignSearchText(e.target.value)} placeholder="name, tag, status..." /></label>
+          <label><span>Filter by tag</span>
+            <select value={campaignLabelFilter} onChange={(e) => setCampaignLabelFilter(e.target.value)}>
+              <option value="">All tags</option>
+              {templateLabelOptions.map((label) => <option key={`cmp-label-${label}`} value={label}>{label}</option>)}
+            </select>
+          </label>
+        </div>
         <label><span>Select campaign</span><select value={selectedCampaignId} onChange={(e) => setSelectedCampaignId(e.target.value)}>
           <option value="">Select</option>
-          {campaigns.map((item) => <option key={item.id} value={item.id}>{item.name} ({item.status})</option>)}
+          {filteredCampaigns.map((item) => <option key={item.id} value={item.id}>{item.name} ({item.status})</option>)}
         </select></label>
         {activeCampaign ? (
           <div className="item-card compact-card">
