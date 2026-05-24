@@ -5710,6 +5710,7 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
   const [selectedProspectIds, setSelectedProspectIds] = useState([]);
   const [status, setStatus] = useState({ message: "", kind: "" });
   const csvFileInputRef = useRef(null);
+  const campaignCsvFileInputRef = useRef(null);
   const prospectFormSectionRef = useRef(null);
   const prospectNameInputRef = useRef(null);
   const templateSubjectInputRef = useRef(null);
@@ -6050,6 +6051,57 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
     if (!selectedCampaignId) throw new Error("Select campaign first.");
     if (!selectedProspectIds.length) throw new Error("Select prospects first.");
     await api(`/company/marketing/campaigns/${encodeURIComponent(selectedCampaignId)}/prospects`, token, "POST", { prospectIds: selectedProspectIds });
+  }
+
+  async function handleCampaignCsvFileImport(file) {
+    if (!selectedCampaignId) throw new Error("Select campaign first.");
+    const picked = file || null;
+    if (!picked) return;
+    const payload = {};
+    const lowerName = String(picked.name || "").trim().toLowerCase();
+    if (lowerName.endsWith(".xlsx") || lowerName.endsWith(".xls")) {
+      const buffer = await picked.arrayBuffer();
+      const bytes = new Uint8Array(buffer);
+      let binary = "";
+      const chunkSize = 0x8000;
+      for (let i = 0; i < bytes.length; i += chunkSize) {
+        binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
+      }
+      payload.filename = picked.name || "";
+      payload.fileData = btoa(binary);
+    } else {
+      const text = await picked.text();
+      const trimmed = String(text || "").trim();
+      if (!trimmed) throw new Error("Selected CSV file is empty.");
+      payload.csv = trimmed;
+    }
+    const preview = await api("/company/marketing/prospects/import", token, "POST", {
+      ...payload,
+      mode: "preview"
+    });
+    const total = Number(preview?.totalRows || 0);
+    const valid = Number(preview?.validRows || 0);
+    const invalid = Number(preview?.invalidRows || 0);
+    const fresh = Number(preview?.newCount || 0);
+    const existing = Number(preview?.existingCount || 0);
+    const proceed = window.confirm(
+      `Import summary for selected campaign:\nTotal rows: ${total}\nValid: ${valid}\nInvalid: ${invalid}\nNew prospects: ${fresh}\nAlready existing: ${existing}\n\nProceed with import and attach?`
+    );
+    if (!proceed) return;
+    const includeExistingForCampaign = existing > 0
+      ? window.confirm(`${existing} prospects already exist in system.\nAttach existing ones also to selected campaign?`)
+      : false;
+    const result = await api("/company/marketing/prospects/import", token, "POST", {
+      ...payload,
+      mode: "commit",
+      importAction: includeExistingForCampaign ? "new_and_use_existing" : "new_only",
+      includeExistingForCampaign,
+      campaignId: selectedCampaignId
+    });
+    const inserted = Number(result?.inserted || 0);
+    const linked = Number(result?.campaignLinked || 0);
+    setOk(`Campaign import done. New inserted: ${inserted}. Campaign linked: ${linked}.`);
+    await refreshLight("campaigns");
   }
 
   async function launchSelectedProspectsNow() {
@@ -6661,6 +6713,7 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
             <button className="ghost-btn" onClick={() => void api(`/company/marketing/campaigns/${activeCampaign.id}/pause`, token, "POST", {}).then(() => { setOk("Campaign paused."); return refreshLight("campaigns"); }).catch(setErr)}>Pause</button>
             <button className="ghost-btn" onClick={() => void api(`/company/marketing/campaigns/${activeCampaign.id}/resume`, token, "POST", {}).then(() => { setOk("Campaign resumed."); return refreshLight("campaigns"); }).catch(setErr)}>Resume</button>
             <button className="ghost-btn" disabled={!selectedProspectIds.length} onClick={() => void attachSelectedProspects().then(() => { setOk("Selected prospects attached to campaign."); return refreshLight("campaigns"); }).catch(setErr)}>Attach selected prospects</button>
+            <button className="ghost-btn" type="button" onClick={() => campaignCsvFileInputRef.current?.click()} disabled={saving}>Upload prospects for this campaign</button>
             <button disabled={!selectedProspectIds.length || saving} onClick={() => void (async () => {
               setSaving(true);
               try {
@@ -6671,6 +6724,27 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
                 setSaving(false);
               }
             })()}>{saving ? "Launching..." : "Launch selected now"}</button>
+            <input
+              ref={campaignCsvFileInputRef}
+              type="file"
+              accept=".csv,.xlsx,.xls,text/csv,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+              style={{ display: "none" }}
+              onChange={(e) => {
+                const file = e.target.files && e.target.files[0] ? e.target.files[0] : null;
+                if (!file) return;
+                void (async () => {
+                  setSaving(true);
+                  try {
+                    await handleCampaignCsvFileImport(file);
+                  } catch (error) {
+                    setErr(error);
+                  } finally {
+                    setSaving(false);
+                    e.target.value = "";
+                  }
+                })();
+              }}
+            />
           </div>
         ) : null}
         <div className="table-wrap">
