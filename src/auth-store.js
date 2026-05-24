@@ -912,6 +912,99 @@ function sanitizeShortcutMapForPersistence(shortcuts) {
   });
   return out;
 }
+
+function parseOwnerEmailList() {
+  const configured = String(process.env.PLATFORM_SUGGESTED_OWNER_EMAILS || process.env.PLATFORM_COMPANY_CREATOR_EMAILS || "ankit.garg@kompatibleminds.com")
+    .split(",")
+    .map((value) => normalizeEmail(value))
+    .filter(Boolean);
+  return Array.from(new Set(configured));
+}
+
+function isSuggestedGlobalOwner(actor = null) {
+  const email = normalizeEmail(actor?.email || "");
+  if (!email) return false;
+  const allow = parseOwnerEmailList();
+  return allow.includes(email);
+}
+
+async function getCompanySharedExportPresetsLocal(companyId) {
+  if (!companyId) throw new Error("companyId is required.");
+  if (!cfg().on) {
+    const row = (readStore().jobs || []).find((j) => j.companyId === companyId && isSharedExportPresetRow(j));
+    return sanitizeSharedExportPresetSettings(row?.payload || row || {});
+  }
+  await ensureSeeded();
+  const rows = await sbSel("company_jobs", `select=*&company_id=eq.${enc(companyId)}&title=eq.${enc(SHARED_EXPORT_PRESET_ROW_TITLE)}&limit=1`);
+  return sanitizeSharedExportPresetSettings(rows?.[0]?.payload || rows?.[0] || {});
+}
+
+let SUGGESTED_GLOBAL_SOURCE_CACHE = { companyId: "", resolvedAt: 0 };
+async function resolveSuggestedGlobalSourceCompanyId() {
+  const forced = String(process.env.PLATFORM_SUGGESTED_SOURCE_COMPANY_ID || "").trim();
+  if (forced) return forced;
+  const now = Date.now();
+  if (SUGGESTED_GLOBAL_SOURCE_CACHE.companyId && now - Number(SUGGESTED_GLOBAL_SOURCE_CACHE.resolvedAt || 0) < 10 * 60 * 1000) {
+    return SUGGESTED_GLOBAL_SOURCE_CACHE.companyId;
+  }
+  const ownerEmails = parseOwnerEmailList();
+  if (!ownerEmails.length) return "";
+  if (!cfg().on) {
+    const store = readStore();
+    const users = Array.isArray(store.users) ? store.users : [];
+    const hit = users.find((user) => {
+      const email = normalizeEmail(user?.email || "");
+      return email && ownerEmails.includes(email) && String(user?.role || "").toLowerCase() === "admin";
+    });
+    const companyId = String(hit?.companyId || hit?.company_id || "").trim();
+    if (companyId) SUGGESTED_GLOBAL_SOURCE_CACHE = { companyId, resolvedAt: now };
+    return companyId;
+  }
+  await ensureSeeded();
+  for (const ownerEmail of ownerEmails) {
+    const rows = await sbSel("users", `select=company_id,role,email&email=eq.${enc(ownerEmail)}&limit=1`).catch(() => []);
+    const hit = (rows || []).find((row) => String(row?.role || "").toLowerCase() === "admin");
+    const companyId = String(hit?.company_id || "").trim();
+    if (companyId) {
+      SUGGESTED_GLOBAL_SOURCE_CACHE = { companyId, resolvedAt: now };
+      return companyId;
+    }
+  }
+  return "";
+}
+
+function mergeSuggestedAndCompanySettings(globalSettings = {}, companySettings = {}) {
+  const globalSafe = sanitizeSharedExportPresetSettings(globalSettings || {});
+  const companySafe = sanitizeSharedExportPresetSettings(companySettings || {});
+  const mergedCustomById = new Map();
+  (globalSafe.customExportPresets || []).forEach((item) => {
+    const id = String(item?.id || "").trim();
+    if (!id) return;
+    mergedCustomById.set(id, { ...item, scope: "suggested_global" });
+  });
+  (companySafe.customExportPresets || []).forEach((item) => {
+    const id = String(item?.id || "").trim();
+    if (!id) return;
+    mergedCustomById.set(id, { ...item, scope: item?.scope || "company_local" });
+  });
+  return sanitizeSharedExportPresetSettings({
+    ...globalSafe,
+    ...companySafe,
+    exportPresetLabels: {
+      ...(globalSafe.exportPresetLabels || {}),
+      ...(companySafe.exportPresetLabels || {})
+    },
+    exportPresetColumns: {
+      ...(globalSafe.exportPresetColumns || {}),
+      ...(companySafe.exportPresetColumns || {})
+    },
+    companyWideShortcuts: {
+      ...(globalSafe.companyWideShortcuts || {}),
+      ...(companySafe.companyWideShortcuts || {})
+    },
+    customExportPresets: Array.from(mergedCustomById.values())
+  });
+}
 function sanitizeAssessment(item) {
   if (!item) return null;
   const p = item.payload && typeof item.payload === "object" ? item.payload : {};
@@ -2811,13 +2904,13 @@ async function saveCompanyJobRecruiterShortcuts({ actorUserId, companyId, jobId,
 }
 async function getCompanySharedExportPresets(companyId) {
   if (!companyId) throw new Error("companyId is required.");
-  if (!cfg().on) {
-    const row = (readStore().jobs || []).find((j) => j.companyId === companyId && isSharedExportPresetRow(j));
-    return sanitizeSharedExportPresetSettings(row?.payload || row || {});
+  const companyLocal = await getCompanySharedExportPresetsLocal(companyId);
+  const suggestedSourceCompanyId = await resolveSuggestedGlobalSourceCompanyId();
+  if (!suggestedSourceCompanyId || suggestedSourceCompanyId === String(companyId || "").trim()) {
+    return companyLocal;
   }
-  await ensureSeeded();
-  const rows = await sbSel("company_jobs", `select=*&company_id=eq.${enc(companyId)}&title=eq.${enc(SHARED_EXPORT_PRESET_ROW_TITLE)}&limit=1`);
-  return sanitizeSharedExportPresetSettings(rows?.[0]?.payload || rows?.[0] || {});
+  const globalSuggested = await getCompanySharedExportPresetsLocal(suggestedSourceCompanyId).catch(() => ({}));
+  return mergeSuggestedAndCompanySettings(globalSuggested, companyLocal);
 }
 
 async function getCompanyEmailThreadByKey(companyId, conversationKey) {
@@ -2897,30 +2990,36 @@ async function upsertCompanyEmailThread({
   const row = await getCompanyEmailThreadByKey(scopedCompanyId, scopedKey);
   return row || payload;
 }
-async function saveCompanySharedExportPresets({ actorUserId, companyId, settings }) {
+async function saveCompanySharedExportPresets({ actorUserId, companyId, settings, saveAsSuggestedGlobal = false }) {
   if (!actorUserId || !companyId) throw new Error("actorUserId and companyId are required.");
   const actor = sanitizeUser(await getUserById(actorUserId, companyId));
   if (!actor) throw new Error("Authenticated recruiter not found for this company.");
   if (String(actor.role || "").toLowerCase() !== "admin") {
     throw new Error("Only an admin can manage shared export presets.");
   }
+  if (saveAsSuggestedGlobal && !isSuggestedGlobalOwner(actor)) {
+    throw new Error("Only platform owner can update suggested global presets.");
+  }
+  const targetCompanyId = saveAsSuggestedGlobal
+    ? (await resolveSuggestedGlobalSourceCompanyId().catch(() => "") || String(companyId || "").trim())
+    : String(companyId || "").trim();
   const sanitized = sanitizeSharedExportPresetSettings(settings);
   const now = new Date().toISOString();
   const payload = {
     ...sanitized,
     id: SHARED_EXPORT_PRESET_ROW_ID,
     title: SHARED_EXPORT_PRESET_ROW_TITLE,
-    companyId,
+    companyId: targetCompanyId,
     updatedAt: now,
     updatedBy: actor.email
   };
   if (!cfg().on) {
     const store = readStore();
     store.jobs = Array.isArray(store.jobs) ? store.jobs : [];
-    const ix = store.jobs.findIndex((j) => j.companyId === companyId && isSharedExportPresetRow(j));
+    const ix = store.jobs.findIndex((j) => j.companyId === targetCompanyId && isSharedExportPresetRow(j));
     const next = {
       id: SHARED_EXPORT_PRESET_ROW_ID,
-      companyId,
+      companyId: targetCompanyId,
       title: SHARED_EXPORT_PRESET_ROW_TITLE,
       clientName: "__system__",
       jobDescription: "Shared export presets",
@@ -2939,8 +3038,8 @@ async function saveCompanySharedExportPresets({ actorUserId, companyId, settings
     return sanitizeSharedExportPresetSettings(next.payload);
   }
   const rows = await sbIns("company_jobs", [{
-    id: systemJobRowId(companyId, SHARED_EXPORT_PRESET_ROW_ID),
-    company_id: companyId,
+    id: systemJobRowId(targetCompanyId, SHARED_EXPORT_PRESET_ROW_ID),
+    company_id: targetCompanyId,
     title: SHARED_EXPORT_PRESET_ROW_TITLE,
     client_name: "__system__",
     job_description: "Shared export presets",
@@ -2954,6 +3053,9 @@ async function saveCompanySharedExportPresets({ actorUserId, companyId, settings
     updated_by: actor.email,
     payload
   }], { conflict: "id", upsert: true });
+  if (saveAsSuggestedGlobal && targetCompanyId !== String(companyId || "").trim()) {
+    return getCompanySharedExportPresets(companyId);
+  }
   return sanitizeSharedExportPresetSettings(rows?.[0]?.payload || payload);
 }
 async function getCompanyPersonalShortcuts({ companyId, userId }) {

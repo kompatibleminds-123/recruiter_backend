@@ -235,8 +235,8 @@ function FeatureLockedSection({ title = "Feature locked" }) {
   // Admin can turn it off for the whole workspace from Preset Settings.
   semanticSearchEnabled: true,
   exportPresetLabels: {
-    compact_recruiter: "Compact recruiter",
-    client_tracker: "Client tracker",
+    compact_recruiter: "Default recruiter exports",
+    client_tracker: "Internal tracker",
     client_submission: "Client submission",
     screening_focus: "Screening focus"
   },
@@ -495,7 +495,10 @@ const PRESET_INDICATOR_LIBRARY = [
   { key: "reason_of_change", label: "Reason of Change" },
   { key: "other_pointers", label: "Optional Pointers" },
   { key: "other_standard_questions", label: "Screening Q&A" },
-  { key: "remarks", label: "Recruiter Notes" },
+  { key: "screening_remarks", label: "Screening Remarks (timeline/interview notes)" },
+  { key: "remarks", label: "Recruiter Notes (general)" },
+  { key: "lwd_or_doj", label: "LWD / DOJ" },
+  { key: "offer_in_hand", label: "Offer in hand" },
   { key: "linkedin", label: "LinkedIn" },
   { key: "date_added", label: "Date Added" }
 ];
@@ -2907,6 +2910,16 @@ function getJdCcHistoryStorageKey(companyId = "") {
   return `${JD_EMAIL_CC_HISTORY_KEY_PREFIX}${String(companyId || "").trim()}`;
 }
 
+function getCopySettingsStorageKey(companyId = "") {
+  const id = String(companyId || "").trim();
+  return `${COPY_SETTINGS_STORAGE_KEY}:${id || "anonymous"}`;
+}
+
+function getDirectShareHistoryStorageKey(companyId = "") {
+  const id = String(companyId || "").trim();
+  return `${DIRECT_SHARE_HISTORY_KEY}:${id || "anonymous"}`;
+}
+
 function readJdCcHistory(companyId = "") {
   const id = String(companyId || "").trim();
   if (!id) return [];
@@ -3929,6 +3942,12 @@ function Section({ kicker, title, children, className = "", sectionRef = null })
       {children}
     </section>
   );
+}
+
+function getIndicatorLabelByKey(fieldKey = "") {
+  const key = String(fieldKey || "").trim();
+  const hit = PRESET_INDICATOR_LIBRARY.find((item) => String(item?.key || "") === key);
+  return String(hit?.label || key || "").trim();
 }
 
 function RichTextEditor({ value, onChange, placeholder = "Write here...", minHeight = 160, editorRef: externalRef = null }) {
@@ -7349,17 +7368,10 @@ function PortalApp({ token, onLogout }) {
   const assessmentMoreMenuRef = useRef(null);
   const [clientShareSuggestOpen, setClientShareSuggestOpen] = useState({ to: false, cc: false });
   // Assessment event exports are available via dedicated buttons (no modal).
-  const [copySettings, setCopySettings] = useState(() => {
-    try {
-      const saved = window.localStorage.getItem(COPY_SETTINGS_STORAGE_KEY);
-      return migrateCopySettings(saved ? JSON.parse(saved) : {});
-    } catch {
-      return migrateCopySettings({});
-    }
-  });
+  const [copySettings, setCopySettings] = useState(() => migrateCopySettings({}));
   const exportPresetOptions = useMemo(() => [
-    { id: "compact_recruiter", label: copySettings.exportPresetLabels?.compact_recruiter || "Compact recruiter" },
-    { id: "client_tracker", label: copySettings.exportPresetLabels?.client_tracker || "Client tracker" },
+    { id: "compact_recruiter", label: copySettings.exportPresetLabels?.compact_recruiter || "Default recruiter exports" },
+    { id: "client_tracker", label: copySettings.exportPresetLabels?.client_tracker || "Internal tracker" },
     { id: "client_submission", label: copySettings.exportPresetLabels?.client_submission || "Client submission" },
     { id: "screening_focus", label: copySettings.exportPresetLabels?.screening_focus || "Screening focus" },
     ...((copySettings.customExportPresets || []).map((preset) => ({
@@ -7832,6 +7844,17 @@ function PortalApp({ token, onLogout }) {
     String(state.user?.companyId || "").trim() === KOMPATIBLE_MINDS_COMPANY_ID &&
     isSettingsAdmin;
   const isAnkitAdmin = String(state.user?.email || "").trim().toLowerCase() === "ankit.garg@kompatibleminds.com";
+  const canEditSuggestedGlobalPresets = Boolean(isSettingsAdmin && isAnkitAdmin);
+
+  useEffect(() => {
+    try {
+      const key = getCopySettingsStorageKey(currentCompanyId);
+      const saved = window.localStorage.getItem(key);
+      setCopySettings(migrateCopySettings(saved ? JSON.parse(saved) : {}));
+    } catch {
+      setCopySettings(migrateCopySettings({}));
+    }
+  }, [currentCompanyId]);
   const canAddCompany = isSettingsAdmin && isAnkitAdmin;
   const canViewClientPayrollInLoginSettings = hasSuiteModulesAccess || isKompatibleCompany;
   const loginSettingsOptions = [
@@ -8235,7 +8258,7 @@ function PortalApp({ token, onLogout }) {
       const displayKey = safeKey.replace(/^\/+/, "");
       const safeTemplate = String(template || "").trim();
       if (!displayKey || !safeTemplate) return;
-      options.push({ id: `company:${displayKey}`, label: `/${displayKey} (Company)`, template: safeTemplate, scope: "company_wide" });
+      options.push({ id: `company:${displayKey}`, label: `/${displayKey} (Company Specific)`, template: safeTemplate, scope: "company_wide" });
     });
     const personalMap = incomingPersonalShortcuts && typeof incomingPersonalShortcuts === "object" ? incomingPersonalShortcuts : personalShortcuts;
     Object.entries(personalMap || {}).forEach(([key, template]) => {
@@ -9065,15 +9088,16 @@ function PortalApp({ token, onLogout }) {
 
   useEffect(() => {
     try {
-      window.localStorage.setItem(COPY_SETTINGS_STORAGE_KEY, JSON.stringify(copySettings));
+      const key = getCopySettingsStorageKey(currentCompanyId);
+      window.localStorage.setItem(key, JSON.stringify(copySettings));
     } catch {
       // Ignore local storage errors in restricted browsers.
     }
-  }, [copySettings]);
+  }, [copySettings, currentCompanyId]);
 
   useEffect(() => {
     try {
-      const raw = window.localStorage.getItem(DIRECT_SHARE_HISTORY_KEY);
+      const raw = window.localStorage.getItem(getDirectShareHistoryStorageKey(currentCompanyId));
       if (!raw) return;
       const parsed = JSON.parse(raw);
       setDirectShareHistory({
@@ -9083,16 +9107,16 @@ function PortalApp({ token, onLogout }) {
     } catch {
       setDirectShareHistory({ to: [], cc: [] });
     }
-  }, []);
+  }, [currentCompanyId]);
 
   useEffect(() => {
     try {
-      window.localStorage.setItem(DIRECT_SHARE_HISTORY_KEY, JSON.stringify({
+      window.localStorage.setItem(getDirectShareHistoryStorageKey(currentCompanyId), JSON.stringify({
         to: uniqueEmails(directShareHistory.to || []).slice(0, 40),
         cc: uniqueEmails(directShareHistory.cc || []).slice(0, 60)
       }));
     } catch {}
-  }, [directShareHistory]);
+  }, [directShareHistory, currentCompanyId]);
 
   useEffect(() => {
     if (!exportPresetOptions.length) return;
@@ -15676,7 +15700,10 @@ function PortalApp({ token, onLogout }) {
       }
     }
     const payload = migrateCopySettings(draftSettings);
-    const result = await api("/company/shared-export-presets", token, "POST", { settings: payload });
+    const result = await api("/company/shared-export-presets", token, "POST", {
+      settings: payload,
+      saveAsSuggestedGlobal: Boolean(isSuggestedPresetSelected && canEditSuggestedGlobalPresets)
+    });
     setCopySettings((current) => ({ ...DEFAULT_COPY_SETTINGS, ...current, ...result }));
     setStatus("settings", "Shared copy presets saved for all recruiters.", "ok");
   }
@@ -15713,7 +15740,10 @@ function PortalApp({ token, onLogout }) {
       }
     }
     const payload = migrateCopySettings(draftSettings);
-    const result = await api("/company/shared-export-presets", token, "POST", { settings: payload });
+    const result = await api("/company/shared-export-presets", token, "POST", {
+      settings: payload,
+      saveAsSuggestedGlobal: Boolean(isSuggestedPresetSelected && canEditSuggestedGlobalPresets)
+    });
     setCopySettings((current) => ({ ...DEFAULT_COPY_SETTINGS, ...current, ...result }));
     setStatus("settings", successMessage, "ok");
   }
@@ -16109,14 +16139,16 @@ function PortalApp({ token, onLogout }) {
       setStatus("settings", "You can add up to 10 indicators in one tracker.", "error");
       return;
     }
-    const title = String(newIndicatorDraft.title || "").trim();
+    const explicitTitle = String(newIndicatorDraft.title || "").trim();
     const fields = Array.from(new Set([
       String(newIndicatorDraft.fieldA || "").trim(),
       String(newIndicatorDraft.fieldB || "").trim(),
       String(newIndicatorDraft.fieldC || "").trim()
     ].filter(Boolean))).slice(0, 3);
+    const autoTitle = fields.map((key) => getIndicatorLabelByKey(key)).filter(Boolean).join(" + ");
+    const title = explicitTitle || autoTitle;
     if (!title || !fields.length) {
-      setStatus("settings", "Mixed indicator needs title + at least one field.", "error");
+      setStatus("settings", "Mixed indicator needs at least one selected field.", "error");
       return;
     }
     const next = [
@@ -16152,6 +16184,8 @@ function PortalApp({ token, onLogout }) {
   const selectedPresetClientName = selectedCustomPreset
     ? String(selectedCustomPreset.clientName || "").trim()
     : String(copySettings.exportPresetClientMap?.[selectedBuiltInPresetId] || "").trim();
+  const isSuggestedPresetSelected = !selectedCustomPreset && Boolean(selectedBuiltInPresetId);
+  const canEditSelectedPreset = selectedCustomPreset ? Boolean(isSettingsAdmin) : Boolean(canEditSuggestedGlobalPresets);
 
   useEffect(() => {
     setEditPresetIndicators(presetColumnsToIndicators(selectedPresetColumns));
@@ -16163,7 +16197,7 @@ function PortalApp({ token, onLogout }) {
   }
 
   function addEditIndicatorFromLibrary(fieldKey) {
-    if (!isSettingsAdmin) return;
+    if (!canEditSelectedPreset) return;
     if ((editPresetIndicators || []).length >= 10) {
       setStatus("settings", "You can keep up to 10 indicators in one tracker.", "error");
       return;
@@ -16196,19 +16230,21 @@ function PortalApp({ token, onLogout }) {
   }
 
   function addEditMixedIndicator() {
-    if (!isSettingsAdmin) return;
+    if (!canEditSelectedPreset) return;
     if ((editPresetIndicators || []).length >= 10) {
       setStatus("settings", "You can keep up to 10 indicators in one tracker.", "error");
       return;
     }
-    const title = String(editIndicatorDraft.title || "").trim();
+    const explicitTitle = String(editIndicatorDraft.title || "").trim();
     const fields = Array.from(new Set([
       String(editIndicatorDraft.fieldA || "").trim(),
       String(editIndicatorDraft.fieldB || "").trim(),
       String(editIndicatorDraft.fieldC || "").trim()
     ].filter(Boolean))).slice(0, 3);
+    const autoTitle = fields.map((key) => getIndicatorLabelByKey(key)).filter(Boolean).join(" + ");
+    const title = explicitTitle || autoTitle;
     if (!title || !fields.length) {
-      setStatus("settings", "Mixed indicator needs title + at least one field.", "error");
+      setStatus("settings", "Mixed indicator needs at least one selected field.", "error");
       return;
     }
     const next = [
@@ -16222,12 +16258,14 @@ function PortalApp({ token, onLogout }) {
 
   function updateSelectedPresetLabel(value) {
     if (selectedCustomPreset) {
+      if (!isSettingsAdmin) return;
       setCopySettings((current) => ({
         ...current,
         customExportPresets: (current.customExportPresets || []).map((preset) => String(preset.id) === String(selectedCustomPreset.id) ? { ...preset, label: value } : preset)
       }));
       return;
     }
+    if (!canEditSuggestedGlobalPresets) return;
     if (!selectedBuiltInPresetId) return;
     setCopySettings((current) => ({
       ...current,
@@ -16240,12 +16278,14 @@ function PortalApp({ token, onLogout }) {
 
   function updateSelectedPresetColumns(value) {
     if (selectedCustomPreset) {
+      if (!isSettingsAdmin) return;
       setCopySettings((current) => ({
         ...current,
         customExportPresets: (current.customExportPresets || []).map((preset) => String(preset.id) === String(selectedCustomPreset.id) ? { ...preset, columns: value } : preset)
       }));
       return;
     }
+    if (!canEditSuggestedGlobalPresets) return;
     if (!selectedBuiltInPresetId) return;
     setCopySettings((current) => ({
       ...current,
@@ -16258,12 +16298,14 @@ function PortalApp({ token, onLogout }) {
 
   function updateSelectedPresetClientName(value) {
     if (selectedCustomPreset) {
+      if (!isSettingsAdmin) return;
       setCopySettings((current) => ({
         ...current,
         customExportPresets: (current.customExportPresets || []).map((preset) => String(preset.id) === String(selectedCustomPreset.id) ? { ...preset, clientName: value } : preset)
       }));
       return;
     }
+    if (!canEditSuggestedGlobalPresets) return;
     if (!selectedBuiltInPresetId) return;
     setCopySettings((current) => ({
       ...current,
@@ -19589,35 +19631,6 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                           ...current,
                           jobApplyFields: [
                             ...(current.jobApplyFields || []),
-                            normalizeJobApplyField({ label: "Referral name", id: "referral_name", type: "text", placeholder: "Who referred you?" }, (current.jobApplyFields || []).length)
-                          ].slice(0, 12)
-                        }))}>Add referral field</button>
-                        <button type="button" className="ghost-btn" onClick={() => setCopySettings((current) => {
-                          const existing = current.jobApplyFields || [];
-                          const nextFields = [
-                            ...existing,
-                            normalizeJobApplyField({
-                              label: "How did you hear about us?",
-                              id: "how_did_you_hear",
-                              type: "select",
-                              placeholder: "Select source",
-                              options: "LinkedIn\nNaukri\nReferral\nCompany website\nOther"
-                            }, existing.length),
-                            normalizeJobApplyField({
-                              label: "Who referred you?",
-                              id: "referral_name",
-                              type: "text",
-                              placeholder: "Referral name",
-                              conditionalOnId: "how_did_you_hear",
-                              conditionalValue: "Referral"
-                            }, existing.length + 1)
-                          ].slice(0, 12);
-                          return { ...current, jobApplyFields: nextFields };
-                        })}>Add source + referral dropdown</button>
-                        <button type="button" className="ghost-btn" onClick={() => setCopySettings((current) => ({
-                          ...current,
-                          jobApplyFields: [
-                            ...(current.jobApplyFields || []),
                             normalizeJobApplyField({ label: "Custom question", id: `custom_question_${(current.jobApplyFields || []).length + 1}`, type: "textarea" }, (current.jobApplyFields || []).length)
                           ].slice(0, 12)
                         }))}>Add custom field</button>
@@ -20249,8 +20262,9 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                   </div>
                 </Section>
 
-                <Section kicker="Company" title="Company Shortcuts" className="shortcuts-section shortcuts-section--company">
-                  {!isSettingsAdmin ? <p className="muted">Read-only for recruiters. Admin-defined company shortcuts appear automatically in your template pickers.</p> : null}
+                <Section kicker="Shortcuts" title="Suggested + Company Specific Shortcuts" className="shortcuts-section shortcuts-section--company">
+                  <p className="muted">This list contains Suggested shortcuts and Company Specific shortcuts.</p>
+                  {!isSettingsAdmin ? <p className="muted">Read-only for recruiters. Admin-defined shortcuts appear automatically in your template pickers.</p> : null}
                   {isSettingsAdmin ? (
                     <>
                       <div className="form-grid two-col">
@@ -20270,7 +20284,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                         </label>
                       </div>
                       <div className="button-row">
-                        <button onClick={() => void saveCompanyShortcutTemplate()}>{normalizeShortcutKey(shortcutCompanyKey) ? "Save company shortcut" : "Add company shortcut"}</button>
+                        <button onClick={() => void saveCompanyShortcutTemplate()}>{normalizeShortcutKey(shortcutCompanyKey) ? "Save company specific shortcut" : "Add company specific shortcut"}</button>
                       </div>
                     </>
                   ) : null}
@@ -20297,7 +20311,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                             <div className="candidate-snippet no-top-border">{String(value || "")}</div>
                           </article>
                         ))
-                    ) : <div className="empty-state">No company shortcuts yet.</div>}
+                    ) : <div className="empty-state">No suggested or company specific shortcuts yet.</div>}
                   </div>
                 </Section>
               </div>
@@ -20633,6 +20647,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                   <p className="muted">Set shared candidate tracker presets and direct-share email defaults. Admin saves them once; recruiters can choose the preset while copying or sharing.</p>
                   {!hasSaasUnlimitedAccess ? <p className="muted">Current plan mode: preset edit only. New preset creation and advanced preset controls unlock on SaaS Unlimited (Rs 4999).</p> : null}
                   {!isSettingsAdmin ? <p className="muted">You can use shared presets here. Only admin can create, edit, or save shared preset settings.</p> : null}
+                  {isSettingsAdmin && !isAnkitAdmin ? <p className="muted">Suggested presets are editable only by platform owner admin. You can still create/edit company-specific presets.</p> : null}
                   {statuses.settings ? <div className={`status ${statuses.settingsKind || ""}`}>{statuses.settings}</div> : null}
                   {/* Email Settings moved to Mail Settings tab (visible to all recruiters). */}
                   {null}
@@ -20644,19 +20659,19 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                       <label>
                         <span>Select preset to edit</span>
                         <select value={copySettings.excelPreset} onChange={(e) => setCopySettings((current) => ({ ...current, excelPreset: e.target.value }))}>
-                          <option value="compact_recruiter">{copySettings.exportPresetLabels?.compact_recruiter || "Compact recruiter"}</option>
-                          <option value="client_tracker">{copySettings.exportPresetLabels?.client_tracker || "Client tracker"}</option>
-                          <option value="client_submission">{copySettings.exportPresetLabels?.client_submission || "Client submission"}</option>
-                          <option value="screening_focus">{copySettings.exportPresetLabels?.screening_focus || "Screening focus"}</option>
+                          <option value="compact_recruiter">{`${copySettings.exportPresetLabels?.compact_recruiter || "Default recruiter exports"} (Suggested)`}</option>
+                          <option value="client_tracker">{`${copySettings.exportPresetLabels?.client_tracker || "Internal tracker"} (Suggested)`}</option>
+                          <option value="client_submission">{`${copySettings.exportPresetLabels?.client_submission || "Client submission"} (Suggested)`}</option>
+                          <option value="screening_focus">{`${copySettings.exportPresetLabels?.screening_focus || "Screening focus"} (Suggested)`}</option>
                           {(copySettings.customExportPresets || []).map((preset) => (
-                            <option key={preset.id} value={preset.id}>{preset.label}</option>
+                            <option key={preset.id} value={preset.id}>{`${preset.label} (Company Specific)`}</option>
                           ))}
                         </select>
                       </label>
                       <label>
-                        <span>{isSettingsAdmin ? "Preset label" : "Selected preset label"}</span>
+                        <span>{isSuggestedPresetSelected ? "Suggested preset label (owner-controlled)" : (isSettingsAdmin ? "Company preset label" : "Selected preset label")}</span>
                         <input
-                          disabled={!isSettingsAdmin}
+                          disabled={!canEditSelectedPreset}
                           value={selectedPresetLabel}
                           onChange={(e) => updateSelectedPresetLabel(e.target.value)}
                           placeholder="Attentive tracker"
@@ -20666,7 +20681,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                       <label>
                         <span>Client for this preset</span>
                         <select
-                          disabled={!isSettingsAdmin}
+                          disabled={!canEditSelectedPreset}
                           value={selectedPresetClientName}
                           onChange={(e) => updateSelectedPresetClientName(e.target.value)}
                         >
@@ -20677,7 +20692,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                       <label className="full">
                         <span>Pick indicator</span>
                         <select
-                          disabled={!isSettingsAdmin}
+                          disabled={!canEditSelectedPreset}
                           value=""
                           onChange={(e) => {
                             const value = String(e.target.value || "").trim();
@@ -20692,12 +20707,13 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                       </label>
                       <div className="full">
                         <span className="field-label">Selected indicators ({editPresetIndicators.length})</span>
+                        <p className="muted">Mixed indicator output shows in one column as: Value 1 | Value 2 | Value 3.</p>
                         <div className="stack-list compact preset-indicator-list">
                           {editPresetIndicators.length ? editPresetIndicators.map((indicator) => (
                             <article
                               key={indicator.id}
                               className="item-card compact-card preset-indicator-row"
-                              draggable={isSettingsAdmin}
+                              draggable={canEditSelectedPreset}
                               onDragStart={() => setEditDragPresetIndicatorId(String(indicator.id))}
                               onDragOver={(e) => e.preventDefault()}
                               onDrop={() => {
@@ -20710,7 +20726,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                               <div className="preset-indicator-row__field">{indicator.title}</div>
                               <div className="preset-indicator-row__value">{(indicator.fields || []).join(" + ")}</div>
                               <div className="preset-indicator-row__actions">
-                                {isSettingsAdmin ? <button className="ghost-btn" onClick={() => removeEditPresetIndicator(indicator.id)}>Remove</button> : null}
+                                {canEditSelectedPreset ? <button className="ghost-btn" onClick={() => removeEditPresetIndicator(indicator.id)}>Remove</button> : null}
                               </div>
                             </article>
                           )) : <div className="empty-state compact-empty">No indicators selected yet.</div>}
@@ -20721,37 +20737,37 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                         <div className="form-grid three-col">
                           <label>
                             <span>Indicator title</span>
-                            <input disabled={!isSettingsAdmin} value={editIndicatorDraft.title} onChange={(e) => setEditIndicatorDraft((current) => ({ ...current, title: e.target.value }))} placeholder="Status context" />
+                            <input disabled={!canEditSelectedPreset} value={editIndicatorDraft.title} onChange={(e) => setEditIndicatorDraft((current) => ({ ...current, title: e.target.value }))} placeholder="Status context" />
                           </label>
                           <label>
                             <span>Field 1</span>
-                            <select disabled={!isSettingsAdmin} value={editIndicatorDraft.fieldA} onChange={(e) => setEditIndicatorDraft((current) => ({ ...current, fieldA: e.target.value }))}>
+                            <select disabled={!canEditSelectedPreset} value={editIndicatorDraft.fieldA} onChange={(e) => setEditIndicatorDraft((current) => ({ ...current, fieldA: e.target.value }))}>
                               <option value="">Choose field</option>
                               {PRESET_INDICATOR_LIBRARY.map((item) => <option key={`edit-mix-a-${item.key}`} value={item.key}>{item.label}</option>)}
                             </select>
                           </label>
                           <label>
                             <span>Field 2</span>
-                            <select disabled={!isSettingsAdmin} value={editIndicatorDraft.fieldB} onChange={(e) => setEditIndicatorDraft((current) => ({ ...current, fieldB: e.target.value }))}>
+                            <select disabled={!canEditSelectedPreset} value={editIndicatorDraft.fieldB} onChange={(e) => setEditIndicatorDraft((current) => ({ ...current, fieldB: e.target.value }))}>
                               <option value="">Optional</option>
                               {PRESET_INDICATOR_LIBRARY.map((item) => <option key={`edit-mix-b-${item.key}`} value={item.key}>{item.label}</option>)}
                             </select>
                           </label>
                           <label>
                             <span>Field 3</span>
-                            <select disabled={!isSettingsAdmin} value={editIndicatorDraft.fieldC} onChange={(e) => setEditIndicatorDraft((current) => ({ ...current, fieldC: e.target.value }))}>
+                            <select disabled={!canEditSelectedPreset} value={editIndicatorDraft.fieldC} onChange={(e) => setEditIndicatorDraft((current) => ({ ...current, fieldC: e.target.value }))}>
                               <option value="">Optional</option>
                               {PRESET_INDICATOR_LIBRARY.map((item) => <option key={`edit-mix-c-${item.key}`} value={item.key}>{item.label}</option>)}
                             </select>
                           </label>
-                          {isSettingsAdmin ? <div className="button-row align-end"><button className="ghost-btn" onClick={addEditMixedIndicator}>Add mixed indicator</button></div> : null}
+                          {canEditSelectedPreset ? <div className="button-row align-end"><button className="ghost-btn" onClick={addEditMixedIndicator}>Add mixed indicator</button></div> : null}
                         </div>
                       </div>
                       <label className="full">
                         <span>{isSettingsAdmin ? "Generated preset columns (advanced view)" : "Selected preset columns"}</span>
                         <textarea
                           className="preset-editor"
-                          disabled={!isSettingsAdmin}
+                          disabled={!canEditSelectedPreset}
                           value={selectedPresetColumns}
                           onChange={(e) => updateSelectedPresetColumns(e.target.value)}
                           placeholder={"S.No.|s_no\nName|name\nStatus|assessment_status"}
@@ -20770,7 +20786,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                     </div>
                     <p className="muted">Available placeholders: copy templates use {`{{index}} {{name}} {{jd_title}} {{company}} {{outcome}} {{recruiter_notes}} {{location}} {{phone}} {{email}} {{source}} {{follow_up_at}}`}.</p>
                     <div className="button-row">
-                      {isSettingsAdmin ? <button onClick={() => void saveSharedCopySettings()}>Save existing preset changes</button> : null}
+                      {canEditSelectedPreset ? <button onClick={() => void saveSharedCopySettings()}>{isSuggestedPresetSelected ? "Save suggested preset changes" : "Save preset changes"}</button> : null}
                       {isSettingsAdmin && selectedCustomPreset ? (
                         <button
                           className="ghost-btn"
@@ -20816,6 +20832,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                       </label>
                       <div className="full">
                         <span className="field-label">Selected indicators ({newPresetIndicators.length}/10)</span>
+                        <p className="muted">Mixed indicator output shows in one column as: Value 1 | Value 2 | Value 3.</p>
                         <div className="stack-list compact preset-indicator-list">
                           {newPresetIndicators.length ? newPresetIndicators.map((indicator) => (
                             <article
@@ -21081,10 +21098,10 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                   </summary>
                   <p className="muted">Create admins and recruiters for this company workspace. Payroll users are managed in the separate Payroll Access section below.</p>
                   <div className="form-grid two-col">
-                    <label><span>Member name</span><input disabled={!isSettingsAdmin} value={teamUserDraft.name} onChange={(e) => setTeamUserDraft((current) => ({ ...current, name: e.target.value }))} placeholder="Ankit Garg" /></label>
-                    <label><span>Member email</span><input disabled={!isSettingsAdmin} type="email" value={teamUserDraft.email} onChange={(e) => setTeamUserDraft((current) => ({ ...current, email: e.target.value }))} placeholder="member@company.com" /></label>
+                    <label><span>Member name</span><input autoComplete="off" disabled={!isSettingsAdmin} value={teamUserDraft.name} onChange={(e) => setTeamUserDraft((current) => ({ ...current, name: e.target.value }))} placeholder="Enter full name" /></label>
+                    <label><span>Member email</span><input autoComplete="off" disabled={!isSettingsAdmin} type="email" value={teamUserDraft.email} onChange={(e) => setTeamUserDraft((current) => ({ ...current, email: e.target.value }))} placeholder="member@company.com" /></label>
                     <label><span>Member role</span><select disabled={!isSettingsAdmin} value={teamUserDraft.role} onChange={(e) => setTeamUserDraft((current) => ({ ...current, role: e.target.value }))}><option value="recruiter">Recruiter</option><option value="admin">Admin</option></select></label>
-                    <label><span>Temporary password</span><input disabled={!isSettingsAdmin} type="password" value={teamUserDraft.password} onChange={(e) => setTeamUserDraft((current) => ({ ...current, password: e.target.value }))} placeholder="Temporary password" /></label>
+                    <label><span>Temporary password</span><input autoComplete="new-password" disabled={!isSettingsAdmin} type="password" value={teamUserDraft.password} onChange={(e) => setTeamUserDraft((current) => ({ ...current, password: e.target.value }))} placeholder="Temporary password" /></label>
                   </div>
                   {isSettingsAdmin ? <div className="button-row"><button onClick={() => void createTeamUser()}>Add recruitment team</button></div> : null}
                   {statuses.loginTeam ? <div className={`status ${statuses.loginTeamKind || ""}`}>{statuses.loginTeam}</div> : null}
@@ -21122,9 +21139,9 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                   </summary>
                   <p className="muted">Create client usernames for the separate client portal. Client will see all current and future positions for their client name.</p>
                   <div className="form-grid two-col">
-                    <label><span>Username</span><input disabled={!isSettingsAdmin} value={clientUserDraft.username} onChange={(e) => setClientUserDraft((current) => ({ ...current, username: e.target.value }))} placeholder="attentive_hr" /></label>
-                    <label><span>Password</span><input disabled={!isSettingsAdmin} type="password" value={clientUserDraft.password} onChange={(e) => setClientUserDraft((current) => ({ ...current, password: e.target.value }))} placeholder="Set client password" /></label>
-                    <label><span>Client name</span><input disabled={!isSettingsAdmin} value={clientUserDraft.clientName} onChange={(e) => setClientUserDraft((current) => ({ ...current, clientName: e.target.value }))} placeholder="Attentive" /></label>
+                    <label><span>Username</span><input autoComplete="off" disabled={!isSettingsAdmin} value={clientUserDraft.username} onChange={(e) => setClientUserDraft((current) => ({ ...current, username: e.target.value }))} placeholder="client_username" /></label>
+                    <label><span>Password</span><input autoComplete="new-password" disabled={!isSettingsAdmin} type="password" value={clientUserDraft.password} onChange={(e) => setClientUserDraft((current) => ({ ...current, password: e.target.value }))} placeholder="Set client password" /></label>
+                    <label><span>Client name</span><input autoComplete="off" disabled={!isSettingsAdmin} value={clientUserDraft.clientName} onChange={(e) => setClientUserDraft((current) => ({ ...current, clientName: e.target.value }))} placeholder="Enter client name" /></label>
                   </div>
                   {isSettingsAdmin ? <div className="button-row"><button onClick={() => void createClientPortalUser()}>Create client login</button></div> : null}
                   {statuses.loginClient ? <div className={`status ${statuses.loginClientKind || ""}`}>{statuses.loginClient}</div> : null}

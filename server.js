@@ -12260,7 +12260,8 @@ const server = http.createServer(async (req, res) => {
       const settings = await saveCompanySharedExportPresets({
         actorUserId: actor.id,
         companyId: actor.companyId,
-        settings: body.settings || body
+        settings: body.settings || body,
+        saveAsSuggestedGlobal: body?.saveAsSuggestedGlobal === true
       });
       sendJson(res, 200, { ok: true, result: settings });
     } catch (error) {
