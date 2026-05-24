@@ -6465,6 +6465,22 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
             Template will be attached to this selected campaign.
           </div>
         </div>
+        <div className="form-grid two-col" style={{ marginTop: 12 }}>
+          <label>
+            <span>Preview prospect</span>
+            <select value={templatePreviewProspectId} onChange={(e) => setTemplatePreviewProspectId(e.target.value)}>
+              <option value="">Sample prospect</option>
+              {templatePreviewProspects.map((item) => (
+                <option key={String(item?.id || "")} value={String(item?.id || "")}>
+                  {`${item?.name || "-"} | ${item?.email || "-"}`}
+                </option>
+              ))}
+            </select>
+          </label>
+          <div className="muted" style={{ alignSelf: "end" }}>
+            Sender placeholders use current logged-in recruiter profile.
+          </div>
+        </div>
         <div className="form-grid">
           <label><span>Subject</span><input ref={templateSubjectInputRef} value={templateDraft.subject} onChange={(e) => setTemplateDraft((c) => ({ ...c, subject: e.target.value }))} /></label>
           <label>
@@ -6534,22 +6550,6 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
         </div>
         <div className="muted" style={{ marginTop: 6 }}>
           Showing {filteredTemplates.length} of {templates.length} template(s)
-        </div>
-        <div className="form-grid two-col" style={{ marginTop: 12 }}>
-          <label>
-            <span>Preview prospect</span>
-            <select value={templatePreviewProspectId} onChange={(e) => setTemplatePreviewProspectId(e.target.value)}>
-              <option value="">Sample prospect</option>
-              {templatePreviewProspects.map((item) => (
-                <option key={String(item?.id || "")} value={String(item?.id || "")}>
-                  {`${item?.name || "-"} | ${item?.email || "-"}`}
-                </option>
-              ))}
-            </select>
-          </label>
-          <div className="muted" style={{ alignSelf: "end" }}>
-            Sender placeholders use current logged-in recruiter profile.
-          </div>
         </div>
         {templatePreviewResult ? (
           <div className="item-card compact-card" style={{ marginTop: 12 }}>
