@@ -4069,8 +4069,6 @@ function LoginScreen({ onRecruiterLogin, onClientLogin, onEmployeeLogin, onEmplo
           <div className="button-row">
             <button type="button" className={mode === "recruiter" ? "" : "ghost-btn"} onClick={() => setMode("recruiter")}>Recruiter login</button>
             <button type="button" className={mode === "client" ? "" : "ghost-btn"} onClick={() => setMode("client")}>Client login</button>
-            <button type="button" className={mode === "employee" ? "" : "ghost-btn"} onClick={() => setMode("employee")}>Employee login</button>
-            <button type="button" className={mode === "payroll" ? "" : "ghost-btn"} onClick={() => setMode("payroll")}>Payroll login</button>
           </div>
         ) : null}
         {authView === "login" ? <form className="form-grid" onSubmit={(e) => {
@@ -7815,7 +7813,6 @@ function PortalApp({ token, onLogout }) {
   const loginSettingsOptions = [
     { id: "team", label: "Add Recruitment Team", visible: true },
     { id: "client", label: "Add Client", visible: canViewClientPayrollInLoginSettings },
-    { id: "payroll", label: "Add Payroll", visible: canViewClientPayrollInLoginSettings },
     { id: "company", label: "Add Company", visible: canAddCompany }
   ].filter((item) => item.visible);
   const shortcutJobOptions = useMemo(() => {
@@ -20901,8 +20898,6 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                       {hasSuiteModulesAccess ? (
                         <div className="button-row">
                           <button onClick={() => window.open("/client-login", "_blank", "noopener,noreferrer")}>Open Client Portal</button>
-                          <button onClick={() => window.open("/employee-login", "_blank", "noopener,noreferrer")}>Open Employee Portal</button>
-                          <button onClick={() => window.open("/payroll-login", "_blank", "noopener,noreferrer")}>Open Payroll Portal</button>
                         </div>
                       ) : (
                         <div className="empty-state compact-empty">
