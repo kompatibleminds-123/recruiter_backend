@@ -3371,6 +3371,33 @@ function normalizeMarketingTemplateRow(row = null) {
   };
 }
 
+function isAdminActor(actor = null) {
+  return String(actor?.role || "").trim().toLowerCase() === "admin";
+}
+
+function buildMarketingOwnerFilter(actor = null, columnName = "created_by") {
+  if (isAdminActor(actor)) return "";
+  const actorId = encodeURIComponent(String(actor?.id || "").trim());
+  if (!actorId) return "&id=eq.__no_actor__";
+  return `&${columnName}=eq.${actorId}`;
+}
+
+async function getMarketingCampaignForActor(actor, campaignId = "") {
+  const safeCampaignId = encodeURIComponent(String(campaignId || "").trim());
+  const safeCompanyId = encodeURIComponent(String(actor?.companyId || "").trim());
+  if (!safeCampaignId || !safeCompanyId) return null;
+  const rows = await supabaseTableFetch(
+    "marketing_campaigns",
+    `?select=id,sender_user_id,company_id&company_id=eq.${safeCompanyId}&id=eq.${safeCampaignId}&limit=1`
+  ).catch(() => []);
+  const campaign = Array.isArray(rows) && rows.length ? rows[0] : null;
+  if (!campaign) return null;
+  if (isAdminActor(actor)) return campaign;
+  const ownerId = String(campaign?.sender_user_id || "").trim();
+  if (ownerId && ownerId === String(actor?.id || "").trim()) return campaign;
+  return null;
+}
+
 function buildMarketingSignatureHtmlAndText(settings = {}) {
   const signatureHtml = String(settings?.signatureHtml || "").trim();
   const signatureText = String(settings?.signatureText || "").trim();
@@ -3397,7 +3424,10 @@ async function processMarketingWorkerTickForActor(actor, options = {}) {
   const smtpSettings = await getUserSmtpSettings({ companyId: String(actor?.companyId || "").trim(), userId: String(actor?.id || "").trim() }).catch(() => null);
   const signature = buildMarketingSignatureHtmlAndText(smtpSettings || {});
   const now = new Date();
-  const campaigns = await supabaseTableFetch("marketing_campaigns", `?select=*&company_id=eq.${companyId}&status=eq.active&limit=50`);
+  const campaigns = await supabaseTableFetch(
+    "marketing_campaigns",
+    `?select=*&company_id=eq.${companyId}&status=eq.active${buildMarketingOwnerFilter(actor, "sender_user_id")}&limit=50`
+  );
   let sent = 0;
   for (const campaign of Array.isArray(campaigns) ? campaigns : []) {
     const campaignId = String(campaign?.id || "").trim();
@@ -10821,6 +10851,8 @@ const server = http.createServer(async (req, res) => {
     try {
       const actor = await requireSessionUser(getBearerToken(req));
       const companyId = encodeURIComponent(String(actor.companyId || "").trim());
+      const isAdmin = isAdminActor(actor);
+      const ownerUserId = encodeURIComponent(String(actor.id || "").trim());
       const dateFrom = String(requestUrl.searchParams.get("dateFrom") || "").trim();
       const dateTo = String(requestUrl.searchParams.get("dateTo") || "").trim();
       const fromIso = dateFrom ? `${dateFrom}T00:00:00.000Z` : "";
@@ -10833,11 +10865,23 @@ const server = http.createServer(async (req, res) => {
         fromIso ? `event_at=gte.${encodeURIComponent(fromIso)}` : "",
         toIso ? `event_at=lte.${encodeURIComponent(toIso)}` : ""
       ].filter(Boolean).join("&");
-      const [prospects, campaigns, queue, events] = await Promise.all([
-        supabaseTableFetch("marketing_prospects", `?select=id,status&company_id=eq.${companyId}&limit=5000`),
-        supabaseTableFetch("marketing_campaigns", `?select=id,status&company_id=eq.${companyId}&limit=5000`),
-        supabaseTableFetch("marketing_campaign_prospects", `?select=id,state&company_id=eq.${companyId}${queueDateFilters ? `&${queueDateFilters}` : ""}&limit=5000`),
-        supabaseTableFetch("marketing_message_events", `?select=id,event_type&company_id=eq.${companyId}${eventDateFilters ? `&${eventDateFilters}` : ""}&limit=5000`)
+      const campaigns = await supabaseTableFetch(
+        "marketing_campaigns",
+        `?select=id,status&company_id=eq.${companyId}${isAdmin ? "" : `&sender_user_id=eq.${ownerUserId}`}&limit=5000`
+      );
+      const campaignIds = (Array.isArray(campaigns) ? campaigns : []).map((item) => String(item?.id || "").trim()).filter(Boolean);
+      const campaignInClause = campaignIds.map((id) => `"${id.replace(/"/g, "")}"`).join(",");
+      const [prospects, queue, events] = await Promise.all([
+        supabaseTableFetch(
+          "marketing_prospects",
+          `?select=id,status&company_id=eq.${companyId}${isAdmin ? "" : `&created_by=eq.${ownerUserId}`}&limit=5000`
+        ),
+        campaignIds.length
+          ? supabaseTableFetch("marketing_campaign_prospects", `?select=id,state&company_id=eq.${companyId}&campaign_id=in.(${campaignInClause})${queueDateFilters ? `&${queueDateFilters}` : ""}&limit=5000`)
+          : [],
+        campaignIds.length
+          ? supabaseTableFetch("marketing_message_events", `?select=id,event_type&company_id=eq.${companyId}&campaign_id=in.(${campaignInClause})${eventDateFilters ? `&${eventDateFilters}` : ""}&limit=5000`)
+          : []
       ]);
       const summarize = (rows = [], key = "status") => (Array.isArray(rows) ? rows : []).reduce((acc, item) => {
         const label = String(item?.[key] || "unknown").trim().toLowerCase() || "unknown";
@@ -10871,7 +10915,7 @@ const server = http.createServer(async (req, res) => {
       const categoryFilter = String(requestUrl.searchParams.get("category") || "").trim().toLowerCase();
       const rows = await supabaseTableFetch(
         "marketing_prospects",
-        `?select=id,name,email,phone,company_name,designation,category,categories,status,updated_at&company_id=eq.${companyId}&order=updated_at.desc&limit=5000`
+        `?select=id,name,email,phone,company_name,designation,category,categories,status,updated_at&company_id=eq.${companyId}${buildMarketingOwnerFilter(actor, "created_by")}&order=updated_at.desc&limit=5000`
       );
       const filtered = (Array.isArray(rows) ? rows : []).filter((item) => {
         if (categoryFilter) {
@@ -10927,7 +10971,7 @@ const server = http.createServer(async (req, res) => {
       if (!item.name || !item.email) throw new Error("Name and email are required.");
       const existingRows = await supabaseTableFetch(
         "marketing_prospects",
-        `?select=id,name,email&company_id=eq.${encodeURIComponent(actor.companyId)}&email=eq.${encodeURIComponent(item.email)}&limit=1`
+        `?select=id,name,email&company_id=eq.${encodeURIComponent(actor.companyId)}&email=eq.${encodeURIComponent(item.email)}${buildMarketingOwnerFilter(actor, "created_by")}&limit=1`
       ).catch(() => []);
       if (Array.isArray(existingRows) && existingRows.length) {
         throw new Error("Prospect already exists for this email. Use existing record or attach it to a campaign.");
@@ -10962,7 +11006,7 @@ const server = http.createServer(async (req, res) => {
       if (!Object.keys(patch).length) throw new Error("Nothing to update.");
       const updated = await supabaseTableFetch(
         "marketing_prospects",
-        `?id=eq.${encodeURIComponent(prospectId)}&company_id=eq.${encodeURIComponent(actor.companyId)}&select=*`,
+        `?id=eq.${encodeURIComponent(prospectId)}&company_id=eq.${encodeURIComponent(actor.companyId)}${buildMarketingOwnerFilter(actor, "created_by")}&select=*`,
         { method: "PATCH", body: patch, prefer: "return=representation" }
       );
       sendJson(res, 200, { ok: true, result: Array.isArray(updated) && updated.length ? updated[0] : null });
@@ -10989,7 +11033,7 @@ const server = http.createServer(async (req, res) => {
       );
       await supabaseTableFetch(
         "marketing_prospects",
-        `?id=eq.${encodeURIComponent(prospectId)}&company_id=eq.${encodeURIComponent(actor.companyId)}&select=id`,
+        `?id=eq.${encodeURIComponent(prospectId)}&company_id=eq.${encodeURIComponent(actor.companyId)}${buildMarketingOwnerFilter(actor, "created_by")}&select=id`,
         { method: "DELETE", prefer: "return=minimal" }
       );
       sendJson(res, 200, { ok: true, result: { deleted: true } });
@@ -11222,7 +11266,7 @@ const server = http.createServer(async (req, res) => {
     try {
       const actor = await requireSessionUser(getBearerToken(req));
       const companyId = encodeURIComponent(String(actor.companyId || "").trim());
-      const items = await supabaseTableFetch("marketing_campaigns", `?select=id,name,category,status,sender_user_id,send_gap_minutes,daily_cap,updated_at,created_at&company_id=eq.${companyId}&order=updated_at.desc&limit=100`);
+      const items = await supabaseTableFetch("marketing_campaigns", `?select=id,name,category,status,sender_user_id,send_gap_minutes,daily_cap,updated_at,created_at&company_id=eq.${companyId}${buildMarketingOwnerFilter(actor, "sender_user_id")}&order=updated_at.desc&limit=100`);
       const dateFrom = String(requestUrl.searchParams.get("dateFrom") || "").trim();
       const dateTo = String(requestUrl.searchParams.get("dateTo") || "").trim();
       const fromIso = dateFrom ? `${dateFrom}T00:00:00.000Z` : "";
@@ -11301,7 +11345,7 @@ const server = http.createServer(async (req, res) => {
       if (!Object.keys(patch).length) throw new Error("Nothing to update.");
       const updated = await supabaseTableFetch(
         "marketing_campaigns",
-        `?id=eq.${encodeURIComponent(campaignId)}&company_id=eq.${encodeURIComponent(actor.companyId)}&select=*`,
+        `?id=eq.${encodeURIComponent(campaignId)}&company_id=eq.${encodeURIComponent(actor.companyId)}${buildMarketingOwnerFilter(actor, "sender_user_id")}&select=*`,
         { method: "PATCH", body: patch, prefer: "return=representation" }
       );
       sendJson(res, 200, { ok: true, result: Array.isArray(updated) && updated.length ? updated[0] : null });
@@ -11333,7 +11377,7 @@ const server = http.createServer(async (req, res) => {
       );
       await supabaseTableFetch(
         "marketing_campaigns",
-        `?id=eq.${encodeURIComponent(campaignId)}&company_id=eq.${encodeURIComponent(actor.companyId)}&select=id`,
+        `?id=eq.${encodeURIComponent(campaignId)}&company_id=eq.${encodeURIComponent(actor.companyId)}${buildMarketingOwnerFilter(actor, "sender_user_id")}&select=id`,
         { method: "DELETE", prefer: "return=minimal" }
       );
       sendJson(res, 200, { ok: true, result: { deleted: true } });
@@ -11347,6 +11391,8 @@ const server = http.createServer(async (req, res) => {
     try {
       const actor = await requireSessionUser(getBearerToken(req));
       const campaignId = String(requestUrl.pathname.replace(/^\/company\/marketing\/campaigns\//, "").replace(/\/prospects$/, "")).trim();
+      const campaignAccess = await getMarketingCampaignForActor(actor, campaignId);
+      if (!campaignAccess) throw new Error("Campaign not found or not accessible.");
       const body = await readJsonBody(req);
       const prospectIds = Array.isArray(body.prospectIds) ? body.prospectIds.map((id) => String(id || "").trim()).filter(Boolean) : [];
       if (!prospectIds.length) throw new Error("prospectIds required.");
@@ -11376,7 +11422,10 @@ const server = http.createServer(async (req, res) => {
   if (req.method === "GET" && /^\/company\/marketing\/campaigns\/[^/]+\/prospects$/.test(requestUrl.pathname)) {
     try {
       const actor = await requireSessionUser(getBearerToken(req));
-      const campaignId = encodeURIComponent(String(requestUrl.pathname.replace(/^\/company\/marketing\/campaigns\//, "").replace(/\/prospects$/, "")).trim());
+      const rawCampaignId = String(requestUrl.pathname.replace(/^\/company\/marketing\/campaigns\//, "").replace(/\/prospects$/, "")).trim();
+      const campaignAccess = await getMarketingCampaignForActor(actor, rawCampaignId);
+      if (!campaignAccess) throw new Error("Campaign not found or not accessible.");
+      const campaignId = encodeURIComponent(rawCampaignId);
       const companyId = encodeURIComponent(String(actor.companyId || "").trim());
       const limit = Math.max(1, Math.min(100, Number(requestUrl.searchParams.get("limit") || 100)));
       const page = Math.max(1, Number(requestUrl.searchParams.get("page") || 1));
@@ -11418,7 +11467,10 @@ const server = http.createServer(async (req, res) => {
   if (req.method === "GET" && /^\/company\/marketing\/campaigns\/[^/]+\/template$/.test(requestUrl.pathname)) {
     try {
       const actor = await requireSessionUser(getBearerToken(req));
-      const campaignId = encodeURIComponent(String(requestUrl.pathname.replace(/^\/company\/marketing\/campaigns\//, "").replace(/\/template$/, "")).trim());
+      const rawCampaignId = String(requestUrl.pathname.replace(/^\/company\/marketing\/campaigns\//, "").replace(/\/template$/, "")).trim();
+      const campaignAccess = await getMarketingCampaignForActor(actor, rawCampaignId);
+      if (!campaignAccess) throw new Error("Campaign not found or not accessible.");
+      const campaignId = encodeURIComponent(rawCampaignId);
       const companyId = encodeURIComponent(String(actor.companyId || "").trim());
       const rows = await supabaseTableFetch("marketing_templates", `?select=*&company_id=eq.${companyId}&campaign_id=eq.${campaignId}&limit=1`);
       const row = Array.isArray(rows) && rows.length ? normalizeMarketingTemplateRow(rows[0]) : null;
@@ -11433,6 +11485,8 @@ const server = http.createServer(async (req, res) => {
     try {
       const actor = await requireSessionUser(getBearerToken(req));
       const campaignId = String(requestUrl.pathname.replace(/^\/company\/marketing\/campaigns\//, "").replace(/\/template$/, "")).trim();
+      const campaignAccess = await getMarketingCampaignForActor(actor, campaignId);
+      if (!campaignAccess) throw new Error("Campaign not found or not accessible.");
       const body = await readJsonBody(req);
       const now = toIsoNow();
       const bodyTextClean = String(body.bodyText || body.body_text || "").trim();
@@ -11467,7 +11521,7 @@ const server = http.createServer(async (req, res) => {
     try {
       const actor = await requireSessionUser(getBearerToken(req));
       const companyId = encodeURIComponent(String(actor.companyId || "").trim());
-      const rows = await supabaseTableFetch("marketing_templates", `?select=id,campaign_id,subject,body_text,target_categories,updated_at,created_at&company_id=eq.${companyId}&order=updated_at.desc&limit=100`);
+      const rows = await supabaseTableFetch("marketing_templates", `?select=id,campaign_id,subject,body_text,target_categories,updated_at,created_at,updated_by&company_id=eq.${companyId}${buildMarketingOwnerFilter(actor, "updated_by")}&order=updated_at.desc&limit=100`);
       const items = (Array.isArray(rows) ? rows : []).map((row) => normalizeMarketingTemplateRow(row));
       sendJson(res, 200, { ok: true, result: { items } });
     } catch (error) {
@@ -11593,6 +11647,8 @@ const server = http.createServer(async (req, res) => {
       const actor = await requireSessionUser(getBearerToken(req));
       const action = String((requestUrl.pathname.match(/(start|pause|resume)$/) || [])[1] || "").trim();
       const campaignId = String(requestUrl.pathname.replace(/^\/company\/marketing\/campaigns\//, "").replace(/\/(start|pause|resume)$/, "")).trim();
+      const campaignAccess = await getMarketingCampaignForActor(actor, campaignId);
+      if (!campaignAccess) throw new Error("Campaign not found or not accessible.");
       const status = action === "pause" ? "paused" : action === "resume" ? "active" : "active";
       const updated = await supabaseTableFetch("marketing_campaigns", `?id=eq.${encodeURIComponent(campaignId)}&company_id=eq.${encodeURIComponent(actor.companyId)}&select=*`, {
         method: "PATCH",
@@ -11610,6 +11666,8 @@ const server = http.createServer(async (req, res) => {
     try {
       const actor = await requireSessionUser(getBearerToken(req));
       const campaignId = String(requestUrl.pathname.replace(/^\/company\/marketing\/campaigns\//, "").replace(/\/followups$/, "")).trim();
+      const campaignAccess = await getMarketingCampaignForActor(actor, campaignId);
+      if (!campaignAccess) throw new Error("Campaign not found or not accessible.");
       const body = await readJsonBody(req);
       const waitDays = Math.max(1, Number(body.waitDays || 7));
       const maxFollowups = Math.max(1, Number(body.maxFollowups || 2));
