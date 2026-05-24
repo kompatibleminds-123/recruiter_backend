@@ -3303,10 +3303,31 @@ function extractSafeFirstName(fullName = "") {
   return "";
 }
 
+function buildMarketingSignatureHtmlAndText(settings = {}) {
+  const signatureHtml = String(settings?.signatureHtml || "").trim();
+  const signatureText = String(settings?.signatureText || "").trim();
+  const links = [
+    { label: String(settings?.signatureLinkLabel || "").trim(), url: String(settings?.signatureLinkUrl || "").trim() },
+    { label: String(settings?.signatureLinkLabel2 || "").trim(), url: String(settings?.signatureLinkUrl2 || "").trim() }
+  ].filter((item) => item.url);
+  const linksHtml = links
+    .map((item) => `<a href="${escapeHtml(item.url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(item.label || item.url)}</a>`)
+    .join(" | ");
+  const fallbackHtml = [
+    signatureText ? `<div>${escapeHtml(signatureText).replace(/\n/g, "<br/>")}</div>` : "",
+    linksHtml ? `<div style="margin-top:6px;">${linksHtml}</div>` : ""
+  ].filter(Boolean).join("");
+  const finalHtml = signatureHtml || fallbackHtml;
+  const finalText = signatureText || stripHtmlForText(signatureHtml || "");
+  return { html: finalHtml, text: finalText };
+}
+
 async function processMarketingWorkerTickForActor(actor, options = {}) {
   const companyId = encodeURIComponent(String(actor?.companyId || "").trim());
   if (!companyId) return { sent: 0 };
   const batchPerCampaign = Math.max(1, Math.min(50, Number(options?.batchPerCampaign || 1)));
+  const smtpSettings = await getUserSmtpSettings({ companyId: String(actor?.companyId || "").trim(), userId: String(actor?.id || "").trim() }).catch(() => null);
+  const signature = buildMarketingSignatureHtmlAndText(smtpSettings || {});
   const now = new Date();
   const campaigns = await supabaseTableFetch("marketing_campaigns", `?select=*&company_id=eq.${companyId}&status=eq.active&limit=50`);
   let sent = 0;
@@ -3345,10 +3366,16 @@ async function processMarketingWorkerTickForActor(actor, options = {}) {
         senderEmail: String(actor?.email || "").trim()
       });
       const hasHtmlBody = /<[^>]+>/.test(renderedBody);
-      const text = hasHtmlBody ? stripHtmlForText(renderedBody) : renderedBody;
-      const html = hasHtmlBody
+      const textBase = hasHtmlBody ? stripHtmlForText(renderedBody) : renderedBody;
+      const htmlBase = hasHtmlBody
         ? renderedBody
-        : `<pre style="font-family:Arial,sans-serif;white-space:pre-wrap;">${escapeHtml(text)}</pre>`;
+        : `<pre style="font-family:Arial,sans-serif;white-space:pre-wrap;">${escapeHtml(textBase)}</pre>`;
+      const html = signature.html
+        ? `${htmlBase}<div style="margin-top:16px;">${signature.html}</div>`
+        : htmlBase;
+      const text = signature.text
+        ? `${textBase}\n\n${signature.text}`
+        : textBase;
       await sendJdEmailAsActor(actor, { to, subject, text, html, cc: "", attachments: [] });
       await supabaseTableFetch("marketing_campaign_prospects", `?id=eq.${encodeURIComponent(String(row.id || ""))}&select=*`, {
         method: "PATCH",
@@ -10758,9 +10785,9 @@ const server = http.createServer(async (req, res) => {
       const categoryFilter = String(requestUrl.searchParams.get("category") || "").trim().toLowerCase();
       const rows = await supabaseTableFetch(
         "marketing_prospects",
-        `?select=id,name,email,phone,company_name,designation,category,categories,status,updated_at&company_id=eq.${companyId}&order=updated_at.desc&offset=${offset}&limit=${limit}`
+        `?select=id,name,email,phone,company_name,designation,category,categories,status,updated_at&company_id=eq.${companyId}&order=updated_at.desc&limit=5000`
       );
-      const items = (Array.isArray(rows) ? rows : []).filter((item) => {
+      const filtered = (Array.isArray(rows) ? rows : []).filter((item) => {
         if (categoryFilter) {
           const currentCategory = String(item?.category || "").trim().toLowerCase();
           if (currentCategory !== categoryFilter) return false;
@@ -10769,7 +10796,19 @@ const server = http.createServer(async (req, res) => {
         const hay = `${item?.name || ""} ${item?.email || ""} ${item?.company_name || ""} ${item?.designation || ""} ${item?.category || ""}`.toLowerCase();
         return hay.includes(q);
       });
-      sendJson(res, 200, { ok: true, result: { items, page, limit, hasMore: items.length >= limit } });
+      const total = filtered.length;
+      const items = filtered.slice(offset, offset + limit);
+      sendJson(res, 200, {
+        ok: true,
+        result: {
+          items,
+          page,
+          limit,
+          total,
+          totalPages: Math.max(1, Math.ceil(total / limit)),
+          hasMore: (offset + items.length) < total
+        }
+      });
     } catch (error) {
       sendJson(res, 400, { ok: false, error: String(error?.message || error) });
     }
@@ -11405,6 +11444,7 @@ const server = http.createServer(async (req, res) => {
       if (!templateId) throw new Error("Template id is required.");
       const body = await readJsonBody(req);
       const patch = {
+        campaign_id: body.campaignId !== undefined ? String(body.campaignId || "").trim() : undefined,
         subject: body.subject !== undefined ? String(body.subject || "").trim() : undefined,
         body_text: body.bodyText !== undefined ? String(body.bodyText || "").trim() : undefined,
         target_categories: body.targetCategories !== undefined ? normalizeMarketingCategories(body.targetCategories || "") : undefined,
@@ -11412,6 +11452,7 @@ const server = http.createServer(async (req, res) => {
         updated_by: actor.id
       };
       Object.keys(patch).forEach((key) => patch[key] === undefined && delete patch[key]);
+      if (patch.campaign_id !== undefined && !patch.campaign_id) throw new Error("campaignId cannot be empty.");
       if (!Object.keys(patch).length) throw new Error("Nothing to update.");
       const updated = await supabaseTableFetch(
         "marketing_templates",

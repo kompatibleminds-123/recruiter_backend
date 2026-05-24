@@ -3945,7 +3945,22 @@ function RichTextEditor({ value, onChange, placeholder = "Write here...", minHei
 
   const run = (command, arg = null) => {
     try {
+      const node = editorRef.current;
+      if (!node) return;
+      node.focus();
+      const before = String(node.innerHTML || "");
+      const selection = window.getSelection?.();
+      const range = selection && selection.rangeCount ? selection.getRangeAt(0) : null;
       document.execCommand(command, false, arg);
+      if (command === "bold" && range && !range.collapsed && String(node.innerHTML || "") === before) {
+        const strong = document.createElement("strong");
+        strong.appendChild(range.extractContents());
+        range.insertNode(strong);
+        selection?.removeAllRanges();
+        const nextRange = document.createRange();
+        nextRange.selectNodeContents(strong);
+        selection?.addRange(nextRange);
+      }
     } catch {}
     onChange(String(editorRef.current?.innerHTML || ""));
   };
@@ -5642,14 +5657,12 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
   const templateSubjectPlaceholderTokens = [
     "{{name}}",
     "{{first_name}}",
-    "{{company}}",
-    "{{company_name}}"
+    "{{company}}"
   ];
   const templateBodyPlaceholderTokens = [
     "{{name}}",
     "{{first_name}}",
     "{{company}}",
-    "{{company_name}}",
     "{{sender_name}}",
     "{{sender_first_name}}",
     "{{sender_email}}"
@@ -5672,6 +5685,7 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
   const [marketingDateTo, setMarketingDateTo] = useState("");
   const [prospectsPage, setProspectsPage] = useState(1);
   const [prospectsHasMore, setProspectsHasMore] = useState(false);
+  const [prospectsTotalPages, setProspectsTotalPages] = useState(1);
   const [queuePage, setQueuePage] = useState(1);
   const [queueHasMore, setQueueHasMore] = useState(false);
   const [sendBatchSize, setSendBatchSize] = useState(3);
@@ -5681,6 +5695,8 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
   const [templatePreviewProspectId, setTemplatePreviewProspectId] = useState("");
   const [templatePreviewProspects, setTemplatePreviewProspects] = useState([]);
   const [templatePreviewResult, setTemplatePreviewResult] = useState(null);
+  const [templateSearchText, setTemplateSearchText] = useState("");
+  const [templateLabelFilter, setTemplateLabelFilter] = useState("");
   const [prospectDraft, setProspectDraft] = useState({ name: "", email: "", phone: "", companyName: "", designation: "", categoriesText: "" });
   const [campaignDraft, setCampaignDraft] = useState({ name: "", category: "", sendGapMinutes: 5, dailyCap: 50 });
   const [editingProspectId, setEditingProspectId] = useState("");
@@ -5728,20 +5744,17 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
 
   const loadProspects = useCallback(async (pageOverride = null) => {
     const pageToLoad = Number.isFinite(Number(pageOverride)) ? Number(pageOverride) : prospectsPage;
-    const result = await api(`/company/marketing/prospects?limit=100&page=${pageToLoad}`, token);
+    const params = new URLSearchParams();
+    params.set("limit", "10");
+    params.set("page", String(pageToLoad));
+    if (prospectSearch) params.set("q", String(prospectSearch || "").trim());
+    if (prospectCategoryFilter) params.set("category", String(prospectCategoryFilter || "").trim());
+    const result = await api(`/company/marketing/prospects?${params.toString()}`, token);
     const items = Array.isArray(result?.items) ? result.items : [];
-    setProspects((current) => {
-      const merged = pageToLoad === 1 ? items : [...current, ...items];
-      const uniqueById = new Map();
-      merged.forEach((item) => {
-        const id = String(item?.id || "").trim();
-        if (!id) return;
-        uniqueById.set(id, item);
-      });
-      return Array.from(uniqueById.values());
-    });
+    setProspects(items);
     setProspectsHasMore(Boolean(result?.hasMore));
-  }, [prospectsPage, token]);
+    setProspectsTotalPages(Math.max(1, Number(result?.totalPages || 1)));
+  }, [prospectsPage, prospectSearch, prospectCategoryFilter, token]);
 
   const loadCampaigns = useCallback(async () => {
     const params = new URLSearchParams();
@@ -5824,7 +5837,7 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
           setTemplateDraft({
             subject: String(row.subject || ""),
             bodyText: String(row.body_text || ""),
-            targetCategoriesText: Array.isArray(row.target_categories) ? row.target_categories.join(", ") : String(row.target_categories || "")
+            targetCategoriesText: ""
           });
         })
         .catch(() => {});
@@ -5847,6 +5860,18 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
   }, [activeTab]);
 
   const activeCampaign = campaigns.find((item) => String(item.id) === String(selectedCampaignId)) || null;
+  const templateLabelOptions = Array.from(new Set(
+    campaigns.map((item) => String(item?.category || "").trim()).filter(Boolean)
+  )).sort((a, b) => a.localeCompare(b));
+  const filteredTemplates = templates.filter((item) => {
+    const campaign = campaigns.find((row) => String(row?.id || "") === String(item?.campaign_id || "")) || null;
+    const campaignLabel = String(campaign?.category || "").trim().toLowerCase();
+    if (templateLabelFilter && campaignLabel !== String(templateLabelFilter || "").trim().toLowerCase()) return false;
+    const q = String(templateSearchText || "").trim().toLowerCase();
+    if (!q) return true;
+    const hay = `${campaign?.name || ""} ${campaign?.category || ""} ${item?.subject || ""}`.toLowerCase();
+    return hay.includes(q);
+  });
   const categories = Array.from(new Set(
     prospects.flatMap((item) => {
       const primary = String(item?.category || "").trim();
@@ -5854,19 +5879,8 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
       return [primary, ...multi].filter(Boolean);
     })
   )).sort((a, b) => a.localeCompare(b));
-  const filteredProspects = prospects.filter((item) => {
-    if (prospectCategoryFilter) {
-      const primary = String(item?.category || "").trim().toLowerCase();
-      const multi = Array.isArray(item?.categories) ? item.categories.map((c) => String(c || "").trim().toLowerCase()) : [];
-      if (primary !== String(prospectCategoryFilter || "").trim().toLowerCase() && !multi.includes(String(prospectCategoryFilter || "").trim().toLowerCase())) {
-        return false;
-      }
-    }
-    if (!prospectSearch) return true;
-    const hay = `${item?.name || ""} ${item?.email || ""} ${item?.phone || ""} ${item?.company_name || ""} ${item?.designation || ""} ${item?.category || ""}`.toLowerCase();
-    return hay.includes(String(prospectSearch || "").trim().toLowerCase());
-  });
-  const selectedProspectsCount = selectedProspectIds.filter((id) => prospects.some((item) => String(item?.id || "") === String(id))).length;
+  const filteredProspects = prospects;
+  const selectedProspectsCount = selectedProspectIds.length;
   const setOk = (message) => setStatus({ message: String(message || ""), kind: "ok" });
   const setErr = (error) => setStatus({ message: String(error?.message || error || "Request failed"), kind: "error" });
 
@@ -6118,7 +6132,7 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
     setTemplateDraft({
       subject: String(item.subject || ""),
       bodyText: String(item.body_text || ""),
-      targetCategoriesText: Array.isArray(item.target_categories) ? item.target_categories.join(", ") : String(item.target_categories || "")
+      targetCategoriesText: ""
     });
   }
 
@@ -6343,7 +6357,7 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
           </label>
           <label><span>Selected</span><input readOnly value={`${selectedProspectsCount}`} /></label>
         </div>
-        <div className="button-row tight">
+        <div className="button-row tight" style={{ gap: 12, flexWrap: "wrap", marginTop: 6 }}>
           <button className="ghost-btn" onClick={selectFilteredProspects}>Select filtered</button>
           <button className="ghost-btn" onClick={clearProspectSelection}>Clear selection</button>
           <button className="ghost-btn" disabled={!selectedProspectIds.length || saving} onClick={() => void bulkDeleteSelectedProspects().catch(setErr)}>
@@ -6403,18 +6417,28 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
             </tbody>
           </table>
         </div>
-        {prospectsHasMore ? (
-          <div className="button-row tight">
-            <button className="ghost-btn" onClick={() => setProspectsPage((current) => current + 1)}>Load more prospects</button>
+        <div className="button-row" style={{ gap: 12, flexWrap: "wrap", marginTop: 10 }}>
+          <button className="ghost-btn" disabled={prospectsPage <= 1} onClick={() => setProspectsPage((current) => Math.max(1, current - 1))}>Previous</button>
+          <div className="button-row tight" style={{ gap: 10, flexWrap: "wrap" }}>
+            {Array.from({ length: prospectsTotalPages }, (_, index) => index + 1).slice(0, 25).map((pageNo) => (
+              <button
+                key={`prospect-page-${pageNo}`}
+                className={pageNo === prospectsPage ? "" : "ghost-btn"}
+                onClick={() => setProspectsPage(pageNo)}
+              >
+                {pageNo}
+              </button>
+            ))}
           </div>
-        ) : null}
+          <button className="ghost-btn" disabled={prospectsPage >= prospectsTotalPages} onClick={() => setProspectsPage((current) => Math.min(prospectsTotalPages, current + 1))}>Next</button>
+        </div>
       </Section>
         </>
       ) : null}
 
       {activeTab === "templates" ? (
       <Section kicker="Email Templates" title="Template Library">
-        <p className="muted">Send-to segments control audience filtering during sends.</p>
+        <p className="muted">Campaign is required to save template.</p>
         <div className="form-grid two-col">
           <label>
             <span>Select campaign</span>
@@ -6439,7 +6463,6 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
               minHeight={220}
             />
           </label>
-          <label><span>Send to segments (comma separated)</span><input value={templateDraft.targetCategoriesText} onChange={(e) => setTemplateDraft((c) => ({ ...c, targetCategoriesText: e.target.value }))} placeholder="Finance HR, Logistics HR, Real Estate HR" /></label>
         </div>
         <div className="item-card compact-card" style={{ marginTop: 12 }}>
           <div className="item-subtitle">Click placeholders to insert</div>
@@ -6463,7 +6486,7 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
             const payload = {
               subject: templateDraft.subject,
               bodyText: templateDraft.bodyText,
-              targetCategories: String(templateDraft.targetCategoriesText || "").split(",").map((item) => item.trim()).filter(Boolean)
+              campaignId: selectedCampaignId
             };
             if (editingTemplateId) {
               await api(`/company/marketing/templates/${encodeURIComponent(editingTemplateId)}`, token, "PATCH", payload);
@@ -6476,6 +6499,22 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
           })().catch(setErr)}>{editingTemplateId ? "Update template" : "Save template"}</button>
           {editingTemplateId ? <button className="ghost-btn" type="button" onClick={cancelTemplateEdit}>Cancel edit</button> : null}
           <button className="ghost-btn" type="button" onClick={() => void generateTemplatePreview().catch(setErr)}>Preview email</button>
+        </div>
+        <div className="form-grid two-col" style={{ marginTop: 12 }}>
+          <label>
+            <span>Search templates</span>
+            <input value={templateSearchText} onChange={(e) => setTemplateSearchText(e.target.value)} placeholder="subject, campaign, label..." />
+          </label>
+          <label>
+            <span>Filter by campaign label</span>
+            <select value={templateLabelFilter} onChange={(e) => setTemplateLabelFilter(e.target.value)}>
+              <option value="">All labels</option>
+              {templateLabelOptions.map((label) => <option key={`tpl-label-${label}`} value={label}>{label}</option>)}
+            </select>
+          </label>
+        </div>
+        <div className="muted" style={{ marginTop: 6 }}>
+          Showing {filteredTemplates.length} of {templates.length} template(s)
         </div>
         <div className="form-grid two-col" style={{ marginTop: 12 }}>
           <label>
@@ -6509,20 +6548,17 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
               <tr>
                 <th>Campaign</th>
                 <th>Subject</th>
-                <th>Target Categories</th>
                 <th>Updated</th>
                 <th>Actions</th>
               </tr>
             </thead>
             <tbody>
-              {templates.map((item) => {
+              {filteredTemplates.map((item) => {
                 const campaign = campaigns.find((row) => String(row?.id || "") === String(item?.campaign_id || ""));
-                const targetCategories = Array.isArray(item?.target_categories) ? item.target_categories.join(", ") : String(item?.target_categories || "-");
                 return (
                   <tr key={String(item?.id || "")}>
                     <td>{campaign?.name || item?.campaign_id || "-"}</td>
                     <td>{item?.subject || "-"}</td>
-                    <td>{targetCategories || "-"}</td>
                     <td>{item?.updated_at ? new Date(item.updated_at).toLocaleString() : "-"}</td>
                     <td>
                       <div className="button-row tight">
@@ -6539,7 +6575,7 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
                   </tr>
                 );
               })}
-              {!templates.length ? <tr><td colSpan="5"><div className="empty-state compact-empty">No templates saved yet.</div></td></tr> : null}
+              {!filteredTemplates.length ? <tr><td colSpan="4"><div className="empty-state compact-empty">{templates.length ? "No templates match this filter." : "No templates saved yet."}</div></td></tr> : null}
             </tbody>
           </table>
         </div>
