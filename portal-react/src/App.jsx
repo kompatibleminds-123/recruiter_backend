@@ -7035,6 +7035,7 @@ function PortalApp({ token, onLogout }) {
   ));
   const [candidateSearchResults, setCandidateSearchResults] = useState([]);
   const [candidatePage, setCandidatePage] = useState(1);
+  const [candidatePageSize, setCandidatePageSize] = useState(10);
   const [candidateStructuredFilters, setCandidateStructuredFilters] = useState(EMPTY_CANDIDATE_STRUCTURED_FILTERS); // applied
   const [candidateStructuredFiltersDraft, setCandidateStructuredFiltersDraft] = useState(EMPTY_CANDIDATE_STRUCTURED_FILTERS); // editable
   const [candidateSearchBusy, setCandidateSearchBusy] = useState(false);
@@ -10059,10 +10060,14 @@ function PortalApp({ token, onLogout }) {
     });
   }, [candidateBaseUniverse, candidateStructuredFilters, state.assessments]);
   const pagedCandidates = useMemo(() => {
-    const start = (candidatePage - 1) * 10;
-    return candidateUniverse.slice(start, start + 10);
-  }, [candidateUniverse, candidatePage]);
-  const totalCandidatePages = Math.max(1, Math.ceil((candidateUniverse.length || 0) / 10));
+    const safePageSize = Math.max(10, Number(candidatePageSize || 10));
+    const start = (candidatePage - 1) * safePageSize;
+    return candidateUniverse.slice(start, start + safePageSize);
+  }, [candidateUniverse, candidatePage, candidatePageSize]);
+  const totalCandidatePages = Math.max(1, Math.ceil((candidateUniverse.length || 0) / Math.max(10, Number(candidatePageSize || 10))));
+  useEffect(() => {
+    setCandidatePage((current) => Math.min(Math.max(1, current), totalCandidatePages));
+  }, [totalCandidatePages]);
   const candidateSmartChipRows = useMemo(() => {
     const emptyRows = {
       aligned_interviews: [],
@@ -18172,6 +18177,20 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                       ))}
                     </div>
                     <div className="button-row">
+                      <label className="copy-preset-control">
+                        <span>Profiles / page</span>
+                        <select
+                          value={candidatePageSize}
+                          onChange={(e) => {
+                            setCandidatePageSize(Number(e.target.value || 10));
+                            setCandidatePage(1);
+                          }}
+                        >
+                          {[10, 40, 80, 160, 320, 500].map((size) => (
+                            <option key={`candidate-page-size-${size}`} value={size}>{size}</option>
+                          ))}
+                        </select>
+                      </label>
                       <button className="ghost-btn" disabled={candidatePage <= 1} onClick={() => setCandidatePage((page) => Math.max(1, page - 1))}>Previous</button>
                       <div className="muted">Page {candidatePage} of {totalCandidatePages}</div>
                       <button className="ghost-btn" disabled={candidatePage >= totalCandidatePages} onClick={() => setCandidatePage((page) => Math.min(totalCandidatePages, page + 1))}>Next</button>
@@ -20957,6 +20976,10 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
           } />
 
           <Route path="/marketing" element={<MarketingModulePage token={token} />} />
+          <Route path="/marketing/prospects" element={<MarketingModulePage token={token} initialTab="prospects" showInternalTabs={false} />} />
+          <Route path="/marketing/templates" element={<MarketingModulePage token={token} initialTab="templates" showInternalTabs={false} />} />
+          <Route path="/marketing/campaigns" element={<MarketingModulePage token={token} initialTab="campaigns" showInternalTabs={false} />} />
+          <Route path="/marketing/queue" element={<MarketingModulePage token={token} initialTab="queue" showInternalTabs={false} />} />
           <Route path="/marketing-module" element={<Navigate to="/marketing" replace />} />
 
           <Route path="*" element={<Navigate to="/dashboard" replace />} />

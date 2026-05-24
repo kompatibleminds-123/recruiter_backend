@@ -158,6 +158,10 @@ textarea { min-height: 92px; resize: vertical; }
   color: var(--muted);
 }
 .nav-section__items { display: grid; gap: 0.55rem; }
+.nav-standalone {
+  display: grid;
+  gap: 0.62rem;
+}
 .nav-btn {
   text-decoration: none;
   display: flex;
