@@ -6268,7 +6268,6 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
         <div className="button-row tight">
           <button className="ghost-btn" onClick={() => void refresh().catch(setErr)} disabled={loading}>Refresh</button>
           <button onClick={() => void api("/company/marketing/worker/tick", token, "POST", { batchPerCampaign: Math.max(1, Math.min(50, Number(sendBatchSize || 1))) }).then((result) => { setOk(`Send tick executed. Sent: ${Number(result?.sent || 0)} (batch ${Number(result?.batchPerCampaign || sendBatchSize)}).`); return refreshLight(activeTab); }).catch(setErr)} disabled={loading}>Run send tick</button>
-          <button className="ghost-btn" disabled={!selectedCampaignId} onClick={() => void queueFollowups().then(() => { setOk("1-week follow-up queue prepared."); return refreshLight(activeTab); }).catch(setErr)}>Queue 7-day follow-ups</button>
           <label style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
             <span className="muted">Batch size</span>
             <input
@@ -6903,9 +6902,9 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
       <Section kicker="Tracking" title="Delivery + Follow-up Snapshot">
         <div className="metric-grid compact">
           <div className="metric-card"><div className="metric-label">Sent</div><div className="metric-value">{overview?.events?.byType?.sent || 0}</div></div>
-          <div className="metric-card"><div className="metric-label">Bounced</div><div className="metric-value">{overview?.events?.byType?.bounce || overview?.events?.byType?.bounced || 0}</div></div>
-          <div className="metric-card"><div className="metric-label">Replies</div><div className="metric-value">{overview?.events?.byType?.reply || overview?.events?.byType?.replied || 0}</div></div>
           <div className="metric-card"><div className="metric-label">Ready Queue</div><div className="metric-value">{overview?.queue?.byStatus?.ready || 0}</div></div>
+          <div className="metric-card"><div className="metric-label">Total Queue</div><div className="metric-value">{overview?.queue?.total || 0}</div></div>
+          <div className="metric-card"><div className="metric-label">Events</div><div className="metric-value">{overview?.events?.total || 0}</div></div>
         </div>
       </Section>
       </>
