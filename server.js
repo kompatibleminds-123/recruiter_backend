@@ -115,6 +115,8 @@ const {
   saveCompanyJob,
   saveCompanyJobRecruiterShortcuts,
   saveCompanySharedExportPresets,
+  appendAuditLog,
+  listCompanyAuditLogs,
   upsertCompanyEmailThread,
   saveCompanyPersonalShortcuts,
   setCompanyExtensionPlan,
@@ -366,64 +368,31 @@ function buildPasswordResetMail({ adminName = "", resetUrl = "" }) {
 
 function planLabel(planCode = "") {
   const code = String(planCode || "").trim().toLowerCase();
-  if (code === "s1_basic_499") return "1 User - Basic Layout (Rs 499/month)";
-  if (code === "s1_full_999") return "1 User - Full Recruiter Mode (Rs 999/month)";
-  if (code === "s1_suite_1499") return "1 User - Full Recruiter + Other Modules (Rs 1499/month)";
-  if (code === "s3_basic_999") return "3 Users - Basic Layout (Rs 999/month)";
-  if (code === "s3_full_1999") return "3 Users - Full Recruiter Mode (Rs 1999/month)";
-  if (code === "s3_suite_2999") return "3 Users - Full Recruiter + Other Modules (Rs 2999/month)";
-  if (code === "s7_basic_1999") return "7 Users - Basic Layout (Rs 1999/month)";
-  if (code === "s7_full_3999") return "7 Users - Full Recruiter Mode (Rs 3999/month)";
-  if (code === "s7_suite_5999") return "7 Users - Full Recruiter + Other Modules (Rs 5999/month)";
-  if (code === "s15_basic_2999") return "7-15 Users - Basic Layout (Rs 2999/month)";
-  if (code === "s15_full_4999") return "7-15 Users - Full Recruiter Mode (Rs 4999/month)";
-  if (code === "s15_suite_6999") return "7-15 Users - Full Recruiter + Other Modules (Rs 6999/month)";
-  if (code === "enterprise_contact") return "Enterprise (15+ Users) - Contact Sales";
-  // Backward compatibility
-  if (code === "ext_499_1_user") return "Extension Lite - Rs 499";
-  if (code === "ext_999_3_users") return "Extension Team - Rs 999";
-  if (code === "ext_1999_7_users") return "Extension Pro - Rs 1999";
-  if (code === "saas_4999_unlimited") return "SaaS Unlimited - Rs 4999";
+  if (code === "trial") return "7-day Trial";
+  if (code === "basic") return "Basic";
+  if (code === "full_recruiter") return "Full Recruiter";
+  if (code.includes("basic") || code === "ext_499_1_user") return "Basic";
+  if (code.includes("full") || code.includes("suite") || code.includes("saas") || code === "ext_999_3_users" || code === "ext_1999_7_users") return "Full Recruiter";
   return String(planCode || "Plan").trim();
 }
 
 const PLAN_DEFINITIONS = {
-  trial: { code: "trial", label: "14-day Trial", amountInr: 0, interval: "one_time_trial", seats: 1, tier: "basic_layout", fullRecruiter: false, suiteModules: false },
-  s1_basic_499: { code: "s1_basic_499", label: "1 User - Basic Layout (Rs 499)", amountInr: 499, interval: "monthly", seats: 1, tier: "basic_layout", fullRecruiter: false, suiteModules: false },
-  s1_full_999: { code: "s1_full_999", label: "1 User - Full Recruiter Mode (Rs 999)", amountInr: 999, interval: "monthly", seats: 1, tier: "full_recruiter_mode", fullRecruiter: true, suiteModules: false },
-  s1_suite_1499: { code: "s1_suite_1499", label: "1 User - Full Recruiter + Other Modules (Rs 1499)", amountInr: 1499, interval: "monthly", seats: 1, tier: "full_recruiter_plus_modules", fullRecruiter: true, suiteModules: true },
-  s3_basic_999: { code: "s3_basic_999", label: "3 Users - Basic Layout (Rs 999)", amountInr: 999, interval: "monthly", seats: 3, tier: "basic_layout", fullRecruiter: false, suiteModules: false },
-  s3_full_1999: { code: "s3_full_1999", label: "3 Users - Full Recruiter Mode (Rs 1999)", amountInr: 1999, interval: "monthly", seats: 3, tier: "full_recruiter_mode", fullRecruiter: true, suiteModules: false },
-  s3_suite_2999: { code: "s3_suite_2999", label: "3 Users - Full Recruiter + Other Modules (Rs 2999)", amountInr: 2999, interval: "monthly", seats: 3, tier: "full_recruiter_plus_modules", fullRecruiter: true, suiteModules: true },
-  s7_basic_1999: { code: "s7_basic_1999", label: "7 Users - Basic Layout (Rs 1999)", amountInr: 1999, interval: "monthly", seats: 7, tier: "basic_layout", fullRecruiter: false, suiteModules: false },
-  s7_full_3999: { code: "s7_full_3999", label: "7 Users - Full Recruiter Mode (Rs 3999)", amountInr: 3999, interval: "monthly", seats: 7, tier: "full_recruiter_mode", fullRecruiter: true, suiteModules: false },
-  s7_suite_5999: { code: "s7_suite_5999", label: "7 Users - Full Recruiter + Other Modules (Rs 5999)", amountInr: 5999, interval: "monthly", seats: 7, tier: "full_recruiter_plus_modules", fullRecruiter: true, suiteModules: true },
-  s15_basic_2999: { code: "s15_basic_2999", label: "7-15 Users - Basic Layout (Rs 2999)", amountInr: 2999, interval: "monthly", seats: 15, tier: "basic_layout", fullRecruiter: false, suiteModules: false },
-  s15_full_4999: { code: "s15_full_4999", label: "7-15 Users - Full Recruiter Mode (Rs 4999)", amountInr: 4999, interval: "monthly", seats: 15, tier: "full_recruiter_mode", fullRecruiter: true, suiteModules: false },
-  s15_suite_6999: { code: "s15_suite_6999", label: "7-15 Users - Full Recruiter + Other Modules (Rs 6999)", amountInr: 6999, interval: "monthly", seats: 15, tier: "full_recruiter_plus_modules", fullRecruiter: true, suiteModules: true },
-  enterprise_contact: { code: "enterprise_contact", label: "Enterprise (15+ Users) - Contact Sales", amountInr: 0, interval: "custom", seats: null, tier: "full_recruiter_plus_modules", fullRecruiter: true, suiteModules: true },
-  // Legacy compatibility
-  ext_499_1_user: { code: "ext_499_1_user", label: "Extension Lite - Rs 499", amountInr: 499, interval: "monthly", seats: 1, tier: "basic_layout", fullRecruiter: false, suiteModules: false },
-  ext_999_3_users: { code: "ext_999_3_users", label: "Extension Team - Rs 999", amountInr: 999, interval: "monthly", seats: 3, tier: "full_recruiter_mode", fullRecruiter: true, suiteModules: false },
-  ext_1999_7_users: { code: "ext_1999_7_users", label: "Extension Pro - Rs 1999", amountInr: 1999, interval: "monthly", seats: 7, tier: "full_recruiter_mode", fullRecruiter: true, suiteModules: false },
-  saas_4999_unlimited: { code: "saas_4999_unlimited", label: "SaaS Unlimited - Rs 4999", amountInr: 4999, interval: "monthly", seats: null, tier: "full_recruiter_plus_modules", fullRecruiter: true, suiteModules: true },
-  legacy: { code: "legacy", label: "Legacy", amountInr: 0, interval: "legacy", seats: null, tier: "full_recruiter_plus_modules", fullRecruiter: true, suiteModules: true }
+  trial: { code: "trial", label: "7-day Trial", amountInr: 0, interval: "one_time_trial", seats: 1, tier: "basic_layout", fullRecruiter: false, suiteModules: false },
+  basic: { code: "basic", label: "Basic", amountInr: 499, interval: "monthly", seats: 1, tier: "basic_layout", fullRecruiter: false, suiteModules: false },
+  full_recruiter: { code: "full_recruiter", label: "Full Recruiter", amountInr: 999, interval: "monthly", seats: null, tier: "full_recruiter_mode", fullRecruiter: true, suiteModules: true },
+  legacy: { code: "legacy", label: "Legacy", amountInr: 0, interval: "legacy", seats: null, tier: "full_recruiter_mode", fullRecruiter: true, suiteModules: true }
 };
 
 function getPlanDefinition(planCode = "") {
   const code = String(planCode || "").trim().toLowerCase();
-  return PLAN_DEFINITIONS[code] || PLAN_DEFINITIONS.trial;
+  if (PLAN_DEFINITIONS[code]) return PLAN_DEFINITIONS[code];
+  if (code.includes("basic") || code === "ext_499_1_user") return PLAN_DEFINITIONS.basic;
+  if (code.includes("full") || code.includes("suite") || code.includes("saas") || code === "ext_999_3_users" || code === "ext_1999_7_users" || code === "enterprise_contact") return PLAN_DEFINITIONS.full_recruiter;
+  return PLAN_DEFINITIONS.trial;
 }
 
 function getPlanCatalog() {
-  return [
-    "trial",
-    "s1_basic_499", "s1_full_999", "s1_suite_1499",
-    "s3_basic_999", "s3_full_1999", "s3_suite_2999",
-    "s7_basic_1999", "s7_full_3999", "s7_suite_5999",
-    "s15_basic_2999", "s15_full_4999", "s15_suite_6999",
-    "enterprise_contact"
-  ].map((code) => {
+  return ["trial", "basic", "full_recruiter"].map((code) => {
     const def = getPlanDefinition(code);
     return {
       code: def.code,
@@ -715,6 +684,33 @@ async function exchangeZohoAuthCode({ code = "", redirectUri = "", hostHint = "z
     refreshToken: String(parsed?.refresh_token || "").trim(),
     expiresIn: Number(parsed?.expires_in || 0) || 0
   };
+}
+
+async function resolveZohoMailboxFromAccessToken({ accessToken = "", hostHint = "zohoapi.com" } = {}) {
+  const token = String(accessToken || "").trim();
+  if (!token) return "";
+  const { mailBase } = resolveZohoBases({ host: hostHint, from: "", user: "" });
+  const response = await fetchWithTimeout(`${mailBase}/api/accounts`, {
+    method: "GET",
+    headers: {
+      "Accept": "application/json",
+      "Content-Type": "application/json",
+      "Authorization": `Zoho-oauthtoken ${token}`
+    }
+  }, 20000);
+  const raw = await response.text();
+  let parsed = {};
+  try {
+    parsed = raw ? JSON.parse(raw) : {};
+  } catch {
+    parsed = {};
+  }
+  if (!response.ok) return "";
+  const accounts = Array.isArray(parsed?.data) ? parsed.data : [];
+  const first = accounts[0] || null;
+  const primary = String(first?.primaryEmailAddress || "").trim();
+  const mailbox = String(first?.mailboxAddress || "").trim();
+  return primary || mailbox || "";
 }
 
 async function sendZohoEmailWithCfg(cfg, { to, cc = "", subject, html = "", text = "", attachments = [], threading = {}, allowThreading = false }) {
@@ -2220,6 +2216,34 @@ function getZohoRedirectUri(req) {
   return "https://recruiter-backend-yvex.onrender.com/zoho/oauth/callback";
 }
 
+async function writeAuditLogSafe({
+  companyId = "",
+  actorUserId = "",
+  actorEmail = "",
+  actorName = "",
+  action = "",
+  module = "",
+  entity = "",
+  entityId = "",
+  detail = ""
+} = {}) {
+  try {
+    await appendAuditLog({
+      companyId,
+      actorUserId,
+      actorEmail,
+      actorName,
+      action,
+      module,
+      entity,
+      entityId,
+      detail
+    });
+  } catch (_) {
+    // Best-effort only.
+  }
+}
+
 function getEmailOauthRedirectUri(provider = "", req = null) {
   const p = String(provider || "").trim().toLowerCase();
   if (p === "zoho") return getZohoRedirectUri(req);
@@ -2326,8 +2350,8 @@ async function requireSuiteModulesAccess(actor, featureLabel = "this feature") {
   const license = await getCompanyLicense(companyId).catch(() => null);
   const status = String(license?.status || "").trim().toLowerCase();
   const planDef = getPlanDefinition(String(license?.plan || "").trim().toLowerCase());
-  if ((status === "active" || status === "legacy" || status === "trial") && Boolean(planDef?.suiteModules)) return true;
-  throw new Error(`${featureLabel} is available on Full Recruiter + Other Modules plans.`);
+  if ((status === "active" || status === "legacy" || status === "trial") && Boolean(planDef?.fullRecruiter)) return true;
+  throw new Error(`${featureLabel} is available on Full Recruiter plans.`);
 }
 
 async function requireCompanySessionOrPayrollSession(token) {
@@ -2341,33 +2365,19 @@ async function requireCompanySessionOrPayrollSession(token) {
 }
 
 const UPGRADE_ALLOWED_PLANS = new Set([
-  "s1_basic_499",
-  "s1_full_999",
-  "s1_suite_1499",
-  "s3_basic_999",
-  "s3_full_1999",
-  "s3_suite_2999",
-  "s7_basic_1999",
-  "s7_full_3999",
-  "s7_suite_5999",
-  "s15_basic_2999",
-  "s15_full_4999",
-  "s15_suite_6999"
+  "basic",
+  "full_recruiter",
+  "s1_basic_499", "s3_basic_999", "s7_basic_1999", "s15_basic_2999", "ext_499_1_user",
+  "s1_full_999", "s3_full_1999", "s7_full_3999", "s15_full_4999", "ext_999_3_users", "ext_1999_7_users",
+  "s1_suite_1499", "s3_suite_2999", "s7_suite_5999", "s15_suite_6999", "saas_4999_unlimited"
 ]);
 
 const UPGRADE_PLAN_AMOUNT_INR = {
-  s1_basic_499: 499,
-  s1_full_999: 999,
-  s1_suite_1499: 1499,
-  s3_basic_999: 999,
-  s3_full_1999: 1999,
-  s3_suite_2999: 2999,
-  s7_basic_1999: 1999,
-  s7_full_3999: 3999,
-  s7_suite_5999: 5999,
-  s15_basic_2999: 2999,
-  s15_full_4999: 4999,
-  s15_suite_6999: 6999
+  basic: 499,
+  full_recruiter: 999,
+  s1_basic_499: 499, s3_basic_999: 499, s7_basic_1999: 499, s15_basic_2999: 499, ext_499_1_user: 499,
+  s1_full_999: 999, s3_full_1999: 999, s7_full_3999: 999, s15_full_4999: 999, ext_999_3_users: 999, ext_1999_7_users: 999,
+  s1_suite_1499: 999, s3_suite_2999: 999, s7_suite_5999: 999, s15_suite_6999: 999, saas_4999_unlimited: 999
 };
 
 function getUpgradeTokenSecret() {
@@ -10071,6 +10081,17 @@ const server = http.createServer(async (req, res) => {
         companyId: String(payload.companyId || "").trim(),
         email: String(payload.email || "").trim()
       });
+      await writeAuditLogSafe({
+        companyId: String(payload.companyId || "").trim(),
+        actorUserId: String(payload.userId || "").trim(),
+        actorEmail: String(payload.email || "").trim(),
+        actorName: String(payload.email || "").trim(),
+        action: "email_verified",
+        module: "auth",
+        entity: "user",
+        entityId: String(payload.userId || "").trim(),
+        detail: "Email verification completed"
+      });
       const body = `<!doctype html><html><head><meta charset="utf-8"/><title>Email Verified</title></head><body style="font-family:Arial,sans-serif;padding:24px;"><h2>Email verified successfully</h2><p>Your RecruitDesk AI account is now activated.</p><p>You can close this tab and login in the app.</p></body></html>`;
       sendText(req, res, 200, body, "text/html; charset=utf-8");
     } catch (error) {
@@ -10691,18 +10712,44 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (req.method === "POST" && req.url === "/auth/login") {
+    let attemptedEmail = "";
     try {
       const body = await readJsonBody(req);
+      attemptedEmail = String(body.email || "").trim();
       const result = await login({
-        email: String(body.email || "").trim(),
+        email: attemptedEmail,
         password: String(body.password || "")
       });
       // Global portal hard-gate removed: allow login for trial and extension plans.
       // Feature-level restrictions are enforced separately where needed.
       await maybeSendPlanExpiryReminder(result?.user?.companyId || "");
+      await writeAuditLogSafe({
+        companyId: String(result?.user?.companyId || "").trim(),
+        actorUserId: String(result?.user?.id || "").trim(),
+        actorEmail: String(result?.user?.email || "").trim(),
+        actorName: String(result?.user?.name || "").trim(),
+        action: "login_success",
+        module: "auth",
+        entity: "session",
+        entityId: "",
+        detail: "Recruiter login successful"
+      });
       sendJson(res, 200, { ok: true, result });
     } catch (error) {
       const message = String(error.message || error);
+      const email = String(attemptedEmail || "").trim().toLowerCase();
+      const userForCompany = email ? await getPortalUserByEmailForReset(email).catch(() => null) : null;
+      await writeAuditLogSafe({
+        companyId: String(userForCompany?.companyId || "").trim(),
+        actorUserId: "",
+        actorEmail: email,
+        actorName: email,
+        action: "login_failed",
+        module: "auth",
+        entity: "session",
+        entityId: "",
+        detail: message
+      });
       sendJson(res, 400, { ok: false, error: message });
     }
     return;
@@ -10741,6 +10788,17 @@ const server = http.createServer(async (req, res) => {
           text: mail.text
         }).catch((error) => {
           console.log("[mail] password reset mail failed:", String(error?.message || error));
+        });
+        await writeAuditLogSafe({
+          companyId: String(portalUser.companyId || "").trim(),
+          actorUserId: String(portalUser.id || "").trim(),
+          actorEmail: email,
+          actorName: String(portalUser.name || email).trim(),
+          action: "forgot_password_requested",
+          module: "auth",
+          entity: "user",
+          entityId: String(portalUser.id || "").trim(),
+          detail: "Password reset link generated"
         });
       }
 
@@ -10789,6 +10847,17 @@ const server = http.createServer(async (req, res) => {
         companyId: payload.companyId,
         email: payload.email,
         newPassword: password
+      });
+      await writeAuditLogSafe({
+        companyId: String(payload.companyId || "").trim(),
+        actorUserId: String(payload.userId || "").trim(),
+        actorEmail: String(payload.email || "").trim(),
+        actorName: String(payload.email || "").trim(),
+        action: "password_reset_completed",
+        module: "auth",
+        entity: "user",
+        entityId: String(payload.userId || "").trim(),
+        detail: "Password reset successful"
       });
       if (String(req.headers["content-type"] || "").toLowerCase().includes("application/json")) {
         sendJson(res, 200, { ok: true, result: { message: "Password reset successful." } });
@@ -10868,6 +10937,17 @@ const server = http.createServer(async (req, res) => {
         text: signupMail.text
       }).catch((error) => {
         console.log("[mail] trial signup mail failed:", String(error?.message || error));
+      });
+      await writeAuditLogSafe({
+        companyId: String(created?.company?.id || created?.user?.companyId || "").trim(),
+        actorUserId: String(created?.user?.id || "").trim(),
+        actorEmail: String(body.email || "").trim(),
+        actorName: String(body.adminName || body.email || "").trim(),
+        action: "signup_created",
+        module: "auth",
+        entity: "company",
+        entityId: String(created?.company?.id || "").trim(),
+        detail: "Trial signup created with pending email verification"
       });
       sendJson(res, 200, {
         ok: true,
@@ -12780,6 +12860,22 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (req.method === "GET" && req.url.startsWith("/company/audit-logs")) {
+    try {
+      const actor = await requireSessionUser(getBearerToken(req));
+      const isAdmin = String(actor?.role || "").trim().toLowerCase() === "admin";
+      if (!isAdmin) throw new Error("Only admin can view audit logs.");
+      const limit = Math.max(1, Math.min(1000, Number(requestUrl.searchParams.get("limit") || 200) || 200));
+      const items = await listCompanyAuditLogs({ companyId: actor.companyId, limit });
+      sendJson(res, 200, { ok: true, result: { items } });
+    } catch (error) {
+      const message = String(error?.message || error);
+      const status = /only admin/i.test(message) ? 403 : 401;
+      sendJson(res, status, { ok: false, error: message });
+    }
+    return;
+  }
+
   if (req.method === "GET" && (requestUrl.pathname === "/zoho/oauth/callback" || requestUrl.pathname === "/email/oauth/callback")) {
     const postResultPage = (ok, message) => {
       const safeMessage = escapeHtml(String(message || "").trim());
@@ -12796,6 +12892,7 @@ const server = http.createServer(async (req, res) => {
       const provider = String(state.provider || "zoho").trim().toLowerCase();
       let resolvedHost = "zohoapi.com";
       let refreshToken = "";
+      let resolvedMailboxEmail = String(state.email || "").trim();
       if (provider === "zoho") {
         const exchanged = await exchangeZohoAuthCode({
           code,
@@ -12804,6 +12901,11 @@ const server = http.createServer(async (req, res) => {
         });
         resolvedHost = String(state.hostHint || "zohoapi.com").trim() || "zohoapi.com";
         refreshToken = String(exchanged.refreshToken || "").trim();
+        const mailboxEmail = await resolveZohoMailboxFromAccessToken({
+          accessToken: String(exchanged.accessToken || "").trim(),
+          hostHint: resolvedHost
+        }).catch(() => "");
+        if (mailboxEmail) resolvedMailboxEmail = mailboxEmail;
       } else if (provider === "google") {
         const clientId = String(process.env.GOOGLE_OAUTH_CLIENT_ID || "").trim();
         const clientSecret = String(process.env.GOOGLE_OAUTH_CLIENT_SECRET || "").trim();
@@ -12828,6 +12930,7 @@ const server = http.createServer(async (req, res) => {
         }
         resolvedHost = "googleapi.com";
         refreshToken = String(tokenJson.refresh_token || "").trim();
+        resolvedMailboxEmail = String(state.email || "").trim();
       } else if (provider === "microsoft") {
         const clientId = String(process.env.MICROSOFT_OAUTH_CLIENT_ID || "").trim();
         const clientSecret = String(process.env.MICROSOFT_OAUTH_CLIENT_SECRET || "").trim();
@@ -12854,6 +12957,7 @@ const server = http.createServer(async (req, res) => {
         }
         resolvedHost = "microsoftapi.com";
         refreshToken = String(tokenJson.refresh_token || "").trim();
+        resolvedMailboxEmail = String(state.email || "").trim();
       } else {
         throw new Error("Unsupported provider in callback.");
       }
@@ -12869,8 +12973,8 @@ const server = http.createServer(async (req, res) => {
           host: resolvedHost,
           port: 443,
           secure: true,
-          user: String(state.email || "").trim(),
-          from: String(state.email || "").trim(),
+          user: String(resolvedMailboxEmail || state.email || "").trim(),
+          from: String(resolvedMailboxEmail || state.email || "").trim(),
           pass: refreshToken,
           keepPass: false,
           signatureText: String(existing?.signatureText || "").trim(),
@@ -12915,6 +13019,17 @@ const server = http.createServer(async (req, res) => {
         planCode: String(body.planCode || body.plan || "").trim(),
         paidAt: String(body.paidAt || body.paid_at || "").trim(),
         months: Number(body.months || 1)
+      });
+      await writeAuditLogSafe({
+        companyId: String(actor.companyId || "").trim(),
+        actorUserId: String(actor.id || "").trim(),
+        actorEmail: String(actor.email || "").trim(),
+        actorName: String(actor.name || "").trim(),
+        action: "plan_changed",
+        module: "billing",
+        entity: "license",
+        entityId: String(actor.companyId || "").trim(),
+        detail: `Plan set to ${String(body.planCode || body.plan || "").trim()}`
       });
       sendJson(res, 200, { ok: true, result: { license } });
     } catch (error) {

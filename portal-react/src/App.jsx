@@ -4027,9 +4027,14 @@ function isMarketingPortalUrl() {
 
 function LoginScreen({ onRecruiterLogin, onClientLogin, onEmployeeLogin, onEmployerLogin, onPayrollLogin, busy, error, forcedMode = "" }) {
   const [mode, setMode] = useState(() => forcedMode || "recruiter");
+  const [authView, setAuthView] = useState("login");
   const [email, setEmail] = useState("");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  const [signupCompanyName, setSignupCompanyName] = useState("");
+  const [signupAdminName, setSignupAdminName] = useState("");
+  const [authBusy, setAuthBusy] = useState(false);
+  const [authMessage, setAuthMessage] = useState("");
 
   useEffect(() => {
     if (forcedMode) setMode(forcedMode);
@@ -4068,7 +4073,7 @@ function LoginScreen({ onRecruiterLogin, onClientLogin, onEmployeeLogin, onEmplo
             <button type="button" className={mode === "payroll" ? "" : "ghost-btn"} onClick={() => setMode("payroll")}>Payroll login</button>
           </div>
         ) : null}
-        <form className="form-grid" onSubmit={(e) => {
+        {authView === "login" ? <form className="form-grid" onSubmit={(e) => {
           e.preventDefault();
           if (mode === "client") onClientLogin({ username, password });
           else if (mode === "employee") (onEmployeeLogin || onEmployerLogin)?.({ username, password });
@@ -4080,8 +4085,60 @@ function LoginScreen({ onRecruiterLogin, onClientLogin, onEmployeeLogin, onEmplo
             : <label><span>Email</span><input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required /></label>}
           <label><span>Password</span><input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required /></label>
           <button type="submit" disabled={busy}>{busy ? "Logging in..." : "Login"}</button>
-        </form>
+        </form> : null}
+        {authView === "signup" ? (
+          <form className="form-grid" onSubmit={async (e) => {
+            e.preventDefault();
+            setAuthBusy(true);
+            setAuthMessage("");
+            try {
+              const result = await api("/auth/trial-signup", "", "POST", {
+                companyName: signupCompanyName,
+                adminName: signupAdminName,
+                email,
+                password
+              });
+              setAuthMessage(String(result?.message || "Signup successful. Check email to verify account."));
+            } catch (err) {
+              setAuthMessage(String(err?.message || err));
+            } finally {
+              setAuthBusy(false);
+            }
+          }}>
+            <label><span>Company Name</span><input value={signupCompanyName} onChange={(e) => setSignupCompanyName(e.target.value)} required /></label>
+            <label><span>Admin Name</span><input value={signupAdminName} onChange={(e) => setSignupAdminName(e.target.value)} required /></label>
+            <label><span>Work Email</span><input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required /></label>
+            <label><span>Create Password</span><input type="password" value={password} onChange={(e) => setPassword(e.target.value)} minLength={8} required /></label>
+            <button type="submit" disabled={authBusy}>{authBusy ? "Creating..." : "Start 7-day Trial"}</button>
+          </form>
+        ) : null}
+        {authView === "forgot" ? (
+          <form className="form-grid" onSubmit={async (e) => {
+            e.preventDefault();
+            setAuthBusy(true);
+            setAuthMessage("");
+            try {
+              const result = await api("/auth/forgot-password", "", "POST", { email });
+              setAuthMessage(String(result?.message || "If account exists, reset link sent."));
+            } catch (err) {
+              setAuthMessage(String(err?.message || err));
+            } finally {
+              setAuthBusy(false);
+            }
+          }}>
+            <label><span>Work Email</span><input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required /></label>
+            <button type="submit" disabled={authBusy}>{authBusy ? "Sending..." : "Send Reset Link"}</button>
+          </form>
+        ) : null}
         {error ? <div className="status error">{error}</div> : null}
+        {authMessage ? <div className="status ok">{authMessage}</div> : null}
+        {mode === "recruiter" && !forcedMode ? (
+          <div className="button-row">
+            <button type="button" className={authView === "login" ? "ghost-btn" : "secondary"} onClick={() => setAuthView("login")}>Login</button>
+            <button type="button" className={authView === "signup" ? "ghost-btn" : "secondary"} onClick={() => setAuthView("signup")}>Signup</button>
+            <button type="button" className={authView === "forgot" ? "ghost-btn" : "secondary"} onClick={() => setAuthView("forgot")}>Forgot Password</button>
+          </div>
+        ) : null}
         <div className="portal-footer portal-footer--auth">{COMPANY_ATTRIBUTION}</div>
       </div>
     </div>
@@ -6936,6 +6993,7 @@ function PortalApp({ token, onLogout }) {
   const [companyLicense, setCompanyLicense] = useState(null);
   const [billingOverview, setBillingOverview] = useState(null);
   const [billingPlans, setBillingPlans] = useState([]);
+  const [auditLogs, setAuditLogs] = useState([]);
   const [planUpgradeBusyCode, setPlanUpgradeBusyCode] = useState("");
   const [assignApplicantId, setAssignApplicantId] = useState("");
   const [assignCandidateId, setAssignCandidateId] = useState("");
@@ -7729,26 +7787,16 @@ function PortalApp({ token, onLogout }) {
   const defaultJdEmailCc = isKompatibleCompany ? DEFAULT_JD_EMAIL_CC : "";
   const currentPlanCode = String(effectiveLicense?.plan || "trial").trim().toLowerCase();
   const currentPlanTier = String(billingOverview?.currentPlan?.tier || "").trim().toLowerCase();
-  const fullRecruiterPlanCodes = new Set([
-    "s1_full_999", "s3_full_1999", "s7_full_3999", "s15_full_4999",
-    "s1_suite_1499", "s3_suite_2999", "s7_suite_5999", "s15_suite_6999",
-    "ext_999_3_users", "ext_1999_7_users", "saas_4999_unlimited", "legacy", "enterprise_contact"
-  ]);
-  const suitePlanCodes = new Set([
-    "s1_suite_1499", "s3_suite_2999", "s7_suite_5999", "s15_suite_6999",
-    "saas_4999_unlimited", "legacy", "enterprise_contact"
-  ]);
+  const fullRecruiterPlanCodes = new Set(["full_recruiter", "legacy"]);
   const hasSaasUnlimitedAccess =
     Boolean(billingOverview?.fullAccessBypass) ||
     Boolean(billingOverview?.currentPlan?.fullRecruiter) ||
     currentPlanTier === "full_recruiter_mode" ||
-    currentPlanTier === "full_recruiter_plus_modules" ||
     fullRecruiterPlanCodes.has(currentPlanCode);
   const hasSuiteModulesAccess =
     Boolean(billingOverview?.fullAccessBypass) ||
-    Boolean(billingOverview?.currentPlan?.suiteModules) ||
-    currentPlanTier === "full_recruiter_plus_modules" ||
-    suitePlanCodes.has(currentPlanCode);
+    Boolean(billingOverview?.currentPlan?.fullRecruiter) ||
+    fullRecruiterPlanCodes.has(currentPlanCode);
   const accessStateLabel = billingOverview?.fullAccessBypass
     ? "Full Access (Bypass)"
     : hasSuiteModulesAccess
@@ -7861,10 +7909,9 @@ function PortalApp({ token, onLogout }) {
     : null;
   const planRank = {
     trial: 0,
-    s1_basic_499: 1, s3_basic_999: 2, s7_basic_1999: 3, s15_basic_2999: 4,
-    s1_full_999: 5, s3_full_1999: 6, s7_full_3999: 7, s15_full_4999: 8,
-    s1_suite_1499: 9, s3_suite_2999: 10, s7_suite_5999: 11, s15_suite_6999: 12,
-    legacy: 13
+    basic: 1,
+    full_recruiter: 2,
+    legacy: 3
   };
   const currentRank = Number(planRank[currentPlanCode] ?? 0);
   const upgradePlans = useMemo(() => (
@@ -7888,7 +7935,7 @@ function PortalApp({ token, onLogout }) {
     const blockedPaths = new Set(["/client-share", "/intake-settings", "/candidates", "/mail-settings", "/reports", "/applicants"]);
     if (!hasSaasUnlimitedAccess && blockedPaths.has(String(location?.pathname || ""))) {
       navigate("/plan", { replace: true });
-      setStatus("loginSettings", "This feature is available on SaaS Unlimited (Rs 4999).", "error");
+      setStatus("loginSettings", "This feature is available on Full Recruiter plan.", "error");
     }
   }, [accessFlagsReady, hasSaasUnlimitedAccess, location?.pathname, navigate]);
 
@@ -7904,9 +7951,26 @@ function PortalApp({ token, onLogout }) {
       pathname.startsWith("/payroll");
     if (!hasSuiteModulesAccess && isModulePath) {
       navigate("/plan", { replace: true });
-      setStatus("loginSettings", "Client, Employee, and Payroll modules are available on Full Recruiter + Other Modules plans.", "error");
+      setStatus("loginSettings", "Client, Employee, and Payroll modules are available on Full Recruiter plan.", "error");
     }
   }, [accessFlagsReady, hasSuiteModulesAccess, location?.pathname, navigate]);
+
+  useEffect(() => {
+    const pathname = String(location?.pathname || "");
+    if (!token || pathname !== "/admin-settings/audit-log" || !isSettingsAdmin) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const result = await api("/company/audit-logs?limit=300", token);
+        if (cancelled) return;
+        setAuditLogs(Array.isArray(result?.items) ? result.items : []);
+      } catch (error) {
+        if (cancelled) return;
+        setStatus("settings", `Audit log load failed: ${String(error?.message || error)}`, "error");
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [location?.pathname, token, isSettingsAdmin]);
 
   useEffect(() => {
     // Keep every route landing at top to avoid blank-gap feel while async tab data hydrates.
@@ -20257,7 +20321,52 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                         <div className="admin-cat-head"><span className="admin-cat-icon"><PortalIcon name="coins" /></span><strong>Plan & Billing</strong></div>
                         <div className="muted">Subscription, plan, and usage controls.</div>
                       </article>
+                      <article className="item-card compact-card admin-cat-card" role="button" tabIndex={0} onClick={() => navigate("/admin-settings/audit-log")} onKeyDown={(e) => { if (e.key === "Enter") navigate("/admin-settings/audit-log"); }}>
+                        <div className="admin-cat-head"><span className="admin-cat-icon"><PortalIcon name="settings" /></span><strong>Audit Log</strong></div>
+                        <div className="muted">Basic action trail for security and accountability.</div>
+                      </article>
                     </div>
+                  </div>
+                </Section>
+              </div>
+            } />
+
+            <Route path="/admin-settings/audit-log" element={
+              !isSettingsAdmin ? <FeatureLockedSection title="Audit Log" /> : <div className="page-grid">
+                <Section kicker="Admin Settings" title="Audit Log">
+                  {statuses.settings ? <div className={`status ${statuses.settingsKind || ""}`}>{statuses.settings}</div> : null}
+                  <div className="button-row">
+                    <button className="secondary" onClick={() => navigate("/admin-settings")}>Back to Admin Settings</button>
+                  </div>
+                  <div className="table-wrap" style={{ marginTop: 10 }}>
+                    <table className="dashboard-table">
+                      <thead>
+                        <tr>
+                          <th>Time</th>
+                          <th>User</th>
+                          <th>Action</th>
+                          <th>Module</th>
+                          <th>Entity</th>
+                          <th>Entity ID</th>
+                          <th>Detail</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {!auditLogs.length ? (
+                          <tr><td colSpan={7} className="muted">No audit logs yet.</td></tr>
+                        ) : auditLogs.map((row) => (
+                          <tr key={String(row?.id || Math.random())}>
+                            <td>{row?.createdAt ? new Date(row.createdAt).toLocaleString() : "-"}</td>
+                            <td>{String(row?.actorName || row?.actorEmail || "-").trim() || "-"}</td>
+                            <td>{String(row?.action || "-").trim() || "-"}</td>
+                            <td>{String(row?.module || "-").trim() || "-"}</td>
+                            <td>{String(row?.entity || "-").trim() || "-"}</td>
+                            <td>{String(row?.entityId || "-").trim() || "-"}</td>
+                            <td>{String(row?.detail || "-").trim() || "-"}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
                   </div>
                 </Section>
               </div>
@@ -20855,34 +20964,29 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                         </table>
                       </div>
                     </Section>
-                    <Section kicker="Pricing Matrix" title="Seat-wise Plan Grid">
+                    <Section kicker="Pricing Matrix" title="Available Plans">
                       <div className="table-wrap plan-matrix-wrap">
                         <table className="dashboard-table plan-matrix-table">
                           <thead>
                             <tr>
+                              <th>Plan</th>
+                              <th>Monthly Price</th>
                               <th>Seats</th>
-                              <th>Basic</th>
-                              <th>Full Recruiter</th>
-                              <th>Full + Modules</th>
+                              <th>Upgrade</th>
                             </tr>
                           </thead>
                           <tbody>
-                            {[
-                              { seat: "1 seat", basic: "s1_basic_499", full: "s1_full_999", suite: "s1_suite_1499" },
-                              { seat: "3 seats", basic: "s3_basic_999", full: "s3_full_1999", suite: "s3_suite_2999" },
-                              { seat: "7 seats", basic: "s7_basic_1999", full: "s7_full_3999", suite: "s7_suite_5999" },
-                              { seat: "7-15 seats", basic: "s15_basic_2999", full: "s15_full_4999", suite: "s15_suite_6999" }
-                            ].map((row) => {
-                              const renderPlanCell = (planCode) => {
-                                const plan = (billingPlans || []).find((item) => String(item?.code || "").trim().toLowerCase() === planCode) || null;
-                                if (!plan) return <td>-</td>;
-                                const code = String(plan.code || "").trim().toLowerCase();
-                                const rank = Number(planRank[code] ?? 0);
-                                const isCurrent = code === currentPlanCode;
-                                const canUpgrade = rank > currentRank;
-                                return (
-                                  <td key={planCode}>
-                                    <div className="plan-matrix-price">{`Rs ${Number(plan.amountInr || 0)}`}</div>
+                            {(billingPlans || []).map((plan) => {
+                              const code = String(plan?.code || "").trim().toLowerCase();
+                              const rank = Number(planRank[code] ?? 0);
+                              const isCurrent = code === currentPlanCode;
+                              const canUpgrade = rank > currentRank;
+                              return (
+                                <tr key={code}>
+                                  <th>{String(plan?.label || code).trim()}</th>
+                                  <td>{`Rs ${Number(plan?.amountInr || 0)}`}</td>
+                                  <td>{plan?.seats == null ? "Unlimited" : String(plan.seats)}</td>
+                                  <td>
                                     {isCurrent ? (
                                       <span className="plan-matrix-badge">Current</span>
                                     ) : canUpgrade ? (
@@ -20897,25 +21001,13 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                                       <span className="plan-matrix-muted">Not available</span>
                                     )}
                                   </td>
-                                );
-                              };
-                              return (
-                                <tr key={row.seat}>
-                                  <th>{row.seat}</th>
-                                  {renderPlanCell(row.basic)}
-                                  {renderPlanCell(row.full)}
-                                  {renderPlanCell(row.suite)}
                                 </tr>
                               );
                             })}
-                            <tr>
-                              <th>15+ seats</th>
-                              <td colSpan="3">Contact Sales (Custom Enterprise)</td>
-                            </tr>
                           </tbody>
                         </table>
                       </div>
-                      <p className="muted">Plan 3 unlocks Client, Employee, and Payroll modules.</p>
+                      <p className="muted">Basic = 1 seat access. Full Recruiter unlocks all connected modules.</p>
                     </Section>
                     {!upgradePlans.length ? <div className="empty-state compact-empty">No higher plan available. You are already on highest access.</div> : null}
                   </>

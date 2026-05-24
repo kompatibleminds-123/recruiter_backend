@@ -503,6 +503,8 @@ const CLIENT_USERS_ROW_ID = "__client_users__";
 const CLIENT_USERS_ROW_TITLE = "__client_users__";
 const COMPANY_LICENSE_ROW_ID = "__company_license__";
 const COMPANY_LICENSE_ROW_TITLE = "__company_license__";
+const AUDIT_LOG_ROW_PREFIX = "__audit_log__";
+const AUDIT_LOG_ROW_TITLE = "__audit_log__";
 const MAX_SHARED_CUSTOM_EXPORT_PRESETS = 10;
 const { parseExperienceTimelineTextToStructured, normalizeTimelineRow } = require("./timeline-utils");
 function isSharedExportPresetRow(job) {
@@ -535,8 +537,13 @@ function isCompanyLicenseRow(job) {
     /company[_\s-]*license/i.test(title)
   );
 }
+function isAuditLogRow(job) {
+  const id = String(job?.id || "").trim().toLowerCase();
+  const title = String(job?.title || "").trim().toLowerCase();
+  return id.startsWith(AUDIT_LOG_ROW_PREFIX) || title === AUDIT_LOG_ROW_TITLE;
+}
 function isSystemJobRow(job) {
-  return isSharedExportPresetRow(job) || isClientUsersRow(job) || isCompanyLicenseRow(job);
+  return isSharedExportPresetRow(job) || isClientUsersRow(job) || isCompanyLicenseRow(job) || isAuditLogRow(job);
 }
 function addDays(dateLike, days) {
   const date = dateLike ? new Date(dateLike) : new Date();
@@ -552,6 +559,8 @@ function addMonths(dateLike, months) {
 }
 const LICENSE_PLAN_ALIASES = {
   trial: "trial",
+  basic: "basic",
+  full_recruiter: "full_recruiter",
   ext_499: "ext_499_1_user",
   monthly_499: "ext_499_1_user",
   starter_1: "ext_499_1_user",
@@ -585,28 +594,15 @@ const LICENSE_PLAN_ALIASES = {
 function normalizeLicensePlanCode(rawPlan = "") {
   const input = String(rawPlan || "").trim().toLowerCase();
   if (!input) return "trial";
-  return LICENSE_PLAN_ALIASES[input] || input;
+  const mapped = LICENSE_PLAN_ALIASES[input] || input;
+  if (mapped === "trial" || mapped === "basic" || mapped === "full_recruiter" || mapped === "legacy") return mapped;
+  if (mapped.includes("basic") || mapped === "ext_499_1_user") return "basic";
+  if (mapped.includes("full") || mapped.includes("suite") || mapped.includes("saas") || mapped.includes("enterprise") || mapped === "ext_999_3_users" || mapped === "ext_1999_7_users") return "full_recruiter";
+  return mapped;
 }
 function isPaidExtensionPlan(planCode = "") {
   const plan = normalizeLicensePlanCode(planCode);
-  return [
-    "ext_499_1_user",
-    "ext_999_3_users",
-    "ext_1999_7_users",
-    "saas_4999_unlimited",
-    "s1_basic_499",
-    "s1_full_999",
-    "s1_suite_1499",
-    "s3_basic_999",
-    "s3_full_1999",
-    "s3_suite_2999",
-    "s7_basic_1999",
-    "s7_full_3999",
-    "s7_suite_5999",
-    "s15_basic_2999",
-    "s15_full_4999",
-    "s15_suite_6999"
-  ].includes(plan);
+  return plan === "basic" || plan === "full_recruiter";
 }
 function sanitizeCompanyLicense(raw, company = null) {
   const source = raw && typeof raw === "object" ? raw : {};
@@ -619,7 +615,7 @@ function sanitizeCompanyLicense(raw, company = null) {
   const now = new Date().toISOString();
   const companyId = String(payload.companyId || payload.company_id || company?.id || company?.companyId || "").trim();
   const startedAt = String(payload.trialStartedAt || payload.trial_started_at || company?.createdAt || company?.created_at || now).trim() || now;
-  const trialEndsAt = String(payload.trialEndsAt || payload.trial_ends_at || addDays(startedAt, 14)).trim();
+  const trialEndsAt = String(payload.trialEndsAt || payload.trial_ends_at || addDays(startedAt, 7)).trim();
   const captureLimit = Math.max(0, Number(payload.captureLimit ?? payload.capture_limit ?? 50) || 50);
   const capturesUsed = Math.max(0, Number(payload.capturesUsed ?? payload.captures_used ?? 0) || 0);
   const plan = normalizeLicensePlanCode(payload.plan || "trial");
@@ -712,20 +708,14 @@ function getWorkspaceUserLimitForLicense(license = null) {
   const plan = normalizeLicensePlanCode(license?.plan || "");
   const status = String(license?.status || "").trim().toLowerCase();
   if (status === "trial" || plan === "trial") return 1;
-  if (plan === "ext_499_1_user") return 1;
-  if (plan === "ext_999_3_users") return 3;
-  if (plan === "ext_1999_7_users") return 7;
-  if (plan === "saas_4999_unlimited") return null;
-  if (plan === "s1_basic_499" || plan === "s1_full_999" || plan === "s1_suite_1499") return 1;
-  if (plan === "s3_basic_999" || plan === "s3_full_1999" || plan === "s3_suite_2999") return 3;
-  if (plan === "s7_basic_1999" || plan === "s7_full_3999" || plan === "s7_suite_5999") return 7;
-  if (plan === "s15_basic_2999" || plan === "s15_full_4999" || plan === "s15_suite_6999") return 15;
+  if (plan === "basic") return 1;
+  if (plan === "full_recruiter") return null;
   return null;
 }
 function getWorkspaceUserLimitMessage(limit) {
   if (limit === 1) return "Your current plan allows only 1 user. Upgrade to add more users.";
   if (limit === 3) return "Your current plan allows up to 3 users. Upgrade to add more users.";
-  if (limit === 7) return "Your current plan allows up to 7 users. For 7+ users, please switch to SaaS plan (₹4999/month).";
+  if (limit === 7) return "Your current plan allows up to 7 users. Upgrade to Full Recruiter for higher capacity.";
   return "User limit reached for this plan.";
 }
 async function countCompanyWorkspaceUsers(companyId) {
@@ -1906,7 +1896,7 @@ async function setCompanyExtensionPlan({
   };
   if (normalizedPlan === "trial") {
     nextPayload.trialStartedAt = paidDateIso;
-    nextPayload.trialEndsAt = addDays(paidDateIso, 14);
+    nextPayload.trialEndsAt = addDays(paidDateIso, 7);
     nextPayload.captureLimit = Number(current?.captureLimit || 50) || 50;
     nextPayload.capturesUsed = Number(current?.capturesUsed || 0) || 0;
     nextPayload.subscriptionStartedAt = null;
@@ -1965,10 +1955,10 @@ async function createTrialCompanyWithAdmin({ companyName, adminName, email, pass
     writeStore(store);
     const license = await saveCompanyLicense(company.id, {
       companyId: company.id,
-      plan: "trial",
+      plan: "basic",
       status: "trial",
       trialStartedAt: now,
-      trialEndsAt: addDays(now, 14),
+      trialEndsAt: addDays(now, 7),
       captureLimit: 50,
       capturesUsed: 0,
       ownerAdminUserId: user.id,
@@ -2007,10 +1997,10 @@ async function createTrialCompanyWithAdmin({ companyName, adminName, email, pass
   }
   const license = await saveCompanyLicense(company.id, {
     companyId: company.id,
-    plan: "trial",
+    plan: "basic",
     status: "trial",
     trialStartedAt: now,
-    trialEndsAt: addDays(now, 14),
+    trialEndsAt: addDays(now, 7),
     captureLimit: 50,
     capturesUsed: 0,
     ownerAdminUserId: String(inserted?.[0]?.id || user.id || "").trim(),
@@ -5365,6 +5355,99 @@ async function deleteAssessment({ actorUserId, companyId, assessmentId }) {
   return { deleted: true, assessmentId };
 }
 
+function sanitizeAuditLogRow(raw = {}) {
+  const payload = raw?.payload && typeof raw.payload === "object" ? raw.payload : raw;
+  return {
+    id: String(payload?.id || raw?.id || "").trim(),
+    companyId: String(payload?.companyId || raw?.company_id || "").trim(),
+    actorUserId: String(payload?.actorUserId || "").trim(),
+    actorEmail: String(payload?.actorEmail || "").trim(),
+    actorName: String(payload?.actorName || "").trim(),
+    action: String(payload?.action || "").trim(),
+    module: String(payload?.module || "").trim(),
+    entity: String(payload?.entity || "").trim(),
+    entityId: String(payload?.entityId || "").trim(),
+    detail: String(payload?.detail || "").trim(),
+    createdAt: String(payload?.createdAt || raw?.created_at || "").trim()
+  };
+}
+
+async function appendAuditLog({
+  companyId,
+  actorUserId = "",
+  actorEmail = "",
+  actorName = "",
+  action = "",
+  module = "",
+  entity = "",
+  entityId = "",
+  detail = ""
+}) {
+  const scopedCompanyId = String(companyId || "").trim();
+  if (!scopedCompanyId) return null;
+  const rowId = `${AUDIT_LOG_ROW_PREFIX}${crypto.randomUUID()}`;
+  const now = new Date().toISOString();
+  const payload = sanitizeAuditLogRow({
+    id: rowId,
+    companyId: scopedCompanyId,
+    actorUserId,
+    actorEmail,
+    actorName,
+    action,
+    module,
+    entity,
+    entityId,
+    detail,
+    createdAt: now
+  });
+  if (!cfg().on) {
+    const store = readStore();
+    store.jobs = Array.isArray(store.jobs) ? store.jobs : [];
+    store.jobs.push({
+      id: rowId,
+      companyId: scopedCompanyId,
+      title: AUDIT_LOG_ROW_TITLE,
+      jobDescription: "Audit log event",
+      payload,
+      createdAt: now,
+      updatedAt: now
+    });
+    writeStore(store);
+    return payload;
+  }
+  await ensureSeeded();
+  await sbIns("jobs", [{
+    id: rowId,
+    company_id: scopedCompanyId,
+    title: AUDIT_LOG_ROW_TITLE,
+    job_description: "Audit log event",
+    payload,
+    created_at: now,
+    updated_at: now
+  }], { conflict: "id", upsert: true }).catch(() => null);
+  return payload;
+}
+
+async function listCompanyAuditLogs({ companyId, limit = 200 }) {
+  const scopedCompanyId = String(companyId || "").trim();
+  if (!scopedCompanyId) return [];
+  const cap = Math.max(1, Math.min(1000, Number(limit) || 200));
+  if (!cfg().on) {
+    const store = readStore();
+    const rows = (store.jobs || [])
+      .filter((item) => String(item?.companyId || item?.company_id || "").trim() === scopedCompanyId && isAuditLogRow(item))
+      .map((item) => sanitizeAuditLogRow(item?.payload || item))
+      .sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || "")));
+    return rows.slice(0, cap);
+  }
+  await ensureSeeded();
+  const rows = await sbSel(
+    "jobs",
+    `select=id,company_id,payload,created_at&company_id=eq.${enc(scopedCompanyId)}&title=eq.${enc(AUDIT_LOG_ROW_TITLE)}&order=created_at.desc&limit=${cap}`
+  ).catch(() => []);
+  return (Array.isArray(rows) ? rows : []).map((item) => sanitizeAuditLogRow(item?.payload || item));
+}
+
 module.exports = {
   bootstrapAdmin,
   createClientUser,
@@ -5454,6 +5537,8 @@ module.exports = {
   saveCompanyJobRecruiterShortcuts,
   getUserSmtpSettings,
   saveUserSmtpSettings,
+  appendAuditLog,
+  listCompanyAuditLogs,
   verifyUserEmail,
   getPortalUserByEmailForReset,
   resetPortalUserPasswordByToken
