@@ -4041,6 +4041,13 @@ function LoginScreen({ onRecruiterLogin, onClientLogin, onEmployeeLogin, onEmplo
   }, [forcedMode]);
 
   useEffect(() => {
+    if (mode !== "recruiter" && authView !== "login") {
+      setAuthView("login");
+      setAuthMessage("");
+    }
+  }, [mode, authView]);
+
+  useEffect(() => {
     try {
       window.localStorage.setItem(AUTH_MODE_KEY, mode);
     } catch {

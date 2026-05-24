@@ -10759,6 +10759,7 @@ const server = http.createServer(async (req, res) => {
     try {
       const body = await readJsonBody(req);
       const email = String(body?.email || "").trim().toLowerCase();
+      console.log("[auth][forgot-password] request received", { email });
       if (!email || !email.includes("@")) {
         sendJson(res, 200, {
           ok: true,
@@ -10789,6 +10790,7 @@ const server = http.createServer(async (req, res) => {
         }).catch((error) => {
           console.log("[mail] password reset mail failed:", String(error?.message || error));
         });
+        console.log("[auth][forgot-password] processed", { email, foundUser: true });
         await writeAuditLogSafe({
           companyId: String(portalUser.companyId || "").trim(),
           actorUserId: String(portalUser.id || "").trim(),
@@ -10807,6 +10809,7 @@ const server = http.createServer(async (req, res) => {
         result: { message: "If this email exists, a reset link has been sent." }
       });
     } catch (error) {
+      console.log("[auth][forgot-password] failed", String(error?.message || error));
       sendJson(res, 200, {
         ok: true,
         result: { message: "If this email exists, a reset link has been sent." }
@@ -10911,6 +10914,10 @@ const server = http.createServer(async (req, res) => {
   if (req.method === "POST" && req.url === "/auth/trial-signup") {
     try {
       const body = await readJsonBody(req);
+      console.log("[auth][trial-signup] request received", {
+        email: String(body?.email || "").trim().toLowerCase(),
+        companyName: String(body?.companyName || "").trim()
+      });
       const created = await createTrialCompanyWithAdmin({
         companyName: String(body.companyName || "").trim(),
         adminName: String(body.adminName || "").trim(),
@@ -10930,13 +10937,24 @@ const server = http.createServer(async (req, res) => {
         adminName: String(body.adminName || "").trim(),
         verifyUrl
       });
-      await sendPlatformTransactionalMail({
-        to: String(body.email || "").trim(),
-        subject: signupMail.subject,
-        html: signupMail.html,
-        text: signupMail.text
-      }).catch((error) => {
-        console.log("[mail] trial signup mail failed:", String(error?.message || error));
+      let mailSent = false;
+      let mailError = "";
+      try {
+        await sendPlatformTransactionalMail({
+          to: String(body.email || "").trim(),
+          subject: signupMail.subject,
+          html: signupMail.html,
+          text: signupMail.text
+        });
+        mailSent = true;
+      } catch (error) {
+        mailError = String(error?.message || error || "Unknown mail error");
+        console.log("[mail] trial signup mail failed:", mailError);
+      }
+      console.log("[auth][trial-signup] processed", {
+        email: String(body?.email || "").trim().toLowerCase(),
+        mailSent,
+        mailError: mailError || null
       });
       await writeAuditLogSafe({
         companyId: String(created?.company?.id || created?.user?.companyId || "").trim(),
@@ -10953,11 +10971,16 @@ const server = http.createServer(async (req, res) => {
         ok: true,
         result: {
           pendingVerification: true,
-          message: "Verification email sent. Please verify email before login.",
+          mailSent,
+          mailError: mailError || null,
+          message: mailSent
+            ? "Verification email sent. Please verify email before login."
+            : "Signup created, but verification email could not be sent. Please fix system mail and retry send verification.",
           email: String(body.email || "").trim()
         }
       });
     } catch (error) {
+      console.log("[auth][trial-signup] failed", String(error?.message || error));
       sendJson(res, 400, { ok: false, error: String(error.message || error) });
     }
     return;
