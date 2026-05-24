@@ -63,6 +63,7 @@ const BASE_NAV_SECTIONS = [
 
 const STANDALONE_NAV_ITEMS = [
   { to: "/candidates", label: "Database" },
+  { to: "/marketing/prospects", label: "Marketing Portal" },
   { to: "/reports", label: "Reports & Analytics" }
 ];
 const PAYROLL_NAV_ITEMS = [
@@ -14334,6 +14335,35 @@ function PortalApp({ token, onLogout }) {
     setStatus("workspace", "Candidate search results downloaded in Excel format.", "ok");
   }
 
+  async function attachCurrentDatabasePageToCampaign() {
+    const candidates = Array.isArray(pagedCandidates) ? pagedCandidates : [];
+    const candidateIds = Array.from(new Set(candidates.map((item) => String(item?.id || "").trim()).filter(Boolean)));
+    if (!candidateIds.length) {
+      setStatus("workspace", "No candidates on current page to attach.", "error");
+      return;
+    }
+    const campaignResult = await api("/company/marketing/campaigns", token).catch(() => ({ items: [] }));
+    const campaigns = Array.isArray(campaignResult?.items) ? campaignResult.items : [];
+    if (!campaigns.length) {
+      setStatus("workspace", "No marketing campaign found. Create one first.", "error");
+      return;
+    }
+    const choices = campaigns.map((item, index) => `${index + 1}. ${item?.name || "Untitled"} (${item?.status || "draft"})`).join("\n");
+    const picked = window.prompt(`Select campaign number:\n${choices}`, "1");
+    if (picked == null) return;
+    const pickedIndex = Math.max(1, Number(picked || 1)) - 1;
+    const campaign = campaigns[pickedIndex];
+    if (!campaign?.id) {
+      setStatus("workspace", "Invalid campaign selection.", "error");
+      return;
+    }
+    const result = await api(`/company/marketing/campaigns/${encodeURIComponent(String(campaign.id || ""))}/attach-candidates`, token, "POST", { candidateIds });
+    const linked = Number(result?.campaignLinked || 0);
+    const created = Number(result?.createdCampaignOnlyProspects || 0);
+    const reused = Number(result?.reusedExistingProspects || 0);
+    setStatus("workspace", `Attached to "${campaign.name || "campaign"}": linked ${linked}, created ${created}, reused ${reused}.`, "ok");
+  }
+
   function downloadCandidateSmartChipRows(chipId) {
     const chip = SMART_SEARCH_QUICK_CHIPS.find((item) => item.id === chipId);
     const rows = candidateSmartChipRows[chipId] || [];
@@ -18092,6 +18122,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                   <button onClick={() => void copyCandidatesExcel()}>Copy Excel</button>
                   <button onClick={() => void copyCandidatesWhatsapp()}>Copy WhatsApp</button>
                   <button onClick={() => void copyCandidatesEmail()}>Copy Email</button>
+                  <button className="ghost-btn" onClick={() => void attachCurrentDatabasePageToCampaign()}>Attach Page to Campaign</button>
                   <button className="ghost-btn" onClick={() => downloadCandidatesExcel()}>Download results</button>
                 </div>
                 {!candidateHasSmartChipSelection ? (

@@ -10915,7 +10915,7 @@ const server = http.createServer(async (req, res) => {
       const categoryFilter = String(requestUrl.searchParams.get("category") || "").trim().toLowerCase();
       const rows = await supabaseTableFetch(
         "marketing_prospects",
-        `?select=id,name,email,phone,company_name,designation,category,categories,status,updated_at&company_id=eq.${companyId}${buildMarketingOwnerFilter(actor, "created_by")}&order=updated_at.desc&limit=5000`
+        `?select=id,name,email,phone,company_name,designation,category,categories,status,updated_at,source&company_id=eq.${companyId}${buildMarketingOwnerFilter(actor, "created_by")}&source=neq.db_campaign_only&order=updated_at.desc&limit=5000`
       );
       const filtered = (Array.isArray(rows) ? rows : []).filter((item) => {
         if (categoryFilter) {
@@ -11524,6 +11524,125 @@ const server = http.createServer(async (req, res) => {
       const rows = await supabaseTableFetch("marketing_templates", `?select=id,campaign_id,subject,body_text,target_categories,updated_at,created_at,updated_by&company_id=eq.${companyId}${buildMarketingOwnerFilter(actor, "updated_by")}&order=updated_at.desc&limit=100`);
       const items = (Array.isArray(rows) ? rows : []).map((row) => normalizeMarketingTemplateRow(row));
       sendJson(res, 200, { ok: true, result: { items } });
+    } catch (error) {
+      sendJson(res, 400, { ok: false, error: String(error?.message || error) });
+    }
+    return;
+  }
+
+  if (req.method === "POST" && /^\/company\/marketing\/campaigns\/[^/]+\/attach-candidates$/.test(requestUrl.pathname)) {
+    try {
+      const actor = await requireSessionUser(getBearerToken(req));
+      const campaignId = String(requestUrl.pathname.replace(/^\/company\/marketing\/campaigns\//, "").replace(/\/attach-candidates$/, "")).trim();
+      const campaignAccess = await getMarketingCampaignForActor(actor, campaignId);
+      if (!campaignAccess) throw new Error("Campaign not found or not accessible.");
+      const body = await readJsonBody(req);
+      const candidateIds = Array.isArray(body.candidateIds) ? body.candidateIds.map((id) => String(id || "").trim()).filter(Boolean) : [];
+      if (!candidateIds.length) throw new Error("candidateIds required.");
+      const uniqueCandidateIds = Array.from(new Set(candidateIds));
+
+      const candidates = await listCandidatesForUser(actor, { limit: 5000, scope: "company" });
+      const candidateById = new Map((Array.isArray(candidates) ? candidates : []).map((item) => [String(item?.id || "").trim(), item]));
+      const picked = uniqueCandidateIds.map((id) => candidateById.get(id)).filter(Boolean);
+      if (!picked.length) throw new Error("No accessible candidates found.");
+
+      const normalized = picked
+        .map((item) => ({
+          candidateId: String(item?.id || "").trim(),
+          name: String(item?.name || item?.candidateName || "").trim(),
+          email: normalizeMarketingEmail(item?.email || ""),
+          phone: String(item?.phone || item?.phoneNumber || "").trim(),
+          company_name: String(item?.company || item?.currentCompany || "").trim(),
+          designation: String(item?.role || item?.currentDesignation || item?.jdTitle || "").trim()
+        }))
+        .filter((item) => item.name && item.email);
+      if (!normalized.length) throw new Error("No valid candidates found (name + email required).");
+
+      const now = toIsoNow();
+      const emailKeys = Array.from(new Set(normalized.map((item) => String(item.email || "").toLowerCase())));
+      const companyId = encodeURIComponent(String(actor.companyId || "").trim());
+      const ownerFilter = buildMarketingOwnerFilter(actor, "created_by");
+      const existingByEmail = new Map();
+      if (emailKeys.length) {
+        const inClause = emailKeys.map((email) => `"${String(email || "").replace(/"/g, "")}"`).join(",");
+        const rows = await supabaseTableFetch(
+          "marketing_prospects",
+          `?select=id,email,name,source&company_id=eq.${companyId}${ownerFilter}&email=in.(${inClause})&limit=5000`
+        ).catch(() => []);
+        (Array.isArray(rows) ? rows : []).forEach((row) => {
+          const key = String(row?.email || "").trim().toLowerCase();
+          if (key) existingByEmail.set(key, row);
+        });
+      }
+
+      const createPayload = [];
+      const attachProspectIds = [];
+      let reusedExisting = 0;
+      normalized.forEach((row) => {
+        const key = String(row.email || "").toLowerCase();
+        const existing = existingByEmail.get(key);
+        if (existing?.id) {
+          attachProspectIds.push(String(existing.id || "").trim());
+          reusedExisting += 1;
+          return;
+        }
+        const prospectId = crypto.randomUUID();
+        createPayload.push({
+          id: prospectId,
+          company_id: actor.companyId,
+          name: row.name,
+          email: row.email,
+          phone: row.phone,
+          company_name: row.company_name,
+          designation: row.designation,
+          category: "",
+          categories: [],
+          source: "db_campaign_only",
+          status: "active",
+          tags: [`candidate_id:${row.candidateId}`],
+          notes: "",
+          created_by: actor.id,
+          created_at: now,
+          updated_at: now
+        });
+        attachProspectIds.push(prospectId);
+      });
+
+      if (createPayload.length) {
+        await supabaseTableFetch("marketing_prospects", "?select=id", {
+          method: "POST",
+          body: createPayload,
+          prefer: "resolution=merge-duplicates,return=minimal"
+        });
+      }
+
+      const uniqueAttachIds = Array.from(new Set(attachProspectIds.filter(Boolean)));
+      const links = uniqueAttachIds.map((prospectId) => ({
+        id: crypto.randomUUID(),
+        company_id: actor.companyId,
+        campaign_id: campaignId,
+        prospect_id: prospectId,
+        state: "ready",
+        created_at: now,
+        updated_at: now
+      }));
+      const linked = links.length
+        ? await supabaseTableFetch("marketing_campaign_prospects", "?on_conflict=campaign_id,prospect_id&select=id", {
+          method: "POST",
+          body: links,
+          prefer: "resolution=merge-duplicates,return=representation"
+        }).catch(() => [])
+        : [];
+      sendJson(res, 200, {
+        ok: true,
+        result: {
+          selected: uniqueCandidateIds.length,
+          valid: normalized.length,
+          createdCampaignOnlyProspects: createPayload.length,
+          reusedExistingProspects: reusedExisting,
+          campaignLinked: Array.isArray(linked) ? linked.length : 0
+        }
+      });
     } catch (error) {
       sendJson(res, 400, { ok: false, error: String(error?.message || error) });
     }
