@@ -6945,6 +6945,7 @@ function PortalApp({ token, onLogout }) {
   const [applicantsVisibleCount, setApplicantsVisibleCount] = useState(50);
   const [bulkAssignApplicantModalOpen, setBulkAssignApplicantModalOpen] = useState(false);
   const [bulkAssignCandidateModalOpen, setBulkAssignCandidateModalOpen] = useState(false);
+  const [dbCampaignAttachModal, setDbCampaignAttachModal] = useState({ open: false, campaigns: [], selectedCampaignId: "", busy: false, totalCandidates: 0 });
   const [hostedJobId, setHostedJobId] = useState("");
   const [hostedRecruiterApplyLinks, setHostedRecruiterApplyLinks] = useState([]);
   const [dashboardFilters, setDashboardFilters] = useState(() => {
@@ -14348,20 +14349,36 @@ function PortalApp({ token, onLogout }) {
       setStatus("workspace", "No marketing campaign found. Create one first.", "error");
       return;
     }
-    const choices = campaigns.map((item, index) => `${index + 1}. ${item?.name || "Untitled"} (${item?.status || "draft"})`).join("\n");
-    const picked = window.prompt(`Select campaign number:\n${choices}`, "1");
-    if (picked == null) return;
-    const pickedIndex = Math.max(1, Number(picked || 1)) - 1;
-    const campaign = campaigns[pickedIndex];
-    if (!campaign?.id) {
-      setStatus("workspace", "Invalid campaign selection.", "error");
+    setDbCampaignAttachModal({
+      open: true,
+      campaigns,
+      selectedCampaignId: String(campaigns?.[0]?.id || ""),
+      busy: false,
+      totalCandidates: candidateIds.length
+    });
+  }
+
+  async function confirmAttachCurrentDatabasePageToCampaign() {
+    const selectedCampaignId = String(dbCampaignAttachModal?.selectedCampaignId || "").trim();
+    if (!selectedCampaignId) {
+      setStatus("workspace", "Select a campaign first.", "error");
       return;
     }
-    const result = await api(`/company/marketing/campaigns/${encodeURIComponent(String(campaign.id || ""))}/attach-candidates`, token, "POST", { candidateIds });
+    const candidates = Array.isArray(pagedCandidates) ? pagedCandidates : [];
+    const candidateIds = Array.from(new Set(candidates.map((item) => String(item?.id || "").trim()).filter(Boolean)));
+    if (!candidateIds.length) {
+      setStatus("workspace", "No candidates on current page to attach.", "error");
+      setDbCampaignAttachModal((current) => ({ ...current, open: false }));
+      return;
+    }
+    setDbCampaignAttachModal((current) => ({ ...current, busy: true }));
+    const result = await api(`/company/marketing/campaigns/${encodeURIComponent(selectedCampaignId)}/attach-candidates`, token, "POST", { candidateIds });
     const linked = Number(result?.campaignLinked || 0);
     const created = Number(result?.createdCampaignOnlyProspects || 0);
     const reused = Number(result?.reusedExistingProspects || 0);
-    setStatus("workspace", `Attached to "${campaign.name || "campaign"}": linked ${linked}, created ${created}, reused ${reused}.`, "ok");
+    const selectedCampaign = (dbCampaignAttachModal?.campaigns || []).find((item) => String(item?.id || "") === selectedCampaignId);
+    setStatus("workspace", `Attached to "${selectedCampaign?.name || "campaign"}": linked ${linked}, created ${created}, reused ${reused}.`, "ok");
+    setDbCampaignAttachModal({ open: false, campaigns: [], selectedCampaignId: "", busy: false, totalCandidates: 0 });
   }
 
   function downloadCandidateSmartChipRows(chipId) {
@@ -21093,6 +21110,49 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
               <button className="ghost-btn" onClick={() => setWhatsappTemplatePicker({ open: false, options: [], selectedId: "", row: null, phone: "", statusKey: "workspace", customText: "", newShortcutKey: "", saveScope: "all_jobs", assignJobId: "" })}>Cancel</button>
               <button className="ghost-btn" onClick={() => void saveWhatsappTemplateFromPicker()}>Save shortcut</button>
               <button onClick={() => void applyWhatsappTemplatePickerSelection()}>Copy and open (without saving)</button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+      {dbCampaignAttachModal.open ? (
+        <div className="overlay" onClick={() => setDbCampaignAttachModal({ open: false, campaigns: [], selectedCampaignId: "", busy: false, totalCandidates: 0 })}>
+          <div className="overlay-card" onClick={(e) => e.stopPropagation()}>
+            <h3>Attach Current Page To Campaign</h3>
+            <p className="muted">Candidates on current page: {Number(dbCampaignAttachModal.totalCandidates || 0)}</p>
+            <div className="form-grid">
+              <label>
+                <span>Select campaign</span>
+                <select
+                  value={dbCampaignAttachModal.selectedCampaignId}
+                  onChange={(e) => setDbCampaignAttachModal((current) => ({ ...current, selectedCampaignId: e.target.value }))}
+                  disabled={dbCampaignAttachModal.busy}
+                >
+                  <option value="">Select campaign</option>
+                  {(dbCampaignAttachModal.campaigns || []).map((item) => (
+                    <option key={`db-attach-campaign-${item.id}`} value={item.id}>
+                      {`${item?.name || "Untitled"} (${item?.status || "draft"})`}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+            <div className="button-row">
+              <button
+                className="ghost-btn"
+                onClick={() => setDbCampaignAttachModal({ open: false, campaigns: [], selectedCampaignId: "", busy: false, totalCandidates: 0 })}
+                disabled={dbCampaignAttachModal.busy}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => void confirmAttachCurrentDatabasePageToCampaign().catch((error) => {
+                  setStatus("workspace", String(error?.message || error || "Failed to attach candidates."), "error");
+                  setDbCampaignAttachModal((current) => ({ ...current, busy: false }));
+                })}
+                disabled={dbCampaignAttachModal.busy || !dbCampaignAttachModal.selectedCampaignId}
+              >
+                {dbCampaignAttachModal.busy ? "Attaching..." : "Attach now"}
+              </button>
             </div>
           </div>
         </div>
