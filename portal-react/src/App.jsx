@@ -7613,6 +7613,7 @@ function PortalApp({ token, onLogout }) {
   const [smtpSettingsKeepPass, setSmtpSettingsKeepPass] = useState(true);
   const [smtpTestBusy, setSmtpTestBusy] = useState(false);
   const [zohoConnectBusy, setZohoConnectBusy] = useState(false);
+  const [mailConnectProvider, setMailConnectProvider] = useState("zoho");
   const smtpSettingsDirtyRef = useRef(false);
   const markSmtpSettingsDirty = () => { smtpSettingsDirtyRef.current = true; };
 
@@ -14340,6 +14341,19 @@ function PortalApp({ token, onLogout }) {
     setStatus("workspace", "Candidate search results downloaded in Excel format.", "ok");
   }
 
+  async function connectMailByProvider() {
+    const provider = String(mailConnectProvider || "zoho").trim().toLowerCase();
+    if (provider === "zoho") {
+      await connectZohoMailbox();
+      return;
+    }
+    if (provider === "google" || provider === "microsoft") {
+      setStatus("settings", `${provider === "google" ? "Google" : "Microsoft"} one-click connect is coming soon. Use manual SMTP/API fallback for now.`, "error");
+      return;
+    }
+    setStatus("settings", "Please select a mail provider first.", "error");
+  }
+
   async function attachCurrentDatabasePageToCampaign() {
     const candidates = Array.isArray(pagedCandidates) ? pagedCandidates : [];
     const candidateIds = Array.from(new Set(candidates.map((item) => String(item?.id || "").trim()).filter(Boolean)));
@@ -19545,8 +19559,16 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                     ) : null}
                   </div>
                   <div className="button-row">
-                    <button className="secondary" disabled={zohoConnectBusy} onClick={() => void connectZohoMailbox()}>
-                      {zohoConnectBusy ? "Connecting..." : "Connect Mail (Zoho API)"}
+                    <label className="copy-preset-control">
+                      <span>Connect provider</span>
+                      <select value={mailConnectProvider} onChange={(e) => setMailConnectProvider(e.target.value)}>
+                        <option value="zoho">Zoho</option>
+                        <option value="google">Google</option>
+                        <option value="microsoft">Microsoft</option>
+                      </select>
+                    </label>
+                    <button className="secondary" disabled={zohoConnectBusy} onClick={() => void connectMailByProvider()}>
+                      {zohoConnectBusy ? "Connecting..." : "Connect Mail"}
                     </button>
                     <button onClick={() => void saveSmtpSettings()}>Save email settings</button>
                     <button className="secondary" disabled={smtpTestBusy} onClick={() => void testSmtpSettings(false)}>
@@ -19559,10 +19581,10 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                 </div>
                 <div className="settings-subsection mail-settings-notes">
                   <div className="section-kicker">Mail Share Notes</div>
-                  <p className="muted"><strong>Recommended:</strong> use <strong>Connect Mail (Zoho API)</strong> first.</p>
+                  <p className="muted"><strong>Recommended:</strong> use <strong>Connect Mail</strong> first, then keep manual SMTP/API as fallback.</p>
                   <p className="muted"><strong>Supported modes:</strong> SMTP mode (<code>smtppro.zoho.com</code>, <code>smtp.gmail.com</code>, <code>smtp.office365.com</code>) or API mode via host keys.</p>
                   <p className="muted"><strong>API mode host keys:</strong> <code>zohoapi.com</code>, <code>sendgridapi</code>, <code>postmarkapi</code>.</p>
-                  <p className="muted"><strong>Zoho:</strong> click <strong>Connect Mail (Zoho API)</strong>. No manual code/token copy required.</p>
+                  <p className="muted"><strong>Zoho:</strong> click <strong>Connect Mail</strong> with provider set to Zoho. No manual code/token copy required.</p>
                   <p className="muted"><strong>Password meaning:</strong> SMTP = mailbox/app password. API = provider credential (Zoho refresh token / SendGrid key / Postmark token).</p>
                   <p className="muted"><strong>Connection:</strong> {String(smtpSettings.host || "").toLowerCase().startsWith("zohoapi") && smtpSettings.hasPassword ? "Zoho connected" : "Not connected"} for current recruiter account.</p>
                   <p className="muted"><strong>Hosting note:</strong> SMTP mode may need paid hosting/network egress; API mode often avoids SMTP port blockers.</p>
