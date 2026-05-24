@@ -27,6 +27,8 @@ const DEFAULT_JD_EMAIL_CC = "ankit.garg@kompatibleminds.com";
 const JD_EMAIL_CC_HISTORY_KEY_PREFIX = "recruitdesk_portal_jd_email_cc_history_v1:";
 const KOMPATIBLE_MINDS_COMPANY_ID = "c0a7d2c9-4ddb-4add-9d4a-24cdd1caba7c";
 const SIDEBAR_PREF_KEY = "recruitdesk_sidebar_collapsed_v1";
+const EXTENSION_PROMPT_STORAGE_KEY_PREFIX = "recruitdesk_extension_prompt_v1";
+const RECRUITDESK_EXTENSION_URL = "https://chromewebstore.google.com/detail/recruitdesk-ai/ihkjpmlpnobojigfdencaafegjidbnah";
 
 const BASE_NAV_SECTIONS = [
   {
@@ -2908,6 +2910,10 @@ function buildCombinedAssessmentInsightsForExportV2(item = {}) {
 
 function getJdCcHistoryStorageKey(companyId = "") {
   return `${JD_EMAIL_CC_HISTORY_KEY_PREFIX}${String(companyId || "").trim()}`;
+}
+
+function getExtensionPromptStorageKey(companyId = "", userId = "") {
+  return `${EXTENSION_PROMPT_STORAGE_KEY_PREFIX}:${String(companyId || "").trim()}:${String(userId || "").trim()}`;
 }
 
 function getCopySettingsStorageKey(companyId = "") {
@@ -7044,6 +7050,7 @@ function PortalApp({ token, onLogout }) {
   const [bulkAssignApplicantModalOpen, setBulkAssignApplicantModalOpen] = useState(false);
   const [bulkAssignCandidateModalOpen, setBulkAssignCandidateModalOpen] = useState(false);
   const [dbCampaignAttachModal, setDbCampaignAttachModal] = useState({ open: false, campaigns: [], selectedCampaignId: "", busy: false, totalCandidates: 0 });
+  const [showExtensionPrompt, setShowExtensionPrompt] = useState(false);
   const [hostedJobId, setHostedJobId] = useState("");
   const [hostedRecruiterApplyLinks, setHostedRecruiterApplyLinks] = useState([]);
   const [dashboardFilters, setDashboardFilters] = useState(() => {
@@ -7505,6 +7512,41 @@ function PortalApp({ token, onLogout }) {
   const [quickUpdateParsedSummary, setQuickUpdateParsedSummary] = useState(null);
   const [quickUpdateConflicts, setQuickUpdateConflicts] = useState([]);
   const [quickUpdateMergedPatch, setQuickUpdateMergedPatch] = useState(null);
+  const extensionPromptStorageKey = useMemo(
+    () => getExtensionPromptStorageKey(String(state.user?.companyId || ""), String(state.user?.id || "")),
+    [state.user?.companyId, state.user?.id]
+  );
+
+  useEffect(() => {
+    const companyId = String(state.user?.companyId || "").trim();
+    const userId = String(state.user?.id || "").trim();
+    if (!companyId || !userId) {
+      setShowExtensionPrompt(false);
+      return;
+    }
+    try {
+      const raw = window.localStorage.getItem(extensionPromptStorageKey);
+      const parsed = raw ? JSON.parse(raw) : {};
+      const installed = parsed?.installed === true;
+      setShowExtensionPrompt(!installed);
+    } catch {
+      setShowExtensionPrompt(true);
+    }
+  }, [state.user?.companyId, state.user?.id, extensionPromptStorageKey]);
+
+  function markExtensionPromptState(next = {}) {
+    const companyId = String(state.user?.companyId || "").trim();
+    const userId = String(state.user?.id || "").trim();
+    if (!companyId || !userId) return;
+    try {
+      window.localStorage.setItem(extensionPromptStorageKey, JSON.stringify({
+        installed: next.installed === true,
+        updatedAt: new Date().toISOString()
+      }));
+    } catch {
+      // ignore
+    }
+  }
   const [newDraftOpen, setNewDraftOpen] = useState(false);
   const [newDraftMode, setNewDraftMode] = useState("manual");
   const [newDraftForm, setNewDraftForm] = useState({
@@ -21229,6 +21271,51 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
         </div>
         <footer className="portal-footer portal-footer--content">{PRODUCT_NAME} {COMPANY_ATTRIBUTION} | build-126c8d5</footer>
       </main>
+
+      {showExtensionPrompt ? (
+        <div
+          className="item-card compact-card"
+          style={{
+            position: "fixed",
+            right: 18,
+            bottom: 18,
+            width: 340,
+            zIndex: 1200,
+            boxShadow: "0 12px 32px rgba(17, 33, 67, 0.22)"
+          }}
+        >
+          <div className="section-kicker">Suggested</div>
+          <h3 style={{ marginTop: 6 }}>Download RecruitDesk AI Extension</h3>
+          <p className="muted" style={{ marginTop: 8 }}>
+            Fast sourcing, copy shortcuts, and smoother recruiter workflow.
+          </p>
+          <div className="button-row" style={{ marginTop: 12 }}>
+            <button
+              onClick={() => {
+                window.open(RECRUITDESK_EXTENSION_URL, "_blank", "noopener,noreferrer");
+                setShowExtensionPrompt(false);
+              }}
+            >
+              Install Extension
+            </button>
+            <button
+              className="ghost-btn"
+              onClick={() => {
+                markExtensionPromptState({ installed: true });
+                setShowExtensionPrompt(false);
+              }}
+            >
+              Already Installed
+            </button>
+            <button
+              className="ghost-btn"
+              onClick={() => setShowExtensionPrompt(false)}
+            >
+              Later
+            </button>
+          </div>
+        </div>
+      ) : null}
 
       <AssignModal
         open={Boolean(assignApplicantId) || (bulkAssignApplicantModalOpen && bulkAssignApplicantIds.length > 0)}
