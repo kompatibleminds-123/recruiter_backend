@@ -5654,6 +5654,7 @@ function JdEmailModal({ open, jobs, value, ccSuggestions = [], onChange, onClose
 const DASHBOARD_FILTER_STORAGE_KEY = "recruitdesk_portal_dashboard_filters_v1";
 
 function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs = true }) {
+  const MARKETING_TEMPLATE_ATTACHMENT_MAX_BYTES = 5 * 1024 * 1024;
   const templateSubjectPlaceholderTokens = [
     "{{name}}",
     "{{first_name}}",
@@ -5692,6 +5693,8 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
   const [selectedCampaignId, setSelectedCampaignId] = useState("");
   const [templateDraft, setTemplateDraft] = useState({ subject: "", bodyText: "Hi {{name}},\n\n\nRegards,\nTeam", targetCategoriesText: "" });
   const [editingTemplateId, setEditingTemplateId] = useState("");
+  const [templateAttachment, setTemplateAttachment] = useState(null);
+  const [templateAttachmentDirty, setTemplateAttachmentDirty] = useState(false);
   const [templatePreviewProspectId, setTemplatePreviewProspectId] = useState("");
   const [templatePreviewProspects, setTemplatePreviewProspects] = useState([]);
   const [templatePreviewResult, setTemplatePreviewResult] = useState(null);
@@ -5715,6 +5718,7 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
   const prospectNameInputRef = useRef(null);
   const templateSubjectInputRef = useRef(null);
   const templateBodyInputRef = useRef(null);
+  const templateAttachmentInputRef = useRef(null);
   const defaultSuggestedProspectCategories = [
     "Sales HR",
     "Finance HR",
@@ -5839,6 +5843,8 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
         .then((row) => {
           if (!row) {
             setTemplateDraft({ subject: "", bodyText: "Hi {{name}},\n\n\nRegards,\nTeam", targetCategoriesText: "" });
+            setTemplateAttachment(null);
+            setTemplateAttachmentDirty(false);
             return;
           }
           setTemplateDraft({
@@ -5846,6 +5852,12 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
             bodyText: String(row.body_text || ""),
             targetCategoriesText: ""
           });
+          setTemplateAttachment(row?.attachment ? {
+            filename: String(row.attachment.filename || "").trim(),
+            mimeType: String(row.attachment.mimeType || "application/octet-stream").trim(),
+            fileData: ""
+          } : null);
+          setTemplateAttachmentDirty(false);
         })
         .catch(() => {});
     }
@@ -6200,11 +6212,35 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
       bodyText: String(item.body_text || ""),
       targetCategoriesText: ""
     });
+    setTemplateAttachment(item?.attachment ? {
+      filename: String(item.attachment.filename || "").trim(),
+      mimeType: String(item.attachment.mimeType || "application/octet-stream").trim(),
+      fileData: ""
+    } : null);
+    setTemplateAttachmentDirty(false);
   }
 
   function cancelTemplateEdit() {
     setEditingTemplateId("");
     setTemplateDraft({ subject: "", bodyText: "Hi {{name}},\n\n\nRegards,\nTeam", targetCategoriesText: "" });
+    setTemplateAttachment(null);
+    setTemplateAttachmentDirty(false);
+    if (templateAttachmentInputRef.current) templateAttachmentInputRef.current.value = "";
+  }
+
+  async function handleTemplateAttachmentFile(file) {
+    if (!file) return;
+    const size = Number(file.size || 0);
+    if (size <= 0) throw new Error("Attachment file is empty.");
+    if (size > MARKETING_TEMPLATE_ATTACHMENT_MAX_BYTES) throw new Error("Attachment too large. Max 5MB.");
+    const base64 = await fileToBase64(file);
+    if (!base64) throw new Error("Could not read attachment file.");
+    setTemplateAttachment({
+      filename: String(file.name || "attachment").trim(),
+      mimeType: String(file.type || "application/octet-stream").trim() || "application/octet-stream",
+      fileData: base64
+    });
+    setTemplateAttachmentDirty(true);
   }
 
   async function loadTemplatePreviewProspects() {
@@ -6548,6 +6584,36 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
             />
           </label>
         </div>
+        <div className="button-row tight" style={{ marginTop: 10, alignItems: "center", flexWrap: "wrap" }}>
+          <button className="ghost-btn" type="button" onClick={() => templateAttachmentInputRef.current?.click()}>
+            {templateAttachment?.filename ? "Replace attachment" : "Attach file to template"}
+          </button>
+          <input
+            ref={templateAttachmentInputRef}
+            type="file"
+            style={{ display: "none" }}
+            accept=".pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.csv,.txt,.zip,.jpg,.jpeg,.png"
+            onChange={(e) => {
+              const file = e.target.files && e.target.files[0] ? e.target.files[0] : null;
+              if (!file) return;
+              void handleTemplateAttachmentFile(file).catch(setErr);
+            }}
+          />
+          {templateAttachment?.filename ? <span className="muted">Attached: {templateAttachment.filename}</span> : <span className="muted">No attachment</span>}
+          {templateAttachment ? (
+            <button
+              className="ghost-btn"
+              type="button"
+              onClick={() => {
+                setTemplateAttachment(null);
+                setTemplateAttachmentDirty(true);
+                if (templateAttachmentInputRef.current) templateAttachmentInputRef.current.value = "";
+              }}
+            >
+              Remove attachment
+            </button>
+          ) : null}
+        </div>
         <div className="item-card compact-card" style={{ marginTop: 12 }}>
           <div className="item-subtitle">Click placeholders to insert</div>
           <div className="button-row tight" style={{ marginTop: 8, flexWrap: "wrap" }}>
@@ -6572,6 +6638,13 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
               bodyText: templateDraft.bodyText,
               campaignId: selectedCampaignId
             };
+            if (templateAttachmentDirty) {
+              payload.attachment = templateAttachment ? {
+                filename: templateAttachment.filename,
+                mimeType: templateAttachment.mimeType,
+                fileData: templateAttachment.fileData || ""
+              } : null;
+            }
             if (editingTemplateId) {
               await api(`/company/marketing/templates/${encodeURIComponent(editingTemplateId)}`, token, "PATCH", payload);
             } else {

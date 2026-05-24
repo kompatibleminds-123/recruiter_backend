@@ -3303,6 +3303,74 @@ function extractSafeFirstName(fullName = "") {
   return "";
 }
 
+const MARKETING_TEMPLATE_ATTACHMENT_MARKER = "RSD_TEMPLATE_ATTACHMENT_V1";
+const MARKETING_TEMPLATE_ATTACHMENT_MAX_BYTES = 5 * 1024 * 1024;
+
+function stripMarketingTemplateAttachment(rawBody = "") {
+  const source = String(rawBody || "");
+  const pattern = new RegExp(`<!--\\s*${MARKETING_TEMPLATE_ATTACHMENT_MARKER}:(.*?)\\s*-->`, "s");
+  const match = source.match(pattern);
+  if (!match) return { cleanBody: source, attachment: null };
+  let parsed = null;
+  try {
+    parsed = JSON.parse(match[1] || "{}");
+  } catch {
+    parsed = null;
+  }
+  const cleanBody = source.replace(pattern, "").trim();
+  if (!parsed || typeof parsed !== "object") return { cleanBody, attachment: null };
+  return {
+    cleanBody,
+    attachment: {
+      filename: String(parsed.filename || "").trim(),
+      mimeType: String(parsed.mimeType || "application/octet-stream").trim() || "application/octet-stream",
+      fileData: String(parsed.fileData || "").trim()
+    }
+  };
+}
+
+function applyMarketingTemplateAttachment(rawBody = "", attachment = null) {
+  const cleaned = stripMarketingTemplateAttachment(rawBody).cleanBody;
+  if (!attachment || typeof attachment !== "object") return cleaned;
+  const filename = String(attachment.filename || "").trim();
+  const fileData = String(attachment.fileData || "").trim();
+  if (!filename || !fileData) return cleaned;
+  const mimeType = String(attachment.mimeType || "application/octet-stream").trim() || "application/octet-stream";
+  const payload = { filename, mimeType, fileData };
+  return `${cleaned}\n<!--${MARKETING_TEMPLATE_ATTACHMENT_MARKER}:${JSON.stringify(payload)}-->`;
+}
+
+function sanitizeMarketingTemplateAttachment(input = null) {
+  if (!input || typeof input !== "object") return null;
+  const filenameRaw = String(input.filename || "").trim();
+  const filename = filenameRaw.replace(/[\\/:*?"<>|]+/g, "_").slice(0, 180);
+  const mimeType = String(input.mimeType || "application/octet-stream").trim() || "application/octet-stream";
+  const fileData = String(input.fileData || "").trim().replace(/^data:[^;]+;base64,/i, "");
+  if (!filename && !fileData) return null;
+  if (!filename) throw new Error("Attachment filename is required.");
+  if (!fileData) throw new Error("Attachment file data is required.");
+  if (!/^[A-Za-z0-9+/=\r\n]+$/.test(fileData)) throw new Error("Attachment must be base64 encoded.");
+  const approxBytes = Math.floor((fileData.replace(/\s+/g, "").length * 3) / 4);
+  if (approxBytes <= 0) throw new Error("Attachment file is empty.");
+  if (approxBytes > MARKETING_TEMPLATE_ATTACHMENT_MAX_BYTES) throw new Error("Attachment too large. Max 5MB.");
+  return { filename, mimeType, fileData };
+}
+
+function normalizeMarketingTemplateRow(row = null) {
+  if (!row || typeof row !== "object") return row;
+  const bodyRaw = String(row.body_text || "").trim();
+  const { cleanBody, attachment } = stripMarketingTemplateAttachment(bodyRaw);
+  return {
+    ...row,
+    body_text: cleanBody,
+    attachment: attachment && attachment.filename && attachment.fileData ? {
+      filename: attachment.filename,
+      mimeType: attachment.mimeType,
+      hasFileData: true
+    } : null
+  };
+}
+
 function buildMarketingSignatureHtmlAndText(settings = {}) {
   const signatureHtml = String(settings?.signatureHtml || "").trim();
   const signatureText = String(settings?.signatureText || "").trim();
@@ -3337,6 +3405,10 @@ async function processMarketingWorkerTickForActor(actor, options = {}) {
     const templateRows = await supabaseTableFetch("marketing_templates", `?select=*&campaign_id=eq.${encodeURIComponent(campaignId)}&company_id=eq.${companyId}&limit=1`);
     const template = Array.isArray(templateRows) && templateRows.length ? templateRows[0] : null;
     if (!template?.subject || !template?.body_text) continue;
+    const templateParsed = stripMarketingTemplateAttachment(String(template.body_text || ""));
+    const templateBody = String(templateParsed.cleanBody || "").trim();
+    const templateAttachment = templateParsed.attachment;
+    if (!templateBody) continue;
     const queueRows = await supabaseTableFetch(
       "marketing_campaign_prospects",
       `?select=id,prospect_id,state,updated_at,last_sent_at&company_id=eq.${companyId}&campaign_id=eq.${encodeURIComponent(campaignId)}&state=eq.ready&order=updated_at.asc&limit=${batchPerCampaign}`
@@ -3363,7 +3435,7 @@ async function processMarketingWorkerTickForActor(actor, options = {}) {
         senderName: String(actor?.name || "").trim(),
         senderEmail: String(actor?.email || "").trim()
       });
-      const renderedBody = renderMarketingTemplate(template.body_text, prospect, {
+      const renderedBody = renderMarketingTemplate(templateBody, prospect, {
         senderName: String(actor?.name || "").trim(),
         senderEmail: String(actor?.email || "").trim()
       });
@@ -3378,7 +3450,19 @@ async function processMarketingWorkerTickForActor(actor, options = {}) {
       const text = signature.text
         ? `${textBase}\n\n${signature.text}`
         : textBase;
-      await sendJdEmailAsActor(actor, { to, subject, text, html, cc: "", attachments: [] });
+      const attachments = [];
+      if (templateAttachment?.filename && templateAttachment?.fileData) {
+        try {
+          attachments.push({
+            filename: templateAttachment.filename,
+            content: Buffer.from(String(templateAttachment.fileData || "").replace(/^data:[^;]+;base64,/i, ""), "base64"),
+            contentType: String(templateAttachment.mimeType || "application/octet-stream").trim() || "application/octet-stream"
+          });
+        } catch {
+          // Ignore malformed template attachment, keep send resilient.
+        }
+      }
+      await sendJdEmailAsActor(actor, { to, subject, text, html, cc: "", attachments });
       await supabaseTableFetch("marketing_campaign_prospects", `?id=eq.${encodeURIComponent(String(row.id || ""))}&select=*`, {
         method: "PATCH",
         body: { state: "sent", updated_at: toIsoNow(), last_sent_at: toIsoNow() },
@@ -11337,7 +11421,8 @@ const server = http.createServer(async (req, res) => {
       const campaignId = encodeURIComponent(String(requestUrl.pathname.replace(/^\/company\/marketing\/campaigns\//, "").replace(/\/template$/, "")).trim());
       const companyId = encodeURIComponent(String(actor.companyId || "").trim());
       const rows = await supabaseTableFetch("marketing_templates", `?select=*&company_id=eq.${companyId}&campaign_id=eq.${campaignId}&limit=1`);
-      sendJson(res, 200, { ok: true, result: Array.isArray(rows) && rows.length ? rows[0] : null });
+      const row = Array.isArray(rows) && rows.length ? normalizeMarketingTemplateRow(rows[0]) : null;
+      sendJson(res, 200, { ok: true, result: row });
     } catch (error) {
       sendJson(res, 400, { ok: false, error: String(error?.message || error) });
     }
@@ -11350,24 +11435,28 @@ const server = http.createServer(async (req, res) => {
       const campaignId = String(requestUrl.pathname.replace(/^\/company\/marketing\/campaigns\//, "").replace(/\/template$/, "")).trim();
       const body = await readJsonBody(req);
       const now = toIsoNow();
+      const bodyTextClean = String(body.bodyText || body.body_text || "").trim();
+      const attachment = sanitizeMarketingTemplateAttachment(body.attachment || null);
+      const bodyWithAttachment = applyMarketingTemplateAttachment(bodyTextClean, attachment);
       const item = {
         id: crypto.randomUUID(),
         company_id: actor.companyId,
         campaign_id: campaignId,
         subject: String(body.subject || "").trim(),
-        body_text: String(body.bodyText || body.body_text || "").trim(),
+        body_text: bodyWithAttachment,
         target_categories: normalizeMarketingCategories(body.targetCategories || body.target_categories || ""),
         updated_by: actor.id,
         created_at: now,
         updated_at: now
       };
-      if (!item.subject || !item.body_text) throw new Error("Template subject and body are required.");
+      if (!item.subject || !bodyTextClean) throw new Error("Template subject and body are required.");
       const saved = await supabaseTableFetch("marketing_templates", "?on_conflict=campaign_id&select=*", {
         method: "POST",
         body: item,
         prefer: "resolution=merge-duplicates,return=representation"
       });
-      sendJson(res, 200, { ok: true, result: (Array.isArray(saved) ? saved[0] : saved) || item });
+      const result = normalizeMarketingTemplateRow((Array.isArray(saved) ? saved[0] : saved) || item);
+      sendJson(res, 200, { ok: true, result });
     } catch (error) {
       sendJson(res, 400, { ok: false, error: String(error?.message || error) });
     }
@@ -11379,7 +11468,8 @@ const server = http.createServer(async (req, res) => {
       const actor = await requireSessionUser(getBearerToken(req));
       const companyId = encodeURIComponent(String(actor.companyId || "").trim());
       const rows = await supabaseTableFetch("marketing_templates", `?select=id,campaign_id,subject,body_text,target_categories,updated_at,created_at&company_id=eq.${companyId}&order=updated_at.desc&limit=100`);
-      sendJson(res, 200, { ok: true, result: { items: Array.isArray(rows) ? rows : [] } });
+      const items = (Array.isArray(rows) ? rows : []).map((row) => normalizeMarketingTemplateRow(row));
+      sendJson(res, 200, { ok: true, result: { items } });
     } catch (error) {
       sendJson(res, 400, { ok: false, error: String(error?.message || error) });
     }
@@ -11391,7 +11481,8 @@ const server = http.createServer(async (req, res) => {
       const actor = await requireSessionUser(getBearerToken(req));
       const body = await readJsonBody(req);
       const subject = String(body.subject || "").trim();
-      const bodyText = String(body.bodyText || body.body_text || "").trim();
+      const bodyTextRaw = String(body.bodyText || body.body_text || "").trim();
+      const bodyText = stripMarketingTemplateAttachment(bodyTextRaw).cleanBody;
       const prospectId = String(body.prospectId || "").trim();
       if (!subject && !bodyText) throw new Error("Template subject/body is required for preview.");
 
@@ -11445,10 +11536,22 @@ const server = http.createServer(async (req, res) => {
       const templateId = String(requestUrl.pathname.replace(/^\/company\/marketing\/templates\//, "")).trim();
       if (!templateId) throw new Error("Template id is required.");
       const body = await readJsonBody(req);
+      const currentRows = await supabaseTableFetch(
+        "marketing_templates",
+        `?id=eq.${encodeURIComponent(templateId)}&company_id=eq.${encodeURIComponent(actor.companyId)}&select=id,body_text&limit=1`
+      );
+      const currentTemplate = Array.isArray(currentRows) && currentRows.length ? currentRows[0] : null;
+      if (!currentTemplate?.id) throw new Error("Template not found.");
+      const currentParsed = stripMarketingTemplateAttachment(String(currentTemplate.body_text || ""));
+      let nextAttachment = currentParsed.attachment;
+      if (body.attachment !== undefined) {
+        nextAttachment = sanitizeMarketingTemplateAttachment(body.attachment || null);
+      }
+      const bodyTextFromPatch = body.bodyText !== undefined ? String(body.bodyText || "").trim() : currentParsed.cleanBody;
       const patch = {
         campaign_id: body.campaignId !== undefined ? String(body.campaignId || "").trim() : undefined,
         subject: body.subject !== undefined ? String(body.subject || "").trim() : undefined,
-        body_text: body.bodyText !== undefined ? String(body.bodyText || "").trim() : undefined,
+        body_text: (body.bodyText !== undefined || body.attachment !== undefined) ? applyMarketingTemplateAttachment(bodyTextFromPatch, nextAttachment) : undefined,
         target_categories: body.targetCategories !== undefined ? normalizeMarketingCategories(body.targetCategories || "") : undefined,
         updated_at: toIsoNow(),
         updated_by: actor.id
@@ -11461,7 +11564,7 @@ const server = http.createServer(async (req, res) => {
         `?id=eq.${encodeURIComponent(templateId)}&company_id=eq.${encodeURIComponent(actor.companyId)}&select=*`,
         { method: "PATCH", body: patch, prefer: "return=representation" }
       );
-      sendJson(res, 200, { ok: true, result: Array.isArray(updated) && updated.length ? updated[0] : null });
+      sendJson(res, 200, { ok: true, result: normalizeMarketingTemplateRow(Array.isArray(updated) && updated.length ? updated[0] : null) });
     } catch (error) {
       sendJson(res, 400, { ok: false, error: String(error?.message || error) });
     }
