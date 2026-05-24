@@ -3339,7 +3339,7 @@ async function processMarketingWorkerTickForActor(actor, options = {}) {
     if (!template?.subject || !template?.body_text) continue;
     const queueRows = await supabaseTableFetch(
       "marketing_campaign_prospects",
-      `?select=id,prospect_id,state,updated_at&company_id=eq.${companyId}&campaign_id=eq.${encodeURIComponent(campaignId)}&state=eq.ready&order=updated_at.asc&limit=${batchPerCampaign}`
+      `?select=id,prospect_id,state,updated_at,last_sent_at&company_id=eq.${companyId}&campaign_id=eq.${encodeURIComponent(campaignId)}&state=eq.ready&order=updated_at.asc&limit=${batchPerCampaign}`
     );
     const rows = Array.isArray(queueRows) ? queueRows : [];
     for (const row of rows) {
@@ -3353,8 +3353,10 @@ async function processMarketingWorkerTickForActor(actor, options = {}) {
       const prospect = Array.isArray(prospectRows) && prospectRows.length ? prospectRows[0] : null;
       if (!row || !prospect || String(prospect?.status || "").toLowerCase() !== "active") continue;
       const rawGap = Math.max(1, Number(campaign?.send_gap_minutes || 5));
-      const lastAt = row?.updated_at ? new Date(row.updated_at) : null;
-      if (lastAt && (now.getTime() - lastAt.getTime()) < (rawGap * 60 * 1000)) continue;
+      // Apply send gap only for rows that have already been sent before.
+      // Fresh "ready" rows (no last_sent_at) should not be throttled by gap.
+      const lastSentAt = row?.last_sent_at ? new Date(row.last_sent_at) : null;
+      if (lastSentAt && (now.getTime() - lastSentAt.getTime()) < (rawGap * 60 * 1000)) continue;
       const to = normalizeMarketingEmail(prospect?.email);
       if (!to) continue;
       const subject = renderMarketingTemplate(template.subject, prospect, {
