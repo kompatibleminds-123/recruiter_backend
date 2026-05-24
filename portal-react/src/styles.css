@@ -1042,6 +1042,12 @@ textarea { min-height: 92px; resize: vertical; }
   display: grid;
   gap: 0.2rem;
 }
+.mail-provider-picker__item span {
+  color: #13233f;
+  font-weight: 700;
+  font-size: 1rem;
+  line-height: 1.3;
+}
 .mail-provider-picker__item.active {
   border-color: #3b82f6;
   box-shadow: 0 0 0 1px #3b82f6 inset;
