@@ -5716,6 +5716,11 @@ function JdEmailModal({ open, jobs, value, ccSuggestions = [], onChange, onClose
 const DASHBOARD_FILTER_STORAGE_KEY = "recruitdesk_portal_dashboard_filters_v1";
 
 function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs = true }) {
+  const location = useLocation();
+  const forcedCampaignIdFromUrl = useMemo(() => {
+    const params = new URLSearchParams(String(location?.search || ""));
+    return String(params.get("campaignId") || "").trim();
+  }, [location?.search]);
   const MARKETING_TEMPLATE_ATTACHMENT_MAX_BYTES = 5 * 1024 * 1024;
   const templateSubjectPlaceholderTokens = [
     "{{name}}",
@@ -5803,6 +5808,11 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
     setActiveTab(initialTab);
   }, [initialTab]);
 
+  useEffect(() => {
+    if (!forcedCampaignIdFromUrl) return;
+    setSelectedCampaignId(forcedCampaignIdFromUrl);
+  }, [forcedCampaignIdFromUrl]);
+
   const loadOverview = useCallback(async () => {
     const params = new URLSearchParams();
     if (marketingDateFrom) params.set("dateFrom", marketingDateFrom);
@@ -5832,9 +5842,16 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
     const result = await api(`/company/marketing/campaigns${params.toString() ? `?${params.toString()}` : ""}`, token);
     const rows = Array.isArray(result?.items) ? result.items : [];
     setCampaigns(rows);
-    setSelectedCampaignId((current) => current || String(rows?.[0]?.id || ""));
+    setSelectedCampaignId((current) => {
+      const forced = String(forcedCampaignIdFromUrl || "").trim();
+      const hasForced = forced && rows.some((item) => String(item?.id || "") === forced);
+      if (hasForced) return forced;
+      const hasCurrent = current && rows.some((item) => String(item?.id || "") === String(current));
+      if (hasCurrent) return String(current);
+      return String(rows?.[0]?.id || "");
+    });
     return rows;
-  }, [marketingDateFrom, marketingDateTo, token]);
+  }, [marketingDateFrom, marketingDateTo, token, forcedCampaignIdFromUrl]);
 
   const loadTemplates = useCallback(async () => {
     const result = await api("/company/marketing/templates", token);
@@ -14506,12 +14523,8 @@ function PortalApp({ token, onLogout }) {
     const selectedCampaign = (dbCampaignAttachModal?.campaigns || []).find((item) => String(item?.id || "") === selectedCampaignId);
     setStatus("workspace", `Attached to "${selectedCampaign?.name || "campaign"}": linked ${linked}, created ${created}, reused ${reused}. No send triggered.`, "ok");
     setDbCampaignAttachModal({ open: false, campaigns: [], selectedCampaignId: "", busy: false, totalCandidates: 0 });
-    const openMarketingNow = window.confirm(
-      `Attached successfully.\nNo email has been sent yet.\n\nOpen Marketing Campaigns now to click Launch manually?`
-    );
-    if (openMarketingNow) {
-      navigate("/marketing/campaigns");
-    }
+    const marketingUrl = `/marketing/campaigns?campaignId=${encodeURIComponent(selectedCampaignId)}`;
+    window.open(marketingUrl, "_blank", "noopener,noreferrer");
   }
 
   function downloadCandidateSmartChipRows(chipId) {
