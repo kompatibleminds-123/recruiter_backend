@@ -5940,24 +5940,9 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
     });
   }
 
-  async function attachSelectedProspectsWithCategory() {
+  async function attachSelectedProspects() {
     if (!selectedCampaignId) throw new Error("Select campaign first.");
     if (!selectedProspectIds.length) throw new Error("Select prospects first.");
-    const categoryInput = window.prompt("Category name for selected prospects (e.g. Fintech Sales, Lending Sales):", "");
-    if (categoryInput === null) return;
-    const category = String(categoryInput || "").trim();
-    if (!category) throw new Error("Category is required.");
-    const selectedRows = prospects.filter((item) => selectedProspectIds.includes(String(item?.id || "")));
-    for (const item of selectedRows) {
-      const id = String(item?.id || "").trim();
-      if (!id) continue;
-      const existing = Array.isArray(item?.categories) ? item.categories.map((v) => String(v || "").trim()).filter(Boolean) : [];
-      const next = Array.from(new Set([...existing, category]));
-      await api(`/company/marketing/prospects/${encodeURIComponent(id)}`, token, "PATCH", {
-        category,
-        categories: next
-      });
-    }
     await api(`/company/marketing/campaigns/${encodeURIComponent(selectedCampaignId)}/prospects`, token, "POST", { prospectIds: selectedProspectIds });
   }
 
@@ -5968,28 +5953,6 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
     const campaignName = String(activeCampaign?.name || "selected campaign").trim();
     const proceed = window.confirm(`Launch mass mail for ${selectedCount} selected prospect(s) in "${campaignName}" now?`);
     if (!proceed) return;
-
-    const defaultCategory = String(activeCampaign?.category || "").trim();
-    const categoryInput = window.prompt(
-      "Optional category to apply before launch (leave blank to keep existing categories):",
-      defaultCategory
-    );
-    if (categoryInput === null) return;
-    const category = String(categoryInput || "").trim();
-
-    const selectedRows = prospects.filter((item) => selectedProspectIds.includes(String(item?.id || "")));
-    if (category) {
-      for (const item of selectedRows) {
-        const id = String(item?.id || "").trim();
-        if (!id) continue;
-        const existing = Array.isArray(item?.categories) ? item.categories.map((v) => String(v || "").trim()).filter(Boolean) : [];
-        const next = Array.from(new Set([...existing, category]));
-        await api(`/company/marketing/prospects/${encodeURIComponent(id)}`, token, "PATCH", {
-          category,
-          categories: next
-        });
-      }
-    }
 
     await api(`/company/marketing/campaigns/${encodeURIComponent(selectedCampaignId)}/prospects`, token, "POST", {
       prospectIds: selectedProspectIds
@@ -6115,13 +6078,14 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
       {activeTab === "prospects" ? (
         <>
       <Section kicker="Prospects" title="Add Prospect" sectionRef={prospectFormSectionRef}>
+        <p className="muted">Prospect segments are for audience grouping.</p>
         <div className="form-grid two-col">
           <label><span>Name</span><input ref={prospectNameInputRef} value={prospectDraft.name} onChange={(e) => setProspectDraft((c) => ({ ...c, name: e.target.value }))} /></label>
           <label><span>Email</span><input value={prospectDraft.email} onChange={(e) => setProspectDraft((c) => ({ ...c, email: e.target.value }))} /></label>
           <label><span>Phone</span><input value={prospectDraft.phone} onChange={(e) => setProspectDraft((c) => ({ ...c, phone: e.target.value }))} /></label>
           <label><span>Company</span><input value={prospectDraft.companyName} onChange={(e) => setProspectDraft((c) => ({ ...c, companyName: e.target.value }))} /></label>
           <label><span>Designation</span><input value={prospectDraft.designation} onChange={(e) => setProspectDraft((c) => ({ ...c, designation: e.target.value }))} /></label>
-          <label className="full"><span>Categories (comma separated)</span><input value={prospectDraft.categoriesText} onChange={(e) => setProspectDraft((c) => ({ ...c, categoriesText: e.target.value }))} placeholder="Sales HR, Finance HR, Fintech HR" /></label>
+          <label className="full"><span>Prospect segments (comma separated)</span><input value={prospectDraft.categoriesText} onChange={(e) => setProspectDraft((c) => ({ ...c, categoriesText: e.target.value }))} placeholder="Sales HR, Finance HR, Fintech HR" /></label>
           <div className="full">
             <span className="muted">Quick categories</span>
             <div className="button-row tight" style={{ marginTop: 8, flexWrap: "wrap" }}>
@@ -6327,10 +6291,11 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
 
       {activeTab === "templates" ? (
       <Section kicker="Email Templates" title="Template Library">
+        <p className="muted">Send-to segments control audience filtering during sends.</p>
         <div className="form-grid">
           <label><span>Subject</span><input ref={templateSubjectInputRef} value={templateDraft.subject} onChange={(e) => setTemplateDraft((c) => ({ ...c, subject: e.target.value }))} /></label>
           <label><span>Body</span><textarea ref={templateBodyInputRef} rows={8} value={templateDraft.bodyText} onChange={(e) => setTemplateDraft((c) => ({ ...c, bodyText: e.target.value }))} /></label>
-          <label><span>Target Categories (multi-select by comma)</span><input value={templateDraft.targetCategoriesText} onChange={(e) => setTemplateDraft((c) => ({ ...c, targetCategoriesText: e.target.value }))} placeholder="Finance HR, Logistics HR, Real Estate HR" /></label>
+          <label><span>Send to segments (comma separated)</span><input value={templateDraft.targetCategoriesText} onChange={(e) => setTemplateDraft((c) => ({ ...c, targetCategoriesText: e.target.value }))} placeholder="Finance HR, Logistics HR, Real Estate HR" /></label>
         </div>
         <div className="item-card compact-card" style={{ marginTop: 12 }}>
           <div className="item-subtitle">Click placeholders to insert</div>
@@ -6393,9 +6358,10 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
 
       {activeTab === "campaigns" ? (
       <Section kicker="Campaigns" title="Build Campaign">
+        <p className="muted">Campaign label is for reporting only and does not overwrite prospect segments.</p>
         <div className="form-grid two-col">
           <label><span>Campaign name</span><input value={campaignDraft.name} onChange={(e) => setCampaignDraft((c) => ({ ...c, name: e.target.value }))} /></label>
-          <label><span>Category</span><input value={campaignDraft.category} onChange={(e) => setCampaignDraft((c) => ({ ...c, category: e.target.value }))} /></label>
+          <label><span>Campaign label (optional)</span><input value={campaignDraft.category} onChange={(e) => setCampaignDraft((c) => ({ ...c, category: e.target.value }))} /></label>
           <label><span>Send gap (mins)</span><input type="number" min="1" value={campaignDraft.sendGapMinutes} onChange={(e) => setCampaignDraft((c) => ({ ...c, sendGapMinutes: e.target.value }))} /></label>
           <label><span>Daily cap</span><input type="number" min="10" value={campaignDraft.dailyCap} onChange={(e) => setCampaignDraft((c) => ({ ...c, dailyCap: e.target.value }))} /></label>
         </div>
@@ -6425,7 +6391,7 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
         </select></label>
         {activeCampaign ? (
           <div className="item-card compact-card">
-            <div className="item-subtitle">{`Category: ${activeCampaign.category || "-"} | Gap: ${activeCampaign.send_gap_minutes || 0} mins | Daily cap: ${activeCampaign.daily_cap || 0}`}</div>
+            <div className="item-subtitle">{`Label: ${activeCampaign.category || "-"} | Gap: ${activeCampaign.send_gap_minutes || 0} mins | Daily cap: ${activeCampaign.daily_cap || 0}`}</div>
           </div>
         ) : null}
         {activeCampaign ? (
@@ -6433,7 +6399,7 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
             <button className="ghost-btn" onClick={() => void api(`/company/marketing/campaigns/${activeCampaign.id}/start`, token, "POST", {}).then(() => { setOk("Campaign started."); return refreshLight("campaigns"); }).catch(setErr)}>Start</button>
             <button className="ghost-btn" onClick={() => void api(`/company/marketing/campaigns/${activeCampaign.id}/pause`, token, "POST", {}).then(() => { setOk("Campaign paused."); return refreshLight("campaigns"); }).catch(setErr)}>Pause</button>
             <button className="ghost-btn" onClick={() => void api(`/company/marketing/campaigns/${activeCampaign.id}/resume`, token, "POST", {}).then(() => { setOk("Campaign resumed."); return refreshLight("campaigns"); }).catch(setErr)}>Resume</button>
-            <button className="ghost-btn" disabled={!selectedProspectIds.length} onClick={() => void attachSelectedProspectsWithCategory().then(() => { setOk("Selected prospects attached with category."); return refreshLight("campaigns"); }).catch(setErr)}>Attach selected prospects</button>
+            <button className="ghost-btn" disabled={!selectedProspectIds.length} onClick={() => void attachSelectedProspects().then(() => { setOk("Selected prospects attached to campaign."); return refreshLight("campaigns"); }).catch(setErr)}>Attach selected prospects</button>
             <button disabled={!selectedProspectIds.length || saving} onClick={() => void (async () => {
               setSaving(true);
               try {
