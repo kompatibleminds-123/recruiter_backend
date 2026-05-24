@@ -5969,9 +5969,6 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
   async function handleCsvFileImport(file) {
     const picked = file || null;
     if (!picked) return;
-    if (!selectedCampaignId) {
-      throw new Error("Select campaign first, then upload prospects.");
-    }
     const payload = {};
     const lowerName = String(picked.name || "").trim().toLowerCase();
     if (lowerName.endsWith(".xlsx") || lowerName.endsWith(".xls")) {
@@ -6006,10 +6003,13 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
     );
     if (!proceed) return;
 
+    const attachToCampaign = selectedCampaignId
+      ? window.confirm("Do you want to attach imported prospects to currently selected campaign?")
+      : false;
     let includeExistingForCampaign = false;
-    if (existing > 0) {
+    if (attachToCampaign && existing > 0) {
       includeExistingForCampaign = window.confirm(
-        `${existing} prospects already exist in system.\nDo you want to attach them also to selected campaign?`
+        `${existing} prospects already exist in system.\nDo you want to attach existing ones also to selected campaign?`
       );
     }
     await api("/company/marketing/prospects/import", token, "POST", {
@@ -6017,7 +6017,7 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
       mode: "commit",
       importAction: includeExistingForCampaign ? "new_and_use_existing" : "new_only",
       includeExistingForCampaign,
-      campaignId: selectedCampaignId
+      campaignId: attachToCampaign ? selectedCampaignId : ""
     });
   }
 
@@ -6284,7 +6284,7 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
         </div>
         <label><span>CSV import (name,email,phone,company,designation)</span><textarea rows={4} value={csvText} onChange={(e) => setCsvText(e.target.value)} /></label>
         <div className="button-row tight">
-          <button className="ghost-btn" type="button" onClick={() => csvFileInputRef.current?.click()} disabled={saving || !selectedCampaignId}>Upload CSV/Excel</button>
+          <button className="ghost-btn" type="button" onClick={() => csvFileInputRef.current?.click()} disabled={saving}>Upload CSV/Excel</button>
           <button className="ghost-btn" type="button" onClick={downloadProspectCsvSample}>Download CSV sample</button>
           <input
             ref={csvFileInputRef}
@@ -6314,14 +6314,13 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
               })();
             }}
           />
-          {!selectedCampaignId ? <span className="muted">Select a campaign first to import and auto-link prospects.</span> : null}
+          {!selectedCampaignId ? <span className="muted">No campaign selected: import will add prospects only (no campaign attach).</span> : null}
           {csvFileName ? <span className="muted">{csvFileName}</span> : null}
         </div>
         <div className="button-row tight">
-          <button className="ghost-btn" disabled={saving || !csvText.trim() || !selectedCampaignId} onClick={() => void (async () => {
+          <button className="ghost-btn" disabled={saving || !csvText.trim()} onClick={() => void (async () => {
             setSaving(true);
             try {
-              if (!selectedCampaignId) throw new Error("Select campaign first, then import prospects.");
               const preview = await api("/company/marketing/prospects/import", token, "POST", { csv: csvText, mode: "preview" });
               const total = Number(preview?.totalRows || 0);
               const valid = Number(preview?.validRows || 0);
@@ -6332,15 +6331,18 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
                 `Import summary:\nTotal rows: ${total}\nValid: ${valid}\nInvalid: ${invalid}\nNew prospects: ${fresh}\nAlready existing: ${existing}\n\nProceed with import?`
               );
               if (!proceed) return;
-              const includeExistingForCampaign = existing > 0
-                ? window.confirm(`${existing} prospects already exist in system.\nDo you want to attach them also to selected campaign?`)
+              const attachToCampaign = selectedCampaignId
+                ? window.confirm("Do you want to attach imported prospects to currently selected campaign?")
+                : false;
+              const includeExistingForCampaign = attachToCampaign && existing > 0
+                ? window.confirm(`${existing} prospects already exist in system.\nDo you want to attach existing ones also to selected campaign?`)
                 : false;
               const result = await api("/company/marketing/prospects/import", token, "POST", {
                 csv: csvText,
                 mode: "commit",
                 importAction: includeExistingForCampaign ? "new_and_use_existing" : "new_only",
                 includeExistingForCampaign,
-                campaignId: selectedCampaignId
+                campaignId: attachToCampaign ? selectedCampaignId : ""
               });
               setCsvText("");
               setProspectsPage(1);
@@ -6350,7 +6352,7 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
               await loadOverview();
               const inserted = Number(result?.inserted || 0);
               const linked = Number(result?.campaignLinked || 0);
-              setOk(`CSV imported. New inserted: ${inserted}. Campaign linked: ${linked}.`);
+              setOk(attachToCampaign ? `CSV imported. New inserted: ${inserted}. Campaign linked: ${linked}.` : `CSV imported. New inserted: ${inserted}.`);
             } catch (error) {
               setErr(error);
             } finally {
