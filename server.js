@@ -10738,6 +10738,13 @@ const server = http.createServer(async (req, res) => {
         updated_at: now
       };
       if (!item.name || !item.email) throw new Error("Name and email are required.");
+      const existingRows = await supabaseTableFetch(
+        "marketing_prospects",
+        `?select=id,name,email&company_id=eq.${encodeURIComponent(actor.companyId)}&email=eq.${encodeURIComponent(item.email)}&limit=1`
+      ).catch(() => []);
+      if (Array.isArray(existingRows) && existingRows.length) {
+        throw new Error("Prospect already exists for this email. Use existing record or attach it to a campaign.");
+      }
       const saved = await supabaseTableFetch("marketing_prospects", "?select=*", { method: "POST", body: item, prefer: "return=representation" });
       sendJson(res, 200, { ok: true, result: (Array.isArray(saved) ? saved[0] : saved) || item });
     } catch (error) {
@@ -10811,12 +10818,16 @@ const server = http.createServer(async (req, res) => {
       const body = await readJsonBody(req);
       const filename = String(body.filename || "").trim().toLowerCase();
       const fileData = String(body.fileData || "").trim();
+      const mode = String(body.mode || "commit").trim().toLowerCase();
+      const importAction = String(body.importAction || "new_only").trim().toLowerCase();
+      const campaignId = String(body.campaignId || "").trim();
+      const includeExistingForCampaign = Boolean(body.includeExistingForCampaign) || importAction === "new_and_use_existing";
       const rows = fileData
         ? parseMarketingSpreadsheetBase64(fileData, filename)
         : parseMarketingCsv(String(body.csv || ""));
       if (!rows.length) throw new Error("CSV content is empty.");
       const now = toIsoNow();
-      const normalizedRows = rows
+      const normalizedRowsRaw = rows
         .map((row) => {
           const nameValue = pickMarketingRowValue(row, [
             "name",
@@ -10883,8 +10894,9 @@ const server = http.createServer(async (req, res) => {
             notes: "",
             created_by: actor.id
           };
-        })
-        .filter((item) => item.name && item.email);
+        });
+      const normalizedRows = normalizedRowsRaw.filter((item) => item.name && item.email);
+      const invalidRows = Math.max(0, normalizedRowsRaw.length - normalizedRows.length);
       if (!normalizedRows.length) throw new Error("No valid rows found (need name + email).");
 
       // Deduplicate within upload by email (latest row wins).
@@ -10893,22 +10905,58 @@ const server = http.createServer(async (req, res) => {
       const dedupedRows = Array.from(byEmail.values());
       const emailKeys = Array.from(byEmail.keys()).filter(Boolean);
 
-      // Pre-read existing emails to return useful inserted/updated summary.
-      const existingEmailSet = new Set();
+      // Pre-read existing emails to support preview and campaign attach decisions.
+      const existingByEmail = new Map();
       if (emailKeys.length) {
         const companyId = encodeURIComponent(String(actor.companyId || "").trim());
         const inClause = emailKeys.map((email) => `"${String(email || "").replace(/"/g, "")}"`).join(",");
         const existingRows = await supabaseTableFetch(
           "marketing_prospects",
-          `?select=email&company_id=eq.${companyId}&email=in.(${inClause})&limit=5000`
+          `?select=id,name,email&company_id=eq.${companyId}&email=in.(${inClause})&limit=5000`
         ).catch(() => []);
         (Array.isArray(existingRows) ? existingRows : []).forEach((row) => {
           const existingEmail = String(row?.email || "").trim().toLowerCase();
-          if (existingEmail) existingEmailSet.add(existingEmail);
+          if (existingEmail) existingByEmail.set(existingEmail, row);
         });
       }
+      const existingEmailSet = new Set(Array.from(existingByEmail.keys()));
+      const existingCount = emailKeys.filter((email) => existingEmailSet.has(email)).length;
+      const newCount = Math.max(0, dedupedRows.length - existingCount);
 
-      const payload = dedupedRows.map((item) => ({
+      if (mode === "preview") {
+        const duplicatePreview = dedupedRows
+          .filter((item) => existingEmailSet.has(String(item.email || "").toLowerCase()))
+          .slice(0, 20)
+          .map((item) => {
+            const email = String(item.email || "").toLowerCase();
+            const existing = existingByEmail.get(email) || {};
+            return {
+              email: String(item.email || "").trim(),
+              uploadName: String(item.name || "").trim(),
+              existingId: String(existing?.id || "").trim(),
+              existingName: String(existing?.name || "").trim()
+            };
+          });
+        sendJson(res, 200, {
+          ok: true,
+          result: {
+            totalRows: rows.length,
+            validRows: normalizedRows.length,
+            invalidRows,
+            totalAccepted: dedupedRows.length,
+            duplicateRowsCollapsed: Math.max(0, normalizedRows.length - dedupedRows.length),
+            newCount,
+            existingCount,
+            duplicatePreview
+          }
+        });
+        return;
+      }
+
+      const rowsToInsert = importAction === "new_and_use_existing"
+        ? dedupedRows.filter((item) => !existingEmailSet.has(String(item.email || "").toLowerCase()))
+        : dedupedRows.filter((item) => !existingEmailSet.has(String(item.email || "").toLowerCase()));
+      const payload = rowsToInsert.map((item) => ({
         id: crypto.randomUUID(),
         company_id: actor.companyId,
         ...item,
@@ -10916,25 +10964,65 @@ const server = http.createServer(async (req, res) => {
         updated_at: now
       }));
 
-      const saved = await supabaseTableFetch(
-        "marketing_prospects",
-        "?on_conflict=company_id,email&select=*",
-        {
-          method: "POST",
-          body: payload,
-          prefer: "resolution=merge-duplicates,return=representation"
+      const saved = payload.length
+        ? await supabaseTableFetch(
+          "marketing_prospects",
+          "?on_conflict=company_id,email&select=*",
+          {
+            method: "POST",
+            body: payload,
+            prefer: "resolution=merge-duplicates,return=representation"
+          }
+        )
+        : [];
+      const insertedRows = Array.isArray(saved) ? saved : [];
+      const inserted = insertedRows.length;
+      const updated = existingCount;
+
+      let campaignLinked = 0;
+      if (campaignId) {
+        const attachIds = [];
+        insertedRows.forEach((row) => {
+          const id = String(row?.id || "").trim();
+          if (id) attachIds.push(id);
+        });
+        if (includeExistingForCampaign) {
+          existingByEmail.forEach((row) => {
+            const id = String(row?.id || "").trim();
+            if (id) attachIds.push(id);
+          });
         }
-      );
-      const updated = emailKeys.filter((email) => existingEmailSet.has(email)).length;
-      const inserted = Math.max(0, dedupedRows.length - updated);
+        const uniqueAttachIds = Array.from(new Set(attachIds));
+        if (uniqueAttachIds.length) {
+          const links = uniqueAttachIds.map((prospectId) => ({
+            id: crypto.randomUUID(),
+            company_id: actor.companyId,
+            campaign_id: campaignId,
+            prospect_id: prospectId,
+            state: "ready",
+            created_at: now,
+            updated_at: now
+          }));
+          const linked = await supabaseTableFetch("marketing_campaign_prospects", "?on_conflict=campaign_id,prospect_id&select=id", {
+            method: "POST",
+            body: links,
+            prefer: "resolution=merge-duplicates,return=representation"
+          }).catch(() => []);
+          campaignLinked = Array.isArray(linked) ? linked.length : 0;
+        }
+      }
       sendJson(res, 200, {
         ok: true,
         result: {
           inserted,
           updated,
           totalAccepted: dedupedRows.length,
+          invalidRows,
+          newCount,
+          existingCount,
+          campaignLinked,
           duplicateRowsCollapsed: Math.max(0, normalizedRows.length - dedupedRows.length),
-          saved: Array.isArray(saved) ? saved.length : 0
+          saved: insertedRows.length
         }
       });
     } catch (error) {

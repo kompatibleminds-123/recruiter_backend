@@ -3921,9 +3921,9 @@ function normalizedAssessmentState(assessment, candidate) {
   };
 }
 
-function Section({ kicker, title, children, className = "" }) {
+function Section({ kicker, title, children, className = "", sectionRef = null }) {
   return (
-    <section className={`panel ${className}`.trim()}>
+    <section ref={sectionRef} className={`panel ${className}`.trim()}>
       <div className="section-kicker">{kicker}</div>
       <h2>{title}</h2>
       {children}
@@ -5631,6 +5631,8 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
   const [selectedProspectIds, setSelectedProspectIds] = useState([]);
   const [status, setStatus] = useState({ message: "", kind: "" });
   const csvFileInputRef = useRef(null);
+  const prospectFormSectionRef = useRef(null);
+  const prospectNameInputRef = useRef(null);
   const templateSubjectInputRef = useRef(null);
   const templateBodyInputRef = useRef(null);
   const defaultSuggestedProspectCategories = [
@@ -5861,6 +5863,10 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
   async function handleCsvFileImport(file) {
     const picked = file || null;
     if (!picked) return;
+    if (!selectedCampaignId) {
+      throw new Error("Select campaign first, then upload prospects.");
+    }
+    const payload = {};
     const lowerName = String(picked.name || "").trim().toLowerCase();
     if (lowerName.endsWith(".xlsx") || lowerName.endsWith(".xls")) {
       const buffer = await picked.arrayBuffer();
@@ -5871,16 +5877,42 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
         binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
       }
       const fileData = btoa(binary);
-      await api("/company/marketing/prospects/import", token, "POST", {
-        filename: picked.name || "",
-        fileData
-      });
-      return;
+      payload.filename = picked.name || "";
+      payload.fileData = fileData;
+    } else {
+      const text = await picked.text();
+      const trimmed = String(text || "").trim();
+      if (!trimmed) throw new Error("Selected CSV file is empty.");
+      payload.csv = trimmed;
     }
-    const text = await picked.text();
-    const trimmed = String(text || "").trim();
-    if (!trimmed) throw new Error("Selected CSV file is empty.");
-    await api("/company/marketing/prospects/import", token, "POST", { csv: trimmed });
+
+    const preview = await api("/company/marketing/prospects/import", token, "POST", {
+      ...payload,
+      mode: "preview"
+    });
+    const total = Number(preview?.totalRows || 0);
+    const valid = Number(preview?.validRows || 0);
+    const invalid = Number(preview?.invalidRows || 0);
+    const fresh = Number(preview?.newCount || 0);
+    const existing = Number(preview?.existingCount || 0);
+    const proceed = window.confirm(
+      `Import summary:\nTotal rows: ${total}\nValid: ${valid}\nInvalid: ${invalid}\nNew prospects: ${fresh}\nAlready existing: ${existing}\n\nProceed with import?`
+    );
+    if (!proceed) return;
+
+    let includeExistingForCampaign = false;
+    if (existing > 0) {
+      includeExistingForCampaign = window.confirm(
+        `${existing} prospects already exist in system.\nDo you want to attach them also to selected campaign?`
+      );
+    }
+    await api("/company/marketing/prospects/import", token, "POST", {
+      ...payload,
+      mode: "commit",
+      importAction: includeExistingForCampaign ? "new_and_use_existing" : "new_only",
+      includeExistingForCampaign,
+      campaignId: selectedCampaignId
+    });
   }
 
   function downloadProspectCsvSample() {
@@ -5991,11 +6023,34 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
         ? item.categories.join(", ")
         : String(item.category || "")
     });
+    setActiveTab("prospects");
+    requestAnimationFrame(() => {
+      try {
+        prospectFormSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+      } catch {}
+      setTimeout(() => {
+        prospectNameInputRef.current?.focus();
+        prospectNameInputRef.current?.select?.();
+      }, 60);
+    });
   }
 
   function cancelProspectEdit() {
     setEditingProspectId("");
     setProspectDraft({ name: "", email: "", phone: "", companyName: "", designation: "", categoriesText: "" });
+  }
+
+  async function bulkDeleteSelectedProspects() {
+    if (!selectedProspectIds.length) throw new Error("Select prospects first.");
+    const confirmed = window.confirm(`Delete ${selectedProspectIds.length} selected prospect(s)? This cannot be undone.`);
+    if (!confirmed) return;
+    for (const id of selectedProspectIds) {
+      await api(`/company/marketing/prospects/${encodeURIComponent(String(id || ""))}`, token, "DELETE");
+    }
+    setSelectedProspectIds([]);
+    setProspectsPage(1);
+    await refreshLight("prospects");
+    setOk("Selected prospects deleted.");
   }
 
   function startCampaignEdit(item) {
@@ -6059,9 +6114,9 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
         <div className="page-grid">
       {activeTab === "prospects" ? (
         <>
-      <Section kicker="Prospects" title="Add Prospect">
+      <Section kicker="Prospects" title="Add Prospect" sectionRef={prospectFormSectionRef}>
         <div className="form-grid two-col">
-          <label><span>Name</span><input value={prospectDraft.name} onChange={(e) => setProspectDraft((c) => ({ ...c, name: e.target.value }))} /></label>
+          <label><span>Name</span><input ref={prospectNameInputRef} value={prospectDraft.name} onChange={(e) => setProspectDraft((c) => ({ ...c, name: e.target.value }))} /></label>
           <label><span>Email</span><input value={prospectDraft.email} onChange={(e) => setProspectDraft((c) => ({ ...c, email: e.target.value }))} /></label>
           <label><span>Phone</span><input value={prospectDraft.phone} onChange={(e) => setProspectDraft((c) => ({ ...c, phone: e.target.value }))} /></label>
           <label><span>Company</span><input value={prospectDraft.companyName} onChange={(e) => setProspectDraft((c) => ({ ...c, companyName: e.target.value }))} /></label>
@@ -6114,7 +6169,7 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
         </div>
         <label><span>CSV import (name,email,phone,company,designation)</span><textarea rows={4} value={csvText} onChange={(e) => setCsvText(e.target.value)} /></label>
         <div className="button-row tight">
-          <button className="ghost-btn" type="button" onClick={() => csvFileInputRef.current?.click()} disabled={saving}>Upload CSV/Excel</button>
+          <button className="ghost-btn" type="button" onClick={() => csvFileInputRef.current?.click()} disabled={saving || !selectedCampaignId}>Upload CSV/Excel</button>
           <button className="ghost-btn" type="button" onClick={downloadProspectCsvSample}>Download CSV sample</button>
           <input
             ref={csvFileInputRef}
@@ -6134,7 +6189,7 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
                   setProspectCategoryFilter("");
                   await loadProspects(1);
                   await loadOverview();
-                  setOk("CSV/XLSX file imported.");
+                  setOk("Prospects imported and linked to selected campaign.");
                 } catch (error) {
                   setErr(error);
                 } finally {
@@ -6144,20 +6199,43 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
               })();
             }}
           />
+          {!selectedCampaignId ? <span className="muted">Select a campaign first to import and auto-link prospects.</span> : null}
           {csvFileName ? <span className="muted">{csvFileName}</span> : null}
         </div>
         <div className="button-row tight">
-          <button className="ghost-btn" disabled={saving || !csvText.trim()} onClick={() => void (async () => {
+          <button className="ghost-btn" disabled={saving || !csvText.trim() || !selectedCampaignId} onClick={() => void (async () => {
             setSaving(true);
             try {
-              await api("/company/marketing/prospects/import", token, "POST", { csv: csvText });
+              if (!selectedCampaignId) throw new Error("Select campaign first, then import prospects.");
+              const preview = await api("/company/marketing/prospects/import", token, "POST", { csv: csvText, mode: "preview" });
+              const total = Number(preview?.totalRows || 0);
+              const valid = Number(preview?.validRows || 0);
+              const invalid = Number(preview?.invalidRows || 0);
+              const fresh = Number(preview?.newCount || 0);
+              const existing = Number(preview?.existingCount || 0);
+              const proceed = window.confirm(
+                `Import summary:\nTotal rows: ${total}\nValid: ${valid}\nInvalid: ${invalid}\nNew prospects: ${fresh}\nAlready existing: ${existing}\n\nProceed with import?`
+              );
+              if (!proceed) return;
+              const includeExistingForCampaign = existing > 0
+                ? window.confirm(`${existing} prospects already exist in system.\nDo you want to attach them also to selected campaign?`)
+                : false;
+              const result = await api("/company/marketing/prospects/import", token, "POST", {
+                csv: csvText,
+                mode: "commit",
+                importAction: includeExistingForCampaign ? "new_and_use_existing" : "new_only",
+                includeExistingForCampaign,
+                campaignId: selectedCampaignId
+              });
               setCsvText("");
               setProspectsPage(1);
               setProspectSearch("");
               setProspectCategoryFilter("");
               await loadProspects(1);
               await loadOverview();
-              setOk("CSV text imported.");
+              const inserted = Number(result?.inserted || 0);
+              const linked = Number(result?.campaignLinked || 0);
+              setOk(`CSV imported. New inserted: ${inserted}. Campaign linked: ${linked}.`);
             } catch (error) {
               setErr(error);
             } finally {
@@ -6181,6 +6259,9 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
         <div className="button-row tight">
           <button className="ghost-btn" onClick={selectFilteredProspects}>Select filtered</button>
           <button className="ghost-btn" onClick={clearProspectSelection}>Clear selection</button>
+          <button className="ghost-btn" disabled={!selectedProspectIds.length || saving} onClick={() => void bulkDeleteSelectedProspects().catch(setErr)}>
+            Delete selected
+          </button>
         </div>
         <div className="table-wrap">
           <table className="dashboard-table">
