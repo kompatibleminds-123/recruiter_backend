@@ -3303,9 +3303,10 @@ function extractSafeFirstName(fullName = "") {
   return "";
 }
 
-async function processMarketingWorkerTickForActor(actor) {
+async function processMarketingWorkerTickForActor(actor, options = {}) {
   const companyId = encodeURIComponent(String(actor?.companyId || "").trim());
   if (!companyId) return { sent: 0 };
+  const batchPerCampaign = Math.max(1, Math.min(50, Number(options?.batchPerCampaign || 1)));
   const now = new Date();
   const campaigns = await supabaseTableFetch("marketing_campaigns", `?select=*&company_id=eq.${companyId}&status=eq.active&limit=50`);
   let sent = 0;
@@ -3317,56 +3318,58 @@ async function processMarketingWorkerTickForActor(actor) {
     if (!template?.subject || !template?.body_text) continue;
     const queueRows = await supabaseTableFetch(
       "marketing_campaign_prospects",
-      `?select=id,prospect_id,state,updated_at&company_id=eq.${companyId}&campaign_id=eq.${encodeURIComponent(campaignId)}&state=eq.ready&order=updated_at.asc&limit=1`
+      `?select=id,prospect_id,state,updated_at&company_id=eq.${companyId}&campaign_id=eq.${encodeURIComponent(campaignId)}&state=eq.ready&order=updated_at.asc&limit=${batchPerCampaign}`
     );
-    const row = Array.isArray(queueRows) && queueRows.length ? queueRows[0] : null;
-    const prospectId = String(row?.prospect_id || "").trim();
-    const prospectRows = prospectId
-      ? await supabaseTableFetch(
-          "marketing_prospects",
-          `?select=id,name,email,phone,company_name,designation,category,categories,status&company_id=eq.${companyId}&id=eq.${encodeURIComponent(prospectId)}&limit=1`
-        )
-      : [];
-    const prospect = Array.isArray(prospectRows) && prospectRows.length ? prospectRows[0] : null;
-    if (!row || !prospect || String(prospect?.status || "").toLowerCase() !== "active") continue;
-    const rawGap = Math.max(1, Number(campaign?.send_gap_minutes || 5));
-    const lastAt = row?.updated_at ? new Date(row.updated_at) : null;
-    if (lastAt && (now.getTime() - lastAt.getTime()) < (rawGap * 60 * 1000)) continue;
-    const to = normalizeMarketingEmail(prospect?.email);
-    if (!to) continue;
-    const subject = renderMarketingTemplate(template.subject, prospect, {
-      senderName: String(actor?.name || "").trim(),
-      senderEmail: String(actor?.email || "").trim()
-    });
-    const renderedBody = renderMarketingTemplate(template.body_text, prospect, {
-      senderName: String(actor?.name || "").trim(),
-      senderEmail: String(actor?.email || "").trim()
-    });
-    const hasHtmlBody = /<[^>]+>/.test(renderedBody);
-    const text = hasHtmlBody ? stripHtmlForText(renderedBody) : renderedBody;
-    const html = hasHtmlBody
-      ? renderedBody
-      : `<pre style="font-family:Arial,sans-serif;white-space:pre-wrap;">${escapeHtml(text)}</pre>`;
-    await sendJdEmailAsActor(actor, { to, subject, text, html, cc: "", attachments: [] });
-    await supabaseTableFetch("marketing_campaign_prospects", `?id=eq.${encodeURIComponent(String(row.id || ""))}&select=*`, {
-      method: "PATCH",
-      body: { state: "sent", updated_at: toIsoNow(), last_sent_at: toIsoNow() },
-      prefer: "return=minimal"
-    });
-    await supabaseTableFetch("marketing_message_events", "?select=id", {
-      method: "POST",
-      body: {
-        id: crypto.randomUUID(),
-        company_id: actor.companyId,
-        campaign_id: campaignId,
-        prospect_id: prospect.id,
-        event_type: "sent",
-        event_at: toIsoNow(),
-        meta: { subject, auto: true }
-      },
-      prefer: "return=minimal"
-    });
-    sent += 1;
+    const rows = Array.isArray(queueRows) ? queueRows : [];
+    for (const row of rows) {
+      const prospectId = String(row?.prospect_id || "").trim();
+      const prospectRows = prospectId
+        ? await supabaseTableFetch(
+            "marketing_prospects",
+            `?select=id,name,email,phone,company_name,designation,category,categories,status&company_id=eq.${companyId}&id=eq.${encodeURIComponent(prospectId)}&limit=1`
+          )
+        : [];
+      const prospect = Array.isArray(prospectRows) && prospectRows.length ? prospectRows[0] : null;
+      if (!row || !prospect || String(prospect?.status || "").toLowerCase() !== "active") continue;
+      const rawGap = Math.max(1, Number(campaign?.send_gap_minutes || 5));
+      const lastAt = row?.updated_at ? new Date(row.updated_at) : null;
+      if (lastAt && (now.getTime() - lastAt.getTime()) < (rawGap * 60 * 1000)) continue;
+      const to = normalizeMarketingEmail(prospect?.email);
+      if (!to) continue;
+      const subject = renderMarketingTemplate(template.subject, prospect, {
+        senderName: String(actor?.name || "").trim(),
+        senderEmail: String(actor?.email || "").trim()
+      });
+      const renderedBody = renderMarketingTemplate(template.body_text, prospect, {
+        senderName: String(actor?.name || "").trim(),
+        senderEmail: String(actor?.email || "").trim()
+      });
+      const hasHtmlBody = /<[^>]+>/.test(renderedBody);
+      const text = hasHtmlBody ? stripHtmlForText(renderedBody) : renderedBody;
+      const html = hasHtmlBody
+        ? renderedBody
+        : `<pre style="font-family:Arial,sans-serif;white-space:pre-wrap;">${escapeHtml(text)}</pre>`;
+      await sendJdEmailAsActor(actor, { to, subject, text, html, cc: "", attachments: [] });
+      await supabaseTableFetch("marketing_campaign_prospects", `?id=eq.${encodeURIComponent(String(row.id || ""))}&select=*`, {
+        method: "PATCH",
+        body: { state: "sent", updated_at: toIsoNow(), last_sent_at: toIsoNow() },
+        prefer: "return=minimal"
+      });
+      await supabaseTableFetch("marketing_message_events", "?select=id", {
+        method: "POST",
+        body: {
+          id: crypto.randomUUID(),
+          company_id: actor.companyId,
+          campaign_id: campaignId,
+          prospect_id: prospect.id,
+          event_type: "sent",
+          event_at: toIsoNow(),
+          meta: { subject, auto: true }
+        },
+        prefer: "return=minimal"
+      });
+      sent += 1;
+    }
   }
   return { sent };
 }
@@ -9624,6 +9627,7 @@ const server = http.createServer(async (req, res) => {
       }
 
       const companyIdFilter = String(requestUrl.searchParams.get("company_id") || "").trim();
+      const batchPerCampaign = Math.max(1, Math.min(50, Number(requestUrl.searchParams.get("batch_per_campaign") || 1)));
       let totalSent = 0;
       let companiesProcessed = 0;
 
@@ -9631,6 +9635,13 @@ const server = http.createServer(async (req, res) => {
       campaigns = Array.isArray(campaigns) ? campaigns : [];
       const companyIds = Array.from(new Set(campaigns.map((row) => String(row?.company_id || "").trim()).filter(Boolean)));
       const filteredCompanyIds = companyIdFilter ? companyIds.filter((id) => id === companyIdFilter) : companyIds;
+      if (!filteredCompanyIds.length) {
+        sendJson(res, 200, {
+          ok: true,
+          result: { sent: 0, companiesProcessed: 0, skipped: "no_active_campaigns", batchPerCampaign }
+        });
+        return;
+      }
 
       for (const companyId of filteredCompanyIds) {
         const users = await listCompanyUsers(companyId).catch(() => []);
@@ -9647,12 +9658,12 @@ const server = http.createServer(async (req, res) => {
           companyId: String(companyId || "").trim()
         };
         if (!actor.id || !actor.companyId || !actor.email) continue;
-        const result = await processMarketingWorkerTickForActor(actor);
+        const result = await processMarketingWorkerTickForActor(actor, { batchPerCampaign });
         totalSent += Number(result?.sent || 0);
         companiesProcessed += 1;
       }
 
-      sendJson(res, 200, { ok: true, result: { sent: totalSent, companiesProcessed } });
+      sendJson(res, 200, { ok: true, result: { sent: totalSent, companiesProcessed, batchPerCampaign } });
     } catch (error) {
       sendJson(res, 400, { ok: false, error: String(error?.message || error) });
     }
@@ -11537,9 +11548,11 @@ const server = http.createServer(async (req, res) => {
   if (req.method === "POST" && requestUrl.pathname === "/company/marketing/worker/tick") {
     try {
       const actor = await requireSessionUser(getBearerToken(req));
-      const result = await processMarketingWorkerTickForActor(actor);
+      const body = await readJsonBody(req).catch(() => ({}));
+      const batchPerCampaign = Math.max(1, Math.min(50, Number(body?.batchPerCampaign || 1)));
+      const result = await processMarketingWorkerTickForActor(actor, { batchPerCampaign });
       const sent = Number(result?.sent || 0);
-      sendJson(res, 200, { ok: true, result: { sent } });
+      sendJson(res, 200, { ok: true, result: { sent, batchPerCampaign } });
     } catch (error) {
       sendJson(res, 400, { ok: false, error: String(error?.message || error) });
     }

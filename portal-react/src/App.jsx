@@ -5674,6 +5674,7 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
   const [prospectsHasMore, setProspectsHasMore] = useState(false);
   const [queuePage, setQueuePage] = useState(1);
   const [queueHasMore, setQueueHasMore] = useState(false);
+  const [sendBatchSize, setSendBatchSize] = useState(3);
   const [selectedCampaignId, setSelectedCampaignId] = useState("");
   const [templateDraft, setTemplateDraft] = useState({ subject: "", bodyText: "Hi {{name}},\n\n\nRegards,\nTeam", targetCategoriesText: "" });
   const [editingTemplateId, setEditingTemplateId] = useState("");
@@ -6150,8 +6151,19 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
         <p className="muted">Standalone marketing module: prospects, templates, campaigns, queue and follow-ups.</p>
         <div className="button-row tight">
           <button className="ghost-btn" onClick={() => void refresh().catch(setErr)} disabled={loading}>Refresh</button>
-          <button onClick={() => void api("/company/marketing/worker/tick", token, "POST", {}).then(() => { setOk("Send tick executed."); return refreshLight(activeTab); }).catch(setErr)} disabled={loading}>Run send tick</button>
+          <button onClick={() => void api("/company/marketing/worker/tick", token, "POST", { batchPerCampaign: Math.max(1, Math.min(50, Number(sendBatchSize || 1))) }).then((result) => { setOk(`Send tick executed. Sent: ${Number(result?.sent || 0)} (batch ${Number(result?.batchPerCampaign || sendBatchSize)}).`); return refreshLight(activeTab); }).catch(setErr)} disabled={loading}>Run send tick</button>
           <button className="ghost-btn" disabled={!selectedCampaignId} onClick={() => void queueFollowups().then(() => { setOk("1-week follow-up queue prepared."); return refreshLight(activeTab); }).catch(setErr)}>Queue 7-day follow-ups</button>
+          <label style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+            <span className="muted">Batch size</span>
+            <input
+              type="number"
+              min="1"
+              max="50"
+              value={sendBatchSize}
+              onChange={(e) => setSendBatchSize(Math.max(1, Math.min(50, Number(e.target.value || 1))))}
+              style={{ width: 84 }}
+            />
+          </label>
         </div>
         <div className="form-grid two-col" style={{ marginTop: 10 }}>
           <label>
