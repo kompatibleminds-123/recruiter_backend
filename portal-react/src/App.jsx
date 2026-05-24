@@ -3952,7 +3952,7 @@ function RichTextEditor({ value, onChange, placeholder = "Write here...", minHei
 
   return (
     <div className="rich-editor">
-      <div className="button-row tight">
+      <div className="rich-editor-toolbar">
         <button type="button" className="ghost-btn" onClick={() => run("bold")}>Bold</button>
         <button type="button" className="ghost-btn" onClick={() => run("italic")}>Italic</button>
         <button type="button" className="ghost-btn" onClick={() => run("underline")}>Underline</button>
@@ -3968,9 +3968,14 @@ function RichTextEditor({ value, onChange, placeholder = "Write here...", minHei
         ref={editorRef}
         contentEditable
         suppressContentEditableWarning
-        className="input-like"
-        style={{ minHeight, whiteSpace: "pre-wrap", marginTop: 8 }}
+        className="client-share-rich-editor"
+        style={{ minHeight, whiteSpace: "pre-wrap", marginTop: 8, cursor: "text" }}
         data-placeholder={placeholder}
+        role="textbox"
+        aria-multiline="true"
+        spellCheck
+        tabIndex={0}
+        onClick={() => editorRef.current?.focus()}
         onInput={() => onChange(String(editorRef.current?.innerHTML || ""))}
       />
     </div>
@@ -6398,6 +6403,18 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
       {activeTab === "templates" ? (
       <Section kicker="Email Templates" title="Template Library">
         <p className="muted">Send-to segments control audience filtering during sends.</p>
+        <div className="form-grid two-col">
+          <label>
+            <span>Select campaign</span>
+            <select value={selectedCampaignId} onChange={(e) => setSelectedCampaignId(e.target.value)}>
+              <option value="">Select campaign</option>
+              {campaigns.map((item) => <option key={item.id} value={item.id}>{item.name} ({item.status})</option>)}
+            </select>
+          </label>
+          <div className="muted" style={{ alignSelf: "end" }}>
+            Template will be attached to this selected campaign.
+          </div>
+        </div>
         <div className="form-grid">
           <label><span>Subject</span><input ref={templateSubjectInputRef} value={templateDraft.subject} onChange={(e) => setTemplateDraft((c) => ({ ...c, subject: e.target.value }))} /></label>
           <label>
