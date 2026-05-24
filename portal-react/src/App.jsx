@@ -4668,11 +4668,13 @@ function NewDraftModal({
   open,
   form,
   cvParsePreview,
+  hasPendingCvApply = false,
   mode = "manual",
   users,
   jobs,
   currentUser,
   onChange,
+  onApplyCvValues,
   onClose,
   onSave,
   onPasteScreenshot,
@@ -4738,6 +4740,11 @@ function NewDraftModal({
         {cvParsePreview ? (
           <div className="panel" style={{ marginBottom: 12, padding: 12 }}>
             <div className="section-kicker">CV Parse Preview</div>
+            {hasPendingCvApply ? (
+              <div className="button-row" style={{ marginBottom: 10 }}>
+                <button type="button" onClick={onApplyCvValues} disabled={importBusy}>Apply parsed values to draft</button>
+              </div>
+            ) : null}
             {reviewHint ? (
               <div className="status-note" style={{ marginBottom: 10 }}>
                 <strong>{reviewHint}</strong>
@@ -5660,7 +5667,16 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
     const pageToLoad = Number.isFinite(Number(pageOverride)) ? Number(pageOverride) : prospectsPage;
     const result = await api(`/company/marketing/prospects?limit=100&page=${pageToLoad}`, token);
     const items = Array.isArray(result?.items) ? result.items : [];
-    setProspects((current) => pageToLoad === 1 ? items : [...current, ...items]);
+    setProspects((current) => {
+      const merged = pageToLoad === 1 ? items : [...current, ...items];
+      const uniqueById = new Map();
+      merged.forEach((item) => {
+        const id = String(item?.id || "").trim();
+        if (!id) return;
+        uniqueById.set(id, item);
+      });
+      return Array.from(uniqueById.values());
+    });
     setProspectsHasMore(Boolean(result?.hasMore));
   }, [prospectsPage, token]);
 
@@ -5911,6 +5927,55 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
       });
     }
     await api(`/company/marketing/campaigns/${encodeURIComponent(selectedCampaignId)}/prospects`, token, "POST", { prospectIds: selectedProspectIds });
+  }
+
+  async function launchSelectedProspectsNow() {
+    if (!selectedCampaignId) throw new Error("Select campaign first.");
+    if (!selectedProspectIds.length) throw new Error("Select prospects first.");
+    const selectedCount = selectedProspectIds.length;
+    const campaignName = String(activeCampaign?.name || "selected campaign").trim();
+    const proceed = window.confirm(`Launch mass mail for ${selectedCount} selected prospect(s) in "${campaignName}" now?`);
+    if (!proceed) return;
+
+    const defaultCategory = String(activeCampaign?.category || "").trim();
+    const categoryInput = window.prompt(
+      "Optional category to apply before launch (leave blank to keep existing categories):",
+      defaultCategory
+    );
+    if (categoryInput === null) return;
+    const category = String(categoryInput || "").trim();
+
+    const selectedRows = prospects.filter((item) => selectedProspectIds.includes(String(item?.id || "")));
+    if (category) {
+      for (const item of selectedRows) {
+        const id = String(item?.id || "").trim();
+        if (!id) continue;
+        const existing = Array.isArray(item?.categories) ? item.categories.map((v) => String(v || "").trim()).filter(Boolean) : [];
+        const next = Array.from(new Set([...existing, category]));
+        await api(`/company/marketing/prospects/${encodeURIComponent(id)}`, token, "PATCH", {
+          category,
+          categories: next
+        });
+      }
+    }
+
+    await api(`/company/marketing/campaigns/${encodeURIComponent(selectedCampaignId)}/prospects`, token, "POST", {
+      prospectIds: selectedProspectIds
+    });
+
+    const campaignStatus = String(activeCampaign?.status || "").trim().toLowerCase();
+    if (campaignStatus !== "active") {
+      if (campaignStatus === "paused") {
+        await api(`/company/marketing/campaigns/${encodeURIComponent(selectedCampaignId)}/resume`, token, "POST", {});
+      } else {
+        await api(`/company/marketing/campaigns/${encodeURIComponent(selectedCampaignId)}/start`, token, "POST", {});
+      }
+    }
+
+    const tickResult = await api("/company/marketing/worker/tick", token, "POST", {});
+    const sent = Number(tickResult?.sent || 0);
+    setOk(`Launch done: ${selectedCount} attached. Send tick processed (${sent} sent now).`);
+    await refreshLight("campaigns");
   }
 
   function startProspectEdit(item) {
@@ -6288,6 +6353,16 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
             <button className="ghost-btn" onClick={() => void api(`/company/marketing/campaigns/${activeCampaign.id}/pause`, token, "POST", {}).then(() => { setOk("Campaign paused."); return refreshLight("campaigns"); }).catch(setErr)}>Pause</button>
             <button className="ghost-btn" onClick={() => void api(`/company/marketing/campaigns/${activeCampaign.id}/resume`, token, "POST", {}).then(() => { setOk("Campaign resumed."); return refreshLight("campaigns"); }).catch(setErr)}>Resume</button>
             <button className="ghost-btn" disabled={!selectedProspectIds.length} onClick={() => void attachSelectedProspectsWithCategory().then(() => { setOk("Selected prospects attached with category."); return refreshLight("campaigns"); }).catch(setErr)}>Attach selected prospects</button>
+            <button disabled={!selectedProspectIds.length || saving} onClick={() => void (async () => {
+              setSaving(true);
+              try {
+                await launchSelectedProspectsNow();
+              } catch (error) {
+                setErr(error);
+              } finally {
+                setSaving(false);
+              }
+            })()}>{saving ? "Launching..." : "Launch selected now"}</button>
           </div>
         ) : null}
         <div className="table-wrap">
@@ -6904,6 +6979,7 @@ function PortalApp({ token, onLogout }) {
     notes: ""
   });
   const [newDraftCvParsePreview, setNewDraftCvParsePreview] = useState(null);
+  const [newDraftCvParsedPatch, setNewDraftCvParsedPatch] = useState(null);
   const resetNewDraftForm = useCallback(() => {
     setNewDraftForm({
       assigned_to_user_id: "",
@@ -6925,6 +7001,7 @@ function PortalApp({ token, onLogout }) {
       notes: ""
     });
     setNewDraftCvParsePreview(null);
+    setNewDraftCvParsedPatch(null);
   }, []);
   const [newDraftImportBusy, setNewDraftImportBusy] = useState(false);
   const [newDraftSheetPreviewOpen, setNewDraftSheetPreviewOpen] = useState(false);
@@ -8031,7 +8108,11 @@ function PortalApp({ token, onLogout }) {
         ? api(`/company/client-portal${clientPortalParams.toString() ? `?${clientPortalParams.toString()}` : ""}`, token)
             .catch(() => ({ summary: { byClient: [], byClientPosition: [] }, availableClients: [] }))
         : Promise.resolve(null),
-      needsApplicants ? api("/company/applicants", token).catch(() => ({ items: [] })) : Promise.resolve(null),
+      needsApplicants
+        ? api("/company/applicants", token)
+            .then((data) => ({ ok: true, data }))
+            .catch((error) => ({ ok: false, error: String(error?.message || error), data: null }))
+        : Promise.resolve(null),
       needsIntake ? api("/company/applicant-intake-secret", token).catch(() => null) : Promise.resolve(null),
       needsJobs ? api("/company/jds", token).catch(() => ({ jobs: [] })) : Promise.resolve(null),
       needsJobs ? api("/company/jds?includeArchived=1", token).catch(() => ({ jobs: [] })) : Promise.resolve(null),
@@ -8083,7 +8164,13 @@ function PortalApp({ token, onLogout }) {
       user: userResult.user || userResult,
       dashboard: nextDashboard(current),
       clientPortal: nextClientPortal(current),
-      applicants: needsApplicants ? (applicantsResult?.items || []) : current.applicants,
+      applicants: needsApplicants
+        ? (
+            applicantsResult?.ok
+              ? (applicantsResult?.data?.items || [])
+              : current.applicants
+          )
+        : current.applicants,
       intake: needsIntake ? (intakeResult || {}) : current.intake,
       jobs: needsJobs ? (jobsResult?.jobs || []) : current.jobs,
       users: needsUsers ? (usersResult?.users || []) : current.users,
@@ -8212,10 +8299,16 @@ function PortalApp({ token, onLogout }) {
 
   async function reloadApplicantsSlice() {
     if (!token) return;
-    const applicantsResult = await api("/company/applicants", token).catch(() => ({ items: [] }));
+    const applicantsEnvelope = await api("/company/applicants", token)
+      .then((data) => ({ ok: true, data }))
+      .catch((error) => ({ ok: false, error: String(error?.message || error), data: null }));
+    if (!applicantsEnvelope.ok) {
+      setStatus("applicants", `Applied refresh failed, keeping existing list: ${applicantsEnvelope.error}`, "error");
+      return;
+    }
     setState((current) => ({
       ...current,
-      applicants: applicantsResult?.items || []
+      applicants: applicantsEnvelope?.data?.items || []
     }));
   }
 
@@ -16432,7 +16525,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
         warnings: Array.isArray(parsedResult?.parser_warnings) ? parsedResult.parser_warnings : (Array.isArray(parsedResult?.parserWarnings) ? parsedResult.parserWarnings : []),
         confidence: parsedResult?.parser_confidence || parsedResult?.confidence || null
       });
-      applyNewDraftAutofillPatch({
+      setNewDraftCvParsedPatch({
         name: String(parsedResult?.candidateName || file.name?.replace(/\.[^.]+$/, "") || "").trim(),
         phone: String(parsedResult?.phoneNumber || "").trim(),
         email: String(parsedResult?.emailId || "").trim(),
@@ -16446,7 +16539,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
         notice_period: String(parsedResult?.noticePeriod || "").trim(),
         highest_education: resolvedQualification
       });
-      setStatus("captured", "CV parsed. Review auto-filled draft and click Save draft.", "ok");
+      setStatus("captured", "CV parsed. Review preview and click Apply parsed values to draft.", "ok");
     } catch (error) {
       setStatus("captured", String(error?.message || error), "error");
     } finally {
@@ -20414,11 +20507,18 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
         open={newDraftOpen}
         form={newDraftForm}
         cvParsePreview={newDraftCvParsePreview}
+        hasPendingCvApply={Boolean(newDraftCvParsedPatch)}
         mode={newDraftMode}
         users={state.users}
         jobs={state.jobs}
         currentUser={state.user}
         onChange={(key, value) => setNewDraftForm((current) => ({ ...current, [key]: value }))}
+        onApplyCvValues={() => {
+          if (!newDraftCvParsedPatch || typeof newDraftCvParsedPatch !== "object") return;
+          applyNewDraftAutofillPatch(newDraftCvParsedPatch);
+          setNewDraftCvParsedPatch(null);
+          setStatus("captured", "Parsed CV values applied to draft.", "ok");
+        }}
         onClose={() => { setNewDraftOpen(false); setNewDraftMode("manual"); resetNewDraftForm(); }}
         onSave={() => void createManualDraft()}
         onPasteScreenshot={() => void importNewDraftFromPastedScreenshot()}
