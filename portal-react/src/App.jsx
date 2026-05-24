@@ -3931,6 +3931,52 @@ function Section({ kicker, title, children, className = "", sectionRef = null })
   );
 }
 
+function RichTextEditor({ value, onChange, placeholder = "Write here...", minHeight = 160, editorRef: externalRef = null }) {
+  const localRef = useRef(null);
+  const editorRef = externalRef || localRef;
+
+  useEffect(() => {
+    const node = editorRef.current;
+    if (!node) return;
+    const raw = String(value || "");
+    const next = /<\/?[a-z][\s\S]*>/i.test(raw) ? raw : escapeHtml(raw).replace(/\n/g, "<br/>");
+    if (node.innerHTML !== next) node.innerHTML = next;
+  }, [value]);
+
+  const run = (command, arg = null) => {
+    try {
+      document.execCommand(command, false, arg);
+    } catch {}
+    onChange(String(editorRef.current?.innerHTML || ""));
+  };
+
+  return (
+    <div className="rich-editor">
+      <div className="button-row tight">
+        <button type="button" className="ghost-btn" onClick={() => run("bold")}>Bold</button>
+        <button type="button" className="ghost-btn" onClick={() => run("italic")}>Italic</button>
+        <button type="button" className="ghost-btn" onClick={() => run("underline")}>Underline</button>
+        <button type="button" className="ghost-btn" onClick={() => run("insertUnorderedList")}>Bullets</button>
+        <button type="button" className="ghost-btn" onClick={() => {
+          const url = window.prompt("Enter URL", "https://");
+          if (!url) return;
+          run("createLink", url);
+        }}>Link</button>
+        <button type="button" className="ghost-btn" onClick={() => run("removeFormat")}>Clear format</button>
+      </div>
+      <div
+        ref={editorRef}
+        contentEditable
+        suppressContentEditableWarning
+        className="input-like"
+        style={{ minHeight, whiteSpace: "pre-wrap", marginTop: 8 }}
+        data-placeholder={placeholder}
+        onInput={() => onChange(String(editorRef.current?.innerHTML || ""))}
+      />
+    </div>
+  );
+}
+
 function isClientPortalUrl() {
   if (typeof window === "undefined") return false;
   const search = new URLSearchParams(window.location.search || "");
@@ -5588,15 +5634,20 @@ function JdEmailModal({ open, jobs, value, ccSuggestions = [], onChange, onClose
 const DASHBOARD_FILTER_STORAGE_KEY = "recruitdesk_portal_dashboard_filters_v1";
 
 function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs = true }) {
-  const templatePlaceholderTokens = [
+  const templateSubjectPlaceholderTokens = [
     "{{name}}",
-    "{{email}}",
-    "{{phone}}",
+    "{{first_name}}",
+    "{{company}}",
+    "{{company_name}}"
+  ];
+  const templateBodyPlaceholderTokens = [
+    "{{name}}",
+    "{{first_name}}",
     "{{company}}",
     "{{company_name}}",
-    "{{designation}}",
-    "{{category}}",
-    "{{categories}}"
+    "{{sender_name}}",
+    "{{sender_first_name}}",
+    "{{sender_email}}"
   ];
   const MARKETING_TABS = [
     { key: "prospects", label: "Prospects" },
@@ -5620,6 +5671,10 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
   const [queueHasMore, setQueueHasMore] = useState(false);
   const [selectedCampaignId, setSelectedCampaignId] = useState("");
   const [templateDraft, setTemplateDraft] = useState({ subject: "", bodyText: "Hi {{name}},\n\n\nRegards,\nTeam", targetCategoriesText: "" });
+  const [editingTemplateId, setEditingTemplateId] = useState("");
+  const [templatePreviewProspectId, setTemplatePreviewProspectId] = useState("");
+  const [templatePreviewProspects, setTemplatePreviewProspects] = useState([]);
+  const [templatePreviewResult, setTemplatePreviewResult] = useState(null);
   const [prospectDraft, setProspectDraft] = useState({ name: "", email: "", phone: "", companyName: "", designation: "", categoriesText: "" });
   const [campaignDraft, setCampaignDraft] = useState({ name: "", category: "", sendGapMinutes: 5, dailyCap: 50 });
   const [editingProspectId, setEditingProspectId] = useState("");
@@ -5780,6 +5835,11 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
     setQueuePage(1);
   }, [activeTab, selectedCampaignId]);
 
+  useEffect(() => {
+    if (activeTab !== "templates") return;
+    void loadTemplatePreviewProspects().catch(() => {});
+  }, [activeTab]);
+
   const activeCampaign = campaigns.find((item) => String(item.id) === String(selectedCampaignId)) || null;
   const categories = Array.from(new Set(
     prospects.flatMap((item) => {
@@ -5845,6 +5905,18 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
     if (!token) return;
     const isSubject = field === "subject";
     const input = isSubject ? templateSubjectInputRef.current : templateBodyInputRef.current;
+    if (!isSubject && templateBodyInputRef.current && templateBodyInputRef.current.isContentEditable) {
+      templateBodyInputRef.current.focus();
+      try {
+        document.execCommand("insertText", false, token);
+      } catch {
+        const currentHtml = String(templateDraft?.bodyText || "");
+        setTemplateDraft((current) => ({ ...current, bodyText: `${currentHtml}${token}` }));
+        return;
+      }
+      setTemplateDraft((current) => ({ ...current, bodyText: String(templateBodyInputRef.current?.innerHTML || current.bodyText || "") }));
+      return;
+    }
     const draftKey = isSubject ? "subject" : "bodyText";
     const currentText = String(templateDraft?.[draftKey] || "");
     const start = Number.isFinite(input?.selectionStart) ? input.selectionStart : currentText.length;
@@ -6031,6 +6103,40 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
   function cancelCampaignEdit() {
     setEditingCampaignId("");
     setCampaignDraft({ name: "", category: "", sendGapMinutes: 5, dailyCap: 50 });
+  }
+
+  function startTemplateEdit(item) {
+    if (!item) return;
+    setEditingTemplateId(String(item.id || ""));
+    setSelectedCampaignId(String(item.campaign_id || selectedCampaignId || ""));
+    setTemplateDraft({
+      subject: String(item.subject || ""),
+      bodyText: String(item.body_text || ""),
+      targetCategoriesText: Array.isArray(item.target_categories) ? item.target_categories.join(", ") : String(item.target_categories || "")
+    });
+  }
+
+  function cancelTemplateEdit() {
+    setEditingTemplateId("");
+    setTemplateDraft({ subject: "", bodyText: "Hi {{name}},\n\n\nRegards,\nTeam", targetCategoriesText: "" });
+  }
+
+  async function loadTemplatePreviewProspects() {
+    const result = await api("/company/marketing/prospects?limit=100&page=1", token);
+    const rows = Array.isArray(result?.items) ? result.items : [];
+    setTemplatePreviewProspects(rows);
+    if (!templatePreviewProspectId && rows.length) {
+      setTemplatePreviewProspectId(String(rows[0]?.id || ""));
+    }
+  }
+
+  async function generateTemplatePreview() {
+    const result = await api("/company/marketing/templates/preview", token, "POST", {
+      subject: templateDraft.subject,
+      bodyText: templateDraft.bodyText,
+      prospectId: templatePreviewProspectId
+    });
+    setTemplatePreviewResult(result || null);
   }
 
   return (
@@ -6294,20 +6400,29 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
         <p className="muted">Send-to segments control audience filtering during sends.</p>
         <div className="form-grid">
           <label><span>Subject</span><input ref={templateSubjectInputRef} value={templateDraft.subject} onChange={(e) => setTemplateDraft((c) => ({ ...c, subject: e.target.value }))} /></label>
-          <label><span>Body</span><textarea ref={templateBodyInputRef} rows={8} value={templateDraft.bodyText} onChange={(e) => setTemplateDraft((c) => ({ ...c, bodyText: e.target.value }))} /></label>
+          <label>
+            <span>Body</span>
+            <RichTextEditor
+              editorRef={templateBodyInputRef}
+              value={templateDraft.bodyText}
+              onChange={(html) => setTemplateDraft((c) => ({ ...c, bodyText: html }))}
+              placeholder="Write email body..."
+              minHeight={220}
+            />
+          </label>
           <label><span>Send to segments (comma separated)</span><input value={templateDraft.targetCategoriesText} onChange={(e) => setTemplateDraft((c) => ({ ...c, targetCategoriesText: e.target.value }))} placeholder="Finance HR, Logistics HR, Real Estate HR" /></label>
         </div>
         <div className="item-card compact-card" style={{ marginTop: 12 }}>
           <div className="item-subtitle">Click placeholders to insert</div>
           <div className="button-row tight" style={{ marginTop: 8, flexWrap: "wrap" }}>
-            {templatePlaceholderTokens.map((token) => (
+            {templateSubjectPlaceholderTokens.map((token) => (
               <button key={`subject-${token}`} type="button" className="ghost-btn" onClick={() => insertTemplatePlaceholder("subject", token)}>
                 {`Subject + ${token}`}
               </button>
             ))}
           </div>
           <div className="button-row tight" style={{ marginTop: 8, flexWrap: "wrap" }}>
-            {templatePlaceholderTokens.map((token) => (
+            {templateBodyPlaceholderTokens.map((token) => (
               <button key={`body-${token}`} type="button" className="ghost-btn" onClick={() => insertTemplatePlaceholder("bodyText", token)}>
                 {`Body + ${token}`}
               </button>
@@ -6315,12 +6430,50 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
           </div>
         </div>
         <div className="button-row tight">
-          <button disabled={!selectedCampaignId} onClick={() => void api(`/company/marketing/campaigns/${encodeURIComponent(selectedCampaignId)}/template`, token, "POST", {
-            subject: templateDraft.subject,
-            bodyText: templateDraft.bodyText,
-            targetCategories: String(templateDraft.targetCategoriesText || "").split(",").map((item) => item.trim()).filter(Boolean)
-          }).then(() => { setOk("Template saved."); return refreshLight("templates"); }).catch(setErr)}>Save template</button>
+          <button disabled={!selectedCampaignId} onClick={() => void (async () => {
+            const payload = {
+              subject: templateDraft.subject,
+              bodyText: templateDraft.bodyText,
+              targetCategories: String(templateDraft.targetCategoriesText || "").split(",").map((item) => item.trim()).filter(Boolean)
+            };
+            if (editingTemplateId) {
+              await api(`/company/marketing/templates/${encodeURIComponent(editingTemplateId)}`, token, "PATCH", payload);
+            } else {
+              await api(`/company/marketing/campaigns/${encodeURIComponent(selectedCampaignId)}/template`, token, "POST", payload);
+            }
+            cancelTemplateEdit();
+            setOk(editingTemplateId ? "Template updated." : "Template saved.");
+            await refreshLight("templates");
+          })().catch(setErr)}>{editingTemplateId ? "Update template" : "Save template"}</button>
+          {editingTemplateId ? <button className="ghost-btn" type="button" onClick={cancelTemplateEdit}>Cancel edit</button> : null}
+          <button className="ghost-btn" type="button" onClick={() => void generateTemplatePreview().catch(setErr)}>Preview email</button>
         </div>
+        <div className="form-grid two-col" style={{ marginTop: 12 }}>
+          <label>
+            <span>Preview prospect</span>
+            <select value={templatePreviewProspectId} onChange={(e) => setTemplatePreviewProspectId(e.target.value)}>
+              <option value="">Sample prospect</option>
+              {templatePreviewProspects.map((item) => (
+                <option key={String(item?.id || "")} value={String(item?.id || "")}>
+                  {`${item?.name || "-"} | ${item?.email || "-"}`}
+                </option>
+              ))}
+            </select>
+          </label>
+          <div className="muted" style={{ alignSelf: "end" }}>
+            Sender placeholders use current logged-in recruiter profile.
+          </div>
+        </div>
+        {templatePreviewResult ? (
+          <div className="item-card compact-card" style={{ marginTop: 12 }}>
+            <div className="item-subtitle">Preview output</div>
+            <div style={{ marginTop: 8 }}><strong>Subject:</strong> {String(templatePreviewResult?.subject || "").trim() || "-"}</div>
+            <div style={{ marginTop: 10 }}>
+              <strong>Body:</strong>
+              <div className="input-like" style={{ marginTop: 6, minHeight: 140 }} dangerouslySetInnerHTML={{ __html: String(templatePreviewResult?.bodyHtml || "") }} />
+            </div>
+          </div>
+        ) : null}
         <div className="table-wrap">
           <table className="dashboard-table">
             <thead>
@@ -6329,6 +6482,7 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
                 <th>Subject</th>
                 <th>Target Categories</th>
                 <th>Updated</th>
+                <th>Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -6341,10 +6495,22 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
                     <td>{item?.subject || "-"}</td>
                     <td>{targetCategories || "-"}</td>
                     <td>{item?.updated_at ? new Date(item.updated_at).toLocaleString() : "-"}</td>
+                    <td>
+                      <div className="button-row tight">
+                        <button className="ghost-btn" type="button" onClick={() => startTemplateEdit(item)}>Edit</button>
+                        <button className="ghost-btn" type="button" onClick={() => void (async () => {
+                          if (!window.confirm("Delete this template?")) return;
+                          await api(`/company/marketing/templates/${encodeURIComponent(String(item?.id || ""))}`, token, "DELETE");
+                          if (String(editingTemplateId || "") === String(item?.id || "")) cancelTemplateEdit();
+                          await refreshLight("templates");
+                          setOk("Template deleted.");
+                        })().catch(setErr)}>Delete</button>
+                      </div>
+                    </td>
                   </tr>
                 );
               })}
-              {!templates.length ? <tr><td colSpan="4"><div className="empty-state compact-empty">No templates saved yet.</div></td></tr> : null}
+              {!templates.length ? <tr><td colSpan="5"><div className="empty-state compact-empty">No templates saved yet.</div></td></tr> : null}
             </tbody>
           </table>
         </div>
@@ -7194,6 +7360,7 @@ function PortalApp({ token, onLogout }) {
     pass: "",
     hasPassword: false,
     signatureText: "",
+    signatureHtml: "",
     signatureLinkLabel: "",
     signatureLinkUrl: "",
     signatureLinkLabel2: "",
@@ -8261,6 +8428,7 @@ function PortalApp({ token, onLogout }) {
           from: String(smtpSettingsResult?.from || "").trim(),
           hasPassword: Boolean(smtpSettingsResult?.hasPassword),
           signatureText: String(smtpSettingsResult?.signatureText || "").trim(),
+          signatureHtml: String(smtpSettingsResult?.signatureHtml || "").trim(),
           signatureLinkLabel: String(smtpSettingsResult?.signatureLinkLabel || "").trim(),
           signatureLinkUrl: String(smtpSettingsResult?.signatureLinkUrl || "").trim(),
           signatureLinkLabel2: String(smtpSettingsResult?.signatureLinkLabel2 || "").trim(),
@@ -13458,6 +13626,7 @@ function PortalApp({ token, onLogout }) {
         user: String(result?.user || "").trim(),
         from: String(result?.from || "").trim(),
         signatureText: String(result?.signatureText || "").trim(),
+        signatureHtml: String(result?.signatureHtml || "").trim(),
         signatureLinkLabel: String(result?.signatureLinkLabel || "").trim(),
         signatureLinkUrl: String(result?.signatureLinkUrl || "").trim(),
         signatureLinkLabel2: String(result?.signatureLinkLabel2 || "").trim(),
@@ -13476,6 +13645,8 @@ function PortalApp({ token, onLogout }) {
   async function saveSmtpSettings() {
     setStatus("settings", "Saving email settings...");
     try {
+      const signatureHtml = String(smtpSettings.signatureHtml || "").trim();
+      const signatureText = signatureHtml ? htmlToPlainText(signatureHtml) : String(smtpSettings.signatureText || "").trim();
       await api("/company/email-settings", token, "POST", {
         settings: {
           host: smtpSettings.host,
@@ -13485,7 +13656,8 @@ function PortalApp({ token, onLogout }) {
           from: smtpSettings.from,
           pass: smtpSettings.pass,
           keepPass: smtpSettingsKeepPass,
-          signatureText: smtpSettings.signatureText,
+          signatureText,
+          signatureHtml,
           signatureLinkLabel: smtpSettings.signatureLinkLabel,
           signatureLinkUrl: smtpSettings.signatureLinkUrl,
           signatureLinkLabel2: smtpSettings.signatureLinkLabel2,
@@ -13505,6 +13677,8 @@ function PortalApp({ token, onLogout }) {
     setStatus("settings", "Saving signature only...");
     try {
       const current = await api("/company/email-settings", token);
+      const signatureHtml = String(smtpSettings.signatureHtml || "").trim();
+      const signatureText = signatureHtml ? htmlToPlainText(signatureHtml) : String(smtpSettings.signatureText || "").trim();
       await api("/company/email-settings", token, "POST", {
         settings: {
           host: String(current?.host || "").trim(),
@@ -13514,7 +13688,8 @@ function PortalApp({ token, onLogout }) {
           from: String(current?.from || "").trim(),
           pass: "",
           keepPass: true,
-          signatureText: smtpSettings.signatureText,
+          signatureText,
+          signatureHtml,
           signatureLinkLabel: smtpSettings.signatureLinkLabel,
           signatureLinkUrl: smtpSettings.signatureLinkUrl,
           signatureLinkLabel2: smtpSettings.signatureLinkLabel2,
@@ -14613,6 +14788,7 @@ function PortalApp({ token, onLogout }) {
 
   function getClientShareSignature() {
     const context = getClientShareContext();
+    const perUserSignatureHtml = String(smtpSettings.signatureHtml || "").trim();
     const perUserSignatureText = String(smtpSettings.signatureText || "").trim();
     const signatureText = perUserSignatureText
       || fillClientShareTemplate(copySettings.clientShareSignatureText || DEFAULT_COPY_SETTINGS.clientShareSignatureText || "", context).trim();
@@ -14626,7 +14802,7 @@ function PortalApp({ token, onLogout }) {
         url: String(smtpSettings.signatureLinkUrl2 || copySettings.clientShareSignatureLinkUrl2 || "").trim()
       }
     ].filter((link) => link.url);
-    return { signatureText, links };
+    return { signatureText, signatureHtml: perUserSignatureHtml, links };
   }
 
   function splitSignatureLinkLabel(rawLabel) {
@@ -14699,10 +14875,11 @@ function PortalApp({ token, onLogout }) {
         return tail ? `${anchor} ${escapeHtml(tail)}` : anchor;
       })
       .join("<br/>");
-    const signatureHtml = [
-      signature.signatureText ? escapeHtml(signature.signatureText).replace(/\n/g, "<br/>") : "",
-      signatureLinksHtml
-    ].filter(Boolean).join("<br/>");
+    const signatureHtml = String(signature.signatureHtml || "").trim()
+      || [
+        signature.signatureText ? escapeHtml(signature.signatureText).replace(/\n/g, "<br/>") : "",
+        signatureLinksHtml
+      ].filter(Boolean).join("<br/>");
     return `
       <div style="font-family:Arial, sans-serif;color:#1f2a44;line-height:1.6;">
         <div>${introHtml}</div>
@@ -19079,29 +19256,19 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
 
                 <div className="settings-subsection mail-signature-shell" style={{ marginTop: 18 }}>
                   <div className="section-kicker">Your Email Signature (per recruiter)</div>
-                  <p className="muted">Used in JD emails and Direct Share by default. Tip: to make only part of link text clickable, write it as <code>LinkedIn || 7027xxxxxxx</code> (only "LinkedIn" becomes the hyperlink).</p>
-                  <div className="form-grid two-col">
-                    <label className="full">
-                      <span>Signature text</span>
-                      <textarea value={smtpSettings.signatureText || ""} onChange={(e) => { markSmtpSettingsDirty(); setSmtpSettings((c) => ({ ...c, signatureText: e.target.value })); }} rows={5} placeholder={"Regards,\nYour Name\nYour Company"} />
-                    </label>
-                    <label>
-                      <span>Signature link 1 text</span>
-                      <input value={smtpSettings.signatureLinkLabel || ""} onChange={(e) => { markSmtpSettingsDirty(); setSmtpSettings((c) => ({ ...c, signatureLinkLabel: e.target.value })); }} placeholder="Kompatible Minds" />
-                    </label>
-                    <label>
-                      <span>Signature link 1 URL</span>
-                      <input value={smtpSettings.signatureLinkUrl || ""} onChange={(e) => { markSmtpSettingsDirty(); setSmtpSettings((c) => ({ ...c, signatureLinkUrl: e.target.value })); }} placeholder="https://kompatibleminds.com" />
-                    </label>
-                    <label>
-                      <span>Signature link 2 text</span>
-                      <input value={smtpSettings.signatureLinkLabel2 || ""} onChange={(e) => { markSmtpSettingsDirty(); setSmtpSettings((c) => ({ ...c, signatureLinkLabel2: e.target.value })); }} placeholder="LinkedIn" />
-                    </label>
-                    <label>
-                      <span>Signature link 2 URL</span>
-                      <input value={smtpSettings.signatureLinkUrl2 || ""} onChange={(e) => { markSmtpSettingsDirty(); setSmtpSettings((c) => ({ ...c, signatureLinkUrl2: e.target.value })); }} placeholder="https://www.linkedin.com/in/..." />
-                    </label>
-                  </div>
+                  <p className="muted">Rich editor: you can bold text, create links on selected words, and format multi-line signatures.</p>
+                  <label className="full">
+                    <span>Signature editor</span>
+                    <RichTextEditor
+                      value={smtpSettings.signatureHtml || smtpSettings.signatureText || ""}
+                      onChange={(html) => {
+                        markSmtpSettingsDirty();
+                        setSmtpSettings((c) => ({ ...c, signatureHtml: html, signatureText: htmlToPlainText(html) }));
+                      }}
+                      placeholder="Regards,<br/>Your Name<br/>Founder | <a href='https://www.linkedin.com'>LinkedIn</a>"
+                      minHeight={180}
+                    />
+                  </label>
                   <div className="button-row">
                     <button className="secondary" onClick={() => void saveSignatureOnly()}>Save signature only</button>
                   </div>

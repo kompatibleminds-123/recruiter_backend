@@ -3244,22 +3244,63 @@ function parseMarketingSpreadsheetBase64(fileData = "", filename = "") {
   });
 }
 
-function renderMarketingTemplate(template = "", prospect = {}) {
+function renderMarketingTemplate(template = "", prospect = {}, context = {}) {
   const source = String(template || "");
+  const firstName = extractSafeFirstName(String(prospect?.name || "").trim());
+  const senderName = String(context?.senderName || context?.actorName || "").trim();
+  const senderFirstName = extractSafeFirstName(senderName);
+  const senderEmail = String(context?.senderEmail || "").trim();
   const replacementMap = {
     name: String(prospect?.name || "").trim(),
+    first_name: firstName,
     email: String(prospect?.email || "").trim(),
     phone: String(prospect?.phone || "").trim(),
     company: String(prospect?.company_name || prospect?.companyName || "").trim(),
     company_name: String(prospect?.company_name || prospect?.companyName || "").trim(),
     designation: String(prospect?.designation || "").trim(),
     category: String(prospect?.category || "").trim(),
-    categories: Array.isArray(prospect?.categories) ? prospect.categories.join(", ") : String(prospect?.categories || "").trim()
+    categories: Array.isArray(prospect?.categories) ? prospect.categories.join(", ") : String(prospect?.categories || "").trim(),
+    sender_name: senderName,
+    sender_first_name: senderFirstName,
+    sender_email: senderEmail
   };
   return source.replace(/\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g, (_match, key) => {
     const needle = String(key || "").trim().toLowerCase();
     return Object.prototype.hasOwnProperty.call(replacementMap, needle) ? replacementMap[needle] : "";
   });
+}
+
+function stripHtmlForText(value = "") {
+  return String(value || "")
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<\/p>/gi, "\n")
+    .replace(/<\/div>/gi, "\n")
+    .replace(/<[^>]*>/g, " ")
+    .replace(/\u00a0/g, " ")
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+function extractSafeFirstName(fullName = "") {
+  const raw = String(fullName || "").trim();
+  if (!raw) return "";
+  const titles = new Set(["mr", "mrs", "ms", "miss", "sh", "shri", "smt", "dr"]);
+  const tokens = raw
+    .split(/\s+/)
+    .map((token) => String(token || "").trim())
+    .filter(Boolean);
+  for (const token of tokens) {
+    const cleaned = token.replace(/[.,]/g, "").trim();
+    const lower = cleaned.toLowerCase();
+    if (!cleaned) continue;
+    if (titles.has(lower)) continue;
+    // Reject initials like "F" or "F."
+    if (cleaned.length <= 1) continue;
+    if (!/[a-z]/i.test(cleaned)) continue;
+    return cleaned;
+  }
+  return "";
 }
 
 async function processMarketingWorkerTickForActor(actor) {
@@ -3293,9 +3334,19 @@ async function processMarketingWorkerTickForActor(actor) {
     if (lastAt && (now.getTime() - lastAt.getTime()) < (rawGap * 60 * 1000)) continue;
     const to = normalizeMarketingEmail(prospect?.email);
     if (!to) continue;
-    const subject = renderMarketingTemplate(template.subject, prospect);
-    const text = renderMarketingTemplate(template.body_text, prospect);
-    const html = `<pre style="font-family:Arial,sans-serif;white-space:pre-wrap;">${escapeHtml(text)}</pre>`;
+    const subject = renderMarketingTemplate(template.subject, prospect, {
+      senderName: String(actor?.name || "").trim(),
+      senderEmail: String(actor?.email || "").trim()
+    });
+    const renderedBody = renderMarketingTemplate(template.body_text, prospect, {
+      senderName: String(actor?.name || "").trim(),
+      senderEmail: String(actor?.email || "").trim()
+    });
+    const hasHtmlBody = /<[^>]+>/.test(renderedBody);
+    const text = hasHtmlBody ? stripHtmlForText(renderedBody) : renderedBody;
+    const html = hasHtmlBody
+      ? renderedBody
+      : `<pre style="font-family:Arial,sans-serif;white-space:pre-wrap;">${escapeHtml(text)}</pre>`;
     await sendJdEmailAsActor(actor, { to, subject, text, html, cc: "", attachments: [] });
     await supabaseTableFetch("marketing_campaign_prospects", `?id=eq.${encodeURIComponent(String(row.id || ""))}&select=*`, {
       method: "PATCH",
@@ -11283,6 +11334,103 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (req.method === "POST" && requestUrl.pathname === "/company/marketing/templates/preview") {
+    try {
+      const actor = await requireSessionUser(getBearerToken(req));
+      const body = await readJsonBody(req);
+      const subject = String(body.subject || "").trim();
+      const bodyText = String(body.bodyText || body.body_text || "").trim();
+      const prospectId = String(body.prospectId || "").trim();
+      if (!subject && !bodyText) throw new Error("Template subject/body is required for preview.");
+
+      let prospect = null;
+      if (prospectId) {
+        const rows = await supabaseTableFetch(
+          "marketing_prospects",
+          `?select=id,name,email,phone,company_name,designation,category,categories,status&company_id=eq.${encodeURIComponent(actor.companyId)}&id=eq.${encodeURIComponent(prospectId)}&limit=1`
+        ).catch(() => []);
+        prospect = Array.isArray(rows) && rows.length ? rows[0] : null;
+      }
+      if (!prospect) {
+        prospect = {
+          name: "Prospect Name",
+          email: "prospect@example.com",
+          phone: "9999999999",
+          company_name: "Sample Company",
+          designation: "Sample Role",
+          category: "Sample Segment",
+          categories: ["Sample Segment"]
+        };
+      }
+
+      const renderedSubject = renderMarketingTemplate(subject, prospect, {
+        senderName: String(actor?.name || "").trim(),
+        senderEmail: String(actor?.email || "").trim()
+      });
+      const renderedBody = renderMarketingTemplate(bodyText, prospect, {
+        senderName: String(actor?.name || "").trim(),
+        senderEmail: String(actor?.email || "").trim()
+      });
+      const isHtml = /<[^>]+>/.test(renderedBody);
+      sendJson(res, 200, {
+        ok: true,
+        result: {
+          subject: renderedSubject,
+          bodyHtml: isHtml ? renderedBody : escapeHtml(renderedBody).replace(/\n/g, "<br/>"),
+          bodyText: isHtml ? stripHtmlForText(renderedBody) : renderedBody,
+          previewProspect: prospect
+        }
+      });
+    } catch (error) {
+      sendJson(res, 400, { ok: false, error: String(error?.message || error) });
+    }
+    return;
+  }
+
+  if (req.method === "PATCH" && /^\/company\/marketing\/templates\/[^/]+$/.test(requestUrl.pathname)) {
+    try {
+      const actor = await requireSessionUser(getBearerToken(req));
+      const templateId = String(requestUrl.pathname.replace(/^\/company\/marketing\/templates\//, "")).trim();
+      if (!templateId) throw new Error("Template id is required.");
+      const body = await readJsonBody(req);
+      const patch = {
+        subject: body.subject !== undefined ? String(body.subject || "").trim() : undefined,
+        body_text: body.bodyText !== undefined ? String(body.bodyText || "").trim() : undefined,
+        target_categories: body.targetCategories !== undefined ? normalizeMarketingCategories(body.targetCategories || "") : undefined,
+        updated_at: toIsoNow(),
+        updated_by: actor.id
+      };
+      Object.keys(patch).forEach((key) => patch[key] === undefined && delete patch[key]);
+      if (!Object.keys(patch).length) throw new Error("Nothing to update.");
+      const updated = await supabaseTableFetch(
+        "marketing_templates",
+        `?id=eq.${encodeURIComponent(templateId)}&company_id=eq.${encodeURIComponent(actor.companyId)}&select=*`,
+        { method: "PATCH", body: patch, prefer: "return=representation" }
+      );
+      sendJson(res, 200, { ok: true, result: Array.isArray(updated) && updated.length ? updated[0] : null });
+    } catch (error) {
+      sendJson(res, 400, { ok: false, error: String(error?.message || error) });
+    }
+    return;
+  }
+
+  if (req.method === "DELETE" && /^\/company\/marketing\/templates\/[^/]+$/.test(requestUrl.pathname)) {
+    try {
+      const actor = await requireSessionUser(getBearerToken(req));
+      const templateId = String(requestUrl.pathname.replace(/^\/company\/marketing\/templates\//, "")).trim();
+      if (!templateId) throw new Error("Template id is required.");
+      await supabaseTableFetch(
+        "marketing_templates",
+        `?id=eq.${encodeURIComponent(templateId)}&company_id=eq.${encodeURIComponent(actor.companyId)}&select=id`,
+        { method: "DELETE", prefer: "return=minimal" }
+      );
+      sendJson(res, 200, { ok: true, result: { deleted: true } });
+    } catch (error) {
+      sendJson(res, 400, { ok: false, error: String(error?.message || error) });
+    }
+    return;
+  }
+
   if (req.method === "POST" && /^\/company\/marketing\/campaigns\/[^/]+\/(start|pause|resume)$/.test(requestUrl.pathname)) {
     try {
       const actor = await requireSessionUser(getBearerToken(req));
@@ -11856,6 +12004,7 @@ const server = http.createServer(async (req, res) => {
               from: settings.from,
               hasPassword: Boolean(settings.pass),
               signatureText: String(settings.signatureText || "").trim(),
+              signatureHtml: String(settings.signatureHtml || "").trim(),
               signatureLinkLabel: String(settings.signatureLinkLabel || "").trim(),
               signatureLinkUrl: String(settings.signatureLinkUrl || "").trim(),
               signatureLinkLabel2: String(settings.signatureLinkLabel2 || "").trim(),
@@ -11869,6 +12018,7 @@ const server = http.createServer(async (req, res) => {
               from: actor.email ? `${actor.name || "Recruiter"} <${actor.email}>` : "",
               hasPassword: false,
               signatureText: "",
+              signatureHtml: "",
               signatureLinkLabel: "",
               signatureLinkUrl: "",
               signatureLinkLabel2: "",
@@ -12037,6 +12187,7 @@ const server = http.createServer(async (req, res) => {
           pass: String(exchanged.refreshToken || "").trim(),
           keepPass: false,
           signatureText: String(existing?.signatureText || "").trim(),
+          signatureHtml: String(existing?.signatureHtml || "").trim(),
           signatureLinkLabel: String(existing?.signatureLinkLabel || "").trim(),
           signatureLinkUrl: String(existing?.signatureLinkUrl || "").trim(),
           signatureLinkLabel2: String(existing?.signatureLinkLabel2 || "").trim(),
