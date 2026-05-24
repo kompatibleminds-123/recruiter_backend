@@ -5833,9 +5833,13 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
         });
     }
     if (activeTab === "templates") {
+      if (editingTemplateId) return;
       void api(`/company/marketing/campaigns/${encodeURIComponent(selectedCampaignId)}/template`, token)
         .then((row) => {
-          if (!row) return;
+          if (!row) {
+            setTemplateDraft({ subject: "", bodyText: "Hi {{name}},\n\n\nRegards,\nTeam", targetCategoriesText: "" });
+            return;
+          }
           setTemplateDraft({
             subject: String(row.subject || ""),
             bodyText: String(row.body_text || ""),
@@ -5844,7 +5848,7 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
         })
         .catch(() => {});
     }
-  }, [activeTab, queuePage, selectedCampaignId, token]);
+  }, [activeTab, editingTemplateId, queuePage, selectedCampaignId, token]);
 
   useEffect(() => {
     if (activeTab !== "prospects") return;
@@ -6510,6 +6514,11 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
           {editingTemplateId ? <button className="ghost-btn" type="button" onClick={cancelTemplateEdit}>Cancel edit</button> : null}
           <button className="ghost-btn" type="button" onClick={() => void generateTemplatePreview().catch(setErr)}>Preview email</button>
         </div>
+        {editingTemplateId ? (
+          <div className="muted" style={{ marginTop: 6 }}>
+            Edit mode active: changing selected campaign and clicking `Update template` will move this template to that campaign.
+          </div>
+        ) : null}
         <div className="form-grid two-col" style={{ marginTop: 12 }}>
           <label>
             <span>Search templates</span>
