@@ -3421,8 +3421,9 @@ async function processMarketingWorkerTickForActor(actor, options = {}) {
   const companyId = encodeURIComponent(String(actor?.companyId || "").trim());
   if (!companyId) return { sent: 0 };
   const batchPerCampaign = Math.max(1, Math.min(50, Number(options?.batchPerCampaign || 1)));
-  const smtpSettings = await getUserSmtpSettings({ companyId: String(actor?.companyId || "").trim(), userId: String(actor?.id || "").trim() }).catch(() => null);
-  const signature = buildMarketingSignatureHtmlAndText(smtpSettings || {});
+  const companyUsers = await listCompanyUsers(String(actor?.companyId || "").trim()).catch(() => []);
+  const userById = new Map((Array.isArray(companyUsers) ? companyUsers : []).map((item) => [String(item?.id || "").trim(), item]));
+  const smtpByUserId = new Map();
   const now = new Date();
   const campaigns = await supabaseTableFetch(
     "marketing_campaigns",
@@ -3431,7 +3432,29 @@ async function processMarketingWorkerTickForActor(actor, options = {}) {
   let sent = 0;
   for (const campaign of Array.isArray(campaigns) ? campaigns : []) {
     const campaignId = String(campaign?.id || "").trim();
-    if (!campaignId) continue;
+    const senderUserId = String(campaign?.sender_user_id || "").trim();
+    if (!campaignId || !senderUserId) continue;
+    if (!isAdminActor(actor) && senderUserId !== String(actor?.id || "").trim()) continue;
+    const senderUser = userById.get(senderUserId) || null;
+    if (!senderUser?.id) continue;
+    if (!smtpByUserId.has(senderUserId)) {
+      const smtp = await getUserSmtpSettings({
+        companyId: String(actor?.companyId || "").trim(),
+        userId: senderUserId
+      }).catch(() => null);
+      smtpByUserId.set(senderUserId, smtp || null);
+    }
+    const senderSmtp = smtpByUserId.get(senderUserId);
+    if (!senderSmtp) continue;
+    const senderActor = {
+      ...actor,
+      id: String(senderUser.id || "").trim(),
+      email: String(senderUser.email || "").trim(),
+      name: String(senderUser.name || "").trim() || String(actor?.name || "").trim(),
+      role: String(senderUser.role || actor?.role || "").trim(),
+      companyId: String(actor?.companyId || "").trim()
+    };
+    const signature = buildMarketingSignatureHtmlAndText(senderSmtp || {});
     const templateRows = await supabaseTableFetch("marketing_templates", `?select=*&campaign_id=eq.${encodeURIComponent(campaignId)}&company_id=eq.${companyId}&limit=1`);
     const template = Array.isArray(templateRows) && templateRows.length ? templateRows[0] : null;
     if (!template?.subject || !template?.body_text) continue;
@@ -3462,12 +3485,12 @@ async function processMarketingWorkerTickForActor(actor, options = {}) {
       const to = normalizeMarketingEmail(prospect?.email);
       if (!to) continue;
       const subject = renderMarketingTemplate(template.subject, prospect, {
-        senderName: String(actor?.name || "").trim(),
-        senderEmail: String(actor?.email || "").trim()
+        senderName: String(senderActor?.name || "").trim(),
+        senderEmail: String(senderActor?.email || "").trim()
       });
       const renderedBody = renderMarketingTemplate(templateBody, prospect, {
-        senderName: String(actor?.name || "").trim(),
-        senderEmail: String(actor?.email || "").trim()
+        senderName: String(senderActor?.name || "").trim(),
+        senderEmail: String(senderActor?.email || "").trim()
       });
       const hasHtmlBody = /<[^>]+>/.test(renderedBody);
       const textBase = hasHtmlBody ? stripHtmlForText(renderedBody) : renderedBody;
@@ -3492,7 +3515,7 @@ async function processMarketingWorkerTickForActor(actor, options = {}) {
           // Ignore malformed template attachment, keep send resilient.
         }
       }
-      await sendJdEmailAsActor(actor, { to, subject, text, html, cc: "", attachments });
+      await sendJdEmailAsActor(senderActor, { to, subject, text, html, cc: "", attachments });
       await supabaseTableFetch("marketing_campaign_prospects", `?id=eq.${encodeURIComponent(String(row.id || ""))}&select=*`, {
         method: "PATCH",
         body: { state: "sent", updated_at: toIsoNow(), last_sent_at: toIsoNow() },

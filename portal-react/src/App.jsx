@@ -19520,7 +19520,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
             <div className="page-grid">
               <Section kicker="Email" title="Mail Settings">
                 {statuses.settings ? <div className={`status ${statuses.settingsKind || ""}`}>{statuses.settings}</div> : null}
-                <p className="muted">Configure email delivery for JD sharing. You can use either SMTP credentials or API mode (per recruiter).</p>
+                <p className="muted">Connect Mail for Zoho API first. Manual SMTP/API fields stay available as fallback (per recruiter).</p>
                 <div className="settings-subsection mail-settings-shell jd-shell-create">
                   <div className="section-kicker">Mail Share Settings (SMTP / API)</div>
                   <div className="form-grid two-col">
@@ -19545,6 +19545,9 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                     ) : null}
                   </div>
                   <div className="button-row">
+                    <button className="secondary" disabled={zohoConnectBusy} onClick={() => void connectZohoMailbox()}>
+                      {zohoConnectBusy ? "Connecting..." : "Connect Mail (Zoho API)"}
+                    </button>
                     <button onClick={() => void saveSmtpSettings()}>Save email settings</button>
                     <button className="secondary" disabled={smtpTestBusy} onClick={() => void testSmtpSettings(false)}>
                       {smtpTestBusy ? "Testing..." : "Test SMTP settings"}
@@ -19552,16 +19555,14 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                     <button className="secondary" disabled={smtpTestBusy} onClick={() => void testSmtpSettings(true)}>
                       {smtpTestBusy ? "Testing..." : "Send test mail to self"}
                     </button>
-                    <button className="secondary" disabled={zohoConnectBusy} onClick={() => void connectZohoMailbox()}>
-                      {zohoConnectBusy ? "Connecting..." : "Connect Zoho (1-click)"}
-                    </button>
                   </div>
                 </div>
                 <div className="settings-subsection mail-settings-notes">
                   <div className="section-kicker">Mail Share Notes</div>
+                  <p className="muted"><strong>Recommended:</strong> use <strong>Connect Mail (Zoho API)</strong> first.</p>
                   <p className="muted"><strong>Supported modes:</strong> SMTP mode (<code>smtppro.zoho.com</code>, <code>smtp.gmail.com</code>, <code>smtp.office365.com</code>) or API mode via host keys.</p>
                   <p className="muted"><strong>API mode host keys:</strong> <code>zohoapi.com</code>, <code>sendgridapi</code>, <code>postmarkapi</code>.</p>
-                  <p className="muted"><strong>Zoho:</strong> click <strong>Connect Zoho (1-click)</strong>. No manual code/token copy required.</p>
+                  <p className="muted"><strong>Zoho:</strong> click <strong>Connect Mail (Zoho API)</strong>. No manual code/token copy required.</p>
                   <p className="muted"><strong>Password meaning:</strong> SMTP = mailbox/app password. API = provider credential (Zoho refresh token / SendGrid key / Postmark token).</p>
                   <p className="muted"><strong>Connection:</strong> {String(smtpSettings.host || "").toLowerCase().startsWith("zohoapi") && smtpSettings.hasPassword ? "Zoho connected" : "Not connected"} for current recruiter account.</p>
                   <p className="muted"><strong>Hosting note:</strong> SMTP mode may need paid hosting/network egress; API mode often avoids SMTP port blockers.</p>
