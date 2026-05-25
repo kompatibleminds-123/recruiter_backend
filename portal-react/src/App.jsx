@@ -19008,45 +19008,62 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                     : "";
                   return (
                     <article className="item-card compact-card captured-note-card" key={item.id}>
-                      <div className="item-card__top">
-                          <div>
-                            <div className="captured-note-title-row">
-                              <h3>{item.name || "Candidate"} | {item.jd_title || item.role || "Untitled role"}</h3>
-                              {linkedinHref ? (
-                                <a className="captured-note-linkedin" href={linkedinHref} target="_blank" rel="noopener noreferrer">LinkedIn</a>
-                              ) : null}
-                            </div>
-                          <p className="muted">{[
-                            item.company || "",
-                            item.source ? `Source: ${item.source}` : "",
-                            item.recruiter_name ? `Captured: ${item.recruiter_name}` : "",
-                            item.assigned_to_name ? `Assigned: ${item.assigned_to_name}` : "",
-                            item.assigned_by_name ? `Assigned by: ${item.assigned_by_name}` : "",
-                            item.assigned_at ? `Assigned at: ${new Date(item.assigned_at).toLocaleString()}` : ""
-                          ].filter(Boolean).join(" | ")}</p>
+                      <div className="captured-note-main">
+                        <div className="captured-note-col captured-note-col--profile">
+                          <div className="captured-note-title-row">
+                            <h3>{item.name || "Candidate"}</h3>
+                            {linkedinHref ? (
+                              <a className="captured-note-linkedin" href={linkedinHref} target="_blank" rel="noopener noreferrer" aria-label="Open LinkedIn profile" title="Open LinkedIn profile">
+                                <span className="captured-note-linkedin-icon">in</span>
+                              </a>
+                            ) : null}
+                          </div>
+                          <div className="captured-note-subtitle">{item.jd_title || item.role || "Untitled role"}</div>
+                          <div className="captured-note-company">{item.company || "Company not available"}</div>
                           {statusState.summary ? <div className="status-line">{statusState.summary}</div> : null}
                           {statusState.note ? <div className="status-note">{statusState.note}</div> : null}
-                          <div className="chip-row">
-                            {String(state.user?.role || "").toLowerCase() === "admin" ? (
-                              <label className="checkbox-row" style={{ marginRight: 6 }}>
-                                <input
-                                  type="checkbox"
-                                  checked={bulkAssignCandidateIds.includes(String(item?.id || ""))}
-                                  onChange={(e) => {
-                                    const id = String(item?.id || "");
-                                    if (!id) return;
-                                    setBulkAssignCandidateIds((current) => e.target.checked
-                                      ? Array.from(new Set([...current, id]))
-                                      : current.filter((entry) => entry !== id));
-                                  }}
-                                />
-                                <span>Select</span>
-                              </label>
-                            ) : null}
-                            {statusState.followUp ? <span className="chip">Follow-up: {new Date(statusState.followUp).toLocaleString()}</span> : null}
-                            {statusState.interviewAt ? <span className="chip">Interview: {new Date(statusState.interviewAt).toLocaleString()}</span> : null}
+                        </div>
+                        <div className="captured-note-col captured-note-col--details">
+                          <div className="captured-note-detail-list">
+                            <div><strong>Experience:</strong> {item.total_experience || "NA"}</div>
+                            <div><strong>CTC:</strong> {item.current_ctc || "NA"}</div>
+                            <div><strong>Notice period:</strong> {item.notice_period || "NA"}</div>
+                            <div><strong>Location:</strong> {item.location || "NA"}</div>
                           </div>
                         </div>
+                        <div className="captured-note-col captured-note-col--meta">
+                          <div className="captured-note-detail-list">
+                            <div><strong>Email:</strong> {item.email || "NA"}</div>
+                            <div><strong>Phone:</strong> {item.phone || item.phoneNumber || "NA"}</div>
+                            <div><strong>Source:</strong> {item.source || "NA"}</div>
+                            <div><strong>Captured by:</strong> {item.recruiter_name || "NA"}</div>
+                            <div><strong>Assigned to:</strong> {item.assigned_to_name || "NA"}</div>
+                          </div>
+                        </div>
+                      </div>
+                      <p className="muted">{[
+                        item.assigned_by_name ? `Assigned by: ${item.assigned_by_name}` : "",
+                        item.assigned_at ? `Assigned at: ${new Date(item.assigned_at).toLocaleString()}` : ""
+                      ].filter(Boolean).join(" | ")}</p>
+                      <div className="chip-row">
+                        {String(state.user?.role || "").toLowerCase() === "admin" ? (
+                          <label className="checkbox-row" style={{ marginRight: 6 }}>
+                            <input
+                              type="checkbox"
+                              checked={bulkAssignCandidateIds.includes(String(item?.id || ""))}
+                              onChange={(e) => {
+                                const id = String(item?.id || "");
+                                if (!id) return;
+                                setBulkAssignCandidateIds((current) => e.target.checked
+                                  ? Array.from(new Set([...current, id]))
+                                  : current.filter((entry) => entry !== id));
+                              }}
+                            />
+                            <span>Select</span>
+                          </label>
+                        ) : null}
+                        {statusState.followUp ? <span className="chip">Follow-up: {new Date(statusState.followUp).toLocaleString()}</span> : null}
+                        {statusState.interviewAt ? <span className="chip">Interview: {new Date(statusState.interviewAt).toLocaleString()}</span> : null}
                       </div>
                       {item.last_contact_outcome || latestAttemptRemarks ? (
                         <div className="status-line" style={{ justifyContent: "flex-end", textAlign: "right" }}>
