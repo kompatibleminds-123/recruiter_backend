@@ -10819,7 +10819,21 @@ function PortalApp({ token, onLogout }) {
   }, [state.candidates, state.user]);
 
   const capturedNotesStats = useMemo(() => {
-    const todayKey = new Date().toISOString().slice(0, 10);
+    const toIstDateKey = (value) => {
+      const date = value ? new Date(value) : new Date();
+      if (!(date instanceof Date) || Number.isNaN(date.getTime())) return "";
+      const parts = new Intl.DateTimeFormat("en-CA", {
+        timeZone: "Asia/Kolkata",
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit"
+      }).formatToParts(date);
+      const year = parts.find((part) => part.type === "year")?.value || "";
+      const month = parts.find((part) => part.type === "month")?.value || "";
+      const day = parts.find((part) => part.type === "day")?.value || "";
+      return year && month && day ? `${year}-${month}-${day}` : "";
+    };
+    const todayKey = toIstDateKey(new Date());
     const queryText = String(candidateFilters.q || "").trim().toLowerCase();
     const viewMode = String(candidateFilters.view || "all").trim() || "all";
     const currentUserName = String(state.user?.name || "").trim().toLowerCase();
@@ -10833,8 +10847,8 @@ function PortalApp({ token, onLogout }) {
       const createdAt = parseTime(item?.created_at);
       const assignedAt = parseTime(item?.assigned_at);
       const activityAt = Math.max(createdAt, assignedAt);
-      if (!activityAt) return item?.created_at ? String(item.created_at).slice(0, 10) : "";
-      return new Date(activityAt).toISOString().slice(0, 10);
+      if (!activityAt) return item?.created_at ? toIstDateKey(item.created_at) : "";
+      return toIstDateKey(activityAt);
     };
     const isAssignedToCurrentUser = (item) => {
       const assignedId = String(item?.assigned_to_user_id || "").trim();
