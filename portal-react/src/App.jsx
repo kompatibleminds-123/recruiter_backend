@@ -21107,8 +21107,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                         <textarea disabled={!isSettingsAdmin} value={copySettings.emailTemplate || DEFAULT_COPY_SETTINGS.emailTemplate} onChange={(e) => setCopySettings((current) => ({ ...current, emailTemplate: e.target.value }))} />
                       </label>
                     </div>
-                    <p className="muted">Available placeholders: copy templates use `{{index}}` `{{name}}` `{{jd_title}}` `{{company}}` `{{outcome}}` `{{recruiter_notes}}` `{{location}}` `{{phone}}` `{{email}}` `{{source}}` `{{follow_up_at}}`.
-                    Note: `remarks` = recruiter manual notes, `notice_period` = notice period text (can include immediate/serving/NP value), `screening_remarks` = timeline + interview/screening notes summary.</p>
+                    <p className="muted">{"Available placeholders: copy templates use {{index}} {{name}} {{jd_title}} {{company}} {{outcome}} {{recruiter_notes}} {{location}} {{phone}} {{email}} {{source}} {{follow_up_at}}. Note: remarks = recruiter manual notes, notice_period = notice period text (can include immediate/serving/NP value), screening_remarks = timeline + interview/screening notes summary."}</p>
                     <div className="button-row">
                       {canEditSelectedPreset ? <button onClick={() => void saveSharedCopySettings()}>{isSuggestedPresetSelected ? "Save suggested preset changes" : "Save preset changes"}</button> : null}
                       {isSettingsAdmin && selectedCustomPreset ? (
