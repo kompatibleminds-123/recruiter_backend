@@ -19002,6 +19002,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                   const statusState = normalizedAssessmentState(matchedAssessment, item);
                   const latestAttemptLine = extractLatestAttemptLine(item.last_contact_notes || "");
                   const latestAttemptRemarks = extractAttemptRemarks(latestAttemptLine);
+                  const experienceValue = item.total_experience || item.experience || item.totalExperience || "";
                   const linkedinRaw = String(item.linkedin || item.linkedinUrl || "").trim();
                   const linkedinHref = linkedinRaw
                     ? (/^https?:\/\//i.test(linkedinRaw) ? linkedinRaw : `https://${linkedinRaw}`)
@@ -19025,8 +19026,12 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                         </div>
                         <div className="captured-note-col captured-note-col--details">
                           <div className="captured-note-detail-list">
-                            <div><strong>Experience:</strong> {item.total_experience || "NA"}</div>
+                            <div><strong>Experience:</strong> {experienceValue || "NA"}</div>
                             <div><strong>CTC:</strong> {item.current_ctc || "NA"}</div>
+                          </div>
+                        </div>
+                        <div className="captured-note-col captured-note-col--notice">
+                          <div className="captured-note-detail-list">
                             <div><strong>Notice period:</strong> {item.notice_period || "NA"}</div>
                             <div><strong>Location:</strong> {item.location || "NA"}</div>
                           </div>
@@ -19038,6 +19043,18 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                             <div><strong>Source:</strong> {item.source || "NA"}</div>
                             <div><strong>Captured by:</strong> {item.recruiter_name || "NA"}</div>
                             <div><strong>Assigned to:</strong> {item.assigned_to_name || "NA"}</div>
+                          </div>
+                        </div>
+                        <div className="captured-note-col captured-note-col--summary">
+                          <div className="captured-note-summary-title">Summary</div>
+                          <div className="captured-note-summary-text">
+                            {normalizeMojibakeSymbols(
+                              [
+                                item.notes || "",
+                                item.recruiter_context_notes || "",
+                                item.other_pointers || ""
+                              ].filter(Boolean).join(" ")
+                            ) || "No summary yet."}
                           </div>
                         </div>
                       </div>
