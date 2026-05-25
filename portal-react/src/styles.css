@@ -2876,6 +2876,17 @@ button:focus-visible {
   flex-wrap: wrap;
 }
 
+.captured-top-select {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+}
+
+.captured-top-select input {
+  width: 18px;
+  height: 18px;
+}
+
 .captured-note-subtitle {
   font-weight: 700;
   color: #1f3a6c;
@@ -3007,6 +3018,17 @@ button:focus-visible {
   flex: 1;
 }
 
+.captured-note-summary-inline-rest {
+  display: none;
+  color: #2b4573;
+  font-size: 0.9rem;
+  line-height: 1.35;
+}
+
+.captured-note-summary-bar[open] .captured-note-summary-inline-rest {
+  display: inline;
+}
+
 .captured-note-summary-toggle {
   color: #1d4ed8;
   font-size: 0.8rem;
@@ -3024,6 +3046,10 @@ button:focus-visible {
   margin-top: 0.45rem;
   white-space: normal;
   overflow-wrap: anywhere;
+}
+
+.captured-note-summary-bar--note .captured-note-summary-badge {
+  color: #1f3a6c;
 }
 
 .captured-action-success {

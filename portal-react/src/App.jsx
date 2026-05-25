@@ -7195,8 +7195,6 @@ function PortalApp({ token, onLogout }) {
   const [assignCandidateId, setAssignCandidateId] = useState("");
   const [bulkAssignApplicantIds, setBulkAssignApplicantIds] = useState([]);
   const [bulkAssignCandidateIds, setBulkAssignCandidateIds] = useState([]);
-  const [capturedSelectMode, setCapturedSelectMode] = useState(false);
-  const [openCapturedMoreId, setOpenCapturedMoreId] = useState("");
   const [applicantsVisibleCount, setApplicantsVisibleCount] = useState(50);
   const [bulkAssignApplicantModalOpen, setBulkAssignApplicantModalOpen] = useState(false);
   const [bulkAssignCandidateModalOpen, setBulkAssignCandidateModalOpen] = useState(false);
@@ -19017,6 +19015,11 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                   const summaryIsTruncated = summaryFull.length > summaryClipLength;
                   const summaryShort = summaryIsTruncated ? `${summaryFull.slice(0, summaryClipLength).trim()}...` : summaryFull;
                   const summaryRemainder = summaryIsTruncated ? summaryFull.slice(summaryClipLength).trim() : "";
+                  const recruiterNoteFull = normalizeMojibakeSymbols(String(item.recruiter_context_notes || "").trim());
+                  const recruiterNoteClipLength = 140;
+                  const recruiterNoteIsTruncated = recruiterNoteFull.length > recruiterNoteClipLength;
+                  const recruiterNoteShort = recruiterNoteIsTruncated ? `${recruiterNoteFull.slice(0, recruiterNoteClipLength).trim()}...` : recruiterNoteFull;
+                  const recruiterNoteRemainder = recruiterNoteIsTruncated ? recruiterNoteFull.slice(recruiterNoteClipLength).trim() : "";
                   const linkedinRaw = String(item.linkedin || item.linkedinUrl || "").trim();
                   const linkedinHref = linkedinRaw
                     ? (/^https?:\/\//i.test(linkedinRaw) ? linkedinRaw : `https://${linkedinRaw}`)
@@ -19032,29 +19035,21 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                                 <span className="captured-note-linkedin-icon">in</span>
                               </a>
                             ) : null}
-                            <div className={`more-menu ${openCapturedMoreId === String(item.id) ? "more-menu--open" : ""}`}>
-                              <button
-                                type="button"
-                                className="ghost-btn more-menu__trigger"
-                                aria-haspopup="menu"
-                                aria-expanded={openCapturedMoreId === String(item.id)}
-                                onClick={() => setOpenCapturedMoreId((current) => current === String(item.id) ? "" : String(item.id))}
-                              >
-                                &#8942;
-                              </button>
-                              {openCapturedMoreId === String(item.id) ? (
-                                <div className="more-menu__dropdown more-menu__dropdown--inline" role="menu">
-                                  <button type="button" className="more-menu__item" onClick={() => { setCapturedSelectMode(true); setOpenCapturedMoreId(""); }}>
-                                    Enable select mode
-                                  </button>
-                                  {capturedSelectMode ? (
-                                    <button type="button" className="more-menu__item" onClick={() => { setCapturedSelectMode(false); setBulkAssignCandidateIds([]); setOpenCapturedMoreId(""); }}>
-                                      Disable select mode
-                                    </button>
-                                  ) : null}
-                                </div>
-                              ) : null}
-                            </div>
+                            {String(state.user?.role || "").toLowerCase() === "admin" ? (
+                              <label className="captured-top-select">
+                                <input
+                                  type="checkbox"
+                                  checked={bulkAssignCandidateIds.includes(String(item?.id || ""))}
+                                  onChange={(e) => {
+                                    const id = String(item?.id || "");
+                                    if (!id) return;
+                                    setBulkAssignCandidateIds((current) => e.target.checked
+                                      ? Array.from(new Set([...current, id]))
+                                      : current.filter((entry) => entry !== id));
+                                  }}
+                                />
+                              </label>
+                            ) : null}
                           </div>
                           <div className="captured-note-subtitle">{item.jd_title || item.role || "Untitled role"}</div>
                           <div className="captured-note-company">{item.company || "Company not available"}</div>
@@ -19166,27 +19161,23 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                         <summary>
                           <span className="captured-note-summary-badge">Summary</span>
                           <span className="captured-note-summary-preview">{summaryShort}</span>
+                          {summaryIsTruncated ? <span className="captured-note-summary-inline-rest">{summaryRemainder}</span> : null}
                           {summaryIsTruncated ? <span className="captured-note-summary-toggle">Show more</span> : null}
                         </summary>
-                        <div className="captured-note-summary-full">{summaryIsTruncated ? summaryRemainder : summaryFull}</div>
+                        {!summaryIsTruncated ? <div className="captured-note-summary-full">{summaryFull}</div> : null}
                       </details>
+                      {recruiterNoteFull ? (
+                        <details className="captured-note-summary-bar captured-note-summary-bar--note">
+                          <summary>
+                            <span className="captured-note-summary-badge">Recruiter note</span>
+                            <span className="captured-note-summary-preview">{recruiterNoteShort}</span>
+                            {recruiterNoteIsTruncated ? <span className="captured-note-summary-inline-rest">{recruiterNoteRemainder}</span> : null}
+                            {recruiterNoteIsTruncated ? <span className="captured-note-summary-toggle">Show more</span> : null}
+                          </summary>
+                          {!recruiterNoteIsTruncated ? <div className="captured-note-summary-full">{recruiterNoteFull}</div> : null}
+                        </details>
+                      ) : null}
                       <div className="chip-row">
-                        {String(state.user?.role || "").toLowerCase() === "admin" && capturedSelectMode ? (
-                          <label className="checkbox-row" style={{ marginRight: 6 }}>
-                            <input
-                              type="checkbox"
-                              checked={bulkAssignCandidateIds.includes(String(item?.id || ""))}
-                              onChange={(e) => {
-                                const id = String(item?.id || "");
-                                if (!id) return;
-                                setBulkAssignCandidateIds((current) => e.target.checked
-                                  ? Array.from(new Set([...current, id]))
-                                  : current.filter((entry) => entry !== id));
-                              }}
-                            />
-                            <span>Select</span>
-                          </label>
-                        ) : null}
                         {statusState.followUp ? <span className="chip">Follow-up: {new Date(statusState.followUp).toLocaleString()}</span> : null}
                         {statusState.interviewAt ? <span className="chip">Interview: {new Date(statusState.interviewAt).toLocaleString()}</span> : null}
                       </div>
