@@ -8130,6 +8130,20 @@ function PortalApp({ token, onLogout }) {
     ];
     return uniqueEmails(sources);
   }, [directShareHistory, state.clientPortal, state.users]);
+  const recruiterUserEmail = String(state.user?.email || "").trim();
+  const recruiterUserPhone = useMemo(() => {
+    const meId = String(state.user?.id || "").trim();
+    const me = (state.users || []).find((item) => String(item?.id || "").trim() === meId) || null;
+    return String(
+      me?.phone ||
+      me?.mobile ||
+      me?.phone_number ||
+      me?.phoneNumber ||
+      state.user?.phone ||
+      state.user?.mobile ||
+      ""
+    ).trim();
+  }, [state.user, state.users]);
   const getActiveEmailToken = useCallback((rawValue = "") => {
     const value = String(rawValue || "");
     const parts = value.split(",");
