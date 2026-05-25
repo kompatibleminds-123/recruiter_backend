@@ -7555,6 +7555,7 @@ function PortalApp({ token, onLogout }) {
   const [teamUserDraft, setTeamUserDraft] = useState({ name: "", email: "", phone: "", password: "", role: "recruiter" });
   const [payrollUserDraft, setPayrollUserDraft] = useState({ name: "", email: "", password: "", role: "payroll_owner" });
   const [teamPasswordDrafts, setTeamPasswordDrafts] = useState({});
+  const [teamUserEditDrafts, setTeamUserEditDrafts] = useState({});
   const [employeeUsers, setEmployeeUsers] = useState([]);
   const [employeeUserDraft, setEmployeeUserDraft] = useState({
     employeeCode: "",
@@ -16342,6 +16343,39 @@ function PortalApp({ token, onLogout }) {
     }
   }
 
+  function getTeamUserEditDraft(item = {}) {
+    const id = String(item?.id || "").trim();
+    const existing = teamUserEditDrafts[id];
+    if (existing && typeof existing === "object") return existing;
+    const roleRaw = String(item?.role || "").trim().toLowerCase();
+    return {
+      role: roleRaw === "admin" ? "admin" : "recruiter",
+      phone: String(item?.phone || "").trim()
+    };
+  }
+
+  async function saveTeamUserEdit(userId) {
+    if (!isSettingsAdmin) {
+      setStatus("loginTeam", "Only admin can edit team users.", "error");
+      return;
+    }
+    const id = String(userId || "").trim();
+    if (!id) return;
+    const draft = teamUserEditDrafts[id] || {};
+    try {
+      setStatus("loginTeam", "Saving user changes...");
+      await api("/company/users", token, "PATCH", {
+        userId: id,
+        role: String(draft.role || "recruiter").trim(),
+        phone: String(draft.phone || "").trim()
+      });
+      await reloadLoginSettingsWorkspace();
+      setStatus("loginTeam", "User updated.", "ok");
+    } catch (error) {
+      setStatus("loginTeam", String(error?.message || error), "error");
+    }
+  }
+
   async function deleteTeamUser(userId) {
     if (!isSettingsAdmin) {
       setStatus("loginTeam", "Only admin can remove team members.", "error");
@@ -20757,7 +20791,6 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                       <label className="full">
                         <span>Subject template</span>
                         <input ref={directShareSubjectTemplateTextareaRef} value={copySettings.clientShareSubjectTemplate || DEFAULT_COPY_SETTINGS.clientShareSubjectTemplate} onChange={(e) => setCopySettings((current) => ({ ...current, clientShareSubjectTemplate: e.target.value }))} />
-                        <span className="field-help">{"Use placeholders: {{client_name}} {{role}} {{role_line}} {{hr_name}} {{recruiter_name}} {{recruiter_email}} {{recruiter_phone}} {{company_name}}."}</span><span className="field-help">{"{{role}} = role only. {{role_line}} = role + client context line fragment."}</span>
                         <span className="field-help">Click placeholders to insert:</span>
                         <div className="placeholder-selector">
                           {CLIENT_SHARE_TEMPLATE_PLACEHOLDERS.map((token) => (
@@ -21466,14 +21499,17 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                         <div className="item-card__top">
                           <div>
                             <h3>{item.name}</h3>
-                            <p className="muted">{`${item.email} | ${formatWorkspaceUserRoleLabel(item.role)}`}</p>
+                            <p className="muted">{`${item.email} | ${formatWorkspaceUserRoleLabel(item.role)}${item?.phone ? ` | ${item.phone}` : ""}`}</p>
                           </div>
-                          {isSettingsAdmin && String(item.role || "").toLowerCase() !== "admin" ? (
+                          {isSettingsAdmin ? (
                             <div className="form-grid" style={{ minWidth: "260px" }}>
+                              <label><span>Role</span><select value={getTeamUserEditDraft(item).role} onChange={(e) => setTeamUserEditDrafts((current) => ({ ...current, [item.id]: { ...getTeamUserEditDraft(item), role: e.target.value } }))}><option value="recruiter">Recruiter</option><option value="admin">Admin</option></select></label>
+                              <label><span>Phone</span><input value={getTeamUserEditDraft(item).phone} onChange={(e) => setTeamUserEditDrafts((current) => ({ ...current, [item.id]: { ...getTeamUserEditDraft(item), phone: e.target.value } }))} placeholder="+91 98xxxxxx10" /></label>
                               <label><span>Reset password</span><input type="password" value={teamPasswordDrafts[item.id] || ""} onChange={(e) => setTeamPasswordDrafts((current) => ({ ...current, [item.id]: e.target.value }))} placeholder="New password" /></label>
                               <div className="button-row tight">
+                                <button className="ghost-btn" onClick={() => void saveTeamUserEdit(item.id)}>Save</button>
                                 <button className="ghost-btn" onClick={() => void resetTeamUserPassword(item.id)}>Reset</button>
-                                <button className="ghost-btn" onClick={() => void deleteTeamUser(item.id)}>Remove</button>
+                                {String(item.role || "").toLowerCase() !== "admin" ? <button className="ghost-btn" onClick={() => void deleteTeamUser(item.id)}>Remove</button> : null}
                               </div>
                             </div>
                           ) : null}
