@@ -14806,6 +14806,11 @@ function PortalApp({ token, onLogout }) {
   }
 
   async function confirmAttachCurrentDatabasePageToCampaign() {
+    const isNewCampaignFlow = Boolean(String(dbCampaignAttachModal?.createCampaignName || "").trim());
+    if (isNewCampaignFlow && Boolean(dbCampaignAttachModal?.launchNow)) {
+      setStatus("workspace", "For new campaign, launch now is not allowed. Create campaign first, then add template and launch.", "error");
+      return;
+    }
     let selectedCampaignId = String(dbCampaignAttachModal?.selectedCampaignId || "").trim();
     let selectedCampaign = (dbCampaignAttachModal?.campaigns || []).find((item) => String(item?.id || "") === selectedCampaignId) || null;
     if (!selectedCampaignId) {
@@ -21501,19 +21506,21 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                             <h3>{item.name}</h3>
                             <p className="muted">{`${item.email} | ${formatWorkspaceUserRoleLabel(item.role)}${item?.phone ? ` | ${item.phone}` : ""}`}</p>
                           </div>
-                          {isSettingsAdmin ? (
-                            <div className="form-grid" style={{ minWidth: "260px" }}>
+                        </div>
+                        {isSettingsAdmin ? (
+                          <>
+                            <div className="form-grid three-col" style={{ marginTop: 10 }}>
                               <label><span>Role</span><select value={getTeamUserEditDraft(item).role} onChange={(e) => setTeamUserEditDrafts((current) => ({ ...current, [item.id]: { ...getTeamUserEditDraft(item), role: e.target.value } }))}><option value="recruiter">Recruiter</option><option value="admin">Admin</option></select></label>
                               <label><span>Phone</span><input value={getTeamUserEditDraft(item).phone} onChange={(e) => setTeamUserEditDrafts((current) => ({ ...current, [item.id]: { ...getTeamUserEditDraft(item), phone: e.target.value } }))} placeholder="+91 98xxxxxx10" /></label>
                               <label><span>Reset password</span><input type="password" value={teamPasswordDrafts[item.id] || ""} onChange={(e) => setTeamPasswordDrafts((current) => ({ ...current, [item.id]: e.target.value }))} placeholder="New password" /></label>
-                              <div className="button-row tight">
-                                <button className="ghost-btn" onClick={() => void saveTeamUserEdit(item.id)}>Save</button>
-                                <button className="ghost-btn" onClick={() => void resetTeamUserPassword(item.id)}>Reset</button>
-                                {String(item.role || "").toLowerCase() !== "admin" ? <button className="ghost-btn" onClick={() => void deleteTeamUser(item.id)}>Remove</button> : null}
-                              </div>
                             </div>
-                          ) : null}
-                        </div>
+                            <div className="button-row tight" style={{ marginTop: 10 }}>
+                              <button className="ghost-btn" onClick={() => void saveTeamUserEdit(item.id)}>Save</button>
+                              <button className="ghost-btn" onClick={() => void resetTeamUserPassword(item.id)}>Reset</button>
+                              {String(item.role || "").toLowerCase() !== "admin" ? <button className="ghost-btn" onClick={() => void deleteTeamUser(item.id)}>Remove</button> : null}
+                            </div>
+                          </>
+                        ) : null}
                       </article>
                     ))}
                   </div>
@@ -21858,10 +21865,13 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                   type="checkbox"
                   checked={Boolean(dbCampaignAttachModal.launchNow)}
                   onChange={(e) => setDbCampaignAttachModal((current) => ({ ...current, launchNow: e.target.checked }))}
-                  disabled={dbCampaignAttachModal.busy}
+                  disabled={dbCampaignAttachModal.busy || Boolean(String(dbCampaignAttachModal.createCampaignName || "").trim())}
                 />
                 <span>Launch now (no shift to Marketing page)</span>
               </label>
+              {String(dbCampaignAttachModal.createCampaignName || "").trim() ? (
+                <p className="muted">New campaign flow: only attach to queue. Launch becomes available after template is configured.</p>
+              ) : null}
             </div>
             <div className="button-row">
               <button
@@ -21878,7 +21888,11 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                 })}
                 disabled={dbCampaignAttachModal.busy || (!dbCampaignAttachModal.selectedCampaignId && !String(dbCampaignAttachModal.createCampaignName || "").trim())}
               >
-                {dbCampaignAttachModal.busy ? "Processing..." : (dbCampaignAttachModal.launchNow ? "Attach + Launch now" : "Attach to queue")}
+                {dbCampaignAttachModal.busy
+                  ? "Processing..."
+                  : (String(dbCampaignAttachModal.createCampaignName || "").trim()
+                    ? "Create + Attach to queue"
+                    : (dbCampaignAttachModal.launchNow ? "Attach + Launch now" : "Attach to queue"))}
               </button>
               <button
                 className="ghost-btn"
