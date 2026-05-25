@@ -18991,7 +18991,14 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                     {exportPresetOptions.map((preset) => <option key={preset.id} value={preset.id}>{preset.label}</option>)}
                   </select>
                 </label>
-                <button className="ghost-btn captured-copy-excel-btn" onClick={() => void copyCapturedExcel()}>?? Copy Excel</button>
+                  <button className="ghost-btn captured-copy-excel-btn" onClick={() => void copyCapturedExcel()}>
+                    <img
+                      className="captured-copy-excel-btn__icon"
+                      src="https://upload.wikimedia.org/wikipedia/commons/7/7f/Microsoft_Office_Excel_%282019%E2%80%93present%29.svg"
+                      alt=""
+                    />
+                    <span>Copy Excel</span>
+                  </button>
                 {String(state.user?.role || "").toLowerCase() === "admin" ? (
                   <>
                       {bulkAssignCandidateIds.length ? (
