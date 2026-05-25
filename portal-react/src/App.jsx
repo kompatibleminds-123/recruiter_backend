@@ -18970,18 +18970,16 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                   <MultiSelectDropdown label="Outcome" options={capturedCandidateOptions.outcomes} selected={candidateFilters.outcomes} onToggle={(value) => setCandidateFilters((current) => ({ ...current, outcomes: value === "__all__" ? [] : current.outcomes.includes(value) ? current.outcomes.filter((item) => item !== value) : [...current.outcomes, value] }))} />
                   <MultiSelectDropdown label="State" options={capturedCandidateOptions.activeStates} selected={candidateFilters.activeStates} allowAll={false} emptySummary="Active only" onToggle={(value) => setCandidateFilters((current) => ({ ...current, activeStates: current.activeStates.includes(value) ? current.activeStates.filter((item) => item !== value) : [...current.activeStates, value] }))} />
                 </div>
-                <div className="button-row">
-                  <label className="copy-preset-control">
-                    <span>Copy preset</span>
-                    <select value={activeCopyPresetId} onChange={(e) => setActiveCopyPresetId(e.target.value)}>
-                      {exportPresetOptions.map((preset) => <option key={preset.id} value={preset.id}>{preset.label}</option>)}
-                    </select>
-                  </label>
-                  <button onClick={() => void copyCapturedExcel()}>Copy Excel</button>
-                  <button onClick={() => void copyCapturedWhatsapp()}>Copy WhatsApp</button>
-                  <button onClick={() => void copyCapturedEmail()}>Copy Email</button>
-                  {String(state.user?.role || "").toLowerCase() === "admin" ? (
-                    <>
+              <div className="button-row captured-copy-row">
+                <label className="copy-preset-control">
+                  <span>Copy preset</span>
+                  <select value={activeCopyPresetId} onChange={(e) => setActiveCopyPresetId(e.target.value)}>
+                    {exportPresetOptions.map((preset) => <option key={preset.id} value={preset.id}>{preset.label}</option>)}
+                  </select>
+                </label>
+                <button onClick={() => void copyCapturedExcel()}>Copy Excel</button>
+                {String(state.user?.role || "").toLowerCase() === "admin" ? (
+                  <>
                       {bulkAssignCandidateIds.length ? (
                         <button
                           onClick={() => {
