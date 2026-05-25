@@ -6355,6 +6355,34 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
     await refreshLight("campaigns");
   }
 
+  async function clearSelectedCampaignQueue(scope = "ready_only") {
+    if (!selectedCampaignId) throw new Error("Select campaign first.");
+    const campaignName = String(activeCampaign?.name || "selected campaign").trim();
+    const scopeLabel = scope === "all" ? "all queue rows" : "ready queue rows only";
+    const proceed = window.confirm(`Clear ${scopeLabel} for "${campaignName}"?`);
+    if (!proceed) return;
+    const result = await api(`/company/marketing/campaigns/${encodeURIComponent(selectedCampaignId)}/prospects`, token, "DELETE", { scope });
+    const removed = Number(result?.removed || 0);
+    setOk(`Queue cleared for "${campaignName}". Removed ${removed} row(s).`);
+    setQueuePage(1);
+    await refreshLight("queue");
+  }
+
+  async function clearPausedCampaignsQueue(scope = "paused_ready_only") {
+    const scopeLabel = scope === "all_campaigns_all_states"
+      ? "all queue rows for all your campaigns"
+      : scope === "paused_all_states"
+        ? "all queue rows for paused campaigns"
+        : "ready queue rows for paused campaigns";
+    const proceed = window.confirm(`Clear ${scopeLabel}?`);
+    if (!proceed) return;
+    const result = await api("/company/marketing/queue", token, "DELETE", { scope });
+    const removed = Number(result?.removed || 0);
+    setOk(`Queue cleanup done. Removed ${removed} row(s).`);
+    setQueuePage(1);
+    await refreshLight("queue");
+  }
+
   function startProspectEdit(item) {
     if (!item) return;
     setEditingProspectId(String(item.id || ""));
@@ -7043,6 +7071,8 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
             <button className="ghost-btn" onClick={() => void api(`/company/marketing/campaigns/${activeCampaign.id}/pause`, token, "POST", {}).then(() => { setOk("Campaign paused."); return refreshLight("campaigns"); }).catch(setErr)}>Pause</button>
             <button className="ghost-btn" onClick={() => void api(`/company/marketing/campaigns/${activeCampaign.id}/resume`, token, "POST", {}).then(() => { setOk("Campaign resumed."); return refreshLight("campaigns"); }).catch(setErr)}>Resume</button>
             <button className="ghost-btn" disabled={!selectedProspectIds.length} onClick={() => void attachSelectedProspects().then(() => { setOk("Selected prospects attached to campaign."); return refreshLight("campaigns"); }).catch(setErr)}>Attach selected prospects</button>
+            <button className="ghost-btn" onClick={() => void clearSelectedCampaignQueue("ready_only").catch(setErr)}>Clear queue (ready only)</button>
+            <button className="ghost-btn" onClick={() => void clearSelectedCampaignQueue("all").catch(setErr)}>Clear queue (all states)</button>
             <button className="ghost-btn" type="button" onClick={() => campaignCsvFileInputRef.current?.click()} disabled={saving}>Upload prospects for this campaign</button>
             <button disabled={!selectedProspectIds.length || saving} onClick={() => void (async () => {
               setSaving(true);
@@ -7163,6 +7193,10 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
           <div className="metric-card"><div className="metric-label">Ready Queue</div><div className="metric-value">{overview?.queue?.byStatus?.ready || 0}</div></div>
           <div className="metric-card"><div className="metric-label">Total Queue</div><div className="metric-value">{overview?.queue?.total || 0}</div></div>
           <div className="metric-card"><div className="metric-label">Events</div><div className="metric-value">{overview?.events?.total || 0}</div></div>
+        </div>
+        <div className="button-row tight" style={{ marginTop: 10, flexWrap: "wrap" }}>
+          <button className="ghost-btn" onClick={() => void clearPausedCampaignsQueue("paused_ready_only").catch(setErr)}>Clear paused queue (ready only)</button>
+          <button className="ghost-btn" onClick={() => void clearPausedCampaignsQueue("paused_all_states").catch(setErr)}>Clear paused queue (all states)</button>
         </div>
       </Section>
       </>
@@ -7768,6 +7802,7 @@ function PortalApp({ token, onLogout }) {
 	const lastWorkspaceRefreshAtRef = useRef(0);
   const lastWorkspaceRefreshByPathRef = useRef({});
   const workspaceLoadSeqRef = useRef(0);
+  const initialWorkspaceLoadDoneRef = useRef(false);
   const candidatesSliceLoadSeqRef = useRef(0);
   const assessmentsSliceLoadSeqRef = useRef(0);
   // Prevent background refresh from clobbering in-flight actions (e.g. SMTP send).
@@ -8837,35 +8872,39 @@ function PortalApp({ token, onLogout }) {
       includeEmployeeUsers = true,
       includeSharedPresets = true,
       includeEmailSettings = true,
-      forceFiveTabsRefresh = false
+      forceFiveTabsRefresh = false,
+      preloadAllTabs = false
     } = options || {};
     const pathname = String(location?.pathname || "/dashboard").trim() || "/dashboard";
     const forceCore = Boolean(forceFiveTabsRefresh);
+    const forceAll = Boolean(preloadAllTabs);
     const isMarketingRoute = pathname === "/marketing" || pathname === "/marketing-module";
-    const needsDashboard = pathname === "/dashboard" || forceCore;
-    const needsApplicants = pathname === "/dashboard" || pathname === "/applicants" || forceCore;
-    const needsIntake = pathname === "/intake-settings" || pathname === "/jobs" || pathname === "/applicants";
-    const needsJobs = !isMarketingRoute && pathname !== "/mail-settings" && pathname !== "/login-settings" && pathname !== "/plan";
-    const needsUsers = needsJobs || pathname === "/login-settings";
-    const needsEmployeeUsers = includeEmployeeUsers && (pathname === "/login-settings" || pathname.startsWith("/admin/payroll"));
+    const needsDashboard = pathname === "/dashboard" || forceCore || forceAll;
+    const needsApplicants = pathname === "/dashboard" || pathname === "/applicants" || forceCore || forceAll;
+    const needsIntake = pathname === "/intake-settings" || pathname === "/jobs" || pathname === "/applicants" || forceAll;
+    const needsJobs = forceAll || (!isMarketingRoute && pathname !== "/mail-settings" && pathname !== "/login-settings" && pathname !== "/plan");
+    const needsUsers = forceAll || needsJobs || pathname === "/login-settings";
+    const needsEmployeeUsers = includeEmployeeUsers && (forceAll || pathname === "/login-settings" || pathname.startsWith("/admin/payroll"));
     const needsCandidates =
       pathname === "/dashboard" ||
       pathname === "/captured-notes" ||
       pathname === "/assessments" ||
       pathname === "/interview" ||
-      forceCore;
-    const needsDatabaseCandidates = pathname === "/candidates" || forceCore;
+      forceCore ||
+      forceAll;
+    const needsDatabaseCandidates = pathname === "/candidates" || forceCore || forceAll;
     const needsAssessments =
       pathname === "/dashboard" ||
       pathname === "/captured-notes" ||
       pathname === "/assessments" ||
       pathname === "/client-share" ||
       pathname === "/interview" ||
-      forceCore;
+      forceCore ||
+      forceAll;
     // Candidate smart-search chips (Shared this week/today) need conversion timestamps,
     // which are best sourced from assessment events.
-    const needsAssessmentEvents = includeEvents && (pathname === "/dashboard" || pathname === "/assessments" || pathname === "/candidates" || forceCore);
-    const needsEmailSettings = includeEmailSettings && pathname === "/mail-settings";
+    const needsAssessmentEvents = includeEvents && (pathname === "/dashboard" || pathname === "/assessments" || pathname === "/candidates" || forceCore || forceAll);
+    const needsEmailSettings = includeEmailSettings && (pathname === "/mail-settings" || forceAll);
     // Billing/access flags are used in sidebar gating across the app,
     // so fetch billing overview on all recruiter routes (plans list only needed on /plan).
     const needsBilling = true;
@@ -9031,6 +9070,23 @@ function PortalApp({ token, onLogout }) {
   }
 
   loadWorkspaceRef.current = loadWorkspace;
+
+  useEffect(() => {
+    if (!token) return;
+    if (initialWorkspaceLoadDoneRef.current) return;
+    initialWorkspaceLoadDoneRef.current = true;
+    const now = Date.now();
+    lastWorkspaceRefreshAtRef.current = now;
+    void loadWorkspace({
+      forceFiveTabsRefresh: true,
+      preloadAllTabs: true,
+      includeEvents: true,
+      includeClientUsers: true,
+      includeEmployeeUsers: true,
+      includeSharedPresets: true,
+      includeEmailSettings: true
+    }).catch((error) => setStatus("workspace", String(error?.message || error), "error"));
+  }, [token]);
 
   async function refreshWorkspaceSilently(reason = "manual", options = {}) {
     if (!token) return;

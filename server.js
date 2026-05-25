@@ -11873,6 +11873,79 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (req.method === "DELETE" && /^\/company\/marketing\/campaigns\/[^/]+\/prospects$/.test(requestUrl.pathname)) {
+    try {
+      const actor = await requireSessionUser(getBearerToken(req));
+      const campaignId = String(requestUrl.pathname.replace(/^\/company\/marketing\/campaigns\//, "").replace(/\/prospects$/, "")).trim();
+      const campaignAccess = await getMarketingCampaignForActor(actor, campaignId);
+      if (!campaignAccess) throw new Error("Campaign not found or not accessible.");
+      const body = await readJsonBody(req).catch(() => ({}));
+      const scope = String(body?.scope || "ready_only").trim().toLowerCase();
+      const stateFilter = scope === "all" ? "" : "&state=eq.ready";
+      const rows = await supabaseTableFetch(
+        "marketing_campaign_prospects",
+        `?select=id&company_id=eq.${encodeURIComponent(actor.companyId)}&campaign_id=eq.${encodeURIComponent(campaignId)}${stateFilter}&limit=10000`
+      );
+      const count = Array.isArray(rows) ? rows.length : 0;
+      if (!count) {
+        sendJson(res, 200, { ok: true, result: { removed: 0, campaignId, scope } });
+        return;
+      }
+      await supabaseTableFetch(
+        "marketing_campaign_prospects",
+        `?company_id=eq.${encodeURIComponent(actor.companyId)}&campaign_id=eq.${encodeURIComponent(campaignId)}${stateFilter}&select=id`,
+        { method: "DELETE", prefer: "return=minimal" }
+      );
+      sendJson(res, 200, { ok: true, result: { removed: count, campaignId, scope } });
+    } catch (error) {
+      sendJson(res, 400, { ok: false, error: String(error?.message || error) });
+    }
+    return;
+  }
+
+  if (req.method === "DELETE" && requestUrl.pathname === "/company/marketing/queue") {
+    try {
+      const actor = await requireSessionUser(getBearerToken(req));
+      const body = await readJsonBody(req).catch(() => ({}));
+      const scope = String(body?.scope || "paused_ready_only").trim().toLowerCase();
+      const onlyPaused = scope !== "all_campaigns_all_states";
+      const onlyReady = scope !== "all_campaigns_all_states" && scope !== "paused_all_states";
+      const campaigns = await supabaseTableFetch(
+        "marketing_campaigns",
+        `?select=id,status&company_id=eq.${encodeURIComponent(actor.companyId)}${buildMarketingOwnerFilter(actor, "sender_user_id")}&limit=5000`
+      );
+      const scopedCampaigns = (Array.isArray(campaigns) ? campaigns : []).filter((item) => {
+        if (!onlyPaused) return true;
+        return String(item?.status || "").trim().toLowerCase() === "paused";
+      });
+      const campaignIds = scopedCampaigns.map((item) => String(item?.id || "").trim()).filter(Boolean);
+      if (!campaignIds.length) {
+        sendJson(res, 200, { ok: true, result: { removed: 0, scope } });
+        return;
+      }
+      const inClause = campaignIds.map((id) => `"${id.replace(/"/g, "")}"`).join(",");
+      const stateFilter = onlyReady ? "&state=eq.ready" : "";
+      const rows = await supabaseTableFetch(
+        "marketing_campaign_prospects",
+        `?select=id&company_id=eq.${encodeURIComponent(actor.companyId)}&campaign_id=in.(${inClause})${stateFilter}&limit=10000`
+      );
+      const count = Array.isArray(rows) ? rows.length : 0;
+      if (!count) {
+        sendJson(res, 200, { ok: true, result: { removed: 0, scope } });
+        return;
+      }
+      await supabaseTableFetch(
+        "marketing_campaign_prospects",
+        `?company_id=eq.${encodeURIComponent(actor.companyId)}&campaign_id=in.(${inClause})${stateFilter}&select=id`,
+        { method: "DELETE", prefer: "return=minimal" }
+      );
+      sendJson(res, 200, { ok: true, result: { removed: count, scope } });
+    } catch (error) {
+      sendJson(res, 400, { ok: false, error: String(error?.message || error) });
+    }
+    return;
+  }
+
   if (req.method === "POST" && /^\/company\/marketing\/campaigns\/[^/]+\/attach-candidates$/.test(requestUrl.pathname)) {
     try {
       const actor = await requireSessionUser(getBearerToken(req));
