@@ -18944,11 +18944,11 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                 </label>
               </div>
               <div className="metric-grid metric-grid--tight captured-metric-row">
-                <div className="metric-card compact-metric"><div className="metric-label">Today</div><div className="metric-value">{capturedNotesStats.today}</div></div>
-                <div className="metric-card compact-metric"><div className="metric-label">Total notes captured</div><div className="metric-value">{capturedNotesStats.total}</div></div>
-                <div className="metric-card compact-metric"><div className="metric-label">Active</div><div className="metric-value">{capturedNotesStats.active}</div></div>
-                <div className="metric-card compact-metric"><div className="metric-label">Inactive</div><div className="metric-value">{capturedNotesStats.inactive || 0}</div></div>
-                <div className="metric-card compact-metric"><div className="metric-label">Converted</div><div className="metric-value">{capturedNotesStats.converted}</div></div>
+                <div className="metric-card compact-metric"><div className="metric-label captured-metric-label"><span className="captured-metric-icon">🗓</span>Today</div><div className="metric-value">{capturedNotesStats.today}</div></div>
+                <div className="metric-card compact-metric"><div className="metric-label captured-metric-label"><span className="captured-metric-icon">🗂</span>Total notes captured</div><div className="metric-value">{capturedNotesStats.total}</div></div>
+                <div className="metric-card compact-metric"><div className="metric-label captured-metric-label"><span className="captured-metric-icon">👥</span>Active</div><div className="metric-value">{capturedNotesStats.active}</div></div>
+                <div className="metric-card compact-metric"><div className="metric-label captured-metric-label"><span className="captured-metric-icon">⏳</span>Inactive</div><div className="metric-value">{capturedNotesStats.inactive || 0}</div></div>
+                <div className="metric-card compact-metric"><div className="metric-label captured-metric-label"><span className="captured-metric-icon">✅</span>Converted</div><div className="metric-value">{capturedNotesStats.converted}</div></div>
               </div>
               <div className="form-grid three-col" style={{ marginTop: 10 }}>
                 <label><span>Date from</span><input type="date" value={candidateFilters.dateFrom} onChange={(e) => setCandidateFilters((c) => ({ ...c, dateFrom: e.target.value }))} /></label>
@@ -18994,7 +18994,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                     </>
                   ) : null}
                 </div>
-                <div className="stack-list">
+                <div className="stack-list captured-notes-list">
                 {!capturedCandidates.length ? <div className="empty-state">No captured notes or recruiter-owned candidates yet.</div> : capturedCandidates.map((item) => {
                   const matchedAssessment = resolveCapturedAssessment(item);
                   const statusState = normalizedAssessmentState(matchedAssessment, item);

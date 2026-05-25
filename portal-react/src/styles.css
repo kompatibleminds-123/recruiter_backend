@@ -965,6 +965,17 @@ textarea { min-height: 92px; resize: vertical; }
   gap: 0.55rem;
 }
 
+.captured-metric-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.34rem;
+}
+
+.captured-metric-icon {
+  font-size: 0.86rem;
+  line-height: 1;
+}
+
 .captured-metric-row .metric-card.compact-metric {
   border-radius: 12px;
   background: #fbfdff;
@@ -976,6 +987,7 @@ textarea { min-height: 92px; resize: vertical; }
 .captured-copy-row {
   align-items: flex-end;
   gap: 0.55rem;
+  margin-bottom: 1rem;
 }
 
 .captured-copy-row > button {
@@ -984,6 +996,10 @@ textarea { min-height: 92px; resize: vertical; }
 
 .captured-copy-row .copy-preset-control {
   min-width: 280px;
+}
+
+.captured-notes-list {
+  margin-top: 0.85rem;
 }
 .candidate-filter-card {
   padding: 1.1rem;
