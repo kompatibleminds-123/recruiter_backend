@@ -2901,6 +2901,10 @@ button:focus-visible {
   margin-top: 0.1rem;
 }
 
+.captured-note-profile-meta {
+  margin-top: 0.45rem;
+}
+
 .captured-note-company {
   color: #4b638d;
   margin-top: 0.12rem;
@@ -2989,6 +2993,12 @@ button:focus-visible {
 .captured-note-actions {
   flex-wrap: wrap;
   align-items: center;
+}
+
+.captured-note-actions .whatsapp-logo-btn {
+  background: #fff;
+  border: 1px solid var(--border);
+  box-shadow: none;
 }
 
 .captured-note-summary-bar {

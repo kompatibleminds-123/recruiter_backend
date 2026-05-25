@@ -19004,7 +19004,6 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                   const latestAttemptRemarks = extractAttemptRemarks(latestAttemptLine);
                   const experienceValue = item.total_experience || item.experience || item.totalExperience || "";
                   const educationValue = item.highest_education || item.highestEducation || "NA";
-                  const designationValue = item.current_designation || item.currentDesignation || "";
                   const companyValue = item.current_company || item.currentCompany || item.company || "NA";
                   const summaryFull = normalizeMojibakeSymbols(
                     [
@@ -19017,7 +19016,11 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                   const summaryIsTruncated = summaryFull.length > summaryClipLength;
                   const summaryShort = summaryIsTruncated ? `${summaryFull.slice(0, summaryClipLength).trim()}...` : summaryFull;
                   const summaryRemainder = summaryIsTruncated ? summaryFull.slice(summaryClipLength).trim() : "";
-                  const recruiterNoteFull = normalizeMojibakeSymbols(String(item.recruiter_context_notes || "").trim());
+                  const recruiterNoteFull = normalizeMojibakeSymbols(
+                    [String(item.recruiter_context_notes || "").trim(), String(item.other_pointers || "").trim()]
+                      .filter(Boolean)
+                      .join("\n\n")
+                  );
                   const recruiterNoteClipLength = 140;
                   const recruiterNoteIsTruncated = recruiterNoteFull.length > recruiterNoteClipLength;
                   const recruiterNoteShort = recruiterNoteIsTruncated ? `${recruiterNoteFull.slice(0, recruiterNoteClipLength).trim()}...` : recruiterNoteFull;
@@ -19054,20 +19057,12 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                             ) : null}
                           </div>
                           <div className="captured-note-subtitle">{item.jd_title || item.role || "Untitled role"}</div>
-                          <div className="captured-note-detail-list">
+                          <div className="captured-note-detail-list captured-note-profile-meta">
                             <div className="captured-note-contact-row captured-note-field">
                               <span className="captured-note-contact-icon" aria-hidden="true">
                                 <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 21h18"/><path d="M5 21V7l7-4 7 4v14"/><path d="M9 9h.01"/><path d="M15 9h.01"/><path d="M9 13h.01"/><path d="M15 13h.01"/></svg>
                               </span>
                               <span className="captured-note-field-value">{companyValue}</span>
-                            </div>
-                          </div>
-                          <div className="captured-note-detail-list">
-                            <div className="captured-note-contact-row captured-note-field">
-                              <span className="captured-note-contact-icon" aria-hidden="true">
-                                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 4h16v16H4z"/><path d="M9 2v4"/><path d="M15 2v4"/><path d="M4 10h16"/></svg>
-                              </span>
-                              <span className="captured-note-field-value">{designationValue || "NA"}</span>
                             </div>
                             <div className="captured-note-contact-row captured-note-field">
                               <span className="captured-note-contact-icon" aria-hidden="true">
@@ -19172,7 +19167,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                           <span className="captured-note-summary-preview">{summaryShort}</span>
                           {summaryIsTruncated ? <span className="captured-note-summary-toggle">Show more</span> : null}
                         </summary>
-                        <div className="captured-note-summary-full">{summaryIsTruncated ? summaryRemainder : summaryFull}</div>
+                        <div className="captured-note-summary-full">{summaryFull}</div>
                       </details>
                       {recruiterNoteFull ? (
                         <details className="captured-note-summary-bar captured-note-summary-bar--note">
@@ -19181,7 +19176,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                             <span className="captured-note-summary-preview">{recruiterNoteShort}</span>
                             {recruiterNoteIsTruncated ? <span className="captured-note-summary-toggle">Show more</span> : null}
                           </summary>
-                          <div className="captured-note-summary-full">{recruiterNoteIsTruncated ? recruiterNoteRemainder : recruiterNoteFull}</div>
+                          <div className="captured-note-summary-full">{recruiterNoteFull}</div>
                         </details>
                       ) : null}
                       <div className="chip-row">
