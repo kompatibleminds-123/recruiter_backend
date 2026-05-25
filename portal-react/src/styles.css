@@ -2849,6 +2849,7 @@ button:focus-visible {
 
 .captured-note-card {
   border-radius: 18px;
+  position: relative;
 }
 
 .captured-note-main {
@@ -2885,6 +2886,13 @@ button:focus-visible {
 .captured-top-select input {
   width: 18px;
   height: 18px;
+}
+
+.captured-top-select--card {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  z-index: 3;
 }
 
 .captured-note-subtitle {

@@ -19004,6 +19004,8 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                   const latestAttemptRemarks = extractAttemptRemarks(latestAttemptLine);
                   const experienceValue = item.total_experience || item.experience || item.totalExperience || "";
                   const educationValue = item.highest_education || item.highestEducation || "NA";
+                  const designationValue = item.current_designation || item.currentDesignation || "";
+                  const companyValue = item.current_company || item.currentCompany || item.company || "NA";
                   const summaryFull = normalizeMojibakeSymbols(
                     [
                       item.notes || "",
@@ -19026,6 +19028,21 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                     : "";
                   return (
                     <article className="item-card compact-card captured-note-card" key={item.id}>
+                      {String(state.user?.role || "").toLowerCase() === "admin" ? (
+                        <label className="captured-top-select captured-top-select--card">
+                          <input
+                            type="checkbox"
+                            checked={bulkAssignCandidateIds.includes(String(item?.id || ""))}
+                            onChange={(e) => {
+                              const id = String(item?.id || "");
+                              if (!id) return;
+                              setBulkAssignCandidateIds((current) => e.target.checked
+                                ? Array.from(new Set([...current, id]))
+                                : current.filter((entry) => entry !== id));
+                            }}
+                          />
+                        </label>
+                      ) : null}
                       <div className="captured-note-main">
                         <div className="captured-note-col captured-note-col--profile">
                           <div className="captured-note-title-row">
@@ -19035,30 +19052,22 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                                 <span className="captured-note-linkedin-icon">in</span>
                               </a>
                             ) : null}
-                            {String(state.user?.role || "").toLowerCase() === "admin" ? (
-                              <label className="captured-top-select">
-                                <input
-                                  type="checkbox"
-                                  checked={bulkAssignCandidateIds.includes(String(item?.id || ""))}
-                                  onChange={(e) => {
-                                    const id = String(item?.id || "");
-                                    if (!id) return;
-                                    setBulkAssignCandidateIds((current) => e.target.checked
-                                      ? Array.from(new Set([...current, id]))
-                                      : current.filter((entry) => entry !== id));
-                                  }}
-                                />
-                              </label>
-                            ) : null}
                           </div>
                           <div className="captured-note-subtitle">{item.jd_title || item.role || "Untitled role"}</div>
-                          <div className="captured-note-company">{item.company || "Company not available"}</div>
+                          <div className="captured-note-detail-list">
+                            <div className="captured-note-contact-row captured-note-field">
+                              <span className="captured-note-contact-icon" aria-hidden="true">
+                                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 21h18"/><path d="M5 21V7l7-4 7 4v14"/><path d="M9 9h.01"/><path d="M15 9h.01"/><path d="M9 13h.01"/><path d="M15 13h.01"/></svg>
+                              </span>
+                              <span className="captured-note-field-value">{companyValue}</span>
+                            </div>
+                          </div>
                           <div className="captured-note-detail-list">
                             <div className="captured-note-contact-row captured-note-field">
                               <span className="captured-note-contact-icon" aria-hidden="true">
                                 <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 4h16v16H4z"/><path d="M9 2v4"/><path d="M15 2v4"/><path d="M4 10h16"/></svg>
                               </span>
-                              <span className="captured-note-field-value">{item.current_designation || item.jd_title || item.role || "NA"}</span>
+                              <span className="captured-note-field-value">{designationValue || "NA"}</span>
                             </div>
                             <div className="captured-note-contact-row captured-note-field">
                               <span className="captured-note-contact-icon" aria-hidden="true">
