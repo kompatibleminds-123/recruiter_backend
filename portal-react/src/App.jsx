@@ -19003,6 +19003,15 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                   const latestAttemptLine = extractLatestAttemptLine(item.last_contact_notes || "");
                   const latestAttemptRemarks = extractAttemptRemarks(latestAttemptLine);
                   const experienceValue = item.total_experience || item.experience || item.totalExperience || "";
+                  const educationValue = item.highest_education || item.highestEducation || "NA";
+                  const summaryFull = normalizeMojibakeSymbols(
+                    [
+                      item.notes || "",
+                      item.recruiter_context_notes || "",
+                      item.other_pointers || ""
+                    ].filter(Boolean).join(" ")
+                  ) || "No summary yet.";
+                  const summaryShort = summaryFull.length > 180 ? `${summaryFull.slice(0, 180).trim()}...` : summaryFull;
                   const linkedinRaw = String(item.linkedin || item.linkedinUrl || "").trim();
                   const linkedinHref = linkedinRaw
                     ? (/^https?:\/\//i.test(linkedinRaw) ? linkedinRaw : `https://${linkedinRaw}`)
@@ -19036,25 +19045,29 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                             <div><strong>Location:</strong> {item.location || "NA"}</div>
                           </div>
                         </div>
+                        <div className="captured-note-col captured-note-col--education">
+                          <div className="captured-note-detail-list">
+                            <div><strong>Education:</strong> {educationValue}</div>
+                            <div><strong>JD / Role:</strong> {item.jd_title || item.role || "NA"}</div>
+                          </div>
+                        </div>
                         <div className="captured-note-col captured-note-col--meta">
                           <div className="captured-note-detail-list">
-                            <div><strong>Email:</strong> {item.email || "NA"}</div>
-                            <div><strong>Phone:</strong> {item.phone || item.phoneNumber || "NA"}</div>
+                            <div className="captured-note-contact-row">
+                              <span className="captured-note-contact-icon" aria-hidden="true">
+                                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 4h16v16H4z"/><path d="m4 7 8 6 8-6"/></svg>
+                              </span>
+                              <strong>Email:</strong> {item.email || "NA"}
+                            </div>
+                            <div className="captured-note-contact-row">
+                              <span className="captured-note-contact-icon" aria-hidden="true">
+                                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.86 19.86 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6A19.86 19.86 0 0 1 2.09 4.18 2 2 0 0 1 4.08 2h3a2 2 0 0 1 2 1.72c.12.9.33 1.79.61 2.64a2 2 0 0 1-.45 2.11L8 9.91a16 16 0 0 0 6 6l1.44-1.24a2 2 0 0 1 2.11-.45c.85.28 1.74.49 2.64.61A2 2 0 0 1 22 16.92z"/></svg>
+                              </span>
+                              <strong>Phone:</strong> {item.phone || item.phoneNumber || "NA"}
+                            </div>
                             <div><strong>Source:</strong> {item.source || "NA"}</div>
                             <div><strong>Captured by:</strong> {item.recruiter_name || "NA"}</div>
                             <div><strong>Assigned to:</strong> {item.assigned_to_name || "NA"}</div>
-                          </div>
-                        </div>
-                        <div className="captured-note-col captured-note-col--summary">
-                          <div className="captured-note-summary-title">Summary</div>
-                          <div className="captured-note-summary-text">
-                            {normalizeMojibakeSymbols(
-                              [
-                                item.notes || "",
-                                item.recruiter_context_notes || "",
-                                item.other_pointers || ""
-                              ].filter(Boolean).join(" ")
-                            ) || "No summary yet."}
                           </div>
                         </div>
                       </div>
@@ -19062,6 +19075,14 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                         item.assigned_by_name ? `Assigned by: ${item.assigned_by_name}` : "",
                         item.assigned_at ? `Assigned at: ${new Date(item.assigned_at).toLocaleString()}` : ""
                       ].filter(Boolean).join(" | ")}</p>
+                      <details className="captured-note-summary-bar">
+                        <summary>
+                          <span className="captured-note-summary-badge">Summary</span>
+                          <span className="captured-note-summary-preview">{summaryShort}</span>
+                          <span className="captured-note-summary-toggle">Show more</span>
+                        </summary>
+                        <div className="captured-note-summary-full">{summaryFull}</div>
+                      </details>
                       <div className="chip-row">
                         {String(state.user?.role || "").toLowerCase() === "admin" ? (
                           <label className="checkbox-row" style={{ marginRight: 6 }}>
@@ -19091,8 +19112,8 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                         {!item.hidden_from_captured ? (
                           <button onClick={() => loadCandidateIntoInterview(item.id)}>Open draft</button>
                         ) : null}
-                        <button onClick={() => { setBulkAssignCandidateModalOpen(false); setBulkAssignCandidateIds([]); setAssignCandidateId(item.id); }}>{item.assigned_to_name ? "Reassign" : "Assign"}</button>
-	                      <button onClick={() => openRecruiterNotes(item)}>Recruiter note</button>
+                        <button className="ghost-btn" onClick={() => { setBulkAssignCandidateModalOpen(false); setBulkAssignCandidateIds([]); setAssignCandidateId(item.id); }}>{item.assigned_to_name ? "Reassign" : "Assign"}</button>
+	                      <button className="ghost-btn" onClick={() => openRecruiterNotes(item)}>Recruiter note</button>
                         <button
                           className="whatsapp-logo-btn"
                           onClick={() => openWhatsappTemplatePicker({
@@ -19115,21 +19136,20 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                         >
                           <img src="https://web.whatsapp.com/favicon.ico" alt="" />
                         </button>
-                        <button onClick={() => void openAttempts(item.id)}>Attempts</button>
+                        <button className="ghost-btn" onClick={() => void openAttempts(item.id)}>Attempts</button>
                         {!item.hidden_from_captured ? (
                           <button className="ghost-btn" onClick={() => openJdEmailModalForCandidate(item)}>Email JD</button>
                         ) : null}
                         {!item.hidden_from_captured ? (
-                          <button onClick={() => void createAssessmentFromCandidate(item.id)}>Create assessment</button>
+                          <button className="captured-action-success" onClick={() => void createAssessmentFromCandidate(item.id)}>Create assessment</button>
                         ) : null}
                         {item.hidden_from_captured ? (
                           <button className="ghost-btn" onClick={() => void restoreCapturedCandidate(item.id)}>Restore to active</button>
                         ) : (
                           <button className="ghost-btn" onClick={() => void hideCapturedCandidate(item.id)}>Hide from list</button>
                         )}
-                        <button className="ghost-btn" onClick={() => void deleteCapturedCandidate(item.id).catch((error) => setStatus("captured", String(error?.message || error), "error"))}>Delete</button>
+                        <button className="captured-action-danger" onClick={() => void deleteCapturedCandidate(item.id).catch((error) => setStatus("captured", String(error?.message || error), "error"))}>Delete</button>
                       </div>
-                      <div className="candidate-snippet">{normalizeMojibakeSymbols([item.notes ? `Initial notes:\n${item.notes}` : "", item.recruiter_context_notes, item.other_pointers].filter(Boolean).join("\n\n") || "No recruiter note or pointers yet.")}</div>
                     </article>
                   );
                 })}

@@ -2853,7 +2853,7 @@ button:focus-visible {
 
 .captured-note-main {
   display: grid;
-  grid-template-columns: 1.2fr 0.9fr 0.9fr 1fr 1.15fr;
+  grid-template-columns: 1.2fr 0.85fr 0.85fr 1fr 1fr;
   gap: 0.9rem;
 }
 
@@ -2863,12 +2863,8 @@ button:focus-visible {
 
 .captured-note-col--details,
 .captured-note-col--notice,
+.captured-note-col--education,
 .captured-note-col--meta {
-  border-left: 1px solid var(--border);
-  padding-left: 0.9rem;
-}
-
-.captured-note-col--summary {
   border-left: 1px solid var(--border);
   padding-left: 0.9rem;
 }
@@ -2927,23 +2923,19 @@ button:focus-visible {
   font-size: 0.92rem;
 }
 
-.captured-note-summary-title {
-  font-size: 0.8rem;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  font-weight: 800;
-  color: #2f4e82;
-  margin-bottom: 0.25rem;
+.captured-note-contact-row {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
 }
 
-.captured-note-summary-text {
-  color: #2b4573;
-  font-size: 0.9rem;
-  line-height: 1.35;
-  display: -webkit-box;
-  -webkit-line-clamp: 5;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
+.captured-note-contact-icon {
+  width: 16px;
+  height: 16px;
+  color: #4b638d;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .captured-note-actions {
@@ -2951,12 +2943,85 @@ button:focus-visible {
   align-items: center;
 }
 
+.captured-note-summary-bar {
+  margin-top: 0.5rem;
+  margin-bottom: 0.55rem;
+  border: 1px solid #e0e8f8;
+  background: #f7faff;
+  border-radius: 10px;
+  padding: 0.45rem 0.6rem;
+}
+
+.captured-note-summary-bar summary {
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  cursor: pointer;
+}
+
+.captured-note-summary-bar summary::-webkit-details-marker {
+  display: none;
+}
+
+.captured-note-summary-badge {
+  color: #2351c9;
+  font-size: 0.76rem;
+  font-weight: 800;
+}
+
+.captured-note-summary-preview {
+  color: #2b4573;
+  font-size: 0.9rem;
+  line-height: 1.35;
+  min-width: 0;
+  flex: 1;
+}
+
+.captured-note-summary-toggle {
+  color: #1d4ed8;
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.captured-note-summary-bar[open] .captured-note-summary-toggle {
+  visibility: hidden;
+}
+
+.captured-note-summary-full {
+  color: #2b4573;
+  font-size: 0.9rem;
+  line-height: 1.42;
+  margin-top: 0.45rem;
+}
+
+.captured-action-success {
+  background: #ffffff;
+  border: 1px solid #b7e3c4;
+  color: #138a3d;
+}
+
+.captured-action-success:hover {
+  background: #edf9f1;
+}
+
+.captured-action-danger {
+  background: #ffffff;
+  border: 1px solid #ffd2d2;
+  color: #d72d2d;
+}
+
+.captured-action-danger:hover {
+  background: #fff3f3;
+}
+
 @media (max-width: 1280px) {
   .captured-note-main {
     grid-template-columns: 1fr 1fr 1fr;
   }
 
-  .captured-note-col--summary {
+  .captured-note-col--education,
+  .captured-note-col--meta {
     grid-column: 1 / -1;
     border-left: 0;
     border-top: 1px solid var(--border);
@@ -3058,14 +3123,8 @@ button:focus-visible {
 
   .captured-note-col--details,
   .captured-note-col--notice,
+  .captured-note-col--education,
   .captured-note-col--meta {
-    border-left: 0;
-    border-top: 1px solid var(--border);
-    padding-left: 0;
-    padding-top: 0.55rem;
-  }
-
-  .captured-note-col--summary {
     border-left: 0;
     border-top: 1px solid var(--border);
     padding-left: 0;
