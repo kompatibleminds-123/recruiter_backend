@@ -2902,7 +2902,7 @@ button:focus-visible {
 }
 
 .captured-note-profile-meta {
-  margin-top: 0.45rem;
+  margin-top: 0.75rem; margin-top: 0.45rem;
 }
 
 .captured-note-company {
@@ -3211,3 +3211,4 @@ button:focus-visible {
     -webkit-overflow-scrolling: touch;
   }
 }
+
