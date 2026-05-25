@@ -2331,6 +2331,50 @@ async function resetUserPassword({ actorUserId, companyId, userId, newPassword }
   }
   return { reset: true, userId };
 }
+async function updateUserProfile({ actorUserId, companyId, userId, role, phone }) {
+  const actor = sanitizeUser(await getUserById(actorUserId, companyId));
+  if (!actor || actor.role !== "admin") throw new Error("Only an admin for this company can update users.");
+  const target = sanitizeUser(await getUserById(userId, companyId));
+  if (!target) throw new Error("User not found.");
+  const targetRole = String(target.role || "").toLowerCase();
+  if (PAYROLL_AUTH_ROLES.has(targetRole)) throw new Error("Use Payroll Access section to manage payroll users.");
+  const patchRoleRaw = String(role || "").trim().toLowerCase();
+  const patchRole = patchRoleRaw
+    ? (patchRoleRaw === "admin" ? "admin" : "team")
+    : null;
+  const patchPhone = phone === undefined ? null : String(phone || "").trim();
+  if (!patchRole && patchPhone === null) throw new Error("Nothing to update.");
+  if (String(actor.id || "").trim() === String(target.id || "").trim() && patchRole && patchRole !== "admin") {
+    throw new Error("You cannot remove your own admin access.");
+  }
+  if (!cfg().on) {
+    const store = readStore();
+    const row = (store.users || []).find((u) => u.id === userId && (u.companyId === companyId || u.company_id === companyId));
+    if (!row) throw new Error("User not found.");
+    if (patchRole) row.role = patchRole;
+    if (patchPhone !== null) row.phone = patchPhone;
+    writeStore(store);
+    return sanitizeUser(row);
+  }
+  const patch = {};
+  if (patchRole) patch.role = patchRole;
+  if (patchPhone !== null) patch.phone_number = patchPhone;
+  let updatedRows = [];
+  try {
+    updatedRows = await sbPatch("users", `id=eq.${enc(userId)}&company_id=eq.${enc(companyId)}`, patch);
+  } catch (error) {
+    const message = String(error?.message || error);
+    if (patchPhone !== null && /phone_number|column/i.test(message)) {
+      const fallbackPatch = { ...patch };
+      delete fallbackPatch.phone_number;
+      updatedRows = await sbPatch("users", `id=eq.${enc(userId)}&company_id=eq.${enc(companyId)}`, fallbackPatch);
+      const updated = sanitizeUser(updatedRows?.[0] || target);
+      return { ...updated, phone: patchPhone };
+    }
+    throw error;
+  }
+  return sanitizeUser(updatedRows?.[0] || target);
+}
 async function login({ email, password }) {
   const e = normalizeEmail(email); const user = await getUserByEmail(e);
   if (!user || !verifyPassword(password, user.passwordHash || user.password_hash)) throw new Error("Invalid email or password.");
@@ -5596,6 +5640,7 @@ module.exports = {
   getEmployeeSessionUser,
   createCompanyWithAdmin,
   createUser,
+  updateUserProfile,
   deleteUser,
   deleteAssessment,
   deleteCompanyJob,

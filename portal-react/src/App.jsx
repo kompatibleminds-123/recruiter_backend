@@ -6540,48 +6540,6 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
         <div className="metric-card"><div className="metric-label">Queue</div><div className="metric-value">{overview?.queue?.total || 0}</div></div>
         <div className="metric-card"><div className="metric-label">Events</div><div className="metric-value">{overview?.events?.total || 0}</div></div>
       </div>
-      <Section kicker="Current Request" title="Campaign + Recipient Clarity">
-        <div className="form-grid three-col">
-          <label><span>Selected campaign</span><input readOnly value={activeCampaign?.name || "No campaign selected"} /></label>
-          <label><span>Selected prospects</span><input readOnly value={String(selectedProspectsCount || 0)} /></label>
-          <label><span>Selected with email</span><input readOnly value={String(selectedProspectsWithEmailCount || 0)} /></label>
-        </div>
-        <p className="muted">
-          Send actions run only for the selected campaign. If this came from database attach, campaign is preselected above.
-        </p>
-      </Section>
-      <Section kicker="Request Log" title="Per-Request Send Tracking">
-        <p className="muted">Each attach/launch request is tracked separately here so totals do not get mixed.</p>
-        <div className="table-wrap">
-          <table className="dashboard-table">
-            <thead>
-              <tr>
-                <th>Time</th>
-                <th>Source</th>
-                <th>Campaign</th>
-                <th>Recipients</th>
-                <th>Sent now</th>
-                <th>Created</th>
-                <th>Reused</th>
-              </tr>
-            </thead>
-            <tbody>
-              {(recentRequestLogs || []).map((row) => (
-                <tr key={String(row?.id || Math.random())}>
-                  <td>{row?.createdAt ? new Date(row.createdAt).toLocaleString() : "-"}</td>
-                  <td>{row?.source || "-"}</td>
-                  <td>{row?.campaignName || row?.campaignId || "-"}</td>
-                  <td>{Number(row?.recipients || 0)}</td>
-                  <td>{Number(row?.sentNow || 0)}</td>
-                  <td>{Number(row?.created || 0)}</td>
-                  <td>{Number(row?.reused || 0)}</td>
-                </tr>
-              ))}
-              {!(recentRequestLogs || []).length ? <tr><td colSpan="7"><div className="empty-state compact-empty">No request logs yet.</div></td></tr> : null}
-            </tbody>
-          </table>
-        </div>
-      </Section>
 
       <div className={showInternalTabs ? "two-pane-grid" : ""}>
         {showInternalTabs ? (
@@ -7159,29 +7117,32 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
       {activeTab === "queue" ? (
       <>
       <Section kicker="Campaign Prospects" title="Campaign Prospect Queue">
+        <p className="muted">Recipients listed below are the actual candidates queued for send in the selected campaign.</p>
         <div className="table-wrap">
           <table className="dashboard-table">
             <thead>
               <tr>
                 <th>Name</th>
                 <th>Email</th>
-                <th>Category</th>
+                <th>Phone</th>
+                <th>Company</th>
                 <th>State</th>
                 <th>Last sent</th>
               </tr>
             </thead>
             <tbody>
-              {campaignProspects.map((item) => (
+              {campaignProspects.filter((item) => String(item?.state || "").trim().toLowerCase() === "ready").map((item) => (
                 <tr key={String(item?.id || "")}>
                   <td>{item?.prospect?.name || "-"}</td>
                   <td>{item?.prospect?.email || "-"}</td>
-                  <td>{item?.prospect?.category || "-"}</td>
+                  <td>{item?.prospect?.phone || "-"}</td>
+                  <td>{item?.prospect?.company_name || "-"}</td>
                   <td>{item?.state || "-"}</td>
                   <td>{item?.lastSentAt ? new Date(item.lastSentAt).toLocaleString() : "-"}</td>
                 </tr>
               ))}
-              {!campaignProspects.length ? (
-                <tr><td colSpan="5"><div className="empty-state compact-empty">No prospects linked to selected campaign yet.</div></td></tr>
+              {!campaignProspects.filter((item) => String(item?.state || "").trim().toLowerCase() === "ready").length ? (
+                <tr><td colSpan="6"><div className="empty-state compact-empty">No prospects linked to selected campaign yet.</div></td></tr>
               ) : null}
             </tbody>
           </table>
@@ -7237,7 +7198,16 @@ function PortalApp({ token, onLogout }) {
   const [applicantsVisibleCount, setApplicantsVisibleCount] = useState(50);
   const [bulkAssignApplicantModalOpen, setBulkAssignApplicantModalOpen] = useState(false);
   const [bulkAssignCandidateModalOpen, setBulkAssignCandidateModalOpen] = useState(false);
-  const [dbCampaignAttachModal, setDbCampaignAttachModal] = useState({ open: false, campaigns: [], selectedCampaignId: "", busy: false, totalCandidates: 0 });
+  const [dbCampaignAttachModal, setDbCampaignAttachModal] = useState({
+    open: false,
+    campaigns: [],
+    selectedCampaignId: "",
+    busy: false,
+    totalCandidates: 0,
+    launchNow: true,
+    createCampaignName: "",
+    createCampaignCategory: ""
+  });
   const [showExtensionPrompt, setShowExtensionPrompt] = useState(false);
   const [hostedJobId, setHostedJobId] = useState("");
   const [hostedRecruiterApplyLinks, setHostedRecruiterApplyLinks] = useState([]);
@@ -14822,24 +14792,36 @@ function PortalApp({ token, onLogout }) {
     }
     const campaignResult = await api("/company/marketing/campaigns", token).catch(() => ({ items: [] }));
     const campaigns = Array.isArray(campaignResult?.items) ? campaignResult.items : [];
-    if (!campaigns.length) {
-      setStatus("workspace", "No marketing campaign found. Create one first.", "error");
-      return;
-    }
     setDbCampaignAttachModal({
       open: true,
       campaigns,
       selectedCampaignId: String(campaigns?.[0]?.id || ""),
       busy: false,
-      totalCandidates: candidateIds.length
+      totalCandidates: candidateIds.length,
+      launchNow: true,
+      createCampaignName: "",
+      createCampaignCategory: ""
     });
   }
 
   async function confirmAttachCurrentDatabasePageToCampaign() {
-    const selectedCampaignId = String(dbCampaignAttachModal?.selectedCampaignId || "").trim();
+    let selectedCampaignId = String(dbCampaignAttachModal?.selectedCampaignId || "").trim();
+    let selectedCampaign = (dbCampaignAttachModal?.campaigns || []).find((item) => String(item?.id || "") === selectedCampaignId) || null;
     if (!selectedCampaignId) {
-      setStatus("workspace", "Select a campaign first.", "error");
-      return;
+      const createCampaignName = String(dbCampaignAttachModal?.createCampaignName || "").trim();
+      if (!createCampaignName) {
+        setStatus("workspace", "Select a campaign or enter a new campaign name.", "error");
+        return;
+      }
+      const createdCampaign = await api("/company/marketing/campaigns", token, "POST", {
+        name: createCampaignName,
+        category: String(dbCampaignAttachModal?.createCampaignCategory || "").trim(),
+        sendGapMinutes: 5,
+        dailyCap: 50
+      });
+      selectedCampaignId = String(createdCampaign?.id || "").trim();
+      selectedCampaign = createdCampaign || null;
+      if (!selectedCampaignId) throw new Error("Campaign create failed. Please retry.");
     }
     const candidates = Array.isArray(pagedCandidates) ? pagedCandidates : [];
     const candidateIds = Array.from(new Set(candidates.map((item) => String(item?.id || "").trim()).filter(Boolean)));
@@ -14853,11 +14835,41 @@ function PortalApp({ token, onLogout }) {
     const linked = Number(result?.campaignLinked || 0);
     const created = Number(result?.createdCampaignOnlyProspects || 0);
     const reused = Number(result?.reusedExistingProspects || 0);
-    const selectedCampaign = (dbCampaignAttachModal?.campaigns || []).find((item) => String(item?.id || "") === selectedCampaignId);
-    setStatus("workspace", `Attached to "${selectedCampaign?.name || "campaign"}": linked ${linked}, created ${created}, reused ${reused}. No send triggered.`, "ok");
-    setDbCampaignAttachModal({ open: false, campaigns: [], selectedCampaignId: "", busy: false, totalCandidates: 0 });
-    const marketingUrl = `/marketing/campaigns?campaignId=${encodeURIComponent(selectedCampaignId)}&source=db_attach&attached=${encodeURIComponent(String(linked))}&created=${encodeURIComponent(String(created))}&reused=${encodeURIComponent(String(reused))}`;
-    window.location.assign(marketingUrl);
+    const launchNow = Boolean(dbCampaignAttachModal?.launchNow);
+    if (launchNow) {
+      const attachProspectIds = Array.isArray(result?.attachProspectIds)
+        ? result.attachProspectIds.map((id) => String(id || "").trim()).filter(Boolean)
+        : [];
+      if (attachProspectIds.length) {
+        await api(`/company/marketing/campaigns/${encodeURIComponent(selectedCampaignId)}/prospects`, token, "POST", {
+          prospectIds: attachProspectIds
+        });
+      }
+      const liveCampaign = selectedCampaign || (await api("/company/marketing/campaigns", token).then((rows) => (Array.isArray(rows?.items) ? rows.items.find((item) => String(item?.id || "") === selectedCampaignId) : null)).catch(() => null));
+      const campaignStatus = String(liveCampaign?.status || "").trim().toLowerCase();
+      if (campaignStatus !== "active") {
+        if (campaignStatus === "paused") {
+          await api(`/company/marketing/campaigns/${encodeURIComponent(selectedCampaignId)}/resume`, token, "POST", {});
+        } else {
+          await api(`/company/marketing/campaigns/${encodeURIComponent(selectedCampaignId)}/start`, token, "POST", {});
+        }
+      }
+      const tickResult = await api("/company/marketing/worker/tick", token, "POST", {});
+      const sent = Number(tickResult?.sent || 0);
+      setStatus("workspace", `Launch done for "${selectedCampaign?.name || "campaign"}": linked ${linked}, created ${created}, reused ${reused}, sent now ${sent}.`, "ok");
+    } else {
+      setStatus("workspace", `Attached to "${selectedCampaign?.name || "campaign"}": linked ${linked}, created ${created}, reused ${reused}. Ready in queue.`, "ok");
+    }
+    setDbCampaignAttachModal({
+      open: false,
+      campaigns: [],
+      selectedCampaignId: "",
+      busy: false,
+      totalCandidates: 0,
+      launchNow: true,
+      createCampaignName: "",
+      createCampaignCategory: ""
+    });
   }
 
   function downloadCandidateSmartChipRows(chipId) {
@@ -21767,19 +21779,19 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
         </div>
       ) : null}
       {dbCampaignAttachModal.open ? (
-        <div className="overlay" onClick={() => setDbCampaignAttachModal({ open: false, campaigns: [], selectedCampaignId: "", busy: false, totalCandidates: 0 })}>
+        <div className="overlay" onClick={() => setDbCampaignAttachModal({ open: false, campaigns: [], selectedCampaignId: "", busy: false, totalCandidates: 0, launchNow: true, createCampaignName: "", createCampaignCategory: "" })}>
           <div className="overlay-card" onClick={(e) => e.stopPropagation()}>
-            <h3>Attach Current Page To Campaign</h3>
+            <h3>Campaign + Launch</h3>
             <p className="muted">Candidates on current page: {Number(dbCampaignAttachModal.totalCandidates || 0)}</p>
             <div className="form-grid">
               <label>
-                <span>Select campaign</span>
+                <span>Select existing campaign</span>
                 <select
                   value={dbCampaignAttachModal.selectedCampaignId}
-                  onChange={(e) => setDbCampaignAttachModal((current) => ({ ...current, selectedCampaignId: e.target.value }))}
+                  onChange={(e) => setDbCampaignAttachModal((current) => ({ ...current, selectedCampaignId: e.target.value, createCampaignName: e.target.value ? "" : current.createCampaignName }))}
                   disabled={dbCampaignAttachModal.busy}
                 >
-                  <option value="">Select campaign</option>
+                  <option value="">Create/select from below</option>
                   {(dbCampaignAttachModal.campaigns || []).map((item) => (
                     <option key={`db-attach-campaign-${item.id}`} value={item.id}>
                       {`${item?.name || "Untitled"} (${item?.status || "draft"})`}
@@ -21787,11 +21799,38 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                   ))}
                 </select>
               </label>
+              <label>
+                <span>Or create new campaign</span>
+                <input
+                  value={dbCampaignAttachModal.createCampaignName || ""}
+                  onChange={(e) => setDbCampaignAttachModal((current) => ({ ...current, createCampaignName: e.target.value, selectedCampaignId: "" }))}
+                  placeholder="Campaign name"
+                  disabled={dbCampaignAttachModal.busy}
+                />
+              </label>
+              <label>
+                <span>Campaign tag (optional)</span>
+                <input
+                  value={dbCampaignAttachModal.createCampaignCategory || ""}
+                  onChange={(e) => setDbCampaignAttachModal((current) => ({ ...current, createCampaignCategory: e.target.value }))}
+                  placeholder="Tag"
+                  disabled={dbCampaignAttachModal.busy}
+                />
+              </label>
+              <label className="checkbox-row">
+                <input
+                  type="checkbox"
+                  checked={Boolean(dbCampaignAttachModal.launchNow)}
+                  onChange={(e) => setDbCampaignAttachModal((current) => ({ ...current, launchNow: e.target.checked }))}
+                  disabled={dbCampaignAttachModal.busy}
+                />
+                <span>Launch now (no shift to Marketing page)</span>
+              </label>
             </div>
             <div className="button-row">
               <button
                 className="ghost-btn"
-                onClick={() => setDbCampaignAttachModal({ open: false, campaigns: [], selectedCampaignId: "", busy: false, totalCandidates: 0 })}
+                onClick={() => setDbCampaignAttachModal({ open: false, campaigns: [], selectedCampaignId: "", busy: false, totalCandidates: 0, launchNow: true, createCampaignName: "", createCampaignCategory: "" })}
                 disabled={dbCampaignAttachModal.busy}
               >
                 Cancel
@@ -21801,9 +21840,16 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                   setStatus("workspace", String(error?.message || error || "Failed to attach candidates."), "error");
                   setDbCampaignAttachModal((current) => ({ ...current, busy: false }));
                 })}
-                disabled={dbCampaignAttachModal.busy || !dbCampaignAttachModal.selectedCampaignId}
+                disabled={dbCampaignAttachModal.busy || (!dbCampaignAttachModal.selectedCampaignId && !String(dbCampaignAttachModal.createCampaignName || "").trim())}
               >
-                {dbCampaignAttachModal.busy ? "Attaching..." : "Attach now"}
+                {dbCampaignAttachModal.busy ? "Processing..." : (dbCampaignAttachModal.launchNow ? "Attach + Launch now" : "Attach to queue")}
+              </button>
+              <button
+                className="ghost-btn"
+                onClick={() => window.location.assign("/marketing/campaigns")}
+                disabled={dbCampaignAttachModal.busy}
+              >
+                Open campaigns page
               </button>
             </div>
           </div>

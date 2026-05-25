@@ -36,6 +36,7 @@ const {
   createCompanyWithAdmin,
   createTrialCompanyWithAdmin,
   createUser,
+  updateUserProfile,
   deleteUser,
   deleteAssessment,
   deleteCompanyJob,
@@ -11289,6 +11290,24 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (req.method === "PATCH" && req.url === "/company/users") {
+    try {
+      const actor = await requireSessionUser(getBearerToken(req));
+      const body = await readJsonBody(req);
+      const result = await updateUserProfile({
+        actorUserId: actor.id,
+        companyId: actor.companyId,
+        userId: String(body.userId || "").trim(),
+        role: String(body.role || "").trim(),
+        phone: body.phone
+      });
+      sendJson(res, 200, { ok: true, result });
+    } catch (error) {
+      sendJson(res, 400, { ok: false, error: String(error.message || error) });
+    }
+    return;
+  }
+
   if (req.method === "POST" && requestUrl.pathname === "/company/marketing/prospects") {
     try {
       const actor = await requireSessionUser(getBearerToken(req));
@@ -12057,7 +12076,8 @@ const server = http.createServer(async (req, res) => {
           valid: normalized.length,
           createdCampaignOnlyProspects: createPayload.length,
           reusedExistingProspects: reusedExisting,
-          campaignLinked: Array.isArray(linked) ? linked.length : 0
+          campaignLinked: Array.isArray(linked) ? linked.length : 0,
+          attachProspectIds: uniqueAttachIds
         }
       });
     } catch (error) {
