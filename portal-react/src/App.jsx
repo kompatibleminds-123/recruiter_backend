@@ -18992,11 +18992,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                   </select>
                 </label>
                   <button className="ghost-btn captured-copy-excel-btn" onClick={() => void copyCapturedExcel()}>
-                    <img
-                      className="captured-copy-excel-btn__icon"
-                      src="https://upload.wikimedia.org/wikipedia/commons/7/7f/Microsoft_Office_Excel_%282019%E2%80%93present%29.svg"
-                      alt=""
-                    />
+                    <span className="captured-copy-excel-btn__icon" aria-hidden="true">X</span>
                     <span>Copy Excel</span>
                   </button>
                 {String(state.user?.role || "").toLowerCase() === "admin" ? (
