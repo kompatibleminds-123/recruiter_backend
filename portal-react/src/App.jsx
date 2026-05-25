@@ -7195,6 +7195,8 @@ function PortalApp({ token, onLogout }) {
   const [assignCandidateId, setAssignCandidateId] = useState("");
   const [bulkAssignApplicantIds, setBulkAssignApplicantIds] = useState([]);
   const [bulkAssignCandidateIds, setBulkAssignCandidateIds] = useState([]);
+  const [capturedSelectMode, setCapturedSelectMode] = useState(false);
+  const [openCapturedMoreId, setOpenCapturedMoreId] = useState("");
   const [applicantsVisibleCount, setApplicantsVisibleCount] = useState(50);
   const [bulkAssignApplicantModalOpen, setBulkAssignApplicantModalOpen] = useState(false);
   const [bulkAssignCandidateModalOpen, setBulkAssignCandidateModalOpen] = useState(false);
@@ -19011,7 +19013,10 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                       item.other_pointers || ""
                     ].filter(Boolean).join(" ")
                   ) || "No summary yet.";
-                  const summaryShort = summaryFull.length > 180 ? `${summaryFull.slice(0, 180).trim()}...` : summaryFull;
+                  const summaryClipLength = 180;
+                  const summaryIsTruncated = summaryFull.length > summaryClipLength;
+                  const summaryShort = summaryIsTruncated ? `${summaryFull.slice(0, summaryClipLength).trim()}...` : summaryFull;
+                  const summaryRemainder = summaryIsTruncated ? summaryFull.slice(summaryClipLength).trim() : "";
                   const linkedinRaw = String(item.linkedin || item.linkedinUrl || "").trim();
                   const linkedinHref = linkedinRaw
                     ? (/^https?:\/\//i.test(linkedinRaw) ? linkedinRaw : `https://${linkedinRaw}`)
@@ -19027,28 +19032,79 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                                 <span className="captured-note-linkedin-icon">in</span>
                               </a>
                             ) : null}
+                            <div className={`more-menu ${openCapturedMoreId === String(item.id) ? "more-menu--open" : ""}`}>
+                              <button
+                                type="button"
+                                className="ghost-btn more-menu__trigger"
+                                aria-haspopup="menu"
+                                aria-expanded={openCapturedMoreId === String(item.id)}
+                                onClick={() => setOpenCapturedMoreId((current) => current === String(item.id) ? "" : String(item.id))}
+                              >
+                                ⋮
+                              </button>
+                              {openCapturedMoreId === String(item.id) ? (
+                                <div className="more-menu__dropdown more-menu__dropdown--inline" role="menu">
+                                  <button type="button" className="more-menu__item" onClick={() => { setCapturedSelectMode(true); setOpenCapturedMoreId(""); }}>
+                                    Enable select mode
+                                  </button>
+                                  {capturedSelectMode ? (
+                                    <button type="button" className="more-menu__item" onClick={() => { setCapturedSelectMode(false); setBulkAssignCandidateIds([]); setOpenCapturedMoreId(""); }}>
+                                      Disable select mode
+                                    </button>
+                                  ) : null}
+                                </div>
+                              ) : null}
+                            </div>
                           </div>
                           <div className="captured-note-subtitle">{item.jd_title || item.role || "Untitled role"}</div>
                           <div className="captured-note-company">{item.company || "Company not available"}</div>
+                          <div className="captured-note-detail-list">
+                            <div className="captured-note-contact-row">
+                              <span className="captured-note-contact-icon" aria-hidden="true">
+                                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 4h16v16H4z"/><path d="M9 2v4"/><path d="M15 2v4"/><path d="M4 10h16"/></svg>
+                              </span>
+                              <strong>Designation:</strong> {item.current_designation || item.jd_title || item.role || "NA"}
+                            </div>
+                            <div className="captured-note-contact-row">
+                              <span className="captured-note-contact-icon" aria-hidden="true">
+                                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 10c0 7-9 13-9 13S3 17 3 10a9 9 0 1 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
+                              </span>
+                              <strong>Location:</strong> {item.location || "NA"}
+                            </div>
+                          </div>
                           {statusState.summary ? <div className="status-line">{statusState.summary}</div> : null}
                           {statusState.note ? <div className="status-note">{statusState.note}</div> : null}
                         </div>
                         <div className="captured-note-col captured-note-col--details">
                           <div className="captured-note-detail-list">
-                            <div><strong>Experience:</strong> {experienceValue || "NA"}</div>
-                            <div><strong>CTC:</strong> {item.current_ctc || "NA"}</div>
-                          </div>
-                        </div>
-                        <div className="captured-note-col captured-note-col--notice">
-                          <div className="captured-note-detail-list">
-                            <div><strong>Notice period:</strong> {item.notice_period || "NA"}</div>
-                            <div><strong>Location:</strong> {item.location || "NA"}</div>
+                            <div className="captured-note-contact-row">
+                              <span className="captured-note-contact-icon" aria-hidden="true">
+                                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 21V7"/><path d="M4 21V3"/><path d="M4 7h16"/><path d="M9 21V11"/><path d="M15 21v-6"/></svg>
+                              </span>
+                              <strong>Experience:</strong> {experienceValue || "NA"}
+                            </div>
+                            <div className="captured-note-contact-row">
+                              <span className="captured-note-contact-icon" aria-hidden="true">
+                                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 6v12"/><path d="M8 10h6a2 2 0 1 1 0 4H9"/></svg>
+                              </span>
+                              <strong>CTC:</strong> {item.current_ctc || "NA"}
+                            </div>
+                            <div className="captured-note-contact-row">
+                              <span className="captured-note-contact-icon" aria-hidden="true">
+                                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                              </span>
+                              <strong>Notice period:</strong> {item.notice_period || "NA"}
+                            </div>
                           </div>
                         </div>
                         <div className="captured-note-col captured-note-col--education">
                           <div className="captured-note-detail-list">
-                            <div><strong>Education:</strong> {educationValue}</div>
-                            <div><strong>JD / Role:</strong> {item.jd_title || item.role || "NA"}</div>
+                            <div className="captured-note-contact-row">
+                              <span className="captured-note-contact-icon" aria-hidden="true">
+                                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m22 10-10-5L2 10l10 5 10-5z"/><path d="M6 12v5c3 3 9 3 12 0v-5"/></svg>
+                              </span>
+                              <strong>Education:</strong> {educationValue}
+                            </div>
                           </div>
                         </div>
                         <div className="captured-note-col captured-note-col--meta">
@@ -19065,9 +19121,28 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                               </span>
                               <strong>Phone:</strong> {item.phone || item.phoneNumber || "NA"}
                             </div>
-                            <div><strong>Source:</strong> {item.source || "NA"}</div>
-                            <div><strong>Captured by:</strong> {item.recruiter_name || "NA"}</div>
-                            <div><strong>Assigned to:</strong> {item.assigned_to_name || "NA"}</div>
+                          </div>
+                        </div>
+                        <div className="captured-note-col captured-note-col--ownership">
+                          <div className="captured-note-detail-list">
+                            <div className="captured-note-contact-row">
+                              <span className="captured-note-contact-icon" aria-hidden="true">
+                                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 20c2-4 6-6 8-6s6 2 8 6"/></svg>
+                              </span>
+                              <strong>Captured by:</strong> {item.recruiter_name || "NA"}
+                            </div>
+                            <div className="captured-note-contact-row">
+                              <span className="captured-note-contact-icon" aria-hidden="true">
+                                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><path d="M20 8v6"/><path d="M23 11h-6"/></svg>
+                              </span>
+                              <strong>Assigned to:</strong> {item.assigned_to_name || "NA"}
+                            </div>
+                            <div className="captured-note-contact-row">
+                              <span className="captured-note-contact-icon" aria-hidden="true">
+                                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10 13a5 5 0 0 1 7 7l-4 1 1-4a5 5 0 0 1-4-4z"/><path d="M14 7a5 5 0 0 1 7 7"/></svg>
+                              </span>
+                              <strong>Source:</strong> {item.source || "NA"}
+                            </div>
                           </div>
                         </div>
                       </div>
@@ -19079,12 +19154,12 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                         <summary>
                           <span className="captured-note-summary-badge">Summary</span>
                           <span className="captured-note-summary-preview">{summaryShort}</span>
-                          <span className="captured-note-summary-toggle">Show more</span>
+                          {summaryIsTruncated ? <span className="captured-note-summary-toggle">Show more</span> : null}
                         </summary>
-                        <div className="captured-note-summary-full">{summaryFull}</div>
+                        <div className="captured-note-summary-full">{summaryIsTruncated ? summaryRemainder : summaryFull}</div>
                       </details>
                       <div className="chip-row">
-                        {String(state.user?.role || "").toLowerCase() === "admin" ? (
+                        {String(state.user?.role || "").toLowerCase() === "admin" && capturedSelectMode ? (
                           <label className="checkbox-row" style={{ marginRight: 6 }}>
                             <input
                               type="checkbox"
