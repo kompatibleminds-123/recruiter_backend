@@ -1,4 +1,4 @@
-﻿import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { NavLink, Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import BrandLogo from "./components/branding/BrandLogo";
 import {
@@ -252,8 +252,8 @@ function FeatureLockedSection({ title = "Feature locked" }) {
   customExportPresets: [],
   whatsappTemplate: "{{index}}. {{name}}\nRole: {{jd_title}}\nCompany: {{company}}\nOutcome: {{outcome}}\nRecruiter note: {{recruiter_notes}}",
   emailTemplate: "{{index}}. {{name}}\nCompany: {{company}}\nRole: {{jd_title}}\nLocation: {{location}}\nOutcome: {{outcome}}\nEmail: {{email}}\nPhone: {{phone}}\nNotes: {{recruiter_notes}}",
-  clientShareIntroTemplate: "Hello {{hr_name}},\n\nGreetings !!\n\nThis is {{recruiter_name}} from {{company_name}}.\nPFA the profiles{{role_line}}.\nKindly review and share your feedback.",
-  clientShareThreadIntroTemplate: "Hello {{hr_name}},\n\nSharing additional profiles{{role_line}} in the same mail chain.\n\nRegards,\n{{recruiter_name}}",
+  clientShareIntroTemplate: "Hello {{hr_name}},\n\nGreetings !!\n\nThis is {{recruiter_name}} from {{company_name}}.\nPFA the profiles for {{role}}.\nKindly review and share your feedback.",
+  clientShareThreadIntroTemplate: "Hello {{hr_name}},\n\nSharing additional profiles for {{role}} in the same mail chain.\n\nRegards,\n{{recruiter_name}}",
   clientShareSubjectTemplate: "{{client_name}} - Candidate Profiles for {{role}}",
   clientShareSignatureText: "Regards,\n{{recruiter_name}}\n{{company_name}}",
   clientShareSignatureLinkLabel: "",
@@ -278,7 +278,7 @@ function FeatureLockedSection({ title = "Feature locked" }) {
   },
   companyWideShortcuts: {},
   jdEmailSubjectTemplate: "Job Description - {Role}",
-  jdEmailIntroTemplate: "Hello {Candidate}.\nGreetings !!\n\nThis is {Recruiter} from Kompatible Minds.\nIt was good to interact with you.\n\nAs discussed, please find the Job description for the {Role}.\nPlease acknowledge or confirm so we can take your candidature ahead.",
+  jdEmailIntroTemplate: "Hello {Candidate}.\nGreetings !!\n\nThis is {Recruiter} from {Company}.\nIt was good to interact with you.\n\nAs discussed, please find the Job description for the {Role}.\nPlease acknowledge or confirm so we can take your candidature ahead.",
   interviewAiParsingEnabled: true,
   jobBoard: {
     slug: "",
@@ -448,6 +448,8 @@ const SMART_CHIP_INTERVIEW_ALIGNED_STATUSES = new Set([
 const SHORTCUT_TEMPLATE_PLACEHOLDERS = [
   "{{name}}",
   "{{recruiter_name}}",
+  "{{recruiter_email}}",
+  "{{recruiter_phone}}",
   "{{interview_at}}",
   "{{jd_title}}",
   "{{client_name}}",
@@ -456,6 +458,32 @@ const SHORTCUT_TEMPLATE_PLACEHOLDERS = [
   "{{email}}",
   "{{jd_link}}",
   "{{recruiter_jd_link}}"
+];
+
+const SUGGESTED_SHORTCUT_TEMPLATES = {
+  "/intro": "Hi {{name}}, this is {{recruiter_name}} from {{company_name}} regarding {{jd_title}}.",
+  "/followup": "Hi {{name}}, following up on {{jd_title}}. Please share an update when convenient.",
+  "/schedule": "Hi {{name}}, can we connect for {{jd_title}} on {{interview_at}}?",
+  "/jdshare": "Sharing JD for {{jd_title}}. Recruiter: {{recruiter_name}} | {{recruiter_email}} | {{recruiter_phone}}"
+};
+
+const CLIENT_SHARE_TEMPLATE_PLACEHOLDERS = [
+  "{{client_name}}",
+  "{{role}}",
+  "{{role_line}}",
+  "{{hr_name}}",
+  "{{recruiter_name}}",
+  "{{recruiter_email}}",
+  "{{recruiter_phone}}",
+  "{{company_name}}"
+];
+const JD_SHARE_TEMPLATE_PLACEHOLDERS = [
+  "{Candidate}",
+  "{Role}",
+  "{Recruiter}",
+  "{Company}",
+  "{RecruiterEmail}",
+  "{RecruiterPhone}"
 ];
 
 function parseEmailTokens(value = "") {
@@ -1640,15 +1668,15 @@ function toSentenceCasePreservingContent(text) {
 
 function normalizeMojibakeSymbols(text) {
   return String(text || "")
-    .replace(/Â€¢|Â·|â€¢/g, "\u2022")
-    .replace(/Ã¢â‚¬Â¢|ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢|ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢|ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¢/g, "\u2022")
-    .replace(/ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã¢â‚¬Å“|ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œ/g, "-")
-    .replace(/ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â|ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â/g, "-")
-    .replace(/ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¹Ãƒâ€¦Ã¢â‚¬Å“|ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¹Ã…â€œ/g, "'")
-    .replace(/ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¾Ãƒâ€šÃ‚Â¢|ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢/g, "'")
-    .replace(/ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œ|ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã¢â‚¬Å“/g, '"')
-    .replace(/ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â|ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â/g, '"')
-    .replace(/ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡/g, "").replace(/Â(?=[•"'`.,:;!?()\-\s])/g, "");
+    .replace(/Ãƒâ€šÃ¢â€šÂ¬Ã‚Â¢|Ãƒâ€šÃ‚Â·|ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢/g, "\u2022")
+    .replace(/ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¢|ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢|ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢|ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢/g, "\u2022")
+    .replace(/ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã¢â‚¬Å“|ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œ/g, "-")
+    .replace(/ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â|ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â/g, "-")
+    .replace(/ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¹ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã¢â‚¬Å“|ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¹ÃƒÆ’Ã¢â‚¬Â¦ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œ/g, "'")
+    .replace(/ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¾ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢|ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¾ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢/g, "'")
+    .replace(/ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¦ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œ|ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã¢â‚¬Å“/g, '"')
+    .replace(/ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â|ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â/g, '"')
+    .replace(/ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡/g, "").replace(/Ãƒâ€š(?=[Ã¢â‚¬Â¢"'`.,:;!?()\-\s])/g, "");
 }
 
 function sanitizeMojibakeDeep(value) {
@@ -2417,7 +2445,7 @@ function normalizeRecruiterMergeBase(item) {
 function normalizeRecruiterConflictValue(key, value) {
   let normalized = String(value || "")
     .trim()
-    .replace(/^[\s\-ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â:]+/, "")
+    .replace(/^[\s\-ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â:]+/, "")
     .replace(/\s+/g, " ")
     .replace(/\s+\./g, ".")
     .toLowerCase();
@@ -2755,6 +2783,8 @@ function fillCandidateTemplate(template, candidate) {
     source: source.source || "",
     follow_up_at: formatDateForCopy(source.follow_up_at || ""),
     recruiter_name: source.recruiter_name || source.recruiterName || "",
+    recruiter_email: source.recruiter_email || source.recruiterEmail || "",
+    recruiter_phone: source.recruiter_phone || source.recruiterPhone || source.recruiter_mobile || source.recruiterMobile || "",
     interview_at: formatDateForCopy(source.interview_at || source.interviewAt || ""),
     client_name: source.client_name || source.clientName || "",
     company_name: source.company_name || source.companyName || "",
@@ -2768,6 +2798,8 @@ function fillClientShareTemplate(template, context) {
   const map = {
     hr_name: context.hrName || "Team",
     recruiter_name: context.recruiterName || "Recruiter",
+    recruiter_email: context.recruiterEmail || "",
+    recruiter_phone: context.recruiterPhone || "",
     company_name: context.companyName || "RecruitDesk",
     client_name: context.clientLabel || "",
     role: context.targetRole || "",
@@ -4865,7 +4897,7 @@ function NewDraftModal({
         {importBusy && !cvParsePreview ? (
           <div className="parse-progress-block" role="status" aria-live="polite">
             <span className="parse-progress-spinner parse-progress-spinner--lg" aria-hidden="true" />
-            <div>Reading CV and building draft…</div>
+            <div>Reading CV and building draftÃ¢â‚¬Â¦</div>
           </div>
         ) : null}
         {!isCvMode ? (
@@ -5746,6 +5778,16 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
     const params = new URLSearchParams(String(location?.search || ""));
     return String(params.get("campaignId") || "").trim();
   }, [location?.search]);
+  const handoffMetaFromUrl = useMemo(() => {
+    const params = new URLSearchParams(String(location?.search || ""));
+    return {
+      source: String(params.get("source") || "").trim(),
+      attached: Math.max(0, Number(params.get("attached") || 0)),
+      created: Math.max(0, Number(params.get("created") || 0)),
+      reused: Math.max(0, Number(params.get("reused") || 0))
+    };
+  }, [location?.search]);
+  const marketingRequestLogStorageKey = useMemo(() => `marketing_request_log_v1_${String(token || "").slice(0, 16)}`, [token]);
   const MARKETING_TEMPLATE_ATTACHMENT_MAX_BYTES = 5 * 1024 * 1024;
   const templateSubjectPlaceholderTokens = [
     "{{name}}",
@@ -5804,6 +5846,7 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
   const [prospectCategoryFilter, setProspectCategoryFilter] = useState("");
   const [selectedProspectIds, setSelectedProspectIds] = useState([]);
   const [status, setStatus] = useState({ message: "", kind: "" });
+  const [recentRequestLogs, setRecentRequestLogs] = useState([]);
   const csvFileInputRef = useRef(null);
   const campaignCsvFileInputRef = useRef(null);
   const prospectFormSectionRef = useRef(null);
@@ -5829,6 +5872,39 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
   ]));
 
   useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem(marketingRequestLogStorageKey);
+      const parsed = raw ? JSON.parse(raw) : [];
+      setRecentRequestLogs(Array.isArray(parsed) ? parsed : []);
+    } catch {
+      setRecentRequestLogs([]);
+    }
+  }, [marketingRequestLogStorageKey]);
+
+  function persistRecentRequestLogs(nextItems = []) {
+    const normalized = Array.isArray(nextItems) ? nextItems.slice(0, 50) : [];
+    setRecentRequestLogs(normalized);
+    try {
+      window.localStorage.setItem(marketingRequestLogStorageKey, JSON.stringify(normalized));
+    } catch {}
+  }
+
+  function appendRecentRequestLog(entry = {}) {
+    const safeEntry = {
+      id: String(entry.id || `req_${Date.now()}`).trim(),
+      source: String(entry.source || "manual").trim(),
+      campaignId: String(entry.campaignId || "").trim(),
+      campaignName: String(entry.campaignName || "").trim(),
+      recipients: Math.max(0, Number(entry.recipients || 0)),
+      sentNow: Math.max(0, Number(entry.sentNow || 0)),
+      created: Math.max(0, Number(entry.created || 0)),
+      reused: Math.max(0, Number(entry.reused || 0)),
+      createdAt: String(entry.createdAt || new Date().toISOString()).trim()
+    };
+    persistRecentRequestLogs([safeEntry, ...(recentRequestLogs || [])]);
+  }
+
+  useEffect(() => {
     if (!initialTab) return;
     setActiveTab(initialTab);
   }, [initialTab]);
@@ -5837,6 +5913,27 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
     if (!forcedCampaignIdFromUrl) return;
     setSelectedCampaignId(forcedCampaignIdFromUrl);
   }, [forcedCampaignIdFromUrl]);
+
+  useEffect(() => {
+    if (!handoffMetaFromUrl?.source) return;
+    if (handoffMetaFromUrl.source !== "db_attach") return;
+    if (!forcedCampaignIdFromUrl) return;
+    const campaignName = String((campaigns || []).find((item) => String(item?.id || "") === String(forcedCampaignIdFromUrl))?.name || "Selected campaign").trim();
+    setStatus({
+      message: `Campaign preselected: "${campaignName}". Attached prospects in this request: ${handoffMetaFromUrl.attached} (created ${handoffMetaFromUrl.created}, reused ${handoffMetaFromUrl.reused}). Next step: open Email Templates, save template, then click Launch selected now.`,
+      kind: "ok"
+    });
+    appendRecentRequestLog({
+      source: "db_attach",
+      campaignId: forcedCampaignIdFromUrl,
+      campaignName,
+      recipients: handoffMetaFromUrl.attached,
+      created: handoffMetaFromUrl.created,
+      reused: handoffMetaFromUrl.reused,
+      sentNow: 0
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [handoffMetaFromUrl?.source, forcedCampaignIdFromUrl, campaigns]);
 
   const loadOverview = useCallback(async () => {
     const params = new URLSearchParams();
@@ -6012,6 +6109,10 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
   )).sort((a, b) => a.localeCompare(b));
   const filteredProspects = prospects;
   const selectedProspectsCount = selectedProspectIds.length;
+  const selectedProspectsWithEmailCount = selectedProspectIds.reduce((count, id) => {
+    const hit = (filteredProspects || []).find((item) => String(item?.id || "") === String(id));
+    return hit?.email ? count + 1 : count;
+  }, 0);
   const setOk = (message) => setStatus({ message: String(message || ""), kind: "ok" });
   const setErr = (error) => setStatus({ message: String(error?.message || error || "Request failed"), kind: "error" });
 
@@ -6243,6 +6344,13 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
 
     const tickResult = await api("/company/marketing/worker/tick", token, "POST", {});
     const sent = Number(tickResult?.sent || 0);
+    appendRecentRequestLog({
+      source: "launch_selected_now",
+      campaignId: selectedCampaignId,
+      campaignName,
+      recipients: selectedCount,
+      sentNow: sent
+    });
     setOk(`Launch done: ${selectedCount} attached. Send tick processed (${sent} sent now).`);
     await refreshLight("campaigns");
   }
@@ -6404,6 +6512,48 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
         <div className="metric-card"><div className="metric-label">Queue</div><div className="metric-value">{overview?.queue?.total || 0}</div></div>
         <div className="metric-card"><div className="metric-label">Events</div><div className="metric-value">{overview?.events?.total || 0}</div></div>
       </div>
+      <Section kicker="Current Request" title="Campaign + Recipient Clarity">
+        <div className="form-grid three-col">
+          <label><span>Selected campaign</span><input readOnly value={activeCampaign?.name || "No campaign selected"} /></label>
+          <label><span>Selected prospects</span><input readOnly value={String(selectedProspectsCount || 0)} /></label>
+          <label><span>Selected with email</span><input readOnly value={String(selectedProspectsWithEmailCount || 0)} /></label>
+        </div>
+        <p className="muted">
+          Send actions run only for the selected campaign. If this came from database attach, campaign is preselected above.
+        </p>
+      </Section>
+      <Section kicker="Request Log" title="Per-Request Send Tracking">
+        <p className="muted">Each attach/launch request is tracked separately here so totals do not get mixed.</p>
+        <div className="table-wrap">
+          <table className="dashboard-table">
+            <thead>
+              <tr>
+                <th>Time</th>
+                <th>Source</th>
+                <th>Campaign</th>
+                <th>Recipients</th>
+                <th>Sent now</th>
+                <th>Created</th>
+                <th>Reused</th>
+              </tr>
+            </thead>
+            <tbody>
+              {(recentRequestLogs || []).map((row) => (
+                <tr key={String(row?.id || Math.random())}>
+                  <td>{row?.createdAt ? new Date(row.createdAt).toLocaleString() : "-"}</td>
+                  <td>{row?.source || "-"}</td>
+                  <td>{row?.campaignName || row?.campaignId || "-"}</td>
+                  <td>{Number(row?.recipients || 0)}</td>
+                  <td>{Number(row?.sentNow || 0)}</td>
+                  <td>{Number(row?.created || 0)}</td>
+                  <td>{Number(row?.reused || 0)}</td>
+                </tr>
+              ))}
+              {!(recentRequestLogs || []).length ? <tr><td colSpan="7"><div className="empty-state compact-empty">No request logs yet.</div></td></tr> : null}
+            </tbody>
+          </table>
+        </div>
+      </Section>
 
       <div className={showInternalTabs ? "two-pane-grid" : ""}>
         {showInternalTabs ? (
@@ -6878,9 +7028,13 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
           <option value="">Select</option>
           {filteredCampaigns.map((item) => <option key={item.id} value={item.id}>{item.name} ({item.status})</option>)}
         </select></label>
+        {!activeCampaign ? <p className="muted">Step 1: Select campaign. Step 2: Attach prospects. Step 3: Launch selected now.</p> : null}
         {activeCampaign ? (
           <div className="item-card compact-card">
             <div className="item-subtitle">{`Label: ${activeCampaign.category || "-"} | Gap: ${activeCampaign.send_gap_minutes || 0} mins | Daily cap: ${activeCampaign.daily_cap || 0}`}</div>
+            <div className="muted" style={{ marginTop: 6 }}>
+              Ready to send to {selectedProspectsCount} selected prospect(s), out of which {selectedProspectsWithEmailCount} have email.
+            </div>
           </div>
         ) : null}
         {activeCampaign ? (
@@ -7636,6 +7790,12 @@ function PortalApp({ token, onLogout }) {
   const jobTemplateTextareaRef = useRef(null);
   const companyTemplateTextareaRef = useRef(null);
   const jdWorkspaceShortcutTextareaRef = useRef(null);
+  const jdEmailSubjectTemplateTextareaRef = useRef(null);
+  const jdEmailBodyTemplateTextareaRef = useRef(null);
+  const directShareSubjectTemplateTextareaRef = useRef(null);
+  const directShareIntroTemplateTextareaRef = useRef(null);
+  const directShareThreadTemplateTextareaRef = useRef(null);
+  const signatureTextTemplateTextareaRef = useRef(null);
   const jdDescriptionEditorRef = useRef(null);
   const jdDescriptionSelectionRef = useRef(null);
   const jdDescriptionEditorLastHtmlRef = useRef("");
@@ -7886,7 +8046,8 @@ function PortalApp({ token, onLogout }) {
     String(state.user?.companyId || "").trim() === KOMPATIBLE_MINDS_COMPANY_ID &&
     isSettingsAdmin;
   const isAnkitAdmin = String(state.user?.email || "").trim().toLowerCase() === "ankit.garg@kompatibleminds.com";
-  const canEditSuggestedGlobalPresets = Boolean(isSettingsAdmin && isAnkitAdmin);
+  const canEditSuggestedGlobalPresets = Boolean(isSettingsAdmin);
+  const canPublishSuggestedGlobalPresets = Boolean(isSettingsAdmin && isAnkitAdmin);
 
   useEffect(() => {
     try {
@@ -7913,6 +8074,10 @@ function PortalApp({ token, onLogout }) {
       jdShortcuts: String(job?.jdShortcuts || "")
     })).filter((job) => job.id);
   }, [state.jobs, jobsCatalog]);
+  const mergedCompanyShortcutTemplates = useMemo(() => ({
+    ...SUGGESTED_SHORTCUT_TEMPLATES,
+    ...((copySettings?.companyWideShortcuts && typeof copySettings.companyWideShortcuts === "object") ? copySettings.companyWideShortcuts : {})
+  }), [copySettings?.companyWideShortcuts]);
   const selectedShortcutJob = useMemo(
     () => shortcutJobOptions.find((job) => String(job.id) === String(shortcutJobId || "")) || null,
     [shortcutJobOptions, shortcutJobId]
@@ -8364,10 +8529,20 @@ function PortalApp({ token, onLogout }) {
       setStatus(statusKey, "No shortcut template found. Create one first.", "error");
       return;
     }
+    const recruiterEmail = String(state.user?.email || "").trim();
+    const recruiterPhone = String(
+      state.user?.phone
+      || state.user?.phoneNumber
+      || state.user?.mobile
+      || state.user?.mobileNumber
+      || ""
+    ).trim();
     const text = fillCandidateTemplate(activeTemplate, {
       ...row,
       index: 1,
-      follow_up_at: formatDateForCopy(row?.follow_up_at || row?.next_follow_up_at || "")
+      follow_up_at: formatDateForCopy(row?.follow_up_at || row?.next_follow_up_at || ""),
+      recruiter_email: recruiterEmail,
+      recruiter_phone: recruiterPhone
     });
     const hasTemplateText = String(text || "").trim().length > 0;
     if (hasTemplateText) {
@@ -8393,12 +8568,22 @@ function PortalApp({ token, onLogout }) {
     const resolvedJobId = resolveRowJobId(row);
     const baseJdLink = resolvedJobId ? getApplyLink(resolvedJobId) : "";
     const recruiterJdLink = String(row?.recruiter_jd_link || row?.recruiterJdLink || "").trim() || baseJdLink;
+    const recruiterEmail = String(state.user?.email || "").trim();
+    const recruiterPhone = String(
+      state.user?.phone
+      || state.user?.phoneNumber
+      || state.user?.mobile
+      || state.user?.mobileNumber
+      || ""
+    ).trim();
     return fillCandidateTemplate(String(template || "").trim(), {
       ...row,
       index: 1,
       follow_up_at: formatDateForCopy(row?.follow_up_at || row?.next_follow_up_at || ""),
       jd_link: baseJdLink,
-      recruiter_jd_link: recruiterJdLink
+      recruiter_jd_link: recruiterJdLink,
+      recruiter_email: recruiterEmail,
+      recruiter_phone: recruiterPhone
     });
   }
 
@@ -9451,7 +9636,7 @@ function PortalApp({ token, onLogout }) {
   const normalizeJobTitleKey = useCallback((value = "") => String(value || "")
     .trim()
     .toLowerCase()
-    .replace(/[–—]/g, "-")
+    .replace(/[Ã¢â‚¬â€œÃ¢â‚¬â€]/g, "-")
     .replace(/[^a-z0-9]+/g, " ")
     .replace(/\s+/g, " ")
     .trim(), []);
@@ -14199,12 +14384,15 @@ function PortalApp({ token, onLogout }) {
     }
   }
 
-  function fillJdEmailTemplate(template, { candidateName, recruiterName, roleLabel }) {
+  function fillJdEmailTemplate(template, { candidateName, recruiterName, roleLabel, companyName, recruiterEmail, recruiterPhone }) {
     const tpl = String(template || "");
     return tpl
       .replace(/\{Candidate\}/gi, String(candidateName || ""))
       .replace(/\{Recruiter\}/gi, String(recruiterName || ""))
-      .replace(/\{Role\}/gi, String(roleLabel || ""));
+      .replace(/\{Role\}/gi, String(roleLabel || ""))
+      .replace(/\{Company\}/gi, String(companyName || ""))
+      .replace(/\{RecruiterEmail\}/gi, String(recruiterEmail || ""))
+      .replace(/\{RecruiterPhone\}/gi, String(recruiterPhone || ""));
   }
 
   function openJdEmailModalForCandidate(candidate, defaultJobId = "") {
@@ -14226,12 +14414,21 @@ function PortalApp({ token, onLogout }) {
     const recruiterName = String(state.user?.name || "Recruiter").trim();
     const subjectTpl = String(copySettings.jdEmailSubjectTemplate || DEFAULT_COPY_SETTINGS.jdEmailSubjectTemplate || "Job Description - {Role}").trim();
     const introTpl = String(copySettings.jdEmailIntroTemplate || DEFAULT_COPY_SETTINGS.jdEmailIntroTemplate || "").trim();
-    const defaultSubject = fillJdEmailTemplate(subjectTpl, { candidateName, recruiterName, roleLabel }).trim();
-    const baseIntro = fillJdEmailTemplate(introTpl, { candidateName, recruiterName, roleLabel }).trim();
+    const defaultSubject = fillJdEmailTemplate(subjectTpl, { candidateName, recruiterName, roleLabel, companyName, recruiterEmail: recruiterUserEmail, recruiterPhone: recruiterUserPhone }).trim();
+    const baseIntro = fillJdEmailTemplate(introTpl, { candidateName, recruiterName, roleLabel, companyName, recruiterEmail: recruiterUserEmail, recruiterPhone: recruiterUserPhone }).trim();
     const companyName = String(state.user?.companyName || state.user?.company_name || "RecruitDesk").trim();
     const clientLabel = String(candidate?.client_name || candidate?.clientName || candidate?.client || "").trim();
     const roleLine = [roleLabel, clientLabel].filter(Boolean).join(" for ");
-    const signatureContext = { hrName: "", clientLabel, targetRole: roleLabel, recruiterName, companyName, roleLine };
+    const signatureContext = {
+      hrName: "",
+      clientLabel,
+      targetRole: roleLabel,
+      recruiterName,
+      recruiterEmail: recruiterUserEmail,
+      recruiterPhone: recruiterUserPhone,
+      companyName,
+      roleLine
+    };
     const signatureText = String(smtpSettings.signatureText || "").trim()
       || fillClientShareTemplate(copySettings.clientShareSignatureText || DEFAULT_COPY_SETTINGS.clientShareSignatureText || "", signatureContext).trim();
     const signatureLinks = [
@@ -14589,8 +14786,8 @@ function PortalApp({ token, onLogout }) {
     const selectedCampaign = (dbCampaignAttachModal?.campaigns || []).find((item) => String(item?.id || "") === selectedCampaignId);
     setStatus("workspace", `Attached to "${selectedCampaign?.name || "campaign"}": linked ${linked}, created ${created}, reused ${reused}. No send triggered.`, "ok");
     setDbCampaignAttachModal({ open: false, campaigns: [], selectedCampaignId: "", busy: false, totalCandidates: 0 });
-    const marketingUrl = `/marketing/campaigns?campaignId=${encodeURIComponent(selectedCampaignId)}`;
-    window.open(marketingUrl, "_blank", "noopener,noreferrer");
+    const marketingUrl = `/marketing/campaigns?campaignId=${encodeURIComponent(selectedCampaignId)}&source=db_attach&attached=${encodeURIComponent(String(linked))}&created=${encodeURIComponent(String(created))}&reused=${encodeURIComponent(String(reused))}`;
+    window.location.assign(marketingUrl);
   }
 
   function downloadCandidateSmartChipRows(chipId) {
@@ -14651,7 +14848,16 @@ function PortalApp({ token, onLogout }) {
     const recruiterName = String(clientShareDraft.recruiterName || state.user?.name || "Recruiter").trim();
     const companyName = String(state.user?.companyName || state.user?.company_name || "RecruitDesk").trim();
     const roleLine = [targetRole, clientLabel].filter(Boolean).join(" for ");
-    return { hrName, clientLabel, targetRole, recruiterName, companyName, roleLine };
+    return {
+      hrName,
+      clientLabel,
+      targetRole,
+      recruiterName,
+      recruiterEmail: recruiterUserEmail,
+      recruiterPhone: recruiterUserPhone,
+      companyName,
+      roleLine
+    };
   }
 
   function getClientShareIntroText() {
@@ -15044,6 +15250,8 @@ function PortalApp({ token, onLogout }) {
     const tokens = {
       hr_name: String(context?.hrName || "").trim() || "Team",
       recruiter_name: String(context?.recruiterName || "").trim(),
+      recruiter_email: String(context?.recruiterEmail || "").trim(),
+      recruiter_phone: String(context?.recruiterPhone || "").trim(),
       company_name: String(context?.companyName || "").trim(),
       client_name: String(context?.clientLabel || "").trim(),
       role: String(context?.targetRole || "").trim(),
@@ -15744,7 +15952,7 @@ function PortalApp({ token, onLogout }) {
     const payload = migrateCopySettings(draftSettings);
     const result = await api("/company/shared-export-presets", token, "POST", {
       settings: payload,
-      saveAsSuggestedGlobal: Boolean(isSuggestedPresetSelected && canEditSuggestedGlobalPresets)
+      saveAsSuggestedGlobal: Boolean(isSuggestedPresetSelected && canPublishSuggestedGlobalPresets)
     });
     setCopySettings((current) => ({ ...DEFAULT_COPY_SETTINGS, ...current, ...result }));
     setStatus("settings", "Shared copy presets saved for all recruiters.", "ok");
@@ -15784,7 +15992,7 @@ function PortalApp({ token, onLogout }) {
     const payload = migrateCopySettings(draftSettings);
     const result = await api("/company/shared-export-presets", token, "POST", {
       settings: payload,
-      saveAsSuggestedGlobal: Boolean(isSuggestedPresetSelected && canEditSuggestedGlobalPresets)
+      saveAsSuggestedGlobal: Boolean(isSuggestedPresetSelected && canPublishSuggestedGlobalPresets)
     });
     setCopySettings((current) => ({ ...DEFAULT_COPY_SETTINGS, ...current, ...result }));
     setStatus("settings", successMessage, "ok");
@@ -16144,8 +16352,8 @@ function PortalApp({ token, onLogout }) {
 
   function addIndicatorFromLibrary(fieldKey) {
     if (!isSettingsAdmin) return;
-    if ((newPresetIndicators || []).length >= 10) {
-      setStatus("settings", "You can add up to 10 indicators in one tracker.", "error");
+    if ((newPresetIndicators || []).length >= 20) {
+      setStatus("settings", "You can add up to 20 indicators in one tracker.", "error");
       return;
     }
     const matched = PRESET_INDICATOR_LIBRARY.find((item) => String(item.key) === String(fieldKey));
@@ -16177,8 +16385,8 @@ function PortalApp({ token, onLogout }) {
 
   function addMixedIndicator() {
     if (!isSettingsAdmin) return;
-    if ((newPresetIndicators || []).length >= 10) {
-      setStatus("settings", "You can add up to 10 indicators in one tracker.", "error");
+    if ((newPresetIndicators || []).length >= 20) {
+      setStatus("settings", "You can add up to 20 indicators in one tracker.", "error");
       return;
     }
     const explicitTitle = String(newIndicatorDraft.title || "").trim();
@@ -16227,7 +16435,7 @@ function PortalApp({ token, onLogout }) {
     ? String(selectedCustomPreset.clientName || "").trim()
     : String(copySettings.exportPresetClientMap?.[selectedBuiltInPresetId] || "").trim();
   const isSuggestedPresetSelected = !selectedCustomPreset && Boolean(selectedBuiltInPresetId);
-  const canEditSelectedPreset = selectedCustomPreset ? Boolean(isSettingsAdmin) : Boolean(canEditSuggestedGlobalPresets);
+  const canEditSelectedPreset = Boolean(isSettingsAdmin);
 
   useEffect(() => {
     setEditPresetIndicators(presetColumnsToIndicators(selectedPresetColumns));
@@ -16240,8 +16448,8 @@ function PortalApp({ token, onLogout }) {
 
   function addEditIndicatorFromLibrary(fieldKey) {
     if (!canEditSelectedPreset) return;
-    if ((editPresetIndicators || []).length >= 10) {
-      setStatus("settings", "You can keep up to 10 indicators in one tracker.", "error");
+    if ((editPresetIndicators || []).length >= 20) {
+      setStatus("settings", "You can keep up to 20 indicators in one tracker.", "error");
       return;
     }
     const matched = PRESET_INDICATOR_LIBRARY.find((item) => String(item.key) === String(fieldKey));
@@ -16273,8 +16481,8 @@ function PortalApp({ token, onLogout }) {
 
   function addEditMixedIndicator() {
     if (!canEditSelectedPreset) return;
-    if ((editPresetIndicators || []).length >= 10) {
-      setStatus("settings", "You can keep up to 10 indicators in one tracker.", "error");
+    if ((editPresetIndicators || []).length >= 20) {
+      setStatus("settings", "You can keep up to 20 indicators in one tracker.", "error");
       return;
     }
     const explicitTitle = String(editIndicatorDraft.title || "").trim();
@@ -16307,7 +16515,7 @@ function PortalApp({ token, onLogout }) {
       }));
       return;
     }
-    if (!canEditSuggestedGlobalPresets) return;
+    if (!isSettingsAdmin) return;
     if (!selectedBuiltInPresetId) return;
     setCopySettings((current) => ({
       ...current,
@@ -16327,7 +16535,7 @@ function PortalApp({ token, onLogout }) {
       }));
       return;
     }
-    if (!canEditSuggestedGlobalPresets) return;
+    if (!isSettingsAdmin) return;
     if (!selectedBuiltInPresetId) return;
     setCopySettings((current) => ({
       ...current,
@@ -16347,7 +16555,7 @@ function PortalApp({ token, onLogout }) {
       }));
       return;
     }
-    if (!canEditSuggestedGlobalPresets) return;
+    if (!isSettingsAdmin) return;
     if (!selectedBuiltInPresetId) return;
     setCopySettings((current) => ({
       ...current,
@@ -20331,18 +20539,21 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                     </>
                   ) : null}
                   <div className="stack-list compact">
-                    {Object.entries((copySettings?.companyWideShortcuts && typeof copySettings.companyWideShortcuts === "object") ? copySettings.companyWideShortcuts : {}).length ? (
-                      Object.entries(copySettings.companyWideShortcuts)
+                    {Object.entries(mergedCompanyShortcutTemplates).length ? (
+                      Object.entries(mergedCompanyShortcutTemplates)
                         .sort(([a], [b]) => String(a || "").localeCompare(String(b || "")))
                         .map(([key, value]) => (
                           <article className="item-card compact-card" key={`company-${key}`}>
                             <div className="item-card__top compact-top">
-                              <strong>{formatShortcutLabel(key)}</strong>
+                              <strong>
+                                {formatShortcutLabel(key)}
+                                {Object.prototype.hasOwnProperty.call((copySettings?.companyWideShortcuts || {}), key) ? " (Company Specific)" : " (Suggested)"}
+                              </strong>
                               {isSettingsAdmin ? (
                                 <div className="button-row tight">
                                   <button className="ghost-btn" onClick={() => { setShortcutCompanyKey(String(key || "")); setShortcutCompanyValue(String(value || "")); }}>Edit</button>
                                   <button className="ghost-btn" onClick={() => void copyShortcutTemplateWithValues(String(key || ""), String(value || ""), selectedShortcutJob)}>Copy</button>
-                                  <button className="ghost-btn" onClick={() => void deleteCompanyShortcutTemplate(String(key || ""))}>Delete</button>
+                                  {Object.prototype.hasOwnProperty.call((copySettings?.companyWideShortcuts || {}), key) ? <button className="ghost-btn" onClick={() => void deleteCompanyShortcutTemplate(String(key || ""))}>Delete</button> : null}
                                 </div>
                               ) : (
                                 <div className="button-row tight">
@@ -20452,8 +20663,8 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                   <div className="settings-subsection">
                     <div className="section-kicker">JD Share Template</div>
                     <div className="form-grid">
-                      <label className="full"><span>Subject template</span><input value={copySettings.jdEmailSubjectTemplate || DEFAULT_COPY_SETTINGS.jdEmailSubjectTemplate} onChange={(e) => setCopySettings((current) => ({ ...current, jdEmailSubjectTemplate: e.target.value }))} /></label>
-                      <label className="full"><span>Body template</span><textarea rows={8} value={copySettings.jdEmailIntroTemplate || DEFAULT_COPY_SETTINGS.jdEmailIntroTemplate} onChange={(e) => setCopySettings((current) => ({ ...current, jdEmailIntroTemplate: e.target.value }))} /></label>
+                      <label className="full"><span>Subject template</span><input ref={jdEmailSubjectTemplateTextareaRef} value={copySettings.jdEmailSubjectTemplate || DEFAULT_COPY_SETTINGS.jdEmailSubjectTemplate} onChange={(e) => setCopySettings((current) => ({ ...current, jdEmailSubjectTemplate: e.target.value }))} /><span className="field-help">Click placeholders to insert:</span><div className="placeholder-selector">{JD_SHARE_TEMPLATE_PLACEHOLDERS.map((token) => (<button key={`jd-subject-${token}`} type="button" className="ghost-btn placeholder-chip" onClick={() => insertPlaceholderAtCursor(jdEmailSubjectTemplateTextareaRef, copySettings.jdEmailSubjectTemplate || DEFAULT_COPY_SETTINGS.jdEmailSubjectTemplate, (next) => setCopySettings((current) => ({ ...current, jdEmailSubjectTemplate: next })), token)}>{token}</button>))}</div></label>
+                      <label className="full"><span>Body template</span><textarea ref={jdEmailBodyTemplateTextareaRef} rows={8} value={copySettings.jdEmailIntroTemplate || DEFAULT_COPY_SETTINGS.jdEmailIntroTemplate} onChange={(e) => setCopySettings((current) => ({ ...current, jdEmailIntroTemplate: e.target.value }))} /><span className="field-help">Click placeholders to insert:</span><div className="placeholder-selector">{JD_SHARE_TEMPLATE_PLACEHOLDERS.map((token) => (<button key={`jd-body-${token}`} type="button" className="ghost-btn placeholder-chip" onClick={() => insertPlaceholderAtCursor(jdEmailBodyTemplateTextareaRef, copySettings.jdEmailIntroTemplate || DEFAULT_COPY_SETTINGS.jdEmailIntroTemplate, (next) => setCopySettings((current) => ({ ...current, jdEmailIntroTemplate: next })), token)}>{token}</button>))}</div></label>
                     </div>
                     <div className="button-row"><button onClick={() => void saveCopySettingsWithMessage("JD share template saved.")}>Save JD share template</button></div>
                   </div>
@@ -20462,18 +20673,18 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                     <div className="form-grid">
                       <label className="full">
                         <span>Subject template</span>
-                        <input value={copySettings.clientShareSubjectTemplate || DEFAULT_COPY_SETTINGS.clientShareSubjectTemplate} onChange={(e) => setCopySettings((current) => ({ ...current, clientShareSubjectTemplate: e.target.value }))} />
-                        <span className="field-help">Use placeholders: {`{{client_name}} {{role}} {{hr_name}} {{recruiter_name}} {{company_name}}`}.</span>
+                        <input ref={directShareSubjectTemplateTextareaRef} value={copySettings.clientShareSubjectTemplate || DEFAULT_COPY_SETTINGS.clientShareSubjectTemplate} onChange={(e) => setCopySettings((current) => ({ ...current, clientShareSubjectTemplate: e.target.value }))} />
+                        <span className="field-help">Use placeholders: {`{{client_name}} {{role}} {{role_line}} {{hr_name}} {{recruiter_name}} {{recruiter_email}} {{recruiter_phone}} {{company_name}}`}.</span><span className="field-help">`{{role}}` = role only. `{{role_line}}` = role + client context line fragment.</span>
                       </label>
-                      <label className="full"><span>Email intro template</span><textarea rows={8} value={copySettings.clientShareIntroTemplate || DEFAULT_COPY_SETTINGS.clientShareIntroTemplate} onChange={(e) => setCopySettings((current) => ({ ...current, clientShareIntroTemplate: e.target.value }))} /></label>
-                      <label className="full"><span>Thread mail intro template (manual copy mode)</span><textarea rows={6} value={copySettings.clientShareThreadIntroTemplate || DEFAULT_COPY_SETTINGS.clientShareThreadIntroTemplate} onChange={(e) => setCopySettings((current) => ({ ...current, clientShareThreadIntroTemplate: e.target.value }))} /></label>
+                      <label className="full"><span>Email intro template</span><textarea ref={directShareIntroTemplateTextareaRef} rows={8} value={copySettings.clientShareIntroTemplate || DEFAULT_COPY_SETTINGS.clientShareIntroTemplate} onChange={(e) => setCopySettings((current) => ({ ...current, clientShareIntroTemplate: e.target.value }))} /><span className="field-help">Click placeholders to insert:</span><div className="placeholder-selector">{CLIENT_SHARE_TEMPLATE_PLACEHOLDERS.map((token) => (<button key={`direct-intro-${token}`} type="button" className="ghost-btn placeholder-chip" onClick={() => insertPlaceholderAtCursor(directShareIntroTemplateTextareaRef, copySettings.clientShareIntroTemplate || DEFAULT_COPY_SETTINGS.clientShareIntroTemplate, (next) => setCopySettings((current) => ({ ...current, clientShareIntroTemplate: next })), token)}>{token}</button>))}</div></label>
+                      <label className="full"><span>Thread mail intro template (manual copy mode)</span><textarea ref={directShareThreadTemplateTextareaRef} rows={6} value={copySettings.clientShareThreadIntroTemplate || DEFAULT_COPY_SETTINGS.clientShareThreadIntroTemplate} onChange={(e) => setCopySettings((current) => ({ ...current, clientShareThreadIntroTemplate: e.target.value }))} /><span className="field-help">Click placeholders to insert:</span><div className="placeholder-selector">{CLIENT_SHARE_TEMPLATE_PLACEHOLDERS.map((token) => (<button key={`direct-thread-${token}`} type="button" className="ghost-btn placeholder-chip" onClick={() => insertPlaceholderAtCursor(directShareThreadTemplateTextareaRef, copySettings.clientShareThreadIntroTemplate || DEFAULT_COPY_SETTINGS.clientShareThreadIntroTemplate, (next) => setCopySettings((current) => ({ ...current, clientShareThreadIntroTemplate: next })), token)}>{token}</button>))}</div></label>
                     </div>
                     <div className="button-row"><button onClick={() => void saveCopySettingsWithMessage("Direct share template saved.")}>Save direct share template</button></div>
                   </div>
                   <div className="settings-subsection">
                     <div className="section-kicker">Signature Settings (Admin Default)</div>
                     <div className="form-grid two-col">
-                      <label className="full"><span>Signature text</span><textarea rows={5} value={copySettings.clientShareSignatureText || DEFAULT_COPY_SETTINGS.clientShareSignatureText} onChange={(e) => setCopySettings((current) => ({ ...current, clientShareSignatureText: e.target.value }))} /></label>
+                      <label className="full"><span>Signature text</span><textarea ref={signatureTextTemplateTextareaRef} rows={5} value={copySettings.clientShareSignatureText || DEFAULT_COPY_SETTINGS.clientShareSignatureText} onChange={(e) => setCopySettings((current) => ({ ...current, clientShareSignatureText: e.target.value }))} /><span className="field-help">Click placeholders to insert:</span><div className="placeholder-selector">{CLIENT_SHARE_TEMPLATE_PLACEHOLDERS.map((token) => (<button key={`sign-${token}`} type="button" className="ghost-btn placeholder-chip" onClick={() => insertPlaceholderAtCursor(signatureTextTemplateTextareaRef, copySettings.clientShareSignatureText || DEFAULT_COPY_SETTINGS.clientShareSignatureText, (next) => setCopySettings((current) => ({ ...current, clientShareSignatureText: next })), token)}>{token}</button>))}</div></label>
                       <label><span>Link 1 text</span><input value={copySettings.clientShareSignatureLinkLabel || ""} onChange={(e) => setCopySettings((current) => ({ ...current, clientShareSignatureLinkLabel: e.target.value }))} /></label>
                       <label><span>Link 1 URL</span><input value={copySettings.clientShareSignatureLinkUrl || ""} onChange={(e) => setCopySettings((current) => ({ ...current, clientShareSignatureLinkUrl: e.target.value }))} /></label>
                       <label><span>Link 2 text</span><input value={copySettings.clientShareSignatureLinkLabel2 || ""} onChange={(e) => setCopySettings((current) => ({ ...current, clientShareSignatureLinkLabel2: e.target.value }))} /></label>
@@ -20689,7 +20900,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                   <p className="muted">Set shared candidate tracker presets and direct-share email defaults. Admin saves them once; recruiters can choose the preset while copying or sharing.</p>
                   {!hasSaasUnlimitedAccess ? <p className="muted">Current plan mode: preset edit only. New preset creation and advanced preset controls unlock on SaaS Unlimited (Rs 4999).</p> : null}
                   {!isSettingsAdmin ? <p className="muted">You can use shared presets here. Only admin can create, edit, or save shared preset settings.</p> : null}
-                  {isSettingsAdmin && !isAnkitAdmin ? <p className="muted">Suggested presets are editable only by platform owner admin. You can still create/edit company-specific presets.</p> : null}
+                  {isSettingsAdmin && !isAnkitAdmin ? <p className="muted">Suggested presets are shown once and can be edited by company admin for company scope. Platform owner admin can additionally publish global suggested changes.</p> : null}
                   {statuses.settings ? <div className={`status ${statuses.settingsKind || ""}`}>{statuses.settings}</div> : null}
                   {/* Email Settings moved to Mail Settings tab (visible to all recruiters). */}
                   {null}
@@ -20711,7 +20922,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                         </select>
                       </label>
                       <label>
-                        <span>{isSuggestedPresetSelected ? "Suggested preset label (owner-controlled)" : (isSettingsAdmin ? "Company preset label" : "Selected preset label")}</span>
+                        <span>{isSuggestedPresetSelected ? "Suggested preset label (editable at company scope; global publish is owner-only)" : (isSettingsAdmin ? "Company preset label" : "Selected preset label")}</span>
                         <input
                           disabled={!canEditSelectedPreset}
                           value={selectedPresetLabel}
@@ -20749,7 +20960,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                       </label>
                       <div className="full">
                         <span className="field-label">Selected indicators ({editPresetIndicators.length})</span>
-                        <p className="muted">Mixed indicator output shows in one column as: Value 1 | Value 2 | Value 3.</p>
+                        <p className="muted">Mixed indicator output shows in one column as: Value 1 | Value 2 | Value 3.</p><p className="muted">Indicator reference: `remarks` = recruiter/manual remarks field. `screening_remarks` = screening/interview notes timeline. `notice_period` = notice + LWD/DOJ + offer-in-hand context.</p>
                         <div className="stack-list compact preset-indicator-list">
                           {editPresetIndicators.length ? editPresetIndicators.map((indicator) => (
                             <article
@@ -20764,7 +20975,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                                 setEditDragPresetIndicatorId("");
                               }}
                             >
-                              <div className="preset-indicator-row__drag" aria-hidden="true">⋮⋮</div>
+                              <div className="preset-indicator-row__drag" aria-hidden="true">??</div>
                               <div className="preset-indicator-row__field">{indicator.title}</div>
                               <div className="preset-indicator-row__value">{(indicator.fields || []).join(" + ")}</div>
                               <div className="preset-indicator-row__actions">
@@ -20826,7 +21037,8 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                         <textarea disabled={!isSettingsAdmin} value={copySettings.emailTemplate || DEFAULT_COPY_SETTINGS.emailTemplate} onChange={(e) => setCopySettings((current) => ({ ...current, emailTemplate: e.target.value }))} />
                       </label>
                     </div>
-                    <p className="muted">Available placeholders: copy templates use {`{{index}} {{name}} {{jd_title}} {{company}} {{outcome}} {{recruiter_notes}} {{location}} {{phone}} {{email}} {{source}} {{follow_up_at}}`}.</p>
+                    <p className="muted">Available placeholders: copy templates use {{index}} {{name}} {{jd_title}} {{company}} {{outcome}} {{recruiter_notes}} {{location}} {{phone}} {{email}} {{source}} {{follow_up_at}}.
+                    Note: `remarks` = recruiter manual notes, `notice_period` = notice period text (can include immediate/serving/NP value), `screening_remarks` = timeline + interview/screening notes summary.</p>
                     <div className="button-row">
                       {canEditSelectedPreset ? <button onClick={() => void saveSharedCopySettings()}>{isSuggestedPresetSelected ? "Save suggested preset changes" : "Save preset changes"}</button> : null}
                       {isSettingsAdmin && selectedCustomPreset ? (
@@ -20846,7 +21058,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                   </div>
                   {hasSaasUnlimitedAccess ? <div className="settings-subsection preset-create-shell">
                     <div className="section-kicker">Create New Presets</div>
-                    <p className="muted">Create a new candidate tracker preset by picking up to 10 indicators, reordering them, and adding mixed indicators with 2-3 outputs.</p>
+                    <p className="muted">Create a new candidate tracker preset by picking up to 20 indicators, reordering them, and adding mixed indicators with 2-3 outputs.</p>
                     <div className="form-grid">
                       <label><span>New preset label</span><input disabled={!isSettingsAdmin} value={newPresetDraft.label} onChange={(e) => setNewPresetDraft((current) => ({ ...current, label: e.target.value }))} placeholder="Client shortlisting sheet" /></label>
                       <label>
@@ -20873,8 +21085,8 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                         </select>
                       </label>
                       <div className="full">
-                        <span className="field-label">Selected indicators ({newPresetIndicators.length}/10)</span>
-                        <p className="muted">Mixed indicator output shows in one column as: Value 1 | Value 2 | Value 3.</p>
+                        <span className="field-label">Selected indicators ({newPresetIndicators.length}/20)</span>
+                        <p className="muted">Mixed indicator output shows in one column as: Value 1 | Value 2 | Value 3.</p><p className="muted">Indicator reference: `remarks` = recruiter/manual remarks field. `screening_remarks` = screening/interview notes timeline. `notice_period` = notice + LWD/DOJ + offer-in-hand context.</p>
                         <div className="stack-list compact preset-indicator-list">
                           {newPresetIndicators.length ? newPresetIndicators.map((indicator) => (
                             <article
@@ -20889,7 +21101,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                                 setDragPresetIndicatorId("");
                               }}
                             >
-                              <div className="preset-indicator-row__drag" aria-hidden="true">⋮⋮</div>
+                              <div className="preset-indicator-row__drag" aria-hidden="true">??</div>
                               <div className="preset-indicator-row__field">{indicator.title}</div>
                               <div className="preset-indicator-row__value">{(indicator.fields || []).join(" + ")}</div>
                               <div className="preset-indicator-row__actions">
@@ -21432,7 +21644,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
             <label className="full">
               <span>Customize message</span>
               <textarea value={whatsappTemplatePicker.customText || ""} onChange={(e) => setWhatsappTemplatePicker((current) => ({ ...current, customText: e.target.value }))} />
-              <span className="field-help">Placeholders: {`{{name}} {{recruiter_name}} {{interview_at}} {{jd_title}} {{client_name}} {{company_name}} {{phone}} {{jd_link}} {{recruiter_jd_link}}`}</span>
+              <span className="field-help">Placeholders: {`{{name}} {{recruiter_name}} {{recruiter_email}} {{recruiter_phone}} {{interview_at}} {{jd_title}} {{client_name}} {{company_name}} {{phone}} {{jd_link}} {{recruiter_jd_link}}`}</span>
             </label>
             <div className="form-grid two-col">
               <label>
@@ -23426,6 +23638,16 @@ export default function App() {
           ? <PortalErrorBoundary><MarketingPortalApp token={token} onLogout={logout} /></PortalErrorBoundary>
         : <PortalErrorBoundary><PortalApp token={token} onLogout={logout} /></PortalErrorBoundary>;
 }
+
+
+
+
+
+
+
+
+
+
 
 
 

@@ -11217,7 +11217,7 @@ const server = http.createServer(async (req, res) => {
       const [prospects, queue, events] = await Promise.all([
         supabaseTableFetch(
           "marketing_prospects",
-          `?select=id,status&company_id=eq.${companyId}${isAdmin ? "" : `&created_by=eq.${ownerUserId}`}&limit=5000`
+          `?select=id,status&company_id=eq.${companyId}${isAdmin ? "" : `&created_by=eq.${ownerUserId}`}&source=neq.db_campaign_only&limit=5000`
         ),
         campaignIds.length
           ? supabaseTableFetch("marketing_campaign_prospects", `?select=id,state&company_id=eq.${companyId}&campaign_id=in.(${campaignInClause})${queueDateFilters ? `&${queueDateFilters}` : ""}&limit=5000`)
