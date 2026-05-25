@@ -14453,11 +14453,11 @@ function PortalApp({ token, onLogout }) {
       || String(candidate?.assigned_jd_title || candidate?.assignedJdTitle || candidate?.jd_title || candidate?.jdTitle || candidate?.role || "").trim();
     const candidateName = String(candidate?.name || candidate?.candidateName || "").trim();
     const recruiterName = String(state.user?.name || "Recruiter").trim();
+    const companyName = String(state.user?.companyName || state.user?.company_name || "RecruitDesk").trim();
     const subjectTpl = String(copySettings.jdEmailSubjectTemplate || DEFAULT_COPY_SETTINGS.jdEmailSubjectTemplate || "Job Description - {Role}").trim();
     const introTpl = String(copySettings.jdEmailIntroTemplate || DEFAULT_COPY_SETTINGS.jdEmailIntroTemplate || "").trim();
     const defaultSubject = fillJdEmailTemplate(subjectTpl, { candidateName, recruiterName, roleLabel, companyName, recruiterEmail: recruiterUserEmail, recruiterPhone: recruiterUserPhone }).trim();
     const baseIntro = fillJdEmailTemplate(introTpl, { candidateName, recruiterName, roleLabel, companyName, recruiterEmail: recruiterUserEmail, recruiterPhone: recruiterUserPhone }).trim();
-    const companyName = String(state.user?.companyName || state.user?.company_name || "RecruitDesk").trim();
     const clientLabel = String(candidate?.client_name || candidate?.clientName || candidate?.client || "").trim();
     const roleLine = [roleLabel, clientLabel].filter(Boolean).join(" for ");
     const signatureContext = {
