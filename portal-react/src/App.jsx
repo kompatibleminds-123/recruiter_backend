@@ -525,7 +525,7 @@ const PRESET_INDICATOR_LIBRARY = [
   { key: "reason_of_change", label: "Reason of Change" },
   { key: "other_pointers", label: "Optional Pointers" },
   { key: "other_standard_questions", label: "Screening Q&A" },
-  { key: "screening_remarks", label: "Screening Remarks (timeline/interview notes)" },
+  { key: "screening_remarks", label: "Screening Remarks (Strong points + Screening Q&A + Reason of change)" },
   { key: "remarks", label: "Recruiter Notes (general)" },
   { key: "lwd_or_doj", label: "LWD / DOJ" },
   { key: "offer_in_hand", label: "Offer in hand" },
@@ -3153,7 +3153,7 @@ function buildScreeningRemarksForExport(item = {}) {
   }
   if (questionLines.length) {
     if (parts.length) parts.push("");
-    parts.push("Screening pointers:");
+    parts.push("Screening Q&A:");
     parts.push(...questionLines);
   }
   if (finalReasonOfChange) {
@@ -7582,7 +7582,7 @@ function PortalApp({ token, onLogout }) {
   const [editPresetIndicators, setEditPresetIndicators] = useState([]);
   const [editDragPresetIndicatorId, setEditDragPresetIndicatorId] = useState("");
   const [editIndicatorDraft, setEditIndicatorDraft] = useState({ title: "", fieldA: "", fieldB: "", fieldC: "" });
-  const [teamUserDraft, setTeamUserDraft] = useState({ name: "", email: "", password: "", role: "recruiter" });
+  const [teamUserDraft, setTeamUserDraft] = useState({ name: "", email: "", phone: "", password: "", role: "recruiter" });
   const [payrollUserDraft, setPayrollUserDraft] = useState({ name: "", email: "", password: "", role: "payroll_owner" });
   const [teamPasswordDrafts, setTeamPasswordDrafts] = useState({});
   const [employeeUsers, setEmployeeUsers] = useState([]);
@@ -16297,12 +16297,13 @@ function PortalApp({ token, onLogout }) {
       const payload = {
         name: String(teamUserDraft.name || "").trim(),
         email: String(teamUserDraft.email || "").trim(),
+        phone: String(teamUserDraft.phone || "").trim(),
         password: String(teamUserDraft.password || ""),
         role: String(teamUserDraft.role || "recruiter").trim()
       };
       await api("/company/users", token, "POST", payload);
       await reloadLoginSettingsWorkspace();
-      setTeamUserDraft({ name: "", email: "", password: "", role: "recruiter" });
+      setTeamUserDraft({ name: "", email: "", phone: "", password: "", role: "recruiter" });
       setStatus("loginTeam", "Team member created.", "ok");
     } catch (error) {
       setStatus("loginTeam", String(error?.message || error), "error");
@@ -20745,6 +20746,24 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                         <span>Subject template</span>
                         <input ref={directShareSubjectTemplateTextareaRef} value={copySettings.clientShareSubjectTemplate || DEFAULT_COPY_SETTINGS.clientShareSubjectTemplate} onChange={(e) => setCopySettings((current) => ({ ...current, clientShareSubjectTemplate: e.target.value }))} />
                         <span className="field-help">{"Use placeholders: {{client_name}} {{role}} {{role_line}} {{hr_name}} {{recruiter_name}} {{recruiter_email}} {{recruiter_phone}} {{company_name}}."}</span><span className="field-help">{"{{role}} = role only. {{role_line}} = role + client context line fragment."}</span>
+                        <span className="field-help">Click placeholders to insert:</span>
+                        <div className="placeholder-selector">
+                          {CLIENT_SHARE_TEMPLATE_PLACEHOLDERS.map((token) => (
+                            <button
+                              key={`direct-subject-${token}`}
+                              type="button"
+                              className="ghost-btn placeholder-chip"
+                              onClick={() => insertPlaceholderAtCursor(
+                                directShareSubjectTemplateTextareaRef,
+                                copySettings.clientShareSubjectTemplate || DEFAULT_COPY_SETTINGS.clientShareSubjectTemplate,
+                                (next) => setCopySettings((current) => ({ ...current, clientShareSubjectTemplate: next })),
+                                token
+                              )}
+                            >
+                              {token}
+                            </button>
+                          ))}
+                        </div>
                       </label>
                       <label className="full"><span>Email intro template</span><textarea ref={directShareIntroTemplateTextareaRef} rows={8} value={copySettings.clientShareIntroTemplate || DEFAULT_COPY_SETTINGS.clientShareIntroTemplate} onChange={(e) => setCopySettings((current) => ({ ...current, clientShareIntroTemplate: e.target.value }))} /><span className="field-help">Click placeholders to insert:</span><div className="placeholder-selector">{CLIENT_SHARE_TEMPLATE_PLACEHOLDERS.map((token) => (<button key={`direct-intro-${token}`} type="button" className="ghost-btn placeholder-chip" onClick={() => insertPlaceholderAtCursor(directShareIntroTemplateTextareaRef, copySettings.clientShareIntroTemplate || DEFAULT_COPY_SETTINGS.clientShareIntroTemplate, (next) => setCopySettings((current) => ({ ...current, clientShareIntroTemplate: next })), token)}>{token}</button>))}</div></label>
                       <label className="full"><span>Thread mail intro template (manual copy mode)</span><textarea ref={directShareThreadTemplateTextareaRef} rows={6} value={copySettings.clientShareThreadIntroTemplate || DEFAULT_COPY_SETTINGS.clientShareThreadIntroTemplate} onChange={(e) => setCopySettings((current) => ({ ...current, clientShareThreadIntroTemplate: e.target.value }))} /><span className="field-help">Click placeholders to insert:</span><div className="placeholder-selector">{CLIENT_SHARE_TEMPLATE_PLACEHOLDERS.map((token) => (<button key={`direct-thread-${token}`} type="button" className="ghost-btn placeholder-chip" onClick={() => insertPlaceholderAtCursor(directShareThreadTemplateTextareaRef, copySettings.clientShareThreadIntroTemplate || DEFAULT_COPY_SETTINGS.clientShareThreadIntroTemplate, (next) => setCopySettings((current) => ({ ...current, clientShareThreadIntroTemplate: next })), token)}>{token}</button>))}</div></label>
@@ -21030,7 +21049,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                       </label>
                       <div className="full">
                         <span className="field-label">Selected indicators ({editPresetIndicators.length})</span>
-                        <p className="muted">Mixed indicator output shows in one column as: Value 1 | Value 2 | Value 3.</p><p className="muted">Indicator reference: `remarks` = recruiter/manual remarks field. `screening_remarks` = screening/interview notes timeline. `notice_period` = notice + LWD/DOJ + offer-in-hand context.</p>
+                        <p className="muted">Mixed indicator output shows in one column as: Value 1 | Value 2 | Value 3.</p><p className="muted">Indicator reference: `remarks` = Recruiter Note (manual recruiter note). `screening_remarks` = Strong points + Screening Q&A + Reason of change. `notice_period` = notice + LWD/DOJ + offer-in-hand context.</p>
                         <div className="stack-list compact preset-indicator-list">
                           {editPresetIndicators.length ? editPresetIndicators.map((indicator) => (
                             <article
@@ -21045,7 +21064,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                                 setEditDragPresetIndicatorId("");
                               }}
                             >
-                              <div className="preset-indicator-row__drag" aria-hidden="true">??</div>
+                              <div className="preset-indicator-row__drag" aria-hidden="true">::</div>
                               <div className="preset-indicator-row__field">{indicator.title}</div>
                               <div className="preset-indicator-row__value">{(indicator.fields || []).join(" + ")}</div>
                               <div className="preset-indicator-row__actions">
@@ -21107,7 +21126,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                         <textarea disabled={!isSettingsAdmin} value={copySettings.emailTemplate || DEFAULT_COPY_SETTINGS.emailTemplate} onChange={(e) => setCopySettings((current) => ({ ...current, emailTemplate: e.target.value }))} />
                       </label>
                     </div>
-                    <p className="muted">{"Available placeholders: copy templates use {{index}} {{name}} {{jd_title}} {{company}} {{outcome}} {{recruiter_notes}} {{location}} {{phone}} {{email}} {{source}} {{follow_up_at}}. Note: remarks = recruiter manual notes, notice_period = notice period text (can include immediate/serving/NP value), screening_remarks = timeline + interview/screening notes summary."}</p>
+                    <p className="muted">{"Available placeholders: copy templates use {{index}} {{name}} {{jd_title}} {{company}} {{outcome}} {{recruiter_notes}} {{location}} {{phone}} {{email}} {{source}} {{follow_up_at}}. Note: remarks = Recruiter Note (manual recruiter note), notice_period = notice period text (can include immediate/serving/NP value), screening_remarks = Strong points + Screening Q&A + Reason of change."}</p>
                     <div className="button-row">
                       {canEditSelectedPreset ? <button onClick={() => void saveSharedCopySettings()}>{isSuggestedPresetSelected ? "Save suggested preset changes" : "Save preset changes"}</button> : null}
                       {isSettingsAdmin && selectedCustomPreset ? (
@@ -21155,7 +21174,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                       </label>
                       <div className="full">
                         <span className="field-label">Selected indicators ({newPresetIndicators.length}/20)</span>
-                        <p className="muted">Mixed indicator output shows in one column as: Value 1 | Value 2 | Value 3.</p><p className="muted">Indicator reference: `remarks` = recruiter/manual remarks field. `screening_remarks` = screening/interview notes timeline. `notice_period` = notice + LWD/DOJ + offer-in-hand context.</p>
+                        <p className="muted">Mixed indicator output shows in one column as: Value 1 | Value 2 | Value 3.</p><p className="muted">Indicator reference: `remarks` = Recruiter Note (manual recruiter note). `screening_remarks` = Strong points + Screening Q&A + Reason of change. `notice_period` = notice + LWD/DOJ + offer-in-hand context.</p>
                         <div className="stack-list compact preset-indicator-list">
                           {newPresetIndicators.length ? newPresetIndicators.map((indicator) => (
                             <article
@@ -21170,7 +21189,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                                 setDragPresetIndicatorId("");
                               }}
                             >
-                              <div className="preset-indicator-row__drag" aria-hidden="true">??</div>
+                              <div className="preset-indicator-row__drag" aria-hidden="true">::</div>
                               <div className="preset-indicator-row__field">{indicator.title}</div>
                               <div className="preset-indicator-row__value">{(indicator.fields || []).join(" + ")}</div>
                               <div className="preset-indicator-row__actions">
@@ -21423,6 +21442,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                   <div className="form-grid two-col">
                     <label><span>Member name</span><input autoComplete="off" disabled={!isSettingsAdmin} value={teamUserDraft.name} onChange={(e) => setTeamUserDraft((current) => ({ ...current, name: e.target.value }))} placeholder="Enter full name" /></label>
                     <label><span>Member email</span><input autoComplete="off" disabled={!isSettingsAdmin} type="email" value={teamUserDraft.email} onChange={(e) => setTeamUserDraft((current) => ({ ...current, email: e.target.value }))} placeholder="member@company.com" /></label>
+                    <label><span>Member phone</span><input autoComplete="off" disabled={!isSettingsAdmin} value={teamUserDraft.phone || ""} onChange={(e) => setTeamUserDraft((current) => ({ ...current, phone: e.target.value }))} placeholder="+91 98xxxxxx10" /></label>
                     <label><span>Member role</span><select disabled={!isSettingsAdmin} value={teamUserDraft.role} onChange={(e) => setTeamUserDraft((current) => ({ ...current, role: e.target.value }))}><option value="recruiter">Recruiter</option><option value="admin">Admin</option></select></label>
                     <label><span>Temporary password</span><input autoComplete="new-password" disabled={!isSettingsAdmin} type="password" value={teamUserDraft.password} onChange={(e) => setTeamUserDraft((current) => ({ ...current, password: e.target.value }))} placeholder="Temporary password" /></label>
                   </div>
@@ -21713,7 +21733,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
             <label className="full">
               <span>Customize message</span>
               <textarea value={whatsappTemplatePicker.customText || ""} onChange={(e) => setWhatsappTemplatePicker((current) => ({ ...current, customText: e.target.value }))} />
-              <span className="field-help">Placeholders: {`{{name}} {{recruiter_name}} {{recruiter_email}} {{recruiter_phone}} {{interview_at}} {{jd_title}} {{client_name}} {{company_name}} {{phone}} {{jd_link}} {{recruiter_jd_link}}`}</span>
+              <span className="field-help">{"Placeholders: {{name}} {{recruiter_name}} {{recruiter_email}} {{recruiter_phone}} {{interview_at}} {{jd_title}} {{client_name}} {{company_name}} {{phone}} {{jd_link}} {{recruiter_jd_link}}"}</span>
             </label>
             <div className="form-grid two-col">
               <label>

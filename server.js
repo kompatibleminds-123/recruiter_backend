@@ -11097,6 +11097,7 @@ const server = http.createServer(async (req, res) => {
         companyId: actor.companyId,
         name: String(body.name || "").trim(),
         email: String(body.email || "").trim(),
+        phone: String(body.phone || "").trim(),
         password: String(body.password || ""),
         role: String(body.role || "team").trim()
       });

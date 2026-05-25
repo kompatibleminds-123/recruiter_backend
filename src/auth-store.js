@@ -429,6 +429,7 @@ function sanitizeUser(user) {
     companyName: user.companyName ?? user.company_name ?? null,
     name: user.name,
     email: user.email,
+    phone: String(user.phone || user.phone_number || user.phoneNumber || "").trim(),
     role: user.role,
     emailVerified: Boolean(user.emailVerified ?? user.email_verified ?? false),
     createdAt: user.createdAt ?? user.created_at ?? null
@@ -2104,7 +2105,7 @@ async function createTrialCompanyWithAdmin({ companyName, adminName, email, pass
   });
   return { company: sanitizeCompany(company), user: sanitizeUser(inserted?.[0] || user), license };
 }
-async function createUser({ actorUserId, companyId, name, email, password, role }) {
+async function createUser({ actorUserId, companyId, name, email, phone, password, role }) {
   const e = normalizeEmail(email);
   const rawRole = String(role || "").trim().toLowerCase();
   const r = rawRole === "admin"
@@ -2142,7 +2143,7 @@ async function createUser({ actorUserId, companyId, name, email, password, role 
         throw new Error(getWorkspaceUserLimitMessage(workspaceUserLimit));
       }
     }
-    const user = { id: crypto.randomUUID(), companyId, companyName: company.name, name: String(name).trim(), email: e, role: r, passwordHash: hashPassword(password), createdAt: new Date().toISOString() };
+    const user = { id: crypto.randomUUID(), companyId, companyName: company.name, name: String(name).trim(), email: e, phone: String(phone || "").trim(), role: r, passwordHash: hashPassword(password), createdAt: new Date().toISOString() };
     if (r === "payroll_owner" || r === "payroll_manager") {
       store.payrollUsers = Array.isArray(store.payrollUsers) ? store.payrollUsers : [];
       store.payrollUsers.push(user);
@@ -2172,8 +2173,37 @@ async function createUser({ actorUserId, companyId, name, email, password, role 
     }], { conflict: "id", upsert: true });
     return sanitizePayrollUser(rows[0]);
   }
-  const rows = await sbIns("users", [{ id: crypto.randomUUID(), company_id: companyId, company_name: company.name, name: String(name).trim(), email: e, role: r, password_hash: hashPassword(password), created_at: new Date().toISOString() }], { conflict: "id", upsert: true });
-  return sanitizeUser(rows[0]);
+  const userRow = {
+    id: crypto.randomUUID(),
+    company_id: companyId,
+    company_name: company.name,
+    name: String(name).trim(),
+    email: e,
+    role: r,
+    phone_number: String(phone || "").trim(),
+    password_hash: hashPassword(password),
+    created_at: new Date().toISOString()
+  };
+  try {
+    const rows = await sbIns("users", [userRow], { conflict: "id", upsert: true });
+    return sanitizeUser(rows[0]);
+  } catch (error) {
+    const message = String(error?.message || error);
+    if (/phone_number|column/i.test(message)) {
+      const fallbackRows = await sbIns("users", [{
+        id: userRow.id,
+        company_id: userRow.company_id,
+        company_name: userRow.company_name,
+        name: userRow.name,
+        email: userRow.email,
+        role: userRow.role,
+        password_hash: userRow.password_hash,
+        created_at: userRow.created_at
+      }], { conflict: "id", upsert: true });
+      return sanitizeUser({ ...(fallbackRows[0] || {}), phone_number: String(phone || "").trim() });
+    }
+    throw error;
+  }
 }
 async function getCompanyApplicantIntakeSecret(companyId) {
   const id = String(companyId || "").trim();
