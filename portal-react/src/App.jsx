@@ -19002,11 +19002,20 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                   const statusState = normalizedAssessmentState(matchedAssessment, item);
                   const latestAttemptLine = extractLatestAttemptLine(item.last_contact_notes || "");
                   const latestAttemptRemarks = extractAttemptRemarks(latestAttemptLine);
+                  const linkedinRaw = String(item.linkedin || item.linkedinUrl || "").trim();
+                  const linkedinHref = linkedinRaw
+                    ? (/^https?:\/\//i.test(linkedinRaw) ? linkedinRaw : `https://${linkedinRaw}`)
+                    : "";
                   return (
-                    <article className="item-card compact-card" key={item.id}>
+                    <article className="item-card compact-card captured-note-card" key={item.id}>
                       <div className="item-card__top">
                           <div>
-                            <h3>{item.name || "Candidate"} | {item.jd_title || item.role || "Untitled role"}</h3>
+                            <div className="captured-note-title-row">
+                              <h3>{item.name || "Candidate"} | {item.jd_title || item.role || "Untitled role"}</h3>
+                              {linkedinHref ? (
+                                <a className="captured-note-linkedin" href={linkedinHref} target="_blank" rel="noopener noreferrer">LinkedIn</a>
+                              ) : null}
+                            </div>
                           <p className="muted">{[
                             item.company || "",
                             item.source ? `Source: ${item.source}` : "",
@@ -19044,7 +19053,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                           {[item.last_contact_outcome ? `Status: ${item.last_contact_outcome}` : "", latestAttemptRemarks ? `Remarks: ${latestAttemptRemarks}` : ""].filter(Boolean).join(" | ")}
                         </div>
                       ) : null}
-                      <div className="button-row">
+                      <div className="button-row captured-note-actions">
                         {!item.hidden_from_captured ? (
                           <button onClick={() => loadCandidateIntoInterview(item.id)}>Open draft</button>
                         ) : null}
