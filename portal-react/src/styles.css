@@ -958,7 +958,37 @@ textarea { min-height: 92px; resize: vertical; }
   display: grid;
   gap: 0.65rem;
   margin: 0.75rem 0 0.65rem;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+}
+
+.captured-filter-grid .filter-dropdown {
+  border-radius: 14px;
+  box-shadow: none;
+}
+
+.captured-filter-grid .filter-dropdown__summary {
+  min-height: 52px;
+  padding: 0.55rem 0.8rem;
+  font-size: 0.85rem;
+  font-weight: 700;
+  background: #f7faff;
+}
+
+.captured-filter-grid .filter-dropdown__summary > span {
+  background: transparent;
+}
+
+.captured-filter-grid .filter-dropdown__summary .muted {
+  background: transparent;
+  box-shadow: none;
+  border: 0;
+  padding: 0;
+  font-size: 0.72rem;
+  color: #56709a;
+}
+
+.captured-filter-grid .filter-dropdown__body {
+  padding: 0 0.75rem 0.75rem;
 }
 
 .captured-metric-row {
@@ -3252,4 +3282,8 @@ button:focus-visible {
     -webkit-overflow-scrolling: touch;
   }
 }
+
+
+.captured-copy-excel-btn { min-height: 36px; border-radius: 10px; padding: 0.45rem 0.8rem; font-weight: 700; background: #fff; color: #1f3760; border: 1px solid #d2deef; box-shadow: none; }
+.captured-copy-excel-btn:hover { background: #f6f9ff; }
 

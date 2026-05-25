@@ -18977,7 +18977,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                     {exportPresetOptions.map((preset) => <option key={preset.id} value={preset.id}>{preset.label}</option>)}
                   </select>
                 </label>
-                <button onClick={() => void copyCapturedExcel()}>Copy Excel</button>
+                <button className="ghost-btn captured-copy-excel-btn" onClick={() => void copyCapturedExcel()}>?? Copy Excel</button>
                 {String(state.user?.role || "").toLowerCase() === "admin" ? (
                   <>
                       {bulkAssignCandidateIds.length ? (
@@ -23964,6 +23964,7 @@ export default function App() {
           ? <PortalErrorBoundary><MarketingPortalApp token={token} onLogout={logout} /></PortalErrorBoundary>
         : <PortalErrorBoundary><PortalApp token={token} onLogout={logout} /></PortalErrorBoundary>;
 }
+
 
 
 
