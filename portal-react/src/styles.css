@@ -2918,15 +2918,15 @@ button:focus-visible {
 
 .captured-note-detail-list {
   display: grid;
-  gap: 0.24rem;
+  gap: 0.2rem;
   color: #2b4573;
-  font-size: 0.9rem;
-  line-height: 1.35;
+  font-size: 0.82rem;
+  line-height: 1.3;
 }
 
 .captured-note-contact-row {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 0.35rem;
   min-width: 0;
   overflow-wrap: anywhere;
@@ -2940,6 +2940,31 @@ button:focus-visible {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  margin-top: 1px;
+}
+
+.captured-note-field {
+  display: grid;
+  grid-template-columns: 14px 1fr;
+  column-gap: 0.35rem;
+}
+
+.captured-note-field .captured-note-contact-icon {
+  grid-row: 1 / span 2;
+}
+
+.captured-note-field-label {
+  grid-column: 2;
+  display: block;
+  font-weight: 500;
+  color: #2a4572;
+}
+
+.captured-note-field-value {
+  grid-column: 2;
+  display: block;
+  font-weight: 700;
+  color: #1e3b6a;
 }
 
 .captured-note-actions {
