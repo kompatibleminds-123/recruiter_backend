@@ -19161,20 +19161,18 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                         <summary>
                           <span className="captured-note-summary-badge">Summary</span>
                           <span className="captured-note-summary-preview">{summaryShort}</span>
-                          {summaryIsTruncated ? <span className="captured-note-summary-inline-rest">{summaryRemainder}</span> : null}
                           {summaryIsTruncated ? <span className="captured-note-summary-toggle">Show more</span> : null}
                         </summary>
-                        {!summaryIsTruncated ? <div className="captured-note-summary-full">{summaryFull}</div> : null}
+                        <div className="captured-note-summary-full">{summaryIsTruncated ? summaryRemainder : summaryFull}</div>
                       </details>
                       {recruiterNoteFull ? (
                         <details className="captured-note-summary-bar captured-note-summary-bar--note">
                           <summary>
                             <span className="captured-note-summary-badge">Recruiter note</span>
                             <span className="captured-note-summary-preview">{recruiterNoteShort}</span>
-                            {recruiterNoteIsTruncated ? <span className="captured-note-summary-inline-rest">{recruiterNoteRemainder}</span> : null}
                             {recruiterNoteIsTruncated ? <span className="captured-note-summary-toggle">Show more</span> : null}
                           </summary>
-                          {!recruiterNoteIsTruncated ? <div className="captured-note-summary-full">{recruiterNoteFull}</div> : null}
+                          <div className="captured-note-summary-full">{recruiterNoteIsTruncated ? recruiterNoteRemainder : recruiterNoteFull}</div>
                         </details>
                       ) : null}
                       <div className="chip-row">

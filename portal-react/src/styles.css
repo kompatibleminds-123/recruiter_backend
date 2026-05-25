@@ -3018,17 +3018,6 @@ button:focus-visible {
   flex: 1;
 }
 
-.captured-note-summary-inline-rest {
-  display: none;
-  color: #2b4573;
-  font-size: 0.9rem;
-  line-height: 1.35;
-}
-
-.captured-note-summary-bar[open] .captured-note-summary-inline-rest {
-  display: inline;
-}
-
 .captured-note-summary-toggle {
   color: #1d4ed8;
   font-size: 0.8rem;
@@ -3037,6 +3026,10 @@ button:focus-visible {
 
 .captured-note-summary-bar[open] .captured-note-summary-toggle {
   visibility: hidden;
+}
+
+.captured-note-summary-bar[open] .captured-note-summary-preview {
+  display: none;
 }
 
 .captured-note-summary-full {
