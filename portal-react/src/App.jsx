@@ -294,7 +294,8 @@ function FeatureLockedSection({ title = "Feature locked" }) {
     mutedTextColor: "#7a8496",
     embedHeightPx: 900
   },
-  jobApplyFields: []
+  jobApplyFields: [],
+  deletedSuggestedShortcuts: []
 };
 
 const JOB_APPLY_FIELD_TYPES = ["text", "textarea", "select", "checkbox"];
@@ -330,6 +331,9 @@ function normalizeJobApplyField(field, index = 0) {
 
 function migrateCopySettings(settings = {}) {
   const next = { ...DEFAULT_COPY_SETTINGS, ...(settings || {}) };
+  next.deletedSuggestedShortcuts = (Array.isArray(next.deletedSuggestedShortcuts) ? next.deletedSuggestedShortcuts : [])
+    .map((item) => normalizeShortcutKey(item))
+    .filter(Boolean);
 	  next.semanticSearchEnabled = next.semanticSearchEnabled !== false;
   next.interviewAiParsingEnabled = next.interviewAiParsingEnabled !== false;
 	  const presetColumns = { ...(next.exportPresetColumns || {}) };
@@ -8080,10 +8084,20 @@ function PortalApp({ token, onLogout }) {
       jdShortcuts: String(job?.jdShortcuts || "")
     })).filter((job) => job.id);
   }, [state.jobs, jobsCatalog]);
-  const mergedCompanyShortcutTemplates = useMemo(() => ({
-    ...SUGGESTED_SHORTCUT_TEMPLATES,
-    ...((copySettings?.companyWideShortcuts && typeof copySettings.companyWideShortcuts === "object") ? copySettings.companyWideShortcuts : {})
-  }), [copySettings?.companyWideShortcuts]);
+  const mergedCompanyShortcutTemplates = useMemo(() => {
+    const deletedSet = new Set(
+      (Array.isArray(copySettings?.deletedSuggestedShortcuts) ? copySettings.deletedSuggestedShortcuts : [])
+        .map((item) => normalizeShortcutKey(item))
+        .filter(Boolean)
+    );
+    const suggestedFiltered = Object.fromEntries(
+      Object.entries(SUGGESTED_SHORTCUT_TEMPLATES).filter(([key]) => !deletedSet.has(normalizeShortcutKey(key)))
+    );
+    return {
+      ...suggestedFiltered,
+      ...((copySettings?.companyWideShortcuts && typeof copySettings.companyWideShortcuts === "object") ? copySettings.companyWideShortcuts : {})
+    };
+  }, [copySettings?.companyWideShortcuts, copySettings?.deletedSuggestedShortcuts]);
   const selectedShortcutJob = useMemo(
     () => shortcutJobOptions.find((job) => String(job.id) === String(shortcutJobId || "")) || null,
     [shortcutJobOptions, shortcutJobId]
@@ -16873,6 +16887,27 @@ function PortalApp({ token, onLogout }) {
     }
   }
 
+  async function deleteSuggestedShortcutTemplate(key) {
+    if (!isSettingsAdmin) {
+      setStatus("shortcuts", "Only admin can delete suggested templates.", "error");
+      return;
+    }
+    const normalized = normalizeShortcutKey(key);
+    if (!normalized) return;
+    try {
+      const existingDeleted = Array.isArray(copySettings?.deletedSuggestedShortcuts)
+        ? copySettings.deletedSuggestedShortcuts
+        : [];
+      const nextDeleted = Array.from(new Set([...existingDeleted, normalized]));
+      const payload = { ...copySettings, deletedSuggestedShortcuts: nextDeleted };
+      const result = await api("/company/shared-export-presets", token, "POST", { settings: payload });
+      setCopySettings((current) => ({ ...DEFAULT_COPY_SETTINGS, ...current, ...result }));
+      setStatus("shortcuts", `Deleted suggested shortcut ${formatShortcutLabel(normalized)}.`, "ok");
+    } catch (error) {
+      setStatus("shortcuts", String(error?.message || error), "error");
+    }
+  }
+
   function buildShortcutCopyContext(jobOverride = null) {
     const job = jobOverride || selectedShortcutJob || null;
     const jobId = String(job?.id || "").trim();
@@ -17581,6 +17616,33 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
       const resolvedTotalExperience = String(strictSummary.totalExperience || "").trim();
       const resolvedCurrentOrgTenure = String(strictSummary.currentOrgTenure || "").trim();
       const resolvedQualification = String(strictSummary.highestEducation || "").trim();
+      const resolvedPhone = String(
+        fixedSummary?.phoneNumber ||
+        fixedSummary?.phone ||
+        parsedResult?.phoneNumber ||
+        parsedResult?.phone ||
+        strictSummary?.phoneNumber ||
+        strictSummary?.phone ||
+        ""
+      ).trim();
+      const resolvedEmail = String(
+        fixedSummary?.emailId ||
+        fixedSummary?.email ||
+        parsedResult?.emailId ||
+        parsedResult?.email ||
+        strictSummary?.emailId ||
+        strictSummary?.email ||
+        ""
+      ).trim();
+      const resolvedLinkedin = String(
+        fixedSummary?.linkedinUrl ||
+        fixedSummary?.linkedin ||
+        parsedResult?.linkedinUrl ||
+        parsedResult?.linkedin ||
+        strictSummary?.linkedinUrl ||
+        strictSummary?.linkedin ||
+        ""
+      ).trim();
       let resolvedLocation = String(fixedSummary?.location || parsedResult?.location || "").trim();
       const lcResolvedCompany = String(resolvedCompany || "").trim().toLowerCase();
       const lcResolvedDesignation = String(resolvedDesignation || "").trim().toLowerCase();
@@ -17596,9 +17658,9 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
       setNewDraftCvParsePreview({
         summary: {
           candidateName: String(fixedSummary?.candidate_name || parsedResult?.candidateName || "").trim(),
-          phoneNumber: String(fixedSummary?.phone || parsedResult?.phoneNumber || "").trim(),
-          emailId: String(fixedSummary?.email || parsedResult?.emailId || "").trim(),
-          linkedinUrl: String(fixedSummary?.linkedin || parsedResult?.linkedinUrl || "").trim(),
+          phoneNumber: resolvedPhone,
+          emailId: resolvedEmail,
+          linkedinUrl: resolvedLinkedin,
           location: resolvedLocation,
           currentCompany: resolvedCompany,
           currentDesignation: resolvedDesignation,
@@ -17613,9 +17675,9 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
       });
       setNewDraftCvParsedPatch({
         name: String(parsedResult?.candidateName || file.name?.replace(/\.[^.]+$/, "") || "").trim(),
-        phone: String(parsedResult?.phoneNumber || "").trim(),
-        email: String(parsedResult?.emailId || "").trim(),
-        linkedin: String(parsedResult?.linkedinUrl || "").trim(),
+        phone: resolvedPhone,
+        email: resolvedEmail,
+        linkedin: resolvedLinkedin,
         company: resolvedCompany || String(parsedResult?.currentCompany || "").trim(),
         current_designation: resolvedDesignation || String(parsedResult?.currentDesignation || "").trim(),
         total_experience: resolvedTotalExperience,
@@ -18798,16 +18860,17 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                 <MultiSelectDropdown label="Outcome" options={applicantOptions.outcomes} selected={applicantFilters.outcomes} onToggle={(value) => setApplicantFilters((current) => ({ ...current, outcomes: value === "__all__" ? [] : current.outcomes.includes(value) ? current.outcomes.filter((item) => item !== value) : [...current.outcomes, value] }))} />
                 <MultiSelectDropdown label="State" options={applicantOptions.activeStates} selected={applicantFilters.activeStates} allowAll={false} emptySummary="Active only" onToggle={(value) => setApplicantFilters((current) => ({ ...current, activeStates: current.activeStates.includes(value) ? current.activeStates.filter((item) => item !== value) : [...current.activeStates, value] }))} />
               </div>
-              <div className="button-row">
+              <div className="button-row captured-copy-row">
                 <label className="copy-preset-control">
                   <span>Copy preset</span>
                   <select value={activeCopyPresetId} onChange={(e) => setActiveCopyPresetId(e.target.value)}>
                     {exportPresetOptions.map((preset) => <option key={preset.id} value={preset.id}>{preset.label}</option>)}
                   </select>
                 </label>
-                <button onClick={() => void copyApplicantsExcel()}>Copy Excel</button>
-                <button onClick={() => void copyApplicantsWhatsapp()}>Copy WhatsApp</button>
-                <button onClick={() => void copyApplicantsEmail()}>Copy Email</button>
+                <button className="ghost-btn captured-copy-excel-btn" onClick={() => void copyApplicantsExcel()}>
+                  <span className="captured-copy-excel-btn__icon" aria-hidden="true">X</span>
+                  <span>Copy Excel</span>
+                </button>
                 {String(state.user?.role || "").toLowerCase() === "admin" ? (
                   <>
                     {bulkAssignApplicantIds.length ? (
@@ -18824,7 +18887,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                   </>
                 ) : null}
               </div>
-              <div className="stack-list">
+              <div className="stack-list captured-notes-list">
                 {!visibleApplicants.length ? <div className="empty-state">No applied candidates right now.</div> : pagedApplicants.map((item) => (
                   <article className="item-card compact-card captured-note-card" key={item.id}>
                     {String(state.user?.role || "").toLowerCase() === "admin" ? (
@@ -18908,11 +18971,12 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                       </div>
                     </div>
                     {item.assignedToName ? <div className="status-note">{`Already assigned to ${item.assignedToName}`}</div> : null}
-                    <div className="button-row">
+                    <div className="button-row captured-note-actions">
                       {!item.hidden_from_captured ? (
                         <button onClick={() => loadApplicantIntoInterview(item.id)}>Open draft</button>
                       ) : null}
-	                            <button onClick={() => openRecruiterNotes(item)}>Recruiter note</button>
+                      {state.user?.role === "admin" ? <button className="ghost-btn" onClick={() => { setBulkAssignApplicantModalOpen(false); setBulkAssignApplicantIds([]); setAssignApplicantId(item.id); }}>{item.assignedToName ? "Reassign" : "Assign"}</button> : null}
+                      <button className="ghost-btn" onClick={() => openRecruiterNotes(item)}>Recruiter note</button>
                       <button
                         className="whatsapp-logo-btn"
                         onClick={() => openWhatsappTemplatePicker({
@@ -18942,8 +19006,6 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                       {!item.hidden_from_captured ? (
                         <button onClick={() => void createAssessmentFromCandidate(item.id)}>Create assessment</button>
                       ) : null}
-                      {item.cvFilename ? <button onClick={() => void openCv(item.id)}>Open CV</button> : null}
-                      {state.user?.role === "admin" ? <button onClick={() => { setBulkAssignApplicantModalOpen(false); setBulkAssignApplicantIds([]); setAssignApplicantId(item.id); }}>{item.assignedToName ? "Reassign" : "Assign"}</button> : null}
                       {item.hidden_from_captured ? (
                         <button className="ghost-btn" onClick={() => void restoreApplicant(item.id)}>Restore to active</button>
                       ) : (
@@ -18954,7 +19016,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                     {String(item.screeningAnswers || "").trim() ? (
                       <details className="captured-note-summary-bar">
                         <summary>
-                          <span className="captured-note-summary-badge">Screening answers</span>
+                          <span className="captured-note-summary-badge">Remarks</span>
                           <span className="captured-note-summary-preview">{(() => {
                             const text = normalizeMojibakeSymbols(String(item.screeningAnswers || "").trim());
                             const clip = 180;
@@ -18966,6 +19028,35 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                           })()}
                         </summary>
                         <div className="captured-note-summary-full">{normalizeMojibakeSymbols(String(item.screeningAnswers || "").trim())}</div>
+                      </details>
+                    ) : null}
+                    {String(normalizeMojibakeSymbols([
+                      String(item.recruiter_context_notes || "").trim(),
+                      String(item.other_pointers || "").trim()
+                    ].filter(Boolean).join("\n\n")) || "").trim() ? (
+                      <details className="captured-note-summary-bar captured-note-summary-bar--note">
+                        <summary>
+                          <span className="captured-note-summary-badge">Recruiter note</span>
+                          <span className="captured-note-summary-preview">{(() => {
+                            const text = normalizeMojibakeSymbols([
+                              String(item.recruiter_context_notes || "").trim(),
+                              String(item.other_pointers || "").trim()
+                            ].filter(Boolean).join("\n\n")) || "";
+                            const clip = 140;
+                            return text.length > clip ? `${text.slice(0, clip).trim()}...` : text;
+                          })()}</span>
+                          {(() => {
+                            const text = normalizeMojibakeSymbols([
+                              String(item.recruiter_context_notes || "").trim(),
+                              String(item.other_pointers || "").trim()
+                            ].filter(Boolean).join("\n\n")) || "";
+                            return text.length > 140 ? <span className="captured-note-summary-toggle">Show more</span> : null;
+                          })()}
+                        </summary>
+                        <div className="captured-note-summary-full">{normalizeMojibakeSymbols([
+                          String(item.recruiter_context_notes || "").trim(),
+                          String(item.other_pointers || "").trim()
+                        ].filter(Boolean).join("\n\n"))}</div>
                       </details>
                     ) : null}
                   </article>
@@ -20827,6 +20918,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
 
                 <Section kicker="Shortcuts" title="Suggested + Company Specific Shortcuts" className="shortcuts-section shortcuts-section--company">
                   <p className="muted">This list contains Suggested shortcuts and Company Specific shortcuts.</p>
+                  <p className="muted">Suggested = platform defaults. Company Specific = your workspace overrides.</p>
                   {!isSettingsAdmin ? <p className="muted">Read-only for recruiters. Admin-defined shortcuts appear automatically in your template pickers.</p> : null}
                   {isSettingsAdmin ? (
                     <>
@@ -20866,7 +20958,9 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                                 <div className="button-row tight">
                                   <button className="ghost-btn" onClick={() => { setShortcutCompanyKey(String(key || "")); setShortcutCompanyValue(String(value || "")); }}>Edit</button>
                                   <button className="ghost-btn" onClick={() => void copyShortcutTemplateWithValues(String(key || ""), String(value || ""), selectedShortcutJob)}>Copy</button>
-                                  {Object.prototype.hasOwnProperty.call((copySettings?.companyWideShortcuts || {}), key) ? <button className="ghost-btn" onClick={() => void deleteCompanyShortcutTemplate(String(key || ""))}>Delete</button> : null}
+                                  {Object.prototype.hasOwnProperty.call((copySettings?.companyWideShortcuts || {}), key)
+                                    ? <button className="ghost-btn" onClick={() => void deleteCompanyShortcutTemplate(String(key || ""))}>Delete</button>
+                                    : <button className="ghost-btn" onClick={() => void deleteSuggestedShortcutTemplate(String(key || ""))}>Delete</button>}
                                 </div>
                               ) : (
                                 <div className="button-row tight">
