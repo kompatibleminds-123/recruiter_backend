@@ -2937,6 +2937,10 @@ button:focus-visible {
   gap: 0.9rem;
 }
 
+.applied-note-main {
+  grid-template-columns: 1.25fr 0.95fr 1fr 0.95fr;
+}
+
 .captured-note-col {
   min-width: 0;
 }

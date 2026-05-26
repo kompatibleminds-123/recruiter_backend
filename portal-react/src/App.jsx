@@ -18828,41 +18828,93 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
               </div>
               <div className="stack-list">
                 {!visibleApplicants.length ? <div className="empty-state">No applied candidates right now.</div> : pagedApplicants.map((item) => (
-                  <article className="item-card compact-card" key={item.id}>
-                    <div className="item-card__top">
-                      <div>
-                        <h3>{item.candidateName || "Applicant"} | {item.jdTitle || "Untitled role"}</h3>
-                        <p className="muted">{[
-                          item.clientName ? `Client: ${item.clientName}` : "",
-                          item.jdTitle ? `JD: ${item.jdTitle}` : "",
-                          item.sourcePlatform ? `Source: ${item.sourcePlatform}` : "",
-                          item.assignedToName ? `Assigned: ${item.assignedToName}` : "",
-                          item.parseStatus ? `Parse: ${item.parseStatus}` : ""
-                        ].filter(Boolean).join(" | ")}</p>
-                        {item.assignedToName ? <div className="status-note">{`Already assigned to ${item.assignedToName}`}</div> : null}
+                  <article className="item-card compact-card captured-note-card" key={item.id}>
+                    {String(state.user?.role || "").toLowerCase() === "admin" ? (
+                      <label className="captured-top-select captured-top-select--card">
+                        <input
+                          type="checkbox"
+                          checked={bulkAssignApplicantIds.includes(String(item?.id || ""))}
+                          onChange={(e) => {
+                            const id = String(item?.id || "");
+                            if (!id) return;
+                            setBulkAssignApplicantIds((current) => e.target.checked
+                              ? Array.from(new Set([...current, id]))
+                              : current.filter((entry) => entry !== id));
+                          }}
+                        />
+                      </label>
+                    ) : null}
+                    <div className="captured-note-main applied-note-main">
+                      <div className="captured-note-col captured-note-col--profile">
+                        <div className="captured-note-title-row">
+                          <h3>{item.candidateName || "Applicant"}</h3>
+                        </div>
+                        <div className="captured-note-subtitle">{item.jdTitle || "Untitled role"}</div>
+                        <div className="captured-note-detail-list captured-note-profile-meta">
+                          <div className="captured-note-contact-row captured-note-field">
+                            <span className="captured-note-contact-icon" aria-hidden="true">🏢</span>
+                            <span className="captured-note-field-value">{item.currentCompany || "NA"}</span>
+                          </div>
+                          <div className="captured-note-contact-row captured-note-field">
+                            <span className="captured-note-contact-icon" aria-hidden="true">📍</span>
+                            <span className="captured-note-field-value">{item.location || "NA"}</span>
+                          </div>
+                        </div>
                       </div>
-                      <div className="chip-row">
-                        {String(state.user?.role || "").toLowerCase() === "admin" ? (
-                          <label className="checkbox-row" style={{ marginRight: 6 }}>
-                            <input
-                              type="checkbox"
-                              checked={bulkAssignApplicantIds.includes(String(item?.id || ""))}
-                              onChange={(e) => {
-                                const id = String(item?.id || "");
-                                if (!id) return;
-                                setBulkAssignApplicantIds((current) => e.target.checked
-                                  ? Array.from(new Set([...current, id]))
-                                  : current.filter((entry) => entry !== id));
-                              }}
-                            />
-                            <span>Select</span>
-                          </label>
-                        ) : null}
-                        {item.cvFilename ? <span className="chip">CV: {item.cvFilename}</span> : null}
-                        {item.location ? <span className="chip">{item.location}</span> : null}
-                        {item.totalExperience ? <span className="chip">{item.totalExperience}</span> : null}
+                      <div className="captured-note-col captured-note-col--details">
+                        <div className="captured-note-detail-list">
+                          <div className="captured-note-contact-row captured-note-field">
+                            <span className="captured-note-contact-icon" aria-hidden="true">📊</span>
+                            <span className="captured-note-field-label">Experience</span>
+                            <span className="captured-note-field-value">{item.totalExperience || item.total_experience || "NA"}</span>
+                          </div>
+                          <div className="captured-note-contact-row captured-note-field">
+                            <span className="captured-note-contact-icon" aria-hidden="true">₹</span>
+                            <span className="captured-note-field-label">CTC</span>
+                            <span className="captured-note-field-value">{item.currentCtc || item.current_ctc || "NA"}</span>
+                          </div>
+                          <div className="captured-note-contact-row captured-note-field">
+                            <span className="captured-note-contact-icon" aria-hidden="true">🕒</span>
+                            <span className="captured-note-field-label">Notice period</span>
+                            <span className="captured-note-field-value">{item.noticePeriod || item.notice_period || "NA"}</span>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="captured-note-col captured-note-col--meta">
+                        <div className="captured-note-detail-list">
+                          <div className="captured-note-contact-row captured-note-field">
+                            <span className="captured-note-contact-icon" aria-hidden="true">✉</span>
+                            <span className="captured-note-field-label">Email</span>
+                            <span className="captured-note-field-value">{item.email || "NA"}</span>
+                          </div>
+                          <div className="captured-note-contact-row captured-note-field">
+                            <span className="captured-note-contact-icon" aria-hidden="true">☎</span>
+                            <span className="captured-note-field-label">Phone</span>
+                            <span className="captured-note-field-value">{item.phone || item.phoneNumber || "NA"}</span>
+                          </div>
+                          <div className="captured-note-contact-row captured-note-field">
+                            <span className="captured-note-contact-icon" aria-hidden="true">↺</span>
+                            <span className="captured-note-field-label">Source</span>
+                            <span className="captured-note-field-value">{item.sourcePlatform || "NA"}</span>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="captured-note-col captured-note-col--ownership">
+                        <div className="captured-note-detail-list">
+                          <div className="captured-note-contact-row captured-note-field">
+                            <span className="captured-note-contact-icon" aria-hidden="true">👤</span>
+                            <span className="captured-note-field-label">Assigned to</span>
+                            <span className="captured-note-field-value">{item.assignedToName || "NA"}</span>
+                          </div>
+                          <div className="captured-note-contact-row captured-note-field">
+                            <span className="captured-note-contact-icon" aria-hidden="true">🕒</span>
+                            <span className="captured-note-field-label">Assigned at</span>
+                            <span className="captured-note-field-value">{item.assignedAt ? new Date(item.assignedAt).toLocaleString() : (item.assigned_at ? new Date(item.assigned_at).toLocaleString() : "NA")}</span>
+                          </div>
+                        </div>
                       </div>
                     </div>
+                    {item.assignedToName ? <div className="status-note">{`Already assigned to ${item.assignedToName}`}</div> : null}
                     <div className="button-row">
                       {!item.hidden_from_captured ? (
                         <button onClick={() => loadApplicantIntoInterview(item.id)}>Open draft</button>
