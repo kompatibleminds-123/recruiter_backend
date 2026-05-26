@@ -961,6 +961,10 @@ textarea { min-height: 92px; resize: vertical; }
   grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
 }
 
+.captured-view-row {
+  margin-bottom: 0.45rem;
+}
+
 .captured-filter-grid .filter-dropdown {
   border-radius: 14px;
   box-shadow: none;
@@ -1012,6 +1016,10 @@ textarea { min-height: 92px; resize: vertical; }
   border-color: #d9e3f7;
   min-height: 76px;
   padding: 0.58rem 0.78rem;
+}
+
+.captured-metric-row .metric-value {
+  font-size: 1.12rem;
 }
 
 .captured-copy-row {

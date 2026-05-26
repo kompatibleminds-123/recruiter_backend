@@ -18945,7 +18945,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
               <div className="form-grid three-col">
                 <label className="full"><span>Search</span><input placeholder="Search candidate name, company, phone, email, LinkedIn..." value={candidateFilters.q} onChange={(e) => setCandidateFilters((c) => ({ ...c, q: e.target.value }))} /></label>
               </div>
-              <div className="form-grid three-col">
+              <div className="form-grid three-col captured-view-row">
                 <label>
                   <span>View</span>
                   <select value={candidateFilters.view} onChange={(e) => setCandidateFilters((current) => ({ ...current, view: e.target.value }))}>
@@ -18953,7 +18953,6 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                     <option value="added_by_me">Added by me</option>
                     <option value="assigned_to_me">Assigned to me (primary)</option>
                     <option value="reassigned_to_me">Reassigned to me</option>
-                    {String(state.user?.role || "").toLowerCase() === "admin" ? <option value="reassigned_by_me">Reassigned by me</option> : null}
                   </select>
                 </label>
               </div>
