@@ -4419,14 +4419,7 @@ function NotesModal({ open, candidate, onClose, onPatch, onParse, onOpenLinkedin
         {cautiousIndicatorsText ? (
           <div style={{ marginTop: 8 }}>
             <div className="status-note"><strong>Cautious indicators to check</strong></div>
-                    <details className="captured-note-summary-bar">
-                      <summary>
-                        <span className="captured-note-summary-badge">Summary</span>
-                        <span className="captured-note-summary-preview">{(() => { const text = normalizeMojibakeSymbols([item.screeningAnswers ? `Screening answers:\n${item.screeningAnswers}` : "", item.currentCompany || item.currentDesignation ? [item.currentCompany, item.currentDesignation].filter(Boolean).join(" | ") : ""].filter(Boolean).join("\n\n")) || "No extra notes yet."; const clip = 180; return text.length > clip ? `${text.slice(0, clip).trim()}...` : text; })()}</span>
-                        {(() => { const text = normalizeMojibakeSymbols([item.screeningAnswers ? `Screening answers:\n${item.screeningAnswers}` : "", item.currentCompany || item.currentDesignation ? [item.currentCompany, item.currentDesignation].filter(Boolean).join(" | ") : ""].filter(Boolean).join("\n\n")) || "No extra notes yet."; return text.length > 180 ? <span className="captured-note-summary-toggle">Show more</span> : null; })()}
-                      </summary>
-                      <div className="captured-note-summary-full">{normalizeMojibakeSymbols([item.screeningAnswers ? `Screening answers:\n${item.screeningAnswers}` : "", item.currentCompany || item.currentDesignation ? [item.currentCompany, item.currentDesignation].filter(Boolean).join(" | ") : ""].filter(Boolean).join("\n\n")) || "No extra notes yet."}</div>
-                    </details>
+            <div className="candidate-snippet">{cautiousIndicatorsText}</div>
           </div>
         ) : null}
         <div className="form-grid two-col">
