@@ -4419,7 +4419,14 @@ function NotesModal({ open, candidate, onClose, onPatch, onParse, onOpenLinkedin
         {cautiousIndicatorsText ? (
           <div style={{ marginTop: 8 }}>
             <div className="status-note"><strong>Cautious indicators to check</strong></div>
-            <div className="candidate-snippet">{cautiousIndicatorsText}</div>
+                    <details className="captured-note-summary-bar">
+                      <summary>
+                        <span className="captured-note-summary-badge">Summary</span>
+                        <span className="captured-note-summary-preview">{(() => { const text = normalizeMojibakeSymbols([item.screeningAnswers ? `Screening answers:\n${item.screeningAnswers}` : "", item.currentCompany || item.currentDesignation ? [item.currentCompany, item.currentDesignation].filter(Boolean).join(" | ") : ""].filter(Boolean).join("\n\n")) || "No extra notes yet."; const clip = 180; return text.length > clip ? `${text.slice(0, clip).trim()}...` : text; })()}</span>
+                        {(() => { const text = normalizeMojibakeSymbols([item.screeningAnswers ? `Screening answers:\n${item.screeningAnswers}` : "", item.currentCompany || item.currentDesignation ? [item.currentCompany, item.currentDesignation].filter(Boolean).join(" | ") : ""].filter(Boolean).join("\n\n")) || "No extra notes yet."; return text.length > 180 ? <span className="captured-note-summary-toggle">Show more</span> : null; })()}
+                      </summary>
+                      <div className="captured-note-summary-full">{normalizeMojibakeSymbols([item.screeningAnswers ? `Screening answers:\n${item.screeningAnswers}` : "", item.currentCompany || item.currentDesignation ? [item.currentCompany, item.currentDesignation].filter(Boolean).join(" | ") : ""].filter(Boolean).join("\n\n")) || "No extra notes yet."}</div>
+                    </details>
           </div>
         ) : null}
         <div className="form-grid two-col">
@@ -18776,12 +18783,11 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
               <div className="form-grid three-col">
                 <label className="full"><span>Search</span><input placeholder="Search by candidate, phone, email, JD..." value={applicantFilters.q} onChange={(e) => setApplicantFilters((current) => ({ ...current, q: e.target.value }))} /></label>
               </div>
-              <div className="metric-grid metric-grid--tight">
-                <div className="metric-card compact-metric"><div className="metric-label">Applied today</div><div className="metric-value">{applicantStats.today}</div></div>
-                <div className="metric-card compact-metric"><div className="metric-label">{String(state.user?.role || "").toLowerCase() === "admin" ? "Owner (unassigned inbox)" : "Owned (direct inbox)"}</div><div className="metric-value">{applicantStats.ownedDirect || 0}</div></div>
-                <div className="metric-card compact-metric"><div className="metric-label">Assigned (manual)</div><div className="metric-value">{applicantStats.assignedManual || 0}</div></div>
-                <div className="metric-card compact-metric"><div className="metric-label">Active</div><div className="metric-value">{applicantStats.active}</div></div>
-                <div className="metric-card compact-metric"><div className="metric-label">Converted</div><div className="metric-value">{applicantStats.converted}</div></div>
+              <div className="metric-grid metric-grid--tight captured-metric-row" style={{ marginTop: 12 }}>
+                <div className="metric-card compact-metric"><div className="metric-label captured-metric-label"><span className="captured-metric-icon">🗓</span>Applied today</div><div className="metric-value">{applicantStats.today}</div></div>
+                <div className="metric-card compact-metric"><div className="metric-label captured-metric-label"><span className="captured-metric-icon">🗂</span>Total applied</div><div className="metric-value">{applicantStats.total || 0}</div></div>
+                <div className="metric-card compact-metric"><div className="metric-label captured-metric-label"><span className="captured-metric-icon">👥</span>Active</div><div className="metric-value">{applicantStats.active}</div></div>
+                <div className="metric-card compact-metric"><div className="metric-label captured-metric-label"><span className="captured-metric-icon">✅</span>Converted</div><div className="metric-value">{applicantStats.converted}</div></div>
               </div>
               <div className="form-grid three-col" style={{ marginTop: 10 }}>
                 <label><span>Date from</span><input type="date" value={applicantFilters.dateFrom} onChange={(e) => setApplicantFilters((current) => ({ ...current, dateFrom: e.target.value }))} /></label>
@@ -18790,7 +18796,6 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
               <div className="muted" style={{ marginTop: 8 }}>
                 Inactive: {applicantStats.inactive || 0} (hidden). Total: {applicantStats.total || 0}
               </div>
-              <p className="muted">For admin: Owner means inbound applicants not assigned to anyone yet. Assigned (manual) means admin assigned them to a recruiter. For recruiters: Owned means it landed directly in your inbox via your apply link.</p>
               <div className="captured-filter-grid">
                 <MultiSelectDropdown label="Clients" options={applicantOptions.clients} selected={applicantFilters.clients} onToggle={(value) => setApplicantFilters((current) => ({ ...current, clients: value === "__all__" ? [] : current.clients.includes(value) ? current.clients.filter((item) => item !== value) : [...current.clients, value] }))} />
                 <MultiSelectDropdown label="JD / Role" options={applicantOptions.jds} selected={applicantFilters.jds} onToggle={(value) => setApplicantFilters((current) => ({ ...current, jds: value === "__all__" ? [] : current.jds.includes(value) ? current.jds.filter((item) => item !== value) : [...current.jds, value] }))} />
@@ -18906,11 +18911,6 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                             <span className="captured-note-field-label">Assigned to</span>
                             <span className="captured-note-field-value">{item.assignedToName || "NA"}</span>
                           </div>
-                          <div className="captured-note-contact-row captured-note-field">
-                            <span className="captured-note-contact-icon" aria-hidden="true">🕒</span>
-                            <span className="captured-note-field-label">Assigned at</span>
-                            <span className="captured-note-field-value">{item.assignedAt ? new Date(item.assignedAt).toLocaleString() : (item.assigned_at ? new Date(item.assigned_at).toLocaleString() : "NA")}</span>
-                          </div>
                         </div>
                       </div>
                     </div>
@@ -18958,10 +18958,23 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                       )}
                       {state.user?.role === "admin" ? <button className="ghost-btn" onClick={() => void removeApplicant(item.id)}>Remove</button> : null}
                     </div>
-                    <div className="candidate-snippet">{[
-                      item.screeningAnswers ? `Screening answers:\n${item.screeningAnswers}` : "",
-                      item.currentCompany || item.currentDesignation ? [item.currentCompany, item.currentDesignation].filter(Boolean).join(" | ") : ""
-                    ].filter(Boolean).join("\n\n") || "No extra notes yet."}</div>
+                    {String(item.screeningAnswers || "").trim() ? (
+                      <details className="captured-note-summary-bar">
+                        <summary>
+                          <span className="captured-note-summary-badge">Screening answers</span>
+                          <span className="captured-note-summary-preview">{(() => {
+                            const text = normalizeMojibakeSymbols(String(item.screeningAnswers || "").trim());
+                            const clip = 180;
+                            return text.length > clip ? `${text.slice(0, clip).trim()}...` : text;
+                          })()}</span>
+                          {(() => {
+                            const text = normalizeMojibakeSymbols(String(item.screeningAnswers || "").trim());
+                            return text.length > 180 ? <span className="captured-note-summary-toggle">Show more</span> : null;
+                          })()}
+                        </summary>
+                        <div className="captured-note-summary-full">{normalizeMojibakeSymbols(String(item.screeningAnswers || "").trim())}</div>
+                      </details>
+                    ) : null}
                   </article>
                 ))}
               </div>
@@ -19125,15 +19138,11 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                           <div className="captured-note-subtitle">{item.jd_title || item.role || "Untitled role"}</div>
                           <div className="captured-note-detail-list captured-note-profile-meta">
                             <div className="captured-note-contact-row captured-note-field">
-                              <span className="captured-note-contact-icon" aria-hidden="true">
-                                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 21h18"/><path d="M5 21V7l7-4 7 4v14"/><path d="M9 9h.01"/><path d="M15 9h.01"/><path d="M9 13h.01"/><path d="M15 13h.01"/></svg>
-                              </span>
+                              <span className="captured-note-contact-icon" aria-hidden="true">??</span>
                               <span className="captured-note-field-value">{companyValue}</span>
                             </div>
                             <div className="captured-note-contact-row captured-note-field">
-                              <span className="captured-note-contact-icon" aria-hidden="true">
-                                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 10c0 7-9 13-9 13S3 17 3 10a9 9 0 1 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
-                              </span>
+                              <span className="captured-note-contact-icon" aria-hidden="true">??</span>
                               <span className="captured-note-field-value">{item.location || "NA"}</span>
                             </div>
                           </div>
@@ -19143,23 +19152,17 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                         <div className="captured-note-col captured-note-col--details">
                           <div className="captured-note-detail-list">
                             <div className="captured-note-contact-row captured-note-field">
-                              <span className="captured-note-contact-icon" aria-hidden="true">
-                                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 21V7"/><path d="M4 21V3"/><path d="M4 7h16"/><path d="M9 21V11"/><path d="M15 21v-6"/></svg>
-                              </span>
+                              <span className="captured-note-contact-icon" aria-hidden="true">??</span>
                               <span className="captured-note-field-label">Experience</span>
                               <span className="captured-note-field-value">{experienceValue || "NA"}</span>
                             </div>
                             <div className="captured-note-contact-row captured-note-field">
-                              <span className="captured-note-contact-icon" aria-hidden="true">
-                                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 6v12"/><path d="M8 10h6a2 2 0 1 1 0 4H9"/></svg>
-                              </span>
+                              <span className="captured-note-contact-icon" aria-hidden="true">?</span>
                               <span className="captured-note-field-label">CTC</span>
                               <span className="captured-note-field-value">{item.current_ctc || "NA"}</span>
                             </div>
                             <div className="captured-note-contact-row captured-note-field">
-                              <span className="captured-note-contact-icon" aria-hidden="true">
-                                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-                              </span>
+                              <span className="captured-note-contact-icon" aria-hidden="true">??</span>
                               <span className="captured-note-field-label">Notice period</span>
                               <span className="captured-note-field-value">{item.notice_period || "NA"}</span>
                             </div>
@@ -19168,9 +19171,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                         <div className="captured-note-col captured-note-col--education">
                           <div className="captured-note-detail-list">
                             <div className="captured-note-contact-row captured-note-field">
-                              <span className="captured-note-contact-icon" aria-hidden="true">
-                                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m22 10-10-5L2 10l10 5 10-5z"/><path d="M6 12v5c3 3 9 3 12 0v-5"/></svg>
-                              </span>
+                              <span className="captured-note-contact-icon" aria-hidden="true">??</span>
                               <span className="captured-note-field-label">Education</span>
                               <span className="captured-note-field-value">{educationValue}</span>
                             </div>
@@ -19179,23 +19180,17 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                         <div className="captured-note-col captured-note-col--meta">
                           <div className="captured-note-detail-list">
                             <div className="captured-note-contact-row captured-note-field">
-                              <span className="captured-note-contact-icon" aria-hidden="true">
-                                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 4h16v16H4z"/><path d="m4 7 8 6 8-6"/></svg>
-                              </span>
+                              <span className="captured-note-contact-icon" aria-hidden="true">?</span>
                               <span className="captured-note-field-label">Email</span>
                               <span className="captured-note-field-value">{item.email || "NA"}</span>
                             </div>
                             <div className="captured-note-contact-row captured-note-field">
-                              <span className="captured-note-contact-icon" aria-hidden="true">
-                                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.86 19.86 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6A19.86 19.86 0 0 1 2.09 4.18 2 2 0 0 1 4.08 2h3a2 2 0 0 1 2 1.72c.12.9.33 1.79.61 2.64a2 2 0 0 1-.45 2.11L8 9.91a16 16 0 0 0 6 6l1.44-1.24a2 2 0 0 1 2.11-.45c.85.28 1.74.49 2.64.61A2 2 0 0 1 22 16.92z"/></svg>
-                              </span>
+                              <span className="captured-note-contact-icon" aria-hidden="true">?</span>
                               <span className="captured-note-field-label">Phone</span>
                               <span className="captured-note-field-value">{item.phone || item.phoneNumber || "NA"}</span>
                             </div>
                             <div className="captured-note-contact-row captured-note-field">
-                              <span className="captured-note-contact-icon" aria-hidden="true">
-                                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10 13a5 5 0 0 1 7 7l-4 1 1-4a5 5 0 0 1-4-4z"/><path d="M14 7a5 5 0 0 1 7 7"/></svg>
-                              </span>
+                              <span className="captured-note-contact-icon" aria-hidden="true">?</span>
                               <span className="captured-note-field-label">Source</span>
                               <span className="captured-note-field-value">{item.source || "NA"}</span>
                             </div>
@@ -19204,23 +19199,17 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                         <div className="captured-note-col captured-note-col--ownership">
                           <div className="captured-note-detail-list">
                             <div className="captured-note-contact-row captured-note-field">
-                              <span className="captured-note-contact-icon" aria-hidden="true">
-                                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 20c2-4 6-6 8-6s6 2 8 6"/></svg>
-                              </span>
+                              <span className="captured-note-contact-icon" aria-hidden="true">??</span>
                               <span className="captured-note-field-label">Captured by</span>
                               <span className="captured-note-field-value">{item.recruiter_name || "NA"}</span>
                             </div>
                             <div className="captured-note-contact-row captured-note-field">
-                              <span className="captured-note-contact-icon" aria-hidden="true">
-                                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><path d="M20 8v6"/><path d="M23 11h-6"/></svg>
-                              </span>
+                              <span className="captured-note-contact-icon" aria-hidden="true">??</span>
                               <span className="captured-note-field-label">Assigned to</span>
                               <span className="captured-note-field-value">{item.assigned_to_name || "NA"}</span>
                             </div>
                             <div className="captured-note-contact-row captured-note-field">
-                              <span className="captured-note-contact-icon" aria-hidden="true">
-                                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10 13a5 5 0 0 1 7 7l-4 1 1-4a5 5 0 0 1-4-4z"/><path d="M14 7a5 5 0 0 1 7 7"/></svg>
-                              </span>
+                              <span className="captured-note-contact-icon" aria-hidden="true">??</span>
                               <span className="captured-note-field-label">Assigned at</span>
                               <span className="captured-note-field-value">{item.assigned_at ? new Date(item.assigned_at).toLocaleString() : "NA"}</span>
                             </div>
@@ -24032,6 +24021,7 @@ export default function App() {
           ? <PortalErrorBoundary><MarketingPortalApp token={token} onLogout={logout} /></PortalErrorBoundary>
         : <PortalErrorBoundary><PortalApp token={token} onLogout={logout} /></PortalErrorBoundary>;
 }
+
 
 
 
