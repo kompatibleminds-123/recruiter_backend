@@ -462,7 +462,7 @@ const SMART_CHIP_INTERVIEW_TIMELINE_STATUSES = new Set([
   "offered",
   "joined",
   "shortlisted",
-  "hold"
+  "interview on hold"
 ]);
 const SHORTCUT_TEMPLATE_PLACEHOLDERS = [
   "{{name}}",
@@ -568,6 +568,8 @@ const REPORT_ACTIVE_PIPELINE_STATUSES = new Set([
   "hr interview aligned",
   "feedback awaited",
   "hold",
+  "cv put on hold",
+  "interview on hold",
   "offered",
   "shortlisted",
   "joined"
@@ -659,8 +661,8 @@ const DEFAULT_STATUS_OPTIONS = [
   "HR interview aligned",
   "Offered",
   "Interview feedback awaited",
-  "Feedback Awaited",
-  "Hold",
+  "CV put on hold",
+  "Interview On Hold",
   "Not responding",
   "Dropped",
   "Screening Reject",
@@ -921,6 +923,8 @@ function isTerminalStatus(status) {
     "shortlisted",
     "offered",
     "hold",
+    "cv put on hold",
+    "interview on hold",
     "did not attend",
     "dropped",
     "screening reject",
@@ -1958,7 +1962,7 @@ function inferAttemptOutcomeAndFollowUp(text) {
   if (/\breject\b|\brejected\b|\bscreening reject\b|\bsr\b|\bpoor communication\b|\bbad communication\b/.test(value)) return { outcome: "Screening reject", followUpAt: "", candidateStatus: "Screening Reject" };
   if (/\bnot interested\b/.test(value)) return { outcome: "Not interested", followUpAt: "", candidateStatus: "Not interested" };
   if (/\brevisit\b/.test(value)) return { outcome: "Revisit for other role", followUpAt: "", candidateStatus: "Revisit for other role" };
-  if (/\bhold\b|\bon hold\b|\bhigh ctc\b|\bhigh notice\b|\bhigh np\b|\bout of budget\b/.test(value)) return { outcome: "Hold by recruiter", followUpAt: "", candidateStatus: "Hold" };
+  if (/\bhold\b|\bon hold\b|\bhigh ctc\b|\bhigh notice\b|\bhigh np\b|\bout of budget\b/.test(value)) return { outcome: "Hold by recruiter", followUpAt: "", candidateStatus: "CV put on hold" };
   if (/\binterested\b/.test(value)) return { outcome: "Interested", followUpAt: "", candidateStatus: "Interested" };
   if (/\bcall later\b|\bcall next\b|\bnext call\b|\bfollow up\b|\bcall tomorrow\b|\bcall today\b|\bcall day after tomorrow\b|\bcall next week\b|\bcall this week\b|\bcall on\b|\bcall at\b|\bcall (monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b|\bcall this (monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b|\bcall next (monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/.test(value)) return { outcome: "Call later", followUpAt: parseNaturalFollowUpDate(value), candidateStatus: "Follow-up" };
   if (/\bduplicate\b/.test(value)) return { outcome: "Duplicate", followUpAt: "", candidateStatus: "Duplicate" };
@@ -1985,6 +1989,10 @@ function isAssessmentStatusLine(line) {
     "l3 aligned",
     "hr interview aligned",
     "feedback awaited",
+    "cv feedback awaited",
+    "interview feedback awaited",
+    "cv put on hold",
+    "interview on hold",
     "hold",
     "did not attend",
     "not responding",
@@ -2029,7 +2037,7 @@ function inferAssessmentStatusAndSchedule(text, baseDate = new Date()) {
   else if (hasOffer) candidateStatus = "Offered";
   else if (hasReject) candidateStatus = "Interview Reject";
   else if (hasFeedback) candidateStatus = "Feedback Awaited";
-  else if (hasHold) candidateStatus = "Hold";
+  else if (hasHold) candidateStatus = "CV put on hold";
   else if (hasTestOrAssignment) candidateStatus = "Test or Assignment shared";
   else if (hasHr) candidateStatus = "HR interview aligned";
   else if (hasL2) candidateStatus = "L2 aligned";
@@ -3923,7 +3931,14 @@ function mapAssessmentStatusToPipelineStage(status) {
   if (value === "cv to be shared") return "Submitted";
   if (isInterviewAlignedStatus(value)) return "Interview Scheduled";
   if (value === "offered") return "Offer Extended";
-  if (value === "feedback awaited" || value === "hold") return "On Hold";
+  if (
+    value === "feedback awaited" ||
+    value === "cv feedback awaited" ||
+    value === "interview feedback awaited" ||
+    value === "hold" ||
+    value === "cv put on hold" ||
+    value === "interview on hold"
+  ) return "On Hold";
   if (value === "screening reject" || value === "interview reject" || value === "duplicate" || value === "dropped" || value === "not responding" || value === "did not attend") return "Rejected";
   if (value === "shortlisted") return "Shortlisted";
   if (value === "joined") return "Joined";
@@ -3978,8 +3993,8 @@ function buildAssessmentStatusCalendarNote(statusValue, atLocalValue) {
   if (status === "shortlisted") return "Shortlisted.";
   if (status === "joined") return "Joined.";
   if (status === "dropped") return "Dropped.";
-  if (status === "feedback awaited") return "Feedback awaited.";
-  if (status === "hold") return "Hold.";
+  if (status === "feedback awaited" || status === "cv feedback awaited" || status === "interview feedback awaited") return "Feedback awaited.";
+  if (status === "hold" || status === "cv put on hold" || status === "interview on hold") return "On hold.";
   return statusLabel;
 }
 
@@ -17344,6 +17359,9 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
     })();
     if (String(nextStatus || "").trim().toLowerCase() === "feedback awaited") {
       nextStatus = hasAlignedInHistory ? "Interview feedback awaited" : "CV feedback awaited";
+    }
+    if (String(nextStatus || "").trim().toLowerCase() === "hold") {
+      nextStatus = hasAlignedInHistory ? "Interview On Hold" : "CV put on hold";
     }
     const nextStatusLower = nextStatus.toLowerCase();
     const isInterviewStatus = isInterviewAlignedStatus(nextStatus);
