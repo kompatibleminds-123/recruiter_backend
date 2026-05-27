@@ -10546,6 +10546,15 @@ function PortalApp({ token, onLogout }) {
       if (!Number.isFinite(ts)) return false;
       return ts >= weekStartTs && ts <= weekEndTs;
     };
+    const formatEventDate = (value) => {
+      const ts = toTimestampSafe(value);
+      if (!Number.isFinite(ts)) return "";
+      try {
+        return new Date(ts).toLocaleString();
+      } catch (_) {
+        return String(value || "");
+      }
+    };
     const normalizeStatus = (value) => normalizeAssessmentStatusLabel(String(value || "")).toLowerCase();
     const rowsByChip = { ...emptyRows };
     const assessmentSharedAtMap = new Map();
@@ -10605,15 +10614,31 @@ function PortalApp({ token, onLogout }) {
           || ""
       ).trim();
       const statusHistory = Array.isArray(linkedAssessment?.statusHistory) ? linkedAssessment.statusHistory : [];
+      const currentStatusLabel = normalizeAssessmentStatusLabel(
+        linkedAssessment?.candidateStatus
+          || linkedAssessment?.status
+          || item?.candidateStatus
+          || item?.assessment_status
+          || item?.assessmentStatus
+          || ""
+      );
       // Status history ordering isn't guaranteed (some payloads prepend newest).
       // Find the earliest "conversion/share" marker across the full list.
       let statusHistoryConvertedAt = "";
+      const alignedHistoryEvents = [];
+      const feedbackAwaitedHistoryEvents = [];
       statusHistory.forEach((entry) => {
         if (!entry || typeof entry !== "object") return;
         const at = String(entry?.at || "").trim();
-        if (!at) return;
         const label = normalizeAssessmentStatusLabel(String(entry?.status || "")).toLowerCase();
         const notes = String(entry?.notes || "").trim().toLowerCase();
+        if (label && SMART_CHIP_INTERVIEW_ALIGNED_STATUSES.has(label) && at) {
+          alignedHistoryEvents.push({ status: label, at });
+        }
+        if (label === "feedback awaited" && at) {
+          feedbackAwaitedHistoryEvents.push({ status: label, at });
+        }
+        if (!at) return;
         const isConversionMarker = label === "cv shared" || notes.includes("converted into assessment");
         if (!isConversionMarker) return;
         if (!statusHistoryConvertedAt || toTimestampSafe(at) < toTimestampSafe(statusHistoryConvertedAt)) {
@@ -10639,22 +10664,51 @@ function PortalApp({ token, onLogout }) {
         currentCtc: item?.current_ctc || item?.currentCtc || "",
         expectedCtc: item?.expected_ctc || item?.expectedCtc || "",
         notice: item?.notice_period || item?.noticePeriod || "",
-        status: normalizeAssessmentStatusLabel(
-          linkedAssessment?.candidateStatus
-            || linkedAssessment?.status
-            || item?.candidateStatus
-            || item?.assessment_status
-            || item?.assessmentStatus
-            || ""
-        ),
+        status: currentStatusLabel,
         date: interviewAt || updatedAt || ""
       };
 
-      if (SMART_CHIP_INTERVIEW_ALIGNED_STATUSES.has(assessmentStatus) && inDateRange(interviewAt || updatedAt)) {
-        rowsByChip.aligned_interviews.push({ ...baseRow, round: formatAssessmentStatusDisplay(assessmentStatus) });
+      if (alignedHistoryEvents.length) {
+        const sortedAlignedEvents = [...alignedHistoryEvents]
+          .filter((event) => event?.at && Number.isFinite(toTimestampSafe(event.at)))
+          .sort((a, b) => toTimestampSafe(a.at) - toTimestampSafe(b.at));
+        const latestAlignedEvent = sortedAlignedEvents[sortedAlignedEvents.length - 1] || null;
+        const previousAlignedEvent = sortedAlignedEvents.length > 1 ? sortedAlignedEvents[sortedAlignedEvents.length - 2] : null;
+        if (latestAlignedEvent && inDateRange(latestAlignedEvent.at)) {
+          const timelineText = previousAlignedEvent
+            ? `${formatAssessmentStatusDisplay(previousAlignedEvent.status)} done on ${formatEventDate(previousAlignedEvent.at)} | now ${formatAssessmentStatusDisplay(latestAlignedEvent.status)} aligned on ${formatEventDate(latestAlignedEvent.at)}`
+            : `${formatAssessmentStatusDisplay(latestAlignedEvent.status)} aligned on ${formatEventDate(latestAlignedEvent.at)}`;
+          rowsByChip.aligned_interviews.push({
+            ...baseRow,
+            round: `${timelineText} | Current: ${currentStatusLabel || "-"}`,
+            date: latestAlignedEvent.at
+          });
+        }
+      } else if (SMART_CHIP_INTERVIEW_ALIGNED_STATUSES.has(assessmentStatus) && inDateRange(interviewAt || updatedAt)) {
+        rowsByChip.aligned_interviews.push({
+          ...baseRow,
+          round: `${formatAssessmentStatusDisplay(assessmentStatus)} | Current: ${currentStatusLabel || "-"}`,
+          date: interviewAt || updatedAt || ""
+        });
       }
-      if (assessmentStatus === "feedback awaited" && inDateRange(interviewAt || updatedAt)) {
-        rowsByChip.feedback_awaited.push({ ...baseRow, round: "Feedback awaited" });
+      if (feedbackAwaitedHistoryEvents.length) {
+        const latestFeedbackEvent = [...feedbackAwaitedHistoryEvents]
+          .filter((event) => event?.at && Number.isFinite(toTimestampSafe(event.at)))
+          .sort((a, b) => toTimestampSafe(a.at) - toTimestampSafe(b.at))
+          .pop();
+        if (latestFeedbackEvent && inDateRange(latestFeedbackEvent.at)) {
+          rowsByChip.feedback_awaited.push({
+            ...baseRow,
+            round: `Feedback awaited on ${formatEventDate(latestFeedbackEvent.at)} | Current: ${currentStatusLabel || "-"}`,
+            date: latestFeedbackEvent.at
+          });
+        }
+      } else if (assessmentStatus === "feedback awaited" && inDateRange(interviewAt || updatedAt)) {
+        rowsByChip.feedback_awaited.push({
+          ...baseRow,
+          round: `Feedback awaited | Current: ${currentStatusLabel || "-"}`,
+          date: interviewAt || updatedAt || ""
+        });
       }
       const capturedIsActive = item ? (item?.hidden_from_captured !== true && item?.hiddenFromCaptured !== true) : true;
       const activeAssessment = linkedAssessment && !isAssessmentArchived(linkedAssessment);
@@ -10727,7 +10781,37 @@ function PortalApp({ token, onLogout }) {
         }
       });
     }
-    return rowsByChip;
+    const dedupeLatestByCandidate = (rows = []) => {
+      const bestByCandidate = new Map();
+      rows.forEach((row) => {
+        const item = row?.item || {};
+        const candidateKey = String(
+          item?.id
+          || item?.candidateId
+          || item?.candidate_id
+          || row?.candidateId
+          || row?.candidateName
+          || ""
+        ).trim().toLowerCase();
+        if (!candidateKey) return;
+        const rowTs = toTimestampSafe(row?.date || "");
+        const prev = bestByCandidate.get(candidateKey);
+        const prevTs = toTimestampSafe(prev?.date || "");
+        if (!prev || (!Number.isFinite(prevTs) && Number.isFinite(rowTs)) || (Number.isFinite(rowTs) && rowTs >= prevTs)) {
+          bestByCandidate.set(candidateKey, row);
+        }
+      });
+      return Array.from(bestByCandidate.values()).sort((a, b) => toTimestampSafe(b?.date || "") - toTimestampSafe(a?.date || ""));
+    };
+    return {
+      aligned_interviews: dedupeLatestByCandidate(rowsByChip.aligned_interviews),
+      feedback_awaited: dedupeLatestByCandidate(rowsByChip.feedback_awaited),
+      quick_joiners: dedupeLatestByCandidate(rowsByChip.quick_joiners),
+      shared_today: dedupeLatestByCandidate(rowsByChip.shared_today),
+      shared_this_week: dedupeLatestByCandidate(rowsByChip.shared_this_week),
+      offered_candidates: dedupeLatestByCandidate(rowsByChip.offered_candidates),
+      cv_shared: dedupeLatestByCandidate(rowsByChip.cv_shared)
+    };
     } catch (error) {
       console.error("candidateSmartChipRows failed", error);
       return emptyRows;
