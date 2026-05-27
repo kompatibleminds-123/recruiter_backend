@@ -10803,7 +10803,19 @@ function PortalApp({ token, onLogout }) {
         const sortedTrackEvents = [...interviewTrackEvents]
           .filter((event) => event?.effectiveAt && Number.isFinite(toTimestampSafe(event.effectiveAt)))
           .sort((a, b) => toTimestampSafe(a.effectiveAt) - toTimestampSafe(b.effectiveAt));
-        const inRangeEvents = sortedTrackEvents.filter((event) => inDateRange(event.effectiveAt));
+        // Keep only the latest aligned entry per round (L1/L2/L3/HR/Screening) so
+        // update-time echoes do not duplicate the same round beside interview-time.
+        const latestAlignedByStatus = new Map();
+        sortedTrackEvents.forEach((event) => {
+          if (!SMART_CHIP_INTERVIEW_ALIGNED_STATUSES.has(String(event?.status || "").toLowerCase())) return;
+          latestAlignedByStatus.set(String(event.status).toLowerCase(), event);
+        });
+        const dedupedTrackEvents = sortedTrackEvents.filter((event) => {
+          const key = String(event?.status || "").toLowerCase();
+          if (!SMART_CHIP_INTERVIEW_ALIGNED_STATUSES.has(key)) return true;
+          return latestAlignedByStatus.get(key) === event;
+        });
+        const inRangeEvents = dedupedTrackEvents.filter((event) => inDateRange(event.effectiveAt));
         if (inRangeEvents.length) {
           const latestTrackEvent = inRangeEvents[inRangeEvents.length - 1];
           const timeline = inRangeEvents
