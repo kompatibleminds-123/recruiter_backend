@@ -2017,9 +2017,11 @@ function inferAssessmentStatusAndSchedule(text, baseDate = new Date()) {
   const hasHr = /\bhr\b/.test(value);
   const hasL2 = /\bl2\b/.test(value);
   const hasL1 = /\bl1\b/.test(value);
+  const hasL3 = /\bl3\b/.test(value);
   const hasScreeningCall = /\bscreening\b/.test(value);
   const hasFeedback = /\bfeedback\b/.test(value);
-  const hasHold = /\bon hold\b|\bhold\b|\bhigh notice\b|\bhigh ctc\b|\bout of budget\b/.test(value);
+  const hasHold = /\bon hold\b|\bhold\b|\bhigh notice\b|\bhigh ctc\b|\bhigh np\b|\bout of budget\b/.test(value);
+  const hasInterviewContext = hasScreening || hasScreeningCall || hasL1 || hasL2 || hasL3 || hasHr || /\binterview\b/.test(value);
   const hasTestOrAssignment = /\btest\b|\bassignment\b|\bassignment shared\b/.test(value);
   const hasNotResponding = /\bnr\b|\bnot responding\b|\bno response\b|\bno answer\b|\bdid not pick up\b|\bdid not join\b|\bdid not attend\b/.test(value);
   const hasDuplicate = /\bduplicate\b/.test(value);
@@ -2036,7 +2038,7 @@ function inferAssessmentStatusAndSchedule(text, baseDate = new Date()) {
   else if (hasShortlisted) candidateStatus = "Shortlisted";
   else if (hasOffer) candidateStatus = "Offered";
   else if (hasReject) candidateStatus = "Interview Reject";
-  else if (hasFeedback) candidateStatus = "Feedback Awaited";
+  else if (hasFeedback) candidateStatus = hasInterviewContext ? "Interview feedback awaited" : "CV feedback awaited";
   else if (hasHold) candidateStatus = "CV put on hold";
   else if (hasTestOrAssignment) candidateStatus = "Test or Assignment shared";
   else if (hasHr) candidateStatus = "HR interview aligned";
@@ -10643,6 +10645,13 @@ function PortalApp({ token, onLogout }) {
       if (!Number.isFinite(ts)) return `${base} aligned`;
       return ts < Date.now() ? `${base} was aligned` : `${base} aligned`;
     };
+    const formatInterviewTimelineEventLabel = (statusValue, atValue) => {
+      const normalized = normalizeAssessmentStatusLabel(String(statusValue || "")).toLowerCase();
+      if (SMART_CHIP_INTERVIEW_ALIGNED_STATUSES.has(normalized)) {
+        return alignedPhraseForDate(normalizeAlignedLabel(statusValue), atValue);
+      }
+      return formatAssessmentStatusDisplay(statusValue);
+    };
     const normalizeStatus = (value) => normalizeAssessmentStatusLabel(String(value || "")).toLowerCase();
     const rowsByChip = { ...emptyRows };
     const assessmentSharedAtMap = new Map();
@@ -10667,7 +10676,8 @@ function PortalApp({ token, onLogout }) {
       }
       if (eventAt && status) {
         const list = assessmentEventsByAssessmentId.get(assessmentId) || [];
-        list.push({ status, at: eventAt });
+        const payloadStatusAt = String(payload?.statusAt || payload?.status_at || "").trim();
+        list.push({ status, at: eventAt, statusAt: payloadStatusAt });
         assessmentEventsByAssessmentId.set(assessmentId, list);
       }
     });
@@ -10722,26 +10732,29 @@ function PortalApp({ token, onLogout }) {
       const alignedHistoryEvents = [];
       const feedbackAwaitedHistoryEvents = [];
       const interviewTrackEvents = [];
-      const pushInterviewTrackEvent = (statusValue, atValue) => {
+      const pushInterviewTrackEvent = (statusValue, atValue, statusAtValue = "") => {
         const statusKey = normalizeAssessmentStatusLabel(String(statusValue || "")).toLowerCase();
         const atKey = String(atValue || "").trim();
+        const statusAtKey = String(statusAtValue || "").trim();
+        const effectiveAtKey = SMART_CHIP_INTERVIEW_ALIGNED_STATUSES.has(statusKey) && statusAtKey ? statusAtKey : atKey;
         if (!statusKey || !atKey) return;
         if (!SMART_CHIP_INTERVIEW_TIMELINE_STATUSES.has(statusKey)) return;
-        if (interviewTrackEvents.some((event) => event.status === statusKey && String(event.at || "") === atKey)) return;
-        interviewTrackEvents.push({ status: statusKey, at: atKey });
+        if (interviewTrackEvents.some((event) => event.status === statusKey && String(event.at || "") === atKey && String(event.effectiveAt || "") === effectiveAtKey)) return;
+        interviewTrackEvents.push({ status: statusKey, at: atKey, effectiveAt: effectiveAtKey });
       };
       statusHistory.forEach((entry) => {
         if (!entry || typeof entry !== "object") return;
         const at = String(entry?.at || "").trim();
+        const statusAt = String(entry?.statusAt || entry?.status_at || "").trim();
         const label = normalizeAssessmentStatusLabel(String(entry?.status || "")).toLowerCase();
         const notes = String(entry?.notes || "").trim().toLowerCase();
         if (label && SMART_CHIP_INTERVIEW_ALIGNED_STATUSES.has(label) && at) {
-          alignedHistoryEvents.push({ status: label, at });
+          alignedHistoryEvents.push({ status: label, at, statusAt });
         }
         if (isFeedbackAwaitedStatus(label) && at) {
           feedbackAwaitedHistoryEvents.push({ status: label, at });
         }
-        pushInterviewTrackEvent(label, at);
+        pushInterviewTrackEvent(label, at, statusAt);
         if (!at) return;
         const isConversionMarker = label === "cv shared" || notes.includes("converted into assessment");
         if (!isConversionMarker) return;
@@ -10750,7 +10763,7 @@ function PortalApp({ token, onLogout }) {
         }
       });
       (assessmentEventsByAssessmentId.get(assessmentId) || []).forEach((event) => {
-        pushInterviewTrackEvent(event?.status, event?.at);
+        pushInterviewTrackEvent(event?.status, event?.at, event?.statusAt);
       });
       // If final status exists but event trail is missing, include it using best-known timestamp.
       if (SMART_CHIP_INTERVIEW_TIMELINE_STATUSES.has(assessmentStatus)) {
@@ -10788,13 +10801,13 @@ function PortalApp({ token, onLogout }) {
       const activeAssessment = linkedAssessment && !isAssessmentArchived(linkedAssessment);
       if (interviewTrackEvents.length) {
         const sortedTrackEvents = [...interviewTrackEvents]
-          .filter((event) => event?.at && Number.isFinite(toTimestampSafe(event.at)))
-          .sort((a, b) => toTimestampSafe(a.at) - toTimestampSafe(b.at));
-        const inRangeEvents = sortedTrackEvents.filter((event) => inDateRange(event.at));
+          .filter((event) => event?.effectiveAt && Number.isFinite(toTimestampSafe(event.effectiveAt)))
+          .sort((a, b) => toTimestampSafe(a.effectiveAt) - toTimestampSafe(b.effectiveAt));
+        const inRangeEvents = sortedTrackEvents.filter((event) => inDateRange(event.effectiveAt));
         if (inRangeEvents.length) {
           const latestTrackEvent = inRangeEvents[inRangeEvents.length - 1];
           const timeline = inRangeEvents
-            .map((event) => `${formatAssessmentStatusDisplay(event.status)} on ${formatEventDate(event.at)}`)
+            .map((event) => `${formatInterviewTimelineEventLabel(event.status, event.effectiveAt)} on ${formatEventDate(event.effectiveAt)}`)
             .join(" | ");
           rowsByChip.interview_history.push({
             ...baseRow,
@@ -10802,7 +10815,7 @@ function PortalApp({ token, onLogout }) {
             date: String(
               linkedAssessment?.interviewAt
               || linkedAssessment?.interview_at
-              || latestTrackEvent?.at
+              || latestTrackEvent?.effectiveAt
               || ""
             ).trim()
           });
