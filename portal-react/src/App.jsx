@@ -7586,16 +7586,56 @@ function PortalApp({ token, onLogout }) {
     () => (state.users || []).filter((item) => !["payroll_owner", "payroll_manager"].includes(String(item?.role || "").toLowerCase())),
     [state.users]
   );
+  const normalizeClientIdentityKey = useCallback((value = "") => String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/^https?:\/\//, "")
+    .replace(/^www\./, "")
+    .replace(/\.(ai|com|in|co|io|org|net)\b/g, "")
+    .replace(/[|/\\]+/g, " ")
+    .replace(/[^a-z0-9]+/g, "")
+    .trim(), []);
+  const sanitizeClientNameInput = useCallback((value = "") => {
+    const raw = String(value || "").trim();
+    if (!raw) return "";
+    const firstPart = raw.split(/[|/\\]/).map((part) => String(part || "").trim()).filter(Boolean)[0] || raw;
+    return firstPart.replace(/\.(ai|com|in|co|io|org|net)\b/ig, "").trim();
+  }, []);
+  const canonicalClientNameByKey = useMemo(() => {
+    const byKey = new Map();
+    (Array.isArray(state.jobs) ? state.jobs : []).forEach((job) => {
+      const original = String(job?.client_name || job?.clientName || "").trim();
+      if (!original || original.startsWith("__")) return;
+      const cleaned = sanitizeClientNameInput(original);
+      const key = normalizeClientIdentityKey(cleaned || original);
+      if (!key) return;
+      const candidate = cleaned || original;
+      const existing = byKey.get(key);
+      if (!existing) {
+        byKey.set(key, candidate);
+        return;
+      }
+      // Prefer shorter canonical value (e.g., Attentive over Attentive.ai).
+      if (candidate.length < existing.length) byKey.set(key, candidate);
+    });
+    return byKey;
+  }, [state.jobs, normalizeClientIdentityKey, sanitizeClientNameInput]);
+  const canonicalizeClientName = useCallback((value = "") => {
+    const cleaned = sanitizeClientNameInput(value);
+    const key = normalizeClientIdentityKey(cleaned);
+    if (!key) return cleaned;
+    return String(canonicalClientNameByKey.get(key) || cleaned).trim();
+  }, [canonicalClientNameByKey, normalizeClientIdentityKey, sanitizeClientNameInput]);
   const availablePresetClients = useMemo(() => {
     const values = new Set();
     (Array.isArray(state.jobs) ? state.jobs : []).forEach((job) => {
-      const clientName = String(job?.client_name || job?.clientName || "").trim();
+      const clientName = canonicalizeClientName(String(job?.client_name || job?.clientName || "").trim());
       if (!clientName) return;
       if (clientName.startsWith("__")) return;
       values.add(clientName);
     });
     return Array.from(values).sort((a, b) => a.localeCompare(b));
-  }, [state.jobs]);
+  }, [state.jobs, canonicalizeClientName]);
   const clientRoleOptionsByClient = useMemo(() => {
     const byClient = new Map();
     (Array.isArray(state.jobs) ? state.jobs : []).forEach((job) => {
@@ -13671,9 +13711,11 @@ function PortalApp({ token, onLogout }) {
           primary: id === String(ownerRecruiterId || "").trim()
         });
       });
+      const normalizedClientName = canonicalizeClientName(jobDraft.clientName || "");
       const result = await api("/company/jds", token, "POST", {
         job: {
           ...jobDraft,
+          clientName: normalizedClientName,
           id: String(selectedJobId || jobDraft.id || "").trim() || jobDraft.id,
           isArchived: Boolean(jobDraft.isArchived),
           ownerRecruiterId,
@@ -13721,8 +13763,10 @@ function PortalApp({ token, onLogout }) {
           primary: id === String(ownerRecruiterId || "").trim()
         });
       });
+      const normalizedClientName = canonicalizeClientName(jobDraft.clientName || "");
       const buildNewJobPayload = (forceFresh = false) => ({
         ...jobDraft,
+        clientName: normalizedClientName,
         // Force-create a new JD even if user is currently editing an existing one.
         id: forceFresh ? "" : `jd-${Date.now()}`,
         isArchived: false,
@@ -20717,6 +20761,12 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                         const nextClient = e.target.value;
                         setJobDraft((c) => ({ ...c, clientName: nextClient }));
                         applyClientJobContentDefaults(nextClient);
+                      }}
+                      onBlur={(e) => {
+                        const canonical = canonicalizeClientName(e.target.value);
+                        if (!canonical || canonical === jobDraft.clientName) return;
+                        setJobDraft((c) => ({ ...c, clientName: canonical }));
+                        applyClientJobContentDefaults(canonical);
                       }}
                     />
                     <datalist id="job-client-name-options">
