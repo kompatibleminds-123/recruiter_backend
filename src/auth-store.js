@@ -827,6 +827,7 @@ function sanitizeSharedExportPresetSettings(raw) {
   const safeHeaderFields = normalizedHeaderFields.length ? normalizedHeaderFields : defaultHeaderFields;
   return {
     semanticSearchEnabled: source.semanticSearchEnabled !== false && source.semantic_search_enabled !== false,
+    interviewAiParsingEnabled: source.interviewAiParsingEnabled === true || source.interview_ai_parsing_enabled === true,
     exportPresetLabels: {
       compact_recruiter: String(rawLabels.compact_recruiter || "").trim(),
       client_tracker: String(rawLabels.client_tracker || "").trim(),
