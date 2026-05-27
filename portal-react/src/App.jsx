@@ -18999,19 +18999,19 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                       >
                         <img src="https://web.whatsapp.com/favicon.ico" alt="" />
                       </button>
-                      <button onClick={() => void openAttempts(item.id)}>Attempts</button>
+                      <button className="ghost-btn" onClick={() => void openAttempts(item.id)}>Attempts</button>
                       {!item.hidden_from_captured ? (
                         <button className="ghost-btn" onClick={() => openJdEmailModalForCandidate(item, item.jdId || "")}>Email JD</button>
                       ) : null}
                       {!item.hidden_from_captured ? (
-                        <button onClick={() => void createAssessmentFromCandidate(item.id)}>Create assessment</button>
+                        <button className="captured-action-success" onClick={() => void createAssessmentFromCandidate(item.id)}>Create assessment</button>
                       ) : null}
                       {item.hidden_from_captured ? (
                         <button className="ghost-btn" onClick={() => void restoreApplicant(item.id)}>Restore to active</button>
                       ) : (
                         <button className="ghost-btn" onClick={() => void hideApplicant(item.id)}>Hide from list</button>
                       )}
-                      {state.user?.role === "admin" ? <button className="ghost-btn" onClick={() => void removeApplicant(item.id)}>Remove</button> : null}
+                      {state.user?.role === "admin" ? <button className="captured-action-danger" onClick={() => void removeApplicant(item.id)}>Remove</button> : null}
                     </div>
                     {String(item.screeningAnswers || "").trim() ? (
                       <details className="captured-note-summary-bar">
