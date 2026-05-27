@@ -9203,25 +9203,71 @@ function PortalApp({ token, onLogout }) {
     }).catch((error) => setStatus("workspace", String(error?.message || error), "error"));
   }, [token]);
 
+  async function syncSharedSettingsFromServer(options = {}) {
+    const showStatus = options?.showStatus === true;
+    const activePath = String(location?.pathname || "").trim();
+    const sharedPresetResult = await api("/company/shared-export-presets", token);
+    const merged = migrateCopySettings({ ...DEFAULT_COPY_SETTINGS, ...sharedPresetResult });
+    setCopySettings((current) => migrateCopySettings({ ...current, ...sharedPresetResult }));
+    if (!showStatus) return merged;
+    if (activePath === "/admin-settings/ai") {
+      setStatus(
+        "settings",
+        `AI settings synced from server: ${merged.interviewAiParsingEnabled === true ? "ON" : "OFF"}.`,
+        "ok"
+      );
+      return merged;
+    }
+    setStatus("settings", "Settings synced from server.", "ok");
+    return merged;
+  }
+
+  async function syncMailSettingsFromServer(options = {}) {
+    const showStatus = options?.showStatus === true;
+    const result = await api("/company/email-settings", token);
+    if (!smtpSettingsDirtyRef.current) {
+      setSmtpSettings((current) => ({
+        ...current,
+        host: String(result?.host || "").trim(),
+        port: Number(result?.port || 587),
+        secure: Boolean(result?.secure),
+        user: String(result?.user || "").trim(),
+        from: String(result?.from || "").trim(),
+        signatureText: String(result?.signatureText || "").trim(),
+        signatureHtml: String(result?.signatureHtml || "").trim(),
+        signatureLinkLabel: String(result?.signatureLinkLabel || "").trim(),
+        signatureLinkUrl: String(result?.signatureLinkUrl || "").trim(),
+        signatureLinkLabel2: String(result?.signatureLinkLabel2 || "").trim(),
+        signatureLinkUrl2: String(result?.signatureLinkUrl2 || "").trim(),
+        hasPassword: Boolean(result?.hasPassword),
+        pass: ""
+      }));
+      setSmtpSettingsKeepPass(Boolean(result?.hasPassword));
+      setSmtpSettingsLoaded(true);
+    }
+    if (showStatus) setStatus("settings", "Mail settings synced from server.", "ok");
+    return result;
+  }
+
   useEffect(() => {
     if (!token) return;
     if (!isSettingsAdmin) return;
-    if (String(location?.pathname || "") !== "/admin-settings/ai") return;
+    const activePath = String(location?.pathname || "").trim();
+    const isAdminSettingsRoute = activePath.startsWith("/admin-settings");
+    const isMailSettingsRoute = activePath === "/mail-settings";
+    if (!isAdminSettingsRoute && !isMailSettingsRoute) return;
     let cancelled = false;
     void (async () => {
       try {
-        const sharedPresetResult = await api("/company/shared-export-presets", token);
-        if (cancelled) return;
-        const merged = migrateCopySettings({ ...DEFAULT_COPY_SETTINGS, ...sharedPresetResult });
-        setCopySettings((current) => migrateCopySettings({ ...current, ...sharedPresetResult }));
-        setStatus(
-          "settings",
-          `AI settings synced from server: ${merged.interviewAiParsingEnabled === true ? "ON" : "OFF"}.`,
-          "ok"
-        );
+        if (isAdminSettingsRoute) {
+          await syncSharedSettingsFromServer({ showStatus: true });
+        }
+        if (isMailSettingsRoute) {
+          await syncMailSettingsFromServer({ showStatus: true });
+        }
       } catch (error) {
         if (cancelled) return;
-        setStatus("settings", `AI settings sync failed: ${String(error?.message || error)}`, "error");
+        setStatus("settings", `Settings sync failed: ${String(error?.message || error)}`, "error");
       }
     })();
     return () => {
