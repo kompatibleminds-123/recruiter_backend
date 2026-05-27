@@ -2703,6 +2703,17 @@ function buildParseCandidateCacheKey(body = {}, companyId = "") {
   return `${CV_PARSE_RESULT_VERSION}|${scope}|${sourceType}|${aiMode}|${fingerprint}`;
 }
 
+async function getEffectiveInterviewAiParsingEnabled(companyId = "") {
+  const scopedCompanyId = String(companyId || "").trim();
+  if (!scopedCompanyId) return true;
+  try {
+    const settings = await getCompanySharedExportPresets(scopedCompanyId);
+    return settings?.interviewAiParsingEnabled !== false;
+  } catch (_) {
+    return true;
+  }
+}
+
 function setParseCandidateCache(cacheKey = "", payload = null) {
   if (!cacheKey || !payload) return;
   if (PARSE_CANDIDATE_CACHE.has(cacheKey)) PARSE_CANDIDATE_CACHE.delete(cacheKey);
@@ -16572,6 +16583,7 @@ const server = http.createServer(async (req, res) => {
       const actor = await requireSessionUser(getBearerToken(req));
       const candidateId = String(requestUrl.pathname.replace(/^\/company\/candidates\//, "").replace(/\/interview-cv$/, "")).trim();
       const body = await readJsonBody(req);
+      const effectiveAiParsingEnabled = await getEffectiveInterviewAiParsingEnabled(actor.companyId);
       const uploadedFile = body.file || null;
       const deferParse = body.deferParse === true || body.defer_parse === true;
       if (!candidateId) throw new Error("Candidate not found.");
@@ -16689,7 +16701,7 @@ const server = http.createServer(async (req, res) => {
               },
               apiKey: body.apiKey || process.env.OPENAI_API_KEY || "",
               model: String(body.model || "").trim(),
-              normalizeWithAi: body.normalizeWithAi !== false
+              normalizeWithAi: effectiveAiParsingEnabled
             });
             const aiParseMode = hybrid.meta.aiMode;
             const aiParseReason = hybrid.meta.aiPrimaryUsed
@@ -16736,7 +16748,7 @@ const server = http.createServer(async (req, res) => {
             });
             nextMeta.searchDocUpdatedAt = new Date().toISOString();
 
-            const shouldApplyAutofill = body.normalizeWithAi !== false;
+            const shouldApplyAutofill = effectiveAiParsingEnabled;
             await patchCandidate(candidate.id, {
               raw_note: encodeApplicantMetadata(nextMeta),
               ...(shouldApplyAutofill ? buildCvAutofillPatch(refreshed || candidate, result) : {})
@@ -16785,7 +16797,7 @@ const server = http.createServer(async (req, res) => {
         },
         apiKey: body.apiKey || process.env.OPENAI_API_KEY || "",
         model: String(body.model || "").trim(),
-        normalizeWithAi: body.normalizeWithAi !== false
+        normalizeWithAi: effectiveAiParsingEnabled
       });
       const aiParseMode = hybrid.meta.aiMode;
       const aiParseReason = hybrid.meta.aiPrimaryUsed
@@ -16830,7 +16842,7 @@ const server = http.createServer(async (req, res) => {
       });
       nextMeta.searchDocUpdatedAt = new Date().toISOString();
 
-      const shouldApplyAutofill = body.normalizeWithAi !== false;
+      const shouldApplyAutofill = effectiveAiParsingEnabled;
       await patchCandidate(candidate.id, {
         raw_note: encodeApplicantMetadata(nextMeta),
         ...(shouldApplyAutofill ? buildCvAutofillPatch(candidate, result) : {})
@@ -16936,27 +16948,30 @@ const server = http.createServer(async (req, res) => {
     try {
       const body = await readJsonBody(req);
       let cacheCompanyId = "";
+      let effectiveAiParsingEnabled = body?.normalizeWithAi !== false;
       try {
         const actor = await requireSessionUser(getBearerToken(req));
         cacheCompanyId = String(actor?.companyId || "").trim();
+        effectiveAiParsingEnabled = await getEffectiveInterviewAiParsingEnabled(cacheCompanyId);
       } catch (_) {}
-      const cacheKey = buildParseCandidateCacheKey(body, cacheCompanyId);
+      const effectiveBody = { ...(body || {}), normalizeWithAi: effectiveAiParsingEnabled };
+      const cacheKey = buildParseCandidateCacheKey(effectiveBody, cacheCompanyId);
       const cachedEntry = cacheKey ? PARSE_CANDIDATE_CACHE.get(cacheKey) : null;
       if (cachedEntry?.payload) {
         sendJson(res, 200, { ok: true, result: { ...cachedEntry.payload, cached: true } });
         return;
       }
       const hybrid = await parseCandidateHybrid({
-        payload: String(body?.sourceType || "").trim().toLowerCase() === "cv"
+        payload: String(effectiveBody?.sourceType || "").trim().toLowerCase() === "cv"
           ? {
-              ...body,
+              ...effectiveBody,
               candidateName: "",
               totalExperience: ""
             }
-          : body,
-        apiKey: body.apiKey || process.env.OPENAI_API_KEY || "",
-        model: String(body.model || "").trim(),
-        normalizeWithAi: body.normalizeWithAi !== false
+          : effectiveBody,
+        apiKey: effectiveBody.apiKey || process.env.OPENAI_API_KEY || "",
+        model: String(effectiveBody.model || "").trim(),
+        normalizeWithAi: effectiveAiParsingEnabled
       });
       const aiParseMode = hybrid.meta.aiMode;
       const aiParseReason = hybrid.meta.aiPrimaryUsed

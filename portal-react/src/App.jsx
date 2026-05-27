@@ -8151,7 +8151,9 @@ function PortalApp({ token, onLogout }) {
     try {
       const key = getCopySettingsStorageKey(currentCompanyId);
       const saved = window.localStorage.getItem(key);
-      setCopySettings(migrateCopySettings(saved ? JSON.parse(saved) : {}));
+      const parsed = saved ? JSON.parse(saved) : {};
+      if (parsed && typeof parsed === "object") delete parsed.interviewAiParsingEnabled;
+      setCopySettings(migrateCopySettings(parsed || {}));
     } catch {
       setCopySettings(migrateCopySettings({}));
     }
@@ -9474,7 +9476,9 @@ function PortalApp({ token, onLogout }) {
   useEffect(() => {
     try {
       const key = getCopySettingsStorageKey(currentCompanyId);
-      window.localStorage.setItem(key, JSON.stringify(copySettings));
+      const next = { ...(copySettings || {}) };
+      delete next.interviewAiParsingEnabled;
+      window.localStorage.setItem(key, JSON.stringify(next));
     } catch {
       // Ignore local storage errors in restricted browsers.
     }

@@ -44,6 +44,30 @@ function getContactAttemptCompanyId(item) {
   return normalizeCompanyId(item?.company_id || item?.companyId);
 }
 
+function isMaskedContactValue(value = "") {
+  const text = String(value || "").trim();
+  if (!text) return false;
+  return /[*xX•_]/.test(text);
+}
+
+function normalizeSafeEmail(value = "") {
+  const text = String(value || "").trim().toLowerCase();
+  if (!text) return "";
+  if (isMaskedContactValue(text)) return "";
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(text)) return "";
+  return text;
+}
+
+function normalizeSafePhone(value = "") {
+  const text = String(value || "").trim();
+  if (!text) return "";
+  if (isMaskedContactValue(text)) return "";
+  const compact = text.replace(/[^\d+]/g, "");
+  const digits = compact.replace(/\D/g, "");
+  if (digits.length < 10 || digits.length > 15) return "";
+  return compact.startsWith("+") ? `+${digits}` : digits;
+}
+
 function buildQuickCaptureSchema() {
   return {
     type: "object",
@@ -401,6 +425,12 @@ async function saveCandidate(candidate, options = {}) {
     ...candidate,
     company_id: companyId || null
   };
+  const sanitizedPhone = normalizeSafePhone(nextCandidate.phone || "");
+  const sanitizedEmail = normalizeSafeEmail(nextCandidate.email || "");
+  if (sanitizedPhone) nextCandidate.phone = sanitizedPhone;
+  else delete nextCandidate.phone;
+  if (sanitizedEmail) nextCandidate.email = sanitizedEmail;
+  else delete nextCandidate.email;
   if (!candidateId) {
     delete nextCandidate.id;
   }
