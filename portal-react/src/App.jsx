@@ -1629,6 +1629,28 @@ function getDeterministicSummaryFromResult(result = null) {
   };
 }
 
+function looksMaskedContactValue(value = "") {
+  const text = String(value || "").trim();
+  if (!text) return false;
+  return /[*xX•_]/.test(text);
+}
+
+function sanitizeInterviewParsedEmail(value = "") {
+  const text = String(value || "").trim().toLowerCase();
+  if (!text || looksMaskedContactValue(text)) return "";
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(text)) return "";
+  return text;
+}
+
+function sanitizeInterviewParsedPhone(value = "") {
+  const text = String(value || "").trim();
+  if (!text || looksMaskedContactValue(text)) return "";
+  const compact = text.replace(/[^\d+]/g, "");
+  const digits = compact.replace(/\D/g, "");
+  if (digits.length < 10 || digits.length > 15) return "";
+  return compact.startsWith("+") ? `+${digits}` : digits;
+}
+
 function buildInterviewCvAnalysis(baseForm = {}, result = {}, storedFile = null, normalizedExperience = [], normalizedEducation = []) {
   const strictSummary = getDeterministicSummaryFromResult(result)
     || deriveStrictCvSummaryFromRows(normalizedExperience, normalizedEducation);
@@ -1640,6 +1662,8 @@ function buildInterviewCvAnalysis(baseForm = {}, result = {}, storedFile = null,
   const timelineConfidenceLabel =
     String(result?.timelineConfidence?.label || result?.parseDebug?.timelineConfidenceLabel || "").trim()
     || (timelineConfidenceLevel ? `Timeline confidence ${timelineConfidenceLevel}` : "");
+  const parsedEmail = sanitizeInterviewParsedEmail(result.emailId || "");
+  const parsedPhone = sanitizeInterviewParsedPhone(result.phoneNumber || "");
   return {
     exactTotalExperience: strictSummary.totalExperience || "",
     currentCompany: strictSummary.currentCompany || "",
@@ -1647,8 +1671,8 @@ function buildInterviewCvAnalysis(baseForm = {}, result = {}, storedFile = null,
     currentOrgTenure: strictSummary.currentOrgTenure || "",
     highestEducation: strictSummary.highestEducation || "",
     candidateName: result.candidateName || "",
-    emailId: result.emailId || "",
-    phoneNumber: result.phoneNumber || "",
+    emailId: parsedEmail || String(baseForm.emailId || "").trim(),
+    phoneNumber: parsedPhone || String(baseForm.phoneNumber || "").trim(),
     linkedin: result.linkedinUrl || "",
     location: strictSummary.location || result.location || "",
     timelineConfidenceLevel,
@@ -9178,6 +9202,32 @@ function PortalApp({ token, onLogout }) {
       includeEmailSettings: true
     }).catch((error) => setStatus("workspace", String(error?.message || error), "error"));
   }, [token]);
+
+  useEffect(() => {
+    if (!token) return;
+    if (!isSettingsAdmin) return;
+    if (String(location?.pathname || "") !== "/admin-settings/ai") return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const sharedPresetResult = await api("/company/shared-export-presets", token);
+        if (cancelled) return;
+        const merged = migrateCopySettings({ ...DEFAULT_COPY_SETTINGS, ...sharedPresetResult });
+        setCopySettings((current) => migrateCopySettings({ ...current, ...sharedPresetResult }));
+        setStatus(
+          "settings",
+          `AI settings synced from server: ${merged.interviewAiParsingEnabled === true ? "ON" : "OFF"}.`,
+          "ok"
+        );
+      } catch (error) {
+        if (cancelled) return;
+        setStatus("settings", `AI settings sync failed: ${String(error?.message || error)}`, "error");
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [token, isSettingsAdmin, location?.pathname]);
 
   async function refreshWorkspaceSilently(reason = "manual", options = {}) {
     if (!token) return;

@@ -9337,7 +9337,7 @@ function buildCandidateParseResponse(baseResult, normalizedResult, parseMeta = {
   const normalizedExtractedPhone = normalizePhone(extractedPhoneFromRaw);
   const phoneNumber = normalizedPreferredPhone
     || normalizedExtractedPhone
-    || String(preferredPhoneRaw || extractedPhoneFromRaw || "").trim();
+    || "";
   const linkedinUrl = choosePreferredScalar(
     normalizedResult?.linkedinUrl,
     baseResult?.linkedinUrl
