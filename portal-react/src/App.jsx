@@ -7642,9 +7642,10 @@ function PortalApp({ token, onLogout }) {
     const raw = String(value || "").trim();
     if (!raw) return "";
     const firstPart = raw.split(/[|/\\]/).map((part) => String(part || "").trim()).filter(Boolean)[0] || raw;
-    return firstPart.replace(/\.(ai|com|in|co|io|org|net)\b/ig, "").trim();
+    return firstPart.trim();
   }, []);
   const canonicalClientNameByKey = useMemo(() => {
+    const rowTs = (job) => new Date(job?.updatedAt || job?.updated_at || job?.createdAt || job?.created_at || 0).getTime() || 0;
     const byKey = new Map();
     (Array.isArray(state.jobs) ? state.jobs : []).forEach((job) => {
       const original = String(job?.client_name || job?.clientName || "").trim();
@@ -7655,13 +7656,17 @@ function PortalApp({ token, onLogout }) {
       const candidate = cleaned || original;
       const existing = byKey.get(key);
       if (!existing) {
-        byKey.set(key, candidate);
+        byKey.set(key, { value: candidate, ts: rowTs(job) });
         return;
       }
-      // Prefer shorter canonical value (e.g., Attentive over Attentive.ai).
-      if (candidate.length < existing.length) byKey.set(key, candidate);
+      const nextTs = rowTs(job);
+      if (nextTs >= Number(existing?.ts || 0)) byKey.set(key, { value: candidate, ts: nextTs });
     });
-    return byKey;
+    const output = new Map();
+    byKey.forEach((entry, key) => {
+      output.set(key, String(entry?.value || "").trim());
+    });
+    return output;
   }, [state.jobs, normalizeClientIdentityKey, sanitizeClientNameInput]);
   const canonicalizeClientName = useCallback((value = "") => {
     const cleaned = sanitizeClientNameInput(value);
@@ -7682,7 +7687,7 @@ function PortalApp({ token, onLogout }) {
   const clientRoleOptionsByClient = useMemo(() => {
     const byClient = new Map();
     (Array.isArray(state.jobs) ? state.jobs : []).forEach((job) => {
-      const clientName = String(job?.client_name || job?.clientName || "").trim();
+      const clientName = canonicalizeClientName(String(job?.client_name || job?.clientName || "").trim());
       const role = String(job?.title || "").trim();
       if (!clientName || !role || clientName.startsWith("__")) return;
       if (!byClient.has(clientName)) byClient.set(clientName, new Set());
@@ -7693,10 +7698,10 @@ function PortalApp({ token, onLogout }) {
       output[clientName] = Array.from(roles).sort((a, b) => a.localeCompare(b));
     });
     return output;
-  }, [state.jobs]);
+  }, [state.jobs, canonicalizeClientName]);
   const clientRoleOptions = useMemo(
-    () => clientRoleOptionsByClient[String(clientShareDraft.clientLabel || "").trim()] || [],
-    [clientRoleOptionsByClient, clientShareDraft.clientLabel]
+    () => clientRoleOptionsByClient[canonicalizeClientName(String(clientShareDraft.clientLabel || "").trim())] || [],
+    [clientRoleOptionsByClient, clientShareDraft.clientLabel, canonicalizeClientName]
   );
   const clientJobContentDefaults = useMemo(() => {
     const scoreRow = (job) => {
@@ -7707,7 +7712,7 @@ function PortalApp({ token, onLogout }) {
     };
     const byClient = new Map();
     (Array.isArray(state.jobs) ? state.jobs : []).forEach((job) => {
-      const clientName = String(job?.client_name || job?.clientName || "").trim();
+      const clientName = canonicalizeClientName(String(job?.client_name || job?.clientName || "").trim());
       if (!clientName || clientName.startsWith("__")) return;
       const currentBest = byClient.get(clientName) || null;
       if (!currentBest) {
@@ -7735,7 +7740,7 @@ function PortalApp({ token, onLogout }) {
       };
     });
     return defaults;
-  }, [state.jobs]);
+  }, [state.jobs, canonicalizeClientName]);
   const [clientUserDraft, setClientUserDraft] = useState({ username: "", password: "", clientName: "", allowedPositions: "" });
   const [clientPasswordDrafts, setClientPasswordDrafts] = useState({});
   const [loginSettingsPanel, setLoginSettingsPanel] = useState("team");
