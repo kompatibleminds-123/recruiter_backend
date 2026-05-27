@@ -3995,8 +3995,12 @@ function buildAssessmentStatusCalendarNote(statusValue, atLocalValue) {
   if (status === "shortlisted") return "Shortlisted.";
   if (status === "joined") return "Joined.";
   if (status === "dropped") return "Dropped.";
-  if (status === "feedback awaited" || status === "cv feedback awaited" || status === "interview feedback awaited") return "Feedback awaited.";
-  if (status === "hold" || status === "cv put on hold" || status === "interview on hold") return "On hold.";
+  if (status === "cv feedback awaited") return "CV feedback awaited.";
+  if (status === "interview feedback awaited") return "Interview feedback awaited.";
+  if (status === "feedback awaited") return "Feedback awaited.";
+  if (status === "cv put on hold") return "CV put on hold.";
+  if (status === "interview on hold") return "Interview on hold.";
+  if (status === "hold") return "On hold.";
   return statusLabel;
 }
 
@@ -17389,7 +17393,9 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
     const combinedNotes = [inferText, manualRemarks ? `Remarks: ${manualRemarks}` : ""].filter(Boolean).join("\n");
     const lastLine = extractLastMeaningfulLine(inferText);
     const inferred = inferAssessmentStatusAndSchedule(lastLine);
-    let nextStatus = String(inferred.candidateStatus || payload?.candidateStatus || "").trim();
+    // Keep recruiter's explicit status selection as source of truth.
+    // Infer box should assist, not override a deliberate dropdown choice.
+    let nextStatus = String(payload?.candidateStatus || inferred.candidateStatus || "").trim();
     if (!nextStatus) throw new Error("Select a status first.");
     const hasAlignedInHistory = (() => {
       const current = String(normalizeAssessmentStatusLabel(assessment?.candidateStatus || "") || "").toLowerCase();
