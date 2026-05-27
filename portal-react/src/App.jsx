@@ -279,7 +279,7 @@ function FeatureLockedSection({ title = "Feature locked" }) {
   companyWideShortcuts: {},
   jdEmailSubjectTemplate: "Job Description - {Role}",
   jdEmailIntroTemplate: "Hello {Candidate}.\nGreetings !!\n\nThis is {Recruiter} from {Company}.\nIt was good to interact with you.\n\nAs discussed, please find the Job description for the {Role}.\nPlease acknowledge or confirm so we can take your candidature ahead.",
-  interviewAiParsingEnabled: true,
+  interviewAiParsingEnabled: false,
   jobBoard: {
     slug: "",
     pageTitle: "{{company_name}} Jobs",
@@ -335,7 +335,9 @@ function migrateCopySettings(settings = {}) {
     .map((item) => normalizeShortcutKey(item))
     .filter(Boolean);
 	  next.semanticSearchEnabled = next.semanticSearchEnabled !== false;
-  next.interviewAiParsingEnabled = next.interviewAiParsingEnabled !== false;
+  // Fail-safe: only explicit true should turn AI parsing on.
+  // This prevents stale/mobile fallback from showing ON when server settings are unavailable.
+  next.interviewAiParsingEnabled = next.interviewAiParsingEnabled === true;
 	  const presetColumns = { ...(next.exportPresetColumns || {}) };
 	  const attentive = String(presetColumns.attentive_tracker || "").trim();
 	  if (attentive) {
