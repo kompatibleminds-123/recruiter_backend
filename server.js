@@ -8454,6 +8454,36 @@ function normalizePhone(value) {
   return digits;
 }
 
+function looksMaskedContactValue(value) {
+  const text = String(value || "").trim();
+  if (!text) return false;
+  return /[*xX•_]/.test(text);
+}
+
+function extractBestEmailFromRawText(rawText = "") {
+  const raw = String(rawText || "").trim();
+  if (!raw) return "";
+  const direct = extractEmailAddress(raw);
+  if (direct) return String(direct).toLowerCase();
+  const normalized = raw
+    .replace(/\s*\(?\s*at\s*\)?\s*/gi, "@")
+    .replace(/\s*\(?\s*dot\s*\)?\s*/gi, ".")
+    .replace(/\s+/g, "");
+  const fromNormalized = extractEmailAddress(normalized);
+  return fromNormalized ? String(fromNormalized).toLowerCase() : "";
+}
+
+function extractBestPhoneFromRawText(rawText = "") {
+  const raw = String(rawText || "");
+  if (!raw) return "";
+  const matches = raw.match(/(?:\+?\d[\d\s().-]{8,}\d)/g) || [];
+  for (const match of matches) {
+    const normalized = normalizePhone(match);
+    if (normalized) return normalized;
+  }
+  return "";
+}
+
 function choosePreferredScalar(...args) {
   let validator = null;
   if (typeof args[args.length - 1] === "function") {
@@ -9252,14 +9282,20 @@ function buildCandidateParseResponse(baseResult, normalizedResult, parseMeta = {
   const rawTextForSearch = String(baseResult?.rawText || "").trim();
   // Do not auto-hide/blank contact details. Keep best available value;
   // reviewers can still see warning flags from validateParseResult.
-  const emailId = applyEmailTldSafeguard(
-    choosePreferredScalar(normalizedResult?.emailId, baseResult?.emailId),
-    rawTextForSearch
-  );
-  const phoneNumber = choosePreferredScalar(
-    normalizedResult?.phoneNumber,
-    baseResult?.phoneNumber
-  );
+  const preferredEmailRaw = choosePreferredScalar(normalizedResult?.emailId, baseResult?.emailId);
+  const extractedEmailFromRaw = extractBestEmailFromRawText(rawTextForSearch);
+  const emailCandidate = (
+    !preferredEmailRaw || !isValidEmail(preferredEmailRaw) || looksMaskedContactValue(preferredEmailRaw)
+  ) ? (extractedEmailFromRaw || preferredEmailRaw) : preferredEmailRaw;
+  const emailId = applyEmailTldSafeguard(emailCandidate, rawTextForSearch);
+
+  const preferredPhoneRaw = choosePreferredScalar(normalizedResult?.phoneNumber, baseResult?.phoneNumber);
+  const extractedPhoneFromRaw = extractBestPhoneFromRawText(rawTextForSearch);
+  const normalizedPreferredPhone = normalizePhone(preferredPhoneRaw);
+  const normalizedExtractedPhone = normalizePhone(extractedPhoneFromRaw);
+  const phoneNumber = normalizedPreferredPhone
+    || normalizedExtractedPhone
+    || String(preferredPhoneRaw || extractedPhoneFromRaw || "").trim();
   const linkedinUrl = choosePreferredScalar(
     normalizedResult?.linkedinUrl,
     baseResult?.linkedinUrl
@@ -9473,7 +9509,7 @@ function buildCandidateParseResponse(baseResult, normalizedResult, parseMeta = {
     summary: {
       candidate_name: String(normalizedResult?.candidateName || baseResult?.candidateName || "").trim(),
       email: emailId,
-      phone: normalizePhone(phoneNumber),
+      phone: phoneNumber,
       linkedin: linkedinUrl,
       location: resolvedCvLocation,
       current_company: normalizedCurrentCompany,
@@ -9522,7 +9558,7 @@ function buildCandidateParseResponse(baseResult, normalizedResult, parseMeta = {
     currentCompany: normalizedCurrentCompany,
     currentDesignation: normalizedCurrentDesignation,
       emailId,
-      phoneNumber: normalizePhone(phoneNumber),
+      phoneNumber,
       linkedinUrl,
       location: resolvedCvLocation,
       highestEducation,
