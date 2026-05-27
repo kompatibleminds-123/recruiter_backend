@@ -10555,6 +10555,10 @@ function PortalApp({ token, onLogout }) {
         return String(value || "");
       }
     };
+    const normalizeAlignedLabel = (value) => {
+      const label = formatAssessmentStatusDisplay(value || "").trim();
+      return label || "Interview";
+    };
     const normalizeStatus = (value) => normalizeAssessmentStatusLabel(String(value || "")).toLowerCase();
     const rowsByChip = { ...emptyRows };
     const assessmentSharedAtMap = new Map();
@@ -10674,21 +10678,35 @@ function PortalApp({ token, onLogout }) {
           .sort((a, b) => toTimestampSafe(a.at) - toTimestampSafe(b.at));
         const latestAlignedEvent = sortedAlignedEvents[sortedAlignedEvents.length - 1] || null;
         const previousAlignedEvent = sortedAlignedEvents.length > 1 ? sortedAlignedEvents[sortedAlignedEvents.length - 2] : null;
-        if (latestAlignedEvent && inDateRange(latestAlignedEvent.at)) {
+        if (latestAlignedEvent) {
+          const interviewTimelineDate = String(
+            linkedAssessment?.interviewAt
+            || linkedAssessment?.interview_at
+            || latestAlignedEvent.at
+            || ""
+          ).trim();
+          if (!inDateRange(interviewTimelineDate || latestAlignedEvent.at)) return;
           const timelineText = previousAlignedEvent
-            ? `${formatAssessmentStatusDisplay(previousAlignedEvent.status)} done on ${formatEventDate(previousAlignedEvent.at)} | now ${formatAssessmentStatusDisplay(latestAlignedEvent.status)} aligned on ${formatEventDate(latestAlignedEvent.at)}`
-            : `${formatAssessmentStatusDisplay(latestAlignedEvent.status)} aligned on ${formatEventDate(latestAlignedEvent.at)}`;
+            ? `${normalizeAlignedLabel(previousAlignedEvent.status)} done on ${formatEventDate(previousAlignedEvent.at)} | now ${normalizeAlignedLabel(latestAlignedEvent.status)} on ${formatEventDate(interviewTimelineDate)}`
+            : `${normalizeAlignedLabel(latestAlignedEvent.status)} on ${formatEventDate(interviewTimelineDate)}`;
           rowsByChip.aligned_interviews.push({
             ...baseRow,
             round: `${timelineText} | Current: ${currentStatusLabel || "-"}`,
-            date: latestAlignedEvent.at
+            date: interviewTimelineDate || latestAlignedEvent.at
           });
         }
       } else if (SMART_CHIP_INTERVIEW_ALIGNED_STATUSES.has(assessmentStatus) && inDateRange(interviewAt || updatedAt)) {
+        const fallbackInterviewDate = String(
+          linkedAssessment?.interviewAt
+          || linkedAssessment?.interview_at
+          || interviewAt
+          || updatedAt
+          || ""
+        ).trim();
         rowsByChip.aligned_interviews.push({
           ...baseRow,
-          round: `${formatAssessmentStatusDisplay(assessmentStatus)} | Current: ${currentStatusLabel || "-"}`,
-          date: interviewAt || updatedAt || ""
+          round: `${normalizeAlignedLabel(assessmentStatus)} | Current: ${currentStatusLabel || "-"}`,
+          date: fallbackInterviewDate
         });
       }
       if (feedbackAwaitedHistoryEvents.length) {
@@ -10696,18 +10714,32 @@ function PortalApp({ token, onLogout }) {
           .filter((event) => event?.at && Number.isFinite(toTimestampSafe(event.at)))
           .sort((a, b) => toTimestampSafe(a.at) - toTimestampSafe(b.at))
           .pop();
-        if (latestFeedbackEvent && inDateRange(latestFeedbackEvent.at)) {
+        if (latestFeedbackEvent) {
+          const feedbackTimelineDate = String(
+            linkedAssessment?.interviewAt
+            || linkedAssessment?.interview_at
+            || latestFeedbackEvent.at
+            || ""
+          ).trim();
+          if (!inDateRange(feedbackTimelineDate || latestFeedbackEvent.at)) return;
           rowsByChip.feedback_awaited.push({
             ...baseRow,
-            round: `Feedback awaited on ${formatEventDate(latestFeedbackEvent.at)} | Current: ${currentStatusLabel || "-"}`,
-            date: latestFeedbackEvent.at
+            round: `Feedback awaited on ${formatEventDate(feedbackTimelineDate || latestFeedbackEvent.at)} | Current: ${currentStatusLabel || "-"}`,
+            date: feedbackTimelineDate || latestFeedbackEvent.at
           });
         }
       } else if (assessmentStatus === "feedback awaited" && inDateRange(interviewAt || updatedAt)) {
+        const fallbackFeedbackDate = String(
+          linkedAssessment?.interviewAt
+          || linkedAssessment?.interview_at
+          || interviewAt
+          || updatedAt
+          || ""
+        ).trim();
         rowsByChip.feedback_awaited.push({
           ...baseRow,
           round: `Feedback awaited | Current: ${currentStatusLabel || "-"}`,
-          date: interviewAt || updatedAt || ""
+          date: fallbackFeedbackDate
         });
       }
       const capturedIsActive = item ? (item?.hidden_from_captured !== true && item?.hiddenFromCaptured !== true) : true;
@@ -10781,7 +10813,7 @@ function PortalApp({ token, onLogout }) {
         }
       });
     }
-    const dedupeLatestByCandidate = (rows = []) => {
+    const dedupeByCandidate = (rows = [], { prefer = "latest" } = {}) => {
       const bestByCandidate = new Map();
       rows.forEach((row) => {
         const item = row?.item || {};
@@ -10797,20 +10829,24 @@ function PortalApp({ token, onLogout }) {
         const rowTs = toTimestampSafe(row?.date || "");
         const prev = bestByCandidate.get(candidateKey);
         const prevTs = toTimestampSafe(prev?.date || "");
-        if (!prev || (!Number.isFinite(prevTs) && Number.isFinite(rowTs)) || (Number.isFinite(rowTs) && rowTs >= prevTs)) {
+        const shouldReplaceLatest = !prev || (!Number.isFinite(prevTs) && Number.isFinite(rowTs)) || (Number.isFinite(rowTs) && rowTs >= prevTs);
+        const shouldReplaceEarliest = !prev || (!Number.isFinite(prevTs) && Number.isFinite(rowTs)) || (Number.isFinite(rowTs) && rowTs <= prevTs);
+        if ((prefer === "latest" && shouldReplaceLatest) || (prefer === "earliest" && shouldReplaceEarliest)) {
           bestByCandidate.set(candidateKey, row);
         }
       });
       return Array.from(bestByCandidate.values()).sort((a, b) => toTimestampSafe(b?.date || "") - toTimestampSafe(a?.date || ""));
     };
     return {
-      aligned_interviews: dedupeLatestByCandidate(rowsByChip.aligned_interviews),
-      feedback_awaited: dedupeLatestByCandidate(rowsByChip.feedback_awaited),
-      quick_joiners: dedupeLatestByCandidate(rowsByChip.quick_joiners),
-      shared_today: dedupeLatestByCandidate(rowsByChip.shared_today),
-      shared_this_week: dedupeLatestByCandidate(rowsByChip.shared_this_week),
-      offered_candidates: dedupeLatestByCandidate(rowsByChip.offered_candidates),
-      cv_shared: dedupeLatestByCandidate(rowsByChip.cv_shared)
+      aligned_interviews: dedupeByCandidate(rowsByChip.aligned_interviews, { prefer: "latest" }),
+      feedback_awaited: dedupeByCandidate(rowsByChip.feedback_awaited, { prefer: "latest" }),
+      quick_joiners: dedupeByCandidate(rowsByChip.quick_joiners, { prefer: "latest" }),
+      // Shared chips should not re-count reconversions done later.
+      // Keep the earliest conversion/share moment per candidate.
+      shared_today: dedupeByCandidate(rowsByChip.shared_today, { prefer: "earliest" }),
+      shared_this_week: dedupeByCandidate(rowsByChip.shared_this_week, { prefer: "earliest" }),
+      offered_candidates: dedupeByCandidate(rowsByChip.offered_candidates, { prefer: "latest" }),
+      cv_shared: dedupeByCandidate(rowsByChip.cv_shared, { prefer: "latest" })
     };
     } catch (error) {
       console.error("candidateSmartChipRows failed", error);
@@ -18812,17 +18848,20 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                                     </tr>
                                   </thead>
                                   <tbody>
-                                    {rows.map((row, index) => (
+                                    {rows.map((row, index) => {
+                                      const statusHay = `${row.round || ""} ${row.status || ""}`.toLowerCase();
+                                      const isAlertStatus = statusHay.includes("interview reject");
+                                      return (
                                       <tr key={`${chip.id}-${row.item?.id || row.item?.assessmentId || row.candidateName}-${index}`}>
                                         <td>
                                           <button
-                                            className="linkish candidate-smart-link"
+                                            className={`linkish candidate-smart-link${isAlertStatus ? " candidate-smart-alert" : ""}`}
                                             onClick={() => void openCandidateFromSearch(row.item)}
                                           >
                                             {row.candidateName}
                                           </button>
                                         </td>
-                                        <td>{row.round || row.status || "-"}</td>
+                                        <td className={isAlertStatus ? "candidate-smart-alert" : ""}>{row.round || row.status || "-"}</td>
                                         <td>{row.date ? formatDateForCopy(row.date) : "-"}</td>
                                         <td>{row.client || "-"}</td>
                                         <td>{row.role || "-"}</td>
@@ -18839,7 +18878,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                                           </button>
                                         </td>
                                       </tr>
-                                    ))}
+                                    )})}
                                   </tbody>
                                 </table>
                               </div>

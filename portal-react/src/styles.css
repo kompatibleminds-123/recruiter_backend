@@ -1738,6 +1738,10 @@ textarea { min-height: 92px; resize: vertical; }
 .candidate-smart-link {
   white-space: nowrap;
 }
+.candidate-smart-alert {
+  color: #b42318 !important;
+  font-weight: 800;
+}
 .candidate-keyword-builder {
   border: 1px solid #d9e4fb;
   background: linear-gradient(180deg, #f8fbff 0%, #f2f7ff 100%);
