@@ -449,6 +449,21 @@ const SMART_CHIP_INTERVIEW_ALIGNED_STATUSES = new Set([
   "l3 aligned",
   "hr interview aligned"
 ]);
+const SMART_CHIP_INTERVIEW_TIMELINE_STATUSES = new Set([
+  "screening call aligned",
+  "l1 aligned",
+  "l2 aligned",
+  "l3 aligned",
+  "hr interview aligned",
+  "feedback awaited",
+  "cv feedback awaited",
+  "interview feedback awaited",
+  "interview reject",
+  "offered",
+  "joined",
+  "shortlisted",
+  "hold"
+]);
 const SHORTCUT_TEMPLATE_PLACEHOLDERS = [
   "{{name}}",
   "{{recruiter_name}}",
@@ -635,6 +650,7 @@ const DEFAULT_PIPELINE_STAGE_OPTIONS = [
 
 const DEFAULT_STATUS_OPTIONS = [
   "CV shared",
+  "CV feedback awaited",
   "Test or Assignment shared",
   "Screening call aligned",
   "L1 aligned",
@@ -642,6 +658,7 @@ const DEFAULT_STATUS_OPTIONS = [
   "L3 aligned",
   "HR interview aligned",
   "Offered",
+  "Interview feedback awaited",
   "Feedback Awaited",
   "Hold",
   "Not responding",
@@ -922,6 +939,11 @@ function normalizeAssessmentStatusLabel(status) {
   if (/\bassignment\b/i.test(value)) return "Test or Assignment shared";
   if (/^did not attend$/i.test(value)) return "Not responding";
   return value;
+}
+
+function isFeedbackAwaitedStatus(status) {
+  const lower = String(normalizeAssessmentStatusLabel(status) || "").trim().toLowerCase();
+  return lower === "feedback awaited" || lower === "cv feedback awaited" || lower === "interview feedback awaited";
 }
 
 class PayrollRouteBoundary extends React.Component {
@@ -10601,13 +10623,15 @@ function PortalApp({ token, onLogout }) {
       return label || "Interview";
     };
     const alignedPhraseForDate = (label, value) => {
+      const base = String(label || "Interview").replace(/\s+aligned$/i, "").trim() || "Interview";
       const ts = toTimestampSafe(value);
-      if (!Number.isFinite(ts)) return `${label} aligned`;
-      return ts < Date.now() ? `${label} was aligned` : `${label} aligned`;
+      if (!Number.isFinite(ts)) return `${base} aligned`;
+      return ts < Date.now() ? `${base} was aligned` : `${base} aligned`;
     };
     const normalizeStatus = (value) => normalizeAssessmentStatusLabel(String(value || "")).toLowerCase();
     const rowsByChip = { ...emptyRows };
     const assessmentSharedAtMap = new Map();
+    const assessmentEventsByAssessmentId = new Map();
     const eventRows = Array.isArray(state.assessmentEvents) ? state.assessmentEvents : [];
     eventRows.forEach((event) => {
       const assessmentId = String(event?.assessment_id || event?.assessmentId || "").trim();
@@ -10625,6 +10649,11 @@ function PortalApp({ token, onLogout }) {
         if (!existing || toTimestampSafe(eventAt) < toTimestampSafe(existing)) {
           assessmentSharedAtMap.set(assessmentId, eventAt);
         }
+      }
+      if (eventAt && status) {
+        const list = assessmentEventsByAssessmentId.get(assessmentId) || [];
+        list.push({ status, at: eventAt });
+        assessmentEventsByAssessmentId.set(assessmentId, list);
       }
     });
     assessments.forEach((assessment) => {
@@ -10678,6 +10707,14 @@ function PortalApp({ token, onLogout }) {
       const alignedHistoryEvents = [];
       const feedbackAwaitedHistoryEvents = [];
       const interviewTrackEvents = [];
+      const pushInterviewTrackEvent = (statusValue, atValue) => {
+        const statusKey = normalizeAssessmentStatusLabel(String(statusValue || "")).toLowerCase();
+        const atKey = String(atValue || "").trim();
+        if (!statusKey || !atKey) return;
+        if (!SMART_CHIP_INTERVIEW_TIMELINE_STATUSES.has(statusKey)) return;
+        if (interviewTrackEvents.some((event) => event.status === statusKey && String(event.at || "") === atKey)) return;
+        interviewTrackEvents.push({ status: statusKey, at: atKey });
+      };
       statusHistory.forEach((entry) => {
         if (!entry || typeof entry !== "object") return;
         const at = String(entry?.at || "").trim();
@@ -10686,12 +10723,10 @@ function PortalApp({ token, onLogout }) {
         if (label && SMART_CHIP_INTERVIEW_ALIGNED_STATUSES.has(label) && at) {
           alignedHistoryEvents.push({ status: label, at });
         }
-        if (label === "feedback awaited" && at) {
+        if (isFeedbackAwaitedStatus(label) && at) {
           feedbackAwaitedHistoryEvents.push({ status: label, at });
         }
-        if ((SMART_CHIP_INTERVIEW_ALIGNED_STATUSES.has(label) || label === "feedback awaited") && at) {
-          interviewTrackEvents.push({ status: label, at });
-        }
+        pushInterviewTrackEvent(label, at);
         if (!at) return;
         const isConversionMarker = label === "cv shared" || notes.includes("converted into assessment");
         if (!isConversionMarker) return;
@@ -10699,6 +10734,20 @@ function PortalApp({ token, onLogout }) {
           statusHistoryConvertedAt = at;
         }
       });
+      (assessmentEventsByAssessmentId.get(assessmentId) || []).forEach((event) => {
+        pushInterviewTrackEvent(event?.status, event?.at);
+      });
+      // If final status exists but event trail is missing, include it using best-known timestamp.
+      if (SMART_CHIP_INTERVIEW_TIMELINE_STATUSES.has(assessmentStatus)) {
+        const fallbackFinalAt = String(
+          linkedAssessment?.updatedAt
+          || linkedAssessment?.updated_at
+          || linkedAssessment?.generatedAt
+          || linkedAssessment?.generated_at
+          || ""
+        ).trim();
+        pushInterviewTrackEvent(assessmentStatus, fallbackFinalAt);
+      }
       const convertedAt = String(
         universeConvertedAtByAssessmentId.get(String(linkedAssessment?.id || assessmentId || "").trim())
           || universeConvertedAtByCandidateId.get(candidateId)
@@ -10770,7 +10819,11 @@ function PortalApp({ token, onLogout }) {
             });
           }
         }
-      } else if (activeAssessment && SMART_CHIP_INTERVIEW_ALIGNED_STATUSES.has(assessmentStatus) && inDateRange(interviewAt || updatedAt)) {
+      } else if (
+        activeAssessment &&
+        (SMART_CHIP_INTERVIEW_ALIGNED_STATUSES.has(assessmentStatus) || String(assessmentStatus || "").trim().toLowerCase() === "interview feedback awaited") &&
+        inDateRange(interviewAt || updatedAt)
+      ) {
         const fallbackInterviewDate = String(
           linkedAssessment?.interviewAt
           || linkedAssessment?.interview_at
@@ -10778,9 +10831,12 @@ function PortalApp({ token, onLogout }) {
           || updatedAt
           || ""
         ).trim();
+        const isDirectInterviewFeedbackAwaited = String(assessmentStatus || "").trim().toLowerCase() === "interview feedback awaited";
         rowsByChip.aligned_interviews.push({
           ...baseRow,
-          round: `${alignedPhraseForDate(normalizeAlignedLabel(assessmentStatus), fallbackInterviewDate)} on ${formatEventDate(fallbackInterviewDate)} | Current: ${currentStatusLabel || "-"}`,
+          round: isDirectInterviewFeedbackAwaited
+            ? `Interview feedback awaited on ${formatEventDate(fallbackInterviewDate)} | Round not captured | Current: ${currentStatusLabel || "-"}`
+            : `${alignedPhraseForDate(normalizeAlignedLabel(assessmentStatus), fallbackInterviewDate)} on ${formatEventDate(fallbackInterviewDate)} | Current: ${currentStatusLabel || "-"}`,
           date: fallbackInterviewDate
         });
       }
@@ -10805,7 +10861,7 @@ function PortalApp({ token, onLogout }) {
             });
           }
         }
-      } else if (activeAssessment && assessmentStatus === "feedback awaited" && inDateRange(interviewAt || updatedAt)) {
+      } else if (activeAssessment && isFeedbackAwaitedStatus(assessmentStatus) && inDateRange(interviewAt || updatedAt)) {
         const fallbackFeedbackDate = String(
           linkedAssessment?.interviewAt
           || linkedAssessment?.interview_at
@@ -17278,8 +17334,17 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
     const combinedNotes = [inferText, manualRemarks ? `Remarks: ${manualRemarks}` : ""].filter(Boolean).join("\n");
     const lastLine = extractLastMeaningfulLine(inferText);
     const inferred = inferAssessmentStatusAndSchedule(lastLine);
-    const nextStatus = String(inferred.candidateStatus || payload?.candidateStatus || "").trim();
+    let nextStatus = String(inferred.candidateStatus || payload?.candidateStatus || "").trim();
     if (!nextStatus) throw new Error("Select a status first.");
+    const hasAlignedInHistory = (() => {
+      const current = String(normalizeAssessmentStatusLabel(assessment?.candidateStatus || "") || "").toLowerCase();
+      if (isInterviewAlignedStatus(current)) return true;
+      const history = Array.isArray(assessment?.statusHistory) ? assessment.statusHistory : [];
+      return history.some((entry) => isInterviewAlignedStatus(entry?.status || ""));
+    })();
+    if (String(nextStatus || "").trim().toLowerCase() === "feedback awaited") {
+      nextStatus = hasAlignedInHistory ? "Interview feedback awaited" : "CV feedback awaited";
+    }
     const nextStatusLower = nextStatus.toLowerCase();
     const isInterviewStatus = isInterviewAlignedStatus(nextStatus);
     const isOffered = nextStatusLower === "offered";
