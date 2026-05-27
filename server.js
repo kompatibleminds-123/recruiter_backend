@@ -1048,6 +1048,37 @@ async function sendPostmarkEmailWithCfg(cfg, { to, cc = "", subject, html = "", 
   return { ok: true };
 }
 
+function decodeHtmlEntities(value = "") {
+  return String(value || "")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/&quot;/gi, "\"")
+    .replace(/&#39;/gi, "'");
+}
+
+function richHtmlToReadableText(value = "") {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  if (!/[<>]/.test(raw)) return raw;
+  let text = raw;
+  text = text.replace(/<\s*br\s*\/?>/gi, "\n");
+  text = text.replace(/<\/\s*(p|div|section|article|h[1-6])\s*>/gi, "\n");
+  text = text.replace(/<\s*li[^>]*>/gi, "\n- ");
+  text = text.replace(/<\/\s*li\s*>/gi, "");
+  text = text.replace(/<[^>]+>/g, " ");
+  text = decodeHtmlEntities(text);
+  text = text
+    .replace(/\r/g, "")
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n[ \t]+/g, "\n")
+    .replace(/[ \t]{2,}/g, " ")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+  return text;
+}
+
 function buildJobShareEmail({ job, introText = "", senderName = "", signatureText = "", signatureLinks = [] }) {
   const title = String(job?.title || "").trim();
   const client = String(job?.clientName || "").trim();
@@ -1055,7 +1086,7 @@ function buildJobShareEmail({ job, introText = "", senderName = "", signatureTex
   const workMode = String(job?.workMode || "").trim();
   const aboutCompany = String(job?.aboutCompany || "").trim();
   const mustHave = String(job?.mustHaveSkills || "").trim();
-  const jd = String(job?.jobDescription || "").trim();
+  const jd = richHtmlToReadableText(String(job?.jobDescription || "").trim());
   const redFlags = String(job?.redFlags || "").trim();
   const recruiterNotes = String(job?.recruiterNotes || "").trim();
   const applyBase = String(process.env.PUBLIC_PORTAL_BASE_URL || "https://recruit.kompatibleminds.com").trim().replace(/\/+$/, "");
@@ -1160,7 +1191,7 @@ async function buildJobShareDocxBuffer({ job, introText = "", senderName = "" })
   const workMode = String(job?.workMode || "").trim();
   const aboutCompany = String(job?.aboutCompany || "").trim();
   const mustHave = String(job?.mustHaveSkills || "").trim();
-  const jd = String(job?.jobDescription || "").trim();
+  const jd = richHtmlToReadableText(String(job?.jobDescription || "").trim());
   const redFlags = String(job?.redFlags || "").trim();
   const recruiterNotes = String(job?.recruiterNotes || "").trim();
   const applyBase = String(process.env.PUBLIC_PORTAL_BASE_URL || "https://recruit.kompatibleminds.com").trim().replace(/\/+$/, "");
