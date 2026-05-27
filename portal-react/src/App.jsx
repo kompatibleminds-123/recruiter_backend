@@ -9354,6 +9354,21 @@ function PortalApp({ token, onLogout }) {
   }, [token]);
 
   useEffect(() => {
+    if (!token) return undefined;
+    if (String(location?.pathname || "") !== "/assessments") return undefined;
+
+    let cancelled = false;
+    // One-time pull on entering Assessments tab so team conversions show without relogin.
+    // No interval polling to keep egress low.
+    void Promise.all([reloadAssessmentsSlice(), reloadCandidatesSlice()]).catch(() => {}).finally(() => {
+      if (cancelled) return;
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [token, location?.pathname]);
+
+  useEffect(() => {
     if (!token) return;
     if (String(location?.pathname || "") !== "/shortcuts") return;
     void loadPersonalShortcuts();
