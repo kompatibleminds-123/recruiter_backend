@@ -439,7 +439,7 @@ const SMART_SEARCH_QUICK_CHIPS = [
   { id: "quick_joiners", label: "Quick joiners (<=15 days)", querySuffix: "notice period under 15 days" },
   { id: "shared_today", label: "Candidates shared today", querySuffix: "converted to assessments today" },
   { id: "shared_this_week", label: "Shared this week", querySuffix: "converted to assessments this week" },
-  { id: "offered_candidates", label: "Offered candidates", querySuffix: "assessment status offered" },
+  { id: "joined_candidates", label: "Joined candidates", querySuffix: "assessment status joined" },
   { id: "cv_shared", label: "Active pipeline", querySuffix: "active assessments" }
 ];
 const SMART_CHIP_INTERVIEW_ALIGNED_STATUSES = new Set([
@@ -10567,7 +10567,7 @@ function PortalApp({ token, onLogout }) {
       quick_joiners: [],
       shared_today: [],
       shared_this_week: [],
-      offered_candidates: [],
+      joined_candidates: [],
       cv_shared: []
     };
     try {
@@ -10870,7 +10870,7 @@ function PortalApp({ token, onLogout }) {
           const timelineText = previousAlignedEvent
             ? `${alignedPhraseForDate(normalizeAlignedLabel(previousAlignedEvent.status), previousAlignedEvent.at)} on ${formatEventDate(previousAlignedEvent.at)} | now ${alignedPhraseForDate(normalizeAlignedLabel(latestAlignedEvent.status), interviewTimelineDate)} on ${formatEventDate(interviewTimelineDate)}`
             : `${alignedPhraseForDate(normalizeAlignedLabel(latestAlignedEvent.status), interviewTimelineDate)} on ${formatEventDate(interviewTimelineDate)}`;
-          if (activeAssessment) {
+          if (activeAssessment && String(assessmentStatus || "").trim().toLowerCase() !== "joined") {
             rowsByChip.aligned_interviews.push({
               ...baseRow,
               round: `${timelineText} | Current: ${currentStatusLabel || "-"}`,
@@ -10880,7 +10880,10 @@ function PortalApp({ token, onLogout }) {
         }
       } else if (
         activeAssessment &&
-        (SMART_CHIP_INTERVIEW_ALIGNED_STATUSES.has(assessmentStatus) || String(assessmentStatus || "").trim().toLowerCase() === "interview feedback awaited") &&
+        (
+          SMART_CHIP_INTERVIEW_ALIGNED_STATUSES.has(assessmentStatus)
+          || ["interview feedback awaited", "interview on hold", "shortlisted", "offered"].includes(String(assessmentStatus || "").trim().toLowerCase())
+        ) &&
         inDateRange(interviewAt || updatedAt)
       ) {
         const fallbackInterviewDate = String(
@@ -10891,10 +10894,13 @@ function PortalApp({ token, onLogout }) {
           || ""
         ).trim();
         const isDirectInterviewFeedbackAwaited = String(assessmentStatus || "").trim().toLowerCase() === "interview feedback awaited";
+        const isInterviewOnHold = String(assessmentStatus || "").trim().toLowerCase() === "interview on hold";
         rowsByChip.aligned_interviews.push({
           ...baseRow,
           round: isDirectInterviewFeedbackAwaited
             ? `Interview feedback awaited on ${formatEventDate(fallbackInterviewDate)} | Round not captured | Current: ${currentStatusLabel || "-"}`
+            : isInterviewOnHold
+              ? `Interview on hold on ${formatEventDate(fallbackInterviewDate)} | Current: ${currentStatusLabel || "-"}`
             : `${alignedPhraseForDate(normalizeAlignedLabel(assessmentStatus), fallbackInterviewDate)} on ${formatEventDate(fallbackInterviewDate)} | Current: ${currentStatusLabel || "-"}`,
           date: fallbackInterviewDate
         });
@@ -10944,8 +10950,8 @@ function PortalApp({ token, onLogout }) {
       if (linkedAssessment && inThisWeek(convertedAt) && inDateRange(convertedAt)) {
         rowsByChip.shared_this_week.push({ ...baseRow, round: "Converted to assessment", date: convertedAt });
       }
-      if (assessmentStatus === "offered" && inDateRange(updatedAt)) {
-        rowsByChip.offered_candidates.push({ ...baseRow, round: "Offered" });
+      if (assessmentStatus === "joined" && inDateRange(updatedAt)) {
+        rowsByChip.joined_candidates.push({ ...baseRow, round: "Joined" });
       }
       if (activeAssessment && inDateRange(updatedAt)) {
         const statusLower = normalizeStatus(baseRow.status || assessmentStatus || "");
@@ -11037,7 +11043,7 @@ function PortalApp({ token, onLogout }) {
       // Keep the earliest conversion/share moment per candidate.
       shared_today: dedupeByCandidate(rowsByChip.shared_today, { prefer: "earliest" }),
       shared_this_week: dedupeByCandidate(rowsByChip.shared_this_week, { prefer: "earliest" }),
-      offered_candidates: dedupeByCandidate(rowsByChip.offered_candidates, { prefer: "latest" }),
+      joined_candidates: dedupeByCandidate(rowsByChip.joined_candidates, { prefer: "latest" }),
       cv_shared: dedupeByCandidate(rowsByChip.cv_shared, { prefer: "latest" })
     };
     } catch (error) {
