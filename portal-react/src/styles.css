@@ -1742,6 +1742,25 @@ textarea { min-height: 92px; resize: vertical; }
   color: #b42318 !important;
   font-weight: 800;
 }
+.candidate-smart-round-details summary {
+  list-style: none;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.candidate-smart-round-details summary::-webkit-details-marker {
+  display: none;
+}
+.candidate-smart-round-toggle {
+  color: #1c4ed8;
+  font-weight: 700;
+  font-size: 0.86rem;
+}
+.candidate-smart-round-full {
+  margin-top: 6px;
+  white-space: pre-line;
+}
 .candidate-keyword-builder {
   border: 1px solid #d9e4fb;
   background: linear-gradient(180deg, #f8fbff 0%, #f2f7ff 100%);

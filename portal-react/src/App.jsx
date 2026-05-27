@@ -434,8 +434,8 @@ const BOOLEAN_SEARCH_EXAMPLE_PROMPTS = [
 ];
 
 const SMART_SEARCH_QUICK_CHIPS = [
+  { id: "interview_history", label: "Throughout interview history", querySuffix: "interview history screening call aligned L1 aligned L2 aligned L3 aligned HR interview aligned feedback awaited" },
   { id: "aligned_interviews", label: "Aligned interviews", querySuffix: "assessment status screening call aligned or L1 aligned or L2 aligned or L3 aligned or HR interview aligned" },
-  { id: "feedback_awaited", label: "Feedback awaited", querySuffix: "assessment status feedback awaited" },
   { id: "quick_joiners", label: "Quick joiners (<=15 days)", querySuffix: "notice period under 15 days" },
   { id: "shared_today", label: "Candidates shared today", querySuffix: "converted to assessments today" },
   { id: "shared_this_week", label: "Shared this week", querySuffix: "converted to assessments this week" },
@@ -10503,6 +10503,7 @@ function PortalApp({ token, onLogout }) {
   }, [totalCandidatePages]);
   const candidateSmartChipRows = useMemo(() => {
     const emptyRows = {
+      interview_history: [],
       aligned_interviews: [],
       feedback_awaited: [],
       quick_joiners: [],
@@ -10599,6 +10600,11 @@ function PortalApp({ token, onLogout }) {
       const label = formatAssessmentStatusDisplay(value || "").trim();
       return label || "Interview";
     };
+    const alignedPhraseForDate = (label, value) => {
+      const ts = toTimestampSafe(value);
+      if (!Number.isFinite(ts)) return `${label} aligned`;
+      return ts < Date.now() ? `${label} was aligned` : `${label} aligned`;
+    };
     const normalizeStatus = (value) => normalizeAssessmentStatusLabel(String(value || "")).toLowerCase();
     const rowsByChip = { ...emptyRows };
     const assessmentSharedAtMap = new Map();
@@ -10671,6 +10677,7 @@ function PortalApp({ token, onLogout }) {
       let statusHistoryConvertedAt = "";
       const alignedHistoryEvents = [];
       const feedbackAwaitedHistoryEvents = [];
+      const interviewTrackEvents = [];
       statusHistory.forEach((entry) => {
         if (!entry || typeof entry !== "object") return;
         const at = String(entry?.at || "").trim();
@@ -10681,6 +10688,9 @@ function PortalApp({ token, onLogout }) {
         }
         if (label === "feedback awaited" && at) {
           feedbackAwaitedHistoryEvents.push({ status: label, at });
+        }
+        if ((SMART_CHIP_INTERVIEW_ALIGNED_STATUSES.has(label) || label === "feedback awaited") && at) {
+          interviewTrackEvents.push({ status: label, at });
         }
         if (!at) return;
         const isConversionMarker = label === "cv shared" || notes.includes("converted into assessment");
@@ -10711,6 +10721,29 @@ function PortalApp({ token, onLogout }) {
         status: currentStatusLabel,
         date: interviewAt || updatedAt || ""
       };
+      const activeAssessment = linkedAssessment && !isAssessmentArchived(linkedAssessment);
+      if (interviewTrackEvents.length) {
+        const sortedTrackEvents = [...interviewTrackEvents]
+          .filter((event) => event?.at && Number.isFinite(toTimestampSafe(event.at)))
+          .sort((a, b) => toTimestampSafe(a.at) - toTimestampSafe(b.at));
+        const inRangeEvents = sortedTrackEvents.filter((event) => inDateRange(event.at));
+        if (inRangeEvents.length) {
+          const latestTrackEvent = inRangeEvents[inRangeEvents.length - 1];
+          const timeline = inRangeEvents
+            .map((event) => `${formatAssessmentStatusDisplay(event.status)} on ${formatEventDate(event.at)}`)
+            .join(" | ");
+          rowsByChip.interview_history.push({
+            ...baseRow,
+            round: `${timeline} | Current: ${currentStatusLabel || "-"}`,
+            date: String(
+              linkedAssessment?.interviewAt
+              || linkedAssessment?.interview_at
+              || latestTrackEvent?.at
+              || ""
+            ).trim()
+          });
+        }
+      }
 
       if (alignedHistoryEvents.length) {
         const sortedAlignedEvents = [...alignedHistoryEvents]
@@ -10727,15 +10760,17 @@ function PortalApp({ token, onLogout }) {
           ).trim();
           if (!inDateRange(interviewTimelineDate || latestAlignedEvent.at)) return;
           const timelineText = previousAlignedEvent
-            ? `${normalizeAlignedLabel(previousAlignedEvent.status)} done on ${formatEventDate(previousAlignedEvent.at)} | now ${normalizeAlignedLabel(latestAlignedEvent.status)} on ${formatEventDate(interviewTimelineDate)}`
-            : `${normalizeAlignedLabel(latestAlignedEvent.status)} on ${formatEventDate(interviewTimelineDate)}`;
-          rowsByChip.aligned_interviews.push({
-            ...baseRow,
-            round: `${timelineText} | Current: ${currentStatusLabel || "-"}`,
-            date: interviewTimelineDate || latestAlignedEvent.at
-          });
+            ? `${alignedPhraseForDate(normalizeAlignedLabel(previousAlignedEvent.status), previousAlignedEvent.at)} on ${formatEventDate(previousAlignedEvent.at)} | now ${alignedPhraseForDate(normalizeAlignedLabel(latestAlignedEvent.status), interviewTimelineDate)} on ${formatEventDate(interviewTimelineDate)}`
+            : `${alignedPhraseForDate(normalizeAlignedLabel(latestAlignedEvent.status), interviewTimelineDate)} on ${formatEventDate(interviewTimelineDate)}`;
+          if (activeAssessment) {
+            rowsByChip.aligned_interviews.push({
+              ...baseRow,
+              round: `${timelineText} | Current: ${currentStatusLabel || "-"}`,
+              date: interviewTimelineDate || latestAlignedEvent.at
+            });
+          }
         }
-      } else if (SMART_CHIP_INTERVIEW_ALIGNED_STATUSES.has(assessmentStatus) && inDateRange(interviewAt || updatedAt)) {
+      } else if (activeAssessment && SMART_CHIP_INTERVIEW_ALIGNED_STATUSES.has(assessmentStatus) && inDateRange(interviewAt || updatedAt)) {
         const fallbackInterviewDate = String(
           linkedAssessment?.interviewAt
           || linkedAssessment?.interview_at
@@ -10745,7 +10780,7 @@ function PortalApp({ token, onLogout }) {
         ).trim();
         rowsByChip.aligned_interviews.push({
           ...baseRow,
-          round: `${normalizeAlignedLabel(assessmentStatus)} | Current: ${currentStatusLabel || "-"}`,
+          round: `${alignedPhraseForDate(normalizeAlignedLabel(assessmentStatus), fallbackInterviewDate)} on ${formatEventDate(fallbackInterviewDate)} | Current: ${currentStatusLabel || "-"}`,
           date: fallbackInterviewDate
         });
       }
@@ -10762,13 +10797,15 @@ function PortalApp({ token, onLogout }) {
             || ""
           ).trim();
           if (!inDateRange(feedbackTimelineDate || latestFeedbackEvent.at)) return;
-          rowsByChip.feedback_awaited.push({
-            ...baseRow,
-            round: `Feedback awaited on ${formatEventDate(feedbackTimelineDate || latestFeedbackEvent.at)} | Current: ${currentStatusLabel || "-"}`,
-            date: feedbackTimelineDate || latestFeedbackEvent.at
-          });
+          if (activeAssessment) {
+            rowsByChip.feedback_awaited.push({
+              ...baseRow,
+              round: `Feedback awaited on ${formatEventDate(feedbackTimelineDate || latestFeedbackEvent.at)} | Current: ${currentStatusLabel || "-"}`,
+              date: feedbackTimelineDate || latestFeedbackEvent.at
+            });
+          }
         }
-      } else if (assessmentStatus === "feedback awaited" && inDateRange(interviewAt || updatedAt)) {
+      } else if (activeAssessment && assessmentStatus === "feedback awaited" && inDateRange(interviewAt || updatedAt)) {
         const fallbackFeedbackDate = String(
           linkedAssessment?.interviewAt
           || linkedAssessment?.interview_at
@@ -10783,7 +10820,6 @@ function PortalApp({ token, onLogout }) {
         });
       }
       const capturedIsActive = item ? (item?.hidden_from_captured !== true && item?.hiddenFromCaptured !== true) : true;
-      const activeAssessment = linkedAssessment && !isAssessmentArchived(linkedAssessment);
       if (noticeDays != null && noticeDays <= 15 && capturedIsActive && activeAssessment && inDateRange(updatedAt)) {
         rowsByChip.quick_joiners.push({ ...baseRow, round: formatAssessmentStatusDisplay(baseRow.status || assessmentStatus || "CV shared") });
       }
@@ -10878,6 +10914,7 @@ function PortalApp({ token, onLogout }) {
       return Array.from(bestByCandidate.values()).sort((a, b) => toTimestampSafe(b?.date || "") - toTimestampSafe(a?.date || ""));
     };
     return {
+      interview_history: dedupeByCandidate(rowsByChip.interview_history, { prefer: "latest" }),
       aligned_interviews: dedupeByCandidate(rowsByChip.aligned_interviews, { prefer: "latest" }),
       feedback_awaited: dedupeByCandidate(rowsByChip.feedback_awaited, { prefer: "latest" }),
       quick_joiners: dedupeByCandidate(rowsByChip.quick_joiners, { prefer: "latest" }),
@@ -18895,6 +18932,10 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                                     {rows.map((row, index) => {
                                       const statusHay = `${row.round || ""} ${row.status || ""}`.toLowerCase();
                                       const isAlertStatus = statusHay.includes("interview reject");
+                                      const roundStatusText = String(row.round || row.status || "-").trim();
+                                      const roundParts = roundStatusText.split(" | ").map((part) => String(part || "").trim()).filter(Boolean);
+                                      const hasLongTimeline = roundParts.length > 3;
+                                      const roundPreviewText = hasLongTimeline ? roundParts.slice(-3).join(" | ") : roundStatusText;
                                       return (
                                       <tr key={`${chip.id}-${row.item?.id || row.item?.assessmentId || row.candidateName}-${index}`}>
                                         <td>
@@ -18905,7 +18946,19 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                                             {row.candidateName}
                                           </button>
                                         </td>
-                                        <td className={isAlertStatus ? "candidate-smart-alert" : ""}>{row.round || row.status || "-"}</td>
+                                        <td className={isAlertStatus ? "candidate-smart-alert" : ""}>
+                                          {hasLongTimeline ? (
+                                            <details className="candidate-smart-round-details">
+                                              <summary>
+                                                <span>{roundPreviewText}</span>
+                                                <span className="candidate-smart-round-toggle">Show more</span>
+                                              </summary>
+                                              <div className="candidate-smart-round-full">{roundStatusText}</div>
+                                            </details>
+                                          ) : (
+                                            roundPreviewText
+                                          )}
+                                        </td>
                                         <td>{row.date ? formatDateForCopy(row.date) : "-"}</td>
                                         <td>{row.client || "-"}</td>
                                         <td>{row.role || "-"}</td>
@@ -20753,25 +20806,23 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                   <label><span>Job title</span><input disabled={jobDraftReadOnly || jobActionBusy} value={jobDraft.title} onChange={(e) => setJobDraft((c) => ({ ...c, title: e.target.value }))} /></label>
                   <label>
                     <span>Client</span>
-                    <input
+                    <select
                       disabled={jobDraftReadOnly || jobActionBusy}
-                      list="job-client-name-options"
                       value={jobDraft.clientName}
                       onChange={(e) => {
-                        const nextClient = e.target.value;
+                        const nextClient = canonicalizeClientName(e.target.value);
                         setJobDraft((c) => ({ ...c, clientName: nextClient }));
                         applyClientJobContentDefaults(nextClient);
                       }}
-                      onBlur={(e) => {
-                        const canonical = canonicalizeClientName(e.target.value);
-                        if (!canonical || canonical === jobDraft.clientName) return;
-                        setJobDraft((c) => ({ ...c, clientName: canonical }));
-                        applyClientJobContentDefaults(canonical);
-                      }}
-                    />
-                    <datalist id="job-client-name-options">
-                      {availablePresetClients.map((clientName) => <option key={`job-client-${clientName}`} value={clientName} />)}
-                    </datalist>
+                    >
+                      <option value="">Select client</option>
+                      {jobDraft.clientName && !availablePresetClients.includes(jobDraft.clientName) ? (
+                        <option value={jobDraft.clientName}>{jobDraft.clientName}</option>
+                      ) : null}
+                      {availablePresetClients.map((clientName) => (
+                        <option key={`job-client-${clientName}`} value={clientName}>{clientName}</option>
+                      ))}
+                    </select>
                   </label>
                   <label><span>Location</span><input disabled={jobDraftReadOnly || jobActionBusy} value={jobDraft.location} onChange={(e) => setJobDraft((c) => ({ ...c, location: e.target.value }))} placeholder="Mumbai / Bengaluru / Remote" /></label>
                   <label><span>Work mode</span><select disabled={jobDraftReadOnly || jobActionBusy} value={jobDraft.workMode} onChange={(e) => setJobDraft((c) => ({ ...c, workMode: e.target.value }))}><option value="">Not specified</option><option value="Remote">Remote</option><option value="Hybrid">Hybrid</option><option value="Work from office">Work from office</option></select></label>
