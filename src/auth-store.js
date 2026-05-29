@@ -5263,6 +5263,11 @@ async function saveAssessment({ actorUserId, companyId, assessment }) {
     throw new Error("candidateId is required for assessments.");
   }
   const safeAssessment = existingId ? { ...incoming, id: existingId } : incoming;
+  const expectedUpdatedAt = String(
+    assessment?.expectedUpdatedAt
+    || assessment?.expected_updated_at
+    || ""
+  ).trim();
 
   // Read previous row (best-effort) so we can create factual events (status changes, interview done, offered, etc.)
   // without breaking existing flows if the table isn't present.
@@ -5284,7 +5289,17 @@ async function saveAssessment({ actorUserId, companyId, assessment }) {
   // Preserve the original created_at / generatedAt on upserts to avoid collapsing timestamps
   // when patching many assessments (e.g. migrations, link repairs, bulk edits).
   const preservedCreatedAt = String(previous?.created_at || previous?.createdAt || "").trim();
-  const safeAssessmentForSave = preservedCreatedAt ? { ...safeAssessment, generatedAt: preservedCreatedAt } : safeAssessment;
+  if (previous && expectedUpdatedAt) {
+    const prevUpdatedAt = String(previous?.updated_at || previous?.updatedAt || "").trim();
+    if (prevUpdatedAt && prevUpdatedAt !== expectedUpdatedAt) {
+      throw new Error("Assessment was updated by another change. Please reopen and save again.");
+    }
+  }
+
+  const sanitizedForSave = { ...safeAssessment };
+  delete sanitizedForSave.expectedUpdatedAt;
+  delete sanitizedForSave.expected_updated_at;
+  const safeAssessmentForSave = preservedCreatedAt ? { ...sanitizedForSave, generatedAt: preservedCreatedAt } : sanitizedForSave;
 
   const rows = await sbIns("assessments", [assessmentRow(safeAssessmentForSave, actor, companyId)], { conflict: "id", upsert: true });
   const saved = sanitizeAssessment(rows[0]);

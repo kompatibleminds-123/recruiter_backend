@@ -13650,7 +13650,8 @@ function PortalApp({ token, onLogout }) {
     const candidateDraft = getCandidateDraftState(matchedCandidate || {});
     setInterviewMeta({
       candidateId: String(matchedCandidate?.id || assessment?.candidateId || ""),
-      assessmentId: String(assessment?.id || "")
+      assessmentId: String(assessment?.id || ""),
+      assessmentUpdatedAt: String(assessment?.updatedAt || assessment?.updated_at || "").trim()
     });
     const parsedRecruiterBase = normalizeRecruiterMergeBase(matchedCandidate || assessment || {});
     const cvMeta = decodePortalApplicantMetadata(matchedCandidate || {});
@@ -13836,6 +13837,7 @@ function PortalApp({ token, onLogout }) {
     const assessment = {
       id: interviewMeta.assessmentId || `assessment-${Date.now()}`,
       ...(interviewMeta.candidateId ? { candidateId: String(interviewMeta.candidateId) } : {}),
+      ...(interviewMeta.assessmentId ? { expectedUpdatedAt: String(interviewMeta.assessmentUpdatedAt || "").trim() } : {}),
       ...form,
       candidateStatus: initialStatus,
       pipelineStage: "",
@@ -13858,50 +13860,58 @@ function PortalApp({ token, onLogout }) {
       }
     }
     setStatus("interview", "Saving assessment...");
-    const savedAssessment = await api("/company/assessments", token, "POST", { assessment });
-    upsertAssessmentInState(savedAssessment || assessment);
-    if (savedAssessment?.id) {
-      setInterviewMeta((current) => ({ ...current, assessmentId: String(savedAssessment.id) }));
-    }
-    if (interviewMeta.candidateId) {
-      const existingCandidate = (state.candidates || []).find((item) => String(item.id) === String(interviewMeta.candidateId));
-      const existingMeta = decodePortalApplicantMetadata(existingCandidate || {});
-      const nextMeta = mergeStoredCvIntoApplicantMeta(existingMeta, form.cvAnalysis || null);
-      await patchCandidateQuiet(interviewMeta.candidateId, {
-        name: form.candidateName,
-        phone: form.phoneNumber,
-        email: form.emailId,
-        linkedin: form.linkedin,
-        location: form.location,
-        company: form.currentCompany,
-        role: form.currentDesignation,
-        experience: form.totalExperience,
-        relevant_experience: form.relevantExperience,
-        highest_education: form.highestEducation,
-        current_ctc: form.currentCtc,
-        expected_ctc: form.expectedCtc,
-        notice_period: form.noticePeriod,
-        recruiter_context_notes: form.recruiterNotes,
-        other_pointers: form.otherPointers,
-        skills: parseTagInputValue(form.tags),
-        lwd_or_doj: sanitizeLwdOrDojValue(form.lwdOrDoj),
-        jd_title: form.jdTitle,
-        client_name: form.clientName,
-        next_follow_up_at: form.followUpAt,
-        screening_answers: form.jdScreeningAnswers || {},
-        draft_payload: {
-          ...form,
-          current_org_tenure: String(form.currentOrgTenure || "").trim(),
-          jdScreeningAnswers: form.jdScreeningAnswers || {}
-        },
-        raw_note: encodePortalApplicantMetadata({
-          ...nextMeta,
-          jdScreeningAnswers: form.jdScreeningAnswers || {}
-        })
-      });
-      setStatus("interview", "Assessment saved and candidate details updated.", "ok");
-    } else {
-      setStatus("interview", "Assessment saved.", "ok");
+    try {
+      const savedAssessment = await api("/company/assessments", token, "POST", { assessment });
+      upsertAssessmentInState(savedAssessment || assessment);
+      if (savedAssessment?.id) {
+        setInterviewMeta((current) => ({
+          ...current,
+          assessmentId: String(savedAssessment.id),
+          assessmentUpdatedAt: String(savedAssessment?.updatedAt || savedAssessment?.updated_at || "").trim()
+        }));
+      }
+      if (interviewMeta.candidateId) {
+        const existingCandidate = (state.candidates || []).find((item) => String(item.id) === String(interviewMeta.candidateId));
+        const existingMeta = decodePortalApplicantMetadata(existingCandidate || {});
+        const nextMeta = mergeStoredCvIntoApplicantMeta(existingMeta, form.cvAnalysis || null);
+        await patchCandidateQuiet(interviewMeta.candidateId, {
+          name: form.candidateName,
+          phone: form.phoneNumber,
+          email: form.emailId,
+          linkedin: form.linkedin,
+          location: form.location,
+          company: form.currentCompany,
+          role: form.currentDesignation,
+          experience: form.totalExperience,
+          relevant_experience: form.relevantExperience,
+          highest_education: form.highestEducation,
+          current_ctc: form.currentCtc,
+          expected_ctc: form.expectedCtc,
+          notice_period: form.noticePeriod,
+          recruiter_context_notes: form.recruiterNotes,
+          other_pointers: form.otherPointers,
+          skills: parseTagInputValue(form.tags),
+          lwd_or_doj: sanitizeLwdOrDojValue(form.lwdOrDoj),
+          jd_title: form.jdTitle,
+          client_name: form.clientName,
+          next_follow_up_at: form.followUpAt,
+          screening_answers: form.jdScreeningAnswers || {},
+          draft_payload: {
+            ...form,
+            current_org_tenure: String(form.currentOrgTenure || "").trim(),
+            jdScreeningAnswers: form.jdScreeningAnswers || {}
+          },
+          raw_note: encodePortalApplicantMetadata({
+            ...nextMeta,
+            jdScreeningAnswers: form.jdScreeningAnswers || {}
+          })
+        });
+        setStatus("interview", "Assessment saved and candidate details updated.", "ok");
+      } else {
+        setStatus("interview", "Assessment saved.", "ok");
+      }
+    } catch (error) {
+      setStatus("interview", String(error?.message || error), "error");
     }
     // Skip immediate workspace refresh to keep viewport stable after assessment save.
   }
@@ -13956,6 +13966,7 @@ function PortalApp({ token, onLogout }) {
 	      if (linkedAssessment?.id) {
 	        await api("/company/assessments", token, "POST", { assessment: {
 	          ...linkedAssessment,
+	          expectedUpdatedAt: String(linkedAssessment?.updatedAt || linkedAssessment?.updated_at || "").trim(),
 	          ...form,
 	          id: linkedAssessment.id,
 	          candidateId: interviewMeta.candidateId,
@@ -17944,6 +17955,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
       dateOfJoining: isJoined ? atIso : (assessment?.dateOfJoining || ""),
       updatedAt: new Date().toISOString()
     };
+    const expectedUpdatedAt = String(assessment?.updatedAt || assessment?.updated_at || "").trim();
     const statusUpdatedAt = new Date().toISOString();
     nextAssessment.statusHistory.push({
       status: nextStatus,
@@ -18053,6 +18065,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
         await api("/company/assessments", token, "POST", {
           assessment: {
             ...nextAssessment,
+            expectedUpdatedAt,
             generatedAt: assessment?.generatedAt || new Date().toISOString()
           }
         });
