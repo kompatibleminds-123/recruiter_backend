@@ -934,7 +934,7 @@ textarea { min-height: 92px; resize: vertical; }
   border-right: 1px solid #eef2fa;
   border-bottom: 1px solid #eef2fa;
   background: #ffffff;
-  padding: 14px 15px;
+  padding: 11px 12px;
   display: grid;
   gap: 3px;
 }
@@ -946,14 +946,14 @@ textarea { min-height: 92px; resize: vertical; }
 }
 .assessment-placard__grid span {
   color: #5a7198;
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 600;
   text-transform: none;
   letter-spacing: 0;
 }
 .assessment-placard__grid strong {
   color: #1c2f54;
-  font-size: 17px;
+  font-size: 15px;
   line-height: 1.25;
   font-weight: 600;
   overflow-wrap: anywhere;
@@ -968,13 +968,13 @@ textarea { min-height: 92px; resize: vertical; }
 .assessment-placard__times span {
   display: block;
   color: #5a7198;
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 700;
 }
 .assessment-placard__times strong {
   display: block;
   color: #1c2f54;
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 600;
   margin-top: 0.12rem;
 }
@@ -982,7 +982,7 @@ textarea { min-height: 92px; resize: vertical; }
   border: 1px solid #e3eaf7;
   border-radius: 12px;
   background: #ffffff;
-  padding: 12px 14px;
+  padding: 10px 12px;
   display: grid;
   grid-template-columns: minmax(0, 280px) minmax(0, 1fr);
   gap: 10px 14px;
@@ -990,7 +990,7 @@ textarea { min-height: 92px; resize: vertical; }
 }
 .assessment-placard__status-strip span {
   color: #5a7198;
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 600;
   display: inline-flex;
   align-items: center;
@@ -1006,52 +1006,42 @@ textarea { min-height: 92px; resize: vertical; }
 }
 .assessment-placard__status-strip strong {
   color: #1c2f54;
-  font-size: 16px;
-  font-weight: 700;
+  font-size: 14px;
+  font-weight: 600;
   display: block;
   margin-top: 0.25rem;
 }
 .assessment-placard__status-strip em {
   color: #38598f;
-  font-size: 14px;
+  font-size: 13px;
   font-style: normal;
   line-height: 1.3;
   overflow-wrap: anywhere;
   display: block;
   margin-top: 0.25rem;
 }
-.assessment-status-badge {
+.assessment-status-text {
   display: inline-flex;
   align-items: center;
-  border-radius: 999px;
-  padding: 0.22rem 0.6rem;
-  border: 1px solid #c9d8ee;
-  background: #eef4ff;
-  color: #224478;
-  font-size: 0.9rem;
+  gap: 0.42rem;
   line-height: 1.2;
-  font-weight: 800;
 }
-.assessment-status-badge--danger {
-  border-color: #efb4b4;
-  background: #fff0f0;
-  color: #b43333;
+.assessment-status-text::before {
+  content: "";
+  width: 9px;
+  height: 9px;
+  border-radius: 999px;
+  display: inline-block;
+  background: #3f68ab;
 }
-.assessment-status-badge--success {
-  border-color: #b8dfc7;
-  background: #eefbf2;
-  color: #1e7a3a;
-}
-.assessment-status-badge--warning {
-  border-color: #ebd39f;
-  background: #fff8e8;
-  color: #8b5c00;
-}
-.assessment-status-badge--info {
-  border-color: #c9d8ee;
-  background: #eef4ff;
-  color: #224478;
-}
+.assessment-status-text--danger { color: #b43333; }
+.assessment-status-text--danger::before { background: #e54848; }
+.assessment-status-text--success { color: #1e7a3a; }
+.assessment-status-text--success::before { background: #2fbe62; }
+.assessment-status-text--warning { color: #8b5c00; }
+.assessment-status-text--warning::before { background: #df9f22; }
+.assessment-status-text--info { color: #224478; }
+.assessment-status-text--info::before { background: #4d73be; }
 .assessment-btn-primary {
   background: linear-gradient(180deg, #2f6cf0 0%, #2358d6 100%);
   border-color: #2358d6;

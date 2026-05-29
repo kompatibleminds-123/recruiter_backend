@@ -20345,7 +20345,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                           <div className="assessment-placard__status-strip">
                             <div className="assessment-placard__status">
                               <span>Assessment status</span>
-                              <strong className={`assessment-status-badge assessment-status-badge--${statusTone}`}>{statusLabel}</strong>
+                              <strong className={`assessment-status-text assessment-status-text--${statusTone}`}>{statusLabel}</strong>
                             </div>
                             <div className="assessment-placard__remarks">
                               <span>Latest remarks</span>
