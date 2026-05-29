@@ -4978,7 +4978,7 @@ function NewDraftModal({
         {importBusy && !cvParsePreview ? (
           <div className="parse-progress-block" role="status" aria-live="polite">
             <span className="parse-progress-spinner parse-progress-spinner--lg" aria-hidden="true" />
-            <div>Reading CV and building draftÃ¢â‚¬Â¦</div>
+            <div>Reading CV and building draft...</div>
           </div>
         ) : null}
         {!isCvMode ? (
@@ -13213,13 +13213,15 @@ function buildManualDraftCandidatePayload({ draftForm, assignedRecruiter, parsed
       : state.user;
     let success = 0;
     let failed = 0;
+    const failureMessages = [];
+    const perRowTimeoutMs = 25000;
     try {
       setNewDraftImportBusy(true);
       setStatus("captured", `Importing ${validRows.length} valid row(s)...`);
       for (const row of validRows) {
         try {
           const rowAssignedRecruiter = isAdmin
-            ? resolveSheetAssignedRecruiter(row, state.users || [], assignedRecruiter)
+            ? (resolveSheetAssignedRecruiter(row, state.users || [], assignedRecruiter) || state.user || assignedRecruiter || null)
             : state.user;
           const payload = buildManualDraftCandidatePayload({
             draftForm: {
@@ -13231,17 +13233,34 @@ function buildManualDraftCandidatePayload({ draftForm, assignedRecruiter, parsed
             source: "sheet_bulk_import",
             filename: ""
           });
-          await api("/candidates", token, "POST", { candidate: payload });
+          await Promise.race([
+            api("/candidates", token, "POST", { candidate: payload }),
+            new Promise((_, reject) => setTimeout(() => reject(new Error("Row import timed out. Please retry.")), perRowTimeoutMs))
+          ]);
           success += 1;
-        } catch {
+        } catch (error) {
           failed += 1;
+          if (failureMessages.length < 5) {
+            const name = String(row?.name || "").trim() || `Row ${row?.index || "?"}`;
+            const reason = String(error?.message || error || "Unknown error");
+            failureMessages.push(`${name}: ${reason}`);
+          }
         }
       }
-      await reloadCandidatesSlice({ includeDatabase: location?.pathname === "/candidates" });
-      void refreshWorkspaceSilently("post-sheet-bulk-import");
+      // Unblock UI immediately after import loop; refresh runs in background.
       setNewDraftSheetPreviewOpen(false);
       setNewDraftSheetRows([]);
-      setStatus("captured", `Sheet import done. Imported: ${success} | Failed: ${failed} | Skipped: ${(newDraftSheetRows || []).length - validRows.length}.`, failed ? "error" : "ok");
+      const summary = `Sheet import done. Imported: ${success} | Failed: ${failed} | Skipped: ${(newDraftSheetRows || []).length - validRows.length}.`;
+      const details = failureMessages.length ? ` Fail reasons: ${failureMessages.join(" || ")}` : "";
+      setStatus("captured", `${summary}${details}`, failed ? "error" : "ok");
+      void (async () => {
+        try {
+          await reloadCandidatesSlice({ includeDatabase: location?.pathname === "/candidates" });
+          void refreshWorkspaceSilently("post-sheet-bulk-import");
+        } catch {
+          // Non-blocking refresh; summary already shown.
+        }
+      })();
     } finally {
       setNewDraftImportBusy(false);
     }
