@@ -4994,7 +4994,6 @@ function NewDraftModal({
                   const file = e.target.files?.[0] || null;
                   if (file) {
                     onImportSheet?.(file);
-                    onOpenSheetImportPreview?.();
                   }
                   e.currentTarget.value = "";
                 }}
