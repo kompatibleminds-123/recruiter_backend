@@ -12643,6 +12643,9 @@ function PortalApp({ token, onLogout }) {
     const candidateRef = (candidateOrId && typeof candidateOrId === "object")
       ? candidateOrId
       : ([...(state.candidates || []), ...(state.databaseCandidates || [])].find((item) => String(item?.id || "").trim() === requestedId) || null);
+    if (!isUuidLike(requestedId)) {
+      throw new Error("Delete blocked: stale candidate id. Please refresh once and retry.");
+    }
     let deletedId = requestedId;
     try {
       await api(`/company/candidates/${encodeURIComponent(requestedId)}`, token, "DELETE");
@@ -12665,6 +12668,7 @@ function PortalApp({ token, onLogout }) {
       });
       if (!fallback?.id) throw error;
       deletedId = String(fallback.id || "").trim();
+      if (!isUuidLike(deletedId)) throw error;
       await api(`/company/candidates/${encodeURIComponent(deletedId)}`, token, "DELETE");
     }
     setState((current) => ({
@@ -12684,6 +12688,41 @@ function PortalApp({ token, onLogout }) {
     }));
     void refreshWorkspaceSilently("post-delete");
     setStatus("captured", "Candidate deleted.", "ok");
+  }
+
+  async function bulkDeleteCapturedCandidates() {
+    const selectedIds = Array.from(new Set((bulkAssignCandidateIds || []).map((item) => String(item || "").trim()).filter(Boolean)));
+    if (!selectedIds.length) {
+      setStatus("captured", "Select candidates first.", "error");
+      return;
+    }
+    const safeIds = selectedIds.filter((id) => isUuidLike(id));
+    if (!safeIds.length) {
+      setStatus("captured", "No valid candidate ids selected. Refresh once and retry.", "error");
+      return;
+    }
+    if (!window.confirm(`Delete ${safeIds.length} selected candidate(s) permanently?`)) return;
+    let success = 0;
+    let failed = 0;
+    const failReasons = [];
+    for (const id of safeIds) {
+      try {
+        await api(`/company/candidates/${encodeURIComponent(id)}`, token, "DELETE");
+        success += 1;
+      } catch (error) {
+        failed += 1;
+        if (failReasons.length < 5) failReasons.push(`${id.slice(0, 8)}: ${String(error?.message || error)}`);
+      }
+    }
+    setState((current) => ({
+      ...current,
+      candidates: Array.isArray(current.candidates) ? current.candidates.filter((item) => !safeIds.includes(String(item?.id || "").trim())) : current.candidates,
+      databaseCandidates: Array.isArray(current.databaseCandidates) ? current.databaseCandidates.filter((item) => !safeIds.includes(String(item?.id || "").trim())) : current.databaseCandidates
+    }));
+    setBulkAssignCandidateIds([]);
+    void refreshWorkspaceSilently("post-bulk-delete");
+    const msg = `Bulk delete done. Deleted: ${success} | Failed: ${failed}.`;
+    setStatus("captured", failReasons.length ? `${msg} Reasons: ${failReasons.join(" || ")}` : msg, failed ? "error" : "ok");
   }
 
   async function parseQuickUpdateRecruiterNote() {
@@ -19836,15 +19875,23 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                 {String(state.user?.role || "").toLowerCase() === "admin" ? (
                   <>
                       {bulkAssignCandidateIds.length ? (
-                        <button
-                          onClick={() => {
-                            if (!bulkAssignCandidateIds.length) return;
-                            setAssignCandidateId("");
-                            setBulkAssignCandidateModalOpen(true);
-                          }}
-                        >
-                          {`Assign selected (${bulkAssignCandidateIds.length})`}
-                        </button>
+                        <>
+                          <button
+                            onClick={() => {
+                              if (!bulkAssignCandidateIds.length) return;
+                              setAssignCandidateId("");
+                              setBulkAssignCandidateModalOpen(true);
+                            }}
+                          >
+                            {`Assign selected (${bulkAssignCandidateIds.length})`}
+                          </button>
+                          <button
+                            className="captured-action-danger"
+                            onClick={() => void bulkDeleteCapturedCandidates()}
+                          >
+                            {`Delete selected (${bulkAssignCandidateIds.length})`}
+                          </button>
+                        </>
                       ) : null}
                     </>
                   ) : null}
@@ -20057,7 +20104,14 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                         ) : (
                           <button className="ghost-btn" onClick={() => void hideCapturedCandidate(item.id)}>Hide from list</button>
                         )}
-                        <button className="captured-action-danger" onClick={() => void deleteCapturedCandidate(item).catch((error) => setStatus("captured", String(error?.message || error), "error"))}>Delete</button>
+                        <button
+                          className="captured-action-danger"
+                          disabled={!isUuidLike(String(item?.id || ""))}
+                          title={!isUuidLike(String(item?.id || "")) ? "Refreshing candidate id. Please refresh and retry." : "Delete"}
+                          onClick={() => void deleteCapturedCandidate(item).catch((error) => setStatus("captured", String(error?.message || error), "error"))}
+                        >
+                          Delete
+                        </button>
                       </div>
                     </article>
                   );
@@ -23605,6 +23659,10 @@ function normalizeSheetIdentityValue(value = "") {
 
 function normalizeSheetPhone(value = "") {
   return String(value || "").replace(/[^\d+]/g, "").trim();
+}
+
+function isUuidLike(value = "") {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(value || "").trim());
 }
 
 function buildSheetDraftRows(rows = [], options = {}) {
