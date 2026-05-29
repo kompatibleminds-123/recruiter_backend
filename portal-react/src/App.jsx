@@ -20295,6 +20295,14 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                       const linkedinHref = linkedinRaw ? (/^https?:\/\//i.test(linkedinRaw) ? linkedinRaw : `https://${linkedinRaw}`) : "";
                       const statusLabel = normalizeAssessmentStatusLabel(item.candidateStatus) || "-";
                       const remarksValue = String(latestStatusPreview.remarks || item.clientFeedback || "").trim() || "No remarks";
+                      const normalizedStatusText = String(statusLabel || "").trim().toLowerCase();
+                      const statusTone = /reject|not interested|screening reject|interview reject/i.test(normalizedStatusText)
+                        ? "danger"
+                        : /joined|offer accepted|shortlisted|selected|offered/i.test(normalizedStatusText)
+                          ? "success"
+                          : /hold|awaited|pending/i.test(normalizedStatusText)
+                            ? "warning"
+                            : "info";
                       const convertedAt = item.generatedAt || item.createdAt || item.created_at || "";
                       const updatedAt = item.updatedAt || item.updated_at || "";
                       return (
@@ -20328,8 +20336,14 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                             </div>
                           </div>
                           <div className="assessment-placard__status-strip">
-                            <div className="assessment-placard__status"><span>Assessment status</span><strong>{statusLabel}</strong></div>
-                            <div className="assessment-placard__remarks"><span>Latest remarks</span><em>{remarksValue}</em></div>
+                            <div className="assessment-placard__status">
+                              <span>Assessment status</span>
+                              <strong className={`assessment-status-badge assessment-status-badge--${statusTone}`}>{statusLabel}</strong>
+                            </div>
+                            <div className="assessment-placard__remarks">
+                              <span>Latest remarks</span>
+                              <em>{remarksValue}</em>
+                            </div>
                           </div>
                         </div>
                       );
