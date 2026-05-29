@@ -12931,6 +12931,9 @@ function PortalApp({ token, onLogout }) {
         callbackNotes: notes,
         otherPointers: "",
         tags: draftForm.tags || "",
+        raw_extra_fields: draftForm.raw_extra_fields && typeof draftForm.raw_extra_fields === "object"
+          ? draftForm.raw_extra_fields
+          : {},
         jdScreeningAnswers: {},
         cvAnalysis: parsedResult || null,
         cvAnalysisApplied: false,
@@ -13183,12 +13186,15 @@ function PortalApp({ token, onLogout }) {
       setStatus("captured", `Importing ${validRows.length} valid row(s)...`);
       for (const row of validRows) {
         try {
+          const rowAssignedRecruiter = isAdmin
+            ? resolveSheetAssignedRecruiter(row, state.users || [], assignedRecruiter)
+            : state.user;
           const payload = buildManualDraftCandidatePayload({
             draftForm: {
               ...newDraftForm,
               ...row
             },
-            assignedRecruiter,
+            assignedRecruiter: rowAssignedRecruiter,
             parsedResult: null,
             source: "sheet_bulk_import",
             filename: ""
@@ -17329,6 +17335,54 @@ function PortalApp({ token, onLogout }) {
     } catch (error) {
       setStatus("shortcuts", String(error?.message || error), "error");
     }
+  }
+
+  function downloadRejectedSheetRows() {
+    const rejected = (newDraftSheetRows || []).filter((row) => row.status !== "valid");
+    if (!rejected.length) {
+      setStatus("captured", "No rejected rows to download.", "error");
+      return;
+    }
+    const headers = [
+      "status",
+      "issues",
+      "name",
+      "phone",
+      "email",
+      "linkedin",
+      "company",
+      "current_designation",
+      "location",
+      "notes",
+      "recruiter_name",
+      "recruiter_email"
+    ];
+    const escapeCsv = (value = "") => `"${String(value || "").replace(/"/g, "\"\"")}"`;
+    const rows = rejected.map((row) => ([
+      row.status || "",
+      (row.issues || []).join("; "),
+      row.name || "",
+      row.phone || "",
+      row.email || "",
+      row.linkedin || "",
+      row.company || "",
+      row.current_designation || "",
+      row.location || "",
+      row.notes || "",
+      row.recruiter_name || "",
+      row.recruiter_email || ""
+    ].map(escapeCsv).join(",")));
+    const csv = [headers.join(","), ...rows].join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `new-draft-rejected-${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(anchor);
+    anchor.click();
+    document.body.removeChild(anchor);
+    URL.revokeObjectURL(url);
+    setStatus("captured", `Downloaded ${rejected.length} rejected row(s).`, "ok");
   }
 
   async function deleteSuggestedShortcutTemplate(key) {
@@ -22512,6 +22566,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
         }}
         onCellChange={updateSheetPreviewRow}
         onImportValid={() => void importValidatedSheetRows()}
+        onDownloadRejected={downloadRejectedSheetRows}
       />
       <InterviewCvParseModal
         open={interviewCvParseModalOpen}
@@ -23030,7 +23085,8 @@ function NewDraftSheetImportPreviewModal({
   busy = false,
   onClose,
   onCellChange,
-  onImportValid
+  onImportValid,
+  onDownloadRejected
 }) {
   if (!open) return null;
   const total = rows.length;
@@ -23057,6 +23113,7 @@ function NewDraftSheetImportPreviewModal({
                 <th>Company</th>
                 <th>Role</th>
                 <th>Location</th>
+                <th>Recruiter</th>
                 <th>Notes</th>
                 <th>Issues</th>
               </tr>
@@ -23073,18 +23130,26 @@ function NewDraftSheetImportPreviewModal({
                   <td><input value={row.company} onChange={(e) => onCellChange?.(row.id, "company", e.target.value)} /></td>
                   <td><input value={row.current_designation} onChange={(e) => onCellChange?.(row.id, "current_designation", e.target.value)} /></td>
                   <td><input value={row.location} onChange={(e) => onCellChange?.(row.id, "location", e.target.value)} /></td>
+                  <td>
+                    <input
+                      value={row.recruiter_name || row.recruiter_email || ""}
+                      onChange={(e) => onCellChange?.(row.id, "recruiter_name", e.target.value)}
+                      placeholder="Recruiter name/email"
+                    />
+                  </td>
                   <td><input value={row.notes} onChange={(e) => onCellChange?.(row.id, "notes", e.target.value)} /></td>
                   <td style={{ minWidth: 240 }}>{(row.issues || []).join("; ") || "-"}</td>
                 </tr>
               ))}
               {!rows.length ? (
-                <tr><td colSpan="11"><div className="empty-state compact-empty">No rows loaded yet.</div></td></tr>
+                <tr><td colSpan="12"><div className="empty-state compact-empty">No rows loaded yet.</div></td></tr>
               ) : null}
             </tbody>
           </table>
         </div>
         <div className="button-row" style={{ marginTop: 12 }}>
           <button onClick={onImportValid} disabled={busy || !valid}>{busy ? "Importing..." : "Import Valid Rows Only"}</button>
+          <button className="ghost-btn" onClick={onDownloadRejected} disabled={busy || !rows.some((row) => row.status !== "valid")}>Download Rejects</button>
           <button className="ghost-btn" onClick={onClose} disabled={busy}>Cancel</button>
         </div>
       </div>
@@ -23145,20 +23210,55 @@ function convertSpreadsheetObjectRowsToTableRows(rows = []) {
   return tableRows;
 }
 
+function normalizeSheetHeaderToken(value = "") {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function getSheetValueByAliases(headers = [], values = [], aliases = []) {
+  const normalizedHeaders = (headers || []).map((header) => normalizeSheetHeaderToken(header));
+  for (const alias of aliases) {
+    const needle = normalizeSheetHeaderToken(alias);
+    if (!needle) continue;
+    const idx = normalizedHeaders.findIndex((header) => header === needle || header.includes(needle));
+    if (idx >= 0) {
+      const value = String(values[idx] || "").trim();
+      if (value) return value;
+    }
+  }
+  return "";
+}
+
+const SHEET_FIELD_ALIASES = {
+  name: ["name", "candidate name", "full name", "applicant name", "candidate"],
+  phone: ["phone", "phone number", "mobile", "mobile number", "contact", "contact number", "phone no"],
+  email: ["email", "email id", "email address", "mail", "e mail"],
+  linkedin: ["linkedin", "linkedin url", "linkedin profile", "linkedin profile url"],
+  company: ["current company", "company", "organization", "org", "present company"],
+  current_designation: ["current designation", "designation", "role", "position", "job role", "title"],
+  total_experience: ["total experience", "experience", "work experience", "overall experience", "exp"],
+  location: ["location", "city", "current location", "preferred location"],
+  jd_title: ["jd title", "job title", "role title", "position title", "requirement", "job role"],
+  client_name: ["client", "client name", "account name"],
+  tags: ["tags", "skills", "technical skills", "keywords", "skillset", "skill set"],
+  notes: ["notes", "remarks", "comment", "comments", "screening answers"],
+  current_ctc: ["current ctc", "ctc", "present ctc", "current salary"],
+  expected_ctc: ["expected ctc", "expected", "expected salary"],
+  notice_period: ["notice period", "notice", "np", "serving notice"],
+  highest_education: ["highest education", "highest qualification", "qualification", "education", "degree"],
+  recruiter_name: ["recruiter name", "assigned recruiter", "owner recruiter", "recruiter"],
+  recruiter_email: ["recruiter email", "assigned recruiter email", "owner recruiter email", "recruiter mail"]
+};
+
 function mapDraftAutofillFromSpreadsheetRows(rows = []) {
   if (!Array.isArray(rows) || rows.length < 2) return null;
-  const headers = rows[0].map((item) => String(item || "").trim().toLowerCase());
+  const headers = rows[0].map((item) => String(item || ""));
   const values = rows[1] || [];
-  const getValue = (...aliases) => {
-    for (const alias of aliases) {
-      const idx = headers.findIndex((header) => header === alias || header.includes(alias));
-      if (idx >= 0) {
-        const value = String(values[idx] || "").trim();
-        if (value) return value;
-      }
-    }
-    return "";
-  };
+  const getValue = (...aliases) => getSheetValueByAliases(headers, values, aliases);
   return {
     name: getValue("name", "candidate name", "full name"),
     phone: getValue("phone", "mobile", "contact", "phone number"),
@@ -23188,38 +23288,76 @@ function normalizeSheetPhone(value = "") {
 
 function buildSheetDraftRows(rows = []) {
   if (!Array.isArray(rows) || rows.length < 2) return [];
-  const headers = rows[0].map((item) => String(item || "").trim().toLowerCase());
-  const getValue = (values = [], ...aliases) => {
-    for (const alias of aliases) {
-      const idx = headers.findIndex((header) => header === alias || header.includes(alias));
+  const headers = rows[0].map((item) => String(item || ""));
+  const normalizedHeaders = headers.map((header) => normalizeSheetHeaderToken(header));
+  const getValueAndMatchedIndex = (values = [], aliases = []) => {
+    const aliasList = Array.isArray(aliases) ? aliases : [];
+    for (const alias of aliasList) {
+      const needle = normalizeSheetHeaderToken(alias);
+      if (!needle) continue;
+      const idx = normalizedHeaders.findIndex((header) => header === needle || header.includes(needle));
       if (idx >= 0) {
         const value = String(values[idx] || "").trim();
-        if (value) return value;
+        if (value) return { value, idx };
       }
     }
-    return "";
+    return { value: "", idx: -1 };
   };
-  return rows.slice(1).map((values, idx) => ({
-    id: `sheet-row-${idx + 1}`,
-    index: idx + 1,
-    name: getValue(values, "name", "candidate name", "full name"),
-    phone: getValue(values, "phone", "mobile", "contact", "phone number"),
-    email: getValue(values, "email", "email id", "mail"),
-    linkedin: getValue(values, "linkedin", "linkedin url", "linkedin profile"),
-    company: getValue(values, "company", "current company", "organization"),
-    current_designation: getValue(values, "designation", "role", "current designation", "position"),
-    total_experience: getValue(values, "experience", "total experience", "work experience"),
-    location: getValue(values, "location", "city"),
-    jd_title: getValue(values, "jd", "role", "position", "job title"),
-    client_name: getValue(values, "client", "client name"),
-    tags: getValue(values, "skill", "skills", "keywords", "tags"),
-    notes: getValue(values, "note", "notes", "remarks"),
-    current_ctc: getValue(values, "current ctc", "ctc"),
-    notice_period: getValue(values, "notice", "notice period"),
-    highest_education: getValue(values, "qualification", "education", "highest education")
-  })).filter((row) =>
-    Object.keys(row).some((key) => !["id", "index"].includes(key) && String(row[key] || "").trim())
-  );
+  return rows.slice(1).map((values, idx) => {
+      const matchedIndexSet = new Set();
+      const pick = (fieldKey) => {
+        const hit = getValueAndMatchedIndex(values, SHEET_FIELD_ALIASES[fieldKey] || []);
+        if (hit.idx >= 0) matchedIndexSet.add(hit.idx);
+        return hit.value;
+      };
+      const row = {
+        id: `sheet-row-${idx + 1}`,
+        index: idx + 1,
+        name: pick("name"),
+        phone: pick("phone"),
+        email: pick("email"),
+        linkedin: pick("linkedin"),
+        company: pick("company"),
+        current_designation: pick("current_designation"),
+        total_experience: pick("total_experience"),
+        location: pick("location"),
+        jd_title: pick("jd_title"),
+        client_name: pick("client_name"),
+        tags: pick("tags"),
+        notes: pick("notes"),
+        current_ctc: pick("current_ctc"),
+        expected_ctc: pick("expected_ctc"),
+        notice_period: pick("notice_period"),
+        highest_education: pick("highest_education"),
+        recruiter_name: pick("recruiter_name"),
+        recruiter_email: pick("recruiter_email")
+      };
+      const extra = {};
+      headers.forEach((header, headerIdx) => {
+        if (matchedIndexSet.has(headerIdx)) return;
+        const key = String(header || "").trim();
+        const value = String(values[headerIdx] || "").trim();
+        if (!key || !value) return;
+        extra[key] = value;
+      });
+      row.raw_extra_fields = extra;
+      return row;
+    }).filter((row) => Object.keys(row).some((key) => !["id", "index", "raw_extra_fields"].includes(key) && String(row[key] || "").trim()));
+}
+
+function resolveSheetAssignedRecruiter(row = {}, users = [], fallback = null) {
+  const list = Array.isArray(users) ? users : [];
+  const byEmail = String(row?.recruiter_email || "").trim().toLowerCase();
+  const byName = String(row?.recruiter_name || "").trim().toLowerCase();
+  if (byEmail) {
+    const hit = list.find((user) => String(user?.email || "").trim().toLowerCase() === byEmail);
+    if (hit) return hit;
+  }
+  if (byName) {
+    const hit = list.find((user) => String(user?.name || "").trim().toLowerCase() === byName);
+    if (hit) return hit;
+  }
+  return fallback || null;
 }
 
 function validateSheetDraftRows(rows = [], existingRows = []) {
