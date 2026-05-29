@@ -3372,14 +3372,43 @@ function parseGenericSpreadsheetBase64ToRows(fileData = "", filename = "") {
   const firstSheetName = Array.isArray(workbook?.SheetNames) && workbook.SheetNames.length ? workbook.SheetNames[0] : null;
   if (!firstSheetName) return [];
   const sheet = workbook.Sheets[firstSheetName];
-  const rows = xlsxLib.utils.sheet_to_json(sheet, { defval: "" });
-  return (Array.isArray(rows) ? rows : []).map((row) => {
-    const out = {};
-    Object.keys(row || {}).forEach((key) => {
-      out[String(key || "").trim().toLowerCase()] = String(row[key] == null ? "" : row[key]).trim();
-    });
-    return out;
+  const grid = xlsxLib.utils.sheet_to_json(sheet, { header: 1, defval: "" });
+  const rows = Array.isArray(grid) ? grid.map((row) => (Array.isArray(row) ? row : [])).filter((row) => row.some((cell) => String(cell || "").trim())) : [];
+  if (!rows.length) return [];
+  const normalize = (value = "") => String(value || "").trim().toLowerCase().replace(/[^a-z0-9]+/g, " ").replace(/\s+/g, " ").trim();
+  const headerHints = ["name", "candidate", "phone", "mobile", "email", "linkedin", "company", "designation", "role", "location", "ctc", "notice", "experience", "qualification", "education"];
+  let headerRowIndex = 0;
+  let bestScore = -1;
+  const scanUpto = Math.min(rows.length, 12);
+  for (let i = 0; i < scanUpto; i += 1) {
+    const row = rows[i];
+    const nonEmpty = row.filter((cell) => String(cell || "").trim()).length;
+    if (!nonEmpty) continue;
+    const tokens = row.map((cell) => normalize(cell)).filter(Boolean);
+    const hintHits = tokens.reduce((count, token) => count + (headerHints.some((hint) => token.includes(hint)) ? 1 : 0), 0);
+    const score = hintHits * 10 + nonEmpty;
+    if (score > bestScore) {
+      bestScore = score;
+      headerRowIndex = i;
+    }
+  }
+  const headers = rows[headerRowIndex].map((cell, idx) => {
+    const raw = String(cell || "").trim();
+    return raw ? raw : `column_${idx + 1}`;
   });
+  const output = [];
+  for (let i = headerRowIndex + 1; i < rows.length; i += 1) {
+    const row = rows[i];
+    const out = {};
+    let hasValue = false;
+    headers.forEach((header, idx) => {
+      const value = String(row[idx] == null ? "" : row[idx]).trim();
+      if (value) hasValue = true;
+      out[String(header || "").trim().toLowerCase()] = value;
+    });
+    if (hasValue) output.push(out);
+  }
+  return output;
 }
 
 async function getGoogleAccessToken(cfg = {}) {
