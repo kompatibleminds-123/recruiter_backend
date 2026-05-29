@@ -3360,6 +3360,28 @@ function renderMarketingTemplate(template = "", prospect = {}, context = {}) {
   });
 }
 
+function parseGenericSpreadsheetBase64ToRows(fileData = "", filename = "") {
+  if (!xlsxLib) {
+    throw new Error("Excel parser is not installed on server. Please install dependency `xlsx`.");
+  }
+  const safeData = String(fileData || "").trim();
+  if (!safeData) return [];
+  const ext = String(filename || "").trim().toLowerCase();
+  const type = ext.endsWith(".xls") || ext.endsWith(".xlsx") ? "buffer" : "buffer";
+  const workbook = xlsxLib.read(Buffer.from(safeData, "base64"), { type });
+  const firstSheetName = Array.isArray(workbook?.SheetNames) && workbook.SheetNames.length ? workbook.SheetNames[0] : null;
+  if (!firstSheetName) return [];
+  const sheet = workbook.Sheets[firstSheetName];
+  const rows = xlsxLib.utils.sheet_to_json(sheet, { defval: "" });
+  return (Array.isArray(rows) ? rows : []).map((row) => {
+    const out = {};
+    Object.keys(row || {}).forEach((key) => {
+      out[String(key || "").trim().toLowerCase()] = String(row[key] == null ? "" : row[key]).trim();
+    });
+    return out;
+  });
+}
+
 async function getGoogleAccessToken(cfg = {}) {
   const refreshToken = String(cfg.pass || "").trim();
   const clientId = String(process.env.GOOGLE_OAUTH_CLIENT_ID || "").trim();
@@ -16982,6 +17004,32 @@ const server = http.createServer(async (req, res) => {
       const result = finalizeCvParseResult({ hybrid, aiParseMode, aiParseReason });
       if (cacheKey) setParseCandidateCache(cacheKey, result);
       sendJson(res, 200, { ok: true, result });
+    } catch (error) {
+      sendJson(res, 400, { ok: false, error: String(error.message || error) });
+    }
+    return;
+  }
+
+  if (req.method === "POST" && requestUrl.pathname === "/company/spreadsheet/parse-rows") {
+    try {
+      await requireSessionUser(getBearerToken(req));
+      const body = await readJsonBody(req);
+      const filename = String(body?.filename || "").trim();
+      const fileData = String(body?.fileData || "").trim();
+      if (!filename) throw new Error("filename is required.");
+      if (!fileData) throw new Error("fileData is required.");
+      const lower = filename.toLowerCase();
+      if (!(lower.endsWith(".xlsx") || lower.endsWith(".xls"))) {
+        throw new Error("Only .xlsx/.xls files are supported on this endpoint.");
+      }
+      const rows = parseGenericSpreadsheetBase64ToRows(fileData, filename);
+      sendJson(res, 200, {
+        ok: true,
+        result: {
+          rows: rows.slice(0, 1000),
+          totalRows: rows.length
+        }
+      });
     } catch (error) {
       sendJson(res, 400, { ok: false, error: String(error.message || error) });
     }

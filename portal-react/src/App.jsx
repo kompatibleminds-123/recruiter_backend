@@ -13120,11 +13120,26 @@ function PortalApp({ token, onLogout }) {
     try {
       setNewDraftImportBusy(true);
       setStatus("captured", "Reading sheet...");
-      if (!(filename.endsWith(".csv") || filename.endsWith(".tsv") || filename.endsWith(".txt"))) {
-        throw new Error("For now, upload CSV/TSV (save Excel as CSV once), then auto-fill will work.");
+      let rows = [];
+      if (filename.endsWith(".xlsx") || filename.endsWith(".xls")) {
+        const buffer = await file.arrayBuffer();
+        const bytes = new Uint8Array(buffer);
+        let binary = "";
+        const chunkSize = 0x8000;
+        for (let i = 0; i < bytes.length; i += chunkSize) {
+          binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
+        }
+        const parsed = await api("/company/spreadsheet/parse-rows", token, "POST", {
+          filename: file.name || "sheet.xlsx",
+          fileData: btoa(binary)
+        });
+        rows = convertSpreadsheetObjectRowsToTableRows(parsed?.result?.rows || []);
+      } else if (filename.endsWith(".csv") || filename.endsWith(".tsv") || filename.endsWith(".txt")) {
+        const raw = await file.text();
+        rows = parseDelimitedRowsFromText(raw);
+      } else {
+        throw new Error("Upload CSV/TSV/TXT/XLS/XLSX only.");
       }
-      const raw = await file.text();
-      const rows = parseDelimitedRowsFromText(raw);
       const mappedRows = buildSheetDraftRows(rows).slice(0, 50);
       if (!mappedRows.length) {
         throw new Error("Could not detect columns. Keep header row like Name, Email, Phone, Company, Location.");
@@ -23111,6 +23126,25 @@ function parseDelimitedRowsFromText(text = "") {
   return lines.map(splitLine);
 }
 
+function convertSpreadsheetObjectRowsToTableRows(rows = []) {
+  const list = Array.isArray(rows) ? rows : [];
+  if (!list.length) return [];
+  const headerSet = new Set();
+  list.forEach((row) => {
+    Object.keys(row || {}).forEach((key) => {
+      const safe = String(key || "").trim();
+      if (safe) headerSet.add(safe);
+    });
+  });
+  const headers = Array.from(headerSet);
+  if (!headers.length) return [];
+  const tableRows = [headers];
+  list.forEach((row) => {
+    tableRows.push(headers.map((header) => String(row?.[header] || "").trim()));
+  });
+  return tableRows;
+}
+
 function mapDraftAutofillFromSpreadsheetRows(rows = []) {
   if (!Array.isArray(rows) || rows.length < 2) return null;
   const headers = rows[0].map((item) => String(item || "").trim().toLowerCase());
@@ -23206,7 +23240,7 @@ function validateSheetDraftRows(rows = [], existingRows = []) {
     const email = normalizeSheetIdentityValue(row?.email || "");
     const linkedin = normalizeSheetIdentityValue(row?.linkedin || "");
     if (!name) issues.push("Missing name");
-    if (!(phone || email || linkedin)) issues.push("Need at least one contact: phone/email/linkedin");
+    if (!(phone || email)) issues.push("Need at least one contact: phone/email");
     const identities = [];
     if (phone) identities.push(`phone:${phone}`);
     if (email) identities.push(`email:${email}`);
