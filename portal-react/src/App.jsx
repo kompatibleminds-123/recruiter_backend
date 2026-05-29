@@ -20329,56 +20329,56 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                           <div className="assessment-placard__main">
                             <div className="assessment-placard__grid">
                               <div>
-                                <span className="assessment-field-label">
+                                <span className="assessment-field-label assessment-field-label--jd">
                                   <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><rect x="3" y="7" width="18" height="13" rx="2"/></svg>
                                   JD title
                                 </span>
                                 <strong>{jdTitle || "NA"}</strong>
                               </div>
                               <div>
-                                <span className="assessment-field-label">
+                                <span className="assessment-field-label assessment-field-label--company">
                                   <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 21h18"/><path d="M5 21V8l7-4 7 4v13"/><path d="M9 12h2v2H9zM13 12h2v2h-2zM9 16h2v2H9zM13 16h2v2h-2z"/></svg>
                                   Current company
                                 </span>
                                 <strong>{item.currentCompany || "NA"}</strong>
                               </div>
                               <div>
-                                <span className="assessment-field-label">
+                                <span className="assessment-field-label assessment-field-label--designation">
                                   <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="7" r="4"/><path d="M5.5 21a6.5 6.5 0 0 1 13 0"/></svg>
                                   Current designation
                                 </span>
                                 <strong>{item.currentDesignation || "NA"}</strong>
                               </div>
                               <div>
-                                <span className="assessment-field-label">
+                                <span className="assessment-field-label assessment-field-label--location">
                                   <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21s7-5.2 7-11a7 7 0 1 0-14 0c0 5.8 7 11 7 11z"/><circle cx="12" cy="10" r="2.5"/></svg>
                                   Location
                                 </span>
                                 <strong>{item.location || "NA"}</strong>
                               </div>
                               <div>
-                                <span className="assessment-field-label">
+                                <span className="assessment-field-label assessment-field-label--ctc">
                                   <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 4h9"/><path d="M9 4v16"/><path d="M7 10h8a3 3 0 1 1 0 6H6"/></svg>
                                   Current CTC
                                 </span>
                                 <strong>{item.currentCtc || "NA"}</strong>
                               </div>
                               <div>
-                                <span className="assessment-field-label">
+                                <span className="assessment-field-label assessment-field-label--ectc">
                                   <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 4h9"/><path d="M9 4v16"/><path d="M7 10h8a3 3 0 1 1 0 6H6"/></svg>
                                   Expected CTC
                                 </span>
                                 <strong>{item.expectedCtc || "NA"}</strong>
                               </div>
                               <div>
-                                <span className="assessment-field-label">
+                                <span className="assessment-field-label assessment-field-label--notice">
                                   <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v6l4 2"/></svg>
                                   Notice period
                                 </span>
                                 <strong>{item.noticePeriod || "NA"}</strong>
                               </div>
                               <div>
-                                <span className="assessment-field-label">
+                                <span className="assessment-field-label assessment-field-label--experience">
                                   <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19h16"/><path d="M7 16V8"/><path d="M12 16V5"/><path d="M17 16v-3"/></svg>
                                   Total experience
                                 </span>

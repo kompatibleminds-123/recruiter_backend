@@ -963,6 +963,14 @@ textarea { min-height: 92px; resize: vertical; }
   fill: none;
   flex: 0 0 13px;
 }
+.assessment-field-label--jd svg { color: #6475b3; }
+.assessment-field-label--company svg { color: #4e8ab7; }
+.assessment-field-label--designation svg { color: #6d74c7; }
+.assessment-field-label--location svg { color: #e16f6f; }
+.assessment-field-label--ctc svg { color: #2ea365; }
+.assessment-field-label--ectc svg { color: #4d84d6; }
+.assessment-field-label--notice svg { color: #d89a33; }
+.assessment-field-label--experience svg { color: #8a63cf; }
 .assessment-placard__grid strong {
   color: #1c2f54;
   font-size: 15px;
