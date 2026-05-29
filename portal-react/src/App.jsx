@@ -13223,10 +13223,17 @@ function buildManualDraftCandidatePayload({ draftForm, assignedRecruiter, parsed
           const rowAssignedRecruiter = isAdmin
             ? (resolveSheetAssignedRecruiter(row, state.users || [], assignedRecruiter) || state.user || assignedRecruiter || null)
             : state.user;
+          const {
+            id: _tmpSheetId,
+            index: _tmpSheetIndex,
+            status: _tmpSheetStatus,
+            issues: _tmpSheetIssues,
+            ...safeRow
+          } = (row && typeof row === "object") ? row : {};
           const payload = buildManualDraftCandidatePayload({
             draftForm: {
               ...newDraftForm,
-              ...row
+              ...safeRow
             },
             assignedRecruiter: rowAssignedRecruiter,
             parsedResult: null,
