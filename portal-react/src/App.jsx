@@ -5549,6 +5549,26 @@ function CandidateProfileModal({ open, candidate, onClose, onOpenCvOriginal, onO
           ""
       )
     : "";
+  const heroAssignedTo = String(
+    linkedAssessment?.recruiterName ||
+    baseCandidate?.assigned_to_name ||
+    baseCandidate?.ownerRecruiter ||
+    "-"
+  ).trim();
+  const heroUpdatedAt = String(
+    linkedAssessment?.updatedAt ||
+    linkedAssessment?.updated_at ||
+    baseCandidate?.updated_at ||
+    baseCandidate?.updatedAt ||
+    ""
+  ).trim();
+  const heroUpdatedText = heroUpdatedAt ? new Date(heroUpdatedAt).toLocaleString() : "-";
+  const kpiTiles = [
+    { label: "Experience", value: linkedAssessment?.totalExperience || baseCandidate?.experience || baseCandidate?.totalExperience || draft?.totalExperience || "-" },
+    { label: "Current CTC", value: linkedAssessment?.currentCtc || baseCandidate?.current_ctc || baseCandidate?.currentCtc || draft?.currentCtc || "-" },
+    { label: "Expected CTC", value: linkedAssessment?.expectedCtc || baseCandidate?.expected_ctc || baseCandidate?.expectedCtc || draft?.expectedCtc || "-" },
+    { label: "Notice period", value: linkedAssessment?.noticePeriod || baseCandidate?.notice_period || baseCandidate?.noticePeriod || draft?.noticePeriod || "-" }
+  ];
   return (
     <div className="overlay">
       <div className="overlay-card overlay-card--wide" onClick={(e) => e.stopPropagation()}>
@@ -5556,10 +5576,25 @@ function CandidateProfileModal({ open, candidate, onClose, onOpenCvOriginal, onO
           <div>
             <h3>{modalTitle}</h3>
             <p className="muted">{modalSubtitle}</p>
+            <p className="candidate-sheet__hero-meta">Assigned to: {heroAssignedTo} • Updated {heroUpdatedText}</p>
           </div>
           <div className="candidate-sheet__head-meta">
-            {assessmentStatusLabel ? <span className="chip">Assessment status: {assessmentStatusLabel}</span> : null}
+            {assessmentStatusLabel ? (
+              <span className="candidate-sheet__status-pill">
+                <span className="candidate-sheet__status-dot" />
+                {assessmentStatusLabel}
+              </span>
+            ) : null}
           </div>
+        </div>
+
+        <div className="candidate-sheet__kpis">
+          {kpiTiles.map((tile) => (
+            <div className="candidate-sheet__kpi" key={tile.label}>
+              <div className="candidate-sheet__kpi-label">{tile.label}</div>
+              <div className="candidate-sheet__kpi-value">{String(tile.value || "-")}</div>
+            </div>
+          ))}
         </div>
 
         <div className="candidate-sheet">
