@@ -863,7 +863,7 @@ textarea { min-height: 92px; resize: vertical; }
 }
 .assessment-placard {
   display: grid;
-  gap: 0.65rem;
+  gap: 0.62rem;
 }
 .assessment-placard__head {
   display: inline-flex;
@@ -871,37 +871,109 @@ textarea { min-height: 92px; resize: vertical; }
   gap: 10px;
   flex-wrap: wrap;
 }
+.assessment-placard__head h3 {
+  font-size: 2rem;
+  line-height: 1.2;
+  margin: 0;
+}
+.assessment-placard__meta {
+  display: grid;
+  gap: 0.25rem;
+}
+.assessment-placard__assigned {
+  color: #465f89;
+  font-size: 1.08rem;
+  font-weight: 600;
+}
+.assessment-placard__client-line {
+  color: #556f97;
+  font-size: 1.06rem;
+}
+.assessment-placard__main {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 230px;
+  gap: 1rem;
+  align-items: stretch;
+}
 .assessment-placard__grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 0.65rem 0.8rem;
+  gap: 0;
+  border: 1px solid #dbe6fa;
+  border-radius: 12px;
+  overflow: hidden;
+  background: #ffffff;
 }
 .assessment-placard__grid > div {
   min-width: 0;
-  border: 1px solid #dbe6fa;
-  background: #f9fbff;
-  border-radius: 12px;
-  padding: 0.5rem 0.62rem;
+  border-right: 1px solid #e5edf9;
+  border-bottom: 1px solid #e5edf9;
+  background: #ffffff;
+  padding: 0.62rem 0.72rem;
   display: grid;
   gap: 0.12rem;
 }
+.assessment-placard__grid > div:nth-child(4n) {
+  border-right: none;
+}
+.assessment-placard__grid > div:nth-child(n+5) {
+  border-bottom: none;
+}
 .assessment-placard__grid span {
   color: #5a7198;
-  font-size: 0.72rem;
+  font-size: 0.95rem;
   font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
+  text-transform: none;
+  letter-spacing: 0;
 }
 .assessment-placard__grid strong {
   color: #1c2f54;
-  font-size: 0.9rem;
+  font-size: 1.07rem;
   line-height: 1.25;
   font-weight: 800;
   overflow-wrap: anywhere;
 }
-.assessment-placard__status em {
+.assessment-placard__times {
+  border-left: 1px solid #e0e8f5;
+  padding-left: 1rem;
+  display: grid;
+  align-content: center;
+  gap: 1.25rem;
+}
+.assessment-placard__times span {
+  display: block;
+  color: #5a7198;
+  font-size: 0.95rem;
+  font-weight: 700;
+}
+.assessment-placard__times strong {
+  display: block;
+  color: #1c2f54;
+  font-size: 1.06rem;
+  font-weight: 800;
+  margin-top: 0.12rem;
+}
+.assessment-placard__status-strip {
+  border: 1px solid #dbe6fa;
+  border-radius: 12px;
+  background: #f8fbff;
+  padding: 0.7rem 0.82rem;
+  display: grid;
+  gap: 0.35rem;
+}
+.assessment-placard__status-strip span {
+  color: #5a7198;
+  font-size: 0.95rem;
+  font-weight: 700;
+}
+.assessment-placard__status-strip strong {
+  color: #1c2f54;
+  font-size: 1.08rem;
+  font-weight: 800;
+}
+.assessment-placard__status-strip em {
   color: #38598f;
-  font-size: 0.8rem;
+  font-size: 1rem;
   font-style: normal;
   line-height: 1.3;
   overflow-wrap: anywhere;
@@ -922,18 +994,47 @@ textarea { min-height: 92px; resize: vertical; }
   background: #ffffff;
 }
 @media (max-width: 1200px) {
-  .assessment-placard__grid {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+  .assessment-placard__main {
+    grid-template-columns: 1fr;
+  }
+  .assessment-placard__times {
+    border-left: none;
+    border-top: 1px solid #e0e8f5;
+    padding-left: 0;
+    padding-top: 0.75rem;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 @media (max-width: 900px) {
   .assessment-placard__grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+  .assessment-placard__grid > div:nth-child(4n) {
+    border-right: 1px solid #e5edf9;
+  }
+  .assessment-placard__grid > div:nth-child(2n) {
+    border-right: none;
+  }
+  .assessment-placard__grid > div:nth-child(n+5) {
+    border-bottom: 1px solid #e5edf9;
+  }
+  .assessment-placard__grid > div:nth-child(n+7) {
+    border-bottom: none;
+  }
 }
 @media (max-width: 620px) {
   .assessment-placard__grid {
     grid-template-columns: 1fr;
+  }
+  .assessment-placard__times {
+    grid-template-columns: 1fr;
+  }
+  .assessment-placard__grid > div {
+    border-right: none !important;
+    border-bottom: 1px solid #e5edf9 !important;
+  }
+  .assessment-placard__grid > div:last-child {
+    border-bottom: none !important;
   }
 }
 .compact-card { padding: 0.72rem 0.82rem; }

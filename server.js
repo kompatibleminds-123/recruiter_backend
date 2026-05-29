@@ -384,6 +384,27 @@ const PLAN_DEFINITIONS = {
   legacy: { code: "legacy", label: "Legacy", amountInr: 0, interval: "legacy", seats: null, tier: "full_recruiter_mode", fullRecruiter: true, suiteModules: true }
 };
 
+function getPortalBuildInfo() {
+  const assetsDir = path.join(ROOT_PUBLIC_DIR, "portal-app", "assets");
+  let buildId = "unknown";
+  let builtAtIso = "";
+  try {
+    const files = fs.existsSync(assetsDir) ? fs.readdirSync(assetsDir) : [];
+    const jsFiles = files.filter((name) => /^index-.*\.js$/i.test(String(name || "")));
+    const target = jsFiles[0] || "";
+    if (target) {
+      const m = String(target).match(/^index-([^.]+)\.js$/i);
+      if (m && m[1]) buildId = m[1];
+      const fullPath = path.join(assetsDir, target);
+      const stat = fs.statSync(fullPath);
+      if (stat?.mtime) builtAtIso = new Date(stat.mtime).toISOString();
+    }
+  } catch (_) {
+    // Keep endpoint resilient even when asset scan fails.
+  }
+  return { buildId, builtAt: builtAtIso };
+}
+
 function getPlanDefinition(planCode = "") {
   const code = String(planCode || "").trim().toLowerCase();
   if (PLAN_DEFINITIONS[code]) return PLAN_DEFINITIONS[code];
@@ -2181,10 +2202,20 @@ function serveStaticFile(arg1, arg2, arg3) {
   const ext = path.extname(filePath).toLowerCase();
   const contentType = STATIC_MIME_TYPES[ext] || "application/octet-stream";
   const body = fs.readFileSync(filePath);
+  const normalizedPath = String(filePath || "").replace(/\\/g, "/").toLowerCase();
+  const isHtmlShell = path.basename(filePath).toLowerCase() === "index.html";
+  const isHashedPortalAsset =
+    normalizedPath.includes("/public/portal-app/assets/")
+    && /\/index-[^/]+\.(js|css)$/i.test(normalizedPath);
+  const cacheControl = isHtmlShell
+    ? "no-cache, no-store, must-revalidate"
+    : isHashedPortalAsset
+      ? "public, max-age=31536000, immutable"
+      : (contentType.startsWith("image/") ? "public, max-age=86400" : "no-store");
   res.writeHead(200, buildResponseHeaders(req, {
     "Content-Type": contentType,
     "Content-Length": body.length,
-    "Cache-Control": contentType.startsWith("image/") ? "public, max-age=86400" : "no-store"
+    "Cache-Control": cacheControl
   }));
   res.end(body);
 }
@@ -10139,6 +10170,18 @@ const server = http.createServer(async (req, res) => {
   // know when the service is ready to serve traffic.
   if (req.method === "GET" && (requestUrl.pathname === "/health" || requestUrl.pathname === "/healthz")) {
     sendJson(res, 200, { ok: true, ts: new Date().toISOString() });
+    return;
+  }
+
+  if (req.method === "GET" && requestUrl.pathname === "/app-version") {
+    const info = getPortalBuildInfo();
+    sendJson(res, 200, {
+      ok: true,
+      app: "portal",
+      buildId: info.buildId,
+      builtAt: info.builtAt || null,
+      ts: new Date().toISOString()
+    });
     return;
   }
 

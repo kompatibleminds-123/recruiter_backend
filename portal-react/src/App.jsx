@@ -29,6 +29,8 @@ const KOMPATIBLE_MINDS_COMPANY_ID = "c0a7d2c9-4ddb-4add-9d4a-24cdd1caba7c";
 const SIDEBAR_PREF_KEY = "recruitdesk_sidebar_collapsed_v1";
 const EXTENSION_PROMPT_STORAGE_KEY_PREFIX = "recruitdesk_extension_prompt_v1";
 const RECRUITDESK_EXTENSION_URL = "https://chromewebstore.google.com/detail/recruitdesk-ai/ihkjpmlpnobojigfdencaafegjidbnah";
+const APP_VERSION_RELOAD_GUARD_PREFIX = "recruitdesk_portal_version_reload_once_v1:";
+const APP_VERSION_PROMPT_GUARD_PREFIX = "recruitdesk_portal_version_prompt_v1:";
 
 const BASE_NAV_SECTIONS = [
   {
@@ -425,6 +427,20 @@ function migrateCopySettings(settings = {}) {
     : {};
   next.exportPresetColumns = presetColumns;
   return next;
+}
+
+function getClientBuildId() {
+  try {
+    const scripts = Array.from(document.querySelectorAll("script[src]"));
+    for (const script of scripts) {
+      const src = String(script.getAttribute("src") || "").trim();
+      const match = src.match(/index-([^.\/?#]+)\.js/i);
+      if (match?.[1]) return String(match[1]).trim();
+    }
+  } catch {
+    // Ignore and fallback.
+  }
+  return "unknown";
 }
 
 const AI_SEARCH_EXAMPLE_PROMPTS = [
@@ -7268,6 +7284,7 @@ function PortalApp({ token, onLogout }) {
   });
   const [statuses, setStatuses] = useState({});
   const statusTimersRef = useRef({});
+  const [versionSyncState, setVersionSyncState] = useState({ mismatch: false, serverBuildId: "", clientBuildId: "" });
   const [companyLicense, setCompanyLicense] = useState(null);
   const [billingOverview, setBillingOverview] = useState(null);
   const [billingPlans, setBillingPlans] = useState([]);
@@ -8451,6 +8468,62 @@ function PortalApp({ token, onLogout }) {
 	    delete statusTimersRef.current[scopedKey];
 	  }, timeoutMs);
 	}
+
+  useEffect(() => {
+    if (!token) return;
+    let cancelled = false;
+
+    const checkVersion = async () => {
+      try {
+        const response = await fetch("/app-version", { method: "GET", cache: "no-store" });
+        if (!response.ok) return;
+        const payload = await response.json().catch(() => null);
+        if (cancelled || !payload?.ok) return;
+        const serverBuildId = String(payload?.buildId || "").trim();
+        const clientBuildId = String(getClientBuildId() || "").trim();
+        if (!serverBuildId || !clientBuildId || serverBuildId === "unknown" || clientBuildId === "unknown" || serverBuildId === clientBuildId) {
+          if (!cancelled) setVersionSyncState({ mismatch: false, serverBuildId: "", clientBuildId: "" });
+          return;
+        }
+
+        if (!cancelled) {
+          setVersionSyncState({ mismatch: true, serverBuildId, clientBuildId });
+        }
+
+        const reloadGuardKey = `${APP_VERSION_RELOAD_GUARD_PREFIX}${serverBuildId}`;
+        const alreadyAutoReloaded = window.sessionStorage.getItem(reloadGuardKey) === "1";
+        if (!alreadyAutoReloaded) {
+          window.sessionStorage.setItem(reloadGuardKey, "1");
+          window.location.reload();
+          return;
+        }
+
+        const promptGuardKey = `${APP_VERSION_PROMPT_GUARD_PREFIX}${serverBuildId}`;
+        const lastPromptAt = Number(window.sessionStorage.getItem(promptGuardKey) || 0);
+        const now = Date.now();
+        // Avoid prompt spam: at most once every 5 minutes for same server build.
+        if (!Number.isFinite(lastPromptAt) || now - lastPromptAt > 5 * 60 * 1000) {
+          window.sessionStorage.setItem(promptGuardKey, String(now));
+          const shouldReload = window.confirm("New version is available. Update now?");
+          if (shouldReload) {
+            window.location.reload();
+          }
+        }
+      } catch {
+        // Silent by design.
+      }
+    };
+
+    void checkVersion();
+    const timer = window.setInterval(() => {
+      void checkVersion();
+    }, 60000);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [token]);
 
   useEffect(() => () => {
     Object.values(statusTimersRef.current || {}).forEach((timerId) => {
@@ -18675,6 +18748,15 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
           </div>
           <div className="button-row tight">
             <button className="ghost-btn" onClick={() => void refreshWorkspaceNow()}>Refresh</button>
+            {versionSyncState.mismatch ? (
+              <button
+                className="ghost-btn"
+                onClick={() => window.location.reload()}
+                title={`Server build: ${versionSyncState.serverBuildId} | Current: ${versionSyncState.clientBuildId}`}
+              >
+                Update now
+              </button>
+            ) : null}
             {statuses.workspace ? <div className={`status inline ${statuses.workspaceKind || ""}`}>{statuses.workspace}</div> : null}
           </div>
         </header>
@@ -20206,13 +20288,14 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                     {(() => {
                       const linkedCandidate = assessmentLinkedCandidateMap.get(String(item.id || "")) || null;
                       const assignedTo = String(linkedCandidate?.assigned_to_name || linkedCandidate?.assignedToName || "").trim() || "NA";
+                      const clientName = String(item.clientName || linkedCandidate?.company || "").trim();
                       const candidateName = String(item.candidateName || "Candidate").trim();
                       const jdTitle = String(item.jdTitle || "Untitled role").trim();
                       const linkedinRaw = String(item.linkedinUrl || linkedCandidate?.linkedin || "").trim();
                       const linkedinHref = linkedinRaw ? (/^https?:\/\//i.test(linkedinRaw) ? linkedinRaw : `https://${linkedinRaw}`) : "";
                       const statusLabel = normalizeAssessmentStatusLabel(item.candidateStatus) || "-";
                       const remarksValue = String(latestStatusPreview.remarks || item.clientFeedback || "").trim() || "No remarks";
-                      const convertedAt = item.createdAt || item.created_at || "";
+                      const convertedAt = item.generatedAt || item.createdAt || item.created_at || "";
                       const updatedAt = item.updatedAt || item.updated_at || "";
                       return (
                         <div className="assessment-placard">
@@ -20224,19 +20307,29 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                               </a>
                             ) : null}
                           </div>
-                          <div className="assessment-placard__grid">
-                            <div><span>JD title</span><strong>{jdTitle || "NA"}</strong></div>
-                            <div><span>Current company</span><strong>{item.currentCompany || "NA"}</strong></div>
-                            <div><span>Current designation</span><strong>{item.currentDesignation || "NA"}</strong></div>
-                            <div><span>Location</span><strong>{item.location || "NA"}</strong></div>
-                            <div><span>Current CTC</span><strong>{item.currentCtc || "NA"}</strong></div>
-                            <div><span>Expected CTC</span><strong>{item.expectedCtc || "NA"}</strong></div>
-                            <div><span>Notice period</span><strong>{item.noticePeriod || "NA"}</strong></div>
-                            <div><span>Total experience</span><strong>{item.totalExperience || "NA"}</strong></div>
-                            <div><span>Assigned to</span><strong>{assignedTo}</strong></div>
-                            <div className="assessment-placard__status"><span>Assessment status</span><strong>{statusLabel}</strong><em>{remarksValue}</em></div>
-                            <div><span>Converted at</span><strong>{convertedAt ? new Date(convertedAt).toLocaleString() : "NA"}</strong></div>
-                            <div><span>Updated at</span><strong>{updatedAt ? new Date(updatedAt).toLocaleString() : "NA"}</strong></div>
+                          <div className="assessment-placard__meta">
+                            <div className="assessment-placard__assigned">Assigned to: {assignedTo}</div>
+                            <div className="assessment-placard__client-line">{clientName || "Client"} | Updated {updatedAt ? new Date(updatedAt).toLocaleString() : "NA"}</div>
+                          </div>
+                          <div className="assessment-placard__main">
+                            <div className="assessment-placard__grid">
+                              <div><span>JD title</span><strong>{jdTitle || "NA"}</strong></div>
+                              <div><span>Current company</span><strong>{item.currentCompany || "NA"}</strong></div>
+                              <div><span>Current designation</span><strong>{item.currentDesignation || "NA"}</strong></div>
+                              <div><span>Location</span><strong>{item.location || "NA"}</strong></div>
+                              <div><span>Current CTC</span><strong>{item.currentCtc || "NA"}</strong></div>
+                              <div><span>Expected CTC</span><strong>{item.expectedCtc || "NA"}</strong></div>
+                              <div><span>Notice period</span><strong>{item.noticePeriod || "NA"}</strong></div>
+                              <div><span>Total experience</span><strong>{item.totalExperience || "NA"}</strong></div>
+                            </div>
+                            <div className="assessment-placard__times">
+                              <div><span>Converted at</span><strong>{convertedAt ? new Date(convertedAt).toLocaleString() : "NA"}</strong></div>
+                              <div><span>Updated at</span><strong>{updatedAt ? new Date(updatedAt).toLocaleString() : "NA"}</strong></div>
+                            </div>
+                          </div>
+                          <div className="assessment-placard__status-strip">
+                            <div className="assessment-placard__status"><span>Assessment status</span><strong>{statusLabel}</strong></div>
+                            <div className="assessment-placard__remarks"><span>Latest remarks</span><em>{remarksValue}</em></div>
                           </div>
                         </div>
                       );
