@@ -295,7 +295,9 @@ function FeatureLockedSection({ title = "Feature locked" }) {
     embedHeightPx: 900
   },
   jobApplyFields: [],
-  deletedSuggestedShortcuts: []
+  deletedSuggestedShortcuts: [],
+  sheetImportMappingsByUser: {},
+  sheetImportLearnedAliases: {}
 };
 
 const JOB_APPLY_FIELD_TYPES = ["text", "textarea", "select", "checkbox"];
@@ -415,6 +417,12 @@ function migrateCopySettings(settings = {}) {
     .map((field, index) => normalizeJobApplyField(field, index))
     .filter((field) => field.id && field.label)
     .slice(0, 12);
+  next.sheetImportMappingsByUser = next.sheetImportMappingsByUser && typeof next.sheetImportMappingsByUser === "object"
+    ? next.sheetImportMappingsByUser
+    : {};
+  next.sheetImportLearnedAliases = next.sheetImportLearnedAliases && typeof next.sheetImportLearnedAliases === "object"
+    ? next.sheetImportLearnedAliases
+    : {};
   next.exportPresetColumns = presetColumns;
   return next;
 }
@@ -7873,6 +7881,11 @@ function PortalApp({ token, onLogout }) {
   const [newDraftImportBusy, setNewDraftImportBusy] = useState(false);
   const [newDraftSheetPreviewOpen, setNewDraftSheetPreviewOpen] = useState(false);
   const [newDraftSheetRows, setNewDraftSheetRows] = useState([]);
+  const [newDraftSheetRawRows, setNewDraftSheetRawRows] = useState([]);
+  const [newDraftSheetHeaders, setNewDraftSheetHeaders] = useState([]);
+  const [newDraftSheetMapping, setNewDraftSheetMapping] = useState({});
+  const [newDraftSheetMappingSignature, setNewDraftSheetMappingSignature] = useState("");
+  const [newDraftSheetMapperOpen, setNewDraftSheetMapperOpen] = useState(false);
   const capturedSingleCvInputRef = useRef(null);
   const draftCvInputRef = useRef(null);
   const assessmentStatusSaveLockRef = useRef(new Set());
@@ -13143,15 +13156,29 @@ function PortalApp({ token, onLogout }) {
       } else {
         throw new Error("Upload CSV/TSV/TXT/XLS/XLSX only.");
       }
-      const mappedRows = buildSheetDraftRows(rows).slice(0, 50);
-      if (!mappedRows.length) {
-        throw new Error("Could not detect columns. Keep header row like Name, Email, Phone, Company, Location.");
-      }
-      const existingRows = [...(state.candidates || []), ...(state.databaseCandidates || [])];
-      const validated = validateSheetDraftRows(mappedRows, existingRows);
-      setNewDraftSheetRows(validated);
-      setNewDraftSheetPreviewOpen(true);
-      setStatus("captured", `Sheet loaded for preview. ${validated.length} row(s) ready (max 50).`, "ok");
+      const headers = Array.isArray(rows?.[0]) ? rows[0].map((item) => String(item || "").trim()).filter(Boolean) : [];
+      const signature = buildSheetHeaderSignature(headers);
+      const userId = String(state.user?.id || "").trim();
+      const savedByUser = copySettings?.sheetImportMappingsByUser && typeof copySettings.sheetImportMappingsByUser === "object"
+        ? copySettings.sheetImportMappingsByUser
+        : {};
+      const savedMapping = userId && signature
+        ? (savedByUser?.[userId] && typeof savedByUser[userId] === "object" ? savedByUser[userId]?.[signature] : null)
+        : null;
+      const learnedAliases = copySettings?.sheetImportLearnedAliases && typeof copySettings.sheetImportLearnedAliases === "object"
+        ? copySettings.sheetImportLearnedAliases
+        : {};
+      const initialMapping = savedMapping && typeof savedMapping === "object"
+        ? savedMapping
+        : detectInitialSheetColumnMapping(headers, learnedAliases);
+      setNewDraftSheetRawRows(rows);
+      setNewDraftSheetHeaders(headers);
+      setNewDraftSheetMapping(initialMapping);
+      setNewDraftSheetMappingSignature(signature);
+      setNewDraftSheetRows([]);
+      setNewDraftSheetPreviewOpen(false);
+      setNewDraftSheetMapperOpen(true);
+      setStatus("captured", "Sheet loaded. Map columns to continue.", "ok");
     } catch (error) {
       setStatus("captured", String(error?.message || error), "error");
     } finally {
@@ -17334,6 +17361,68 @@ function PortalApp({ token, onLogout }) {
       setStatus("shortcuts", `Deleted company shortcut ${formatShortcutLabel(normalized)}.`, "ok");
     } catch (error) {
       setStatus("shortcuts", String(error?.message || error), "error");
+    }
+  }
+
+  async function applyNewDraftSheetColumnMapping() {
+    const rows = Array.isArray(newDraftSheetRawRows) ? newDraftSheetRawRows : [];
+    if (rows.length < 2) {
+      setStatus("captured", "No sheet rows available for mapping.", "error");
+      return;
+    }
+    const learnedAliases = copySettings?.sheetImportLearnedAliases && typeof copySettings.sheetImportLearnedAliases === "object"
+      ? copySettings.sheetImportLearnedAliases
+      : {};
+    const mappedRows = buildSheetDraftRows(rows, {
+      mappingByHeaderToken: newDraftSheetMapping,
+      learnedAliases
+    }).slice(0, 50);
+    if (!mappedRows.length) {
+      setStatus("captured", "Could not build rows from selected mapping. Map at least Name and Phone/Email columns.", "error");
+      return;
+    }
+    const existingRows = [...(state.candidates || []), ...(state.databaseCandidates || [])];
+    const validated = validateSheetDraftRows(mappedRows, existingRows);
+    setNewDraftSheetRows(validated);
+    setNewDraftSheetPreviewOpen(true);
+    setNewDraftSheetMapperOpen(false);
+
+    // Save mapping preset per recruiter/company and learn aliases.
+    try {
+      const userId = String(state.user?.id || "").trim();
+      if (!userId || !newDraftSheetMappingSignature) return;
+      const currentByUser = copySettings?.sheetImportMappingsByUser && typeof copySettings.sheetImportMappingsByUser === "object"
+        ? copySettings.sheetImportMappingsByUser
+        : {};
+      const nextUserMappings = {
+        ...((currentByUser?.[userId] && typeof currentByUser[userId] === "object") ? currentByUser[userId] : {}),
+        [newDraftSheetMappingSignature]: { ...(newDraftSheetMapping || {}) }
+      };
+      const nextMappingsByUser = {
+        ...currentByUser,
+        [userId]: nextUserMappings
+      };
+      const currentLearned = copySettings?.sheetImportLearnedAliases && typeof copySettings.sheetImportLearnedAliases === "object"
+        ? copySettings.sheetImportLearnedAliases
+        : {};
+      const learnedNext = { ...currentLearned };
+      Object.entries(newDraftSheetMapping || {}).forEach(([headerToken, field]) => {
+        const safeField = String(field || "").trim();
+        const safeHeader = String(headerToken || "").trim().toLowerCase();
+        if (!safeField || !safeHeader) return;
+        const existing = Array.isArray(learnedNext[safeField]) ? learnedNext[safeField] : [];
+        learnedNext[safeField] = Array.from(new Set([...existing, safeHeader])).slice(0, 300);
+      });
+      const payload = {
+        ...copySettings,
+        sheetImportMappingsByUser: nextMappingsByUser,
+        sheetImportLearnedAliases: learnedNext
+      };
+      const result = await api("/company/shared-export-presets", token, "POST", { settings: payload });
+      setCopySettings((current) => migrateCopySettings({ ...current, ...result }));
+      setStatus("captured", "Column mapping saved for future imports.", "ok");
+    } catch (error) {
+      setStatus("captured", `Mapping applied but save failed: ${String(error?.message || error)}`, "error");
     }
   }
 
@@ -22568,6 +22657,28 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
         onImportValid={() => void importValidatedSheetRows()}
         onDownloadRejected={downloadRejectedSheetRows}
       />
+      <NewDraftSheetColumnMapperModal
+        open={newDraftSheetMapperOpen}
+        headers={newDraftSheetHeaders}
+        mapping={newDraftSheetMapping}
+        busy={newDraftImportBusy}
+        onChange={(token, fieldKey) => {
+          setNewDraftSheetMapping((current) => {
+            const next = { ...(current || {}) };
+            if (!fieldKey) {
+              delete next[token];
+            } else {
+              next[token] = fieldKey;
+            }
+            return next;
+          });
+        }}
+        onApply={() => void applyNewDraftSheetColumnMapping()}
+        onClose={() => {
+          if (newDraftImportBusy) return;
+          setNewDraftSheetMapperOpen(false);
+        }}
+      />
       <InterviewCvParseModal
         open={interviewCvParseModalOpen}
         busy={interviewCvParseBusy}
@@ -23157,6 +23268,58 @@ function NewDraftSheetImportPreviewModal({
   );
 }
 
+function NewDraftSheetColumnMapperModal({
+  open,
+  headers = [],
+  mapping = {},
+  busy = false,
+  onChange,
+  onApply,
+  onClose
+}) {
+  if (!open) return null;
+  return (
+    <div className="overlay" onClick={busy ? undefined : onClose}>
+      <div className="overlay-card" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 980, width: "96vw" }}>
+        <h3>Column Mapper</h3>
+        <p className="muted">Map detected columns to standard fields. This mapping will be remembered for future imports.</p>
+        <div className="table-wrap" style={{ maxHeight: "56vh", overflow: "auto" }}>
+          <table className="dashboard-table">
+            <thead>
+              <tr>
+                <th>Detected Column</th>
+                <th>Map To</th>
+              </tr>
+            </thead>
+            <tbody>
+              {(headers || []).map((header) => {
+                const token = normalizeSheetHeaderToken(header);
+                return (
+                  <tr key={`map-${header}`}>
+                    <td>{header}</td>
+                    <td>
+                      <select value={mapping?.[token] || ""} onChange={(e) => onChange?.(token, e.target.value)}>
+                        <option value="">(Ignore / Extra field)</option>
+                        {SHEET_IMPORT_FIELD_OPTIONS.map((option) => (
+                          <option key={option.key} value={option.key}>{option.label}</option>
+                        ))}
+                      </select>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+        <div className="button-row" style={{ marginTop: 12 }}>
+          <button onClick={onApply} disabled={busy}>Apply Mapping</button>
+          <button className="ghost-btn" onClick={onClose} disabled={busy}>Cancel</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function parseDelimitedRowsFromText(text = "") {
   const raw = String(text || "").replace(/\r\n/g, "\n").trim();
   if (!raw) return [];
@@ -23254,6 +23417,58 @@ const SHEET_FIELD_ALIASES = {
   recruiter_email: ["recruiter email", "assigned recruiter email", "owner recruiter email", "recruiter mail"]
 };
 
+const SHEET_IMPORT_FIELD_OPTIONS = [
+  { key: "name", label: "Name" },
+  { key: "phone", label: "Phone" },
+  { key: "email", label: "Email" },
+  { key: "linkedin", label: "LinkedIn" },
+  { key: "company", label: "Current Company" },
+  { key: "current_designation", label: "Current Designation" },
+  { key: "total_experience", label: "Total Experience" },
+  { key: "location", label: "Location" },
+  { key: "jd_title", label: "JD Title" },
+  { key: "client_name", label: "Client Name" },
+  { key: "tags", label: "Tags/Skills" },
+  { key: "notes", label: "Notes/Remarks" },
+  { key: "current_ctc", label: "Current CTC" },
+  { key: "expected_ctc", label: "Expected CTC" },
+  { key: "notice_period", label: "Notice Period" },
+  { key: "highest_education", label: "Highest Education" },
+  { key: "recruiter_name", label: "Recruiter Name" },
+  { key: "recruiter_email", label: "Recruiter Email" }
+];
+
+function buildSheetHeaderSignature(headers = []) {
+  const tokens = (Array.isArray(headers) ? headers : [])
+    .map((header) => normalizeSheetHeaderToken(header))
+    .filter(Boolean);
+  return tokens.join("|").slice(0, 600);
+}
+
+function detectInitialSheetColumnMapping(headers = [], learnedAliases = {}) {
+  const mapping = {};
+  const normalizedHeaders = (Array.isArray(headers) ? headers : []).map((header) => normalizeSheetHeaderToken(header));
+  normalizedHeaders.forEach((token) => {
+    if (!token) return;
+    for (const option of SHEET_IMPORT_FIELD_OPTIONS) {
+      const field = option.key;
+      const aliases = [
+        ...(SHEET_FIELD_ALIASES[field] || []),
+        ...((Array.isArray(learnedAliases?.[field]) ? learnedAliases[field] : []))
+      ];
+      const hasMatch = aliases.some((alias) => {
+        const needle = normalizeSheetHeaderToken(alias);
+        return needle && (token === needle || token.includes(needle));
+      });
+      if (hasMatch) {
+        mapping[token] = field;
+        break;
+      }
+    }
+  });
+  return mapping;
+}
+
 function mapDraftAutofillFromSpreadsheetRows(rows = []) {
   if (!Array.isArray(rows) || rows.length < 2) return null;
   const headers = rows[0].map((item) => String(item || ""));
@@ -23286,10 +23501,16 @@ function normalizeSheetPhone(value = "") {
   return String(value || "").replace(/[^\d+]/g, "").trim();
 }
 
-function buildSheetDraftRows(rows = []) {
+function buildSheetDraftRows(rows = [], options = {}) {
   if (!Array.isArray(rows) || rows.length < 2) return [];
   const headers = rows[0].map((item) => String(item || ""));
   const normalizedHeaders = headers.map((header) => normalizeSheetHeaderToken(header));
+  const manualMapping = options?.mappingByHeaderToken && typeof options.mappingByHeaderToken === "object"
+    ? options.mappingByHeaderToken
+    : {};
+  const learnedAliases = options?.learnedAliases && typeof options.learnedAliases === "object"
+    ? options.learnedAliases
+    : {};
   const getValueAndMatchedIndex = (values = [], aliases = []) => {
     const aliasList = Array.isArray(aliases) ? aliases : [];
     for (const alias of aliasList) {
@@ -23305,8 +23526,23 @@ function buildSheetDraftRows(rows = []) {
   };
   return rows.slice(1).map((values, idx) => {
       const matchedIndexSet = new Set();
+      const manualFieldValues = {};
+      normalizedHeaders.forEach((headerToken, headerIdx) => {
+        const mappedField = String(manualMapping?.[headerToken] || "").trim();
+        if (!mappedField) return;
+        const value = String(values[headerIdx] || "").trim();
+        if (!value) return;
+        matchedIndexSet.add(headerIdx);
+        if (!manualFieldValues[mappedField]) manualFieldValues[mappedField] = value;
+      });
       const pick = (fieldKey) => {
+        if (manualFieldValues[fieldKey]) return manualFieldValues[fieldKey];
         const hit = getValueAndMatchedIndex(values, SHEET_FIELD_ALIASES[fieldKey] || []);
+        if (!hit.value && Array.isArray(learnedAliases?.[fieldKey]) && learnedAliases[fieldKey].length) {
+          const learnedHit = getValueAndMatchedIndex(values, learnedAliases[fieldKey] || []);
+          if (learnedHit.idx >= 0) matchedIndexSet.add(learnedHit.idx);
+          return learnedHit.value;
+        }
         if (hit.idx >= 0) matchedIndexSet.add(hit.idx);
         return hit.value;
       };

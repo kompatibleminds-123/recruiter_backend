@@ -762,6 +762,14 @@ function sanitizeSharedExportPresetSettings(raw) {
       ? source.companyWideShortcuts
       : {};
   const rawJobApplyFields = Array.isArray(source.jobApplyFields) ? source.jobApplyFields : [];
+  const rawSheetImportMappingsByUser =
+    source.sheetImportMappingsByUser && typeof source.sheetImportMappingsByUser === "object"
+      ? source.sheetImportMappingsByUser
+      : {};
+  const rawSheetImportLearnedAliases =
+    source.sheetImportLearnedAliases && typeof source.sheetImportLearnedAliases === "object"
+      ? source.sheetImportLearnedAliases
+      : {};
   const normalizeJobApplyField = (field, index = 0) => {
     const item = field && typeof field === "object" ? field : {};
     const label = String(item.label || item.name || `Custom field ${index + 1}`).trim();
@@ -812,6 +820,35 @@ function sanitizeSharedExportPresetSettings(raw) {
     if (Object.keys(normalized).length) personalShortcutsByUser[safeUserId] = normalized;
   });
   const companyWideShortcuts = normalizeShortcutMap(rawCompanyWideShortcuts);
+  const sheetImportMappingsByUser = {};
+  Object.entries(rawSheetImportMappingsByUser).forEach(([userId, signatures]) => {
+    const safeUserId = String(userId || "").trim();
+    if (!safeUserId || !signatures || typeof signatures !== "object" || Array.isArray(signatures)) return;
+    const next = {};
+    Object.entries(signatures).forEach(([signature, mapping]) => {
+      const safeSignature = String(signature || "").trim();
+      if (!safeSignature || !mapping || typeof mapping !== "object" || Array.isArray(mapping)) return;
+      const normalized = {};
+      Object.entries(mapping).forEach(([header, field]) => {
+        const safeHeader = String(header || "").trim().toLowerCase();
+        const safeField = String(field || "").trim().toLowerCase();
+        if (!safeHeader || !safeField) return;
+        normalized[safeHeader] = safeField;
+      });
+      if (Object.keys(normalized).length) next[safeSignature] = normalized;
+    });
+    if (Object.keys(next).length) sheetImportMappingsByUser[safeUserId] = next;
+  });
+  const sheetImportLearnedAliases = {};
+  Object.entries(rawSheetImportLearnedAliases).forEach(([field, aliases]) => {
+    const safeField = String(field || "").trim().toLowerCase();
+    if (!safeField) return;
+    const list = (Array.isArray(aliases) ? aliases : [])
+      .map((item) => String(item || "").trim().toLowerCase())
+      .filter(Boolean)
+      .slice(0, 200);
+    if (list.length) sheetImportLearnedAliases[safeField] = Array.from(new Set(list));
+  });
   const defaultHeaderFields = [
     "candidate_name",
     "target_role",
@@ -895,6 +932,8 @@ function sanitizeSharedExportPresetSettings(raw) {
       .map((field, index) => normalizeJobApplyField(field, index))
       .filter((field) => field.id && field.label)
       .slice(0, 12),
+    sheetImportMappingsByUser,
+    sheetImportLearnedAliases,
     companyWideShortcuts,
     personalShortcutsByUser,
     updatedAt: String(source.updatedAt || "").trim(),
