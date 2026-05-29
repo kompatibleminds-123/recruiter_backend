@@ -12892,7 +12892,7 @@ function PortalApp({ token, onLogout }) {
     setStatus("captured", "Manual draft created.", "ok");
   }
 
-  function buildManualDraftCandidatePayload({ draftForm, assignedRecruiter, parsedResult = null, source = "manual_draft", filename = "" }) {
+function buildManualDraftCandidatePayload({ draftForm, assignedRecruiter, parsedResult = null, source = "manual_draft", filename = "" }) {
     const parsedSkills = String(draftForm.tags || "")
       .split(/\r?\n|,|\||;/)
       .map((item) => String(item || "").trim())
@@ -12902,10 +12902,11 @@ function PortalApp({ token, onLogout }) {
       : "";
     const timelineConfidenceLabel = String(parsedResult?.timelineConfidence?.label || "").trim();
     const notes = [String(draftForm.notes || "").trim(), timelineConfidenceLabel, parsedTimelineLabel].filter(Boolean).join(" | ");
+    const importedAttemptOutcome = normalizeAttemptOutcomeLabel(String(draftForm.contact_attempts || draftForm.last_contact_outcome || "").trim());
     return {
       ...draftForm,
       source,
-      role: String(draftForm.current_designation || parsedResult?.currentDesignation || "").trim(),
+      role: String(draftForm.current_designation || parsedResult?.currentDesignation || draftForm.role || "").trim(),
       experience: String(draftForm.total_experience || parsedResult?.totalExperience || "").trim(),
       current_ctc: String(draftForm.current_ctc || parsedResult?.currentCtc || "").trim(),
       notice_period: String(draftForm.notice_period || parsedResult?.noticePeriod || "").trim(),
@@ -12935,7 +12936,7 @@ function PortalApp({ token, onLogout }) {
         currentOrgTenure: String(draftForm.current_org_tenure || parsedResult?.currentOrgTenure || "").trim(),
         reasonForChange: "",
         clientName: draftForm.client_name || "",
-        jdTitle: draftForm.jd_title || "",
+        jdTitle: draftForm.jd_title || draftForm.role || "",
         pipelineStage: "Under Interview Process",
         candidateStatus: "Screening in progress",
         followUpAt: "",
@@ -12953,6 +12954,8 @@ function PortalApp({ token, onLogout }) {
         statusHistory: []
       },
       linkedin: draftForm.linkedin || "",
+      company_name: draftForm.company_name || state.user?.companyName || "",
+      last_contact_outcome: importedAttemptOutcome && importedAttemptOutcome !== "No outcome" ? importedAttemptOutcome : "",
       assigned_to_user_id: assignedRecruiter?.id || "",
       assigned_to_name: assignedRecruiter?.name || "",
       cv_filename: filename || ""
@@ -23422,9 +23425,11 @@ function getSheetValueByAliases(headers = [], values = [], aliases = []) {
 
 const SHEET_FIELD_ALIASES = {
   name: ["name", "candidate name", "full name", "applicant name", "candidate"],
+  role: ["role", "hiring role", "requirement role", "position", "position applied", "open position"],
   phone: ["phone", "phone number", "mobile", "mobile number", "contact", "contact number", "phone no"],
   email: ["email", "email id", "email address", "mail", "e mail"],
   linkedin: ["linkedin", "linkedin url", "linkedin profile", "linkedin profile url"],
+  company_name: ["company name", "agency name", "vendor name", "recruitment agency", "consultancy", "consultancy name"],
   company: ["current company", "company", "organization", "org", "present company"],
   current_designation: ["current designation", "designation", "role", "position", "job role", "title"],
   total_experience: ["total experience", "experience", "work experience", "overall experience", "exp"],
@@ -23438,14 +23443,17 @@ const SHEET_FIELD_ALIASES = {
   notice_period: ["notice period", "notice", "np", "serving notice"],
   highest_education: ["highest education", "highest qualification", "qualification", "education", "degree"],
   recruiter_name: ["recruiter name", "assigned recruiter", "owner recruiter", "recruiter"],
-  recruiter_email: ["recruiter email", "assigned recruiter email", "owner recruiter email", "recruiter mail"]
+  recruiter_email: ["recruiter email", "assigned recruiter email", "owner recruiter email", "recruiter mail"],
+  contact_attempts: ["status", "attempt status", "contact attempt", "contact attempts", "last contact outcome", "outcome"]
 };
 
 const SHEET_IMPORT_FIELD_OPTIONS = [
   { key: "name", label: "Name" },
+  { key: "role", label: "Role (Hiring)" },
   { key: "phone", label: "Phone" },
   { key: "email", label: "Email" },
   { key: "linkedin", label: "LinkedIn" },
+  { key: "company_name", label: "Company Name (Agency)" },
   { key: "company", label: "Current Company" },
   { key: "current_designation", label: "Current Designation" },
   { key: "total_experience", label: "Total Experience" },
@@ -23459,8 +23467,18 @@ const SHEET_IMPORT_FIELD_OPTIONS = [
   { key: "notice_period", label: "Notice Period" },
   { key: "highest_education", label: "Highest Education" },
   { key: "recruiter_name", label: "Recruiter Name" },
-  { key: "recruiter_email", label: "Recruiter Email" }
+  { key: "recruiter_email", label: "Recruiter Email" },
+  { key: "contact_attempts", label: "Contact Attempts Status" }
 ];
+
+const SHEET_IGNORED_HEADER_TOKENS = new Set([
+  "s no",
+  "s no ",
+  "sno",
+  "sr no",
+  "serial no",
+  "serial number"
+]);
 
 function buildSheetHeaderSignature(headers = []) {
   const tokens = (Array.isArray(headers) ? headers : [])
@@ -23548,6 +23566,12 @@ function buildSheetDraftRows(rows = [], options = {}) {
     }
     return { value: "", idx: -1 };
   };
+  const normalizeImportedContactAttempt = (value = "") => {
+    const raw = String(value || "").trim();
+    if (!raw) return "";
+    const normalized = normalizeAttemptOutcomeLabel(raw);
+    return ATTEMPT_OUTCOME_OPTIONS.includes(normalized) ? normalized : "No outcome";
+  };
   return rows.slice(1).map((values, idx) => {
       const matchedIndexSet = new Set();
       const manualFieldValues = {};
@@ -23574,9 +23598,11 @@ function buildSheetDraftRows(rows = [], options = {}) {
         id: `sheet-row-${idx + 1}`,
         index: idx + 1,
         name: pick("name"),
+        role: pick("role"),
         phone: pick("phone"),
         email: pick("email"),
         linkedin: pick("linkedin"),
+        company_name: pick("company_name"),
         company: pick("company"),
         current_designation: pick("current_designation"),
         total_experience: pick("total_experience"),
@@ -23590,17 +23616,30 @@ function buildSheetDraftRows(rows = [], options = {}) {
         notice_period: pick("notice_period"),
         highest_education: pick("highest_education"),
         recruiter_name: pick("recruiter_name"),
-        recruiter_email: pick("recruiter_email")
+        recruiter_email: pick("recruiter_email"),
+        contact_attempts: ""
       };
+      const contactAttemptRaw = String(pick("contact_attempts") || "").trim();
+      row.contact_attempts = normalizeImportedContactAttempt(contactAttemptRaw);
+      const contactAttemptNormalizedLabel = normalizeAttemptOutcomeLabel(contactAttemptRaw);
+      if (contactAttemptRaw && !ATTEMPT_OUTCOME_OPTIONS.includes(contactAttemptNormalizedLabel)) {
+        row.raw_contact_attempts = contactAttemptRaw;
+      }
       const extra = {};
       headers.forEach((header, headerIdx) => {
         if (matchedIndexSet.has(headerIdx)) return;
+        const token = normalizeSheetHeaderToken(header);
+        if (SHEET_IGNORED_HEADER_TOKENS.has(token)) return;
         const key = String(header || "").trim();
         const value = String(values[headerIdx] || "").trim();
         if (!key || !value) return;
         extra[key] = value;
       });
       row.raw_extra_fields = extra;
+      if (row.raw_contact_attempts) {
+        row.raw_extra_fields.contact_attempts_raw = row.raw_contact_attempts;
+      }
+      delete row.raw_contact_attempts;
       return row;
     }).filter((row) => Object.keys(row).some((key) => !["id", "index", "raw_extra_fields"].includes(key) && String(row[key] || "").trim()));
 }
