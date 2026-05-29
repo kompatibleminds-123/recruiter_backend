@@ -13149,12 +13149,15 @@ function PortalApp({ token, onLogout }) {
           filename: file.name || "sheet.xlsx",
           fileData: btoa(binary)
         });
-        rows = convertSpreadsheetObjectRowsToTableRows(parsed?.result?.rows || []);
+        rows = normalizeParsedSheetRows(parsed);
       } else if (filename.endsWith(".csv") || filename.endsWith(".tsv") || filename.endsWith(".txt")) {
         const raw = await file.text();
         rows = parseDelimitedRowsFromText(raw);
       } else {
         throw new Error("Upload CSV/TSV/TXT/XLS/XLSX only.");
+      }
+      if (!rows.length) {
+        throw new Error("No rows detected in sheet. Please keep first data sheet with visible header row + at least 1 candidate row.");
       }
       const headers = Array.isArray(rows?.[0]) ? rows[0].map((item) => String(item || "").trim()).filter(Boolean) : [];
       const signature = buildSheetHeaderSignature(headers);
@@ -23371,6 +23374,27 @@ function convertSpreadsheetObjectRowsToTableRows(rows = []) {
     tableRows.push(headers.map((header) => String(row?.[header] || "").trim()));
   });
   return tableRows;
+}
+
+function normalizeParsedSheetRows(parsedPayload) {
+  const payload = parsedPayload || {};
+  const candidateRows = (
+    payload?.result?.rows
+    || payload?.rows
+    || payload?.result?.data?.rows
+    || payload?.data?.rows
+    || []
+  );
+  const list = Array.isArray(candidateRows) ? candidateRows : [];
+  if (!list.length) return [];
+  // If backend already returns table rows [[h1,h2], [..]], keep as-is.
+  if (Array.isArray(list[0])) {
+    return list
+      .map((row) => (Array.isArray(row) ? row.map((cell) => String(cell == null ? "" : cell).trim()) : []))
+      .filter((row) => row.some((cell) => String(cell || "").trim()));
+  }
+  // Default object-row mode.
+  return convertSpreadsheetObjectRowsToTableRows(list);
 }
 
 function normalizeSheetHeaderToken(value = "") {
