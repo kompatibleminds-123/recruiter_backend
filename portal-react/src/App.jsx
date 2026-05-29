@@ -20262,29 +20262,6 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                       const isArchived = isAssessmentArchived(item);
                       return (
                         <>
-                    <div className="assessment-select-row">
-                      {assessmentLane === "active" && !isArchived ? (
-                        <div className="assessment-select-row__checks">
-                          <label className="checkbox-pill">
-                            <input type="checkbox" checked={selectedAssessmentIds.includes(String(item.id))} onChange={() => { void toggleAssessmentSelectionWithBranding(item); }} />
-                            <span>Select for client share</span>
-                          </label>
-                          {selectedAssessmentIds.includes(String(item.id)) ? (
-                            <label className="checkbox-pill checkbox-pill--soft">
-                              <input
-                                type="checkbox"
-                                checked={isAssessmentShareBrandedCvEnabled(item)}
-                                onClick={(e) => e.stopPropagation()}
-                                onChange={(e) => { void setAssessmentShareBrandedCv(item, e.target.checked); }}
-                              />
-                              <span>Share Branded CV</span>
-                            </label>
-                          ) : null}
-                        </div>
-                      ) : (
-                        <span className="muted">Archived</span>
-                      )}
-                    </div>
                     {(() => {
                       const linkedCandidate = assessmentLinkedCandidateMap.get(String(item.id || "")) || null;
                       const assignedTo = String(linkedCandidate?.assigned_to_name || linkedCandidate?.assignedToName || "").trim() || "NA";
@@ -20308,16 +20285,46 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                       return (
                         <div className="assessment-placard">
                           <div className="assessment-placard__head">
-                            <h3>{candidateName} | {jdTitle}</h3>
-                            {linkedinHref ? (
-                              <a className="captured-note-linkedin" href={linkedinHref} target="_blank" rel="noopener noreferrer" aria-label="Open LinkedIn profile" title="Open LinkedIn profile">
-                                <span className="captured-note-linkedin-icon">in</span>
-                              </a>
-                            ) : null}
+                            <div className="assessment-placard__title-row">
+                              <h3>
+                                <span className="assessment-placard__candidate-name">{candidateName}</span>
+                                {linkedinHref ? (
+                                  <a className="captured-note-linkedin assessment-placard__inline-linkedin" href={linkedinHref} target="_blank" rel="noopener noreferrer" aria-label="Open LinkedIn profile" title="Open LinkedIn profile">
+                                    <span className="captured-note-linkedin-icon">in</span>
+                                  </a>
+                                ) : null}
+                                <span className="assessment-placard__title-sep">|</span>
+                                <span className="assessment-placard__role-title">{jdTitle}</span>
+                              </h3>
+                            </div>
+                            <div className="assessment-placard__head-actions">
+                              {assessmentLane === "active" && !isArchived ? (
+                                <div className="assessment-select-row__checks">
+                                  <label className="checkbox-pill">
+                                    <input type="checkbox" checked={selectedAssessmentIds.includes(String(item.id))} onChange={() => { void toggleAssessmentSelectionWithBranding(item); }} />
+                                    <span>Select for client share</span>
+                                  </label>
+                                  {selectedAssessmentIds.includes(String(item.id)) ? (
+                                    <label className="checkbox-pill checkbox-pill--soft">
+                                      <input
+                                        type="checkbox"
+                                        checked={isAssessmentShareBrandedCvEnabled(item)}
+                                        onClick={(e) => e.stopPropagation()}
+                                        onChange={(e) => { void setAssessmentShareBrandedCv(item, e.target.checked); }}
+                                      />
+                                      <span>Share Branded CV</span>
+                                    </label>
+                                  ) : null}
+                                </div>
+                              ) : (
+                                <span className="muted">Archived</span>
+                              )}
+                            </div>
                           </div>
                           <div className="assessment-placard__meta">
-                            <div className="assessment-placard__assigned">Assigned to: {assignedTo}</div>
-                            <div className="assessment-placard__client-line">{clientName || "Client"} | Updated {updatedAt ? new Date(updatedAt).toLocaleString() : "NA"}</div>
+                            <div className="assessment-placard__assigned">
+                              Assigned to: {assignedTo} <span className="assessment-placard__dot">•</span> {clientName || "Client"} <span className="assessment-placard__dot">•</span> Updated {updatedAt ? new Date(updatedAt).toLocaleDateString() : "NA"}
+                            </div>
                           </div>
                           <div className="assessment-placard__main">
                             <div className="assessment-placard__grid">
