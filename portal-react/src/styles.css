@@ -64,6 +64,17 @@ button:hover {
   border-color: #c9d6ea;
   box-shadow: var(--shadow-sm);
 }
+.draft-upload-btn {
+  min-height: 44px;
+  padding: 0.72rem 1rem;
+  border-radius: 16px;
+  font-weight: 700;
+  user-select: none;
+}
+.draft-upload-btn > span {
+  display: inline-block;
+  line-height: 1;
+}
 input, select, textarea {
   width: 100%;
   border: 1px solid var(--border);

@@ -4984,7 +4984,7 @@ function NewDraftModal({
         {!isCvMode ? (
           <div className="button-row" style={{ marginBottom: 10 }}>
             <button type="button" className="ghost-btn" onClick={onPasteScreenshot} disabled={importBusy}>Paste screenshot (Ctrl+V)</button>
-            <label className="ghost-btn" style={{ display: "inline-flex", alignItems: "center", cursor: importBusy ? "not-allowed" : "pointer", opacity: importBusy ? 0.7 : 1 }}>
+            <label className="ghost-btn draft-upload-btn" style={{ display: "inline-flex", alignItems: "center", cursor: importBusy ? "not-allowed" : "pointer", opacity: importBusy ? 0.7 : 1 }}>
               <input
                 type="file"
                 accept=".csv,.tsv,.txt,.xlsx,.xls"
@@ -4998,7 +4998,7 @@ function NewDraftModal({
                   e.currentTarget.value = "";
                 }}
               />
-              Upload Excel/CSV
+              <span>Upload Excel/CSV</span>
             </label>
           </div>
         ) : null}
@@ -23682,11 +23682,17 @@ function normalizeImportedContactAttemptOutcome(value = "") {
     "already joined": "Not interested",
     "interview reject": "Screening reject",
     "screening reject": "Screening reject",
+    "sr": "Screening reject",
     "duplicate profile": "Duplicate",
     "duplicate candidate": "Duplicate",
     "switch off": "Switch Off",
     "switched off": "Switch Off",
     "no response": "Not responding",
+    "nr": "Not responding",
+    "not received": "Not responding",
+    "no reply": "Not responding",
+    "not replied": "Not responding",
+    "unanswered": "Not responding",
     "call back": "Call later",
     "callback": "Call later",
     "hold": "Hold by recruiter"
