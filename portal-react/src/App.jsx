@@ -23699,6 +23699,19 @@ function normalizeImportedContactAttemptOutcome(value = "") {
   };
   const mapped = map[key] || "";
   if (mapped && ATTEMPT_OUTCOME_OPTIONS.includes(mapped)) return mapped;
+  if (/\bnot\s*interested|joined\s*elsewhere|already\s*joined|not\s*looking\b/.test(key)) return "Not interested";
+  if (/\bno\s*response|not\s*received|no\s*reply|not\s*replied|unanswered|nr\b/.test(key)) return "Not responding";
+  if (/\bswitch\s*off|switched\s*off\b/.test(key)) return "Switch Off";
+  if (/\bdisconnected\b/.test(key)) return "Disconnected";
+  if (/\bnot\s*reachable\b/.test(key)) return "Not reachable";
+  if (/\bcall\s*back|callback|call\s*later|follow\s*up\b/.test(key)) return "Call later";
+  if (/\bduplicate\b/.test(key)) return "Duplicate";
+  if (/\bjd\s*shared|cv\s*shared|jd\s*sent|shared\b/.test(key)) return "JD shared";
+  if (/\binterested\b/.test(key)) return "Interested";
+  if (/\bhold\b/.test(key)) return "Hold by recruiter";
+  if (/\bscreening\s*reject|interview\s*reject|\bsr\b/.test(key)) return "Screening reject";
+  if (/\brevisit\b/.test(key)) return "Revisit for other role";
+  if (/\bbusy\b/.test(key)) return "Busy";
   return "No outcome";
 }
 
