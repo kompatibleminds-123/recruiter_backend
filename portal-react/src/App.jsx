@@ -12635,13 +12635,52 @@ function PortalApp({ token, onLogout }) {
     setStatus("captured", "Candidate restored to active captured notes.", "ok");
   }
 
-  async function deleteCapturedCandidate(candidateId) {
+  async function deleteCapturedCandidate(candidateOrId) {
     if (!window.confirm("Delete this captured note permanently?")) return;
-    await api(`/company/candidates/${encodeURIComponent(candidateId)}`, token, "DELETE");
+    const requestedId = typeof candidateOrId === "object"
+      ? String(candidateOrId?.id || "").trim()
+      : String(candidateOrId || "").trim();
+    const candidateRef = (candidateOrId && typeof candidateOrId === "object")
+      ? candidateOrId
+      : ([...(state.candidates || []), ...(state.databaseCandidates || [])].find((item) => String(item?.id || "").trim() === requestedId) || null);
+    let deletedId = requestedId;
+    try {
+      await api(`/company/candidates/${encodeURIComponent(requestedId)}`, token, "DELETE");
+    } catch (error) {
+      const message = String(error?.message || error || "");
+      const notFound = /candidate not found in this company/i.test(message);
+      if (!notFound || !candidateRef) throw error;
+      const targetPhone = normalizeSheetPhone(candidateRef?.phone || candidateRef?.phoneNumber || "");
+      const targetEmail = normalizeSheetIdentityValue(candidateRef?.email || candidateRef?.emailId || "");
+      const targetName = normalizeSheetIdentityValue(candidateRef?.name || "");
+      const fallback = [...(state.candidates || []), ...(state.databaseCandidates || [])].find((item) => {
+        const id = String(item?.id || "").trim();
+        if (!id || id === requestedId) return false;
+        const phone = normalizeSheetPhone(item?.phone || item?.phoneNumber || "");
+        const email = normalizeSheetIdentityValue(item?.email || item?.emailId || "");
+        const name = normalizeSheetIdentityValue(item?.name || "");
+        if (targetPhone && phone && phone === targetPhone) return true;
+        if (targetEmail && email && email === targetEmail) return true;
+        return Boolean(targetName && name && targetName === name);
+      });
+      if (!fallback?.id) throw error;
+      deletedId = String(fallback.id || "").trim();
+      await api(`/company/candidates/${encodeURIComponent(deletedId)}`, token, "DELETE");
+    }
     setState((current) => ({
       ...current,
-      candidates: Array.isArray(current.candidates) ? current.candidates.filter((item) => String(item?.id || "") !== String(candidateId)) : current.candidates,
-      databaseCandidates: Array.isArray(current.databaseCandidates) ? current.databaseCandidates.filter((item) => String(item?.id || "") !== String(candidateId)) : current.databaseCandidates
+      candidates: Array.isArray(current.candidates)
+        ? current.candidates.filter((item) => {
+          const id = String(item?.id || "").trim();
+          return id !== requestedId && id !== deletedId;
+        })
+        : current.candidates,
+      databaseCandidates: Array.isArray(current.databaseCandidates)
+        ? current.databaseCandidates.filter((item) => {
+          const id = String(item?.id || "").trim();
+          return id !== requestedId && id !== deletedId;
+        })
+        : current.databaseCandidates
     }));
     void refreshWorkspaceSilently("post-delete");
     setStatus("captured", "Candidate deleted.", "ok");
@@ -20018,7 +20057,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                         ) : (
                           <button className="ghost-btn" onClick={() => void hideCapturedCandidate(item.id)}>Hide from list</button>
                         )}
-                        <button className="captured-action-danger" onClick={() => void deleteCapturedCandidate(item.id).catch((error) => setStatus("captured", String(error?.message || error), "error"))}>Delete</button>
+                        <button className="captured-action-danger" onClick={() => void deleteCapturedCandidate(item).catch((error) => setStatus("captured", String(error?.message || error), "error"))}>Delete</button>
                       </div>
                     </article>
                   );
