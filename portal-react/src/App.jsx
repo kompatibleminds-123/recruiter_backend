@@ -23667,6 +23667,35 @@ function isUuidLike(value = "") {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(value || "").trim());
 }
 
+function normalizeImportedContactAttemptOutcome(value = "") {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  const normalized = normalizeAttemptOutcomeLabel(raw);
+  if (ATTEMPT_OUTCOME_OPTIONS.includes(normalized)) return normalized;
+  const key = raw.toLowerCase().replace(/[_-]+/g, " ").replace(/\s+/g, " ").trim();
+  const map = {
+    "cv shared": "JD shared",
+    "jd sent": "JD shared",
+    "shared": "JD shared",
+    "joined elsewhere": "Not interested",
+    "not looking": "Not interested",
+    "already joined": "Not interested",
+    "interview reject": "Screening reject",
+    "screening reject": "Screening reject",
+    "duplicate profile": "Duplicate",
+    "duplicate candidate": "Duplicate",
+    "switch off": "Switch Off",
+    "switched off": "Switch Off",
+    "no response": "Not responding",
+    "call back": "Call later",
+    "callback": "Call later",
+    "hold": "Hold by recruiter"
+  };
+  const mapped = map[key] || "";
+  if (mapped && ATTEMPT_OUTCOME_OPTIONS.includes(mapped)) return mapped;
+  return "No outcome";
+}
+
 function buildSheetDraftRows(rows = [], options = {}) {
   if (!Array.isArray(rows) || rows.length < 2) return [];
   const headers = rows[0].map((item) => String(item || ""));
@@ -23689,12 +23718,6 @@ function buildSheetDraftRows(rows = [], options = {}) {
       }
     }
     return { value: "", idx: -1 };
-  };
-  const normalizeImportedContactAttempt = (value = "") => {
-    const raw = String(value || "").trim();
-    if (!raw) return "";
-    const normalized = normalizeAttemptOutcomeLabel(raw);
-    return ATTEMPT_OUTCOME_OPTIONS.includes(normalized) ? normalized : "No outcome";
   };
   return rows.slice(1).map((values, idx) => {
       const matchedIndexSet = new Set();
@@ -23743,7 +23766,7 @@ function buildSheetDraftRows(rows = [], options = {}) {
         contact_attempts: ""
       };
       const contactAttemptRaw = String(pick("contact_attempts") || "").trim();
-      row.contact_attempts = normalizeImportedContactAttempt(contactAttemptRaw);
+      row.contact_attempts = normalizeImportedContactAttemptOutcome(contactAttemptRaw);
       const contactAttemptNormalizedLabel = normalizeAttemptOutcomeLabel(contactAttemptRaw);
       if (contactAttemptRaw && !ATTEMPT_OUTCOME_OPTIONS.includes(contactAttemptNormalizedLabel)) {
         row.raw_contact_attempts = contactAttemptRaw;
