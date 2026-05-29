@@ -1640,7 +1640,9 @@ function getDeterministicSummaryFromResult(result = null) {
 function looksMaskedContactValue(value = "") {
   const text = String(value || "").trim();
   if (!text) return false;
-  return /[*xX•_]/.test(text);
+  // Treat only strong masking tokens as masked; do not reject normal values containing x.
+  if (/[*�•_]/.test(text)) return true;
+  return /(?:^|[^a-zA-Z])[xX]{3,}(?:[^a-zA-Z]|$)/.test(text);
 }
 
 function sanitizeInterviewParsedEmail(value = "") {
@@ -20201,53 +20203,53 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                         <span className="muted">Archived</span>
                       )}
                     </div>
-                    <div className="item-card__top">
-                      <div>
-                        <h3>{item.candidateName || "Candidate"} | {item.jdTitle || "Untitled role"}</h3>
-                        {(() => {
-                          const linkedCandidate = assessmentLinkedCandidateMap.get(String(item.id || "")) || null;
-                          const assignedTo = String(linkedCandidate?.assigned_to_name || linkedCandidate?.assignedToName || "").trim();
-                          const ownerName = String(linkedCandidate?.recruiter_name || linkedCandidate?.recruiterName || item.recruiterName || "").trim();
-                          const recruiterLabel = assignedTo ? `Assigned to: ${assignedTo}` : ownerName ? `Owner: ${ownerName}` : "";
-                          return (
-                            <p className="muted">
-                              {[item.pipelineStage || "", normalizeAssessmentStatusLabel(item.candidateStatus) || "", recruiterLabel].filter(Boolean).join(" | ")}
-                            </p>
-                          );
-                        })()}
-                        <div className="status-note">
-                          {[
-                            item.currentCompany || "",
-                            item.interviewAt ? `Interview ${new Date(item.interviewAt).toLocaleString()}` : "",
-                            item.updatedAt ? `Updated ${new Date(item.updatedAt).toLocaleString()}` : ""
-                          ].filter(Boolean).join(" | ")}
+                    {(() => {
+                      const linkedCandidate = assessmentLinkedCandidateMap.get(String(item.id || "")) || null;
+                      const assignedTo = String(linkedCandidate?.assigned_to_name || linkedCandidate?.assignedToName || "").trim() || "NA";
+                      const candidateName = String(item.candidateName || "Candidate").trim();
+                      const jdTitle = String(item.jdTitle || "Untitled role").trim();
+                      const linkedinRaw = String(item.linkedinUrl || linkedCandidate?.linkedin || "").trim();
+                      const linkedinHref = linkedinRaw ? (/^https?:\/\//i.test(linkedinRaw) ? linkedinRaw : `https://${linkedinRaw}`) : "";
+                      const statusLabel = normalizeAssessmentStatusLabel(item.candidateStatus) || "-";
+                      const remarksValue = String(latestStatusPreview.remarks || item.clientFeedback || "").trim() || "No remarks";
+                      const convertedAt = item.createdAt || item.created_at || "";
+                      const updatedAt = item.updatedAt || item.updated_at || "";
+                      return (
+                        <div className="assessment-placard">
+                          <div className="assessment-placard__head">
+                            <h3>{candidateName} | {jdTitle}</h3>
+                            {linkedinHref ? (
+                              <a className="captured-note-linkedin" href={linkedinHref} target="_blank" rel="noopener noreferrer" aria-label="Open LinkedIn profile" title="Open LinkedIn profile">
+                                <span className="captured-note-linkedin-icon">in</span>
+                              </a>
+                            ) : null}
+                          </div>
+                          <div className="assessment-placard__grid">
+                            <div><span>JD title</span><strong>{jdTitle || "NA"}</strong></div>
+                            <div><span>Current company</span><strong>{item.currentCompany || "NA"}</strong></div>
+                            <div><span>Current designation</span><strong>{item.currentDesignation || "NA"}</strong></div>
+                            <div><span>Location</span><strong>{item.location || "NA"}</strong></div>
+                            <div><span>Current CTC</span><strong>{item.currentCtc || "NA"}</strong></div>
+                            <div><span>Expected CTC</span><strong>{item.expectedCtc || "NA"}</strong></div>
+                            <div><span>Notice period</span><strong>{item.noticePeriod || "NA"}</strong></div>
+                            <div><span>Total experience</span><strong>{item.totalExperience || "NA"}</strong></div>
+                            <div><span>Assigned to</span><strong>{assignedTo}</strong></div>
+                            <div className="assessment-placard__status"><span>Assessment status</span><strong>{statusLabel}</strong><em>{remarksValue}</em></div>
+                            <div><span>Converted at</span><strong>{convertedAt ? new Date(convertedAt).toLocaleString() : "NA"}</strong></div>
+                            <div><span>Updated at</span><strong>{updatedAt ? new Date(updatedAt).toLocaleString() : "NA"}</strong></div>
+                          </div>
                         </div>
-                        {(latestStatusPreview.status || latestStatusPreview.remarks) ? (
-                          <div className="feedback-preview">
-                            <div className="feedback-preview__label">Latest saved update</div>
-                            {latestStatusPreview.status ? <div>{`Status: ${latestStatusPreview.status}`}</div> : null}
-                            {latestStatusPreview.remarks ? <div>{`Remarks: ${latestStatusPreview.remarks}`}</div> : null}
-                            {latestStatusPreview.at ? <div className="muted">{new Date(latestStatusPreview.at).toLocaleString()}</div> : null}
-                          </div>
-                        ) : null}
-                        {item.clientFeedback ? (
-                          <div className="feedback-preview">
-                            <div className="feedback-preview__label">Client feedback</div>
-                            <div>{item.clientFeedback}</div>
-                            <div className="muted">{[item.clientFeedbackStatus ? `Status: ${item.clientFeedbackStatus}` : "", item.clientFeedbackUpdatedBy || "", item.clientFeedbackUpdatedAt ? new Date(item.clientFeedbackUpdatedAt).toLocaleString() : ""].filter(Boolean).join(" | ")}</div>
-                          </div>
-                        ) : null}
-                      </div>
-                    </div>
+                      );
+                    })()}
                     <div className="button-row">
                       {assessmentLane === "active" && !isArchived ? (
                         <>
-                          <button onClick={() => { closeAssessmentMoreMenu(); openSavedAssessment(item); }}>Edit assessment</button>
-                          <button onClick={() => { closeAssessmentMoreMenu(); setAssessmentStatusId(item.id); }}>Update status</button>
-                          <button onClick={() => { closeAssessmentMoreMenu(); void openAssessmentJourney(item); }}>Journey</button>
-                          <button onClick={() => { closeAssessmentMoreMenu(); void openAssessmentCandidateCardModal(item); }}>Candidate card</button>
+                          <button className="assessment-btn-primary" onClick={() => { closeAssessmentMoreMenu(); openSavedAssessment(item); }}>Edit assessment</button>
+                          <button className="ghost-btn assessment-btn-neutral" onClick={() => { closeAssessmentMoreMenu(); setAssessmentStatusId(item.id); }}>Update status</button>
+                          <button className="ghost-btn assessment-btn-neutral" onClick={() => { closeAssessmentMoreMenu(); void openAssessmentJourney(item); }}>Journey</button>
+                          <button className="ghost-btn assessment-btn-neutral" onClick={() => { closeAssessmentMoreMenu(); void openAssessmentCandidateCardModal(item); }}>Candidate card</button>
                           <button
-                            className="whatsapp-logo-btn"
+                            className="whatsapp-logo-btn assessment-btn-wa"
                             onClick={() => { closeAssessmentMoreMenu(); openAssessmentWhatsapp(item); }}
                             title="Open WhatsApp"
                             aria-label="Open WhatsApp"
@@ -20262,7 +20264,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                           >
                             <button
                               type="button"
-                              className="ghost-btn more-menu__trigger"
+                              className="ghost-btn assessment-btn-neutral more-menu__trigger"
                               onClick={(e) => {
                                 e.stopPropagation();
                                 setOpenAssessmentMoreId((current) => (current === String(item.id) ? "" : String(item.id)));
@@ -25210,6 +25212,7 @@ export default function App() {
           ? <PortalErrorBoundary><MarketingPortalApp token={token} onLogout={logout} /></PortalErrorBoundary>
         : <PortalErrorBoundary><PortalApp token={token} onLogout={logout} /></PortalErrorBoundary>;
 }
+
 
 
 

@@ -8550,7 +8550,9 @@ function normalizePhone(value) {
 function looksMaskedContactValue(value) {
   const text = String(value || "").trim();
   if (!text) return false;
-  return /[*xX•_]/.test(text);
+  // Treat only strong masking tokens as masked; do not reject normal names/emails containing x.
+  if (/[*�•_]/.test(text)) return true;
+  return /(?:^|[^a-zA-Z])[xX]{3,}(?:[^a-zA-Z]|$)/.test(text);
 }
 
 function extractBestEmailFromRawText(rawText = "") {
@@ -17107,6 +17109,7 @@ const server = http.createServer(async (req, res) => {
 server.listen(PORT, () => {
   console.log(`Recruiter backend listening on http://localhost:${PORT}`);
 });
+
 
 
 
