@@ -12969,7 +12969,7 @@ function PortalApp({ token, onLogout }) {
     setStatus("captured", "Manual draft created.", "ok");
   }
 
-function buildManualDraftCandidatePayload({ draftForm, assignedRecruiter, parsedResult = null, source = "manual_draft", filename = "" }) {
+  function buildManualDraftCandidatePayload({ draftForm, assignedRecruiter, parsedResult = null, source = "manual_draft", filename = "" }) {
     const parsedSkills = String(draftForm.tags || "")
       .split(/\r?\n|,|\||;/)
       .map((item) => String(item || "").trim())
@@ -12980,10 +12980,11 @@ function buildManualDraftCandidatePayload({ draftForm, assignedRecruiter, parsed
     const timelineConfidenceLabel = String(parsedResult?.timelineConfidence?.label || "").trim();
     const notes = [String(draftForm.notes || "").trim(), timelineConfidenceLabel, parsedTimelineLabel].filter(Boolean).join(" | ");
     const importedAttemptOutcome = normalizeAttemptOutcomeLabel(String(draftForm.contact_attempts || draftForm.last_contact_outcome || "").trim());
+    const canonicalClientName = canonicalizeClientName(String(draftForm.client_name || "").trim());
     return {
       ...draftForm,
       source,
-      role: String(draftForm.current_designation || parsedResult?.currentDesignation || draftForm.role || "").trim(),
+      role: String(draftForm.current_designation || parsedResult?.currentDesignation || "").trim(),
       experience: String(draftForm.total_experience || parsedResult?.totalExperience || "").trim(),
       current_ctc: String(draftForm.current_ctc || parsedResult?.currentCtc || "").trim(),
       notice_period: String(draftForm.notice_period || parsedResult?.noticePeriod || "").trim(),
@@ -13012,8 +13013,8 @@ function buildManualDraftCandidatePayload({ draftForm, assignedRecruiter, parsed
         lwdOrDoj: "",
         currentOrgTenure: String(draftForm.current_org_tenure || parsedResult?.currentOrgTenure || "").trim(),
         reasonForChange: "",
-        clientName: draftForm.client_name || "",
-        jdTitle: draftForm.jd_title || draftForm.role || "",
+        clientName: canonicalClientName || "",
+        jdTitle: draftForm.jd_title || "",
         pipelineStage: "Under Interview Process",
         candidateStatus: "Screening in progress",
         followUpAt: "",
@@ -13032,6 +13033,7 @@ function buildManualDraftCandidatePayload({ draftForm, assignedRecruiter, parsed
       },
       linkedin: draftForm.linkedin || "",
       company_name: draftForm.company_name || state.user?.companyName || "",
+      client_name: canonicalClientName || "",
       last_contact_outcome: importedAttemptOutcome && importedAttemptOutcome !== "No outcome" ? importedAttemptOutcome : "",
       assigned_to_user_id: assignedRecruiter?.id || "",
       assigned_to_name: assignedRecruiter?.name || "",
@@ -23543,16 +23545,16 @@ function getSheetValueByAliases(headers = [], values = [], aliases = []) {
 
 const SHEET_FIELD_ALIASES = {
   name: ["name", "candidate name", "full name", "applicant name", "candidate"],
-  role: ["role", "hiring role", "requirement role", "position", "position applied", "open position"],
+  role: ["hiring role", "requirement role", "position applied", "open position", "target role"],
   phone: ["phone", "phone number", "mobile", "mobile number", "contact", "contact number", "phone no"],
   email: ["email", "email id", "email address", "mail", "e mail"],
   linkedin: ["linkedin", "linkedin url", "linkedin profile", "linkedin profile url"],
   company_name: ["company name", "agency name", "vendor name", "recruitment agency", "consultancy", "consultancy name"],
   company: ["current company", "company", "organization", "org", "present company"],
-  current_designation: ["current designation", "designation", "role", "position", "job role", "title"],
+  current_designation: ["current designation", "designation", "current role", "current position", "current title"],
   total_experience: ["total experience", "experience", "work experience", "overall experience", "exp"],
   location: ["location", "city", "current location", "preferred location"],
-  jd_title: ["jd title", "job title", "role title", "position title", "requirement", "job role"],
+  jd_title: ["jd title", "job title", "role title", "position title", "requirement", "job role", "role", "position"],
   client_name: ["client", "client name", "account name"],
   tags: ["tags", "skills", "technical skills", "keywords", "skillset", "skill set"],
   notes: ["notes", "remarks", "comment", "comments", "screening answers"],
@@ -23567,7 +23569,7 @@ const SHEET_FIELD_ALIASES = {
 
 const SHEET_IMPORT_FIELD_OPTIONS = [
   { key: "name", label: "Name" },
-  { key: "role", label: "Role (Hiring)" },
+  { key: "role", label: "JD Title (Hiring Role)" },
   { key: "phone", label: "Phone" },
   { key: "email", label: "Email" },
   { key: "linkedin", label: "LinkedIn" },
@@ -23640,7 +23642,7 @@ function mapDraftAutofillFromSpreadsheetRows(rows = []) {
     email: getValue("email", "email id", "mail"),
     linkedin: getValue("linkedin", "linkedin url", "linkedin profile"),
     company: getValue("company", "current company", "organization"),
-    current_designation: getValue("designation", "role", "current designation", "position"),
+    current_designation: getValue("designation", "current designation", "current role", "current position"),
     total_experience: getValue("experience", "total experience", "work experience"),
     location: getValue("location", "city"),
     jd_title: getValue("jd", "role", "position", "job title"),
@@ -23720,7 +23722,6 @@ function buildSheetDraftRows(rows = [], options = {}) {
         id: `sheet-row-${idx + 1}`,
         index: idx + 1,
         name: pick("name"),
-        role: pick("role"),
         phone: pick("phone"),
         email: pick("email"),
         linkedin: pick("linkedin"),
@@ -23729,7 +23730,7 @@ function buildSheetDraftRows(rows = [], options = {}) {
         current_designation: pick("current_designation"),
         total_experience: pick("total_experience"),
         location: pick("location"),
-        jd_title: pick("jd_title"),
+        jd_title: pick("jd_title") || pick("role"),
         client_name: pick("client_name"),
         tags: pick("tags"),
         notes: pick("notes"),
