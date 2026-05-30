@@ -8031,6 +8031,7 @@ function PortalApp({ token, onLogout }) {
   const [interviewCvParseModalOpen, setInterviewCvParseModalOpen] = useState(false);
   const [interviewCvParseBusy, setInterviewCvParseBusy] = useState(false);
   const [interviewCvParsePreview, setInterviewCvParsePreview] = useState(null);
+  const [interviewLatestLoading, setInterviewLatestLoading] = useState(false);
   const interviewCvParseSessionRef = useRef({ requestId: 0, candidateId: "" });
   const [interviewForm, setInterviewForm] = useState({
     candidateName: "",
@@ -12515,6 +12516,7 @@ function PortalApp({ token, onLogout }) {
       return;
     }
     const applicantDraft = getCandidateDraftState(applicant || {});
+    setInterviewLatestLoading(false);
     setInterviewMeta({
       candidateId: String(applicant.id || ""),
       assessmentId: ""
@@ -13556,6 +13558,7 @@ function PortalApp({ token, onLogout }) {
     resetInterviewCvParseTransientState();
     const candidateDraft = getCandidateDraftState(candidate);
     const matched = resolveCapturedAssessment(candidate);
+    setInterviewLatestLoading(false);
     setInterviewMeta({
       candidateId: String(candidate.id || ""),
       assessmentId: String(matched?.id || "")
@@ -13618,6 +13621,11 @@ function PortalApp({ token, onLogout }) {
   async function openSavedAssessment(assessmentInput) {
     const requestedId = String(assessmentInput?.id || "").trim();
     let assessment = assessmentInput;
+    const needsLatestFetch = Boolean(requestedId);
+    if (needsLatestFetch) {
+      setInterviewLatestLoading(true);
+      setStatus("interview", "Loading latest assessment data... please wait before editing.", "ok");
+    }
     // Use the latest saved snapshot for edit-open to avoid stale reopen.
     if (requestedId) {
       try {
@@ -13702,6 +13710,7 @@ function PortalApp({ token, onLogout }) {
     });
     navigate("/interview");
     setStatus("interview", `Opened saved assessment for ${assessment?.candidateName || "candidate"}.`, "ok");
+    if (needsLatestFetch) setInterviewLatestLoading(false);
   }
 
   async function createAssessmentFromCandidate(candidateId) {
@@ -18251,6 +18260,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
   }
 
   function reuseAssessmentAsNew(assessment) {
+    setInterviewLatestLoading(false);
     setInterviewMeta({ candidateId: "", assessmentId: "" });
     setInterviewForm({
       candidateName: assessment?.candidateName || "",
@@ -18289,6 +18299,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
 
   function reuseDatabaseCandidate(candidate) {
     if (!candidate) return;
+    setInterviewLatestLoading(false);
     setInterviewMeta({ candidateId: "", assessmentId: "" });
     setInterviewForm({
       candidateName: candidate?.name || candidate?.candidateName || "",
@@ -20818,6 +20829,12 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                 </div>
               </Section>
 
+              {interviewLatestLoading ? (
+                <div className="status" style={{ marginBottom: 10 }}>
+                  Loading latest assessment data... editing is temporarily locked.
+                </div>
+              ) : null}
+              <fieldset disabled={interviewLatestLoading} style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}>
               <Section kicker="Recruiter Inputs" title="Draft Notes">
                 <form className="form-grid two-col" onSubmit={(e) => { e.preventDefault(); }}>
                   {[["candidateName", "Candidate name"], ["phoneNumber", "Phone"], ["emailId", "Email", "email"], ["linkedin", "LinkedIn"], ["location", "Location"], ["currentCompany", "Current company"], ["currentDesignation", "Current designation"], ["totalExperience", "Total experience"], ["relevantExperience", "Relevant experience"], ["highestEducation", "Qualification"]].map(([name, label, type]) => (
@@ -20927,6 +20944,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
 
                 </div>
               </Section>
+              </fieldset>
 
               <Section kicker="CV Upload" title="Candidate CV Storage">
                 <div className="cv-analysis-box">
@@ -21001,11 +21019,11 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
 	                    </select>
 	                  </label>
 	                  <button onClick={() => void copyInterviewTracker()}>Copy tracker</button>
-	                  {interviewMeta.candidateId && !interviewMeta.assessmentId ? <button onClick={() => void saveInterviewDraft()}>Save draft</button> : null}
-	                  <button onClick={() => void saveAssessment()}>{interviewMeta.assessmentId ? "Save assessment" : "Create assessment"}</button>
+	                  {interviewMeta.candidateId && !interviewMeta.assessmentId ? <button disabled={interviewLatestLoading} onClick={() => void saveInterviewDraft()}>Save draft</button> : null}
+	                  <button disabled={interviewLatestLoading} onClick={() => void saveAssessment()}>{interviewMeta.assessmentId ? "Save assessment" : "Create assessment"}</button>
 	                  <button onClick={() => sendInterviewToSheets()}>Send to Sheets</button>
 	                  <button onClick={() => exportInterviewAll()}>Export all</button>
-	                    <button className="ghost-btn" onClick={() => { setEditCautiousIndicators(false); setInterviewMeta({ candidateId: "", assessmentId: "" }); setInterviewForm({ candidateName: "", phoneNumber: "", emailId: "", linkedin: "", location: "", gender: "", currentCtc: "", expectedCtc: "", noticePeriod: "", offerInHand: "", lwdOrDoj: "", currentCompany: "", currentDesignation: "", totalExperience: "", relevantExperience: "", currentOrgTenure: "", experienceTimeline: "", reasonForChange: "", cautiousIndicators: "", clientName: "", jdTitle: "", pipelineStage: "Under Interview Process", candidateStatus: "Screening in progress", followUpAt: "", interviewAt: "", recruiterNotes: "", callbackNotes: "", otherPointers: "", tags: "", jdScreeningAnswers: {}, cvAnalysis: null, cvAnalysisApplied: false, statusHistory: [] }); setStatus("interview", ""); }}>Clear draft</button>
+	                    <button className="ghost-btn" onClick={() => { setEditCautiousIndicators(false); setInterviewLatestLoading(false); setInterviewMeta({ candidateId: "", assessmentId: "" }); setInterviewForm({ candidateName: "", phoneNumber: "", emailId: "", linkedin: "", location: "", gender: "", currentCtc: "", expectedCtc: "", noticePeriod: "", offerInHand: "", lwdOrDoj: "", currentCompany: "", currentDesignation: "", totalExperience: "", relevantExperience: "", currentOrgTenure: "", experienceTimeline: "", reasonForChange: "", cautiousIndicators: "", clientName: "", jdTitle: "", pipelineStage: "Under Interview Process", candidateStatus: "Screening in progress", followUpAt: "", interviewAt: "", recruiterNotes: "", callbackNotes: "", otherPointers: "", tags: "", jdScreeningAnswers: {}, cvAnalysis: null, cvAnalysisApplied: false, statusHistory: [] }); setStatus("interview", ""); }}>Clear draft</button>
 	                </div>
 	              </Section>
             </div>
