@@ -163,6 +163,9 @@ const PORT = Number(process.env.PORT || 8787);
 const WHATSAPP_VERIFY_TOKEN = String(process.env.WHATSAPP_VERIFY_TOKEN || "").trim();
 const QUICK_CAPTURE_PUBLIC_DIR = path.join(__dirname, "public", "quick-capture");
 const ROOT_PUBLIC_DIR = path.join(__dirname, "public");
+const BRANDED_CV_RESPONSE_CACHE_TTL_MS = 1000 * 60 * 10;
+const BRANDED_CV_RESPONSE_CACHE_MAX_ENTRIES = 30;
+const BRANDED_CV_RESPONSE_CACHE = new Map();
 const MONTH_INDEX = {
   jan: 0,
   feb: 1,
@@ -2182,6 +2185,143 @@ function sendBuffer(arg1, arg2, arg3, arg4, arg5 = {}) {
     ...extras
   }));
   res.end(buffer);
+}
+
+function stableStringifyForCache(value) {
+  const seen = new WeakSet();
+  const normalize = (input) => {
+    if (input === null || input === undefined) return null;
+    if (Buffer.isBuffer(input)) {
+      return {
+        __type: "buffer",
+        sha256: crypto.createHash("sha256").update(input).digest("hex"),
+        length: input.length
+      };
+    }
+    if (input instanceof Date) return input.toISOString();
+    if (Array.isArray(input)) return input.map((item) => normalize(item));
+    if (typeof input === "object") {
+      if (seen.has(input)) return "[Circular]";
+      seen.add(input);
+      const out = {};
+      for (const key of Object.keys(input).sort()) {
+        const normalized = normalize(input[key]);
+        if (normalized !== undefined) out[key] = normalized;
+      }
+      seen.delete(input);
+      return out;
+    }
+    if (typeof input === "bigint") return String(input);
+    if (typeof input === "number" && !Number.isFinite(input)) return String(input);
+    return input;
+  };
+  return JSON.stringify(normalize(value));
+}
+
+function sha256Hex(value = "") {
+  return crypto.createHash("sha256").update(String(value || "")).digest("hex");
+}
+
+function normalizeEtagValue(value = "") {
+  return String(value || "")
+    .trim()
+    .replace(/^W\//i, "")
+    .replace(/^"|"$/g, "");
+}
+
+function requestMatchesEtag(req, etag = "") {
+  const expected = normalizeEtagValue(etag);
+  if (!expected) return false;
+  const header = String(req?.headers?.["if-none-match"] || "").trim();
+  if (!header) return false;
+  const values = header.split(",").map((item) => normalizeEtagValue(item)).filter(Boolean);
+  return values.includes("*") || values.includes(expected);
+}
+
+function pruneBrandedCvResponseCache() {
+  const now = Date.now();
+  for (const [cacheKey, entry] of BRANDED_CV_RESPONSE_CACHE.entries()) {
+    if (!entry || !entry.createdAt || now - Number(entry.createdAt || 0) > BRANDED_CV_RESPONSE_CACHE_TTL_MS) {
+      BRANDED_CV_RESPONSE_CACHE.delete(cacheKey);
+    }
+  }
+  while (BRANDED_CV_RESPONSE_CACHE.size > BRANDED_CV_RESPONSE_CACHE_MAX_ENTRIES) {
+    let oldestKey = null;
+    let oldestTouched = Infinity;
+    for (const [cacheKey, entry] of BRANDED_CV_RESPONSE_CACHE.entries()) {
+      const touched = Number(entry?.lastAccessAt || entry?.createdAt || 0);
+      if (touched < oldestTouched) {
+        oldestTouched = touched;
+        oldestKey = cacheKey;
+      }
+    }
+    if (!oldestKey) break;
+    BRANDED_CV_RESPONSE_CACHE.delete(oldestKey);
+  }
+}
+
+function getBrandedCvResponseFromCache(cacheKey = "") {
+  const key = String(cacheKey || "").trim();
+  if (!key) return null;
+  pruneBrandedCvResponseCache();
+  const entry = BRANDED_CV_RESPONSE_CACHE.get(key) || null;
+  if (!entry) return null;
+  entry.lastAccessAt = Date.now();
+  BRANDED_CV_RESPONSE_CACHE.set(key, entry);
+  return entry;
+}
+
+function setBrandedCvResponseCache(cacheKey = "", value = {}) {
+  const key = String(cacheKey || "").trim();
+  if (!key || !value || !Buffer.isBuffer(value.buffer) || !value.etag) return;
+  BRANDED_CV_RESPONSE_CACHE.set(key, {
+    buffer: value.buffer,
+    etag: String(value.etag || "").trim(),
+    cacheControl: String(value.cacheControl || "private, max-age=0, must-revalidate").trim(),
+    contentType: String(value.contentType || "application/pdf").trim(),
+    contentDisposition: String(value.contentDisposition || "").trim(),
+    brandedFallbackUsed: Boolean(value.brandedFallbackUsed),
+    createdAt: Date.now(),
+    lastAccessAt: Date.now()
+  });
+  pruneBrandedCvResponseCache();
+}
+
+function buildBrandedCvResponseCacheKey(parts = {}) {
+  return sha256Hex(stableStringifyForCache({
+    route: String(parts.route || "").trim(),
+    companyId: String(parts.companyId || "").trim(),
+    candidateId: String(parts.candidateId || "").trim(),
+    assessmentId: String(parts.assessmentId || "").trim(),
+    forceDownload: Boolean(parts.forceDownload),
+    companyName: String(parts.companyName || "").trim(),
+    candidateName: String(parts.candidateName || "").trim(),
+    headerLine: String(parts.headerLine || "").trim(),
+    resumeFormatting: parts.resumeFormatting && typeof parts.resumeFormatting === "object" ? parts.resumeFormatting : {},
+    fileHash: Buffer.isBuffer(parts.fileBuffer) ? sha256Hex(parts.fileBuffer) : String(parts.fileHash || "").trim()
+  }));
+}
+
+function sendConditionalBuffer(arg1, arg2, arg3, arg4, arg5 = {}) {
+  const hasExplicitReq = arguments.length >= 4;
+  const req = hasExplicitReq ? arg1 : null;
+  const res = hasExplicitReq ? arg2 : arg1;
+  const statusCode = hasExplicitReq ? arg3 : arg2;
+  const buffer = hasExplicitReq ? arg4 : arg3;
+  const extras = hasExplicitReq ? { ...(arg5 || {}) } : { ...((arg4 && typeof arg4 === "object") ? arg4 : {}) };
+  const etag = normalizeEtagValue(extras.ETag || extras.etag || "");
+  if (etag) {
+    extras.ETag = `"${etag}"`;
+    if (requestMatchesEtag(req, etag)) {
+      res.writeHead(304, buildResponseHeaders(req, {
+        ...extras,
+        "Content-Length": 0
+      }));
+      res.end();
+      return;
+    }
+  }
+  sendBuffer(req, res, statusCode, buffer, extras);
 }
 
 function serveStaticFile(arg1, arg2, arg3) {
@@ -12689,8 +12829,34 @@ const server = http.createServer(async (req, res) => {
         }
       }
       candidateName = candidateName || "Candidate Name";
+      const pdfBase64Raw = String(body?.pdfBase64 || "").trim();
+      const pdfBufferForCache = Buffer.from(pdfBase64Raw, "base64");
+      const cacheKey = buildBrandedCvResponseCacheKey({
+        route: "/company/resume-formatting/branded-pdf",
+        companyId: String(actor.companyId || "").trim(),
+        candidateId,
+        forceDownload: true,
+        companyName,
+        candidateName,
+        headerLine,
+        resumeFormatting,
+        fileBuffer: pdfBufferForCache,
+        assessmentId: ""
+      });
+      const contentDisposition = `attachment; filename="${(filenameRaw.toLowerCase().endsWith(".pdf") ? filenameRaw : `${filenameRaw}.pdf`).replace(/"/g, "")}"`;
+      const cachedBrandedPdf = getBrandedCvResponseFromCache(cacheKey);
+      if (cachedBrandedPdf?.buffer && cachedBrandedPdf?.etag) {
+        sendConditionalBuffer(req, res, 200, cachedBrandedPdf.buffer, {
+          "Content-Type": cachedBrandedPdf.contentType || "application/pdf",
+          "Content-Disposition": cachedBrandedPdf.contentDisposition || contentDisposition,
+          "Cache-Control": cachedBrandedPdf.cacheControl || "private, max-age=0, must-revalidate",
+          "ETag": cachedBrandedPdf.etag,
+          "X-Branded-Fallback-Used": cachedBrandedPdf.brandedFallbackUsed ? "1" : "0"
+        });
+        return;
+      }
       const brandedPdf = await buildBrandedPdfBuffer({
-        pdfBase64: body?.pdfBase64 || "",
+        pdfBase64: pdfBase64Raw,
         companyName,
         resumeFormatting,
         candidateName,
@@ -12700,9 +12866,21 @@ const server = http.createServer(async (req, res) => {
         console.warn("[branded-cv] branded_fallback_used=true route=/company/resume-formatting/branded-pdf");
       }
       const downloadName = filenameRaw.toLowerCase().endsWith(".pdf") ? filenameRaw : `${filenameRaw}.pdf`;
-      sendBuffer(req, res, 200, brandedPdf.buffer, {
+      const brandedEtag = `"${sha256Hex(brandedPdf.buffer)}"`;
+      const cacheControl = "private, max-age=0, must-revalidate";
+      setBrandedCvResponseCache(cacheKey, {
+        buffer: brandedPdf.buffer,
+        etag: brandedEtag,
+        cacheControl,
+        contentType: "application/pdf",
+        contentDisposition,
+        brandedFallbackUsed: brandedPdf?.brandedFallbackUsed
+      });
+      sendConditionalBuffer(req, res, 200, brandedPdf.buffer, {
         "Content-Type": "application/pdf",
-        "Content-Disposition": `attachment; filename=\"${downloadName.replace(/"/g, "")}\"`,
+        "Content-Disposition": contentDisposition,
+        "Cache-Control": cacheControl,
+        "ETag": brandedEtag,
         "X-Branded-Fallback-Used": brandedPdf?.brandedFallbackUsed ? "1" : "0"
       });
     } catch (error) {
@@ -14866,6 +15044,7 @@ const server = http.createServer(async (req, res) => {
       }
       const file = await loadStoredFile(fileRef);
       const isPdf = String(file.mimeType || "").toLowerCase().includes("pdf") || /\.pdf$/i.test(String(file.filename || ""));
+      const fileEtag = `"${sha256Hex(file.buffer)}"`;
       if (wantBranded) {
         if (!isPdf) throw new Error("Branded CV is available only for PDF files.");
         const brandedCtx = await resolveBrandedCvContext({
@@ -14877,6 +15056,30 @@ const server = http.createServer(async (req, res) => {
         let headerLine = String(brandedCtx.headerLine || "").trim();
         if (!headerLine && requestedHeaderLine) headerLine = requestedHeaderLine;
         const candidateName = String(brandedCtx.candidateName || requestedCandidateName || "").trim() || "Candidate Name";
+        const cacheKey = buildBrandedCvResponseCacheKey({
+          route: "/company/candidates/:id/cv",
+          companyId: String(actor.companyId || "").trim(),
+          candidateId,
+          forceDownload,
+          companyName: brandedCtx.companyName,
+          candidateName,
+          headerLine,
+          resumeFormatting: brandedCtx.resumeFormatting,
+          fileBuffer: file.buffer
+        });
+        const brandedName = `${toSafeCvFilenameBase(candidateName)}_CV.pdf`;
+        const contentDisposition = `${forceDownload ? "attachment" : "inline"}; filename="${brandedName.replace(/"/g, "")}"`;
+        const cachedBrandedPdf = getBrandedCvResponseFromCache(cacheKey);
+        if (cachedBrandedPdf?.buffer && cachedBrandedPdf?.etag) {
+          sendConditionalBuffer(req, res, 200, cachedBrandedPdf.buffer, {
+            "Content-Type": cachedBrandedPdf.contentType || "application/pdf",
+            "Content-Disposition": cachedBrandedPdf.contentDisposition || contentDisposition,
+            "Cache-Control": cachedBrandedPdf.cacheControl || "private, max-age=0, must-revalidate",
+            "ETag": cachedBrandedPdf.etag,
+            "X-Branded-Fallback-Used": cachedBrandedPdf.brandedFallbackUsed ? "1" : "0"
+          });
+          return;
+        }
         const brandedPdf = await buildBrandedPdfBuffer({
           pdfBase64: file.buffer.toString("base64"),
           companyName: brandedCtx.companyName,
@@ -14887,19 +15090,31 @@ const server = http.createServer(async (req, res) => {
         if (brandedPdf?.brandedFallbackUsed) {
           console.warn("[branded-cv] branded_fallback_used=true route=/company/candidates/cv");
         }
-        const brandedName = `${toSafeCvFilenameBase(candidateName)}_CV.pdf`;
-        sendBuffer(req, res, 200, brandedPdf.buffer, {
+        const brandedEtag = `"${sha256Hex(brandedPdf.buffer)}"`;
+        const cacheControl = "private, max-age=0, must-revalidate";
+        setBrandedCvResponseCache(cacheKey, {
+          buffer: brandedPdf.buffer,
+          etag: brandedEtag,
+          cacheControl,
+          contentType: "application/pdf",
+          contentDisposition,
+          brandedFallbackUsed: brandedPdf?.brandedFallbackUsed
+        });
+        sendConditionalBuffer(req, res, 200, brandedPdf.buffer, {
           "Content-Type": "application/pdf",
-          "Content-Disposition": `${forceDownload ? "attachment" : "inline"}; filename="${brandedName.replace(/"/g, "")}"`,
-          "Cache-Control": "no-store",
+          "Content-Disposition": contentDisposition,
+          "Cache-Control": cacheControl,
+          "ETag": brandedEtag,
           "X-Branded-Fallback-Used": brandedPdf?.brandedFallbackUsed ? "1" : "0"
         });
         return;
       }
       const downloadName = String(file.filename || "resume.pdf").replace(/"/g, "");
-      sendBuffer(req, res, 200, file.buffer, {
+      sendConditionalBuffer(req, res, 200, file.buffer, {
         "Content-Type": String(file.mimeType || "application/octet-stream").trim(),
-        "Content-Disposition": `${forceDownload ? "attachment" : "inline"}; filename="${downloadName}"`
+        "Content-Disposition": `${forceDownload ? "attachment" : "inline"}; filename="${downloadName}"`,
+        "Cache-Control": "private, max-age=0, must-revalidate",
+        "ETag": fileEtag
       });
     } catch (error) {
       sendJson(res, 400, { ok: false, error: String(error.message || error) });
@@ -14921,6 +15136,7 @@ const server = http.createServer(async (req, res) => {
         filename: payload.filename,
         mimeType: payload.mimeType
       });
+      const fileEtag = `"${sha256Hex(file.buffer)}"`;
       if (wantBranded && String(file.mimeType || payload.mimeType || "").toLowerCase().includes("pdf")) {
         const scopedCompanyId = String(payload.companyId || "").trim();
         let resolvedCandidateName = String(payload.candidateName || "Candidate Name").trim() || "Candidate Name";
@@ -14948,6 +15164,31 @@ const server = http.createServer(async (req, res) => {
             ? sharedSettings.resumeFormatting
             : {};
         }
+        const brandedName = `${toSafeCvFilenameBase(resolvedCandidateName)}_CV.pdf`;
+        const cacheKey = buildBrandedCvResponseCacheKey({
+          route: "/shared/cv",
+          companyId: scopedCompanyId,
+          candidateId: payloadCandidateId,
+          assessmentId: String(payload.assessmentId || "").trim(),
+          forceDownload: false,
+          companyName: String(payload.companyName || "Your Company").trim() || "Your Company",
+          candidateName: resolvedCandidateName,
+          headerLine: resolvedHeaderLine,
+          resumeFormatting: resolvedResumeFormatting,
+          fileBuffer: file.buffer
+        });
+        const contentDisposition = `inline; filename="${brandedName.replace(/"/g, "")}"`;
+        const cachedBrandedPdf = getBrandedCvResponseFromCache(cacheKey);
+        if (cachedBrandedPdf?.buffer && cachedBrandedPdf?.etag) {
+          sendConditionalBuffer(req, res, 200, cachedBrandedPdf.buffer, {
+            "Content-Type": cachedBrandedPdf.contentType || "application/pdf",
+            "Content-Disposition": cachedBrandedPdf.contentDisposition || contentDisposition,
+            "Cache-Control": cachedBrandedPdf.cacheControl || "private, max-age=0, must-revalidate",
+            "ETag": cachedBrandedPdf.etag,
+            "X-Branded-Fallback-Used": cachedBrandedPdf.brandedFallbackUsed ? "1" : "0"
+          });
+          return;
+        }
         const brandedPdf = await buildBrandedPdfBuffer({
           pdfBase64: file.buffer.toString("base64"),
           companyName: String(payload.companyName || "Your Company").trim() || "Your Company",
@@ -14958,20 +15199,31 @@ const server = http.createServer(async (req, res) => {
         if (brandedPdf?.brandedFallbackUsed) {
           console.warn("[branded-cv] branded_fallback_used=true route=/shared/cv");
         }
-        const brandedName = `${toSafeCvFilenameBase(resolvedCandidateName)}_CV.pdf`;
-        sendBuffer(req, res, 200, brandedPdf.buffer, {
+        const brandedEtag = `"${sha256Hex(brandedPdf.buffer)}"`;
+        const cacheControl = "private, max-age=0, must-revalidate";
+        setBrandedCvResponseCache(cacheKey, {
+          buffer: brandedPdf.buffer,
+          etag: brandedEtag,
+          cacheControl,
+          contentType: "application/pdf",
+          contentDisposition,
+          brandedFallbackUsed: brandedPdf?.brandedFallbackUsed
+        });
+        sendConditionalBuffer(req, res, 200, brandedPdf.buffer, {
           "Content-Type": "application/pdf",
-          "Content-Disposition": `inline; filename="${brandedName.replace(/"/g, "")}"`,
-          "Cache-Control": "no-store",
+          "Content-Disposition": contentDisposition,
+          "Cache-Control": cacheControl,
+          "ETag": brandedEtag,
           "X-Branded-Fallback-Used": brandedPdf?.brandedFallbackUsed ? "1" : "0"
         });
         return;
       }
       const downloadName = String(file.filename || payload.filename || "resume.pdf").replace(/"/g, "");
-      sendBuffer(req, res, 200, file.buffer, {
+      sendConditionalBuffer(req, res, 200, file.buffer, {
         "Content-Type": String(file.mimeType || payload.mimeType || "application/octet-stream").trim(),
         "Content-Disposition": `inline; filename="${downloadName}"`,
-        "Cache-Control": "private, max-age=300"
+        "Cache-Control": "private, max-age=0, must-revalidate",
+        "ETag": fileEtag
       });
     } catch (error) {
       sendJson(res, 400, { ok: false, error: String(error.message || error) });
