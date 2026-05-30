@@ -9600,7 +9600,19 @@ function PortalApp({ token, onLogout }) {
     if (!safeId || !token) return false;
     const rows = await api(`/candidates?id=${encodeURIComponent(safeId)}&limit=1`, token).catch(() => []);
     const candidate = Array.isArray(rows) && rows.length ? rows[0] : null;
-    if (!candidate?.id) return false;
+    if (!candidate?.id) {
+      // Deletion/tombstone case: remove stale local row when the candidate no longer exists.
+      setState((current) => ({
+        ...current,
+        candidates: Array.isArray(current.candidates)
+          ? current.candidates.filter((item) => String(item?.id || "").trim() !== safeId)
+          : current.candidates,
+        databaseCandidates: Array.isArray(current.databaseCandidates)
+          ? current.databaseCandidates.filter((item) => String(item?.id || "").trim() !== safeId)
+          : current.databaseCandidates
+      }));
+      return false;
+    }
     upsertCandidateInState(candidate);
     return true;
   }
@@ -9609,7 +9621,16 @@ function PortalApp({ token, onLogout }) {
     const safeId = String(assessmentId || "").trim();
     if (!safeId || !token) return false;
     const assessment = await api(`/company/assessments/by-id?assessmentId=${encodeURIComponent(safeId)}`, token).catch(() => null);
-    if (!assessment?.id) return false;
+    if (!assessment?.id) {
+      // Deletion/tombstone case: remove stale local row when server no longer has this id.
+      setState((current) => ({
+        ...current,
+        assessments: Array.isArray(current.assessments)
+          ? current.assessments.filter((item) => String(item?.id || "").trim() !== safeId)
+          : current.assessments
+      }));
+      return false;
+    }
     upsertAssessmentInState(assessment);
     return true;
   }
@@ -9696,7 +9717,7 @@ function PortalApp({ token, onLogout }) {
 
   useEffect(() => {
     if (!token) return undefined;
-    const POLL_MS = 12000;
+    const POLL_MS = 7000;
     const MAX_EVENTS_PER_CYCLE = 20;
     let timer = null;
     let stopped = false;

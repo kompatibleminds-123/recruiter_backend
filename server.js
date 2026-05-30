@@ -16663,6 +16663,13 @@ const server = http.createServer(async (req, res) => {
       const actor = await requireSessionUser(getBearerToken(req));
       const candidateId = String(requestUrl.searchParams.get("id") || "").trim();
       const result = await deleteCandidate(candidateId, { companyId: actor.companyId });
+      await emitCompanyChangeEventSafe({
+        companyId: actor.companyId,
+        entity: "candidate",
+        entityId: candidateId,
+        updatedAt: new Date().toISOString(),
+        impactScopes: ["captured_notes", "candidates", "dashboard", "reports", "assessments"]
+      });
       sendJson(res, 200, { ok: true, result });
     } catch (error) {
       sendJson(res, 400, { ok: false, error: String(error.message || error) });
