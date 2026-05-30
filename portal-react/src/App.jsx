@@ -11595,10 +11595,16 @@ function PortalApp({ token, onLogout }) {
       const time = Date.parse(String(value || ""));
       return Number.isFinite(time) ? time : 0;
     };
-    const activityTime = (item) => Math.max(parseTime(item?.created_at), parseTime(item?.assigned_at));
+    const activityTime = (item) => Math.max(
+      parseTime(item?.updated_at),
+      parseTime(item?.updatedAt),
+      parseTime(item?.created_at),
+      parseTime(item?.createdAt),
+      parseTime(item?.assigned_at)
+    );
     const activityDateKey = (item) => {
       const time = activityTime(item);
-      if (!time) return item?.created_at ? String(item.created_at).slice(0, 10) : "";
+      if (!time) return item?.updated_at ? String(item.updated_at).slice(0, 10) : (item?.created_at ? String(item.created_at).slice(0, 10) : "");
       return new Date(time).toISOString().slice(0, 10);
     };
     const isAssignedToCurrentUser = (item) => {
@@ -11703,7 +11709,7 @@ function PortalApp({ token, onLogout }) {
     return filtered.sort((a, b) => {
       const delta = activityTime(b) - activityTime(a);
       if (delta !== 0) return delta;
-      return String(b?.created_at || "").localeCompare(String(a?.created_at || ""));
+      return String(b?.updated_at || b?.updatedAt || b?.created_at || b?.createdAt || "").localeCompare(String(a?.updated_at || a?.updatedAt || a?.created_at || a?.createdAt || ""));
     });
   }, [candidateFilters, capturedAssessmentMap, capturedNotesUniverse, state.user, state.users, resolveCapturedAssessment, resolveCanonicalJdTitle]);
   const filteredApplicants = useMemo(() => {
