@@ -7955,7 +7955,7 @@ function PortalApp({ token, onLogout }) {
   const [clientFeedbackItem, setClientFeedbackItem] = useState(null);
 	const [attempts, setAttempts] = useState([]);
 	const workspaceRefreshInFlightRef = useRef(false);
-	const workspaceRefreshPendingRef = useRef(false);
+  const workspaceRefreshPendingRef = useRef(false);
 	const lastWorkspaceRefreshAtRef = useRef(0);
   const lastWorkspaceRefreshByPathRef = useRef({});
   const workspaceLoadSeqRef = useRef(0);
@@ -7963,6 +7963,7 @@ function PortalApp({ token, onLogout }) {
   const candidatesSliceLoadSeqRef = useRef(0);
   const assessmentsSliceLoadSeqRef = useRef(0);
   const assessmentCaptureSyncAtRef = useRef(0);
+  const [workspaceDataReady, setWorkspaceDataReady] = useState(false);
   // Prevent background refresh from clobbering in-flight actions (e.g. SMTP send).
   const suspendWorkspaceRefreshRef = useRef(false);
 	const loadWorkspaceRef = useRef(null);
@@ -9318,6 +9319,7 @@ function PortalApp({ token, onLogout }) {
     initialWorkspaceLoadDoneRef.current = true;
     const now = Date.now();
     lastWorkspaceRefreshAtRef.current = now;
+    setWorkspaceDataReady(false);
     void loadWorkspace({
       forceFiveTabsRefresh: true,
       preloadAllTabs: true,
@@ -9326,7 +9328,9 @@ function PortalApp({ token, onLogout }) {
       includeEmployeeUsers: true,
       includeSharedPresets: true,
       includeEmailSettings: true
-    }).catch((error) => setStatus("workspace", String(error?.message || error), "error"));
+    }).catch((error) => setStatus("workspace", String(error?.message || error), "error")).finally(() => {
+      setWorkspaceDataReady(true);
+    });
   }, [token]);
 
   async function syncSharedSettingsFromServer(options = {}) {
@@ -11599,6 +11603,8 @@ function PortalApp({ token, onLogout }) {
       archived: archivedCount
     };
   }, [assessmentFilters, state.assessments, state.candidates, resolveCanonicalJdTitle]);
+
+  const renderLoadedMetricValue = (value) => (workspaceDataReady ? value : "…");
 
   const capturedCandidates = useMemo(() => {
     const queryText = candidateFilters.q.trim().toLowerCase();
@@ -19751,17 +19757,17 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                 <label className="full"><span>Search</span><input placeholder="Search by candidate, phone, email, JD..." value={applicantFilters.q} onChange={(e) => setApplicantFilters((current) => ({ ...current, q: e.target.value }))} /></label>
               </div>
               <div className="metric-grid metric-grid--tight captured-metric-row" style={{ marginTop: 12 }}>
-                <div className="metric-card compact-metric"><div className="metric-label captured-metric-label"><span className="captured-metric-icon">🗓</span>Applied today</div><div className="metric-value">{applicantStats.today}</div></div>
-                <div className="metric-card compact-metric"><div className="metric-label captured-metric-label"><span className="captured-metric-icon">🗂</span>Total applied</div><div className="metric-value">{applicantStats.total || 0}</div></div>
-                <div className="metric-card compact-metric"><div className="metric-label captured-metric-label"><span className="captured-metric-icon">👥</span>Active</div><div className="metric-value">{applicantStats.active}</div></div>
-                <div className="metric-card compact-metric"><div className="metric-label captured-metric-label"><span className="captured-metric-icon">✅</span>Converted</div><div className="metric-value">{applicantStats.converted}</div></div>
+                <div className="metric-card compact-metric"><div className="metric-label captured-metric-label"><span className="captured-metric-icon">🗓</span>Applied today</div><div className="metric-value">{renderLoadedMetricValue(applicantStats.today)}</div></div>
+                <div className="metric-card compact-metric"><div className="metric-label captured-metric-label"><span className="captured-metric-icon">🗂</span>Total applied</div><div className="metric-value">{renderLoadedMetricValue(applicantStats.total || 0)}</div></div>
+                <div className="metric-card compact-metric"><div className="metric-label captured-metric-label"><span className="captured-metric-icon">👥</span>Active</div><div className="metric-value">{renderLoadedMetricValue(applicantStats.active)}</div></div>
+                <div className="metric-card compact-metric"><div className="metric-label captured-metric-label"><span className="captured-metric-icon">✅</span>Converted</div><div className="metric-value">{renderLoadedMetricValue(applicantStats.converted)}</div></div>
               </div>
               <div className="form-grid three-col" style={{ marginTop: 10 }}>
                 <label><span>Date from</span><input type="date" value={applicantFilters.dateFrom} onChange={(e) => setApplicantFilters((current) => ({ ...current, dateFrom: e.target.value }))} /></label>
                 <label><span>Date to</span><input type="date" value={applicantFilters.dateTo} onChange={(e) => setApplicantFilters((current) => ({ ...current, dateTo: e.target.value }))} /></label>
               </div>
               <div className="muted" style={{ marginTop: 8 }}>
-                Inactive: {applicantStats.inactive || 0} (hidden). Total: {applicantStats.total || 0}
+                Inactive: {renderLoadedMetricValue(applicantStats.inactive || 0)} (hidden). Total: {renderLoadedMetricValue(applicantStats.total || 0)}
               </div>
               <div className="captured-filter-grid">
                 <MultiSelectDropdown label="Clients" options={applicantOptions.clients} selected={applicantFilters.clients} onToggle={(value) => setApplicantFilters((current) => ({ ...current, clients: value === "__all__" ? [] : current.clients.includes(value) ? current.clients.filter((item) => item !== value) : [...current.clients, value] }))} />
@@ -19800,7 +19806,8 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                 ) : null}
               </div>
               <div className="stack-list captured-notes-list">
-                {!visibleApplicants.length ? <div className="empty-state">No applied candidates right now.</div> : pagedApplicants.map((item) => (
+                {workspaceDataReady ? (
+                  !visibleApplicants.length ? <div className="empty-state">No applied candidates right now.</div> : pagedApplicants.map((item) => (
                   <article className="item-card compact-card captured-note-card" key={item.id}>
                     {String(state.user?.role || "").toLowerCase() === "admin" ? (
                       <label className="captured-top-select captured-top-select--card">
@@ -19972,7 +19979,8 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                       </details>
                     ) : null}
                   </article>
-                ))}
+                  ))
+                ) : <div className="empty-state">Loading applied candidates...</div>}
               </div>
               {visibleApplicants.length > applicantsVisibleCount ? (
                 <div className="button-row tight">
@@ -20018,11 +20026,11 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                 </label>
               </div>
               <div className="metric-grid metric-grid--tight captured-metric-row">
-                <div className="metric-card compact-metric"><div className="metric-label captured-metric-label"><span className="captured-metric-icon">🗓</span>Today</div><div className="metric-value">{capturedNotesStats.today}</div></div>
-                <div className="metric-card compact-metric"><div className="metric-label captured-metric-label"><span className="captured-metric-icon">🗂</span>Total notes captured</div><div className="metric-value">{capturedNotesStats.total}</div></div>
-                <div className="metric-card compact-metric"><div className="metric-label captured-metric-label"><span className="captured-metric-icon">👥</span>Active</div><div className="metric-value">{capturedNotesStats.active}</div></div>
-                <div className="metric-card compact-metric"><div className="metric-label captured-metric-label"><span className="captured-metric-icon">⏳</span>Inactive</div><div className="metric-value">{capturedNotesStats.inactive || 0}</div></div>
-                <div className="metric-card compact-metric"><div className="metric-label captured-metric-label"><span className="captured-metric-icon">✅</span>Converted</div><div className="metric-value">{capturedNotesStats.converted}</div></div>
+                <div className="metric-card compact-metric"><div className="metric-label captured-metric-label"><span className="captured-metric-icon">🗓</span>Today</div><div className="metric-value">{renderLoadedMetricValue(capturedNotesStats.today)}</div></div>
+                <div className="metric-card compact-metric"><div className="metric-label captured-metric-label"><span className="captured-metric-icon">🗂</span>Total notes captured</div><div className="metric-value">{renderLoadedMetricValue(capturedNotesStats.total)}</div></div>
+                <div className="metric-card compact-metric"><div className="metric-label captured-metric-label"><span className="captured-metric-icon">👥</span>Active</div><div className="metric-value">{renderLoadedMetricValue(capturedNotesStats.active)}</div></div>
+                <div className="metric-card compact-metric"><div className="metric-label captured-metric-label"><span className="captured-metric-icon">⏳</span>Inactive</div><div className="metric-value">{renderLoadedMetricValue(capturedNotesStats.inactive || 0)}</div></div>
+                <div className="metric-card compact-metric"><div className="metric-label captured-metric-label"><span className="captured-metric-icon">✅</span>Converted</div><div className="metric-value">{renderLoadedMetricValue(capturedNotesStats.converted)}</div></div>
               </div>
               <div className="form-grid three-col" style={{ marginTop: 10 }}>
                 <label><span>Date from</span><input type="date" value={candidateFilters.dateFrom} onChange={(e) => setCandidateFilters((c) => ({ ...c, dateFrom: e.target.value }))} /></label>
@@ -20078,9 +20086,9 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                       ) : null}
                     </>
                   ) : null}
-                </div>
-                <div className="stack-list captured-notes-list">
-                {!capturedCandidates.length ? <div className="empty-state">No captured notes or recruiter-owned candidates yet.</div> : capturedCandidates.map((item) => {
+              </div>
+              <div className="stack-list captured-notes-list">
+                {workspaceDataReady ? (!capturedCandidates.length ? <div className="empty-state">No captured notes or recruiter-owned candidates yet.</div> : capturedCandidates.map((item) => {
                   const matchedAssessment = resolveCapturedAssessment(item);
                   const statusState = normalizedAssessmentState(matchedAssessment, item);
                   const latestAttemptLine = extractLatestAttemptLine(item.last_contact_notes || "");
@@ -20298,7 +20306,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                       </div>
                     </article>
                   );
-                })}
+                })) : <div className="empty-state">Loading captured notes...</div>}
               </div>
             </Section>
           } />
@@ -20310,10 +20318,10 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                 <label className="full"><span>Search</span><input placeholder="Search by candidate, phone, email, JD..." value={assessmentFilters.q} onChange={(e) => setAssessmentFilters((current) => ({ ...current, q: e.target.value }))} /></label>
               </div>
               <div className="metric-grid metric-grid--tight">
-                <div className="metric-card compact-metric"><div className="metric-label">Today</div><div className="metric-value">{assessmentStats.today}</div></div>
-                <div className="metric-card compact-metric"><div className="metric-label">Total assessments</div><div className="metric-value">{assessmentStats.total}</div></div>
-                <div className="metric-card compact-metric"><div className="metric-label">Active</div><div className="metric-value">{assessmentStats.active}</div></div>
-                <div className="metric-card compact-metric"><div className="metric-label">Archived</div><div className="metric-value">{assessmentStats.archived}</div></div>
+                <div className="metric-card compact-metric"><div className="metric-label">Today</div><div className="metric-value">{renderLoadedMetricValue(assessmentStats.today)}</div></div>
+                <div className="metric-card compact-metric"><div className="metric-label">Total assessments</div><div className="metric-value">{renderLoadedMetricValue(assessmentStats.total)}</div></div>
+                <div className="metric-card compact-metric"><div className="metric-label">Active</div><div className="metric-value">{renderLoadedMetricValue(assessmentStats.active)}</div></div>
+                <div className="metric-card compact-metric"><div className="metric-label">Archived</div><div className="metric-value">{renderLoadedMetricValue(assessmentStats.archived)}</div></div>
               </div>
               <div className="form-grid three-col" style={{ marginTop: 10 }}>
                 <label><span>Date from</span><input type="date" value={assessmentFilters.dateFrom} onChange={(e) => setAssessmentFilters((current) => ({ ...current, dateFrom: e.target.value }))} /></label>
@@ -20352,7 +20360,8 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
               </div>
               <div className="status-note">Selected for client share: {selectedAssessmentIds.length}</div>
               <div className="stack-list">
-                {!(Array.isArray(filteredAssessments) && filteredAssessments.length) ? <div className="empty-state">No assessments saved yet.</div> : filteredAssessments.map((item) => (
+                {workspaceDataReady ? (
+                  !(Array.isArray(filteredAssessments) && filteredAssessments.length) ? <div className="empty-state">No assessments saved yet.</div> : filteredAssessments.map((item) => (
                   <article className={`item-card compact-card assessment-card ${selectedAssessmentIds.includes(String(item.id)) ? "selected-card" : ""}`} key={item.id}>
                     {(() => {
                       const latestStatusPreview = getLatestAssessmentStatusPreview(item);
@@ -20591,7 +20600,8 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                       );
                     })()}
                   </article>
-                ))}
+                  ))
+                ) : <div className="empty-state">Loading assessments...</div>}
               </div>
             </Section>
           } />
