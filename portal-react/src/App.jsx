@@ -9778,6 +9778,8 @@ function PortalApp({ token, onLogout }) {
         const assessmentIds = new Set();
         let needsSettingsSync = false;
         let needsSummarySync = false;
+        let needsCandidateSliceSync = false;
+        let needsAssessmentSliceSync = false;
         let latestCursor = since;
 
         events.forEach((event) => {
@@ -9786,9 +9788,21 @@ function PortalApp({ token, onLogout }) {
           const updatedAt = String(event?.updatedAt || "").trim();
           if (updatedAt && (!latestCursor || updatedAt > latestCursor)) latestCursor = updatedAt;
           const scopes = Array.isArray(event?.impactScopes) ? event.impactScopes.map((s) => String(s || "").trim().toLowerCase()) : [];
-          if (entity === "candidate" && entityId) candidateIds.add(entityId);
-          if (entity === "assessment" && entityId) assessmentIds.add(entityId);
+          if (entity === "candidate" && entityId) {
+            candidateIds.add(entityId);
+            needsCandidateSliceSync = true;
+            needsAssessmentSliceSync = true;
+          }
+          if (entity === "assessment" && entityId) {
+            assessmentIds.add(entityId);
+            needsCandidateSliceSync = true;
+            needsAssessmentSliceSync = true;
+          }
           if (entity === "settings" || scopes.includes("settings")) needsSettingsSync = true;
+          if (scopes.includes("captured_notes") || scopes.includes("assessments") || scopes.includes("candidates")) {
+            needsCandidateSliceSync = true;
+            needsAssessmentSliceSync = true;
+          }
           if (scopes.includes("dashboard") || scopes.includes("reports")) needsSummarySync = true;
         });
 
@@ -9800,6 +9814,13 @@ function PortalApp({ token, onLogout }) {
           ...candidateBatch.map((id) => fetchCandidateByIdAndPatch(id)),
           ...assessmentBatch.map((id) => fetchAssessmentByIdAndPatch(id))
         ]);
+
+        if (needsCandidateSliceSync || needsAssessmentSliceSync) {
+          await Promise.all([
+            needsCandidateSliceSync ? reloadCandidatesSlice() : Promise.resolve(),
+            needsAssessmentSliceSync ? reloadAssessmentsSlice() : Promise.resolve()
+          ]).catch(() => {});
+        }
 
         if (needsSettingsSync) {
           const activePath = String(location?.pathname || "");
@@ -12962,6 +12983,7 @@ function PortalApp({ token, onLogout }) {
         databaseCandidates: applyPatch(current.databaseCandidates)
       };
     });
+    void Promise.all([reloadCandidatesSlice(), reloadAssessmentsSlice()]).catch(() => {});
     setStatus("captured", "Candidate hidden from captured notes.", "ok");
   }
 
@@ -12978,6 +13000,7 @@ function PortalApp({ token, onLogout }) {
         databaseCandidates: applyPatch(current.databaseCandidates)
       };
     });
+    void Promise.all([reloadCandidatesSlice(), reloadAssessmentsSlice()]).catch(() => {});
     setStatus("captured", "Candidate restored to active captured notes.", "ok");
   }
 
@@ -13032,6 +13055,7 @@ function PortalApp({ token, onLogout }) {
         })
         : current.databaseCandidates
     }));
+    void Promise.all([reloadCandidatesSlice(), reloadAssessmentsSlice()]).catch(() => {});
     void refreshWorkspaceSilently("post-delete");
     setStatus("captured", "Candidate deleted.", "ok");
   }
@@ -13966,11 +13990,12 @@ function PortalApp({ token, onLogout }) {
       return;
     }
     const candidateName = candidate?.name || sourceApplicant?.candidateName || "";
-    const matched = (state.assessments || []).find((item) =>
-      String(item.candidateId || item.candidate_id || "") === String(candidate?.id || sourceApplicant?.id || "")
-    );
-    if (matched) {
-      openSavedAssessment(matched);
+    const canonicalAssessmentId = String(candidate?.assessment_id || candidate?.assessmentId || "").trim();
+    const canonicalAssessment = canonicalAssessmentId
+      ? (state.assessments || []).find((item) => String(item?.id || "").trim() === canonicalAssessmentId) || null
+      : null;
+    if (canonicalAssessment) {
+      openSavedAssessment(canonicalAssessment);
       return;
     }
 
@@ -14064,6 +14089,7 @@ function PortalApp({ token, onLogout }) {
       });
       navigate("/assessments");
       setStatus("assessments", `Converted ${candidateName || "candidate"} into assessment.`, "ok");
+      void Promise.all([reloadCandidatesSlice(), reloadAssessmentsSlice()]).catch(() => {});
       // Skip immediate workspace refresh to keep viewport stable after conversion.
     } catch (error) {
       setStatus(statusKey, String(error?.message || error), "error");
@@ -18345,6 +18371,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
         ? current.assessments.filter((item) => String(item?.id || "") !== String(assessment?.id || ""))
         : current.assessments
     }));
+    void Promise.all([reloadCandidatesSlice(), reloadAssessmentsSlice()]).catch(() => {});
     void refreshWorkspaceSilently("post-delete");
     setStatus("assessments", "Assessment deleted.", "ok");
   }
@@ -18440,6 +18467,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
           ? current.assessments.filter((item) => String(item?.id || "") !== assessmentId)
           : current.assessments
       }));
+      void Promise.all([reloadCandidatesSlice(), reloadAssessmentsSlice()]).catch(() => {});
       navigate("/captured-notes");
       setStatus("captured", "Moved back to Captured.", "ok");
       void refreshWorkspaceSilently("post-delete");
