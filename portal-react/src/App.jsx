@@ -9577,6 +9577,10 @@ function PortalApp({ token, onLogout }) {
     const safeId = String(savedCandidate?.id || "").trim();
     if (!safeId) return;
     setState((current) => {
+      const existingCandidate = [...(Array.isArray(current.candidates) ? current.candidates : []), ...(Array.isArray(current.databaseCandidates) ? current.databaseCandidates : [])]
+        .find((item) => String(item?.id || "").trim() === safeId) || null;
+      const nextAssessmentId = String(savedCandidate?.assessment_id || savedCandidate?.assessmentId || "").trim();
+      const prevAssessmentId = String(existingCandidate?.assessment_id || existingCandidate?.assessmentId || "").trim();
       const mergeById = (items) => {
         const rows = Array.isArray(items) ? [...items] : [];
         const ix = rows.findIndex((item) => String(item?.id || "").trim() === safeId);
@@ -9587,10 +9591,31 @@ function PortalApp({ token, onLogout }) {
         rows.unshift(savedCandidate);
         return rows;
       };
+      const shouldRemoveLinkedAssessment =
+        Boolean(prevAssessmentId)
+        && !nextAssessmentId
+        && prevAssessmentId !== nextAssessmentId;
+      const removeLinkedAssessment = (items) => {
+        if (!shouldRemoveLinkedAssessment || !Array.isArray(items)) return items;
+        return items.filter((item) => {
+          const assessmentId = String(item?.id || "").trim();
+          const itemCandidateId = String(item?.candidateId || item?.candidate_id || "").trim();
+          return assessmentId !== prevAssessmentId && itemCandidateId !== safeId;
+        });
+      };
       return {
         ...current,
-        candidates: mergeById(current.candidates),
-        databaseCandidates: mergeById(current.databaseCandidates)
+        candidates: removeLinkedAssessment(mergeById(current.candidates)),
+        databaseCandidates: removeLinkedAssessment(mergeById(current.databaseCandidates)),
+        assessments: shouldRemoveLinkedAssessment
+          ? Array.isArray(current.assessments)
+            ? current.assessments.filter((item) => {
+                const assessmentId = String(item?.id || "").trim();
+                const itemCandidateId = String(item?.candidateId || item?.candidate_id || "").trim();
+                return assessmentId !== prevAssessmentId && itemCandidateId !== safeId;
+              })
+            : current.assessments
+          : current.assessments
       };
     });
   }
@@ -9602,6 +9627,9 @@ function PortalApp({ token, onLogout }) {
     const candidate = Array.isArray(rows) && rows.length ? rows[0] : null;
     if (!candidate?.id) {
       // Deletion/tombstone case: remove stale local row when the candidate no longer exists.
+      const existingCandidate = [...(Array.isArray(state.candidates) ? state.candidates : []), ...(Array.isArray(state.databaseCandidates) ? state.databaseCandidates : [])]
+        .find((item) => String(item?.id || "").trim() === safeId) || null;
+      const existingAssessmentId = String(existingCandidate?.assessment_id || existingCandidate?.assessmentId || "").trim();
       setState((current) => ({
         ...current,
         candidates: Array.isArray(current.candidates)
@@ -9609,7 +9637,14 @@ function PortalApp({ token, onLogout }) {
           : current.candidates,
         databaseCandidates: Array.isArray(current.databaseCandidates)
           ? current.databaseCandidates.filter((item) => String(item?.id || "").trim() !== safeId)
-          : current.databaseCandidates
+          : current.databaseCandidates,
+        assessments: Array.isArray(current.assessments)
+          ? current.assessments.filter((item) => {
+              const assessmentId = String(item?.id || "").trim();
+              const itemCandidateId = String(item?.candidateId || item?.candidate_id || "").trim();
+              return assessmentId !== existingAssessmentId && itemCandidateId !== safeId;
+            })
+          : current.assessments
       }));
       return false;
     }
