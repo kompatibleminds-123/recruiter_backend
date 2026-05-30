@@ -2234,7 +2234,7 @@ function buildAssessmentJourneyEntries(assessment, contactAttempts = [], candida
     let scheduleText = "";
     if (statusAt) {
       const parsedAt = Date.parse(statusAt);
-      scheduleText = Number.isFinite(parsedAt) ? new Date(parsedAt).toLocaleString() : "";
+      scheduleText = Number.isFinite(parsedAt) ? formatDateForCopy(parsedAt) : "";
     } else {
       const atLabel = String(item?.atLabel || "").trim();
       if (atLabel) {
@@ -2262,7 +2262,7 @@ function buildAssessmentJourneyEntries(assessment, contactAttempts = [], candida
     if (!when) return;
     pushJourneyEntry({
       at: when,
-      text: `Client feedback | ${[item?.status, item?.feedback, item?.interviewAt ? `Interview ${new Date(item.interviewAt).toLocaleString()}` : "", item?.updatedBy].filter(Boolean).join(" | ")}`
+      text: `Client feedback | ${[item?.status, item?.feedback, item?.interviewAt ? `Interview ${formatDateForCopy(item.interviewAt)}` : "", item?.updatedBy].filter(Boolean).join(" | ")}`
     });
   });
 
@@ -2443,7 +2443,7 @@ function appendReadableUpdateNote(existingText, incomingText) {
 function formatAttemptLinesWithTimestamp(text, atValue) {
   const lines = String(text || "").split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
   if (!lines.length) return "";
-  const stamp = atValue ? new Date(atValue).toLocaleString() : "";
+  const stamp = atValue ? formatDateForCopy(atValue) : "";
   return lines.map((line) => (/^\[[^\]]+\]\s/.test(line) ? line : `${stamp ? `[${stamp}] ` : ""}${line}`)).join("\n");
 }
 
@@ -2459,10 +2459,10 @@ function buildAttemptHistoryLine({ outcome = "", remarks = "", followUpAt = "", 
   const bits = [String(outcome || "").trim()].filter(Boolean);
   const cleanedRemarks = String(remarks || "").trim();
   if (cleanedRemarks) bits.push(`Remarks: ${cleanedRemarks}`);
-  if (followUpAt) bits.push(`Follow-up: ${new Date(followUpAt).toLocaleString()}`);
+  if (followUpAt) bits.push(`Follow-up: ${formatDateForCopy(followUpAt)}`);
   const line = bits.join(" | ").trim();
   if (!line) return "";
-  const stamp = atValue ? new Date(atValue).toLocaleString() : "";
+  const stamp = atValue ? formatDateForCopy(atValue) : "";
   return stamp ? `[${stamp}] ${line}` : line;
 }
 
@@ -4015,8 +4015,8 @@ function buildDetectedUpdateConfirmation({ candidateName = "", status = "", outc
   if (candidateName) lines.push(`Candidate: ${candidateName}`);
   if (status) lines.push(`Status: ${status}`);
   if (outcome) lines.push(`Outcome: ${outcome}`);
-  if (interviewAt) lines.push(`Interview: ${new Date(interviewAt).toLocaleString()}`);
-  if (followUpAt) lines.push(`Follow-up: ${new Date(followUpAt).toLocaleString()}`);
+  if (interviewAt) lines.push(`Interview: ${formatDateForCopy(interviewAt)}`);
+  if (followUpAt) lines.push(`Follow-up: ${formatDateForCopy(followUpAt)}`);
   if (notes) lines.push(`Notes: ${notes}`);
   return `Detected update:\n${lines.join("\n")}\n\nApply this update?`;
 }
@@ -4665,22 +4665,22 @@ function AttemptsModal({ open, candidate, attempts, onClose, onRefresh, onSave }
                 <article className="item-card compact-card">
                   <div className="item-card__top compact-top">
                     <strong>Latest saved status</strong>
-                    <span className="muted">{candidate?.last_contact_at ? new Date(candidate.last_contact_at).toLocaleString() : ""}</span>
+                    <span className="muted">{candidate?.last_contact_at ? formatDateForCopy(candidate.last_contact_at) : ""}</span>
                   </div>
                   <p className="muted">{candidate?.last_contact_outcome || "No outcome"}</p>
                   {extractAttemptRemarks(extractLatestAttemptLine(candidate?.last_contact_notes || "")) ? <div className="candidate-snippet">{extractAttemptRemarks(extractLatestAttemptLine(candidate?.last_contact_notes || ""))}</div> : null}
                   {attemptsForCandidate.length ? (
                     <div className="candidate-snippet">
                       {attemptsForCandidate.map((item, index) => {
-                        const atText = item?.created_at || item?.at ? new Date(item.created_at || item.at).toLocaleString() : "-";
+                        const atText = item?.created_at || item?.at ? formatDateForCopy(item.created_at || item.at) : "-";
                         const outcomeText = String(item?.outcome || "").trim() || "Attempt";
                         const remarksText = extractAttemptManualRemarksFromNotes(item?.notes || "", outcomeText);
-                        const followUpText = item?.next_follow_up_at ? ` | Follow-up: ${new Date(item.next_follow_up_at).toLocaleString()}` : "";
+                        const followUpText = item?.next_follow_up_at ? ` | Follow-up: ${formatDateForCopy(item.next_follow_up_at)}` : "";
                         return `${index + 1}. ${atText} | ${outcomeText}${remarksText ? ` | Remarks: ${remarksText}` : ""}${followUpText}`;
                       }).join("\n")}
                     </div>
                   ) : candidate?.last_contact_notes ? <div className="candidate-snippet">{formatAttemptLinesWithTimestamp(candidate.last_contact_notes, candidate.last_contact_at)}</div> : null}
-                  {candidate?.next_follow_up_at ? <div className="chip-row"><span className="chip">Next follow-up: {new Date(candidate.next_follow_up_at).toLocaleString()}</span></div> : null}
+                  {candidate?.next_follow_up_at ? <div className="chip-row"><span className="chip">Next follow-up: {formatDateForCopy(candidate.next_follow_up_at)}</span></div> : null}
                 </article>
               ) : null}
               {!(attemptsForCandidate.length || candidate?.last_contact_outcome || candidate?.last_contact_notes || candidate?.next_follow_up_at)
@@ -4879,7 +4879,7 @@ function AssessmentStatusModal({ open, assessment, onClose, onSave }) {
             {"\n"}
             {statusHistoryPreview.map((item, index) => {
               const whenRaw = String(item?.at || item?.updatedAt || "").trim();
-              const when = whenRaw ? new Date(whenRaw).toLocaleString() : "-";
+              const when = whenRaw ? formatDateForCopy(whenRaw) : "-";
               const statusText = String(item?.status || "Status update").trim();
               const manual = String(item?.manualRemarks || "").trim();
               const atLabel = String(item?.atLabel || "").trim();
@@ -5331,7 +5331,7 @@ function ClientFeedbackModal({ open, item, onClose, onSave }) {
             <div className="feedback-preview__label">Previous feedback</div>
             {feedbackMeta.history.slice().reverse().map((entry, index) => (
               <div className="status-note" key={`${entry.updatedAt || index}-${entry.status || ""}`}>
-                {[entry.updatedAt ? new Date(entry.updatedAt).toLocaleString() : "", entry.updatedBy || "", entry.status || ""].filter(Boolean).join(" | ")}
+                {[entry.updatedAt ? formatDateForCopy(entry.updatedAt) : "", entry.updatedBy || "", entry.status || ""].filter(Boolean).join(" | ")}
                 {entry.feedback ? <div>{entry.feedback}</div> : null}
               </div>
             ))}
@@ -5428,13 +5428,13 @@ function DrilldownModal({ open, title, items, onClose, onOpenCvOriginal, onOpenC
                     item.ownerRecruiter ? `Recruiter: ${item.ownerRecruiter}` : "",
                     item.source ? `Source: ${item.source}` : ""
                   ].filter(Boolean).join(" | ")}</p>
-                  <div className="candidate-snippet">{[item.candidateStatus ? `Assessment status: ${item.candidateStatus}` : "", item.followUpAt ? `Follow-up: ${new Date(item.followUpAt).toLocaleString()}` : "", item.interviewAt ? `Interview: ${new Date(item.interviewAt).toLocaleString()}` : ""].filter(Boolean).join("\n")}</div>
+                  <div className="candidate-snippet">{[item.candidateStatus ? `Assessment status: ${item.candidateStatus}` : "", item.followUpAt ? `Follow-up: ${formatDateForCopy(item.followUpAt)}` : "", item.interviewAt ? `Interview: ${formatDateForCopy(item.interviewAt)}` : ""].filter(Boolean).join("\n")}</div>
                   {feedbackMeta.feedback ? (
                     <div className="feedback-preview">
                       <div className="feedback-preview__label">Client feedback</div>
                       <div>{feedbackMeta.feedback}</div>
                       {feedbackMeta.history.length > 1 ? <div className="muted">{feedbackMeta.history.length} feedback update(s)</div> : null}
-                      <div className="muted">{[feedbackMeta.status ? `Status: ${feedbackMeta.status}` : "", feedbackMeta.updatedBy || "", feedbackMeta.updatedAt ? new Date(feedbackMeta.updatedAt).toLocaleString() : ""].filter(Boolean).join(" | ")}</div>
+                      <div className="muted">{[feedbackMeta.status ? `Status: ${feedbackMeta.status}` : "", feedbackMeta.updatedBy || "", feedbackMeta.updatedAt ? formatDateForCopy(feedbackMeta.updatedAt) : ""].filter(Boolean).join(" | ")}</div>
                     </div>
                   ) : null}
                   <div className="button-row drilldown-actions">
@@ -5505,7 +5505,7 @@ function CandidateProfileModal({ open, candidate, onClose, onOpenCvOriginal, onO
   const candidateRows = [
     ["Name of candidate", linkedAssessment?.candidateName || baseCandidate.name || draft.candidateName || "-"],
     ["Position applied for", linkedAssessment?.jdTitle || baseCandidate.assigned_jd_title || baseCandidate.jd_title || baseCandidate.jdTitle || baseCandidate.role || draft.jdTitle || "-"],
-    ["Date applied", dateApplied ? new Date(dateApplied).toLocaleDateString() : "-"],
+    ["Date applied", dateApplied ? formatDateForCopy(dateApplied) : "-"],
     ["Mobile", linkedAssessment?.phoneNumber || baseCandidate.phone || baseCandidate.phoneNumber || draft.phoneNumber || "-"],
     ["Email", linkedAssessment?.emailId || baseCandidate.email || baseCandidate.emailId || draft.emailId || "-"],
     ["Source", baseCandidate.source || baseCandidate.sourcePlatform || "-"]
@@ -5562,7 +5562,7 @@ function CandidateProfileModal({ open, candidate, onClose, onOpenCvOriginal, onO
     baseCandidate?.updatedAt ||
     ""
   ).trim();
-  const heroUpdatedText = heroUpdatedAt ? new Date(heroUpdatedAt).toLocaleString() : "-";
+  const heroUpdatedText = heroUpdatedAt ? formatDateForCopy(heroUpdatedAt) : "-";
   const kpiTiles = [
     { label: "Experience", value: linkedAssessment?.totalExperience || baseCandidate?.experience || baseCandidate?.totalExperience || draft?.totalExperience || "-" },
     { label: "Current CTC", value: linkedAssessment?.currentCtc || baseCandidate?.current_ctc || baseCandidate?.currentCtc || draft?.currentCtc || "-" },
@@ -5710,7 +5710,7 @@ function ClientProfileModal({ open, item, onClose, copySettings = DEFAULT_COPY_S
   const candidateRows = [
     ["Name of candidate", assessment.candidateName || item.candidateName || candidate.name || candidateDraft.candidateName || "-"],
     ["Position applied for", assessment.jdTitle || item.position || item.role || candidate.jd_title || candidateDraft.jdTitle || "-"],
-    ["Date applied", dateApplied ? new Date(dateApplied).toLocaleDateString() : "-"],
+    ["Date applied", dateApplied ? formatDateForCopy(dateApplied) : "-"],
     ["Mobile", assessment.phoneNumber || item.phone || candidate.phone || candidateDraft.phoneNumber || "-"],
     ["Email", assessment.emailId || item.email || candidate.email || candidateDraft.emailId || "-"],
     ["Source", candidate.source || item.source || "Client portal"]
@@ -7077,7 +7077,7 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
                   <tr key={String(item?.id || "")}>
                     <td>{campaign?.name || item?.campaign_id || "-"}</td>
                     <td>{item?.subject || "-"}</td>
-                    <td>{item?.updated_at ? new Date(item.updated_at).toLocaleString() : "-"}</td>
+                    <td>{item?.updated_at ? formatDateForCopy(item.updated_at) : "-"}</td>
                     <td>
                       <div className="button-row tight">
                         <button className="ghost-btn" type="button" onClick={() => startTemplateEdit(item)}>Edit</button>
@@ -7221,7 +7221,7 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
                   <td>{Number(item?.stats?.sent || 0)}</td>
                   <td>{Number(item?.stats?.bounced || 0)}</td>
                   <td>{Number(item?.stats?.replies || 0)}</td>
-                  <td>{item?.updated_at ? new Date(item.updated_at).toLocaleString() : "-"}</td>
+                  <td>{item?.updated_at ? formatDateForCopy(item.updated_at) : "-"}</td>
                   <td>
                     <div className="button-row tight">
                       <button className="ghost-btn" type="button" onClick={() => startCampaignEdit(item)}>Edit</button>
@@ -7271,7 +7271,7 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
                   <td>{item?.prospect?.phone || "-"}</td>
                   <td>{item?.prospect?.company_name || "-"}</td>
                   <td>{item?.state || "-"}</td>
-                  <td>{item?.lastSentAt ? new Date(item.lastSentAt).toLocaleString() : "-"}</td>
+                  <td>{item?.lastSentAt ? formatDateForCopy(item.lastSentAt) : "-"}</td>
                 </tr>
               ))}
               {!campaignProspects.filter((item) => String(item?.state || "").trim().toLowerCase() === "ready").length ? (
@@ -7398,6 +7398,7 @@ function PortalApp({ token, onLogout }) {
     q: "",
     dateFrom: "",
     dateTo: "",
+    sortBy: "latest",
     clients: [],
     jds: [],
     recruiters: [],
@@ -7960,6 +7961,8 @@ function PortalApp({ token, onLogout }) {
   const initialWorkspaceLoadDoneRef = useRef(false);
   const candidatesSliceLoadSeqRef = useRef(0);
   const assessmentsSliceLoadSeqRef = useRef(0);
+  const changeFeedCursorRef = useRef("");
+  const changeFeedInFlightRef = useRef(false);
   // Prevent background refresh from clobbering in-flight actions (e.g. SMTP send).
   const suspendWorkspaceRefreshRef = useRef(false);
 	const loadWorkspaceRef = useRef(null);
@@ -9559,6 +9562,47 @@ function PortalApp({ token, onLogout }) {
     }));
   }
 
+  function upsertCandidateInState(savedCandidate) {
+    const safeId = String(savedCandidate?.id || "").trim();
+    if (!safeId) return;
+    setState((current) => {
+      const mergeById = (items) => {
+        const rows = Array.isArray(items) ? [...items] : [];
+        const ix = rows.findIndex((item) => String(item?.id || "").trim() === safeId);
+        if (ix >= 0) {
+          rows[ix] = { ...rows[ix], ...savedCandidate };
+          return rows;
+        }
+        rows.unshift(savedCandidate);
+        return rows;
+      };
+      return {
+        ...current,
+        candidates: mergeById(current.candidates),
+        databaseCandidates: mergeById(current.databaseCandidates)
+      };
+    });
+  }
+
+  async function fetchCandidateByIdAndPatch(candidateId) {
+    const safeId = String(candidateId || "").trim();
+    if (!safeId || !token) return false;
+    const rows = await api(`/candidates?id=${encodeURIComponent(safeId)}&limit=1`, token).catch(() => []);
+    const candidate = Array.isArray(rows) && rows.length ? rows[0] : null;
+    if (!candidate?.id) return false;
+    upsertCandidateInState(candidate);
+    return true;
+  }
+
+  async function fetchAssessmentByIdAndPatch(assessmentId) {
+    const safeId = String(assessmentId || "").trim();
+    if (!safeId || !token) return false;
+    const assessment = await api(`/company/assessments/by-id?assessmentId=${encodeURIComponent(safeId)}`, token).catch(() => null);
+    if (!assessment?.id) return false;
+    upsertAssessmentInState(assessment);
+    return true;
+  }
+
   useEffect(() => {
     if (!token) return;
     const pathname = String(location?.pathname || "/dashboard").trim() || "/dashboard";
@@ -9583,6 +9627,11 @@ function PortalApp({ token, onLogout }) {
     if (!token) return undefined;
     // Keep workspace refresh manual/lightweight to avoid burning Supabase egress on every tab focus/poll.
     return undefined;
+  }, [token]);
+
+  useEffect(() => {
+    if (!token) return;
+    changeFeedCursorRef.current = new Date().toISOString();
   }, [token]);
 
   useEffect(() => {
@@ -9612,12 +9661,11 @@ function PortalApp({ token, onLogout }) {
 
   useEffect(() => {
     if (!token) return undefined;
-    const MIN_FOCUS_REFRESH_GAP_MS = 45000;
-    const HEARTBEAT_MS = 90000;
+    const TEN_MIN_MS = 10 * 60 * 1000;
 
     function shouldRefreshNow() {
       if (document.visibilityState !== "visible") return false;
-      return (Date.now() - Number(lastWorkspaceRefreshAtRef.current || 0)) > MIN_FOCUS_REFRESH_GAP_MS;
+      return (Date.now() - Number(lastWorkspaceRefreshAtRef.current || 0)) > TEN_MIN_MS;
     }
 
     function onFocusLikeEvent() {
@@ -9625,21 +9673,97 @@ function PortalApp({ token, onLogout }) {
       void refreshWorkspaceSilently("focus-sync");
     }
 
-    const heartbeat = window.setInterval(() => {
-      if (document.visibilityState !== "visible") return;
-      void refreshWorkspaceSilently("heartbeat");
-    }, HEARTBEAT_MS);
-
     window.addEventListener("focus", onFocusLikeEvent);
     window.addEventListener("pageshow", onFocusLikeEvent);
     document.addEventListener("visibilitychange", onFocusLikeEvent);
     return () => {
-      try { window.clearInterval(heartbeat); } catch {}
       window.removeEventListener("focus", onFocusLikeEvent);
       window.removeEventListener("pageshow", onFocusLikeEvent);
       document.removeEventListener("visibilitychange", onFocusLikeEvent);
     };
   }, [token]);
+
+  useEffect(() => {
+    if (!token) return undefined;
+    const POLL_MS = 12000;
+    const MAX_EVENTS_PER_CYCLE = 20;
+    let timer = null;
+    let stopped = false;
+
+    async function runPollCycle() {
+      if (stopped || document.visibilityState !== "visible") return;
+      if (changeFeedInFlightRef.current) return;
+      changeFeedInFlightRef.current = true;
+      try {
+        const since = String(changeFeedCursorRef.current || "").trim();
+        const result = await api(
+          `/company/change-feed?since=${encodeURIComponent(since)}&limit=${MAX_EVENTS_PER_CYCLE}`,
+          token
+        ).catch(() => ({ events: [] }));
+        const events = Array.isArray(result?.events) ? result.events : [];
+        if (!events.length) return;
+
+        const candidateIds = new Set();
+        const assessmentIds = new Set();
+        let needsSettingsSync = false;
+        let needsSummarySync = false;
+        let latestCursor = since;
+
+        events.forEach((event) => {
+          const entity = String(event?.entity || "").trim().toLowerCase();
+          const entityId = String(event?.entityId || "").trim();
+          const updatedAt = String(event?.updatedAt || "").trim();
+          if (updatedAt && (!latestCursor || updatedAt > latestCursor)) latestCursor = updatedAt;
+          const scopes = Array.isArray(event?.impactScopes) ? event.impactScopes.map((s) => String(s || "").trim().toLowerCase()) : [];
+          if (entity === "candidate" && entityId) candidateIds.add(entityId);
+          if (entity === "assessment" && entityId) assessmentIds.add(entityId);
+          if (entity === "settings" || scopes.includes("settings")) needsSettingsSync = true;
+          if (scopes.includes("dashboard") || scopes.includes("reports")) needsSummarySync = true;
+        });
+
+        if (latestCursor) changeFeedCursorRef.current = latestCursor;
+
+        const candidateBatch = Array.from(candidateIds).slice(0, MAX_EVENTS_PER_CYCLE);
+        const assessmentBatch = Array.from(assessmentIds).slice(0, MAX_EVENTS_PER_CYCLE);
+        await Promise.all([
+          ...candidateBatch.map((id) => fetchCandidateByIdAndPatch(id)),
+          ...assessmentBatch.map((id) => fetchAssessmentByIdAndPatch(id))
+        ]);
+
+        if (needsSettingsSync) {
+          const activePath = String(location?.pathname || "");
+          if (activePath === "/mail-settings") await syncMailSettingsFromServer({ showStatus: false }).catch(() => {});
+          if (activePath.startsWith("/admin-settings") || activePath === "/settings") {
+            await syncSharedSettingsFromServer({ showStatus: false }).catch(() => {});
+          }
+        }
+        if (needsSummarySync) {
+          await loadDashboardSlice({ force: true }).catch(() => {});
+          await loadClientPortalSlice({ force: true }).catch(() => {});
+        }
+      } catch (_) {
+        // Keep polling resilient; refresh fallback handles recovery.
+      } finally {
+        changeFeedInFlightRef.current = false;
+      }
+    }
+
+    function schedule() {
+      if (stopped) return;
+      timer = window.setTimeout(async () => {
+        await runPollCycle();
+        schedule();
+      }, POLL_MS);
+    }
+
+    runPollCycle().finally(() => schedule());
+    return () => {
+      stopped = true;
+      if (timer) {
+        try { window.clearTimeout(timer); } catch {}
+      }
+    };
+  }, [token, location?.pathname]);
 
   useEffect(() => {
     if (!token) return undefined;
@@ -10112,7 +10236,7 @@ function PortalApp({ token, onLogout }) {
 
   const filteredAssessments = useMemo(() => {
     const query = String(assessmentFilters.q || "").trim().toLowerCase();
-    return (state.assessments || []).filter((item) => {
+    const filtered = (state.assessments || []).filter((item) => {
       const archived = isAssessmentArchived(item);
       if (assessmentLane === "active" && archived) return false;
       if (assessmentLane === "archived" && !archived) return false;
@@ -10143,6 +10267,27 @@ function PortalApp({ token, onLogout }) {
       if (assessmentFilters.outcomes.length && !assessmentFilters.outcomes.includes(outcomeValue)) return false;
       return true;
     });
+    const freshnessTs = (item) => {
+      const tsCandidates = [
+        item?.updatedAt,
+        item?.updated_at,
+        item?.createdAt,
+        item?.created_at,
+        item?.generatedAt,
+        item?.generated_at
+      ];
+      const parsed = tsCandidates
+        .map((value) => Date.parse(String(value || "").trim()))
+        .filter((value) => Number.isFinite(value));
+      return parsed.length ? Math.max(...parsed) : 0;
+    };
+    const sortBy = String(assessmentFilters.sortBy || "latest").toLowerCase();
+    return filtered
+      .slice()
+      .sort((a, b) => {
+        const delta = freshnessTs(b) - freshnessTs(a);
+        return sortBy === "oldest" ? -delta : delta;
+      });
   }, [state.assessments, state.candidates, assessmentFilters, assessmentLane, resolveCanonicalJdTitle]);
 
   function inferInterviewRoundFromStatus(value) {
@@ -10224,7 +10369,7 @@ function PortalApp({ token, onLogout }) {
         const clientName = String(assessment?.clientName || linkedCandidate?.client_name || "").trim();
         const jdTitle = String(assessment?.jdTitle || linkedCandidate?.jd_title || "").trim();
         rows.push([
-          atValue ? new Date(atValue).toLocaleString() : "",
+          atValue ? formatDateForCopy(atValue) : "",
           inferredRound,
           String(assessment?.candidateName || "").trim(),
           jdTitle,
@@ -10266,7 +10411,7 @@ function PortalApp({ token, onLogout }) {
           const round = String(payload?.round || "").trim();
           const candidateName = String(payload?.candidateName || "").trim();
           return [
-            atValue ? new Date(atValue).toLocaleString() : "",
+            atValue ? formatDateForCopy(atValue) : "",
             round,
             candidateName,
             String(row?.jd_title || "").trim(),
@@ -10342,7 +10487,7 @@ function PortalApp({ token, onLogout }) {
             const clientName = String(assessment?.clientName || linkedCandidate?.client_name || "").trim();
             const jdTitle = String(assessment?.jdTitle || linkedCandidate?.jd_title || "").trim();
             return [
-              interviewAt ? new Date(interviewAt).toLocaleString() : "",
+              interviewAt ? formatDateForCopy(interviewAt) : "",
               round,
               String(assessment?.candidateName || "").trim(),
               jdTitle,
@@ -10385,7 +10530,7 @@ function PortalApp({ token, onLogout }) {
             const jdTitle = String(assessment?.jdTitle || linkedCandidate?.jd_title || "").trim();
 
             return [
-              offeredAt ? new Date(offeredAt).toLocaleString() : "",
+              offeredAt ? formatDateForCopy(offeredAt) : "",
               String(assessment?.candidateName || "").trim(),
               jdTitle,
               clientName,
@@ -10879,7 +11024,7 @@ function PortalApp({ token, onLogout }) {
       const ts = toTimestampSafe(value);
       if (!Number.isFinite(ts)) return "";
       try {
-        return new Date(ts).toLocaleString();
+        return formatDateForCopy(ts);
       } catch (_) {
         return String(value || "");
       }
@@ -17887,7 +18032,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
       assessment?.candidateStatus ? `Current status: ${assessment.candidateStatus}` : ""
     ].filter(Boolean);
     const timeline = buildAssessmentJourneyEntries(assessment, contactAttempts, candidate)
-      .map((item) => `${new Date(item.at).toLocaleString()} | ${item.text}`);
+      .map((item) => `${formatDateForCopy(item.at)} | ${item.text}`);
     return [...header, "", "Journey:", ...timeline].filter(Boolean).join("\n");
   }
 
@@ -18876,7 +19021,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                             <div>
                               <span className="agenda-item__title">{item.name || "Candidate"}</span>
                               <span className="agenda-item__subtitle">{item.jd_title || item.role || "Untitled role"}</span>
-                              <span className="agenda-item__time">{`Call follow-up | ${new Date(item.next_follow_up_at).toLocaleString()}`}</span>
+                              <span className="agenda-item__time">{`Call follow-up | ${formatDateForCopy(item.next_follow_up_at)}`}</span>
                             </div>
                             <div className="button-row tight">
                               <button onClick={() => void openAttempts(item.id)}>Update</button>
@@ -18900,7 +19045,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                               <span className="agenda-item__type">{item.type}</span>
                               <span className="agenda-item__title">{item.title}</span>
                               <span className="agenda-item__subtitle">{item.subtitle}</span>
-                              <span className="agenda-item__time">{new Date(item.when).toLocaleString()}</span>
+                              <span className="agenda-item__time">{formatDateForCopy(item.when)}</span>
                             </div>
                             <div className="button-row tight">
                               <button onClick={item.action}>Update</button>
@@ -18920,7 +19065,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                               <span className="agenda-item__type">{item.type}</span>
                               <span className="agenda-item__title">{item.title}</span>
                               <span className="agenda-item__subtitle">{item.subtitle}</span>
-                              <span className="agenda-item__time">{new Date(item.when).toLocaleString()}</span>
+                              <span className="agenda-item__time">{formatDateForCopy(item.when)}</span>
                             </div>
                             <div className="button-row tight">
                               <button onClick={item.action}>Update</button>
@@ -18949,7 +19094,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                             <div>
                               <span className="agenda-item__title">{item.candidateName || "Candidate"}</span>
                               <span className="agenda-item__subtitle">{item.jdTitle || "Untitled role"}</span>
-                              <span className="agenda-item__time">{`Upcoming joining | ${new Date(item.followUpAt || item.interviewAt).toLocaleString()} | ${item.candidateStatus || "Offered"}`}</span>
+                              <span className="agenda-item__time">{`Upcoming joining | ${formatDateForCopy(item.followUpAt || item.interviewAt)} | ${item.candidateStatus || "Offered"}`}</span>
                             </div>
                             <div className="button-row tight">
                               <button onClick={() => openSavedAssessment(item)}>Update</button>
@@ -20185,7 +20330,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                             <div className="captured-note-contact-row captured-note-field">
                               <span className="captured-note-contact-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></span>
                               <span className="captured-note-field-label">Assigned at</span>
-                              <span className="captured-note-field-value">{item.assigned_at ? new Date(item.assigned_at).toLocaleString() : "NA"}</span>
+                              <span className="captured-note-field-value">{item.assigned_at ? formatDateForCopy(item.assigned_at) : "NA"}</span>
                             </div>
                           </div>
                         </div>
@@ -20209,8 +20354,8 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                         </details>
                       ) : null}
                       <div className="chip-row">
-                        {statusState.followUp ? <span className="chip">Follow-up: {new Date(statusState.followUp).toLocaleString()}</span> : null}
-                        {statusState.interviewAt ? <span className="chip">Interview: {new Date(statusState.interviewAt).toLocaleString()}</span> : null}
+                        {statusState.followUp ? <span className="chip">Follow-up: {formatDateForCopy(statusState.followUp)}</span> : null}
+                        {statusState.interviewAt ? <span className="chip">Interview: {formatDateForCopy(statusState.interviewAt)}</span> : null}
                       </div>
                       {item.last_contact_outcome || latestAttemptRemarks ? (
                         <div className="status-line" style={{ justifyContent: "flex-end", textAlign: "right" }}>
@@ -20293,6 +20438,15 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                   <select value={assessmentLane} onChange={(e) => setAssessmentLane(e.target.value)}>
                     <option value="active">Active</option>
                     <option value="archived">Archived</option>
+                  </select>
+                </label>
+              </div>
+              <div className="form-grid three-col" style={{ marginTop: 8 }}>
+                <label>
+                  <span>Sort by</span>
+                  <select value={assessmentFilters.sortBy || "latest"} onChange={(e) => setAssessmentFilters((current) => ({ ...current, sortBy: e.target.value }))}>
+                    <option value="latest">Latest first</option>
+                    <option value="oldest">Oldest first</option>
                   </select>
                 </label>
               </div>
@@ -20390,7 +20544,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                           </div>
                           <div className="assessment-placard__meta">
                             <div className="assessment-placard__assigned">
-                              Assigned to: {assignedTo} <span className="assessment-placard__dot">•</span> {clientName || "Client"} <span className="assessment-placard__dot">•</span> Updated {updatedAt ? new Date(updatedAt).toLocaleDateString() : "NA"}
+                              Assigned to: {assignedTo} <span className="assessment-placard__dot">•</span> {clientName || "Client"} <span className="assessment-placard__dot">•</span> Updated {formatDateForCopy(updatedAt) || "NA"}
                             </div>
                           </div>
                           <div className="assessment-placard__main">
@@ -20453,8 +20607,8 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                               </div>
                             </div>
                             <div className="assessment-placard__times">
-                              <div><span>Converted at</span><strong>{convertedAt ? new Date(convertedAt).toLocaleString() : "NA"}</strong></div>
-                              <div><span>Updated at</span><strong>{updatedAt ? new Date(updatedAt).toLocaleString() : "NA"}</strong></div>
+                              <div><span>Converted at</span><strong>{formatDateForCopy(convertedAt) || "NA"}</strong></div>
+                              <div><span>Updated at</span><strong>{formatDateForCopy(updatedAt) || "NA"}</strong></div>
                             </div>
                           </div>
                           <div className="assessment-placard__status-strip">
@@ -21464,7 +21618,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                           const selectedJob = (jobsCatalog || []).find((job) => String(job?.id || "") === String(selectedJobId || ""));
                           if (!selectedJob) return "Archive status not available.";
                           const closeDate = String(selectedJob?.closedAt || selectedJob?.archivedAt || "").trim();
-                          return `${getArchivedJobStatusLabel(selectedJob)}${closeDate ? ` | Closed: ${new Date(closeDate).toLocaleDateString()}` : ""}`;
+                          return `${getArchivedJobStatusLabel(selectedJob)}${closeDate ? ` | Closed: ${formatDateForCopy(closeDate)}` : ""}`;
                         })()}
                       </small>
                     ) : null}
@@ -22037,7 +22191,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                           <tr><td colSpan={7} className="muted">No audit logs yet.</td></tr>
                         ) : auditLogs.map((row) => (
                           <tr key={String(row?.id || Math.random())}>
-                            <td>{row?.createdAt ? new Date(row.createdAt).toLocaleString() : "-"}</td>
+                            <td>{row?.createdAt ? formatDateForCopy(row.createdAt) : "-"}</td>
                             <td>{String(row?.actorName || row?.actorEmail || "-").trim() || "-"}</td>
                             <td>{String(row?.action || "-").trim() || "-"}</td>
                             <td>{String(row?.module || "-").trim() || "-"}</td>
@@ -22586,7 +22740,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                             <h3>{String(billingOverview?.currentPlan?.label || "Current plan").trim()}</h3>
                             <p className="muted">
                               {`Status: ${String(billingOverview?.billing?.status || companyLicense?.status || "unknown").trim()} | `}
-                              {`Valid till: ${billingOverview?.billing?.subscriptionEndsAt ? new Date(billingOverview.billing.subscriptionEndsAt).toLocaleDateString() : "N/A"} | `}
+                              {`Valid till: ${billingOverview?.billing?.subscriptionEndsAt ? formatDateForCopy(billingOverview.billing.subscriptionEndsAt) : "N/A"} | `}
                               {`Full access bypass: ${billingOverview?.fullAccessBypass ? "Enabled" : "No"}`}
                             </p>
                             {currentPlanCode === "trial" ? (
@@ -22623,15 +22777,15 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                             </tr>
                             <tr>
                               <th>Subscription start</th>
-                              <td>{effectiveLicense?.subscriptionStartedAt ? new Date(effectiveLicense.subscriptionStartedAt).toLocaleString() : "-"}</td>
+                              <td>{effectiveLicense?.subscriptionStartedAt ? formatDateForCopy(effectiveLicense.subscriptionStartedAt) : "-"}</td>
                             </tr>
                             <tr>
                               <th>Subscription end</th>
-                              <td>{effectiveLicense?.subscriptionEndsAt ? new Date(effectiveLicense.subscriptionEndsAt).toLocaleString() : "-"}</td>
+                              <td>{effectiveLicense?.subscriptionEndsAt ? formatDateForCopy(effectiveLicense.subscriptionEndsAt) : "-"}</td>
                             </tr>
                             <tr>
                               <th>Last license update</th>
-                              <td>{effectiveLicense?.updatedAt ? new Date(effectiveLicense.updatedAt).toLocaleString() : "-"}</td>
+                              <td>{effectiveLicense?.updatedAt ? formatDateForCopy(effectiveLicense.updatedAt) : "-"}</td>
                             </tr>
                             {currentPlanCode === "trial" ? (
                               <tr>
@@ -22657,7 +22811,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                             </tr>
                             <tr>
                               <th>Last paid at</th>
-                              <td>{effectiveLicense?.lastPaidAt ? new Date(effectiveLicense.lastPaidAt).toLocaleString() : "-"}</td>
+                              <td>{effectiveLicense?.lastPaidAt ? formatDateForCopy(effectiveLicense.lastPaidAt) : "-"}</td>
                             </tr>
                           </tbody>
                         </table>
@@ -23460,7 +23614,7 @@ function ClientPortalApp({ token, onLogout }) {
                       <div>
                         <span className="agenda-item__title">{item.candidateName || "Candidate"}</span>
                         <span className="agenda-item__subtitle">{item.position || "Untitled role"}</span>
-                        <span className="agenda-item__time">{item.at ? new Date(item.at).toLocaleString() : item.status}</span>
+                        <span className="agenda-item__time">{item.at ? formatDateForCopy(item.at) : item.status}</span>
                       </div>
                       <button className="ghost-btn" onClick={() => void completeClientAgendaItem(item, "interview")}>Mark done</button>
                     </article>
@@ -23476,7 +23630,7 @@ function ClientPortalApp({ token, onLogout }) {
                       <div>
                         <span className="agenda-item__title">{item.candidateName || "Candidate"}</span>
                         <span className="agenda-item__subtitle">{item.position || "Untitled role"}</span>
-                        <span className="agenda-item__time">{item.at ? new Date(item.at).toLocaleString() : item.status}</span>
+                        <span className="agenda-item__time">{item.at ? formatDateForCopy(item.at) : item.status}</span>
                       </div>
                       <button className="ghost-btn" onClick={() => void completeClientAgendaItem(item, "joining")}>Mark done</button>
                     </article>
@@ -24736,7 +24890,7 @@ function PayrollLiteAdminPage({ token, employees = [], users = [], viewMode = "a
                       />
                     </td>
                     <td>{item.status || "-"}</td>
-                    <td>{item.decidedAt ? new Date(item.decidedAt).toLocaleString() : "-"}</td>
+                    <td>{item.decidedAt ? formatDateForCopy(item.decidedAt) : "-"}</td>
                     <td>{item.decidedBy ? (userNameById.get(String(item.decidedBy || "").trim()) || String(item.decidedBy).slice(0, 8)) : "-"}</td>
                     <td>{item.rejectionReason || "-"}</td>
                     <td>{docs.length ? <a href={String(docs[0]?.url || "#")} target="_blank" rel="noreferrer">{String(docs[0]?.label || "Document")}</a> : "-"}</td>
@@ -24770,7 +24924,7 @@ function PayrollLiteAdminPage({ token, employees = [], users = [], viewMode = "a
                     <td>{emp ? `${emp.employeeCode} - ${emp.fullName}` : item.employeeId}</td>
                     <td>{item.payrollMonth}/{item.payrollYear}</td>
                     <td>{item.status || "-"}</td>
-                    <td>{item.publishedAt ? new Date(item.publishedAt).toLocaleString() : "-"}</td>
+                    <td>{item.publishedAt ? formatDateForCopy(item.publishedAt) : "-"}</td>
                   </tr>
                 );
               })}
@@ -24994,10 +25148,10 @@ function EmployeePortalApp({ token, onLogout }) {
                   {attendanceItems.map((item) => (
                     <tr key={item.id}>
                       <td>{item.attendanceDate || "-"}</td>
-                      <td>{item.checkInAt ? new Date(item.checkInAt).toLocaleString() : "-"}</td>
+                      <td>{item.checkInAt ? formatDateForCopy(item.checkInAt) : "-"}</td>
                       <td>{item.checkInAt ? formatEmployeeLocationStatusLabel(item.checkInLocationStatus || item.locationStatus) : "-"}</td>
                       <td>{formatEmployeeCoordinatePair(item.checkInLatitude, item.checkInLongitude)}</td>
-                      <td>{item.checkOutAt ? new Date(item.checkOutAt).toLocaleString() : "-"}</td>
+                      <td>{item.checkOutAt ? formatDateForCopy(item.checkOutAt) : "-"}</td>
                       <td>{item.checkOutAt ? formatEmployeeLocationStatusLabel(item.checkOutLocationStatus || item.locationStatus) : "-"}</td>
                       <td>{formatEmployeeCoordinatePair(item.checkOutLatitude, item.checkOutLongitude)}</td>
                       <td>{formatAccuracyWithOfficeDistance({
@@ -25026,7 +25180,7 @@ function EmployeePortalApp({ token, onLogout }) {
                     <tr key={doc.id}>
                       <td>{doc.payrollMonth}/{doc.payrollYear}</td>
                       <td>{doc.status || "-"}</td>
-                      <td>{doc.publishedAt ? new Date(doc.publishedAt).toLocaleString() : "-"}</td>
+                      <td>{doc.publishedAt ? formatDateForCopy(doc.publishedAt) : "-"}</td>
                       <td>{Number(doc?.payload?.netSalary || doc?.payload?.net_salary || 0).toFixed(2)}</td>
                       <td>
                         <div className="button-row tight">
@@ -25044,7 +25198,7 @@ function EmployeePortalApp({ token, onLogout }) {
               <div className="item-card compact-card" style={{ marginTop: 12 }}>
                 <div className="section-kicker">Payslip Preview</div>
                 <h3>{selectedPayslip.payrollMonth}/{selectedPayslip.payrollYear} | {employeeUser?.fullName || "Employee"}</h3>
-                <div className="muted">Published: {selectedPayslip.publishedAt ? new Date(selectedPayslip.publishedAt).toLocaleString() : "-"}</div>
+                <div className="muted">Published: {selectedPayslip.publishedAt ? formatDateForCopy(selectedPayslip.publishedAt) : "-"}</div>
                 <div className="table-wrap" style={{ marginTop: 10 }}>
                   <table className="dashboard-table">
                     <tbody>

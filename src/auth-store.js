@@ -506,6 +506,8 @@ const COMPANY_LICENSE_ROW_ID = "__company_license__";
 const COMPANY_LICENSE_ROW_TITLE = "__company_license__";
 const AUDIT_LOG_ROW_PREFIX = "__audit_log__";
 const AUDIT_LOG_ROW_TITLE = "__audit_log__";
+const CHANGE_EVENT_ROW_PREFIX = "__change_event__";
+const CHANGE_EVENT_ROW_TITLE = "__change_event__";
 const MAX_SHARED_CUSTOM_EXPORT_PRESETS = 10;
 const { parseExperienceTimelineTextToStructured, normalizeTimelineRow } = require("./timeline-utils");
 function isSharedExportPresetRow(job) {
@@ -5679,6 +5681,100 @@ async function listCompanyAuditLogs({ companyId, limit = 200 }) {
   return (Array.isArray(rows) ? rows : []).map((item) => sanitizeAuditLogRow(item?.payload || item));
 }
 
+function isChangeEventRow(row = {}) {
+  return String(row?.title || "").trim() === CHANGE_EVENT_ROW_TITLE;
+}
+
+function sanitizeChangeEventRow(raw = {}) {
+  const payload = raw?.payload && typeof raw.payload === "object" ? raw.payload : raw;
+  const impactScopesRaw = Array.isArray(payload?.impactScopes) ? payload.impactScopes : Array.isArray(payload?.impact_scopes) ? payload.impact_scopes : [];
+  return {
+    id: String(payload?.id || raw?.id || "").trim(),
+    companyId: String(payload?.companyId || raw?.company_id || "").trim(),
+    entity: String(payload?.entity || "").trim(),
+    entityId: String(payload?.entityId || payload?.entity_id || "").trim(),
+    updatedAt: String(payload?.updatedAt || payload?.updated_at || payload?.createdAt || raw?.created_at || "").trim(),
+    impactScopes: impactScopesRaw
+      .map((item) => String(item || "").trim().toLowerCase())
+      .filter(Boolean)
+      .slice(0, 12)
+  };
+}
+
+async function appendCompanyChangeEvent({
+  companyId,
+  entity = "",
+  entityId = "",
+  updatedAt = "",
+  impactScopes = []
+}) {
+  const scopedCompanyId = String(companyId || "").trim();
+  const scopedEntity = String(entity || "").trim().toLowerCase();
+  const scopedEntityId = String(entityId || "").trim();
+  if (!scopedCompanyId || !scopedEntity || !scopedEntityId) return null;
+  const rowId = `${CHANGE_EVENT_ROW_PREFIX}${crypto.randomUUID()}`;
+  const now = new Date().toISOString();
+  const payload = sanitizeChangeEventRow({
+    id: rowId,
+    companyId: scopedCompanyId,
+    entity: scopedEntity,
+    entityId: scopedEntityId,
+    updatedAt: String(updatedAt || "").trim() || now,
+    impactScopes
+  });
+  if (!cfg().on) {
+    const store = readStore();
+    store.jobs = Array.isArray(store.jobs) ? store.jobs : [];
+    store.jobs.push({
+      id: rowId,
+      companyId: scopedCompanyId,
+      title: CHANGE_EVENT_ROW_TITLE,
+      jobDescription: "Change event",
+      payload,
+      createdAt: now,
+      updatedAt: now
+    });
+    writeStore(store);
+    return payload;
+  }
+  await ensureSeeded();
+  await sbIns("jobs", [{
+    id: rowId,
+    company_id: scopedCompanyId,
+    title: CHANGE_EVENT_ROW_TITLE,
+    job_description: "Change event",
+    payload,
+    created_at: now,
+    updated_at: now
+  }], { conflict: "id", upsert: true }).catch(() => null);
+  return payload;
+}
+
+async function listCompanyChangeEvents({ companyId, since = "", limit = 100 }) {
+  const scopedCompanyId = String(companyId || "").trim();
+  if (!scopedCompanyId) return [];
+  const cap = Math.max(1, Math.min(500, Number(limit) || 100));
+  const sinceTs = Date.parse(String(since || "").trim());
+  const sinceIso = Number.isFinite(sinceTs) ? new Date(sinceTs).toISOString() : "";
+  if (!cfg().on) {
+    const store = readStore();
+    const rows = (store.jobs || [])
+      .filter((item) => String(item?.companyId || item?.company_id || "").trim() === scopedCompanyId && isChangeEventRow(item))
+      .map((item) => sanitizeChangeEventRow(item?.payload || item))
+      .filter((item) => !sinceIso || String(item.updatedAt || "").trim() > sinceIso)
+      .sort((a, b) => String(a.updatedAt || "").localeCompare(String(b.updatedAt || "")));
+    return rows.slice(0, cap);
+  }
+  await ensureSeeded();
+  const rows = await sbSel(
+    "jobs",
+    `select=id,company_id,payload,created_at&company_id=eq.${enc(scopedCompanyId)}&title=eq.${enc(CHANGE_EVENT_ROW_TITLE)}&order=created_at.asc&limit=${cap}`
+  ).catch(() => []);
+  return (Array.isArray(rows) ? rows : [])
+    .map((item) => sanitizeChangeEventRow(item?.payload || item))
+    .filter((item) => !sinceIso || String(item.updatedAt || "").trim() > sinceIso);
+}
+
 module.exports = {
   bootstrapAdmin,
   createClientUser,
@@ -5771,6 +5867,8 @@ module.exports = {
   saveUserSmtpSettings,
   appendAuditLog,
   listCompanyAuditLogs,
+  appendCompanyChangeEvent,
+  listCompanyChangeEvents,
   verifyUserEmail,
   getPortalUserByEmailForReset,
   resetPortalUserPasswordByToken
