@@ -118,8 +118,6 @@ const {
   saveCompanySharedExportPresets,
   appendAuditLog,
   listCompanyAuditLogs,
-  appendCompanyChangeEvent,
-  listCompanyChangeEvents,
   upsertCompanyEmailThread,
   saveCompanyPersonalShortcuts,
   setCompanyExtensionPlan,
@@ -255,20 +253,6 @@ function isSendgridApiMode(cfg = {}) {
 function isPostmarkApiMode(cfg = {}) {
   const host = normalizeSmtpHost(cfg.host).toLowerCase();
   return host.startsWith("postmarkapi");
-}
-
-async function emitCompanyChangeEventSafe({
-  companyId,
-  entity,
-  entityId,
-  updatedAt = "",
-  impactScopes = []
-}) {
-  try {
-    await appendCompanyChangeEvent({ companyId, entity, entityId, updatedAt, impactScopes });
-  } catch (_) {
-    // Never block primary workflow if change-feed logging fails.
-  }
 }
 
 function isGoogleApiMode(cfg = {}) {
@@ -12547,31 +12531,7 @@ const server = http.createServer(async (req, res) => {
         settings: body.settings || body,
         saveAsSuggestedGlobal: body?.saveAsSuggestedGlobal === true
       });
-      await emitCompanyChangeEventSafe({
-        companyId: actor.companyId,
-        entity: "settings",
-        entityId: `shared-export-presets:${actor.companyId}`,
-        updatedAt: new Date().toISOString(),
-        impactScopes: ["settings", "reports", "dashboard"]
-      });
       sendJson(res, 200, { ok: true, result: settings });
-    } catch (error) {
-      sendJson(res, 400, { ok: false, error: String(error.message || error) });
-    }
-    return;
-  }
-
-  if (req.method === "GET" && requestUrl.pathname === "/company/change-feed") {
-    try {
-      const actor = await requireSessionUser(getBearerToken(req));
-      const since = String(requestUrl.searchParams.get("since") || "").trim();
-      const limit = Math.max(1, Math.min(200, Number(requestUrl.searchParams.get("limit") || 100)));
-      const events = await listCompanyChangeEvents({
-        companyId: actor.companyId,
-        since,
-        limit
-      });
-      sendJson(res, 200, { ok: true, result: { events } });
     } catch (error) {
       sendJson(res, 400, { ok: false, error: String(error.message || error) });
     }
@@ -13317,13 +13277,6 @@ const server = http.createServer(async (req, res) => {
           signatureLinkUrl2: String(existing?.signatureLinkUrl2 || "").trim()
         }
       });
-      await emitCompanyChangeEventSafe({
-        companyId: String(state.companyId || "").trim(),
-        entity: "settings",
-        entityId: `email-settings:${String(state.userId || "").trim()}`,
-        updatedAt: new Date().toISOString(),
-        impactScopes: ["settings"]
-      });
       postResultPage(true, `${provider[0].toUpperCase()}${provider.slice(1)} mail connected successfully. You can go back to RecruitDesk.`);
     } catch (error) {
       postResultPage(false, String(error?.message || error));
@@ -13340,13 +13293,6 @@ const server = http.createServer(async (req, res) => {
         companyId: actor.companyId,
         userId: actor.id,
         settings: body.settings || body
-      });
-      await emitCompanyChangeEventSafe({
-        companyId: actor.companyId,
-        entity: "settings",
-        entityId: `email-settings:${actor.id}`,
-        updatedAt: new Date().toISOString(),
-        impactScopes: ["settings"]
       });
       sendJson(res, 200, { ok: true, result: saved });
     } catch (error) {
@@ -15129,13 +15075,6 @@ const server = http.createServer(async (req, res) => {
         jd_title: body.jd_title || body.jdTitle,
         client_name: body.client_name || body.clientName
       }, { companyId: actor.companyId });
-      await emitCompanyChangeEventSafe({
-        companyId: actor.companyId,
-        entity: "candidate",
-        entityId: String(body.id || body.candidateId || ""),
-        updatedAt: String(result?.updated_at || result?.updatedAt || new Date().toISOString()),
-        impactScopes: ["captured_notes", "candidates", "dashboard", "reports"]
-      });
       sendJson(res, 200, { ok: true, result });
     } catch (error) {
       sendJson(res, 400, { ok: false, error: String(error.message || error) });
@@ -16168,21 +16107,6 @@ const server = http.createServer(async (req, res) => {
       if (assessment?.id) {
         // Canonical 1:1 link: candidates.assessment_id must always point to the assessment.id
         await linkCandidateToAssessment(incomingCandidateId, assessment.id, { companyId: actor.companyId });
-        const eventAt = String(assessment?.updatedAt || assessment?.updated_at || new Date().toISOString());
-        await emitCompanyChangeEventSafe({
-          companyId: actor.companyId,
-          entity: "assessment",
-          entityId: String(assessment.id),
-          updatedAt: eventAt,
-          impactScopes: ["assessments", "dashboard", "reports", "candidates"]
-        });
-        await emitCompanyChangeEventSafe({
-          companyId: actor.companyId,
-          entity: "candidate",
-          entityId: incomingCandidateId,
-          updatedAt: eventAt,
-          impactScopes: ["captured_notes", "candidates", "dashboard", "reports", "assessments"]
-        });
       }
       sendJson(res, 200, { ok: true, result: assessment });
     } catch (error) {
@@ -16355,21 +16279,6 @@ const server = http.createServer(async (req, res) => {
       });
       if (restored?.id) {
         await linkCandidateToAssessment(candidateId, restored.id, { companyId: actor.companyId });
-        const eventAt = String(restored?.updatedAt || restored?.updated_at || new Date().toISOString());
-        await emitCompanyChangeEventSafe({
-          companyId: actor.companyId,
-          entity: "assessment",
-          entityId: String(restored.id),
-          updatedAt: eventAt,
-          impactScopes: ["assessments", "dashboard", "reports", "candidates"]
-        });
-        await emitCompanyChangeEventSafe({
-          companyId: actor.companyId,
-          entity: "candidate",
-          entityId: candidateId,
-          updatedAt: eventAt,
-          impactScopes: ["captured_notes", "candidates", "dashboard", "reports", "assessments"]
-        });
       }
       sendJson(res, 200, { ok: true, result: restored });
     } catch (error) {
@@ -16389,13 +16298,6 @@ const server = http.createServer(async (req, res) => {
         assessmentId
       });
       await unlinkAssessmentFromCompanyCandidates(actor.companyId, assessmentId);
-      await emitCompanyChangeEventSafe({
-        companyId: actor.companyId,
-        entity: "assessment",
-        entityId: assessmentId,
-        updatedAt: new Date().toISOString(),
-        impactScopes: ["assessments", "dashboard", "reports", "candidates"]
-      });
       sendJson(res, 200, { ok: true, result });
     } catch (error) {
       sendJson(res, 400, { ok: false, error: String(error.message || error) });
@@ -16516,13 +16418,6 @@ const server = http.createServer(async (req, res) => {
       const hideOnlyPatch = patchKeys.length === 1 && patchKeys[0] === "hidden_from_captured";
       if (hideOnlyPatch) {
         const result = await patchCandidate(candidateId, patch, { companyId: actor.companyId });
-        await emitCompanyChangeEventSafe({
-          companyId: actor.companyId,
-          entity: "candidate",
-          entityId: candidateId,
-          updatedAt: String(result?.updated_at || result?.updatedAt || new Date().toISOString()),
-          impactScopes: ["captured_notes", "candidates", "dashboard", "reports"]
-        });
         sendJson(res, 200, { ok: true, result });
         return;
       }
@@ -16582,13 +16477,6 @@ const server = http.createServer(async (req, res) => {
         });
       }
       const result = await patchCandidate(candidateId, patch, { companyId: actor.companyId });
-      await emitCompanyChangeEventSafe({
-        companyId: actor.companyId,
-        entity: "candidate",
-        entityId: candidateId,
-        updatedAt: String(result?.updated_at || result?.updatedAt || new Date().toISOString()),
-        impactScopes: ["captured_notes", "candidates", "dashboard", "reports"]
-      });
       sendJson(res, 200, { ok: true, result });
     } catch (error) {
       sendJson(res, 400, { ok: false, error: String(error.message || error) });
@@ -16663,13 +16551,6 @@ const server = http.createServer(async (req, res) => {
       const actor = await requireSessionUser(getBearerToken(req));
       const candidateId = String(requestUrl.searchParams.get("id") || "").trim();
       const result = await deleteCandidate(candidateId, { companyId: actor.companyId });
-      await emitCompanyChangeEventSafe({
-        companyId: actor.companyId,
-        entity: "candidate",
-        entityId: candidateId,
-        updatedAt: new Date().toISOString(),
-        impactScopes: ["captured_notes", "candidates", "dashboard", "reports", "assessments"]
-      });
       sendJson(res, 200, { ok: true, result });
     } catch (error) {
       sendJson(res, 400, { ok: false, error: String(error.message || error) });
@@ -16731,13 +16612,6 @@ const server = http.createServer(async (req, res) => {
         jd_title: body.jd_title || body.jdTitle,
         client_name: body.client_name || body.clientName
       }, { companyId: actor.companyId });
-      await emitCompanyChangeEventSafe({
-        companyId: actor.companyId,
-        entity: "candidate",
-        entityId: String(candidateId || ""),
-        updatedAt: String(result?.updated_at || result?.updatedAt || new Date().toISOString()),
-        impactScopes: ["captured_notes", "candidates", "dashboard", "reports"]
-      });
       sendJson(res, 200, { ok: true, result });
     } catch (error) {
       sendJson(res, 400, { ok: false, error: String(error.message || error) });
@@ -16793,16 +16667,6 @@ const server = http.createServer(async (req, res) => {
         notes: body.notes,
         next_follow_up_at: body.next_follow_up_at || body.nextFollowUpAt
       }, { companyId: actor.companyId });
-      const candidateId = String(body.candidate_id || body.candidateId || "").trim();
-      if (candidateId) {
-        await emitCompanyChangeEventSafe({
-          companyId: actor.companyId,
-          entity: "candidate",
-          entityId: candidateId,
-          updatedAt: new Date().toISOString(),
-          impactScopes: ["captured_notes", "candidates", "dashboard", "reports"]
-        });
-      }
       sendJson(res, 200, { ok: true, result });
     } catch (error) {
       sendJson(res, 400, { ok: false, error: String(error.message || error) });
