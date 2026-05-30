@@ -10114,7 +10114,7 @@ function PortalApp({ token, onLogout }) {
 
   const filteredAssessments = useMemo(() => {
     const query = String(assessmentFilters.q || "").trim().toLowerCase();
-    return (state.assessments || []).filter((item) => {
+    const rows = (state.assessments || []).filter((item) => {
       const archived = isAssessmentArchived(item);
       if (assessmentLane === "active" && archived) return false;
       if (assessmentLane === "archived" && !archived) return false;
@@ -10144,6 +10144,16 @@ function PortalApp({ token, onLogout }) {
       if (assessmentFilters.recruiters.length && !assessmentFilters.recruiters.includes(recruiterValue)) return false;
       if (assessmentFilters.outcomes.length && !assessmentFilters.outcomes.includes(outcomeValue)) return false;
       return true;
+    });
+    const rowTime = (item) => {
+      const t1 = Date.parse(String(item?.updatedAt || item?.updated_at || ""));
+      const t2 = Date.parse(String(item?.generatedAt || item?.createdAt || item?.created_at || ""));
+      return Math.max(Number.isFinite(t1) ? t1 : 0, Number.isFinite(t2) ? t2 : 0);
+    };
+    return rows.sort((a, b) => {
+      const diff = rowTime(b) - rowTime(a);
+      if (diff) return diff;
+      return String(b?.id || "").localeCompare(String(a?.id || ""));
     });
   }, [state.assessments, state.candidates, assessmentFilters, assessmentLane, resolveCanonicalJdTitle]);
 
@@ -11807,7 +11817,7 @@ function PortalApp({ token, onLogout }) {
 
   const visibleApplicants = useMemo(() => {
     const query = String(applicantFilters.q || "").trim().toLowerCase();
-    return filteredApplicants.filter((item) => {
+    const rows = filteredApplicants.filter((item) => {
       const linkedCandidate = applicantCandidateMap.get(String(item.id)) || null;
       const linkedAssessment = applicantAssessmentMap.get(String(item.id)) || null;
       if (isApplicantConvertedToAssessment(item, linkedCandidate, linkedAssessment)) return false;
@@ -11847,6 +11857,17 @@ function PortalApp({ token, onLogout }) {
       if (applicantFilters.assignedTo.length && !applicantFilters.assignedTo.includes(assignedValue)) return false;
       if (applicantFilters.outcomes.length && !applicantFilters.outcomes.includes(outcomeValue)) return false;
       return true;
+    });
+    const rowTime = (item) => {
+      const t1 = Date.parse(String(item?.updatedAt || item?.updated_at || ""));
+      const t2 = Date.parse(String(item?.createdAt || item?.created_at || ""));
+      const t3 = Date.parse(String(item?.hiddenAt || item?.hidden_at || ""));
+      return Math.max(Number.isFinite(t1) ? t1 : 0, Number.isFinite(t2) ? t2 : 0, Number.isFinite(t3) ? t3 : 0);
+    };
+    return rows.sort((a, b) => {
+      const diff = rowTime(b) - rowTime(a);
+      if (diff) return diff;
+      return String(b?.id || "").localeCompare(String(a?.id || ""));
     });
   }, [filteredApplicants, applicantFilters, applicantCandidateMap, applicantAssessmentMap]);
   const pagedApplicants = useMemo(() => visibleApplicants.slice(0, applicantsVisibleCount), [visibleApplicants, applicantsVisibleCount]);
