@@ -2570,7 +2570,9 @@ function extractRecruiterNoteFieldFallbacks(rawNote = "") {
         const match = line.match(pattern);
         if (match?.[1]) {
           const extracted = normalizeParsedRecruiterValue(match[1]);
-          return patterns === lwdPatterns ? sanitizeLwdOrDojValue(extracted) : extracted;
+          return (patterns === lwdExplicitPatterns || patterns === lwdHeuristicPatterns)
+            ? sanitizeLwdOrDojValue(extracted)
+            : extracted;
         }
       }
     }
