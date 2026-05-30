@@ -7974,6 +7974,7 @@ function PortalApp({ token, onLogout }) {
   const assessmentsSliceLoadSeqRef = useRef(0);
   const changeFeedCursorRef = useRef("");
   const changeFeedInFlightRef = useRef(false);
+  const changeFeedTickRef = useRef(async () => {});
   // Prevent background refresh from clobbering in-flight actions (e.g. SMTP send).
   const suspendWorkspaceRefreshRef = useRef(false);
 	const loadWorkspaceRef = useRef(null);
@@ -9736,6 +9737,9 @@ function PortalApp({ token, onLogout }) {
     }
 
     function onFocusLikeEvent() {
+      if (document.visibilityState === "visible") {
+        void changeFeedTickRef.current?.();
+      }
       if (!shouldRefreshNow()) return;
       void refreshWorkspaceSilently("focus-sync");
     }
@@ -9815,6 +9819,8 @@ function PortalApp({ token, onLogout }) {
       }
     }
 
+    changeFeedTickRef.current = runPollCycle;
+
     function schedule() {
       if (stopped) return;
       timer = window.setTimeout(async () => {
@@ -9826,6 +9832,7 @@ function PortalApp({ token, onLogout }) {
     runPollCycle().finally(() => schedule());
     return () => {
       stopped = true;
+      changeFeedTickRef.current = async () => {};
       if (timer) {
         try { window.clearTimeout(timer); } catch {}
       }
@@ -10138,6 +10145,15 @@ function PortalApp({ token, onLogout }) {
     return map;
   }, [state.assessments]);
 
+  function findCandidateByIdInWorkspace(candidateId) {
+    const safeCandidateId = String(candidateId || "").trim();
+    if (!safeCandidateId) return null;
+    return (
+      [...(Array.isArray(state.candidates) ? state.candidates : []), ...(Array.isArray(state.databaseCandidates) ? state.databaseCandidates : [])]
+        .find((item) => String(item?.id || "").trim() === safeCandidateId) || null
+    );
+  }
+
   function resolveCapturedAssessment(candidateRow) {
     const normalizeEmail = (value) => String(value || "").trim().toLowerCase();
     const normalizePhone = (value) => {
@@ -10171,6 +10187,8 @@ function PortalApp({ token, onLogout }) {
 
     const candidateIdKey = String(candidateRow?.id || "").trim();
     if (candidateIdKey) {
+      const currentCandidateLink = String(candidateRow?.assessment_id || candidateRow?.assessmentId || "").trim();
+      if (!currentCandidateLink) return null;
       const byCandidateId = capturedAssessmentMap.get(`cid:${candidateIdKey}`) || null;
       if (byCandidateId) return byCandidateId;
     }
@@ -10307,10 +10325,14 @@ function PortalApp({ token, onLogout }) {
       const archived = isAssessmentArchived(item);
       if (assessmentLane === "active" && archived) return false;
       if (assessmentLane === "archived" && !archived) return false;
-      const matchedCandidate = (state.candidates || []).find((candidate) =>
-        (item?.candidateId && String(candidate.id) === String(item.candidateId)) ||
-        String(candidate.name || "").trim().toLowerCase() === String(item?.candidateName || "").trim().toLowerCase()
-      );
+      const exactCandidateId = String(item?.candidateId || item?.candidate_id || "").trim();
+      const matchedCandidate = exactCandidateId ? findCandidateByIdInWorkspace(exactCandidateId) : null;
+      if (exactCandidateId) {
+        if (!matchedCandidate) return false;
+        const linkedAssessmentId = String(matchedCandidate?.assessment_id || matchedCandidate?.assessmentId || "").trim();
+        if (!linkedAssessmentId) return false;
+        if (linkedAssessmentId !== String(item?.id || "").trim()) return false;
+      }
       const clientValue = String(item?.clientName || matchedCandidate?.client_name || "").trim();
       const jdValue = resolveCanonicalJdTitle(item, matchedCandidate);
       // Always filter by assigned recruiter (not assessment creator/last editor).
@@ -10355,7 +10377,7 @@ function PortalApp({ token, onLogout }) {
         const delta = freshnessTs(b) - freshnessTs(a);
         return sortBy === "oldest" ? -delta : delta;
       });
-  }, [state.assessments, state.candidates, assessmentFilters, assessmentLane, resolveCanonicalJdTitle]);
+  }, [state.assessments, state.candidates, state.databaseCandidates, assessmentFilters, assessmentLane, resolveCanonicalJdTitle]);
 
   function inferInterviewRoundFromStatus(value) {
     const raw = String(value || "").trim().toLowerCase();
