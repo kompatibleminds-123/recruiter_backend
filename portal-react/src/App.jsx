@@ -7955,13 +7955,14 @@ function PortalApp({ token, onLogout }) {
   const [clientFeedbackItem, setClientFeedbackItem] = useState(null);
 	const [attempts, setAttempts] = useState([]);
 	const workspaceRefreshInFlightRef = useRef(false);
-  const workspaceRefreshPendingRef = useRef(false);
+	const workspaceRefreshPendingRef = useRef(false);
 	const lastWorkspaceRefreshAtRef = useRef(0);
   const lastWorkspaceRefreshByPathRef = useRef({});
   const workspaceLoadSeqRef = useRef(0);
   const initialWorkspaceLoadDoneRef = useRef(false);
   const candidatesSliceLoadSeqRef = useRef(0);
   const assessmentsSliceLoadSeqRef = useRef(0);
+  const assessmentCaptureSyncAtRef = useRef(0);
   // Prevent background refresh from clobbering in-flight actions (e.g. SMTP send).
   const suspendWorkspaceRefreshRef = useRef(false);
 	const loadWorkspaceRef = useRef(null);
@@ -9614,34 +9615,38 @@ function PortalApp({ token, onLogout }) {
 
   useEffect(() => {
     if (!token) return undefined;
-    const MIN_FOCUS_REFRESH_GAP_MS = 45000;
-    const HEARTBEAT_MS = 90000;
+    const pathname = String(location?.pathname || "").trim();
+    const syncRoutes = new Set(["/assessments", "/captured-notes"]);
+    if (!syncRoutes.has(pathname)) return undefined;
+    const MIN_SYNC_GAP_MS = 2500;
+    const SYNC_INTERVAL_MS = 5000;
 
-    function shouldRefreshNow() {
-      if (document.visibilityState !== "visible") return false;
-      return (Date.now() - Number(lastWorkspaceRefreshAtRef.current || 0)) > MIN_FOCUS_REFRESH_GAP_MS;
+    function syncAssessmentAndCaptureState(force = false) {
+      if (document.visibilityState !== "visible" && !force) return;
+      if (!force && (Date.now() - Number(assessmentCaptureSyncAtRef.current || 0)) <= MIN_SYNC_GAP_MS) return;
+      assessmentCaptureSyncAtRef.current = Date.now();
+      void Promise.all([reloadAssessmentsSlice(), reloadCandidatesSlice()]).catch(() => {});
     }
 
-    function onFocusLikeEvent() {
-      if (!shouldRefreshNow()) return;
-      void refreshWorkspaceSilently("focus-sync");
-    }
+    const onFocus = () => syncAssessmentAndCaptureState(true);
+    const onPageshow = () => syncAssessmentAndCaptureState(true);
+    const onVisibilityChange = () => syncAssessmentAndCaptureState(true);
 
     const heartbeat = window.setInterval(() => {
-      if (document.visibilityState !== "visible") return;
-      void refreshWorkspaceSilently("heartbeat");
-    }, HEARTBEAT_MS);
+      syncAssessmentAndCaptureState(false);
+    }, SYNC_INTERVAL_MS);
 
-    window.addEventListener("focus", onFocusLikeEvent);
-    window.addEventListener("pageshow", onFocusLikeEvent);
-    document.addEventListener("visibilitychange", onFocusLikeEvent);
+    window.addEventListener("focus", onFocus);
+    window.addEventListener("pageshow", onPageshow);
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    syncAssessmentAndCaptureState(true);
     return () => {
       try { window.clearInterval(heartbeat); } catch {}
-      window.removeEventListener("focus", onFocusLikeEvent);
-      window.removeEventListener("pageshow", onFocusLikeEvent);
-      document.removeEventListener("visibilitychange", onFocusLikeEvent);
+      window.removeEventListener("focus", onFocus);
+      window.removeEventListener("pageshow", onPageshow);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
     };
-  }, [token]);
+  }, [token, location?.pathname]);
 
   useEffect(() => {
     if (!token) return undefined;

@@ -5269,6 +5269,28 @@ async function saveAssessment({ actorUserId, companyId, assessment }) {
     || ""
   ).trim();
 
+  if (expectedUpdatedAt) {
+    try {
+      const candidateRows = await sbSel(
+        "candidates",
+        `select=id,assessment_id,assessmentId,used_in_assessment,hidden_from_captured&company_id=eq.${enc(companyId)}&id=eq.${enc(candidateId)}&limit=1`
+      ).catch(() => []);
+      const candidateRow = candidateRows && candidateRows[0] ? candidateRows[0] : null;
+      const linkedAssessmentId = String(candidateRow?.assessment_id || candidateRow?.assessmentId || "").trim();
+      if (!linkedAssessmentId) {
+        throw new Error("Assessment was deleted or moved back to Captured. Please reopen the latest record.");
+      }
+      if (String(linkedAssessmentId) !== String(safeAssessment.id || "").trim()) {
+        throw new Error("Assessment was moved back to Captured or relinked elsewhere. Please reopen the latest record.");
+      }
+    } catch (error) {
+      if (/Assessment was (deleted|moved back to Captured|moved back to Captured or relinked elsewhere)/i.test(String(error?.message || error))) {
+        throw error;
+      }
+      throw new Error("Assessment was deleted or moved back to Captured. Please reopen the latest record.");
+    }
+  }
+
   // Read previous row (best-effort) so we can create factual events (status changes, interview done, offered, etc.)
   // without breaking existing flows if the table isn't present.
   let previous = null;
@@ -5294,6 +5316,8 @@ async function saveAssessment({ actorUserId, companyId, assessment }) {
     if (prevUpdatedAt && prevUpdatedAt !== expectedUpdatedAt) {
       throw new Error("Assessment was updated by another change. Please reopen and save again.");
     }
+  } else if (expectedUpdatedAt && !previous) {
+    throw new Error("Assessment was deleted or moved back to Captured. Please reopen the latest record.");
   }
 
   const sanitizedForSave = { ...safeAssessment };
