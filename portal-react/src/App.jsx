@@ -2570,18 +2570,20 @@ function extractRecruiterNoteFieldFallbacks(rawNote = "") {
         const match = line.match(pattern);
         if (match?.[1]) {
           const extracted = normalizeParsedRecruiterValue(match[1]);
-          return patterns === lwdPatterns ? sanitizeLwdOrDojValue(extracted) : extracted;
+          return extracted;
         }
       }
     }
     return "";
   };
-  const lwdPatterns = [
+  const lwdExplicitPatterns = [
     /^\s*lwd(?:\s*is|:)?\s*([^\n]+)/i,
     /^\s*lwd\s*-\s*([^\n]+)/i,
     /^\s*doj(?:\s*is|:)?\s*([^\n]+)/i,
     /^\s*doj\s*-\s*([^\n]+)/i,
-    /^\s*last\s*working\s*day(?:\s*is|:)?\s*([^\n]+)/i,
+    /^\s*last\s*working\s*day(?:\s*is|:)?\s*([^\n]+)/i
+  ];
+  const lwdHeuristicPatterns = [
     /\blwd\s*(?:as|is|=)\s*([^\n]+)/i,
     /\bdoj\s*(?:as|is|=)\s*([^\n]+)/i,
     /\bserving\s*notice.*?\blwd\s*(?:as|is|=)?\s*([^\n]+)/i
@@ -2609,7 +2611,7 @@ return {
       /^\s*notice\s*[-:]\s*([^\n]+)/i,
       /^\s*np(?:\s*is|:)?\s*([^\n]+)/i
     ]),
-    lwd_or_doj: findLineValue(lwdPatterns),
+    lwd_or_doj: sanitizeLwdOrDojValue(findLineValue(lwdExplicitPatterns) || findLineValue(lwdHeuristicPatterns)),
     offer_in_hand: findLineValue([
       /^\s*offer\s*in\s*hand(?:\s*is|:)?\s*([^\n]+)/i,
       /^\s*offer\s*in\s*hand\s*-\s*([^\n]+)/i,
@@ -13620,24 +13622,8 @@ function PortalApp({ token, onLogout }) {
 
   async function openSavedAssessment(assessmentInput) {
     const requestedId = String(assessmentInput?.id || "").trim();
-    let assessment = assessmentInput;
-    const needsLatestFetch = Boolean(requestedId);
-    if (needsLatestFetch) {
-      setInterviewLatestLoading(true);
-      setStatus("interview", "Loading latest assessment data... please wait before editing.", "ok");
-    }
-    // Use the latest saved snapshot for edit-open to avoid stale reopen.
-    if (requestedId) {
-      try {
-        const fresh = await api(`/company/assessments/by-id?assessmentId=${encodeURIComponent(requestedId)}`, token);
-        if (fresh && typeof fresh === "object" && String(fresh.id || "").trim() === requestedId) {
-          assessment = fresh;
-          upsertAssessmentInState(fresh);
-        }
-      } catch {
-        // Fall back to in-memory row.
-      }
-    }
+    const assessment = assessmentInput && typeof assessmentInput === "object" ? assessmentInput : {};
+    setInterviewLatestLoading(false);
     const normalizeEmail = (value) => String(value || "").trim().toLowerCase();
     const normalizePhone = (value) => {
       const digits = String(value || "").replace(/[^\d]/g, "");
@@ -13710,7 +13696,19 @@ function PortalApp({ token, onLogout }) {
     });
     navigate("/interview");
     setStatus("interview", `Opened saved assessment for ${assessment?.candidateName || "candidate"}.`, "ok");
-    if (needsLatestFetch) setInterviewLatestLoading(false);
+
+    if (requestedId) {
+      void (async () => {
+        try {
+          const fresh = await api(`/company/assessments/by-id?assessmentId=${encodeURIComponent(requestedId)}`, token);
+          if (fresh && typeof fresh === "object" && String(fresh.id || "").trim() === requestedId) {
+            upsertAssessmentInState(fresh);
+          }
+        } catch {
+          // Keep the instantly opened form; latest snapshot can be reloaded on save if needed.
+        }
+      })();
+    }
   }
 
   async function createAssessmentFromCandidate(candidateId) {
