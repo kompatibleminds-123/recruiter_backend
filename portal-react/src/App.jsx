@@ -2563,8 +2563,8 @@ function isMeaningfulRecruiterConflict(key, fromValue, toValue) {
 function extractRecruiterNoteFieldFallbacks(rawNote = "") {
   const text = String(rawNote || "").trim();
   if (!text) return { current_ctc: "", expected_ctc: "", notice_period: "", lwd_or_doj: "", offer_in_hand: "" };
+  const lines = text.split(/\r?\n/).map((line) => String(line || "").trim()).filter(Boolean);
   const findLineValue = (patterns) => {
-    const lines = text.split(/\r?\n/).map((line) => String(line || "").trim()).filter(Boolean);
     for (const line of lines) {
       for (const pattern of patterns) {
         const match = line.match(pattern);
@@ -2576,16 +2576,25 @@ function extractRecruiterNoteFieldFallbacks(rawNote = "") {
     }
     return "";
   };
-  const lwdPatterns = [
+  const lwdExplicitPatterns = [
     /^\s*lwd(?:\s*is|:)?\s*([^\n]+)/i,
     /^\s*lwd\s*-\s*([^\n]+)/i,
     /^\s*doj(?:\s*is|:)?\s*([^\n]+)/i,
     /^\s*doj\s*-\s*([^\n]+)/i,
-    /^\s*last\s*working\s*day(?:\s*is|:)?\s*([^\n]+)/i,
+    /^\s*last\s*working\s*day(?:\s*is|:)?\s*([^\n]+)/i
+  ];
+  const lwdHeuristicPatterns = [
     /\blwd\s*(?:as|is|=)\s*([^\n]+)/i,
     /\bdoj\s*(?:as|is|=)\s*([^\n]+)/i,
     /\bserving\s*notice.*?\blwd\s*(?:as|is|=)?\s*([^\n]+)/i
   ];
+  const findLwdValue = () => {
+    // Critical precedence rule:
+    // explicit LWD/DOJ lines must win over heuristic matches from Notice-period text.
+    const explicit = findLineValue(lwdExplicitPatterns);
+    if (explicit) return explicit;
+    return findLineValue(lwdHeuristicPatterns);
+  };
 return {
   current_ctc: findLineValue([
     /^\s*current\s*ctc(?:\s*is|:)?\s*(\d+(?:\.\d+)?\s*(?:lpa|l|lac|lakh|lakhs)?)\.?$/i,
@@ -2609,7 +2618,7 @@ return {
       /^\s*notice\s*[-:]\s*([^\n]+)/i,
       /^\s*np(?:\s*is|:)?\s*([^\n]+)/i
     ]),
-    lwd_or_doj: findLineValue(lwdPatterns),
+    lwd_or_doj: findLwdValue(),
     offer_in_hand: findLineValue([
       /^\s*offer\s*in\s*hand(?:\s*is|:)?\s*([^\n]+)/i,
       /^\s*offer\s*in\s*hand\s*-\s*([^\n]+)/i,
