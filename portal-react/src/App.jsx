@@ -9160,11 +9160,9 @@ function PortalApp({ token, onLogout }) {
     // which are best sourced from assessment events.
     const needsAssessmentEvents = includeEvents && (pathname === "/dashboard" || pathname === "/assessments" || pathname === "/candidates" || forceCore || forceAll);
     const needsEmailSettings = includeEmailSettings && (pathname === "/mail-settings" || forceAll);
-    const useLightCandidateFetch = pathname === "/captured-notes" || pathname === "/assessments";
-    const capturedRoutePageSize = [10, 25, 50].includes(Number(capturedPageSize)) ? Number(capturedPageSize) : 25;
-    const capturedRoutePage = Math.max(1, Number(capturedPage || 1));
-    const candidateFetchLimit = pathname === "/captured-notes" ? capturedRoutePageSize : (useLightCandidateFetch ? 50 : 5000);
-    const candidateFetchPage = pathname === "/captured-notes" ? capturedRoutePage : 1;
+    const useLightCandidateFetch = pathname === "/assessments";
+    const candidateFetchLimit = useLightCandidateFetch ? 50 : 5000;
+    const candidateFetchPage = 1;
     const candidateFetchMetaSuffix = useLightCandidateFetch ? "&includeMeta=1" : "";
     // Billing/access flags are used in sidebar gating across the app,
     // so fetch billing overview on all recruiter routes (plans list only needed on /plan).
