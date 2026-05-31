@@ -9334,13 +9334,13 @@ function PortalApp({ token, onLogout }) {
     lastWorkspaceRefreshAtRef.current = now;
     setWorkspaceDataReady(false);
     void loadWorkspace({
-      forceFiveTabsRefresh: true,
-      preloadAllTabs: true,
-      includeEvents: true,
-      includeClientUsers: true,
-      includeEmployeeUsers: true,
-      includeSharedPresets: true,
-      includeEmailSettings: true
+      forceFiveTabsRefresh: false,
+      preloadAllTabs: false,
+      includeEvents: false,
+      includeClientUsers: false,
+      includeEmployeeUsers: false,
+      includeSharedPresets: false,
+      includeEmailSettings: false
     }).catch((error) => setStatus("workspace", String(error?.message || error), "error")).finally(() => {
       setWorkspaceDataReady(true);
     });
@@ -9420,6 +9420,8 @@ function PortalApp({ token, onLogout }) {
 
   async function refreshWorkspaceSilently(reason = "manual", options = {}) {
     if (!token) return;
+    // Emergency hard-stop: prevent silent global workspace refresh loops.
+    return;
     if (workspaceRefreshInFlightRef.current) {
       workspaceRefreshPendingRef.current = true;
       return;
@@ -9581,22 +9583,8 @@ function PortalApp({ token, onLogout }) {
 
   useEffect(() => {
     if (!token) return;
-    const pathname = String(location?.pathname || "/dashboard").trim() || "/dashboard";
-    const refreshGateTabs = new Set(["/dashboard", "/candidates", "/assessments", "/applicants"]);
-    if (!refreshGateTabs.has(pathname)) return;
-
-    const now = Date.now();
-    const TEN_MIN_MS = 10 * 60 * 1000;
-    const lastFullRefreshAt = Number(lastWorkspaceRefreshAtRef.current || 0);
-    const isStale = !lastFullRefreshAt || (now - lastFullRefreshAt) > TEN_MIN_MS;
-    if (!isStale) return;
-
-    lastWorkspaceRefreshByPathRef.current = {
-      ...(lastWorkspaceRefreshByPathRef.current || {}),
-      [pathname]: now
-    };
-    lastWorkspaceRefreshAtRef.current = now;
-    void loadWorkspace({ forceFiveTabsRefresh: true }).catch((error) => setStatus("workspace", String(error?.message || error), "error"));
+    // Emergency hard-stop: disable route-triggered global auto-refresh.
+    return;
   }, [token, location?.pathname]);
 
   useEffect(() => {
