@@ -9160,6 +9160,12 @@ function PortalApp({ token, onLogout }) {
     // which are best sourced from assessment events.
     const needsAssessmentEvents = includeEvents && (pathname === "/dashboard" || pathname === "/assessments" || pathname === "/candidates" || forceCore || forceAll);
     const needsEmailSettings = includeEmailSettings && (pathname === "/mail-settings" || forceAll);
+    const useLightCandidateFetch = pathname === "/captured-notes" || pathname === "/assessments";
+    const capturedRoutePageSize = [10, 25, 50].includes(Number(capturedPageSize)) ? Number(capturedPageSize) : 25;
+    const capturedRoutePage = Math.max(1, Number(capturedPage || 1));
+    const candidateFetchLimit = pathname === "/captured-notes" ? capturedRoutePageSize : (useLightCandidateFetch ? 50 : 5000);
+    const candidateFetchPage = pathname === "/captured-notes" ? capturedRoutePage : 1;
+    const candidateFetchMetaSuffix = useLightCandidateFetch ? "&includeMeta=1" : "";
     // Billing/access flags are used in sidebar gating across the app,
     // so fetch billing overview on all recruiter routes (plans list only needed on /plan).
     const needsBilling = true;
@@ -9212,7 +9218,7 @@ function PortalApp({ token, onLogout }) {
       needsEmployeeUsers
         ? api("/company/employees", token).catch(() => ({ employees: [] }))
         : Promise.resolve(null),
-      needsCandidates ? api("/candidates?limit=5000", token).catch(() => []) : Promise.resolve(null),
+      needsCandidates ? api(`/candidates?limit=${candidateFetchLimit}&page=${candidateFetchPage}${candidateFetchMetaSuffix}`, token).catch(() => []) : Promise.resolve(null),
       needsDatabaseCandidates ? api("/company/database-candidates?limit=5000", token).catch(() => []) : Promise.resolve(null),
       needsAssessments ? api("/company/assessments", token).catch(() => ({ assessments: [] })) : Promise.resolve(null),
       needsAssessmentEvents
@@ -9248,6 +9254,9 @@ function PortalApp({ token, onLogout }) {
     );
 
     if (seq !== workspaceLoadSeqRef.current) return;
+    const candidateRows = Array.isArray(candidatesResult)
+      ? candidatesResult
+      : (Array.isArray(candidatesResult?.items) ? candidatesResult.items : []);
     setState((current) => ({
       ...current,
       user: userResult.user || userResult,
@@ -9264,7 +9273,7 @@ function PortalApp({ token, onLogout }) {
       jobs: needsJobs ? (jobsResult?.jobs || []) : current.jobs,
       users: needsUsers ? (usersResult?.users || []) : current.users,
       candidates: needsCandidates
-        ? mergeCandidatesByFreshness(current.candidates, Array.isArray(candidatesResult) ? candidatesResult : [])
+        ? mergeCandidatesByFreshness(current.candidates, candidateRows)
         : current.candidates,
       databaseCandidates: needsDatabaseCandidates
         ? mergeCandidatesByFreshness(current.databaseCandidates, Array.isArray(databaseCandidatesResult) ? databaseCandidatesResult : [])
@@ -9545,20 +9554,29 @@ function PortalApp({ token, onLogout }) {
     }
   }
 
-  async function reloadCandidatesSlice({ includeDatabase = false } = {}) {
+  async function reloadCandidatesSlice({ includeDatabase = false, limit = 5000, page = 1, includeMeta = false } = {}) {
     if (!token) return;
     const seq = (candidatesSliceLoadSeqRef.current || 0) + 1;
     candidatesSliceLoadSeqRef.current = seq;
+    const safeLimit = Math.max(1, Math.min(5000, Number(limit || 5000)));
+    const safePage = Math.max(1, Number(page || 1));
+    const metaSuffix = includeMeta ? "&includeMeta=1" : "";
     const [candidatesResult, databaseCandidatesResult] = await Promise.all([
-      api("/candidates?limit=5000", token).catch(() => []),
-      includeDatabase ? api("/company/database-candidates?limit=5000", token).catch(() => []) : Promise.resolve(null)
+      api(`/candidates?limit=${safeLimit}&page=${safePage}${metaSuffix}`, token).catch(() => []),
+      includeDatabase ? api(`/company/database-candidates?limit=${safeLimit}&page=${safePage}${metaSuffix}`, token).catch(() => []) : Promise.resolve(null)
     ]);
     if (seq !== candidatesSliceLoadSeqRef.current) return;
+    const candidateRows = Array.isArray(candidatesResult)
+      ? candidatesResult
+      : (Array.isArray(candidatesResult?.items) ? candidatesResult.items : []);
+    const databaseRows = Array.isArray(databaseCandidatesResult)
+      ? databaseCandidatesResult
+      : (Array.isArray(databaseCandidatesResult?.items) ? databaseCandidatesResult.items : []);
     setState((current) => ({
       ...current,
-      candidates: mergeCandidatesByFreshness(current.candidates, Array.isArray(candidatesResult) ? candidatesResult : []),
+      candidates: mergeCandidatesByFreshness(current.candidates, candidateRows),
       databaseCandidates: includeDatabase
-        ? mergeCandidatesByFreshness(current.databaseCandidates, Array.isArray(databaseCandidatesResult) ? databaseCandidatesResult : [])
+        ? mergeCandidatesByFreshness(current.databaseCandidates, databaseRows)
         : current.databaseCandidates
     }));
   }
@@ -9592,6 +9610,8 @@ function PortalApp({ token, onLogout }) {
     // Keep workspace refresh manual/lightweight to avoid burning Supabase egress on every tab focus/poll.
     return undefined;
   }, [token]);
+  const capturedSyncLimit = [10, 25, 50].includes(Number(capturedPageSize)) ? Number(capturedPageSize) : 25;
+  const capturedSyncPage = Math.max(1, Number(capturedPage || 1));
 
   useEffect(() => {
     if (!token) return undefined;
@@ -9600,7 +9620,10 @@ function PortalApp({ token, onLogout }) {
     let cancelled = false;
     // One-time pull on entering Assessments tab so team conversions show without relogin.
     // No interval polling to keep egress low.
-    void Promise.all([reloadAssessmentsSlice(), reloadCandidatesSlice()]).catch(() => {}).finally(() => {
+    void Promise.all([
+      reloadAssessmentsSlice(),
+      reloadCandidatesSlice({ limit: 50, page: 1, includeMeta: true })
+    ]).catch(() => {}).finally(() => {
       if (cancelled) return;
     });
     return () => {
@@ -9624,9 +9647,9 @@ function PortalApp({ token, onLogout }) {
     const syncRoutes = new Set(["/captured-notes"]);
     if (!syncRoutes.has(pathname)) return undefined;
     assessmentCaptureSyncAtRef.current = Date.now();
-    void reloadCandidatesSlice().catch(() => {});
+    void reloadCandidatesSlice({ limit: capturedSyncLimit, page: capturedSyncPage, includeMeta: true }).catch(() => {});
     return undefined;
-  }, [token, location?.pathname]);
+  }, [token, location?.pathname, capturedSyncLimit, capturedSyncPage]);
 
   useEffect(() => {
     if (!token) return undefined;
@@ -9634,7 +9657,7 @@ function PortalApp({ token, onLogout }) {
     let cancelled = false;
     const streamUrl = `/company/stream/captured?token=${encodeURIComponent(String(token || "").trim())}`;
     const source = new EventSource(streamUrl);
-    const onCaptured = () => {
+    const onCaptured = (event) => {
       if (cancelled) return;
       if (document.visibilityState !== "visible") return;
       if (capturedLiveSyncInFlightRef.current) {
@@ -9646,14 +9669,40 @@ function PortalApp({ token, onLogout }) {
         return;
       }
       capturedLiveSyncInFlightRef.current = true;
-      void reloadCandidatesSlice({ includeDatabase: location?.pathname === "/candidates" })
+      const payload = (() => {
+        try {
+          return JSON.parse(String(event?.data || "{}"));
+        } catch {
+          return {};
+        }
+      })();
+      const eventType = String(payload?.eventType || "").trim();
+      const candidateId = String(payload?.candidateId || "").trim();
+      const refreshPromise = (candidateId && eventType !== "candidate_deleted")
+        ? api(`/candidates?id=${encodeURIComponent(candidateId)}&scope=company&limit=1`, token)
+            .then((rows) => {
+              const nextRows = Array.isArray(rows) ? rows : [];
+              setState((current) => ({
+                ...current,
+                candidates: mergeCandidatesByFreshness(current.candidates, nextRows)
+              }));
+            })
+        : (eventType === "candidate_deleted" && candidateId)
+          ? Promise.resolve().then(() => {
+              setState((current) => ({
+                ...current,
+                candidates: (current.candidates || []).filter((item) => String(item?.id || "") !== candidateId)
+              }));
+            })
+          : reloadCandidatesSlice({ limit: capturedSyncLimit, page: capturedSyncPage, includeMeta: true });
+      void refreshPromise
         .catch(() => {})
         .finally(() => {
           capturedLiveSyncInFlightRef.current = false;
           if (capturedLiveSyncPendingRef.current && !isCapturedUserEditing && !cancelled) {
             capturedLiveSyncPendingRef.current = false;
             capturedLiveSyncInFlightRef.current = true;
-            void reloadCandidatesSlice({ includeDatabase: location?.pathname === "/candidates" })
+            void reloadCandidatesSlice({ limit: capturedSyncLimit, page: capturedSyncPage, includeMeta: true })
               .catch(() => {})
               .finally(() => {
                 capturedLiveSyncInFlightRef.current = false;
@@ -9668,7 +9717,7 @@ function PortalApp({ token, onLogout }) {
       try { source.removeEventListener("captured", onCaptured); } catch {}
       try { source.close(); } catch {}
     };
-  }, [token, location?.pathname, isCapturedUserEditing]);
+  }, [token, location?.pathname, isCapturedUserEditing, capturedSyncLimit, capturedSyncPage]);
 
   useEffect(() => {
     if (!token) return;
@@ -9676,8 +9725,8 @@ function PortalApp({ token, onLogout }) {
     if (isCapturedUserEditing) return;
     if (!capturedLiveSyncPendingRef.current) return;
     capturedLiveSyncPendingRef.current = false;
-    void reloadCandidatesSlice({ includeDatabase: location?.pathname === "/candidates" }).catch(() => {});
-  }, [token, location?.pathname, isCapturedUserEditing]);
+    void reloadCandidatesSlice({ limit: capturedSyncLimit, page: capturedSyncPage, includeMeta: true }).catch(() => {});
+  }, [token, location?.pathname, isCapturedUserEditing, capturedSyncLimit, capturedSyncPage]);
 
   useEffect(() => {
     if (!token) return undefined;
