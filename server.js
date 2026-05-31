@@ -4131,6 +4131,46 @@ async function ensureCandidateVisibleToActor(actor, candidateId) {
   return matches[0];
 }
 
+const capturedStreamByCompany = new Map();
+
+function addCapturedStreamClient(companyId, client) {
+  const key = String(companyId || "").trim();
+  if (!key || !client) return;
+  const list = capturedStreamByCompany.get(key) || [];
+  list.push(client);
+  capturedStreamByCompany.set(key, list);
+}
+
+function removeCapturedStreamClient(companyId, client) {
+  const key = String(companyId || "").trim();
+  if (!key) return;
+  const list = capturedStreamByCompany.get(key) || [];
+  const next = list.filter((item) => item !== client);
+  if (next.length) capturedStreamByCompany.set(key, next);
+  else capturedStreamByCompany.delete(key);
+}
+
+function emitCapturedStreamEvent(companyId, eventType = "candidate_changed", payload = {}) {
+  const key = String(companyId || "").trim();
+  if (!key) return;
+  const list = capturedStreamByCompany.get(key) || [];
+  if (!list.length) return;
+  const data = JSON.stringify({
+    type: String(eventType || "candidate_changed").trim(),
+    at: new Date().toISOString(),
+    ...((payload && typeof payload === "object") ? payload : {})
+  });
+  list.forEach((client) => {
+    try {
+      client.res.write(`event: captured\n`);
+      client.res.write(`data: ${data}\n\n`);
+    } catch {
+      removeCapturedStreamClient(key, client);
+      try { client.res.end(); } catch {}
+    }
+  });
+}
+
 async function getVisibleCandidateForActor(actor, candidateId) {
   const id = String(candidateId || "").trim();
   if (!id) {
@@ -10323,6 +10363,47 @@ const server = http.createServer(async (req, res) => {
       ts: new Date().toISOString()
     });
     return;
+  }
+
+  if (req.method === "GET" && requestUrl.pathname === "/company/stream/captured") {
+    try {
+      const streamToken = String(requestUrl.searchParams.get("token") || "").trim();
+      const actor = await requireSessionUser(streamToken || getBearerToken(req));
+      const companyId = String(actor?.companyId || "").trim();
+      if (!companyId) throw new Error("Invalid session.");
+
+      const headers = buildResponseHeaders(req, {
+        "Content-Type": "text/event-stream; charset=utf-8",
+        "Cache-Control": "no-cache, no-transform",
+        Connection: "keep-alive",
+        "X-Accel-Buffering": "no"
+      });
+      res.writeHead(200, headers);
+      res.write(`event: connected\n`);
+      res.write(`data: ${JSON.stringify({ ok: true, at: new Date().toISOString() })}\n\n`);
+
+      const client = { res, companyId };
+      addCapturedStreamClient(companyId, client);
+      const keepAlive = setInterval(() => {
+        try {
+          res.write(`event: ping\n`);
+          res.write(`data: ${JSON.stringify({ at: new Date().toISOString() })}\n\n`);
+        } catch {
+          // handled by close/error cleanup
+        }
+      }, 25000);
+
+      const cleanup = () => {
+        try { clearInterval(keepAlive); } catch {}
+        removeCapturedStreamClient(companyId, client);
+      };
+      req.on("close", cleanup);
+      req.on("error", cleanup);
+      return;
+    } catch (error) {
+      sendJson(res, 401, { ok: false, error: String(error?.message || error) });
+      return;
+    }
   }
 
   if (req.method === "POST" && requestUrl.pathname === "/internal/marketing/worker/tick") {
@@ -16670,6 +16751,7 @@ const server = http.createServer(async (req, res) => {
       const hideOnlyPatch = patchKeys.length === 1 && patchKeys[0] === "hidden_from_captured";
       if (hideOnlyPatch) {
         const result = await patchCandidate(candidateId, patch, { companyId: actor.companyId });
+        emitCapturedStreamEvent(actor.companyId, "candidate_changed", { candidateId });
         sendJson(res, 200, { ok: true, result });
         return;
       }
@@ -16729,6 +16811,7 @@ const server = http.createServer(async (req, res) => {
         });
       }
       const result = await patchCandidate(candidateId, patch, { companyId: actor.companyId });
+      emitCapturedStreamEvent(actor.companyId, "candidate_changed", { candidateId });
       sendJson(res, 200, { ok: true, result });
     } catch (error) {
       sendJson(res, 400, { ok: false, error: String(error.message || error) });
@@ -16791,6 +16874,7 @@ const server = http.createServer(async (req, res) => {
       }
       const result = await saveCandidate(candidate, { companyId: actor.companyId });
       const license = await incrementCompanyCaptureUsage(actor.companyId, 1);
+      emitCapturedStreamEvent(actor.companyId, "candidate_created", { candidateId: String(result?.id || "").trim() || undefined });
       sendJson(res, 200, { ok: true, result, license });
     } catch (error) {
       sendJson(res, 400, { ok: false, error: String(error.message || error) });
@@ -16803,6 +16887,7 @@ const server = http.createServer(async (req, res) => {
       const actor = await requireSessionUser(getBearerToken(req));
       const candidateId = String(requestUrl.searchParams.get("id") || "").trim();
       const result = await deleteCandidate(candidateId, { companyId: actor.companyId });
+      emitCapturedStreamEvent(actor.companyId, "candidate_deleted", { candidateId });
       sendJson(res, 200, { ok: true, result });
     } catch (error) {
       sendJson(res, 400, { ok: false, error: String(error.message || error) });
@@ -16841,6 +16926,7 @@ const server = http.createServer(async (req, res) => {
         jd_title: body.jd_title || body.jdTitle,
         client_name: body.client_name || body.clientName
       }, { companyId: actor.companyId });
+      emitCapturedStreamEvent(actor.companyId, "candidate_assigned", { candidateId: String(body.id || body.candidateId || "").trim() || undefined });
       sendJson(res, 200, { ok: true, result });
     } catch (error) {
       sendJson(res, 400, { ok: false, error: String(error.message || error) });
@@ -16864,6 +16950,7 @@ const server = http.createServer(async (req, res) => {
         jd_title: body.jd_title || body.jdTitle,
         client_name: body.client_name || body.clientName
       }, { companyId: actor.companyId });
+      emitCapturedStreamEvent(actor.companyId, "candidate_assigned", { candidateId: String(candidateId || "").trim() || undefined });
       sendJson(res, 200, { ok: true, result });
     } catch (error) {
       sendJson(res, 400, { ok: false, error: String(error.message || error) });
@@ -16919,6 +17006,7 @@ const server = http.createServer(async (req, res) => {
         notes: body.notes,
         next_follow_up_at: body.next_follow_up_at || body.nextFollowUpAt
       }, { companyId: actor.companyId });
+      emitCapturedStreamEvent(actor.companyId, "candidate_attempt", { candidateId: String(body.candidate_id || body.candidateId || "").trim() || undefined });
       sendJson(res, 200, { ok: true, result });
     } catch (error) {
       sendJson(res, 400, { ok: false, error: String(error.message || error) });

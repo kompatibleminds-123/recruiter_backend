@@ -7332,6 +7332,8 @@ function PortalApp({ token, onLogout }) {
   const [bulkAssignApplicantIds, setBulkAssignApplicantIds] = useState([]);
   const [bulkAssignCandidateIds, setBulkAssignCandidateIds] = useState([]);
   const [applicantsVisibleCount, setApplicantsVisibleCount] = useState(50);
+  const [capturedPage, setCapturedPage] = useState(1);
+  const [capturedPageSize, setCapturedPageSize] = useState(25);
   const [bulkAssignApplicantModalOpen, setBulkAssignApplicantModalOpen] = useState(false);
   const [bulkAssignCandidateModalOpen, setBulkAssignCandidateModalOpen] = useState(false);
   const [dbCampaignAttachModal, setDbCampaignAttachModal] = useState({
@@ -7963,6 +7965,8 @@ function PortalApp({ token, onLogout }) {
   const candidatesSliceLoadSeqRef = useRef(0);
   const assessmentsSliceLoadSeqRef = useRef(0);
   const assessmentCaptureSyncAtRef = useRef(0);
+  const capturedLiveSyncInFlightRef = useRef(false);
+  const capturedLiveSyncPendingRef = useRef(false);
   const [workspaceDataReady, setWorkspaceDataReady] = useState(false);
   // Prevent background refresh from clobbering in-flight actions (e.g. SMTP send).
   const suspendWorkspaceRefreshRef = useRef(false);
@@ -7972,6 +7976,15 @@ function PortalApp({ token, onLogout }) {
   const [jobListLane, setJobListLane] = useState("active");
   const [jobsCatalog, setJobsCatalog] = useState([]);
   const [jobShortcutKey, setJobShortcutKey] = useState("");
+  const isCapturedUserEditing = useMemo(() => (
+    Boolean(
+      newDraftOpen
+      || String(assignCandidateId || "").trim()
+      || String(notesCandidateId || "").trim()
+      || String(attemptsCandidateId || "").trim()
+      || bulkAssignCandidateModalOpen
+    )
+  ), [newDraftOpen, assignCandidateId, notesCandidateId, attemptsCandidateId, bulkAssignCandidateModalOpen]);
   const [jobShortcutValue, setJobShortcutValue] = useState("");
   const [shortcutPersonalKey, setShortcutPersonalKey] = useState("");
   const [shortcutPersonalValue, setShortcutPersonalValue] = useState("");
@@ -9569,7 +9582,7 @@ function PortalApp({ token, onLogout }) {
   useEffect(() => {
     if (!token) return;
     const pathname = String(location?.pathname || "/dashboard").trim() || "/dashboard";
-    const refreshGateTabs = new Set(["/captured-notes", "/dashboard", "/candidates", "/assessments", "/applicants"]);
+    const refreshGateTabs = new Set(["/dashboard", "/candidates", "/assessments", "/applicants"]);
     if (!refreshGateTabs.has(pathname)) return;
 
     const now = Date.now();
@@ -9620,37 +9633,63 @@ function PortalApp({ token, onLogout }) {
   useEffect(() => {
     if (!token) return undefined;
     const pathname = String(location?.pathname || "").trim();
-    const syncRoutes = new Set(["/assessments", "/captured-notes"]);
+    const syncRoutes = new Set(["/captured-notes"]);
     if (!syncRoutes.has(pathname)) return undefined;
-    const MIN_SYNC_GAP_MS = 2500;
-    const SYNC_INTERVAL_MS = 5000;
-
-    function syncAssessmentAndCaptureState(force = false) {
-      if (document.visibilityState !== "visible" && !force) return;
-      if (!force && (Date.now() - Number(assessmentCaptureSyncAtRef.current || 0)) <= MIN_SYNC_GAP_MS) return;
-      assessmentCaptureSyncAtRef.current = Date.now();
-      void Promise.all([reloadAssessmentsSlice(), reloadCandidatesSlice()]).catch(() => {});
-    }
-
-    const onFocus = () => syncAssessmentAndCaptureState(true);
-    const onPageshow = () => syncAssessmentAndCaptureState(true);
-    const onVisibilityChange = () => syncAssessmentAndCaptureState(true);
-
-    const heartbeat = window.setInterval(() => {
-      syncAssessmentAndCaptureState(false);
-    }, SYNC_INTERVAL_MS);
-
-    window.addEventListener("focus", onFocus);
-    window.addEventListener("pageshow", onPageshow);
-    document.addEventListener("visibilitychange", onVisibilityChange);
-    syncAssessmentAndCaptureState(true);
-    return () => {
-      try { window.clearInterval(heartbeat); } catch {}
-      window.removeEventListener("focus", onFocus);
-      window.removeEventListener("pageshow", onPageshow);
-      document.removeEventListener("visibilitychange", onVisibilityChange);
-    };
+    assessmentCaptureSyncAtRef.current = Date.now();
+    void reloadCandidatesSlice().catch(() => {});
+    return undefined;
   }, [token, location?.pathname]);
+
+  useEffect(() => {
+    if (!token) return undefined;
+    if (String(location?.pathname || "").trim() !== "/captured-notes") return undefined;
+    let cancelled = false;
+    const streamUrl = `/company/stream/captured?token=${encodeURIComponent(String(token || "").trim())}`;
+    const source = new EventSource(streamUrl);
+    const onCaptured = () => {
+      if (cancelled) return;
+      if (document.visibilityState !== "visible") return;
+      if (capturedLiveSyncInFlightRef.current) {
+        capturedLiveSyncPendingRef.current = true;
+        return;
+      }
+      if (isCapturedUserEditing) {
+        capturedLiveSyncPendingRef.current = true;
+        return;
+      }
+      capturedLiveSyncInFlightRef.current = true;
+      void reloadCandidatesSlice({ includeDatabase: location?.pathname === "/candidates" })
+        .catch(() => {})
+        .finally(() => {
+          capturedLiveSyncInFlightRef.current = false;
+          if (capturedLiveSyncPendingRef.current && !isCapturedUserEditing && !cancelled) {
+            capturedLiveSyncPendingRef.current = false;
+            capturedLiveSyncInFlightRef.current = true;
+            void reloadCandidatesSlice({ includeDatabase: location?.pathname === "/candidates" })
+              .catch(() => {})
+              .finally(() => {
+                capturedLiveSyncInFlightRef.current = false;
+              });
+          }
+        });
+    };
+    source.addEventListener("captured", onCaptured);
+
+    return () => {
+      cancelled = true;
+      try { source.removeEventListener("captured", onCaptured); } catch {}
+      try { source.close(); } catch {}
+    };
+  }, [token, location?.pathname, isCapturedUserEditing]);
+
+  useEffect(() => {
+    if (!token) return;
+    if (String(location?.pathname || "").trim() !== "/captured-notes") return;
+    if (isCapturedUserEditing) return;
+    if (!capturedLiveSyncPendingRef.current) return;
+    capturedLiveSyncPendingRef.current = false;
+    void reloadCandidatesSlice({ includeDatabase: location?.pathname === "/candidates" }).catch(() => {});
+  }, [token, location?.pathname, isCapturedUserEditing]);
 
   useEffect(() => {
     if (!token) return undefined;
@@ -11733,6 +11772,12 @@ function PortalApp({ token, onLogout }) {
       return String(b?.updated_at || b?.updatedAt || b?.created_at || b?.createdAt || "").localeCompare(String(a?.updated_at || a?.updatedAt || a?.created_at || a?.createdAt || ""));
     });
   }, [candidateFilters, capturedAssessmentMap, capturedNotesUniverse, state.user, state.users, resolveCapturedAssessment, resolveCanonicalJdTitle]);
+  const safeCapturedPageSize = [10, 25, 50].includes(Number(capturedPageSize)) ? Number(capturedPageSize) : 25;
+  const totalCapturedPages = Math.max(1, Math.ceil((capturedCandidates.length || 0) / safeCapturedPageSize));
+  const pagedCapturedCandidates = useMemo(() => {
+    const start = (capturedPage - 1) * safeCapturedPageSize;
+    return capturedCandidates.slice(start, start + safeCapturedPageSize);
+  }, [capturedCandidates, capturedPage, safeCapturedPageSize]);
   const filteredApplicants = useMemo(() => {
     const isAdmin = String(state.user?.role || "").toLowerCase() === "admin";
     const currentUserName = String(state.user?.name || "").trim().toLowerCase();
@@ -12003,6 +12048,25 @@ function PortalApp({ token, onLogout }) {
     applicantFilters.assignedTo,
     applicantFilters.outcomes,
     applicantFilters.activeStates
+  ]);
+  useEffect(() => {
+    setCapturedPage((current) => Math.min(Math.max(1, current), totalCapturedPages));
+  }, [totalCapturedPages]);
+  useEffect(() => {
+    setCapturedPage(1);
+  }, [
+    candidateFilters.q,
+    candidateFilters.view,
+    candidateFilters.dateFrom,
+    candidateFilters.dateTo,
+    candidateFilters.clients,
+    candidateFilters.jds,
+    candidateFilters.assignedTo,
+    candidateFilters.capturedBy,
+    candidateFilters.sources,
+    candidateFilters.outcomes,
+    candidateFilters.activeStates,
+    capturedPageSize
   ]);
 
   const quickUpdateMatches = useMemo(() => {
@@ -12747,7 +12811,7 @@ function PortalApp({ token, onLogout }) {
       };
     });
     if (!skipRefresh) {
-      void refreshWorkspaceSilently("post-patch");
+      await reloadCandidatesSlice({ includeDatabase: location?.pathname === "/candidates" });
     }
   }
 
@@ -12838,7 +12902,7 @@ function PortalApp({ token, onLogout }) {
         })
         : current.databaseCandidates
     }));
-    void refreshWorkspaceSilently("post-delete");
+    await reloadCandidatesSlice({ includeDatabase: location?.pathname === "/candidates" });
     setStatus("captured", "Candidate deleted.", "ok");
   }
 
@@ -12872,7 +12936,7 @@ function PortalApp({ token, onLogout }) {
       databaseCandidates: Array.isArray(current.databaseCandidates) ? current.databaseCandidates.filter((item) => !safeIds.includes(String(item?.id || "").trim())) : current.databaseCandidates
     }));
     setBulkAssignCandidateIds([]);
-    void refreshWorkspaceSilently("post-bulk-delete");
+    await reloadCandidatesSlice({ includeDatabase: location?.pathname === "/candidates" });
     const msg = `Bulk delete done. Deleted: ${success} | Failed: ${failed}.`;
     setStatus("captured", failReasons.length ? `${msg} Reasons: ${failReasons.join(" || ")}` : msg, failed ? "error" : "ok");
   }
@@ -13115,7 +13179,6 @@ function PortalApp({ token, onLogout }) {
     });
     await api("/candidates", token, "POST", { candidate: payload });
     await reloadCandidatesSlice({ includeDatabase: location?.pathname === "/candidates" });
-    void refreshWorkspaceSilently("post-manual-draft");
     setNewDraftOpen(false);
     resetNewDraftForm();
     setStatus("captured", "Manual draft created.", "ok");
@@ -13250,7 +13313,6 @@ function PortalApp({ token, onLogout }) {
         }
       }
       await reloadCandidatesSlice({ includeDatabase: location?.pathname === "/candidates" });
-      void refreshWorkspaceSilently("post-bulk-cv-import");
       setStatus("captured", `Bulk CV import done. Success: ${success} | Failed: ${failed}.`, failed ? "error" : "ok");
     } finally {
       setNewDraftImportBusy(false);
@@ -20087,8 +20149,35 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                     </>
                   ) : null}
               </div>
+              {workspaceDataReady ? (
+                <div className="button-row tight" style={{ justifyContent: "space-between", alignItems: "center", gap: 10 }}>
+                  <div className="muted">
+                    {capturedCandidates.length ? `Showing ${(capturedPage - 1) * safeCapturedPageSize + 1}-${Math.min(capturedCandidates.length, capturedPage * safeCapturedPageSize)} of ${capturedCandidates.length}` : "Showing 0 of 0"}
+                  </div>
+                  <div className="button-row tight" style={{ alignItems: "center", gap: 10 }}>
+                    <label className="copy-preset-control" style={{ margin: 0 }}>
+                      <span>Rows per page</span>
+                      <select
+                        value={safeCapturedPageSize}
+                        onChange={(e) => {
+                          const nextSize = Number(e.target.value || 25);
+                          setCapturedPageSize([10, 25, 50].includes(nextSize) ? nextSize : 25);
+                          setCapturedPage(1);
+                        }}
+                      >
+                        <option value={10}>10</option>
+                        <option value={25}>25</option>
+                        <option value={50}>50</option>
+                      </select>
+                    </label>
+                    <button className="ghost-btn" disabled={capturedPage <= 1} onClick={() => setCapturedPage((page) => Math.max(1, page - 1))}>Previous</button>
+                    <div className="muted">Page {capturedPage} of {totalCapturedPages}</div>
+                    <button className="ghost-btn" disabled={capturedPage >= totalCapturedPages} onClick={() => setCapturedPage((page) => Math.min(totalCapturedPages, page + 1))}>Next</button>
+                  </div>
+                </div>
+              ) : null}
               <div className="stack-list captured-notes-list">
-                {workspaceDataReady ? (!capturedCandidates.length ? <div className="empty-state">No captured notes or recruiter-owned candidates yet.</div> : capturedCandidates.map((item) => {
+                {workspaceDataReady ? (!capturedCandidates.length ? <div className="empty-state">No captured notes or recruiter-owned candidates yet.</div> : pagedCapturedCandidates.map((item) => {
                   const matchedAssessment = resolveCapturedAssessment(item);
                   const statusState = normalizedAssessmentState(matchedAssessment, item);
                   const latestAttemptLine = extractLatestAttemptLine(item.last_contact_notes || "");
