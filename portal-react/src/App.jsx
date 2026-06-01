@@ -19946,17 +19946,6 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
               <div className="form-grid three-col">
                 <label className="full"><span>Search</span><input placeholder="Search by candidate, phone, email, JD..." value={applicantFilters.q} onChange={(e) => setApplicantFilters((current) => ({ ...current, q: e.target.value }))} /></label>
               </div>
-              <div className="button-row tight" style={{ marginTop: 8 }}>
-                <label className="copy-preset-control">
-                  <span>Rows per page</span>
-                  <select value={safeApplicantApiPageSize} onChange={(e) => setApplicantPageSize(Number(e.target.value || 25))}>
-                    {[10, 25, 50].map((size) => <option key={size} value={size}>{size}</option>)}
-                  </select>
-                </label>
-                <button className="ghost-btn" disabled={safeApplicantApiPage <= 1} onClick={() => setApplicantPage((page) => Math.max(1, page - 1))}>Previous</button>
-                <div className="muted">{`Page ${safeApplicantApiPage} of ${totalApplicantPages}`}</div>
-                <button className="ghost-btn" disabled={safeApplicantApiPage >= totalApplicantPages} onClick={() => setApplicantPage((page) => Math.min(totalApplicantPages, page + 1))}>Next</button>
-              </div>
               <div className="metric-grid metric-grid--tight captured-metric-row" style={{ marginTop: 12 }}>
                 <div className="metric-card compact-metric"><div className="metric-label captured-metric-label"><span className="captured-metric-icon">🗓</span>Applied today</div><div className="metric-value">{renderLoadedMetricValue(applicantStats.today)}</div></div>
                 <div className="metric-card compact-metric"><div className="metric-label captured-metric-label"><span className="captured-metric-icon">🗂</span>Total applied</div><div className="metric-value">{renderLoadedMetricValue(applicantStats.total || 0)}</div></div>
@@ -20044,6 +20033,17 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                     ) : null}
                   </>
                 ) : null}
+              </div>
+              <div className="button-row tight" style={{ marginTop: 8 }}>
+                <label className="copy-preset-control">
+                  <span>Rows per page</span>
+                  <select value={safeApplicantApiPageSize} onChange={(e) => setApplicantPageSize(Number(e.target.value || 25))}>
+                    {[10, 25, 50].map((size) => <option key={size} value={size}>{size}</option>)}
+                  </select>
+                </label>
+                <button className="ghost-btn" disabled={safeApplicantApiPage <= 1} onClick={() => setApplicantPage((page) => Math.max(1, page - 1))}>Previous</button>
+                <div className="muted">{`Page ${safeApplicantApiPage} of ${totalApplicantPages}`}</div>
+                <button className="ghost-btn" disabled={safeApplicantApiPage >= totalApplicantPages} onClick={() => setApplicantPage((page) => Math.min(totalApplicantPages, page + 1))}>Next</button>
               </div>
               <div className="stack-list captured-notes-list">
                 {workspaceDataReady ? (

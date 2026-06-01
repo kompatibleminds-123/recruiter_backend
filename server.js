@@ -3562,9 +3562,7 @@ async function getApplicantStatsForUser(user, options = {}) {
   const actorId = String(user?.id || "").trim();
   const actorIsAdmin = String(user?.role || "").toLowerCase() === "admin";
   const sources = ["website_apply", "hosted_apply", "google_sheet"];
-  const now = new Date();
-  const todayStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate())).toISOString();
-  const tomorrowStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1)).toISOString();
+  const todayKey = new Date().toISOString().slice(0, 10);
 
   const buildBaseQueryParts = () => {
     const parts = [
@@ -3590,39 +3588,42 @@ async function getApplicantStatsForUser(user, options = {}) {
     return parts;
   };
 
-  const fetchCount = async (extra = []) => {
-    if (!(on && companyId)) return 0;
-    const query = ["select=id", ...buildBaseQueryParts(), ...extra].join("&");
+  const fetchStatRows = async () => {
+    if (!(on && companyId)) return [];
+    const query = [
+      "select=id,source,created_at,hidden_from_captured,used_in_assessment,assessment_id,name,email,phone,company,role,location,client_name,jd_title,assigned_to_name,recruiter_name",
+      ...buildBaseQueryParts(),
+      "limit=5000"
+    ].join("&");
     const response = await fetch(`${url}/rest/v1/candidates?${query}`, {
-      method: "HEAD",
       headers: {
         apikey: key,
-        Authorization: `Bearer ${key}`,
-        Prefer: "count=exact"
+        Authorization: `Bearer ${key}`
       }
     });
-    if (!response.ok) return 0;
-    const contentRange = String(response.headers.get("content-range") || "").trim();
-    const totalText = contentRange.split("/")[1] || "0";
-    const total = Number(totalText);
-    return Number.isFinite(total) ? total : 0;
+    if (!response.ok) return [];
+    const rows = await response.json();
+    return Array.isArray(rows) ? rows : [];
   };
 
   if (on && companyId) {
-    const [total, today, converted, inactive] = await Promise.all([
-      fetchCount([]),
-      fetchCount([`created_at=gte.${encodeURIComponent(todayStart)}`, `created_at=lt.${encodeURIComponent(tomorrowStart)}`]),
-      fetchCount(["or=(used_in_assessment.is.true,assessment_id.not.is.null)"]),
-      fetchCount(["hidden_from_captured.is.true", "used_in_assessment=not.is.true", "assessment_id=is.null"])
-    ]);
+    const rows = await fetchStatRows();
+    const pool = rows.filter((item) => applyApplicantFiltersLocal(item, filters, true));
+    const converted = pool.filter((item) => Boolean(item?.used_in_assessment) || Boolean(String(item?.assessment_id || item?.assessmentId || "").trim())).length;
+    const inactive = pool.filter((item) => {
+      const isConverted = Boolean(item?.used_in_assessment) || Boolean(String(item?.assessment_id || item?.assessmentId || "").trim());
+      if (isConverted) return false;
+      return item?.hidden_from_captured === true;
+    }).length;
+    const total = pool.length;
     const active = Math.max(0, total - converted - inactive);
+    const today = pool.filter((item) => String(item?.created_at || "").slice(0, 10) === todayKey).length;
     return { today, total, active, inactive, converted };
   }
 
   // Local fallback.
   const fallbackRows = await listCandidatesForUser(user, { limit: 5000, q });
   const pool = (Array.isArray(fallbackRows) ? fallbackRows : []).filter((item) => applyApplicantFiltersLocal(item, filters, true));
-  const todayKey = new Date().toISOString().slice(0, 10);
   const converted = pool.filter((item) => Boolean(item?.used_in_assessment) || Boolean(String(item?.assessment_id || item?.assessmentId || "").trim())).length;
   const inactive = pool.filter((item) => Boolean(item?.hidden_from_captured) && !Boolean(item?.used_in_assessment) && !Boolean(String(item?.assessment_id || item?.assessmentId || "").trim())).length;
   const total = pool.length;
