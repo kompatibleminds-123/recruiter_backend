@@ -7449,6 +7449,7 @@ function PortalApp({ token, onLogout }) {
   const [assessmentListMeta, setAssessmentListMeta] = useState({ total: 0, totalPages: 1, page: 1, limit: 25 });
   const [assessmentListLoading, setAssessmentListLoading] = useState(false);
   const [assessmentStatsSnapshot, setAssessmentStatsSnapshot] = useState(null);
+  const [assessmentStatusItemSnapshot, setAssessmentStatusItemSnapshot] = useState(null);
   const [capturedStatsSnapshot, setCapturedStatsSnapshot] = useState(null);
   const [capturedListItems, setCapturedListItems] = useState([]);
   const [capturedOptionPool, setCapturedOptionPool] = useState([]);
@@ -8224,6 +8225,33 @@ function PortalApp({ token, onLogout }) {
   }, [assessmentLane, assessmentPage, assessmentPageSize, assessmentFiltersApplied]);
 
   useEffect(() => {
+    if (!token) return;
+    const requestedId = String(assessmentStatusId || "").trim();
+    if (!requestedId) {
+      setAssessmentStatusItemSnapshot(null);
+      return;
+    }
+    const localMatch = (Array.isArray(assessmentListItems) ? assessmentListItems : []).find((item) => String(item?.id || "").trim() === requestedId) || null;
+    if (localMatch) {
+      setAssessmentStatusItemSnapshot(localMatch);
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      try {
+        const fresh = await api(`/company/assessments/by-id?assessmentId=${encodeURIComponent(requestedId)}`, token);
+        if (cancelled) return;
+        setAssessmentStatusItemSnapshot(fresh && typeof fresh === "object" && String(fresh.id || "").trim() === requestedId ? fresh : null);
+      } catch {
+        if (!cancelled) setAssessmentStatusItemSnapshot(null);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [token, assessmentStatusId, assessmentListItems]);
+
+  useEffect(() => {
     // Load per-recruiter SMTP/signature settings where mail content is composed.
     if (location?.pathname === "/mail-settings" || location?.pathname === "/settings" || location?.pathname === "/client-share") {
       void loadSmtpSettingsOnce();
@@ -8264,7 +8292,9 @@ function PortalApp({ token, onLogout }) {
   const notesCandidateLive = (state.candidates || []).find((item) => String(item.id) === String(notesCandidateId)) || null;
   const notesCandidate = notesCandidateLive || notesCandidateSnapshot || null;
   const attemptsCandidate = (state.candidates || []).find((item) => String(item.id) === String(attemptsCandidateId)) || null;
-  const assessmentStatusItem = (state.assessments || []).find((item) => String(item.id) === String(assessmentStatusId)) || null;
+  const assessmentStatusItem = assessmentStatusItemSnapshot
+    || (Array.isArray(assessmentListItems) ? assessmentListItems.find((item) => String(item.id) === String(assessmentStatusId)) : null)
+    || null;
   const quickUpdateCandidate = (state.candidates || []).find((item) => String(item.id) === String(quickUpdateCandidateId)) || null;
   const quickUpdateLinkedAssessment = useMemo(() => {
     if (!quickUpdateCandidate) return null;
@@ -9211,7 +9241,6 @@ function PortalApp({ token, onLogout }) {
     const needsAssessments =
       pathname === "/dashboard" ||
       pathname === "/captured-notes" ||
-      pathname === "/assessments" ||
       pathname === "/client-share" ||
       pathname === "/interview" ||
       forceCore ||
@@ -10507,7 +10536,7 @@ function PortalApp({ token, onLogout }) {
     const allowedRecruiterNames = isAdmin
       ? (state.users || []).map((item) => String(item?.name || "").trim()).filter(Boolean)
       : Array.from(new Set([currentUserName, ...adminNames].filter(Boolean)));
-    (state.assessments || []).forEach((item) => {
+    (Array.isArray(assessmentListItems) ? assessmentListItems : []).forEach((item) => {
       const matchedCandidate = (state.candidates || []).find((candidate) =>
         (item?.candidateId && String(candidate.id) === String(item.candidateId)) ||
         String(candidate.name || "").trim().toLowerCase() === String(item?.candidateName || "").trim().toLowerCase()
@@ -10527,52 +10556,11 @@ function PortalApp({ token, onLogout }) {
       recruiters: Array.from(recruiters).sort((a, b) => a.localeCompare(b)),
       outcomes: DEFAULT_STATUS_OPTIONS
     };
-  }, [state.assessments, state.candidates, state.user, state.users, resolveCanonicalJdTitle, getClientScopedActiveJobTitles, assessmentFilters.clients]);
+  }, [assessmentListItems, state.candidates, state.user, state.users, resolveCanonicalJdTitle, getClientScopedActiveJobTitles, assessmentFilters.clients]);
 
   const filteredAssessments = useMemo(() => {
-    const query = String(assessmentFiltersApplied.q || "").trim().toLowerCase();
-    const rows = (state.assessments || []).filter((item) => {
-      const archived = isAssessmentArchived(item);
-      if (assessmentLane === "active" && archived) return false;
-      if (assessmentLane === "archived" && !archived) return false;
-      const matchedCandidate = (state.candidates || []).find((candidate) =>
-        (item?.candidateId && String(candidate.id) === String(item.candidateId)) ||
-        String(candidate.name || "").trim().toLowerCase() === String(item?.candidateName || "").trim().toLowerCase()
-      );
-      const clientValue = String(item?.clientName || matchedCandidate?.client_name || "").trim();
-      const jdValue = resolveCanonicalJdTitle(item, matchedCandidate);
-      // Always filter by assigned recruiter (not assessment creator/last editor).
-      const recruiterValue = String(matchedCandidate?.assigned_to_name || item?.recruiterName || matchedCandidate?.recruiter_name || "").trim();
-      const outcomeValue = normalizeAssessmentStatusLabel(item?.candidateStatus || item?.candidate_status || "") || "No outcome";
-      const createdDate = String(item?.generatedAt || item?.updatedAt || "").slice(0, 10);
-      const hay = [
-        item?.candidateName,
-        item?.phoneNumber,
-        item?.emailId,
-        jdValue,
-        clientValue,
-        recruiterValue
-      ].join(" ").toLowerCase();
-      if (query && !hay.includes(query)) return false;
-      if (assessmentFiltersApplied.dateFrom && createdDate && createdDate < assessmentFiltersApplied.dateFrom) return false;
-      if (assessmentFiltersApplied.dateTo && createdDate && createdDate > assessmentFiltersApplied.dateTo) return false;
-      if (assessmentFiltersApplied.clients.length && !assessmentFiltersApplied.clients.includes(clientValue)) return false;
-      if (assessmentFiltersApplied.jds.length && !assessmentFiltersApplied.jds.includes(jdValue)) return false;
-      if (assessmentFiltersApplied.recruiters.length && !assessmentFiltersApplied.recruiters.includes(recruiterValue)) return false;
-      if (assessmentFiltersApplied.outcomes.length && !assessmentFiltersApplied.outcomes.includes(outcomeValue)) return false;
-      return true;
-    });
-    const rowTime = (item) => {
-      const t1 = Date.parse(String(item?.updatedAt || item?.updated_at || ""));
-      const t2 = Date.parse(String(item?.generatedAt || item?.createdAt || item?.created_at || ""));
-      return Math.max(Number.isFinite(t1) ? t1 : 0, Number.isFinite(t2) ? t2 : 0);
-    };
-    return rows.sort((a, b) => {
-      const diff = rowTime(b) - rowTime(a);
-      if (diff) return diff;
-      return String(b?.id || "").localeCompare(String(a?.id || ""));
-    });
-  }, [state.assessments, state.candidates, assessmentFiltersApplied, assessmentLane, resolveCanonicalJdTitle]);
+    return Array.isArray(assessmentListItems) ? assessmentListItems : [];
+  }, [assessmentListItems]);
 
   function inferInterviewRoundFromStatus(value) {
     const raw = String(value || "").trim().toLowerCase();
@@ -11810,175 +11798,17 @@ function PortalApp({ token, onLogout }) {
   }, [state.candidates, state.user]);
 
   const capturedNotesStats = useMemo(() => {
-    if (!Array.isArray(capturedNotesUniverse) || !capturedNotesUniverse.length) {
-      if (capturedStatsSnapshot && typeof capturedStatsSnapshot === "object") {
-        return {
-          today: Number(capturedStatsSnapshot.today || 0),
-          total: Number(capturedStatsSnapshot.total || 0),
-          active: Number(capturedStatsSnapshot.active || 0),
-          inactive: Number(capturedStatsSnapshot.inactive || 0),
-          converted: Number(capturedStatsSnapshot.converted || 0)
-        };
-      }
-      return { today: 0, total: 0, active: 0, inactive: 0, converted: 0 };
+    if (capturedStatsSnapshot && typeof capturedStatsSnapshot === "object") {
+      return {
+        today: Number(capturedStatsSnapshot.today || 0),
+        total: Number(capturedStatsSnapshot.total || 0),
+        active: Number(capturedStatsSnapshot.active || 0),
+        inactive: Number(capturedStatsSnapshot.inactive || 0),
+        converted: Number(capturedStatsSnapshot.converted || 0)
+      };
     }
-    const toIstDateKey = (value) => {
-      const date = value ? new Date(value) : new Date();
-      if (!(date instanceof Date) || Number.isNaN(date.getTime())) return "";
-      const parts = new Intl.DateTimeFormat("en-CA", {
-        timeZone: "Asia/Kolkata",
-        year: "numeric",
-        month: "2-digit",
-        day: "2-digit"
-      }).formatToParts(date);
-      const year = parts.find((part) => part.type === "year")?.value || "";
-      const month = parts.find((part) => part.type === "month")?.value || "";
-      const day = parts.find((part) => part.type === "day")?.value || "";
-      return year && month && day ? `${year}-${month}-${day}` : "";
-    };
-    const todayKey = toIstDateKey(new Date());
-    const filters = candidateFiltersApplied || {};
-    const queryText = String(filters.q || "").trim().toLowerCase();
-    const viewMode = String(filters.view || "all").trim() || "all";
-    const currentUserName = String(state.user?.name || "").trim().toLowerCase();
-    const currentUserId = String(state.user?.id || "").trim();
-    const adminUserIds = new Set((state.users || []).filter((user) => String(user?.role || "").toLowerCase() === "admin").map((user) => String(user?.id || "").trim()).filter(Boolean));
-    const parseTime = (value) => {
-      const time = Date.parse(String(value || ""));
-      return Number.isFinite(time) ? time : 0;
-    };
-    const activityDateKey = (item) => {
-      const createdAt = parseTime(item?.created_at);
-      const assignedAt = parseTime(item?.assigned_at);
-      const activityAt = Math.max(createdAt, assignedAt);
-      if (!activityAt) return item?.created_at ? toIstDateKey(item.created_at) : "";
-      return toIstDateKey(activityAt);
-    };
-    const isAssignedToCurrentUser = (item) => {
-      const assignedId = String(item?.assigned_to_user_id || "").trim();
-      const assignedName = String(item?.assigned_to_name || "").trim().toLowerCase();
-      if (currentUserId && assignedId) return assignedId === currentUserId;
-      return Boolean(currentUserName && assignedName && assignedName === currentUserName);
-    };
-    const isAssignedByCurrentUser = (item) => {
-      const assignedById = String(item?.assigned_by_user_id || "").trim();
-      const assignedByName = String(item?.assigned_by_name || "").trim().toLowerCase();
-      if (currentUserId && assignedById) return assignedById === currentUserId;
-      return Boolean(currentUserName && assignedByName && assignedByName === currentUserName);
-    };
-    const isCapturedByCurrentUser = (item) => {
-      const capturedId = String(item?.recruiter_id || "").trim();
-      const capturedName = String(item?.recruiter_name || "").trim().toLowerCase();
-      if (currentUserId && capturedId) return capturedId === currentUserId;
-      return Boolean(currentUserName && capturedName && capturedName === currentUserName);
-    };
-    const isFirstAssignedToCurrentUser = (item) => {
-      const firstId = String(item?.first_assigned_to_user_id || "").trim();
-      const firstName = String(item?.first_assigned_to_name || "").trim().toLowerCase();
-      if (currentUserId && firstId) return firstId === currentUserId;
-      return Boolean(currentUserName && firstName && firstName === currentUserName);
-    };
-    const isFirstAssignedByAdmin = (item) => {
-      const firstById = String(item?.first_assigned_by_user_id || "").trim();
-      if (firstById && adminUserIds.size) return adminUserIds.has(firstById);
-      const fallbackById = String(item?.assigned_by_user_id || "").trim();
-      if (fallbackById && adminUserIds.size) return adminUserIds.has(fallbackById);
-      const fallbackByName = String(item?.assigned_by_name || "").trim().toLowerCase();
-      return Boolean(fallbackByName === "admin");
-    };
-    const isConvertedCandidate = (item) => Boolean(resolveCapturedAssessment(item));
-    // Build one common filtered base for captured notes metrics.
-    const filteredBase = capturedNotesUniverse.filter((item) => {
-      const sourceValue = String(item.source || "").trim();
-      const clientValue = String(item.client_name || "Unassigned").trim();
-      const matchedAssessment = resolveCapturedAssessment(item);
-      const jdValue = resolveCanonicalJdTitle(item, matchedAssessment);
-      const assignedToValue = String(item.assigned_to_name || "Unassigned").trim();
-      const capturedByValue = String(item.recruiter_name || item.assigned_by_name || "Unknown").trim();
-      const outcomeValue = getCapturedOutcome(item, null);
-      const activityKey = activityDateKey(item);
-      const manuallyHidden = item.hidden_from_captured === true;
-      const activeValue = manuallyHidden ? "Inactive" : (isConvertedCandidate(item) ? "Converted" : "Active");
-      const nameHay = [item.name].join(" ").toLowerCase();
-      const hay = [
-        item.name,
-        item.company,
-        item.role,
-        item.jd_title,
-        jdValue,
-        item.client_name,
-        item.assigned_to_name,
-        item.source,
-        item.notes,
-        item.recruiter_context_notes,
-        item.other_pointers
-      ].join(" ").toLowerCase();
-      const queryOk = !queryText || hay.includes(queryText);
-      const dateFromOk = !filters.dateFrom || (activityKey && activityKey >= filters.dateFrom);
-      const dateToOk = !filters.dateTo || (activityKey && activityKey <= filters.dateTo);
-      const clientOk = !filters.clients.length || filters.clients.includes(clientValue);
-      const jdOk = !filters.jds.length || filters.jds.includes(jdValue);
-      const assignedToOk = !filters.assignedTo.length || filters.assignedTo.includes(assignedToValue);
-      const capturedByOk = !filters.capturedBy.length || filters.capturedBy.includes(capturedByValue);
-      const sourceOk = !filters.sources.length || filters.sources.includes(sourceValue);
-      const outcomeOk = !filters.outcomes.length || filters.outcomes.includes(outcomeValue);
-      const searchNameMatch = Boolean(queryText && nameHay.includes(queryText));
-      const viewOk = (() => {
-        if (viewMode === "all") return true;
-        if (viewMode === "added_by_me") return isCapturedByCurrentUser(item);
-        if (viewMode === "assigned_to_me") {
-          return isAssignedToCurrentUser(item)
-            && !isCapturedByCurrentUser(item)
-            && Boolean(item?.first_assigned_to_user_id || item?.first_assigned_to_name)
-            && isFirstAssignedToCurrentUser(item)
-            && isFirstAssignedByAdmin(item);
-        }
-        if (viewMode === "reassigned_to_me") {
-          return isAssignedToCurrentUser(item)
-            && !isCapturedByCurrentUser(item)
-            && Boolean(item?.first_assigned_to_user_id || item?.first_assigned_to_name)
-            && !isFirstAssignedToCurrentUser(item);
-        }
-        if (viewMode === "reassigned_by_me") return isAssignedByCurrentUser(item) && Boolean(item?.assigned_at);
-        return true;
-      })();
-
-      return viewOk && queryOk && dateFromOk && dateToOk && clientOk && jdOk && assignedToOk && capturedByOk && sourceOk && outcomeOk;
-    });
-
-    const wantsActive = filters.activeStates.includes("Active");
-    const wantsInactive = filters.activeStates.includes("Inactive");
-    const defaultActiveOnly = !filters.activeStates.length;
-
-    // Converted follows selected state, but hidden rows stay inactive.
-    const includeConvertedForState = defaultActiveOnly || wantsActive || (wantsActive && wantsInactive);
-    const convertedCount = includeConvertedForState
-      ? filteredBase.filter((item) => isConvertedCandidate(item) && item.hidden_from_captured !== true).length
-      : 0;
-
-    // Captured active/inactive totals exclude visible converted rows; hidden converted rows stay inactive.
-    const nonConvertedBase = filteredBase.filter((item) => !isConvertedCandidate(item) || item.hidden_from_captured === true);
-    const stateScopedRows = nonConvertedBase.filter((item) => {
-      const manuallyHidden = item.hidden_from_captured === true;
-      const activeValue = manuallyHidden ? "Inactive" : (isConvertedCandidate(item) ? "Converted" : "Active");
-      const searchNameMatch = Boolean(queryText && String(item?.name || "").toLowerCase().includes(queryText));
-      const activeOk = defaultActiveOnly
-        ? (activeValue === "Active" || searchNameMatch)
-        : (filters.activeStates.includes(activeValue) || (searchNameMatch && wantsActive));
-      const inactiveBlockedByDefault = defaultActiveOnly && activeValue === "Inactive" && !searchNameMatch;
-      return !inactiveBlockedByDefault && activeOk;
-    });
-
-    const activeCount = stateScopedRows.filter((item) => !item.hidden_from_captured).length;
-    const inactiveCount = stateScopedRows.filter((item) => item.hidden_from_captured === true).length;
-    return {
-      today: stateScopedRows.filter((item) => activityDateKey(item) === todayKey).length,
-      total: activeCount + inactiveCount + convertedCount,
-      active: activeCount,
-      inactive: inactiveCount,
-      converted: convertedCount
-    };
-  }, [capturedStatsSnapshot, candidateFiltersApplied, capturedAssessmentMap, capturedNotesUniverse, state.user, state.users, resolveCapturedAssessment, resolveCanonicalJdTitle]);
+    return { today: 0, total: 0, active: 0, inactive: 0, converted: 0 };
+  }, [capturedStatsSnapshot]);
 
   const assessmentStats = useMemo(() => {
     if (assessmentStatsSnapshot && typeof assessmentStatsSnapshot === "object") {
@@ -11986,40 +11816,14 @@ function PortalApp({ token, onLogout }) {
         today: Number(assessmentStatsSnapshot.today || 0),
         total: Number(assessmentStatsSnapshot.total || 0),
         active: Number(assessmentStatsSnapshot.active || 0),
-        archived: Number(assessmentStatsSnapshot.archived || 0)
+      archived: Number(assessmentStatsSnapshot.archived || 0)
       };
     }
     const todayKey = new Date().toISOString().slice(0, 10);
     const query = String(assessmentFiltersApplied.q || "").trim().toLowerCase();
     // Keep stats aligned with the same filters as the visible list (client/JD/recruiter/outcome/date/query),
     // but we intentionally do not apply the "Active/Archived lane" filter here so the cards can show both counts.
-    const universe = (Array.isArray(state.assessments) ? state.assessments : []).filter((item) => {
-      const matchedCandidate = (state.candidates || []).find((candidate) =>
-        (item?.candidateId && String(candidate.id) === String(item.candidateId)) ||
-        String(candidate.name || "").trim().toLowerCase() === String(item?.candidateName || "").trim().toLowerCase()
-      );
-      const clientValue = String(item?.clientName || matchedCandidate?.client_name || "").trim();
-      const jdValue = resolveCanonicalJdTitle(item, matchedCandidate);
-      const recruiterValue = String(matchedCandidate?.assigned_to_name || item?.recruiterName || matchedCandidate?.recruiter_name || "").trim();
-      const outcomeValue = normalizeAssessmentStatusLabel(item?.candidateStatus || item?.candidate_status || "") || "No outcome";
-      const createdKey = String(item?.generatedAt || item?.createdAt || item?.created_at || item?.updatedAt || "").slice(0, 10);
-      const hay = [
-        item?.candidateName,
-        item?.phoneNumber,
-        item?.emailId,
-        jdValue,
-        clientValue,
-        recruiterValue
-      ].join(" ").toLowerCase();
-      if (query && !hay.includes(query)) return false;
-      if (assessmentFiltersApplied.dateFrom && createdKey && createdKey < assessmentFiltersApplied.dateFrom) return false;
-      if (assessmentFiltersApplied.dateTo && createdKey && createdKey > assessmentFiltersApplied.dateTo) return false;
-      if (assessmentFiltersApplied.clients.length && !assessmentFiltersApplied.clients.includes(clientValue)) return false;
-      if (assessmentFiltersApplied.jds.length && !assessmentFiltersApplied.jds.includes(jdValue)) return false;
-      if (assessmentFiltersApplied.recruiters.length && !assessmentFiltersApplied.recruiters.includes(recruiterValue)) return false;
-      if (assessmentFiltersApplied.outcomes.length && !assessmentFiltersApplied.outcomes.includes(outcomeValue)) return false;
-      return true;
-    });
+    const universe = Array.isArray(assessmentListItems) ? assessmentListItems : [];
     const activeCount = universe.filter((item) => !isAssessmentArchived(item)).length;
     const archivedCount = universe.filter((item) => isAssessmentArchived(item)).length;
     return {
@@ -12028,7 +11832,7 @@ function PortalApp({ token, onLogout }) {
       active: activeCount,
       archived: archivedCount
     };
-  }, [assessmentStatsSnapshot, assessmentFiltersApplied, state.assessments, state.candidates, resolveCanonicalJdTitle]);
+  }, [assessmentStatsSnapshot, assessmentListItems]);
 
   const renderLoadedMetricValue = (value) => (workspaceDataReady ? value : "…");
 
@@ -12678,8 +12482,17 @@ function PortalApp({ token, onLogout }) {
     }
     const assessmentFromItem = item?.raw?.assessment
       || item?.assessment
-      || (assessmentId ? (state.assessments || []).find((assessment) => String(assessment?.id || "").trim() === assessmentId) : null)
+      || (assessmentId ? (Array.isArray(assessmentListItems) ? assessmentListItems.find((assessment) => String(assessment?.id || "").trim() === assessmentId) : null) : null)
       || null;
+    if (!assessmentFromItem && assessmentId) {
+      try {
+        const fresh = await api(`/company/assessments/by-id?assessmentId=${encodeURIComponent(assessmentId)}`, token);
+        if (fresh && typeof fresh === "object" && String(fresh.id || "").trim() === assessmentId) {
+          await openAssessmentCandidateCardModal(fresh);
+          return;
+        }
+      } catch {}
+    }
     if (assessmentFromItem) {
       await openAssessmentCandidateCardModal(assessmentFromItem);
       return;
@@ -12691,7 +12504,7 @@ function PortalApp({ token, onLogout }) {
     setStatus("workspace", "Candidate link not available for this row.", "error");
   }
 
-  function openAssessmentStatusFromSearch(item) {
+  async function openAssessmentStatusFromSearch(item) {
     const assessmentId = String(item?.assessment_id || item?.assessmentId || item?.raw?.assessment?.id || item?.assessment?.id || "").trim();
     if (assessmentId) {
       setAssessmentStatusId(assessmentId);
@@ -12702,7 +12515,7 @@ function PortalApp({ token, onLogout }) {
       setStatus("workspace", "Assessment status update is not available for this row.", "error");
       return;
     }
-    const matchedAssessment = (state.assessments || []).find((assessment) => {
+    const matchedAssessment = (Array.isArray(assessmentListItems) ? assessmentListItems : []).find((assessment) => {
       const linkedCandidateId = String(assessment?.candidateId || "").trim();
       return linkedCandidateId && linkedCandidateId === candidateId;
     });
@@ -12710,6 +12523,15 @@ function PortalApp({ token, onLogout }) {
       setAssessmentStatusId(String(matchedAssessment.id));
       return;
     }
+    try {
+      const fresh = await api(`/company/assessments/search?q=${encodeURIComponent(candidateId)}&limit=10`, token);
+      const freshAssessment = Array.isArray(fresh?.assessments) ? fresh.assessments.find((assessment) => String(assessment?.candidateId || assessment?.candidate_id || "").trim() === candidateId) : null;
+      if (freshAssessment?.id) {
+        setAssessmentStatusItemSnapshot(freshAssessment);
+        setAssessmentStatusId(String(freshAssessment.id));
+        return;
+      }
+    } catch {}
     setStatus("workspace", "No linked assessment found for this candidate yet.", "error");
   }
 
