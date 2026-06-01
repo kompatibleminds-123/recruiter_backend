@@ -3403,14 +3403,139 @@ function sanitizeApplicantCandidate(candidate = {}) {
 }
 
 async function listApplicantsForUser(user, options = {}) {
-  const rows = await listCandidatesForUser(user, { limit: Number(options.limit || 500), q: String(options.q || "").trim() });
-  return rows
-    .filter((candidate) => {
-      const source = String(candidate?.source || "").trim();
-      if (candidate?.used_in_assessment) return false;
-      return source === "website_apply" || source === "hosted_apply";
-    })
-    .map(sanitizeApplicantCandidate);
+  const limit = Math.max(1, Math.min(1000, Number(options.limit || 50)));
+  const page = Math.max(1, Number(options.page || 1));
+  const offset = Math.max(0, (page - 1) * limit);
+  const q = String(options.q || "").trim();
+  const includeConverted = options.includeConverted === true;
+  const { on, url, key } = getSupabaseServiceConfig();
+  const companyId = String(user?.companyId || "").trim();
+  const actorId = String(user?.id || "").trim();
+  const actorIsAdmin = String(user?.role || "").toLowerCase() === "admin";
+  const sources = ["website_apply", "hosted_apply", "google_sheet"];
+
+  if (on && companyId) {
+    const queryParts = [
+      "select=*",
+      `company_id=eq.${encodeURIComponent(companyId)}`,
+      `source=in.(${sources.map((item) => encodeURIComponent(item)).join(",")})`,
+      "order=created_at.desc",
+      `limit=${limit}`,
+      `offset=${offset}`
+    ];
+    if (!actorIsAdmin && actorId) {
+      queryParts.push(`or=(recruiter_id.eq.${encodeURIComponent(actorId)},assigned_to_user_id.eq.${encodeURIComponent(actorId)})`);
+    }
+    if (q) {
+      const escaped = q.replace(/[%*]/g, "").trim();
+      if (escaped) {
+        const like = `*${escaped.replace(/,/g, " ")}*`;
+        queryParts.push(`or=(name.ilike.${encodeURIComponent(like)},email.ilike.${encodeURIComponent(like)},phone.ilike.${encodeURIComponent(like)},company.ilike.${encodeURIComponent(like)},role.ilike.${encodeURIComponent(like)},location.ilike.${encodeURIComponent(like)},client_name.ilike.${encodeURIComponent(like)},jd_title.ilike.${encodeURIComponent(like)})`);
+      }
+    }
+    if (!includeConverted) {
+      queryParts.push("used_in_assessment=not.is.true");
+      queryParts.push("assessment_id=is.null");
+    }
+    const response = await fetch(`${url}/rest/v1/candidates?${queryParts.join("&")}`, {
+      headers: {
+        apikey: key,
+        Authorization: `Bearer ${key}`
+      }
+    });
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Applied candidates read failed: ${response.status} ${errorText}`);
+    }
+    const rows = await response.json();
+    return (Array.isArray(rows) ? rows : []).map(sanitizeApplicantCandidate);
+  }
+
+  // Local fallback (non-supabase): keep legacy behavior.
+  const rows = await listCandidatesForUser(user, {
+    limit: Math.max(500, limit * Math.max(1, page)),
+    q
+  });
+  const filtered = rows.filter((candidate) => {
+    const source = String(candidate?.source || "").trim().toLowerCase();
+    if (!sources.includes(source)) return false;
+    if (!includeConverted && candidate?.used_in_assessment) return false;
+    return true;
+  });
+  return filtered.slice(offset, offset + limit).map(sanitizeApplicantCandidate);
+}
+
+async function getApplicantStatsForUser(user, options = {}) {
+  const q = String(options.q || "").trim();
+  const { on, url, key } = getSupabaseServiceConfig();
+  const companyId = String(user?.companyId || "").trim();
+  const actorId = String(user?.id || "").trim();
+  const actorIsAdmin = String(user?.role || "").toLowerCase() === "admin";
+  const sources = ["website_apply", "hosted_apply", "google_sheet"];
+  const now = new Date();
+  const todayStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate())).toISOString();
+  const tomorrowStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1)).toISOString();
+
+  const buildBaseQueryParts = () => {
+    const parts = [
+      `company_id=eq.${encodeURIComponent(companyId)}`,
+      `source=in.(${sources.map((item) => encodeURIComponent(item)).join(",")})`
+    ];
+    if (!actorIsAdmin && actorId) {
+      parts.push(`or=(recruiter_id.eq.${encodeURIComponent(actorId)},assigned_to_user_id.eq.${encodeURIComponent(actorId)})`);
+    }
+    if (q) {
+      const escaped = q.replace(/[%*]/g, "").trim();
+      if (escaped) {
+        const like = `*${escaped.replace(/,/g, " ")}*`;
+        parts.push(`or=(name.ilike.${encodeURIComponent(like)},email.ilike.${encodeURIComponent(like)},phone.ilike.${encodeURIComponent(like)},company.ilike.${encodeURIComponent(like)},role.ilike.${encodeURIComponent(like)},location.ilike.${encodeURIComponent(like)},client_name.ilike.${encodeURIComponent(like)},jd_title.ilike.${encodeURIComponent(like)})`);
+      }
+    }
+    return parts;
+  };
+
+  const fetchCount = async (extra = []) => {
+    if (!(on && companyId)) return 0;
+    const query = ["select=id", ...buildBaseQueryParts(), ...extra].join("&");
+    const response = await fetch(`${url}/rest/v1/candidates?${query}`, {
+      method: "HEAD",
+      headers: {
+        apikey: key,
+        Authorization: `Bearer ${key}`,
+        Prefer: "count=exact"
+      }
+    });
+    if (!response.ok) return 0;
+    const contentRange = String(response.headers.get("content-range") || "").trim();
+    const totalText = contentRange.split("/")[1] || "0";
+    const total = Number(totalText);
+    return Number.isFinite(total) ? total : 0;
+  };
+
+  if (on && companyId) {
+    const [total, today, converted, inactive] = await Promise.all([
+      fetchCount([]),
+      fetchCount([`created_at=gte.${encodeURIComponent(todayStart)}`, `created_at=lt.${encodeURIComponent(tomorrowStart)}`]),
+      fetchCount(["or=(used_in_assessment.is.true,assessment_id.not.is.null)"]),
+      fetchCount(["hidden_from_captured.is.true", "used_in_assessment=not.is.true", "assessment_id=is.null"])
+    ]);
+    const active = Math.max(0, total - converted - inactive);
+    return { today, total, active, inactive, converted };
+  }
+
+  // Local fallback.
+  const fallbackRows = await listCandidatesForUser(user, { limit: 5000, q });
+  const pool = (Array.isArray(fallbackRows) ? fallbackRows : []).filter((item) => {
+    const source = String(item?.source || "").trim().toLowerCase();
+    return sources.includes(source);
+  });
+  const todayKey = new Date().toISOString().slice(0, 10);
+  const converted = pool.filter((item) => Boolean(item?.used_in_assessment) || Boolean(String(item?.assessment_id || item?.assessmentId || "").trim())).length;
+  const inactive = pool.filter((item) => Boolean(item?.hidden_from_captured) && !Boolean(item?.used_in_assessment) && !Boolean(String(item?.assessment_id || item?.assessmentId || "").trim())).length;
+  const total = pool.length;
+  const active = Math.max(0, total - converted - inactive);
+  const today = pool.filter((item) => String(item?.created_at || "").slice(0, 10) === todayKey).length;
+  return { today, total, active, inactive, converted };
 }
 
 function getSupabaseServiceConfig() {
@@ -14923,8 +15048,29 @@ const server = http.createServer(async (req, res) => {
       const user = await requireSessionUser(getBearerToken(req));
       await requireSaasAccess(user, "applied candidates pipeline");
       const q = String(requestUrl.searchParams.get("q") || "").trim();
-      const items = await listApplicantsForUser(user, { q, limit: 500 });
-      sendJson(res, 200, { ok: true, result: { total: items.length, items } });
+      const limit = Math.max(1, Math.min(1000, Number(requestUrl.searchParams.get("limit") || 50)));
+      const page = Math.max(1, Number(requestUrl.searchParams.get("page") || 1));
+      const includeConverted = String(requestUrl.searchParams.get("includeConverted") || "true").trim().toLowerCase() !== "false";
+      const [items, stats] = await Promise.all([
+        listApplicantsForUser(user, { q, limit, page, includeConverted }),
+        getApplicantStatsForUser(user, { q })
+      ]);
+      sendJson(res, 200, {
+        ok: true,
+        result: {
+          total: Number(stats?.total || 0),
+          page,
+          limit,
+          items,
+          stats: {
+            today: Number(stats?.today || 0),
+            total: Number(stats?.total || 0),
+            active: Number(stats?.active || 0),
+            inactive: Number(stats?.inactive || 0),
+            converted: Number(stats?.converted || 0)
+          }
+        }
+      });
     } catch (error) {
       sendJson(res, 400, { ok: false, error: String(error.message || error) });
     }
