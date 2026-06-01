@@ -7399,6 +7399,18 @@ function PortalApp({ token, onLogout }) {
     outcomes: [],
     activeStates: []
   });
+  const [applicantFiltersApplied, setApplicantFiltersApplied] = useState({
+    q: "",
+    dateFrom: "",
+    dateTo: "",
+    clients: [],
+    jds: [],
+    locations: [],
+    ownedBy: [],
+    assignedTo: [],
+    outcomes: [],
+    activeStates: []
+  });
   const [assessmentFilters, setAssessmentFilters] = useState({
     q: "",
     dateFrom: "",
@@ -9139,7 +9151,7 @@ function PortalApp({ token, onLogout }) {
     const forceAll = Boolean(preloadAllTabs);
     const isMarketingRoute = pathname === "/marketing" || pathname === "/marketing-module";
     const needsDashboard = pathname === "/dashboard" || forceCore || forceAll;
-    const needsApplicants = pathname === "/dashboard" || pathname === "/applicants" || forceCore || forceAll;
+    const needsApplicants = forceCore || forceAll;
     const needsIntake = pathname === "/intake-settings" || pathname === "/jobs" || pathname === "/applicants" || forceAll;
     const needsJobs = forceAll || (!isMarketingRoute && pathname !== "/mail-settings" && pathname !== "/login-settings" && pathname !== "/plan");
     const needsUsers = forceAll || needsJobs || pathname === "/login-settings";
@@ -9206,7 +9218,7 @@ function PortalApp({ token, onLogout }) {
             .catch(() => ({ summary: { byClient: [], byClientPosition: [] }, availableClients: [] }))
         : Promise.resolve(null),
       needsApplicants
-        ? api(`/company/applicants?limit=${safeApplicantApiPageSize}&page=${safeApplicantApiPage}&includeConverted=true`, token)
+        ? api(`/company/applicants/list?limit=${safeApplicantApiPageSize}&page=${safeApplicantApiPage}&includeConverted=true`, token)
             .then((data) => ({ ok: true, data }))
             .catch((error) => ({ ok: false, error: String(error?.message || error), data: null }))
         : Promise.resolve(null),
@@ -9285,10 +9297,6 @@ function PortalApp({ token, onLogout }) {
         : current.assessments,
       assessmentEvents: needsAssessmentEvents ? (assessmentEventsResult?.result?.rows || []) : current.assessmentEvents
     }));
-    if (seq !== workspaceLoadSeqRef.current) return;
-    if (needsApplicants && applicantsResult?.ok) {
-      setApplicantStatsSnapshot(applicantsResult?.data?.stats || null);
-    }
     if (seq !== workspaceLoadSeqRef.current) return;
     if (needsJobs) {
       setJobsCatalog(Array.isArray(jobsManageResult?.jobs) ? jobsManageResult.jobs : []);
@@ -9496,11 +9504,32 @@ function PortalApp({ token, onLogout }) {
     }
   }
 
-  async function reloadApplicantsSlice(page = safeApplicantApiPage, limit = safeApplicantApiPageSize) {
+  function buildApplicantQueryParams(filters = applicantFiltersApplied, page = safeApplicantApiPage, limit = safeApplicantApiPageSize) {
+    const params = new URLSearchParams();
+    params.set("limit", String(Math.max(1, Number(limit || 25))));
+    params.set("page", String(Math.max(1, Number(page || 1))));
+    params.set("includeConverted", "true");
+    const addCsv = (key, list) => {
+      if (!Array.isArray(list) || !list.length) return;
+      params.set(key, list.map((item) => String(item || "").trim()).filter(Boolean).join(","));
+    };
+    const q = String(filters?.q || "").trim();
+    if (q) params.set("q", q);
+    if (String(filters?.dateFrom || "").trim()) params.set("dateFrom", String(filters.dateFrom).trim());
+    if (String(filters?.dateTo || "").trim()) params.set("dateTo", String(filters.dateTo).trim());
+    addCsv("clients", filters?.clients);
+    addCsv("jds", filters?.jds);
+    addCsv("locations", filters?.locations);
+    addCsv("ownedBy", filters?.ownedBy);
+    addCsv("assignedTo", filters?.assignedTo);
+    addCsv("activeStates", filters?.activeStates);
+    return params.toString();
+  }
+
+  async function reloadApplicantsSlice(page = safeApplicantApiPage, limit = safeApplicantApiPageSize, filters = applicantFiltersApplied) {
     if (!token) return;
-    const safeLimit = [10, 25, 50].includes(Number(limit)) ? Number(limit) : 25;
-    const safePage = Math.max(1, Number(page || 1));
-    const applicantsEnvelope = await api(`/company/applicants?limit=${safeLimit}&page=${safePage}&includeConverted=true`, token)
+    const query = buildApplicantQueryParams(filters, page, limit);
+    const applicantsEnvelope = await api(`/company/applicants/list?${query}`, token)
       .then((data) => ({ ok: true, data }))
       .catch((error) => ({ ok: false, error: String(error?.message || error), data: null }));
     if (!applicantsEnvelope.ok) {
@@ -9511,7 +9540,16 @@ function PortalApp({ token, onLogout }) {
       ...current,
       applicants: applicantsEnvelope?.data?.items || []
     }));
-    setApplicantStatsSnapshot(applicantsEnvelope?.data?.stats || null);
+  }
+
+  async function reloadApplicantStats(filters = applicantFiltersApplied) {
+    if (!token) return;
+    const query = buildApplicantQueryParams(filters, 1, 1);
+    const statsEnvelope = await api(`/company/applicants/stats?${query}`, token)
+      .then((data) => ({ ok: true, data }))
+      .catch((error) => ({ ok: false, error: String(error?.message || error), data: null }));
+    if (!statsEnvelope.ok) return;
+    setApplicantStatsSnapshot(statsEnvelope?.data || null);
   }
 
   async function reloadIntakeSlice() {
@@ -9740,8 +9778,23 @@ function PortalApp({ token, onLogout }) {
   useEffect(() => {
     if (!token) return;
     if (String(location?.pathname || "").trim() !== "/applicants") return;
-    void reloadApplicantsSlice(safeApplicantApiPage, safeApplicantApiPageSize).catch(() => {});
-  }, [token, location?.pathname, safeApplicantApiPage, safeApplicantApiPageSize]);
+    void Promise.all([
+      reloadApplicantsSlice(safeApplicantApiPage, safeApplicantApiPageSize, applicantFiltersApplied),
+      reloadApplicantStats(applicantFiltersApplied)
+    ]).catch(() => {});
+  }, [token, location?.pathname, safeApplicantApiPage, safeApplicantApiPageSize, applicantFiltersApplied]);
+
+  useEffect(() => {
+    if (String(location?.pathname || "").trim() !== "/applicants") return;
+    const nextQ = String(applicantFilters?.q || "").trim();
+    const timer = setTimeout(() => {
+      setApplicantPage(1);
+      setApplicantFiltersApplied((current) => (
+        String(current?.q || "").trim() === nextQ ? current : { ...current, q: nextQ }
+      ));
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [location?.pathname, applicantFilters?.q]);
 
   useEffect(() => {
     if (!token) return undefined;
@@ -11924,7 +11977,7 @@ function PortalApp({ token, onLogout }) {
   }, [filteredApplicants, applicantCandidateMap, applicantAssessmentMap, state.user, state.users]);
 
   const visibleApplicants = useMemo(() => {
-    const query = String(applicantFilters.q || "").trim().toLowerCase();
+    const query = String(applicantFiltersApplied.q || "").trim().toLowerCase();
     const rows = filteredApplicants.filter((item) => {
       const linkedCandidate = applicantCandidateMap.get(String(item.id)) || null;
       const linkedAssessment = applicantAssessmentMap.get(String(item.id)) || null;
@@ -11954,16 +12007,16 @@ function PortalApp({ token, onLogout }) {
       ].join(" ").toLowerCase();
       if (query && !hay.includes(query)) return false;
       const searchNameMatch = Boolean(query && nameHay.includes(query));
-      if (!applicantFilters.activeStates.length && activeValue === "Inactive" && !searchNameMatch) return false;
-      if (applicantFilters.activeStates.length && !applicantFilters.activeStates.includes(activeValue)) return false;
-      if (applicantFilters.dateFrom && createdDate && createdDate < applicantFilters.dateFrom) return false;
-      if (applicantFilters.dateTo && createdDate && createdDate > applicantFilters.dateTo) return false;
-      if (applicantFilters.clients.length && !applicantFilters.clients.includes(clientValue)) return false;
-      if (applicantFilters.jds.length && !applicantFilters.jds.includes(jdValue)) return false;
-      if (applicantFilters.locations.length && !applicantFilters.locations.includes(locationValue)) return false;
-      if (applicantFilters.ownedBy.length && !applicantFilters.ownedBy.includes(ownedValue)) return false;
-      if (applicantFilters.assignedTo.length && !applicantFilters.assignedTo.includes(assignedValue)) return false;
-      if (applicantFilters.outcomes.length && !applicantFilters.outcomes.includes(outcomeValue)) return false;
+      if (!applicantFiltersApplied.activeStates.length && activeValue === "Inactive" && !searchNameMatch) return false;
+      if (applicantFiltersApplied.activeStates.length && !applicantFiltersApplied.activeStates.includes(activeValue)) return false;
+      if (applicantFiltersApplied.dateFrom && createdDate && createdDate < applicantFiltersApplied.dateFrom) return false;
+      if (applicantFiltersApplied.dateTo && createdDate && createdDate > applicantFiltersApplied.dateTo) return false;
+      if (applicantFiltersApplied.clients.length && !applicantFiltersApplied.clients.includes(clientValue)) return false;
+      if (applicantFiltersApplied.jds.length && !applicantFiltersApplied.jds.includes(jdValue)) return false;
+      if (applicantFiltersApplied.locations.length && !applicantFiltersApplied.locations.includes(locationValue)) return false;
+      if (applicantFiltersApplied.ownedBy.length && !applicantFiltersApplied.ownedBy.includes(ownedValue)) return false;
+      if (applicantFiltersApplied.assignedTo.length && !applicantFiltersApplied.assignedTo.includes(assignedValue)) return false;
+      if (applicantFiltersApplied.outcomes.length && !applicantFiltersApplied.outcomes.includes(outcomeValue)) return false;
       return true;
     });
     const rowTime = (item) => {
@@ -11977,7 +12030,7 @@ function PortalApp({ token, onLogout }) {
       if (diff) return diff;
       return String(b?.id || "").localeCompare(String(a?.id || ""));
     });
-  }, [filteredApplicants, applicantFilters, applicantCandidateMap, applicantAssessmentMap]);
+  }, [filteredApplicants, applicantFiltersApplied, applicantCandidateMap, applicantAssessmentMap]);
   const totalApplicantPages = Math.max(1, Math.ceil((visibleApplicants.length || 0) / safeApplicantApiPageSize));
   const pagedApplicants = useMemo(() => {
     const start = (safeApplicantApiPage - 1) * safeApplicantApiPageSize;
@@ -12002,7 +12055,7 @@ function PortalApp({ token, onLogout }) {
 
     // Keep stats aligned with the same filters as the visible list (clients/JD/owner/assignee/outcome/state/date/query).
     // We do not exclude converted rows here because we show both Active + Converted counts.
-    const query = String(applicantFilters.q || "").trim().toLowerCase();
+    const query = String(applicantFiltersApplied.q || "").trim().toLowerCase();
     const universe = filteredApplicants.filter((item) => {
       const linkedCandidate = applicantCandidateMap.get(String(item.id)) || null;
       const linkedAssessment = applicantAssessmentMap.get(String(item.id)) || null;
@@ -12031,16 +12084,16 @@ function PortalApp({ token, onLogout }) {
       ].join(" ").toLowerCase();
       if (query && !hay.includes(query)) return false;
       const searchNameMatch = Boolean(query && nameHay.includes(query));
-      if (!applicantFilters.activeStates.length && activeValue === "Inactive" && !searchNameMatch) return false;
-      if (applicantFilters.activeStates.length && !applicantFilters.activeStates.includes(activeValue)) return false;
-      if (applicantFilters.dateFrom && createdDate && createdDate < applicantFilters.dateFrom) return false;
-      if (applicantFilters.dateTo && createdDate && createdDate > applicantFilters.dateTo) return false;
-      if (applicantFilters.clients.length && !applicantFilters.clients.includes(clientValue)) return false;
-      if (applicantFilters.jds.length && !applicantFilters.jds.includes(jdValue)) return false;
-      if (applicantFilters.locations.length && !applicantFilters.locations.includes(locationValue)) return false;
-      if (applicantFilters.ownedBy.length && !applicantFilters.ownedBy.includes(ownedValue)) return false;
-      if (applicantFilters.assignedTo.length && !applicantFilters.assignedTo.includes(assignedValue)) return false;
-      if (applicantFilters.outcomes.length && !applicantFilters.outcomes.includes(outcomeValue)) return false;
+      if (!applicantFiltersApplied.activeStates.length && activeValue === "Inactive" && !searchNameMatch) return false;
+      if (applicantFiltersApplied.activeStates.length && !applicantFiltersApplied.activeStates.includes(activeValue)) return false;
+      if (applicantFiltersApplied.dateFrom && createdDate && createdDate < applicantFiltersApplied.dateFrom) return false;
+      if (applicantFiltersApplied.dateTo && createdDate && createdDate > applicantFiltersApplied.dateTo) return false;
+      if (applicantFiltersApplied.clients.length && !applicantFiltersApplied.clients.includes(clientValue)) return false;
+      if (applicantFiltersApplied.jds.length && !applicantFiltersApplied.jds.includes(jdValue)) return false;
+      if (applicantFiltersApplied.locations.length && !applicantFiltersApplied.locations.includes(locationValue)) return false;
+      if (applicantFiltersApplied.ownedBy.length && !applicantFiltersApplied.ownedBy.includes(ownedValue)) return false;
+      if (applicantFiltersApplied.assignedTo.length && !applicantFiltersApplied.assignedTo.includes(assignedValue)) return false;
+      if (applicantFiltersApplied.outcomes.length && !applicantFiltersApplied.outcomes.includes(outcomeValue)) return false;
       // Keep converted rows in universe for Converted counts; list view excludes them separately.
       if (linkedAssessment && isApplicantConvertedToAssessment(item, linkedCandidate, linkedAssessment)) return true;
       return true;
@@ -12100,21 +12153,21 @@ function PortalApp({ token, onLogout }) {
       assignedManual,
       total: universe.length
     };
-  }, [applicantStatsSnapshot, applicantAssessmentMap, applicantCandidateMap, filteredApplicants, state.user, applicantFilters]);
+  }, [applicantStatsSnapshot, applicantAssessmentMap, applicantCandidateMap, filteredApplicants, state.user, applicantFiltersApplied]);
 
   useEffect(() => {
     setApplicantPage(1);
   }, [
-    applicantFilters.q,
-    applicantFilters.dateFrom,
-    applicantFilters.dateTo,
-    applicantFilters.clients,
-    applicantFilters.jds,
-    applicantFilters.locations,
-    applicantFilters.ownedBy,
-    applicantFilters.assignedTo,
-    applicantFilters.outcomes,
-    applicantFilters.activeStates,
+    applicantFiltersApplied.q,
+    applicantFiltersApplied.dateFrom,
+    applicantFiltersApplied.dateTo,
+    applicantFiltersApplied.clients,
+    applicantFiltersApplied.jds,
+    applicantFiltersApplied.locations,
+    applicantFiltersApplied.ownedBy,
+    applicantFiltersApplied.assignedTo,
+    applicantFiltersApplied.outcomes,
+    applicantFiltersApplied.activeStates,
     applicantPageSize
   ]);
   useEffect(() => {
@@ -19893,18 +19946,27 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
               <div className="form-grid three-col">
                 <label className="full"><span>Search</span><input placeholder="Search by candidate, phone, email, JD..." value={applicantFilters.q} onChange={(e) => setApplicantFilters((current) => ({ ...current, q: e.target.value }))} /></label>
               </div>
+              <div className="button-row tight" style={{ marginTop: 8 }}>
+                <label className="copy-preset-control">
+                  <span>Rows per page</span>
+                  <select value={safeApplicantApiPageSize} onChange={(e) => setApplicantPageSize(Number(e.target.value || 25))}>
+                    {[10, 25, 50].map((size) => <option key={size} value={size}>{size}</option>)}
+                  </select>
+                </label>
+                <button className="ghost-btn" disabled={safeApplicantApiPage <= 1} onClick={() => setApplicantPage((page) => Math.max(1, page - 1))}>Previous</button>
+                <div className="muted">{`Page ${safeApplicantApiPage} of ${totalApplicantPages}`}</div>
+                <button className="ghost-btn" disabled={safeApplicantApiPage >= totalApplicantPages} onClick={() => setApplicantPage((page) => Math.min(totalApplicantPages, page + 1))}>Next</button>
+              </div>
               <div className="metric-grid metric-grid--tight captured-metric-row" style={{ marginTop: 12 }}>
                 <div className="metric-card compact-metric"><div className="metric-label captured-metric-label"><span className="captured-metric-icon">🗓</span>Applied today</div><div className="metric-value">{renderLoadedMetricValue(applicantStats.today)}</div></div>
                 <div className="metric-card compact-metric"><div className="metric-label captured-metric-label"><span className="captured-metric-icon">🗂</span>Total applied</div><div className="metric-value">{renderLoadedMetricValue(applicantStats.total || 0)}</div></div>
                 <div className="metric-card compact-metric"><div className="metric-label captured-metric-label"><span className="captured-metric-icon">👥</span>Active</div><div className="metric-value">{renderLoadedMetricValue(applicantStats.active)}</div></div>
+                <div className="metric-card compact-metric"><div className="metric-label captured-metric-label"><span className="captured-metric-icon">?</span>Inactive</div><div className="metric-value">{renderLoadedMetricValue(applicantStats.inactive || 0)}</div></div>
                 <div className="metric-card compact-metric"><div className="metric-label captured-metric-label"><span className="captured-metric-icon">✅</span>Converted</div><div className="metric-value">{renderLoadedMetricValue(applicantStats.converted)}</div></div>
               </div>
               <div className="form-grid three-col" style={{ marginTop: 10 }}>
                 <label><span>Date from</span><input type="date" value={applicantFilters.dateFrom} onChange={(e) => setApplicantFilters((current) => ({ ...current, dateFrom: e.target.value }))} /></label>
                 <label><span>Date to</span><input type="date" value={applicantFilters.dateTo} onChange={(e) => setApplicantFilters((current) => ({ ...current, dateTo: e.target.value }))} /></label>
-              </div>
-              <div className="muted" style={{ marginTop: 8 }}>
-                Inactive: {renderLoadedMetricValue(applicantStats.inactive || 0)} (hidden). Total: {renderLoadedMetricValue(applicantStats.total || 0)}
               </div>
               <div className="captured-filter-grid">
                 <MultiSelectDropdown label="Clients" options={applicantOptions.clients} selected={applicantFilters.clients} onToggle={(value) => setApplicantFilters((current) => ({ ...current, clients: value === "__all__" ? [] : current.clients.includes(value) ? current.clients.filter((item) => item !== value) : [...current.clients, value] }))} />
@@ -19914,6 +19976,47 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                 {String(state.user?.role || "").toLowerCase() === "admin" ? <MultiSelectDropdown label="Assigned to" options={applicantOptions.assignedTo} selected={applicantFilters.assignedTo} onToggle={(value) => setApplicantFilters((current) => ({ ...current, assignedTo: value === "__all__" ? [] : current.assignedTo.includes(value) ? current.assignedTo.filter((item) => item !== value) : [...current.assignedTo, value] }))} /> : null}
                 <MultiSelectDropdown label="Outcome" options={applicantOptions.outcomes} selected={applicantFilters.outcomes} onToggle={(value) => setApplicantFilters((current) => ({ ...current, outcomes: value === "__all__" ? [] : current.outcomes.includes(value) ? current.outcomes.filter((item) => item !== value) : [...current.outcomes, value] }))} />
                 <MultiSelectDropdown label="State" options={applicantOptions.activeStates} selected={applicantFilters.activeStates} allowAll={false} emptySummary="Active only" onToggle={(value) => setApplicantFilters((current) => ({ ...current, activeStates: current.activeStates.includes(value) ? current.activeStates.filter((item) => item !== value) : [...current.activeStates, value] }))} />
+              </div>
+              <div className="button-row tight" style={{ marginTop: 8 }}>
+                <button
+                  onClick={() => {
+                    setApplicantPage(1);
+                    setApplicantFiltersApplied({
+                      ...applicantFilters,
+                      clients: [...(applicantFilters.clients || [])],
+                      jds: [...(applicantFilters.jds || [])],
+                      locations: [...(applicantFilters.locations || [])],
+                      ownedBy: [...(applicantFilters.ownedBy || [])],
+                      assignedTo: [...(applicantFilters.assignedTo || [])],
+                      outcomes: [...(applicantFilters.outcomes || [])],
+                      activeStates: [...(applicantFilters.activeStates || [])]
+                    });
+                  }}
+                >
+                  Apply filters
+                </button>
+                <button
+                  className="ghost-btn"
+                  onClick={() => {
+                    const reset = {
+                      q: "",
+                      dateFrom: "",
+                      dateTo: "",
+                      clients: [],
+                      jds: [],
+                      locations: [],
+                      ownedBy: [],
+                      assignedTo: [],
+                      outcomes: [],
+                      activeStates: []
+                    };
+                    setApplicantPage(1);
+                    setApplicantFilters(reset);
+                    setApplicantFiltersApplied(reset);
+                  }}
+                >
+                  Reset
+                </button>
               </div>
               <div className="button-row captured-copy-row">
                 <label className="copy-preset-control">
@@ -20118,17 +20221,6 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                   </article>
                   ))
                 ) : <div className="empty-state">Loading applied candidates...</div>}
-              </div>
-              <div className="button-row tight">
-                <label className="copy-preset-control">
-                  <span>Rows per page</span>
-                  <select value={safeApplicantApiPageSize} onChange={(e) => setApplicantPageSize(Number(e.target.value || 25))}>
-                    {[10, 25, 50].map((size) => <option key={size} value={size}>{size}</option>)}
-                  </select>
-                </label>
-                <button className="ghost-btn" disabled={safeApplicantApiPage <= 1} onClick={() => setApplicantPage((page) => Math.max(1, page - 1))}>Previous</button>
-                <div className="muted">{`Page ${safeApplicantApiPage} of ${totalApplicantPages}`}</div>
-                <button className="ghost-btn" disabled={safeApplicantApiPage >= totalApplicantPages} onClick={() => setApplicantPage((page) => Math.min(totalApplicantPages, page + 1))}>Next</button>
               </div>
             </Section>
           } />

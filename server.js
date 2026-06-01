@@ -3402,11 +3402,85 @@ function sanitizeApplicantCandidate(candidate = {}) {
   };
 }
 
+function normalizeApplicantFilterOptions(raw = {}) {
+  const toList = (value) => {
+    if (Array.isArray(value)) return value.map((item) => String(item || "").trim()).filter(Boolean);
+    const text = String(value || "").trim();
+    if (!text) return [];
+    return text.split(",").map((item) => String(item || "").trim()).filter(Boolean);
+  };
+  return {
+    q: String(raw?.q || "").trim(),
+    dateFrom: String(raw?.dateFrom || "").trim(),
+    dateTo: String(raw?.dateTo || "").trim(),
+    clients: toList(raw?.clients),
+    jds: toList(raw?.jds),
+    locations: toList(raw?.locations),
+    ownedBy: toList(raw?.ownedBy),
+    assignedTo: toList(raw?.assignedTo),
+    activeStates: toList(raw?.activeStates)
+  };
+}
+
+function matchApplicantState(candidate = {}, activeStates = []) {
+  if (!Array.isArray(activeStates) || !activeStates.length) return true;
+  const isConverted = Boolean(candidate?.used_in_assessment) || Boolean(String(candidate?.assessment_id || candidate?.assessmentId || "").trim());
+  const isHidden = Boolean(candidate?.hidden_from_captured);
+  const state = isConverted ? "Converted" : (isHidden ? "Inactive" : "Active");
+  return activeStates.includes(state) || (state === "Converted" && activeStates.includes("Converted"));
+}
+
+function applyApplicantFiltersLocal(row = {}, filters = {}, includeConverted = true) {
+  const source = String(row?.source || "").trim().toLowerCase();
+  if (!["website_apply", "hosted_apply", "google_sheet"].includes(source)) return false;
+  const isConverted = Boolean(row?.used_in_assessment) || Boolean(String(row?.assessment_id || row?.assessmentId || "").trim());
+  if (!includeConverted && isConverted) return false;
+  if (!matchApplicantState(row, filters.activeStates || [])) return false;
+  const createdAt = String(row?.created_at || "").slice(0, 10);
+  if (filters.dateFrom && createdAt && createdAt < filters.dateFrom) return false;
+  if (filters.dateTo && createdAt && createdAt > filters.dateTo) return false;
+  if (filters.clients?.length) {
+    const value = String(row?.client_name || "Unassigned").trim();
+    if (!filters.clients.includes(value)) return false;
+  }
+  if (filters.jds?.length) {
+    const value = String(row?.jd_title || row?.assigned_jd_title || "").trim();
+    if (!filters.jds.includes(value)) return false;
+  }
+  if (filters.locations?.length) {
+    const value = String(row?.location || "").trim();
+    if (!filters.locations.includes(value)) return false;
+  }
+  if (filters.ownedBy?.length) {
+    const value = String(row?.assigned_to_name || row?.assignedToName || row?.recruiter_name || "").trim();
+    if (!filters.ownedBy.includes(value)) return false;
+  }
+  if (filters.assignedTo?.length) {
+    const value = String(row?.assigned_to_name || row?.assignedToName || "").trim();
+    if (!filters.assignedTo.includes(value)) return false;
+  }
+  if (filters.q) {
+    const hay = [
+      row?.name,
+      row?.email,
+      row?.phone,
+      row?.company,
+      row?.role,
+      row?.location,
+      row?.client_name,
+      row?.jd_title
+    ].filter(Boolean).join(" ").toLowerCase();
+    if (!hay.includes(String(filters.q || "").toLowerCase())) return false;
+  }
+  return true;
+}
+
 async function listApplicantsForUser(user, options = {}) {
   const limit = Math.max(1, Math.min(1000, Number(options.limit || 50)));
   const page = Math.max(1, Number(options.page || 1));
   const offset = Math.max(0, (page - 1) * limit);
-  const q = String(options.q || "").trim();
+  const filters = normalizeApplicantFilterOptions(options.filters || { q: options.q });
+  const q = String(filters.q || "").trim();
   const includeConverted = options.includeConverted === true;
   const { on, url, key } = getSupabaseServiceConfig();
   const companyId = String(user?.companyId || "").trim();
@@ -3433,6 +3507,26 @@ async function listApplicantsForUser(user, options = {}) {
         queryParts.push(`or=(name.ilike.${encodeURIComponent(like)},email.ilike.${encodeURIComponent(like)},phone.ilike.${encodeURIComponent(like)},company.ilike.${encodeURIComponent(like)},role.ilike.${encodeURIComponent(like)},location.ilike.${encodeURIComponent(like)},client_name.ilike.${encodeURIComponent(like)},jd_title.ilike.${encodeURIComponent(like)})`);
       }
     }
+    if (filters.dateFrom) queryParts.push(`created_at=gte.${encodeURIComponent(`${filters.dateFrom}T00:00:00.000Z`)}`);
+    if (filters.dateTo) queryParts.push(`created_at=lte.${encodeURIComponent(`${filters.dateTo}T23:59:59.999Z`)}`);
+    if (filters.clients.length) queryParts.push(`client_name=in.(${filters.clients.map((item) => encodeURIComponent(item)).join(",")})`);
+    if (filters.jds.length) queryParts.push(`jd_title=in.(${filters.jds.map((item) => encodeURIComponent(item)).join(",")})`);
+    if (filters.locations.length) queryParts.push(`location=in.(${filters.locations.map((item) => encodeURIComponent(item)).join(",")})`);
+    if (filters.assignedTo.length) queryParts.push(`assigned_to_name=in.(${filters.assignedTo.map((item) => encodeURIComponent(item)).join(",")})`);
+    if (filters.activeStates.length === 1) {
+      const only = String(filters.activeStates[0] || "").trim();
+      if (only === "Active") {
+        queryParts.push("hidden_from_captured=not.is.true");
+        queryParts.push("used_in_assessment=not.is.true");
+        queryParts.push("assessment_id=is.null");
+      } else if (only === "Inactive") {
+        queryParts.push("hidden_from_captured=is.true");
+        queryParts.push("used_in_assessment=not.is.true");
+        queryParts.push("assessment_id=is.null");
+      } else if (only === "Converted") {
+        queryParts.push("or=(used_in_assessment.is.true,assessment_id.not.is.null)");
+      }
+    }
     if (!includeConverted) {
       queryParts.push("used_in_assessment=not.is.true");
       queryParts.push("assessment_id=is.null");
@@ -3456,17 +3550,13 @@ async function listApplicantsForUser(user, options = {}) {
     limit: Math.max(500, limit * Math.max(1, page)),
     q
   });
-  const filtered = rows.filter((candidate) => {
-    const source = String(candidate?.source || "").trim().toLowerCase();
-    if (!sources.includes(source)) return false;
-    if (!includeConverted && candidate?.used_in_assessment) return false;
-    return true;
-  });
+  const filtered = rows.filter((candidate) => applyApplicantFiltersLocal(candidate, filters, includeConverted));
   return filtered.slice(offset, offset + limit).map(sanitizeApplicantCandidate);
 }
 
 async function getApplicantStatsForUser(user, options = {}) {
-  const q = String(options.q || "").trim();
+  const filters = normalizeApplicantFilterOptions(options.filters || { q: options.q });
+  const q = String(filters.q || "").trim();
   const { on, url, key } = getSupabaseServiceConfig();
   const companyId = String(user?.companyId || "").trim();
   const actorId = String(user?.id || "").trim();
@@ -3491,6 +3581,12 @@ async function getApplicantStatsForUser(user, options = {}) {
         parts.push(`or=(name.ilike.${encodeURIComponent(like)},email.ilike.${encodeURIComponent(like)},phone.ilike.${encodeURIComponent(like)},company.ilike.${encodeURIComponent(like)},role.ilike.${encodeURIComponent(like)},location.ilike.${encodeURIComponent(like)},client_name.ilike.${encodeURIComponent(like)},jd_title.ilike.${encodeURIComponent(like)})`);
       }
     }
+    if (filters.dateFrom) parts.push(`created_at=gte.${encodeURIComponent(`${filters.dateFrom}T00:00:00.000Z`)}`);
+    if (filters.dateTo) parts.push(`created_at=lte.${encodeURIComponent(`${filters.dateTo}T23:59:59.999Z`)}`);
+    if (filters.clients.length) parts.push(`client_name=in.(${filters.clients.map((item) => encodeURIComponent(item)).join(",")})`);
+    if (filters.jds.length) parts.push(`jd_title=in.(${filters.jds.map((item) => encodeURIComponent(item)).join(",")})`);
+    if (filters.locations.length) parts.push(`location=in.(${filters.locations.map((item) => encodeURIComponent(item)).join(",")})`);
+    if (filters.assignedTo.length) parts.push(`assigned_to_name=in.(${filters.assignedTo.map((item) => encodeURIComponent(item)).join(",")})`);
     return parts;
   };
 
@@ -3525,10 +3621,7 @@ async function getApplicantStatsForUser(user, options = {}) {
 
   // Local fallback.
   const fallbackRows = await listCandidatesForUser(user, { limit: 5000, q });
-  const pool = (Array.isArray(fallbackRows) ? fallbackRows : []).filter((item) => {
-    const source = String(item?.source || "").trim().toLowerCase();
-    return sources.includes(source);
-  });
+  const pool = (Array.isArray(fallbackRows) ? fallbackRows : []).filter((item) => applyApplicantFiltersLocal(item, filters, true));
   const todayKey = new Date().toISOString().slice(0, 10);
   const converted = pool.filter((item) => Boolean(item?.used_in_assessment) || Boolean(String(item?.assessment_id || item?.assessmentId || "").trim())).length;
   const inactive = pool.filter((item) => Boolean(item?.hidden_from_captured) && !Boolean(item?.used_in_assessment) && !Boolean(String(item?.assessment_id || item?.assessmentId || "").trim())).length;
@@ -15043,34 +15136,85 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (req.method === "GET" && requestUrl.pathname === "/company/applicants/list") {
+    try {
+      const user = await requireSessionUser(getBearerToken(req));
+      await requireSaasAccess(user, "applied candidates pipeline");
+      const limit = Math.max(1, Math.min(1000, Number(requestUrl.searchParams.get("limit") || 50)));
+      const page = Math.max(1, Number(requestUrl.searchParams.get("page") || 1));
+      const includeConverted = String(requestUrl.searchParams.get("includeConverted") || "true").trim().toLowerCase() !== "false";
+      const filters = {
+        q: String(requestUrl.searchParams.get("q") || "").trim(),
+        dateFrom: String(requestUrl.searchParams.get("dateFrom") || "").trim(),
+        dateTo: String(requestUrl.searchParams.get("dateTo") || "").trim(),
+        clients: String(requestUrl.searchParams.get("clients") || "").trim(),
+        jds: String(requestUrl.searchParams.get("jds") || "").trim(),
+        locations: String(requestUrl.searchParams.get("locations") || "").trim(),
+        ownedBy: String(requestUrl.searchParams.get("ownedBy") || "").trim(),
+        assignedTo: String(requestUrl.searchParams.get("assignedTo") || "").trim(),
+        activeStates: String(requestUrl.searchParams.get("activeStates") || "").trim()
+      };
+      const items = await listApplicantsForUser(user, { limit, page, includeConverted, filters });
+      sendJson(res, 200, {
+        ok: true,
+        result: {
+          page,
+          limit,
+          items
+        }
+      });
+    } catch (error) {
+      sendJson(res, 400, { ok: false, error: String(error.message || error) });
+    }
+    return;
+  }
+
+  if (req.method === "GET" && requestUrl.pathname === "/company/applicants/stats") {
+    try {
+      const user = await requireSessionUser(getBearerToken(req));
+      await requireSaasAccess(user, "applied candidates pipeline");
+      const filters = {
+        q: String(requestUrl.searchParams.get("q") || "").trim(),
+        dateFrom: String(requestUrl.searchParams.get("dateFrom") || "").trim(),
+        dateTo: String(requestUrl.searchParams.get("dateTo") || "").trim(),
+        clients: String(requestUrl.searchParams.get("clients") || "").trim(),
+        jds: String(requestUrl.searchParams.get("jds") || "").trim(),
+        locations: String(requestUrl.searchParams.get("locations") || "").trim(),
+        ownedBy: String(requestUrl.searchParams.get("ownedBy") || "").trim(),
+        assignedTo: String(requestUrl.searchParams.get("assignedTo") || "").trim(),
+        activeStates: String(requestUrl.searchParams.get("activeStates") || "").trim()
+      };
+      const stats = await getApplicantStatsForUser(user, { filters });
+      sendJson(res, 200, { ok: true, result: stats });
+    } catch (error) {
+      sendJson(res, 400, { ok: false, error: String(error.message || error) });
+    }
+    return;
+  }
+
   if (req.method === "GET" && requestUrl.pathname === "/company/applicants") {
     try {
       const user = await requireSessionUser(getBearerToken(req));
       await requireSaasAccess(user, "applied candidates pipeline");
-      const q = String(requestUrl.searchParams.get("q") || "").trim();
       const limit = Math.max(1, Math.min(1000, Number(requestUrl.searchParams.get("limit") || 50)));
       const page = Math.max(1, Number(requestUrl.searchParams.get("page") || 1));
       const includeConverted = String(requestUrl.searchParams.get("includeConverted") || "true").trim().toLowerCase() !== "false";
+      const filters = {
+        q: String(requestUrl.searchParams.get("q") || "").trim(),
+        dateFrom: String(requestUrl.searchParams.get("dateFrom") || "").trim(),
+        dateTo: String(requestUrl.searchParams.get("dateTo") || "").trim(),
+        clients: String(requestUrl.searchParams.get("clients") || "").trim(),
+        jds: String(requestUrl.searchParams.get("jds") || "").trim(),
+        locations: String(requestUrl.searchParams.get("locations") || "").trim(),
+        ownedBy: String(requestUrl.searchParams.get("ownedBy") || "").trim(),
+        assignedTo: String(requestUrl.searchParams.get("assignedTo") || "").trim(),
+        activeStates: String(requestUrl.searchParams.get("activeStates") || "").trim()
+      };
       const [items, stats] = await Promise.all([
-        listApplicantsForUser(user, { q, limit, page, includeConverted }),
-        getApplicantStatsForUser(user, { q })
+        listApplicantsForUser(user, { limit, page, includeConverted, filters }),
+        getApplicantStatsForUser(user, { filters })
       ]);
-      sendJson(res, 200, {
-        ok: true,
-        result: {
-          total: Number(stats?.total || 0),
-          page,
-          limit,
-          items,
-          stats: {
-            today: Number(stats?.today || 0),
-            total: Number(stats?.total || 0),
-            active: Number(stats?.active || 0),
-            inactive: Number(stats?.inactive || 0),
-            converted: Number(stats?.converted || 0)
-          }
-        }
-      });
+      sendJson(res, 200, { ok: true, result: { page, limit, items, stats, total: Number(stats?.total || 0) } });
     } catch (error) {
       sendJson(res, 400, { ok: false, error: String(error.message || error) });
     }
