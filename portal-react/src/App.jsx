@@ -7332,6 +7332,10 @@ function PortalApp({ token, onLogout }) {
   const [bulkAssignApplicantIds, setBulkAssignApplicantIds] = useState([]);
   const [bulkAssignCandidateIds, setBulkAssignCandidateIds] = useState([]);
   const [applicantsVisibleCount, setApplicantsVisibleCount] = useState(50);
+  const [appliedPage, setAppliedPage] = useState(1);
+  const [appliedPageSize, setAppliedPageSize] = useState(25);
+  const [appliedTabData, setAppliedTabData] = useState({ total: 0, page: 1, limit: 25, hasMore: false, items: [], stats: { today: 0, total: 0, active: 0, inactive: 0, converted: 0 }, options: { clients: [], jds: [], locations: [], ownedBy: [], outcomes: [], activeStates: ["Active", "Inactive"] } });
+  const appliedTabInitializedRef = useRef(false);
   const [capturedPage, setCapturedPage] = useState(1);
   const [capturedPageSize, setCapturedPageSize] = useState(25);
   const [bulkAssignApplicantModalOpen, setBulkAssignApplicantModalOpen] = useState(false);
@@ -9490,17 +9494,43 @@ function PortalApp({ token, onLogout }) {
 
   async function reloadApplicantsSlice() {
     if (!token) return;
-    const applicantsEnvelope = await api("/company/applicants", token)
+    const filtersPayload = {
+      q: applicantFilters.q || "",
+      dateFrom: applicantFilters.dateFrom || "",
+      dateTo: applicantFilters.dateTo || "",
+      clients: Array.isArray(applicantFilters.clients) ? applicantFilters.clients : [],
+      jds: Array.isArray(applicantFilters.jds) ? applicantFilters.jds : [],
+      locations: Array.isArray(applicantFilters.locations) ? applicantFilters.locations : [],
+      ownedBy: Array.isArray(applicantFilters.ownedBy) ? applicantFilters.ownedBy : [],
+      outcomes: Array.isArray(applicantFilters.outcomes) ? applicantFilters.outcomes : [],
+      activeStates: Array.isArray(applicantFilters.activeStates) ? applicantFilters.activeStates : []
+    };
+    const query = new URLSearchParams({
+      page: String(Math.max(1, Number(appliedPage || 1))),
+      limit: String([10, 25, 50].includes(Number(appliedPageSize)) ? Number(appliedPageSize) : 25),
+      filters: JSON.stringify(filtersPayload)
+    });
+    const applicantsEnvelope = await api(`/company/applicants?${query.toString()}`, token)
       .then((data) => ({ ok: true, data }))
       .catch((error) => ({ ok: false, error: String(error?.message || error), data: null }));
     if (!applicantsEnvelope.ok) {
       setStatus("applicants", `Applied refresh failed, keeping existing list: ${applicantsEnvelope.error}`, "error");
       return;
     }
+    const payload = applicantsEnvelope?.data || {};
     setState((current) => ({
       ...current,
-      applicants: applicantsEnvelope?.data?.items || []
+      applicants: Array.isArray(payload?.items) ? payload.items : []
     }));
+    setAppliedTabData({
+      total: Number(payload?.total || 0),
+      page: Number(payload?.page || 1),
+      limit: Number(payload?.limit || ([10, 25, 50].includes(Number(appliedPageSize)) ? Number(appliedPageSize) : 25)),
+      hasMore: Boolean(payload?.hasMore),
+      items: Array.isArray(payload?.items) ? payload.items : [],
+      stats: payload?.stats || { today: 0, total: 0, active: 0, inactive: 0, converted: 0 },
+      options: payload?.options || { clients: [], jds: [], locations: [], ownedBy: [], outcomes: [], activeStates: ["Active", "Inactive"] }
+    });
   }
 
   async function reloadIntakeSlice() {
@@ -9638,6 +9668,58 @@ function PortalApp({ token, onLogout }) {
       if (firstJobId) setShortcutJobId(firstJobId);
     }
   }, [token, location?.pathname, state.jobs, shortcutJobId]);
+
+  useEffect(() => {
+    if (!token) return;
+    if (String(location?.pathname || "").trim() !== "/applicants") return;
+    if (appliedTabInitializedRef.current) return;
+    appliedTabInitializedRef.current = true;
+    void reloadApplicantsSlice();
+  }, [token, location?.pathname]);
+
+  useEffect(() => {
+    if (!token) return;
+    if (String(location?.pathname || "").trim() !== "/applicants") return;
+    if (!appliedTabInitializedRef.current) return;
+    void reloadApplicantsSlice();
+  }, [
+    token,
+    appliedPage,
+    appliedPageSize,
+    applicantFilters.q,
+    applicantFilters.dateFrom,
+    applicantFilters.dateTo,
+    JSON.stringify(applicantFilters.clients || []),
+    JSON.stringify(applicantFilters.jds || []),
+    JSON.stringify(applicantFilters.locations || []),
+    JSON.stringify(applicantFilters.ownedBy || []),
+    JSON.stringify(applicantFilters.outcomes || []),
+    JSON.stringify(applicantFilters.activeStates || [])
+  ]);
+
+  useEffect(() => {
+    if (!token) return undefined;
+    if (String(location?.pathname || "").trim() !== "/applicants") return undefined;
+    let cancelled = false;
+    const streamUrl = `/company/stream/captured?token=${encodeURIComponent(String(token || "").trim())}`;
+    const source = new EventSource(streamUrl);
+    const onAppliedEvent = (event) => {
+      if (cancelled) return;
+      if (document.visibilityState !== "visible") return;
+      let payload = {};
+      try { payload = JSON.parse(String(event?.data || "{}")); } catch { payload = {}; }
+      const candidateId = String(payload?.candidateId || "").trim();
+      const eventType = String(payload?.eventType || "").trim();
+      if (!candidateId && !eventType) return;
+      void reloadApplicantsSlice();
+    };
+    source.addEventListener("captured", onAppliedEvent);
+    return () => {
+      cancelled = true;
+      try { source.removeEventListener("captured", onAppliedEvent); } catch {}
+      try { source.close(); } catch {}
+    };
+  }, [token, location?.pathname, appliedPage, appliedPageSize, applicantFilters]);
 
   useEffect(() => {
     if (!token) return undefined;
@@ -12069,9 +12151,23 @@ function PortalApp({ token, onLogout }) {
       total: universe.length
     };
   }, [applicantAssessmentMap, applicantCandidateMap, filteredApplicants, state.user, applicantFilters]);
+  const appliedApplicantOptions = useMemo(() => (
+    appliedTabData?.options || { clients: [], jds: [], locations: [], ownedBy: [], outcomes: [], activeStates: ["Active", "Inactive"] }
+  ), [appliedTabData]);
+  const appliedVisibleApplicants = useMemo(() => (
+    Array.isArray(appliedTabData?.items) ? appliedTabData.items : []
+  ), [appliedTabData]);
+  const appliedApplicantStats = useMemo(() => (
+    appliedTabData?.stats || { today: 0, total: 0, active: 0, inactive: 0, converted: 0 }
+  ), [appliedTabData]);
+  const appliedTotalPages = useMemo(() => {
+    const total = Number(appliedTabData?.total || 0);
+    const limit = Number(appliedTabData?.limit || ([10, 25, 50].includes(Number(appliedPageSize)) ? Number(appliedPageSize) : 25));
+    return Math.max(1, Math.ceil(total / Math.max(1, limit)));
+  }, [appliedTabData, appliedPageSize]);
 
   useEffect(() => {
-    setApplicantsVisibleCount(50);
+    setAppliedPage(1);
   }, [
     applicantFilters.q,
     applicantFilters.dateFrom,
@@ -12080,7 +12176,6 @@ function PortalApp({ token, onLogout }) {
     applicantFilters.jds,
     applicantFilters.locations,
     applicantFilters.ownedBy,
-    applicantFilters.assignedTo,
     applicantFilters.outcomes,
     applicantFilters.activeStates
   ]);
@@ -18324,8 +18419,13 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
       setStatus("assessments", "Candidate id missing for this assessment (cannot move back safely).", "error");
       return;
     }
+    const linkedCandidate = (state.candidates || []).find((item) => String(item?.id || "").trim() === candidateId) || null;
+    const source = String(linkedCandidate?.source || "").trim().toLowerCase();
+    const targetIsApplied = source === "website_apply" || source === "hosted_apply" || source === "google_sheet";
     const confirmed = typeof window === "undefined" || window.confirm(
-      "Move back to Captured will remove this assessment and keep the candidate as a captured note. Continue?"
+      targetIsApplied
+        ? "Move back will remove this assessment and keep the candidate in Applied Candidates. Continue?"
+        : "Move back to Captured will remove this assessment and keep the candidate as a captured note. Continue?"
     );
     if (!confirmed) return;
     setStatus("assessments", "Moving back to Captured...");
@@ -18343,8 +18443,13 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
           ? current.assessments.filter((item) => String(item?.id || "") !== assessmentId)
           : current.assessments
       }));
-      navigate("/captured-notes");
-      setStatus("captured", "Moved back to Captured.", "ok");
+      if (targetIsApplied) {
+        navigate("/applicants");
+        setStatus("applicants", "Moved back to Applied.", "ok");
+      } else {
+        navigate("/captured-notes");
+        setStatus("captured", "Moved back to Captured.", "ok");
+      }
       void refreshWorkspaceSilently("post-delete");
     } catch (error) {
       setStatus("assessments", String(error?.message || error), "error");
@@ -19858,26 +19963,23 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                 <label className="full"><span>Search</span><input placeholder="Search by candidate, phone, email, JD..." value={applicantFilters.q} onChange={(e) => setApplicantFilters((current) => ({ ...current, q: e.target.value }))} /></label>
               </div>
               <div className="metric-grid metric-grid--tight captured-metric-row" style={{ marginTop: 12 }}>
-                <div className="metric-card compact-metric"><div className="metric-label captured-metric-label"><span className="captured-metric-icon">🗓</span>Applied today</div><div className="metric-value">{renderLoadedMetricValue(applicantStats.today)}</div></div>
-                <div className="metric-card compact-metric"><div className="metric-label captured-metric-label"><span className="captured-metric-icon">🗂</span>Total applied</div><div className="metric-value">{renderLoadedMetricValue(applicantStats.total || 0)}</div></div>
-                <div className="metric-card compact-metric"><div className="metric-label captured-metric-label"><span className="captured-metric-icon">👥</span>Active</div><div className="metric-value">{renderLoadedMetricValue(applicantStats.active)}</div></div>
-                <div className="metric-card compact-metric"><div className="metric-label captured-metric-label"><span className="captured-metric-icon">✅</span>Converted</div><div className="metric-value">{renderLoadedMetricValue(applicantStats.converted)}</div></div>
+                <div className="metric-card compact-metric"><div className="metric-label captured-metric-label"><span className="captured-metric-icon">🗓</span>Applied today</div><div className="metric-value">{renderLoadedMetricValue(appliedApplicantStats.today)}</div></div>
+                <div className="metric-card compact-metric"><div className="metric-label captured-metric-label"><span className="captured-metric-icon">🗂</span>Total applied</div><div className="metric-value">{renderLoadedMetricValue(appliedApplicantStats.total || 0)}</div></div>
+                <div className="metric-card compact-metric"><div className="metric-label captured-metric-label"><span className="captured-metric-icon">👥</span>Active</div><div className="metric-value">{renderLoadedMetricValue(appliedApplicantStats.active)}</div></div>
+                <div className="metric-card compact-metric"><div className="metric-label captured-metric-label"><span className="captured-metric-icon">⏳</span>Inactive</div><div className="metric-value">{renderLoadedMetricValue(appliedApplicantStats.inactive || 0)}</div></div>
+                <div className="metric-card compact-metric"><div className="metric-label captured-metric-label"><span className="captured-metric-icon">✅</span>Converted</div><div className="metric-value">{renderLoadedMetricValue(appliedApplicantStats.converted)}</div></div>
               </div>
               <div className="form-grid three-col" style={{ marginTop: 10 }}>
                 <label><span>Date from</span><input type="date" value={applicantFilters.dateFrom} onChange={(e) => setApplicantFilters((current) => ({ ...current, dateFrom: e.target.value }))} /></label>
                 <label><span>Date to</span><input type="date" value={applicantFilters.dateTo} onChange={(e) => setApplicantFilters((current) => ({ ...current, dateTo: e.target.value }))} /></label>
               </div>
-              <div className="muted" style={{ marginTop: 8 }}>
-                Inactive: {renderLoadedMetricValue(applicantStats.inactive || 0)} (hidden). Total: {renderLoadedMetricValue(applicantStats.total || 0)}
-              </div>
               <div className="captured-filter-grid">
-                <MultiSelectDropdown label="Clients" options={applicantOptions.clients} selected={applicantFilters.clients} onToggle={(value) => setApplicantFilters((current) => ({ ...current, clients: value === "__all__" ? [] : current.clients.includes(value) ? current.clients.filter((item) => item !== value) : [...current.clients, value] }))} />
-                <MultiSelectDropdown label="JD / Role" options={applicantOptions.jds} selected={applicantFilters.jds} onToggle={(value) => setApplicantFilters((current) => ({ ...current, jds: value === "__all__" ? [] : current.jds.includes(value) ? current.jds.filter((item) => item !== value) : [...current.jds, value] }))} />
-                <MultiSelectDropdown label="Location" options={applicantOptions.locations} selected={applicantFilters.locations} onToggle={(value) => setApplicantFilters((current) => ({ ...current, locations: value === "__all__" ? [] : current.locations.includes(value) ? current.locations.filter((item) => item !== value) : [...current.locations, value] }))} />
-                {String(state.user?.role || "").toLowerCase() === "admin" ? <MultiSelectDropdown label="Owned by" options={applicantOptions.ownedBy} selected={applicantFilters.ownedBy} onToggle={(value) => setApplicantFilters((current) => ({ ...current, ownedBy: value === "__all__" ? [] : current.ownedBy.includes(value) ? current.ownedBy.filter((item) => item !== value) : [...current.ownedBy, value] }))} /> : null}
-                {String(state.user?.role || "").toLowerCase() === "admin" ? <MultiSelectDropdown label="Assigned to" options={applicantOptions.assignedTo} selected={applicantFilters.assignedTo} onToggle={(value) => setApplicantFilters((current) => ({ ...current, assignedTo: value === "__all__" ? [] : current.assignedTo.includes(value) ? current.assignedTo.filter((item) => item !== value) : [...current.assignedTo, value] }))} /> : null}
-                <MultiSelectDropdown label="Outcome" options={applicantOptions.outcomes} selected={applicantFilters.outcomes} onToggle={(value) => setApplicantFilters((current) => ({ ...current, outcomes: value === "__all__" ? [] : current.outcomes.includes(value) ? current.outcomes.filter((item) => item !== value) : [...current.outcomes, value] }))} />
-                <MultiSelectDropdown label="State" options={applicantOptions.activeStates} selected={applicantFilters.activeStates} allowAll={false} emptySummary="Active only" onToggle={(value) => setApplicantFilters((current) => ({ ...current, activeStates: current.activeStates.includes(value) ? current.activeStates.filter((item) => item !== value) : [...current.activeStates, value] }))} />
+                <MultiSelectDropdown label="Clients" options={appliedApplicantOptions.clients} selected={applicantFilters.clients} onToggle={(value) => setApplicantFilters((current) => ({ ...current, clients: value === "__all__" ? [] : current.clients.includes(value) ? current.clients.filter((item) => item !== value) : [...current.clients, value] }))} />
+                <MultiSelectDropdown label="JD / Role" options={appliedApplicantOptions.jds} selected={applicantFilters.jds} onToggle={(value) => setApplicantFilters((current) => ({ ...current, jds: value === "__all__" ? [] : current.jds.includes(value) ? current.jds.filter((item) => item !== value) : [...current.jds, value] }))} />
+                <MultiSelectDropdown label="Location" options={appliedApplicantOptions.locations} selected={applicantFilters.locations} onToggle={(value) => setApplicantFilters((current) => ({ ...current, locations: value === "__all__" ? [] : current.locations.includes(value) ? current.locations.filter((item) => item !== value) : [...current.locations, value] }))} />
+                {String(state.user?.role || "").toLowerCase() === "admin" ? <MultiSelectDropdown label="Assigned to" options={appliedApplicantOptions.ownedBy} selected={applicantFilters.ownedBy} onToggle={(value) => setApplicantFilters((current) => ({ ...current, ownedBy: value === "__all__" ? [] : current.ownedBy.includes(value) ? current.ownedBy.filter((item) => item !== value) : [...current.ownedBy, value] }))} /> : null}
+                <MultiSelectDropdown label="Outcome" options={appliedApplicantOptions.outcomes} selected={applicantFilters.outcomes} onToggle={(value) => setApplicantFilters((current) => ({ ...current, outcomes: value === "__all__" ? [] : current.outcomes.includes(value) ? current.outcomes.filter((item) => item !== value) : [...current.outcomes, value] }))} />
+                <MultiSelectDropdown label="State" options={appliedApplicantOptions.activeStates} selected={applicantFilters.activeStates} allowAll={false} emptySummary="Active only" onToggle={(value) => setApplicantFilters((current) => ({ ...current, activeStates: current.activeStates.includes(value) ? current.activeStates.filter((item) => item !== value) : [...current.activeStates, value] }))} />
               </div>
               <div className="button-row captured-copy-row">
                 <label className="copy-preset-control">
@@ -19908,7 +20010,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
               </div>
               <div className="stack-list captured-notes-list">
                 {workspaceDataReady ? (
-                  !visibleApplicants.length ? <div className="empty-state">No applied candidates right now.</div> : pagedApplicants.map((item) => (
+                  !appliedVisibleApplicants.length ? <div className="empty-state">No applied candidates right now.</div> : appliedVisibleApplicants.map((item) => (
                   <article className="item-card compact-card captured-note-card" key={item.id}>
                     {String(state.user?.role || "").toLowerCase() === "admin" ? (
                       <label className="captured-top-select captured-top-select--card">
@@ -19985,12 +20087,12 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                           <div className="captured-note-contact-row captured-note-field">
                             <span className="captured-note-contact-icon" aria-hidden="true">👤</span>
                             <span className="captured-note-field-label">Assigned to</span>
-                            <span className="captured-note-field-value">{item.assignedToName || "NA"}</span>
+                            <span className="captured-note-field-value">{item.assignedToName || item.assigned_to_name || "NA"}</span>
                           </div>
                         </div>
                       </div>
                     </div>
-                    {item.assignedToName ? <div className="status-note">{`Already assigned to ${item.assignedToName}`}</div> : null}
+                    {(item.assignedToName || item.assigned_to_name) ? <div className="status-note">{`Already assigned to ${item.assignedToName || item.assigned_to_name}`}</div> : null}
                     <div className="button-row captured-note-actions">
                       {!item.hidden_from_captured ? (
                         <button onClick={() => loadApplicantIntoInterview(item.id)}>Open draft</button>
@@ -20083,12 +20185,17 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                   ))
                 ) : <div className="empty-state">Loading applied candidates...</div>}
               </div>
-              {visibleApplicants.length > applicantsVisibleCount ? (
-                <div className="button-row tight">
-                  <button className="ghost-btn" onClick={() => setApplicantsVisibleCount((current) => current + 50)}>Load more applicants</button>
-                  <div className="muted">{`Showing ${Math.min(applicantsVisibleCount, visibleApplicants.length)} of ${visibleApplicants.length}`}</div>
-                </div>
-              ) : null}
+              <div className="button-row tight">
+                <label className="copy-preset-control">
+                  <span>Profiles / page</span>
+                  <select value={appliedPageSize} onChange={(e) => { setAppliedPageSize(Number(e.target.value || 25)); setAppliedPage(1); }}>
+                    {[10, 25, 50].map((size) => <option key={`applied-page-size-${size}`} value={size}>{size}</option>)}
+                  </select>
+                </label>
+                <button className="ghost-btn" disabled={appliedPage <= 1} onClick={() => setAppliedPage((page) => Math.max(1, page - 1))}>Previous</button>
+                <div className="muted">{`Page ${appliedPage} of ${appliedTotalPages}`}</div>
+                <button className="ghost-btn" disabled={appliedPage >= appliedTotalPages} onClick={() => setAppliedPage((page) => Math.min(appliedTotalPages, page + 1))}>Next</button>
+              </div>
             </Section>
           } />
 
