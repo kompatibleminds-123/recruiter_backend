@@ -11827,16 +11827,9 @@ function PortalApp({ token, onLogout }) {
         archived: Number(assessmentStatsSnapshot.archived || 0)
       };
     }
-    const todayKey = new Date().toISOString().slice(0, 10);
-    const universe = Array.isArray(state.assessments) ? state.assessments : [];
-    return {
-      today: universe.filter((item) => String(item?.generatedAt || item?.createdAt || item?.created_at || item?.updatedAt || "").slice(0, 10) === todayKey).length,
-      total: universe.length,
-      active: universe.filter((item) => !isAssessmentArchived(item)).length,
-      archived: universe.filter((item) => isAssessmentArchived(item)).length
-    };
-  }, [assessmentStatsSnapshot, state.assessments]);
-  const renderAssessmentMetricValue = (value) => (assessmentStatsSnapshot || (Array.isArray(state.assessments) && state.assessments.length) ? value : "…");
+    return { today: 0, total: 0, active: 0, archived: 0 };
+  }, [assessmentStatsSnapshot]);
+  const renderAssessmentMetricValue = (value) => (assessmentStatsSnapshot ? value : "…");
 
   const renderLoadedMetricValue = (value) => (workspaceDataReady ? value : "…");
 
