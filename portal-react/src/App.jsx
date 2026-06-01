@@ -9901,14 +9901,19 @@ function PortalApp({ token, onLogout }) {
     if (!token) return undefined;
     if (String(location?.pathname || "") !== "/assessments") return undefined;
 
+    void reloadAssessmentStats(assessmentFiltersApplied).catch(() => {});
+  }, [token, location?.pathname, assessmentFiltersApplied]);
+
+  useEffect(() => {
+    if (!token) return undefined;
+    if (String(location?.pathname || "") !== "/assessments") return undefined;
+
     let cancelled = false;
-    // One-time pull on entering Assessments tab so the page can bind to API-backed slices.
-    void Promise.all([
-      reloadAssessmentSlice(assessmentPage, safeAssessmentApiPageSize, assessmentFiltersApplied, assessmentLane),
-      reloadAssessmentStats(assessmentFiltersApplied)
-    ]).catch(() => {}).finally(() => {
-      if (cancelled) return;
-    });
+    void reloadAssessmentSlice(assessmentPage, safeAssessmentApiPageSize, assessmentFiltersApplied, assessmentLane)
+      .catch(() => {})
+      .finally(() => {
+        if (cancelled) return;
+      });
     return () => {
       cancelled = true;
     };
@@ -11828,6 +11833,7 @@ function PortalApp({ token, onLogout }) {
       archived: 0
     };
   }, [assessmentStatsSnapshot]);
+  const renderAssessmentMetricValue = (value) => (assessmentStatsSnapshot ? value : "…");
 
   const renderLoadedMetricValue = (value) => (workspaceDataReady ? value : "…");
 
@@ -20589,10 +20595,10 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                 <label className="full"><span>Search</span><input placeholder="Search by candidate, phone, email, JD..." value={assessmentFilters.q} onChange={(e) => setAssessmentFilters((current) => ({ ...current, q: e.target.value }))} /></label>
               </div>
               <div className="metric-grid metric-grid--tight">
-                <div className="metric-card compact-metric"><div className="metric-label">Today</div><div className="metric-value">{renderLoadedMetricValue(assessmentStats.today)}</div></div>
-                <div className="metric-card compact-metric"><div className="metric-label">Total assessments</div><div className="metric-value">{renderLoadedMetricValue(assessmentStats.total)}</div></div>
-                <div className="metric-card compact-metric"><div className="metric-label">Active</div><div className="metric-value">{renderLoadedMetricValue(assessmentStats.active)}</div></div>
-                <div className="metric-card compact-metric"><div className="metric-label">Archived</div><div className="metric-value">{renderLoadedMetricValue(assessmentStats.archived)}</div></div>
+                <div className="metric-card compact-metric"><div className="metric-label">Today</div><div className="metric-value">{renderAssessmentMetricValue(assessmentStats.today)}</div></div>
+                <div className="metric-card compact-metric"><div className="metric-label">Total assessments</div><div className="metric-value">{renderAssessmentMetricValue(assessmentStats.total)}</div></div>
+                <div className="metric-card compact-metric"><div className="metric-label">Active</div><div className="metric-value">{renderAssessmentMetricValue(assessmentStats.active)}</div></div>
+                <div className="metric-card compact-metric"><div className="metric-label">Archived</div><div className="metric-value">{renderAssessmentMetricValue(assessmentStats.archived)}</div></div>
               </div>
               <div className="form-grid three-col" style={{ marginTop: 10 }}>
                 <label><span>Date from</span><input type="date" value={assessmentFilters.dateFrom} onChange={(e) => setAssessmentFilters((current) => ({ ...current, dateFrom: e.target.value }))} /></label>
