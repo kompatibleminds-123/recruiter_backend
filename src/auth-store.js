@@ -5273,21 +5273,22 @@ async function saveAssessment({ actorUserId, companyId, assessment }) {
     try {
       const candidateRows = await sbSel(
         "candidates",
-        `select=id,assessment_id,assessmentId,used_in_assessment,hidden_from_captured&company_id=eq.${enc(companyId)}&id=eq.${enc(candidateId)}&limit=1`
+        `select=id,assessment_id,used_in_assessment,hidden_from_captured&company_id=eq.${enc(companyId)}&id=eq.${enc(candidateId)}&limit=1`
       ).catch(() => []);
       const candidateRow = candidateRows && candidateRows[0] ? candidateRows[0] : null;
-      const linkedAssessmentId = String(candidateRow?.assessment_id || candidateRow?.assessmentId || "").trim();
-      if (!linkedAssessmentId) {
-        throw new Error("Assessment was deleted or moved back to Captured. Please reopen the latest record.");
-      }
-      if (String(linkedAssessmentId) !== String(safeAssessment.id || "").trim()) {
-        throw new Error("Assessment was moved back to Captured or relinked elsewhere. Please reopen the latest record.");
+      const linkedAssessmentId = String(candidateRow?.assessment_id || "").trim();
+      // Soft validation only: do not block save on transient link races.
+      if (linkedAssessmentId && String(linkedAssessmentId) !== String(safeAssessment.id || "").trim()) {
+        console.warn("[assessment-save] candidate link mismatch during optimistic lock", {
+          companyId,
+          candidateId,
+          linkedAssessmentId,
+          safeAssessmentId: String(safeAssessment.id || "").trim()
+        });
       }
     } catch (error) {
-      if (/Assessment was (deleted|moved back to Captured|moved back to Captured or relinked elsewhere)/i.test(String(error?.message || error))) {
-        throw error;
-      }
-      throw new Error("Assessment was deleted or moved back to Captured. Please reopen the latest record.");
+      // Ignore candidate-link lookup failures here; canonical optimistic lock check
+      // continues below using assessment.updated_at vs expectedUpdatedAt.
     }
   }
 
