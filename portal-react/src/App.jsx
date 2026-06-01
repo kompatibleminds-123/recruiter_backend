@@ -11672,14 +11672,17 @@ function PortalApp({ token, onLogout }) {
   }, [state.candidates, state.user]);
 
   const capturedNotesStats = useMemo(() => {
-    if (capturedStatsSnapshot && typeof capturedStatsSnapshot === "object") {
-      return {
-        today: Number(capturedStatsSnapshot.today || 0),
-        total: Number(capturedStatsSnapshot.total || 0),
-        active: Number(capturedStatsSnapshot.active || 0),
-        inactive: Number(capturedStatsSnapshot.inactive || 0),
-        converted: Number(capturedStatsSnapshot.converted || 0)
-      };
+    if (!Array.isArray(capturedNotesUniverse) || !capturedNotesUniverse.length) {
+      if (capturedStatsSnapshot && typeof capturedStatsSnapshot === "object") {
+        return {
+          today: Number(capturedStatsSnapshot.today || 0),
+          total: Number(capturedStatsSnapshot.total || 0),
+          active: Number(capturedStatsSnapshot.active || 0),
+          inactive: Number(capturedStatsSnapshot.inactive || 0),
+          converted: Number(capturedStatsSnapshot.converted || 0)
+        };
+      }
+      return { today: 0, total: 0, active: 0, inactive: 0, converted: 0 };
     }
     const toIstDateKey = (value) => {
       const date = value ? new Date(value) : new Date();
@@ -11696,8 +11699,9 @@ function PortalApp({ token, onLogout }) {
       return year && month && day ? `${year}-${month}-${day}` : "";
     };
     const todayKey = toIstDateKey(new Date());
-    const queryText = String(candidateFilters.q || "").trim().toLowerCase();
-    const viewMode = String(candidateFilters.view || "all").trim() || "all";
+    const filters = candidateFiltersApplied || {};
+    const queryText = String(filters.q || "").trim().toLowerCase();
+    const viewMode = String(filters.view || "all").trim() || "all";
     const currentUserName = String(state.user?.name || "").trim().toLowerCase();
     const currentUserId = String(state.user?.id || "").trim();
     const adminUserIds = new Set((state.users || []).filter((user) => String(user?.role || "").toLowerCase() === "admin").map((user) => String(user?.id || "").trim()).filter(Boolean));
@@ -11756,7 +11760,7 @@ function PortalApp({ token, onLogout }) {
       const outcomeValue = getCapturedOutcome(item, null);
       const activityKey = activityDateKey(item);
       const manuallyHidden = item.hidden_from_captured === true;
-      const activeValue = manuallyHidden ? "Inactive" : "Active";
+      const activeValue = manuallyHidden ? "Inactive" : (isConvertedCandidate(item) ? "Converted" : "Active");
       const nameHay = [item.name].join(" ").toLowerCase();
       const hay = [
         item.name,
@@ -11772,14 +11776,14 @@ function PortalApp({ token, onLogout }) {
         item.other_pointers
       ].join(" ").toLowerCase();
       const queryOk = !queryText || hay.includes(queryText);
-      const dateFromOk = !candidateFilters.dateFrom || (activityKey && activityKey >= candidateFilters.dateFrom);
-      const dateToOk = !candidateFilters.dateTo || (activityKey && activityKey <= candidateFilters.dateTo);
-      const clientOk = !candidateFilters.clients.length || candidateFilters.clients.includes(clientValue);
-      const jdOk = !candidateFilters.jds.length || candidateFilters.jds.includes(jdValue);
-      const assignedToOk = !candidateFilters.assignedTo.length || candidateFilters.assignedTo.includes(assignedToValue);
-      const capturedByOk = !candidateFilters.capturedBy.length || candidateFilters.capturedBy.includes(capturedByValue);
-      const sourceOk = !candidateFilters.sources.length || candidateFilters.sources.includes(sourceValue);
-      const outcomeOk = !candidateFilters.outcomes.length || candidateFilters.outcomes.includes(outcomeValue);
+      const dateFromOk = !filters.dateFrom || (activityKey && activityKey >= filters.dateFrom);
+      const dateToOk = !filters.dateTo || (activityKey && activityKey <= filters.dateTo);
+      const clientOk = !filters.clients.length || filters.clients.includes(clientValue);
+      const jdOk = !filters.jds.length || filters.jds.includes(jdValue);
+      const assignedToOk = !filters.assignedTo.length || filters.assignedTo.includes(assignedToValue);
+      const capturedByOk = !filters.capturedBy.length || filters.capturedBy.includes(capturedByValue);
+      const sourceOk = !filters.sources.length || filters.sources.includes(sourceValue);
+      const outcomeOk = !filters.outcomes.length || filters.outcomes.includes(outcomeValue);
       const searchNameMatch = Boolean(queryText && nameHay.includes(queryText));
       const viewOk = (() => {
         if (viewMode === "all") return true;
@@ -11804,28 +11808,25 @@ function PortalApp({ token, onLogout }) {
       return viewOk && queryOk && dateFromOk && dateToOk && clientOk && jdOk && assignedToOk && capturedByOk && sourceOk && outcomeOk;
     });
 
-    const wantsActive = candidateFilters.activeStates.includes("Active");
-    const wantsInactive = candidateFilters.activeStates.includes("Inactive");
-    const defaultActiveOnly = !candidateFilters.activeStates.length;
+    const wantsActive = filters.activeStates.includes("Active");
+    const wantsInactive = filters.activeStates.includes("Inactive");
+    const defaultActiveOnly = !filters.activeStates.length;
 
-    // Converted metric now follows selected state:
-    // - default/Active: include converted
-    // - Inactive only: converted = 0
-    // - Active+Inactive: include converted
+    // Converted follows selected state, but hidden rows stay inactive.
     const includeConvertedForState = defaultActiveOnly || wantsActive || (wantsActive && wantsInactive);
     const convertedCount = includeConvertedForState
-      ? filteredBase.filter((item) => isConvertedCandidate(item)).length
+      ? filteredBase.filter((item) => isConvertedCandidate(item) && item.hidden_from_captured !== true).length
       : 0;
 
-    // Captured totals are strictly non-converted rows only.
-    const nonConvertedBase = filteredBase.filter((item) => !isConvertedCandidate(item));
+    // Captured active/inactive totals exclude visible converted rows; hidden converted rows stay inactive.
+    const nonConvertedBase = filteredBase.filter((item) => !isConvertedCandidate(item) || item.hidden_from_captured === true);
     const stateScopedRows = nonConvertedBase.filter((item) => {
       const manuallyHidden = item.hidden_from_captured === true;
-      const activeValue = manuallyHidden ? "Inactive" : "Active";
+      const activeValue = manuallyHidden ? "Inactive" : (isConvertedCandidate(item) ? "Converted" : "Active");
       const searchNameMatch = Boolean(queryText && String(item?.name || "").toLowerCase().includes(queryText));
       const activeOk = defaultActiveOnly
         ? (activeValue === "Active" || searchNameMatch)
-        : (candidateFilters.activeStates.includes(activeValue) || (searchNameMatch && wantsActive));
+        : (filters.activeStates.includes(activeValue) || (searchNameMatch && wantsActive));
       const inactiveBlockedByDefault = defaultActiveOnly && activeValue === "Inactive" && !searchNameMatch;
       return !inactiveBlockedByDefault && activeOk;
     });
@@ -11839,7 +11840,7 @@ function PortalApp({ token, onLogout }) {
       inactive: inactiveCount,
       converted: convertedCount
     };
-  }, [capturedStatsSnapshot, candidateFilters, capturedAssessmentMap, capturedNotesUniverse, state.user, state.users, resolveCapturedAssessment, resolveCanonicalJdTitle]);
+  }, [capturedStatsSnapshot, candidateFiltersApplied, capturedAssessmentMap, capturedNotesUniverse, state.user, state.users, resolveCapturedAssessment, resolveCanonicalJdTitle]);
 
   const assessmentStats = useMemo(() => {
     const todayKey = new Date().toISOString().slice(0, 10);
@@ -12037,7 +12038,8 @@ function PortalApp({ token, onLogout }) {
       const assignedValue = getApplicantManualAssigneeLabel(item, linkedCandidate);
       const outcomeValue = getApplicantWorkflowOutcome(item, linkedCandidate);
       const manuallyHidden = Boolean(item.hidden_from_captured || linkedCandidate?.hidden_from_captured);
-      const activeValue = manuallyHidden ? "Inactive" : "Active";
+      const isConvertedApplicant = isApplicantConvertedToAssessment(item, linkedCandidate, linkedAssessment);
+      const activeValue = manuallyHidden ? "Inactive" : (isConvertedApplicant ? "Converted" : "Active");
       const createdDate = String(item.createdAt || item.created_at || "").slice(0, 10);
       const nameHay = [item.candidateName, linkedCandidate?.name].join(" ").toLowerCase();
       const hay = [
@@ -12066,10 +12068,14 @@ function PortalApp({ token, onLogout }) {
       if (applicantFiltersApplied.assignedTo.length && !applicantFiltersApplied.assignedTo.includes(assignedValue)) return false;
       if (applicantFiltersApplied.outcomes.length && !applicantFiltersApplied.outcomes.includes(outcomeValue)) return false;
       // Keep converted rows in universe for Converted counts; list view excludes them separately.
-      if (linkedAssessment && isApplicantConvertedToAssessment(item, linkedCandidate, linkedAssessment)) return true;
+      if (linkedAssessment && isConvertedApplicant) return true;
       return true;
     });
-    const converted = universe.filter((item) => Boolean(applicantAssessmentMap.get(String(item.id)) || null)).length;
+    const converted = universe.filter((item) => {
+      const linkedCandidate = applicantCandidateMap.get(String(item.id)) || null;
+      const manuallyHidden = Boolean(item.hidden_from_captured || linkedCandidate?.hidden_from_captured);
+      return !manuallyHidden && Boolean(applicantAssessmentMap.get(String(item.id)) || null);
+    }).length;
     const active = universe.filter((item) => {
       const linkedAssessment = applicantAssessmentMap.get(String(item.id)) || null;
       if (linkedAssessment) return false;
@@ -12078,8 +12084,6 @@ function PortalApp({ token, onLogout }) {
       return !manuallyHidden;
     }).length;
     const inactive = universe.filter((item) => {
-      const linkedAssessment = applicantAssessmentMap.get(String(item.id)) || null;
-      if (linkedAssessment) return false;
       const linkedCandidate = applicantCandidateMap.get(String(item.id)) || null;
       const manuallyHidden = Boolean(item.hidden_from_captured || linkedCandidate?.hidden_from_captured);
       return manuallyHidden;

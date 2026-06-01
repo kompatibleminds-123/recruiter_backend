@@ -521,6 +521,13 @@ async function patchCandidate(candidateId, patch, options = {}) {
     ...patch,
     updated_at: new Date().toISOString()
   };
+  if (Object.prototype.hasOwnProperty.call(payload, "assessment_id") && String(payload.assessment_id || "").trim() === "") {
+    payload.assessment_id = null;
+  }
+  if (payload.hidden_from_captured === true) {
+    payload.used_in_assessment = false;
+    payload.assessment_id = null;
+  }
 
   const { url, serviceRoleKey } = getSupabaseConfig();
   if (url && serviceRoleKey) {
@@ -835,6 +842,7 @@ async function linkCandidateToAssessment(candidateId, assessmentId, options = {}
   const payload = {
     used_in_assessment: true,
     assessment_id: linkedAssessmentId,
+    hidden_from_captured: false,
     updated_at: new Date().toISOString()
   };
   return patchCandidate(id, payload, options);
@@ -1108,7 +1116,7 @@ async function getCandidateStatsForUser(user, options = {}) {
   const createdKey = (item) => String(item?.created_at || "").slice(0, 10);
   const total = items.length;
   const today = items.filter((item) => createdKey(item) === todayKey).length;
-  const converted = items.filter((item) => isConverted(item)).length;
+  const converted = items.filter((item) => isConverted(item) && !isHidden(item)).length;
   const hidden = items.filter((item) => isHidden(item)).length;
   const active = items.filter((item) => !isHidden(item) && !isConverted(item)).length;
   return {

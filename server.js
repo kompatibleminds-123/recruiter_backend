@@ -3426,7 +3426,7 @@ function matchApplicantState(candidate = {}, activeStates = []) {
   if (!Array.isArray(activeStates) || !activeStates.length) return true;
   const isConverted = Boolean(candidate?.used_in_assessment) || Boolean(String(candidate?.assessment_id || candidate?.assessmentId || "").trim());
   const isHidden = Boolean(candidate?.hidden_from_captured);
-  const state = isConverted ? "Converted" : (isHidden ? "Inactive" : "Active");
+  const state = isHidden ? "Inactive" : (isConverted ? "Converted" : "Active");
   return activeStates.includes(state) || (state === "Converted" && activeStates.includes("Converted"));
 }
 
@@ -3518,9 +3518,7 @@ async function listApplicantsForUser(user, options = {}) {
         baseFilterParts.push("assessment_id=is.null");
       } else if (only === "Inactive") {
         baseFilterParts.push("hidden_from_captured=is.true");
-        // Inactive includes hidden rows even if they were converted later.
       } else if (only === "Converted") {
-        // Converted excludes hidden rows; hidden+converted belongs to Inactive.
         baseFilterParts.push("hidden_from_captured=not.is.true");
         baseFilterParts.push("or=(used_in_assessment.is.true,assessment_id.not.is.null)");
       }
@@ -3546,7 +3544,8 @@ async function listApplicantsForUser(user, options = {}) {
       throw new Error(`Applied candidates read failed: ${response.status} ${errorText}`);
     }
     const rows = await response.json();
-    const countResponse = await fetch(`${url}/rest/v1/candidates?select=id&${baseFilterParts.join("&")}&limit=1`, {
+    const countFilterParts = baseFilterParts.filter((part) => !String(part || "").startsWith("select="));
+    const countResponse = await fetch(`${url}/rest/v1/candidates?select=id&${countFilterParts.join("&")}&limit=1`, {
       headers: {
         apikey: key,
         Authorization: `Bearer ${key}`,
@@ -3631,12 +3630,8 @@ async function getApplicantStatsForUser(user, options = {}) {
   if (on && companyId) {
     const rows = await fetchStatRows();
     const pool = rows.filter((item) => applyApplicantFiltersLocal(item, filters, true));
-    const converted = pool.filter((item) => Boolean(item?.used_in_assessment) || Boolean(String(item?.assessment_id || item?.assessmentId || "").trim())).length;
-    const inactive = pool.filter((item) => {
-      const isConverted = Boolean(item?.used_in_assessment) || Boolean(String(item?.assessment_id || item?.assessmentId || "").trim());
-      if (isConverted) return false;
-      return item?.hidden_from_captured === true;
-    }).length;
+    const converted = pool.filter((item) => (Boolean(item?.used_in_assessment) || Boolean(String(item?.assessment_id || item?.assessmentId || "").trim())) && item?.hidden_from_captured !== true).length;
+    const inactive = pool.filter((item) => item?.hidden_from_captured === true).length;
     const total = pool.length;
     const active = Math.max(0, total - converted - inactive);
     const today = pool.filter((item) => String(item?.created_at || "").slice(0, 10) === todayKey).length;
@@ -3646,8 +3641,8 @@ async function getApplicantStatsForUser(user, options = {}) {
   // Local fallback.
   const fallbackRows = await listCandidatesForUser(user, { limit: 5000, q });
   const pool = (Array.isArray(fallbackRows) ? fallbackRows : []).filter((item) => applyApplicantFiltersLocal(item, filters, true));
-  const converted = pool.filter((item) => Boolean(item?.used_in_assessment) || Boolean(String(item?.assessment_id || item?.assessmentId || "").trim())).length;
-  const inactive = pool.filter((item) => Boolean(item?.hidden_from_captured) && !Boolean(item?.used_in_assessment) && !Boolean(String(item?.assessment_id || item?.assessmentId || "").trim())).length;
+  const converted = pool.filter((item) => (Boolean(item?.used_in_assessment) || Boolean(String(item?.assessment_id || item?.assessmentId || "").trim())) && !Boolean(item?.hidden_from_captured)).length;
+  const inactive = pool.filter((item) => Boolean(item?.hidden_from_captured)).length;
   const total = pool.length;
   const active = Math.max(0, total - converted - inactive);
   const today = pool.filter((item) => String(item?.created_at || "").slice(0, 10) === todayKey).length;
@@ -3685,7 +3680,6 @@ function applyCapturedFiltersLocal(row = {}, filters = {}, user = null) {
   if (!isCapturedCandidateRow(row)) return false;
   const isConverted = Boolean(row?.used_in_assessment) || Boolean(String(row?.assessment_id || row?.assessmentId || "").trim());
   const isHidden = row?.hidden_from_captured === true;
-  // Captured rule: hidden rows are always counted as Inactive (even if linked/converted).
   const state = isHidden ? "Inactive" : (isConverted ? "Converted" : "Active");
   const activeStates = Array.isArray(filters?.activeStates) ? filters.activeStates : [];
   if (activeStates.length) {
@@ -3804,9 +3798,8 @@ async function listCapturedForUser(user, options = {}) {
         baseFilterParts.push("assessment_id=is.null");
       } else if (only === "Inactive") {
         baseFilterParts.push("hidden_from_captured=is.true");
-        baseFilterParts.push("used_in_assessment=not.is.true");
-        baseFilterParts.push("assessment_id=is.null");
       } else if (only === "Converted") {
+        baseFilterParts.push("hidden_from_captured=not.is.true");
         baseFilterParts.push("or=(used_in_assessment.is.true,assessment_id.not.is.null)");
       }
     } else if (!filters.activeStates.length) {
@@ -3851,7 +3844,8 @@ async function listCapturedForUser(user, options = {}) {
       throw new Error(`Captured list read failed: ${response.status} ${errorText}`);
     }
     const rows = await response.json();
-    const countResponse = await fetch(`${url}/rest/v1/candidates?select=id&${baseFilterParts.join("&")}&limit=1`, {
+    const countFilterParts = baseFilterParts.filter((part) => !String(part || "").startsWith("select="));
+    const countResponse = await fetch(`${url}/rest/v1/candidates?select=id&${countFilterParts.join("&")}&limit=1`, {
       headers: { apikey: key, Authorization: `Bearer ${key}`, Prefer: "count=exact" }
     });
     let total = Array.isArray(rows) ? rows.length : 0;
@@ -4720,8 +4714,9 @@ async function unlinkAssessmentFromCompanyCandidates(companyId, assessmentId) {
       continue;
     }
     await patchCandidate(candidateId, {
+      hidden_from_captured: false,
       used_in_assessment: false,
-      assessment_id: "",
+      assessment_id: null,
       updated_at: new Date().toISOString()
     }, { companyId: scopedCompanyId });
   }
@@ -17388,6 +17383,19 @@ const server = http.createServer(async (req, res) => {
         assigned_jd_title: fieldValueOrUndefined("assigned_jd_title", "assignedJdTitle"),
         raw_note: fieldValueOrUndefined("raw_note", "rawNote")
       };
+      if (Object.prototype.hasOwnProperty.call(input, "used_in_assessment")) {
+        patch.used_in_assessment = input.used_in_assessment === true;
+      }
+      if (Object.prototype.hasOwnProperty.call(input, "assessment_id")) {
+        const nextAssessmentId = input.assessment_id;
+        patch.assessment_id = nextAssessmentId === null || nextAssessmentId === false || String(nextAssessmentId || "").trim() === ""
+          ? null
+          : String(nextAssessmentId).trim();
+      }
+      if (patch.hidden_from_captured === true) {
+        patch.used_in_assessment = false;
+        patch.assessment_id = null;
+      }
       Object.keys(patch).forEach((key) => patch[key] === undefined && delete patch[key]);
       const patchKeys = Object.keys(patch);
       const hideOnlyPatch = patchKeys.length === 1 && patchKeys[0] === "hidden_from_captured";
