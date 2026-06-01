@@ -7446,6 +7446,7 @@ function PortalApp({ token, onLogout }) {
   const [assessmentPage, setAssessmentPage] = useState(1);
   const [assessmentPageSize, setAssessmentPageSize] = useState(25);
   const [assessmentListItems, setAssessmentListItems] = useState([]);
+  const [assessmentOptionPool, setAssessmentOptionPool] = useState([]);
   const [assessmentListMeta, setAssessmentListMeta] = useState({ total: 0, totalPages: 1, page: 1, limit: 25 });
   const [assessmentListLoading, setAssessmentListLoading] = useState(false);
   const [assessmentStatsSnapshot, setAssessmentStatsSnapshot] = useState(null);
@@ -9829,6 +9830,7 @@ function PortalApp({ token, onLogout }) {
     }
     const items = Array.isArray(envelope?.data?.items) ? envelope.data.items : [];
     setAssessmentListItems(items);
+    setAssessmentOptionPool((current) => mergeAssessmentsByFreshness(current, items));
     setAssessmentListMeta({
       total: Math.max(0, Number(envelope?.data?.total || 0)),
       totalPages: Math.max(1, Number(envelope?.data?.totalPages || 1)),
@@ -10536,7 +10538,7 @@ function PortalApp({ token, onLogout }) {
     const allowedRecruiterNames = isAdmin
       ? (state.users || []).map((item) => String(item?.name || "").trim()).filter(Boolean)
       : Array.from(new Set([currentUserName, ...adminNames].filter(Boolean)));
-    (Array.isArray(assessmentListItems) ? assessmentListItems : []).forEach((item) => {
+    assessmentOptionPool.forEach((item) => {
       const matchedCandidate = (state.candidates || []).find((candidate) =>
         (item?.candidateId && String(candidate.id) === String(item.candidateId)) ||
         String(candidate.name || "").trim().toLowerCase() === String(item?.candidateName || "").trim().toLowerCase()
@@ -10556,7 +10558,7 @@ function PortalApp({ token, onLogout }) {
       recruiters: Array.from(recruiters).sort((a, b) => a.localeCompare(b)),
       outcomes: DEFAULT_STATUS_OPTIONS
     };
-  }, [assessmentListItems, state.candidates, state.user, state.users, resolveCanonicalJdTitle, getClientScopedActiveJobTitles, assessmentFilters.clients]);
+  }, [assessmentOptionPool, state.candidates, state.user, state.users, resolveCanonicalJdTitle, getClientScopedActiveJobTitles, assessmentFilters.clients]);
 
   const filteredAssessments = useMemo(() => {
     return Array.isArray(assessmentListItems) ? assessmentListItems : [];
@@ -11816,23 +11818,16 @@ function PortalApp({ token, onLogout }) {
         today: Number(assessmentStatsSnapshot.today || 0),
         total: Number(assessmentStatsSnapshot.total || 0),
         active: Number(assessmentStatsSnapshot.active || 0),
-      archived: Number(assessmentStatsSnapshot.archived || 0)
+        archived: Number(assessmentStatsSnapshot.archived || 0)
       };
     }
-    const todayKey = new Date().toISOString().slice(0, 10);
-    const query = String(assessmentFiltersApplied.q || "").trim().toLowerCase();
-    // Keep stats aligned with the same filters as the visible list (client/JD/recruiter/outcome/date/query),
-    // but we intentionally do not apply the "Active/Archived lane" filter here so the cards can show both counts.
-    const universe = Array.isArray(assessmentListItems) ? assessmentListItems : [];
-    const activeCount = universe.filter((item) => !isAssessmentArchived(item)).length;
-    const archivedCount = universe.filter((item) => isAssessmentArchived(item)).length;
     return {
-      today: universe.filter((item) => String(item?.generatedAt || item?.createdAt || item?.created_at || item?.updatedAt || "").slice(0, 10) === todayKey).length,
-      total: universe.length,
-      active: activeCount,
-      archived: archivedCount
+      today: 0,
+      total: 0,
+      active: 0,
+      archived: 0
     };
-  }, [assessmentStatsSnapshot, assessmentListItems]);
+  }, [assessmentStatsSnapshot]);
 
   const renderLoadedMetricValue = (value) => (workspaceDataReady ? value : "…");
 
