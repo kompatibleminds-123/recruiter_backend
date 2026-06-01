@@ -19950,7 +19950,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                 <div className="metric-card compact-metric"><div className="metric-label captured-metric-label"><span className="captured-metric-icon">🗓</span>Applied today</div><div className="metric-value">{renderLoadedMetricValue(applicantStats.today)}</div></div>
                 <div className="metric-card compact-metric"><div className="metric-label captured-metric-label"><span className="captured-metric-icon">🗂</span>Total applied</div><div className="metric-value">{renderLoadedMetricValue(applicantStats.total || 0)}</div></div>
                 <div className="metric-card compact-metric"><div className="metric-label captured-metric-label"><span className="captured-metric-icon">👥</span>Active</div><div className="metric-value">{renderLoadedMetricValue(applicantStats.active)}</div></div>
-                <div className="metric-card compact-metric"><div className="metric-label captured-metric-label"><span className="captured-metric-icon">?</span>Inactive</div><div className="metric-value">{renderLoadedMetricValue(applicantStats.inactive || 0)}</div></div>
+                <div className="metric-card compact-metric"><div className="metric-label captured-metric-label"><span className="captured-metric-icon">⏳</span>Inactive</div><div className="metric-value">{renderLoadedMetricValue(applicantStats.inactive || 0)}</div></div>
                 <div className="metric-card compact-metric"><div className="metric-label captured-metric-label"><span className="captured-metric-icon">✅</span>Converted</div><div className="metric-value">{renderLoadedMetricValue(applicantStats.converted)}</div></div>
               </div>
               <div className="form-grid three-col" style={{ marginTop: 10 }}>
@@ -20034,7 +20034,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                   </>
                 ) : null}
               </div>
-              <div className="button-row tight" style={{ marginTop: 8 }}>
+              <div className="button-row tight" style={{ marginTop: 8, justifyContent: "flex-end" }}>
                 <label className="copy-preset-control">
                   <span>Rows per page</span>
                   <select value={safeApplicantApiPageSize} onChange={(e) => setApplicantPageSize(Number(e.target.value || 25))}>
