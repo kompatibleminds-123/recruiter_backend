@@ -4001,20 +4001,78 @@ async function listAssessmentsForUser(user, options = {}) {
   return { items, total, page, limit, totalPages: Math.max(1, Math.ceil(total / limit)) };
 }
 
+async function countAssessmentsForUser(user, options = {}) {
+  const filters = normalizeAssessmentFilterOptions(options.filters || {});
+  const lane = String(options?.lane || "all").trim() || "all";
+  const companyId = String(user?.companyId || "").trim();
+  const actorId = String(user?.id || "").trim();
+  const actorName = String(user?.name || "").trim();
+  const actorIsAdmin = String(user?.role || "").toLowerCase() === "admin";
+  const { on, url, key } = getSupabaseServiceConfig();
+  if (!(on && companyId)) return 0;
+
+  const queryParts = [
+    `company_id=eq.${encodeURIComponent(companyId)}`
+  ];
+
+  if (!actorIsAdmin) {
+    const visibleCandidates = await fetch(`${url}/rest/v1/candidates?select=id,email,phone&company_id=eq.${encodeURIComponent(companyId)}&or=(recruiter_id.eq.${encodeURIComponent(actorId)},assigned_to_user_id.eq.${encodeURIComponent(actorId)})&limit=5000`, {
+      headers: { apikey: key, Authorization: `Bearer ${key}` }
+    }).then(async (response) => (response.ok ? response.json() : [])).catch(() => []);
+    const visibleCandidateIds = Array.from(new Set((Array.isArray(visibleCandidates) ? visibleCandidates : []).map((candidate) => String(candidate?.id || "").trim()).filter(Boolean)));
+    const visibleEmails = Array.from(new Set((Array.isArray(visibleCandidates) ? visibleCandidates : []).map((candidate) => String(candidate?.email || "").trim().toLowerCase()).filter(Boolean)));
+    const visiblePhones = Array.from(new Set((Array.isArray(visibleCandidates) ? visibleCandidates : []).map((candidate) => String(candidate?.phone || "").replace(/\D/g, "").slice(-10)).filter(Boolean)));
+    const visibilityOrParts = [`recruiter_id.eq.${encodeURIComponent(actorId)}`];
+    if (visibleCandidateIds.length) visibilityOrParts.push(`candidate_id.in.(${visibleCandidateIds.map((id) => encodeURIComponent(id)).join(",")})`);
+    if (visibleEmails.length) visibilityOrParts.push(`email_id.in.(${visibleEmails.map((email) => encodeURIComponent(email)).join(",")})`);
+    if (visiblePhones.length) visibilityOrParts.push(`phone_number.in.(${visiblePhones.map((phone) => encodeURIComponent(phone)).join(",")})`);
+    queryParts.push(`or=(${visibilityOrParts.join(",")})`);
+  }
+
+  if (filters.q) {
+    const escaped = String(filters.q || "").replace(/[%*]/g, "").trim();
+    if (escaped) {
+      const like = `*${escaped.replace(/,/g, " ")}*`;
+      queryParts.push(`or=(candidate_name.ilike.${encodeURIComponent(like)},email_id.ilike.${encodeURIComponent(like)},phone_number.ilike.${encodeURIComponent(like)},client_name.ilike.${encodeURIComponent(like)},jd_title.ilike.${encodeURIComponent(like)},recruiter_name.ilike.${encodeURIComponent(like)})`);
+    }
+  }
+  if (filters.dateFrom) queryParts.push(`created_at=gte.${encodeURIComponent(`${filters.dateFrom}T00:00:00.000Z`)}`);
+  if (filters.dateTo) queryParts.push(`created_at=lte.${encodeURIComponent(`${filters.dateTo}T23:59:59.999Z`)}`);
+  if (filters.clients.length) queryParts.push(`client_name=in.(${filters.clients.map((item) => encodeURIComponent(item)).join(",")})`);
+  if (filters.jds.length) queryParts.push(`jd_title=in.(${filters.jds.map((item) => encodeURIComponent(item)).join(",")})`);
+  if (filters.recruiters.length) queryParts.push(`recruiter_name=in.(${filters.recruiters.map((item) => encodeURIComponent(item)).join(",")})`);
+  if (filters.outcomes.length) queryParts.push(`candidate_status=in.(${filters.outcomes.map((item) => encodeURIComponent(item)).join(",")})`);
+  if (lane === "active") {
+    queryParts.push("archived_at=is.null");
+  } else if (lane === "archived") {
+    queryParts.push("archived_at=not.is.null");
+  }
+
+  const response = await fetch(`${url}/rest/v1/assessments?select=id&${queryParts.join("&")}&limit=1`, {
+    headers: {
+      apikey: key,
+      Authorization: `Bearer ${key}`,
+      Prefer: "count=exact"
+    }
+  });
+  if (!response.ok) return 0;
+  const contentRange = String(response.headers.get("content-range") || "");
+  const totalPart = contentRange.split("/")[1] || "";
+  return Math.max(0, Number(totalPart || 0));
+}
+
 async function getAssessmentStatsForUser(user, options = {}) {
   const filters = normalizeAssessmentFilterOptions(options.filters || {});
-  const rows = sortAssessmentsForList(await getAssessmentsUniverseForUser(user));
-  const filtered = rows.filter((item) => applyAssessmentFiltersLocal(item, { ...filters, lane: "all" }));
   const todayKey = new Date().toISOString().slice(0, 10);
-  const active = filtered.filter((item) => !isAssessmentArchivedLocal(item)).length;
-  const archived = filtered.filter((item) => isAssessmentArchivedLocal(item)).length;
-  const today = filtered.filter((item) => {
-    const createdKey = String(item?.generatedAt || item?.createdAt || item?.created_at || item?.updatedAt || item?.updated_at || "").slice(0, 10);
-    return createdKey === todayKey;
-  }).length;
+  const [total, active, archived, today] = await Promise.all([
+    countAssessmentsForUser(user, { filters, lane: "all" }),
+    countAssessmentsForUser(user, { filters, lane: "active" }),
+    countAssessmentsForUser(user, { filters, lane: "archived" }),
+    countAssessmentsForUser(user, { filters: { ...filters, dateFrom: todayKey, dateTo: todayKey }, lane: "all" })
+  ]);
   return {
     today,
-    total: filtered.length,
+    total,
     active,
     archived
   };
