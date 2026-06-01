@@ -3653,6 +3653,244 @@ async function getApplicantStatsForUser(user, options = {}) {
   return { today, total, active, inactive, converted };
 }
 
+function normalizeCapturedFilterOptions(raw = {}) {
+  const toList = (value) => {
+    if (Array.isArray(value)) return value.map((item) => String(item || "").trim()).filter(Boolean);
+    const text = String(value || "").trim();
+    if (!text) return [];
+    return text.split(",").map((item) => String(item || "").trim()).filter(Boolean);
+  };
+  return {
+    q: String(raw?.q || "").trim(),
+    view: String(raw?.view || "all").trim() || "all",
+    dateFrom: String(raw?.dateFrom || "").trim(),
+    dateTo: String(raw?.dateTo || "").trim(),
+    clients: toList(raw?.clients),
+    jds: toList(raw?.jds),
+    assignedTo: toList(raw?.assignedTo),
+    capturedBy: toList(raw?.capturedBy),
+    sources: toList(raw?.sources),
+    outcomes: toList(raw?.outcomes),
+    activeStates: toList(raw?.activeStates)
+  };
+}
+
+function isCapturedCandidateRow(row = {}) {
+  const source = String(row?.source || "").trim().toLowerCase();
+  return !["website_apply", "hosted_apply", "google_sheet"].includes(source);
+}
+
+function applyCapturedFiltersLocal(row = {}, filters = {}, user = null) {
+  if (!isCapturedCandidateRow(row)) return false;
+  const isConverted = Boolean(row?.used_in_assessment) || Boolean(String(row?.assessment_id || row?.assessmentId || "").trim());
+  const isHidden = row?.hidden_from_captured === true;
+  const state = isConverted ? "Converted" : (isHidden ? "Inactive" : "Active");
+  const activeStates = Array.isArray(filters?.activeStates) ? filters.activeStates : [];
+  if (activeStates.length) {
+    if (!activeStates.includes(state)) return false;
+  } else if (state !== "Active") {
+    return false;
+  }
+  const createdAt = String(row?.created_at || row?.createdAt || "").slice(0, 10);
+  if (filters?.dateFrom && createdAt && createdAt < filters.dateFrom) return false;
+  if (filters?.dateTo && createdAt && createdAt > filters.dateTo) return false;
+  if (filters?.clients?.length) {
+    const value = String(row?.client_name || "Unassigned").trim();
+    if (!filters.clients.includes(value)) return false;
+  }
+  if (filters?.jds?.length) {
+    const value = String(row?.jd_title || row?.assigned_jd_title || "").trim();
+    if (!filters.jds.includes(value)) return false;
+  }
+  if (filters?.assignedTo?.length) {
+    const value = String(row?.assigned_to_name || "Unassigned").trim();
+    if (!filters.assignedTo.includes(value)) return false;
+  }
+  if (filters?.capturedBy?.length) {
+    const value = String(row?.recruiter_name || row?.assigned_by_name || "Unknown").trim();
+    if (!filters.capturedBy.includes(value)) return false;
+  }
+  if (filters?.sources?.length) {
+    const value = String(row?.source || "").trim();
+    if (!filters.sources.includes(value)) return false;
+  }
+  if (filters?.outcomes?.length) {
+    const value = String(row?.last_contact_outcome || "").trim() || "No outcome";
+    if (!filters.outcomes.includes(value)) return false;
+  }
+  if (filters?.q) {
+    const q = String(filters.q || "").toLowerCase();
+    const hay = [
+      row?.name,
+      row?.company,
+      row?.role,
+      row?.jd_title,
+      row?.client_name,
+      row?.assigned_to_name,
+      row?.recruiter_name,
+      row?.source,
+      row?.phone,
+      row?.email,
+      row?.notes,
+      row?.recruiter_context_notes,
+      row?.other_pointers
+    ].filter(Boolean).join(" ").toLowerCase();
+    if (!hay.includes(q)) return false;
+  }
+  const view = String(filters?.view || "all").trim();
+  if (view !== "all" && user) {
+    const currentUserId = String(user?.id || "").trim();
+    const currentUserName = String(user?.name || "").trim().toLowerCase();
+    const capturedId = String(row?.recruiter_id || "").trim();
+    const capturedName = String(row?.recruiter_name || "").trim().toLowerCase();
+    const assignedId = String(row?.assigned_to_user_id || "").trim();
+    const assignedName = String(row?.assigned_to_name || "").trim().toLowerCase();
+    const firstAssignedToId = String(row?.first_assigned_to_user_id || "").trim();
+    if (view === "added_by_me") {
+      const byId = currentUserId && capturedId && capturedId === currentUserId;
+      const byName = currentUserName && capturedName && capturedName === currentUserName;
+      if (!byId && !byName) return false;
+    } else if (view === "assigned_to_me") {
+      const toMe = (currentUserId && assignedId === currentUserId) || (currentUserName && assignedName === currentUserName);
+      const firstToMe = (currentUserId && firstAssignedToId === currentUserId) || false;
+      if (!toMe || !firstToMe) return false;
+    } else if (view === "reassigned_to_me") {
+      const toMe = (currentUserId && assignedId === currentUserId) || (currentUserName && assignedName === currentUserName);
+      const firstToMe = (currentUserId && firstAssignedToId === currentUserId) || false;
+      if (!toMe || firstToMe) return false;
+    }
+  }
+  return true;
+}
+
+async function listCapturedForUser(user, options = {}) {
+  const limit = Math.max(1, Math.min(200, Number(options.limit || 25)));
+  const page = Math.max(1, Number(options.page || 1));
+  const offset = Math.max(0, (page - 1) * limit);
+  const filters = normalizeCapturedFilterOptions(options.filters || {});
+  const { on, url, key } = getSupabaseServiceConfig();
+  const companyId = String(user?.companyId || "").trim();
+  const actorId = String(user?.id || "").trim();
+  const actorName = String(user?.name || "").trim();
+  const actorIsAdmin = String(user?.role || "").toLowerCase() === "admin";
+
+  if (on && companyId) {
+    const baseFilterParts = [
+      "select=*",
+      `company_id=eq.${encodeURIComponent(companyId)}`,
+      "or=(source.is.null,source.not.in.(website_apply,hosted_apply,google_sheet))"
+    ];
+    if (!actorIsAdmin) {
+      if (actorId) {
+        baseFilterParts.push(`or=(recruiter_id.eq.${encodeURIComponent(actorId)},assigned_to_user_id.eq.${encodeURIComponent(actorId)})`);
+      } else if (actorName) {
+        baseFilterParts.push(`or=(recruiter_name.eq.${encodeURIComponent(actorName)},assigned_to_name.eq.${encodeURIComponent(actorName)})`);
+      }
+    }
+    if (filters.dateFrom) baseFilterParts.push(`created_at=gte.${encodeURIComponent(`${filters.dateFrom}T00:00:00.000Z`)}`);
+    if (filters.dateTo) baseFilterParts.push(`created_at=lte.${encodeURIComponent(`${filters.dateTo}T23:59:59.999Z`)}`);
+    if (filters.clients.length) baseFilterParts.push(`client_name=in.(${filters.clients.map((item) => encodeURIComponent(item)).join(",")})`);
+    if (filters.jds.length) baseFilterParts.push(`jd_title=in.(${filters.jds.map((item) => encodeURIComponent(item)).join(",")})`);
+    if (filters.assignedTo.length) baseFilterParts.push(`assigned_to_name=in.(${filters.assignedTo.map((item) => encodeURIComponent(item)).join(",")})`);
+    if (filters.capturedBy.length) baseFilterParts.push(`recruiter_name=in.(${filters.capturedBy.map((item) => encodeURIComponent(item)).join(",")})`);
+    if (filters.sources.length) baseFilterParts.push(`source=in.(${filters.sources.map((item) => encodeURIComponent(item)).join(",")})`);
+    if (filters.activeStates.length === 1) {
+      const only = String(filters.activeStates[0] || "").trim();
+      if (only === "Active") {
+        baseFilterParts.push("hidden_from_captured=not.is.true");
+        baseFilterParts.push("used_in_assessment=not.is.true");
+        baseFilterParts.push("assessment_id=is.null");
+      } else if (only === "Inactive") {
+        baseFilterParts.push("hidden_from_captured=is.true");
+        baseFilterParts.push("used_in_assessment=not.is.true");
+        baseFilterParts.push("assessment_id=is.null");
+      } else if (only === "Converted") {
+        baseFilterParts.push("or=(used_in_assessment.is.true,assessment_id.not.is.null)");
+      }
+    } else if (!filters.activeStates.length) {
+      // Captured default behavior: active-only when no state selected.
+      baseFilterParts.push("hidden_from_captured=not.is.true");
+      baseFilterParts.push("used_in_assessment=not.is.true");
+      baseFilterParts.push("assessment_id=is.null");
+    }
+    if (filters.view === "added_by_me") {
+      if (actorId) baseFilterParts.push(`recruiter_id=eq.${encodeURIComponent(actorId)}`);
+      else if (actorName) baseFilterParts.push(`recruiter_name=eq.${encodeURIComponent(actorName)}`);
+    } else if (filters.view === "assigned_to_me") {
+      if (actorId) {
+        baseFilterParts.push(`assigned_to_user_id=eq.${encodeURIComponent(actorId)}`);
+        baseFilterParts.push(`first_assigned_to_user_id=eq.${encodeURIComponent(actorId)}`);
+      } else if (actorName) {
+        baseFilterParts.push(`assigned_to_name=eq.${encodeURIComponent(actorName)}`);
+        baseFilterParts.push(`first_assigned_to_name=eq.${encodeURIComponent(actorName)}`);
+      }
+    } else if (filters.view === "reassigned_to_me") {
+      if (actorId) {
+        baseFilterParts.push(`assigned_to_user_id=eq.${encodeURIComponent(actorId)}`);
+        baseFilterParts.push(`first_assigned_to_user_id=not.eq.${encodeURIComponent(actorId)}`);
+      } else if (actorName) {
+        baseFilterParts.push(`assigned_to_name=eq.${encodeURIComponent(actorName)}`);
+        baseFilterParts.push(`first_assigned_to_name=not.eq.${encodeURIComponent(actorName)}`);
+      }
+    }
+    if (filters.q) {
+      const escaped = filters.q.replace(/[%*]/g, "").trim();
+      if (escaped) {
+        const like = `*${escaped.replace(/,/g, " ")}*`;
+        baseFilterParts.push(`or=(name.ilike.${encodeURIComponent(like)},email.ilike.${encodeURIComponent(like)},phone.ilike.${encodeURIComponent(like)},company.ilike.${encodeURIComponent(like)},role.ilike.${encodeURIComponent(like)},client_name.ilike.${encodeURIComponent(like)},jd_title.ilike.${encodeURIComponent(like)})`);
+      }
+    }
+    const listQueryParts = [...baseFilterParts, "order=updated_at.desc", `limit=${limit}`, `offset=${offset}`];
+    const response = await fetch(`${url}/rest/v1/candidates?${listQueryParts.join("&")}`, {
+      headers: { apikey: key, Authorization: `Bearer ${key}` }
+    });
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Captured list read failed: ${response.status} ${errorText}`);
+    }
+    const rows = await response.json();
+    const countResponse = await fetch(`${url}/rest/v1/candidates?select=id&${baseFilterParts.join("&")}&limit=1`, {
+      headers: { apikey: key, Authorization: `Bearer ${key}`, Prefer: "count=exact" }
+    });
+    let total = Array.isArray(rows) ? rows.length : 0;
+    if (countResponse.ok) {
+      const contentRange = String(countResponse.headers.get("content-range") || "");
+      const totalPart = contentRange.split("/")[1] || "";
+      total = Math.max(0, Number(totalPart || 0));
+    }
+    return { items: Array.isArray(rows) ? rows : [], total, page, limit, totalPages: Math.max(1, Math.ceil(total / limit)) };
+  }
+
+  const fallbackRows = await listCandidatesForUser(user, { limit: 5000, q: filters.q });
+  const filtered = (Array.isArray(fallbackRows) ? fallbackRows : []).filter((row) => applyCapturedFiltersLocal(row, filters, user));
+  const items = filtered.slice(offset, offset + limit);
+  const total = filtered.length;
+  return { items, total, page, limit, totalPages: Math.max(1, Math.ceil(total / limit)) };
+}
+
+async function getCapturedStatsForUser(user, options = {}) {
+  const filters = normalizeCapturedFilterOptions(options.filters || {});
+  // Tiny re-read by count queries (no full list scan).
+  const [all, active, inactive, converted, today] = await Promise.all([
+    listCapturedForUser(user, { limit: 1, page: 1, filters: { ...filters, activeStates: ["Active", "Inactive", "Converted"] } }),
+    listCapturedForUser(user, { limit: 1, page: 1, filters: { ...filters, activeStates: ["Active"] } }),
+    listCapturedForUser(user, { limit: 1, page: 1, filters: { ...filters, activeStates: ["Inactive"] } }),
+    listCapturedForUser(user, { limit: 1, page: 1, filters: { ...filters, activeStates: ["Converted"] } }),
+    listCapturedForUser(user, {
+      limit: 1,
+      page: 1,
+      filters: { ...filters, dateFrom: new Date().toISOString().slice(0, 10), dateTo: new Date().toISOString().slice(0, 10) }
+    })
+  ]);
+  return {
+    today: Number(today?.total || 0),
+    total: Number(all?.total || 0),
+    active: Number(active?.total || 0),
+    inactive: Number(inactive?.total || 0),
+    converted: Number(converted?.total || 0)
+  };
+}
+
 function getSupabaseServiceConfig() {
   const url = String(process.env.SUPABASE_URL || "").trim().replace(/\/+$/, "");
   const key = String(process.env.SUPABASE_SERVICE_ROLE_KEY || "").trim();
@@ -15187,6 +15425,67 @@ const server = http.createServer(async (req, res) => {
           items: Array.isArray(listResult?.items) ? listResult.items : []
         }
       });
+    } catch (error) {
+      sendJson(res, 400, { ok: false, error: String(error.message || error) });
+    }
+    return;
+  }
+
+  if (req.method === "GET" && requestUrl.pathname === "/company/captured/list") {
+    try {
+      const user = await requireSessionUser(getBearerToken(req));
+      await requireSaasAccess(user, "captured notes pipeline");
+      const limit = Math.max(1, Math.min(200, Number(requestUrl.searchParams.get("limit") || 25)));
+      const page = Math.max(1, Number(requestUrl.searchParams.get("page") || 1));
+      const filters = {
+        q: String(requestUrl.searchParams.get("q") || "").trim(),
+        view: String(requestUrl.searchParams.get("view") || "all").trim(),
+        dateFrom: String(requestUrl.searchParams.get("dateFrom") || "").trim(),
+        dateTo: String(requestUrl.searchParams.get("dateTo") || "").trim(),
+        clients: String(requestUrl.searchParams.get("clients") || "").trim(),
+        jds: String(requestUrl.searchParams.get("jds") || "").trim(),
+        assignedTo: String(requestUrl.searchParams.get("assignedTo") || "").trim(),
+        capturedBy: String(requestUrl.searchParams.get("capturedBy") || "").trim(),
+        sources: String(requestUrl.searchParams.get("sources") || "").trim(),
+        outcomes: String(requestUrl.searchParams.get("outcomes") || "").trim(),
+        activeStates: String(requestUrl.searchParams.get("activeStates") || "").trim()
+      };
+      const listResult = await listCapturedForUser(user, { limit, page, filters });
+      sendJson(res, 200, {
+        ok: true,
+        result: {
+          page: Number(listResult?.page || page),
+          limit: Number(listResult?.limit || limit),
+          total: Number(listResult?.total || 0),
+          totalPages: Number(listResult?.totalPages || 1),
+          items: Array.isArray(listResult?.items) ? listResult.items : []
+        }
+      });
+    } catch (error) {
+      sendJson(res, 400, { ok: false, error: String(error.message || error) });
+    }
+    return;
+  }
+
+  if (req.method === "GET" && requestUrl.pathname === "/company/captured/stats") {
+    try {
+      const user = await requireSessionUser(getBearerToken(req));
+      await requireSaasAccess(user, "captured notes pipeline");
+      const filters = {
+        q: String(requestUrl.searchParams.get("q") || "").trim(),
+        view: String(requestUrl.searchParams.get("view") || "all").trim(),
+        dateFrom: String(requestUrl.searchParams.get("dateFrom") || "").trim(),
+        dateTo: String(requestUrl.searchParams.get("dateTo") || "").trim(),
+        clients: String(requestUrl.searchParams.get("clients") || "").trim(),
+        jds: String(requestUrl.searchParams.get("jds") || "").trim(),
+        assignedTo: String(requestUrl.searchParams.get("assignedTo") || "").trim(),
+        capturedBy: String(requestUrl.searchParams.get("capturedBy") || "").trim(),
+        sources: String(requestUrl.searchParams.get("sources") || "").trim(),
+        outcomes: String(requestUrl.searchParams.get("outcomes") || "").trim(),
+        activeStates: String(requestUrl.searchParams.get("activeStates") || "").trim()
+      };
+      const stats = await getCapturedStatsForUser(user, { filters });
+      sendJson(res, 200, { ok: true, result: stats });
     } catch (error) {
       sendJson(res, 400, { ok: false, error: String(error.message || error) });
     }

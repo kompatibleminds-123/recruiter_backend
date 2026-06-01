@@ -7421,6 +7421,12 @@ function PortalApp({ token, onLogout }) {
     outcomes: []
   });
   const [assessmentLane, setAssessmentLane] = useState("active"); // active | archived
+  const [capturedStatsSnapshot, setCapturedStatsSnapshot] = useState(null);
+  const [capturedListItems, setCapturedListItems] = useState([]);
+  const [capturedListMeta, setCapturedListMeta] = useState({ total: 0, totalPages: 1, page: 1, limit: 25 });
+  const [capturedListLoading, setCapturedListLoading] = useState(false);
+  const capturedListRequestRef = useRef({ seq: 0, inflightQuery: "" });
+  const capturedStatsRequestRef = useRef({ seq: 0, inflightQuery: "" });
   const [applicantStatsSnapshot, setApplicantStatsSnapshot] = useState(null);
   const [applicantListMeta, setApplicantListMeta] = useState({ total: 0, totalPages: 1, page: 1, limit: 25 });
   const [applicantListLoading, setApplicantListLoading] = useState(false);
@@ -7428,6 +7434,7 @@ function PortalApp({ token, onLogout }) {
   const applicantStatsRequestRef = useRef({ seq: 0, inflightQuery: "" });
   const safeApplicantApiPageSize = [10, 25, 50].includes(Number(applicantPageSize)) ? Number(applicantPageSize) : 25;
   const safeApplicantApiPage = Math.max(1, Number(applicantPage || 1));
+  const safeCapturedApiPageSize = [10, 25, 50].includes(Number(capturedPageSize)) ? Number(capturedPageSize) : 25;
   const [agendaBusyIds, setAgendaBusyIds] = useState({});
   const [reportsTab, setReportsTab] = useState("client");
   const [reportsFilters, setReportsFilters] = useState({
@@ -9574,6 +9581,76 @@ function PortalApp({ token, onLogout }) {
     setApplicantStatsSnapshot(statsEnvelope?.data || null);
   }
 
+  function buildCapturedQueryParams(filters = candidateFilters, page = capturedPage, limit = safeCapturedApiPageSize) {
+    const params = new URLSearchParams();
+    params.set("limit", String(Math.max(1, Number(limit || 25))));
+    params.set("page", String(Math.max(1, Number(page || 1))));
+    const addCsv = (key, list) => {
+      if (!Array.isArray(list) || !list.length) return;
+      params.set(key, list.map((item) => String(item || "").trim()).filter(Boolean).join(","));
+    };
+    const q = String(filters?.q || "").trim();
+    if (q) params.set("q", q);
+    const view = String(filters?.view || "all").trim() || "all";
+    if (view) params.set("view", view);
+    if (String(filters?.dateFrom || "").trim()) params.set("dateFrom", String(filters.dateFrom).trim());
+    if (String(filters?.dateTo || "").trim()) params.set("dateTo", String(filters.dateTo).trim());
+    addCsv("clients", filters?.clients);
+    addCsv("jds", filters?.jds);
+    addCsv("assignedTo", filters?.assignedTo);
+    addCsv("capturedBy", filters?.capturedBy);
+    addCsv("sources", filters?.sources);
+    addCsv("outcomes", filters?.outcomes);
+    addCsv("activeStates", filters?.activeStates);
+    return params.toString();
+  }
+
+  async function reloadCapturedSlice(page = capturedPage, limit = safeCapturedApiPageSize, filters = candidateFilters) {
+    if (!token) return;
+    const query = buildCapturedQueryParams(filters, page, limit);
+    if (capturedListRequestRef.current.inflightQuery === query) return;
+    const seq = Number(capturedListRequestRef.current.seq || 0) + 1;
+    capturedListRequestRef.current = { seq, inflightQuery: query };
+    setCapturedListLoading(true);
+    const envelope = await api(`/company/captured/list?${query}`, token)
+      .then((data) => ({ ok: true, data }))
+      .catch((error) => ({ ok: false, error: String(error?.message || error), data: null }));
+    if (seq !== capturedListRequestRef.current.seq) return;
+    capturedListRequestRef.current = { ...capturedListRequestRef.current, inflightQuery: "" };
+    setCapturedListLoading(false);
+    if (!envelope.ok) {
+      setStatus("captured", `Captured refresh failed, keeping existing list: ${envelope.error}`, "error");
+      return;
+    }
+    const items = Array.isArray(envelope?.data?.items) ? envelope.data.items : [];
+    setCapturedListItems(items);
+    setState((current) => ({
+      ...current,
+      candidates: mergeCandidatesByFreshness(current.candidates, items)
+    }));
+    setCapturedListMeta({
+      total: Math.max(0, Number(envelope?.data?.total || 0)),
+      totalPages: Math.max(1, Number(envelope?.data?.totalPages || 1)),
+      page: Math.max(1, Number(envelope?.data?.page || page || 1)),
+      limit: Math.max(1, Number(envelope?.data?.limit || limit || 25))
+    });
+  }
+
+  async function reloadCapturedStats(filters = candidateFilters) {
+    if (!token) return;
+    const query = buildCapturedQueryParams(filters, 1, 1);
+    if (capturedStatsRequestRef.current.inflightQuery === query) return;
+    const seq = Number(capturedStatsRequestRef.current.seq || 0) + 1;
+    capturedStatsRequestRef.current = { seq, inflightQuery: query };
+    const envelope = await api(`/company/captured/stats?${query}`, token)
+      .then((data) => ({ ok: true, data }))
+      .catch((error) => ({ ok: false, error: String(error?.message || error), data: null }));
+    if (seq !== capturedStatsRequestRef.current.seq) return;
+    capturedStatsRequestRef.current = { ...capturedStatsRequestRef.current, inflightQuery: "" };
+    if (!envelope.ok) return;
+    setCapturedStatsSnapshot(envelope?.data || null);
+  }
+
   async function reloadIntakeSlice() {
     if (!token) return;
     const intakeResult = await api("/company/applicant-intake-secret", token).catch(() => null);
@@ -9679,8 +9756,6 @@ function PortalApp({ token, onLogout }) {
     // Keep workspace refresh manual/lightweight to avoid burning Supabase egress on every tab focus/poll.
     return undefined;
   }, [token]);
-  const capturedSyncLimit = 5000;
-  const capturedSyncPage = 1;
 
   useEffect(() => {
     if (!token) return undefined;
@@ -9712,13 +9787,14 @@ function PortalApp({ token, onLogout }) {
 
   useEffect(() => {
     if (!token) return undefined;
-    const pathname = String(location?.pathname || "").trim();
-    const syncRoutes = new Set(["/captured-notes"]);
-    if (!syncRoutes.has(pathname)) return undefined;
+    if (String(location?.pathname || "").trim() !== "/captured-notes") return undefined;
     assessmentCaptureSyncAtRef.current = Date.now();
-    void reloadCandidatesSlice({ limit: capturedSyncLimit, page: capturedSyncPage, includeMeta: true }).catch(() => {});
+    void Promise.all([
+      reloadCapturedSlice(capturedPage, safeCapturedApiPageSize, candidateFilters),
+      reloadCapturedStats(candidateFilters)
+    ]).catch(() => {});
     return undefined;
-  }, [token, location?.pathname, capturedSyncLimit, capturedSyncPage]);
+  }, [token, location?.pathname, capturedPage, safeCapturedApiPageSize, candidateFilters]);
 
   useEffect(() => {
     if (!token) return undefined;
@@ -9763,15 +9839,19 @@ function PortalApp({ token, onLogout }) {
                 candidates: (current.candidates || []).filter((item) => String(item?.id || "") !== candidateId)
               }));
             })
-          : reloadCandidatesSlice({ limit: capturedSyncLimit, page: capturedSyncPage, includeMeta: true });
+          : reloadCapturedSlice(capturedPage, safeCapturedApiPageSize, candidateFilters);
       void refreshPromise
+        .then(() => reloadCapturedStats(candidateFilters))
         .catch(() => {})
         .finally(() => {
           capturedLiveSyncInFlightRef.current = false;
           if (capturedLiveSyncPendingRef.current && !isCapturedUserEditing && !cancelled) {
             capturedLiveSyncPendingRef.current = false;
             capturedLiveSyncInFlightRef.current = true;
-            void reloadCandidatesSlice({ limit: capturedSyncLimit, page: capturedSyncPage, includeMeta: true })
+            void Promise.all([
+              reloadCapturedSlice(capturedPage, safeCapturedApiPageSize, candidateFilters),
+              reloadCapturedStats(candidateFilters)
+            ])
               .catch(() => {})
               .finally(() => {
                 capturedLiveSyncInFlightRef.current = false;
@@ -9786,7 +9866,7 @@ function PortalApp({ token, onLogout }) {
       try { source.removeEventListener("captured", onCaptured); } catch {}
       try { source.close(); } catch {}
     };
-  }, [token, location?.pathname, isCapturedUserEditing, capturedSyncLimit, capturedSyncPage]);
+  }, [token, location?.pathname, isCapturedUserEditing, capturedPage, safeCapturedApiPageSize, candidateFilters]);
 
   useEffect(() => {
     if (!token) return;
@@ -9794,8 +9874,11 @@ function PortalApp({ token, onLogout }) {
     if (isCapturedUserEditing) return;
     if (!capturedLiveSyncPendingRef.current) return;
     capturedLiveSyncPendingRef.current = false;
-    void reloadCandidatesSlice({ limit: capturedSyncLimit, page: capturedSyncPage, includeMeta: true }).catch(() => {});
-  }, [token, location?.pathname, isCapturedUserEditing, capturedSyncLimit, capturedSyncPage]);
+    void Promise.all([
+      reloadCapturedSlice(capturedPage, safeCapturedApiPageSize, candidateFilters),
+      reloadCapturedStats(candidateFilters)
+    ]).catch(() => {});
+  }, [token, location?.pathname, isCapturedUserEditing, capturedPage, safeCapturedApiPageSize, candidateFilters]);
 
   useEffect(() => {
     if (!token) return;
@@ -11568,6 +11651,15 @@ function PortalApp({ token, onLogout }) {
   }, [state.candidates, state.user]);
 
   const capturedNotesStats = useMemo(() => {
+    if (capturedStatsSnapshot && typeof capturedStatsSnapshot === "object") {
+      return {
+        today: Number(capturedStatsSnapshot.today || 0),
+        total: Number(capturedStatsSnapshot.total || 0),
+        active: Number(capturedStatsSnapshot.active || 0),
+        inactive: Number(capturedStatsSnapshot.inactive || 0),
+        converted: Number(capturedStatsSnapshot.converted || 0)
+      };
+    }
     const toIstDateKey = (value) => {
       const date = value ? new Date(value) : new Date();
       if (!(date instanceof Date) || Number.isNaN(date.getTime())) return "";
@@ -11726,7 +11818,7 @@ function PortalApp({ token, onLogout }) {
       inactive: inactiveCount,
       converted: convertedCount
     };
-  }, [candidateFilters, capturedAssessmentMap, capturedNotesUniverse, state.user, state.users, resolveCapturedAssessment, resolveCanonicalJdTitle]);
+  }, [capturedStatsSnapshot, candidateFilters, capturedAssessmentMap, capturedNotesUniverse, state.user, state.users, resolveCapturedAssessment, resolveCanonicalJdTitle]);
 
   const assessmentStats = useMemo(() => {
     const todayKey = new Date().toISOString().slice(0, 10);
@@ -11772,139 +11864,12 @@ function PortalApp({ token, onLogout }) {
 
   const renderLoadedMetricValue = (value) => (workspaceDataReady ? value : "…");
 
-  const capturedCandidates = useMemo(() => {
-    const queryText = candidateFilters.q.trim().toLowerCase();
-    const viewMode = String(candidateFilters.view || "all").trim() || "all";
-    const currentUserName = String(state.user?.name || "").trim().toLowerCase();
-    const currentUserId = String(state.user?.id || "").trim();
-    const adminUserIds = new Set((state.users || []).filter((user) => String(user?.role || "").toLowerCase() === "admin").map((user) => String(user?.id || "").trim()).filter(Boolean));
-    const parseTime = (value) => {
-      const time = Date.parse(String(value || ""));
-      return Number.isFinite(time) ? time : 0;
-    };
-    const activityTime = (item) => Math.max(
-      parseTime(item?.updated_at),
-      parseTime(item?.updatedAt),
-      parseTime(item?.created_at),
-      parseTime(item?.createdAt),
-      parseTime(item?.assigned_at)
-    );
-    const activityDateKey = (item) => {
-      const time = activityTime(item);
-      if (!time) return item?.updated_at ? String(item.updated_at).slice(0, 10) : (item?.created_at ? String(item.created_at).slice(0, 10) : "");
-      return new Date(time).toISOString().slice(0, 10);
-    };
-    const isAssignedToCurrentUser = (item) => {
-      const assignedId = String(item?.assigned_to_user_id || "").trim();
-      const assignedName = String(item?.assigned_to_name || "").trim().toLowerCase();
-      if (currentUserId && assignedId) return assignedId === currentUserId;
-      return Boolean(currentUserName && assignedName && assignedName === currentUserName);
-    };
-    const isAssignedByCurrentUser = (item) => {
-      const assignedById = String(item?.assigned_by_user_id || "").trim();
-      const assignedByName = String(item?.assigned_by_name || "").trim().toLowerCase();
-      if (currentUserId && assignedById) return assignedById === currentUserId;
-      return Boolean(currentUserName && assignedByName && assignedByName === currentUserName);
-    };
-    const isCapturedByCurrentUser = (item) => {
-      const capturedId = String(item?.recruiter_id || "").trim();
-      const capturedName = String(item?.recruiter_name || "").trim().toLowerCase();
-      if (currentUserId && capturedId) return capturedId === currentUserId;
-      return Boolean(currentUserName && capturedName && capturedName === currentUserName);
-    };
-    const isFirstAssignedToCurrentUser = (item) => {
-      const firstId = String(item?.first_assigned_to_user_id || "").trim();
-      const firstName = String(item?.first_assigned_to_name || "").trim().toLowerCase();
-      if (currentUserId && firstId) return firstId === currentUserId;
-      return Boolean(currentUserName && firstName && firstName === currentUserName);
-    };
-    const isFirstAssignedByAdmin = (item) => {
-      const firstById = String(item?.first_assigned_by_user_id || "").trim();
-      if (firstById && adminUserIds.size) return adminUserIds.has(firstById);
-      const fallbackById = String(item?.assigned_by_user_id || "").trim();
-      if (fallbackById && adminUserIds.size) return adminUserIds.has(fallbackById);
-      const fallbackByName = String(item?.assigned_by_name || "").trim().toLowerCase();
-      return Boolean(fallbackByName === "admin");
-    };
-
-    const filtered = capturedNotesUniverse.filter((item) => {
-      const matchedAssessment = resolveCapturedAssessment(item);
-      if (matchedAssessment) return false;
-      const sourceValue = String(item.source || "").trim();
-      const clientValue = String(item.client_name || matchedAssessment?.clientName || "Unassigned").trim();
-      const jdValue = resolveCanonicalJdTitle(item, matchedAssessment);
-      const assignedToValue = String(item.assigned_to_name || "Unassigned").trim();
-      const capturedByValue = String(item.recruiter_name || item.assigned_by_name || "Unknown").trim();
-      const outcomeValue = getCapturedOutcome(item, matchedAssessment);
-      const activityKey = activityDateKey(item);
-      const manuallyHidden = item.hidden_from_captured === true;
-      const activeValue = manuallyHidden ? "Inactive" : "Active";
-      const nameHay = [item.name].join(" ").toLowerCase();
-      const hay = [
-        item.name,
-        item.company,
-        item.role,
-        item.jd_title,
-        jdValue,
-        item.client_name,
-        item.assigned_to_name,
-        item.source,
-        item.notes,
-        item.recruiter_context_notes,
-        item.other_pointers
-      ].join(" ").toLowerCase();
-      const queryOk = !queryText || hay.includes(queryText);
-      const dateFromOk = !candidateFilters.dateFrom || (activityKey && activityKey >= candidateFilters.dateFrom);
-      const dateToOk = !candidateFilters.dateTo || (activityKey && activityKey <= candidateFilters.dateTo);
-      const clientOk = !candidateFilters.clients.length || candidateFilters.clients.includes(clientValue);
-      const jdOk = !candidateFilters.jds.length || candidateFilters.jds.includes(jdValue);
-      const assignedToOk = !candidateFilters.assignedTo.length || candidateFilters.assignedTo.includes(assignedToValue);
-      const capturedByOk = !candidateFilters.capturedBy.length || candidateFilters.capturedBy.includes(capturedByValue);
-      const sourceOk = !candidateFilters.sources.length || candidateFilters.sources.includes(sourceValue);
-      const outcomeOk = !candidateFilters.outcomes.length || candidateFilters.outcomes.includes(outcomeValue);
-      const searchNameMatch = Boolean(queryText && nameHay.includes(queryText));
-      const viewOk = (() => {
-        if (viewMode === "all") return true;
-        if (viewMode === "added_by_me") return isCapturedByCurrentUser(item);
-        if (viewMode === "assigned_to_me") {
-          return isAssignedToCurrentUser(item)
-            && !isCapturedByCurrentUser(item)
-            && Boolean(item?.first_assigned_to_user_id || item?.first_assigned_to_name)
-            && isFirstAssignedToCurrentUser(item)
-            && isFirstAssignedByAdmin(item);
-        }
-        if (viewMode === "reassigned_to_me") {
-          return isAssignedToCurrentUser(item)
-            && !isCapturedByCurrentUser(item)
-            && Boolean(item?.first_assigned_to_user_id || item?.first_assigned_to_name)
-            && !isFirstAssignedToCurrentUser(item);
-        }
-        if (viewMode === "reassigned_by_me") return isAssignedByCurrentUser(item) && Boolean(item?.assigned_at);
-        return true;
-      })();
-
-      const wantsActive = candidateFilters.activeStates.includes("Active");
-      const defaultActiveOnly = !candidateFilters.activeStates.length;
-      const activeOk = defaultActiveOnly
-        ? (activeValue === "Active" || searchNameMatch)
-        : (candidateFilters.activeStates.includes(activeValue) || (searchNameMatch && wantsActive));
-
-      const inactiveBlockedByDefault = defaultActiveOnly && activeValue === "Inactive" && !searchNameMatch;
-      return !inactiveBlockedByDefault && viewOk && queryOk && dateFromOk && dateToOk && clientOk && jdOk && assignedToOk && capturedByOk && sourceOk && outcomeOk && activeOk;
-    });
-
-    return filtered.sort((a, b) => {
-      const delta = activityTime(b) - activityTime(a);
-      if (delta !== 0) return delta;
-      return String(b?.updated_at || b?.updatedAt || b?.created_at || b?.createdAt || "").localeCompare(String(a?.updated_at || a?.updatedAt || a?.created_at || a?.createdAt || ""));
-    });
-  }, [candidateFilters, capturedAssessmentMap, capturedNotesUniverse, state.user, state.users, resolveCapturedAssessment, resolveCanonicalJdTitle]);
-  const safeCapturedPageSize = [10, 25, 50].includes(Number(capturedPageSize)) ? Number(capturedPageSize) : 25;
-  const totalCapturedPages = Math.max(1, Math.ceil((capturedCandidates.length || 0) / safeCapturedPageSize));
-  const pagedCapturedCandidates = useMemo(() => {
-    const start = (capturedPage - 1) * safeCapturedPageSize;
-    return capturedCandidates.slice(start, start + safeCapturedPageSize);
-  }, [capturedCandidates, capturedPage, safeCapturedPageSize]);
+  const capturedCandidates = useMemo(() => (
+    Array.isArray(capturedListItems) ? capturedListItems : []
+  ), [capturedListItems]);
+  const safeCapturedPageSize = safeCapturedApiPageSize;
+  const totalCapturedPages = Math.max(1, Number(capturedListMeta?.totalPages || 1));
+  const pagedCapturedCandidates = capturedCandidates;
   const filteredApplicants = useMemo(() => {
     const isAdmin = String(state.user?.role || "").toLowerCase() === "admin";
     const currentUserName = String(state.user?.name || "").trim().toLowerCase();
@@ -20315,7 +20280,9 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
               {workspaceDataReady ? (
                 <div className="button-row tight" style={{ justifyContent: "space-between", alignItems: "center", gap: 10 }}>
                   <div className="muted">
-                    {capturedCandidates.length ? `Showing ${(capturedPage - 1) * safeCapturedPageSize + 1}-${Math.min(capturedCandidates.length, capturedPage * safeCapturedPageSize)} of ${capturedCandidates.length}` : "Showing 0 of 0"}
+                    {Number(capturedListMeta?.total || 0)
+                      ? `Showing ${((capturedPage - 1) * safeCapturedPageSize) + 1}-${Math.min(Number(capturedListMeta?.total || 0), ((capturedPage - 1) * safeCapturedPageSize) + capturedCandidates.length)} of ${Number(capturedListMeta?.total || 0)}`
+                      : "Showing 0 of 0"}
                   </div>
                   <div className="button-row tight" style={{ alignItems: "center", gap: 10 }}>
                     <label className="copy-preset-control" style={{ margin: 0 }}>
