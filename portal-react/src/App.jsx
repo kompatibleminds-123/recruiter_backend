@@ -18198,8 +18198,8 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
         };
       });
     }
-    if (options.closeModal !== false) setAssessmentStatusId("");
     setStatus(statusTarget, `Updated status for ${assessment?.candidateName || "candidate"}.`, "ok");
+    if (options.closeModal !== false) setAssessmentStatusId("");
 
     // Persist in background; if fails, surface error and refresh to resync.
     void (async () => {
@@ -18254,8 +18254,12 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
       const savedId = String(saved?.id || "").trim();
       if (savedId) {
         const existingIx = nextAssessments.findIndex((a) => String(a?.id || "").trim() === savedId);
-        if (existingIx >= 0) nextAssessments.splice(existingIx, 1);
-        nextAssessments.unshift(saved);
+        if (existingIx >= 0) {
+          // Keep card position stable on updates; avoid jumping list to top.
+          nextAssessments.splice(existingIx, 1, saved);
+        } else {
+          nextAssessments.unshift(saved);
+        }
       }
       return { ...current, assessments: nextAssessments };
     });
