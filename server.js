@@ -3901,6 +3901,166 @@ function getSupabaseServiceConfig() {
   return { on: Boolean(url && key), url, key };
 }
 
+function normalizeAssessmentStatusLabel(status) {
+  const value = String(status || "").trim();
+  if (!value) return "";
+  if (/^cv shared$/i.test(value)) return "CV shared";
+  if (/^cv to be shared$/i.test(value)) return "CV shared";
+  if (/^test\b/i.test(value)) return "Test or Assignment shared";
+  if (/\bassignment\b/i.test(value)) return "Test or Assignment shared";
+  if (/^did not attend$/i.test(value)) return "Not responding";
+  return value;
+}
+
+function normalizeAssessmentFilterOptions(raw = {}) {
+  const toList = (value) => {
+    if (Array.isArray(value)) {
+      return Array.from(new Set(value.map((item) => String(item || "").trim()).filter(Boolean)));
+    }
+    const text = String(value || "").trim();
+    if (!text) return [];
+    return Array.from(new Set(text.split(",").map((item) => String(item || "").trim()).filter(Boolean)));
+  };
+  return {
+    q: String(raw?.q || "").trim(),
+    dateFrom: String(raw?.dateFrom || "").trim(),
+    dateTo: String(raw?.dateTo || "").trim(),
+    clients: toList(raw?.clients),
+    jds: toList(raw?.jds),
+    recruiters: toList(raw?.recruiters),
+    outcomes: toList(raw?.outcomes),
+    lane: String(raw?.lane || "active").trim() || "active"
+  };
+}
+
+function isAssessmentArchivedLocal(item = {}) {
+  const archivedFlag = item?.archived ?? item?.isArchived ?? item?.archived_flag;
+  if (archivedFlag === true) return true;
+  const archivedAt = String(item?.archivedAt || item?.archived_at || "").trim();
+  return Boolean(archivedAt);
+}
+
+function getAssessmentFilterFieldValues(item = {}) {
+  const clientValue = String(item?.clientName || item?.client_name || "").trim() || "Unassigned";
+  const jdValue = String(item?.jdTitle || item?.jd_title || "").trim() || "Unassigned";
+  const recruiterValue = String(item?.recruiterName || item?.recruiter_name || "").trim() || "Unassigned";
+  const outcomeValue = normalizeAssessmentStatusLabel(item?.candidateStatus || item?.candidate_status || "") || "No outcome";
+  const createdKey = String(item?.generatedAt || item?.createdAt || item?.created_at || item?.updatedAt || item?.updated_at || "").slice(0, 10);
+  const hay = [
+    item?.candidateName,
+    item?.phoneNumber,
+    item?.emailId,
+    jdValue,
+    clientValue,
+    recruiterValue
+  ].join(" ").toLowerCase();
+  return { clientValue, jdValue, recruiterValue, outcomeValue, createdKey, hay };
+}
+
+function applyAssessmentFiltersLocal(item = {}, filters = {}) {
+  const lane = String(filters?.lane || "active").trim() || "active";
+  const archived = isAssessmentArchivedLocal(item);
+  if (lane === "active" && archived) return false;
+  if (lane === "archived" && !archived) return false;
+  const { clientValue, jdValue, recruiterValue, outcomeValue, createdKey, hay } = getAssessmentFilterFieldValues(item);
+  const query = String(filters?.q || "").trim().toLowerCase();
+  if (query && !hay.includes(query)) return false;
+  if (filters?.dateFrom && createdKey && createdKey < filters.dateFrom) return false;
+  if (filters?.dateTo && createdKey && createdKey > filters.dateTo) return false;
+  if (Array.isArray(filters?.clients) && filters.clients.length && !filters.clients.includes(clientValue)) return false;
+  if (Array.isArray(filters?.jds) && filters.jds.length && !filters.jds.includes(jdValue)) return false;
+  if (Array.isArray(filters?.recruiters) && filters.recruiters.length && !filters.recruiters.includes(recruiterValue)) return false;
+  if (Array.isArray(filters?.outcomes) && filters.outcomes.length && !filters.outcomes.includes(outcomeValue)) return false;
+  return true;
+}
+
+function sortAssessmentsForList(items = []) {
+  return (Array.isArray(items) ? items : []).slice().sort((a, b) => {
+    const aTime = Date.parse(String(a?.updatedAt || a?.updated_at || a?.generatedAt || a?.createdAt || a?.created_at || ""));
+    const bTime = Date.parse(String(b?.updatedAt || b?.updated_at || b?.generatedAt || b?.createdAt || b?.created_at || ""));
+    const diff = (Number.isFinite(bTime) ? bTime : 0) - (Number.isFinite(aTime) ? aTime : 0);
+    if (diff) return diff;
+    return String(b?.id || "").localeCompare(String(a?.id || ""));
+  });
+}
+
+async function getAssessmentsUniverseForUser(user) {
+  const rows = await listAssessments({ actorUserId: user.id, companyId: user.companyId }).catch(() => []);
+  return Array.isArray(rows) ? rows : [];
+}
+
+async function listAssessmentsForUser(user, options = {}) {
+  const limit = Math.max(1, Math.min(100, Number(options.limit || 25)));
+  const page = Math.max(1, Number(options.page || 1));
+  const offset = Math.max(0, (page - 1) * limit);
+  const filters = normalizeAssessmentFilterOptions(options.filters || {});
+  const rows = sortAssessmentsForList(await getAssessmentsUniverseForUser(user));
+  const filtered = rows.filter((item) => applyAssessmentFiltersLocal(item, filters));
+  const items = filtered.slice(offset, offset + limit);
+  const total = filtered.length;
+  return { items, total, page, limit, totalPages: Math.max(1, Math.ceil(total / limit)) };
+}
+
+async function getAssessmentStatsForUser(user, options = {}) {
+  const filters = normalizeAssessmentFilterOptions(options.filters || {});
+  const rows = sortAssessmentsForList(await getAssessmentsUniverseForUser(user));
+  const filtered = rows.filter((item) => applyAssessmentFiltersLocal(item, { ...filters, lane: "all" }));
+  const todayKey = new Date().toISOString().slice(0, 10);
+  const active = filtered.filter((item) => !isAssessmentArchivedLocal(item)).length;
+  const archived = filtered.filter((item) => isAssessmentArchivedLocal(item)).length;
+  const today = filtered.filter((item) => {
+    const createdKey = String(item?.generatedAt || item?.createdAt || item?.created_at || item?.updatedAt || item?.updated_at || "").slice(0, 10);
+    return createdKey === todayKey;
+  }).length;
+  return {
+    today,
+    total: filtered.length,
+    active,
+    archived
+  };
+}
+
+const assessmentStreamByCompany = new Map();
+
+function addAssessmentStreamClient(companyId, client) {
+  const key = String(companyId || "").trim();
+  if (!key || !client) return;
+  const list = assessmentStreamByCompany.get(key) || [];
+  list.push(client);
+  assessmentStreamByCompany.set(key, list);
+}
+
+function removeAssessmentStreamClient(companyId, client) {
+  const key = String(companyId || "").trim();
+  if (!key) return;
+  const list = assessmentStreamByCompany.get(key) || [];
+  const next = list.filter((item) => item !== client);
+  if (next.length) assessmentStreamByCompany.set(key, next);
+  else assessmentStreamByCompany.delete(key);
+}
+
+function emitAssessmentStreamEvent(companyId, eventType = "assessment_changed", payload = {}) {
+  const key = String(companyId || "").trim();
+  if (!key) return;
+  const list = assessmentStreamByCompany.get(key) || [];
+  if (!list.length) return;
+  const safePayload = (payload && typeof payload === "object") ? payload : {};
+  const data = JSON.stringify({
+    type: String(eventType || "assessment_changed").trim(),
+    at: new Date().toISOString(),
+    ...safePayload
+  });
+  list.forEach((client) => {
+    try {
+      client.res.write(`event: assessment\n`);
+      client.res.write(`data: ${data}\n\n`);
+    } catch {
+      removeAssessmentStreamClient(key, client);
+      try { client.res.end(); } catch {}
+    }
+  });
+}
+
 function toIsoNow() {
   return new Date().toISOString();
 }
@@ -10898,6 +11058,45 @@ const server = http.createServer(async (req, res) => {
     }
   }
 
+  if (req.method === "GET" && requestUrl.pathname === "/company/stream/assessments") {
+    try {
+      const streamToken = String(requestUrl.searchParams.get("token") || "").trim();
+      const actor = await requireSessionUser(streamToken || getBearerToken(req));
+      const companyId = String(actor?.companyId || "").trim();
+      if (!companyId) throw new Error("Invalid session.");
+
+      const headers = buildResponseHeaders(req, {
+        "Content-Type": "text/event-stream; charset=utf-8",
+        "Cache-Control": "no-cache, no-transform",
+        Connection: "keep-alive",
+        "X-Accel-Buffering": "no"
+      });
+      res.writeHead(200, headers);
+      res.write(`event: connected\n`);
+      res.write(`data: ${JSON.stringify({ ok: true, at: new Date().toISOString() })}\n\n`);
+
+      const client = { res, companyId };
+      addAssessmentStreamClient(companyId, client);
+      const keepAlive = setInterval(() => {
+        try {
+          res.write(`event: ping\n`);
+          res.write(`data: ${JSON.stringify({ at: new Date().toISOString() })}\n\n`);
+        } catch {}
+      }, 25000);
+
+      const cleanup = () => {
+        try { clearInterval(keepAlive); } catch {}
+        removeAssessmentStreamClient(companyId, client);
+      };
+      req.on("close", cleanup);
+      req.on("error", cleanup);
+      return;
+    } catch (error) {
+      sendJson(res, 401, { ok: false, error: String(error?.message || error) });
+      return;
+    }
+  }
+
   if (req.method === "POST" && requestUrl.pathname === "/internal/marketing/worker/tick") {
     try {
       const secret = String(process.env.MARKETING_WORKER_CRON_SECRET || "").trim();
@@ -15118,6 +15317,51 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (req.method === "GET" && requestUrl.pathname === "/company/assessments/list") {
+    try {
+      const user = await requireSessionUser(getBearerToken(req));
+      const result = await listAssessmentsForUser(user, {
+        page: Number(requestUrl.searchParams.get("page") || 1),
+        limit: Number(requestUrl.searchParams.get("limit") || 25),
+        filters: {
+          q: String(requestUrl.searchParams.get("q") || "").trim(),
+          dateFrom: String(requestUrl.searchParams.get("dateFrom") || "").trim(),
+          dateTo: String(requestUrl.searchParams.get("dateTo") || "").trim(),
+          clients: String(requestUrl.searchParams.get("clients") || "").trim(),
+          jds: String(requestUrl.searchParams.get("jds") || "").trim(),
+          recruiters: String(requestUrl.searchParams.get("recruiters") || "").trim(),
+          outcomes: String(requestUrl.searchParams.get("outcomes") || "").trim(),
+          lane: String(requestUrl.searchParams.get("lane") || "active").trim() || "active"
+        }
+      });
+      sendJson(res, 200, { ok: true, result });
+    } catch (error) {
+      sendJson(res, 401, { ok: false, error: String(error.message || error) });
+    }
+    return;
+  }
+
+  if (req.method === "GET" && requestUrl.pathname === "/company/assessments/stats") {
+    try {
+      const user = await requireSessionUser(getBearerToken(req));
+      const result = await getAssessmentStatsForUser(user, {
+        filters: {
+          q: String(requestUrl.searchParams.get("q") || "").trim(),
+          dateFrom: String(requestUrl.searchParams.get("dateFrom") || "").trim(),
+          dateTo: String(requestUrl.searchParams.get("dateTo") || "").trim(),
+          clients: String(requestUrl.searchParams.get("clients") || "").trim(),
+          jds: String(requestUrl.searchParams.get("jds") || "").trim(),
+          recruiters: String(requestUrl.searchParams.get("recruiters") || "").trim(),
+          outcomes: String(requestUrl.searchParams.get("outcomes") || "").trim()
+        }
+      });
+      sendJson(res, 200, { ok: true, result });
+    } catch (error) {
+      sendJson(res, 401, { ok: false, error: String(error.message || error) });
+    }
+    return;
+  }
+
   // Service-role backed exports for factual analytics (interviews aligned/done, offered, etc.).
   // This avoids relying on free-text notes inside status history and remains stable over time.
   if (req.method === "GET" && requestUrl.pathname === "/company/assessment-events") {
@@ -16912,6 +17156,13 @@ const server = http.createServer(async (req, res) => {
           clientFeedbackHistory: nextHistory
         }
       });
+      if (saved?.id) {
+        emitAssessmentStreamEvent(clientUser.companyId, "assessment_saved", {
+          assessmentId: String(saved.id || "").trim(),
+          candidateId: String(saved.candidateId || assessment?.candidateId || assessment?.candidate_id || "").trim(),
+          assessment: saved
+        });
+      }
       sendJson(res, 200, { ok: true, result: saved });
     } catch (error) {
       sendJson(res, 400, { ok: false, error: String(error.message || error) });
@@ -16980,6 +17231,13 @@ const server = http.createServer(async (req, res) => {
           statusHistory: nextStatusHistory
         }
       });
+      if (saved?.id) {
+        emitAssessmentStreamEvent(clientUser.companyId, "assessment_saved", {
+          assessmentId: String(saved.id || "").trim(),
+          candidateId: String(saved.candidateId || assessment?.candidateId || assessment?.candidate_id || "").trim(),
+          assessment: saved
+        });
+      }
       sendJson(res, 200, { ok: true, result: saved });
     } catch (error) {
       sendJson(res, 400, { ok: false, error: String(error.message || error) });
@@ -17077,6 +17335,11 @@ const server = http.createServer(async (req, res) => {
       if (assessment?.id) {
         // Canonical 1:1 link: candidates.assessment_id must always point to the assessment.id
         await linkCandidateToAssessment(incomingCandidateId, assessment.id, { companyId: actor.companyId });
+        emitAssessmentStreamEvent(actor.companyId, "assessment_saved", {
+          assessmentId: String(assessment.id || "").trim(),
+          candidateId: incomingCandidateId,
+          assessment
+        });
       }
       sendJson(res, 200, { ok: true, result: assessment });
     } catch (error) {
@@ -17249,6 +17512,11 @@ const server = http.createServer(async (req, res) => {
       });
       if (restored?.id) {
         await linkCandidateToAssessment(candidateId, restored.id, { companyId: actor.companyId });
+        emitAssessmentStreamEvent(actor.companyId, "assessment_restored", {
+          assessmentId: String(restored.id || "").trim(),
+          candidateId,
+          assessment: restored
+        });
       }
       sendJson(res, 200, { ok: true, result: restored });
     } catch (error) {
@@ -17262,12 +17530,18 @@ const server = http.createServer(async (req, res) => {
       const actor = await requireSessionUser(getBearerToken(req));
       const body = await readJsonBody(req);
       const assessmentId = String(body.assessmentId || "").trim();
+      const existing = assessmentId ? await getAssessmentById({ companyId: actor.companyId, assessmentId }).catch(() => null) : null;
       const result = await deleteAssessment({
         actorUserId: actor.id,
         companyId: actor.companyId,
         assessmentId
       });
       await unlinkAssessmentFromCompanyCandidates(actor.companyId, assessmentId);
+      emitAssessmentStreamEvent(actor.companyId, "assessment_deleted", {
+        assessmentId,
+        candidateId: String(existing?.candidateId || existing?.candidate_id || "").trim(),
+        assessment: existing || null
+      });
       sendJson(res, 200, { ok: true, result });
     } catch (error) {
       sendJson(res, 400, { ok: false, error: String(error.message || error) });

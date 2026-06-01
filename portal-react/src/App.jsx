@@ -7433,7 +7433,22 @@ function PortalApp({ token, onLogout }) {
     recruiters: [],
     outcomes: []
   });
+  const [assessmentFiltersApplied, setAssessmentFiltersApplied] = useState({
+    q: "",
+    dateFrom: "",
+    dateTo: "",
+    clients: [],
+    jds: [],
+    recruiters: [],
+    outcomes: []
+  });
   const [assessmentLane, setAssessmentLane] = useState("active"); // active | archived
+  const [assessmentPage, setAssessmentPage] = useState(1);
+  const [assessmentPageSize, setAssessmentPageSize] = useState(25);
+  const [assessmentListItems, setAssessmentListItems] = useState([]);
+  const [assessmentListMeta, setAssessmentListMeta] = useState({ total: 0, totalPages: 1, page: 1, limit: 25 });
+  const [assessmentListLoading, setAssessmentListLoading] = useState(false);
+  const [assessmentStatsSnapshot, setAssessmentStatsSnapshot] = useState(null);
   const [capturedStatsSnapshot, setCapturedStatsSnapshot] = useState(null);
   const [capturedListItems, setCapturedListItems] = useState([]);
   const [capturedOptionPool, setCapturedOptionPool] = useState([]);
@@ -7449,6 +7464,8 @@ function PortalApp({ token, onLogout }) {
   const safeApplicantApiPageSize = [10, 25, 50].includes(Number(applicantPageSize)) ? Number(applicantPageSize) : 25;
   const safeApplicantApiPage = Math.max(1, Number(applicantPage || 1));
   const safeCapturedApiPageSize = [10, 25, 50].includes(Number(capturedPageSize)) ? Number(capturedPageSize) : 25;
+  const safeAssessmentApiPageSize = [10, 25, 50].includes(Number(assessmentPageSize)) ? Number(assessmentPageSize) : 25;
+  const safeAssessmentApiPage = Math.max(1, Number(assessmentPage || 1));
   const [agendaBusyIds, setAgendaBusyIds] = useState({});
   const [reportsTab, setReportsTab] = useState("client");
   const [reportsFilters, setReportsFilters] = useState({
@@ -8005,6 +8022,8 @@ function PortalApp({ token, onLogout }) {
   const initialWorkspaceLoadDoneRef = useRef(false);
   const candidatesSliceLoadSeqRef = useRef(0);
   const assessmentsSliceLoadSeqRef = useRef(0);
+  const assessmentListRequestRef = useRef({ seq: 0, inflightQuery: "" });
+  const assessmentStatsRequestRef = useRef({ seq: 0, inflightQuery: "" });
   const assessmentCaptureSyncAtRef = useRef(0);
   const capturedLiveSyncInFlightRef = useRef(false);
   const capturedLiveSyncPendingRef = useRef(false);
@@ -8202,7 +8221,7 @@ function PortalApp({ token, onLogout }) {
   useEffect(() => {
     // Archived assessments should not be selected for client share.
     setSelectedAssessmentIds([]);
-  }, [assessmentLane]);
+  }, [assessmentLane, assessmentPage, assessmentPageSize, assessmentFiltersApplied]);
 
   useEffect(() => {
     // Load per-recruiter SMTP/signature settings where mail content is composed.
@@ -9742,6 +9761,81 @@ function PortalApp({ token, onLogout }) {
     }));
   }
 
+  function buildAssessmentQueryParams(filters = assessmentFiltersApplied, page = safeAssessmentApiPage, limit = safeAssessmentApiPageSize, lane = assessmentLane) {
+    const params = new URLSearchParams();
+    params.set("limit", String(Math.max(1, Number(limit || 25))));
+    params.set("page", String(Math.max(1, Number(page || 1))));
+    const addCsv = (key, list) => {
+      if (!Array.isArray(list) || !list.length) return;
+      params.set(key, list.map((item) => String(item || "").trim()).filter(Boolean).join(","));
+    };
+    const q = String(filters?.q || "").trim();
+    if (q) params.set("q", q);
+    if (String(filters?.dateFrom || "").trim()) params.set("dateFrom", String(filters.dateFrom).trim());
+    if (String(filters?.dateTo || "").trim()) params.set("dateTo", String(filters.dateTo).trim());
+    addCsv("clients", filters?.clients);
+    addCsv("jds", filters?.jds);
+    addCsv("recruiters", filters?.recruiters);
+    addCsv("outcomes", filters?.outcomes);
+    if (lane) params.set("lane", String(lane || "active").trim() || "active");
+    return params.toString();
+  }
+
+  async function reloadAssessmentSlice(page = safeAssessmentApiPage, limit = safeAssessmentApiPageSize, filters = assessmentFiltersApplied, lane = assessmentLane) {
+    if (!token) return;
+    const query = buildAssessmentQueryParams(filters, page, limit, lane);
+    if (assessmentListRequestRef.current.inflightQuery === query) return;
+    const seq = Number(assessmentListRequestRef.current.seq || 0) + 1;
+    assessmentListRequestRef.current = { seq, inflightQuery: query };
+    setAssessmentListLoading(true);
+    const envelope = await api(`/company/assessments/list?${query}`, token)
+      .then((data) => ({ ok: true, data }))
+      .catch((error) => ({ ok: false, error: String(error?.message || error), data: null }));
+    if (seq !== assessmentListRequestRef.current.seq) return;
+    assessmentListRequestRef.current = { ...assessmentListRequestRef.current, inflightQuery: "" };
+    setAssessmentListLoading(false);
+    if (!envelope.ok) {
+      setStatus("assessments", `Assessments refresh failed, keeping existing list: ${envelope.error}`, "error");
+      return;
+    }
+    const items = Array.isArray(envelope?.data?.items) ? envelope.data.items : [];
+    setAssessmentListItems(items);
+    setAssessmentListMeta({
+      total: Math.max(0, Number(envelope?.data?.total || 0)),
+      totalPages: Math.max(1, Number(envelope?.data?.totalPages || 1)),
+      page: Math.max(1, Number(envelope?.data?.page || page || 1)),
+      limit: Math.max(1, Number(envelope?.data?.limit || limit || 25))
+    });
+  }
+
+  async function reloadAssessmentStats(filters = assessmentFiltersApplied) {
+    if (!token) return;
+    const params = new URLSearchParams();
+    const q = String(filters?.q || "").trim();
+    if (q) params.set("q", q);
+    if (String(filters?.dateFrom || "").trim()) params.set("dateFrom", String(filters.dateFrom).trim());
+    if (String(filters?.dateTo || "").trim()) params.set("dateTo", String(filters.dateTo).trim());
+    const addCsv = (key, list) => {
+      if (!Array.isArray(list) || !list.length) return;
+      params.set(key, list.map((item) => String(item || "").trim()).filter(Boolean).join(","));
+    };
+    addCsv("clients", filters?.clients);
+    addCsv("jds", filters?.jds);
+    addCsv("recruiters", filters?.recruiters);
+    addCsv("outcomes", filters?.outcomes);
+    const query = params.toString();
+    if (assessmentStatsRequestRef.current.inflightQuery === query) return;
+    const seq = Number(assessmentStatsRequestRef.current.seq || 0) + 1;
+    assessmentStatsRequestRef.current = { seq, inflightQuery: query };
+    const envelope = await api(`/company/assessments/stats?${query}`, token)
+      .then((data) => ({ ok: true, data }))
+      .catch((error) => ({ ok: false, error: String(error?.message || error), data: null }));
+    if (seq !== assessmentStatsRequestRef.current.seq) return;
+    assessmentStatsRequestRef.current = { ...assessmentStatsRequestRef.current, inflightQuery: "" };
+    if (!envelope.ok) return;
+    setAssessmentStatsSnapshot(envelope?.data || null);
+  }
+
   async function reloadAssessmentsSlice({ includeEvents = false } = {}) {
     if (!token) return;
     const seq = (assessmentsSliceLoadSeqRef.current || 0) + 1;
@@ -9777,18 +9871,62 @@ function PortalApp({ token, onLogout }) {
     if (String(location?.pathname || "") !== "/assessments") return undefined;
 
     let cancelled = false;
-    // One-time pull on entering Assessments tab so team conversions show without relogin.
-    // No interval polling to keep egress low.
+    // One-time pull on entering Assessments tab so the page can bind to API-backed slices.
     void Promise.all([
-      reloadAssessmentsSlice(),
-      reloadCandidatesSlice({ limit: 5000, page: 1, includeMeta: true })
+      reloadAssessmentSlice(assessmentPage, safeAssessmentApiPageSize, assessmentFiltersApplied, assessmentLane),
+      reloadAssessmentStats(assessmentFiltersApplied)
     ]).catch(() => {}).finally(() => {
       if (cancelled) return;
     });
     return () => {
       cancelled = true;
     };
-  }, [token, location?.pathname]);
+  }, [token, location?.pathname, assessmentPage, safeAssessmentApiPageSize, assessmentFiltersApplied, assessmentLane]);
+
+  useEffect(() => {
+    if (!token) return undefined;
+    if (String(location?.pathname || "") !== "/assessments") return undefined;
+    let cancelled = false;
+    const streamUrl = `/company/stream/assessments?token=${encodeURIComponent(String(token || "").trim())}`;
+    const source = new EventSource(streamUrl);
+    const onAssessment = (event) => {
+      if (cancelled) return;
+      const payload = (() => {
+        try {
+          return JSON.parse(String(event?.data || "{}"));
+        } catch {
+          return {};
+        }
+      })();
+      const eventType = String(payload?.type || payload?.eventType || "").trim();
+      const assessmentId = String(payload?.assessmentId || payload?.assessment_id || payload?.assessment?.id || "").trim();
+      const candidateId = String(payload?.candidateId || payload?.candidate_id || payload?.assessment?.candidateId || payload?.assessment?.candidate_id || "").trim();
+      const assessment = payload?.assessment && typeof payload.assessment === "object" ? payload.assessment : null;
+      if (assessment && assessmentId) {
+        setState((current) => ({
+          ...current,
+          assessments: mergeAssessmentsByFreshness(current.assessments, [assessment])
+        }));
+      } else if (eventType === "assessment_deleted" && assessmentId) {
+        setState((current) => ({
+          ...current,
+          assessments: (current.assessments || []).filter((item) => String(item?.id || "") !== assessmentId)
+        }));
+      }
+      if (candidateId || assessmentId) {
+        void Promise.all([
+          reloadAssessmentSlice(assessmentPage, safeAssessmentApiPageSize, assessmentFiltersApplied, assessmentLane),
+          reloadAssessmentStats(assessmentFiltersApplied)
+        ]).catch(() => {});
+      }
+    };
+    source.addEventListener("assessment", onAssessment);
+    return () => {
+      cancelled = true;
+      try { source.removeEventListener("assessment", onAssessment); } catch {}
+      try { source.close(); } catch {}
+    };
+  }, [token, location?.pathname, assessmentPage, safeAssessmentApiPageSize, assessmentFiltersApplied, assessmentLane]);
 
   useEffect(() => {
     if (!token) return;
@@ -10392,7 +10530,7 @@ function PortalApp({ token, onLogout }) {
   }, [state.assessments, state.candidates, state.user, state.users, resolveCanonicalJdTitle, getClientScopedActiveJobTitles, assessmentFilters.clients]);
 
   const filteredAssessments = useMemo(() => {
-    const query = String(assessmentFilters.q || "").trim().toLowerCase();
+    const query = String(assessmentFiltersApplied.q || "").trim().toLowerCase();
     const rows = (state.assessments || []).filter((item) => {
       const archived = isAssessmentArchived(item);
       if (assessmentLane === "active" && archived) return false;
@@ -10416,12 +10554,12 @@ function PortalApp({ token, onLogout }) {
         recruiterValue
       ].join(" ").toLowerCase();
       if (query && !hay.includes(query)) return false;
-      if (assessmentFilters.dateFrom && createdDate && createdDate < assessmentFilters.dateFrom) return false;
-      if (assessmentFilters.dateTo && createdDate && createdDate > assessmentFilters.dateTo) return false;
-      if (assessmentFilters.clients.length && !assessmentFilters.clients.includes(clientValue)) return false;
-      if (assessmentFilters.jds.length && !assessmentFilters.jds.includes(jdValue)) return false;
-      if (assessmentFilters.recruiters.length && !assessmentFilters.recruiters.includes(recruiterValue)) return false;
-      if (assessmentFilters.outcomes.length && !assessmentFilters.outcomes.includes(outcomeValue)) return false;
+      if (assessmentFiltersApplied.dateFrom && createdDate && createdDate < assessmentFiltersApplied.dateFrom) return false;
+      if (assessmentFiltersApplied.dateTo && createdDate && createdDate > assessmentFiltersApplied.dateTo) return false;
+      if (assessmentFiltersApplied.clients.length && !assessmentFiltersApplied.clients.includes(clientValue)) return false;
+      if (assessmentFiltersApplied.jds.length && !assessmentFiltersApplied.jds.includes(jdValue)) return false;
+      if (assessmentFiltersApplied.recruiters.length && !assessmentFiltersApplied.recruiters.includes(recruiterValue)) return false;
+      if (assessmentFiltersApplied.outcomes.length && !assessmentFiltersApplied.outcomes.includes(outcomeValue)) return false;
       return true;
     });
     const rowTime = (item) => {
@@ -10434,7 +10572,7 @@ function PortalApp({ token, onLogout }) {
       if (diff) return diff;
       return String(b?.id || "").localeCompare(String(a?.id || ""));
     });
-  }, [state.assessments, state.candidates, assessmentFilters, assessmentLane, resolveCanonicalJdTitle]);
+  }, [state.assessments, state.candidates, assessmentFiltersApplied, assessmentLane, resolveCanonicalJdTitle]);
 
   function inferInterviewRoundFromStatus(value) {
     const raw = String(value || "").trim().toLowerCase();
@@ -10530,8 +10668,8 @@ function PortalApp({ token, onLogout }) {
   }
 
   function downloadAssessmentEventXlsx(kind) {
-    const dateFrom = String(assessmentFilters.dateFrom || "").trim();
-    const dateTo = String(assessmentFilters.dateTo || "").trim();
+    const dateFrom = String(assessmentFiltersApplied.dateFrom || "").trim();
+    const dateTo = String(assessmentFiltersApplied.dateTo || "").trim();
     const labelRange = [dateFrom || "any", dateTo || "any"].join("_to_");
     const today = new Date().toISOString().slice(0, 10);
     const filename = `assessments-${kind}-${labelRange}-${today}.xls`;
@@ -11843,8 +11981,16 @@ function PortalApp({ token, onLogout }) {
   }, [capturedStatsSnapshot, candidateFiltersApplied, capturedAssessmentMap, capturedNotesUniverse, state.user, state.users, resolveCapturedAssessment, resolveCanonicalJdTitle]);
 
   const assessmentStats = useMemo(() => {
+    if (assessmentStatsSnapshot && typeof assessmentStatsSnapshot === "object") {
+      return {
+        today: Number(assessmentStatsSnapshot.today || 0),
+        total: Number(assessmentStatsSnapshot.total || 0),
+        active: Number(assessmentStatsSnapshot.active || 0),
+        archived: Number(assessmentStatsSnapshot.archived || 0)
+      };
+    }
     const todayKey = new Date().toISOString().slice(0, 10);
-    const query = String(assessmentFilters.q || "").trim().toLowerCase();
+    const query = String(assessmentFiltersApplied.q || "").trim().toLowerCase();
     // Keep stats aligned with the same filters as the visible list (client/JD/recruiter/outcome/date/query),
     // but we intentionally do not apply the "Active/Archived lane" filter here so the cards can show both counts.
     const universe = (Array.isArray(state.assessments) ? state.assessments : []).filter((item) => {
@@ -11866,12 +12012,12 @@ function PortalApp({ token, onLogout }) {
         recruiterValue
       ].join(" ").toLowerCase();
       if (query && !hay.includes(query)) return false;
-      if (assessmentFilters.dateFrom && createdKey && createdKey < assessmentFilters.dateFrom) return false;
-      if (assessmentFilters.dateTo && createdKey && createdKey > assessmentFilters.dateTo) return false;
-      if (assessmentFilters.clients.length && !assessmentFilters.clients.includes(clientValue)) return false;
-      if (assessmentFilters.jds.length && !assessmentFilters.jds.includes(jdValue)) return false;
-      if (assessmentFilters.recruiters.length && !assessmentFilters.recruiters.includes(recruiterValue)) return false;
-      if (assessmentFilters.outcomes.length && !assessmentFilters.outcomes.includes(outcomeValue)) return false;
+      if (assessmentFiltersApplied.dateFrom && createdKey && createdKey < assessmentFiltersApplied.dateFrom) return false;
+      if (assessmentFiltersApplied.dateTo && createdKey && createdKey > assessmentFiltersApplied.dateTo) return false;
+      if (assessmentFiltersApplied.clients.length && !assessmentFiltersApplied.clients.includes(clientValue)) return false;
+      if (assessmentFiltersApplied.jds.length && !assessmentFiltersApplied.jds.includes(jdValue)) return false;
+      if (assessmentFiltersApplied.recruiters.length && !assessmentFiltersApplied.recruiters.includes(recruiterValue)) return false;
+      if (assessmentFiltersApplied.outcomes.length && !assessmentFiltersApplied.outcomes.includes(outcomeValue)) return false;
       return true;
     });
     const activeCount = universe.filter((item) => !isAssessmentArchived(item)).length;
@@ -11882,13 +12028,18 @@ function PortalApp({ token, onLogout }) {
       active: activeCount,
       archived: archivedCount
     };
-  }, [assessmentFilters, state.assessments, state.candidates, resolveCanonicalJdTitle]);
+  }, [assessmentStatsSnapshot, assessmentFiltersApplied, state.assessments, state.candidates, resolveCanonicalJdTitle]);
 
   const renderLoadedMetricValue = (value) => (workspaceDataReady ? value : "…");
 
   const capturedCandidates = useMemo(() => (
     Array.isArray(capturedListItems) ? capturedListItems : []
   ), [capturedListItems]);
+  const assessmentPageItems = useMemo(() => (
+    Array.isArray(assessmentListItems) ? assessmentListItems : []
+  ), [assessmentListItems]);
+  const totalAssessmentPages = Math.max(1, Number(assessmentListMeta?.totalPages || 1));
+  const pagedAssessments = assessmentPageItems;
   const safeCapturedPageSize = safeCapturedApiPageSize;
   const totalCapturedPages = Math.max(1, Number(capturedListMeta?.totalPages || 1));
   const pagedCapturedCandidates = capturedCandidates;
@@ -12151,6 +12302,9 @@ function PortalApp({ token, onLogout }) {
   useEffect(() => {
     setCapturedPage((current) => Math.min(Math.max(1, current), totalCapturedPages));
   }, [totalCapturedPages]);
+  useEffect(() => {
+    setAssessmentPage((current) => Math.min(Math.max(1, current), totalAssessmentPages));
+  }, [totalAssessmentPages]);
   useEffect(() => {
     setCapturedPage(1);
   }, [
@@ -13164,7 +13318,14 @@ function PortalApp({ token, onLogout }) {
         updatedAt: new Date().toISOString()
       };
       await api("/company/assessments", token, "POST", { assessment: nextAssessment });
-      await reloadAssessmentsSlice();
+      if (String(location?.pathname || "") === "/assessments") {
+        await Promise.all([
+          reloadAssessmentSlice(assessmentPage, safeAssessmentApiPageSize, assessmentFiltersApplied, assessmentLane),
+          reloadAssessmentStats(assessmentFiltersApplied)
+        ]);
+      } else {
+        await reloadAssessmentsSlice();
+      }
       void refreshWorkspaceSilently("post-quick-update");
       setQuickUpdateMergedPatch(null);
       setQuickUpdateConflicts([]);
@@ -15042,7 +15203,14 @@ function PortalApp({ token, onLogout }) {
       });
     }
     if (assessment) {
-      await reloadAssessmentsSlice();
+      if (String(location?.pathname || "") === "/assessments") {
+        await Promise.all([
+          reloadAssessmentSlice(assessmentPage, safeAssessmentApiPageSize, assessmentFiltersApplied, assessmentLane),
+          reloadAssessmentStats(assessmentFiltersApplied)
+        ]);
+      } else {
+        await reloadAssessmentsSlice();
+      }
     } else {
       await reloadCandidatesSlice({ includeDatabase: location?.pathname === "/candidates" });
     }
@@ -20633,6 +20801,41 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                 <MultiSelectDropdown label="Recruiters" options={assessmentOptions.recruiters} selected={assessmentFilters.recruiters} onToggle={(value) => setAssessmentFilters((current) => ({ ...current, recruiters: value === "__all__" ? [] : current.recruiters.includes(value) ? current.recruiters.filter((item) => item !== value) : [...current.recruiters, value] }))} />
                 <MultiSelectDropdown label="Outcome" options={assessmentOptions.outcomes} selected={assessmentFilters.outcomes} onToggle={(value) => setAssessmentFilters((current) => ({ ...current, outcomes: value === "__all__" ? [] : current.outcomes.includes(value) ? current.outcomes.filter((item) => item !== value) : [...current.outcomes, value] }))} />
               </div>
+              <div className="button-row tight" style={{ marginTop: 8 }}>
+                <button
+                  onClick={() => {
+                    setAssessmentPage(1);
+                    setAssessmentFiltersApplied({
+                      ...assessmentFilters,
+                      clients: [...(assessmentFilters.clients || [])],
+                      jds: [...(assessmentFilters.jds || [])],
+                      recruiters: [...(assessmentFilters.recruiters || [])],
+                      outcomes: [...(assessmentFilters.outcomes || [])]
+                    });
+                  }}
+                >
+                  Apply filters
+                </button>
+                <button
+                  className="ghost-btn"
+                  onClick={() => {
+                    const reset = {
+                      q: "",
+                      dateFrom: "",
+                      dateTo: "",
+                      clients: [],
+                      jds: [],
+                      recruiters: [],
+                      outcomes: []
+                    };
+                    setAssessmentPage(1);
+                    setAssessmentFilters(reset);
+                    setAssessmentFiltersApplied(reset);
+                  }}
+                >
+                  Reset
+                </button>
+              </div>
               <div className="button-row">
                 <label className="copy-preset-control">
                   <span>Copy preset</span>
@@ -20645,9 +20848,36 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                 <button onClick={() => void copyAssessmentsEmail()}>Copy Email</button>
               </div>
               <div className="status-note">Selected for client share: {selectedAssessmentIds.length}</div>
+              <div className="button-row tight" style={{ justifyContent: "space-between", alignItems: "center", gap: 10, marginTop: 10 }}>
+                <div className="muted">
+                  {Number(assessmentListMeta?.total || 0)
+                    ? `Showing ${((assessmentPage - 1) * safeAssessmentApiPageSize) + 1}-${Math.min(Number(assessmentListMeta?.total || 0), ((assessmentPage - 1) * safeAssessmentApiPageSize) + pagedAssessments.length)} of ${Number(assessmentListMeta?.total || 0)}`
+                    : "Showing 0 of 0"}
+                </div>
+                <div className="button-row tight" style={{ alignItems: "center", gap: 10 }}>
+                  <label className="copy-preset-control" style={{ margin: 0 }}>
+                    <span>Rows per page</span>
+                    <select
+                      value={safeAssessmentApiPageSize}
+                      onChange={(e) => {
+                        const nextSize = Number(e.target.value || 25);
+                        setAssessmentPageSize([10, 25, 50].includes(nextSize) ? nextSize : 25);
+                        setAssessmentPage(1);
+                      }}
+                    >
+                      <option value={10}>10</option>
+                      <option value={25}>25</option>
+                      <option value={50}>50</option>
+                    </select>
+                  </label>
+                  <button className="ghost-btn" disabled={assessmentPage <= 1} onClick={() => setAssessmentPage((page) => Math.max(1, page - 1))}>Previous</button>
+                  <div className="muted">Page {assessmentPage} of {totalAssessmentPages}</div>
+                  <button className="ghost-btn" disabled={assessmentPage >= totalAssessmentPages} onClick={() => setAssessmentPage((page) => Math.min(totalAssessmentPages, page + 1))}>Next</button>
+                </div>
+              </div>
               <div className="stack-list">
                 {workspaceDataReady ? (
-                  !(Array.isArray(filteredAssessments) && filteredAssessments.length) ? <div className="empty-state">No assessments saved yet.</div> : filteredAssessments.map((item) => (
+                  !(Array.isArray(pagedAssessments) && pagedAssessments.length) ? <div className="empty-state">No assessments saved yet.</div> : pagedAssessments.map((item) => (
                   <article className={`item-card compact-card assessment-card ${selectedAssessmentIds.includes(String(item.id)) ? "selected-card" : ""}`} key={item.id}>
                     {(() => {
                       const latestStatusPreview = getLatestAssessmentStatusPreview(item);

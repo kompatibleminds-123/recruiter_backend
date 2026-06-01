@@ -5103,7 +5103,7 @@ async function listAssessments({ actorUserId, companyId }) {
     return (readStore().assessments || []).filter((i) => i.companyId === companyId && (actor.role === "admin" || i.recruiterId === actor.id)).sort((a, b) => String(b.generatedAt || b.createdAt || "").localeCompare(String(a.generatedAt || a.createdAt || ""))).map(sanitizeAssessment);
   }
   await ensureSeeded();
-  const rows = await sbSel("assessments", `select=*&company_id=eq.${enc(companyId)}&order=created_at.desc&limit=500`);
+  const rows = await sbSel("assessments", `select=*&company_id=eq.${enc(companyId)}&order=created_at.desc&limit=5000`);
   if (actor.role === "admin") return (rows || []).map(sanitizeAssessment);
 
   // Team recruiters should also see admin-created assessments if the underlying candidate
@@ -5208,12 +5208,12 @@ async function findExistingAssessmentIdForCandidate({ actorUserId, companyId, as
   // Pull a small set for the candidate, then filter in JS to keep logic consistent.
   let rows = [];
   if (candidateId) {
-    rows = await sbSel("assessments", `select=id,candidate_id,candidate_name,client_name,jd_title,email_id,phone_number,payload&company_id=eq.${enc(companyId)}&candidate_id=eq.${enc(candidateId)}&limit=50`).catch(() => []);
+    rows = await sbSel("assessments", `select=id,candidate_id,candidate_name,client_name,jd_title,email_id,phone_number,payload&company_id=eq.${enc(companyId)}&candidate_id=eq.${enc(candidateId)}&limit=5000`).catch(() => []);
   } else if (emailNeedle || phoneNeedle) {
     const orParts = [];
     if (emailNeedle) orParts.push(`email_id.eq.${enc(emailNeedle)}`);
     if (phoneNeedle) orParts.push(`phone_number.eq.${enc(phoneNeedle)}`);
-    rows = await sbSel("assessments", `select=id,candidate_id,candidate_name,client_name,jd_title,email_id,phone_number,payload&company_id=eq.${enc(companyId)}&or=(${orParts.join(",")})&limit=50`).catch(() => []);
+    rows = await sbSel("assessments", `select=id,candidate_id,candidate_name,client_name,jd_title,email_id,phone_number,payload&company_id=eq.${enc(companyId)}&or=(${orParts.join(",")})&limit=5000`).catch(() => []);
   }
   const sanitized = (rows || []).map(sanitizeAssessment);
   const match = sanitized.find((existing) => {
@@ -5229,7 +5229,7 @@ async function findExistingAssessmentIdForCandidate({ actorUserId, companyId, as
 
   // Fallback: if candidateId differs due to accidental duplicate candidate rows, match by phone/email instead.
   if (emailNeedle || phoneNeedle) {
-    const fallbackRows = await sbSel("assessments", `select=id,candidate_id,client_name,jd_title,email_id,phone_number,payload&company_id=eq.${enc(companyId)}&limit=250`).catch(() => []);
+    const fallbackRows = await sbSel("assessments", `select=id,candidate_id,client_name,jd_title,email_id,phone_number,payload&company_id=eq.${enc(companyId)}&limit=5000`).catch(() => []);
     const fallback = (fallbackRows || []).map(sanitizeAssessment).find((existing) => {
       const exEmail = normalizeAssessmentEmail(existing?.emailId || existing?.email_id || "");
       const exPhone = normalizeAssessmentPhone(existing?.phoneNumber || existing?.phone_number || "");
