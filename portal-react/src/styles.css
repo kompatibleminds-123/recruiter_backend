@@ -1332,6 +1332,44 @@ textarea { min-height: 92px; resize: vertical; }
 .captured-notes-list {
   margin-top: 0.85rem;
 }
+
+.applicants-pagination-toolbar {
+  margin-top: 0.55rem;
+  margin-bottom: 0.8rem;
+  padding: 0.62rem 0.8rem;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: #fbfdff;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.7rem;
+}
+
+.applicants-pagination-toolbar__controls {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.applicants-pagination-toolbar .ghost-btn {
+  min-height: 34px;
+  padding: 0.35rem 0.75rem;
+}
+
+@media (max-width: 900px) {
+  .applicants-pagination-toolbar {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .applicants-pagination-toolbar__controls {
+    width: 100%;
+    justify-content: flex-start;
+  }
+}
 .candidate-filter-card {
   padding: 1.1rem;
 }

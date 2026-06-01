@@ -7422,6 +7422,10 @@ function PortalApp({ token, onLogout }) {
   });
   const [assessmentLane, setAssessmentLane] = useState("active"); // active | archived
   const [applicantStatsSnapshot, setApplicantStatsSnapshot] = useState(null);
+  const [applicantListMeta, setApplicantListMeta] = useState({ total: 0, totalPages: 1, page: 1, limit: 25 });
+  const [applicantListLoading, setApplicantListLoading] = useState(false);
+  const applicantListRequestRef = useRef({ seq: 0, inflightQuery: "" });
+  const applicantStatsRequestRef = useRef({ seq: 0, inflightQuery: "" });
   const safeApplicantApiPageSize = [10, 25, 50].includes(Number(applicantPageSize)) ? Number(applicantPageSize) : 25;
   const safeApplicantApiPage = Math.max(1, Number(applicantPage || 1));
   const [agendaBusyIds, setAgendaBusyIds] = useState({});
@@ -9529,9 +9533,16 @@ function PortalApp({ token, onLogout }) {
   async function reloadApplicantsSlice(page = safeApplicantApiPage, limit = safeApplicantApiPageSize, filters = applicantFiltersApplied) {
     if (!token) return;
     const query = buildApplicantQueryParams(filters, page, limit);
+    if (applicantListRequestRef.current.inflightQuery === query) return;
+    const seq = Number(applicantListRequestRef.current.seq || 0) + 1;
+    applicantListRequestRef.current = { seq, inflightQuery: query };
+    setApplicantListLoading(true);
     const applicantsEnvelope = await api(`/company/applicants/list?${query}`, token)
       .then((data) => ({ ok: true, data }))
       .catch((error) => ({ ok: false, error: String(error?.message || error), data: null }));
+    if (seq !== applicantListRequestRef.current.seq) return;
+    applicantListRequestRef.current = { ...applicantListRequestRef.current, inflightQuery: "" };
+    setApplicantListLoading(false);
     if (!applicantsEnvelope.ok) {
       setStatus("applicants", `Applied refresh failed, keeping existing list: ${applicantsEnvelope.error}`, "error");
       return;
@@ -9540,14 +9551,25 @@ function PortalApp({ token, onLogout }) {
       ...current,
       applicants: applicantsEnvelope?.data?.items || []
     }));
+    setApplicantListMeta({
+      total: Math.max(0, Number(applicantsEnvelope?.data?.total || 0)),
+      totalPages: Math.max(1, Number(applicantsEnvelope?.data?.totalPages || 1)),
+      page: Math.max(1, Number(applicantsEnvelope?.data?.page || page || 1)),
+      limit: Math.max(1, Number(applicantsEnvelope?.data?.limit || limit || 25))
+    });
   }
 
   async function reloadApplicantStats(filters = applicantFiltersApplied) {
     if (!token) return;
     const query = buildApplicantQueryParams(filters, 1, 1);
+    if (applicantStatsRequestRef.current.inflightQuery === query) return;
+    const seq = Number(applicantStatsRequestRef.current.seq || 0) + 1;
+    applicantStatsRequestRef.current = { seq, inflightQuery: query };
     const statsEnvelope = await api(`/company/applicants/stats?${query}`, token)
       .then((data) => ({ ok: true, data }))
       .catch((error) => ({ ok: false, error: String(error?.message || error), data: null }));
+    if (seq !== applicantStatsRequestRef.current.seq) return;
+    applicantStatsRequestRef.current = { ...applicantStatsRequestRef.current, inflightQuery: "" };
     if (!statsEnvelope.ok) return;
     setApplicantStatsSnapshot(statsEnvelope?.data || null);
   }
@@ -11976,66 +11998,29 @@ function PortalApp({ token, onLogout }) {
     };
   }, [filteredApplicants, applicantCandidateMap, applicantAssessmentMap, state.user, state.users]);
 
-  const visibleApplicants = useMemo(() => {
-    const query = String(applicantFiltersApplied.q || "").trim().toLowerCase();
-    const rows = filteredApplicants.filter((item) => {
-      const linkedCandidate = applicantCandidateMap.get(String(item.id)) || null;
-      const linkedAssessment = applicantAssessmentMap.get(String(item.id)) || null;
-      if (isApplicantConvertedToAssessment(item, linkedCandidate, linkedAssessment)) return false;
-      const clientValue = String(item.clientName || item.client_name || "Unassigned").trim();
-      const jdValue = String(item.jdTitle || item.jd_title || "").trim();
-      const locationValue = normalizeApplicantLocationLabel(item.location || linkedCandidate?.location || "");
-      const ownedValue = getApplicantOwnerLabel(item, linkedCandidate);
-      const assignedValue = getApplicantManualAssigneeLabel(item, linkedCandidate);
-      const outcomeValue = getApplicantWorkflowOutcome(item, linkedCandidate);
-      const manuallyHidden = Boolean(item.hidden_from_captured || linkedCandidate?.hidden_from_captured);
-      const activeValue = manuallyHidden ? "Inactive" : "Active";
-      const createdDate = String(item.createdAt || item.created_at || "").slice(0, 10);
-      const nameHay = [item.candidateName, linkedCandidate?.name].join(" ").toLowerCase();
-      const hay = [
-        item.candidateName,
-        linkedCandidate?.name,
-        item.phone,
-        item.email,
-        jdValue,
-        clientValue,
-        locationValue,
-        ownedValue,
-        assignedValue,
-        item.currentCompany,
-        item.currentDesignation
-      ].join(" ").toLowerCase();
-      if (query && !hay.includes(query)) return false;
-      const searchNameMatch = Boolean(query && nameHay.includes(query));
-      if (!applicantFiltersApplied.activeStates.length && activeValue === "Inactive" && !searchNameMatch) return false;
-      if (applicantFiltersApplied.activeStates.length && !applicantFiltersApplied.activeStates.includes(activeValue)) return false;
-      if (applicantFiltersApplied.dateFrom && createdDate && createdDate < applicantFiltersApplied.dateFrom) return false;
-      if (applicantFiltersApplied.dateTo && createdDate && createdDate > applicantFiltersApplied.dateTo) return false;
-      if (applicantFiltersApplied.clients.length && !applicantFiltersApplied.clients.includes(clientValue)) return false;
-      if (applicantFiltersApplied.jds.length && !applicantFiltersApplied.jds.includes(jdValue)) return false;
-      if (applicantFiltersApplied.locations.length && !applicantFiltersApplied.locations.includes(locationValue)) return false;
-      if (applicantFiltersApplied.ownedBy.length && !applicantFiltersApplied.ownedBy.includes(ownedValue)) return false;
-      if (applicantFiltersApplied.assignedTo.length && !applicantFiltersApplied.assignedTo.includes(assignedValue)) return false;
-      if (applicantFiltersApplied.outcomes.length && !applicantFiltersApplied.outcomes.includes(outcomeValue)) return false;
-      return true;
-    });
-    const rowTime = (item) => {
-      const t1 = Date.parse(String(item?.updatedAt || item?.updated_at || ""));
-      const t2 = Date.parse(String(item?.createdAt || item?.created_at || ""));
-      const t3 = Date.parse(String(item?.hiddenAt || item?.hidden_at || ""));
-      return Math.max(Number.isFinite(t1) ? t1 : 0, Number.isFinite(t2) ? t2 : 0, Number.isFinite(t3) ? t3 : 0);
-    };
-    return rows.sort((a, b) => {
-      const diff = rowTime(b) - rowTime(a);
-      if (diff) return diff;
-      return String(b?.id || "").localeCompare(String(a?.id || ""));
-    });
-  }, [filteredApplicants, applicantFiltersApplied, applicantCandidateMap, applicantAssessmentMap]);
-  const totalApplicantPages = Math.max(1, Math.ceil((visibleApplicants.length || 0) / safeApplicantApiPageSize));
-  const pagedApplicants = useMemo(() => {
-    const start = (safeApplicantApiPage - 1) * safeApplicantApiPageSize;
-    return visibleApplicants.slice(start, start + safeApplicantApiPageSize);
-  }, [visibleApplicants, safeApplicantApiPage, safeApplicantApiPageSize]);
+  const visibleApplicants = useMemo(() => (
+    Array.isArray(state.applicants) ? state.applicants : []
+  ), [state.applicants]);
+  const totalApplicantCount = Math.max(
+    0,
+    Number(
+      (applicantListMeta && typeof applicantListMeta === "object" && Number.isFinite(Number(applicantListMeta.total))
+        ? applicantListMeta.total
+        : (applicantStatsSnapshot && typeof applicantStatsSnapshot === "object"
+          ? applicantStatsSnapshot.total
+          : visibleApplicants.length)) || 0
+    )
+  );
+  const totalApplicantPages = Math.max(
+    1,
+    Number(applicantListMeta?.totalPages || Math.ceil(totalApplicantCount / safeApplicantApiPageSize) || 1)
+  );
+  const applicantShowingStart = totalApplicantCount > 0
+    ? ((safeApplicantApiPage - 1) * safeApplicantApiPageSize) + 1
+    : 0;
+  const applicantShowingEnd = totalApplicantCount > 0
+    ? Math.min(totalApplicantCount, applicantShowingStart + Math.max(0, visibleApplicants.length - 1))
+    : 0;
   const applicantStats = useMemo(() => {
     if (applicantStatsSnapshot && typeof applicantStatsSnapshot === "object") {
       return {
@@ -20034,8 +20019,10 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                   </>
                 ) : null}
               </div>
-              <div className="button-row tight" style={{ marginTop: 8, justifyContent: "flex-end" }}>
-                <label className="copy-preset-control">
+              <div className="applicants-pagination-toolbar">
+                <div className="muted">{`Showing ${applicantShowingStart}-${applicantShowingEnd} of ${totalApplicantCount}`}</div>
+                <div className="applicants-pagination-toolbar__controls">
+                <label className="copy-preset-control" style={{ margin: 0 }}>
                   <span>Rows per page</span>
                   <select value={safeApplicantApiPageSize} onChange={(e) => setApplicantPageSize(Number(e.target.value || 25))}>
                     {[10, 25, 50].map((size) => <option key={size} value={size}>{size}</option>)}
@@ -20044,10 +20031,14 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                 <button className="ghost-btn" disabled={safeApplicantApiPage <= 1} onClick={() => setApplicantPage((page) => Math.max(1, page - 1))}>Previous</button>
                 <div className="muted">{`Page ${safeApplicantApiPage} of ${totalApplicantPages}`}</div>
                 <button className="ghost-btn" disabled={safeApplicantApiPage >= totalApplicantPages} onClick={() => setApplicantPage((page) => Math.min(totalApplicantPages, page + 1))}>Next</button>
+                {applicantListLoading ? <div className="muted">Updating...</div> : null}
+                </div>
               </div>
               <div className="stack-list captured-notes-list">
                 {workspaceDataReady ? (
-                  !visibleApplicants.length ? <div className="empty-state">No applied candidates right now.</div> : pagedApplicants.map((item) => (
+                  (!visibleApplicants.length && !applicantListLoading)
+                    ? <div className="empty-state">No applied candidates right now.</div>
+                    : visibleApplicants.map((item) => (
                   <article className="item-card compact-card captured-note-card" key={item.id}>
                     {String(state.user?.role || "").toLowerCase() === "admin" ? (
                       <label className="captured-top-select captured-top-select--card">

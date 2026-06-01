@@ -3489,49 +3489,52 @@ async function listApplicantsForUser(user, options = {}) {
   const sources = ["website_apply", "hosted_apply", "google_sheet"];
 
   if (on && companyId) {
-    const queryParts = [
+    const baseFilterParts = [
       "select=*",
       `company_id=eq.${encodeURIComponent(companyId)}`,
-      `source=in.(${sources.map((item) => encodeURIComponent(item)).join(",")})`,
-      "order=created_at.desc",
-      `limit=${limit}`,
-      `offset=${offset}`
+      `source=in.(${sources.map((item) => encodeURIComponent(item)).join(",")})`
     ];
     if (!actorIsAdmin && actorId) {
-      queryParts.push(`or=(recruiter_id.eq.${encodeURIComponent(actorId)},assigned_to_user_id.eq.${encodeURIComponent(actorId)})`);
+      baseFilterParts.push(`or=(recruiter_id.eq.${encodeURIComponent(actorId)},assigned_to_user_id.eq.${encodeURIComponent(actorId)})`);
     }
     if (q) {
       const escaped = q.replace(/[%*]/g, "").trim();
       if (escaped) {
         const like = `*${escaped.replace(/,/g, " ")}*`;
-        queryParts.push(`or=(name.ilike.${encodeURIComponent(like)},email.ilike.${encodeURIComponent(like)},phone.ilike.${encodeURIComponent(like)},company.ilike.${encodeURIComponent(like)},role.ilike.${encodeURIComponent(like)},location.ilike.${encodeURIComponent(like)},client_name.ilike.${encodeURIComponent(like)},jd_title.ilike.${encodeURIComponent(like)})`);
+        baseFilterParts.push(`or=(name.ilike.${encodeURIComponent(like)},email.ilike.${encodeURIComponent(like)},phone.ilike.${encodeURIComponent(like)},company.ilike.${encodeURIComponent(like)},role.ilike.${encodeURIComponent(like)},location.ilike.${encodeURIComponent(like)},client_name.ilike.${encodeURIComponent(like)},jd_title.ilike.${encodeURIComponent(like)})`);
       }
     }
-    if (filters.dateFrom) queryParts.push(`created_at=gte.${encodeURIComponent(`${filters.dateFrom}T00:00:00.000Z`)}`);
-    if (filters.dateTo) queryParts.push(`created_at=lte.${encodeURIComponent(`${filters.dateTo}T23:59:59.999Z`)}`);
-    if (filters.clients.length) queryParts.push(`client_name=in.(${filters.clients.map((item) => encodeURIComponent(item)).join(",")})`);
-    if (filters.jds.length) queryParts.push(`jd_title=in.(${filters.jds.map((item) => encodeURIComponent(item)).join(",")})`);
-    if (filters.locations.length) queryParts.push(`location=in.(${filters.locations.map((item) => encodeURIComponent(item)).join(",")})`);
-    if (filters.assignedTo.length) queryParts.push(`assigned_to_name=in.(${filters.assignedTo.map((item) => encodeURIComponent(item)).join(",")})`);
+    if (filters.dateFrom) baseFilterParts.push(`created_at=gte.${encodeURIComponent(`${filters.dateFrom}T00:00:00.000Z`)}`);
+    if (filters.dateTo) baseFilterParts.push(`created_at=lte.${encodeURIComponent(`${filters.dateTo}T23:59:59.999Z`)}`);
+    if (filters.clients.length) baseFilterParts.push(`client_name=in.(${filters.clients.map((item) => encodeURIComponent(item)).join(",")})`);
+    if (filters.jds.length) baseFilterParts.push(`jd_title=in.(${filters.jds.map((item) => encodeURIComponent(item)).join(",")})`);
+    if (filters.locations.length) baseFilterParts.push(`location=in.(${filters.locations.map((item) => encodeURIComponent(item)).join(",")})`);
+    if (filters.assignedTo.length) baseFilterParts.push(`assigned_to_name=in.(${filters.assignedTo.map((item) => encodeURIComponent(item)).join(",")})`);
     if (filters.activeStates.length === 1) {
       const only = String(filters.activeStates[0] || "").trim();
       if (only === "Active") {
-        queryParts.push("hidden_from_captured=not.is.true");
-        queryParts.push("used_in_assessment=not.is.true");
-        queryParts.push("assessment_id=is.null");
+        baseFilterParts.push("hidden_from_captured=not.is.true");
+        baseFilterParts.push("used_in_assessment=not.is.true");
+        baseFilterParts.push("assessment_id=is.null");
       } else if (only === "Inactive") {
-        queryParts.push("hidden_from_captured=is.true");
-        queryParts.push("used_in_assessment=not.is.true");
-        queryParts.push("assessment_id=is.null");
+        baseFilterParts.push("hidden_from_captured=is.true");
+        baseFilterParts.push("used_in_assessment=not.is.true");
+        baseFilterParts.push("assessment_id=is.null");
       } else if (only === "Converted") {
-        queryParts.push("or=(used_in_assessment.is.true,assessment_id.not.is.null)");
+        baseFilterParts.push("or=(used_in_assessment.is.true,assessment_id.not.is.null)");
       }
     }
     if (!includeConverted) {
-      queryParts.push("used_in_assessment=not.is.true");
-      queryParts.push("assessment_id=is.null");
+      baseFilterParts.push("used_in_assessment=not.is.true");
+      baseFilterParts.push("assessment_id=is.null");
     }
-    const response = await fetch(`${url}/rest/v1/candidates?${queryParts.join("&")}`, {
+    const listQueryParts = [
+      ...baseFilterParts,
+      "order=created_at.desc",
+      `limit=${limit}`,
+      `offset=${offset}`
+    ];
+    const response = await fetch(`${url}/rest/v1/candidates?${listQueryParts.join("&")}`, {
       headers: {
         apikey: key,
         Authorization: `Bearer ${key}`
@@ -3542,7 +3545,22 @@ async function listApplicantsForUser(user, options = {}) {
       throw new Error(`Applied candidates read failed: ${response.status} ${errorText}`);
     }
     const rows = await response.json();
-    return (Array.isArray(rows) ? rows : []).map(sanitizeApplicantCandidate);
+    const countResponse = await fetch(`${url}/rest/v1/candidates?select=id&${baseFilterParts.join("&")}&limit=1`, {
+      headers: {
+        apikey: key,
+        Authorization: `Bearer ${key}`,
+        Prefer: "count=exact"
+      }
+    });
+    let total = 0;
+    if (countResponse.ok) {
+      const contentRange = String(countResponse.headers.get("content-range") || "");
+      const totalPart = contentRange.split("/")[1] || "";
+      total = Math.max(0, Number(totalPart || 0));
+    }
+    const items = (Array.isArray(rows) ? rows : []).map(sanitizeApplicantCandidate);
+    const totalPages = Math.max(1, Math.ceil(total / limit));
+    return { items, total, page, limit, totalPages };
   }
 
   // Local fallback (non-supabase): keep legacy behavior.
@@ -3551,7 +3569,10 @@ async function listApplicantsForUser(user, options = {}) {
     q
   });
   const filtered = rows.filter((candidate) => applyApplicantFiltersLocal(candidate, filters, includeConverted));
-  return filtered.slice(offset, offset + limit).map(sanitizeApplicantCandidate);
+  const total = filtered.length;
+  const items = filtered.slice(offset, offset + limit).map(sanitizeApplicantCandidate);
+  const totalPages = Math.max(1, Math.ceil(total / limit));
+  return { items, total, page, limit, totalPages };
 }
 
 async function getApplicantStatsForUser(user, options = {}) {
@@ -15155,13 +15176,15 @@ const server = http.createServer(async (req, res) => {
         assignedTo: String(requestUrl.searchParams.get("assignedTo") || "").trim(),
         activeStates: String(requestUrl.searchParams.get("activeStates") || "").trim()
       };
-      const items = await listApplicantsForUser(user, { limit, page, includeConverted, filters });
+      const listResult = await listApplicantsForUser(user, { limit, page, includeConverted, filters });
       sendJson(res, 200, {
         ok: true,
         result: {
-          page,
-          limit,
-          items
+          page: Number(listResult?.page || page),
+          limit: Number(listResult?.limit || limit),
+          total: Number(listResult?.total || 0),
+          totalPages: Number(listResult?.totalPages || 1),
+          items: Array.isArray(listResult?.items) ? listResult.items : []
         }
       });
     } catch (error) {
@@ -15211,11 +15234,21 @@ const server = http.createServer(async (req, res) => {
         assignedTo: String(requestUrl.searchParams.get("assignedTo") || "").trim(),
         activeStates: String(requestUrl.searchParams.get("activeStates") || "").trim()
       };
-      const [items, stats] = await Promise.all([
+      const [listResult, stats] = await Promise.all([
         listApplicantsForUser(user, { limit, page, includeConverted, filters }),
         getApplicantStatsForUser(user, { filters })
       ]);
-      sendJson(res, 200, { ok: true, result: { page, limit, items, stats, total: Number(stats?.total || 0) } });
+      sendJson(res, 200, {
+        ok: true,
+        result: {
+          page: Number(listResult?.page || page),
+          limit: Number(listResult?.limit || limit),
+          items: Array.isArray(listResult?.items) ? listResult.items : [],
+          stats,
+          total: Number(listResult?.total || stats?.total || 0),
+          totalPages: Number(listResult?.totalPages || 1)
+        }
+      });
     } catch (error) {
       sendJson(res, 400, { ok: false, error: String(error.message || error) });
     }
