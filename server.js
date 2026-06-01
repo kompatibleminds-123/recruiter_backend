@@ -3403,114 +3403,14 @@ function sanitizeApplicantCandidate(candidate = {}) {
 }
 
 async function listApplicantsForUser(user, options = {}) {
-  const rows = await listCandidatesForUser(user, { limit: Number(options.limit || 5000), q: String(options.q || "").trim() });
-  const appliedRows = rows
+  const rows = await listCandidatesForUser(user, { limit: Number(options.limit || 500), q: String(options.q || "").trim() });
+  return rows
     .filter((candidate) => {
-      const source = String(candidate?.source || "").trim().toLowerCase();
-      return source === "website_apply" || source === "hosted_apply" || source === "google_sheet";
+      const source = String(candidate?.source || "").trim();
+      if (candidate?.used_in_assessment) return false;
+      return source === "website_apply" || source === "hosted_apply";
     })
-    .map((row) => {
-      const sanitized = sanitizeApplicantCandidate(row);
-      return {
-        ...sanitized,
-        source: String(row?.source || "").trim().toLowerCase(),
-        hidden_from_captured: Boolean(row?.hidden_from_captured),
-        assessmentId: String(row?.assessment_id || row?.assessmentId || "").trim(),
-        usedInAssessment: Boolean(row?.used_in_assessment) || Boolean(String(row?.assessment_id || row?.assessmentId || "").trim())
-      };
-    });
-
-  const filters = options?.filters && typeof options.filters === "object" ? options.filters : {};
-  const textQuery = String(filters.q || options.q || "").trim().toLowerCase();
-  const asArray = (value) => Array.isArray(value) ? value.map((item) => String(item || "").trim()).filter(Boolean) : [];
-  const clients = asArray(filters.clients);
-  const jds = asArray(filters.jds);
-  const locations = asArray(filters.locations);
-  const owners = asArray(filters.ownedBy);
-  const outcomes = asArray(filters.outcomes);
-  const activeStates = asArray(filters.activeStates);
-  const dateFrom = String(filters.dateFrom || "").trim();
-  const dateTo = String(filters.dateTo || "").trim();
-
-  const normalizedRows = appliedRows.map((item) => {
-    const hidden = Boolean(item.hidden_from_captured);
-    const converted = Boolean(item.usedInAssessment);
-    const activeState = hidden ? "Inactive" : "Active";
-    const ownerLabel = String(item.assignedToName || item.assigned_to_name || "Unassigned").trim();
-    const outcome = String(item.parseStatus || "").trim();
-    const createdDate = String(item.createdAt || "").slice(0, 10);
-    return { ...item, __hidden: hidden, __converted: converted, __activeState: activeState, __ownerLabel: ownerLabel, __outcome: outcome, __createdDate: createdDate };
-  });
-
-  const filtered = normalizedRows.filter((item) => {
-    const hay = [
-      item.candidateName,
-      item.phone,
-      item.email,
-      item.currentCompany,
-      item.currentDesignation,
-      item.clientName,
-      item.jdTitle,
-      item.location,
-      item.__ownerLabel,
-      item.__outcome
-    ].join(" ").toLowerCase();
-    if (textQuery && !hay.includes(textQuery)) return false;
-    if (dateFrom && item.__createdDate && item.__createdDate < dateFrom) return false;
-    if (dateTo && item.__createdDate && item.__createdDate > dateTo) return false;
-    if (clients.length && !clients.includes(String(item.clientName || "Unassigned").trim())) return false;
-    if (jds.length && !jds.includes(String(item.jdTitle || "").trim())) return false;
-    if (locations.length && !locations.includes(String(item.location || "").trim())) return false;
-    if (owners.length && !owners.includes(item.__ownerLabel)) return false;
-    if (outcomes.length && !outcomes.includes(item.__outcome)) return false;
-    if (activeStates.length && !activeStates.includes(item.__activeState)) return false;
-    return true;
-  });
-
-  const todayKey = new Date().toISOString().slice(0, 10);
-  const convertedCount = filtered.filter((item) => item.__converted).length;
-  const activeCount = filtered.filter((item) => !item.__hidden && !item.__converted).length;
-  const inactiveCount = filtered.filter((item) => item.__hidden && !item.__converted).length;
-  const stats = {
-    today: filtered.filter((item) => item.__createdDate === todayKey).length,
-    active: activeCount,
-    inactive: inactiveCount,
-    converted: convertedCount,
-    total: activeCount + inactiveCount + convertedCount
-  };
-
-  const optionsOut = {
-    clients: Array.from(new Set(filtered.map((item) => String(item.clientName || "Unassigned").trim()).filter(Boolean))).sort((a, b) => a.localeCompare(b)),
-    jds: Array.from(new Set(filtered.map((item) => String(item.jdTitle || "").trim()).filter(Boolean))).sort((a, b) => a.localeCompare(b)),
-    locations: Array.from(new Set(filtered.map((item) => String(item.location || "").trim()).filter(Boolean))).sort((a, b) => a.localeCompare(b)),
-    ownedBy: Array.from(new Set(filtered.map((item) => String(item.__ownerLabel || "").trim()).filter(Boolean))).sort((a, b) => a.localeCompare(b)),
-    outcomes: Array.from(new Set(filtered.map((item) => String(item.__outcome || "").trim()).filter(Boolean))).sort((a, b) => a.localeCompare(b)),
-    activeStates: ["Active", "Inactive"]
-  };
-
-  const page = Math.max(1, Number(options.page || 1));
-  const limit = Math.max(1, Math.min(50, Number(options.limit || 25)));
-  const sorted = [...filtered].sort((a, b) => {
-    const t1 = Date.parse(String(a.updatedAt || a.createdAt || ""));
-    const t2 = Date.parse(String(b.updatedAt || b.createdAt || ""));
-    return (Number.isFinite(t2) ? t2 : 0) - (Number.isFinite(t1) ? t1 : 0);
-  });
-  const start = (page - 1) * limit;
-  const items = sorted.slice(start, start + limit).map((item) => {
-    const out = { ...item };
-    delete out.__hidden; delete out.__converted; delete out.__activeState; delete out.__ownerLabel; delete out.__outcome; delete out.__createdDate;
-    return out;
-  });
-
-  return {
-    total: sorted.length,
-    page,
-    limit,
-    hasMore: start + limit < sorted.length,
-    items,
-    stats,
-    options: optionsOut
-  };
+    .map(sanitizeApplicantCandidate);
 }
 
 function getSupabaseServiceConfig() {
@@ -15023,17 +14923,8 @@ const server = http.createServer(async (req, res) => {
       const user = await requireSessionUser(getBearerToken(req));
       await requireSaasAccess(user, "applied candidates pipeline");
       const q = String(requestUrl.searchParams.get("q") || "").trim();
-      let parsedFilters = {};
-      try {
-        const rawFilters = String(requestUrl.searchParams.get("filters") || "").trim();
-        parsedFilters = rawFilters ? JSON.parse(rawFilters) : {};
-      } catch {
-        parsedFilters = {};
-      }
-      const page = Math.max(1, Number(requestUrl.searchParams.get("page") || 1));
-      const limit = Math.max(1, Math.min(50, Number(requestUrl.searchParams.get("limit") || 25)));
-      const result = await listApplicantsForUser(user, { q, page, limit, filters: parsedFilters });
-      sendJson(res, 200, { ok: true, result });
+      const items = await listApplicantsForUser(user, { q, limit: 500 });
+      sendJson(res, 200, { ok: true, result: { total: items.length, items } });
     } catch (error) {
       sendJson(res, 400, { ok: false, error: String(error.message || error) });
     }
