@@ -7334,7 +7334,6 @@ function PortalApp({ token, onLogout }) {
   const [applicantsVisibleCount, setApplicantsVisibleCount] = useState(50);
   const [capturedPage, setCapturedPage] = useState(1);
   const [capturedPageSize, setCapturedPageSize] = useState(25);
-  const [capturedStatsSnapshot, setCapturedStatsSnapshot] = useState(null);
   const [bulkAssignApplicantModalOpen, setBulkAssignApplicantModalOpen] = useState(false);
   const [bulkAssignCandidateModalOpen, setBulkAssignCandidateModalOpen] = useState(false);
   const [dbCampaignAttachModal, setDbCampaignAttachModal] = useState({
@@ -9162,8 +9161,7 @@ function PortalApp({ token, onLogout }) {
     const needsAssessmentEvents = includeEvents && (pathname === "/dashboard" || pathname === "/assessments" || pathname === "/candidates" || forceCore || forceAll);
     const needsEmailSettings = includeEmailSettings && (pathname === "/mail-settings" || forceAll);
     const useLightCandidateFetch = pathname === "/assessments";
-    const capturedRoutePageSize = [10, 25, 50].includes(Number(capturedPageSize)) ? Number(capturedPageSize) : 25;
-    const candidateFetchLimit = pathname === "/captured-notes" ? capturedRoutePageSize : (useLightCandidateFetch ? 50 : 5000);
+    const candidateFetchLimit = useLightCandidateFetch ? 50 : 5000;
     const candidateFetchPage = 1;
     const candidateFetchMetaSuffix = useLightCandidateFetch ? "&includeMeta=1" : "";
     // Billing/access flags are used in sidebar gating across the app,
@@ -9554,7 +9552,7 @@ function PortalApp({ token, onLogout }) {
     }
   }
 
-  async function reloadCandidatesSlice({ includeDatabase = false, limit = 50, page = 1, includeMeta = false } = {}) {
+  async function reloadCandidatesSlice({ includeDatabase = false, limit = 5000, page = 1, includeMeta = false } = {}) {
     if (!token) return;
     const seq = (candidatesSliceLoadSeqRef.current || 0) + 1;
     candidatesSliceLoadSeqRef.current = seq;
@@ -9579,23 +9577,6 @@ function PortalApp({ token, onLogout }) {
         ? mergeCandidatesByFreshness(current.databaseCandidates, databaseRows)
         : current.databaseCandidates
     }));
-  }
-
-  async function refreshCapturedStatsSnapshot() {
-    if (!token) return;
-    const query = String(candidateFilters?.q || "").trim();
-    const params = new URLSearchParams();
-    params.set("source", "captured");
-    if (query) params.set("q", query);
-    const result = await api(`/candidates/stats?${params.toString()}`, token).catch(() => null);
-    if (!result || typeof result !== "object") return;
-    setCapturedStatsSnapshot({
-      today: Number(result.today || 0),
-      total: Number(result.total || 0),
-      active: Number(result.active || 0),
-      inactive: Number(result.hidden || 0),
-      converted: Number(result.converted || 0)
-    });
   }
 
   async function reloadAssessmentsSlice({ includeEvents = false } = {}) {
@@ -9667,12 +9648,6 @@ function PortalApp({ token, onLogout }) {
     void reloadCandidatesSlice({ limit: capturedSyncLimit, page: capturedSyncPage, includeMeta: true }).catch(() => {});
     return undefined;
   }, [token, location?.pathname, capturedSyncLimit, capturedSyncPage]);
-
-  useEffect(() => {
-    if (!token) return;
-    if (String(location?.pathname || "").trim() !== "/captured-notes") return;
-    void refreshCapturedStatsSnapshot();
-  }, [token, location?.pathname, candidateFilters?.q]);
 
   useEffect(() => {
     if (!token) return undefined;
@@ -11704,19 +11679,6 @@ function PortalApp({ token, onLogout }) {
   }, [assessmentFilters, state.assessments, state.candidates, resolveCanonicalJdTitle]);
 
   const renderLoadedMetricValue = (value) => (workspaceDataReady ? value : "…");
-  const capturedStatsForCards = useMemo(() => {
-    const hasDefaultFilters =
-      !String(candidateFilters?.dateFrom || "").trim()
-      && !String(candidateFilters?.dateTo || "").trim()
-      && !(Array.isArray(candidateFilters?.clients) && candidateFilters.clients.length)
-      && !(Array.isArray(candidateFilters?.jds) && candidateFilters.jds.length)
-      && !(Array.isArray(candidateFilters?.assignedTo) && candidateFilters.assignedTo.length)
-      && !(Array.isArray(candidateFilters?.capturedBy) && candidateFilters.capturedBy.length)
-      && !(Array.isArray(candidateFilters?.sources) && candidateFilters.sources.length)
-      && !(Array.isArray(candidateFilters?.outcomes) && candidateFilters.outcomes.length)
-      && String(candidateFilters?.view || "all").trim() === "all";
-    return hasDefaultFilters && capturedStatsSnapshot ? capturedStatsSnapshot : capturedNotesStats;
-  }, [candidateFilters, capturedStatsSnapshot, capturedNotesStats]);
 
   const capturedCandidates = useMemo(() => {
     const queryText = candidateFilters.q.trim().toLowerCase();
@@ -12884,8 +12846,7 @@ function PortalApp({ token, onLogout }) {
       };
     });
     if (!skipRefresh) {
-      await reloadCandidatesSlice({ includeDatabase: location?.pathname === "/candidates", limit: capturedSyncLimit, page: capturedSyncPage, includeMeta: true });
-      void refreshCapturedStatsSnapshot();
+      await reloadCandidatesSlice({ includeDatabase: location?.pathname === "/candidates" });
     }
   }
 
@@ -12976,8 +12937,7 @@ function PortalApp({ token, onLogout }) {
         })
         : current.databaseCandidates
     }));
-    await reloadCandidatesSlice({ includeDatabase: location?.pathname === "/candidates", limit: capturedSyncLimit, page: capturedSyncPage, includeMeta: true });
-    void refreshCapturedStatsSnapshot();
+    await reloadCandidatesSlice({ includeDatabase: location?.pathname === "/candidates" });
     setStatus("captured", "Candidate deleted.", "ok");
   }
 
@@ -13011,8 +12971,7 @@ function PortalApp({ token, onLogout }) {
       databaseCandidates: Array.isArray(current.databaseCandidates) ? current.databaseCandidates.filter((item) => !safeIds.includes(String(item?.id || "").trim())) : current.databaseCandidates
     }));
     setBulkAssignCandidateIds([]);
-    await reloadCandidatesSlice({ includeDatabase: location?.pathname === "/candidates", limit: capturedSyncLimit, page: capturedSyncPage, includeMeta: true });
-    void refreshCapturedStatsSnapshot();
+    await reloadCandidatesSlice({ includeDatabase: location?.pathname === "/candidates" });
     const msg = `Bulk delete done. Deleted: ${success} | Failed: ${failed}.`;
     setStatus("captured", failReasons.length ? `${msg} Reasons: ${failReasons.join(" || ")}` : msg, failed ? "error" : "ok");
   }
@@ -13254,8 +13213,7 @@ function PortalApp({ token, onLogout }) {
       assignedRecruiter
     });
     await api("/candidates", token, "POST", { candidate: payload });
-    await reloadCandidatesSlice({ includeDatabase: location?.pathname === "/candidates", limit: capturedSyncLimit, page: capturedSyncPage, includeMeta: true });
-    void refreshCapturedStatsSnapshot();
+    await reloadCandidatesSlice({ includeDatabase: location?.pathname === "/candidates" });
     setNewDraftOpen(false);
     resetNewDraftForm();
     setStatus("captured", "Manual draft created.", "ok");
@@ -13389,8 +13347,7 @@ function PortalApp({ token, onLogout }) {
           failed += 1;
         }
       }
-      await reloadCandidatesSlice({ includeDatabase: location?.pathname === "/candidates", limit: capturedSyncLimit, page: capturedSyncPage, includeMeta: true });
-      void refreshCapturedStatsSnapshot();
+      await reloadCandidatesSlice({ includeDatabase: location?.pathname === "/candidates" });
       setStatus("captured", `Bulk CV import done. Success: ${success} | Failed: ${failed}.`, failed ? "error" : "ok");
     } finally {
       setNewDraftImportBusy(false);
@@ -13634,8 +13591,7 @@ function PortalApp({ token, onLogout }) {
       setStatus("captured", `${summary}${details}`, failed ? "error" : "ok");
       void (async () => {
         try {
-          await reloadCandidatesSlice({ includeDatabase: location?.pathname === "/candidates", limit: capturedSyncLimit, page: capturedSyncPage, includeMeta: true });
-          void refreshCapturedStatsSnapshot();
+          await reloadCandidatesSlice({ includeDatabase: location?.pathname === "/candidates" });
           void refreshWorkspaceSilently("post-sheet-bulk-import");
         } catch {
           // Non-blocking refresh; summary already shown.
@@ -15024,8 +14980,7 @@ function PortalApp({ token, onLogout }) {
     if (assessment) {
       await reloadAssessmentsSlice();
     } else {
-      await reloadCandidatesSlice({ includeDatabase: location?.pathname === "/candidates", limit: capturedSyncLimit, page: capturedSyncPage, includeMeta: true });
-      void refreshCapturedStatsSnapshot();
+      await reloadCandidatesSlice({ includeDatabase: location?.pathname === "/candidates" });
     }
     void refreshWorkspaceSilently("post-client-feedback");
     await refreshOpenDrilldown();
@@ -20168,11 +20123,11 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                 </label>
               </div>
               <div className="metric-grid metric-grid--tight captured-metric-row">
-                <div className="metric-card compact-metric"><div className="metric-label captured-metric-label"><span className="captured-metric-icon">🗓</span>Today</div><div className="metric-value">{renderLoadedMetricValue(capturedStatsForCards.today)}</div></div>
-                <div className="metric-card compact-metric"><div className="metric-label captured-metric-label"><span className="captured-metric-icon">🗂</span>Total notes captured</div><div className="metric-value">{renderLoadedMetricValue(capturedStatsForCards.total)}</div></div>
-                <div className="metric-card compact-metric"><div className="metric-label captured-metric-label"><span className="captured-metric-icon">👥</span>Active</div><div className="metric-value">{renderLoadedMetricValue(capturedStatsForCards.active)}</div></div>
-                <div className="metric-card compact-metric"><div className="metric-label captured-metric-label"><span className="captured-metric-icon">⏳</span>Inactive</div><div className="metric-value">{renderLoadedMetricValue(capturedStatsForCards.inactive || 0)}</div></div>
-                <div className="metric-card compact-metric"><div className="metric-label captured-metric-label"><span className="captured-metric-icon">✅</span>Converted</div><div className="metric-value">{renderLoadedMetricValue(capturedStatsForCards.converted)}</div></div>
+                <div className="metric-card compact-metric"><div className="metric-label captured-metric-label"><span className="captured-metric-icon">🗓</span>Today</div><div className="metric-value">{renderLoadedMetricValue(capturedNotesStats.today)}</div></div>
+                <div className="metric-card compact-metric"><div className="metric-label captured-metric-label"><span className="captured-metric-icon">🗂</span>Total notes captured</div><div className="metric-value">{renderLoadedMetricValue(capturedNotesStats.total)}</div></div>
+                <div className="metric-card compact-metric"><div className="metric-label captured-metric-label"><span className="captured-metric-icon">👥</span>Active</div><div className="metric-value">{renderLoadedMetricValue(capturedNotesStats.active)}</div></div>
+                <div className="metric-card compact-metric"><div className="metric-label captured-metric-label"><span className="captured-metric-icon">⏳</span>Inactive</div><div className="metric-value">{renderLoadedMetricValue(capturedNotesStats.inactive || 0)}</div></div>
+                <div className="metric-card compact-metric"><div className="metric-label captured-metric-label"><span className="captured-metric-icon">✅</span>Converted</div><div className="metric-value">{renderLoadedMetricValue(capturedNotesStats.converted)}</div></div>
               </div>
               <div className="form-grid three-col" style={{ marginTop: 10 }}>
                 <label><span>Date from</span><input type="date" value={candidateFilters.dateFrom} onChange={(e) => setCandidateFilters((c) => ({ ...c, dateFrom: e.target.value }))} /></label>
