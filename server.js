@@ -3518,9 +3518,10 @@ async function listApplicantsForUser(user, options = {}) {
         baseFilterParts.push("assessment_id=is.null");
       } else if (only === "Inactive") {
         baseFilterParts.push("hidden_from_captured=is.true");
-        baseFilterParts.push("used_in_assessment=not.is.true");
-        baseFilterParts.push("assessment_id=is.null");
+        // Inactive includes hidden rows even if they were converted later.
       } else if (only === "Converted") {
+        // Converted excludes hidden rows; hidden+converted belongs to Inactive.
+        baseFilterParts.push("hidden_from_captured=not.is.true");
         baseFilterParts.push("or=(used_in_assessment.is.true,assessment_id.not.is.null)");
       }
     }
@@ -3872,23 +3873,31 @@ async function listCapturedForUser(user, options = {}) {
 async function getCapturedStatsForUser(user, options = {}) {
   const filters = normalizeCapturedFilterOptions(options.filters || {});
   // Tiny re-read by count queries (no full list scan).
-  const [all, active, inactive, converted, today] = await Promise.all([
-    listCapturedForUser(user, { limit: 1, page: 1, filters: { ...filters, activeStates: ["Active", "Inactive", "Converted"] } }),
+  const [active, inactive, converted, todayAll] = await Promise.all([
     listCapturedForUser(user, { limit: 1, page: 1, filters: { ...filters, activeStates: ["Active"] } }),
     listCapturedForUser(user, { limit: 1, page: 1, filters: { ...filters, activeStates: ["Inactive"] } }),
     listCapturedForUser(user, { limit: 1, page: 1, filters: { ...filters, activeStates: ["Converted"] } }),
     listCapturedForUser(user, {
       limit: 1,
       page: 1,
-      filters: { ...filters, dateFrom: new Date().toISOString().slice(0, 10), dateTo: new Date().toISOString().slice(0, 10) }
+      filters: {
+        ...filters,
+        activeStates: ["Active", "Inactive", "Converted"],
+        dateFrom: new Date().toISOString().slice(0, 10),
+        dateTo: new Date().toISOString().slice(0, 10)
+      }
     })
   ]);
+  const activeCount = Number(active?.total || 0);
+  const inactiveCount = Number(inactive?.total || 0);
+  const convertedCount = Number(converted?.total || 0);
+  const totalCount = activeCount + inactiveCount + convertedCount;
   return {
-    today: Number(today?.total || 0),
-    total: Number(all?.total || 0),
-    active: Number(active?.total || 0),
-    inactive: Number(inactive?.total || 0),
-    converted: Number(converted?.total || 0)
+    today: Number(todayAll?.total || 0),
+    total: totalCount,
+    active: activeCount,
+    inactive: inactiveCount,
+    converted: convertedCount
   };
 }
 
