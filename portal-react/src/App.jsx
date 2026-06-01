@@ -7423,6 +7423,7 @@ function PortalApp({ token, onLogout }) {
   const [assessmentLane, setAssessmentLane] = useState("active"); // active | archived
   const [capturedStatsSnapshot, setCapturedStatsSnapshot] = useState(null);
   const [capturedListItems, setCapturedListItems] = useState([]);
+  const [capturedOptionPool, setCapturedOptionPool] = useState([]);
   const [capturedListMeta, setCapturedListMeta] = useState({ total: 0, totalPages: 1, page: 1, limit: 25 });
   const [capturedListLoading, setCapturedListLoading] = useState(false);
   const capturedListRequestRef = useRef({ seq: 0, inflightQuery: "" });
@@ -9624,6 +9625,7 @@ function PortalApp({ token, onLogout }) {
     }
     const items = Array.isArray(envelope?.data?.items) ? envelope.data.items : [];
     setCapturedListItems(items);
+    setCapturedOptionPool((current) => mergeCandidatesByFreshness(current, items));
     setState((current) => ({
       ...current,
       candidates: mergeCandidatesByFreshness(current.candidates, items)
@@ -9821,8 +9823,14 @@ function PortalApp({ token, onLogout }) {
           return {};
         }
       })();
-      const eventType = String(payload?.eventType || "").trim();
-      const candidateId = String(payload?.candidateId || "").trim();
+      const eventType = String(payload?.eventType || payload?.type || "").trim();
+      const candidateId = String(
+        payload?.candidateId ||
+        payload?.candidate_id ||
+        payload?.id ||
+        payload?.candidate?.id ||
+        ""
+      ).trim();
       const refreshPromise = (candidateId && eventType !== "candidate_deleted")
         ? api(`/candidates?id=${encodeURIComponent(candidateId)}&scope=company&limit=1`, token)
             .then((rows) => {
@@ -11572,7 +11580,7 @@ function PortalApp({ token, onLogout }) {
       const adminName = String(adminUser?.name || "").trim();
       if (adminName) meta.capturedBy.add(adminName);
     }
-    for (const item of state.candidates || []) {
+    for (const item of capturedOptionPool || []) {
       const matchedAssessment = resolveCapturedAssessment(item);
       const sourceValue = String(item.source || "").trim();
       const isInboundApplicant = sourceValue === "website_apply" || sourceValue === "hosted_apply" || sourceValue === "google_sheet";
@@ -11601,7 +11609,7 @@ function PortalApp({ token, onLogout }) {
       ),
       activeStates: ["Active", "Inactive"]
     };
-  }, [capturedAssessmentMap, state.candidates, state.user, state.users, resolveCapturedAssessment, getClientScopedActiveJobTitles, candidateFilters.clients]);
+  }, [capturedAssessmentMap, capturedOptionPool, state.user, state.users, resolveCapturedAssessment, getClientScopedActiveJobTitles, candidateFilters.clients]);
 
   useEffect(() => {
     setAssessmentFilters((current) => {

@@ -4633,10 +4633,19 @@ function emitCapturedStreamEvent(companyId, eventType = "candidate_changed", pay
   if (!key) return;
   const list = capturedStreamByCompany.get(key) || [];
   if (!list.length) return;
+  const safePayload = (payload && typeof payload === "object") ? payload : {};
+  const derivedCandidateId = String(
+    safePayload?.candidateId ||
+    safePayload?.candidate_id ||
+    safePayload?.id ||
+    safePayload?.candidate?.id ||
+    ""
+  ).trim();
   const data = JSON.stringify({
     type: String(eventType || "candidate_changed").trim(),
     at: new Date().toISOString(),
-    ...((payload && typeof payload === "object") ? payload : {})
+    ...safePayload,
+    candidateId: derivedCandidateId || undefined
   });
   list.forEach((client) => {
     try {
