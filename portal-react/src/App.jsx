@@ -7411,6 +7411,19 @@ function PortalApp({ token, onLogout }) {
     outcomes: [],
     activeStates: []
   });
+  const [candidateFiltersApplied, setCandidateFiltersApplied] = useState({
+    q: "",
+    view: "all",
+    dateFrom: "",
+    dateTo: "",
+    clients: [],
+    jds: [],
+    assignedTo: [],
+    capturedBy: [],
+    sources: [],
+    outcomes: [],
+    activeStates: []
+  });
   const [assessmentFilters, setAssessmentFilters] = useState({
     q: "",
     dateFrom: "",
@@ -9582,7 +9595,7 @@ function PortalApp({ token, onLogout }) {
     setApplicantStatsSnapshot(statsEnvelope?.data || null);
   }
 
-  function buildCapturedQueryParams(filters = candidateFilters, page = capturedPage, limit = safeCapturedApiPageSize) {
+  function buildCapturedQueryParams(filters = candidateFiltersApplied, page = capturedPage, limit = safeCapturedApiPageSize) {
     const params = new URLSearchParams();
     params.set("limit", String(Math.max(1, Number(limit || 25))));
     params.set("page", String(Math.max(1, Number(page || 1))));
@@ -9606,7 +9619,7 @@ function PortalApp({ token, onLogout }) {
     return params.toString();
   }
 
-  async function reloadCapturedSlice(page = capturedPage, limit = safeCapturedApiPageSize, filters = candidateFilters) {
+  async function reloadCapturedSlice(page = capturedPage, limit = safeCapturedApiPageSize, filters = candidateFiltersApplied) {
     if (!token) return;
     const query = buildCapturedQueryParams(filters, page, limit);
     if (capturedListRequestRef.current.inflightQuery === query) return;
@@ -9638,7 +9651,7 @@ function PortalApp({ token, onLogout }) {
     });
   }
 
-  async function reloadCapturedStats(filters = candidateFilters) {
+  async function reloadCapturedStats(filters = candidateFiltersApplied) {
     if (!token) return;
     const query = buildCapturedQueryParams(filters, 1, 1);
     if (capturedStatsRequestRef.current.inflightQuery === query) return;
@@ -9792,11 +9805,11 @@ function PortalApp({ token, onLogout }) {
     if (String(location?.pathname || "").trim() !== "/captured-notes") return undefined;
     assessmentCaptureSyncAtRef.current = Date.now();
     void Promise.all([
-      reloadCapturedSlice(capturedPage, safeCapturedApiPageSize, candidateFilters),
-      reloadCapturedStats(candidateFilters)
+      reloadCapturedSlice(capturedPage, safeCapturedApiPageSize, candidateFiltersApplied),
+      reloadCapturedStats(candidateFiltersApplied)
     ]).catch(() => {});
     return undefined;
-  }, [token, location?.pathname, capturedPage, safeCapturedApiPageSize, candidateFilters]);
+  }, [token, location?.pathname, capturedPage, safeCapturedApiPageSize, candidateFiltersApplied]);
 
   useEffect(() => {
     if (!token) return undefined;
@@ -9847,9 +9860,9 @@ function PortalApp({ token, onLogout }) {
                 candidates: (current.candidates || []).filter((item) => String(item?.id || "") !== candidateId)
               }));
             })
-          : reloadCapturedSlice(capturedPage, safeCapturedApiPageSize, candidateFilters);
+          : reloadCapturedSlice(capturedPage, safeCapturedApiPageSize, candidateFiltersApplied);
       void refreshPromise
-        .then(() => reloadCapturedStats(candidateFilters))
+        .then(() => reloadCapturedStats(candidateFiltersApplied))
         .catch(() => {})
         .finally(() => {
           capturedLiveSyncInFlightRef.current = false;
@@ -9857,8 +9870,8 @@ function PortalApp({ token, onLogout }) {
             capturedLiveSyncPendingRef.current = false;
             capturedLiveSyncInFlightRef.current = true;
             void Promise.all([
-              reloadCapturedSlice(capturedPage, safeCapturedApiPageSize, candidateFilters),
-              reloadCapturedStats(candidateFilters)
+              reloadCapturedSlice(capturedPage, safeCapturedApiPageSize, candidateFiltersApplied),
+              reloadCapturedStats(candidateFiltersApplied)
             ])
               .catch(() => {})
               .finally(() => {
@@ -9874,7 +9887,7 @@ function PortalApp({ token, onLogout }) {
       try { source.removeEventListener("captured", onCaptured); } catch {}
       try { source.close(); } catch {}
     };
-  }, [token, location?.pathname, isCapturedUserEditing, capturedPage, safeCapturedApiPageSize, candidateFilters]);
+  }, [token, location?.pathname, isCapturedUserEditing, capturedPage, safeCapturedApiPageSize, candidateFiltersApplied]);
 
   useEffect(() => {
     if (!token) return;
@@ -9883,10 +9896,10 @@ function PortalApp({ token, onLogout }) {
     if (!capturedLiveSyncPendingRef.current) return;
     capturedLiveSyncPendingRef.current = false;
     void Promise.all([
-      reloadCapturedSlice(capturedPage, safeCapturedApiPageSize, candidateFilters),
-      reloadCapturedStats(candidateFilters)
+      reloadCapturedSlice(capturedPage, safeCapturedApiPageSize, candidateFiltersApplied),
+      reloadCapturedStats(candidateFiltersApplied)
     ]).catch(() => {});
-  }, [token, location?.pathname, isCapturedUserEditing, capturedPage, safeCapturedApiPageSize, candidateFilters]);
+  }, [token, location?.pathname, isCapturedUserEditing, capturedPage, safeCapturedApiPageSize, candidateFiltersApplied]);
 
   useEffect(() => {
     if (!token) return;
@@ -12137,17 +12150,17 @@ function PortalApp({ token, onLogout }) {
   useEffect(() => {
     setCapturedPage(1);
   }, [
-    candidateFilters.q,
-    candidateFilters.view,
-    candidateFilters.dateFrom,
-    candidateFilters.dateTo,
-    candidateFilters.clients,
-    candidateFilters.jds,
-    candidateFilters.assignedTo,
-    candidateFilters.capturedBy,
-    candidateFilters.sources,
-    candidateFilters.outcomes,
-    candidateFilters.activeStates,
+    candidateFiltersApplied.q,
+    candidateFiltersApplied.view,
+    candidateFiltersApplied.dateFrom,
+    candidateFiltersApplied.dateTo,
+    candidateFiltersApplied.clients,
+    candidateFiltersApplied.jds,
+    candidateFiltersApplied.assignedTo,
+    candidateFiltersApplied.capturedBy,
+    candidateFiltersApplied.sources,
+    candidateFiltersApplied.outcomes,
+    candidateFiltersApplied.activeStates,
     capturedPageSize
   ]);
 
@@ -20250,6 +20263,48 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                   <MultiSelectDropdown label="Outcome" options={capturedCandidateOptions.outcomes} selected={candidateFilters.outcomes} onToggle={(value) => setCandidateFilters((current) => ({ ...current, outcomes: value === "__all__" ? [] : current.outcomes.includes(value) ? current.outcomes.filter((item) => item !== value) : [...current.outcomes, value] }))} />
                   <MultiSelectDropdown label="State" options={capturedCandidateOptions.activeStates} selected={candidateFilters.activeStates} allowAll={false} emptySummary="Active only" onToggle={(value) => setCandidateFilters((current) => ({ ...current, activeStates: current.activeStates.includes(value) ? current.activeStates.filter((item) => item !== value) : [...current.activeStates, value] }))} />
                 </div>
+              <div className="button-row tight" style={{ marginTop: 8 }}>
+                <button
+                  onClick={() => {
+                    setCapturedPage(1);
+                    setCandidateFiltersApplied({
+                      ...candidateFilters,
+                      clients: [...(candidateFilters.clients || [])],
+                      jds: [...(candidateFilters.jds || [])],
+                      assignedTo: [...(candidateFilters.assignedTo || [])],
+                      capturedBy: [...(candidateFilters.capturedBy || [])],
+                      sources: [...(candidateFilters.sources || [])],
+                      outcomes: [...(candidateFilters.outcomes || [])],
+                      activeStates: [...(candidateFilters.activeStates || [])]
+                    });
+                  }}
+                >
+                  Apply filters
+                </button>
+                <button
+                  className="ghost-btn"
+                  onClick={() => {
+                    const reset = {
+                      q: "",
+                      view: "all",
+                      dateFrom: "",
+                      dateTo: "",
+                      clients: [],
+                      jds: [],
+                      assignedTo: [],
+                      capturedBy: [],
+                      sources: [],
+                      outcomes: [],
+                      activeStates: []
+                    };
+                    setCapturedPage(1);
+                    setCandidateFilters(reset);
+                    setCandidateFiltersApplied(reset);
+                  }}
+                >
+                  Reset
+                </button>
+              </div>
               <div className="button-row captured-copy-row">
                 <label className="copy-preset-control">
                   <span>Copy preset</span>

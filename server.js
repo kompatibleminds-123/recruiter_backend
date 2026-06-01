@@ -3684,7 +3684,8 @@ function applyCapturedFiltersLocal(row = {}, filters = {}, user = null) {
   if (!isCapturedCandidateRow(row)) return false;
   const isConverted = Boolean(row?.used_in_assessment) || Boolean(String(row?.assessment_id || row?.assessmentId || "").trim());
   const isHidden = row?.hidden_from_captured === true;
-  const state = isConverted ? "Converted" : (isHidden ? "Inactive" : "Active");
+  // Captured rule: hidden rows are always counted as Inactive (even if linked/converted).
+  const state = isHidden ? "Inactive" : (isConverted ? "Converted" : "Active");
   const activeStates = Array.isArray(filters?.activeStates) ? filters.activeStates : [];
   if (activeStates.length) {
     if (!activeStates.includes(state)) return false;
