@@ -5273,7 +5273,7 @@ async function saveAssessment({ actorUserId, companyId, assessment }) {
     try {
       const candidateRows = await sbSel(
         "candidates",
-        `select=id,assessment_id,used_in_assessment,hidden_from_captured&company_id=eq.${enc(companyId)}&id=eq.${enc(candidateId)}&limit=1`
+        `select=id,assessment_id,assessmentId,used_in_assessment,hidden_from_captured&company_id=eq.${enc(companyId)}&id=eq.${enc(candidateId)}&limit=1`
       ).catch(() => []);
       const candidateRow = candidateRows && candidateRows[0] ? candidateRows[0] : null;
       const linkedAssessmentId = String(candidateRow?.assessment_id || candidateRow?.assessmentId || "").trim();
