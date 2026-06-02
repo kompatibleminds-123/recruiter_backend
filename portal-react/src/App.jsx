@@ -5552,10 +5552,14 @@ function CandidateProfileModal({ open, candidate, onClose, onOpenCvOriginal, onO
       )
     : "";
   const heroAssignedTo = String(
+    baseCandidate?.assigned_to_name ||
+    baseCandidate?.assignedToName ||
+    baseCandidate?.recruiter_name ||
+    baseCandidate?.recruiterName ||
     linkedAssessment?.assigned_to_name ||
     linkedAssessment?.assignedToName ||
-    baseCandidate?.assigned_to_name ||
-    baseCandidate?.ownerRecruiter ||
+    linkedAssessment?.recruiter_name ||
+    linkedAssessment?.recruiterName ||
     "-"
   ).trim();
   const heroUpdatedAt = String(
@@ -10614,10 +10618,14 @@ function PortalApp({ token, onLogout }) {
       const clientValue = String(item?.clientName || matchedCandidate?.client_name || "").trim();
       // Always display the assignee for the assessment.
       const recruiterValue = String(
-        item?.assigned_to_name
-        || item?.assignedToName
-        || matchedCandidate?.assigned_to_name
+        matchedCandidate?.assigned_to_name
         || matchedCandidate?.assignedToName
+        || matchedCandidate?.recruiter_name
+        || matchedCandidate?.recruiterName
+        || item?.assigned_to_name
+        || item?.assignedToName
+        || item?.recruiter_name
+        || item?.recruiterName
         || ""
       ).trim();
       const outcomeValue = normalizeAssessmentStatusLabel(item?.candidateStatus || item?.candidate_status || "") || "No outcome";
@@ -10651,10 +10659,14 @@ function PortalApp({ token, onLogout }) {
 
   function getAssessmentOwnerLabel(assessment, linkedCandidate) {
     return String(
-      assessment?.assigned_to_name
-      || assessment?.assignedToName
-      || linkedCandidate?.assigned_to_name
+      linkedCandidate?.assigned_to_name
       || linkedCandidate?.assignedToName
+      || linkedCandidate?.recruiter_name
+      || linkedCandidate?.recruiterName
+      || assessment?.assigned_to_name
+      || assessment?.assignedToName
+      || assessment?.recruiter_name
+      || assessment?.recruiterName
       || ""
     ).trim();
   }
@@ -14391,32 +14403,24 @@ function PortalApp({ token, onLogout }) {
       assigned_to_name: String(
         state.candidates?.find((item) => String(item?.id || "") === String(interviewMeta.candidateId || ""))?.assigned_to_name
         || state.candidates?.find((item) => String(item?.id || "") === String(interviewMeta.candidateId || ""))?.assignedToName
-        || state.candidates?.find((item) => String(item?.id || "") === String(interviewMeta.candidateId || ""))?.recruiterName
-        || state.candidates?.find((item) => String(item?.id || "") === String(interviewMeta.candidateId || ""))?.recruiter_name
         || state.user?.name
         || ""
       ).trim(),
       assignedToName: String(
         state.candidates?.find((item) => String(item?.id || "") === String(interviewMeta.candidateId || ""))?.assigned_to_name
         || state.candidates?.find((item) => String(item?.id || "") === String(interviewMeta.candidateId || ""))?.assignedToName
-        || state.candidates?.find((item) => String(item?.id || "") === String(interviewMeta.candidateId || ""))?.recruiterName
-        || state.candidates?.find((item) => String(item?.id || "") === String(interviewMeta.candidateId || ""))?.recruiter_name
         || state.user?.name
         || ""
       ).trim(),
       recruiterName: String(
         state.candidates?.find((item) => String(item?.id || "") === String(interviewMeta.candidateId || ""))?.assigned_to_name
         || state.candidates?.find((item) => String(item?.id || "") === String(interviewMeta.candidateId || ""))?.assignedToName
-        || state.candidates?.find((item) => String(item?.id || "") === String(interviewMeta.candidateId || ""))?.recruiterName
-        || state.candidates?.find((item) => String(item?.id || "") === String(interviewMeta.candidateId || ""))?.recruiter_name
         || state.user?.name
         || ""
       ).trim(),
       recruiter_name: String(
         state.candidates?.find((item) => String(item?.id || "") === String(interviewMeta.candidateId || ""))?.assigned_to_name
         || state.candidates?.find((item) => String(item?.id || "") === String(interviewMeta.candidateId || ""))?.assignedToName
-        || state.candidates?.find((item) => String(item?.id || "") === String(interviewMeta.candidateId || ""))?.recruiterName
-        || state.candidates?.find((item) => String(item?.id || "") === String(interviewMeta.candidateId || ""))?.recruiter_name
         || state.user?.name
         || ""
       ).trim()
