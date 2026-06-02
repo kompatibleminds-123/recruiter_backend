@@ -4055,9 +4055,9 @@ async function countAssessmentsForUser(user, options = {}) {
   if (filters.recruiters.length) queryParts.push(`recruiter_name=in.(${filters.recruiters.map((item) => encodeURIComponent(item)).join(",")})`);
   if (filters.outcomes.length) queryParts.push(`candidate_status=in.(${filters.outcomes.map((item) => encodeURIComponent(item)).join(",")})`);
   if (lane === "active") {
-    queryParts.push("archived_at=is.null");
+    queryParts.push("payload->>archived=eq.false");
   } else if (lane === "archived") {
-    queryParts.push("archived_at=not.is.null");
+    queryParts.push("payload->>archived=eq.true");
   }
 
   const response = await fetch(`${url}/rest/v1/assessments?select=id&${queryParts.join("&")}&limit=1`, {
