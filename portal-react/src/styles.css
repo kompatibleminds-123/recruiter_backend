@@ -873,14 +873,14 @@ textarea { min-height: 92px; resize: vertical; }
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
 }
 .assessment-placard__head h3 {
   font-size: 0;
   line-height: 1.2;
   margin: 0;
 }
-.assessment-placard__title-row { min-width: 0; }
+.assessment-placard__title-row { min-width: 0; flex: 1 1 auto; }
 .assessment-placard__candidate-name {
   color: #162a4d;
   font-size: 20px;
@@ -905,6 +905,8 @@ textarea { min-height: 92px; resize: vertical; }
   display: inline-flex;
   align-items: center;
   justify-content: flex-end;
+  flex: 0 0 auto;
+  white-space: nowrap;
 }
 .assessment-placard__meta {
   display: grid;
@@ -1128,6 +1130,15 @@ textarea { min-height: 92px; resize: vertical; }
   }
 }
 @media (max-width: 620px) {
+  .assessment-placard__head-actions {
+    white-space: normal;
+  }
+  .assessment-select-row__checks {
+    flex-wrap: wrap;
+  }
+  .assessment-select-row__stack {
+    align-items: stretch;
+  }
   .assessment-placard__grid {
     grid-template-columns: 1fr;
   }
@@ -2898,6 +2909,12 @@ textarea { min-height: 92px; resize: vertical; }
   flex-wrap: wrap;
   gap: 0.42rem;
   align-items: center;
+}
+.assessment-select-row__stack {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.42rem;
 }
 .checkbox-pill--soft {
   background: #f2f7ff;

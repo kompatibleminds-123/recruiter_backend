@@ -20806,37 +20806,34 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                             <div className="assessment-placard__head-actions">
                               {assessmentLane === "active" && !isArchived ? (
                                 <div className="assessment-select-row__checks">
-                                  <button
-                                    type="button"
-                                    className={`checkbox-pill${selectedAssessmentIds.includes(String(item.id)) ? " active" : ""}`}
-                                    aria-pressed={selectedAssessmentIds.includes(String(item.id))}
-                                    onClick={() => { void toggleAssessmentSelectionWithBranding(item); }}
-                                  >
-                                    <span className="checkbox-pill__box" aria-hidden="true">
-                                      {selectedAssessmentIds.includes(String(item.id)) ? "✓" : ""}
-                                    </span>
-                                    <span>Select for client share</span>
-                                  </button>
-                                  <button
-                                    type="button"
-                                    className="checkbox-pill checkbox-pill--soft"
-                                    aria-pressed={isAssessmentShareBrandedCvEnabled(item)}
-                                    aria-hidden={!selectedAssessmentIds.includes(String(item.id))}
-                                    tabIndex={selectedAssessmentIds.includes(String(item.id)) ? 0 : -1}
-                                    style={{
-                                      visibility: selectedAssessmentIds.includes(String(item.id)) ? "visible" : "hidden",
-                                      pointerEvents: selectedAssessmentIds.includes(String(item.id)) ? "auto" : "none"
-                                    }}
-                                    onClick={() => {
-                                      if (!selectedAssessmentIds.includes(String(item.id))) return;
-                                      void setAssessmentShareBrandedCv(item, !isAssessmentShareBrandedCvEnabled(item));
-                                    }}
-                                  >
-                                    <span className="checkbox-pill__box" aria-hidden="true">
-                                      {isAssessmentShareBrandedCvEnabled(item) ? "✓" : ""}
-                                    </span>
-                                    <span>Share Branded CV</span>
-                                  </button>
+                                  <div className="assessment-select-row__stack">
+                                    <button
+                                      type="button"
+                                      className={`checkbox-pill${selectedAssessmentIds.includes(String(item.id)) ? " active" : ""}`}
+                                      aria-pressed={selectedAssessmentIds.includes(String(item.id))}
+                                      onClick={() => { void toggleAssessmentSelectionWithBranding(item); }}
+                                    >
+                                      <span className="checkbox-pill__box" aria-hidden="true">
+                                        {selectedAssessmentIds.includes(String(item.id)) ? "?" : ""}
+                                      </span>
+                                      <span>Select for client share</span>
+                                    </button>
+                                    {selectedAssessmentIds.includes(String(item.id)) ? (
+                                      <button
+                                        type="button"
+                                        className="checkbox-pill checkbox-pill--soft"
+                                        aria-pressed={isAssessmentShareBrandedCvEnabled(item)}
+                                        onClick={() => {
+                                          void setAssessmentShareBrandedCv(item, !isAssessmentShareBrandedCvEnabled(item));
+                                        }}
+                                      >
+                                        <span className="checkbox-pill__box" aria-hidden="true">
+                                          {isAssessmentShareBrandedCvEnabled(item) ? "?" : ""}
+                                        </span>
+                                        <span>Share Branded CV</span>
+                                      </button>
+                                    ) : null}
+                                  </div>
                                 </div>
                               ) : (
                                 <span className="muted">Archived</span>
