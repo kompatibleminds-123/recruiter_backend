@@ -16895,33 +16895,39 @@ function PortalApp({ token, onLogout }) {
     const current = assessment && typeof assessment === "object" ? assessment : null;
     const assessmentId = String(current?.id || "").trim();
     if (!assessmentId) return;
+    const nextShareBrandedCv = Boolean(enabled);
+    const patchVisibleAssessmentShareState = (currentRow, rowEnabled) => {
+      if (!currentRow || typeof currentRow !== "object") return currentRow;
+      return {
+        ...currentRow,
+        shareBrandedCv: Boolean(rowEnabled),
+        share_branded_cv: Boolean(rowEnabled),
+        payload: {
+          ...((currentRow && currentRow.payload && typeof currentRow.payload === "object") ? currentRow.payload : {}),
+          shareBrandedCv: Boolean(rowEnabled),
+          share_branded_cv: Boolean(rowEnabled)
+        }
+      };
+    };
     // Optimistic UI: reflect checkbox state immediately.
     setState((stateCurrent) => ({
       ...stateCurrent,
       assessments: (stateCurrent.assessments || []).map((item) => (
         String(item?.id || "").trim() === assessmentId
-          ? {
-              ...item,
-              shareBrandedCv: Boolean(enabled),
-              share_branded_cv: Boolean(enabled),
-              payload: {
-                ...((item && item.payload && typeof item.payload === "object") ? item.payload : {}),
-                shareBrandedCv: Boolean(enabled),
-                share_branded_cv: Boolean(enabled)
-              }
-            }
+          ? patchVisibleAssessmentShareState(item, nextShareBrandedCv)
           : item
       ))
     }));
+    patchVisibleAssessmentRow(patchVisibleAssessmentShareState(current, nextShareBrandedCv), "upsert");
     try {
       const next = {
         ...current,
-        shareBrandedCv: Boolean(enabled),
-        share_branded_cv: Boolean(enabled),
+        shareBrandedCv: nextShareBrandedCv,
+        share_branded_cv: nextShareBrandedCv,
         payload: {
           ...((current && current.payload && typeof current.payload === "object") ? current.payload : {}),
-          shareBrandedCv: Boolean(enabled),
-          share_branded_cv: Boolean(enabled)
+          shareBrandedCv: nextShareBrandedCv,
+          share_branded_cv: nextShareBrandedCv
         },
         updatedAt: new Date().toISOString()
       };
@@ -16931,21 +16937,30 @@ function PortalApp({ token, onLogout }) {
         ...stateCurrent,
         assessments: (stateCurrent.assessments || []).map((item) => (
           String(item?.id || "").trim() === savedId
-            ? {
-                ...item,
-                ...saved,
-                shareBrandedCv: Boolean(saved?.shareBrandedCv ?? saved?.share_branded_cv ?? enabled),
-                share_branded_cv: Boolean(saved?.share_branded_cv ?? saved?.shareBrandedCv ?? enabled),
-                payload: {
-                  ...((item && item.payload && typeof item.payload === "object") ? item.payload : {}),
-                  ...((saved && saved.payload && typeof saved.payload === "object") ? saved.payload : {}),
-                  shareBrandedCv: Boolean(saved?.payload?.shareBrandedCv ?? saved?.shareBrandedCv ?? saved?.share_branded_cv ?? enabled),
-                  share_branded_cv: Boolean(saved?.payload?.share_branded_cv ?? saved?.share_branded_cv ?? saved?.shareBrandedCv ?? enabled)
-                }
-              }
+            ? patchVisibleAssessmentShareState(
+                {
+                  ...item,
+                  ...saved,
+                  shareBrandedCv: Boolean(saved?.shareBrandedCv ?? saved?.share_branded_cv ?? nextShareBrandedCv),
+                  share_branded_cv: Boolean(saved?.share_branded_cv ?? saved?.shareBrandedCv ?? nextShareBrandedCv),
+                  payload: {
+                    ...((item && item.payload && typeof item.payload === "object") ? item.payload : {}),
+                    ...((saved && saved.payload && typeof saved.payload === "object") ? saved.payload : {}),
+                    shareBrandedCv: Boolean(saved?.payload?.shareBrandedCv ?? saved?.shareBrandedCv ?? saved?.share_branded_cv ?? nextShareBrandedCv),
+                    share_branded_cv: Boolean(saved?.payload?.share_branded_cv ?? saved?.share_branded_cv ?? saved?.shareBrandedCv ?? nextShareBrandedCv)
+                  }
+                },
+                Boolean(saved?.payload?.shareBrandedCv ?? saved?.shareBrandedCv ?? saved?.share_branded_cv ?? nextShareBrandedCv)
+              )
             : item
         ))
       }));
+      patchVisibleAssessmentRow(saved || {
+        ...current,
+        ...next,
+        shareBrandedCv: Boolean(saved?.shareBrandedCv ?? saved?.share_branded_cv ?? nextShareBrandedCv),
+        share_branded_cv: Boolean(saved?.share_branded_cv ?? saved?.shareBrandedCv ?? nextShareBrandedCv)
+      }, "upsert");
       setStatus("assessments", enabled ? "Share Branded CV enabled for this profile." : "Share Branded CV disabled for this profile.", "ok");
     } catch (error) {
       // Revert optimistic toggle on failure.
@@ -16953,19 +16968,11 @@ function PortalApp({ token, onLogout }) {
         ...stateCurrent,
         assessments: (stateCurrent.assessments || []).map((item) => (
           String(item?.id || "").trim() === assessmentId
-            ? {
-                ...item,
-                shareBrandedCv: !Boolean(enabled),
-                share_branded_cv: !Boolean(enabled),
-                payload: {
-                  ...((item && item.payload && typeof item.payload === "object") ? item.payload : {}),
-                  shareBrandedCv: !Boolean(enabled),
-                  share_branded_cv: !Boolean(enabled)
-                }
-              }
+            ? patchVisibleAssessmentShareState(item, !nextShareBrandedCv)
             : item
         ))
       }));
+      patchVisibleAssessmentRow(patchVisibleAssessmentShareState(current, !nextShareBrandedCv), "upsert");
       setStatus("assessments", String(error?.message || error || "Could not update branded CV preference."), "error");
     }
   }
@@ -20804,15 +20811,17 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                                     <span>Select for client share</span>
                                   </button>
                                   {selectedAssessmentIds.includes(String(item.id)) ? (
-                                    <label className="checkbox-pill checkbox-pill--soft">
-                                      <input
-                                        type="checkbox"
-                                        checked={isAssessmentShareBrandedCvEnabled(item)}
-                                        onClick={(e) => e.stopPropagation()}
-                                        onChange={(e) => { void setAssessmentShareBrandedCv(item, e.target.checked); }}
-                                      />
+                                    <button
+                                      type="button"
+                                      className={`checkbox-pill checkbox-pill--soft${isAssessmentShareBrandedCvEnabled(item) ? " active" : ""}`}
+                                      aria-pressed={isAssessmentShareBrandedCvEnabled(item)}
+                                      onClick={() => { void setAssessmentShareBrandedCv(item, !isAssessmentShareBrandedCvEnabled(item)); }}
+                                    >
+                                      <span className="checkbox-pill__box" aria-hidden="true">
+                                        {isAssessmentShareBrandedCvEnabled(item) ? "âœ“" : ""}
+                                      </span>
                                       <span>Share Branded CV</span>
-                                    </label>
+                                    </button>
                                   ) : null}
                                 </div>
                               ) : (
@@ -20937,21 +20946,22 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                               <div className="more-menu__dropdown more-menu__dropdown--inline" role="menu">
                                 {(() => {
                                   const linkedCandidate = assessmentLinkedCandidateMap.get(String(item.id || "")) || null;
+                                  const candidateForCv = linkedCandidate;
                                   const hasCv = candidateHasStoredCv(linkedCandidate);
                                   if (!hasCv) return null;
                                   return (
                                     <>
                                       <button type="button" className="more-menu__item" onClick={() => {
                                         closeAssessmentMoreMenu();
-                                        if (!linkedCandidate) return setStatus("assessments", "Linked candidate not found for this assessment.", "error");
-                                        openDatabaseCandidateCv(linkedCandidate);
+                                        if (!candidateForCv) return setStatus("assessments", "Linked candidate not found for this assessment.", "error");
+                                        openDatabaseCandidateCv(candidateForCv);
                                       }}>Open Original CV</button>
                                       <button type="button" className="more-menu__item" onClick={() => {
                                         closeAssessmentMoreMenu();
-                                        if (!linkedCandidate) return setStatus("assessments", "Linked candidate not found for this assessment.", "error");
-                                        void openBrandedCandidateCv(linkedCandidate);
+                                        if (!candidateForCv) return setStatus("assessments", "Linked candidate not found for this assessment.", "error");
+                                        void openBrandedCandidateCv(candidateForCv);
                                       }}>
-                                        {brandedCvOpeningId && linkedCandidate && brandedCvOpeningId === String(getCandidateProfileCvMeta(linkedCandidate)?.candidateId || "") ? "Opening Branded CV..." : "Open Branded CV"}
+                                        {brandedCvOpeningId && candidateForCv && brandedCvOpeningId === String(getCandidateProfileCvMeta(candidateForCv)?.candidateId || "") ? "Opening Branded CV..." : "Open Branded CV"}
                                       </button>
                                     </>
                                   );
