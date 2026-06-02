@@ -9593,6 +9593,7 @@ function PortalApp({ token, onLogout }) {
     if (String(filters?.dateTo || "").trim()) params.set("dateTo", String(filters.dateTo).trim());
     addCsv("clients", filters?.clients);
     addCsv("jds", filters?.jds);
+    addCsv("jdIds", getJobIdsForSelectedTitles(filters?.jds));
     addCsv("locations", filters?.locations);
     addCsv("ownedBy", filters?.ownedBy);
     addCsv("assignedTo", filters?.assignedTo);
@@ -9660,6 +9661,7 @@ function PortalApp({ token, onLogout }) {
     if (String(filters?.dateTo || "").trim()) params.set("dateTo", String(filters.dateTo).trim());
     addCsv("clients", filters?.clients);
     addCsv("jds", filters?.jds);
+    addCsv("jdIds", getJobIdsForSelectedTitles(filters?.jds));
     addCsv("assignedTo", filters?.assignedTo);
     addCsv("capturedBy", filters?.capturedBy);
     addCsv("sources", filters?.sources);
@@ -9805,6 +9807,7 @@ function PortalApp({ token, onLogout }) {
     if (String(filters?.dateTo || "").trim()) params.set("dateTo", String(filters.dateTo).trim());
     addCsv("clients", filters?.clients);
     addCsv("jds", filters?.jds);
+    addCsv("jdIds", getJobIdsForSelectedTitles(filters?.jds));
     addCsv("recruiters", filters?.recruiters);
     addCsv("outcomes", filters?.outcomes);
     if (lane) params.set("lane", String(lane || "active").trim() || "active");
@@ -9852,6 +9855,7 @@ function PortalApp({ token, onLogout }) {
     };
     addCsv("clients", filters?.clients);
     addCsv("jds", filters?.jds);
+    addCsv("jdIds", getJobIdsForSelectedTitles(filters?.jds));
     addCsv("recruiters", filters?.recruiters);
     addCsv("outcomes", filters?.outcomes);
     const query = params.toString();
@@ -10540,6 +10544,24 @@ function PortalApp({ token, onLogout }) {
     });
     return Array.from(titles).sort((a, b) => a.localeCompare(b));
   }, [activeJobTitlesForFilters, normalizeClientFilterKey]);
+  const getJobIdsForSelectedTitles = useCallback((selectedTitles = []) => {
+    const titleKeys = new Set((Array.isArray(selectedTitles) ? selectedTitles : [])
+      .map((value) => normalizeJobTitleKey(value))
+      .filter(Boolean));
+    if (!titleKeys.size) return [];
+    const jobs = Array.from(
+      new Map(
+        [
+          ...(Array.isArray(state.jobs) ? state.jobs : []),
+          ...(Array.isArray(jobsCatalog) ? jobsCatalog : [])
+        ].map((job) => [String(job?.id || `${job?.title || ""}`), job])
+      ).values()
+    );
+    return jobs
+      .filter((job) => titleKeys.has(normalizeJobTitleKey(job?.title || "")))
+      .map((job) => String(job?.id || "").trim())
+      .filter(Boolean);
+  }, [jobsCatalog, normalizeJobTitleKey, state.jobs]);
   const assessmentOptions = useMemo(() => {
     const clients = new Set();
     const recruiters = new Set();
@@ -12611,8 +12633,10 @@ function PortalApp({ token, onLogout }) {
         databaseCandidates: applyPatch(current.databaseCandidates)
       };
     });
-    await reloadApplicantsSlice();
-    void refreshWorkspaceSilently("post-applicant-hide");
+    void Promise.all([
+      reloadApplicantsSlice(),
+      reloadApplicantStats(applicantFiltersApplied)
+    ]).catch(() => {});
     setStatus("applicants", "Applicant hidden from active list.", "ok");
   }
 
@@ -12629,8 +12653,10 @@ function PortalApp({ token, onLogout }) {
         databaseCandidates: applyPatch(current.databaseCandidates)
       };
     });
-    await reloadApplicantsSlice();
-    void refreshWorkspaceSilently("post-applicant-restore");
+    void Promise.all([
+      reloadApplicantsSlice(),
+      reloadApplicantStats(applicantFiltersApplied)
+    ]).catch(() => {});
     setStatus("applicants", "Applicant restored to active list.", "ok");
   }
 
