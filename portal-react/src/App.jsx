@@ -5905,6 +5905,41 @@ function JdEmailModal({ open, jobs, value, ccSuggestions = [], onChange, onClose
   );
 }
 
+function JourneyModal({ open, title = "Journey", text = "", onClose, onCopy }) {
+  const [copied, setCopied] = useState(false);
+  useEffect(() => {
+    if (!open) setCopied(false);
+  }, [open]);
+  if (!open) return null;
+  return (
+    <div className="overlay" onClick={onClose}>
+      <div className="overlay-card overlay-card--wide journey-modal" onClick={(e) => e.stopPropagation()}>
+        <div className="overlay-header">
+          <div>
+            <h3>{title}</h3>
+            <p className="muted">Copied journey text for this assessment.</p>
+          </div>
+          <button className="ghost-btn" onClick={onClose}>Close</button>
+        </div>
+        <textarea
+          className="journey-modal__text"
+          readOnly
+          value={text}
+          onFocus={(e) => e.currentTarget.select()}
+        />
+        <div className="button-row">
+          <button onClick={async () => {
+            await onCopy?.();
+            setCopied(true);
+          }}>Copy again</button>
+          <button className="ghost-btn" onClick={onClose}>Done</button>
+          {copied ? <span className="status inline ok">Journey copied.</span> : null}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 const DASHBOARD_FILTER_STORAGE_KEY = "recruitdesk_portal_dashboard_filters_v1";
 
 function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs = true }) {
@@ -8195,6 +8230,11 @@ function PortalApp({ token, onLogout }) {
     attachJdFile: true,
     signatureText: "",
     signatureLinks: []
+  });
+  const [assessmentJourneyModal, setAssessmentJourneyModal] = useState({
+    open: false,
+    title: "",
+    text: ""
   });
   const [jdEmailCcSuggestions, setJdEmailCcSuggestions] = useState([]);
   const [jdEmailBusy, setJdEmailBusy] = useState(false);
@@ -18935,6 +18975,11 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
       candidate
     );
     await copyText(text);
+    setAssessmentJourneyModal({
+      open: true,
+      title: `${assessment?.candidateName || candidate?.name || "Candidate"} journey`,
+      text
+    });
     setStatus("assessments", "Journey copied.", "ok");
   }
 
@@ -24023,6 +24068,13 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
         busy={jdEmailBusy}
         status={jdEmailModalStatus.message}
         statusKind={jdEmailModalStatus.kind}
+      />
+      <JourneyModal
+        open={Boolean(assessmentJourneyModal.open)}
+        title={assessmentJourneyModal.title}
+        text={assessmentJourneyModal.text}
+        onClose={() => setAssessmentJourneyModal({ open: false, title: "", text: "" })}
+        onCopy={() => copyText(assessmentJourneyModal.text)}
       />
       <ClientFeedbackModal open={Boolean(clientFeedbackItem)} item={clientFeedbackItem} onClose={() => setClientFeedbackItem(null)} onSave={(payload) => void saveClientFeedback(payload)} />
     </div>
