@@ -4049,7 +4049,7 @@ function isAssessmentArchivedLocal(item = {}) {
 function getAssessmentFilterFieldValues(item = {}) {
   const clientValue = String(item?.clientName || item?.client_name || "").trim() || "Unassigned";
   const jdValue = String(item?.jdTitle || item?.jd_title || "").trim() || "Unassigned";
-  const recruiterValue = String(item?.recruiterName || item?.recruiter_name || "").trim() || "Unassigned";
+  const recruiterValue = String(item?.assigned_to_name || item?.assignedToName || item?.recruiterName || item?.recruiter_name || "").trim() || "Unassigned";
   const outcomeValue = normalizeAssessmentStatusLabel(item?.candidateStatus || item?.candidate_status || "") || "No outcome";
   const createdKey = String(item?.generatedAt || item?.createdAt || item?.created_at || item?.updatedAt || item?.updated_at || "").slice(0, 10);
   const hay = [
@@ -4176,7 +4176,10 @@ async function countAssessmentsForUser(user, options = {}) {
     const jdClause = buildJdFilterQueryClause(filters.jds, "jd_title");
     if (jdClause) queryParts.push(jdClause);
   }
-  if (filters.recruiters.length) queryParts.push(`recruiter_name=in.(${filters.recruiters.map((item) => encodeURIComponent(item)).join(",")})`);
+  if (filters.recruiters.length) {
+    const recruiterList = filters.recruiters.map((item) => encodeURIComponent(item)).join(",");
+    queryParts.push(`or=(assigned_to_name.in.(${recruiterList}),recruiter_name.in.(${recruiterList}))`);
+  }
   if (filters.outcomes.length) queryParts.push(`candidate_status=in.(${filters.outcomes.map((item) => encodeURIComponent(item)).join(",")})`);
   if (lane === "active") {
     queryParts.push("payload->>archived=eq.false");

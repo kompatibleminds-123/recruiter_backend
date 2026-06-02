@@ -1684,13 +1684,23 @@ function assessmentRow(assessment, actor, companyId) {
   const a = sanitizeAssessment(assessment);
   const id = persistedAssessmentId(a.id);
   const now = new Date().toISOString();
+  const assignedToName = String(
+    a.assigned_to_name
+    || a.assignedToName
+    || a.recruiterName
+    || a.recruiter_name
+    || actor?.name
+    || ""
+  ).trim();
   const next = {
     ...a,
     id,
     companyId,
     recruiterId: actor.id,
-    recruiterName: actor.name,
+    recruiterName: assignedToName || actor.name,
     recruiterEmail: actor.email,
+    assigned_to_name: assignedToName || actor.name,
+    assignedToName: assignedToName || actor.name,
     generatedAt: a.generatedAt || now,
     updatedAt: now,
     shareBrandedCv: Boolean(a.shareBrandedCv ?? a.share_branded_cv ?? a.payload?.shareBrandedCv ?? a.payload?.share_branded_cv ?? false),
@@ -1724,6 +1734,7 @@ function assessmentRow(assessment, actor, companyId) {
     jd_shortcuts: next.jdShortcuts || "",
     standard_questions: standardQuestions,
     recruiter_notes: next.recruiterNotes || "",
+    assigned_to_name: next.assignedToName || next.assigned_to_name || "",
     reason_of_change: next.reasonForChange || "",
     current_ctc: next.currentCtc || "",
     expected_ctc: next.expectedCtc || "",

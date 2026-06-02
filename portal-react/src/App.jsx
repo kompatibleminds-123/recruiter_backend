@@ -10612,7 +10612,17 @@ function PortalApp({ token, onLogout }) {
       );
       const clientValue = String(item?.clientName || matchedCandidate?.client_name || "").trim();
       // Always display the assigned recruiter (not assessment creator/last editor).
-      const recruiterValue = String(matchedCandidate?.assigned_to_name || item?.recruiterName || matchedCandidate?.recruiter_name || "").trim();
+      const recruiterValue = String(
+        item?.assigned_to_name
+        || item?.assignedToName
+        || item?.recruiterName
+        || item?.recruiter_name
+        || matchedCandidate?.assigned_to_name
+        || matchedCandidate?.assignedToName
+        || matchedCandidate?.recruiterName
+        || matchedCandidate?.recruiter_name
+        || ""
+      ).trim();
       const outcomeValue = normalizeAssessmentStatusLabel(item?.candidateStatus || item?.candidate_status || "") || "No outcome";
       if (clientValue) clients.add(clientValue);
       if (recruiterValue) recruiters.add(recruiterValue);
@@ -14251,6 +14261,18 @@ function PortalApp({ token, onLogout }) {
 
     const candidateDraft = candidate ? getCandidateDraftState(candidate) : {};
     const cvMeta = candidate ? decodePortalApplicantMetadata(candidate) : null;
+    const assignedRecruiterName = String(
+      candidate?.assigned_to_name
+      || candidate?.assignedToName
+      || sourceApplicant?.assigned_to_name
+      || sourceApplicant?.assignedToName
+      || candidate?.recruiterName
+      || candidate?.recruiter_name
+      || sourceApplicant?.recruiterName
+      || sourceApplicant?.recruiter_name
+      || state.user?.name
+      || ""
+    ).trim();
     const candidateCvAnalysis = cvMeta?.cvAnalysisCache?.result
       ? buildInterviewCvAnalysis({
           currentCompany: candidate?.company || sourceApplicant?.currentCompany || "",
@@ -14297,6 +14319,10 @@ function PortalApp({ token, onLogout }) {
       jdScreeningAnswers: candidateDraft.jdScreeningAnswers || {},
       cvAnalysis: candidateCvAnalysis,
       cvAnalysisApplied: false,
+      assigned_to_name: assignedRecruiterName,
+      assignedToName: assignedRecruiterName,
+      recruiterName: assignedRecruiterName,
+      recruiter_name: assignedRecruiterName,
       statusHistory: [{
         status: "CV shared",
         at: new Date().toISOString(),
@@ -14364,7 +14390,39 @@ function PortalApp({ token, onLogout }) {
             atLabel: ""
           }],
       questionMode: "basic",
-      generatedAt: new Date().toISOString()
+      generatedAt: new Date().toISOString(),
+      assigned_to_name: String(
+        state.candidates?.find((item) => String(item?.id || "") === String(interviewMeta.candidateId || ""))?.assigned_to_name
+        || state.candidates?.find((item) => String(item?.id || "") === String(interviewMeta.candidateId || ""))?.assignedToName
+        || state.candidates?.find((item) => String(item?.id || "") === String(interviewMeta.candidateId || ""))?.recruiterName
+        || state.candidates?.find((item) => String(item?.id || "") === String(interviewMeta.candidateId || ""))?.recruiter_name
+        || state.user?.name
+        || ""
+      ).trim(),
+      assignedToName: String(
+        state.candidates?.find((item) => String(item?.id || "") === String(interviewMeta.candidateId || ""))?.assigned_to_name
+        || state.candidates?.find((item) => String(item?.id || "") === String(interviewMeta.candidateId || ""))?.assignedToName
+        || state.candidates?.find((item) => String(item?.id || "") === String(interviewMeta.candidateId || ""))?.recruiterName
+        || state.candidates?.find((item) => String(item?.id || "") === String(interviewMeta.candidateId || ""))?.recruiter_name
+        || state.user?.name
+        || ""
+      ).trim(),
+      recruiterName: String(
+        state.candidates?.find((item) => String(item?.id || "") === String(interviewMeta.candidateId || ""))?.assigned_to_name
+        || state.candidates?.find((item) => String(item?.id || "") === String(interviewMeta.candidateId || ""))?.assignedToName
+        || state.candidates?.find((item) => String(item?.id || "") === String(interviewMeta.candidateId || ""))?.recruiterName
+        || state.candidates?.find((item) => String(item?.id || "") === String(interviewMeta.candidateId || ""))?.recruiter_name
+        || state.user?.name
+        || ""
+      ).trim(),
+      recruiter_name: String(
+        state.candidates?.find((item) => String(item?.id || "") === String(interviewMeta.candidateId || ""))?.assigned_to_name
+        || state.candidates?.find((item) => String(item?.id || "") === String(interviewMeta.candidateId || ""))?.assignedToName
+        || state.candidates?.find((item) => String(item?.id || "") === String(interviewMeta.candidateId || ""))?.recruiterName
+        || state.candidates?.find((item) => String(item?.id || "") === String(interviewMeta.candidateId || ""))?.recruiter_name
+        || state.user?.name
+        || ""
+      ).trim()
     };
     if (interviewMeta.candidateId) {
       const linkedCandidate = (state.candidates || []).find((item) => String(item?.id || "") === String(interviewMeta.candidateId));
@@ -19169,7 +19227,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
       company: assessment?.currentCompany || "",
       company_name: state.user?.companyName || "",
       outcome: normalizeAssessmentStatusLabel(assessment?.candidateStatus || ""),
-      recruiter_name: assessment?.recruiterName || state.user?.name || "",
+      recruiter_name: assessment?.assigned_to_name || assessment?.assignedToName || assessment?.recruiterName || assessment?.recruiter_name || state.user?.name || "",
       recruiter_notes: assessment?.recruiterNotes || "",
       location: assessment?.location || "",
       phone: assessment?.phoneNumber || "",
@@ -21044,7 +21102,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                   emptySummary={assessmentFilters.clients.length ? "No active jobs" : "Choose client first"}
                   onToggle={(value) => setAssessmentFilters((current) => ({ ...current, jds: value === "__all__" ? [] : current.jds.includes(value) ? current.jds.filter((item) => item !== value) : [...current.jds, value] }))}
                 />
-                <MultiSelectDropdown label="Recruiters" options={assessmentOptions.recruiters} selected={assessmentFilters.recruiters} onToggle={(value) => setAssessmentFilters((current) => ({ ...current, recruiters: value === "__all__" ? [] : current.recruiters.includes(value) ? current.recruiters.filter((item) => item !== value) : [...current.recruiters, value] }))} />
+                <MultiSelectDropdown label="Assigned to" options={assessmentOptions.recruiters} selected={assessmentFilters.recruiters} onToggle={(value) => setAssessmentFilters((current) => ({ ...current, recruiters: value === "__all__" ? [] : current.recruiters.includes(value) ? current.recruiters.filter((item) => item !== value) : [...current.recruiters, value] }))} />
                 <MultiSelectDropdown label="Outcome" options={assessmentOptions.outcomes} selected={assessmentFilters.outcomes} onToggle={(value) => setAssessmentFilters((current) => ({ ...current, outcomes: value === "__all__" ? [] : current.outcomes.includes(value) ? current.outcomes.filter((item) => item !== value) : [...current.outcomes, value] }))} />
               </div>
               <div className="button-row tight" style={{ marginTop: 8 }}>
