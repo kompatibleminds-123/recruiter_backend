@@ -4001,13 +4001,33 @@ async function listAssessmentsForUser(user, options = {}) {
   return { items, total, page, limit, totalPages: Math.max(1, Math.ceil(total / limit)) };
 }
 
+async function buildAssessmentVisibilityQueryForUser(user) {
+  const companyId = String(user?.companyId || "").trim();
+  const actorId = String(user?.id || "").trim();
+  const actorIsAdmin = String(user?.role || "").toLowerCase() === "admin";
+  const { on, url, key } = getSupabaseServiceConfig();
+  if (!(on && companyId)) return null;
+  if (actorIsAdmin) return null;
+
+  const visibleCandidates = await fetch(`${url}/rest/v1/candidates?select=id,email,phone&company_id=eq.${encodeURIComponent(companyId)}&or=(recruiter_id.eq.${encodeURIComponent(actorId)},assigned_to_user_id.eq.${encodeURIComponent(actorId)})&limit=5000`, {
+    headers: { apikey: key, Authorization: `Bearer ${key}` }
+  }).then(async (response) => (response.ok ? response.json() : [])).catch(() => []);
+
+  const visibleCandidateIds = Array.from(new Set((Array.isArray(visibleCandidates) ? visibleCandidates : []).map((candidate) => String(candidate?.id || "").trim()).filter(Boolean)));
+  const visibleEmails = Array.from(new Set((Array.isArray(visibleCandidates) ? visibleCandidates : []).map((candidate) => String(candidate?.email || "").trim().toLowerCase()).filter(Boolean)));
+  const visiblePhones = Array.from(new Set((Array.isArray(visibleCandidates) ? visibleCandidates : []).map((candidate) => String(candidate?.phone || "").replace(/\D/g, "").slice(-10)).filter(Boolean)));
+  const visibilityOrParts = [`recruiter_id.eq.${encodeURIComponent(actorId)}`];
+  if (visibleCandidateIds.length) visibilityOrParts.push(`candidate_id.in.(${visibleCandidateIds.map((id) => encodeURIComponent(id)).join(",")})`);
+  if (visibleEmails.length) visibilityOrParts.push(`email_id.in.(${visibleEmails.map((email) => encodeURIComponent(email)).join(",")})`);
+  if (visiblePhones.length) visibilityOrParts.push(`phone_number.in.(${visiblePhones.map((phone) => encodeURIComponent(phone)).join(",")})`);
+  return `or=(${visibilityOrParts.join(",")})`;
+}
+
 async function countAssessmentsForUser(user, options = {}) {
   const filters = normalizeAssessmentFilterOptions(options.filters || {});
   const lane = String(options?.lane || "all").trim() || "all";
   const companyId = String(user?.companyId || "").trim();
-  const actorId = String(user?.id || "").trim();
-  const actorName = String(user?.name || "").trim();
-  const actorIsAdmin = String(user?.role || "").toLowerCase() === "admin";
+  const visibilityQuery = String(options?.visibilityQuery || "").trim();
   const { on, url, key } = getSupabaseServiceConfig();
   if (!(on && companyId)) return 0;
 
@@ -4015,18 +4035,10 @@ async function countAssessmentsForUser(user, options = {}) {
     `company_id=eq.${encodeURIComponent(companyId)}`
   ];
 
-  if (!actorIsAdmin) {
-    const visibleCandidates = await fetch(`${url}/rest/v1/candidates?select=id,email,phone&company_id=eq.${encodeURIComponent(companyId)}&or=(recruiter_id.eq.${encodeURIComponent(actorId)},assigned_to_user_id.eq.${encodeURIComponent(actorId)})&limit=5000`, {
-      headers: { apikey: key, Authorization: `Bearer ${key}` }
-    }).then(async (response) => (response.ok ? response.json() : [])).catch(() => []);
-    const visibleCandidateIds = Array.from(new Set((Array.isArray(visibleCandidates) ? visibleCandidates : []).map((candidate) => String(candidate?.id || "").trim()).filter(Boolean)));
-    const visibleEmails = Array.from(new Set((Array.isArray(visibleCandidates) ? visibleCandidates : []).map((candidate) => String(candidate?.email || "").trim().toLowerCase()).filter(Boolean)));
-    const visiblePhones = Array.from(new Set((Array.isArray(visibleCandidates) ? visibleCandidates : []).map((candidate) => String(candidate?.phone || "").replace(/\D/g, "").slice(-10)).filter(Boolean)));
-    const visibilityOrParts = [`recruiter_id.eq.${encodeURIComponent(actorId)}`];
-    if (visibleCandidateIds.length) visibilityOrParts.push(`candidate_id.in.(${visibleCandidateIds.map((id) => encodeURIComponent(id)).join(",")})`);
-    if (visibleEmails.length) visibilityOrParts.push(`email_id.in.(${visibleEmails.map((email) => encodeURIComponent(email)).join(",")})`);
-    if (visiblePhones.length) visibilityOrParts.push(`phone_number.in.(${visiblePhones.map((phone) => encodeURIComponent(phone)).join(",")})`);
-    queryParts.push(`or=(${visibilityOrParts.join(",")})`);
+  if (visibilityQuery) queryParts.push(visibilityQuery);
+  else if (String(user?.role || "").toLowerCase() !== "admin") {
+    const fallbackVisibilityQuery = await buildAssessmentVisibilityQueryForUser(user);
+    if (fallbackVisibilityQuery) queryParts.push(fallbackVisibilityQuery);
   }
 
   if (filters.q) {
@@ -4064,11 +4076,12 @@ async function countAssessmentsForUser(user, options = {}) {
 async function getAssessmentStatsForUser(user, options = {}) {
   const filters = normalizeAssessmentFilterOptions(options.filters || {});
   const todayKey = new Date().toISOString().slice(0, 10);
+  const visibilityQuery = await buildAssessmentVisibilityQueryForUser(user);
   const [total, active, archived, today] = await Promise.all([
-    countAssessmentsForUser(user, { filters, lane: "all" }),
-    countAssessmentsForUser(user, { filters, lane: "active" }),
-    countAssessmentsForUser(user, { filters, lane: "archived" }),
-    countAssessmentsForUser(user, { filters: { ...filters, dateFrom: todayKey, dateTo: todayKey }, lane: "all" })
+    countAssessmentsForUser(user, { filters, lane: "all", visibilityQuery }),
+    countAssessmentsForUser(user, { filters, lane: "active", visibilityQuery }),
+    countAssessmentsForUser(user, { filters, lane: "archived", visibilityQuery }),
+    countAssessmentsForUser(user, { filters: { ...filters, dateFrom: todayKey, dateTo: todayKey }, lane: "all", visibilityQuery })
   ]);
   return {
     today,
