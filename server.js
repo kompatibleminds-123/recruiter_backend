@@ -3510,8 +3510,11 @@ async function listApplicantsForUser(user, options = {}) {
     if (filters.jds.length) baseFilterParts.push(`jd_title=in.(${filters.jds.map((item) => encodeURIComponent(item)).join(",")})`);
     if (filters.locations.length) baseFilterParts.push(`location=in.(${filters.locations.map((item) => encodeURIComponent(item)).join(",")})`);
     if (filters.assignedTo.length) baseFilterParts.push(`assigned_to_name=in.(${filters.assignedTo.map((item) => encodeURIComponent(item)).join(",")})`);
-    if (filters.activeStates.length === 1) {
-      const only = String(filters.activeStates[0] || "").trim();
+    const selectedStates = Array.isArray(filters.activeStates)
+      ? Array.from(new Set(filters.activeStates.map((item) => String(item || "").trim()).filter(Boolean)))
+      : [];
+    if (selectedStates.length === 1) {
+      const only = selectedStates[0];
       if (only === "Active") {
         baseFilterParts.push("hidden_from_captured=not.is.true");
         baseFilterParts.push("used_in_assessment=not.is.true");
@@ -3522,6 +3525,13 @@ async function listApplicantsForUser(user, options = {}) {
         baseFilterParts.push("hidden_from_captured=not.is.true");
         baseFilterParts.push("or=(used_in_assessment.is.true,assessment_id.not.is.null)");
       }
+    } else if (selectedStates.length === 2 && selectedStates.includes("Active") && selectedStates.includes("Inactive")) {
+      baseFilterParts.push("used_in_assessment=not.is.true");
+      baseFilterParts.push("assessment_id=is.null");
+    } else if (selectedStates.length >= 3) {
+      // All states are selected; keep the full captured universe except converted rows stay counter-only.
+      baseFilterParts.push("used_in_assessment=not.is.true");
+      baseFilterParts.push("assessment_id=is.null");
     }
     if (!includeConverted) {
       baseFilterParts.push("used_in_assessment=not.is.true");
