@@ -20776,10 +20776,17 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                             <div className="assessment-placard__head-actions">
                               {assessmentLane === "active" && !isArchived ? (
                                 <div className="assessment-select-row__checks">
-                                  <label className="checkbox-pill">
-                                    <input type="checkbox" checked={selectedAssessmentIds.includes(String(item.id))} onChange={() => { void toggleAssessmentSelectionWithBranding(item); }} />
+                                  <button
+                                    type="button"
+                                    className={`checkbox-pill${selectedAssessmentIds.includes(String(item.id)) ? " active" : ""}`}
+                                    aria-pressed={selectedAssessmentIds.includes(String(item.id))}
+                                    onClick={() => { void toggleAssessmentSelectionWithBranding(item); }}
+                                  >
+                                    <span className="checkbox-pill__box" aria-hidden="true">
+                                      {selectedAssessmentIds.includes(String(item.id)) ? "✓" : ""}
+                                    </span>
                                     <span>Select for client share</span>
-                                  </label>
+                                  </button>
                                   {selectedAssessmentIds.includes(String(item.id)) ? (
                                     <label className="checkbox-pill checkbox-pill--soft">
                                       <input
