@@ -10604,7 +10604,15 @@ function PortalApp({ token, onLogout }) {
         String(candidate.name || "").trim().toLowerCase() === String(item?.candidateName || "").trim().toLowerCase()
       );
       const clientValue = String(item?.clientName || matchedCandidate?.client_name || "").trim();
-      const recruiterValue = String(matchedCandidate?.assigned_to_name || matchedCandidate?.assignedToName || "").trim();
+      const recruiterValue = String(
+        item?.payload?.recruiterName
+        || item?.payload?.recruiter_name
+        || item?.recruiterName
+        || item?.recruiter_name
+        || matchedCandidate?.assigned_to_name
+        || matchedCandidate?.assignedToName
+        || ""
+      ).trim();
       const outcomeValue = normalizeAssessmentStatusLabel(item?.candidateStatus || item?.candidate_status || "") || "No outcome";
       if (clientValue) clients.add(clientValue);
       if (recruiterValue) recruiters.add(recruiterValue);
@@ -10635,7 +10643,11 @@ function PortalApp({ token, onLogout }) {
 
   function getAssessmentOwnerLabel(assessment, linkedCandidate) {
     return String(
-      linkedCandidate?.assigned_to_name
+      assessment?.payload?.recruiterName
+      || assessment?.payload?.recruiter_name
+      || assessment?.recruiterName
+      || assessment?.recruiter_name
+      || linkedCandidate?.assigned_to_name
       || linkedCandidate?.assignedToName
       || ""
     ).trim();
@@ -21192,7 +21204,11 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                     {(() => {
                       const linkedCandidate = resolveAssessmentLinkedCandidate(item);
                       const assignedTo = String(
-                        linkedCandidate?.assigned_to_name
+                        item?.payload?.recruiterName
+                        || item?.payload?.recruiter_name
+                        || item?.recruiterName
+                        || item?.recruiter_name
+                        || linkedCandidate?.assigned_to_name
                         || linkedCandidate?.assignedToName
                         || ""
                       ).trim() || "NA";
