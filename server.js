@@ -4220,7 +4220,7 @@ async function countAssessmentsForUser(user, options = {}) {
     const escaped = String(filters.q || "").replace(/[%*]/g, "").trim();
     if (escaped) {
       const like = `*${escaped.replace(/,/g, " ")}*`;
-      queryParts.push(`or=(candidate_name.ilike.${encodeURIComponent(like)},email_id.ilike.${encodeURIComponent(like)},phone_number.ilike.${encodeURIComponent(like)},client_name.ilike.${encodeURIComponent(like)},jd_title.ilike.${encodeURIComponent(like)},assigned_to_name.ilike.${encodeURIComponent(like)})`);
+      queryParts.push(`or=(candidate_name.ilike.${encodeURIComponent(like)},email_id.ilike.${encodeURIComponent(like)},phone_number.ilike.${encodeURIComponent(like)},client_name.ilike.${encodeURIComponent(like)},jd_title.ilike.${encodeURIComponent(like)})`);
     }
   }
   if (filters.dateFrom) queryParts.push(`created_at=gte.${encodeURIComponent(`${filters.dateFrom}T00:00:00.000Z`)}`);

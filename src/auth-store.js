@@ -1751,7 +1751,6 @@ function assessmentRow(assessment, actor, companyId) {
     jd_shortcuts: next.jdShortcuts || "",
     standard_questions: standardQuestions,
     recruiter_notes: next.recruiterNotes || "",
-    assigned_to_name: next.assignedToName || next.assigned_to_name || "",
     reason_of_change: next.reasonForChange || "",
     current_ctc: next.currentCtc || "",
     expected_ctc: next.expectedCtc || "",
