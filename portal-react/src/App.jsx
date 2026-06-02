@@ -12627,43 +12627,165 @@ function PortalApp({ token, onLogout }) {
       setStatus("applicants", "Cannot hide: missing applicant id.", "error");
       return;
     }
-    await api(`/company/candidates/${encodeURIComponent(applicantId)}`, token, "PATCH", { patch: { hidden_from_captured: true } });
-    setState((current) => {
-      const applyPatch = (items) => Array.isArray(items)
-        ? items.map((item) => String(item?.id || "") === String(applicantId) ? { ...item, hidden_from_captured: true } : item)
-        : items;
+    const currentActiveStates = Array.isArray(applicantFiltersApplied.activeStates) && applicantFiltersApplied.activeStates.length
+      ? applicantFiltersApplied.activeStates
+      : ["Active"];
+    const shouldRemainVisible = currentActiveStates.includes("Inactive");
+    const optimisticUpdatedAt = new Date().toISOString();
+    const patchHiddenState = (items, hidden) => Array.isArray(items)
+      ? items.map((item) => String(item?.id || "") === String(applicantId)
+        ? { ...item, hidden_from_captured: hidden, updated_at: optimisticUpdatedAt, updatedAt: optimisticUpdatedAt }
+        : item)
+      : items;
+    setState((current) => ({
+      ...current,
+      applicants: shouldRemainVisible
+        ? patchHiddenState(current.applicants, true)
+        : (Array.isArray(current.applicants) ? current.applicants.filter((item) => String(item?.id || "") !== String(applicantId)) : current.applicants),
+      candidates: patchHiddenState(current.candidates, true),
+      databaseCandidates: patchHiddenState(current.databaseCandidates, true)
+    }));
+    if (!shouldRemainVisible) {
+      setApplicantListMeta((current) => {
+        const meta = current && typeof current === "object" ? current : {};
+        const nextTotal = Math.max(0, Number(meta.total || 0) - 1);
+        const limit = Math.max(1, Number(meta.limit || safeApplicantApiPageSize || 25));
+        return {
+          ...meta,
+          total: nextTotal,
+          totalPages: Math.max(1, Math.ceil(nextTotal / limit)),
+          page: Math.min(Math.max(1, Number(meta.page || safeApplicantApiPage || 1)), Math.max(1, Math.ceil(nextTotal / limit))),
+          limit
+        };
+      });
+    }
+    setApplicantStatsSnapshot((current) => {
+      if (!current || typeof current !== "object") return current;
       return {
         ...current,
-        applicants: applyPatch(current.applicants),
-        candidates: applyPatch(current.candidates),
-        databaseCandidates: applyPatch(current.databaseCandidates)
+        active: Math.max(0, Number(current.active || 0) - 1),
+        inactive: Math.max(0, Number(current.inactive || 0) + 1)
       };
     });
-    void Promise.all([
-      reloadApplicantsSlice(),
-      reloadApplicantStats(applicantFiltersApplied)
-    ]).catch(() => {});
-    setStatus("applicants", "Applicant hidden from active list.", "ok");
+    try {
+      await api(`/company/candidates/${encodeURIComponent(applicantId)}`, token, "PATCH", { patch: { hidden_from_captured: true } });
+      setStatus("applicants", "Applicant hidden from active list.", "ok");
+    } catch (error) {
+      setState((current) => ({
+        ...current,
+        applicants: shouldRemainVisible
+          ? patchHiddenState(current.applicants, false)
+          : (Array.isArray(current.applicants) ? current.applicants.map((item) => String(item?.id || "") === String(applicantId)
+            ? { ...item, hidden_from_captured: false, updated_at: optimisticUpdatedAt, updatedAt: optimisticUpdatedAt }
+            : item) : current.applicants),
+        candidates: patchHiddenState(current.candidates, false),
+        databaseCandidates: patchHiddenState(current.databaseCandidates, false)
+      }));
+      if (!shouldRemainVisible) {
+        setApplicantListMeta((current) => {
+          const meta = current && typeof current === "object" ? current : {};
+          const nextTotal = Math.max(0, Number(meta.total || 0) + 1);
+          const limit = Math.max(1, Number(meta.limit || safeApplicantApiPageSize || 25));
+          return {
+            ...meta,
+            total: nextTotal,
+            totalPages: Math.max(1, Math.ceil(nextTotal / limit)),
+            page: Math.min(Math.max(1, Number(meta.page || safeApplicantApiPage || 1)), Math.max(1, Math.ceil(nextTotal / limit))),
+            limit
+          };
+        });
+      }
+      setApplicantStatsSnapshot((current) => {
+        if (!current || typeof current !== "object") return current;
+        return {
+          ...current,
+          active: Math.max(0, Number(current.active || 0) + 1),
+          inactive: Math.max(0, Number(current.inactive || 0) - 1)
+        };
+      });
+      setStatus("applicants", String(error?.message || error), "error");
+    }
   }
 
   async function restoreApplicant(applicantId) {
-    await api(`/company/candidates/${encodeURIComponent(applicantId)}`, token, "PATCH", { patch: { hidden_from_captured: false } });
-    setState((current) => {
-      const applyPatch = (items) => Array.isArray(items)
-        ? items.map((item) => String(item?.id || "") === String(applicantId) ? { ...item, hidden_from_captured: false } : item)
-        : items;
+    const currentActiveStates = Array.isArray(applicantFiltersApplied.activeStates) && applicantFiltersApplied.activeStates.length
+      ? applicantFiltersApplied.activeStates
+      : ["Active"];
+    const shouldRemainVisible = currentActiveStates.includes("Active");
+    const optimisticUpdatedAt = new Date().toISOString();
+    const patchHiddenState = (items, hidden) => Array.isArray(items)
+      ? items.map((item) => String(item?.id || "") === String(applicantId)
+        ? { ...item, hidden_from_captured: hidden, updated_at: optimisticUpdatedAt, updatedAt: optimisticUpdatedAt }
+        : item)
+      : items;
+    setState((current) => ({
+      ...current,
+      applicants: shouldRemainVisible
+        ? patchHiddenState(current.applicants, false)
+        : (Array.isArray(current.applicants) ? current.applicants.filter((item) => String(item?.id || "") !== String(applicantId)) : current.applicants),
+      candidates: patchHiddenState(current.candidates, false),
+      databaseCandidates: patchHiddenState(current.databaseCandidates, false)
+    }));
+    if (!shouldRemainVisible) {
+      setApplicantListMeta((current) => {
+        const meta = current && typeof current === "object" ? current : {};
+        const nextTotal = Math.max(0, Number(meta.total || 0) - 1);
+        const limit = Math.max(1, Number(meta.limit || safeApplicantApiPageSize || 25));
+        return {
+          ...meta,
+          total: nextTotal,
+          totalPages: Math.max(1, Math.ceil(nextTotal / limit)),
+          page: Math.min(Math.max(1, Number(meta.page || safeApplicantApiPage || 1)), Math.max(1, Math.ceil(nextTotal / limit))),
+          limit
+        };
+      });
+    }
+    setApplicantStatsSnapshot((current) => {
+      if (!current || typeof current !== "object") return current;
       return {
         ...current,
-        applicants: applyPatch(current.applicants),
-        candidates: applyPatch(current.candidates),
-        databaseCandidates: applyPatch(current.databaseCandidates)
+        active: Math.max(0, Number(current.active || 0) + 1),
+        inactive: Math.max(0, Number(current.inactive || 0) - 1)
       };
     });
-    void Promise.all([
-      reloadApplicantsSlice(),
-      reloadApplicantStats(applicantFiltersApplied)
-    ]).catch(() => {});
-    setStatus("applicants", "Applicant restored to active list.", "ok");
+    try {
+      await api(`/company/candidates/${encodeURIComponent(applicantId)}`, token, "PATCH", { patch: { hidden_from_captured: false } });
+      setStatus("applicants", "Applicant restored to active list.", "ok");
+    } catch (error) {
+      setState((current) => ({
+        ...current,
+        applicants: shouldRemainVisible
+          ? patchHiddenState(current.applicants, true)
+          : (Array.isArray(current.applicants) ? current.applicants.map((item) => String(item?.id || "") === String(applicantId)
+            ? { ...item, hidden_from_captured: true, updated_at: optimisticUpdatedAt, updatedAt: optimisticUpdatedAt }
+            : item) : current.applicants),
+        candidates: patchHiddenState(current.candidates, true),
+        databaseCandidates: patchHiddenState(current.databaseCandidates, true)
+      }));
+      if (!shouldRemainVisible) {
+        setApplicantListMeta((current) => {
+          const meta = current && typeof current === "object" ? current : {};
+          const nextTotal = Math.max(0, Number(meta.total || 0) + 1);
+          const limit = Math.max(1, Number(meta.limit || safeApplicantApiPageSize || 25));
+          return {
+            ...meta,
+            total: nextTotal,
+            totalPages: Math.max(1, Math.ceil(nextTotal / limit)),
+            page: Math.min(Math.max(1, Number(meta.page || safeApplicantApiPage || 1)), Math.max(1, Math.ceil(nextTotal / limit))),
+            limit
+          };
+        });
+      }
+      setApplicantStatsSnapshot((current) => {
+        if (!current || typeof current !== "object") return current;
+        return {
+          ...current,
+          active: Math.max(0, Number(current.active || 0) - 1),
+          inactive: Math.max(0, Number(current.inactive || 0) + 1)
+        };
+      });
+      setStatus("applicants", String(error?.message || error), "error");
+    }
   }
 
   async function saveApplicantAssignment({ recruiterId, jdId, jdTitle, clientName, targetIds = [] }) {
@@ -12933,35 +13055,169 @@ function PortalApp({ token, onLogout }) {
       setStatus("captured", "Cannot hide: missing candidate id.", "error");
       return;
     }
-    await api(`/company/candidates/${encodeURIComponent(candidateId)}`, token, "PATCH", { patch: { hidden_from_captured: true } });
     const optimisticUpdatedAt = new Date().toISOString();
-    setState((current) => {
-      const applyPatch = (items) => Array.isArray(items)
-        ? items.map((item) => String(item?.id || "") === String(candidateId) ? { ...item, hidden_from_captured: true, updated_at: optimisticUpdatedAt, updatedAt: optimisticUpdatedAt } : item)
-        : items;
+    const currentActiveStates = Array.isArray(candidateFiltersApplied.activeStates) && candidateFiltersApplied.activeStates.length
+      ? candidateFiltersApplied.activeStates
+      : ["Active"];
+    const shouldRemainVisible = currentActiveStates.includes("Inactive");
+    const patchHiddenState = (items, hidden) => Array.isArray(items)
+      ? items.map((item) => String(item?.id || "") === String(candidateId)
+        ? { ...item, hidden_from_captured: hidden, updated_at: optimisticUpdatedAt, updatedAt: optimisticUpdatedAt }
+        : item)
+      : items;
+    setCapturedListItems((current) => (shouldRemainVisible
+      ? patchHiddenState(current, true)
+      : (Array.isArray(current) ? current.filter((item) => String(item?.id || "") !== String(candidateId)) : current)));
+    setCapturedOptionPool((current) => patchHiddenState(current, true));
+    setState((current) => ({
+      ...current,
+      candidates: patchHiddenState(current.candidates, true),
+      databaseCandidates: patchHiddenState(current.databaseCandidates, true)
+    }));
+    if (!shouldRemainVisible) {
+      setCapturedListMeta((current) => {
+        const meta = current && typeof current === "object" ? current : {};
+        const nextTotal = Math.max(0, Number(meta.total || 0) - 1);
+        const limit = Math.max(1, Number(meta.limit || safeCapturedApiPageSize || 25));
+        return {
+          ...meta,
+          total: nextTotal,
+          totalPages: Math.max(1, Math.ceil(nextTotal / limit)),
+          page: Math.min(Math.max(1, Number(meta.page || capturedPage || 1)), Math.max(1, Math.ceil(nextTotal / limit))),
+          limit
+        };
+      });
+    }
+    setCapturedStatsSnapshot((current) => {
+      if (!current || typeof current !== "object") return current;
       return {
         ...current,
-        candidates: applyPatch(current.candidates),
-        databaseCandidates: applyPatch(current.databaseCandidates)
+        active: Math.max(0, Number(current.active || 0) - 1),
+        inactive: Math.max(0, Number(current.inactive || 0) + 1)
       };
     });
-    setStatus("captured", "Candidate hidden from captured notes.", "ok");
+    try {
+      await api(`/company/candidates/${encodeURIComponent(candidateId)}`, token, "PATCH", { patch: { hidden_from_captured: true } });
+      setStatus("captured", "Candidate hidden from captured notes.", "ok");
+    } catch (error) {
+      setCapturedListItems((current) => (shouldRemainVisible
+        ? patchHiddenState(current, false)
+        : (Array.isArray(current) ? current.map((item) => String(item?.id || "") === String(candidateId)
+          ? { ...item, hidden_from_captured: false, updated_at: optimisticUpdatedAt, updatedAt: optimisticUpdatedAt }
+          : item) : current)));
+      setCapturedOptionPool((current) => patchHiddenState(current, false));
+      setState((current) => ({
+        ...current,
+        candidates: patchHiddenState(current.candidates, false),
+        databaseCandidates: patchHiddenState(current.databaseCandidates, false)
+      }));
+      if (!shouldRemainVisible) {
+        setCapturedListMeta((current) => {
+          const meta = current && typeof current === "object" ? current : {};
+          const nextTotal = Math.max(0, Number(meta.total || 0) + 1);
+          const limit = Math.max(1, Number(meta.limit || safeCapturedApiPageSize || 25));
+          return {
+            ...meta,
+            total: nextTotal,
+            totalPages: Math.max(1, Math.ceil(nextTotal / limit)),
+            page: Math.min(Math.max(1, Number(meta.page || capturedPage || 1)), Math.max(1, Math.ceil(nextTotal / limit))),
+            limit
+          };
+        });
+      }
+      setCapturedStatsSnapshot((current) => {
+        if (!current || typeof current !== "object") return current;
+        return {
+          ...current,
+          active: Math.max(0, Number(current.active || 0) + 1),
+          inactive: Math.max(0, Number(current.inactive || 0) - 1)
+        };
+      });
+      setStatus("captured", String(error?.message || error), "error");
+    }
   }
 
   async function restoreCapturedCandidate(candidateId) {
-    await api(`/company/candidates/${encodeURIComponent(candidateId)}`, token, "PATCH", { patch: { hidden_from_captured: false } });
     const optimisticUpdatedAt = new Date().toISOString();
-    setState((current) => {
-      const applyPatch = (items) => Array.isArray(items)
-        ? items.map((item) => String(item?.id || "") === String(candidateId) ? { ...item, hidden_from_captured: false, updated_at: optimisticUpdatedAt, updatedAt: optimisticUpdatedAt } : item)
-        : items;
+    const currentActiveStates = Array.isArray(candidateFiltersApplied.activeStates) && candidateFiltersApplied.activeStates.length
+      ? candidateFiltersApplied.activeStates
+      : ["Active"];
+    const shouldRemainVisible = currentActiveStates.includes("Active");
+    const patchHiddenState = (items, hidden) => Array.isArray(items)
+      ? items.map((item) => String(item?.id || "") === String(candidateId)
+        ? { ...item, hidden_from_captured: hidden, updated_at: optimisticUpdatedAt, updatedAt: optimisticUpdatedAt }
+        : item)
+      : items;
+    setCapturedListItems((current) => (shouldRemainVisible
+      ? patchHiddenState(current, false)
+      : (Array.isArray(current) ? current.filter((item) => String(item?.id || "") !== String(candidateId)) : current)));
+    setCapturedOptionPool((current) => patchHiddenState(current, false));
+    setState((current) => ({
+      ...current,
+      candidates: patchHiddenState(current.candidates, false),
+      databaseCandidates: patchHiddenState(current.databaseCandidates, false)
+    }));
+    if (!shouldRemainVisible) {
+      setCapturedListMeta((current) => {
+        const meta = current && typeof current === "object" ? current : {};
+        const nextTotal = Math.max(0, Number(meta.total || 0) - 1);
+        const limit = Math.max(1, Number(meta.limit || safeCapturedApiPageSize || 25));
+        return {
+          ...meta,
+          total: nextTotal,
+          totalPages: Math.max(1, Math.ceil(nextTotal / limit)),
+          page: Math.min(Math.max(1, Number(meta.page || capturedPage || 1)), Math.max(1, Math.ceil(nextTotal / limit))),
+          limit
+        };
+      });
+    }
+    setCapturedStatsSnapshot((current) => {
+      if (!current || typeof current !== "object") return current;
       return {
         ...current,
-        candidates: applyPatch(current.candidates),
-        databaseCandidates: applyPatch(current.databaseCandidates)
+        active: Math.max(0, Number(current.active || 0) + 1),
+        inactive: Math.max(0, Number(current.inactive || 0) - 1)
       };
     });
-    setStatus("captured", "Candidate restored to active captured notes.", "ok");
+    try {
+      await api(`/company/candidates/${encodeURIComponent(candidateId)}`, token, "PATCH", { patch: { hidden_from_captured: false } });
+      setStatus("captured", "Candidate restored to active captured notes.", "ok");
+    } catch (error) {
+      setCapturedListItems((current) => (shouldRemainVisible
+        ? patchHiddenState(current, true)
+        : (Array.isArray(current) ? current.map((item) => String(item?.id || "") === String(candidateId)
+          ? { ...item, hidden_from_captured: true, updated_at: optimisticUpdatedAt, updatedAt: optimisticUpdatedAt }
+          : item) : current)));
+      setCapturedOptionPool((current) => patchHiddenState(current, true));
+      setState((current) => ({
+        ...current,
+        candidates: patchHiddenState(current.candidates, true),
+        databaseCandidates: patchHiddenState(current.databaseCandidates, true)
+      }));
+      if (!shouldRemainVisible) {
+        setCapturedListMeta((current) => {
+          const meta = current && typeof current === "object" ? current : {};
+          const nextTotal = Math.max(0, Number(meta.total || 0) + 1);
+          const limit = Math.max(1, Number(meta.limit || safeCapturedApiPageSize || 25));
+          return {
+            ...meta,
+            total: nextTotal,
+            totalPages: Math.max(1, Math.ceil(nextTotal / limit)),
+            page: Math.min(Math.max(1, Number(meta.page || capturedPage || 1)), Math.max(1, Math.ceil(nextTotal / limit))),
+            limit
+          };
+        });
+      }
+      setCapturedStatsSnapshot((current) => {
+        if (!current || typeof current !== "object") return current;
+        return {
+          ...current,
+          active: Math.max(0, Number(current.active || 0) - 1),
+          inactive: Math.max(0, Number(current.inactive || 0) + 1)
+        };
+      });
+      setStatus("captured", String(error?.message || error), "error");
+    }
   }
 
   async function deleteCapturedCandidate(candidateOrId) {
@@ -18393,6 +18649,9 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
       return null;
     }
     const nowIso = new Date().toISOString();
+    const wasArchived = Boolean(isAssessmentArchived(safeAssessment));
+    const laneMatchesNewState = Boolean(archived) === (assessmentLane === "archived");
+    const listDelta = laneMatchesNewState ? 1 : -1;
     const next = {
       ...safeAssessment,
       candidateId,
@@ -18412,11 +18671,36 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
     };
     setStatus("assessments", archived ? "Archiving assessment..." : "Restoring assessment...");
     upsertAssessmentInState(optimisticAssessment);
-    patchVisibleAssessmentRow(optimisticAssessment, "upsert");
+    patchVisibleAssessmentRow(optimisticAssessment, laneMatchesNewState ? "upsert" : "delete");
+    setAssessmentListMeta((current) => {
+      const currentMeta = current && typeof current === "object" ? current : {};
+      const previousTotal = Math.max(0, Number(currentMeta.total || 0));
+      const nextTotal = Math.max(0, previousTotal + listDelta);
+      const limit = Math.max(1, Number(currentMeta.limit || safeAssessmentApiPageSize || 25));
+      const nextTotalPages = Math.max(1, Math.ceil(nextTotal / limit));
+      const nextPage = Math.min(Math.max(1, Number(currentMeta.page || assessmentPage || 1)), nextTotalPages);
+      return {
+        ...currentMeta,
+        total: nextTotal,
+        totalPages: nextTotalPages,
+        page: nextPage,
+        limit
+      };
+    });
+    setAssessmentStatsSnapshot((current) => {
+      if (!current || typeof current !== "object") return current;
+      const activeDelta = Boolean(archived) ? -1 : 1;
+      const archivedDelta = Boolean(archived) ? 1 : -1;
+      return {
+        ...current,
+        active: Math.max(0, Number(current.active || 0) + activeDelta),
+        archived: Math.max(0, Number(current.archived || 0) + archivedDelta)
+      };
+    });
     try {
       const saved = await api("/company/assessments", token, "POST", { assessment: next });
       upsertAssessmentInState(saved);
-      patchVisibleAssessmentRow(saved, "upsert");
+      patchVisibleAssessmentRow(saved, laneMatchesNewState ? "upsert" : "delete");
       setStatus("assessments", archived ? "Assessment archived." : "Assessment restored.", "ok");
       void refreshWorkspaceSilently("manual");
       return saved;
@@ -18428,7 +18712,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
         try {
           const restored = await api("/company/assessments/restore", token, "POST", { assessmentId: safeAssessment.id });
           upsertAssessmentInState(restored);
-          patchVisibleAssessmentRow(restored, "upsert");
+          patchVisibleAssessmentRow(restored, Boolean(isAssessmentArchived(restored)) === (assessmentLane === "archived") ? "upsert" : "delete");
           setStatus("assessments", "Assessment restored.", "ok");
           void refreshWorkspaceSilently("post-restore");
           return restored;
@@ -18438,7 +18722,32 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
         }
       }
       upsertAssessmentInState(safeAssessment);
-      patchVisibleAssessmentRow(safeAssessment, "upsert");
+      patchVisibleAssessmentRow(safeAssessment, wasArchived === (assessmentLane === "archived") ? "upsert" : "delete");
+      setAssessmentListMeta((current) => {
+        const currentMeta = current && typeof current === "object" ? current : {};
+        const previousTotal = Math.max(0, Number(currentMeta.total || 0));
+        const nextTotal = Math.max(0, previousTotal - listDelta);
+        const limit = Math.max(1, Number(currentMeta.limit || safeAssessmentApiPageSize || 25));
+        const nextTotalPages = Math.max(1, Math.ceil(nextTotal / limit));
+        const nextPage = Math.min(Math.max(1, Number(currentMeta.page || assessmentPage || 1)), nextTotalPages);
+        return {
+          ...currentMeta,
+          total: nextTotal,
+          totalPages: nextTotalPages,
+          page: nextPage,
+          limit
+        };
+      });
+      setAssessmentStatsSnapshot((current) => {
+        if (!current || typeof current !== "object") return current;
+        const activeDelta = Boolean(archived) ? 1 : -1;
+        const archivedDelta = Boolean(archived) ? -1 : 1;
+        return {
+          ...current,
+          active: Math.max(0, Number(current.active || 0) + activeDelta),
+          archived: Math.max(0, Number(current.archived || 0) + archivedDelta)
+        };
+      });
       setStatus("assessments", message, "error");
       return null;
     }
