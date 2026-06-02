@@ -3418,8 +3418,59 @@ function normalizeApplicantFilterOptions(raw = {}) {
     locations: toList(raw?.locations),
     ownedBy: toList(raw?.ownedBy),
     assignedTo: toList(raw?.assignedTo),
+    jdIds: toList(raw?.jdIds),
     activeStates: toList(raw?.activeStates)
   };
+}
+
+function normalizeJdMatchKey(value = "") {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[\s\-_]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function matchesJdFilterValue(candidateValue = "", selectedValues = []) {
+  const candidateKey = normalizeJdMatchKey(candidateValue);
+  if (!candidateKey) return false;
+  return (Array.isArray(selectedValues) ? selectedValues : []).some((value) => {
+    const filterKey = normalizeJdMatchKey(value);
+    if (!filterKey) return false;
+    return candidateKey === filterKey || candidateKey.includes(filterKey) || filterKey.includes(candidateKey);
+  });
+}
+
+function buildJdFilterQueryClause(selectedValues = [], fieldName = "jd_title") {
+  const values = Array.isArray(selectedValues)
+    ? Array.from(new Set(selectedValues.map((item) => String(item || "").trim()).filter(Boolean)))
+    : [];
+  const parts = [];
+  values.forEach((value) => {
+    const clean = String(value || "").replace(/[%*]/g, "").trim();
+    if (!clean) return;
+    const like = `*${clean.replace(/,/g, " ")}*`;
+    parts.push(`${fieldName}.eq.${encodeURIComponent(value)}`);
+    parts.push(`${fieldName}.ilike.${encodeURIComponent(like)}`);
+  });
+  return parts.length ? `or=(${parts.join(",")})` : "";
+}
+
+function buildJobIdFilterQueryClause(selectedValues = [], fieldNames = ["assigned_jd_id", "jd_id", "job_id", "jobId"]) {
+  const ids = Array.isArray(selectedValues)
+    ? Array.from(new Set(selectedValues.map((item) => String(item || "").trim()).filter(Boolean)))
+    : [];
+  if (!ids.length) return "";
+  const idClause = ids.map((item) => encodeURIComponent(item)).join(",");
+  const parts = (Array.isArray(fieldNames) ? fieldNames : []).map((fieldName) => `${fieldName}.in.(${idClause})`);
+  return parts.length ? `or=(${parts.join(",")})` : "";
+}
+
+function matchesJobIdFilterValue(candidateValue = "", selectedValues = []) {
+  const candidateKey = String(candidateValue || "").trim();
+  if (!candidateKey) return false;
+  return (Array.isArray(selectedValues) ? selectedValues : []).some((value) => String(value || "").trim() === candidateKey);
 }
 
 function matchApplicantState(candidate = {}, activeStates = []) {
@@ -3445,7 +3496,18 @@ function applyApplicantFiltersLocal(row = {}, filters = {}, includeConverted = t
   }
   if (filters.jds?.length) {
     const value = String(row?.jd_title || row?.assigned_jd_title || "").trim();
-    if (!filters.jds.includes(value)) return false;
+    if (!matchesJdFilterValue(value, filters.jds)) return false;
+  }
+  if (filters.jdIds?.length) {
+    const candidateIds = [
+      row?.assigned_jd_id,
+      row?.assignedJdId,
+      row?.jd_id,
+      row?.jdId,
+      row?.job_id,
+      row?.jobId
+    ].map((item) => String(item || "").trim()).filter(Boolean);
+    if (!candidateIds.some((id) => matchesJobIdFilterValue(id, filters.jdIds))) return false;
   }
   if (filters.locations?.length) {
     const value = String(row?.location || "").trim();
@@ -3507,7 +3569,13 @@ async function listApplicantsForUser(user, options = {}) {
     if (filters.dateFrom) baseFilterParts.push(`created_at=gte.${encodeURIComponent(`${filters.dateFrom}T00:00:00.000Z`)}`);
     if (filters.dateTo) baseFilterParts.push(`created_at=lte.${encodeURIComponent(`${filters.dateTo}T23:59:59.999Z`)}`);
     if (filters.clients.length) baseFilterParts.push(`client_name=in.(${filters.clients.map((item) => encodeURIComponent(item)).join(",")})`);
-    if (filters.jds.length) baseFilterParts.push(`jd_title=in.(${filters.jds.map((item) => encodeURIComponent(item)).join(",")})`);
+    if (filters.jdIds.length) {
+      const jobIdClause = buildJobIdFilterQueryClause(filters.jdIds, ["assigned_jd_id", "jd_id", "job_id"]);
+      if (jobIdClause) baseFilterParts.push(jobIdClause);
+    } else if (filters.jds.length) {
+      const jdClause = buildJdFilterQueryClause(filters.jds, "jd_title");
+      if (jdClause) baseFilterParts.push(jdClause);
+    }
     if (filters.locations.length) baseFilterParts.push(`location=in.(${filters.locations.map((item) => encodeURIComponent(item)).join(",")})`);
     if (filters.assignedTo.length) baseFilterParts.push(`assigned_to_name=in.(${filters.assignedTo.map((item) => encodeURIComponent(item)).join(",")})`);
     const selectedStates = Array.isArray(filters.activeStates)
@@ -3613,7 +3681,13 @@ async function getApplicantStatsForUser(user, options = {}) {
     if (filters.dateFrom) parts.push(`created_at=gte.${encodeURIComponent(`${filters.dateFrom}T00:00:00.000Z`)}`);
     if (filters.dateTo) parts.push(`created_at=lte.${encodeURIComponent(`${filters.dateTo}T23:59:59.999Z`)}`);
     if (filters.clients.length) parts.push(`client_name=in.(${filters.clients.map((item) => encodeURIComponent(item)).join(",")})`);
-    if (filters.jds.length) parts.push(`jd_title=in.(${filters.jds.map((item) => encodeURIComponent(item)).join(",")})`);
+    if (filters.jdIds.length) {
+      const jobIdClause = buildJobIdFilterQueryClause(filters.jdIds, ["assigned_jd_id", "jd_id", "job_id"]);
+      if (jobIdClause) parts.push(jobIdClause);
+    } else if (filters.jds.length) {
+      const jdClause = buildJdFilterQueryClause(filters.jds, "jd_title");
+      if (jdClause) parts.push(jdClause);
+    }
     if (filters.locations.length) parts.push(`location=in.(${filters.locations.map((item) => encodeURIComponent(item)).join(",")})`);
     if (filters.assignedTo.length) parts.push(`assigned_to_name=in.(${filters.assignedTo.map((item) => encodeURIComponent(item)).join(",")})`);
     return parts;
@@ -3677,6 +3751,7 @@ function normalizeCapturedFilterOptions(raw = {}) {
     capturedBy: toList(raw?.capturedBy),
     sources: toList(raw?.sources),
     outcomes: toList(raw?.outcomes),
+    jdIds: toList(raw?.jdIds),
     activeStates: toList(raw?.activeStates)
   };
 }
@@ -3706,7 +3781,18 @@ function applyCapturedFiltersLocal(row = {}, filters = {}, user = null) {
   }
   if (filters?.jds?.length) {
     const value = String(row?.jd_title || row?.assigned_jd_title || "").trim();
-    if (!filters.jds.includes(value)) return false;
+    if (!matchesJdFilterValue(value, filters.jds)) return false;
+  }
+  if (filters?.jdIds?.length) {
+    const candidateIds = [
+      row?.assigned_jd_id,
+      row?.assignedJdId,
+      row?.jd_id,
+      row?.jdId,
+      row?.job_id,
+      row?.jobId
+    ].map((item) => String(item || "").trim()).filter(Boolean);
+    if (!candidateIds.some((id) => matchesJobIdFilterValue(id, filters.jdIds))) return false;
   }
   if (filters?.assignedTo?.length) {
     const value = String(row?.assigned_to_name || "Unassigned").trim();
@@ -3796,7 +3882,13 @@ async function listCapturedForUser(user, options = {}) {
     if (filters.dateFrom) baseFilterParts.push(`created_at=gte.${encodeURIComponent(`${filters.dateFrom}T00:00:00.000Z`)}`);
     if (filters.dateTo) baseFilterParts.push(`created_at=lte.${encodeURIComponent(`${filters.dateTo}T23:59:59.999Z`)}`);
     if (filters.clients.length) baseFilterParts.push(`client_name=in.(${filters.clients.map((item) => encodeURIComponent(item)).join(",")})`);
-    if (filters.jds.length) baseFilterParts.push(`jd_title=in.(${filters.jds.map((item) => encodeURIComponent(item)).join(",")})`);
+    if (filters.jdIds.length) {
+      const jobIdClause = buildJobIdFilterQueryClause(filters.jdIds, ["assigned_jd_id", "jd_id", "job_id"]);
+      if (jobIdClause) baseFilterParts.push(jobIdClause);
+    } else if (filters.jds.length) {
+      const jdClause = buildJdFilterQueryClause(filters.jds, "jd_title");
+      if (jdClause) baseFilterParts.push(jdClause);
+    }
     if (filters.assignedTo.length) baseFilterParts.push(`assigned_to_name=in.(${filters.assignedTo.map((item) => encodeURIComponent(item)).join(",")})`);
     if (filters.capturedBy.length) baseFilterParts.push(`recruiter_name=in.(${filters.capturedBy.map((item) => encodeURIComponent(item)).join(",")})`);
     if (filters.sources.length) baseFilterParts.push(`source=in.(${filters.sources.map((item) => encodeURIComponent(item)).join(",")})`);
@@ -3812,6 +3904,9 @@ async function listCapturedForUser(user, options = {}) {
         baseFilterParts.push("hidden_from_captured=not.is.true");
         baseFilterParts.push("or=(used_in_assessment.is.true,assessment_id.not.is.null)");
       }
+    } else if (filters.activeStates.length === 2 && filters.activeStates.includes("Active") && filters.activeStates.includes("Inactive")) {
+      baseFilterParts.push("used_in_assessment=not.is.true");
+      baseFilterParts.push("assessment_id=is.null");
     } else if (!filters.activeStates.length) {
       // Captured default behavior: active-only when no state selected.
       baseFilterParts.push("hidden_from_captured=not.is.true");
@@ -3937,6 +4032,7 @@ function normalizeAssessmentFilterOptions(raw = {}) {
     dateTo: String(raw?.dateTo || "").trim(),
     clients: toList(raw?.clients),
     jds: toList(raw?.jds),
+    jdIds: toList(raw?.jdIds),
     recruiters: toList(raw?.recruiters),
     outcomes: toList(raw?.outcomes),
     lane: String(raw?.lane || "active").trim() || "active"
@@ -3978,7 +4074,19 @@ function applyAssessmentFiltersLocal(item = {}, filters = {}) {
   if (filters?.dateFrom && createdKey && createdKey < filters.dateFrom) return false;
   if (filters?.dateTo && createdKey && createdKey > filters.dateTo) return false;
   if (Array.isArray(filters?.clients) && filters.clients.length && !filters.clients.includes(clientValue)) return false;
-  if (Array.isArray(filters?.jds) && filters.jds.length && !filters.jds.includes(jdValue)) return false;
+  if (Array.isArray(filters?.jds) && filters.jds.length && !matchesJdFilterValue(jdValue, filters.jds)) return false;
+  if (Array.isArray(filters?.jdIds) && filters.jdIds.length) {
+    const candidateIds = [
+      item?.jobId,
+      item?.job_id,
+      item?.jd_id,
+      item?.assigned_jd_id,
+      item?.payload?.jobId,
+      item?.payload?.job_id,
+      item?.payload?.jd_id
+    ].map((value) => String(value || "").trim()).filter(Boolean);
+    if (!candidateIds.some((id) => matchesJobIdFilterValue(id, filters.jdIds))) return false;
+  }
   if (Array.isArray(filters?.recruiters) && filters.recruiters.length && !filters.recruiters.includes(recruiterValue)) return false;
   if (Array.isArray(filters?.outcomes) && filters.outcomes.length && !filters.outcomes.includes(outcomeValue)) return false;
   return true;
@@ -4061,7 +4169,13 @@ async function countAssessmentsForUser(user, options = {}) {
   if (filters.dateFrom) queryParts.push(`created_at=gte.${encodeURIComponent(`${filters.dateFrom}T00:00:00.000Z`)}`);
   if (filters.dateTo) queryParts.push(`created_at=lte.${encodeURIComponent(`${filters.dateTo}T23:59:59.999Z`)}`);
   if (filters.clients.length) queryParts.push(`client_name=in.(${filters.clients.map((item) => encodeURIComponent(item)).join(",")})`);
-  if (filters.jds.length) queryParts.push(`jd_title=in.(${filters.jds.map((item) => encodeURIComponent(item)).join(",")})`);
+  if (filters.jdIds.length) {
+    const jobIdClause = buildJobIdFilterQueryClause(filters.jdIds, ["job_id", "jobId", "jd_id"]);
+    if (jobIdClause) queryParts.push(jobIdClause);
+  } else if (filters.jds.length) {
+    const jdClause = buildJdFilterQueryClause(filters.jds, "jd_title");
+    if (jdClause) queryParts.push(jdClause);
+  }
   if (filters.recruiters.length) queryParts.push(`recruiter_name=in.(${filters.recruiters.map((item) => encodeURIComponent(item)).join(",")})`);
   if (filters.outcomes.length) queryParts.push(`candidate_status=in.(${filters.outcomes.map((item) => encodeURIComponent(item)).join(",")})`);
   if (lane === "active") {

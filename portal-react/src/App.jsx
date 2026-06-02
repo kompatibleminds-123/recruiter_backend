@@ -10516,6 +10516,15 @@ function PortalApp({ token, onLogout }) {
     }
     return cleanTitles[0] || "";
   }, [activeJobTitleById, activeJobTitlesForFilters, normalizeJobTitleKey]);
+  const matchesJdFilterValue = useCallback((candidateValue = "", selectedValues = []) => {
+    const candidateKey = normalizeJobTitleKey(candidateValue);
+    if (!candidateKey) return false;
+    return (Array.isArray(selectedValues) ? selectedValues : []).some((value) => {
+      const filterKey = normalizeJobTitleKey(value);
+      if (!filterKey) return false;
+      return candidateKey === filterKey || candidateKey.includes(filterKey) || filterKey.includes(candidateKey);
+    });
+  }, [normalizeJobTitleKey]);
   const getClientScopedActiveJobTitles = useCallback((selectedClients = []) => {
     const clientKeys = (Array.isArray(selectedClients) ? selectedClients : [])
       .map((value) => normalizeClientFilterKey(value))
@@ -12014,7 +12023,7 @@ function PortalApp({ token, onLogout }) {
       if (applicantFiltersApplied.dateFrom && createdDate && createdDate < applicantFiltersApplied.dateFrom) return false;
       if (applicantFiltersApplied.dateTo && createdDate && createdDate > applicantFiltersApplied.dateTo) return false;
       if (applicantFiltersApplied.clients.length && !applicantFiltersApplied.clients.includes(clientValue)) return false;
-      if (applicantFiltersApplied.jds.length && !applicantFiltersApplied.jds.includes(jdValue)) return false;
+      if (applicantFiltersApplied.jds.length && !matchesJdFilterValue(jdValue, applicantFiltersApplied.jds)) return false;
       if (applicantFiltersApplied.locations.length && !applicantFiltersApplied.locations.includes(locationValue)) return false;
       if (applicantFiltersApplied.ownedBy.length && !applicantFiltersApplied.ownedBy.includes(ownedValue)) return false;
       if (applicantFiltersApplied.assignedTo.length && !applicantFiltersApplied.assignedTo.includes(assignedValue)) return false;
