@@ -2304,6 +2304,18 @@ textarea { min-height: 92px; resize: vertical; }
 }
 .status.inline { margin-top: 0; max-width: 420px; }
 .status.action-status { margin-top: 0.75rem; }
+.status-fixed {
+  min-height: 56px;
+  display: flex;
+  align-items: center;
+}
+.status-fixed__text {
+  display: block;
+  width: 100%;
+}
+.status-fixed--empty {
+  visibility: hidden;
+}
 .status.ok { background: #eaf9f4; border-color: #bde9d7; color: var(--ok); }
 .status.error { background: #fff1ef; border-color: #f5cbc5; color: var(--error); }
 .empty-state {
@@ -2906,13 +2918,14 @@ textarea { min-height: 92px; resize: vertical; }
 }
 .assessment-select-row__checks {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: 0.42rem;
   align-items: center;
+  justify-content: flex-end;
 }
 .assessment-select-row__stack {
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   align-items: flex-end;
   gap: 0.42rem;
 }

@@ -18400,10 +18400,23 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
       archivedAt: archived ? nowIso : "",
       archivedBy: archived ? String(state.user?.name || "").trim() : ""
     };
+    const optimisticAssessment = {
+      ...safeAssessment,
+      ...next,
+      payload: {
+        ...((safeAssessment && safeAssessment.payload && typeof safeAssessment.payload === "object") ? safeAssessment.payload : {}),
+        archived: Boolean(archived),
+        archived_at: archived ? nowIso : "",
+        archived_by: archived ? String(state.user?.name || "").trim() : ""
+      }
+    };
     setStatus("assessments", archived ? "Archiving assessment..." : "Restoring assessment...");
+    upsertAssessmentInState(optimisticAssessment);
+    patchVisibleAssessmentRow(optimisticAssessment, "upsert");
     try {
       const saved = await api("/company/assessments", token, "POST", { assessment: next });
       upsertAssessmentInState(saved);
+      patchVisibleAssessmentRow(saved, "upsert");
       setStatus("assessments", archived ? "Assessment archived." : "Assessment restored.", "ok");
       void refreshWorkspaceSilently("manual");
       return saved;
@@ -18415,6 +18428,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
         try {
           const restored = await api("/company/assessments/restore", token, "POST", { assessmentId: safeAssessment.id });
           upsertAssessmentInState(restored);
+          patchVisibleAssessmentRow(restored, "upsert");
           setStatus("assessments", "Assessment restored.", "ok");
           void refreshWorkspaceSilently("post-restore");
           return restored;
@@ -18423,6 +18437,8 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
           return null;
         }
       }
+      upsertAssessmentInState(safeAssessment);
+      patchVisibleAssessmentRow(safeAssessment, "upsert");
       setStatus("assessments", message, "error");
       return null;
     }
@@ -18610,7 +18626,6 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
       candidate
     );
     await copyText(text);
-    window.alert(text);
     setStatus("assessments", "Journey copied.", "ok");
   }
 
@@ -20651,7 +20666,9 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
 
           <Route path="/assessments" element={
             <Section kicker="Structured Workflow" title="Assessments">
-              {statuses.assessments ? <div className={`status ${statuses.assessmentsKind || ""}`}>{statuses.assessments}</div> : null}
+              <div className={`status status-fixed ${statuses.assessments ? "" : "status-fixed--empty"} ${statuses.assessmentsKind || ""}`} aria-live="polite">
+                <span className="status-fixed__text">{statuses.assessments || "\u00A0"}</span>
+              </div>
               <div className="form-grid three-col">
                 <label className="full"><span>Search</span><input placeholder="Search by candidate, phone, email, JD..." value={assessmentFilters.q} onChange={(e) => setAssessmentFilters((current) => ({ ...current, q: e.target.value }))} /></label>
               </div>
@@ -20806,34 +20823,32 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                             <div className="assessment-placard__head-actions">
                               {assessmentLane === "active" && !isArchived ? (
                                 <div className="assessment-select-row__checks">
-                                  <div className="assessment-select-row__stack">
+                                  <button
+                                    type="button"
+                                    className={`checkbox-pill${selectedAssessmentIds.includes(String(item.id)) ? " active" : ""}`}
+                                    aria-pressed={selectedAssessmentIds.includes(String(item.id))}
+                                    onClick={() => { void toggleAssessmentSelectionWithBranding(item); }}
+                                  >
+                                    <span className="checkbox-pill__box" aria-hidden="true">
+                                      {selectedAssessmentIds.includes(String(item.id)) ? "✓" : ""}
+                                    </span>
+                                    <span>Select for client share</span>
+                                  </button>
+                                  {selectedAssessmentIds.includes(String(item.id)) ? (
                                     <button
                                       type="button"
-                                      className={`checkbox-pill${selectedAssessmentIds.includes(String(item.id)) ? " active" : ""}`}
-                                      aria-pressed={selectedAssessmentIds.includes(String(item.id))}
-                                      onClick={() => { void toggleAssessmentSelectionWithBranding(item); }}
+                                      className="checkbox-pill checkbox-pill--soft"
+                                      aria-pressed={isAssessmentShareBrandedCvEnabled(item)}
+                                      onClick={() => {
+                                        void setAssessmentShareBrandedCv(item, !isAssessmentShareBrandedCvEnabled(item));
+                                      }}
                                     >
                                       <span className="checkbox-pill__box" aria-hidden="true">
-                                        {selectedAssessmentIds.includes(String(item.id)) ? "?" : ""}
+                                        {isAssessmentShareBrandedCvEnabled(item) ? "✓" : ""}
                                       </span>
-                                      <span>Select for client share</span>
+                                      <span>Share Branded CV</span>
                                     </button>
-                                    {selectedAssessmentIds.includes(String(item.id)) ? (
-                                      <button
-                                        type="button"
-                                        className="checkbox-pill checkbox-pill--soft"
-                                        aria-pressed={isAssessmentShareBrandedCvEnabled(item)}
-                                        onClick={() => {
-                                          void setAssessmentShareBrandedCv(item, !isAssessmentShareBrandedCvEnabled(item));
-                                        }}
-                                      >
-                                        <span className="checkbox-pill__box" aria-hidden="true">
-                                          {isAssessmentShareBrandedCvEnabled(item) ? "?" : ""}
-                                        </span>
-                                        <span>Share Branded CV</span>
-                                      </button>
-                                    ) : null}
-                                  </div>
+                                  ) : null}
                                 </div>
                               ) : (
                                 <span className="muted">Archived</span>
