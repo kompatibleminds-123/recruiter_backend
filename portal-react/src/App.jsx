@@ -5554,12 +5554,8 @@ function CandidateProfileModal({ open, candidate, onClose, onOpenCvOriginal, onO
   const heroAssignedTo = String(
     baseCandidate?.assigned_to_name ||
     baseCandidate?.assignedToName ||
-    baseCandidate?.recruiter_name ||
-    baseCandidate?.recruiterName ||
     linkedAssessment?.assigned_to_name ||
     linkedAssessment?.assignedToName ||
-    linkedAssessment?.recruiter_name ||
-    linkedAssessment?.recruiterName ||
     "-"
   ).trim();
   const heroUpdatedAt = String(
@@ -10602,39 +10598,18 @@ function PortalApp({ token, onLogout }) {
     const clients = new Set();
     const recruiters = new Set();
     const outcomes = new Set();
-    const isAdmin = String(state.user?.role || "").toLowerCase() === "admin";
-    const currentUserName = String(state.user?.name || "").trim();
-    const adminNames = (state.users || [])
-      .filter((item) => String(item?.role || "").toLowerCase() === "admin")
-      .map((item) => String(item?.name || "").trim())
-      .filter(Boolean);
-    const allowedRecruiterNames = isAdmin
-      ? (state.users || []).map((item) => String(item?.name || "").trim()).filter(Boolean)
-      : Array.from(new Set([currentUserName, ...adminNames].filter(Boolean)));
     assessmentOptionPool.forEach((item) => {
       const matchedCandidate = (state.candidates || []).find((candidate) =>
         (item?.candidateId && String(candidate.id) === String(item.candidateId)) ||
         String(candidate.name || "").trim().toLowerCase() === String(item?.candidateName || "").trim().toLowerCase()
       );
       const clientValue = String(item?.clientName || matchedCandidate?.client_name || "").trim();
-      // Always display the assignee for the assessment.
-      const recruiterValue = String(
-        matchedCandidate?.assigned_to_name
-        || matchedCandidate?.assignedToName
-        || matchedCandidate?.recruiter_name
-        || matchedCandidate?.recruiterName
-        || item?.assigned_to_name
-        || item?.assignedToName
-        || item?.recruiter_name
-        || item?.recruiterName
-        || ""
-      ).trim();
+      const recruiterValue = String(matchedCandidate?.assigned_to_name || matchedCandidate?.assignedToName || "").trim();
       const outcomeValue = normalizeAssessmentStatusLabel(item?.candidateStatus || item?.candidate_status || "") || "No outcome";
       if (clientValue) clients.add(clientValue);
       if (recruiterValue) recruiters.add(recruiterValue);
       if (outcomeValue) outcomes.add(outcomeValue);
     });
-    allowedRecruiterNames.forEach((name) => recruiters.add(name));
     return {
       clients: Array.from(clients).sort((a, b) => a.localeCompare(b)),
       jds: getClientScopedActiveJobTitles(assessmentFilters.clients),
@@ -10662,12 +10637,8 @@ function PortalApp({ token, onLogout }) {
     return String(
       linkedCandidate?.assigned_to_name
       || linkedCandidate?.assignedToName
-      || linkedCandidate?.recruiter_name
-      || linkedCandidate?.recruiterName
       || assessment?.assigned_to_name
       || assessment?.assignedToName
-      || assessment?.recruiter_name
-      || assessment?.recruiterName
       || ""
     ).trim();
   }
@@ -11000,8 +10971,8 @@ function PortalApp({ token, onLogout }) {
       expected_ctc: item.expectedCtc || "",
       created_at: item.createdAt || item.generatedAt || "",
       skills: Array.isArray(linkedCandidate?.skills) ? linkedCandidate.skills : [],
-      assigned_to_name: String(linkedCandidate?.assigned_to_name || item.assigned_to_name || item.assignedToName || "").trim(),
-      recruiter_name: String(linkedCandidate?.assigned_to_name || item.assigned_to_name || item.assignedToName || "").trim(),
+      assigned_to_name: String(linkedCandidate?.assigned_to_name || linkedCandidate?.assignedToName || "").trim(),
+      recruiter_name: String(linkedCandidate?.assigned_to_name || linkedCandidate?.assignedToName || "").trim(),
       notice_period: item.noticePeriod || "",
       lwd_or_doj: item.lwdOrDoj || item.offerDoj || linkedCandidate?.lwd_or_doj || linkedCandidateDraft?.lwdOrDoj || "",
       offer_in_hand: item.offerInHand || item.offerAmount || linkedCandidate?.offer_in_hand || linkedCandidateDraft?.offerInHand || "",
@@ -21208,9 +21179,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                     {(() => {
                       const linkedCandidate = assessmentLinkedCandidateMap.get(String(item.id || "")) || null;
                       const assignedTo = String(
-                        item?.assigned_to_name
-                        || item?.assignedToName
-                        || linkedCandidate?.assigned_to_name
+                        linkedCandidate?.assigned_to_name
                         || linkedCandidate?.assignedToName
                         || ""
                       ).trim() || "NA";

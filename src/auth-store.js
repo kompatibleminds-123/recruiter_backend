@@ -5147,7 +5147,7 @@ async function listAssessments({ actorUserId, companyId }) {
   const visibleEmails = new Set((visibleCandidates || []).map((c) => String(c?.email || "").trim().toLowerCase()).filter(Boolean));
   const visiblePhones = new Set((visibleCandidates || []).map((c) => normalizeAssessmentPhone(c?.phone)).filter(Boolean));
 
-  return (rows || [])
+  const visibleAssessmentRows = (rows || [])
     .filter((i) => {
       if (String(i.recruiter_id || "") === actor.id) return true;
       const payload = i?.payload && typeof i.payload === "object" ? i.payload : {};
@@ -5160,8 +5160,33 @@ async function listAssessments({ actorUserId, companyId }) {
       if (email && visibleEmails.has(email)) return true;
       if (phone && visiblePhones.has(phone)) return true;
       return false;
-    })
-    .map(sanitizeAssessment);
+    });
+  const candidateIds = Array.from(new Set(visibleAssessmentRows.map((item) => String(item?.candidate_id || item?.candidateId || item?.payload?.candidateId || item?.payload?.candidate_id || "").trim()).filter(Boolean)));
+  const candidateMap = new Map();
+  if (candidateIds.length) {
+    const candidateRows = await sbSel(
+      "candidates",
+      `select=id,assigned_to_name,assigned_to_user_id&company_id=eq.${enc(companyId)}&id=in.(${candidateIds.map((id) => enc(id)).join(",")})&limit=5000`
+    ).catch(() => []);
+    (candidateRows || []).forEach((candidate) => {
+      const id = String(candidate?.id || "").trim();
+      if (!id) return;
+      candidateMap.set(id, candidate);
+    });
+  }
+  return visibleAssessmentRows.map((row) => {
+    const candidateId = String(row?.candidate_id || row?.candidateId || row?.payload?.candidateId || row?.payload?.candidate_id || "").trim();
+    const candidate = candidateId ? candidateMap.get(candidateId) : null;
+    const assignedToName = String(candidate?.assigned_to_name || "").trim();
+    const assignedToUserId = String(candidate?.assigned_to_user_id || "").trim();
+    return sanitizeAssessment({
+      ...row,
+      assigned_to_name: assignedToName || row?.assigned_to_name || row?.recruiter_name || "",
+      assignedToName: assignedToName || row?.assignedToName || row?.recruiter_name || "",
+      assigned_to_user_id: assignedToUserId || row?.assigned_to_user_id || row?.assignedToUserId || "",
+      assignedToUserId: assignedToUserId || row?.assignedToUserId || row?.assigned_to_user_id || ""
+    });
+  });
 }
 
 // Used by signed public share links. This intentionally bypasses recruiter scoping,
@@ -5176,7 +5201,23 @@ async function getAssessmentById({ companyId, assessmentId }) {
   }
   await ensureSeeded();
   const rows = await sbSel("assessments", `select=*&company_id=eq.${enc(safeCompanyId)}&id=eq.${enc(safeAssessmentId)}&limit=1`).catch(() => []);
-  return rows && rows[0] ? sanitizeAssessment(rows[0]) : null;
+  const item = rows && rows[0] ? rows[0] : null;
+  if (!item) return null;
+  const candidateId = String(item?.candidate_id || item?.candidateId || item?.payload?.candidateId || item?.payload?.candidate_id || "").trim();
+  let candidate = null;
+  if (candidateId) {
+    const candidateRows = await sbSel("candidates", `select=id,assigned_to_name,assigned_to_user_id&company_id=eq.${enc(safeCompanyId)}&id=eq.${enc(candidateId)}&limit=1`).catch(() => []);
+    candidate = candidateRows && candidateRows[0] ? candidateRows[0] : null;
+  }
+  const assignedToName = String(candidate?.assigned_to_name || "").trim();
+  const assignedToUserId = String(candidate?.assigned_to_user_id || "").trim();
+  return sanitizeAssessment({
+    ...item,
+    assigned_to_name: assignedToName || item?.assigned_to_name || item?.recruiter_name || "",
+    assignedToName: assignedToName || item?.assignedToName || item?.recruiter_name || "",
+    assigned_to_user_id: assignedToUserId || item?.assigned_to_user_id || item?.assignedToUserId || "",
+    assignedToUserId: assignedToUserId || item?.assignedToUserId || item?.assigned_to_user_id || ""
+  });
 }
 
 function normalizeAssessmentKeyPart(value) {

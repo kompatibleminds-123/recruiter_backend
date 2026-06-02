@@ -4063,6 +4063,49 @@ function getAssessmentFilterFieldValues(item = {}) {
   return { clientValue, jdValue, recruiterValue, outcomeValue, createdKey, hay };
 }
 
+async function hydrateAssessmentsWithCandidateAssignees(rows = [], companyId = "") {
+  const items = Array.isArray(rows) ? rows : [];
+  const safeCompanyId = String(companyId || "").trim();
+  if (!items.length || !safeCompanyId) return items;
+  const candidateIds = Array.from(new Set(items.map((row) => String(row?.candidateId || row?.candidate_id || row?.payload?.candidateId || row?.payload?.candidate_id || "").trim()).filter(Boolean)));
+  if (!candidateIds.length) return items;
+  const { on, url, key } = getSupabaseServiceConfig();
+  if (!(on && url && key)) return items;
+  const candidateRows = await fetch(`${url}/rest/v1/candidates?select=id,assigned_to_name,assigned_to_user_id,name&company_id=eq.${encodeURIComponent(safeCompanyId)}&id=in.(${candidateIds.map((id) => encodeURIComponent(id)).join(",")})&limit=5000`, {
+    headers: { apikey: key, Authorization: `Bearer ${key}` }
+  }).then(async (response) => (response.ok ? response.json() : [])).catch(() => []);
+  const byId = new Map((Array.isArray(candidateRows) ? candidateRows : []).map((candidate) => [String(candidate?.id || "").trim(), candidate]));
+  return items.map((item) => {
+    const candidateId = String(item?.candidateId || item?.candidate_id || item?.payload?.candidateId || item?.payload?.candidate_id || "").trim();
+    if (!candidateId) return item;
+    const candidate = byId.get(candidateId) || null;
+    if (!candidate) return item;
+    const assignedToName = String(candidate?.assigned_to_name || "").trim();
+    const assignedToUserId = String(candidate?.assigned_to_user_id || "").trim();
+    return {
+      ...item,
+      assigned_to_name: assignedToName || item?.assigned_to_name || item?.recruiter_name || "",
+      assignedToName: assignedToName || item?.assignedToName || item?.recruiter_name || "",
+      assigned_to_user_id: assignedToUserId || item?.assigned_to_user_id || item?.assignedToUserId || "",
+      assignedToUserId: assignedToUserId || item?.assignedToUserId || item?.assigned_to_user_id || "",
+      recruiter_name: assignedToName || item?.recruiter_name || "",
+      recruiterName: assignedToName || item?.recruiterName || ""
+    };
+  });
+}
+
+async function resolveAssessmentCandidateIdsForAssignees(companyId, recruiters = []) {
+  const safeCompanyId = String(companyId || "").trim();
+  const names = Array.isArray(recruiters) ? recruiters.map((item) => String(item || "").trim()).filter(Boolean) : [];
+  if (!safeCompanyId || !names.length) return [];
+  const { on, url, key } = getSupabaseServiceConfig();
+  if (!(on && url && key)) return [];
+  const candidateRows = await fetch(`${url}/rest/v1/candidates?select=id,assigned_to_name&company_id=eq.${encodeURIComponent(safeCompanyId)}&assigned_to_name=in.(${names.map((name) => encodeURIComponent(name)).join(",")})&limit=5000`, {
+    headers: { apikey: key, Authorization: `Bearer ${key}` }
+  }).then(async (response) => (response.ok ? response.json() : [])).catch(() => []);
+  return Array.from(new Set((Array.isArray(candidateRows) ? candidateRows : []).map((candidate) => String(candidate?.id || "").trim()).filter(Boolean)));
+}
+
 function applyAssessmentFiltersLocal(item = {}, filters = {}) {
   const lane = String(filters?.lane || "active").trim() || "active";
   const archived = isAssessmentArchivedLocal(item);
@@ -4087,7 +4130,10 @@ function applyAssessmentFiltersLocal(item = {}, filters = {}) {
     ].map((value) => String(value || "").trim()).filter(Boolean);
     if (!candidateIds.some((id) => matchesJobIdFilterValue(id, filters.jdIds))) return false;
   }
-  if (Array.isArray(filters?.recruiters) && filters.recruiters.length && !filters.recruiters.includes(recruiterValue)) return false;
+  if (Array.isArray(filters?.recruiterCandidateIds) && filters.recruiterCandidateIds.length) {
+    const candidateId = String(item?.candidateId || item?.candidate_id || item?.payload?.candidateId || item?.payload?.candidate_id || "").trim();
+    if (!filters.recruiterCandidateIds.includes(candidateId)) return false;
+  } else if (Array.isArray(filters?.recruiters) && filters.recruiters.length && !filters.recruiters.includes(recruiterValue)) return false;
   if (Array.isArray(filters?.outcomes) && filters.outcomes.length && !filters.outcomes.includes(outcomeValue)) return false;
   return true;
 }
@@ -4108,7 +4154,7 @@ function sortAssessmentsForList(items = [], sortBy = "updated") {
 
 async function getAssessmentsUniverseForUser(user) {
   const rows = await listAssessments({ actorUserId: user.id, companyId: user.companyId }).catch(() => []);
-  return Array.isArray(rows) ? rows : [];
+  return hydrateAssessmentsWithCandidateAssignees(Array.isArray(rows) ? rows : [], user.companyId).catch(() => Array.isArray(rows) ? rows : []);
 }
 
 async function listAssessmentsForUser(user, options = {}) {
@@ -4116,6 +4162,13 @@ async function listAssessmentsForUser(user, options = {}) {
   const page = Math.max(1, Number(options.page || 1));
   const offset = Math.max(0, (page - 1) * limit);
   const filters = normalizeAssessmentFilterOptions(options.filters || {});
+  if (filters.recruiters.length) {
+    const recruiterCandidateIds = await resolveAssessmentCandidateIdsForAssignees(user.companyId, filters.recruiters);
+    if (recruiterCandidateIds.length) filters.jdIds = filters.jdIds || [];
+    if (recruiterCandidateIds.length) {
+      filters.recruiterCandidateIds = recruiterCandidateIds;
+    }
+  }
   const rows = sortAssessmentsForList(await getAssessmentsUniverseForUser(user), options.sortBy || "updated");
   const filtered = rows.filter((item) => applyAssessmentFiltersLocal(item, filters));
   const items = filtered.slice(offset, offset + limit);
@@ -4181,8 +4234,12 @@ async function countAssessmentsForUser(user, options = {}) {
     if (jdClause) queryParts.push(jdClause);
   }
   if (filters.recruiters.length) {
-    const recruiterList = filters.recruiters.map((item) => encodeURIComponent(item)).join(",");
-    queryParts.push(`assigned_to_name=in.(${recruiterList})`);
+    const recruiterCandidateIds = await resolveAssessmentCandidateIdsForAssignees(companyId, filters.recruiters);
+    if (recruiterCandidateIds.length) {
+      queryParts.push(`candidate_id=in.(${recruiterCandidateIds.map((item) => encodeURIComponent(item)).join(",")})`);
+    } else {
+      queryParts.push("id=eq.__no_assignee_match__");
+    }
   }
   if (filters.outcomes.length) queryParts.push(`candidate_status=in.(${filters.outcomes.map((item) => encodeURIComponent(item)).join(",")})`);
   if (lane === "active") {
