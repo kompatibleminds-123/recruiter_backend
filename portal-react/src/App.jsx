@@ -10599,7 +10599,7 @@ function PortalApp({ token, onLogout }) {
     const recruiters = new Set();
     const outcomes = new Set();
     assessmentOptionPool.forEach((item) => {
-      const matchedCandidate = resolveAssessmentLinkedCandidate(item) || (state.candidates || []).find((candidate) =>
+      const matchedCandidate = (state.candidates || []).find((candidate) =>
         (item?.candidateId && String(candidate.id) === String(item.candidateId)) ||
         String(candidate.name || "").trim().toLowerCase() === String(item?.candidateName || "").trim().toLowerCase()
       );
