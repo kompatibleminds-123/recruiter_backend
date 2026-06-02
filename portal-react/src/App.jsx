@@ -9293,7 +9293,7 @@ function PortalApp({ token, onLogout }) {
             .catch(() => ({ summary: { byClient: [], byClientPosition: [] }, availableClients: [] }))
         : Promise.resolve(null),
       needsApplicants
-        ? api(`/company/applicants/list?limit=${safeApplicantApiPageSize}&page=${safeApplicantApiPage}&includeConverted=true`, token)
+        ? api(`/company/applicants/list?limit=${safeApplicantApiPageSize}&page=${safeApplicantApiPage}`, token)
             .then((data) => ({ ok: true, data }))
             .catch((error) => ({ ok: false, error: String(error?.message || error), data: null }))
         : Promise.resolve(null),
@@ -9583,7 +9583,6 @@ function PortalApp({ token, onLogout }) {
     const params = new URLSearchParams();
     params.set("limit", String(Math.max(1, Number(limit || 25))));
     params.set("page", String(Math.max(1, Number(page || 1))));
-    params.set("includeConverted", "true");
     const addCsv = (key, list) => {
       if (!Array.isArray(list) || !list.length) return;
       params.set(key, list.map((item) => String(item || "").trim()).filter(Boolean).join(","));

@@ -15731,7 +15731,7 @@ const server = http.createServer(async (req, res) => {
       await requireSaasAccess(user, "applied candidates pipeline");
       const limit = Math.max(1, Math.min(1000, Number(requestUrl.searchParams.get("limit") || 50)));
       const page = Math.max(1, Number(requestUrl.searchParams.get("page") || 1));
-      const includeConverted = String(requestUrl.searchParams.get("includeConverted") || "true").trim().toLowerCase() !== "false";
+      const includeConverted = String(requestUrl.searchParams.get("includeConverted") || "false").trim().toLowerCase() === "true";
       const filters = {
         q: String(requestUrl.searchParams.get("q") || "").trim(),
         dateFrom: String(requestUrl.searchParams.get("dateFrom") || "").trim(),
@@ -15850,7 +15850,7 @@ const server = http.createServer(async (req, res) => {
       await requireSaasAccess(user, "applied candidates pipeline");
       const limit = Math.max(1, Math.min(1000, Number(requestUrl.searchParams.get("limit") || 50)));
       const page = Math.max(1, Number(requestUrl.searchParams.get("page") || 1));
-      const includeConverted = String(requestUrl.searchParams.get("includeConverted") || "true").trim().toLowerCase() !== "false";
+      const includeConverted = String(requestUrl.searchParams.get("includeConverted") || "false").trim().toLowerCase() === "true";
       const filters = {
         q: String(requestUrl.searchParams.get("q") || "").trim(),
         dateFrom: String(requestUrl.searchParams.get("dateFrom") || "").trim(),
