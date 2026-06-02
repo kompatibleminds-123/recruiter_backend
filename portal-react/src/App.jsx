@@ -8025,7 +8025,7 @@ function PortalApp({ token, onLogout }) {
   const candidatesSliceLoadSeqRef = useRef(0);
   const assessmentsSliceLoadSeqRef = useRef(0);
   const assessmentListRequestRef = useRef({ seq: 0, inflightQuery: "" });
-  const assessmentStatsRequestRef = useRef({ seq: 0, inflightQuery: "" });
+  const assessmentStatsRequestRef = useRef({ seq: 0, inflightQuery: null });
   const assessmentCaptureSyncAtRef = useRef(0);
   const capturedLiveSyncInFlightRef = useRef(false);
   const capturedLiveSyncPendingRef = useRef(false);
@@ -9856,14 +9856,15 @@ function PortalApp({ token, onLogout }) {
     addCsv("recruiters", filters?.recruiters);
     addCsv("outcomes", filters?.outcomes);
     const query = params.toString();
-    if (assessmentStatsRequestRef.current.inflightQuery === query) return;
+    const requestKey = query || "__all__";
+    if (assessmentStatsRequestRef.current.inflightQuery === requestKey) return;
     const seq = Number(assessmentStatsRequestRef.current.seq || 0) + 1;
-    assessmentStatsRequestRef.current = { seq, inflightQuery: query };
+    assessmentStatsRequestRef.current = { seq, inflightQuery: requestKey };
     const envelope = await api(`/company/assessments/stats?${query}`, token)
       .then((data) => ({ ok: true, data }))
       .catch((error) => ({ ok: false, error: String(error?.message || error), data: null }));
     if (seq !== assessmentStatsRequestRef.current.seq) return;
-    assessmentStatsRequestRef.current = { ...assessmentStatsRequestRef.current, inflightQuery: "" };
+    assessmentStatsRequestRef.current = { ...assessmentStatsRequestRef.current, inflightQuery: null };
     if (!envelope.ok) return;
     setAssessmentStatsSnapshot(envelope?.data || null);
   }
