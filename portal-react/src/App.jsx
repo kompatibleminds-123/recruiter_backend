@@ -10616,7 +10616,7 @@ function PortalApp({ token, onLogout }) {
       recruiters: Array.from(recruiters).sort((a, b) => a.localeCompare(b)),
       outcomes: DEFAULT_STATUS_OPTIONS
     };
-  }, [assessmentOptionPool, state.candidates, state.user, state.users, resolveCanonicalJdTitle, getClientScopedActiveJobTitles, assessmentFilters.clients, assessmentLinkedCandidateMap]);
+  }, [assessmentOptionPool, state.candidates, state.user, state.users, resolveCanonicalJdTitle, getClientScopedActiveJobTitles, assessmentFilters.clients]);
 
   const filteredAssessments = useMemo(() => {
     return Array.isArray(assessmentListItems) ? assessmentListItems : [];
