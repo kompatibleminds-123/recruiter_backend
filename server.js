@@ -4049,7 +4049,7 @@ function isAssessmentArchivedLocal(item = {}) {
 function getAssessmentFilterFieldValues(item = {}) {
   const clientValue = String(item?.clientName || item?.client_name || "").trim() || "Unassigned";
   const jdValue = String(item?.jdTitle || item?.jd_title || "").trim() || "Unassigned";
-  const recruiterValue = String(item?.assigned_to_name || item?.assignedToName || item?.recruiterName || item?.recruiter_name || "").trim() || "Unassigned";
+  const recruiterValue = String(item?.assigned_to_name || item?.assignedToName || "").trim() || "Unassigned";
   const outcomeValue = normalizeAssessmentStatusLabel(item?.candidateStatus || item?.candidate_status || "") || "No outcome";
   const createdKey = String(item?.generatedAt || item?.createdAt || item?.created_at || item?.updatedAt || item?.updated_at || "").slice(0, 10);
   const hay = [
@@ -4163,7 +4163,7 @@ async function countAssessmentsForUser(user, options = {}) {
     const escaped = String(filters.q || "").replace(/[%*]/g, "").trim();
     if (escaped) {
       const like = `*${escaped.replace(/,/g, " ")}*`;
-      queryParts.push(`or=(candidate_name.ilike.${encodeURIComponent(like)},email_id.ilike.${encodeURIComponent(like)},phone_number.ilike.${encodeURIComponent(like)},client_name.ilike.${encodeURIComponent(like)},jd_title.ilike.${encodeURIComponent(like)},recruiter_name.ilike.${encodeURIComponent(like)})`);
+      queryParts.push(`or=(candidate_name.ilike.${encodeURIComponent(like)},email_id.ilike.${encodeURIComponent(like)},phone_number.ilike.${encodeURIComponent(like)},client_name.ilike.${encodeURIComponent(like)},jd_title.ilike.${encodeURIComponent(like)},assigned_to_name.ilike.${encodeURIComponent(like)})`);
     }
   }
   if (filters.dateFrom) queryParts.push(`created_at=gte.${encodeURIComponent(`${filters.dateFrom}T00:00:00.000Z`)}`);
@@ -4178,7 +4178,7 @@ async function countAssessmentsForUser(user, options = {}) {
   }
   if (filters.recruiters.length) {
     const recruiterList = filters.recruiters.map((item) => encodeURIComponent(item)).join(",");
-    queryParts.push(`or=(assigned_to_name.in.(${recruiterList}),recruiter_name.in.(${recruiterList}))`);
+    queryParts.push(`assigned_to_name=in.(${recruiterList})`);
   }
   if (filters.outcomes.length) queryParts.push(`candidate_status=in.(${filters.outcomes.map((item) => encodeURIComponent(item)).join(",")})`);
   if (lane === "active") {
@@ -5557,6 +5557,8 @@ function getClientLabel(candidate = {}, assessment = {}) {
 
 function getRecruiterLabel(candidate = {}, assessment = {}) {
   return (
+    String(candidate.assigned_to_name || candidate.assignedToName || "").trim() ||
+    String(assessment.assigned_to_name || assessment.assignedToName || "").trim() ||
     String(candidate.recruiter_name || candidate.recruiterName || "").trim() ||
     String(assessment.recruiterName || assessment.recruiter_name || "").trim() ||
     "Unassigned"

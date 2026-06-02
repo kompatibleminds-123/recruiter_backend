@@ -246,7 +246,7 @@ function FeatureLockedSection({ title = "Feature locked" }) {
   },
 	  exportPresetColumns: {
 	    compact_recruiter: "S.No.|s_no\nName|name\nPh|phone\nEmail|email\nCurrent Company|current_company\nCurrent Designation|current_designation\nTotal Experience|total_experience\nTenure in current company|current_org_tenure\nLocation|location\nReason of change|reason_of_change\nStatus|status\nCurrent CTC|current_ctc\nExpected CTC|expected_ctc\nNotice Period|notice_period\nOther Standard Questions|other_standard_questions\nRemarks|remarks\nLinkedIn|linkedin",
-	    client_tracker: "Client Name|client_name\nTarget Role / Open Position|jd_title\nKey Skills Required|key_skills_required\nRecruiter Name|recruiter_name\nDate Added|date_added\nCandidate Name|name\nStatus|status\nContact No.|phone\nEmail ID|email\nLocation|location\nCurrent Company|current_company\nCurrent Designation|current_designation\nDomain / Industry|domain_industry\nWork Exp (Total years/months)|total_experience\nHighest Education|highest_education\nCurrent CTC|current_ctc\nExpected CTC|expected_ctc\nNotice Period|notice_period\nRemarks / Notes|remarks\nLinkedIn Profile Link (Optional)|linkedin",
+    client_tracker: "Client Name|client_name\nTarget Role / Open Position|jd_title\nKey Skills Required|key_skills_required\nAssigned to|recruiter_name\nDate Added|date_added\nCandidate Name|name\nStatus|status\nContact No.|phone\nEmail ID|email\nLocation|location\nCurrent Company|current_company\nCurrent Designation|current_designation\nDomain / Industry|domain_industry\nWork Exp (Total years/months)|total_experience\nHighest Education|highest_education\nCurrent CTC|current_ctc\nExpected CTC|expected_ctc\nNotice Period|notice_period\nRemarks / Notes|remarks\nLinkedIn Profile Link (Optional)|linkedin",
 	    client_submission: "S.No.|s_no\nName|name\nPh|phone\nEmail|email\nCurrent Company|current_company\nCurrent Designation|current_designation\nTotal Experience|total_experience\nStrong Points|other_pointers\nRemarks|remarks",
 	    screening_focus: "S.No.|s_no\nName|name\nCurrent CTC|current_ctc\nExpected CTC|expected_ctc\nNotice Period|notice_period\nScreening Answers|other_standard_questions\nRemarks|remarks"
 	  },
@@ -3458,7 +3458,7 @@ function buildCapturedExcelRows(items, preset, settings = DEFAULT_COPY_SETTINGS)
           "Client Name",
           "Target Role / Open Position",
           "Key Skills Required",
-          "Recruiter Name",
+          "Assigned to",
           "Date Added",
           "Candidate Name",
           "Status",
@@ -5552,7 +5552,8 @@ function CandidateProfileModal({ open, candidate, onClose, onOpenCvOriginal, onO
       )
     : "";
   const heroAssignedTo = String(
-    linkedAssessment?.recruiterName ||
+    linkedAssessment?.assigned_to_name ||
+    linkedAssessment?.assignedToName ||
     baseCandidate?.assigned_to_name ||
     baseCandidate?.ownerRecruiter ||
     "-"
@@ -10611,16 +10612,12 @@ function PortalApp({ token, onLogout }) {
         String(candidate.name || "").trim().toLowerCase() === String(item?.candidateName || "").trim().toLowerCase()
       );
       const clientValue = String(item?.clientName || matchedCandidate?.client_name || "").trim();
-      // Always display the assigned recruiter (not assessment creator/last editor).
+      // Always display the assignee for the assessment.
       const recruiterValue = String(
         item?.assigned_to_name
         || item?.assignedToName
-        || item?.recruiterName
-        || item?.recruiter_name
         || matchedCandidate?.assigned_to_name
         || matchedCandidate?.assignedToName
-        || matchedCandidate?.recruiterName
-        || matchedCandidate?.recruiter_name
         || ""
       ).trim();
       const outcomeValue = normalizeAssessmentStatusLabel(item?.candidateStatus || item?.candidate_status || "") || "No outcome";
@@ -10653,9 +10650,13 @@ function PortalApp({ token, onLogout }) {
   }
 
   function getAssessmentOwnerLabel(assessment, linkedCandidate) {
-    const assignedTo = String(linkedCandidate?.assigned_to_name || linkedCandidate?.assignedToName || "").trim();
-    const ownerName = String(linkedCandidate?.recruiter_name || linkedCandidate?.recruiterName || assessment?.recruiterName || linkedCandidate?.recruiter_name || "").trim();
-    return assignedTo || ownerName || "";
+    return String(
+      assessment?.assigned_to_name
+      || assessment?.assignedToName
+      || linkedCandidate?.assigned_to_name
+      || linkedCandidate?.assignedToName
+      || ""
+    ).trim();
   }
 
   function getAssessmentOfferedAt(assessment) {
@@ -10716,7 +10717,7 @@ function PortalApp({ token, onLogout }) {
         if (dateFrom && eventDate && eventDate < dateFrom) return;
         if (dateTo && eventDate && eventDate > dateTo) return;
 
-        const recruiter = getAssessmentOwnerLabel(assessment, linkedCandidate);
+      const recruiter = getAssessmentOwnerLabel(assessment, linkedCandidate);
         const clientName = String(assessment?.clientName || linkedCandidate?.client_name || "").trim();
         const jdTitle = String(assessment?.jdTitle || linkedCandidate?.jd_title || "").trim();
         rows.push([
@@ -10986,8 +10987,8 @@ function PortalApp({ token, onLogout }) {
       expected_ctc: item.expectedCtc || "",
       created_at: item.createdAt || item.generatedAt || "",
       skills: Array.isArray(linkedCandidate?.skills) ? linkedCandidate.skills : [],
-      assigned_to_name: String(linkedCandidate?.assigned_to_name || item.recruiterName || linkedCandidate?.recruiter_name || "").trim(),
-      recruiter_name: String(linkedCandidate?.assigned_to_name || item.recruiterName || linkedCandidate?.recruiter_name || "").trim(),
+      assigned_to_name: String(linkedCandidate?.assigned_to_name || item.assigned_to_name || item.assignedToName || "").trim(),
+      recruiter_name: String(linkedCandidate?.assigned_to_name || item.assigned_to_name || item.assignedToName || "").trim(),
       notice_period: item.noticePeriod || "",
       lwd_or_doj: item.lwdOrDoj || item.offerDoj || linkedCandidate?.lwd_or_doj || linkedCandidateDraft?.lwdOrDoj || "",
       offer_in_hand: item.offerInHand || item.offerAmount || linkedCandidate?.offer_in_hand || linkedCandidateDraft?.offerInHand || "",
@@ -11146,7 +11147,7 @@ function PortalApp({ token, onLogout }) {
         location: item.location || "",
         client_name: item.clientName || "",
         jd_title: item.jdTitle || "",
-        assigned_to_name: item.recruiterName || "",
+        assigned_to_name: item.assigned_to_name || item.assignedToName || "",
         source: "assessment_only",
         notes: item.callbackNotes || "",
         recruiter_context_notes: item.recruiterNotes || "",
@@ -11161,7 +11162,7 @@ function PortalApp({ token, onLogout }) {
       const assignedUserId = String(item?.assigned_to_user_id || item?.assignedToUserId || "").trim();
       const ownerRecruiterId = String(item?.ownerRecruiterId || item?.recruiter_id || "").trim();
       const assignedToName = String(item?.assigned_to_name || item?.assignedToName || "").trim().toLowerCase();
-      const recruiterName = String(item?.ownerRecruiter || item?.recruiterName || item?.recruiter_name || "").trim().toLowerCase();
+      const recruiterName = String(item?.assigned_to_name || item?.assignedToName || "").trim().toLowerCase();
       if (currentUserId && (assignedUserId === currentUserId || ownerRecruiterId === currentUserId)) return true;
       if (currentUserName && (assignedToName === currentUserName || recruiterName === currentUserName)) return true;
       return false;
@@ -11172,7 +11173,7 @@ function PortalApp({ token, onLogout }) {
     const genders = new Set();
     const clients = new Set();
     candidateUniverseAll.forEach((item) => {
-      const recruiter = String(item.assigned_to_name || item.ownerRecruiter || item.recruiterName || "").trim();
+      const recruiter = String(item.assigned_to_name || item.assignedToName || "").trim();
       const draftPayload = parsePortalObjectField(item?.draft_payload || item?.draftPayload);
       const gender = String(item.gender || draftPayload?.gender || "").trim();
       const client = String(item.client_name || item.clientName || "").trim();
@@ -11223,7 +11224,7 @@ function PortalApp({ token, onLogout }) {
         item.recruiter_context_notes || ""
       ].join(" ").toLowerCase();
       const clientValue = String(item.client_name || item.clientName || "").trim();
-      const recruiterValue = String(item.assigned_to_name || item.ownerRecruiter || item.recruiterName || "").trim();
+      const recruiterValue = String(item.assigned_to_name || item.assignedToName || "").trim();
       const draftPayload = parsePortalObjectField(item?.draft_payload || item?.draftPayload);
       const genderValue = String(item.gender || draftPayload?.gender || "").trim();
       const normalizedClientValue = clientValue.toLowerCase();
@@ -11543,7 +11544,7 @@ function PortalApp({ token, onLogout }) {
         candidateName: item?.name || item?.candidateName || "Candidate",
         role: linkedAssessment?.jdTitle || item?.role || item?.currentDesignation || item?.jd_title || item?.jdTitle || "",
         client: linkedAssessment?.clientName || item?.client_name || item?.clientName || "",
-        recruiter: item?.assigned_to_name || item?.ownerRecruiter || item?.recruiterName || "",
+        recruiter: item?.assigned_to_name || item?.assignedToName || "",
         currentCtc: item?.current_ctc || item?.currentCtc || "",
         expectedCtc: item?.expected_ctc || item?.expectedCtc || "",
         notice: item?.notice_period || item?.noticePeriod || "",
@@ -11727,7 +11728,7 @@ function PortalApp({ token, onLogout }) {
           candidateName: candidate?.name || candidate?.candidateName || assessment?.candidateName || assessment?.payload?.candidateName || "Candidate",
           role: assessment?.jdTitle || candidate?.role || candidate?.jd_title || candidate?.jdTitle || "",
           client: assessment?.clientName || candidate?.client_name || candidate?.clientName || "",
-          recruiter: candidate?.assigned_to_name || candidate?.ownerRecruiter || candidate?.recruiterName || "",
+          recruiter: candidate?.assigned_to_name || candidate?.assignedToName || "",
           currentCtc: candidate?.current_ctc || candidate?.currentCtc || "",
           expectedCtc: candidate?.expected_ctc || candidate?.expectedCtc || "",
           notice: candidate?.notice_period || candidate?.noticePeriod || "",
@@ -14266,10 +14267,6 @@ function PortalApp({ token, onLogout }) {
       || candidate?.assignedToName
       || sourceApplicant?.assigned_to_name
       || sourceApplicant?.assignedToName
-      || candidate?.recruiterName
-      || candidate?.recruiter_name
-      || sourceApplicant?.recruiterName
-      || sourceApplicant?.recruiter_name
       || state.user?.name
       || ""
     ).trim();
@@ -16024,8 +16021,8 @@ function PortalApp({ token, onLogout }) {
         skills: normalizedSkills,
         domain_industry: baseCandidate?.domain_industry || baseCandidate?.domainIndustry || "",
         current_org_tenure: baseCandidate?.current_org_tenure || baseCandidate?.currentOrgTenure || linkedAssessment?.currentOrgTenure || "",
-        assigned_to_name: baseCandidate?.assigned_to_name || baseCandidate?.assignedToName || item?.ownerRecruiter || item?.recruiterName || "",
-        recruiter_name: baseCandidate?.recruiter_name || baseCandidate?.assigned_by_name || item?.sourcedRecruiter || baseCandidate?.assigned_to_name || "",
+        assigned_to_name: baseCandidate?.assigned_to_name || baseCandidate?.assignedToName || item?.assigned_to_name || item?.assignedToName || "",
+        recruiter_name: baseCandidate?.assigned_to_name || baseCandidate?.assignedToName || item?.assigned_to_name || item?.assignedToName || "",
         recruiter_context_notes: recruiterNotes,
         other_pointers: otherPointers,
         notes: candidateNotes || String(linkedAssessment?.callbackNotes || "").trim(),
@@ -19227,7 +19224,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
       company: assessment?.currentCompany || "",
       company_name: state.user?.companyName || "",
       outcome: normalizeAssessmentStatusLabel(assessment?.candidateStatus || ""),
-      recruiter_name: assessment?.assigned_to_name || assessment?.assignedToName || assessment?.recruiterName || assessment?.recruiter_name || state.user?.name || "",
+      recruiter_name: assessment?.assigned_to_name || assessment?.assignedToName || state.user?.name || "",
       recruiter_notes: assessment?.recruiterNotes || "",
       location: assessment?.location || "",
       phone: assessment?.phoneNumber || "",
@@ -20595,7 +20592,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                           company: item.currentCompany || "",
                           company_name: state.user?.companyName || "",
                           outcome: getApplicantOutcome(item),
-                          recruiter_name: item.assignedToName || state.user?.name || "",
+                          recruiter_name: item.assigned_to_name || item.assignedToName || state.user?.name || "",
                           recruiter_notes: item.screeningAnswers || "",
                           location: item.location || "",
                           phone: item.phone || item.phoneNumber || "",
@@ -21193,12 +21190,8 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                       const assignedTo = String(
                         item?.assigned_to_name
                         || item?.assignedToName
-                        || item?.recruiterName
-                        || item?.recruiter_name
                         || linkedCandidate?.assigned_to_name
                         || linkedCandidate?.assignedToName
-                        || linkedCandidate?.recruiterName
-                        || linkedCandidate?.recruiter_name
                         || ""
                       ).trim() || "NA";
                       const clientName = String(item.clientName || linkedCandidate?.company || "").trim();
@@ -24691,7 +24684,7 @@ const SHEET_FIELD_ALIASES = {
   expected_ctc: ["expected ctc", "expected", "expected salary"],
   notice_period: ["notice period", "notice", "np", "serving notice"],
   highest_education: ["highest education", "highest qualification", "qualification", "education", "degree"],
-  recruiter_name: ["recruiter name", "assigned recruiter", "owner recruiter", "recruiter"],
+  recruiter_name: ["assigned to", "assigned recruiter", "recruiter name", "owner recruiter", "recruiter"],
   recruiter_email: ["recruiter email", "assigned recruiter email", "owner recruiter email", "recruiter mail"],
   contact_attempts: ["status", "attempt status", "contact attempt", "contact attempts", "last contact outcome", "outcome"]
 };
@@ -24715,7 +24708,7 @@ const SHEET_IMPORT_FIELD_OPTIONS = [
   { key: "expected_ctc", label: "Expected CTC" },
   { key: "notice_period", label: "Notice Period" },
   { key: "highest_education", label: "Highest Education" },
-  { key: "recruiter_name", label: "Recruiter Name" },
+  { key: "recruiter_name", label: "Assigned to" },
   { key: "recruiter_email", label: "Recruiter Email" },
   { key: "contact_attempts", label: "Contact Attempts Status" }
 ];

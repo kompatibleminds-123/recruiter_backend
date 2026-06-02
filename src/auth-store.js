@@ -1049,12 +1049,26 @@ function mergeSuggestedAndCompanySettings(globalSettings = {}, companySettings =
 function sanitizeAssessment(item) {
   if (!item) return null;
   const p = item.payload && typeof item.payload === "object" ? item.payload : {};
+  const assignedToName = String(
+    item.assigned_to_name
+    || item.assignedToName
+    || item.recruiterName
+    || item.recruiter_name
+    || p.assigned_to_name
+    || p.assignedToName
+    || p.recruiterName
+    || p.recruiter_name
+    || ""
+  ).trim();
   return {
     ...p,
     id: item.id ?? p.id ?? null,
     companyId: item.companyId ?? item.company_id ?? p.companyId ?? null,
     recruiterId: item.recruiterId ?? item.recruiter_id ?? p.recruiterId ?? null,
-    recruiterName: item.recruiterName ?? item.recruiter_name ?? p.recruiterName ?? null,
+    recruiterName: String(assignedToName || item.recruiterName || item.recruiter_name || p.recruiterName || "").trim() || null,
+    recruiter_name: String(assignedToName || item.recruiter_name || item.recruiterName || p.recruiter_name || "").trim() || null,
+    assigned_to_name: assignedToName || null,
+    assignedToName: assignedToName || null,
     recruiterEmail: item.recruiterEmail ?? item.recruiter_email ?? p.recruiterEmail ?? null,
     generatedAt: item.generatedAt ?? item.generated_at ?? item.created_at ?? p.generatedAt ?? null,
     updatedAt: item.updatedAt ?? item.updated_at ?? p.updatedAt ?? null,
@@ -1713,7 +1727,7 @@ function assessmentRow(assessment, actor, companyId) {
     id,
     company_id: companyId,
     recruiter_id: actor.id,
-    recruiter_name: actor.name,
+    recruiter_name: next.assignedToName || actor.name,
     recruiter_email: actor.email,
     candidate_id: candidateId,
     candidate_name: next.candidateName || "",
@@ -5261,7 +5275,27 @@ async function saveAssessment({ actorUserId, companyId, assessment }) {
   const actor = sanitizeUser(await getUserById(actorUserId, companyId)); if (!actor) throw new Error("Authenticated recruiter not found for this company.");
   if (!cfg().on) {
     const store = readStore(); store.assessments = Array.isArray(store.assessments) ? store.assessments : []; const now = new Date().toISOString(); const id = persistedAssessmentId(assessment.id); const ix = store.assessments.findIndex((i) => i.id === id && i.companyId === companyId);
-    const next = { ...assessment, id, companyId, recruiterId: actor.id, recruiterName: actor.name, recruiterEmail: actor.email, generatedAt: assessment.generatedAt || now, updatedAt: now };
+    const assignedToName = String(
+      assessment?.assigned_to_name
+      || assessment?.assignedToName
+      || assessment?.recruiterName
+      || assessment?.recruiter_name
+      || actor.name
+      || ""
+    ).trim();
+    const next = {
+      ...assessment,
+      id,
+      companyId,
+      recruiterId: actor.id,
+      recruiterName: assignedToName || actor.name,
+      recruiter_name: assignedToName || actor.name,
+      assigned_to_name: assignedToName || actor.name,
+      assignedToName: assignedToName || actor.name,
+      recruiterEmail: actor.email,
+      generatedAt: assessment.generatedAt || now,
+      updatedAt: now
+    };
     if (ix >= 0) store.assessments[ix] = next; else store.assessments.unshift(next); writeStore(store); return sanitizeAssessment(next);
   }
   // De-duplicate: if an assessment already exists for the same candidate (and same client/JD when present),
