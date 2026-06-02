@@ -10599,7 +10599,7 @@ function PortalApp({ token, onLogout }) {
     const recruiters = new Set();
     const outcomes = new Set();
     assessmentOptionPool.forEach((item) => {
-      const matchedCandidate = (state.candidates || []).find((candidate) =>
+      const matchedCandidate = resolveAssessmentLinkedCandidate(item) || (state.candidates || []).find((candidate) =>
         (item?.candidateId && String(candidate.id) === String(item.candidateId)) ||
         String(candidate.name || "").trim().toLowerCase() === String(item?.candidateName || "").trim().toLowerCase()
       );
@@ -10616,7 +10616,7 @@ function PortalApp({ token, onLogout }) {
       recruiters: Array.from(recruiters).sort((a, b) => a.localeCompare(b)),
       outcomes: DEFAULT_STATUS_OPTIONS
     };
-  }, [assessmentOptionPool, state.candidates, state.user, state.users, resolveCanonicalJdTitle, getClientScopedActiveJobTitles, assessmentFilters.clients]);
+  }, [assessmentOptionPool, state.candidates, state.user, state.users, resolveCanonicalJdTitle, getClientScopedActiveJobTitles, assessmentFilters.clients, assessmentLinkedCandidateMap]);
 
   const filteredAssessments = useMemo(() => {
     return Array.isArray(assessmentListItems) ? assessmentListItems : [];
@@ -10637,8 +10637,6 @@ function PortalApp({ token, onLogout }) {
     return String(
       linkedCandidate?.assigned_to_name
       || linkedCandidate?.assignedToName
-      || assessment?.assigned_to_name
-      || assessment?.assignedToName
       || ""
     ).trim();
   }
@@ -10925,9 +10923,24 @@ function PortalApp({ token, onLogout }) {
     return map;
   }, [filteredAssessments, state.candidates]);
 
+  function resolveAssessmentLinkedCandidate(assessment = {}) {
+    const byAssessmentId = assessmentLinkedCandidateMap.get(String(assessment?.id || "")) || null;
+    if (byAssessmentId) return byAssessmentId;
+    const candidateId = String(assessment?.candidateId || assessment?.candidate_id || assessment?.payload?.candidateId || assessment?.payload?.candidate_id || "").trim();
+    if (candidateId) {
+      const byCandidateId = (state.candidates || []).find((candidate) => String(candidate?.id || "").trim() === candidateId) || null;
+      if (byCandidateId) return byCandidateId;
+      const byAssessmentLink = (state.candidates || []).find((candidate) => String(candidate?.assessment_id || "").trim() === String(assessment?.id || "").trim()) || null;
+      if (byAssessmentLink) return byAssessmentLink;
+    }
+    const candidateName = String(assessment?.candidateName || "").trim().toLowerCase();
+    if (!candidateName) return null;
+    return (state.candidates || []).find((candidate) => String(candidate?.name || "").trim().toLowerCase() === candidateName) || null;
+  }
+
   const normalizedAssessmentCopyRows = useMemo(() => {
     return filteredAssessments.map((item, index) => {
-      const linkedCandidate = assessmentLinkedCandidateMap.get(String(item.id || "")) || null;
+      const linkedCandidate = resolveAssessmentLinkedCandidate(item);
       const linkedCandidateDraft = getCandidateDraftState(linkedCandidate || {});
       const linkedCandidateAnswers = linkedCandidateDraft?.jdScreeningAnswers && typeof linkedCandidateDraft.jdScreeningAnswers === "object"
         ? linkedCandidateDraft.jdScreeningAnswers
@@ -11027,7 +11040,7 @@ function PortalApp({ token, onLogout }) {
         || ""
       };
     });
-  }, [assessmentLinkedCandidateMap, filteredAssessments]);
+  }, [assessmentLinkedCandidateMap, filteredAssessments, state.candidates]);
   const selectedAssessmentRows = useMemo(() => (
     normalizedAssessmentCopyRows
       .filter((item) => selectedAssessmentIds.includes(String(item.id || item.assessmentId || "")))
@@ -21177,7 +21190,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                       return (
                         <>
                     {(() => {
-                      const linkedCandidate = assessmentLinkedCandidateMap.get(String(item.id || "")) || null;
+                      const linkedCandidate = resolveAssessmentLinkedCandidate(item);
                       const assignedTo = String(
                         linkedCandidate?.assigned_to_name
                         || linkedCandidate?.assignedToName
@@ -21366,7 +21379,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                             {openAssessmentMoreId === String(item.id) ? (
                               <div className="more-menu__dropdown more-menu__dropdown--inline" role="menu">
                                 {(() => {
-                                  const linkedCandidate = assessmentLinkedCandidateMap.get(String(item.id || "")) || null;
+                                  const linkedCandidate = resolveAssessmentLinkedCandidate(item);
                                   const candidateForCv = linkedCandidate || item;
                                   const hasCv = candidateHasStoredCv(linkedCandidate) || candidateHasStoredCv(item);
                                   if (!hasCv) return null;
