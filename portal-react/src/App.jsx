@@ -9948,17 +9948,16 @@ function PortalApp({ token, onLogout }) {
           ...current,
           assessments: mergeAssessmentsByFreshness(current.assessments, [assessment])
         }));
+        patchVisibleAssessmentRow(assessment, "upsert");
       } else if (eventType === "assessment_deleted" && assessmentId) {
         setState((current) => ({
           ...current,
           assessments: (current.assessments || []).filter((item) => String(item?.id || "") !== assessmentId)
         }));
+        patchVisibleAssessmentRow({ id: assessmentId }, "delete");
       }
-      if (candidateId || assessmentId) {
-        void Promise.all([
-          reloadAssessmentSlice(assessmentPage, safeAssessmentApiPageSize, assessmentFiltersApplied, assessmentLane),
-          reloadAssessmentStats(assessmentFiltersApplied)
-        ]).catch(() => {});
+      if (eventType === "assessment_deleted" || eventType === "assessment_restored") {
+        void reloadAssessmentStats(assessmentFiltersApplied).catch(() => {});
       }
     };
     source.addEventListener("assessment", onAssessment);
@@ -18348,6 +18347,23 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
         }
       }
       return { ...current, assessments: nextAssessments };
+    });
+  }
+
+  function patchVisibleAssessmentRow(saved, mode = "upsert") {
+    const savedId = String(saved?.id || "").trim();
+    if (!savedId) return;
+    if (mode === "delete") {
+      setAssessmentListItems((current) => (Array.isArray(current) ? current.filter((item) => String(item?.id || "").trim() !== savedId) : current));
+      return;
+    }
+    setAssessmentListItems((current) => {
+      if (!Array.isArray(current)) return current;
+      const existingIx = current.findIndex((item) => String(item?.id || "").trim() === savedId);
+      if (existingIx < 0) return current;
+      const next = [...current];
+      next.splice(existingIx, 1, { ...next[existingIx], ...saved });
+      return next;
     });
   }
 
