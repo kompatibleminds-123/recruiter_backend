@@ -2969,20 +2969,27 @@ textarea { min-height: 92px; resize: vertical; }
   text-align: left;
 }
 .journey-modal {
-  max-width: 760px;
+  max-width: 500px;
 }
 .journey-modal__text {
   width: 100%;
-  min-height: 280px;
+  min-height: 150px;
   resize: vertical;
   border: 1px solid var(--border);
   border-radius: 14px;
-  padding: 12px 14px;
+  padding: 8px 10px;
   background: #fbfdff;
   color: var(--text);
   font: inherit;
-  line-height: 1.55;
+  line-height: 1.45;
   white-space: pre-wrap;
+}
+.journey-modal .overlay-header {
+  margin-bottom: 8px;
+}
+.journey-modal .button-row {
+  margin-top: 8px;
+  gap: 0.42rem;
 }
 .placeholder-chip.active {
   background: #e7f0ff;

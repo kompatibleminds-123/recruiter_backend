@@ -5906,10 +5906,6 @@ function JdEmailModal({ open, jobs, value, ccSuggestions = [], onChange, onClose
 }
 
 function JourneyModal({ open, title = "Journey", text = "", onClose, onCopy }) {
-  const [copied, setCopied] = useState(false);
-  useEffect(() => {
-    if (!open) setCopied(false);
-  }, [open]);
   if (!open) return null;
   return (
     <div className="overlay" onClick={onClose}>
@@ -5917,7 +5913,6 @@ function JourneyModal({ open, title = "Journey", text = "", onClose, onCopy }) {
         <div className="overlay-header">
           <div>
             <h3>{title}</h3>
-            <p className="muted">Copied journey text for this assessment.</p>
           </div>
           <button className="ghost-btn" onClick={onClose}>Close</button>
         </div>
@@ -5928,12 +5923,8 @@ function JourneyModal({ open, title = "Journey", text = "", onClose, onCopy }) {
           onFocus={(e) => e.currentTarget.select()}
         />
         <div className="button-row">
-          <button onClick={async () => {
-            await onCopy?.();
-            setCopied(true);
-          }}>Copy again</button>
-          <button className="ghost-btn" onClick={onClose}>Done</button>
-          {copied ? <span className="status inline ok">Journey copied.</span> : null}
+          <button onClick={async () => { await onCopy?.(); }}>Copy</button>
+          <button className="ghost-btn" onClick={onClose}>Close</button>
         </div>
       </div>
     </div>
@@ -21141,7 +21132,17 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                         <>
                     {(() => {
                       const linkedCandidate = assessmentLinkedCandidateMap.get(String(item.id || "")) || null;
-                      const assignedTo = String(linkedCandidate?.assigned_to_name || linkedCandidate?.assignedToName || "").trim() || "NA";
+                      const assignedTo = String(
+                        item?.assigned_to_name
+                        || item?.assignedToName
+                        || item?.recruiterName
+                        || item?.recruiter_name
+                        || linkedCandidate?.assigned_to_name
+                        || linkedCandidate?.assignedToName
+                        || linkedCandidate?.recruiterName
+                        || linkedCandidate?.recruiter_name
+                        || ""
+                      ).trim() || "NA";
                       const clientName = String(item.clientName || linkedCandidate?.company || "").trim();
                       const candidateName = String(item.candidateName || "Candidate").trim();
                       const jdTitle = String(item.jdTitle || "Untitled role").trim();
