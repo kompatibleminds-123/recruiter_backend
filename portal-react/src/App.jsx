@@ -7714,6 +7714,7 @@ function PortalApp({ token, onLogout }) {
   const [clientShareCvLinks, setClientShareCvLinks] = useState({});
   const [clientShareCvLinkState, setClientShareCvLinkState] = useState({});
   const [clientShareCvLinkFingerprint, setClientShareCvLinkFingerprint] = useState({});
+  const clientShareCvLinkPendingRef = useRef(new Map());
   const [clientShareSendQueue, setClientShareSendQueue] = useState({ pending: false, executeAt: 0, to: "", subject: "" });
   const [clientShareQueueSeconds, setClientShareQueueSeconds] = useState(0);
   const [clientShareBodyTouched, setClientShareBodyTouched] = useState(false);
@@ -11010,14 +11011,15 @@ function PortalApp({ token, onLogout }) {
 	  useEffect(() => {
 	    async function loadCvLinks() {
 	      if (!token || !selectedAssessmentRows.length) return;
-	      const rowsNeedingLinks = selectedAssessmentRows.filter((item) => {
-	        const shareKey = String(item.candidate_id || item.id || "");
-	        if (!shareKey) return false;
-	        const hasCvRef = Boolean(item.cv_key || item.cv_url || item.cv_provider || item.cv_filename);
-	        if (!hasCvRef) return false;
-	        const fingerprint = [item.cv_provider || "", item.cv_key || "", item.cv_url || "", item.cv_filename || "", isAssessmentShareBrandedCvEnabled(item) ? "branded" : "original"].join("|");
-	        return clientShareCvLinkFingerprint[shareKey] !== fingerprint;
-	      });
+      const rowsNeedingLinks = selectedAssessmentRows.filter((item) => {
+        const shareKey = String(item.candidate_id || item.id || "");
+        if (!shareKey) return false;
+        const hasCvRef = Boolean(item.cv_key || item.cv_url || item.cv_provider || item.cv_filename);
+        if (!hasCvRef) return false;
+        const fingerprint = [item.cv_provider || "", item.cv_key || "", item.cv_url || "", item.cv_filename || "", isAssessmentShareBrandedCvEnabled(item) ? "branded" : "original"].join("|");
+        if (clientShareCvLinkPendingRef.current.get(shareKey) === fingerprint) return false;
+        return clientShareCvLinkFingerprint[shareKey] !== fingerprint;
+      });
 	      if (!rowsNeedingLinks.length) return;
 	      setClientShareCvLinkState((current) => {
 	        const next = { ...current };
@@ -11027,9 +11029,11 @@ function PortalApp({ token, onLogout }) {
 	        });
 	        return next;
 	      });
-	      const entries = await Promise.all(rowsNeedingLinks.map(async (item) => {
-	        const shareKey = String(item.candidate_id || item.id || "");
-	        try {
+      const entries = await Promise.all(rowsNeedingLinks.map(async (item) => {
+        const shareKey = String(item.candidate_id || item.id || "");
+        const fingerprint = [item.cv_provider || "", item.cv_key || "", item.cv_url || "", item.cv_filename || "", isAssessmentShareBrandedCvEnabled(item) ? "branded" : "original"].join("|");
+        clientShareCvLinkPendingRef.current.set(shareKey, fingerprint);
+        try {
           const params = new URLSearchParams();
           if (item.candidate_id) params.set("candidate_id", String(item.candidate_id));
           if (item.phone) params.set("candidate_phone", String(item.phone));
@@ -11042,11 +11046,11 @@ function PortalApp({ token, onLogout }) {
           if (item.name) params.set("candidate_name", String(item.name));
           if (isAssessmentShareBrandedCvEnabled(item)) params.set("branded", "1");
 	          const result = await api(`/company/share-cv-link${params.toString() ? `?${params.toString()}` : ""}`, token);
-	          return [shareKey, result.url, "ready", [item.cv_provider || "", item.cv_key || "", item.cv_url || "", item.cv_filename || "", isAssessmentShareBrandedCvEnabled(item) ? "branded" : "original"].join("|")];
-	        } catch {
-	          return [shareKey, "", "missing", [item.cv_provider || "", item.cv_key || "", item.cv_url || "", item.cv_filename || "", isAssessmentShareBrandedCvEnabled(item) ? "branded" : "original"].join("|")];
-	        }
-	      }));
+          return [shareKey, result.url, "ready", fingerprint];
+        } catch {
+          return [shareKey, "", "missing", fingerprint];
+        }
+      }));
 	      setClientShareCvLinks((current) => {
 	        const next = { ...current };
 	        entries.forEach(([candidateId, url]) => {
@@ -11061,16 +11065,20 @@ function PortalApp({ token, onLogout }) {
 	        });
 	        return next;
 	      });
-	      setClientShareCvLinkFingerprint((current) => {
-	        const next = { ...current };
-	        entries.forEach(([candidateId, _url, _state, fingerprint]) => {
-	          if (candidateId) next[candidateId] = fingerprint || "";
-	        });
-	        return next;
-	      });
-	    }
-	    void loadCvLinks();
-	  }, [selectedAssessmentRows, token, clientShareCvLinkFingerprint]);
+      setClientShareCvLinkFingerprint((current) => {
+        const next = { ...current };
+        entries.forEach(([candidateId, _url, _state, fingerprint]) => {
+          if (candidateId) next[candidateId] = fingerprint || "";
+        });
+        return next;
+      });
+      rowsNeedingLinks.forEach((item) => {
+        const shareKey = String(item.candidate_id || item.id || "");
+        if (shareKey) clientShareCvLinkPendingRef.current.delete(shareKey);
+      });
+    }
+    void loadCvLinks();
+  }, [selectedAssessmentRows, token, clientShareCvLinkFingerprint]);
   const candidateUniverseAll = useMemo(() => {
     const databaseRows = Array.isArray(state.databaseCandidates) && state.databaseCandidates.length ? state.databaseCandidates : (state.candidates || []);
     const linkedAssessmentIds = new Set(databaseRows.map((item) => String(item.assessment_id || "").trim()).filter(Boolean));
@@ -20810,19 +20818,23 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                                     </span>
                                     <span>Select for client share</span>
                                   </button>
-                                  {selectedAssessmentIds.includes(String(item.id)) ? (
-                                    <button
-                                      type="button"
-                                      className={`checkbox-pill checkbox-pill--soft${isAssessmentShareBrandedCvEnabled(item) ? " active" : ""}`}
-                                      aria-pressed={isAssessmentShareBrandedCvEnabled(item)}
-                                      onClick={() => { void setAssessmentShareBrandedCv(item, !isAssessmentShareBrandedCvEnabled(item)); }}
-                                    >
-                                      <span className="checkbox-pill__box" aria-hidden="true">
-                                        {isAssessmentShareBrandedCvEnabled(item) ? "âœ“" : ""}
-                                      </span>
-                                      <span>Share Branded CV</span>
-                                    </button>
-                                  ) : null}
+                                  <button
+                                    type="button"
+                                    className={`checkbox-pill checkbox-pill--soft${isAssessmentShareBrandedCvEnabled(item) ? " active" : ""}`}
+                                    aria-pressed={isAssessmentShareBrandedCvEnabled(item)}
+                                    aria-hidden={!selectedAssessmentIds.includes(String(item.id))}
+                                    tabIndex={selectedAssessmentIds.includes(String(item.id)) ? 0 : -1}
+                                    style={{
+                                      visibility: selectedAssessmentIds.includes(String(item.id)) ? "visible" : "hidden",
+                                      pointerEvents: selectedAssessmentIds.includes(String(item.id)) ? "auto" : "none"
+                                    }}
+                                    onClick={() => {
+                                      if (!selectedAssessmentIds.includes(String(item.id))) return;
+                                      void setAssessmentShareBrandedCv(item, !isAssessmentShareBrandedCvEnabled(item));
+                                    }}
+                                  >
+                                    <span>Share Branded CV</span>
+                                  </button>
                                 </div>
                               ) : (
                                 <span className="muted">Archived</span>
