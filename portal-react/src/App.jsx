@@ -9235,7 +9235,6 @@ function PortalApp({ token, onLogout }) {
     const needsCandidates =
       pathname === "/dashboard" ||
       pathname === "/captured-notes" ||
-      pathname === "/assessments" ||
       pathname === "/interview" ||
       forceCore ||
       forceAll;
@@ -20820,7 +20819,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                                   </button>
                                   <button
                                     type="button"
-                                    className={`checkbox-pill checkbox-pill--soft${isAssessmentShareBrandedCvEnabled(item) ? " active" : ""}`}
+                                    className="checkbox-pill checkbox-pill--soft"
                                     aria-pressed={isAssessmentShareBrandedCvEnabled(item)}
                                     aria-hidden={!selectedAssessmentIds.includes(String(item.id))}
                                     tabIndex={selectedAssessmentIds.includes(String(item.id)) ? 0 : -1}
@@ -20833,6 +20832,9 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                                       void setAssessmentShareBrandedCv(item, !isAssessmentShareBrandedCvEnabled(item));
                                     }}
                                   >
+                                    <span className="checkbox-pill__box" aria-hidden="true">
+                                      {isAssessmentShareBrandedCvEnabled(item) ? "✓" : ""}
+                                    </span>
                                     <span>Share Branded CV</span>
                                   </button>
                                 </div>
@@ -20958,8 +20960,8 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                               <div className="more-menu__dropdown more-menu__dropdown--inline" role="menu">
                                 {(() => {
                                   const linkedCandidate = assessmentLinkedCandidateMap.get(String(item.id || "")) || null;
-                                  const candidateForCv = linkedCandidate;
-                                  const hasCv = candidateHasStoredCv(linkedCandidate);
+                                  const candidateForCv = linkedCandidate || item;
+                                  const hasCv = candidateHasStoredCv(linkedCandidate) || candidateHasStoredCv(item);
                                   if (!hasCv) return null;
                                   return (
                                     <>
