@@ -5919,7 +5919,6 @@ function JourneyModal({ open, title = "Journey", text = "", onClose, onCopy }) {
           <div>
             <h3>{title}</h3>
           </div>
-          <button className="ghost-btn" onClick={onClose}>Close</button>
         </div>
         <textarea
           className="journey-modal__text"
@@ -7474,6 +7473,7 @@ function PortalApp({ token, onLogout }) {
     outcomes: []
   });
   const [assessmentLane, setAssessmentLane] = useState("active"); // active | archived
+  const [assessmentSortBy, setAssessmentSortBy] = useState("updated"); // updated | created
   const [assessmentPage, setAssessmentPage] = useState(1);
   const [assessmentPageSize, setAssessmentPageSize] = useState(25);
   const [assessmentListItems, setAssessmentListItems] = useState([]);
@@ -8260,7 +8260,7 @@ function PortalApp({ token, onLogout }) {
   useEffect(() => {
     // Archived assessments should not be selected for client share.
     setSelectedAssessmentIds([]);
-  }, [assessmentLane, assessmentPage, assessmentPageSize, assessmentFiltersApplied]);
+  }, [assessmentLane, assessmentPage, assessmentPageSize, assessmentFiltersApplied, assessmentSortBy]);
 
   useEffect(() => {
     if (!token) return;
@@ -9829,10 +9829,11 @@ function PortalApp({ token, onLogout }) {
     }));
   }
 
-  function buildAssessmentQueryParams(filters = assessmentFiltersApplied, page = safeAssessmentApiPage, limit = safeAssessmentApiPageSize, lane = assessmentLane) {
+  function buildAssessmentQueryParams(filters = assessmentFiltersApplied, page = safeAssessmentApiPage, limit = safeAssessmentApiPageSize, lane = assessmentLane, sortBy = assessmentSortBy) {
     const params = new URLSearchParams();
     params.set("limit", String(Math.max(1, Number(limit || 25))));
     params.set("page", String(Math.max(1, Number(page || 1))));
+    params.set("sortBy", String(sortBy || "updated").trim() || "updated");
     const addCsv = (key, list) => {
       if (!Array.isArray(list) || !list.length) return;
       params.set(key, list.map((item) => String(item || "").trim()).filter(Boolean).join(","));
@@ -9850,9 +9851,9 @@ function PortalApp({ token, onLogout }) {
     return params.toString();
   }
 
-  async function reloadAssessmentSlice(page = safeAssessmentApiPage, limit = safeAssessmentApiPageSize, filters = assessmentFiltersApplied, lane = assessmentLane) {
+  async function reloadAssessmentSlice(page = safeAssessmentApiPage, limit = safeAssessmentApiPageSize, filters = assessmentFiltersApplied, lane = assessmentLane, sortBy = assessmentSortBy) {
     if (!token) return;
-    const query = buildAssessmentQueryParams(filters, page, limit, lane);
+    const query = buildAssessmentQueryParams(filters, page, limit, lane, sortBy);
     if (assessmentListRequestRef.current.inflightQuery === query) return;
     const seq = Number(assessmentListRequestRef.current.seq || 0) + 1;
     assessmentListRequestRef.current = { seq, inflightQuery: query };
@@ -9950,7 +9951,7 @@ function PortalApp({ token, onLogout }) {
     if (String(location?.pathname || "") !== "/assessments") return undefined;
 
     let cancelled = false;
-    void reloadAssessmentSlice(assessmentPage, safeAssessmentApiPageSize, assessmentFiltersApplied, assessmentLane)
+    void reloadAssessmentSlice(assessmentPage, safeAssessmentApiPageSize, assessmentFiltersApplied, assessmentLane, assessmentSortBy)
       .catch(() => {})
       .finally(() => {
         if (cancelled) return;
@@ -9958,7 +9959,7 @@ function PortalApp({ token, onLogout }) {
     return () => {
       cancelled = true;
     };
-  }, [token, location?.pathname, assessmentPage, safeAssessmentApiPageSize, assessmentFiltersApplied, assessmentLane]);
+  }, [token, location?.pathname, assessmentPage, safeAssessmentApiPageSize, assessmentFiltersApplied, assessmentLane, assessmentSortBy]);
 
   useEffect(() => {
     if (!token) return undefined;
@@ -13490,7 +13491,7 @@ function PortalApp({ token, onLogout }) {
       await api("/company/assessments", token, "POST", { assessment: nextAssessment });
       if (String(location?.pathname || "") === "/assessments") {
         await Promise.all([
-          reloadAssessmentSlice(assessmentPage, safeAssessmentApiPageSize, assessmentFiltersApplied, assessmentLane),
+          reloadAssessmentSlice(assessmentPage, safeAssessmentApiPageSize, assessmentFiltersApplied, assessmentLane, assessmentSortBy),
           reloadAssessmentStats(assessmentFiltersApplied)
         ]);
       } else {
@@ -15411,7 +15412,7 @@ function PortalApp({ token, onLogout }) {
     if (assessment) {
       if (String(location?.pathname || "") === "/assessments") {
         await Promise.all([
-          reloadAssessmentSlice(assessmentPage, safeAssessmentApiPageSize, assessmentFiltersApplied, assessmentLane),
+          reloadAssessmentSlice(assessmentPage, safeAssessmentApiPageSize, assessmentFiltersApplied, assessmentLane, assessmentSortBy),
           reloadAssessmentStats(assessmentFiltersApplied)
         ]);
       } else {
@@ -17277,12 +17278,13 @@ function PortalApp({ token, onLogout }) {
         ...current,
         shareBrandedCv: nextShareBrandedCv,
         share_branded_cv: nextShareBrandedCv,
+        preserveUpdatedAt: true,
         payload: {
           ...((current && current.payload && typeof current.payload === "object") ? current.payload : {}),
           shareBrandedCv: nextShareBrandedCv,
           share_branded_cv: nextShareBrandedCv
         },
-        updatedAt: new Date().toISOString()
+        updatedAt: String(current?.updatedAt || current?.updated_at || "").trim()
       };
       const saved = await api("/company/assessments", token, "POST", { assessment: next });
       const savedId = String(saved?.id || assessmentId).trim();
@@ -21160,6 +21162,20 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                     : "Showing 0 of 0"}
                 </div>
                 <div className="button-row tight" style={{ alignItems: "center", gap: 10 }}>
+                  <label className="copy-preset-control" style={{ margin: 0 }}>
+                    <span>Sort by</span>
+                    <select
+                      value={assessmentSortBy}
+                      onChange={(e) => {
+                        const nextSort = String(e.target.value || "updated").trim() || "updated";
+                        setAssessmentSortBy(nextSort);
+                        setAssessmentPage(1);
+                      }}
+                    >
+                      <option value="updated">Updated time</option>
+                      <option value="created">Created time</option>
+                    </select>
+                  </label>
                   <label className="copy-preset-control" style={{ margin: 0 }}>
                     <span>Rows per page</span>
                     <select

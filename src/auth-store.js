@@ -1072,6 +1072,7 @@ function sanitizeAssessment(item) {
     recruiterEmail: item.recruiterEmail ?? item.recruiter_email ?? p.recruiterEmail ?? null,
     generatedAt: item.generatedAt ?? item.generated_at ?? item.created_at ?? p.generatedAt ?? null,
     updatedAt: item.updatedAt ?? item.updated_at ?? p.updatedAt ?? null,
+    preserveUpdatedAt: Boolean(item.preserveUpdatedAt ?? p.preserveUpdatedAt ?? false),
     candidateId: item.candidateId ?? item.candidate_id ?? p.candidateId ?? p.candidate_id ?? "",
     candidateName: item.candidateName ?? item.candidate_name ?? p.candidateName ?? "",
     phoneNumber: item.phoneNumber ?? item.phone_number ?? p.phoneNumber ?? "",
@@ -1698,6 +1699,8 @@ function assessmentRow(assessment, actor, companyId) {
   const a = sanitizeAssessment(assessment);
   const id = persistedAssessmentId(a.id);
   const now = new Date().toISOString();
+  const preserveUpdatedAt = Boolean(a.preserveUpdatedAt);
+  const explicitUpdatedAt = String(a.updatedAt || a.updated_at || "").trim();
   const assignedToName = String(
     a.assigned_to_name
     || a.assignedToName
@@ -1716,7 +1719,7 @@ function assessmentRow(assessment, actor, companyId) {
     assigned_to_name: assignedToName || actor.name,
     assignedToName: assignedToName || actor.name,
     generatedAt: a.generatedAt || now,
-    updatedAt: now,
+    updatedAt: preserveUpdatedAt && explicitUpdatedAt ? explicitUpdatedAt : now,
     shareBrandedCv: Boolean(a.shareBrandedCv ?? a.share_branded_cv ?? a.payload?.shareBrandedCv ?? a.payload?.share_branded_cv ?? false),
     share_branded_cv: Boolean(a.share_branded_cv ?? a.shareBrandedCv ?? a.payload?.share_branded_cv ?? a.payload?.shareBrandedCv ?? false)
   };
@@ -1777,7 +1780,10 @@ function assessmentRow(assessment, actor, companyId) {
     answers: next.answers || [],
     standard_answers: standardAnswers,
     question_answer_pairs: next.questionAnswerPairs || [],
-    payload: next
+    payload: {
+      ...next,
+      updatedAt: next.updatedAt
+    }
   };
 }
 const jobRow = (job) => {

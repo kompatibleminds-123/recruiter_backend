@@ -4092,10 +4092,14 @@ function applyAssessmentFiltersLocal(item = {}, filters = {}) {
   return true;
 }
 
-function sortAssessmentsForList(items = []) {
+function sortAssessmentsForList(items = [], sortBy = "updated") {
+  const sortMode = String(sortBy || "updated").trim().toLowerCase();
+  const primaryKeys = sortMode === "created"
+    ? ["createdAt", "created_at", "generatedAt", "updatedAt", "updated_at"]
+    : ["updatedAt", "updated_at", "generatedAt", "createdAt", "created_at"];
   return (Array.isArray(items) ? items : []).slice().sort((a, b) => {
-    const aTime = Date.parse(String(a?.updatedAt || a?.updated_at || a?.generatedAt || a?.createdAt || a?.created_at || ""));
-    const bTime = Date.parse(String(b?.updatedAt || b?.updated_at || b?.generatedAt || b?.createdAt || b?.created_at || ""));
+    const aTime = Date.parse(String(primaryKeys.map((key) => a?.[key]).find((value) => String(value || "").trim()) || ""));
+    const bTime = Date.parse(String(primaryKeys.map((key) => b?.[key]).find((value) => String(value || "").trim()) || ""));
     const diff = (Number.isFinite(bTime) ? bTime : 0) - (Number.isFinite(aTime) ? aTime : 0);
     if (diff) return diff;
     return String(b?.id || "").localeCompare(String(a?.id || ""));
@@ -4112,7 +4116,7 @@ async function listAssessmentsForUser(user, options = {}) {
   const page = Math.max(1, Number(options.page || 1));
   const offset = Math.max(0, (page - 1) * limit);
   const filters = normalizeAssessmentFilterOptions(options.filters || {});
-  const rows = sortAssessmentsForList(await getAssessmentsUniverseForUser(user));
+  const rows = sortAssessmentsForList(await getAssessmentsUniverseForUser(user), options.sortBy || "updated");
   const filtered = rows.filter((item) => applyAssessmentFiltersLocal(item, filters));
   const items = filtered.slice(offset, offset + limit);
   const total = filtered.length;
@@ -15523,6 +15527,7 @@ const server = http.createServer(async (req, res) => {
       const result = await listAssessmentsForUser(user, {
         page: Number(requestUrl.searchParams.get("page") || 1),
         limit: Number(requestUrl.searchParams.get("limit") || 25),
+        sortBy: String(requestUrl.searchParams.get("sortBy") || "updated").trim() || "updated",
         filters: {
           q: String(requestUrl.searchParams.get("q") || "").trim(),
           dateFrom: String(requestUrl.searchParams.get("dateFrom") || "").trim(),
