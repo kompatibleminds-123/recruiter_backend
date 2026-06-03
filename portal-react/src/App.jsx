@@ -5934,11 +5934,6 @@ function JourneyModal({ open, title = "Journey", text = "", onClose, onCopy }) {
 
 const DASHBOARD_FILTER_STORAGE_KEY = "recruitdesk_portal_dashboard_filters_v1";
 const DASHBOARD_DATABASE_WORKSPACE_LOADED_ONCE_KEY = "recruitdesk_portal_dashboard_database_workspace_loaded_once_v1";
-const TAB_FIRST_OPEN_SESSION_KEYS = {
-  captured: "recruitdesk_portal_captured_notes_loaded_once_v1",
-  applicants: "recruitdesk_portal_applicants_loaded_once_v1",
-  assessments: "recruitdesk_portal_assessments_loaded_once_v1"
-};
 
 function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs = true }) {
   const location = useLocation();
@@ -8102,15 +8097,14 @@ function PortalApp({ token, onLogout }) {
   useEffect(() => {
     try {
       dashboardDatabaseWorkspaceLoadedOnceRef.current = window.sessionStorage.getItem(DASHBOARD_DATABASE_WORKSPACE_LOADED_ONCE_KEY) === "1";
-      tabFirstOpenLoadedRef.current = {
-        captured: window.sessionStorage.getItem(TAB_FIRST_OPEN_SESSION_KEYS.captured) === "1",
-        applicants: window.sessionStorage.getItem(TAB_FIRST_OPEN_SESSION_KEYS.applicants) === "1",
-        assessments: window.sessionStorage.getItem(TAB_FIRST_OPEN_SESSION_KEYS.assessments) === "1"
-      };
     } catch {
       dashboardDatabaseWorkspaceLoadedOnceRef.current = false;
-      tabFirstOpenLoadedRef.current = { captured: false, applicants: false, assessments: false };
     }
+    tabFirstOpenLoadedRef.current = {
+      captured: false,
+      applicants: false,
+      assessments: false
+    };
   }, []);
 
   function shouldSkipTabFirstOpenReload(tabKey, currentPath) {
@@ -8129,12 +8123,6 @@ function PortalApp({ token, onLogout }) {
         ...(tabFirstOpenLoadedRef.current || {}),
         [safeKey]: true
       };
-      try {
-        const storageKey = TAB_FIRST_OPEN_SESSION_KEYS[safeKey];
-        if (storageKey) window.sessionStorage.setItem(storageKey, "1");
-      } catch {
-        // Ignore session storage failures.
-      }
       return false;
     }
     return true;
@@ -10038,9 +10026,6 @@ function PortalApp({ token, onLogout }) {
     if (tabFirstOpenLoadedRef.current.assessments) return undefined;
     tabFirstOpenLoadedRef.current.assessments = true;
     tabInitialLoadSuppressedRef.current.assessments = true;
-    try {
-      window.sessionStorage.setItem(TAB_FIRST_OPEN_SESSION_KEYS.assessments, "1");
-    } catch {}
     void Promise.all([
       reloadAssessmentSlice(assessmentPage, safeAssessmentApiPageSize, assessmentFiltersApplied, assessmentLane, assessmentSortBy),
       reloadAssessmentStats(assessmentFiltersApplied)
@@ -10205,9 +10190,6 @@ function PortalApp({ token, onLogout }) {
     if (tabFirstOpenLoadedRef.current.captured) return undefined;
     tabFirstOpenLoadedRef.current.captured = true;
     tabInitialLoadSuppressedRef.current.captured = true;
-    try {
-      window.sessionStorage.setItem(TAB_FIRST_OPEN_SESSION_KEYS.captured, "1");
-    } catch {}
     assessmentCaptureSyncAtRef.current = Date.now();
     void Promise.all([
       reloadCapturedSlice(capturedPage, safeCapturedApiPageSize, candidateFiltersApplied),
@@ -10446,9 +10428,6 @@ function PortalApp({ token, onLogout }) {
     if (tabFirstOpenLoadedRef.current.applicants) return undefined;
     tabFirstOpenLoadedRef.current.applicants = true;
     tabInitialLoadSuppressedRef.current.applicants = true;
-    try {
-      window.sessionStorage.setItem(TAB_FIRST_OPEN_SESSION_KEYS.applicants, "1");
-    } catch {}
     void Promise.all([
       reloadApplicantsSlice(safeApplicantApiPage, safeApplicantApiPageSize, applicantFiltersApplied),
       reloadApplicantStats(applicantFiltersApplied)
