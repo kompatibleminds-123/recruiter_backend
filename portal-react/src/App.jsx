@@ -5934,6 +5934,11 @@ function JourneyModal({ open, title = "Journey", text = "", onClose, onCopy }) {
 
 const DASHBOARD_FILTER_STORAGE_KEY = "recruitdesk_portal_dashboard_filters_v1";
 const DASHBOARD_DATABASE_WORKSPACE_LOADED_ONCE_KEY = "recruitdesk_portal_dashboard_database_workspace_loaded_once_v1";
+const PORTAL_TAB_FIRST_OPEN_RUNTIME_STATE = globalThis.__recruitdeskPortalTabFirstOpenRuntimeState || (globalThis.__recruitdeskPortalTabFirstOpenRuntimeState = {
+  captured: false,
+  applicants: false,
+  assessments: false
+});
 
 function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs = true }) {
   const location = useLocation();
@@ -8061,11 +8066,7 @@ function PortalApp({ token, onLogout }) {
   const capturedLiveSyncPendingRef = useRef(false);
   const capturedLiveSyncPendingEventRef = useRef({ candidateId: "", eventType: "" });
   const dashboardDatabaseWorkspaceLoadedOnceRef = useRef(false);
-  const tabFirstOpenLoadedRef = useRef({
-    captured: false,
-    applicants: false,
-    assessments: false
-  });
+  const tabFirstOpenLoadedRef = useRef(PORTAL_TAB_FIRST_OPEN_RUNTIME_STATE);
   const tabInitialLoadSuppressedRef = useRef({
     captured: false,
     applicants: false,
@@ -8100,11 +8101,6 @@ function PortalApp({ token, onLogout }) {
     } catch {
       dashboardDatabaseWorkspaceLoadedOnceRef.current = false;
     }
-    tabFirstOpenLoadedRef.current = {
-      captured: false,
-      applicants: false,
-      assessments: false
-    };
   }, []);
 
   function shouldSkipTabFirstOpenReload(tabKey, currentPath) {
@@ -10025,6 +10021,7 @@ function PortalApp({ token, onLogout }) {
     if (currentPath !== "/assessments") return undefined;
     if (tabFirstOpenLoadedRef.current.assessments) return undefined;
     tabFirstOpenLoadedRef.current.assessments = true;
+    PORTAL_TAB_FIRST_OPEN_RUNTIME_STATE.assessments = true;
     tabInitialLoadSuppressedRef.current.assessments = true;
     void Promise.all([
       reloadAssessmentSlice(assessmentPage, safeAssessmentApiPageSize, assessmentFiltersApplied, assessmentLane, assessmentSortBy),
@@ -10189,6 +10186,7 @@ function PortalApp({ token, onLogout }) {
     if (currentPath !== "/captured-notes") return undefined;
     if (tabFirstOpenLoadedRef.current.captured) return undefined;
     tabFirstOpenLoadedRef.current.captured = true;
+    PORTAL_TAB_FIRST_OPEN_RUNTIME_STATE.captured = true;
     tabInitialLoadSuppressedRef.current.captured = true;
     assessmentCaptureSyncAtRef.current = Date.now();
     void Promise.all([
@@ -10427,6 +10425,7 @@ function PortalApp({ token, onLogout }) {
     if (currentPath !== "/applicants") return undefined;
     if (tabFirstOpenLoadedRef.current.applicants) return undefined;
     tabFirstOpenLoadedRef.current.applicants = true;
+    PORTAL_TAB_FIRST_OPEN_RUNTIME_STATE.applicants = true;
     tabInitialLoadSuppressedRef.current.applicants = true;
     void Promise.all([
       reloadApplicantsSlice(safeApplicantApiPage, safeApplicantApiPageSize, applicantFiltersApplied),
