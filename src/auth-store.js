@@ -1781,6 +1781,8 @@ function assessmentRow(assessment, actor, companyId) {
     question_answer_pairs: next.questionAnswerPairs || [],
     payload: {
       ...next,
+      assigned_to_name: next.assignedToName || next.assigned_to_name || "",
+      assignedToName: next.assignedToName || next.assigned_to_name || "",
       updatedAt: next.updatedAt
     }
   };
