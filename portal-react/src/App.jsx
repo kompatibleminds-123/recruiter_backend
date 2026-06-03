@@ -5932,6 +5932,7 @@ function JourneyModal({ open, title = "Journey", text = "", onClose, onCopy }) {
 }
 
 const DASHBOARD_FILTER_STORAGE_KEY = "recruitdesk_portal_dashboard_filters_v1";
+const DASHBOARD_DATABASE_WORKSPACE_LOADED_ONCE_KEY = "recruitdesk_portal_dashboard_database_workspace_loaded_once_v1";
 
 function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs = true }) {
   const location = useLocation();
@@ -8057,6 +8058,7 @@ function PortalApp({ token, onLogout }) {
   const assessmentCaptureSyncAtRef = useRef(0);
   const capturedLiveSyncInFlightRef = useRef(false);
   const capturedLiveSyncPendingRef = useRef(false);
+  const dashboardDatabaseWorkspaceLoadedOnceRef = useRef(false);
   const [workspaceDataReady, setWorkspaceDataReady] = useState(false);
   // Prevent background refresh from clobbering in-flight actions (e.g. SMTP send).
   const suspendWorkspaceRefreshRef = useRef(false);
@@ -8075,6 +8077,13 @@ function PortalApp({ token, onLogout }) {
       || bulkAssignCandidateModalOpen
     )
   ), [newDraftOpen, assignCandidateId, notesCandidateId, attemptsCandidateId, bulkAssignCandidateModalOpen]);
+  useEffect(() => {
+    try {
+      dashboardDatabaseWorkspaceLoadedOnceRef.current = window.sessionStorage.getItem(DASHBOARD_DATABASE_WORKSPACE_LOADED_ONCE_KEY) === "1";
+    } catch {
+      dashboardDatabaseWorkspaceLoadedOnceRef.current = false;
+    }
+  }, []);
   const [jobShortcutValue, setJobShortcutValue] = useState("");
   const [shortcutPersonalKey, setShortcutPersonalKey] = useState("");
   const [shortcutPersonalValue, setShortcutPersonalValue] = useState("");
@@ -9460,6 +9469,13 @@ function PortalApp({ token, onLogout }) {
     if (!token) return;
     if (initialWorkspaceLoadDoneRef.current) return;
     initialWorkspaceLoadDoneRef.current = true;
+    const initialPathname = String(location?.pathname || "/dashboard").trim() || "/dashboard";
+    if (initialPathname === "/dashboard" || initialPathname === "/candidates") {
+      dashboardDatabaseWorkspaceLoadedOnceRef.current = true;
+      try {
+        window.sessionStorage.setItem(DASHBOARD_DATABASE_WORKSPACE_LOADED_ONCE_KEY, "1");
+      } catch {}
+    }
     const now = Date.now();
     lastWorkspaceRefreshAtRef.current = now;
     setWorkspaceDataReady(false);
@@ -9475,6 +9491,31 @@ function PortalApp({ token, onLogout }) {
       setWorkspaceDataReady(true);
     });
   }, [token]);
+
+  useEffect(() => {
+    if (!token) return;
+    const pathname = String(location?.pathname || "").trim();
+    if (pathname !== "/dashboard" && pathname !== "/candidates") return;
+    if (dashboardDatabaseWorkspaceLoadedOnceRef.current) return;
+    dashboardDatabaseWorkspaceLoadedOnceRef.current = true;
+    try {
+      window.sessionStorage.setItem(DASHBOARD_DATABASE_WORKSPACE_LOADED_ONCE_KEY, "1");
+    } catch {}
+    const now = Date.now();
+    lastWorkspaceRefreshAtRef.current = now;
+    setWorkspaceDataReady(false);
+    void loadWorkspace({
+      forceFiveTabsRefresh: false,
+      preloadAllTabs: false,
+      includeEvents: false,
+      includeClientUsers: false,
+      includeEmployeeUsers: false,
+      includeSharedPresets: false,
+      includeEmailSettings: false
+    }).catch((error) => setStatus("workspace", String(error?.message || error), "error")).finally(() => {
+      setWorkspaceDataReady(true);
+    });
+  }, [token, location?.pathname]);
 
   async function syncSharedSettingsFromServer(options = {}) {
     const showStatus = options?.showStatus === true;
@@ -10002,6 +10043,60 @@ function PortalApp({ token, onLogout }) {
   }, [token, location?.pathname, assessmentPage, safeAssessmentApiPageSize, assessmentFiltersApplied, assessmentLane]);
 
   useEffect(() => {
+    if (!token) return undefined;
+    let cancelled = false;
+    const streamUrl = `/company/stream/shortcuts?token=${encodeURIComponent(String(token || "").trim())}`;
+    const source = new EventSource(streamUrl);
+    const onShortcuts = (event) => {
+      if (cancelled) return;
+      const payload = (() => {
+        try {
+          return JSON.parse(String(event?.data || "{}"));
+        } catch {
+          return {};
+        }
+      })();
+      const eventType = String(payload?.type || payload?.eventType || "").trim();
+      if (eventType === "company_shortcuts_changed") {
+        const settings = payload?.settings && typeof payload.settings === "object" ? payload.settings : null;
+        if (!settings) return;
+        setCopySettings((current) => migrateCopySettings({ ...current, ...settings }));
+        return;
+      }
+      if (eventType === "personal_shortcuts_changed") {
+        const eventUserId = String(payload?.userId || payload?.user_id || "").trim();
+        const currentUserId = String(state.user?.id || "").trim();
+        if (eventUserId && currentUserId && eventUserId !== currentUserId) return;
+        const shortcuts = normalizeShortcutMapKeys(
+          payload?.shortcuts && typeof payload.shortcuts === "object" ? payload.shortcuts : {}
+        );
+        setPersonalShortcuts(shortcuts);
+        return;
+      }
+      if (eventType === "job_shortcuts_changed") {
+        const jobId = String(payload?.jobId || payload?.job_id || "").trim();
+        const jdShortcuts = String(payload?.jdShortcuts || payload?.jd_shortcuts || "").trim();
+        if (!jobId) return;
+        setState((current) => ({
+          ...current,
+          jobs: Array.isArray(current.jobs)
+            ? current.jobs.map((item) => String(item?.id || "") === jobId ? { ...item, jdShortcuts } : item)
+            : current.jobs
+        }));
+        setJobsCatalog((current) => Array.isArray(current)
+          ? current.map((item) => String(item?.id || "") === jobId ? { ...item, jdShortcuts } : item)
+          : current);
+      }
+    };
+    source.addEventListener("shortcuts", onShortcuts);
+    return () => {
+      cancelled = true;
+      try { source.removeEventListener("shortcuts", onShortcuts); } catch {}
+      try { source.close(); } catch {}
+    };
+  }, [token, state.user?.id]);
+
+  useEffect(() => {
     if (!token) return;
     if (String(location?.pathname || "") !== "/shortcuts") return;
     void loadPersonalShortcuts();
@@ -10055,25 +10150,61 @@ function PortalApp({ token, onLogout }) {
         payload?.candidate?.id ||
         ""
       ).trim();
-      const refreshPromise = (candidateId && eventType !== "candidate_deleted")
-        ? api(`/candidates?id=${encodeURIComponent(candidateId)}&scope=company&limit=1`, token)
-            .then((rows) => {
-              const nextRows = Array.isArray(rows) ? rows : [];
-              setState((current) => ({
-                ...current,
-                candidates: mergeCandidatesByFreshness(current.candidates, nextRows)
-              }));
-            })
-        : (eventType === "candidate_deleted" && candidateId)
-          ? Promise.resolve().then(() => {
-              setState((current) => ({
-                ...current,
-                candidates: (current.candidates || []).filter((item) => String(item?.id || "") !== candidateId)
-              }));
-            })
-          : reloadCapturedSlice(capturedPage, safeCapturedApiPageSize, candidateFiltersApplied);
+      const refreshPromise = (async () => {
+        if (eventType === "candidate_created") {
+          await Promise.all([
+            reloadCapturedSlice(capturedPage, safeCapturedApiPageSize, candidateFiltersApplied),
+            reloadCapturedStats(candidateFiltersApplied)
+          ]);
+          return;
+        }
+
+        if (eventType === "candidate_deleted" && candidateId) {
+          setState((current) => ({
+            ...current,
+            candidates: (current.candidates || []).filter((item) => String(item?.id || "") !== candidateId)
+          }));
+          setCapturedOptionPool((current) => (current || []).filter((item) => String(item?.id || "") !== candidateId));
+          await Promise.all([
+            reloadCapturedSlice(capturedPage, safeCapturedApiPageSize, candidateFiltersApplied),
+            reloadCapturedStats(candidateFiltersApplied)
+          ]);
+          return;
+        }
+
+        if (!candidateId) {
+          await reloadCapturedSlice(capturedPage, safeCapturedApiPageSize, candidateFiltersApplied);
+          return;
+        }
+
+        const rows = await api(`/candidates?id=${encodeURIComponent(candidateId)}&scope=company&limit=1`, token);
+        const nextRows = Array.isArray(rows) ? rows : [];
+        const nextRow = nextRows && nextRows.length ? nextRows[0] : null;
+        const previousRow = (state.candidates || []).find((item) => String(item?.id || "") === candidateId) || null;
+        if (nextRow) {
+          setState((current) => ({
+            ...current,
+            candidates: mergeCandidatesByFreshness(current.candidates, nextRows)
+          }));
+          setCapturedOptionPool((current) => mergeCandidatesByFreshness(current, nextRows));
+        }
+
+        const previousHidden = Boolean(previousRow?.hidden_from_captured);
+        const nextHidden = Boolean(nextRow?.hidden_from_captured);
+        const previousUsed = Boolean(previousRow?.used_in_assessment);
+        const nextUsed = Boolean(nextRow?.used_in_assessment);
+        const previousAssessmentId = String(previousRow?.assessment_id || previousRow?.assessmentId || "").trim();
+        const nextAssessmentId = String(nextRow?.assessment_id || nextRow?.assessmentId || "").trim();
+        const membershipChanged = previousHidden !== nextHidden || previousUsed !== nextUsed || previousAssessmentId !== nextAssessmentId;
+
+        if (membershipChanged) {
+          await Promise.all([
+            reloadCapturedSlice(capturedPage, safeCapturedApiPageSize, candidateFiltersApplied),
+            reloadCapturedStats(candidateFiltersApplied)
+          ]);
+        }
+      })();
       void refreshPromise
-        .then(() => reloadCapturedStats(candidateFiltersApplied))
         .catch(() => {})
         .finally(() => {
           capturedLiveSyncInFlightRef.current = false;
@@ -14279,6 +14410,13 @@ function PortalApp({ token, onLogout }) {
       || candidate?.assignedToName
       || sourceApplicant?.assigned_to_name
       || sourceApplicant?.assignedToName
+      || ""
+    ).trim();
+    const recruiterCapturedByName = String(
+      sourceApplicant?.recruiter_name
+      || sourceApplicant?.recruiterName
+      || candidate?.recruiter_name
+      || candidate?.recruiterName
       || state.user?.name
       || ""
     ).trim();
@@ -14330,8 +14468,8 @@ function PortalApp({ token, onLogout }) {
       cvAnalysisApplied: false,
       assigned_to_name: assignedRecruiterName,
       assignedToName: assignedRecruiterName,
-      recruiterName: assignedRecruiterName,
-      recruiter_name: assignedRecruiterName,
+      recruiterName: recruiterCapturedByName,
+      recruiter_name: recruiterCapturedByName,
       statusHistory: [{
         status: "CV shared",
         at: new Date().toISOString(),
@@ -14403,24 +14541,26 @@ function PortalApp({ token, onLogout }) {
       assigned_to_name: String(
         state.candidates?.find((item) => String(item?.id || "") === String(interviewMeta.candidateId || ""))?.assigned_to_name
         || state.candidates?.find((item) => String(item?.id || "") === String(interviewMeta.candidateId || ""))?.assignedToName
-        || state.user?.name
+        || form.assigned_to_name
+        || form.assignedToName
         || ""
       ).trim(),
       assignedToName: String(
         state.candidates?.find((item) => String(item?.id || "") === String(interviewMeta.candidateId || ""))?.assigned_to_name
         || state.candidates?.find((item) => String(item?.id || "") === String(interviewMeta.candidateId || ""))?.assignedToName
-        || state.user?.name
+        || form.assigned_to_name
+        || form.assignedToName
         || ""
       ).trim(),
       recruiterName: String(
-        state.candidates?.find((item) => String(item?.id || "") === String(interviewMeta.candidateId || ""))?.assigned_to_name
-        || state.candidates?.find((item) => String(item?.id || "") === String(interviewMeta.candidateId || ""))?.assignedToName
+        form.recruiterName
+        || form.recruiter_name
         || state.user?.name
         || ""
       ).trim(),
       recruiter_name: String(
-        state.candidates?.find((item) => String(item?.id || "") === String(interviewMeta.candidateId || ""))?.assigned_to_name
-        || state.candidates?.find((item) => String(item?.id || "") === String(interviewMeta.candidateId || ""))?.assignedToName
+        form.recruiter_name
+        || form.recruiterName
         || state.user?.name
         || ""
       ).trim()

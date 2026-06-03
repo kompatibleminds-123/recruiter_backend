@@ -4320,6 +4320,47 @@ function emitAssessmentStreamEvent(companyId, eventType = "assessment_changed", 
   });
 }
 
+const shortcutStreamByCompany = new Map();
+
+function addShortcutStreamClient(companyId, client) {
+  const key = String(companyId || "").trim();
+  if (!key || !client) return;
+  const list = shortcutStreamByCompany.get(key) || [];
+  list.push(client);
+  shortcutStreamByCompany.set(key, list);
+}
+
+function removeShortcutStreamClient(companyId, client) {
+  const key = String(companyId || "").trim();
+  if (!key) return;
+  const list = shortcutStreamByCompany.get(key) || [];
+  const next = list.filter((item) => item !== client);
+  if (next.length) shortcutStreamByCompany.set(key, next);
+  else shortcutStreamByCompany.delete(key);
+}
+
+function emitShortcutStreamEvent(companyId, eventType = "shortcuts_changed", payload = {}) {
+  const key = String(companyId || "").trim();
+  if (!key) return;
+  const list = shortcutStreamByCompany.get(key) || [];
+  if (!list.length) return;
+  const safePayload = (payload && typeof payload === "object") ? payload : {};
+  const data = JSON.stringify({
+    type: String(eventType || "shortcuts_changed").trim(),
+    at: new Date().toISOString(),
+    ...safePayload
+  });
+  list.forEach((client) => {
+    try {
+      client.res.write(`event: shortcuts\n`);
+      client.res.write(`data: ${data}\n\n`);
+    } catch {
+      removeShortcutStreamClient(key, client);
+      try { client.res.end(); } catch {}
+    }
+  });
+}
+
 function toIsoNow() {
   return new Date().toISOString();
 }
@@ -11319,6 +11360,45 @@ const server = http.createServer(async (req, res) => {
     }
   }
 
+  if (req.method === "GET" && requestUrl.pathname === "/company/stream/shortcuts") {
+    try {
+      const streamToken = String(requestUrl.searchParams.get("token") || "").trim();
+      const actor = await requireSessionUser(streamToken || getBearerToken(req));
+      const companyId = String(actor?.companyId || "").trim();
+      if (!companyId) throw new Error("Invalid session.");
+
+      const headers = buildResponseHeaders(req, {
+        "Content-Type": "text/event-stream; charset=utf-8",
+        "Cache-Control": "no-cache, no-transform",
+        Connection: "keep-alive",
+        "X-Accel-Buffering": "no"
+      });
+      res.writeHead(200, headers);
+      res.write(`event: connected\n`);
+      res.write(`data: ${JSON.stringify({ ok: true, at: new Date().toISOString() })}\n\n`);
+
+      const client = { res, companyId };
+      addShortcutStreamClient(companyId, client);
+      const keepAlive = setInterval(() => {
+        try {
+          res.write(`event: ping\n`);
+          res.write(`data: ${JSON.stringify({ at: new Date().toISOString() })}\n\n`);
+        } catch {}
+      }, 25000);
+
+      const cleanup = () => {
+        try { clearInterval(keepAlive); } catch {}
+        removeShortcutStreamClient(companyId, client);
+      };
+      req.on("close", cleanup);
+      req.on("error", cleanup);
+      return;
+    } catch (error) {
+      sendJson(res, 401, { ok: false, error: String(error?.message || error) });
+      return;
+    }
+  }
+
   if (req.method === "GET" && requestUrl.pathname === "/company/stream/assessments") {
     try {
       const streamToken = String(requestUrl.searchParams.get("token") || "").trim();
@@ -13704,6 +13784,10 @@ const server = http.createServer(async (req, res) => {
         settings: body.settings || body,
         saveAsSuggestedGlobal: body?.saveAsSuggestedGlobal === true
       });
+      emitShortcutStreamEvent(actor.companyId, "company_shortcuts_changed", {
+        scope: "company",
+        settings
+      });
       sendJson(res, 200, { ok: true, result: settings });
     } catch (error) {
       sendJson(res, 400, { ok: false, error: String(error.message || error) });
@@ -14202,6 +14286,11 @@ const server = http.createServer(async (req, res) => {
         jobId,
         shortcuts
       });
+      emitShortcutStreamEvent(actor.companyId, "job_shortcuts_changed", {
+        scope: "job",
+        jobId,
+        jdShortcuts: savedShortcuts
+      });
       sendJson(res, 200, { ok: true, result: { jobId, jdShortcuts: savedShortcuts } });
     } catch (error) {
       sendJson(res, 400, { ok: false, error: String(error.message || error) });
@@ -14231,6 +14320,11 @@ const server = http.createServer(async (req, res) => {
         actorUserId: actor.id,
         companyId: actor.companyId,
         shortcuts: body?.shortcuts || {}
+      });
+      emitShortcutStreamEvent(actor.companyId, "personal_shortcuts_changed", {
+        scope: "personal",
+        userId: actor.id,
+        shortcuts
       });
       sendJson(res, 200, { ok: true, result: { shortcuts } });
     } catch (error) {
@@ -18307,6 +18401,7 @@ const server = http.createServer(async (req, res) => {
       await patchCandidate(candidate.id, {
         raw_note: encodeApplicantMetadata(immediateMeta)
       }, { companyId: actor.companyId });
+      emitCapturedStreamEvent(actor.companyId, "candidate_changed", { candidateId: candidate.id });
 
       if (deferParse) {
         // Fast response, parse continues in the background.
@@ -18375,6 +18470,7 @@ const server = http.createServer(async (req, res) => {
               raw_note: encodeApplicantMetadata(nextMeta),
               ...(shouldApplyAutofill ? buildCvAutofillPatch(refreshed || candidate, result) : {})
             }, { companyId: actor.companyId });
+            emitCapturedStreamEvent(actor.companyId, "candidate_changed", { candidateId: candidate.id });
 
             // Best-effort persistence of unified search-doc + full CV text (if table exists).
             try {
@@ -18469,6 +18565,7 @@ const server = http.createServer(async (req, res) => {
         raw_note: encodeApplicantMetadata(nextMeta),
         ...(shouldApplyAutofill ? buildCvAutofillPatch(candidate, result) : {})
       }, { companyId: actor.companyId });
+      emitCapturedStreamEvent(actor.companyId, "candidate_changed", { candidateId: candidate.id });
 
       // Best-effort persistence of unified search-doc + full CV text (if table exists).
       try {

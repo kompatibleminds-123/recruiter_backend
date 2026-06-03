@@ -1701,12 +1701,15 @@ function assessmentRow(assessment, actor, companyId) {
   const now = new Date().toISOString();
   const preserveUpdatedAt = Boolean(a.preserveUpdatedAt);
   const explicitUpdatedAt = String(a.updatedAt || a.updated_at || "").trim();
+  const recruiterName = String(
+    a.recruiter_name
+    || a.recruiterName
+    || actor?.name
+    || ""
+  ).trim();
   const assignedToName = String(
     a.assigned_to_name
     || a.assignedToName
-    || a.recruiterName
-    || a.recruiter_name
-    || actor?.name
     || ""
   ).trim();
   const next = {
@@ -1714,10 +1717,10 @@ function assessmentRow(assessment, actor, companyId) {
     id,
     companyId,
     recruiterId: actor.id,
-    recruiterName: assignedToName || actor.name,
+    recruiterName: recruiterName || actor.name,
     recruiterEmail: actor.email,
-    assigned_to_name: assignedToName || actor.name,
-    assignedToName: assignedToName || actor.name,
+    assigned_to_name: assignedToName || "",
+    assignedToName: assignedToName || "",
     generatedAt: a.generatedAt || now,
     updatedAt: preserveUpdatedAt && explicitUpdatedAt ? explicitUpdatedAt : now,
     shareBrandedCv: Boolean(a.shareBrandedCv ?? a.share_branded_cv ?? a.payload?.shareBrandedCv ?? a.payload?.share_branded_cv ?? false),
@@ -1730,7 +1733,7 @@ function assessmentRow(assessment, actor, companyId) {
     id,
     company_id: companyId,
     recruiter_id: actor.id,
-    recruiter_name: next.assignedToName || actor.name,
+    recruiter_name: next.recruiterName || actor.name,
     recruiter_email: actor.email,
     candidate_id: candidateId,
     candidate_name: next.candidateName || "",
@@ -5323,12 +5326,15 @@ async function saveAssessment({ actorUserId, companyId, assessment }) {
   const actor = sanitizeUser(await getUserById(actorUserId, companyId)); if (!actor) throw new Error("Authenticated recruiter not found for this company.");
   if (!cfg().on) {
     const store = readStore(); store.assessments = Array.isArray(store.assessments) ? store.assessments : []; const now = new Date().toISOString(); const id = persistedAssessmentId(assessment.id); const ix = store.assessments.findIndex((i) => i.id === id && i.companyId === companyId);
+    const recruiterName = String(
+      assessment?.recruiter_name
+      || assessment?.recruiterName
+      || actor.name
+      || ""
+    ).trim();
     const assignedToName = String(
       assessment?.assigned_to_name
       || assessment?.assignedToName
-      || assessment?.recruiterName
-      || assessment?.recruiter_name
-      || actor.name
       || ""
     ).trim();
     const next = {
@@ -5336,10 +5342,10 @@ async function saveAssessment({ actorUserId, companyId, assessment }) {
       id,
       companyId,
       recruiterId: actor.id,
-      recruiterName: assignedToName || actor.name,
-      recruiter_name: assignedToName || actor.name,
-      assigned_to_name: assignedToName || actor.name,
-      assignedToName: assignedToName || actor.name,
+      recruiterName: recruiterName || actor.name,
+      recruiter_name: recruiterName || actor.name,
+      assigned_to_name: assignedToName || "",
+      assignedToName: assignedToName || "",
       recruiterEmail: actor.email,
       generatedAt: assessment.generatedAt || now,
       updatedAt: now
