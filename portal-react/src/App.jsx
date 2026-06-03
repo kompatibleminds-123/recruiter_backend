@@ -31,6 +31,7 @@ const EXTENSION_PROMPT_STORAGE_KEY_PREFIX = "recruitdesk_extension_prompt_v1";
 const RECRUITDESK_EXTENSION_URL = "https://chromewebstore.google.com/detail/recruitdesk-ai/ihkjpmlpnobojigfdencaafegjidbnah";
 const APP_VERSION_RELOAD_GUARD_PREFIX = "recruitdesk_portal_version_reload_once_v1:";
 const APP_VERSION_PROMPT_GUARD_PREFIX = "recruitdesk_portal_version_prompt_v1:";
+const APP_VERSION_POLL_INTERVAL_MS = 15 * 60 * 1000;
 
 const BASE_NAV_SECTIONS = [
   {
@@ -5933,6 +5934,11 @@ function JourneyModal({ open, title = "Journey", text = "", onClose, onCopy }) {
 
 const DASHBOARD_FILTER_STORAGE_KEY = "recruitdesk_portal_dashboard_filters_v1";
 const DASHBOARD_DATABASE_WORKSPACE_LOADED_ONCE_KEY = "recruitdesk_portal_dashboard_database_workspace_loaded_once_v1";
+const TAB_FIRST_OPEN_SESSION_KEYS = {
+  captured: "recruitdesk_portal_captured_notes_loaded_once_v1",
+  applicants: "recruitdesk_portal_applicants_loaded_once_v1",
+  assessments: "recruitdesk_portal_assessments_loaded_once_v1"
+};
 
 function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs = true }) {
   const location = useLocation();
@@ -8058,7 +8064,23 @@ function PortalApp({ token, onLogout }) {
   const assessmentCaptureSyncAtRef = useRef(0);
   const capturedLiveSyncInFlightRef = useRef(false);
   const capturedLiveSyncPendingRef = useRef(false);
+  const capturedLiveSyncPendingEventRef = useRef({ candidateId: "", eventType: "" });
   const dashboardDatabaseWorkspaceLoadedOnceRef = useRef(false);
+  const tabFirstOpenLoadedRef = useRef({
+    captured: false,
+    applicants: false,
+    assessments: false
+  });
+  const tabInitialLoadSuppressedRef = useRef({
+    captured: false,
+    applicants: false,
+    assessments: false
+  });
+  const lastTabPathRef = useRef({
+    captured: "",
+    applicants: "",
+    assessments: ""
+  });
   const [workspaceDataReady, setWorkspaceDataReady] = useState(false);
   // Prevent background refresh from clobbering in-flight actions (e.g. SMTP send).
   const suspendWorkspaceRefreshRef = useRef(false);
@@ -8080,10 +8102,43 @@ function PortalApp({ token, onLogout }) {
   useEffect(() => {
     try {
       dashboardDatabaseWorkspaceLoadedOnceRef.current = window.sessionStorage.getItem(DASHBOARD_DATABASE_WORKSPACE_LOADED_ONCE_KEY) === "1";
+      tabFirstOpenLoadedRef.current = {
+        captured: window.sessionStorage.getItem(TAB_FIRST_OPEN_SESSION_KEYS.captured) === "1",
+        applicants: window.sessionStorage.getItem(TAB_FIRST_OPEN_SESSION_KEYS.applicants) === "1",
+        assessments: window.sessionStorage.getItem(TAB_FIRST_OPEN_SESSION_KEYS.assessments) === "1"
+      };
     } catch {
       dashboardDatabaseWorkspaceLoadedOnceRef.current = false;
+      tabFirstOpenLoadedRef.current = { captured: false, applicants: false, assessments: false };
     }
   }, []);
+
+  function shouldSkipTabFirstOpenReload(tabKey, currentPath) {
+    const safeKey = String(tabKey || "").trim();
+    const safePath = String(currentPath || "").trim();
+    const lastPath = String(lastTabPathRef.current?.[safeKey] || "").trim();
+    lastTabPathRef.current = {
+      ...(lastTabPathRef.current || {}),
+      [safeKey]: safePath
+    };
+    if (!safePath) return true;
+    const justEntered = lastPath !== safePath;
+    if (!justEntered) return false;
+    if (!tabFirstOpenLoadedRef.current?.[safeKey]) {
+      tabFirstOpenLoadedRef.current = {
+        ...(tabFirstOpenLoadedRef.current || {}),
+        [safeKey]: true
+      };
+      try {
+        const storageKey = TAB_FIRST_OPEN_SESSION_KEYS[safeKey];
+        if (storageKey) window.sessionStorage.setItem(storageKey, "1");
+      } catch {
+        // Ignore session storage failures.
+      }
+      return false;
+    }
+    return true;
+  }
   const [jobShortcutValue, setJobShortcutValue] = useState("");
   const [shortcutPersonalKey, setShortcutPersonalKey] = useState("");
   const [shortcutPersonalValue, setShortcutPersonalValue] = useState("");
@@ -8703,7 +8758,7 @@ function PortalApp({ token, onLogout }) {
     void checkVersion();
     const timer = window.setInterval(() => {
       void checkVersion();
-    }, 60000);
+    }, APP_VERSION_POLL_INTERVAL_MS);
 
     return () => {
       cancelled = true;
@@ -9978,14 +10033,51 @@ function PortalApp({ token, onLogout }) {
 
   useEffect(() => {
     if (!token) return undefined;
-    if (String(location?.pathname || "") !== "/assessments") return undefined;
+    const currentPath = String(location?.pathname || "").trim();
+    if (currentPath !== "/assessments") return undefined;
+    if (tabFirstOpenLoadedRef.current.assessments) return undefined;
+    tabFirstOpenLoadedRef.current.assessments = true;
+    tabInitialLoadSuppressedRef.current.assessments = true;
+    try {
+      window.sessionStorage.setItem(TAB_FIRST_OPEN_SESSION_KEYS.assessments, "1");
+    } catch {}
+    void Promise.all([
+      reloadAssessmentSlice(assessmentPage, safeAssessmentApiPageSize, assessmentFiltersApplied, assessmentLane, assessmentSortBy),
+      reloadAssessmentStats(assessmentFiltersApplied)
+    ]).catch(() => {});
+    return undefined;
+  }, [token, location?.pathname]);
+
+  useEffect(() => {
+    if (!token) return undefined;
+    const currentPath = String(location?.pathname || "").trim();
+    const previousPath = String(lastTabPathRef.current.assessments || "").trim();
+    const justEntered = previousPath !== currentPath;
+    lastTabPathRef.current = { ...(lastTabPathRef.current || {}), assessments: currentPath };
+    if (currentPath !== "/assessments") return undefined;
+    if (justEntered) {
+      if (tabInitialLoadSuppressedRef.current.assessments) {
+        tabInitialLoadSuppressedRef.current.assessments = false;
+      }
+      return undefined;
+    }
 
     void reloadAssessmentStats(assessmentFiltersApplied).catch(() => {});
   }, [token, location?.pathname, assessmentFiltersApplied]);
 
   useEffect(() => {
     if (!token) return undefined;
-    if (String(location?.pathname || "") !== "/assessments") return undefined;
+    const currentPath = String(location?.pathname || "").trim();
+    const previousPath = String(lastTabPathRef.current.assessments || "").trim();
+    const justEntered = previousPath !== currentPath;
+    lastTabPathRef.current = { ...(lastTabPathRef.current || {}), assessments: currentPath };
+    if (currentPath !== "/assessments") return undefined;
+    if (justEntered) {
+      if (tabInitialLoadSuppressedRef.current.assessments) {
+        tabInitialLoadSuppressedRef.current.assessments = false;
+      }
+      return undefined;
+    }
 
     let cancelled = false;
     void reloadAssessmentSlice(assessmentPage, safeAssessmentApiPageSize, assessmentFiltersApplied, assessmentLane, assessmentSortBy)
@@ -10108,7 +10200,35 @@ function PortalApp({ token, onLogout }) {
 
   useEffect(() => {
     if (!token) return undefined;
-    if (String(location?.pathname || "").trim() !== "/captured-notes") return undefined;
+    const currentPath = String(location?.pathname || "").trim();
+    if (currentPath !== "/captured-notes") return undefined;
+    if (tabFirstOpenLoadedRef.current.captured) return undefined;
+    tabFirstOpenLoadedRef.current.captured = true;
+    tabInitialLoadSuppressedRef.current.captured = true;
+    try {
+      window.sessionStorage.setItem(TAB_FIRST_OPEN_SESSION_KEYS.captured, "1");
+    } catch {}
+    assessmentCaptureSyncAtRef.current = Date.now();
+    void Promise.all([
+      reloadCapturedSlice(capturedPage, safeCapturedApiPageSize, candidateFiltersApplied),
+      reloadCapturedStats(candidateFiltersApplied)
+    ]).catch(() => {});
+    return undefined;
+  }, [token, location?.pathname]);
+
+  useEffect(() => {
+    if (!token) return undefined;
+    const currentPath = String(location?.pathname || "").trim();
+    const previousPath = String(lastTabPathRef.current.captured || "").trim();
+    const justEntered = previousPath !== currentPath;
+    lastTabPathRef.current = { ...(lastTabPathRef.current || {}), captured: currentPath };
+    if (currentPath !== "/captured-notes") return undefined;
+    if (justEntered) {
+      if (tabInitialLoadSuppressedRef.current.captured) {
+        tabInitialLoadSuppressedRef.current.captured = false;
+      }
+      return undefined;
+    }
     assessmentCaptureSyncAtRef.current = Date.now();
     void Promise.all([
       reloadCapturedSlice(capturedPage, safeCapturedApiPageSize, candidateFiltersApplied),
@@ -10119,22 +10239,22 @@ function PortalApp({ token, onLogout }) {
 
   useEffect(() => {
     if (!token) return undefined;
-    if (String(location?.pathname || "").trim() !== "/captured-notes") return undefined;
+    const currentPath = String(location?.pathname || "").trim();
+    const previousPath = String(lastTabPathRef.current.captured || "").trim();
+    const justEntered = previousPath !== currentPath;
+    lastTabPathRef.current = { ...(lastTabPathRef.current || {}), captured: currentPath };
+    if (currentPath !== "/captured-notes") return undefined;
+    if (justEntered) {
+      if (tabInitialLoadSuppressedRef.current.captured) {
+        tabInitialLoadSuppressedRef.current.captured = false;
+      }
+      return undefined;
+    }
     let cancelled = false;
     const streamUrl = `/company/stream/captured?token=${encodeURIComponent(String(token || "").trim())}`;
     const source = new EventSource(streamUrl);
     const onCaptured = (event) => {
       if (cancelled) return;
-      if (document.visibilityState !== "visible") return;
-      if (capturedLiveSyncInFlightRef.current) {
-        capturedLiveSyncPendingRef.current = true;
-        return;
-      }
-      if (isCapturedUserEditing) {
-        capturedLiveSyncPendingRef.current = true;
-        return;
-      }
-      capturedLiveSyncInFlightRef.current = true;
       const payload = (() => {
         try {
           return JSON.parse(String(event?.data || "{}"));
@@ -10150,6 +10270,16 @@ function PortalApp({ token, onLogout }) {
         payload?.candidate?.id ||
         ""
       ).trim();
+      const queuePending = () => {
+        capturedLiveSyncPendingRef.current = true;
+        capturedLiveSyncPendingEventRef.current = { candidateId, eventType };
+      };
+      if (document.visibilityState !== "visible") return;
+      if (capturedLiveSyncInFlightRef.current || isCapturedUserEditing) {
+        queuePending();
+        return;
+      }
+      capturedLiveSyncInFlightRef.current = true;
       const refreshPromise = (async () => {
         if (eventType === "candidate_created") {
           await Promise.all([
@@ -10210,11 +10340,44 @@ function PortalApp({ token, onLogout }) {
           capturedLiveSyncInFlightRef.current = false;
           if (capturedLiveSyncPendingRef.current && !isCapturedUserEditing && !cancelled) {
             capturedLiveSyncPendingRef.current = false;
+            const pendingEvent = { ...(capturedLiveSyncPendingEventRef.current || {}) };
+            capturedLiveSyncPendingEventRef.current = { candidateId: "", eventType: "" };
             capturedLiveSyncInFlightRef.current = true;
-            void Promise.all([
-              reloadCapturedSlice(capturedPage, safeCapturedApiPageSize, candidateFiltersApplied),
-              reloadCapturedStats(candidateFiltersApplied)
-            ])
+            void (async () => {
+              const pendingCandidateId = String(pendingEvent?.candidateId || "").trim();
+              const pendingEventType = String(pendingEvent?.eventType || "").trim();
+              if (pendingEventType === "candidate_created" || pendingEventType === "candidate_deleted" || !pendingCandidateId) {
+                await Promise.all([
+                  reloadCapturedSlice(capturedPage, safeCapturedApiPageSize, candidateFiltersApplied),
+                  reloadCapturedStats(candidateFiltersApplied)
+                ]);
+                return;
+              }
+              const rows = await api(`/candidates?id=${encodeURIComponent(pendingCandidateId)}&scope=company&limit=1`, token);
+              const nextRows = Array.isArray(rows) ? rows : [];
+              const nextRow = nextRows && nextRows.length ? nextRows[0] : null;
+              const previousRow = (state.candidates || []).find((item) => String(item?.id || "") === pendingCandidateId) || null;
+              if (nextRow) {
+                setState((current) => ({
+                  ...current,
+                  candidates: mergeCandidatesByFreshness(current.candidates, nextRows)
+                }));
+                setCapturedOptionPool((current) => mergeCandidatesByFreshness(current, nextRows));
+              }
+              const previousHidden = Boolean(previousRow?.hidden_from_captured);
+              const nextHidden = Boolean(nextRow?.hidden_from_captured);
+              const previousUsed = Boolean(previousRow?.used_in_assessment);
+              const nextUsed = Boolean(nextRow?.used_in_assessment);
+              const previousAssessmentId = String(previousRow?.assessment_id || previousRow?.assessmentId || "").trim();
+              const nextAssessmentId = String(nextRow?.assessment_id || nextRow?.assessmentId || "").trim();
+              const membershipChanged = previousHidden !== nextHidden || previousUsed !== nextUsed || previousAssessmentId !== nextAssessmentId;
+              if (membershipChanged) {
+                await Promise.all([
+                  reloadCapturedSlice(capturedPage, safeCapturedApiPageSize, candidateFiltersApplied),
+                  reloadCapturedStats(candidateFiltersApplied)
+                ]);
+              }
+            })()
               .catch(() => {})
               .finally(() => {
                 capturedLiveSyncInFlightRef.current = false;
@@ -10237,15 +10400,75 @@ function PortalApp({ token, onLogout }) {
     if (isCapturedUserEditing) return;
     if (!capturedLiveSyncPendingRef.current) return;
     capturedLiveSyncPendingRef.current = false;
-    void Promise.all([
-      reloadCapturedSlice(capturedPage, safeCapturedApiPageSize, candidateFiltersApplied),
-      reloadCapturedStats(candidateFiltersApplied)
-    ]).catch(() => {});
+    const pendingEvent = { ...(capturedLiveSyncPendingEventRef.current || {}) };
+    capturedLiveSyncPendingEventRef.current = { candidateId: "", eventType: "" };
+    const pendingCandidateId = String(pendingEvent?.candidateId || "").trim();
+    const pendingEventType = String(pendingEvent?.eventType || "").trim();
+    if (pendingEventType === "candidate_created" || pendingEventType === "candidate_deleted" || !pendingCandidateId) {
+      void Promise.all([
+        reloadCapturedSlice(capturedPage, safeCapturedApiPageSize, candidateFiltersApplied),
+        reloadCapturedStats(candidateFiltersApplied)
+      ]).catch(() => {});
+      return;
+    }
+    void (async () => {
+      const rows = await api(`/candidates?id=${encodeURIComponent(pendingCandidateId)}&scope=company&limit=1`, token);
+      const nextRows = Array.isArray(rows) ? rows : [];
+      const nextRow = nextRows && nextRows.length ? nextRows[0] : null;
+      const previousRow = (state.candidates || []).find((item) => String(item?.id || "") === pendingCandidateId) || null;
+      if (nextRow) {
+        setState((current) => ({
+          ...current,
+          candidates: mergeCandidatesByFreshness(current.candidates, nextRows)
+        }));
+        setCapturedOptionPool((current) => mergeCandidatesByFreshness(current, nextRows));
+      }
+      const previousHidden = Boolean(previousRow?.hidden_from_captured);
+      const nextHidden = Boolean(nextRow?.hidden_from_captured);
+      const previousUsed = Boolean(previousRow?.used_in_assessment);
+      const nextUsed = Boolean(nextRow?.used_in_assessment);
+      const previousAssessmentId = String(previousRow?.assessment_id || previousRow?.assessmentId || "").trim();
+      const nextAssessmentId = String(nextRow?.assessment_id || nextRow?.assessmentId || "").trim();
+      const membershipChanged = previousHidden !== nextHidden || previousUsed !== nextUsed || previousAssessmentId !== nextAssessmentId;
+      if (membershipChanged) {
+        await Promise.all([
+          reloadCapturedSlice(capturedPage, safeCapturedApiPageSize, candidateFiltersApplied),
+          reloadCapturedStats(candidateFiltersApplied)
+        ]);
+      }
+    })().catch(() => {});
   }, [token, location?.pathname, isCapturedUserEditing, capturedPage, safeCapturedApiPageSize, candidateFiltersApplied]);
 
   useEffect(() => {
+    if (!token) return undefined;
+    const currentPath = String(location?.pathname || "").trim();
+    if (currentPath !== "/applicants") return undefined;
+    if (tabFirstOpenLoadedRef.current.applicants) return undefined;
+    tabFirstOpenLoadedRef.current.applicants = true;
+    tabInitialLoadSuppressedRef.current.applicants = true;
+    try {
+      window.sessionStorage.setItem(TAB_FIRST_OPEN_SESSION_KEYS.applicants, "1");
+    } catch {}
+    void Promise.all([
+      reloadApplicantsSlice(safeApplicantApiPage, safeApplicantApiPageSize, applicantFiltersApplied),
+      reloadApplicantStats(applicantFiltersApplied)
+    ]).catch(() => {});
+    return undefined;
+  }, [token, location?.pathname]);
+
+  useEffect(() => {
     if (!token) return;
-    if (String(location?.pathname || "").trim() !== "/applicants") return;
+    const currentPath = String(location?.pathname || "").trim();
+    const previousPath = String(lastTabPathRef.current.applicants || "").trim();
+    const justEntered = previousPath !== currentPath;
+    lastTabPathRef.current = { ...(lastTabPathRef.current || {}), applicants: currentPath };
+    if (currentPath !== "/applicants") return;
+    if (justEntered) {
+      if (tabInitialLoadSuppressedRef.current.applicants) {
+        tabInitialLoadSuppressedRef.current.applicants = false;
+      }
+      return;
+    }
     void Promise.all([
       reloadApplicantsSlice(safeApplicantApiPage, safeApplicantApiPageSize, applicantFiltersApplied),
       reloadApplicantStats(applicantFiltersApplied)
