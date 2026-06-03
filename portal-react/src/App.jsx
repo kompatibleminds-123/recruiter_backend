@@ -10029,7 +10029,11 @@ function PortalApp({ token, onLogout }) {
     void Promise.all([
       reloadAssessmentSlice(assessmentPage, safeAssessmentApiPageSize, assessmentFiltersApplied, assessmentLane, assessmentSortBy),
       reloadAssessmentStats(assessmentFiltersApplied)
-    ]).catch(() => {});
+    ]).catch(() => {}).finally(() => {
+      window.setTimeout(() => {
+        tabInitialLoadSuppressedRef.current.assessments = false;
+      }, 0);
+    });
     return undefined;
   }, [token, location?.pathname]);
 
@@ -10040,10 +10044,8 @@ function PortalApp({ token, onLogout }) {
     const justEntered = previousPath !== currentPath;
     lastTabPathRef.current = { ...(lastTabPathRef.current || {}), assessments: currentPath };
     if (currentPath !== "/assessments") return undefined;
+    if (tabInitialLoadSuppressedRef.current.assessments) return undefined;
     if (justEntered) {
-      if (tabInitialLoadSuppressedRef.current.assessments) {
-        tabInitialLoadSuppressedRef.current.assessments = false;
-      }
       return undefined;
     }
 
@@ -10057,10 +10059,8 @@ function PortalApp({ token, onLogout }) {
     const justEntered = previousPath !== currentPath;
     lastTabPathRef.current = { ...(lastTabPathRef.current || {}), assessments: currentPath };
     if (currentPath !== "/assessments") return undefined;
+    if (tabInitialLoadSuppressedRef.current.assessments) return undefined;
     if (justEntered) {
-      if (tabInitialLoadSuppressedRef.current.assessments) {
-        tabInitialLoadSuppressedRef.current.assessments = false;
-      }
       return undefined;
     }
 
