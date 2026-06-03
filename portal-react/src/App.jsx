@@ -10598,7 +10598,10 @@ function PortalApp({ token, onLogout }) {
     const clients = new Set();
     const recruiters = new Set();
     const outcomes = new Set();
-    assessmentOptionPool.forEach((item) => {
+    const assessmentUniverse = Array.isArray(state.assessments) && state.assessments.length
+      ? state.assessments
+      : assessmentOptionPool;
+    assessmentUniverse.forEach((item) => {
       const matchedCandidate = (state.candidates || []).find((candidate) =>
         (item?.candidateId && String(candidate.id) === String(item.candidateId)) ||
         String(candidate.name || "").trim().toLowerCase() === String(item?.candidateName || "").trim().toLowerCase()
@@ -10624,7 +10627,7 @@ function PortalApp({ token, onLogout }) {
       recruiters: Array.from(recruiters).sort((a, b) => a.localeCompare(b)),
       outcomes: DEFAULT_STATUS_OPTIONS
     };
-  }, [assessmentOptionPool, state.candidates, state.user, state.users, resolveCanonicalJdTitle, getClientScopedActiveJobTitles, assessmentFilters.clients]);
+  }, [assessmentOptionPool, state.assessments, state.candidates, state.user, state.users, resolveCanonicalJdTitle, getClientScopedActiveJobTitles, assessmentFilters.clients]);
 
   const filteredAssessments = useMemo(() => {
     return Array.isArray(assessmentListItems) ? assessmentListItems : [];
