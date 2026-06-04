@@ -5933,7 +5933,6 @@ function JourneyModal({ open, title = "Journey", text = "", onClose, onCopy }) {
 }
 
 const DASHBOARD_FILTER_STORAGE_KEY = "recruitdesk_portal_dashboard_filters_v1";
-const DASHBOARD_DATABASE_WORKSPACE_LOADED_ONCE_KEY = "recruitdesk_portal_dashboard_database_workspace_loaded_once_v1";
 const PORTAL_TAB_FIRST_OPEN_RUNTIME_STATE = globalThis.__recruitdeskPortalTabFirstOpenRuntimeState || (globalThis.__recruitdeskPortalTabFirstOpenRuntimeState = {
   captured: false,
   applicants: false,
@@ -8096,11 +8095,7 @@ function PortalApp({ token, onLogout }) {
     )
   ), [newDraftOpen, assignCandidateId, notesCandidateId, attemptsCandidateId, bulkAssignCandidateModalOpen]);
   useEffect(() => {
-    try {
-      dashboardDatabaseWorkspaceLoadedOnceRef.current = window.sessionStorage.getItem(DASHBOARD_DATABASE_WORKSPACE_LOADED_ONCE_KEY) === "1";
-    } catch {
-      dashboardDatabaseWorkspaceLoadedOnceRef.current = false;
-    }
+    dashboardDatabaseWorkspaceLoadedOnceRef.current = false;
   }, []);
 
   function shouldSkipTabFirstOpenReload(tabKey, currentPath) {
@@ -9511,9 +9506,6 @@ function PortalApp({ token, onLogout }) {
     const initialPathname = String(location?.pathname || "/dashboard").trim() || "/dashboard";
     if (initialPathname === "/dashboard" || initialPathname === "/candidates") {
       dashboardDatabaseWorkspaceLoadedOnceRef.current = true;
-      try {
-        window.sessionStorage.setItem(DASHBOARD_DATABASE_WORKSPACE_LOADED_ONCE_KEY, "1");
-      } catch {}
     }
     const now = Date.now();
     lastWorkspaceRefreshAtRef.current = now;
@@ -9537,9 +9529,6 @@ function PortalApp({ token, onLogout }) {
     if (pathname !== "/dashboard" && pathname !== "/candidates") return;
     if (dashboardDatabaseWorkspaceLoadedOnceRef.current) return;
     dashboardDatabaseWorkspaceLoadedOnceRef.current = true;
-    try {
-      window.sessionStorage.setItem(DASHBOARD_DATABASE_WORKSPACE_LOADED_ONCE_KEY, "1");
-    } catch {}
     const now = Date.now();
     lastWorkspaceRefreshAtRef.current = now;
     setWorkspaceDataReady(false);
