@@ -10276,7 +10276,7 @@ function PortalApp({ token, onLogout }) {
           return;
         }
 
-        const shouldTreatAsRowPatch = eventType === "candidate_changed" || eventType === "candidate_attempt";
+        const shouldTreatAsRowPatch = eventType === "candidate_changed" || eventType === "candidate_attempt" || eventType === "candidate_assigned";
 
         const rows = await api(`/candidates?id=${encodeURIComponent(candidateId)}&scope=company&limit=1`, token);
         const nextRows = Array.isArray(rows) ? rows : [];
@@ -10400,7 +10400,7 @@ function PortalApp({ token, onLogout }) {
         markPending(candidateId, eventType);
         return;
       }
-      if (eventType === "candidate_changed" || eventType === "candidate_attempt") {
+      if (eventType === "candidate_changed" || eventType === "candidate_attempt" || eventType === "candidate_assigned") {
         markPending(candidateId, eventType);
       }
     };
@@ -13319,36 +13319,40 @@ function PortalApp({ token, onLogout }) {
     const applyLocalAssignPatch = (candidateId) => {
       const safeCandidateId = String(candidateId || "").trim();
       if (!safeCandidateId) return;
+      const applyPatch = (items) => Array.isArray(items)
+        ? items.map((item) => {
+          if (String(item?.id || "").trim() !== safeCandidateId) return item;
+          const next = {
+            ...item,
+            assigned_to_user_id: effectiveRecruiterId || item?.assigned_to_user_id || "",
+            assigned_to_name: nextAssigneeName || item?.assigned_to_name || "",
+            assigned_jd_id: String(jdId || "").trim() || item?.assigned_jd_id || "",
+            assigned_jd_title: String(jdTitle || "").trim() || item?.assigned_jd_title || "",
+            jd_title: String(jdTitle || "").trim() || item?.jd_title || "",
+            client_name: String(clientName || "").trim() || item?.client_name || "",
+            assigned_at: assignAtIso,
+            updated_at: assignAtIso,
+            updatedAt: assignAtIso
+          };
+          if (!String(item?.first_assigned_at || "").trim()) next.first_assigned_at = assignAtIso;
+          if (!String(item?.first_assigned_to_user_id || "").trim()) next.first_assigned_to_user_id = effectiveRecruiterId || "";
+          if (!String(item?.first_assigned_to_name || "").trim()) next.first_assigned_to_name = nextAssigneeName || "";
+          if (!String(item?.first_assigned_by_user_id || "").trim()) next.first_assigned_by_user_id = String(state.user?.id || "").trim();
+          if (!String(item?.first_assigned_by_name || "").trim()) next.first_assigned_by_name = String(state.user?.name || "").trim();
+          return next;
+        })
+        : items;
       setState((current) => {
-        const applyPatch = (items) => Array.isArray(items)
-          ? items.map((item) => {
-            if (String(item?.id || "").trim() !== safeCandidateId) return item;
-            const next = {
-              ...item,
-              assigned_to_user_id: effectiveRecruiterId || item?.assigned_to_user_id || "",
-              assigned_to_name: nextAssigneeName || item?.assigned_to_name || "",
-              assigned_jd_id: String(jdId || "").trim() || item?.assigned_jd_id || "",
-              assigned_jd_title: String(jdTitle || "").trim() || item?.assigned_jd_title || "",
-              jd_title: String(jdTitle || "").trim() || item?.jd_title || "",
-              client_name: String(clientName || "").trim() || item?.client_name || "",
-              assigned_at: assignAtIso,
-              updated_at: assignAtIso,
-              updatedAt: assignAtIso
-            };
-            if (!String(item?.first_assigned_at || "").trim()) next.first_assigned_at = assignAtIso;
-            if (!String(item?.first_assigned_to_user_id || "").trim()) next.first_assigned_to_user_id = effectiveRecruiterId || "";
-            if (!String(item?.first_assigned_to_name || "").trim()) next.first_assigned_to_name = nextAssigneeName || "";
-            if (!String(item?.first_assigned_by_user_id || "").trim()) next.first_assigned_by_user_id = String(state.user?.id || "").trim();
-            if (!String(item?.first_assigned_by_name || "").trim()) next.first_assigned_by_name = String(state.user?.name || "").trim();
-            return next;
-          })
-          : items;
         return {
           ...current,
           candidates: applyPatch(current.candidates),
           databaseCandidates: applyPatch(current.databaseCandidates)
         };
       });
+      if (String(location?.pathname || "").trim() === "/captured-notes") {
+        setCapturedListItems((current) => applyPatch(current));
+        setCapturedOptionPool((current) => applyPatch(current));
+      }
     };
     if (isAdmin) {
       const results = await Promise.allSettled(ids.map(async (id) => {
