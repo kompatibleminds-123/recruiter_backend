@@ -5553,10 +5553,10 @@ function CandidateProfileModal({ open, candidate, onClose, onOpenCvOriginal, onO
       )
     : "";
   const heroAssignedTo = String(
+    linkedAssessment?.recruiter_name ||
+    linkedAssessment?.recruiterName ||
     baseCandidate?.assigned_to_name ||
     baseCandidate?.assignedToName ||
-    linkedAssessment?.assigned_to_name ||
-    linkedAssessment?.assignedToName ||
     "-"
   ).trim();
   const heroUpdatedAt = String(
@@ -10276,6 +10276,8 @@ function PortalApp({ token, onLogout }) {
           return;
         }
 
+        const shouldTreatAsRowPatch = eventType === "candidate_changed" || eventType === "candidate_attempt";
+
         const rows = await api(`/candidates?id=${encodeURIComponent(candidateId)}&scope=company&limit=1`, token);
         const nextRows = Array.isArray(rows) ? rows : [];
         const nextRow = nextRows && nextRows.length ? nextRows[0] : null;
@@ -10286,6 +10288,9 @@ function PortalApp({ token, onLogout }) {
             candidates: mergeCandidatesByFreshness(current.candidates, nextRows)
           }));
           setCapturedOptionPool((current) => mergeCandidatesByFreshness(current, nextRows));
+          if (String(location?.pathname || "").trim() === "/captured-notes" && shouldTreatAsRowPatch) {
+            setCapturedListItems((current) => mergeCandidatesByFreshness(current, nextRows));
+          }
         }
 
         const previousHidden = Boolean(previousRow?.hidden_from_captured);
@@ -10362,6 +10367,50 @@ function PortalApp({ token, onLogout }) {
       try { source.close(); } catch {}
     };
   }, [token, location?.pathname, isCapturedUserEditing, capturedPage, safeCapturedApiPageSize, candidateFiltersApplied]);
+
+  useEffect(() => {
+    if (!token) return undefined;
+    const currentPath = String(location?.pathname || "").trim();
+    if (currentPath === "/captured-notes") return undefined;
+    let cancelled = false;
+    const streamUrl = `/company/stream/captured?token=${encodeURIComponent(String(token || "").trim())}`;
+    const source = new EventSource(streamUrl);
+    const markPending = (candidateId = "", eventType = "") => {
+      capturedLiveSyncPendingRef.current = true;
+      capturedLiveSyncPendingEventRef.current = { candidateId, eventType };
+    };
+    const onCaptured = (event) => {
+      if (cancelled) return;
+      const payload = (() => {
+        try {
+          return JSON.parse(String(event?.data || "{}"));
+        } catch {
+          return {};
+        }
+      })();
+      const eventType = String(payload?.eventType || payload?.type || "").trim();
+      const candidateId = String(
+        payload?.candidateId ||
+        payload?.candidate_id ||
+        payload?.id ||
+        payload?.candidate?.id ||
+        ""
+      ).trim();
+      if (eventType === "candidate_created" || eventType === "candidate_deleted" || !candidateId) {
+        markPending(candidateId, eventType);
+        return;
+      }
+      if (eventType === "candidate_changed" || eventType === "candidate_attempt") {
+        markPending(candidateId, eventType);
+      }
+    };
+    source.addEventListener("captured", onCaptured);
+    return () => {
+      cancelled = true;
+      try { source.removeEventListener("captured", onCaptured); } catch {}
+      try { source.close(); } catch {}
+    };
+  }, [token, location?.pathname]);
 
   useEffect(() => {
     if (!token) return;
@@ -10928,15 +10977,7 @@ function PortalApp({ token, onLogout }) {
         String(candidate.name || "").trim().toLowerCase() === String(item?.candidateName || "").trim().toLowerCase()
       );
       const clientValue = String(item?.clientName || matchedCandidate?.client_name || "").trim();
-      const recruiterValue = String(
-        item?.payload?.recruiterName
-        || item?.payload?.recruiter_name
-        || item?.recruiterName
-        || item?.recruiter_name
-        || matchedCandidate?.assigned_to_name
-        || matchedCandidate?.assignedToName
-        || ""
-      ).trim();
+      const recruiterValue = String(item?.recruiterName || item?.recruiter_name || "").trim();
       const outcomeValue = normalizeAssessmentStatusLabel(item?.candidateStatus || item?.candidate_status || "") || "No outcome";
       if (clientValue) clients.add(clientValue);
       if (recruiterValue) recruiters.add(recruiterValue);
@@ -10966,15 +11007,7 @@ function PortalApp({ token, onLogout }) {
   }
 
   function getAssessmentOwnerLabel(assessment, linkedCandidate) {
-    return String(
-      assessment?.payload?.recruiterName
-      || assessment?.payload?.recruiter_name
-      || assessment?.recruiterName
-      || assessment?.recruiter_name
-      || linkedCandidate?.assigned_to_name
-      || linkedCandidate?.assignedToName
-      || ""
-    ).trim();
+    return String(assessment?.recruiterName || assessment?.recruiter_name || "").trim();
   }
 
   function getAssessmentOfferedAt(assessment) {
@@ -11321,7 +11354,7 @@ function PortalApp({ token, onLogout }) {
       created_at: item.createdAt || item.generatedAt || "",
       skills: Array.isArray(linkedCandidate?.skills) ? linkedCandidate.skills : [],
       assigned_to_name: String(linkedCandidate?.assigned_to_name || linkedCandidate?.assignedToName || "").trim(),
-      recruiter_name: String(linkedCandidate?.assigned_to_name || linkedCandidate?.assignedToName || "").trim(),
+      recruiter_name: String(item.recruiter_name || item.recruiterName || "").trim(),
       notice_period: item.noticePeriod || "",
       lwd_or_doj: item.lwdOrDoj || item.offerDoj || linkedCandidate?.lwd_or_doj || linkedCandidateDraft?.lwdOrDoj || "",
       offer_in_hand: item.offerInHand || item.offerAmount || linkedCandidate?.offer_in_hand || linkedCandidateDraft?.offerInHand || "",
@@ -13381,17 +13414,19 @@ function PortalApp({ token, onLogout }) {
     }
     await api(`/company/candidates/${encodeURIComponent(candidateId)}`, token, "PATCH", { patch: nextPatch });
     const optimisticUpdatedAt = new Date().toISOString();
+    const applyPatch = (items) => Array.isArray(items)
+      ? items.map((item) => String(item?.id || "") === String(candidateId) ? { ...item, ...nextPatch, updated_at: optimisticUpdatedAt, updatedAt: optimisticUpdatedAt } : item)
+      : items;
     // Optimistic local patch to avoid blocking the UI on a full workspace refresh.
-    setState((current) => {
-      const applyPatch = (items) => Array.isArray(items)
-        ? items.map((item) => String(item?.id || "") === String(candidateId) ? { ...item, ...nextPatch, updated_at: optimisticUpdatedAt, updatedAt: optimisticUpdatedAt } : item)
-        : items;
-      return {
-        ...current,
-        candidates: applyPatch(current.candidates),
-        databaseCandidates: applyPatch(current.databaseCandidates)
-      };
-    });
+    setState((current) => ({
+      ...current,
+      candidates: applyPatch(current.candidates),
+      databaseCandidates: applyPatch(current.databaseCandidates)
+    }));
+    if (String(location?.pathname || "").trim() === "/captured-notes") {
+      setCapturedListItems((current) => applyPatch(current));
+      setCapturedOptionPool((current) => applyPatch(current));
+    }
     // No immediate workspace refresh here: optimistic + timestamped local state is source of truth.
     // This avoids delayed viewport jump while preserving correct saved values.
     setStatus("captured", okMessage, "ok");
@@ -13410,16 +13445,18 @@ function PortalApp({ token, onLogout }) {
     }
     await api(`/company/candidates/${encodeURIComponent(candidateId)}`, token, "PATCH", { patch: nextPatch });
     const optimisticUpdatedAt = new Date().toISOString();
-    setState((current) => {
-      const applyPatch = (items) => Array.isArray(items)
-        ? items.map((item) => String(item?.id || "") === String(candidateId) ? { ...item, ...nextPatch, updated_at: optimisticUpdatedAt, updatedAt: optimisticUpdatedAt } : item)
-        : items;
-      return {
-        ...current,
-        candidates: applyPatch(current.candidates),
-        databaseCandidates: applyPatch(current.databaseCandidates)
-      };
-    });
+    const applyPatch = (items) => Array.isArray(items)
+      ? items.map((item) => String(item?.id || "") === String(candidateId) ? { ...item, ...nextPatch, updated_at: optimisticUpdatedAt, updatedAt: optimisticUpdatedAt } : item)
+      : items;
+    setState((current) => ({
+      ...current,
+      candidates: applyPatch(current.candidates),
+      databaseCandidates: applyPatch(current.databaseCandidates)
+    }));
+    if (String(location?.pathname || "").trim() === "/captured-notes") {
+      setCapturedListItems((current) => applyPatch(current));
+      setCapturedOptionPool((current) => applyPatch(current));
+    }
     if (!skipRefresh) {
       await reloadCandidatesSlice({ includeDatabase: location?.pathname === "/candidates" });
     }
@@ -14366,14 +14403,38 @@ function PortalApp({ token, onLogout }) {
       });
     }
     try {
-      await api("/contact-attempts", token, "POST", {
+      const savedAttempt = await api("/contact-attempts", token, "POST", {
         candidateId: attemptsCandidateId,
         outcome: finalOutcome,
         notes: storedNote,
         next_follow_up_at: patch.next_follow_up_at
       });
+      if (savedAttempt && typeof savedAttempt === "object" && String(savedAttempt.id || "").trim()) {
+        setAttempts((current) => {
+          const next = Array.isArray(current) ? current.slice() : [];
+          const optimisticId = String(next[0]?.id || "").startsWith("tmp-") ? next[0]?.id : "";
+          const normalizedAttempt = {
+            ...savedAttempt,
+            candidate_id: String(savedAttempt.candidate_id || savedAttempt.candidateId || attemptsCandidateId || "").trim() || attemptsCandidateId,
+            outcome: String(savedAttempt.outcome || finalOutcome || "").trim(),
+            notes: String(savedAttempt.notes || storedNote || "").trim(),
+            next_follow_up_at: savedAttempt.next_follow_up_at || (patch.next_follow_up_at ? new Date(patch.next_follow_up_at).toISOString() : ""),
+            created_at: String(savedAttempt.created_at || savedAttempt.createdAt || savedAt).trim() || savedAt,
+            at: String(savedAttempt.created_at || savedAttempt.createdAt || savedAt).trim() || savedAt
+          };
+          if (optimisticId) {
+            return next.map((item) => String(item?.id || "") === optimisticId ? normalizedAttempt : item);
+          }
+          return [normalizedAttempt, ...next.filter((item) => String(item?.id || "") !== String(normalizedAttempt.id || ""))];
+        });
+      }
       if (Object.keys(candidatePatch).length) {
-        await patchCandidateQuiet(attemptsCandidateId, candidatePatch, { skipRefresh: true });
+        try {
+          await patchCandidateQuiet(attemptsCandidateId, candidatePatch, { skipRefresh: true });
+        } catch (patchError) {
+          console.warn("Attempt candidate patch failed:", patchError);
+          setStatus("captured", "Attempt saved. Candidate sync needs a retry.", "warning");
+        }
       }
       await refreshAttempts();
       setStatus("captured", "Attempt logged.", "ok");
@@ -14602,14 +14663,20 @@ function PortalApp({ token, onLogout }) {
       || sourceApplicant?.assignedToName
       || ""
     ).trim();
-    const recruiterCapturedByName = String(
-      sourceApplicant?.recruiter_name
-      || sourceApplicant?.recruiterName
-      || candidate?.recruiter_name
-      || candidate?.recruiterName
-      || state.user?.name
+    const assignedRecruiterUserId = String(
+      candidate?.assigned_to_user_id
+      || candidate?.assignedToUserId
+      || sourceApplicant?.assigned_to_user_id
+      || sourceApplicant?.assignedToUserId
       || ""
     ).trim();
+    const assessmentOwnerUser = (Array.isArray(state.users) ? state.users : []).find((user) =>
+      String(user?.id || "") === assignedRecruiterUserId
+      || String(user?.name || "").trim() === assignedRecruiterName
+    ) || null;
+    const assessmentOwnerName = String(assessmentOwnerUser?.name || assignedRecruiterName || state.user?.name || "").trim();
+    const assessmentOwnerEmail = String(assessmentOwnerUser?.email || state.user?.email || "").trim();
+    const assessmentOwnerId = String(assessmentOwnerUser?.id || state.user?.id || "").trim();
     const candidateCvAnalysis = cvMeta?.cvAnalysisCache?.result
       ? buildInterviewCvAnalysis({
           currentCompany: candidate?.company || sourceApplicant?.currentCompany || "",
@@ -14656,10 +14723,10 @@ function PortalApp({ token, onLogout }) {
       jdScreeningAnswers: candidateDraft.jdScreeningAnswers || {},
       cvAnalysis: candidateCvAnalysis,
       cvAnalysisApplied: false,
-      assigned_to_name: assignedRecruiterName,
-      assignedToName: assignedRecruiterName,
-      recruiterName: recruiterCapturedByName,
-      recruiter_name: recruiterCapturedByName,
+      recruiterName: assessmentOwnerName,
+      recruiter_name: assessmentOwnerName,
+      recruiterEmail: assessmentOwnerEmail,
+      recruiterId: assessmentOwnerId,
       statusHistory: [{
         status: "CV shared",
         at: new Date().toISOString(),
@@ -14711,6 +14778,41 @@ function PortalApp({ token, onLogout }) {
     const initialStatus = !normalizedInitialStatus || normalizedInitialStatus === "screening in progress"
       ? "CV shared"
       : canonicalInitialStatus;
+    const interviewCandidate = interviewMeta.candidateId
+      ? (state.candidates || []).find((item) => String(item?.id || "") === String(interviewMeta.candidateId))
+      : null;
+    const assessmentOwnerUser = (() => {
+      const byId = String(interviewCandidate?.assigned_to_user_id || interviewCandidate?.assignedToUserId || "").trim();
+      const byName = String(interviewCandidate?.assigned_to_name || interviewCandidate?.assignedToName || "").trim();
+      const users = Array.isArray(state.users) ? state.users : [];
+      return users.find((user) =>
+        (byId && String(user?.id || "") === byId)
+        || (byName && String(user?.name || "").trim() === byName)
+      ) || null;
+    })();
+    const assessmentOwnerName = String(
+      form.recruiter_name
+      || form.recruiterName
+      || assessmentOwnerUser?.name
+      || interviewCandidate?.assigned_to_name
+      || interviewCandidate?.assignedToName
+      || state.user?.name
+      || ""
+    ).trim();
+    const assessmentOwnerEmail = String(
+      form.recruiter_email
+      || form.recruiterEmail
+      || assessmentOwnerUser?.email
+      || state.user?.email
+      || ""
+    ).trim();
+    const assessmentOwnerId = String(
+      form.recruiter_id
+      || form.recruiterId
+      || assessmentOwnerUser?.id
+      || state.user?.id
+      || ""
+    ).trim();
     const assessment = {
       id: interviewMeta.assessmentId || `assessment-${Date.now()}`,
       ...(interviewMeta.candidateId ? { candidateId: String(interviewMeta.candidateId) } : {}),
@@ -14728,33 +14830,13 @@ function PortalApp({ token, onLogout }) {
           }],
       questionMode: "basic",
       generatedAt: new Date().toISOString(),
-      assigned_to_name: String(
-        state.candidates?.find((item) => String(item?.id || "") === String(interviewMeta.candidateId || ""))?.assigned_to_name
-        || state.candidates?.find((item) => String(item?.id || "") === String(interviewMeta.candidateId || ""))?.assignedToName
-        || form.assigned_to_name
-        || form.assignedToName
-        || ""
-      ).trim(),
-      assignedToName: String(
-        state.candidates?.find((item) => String(item?.id || "") === String(interviewMeta.candidateId || ""))?.assigned_to_name
-        || state.candidates?.find((item) => String(item?.id || "") === String(interviewMeta.candidateId || ""))?.assignedToName
-        || form.assigned_to_name
-        || form.assignedToName
-        || ""
-      ).trim(),
-      recruiterName: String(
-        form.recruiterName
-        || form.recruiter_name
-        || state.user?.name
-        || ""
-      ).trim(),
-      recruiter_name: String(
-        form.recruiter_name
-        || form.recruiterName
-        || state.user?.name
-        || ""
-      ).trim()
+      recruiterName: assessmentOwnerName,
+      recruiter_name: assessmentOwnerName,
+      recruiterEmail: assessmentOwnerEmail,
+      recruiterId: assessmentOwnerId
     };
+    delete assessment.assigned_to_name;
+    delete assessment.assignedToName;
     if (interviewMeta.candidateId) {
       const linkedCandidate = (state.candidates || []).find((item) => String(item?.id || "") === String(interviewMeta.candidateId));
       if (linkedCandidate?.hidden_from_captured) {
@@ -19559,7 +19641,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
       company: assessment?.currentCompany || "",
       company_name: state.user?.companyName || "",
       outcome: normalizeAssessmentStatusLabel(assessment?.candidateStatus || ""),
-      recruiter_name: assessment?.assigned_to_name || assessment?.assignedToName || state.user?.name || "",
+      recruiter_name: assessment?.recruiter_name || assessment?.recruiterName || state.user?.name || "",
       recruiter_notes: assessment?.recruiterNotes || "",
       location: assessment?.location || "",
       phone: assessment?.phoneNumber || "",
@@ -21536,15 +21618,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                         <>
                     {(() => {
                       const linkedCandidate = resolveAssessmentLinkedCandidate(item);
-                      const assignedTo = String(
-                        item?.payload?.recruiterName
-                        || item?.payload?.recruiter_name
-                        || item?.recruiterName
-                        || item?.recruiter_name
-                        || linkedCandidate?.assigned_to_name
-                        || linkedCandidate?.assignedToName
-                        || ""
-                      ).trim() || "NA";
+                      const assignedTo = String(item?.recruiterName || item?.recruiter_name || "").trim() || "NA";
                       const clientName = String(item.clientName || linkedCandidate?.company || "").trim();
                       const candidateName = String(item.candidateName || "Candidate").trim();
                       const jdTitle = String(item.jdTitle || "Untitled role").trim();

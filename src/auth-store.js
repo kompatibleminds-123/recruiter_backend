@@ -1707,20 +1707,25 @@ function assessmentRow(assessment, actor, companyId) {
     || actor?.name
     || ""
   ).trim();
-  const assignedToName = String(
-    a.assigned_to_name
-    || a.assignedToName
+  const recruiterEmail = String(
+    a.recruiter_email
+    || a.recruiterEmail
+    || actor?.email
+    || ""
+  ).trim();
+  const recruiterId = String(
+    a.recruiter_id
+    || a.recruiterId
+    || actor?.id
     || ""
   ).trim();
   const next = {
     ...a,
     id,
     companyId,
-    recruiterId: actor.id,
+    recruiterId: recruiterId || actor.id,
     recruiterName: recruiterName || actor.name,
-    recruiterEmail: actor.email,
-    assigned_to_name: assignedToName || "",
-    assignedToName: assignedToName || "",
+    recruiterEmail: recruiterEmail || actor.email,
     generatedAt: a.generatedAt || now,
     updatedAt: preserveUpdatedAt && explicitUpdatedAt ? explicitUpdatedAt : now,
     shareBrandedCv: Boolean(a.shareBrandedCv ?? a.share_branded_cv ?? a.payload?.shareBrandedCv ?? a.payload?.share_branded_cv ?? false),
@@ -1732,9 +1737,9 @@ function assessmentRow(assessment, actor, companyId) {
   return {
     id,
     company_id: companyId,
-    recruiter_id: actor.id,
+    recruiter_id: next.recruiterId || actor.id,
     recruiter_name: next.recruiterName || actor.name,
-    recruiter_email: actor.email,
+    recruiter_email: next.recruiterEmail || actor.email,
     candidate_id: candidateId,
     candidate_name: next.candidateName || "",
     phone_number: next.phoneNumber || "",
@@ -1783,9 +1788,12 @@ function assessmentRow(assessment, actor, companyId) {
     standard_answers: standardAnswers,
     question_answer_pairs: next.questionAnswerPairs || [],
     payload: {
-      ...next,
-      assigned_to_name: next.assignedToName || next.assigned_to_name || "",
-      assignedToName: next.assignedToName || next.assigned_to_name || "",
+      ...(() => {
+        const payload = { ...next };
+        delete payload.assigned_to_name;
+        delete payload.assignedToName;
+        return payload;
+      })(),
       updatedAt: next.updatedAt
     }
   };
@@ -5332,21 +5340,26 @@ async function saveAssessment({ actorUserId, companyId, assessment }) {
       || actor.name
       || ""
     ).trim();
-    const assignedToName = String(
-      assessment?.assigned_to_name
-      || assessment?.assignedToName
+    const recruiterEmail = String(
+      assessment?.recruiter_email
+      || assessment?.recruiterEmail
+      || actor.email
+      || ""
+    ).trim();
+    const recruiterId = String(
+      assessment?.recruiter_id
+      || assessment?.recruiterId
+      || actor.id
       || ""
     ).trim();
     const next = {
       ...assessment,
       id,
       companyId,
-      recruiterId: actor.id,
+      recruiterId: recruiterId || actor.id,
       recruiterName: recruiterName || actor.name,
       recruiter_name: recruiterName || actor.name,
-      assigned_to_name: assignedToName || "",
-      assignedToName: assignedToName || "",
-      recruiterEmail: actor.email,
+      recruiterEmail: recruiterEmail || actor.email,
       generatedAt: assessment.generatedAt || now,
       updatedAt: now
     };

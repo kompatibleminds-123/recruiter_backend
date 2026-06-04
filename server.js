@@ -4049,7 +4049,7 @@ function isAssessmentArchivedLocal(item = {}) {
 function getAssessmentFilterFieldValues(item = {}) {
   const clientValue = String(item?.clientName || item?.client_name || "").trim() || "Unassigned";
   const jdValue = String(item?.jdTitle || item?.jd_title || "").trim() || "Unassigned";
-  const recruiterValue = String(item?.assigned_to_name || item?.assignedToName || "").trim() || "Unassigned";
+  const recruiterValue = String(item?.recruiter_name || item?.recruiterName || "").trim() || "Unassigned";
   const outcomeValue = normalizeAssessmentStatusLabel(item?.candidateStatus || item?.candidate_status || "") || "No outcome";
   const createdKey = String(item?.generatedAt || item?.createdAt || item?.created_at || item?.updatedAt || item?.updated_at || "").slice(0, 10);
   const hay = [
@@ -5659,10 +5659,10 @@ function getClientLabel(candidate = {}, assessment = {}) {
 
 function getRecruiterLabel(candidate = {}, assessment = {}) {
   return (
+    String(assessment.recruiter_name || assessment.recruiterName || "").trim() ||
     String(candidate.assigned_to_name || candidate.assignedToName || "").trim() ||
-    String(assessment.assigned_to_name || assessment.assignedToName || "").trim() ||
     String(candidate.recruiter_name || candidate.recruiterName || "").trim() ||
-    String(assessment.recruiterName || assessment.recruiter_name || "").trim() ||
+    String(assessment.assigned_to_name || assessment.assignedToName || "").trim() ||
     "Unassigned"
   );
 }
@@ -5670,6 +5670,8 @@ function getRecruiterLabel(candidate = {}, assessment = {}) {
 function getOwnerRecruiterLabel(candidate = {}, assessment = {}) {
   const source = String(candidate?.source || "").trim().toLowerCase();
   const isApplicant = source === "website" || source === "website_apply" || source === "hosted_apply";
+  const assessmentOwner = String(assessment?.recruiter_name || assessment?.recruiterName || "").trim();
+  if (assessmentOwner) return assessmentOwner;
   const assigned = String(candidate.assigned_to_name || candidate.assignedToName || "").trim();
   if (assigned) return assigned;
   // Applicants often arrive without an assigned recruiter. Avoid showing "Website Apply" as a
@@ -5680,7 +5682,7 @@ function getOwnerRecruiterLabel(candidate = {}, assessment = {}) {
   // as a safe fallback so dashboards and filters behave consistently.
   const owner =
     String(candidate.recruiter_name || candidate.recruiterName || "").trim() ||
-    String(assessment.recruiterName || assessment.recruiter_name || "").trim();
+    String(assessment.assigned_to_name || assessment.assignedToName || "").trim();
   return owner || "Unassigned";
 }
 
