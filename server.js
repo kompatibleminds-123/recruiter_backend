@@ -17693,6 +17693,10 @@ const server = http.createServer(async (req, res) => {
       if (assessment?.id) {
         // Canonical 1:1 link: candidates.assessment_id must always point to the assessment.id
         await linkCandidateToAssessment(incomingCandidateId, assessment.id, { companyId: actor.companyId });
+        emitCapturedStreamEvent(actor.companyId, "candidate_changed", {
+          candidateId: incomingCandidateId,
+          assessmentId: String(assessment.id || "").trim()
+        });
         emitAssessmentStreamEvent(actor.companyId, "assessment_saved", {
           assessmentId: String(assessment.id || "").trim(),
           candidateId: incomingCandidateId,

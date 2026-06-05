@@ -8053,6 +8053,8 @@ function PortalApp({ token, onLogout }) {
 	const workspaceRefreshInFlightRef = useRef(false);
   const workspaceRefreshPendingRef = useRef(false);
 	const lastWorkspaceRefreshAtRef = useRef(0);
+  const lastWorkspaceHiddenAtRef = useRef(0);
+  const lastWorkspaceResumeRefreshAtRef = useRef(0);
   const lastWorkspaceRefreshByPathRef = useRef({});
   const workspaceLoadSeqRef = useRef(0);
   const initialWorkspaceLoadDoneRef = useRef(false);
@@ -9543,6 +9545,74 @@ function PortalApp({ token, onLogout }) {
     }).catch((error) => setStatus("workspace", String(error?.message || error), "error")).finally(() => {
       setWorkspaceDataReady(true);
     });
+  }, [token, location?.pathname]);
+
+  useEffect(() => {
+    if (!token) return undefined;
+    const RESUME_HIDDEN_THRESHOLD_MS = 15 * 60 * 1000;
+    const RESUME_THROTTLE_MS = 15 * 60 * 1000;
+    const isDashboardWorkspacePath = () => {
+      const pathname = String(location?.pathname || "").trim();
+      return pathname === "/dashboard" || pathname === "/candidates";
+    };
+    const refreshOnResume = async () => {
+      if (!isDashboardWorkspacePath()) return;
+      if (workspaceRefreshInFlightRef.current) {
+        workspaceRefreshPendingRef.current = true;
+        return;
+      }
+      if (suspendWorkspaceRefreshRef.current) return;
+      const now = Date.now();
+      const hiddenAt = Number(lastWorkspaceHiddenAtRef.current || 0);
+      const hiddenDuration = hiddenAt > 0 ? now - hiddenAt : 0;
+      if (hiddenDuration < RESUME_HIDDEN_THRESHOLD_MS) return;
+      if (now - lastWorkspaceResumeRefreshAtRef.current < RESUME_THROTTLE_MS) return;
+      lastWorkspaceResumeRefreshAtRef.current = now;
+      workspaceRefreshInFlightRef.current = true;
+      lastWorkspaceRefreshAtRef.current = now;
+      setWorkspaceDataReady(false);
+      try {
+        const latestLoader = loadWorkspaceRef.current;
+        if (typeof latestLoader === "function") {
+          await latestLoader({
+            forceFiveTabsRefresh: false,
+            preloadAllTabs: false,
+            includeEvents: false,
+            includeClientUsers: false,
+            includeEmployeeUsers: false,
+            includeSharedPresets: false,
+            includeEmailSettings: false
+          });
+        }
+      } catch (error) {
+        setStatus("workspace", String(error?.message || error), "error");
+      } finally {
+        workspaceRefreshInFlightRef.current = false;
+        setWorkspaceDataReady(true);
+        if (workspaceRefreshPendingRef.current) {
+          workspaceRefreshPendingRef.current = false;
+          void refreshOnResume();
+        }
+      }
+    };
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "hidden") {
+        lastWorkspaceHiddenAtRef.current = Date.now();
+        return;
+      }
+      if (document.visibilityState === "visible") {
+        void refreshOnResume();
+      }
+    };
+    const onFocus = () => {
+      void refreshOnResume();
+    };
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    return () => {
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+    };
   }, [token, location?.pathname]);
 
   async function syncSharedSettingsFromServer(options = {}) {
@@ -14633,6 +14703,7 @@ function PortalApp({ token, onLogout }) {
     const linkedApplicantCandidate = sourceApplicant ? applicantCandidateMap.get(String(sourceApplicant.id)) : null;
     const candidate = (state.candidates || []).find((item) => String(item.id) === String(candidateId)) || linkedApplicantCandidate;
     const source = candidate || sourceApplicant;
+    const capturedCandidateId = String(candidate?.id || sourceApplicant?.id || candidateId || "").trim();
     if (!source) {
       setStatus(statusKey, "Candidate not found for assessment conversion.", "error");
       return;
@@ -14660,6 +14731,9 @@ function PortalApp({ token, onLogout }) {
 
     const candidateDraft = candidate ? getCandidateDraftState(candidate) : {};
     const cvMeta = candidate ? decodePortalApplicantMetadata(candidate) : null;
+    const removeFromCapturedCaches = (items) => Array.isArray(items)
+      ? items.filter((item) => String(item?.id || "").trim() !== capturedCandidateId)
+      : items;
     const assignedRecruiterName = String(
       candidate?.assigned_to_name
       || candidate?.assignedToName
@@ -14767,6 +14841,31 @@ function PortalApp({ token, onLogout }) {
           : current.candidates;
         return { ...current, assessments: nextAssessments, candidates: nextCandidates };
       });
+      if (capturedCandidateId) {
+        setCapturedListItems((current) => removeFromCapturedCaches(current));
+        setCapturedOptionPool((current) => removeFromCapturedCaches(current));
+        setCapturedListMeta((current) => {
+          const meta = current && typeof current === "object" ? current : {};
+          const nextTotal = Math.max(0, Number(meta.total || 0) - 1);
+          const limit = Math.max(1, Number(meta.limit || safeCapturedApiPageSize || 25));
+          const nextTotalPages = Math.max(1, Math.ceil(nextTotal / limit));
+          return {
+            ...meta,
+            total: nextTotal,
+            totalPages: nextTotalPages,
+            page: Math.min(Math.max(1, Number(meta.page || capturedPage || 1)), nextTotalPages),
+            limit
+          };
+        });
+        setCapturedStatsSnapshot((current) => {
+          if (!current || typeof current !== "object") return current;
+          return {
+            ...current,
+            active: Math.max(0, Number(current.active || 0) - 1),
+            converted: Math.max(0, Number(current.converted || 0) + 1)
+          };
+        });
+      }
       navigate("/assessments");
       setStatus("assessments", `Converted ${candidateName || "candidate"} into assessment.`, "ok");
       // Skip immediate workspace refresh to keep viewport stable after conversion.
