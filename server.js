@@ -4264,13 +4264,12 @@ async function countAssessmentsForUser(user, options = {}) {
 async function getAssessmentStatsForUser(user, options = {}) {
   const filters = normalizeAssessmentFilterOptions(options.filters || {});
   const todayKey = new Date().toISOString().slice(0, 10);
-  const visibilityQuery = await buildAssessmentVisibilityQueryForUser(user);
-  const [total, active, archived, today] = await Promise.all([
-    countAssessmentsForUser(user, { filters, lane: "all", visibilityQuery }),
-    countAssessmentsForUser(user, { filters, lane: "active", visibilityQuery }),
-    countAssessmentsForUser(user, { filters, lane: "archived", visibilityQuery }),
-    countAssessmentsForUser(user, { filters: { ...filters, dateFrom: todayKey, dateTo: todayKey }, lane: "all", visibilityQuery })
-  ]);
+  const rows = sortAssessmentsForList(await getAssessmentsUniverseForUser(user), options.sortBy || "updated");
+  const pool = rows.filter((item) => applyAssessmentFiltersLocal(item, { ...filters, lane: "all" }));
+  const active = pool.filter((item) => applyAssessmentFiltersLocal(item, { ...filters, lane: "active" })).length;
+  const archived = pool.filter((item) => applyAssessmentFiltersLocal(item, { ...filters, lane: "archived" })).length;
+  const total = pool.length;
+  const today = rows.filter((item) => applyAssessmentFiltersLocal(item, { ...filters, lane: "all", dateFrom: todayKey, dateTo: todayKey })).length;
   return {
     today,
     total,
@@ -5074,6 +5073,7 @@ async function ensureCandidateVisibleToActor(actor, candidateId) {
 }
 
 const capturedStreamByCompany = new Map();
+const applicantStreamByCompany = new Map();
 
 function addCapturedStreamClient(companyId, client) {
   const key = String(companyId || "").trim();
@@ -5117,6 +5117,53 @@ function emitCapturedStreamEvent(companyId, eventType = "candidate_changed", pay
       client.res.write(`data: ${data}\n\n`);
     } catch {
       removeCapturedStreamClient(key, client);
+      try { client.res.end(); } catch {}
+    }
+  });
+}
+
+function addApplicantStreamClient(companyId, client) {
+  const key = String(companyId || "").trim();
+  if (!key || !client) return;
+  const list = applicantStreamByCompany.get(key) || [];
+  list.push(client);
+  applicantStreamByCompany.set(key, list);
+}
+
+function removeApplicantStreamClient(companyId, client) {
+  const key = String(companyId || "").trim();
+  if (!key) return;
+  const list = applicantStreamByCompany.get(key) || [];
+  const next = list.filter((item) => item !== client);
+  if (next.length) applicantStreamByCompany.set(key, next);
+  else applicantStreamByCompany.delete(key);
+}
+
+function emitApplicantStreamEvent(companyId, eventType = "candidate_changed", payload = {}) {
+  const key = String(companyId || "").trim();
+  if (!key) return;
+  const list = applicantStreamByCompany.get(key) || [];
+  if (!list.length) return;
+  const safePayload = (payload && typeof payload === "object") ? payload : {};
+  const derivedCandidateId = String(
+    safePayload?.candidateId ||
+    safePayload?.candidate_id ||
+    safePayload?.id ||
+    safePayload?.candidate?.id ||
+    ""
+  ).trim();
+  const data = JSON.stringify({
+    type: String(eventType || "candidate_changed").trim(),
+    at: new Date().toISOString(),
+    ...safePayload,
+    candidateId: derivedCandidateId || undefined
+  });
+  list.forEach((client) => {
+    try {
+      client.res.write(`event: applicants\n`);
+      client.res.write(`data: ${data}\n\n`);
+    } catch {
+      removeApplicantStreamClient(key, client);
       try { client.res.end(); } catch {}
     }
   });
@@ -11362,6 +11409,45 @@ const server = http.createServer(async (req, res) => {
     }
   }
 
+  if (req.method === "GET" && requestUrl.pathname === "/company/stream/applicants") {
+    try {
+      const streamToken = String(requestUrl.searchParams.get("token") || "").trim();
+      const actor = await requireSessionUser(streamToken || getBearerToken(req));
+      const companyId = String(actor?.companyId || "").trim();
+      if (!companyId) throw new Error("Invalid session.");
+
+      const headers = buildResponseHeaders(req, {
+        "Content-Type": "text/event-stream; charset=utf-8",
+        "Cache-Control": "no-cache, no-transform",
+        Connection: "keep-alive",
+        "X-Accel-Buffering": "no"
+      });
+      res.writeHead(200, headers);
+      res.write(`event: connected\n`);
+      res.write(`data: ${JSON.stringify({ ok: true, at: new Date().toISOString() })}\n\n`);
+
+      const client = { res, companyId };
+      addApplicantStreamClient(companyId, client);
+      const keepAlive = setInterval(() => {
+        try {
+          res.write(`event: ping\n`);
+          res.write(`data: ${JSON.stringify({ at: new Date().toISOString() })}\n\n`);
+        } catch {}
+      }, 25000);
+
+      const cleanup = () => {
+        try { clearInterval(keepAlive); } catch {}
+        removeApplicantStreamClient(companyId, client);
+      };
+      req.on("close", cleanup);
+      req.on("error", cleanup);
+      return;
+    } catch (error) {
+      sendJson(res, 401, { ok: false, error: String(error?.message || error) });
+      return;
+    }
+  }
+
   if (req.method === "GET" && requestUrl.pathname === "/company/stream/shortcuts") {
     try {
       const streamToken = String(requestUrl.searchParams.get("token") || "").trim();
@@ -16622,6 +16708,10 @@ const server = http.createServer(async (req, res) => {
       }
       const body = await readJsonBody(req);
       const result = await linkCandidateToAssessment(body.id || body.candidateId, body.assessment_id || body.assessmentId, { companyId: actor.companyId });
+      emitApplicantStreamEvent(actor.companyId, "candidate_changed", {
+        candidateId: String(body.id || body.candidateId || "").trim() || undefined,
+        assessmentId: String(body.assessment_id || body.assessmentId || "").trim() || undefined
+      });
       sendJson(res, 200, { ok: true, result });
     } catch (error) {
       sendJson(res, 400, { ok: false, error: String(error.message || error) });
@@ -17697,6 +17787,10 @@ const server = http.createServer(async (req, res) => {
           candidateId: incomingCandidateId,
           assessmentId: String(assessment.id || "").trim()
         });
+        emitApplicantStreamEvent(actor.companyId, "candidate_changed", {
+          candidateId: incomingCandidateId,
+          assessmentId: String(assessment.id || "").trim()
+        });
         emitAssessmentStreamEvent(actor.companyId, "assessment_saved", {
           assessmentId: String(assessment.id || "").trim(),
           candidateId: incomingCandidateId,
@@ -17904,6 +17998,10 @@ const server = http.createServer(async (req, res) => {
           candidateId: String(existing?.candidateId || existing?.candidate_id || "").trim(),
           assessmentId: ""
         });
+        emitApplicantStreamEvent(actor.companyId, "candidate_changed", {
+          candidateId: String(existing?.candidateId || existing?.candidate_id || "").trim(),
+          assessmentId: ""
+        });
       }
       emitAssessmentStreamEvent(actor.companyId, "assessment_deleted", {
         assessmentId,
@@ -18044,6 +18142,7 @@ const server = http.createServer(async (req, res) => {
       if (hideOnlyPatch) {
         const result = await patchCandidate(candidateId, patch, { companyId: actor.companyId });
         emitCapturedStreamEvent(actor.companyId, "candidate_changed", { candidateId });
+        emitApplicantStreamEvent(actor.companyId, "candidate_changed", { candidateId });
         sendJson(res, 200, { ok: true, result });
         return;
       }
@@ -18104,6 +18203,7 @@ const server = http.createServer(async (req, res) => {
       }
       const result = await patchCandidate(candidateId, patch, { companyId: actor.companyId });
       emitCapturedStreamEvent(actor.companyId, "candidate_changed", { candidateId });
+      emitApplicantStreamEvent(actor.companyId, "candidate_changed", { candidateId });
       sendJson(res, 200, { ok: true, result });
     } catch (error) {
       sendJson(res, 400, { ok: false, error: String(error.message || error) });
@@ -18167,6 +18267,7 @@ const server = http.createServer(async (req, res) => {
       const result = await saveCandidate(candidate, { companyId: actor.companyId });
       const license = await incrementCompanyCaptureUsage(actor.companyId, 1);
       emitCapturedStreamEvent(actor.companyId, "candidate_created", { candidateId: String(result?.id || "").trim() || undefined });
+      emitApplicantStreamEvent(actor.companyId, "candidate_created", { candidateId: String(result?.id || "").trim() || undefined });
       sendJson(res, 200, { ok: true, result, license });
     } catch (error) {
       sendJson(res, 400, { ok: false, error: String(error.message || error) });
@@ -18180,6 +18281,7 @@ const server = http.createServer(async (req, res) => {
       const candidateId = String(requestUrl.searchParams.get("id") || "").trim();
       const result = await deleteCandidate(candidateId, { companyId: actor.companyId });
       emitCapturedStreamEvent(actor.companyId, "candidate_deleted", { candidateId });
+      emitApplicantStreamEvent(actor.companyId, "candidate_deleted", { candidateId });
       sendJson(res, 200, { ok: true, result });
     } catch (error) {
       sendJson(res, 400, { ok: false, error: String(error.message || error) });
@@ -18219,6 +18321,7 @@ const server = http.createServer(async (req, res) => {
         client_name: body.client_name || body.clientName
       }, { companyId: actor.companyId });
       emitCapturedStreamEvent(actor.companyId, "candidate_assigned", { candidateId: String(body.id || body.candidateId || "").trim() || undefined });
+      emitApplicantStreamEvent(actor.companyId, "candidate_assigned", { candidateId: String(body.id || body.candidateId || "").trim() || undefined });
       sendJson(res, 200, { ok: true, result });
     } catch (error) {
       sendJson(res, 400, { ok: false, error: String(error.message || error) });
@@ -18243,6 +18346,7 @@ const server = http.createServer(async (req, res) => {
         client_name: body.client_name || body.clientName
       }, { companyId: actor.companyId });
       emitCapturedStreamEvent(actor.companyId, "candidate_assigned", { candidateId: String(candidateId || "").trim() || undefined });
+      emitApplicantStreamEvent(actor.companyId, "candidate_assigned", { candidateId: String(candidateId || "").trim() || undefined });
       sendJson(res, 200, { ok: true, result });
     } catch (error) {
       sendJson(res, 400, { ok: false, error: String(error.message || error) });
@@ -18299,6 +18403,7 @@ const server = http.createServer(async (req, res) => {
         next_follow_up_at: body.next_follow_up_at || body.nextFollowUpAt
       }, { companyId: actor.companyId });
       emitCapturedStreamEvent(actor.companyId, "candidate_attempt", { candidateId: String(body.candidate_id || body.candidateId || "").trim() || undefined });
+      emitApplicantStreamEvent(actor.companyId, "candidate_attempt", { candidateId: String(body.candidate_id || body.candidateId || "").trim() || undefined });
       sendJson(res, 200, { ok: true, result });
     } catch (error) {
       sendJson(res, 400, { ok: false, error: String(error.message || error) });
@@ -18414,6 +18519,7 @@ const server = http.createServer(async (req, res) => {
         raw_note: encodeApplicantMetadata(immediateMeta)
       }, { companyId: actor.companyId });
       emitCapturedStreamEvent(actor.companyId, "candidate_changed", { candidateId: candidate.id });
+      emitApplicantStreamEvent(actor.companyId, "candidate_changed", { candidateId: candidate.id });
 
       if (deferParse) {
         // Fast response, parse continues in the background.
@@ -18483,6 +18589,7 @@ const server = http.createServer(async (req, res) => {
               ...(shouldApplyAutofill ? buildCvAutofillPatch(refreshed || candidate, result) : {})
             }, { companyId: actor.companyId });
             emitCapturedStreamEvent(actor.companyId, "candidate_changed", { candidateId: candidate.id });
+            emitApplicantStreamEvent(actor.companyId, "candidate_changed", { candidateId: candidate.id });
 
             // Best-effort persistence of unified search-doc + full CV text (if table exists).
             try {
@@ -18578,6 +18685,7 @@ const server = http.createServer(async (req, res) => {
         ...(shouldApplyAutofill ? buildCvAutofillPatch(candidate, result) : {})
       }, { companyId: actor.companyId });
       emitCapturedStreamEvent(actor.companyId, "candidate_changed", { candidateId: candidate.id });
+      emitApplicantStreamEvent(actor.companyId, "candidate_changed", { candidateId: candidate.id });
 
       // Best-effort persistence of unified search-doc + full CV text (if table exists).
       try {

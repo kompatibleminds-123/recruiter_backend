@@ -1025,6 +1025,17 @@ function formatAssessmentStatusDisplay(status) {
     .replace(/\bhr\b/gi, "HR");
 }
 
+function resetPortalFirstOpenRuntimeState() {
+  try {
+    const state = globalThis.__recruitdeskPortalTabFirstOpenRuntimeState;
+    if (state && typeof state === "object") {
+      state.captured = false;
+      state.applicants = false;
+      state.assessments = false;
+    }
+  } catch {}
+}
+
 function normalizeShortcutKey(raw) {
   const value = String(raw || "").trim();
   if (!value) return "";
@@ -8066,6 +8077,9 @@ function PortalApp({ token, onLogout }) {
   const capturedLiveSyncInFlightRef = useRef(false);
   const capturedLiveSyncPendingRef = useRef(false);
   const capturedLiveSyncPendingEventRef = useRef({ candidateId: "", eventType: "" });
+  const applicantLiveSyncInFlightRef = useRef(false);
+  const applicantLiveSyncPendingRef = useRef(false);
+  const applicantLiveSyncPendingEventRef = useRef({ candidateId: "", eventType: "" });
   const dashboardDatabaseWorkspaceLoadedOnceRef = useRef(false);
   const tabFirstOpenLoadedRef = useRef(PORTAL_TAB_FIRST_OPEN_RUNTIME_STATE);
   const tabInitialLoadSuppressedRef = useRef({
@@ -10098,7 +10112,6 @@ function PortalApp({ token, onLogout }) {
     const currentPath = String(location?.pathname || "").trim();
     const previousPath = String(lastTabPathRef.current.assessments || "").trim();
     const justEntered = previousPath !== currentPath;
-    lastTabPathRef.current = { ...(lastTabPathRef.current || {}), assessments: currentPath };
     if (currentPath !== "/assessments") return undefined;
     if (tabInitialLoadSuppressedRef.current.assessments) return undefined;
     if (justEntered) {
@@ -10113,7 +10126,6 @@ function PortalApp({ token, onLogout }) {
     const currentPath = String(location?.pathname || "").trim();
     const previousPath = String(lastTabPathRef.current.assessments || "").trim();
     const justEntered = previousPath !== currentPath;
-    lastTabPathRef.current = { ...(lastTabPathRef.current || {}), assessments: currentPath };
     if (currentPath !== "/assessments") return undefined;
     if (tabInitialLoadSuppressedRef.current.assessments) return undefined;
     if (justEntered) {
@@ -10260,7 +10272,6 @@ function PortalApp({ token, onLogout }) {
     const currentPath = String(location?.pathname || "").trim();
     const previousPath = String(lastTabPathRef.current.captured || "").trim();
     const justEntered = previousPath !== currentPath;
-    lastTabPathRef.current = { ...(lastTabPathRef.current || {}), captured: currentPath };
     if (currentPath !== "/captured-notes") return undefined;
     if (justEntered) {
       if (tabInitialLoadSuppressedRef.current.captured) {
@@ -10281,7 +10292,6 @@ function PortalApp({ token, onLogout }) {
     const currentPath = String(location?.pathname || "").trim();
     const previousPath = String(lastTabPathRef.current.captured || "").trim();
     const justEntered = previousPath !== currentPath;
-    lastTabPathRef.current = { ...(lastTabPathRef.current || {}), captured: currentPath };
     if (currentPath !== "/captured-notes") return undefined;
     if (justEntered) {
       if (tabInitialLoadSuppressedRef.current.captured) {
@@ -10548,7 +10558,6 @@ function PortalApp({ token, onLogout }) {
     const currentPath = String(location?.pathname || "").trim();
     const previousPath = String(lastTabPathRef.current.applicants || "").trim();
     const justEntered = previousPath !== currentPath;
-    lastTabPathRef.current = { ...(lastTabPathRef.current || {}), applicants: currentPath };
     if (currentPath !== "/applicants") return;
     if (justEntered) {
       if (tabInitialLoadSuppressedRef.current.applicants) {
@@ -10561,6 +10570,266 @@ function PortalApp({ token, onLogout }) {
       reloadApplicantStats(applicantFiltersApplied)
     ]).catch(() => {});
   }, [token, location?.pathname, safeApplicantApiPage, safeApplicantApiPageSize, applicantFiltersApplied]);
+
+  useEffect(() => {
+    if (!token) return undefined;
+    if (String(location?.pathname || "").trim() !== "/applicants") return undefined;
+    let cancelled = false;
+    const streamUrl = `/company/stream/applicants?token=${encodeURIComponent(String(token || "").trim())}`;
+    const source = new EventSource(streamUrl);
+    const onApplicants = (event) => {
+      if (cancelled) return;
+      const payload = (() => {
+        try {
+          return JSON.parse(String(event?.data || "{}"));
+        } catch {
+          return {};
+        }
+      })();
+      const eventType = String(payload?.type || payload?.eventType || "").trim();
+      const candidateId = String(payload?.candidateId || payload?.candidate_id || payload?.id || payload?.candidate?.id || "").trim();
+      const queuePending = () => {
+        applicantLiveSyncPendingRef.current = true;
+        applicantLiveSyncPendingEventRef.current = { candidateId, eventType };
+      };
+      if (document.visibilityState !== "visible") return;
+      if (applicantLiveSyncInFlightRef.current) {
+        queuePending();
+        return;
+      }
+      applicantLiveSyncInFlightRef.current = true;
+      const refreshPromise = (async () => {
+        if (eventType === "candidate_created") {
+          await Promise.all([
+            reloadApplicantsSlice(safeApplicantApiPage, safeApplicantApiPageSize, applicantFiltersApplied),
+            reloadApplicantStats(applicantFiltersApplied)
+          ]);
+          return;
+        }
+
+        if (eventType === "candidate_deleted" && candidateId) {
+          setState((current) => ({
+            ...current,
+            applicants: (current.applicants || []).filter((item) => String(item?.id || "") !== candidateId),
+            candidates: (current.candidates || []).filter((item) => String(item?.id || "") !== candidateId),
+            databaseCandidates: (current.databaseCandidates || []).filter((item) => String(item?.id || "") !== candidateId)
+          }));
+          await Promise.all([
+            reloadApplicantsSlice(safeApplicantApiPage, safeApplicantApiPageSize, applicantFiltersApplied),
+            reloadApplicantStats(applicantFiltersApplied)
+          ]);
+          return;
+        }
+
+        if (!candidateId) {
+          await Promise.all([
+            reloadApplicantsSlice(safeApplicantApiPage, safeApplicantApiPageSize, applicantFiltersApplied),
+            reloadApplicantStats(applicantFiltersApplied)
+          ]);
+          return;
+        }
+
+        const shouldTreatAsRowPatch = eventType === "candidate_changed" || eventType === "candidate_attempt" || eventType === "candidate_assigned";
+        const rows = await api(`/candidates?id=${encodeURIComponent(candidateId)}&scope=company&limit=1`, token);
+        const nextRows = Array.isArray(rows) ? rows : [];
+        const nextRow = nextRows && nextRows.length ? nextRows[0] : null;
+        const previousRow = (state.applicants || []).find((item) => String(item?.id || "") === candidateId)
+          || (state.candidates || []).find((item) => String(item?.id || "") === candidateId)
+          || null;
+        if (nextRow) {
+          setState((current) => ({
+            ...current,
+            applicants: mergeCandidatesByFreshness(current.applicants, nextRows),
+            candidates: mergeCandidatesByFreshness(current.candidates, nextRows),
+            databaseCandidates: mergeCandidatesByFreshness(current.databaseCandidates, nextRows)
+          }));
+        }
+        if (String(location?.pathname || "").trim() === "/applicants" && shouldTreatAsRowPatch && nextRow) {
+          setApplicantListMeta((current) => current && typeof current === "object" ? current : current);
+        }
+
+        const previousSource = String(previousRow?.source || "").trim().toLowerCase();
+        const nextSource = String(nextRow?.source || "").trim().toLowerCase();
+        const previousHidden = Boolean(previousRow?.hidden_from_captured);
+        const nextHidden = Boolean(nextRow?.hidden_from_captured);
+        const previousUsed = Boolean(previousRow?.used_in_assessment);
+        const nextUsed = Boolean(nextRow?.used_in_assessment);
+        const previousAssessmentId = String(previousRow?.assessment_id || previousRow?.assessmentId || "").trim();
+        const nextAssessmentId = String(nextRow?.assessment_id || nextRow?.assessmentId || "").trim();
+        const membershipChanged =
+          previousSource !== nextSource ||
+          previousHidden !== nextHidden ||
+          previousUsed !== nextUsed ||
+          previousAssessmentId !== nextAssessmentId;
+        if (membershipChanged) {
+          await Promise.all([
+            reloadApplicantsSlice(safeApplicantApiPage, safeApplicantApiPageSize, applicantFiltersApplied),
+            reloadApplicantStats(applicantFiltersApplied)
+          ]);
+        }
+      })();
+      void refreshPromise
+        .catch(() => {})
+        .finally(() => {
+          applicantLiveSyncInFlightRef.current = false;
+          if (applicantLiveSyncPendingRef.current && !cancelled) {
+            applicantLiveSyncPendingRef.current = false;
+            const pendingEvent = { ...(applicantLiveSyncPendingEventRef.current || {}) };
+            applicantLiveSyncPendingEventRef.current = { candidateId: "", eventType: "" };
+            const pendingCandidateId = String(pendingEvent?.candidateId || "").trim();
+            const pendingEventType = String(pendingEvent?.eventType || "").trim();
+            if (pendingEventType === "candidate_created" || pendingEventType === "candidate_deleted" || !pendingCandidateId) {
+              void Promise.all([
+                reloadApplicantsSlice(safeApplicantApiPage, safeApplicantApiPageSize, applicantFiltersApplied),
+                reloadApplicantStats(applicantFiltersApplied)
+              ]).catch(() => {});
+              return;
+            }
+            void (async () => {
+              const rows = await api(`/candidates?id=${encodeURIComponent(pendingCandidateId)}&scope=company&limit=1`, token);
+              const nextRows = Array.isArray(rows) ? rows : [];
+              const nextRow = nextRows && nextRows.length ? nextRows[0] : null;
+              const previousRow = (state.applicants || []).find((item) => String(item?.id || "") === pendingCandidateId)
+                || (state.candidates || []).find((item) => String(item?.id || "") === pendingCandidateId)
+                || null;
+              if (nextRow) {
+                setState((current) => ({
+                  ...current,
+                  applicants: mergeCandidatesByFreshness(current.applicants, nextRows),
+                  candidates: mergeCandidatesByFreshness(current.candidates, nextRows),
+                  databaseCandidates: mergeCandidatesByFreshness(current.databaseCandidates, nextRows)
+                }));
+              }
+              const previousSource = String(previousRow?.source || "").trim().toLowerCase();
+              const nextSource = String(nextRow?.source || "").trim().toLowerCase();
+              const previousHidden = Boolean(previousRow?.hidden_from_captured);
+              const nextHidden = Boolean(nextRow?.hidden_from_captured);
+              const previousUsed = Boolean(previousRow?.used_in_assessment);
+              const nextUsed = Boolean(nextRow?.used_in_assessment);
+              const previousAssessmentId = String(previousRow?.assessment_id || previousRow?.assessmentId || "").trim();
+              const nextAssessmentId = String(nextRow?.assessment_id || nextRow?.assessmentId || "").trim();
+              const membershipChanged =
+                previousSource !== nextSource ||
+                previousHidden !== nextHidden ||
+                previousUsed !== nextUsed ||
+                previousAssessmentId !== nextAssessmentId;
+              if (membershipChanged) {
+                await Promise.all([
+                  reloadApplicantsSlice(safeApplicantApiPage, safeApplicantApiPageSize, applicantFiltersApplied),
+                  reloadApplicantStats(applicantFiltersApplied)
+                ]);
+              }
+            })().catch(() => {});
+          }
+        });
+    };
+    source.addEventListener("applicants", onApplicants);
+    return () => {
+      cancelled = true;
+      try { source.removeEventListener("applicants", onApplicants); } catch {}
+      try { source.close(); } catch {}
+    };
+  }, [token, location?.pathname, safeApplicantApiPage, safeApplicantApiPageSize, applicantFiltersApplied]);
+
+  useEffect(() => {
+    if (!token) return undefined;
+    const currentPath = String(location?.pathname || "").trim();
+    if (currentPath === "/applicants") return undefined;
+    let cancelled = false;
+    const streamUrl = `/company/stream/applicants?token=${encodeURIComponent(String(token || "").trim())}`;
+    const source = new EventSource(streamUrl);
+    const onApplicants = (event) => {
+      if (cancelled) return;
+      const payload = (() => {
+        try {
+          return JSON.parse(String(event?.data || "{}"));
+        } catch {
+          return {};
+        }
+      })();
+      const eventType = String(payload?.type || payload?.eventType || "").trim();
+      const candidateId = String(payload?.candidateId || payload?.candidate_id || payload?.id || payload?.candidate?.id || "").trim();
+      if (eventType === "candidate_created" || eventType === "candidate_deleted" || !candidateId) {
+        applicantLiveSyncPendingRef.current = true;
+        applicantLiveSyncPendingEventRef.current = { candidateId, eventType };
+        return;
+      }
+      if (eventType === "candidate_changed" || eventType === "candidate_attempt" || eventType === "candidate_assigned") {
+        applicantLiveSyncPendingRef.current = true;
+        applicantLiveSyncPendingEventRef.current = { candidateId, eventType };
+      }
+    };
+    source.addEventListener("applicants", onApplicants);
+    return () => {
+      cancelled = true;
+      try { source.removeEventListener("applicants", onApplicants); } catch {}
+      try { source.close(); } catch {}
+    };
+  }, [token, location?.pathname]);
+
+  useEffect(() => {
+    if (!token) return undefined;
+    if (String(location?.pathname || "").trim() !== "/applicants") return undefined;
+    if (!applicantLiveSyncPendingRef.current) return undefined;
+    applicantLiveSyncPendingRef.current = false;
+    const pendingEvent = { ...(applicantLiveSyncPendingEventRef.current || {}) };
+    applicantLiveSyncPendingEventRef.current = { candidateId: "", eventType: "" };
+    const pendingCandidateId = String(pendingEvent?.candidateId || "").trim();
+    const pendingEventType = String(pendingEvent?.eventType || "").trim();
+    if (pendingEventType === "candidate_created" || pendingEventType === "candidate_deleted" || !pendingCandidateId) {
+      void Promise.all([
+        reloadApplicantsSlice(safeApplicantApiPage, safeApplicantApiPageSize, applicantFiltersApplied),
+        reloadApplicantStats(applicantFiltersApplied)
+      ]).catch(() => {});
+      return;
+    }
+    void (async () => {
+      const rows = await api(`/candidates?id=${encodeURIComponent(pendingCandidateId)}&scope=company&limit=1`, token);
+      const nextRows = Array.isArray(rows) ? rows : [];
+      const nextRow = nextRows && nextRows.length ? nextRows[0] : null;
+      const previousRow = (state.applicants || []).find((item) => String(item?.id || "") === pendingCandidateId)
+        || (state.candidates || []).find((item) => String(item?.id || "") === pendingCandidateId)
+        || null;
+      if (nextRow) {
+        setState((current) => ({
+          ...current,
+          applicants: mergeCandidatesByFreshness(current.applicants, nextRows),
+          candidates: mergeCandidatesByFreshness(current.candidates, nextRows),
+          databaseCandidates: mergeCandidatesByFreshness(current.databaseCandidates, nextRows)
+        }));
+      }
+      const previousSource = String(previousRow?.source || "").trim().toLowerCase();
+      const nextSource = String(nextRow?.source || "").trim().toLowerCase();
+      const previousHidden = Boolean(previousRow?.hidden_from_captured);
+      const nextHidden = Boolean(nextRow?.hidden_from_captured);
+      const previousUsed = Boolean(previousRow?.used_in_assessment);
+      const nextUsed = Boolean(nextRow?.used_in_assessment);
+      const previousAssessmentId = String(previousRow?.assessment_id || previousRow?.assessmentId || "").trim();
+      const nextAssessmentId = String(nextRow?.assessment_id || nextRow?.assessmentId || "").trim();
+      const membershipChanged =
+        previousSource !== nextSource ||
+        previousHidden !== nextHidden ||
+        previousUsed !== nextUsed ||
+        previousAssessmentId !== nextAssessmentId;
+      if (membershipChanged) {
+        await Promise.all([
+          reloadApplicantsSlice(safeApplicantApiPage, safeApplicantApiPageSize, applicantFiltersApplied),
+          reloadApplicantStats(applicantFiltersApplied)
+        ]);
+      }
+    })().catch(() => {});
+  }, [token, location?.pathname, safeApplicantApiPage, safeApplicantApiPageSize, applicantFiltersApplied]);
+
+  useEffect(() => {
+    if (!token) return;
+    const currentPath = String(location?.pathname || "").trim();
+    lastTabPathRef.current = {
+      ...(lastTabPathRef.current || {}),
+      assessments: currentPath,
+      captured: currentPath,
+      applicants: currentPath
+    };
+  }, [token, location?.pathname]);
 
   useEffect(() => {
     if (String(location?.pathname || "").trim() !== "/applicants") return;
@@ -26965,6 +27234,7 @@ export default function App() {
     localStorage.removeItem(EMPLOYEE_TOKEN_KEY);
     localStorage.removeItem(PAYROLL_TOKEN_KEY);
     localStorage.removeItem(AUTH_MODE_KEY);
+    resetPortalFirstOpenRuntimeState();
     setAuthMode(forcedMode);
     setToken("");
   }
