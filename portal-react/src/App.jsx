@@ -9310,6 +9310,7 @@ function PortalApp({ token, onLogout }) {
       includeEmployeeUsers = true,
       includeSharedPresets = true,
       includeEmailSettings = true,
+      skipCoreSummaries = false,
       forceFiveTabsRefresh = false,
       preloadAllTabs = false
     } = options || {};
@@ -9317,7 +9318,8 @@ function PortalApp({ token, onLogout }) {
     const forceCore = Boolean(forceFiveTabsRefresh);
     const forceAll = Boolean(preloadAllTabs);
     const isMarketingRoute = pathname === "/marketing" || pathname === "/marketing-module";
-    const needsDashboard = pathname === "/dashboard" || forceCore || forceAll;
+    const shouldSkipCoreSummaries = Boolean(skipCoreSummaries);
+    const needsDashboard = !shouldSkipCoreSummaries && (pathname === "/dashboard" || forceCore || forceAll);
     const needsApplicants = forceCore || forceAll;
     const needsIntake = pathname === "/intake-settings" || pathname === "/jobs" || pathname === "/applicants" || forceAll;
     const needsJobs = forceAll || (!isMarketingRoute && pathname !== "/mail-settings" && pathname !== "/login-settings" && pathname !== "/plan");
@@ -9515,6 +9517,37 @@ function PortalApp({ token, onLogout }) {
 
   loadWorkspaceRef.current = loadWorkspace;
 
+  async function loadWorkspaceShellThenBackground() {
+    const now = Date.now();
+    lastWorkspaceRefreshAtRef.current = now;
+    setWorkspaceDataReady(false);
+    try {
+      const [userResult] = await Promise.all([
+        api("/auth/me", token).catch(() => ({ user: null })),
+        loadDashboardSummary(dashboardFilters).catch(() => null),
+        loadClientPortalSummary(clientPortalFilters).catch(() => null)
+      ]);
+      if (userResult) {
+        setState((current) => ({
+          ...current,
+          user: userResult.user || userResult
+        }));
+      }
+    } finally {
+      setWorkspaceDataReady(true);
+    }
+    void loadWorkspace({
+      forceFiveTabsRefresh: false,
+      preloadAllTabs: false,
+      includeEvents: false,
+      includeClientUsers: false,
+      includeEmployeeUsers: false,
+      includeSharedPresets: false,
+      includeEmailSettings: false,
+      skipCoreSummaries: true
+    }).catch((error) => setStatus("workspace", String(error?.message || error), "error"));
+  }
+
   useEffect(() => {
     if (!token) return;
     if (initialWorkspaceLoadDoneRef.current) return;
@@ -9522,6 +9555,10 @@ function PortalApp({ token, onLogout }) {
     const initialPathname = String(location?.pathname || "/dashboard").trim() || "/dashboard";
     if (initialPathname === "/dashboard" || initialPathname === "/candidates") {
       dashboardDatabaseWorkspaceLoadedOnceRef.current = true;
+    }
+    if (initialPathname === "/dashboard" || initialPathname === "/candidates") {
+      void loadWorkspaceShellThenBackground();
+      return;
     }
     const now = Date.now();
     lastWorkspaceRefreshAtRef.current = now;
@@ -9545,20 +9582,7 @@ function PortalApp({ token, onLogout }) {
     if (pathname !== "/dashboard" && pathname !== "/candidates") return;
     if (dashboardDatabaseWorkspaceLoadedOnceRef.current) return;
     dashboardDatabaseWorkspaceLoadedOnceRef.current = true;
-    const now = Date.now();
-    lastWorkspaceRefreshAtRef.current = now;
-    setWorkspaceDataReady(false);
-    void loadWorkspace({
-      forceFiveTabsRefresh: false,
-      preloadAllTabs: false,
-      includeEvents: false,
-      includeClientUsers: false,
-      includeEmployeeUsers: false,
-      includeSharedPresets: false,
-      includeEmailSettings: false
-    }).catch((error) => setStatus("workspace", String(error?.message || error), "error")).finally(() => {
-      setWorkspaceDataReady(true);
-    });
+    void loadWorkspaceShellThenBackground();
   }, [token, location?.pathname]);
 
   useEffect(() => {
