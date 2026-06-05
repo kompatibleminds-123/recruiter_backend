@@ -9525,7 +9525,8 @@ function PortalApp({ token, onLogout }) {
       const [userResult] = await Promise.all([
         api("/auth/me", token).catch(() => ({ user: null })),
         loadDashboardSummary(dashboardFilters).catch(() => null),
-        loadClientPortalSummary(clientPortalFilters).catch(() => null)
+        loadClientPortalSummary(clientPortalFilters).catch(() => null),
+        reloadApplicantStats(applicantFiltersApplied).catch(() => null)
       ]);
       if (userResult) {
         setState((current) => ({
@@ -20335,7 +20336,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
     if (isApplicantConvertedToAssessment(item, linkedCandidate, linkedAssessment)) return false;
     const manuallyHidden = Boolean(item.hidden_from_captured || linkedCandidate?.hidden_from_captured);
     return !manuallyHidden;
-  }).length;
+  }).length || Number(applicantStatsSnapshot?.active || 0);
   const pendingNotes = (state.candidates || []).filter((item) => {
     const sourceValue = String(item.source || "").trim();
     if (["website_apply", "hosted_apply", "google_sheet"].includes(sourceValue)) return false;
