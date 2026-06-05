@@ -17899,6 +17899,12 @@ const server = http.createServer(async (req, res) => {
         assessmentId
       });
       await unlinkAssessmentFromCompanyCandidates(actor.companyId, assessmentId);
+      if (existing?.candidateId || existing?.candidate_id) {
+        emitCapturedStreamEvent(actor.companyId, "candidate_changed", {
+          candidateId: String(existing?.candidateId || existing?.candidate_id || "").trim(),
+          assessmentId: ""
+        });
+      }
       emitAssessmentStreamEvent(actor.companyId, "assessment_deleted", {
         assessmentId,
         candidateId: String(existing?.candidateId || existing?.candidate_id || "").trim(),

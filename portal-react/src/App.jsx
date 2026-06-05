@@ -10510,6 +10510,7 @@ function PortalApp({ token, onLogout }) {
           candidates: mergeCandidatesByFreshness(current.candidates, nextRows)
         }));
         setCapturedOptionPool((current) => mergeCandidatesByFreshness(current, nextRows));
+        setCapturedListItems((current) => mergeCandidatesByFreshness(current, nextRows));
       }
       const previousHidden = Boolean(previousRow?.hidden_from_captured);
       const nextHidden = Boolean(nextRow?.hidden_from_captured);
@@ -14475,6 +14476,15 @@ function PortalApp({ token, onLogout }) {
           databaseCandidates: applyPatch(current.databaseCandidates)
         };
       });
+      if (String(location?.pathname || "").trim() === "/captured-notes") {
+        const applyCapturedPatch = (items) => Array.isArray(items)
+          ? items.map((item) => String(item?.id || "") === String(attemptsCandidateId)
+            ? { ...item, ...candidatePatch, updated_at: optimisticUpdatedAt, updatedAt: optimisticUpdatedAt }
+            : item)
+          : items;
+        setCapturedListItems((current) => applyCapturedPatch(current));
+        setCapturedOptionPool((current) => applyCapturedPatch(current));
+      }
     }
     try {
       const savedAttempt = await api("/contact-attempts", token, "POST", {
@@ -14717,12 +14727,27 @@ function PortalApp({ token, onLogout }) {
       return;
     }
     const candidateName = candidate?.name || sourceApplicant?.candidateName || "";
-    const matched = (state.assessments || []).find((item) =>
-      String(item.candidateId || item.candidate_id || "") === String(candidate?.id || sourceApplicant?.id || "")
-    );
-    if (matched) {
-      openSavedAssessment(matched);
-      return;
+    const linkedAssessmentId = String(
+      candidate?.assessment_id
+      || candidate?.assessmentId
+      || sourceApplicant?.assessment_id
+      || sourceApplicant?.assessmentId
+      || ""
+    ).trim();
+    if (linkedAssessmentId) {
+      const matched = (state.assessments || []).find((item) => String(item?.id || "").trim() === linkedAssessmentId) || null;
+      if (matched) {
+        openSavedAssessment(matched);
+        return;
+      }
+      const matchedByResolvedLink = resolveCapturedAssessment(candidate || sourceApplicant);
+      if (matchedByResolvedLink) {
+        openSavedAssessment(matchedByResolvedLink);
+        return;
+      }
+    }
+    if (String(candidate?.assessment_id || candidate?.assessmentId || sourceApplicant?.assessment_id || sourceApplicant?.assessmentId || "").trim()) {
+      setStatus(statusKey, "Linked assessment not found locally; opening a fresh assessment instead.", "warning");
     }
 
     if (!window.confirm(`Create assessment for ${candidateName || "this candidate"}? This will move the record out of the active ${sourceApplicant ? "Applied Candidates" : "Captured Notes"} list.`)) {
