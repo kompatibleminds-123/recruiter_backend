@@ -8052,7 +8052,7 @@ function PortalApp({ token, onLogout }) {
 	const [attempts, setAttempts] = useState([]);
 	const workspaceRefreshInFlightRef = useRef(false);
   const workspaceRefreshPendingRef = useRef(false);
-	const lastWorkspaceRefreshAtRef = useRef(0);
+  const lastWorkspaceRefreshAtRef = useRef(0);
   const lastWorkspaceHiddenAtRef = useRef(0);
   const lastWorkspaceResumeRefreshAtRef = useRef(0);
   const lastWorkspaceRefreshByPathRef = useRef({});
@@ -19376,24 +19376,119 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
     );
     if (!confirmed) return;
     setStatus("assessments", "Moving back to Captured...");
+    const optimisticUpdatedAt = new Date().toISOString();
+    const currentActiveStates = Array.isArray(candidateFiltersApplied.activeStates) && candidateFiltersApplied.activeStates.length
+      ? candidateFiltersApplied.activeStates
+      : ["Active"];
+    const shouldRemainVisible = currentActiveStates.includes("Active");
+    const existingCandidate = (state.candidates || []).find((item) => String(item?.id || "") === candidateId)
+      || (state.databaseCandidates || []).find((item) => String(item?.id || "") === candidateId)
+      || null;
+    const restoredCandidatePreview = {
+      ...(existingCandidate || {}),
+      id: candidateId,
+      assessment_id: "",
+      assessmentId: "",
+      used_in_assessment: false,
+      assessment_status: "",
+      hidden_from_captured: false,
+      updated_at: optimisticUpdatedAt,
+      updatedAt: optimisticUpdatedAt
+    };
+    const patchCandidateState = (items) => Array.isArray(items)
+      ? items.map((item) => String(item?.id || "") === candidateId ? { ...item, ...restoredCandidatePreview } : item)
+      : items;
+    const prevCapturedListItems = Array.isArray(capturedListItems) ? [...capturedListItems] : capturedListItems;
+    const prevCapturedOptionPool = Array.isArray(capturedOptionPool) ? [...capturedOptionPool] : capturedOptionPool;
+    const prevCapturedListMeta = capturedListMeta && typeof capturedListMeta === "object" ? { ...capturedListMeta } : capturedListMeta;
+    const prevCapturedStats = capturedStatsSnapshot && typeof capturedStatsSnapshot === "object" ? { ...capturedStatsSnapshot } : capturedStatsSnapshot;
+    const prevAssessmentListItems = Array.isArray(assessmentListItems) ? [...assessmentListItems] : assessmentListItems;
+    const prevAssessmentListMeta = assessmentListMeta && typeof assessmentListMeta === "object" ? { ...assessmentListMeta } : assessmentListMeta;
+    const prevAssessmentStats = assessmentStatsSnapshot && typeof assessmentStatsSnapshot === "object" ? { ...assessmentStatsSnapshot } : assessmentStatsSnapshot;
+    setState((current) => ({
+      ...current,
+      assessments: Array.isArray(current.assessments)
+        ? current.assessments.filter((item) => String(item?.id || "") !== assessmentId)
+        : current.assessments,
+      candidates: patchCandidateState(current.candidates),
+      databaseCandidates: patchCandidateState(current.databaseCandidates)
+    }));
+    setCapturedListItems((current) => (shouldRemainVisible
+      ? mergeCandidatesByFreshness(current, [restoredCandidatePreview])
+      : (Array.isArray(current) ? current.filter((item) => String(item?.id || "") !== candidateId) : current)));
+    setCapturedOptionPool((current) => mergeCandidatesByFreshness(current, [restoredCandidatePreview]));
+    if (shouldRemainVisible) {
+      setCapturedListMeta((current) => {
+        const meta = current && typeof current === "object" ? current : {};
+        const nextTotal = Math.max(0, Number(meta.total || 0) + 1);
+        const limit = Math.max(1, Number(meta.limit || safeCapturedApiPageSize || 25));
+        const nextTotalPages = Math.max(1, Math.ceil(nextTotal / limit));
+        return {
+          ...meta,
+          total: nextTotal,
+          totalPages: nextTotalPages,
+          page: Math.min(Math.max(1, Number(meta.page || capturedPage || 1)), nextTotalPages),
+          limit
+        };
+      });
+    }
+    setCapturedStatsSnapshot((current) => {
+      if (!current || typeof current !== "object") return current;
+      return {
+        ...current,
+        active: Math.max(0, Number(current.active || 0) + 1),
+        converted: Math.max(0, Number(current.converted || 0) - 1)
+      };
+    });
+    setAssessmentListItems((current) => Array.isArray(current)
+      ? current.filter((item) => String(item?.id || "") !== assessmentId)
+      : current);
+    setAssessmentListMeta((current) => {
+      const meta = current && typeof current === "object" ? current : {};
+      const nextTotal = Math.max(0, Number(meta.total || 0) - 1);
+      const limit = Math.max(1, Number(meta.limit || safeAssessmentApiPageSize || 25));
+      const nextTotalPages = Math.max(1, Math.ceil(nextTotal / limit));
+      return {
+        ...meta,
+        total: nextTotal,
+        totalPages: nextTotalPages,
+        page: Math.min(Math.max(1, Number(meta.page || assessmentPage || 1)), nextTotalPages),
+        limit
+      };
+    });
+    setAssessmentStatsSnapshot((current) => {
+      if (!current || typeof current !== "object") return current;
+      return {
+        ...current,
+        active: Math.max(0, Number(current.active || 0) - 1),
+        total: Math.max(0, Number(current.total || 0) - 1)
+      };
+    });
     try {
       await api("/company/assessments", token, "DELETE", { assessmentId });
       // Clear the candidate link so it shows up in captured notes again.
       await patchCandidateQuiet(candidateId, {
         assessment_id: "",
         used_in_assessment: false,
-        assessment_status: ""
-      });
-      setState((current) => ({
-        ...current,
-        assessments: Array.isArray(current.assessments)
-          ? current.assessments.filter((item) => String(item?.id || "") !== assessmentId)
-          : current.assessments
-      }));
+        assessment_status: "",
+        hidden_from_captured: false
+      }, { skipRefresh: true });
       navigate("/captured-notes");
       setStatus("captured", "Moved back to Captured.", "ok");
-      void refreshWorkspaceSilently("post-delete");
     } catch (error) {
+      setCapturedListItems(prevCapturedListItems);
+      setCapturedOptionPool(prevCapturedOptionPool);
+      setCapturedListMeta(prevCapturedListMeta);
+      setCapturedStatsSnapshot(prevCapturedStats);
+      setAssessmentListItems(prevAssessmentListItems);
+      setAssessmentListMeta(prevAssessmentListMeta);
+      setAssessmentStatsSnapshot(prevAssessmentStats);
+      setState((current) => ({
+        ...current,
+        assessments: prevAssessmentListItems,
+        candidates: patchCandidateState(current.candidates),
+        databaseCandidates: patchCandidateState(current.databaseCandidates)
+      }));
       setStatus("assessments", String(error?.message || error), "error");
     }
   }
