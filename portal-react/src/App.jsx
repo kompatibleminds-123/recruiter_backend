@@ -10366,11 +10366,13 @@ function PortalApp({ token, onLogout }) {
       const candidateId = String(payload?.candidateId || payload?.candidate_id || payload?.assessment?.candidateId || payload?.assessment?.candidate_id || "").trim();
       const assessment = payload?.assessment && typeof payload.assessment === "object" ? payload.assessment : null;
       if (assessment && assessmentId) {
+        const linkedCandidate = (state.candidates || []).find((item) => String(item?.id || "") === String(assessment?.candidateId || assessment?.candidate_id || candidateId || "").trim()) || null;
+        const hydratedAssessment = hydrateAssessmentCvRefs(assessment, linkedCandidate);
         setState((current) => ({
           ...current,
-          assessments: mergeAssessmentsByFreshness(current.assessments, [assessment])
+          assessments: mergeAssessmentsByFreshness(current.assessments, [hydratedAssessment])
         }));
-        patchVisibleAssessmentRow(assessment, "upsert");
+        patchVisibleAssessmentRow(hydratedAssessment, "upsert");
       } else if (eventType === "assessment_deleted" && assessmentId) {
         setState((current) => ({
           ...current,
@@ -15548,7 +15550,10 @@ function PortalApp({ token, onLogout }) {
     setStatus("interview", "Saving assessment...");
     try {
       const savedAssessment = await api("/company/assessments", token, "POST", { assessment });
-      upsertAssessmentInState(savedAssessment || assessment);
+      const hydratedAssessment = hydrateAssessmentCvRefs(savedAssessment || assessment, candidate || sourceApplicant);
+      upsertAssessmentInState(hydratedAssessment);
+      patchVisibleAssessmentRow(hydratedAssessment, "upsert");
+      setAssessmentOptionPool((current) => mergeAssessmentsByFreshness(current, [hydratedAssessment]));
       if (savedAssessment?.id) {
         setInterviewMeta((current) => ({
           ...current,
@@ -19813,15 +19818,38 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
       const savedId = String(saved?.id || "").trim();
       if (savedId) {
         const existingIx = nextAssessments.findIndex((a) => String(a?.id || "").trim() === savedId);
+        const existingItem = existingIx >= 0 ? nextAssessments[existingIx] : null;
+        const linkedCandidate = resolveAssessmentLinkedCandidate(saved) || resolveAssessmentLinkedCandidate(existingItem) || null;
+        const hydratedSaved = hydrateAssessmentCvRefs(
+          existingItem && typeof existingItem === "object"
+            ? { ...existingItem, ...(saved && typeof saved === "object" ? saved : {}) }
+            : saved,
+          linkedCandidate
+        );
         if (existingIx >= 0) {
           // Keep card position stable on updates; avoid jumping list to top.
-          nextAssessments.splice(existingIx, 1, saved);
+          nextAssessments.splice(existingIx, 1, hydratedSaved);
         } else {
-          nextAssessments.unshift(saved);
+          nextAssessments.unshift(hydratedSaved);
         }
       }
       return { ...current, assessments: nextAssessments };
     });
+  }
+
+  function hydrateAssessmentCvRefs(assessment = {}, linkedCandidate = null) {
+    const base = assessment && typeof assessment === "object" ? assessment : {};
+    const candidate = linkedCandidate && typeof linkedCandidate === "object" ? linkedCandidate : null;
+    const candidateMetaSource = candidate || base?.raw?.candidate || base?.candidate || base;
+    const cvMeta = getCandidateProfileCvMeta(candidateMetaSource || {});
+    return {
+      ...base,
+      cv_provider: base.cv_provider || base.cvProvider || cvMeta.provider || "",
+      cv_key: base.cv_key || base.cvKey || cvMeta.key || "",
+      cv_url: base.cv_url || base.cvUrl || cvMeta.url || "",
+      cv_filename: base.cv_filename || base.cvFilename || cvMeta.filename || "",
+      cvAnalysis: base.cvAnalysis || base.cv_analysis || candidate?.cvAnalysis || candidate?.cv_analysis || base?.raw?.candidate?.cvAnalysis || base?.raw?.candidate?.cv_analysis || null
+    };
   }
 
   function patchVisibleAssessmentRow(saved, mode = "upsert") {
@@ -19834,12 +19862,20 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
     setAssessmentListItems((current) => {
       if (!Array.isArray(current)) return current;
       const existingIx = current.findIndex((item) => String(item?.id || "").trim() === savedId);
+      const existingItem = existingIx >= 0 ? current[existingIx] : null;
+      const linkedCandidate = resolveAssessmentLinkedCandidate(saved) || resolveAssessmentLinkedCandidate(existingItem) || null;
+      const hydratedSaved = hydrateAssessmentCvRefs(
+        existingItem && typeof existingItem === "object"
+          ? { ...existingItem, ...(saved && typeof saved === "object" ? saved : {}) }
+          : saved,
+        linkedCandidate
+      );
       const next = [...current];
       if (existingIx < 0) {
-        next.unshift(saved);
+        next.unshift(hydratedSaved);
         return next;
       }
-      next.splice(existingIx, 1, { ...next[existingIx], ...saved });
+      next.splice(existingIx, 1, { ...next[existingIx], ...hydratedSaved });
       return next;
     });
   }
