@@ -1503,6 +1503,14 @@ function getCandidateProfileCvMeta(item = {}) {
   };
 }
 
+function WhatsAppGlyph() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <path d="M12 2.5A9.5 9.5 0 0 0 3.07 15.15L2.5 21.5l6.52-0.54A9.5 9.5 0 1 0 12 2.5Zm0 17.2a7.67 7.67 0 0 1-3.9-1.06l-.28-.16-3.87.32.34-3.76-.18-.3A7.7 7.7 0 1 1 12 19.7Zm4.55-5.25c-.24-.12-1.4-.69-1.62-.77s-.38-.12-.54.12-.62.77-.76.93-.28.18-.52.06a6.27 6.27 0 0 1-1.85-1.14 6.94 6.94 0 0 1-1.28-1.6c-.13-.23 0-.35.1-.46.1-.1.23-.28.35-.42.12-.14.16-.23.25-.38s.05-.28 0-.4-.54-1.3-.74-1.77c-.2-.47-.4-.4-.54-.41h-.47a.9.9 0 0 0-.65.3c-.22.23-.82.8-.82 1.94s.84 2.23.96 2.38c.12.16 1.6 2.45 3.86 3.43.54.23.96.37 1.29.47.54.17 1.02.15 1.4.09.43-.07 1.4-.57 1.6-1.12s.2-1.03.14-1.12c-.06-.1-.22-.16-.46-.28Z" fill="currentColor"/>
+    </svg>
+  );
+}
+
 function buildVisibleTagList(item = {}) {
   const explicit = Array.isArray(item.skills) ? item.skills : [];
   const inferred = Array.isArray(item.inferredTags) ? item.inferredTags : [];
@@ -21939,7 +21947,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                         title="Open WhatsApp"
                         aria-label="Open WhatsApp"
                       >
-                        <img src="https://web.whatsapp.com/favicon.ico" alt="" />
+                        <WhatsAppGlyph />
                       </button>
                       <button className="ghost-btn" onClick={() => void openAttempts(item.id)}>Attempts</button>
                       {!item.hidden_from_captured ? (
@@ -22383,7 +22391,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                           title="Open WhatsApp"
                           aria-label="Open WhatsApp"
                         >
-                          <img src="https://web.whatsapp.com/favicon.ico" alt="" />
+                          <WhatsAppGlyph />
                         </button>
                         <button className="ghost-btn" onClick={() => void openAttempts(item.id)}>Attempts</button>
                         {!item.hidden_from_captured ? (
@@ -22743,7 +22751,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                             title="Open WhatsApp"
                             aria-label="Open WhatsApp"
                           >
-                            <img src="https://web.whatsapp.com/favicon.ico" alt="" />
+                            <WhatsAppGlyph />
                           </button>
                           <div
                             className={`more-menu ${openAssessmentMoreId === String(item.id) ? "more-menu--open" : ""}`}
