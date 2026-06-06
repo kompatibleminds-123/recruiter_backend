@@ -10534,90 +10534,7 @@ function PortalApp({ token, onLogout }) {
         return;
       }
       capturedLiveSyncInFlightRef.current = true;
-      const refreshPromise = (async () => {
-        if (eventType === "candidate_created") {
-          await Promise.all([
-            reloadCapturedSlice(capturedPage, safeCapturedApiPageSize, candidateFiltersApplied, capturedSortBy),
-            reloadCapturedStats(candidateFiltersApplied)
-          ]);
-          return;
-        }
-
-        if (eventType === "candidate_deleted" && candidateId) {
-          setState((current) => ({
-            ...current,
-            candidates: (current.candidates || []).filter((item) => String(item?.id || "") !== candidateId)
-          }));
-          setCapturedOptionPool((current) => (current || []).filter((item) => String(item?.id || "") !== candidateId));
-          await Promise.all([
-            reloadCapturedSlice(capturedPage, safeCapturedApiPageSize, candidateFiltersApplied, capturedSortBy),
-            reloadCapturedStats(candidateFiltersApplied)
-          ]);
-          return;
-        }
-
-        if (!candidateId) {
-          await reloadCapturedSlice(capturedPage, safeCapturedApiPageSize, candidateFiltersApplied, capturedSortBy);
-          return;
-        }
-
-        const shouldTreatAsRowPatch = eventType === "candidate_changed" || eventType === "candidate_attempt" || eventType === "candidate_assigned";
-
-        const rows = payloadCandidate
-          ? [payloadCandidate]
-          : await api(`/candidates?id=${encodeURIComponent(candidateId)}&scope=company&limit=1`, token);
-        const nextRows = Array.isArray(rows) ? rows : [];
-        const nextRow = nextRows && nextRows.length ? nextRows[0] : null;
-        const previousRow = (state.candidates || []).find((item) => String(item?.id || "") === candidateId) || null;
-        const previousHidden = Boolean(previousRow?.hidden_from_captured);
-        const nextHidden = Boolean(nextRow?.hidden_from_captured);
-        const hiddenChanged = previousHidden !== nextHidden;
-        const nextVisible = nextRow ? isCapturedRowVisibleInCurrentView(nextRow, candidateFiltersApplied, state.user) : false;
-        if (nextRow) {
-          setState((current) => ({
-            ...current,
-            candidates: replaceCandidatesById(current.candidates, nextRows)
-          }));
-          if (eventType === "candidate_attempt") {
-            setCapturedOptionPool((current) => replaceCandidatesById(current, nextRows));
-            setCapturedListItems((current) => replaceCandidatesById(current, nextRows));
-          } else if (eventType === "candidate_changed" && hiddenChanged) {
-            if (nextVisible) {
-              setCapturedOptionPool((current) => upsertCandidatesById(current, nextRows));
-              setCapturedListItems((current) => upsertCandidatesById(current, nextRows));
-            } else {
-              setCapturedOptionPool((current) => removeCandidatesById(current, [candidateId]));
-              setCapturedListItems((current) => removeCandidatesById(current, [candidateId]));
-            }
-          } else if (eventType === "candidate_changed") {
-            if (nextVisible) {
-              setCapturedOptionPool((current) => replaceCandidatesById(current, nextRows));
-              setCapturedListItems((current) => replaceCandidatesById(current, nextRows));
-            } else {
-              setCapturedOptionPool((current) => removeCandidatesById(current, [candidateId]));
-              setCapturedListItems((current) => removeCandidatesById(current, [candidateId]));
-            }
-          } else if (eventType === "candidate_assigned" && nextVisible) {
-            setCapturedOptionPool((current) => upsertCandidatesById(current, nextRows));
-            setCapturedListItems((current) => upsertCandidatesById(current, nextRows));
-          } else if (eventType === "candidate_assigned") {
-            setCapturedOptionPool((current) => removeCandidatesById(current, [candidateId]));
-            setCapturedListItems((current) => removeCandidatesById(current, [candidateId]));
-          } else if (nextVisible) {
-            setCapturedOptionPool((current) => upsertCandidatesById(current, nextRows));
-            setCapturedListItems((current) => upsertCandidatesById(current, nextRows));
-          } else {
-            setCapturedOptionPool((current) => removeCandidatesById(current, [candidateId]));
-            setCapturedListItems((current) => removeCandidatesById(current, [candidateId]));
-          }
-        } else {
-          setCapturedOptionPool((current) => removeCandidatesById(current, [candidateId]));
-          setCapturedListItems((current) => removeCandidatesById(current, [candidateId]));
-        }
-
-        if (shouldTreatAsRowPatch) return;
-      })();
-      void refreshPromise
+      void applyCandidateLiveRowEvent({ eventType, candidateId, payloadCandidate })
         .catch(() => {})
         .finally(() => {
           capturedLiveSyncInFlightRef.current = false;
@@ -10626,69 +10543,11 @@ function PortalApp({ token, onLogout }) {
             const pendingEvent = { ...(capturedLiveSyncPendingEventRef.current || {}) };
             capturedLiveSyncPendingEventRef.current = { candidateId: "", eventType: "" };
             capturedLiveSyncInFlightRef.current = true;
-            void (async () => {
-              const pendingCandidateId = String(pendingEvent?.candidateId || "").trim();
-              const pendingEventType = String(pendingEvent?.eventType || "").trim();
-              if (pendingEventType === "candidate_created" || pendingEventType === "candidate_deleted" || !pendingCandidateId) {
-                await Promise.all([
-                  reloadCapturedSlice(capturedPage, safeCapturedApiPageSize, candidateFiltersApplied, capturedSortBy),
-                  reloadCapturedStats(candidateFiltersApplied)
-                ]);
-                return;
-              }
-              const rows = await api(`/candidates?id=${encodeURIComponent(pendingCandidateId)}&scope=company&limit=1`, token);
-              const nextRows = Array.isArray(rows) ? rows : [];
-              const nextRow = nextRows && nextRows.length ? nextRows[0] : null;
-              const previousRow = (state.candidates || []).find((item) => String(item?.id || "") === pendingCandidateId) || null;
-              const previousHidden = Boolean(previousRow?.hidden_from_captured);
-              const nextHidden = Boolean(nextRow?.hidden_from_captured);
-              const hiddenChanged = previousHidden !== nextHidden;
-              const nextVisible = nextRow ? isCapturedRowVisibleInCurrentView(nextRow, candidateFiltersApplied, state.user) : false;
-              if (nextRow) {
-                setState((current) => ({
-                  ...current,
-                  candidates: replaceCandidatesById(current.candidates, nextRows)
-                }));
-                if (pendingEventType === "candidate_attempt") {
-                  setCapturedOptionPool((current) => replaceCandidatesById(current, nextRows));
-                  setCapturedListItems((current) => replaceCandidatesById(current, nextRows));
-                } else if (pendingEventType === "candidate_changed" && hiddenChanged) {
-                  if (nextVisible) {
-                    setCapturedOptionPool((current) => upsertCandidatesById(current, nextRows));
-                    setCapturedListItems((current) => upsertCandidatesById(current, nextRows));
-                  } else {
-                    setCapturedOptionPool((current) => removeCandidatesById(current, [pendingCandidateId]));
-                    setCapturedListItems((current) => removeCandidatesById(current, [pendingCandidateId]));
-                  }
-                } else if (pendingEventType === "candidate_changed") {
-                  if (nextVisible) {
-                    setCapturedOptionPool((current) => replaceCandidatesById(current, nextRows));
-                    setCapturedListItems((current) => replaceCandidatesById(current, nextRows));
-                  } else {
-                    setCapturedOptionPool((current) => removeCandidatesById(current, [pendingCandidateId]));
-                    setCapturedListItems((current) => removeCandidatesById(current, [pendingCandidateId]));
-                  }
-                } else if (pendingEventType === "candidate_assigned" && nextVisible) {
-                  setCapturedOptionPool((current) => upsertCandidatesById(current, nextRows));
-                  setCapturedListItems((current) => upsertCandidatesById(current, nextRows));
-                } else if (pendingEventType === "candidate_assigned") {
-                  setCapturedOptionPool((current) => removeCandidatesById(current, [pendingCandidateId]));
-                  setCapturedListItems((current) => removeCandidatesById(current, [pendingCandidateId]));
-                } else if (nextVisible) {
-                  setCapturedOptionPool((current) => upsertCandidatesById(current, nextRows));
-                  setCapturedListItems((current) => upsertCandidatesById(current, nextRows));
-                } else {
-                  setCapturedOptionPool((current) => removeCandidatesById(current, [pendingCandidateId]));
-                  setCapturedListItems((current) => removeCandidatesById(current, [pendingCandidateId]));
-                }
-              } else {
-                setCapturedOptionPool((current) => removeCandidatesById(current, [pendingCandidateId]));
-                setCapturedListItems((current) => removeCandidatesById(current, [pendingCandidateId]));
-              }
-              if (pendingEventType === "candidate_changed" || pendingEventType === "candidate_attempt" || pendingEventType === "candidate_assigned") {
-                return;
-              }
-            })()
+            void applyCandidateLiveRowEvent({
+              eventType: String(pendingEvent?.eventType || "").trim(),
+              candidateId: String(pendingEvent?.candidateId || "").trim(),
+              payloadCandidate: pendingEvent?.candidate && typeof pendingEvent.candidate === "object" ? pendingEvent.candidate : null
+            })
               .catch(() => {})
               .finally(() => {
                 capturedLiveSyncInFlightRef.current = false;
