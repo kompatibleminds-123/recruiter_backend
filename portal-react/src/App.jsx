@@ -2522,6 +2522,22 @@ function isCapturedRowVisibleInCurrentView(row = {}, filters = {}, user = null) 
   return true;
 }
 
+function isCapturedRowOwnedByCurrentView(row = {}, user = null) {
+  if (!row || !user) return false;
+  const isAdmin = String(user?.role || "").toLowerCase() === "admin";
+  if (isAdmin) return true;
+  const currentUserId = String(user?.id || "").trim();
+  const currentUserName = String(user?.name || "").trim().toLowerCase();
+  const capturedId = String(row?.recruiter_id || row?.recruiterId || "").trim();
+  const capturedName = String(row?.recruiter_name || row?.recruiterName || "").trim().toLowerCase();
+  const assignedId = String(row?.assigned_to_user_id || row?.assignedToUserId || "").trim();
+  const assignedName = String(row?.assigned_to_name || row?.assignedToName || "").trim().toLowerCase();
+  return Boolean(
+    (currentUserId && (capturedId === currentUserId || assignedId === currentUserId)) ||
+    (currentUserName && (capturedName === currentUserName || assignedName === currentUserName))
+  );
+}
+
 function syncAssessmentNotesWithStatus(currentNotes, statusValue, atValue = "", extra = {}) {
   const lines = String(currentNotes || "").split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
   const nextLine = buildAssessmentStatusNoteLine(statusValue, atValue, extra).trim();
@@ -10522,8 +10538,8 @@ function PortalApp({ token, onLogout }) {
       const nextRows = Array.isArray(rows) ? rows : [];
       const nextRow = nextRows && nextRows.length ? nextRows[0] : null;
       const previousRow = (state.candidates || []).find((item) => String(item?.id || "") === candidateId) || null;
-      const previousVisible = previousRow ? isCapturedRowVisibleInCurrentView(previousRow, candidateFiltersApplied, state.user) : false;
-      const nextVisible = nextRow ? isCapturedRowVisibleInCurrentView(nextRow, candidateFiltersApplied, state.user) : false;
+        const previousVisible = previousRow ? isCapturedRowOwnedByCurrentView(previousRow, state.user) : false;
+        const nextVisible = nextRow ? isCapturedRowOwnedByCurrentView(nextRow, state.user) : false;
         if (nextRow) {
           setState((current) => ({
             ...current,
@@ -10598,8 +10614,8 @@ function PortalApp({ token, onLogout }) {
               const nextRows = Array.isArray(rows) ? rows : [];
               const nextRow = nextRows && nextRows.length ? nextRows[0] : null;
               const previousRow = (state.candidates || []).find((item) => String(item?.id || "") === pendingCandidateId) || null;
-              const previousVisible = previousRow ? isCapturedRowVisibleInCurrentView(previousRow, candidateFiltersApplied, state.user) : false;
-              const nextVisible = nextRow ? isCapturedRowVisibleInCurrentView(nextRow, candidateFiltersApplied, state.user) : false;
+              const previousVisible = previousRow ? isCapturedRowOwnedByCurrentView(previousRow, state.user) : false;
+              const nextVisible = nextRow ? isCapturedRowOwnedByCurrentView(nextRow, state.user) : false;
               if (nextRow) {
                 setState((current) => ({
                   ...current,
