@@ -8227,6 +8227,7 @@ function PortalApp({ token, onLogout }) {
   const capturedSingleCvInputRef = useRef(null);
   const draftCvInputRef = useRef(null);
   const assessmentStatusSaveLockRef = useRef(new Set());
+  const [assessmentActionBusyIds, setAssessmentActionBusyIds] = useState({});
   const [notesCandidateId, setNotesCandidateId] = useState("");
   const [notesCandidateSnapshot, setNotesCandidateSnapshot] = useState(null);
   const [attemptsCandidateId, setAttemptsCandidateId] = useState("");
@@ -10391,6 +10392,57 @@ function PortalApp({ token, onLogout }) {
       try { source.close(); } catch {}
     };
   }, [token, location?.pathname, assessmentPage, safeAssessmentApiPageSize, assessmentFiltersApplied, assessmentLane]);
+
+  useEffect(() => {
+    if (!token) return undefined;
+    const currentPath = String(location?.pathname || "").trim();
+    if (currentPath === "/assessments") return undefined;
+    let cancelled = false;
+    const streamUrl = `/company/stream/assessments?token=${encodeURIComponent(String(token || "").trim())}`;
+    const source = new EventSource(streamUrl);
+    const onAssessment = (event) => {
+      if (cancelled) return;
+      const payload = (() => {
+        try {
+          return JSON.parse(String(event?.data || "{}"));
+        } catch {
+          return {};
+        }
+      })();
+      const eventType = String(payload?.type || payload?.eventType || "").trim();
+      const assessmentId = String(payload?.assessmentId || payload?.assessment_id || payload?.assessment?.id || "").trim();
+      const candidateId = String(payload?.candidateId || payload?.candidate_id || payload?.assessment?.candidateId || payload?.assessment?.candidate_id || "").trim();
+      const assessment = payload?.assessment && typeof payload.assessment === "object" ? payload.assessment : null;
+      if (assessment && assessmentId) {
+        const linkedCandidate = (state.candidates || []).find((item) => String(item?.id || "") === String(assessment?.candidateId || assessment?.candidate_id || candidateId || "").trim()) || null;
+        const hydratedAssessment = hydrateAssessmentCvRefs(assessment, linkedCandidate);
+        setState((current) => ({
+          ...current,
+          assessments: mergeAssessmentsByFreshness(current.assessments, [hydratedAssessment])
+        }));
+        patchVisibleAssessmentRow(hydratedAssessment, "upsert");
+        return;
+      }
+      if (eventType === "assessment_deleted" && assessmentId) {
+        setState((current) => ({
+          ...current,
+          assessments: (current.assessments || []).filter((item) => String(item?.id || "") !== assessmentId)
+        }));
+        patchVisibleAssessmentRow({ id: assessmentId }, "delete");
+        void reloadAssessmentStats(assessmentFiltersApplied).catch(() => {});
+        return;
+      }
+      if (eventType === "assessment_restored" && assessmentId) {
+        void reloadAssessmentStats(assessmentFiltersApplied).catch(() => {});
+      }
+    };
+    source.addEventListener("assessment", onAssessment);
+    return () => {
+      cancelled = true;
+      try { source.removeEventListener("assessment", onAssessment); } catch {}
+      try { source.close(); } catch {}
+    };
+  }, [token, location?.pathname, assessmentFiltersApplied]);
 
   useEffect(() => {
     if (!token) return undefined;
@@ -15152,6 +15204,15 @@ function PortalApp({ token, onLogout }) {
     if (!window.confirm(`Create assessment for ${candidateName || "this candidate"}? This will move the record out of the active ${sourceApplicant ? "Applied Candidates" : "Captured Notes"} list.`)) {
       return;
     }
+    const lockKey = capturedCandidateId;
+    if (lockKey && assessmentStatusSaveLockRef.current.has(lockKey)) {
+      setStatus(statusKey, "Assessment action already in progress for this candidate. Please wait.", "error");
+      return;
+    }
+    if (lockKey) {
+      assessmentStatusSaveLockRef.current.add(lockKey);
+      setAssessmentActionBusyIds((current) => ({ ...current, [lockKey]: true }));
+    }
 
     const candidateDraft = candidate ? getCandidateDraftState(candidate) : {};
     const cvMeta = candidate ? decodePortalApplicantMetadata(candidate) : null;
@@ -15339,6 +15400,15 @@ function PortalApp({ token, onLogout }) {
       // Skip immediate workspace refresh to keep viewport stable after conversion.
     } catch (error) {
       setStatus(statusKey, String(error?.message || error), "error");
+    } finally {
+      if (lockKey) {
+        assessmentStatusSaveLockRef.current.delete(lockKey);
+        setAssessmentActionBusyIds((current) => {
+          const next = { ...current };
+          delete next[lockKey];
+          return next;
+        });
+      }
     }
   }
 
@@ -15421,6 +15491,15 @@ function PortalApp({ token, onLogout }) {
     assessment.cv_key = String(form.cvAnalysis?.storedFile?.key || interviewCandidateCvMeta.key || interviewCandidateMeta?.fileKey || "").trim();
     assessment.cv_url = String(form.cvAnalysis?.storedFile?.url || interviewCandidateCvMeta.url || interviewCandidateMeta?.fileUrl || "").trim();
     assessment.cv_filename = String(form.cvAnalysis?.storedFile?.filename || interviewCandidateCvMeta.filename || interviewCandidateMeta?.filename || "").trim();
+    const lockKey = String(interviewMeta.assessmentId || interviewMeta.candidateId || "").trim();
+    if (lockKey && assessmentStatusSaveLockRef.current.has(lockKey)) {
+      setStatus("interview", "Assessment action already in progress for this candidate. Please wait.", "error");
+      return;
+    }
+    if (lockKey) {
+      assessmentStatusSaveLockRef.current.add(lockKey);
+      setAssessmentActionBusyIds((current) => ({ ...current, [lockKey]: true }));
+    }
     delete assessment.assigned_to_name;
     delete assessment.assignedToName;
     if (interviewMeta.candidateId) {
@@ -15486,6 +15565,15 @@ function PortalApp({ token, onLogout }) {
       }
     } catch (error) {
       setStatus("interview", String(error?.message || error), "error");
+    } finally {
+      if (lockKey) {
+        assessmentStatusSaveLockRef.current.delete(lockKey);
+        setAssessmentActionBusyIds((current) => {
+          const next = { ...current };
+          delete next[lockKey];
+          return next;
+        });
+      }
     }
     // Skip immediate workspace refresh to keep viewport stable after assessment save.
   }
@@ -19844,6 +19932,15 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
       setStatus("assessments", "Candidate id missing for this assessment (cannot archive/restore safely).", "error");
       return null;
     }
+    const lockKey = String(safeAssessment?.id || safeAssessment?.candidateId || "").trim();
+    if (lockKey && assessmentStatusSaveLockRef.current.has(lockKey)) {
+      setStatus("assessments", "Assessment action already in progress for this candidate. Please wait.", "error");
+      return null;
+    }
+    if (lockKey) {
+      assessmentStatusSaveLockRef.current.add(lockKey);
+      setAssessmentActionBusyIds((current) => ({ ...current, [lockKey]: true }));
+    }
     const nowIso = new Date().toISOString();
     const wasArchived = Boolean(isAssessmentArchived(safeAssessment));
     const laneMatchesNewState = Boolean(archived) === (assessmentLane === "archived");
@@ -19946,6 +20043,15 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
       });
       setStatus("assessments", message, "error");
       return null;
+    } finally {
+      if (lockKey) {
+        assessmentStatusSaveLockRef.current.delete(lockKey);
+        setAssessmentActionBusyIds((current) => {
+          const next = { ...current };
+          delete next[lockKey];
+          return next;
+        });
+      }
     }
   }
 
@@ -19965,6 +20071,15 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
       "Move back to Captured will remove this assessment and keep the candidate as a captured note. Continue?"
     );
     if (!confirmed) return;
+    const lockKey = String(safeAssessment?.id || safeAssessment?.candidateId || "").trim();
+    if (lockKey && assessmentStatusSaveLockRef.current.has(lockKey)) {
+      setStatus("assessments", "Assessment action already in progress for this candidate. Please wait.", "error");
+      return;
+    }
+    if (lockKey) {
+      assessmentStatusSaveLockRef.current.add(lockKey);
+      setAssessmentActionBusyIds((current) => ({ ...current, [lockKey]: true }));
+    }
     setStatus("assessments", "Moving back to Captured...");
     const optimisticUpdatedAt = new Date().toISOString();
     const currentActiveStates = Array.isArray(candidateFiltersApplied.activeStates) && candidateFiltersApplied.activeStates.length
@@ -20080,6 +20195,15 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
         databaseCandidates: patchCandidateState(current.databaseCandidates)
       }));
       setStatus("assessments", String(error?.message || error), "error");
+    } finally {
+      if (lockKey) {
+        assessmentStatusSaveLockRef.current.delete(lockKey);
+        setAssessmentActionBusyIds((current) => {
+          const next = { ...current };
+          delete next[lockKey];
+          return next;
+        });
+      }
     }
   }
 
@@ -21818,7 +21942,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                         <button className="ghost-btn" onClick={() => openJdEmailModalForCandidate(item, item.jdId || "")}>Email JD</button>
                       ) : null}
                       {!item.hidden_from_captured ? (
-                        <button className="captured-action-success" onClick={() => void createAssessmentFromCandidate(item.id)}>Create assessment</button>
+                        <button className="captured-action-success" disabled={Boolean(assessmentActionBusyIds[String(item.id || "")])} onClick={() => void createAssessmentFromCandidate(item.id)}>{assessmentActionBusyIds[String(item.id || "")] ? "Creating..." : "Create assessment"}</button>
                       ) : null}
                       {item.hidden_from_captured ? (
                         <button className="ghost-btn" onClick={() => void restoreApplicant(item.id)}>Restore to active</button>
@@ -22262,7 +22386,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                           <button className="ghost-btn" onClick={() => openJdEmailModalForCandidate(item)}>Email JD</button>
                         ) : null}
                         {!item.hidden_from_captured ? (
-                          <button className="captured-action-success" onClick={() => void createAssessmentFromCandidate(item.id)}>Create assessment</button>
+                          <button className="captured-action-success" disabled={Boolean(assessmentActionBusyIds[String(item.id || "")])} onClick={() => void createAssessmentFromCandidate(item.id)}>{assessmentActionBusyIds[String(item.id || "")] ? "Creating..." : "Create assessment"}</button>
                         ) : null}
                         {item.hidden_from_captured ? (
                           <button className="ghost-btn" onClick={() => void restoreCapturedCandidate(item.id)}>Restore to active</button>
@@ -22612,12 +22736,12 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                                   if (!hasCv) return null;
                                   return (
                                     <>
-                                      <button type="button" className="more-menu__item" onClick={() => {
+                                      <button type="button" className="more-menu__item" disabled={Boolean(assessmentActionBusyIds[String(item.id || "")]|| assessmentActionBusyIds[String(item.candidateId || "")])} onClick={() => {
                                         closeAssessmentMoreMenu();
                                         if (!candidateForCv) return setStatus("assessments", "Linked candidate not found for this assessment.", "error");
                                         openDatabaseCandidateCv(candidateForCv);
                                       }}>Open Original CV</button>
-                                      <button type="button" className="more-menu__item" onClick={() => {
+                                      <button type="button" className="more-menu__item" disabled={Boolean(assessmentActionBusyIds[String(item.id || "")]|| assessmentActionBusyIds[String(item.candidateId || "")])} onClick={() => {
                                         closeAssessmentMoreMenu();
                                         if (!candidateForCv) return setStatus("assessments", "Linked candidate not found for this assessment.", "error");
                                         void openBrandedCandidateCv(candidateForCv);
@@ -22627,16 +22751,16 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                                     </>
                                   );
                                 })()}
-                                <button type="button" className="more-menu__item" onClick={() => { closeAssessmentMoreMenu(); void moveAssessmentBackToCaptured(item); }}>Move back to captured</button>
-                                <button type="button" className="more-menu__item" onClick={() => { closeAssessmentMoreMenu(); void setAssessmentArchivedState(item, true); }}>Hide</button>
-                                <button type="button" className="more-menu__item more-menu__danger" onClick={() => { closeAssessmentMoreMenu(); void deleteAssessmentItem(item); }}>Delete</button>
+                                <button type="button" className="more-menu__item" disabled={Boolean(assessmentActionBusyIds[String(item.id || "")]|| assessmentActionBusyIds[String(item.candidateId || "")])} onClick={() => { closeAssessmentMoreMenu(); void moveAssessmentBackToCaptured(item); }}>Move back to captured</button>
+                                <button type="button" className="more-menu__item" disabled={Boolean(assessmentActionBusyIds[String(item.id || "")]|| assessmentActionBusyIds[String(item.candidateId || "")])} onClick={() => { closeAssessmentMoreMenu(); void setAssessmentArchivedState(item, true); }}>Hide</button>
+                                <button type="button" className="more-menu__item more-menu__danger" disabled={Boolean(assessmentActionBusyIds[String(item.id || "")] || assessmentActionBusyIds[String(item.candidateId || "")])} onClick={() => { closeAssessmentMoreMenu(); void deleteAssessmentItem(item); }}>Delete</button>
                               </div>
                             ) : null}
                           </div>
                         </>
                       ) : (
                         <>
-                          <button onClick={() => { closeAssessmentMoreMenu(); void setAssessmentArchivedState(item, false); }}>Restore</button>
+                          <button disabled={Boolean(assessmentActionBusyIds[String(item.id || "")] || assessmentActionBusyIds[String(item.candidateId || "")])} onClick={() => { closeAssessmentMoreMenu(); void setAssessmentArchivedState(item, false); }}>Restore</button>
                           <button onClick={() => { closeAssessmentMoreMenu(); void openAssessmentCandidateCardModal(item); }}>Candidate card</button>
                           <div
                             className={`more-menu ${openAssessmentMoreId === String(item.id) ? "more-menu--open" : ""}`}
@@ -22653,7 +22777,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                             </button>
                             {openAssessmentMoreId === String(item.id) ? (
                               <div className="more-menu__dropdown more-menu__dropdown--inline" role="menu">
-                                <button type="button" className="more-menu__item more-menu__danger" onClick={() => { closeAssessmentMoreMenu(); void deleteAssessmentItem(item); }}>Delete</button>
+                                <button type="button" className="more-menu__item more-menu__danger" disabled={Boolean(assessmentActionBusyIds[String(item.id || "")] || assessmentActionBusyIds[String(item.candidateId || "")])} onClick={() => { closeAssessmentMoreMenu(); void deleteAssessmentItem(item); }}>Delete</button>
                               </div>
                             ) : null}
                           </div>
@@ -23124,7 +23248,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
 	                  </label>
 	                  <button onClick={() => void copyInterviewTracker()}>Copy tracker</button>
 	                  {interviewMeta.candidateId && !interviewMeta.assessmentId ? <button disabled={interviewLatestLoading} onClick={() => void saveInterviewDraft()}>Save draft</button> : null}
-	                  <button disabled={interviewLatestLoading} onClick={() => void saveAssessment()}>{interviewMeta.assessmentId ? "Save assessment" : "Create assessment"}</button>
+	                  <button disabled={interviewLatestLoading || Boolean(assessmentActionBusyIds[String(interviewMeta.assessmentId || interviewMeta.candidateId || "")])} onClick={() => void saveAssessment()}>{assessmentActionBusyIds[String(interviewMeta.assessmentId || interviewMeta.candidateId || "")] ? "Saving..." : (interviewMeta.assessmentId ? "Save assessment" : "Create assessment")}</button>
 	                  <button onClick={() => sendInterviewToSheets()}>Send to Sheets</button>
 	                  <button onClick={() => exportInterviewAll()}>Export all</button>
 	                    <button className="ghost-btn" onClick={() => { setEditCautiousIndicators(false); setInterviewLatestLoading(false); setInterviewMeta({ candidateId: "", assessmentId: "" }); setInterviewForm({ candidateName: "", phoneNumber: "", emailId: "", linkedin: "", location: "", gender: "", currentCtc: "", expectedCtc: "", noticePeriod: "", offerInHand: "", lwdOrDoj: "", currentCompany: "", currentDesignation: "", totalExperience: "", relevantExperience: "", currentOrgTenure: "", experienceTimeline: "", reasonForChange: "", cautiousIndicators: "", clientName: "", jdTitle: "", pipelineStage: "Under Interview Process", candidateStatus: "Screening in progress", followUpAt: "", interviewAt: "", recruiterNotes: "", callbackNotes: "", otherPointers: "", tags: "", jdScreeningAnswers: {}, cvAnalysis: null, cvAnalysisApplied: false, statusHistory: [] }); setStatus("interview", ""); }}>Clear draft</button>
@@ -27562,6 +27686,8 @@ export default function App() {
           ? <PortalErrorBoundary><MarketingPortalApp token={token} onLogout={logout} /></PortalErrorBoundary>
         : <PortalErrorBoundary><PortalApp token={token} onLogout={logout} /></PortalErrorBoundary>;
 }
+
+
 
 
 
