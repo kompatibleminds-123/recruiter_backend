@@ -23201,9 +23201,6 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                         onChange={handleInterviewCvSelection}
                       />
                       <button type="button" onClick={() => draftCvInputRef.current?.click()}>Upload CV (Auto-fill Draft)</button>
-                      <span className="status-note">
-                        {copySettings.interviewAiParsingEnabled !== false ? "AI Compare Mode: ON" : "AI Compare Mode: OFF"}
-                      </span>
                     </div>
                   </div>
                   {interviewForm.cvAnalysis?.storedFile ? (
@@ -23216,7 +23213,6 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                       <span className="status-note">{getInterviewCvStoredFileLabel(interviewForm.cvAnalysis)}</span>
                       <span className="status-note">{`Stored: ${getInterviewCvStoredFilePath(interviewForm.cvAnalysis)}`}</span>
                       {interviewMeta.candidateId ? <button className="ghost-btn" onClick={() => openInterviewStoredCv()}>Open uploaded CV</button> : null}
-                      {interviewMeta.candidateId ? <button className="ghost-btn" onClick={() => void removeInterviewStoredCv()}>Remove uploaded CV</button> : null}
                     </div>
                   ) : null}
                   {interviewForm.cvAnalysis ? (
