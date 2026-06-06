@@ -10372,14 +10372,17 @@ function PortalApp({ token, onLogout }) {
           assessments: (current.assessments || []).filter((item) => String(item?.id || "") !== assessmentId)
         }));
         patchVisibleAssessmentRow({ id: assessmentId }, "delete");
-      } else if (assessment && assessmentId) {
+        return;
+      }
+      if (assessment && assessmentId) {
         const linkedCandidate = (state.candidates || []).find((item) => String(item?.id || "") === String(assessment?.candidateId || assessment?.candidate_id || candidateId || "").trim()) || null;
         const hydratedAssessment = hydrateAssessmentCvRefs(assessment, linkedCandidate);
+        const shouldShowInCurrentLane = Boolean(isAssessmentArchived(hydratedAssessment)) === (assessmentLane === "archived");
         setState((current) => ({
           ...current,
           assessments: mergeAssessmentsByFreshness(current.assessments, [hydratedAssessment])
         }));
-        patchVisibleAssessmentRow(hydratedAssessment, "upsert");
+        patchVisibleAssessmentRow(hydratedAssessment, shouldShowInCurrentLane ? "upsert" : "delete");
       }
       if (eventType === "assessment_deleted" || eventType === "assessment_restored") {
         void reloadAssessmentStats(assessmentFiltersApplied).catch(() => {});
@@ -10425,11 +10428,12 @@ function PortalApp({ token, onLogout }) {
       if (assessment && assessmentId) {
         const linkedCandidate = (state.candidates || []).find((item) => String(item?.id || "") === String(assessment?.candidateId || assessment?.candidate_id || candidateId || "").trim()) || null;
         const hydratedAssessment = hydrateAssessmentCvRefs(assessment, linkedCandidate);
+        const shouldShowInCurrentLane = Boolean(isAssessmentArchived(hydratedAssessment)) === (assessmentLane === "archived");
         setState((current) => ({
           ...current,
           assessments: mergeAssessmentsByFreshness(current.assessments, [hydratedAssessment])
         }));
-        patchVisibleAssessmentRow(hydratedAssessment, "upsert");
+        patchVisibleAssessmentRow(hydratedAssessment, shouldShowInCurrentLane ? "upsert" : "delete");
         return;
       }
       if (eventType === "assessment_restored" && assessmentId) {
