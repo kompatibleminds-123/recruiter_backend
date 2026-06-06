@@ -2393,6 +2393,20 @@ function mergeCandidatesByFreshness(currentList = [], incomingList = []) {
   return Array.from(byId.values());
 }
 
+function sortCapturedNotesForList(items = [], sortBy = "created") {
+  const sortMode = String(sortBy || "created").trim().toLowerCase();
+  const primaryKeys = sortMode === "updated"
+    ? ["updatedAt", "updated_at", "last_contact_at", "lastContactAt", "assigned_at", "assignedAt", "createdAt", "created_at"]
+    : ["createdAt", "created_at", "generatedAt", "updatedAt", "updated_at", "last_contact_at", "lastContactAt"];
+  return (Array.isArray(items) ? items : []).slice().sort((a, b) => {
+    const aTime = Date.parse(String(primaryKeys.map((key) => a?.[key]).find((value) => String(value || "").trim()) || ""));
+    const bTime = Date.parse(String(primaryKeys.map((key) => b?.[key]).find((value) => String(value || "").trim()) || ""));
+    const diff = (Number.isFinite(bTime) ? bTime : 0) - (Number.isFinite(aTime) ? aTime : 0);
+    if (diff) return diff;
+    return String(b?.id || "").localeCompare(String(a?.id || ""));
+  });
+}
+
 function syncAssessmentNotesWithStatus(currentNotes, statusValue, atValue = "", extra = {}) {
   const lines = String(currentNotes || "").split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
   const nextLine = buildAssessmentStatusNoteLine(statusValue, atValue, extra).trim();
@@ -7378,6 +7392,7 @@ function PortalApp({ token, onLogout }) {
   const [applicantPageSize, setApplicantPageSize] = useState(25);
   const [capturedPage, setCapturedPage] = useState(1);
   const [capturedPageSize, setCapturedPageSize] = useState(25);
+  const [capturedSortBy, setCapturedSortBy] = useState("created"); // created | updated
   const [bulkAssignApplicantModalOpen, setBulkAssignApplicantModalOpen] = useState(false);
   const [bulkAssignCandidateModalOpen, setBulkAssignCandidateModalOpen] = useState(false);
   const [dbCampaignAttachModal, setDbCampaignAttachModal] = useState({
@@ -9856,10 +9871,11 @@ function PortalApp({ token, onLogout }) {
     setApplicantStatsSnapshot(statsEnvelope?.data || null);
   }
 
-  function buildCapturedQueryParams(filters = candidateFiltersApplied, page = capturedPage, limit = safeCapturedApiPageSize) {
+  function buildCapturedQueryParams(filters = candidateFiltersApplied, page = capturedPage, limit = safeCapturedApiPageSize, sortBy = capturedSortBy) {
     const params = new URLSearchParams();
     params.set("limit", String(Math.max(1, Number(limit || 25))));
     params.set("page", String(Math.max(1, Number(page || 1))));
+    params.set("sortBy", String(sortBy || "created").trim() || "created");
     const addCsv = (key, list) => {
       if (!Array.isArray(list) || !list.length) return;
       params.set(key, list.map((item) => String(item || "").trim()).filter(Boolean).join(","));
@@ -9881,9 +9897,9 @@ function PortalApp({ token, onLogout }) {
     return params.toString();
   }
 
-  async function reloadCapturedSlice(page = capturedPage, limit = safeCapturedApiPageSize, filters = candidateFiltersApplied) {
+  async function reloadCapturedSlice(page = capturedPage, limit = safeCapturedApiPageSize, filters = candidateFiltersApplied, sortBy = capturedSortBy) {
     if (!token) return;
-    const query = buildCapturedQueryParams(filters, page, limit);
+    const query = buildCapturedQueryParams(filters, page, limit, sortBy);
     if (capturedListRequestRef.current.inflightQuery === query) return;
     const seq = Number(capturedListRequestRef.current.seq || 0) + 1;
     capturedListRequestRef.current = { seq, inflightQuery: query };
@@ -9915,7 +9931,7 @@ function PortalApp({ token, onLogout }) {
 
   async function reloadCapturedStats(filters = candidateFiltersApplied) {
     if (!token) return;
-    const query = buildCapturedQueryParams(filters, 1, 1);
+    const query = buildCapturedQueryParams(filters, 1, 1, capturedSortBy);
     if (capturedStatsRequestRef.current.inflightQuery === query) return;
     const seq = Number(capturedStatsRequestRef.current.seq || 0) + 1;
     capturedStatsRequestRef.current = { seq, inflightQuery: query };
@@ -10287,11 +10303,11 @@ function PortalApp({ token, onLogout }) {
     tabInitialLoadSuppressedRef.current.captured = true;
     assessmentCaptureSyncAtRef.current = Date.now();
     void Promise.all([
-      reloadCapturedSlice(capturedPage, safeCapturedApiPageSize, candidateFiltersApplied),
+      reloadCapturedSlice(capturedPage, safeCapturedApiPageSize, candidateFiltersApplied, capturedSortBy),
       reloadCapturedStats(candidateFiltersApplied)
     ]).catch(() => {});
     return undefined;
-  }, [token, location?.pathname]);
+  }, [token, location?.pathname, capturedSortBy]);
 
   useEffect(() => {
     if (!token) return undefined;
@@ -10307,11 +10323,11 @@ function PortalApp({ token, onLogout }) {
     }
     assessmentCaptureSyncAtRef.current = Date.now();
     void Promise.all([
-      reloadCapturedSlice(capturedPage, safeCapturedApiPageSize, candidateFiltersApplied),
+      reloadCapturedSlice(capturedPage, safeCapturedApiPageSize, candidateFiltersApplied, capturedSortBy),
       reloadCapturedStats(candidateFiltersApplied)
     ]).catch(() => {});
     return undefined;
-  }, [token, location?.pathname, capturedPage, safeCapturedApiPageSize, candidateFiltersApplied]);
+  }, [token, location?.pathname, capturedPage, safeCapturedApiPageSize, candidateFiltersApplied, capturedSortBy]);
 
   useEffect(() => {
     if (!token) return undefined;
@@ -10358,7 +10374,7 @@ function PortalApp({ token, onLogout }) {
       const refreshPromise = (async () => {
         if (eventType === "candidate_created") {
           await Promise.all([
-            reloadCapturedSlice(capturedPage, safeCapturedApiPageSize, candidateFiltersApplied),
+            reloadCapturedSlice(capturedPage, safeCapturedApiPageSize, candidateFiltersApplied, capturedSortBy),
             reloadCapturedStats(candidateFiltersApplied)
           ]);
           return;
@@ -10371,14 +10387,14 @@ function PortalApp({ token, onLogout }) {
           }));
           setCapturedOptionPool((current) => (current || []).filter((item) => String(item?.id || "") !== candidateId));
           await Promise.all([
-            reloadCapturedSlice(capturedPage, safeCapturedApiPageSize, candidateFiltersApplied),
+            reloadCapturedSlice(capturedPage, safeCapturedApiPageSize, candidateFiltersApplied, capturedSortBy),
             reloadCapturedStats(candidateFiltersApplied)
           ]);
           return;
         }
 
         if (!candidateId) {
-          await reloadCapturedSlice(capturedPage, safeCapturedApiPageSize, candidateFiltersApplied);
+          await reloadCapturedSlice(capturedPage, safeCapturedApiPageSize, candidateFiltersApplied, capturedSortBy);
           return;
         }
 
@@ -10409,7 +10425,7 @@ function PortalApp({ token, onLogout }) {
 
         if (membershipChanged) {
           await Promise.all([
-            reloadCapturedSlice(capturedPage, safeCapturedApiPageSize, candidateFiltersApplied),
+            reloadCapturedSlice(capturedPage, safeCapturedApiPageSize, candidateFiltersApplied, capturedSortBy),
             reloadCapturedStats(candidateFiltersApplied)
           ]);
         }
@@ -10428,7 +10444,7 @@ function PortalApp({ token, onLogout }) {
               const pendingEventType = String(pendingEvent?.eventType || "").trim();
               if (pendingEventType === "candidate_created" || pendingEventType === "candidate_deleted" || !pendingCandidateId) {
                 await Promise.all([
-                  reloadCapturedSlice(capturedPage, safeCapturedApiPageSize, candidateFiltersApplied),
+                  reloadCapturedSlice(capturedPage, safeCapturedApiPageSize, candidateFiltersApplied, capturedSortBy),
                   reloadCapturedStats(candidateFiltersApplied)
                 ]);
                 return;
@@ -10453,7 +10469,7 @@ function PortalApp({ token, onLogout }) {
               const membershipChanged = previousHidden !== nextHidden || previousUsed !== nextUsed || previousAssessmentId !== nextAssessmentId;
               if (membershipChanged) {
                 await Promise.all([
-                  reloadCapturedSlice(capturedPage, safeCapturedApiPageSize, candidateFiltersApplied),
+                  reloadCapturedSlice(capturedPage, safeCapturedApiPageSize, candidateFiltersApplied, capturedSortBy),
                   reloadCapturedStats(candidateFiltersApplied)
                 ]);
               }
@@ -10472,7 +10488,7 @@ function PortalApp({ token, onLogout }) {
       try { source.removeEventListener("captured", onCaptured); } catch {}
       try { source.close(); } catch {}
     };
-  }, [token, location?.pathname, isCapturedUserEditing, capturedPage, safeCapturedApiPageSize, candidateFiltersApplied]);
+  }, [token, location?.pathname, isCapturedUserEditing, capturedPage, safeCapturedApiPageSize, candidateFiltersApplied, capturedSortBy]);
 
   useEffect(() => {
     if (!token) return undefined;
@@ -10530,7 +10546,7 @@ function PortalApp({ token, onLogout }) {
     const pendingEventType = String(pendingEvent?.eventType || "").trim();
     if (pendingEventType === "candidate_created" || pendingEventType === "candidate_deleted" || !pendingCandidateId) {
       void Promise.all([
-        reloadCapturedSlice(capturedPage, safeCapturedApiPageSize, candidateFiltersApplied),
+        reloadCapturedSlice(capturedPage, safeCapturedApiPageSize, candidateFiltersApplied, capturedSortBy),
         reloadCapturedStats(candidateFiltersApplied)
       ]).catch(() => {});
       return;
@@ -10557,12 +10573,12 @@ function PortalApp({ token, onLogout }) {
       const membershipChanged = previousHidden !== nextHidden || previousUsed !== nextUsed || previousAssessmentId !== nextAssessmentId;
       if (membershipChanged) {
         await Promise.all([
-          reloadCapturedSlice(capturedPage, safeCapturedApiPageSize, candidateFiltersApplied),
+          reloadCapturedSlice(capturedPage, safeCapturedApiPageSize, candidateFiltersApplied, capturedSortBy),
           reloadCapturedStats(candidateFiltersApplied)
         ]);
       }
     })().catch(() => {});
-  }, [token, location?.pathname, isCapturedUserEditing, capturedPage, safeCapturedApiPageSize, candidateFiltersApplied]);
+  }, [token, location?.pathname, isCapturedUserEditing, capturedPage, safeCapturedApiPageSize, candidateFiltersApplied, capturedSortBy]);
 
   useEffect(() => {
     if (!token) return undefined;
@@ -12645,8 +12661,8 @@ function PortalApp({ token, onLogout }) {
   const renderLoadedMetricValue = (value) => (workspaceDataReady ? value : "…");
 
   const capturedCandidates = useMemo(() => (
-    Array.isArray(capturedListItems) ? capturedListItems : []
-  ), [capturedListItems]);
+    sortCapturedNotesForList(capturedListItems, capturedSortBy)
+  ), [capturedListItems, capturedSortBy]);
   const assessmentPageItems = useMemo(() => (
     Array.isArray(assessmentListItems) ? assessmentListItems : []
   ), [assessmentListItems]);
@@ -21756,6 +21772,20 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                       : "Showing 0 of 0"}
                   </div>
                   <div className="button-row tight" style={{ alignItems: "center", gap: 10 }}>
+                    <label className="copy-preset-control" style={{ margin: 0 }}>
+                      <span>Sort by</span>
+                      <select
+                        value={capturedSortBy}
+                        onChange={(e) => {
+                          const nextSort = String(e.target.value || "created").trim() || "created";
+                          setCapturedSortBy(nextSort);
+                          setCapturedPage(1);
+                        }}
+                      >
+                        <option value="created">Created time</option>
+                        <option value="updated">Updated time</option>
+                      </select>
+                    </label>
                     <label className="copy-preset-control" style={{ margin: 0 }}>
                       <span>Rows per page</span>
                       <select

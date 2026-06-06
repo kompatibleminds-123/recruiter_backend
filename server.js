@@ -3860,6 +3860,7 @@ async function listCapturedForUser(user, options = {}) {
   const page = Math.max(1, Number(options.page || 1));
   const offset = Math.max(0, (page - 1) * limit);
   const filters = normalizeCapturedFilterOptions(options.filters || {});
+  const sortBy = String(options?.sortBy || "created").trim().toLowerCase() === "updated" ? "updated" : "created";
   const { on, url, key } = getSupabaseServiceConfig();
   const companyId = String(user?.companyId || "").trim();
   const actorId = String(user?.id || "").trim();
@@ -3940,7 +3941,7 @@ async function listCapturedForUser(user, options = {}) {
         baseFilterParts.push(`or=(name.ilike.${encodeURIComponent(like)},email.ilike.${encodeURIComponent(like)},phone.ilike.${encodeURIComponent(like)},company.ilike.${encodeURIComponent(like)},role.ilike.${encodeURIComponent(like)},client_name.ilike.${encodeURIComponent(like)},jd_title.ilike.${encodeURIComponent(like)})`);
       }
     }
-    const listQueryParts = [...baseFilterParts, "order=updated_at.desc", `limit=${limit}`, `offset=${offset}`];
+    const listQueryParts = [...baseFilterParts, `order=${sortBy === "updated" ? "updated_at.desc" : "created_at.desc"}`, `limit=${limit}`, `offset=${offset}`];
     const response = await fetch(`${url}/rest/v1/candidates?${listQueryParts.join("&")}`, {
       headers: { apikey: key, Authorization: `Bearer ${key}` }
     });
@@ -3963,7 +3964,19 @@ async function listCapturedForUser(user, options = {}) {
   }
 
   const fallbackRows = await listCandidatesForUser(user, { limit: 5000, q: filters.q });
-  const filtered = (Array.isArray(fallbackRows) ? fallbackRows : []).filter((row) => applyCapturedFiltersLocal(row, filters, user));
+  const filtered = (Array.isArray(fallbackRows) ? fallbackRows : [])
+    .filter((row) => applyCapturedFiltersLocal(row, filters, user))
+    .slice()
+    .sort((a, b) => {
+      const sortKeys = sortBy === "updated"
+        ? ["updated_at", "updatedAt", "last_contact_at", "lastContactAt", "assigned_at", "assignedAt", "created_at", "createdAt"]
+        : ["created_at", "createdAt", "generatedAt", "updated_at", "updatedAt", "last_contact_at", "lastContactAt"];
+      const aTime = Date.parse(String(sortKeys.map((key) => a?.[key]).find((value) => String(value || "").trim()) || ""));
+      const bTime = Date.parse(String(sortKeys.map((key) => b?.[key]).find((value) => String(value || "").trim()) || ""));
+      const diff = (Number.isFinite(bTime) ? bTime : 0) - (Number.isFinite(aTime) ? aTime : 0);
+      if (diff) return diff;
+      return String(b?.id || "").localeCompare(String(a?.id || ""));
+    });
   const items = filtered.slice(offset, offset + limit);
   const total = filtered.length;
   return { items, total, page, limit, totalPages: Math.max(1, Math.ceil(total / limit)) };
@@ -16139,6 +16152,7 @@ const server = http.createServer(async (req, res) => {
       await requireSaasAccess(user, "captured notes pipeline");
       const limit = Math.max(1, Math.min(200, Number(requestUrl.searchParams.get("limit") || 25)));
       const page = Math.max(1, Number(requestUrl.searchParams.get("page") || 1));
+      const sortBy = String(requestUrl.searchParams.get("sortBy") || "created").trim().toLowerCase() === "updated" ? "updated" : "created";
       const filters = {
         q: String(requestUrl.searchParams.get("q") || "").trim(),
         view: String(requestUrl.searchParams.get("view") || "all").trim(),
@@ -16152,7 +16166,7 @@ const server = http.createServer(async (req, res) => {
         outcomes: String(requestUrl.searchParams.get("outcomes") || "").trim(),
         activeStates: String(requestUrl.searchParams.get("activeStates") || "").trim()
       };
-      const listResult = await listCapturedForUser(user, { limit, page, filters });
+      const listResult = await listCapturedForUser(user, { limit, page, filters, sortBy });
       sendJson(res, 200, {
         ok: true,
         result: {
