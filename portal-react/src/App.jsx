@@ -7530,6 +7530,7 @@ function PortalApp({ token, onLogout }) {
     dashboard: null,
     clientPortal: null,
     applicants: [],
+    applicantListItems: [],
     candidates: [],
     databaseCandidates: [],
     assessments: [],
@@ -10009,7 +10010,8 @@ function PortalApp({ token, onLogout }) {
     }
     setState((current) => ({
       ...current,
-      applicants: applicantsEnvelope?.data?.items || []
+      applicants: applicantsEnvelope?.data?.items || [],
+      applicantListItems: applicantsEnvelope?.data?.items || []
     }));
     setApplicantListMeta({
       total: Math.max(0, Number(applicantsEnvelope?.data?.total || 0)),
@@ -10773,141 +10775,20 @@ function PortalApp({ token, onLogout }) {
       })();
       const eventType = String(payload?.type || payload?.eventType || "").trim();
       const candidateId = String(payload?.candidateId || payload?.candidate_id || payload?.id || payload?.candidate?.id || "").trim();
-      const queuePending = () => {
-        applicantLiveSyncPendingRef.current = true;
-        applicantLiveSyncPendingEventRef.current = { candidateId, eventType };
-      };
-      if (document.visibilityState !== "visible") return;
-      if (applicantLiveSyncInFlightRef.current) {
-        queuePending();
+      if (eventType === "candidate_changed" || eventType === "candidate_attempt" || eventType === "candidate_assigned") {
+        void applyCandidateLiveRowEvent({
+          eventType,
+          candidateId,
+          payloadCandidate: payload?.candidate && typeof payload.candidate === "object" ? payload.candidate : null
+        }).catch(() => {});
         return;
       }
-      applicantLiveSyncInFlightRef.current = true;
-      const refreshPromise = (async () => {
-        if (eventType === "candidate_created") {
-          await Promise.all([
-            reloadApplicantsSlice(safeApplicantApiPage, safeApplicantApiPageSize, applicantFiltersApplied),
-            reloadApplicantStats(applicantFiltersApplied)
-          ]);
-          return;
-        }
-
-        if (eventType === "candidate_deleted" && candidateId) {
-          setState((current) => ({
-            ...current,
-            applicants: (current.applicants || []).filter((item) => String(item?.id || "") !== candidateId),
-            candidates: (current.candidates || []).filter((item) => String(item?.id || "") !== candidateId),
-            databaseCandidates: (current.databaseCandidates || []).filter((item) => String(item?.id || "") !== candidateId)
-          }));
-          await Promise.all([
-            reloadApplicantsSlice(safeApplicantApiPage, safeApplicantApiPageSize, applicantFiltersApplied),
-            reloadApplicantStats(applicantFiltersApplied)
-          ]);
-          return;
-        }
-
-        if (!candidateId) {
-          await Promise.all([
-            reloadApplicantsSlice(safeApplicantApiPage, safeApplicantApiPageSize, applicantFiltersApplied),
-            reloadApplicantStats(applicantFiltersApplied)
-          ]);
-          return;
-        }
-
-        const shouldTreatAsRowPatch = eventType === "candidate_changed" || eventType === "candidate_attempt" || eventType === "candidate_assigned";
-        const shouldAlwaysPatchVisibleCapturedRow = eventType === "candidate_changed" || eventType === "candidate_attempt";
-        const rows = await api(`/candidates?id=${encodeURIComponent(candidateId)}&scope=company&limit=1`, token);
-        const nextRows = Array.isArray(rows) ? rows : [];
-        const nextRow = nextRows && nextRows.length ? nextRows[0] : null;
-        const previousRow = (state.applicants || []).find((item) => String(item?.id || "") === candidateId)
-          || (state.candidates || []).find((item) => String(item?.id || "") === candidateId)
-          || null;
-        if (nextRow) {
-          setState((current) => ({
-            ...current,
-            applicants: mergeCandidatesByFreshness(current.applicants, nextRows),
-            candidates: mergeCandidatesByFreshness(current.candidates, nextRows),
-            databaseCandidates: mergeCandidatesByFreshness(current.databaseCandidates, nextRows)
-          }));
-        }
-        if (String(location?.pathname || "").trim() === "/applicants" && shouldTreatAsRowPatch && nextRow) {
-          setApplicantListMeta((current) => current && typeof current === "object" ? current : current);
-        }
-
-        const previousSource = String(previousRow?.source || "").trim().toLowerCase();
-        const nextSource = String(nextRow?.source || "").trim().toLowerCase();
-        const previousHidden = Boolean(previousRow?.hidden_from_captured);
-        const nextHidden = Boolean(nextRow?.hidden_from_captured);
-        const previousUsed = Boolean(previousRow?.used_in_assessment);
-        const nextUsed = Boolean(nextRow?.used_in_assessment);
-        const previousAssessmentId = String(previousRow?.assessment_id || previousRow?.assessmentId || "").trim();
-        const nextAssessmentId = String(nextRow?.assessment_id || nextRow?.assessmentId || "").trim();
-        const membershipChanged =
-          previousSource !== nextSource ||
-          previousHidden !== nextHidden ||
-          previousUsed !== nextUsed ||
-          previousAssessmentId !== nextAssessmentId;
-        if (membershipChanged) {
-          await Promise.all([
-            reloadApplicantsSlice(safeApplicantApiPage, safeApplicantApiPageSize, applicantFiltersApplied),
-            reloadApplicantStats(applicantFiltersApplied)
-          ]);
-        }
-      })();
-      void refreshPromise
-        .catch(() => {})
-        .finally(() => {
-          applicantLiveSyncInFlightRef.current = false;
-          if (applicantLiveSyncPendingRef.current && !cancelled) {
-            applicantLiveSyncPendingRef.current = false;
-            const pendingEvent = { ...(applicantLiveSyncPendingEventRef.current || {}) };
-            applicantLiveSyncPendingEventRef.current = { candidateId: "", eventType: "" };
-            const pendingCandidateId = String(pendingEvent?.candidateId || "").trim();
-            const pendingEventType = String(pendingEvent?.eventType || "").trim();
-            if (pendingEventType === "candidate_created" || pendingEventType === "candidate_deleted" || !pendingCandidateId) {
-              void Promise.all([
-                reloadApplicantsSlice(safeApplicantApiPage, safeApplicantApiPageSize, applicantFiltersApplied),
-                reloadApplicantStats(applicantFiltersApplied)
-              ]).catch(() => {});
-              return;
-            }
-            void (async () => {
-              const rows = await api(`/candidates?id=${encodeURIComponent(pendingCandidateId)}&scope=company&limit=1`, token);
-              const nextRows = Array.isArray(rows) ? rows : [];
-              const nextRow = nextRows && nextRows.length ? nextRows[0] : null;
-              const previousRow = (state.applicants || []).find((item) => String(item?.id || "") === pendingCandidateId)
-                || (state.candidates || []).find((item) => String(item?.id || "") === pendingCandidateId)
-                || null;
-              if (nextRow) {
-                setState((current) => ({
-                  ...current,
-                  applicants: mergeCandidatesByFreshness(current.applicants, nextRows),
-                  candidates: mergeCandidatesByFreshness(current.candidates, nextRows),
-                  databaseCandidates: mergeCandidatesByFreshness(current.databaseCandidates, nextRows)
-                }));
-              }
-              const previousSource = String(previousRow?.source || "").trim().toLowerCase();
-              const nextSource = String(nextRow?.source || "").trim().toLowerCase();
-              const previousHidden = Boolean(previousRow?.hidden_from_captured);
-              const nextHidden = Boolean(nextRow?.hidden_from_captured);
-              const previousUsed = Boolean(previousRow?.used_in_assessment);
-              const nextUsed = Boolean(nextRow?.used_in_assessment);
-              const previousAssessmentId = String(previousRow?.assessment_id || previousRow?.assessmentId || "").trim();
-              const nextAssessmentId = String(nextRow?.assessment_id || nextRow?.assessmentId || "").trim();
-              const membershipChanged =
-                previousSource !== nextSource ||
-                previousHidden !== nextHidden ||
-                previousUsed !== nextUsed ||
-                previousAssessmentId !== nextAssessmentId;
-              if (membershipChanged) {
-                await Promise.all([
-                  reloadApplicantsSlice(safeApplicantApiPage, safeApplicantApiPageSize, applicantFiltersApplied),
-                  reloadApplicantStats(applicantFiltersApplied)
-                ]);
-              }
-            })().catch(() => {});
-          }
-        });
+      if (eventType === "candidate_created" || eventType === "candidate_deleted" || !candidateId) {
+        void Promise.all([
+          reloadApplicantsSlice(safeApplicantApiPage, safeApplicantApiPageSize, applicantFiltersApplied),
+          reloadApplicantStats(applicantFiltersApplied)
+        ]).catch(() => {});
+      }
     };
     source.addEventListener("applicants", onApplicants);
     return () => {
@@ -12910,8 +12791,8 @@ function PortalApp({ token, onLogout }) {
   }, [filteredApplicants, applicantCandidateMap, applicantAssessmentMap, state.user, state.users]);
 
   const visibleApplicants = useMemo(() => (
-    Array.isArray(state.applicants) ? state.applicants : []
-  ), [state.applicants]);
+    Array.isArray(state.applicantListItems) ? state.applicantListItems : []
+  ), [state.applicantListItems]);
   const totalApplicantCount = Math.max(
     0,
     Number(
@@ -13578,7 +13459,10 @@ function PortalApp({ token, onLogout }) {
         ? patchHiddenState(current.applicants, true)
         : (Array.isArray(current.applicants) ? current.applicants.filter((item) => String(item?.id || "") !== String(applicantId)) : current.applicants),
       candidates: patchHiddenState(current.candidates, true),
-      databaseCandidates: patchHiddenState(current.databaseCandidates, true)
+      databaseCandidates: patchHiddenState(current.databaseCandidates, true),
+      applicantListItems: shouldRemainVisible
+        ? patchHiddenState(current.applicantListItems, true)
+        : (Array.isArray(current.applicantListItems) ? current.applicantListItems.filter((item) => String(item?.id || "") !== String(applicantId)) : current.applicantListItems)
     }));
     if (!shouldRemainVisible) {
       setApplicantListMeta((current) => {
@@ -13614,7 +13498,12 @@ function PortalApp({ token, onLogout }) {
             ? { ...item, hidden_from_captured: false, updated_at: optimisticUpdatedAt, updatedAt: optimisticUpdatedAt }
             : item) : current.applicants),
         candidates: patchHiddenState(current.candidates, false),
-        databaseCandidates: patchHiddenState(current.databaseCandidates, false)
+        databaseCandidates: patchHiddenState(current.databaseCandidates, false),
+        applicantListItems: shouldRemainVisible
+          ? patchHiddenState(current.applicantListItems, false)
+          : (Array.isArray(current.applicantListItems) ? current.applicantListItems.map((item) => String(item?.id || "") === String(applicantId)
+            ? { ...item, hidden_from_captured: false, updated_at: optimisticUpdatedAt, updatedAt: optimisticUpdatedAt }
+            : item) : current.applicantListItems)
       }));
       if (!shouldRemainVisible) {
         setApplicantListMeta((current) => {
@@ -13659,7 +13548,10 @@ function PortalApp({ token, onLogout }) {
         ? patchHiddenState(current.applicants, false)
         : (Array.isArray(current.applicants) ? current.applicants.filter((item) => String(item?.id || "") !== String(applicantId)) : current.applicants),
       candidates: patchHiddenState(current.candidates, false),
-      databaseCandidates: patchHiddenState(current.databaseCandidates, false)
+      databaseCandidates: patchHiddenState(current.databaseCandidates, false),
+      applicantListItems: shouldRemainVisible
+        ? patchHiddenState(current.applicantListItems, false)
+        : (Array.isArray(current.applicantListItems) ? current.applicantListItems.filter((item) => String(item?.id || "") !== String(applicantId)) : current.applicantListItems)
     }));
     if (!shouldRemainVisible) {
       setApplicantListMeta((current) => {
@@ -13695,7 +13587,12 @@ function PortalApp({ token, onLogout }) {
             ? { ...item, hidden_from_captured: true, updated_at: optimisticUpdatedAt, updatedAt: optimisticUpdatedAt }
             : item) : current.applicants),
         candidates: patchHiddenState(current.candidates, true),
-        databaseCandidates: patchHiddenState(current.databaseCandidates, true)
+        databaseCandidates: patchHiddenState(current.databaseCandidates, true),
+        applicantListItems: shouldRemainVisible
+          ? patchHiddenState(current.applicantListItems, true)
+          : (Array.isArray(current.applicantListItems) ? current.applicantListItems.map((item) => String(item?.id || "") === String(applicantId)
+            ? { ...item, hidden_from_captured: true, updated_at: optimisticUpdatedAt, updatedAt: optimisticUpdatedAt }
+            : item) : current.applicantListItems)
       }));
       if (!shouldRemainVisible) {
         setApplicantListMeta((current) => {
@@ -13982,7 +13879,11 @@ function PortalApp({ token, onLogout }) {
     setState((current) => ({
       ...current,
       candidates: applyPatch(current.candidates),
-      databaseCandidates: applyPatch(current.databaseCandidates)
+      databaseCandidates: applyPatch(current.databaseCandidates),
+      applicants: applyPatch(current.applicants),
+      applicantListItems: String(location?.pathname || "").trim() === "/applicants"
+        ? applyPatch(current.applicantListItems)
+        : current.applicantListItems
     }));
     if (String(location?.pathname || "").trim() === "/captured-notes") {
       setCapturedListItems((current) => applyPatch(current));
@@ -19868,6 +19769,12 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
     const previousHidden = Boolean(previousRow?.hidden_from_captured);
     const nextHidden = Boolean(nextRow?.hidden_from_captured);
     const hiddenChanged = previousHidden !== nextHidden;
+    const applicantCurrentStates = Array.isArray(applicantFiltersApplied.activeStates) && applicantFiltersApplied.activeStates.length
+      ? applicantFiltersApplied.activeStates
+      : ["Active"];
+    const nextApplicantVisible = nextRow
+      ? (nextHidden ? applicantCurrentStates.includes("Inactive") : applicantCurrentStates.includes("Active"))
+      : false;
     const nextVisible = nextRow ? isCapturedRowVisibleInCurrentView(nextRow, candidateFiltersApplied, state.user) : false;
 
     if (eventType === "candidate_deleted" || !nextRow) {
@@ -19875,7 +19782,8 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
         ...current,
         candidates: (current.candidates || []).filter((item) => String(item?.id || "") !== safeCandidateId),
         databaseCandidates: (current.databaseCandidates || []).filter((item) => String(item?.id || "") !== safeCandidateId),
-        applicants: (current.applicants || []).filter((item) => String(item?.id || "") !== safeCandidateId)
+        applicants: (current.applicants || []).filter((item) => String(item?.id || "") !== safeCandidateId),
+        applicantListItems: (current.applicantListItems || []).filter((item) => String(item?.id || "") !== safeCandidateId)
       }));
       setCapturedOptionPool((current) => removeCandidatesById(current, [safeCandidateId]));
       setCapturedListItems((current) => removeCandidatesById(current, [safeCandidateId]));
@@ -19884,9 +19792,10 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
 
     setState((current) => ({
       ...current,
-      candidates: replaceCandidatesById(current.candidates, nextRows),
-      databaseCandidates: replaceCandidatesById(current.databaseCandidates, nextRows),
-      applicants: replaceCandidatesById(current.applicants, nextRows)
+      candidates: upsertCandidatesById(current.candidates, nextRows),
+      databaseCandidates: upsertCandidatesById(current.databaseCandidates, nextRows),
+      applicants: upsertCandidatesById(current.applicants, nextRows),
+      applicantListItems: upsertCandidatesById(current.applicantListItems, nextRows)
     }));
 
     if (eventType === "candidate_attempt") {
@@ -19896,10 +19805,18 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
     }
 
     if (eventType === "candidate_assigned") {
-      if (nextVisible) {
+      if (nextApplicantVisible) {
+        setState((current) => ({
+          ...current,
+          applicantListItems: upsertCandidatesById(current.applicantListItems, nextRows)
+        }));
         setCapturedOptionPool((current) => upsertCandidatesById(current, nextRows));
         setCapturedListItems((current) => upsertCandidatesById(current, nextRows));
       } else {
+        setState((current) => ({
+          ...current,
+          applicantListItems: removeCandidatesById(current.applicantListItems, [safeCandidateId])
+        }));
         setCapturedOptionPool((current) => removeCandidatesById(current, [safeCandidateId]));
         setCapturedListItems((current) => removeCandidatesById(current, [safeCandidateId]));
       }
@@ -19907,20 +19824,36 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
     }
 
     if (eventType === "candidate_changed" && hiddenChanged) {
-      if (nextVisible) {
+      if (nextApplicantVisible) {
+        setState((current) => ({
+          ...current,
+          applicantListItems: upsertCandidatesById(current.applicantListItems, nextRows)
+        }));
         setCapturedOptionPool((current) => upsertCandidatesById(current, nextRows));
         setCapturedListItems((current) => upsertCandidatesById(current, nextRows));
       } else {
+        setState((current) => ({
+          ...current,
+          applicantListItems: removeCandidatesById(current.applicantListItems, [safeCandidateId])
+        }));
         setCapturedOptionPool((current) => removeCandidatesById(current, [safeCandidateId]));
         setCapturedListItems((current) => removeCandidatesById(current, [safeCandidateId]));
       }
       return;
     }
 
-    if (nextVisible) {
+    if (nextApplicantVisible) {
+      setState((current) => ({
+        ...current,
+        applicantListItems: upsertCandidatesById(current.applicantListItems, nextRows)
+      }));
       setCapturedOptionPool((current) => replaceCandidatesById(current, nextRows));
       setCapturedListItems((current) => replaceCandidatesById(current, nextRows));
     } else {
+      setState((current) => ({
+        ...current,
+        applicantListItems: removeCandidatesById(current.applicantListItems, [safeCandidateId])
+      }));
       setCapturedOptionPool((current) => removeCandidatesById(current, [safeCandidateId]));
       setCapturedListItems((current) => removeCandidatesById(current, [safeCandidateId]));
     }
