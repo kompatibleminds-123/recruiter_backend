@@ -21824,17 +21824,54 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                 <div className="applicants-pagination-toolbar__controls">
                 <label className="copy-preset-control" style={{ margin: 0 }}>
                   <span>Rows per page</span>
-                  <select value={safeApplicantApiPageSize} onChange={(e) => setApplicantPageSize(Number(e.target.value || 25))}>
+                  <select value={safeApplicantApiPageSize} onChange={(e) => {
+                    setApplicantListLoading(true);
+                    setApplicantPageSize(Number(e.target.value || 25));
+                  }}>
                     {[10, 25, 50].map((size) => <option key={size} value={size}>{size}</option>)}
                   </select>
                 </label>
-                <button className="ghost-btn" disabled={safeApplicantApiPage <= 1} onClick={() => setApplicantPage((page) => Math.max(1, page - 1))}>Previous</button>
+                <button className="ghost-btn" disabled={safeApplicantApiPage <= 1} onClick={() => { setApplicantListLoading(true); setApplicantPage((page) => Math.max(1, page - 1)); }}>Previous</button>
                 <div className="muted">{`Page ${safeApplicantApiPage} of ${totalApplicantPages}`}</div>
-                <button className="ghost-btn" disabled={safeApplicantApiPage >= totalApplicantPages} onClick={() => setApplicantPage((page) => Math.min(totalApplicantPages, page + 1))}>Next</button>
+                <button className="ghost-btn" disabled={safeApplicantApiPage >= totalApplicantPages} onClick={() => { setApplicantListLoading(true); setApplicantPage((page) => Math.min(totalApplicantPages, page + 1)); }}>Next</button>
                 {applicantListLoading ? <div className="muted">Updating...</div> : null}
                 </div>
               </div>
-              <div className="stack-list captured-notes-list">
+              <div className="stack-list captured-notes-list" style={{ position: "relative", minHeight: 220 }}>
+                {applicantListLoading ? (
+                  <div
+                    aria-hidden="true"
+                    style={{
+                      position: "absolute",
+                      inset: 0,
+                      zIndex: 2,
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      borderRadius: 18,
+                      background: "rgba(248, 250, 252, 0.72)",
+                      backdropFilter: "blur(3px)",
+                      pointerEvents: "none"
+                    }}
+                  >
+                    <div className="empty-state" style={{ margin: 0, boxShadow: "0 8px 24px rgba(15,23,42,0.08)", display: "flex", alignItems: "center", gap: 10 }}>
+                      <span
+                        aria-hidden="true"
+                        style={{
+                          width: 18,
+                          height: 18,
+                          borderRadius: "50%",
+                          border: "2px solid rgba(59, 130, 246, 0.22)",
+                          borderTopColor: "#2563eb",
+                          animation: "assessmentSpin 0.8s linear infinite",
+                          flex: "0 0 auto"
+                        }}
+                      />
+                      <span>Loading applied candidates...</span>
+                    </div>
+                  </div>
+                ) : null}
+                <div style={{ opacity: applicantListLoading ? 0.35 : 1, filter: applicantListLoading ? "blur(1px)" : "none", transition: "opacity 150ms ease, filter 150ms ease" }}>
                 {workspaceDataReady ? (
                   (!visibleApplicants.length && !applicantListLoading)
                     ? <div className="empty-state">No applied candidates right now.</div>
@@ -22012,6 +22049,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                   </article>
                   ))
                 ) : <div className="empty-state">Loading applied candidates...</div>}
+                </div>
               </div>
             </Section>
           } />
@@ -22078,11 +22116,12 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                   <MultiSelectDropdown label="State" options={capturedCandidateOptions.activeStates} selected={candidateFilters.activeStates} allowAll={false} emptySummary="Active only" onToggle={(value) => setCandidateFilters((current) => ({ ...current, activeStates: current.activeStates.includes(value) ? current.activeStates.filter((item) => item !== value) : [...current.activeStates, value] }))} />
                 </div>
               <div className="button-row tight" style={{ marginTop: 8 }}>
-                <button
-                  onClick={() => {
-                    setCapturedPage(1);
-                    setCandidateFiltersApplied({
-                      ...candidateFilters,
+                    <button
+                      onClick={() => {
+                        setCapturedListLoading(true);
+                        setCapturedPage(1);
+                        setCandidateFiltersApplied({
+                          ...candidateFilters,
                       clients: [...(candidateFilters.clients || [])],
                       jds: [...(candidateFilters.jds || [])],
                       assignedTo: [...(candidateFilters.assignedTo || [])],
@@ -22095,12 +22134,13 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                 >
                   Apply filters
                 </button>
-                <button
-                  className="ghost-btn"
-                  onClick={() => {
-                    const reset = {
-                      q: "",
-                      view: "all",
+                    <button
+                      className="ghost-btn"
+                      onClick={() => {
+                        setCapturedListLoading(true);
+                        const reset = {
+                          q: "",
+                          view: "all",
                       dateFrom: "",
                       dateTo: "",
                       clients: [],
@@ -22168,6 +22208,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                         value={capturedSortBy}
                         onChange={(e) => {
                           const nextSort = String(e.target.value || "created").trim() || "created";
+                          setCapturedListLoading(true);
                           setCapturedSortBy(nextSort);
                           setCapturedPage(1);
                         }}
@@ -22182,6 +22223,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                         value={safeCapturedPageSize}
                         onChange={(e) => {
                           const nextSize = Number(e.target.value || 25);
+                          setCapturedListLoading(true);
                           setCapturedPageSize([10, 25, 50].includes(nextSize) ? nextSize : 25);
                           setCapturedPage(1);
                         }}
@@ -22191,13 +22233,47 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                         <option value={50}>50</option>
                       </select>
                     </label>
-                    <button className="ghost-btn" disabled={capturedPage <= 1} onClick={() => setCapturedPage((page) => Math.max(1, page - 1))}>Previous</button>
+                    <button className="ghost-btn" disabled={capturedPage <= 1} onClick={() => { setCapturedListLoading(true); setCapturedPage((page) => Math.max(1, page - 1)); }}>Previous</button>
                     <div className="muted">Page {capturedPage} of {totalCapturedPages}</div>
-                    <button className="ghost-btn" disabled={capturedPage >= totalCapturedPages} onClick={() => setCapturedPage((page) => Math.min(totalCapturedPages, page + 1))}>Next</button>
+                    <button className="ghost-btn" disabled={capturedPage >= totalCapturedPages} onClick={() => { setCapturedListLoading(true); setCapturedPage((page) => Math.min(totalCapturedPages, page + 1)); }}>Next</button>
                   </div>
                 </div>
               ) : null}
-              <div className="stack-list captured-notes-list">
+              <div className="stack-list captured-notes-list" style={{ position: "relative", minHeight: 220 }}>
+                {capturedListLoading ? (
+                  <div
+                    aria-hidden="true"
+                    style={{
+                      position: "absolute",
+                      inset: 0,
+                      zIndex: 2,
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      borderRadius: 18,
+                      background: "rgba(248, 250, 252, 0.72)",
+                      backdropFilter: "blur(3px)",
+                      pointerEvents: "none"
+                    }}
+                  >
+                    <div className="empty-state" style={{ margin: 0, boxShadow: "0 8px 24px rgba(15,23,42,0.08)", display: "flex", alignItems: "center", gap: 10 }}>
+                      <span
+                        aria-hidden="true"
+                        style={{
+                          width: 18,
+                          height: 18,
+                          borderRadius: "50%",
+                          border: "2px solid rgba(59, 130, 246, 0.22)",
+                          borderTopColor: "#2563eb",
+                          animation: "assessmentSpin 0.8s linear infinite",
+                          flex: "0 0 auto"
+                        }}
+                      />
+                      <span>Loading captured notes...</span>
+                    </div>
+                  </div>
+                ) : null}
+                <div style={{ opacity: capturedListLoading ? 0.35 : 1, filter: capturedListLoading ? "blur(1px)" : "none", transition: "opacity 150ms ease, filter 150ms ease" }}>
                 {workspaceDataReady ? (!capturedCandidates.length ? <div className="empty-state">No captured notes or recruiter-owned candidates yet.</div> : pagedCapturedCandidates.map((item) => {
                   const matchedAssessment = resolveCapturedAssessment(item);
                   const statusState = normalizedAssessmentState(matchedAssessment, item);
@@ -22417,6 +22493,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                     </article>
                   );
                 })) : <div className="empty-state">Loading captured notes...</div>}
+                </div>
               </div>
             </Section>
           } />
