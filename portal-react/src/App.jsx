@@ -21827,8 +21827,11 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                 {workspaceDataReady ? (
                   (!visibleApplicants.length && !applicantListLoading)
                     ? <div className="empty-state">No applied candidates right now.</div>
-                    : visibleApplicants.map((item) => (
-                  <article className={`item-card compact-card captured-note-card${item.hidden_from_captured ? " captured-note-card--inactive" : ""}`} key={item.id}>
+                    : visibleApplicants.map((item) => {
+                  const linkedCandidate = applicantCandidateMap.get(String(item.id)) || null;
+                  const applicantIsHidden = Boolean(item.hidden_from_captured || linkedCandidate?.hidden_from_captured);
+                  return (
+                  <article className={`item-card compact-card captured-note-card${applicantIsHidden ? " captured-note-card--inactive" : ""}`} key={item.id}>
                     {String(state.user?.role || "").toLowerCase() === "admin" ? (
                       <label className="captured-top-select captured-top-select--card">
                         <input
@@ -21848,7 +21851,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                       <div className="captured-note-col captured-note-col--profile">
                         <div className="captured-note-title-row">
                           <h3>{item.candidateName || item.name || item.candidate_name || "Applicant"}</h3>
-                          {item.hidden_from_captured ? <span className="captured-note-status-pill captured-note-status-pill--inactive">Inactive</span> : null}
+                          {applicantIsHidden ? <span className="captured-note-status-pill captured-note-status-pill--inactive">Inactive</span> : null}
                         </div>
                         <div className="captured-note-subtitle">{item.jdTitle || "Untitled role"}</div>
                         <div className="captured-note-detail-list captured-note-profile-meta">
@@ -21912,7 +21915,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                     </div>
                     {item.assignedToName ? <div className="status-note">{`Already assigned to ${item.assignedToName}`}</div> : null}
                     <div className="button-row captured-note-actions">
-                      {!item.hidden_from_captured ? (
+                      {!applicantIsHidden ? (
                         <button onClick={() => loadApplicantIntoInterview(item.id)}>Open draft</button>
                       ) : null}
                       {state.user?.role === "admin" ? <button className="ghost-btn" onClick={() => { setBulkAssignApplicantModalOpen(false); setBulkAssignApplicantIds([]); setAssignApplicantId(item.id); }}>{item.assignedToName ? "Reassign" : "Assign"}</button> : null}
@@ -21940,13 +21943,13 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                         <FaWhatsapp size={18} color="#25D366" title="WhatsApp" />
                       </button>
                       <button className="ghost-btn" onClick={() => void openAttempts(item.id)}>Attempts</button>
-                      {!item.hidden_from_captured ? (
+                      {!applicantIsHidden ? (
                         <button className="ghost-btn" onClick={() => openJdEmailModalForCandidate(item, item.jdId || "")}>Email JD</button>
                       ) : null}
-                      {!item.hidden_from_captured ? (
+                      {!applicantIsHidden ? (
                         <button className="captured-action-success" disabled={Boolean(assessmentActionBusyIds[String(item.id || "")])} onClick={() => void createAssessmentFromCandidate(item.id)}>{assessmentActionBusyIds[String(item.id || "")] ? "Creating..." : "Create assessment"}</button>
                       ) : null}
-                      {item.hidden_from_captured ? (
+                      {applicantIsHidden ? (
                         <button className="ghost-btn" onClick={() => void restoreApplicant(item.id)}>Restore to active</button>
                       ) : (
                         <button className="ghost-btn" onClick={() => void hideApplicant(item.id)}>Hide from list</button>
@@ -22014,7 +22017,8 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                       </details>
                     ) : null}
                   </article>
-                  ))
+                  );
+                })
                 ) : <div className="empty-state">Loading applied candidates...</div>}
                 </div>
               </div>
