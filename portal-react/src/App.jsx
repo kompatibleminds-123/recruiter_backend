@@ -10540,6 +10540,10 @@ function PortalApp({ token, onLogout }) {
           setCapturedListItems((current) => removeCandidatesById(current, [candidateId]));
         }
 
+        if (shouldTreatAsRowPatch) {
+          return;
+        }
+
         const previousHidden = Boolean(previousRow?.hidden_from_captured);
         const nextHidden = Boolean(nextRow?.hidden_from_captured);
         const previousUsed = Boolean(previousRow?.used_in_assessment);
@@ -10606,6 +10610,9 @@ function PortalApp({ token, onLogout }) {
               } else {
                 setCapturedOptionPool((current) => removeCandidatesById(current, [pendingCandidateId]));
                 setCapturedListItems((current) => removeCandidatesById(current, [pendingCandidateId]));
+              }
+              if (pendingEventType === "candidate_changed" || pendingEventType === "candidate_attempt" || pendingEventType === "candidate_assigned") {
+                return;
               }
               const previousHidden = Boolean(previousRow?.hidden_from_captured);
               const nextHidden = Boolean(nextRow?.hidden_from_captured);
