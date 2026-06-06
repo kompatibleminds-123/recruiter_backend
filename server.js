@@ -18155,8 +18155,8 @@ const server = http.createServer(async (req, res) => {
       const hideOnlyPatch = patchKeys.length === 1 && patchKeys[0] === "hidden_from_captured";
       if (hideOnlyPatch) {
         const result = await patchCandidate(candidateId, patch, { companyId: actor.companyId });
-        emitCapturedStreamEvent(actor.companyId, "candidate_changed", { candidateId });
-        emitApplicantStreamEvent(actor.companyId, "candidate_changed", { candidateId });
+        emitCapturedStreamEvent(actor.companyId, "candidate_changed", { candidateId, candidate: result });
+        emitApplicantStreamEvent(actor.companyId, "candidate_changed", { candidateId, candidate: result });
         sendJson(res, 200, { ok: true, result });
         return;
       }
@@ -18216,8 +18216,8 @@ const server = http.createServer(async (req, res) => {
         });
       }
       const result = await patchCandidate(candidateId, patch, { companyId: actor.companyId });
-      emitCapturedStreamEvent(actor.companyId, "candidate_changed", { candidateId });
-      emitApplicantStreamEvent(actor.companyId, "candidate_changed", { candidateId });
+      emitCapturedStreamEvent(actor.companyId, "candidate_changed", { candidateId, candidate: result });
+      emitApplicantStreamEvent(actor.companyId, "candidate_changed", { candidateId, candidate: result });
       sendJson(res, 200, { ok: true, result });
     } catch (error) {
       sendJson(res, 400, { ok: false, error: String(error.message || error) });
@@ -18334,8 +18334,8 @@ const server = http.createServer(async (req, res) => {
         jd_title: body.jd_title || body.jdTitle,
         client_name: body.client_name || body.clientName
       }, { companyId: actor.companyId });
-      emitCapturedStreamEvent(actor.companyId, "candidate_assigned", { candidateId: String(body.id || body.candidateId || "").trim() || undefined });
-      emitApplicantStreamEvent(actor.companyId, "candidate_assigned", { candidateId: String(body.id || body.candidateId || "").trim() || undefined });
+      emitCapturedStreamEvent(actor.companyId, "candidate_assigned", { candidateId: String(body.id || body.candidateId || "").trim() || undefined, candidate: result });
+      emitApplicantStreamEvent(actor.companyId, "candidate_assigned", { candidateId: String(body.id || body.candidateId || "").trim() || undefined, candidate: result });
       sendJson(res, 200, { ok: true, result });
     } catch (error) {
       sendJson(res, 400, { ok: false, error: String(error.message || error) });
@@ -18359,8 +18359,8 @@ const server = http.createServer(async (req, res) => {
         jd_title: body.jd_title || body.jdTitle,
         client_name: body.client_name || body.clientName
       }, { companyId: actor.companyId });
-      emitCapturedStreamEvent(actor.companyId, "candidate_assigned", { candidateId: String(candidateId || "").trim() || undefined });
-      emitApplicantStreamEvent(actor.companyId, "candidate_assigned", { candidateId: String(candidateId || "").trim() || undefined });
+      emitCapturedStreamEvent(actor.companyId, "candidate_assigned", { candidateId: String(candidateId || "").trim() || undefined, candidate: result });
+      emitApplicantStreamEvent(actor.companyId, "candidate_assigned", { candidateId: String(candidateId || "").trim() || undefined, candidate: result });
       sendJson(res, 200, { ok: true, result });
     } catch (error) {
       sendJson(res, 400, { ok: false, error: String(error.message || error) });
@@ -18416,8 +18416,9 @@ const server = http.createServer(async (req, res) => {
         notes: body.notes,
         next_follow_up_at: body.next_follow_up_at || body.nextFollowUpAt
       }, { companyId: actor.companyId });
-      emitCapturedStreamEvent(actor.companyId, "candidate_attempt", { candidateId: String(body.candidate_id || body.candidateId || "").trim() || undefined });
-      emitApplicantStreamEvent(actor.companyId, "candidate_attempt", { candidateId: String(body.candidate_id || body.candidateId || "").trim() || undefined });
+      const updatedCandidate = (await listCandidatesForUser(actor, { id: String(body.candidate_id || body.candidateId || "").trim(), limit: 1 }))[0] || null;
+      emitCapturedStreamEvent(actor.companyId, "candidate_attempt", { candidateId: String(body.candidate_id || body.candidateId || "").trim() || undefined, candidate: updatedCandidate, attempt: result });
+      emitApplicantStreamEvent(actor.companyId, "candidate_attempt", { candidateId: String(body.candidate_id || body.candidateId || "").trim() || undefined, candidate: updatedCandidate, attempt: result });
       sendJson(res, 200, { ok: true, result });
     } catch (error) {
       sendJson(res, 400, { ok: false, error: String(error.message || error) });

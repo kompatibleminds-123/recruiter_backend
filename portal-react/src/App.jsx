@@ -10476,9 +10476,10 @@ function PortalApp({ token, onLogout }) {
         payload?.candidate?.id ||
         ""
       ).trim();
+      const payloadCandidate = payload?.candidate && typeof payload.candidate === "object" ? payload.candidate : null;
       const queuePending = () => {
         capturedLiveSyncPendingRef.current = true;
-        capturedLiveSyncPendingEventRef.current = { candidateId, eventType };
+        capturedLiveSyncPendingEventRef.current = { candidateId, eventType, candidate: payloadCandidate };
       };
       if (document.visibilityState !== "visible") return;
       if (capturedLiveSyncInFlightRef.current || isCapturedUserEditing) {
@@ -10515,7 +10516,9 @@ function PortalApp({ token, onLogout }) {
 
         const shouldTreatAsRowPatch = eventType === "candidate_changed" || eventType === "candidate_attempt" || eventType === "candidate_assigned";
 
-        const rows = await api(`/candidates?id=${encodeURIComponent(candidateId)}&scope=company&limit=1`, token);
+        const rows = payloadCandidate
+          ? [payloadCandidate]
+          : await api(`/candidates?id=${encodeURIComponent(candidateId)}&scope=company&limit=1`, token);
         const nextRows = Array.isArray(rows) ? rows : [];
         const nextRow = nextRows && nextRows.length ? nextRows[0] : null;
         const previousRow = (state.candidates || []).find((item) => String(item?.id || "") === candidateId) || null;
@@ -10653,9 +10656,9 @@ function PortalApp({ token, onLogout }) {
     let cancelled = false;
     const streamUrl = `/company/stream/captured?token=${encodeURIComponent(String(token || "").trim())}`;
     const source = new EventSource(streamUrl);
-    const markPending = (candidateId = "", eventType = "") => {
+    const markPending = (candidateId = "", eventType = "", candidate = null) => {
       capturedLiveSyncPendingRef.current = true;
-      capturedLiveSyncPendingEventRef.current = { candidateId, eventType };
+      capturedLiveSyncPendingEventRef.current = { candidateId, eventType, candidate };
     };
     const onCaptured = (event) => {
       if (cancelled) return;
@@ -10674,12 +10677,13 @@ function PortalApp({ token, onLogout }) {
         payload?.candidate?.id ||
         ""
       ).trim();
+      const payloadCandidate = payload?.candidate && typeof payload.candidate === "object" ? payload.candidate : null;
       if (eventType === "candidate_created" || eventType === "candidate_deleted" || !candidateId) {
-        markPending(candidateId, eventType);
+        markPending(candidateId, eventType, payloadCandidate);
         return;
       }
       if (eventType === "candidate_changed" || eventType === "candidate_attempt" || eventType === "candidate_assigned") {
-        markPending(candidateId, eventType);
+        markPending(candidateId, eventType, payloadCandidate);
       }
     };
     source.addEventListener("captured", onCaptured);
@@ -10700,6 +10704,7 @@ function PortalApp({ token, onLogout }) {
     capturedLiveSyncPendingEventRef.current = { candidateId: "", eventType: "" };
     const pendingCandidateId = String(pendingEvent?.candidateId || "").trim();
     const pendingEventType = String(pendingEvent?.eventType || "").trim();
+    const pendingPayloadCandidate = pendingEvent?.candidate && typeof pendingEvent.candidate === "object" ? pendingEvent.candidate : null;
     if (pendingEventType === "candidate_created" || pendingEventType === "candidate_deleted" || !pendingCandidateId) {
       void Promise.all([
         reloadCapturedSlice(capturedPage, safeCapturedApiPageSize, candidateFiltersApplied, capturedSortBy),
@@ -10991,7 +10996,9 @@ function PortalApp({ token, onLogout }) {
       return;
     }
     void (async () => {
-      const rows = await api(`/candidates?id=${encodeURIComponent(pendingCandidateId)}&scope=company&limit=1`, token);
+      const rows = pendingPayloadCandidate
+        ? [pendingPayloadCandidate]
+        : await api(`/candidates?id=${encodeURIComponent(pendingCandidateId)}&scope=company&limit=1`, token);
       const nextRows = Array.isArray(rows) ? rows : [];
       const nextRow = nextRows && nextRows.length ? nextRows[0] : null;
       const previousRow = (state.applicants || []).find((item) => String(item?.id || "") === pendingCandidateId)
