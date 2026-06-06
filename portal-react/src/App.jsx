@@ -9526,6 +9526,7 @@ function PortalApp({ token, onLogout }) {
         api("/auth/me", token).catch(() => ({ user: null })),
         loadDashboardSummary(dashboardFilters).catch(() => null),
         loadClientPortalSummary(clientPortalFilters).catch(() => null),
+        reloadCapturedStats(candidateFiltersApplied).catch(() => null),
         reloadApplicantStats(applicantFiltersApplied).catch(() => null)
       ]);
       if (userResult) {
@@ -20337,13 +20338,15 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
     const manuallyHidden = Boolean(item.hidden_from_captured || linkedCandidate?.hidden_from_captured);
     return !manuallyHidden;
   }).length || Number(applicantStatsSnapshot?.active || 0);
-  const pendingNotes = (state.candidates || []).filter((item) => {
-    const sourceValue = String(item.source || "").trim();
-    if (["website_apply", "hosted_apply", "google_sheet"].includes(sourceValue)) return false;
-      const matchedAssessment = resolveCapturedAssessment(item);
-      if (matchedAssessment) return false;
-      return !item.hidden_from_captured;
-  }).length;
+  const pendingNotes = capturedStatsSnapshot && typeof capturedStatsSnapshot === "object"
+    ? Number(capturedNotesStats.active || 0)
+    : (state.candidates || []).filter((item) => {
+        const sourceValue = String(item.source || "").trim();
+        if (["website_apply", "hosted_apply", "google_sheet"].includes(sourceValue)) return false;
+        const matchedAssessment = resolveCapturedAssessment(item);
+        if (matchedAssessment) return false;
+        return !item.hidden_from_captured;
+      }).length;
   const scheduledFollowUpItems = todaysFollowUps
     .map((item) => ({
       key: `followup-${item.id}`,
