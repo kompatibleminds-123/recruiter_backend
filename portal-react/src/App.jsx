@@ -2407,6 +2407,98 @@ function sortCapturedNotesForList(items = [], sortBy = "created") {
   });
 }
 
+function isCapturedRowVisibleInCurrentView(row = {}, filters = {}, user = null) {
+  if (!row) return false;
+  const isAdmin = String(user?.role || "").toLowerCase() === "admin";
+  const currentUserId = String(user?.id || "").trim();
+  const currentUserName = String(user?.name || "").trim().toLowerCase();
+  const sourceValue = String(row?.source || "").trim();
+  if (["website_apply", "hosted_apply", "google_sheet"].includes(sourceValue)) return false;
+  const isConverted = Boolean(row?.used_in_assessment) || Boolean(String(row?.assessment_id || row?.assessmentId || "").trim());
+  const isHidden = row?.hidden_from_captured === true;
+  const stateValue = isHidden ? "Inactive" : (isConverted ? "Converted" : "Active");
+  const activeStates = Array.isArray(filters?.activeStates) ? filters.activeStates : [];
+  if (activeStates.length) {
+    if (!activeStates.includes(stateValue)) return false;
+  } else if (stateValue !== "Active") {
+    return false;
+  }
+  const createdAt = String(row?.created_at || row?.createdAt || "").slice(0, 10);
+  if (filters?.dateFrom && createdAt && createdAt < filters.dateFrom) return false;
+  if (filters?.dateTo && createdAt && createdAt > filters.dateTo) return false;
+  if (Array.isArray(filters?.clients) && filters.clients.length) {
+    const value = String(row?.client_name || "Unassigned").trim();
+    if (!filters.clients.includes(value)) return false;
+  }
+  if (Array.isArray(filters?.jds) && filters.jds.length) {
+    const value = String(row?.jd_title || row?.assigned_jd_title || "").trim();
+    if (!filters.jds.includes(value)) return false;
+  }
+  if (Array.isArray(filters?.assignedTo) && filters.assignedTo.length) {
+    const value = String(row?.assigned_to_name || "Unassigned").trim();
+    if (!filters.assignedTo.includes(value)) return false;
+  }
+  if (Array.isArray(filters?.capturedBy) && filters.capturedBy.length) {
+    const value = String(row?.recruiter_name || row?.assigned_by_name || "Unknown").trim();
+    if (!filters.capturedBy.includes(value)) return false;
+  }
+  if (Array.isArray(filters?.sources) && filters.sources.length) {
+    const value = String(row?.source || "").trim();
+    if (!filters.sources.includes(value)) return false;
+  }
+  if (Array.isArray(filters?.outcomes) && filters.outcomes.length) {
+    const value = String(row?.last_contact_outcome || "").trim() || "No outcome";
+    if (!filters.outcomes.includes(value)) return false;
+  }
+  if (String(filters?.q || "").trim()) {
+    const q = String(filters.q || "").toLowerCase();
+    const hay = [
+      row?.name,
+      row?.company,
+      row?.role,
+      row?.jd_title,
+      row?.client_name,
+      row?.assigned_to_name,
+      row?.recruiter_name,
+      row?.source,
+      row?.phone,
+      row?.email,
+      row?.notes,
+      row?.recruiter_context_notes,
+      row?.other_pointers
+    ].filter(Boolean).join(" ").toLowerCase();
+    if (!hay.includes(q)) return false;
+  }
+  const view = String(filters?.view || "all").trim();
+  const capturedId = String(row?.recruiter_id || row?.recruiterId || "").trim();
+  const capturedName = String(row?.recruiter_name || row?.recruiterName || "").trim().toLowerCase();
+  const assignedId = String(row?.assigned_to_user_id || row?.assignedToUserId || "").trim();
+  const assignedName = String(row?.assigned_to_name || row?.assignedToName || "").trim().toLowerCase();
+  const firstAssignedToId = String(row?.first_assigned_to_user_id || row?.firstAssignedToUserId || "").trim();
+  if (view !== "all" && user) {
+    if (view === "added_by_me") {
+      const byId = currentUserId && capturedId && capturedId === currentUserId;
+      const byName = currentUserName && capturedName && capturedName === currentUserName;
+      if (!byId && !byName) return false;
+    } else if (view === "assigned_to_me") {
+      const toMe = (currentUserId && assignedId === currentUserId) || (currentUserName && assignedName === currentUserName);
+      const firstToMe = (currentUserId && firstAssignedToId === currentUserId) || false;
+      if (!toMe || !firstToMe) return false;
+    } else if (view === "reassigned_to_me") {
+      const toMe = (currentUserId && assignedId === currentUserId) || (currentUserName && assignedName === currentUserName);
+      const firstToMe = (currentUserId && firstAssignedToId === currentUserId) || false;
+      if (!toMe || firstToMe) return false;
+    }
+    return true;
+  }
+  if (!isAdmin) {
+    const ownsRow = (currentUserId && (capturedId === currentUserId || assignedId === currentUserId))
+      || (currentUserName && (capturedName === currentUserName || assignedName === currentUserName));
+    if (!ownsRow) return false;
+  }
+  return true;
+}
+
 function syncAssessmentNotesWithStatus(currentNotes, statusValue, atValue = "", extra = {}) {
   const lines = String(currentNotes || "").split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
   const nextLine = buildAssessmentStatusNoteLine(statusValue, atValue, extra).trim();
@@ -10404,15 +10496,22 @@ function PortalApp({ token, onLogout }) {
         const nextRows = Array.isArray(rows) ? rows : [];
         const nextRow = nextRows && nextRows.length ? nextRows[0] : null;
         const previousRow = (state.candidates || []).find((item) => String(item?.id || "") === candidateId) || null;
+        const nextVisible = nextRow ? isCapturedRowVisibleInCurrentView(nextRow, candidateFiltersApplied, state.user) : false;
         if (nextRow) {
           setState((current) => ({
             ...current,
             candidates: mergeCandidatesByFreshness(current.candidates, nextRows)
           }));
-          setCapturedOptionPool((current) => mergeCandidatesByFreshness(current, nextRows));
-          if (String(location?.pathname || "").trim() === "/captured-notes" && shouldTreatAsRowPatch) {
+          if (String(location?.pathname || "").trim() === "/captured-notes" && shouldTreatAsRowPatch && nextVisible) {
+            setCapturedOptionPool((current) => mergeCandidatesByFreshness(current, nextRows));
             setCapturedListItems((current) => mergeCandidatesByFreshness(current, nextRows));
+          } else {
+            setCapturedOptionPool((current) => (Array.isArray(current) ? current.filter((item) => String(item?.id || "") !== candidateId) : current));
+            setCapturedListItems((current) => (Array.isArray(current) ? current.filter((item) => String(item?.id || "") !== candidateId) : current));
           }
+        } else {
+          setCapturedOptionPool((current) => (Array.isArray(current) ? current.filter((item) => String(item?.id || "") !== candidateId) : current));
+          setCapturedListItems((current) => (Array.isArray(current) ? current.filter((item) => String(item?.id || "") !== candidateId) : current));
         }
 
         const previousHidden = Boolean(previousRow?.hidden_from_captured);
@@ -10435,7 +10534,7 @@ function PortalApp({ token, onLogout }) {
           || previousRecruiterName !== nextRecruiterName;
         const membershipChanged = previousHidden !== nextHidden || previousUsed !== nextUsed || previousAssessmentId !== nextAssessmentId || assignmentChanged;
 
-        if (membershipChanged) {
+        if (membershipChanged || !nextVisible) {
           await Promise.all([
             reloadCapturedSlice(capturedPage, safeCapturedApiPageSize, candidateFiltersApplied, capturedSortBy),
             reloadCapturedStats(candidateFiltersApplied)
@@ -10465,12 +10564,22 @@ function PortalApp({ token, onLogout }) {
               const nextRows = Array.isArray(rows) ? rows : [];
               const nextRow = nextRows && nextRows.length ? nextRows[0] : null;
               const previousRow = (state.candidates || []).find((item) => String(item?.id || "") === pendingCandidateId) || null;
+              const nextVisible = nextRow ? isCapturedRowVisibleInCurrentView(nextRow, candidateFiltersApplied, state.user) : false;
               if (nextRow) {
                 setState((current) => ({
                   ...current,
                   candidates: mergeCandidatesByFreshness(current.candidates, nextRows)
                 }));
-                setCapturedOptionPool((current) => mergeCandidatesByFreshness(current, nextRows));
+                if (nextVisible) {
+                  setCapturedOptionPool((current) => mergeCandidatesByFreshness(current, nextRows));
+                  setCapturedListItems((current) => mergeCandidatesByFreshness(current, nextRows));
+                } else {
+                  setCapturedOptionPool((current) => (Array.isArray(current) ? current.filter((item) => String(item?.id || "") !== pendingCandidateId) : current));
+                  setCapturedListItems((current) => (Array.isArray(current) ? current.filter((item) => String(item?.id || "") !== pendingCandidateId) : current));
+                }
+              } else {
+                setCapturedOptionPool((current) => (Array.isArray(current) ? current.filter((item) => String(item?.id || "") !== pendingCandidateId) : current));
+                setCapturedListItems((current) => (Array.isArray(current) ? current.filter((item) => String(item?.id || "") !== pendingCandidateId) : current));
               }
               const previousHidden = Boolean(previousRow?.hidden_from_captured);
               const nextHidden = Boolean(nextRow?.hidden_from_captured);
@@ -10491,7 +10600,7 @@ function PortalApp({ token, onLogout }) {
           || previousRecruiterId !== nextRecruiterId
           || previousRecruiterName !== nextRecruiterName;
         const membershipChanged = previousHidden !== nextHidden || previousUsed !== nextUsed || previousAssessmentId !== nextAssessmentId || assignmentChanged;
-              if (membershipChanged) {
+              if (membershipChanged || !nextVisible) {
                 await Promise.all([
                   reloadCapturedSlice(capturedPage, safeCapturedApiPageSize, candidateFiltersApplied, capturedSortBy),
                   reloadCapturedStats(candidateFiltersApplied)
