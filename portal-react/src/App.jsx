@@ -20004,9 +20004,9 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
       databaseCandidates: patchCandidateState(current.databaseCandidates)
     }));
     setCapturedListItems((current) => (shouldRemainVisible
-      ? mergeCandidatesByFreshness(current, [restoredCandidatePreview])
+      ? upsertCandidatesById(current, [restoredCandidatePreview])
       : (Array.isArray(current) ? current.filter((item) => String(item?.id || "") !== candidateId) : current)));
-    setCapturedOptionPool((current) => mergeCandidatesByFreshness(current, [restoredCandidatePreview]));
+    setCapturedOptionPool((current) => upsertCandidatesById(current, [restoredCandidatePreview]));
     if (shouldRemainVisible) {
       setCapturedListMeta((current) => {
         const meta = current && typeof current === "object" ? current : {};
