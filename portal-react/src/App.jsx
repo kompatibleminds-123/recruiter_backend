@@ -7618,7 +7618,7 @@ function PortalApp({ token, onLogout }) {
     ownedBy: [],
     assignedTo: [],
     outcomes: [],
-    activeStates: []
+    activeStates: ["Active"]
   });
   const [applicantFiltersApplied, setApplicantFiltersApplied] = useState({
     q: "",
@@ -7630,7 +7630,7 @@ function PortalApp({ token, onLogout }) {
     ownedBy: [],
     assignedTo: [],
     outcomes: [],
-    activeStates: []
+    activeStates: ["Active"]
   });
   const [candidateFiltersApplied, setCandidateFiltersApplied] = useState({
     q: "",
@@ -21708,7 +21708,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                       ownedBy: [],
                       assignedTo: [],
                       outcomes: [],
-                      activeStates: []
+                      activeStates: ["Active"]
                     };
                     setApplicantPage(1);
                     setApplicantFilters(reset);
