@@ -10529,7 +10529,6 @@ function PortalApp({ token, onLogout }) {
         capturedLiveSyncPendingRef.current = true;
         capturedLiveSyncPendingEventRef.current = { candidateId, eventType, candidate: payloadCandidate };
       };
-      if (document.visibilityState !== "visible") return;
       if (capturedLiveSyncInFlightRef.current || isCapturedUserEditing) {
         queuePending();
         return;
@@ -10739,9 +10738,62 @@ function PortalApp({ token, onLogout }) {
         markPending(candidateId, eventType, payloadCandidate);
         return;
       }
-      if (eventType === "candidate_changed" || eventType === "candidate_attempt" || eventType === "candidate_assigned") {
-        markPending(candidateId, eventType, payloadCandidate);
+      if (eventType !== "candidate_changed" && eventType !== "candidate_attempt" && eventType !== "candidate_assigned") {
+        return;
       }
+      void (async () => {
+        const rows = payloadCandidate
+          ? [payloadCandidate]
+          : await api(`/candidates?id=${encodeURIComponent(candidateId)}&scope=company&limit=1`, token);
+        const nextRows = Array.isArray(rows) ? rows : [];
+        const nextRow = nextRows && nextRows.length ? nextRows[0] : null;
+        const previousRow = (state.candidates || []).find((item) => String(item?.id || "") === candidateId) || null;
+        const previousHidden = Boolean(previousRow?.hidden_from_captured);
+        const nextHidden = Boolean(nextRow?.hidden_from_captured);
+        const hiddenChanged = previousHidden !== nextHidden;
+        const nextVisible = nextRow ? isCapturedRowVisibleInCurrentView(nextRow, candidateFiltersApplied, state.user) : false;
+        if (nextRow) {
+          setState((current) => ({
+            ...current,
+            candidates: replaceCandidatesById(current.candidates, nextRows)
+          }));
+          if (eventType === "candidate_attempt") {
+            setCapturedOptionPool((current) => replaceCandidatesById(current, nextRows));
+            setCapturedListItems((current) => replaceCandidatesById(current, nextRows));
+          } else if (eventType === "candidate_changed" && hiddenChanged) {
+            if (nextVisible) {
+              setCapturedOptionPool((current) => upsertCandidatesById(current, nextRows));
+              setCapturedListItems((current) => upsertCandidatesById(current, nextRows));
+            } else {
+              setCapturedOptionPool((current) => removeCandidatesById(current, [candidateId]));
+              setCapturedListItems((current) => removeCandidatesById(current, [candidateId]));
+            }
+          } else if (eventType === "candidate_changed") {
+            if (nextVisible) {
+              setCapturedOptionPool((current) => replaceCandidatesById(current, nextRows));
+              setCapturedListItems((current) => replaceCandidatesById(current, nextRows));
+            } else {
+              setCapturedOptionPool((current) => removeCandidatesById(current, [candidateId]));
+              setCapturedListItems((current) => removeCandidatesById(current, [candidateId]));
+            }
+          } else if (eventType === "candidate_assigned" && nextVisible) {
+            setCapturedOptionPool((current) => upsertCandidatesById(current, nextRows));
+            setCapturedListItems((current) => upsertCandidatesById(current, nextRows));
+          } else if (eventType === "candidate_assigned") {
+            setCapturedOptionPool((current) => removeCandidatesById(current, [candidateId]));
+            setCapturedListItems((current) => removeCandidatesById(current, [candidateId]));
+          } else if (nextVisible) {
+            setCapturedOptionPool((current) => upsertCandidatesById(current, nextRows));
+            setCapturedListItems((current) => upsertCandidatesById(current, nextRows));
+          } else {
+            setCapturedOptionPool((current) => removeCandidatesById(current, [candidateId]));
+            setCapturedListItems((current) => removeCandidatesById(current, [candidateId]));
+          }
+        } else {
+          setCapturedOptionPool((current) => removeCandidatesById(current, [candidateId]));
+          setCapturedListItems((current) => removeCandidatesById(current, [candidateId]));
+        }
+      })().catch(() => {});
     };
     source.addEventListener("captured", onCaptured);
     return () => {
