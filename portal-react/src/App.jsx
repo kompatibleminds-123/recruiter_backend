@@ -1226,6 +1226,20 @@ function normalizeApplicantLocationLabel(value) {
     .join(" ");
 }
 
+function normalizeApplicantVisibleRow(item = {}) {
+  if (!item || typeof item !== "object") return item;
+  const candidateName = String(item.candidateName || item.name || item.candidate_name || "").trim();
+  const assignedToName = String(item.assignedToName || item.assigned_to_name || "").trim();
+  return {
+    ...item,
+    candidateName,
+    name: String(item.name || candidateName || "").trim(),
+    candidate_name: String(item.candidate_name || candidateName || "").trim(),
+    assignedToName,
+    assigned_to_name: String(item.assigned_to_name || assignedToName || "").trim()
+  };
+}
+
 function parseMultiChipTokens(value) {
   return String(value || "")
     .split(",")
@@ -10008,10 +10022,13 @@ function PortalApp({ token, onLogout }) {
       setStatus("applicants", `Applied refresh failed, keeping existing list: ${applicantsEnvelope.error}`, "error");
       return;
     }
+    const nextApplicants = Array.isArray(applicantsEnvelope?.data?.items)
+      ? applicantsEnvelope.data.items.map((item) => normalizeApplicantVisibleRow(item))
+      : [];
     setState((current) => ({
       ...current,
-      applicants: applicantsEnvelope?.data?.items || [],
-      applicantListItems: applicantsEnvelope?.data?.items || []
+      applicants: nextApplicants,
+      applicantListItems: nextApplicants
     }));
     setApplicantListMeta({
       total: Math.max(0, Number(applicantsEnvelope?.data?.total || 0)),
@@ -12791,7 +12808,7 @@ function PortalApp({ token, onLogout }) {
   }, [filteredApplicants, applicantCandidateMap, applicantAssessmentMap, state.user, state.users]);
 
   const visibleApplicants = useMemo(() => (
-    Array.isArray(state.applicantListItems) ? state.applicantListItems : []
+    Array.isArray(state.applicantListItems) ? state.applicantListItems.map((item) => normalizeApplicantVisibleRow(item)) : []
   ), [state.applicantListItems]);
   const totalApplicantCount = Math.max(
     0,
@@ -19763,7 +19780,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
     const rows = payloadCandidate && typeof payloadCandidate === "object"
       ? [payloadCandidate]
       : await api(`/candidates?id=${encodeURIComponent(safeCandidateId)}&scope=company&limit=1`, token);
-    const nextRows = Array.isArray(rows) ? rows : [];
+    const nextRows = Array.isArray(rows) ? rows.map((row) => normalizeApplicantVisibleRow(row)) : [];
     const nextRow = nextRows && nextRows.length ? nextRows[0] : null;
     const previousRow = (state.candidates || []).find((item) => String(item?.id || "") === safeCandidateId) || null;
     const previousHidden = Boolean(previousRow?.hidden_from_captured);
@@ -21821,7 +21838,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                     <div className="captured-note-main applied-note-main">
                       <div className="captured-note-col captured-note-col--profile">
                         <div className="captured-note-title-row">
-                          <h3>{item.candidateName || "Applicant"}</h3>
+                          <h3>{item.candidateName || item.name || item.candidate_name || "Applicant"}</h3>
                         </div>
                         <div className="captured-note-subtitle">{item.jdTitle || "Untitled role"}</div>
                         <div className="captured-note-detail-list captured-note-profile-meta">
