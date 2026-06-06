@@ -2393,6 +2393,29 @@ function mergeCandidatesByFreshness(currentList = [], incomingList = []) {
   return Array.from(byId.values());
 }
 
+function replaceCandidatesById(currentList = [], incomingList = []) {
+  const current = Array.isArray(currentList) ? currentList : [];
+  const incoming = Array.isArray(incomingList) ? incomingList : [];
+  const byId = new Map();
+  current.forEach((item) => {
+    const id = String(item?.id || "").trim();
+    if (id) byId.set(id, item);
+  });
+  incoming.forEach((item) => {
+    const id = String(item?.id || "").trim();
+    if (!id) return;
+    byId.set(id, item);
+  });
+  return Array.from(byId.values());
+}
+
+function removeCandidatesById(currentList = [], ids = []) {
+  const current = Array.isArray(currentList) ? currentList : [];
+  const removeSet = new Set((Array.isArray(ids) ? ids : []).map((value) => String(value || "").trim()).filter(Boolean));
+  if (!removeSet.size) return current;
+  return current.filter((item) => !removeSet.has(String(item?.id || "").trim()));
+}
+
 function sortCapturedNotesForList(items = [], sortBy = "created") {
   const sortMode = String(sortBy || "created").trim().toLowerCase();
   const primaryKeys = sortMode === "updated"
@@ -10500,18 +10523,18 @@ function PortalApp({ token, onLogout }) {
         if (nextRow) {
           setState((current) => ({
             ...current,
-            candidates: mergeCandidatesByFreshness(current.candidates, nextRows)
+            candidates: replaceCandidatesById(current.candidates, nextRows)
           }));
           if (String(location?.pathname || "").trim() === "/captured-notes" && shouldTreatAsRowPatch && nextVisible) {
-            setCapturedOptionPool((current) => mergeCandidatesByFreshness(current, nextRows));
-            setCapturedListItems((current) => mergeCandidatesByFreshness(current, nextRows));
+            setCapturedOptionPool((current) => replaceCandidatesById(current, nextRows));
+            setCapturedListItems((current) => replaceCandidatesById(current, nextRows));
           } else {
-            setCapturedOptionPool((current) => (Array.isArray(current) ? current.filter((item) => String(item?.id || "") !== candidateId) : current));
-            setCapturedListItems((current) => (Array.isArray(current) ? current.filter((item) => String(item?.id || "") !== candidateId) : current));
+            setCapturedOptionPool((current) => removeCandidatesById(current, [candidateId]));
+            setCapturedListItems((current) => removeCandidatesById(current, [candidateId]));
           }
         } else {
-          setCapturedOptionPool((current) => (Array.isArray(current) ? current.filter((item) => String(item?.id || "") !== candidateId) : current));
-          setCapturedListItems((current) => (Array.isArray(current) ? current.filter((item) => String(item?.id || "") !== candidateId) : current));
+          setCapturedOptionPool((current) => removeCandidatesById(current, [candidateId]));
+          setCapturedListItems((current) => removeCandidatesById(current, [candidateId]));
         }
 
         const previousHidden = Boolean(previousRow?.hidden_from_captured);
@@ -10568,18 +10591,18 @@ function PortalApp({ token, onLogout }) {
               if (nextRow) {
                 setState((current) => ({
                   ...current,
-                  candidates: mergeCandidatesByFreshness(current.candidates, nextRows)
+                  candidates: replaceCandidatesById(current.candidates, nextRows)
                 }));
                 if (nextVisible) {
-                  setCapturedOptionPool((current) => mergeCandidatesByFreshness(current, nextRows));
-                  setCapturedListItems((current) => mergeCandidatesByFreshness(current, nextRows));
+                  setCapturedOptionPool((current) => replaceCandidatesById(current, nextRows));
+                  setCapturedListItems((current) => replaceCandidatesById(current, nextRows));
                 } else {
-                  setCapturedOptionPool((current) => (Array.isArray(current) ? current.filter((item) => String(item?.id || "") !== pendingCandidateId) : current));
-                  setCapturedListItems((current) => (Array.isArray(current) ? current.filter((item) => String(item?.id || "") !== pendingCandidateId) : current));
+                  setCapturedOptionPool((current) => removeCandidatesById(current, [pendingCandidateId]));
+                  setCapturedListItems((current) => removeCandidatesById(current, [pendingCandidateId]));
                 }
               } else {
-                setCapturedOptionPool((current) => (Array.isArray(current) ? current.filter((item) => String(item?.id || "") !== pendingCandidateId) : current));
-                setCapturedListItems((current) => (Array.isArray(current) ? current.filter((item) => String(item?.id || "") !== pendingCandidateId) : current));
+                setCapturedOptionPool((current) => removeCandidatesById(current, [pendingCandidateId]));
+                setCapturedListItems((current) => removeCandidatesById(current, [pendingCandidateId]));
               }
               const previousHidden = Boolean(previousRow?.hidden_from_captured);
               const nextHidden = Boolean(nextRow?.hidden_from_captured);
@@ -10692,10 +10715,19 @@ function PortalApp({ token, onLogout }) {
       if (nextRow) {
         setState((current) => ({
           ...current,
-          candidates: mergeCandidatesByFreshness(current.candidates, nextRows)
+          candidates: replaceCandidatesById(current.candidates, nextRows)
         }));
-        setCapturedOptionPool((current) => mergeCandidatesByFreshness(current, nextRows));
-        setCapturedListItems((current) => mergeCandidatesByFreshness(current, nextRows));
+        const nextVisible = isCapturedRowVisibleInCurrentView(nextRow, candidateFiltersApplied, state.user);
+        if (nextVisible) {
+          setCapturedOptionPool((current) => replaceCandidatesById(current, nextRows));
+          setCapturedListItems((current) => replaceCandidatesById(current, nextRows));
+        } else {
+          setCapturedOptionPool((current) => removeCandidatesById(current, [pendingCandidateId]));
+          setCapturedListItems((current) => removeCandidatesById(current, [pendingCandidateId]));
+        }
+      } else {
+        setCapturedOptionPool((current) => removeCandidatesById(current, [pendingCandidateId]));
+        setCapturedListItems((current) => removeCandidatesById(current, [pendingCandidateId]));
       }
       const previousHidden = Boolean(previousRow?.hidden_from_captured);
       const nextHidden = Boolean(nextRow?.hidden_from_captured);
