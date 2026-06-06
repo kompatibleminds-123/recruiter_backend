@@ -15293,6 +15293,7 @@ function PortalApp({ token, onLogout }) {
 
     const candidateDraft = candidate ? getCandidateDraftState(candidate) : {};
     const cvMeta = candidate ? decodePortalApplicantMetadata(candidate) : null;
+    const candidateCvMeta = getCandidateProfileCvMeta(candidate || sourceApplicant || {});
     const removeFromCapturedCaches = (items) => Array.isArray(items)
       ? items.filter((item) => String(item?.id || "").trim() !== capturedCandidateId)
       : items;
@@ -15329,6 +15330,7 @@ function PortalApp({ token, onLogout }) {
             || ""
         }, cvMeta.cvAnalysisCache.result, cvMeta.cvAnalysisCache.storedFile || null)
       : null;
+    const candidateCvStoredFile = candidateCvAnalysis?.storedFile || cvMeta?.cvAnalysisCache?.storedFile || null;
     const assessment = {
       id: `assessment-${Date.now()}`,
       candidateId: String(candidate?.id || ""),
@@ -15362,6 +15364,10 @@ function PortalApp({ token, onLogout }) {
       tags: candidateDraft.tags || (Array.isArray(candidate?.skills) ? candidate.skills.join(", ") : ""),
       jdScreeningAnswers: candidateDraft.jdScreeningAnswers || {},
       cvAnalysis: candidateCvAnalysis,
+      cv_provider: candidateCvStoredFile?.provider || candidateCvMeta.provider || "",
+      cv_key: candidateCvStoredFile?.key || candidateCvMeta.key || "",
+      cv_url: candidateCvStoredFile?.url || candidateCvMeta.url || "",
+      cv_filename: candidateCvStoredFile?.filename || candidateCvMeta.filename || "",
       cvAnalysisApplied: false,
       recruiterName: assessmentOwnerName,
       recruiter_name: assessmentOwnerName,
@@ -15484,6 +15490,16 @@ function PortalApp({ token, onLogout }) {
     const interviewCandidate = interviewMeta.candidateId
       ? (state.candidates || []).find((item) => String(item?.id || "") === String(interviewMeta.candidateId))
       : null;
+    const interviewCandidateCvMeta = getCandidateProfileCvMeta(interviewCandidate || {});
+    const interviewCandidateMeta = interviewCandidate ? decodePortalApplicantMetadata(interviewCandidate) : null;
+    const interviewCandidateCvAnalysis = interviewCandidateMeta?.cvAnalysisCache?.result
+      ? buildInterviewCvAnalysis({
+          currentCompany: interviewCandidate?.company || "",
+          currentDesignation: interviewCandidate?.role || "",
+          totalExperience: interviewCandidate?.experience || "",
+          currentOrgTenure: interviewCandidate?.current_org_tenure || interviewCandidate?.currentOrgTenure || ""
+        }, interviewCandidateMeta.cvAnalysisCache.result, interviewCandidateMeta.cvAnalysisCache.storedFile || null)
+      : null;
     const assessmentOwnerUser = (() => {
       const byId = String(interviewCandidate?.assigned_to_user_id || interviewCandidate?.assignedToUserId || "").trim();
       const byName = String(interviewCandidate?.assigned_to_name || interviewCandidate?.assignedToName || "").trim();
@@ -15538,6 +15554,11 @@ function PortalApp({ token, onLogout }) {
       recruiterEmail: assessmentOwnerEmail,
       recruiterId: assessmentOwnerId
     };
+    assessment.cvAnalysis = form.cvAnalysis || interviewCandidateCvAnalysis || null;
+    assessment.cv_provider = String(form.cvAnalysis?.storedFile?.provider || interviewCandidateCvMeta.provider || interviewCandidateMeta?.fileProvider || "").trim();
+    assessment.cv_key = String(form.cvAnalysis?.storedFile?.key || interviewCandidateCvMeta.key || interviewCandidateMeta?.fileKey || "").trim();
+    assessment.cv_url = String(form.cvAnalysis?.storedFile?.url || interviewCandidateCvMeta.url || interviewCandidateMeta?.fileUrl || "").trim();
+    assessment.cv_filename = String(form.cvAnalysis?.storedFile?.filename || interviewCandidateCvMeta.filename || interviewCandidateMeta?.filename || "").trim();
     delete assessment.assigned_to_name;
     delete assessment.assignedToName;
     if (interviewMeta.candidateId) {
