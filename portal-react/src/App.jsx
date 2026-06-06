@@ -15550,7 +15550,7 @@ function PortalApp({ token, onLogout }) {
     setStatus("interview", "Saving assessment...");
     try {
       const savedAssessment = await api("/company/assessments", token, "POST", { assessment });
-      const hydratedAssessment = hydrateAssessmentCvRefs(savedAssessment || assessment, candidate || sourceApplicant);
+      const hydratedAssessment = hydrateAssessmentCvRefs(savedAssessment || assessment, interviewCandidate);
       upsertAssessmentInState(hydratedAssessment);
       patchVisibleAssessmentRow(hydratedAssessment, "upsert");
       setAssessmentOptionPool((current) => mergeAssessmentsByFreshness(current, [hydratedAssessment]));
