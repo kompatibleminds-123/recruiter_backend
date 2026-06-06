@@ -3455,6 +3455,13 @@ button:focus-visible {
   display: block;
 }
 
+.whatsapp-logo-btn svg {
+  width: 22px;
+  height: 22px;
+  display: block;
+  pointer-events: none;
+}
+
 .captured-note-card {
   border-radius: 18px;
   position: relative;
