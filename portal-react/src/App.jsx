@@ -19828,8 +19828,11 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
     setAssessmentListItems((current) => {
       if (!Array.isArray(current)) return current;
       const existingIx = current.findIndex((item) => String(item?.id || "").trim() === savedId);
-      if (existingIx < 0) return current;
       const next = [...current];
+      if (existingIx < 0) {
+        next.unshift(saved);
+        return next;
+      }
       next.splice(existingIx, 1, { ...next[existingIx], ...saved });
       return next;
     });
