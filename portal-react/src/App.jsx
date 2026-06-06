@@ -10565,20 +10565,15 @@ function PortalApp({ token, onLogout }) {
         const rows = payloadCandidate
           ? [payloadCandidate]
           : await api(`/candidates?id=${encodeURIComponent(candidateId)}&scope=company&limit=1`, token);
-      const nextRows = Array.isArray(rows) ? rows : [];
-      const nextRow = nextRows && nextRows.length ? nextRows[0] : null;
-      const previousRow = (state.candidates || []).find((item) => String(item?.id || "") === candidateId) || null;
-        const previousVisible = previousRow ? isCapturedRowOwnedByCurrentView(previousRow, state.user) : false;
-        const nextVisible = nextRow ? isCapturedRowOwnedByCurrentView(nextRow, state.user) : false;
+        const nextRows = Array.isArray(rows) ? rows : [];
+        const nextRow = nextRows && nextRows.length ? nextRows[0] : null;
+        const nextVisible = nextRow ? isCapturedRowVisibleInCurrentView(nextRow, candidateFiltersApplied, state.user) : false;
         if (nextRow) {
           setState((current) => ({
             ...current,
             candidates: replaceCandidatesById(current.candidates, nextRows)
           }));
-          if (eventType === "candidate_assigned" && previousVisible && !nextVisible) {
-            setCapturedOptionPool((current) => removeCandidatesById(current, [candidateId]));
-            setCapturedListItems((current) => removeCandidatesById(current, [candidateId]));
-          } else if (String(location?.pathname || "").trim() === "/captured-notes" && shouldTreatAsRowPatch && nextVisible) {
+          if (nextVisible) {
             setCapturedOptionPool((current) => upsertCandidatesById(current, nextRows));
             setCapturedListItems((current) => upsertCandidatesById(current, nextRows));
           } else {
@@ -10590,36 +10585,7 @@ function PortalApp({ token, onLogout }) {
           setCapturedListItems((current) => removeCandidatesById(current, [candidateId]));
         }
 
-        if (shouldTreatAsRowPatch) {
-          return;
-        }
-
-        const previousHidden = Boolean(previousRow?.hidden_from_captured);
-        const nextHidden = Boolean(nextRow?.hidden_from_captured);
-        const previousUsed = Boolean(previousRow?.used_in_assessment);
-        const nextUsed = Boolean(nextRow?.used_in_assessment);
-        const previousAssessmentId = String(previousRow?.assessment_id || previousRow?.assessmentId || "").trim();
-        const nextAssessmentId = String(nextRow?.assessment_id || nextRow?.assessmentId || "").trim();
-        const previousAssignedToUserId = String(previousRow?.assigned_to_user_id || previousRow?.assignedToUserId || "").trim();
-        const nextAssignedToUserId = String(nextRow?.assigned_to_user_id || nextRow?.assignedToUserId || "").trim();
-        const previousAssignedToName = String(previousRow?.assigned_to_name || previousRow?.assignedToName || "").trim();
-        const nextAssignedToName = String(nextRow?.assigned_to_name || nextRow?.assignedToName || "").trim();
-        const previousRecruiterId = String(previousRow?.recruiter_id || previousRow?.recruiterId || "").trim();
-        const nextRecruiterId = String(nextRow?.recruiter_id || nextRow?.recruiterId || "").trim();
-        const previousRecruiterName = String(previousRow?.recruiter_name || previousRow?.recruiterName || "").trim();
-        const nextRecruiterName = String(nextRow?.recruiter_name || nextRow?.recruiterName || "").trim();
-        const assignmentChanged = previousAssignedToUserId !== nextAssignedToUserId
-          || previousAssignedToName !== nextAssignedToName
-          || previousRecruiterId !== nextRecruiterId
-          || previousRecruiterName !== nextRecruiterName;
-        const membershipChanged = previousHidden !== nextHidden || previousUsed !== nextUsed || previousAssessmentId !== nextAssessmentId || assignmentChanged;
-
-        if (membershipChanged || !nextVisible) {
-          await Promise.all([
-            reloadCapturedSlice(capturedPage, safeCapturedApiPageSize, candidateFiltersApplied, capturedSortBy),
-            reloadCapturedStats(candidateFiltersApplied)
-          ]);
-        }
+        if (shouldTreatAsRowPatch) return;
       })();
       void refreshPromise
         .catch(() => {})
@@ -10643,18 +10609,13 @@ function PortalApp({ token, onLogout }) {
               const rows = await api(`/candidates?id=${encodeURIComponent(pendingCandidateId)}&scope=company&limit=1`, token);
               const nextRows = Array.isArray(rows) ? rows : [];
               const nextRow = nextRows && nextRows.length ? nextRows[0] : null;
-              const previousRow = (state.candidates || []).find((item) => String(item?.id || "") === pendingCandidateId) || null;
-              const previousVisible = previousRow ? isCapturedRowOwnedByCurrentView(previousRow, state.user) : false;
-              const nextVisible = nextRow ? isCapturedRowOwnedByCurrentView(nextRow, state.user) : false;
+              const nextVisible = nextRow ? isCapturedRowVisibleInCurrentView(nextRow, candidateFiltersApplied, state.user) : false;
               if (nextRow) {
                 setState((current) => ({
                   ...current,
                   candidates: replaceCandidatesById(current.candidates, nextRows)
                 }));
-                if (pendingEventType === "candidate_assigned" && previousVisible && !nextVisible) {
-                  setCapturedOptionPool((current) => removeCandidatesById(current, [pendingCandidateId]));
-                  setCapturedListItems((current) => removeCandidatesById(current, [pendingCandidateId]));
-                } else if (nextVisible) {
+                if (nextVisible) {
                   setCapturedOptionPool((current) => upsertCandidatesById(current, nextRows));
                   setCapturedListItems((current) => upsertCandidatesById(current, nextRows));
                 } else {
@@ -10667,31 +10628,6 @@ function PortalApp({ token, onLogout }) {
               }
               if (pendingEventType === "candidate_changed" || pendingEventType === "candidate_attempt" || pendingEventType === "candidate_assigned") {
                 return;
-              }
-              const previousHidden = Boolean(previousRow?.hidden_from_captured);
-              const nextHidden = Boolean(nextRow?.hidden_from_captured);
-              const previousUsed = Boolean(previousRow?.used_in_assessment);
-              const nextUsed = Boolean(nextRow?.used_in_assessment);
-        const previousAssessmentId = String(previousRow?.assessment_id || previousRow?.assessmentId || "").trim();
-        const nextAssessmentId = String(nextRow?.assessment_id || nextRow?.assessmentId || "").trim();
-        const previousAssignedToUserId = String(previousRow?.assigned_to_user_id || previousRow?.assignedToUserId || "").trim();
-        const nextAssignedToUserId = String(nextRow?.assigned_to_user_id || nextRow?.assignedToUserId || "").trim();
-        const previousAssignedToName = String(previousRow?.assigned_to_name || previousRow?.assignedToName || "").trim();
-        const nextAssignedToName = String(nextRow?.assigned_to_name || nextRow?.assignedToName || "").trim();
-        const previousRecruiterId = String(previousRow?.recruiter_id || previousRow?.recruiterId || "").trim();
-        const nextRecruiterId = String(nextRow?.recruiter_id || nextRow?.recruiterId || "").trim();
-        const previousRecruiterName = String(previousRow?.recruiter_name || previousRow?.recruiterName || "").trim();
-        const nextRecruiterName = String(nextRow?.recruiter_name || nextRow?.recruiterName || "").trim();
-        const assignmentChanged = previousAssignedToUserId !== nextAssignedToUserId
-          || previousAssignedToName !== nextAssignedToName
-          || previousRecruiterId !== nextRecruiterId
-          || previousRecruiterName !== nextRecruiterName;
-        const membershipChanged = previousHidden !== nextHidden || previousUsed !== nextUsed || previousAssessmentId !== nextAssessmentId || assignmentChanged;
-              if (membershipChanged || !nextVisible) {
-                await Promise.all([
-                  reloadCapturedSlice(capturedPage, safeCapturedApiPageSize, candidateFiltersApplied, capturedSortBy),
-                  reloadCapturedStats(candidateFiltersApplied)
-                ]);
               }
             })()
               .catch(() => {})
@@ -10903,6 +10839,7 @@ function PortalApp({ token, onLogout }) {
         }
 
         const shouldTreatAsRowPatch = eventType === "candidate_changed" || eventType === "candidate_attempt" || eventType === "candidate_assigned";
+        const shouldAlwaysPatchVisibleCapturedRow = eventType === "candidate_changed" || eventType === "candidate_attempt";
         const rows = await api(`/candidates?id=${encodeURIComponent(candidateId)}&scope=company&limit=1`, token);
         const nextRows = Array.isArray(rows) ? rows : [];
         const nextRow = nextRows && nextRows.length ? nextRows[0] : null;
