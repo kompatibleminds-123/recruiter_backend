@@ -22572,8 +22572,20 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                       pointerEvents: "none"
                     }}
                   >
-                    <div className="empty-state" style={{ margin: 0, boxShadow: "0 8px 24px rgba(15,23,42,0.08)" }}>
-                      Loading assessments...
+                    <div className="empty-state" style={{ margin: 0, boxShadow: "0 8px 24px rgba(15,23,42,0.08)", display: "flex", alignItems: "center", gap: 10 }}>
+                      <span
+                        aria-hidden="true"
+                        style={{
+                          width: 18,
+                          height: 18,
+                          borderRadius: "50%",
+                          border: "2px solid rgba(59, 130, 246, 0.22)",
+                          borderTopColor: "#2563eb",
+                          animation: "assessmentSpin 0.8s linear infinite",
+                          flex: "0 0 auto"
+                        }}
+                      />
+                      <span>Loading assessments...</span>
                     </div>
                   </div>
                 ) : null}

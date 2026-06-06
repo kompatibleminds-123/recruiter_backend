@@ -235,6 +235,10 @@ textarea { min-height: 92px; resize: vertical; }
 @keyframes parse-spin {
   to { transform: rotate(360deg); }
 }
+@keyframes assessmentSpin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
 .nav-btn__icon {
   width: 1.2rem;
   height: 1.2rem;
