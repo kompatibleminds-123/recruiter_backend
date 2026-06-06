@@ -10366,7 +10366,13 @@ function PortalApp({ token, onLogout }) {
       const assessmentId = String(payload?.assessmentId || payload?.assessment_id || payload?.assessment?.id || "").trim();
       const candidateId = String(payload?.candidateId || payload?.candidate_id || payload?.assessment?.candidateId || payload?.assessment?.candidate_id || "").trim();
       const assessment = payload?.assessment && typeof payload.assessment === "object" ? payload.assessment : null;
-      if (assessment && assessmentId) {
+      if (eventType === "assessment_deleted" && assessmentId) {
+        setState((current) => ({
+          ...current,
+          assessments: (current.assessments || []).filter((item) => String(item?.id || "") !== assessmentId)
+        }));
+        patchVisibleAssessmentRow({ id: assessmentId }, "delete");
+      } else if (assessment && assessmentId) {
         const linkedCandidate = (state.candidates || []).find((item) => String(item?.id || "") === String(assessment?.candidateId || assessment?.candidate_id || candidateId || "").trim()) || null;
         const hydratedAssessment = hydrateAssessmentCvRefs(assessment, linkedCandidate);
         setState((current) => ({
@@ -10374,12 +10380,6 @@ function PortalApp({ token, onLogout }) {
           assessments: mergeAssessmentsByFreshness(current.assessments, [hydratedAssessment])
         }));
         patchVisibleAssessmentRow(hydratedAssessment, "upsert");
-      } else if (eventType === "assessment_deleted" && assessmentId) {
-        setState((current) => ({
-          ...current,
-          assessments: (current.assessments || []).filter((item) => String(item?.id || "") !== assessmentId)
-        }));
-        patchVisibleAssessmentRow({ id: assessmentId }, "delete");
       }
       if (eventType === "assessment_deleted" || eventType === "assessment_restored") {
         void reloadAssessmentStats(assessmentFiltersApplied).catch(() => {});
@@ -10413,6 +10413,15 @@ function PortalApp({ token, onLogout }) {
       const assessmentId = String(payload?.assessmentId || payload?.assessment_id || payload?.assessment?.id || "").trim();
       const candidateId = String(payload?.candidateId || payload?.candidate_id || payload?.assessment?.candidateId || payload?.assessment?.candidate_id || "").trim();
       const assessment = payload?.assessment && typeof payload.assessment === "object" ? payload.assessment : null;
+      if (eventType === "assessment_deleted" && assessmentId) {
+        setState((current) => ({
+          ...current,
+          assessments: (current.assessments || []).filter((item) => String(item?.id || "") !== assessmentId)
+        }));
+        patchVisibleAssessmentRow({ id: assessmentId }, "delete");
+        void reloadAssessmentStats(assessmentFiltersApplied).catch(() => {});
+        return;
+      }
       if (assessment && assessmentId) {
         const linkedCandidate = (state.candidates || []).find((item) => String(item?.id || "") === String(assessment?.candidateId || assessment?.candidate_id || candidateId || "").trim()) || null;
         const hydratedAssessment = hydrateAssessmentCvRefs(assessment, linkedCandidate);
@@ -10421,15 +10430,6 @@ function PortalApp({ token, onLogout }) {
           assessments: mergeAssessmentsByFreshness(current.assessments, [hydratedAssessment])
         }));
         patchVisibleAssessmentRow(hydratedAssessment, "upsert");
-        return;
-      }
-      if (eventType === "assessment_deleted" && assessmentId) {
-        setState((current) => ({
-          ...current,
-          assessments: (current.assessments || []).filter((item) => String(item?.id || "") !== assessmentId)
-        }));
-        patchVisibleAssessmentRow({ id: assessmentId }, "delete");
-        void reloadAssessmentStats(assessmentFiltersApplied).catch(() => {});
         return;
       }
       if (eventType === "assessment_restored" && assessmentId) {
