@@ -18323,6 +18323,7 @@ const server = http.createServer(async (req, res) => {
         throw new Error("Only an admin can assign candidates.");
       }
       const body = await readJsonBody(req);
+      const previous = (await listCandidatesForUser(actor, { id: String(body.id || body.candidateId || "").trim(), limit: 1 }))[0] || null;
       await ensureCandidateVisibleToActor(actor, body.id || body.candidateId);
       const result = await assignCandidate(body.id || body.candidateId, {
         assigned_to_user_id: body.assigned_to_user_id || body.assignedToUserId,
@@ -18334,8 +18335,16 @@ const server = http.createServer(async (req, res) => {
         jd_title: body.jd_title || body.jdTitle,
         client_name: body.client_name || body.clientName
       }, { companyId: actor.companyId });
-      emitCapturedStreamEvent(actor.companyId, "candidate_assigned", { candidateId: String(body.id || body.candidateId || "").trim() || undefined, candidate: result });
-      emitApplicantStreamEvent(actor.companyId, "candidate_assigned", { candidateId: String(body.id || body.candidateId || "").trim() || undefined, candidate: result });
+      emitCapturedStreamEvent(actor.companyId, "candidate_assigned", {
+        candidateId: String(body.id || body.candidateId || "").trim() || undefined,
+        candidate: result,
+        previousCandidate: previous
+      });
+      emitApplicantStreamEvent(actor.companyId, "candidate_assigned", {
+        candidateId: String(body.id || body.candidateId || "").trim() || undefined,
+        candidate: result,
+        previousCandidate: previous
+      });
       sendJson(res, 200, { ok: true, result });
     } catch (error) {
       sendJson(res, 400, { ok: false, error: String(error.message || error) });
@@ -18348,6 +18357,7 @@ const server = http.createServer(async (req, res) => {
       const actor = await requireSessionUser(getBearerToken(req));
       const body = await readJsonBody(req);
       const candidateId = body.id || body.candidateId;
+      const previous = (await listCandidatesForUser(actor, { id: String(candidateId || "").trim(), limit: 1 }))[0] || null;
       await ensureCandidateVisibleToActor(actor, candidateId);
       const result = await assignCandidate(candidateId, {
         assigned_to_user_id: actor.id,
@@ -18359,8 +18369,16 @@ const server = http.createServer(async (req, res) => {
         jd_title: body.jd_title || body.jdTitle,
         client_name: body.client_name || body.clientName
       }, { companyId: actor.companyId });
-      emitCapturedStreamEvent(actor.companyId, "candidate_assigned", { candidateId: String(candidateId || "").trim() || undefined, candidate: result });
-      emitApplicantStreamEvent(actor.companyId, "candidate_assigned", { candidateId: String(candidateId || "").trim() || undefined, candidate: result });
+      emitCapturedStreamEvent(actor.companyId, "candidate_assigned", {
+        candidateId: String(candidateId || "").trim() || undefined,
+        candidate: result,
+        previousCandidate: previous
+      });
+      emitApplicantStreamEvent(actor.companyId, "candidate_assigned", {
+        candidateId: String(candidateId || "").trim() || undefined,
+        candidate: result,
+        previousCandidate: previous
+      });
       sendJson(res, 200, { ok: true, result });
     } catch (error) {
       sendJson(res, 400, { ok: false, error: String(error.message || error) });

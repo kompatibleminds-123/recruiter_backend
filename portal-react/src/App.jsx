@@ -10519,16 +10519,20 @@ function PortalApp({ token, onLogout }) {
         const rows = payloadCandidate
           ? [payloadCandidate]
           : await api(`/candidates?id=${encodeURIComponent(candidateId)}&scope=company&limit=1`, token);
-        const nextRows = Array.isArray(rows) ? rows : [];
-        const nextRow = nextRows && nextRows.length ? nextRows[0] : null;
-        const previousRow = (state.candidates || []).find((item) => String(item?.id || "") === candidateId) || null;
-        const nextVisible = nextRow ? isCapturedRowVisibleInCurrentView(nextRow, candidateFiltersApplied, state.user) : false;
+      const nextRows = Array.isArray(rows) ? rows : [];
+      const nextRow = nextRows && nextRows.length ? nextRows[0] : null;
+      const previousRow = (state.candidates || []).find((item) => String(item?.id || "") === candidateId) || null;
+      const previousVisible = previousRow ? isCapturedRowVisibleInCurrentView(previousRow, candidateFiltersApplied, state.user) : false;
+      const nextVisible = nextRow ? isCapturedRowVisibleInCurrentView(nextRow, candidateFiltersApplied, state.user) : false;
         if (nextRow) {
           setState((current) => ({
             ...current,
             candidates: replaceCandidatesById(current.candidates, nextRows)
           }));
-          if (String(location?.pathname || "").trim() === "/captured-notes" && shouldTreatAsRowPatch && nextVisible) {
+          if (eventType === "candidate_assigned" && previousVisible && !nextVisible) {
+            setCapturedOptionPool((current) => removeCandidatesById(current, [candidateId]));
+            setCapturedListItems((current) => removeCandidatesById(current, [candidateId]));
+          } else if (String(location?.pathname || "").trim() === "/captured-notes" && shouldTreatAsRowPatch && nextVisible) {
             setCapturedOptionPool((current) => replaceCandidatesById(current, nextRows));
             setCapturedListItems((current) => replaceCandidatesById(current, nextRows));
           } else {
@@ -10594,13 +10598,17 @@ function PortalApp({ token, onLogout }) {
               const nextRows = Array.isArray(rows) ? rows : [];
               const nextRow = nextRows && nextRows.length ? nextRows[0] : null;
               const previousRow = (state.candidates || []).find((item) => String(item?.id || "") === pendingCandidateId) || null;
+              const previousVisible = previousRow ? isCapturedRowVisibleInCurrentView(previousRow, candidateFiltersApplied, state.user) : false;
               const nextVisible = nextRow ? isCapturedRowVisibleInCurrentView(nextRow, candidateFiltersApplied, state.user) : false;
               if (nextRow) {
                 setState((current) => ({
                   ...current,
                   candidates: replaceCandidatesById(current.candidates, nextRows)
                 }));
-                if (nextVisible) {
+                if (pendingEventType === "candidate_assigned" && previousVisible && !nextVisible) {
+                  setCapturedOptionPool((current) => removeCandidatesById(current, [pendingCandidateId]));
+                  setCapturedListItems((current) => removeCandidatesById(current, [pendingCandidateId]));
+                } else if (nextVisible) {
                   setCapturedOptionPool((current) => replaceCandidatesById(current, nextRows));
                   setCapturedListItems((current) => replaceCandidatesById(current, nextRows));
                 } else {
