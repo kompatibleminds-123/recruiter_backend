@@ -16836,11 +16836,32 @@ const server = http.createServer(async (req, res) => {
       const matchedStoredFile = matchedMeta?.cvAnalysisCache?.storedFile && typeof matchedMeta.cvAnalysisCache.storedFile === "object"
         ? matchedMeta.cvAnalysisCache.storedFile
         : null;
-      const fileProvider = String(requestUrl.searchParams.get("cv_provider") || matchedMeta.fileProvider || matchedStoredFile?.provider || fallbackFileRef?.provider || "").trim();
-      const fileKey = String(requestUrl.searchParams.get("cv_key") || matchedMeta.fileKey || matchedStoredFile?.key || fallbackFileRef?.key || "").trim();
-      const fileUrl = String(requestUrl.searchParams.get("cv_url") || matchedMeta.fileUrl || matchedStoredFile?.url || fallbackFileRef?.url || "").trim();
-      const filename = String(requestUrl.searchParams.get("cv_filename") || matchedMeta.filename || matchedStoredFile?.filename || fallbackFileRef?.filename || "resume.pdf").trim();
-      const mimeType = String(requestUrl.searchParams.get("cv_mime_type") || matchedMeta.mimeType || matchedStoredFile?.mimeType || fallbackFileRef?.mimeType || "application/octet-stream").trim();
+      const shouldPreferCurrentCandidateFile = Boolean(matchedCandidate || matchedMeta.fileKey || matchedMeta.fileUrl || matchedStoredFile?.key || matchedStoredFile?.url);
+      const fileProvider = String(
+        shouldPreferCurrentCandidateFile
+          ? (matchedMeta.fileProvider || matchedStoredFile?.provider || fallbackFileRef?.provider || requestUrl.searchParams.get("cv_provider") || "")
+          : (requestUrl.searchParams.get("cv_provider") || matchedMeta.fileProvider || matchedStoredFile?.provider || fallbackFileRef?.provider || "")
+      ).trim();
+      const fileKey = String(
+        shouldPreferCurrentCandidateFile
+          ? (matchedMeta.fileKey || matchedStoredFile?.key || fallbackFileRef?.key || requestUrl.searchParams.get("cv_key") || "")
+          : (requestUrl.searchParams.get("cv_key") || matchedMeta.fileKey || matchedStoredFile?.key || fallbackFileRef?.key || "")
+      ).trim();
+      const fileUrl = String(
+        shouldPreferCurrentCandidateFile
+          ? (matchedMeta.fileUrl || matchedStoredFile?.url || fallbackFileRef?.url || requestUrl.searchParams.get("cv_url") || "")
+          : (requestUrl.searchParams.get("cv_url") || matchedMeta.fileUrl || matchedStoredFile?.url || fallbackFileRef?.url || "")
+      ).trim();
+      const filename = String(
+        shouldPreferCurrentCandidateFile
+          ? (matchedMeta.filename || matchedStoredFile?.filename || fallbackFileRef?.filename || requestUrl.searchParams.get("cv_filename") || "resume.pdf")
+          : (requestUrl.searchParams.get("cv_filename") || matchedMeta.filename || matchedStoredFile?.filename || fallbackFileRef?.filename || "resume.pdf")
+      ).trim();
+      const mimeType = String(
+        shouldPreferCurrentCandidateFile
+          ? (matchedMeta.mimeType || matchedStoredFile?.mimeType || fallbackFileRef?.mimeType || requestUrl.searchParams.get("cv_mime_type") || "application/octet-stream")
+          : (requestUrl.searchParams.get("cv_mime_type") || matchedMeta.mimeType || matchedStoredFile?.mimeType || fallbackFileRef?.mimeType || "application/octet-stream")
+      ).trim();
       if (!fileProvider && !fileKey && !fileUrl) {
         throw new Error("CV file not available for sharing.");
       }

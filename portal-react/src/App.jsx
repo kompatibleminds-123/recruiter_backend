@@ -10589,8 +10589,13 @@ function PortalApp({ token, onLogout }) {
               setCapturedListItems((current) => removeCandidatesById(current, [candidateId]));
             }
           } else if (eventType === "candidate_changed") {
-            setCapturedOptionPool((current) => replaceCandidatesById(current, nextRows));
-            setCapturedListItems((current) => replaceCandidatesById(current, nextRows));
+            if (nextVisible) {
+              setCapturedOptionPool((current) => replaceCandidatesById(current, nextRows));
+              setCapturedListItems((current) => replaceCandidatesById(current, nextRows));
+            } else {
+              setCapturedOptionPool((current) => removeCandidatesById(current, [candidateId]));
+              setCapturedListItems((current) => removeCandidatesById(current, [candidateId]));
+            }
           } else if (eventType === "candidate_assigned" && nextVisible) {
             setCapturedOptionPool((current) => upsertCandidatesById(current, nextRows));
             setCapturedListItems((current) => upsertCandidatesById(current, nextRows));
@@ -10655,8 +10660,13 @@ function PortalApp({ token, onLogout }) {
                     setCapturedListItems((current) => removeCandidatesById(current, [pendingCandidateId]));
                   }
                 } else if (pendingEventType === "candidate_changed") {
-                  setCapturedOptionPool((current) => replaceCandidatesById(current, nextRows));
-                  setCapturedListItems((current) => replaceCandidatesById(current, nextRows));
+                  if (nextVisible) {
+                    setCapturedOptionPool((current) => replaceCandidatesById(current, nextRows));
+                    setCapturedListItems((current) => replaceCandidatesById(current, nextRows));
+                  } else {
+                    setCapturedOptionPool((current) => removeCandidatesById(current, [pendingCandidateId]));
+                    setCapturedListItems((current) => removeCandidatesById(current, [pendingCandidateId]));
+                  }
                 } else if (pendingEventType === "candidate_assigned" && nextVisible) {
                   setCapturedOptionPool((current) => upsertCandidatesById(current, nextRows));
                   setCapturedListItems((current) => upsertCandidatesById(current, nextRows));
@@ -12046,10 +12056,6 @@ function PortalApp({ token, onLogout }) {
           if (item.phone) params.set("candidate_phone", String(item.phone));
           if (item.email) params.set("candidate_email", String(item.email));
           if (item.jd_title) params.set("jd_title", String(item.jd_title));
-          if (item.cv_provider) params.set("cv_provider", String(item.cv_provider));
-          if (item.cv_key) params.set("cv_key", String(item.cv_key));
-          if (item.cv_url) params.set("cv_url", String(item.cv_url));
-          if (item.cv_filename) params.set("cv_filename", String(item.cv_filename));
           if (item.name) params.set("candidate_name", String(item.name));
           if (isAssessmentShareBrandedCvEnabled(item)) params.set("branded", "1");
 	          const result = await api(`/company/share-cv-link${params.toString() ? `?${params.toString()}` : ""}`, token);
