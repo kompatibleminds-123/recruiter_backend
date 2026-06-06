@@ -1729,7 +1729,17 @@ function assessmentRow(assessment, actor, companyId) {
     generatedAt: a.generatedAt || now,
     updatedAt: preserveUpdatedAt && explicitUpdatedAt ? explicitUpdatedAt : now,
     shareBrandedCv: Boolean(a.shareBrandedCv ?? a.share_branded_cv ?? a.payload?.shareBrandedCv ?? a.payload?.share_branded_cv ?? false),
-    share_branded_cv: Boolean(a.share_branded_cv ?? a.shareBrandedCv ?? a.payload?.share_branded_cv ?? a.payload?.shareBrandedCv ?? false)
+    share_branded_cv: Boolean(a.share_branded_cv ?? a.shareBrandedCv ?? a.payload?.share_branded_cv ?? a.payload?.shareBrandedCv ?? false),
+    cvProvider: String(a.cvProvider ?? a.cv_provider ?? a.payload?.cvProvider ?? a.payload?.cv_provider ?? "").trim(),
+    cv_provider: String(a.cv_provider ?? a.cvProvider ?? a.payload?.cv_provider ?? a.payload?.cvProvider ?? "").trim(),
+    cvKey: String(a.cvKey ?? a.cv_key ?? a.payload?.cvKey ?? a.payload?.cv_key ?? "").trim(),
+    cv_key: String(a.cv_key ?? a.cvKey ?? a.payload?.cv_key ?? a.payload?.cvKey ?? "").trim(),
+    cvUrl: String(a.cvUrl ?? a.cv_url ?? a.payload?.cvUrl ?? a.payload?.cv_url ?? "").trim(),
+    cv_url: String(a.cv_url ?? a.cvUrl ?? a.payload?.cv_url ?? a.payload?.cvUrl ?? "").trim(),
+    cvFilename: String(a.cvFilename ?? a.cv_filename ?? a.payload?.cvFilename ?? a.payload?.cv_filename ?? "").trim(),
+    cv_filename: String(a.cv_filename ?? a.cvFilename ?? a.payload?.cv_filename ?? a.payload?.cvFilename ?? "").trim(),
+    cvAnalysis: a.cvAnalysis ?? a.cv_analysis ?? a.payload?.cvAnalysis ?? a.payload?.cv_analysis ?? null,
+    cv_analysis: a.cv_analysis ?? a.cvAnalysis ?? a.payload?.cv_analysis ?? a.payload?.cvAnalysis ?? null
   };
   const standardQuestions = toStandardQuestionList(next.standardQuestions, next.jdScreeningAnswers);
   const standardAnswers = toStandardAnswerList(next.standardQuestions, next.jdScreeningAnswers);
