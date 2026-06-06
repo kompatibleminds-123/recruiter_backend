@@ -10421,7 +10421,19 @@ function PortalApp({ token, onLogout }) {
         const nextUsed = Boolean(nextRow?.used_in_assessment);
         const previousAssessmentId = String(previousRow?.assessment_id || previousRow?.assessmentId || "").trim();
         const nextAssessmentId = String(nextRow?.assessment_id || nextRow?.assessmentId || "").trim();
-        const membershipChanged = previousHidden !== nextHidden || previousUsed !== nextUsed || previousAssessmentId !== nextAssessmentId;
+        const previousAssignedToUserId = String(previousRow?.assigned_to_user_id || previousRow?.assignedToUserId || "").trim();
+        const nextAssignedToUserId = String(nextRow?.assigned_to_user_id || nextRow?.assignedToUserId || "").trim();
+        const previousAssignedToName = String(previousRow?.assigned_to_name || previousRow?.assignedToName || "").trim();
+        const nextAssignedToName = String(nextRow?.assigned_to_name || nextRow?.assignedToName || "").trim();
+        const previousRecruiterId = String(previousRow?.recruiter_id || previousRow?.recruiterId || "").trim();
+        const nextRecruiterId = String(nextRow?.recruiter_id || nextRow?.recruiterId || "").trim();
+        const previousRecruiterName = String(previousRow?.recruiter_name || previousRow?.recruiterName || "").trim();
+        const nextRecruiterName = String(nextRow?.recruiter_name || nextRow?.recruiterName || "").trim();
+        const assignmentChanged = previousAssignedToUserId !== nextAssignedToUserId
+          || previousAssignedToName !== nextAssignedToName
+          || previousRecruiterId !== nextRecruiterId
+          || previousRecruiterName !== nextRecruiterName;
+        const membershipChanged = previousHidden !== nextHidden || previousUsed !== nextUsed || previousAssessmentId !== nextAssessmentId || assignmentChanged;
 
         if (membershipChanged) {
           await Promise.all([
@@ -10464,9 +10476,21 @@ function PortalApp({ token, onLogout }) {
               const nextHidden = Boolean(nextRow?.hidden_from_captured);
               const previousUsed = Boolean(previousRow?.used_in_assessment);
               const nextUsed = Boolean(nextRow?.used_in_assessment);
-              const previousAssessmentId = String(previousRow?.assessment_id || previousRow?.assessmentId || "").trim();
-              const nextAssessmentId = String(nextRow?.assessment_id || nextRow?.assessmentId || "").trim();
-              const membershipChanged = previousHidden !== nextHidden || previousUsed !== nextUsed || previousAssessmentId !== nextAssessmentId;
+        const previousAssessmentId = String(previousRow?.assessment_id || previousRow?.assessmentId || "").trim();
+        const nextAssessmentId = String(nextRow?.assessment_id || nextRow?.assessmentId || "").trim();
+        const previousAssignedToUserId = String(previousRow?.assigned_to_user_id || previousRow?.assignedToUserId || "").trim();
+        const nextAssignedToUserId = String(nextRow?.assigned_to_user_id || nextRow?.assignedToUserId || "").trim();
+        const previousAssignedToName = String(previousRow?.assigned_to_name || previousRow?.assignedToName || "").trim();
+        const nextAssignedToName = String(nextRow?.assigned_to_name || nextRow?.assignedToName || "").trim();
+        const previousRecruiterId = String(previousRow?.recruiter_id || previousRow?.recruiterId || "").trim();
+        const nextRecruiterId = String(nextRow?.recruiter_id || nextRow?.recruiterId || "").trim();
+        const previousRecruiterName = String(previousRow?.recruiter_name || previousRow?.recruiterName || "").trim();
+        const nextRecruiterName = String(nextRow?.recruiter_name || nextRow?.recruiterName || "").trim();
+        const assignmentChanged = previousAssignedToUserId !== nextAssignedToUserId
+          || previousAssignedToName !== nextAssignedToName
+          || previousRecruiterId !== nextRecruiterId
+          || previousRecruiterName !== nextRecruiterName;
+        const membershipChanged = previousHidden !== nextHidden || previousUsed !== nextUsed || previousAssessmentId !== nextAssessmentId || assignmentChanged;
               if (membershipChanged) {
                 await Promise.all([
                   reloadCapturedSlice(capturedPage, safeCapturedApiPageSize, candidateFiltersApplied, capturedSortBy),
