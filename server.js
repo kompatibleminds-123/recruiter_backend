@@ -5212,13 +5212,14 @@ async function unlinkAssessmentFromCompanyCandidates(companyId, assessmentId) {
   const scopedAssessmentId = String(assessmentId || "").trim();
   const scopedCompanyId = String(companyId || "").trim();
   if (!scopedAssessmentId || !scopedCompanyId) {
-    return;
+    return [];
   }
   const candidates = await listCandidates({ companyId: scopedCompanyId, limit: 5000 });
   const linkedCandidates = (Array.isArray(candidates) ? candidates : []).filter(
     (candidate) =>
       String(candidate?.assessment_id || candidate?.assessmentId || "").trim() === scopedAssessmentId
   );
+  const changedCandidates = [];
   for (const candidate of linkedCandidates) {
     const candidateId = String(candidate?.id || "").trim();
     if (!candidateId) continue;
@@ -5228,18 +5229,21 @@ async function unlinkAssessmentFromCompanyCandidates(companyId, assessmentId) {
       // Under 1:1, deleting an assessment converted from an applied note should delete the applied note too.
       try {
         await deleteCandidate(candidateId, { companyId: scopedCompanyId });
+        changedCandidates.push({ candidateId, deleted: true });
       } catch {
         // ignore
       }
       continue;
     }
-    await patchCandidate(candidateId, {
+    const updatedCandidate = await patchCandidate(candidateId, {
       hidden_from_captured: false,
       used_in_assessment: false,
       assessment_id: null,
       updated_at: new Date().toISOString()
     }, { companyId: scopedCompanyId });
+    changedCandidates.push({ candidateId, candidate: updatedCandidate || null, deleted: false });
   }
+  return changedCandidates;
 }
 
 async function ingestApplicantSubmission(body, req) {
@@ -18027,8 +18031,28 @@ const server = http.createServer(async (req, res) => {
         companyId: actor.companyId,
         assessmentId
       });
-      await unlinkAssessmentFromCompanyCandidates(actor.companyId, assessmentId);
-      if (existing?.candidateId || existing?.candidate_id) {
+      const candidateChanges = await unlinkAssessmentFromCompanyCandidates(actor.companyId, assessmentId);
+      if (Array.isArray(candidateChanges) && candidateChanges.length) {
+        for (const change of candidateChanges) {
+          const candidateId = String(change?.candidateId || "").trim();
+          if (!candidateId) continue;
+          if (change?.deleted) {
+            emitCapturedStreamEvent(actor.companyId, "candidate_deleted", { candidateId });
+            emitApplicantStreamEvent(actor.companyId, "candidate_deleted", { candidateId });
+            continue;
+          }
+          emitCapturedStreamEvent(actor.companyId, "candidate_changed", {
+            candidateId,
+            candidate: change?.candidate || undefined,
+            assessmentId: ""
+          });
+          emitApplicantStreamEvent(actor.companyId, "candidate_changed", {
+            candidateId,
+            candidate: change?.candidate || undefined,
+            assessmentId: ""
+          });
+        }
+      } else if (existing?.candidateId || existing?.candidate_id) {
         emitCapturedStreamEvent(actor.companyId, "candidate_changed", {
           candidateId: String(existing?.candidateId || existing?.candidate_id || "").trim(),
           assessmentId: ""
