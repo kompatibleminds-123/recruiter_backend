@@ -10567,13 +10567,37 @@ function PortalApp({ token, onLogout }) {
           : await api(`/candidates?id=${encodeURIComponent(candidateId)}&scope=company&limit=1`, token);
         const nextRows = Array.isArray(rows) ? rows : [];
         const nextRow = nextRows && nextRows.length ? nextRows[0] : null;
+        const previousRow = (state.candidates || []).find((item) => String(item?.id || "") === candidateId) || null;
+        const previousHidden = Boolean(previousRow?.hidden_from_captured);
+        const nextHidden = Boolean(nextRow?.hidden_from_captured);
+        const hiddenChanged = previousHidden !== nextHidden;
         const nextVisible = nextRow ? isCapturedRowVisibleInCurrentView(nextRow, candidateFiltersApplied, state.user) : false;
         if (nextRow) {
           setState((current) => ({
             ...current,
             candidates: replaceCandidatesById(current.candidates, nextRows)
           }));
-          if (nextVisible) {
+          if (eventType === "candidate_attempt") {
+            setCapturedOptionPool((current) => replaceCandidatesById(current, nextRows));
+            setCapturedListItems((current) => replaceCandidatesById(current, nextRows));
+          } else if (eventType === "candidate_changed" && hiddenChanged) {
+            if (nextVisible) {
+              setCapturedOptionPool((current) => upsertCandidatesById(current, nextRows));
+              setCapturedListItems((current) => upsertCandidatesById(current, nextRows));
+            } else {
+              setCapturedOptionPool((current) => removeCandidatesById(current, [candidateId]));
+              setCapturedListItems((current) => removeCandidatesById(current, [candidateId]));
+            }
+          } else if (eventType === "candidate_changed") {
+            setCapturedOptionPool((current) => replaceCandidatesById(current, nextRows));
+            setCapturedListItems((current) => replaceCandidatesById(current, nextRows));
+          } else if (eventType === "candidate_assigned" && nextVisible) {
+            setCapturedOptionPool((current) => upsertCandidatesById(current, nextRows));
+            setCapturedListItems((current) => upsertCandidatesById(current, nextRows));
+          } else if (eventType === "candidate_assigned") {
+            setCapturedOptionPool((current) => removeCandidatesById(current, [candidateId]));
+            setCapturedListItems((current) => removeCandidatesById(current, [candidateId]));
+          } else if (nextVisible) {
             setCapturedOptionPool((current) => upsertCandidatesById(current, nextRows));
             setCapturedListItems((current) => upsertCandidatesById(current, nextRows));
           } else {
@@ -10609,13 +10633,37 @@ function PortalApp({ token, onLogout }) {
               const rows = await api(`/candidates?id=${encodeURIComponent(pendingCandidateId)}&scope=company&limit=1`, token);
               const nextRows = Array.isArray(rows) ? rows : [];
               const nextRow = nextRows && nextRows.length ? nextRows[0] : null;
+              const previousRow = (state.candidates || []).find((item) => String(item?.id || "") === pendingCandidateId) || null;
+              const previousHidden = Boolean(previousRow?.hidden_from_captured);
+              const nextHidden = Boolean(nextRow?.hidden_from_captured);
+              const hiddenChanged = previousHidden !== nextHidden;
               const nextVisible = nextRow ? isCapturedRowVisibleInCurrentView(nextRow, candidateFiltersApplied, state.user) : false;
               if (nextRow) {
                 setState((current) => ({
                   ...current,
                   candidates: replaceCandidatesById(current.candidates, nextRows)
                 }));
-                if (nextVisible) {
+                if (pendingEventType === "candidate_attempt") {
+                  setCapturedOptionPool((current) => replaceCandidatesById(current, nextRows));
+                  setCapturedListItems((current) => replaceCandidatesById(current, nextRows));
+                } else if (pendingEventType === "candidate_changed" && hiddenChanged) {
+                  if (nextVisible) {
+                    setCapturedOptionPool((current) => upsertCandidatesById(current, nextRows));
+                    setCapturedListItems((current) => upsertCandidatesById(current, nextRows));
+                  } else {
+                    setCapturedOptionPool((current) => removeCandidatesById(current, [pendingCandidateId]));
+                    setCapturedListItems((current) => removeCandidatesById(current, [pendingCandidateId]));
+                  }
+                } else if (pendingEventType === "candidate_changed") {
+                  setCapturedOptionPool((current) => replaceCandidatesById(current, nextRows));
+                  setCapturedListItems((current) => replaceCandidatesById(current, nextRows));
+                } else if (pendingEventType === "candidate_assigned" && nextVisible) {
+                  setCapturedOptionPool((current) => upsertCandidatesById(current, nextRows));
+                  setCapturedListItems((current) => upsertCandidatesById(current, nextRows));
+                } else if (pendingEventType === "candidate_assigned") {
+                  setCapturedOptionPool((current) => removeCandidatesById(current, [pendingCandidateId]));
+                  setCapturedListItems((current) => removeCandidatesById(current, [pendingCandidateId]));
+                } else if (nextVisible) {
                   setCapturedOptionPool((current) => upsertCandidatesById(current, nextRows));
                   setCapturedListItems((current) => upsertCandidatesById(current, nextRows));
                 } else {
@@ -15325,15 +15373,18 @@ function PortalApp({ token, onLogout }) {
     setStatus(statusKey, "Converting draft into assessment...");
     try {
       const saved = await api("/company/assessments", token, "POST", { assessment });
+      const savedAssessment = saved && typeof saved === "object" ? saved : assessment;
+      const savedAssessmentId = String(savedAssessment?.id || assessment?.id || "").trim();
+      const assessmentLandsInCurrentLane = assessmentLane !== "archived";
       // Avoid blocking the UI on a full workspace reload (which can be slow with large datasets).
       // Optimistically update local state, then refresh in the background.
       setState((current) => {
         const nextAssessments = Array.isArray(current.assessments) ? [...current.assessments] : [];
-        const savedId = String(saved?.id || assessment?.id || "").trim();
+        const savedId = savedAssessmentId;
         if (savedId) {
           const existingIx = nextAssessments.findIndex((a) => String(a?.id || "").trim() === savedId);
           if (existingIx >= 0) nextAssessments.splice(existingIx, 1);
-          nextAssessments.unshift(saved);
+          nextAssessments.unshift(savedAssessment);
         }
         const nextCandidates = Array.isArray(current.candidates)
           ? current.candidates.map((item) => {
@@ -15343,10 +15394,45 @@ function PortalApp({ token, onLogout }) {
                 assessment_id: savedId || item.assessment_id,
                 used_in_assessment: true
               };
-            })
+          })
           : current.candidates;
         return { ...current, assessments: nextAssessments, candidates: nextCandidates };
       });
+      if (assessmentLandsInCurrentLane && savedAssessmentId) {
+        setAssessmentListItems((current) => {
+          const next = Array.isArray(current) ? current.filter((item) => String(item?.id || "").trim() !== savedAssessmentId) : [];
+          next.unshift(savedAssessment);
+          return next;
+        });
+        setAssessmentOptionPool((current) => {
+          const next = Array.isArray(current) ? current.filter((item) => String(item?.id || "").trim() !== savedAssessmentId) : [];
+          next.unshift(savedAssessment);
+          return next;
+        });
+        setAssessmentListMeta((current) => {
+          const meta = current && typeof current === "object" ? current : {};
+          const nextTotal = Math.max(0, Number(meta.total || 0) + 1);
+          const limit = Math.max(1, Number(meta.limit || safeAssessmentApiPageSize || 25));
+          const nextTotalPages = Math.max(1, Math.ceil(nextTotal / limit));
+          return {
+            ...meta,
+            total: nextTotal,
+            totalPages: nextTotalPages,
+            page: 1,
+            limit
+          };
+        });
+        setAssessmentStatsSnapshot((current) => {
+          if (!current || typeof current !== "object") return current;
+          return {
+            ...current,
+            today: Math.max(0, Number(current.today || 0) + 1),
+            total: Math.max(0, Number(current.total || 0) + 1),
+            active: Math.max(0, Number(current.active || 0) + 1)
+          };
+        });
+        setAssessmentPage(1);
+      }
       if (capturedCandidateId) {
         setCapturedListItems((current) => removeFromCapturedCaches(current));
         setCapturedOptionPool((current) => removeFromCapturedCaches(current));
