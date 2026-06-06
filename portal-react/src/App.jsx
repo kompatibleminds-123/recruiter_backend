@@ -2409,6 +2409,22 @@ function replaceCandidatesById(currentList = [], incomingList = []) {
   return Array.from(byId.values());
 }
 
+function upsertCandidatesById(currentList = [], incomingList = []) {
+  const current = Array.isArray(currentList) ? currentList : [];
+  const incoming = Array.isArray(incomingList) ? incomingList : [];
+  const byId = new Map();
+  current.forEach((item) => {
+    const id = String(item?.id || "").trim();
+    if (id) byId.set(id, item);
+  });
+  incoming.forEach((item) => {
+    const id = String(item?.id || "").trim();
+    if (!id) return;
+    byId.set(id, item);
+  });
+  return Array.from(byId.values());
+}
+
 function removeCandidatesById(currentList = [], ids = []) {
   const current = Array.isArray(currentList) ? currentList : [];
   const removeSet = new Set((Array.isArray(ids) ? ids : []).map((value) => String(value || "").trim()).filter(Boolean));
@@ -10563,8 +10579,8 @@ function PortalApp({ token, onLogout }) {
             setCapturedOptionPool((current) => removeCandidatesById(current, [candidateId]));
             setCapturedListItems((current) => removeCandidatesById(current, [candidateId]));
           } else if (String(location?.pathname || "").trim() === "/captured-notes" && shouldTreatAsRowPatch && nextVisible) {
-            setCapturedOptionPool((current) => replaceCandidatesById(current, nextRows));
-            setCapturedListItems((current) => replaceCandidatesById(current, nextRows));
+            setCapturedOptionPool((current) => upsertCandidatesById(current, nextRows));
+            setCapturedListItems((current) => upsertCandidatesById(current, nextRows));
           } else {
             setCapturedOptionPool((current) => removeCandidatesById(current, [candidateId]));
             setCapturedListItems((current) => removeCandidatesById(current, [candidateId]));
@@ -10639,8 +10655,8 @@ function PortalApp({ token, onLogout }) {
                   setCapturedOptionPool((current) => removeCandidatesById(current, [pendingCandidateId]));
                   setCapturedListItems((current) => removeCandidatesById(current, [pendingCandidateId]));
                 } else if (nextVisible) {
-                  setCapturedOptionPool((current) => replaceCandidatesById(current, nextRows));
-                  setCapturedListItems((current) => replaceCandidatesById(current, nextRows));
+                  setCapturedOptionPool((current) => upsertCandidatesById(current, nextRows));
+                  setCapturedListItems((current) => upsertCandidatesById(current, nextRows));
                 } else {
                   setCapturedOptionPool((current) => removeCandidatesById(current, [pendingCandidateId]));
                   setCapturedListItems((current) => removeCandidatesById(current, [pendingCandidateId]));
