@@ -21828,7 +21828,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                   (!visibleApplicants.length && !applicantListLoading)
                     ? <div className="empty-state">No applied candidates right now.</div>
                     : visibleApplicants.map((item) => (
-                  <article className="item-card compact-card captured-note-card" key={item.id}>
+                  <article className={`item-card compact-card captured-note-card${item.hidden_from_captured ? " captured-note-card--inactive" : ""}`} key={item.id}>
                     {String(state.user?.role || "").toLowerCase() === "admin" ? (
                       <label className="captured-top-select captured-top-select--card">
                         <input
@@ -21848,6 +21848,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                       <div className="captured-note-col captured-note-col--profile">
                         <div className="captured-note-title-row">
                           <h3>{item.candidateName || item.name || item.candidate_name || "Applicant"}</h3>
+                          {item.hidden_from_captured ? <span className="captured-note-status-pill captured-note-status-pill--inactive">Inactive</span> : null}
                         </div>
                         <div className="captured-note-subtitle">{item.jdTitle || "Untitled role"}</div>
                         <div className="captured-note-detail-list captured-note-profile-meta">
