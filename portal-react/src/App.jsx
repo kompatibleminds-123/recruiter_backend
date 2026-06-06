@@ -2532,9 +2532,23 @@ function isCapturedRowOwnedByCurrentView(row = {}, user = null) {
   const capturedName = String(row?.recruiter_name || row?.recruiterName || "").trim().toLowerCase();
   const assignedId = String(row?.assigned_to_user_id || row?.assignedToUserId || "").trim();
   const assignedName = String(row?.assigned_to_name || row?.assignedToName || "").trim().toLowerCase();
+  const compact = (value) => String(value || "").trim().toLowerCase().replace(/\s+/g, " ");
+  const firstToken = (value) => String(value || "").trim().toLowerCase().split(/\s+/).filter(Boolean)[0] || "";
+  const namesLooselyMatch = (left, right) => {
+    const a = compact(left);
+    const b = compact(right);
+    if (!a || !b) return false;
+    if (a === b) return true;
+    const aFirst = firstToken(a);
+    const bFirst = firstToken(b);
+    return Boolean(
+      (aFirst && aFirst === bFirst) ||
+      (a && b && (a.startsWith(b) || b.startsWith(a) || a.includes(b) || b.includes(a)))
+    );
+  };
   return Boolean(
     (currentUserId && (capturedId === currentUserId || assignedId === currentUserId)) ||
-    (currentUserName && (capturedName === currentUserName || assignedName === currentUserName))
+    (currentUserName && (namesLooselyMatch(capturedName, currentUserName) || namesLooselyMatch(assignedName, currentUserName)))
   );
 }
 
