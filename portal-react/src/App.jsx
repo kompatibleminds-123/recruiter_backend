@@ -22432,7 +22432,11 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                 <label><span>Date to</span><input type="date" value={assessmentFilters.dateTo} onChange={(e) => setAssessmentFilters((current) => ({ ...current, dateTo: e.target.value }))} /></label>
                 <label>
                   <span>State</span>
-                  <select value={assessmentLane} onChange={(e) => setAssessmentLane(e.target.value)}>
+                  <select value={assessmentLane} onChange={(e) => {
+                    setAssessmentListLoading(true);
+                    setAssessmentLane(e.target.value);
+                    setAssessmentPage(1);
+                  }}>
                     <option value="active">Active</option>
                     <option value="archived">Archived</option>
                   </select>
@@ -22454,6 +22458,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
               <div className="button-row tight" style={{ marginTop: 8 }}>
                 <button
                   onClick={() => {
+                    setAssessmentListLoading(true);
                     setAssessmentPage(1);
                     setAssessmentFiltersApplied({
                       ...assessmentFilters,
@@ -22469,6 +22474,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                 <button
                   className="ghost-btn"
                   onClick={() => {
+                    setAssessmentListLoading(true);
                     const reset = {
                       q: "",
                       dateFrom: "",
@@ -22511,6 +22517,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                       value={assessmentSortBy}
                       onChange={(e) => {
                         const nextSort = String(e.target.value || "updated").trim() || "updated";
+                        setAssessmentListLoading(true);
                         setAssessmentSortBy(nextSort);
                         setAssessmentPage(1);
                       }}
@@ -22525,6 +22532,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                       value={safeAssessmentApiPageSize}
                       onChange={(e) => {
                         const nextSize = Number(e.target.value || 25);
+                        setAssessmentListLoading(true);
                         setAssessmentPageSize([10, 25, 50].includes(nextSize) ? nextSize : 25);
                         setAssessmentPage(1);
                       }}
@@ -22534,12 +22542,34 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                       <option value={50}>50</option>
                     </select>
                   </label>
-                  <button className="ghost-btn" disabled={assessmentPage <= 1} onClick={() => setAssessmentPage((page) => Math.max(1, page - 1))}>Previous</button>
+                  <button className="ghost-btn" disabled={assessmentPage <= 1} onClick={() => { setAssessmentListLoading(true); setAssessmentPage((page) => Math.max(1, page - 1)); }}>Previous</button>
                   <div className="muted">Page {assessmentPage} of {totalAssessmentPages}</div>
-                  <button className="ghost-btn" disabled={assessmentPage >= totalAssessmentPages} onClick={() => setAssessmentPage((page) => Math.min(totalAssessmentPages, page + 1))}>Next</button>
+                  <button className="ghost-btn" disabled={assessmentPage >= totalAssessmentPages} onClick={() => { setAssessmentListLoading(true); setAssessmentPage((page) => Math.min(totalAssessmentPages, page + 1)); }}>Next</button>
                 </div>
               </div>
-              <div className="stack-list">
+              <div className="stack-list" style={{ position: "relative", minHeight: 220 }}>
+                {assessmentListLoading ? (
+                  <div
+                    aria-hidden="true"
+                    style={{
+                      position: "absolute",
+                      inset: 0,
+                      zIndex: 2,
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      borderRadius: 18,
+                      background: "rgba(248, 250, 252, 0.72)",
+                      backdropFilter: "blur(3px)",
+                      pointerEvents: "none"
+                    }}
+                  >
+                    <div className="empty-state" style={{ margin: 0, boxShadow: "0 8px 24px rgba(15,23,42,0.08)" }}>
+                      Loading assessments...
+                    </div>
+                  </div>
+                ) : null}
+                <div style={{ opacity: assessmentListLoading ? 0.35 : 1, filter: assessmentListLoading ? "blur(1px)" : "none", transition: "opacity 150ms ease, filter 150ms ease" }}>
                 {workspaceDataReady ? (
                   !(Array.isArray(pagedAssessments) && pagedAssessments.length) ? <div className="empty-state">No assessments saved yet.</div> : pagedAssessments.map((item) => (
                   <article className={`item-card compact-card assessment-card ${selectedAssessmentIds.includes(String(item.id)) ? "selected-card" : ""}`} key={item.id}>
@@ -22794,6 +22824,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                   </article>
                   ))
                 ) : <div className="empty-state">Loading assessments...</div>}
+                </div>
               </div>
             </Section>
           } />
