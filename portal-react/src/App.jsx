@@ -13698,42 +13698,43 @@ function PortalApp({ token, onLogout }) {
       setStatus("applicants", "Applicant not found for draft view.", "error");
       return;
     }
+    const applicantView = normalizeApplicantVisibleRow(applicant);
     const linkedCandidate = (state.candidates || []).find((item) => String(item.id) === String(applicant.id || "")) || null;
     if (linkedCandidate) {
       loadCandidateIntoInterview(String(linkedCandidate.id || ""));
       return;
     }
-    const applicantDraft = getCandidateDraftState(applicant || {});
+    const applicantDraft = getCandidateDraftState(applicantView || {});
     setInterviewLatestLoading(false);
     setInterviewMeta({
       candidateId: String(applicant.id || ""),
       assessmentId: ""
     });
     setInterviewForm({
-      candidateName: applicantDraft.candidateName || applicant.candidateName || "",
-      phoneNumber: applicantDraft.phoneNumber || applicant.phone || "",
-      emailId: applicantDraft.emailId || applicant.email || "",
-      linkedin: applicantDraft.linkedin || applicant.linkedin || "",
-      location: applicantDraft.location || applicant.location || "",
-      gender: applicantDraft.gender || applicant.gender || "",
-      currentCtc: applicantDraft.currentCtc || applicant.currentCtc || "",
-      expectedCtc: applicantDraft.expectedCtc || applicant.expectedCtc || "",
-      noticePeriod: applicantDraft.noticePeriod || applicant.noticePeriod || "",
-      offerInHand: applicantDraft.offerInHand || applicant.offerInHand || "",
-      lwdOrDoj: applicantDraft.lwdOrDoj || applicant.lwdOrDoj || "",
-      currentCompany: applicantDraft.currentCompany || applicant.currentCompany || "",
-      currentDesignation: applicantDraft.currentDesignation || applicant.currentDesignation || "",
-      totalExperience: applicantDraft.totalExperience || applicant.totalExperience || "",
-      relevantExperience: applicantDraft.relevantExperience || applicant.relevantExperience || "",
-      highestEducation: applicantDraft.highestEducation || applicant.highestEducation || "",
-      currentOrgTenure: applicantDraft.currentOrgTenure || applicant.current_org_tenure || applicant.currentOrgTenure || "",
+      candidateName: applicantDraft.candidateName || applicantView.candidateName || applicantView.name || "",
+      phoneNumber: applicantDraft.phoneNumber || applicantView.phone || applicantView.phoneNumber || "",
+      emailId: applicantDraft.emailId || applicantView.email || applicantView.emailId || "",
+      linkedin: applicantDraft.linkedin || applicantView.linkedin || applicantView.linkedinUrl || "",
+      location: applicantDraft.location || applicantView.location || "",
+      gender: applicantDraft.gender || applicantView.gender || "",
+      currentCtc: applicantDraft.currentCtc || applicantView.currentCtc || applicantView.current_ctc || "",
+      expectedCtc: applicantDraft.expectedCtc || applicantView.expectedCtc || applicantView.expected_ctc || "",
+      noticePeriod: applicantDraft.noticePeriod || applicantView.noticePeriod || applicantView.notice_period || "",
+      offerInHand: applicantDraft.offerInHand || applicantView.offerInHand || applicantView.offer_in_hand || "",
+      lwdOrDoj: applicantDraft.lwdOrDoj || applicantView.lwdOrDoj || applicantView.lwd_or_doj || "",
+      currentCompany: applicantDraft.currentCompany || applicantView.currentCompany || applicantView.company || "",
+      currentDesignation: applicantDraft.currentDesignation || applicantView.currentDesignation || applicantView.role || "",
+      totalExperience: applicantDraft.totalExperience || applicantView.totalExperience || applicantView.total_experience || "",
+      relevantExperience: applicantDraft.relevantExperience || applicantView.relevantExperience || applicantView.relevant_experience || "",
+      highestEducation: applicantDraft.highestEducation || applicantView.highestEducation || applicantView.highest_education || "",
+      currentOrgTenure: applicantDraft.currentOrgTenure || applicantView.current_org_tenure || applicantView.currentOrgTenure || "",
       experienceTimeline: "",
-      reasonForChange: applicantDraft.reasonForChange || applicant.reasonForChange || "",
+      reasonForChange: applicantDraft.reasonForChange || applicantView.reasonForChange || "",
       cautiousIndicators: applicantDraft.cautiousIndicators || "",
-      clientName: applicantDraft.clientName || applicant.clientName || "",
-      jdTitle: applicantDraft.jdTitle || applicant.jdTitle || "",
+      clientName: applicantDraft.clientName || applicantView.clientName || applicantView.client_name || "",
+      jdTitle: applicantDraft.jdTitle || applicantView.jdTitle || applicantView.jd_title || "",
       pipelineStage: "Submitted",
-      candidateStatus: applicant.parseStatus || "Applied",
+      candidateStatus: applicantView.parseStatus || applicantView.parse_status || "Applied",
       followUpAt: toDateInputValue(applicantDraft.followUpAt || ""),
       interviewAt: "",
       recruiterNotes: "",
@@ -13745,7 +13746,7 @@ function PortalApp({ token, onLogout }) {
       cvAnalysisApplied: Boolean(applicantDraft.cvAnalysisApplied)
     });
     navigate("/interview");
-    setStatus("interview", `Loaded ${applicant.candidateName || "applicant"} into Interview Panel.`, "ok");
+    setStatus("interview", `Loaded ${applicantView.candidateName || applicantView.name || "applicant"} into Interview Panel.`, "ok");
   }
 
   async function saveCapturedAssignment({ recruiterId, jdId, jdTitle, clientName, targetIds = [] }) {
@@ -13787,7 +13788,9 @@ function PortalApp({ token, onLogout }) {
         return {
           ...current,
           candidates: applyPatch(current.candidates),
-          databaseCandidates: applyPatch(current.databaseCandidates)
+          databaseCandidates: applyPatch(current.databaseCandidates),
+          applicants: applyPatch(current.applicants),
+          applicantListItems: applyPatch(current.applicantListItems)
         };
       });
       if (String(location?.pathname || "").trim() === "/captured-notes") {
@@ -13866,7 +13869,13 @@ function PortalApp({ token, onLogout }) {
     setState((current) => ({
       ...current,
       candidates: applyPatch(current.candidates),
-      databaseCandidates: applyPatch(current.databaseCandidates)
+      databaseCandidates: applyPatch(current.databaseCandidates),
+      applicants: String(location?.pathname || "").trim() === "/applicants"
+        ? applyPatch(current.applicants)
+        : current.applicants,
+      applicantListItems: String(location?.pathname || "").trim() === "/applicants"
+        ? applyPatch(current.applicantListItems)
+        : current.applicantListItems
     }));
     if (String(location?.pathname || "").trim() === "/captured-notes") {
       setCapturedListItems((current) => applyPatch(current));
@@ -21943,10 +21952,24 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                       )}
                       {state.user?.role === "admin" ? <button className="captured-action-danger" onClick={() => void removeApplicant(item.id)}>Remove</button> : null}
                     </div>
-                    {String(item.screeningAnswers || "").trim() ? (
-                      <details className="captured-note-summary-bar">
-                        <summary>
-                          <span className="captured-note-summary-badge">Remarks</span>
+                      {String(item.screeningAnswers || "").trim() || String(item.lastContactOutcome || item.last_contact_outcome || item.status || "").trim() ? (
+                        <div className="status-note" style={{ marginTop: 10 }}>
+                          {(() => {
+                            const statusText = String(getApplicantWorkflowOutcome(item, applicantCandidateMap.get(String(item.id)) || null) || "").trim();
+                            const remarksText = normalizeMojibakeSymbols(String(item.screeningAnswers || "").trim());
+                            return (
+                              <>
+                                <strong>{`Status: ${statusText || "NA"}`}</strong>
+                                {remarksText ? <span>{` | Remarks: ${remarksText}`}</span> : null}
+                              </>
+                            );
+                          })()}
+                        </div>
+                      ) : null}
+                      {String(item.screeningAnswers || "").trim() ? (
+                        <details className="captured-note-summary-bar">
+                          <summary>
+                            <span className="captured-note-summary-badge">Remarks</span>
                           <span className="captured-note-summary-preview">{(() => {
                             const text = normalizeMojibakeSymbols(String(item.screeningAnswers || "").trim());
                             const clip = 180;
