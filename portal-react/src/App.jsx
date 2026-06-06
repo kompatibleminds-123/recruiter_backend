@@ -21851,7 +21851,6 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                       <div className="captured-note-col captured-note-col--profile">
                         <div className="captured-note-title-row">
                           <h3>{item.candidateName || item.name || item.candidate_name || "Applicant"}</h3>
-                          {applicantIsHidden ? <span className="captured-note-status-pill captured-note-status-pill--inactive">Inactive</span> : null}
                         </div>
                         <div className="captured-note-subtitle">{item.jdTitle || "Untitled role"}</div>
                         <div className="captured-note-detail-list captured-note-profile-meta">
