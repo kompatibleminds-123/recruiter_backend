@@ -3198,6 +3198,18 @@ function decodeHtmlEntities(value = "") {
   }
 }
 
+function htmlToPlainTextFallback(html) {
+  const decoded = decodeHtmlEntities(html);
+  return String(decoded || "")
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<\/p>\s*<p[^>]*>/gi, "\n")
+    .replace(/<\/div>\s*<div[^>]*>/gi, "\n")
+    .replace(/<[^>]*>/g, " ")
+    .replace(/\n{3,}/g, "\n\n")
+    .replace(/[ \t]{2,}/g, " ")
+    .trim();
+}
+
 function looksLikeHtmlSignature(value = "") {
   const raw = String(value || "").trim();
   if (!raw) return false;
@@ -3210,7 +3222,7 @@ function normalizeLoadedSignatureValue(signatureHtml = "", signatureText = "") {
   if (rawHtml) {
     return {
       signatureHtml: rawHtml,
-      signatureText: htmlToPlainText(rawHtml)
+      signatureText: htmlToPlainTextFallback(rawHtml)
     };
   }
   if (!rawText) {
@@ -3220,7 +3232,7 @@ function normalizeLoadedSignatureValue(signatureHtml = "", signatureText = "") {
     const decoded = decodeHtmlEntities(rawText);
     return {
       signatureHtml: decoded,
-      signatureText: htmlToPlainText(decoded)
+      signatureText: htmlToPlainTextFallback(decoded)
     };
   }
   return {
