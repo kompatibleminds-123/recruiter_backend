@@ -9049,14 +9049,22 @@ function PortalApp({ token, onLogout }) {
             joined_candidates: Number(snapshot.joined_candidates || snapshot.joinedCandidates || 0),
             cv_shared: Number(snapshot.cv_shared || snapshot.cvShared || 0)
           };
-          candidateSmartChipSummaryStableRef.current = normalized;
-          setCandidateSmartChipSummary(normalized);
+          const summaryValues = Object.values(normalized);
+          const isAllZero = summaryValues.every((value) => Number(value) === 0);
+          const hasRealRows = Number(result?.total || 0) > 0;
+          const nextSummary = (isAllZero && hasRealRows && candidateSmartChipSummaryStableRef.current)
+            ? candidateSmartChipSummaryStableRef.current
+            : normalized;
+          candidateSmartChipSummaryStableRef.current = nextSummary;
+          setCandidateSmartChipSummary(nextSummary);
           if (typeof window !== "undefined" && candidateSmartChipSummaryCacheKey) {
             try {
-              window.localStorage.setItem(candidateSmartChipSummaryCacheKey, JSON.stringify({
-                summary: normalized,
-                generatedAt: result?.generatedAt || new Date().toISOString()
-              }));
+              if (!(isAllZero && hasRealRows && candidateSmartChipSummaryStableRef.current && candidateSmartChipSummaryStableRef.current !== normalized)) {
+                window.localStorage.setItem(candidateSmartChipSummaryCacheKey, JSON.stringify({
+                  summary: nextSummary,
+                  generatedAt: result?.generatedAt || new Date().toISOString()
+                }));
+              }
             } catch {
               // Ignore storage issues and keep the in-memory snapshot.
             }
@@ -22470,7 +22478,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                       .map((chip) => {
                         const rows = candidateSmartChipRows[chip.id] || [];
                         const summaryCount = Number(candidateSmartChipSummary?.[chip.id]);
-                        const chipCount = Number.isFinite(summaryCount) ? summaryCount : rows.length;
+                        const chipCount = Number.isFinite(summaryCount) && summaryCount > 0 ? summaryCount : rows.length;
                         return (
                           <article key={chip.id} className="item-card compact-card candidate-smart-section">
                             <div className="candidate-smart-head">
