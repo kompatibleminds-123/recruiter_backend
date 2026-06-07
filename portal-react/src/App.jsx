@@ -2368,7 +2368,7 @@ function buildAssessmentJourneyEntries(assessment, contactAttempts = [], candida
   const candidateCreatedAt = candidate?.created_at || candidate?.createdAt || "";
   if (candidateCreatedAt) {
     const sourceValue = String(candidate?.source || "").trim();
-    const isApplied = ["website_apply", "hosted_apply", "google_sheet"].includes(sourceValue);
+    const isApplied = ["website_apply", "hosted_apply", "google_sheet", "website", "hosted"].includes(sourceValue);
     pushJourneyEntry({
       at: candidateCreatedAt,
       text: `${isApplied ? "Applied" : "Captured note created"}${sourceValue ? ` | ${sourceValue}` : ""}`
@@ -2641,7 +2641,7 @@ function isCapturedRowVisibleInCurrentView(row = {}, filters = {}, user = null) 
   const currentUserId = String(user?.id || "").trim();
   const currentUserName = String(user?.name || "").trim().toLowerCase();
   const sourceValue = String(row?.source || "").trim();
-  if (["website_apply", "hosted_apply", "google_sheet"].includes(sourceValue)) return false;
+  if (["website_apply", "hosted_apply", "google_sheet", "website", "hosted"].includes(sourceValue)) return false;
   const isConverted = Boolean(row?.used_in_assessment) || Boolean(String(row?.assessment_id || row?.assessmentId || "").trim());
   const isHidden = row?.hidden_from_captured === true;
   const stateValue = isHidden ? "Inactive" : (isConverted ? "Converted" : "Active");
@@ -12819,7 +12819,7 @@ function PortalApp({ token, onLogout }) {
     for (const item of capturedOptionPool || []) {
       const matchedAssessment = resolveCapturedAssessment(item);
       const sourceValue = String(item.source || "").trim();
-      const isInboundApplicant = sourceValue === "website_apply" || sourceValue === "hosted_apply" || sourceValue === "google_sheet";
+      const isInboundApplicant = ["website_apply", "hosted_apply", "google_sheet", "website", "hosted"].includes(sourceValue);
       if (isInboundApplicant) continue;
       if (matchedAssessment) continue;
       const clientValue = String(item.client_name || matchedAssessment?.clientName || "Unassigned").trim();
@@ -12887,7 +12887,7 @@ function PortalApp({ token, onLogout }) {
 
     return (state.candidates || []).filter((item) => {
       const sourceValue = String(item.source || "").trim();
-      const isInboundApplicant = sourceValue === "website_apply" || sourceValue === "hosted_apply" || sourceValue === "google_sheet";
+      const isInboundApplicant = ["website_apply", "hosted_apply", "google_sheet", "website", "hosted"].includes(sourceValue);
       if (isInboundApplicant) return false;
       if (isAdmin) return true;
       return isMine(item);
@@ -21121,7 +21121,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
     ? Number(capturedNotesStats.active || 0)
     : (state.candidates || []).filter((item) => {
         const sourceValue = String(item.source || "").trim();
-        if (["website_apply", "hosted_apply", "google_sheet"].includes(sourceValue)) return false;
+        if (["website_apply", "hosted_apply", "google_sheet", "website", "hosted"].includes(sourceValue)) return false;
         const matchedAssessment = resolveCapturedAssessment(item);
         if (matchedAssessment) return false;
         return !item.hidden_from_captured;

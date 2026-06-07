@@ -3447,6 +3447,11 @@ function normalizeApplicantFilterOptions(raw = {}) {
   };
 }
 
+function isInboundApplicantSourceValue(value = "") {
+  const source = String(value || "").trim().toLowerCase();
+  return ["website_apply", "hosted_apply", "google_sheet", "website", "hosted"].includes(source);
+}
+
 function normalizeJdMatchKey(value = "") {
   return String(value || "")
     .trim()
@@ -3507,7 +3512,7 @@ function matchApplicantState(candidate = {}, activeStates = []) {
 
 function applyApplicantFiltersLocal(row = {}, filters = {}, includeConverted = true) {
   const source = String(row?.source || "").trim().toLowerCase();
-  if (!["website_apply", "hosted_apply", "google_sheet"].includes(source)) return false;
+  if (!isInboundApplicantSourceValue(source)) return false;
   const isConverted = Boolean(row?.used_in_assessment) || Boolean(String(row?.assessment_id || row?.assessmentId || "").trim());
   if (!includeConverted && isConverted) return false;
   if (!matchApplicantState(row, filters.activeStates || [])) return false;
@@ -3572,7 +3577,7 @@ async function listApplicantsForUser(user, options = {}) {
   const companyId = String(user?.companyId || "").trim();
   const actorId = String(user?.id || "").trim();
   const actorIsAdmin = String(user?.role || "").toLowerCase() === "admin";
-  const sources = ["website_apply", "hosted_apply", "google_sheet"];
+  const sources = ["website_apply", "hosted_apply", "google_sheet", "website", "hosted"];
 
   if (on && companyId) {
     const baseFilterParts = [
@@ -3686,7 +3691,7 @@ async function getApplicantStatsForUser(user, options = {}) {
   const companyId = String(user?.companyId || "").trim();
   const actorId = String(user?.id || "").trim();
   const actorIsAdmin = String(user?.role || "").toLowerCase() === "admin";
-  const sources = ["website_apply", "hosted_apply", "google_sheet"];
+  const sources = ["website_apply", "hosted_apply", "google_sheet", "website", "hosted"];
   const todayKey = new Date().toISOString().slice(0, 10);
 
   const buildBaseQueryParts = () => {
@@ -3785,7 +3790,7 @@ function normalizeCapturedFilterOptions(raw = {}) {
 
 function isCapturedCandidateRow(row = {}) {
   const source = String(row?.source || "").trim().toLowerCase();
-  return !["website_apply", "hosted_apply", "google_sheet"].includes(source);
+  return !isInboundApplicantSourceValue(source);
 }
 
 function applyCapturedFiltersLocal(row = {}, filters = {}, user = null) {
@@ -3898,7 +3903,7 @@ async function listCapturedForUser(user, options = {}) {
     const baseFilterParts = [
       "select=*",
       `company_id=eq.${encodeURIComponent(companyId)}`,
-      "or=(source.is.null,source.not.in.(website_apply,hosted_apply,google_sheet))"
+      "or=(source.is.null,source.not.in.(website_apply,hosted_apply,google_sheet,website,hosted))"
     ];
     if (!actorIsAdmin) {
       if (actorId) {
