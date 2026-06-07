@@ -507,13 +507,6 @@ const SHORTCUT_TEMPLATE_PLACEHOLDERS = [
   "{{recruiter_jd_link}}"
 ];
 
-const SUGGESTED_SHORTCUT_TEMPLATES = {
-  "/intro": "Hi {{name}}, this is {{recruiter_name}} from {{company_name}} regarding {{jd_title}}.",
-  "/followup": "Hi {{name}}, following up on {{jd_title}}. Please share an update when convenient.",
-  "/schedule": "Hi {{name}}, can we connect for {{jd_title}} on {{interview_at}}?",
-  "/jdshare": "Sharing JD for {{jd_title}}. Recruiter: {{recruiter_name}} | {{recruiter_email}} | {{recruiter_phone}}"
-};
-
 const CLIENT_SHARE_TEMPLATE_PLACEHOLDERS = [
   "{{client_name}}",
   "{{role}}",
@@ -8942,20 +8935,6 @@ function PortalApp({ token, onLogout }) {
       jdShortcuts: String(job?.jdShortcuts || "")
     })).filter((job) => job.id);
   }, [state.jobs, jobsCatalog]);
-  const mergedCompanyShortcutTemplates = useMemo(() => {
-    const deletedSet = new Set(
-      (Array.isArray(copySettings?.deletedSuggestedShortcuts) ? copySettings.deletedSuggestedShortcuts : [])
-        .map((item) => normalizeShortcutKey(item))
-        .filter(Boolean)
-    );
-    const suggestedFiltered = Object.fromEntries(
-      Object.entries(SUGGESTED_SHORTCUT_TEMPLATES).filter(([key]) => !deletedSet.has(normalizeShortcutKey(key)))
-    );
-    return {
-      ...suggestedFiltered,
-      ...((copySettings?.companyWideShortcuts && typeof copySettings.companyWideShortcuts === "object") ? copySettings.companyWideShortcuts : {})
-    };
-  }, [copySettings?.companyWideShortcuts, copySettings?.deletedSuggestedShortcuts]);
   const selectedShortcutJob = useMemo(
     () => shortcutJobOptions.find((job) => String(job.id) === String(shortcutJobId || "")) || null,
     [shortcutJobOptions, shortcutJobId]
@@ -24953,9 +24932,9 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                   </div>
                 </Section>
 
-                <Section kicker="Shortcuts" title="Suggested + Company Specific Shortcuts" className="shortcuts-section shortcuts-section--company">
-                  <p className="muted">This list contains Suggested shortcuts and Company Specific shortcuts.</p>
-                  <p className="muted">Suggested = platform defaults. Company Specific = your workspace overrides.</p>
+                <Section kicker="Company" title="Company Shortcuts" className="shortcuts-section shortcuts-section--company">
+                  <p className="muted">This list contains company shortcuts only.</p>
+                  <p className="muted">Company shortcuts stay within your workspace and do not leak into other companies.</p>
                   {!isSettingsAdmin ? <p className="muted">Read-only for recruiters. Admin-defined shortcuts appear automatically in your template pickers.</p> : null}
                   {isSettingsAdmin ? (
                     <>
@@ -24981,23 +24960,18 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                     </>
                   ) : null}
                   <div className="stack-list compact">
-                    {Object.entries(mergedCompanyShortcutTemplates).length ? (
-                      Object.entries(mergedCompanyShortcutTemplates)
+                    {Object.entries(copySettings?.companyWideShortcuts && typeof copySettings.companyWideShortcuts === "object" ? copySettings.companyWideShortcuts : {}).length ? (
+                      Object.entries(copySettings?.companyWideShortcuts && typeof copySettings.companyWideShortcuts === "object" ? copySettings.companyWideShortcuts : {})
                         .sort(([a], [b]) => String(a || "").localeCompare(String(b || "")))
                         .map(([key, value]) => (
                           <article className="item-card compact-card" key={`company-${key}`}>
                             <div className="item-card__top compact-top">
-                              <strong>
-                                {formatShortcutLabel(key)}
-                                {Object.prototype.hasOwnProperty.call((copySettings?.companyWideShortcuts || {}), key) ? " (Company Specific)" : " (Suggested)"}
-                              </strong>
+                              <strong>{formatShortcutLabel(key)}</strong>
                               {isSettingsAdmin ? (
                                 <div className="button-row tight">
                                   <button className="ghost-btn" onClick={() => { setShortcutCompanyKey(String(key || "")); setShortcutCompanyValue(String(value || "")); }}>Edit</button>
                                   <button className="ghost-btn" onClick={() => void copyShortcutTemplateWithValues(String(key || ""), String(value || ""), selectedShortcutJob)}>Copy</button>
-                                  {Object.prototype.hasOwnProperty.call((copySettings?.companyWideShortcuts || {}), key)
-                                    ? <button className="ghost-btn" onClick={() => void deleteCompanyShortcutTemplate(String(key || ""))}>Delete</button>
-                                    : <button className="ghost-btn" onClick={() => void deleteSuggestedShortcutTemplate(String(key || ""))}>Delete</button>}
+                                  <button className="ghost-btn" onClick={() => void deleteCompanyShortcutTemplate(String(key || ""))}>Delete</button>
                                 </div>
                               ) : (
                                 <div className="button-row tight">
@@ -25008,7 +24982,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                             <div className="candidate-snippet no-top-border">{String(value || "")}</div>
                           </article>
                         ))
-                    ) : <div className="empty-state">No suggested or company specific shortcuts yet.</div>}
+                    ) : <div className="empty-state">No company shortcuts yet.</div>}
                   </div>
                 </Section>
               </div>
