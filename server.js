@@ -16479,10 +16479,7 @@ const server = http.createServer(async (req, res) => {
       });
       sendJson(res, 200, {
         ok: true,
-        result: {
-          ...summary,
-          summary: { ...summary.summary }
-        }
+        result: summary
       });
     } catch (error) {
       sendJson(res, 400, { ok: false, error: String(error.message || error) });
