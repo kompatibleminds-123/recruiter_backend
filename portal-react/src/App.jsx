@@ -14221,9 +14221,7 @@ function PortalApp({ token, onLogout }) {
       candidates: applyPatch(current.candidates),
       databaseCandidates: applyPatch(current.databaseCandidates),
       applicants: applyPatch(current.applicants),
-      applicantListItems: String(location?.pathname || "").trim() === "/applicants"
-        ? applyPatch(current.applicantListItems)
-        : current.applicantListItems
+      applicantListItems: applyPatch(current.applicantListItems)
     }));
     if (String(location?.pathname || "").trim() === "/captured-notes") {
       setCapturedListItems((current) => applyPatch(current));
