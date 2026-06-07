@@ -9034,7 +9034,10 @@ function PortalApp({ token, onLogout }) {
       })
         .then((result) => {
           if (candidateSmartChipSummaryRequestRef.current !== requestId) return;
-          const snapshot = result?.summary && typeof result.summary === "object" ? result.summary : null;
+          const snapshot =
+            result && typeof result === "object"
+              ? (result.summary && typeof result.summary === "object" ? result.summary : result)
+              : null;
           if (!snapshot) return;
           const normalized = {
             interview_history: Number(snapshot.interview_history || snapshot.interviewHistory || 0),
