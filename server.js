@@ -3386,12 +3386,27 @@ function sanitizeApplicantCandidate(candidate = {}) {
     assignedByName: String(candidate?.assigned_by_name || "").trim(),
     assignedByUserId: String(candidate?.assigned_by_user_id || "").trim(),
     parseStatus: String(meta.parseStatus || "").trim(),
+    lastContactOutcome: String(candidate?.last_contact_outcome || candidate?.lastContactOutcome || "").trim(),
+    last_contact_outcome: String(candidate?.last_contact_outcome || candidate?.lastContactOutcome || "").trim(),
+    lastContactNotes: String(candidate?.last_contact_notes || candidate?.lastContactNotes || "").trim(),
+    last_contact_notes: String(candidate?.last_contact_notes || candidate?.lastContactNotes || "").trim(),
+    recruiterNotes: String(candidate?.recruiter_context_notes || candidate?.recruiterContextNotes || "").trim(),
+    recruiter_context_notes: String(candidate?.recruiter_context_notes || candidate?.recruiterContextNotes || "").trim(),
+    otherPointers: String(candidate?.other_pointers || candidate?.otherPointers || "").trim(),
+    other_pointers: String(candidate?.other_pointers || candidate?.otherPointers || "").trim(),
+    candidateStatus: String(candidate?.candidate_status || candidate?.candidateStatus || "").trim(),
+    candidate_status: String(candidate?.candidate_status || candidate?.candidateStatus || "").trim(),
     cvUrl: String(meta.fileUrl || "").trim(),
     cvFilename: String(meta.filename || "").trim(),
     sourcePlatform: String(meta.sourcePlatform || "").trim(),
     sourceLabel: String(meta.sourceLabel || "").trim(),
     jobPageUrl: String(meta.jobPageUrl || "").trim(),
-    screeningAnswers: String(meta.screeningAnswers || "").trim(),
+    screeningAnswers: String(meta.screeningAnswers || candidate?.screening_answers || candidate?.screeningAnswers || "").trim(),
+    screening_answers: candidate?.screening_answers && typeof candidate.screening_answers === "object"
+      ? candidate.screening_answers
+      : meta.screeningAnswers && typeof meta.screeningAnswers === "object"
+        ? meta.screeningAnswers
+        : {},
     currentOrgTenure: normalizedCurrentOrgTenure,
     current_org_tenure: normalizedCurrentOrgTenure,
     draft_payload: draftPayload,
