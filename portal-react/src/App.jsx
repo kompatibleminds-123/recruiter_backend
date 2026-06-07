@@ -3188,6 +3188,47 @@ function escapeHtml(value) {
     .replace(/'/g, "&#39;");
 }
 
+function decodeHtmlEntities(value = "") {
+  try {
+    const container = document.createElement("textarea");
+    container.innerHTML = String(value || "");
+    return String(container.value || "");
+  } catch {
+    return String(value || "");
+  }
+}
+
+function looksLikeHtmlSignature(value = "") {
+  const raw = String(value || "").trim();
+  if (!raw) return false;
+  return /<\/?[a-z][\s\S]*>/i.test(raw) || /&(?:lt|gt|amp|quot|#39);/i.test(raw);
+}
+
+function normalizeLoadedSignatureValue(signatureHtml = "", signatureText = "") {
+  const rawHtml = String(signatureHtml || "").trim();
+  const rawText = String(signatureText || "").trim();
+  if (rawHtml) {
+    return {
+      signatureHtml: rawHtml,
+      signatureText: htmlToPlainText(rawHtml)
+    };
+  }
+  if (!rawText) {
+    return { signatureHtml: "", signatureText: "" };
+  }
+  if (looksLikeHtmlSignature(rawText)) {
+    const decoded = decodeHtmlEntities(rawText);
+    return {
+      signatureHtml: decoded,
+      signatureText: htmlToPlainText(decoded)
+    };
+  }
+  return {
+    signatureHtml: "",
+    signatureText: rawText
+  };
+}
+
 function formatExcelMultilineCell(value) {
   const raw = String(value ?? "");
   if (!raw) return "";
@@ -4580,12 +4621,6 @@ function RichTextEditor({ value, onChange, placeholder = "Write here...", minHei
         nextRange.selectNodeContents(strong);
         selection?.addRange(nextRange);
       }
-      try {
-        const currentSelection = window.getSelection?.();
-        if (currentSelection) {
-          currentSelection.removeAllRanges();
-        }
-      } catch {}
     } catch {}
     onChange(String(editorRef.current?.innerHTML || ""));
   };
@@ -4593,16 +4628,16 @@ function RichTextEditor({ value, onChange, placeholder = "Write here...", minHei
   return (
     <div className="rich-editor">
       <div className="rich-editor-toolbar">
-        <button type="button" className="ghost-btn" onClick={() => run("bold")}>Bold</button>
-        <button type="button" className="ghost-btn" onClick={() => run("italic")}>Italic</button>
-        <button type="button" className="ghost-btn" onClick={() => run("underline")}>Underline</button>
-        <button type="button" className="ghost-btn" onClick={() => run("insertUnorderedList")}>Bullets</button>
-        <button type="button" className="ghost-btn" onClick={() => {
+        <button type="button" className="ghost-btn" onMouseDown={(e) => e.preventDefault()} onClick={() => run("bold")}>Bold</button>
+        <button type="button" className="ghost-btn" onMouseDown={(e) => e.preventDefault()} onClick={() => run("italic")}>Italic</button>
+        <button type="button" className="ghost-btn" onMouseDown={(e) => e.preventDefault()} onClick={() => run("underline")}>Underline</button>
+        <button type="button" className="ghost-btn" onMouseDown={(e) => e.preventDefault()} onClick={() => run("insertUnorderedList")}>Bullets</button>
+        <button type="button" className="ghost-btn" onMouseDown={(e) => e.preventDefault()} onClick={() => {
           const url = window.prompt("Enter URL", "https://");
           if (!url) return;
           run("createLink", url);
         }}>Link</button>
-        <button type="button" className="ghost-btn" onClick={() => run("removeFormat")}>Clear format</button>
+        <button type="button" className="ghost-btn" onMouseDown={(e) => e.preventDefault()} onClick={() => run("removeFormat")}>Clear format</button>
       </div>
       <div
         ref={editorRef}
@@ -10142,8 +10177,7 @@ function PortalApp({ token, onLogout }) {
         secure: Boolean(result?.secure),
         user: String(result?.user || "").trim(),
         from: String(result?.from || "").trim(),
-        signatureText: String(result?.signatureText || "").trim(),
-        signatureHtml: String(result?.signatureHtml || "").trim(),
+        ...normalizeLoadedSignatureValue(result?.signatureHtml || "", result?.signatureText || ""),
         signatureLinkLabel: String(result?.signatureLinkLabel || "").trim(),
         signatureLinkUrl: String(result?.signatureLinkUrl || "").trim(),
         signatureLinkLabel2: String(result?.signatureLinkLabel2 || "").trim(),
@@ -17072,8 +17106,7 @@ function PortalApp({ token, onLogout }) {
         secure: Boolean(result?.secure ?? c.secure),
         user: String(result?.user || c.user || "").trim(),
         from: String(result?.from || c.from || "").trim(),
-        signatureText: String(result?.signatureText || signatureText || "").trim(),
-        signatureHtml: String(result?.signatureHtml || signatureHtml || "").trim(),
+        ...normalizeLoadedSignatureValue(result?.signatureHtml || signatureHtml || "", result?.signatureText || signatureText || ""),
         signatureLinkLabel: String(result?.signatureLinkLabel || c.signatureLinkLabel || "").trim(),
         signatureLinkUrl: String(result?.signatureLinkUrl || c.signatureLinkUrl || "").trim(),
         signatureLinkLabel2: String(result?.signatureLinkLabel2 || c.signatureLinkLabel2 || "").trim(),
@@ -17115,8 +17148,7 @@ function PortalApp({ token, onLogout }) {
       });
       setSmtpSettings((c) => ({
         ...c,
-        signatureText: String(result?.signatureText || signatureText || "").trim(),
-        signatureHtml: String(result?.signatureHtml || signatureHtml || "").trim()
+        ...normalizeLoadedSignatureValue(result?.signatureHtml || signatureHtml || "", result?.signatureText || signatureText || "")
       }));
       setSmtpSettingsLoaded(true);
       smtpSettingsDirtyRef.current = false;
@@ -24441,7 +24473,6 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
 
                 <div className="settings-subsection mail-signature-shell" style={{ marginTop: 18 }}>
                   <div className="section-kicker">Your Email Signature (per recruiter)</div>
-                  <p className="muted">Rich editor: you can bold text, create links on selected words, and format multi-line signatures.</p>
                   <label className="full">
                     <span>Signature editor</span>
                     <RichTextEditor
@@ -24450,7 +24481,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                         markSmtpSettingsDirty();
                         setSmtpSettings((c) => ({ ...c, signatureHtml: html, signatureText: htmlToPlainText(html) }));
                       }}
-                      placeholder="Regards,<br/>Your Name<br/>Founder | <a href='https://www.linkedin.com'>LinkedIn</a>"
+                      placeholder="Write your signature here..."
                       minHeight={180}
                     />
                   </label>
