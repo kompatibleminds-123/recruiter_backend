@@ -15318,7 +15318,8 @@ function PortalApp({ token, onLogout }) {
     const sourceApplicant = (state.applicants || []).find((item) => String(item.id) === String(candidateId)) || null;
     const statusKey = sourceApplicant ? "applicants" : "captured";
     const linkedApplicantCandidate = sourceApplicant ? applicantCandidateMap.get(String(sourceApplicant.id)) : null;
-    const candidate = (state.candidates || []).find((item) => String(item.id) === String(candidateId)) || linkedApplicantCandidate;
+    let candidate = (state.candidates || []).find((item) => String(item.id) === String(candidateId)) || linkedApplicantCandidate;
+    const applicantView = sourceApplicant ? normalizeApplicantVisibleRow(sourceApplicant) : null;
     const source = candidate || sourceApplicant;
     const capturedCandidateId = String(candidate?.id || sourceApplicant?.id || candidateId || "").trim();
     if (!source) {
@@ -15330,8 +15331,92 @@ function PortalApp({ token, onLogout }) {
       return;
     }
     if (sourceApplicant && !candidate) {
-      setStatus(statusKey, "This applied candidate is not linked to a saved candidate record yet. Open the draft once (so it saves in Captured Notes), then convert to assessment.", "error");
-      return;
+      try {
+        const applicantRemarks = getApplicantRemarksText(applicantView || sourceApplicant || {});
+        const screeningAnswers =
+          (applicantView?.screening_answers && typeof applicantView.screening_answers === "object" ? applicantView.screening_answers : null)
+          || (applicantView?.screeningAnswers && typeof applicantView.screeningAnswers === "object" ? applicantView.screeningAnswers : null)
+          || {};
+        const autoLinkedPayload = {
+          id: String(sourceApplicant.id || "").trim() || undefined,
+          source: String(sourceApplicant.source || sourceApplicant.sourcePlatform || "").trim() || "website_apply",
+          name: String(applicantView?.candidateName || applicantView?.name || "").trim(),
+          company: String(applicantView?.currentCompany || sourceApplicant.company || "").trim(),
+          role: String(applicantView?.currentDesignation || applicantView?.jdTitle || applicantView?.role || "").trim(),
+          experience: String(applicantView?.totalExperience || sourceApplicant.experience || "").trim(),
+          phone: String(applicantView?.phone || applicantView?.phoneNumber || "").trim(),
+          email: String(applicantView?.email || applicantView?.emailId || "").trim(),
+          linkedin: String(applicantView?.linkedin || applicantView?.linkedinUrl || "").trim(),
+          location: String(applicantView?.location || "").trim(),
+          highest_education: String(applicantView?.highestEducation || applicantView?.highest_education || "").trim(),
+          current_ctc: String(applicantView?.currentCtc || applicantView?.current_ctc || "").trim(),
+          expected_ctc: String(applicantView?.expectedCtc || applicantView?.expected_ctc || "").trim(),
+          notice_period: String(applicantView?.noticePeriod || applicantView?.notice_period || "").trim(),
+          lwd_or_doj: String(applicantView?.lwdOrDoj || applicantView?.lwd_or_doj || "").trim(),
+          notes: applicantRemarks,
+          recruiter_context_notes: "",
+          other_pointers: "",
+          client_name: String(applicantView?.clientName || applicantView?.client_name || "").trim(),
+          jd_title: String(applicantView?.jdTitle || applicantView?.assignedJdTitle || applicantView?.assigned_jd_title || applicantView?.jd_title || "").trim(),
+          assigned_to_user_id: String(sourceApplicant.assigned_to_user_id || sourceApplicant.assignedToUserId || "").trim(),
+          assigned_to_name: String(sourceApplicant.assigned_to_name || sourceApplicant.assignedToName || "").trim(),
+          assigned_jd_id: String(sourceApplicant.assigned_jd_id || sourceApplicant.assignedJdId || sourceApplicant.jd_id || sourceApplicant.jdId || sourceApplicant.jobId || "").trim(),
+          assigned_jd_title: String(applicantView?.assignedJdTitle || applicantView?.jdTitle || applicantView?.jd_title || "").trim(),
+          assigned_at: String(sourceApplicant.assigned_at || sourceApplicant.assignedAt || "").trim(),
+          screening_answers: screeningAnswers,
+          hidden_from_captured: false,
+          created_at: String(sourceApplicant.created_at || sourceApplicant.createdAt || "").trim(),
+          draft_payload: {
+            candidateName: String(applicantView?.candidateName || applicantView?.name || "").trim(),
+            phoneNumber: String(applicantView?.phone || applicantView?.phoneNumber || "").trim(),
+            emailId: String(applicantView?.email || applicantView?.emailId || "").trim(),
+            linkedin: String(applicantView?.linkedin || applicantView?.linkedinUrl || "").trim(),
+            location: String(applicantView?.location || "").trim(),
+            currentCompany: String(applicantView?.currentCompany || sourceApplicant.company || "").trim(),
+            currentDesignation: String(applicantView?.currentDesignation || applicantView?.jdTitle || applicantView?.role || "").trim(),
+            totalExperience: String(applicantView?.totalExperience || sourceApplicant.experience || "").trim(),
+            relevantExperience: String(applicantView?.relevantExperience || "").trim(),
+            highestEducation: String(applicantView?.highestEducation || applicantView?.highest_education || "").trim(),
+            currentCtc: String(applicantView?.currentCtc || applicantView?.current_ctc || "").trim(),
+            expectedCtc: String(applicantView?.expectedCtc || applicantView?.expected_ctc || "").trim(),
+            noticePeriod: String(applicantView?.noticePeriod || applicantView?.notice_period || "").trim(),
+            offerInHand: String(applicantView?.offerInHand || applicantView?.offer_in_hand || "").trim(),
+            lwdOrDoj: String(applicantView?.lwdOrDoj || applicantView?.lwd_or_doj || "").trim(),
+            currentOrgTenure: String(applicantView?.currentOrgTenure || applicantView?.current_org_tenure || "").trim(),
+            reasonForChange: String(applicantView?.reasonForChange || "").trim(),
+            clientName: String(applicantView?.clientName || applicantView?.client_name || "").trim(),
+            jdTitle: String(applicantView?.jdTitle || applicantView?.assignedJdTitle || applicantView?.assigned_jd_title || applicantView?.jd_title || "").trim(),
+            pipelineStage: "Submitted",
+            candidateStatus: String(applicantView?.parseStatus || applicantView?.parse_status || "Applied").trim(),
+            followUpAt: "",
+            interviewAt: "",
+            recruiterNotes: "",
+            callbackNotes: applicantRemarks,
+            otherPointers: "",
+            tags: String(applicantView?.tags || "").trim(),
+            jdScreeningAnswers: screeningAnswers,
+            cvAnalysis: null,
+            cvAnalysisApplied: false,
+            statusHistory: []
+          }
+        };
+        const createdCandidateResponse = await api("/candidates", token, "POST", { candidate: autoLinkedPayload });
+        const autoLinkedCandidate = createdCandidateResponse?.result && typeof createdCandidateResponse.result === "object"
+          ? createdCandidateResponse.result
+          : createdCandidateResponse;
+        if (!autoLinkedCandidate || !String(autoLinkedCandidate.id || "").trim()) {
+          throw new Error("Auto-save failed before assessment conversion.");
+        }
+        candidate = autoLinkedCandidate;
+        setState((current) => ({
+          ...current,
+          candidates: upsertCandidatesById(current.candidates, [autoLinkedCandidate]),
+          databaseCandidates: upsertCandidatesById(current.databaseCandidates, [autoLinkedCandidate])
+        }));
+      } catch (error) {
+        setStatus(statusKey, `Could not auto-save this applied candidate before assessment conversion: ${String(error?.message || error)}`, "error");
+        return;
+      }
     }
     const candidateName = candidate?.name || sourceApplicant?.candidateName || "";
     const linkedAssessmentId = String(
