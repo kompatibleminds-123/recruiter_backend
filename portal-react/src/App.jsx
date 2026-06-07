@@ -13114,8 +13114,11 @@ function PortalApp({ token, onLogout }) {
   }, [filteredApplicants, applicantCandidateMap, applicantAssessmentMap, state.dashboard?.availableClients, state.user, state.users]);
 
   const visibleApplicants = useMemo(() => (
-    Array.isArray(state.applicantListItems) ? state.applicantListItems.map((item) => normalizeApplicantVisibleRow(item)) : []
-  ), [state.applicantListItems]);
+    sortApplicantsForList(
+      Array.isArray(state.applicantListItems) ? state.applicantListItems.map((item) => normalizeApplicantVisibleRow(item)) : [],
+      applicantSortBy
+    )
+  ), [state.applicantListItems, applicantSortBy]);
   const totalApplicantCount = Math.max(
     0,
     Number(
