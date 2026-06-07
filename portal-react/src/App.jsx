@@ -8064,6 +8064,8 @@ function PortalApp({ token, onLogout }) {
   const [candidateSmartDateFrom, setCandidateSmartDateFrom] = useState("");
   const [candidateSmartDateTo, setCandidateSmartDateTo] = useState("");
   const candidateSmartChipRowsStableRef = useRef(null);
+  const candidateSmartChipSummaryStableRef = useRef(null);
+  const candidateSmartChipSummaryRequestRef = useRef(0);
   const databaseCandidatesHydratedRef = useRef(false);
   const [candidateFilterPanelOpen, setCandidateFilterPanelOpen] = useState(true);
   const [candidateFilterDrawerOpen, setCandidateFilterDrawerOpen] = useState(false);
@@ -8947,6 +8949,135 @@ function PortalApp({ token, onLogout }) {
     String(state.user?.id || "").trim() === String(companyLicense?.ownerAdminUserId || "").trim();
   const effectiveLicense = billingOverview?.license || companyLicense || null;
   const currentCompanyId = String(state.user?.companyId || "").trim();
+  const candidateSmartChipCacheKey = useMemo(() => {
+    const companyId = String(state.user?.companyId || "").trim();
+    const userId = String(state.user?.id || "").trim();
+    if (!companyId || !userId) return "";
+    return `rd_candidate_smart_chip_cache_v1:${companyId}:${userId}`;
+  }, [state.user?.companyId, state.user?.id]);
+  const candidateSmartChipSummaryCacheKey = useMemo(() => {
+    const companyId = String(state.user?.companyId || "").trim();
+    const userId = String(state.user?.id || "").trim();
+    if (!companyId || !userId) return "";
+    return `rd_candidate_smart_chip_summary_v1:${companyId}:${userId}`;
+  }, [state.user?.companyId, state.user?.id]);
+  const [candidateSmartChipSummary, setCandidateSmartChipSummary] = useState(null);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (!candidateSmartChipCacheKey) return;
+    try {
+      const raw = window.localStorage.getItem(candidateSmartChipCacheKey);
+      if (!raw) return;
+      const parsed = JSON.parse(raw);
+      if (!parsed || typeof parsed !== "object") return;
+      const normalized = {
+        interview_history: Array.isArray(parsed.interview_history) ? parsed.interview_history : [],
+        aligned_interviews: Array.isArray(parsed.aligned_interviews) ? parsed.aligned_interviews : [],
+        feedback_awaited: Array.isArray(parsed.feedback_awaited) ? parsed.feedback_awaited : [],
+        quick_joiners: Array.isArray(parsed.quick_joiners) ? parsed.quick_joiners : [],
+        shared_today: Array.isArray(parsed.shared_today) ? parsed.shared_today : [],
+        shared_this_week: Array.isArray(parsed.shared_this_week) ? parsed.shared_this_week : [],
+        joined_candidates: Array.isArray(parsed.joined_candidates) ? parsed.joined_candidates : [],
+        cv_shared: Array.isArray(parsed.cv_shared) ? parsed.cv_shared : []
+      };
+      candidateSmartChipRowsStableRef.current = normalized;
+    } catch {
+      // Ignore cache parse issues and rebuild from live data.
+    }
+  }, [candidateSmartChipCacheKey]);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (!candidateSmartChipSummaryCacheKey) return;
+    try {
+      const raw = window.localStorage.getItem(candidateSmartChipSummaryCacheKey);
+      if (!raw) return;
+      const parsed = JSON.parse(raw);
+      const snapshot = parsed && typeof parsed === "object" ? (parsed.summary && typeof parsed.summary === "object" ? parsed.summary : parsed) : null;
+      if (!snapshot || typeof snapshot !== "object") return;
+      const normalized = {
+        interview_history: Number(snapshot.interview_history || snapshot.interviewHistory || 0),
+        aligned_interviews: Number(snapshot.aligned_interviews || snapshot.alignedInterviews || 0),
+        feedback_awaited: Number(snapshot.feedback_awaited || snapshot.feedbackAwaited || 0),
+        quick_joiners: Number(snapshot.quick_joiners || snapshot.quickJoiners || 0),
+        shared_today: Number(snapshot.shared_today || snapshot.sharedToday || 0),
+        shared_this_week: Number(snapshot.shared_this_week || snapshot.sharedThisWeek || 0),
+        joined_candidates: Number(snapshot.joined_candidates || snapshot.joinedCandidates || 0),
+        cv_shared: Number(snapshot.cv_shared || snapshot.cvShared || 0)
+      };
+      candidateSmartChipSummaryStableRef.current = normalized;
+      setCandidateSmartChipSummary(normalized);
+    } catch {
+      // Ignore cache parse issues and rebuild from server.
+    }
+  }, [candidateSmartChipSummaryCacheKey]);
+  useEffect(() => {
+    if (!workspaceDataReady) return;
+    if (!candidateSmartChipSummaryCacheKey) return;
+    if (candidateSearchBusy) return;
+    if (!token) return;
+    const requestId = candidateSmartChipSummaryRequestRef.current + 1;
+    candidateSmartChipSummaryRequestRef.current = requestId;
+    const timer = setTimeout(() => {
+      const searchIds = candidateSearchMode === "search"
+        ? (Array.isArray(candidateSearchResults) ? candidateSearchResults : [])
+          .map((item) => String(item?.id || item?.candidateId || item?.assessmentId || item?.candidate_id || item?.assessment_id || "").trim())
+          .filter(Boolean)
+        : [];
+      void api("/company/database/quick-chip-summary", token, "POST", {
+        filters: {
+          ...candidateStructuredFilters,
+          dateFrom: candidateSmartDateFrom,
+          dateTo: candidateSmartDateTo
+        },
+        searchMode: candidateSearchMode,
+        searchIds
+      })
+        .then((result) => {
+          if (candidateSmartChipSummaryRequestRef.current !== requestId) return;
+          const snapshot = result?.summary && typeof result.summary === "object" ? result.summary : null;
+          if (!snapshot) return;
+          const normalized = {
+            interview_history: Number(snapshot.interview_history || snapshot.interviewHistory || 0),
+            aligned_interviews: Number(snapshot.aligned_interviews || snapshot.alignedInterviews || 0),
+            feedback_awaited: Number(snapshot.feedback_awaited || snapshot.feedbackAwaited || 0),
+            quick_joiners: Number(snapshot.quick_joiners || snapshot.quickJoiners || 0),
+            shared_today: Number(snapshot.shared_today || snapshot.sharedToday || 0),
+            shared_this_week: Number(snapshot.shared_this_week || snapshot.sharedThisWeek || 0),
+            joined_candidates: Number(snapshot.joined_candidates || snapshot.joinedCandidates || 0),
+            cv_shared: Number(snapshot.cv_shared || snapshot.cvShared || 0)
+          };
+          candidateSmartChipSummaryStableRef.current = normalized;
+          setCandidateSmartChipSummary(normalized);
+          if (typeof window !== "undefined" && candidateSmartChipSummaryCacheKey) {
+            try {
+              window.localStorage.setItem(candidateSmartChipSummaryCacheKey, JSON.stringify({
+                summary: normalized,
+                generatedAt: result?.generatedAt || new Date().toISOString()
+              }));
+            } catch {
+              // Ignore storage issues and keep the in-memory snapshot.
+            }
+          }
+        })
+        .catch((error) => {
+          if (candidateSmartChipSummaryRequestRef.current !== requestId) return;
+          if (!candidateSmartChipSummaryStableRef.current) {
+            console.warn("candidateSmartChipSummary failed", error);
+          }
+        });
+    }, 250);
+    return () => clearTimeout(timer);
+  }, [
+    workspaceDataReady,
+    candidateSmartChipSummaryCacheKey,
+    candidateSearchBusy,
+    candidateSearchMode,
+    candidateSearchResults,
+    candidateStructuredFilters,
+    candidateSmartDateFrom,
+    candidateSmartDateTo,
+    token
+  ]);
   const isKompatibleCompany = currentCompanyId === KOMPATIBLE_MINDS_COMPANY_ID;
   const defaultJdEmailCc = isKompatibleCompany ? DEFAULT_JD_EMAIL_CC : "";
   const currentPlanCode = String(effectiveLicense?.plan || "trial").trim().toLowerCase();
@@ -10014,6 +10145,7 @@ function PortalApp({ token, onLogout }) {
     if (needsEmailSettings && smtpSettingsResult) {
       const isEditingMailSettings = location?.pathname === "/mail-settings";
       if (!isEditingMailSettings || !smtpSettingsDirtyRef.current) {
+        const loadedSignature = normalizeLoadedSignatureValue(smtpSettingsResult?.signatureHtml || "", smtpSettingsResult?.signatureText || "");
         setSmtpSettings((current) => ({
           ...current,
           host: String(smtpSettingsResult?.host || "").trim(),
@@ -10022,8 +10154,7 @@ function PortalApp({ token, onLogout }) {
           user: String(smtpSettingsResult?.user || "").trim(),
           from: String(smtpSettingsResult?.from || "").trim(),
           hasPassword: Boolean(smtpSettingsResult?.hasPassword),
-          signatureText: String(smtpSettingsResult?.signatureText || "").trim(),
-          signatureHtml: String(smtpSettingsResult?.signatureHtml || "").trim(),
+          ...loadedSignature,
           signatureLinkLabel: String(smtpSettingsResult?.signatureLinkLabel || "").trim(),
           signatureLinkUrl: String(smtpSettingsResult?.signatureLinkUrl || "").trim(),
           signatureLinkLabel2: String(smtpSettingsResult?.signatureLinkLabel2 || "").trim(),
@@ -12947,19 +13078,36 @@ function PortalApp({ token, onLogout }) {
       cv_shared: dedupeByCandidate(rowsByChip.cv_shared, { prefer: "latest" })
     };
     const isAllEmpty = Object.values(nextRows).every((rows) => !Array.isArray(rows) || rows.length === 0);
+    const hasSmartChipSourceData =
+      candidateRows.length > 0
+      || assessments.length > 0
+      || (Array.isArray(candidateUniverse) && candidateUniverse.length > 0)
+      || eventRows.length > 0;
+    const saveSmartChipSnapshot = (snapshot) => {
+      candidateSmartChipRowsStableRef.current = snapshot;
+      if (!candidateSmartChipCacheKey || typeof window === "undefined") return;
+      try {
+        window.localStorage.setItem(candidateSmartChipCacheKey, JSON.stringify(snapshot));
+      } catch {
+        // Cache persistence is best-effort.
+      }
+    };
     if (!smartChipDataReady) {
       return candidateSmartChipRowsStableRef.current || nextRows;
     }
-    if (candidateRows.length === 0 && isAllEmpty && candidateSmartChipRowsStableRef.current) {
+    if (isAllEmpty && hasSmartChipSourceData && candidateSmartChipRowsStableRef.current) {
       return candidateSmartChipRowsStableRef.current;
     }
-    candidateSmartChipRowsStableRef.current = nextRows;
+    if (isAllEmpty && hasSmartChipSourceData && !candidateSmartChipRowsStableRef.current) {
+      return nextRows;
+    }
+    saveSmartChipSnapshot(nextRows);
     return nextRows;
     } catch (error) {
       console.error("candidateSmartChipRows failed", error);
       return candidateSmartChipRowsStableRef.current || emptyRows;
     }
-  }, [candidateUniverse, candidateSmartDateFrom, candidateSmartDateTo, state.assessments, state.candidates, state.assessmentEvents]);
+  }, [candidateUniverse, candidateSmartDateFrom, candidateSmartDateTo, state.assessments, state.candidates, state.assessmentEvents, candidateSmartChipCacheKey]);
   const candidateHasSmartChipSelection = candidateAiQueryMode === "natural" && candidateQuickChipIds.length > 0;
 
   const capturedCandidateOptions = useMemo(() => {
@@ -22318,10 +22466,12 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                       .filter((chip) => candidateQuickChipIds.includes(chip.id))
                       .map((chip) => {
                         const rows = candidateSmartChipRows[chip.id] || [];
+                        const summaryCount = Number(candidateSmartChipSummary?.[chip.id]);
+                        const chipCount = Number.isFinite(summaryCount) ? summaryCount : rows.length;
                         return (
                           <article key={chip.id} className="item-card compact-card candidate-smart-section">
                             <div className="candidate-smart-head">
-                              <h3>{chip.label} ({rows.length})</h3>
+                              <h3>{chip.label} ({chipCount})</h3>
                               <button
                                 className="ghost-btn"
                                 disabled={!rows.length}

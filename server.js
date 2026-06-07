@@ -6540,6 +6540,288 @@ function buildDashboardSummary({ candidates = [], assessments = [], jobs = [], d
   };
 }
 
+function createDatabaseQuickChipSummaryBucket() {
+  return {
+    interview_history: 0,
+    aligned_interviews: 0,
+    feedback_awaited: 0,
+    quick_joiners: 0,
+    shared_today: 0,
+    shared_this_week: 0,
+    joined_candidates: 0,
+    cv_shared: 0
+  };
+}
+
+function normalizeDatabaseQuickChipFilters(raw = {}) {
+  const source = raw && typeof raw === "object" ? raw : {};
+  const toNumberOrNull = (value) => {
+    const num = Number(String(value || "").trim());
+    return Number.isFinite(num) ? num : null;
+  };
+  const splitList = (value) => String(value || "")
+    .split(/,|\n|\|/g)
+    .map((item) => normalizeDashboardText(item).trim())
+    .filter(Boolean);
+  return {
+    role: String(source.role || source.currentRole || "").trim(),
+    roleFamilies: Array.isArray(source.roleFamilies) ? source.roleFamilies.map((item) => String(item || "").trim()).filter(Boolean) : [],
+    location: String(source.location || "").trim(),
+    locations: Array.isArray(source.locations) ? source.locations.map((item) => String(item || "").trim()).filter(Boolean) : splitList(source.locationsText || source.locationList || source.location),
+    client: String(source.client || source.clientName || "").trim(),
+    targetLabel: String(source.targetLabel || "").trim(),
+    minExperienceYears: toNumberOrNull(source.minExperience),
+    maxExperienceYears: toNumberOrNull(source.maxExperience),
+    minCurrentCtcLpa: toNumberOrNull(source.minCurrentCtc),
+    maxCurrentCtcLpa: toNumberOrNull(source.maxCurrentCtc),
+    minExpectedCtcLpa: toNumberOrNull(source.minExpectedCtc),
+    maxExpectedCtcLpa: toNumberOrNull(source.maxExpectedCtc),
+    maxNoticeDays: toNumberOrNull(source.maxNoticeDays),
+    currentCompany: String(source.currentCompany || "").trim(),
+    keySkills: String(source.keySkills || source.skills || source.skillsText || "").trim(),
+    skills: Array.isArray(source.skills) ? source.skills.map((item) => String(item || "").trim()).filter(Boolean) : splitList(source.skillsText || source.skills),
+    skillsMatch: String(source.skillsMatch || "").trim(),
+    mustHaveSkills: Boolean(source.mustHaveSkills),
+    mustSkills: Array.isArray(source.mustSkills) ? source.mustSkills : [],
+    anyOfSkillGroups: Array.isArray(source.anyOfSkillGroups) ? source.anyOfSkillGroups : [],
+    qualification: String(source.qualification || "").trim(),
+    assessmentStatus: String(source.assessmentStatus || "").trim(),
+    attemptOutcome: String(source.attemptOutcome || "").trim(),
+    gender: String(source.gender || "").trim(),
+    statuses: Array.isArray(source.statuses) ? source.statuses.map((item) => normalizeDashboardText(item)).filter(Boolean) : [],
+    detailedStatuses: Array.isArray(source.detailedStatuses) ? source.detailedStatuses.map((item) => normalizeDashboardText(item)).filter(Boolean) : [],
+    interviewScheduled: Boolean(source.interviewScheduled),
+    upcomingJoinings: Boolean(source.upcomingJoinings),
+    recruiterScope: String(source.recruiterScope || "").trim(),
+    recruiterField: String(source.recruiterField || "").trim(),
+    recruiterName: String(source.recruiterName || source.recruiter || "").trim(),
+    sources: Array.isArray(source.sources) ? source.sources.map((item) => String(item || "").trim()).filter(Boolean) : splitList(source.sources || source.sourceTypeFilter || ""),
+    sourceTypeFilter: String(source.sourceTypeFilter || "").trim(),
+    activeStates: Array.isArray(source.activeStates) ? source.activeStates.map((item) => String(item || "").trim()).filter(Boolean) : splitList(source.activeStates || ""),
+    dateFrom: String(source.dateFrom || "").trim(),
+    dateTo: String(source.dateTo || "").trim(),
+    dateField: String(source.dateField || "").trim()
+  };
+}
+
+function databaseSmartChipRowMatchesFrontendFilters(item, filters = {}) {
+  const normalizedFilters = filters && typeof filters === "object" ? filters : {};
+  const years = parseExperienceToYears(item?.experience || item?.totalExperience || "");
+  const minYears = Number(normalizedFilters.minExperienceYears || normalizedFilters.minExperience || "");
+  const maxYears = Number(normalizedFilters.maxExperienceYears || normalizedFilters.maxExperience || "");
+  const noticeDays = parseNoticePeriodToDays(item?.notice_period || item?.noticePeriod || "");
+  const currentCtc = parseAmountToLpa(item?.current_ctc || item?.currentCtc || "");
+  const expectedCtc = parseAmountToLpa(item?.expected_ctc || item?.expectedCtc || "");
+  const locationHay = String(item?.location || "").toLowerCase();
+  const companyHay = String(item?.company || item?.currentCompany || "").toLowerCase();
+  const educationHay = String(item?.highest_education || item?.highestEducation || "").toLowerCase();
+  const skillsHay = [
+    item?.name || "",
+    item?.candidateName || "",
+    item?.phone || "",
+    item?.email || "",
+    item?.role || item?.currentDesignation || "",
+    item?.position || item?.jdTitle || "",
+    item?.company || item?.currentCompany || "",
+    item?.location || "",
+    Array.isArray(item?.skills) ? item.skills.join(" ") : "",
+    Array.isArray(item?.inferredTags) ? item.inferredTags.join(" ") : "",
+    item?.notesText || "",
+    item?.hiddenCvText || "",
+    item?.other_pointers || "",
+    item?.recruiter_context_notes || ""
+  ].join(" ").toLowerCase();
+  const clientValue = String(item?.client_name || item?.clientName || "").trim();
+  const recruiterValue = String(item?.assigned_to_name || item?.assignedToName || item?.recruiterName || "").trim();
+  const draftPayload = normalizeJsonObjectInput(item?.draft_payload || item?.draftPayload || item?.raw?.candidate?.draft_payload || item?.raw?.candidate?.draftPayload || {});
+  const genderValue = String(item?.gender || draftPayload?.gender || "").trim();
+  const normalizedClientValue = clientValue.toLowerCase();
+  const normalizedRecruiterValue = recruiterValue.toLowerCase();
+  const normalizedGenderValue = genderValue.toLowerCase();
+  const linkedAssessment = item?.raw?.assessment || item?.assessment || null;
+  const assessmentStatusValue = String(
+    linkedAssessment?.candidateStatus
+      || linkedAssessment?.status
+      || item?.candidateStatus
+      || item?.workflowStatus
+      || item?.assessment_status
+      || item?.assessmentStatus
+      || ""
+  ).trim();
+  const attemptOutcomeValue = String(item?.last_contact_outcome || item?.attemptStatus || item?.outcome || "").trim();
+
+  if (normalizedFilters.minExperienceYears != null && normalizedFilters.minExperienceYears !== "" && (years == null || years < minYears)) return false;
+  if (normalizedFilters.maxExperienceYears != null && normalizedFilters.maxExperienceYears !== "" && (years == null || years > maxYears)) return false;
+  if (normalizedFilters.location) {
+    const locationTokens = parseLocationFilterTokens(normalizedFilters.location);
+    if (locationTokens.length) {
+      if (!locationTokens.some((token) => locationHay.includes(token))) return false;
+    } else if (!locationHay.includes(String(normalizedFilters.location).trim().toLowerCase())) {
+      return false;
+    }
+  }
+  if (normalizedFilters.keySkills) {
+    const requiredSkills = splitSearchKeywords(normalizedFilters.keySkills);
+    if (requiredSkills.length && !requiredSkills.every((term) => skillsHay.includes(term))) return false;
+  }
+  if (normalizedFilters.currentCompany && !companyHay.includes(String(normalizedFilters.currentCompany).trim().toLowerCase())) return false;
+  const selectedClients = parseMultiChipTokens(normalizedFilters.client).map((entry) => entry.toLowerCase());
+  if (selectedClients.length && !selectedClients.includes(normalizedClientValue)) return false;
+  if (normalizedFilters.minCurrentCtcLpa != null && normalizedFilters.minCurrentCtcLpa !== "" && (currentCtc == null || currentCtc < Number(normalizedFilters.minCurrentCtcLpa))) return false;
+  if (normalizedFilters.maxCurrentCtcLpa != null && normalizedFilters.maxCurrentCtcLpa !== "" && (currentCtc == null || currentCtc > Number(normalizedFilters.maxCurrentCtcLpa))) return false;
+  if (normalizedFilters.minExpectedCtcLpa != null && normalizedFilters.minExpectedCtcLpa !== "" && (expectedCtc == null || expectedCtc < Number(normalizedFilters.minExpectedCtcLpa))) return false;
+  if (normalizedFilters.maxExpectedCtcLpa != null && normalizedFilters.maxExpectedCtcLpa !== "" && (expectedCtc == null || expectedCtc > Number(normalizedFilters.maxExpectedCtcLpa))) return false;
+  if (normalizedFilters.qualification && !educationHay.includes(String(normalizedFilters.qualification).trim().toLowerCase())) return false;
+  const selectedNoticeBuckets = parseMultiChipTokens(normalizedFilters.noticeBucket);
+  if (selectedNoticeBuckets.length) {
+    if (!selectedNoticeBuckets.includes(bucketNoticeDays(noticeDays))) return false;
+  } else if (normalizedFilters.maxNoticeDays != null && normalizedFilters.maxNoticeDays !== "" && (noticeDays == null || noticeDays > Number(normalizedFilters.maxNoticeDays))) {
+    return false;
+  }
+  const selectedRecruiters = parseMultiChipTokens(normalizedFilters.recruiter).map((entry) => entry.toLowerCase());
+  if (selectedRecruiters.length && !selectedRecruiters.includes(normalizedRecruiterValue)) return false;
+  const selectedGenders = parseMultiChipTokens(normalizedFilters.gender).map((entry) => entry.toLowerCase());
+  if (selectedGenders.length && !selectedGenders.includes(normalizedGenderValue)) return false;
+  const selectedAssessmentStatuses = parseMultiChipTokens(normalizedFilters.assessmentStatus).map((entry) => entry.toLowerCase());
+  if (selectedAssessmentStatuses.length && !selectedAssessmentStatuses.includes(normalizeAssessmentStatusLabel(assessmentStatusValue).toLowerCase())) return false;
+  const selectedAttemptOutcomes = parseMultiChipTokens(normalizedFilters.attemptOutcome).map((entry) => normalizeAttemptOutcomeLabel(entry).toLowerCase());
+  if (selectedAttemptOutcomes.length && !selectedAttemptOutcomes.includes(normalizeAttemptOutcomeLabel(attemptOutcomeValue).toLowerCase())) return false;
+  const selectedSources = parseMultiChipTokens(normalizedFilters.sources || normalizedFilters.sourceTypeFilter || "").map((entry) => entry.toLowerCase());
+  if (selectedSources.length) {
+    const sourceValue = String(item?.sourceType || item?.source || "").trim().toLowerCase();
+    if (!selectedSources.includes(sourceValue)) return false;
+  }
+  return true;
+}
+
+function buildDatabaseQuickChipSummary({ candidates = [], assessments = [], jobs = [], filters = {}, searchMode = "", searchIds = [], dateFrom = "", dateTo = "", actor = null } = {}) {
+  const summary = createDatabaseQuickChipSummaryBucket();
+  const normalizedFilters = normalizeDatabaseQuickChipFilters(filters);
+  const dateFromValue = String(dateFrom || normalizedFilters.dateFrom || "").trim();
+  const dateToValue = String(dateTo || normalizedFilters.dateTo || "").trim();
+  const searchSet = new Set((Array.isArray(searchIds) ? searchIds : []).map((value) => String(value || "").trim()).filter(Boolean));
+  if (searchMode === "search" && !searchSet.size) {
+    return {
+      summary,
+      generatedAt: new Date().toISOString(),
+      total: 0
+    };
+  }
+  const universe = buildCandidateSearchUniverse(candidates, assessments, jobs).filter((item) => {
+    if (searchMode === "search" && searchSet.size) {
+      const ids = [
+        item?.id,
+        item?.raw?.candidate?.id,
+        item?.raw?.assessment?.id,
+        item?.candidateId,
+        item?.assessmentId
+      ].map((value) => String(value || "").trim()).filter(Boolean);
+      if (!ids.some((id) => searchSet.has(id))) return false;
+    }
+    return databaseSmartChipRowMatchesFrontendFilters(item, normalizedFilters, actor);
+  });
+  const inDateRange = (value) => isDateWithinRange(value, dateFromValue, dateToValue);
+  const now = new Date();
+  const startOfTodayTs = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const endOfTodayTs = startOfTodayTs + (24 * 60 * 60 * 1000) - 1;
+  const dayOfWeek = now.getDay();
+  const weekStartTs = new Date(now.getFullYear(), now.getMonth(), now.getDate() - dayOfWeek).getTime();
+  const weekEndTs = weekStartTs + (7 * 24 * 60 * 60 * 1000) - 1;
+  const inToday = (value) => {
+    const ts = parseDateLike(value);
+    if (!Number.isFinite(ts)) return false;
+    return ts >= startOfTodayTs && ts <= endOfTodayTs;
+  };
+  const inThisWeek = (value) => {
+    const ts = parseDateLike(value);
+    if (!Number.isFinite(ts)) return false;
+    return ts >= weekStartTs && ts <= weekEndTs;
+  };
+  for (const item of universe) {
+    const assessment = item?.raw?.assessment || null;
+    const candidate = item?.raw?.candidate || null;
+    const activeAssessment = Boolean(assessment && !isAssessmentArchived(assessment));
+    const assessmentStatus = normalizeAssessmentStatusLabel(
+      assessment?.candidateStatus
+      || assessment?.candidate_status
+      || assessment?.status
+      || item?.candidateStatus
+      || item?.status
+      || ""
+    ).toLowerCase();
+    const interviewAt = String(
+      assessment?.interviewAt
+      || assessment?.interview_at
+      || deriveInterviewAtFromHistory(assessment)
+      || item?.interviewAt
+      || ""
+    ).trim();
+    const updatedAt = String(
+      assessment?.updatedAt
+      || assessment?.updated_at
+      || assessment?.generatedAt
+      || assessment?.generated_at
+      || item?.sharedAt
+      || item?.createdAt
+      || item?.date
+      || ""
+    ).trim();
+    const convertedAt = String(
+      getCandidateConvertedAt(candidate || {}, assessment || {})
+      || item?.sharedAt
+      || ""
+    ).trim();
+    const noticeDays = parseNoticePeriodToDays(item?.noticePeriod || item?.notice_period || "");
+    const sourceValue = String(candidate?.source || item?.source || "").trim().toLowerCase();
+    const capturedIsActive = candidate ? (candidate?.hidden_from_captured !== true && candidate?.hiddenFromCaptured !== true) : true;
+
+    if (
+      activeAssessment &&
+      (
+        SMART_CHIP_INTERVIEW_TIMELINE_STATUSES.has(assessmentStatus)
+        || SMART_CHIP_INTERVIEW_ALIGNED_STATUSES.has(assessmentStatus)
+        || ["interview feedback awaited", "interview on hold", "shortlisted", "offered"].includes(assessmentStatus)
+      ) &&
+      inDateRange(interviewAt || updatedAt)
+    ) {
+      summary.interview_history += 1;
+    }
+    if (
+      activeAssessment &&
+      (
+        SMART_CHIP_INTERVIEW_ALIGNED_STATUSES.has(assessmentStatus)
+        || ["interview feedback awaited", "interview on hold", "shortlisted", "offered"].includes(assessmentStatus)
+      ) &&
+      inDateRange(interviewAt || updatedAt)
+    ) {
+      summary.aligned_interviews += 1;
+    }
+    if (activeAssessment && isFeedbackAwaitedStatus(assessmentStatus) && inDateRange(interviewAt || updatedAt)) {
+      summary.feedback_awaited += 1;
+    }
+    if (activeAssessment && noticeDays != null && noticeDays <= 15 && capturedIsActive && inDateRange(updatedAt || interviewAt || convertedAt)) {
+      summary.quick_joiners += 1;
+    }
+    if (assessment && inToday(convertedAt) && inDateRange(convertedAt)) {
+      summary.shared_today += 1;
+    }
+    if (assessment && inThisWeek(convertedAt) && inDateRange(convertedAt)) {
+      summary.shared_this_week += 1;
+    }
+    if (assessmentStatus === "joined" && inDateRange(updatedAt || interviewAt || convertedAt)) {
+      summary.joined_candidates += 1;
+    }
+    if (activeAssessment && inDateRange(updatedAt || interviewAt || convertedAt)) {
+      summary.cv_shared += 1;
+    }
+  }
+  return {
+    summary,
+    generatedAt: new Date().toISOString(),
+    total: universe.length
+  };
+}
+
 function getClientPortalLifecycleBucket(item) {
   const status = normalizeDashboardText(item?.candidateStatus || item?.candidate_status || item?.status || "");
   const combined = `${status}`.trim();
@@ -16161,6 +16443,45 @@ const server = http.createServer(async (req, res) => {
           availableClients,
           availableRecruiters,
           summary
+        }
+      });
+    } catch (error) {
+      sendJson(res, 400, { ok: false, error: String(error.message || error) });
+    }
+    return;
+  }
+
+  if (req.method === "POST" && requestUrl.pathname === "/company/database/quick-chip-summary") {
+    try {
+      const user = await requireSessionUser(getBearerToken(req));
+      await requireSaasAccess(user, "database save and search");
+      const body = await readJsonBody(req);
+      const filters = body?.filters && typeof body.filters === "object" ? body.filters : {};
+      const searchMode = String(body?.searchMode || "all").trim().toLowerCase();
+      const searchIds = Array.isArray(body?.searchIds) ? body.searchIds : [];
+      const dateFrom = String(body?.dateFrom || filters?.dateFrom || "").trim();
+      const dateTo = String(body?.dateTo || filters?.dateTo || "").trim();
+      const [candidates, assessments, jobs] = await Promise.all([
+        listCandidatesForUser(user, { limit: 5000 }),
+        listAssessments({ actorUserId: user.id, companyId: user.companyId }),
+        listCompanyJobs(user.companyId, user.id)
+      ]);
+      const summary = buildDatabaseQuickChipSummary({
+        candidates,
+        assessments,
+        jobs,
+        filters,
+        searchMode,
+        searchIds,
+        dateFrom,
+        dateTo,
+        actor: user
+      });
+      sendJson(res, 200, {
+        ok: true,
+        result: {
+          ...summary,
+          summary: { ...summary.summary }
         }
       });
     } catch (error) {
