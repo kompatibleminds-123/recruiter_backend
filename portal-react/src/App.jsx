@@ -8815,7 +8815,10 @@ function PortalApp({ token, onLogout }) {
   const assignCandidate = (state.candidates || []).find((item) => String(item.id) === String(assignCandidateId))
     || ((bulkAssignCandidateIds || []).length ? (state.candidates || []).find((item) => String(item.id) === String(bulkAssignCandidateIds[0])) : null)
     || null;
-  const notesCandidateLive = (state.candidates || []).find((item) => String(item.id) === String(notesCandidateId)) || null;
+  const notesCandidateLive = (state.applicantListItems || []).find((item) => String(item.id) === String(notesCandidateId))
+    || (state.applicants || []).find((item) => String(item.id) === String(notesCandidateId))
+    || (state.candidates || []).find((item) => String(item.id) === String(notesCandidateId))
+    || null;
   const notesCandidate = notesCandidateLive || notesCandidateSnapshot || null;
   const attemptsCandidate = (state.candidates || []).find((item) => String(item.id) === String(attemptsCandidateId)) || null;
   const assessmentStatusItem = assessmentStatusItemSnapshot
@@ -9666,7 +9669,10 @@ function PortalApp({ token, onLogout }) {
 	function openRecruiterNotes(candidateOrId) {
 	  const candidateId = String(candidateOrId?.id || candidateOrId || "").trim();
 	  if (!candidateId) return;
-    const liveCandidate = (state.candidates || []).find((item) => String(item.id) === candidateId) || null;
+    const liveCandidate = (state.applicantListItems || []).find((item) => String(item.id) === candidateId)
+      || (state.applicants || []).find((item) => String(item.id) === candidateId)
+      || (state.candidates || []).find((item) => String(item.id) === candidateId)
+      || null;
     setNotesCandidateSnapshot(liveCandidate || (candidateOrId && typeof candidateOrId === "object" ? { ...candidateOrId } : null));
 	  setNotesCandidateId(candidateId);
 	}
@@ -14185,12 +14191,8 @@ function PortalApp({ token, onLogout }) {
       ...current,
       candidates: applyPatch(current.candidates),
       databaseCandidates: applyPatch(current.databaseCandidates),
-      applicants: String(location?.pathname || "").trim() === "/applicants"
-        ? applyPatch(current.applicants)
-        : current.applicants,
-      applicantListItems: String(location?.pathname || "").trim() === "/applicants"
-        ? applyPatch(current.applicantListItems)
-        : current.applicantListItems
+      applicants: applyPatch(current.applicants),
+      applicantListItems: applyPatch(current.applicantListItems)
     }));
     if (String(location?.pathname || "").trim() === "/captured-notes") {
       setCapturedListItems((current) => applyPatch(current));
@@ -14198,7 +14200,13 @@ function PortalApp({ token, onLogout }) {
     }
     // No immediate workspace refresh here: optimistic + timestamped local state is source of truth.
     // This avoids delayed viewport jump while preserving correct saved values.
-    setStatus("captured", okMessage, "ok");
+    const liveApplicant = (state.applicantListItems || []).find((item) => String(item?.id || "") === String(candidateId))
+      || (state.applicants || []).find((item) => String(item?.id || "") === String(candidateId))
+      || null;
+    const statusKey = isInboundApplicantSource(liveApplicant?.sourcePlatform || liveApplicant?.source || "")
+      ? "applicants"
+      : "captured";
+    setStatus(statusKey, okMessage, "ok");
   }
 
   async function patchCandidateQuiet(candidateId, patch, options = {}) {
@@ -20207,6 +20215,58 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
         || row?.role
         || ""
       ).trim(),
+      assignedToName: String(
+        row?.assignedToName
+        || row?.assigned_to_name
+        || previousApplicantRow?.assignedToName
+        || previousApplicantRow?.assigned_to_name
+        || ""
+      ).trim(),
+      assigned_to_name: String(
+        row?.assigned_to_name
+        || row?.assignedToName
+        || previousApplicantRow?.assigned_to_name
+        || previousApplicantRow?.assignedToName
+        || ""
+      ).trim(),
+      assignedToUserId: String(
+        row?.assignedToUserId
+        || row?.assigned_to_user_id
+        || previousApplicantRow?.assignedToUserId
+        || previousApplicantRow?.assigned_to_user_id
+        || ""
+      ).trim(),
+      assigned_to_user_id: String(
+        row?.assigned_to_user_id
+        || row?.assignedToUserId
+        || previousApplicantRow?.assigned_to_user_id
+        || previousApplicantRow?.assignedToUserId
+        || ""
+      ).trim(),
+      assignedAt: String(
+        row?.assignedAt
+        || row?.assigned_at
+        || previousApplicantRow?.assignedAt
+        || previousApplicantRow?.assigned_at
+        || row?.createdAt
+        || row?.created_at
+        || previousApplicantRow?.createdAt
+        || previousApplicantRow?.created_at
+        || ""
+      ).trim(),
+      assigned_at: String(
+        row?.assigned_at
+        || row?.assignedAt
+        || previousApplicantRow?.assigned_at
+        || previousApplicantRow?.assignedAt
+        || row?.created_at
+        || row?.createdAt
+        || previousApplicantRow?.created_at
+        || previousApplicantRow?.createdAt
+        || ""
+      ).trim(),
+      createdAt: String(row?.createdAt || row?.created_at || previousApplicantRow?.createdAt || previousApplicantRow?.created_at || "").trim(),
+      created_at: String(row?.created_at || row?.createdAt || previousApplicantRow?.created_at || previousApplicantRow?.createdAt || "").trim(),
       phone: String(row?.phone || previousApplicantRow?.phone || "").trim(),
       email: String(row?.email || previousApplicantRow?.email || "").trim(),
       location: String(row?.location || previousApplicantRow?.location || "").trim(),
@@ -25813,8 +25873,15 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
 	        candidate={notesCandidate}
 	        onClose={() => { setNotesCandidateId(""); setNotesCandidateSnapshot(null); }}
 	        onPatch={async (patch, message) => {
-            await patchCandidate(notesCandidateId, patch, message || "Recruiter note updated.");
+            await patchCandidateQuiet(notesCandidateId, patch, { skipRefresh: true });
             setNotesCandidateSnapshot((current) => (current ? { ...current, ...patch } : current));
+            const notesLiveApplicant = (state.applicantListItems || []).find((item) => String(item?.id || "") === String(notesCandidateId))
+              || (state.applicants || []).find((item) => String(item?.id || "") === String(notesCandidateId))
+              || null;
+            const notesStatusKey = isInboundApplicantSource(notesLiveApplicant?.sourcePlatform || notesLiveApplicant?.source || "")
+              ? "applicants"
+              : "captured";
+            setStatus(notesStatusKey, message || "Recruiter note updated.", "ok");
           }}
 	        onParse={async (rawText) => api("/parse-note", token, "POST", {
 	          note: rawText,
