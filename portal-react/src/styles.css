@@ -3473,6 +3473,11 @@ button:focus-visible {
   box-shadow: inset 0 0 0 1px rgba(120, 138, 170, 0.08);
 }
 
+.captured-note-card--inactive.applied-note-card--inactive {
+  background: #ffffff;
+  box-shadow: inset 0 0 0 1px rgba(120, 138, 170, 0.14);
+}
+
 .captured-note-card--inactive .captured-note-title-row h3,
 .captured-note-card--inactive .captured-note-subtitle,
 .captured-note-card--inactive .captured-note-field-value,

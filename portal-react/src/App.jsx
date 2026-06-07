@@ -21831,7 +21831,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                   const linkedCandidate = applicantCandidateMap.get(String(item.id)) || null;
                   const applicantIsHidden = Boolean(item.hidden_from_captured || linkedCandidate?.hidden_from_captured);
                   return (
-                  <article className={`item-card compact-card captured-note-card${applicantIsHidden ? " captured-note-card--inactive" : ""}`} key={item.id}>
+                  <article className={`item-card compact-card captured-note-card${applicantIsHidden ? " captured-note-card--inactive applied-note-card--inactive" : ""}`} key={item.id}>
                     {String(state.user?.role || "").toLowerCase() === "admin" ? (
                       <label className="captured-top-select captured-top-select--card">
                         <input
@@ -21909,10 +21909,28 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                             <span className="captured-note-field-label">Assigned to</span>
                             <span className="captured-note-field-value">{item.assignedToName || "NA"}</span>
                           </div>
+                          <div className="captured-note-contact-row captured-note-field">
+                            <span className="captured-note-contact-icon" aria-hidden="true">🕒</span>
+                            <span className="captured-note-field-label">Assigned at</span>
+                            <span className="captured-note-field-value">{item.assignedAt || item.assigned_at || "NA"}</span>
+                          </div>
                         </div>
                       </div>
                     </div>
-                    {item.assignedToName ? <div className="status-note">{`Already assigned to ${item.assignedToName}`}</div> : null}
+                    {String(item.lastContactOutcome || item.last_contact_outcome || item.status || "").trim() || String(item.screeningAnswers || "").trim() ? (
+                      <div className="status-note" style={{ marginTop: 10, justifyContent: "flex-end", textAlign: "right" }}>
+                        {(() => {
+                          const statusText = String(getApplicantWorkflowOutcome(item, applicantCandidateMap.get(String(item.id)) || null) || "").trim();
+                          const remarksText = normalizeMojibakeSymbols(String(item.screeningAnswers || "").trim());
+                          return (
+                            <>
+                              <strong>{`Status: ${statusText || "NA"}`}</strong>
+                              {remarksText ? <span>{` | Remarks: ${remarksText}`}</span> : null}
+                            </>
+                          );
+                        })()}
+                      </div>
+                    ) : null}
                     <div className="button-row captured-note-actions">
                       {!applicantIsHidden ? (
                         <button onClick={() => loadApplicantIntoInterview(item.id)}>Open draft</button>
@@ -21955,20 +21973,6 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                       )}
                       {state.user?.role === "admin" ? <button className="captured-action-danger" onClick={() => void removeApplicant(item.id)}>Remove</button> : null}
                     </div>
-                      {String(item.screeningAnswers || "").trim() || String(item.lastContactOutcome || item.last_contact_outcome || item.status || "").trim() ? (
-                        <div className="status-note" style={{ marginTop: 10 }}>
-                          {(() => {
-                            const statusText = String(getApplicantWorkflowOutcome(item, applicantCandidateMap.get(String(item.id)) || null) || "").trim();
-                            const remarksText = normalizeMojibakeSymbols(String(item.screeningAnswers || "").trim());
-                            return (
-                              <>
-                                <strong>{`Status: ${statusText || "NA"}`}</strong>
-                                {remarksText ? <span>{` | Remarks: ${remarksText}`}</span> : null}
-                              </>
-                            );
-                          })()}
-                        </div>
-                      ) : null}
                       {String(item.screeningAnswers || "").trim() ? (
                         <details className="captured-note-summary-bar">
                           <summary>
