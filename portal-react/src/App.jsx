@@ -462,7 +462,7 @@ const BOOLEAN_SEARCH_EXAMPLE_PROMPTS = [
 ];
 
 const SMART_SEARCH_QUICK_CHIPS = [
-  { id: "interview_history", label: "Throughout interview history", querySuffix: "interview history screening call aligned L1 aligned L2 aligned L3 aligned HR interview aligned feedback awaited" },
+  { id: "interview_history", label: "Throughout interview history", querySuffix: "interview history screening call aligned L1 aligned L2 aligned L3 aligned HR interview aligned interview feedback awaited interview reject offered joined shortlisted interview on hold" },
   { id: "aligned_interviews", label: "Aligned interviews", querySuffix: "assessment status screening call aligned or L1 aligned or L2 aligned or L3 aligned or HR interview aligned" },
   { id: "quick_joiners", label: "Quick joiners (<=15 days)", querySuffix: "notice period under 15 days" },
   { id: "shared_today", label: "Candidates shared today", querySuffix: "converted to assessments today" },
@@ -483,8 +483,6 @@ const SMART_CHIP_INTERVIEW_TIMELINE_STATUSES = new Set([
   "l2 aligned",
   "l3 aligned",
   "hr interview aligned",
-  "feedback awaited",
-  "cv feedback awaited",
   "interview feedback awaited",
   "interview reject",
   "offered",
@@ -12451,6 +12449,7 @@ function PortalApp({ token, onLogout }) {
       cv_shared: []
     };
     try {
+    const smartChipDataReady = Boolean(workspaceDataReady) && !candidateSearchBusy;
     const assessments = Array.isArray(state.assessments) ? state.assessments : [];
     const assessmentById = new Map(assessments.map((assessment) => [String(assessment?.id || "").trim(), assessment]));
     const assessmentByCandidateId = new Map();
@@ -12927,6 +12926,9 @@ function PortalApp({ token, onLogout }) {
       cv_shared: dedupeByCandidate(rowsByChip.cv_shared, { prefer: "latest" })
     };
     const isAllEmpty = Object.values(nextRows).every((rows) => !Array.isArray(rows) || rows.length === 0);
+    if (!smartChipDataReady) {
+      return candidateSmartChipRowsStableRef.current || nextRows;
+    }
     if (candidateRows.length === 0 && isAllEmpty && candidateSmartChipRowsStableRef.current) {
       return candidateSmartChipRowsStableRef.current;
     }
