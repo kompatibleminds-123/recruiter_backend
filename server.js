@@ -3401,12 +3401,21 @@ function sanitizeApplicantCandidate(candidate = {}) {
     sourcePlatform: String(meta.sourcePlatform || "").trim(),
     sourceLabel: String(meta.sourceLabel || "").trim(),
     jobPageUrl: String(meta.jobPageUrl || "").trim(),
-    screeningAnswers: String(meta.screeningAnswers || candidate?.screening_answers || candidate?.screeningAnswers || "").trim(),
+    screeningAnswers:
+      candidate?.screening_answers && typeof candidate.screening_answers === "object"
+        ? candidate.screening_answers
+        : candidate?.screeningAnswers && typeof candidate.screeningAnswers === "object"
+          ? candidate.screeningAnswers
+          : meta.screeningAnswers && typeof meta.screeningAnswers === "object"
+            ? meta.screeningAnswers
+            : String(meta.screeningAnswers || candidate?.screening_answers || candidate?.screeningAnswers || "").trim(),
     screening_answers: candidate?.screening_answers && typeof candidate.screening_answers === "object"
       ? candidate.screening_answers
-      : meta.screeningAnswers && typeof meta.screeningAnswers === "object"
-        ? meta.screeningAnswers
-        : {},
+      : candidate?.screeningAnswers && typeof candidate.screeningAnswers === "object"
+        ? candidate.screeningAnswers
+        : meta.screeningAnswers && typeof meta.screeningAnswers === "object"
+          ? meta.screeningAnswers
+          : {},
     currentOrgTenure: normalizedCurrentOrgTenure,
     current_org_tenure: normalizedCurrentOrgTenure,
     draft_payload: draftPayload,

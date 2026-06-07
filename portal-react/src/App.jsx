@@ -1334,7 +1334,7 @@ function normalizeAppliedPlacardCompareText(value) {
 }
 
 function getApplicantRemarksText(item = {}) {
-  const source = item?.screeningAnswers ?? item?.screening_answers ?? item?.remarks ?? item?.notes ?? "";
+  const source = item?.screening_answers ?? item?.screeningAnswers ?? item?.remarks ?? item?.notes ?? "";
   return formatAppliedPlacardText(source);
 }
 
