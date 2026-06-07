@@ -13967,12 +13967,19 @@ function PortalApp({ token, onLogout }) {
             ? {
               ...item,
               assigned_to_user_id: String(recruiterId || "").trim() || item?.assigned_to_user_id || "",
+              assignedToUserId: String(recruiterId || "").trim() || item?.assignedToUserId || item?.assigned_to_user_id || "",
               assigned_to_name: String(user?.name || "").trim() || item?.assigned_to_name || "",
+              assignedToName: String(user?.name || "").trim() || item?.assignedToName || item?.assigned_to_name || "",
+              assigned_by_user_id: String(state.user?.id || "").trim() || item?.assigned_by_user_id || "",
+              assignedByUserId: String(state.user?.id || "").trim() || item?.assignedByUserId || item?.assigned_by_user_id || "",
+              assigned_by_name: String(state.user?.name || "").trim() || item?.assigned_by_name || "",
+              assignedByName: String(state.user?.name || "").trim() || item?.assignedByName || item?.assigned_by_name || "",
               assigned_jd_id: String(jdId || "").trim() || item?.assigned_jd_id || "",
               assigned_jd_title: String(jdTitle || "").trim() || item?.assigned_jd_title || "",
               jd_title: String(jdTitle || "").trim() || item?.jd_title || "",
               client_name: String(clientName || "").trim() || item?.client_name || "",
               assigned_at: assignAtIso,
+              assignedAt: assignAtIso,
               updated_at: assignAtIso,
               updatedAt: assignAtIso
             }
@@ -20195,6 +20202,9 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
     const safeCandidateId = String(candidateId || "").trim();
     if (!safeCandidateId) return;
     const previousApplicantRow = (state.applicants || []).find((item) => String(item?.id || "") === safeCandidateId) || null;
+    const previousApplicantVisible = Array.isArray(state.applicantListItems)
+      ? state.applicantListItems.some((item) => String(item?.id || "") === safeCandidateId)
+      : false;
     const rows = payloadCandidate && typeof payloadCandidate === "object"
       ? [payloadCandidate]
       : await api(`/candidates?id=${encodeURIComponent(safeCandidateId)}&scope=company&limit=1`, token);
@@ -20352,7 +20362,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
       return;
     }
 
-    if (nextApplicantVisible) {
+    if (nextApplicantVisible || (eventType === "candidate_changed" && previousApplicantVisible)) {
       setState((current) => ({
         ...current,
         applicantListItems: upsertCandidatesById(current.applicantListItems, nextRows)
