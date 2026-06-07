@@ -22591,8 +22591,8 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                           </div>
                           <div className="captured-note-contact-row captured-note-field">
                             <span className="captured-note-contact-icon" aria-hidden="true">🕒</span>
-                            <span className="captured-note-field-label">Assigned at</span>
-                            <span className="captured-note-field-value">{formatAppliedPlacardDateTime(item.assignedAt || item.assigned_at || item.createdAt || item.created_at)}</span>
+                            <span className="captured-note-field-label">Updated at</span>
+                            <span className="captured-note-field-value">{formatAppliedPlacardDateTime(item.updatedAt || item.updated_at || item.assignedAt || item.assigned_at || item.createdAt || item.created_at)}</span>
                           </div>
                           <div className="captured-note-contact-row captured-note-field">
                             <span className="captured-note-contact-icon" aria-hidden="true">🗓</span>
