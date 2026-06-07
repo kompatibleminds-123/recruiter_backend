@@ -3234,6 +3234,66 @@ function getApplicantManualAssigneeLabel(applicant, linkedCandidate = null) {
   return getApplicantOwnerLabel(applicant, linkedCandidate);
 }
 
+function isApplicantRowVisibleInCurrentView(row = {}, filters = {}, user = null, linkedCandidate = null, linkedAssessment = null) {
+  if (!row) return false;
+  const isAdmin = String(user?.role || "").toLowerCase() === "admin";
+  const currentUserName = String(user?.name || "").trim().toLowerCase();
+  const currentUserId = String(user?.id || "").trim();
+  const assignedName = String(row?.assignedToName || row?.assigned_to_name || linkedCandidate?.assigned_to_name || "").trim().toLowerCase();
+  const assignedId = String(row?.assignedToUserId || row?.assigned_to_user_id || linkedCandidate?.assigned_to_user_id || "").trim();
+  if (!isAdmin) {
+    if (currentUserId && assignedId) {
+      if (assignedId !== currentUserId) return false;
+    } else if (!assignedName || assignedName !== currentUserName) {
+      return false;
+    }
+  }
+  const manuallyHidden = isApplicantHiddenForCard(row, linkedCandidate);
+  const isConvertedApplicant = Boolean(
+    linkedAssessment ||
+    row?.used_in_assessment ||
+    row?.usedInAssessment ||
+    String(row?.assessment_id || row?.assessmentId || "").trim()
+  );
+  const activeValue = manuallyHidden ? "Inactive" : (isConvertedApplicant ? "Converted" : "Active");
+  const activeStates = Array.isArray(filters?.activeStates) && filters.activeStates.length
+    ? filters.activeStates
+    : ["Active"];
+  if (!activeStates.includes(activeValue)) return false;
+  if (activeValue === "Converted") return false;
+  const clientValue = String(row?.clientName || row?.client_name || "Unassigned").trim();
+  const jdValue = String(row?.jdTitle || row?.jd_title || row?.assigned_jd_title || row?.assignedJdTitle || "").trim();
+  const locationValue = normalizeApplicantLocationLabel(row?.location || linkedCandidate?.location || "");
+  const assignedValue = getApplicantManualAssigneeLabel(row, linkedCandidate);
+  const outcomeValue = getApplicantWorkflowOutcome(row, linkedCandidate);
+  const sourceValue = String(row?.sourcePlatform || row?.source || linkedCandidate?.source || "").trim();
+  const createdDate = String(row?.createdAt || row?.created_at || "").slice(0, 10);
+  const query = String(filters?.q || "").trim().toLowerCase();
+  const hay = [
+    row?.candidateName,
+    row?.name,
+    linkedCandidate?.name,
+    row?.phone,
+    row?.email,
+    jdValue,
+    clientValue,
+    locationValue,
+    assignedValue,
+    row?.currentCompany,
+    row?.currentDesignation
+  ].join(" ").toLowerCase();
+  if (query && !hay.includes(query)) return false;
+  if (filters?.dateFrom && createdDate && createdDate < filters.dateFrom) return false;
+  if (filters?.dateTo && createdDate && createdDate > filters.dateTo) return false;
+  if (Array.isArray(filters?.clients) && filters.clients.length && !filters.clients.includes(clientValue)) return false;
+  if (Array.isArray(filters?.jds) && filters.jds.length && !matchesJdFilterValue(jdValue, filters.jds)) return false;
+  if (Array.isArray(filters?.locations) && filters.locations.length && !filters.locations.includes(locationValue)) return false;
+  if (Array.isArray(filters?.assignedTo) && filters.assignedTo.length && !filters.assignedTo.includes(assignedValue)) return false;
+  if (Array.isArray(filters?.sources) && filters.sources.length && !filters.sources.includes(sourceValue)) return false;
+  if (Array.isArray(filters?.outcomes) && filters.outcomes.length && !filters.outcomes.includes(outcomeValue)) return false;
+  return true;
+}
+
 function fillCandidateTemplate(template, candidate) {
   const source = candidate || {};
   const map = {
@@ -13919,6 +13979,7 @@ function PortalApp({ token, onLogout }) {
         return {
           ...current,
           applicants: applyPatch(current.applicants),
+          applicantListItems: applyPatch(current.applicantListItems),
           candidates: applyPatch(current.candidates),
           databaseCandidates: applyPatch(current.databaseCandidates)
         };
@@ -20135,11 +20196,8 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
     const previousHidden = Boolean(previousRow?.hidden_from_captured);
     const nextHidden = Boolean(nextRow?.hidden_from_captured);
     const hiddenChanged = previousHidden !== nextHidden;
-    const applicantCurrentStates = Array.isArray(applicantFiltersApplied.activeStates) && applicantFiltersApplied.activeStates.length
-      ? applicantFiltersApplied.activeStates
-      : ["Active"];
     const nextApplicantVisible = nextRow
-      ? (nextHidden ? applicantCurrentStates.includes("Inactive") : applicantCurrentStates.includes("Active"))
+      ? isApplicantRowVisibleInCurrentView(nextRow, applicantFiltersApplied, state.user, nextRow, null)
       : false;
     const nextVisible = nextRow ? isCapturedRowVisibleInCurrentView(nextRow, candidateFiltersApplied, state.user) : false;
 
