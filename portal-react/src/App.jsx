@@ -15330,6 +15330,33 @@ function PortalApp({ token, onLogout }) {
       setStatus(statusKey, "This note is hidden/inactive. Restore to active first, then convert to assessment.", "error");
       return;
     }
+    const candidateName = candidate?.name || sourceApplicant?.candidateName || "";
+    const linkedAssessmentId = String(
+      candidate?.assessment_id
+      || candidate?.assessmentId
+      || sourceApplicant?.assessment_id
+      || sourceApplicant?.assessmentId
+      || ""
+    ).trim();
+    if (linkedAssessmentId) {
+      const matched = (state.assessments || []).find((item) => String(item?.id || "").trim() === linkedAssessmentId) || null;
+      if (matched) {
+        openSavedAssessment(matched);
+        return;
+      }
+      const matchedByResolvedLink = resolveCapturedAssessment(candidate || sourceApplicant);
+      if (matchedByResolvedLink) {
+        openSavedAssessment(matchedByResolvedLink);
+        return;
+      }
+    }
+    if (String(candidate?.assessment_id || candidate?.assessmentId || sourceApplicant?.assessment_id || sourceApplicant?.assessmentId || "").trim()) {
+      setStatus(statusKey, "Linked assessment not found locally; opening a fresh assessment instead.", "warning");
+    }
+
+    if (!window.confirm(`Create assessment for ${candidateName || "this candidate"}? This will move the record out of the active ${sourceApplicant ? "Applied Candidates" : "Captured Notes"} list.`)) {
+      return;
+    }
     if (sourceApplicant && !candidate) {
       try {
         const applicantRemarks = getApplicantRemarksText(applicantView || sourceApplicant || {});
@@ -15417,33 +15444,6 @@ function PortalApp({ token, onLogout }) {
         setStatus(statusKey, `Could not auto-save this applied candidate before assessment conversion: ${String(error?.message || error)}`, "error");
         return;
       }
-    }
-    const candidateName = candidate?.name || sourceApplicant?.candidateName || "";
-    const linkedAssessmentId = String(
-      candidate?.assessment_id
-      || candidate?.assessmentId
-      || sourceApplicant?.assessment_id
-      || sourceApplicant?.assessmentId
-      || ""
-    ).trim();
-    if (linkedAssessmentId) {
-      const matched = (state.assessments || []).find((item) => String(item?.id || "").trim() === linkedAssessmentId) || null;
-      if (matched) {
-        openSavedAssessment(matched);
-        return;
-      }
-      const matchedByResolvedLink = resolveCapturedAssessment(candidate || sourceApplicant);
-      if (matchedByResolvedLink) {
-        openSavedAssessment(matchedByResolvedLink);
-        return;
-      }
-    }
-    if (String(candidate?.assessment_id || candidate?.assessmentId || sourceApplicant?.assessment_id || sourceApplicant?.assessmentId || "").trim()) {
-      setStatus(statusKey, "Linked assessment not found locally; opening a fresh assessment instead.", "warning");
-    }
-
-    if (!window.confirm(`Create assessment for ${candidateName || "this candidate"}? This will move the record out of the active ${sourceApplicant ? "Applied Candidates" : "Captured Notes"} list.`)) {
-      return;
     }
     const lockKey = capturedCandidateId;
     if (lockKey && assessmentStatusSaveLockRef.current.has(lockKey)) {
