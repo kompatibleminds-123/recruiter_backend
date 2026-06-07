@@ -14246,6 +14246,7 @@ function PortalApp({ token, onLogout }) {
     }
     await api(`/company/candidates/${encodeURIComponent(candidateId)}`, token, "PATCH", { patch: nextPatch });
     const optimisticUpdatedAt = new Date().toISOString();
+    const isAppliedSource = isInboundApplicantSource(currentCandidate?.sourcePlatform || currentCandidate?.source || "");
     const applyPatch = (items) => Array.isArray(items)
       ? items.map((item) => String(item?.id || "") === String(candidateId) ? { ...item, ...nextPatch, updated_at: optimisticUpdatedAt, updatedAt: optimisticUpdatedAt } : item)
       : items;
@@ -14253,8 +14254,8 @@ function PortalApp({ token, onLogout }) {
       ...current,
       candidates: applyPatch(current.candidates),
       databaseCandidates: applyPatch(current.databaseCandidates),
-      applicants: applyPatch(current.applicants),
-      applicantListItems: applyPatch(current.applicantListItems)
+      applicants: isAppliedSource ? sortApplicantsForList(applyPatch(current.applicants), applicantSortBy) : applyPatch(current.applicants),
+      applicantListItems: isAppliedSource ? sortApplicantsForList(applyPatch(current.applicantListItems), applicantSortBy) : applyPatch(current.applicantListItems)
     }));
     if (String(location?.pathname || "").trim() === "/captured-notes") {
       setCapturedListItems((current) => applyPatch(current));
