@@ -3248,6 +3248,19 @@ function signatureHtmlForMail(signatureHtml = "", signatureText = "") {
   return plainText ? escapeHtml(plainText).replace(/\n/g, "<br/>") : "";
 }
 
+function signatureLinksHtmlBlock(links = []) {
+  return (Array.isArray(links) ? links : [])
+    .map((link) => {
+      const label = String(link?.label || "").trim();
+      const url = String(link?.url || "").trim();
+      if (!url) return "";
+      const linkLabel = escapeHtml(label || url);
+      return `<div><a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">${linkLabel}</a></div>`;
+    })
+    .filter(Boolean)
+    .join("");
+}
+
 function formatExcelMultilineCell(value) {
   const raw = String(value ?? "");
   if (!raw) return "";
@@ -17319,6 +17332,7 @@ function PortalApp({ token, onLogout }) {
     const baseIntro = fillJdEmailTemplate(introTpl, { candidateName, recruiterName, roleLabel, companyName, recruiterEmail: recruiterUserEmail, recruiterPhone: recruiterUserPhone }).trim();
     const clientLabel = String(candidate?.client_name || candidate?.clientName || candidate?.client || "").trim();
     const roleLine = [roleLabel, clientLabel].filter(Boolean).join(" for ");
+    const loadedSignature = normalizeLoadedSignatureValue(smtpSettings.signatureHtml || "", smtpSettings.signatureText || "");
     const signatureContext = {
       hrName: "",
       clientLabel,
@@ -17329,14 +17343,33 @@ function PortalApp({ token, onLogout }) {
       companyName,
       roleLine
     };
-    const loadedSignature = normalizeLoadedSignatureValue(smtpSettings.signatureHtml || "", smtpSettings.signatureText || "");
-    const signatureText = String(loadedSignature.signatureText || "").trim()
+    const recruiterSignatureText = String(loadedSignature.signatureText || "").trim();
+    const signatureText = recruiterSignatureText
       || fillClientShareTemplate(copySettings.clientShareSignatureText || DEFAULT_COPY_SETTINGS.clientShareSignatureText || "", signatureContext).trim();
     const signatureHtml = signatureHtmlForMail(loadedSignature.signatureHtml || "", loadedSignature.signatureText || "");
     const signatureLinks = [
-      { label: String(smtpSettings.signatureLinkLabel || copySettings.clientShareSignatureLinkLabel || "").trim(), url: String(smtpSettings.signatureLinkUrl || copySettings.clientShareSignatureLinkUrl || "").trim() },
-      { label: String(smtpSettings.signatureLinkLabel2 || copySettings.clientShareSignatureLinkLabel2 || "").trim(), url: String(smtpSettings.signatureLinkUrl2 || copySettings.clientShareSignatureLinkUrl2 || "").trim() }
+      {
+        label: String(smtpSettings.signatureLinkLabel || copySettings.clientShareSignatureLinkLabel || "").trim(),
+        url: String(smtpSettings.signatureLinkUrl || copySettings.clientShareSignatureLinkUrl || "").trim()
+      },
+      {
+        label: String(smtpSettings.signatureLinkLabel2 || copySettings.clientShareSignatureLinkLabel2 || "").trim(),
+        url: String(smtpSettings.signatureLinkUrl2 || copySettings.clientShareSignatureLinkUrl2 || "").trim()
+      }
     ].filter((link) => link.url);
+    const signatureHtmlBlock = [
+      signatureHtml ? `<div>${signatureHtml}</div>` : "",
+      signatureLinksHtmlBlock(signatureLinks)
+    ].filter(Boolean).join("");
+    const signatureTextBlock = [
+      signatureText,
+      ...signatureLinks.map((link) => {
+        const label = String(link?.label || "").trim();
+        const url = String(link?.url || "").trim();
+        if (!url) return "";
+        return label ? `${label}: ${url}` : url;
+      }).filter(Boolean)
+    ].filter(Boolean).join("\n");
     const defaultIntro = baseIntro;
     const rememberedCc = String((jdEmailCcSuggestions || [])[0] || "").trim();
     const defaultCc = rememberedCc || defaultJdEmailCc;
@@ -17350,9 +17383,9 @@ function PortalApp({ token, onLogout }) {
       jobId: suggestedJobId
       ,
       attachJdFile: true,
-      signatureHtml,
-      signatureText,
-      signatureLinks
+      signatureHtml: signatureHtmlBlock,
+      signatureText: signatureTextBlock,
+      signatureLinks: []
     });
     setJdEmailModalStatus({ message: "", kind: "" });
   }
@@ -17389,7 +17422,7 @@ function PortalApp({ token, onLogout }) {
         introText: String(jdEmailModal.introText || "").trim(),
         signatureHtml: signatureHtmlForMail(normalizedSignature.signatureHtml || "", normalizedSignature.signatureText || ""),
         signatureText: String(normalizedSignature.signatureText || "").trim(),
-        signatureLinks: Array.isArray(jdEmailModal.signatureLinks) ? jdEmailModal.signatureLinks : [],
+        signatureLinks: [],
         attachJdFile
       });
       if (currentCompanyId) {
