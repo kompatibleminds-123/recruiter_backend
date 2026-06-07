@@ -1354,12 +1354,40 @@ function normalizeAppliedPlacardCompareText(value) {
     .toLowerCase();
 }
 
+function shouldTreatApplicantRecruiterNoteAsCandidateRemarks(item = {}) {
+  const source = String(item?.source || item?.sourcePlatform || "").trim().toLowerCase();
+  if (!["website_apply", "hosted_apply", "website", "hosted"].includes(source)) return false;
+  const recruiterNote = formatAppliedPlacardText(item?.recruiter_context_notes);
+  if (!recruiterNote) return false;
+  const explicitRemarks = [
+    item?.screening_answers,
+    item?.screeningAnswers,
+    item?.remarks,
+    item?.notes
+  ].some((value) => Boolean(formatAppliedPlacardText(value)));
+  if (explicitRemarks) return false;
+  const hasExtraRecruiterFields = [
+    item?.other_pointers,
+    item?.otherPointers,
+    item?.expected_ctc,
+    item?.expectedCtc,
+    item?.current_ctc,
+    item?.currentCtc,
+    item?.notice_period,
+    item?.noticePeriod,
+    item?.lwd_or_doj,
+    item?.lwdOrDoj
+  ].some((value) => Boolean(String(value || "").trim()));
+  return !hasExtraRecruiterFields;
+}
+
 function getApplicantRemarksText(item = {}) {
   const candidates = [
     item?.screening_answers,
     item?.screeningAnswers,
     item?.remarks,
-    item?.notes
+    item?.notes,
+    shouldTreatApplicantRecruiterNoteAsCandidateRemarks(item) ? item?.recruiter_context_notes : ""
   ];
   for (const candidate of candidates) {
     const text = formatAppliedPlacardText(candidate);
@@ -1369,6 +1397,7 @@ function getApplicantRemarksText(item = {}) {
 }
 
 function getApplicantRecruiterNoteText(item = {}) {
+  if (shouldTreatApplicantRecruiterNoteAsCandidateRemarks(item)) return "";
   const note = formatAppliedPlacardText([
     item?.recruiter_context_notes,
     item?.other_pointers
