@@ -1275,11 +1275,8 @@ function formatAppliedPlacardDateTime(value) {
   const date = new Date(raw);
   if (!Number.isFinite(date.getTime())) return raw;
   const dateText = date.toLocaleDateString("en-GB");
-  const hours24 = date.getHours();
-  const hours12 = hours24 % 12 || 12;
-  const minutes = String(date.getMinutes()).padStart(2, "0");
-  const ampm = hours24 >= 12 ? "PM" : "AM";
-  return `${dateText} - ${hours12}.${minutes} ${ampm}`;
+  const timeText = date.toLocaleTimeString("en-GB", { hour12: false });
+  return `${dateText}, ${timeText}`;
 }
 
 function formatAppliedPlacardText(value) {
@@ -4661,15 +4658,20 @@ function MultiSelectDropdown({ label, options, selected, onToggle, allowAll = tr
           {allowAll ? (
             <button className={`chip chip-toggle${!selected.length ? " active" : ""}`} onClick={() => onToggle("__all__")}>All</button>
           ) : null}
-          {options.map((option) => (
-            <button
-              key={option}
-              className={`chip chip-toggle${selected.includes(option) ? " active" : ""}`}
-              onClick={() => onToggle(option)}
-            >
-              {option}
-            </button>
-          ))}
+          {options.map((option) => {
+            const value = typeof option === "object" && option !== null ? String(option.value || "").trim() : String(option || "").trim();
+            if (!value) return null;
+            const labelValue = typeof option === "object" && option !== null ? String(option.label || option.value || value).trim() : value;
+            return (
+              <button
+                key={value}
+                className={`chip chip-toggle${selected.includes(value) ? " active" : ""}`}
+                onClick={() => onToggle(value)}
+              >
+                {labelValue}
+              </button>
+            );
+          })}
         </div>
       </div>
     </details>
@@ -7680,6 +7682,7 @@ function PortalApp({ token, onLogout }) {
   const [bulkAssignCandidateIds, setBulkAssignCandidateIds] = useState([]);
   const [applicantPage, setApplicantPage] = useState(1);
   const [applicantPageSize, setApplicantPageSize] = useState(25);
+  const [applicantSortBy, setApplicantSortBy] = useState("created"); // created | updated
   const [capturedPage, setCapturedPage] = useState(1);
   const [capturedPageSize, setCapturedPageSize] = useState(25);
   const [capturedSortBy, setCapturedSortBy] = useState("created"); // created | updated
@@ -10096,10 +10099,11 @@ function PortalApp({ token, onLogout }) {
     }
   }
 
-  function buildApplicantQueryParams(filters = applicantFiltersApplied, page = safeApplicantApiPage, limit = safeApplicantApiPageSize) {
+  function buildApplicantQueryParams(filters = applicantFiltersApplied, page = safeApplicantApiPage, limit = safeApplicantApiPageSize, sortBy = applicantSortBy) {
     const params = new URLSearchParams();
     params.set("limit", String(Math.max(1, Number(limit || 25))));
     params.set("page", String(Math.max(1, Number(page || 1))));
+    params.set("sortBy", String(sortBy || "created").trim() || "created");
     const addCsv = (key, list) => {
       if (!Array.isArray(list) || !list.length) return;
       params.set(key, list.map((item) => String(item || "").trim()).filter(Boolean).join(","));
@@ -10112,15 +10116,15 @@ function PortalApp({ token, onLogout }) {
     addCsv("jds", filters?.jds);
     addCsv("jdIds", getJobIdsForSelectedTitles(filters?.jds));
     addCsv("locations", filters?.locations);
-    addCsv("ownedBy", filters?.ownedBy);
     addCsv("assignedTo", filters?.assignedTo);
+    addCsv("sources", filters?.sources);
     addCsv("activeStates", filters?.activeStates);
     return params.toString();
   }
 
-  async function reloadApplicantsSlice(page = safeApplicantApiPage, limit = safeApplicantApiPageSize, filters = applicantFiltersApplied) {
+  async function reloadApplicantsSlice(page = safeApplicantApiPage, limit = safeApplicantApiPageSize, filters = applicantFiltersApplied, sortBy = applicantSortBy) {
     if (!token) return;
-    const query = buildApplicantQueryParams(filters, page, limit);
+    const query = buildApplicantQueryParams(filters, page, limit, sortBy);
     if (applicantListRequestRef.current.inflightQuery === query) return;
     const seq = Number(applicantListRequestRef.current.seq || 0) + 1;
     applicantListRequestRef.current = { seq, inflightQuery: query };
@@ -10864,7 +10868,7 @@ function PortalApp({ token, onLogout }) {
     PORTAL_TAB_FIRST_OPEN_RUNTIME_STATE.applicants = true;
     tabInitialLoadSuppressedRef.current.applicants = true;
     void Promise.all([
-      reloadApplicantsSlice(safeApplicantApiPage, safeApplicantApiPageSize, applicantFiltersApplied),
+      reloadApplicantsSlice(safeApplicantApiPage, safeApplicantApiPageSize, applicantFiltersApplied, applicantSortBy),
       reloadApplicantStats(applicantFiltersApplied)
     ]).catch(() => {});
     return undefined;
@@ -10883,10 +10887,10 @@ function PortalApp({ token, onLogout }) {
       return;
     }
     void Promise.all([
-      reloadApplicantsSlice(safeApplicantApiPage, safeApplicantApiPageSize, applicantFiltersApplied),
+      reloadApplicantsSlice(safeApplicantApiPage, safeApplicantApiPageSize, applicantFiltersApplied, applicantSortBy),
       reloadApplicantStats(applicantFiltersApplied)
     ]).catch(() => {});
-  }, [token, location?.pathname, safeApplicantApiPage, safeApplicantApiPageSize, applicantFiltersApplied]);
+  }, [token, location?.pathname, safeApplicantApiPage, safeApplicantApiPageSize, applicantFiltersApplied, applicantSortBy]);
 
   useEffect(() => {
     if (!token) return undefined;
@@ -10915,7 +10919,7 @@ function PortalApp({ token, onLogout }) {
       }
       if (eventType === "candidate_created" || eventType === "candidate_deleted" || !candidateId) {
         void Promise.all([
-          reloadApplicantsSlice(safeApplicantApiPage, safeApplicantApiPageSize, applicantFiltersApplied),
+          reloadApplicantsSlice(safeApplicantApiPage, safeApplicantApiPageSize, applicantFiltersApplied, applicantSortBy),
           reloadApplicantStats(applicantFiltersApplied)
         ]).catch(() => {});
       }
@@ -10926,7 +10930,7 @@ function PortalApp({ token, onLogout }) {
       try { source.removeEventListener("applicants", onApplicants); } catch {}
       try { source.close(); } catch {}
     };
-  }, [token, location?.pathname, safeApplicantApiPage, safeApplicantApiPageSize, applicantFiltersApplied]);
+  }, [token, location?.pathname, safeApplicantApiPage, safeApplicantApiPageSize, applicantFiltersApplied, applicantSortBy]);
 
   useEffect(() => {
     if (!token) return undefined;
@@ -10978,7 +10982,7 @@ function PortalApp({ token, onLogout }) {
     const pendingEventType = String(pendingEvent?.eventType || "").trim();
     if (pendingEventType === "candidate_created" || pendingEventType === "candidate_deleted" || !pendingCandidateId) {
       void Promise.all([
-        reloadApplicantsSlice(safeApplicantApiPage, safeApplicantApiPageSize, applicantFiltersApplied),
+        reloadApplicantsSlice(safeApplicantApiPage, safeApplicantApiPageSize, applicantFiltersApplied, applicantSortBy),
         reloadApplicantStats(applicantFiltersApplied)
       ]).catch(() => {});
       return;
@@ -11015,12 +11019,12 @@ function PortalApp({ token, onLogout }) {
         previousAssessmentId !== nextAssessmentId;
       if (membershipChanged) {
         await Promise.all([
-          reloadApplicantsSlice(safeApplicantApiPage, safeApplicantApiPageSize, applicantFiltersApplied),
+          reloadApplicantsSlice(safeApplicantApiPage, safeApplicantApiPageSize, applicantFiltersApplied, applicantSortBy),
           reloadApplicantStats(applicantFiltersApplied)
         ]);
       }
     })().catch(() => {});
-  }, [token, location?.pathname, safeApplicantApiPage, safeApplicantApiPageSize, applicantFiltersApplied]);
+  }, [token, location?.pathname, safeApplicantApiPage, safeApplicantApiPageSize, applicantFiltersApplied, applicantSortBy]);
 
   useEffect(() => {
     if (!token) return;
@@ -11510,6 +11514,11 @@ function PortalApp({ token, onLogout }) {
     const clients = new Set();
     const recruiters = new Set();
     const outcomes = new Set();
+    const clientUniverse = Array.isArray(state.dashboard?.availableClients) ? state.dashboard.availableClients : [];
+    clientUniverse.forEach((item) => {
+      const label = String(item || "").trim();
+      if (label) clients.add(label);
+    });
     const assessmentUniverse = Array.isArray(state.assessments) && state.assessments.length
       ? state.assessments
       : assessmentOptionPool;
@@ -12695,6 +12704,11 @@ function PortalApp({ token, onLogout }) {
     const meta = { clients: new Set(), sources: new Set(), outcomes: new Set(), assignedTo: new Set(), capturedBy: new Set() };
     const currentUserName = String(state.user?.name || "").trim();
     const isAdmin = String(state.user?.role || "").toLowerCase() === "admin";
+    const clientUniverse = Array.isArray(state.dashboard?.availableClients) ? state.dashboard.availableClients : [];
+    clientUniverse.forEach((item) => {
+      const label = String(item || "").trim();
+      if (label) meta.clients.add(label);
+    });
     if (isAdmin) {
       (state.users || []).forEach((user) => {
         const label = String(user?.name || "").trim();
@@ -12916,7 +12930,10 @@ function PortalApp({ token, onLogout }) {
       jds: Array.from(jds).sort((a, b) => a.localeCompare(b)),
       locations: Array.from(locations).sort((a, b) => a.localeCompare(b)),
       assignedTo: Array.from(assignedTo).sort((a, b) => a.localeCompare(b)),
-      sources: ["website_apply", "hosted_apply"].filter((item) => sources.has(item) || true),
+      sources: [
+        { label: "Website apply", value: "website_apply" },
+        { label: "Hosted apply", value: "hosted_apply" }
+      ],
       outcomes: APPLIED_OUTCOME_FILTER_ORDER.concat(
         Array.from(outcomes).filter((item) => !APPLIED_OUTCOME_FILTER_ORDER.includes(item)).sort((a, b) => a.localeCompare(b))
       ),
@@ -12973,7 +12990,6 @@ function PortalApp({ token, onLogout }) {
       const clientValue = String(item.clientName || item.client_name || "Unassigned").trim();
       const jdValue = String(item.jdTitle || item.jd_title || "").trim();
       const locationValue = normalizeApplicantLocationLabel(item.location || linkedCandidate?.location || "");
-      const ownedValue = getApplicantOwnerLabel(item, linkedCandidate);
       const assignedValue = getApplicantManualAssigneeLabel(item, linkedCandidate);
       const outcomeValue = getApplicantWorkflowOutcome(item, linkedCandidate);
       const manuallyHidden = Boolean(item.hidden_from_captured || item.hiddenFromCaptured || linkedCandidate?.hidden_from_captured || linkedCandidate?.hiddenFromCaptured);
@@ -12989,7 +13005,6 @@ function PortalApp({ token, onLogout }) {
         jdValue,
         clientValue,
         locationValue,
-        ownedValue,
         assignedValue,
         item.currentCompany,
         item.currentDesignation
@@ -13003,8 +13018,8 @@ function PortalApp({ token, onLogout }) {
       if (applicantFiltersApplied.clients.length && !applicantFiltersApplied.clients.includes(clientValue)) return false;
       if (applicantFiltersApplied.jds.length && !matchesJdFilterValue(jdValue, applicantFiltersApplied.jds)) return false;
       if (applicantFiltersApplied.locations.length && !applicantFiltersApplied.locations.includes(locationValue)) return false;
-      if (applicantFiltersApplied.ownedBy.length && !applicantFiltersApplied.ownedBy.includes(ownedValue)) return false;
       if (applicantFiltersApplied.assignedTo.length && !applicantFiltersApplied.assignedTo.includes(assignedValue)) return false;
+      if (applicantFiltersApplied.sources.length && !applicantFiltersApplied.sources.includes(String(item.sourcePlatform || item.source || linkedCandidate?.source || "").trim())) return false;
       if (applicantFiltersApplied.outcomes.length && !applicantFiltersApplied.outcomes.includes(outcomeValue)) return false;
       // Keep converted rows in universe for Converted counts; list view excludes them separately.
       if (linkedAssessment && isConvertedApplicant) return true;
@@ -13078,8 +13093,8 @@ function PortalApp({ token, onLogout }) {
     applicantFiltersApplied.clients,
     applicantFiltersApplied.jds,
     applicantFiltersApplied.locations,
-    applicantFiltersApplied.ownedBy,
     applicantFiltersApplied.assignedTo,
+    applicantFiltersApplied.sources,
     applicantFiltersApplied.outcomes,
     applicantFiltersApplied.activeStates,
     applicantPageSize
@@ -21850,7 +21865,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                 <MultiSelectDropdown label="Clients" options={applicantOptions.clients} selected={applicantFilters.clients} onToggle={(value) => setApplicantFilters((current) => ({ ...current, clients: value === "__all__" ? [] : current.clients.includes(value) ? current.clients.filter((item) => item !== value) : [...current.clients, value] }))} />
                 <MultiSelectDropdown label="JD / Role" options={applicantOptions.jds} selected={applicantFilters.jds} onToggle={(value) => setApplicantFilters((current) => ({ ...current, jds: value === "__all__" ? [] : current.jds.includes(value) ? current.jds.filter((item) => item !== value) : [...current.jds, value] }))} />
                 <MultiSelectDropdown label="Location" options={applicantOptions.locations} selected={applicantFilters.locations} onToggle={(value) => setApplicantFilters((current) => ({ ...current, locations: value === "__all__" ? [] : current.locations.includes(value) ? current.locations.filter((item) => item !== value) : [...current.locations, value] }))} />
-                {String(state.user?.role || "").toLowerCase() === "admin" ? <MultiSelectDropdown label="Owned by" options={applicantOptions.ownedBy} selected={applicantFilters.ownedBy} onToggle={(value) => setApplicantFilters((current) => ({ ...current, ownedBy: value === "__all__" ? [] : current.ownedBy.includes(value) ? current.ownedBy.filter((item) => item !== value) : [...current.ownedBy, value] }))} /> : null}
+                <MultiSelectDropdown label="Sources" options={applicantOptions.sources} selected={applicantFilters.sources} onToggle={(value) => setApplicantFilters((current) => ({ ...current, sources: value === "__all__" ? [] : current.sources.includes(value) ? current.sources.filter((item) => item !== value) : [...current.sources, value] }))} />
                 {String(state.user?.role || "").toLowerCase() === "admin" ? <MultiSelectDropdown label="Assigned to" options={applicantOptions.assignedTo} selected={applicantFilters.assignedTo} onToggle={(value) => setApplicantFilters((current) => ({ ...current, assignedTo: value === "__all__" ? [] : current.assignedTo.includes(value) ? current.assignedTo.filter((item) => item !== value) : [...current.assignedTo, value] }))} /> : null}
                 <MultiSelectDropdown label="Outcome" options={applicantOptions.outcomes} selected={applicantFilters.outcomes} onToggle={(value) => setApplicantFilters((current) => ({ ...current, outcomes: value === "__all__" ? [] : current.outcomes.includes(value) ? current.outcomes.filter((item) => item !== value) : [...current.outcomes, value] }))} />
                 <MultiSelectDropdown label="State" options={applicantOptions.activeStates} selected={applicantFilters.activeStates} allowAll={false} emptySummary="Active only" onToggle={(value) => setApplicantFilters((current) => ({ ...current, activeStates: current.activeStates.includes(value) ? current.activeStates.filter((item) => item !== value) : [...current.activeStates, value] }))} />
@@ -21864,8 +21879,8 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                       clients: [...(applicantFilters.clients || [])],
                       jds: [...(applicantFilters.jds || [])],
                       locations: [...(applicantFilters.locations || [])],
-                      ownedBy: [...(applicantFilters.ownedBy || [])],
                       assignedTo: [...(applicantFilters.assignedTo || [])],
+                      sources: [...(applicantFilters.sources || [])],
                       outcomes: [...(applicantFilters.outcomes || [])],
                       activeStates: [...(applicantFilters.activeStates || [])]
                     });
@@ -21883,7 +21898,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                       clients: [],
                       jds: [],
                       locations: [],
-                      ownedBy: [],
+                      sources: [],
                       assignedTo: [],
                       outcomes: [],
                       activeStates: ["Active"]
@@ -21934,6 +21949,21 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
               <div className="applicants-pagination-toolbar">
                 <div className="muted">{`Showing ${applicantShowingStart}-${applicantShowingEnd} of ${totalApplicantCount}`}</div>
                 <div className="applicants-pagination-toolbar__controls">
+                <label className="copy-preset-control" style={{ margin: 0 }}>
+                  <span>Sort by</span>
+                  <select
+                    value={applicantSortBy}
+                    onChange={(e) => {
+                      const nextSort = String(e.target.value || "created").trim() || "created";
+                      setApplicantListLoading(true);
+                      setApplicantSortBy(nextSort);
+                      setApplicantPage(1);
+                    }}
+                  >
+                    <option value="created">Applied time</option>
+                    <option value="updated">Updated time</option>
+                  </select>
+                </label>
                 <label className="copy-preset-control" style={{ margin: 0 }}>
                   <span>Rows per page</span>
                   <select value={safeApplicantApiPageSize} onChange={(e) => {

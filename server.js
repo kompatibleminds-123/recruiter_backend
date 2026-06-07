@@ -3431,8 +3431,8 @@ function normalizeApplicantFilterOptions(raw = {}) {
     clients: toList(raw?.clients),
     jds: toList(raw?.jds),
     locations: toList(raw?.locations),
-    ownedBy: toList(raw?.ownedBy),
     assignedTo: toList(raw?.assignedTo),
+    sources: toList(raw?.sources),
     jdIds: toList(raw?.jdIds),
     activeStates: toList(raw?.activeStates)
   };
@@ -3528,13 +3528,13 @@ function applyApplicantFiltersLocal(row = {}, filters = {}, includeConverted = t
     const value = String(row?.location || "").trim();
     if (!filters.locations.includes(value)) return false;
   }
-  if (filters.ownedBy?.length) {
-    const value = String(row?.assigned_to_name || row?.assignedToName || row?.recruiter_name || "").trim();
-    if (!filters.ownedBy.includes(value)) return false;
-  }
   if (filters.assignedTo?.length) {
     const value = String(row?.assigned_to_name || row?.assignedToName || "").trim();
     if (!filters.assignedTo.includes(value)) return false;
+  }
+  if (filters.sources?.length) {
+    const value = String(row?.sourcePlatform || row?.source || "").trim();
+    if (!filters.sources.includes(value)) return false;
   }
   if (filters.q) {
     const hay = [
@@ -3593,6 +3593,7 @@ async function listApplicantsForUser(user, options = {}) {
     }
     if (filters.locations.length) baseFilterParts.push(`location=in.(${filters.locations.map((item) => encodeURIComponent(item)).join(",")})`);
     if (filters.assignedTo.length) baseFilterParts.push(`assigned_to_name=in.(${filters.assignedTo.map((item) => encodeURIComponent(item)).join(",")})`);
+    if (filters.sources.length) baseFilterParts.push(`source=in.(${filters.sources.map((item) => encodeURIComponent(item)).join(",")})`);
     const selectedStates = Array.isArray(filters.activeStates)
       ? Array.from(new Set(filters.activeStates.map((item) => String(item || "").trim()).filter(Boolean)))
       : [];
@@ -3705,6 +3706,7 @@ async function getApplicantStatsForUser(user, options = {}) {
     }
     if (filters.locations.length) parts.push(`location=in.(${filters.locations.map((item) => encodeURIComponent(item)).join(",")})`);
     if (filters.assignedTo.length) parts.push(`assigned_to_name=in.(${filters.assignedTo.map((item) => encodeURIComponent(item)).join(",")})`);
+    if (filters.sources.length) parts.push(`source=in.(${filters.sources.map((item) => encodeURIComponent(item)).join(",")})`);
     return parts;
   };
 
@@ -16130,6 +16132,7 @@ const server = http.createServer(async (req, res) => {
       await requireSaasAccess(user, "applied candidates pipeline");
       const limit = Math.max(1, Math.min(1000, Number(requestUrl.searchParams.get("limit") || 50)));
       const page = Math.max(1, Number(requestUrl.searchParams.get("page") || 1));
+      const sortBy = String(requestUrl.searchParams.get("sortBy") || "created").trim().toLowerCase() === "updated" ? "updated" : "created";
       const includeConverted = String(requestUrl.searchParams.get("includeConverted") || "false").trim().toLowerCase() === "true";
       const filters = {
         q: String(requestUrl.searchParams.get("q") || "").trim(),
@@ -16138,11 +16141,11 @@ const server = http.createServer(async (req, res) => {
         clients: String(requestUrl.searchParams.get("clients") || "").trim(),
         jds: String(requestUrl.searchParams.get("jds") || "").trim(),
         locations: String(requestUrl.searchParams.get("locations") || "").trim(),
-        ownedBy: String(requestUrl.searchParams.get("ownedBy") || "").trim(),
         assignedTo: String(requestUrl.searchParams.get("assignedTo") || "").trim(),
+        sources: String(requestUrl.searchParams.get("sources") || "").trim(),
         activeStates: String(requestUrl.searchParams.get("activeStates") || "").trim()
       };
-      const listResult = await listApplicantsForUser(user, { limit, page, includeConverted, filters });
+      const listResult = await listApplicantsForUser(user, { limit, page, includeConverted, filters, sortBy });
       sendJson(res, 200, {
         ok: true,
         result: {
@@ -16232,8 +16235,8 @@ const server = http.createServer(async (req, res) => {
         clients: String(requestUrl.searchParams.get("clients") || "").trim(),
         jds: String(requestUrl.searchParams.get("jds") || "").trim(),
         locations: String(requestUrl.searchParams.get("locations") || "").trim(),
-        ownedBy: String(requestUrl.searchParams.get("ownedBy") || "").trim(),
         assignedTo: String(requestUrl.searchParams.get("assignedTo") || "").trim(),
+        sources: String(requestUrl.searchParams.get("sources") || "").trim(),
         activeStates: String(requestUrl.searchParams.get("activeStates") || "").trim()
       };
       const stats = await getApplicantStatsForUser(user, { filters });
@@ -16250,6 +16253,7 @@ const server = http.createServer(async (req, res) => {
       await requireSaasAccess(user, "applied candidates pipeline");
       const limit = Math.max(1, Math.min(1000, Number(requestUrl.searchParams.get("limit") || 50)));
       const page = Math.max(1, Number(requestUrl.searchParams.get("page") || 1));
+      const sortBy = String(requestUrl.searchParams.get("sortBy") || "created").trim().toLowerCase() === "updated" ? "updated" : "created";
       const includeConverted = String(requestUrl.searchParams.get("includeConverted") || "false").trim().toLowerCase() === "true";
       const filters = {
         q: String(requestUrl.searchParams.get("q") || "").trim(),
@@ -16258,12 +16262,12 @@ const server = http.createServer(async (req, res) => {
         clients: String(requestUrl.searchParams.get("clients") || "").trim(),
         jds: String(requestUrl.searchParams.get("jds") || "").trim(),
         locations: String(requestUrl.searchParams.get("locations") || "").trim(),
-        ownedBy: String(requestUrl.searchParams.get("ownedBy") || "").trim(),
         assignedTo: String(requestUrl.searchParams.get("assignedTo") || "").trim(),
+        sources: String(requestUrl.searchParams.get("sources") || "").trim(),
         activeStates: String(requestUrl.searchParams.get("activeStates") || "").trim()
       };
       const [listResult, stats] = await Promise.all([
-        listApplicantsForUser(user, { limit, page, includeConverted, filters }),
+        listApplicantsForUser(user, { limit, page, includeConverted, filters, sortBy }),
         getApplicantStatsForUser(user, { filters })
       ]);
       sendJson(res, 200, {
