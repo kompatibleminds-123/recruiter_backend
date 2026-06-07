@@ -8064,6 +8064,7 @@ function PortalApp({ token, onLogout }) {
   const [candidateSmartDateFrom, setCandidateSmartDateFrom] = useState("");
   const [candidateSmartDateTo, setCandidateSmartDateTo] = useState("");
   const candidateSmartChipRowsStableRef = useRef(null);
+  const databaseCandidatesHydratedRef = useRef(false);
   const [candidateFilterPanelOpen, setCandidateFilterPanelOpen] = useState(true);
   const [candidateFilterDrawerOpen, setCandidateFilterDrawerOpen] = useState(false);
   const [isCandidateFilterMobile, setIsCandidateFilterMobile] = useState(() => (
@@ -9991,6 +9992,9 @@ function PortalApp({ token, onLogout }) {
       assessmentEvents: needsAssessmentEvents ? (assessmentEventsResult?.result?.rows || []) : current.assessmentEvents
     }));
     if (seq !== workspaceLoadSeqRef.current) return;
+    if (needsDatabaseCandidates) {
+      databaseCandidatesHydratedRef.current = true;
+    }
     if (needsJobs) {
       setJobsCatalog(Array.isArray(jobsManageResult?.jobs) ? jobsManageResult.jobs : []);
     }
@@ -10046,6 +10050,7 @@ function PortalApp({ token, onLogout }) {
     const now = Date.now();
     lastWorkspaceRefreshAtRef.current = now;
     setWorkspaceDataReady(false);
+    databaseCandidatesHydratedRef.current = false;
     try {
       const [userResult] = await Promise.all([
         api("/auth/me", token).catch(() => ({ user: null })),
@@ -10529,6 +10534,9 @@ function PortalApp({ token, onLogout }) {
     const databaseRows = Array.isArray(databaseCandidatesResult)
       ? databaseCandidatesResult
       : (Array.isArray(databaseCandidatesResult?.items) ? databaseCandidatesResult.items : []);
+    if (includeDatabase) {
+      databaseCandidatesHydratedRef.current = true;
+    }
     setState((current) => ({
       ...current,
       candidates: mergeCandidatesByFreshness(current.candidates, candidateRows),
@@ -12462,7 +12470,7 @@ function PortalApp({ token, onLogout }) {
       cv_shared: []
     };
     try {
-    const smartChipDataReady = Boolean(workspaceDataReady) && !candidateSearchBusy;
+    const smartChipDataReady = Boolean(workspaceDataReady) && Boolean(databaseCandidatesHydratedRef.current) && !candidateSearchBusy;
     const assessments = Array.isArray(state.assessments) ? state.assessments : [];
     const assessmentById = new Map(assessments.map((assessment) => [String(assessment?.id || "").trim(), assessment]));
     const assessmentByCandidateId = new Map();
