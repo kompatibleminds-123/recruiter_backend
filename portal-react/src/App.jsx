@@ -2635,6 +2635,20 @@ function sortCapturedNotesForList(items = [], sortBy = "created") {
   });
 }
 
+function sortApplicantsForList(items = [], sortBy = "created") {
+  const sortMode = String(sortBy || "created").trim().toLowerCase();
+  const primaryKeys = sortMode === "updated"
+    ? ["updatedAt", "updated_at", "assigned_at", "assignedAt", "last_contact_at", "lastContactAt", "createdAt", "created_at"]
+    : ["createdAt", "created_at", "appliedAt", "applied_at", "updatedAt", "updated_at", "assigned_at", "assignedAt"];
+  return (Array.isArray(items) ? items : []).slice().sort((a, b) => {
+    const aTime = Date.parse(String(primaryKeys.map((key) => a?.[key]).find((value) => String(value || "").trim()) || ""));
+    const bTime = Date.parse(String(primaryKeys.map((key) => b?.[key]).find((value) => String(value || "").trim()) || ""));
+    const diff = (Number.isFinite(bTime) ? bTime : 0) - (Number.isFinite(aTime) ? aTime : 0);
+    if (diff) return diff;
+    return String(b?.id || "").localeCompare(String(a?.id || ""));
+  });
+}
+
 function isCapturedRowVisibleInCurrentView(row = {}, filters = {}, user = null) {
   if (!row) return false;
   const isAdmin = String(user?.role || "").toLowerCase() === "admin";
@@ -20610,11 +20624,11 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
       candidates: patchCandidateState(current.candidates),
       databaseCandidates: patchCandidateState(current.databaseCandidates),
       applicants: restoreToApplicants
-        ? upsertCandidatesById(current.applicants, [restoredApplicantPreview])
+        ? sortApplicantsForList(upsertCandidatesById(current.applicants, [restoredApplicantPreview]), applicantSortBy)
         : current.applicants,
       applicantListItems: restoreToApplicants
         ? (shouldRemainVisible
-          ? upsertCandidatesById(current.applicantListItems, [restoredApplicantPreview])
+          ? sortApplicantsForList(upsertCandidatesById(current.applicantListItems, [restoredApplicantPreview]), applicantSortBy)
           : removeCandidatesById(current.applicantListItems, [candidateId]))
         : current.applicantListItems
     }));
