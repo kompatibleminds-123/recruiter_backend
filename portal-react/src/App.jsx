@@ -8043,6 +8043,7 @@ function PortalApp({ token, onLogout }) {
   const [candidateQuickChipIds, setCandidateQuickChipIds] = useState([]);
   const [candidateSmartDateFrom, setCandidateSmartDateFrom] = useState("");
   const [candidateSmartDateTo, setCandidateSmartDateTo] = useState("");
+  const candidateSmartChipRowsStableRef = useRef(null);
   const [candidateFilterPanelOpen, setCandidateFilterPanelOpen] = useState(true);
   const [candidateFilterDrawerOpen, setCandidateFilterDrawerOpen] = useState(false);
   const [isCandidateFilterMobile, setIsCandidateFilterMobile] = useState(() => (
@@ -12904,7 +12905,7 @@ function PortalApp({ token, onLogout }) {
       });
       return Array.from(bestByCandidate.values()).sort((a, b) => toTimestampSafe(b?.date || "") - toTimestampSafe(a?.date || ""));
     };
-    return {
+    const nextRows = {
       interview_history: dedupeByCandidate(rowsByChip.interview_history, { prefer: "latest" }),
       aligned_interviews: dedupeByCandidate(rowsByChip.aligned_interviews, { prefer: "latest" }),
       feedback_awaited: dedupeByCandidate(rowsByChip.feedback_awaited, { prefer: "latest" }),
@@ -12916,9 +12917,15 @@ function PortalApp({ token, onLogout }) {
       joined_candidates: dedupeByCandidate(rowsByChip.joined_candidates, { prefer: "latest" }),
       cv_shared: dedupeByCandidate(rowsByChip.cv_shared, { prefer: "latest" })
     };
+    const isAllEmpty = Object.values(nextRows).every((rows) => !Array.isArray(rows) || rows.length === 0);
+    if (candidateRows.length === 0 && isAllEmpty && candidateSmartChipRowsStableRef.current) {
+      return candidateSmartChipRowsStableRef.current;
+    }
+    candidateSmartChipRowsStableRef.current = nextRows;
+    return nextRows;
     } catch (error) {
       console.error("candidateSmartChipRows failed", error);
-      return emptyRows;
+      return candidateSmartChipRowsStableRef.current || emptyRows;
     }
   }, [candidateUniverse, candidateSmartDateFrom, candidateSmartDateTo, state.assessments, state.candidates, state.assessmentEvents]);
   const candidateHasSmartChipSelection = candidateAiQueryMode === "natural" && candidateQuickChipIds.length > 0;
