@@ -1355,8 +1355,17 @@ function normalizeAppliedPlacardCompareText(value) {
 }
 
 function getApplicantRemarksText(item = {}) {
-  const source = item?.screening_answers ?? item?.screeningAnswers ?? item?.remarks ?? item?.notes ?? "";
-  return formatAppliedPlacardText(source);
+  const candidates = [
+    item?.screening_answers,
+    item?.screeningAnswers,
+    item?.remarks,
+    item?.notes
+  ];
+  for (const candidate of candidates) {
+    const text = formatAppliedPlacardText(candidate);
+    if (text) return text;
+  }
+  return "";
 }
 
 function getApplicantRecruiterNoteText(item = {}) {
