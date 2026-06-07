@@ -1232,6 +1232,7 @@ function normalizeApplicantVisibleRow(item = {}) {
   const assignedToName = String(item.assignedToName || item.assigned_to_name || "").trim();
   const createdAt = String(item.createdAt || item.created_at || "").trim();
   const assignedAt = String(item.assignedAt || item.assigned_at || createdAt || "").trim();
+  const hiddenFromCaptured = Boolean(item.hidden_from_captured || item.hiddenFromCaptured);
   return {
     ...item,
     candidateName,
@@ -1242,7 +1243,9 @@ function normalizeApplicantVisibleRow(item = {}) {
     createdAt,
     created_at: String(item.created_at || createdAt || "").trim(),
     assignedAt,
-    assigned_at: String(item.assigned_at || assignedAt || "").trim()
+    assigned_at: String(item.assigned_at || assignedAt || "").trim(),
+    hidden_from_captured: hiddenFromCaptured,
+    hiddenFromCaptured
   };
 }
 
@@ -12878,7 +12881,7 @@ function PortalApp({ token, onLogout }) {
       const ownedValue = getApplicantOwnerLabel(item, linkedCandidate);
       const assignedValue = getApplicantManualAssigneeLabel(item, linkedCandidate);
       const outcomeValue = getApplicantWorkflowOutcome(item, linkedCandidate);
-      const manuallyHidden = Boolean(item.hidden_from_captured || linkedCandidate?.hidden_from_captured);
+      const manuallyHidden = Boolean(item.hidden_from_captured || item.hiddenFromCaptured || linkedCandidate?.hidden_from_captured || linkedCandidate?.hiddenFromCaptured);
       const isConvertedApplicant = isApplicantConvertedToAssessment(item, linkedCandidate, linkedAssessment);
       const activeValue = manuallyHidden ? "Inactive" : (isConvertedApplicant ? "Converted" : "Active");
       const createdDate = String(item.createdAt || item.created_at || "").slice(0, 10);
@@ -12914,19 +12917,19 @@ function PortalApp({ token, onLogout }) {
     });
     const converted = universe.filter((item) => {
       const linkedCandidate = applicantCandidateMap.get(String(item.id)) || null;
-      const manuallyHidden = Boolean(item.hidden_from_captured || linkedCandidate?.hidden_from_captured);
+      const manuallyHidden = Boolean(item.hidden_from_captured || item.hiddenFromCaptured || linkedCandidate?.hidden_from_captured || linkedCandidate?.hiddenFromCaptured);
       return !manuallyHidden && Boolean(applicantAssessmentMap.get(String(item.id)) || null);
     }).length;
     const active = universe.filter((item) => {
       const linkedAssessment = applicantAssessmentMap.get(String(item.id)) || null;
       if (linkedAssessment) return false;
       const linkedCandidate = applicantCandidateMap.get(String(item.id)) || null;
-      const manuallyHidden = Boolean(item.hidden_from_captured || linkedCandidate?.hidden_from_captured);
+      const manuallyHidden = Boolean(item.hidden_from_captured || item.hiddenFromCaptured || linkedCandidate?.hidden_from_captured || linkedCandidate?.hiddenFromCaptured);
       return !manuallyHidden;
     }).length;
     const inactive = universe.filter((item) => {
       const linkedCandidate = applicantCandidateMap.get(String(item.id)) || null;
-      const manuallyHidden = Boolean(item.hidden_from_captured || linkedCandidate?.hidden_from_captured);
+      const manuallyHidden = Boolean(item.hidden_from_captured || item.hiddenFromCaptured || linkedCandidate?.hidden_from_captured || linkedCandidate?.hiddenFromCaptured);
       return manuallyHidden;
     }).length;
 
@@ -21889,7 +21892,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                     ? <div className="empty-state">No applied candidates right now.</div>
                     : visibleApplicants.map((item) => {
                   const linkedCandidate = applicantCandidateMap.get(String(item.id)) || null;
-                  const applicantIsHidden = Boolean(item.hidden_from_captured || linkedCandidate?.hidden_from_captured);
+                  const applicantIsHidden = Boolean(item.hidden_from_captured || item.hiddenFromCaptured || linkedCandidate?.hidden_from_captured || linkedCandidate?.hiddenFromCaptured);
                   return (
                   <article className={`item-card compact-card captured-note-card${applicantIsHidden ? " captured-note-card--inactive applied-note-card--inactive" : ""}`} key={item.id}>
                     {String(state.user?.role || "").toLowerCase() === "admin" ? (
