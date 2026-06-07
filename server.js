@@ -16761,6 +16761,10 @@ const server = http.createServer(async (req, res) => {
         throw new Error("Only an admin can assign applicants.");
       }
       const body = await readJsonBody(req);
+      const candidateId = String(body.id || body.candidateId || "").trim();
+      const previous = candidateId
+        ? ((await listCandidatesForUser(actor, { id: candidateId, limit: 1 }))[0] || null)
+        : null;
       const result = await assignCandidate(body.id || body.candidateId, {
         assigned_to_user_id: body.assigned_to_user_id || body.assignedToUserId,
         assigned_to_name: body.assigned_to_name || body.assignedToName,
@@ -16771,6 +16775,16 @@ const server = http.createServer(async (req, res) => {
         jd_title: body.jd_title || body.jdTitle,
         client_name: body.client_name || body.clientName
       }, { companyId: actor.companyId });
+      emitCapturedStreamEvent(actor.companyId, "candidate_assigned", {
+        candidateId: candidateId || undefined,
+        candidate: result,
+        previousCandidate: previous
+      });
+      emitApplicantStreamEvent(actor.companyId, "candidate_assigned", {
+        candidateId: candidateId || undefined,
+        candidate: result,
+        previousCandidate: previous
+      });
       sendJson(res, 200, { ok: true, result });
     } catch (error) {
       sendJson(res, 400, { ok: false, error: String(error.message || error) });
