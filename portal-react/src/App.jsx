@@ -1282,6 +1282,77 @@ function formatAppliedPlacardDateTime(value) {
   return `${dateText} - ${hours12}.${minutes} ${ampm}`;
 }
 
+function formatAppliedPlacardText(value) {
+  if (value == null) return "";
+  if (typeof value === "string") return normalizeMojibakeSymbols(value).trim();
+  if (typeof value === "number" || typeof value === "boolean") return String(value).trim();
+  if (Array.isArray(value)) {
+    return value
+      .map((entry) => formatAppliedPlacardText(entry))
+      .filter(Boolean)
+      .join("\n\n")
+      .trim();
+  }
+  if (typeof value === "object") {
+    const preferredKeys = [
+      "remarks",
+      "remark",
+      "note",
+      "notes",
+      "comment",
+      "comments",
+      "message",
+      "text",
+      "screening_remarks",
+      "screeningRemarks",
+      "other_standard_questions",
+      "otherStandardQuestions",
+      "candidate_remarks",
+      "candidateRemarks"
+    ];
+    for (const key of preferredKeys) {
+      if (Object.prototype.hasOwnProperty.call(value, key)) {
+        const extracted = formatAppliedPlacardText(value[key]);
+        if (extracted) return extracted;
+      }
+    }
+    const lines = Object.entries(value)
+      .map(([key, entryValue]) => {
+        const formattedValue = formatAppliedPlacardText(entryValue);
+        if (!formattedValue) return "";
+        const cleanKey = String(key || "").trim();
+        return cleanKey ? `${cleanKey}: ${formattedValue}` : formattedValue;
+      })
+      .filter(Boolean);
+    return lines.join("\n").trim();
+  }
+  return String(value).trim();
+}
+
+function normalizeAppliedPlacardCompareText(value) {
+  return normalizeMojibakeSymbols(String(value || ""))
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+}
+
+function getApplicantRemarksText(item = {}) {
+  const source = item?.screeningAnswers ?? item?.screening_answers ?? item?.remarks ?? item?.notes ?? "";
+  return formatAppliedPlacardText(source);
+}
+
+function getApplicantRecruiterNoteText(item = {}) {
+  const note = formatAppliedPlacardText([
+    item?.recruiter_context_notes,
+    item?.other_pointers
+  ].filter(Boolean).join("\n\n"));
+  const remarks = getApplicantRemarksText(item);
+  if (note && normalizeAppliedPlacardCompareText(note) === normalizeAppliedPlacardCompareText(remarks)) {
+    return "";
+  }
+  return note;
+}
+
 function parseMultiChipTokens(value) {
   return String(value || "")
     .split(",")
@@ -7671,8 +7742,8 @@ function PortalApp({ token, onLogout }) {
     clients: [],
     jds: [],
     locations: [],
-    ownedBy: [],
     assignedTo: [],
+    sources: [],
     outcomes: [],
     activeStates: ["Active"]
   });
@@ -7683,8 +7754,8 @@ function PortalApp({ token, onLogout }) {
     clients: [],
     jds: [],
     locations: [],
-    ownedBy: [],
     assignedTo: [],
+    sources: [],
     outcomes: [],
     activeStates: ["Active"]
   });
@@ -12807,15 +12878,19 @@ function PortalApp({ token, onLogout }) {
     const clients = new Set();
     const jds = new Set();
     const locations = new Set();
-    const ownedBy = new Set();
     const assignedTo = new Set();
+    const sources = new Set();
     const outcomes = new Set();
     const isAdmin = String(state.user?.role || "").toLowerCase() === "admin";
+    const clientUniverse = Array.isArray(state.dashboard?.availableClients) ? state.dashboard.availableClients : [];
+    clientUniverse.forEach((item) => {
+      const label = String(item || "").trim();
+      if (label) clients.add(label);
+    });
     if (isAdmin) {
       (state.users || []).forEach((user) => {
         const name = String(user?.name || "").trim();
         if (!name) return;
-        ownedBy.add(name);
         assignedTo.add(name);
       });
     }
@@ -12826,28 +12901,28 @@ function PortalApp({ token, onLogout }) {
       const clientValue = String(item.clientName || item.client_name || "Unassigned").trim();
       const jdValue = String(item.jdTitle || item.jd_title || "").trim();
       const locationValue = normalizeApplicantLocationLabel(item.location || linkedCandidate?.location || "");
-      const ownedValue = getApplicantOwnerLabel(item, linkedCandidate);
       const assignedValue = getApplicantManualAssigneeLabel(item, linkedCandidate);
       const outcomeValue = getApplicantWorkflowOutcome(item, linkedCandidate);
+      const sourceValue = String(item.sourcePlatform || item.source || linkedCandidate?.source || "").trim();
       if (clientValue) clients.add(clientValue);
       if (jdValue) jds.add(jdValue);
       if (locationValue) locations.add(locationValue);
-      if (ownedValue) ownedBy.add(ownedValue);
       if (assignedValue) assignedTo.add(assignedValue);
+      if (sourceValue) sources.add(sourceValue);
       if (outcomeValue) outcomes.add(outcomeValue);
     });
     return {
       clients: Array.from(clients).sort((a, b) => a.localeCompare(b)),
       jds: Array.from(jds).sort((a, b) => a.localeCompare(b)),
       locations: Array.from(locations).sort((a, b) => a.localeCompare(b)),
-      ownedBy: Array.from(ownedBy).sort((a, b) => a.localeCompare(b)),
       assignedTo: Array.from(assignedTo).sort((a, b) => a.localeCompare(b)),
+      sources: ["website_apply", "hosted_apply"].filter((item) => sources.has(item) || true),
       outcomes: APPLIED_OUTCOME_FILTER_ORDER.concat(
         Array.from(outcomes).filter((item) => !APPLIED_OUTCOME_FILTER_ORDER.includes(item)).sort((a, b) => a.localeCompare(b))
       ),
       activeStates: ["Active", "Inactive"]
     };
-  }, [filteredApplicants, applicantCandidateMap, applicantAssessmentMap, state.user, state.users]);
+  }, [filteredApplicants, applicantCandidateMap, applicantAssessmentMap, state.dashboard?.availableClients, state.user, state.users]);
 
   const visibleApplicants = useMemo(() => (
     Array.isArray(state.applicantListItems) ? state.applicantListItems.map((item) => normalizeApplicantVisibleRow(item)) : []
@@ -13813,7 +13888,7 @@ function PortalApp({ token, onLogout }) {
       followUpAt: toDateInputValue(applicantDraft.followUpAt || ""),
       interviewAt: "",
       recruiterNotes: "",
-      callbackNotes: applicantDraft.callbackNotes || applicant.screeningAnswers || "",
+      callbackNotes: applicantDraft.callbackNotes || getApplicantRemarksText(applicantView) || "",
       otherPointers: "",
       tags: applicantDraft.tags || "",
       jdScreeningAnswers: applicantDraft.jdScreeningAnswers || {},
@@ -17015,14 +17090,16 @@ function PortalApp({ token, onLogout }) {
       current_ctc: item.currentCtc || "",
       expected_ctc: item.expectedCtc || "",
       notice_period: item.noticePeriod || "",
-      recruiter_context_notes: item.screeningAnswers || "",
+      remarks: getApplicantRemarksText(item),
+      recruiter_notes: getApplicantRecruiterNoteText(item),
+      recruiter_context_notes: getApplicantRecruiterNoteText(item),
       other_pointers: "",
-      notes: item.screeningAnswers || "",
-      other_standard_questions: item.screeningAnswers || "",
+      notes: getApplicantRecruiterNoteText(item),
+      other_standard_questions: getApplicantRemarksText(item),
       combined_assessment_insights: buildCombinedAssessmentInsightsForExportV2({
-        recruiter_context_notes: item.screeningAnswers || "",
+        recruiter_context_notes: getApplicantRecruiterNoteText(item),
         other_pointers: "",
-        other_standard_questions: item.screeningAnswers || ""
+        other_standard_questions: getApplicantRemarksText(item)
       }),
       linkedin: item.linkedin || "",
       jd_title: item.jdTitle || "",
@@ -22025,7 +22102,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                           company_name: state.user?.companyName || "",
                           outcome: getApplicantOutcome(item),
                           recruiter_name: item.assigned_to_name || item.assignedToName || state.user?.name || "",
-                          recruiter_notes: item.screeningAnswers || "",
+                          recruiter_notes: getApplicantRecruiterNoteText(item) || "",
                           location: item.location || "",
                           phone: item.phone || item.phoneNumber || "",
                           email: item.email || "",
@@ -22052,50 +22129,38 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                       )}
                       {state.user?.role === "admin" ? <button className="captured-action-danger" onClick={() => void removeApplicant(item.id)}>Remove</button> : null}
                     </div>
-                      {String(item.screeningAnswers || "").trim() ? (
-                        <details className="captured-note-summary-bar">
-                          <summary>
-                            <span className="captured-note-summary-badge">Remarks</span>
+                    {String(getApplicantRemarksText(item) || "").trim() ? (
+                      <details className="captured-note-summary-bar">
+                        <summary>
+                          <span className="captured-note-summary-badge">Remarks</span>
                           <span className="captured-note-summary-preview">{(() => {
-                            const text = normalizeMojibakeSymbols(String(item.screeningAnswers || "").trim());
+                            const text = getApplicantRemarksText(item);
                             const clip = 180;
                             return text.length > clip ? `${text.slice(0, clip).trim()}...` : text;
                           })()}</span>
                           {(() => {
-                            const text = normalizeMojibakeSymbols(String(item.screeningAnswers || "").trim());
+                            const text = getApplicantRemarksText(item);
                             return text.length > 180 ? <span className="captured-note-summary-toggle">Show more</span> : null;
                           })()}
                         </summary>
-                        <div className="captured-note-summary-full">{normalizeMojibakeSymbols(String(item.screeningAnswers || "").trim())}</div>
+                        <div className="captured-note-summary-full">{getApplicantRemarksText(item)}</div>
                       </details>
                     ) : null}
-                    {String(normalizeMojibakeSymbols([
-                      String(item.recruiter_context_notes || "").trim(),
-                      String(item.other_pointers || "").trim()
-                    ].filter(Boolean).join("\n\n")) || "").trim() ? (
+                    {String(getApplicantRecruiterNoteText(item) || "").trim() ? (
                       <details className="captured-note-summary-bar captured-note-summary-bar--note">
                         <summary>
                           <span className="captured-note-summary-badge">Recruiter note</span>
                           <span className="captured-note-summary-preview">{(() => {
-                            const text = normalizeMojibakeSymbols([
-                              String(item.recruiter_context_notes || "").trim(),
-                              String(item.other_pointers || "").trim()
-                            ].filter(Boolean).join("\n\n")) || "";
+                            const text = getApplicantRecruiterNoteText(item);
                             const clip = 140;
                             return text.length > clip ? `${text.slice(0, clip).trim()}...` : text;
                           })()}</span>
                           {(() => {
-                            const text = normalizeMojibakeSymbols([
-                              String(item.recruiter_context_notes || "").trim(),
-                              String(item.other_pointers || "").trim()
-                            ].filter(Boolean).join("\n\n")) || "";
+                            const text = getApplicantRecruiterNoteText(item);
                             return text.length > 140 ? <span className="captured-note-summary-toggle">Show more</span> : null;
                           })()}
                         </summary>
-                        <div className="captured-note-summary-full">{normalizeMojibakeSymbols([
-                          String(item.recruiter_context_notes || "").trim(),
-                          String(item.other_pointers || "").trim()
-                        ].filter(Boolean).join("\n\n"))}</div>
+                        <div className="captured-note-summary-full">{getApplicantRecruiterNoteText(item)}</div>
                       </details>
                     ) : null}
                   </article>

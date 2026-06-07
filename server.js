@@ -5484,24 +5484,21 @@ async function ingestApplicantSubmission(body, req) {
       ? appliedSource
       : (existingSource || (existingConverted ? "manual_draft" : appliedSource));
 
-    const patch = {
-      source: nextSource,
-      raw_note: encodeApplicantMetadata(nextMeta),
-      client_name: payload.clientName || existing.client_name || null,
-      jd_title: payload.jdTitle || existing.jd_title || null,
+      const patch = {
+        source: nextSource,
+        raw_note: encodeApplicantMetadata(nextMeta),
+        client_name: payload.clientName || existing.client_name || null,
+        jd_title: payload.jdTitle || existing.jd_title || null,
       assigned_to_user_id: defaultInboxOwner?.id || existing.assigned_to_user_id || null,
-      assigned_to_name: defaultInboxOwner?.name || existing.assigned_to_name || null,
-      assigned_jd_id: matchedJob?.id || existing.assigned_jd_id || null,
-      assigned_jd_title: matchedJob?.title || payload.jdTitle || existing.assigned_jd_title || null,
-      recruiter_context_notes: [
-        payload.screeningAnswers || existing.recruiter_context_notes || "",
-        screeningAnswersToSearchText(payload.customFields || {})
-      ].filter(Boolean).join("\n") || null,
-      // Fill missing contact fields if they were empty in the captured record.
-      phone: existing.phone ? undefined : (merged.phone || undefined),
-      email: existing.email ? undefined : (merged.email || undefined),
-      linkedin: existing.linkedin ? undefined : (merged.linkedin || undefined),
-      location: existing.location ? undefined : (merged.location || undefined),
+        assigned_to_name: defaultInboxOwner?.name || existing.assigned_to_name || null,
+        assigned_jd_id: matchedJob?.id || existing.assigned_jd_id || null,
+        assigned_jd_title: matchedJob?.title || payload.jdTitle || existing.assigned_jd_title || null,
+      recruiter_context_notes: String(existing.recruiter_context_notes || existing.recruiterContextNotes || "").trim() || null,
+        // Fill missing contact fields if they were empty in the captured record.
+        phone: existing.phone ? undefined : (merged.phone || undefined),
+        email: existing.email ? undefined : (merged.email || undefined),
+        linkedin: existing.linkedin ? undefined : (merged.linkedin || undefined),
+        location: existing.location ? undefined : (merged.location || undefined),
       name: existing.name ? undefined : (merged.name || undefined),
       company: existing.company ? undefined : (merged.company || undefined),
       role: existing.role ? undefined : (merged.role || undefined),
@@ -5579,10 +5576,7 @@ async function ingestApplicantSubmission(body, req) {
       expected_ctc: merged.expected_ctc,
       notice_period: merged.notice_period,
       notes: merged.notes,
-      recruiter_context_notes: [
-        payload.screeningAnswers || "",
-        screeningAnswersToSearchText(payload.customFields || {})
-      ].filter(Boolean).join("\n") || null,
+      recruiter_context_notes: null,
       other_pointers: normalized?.timeline?.length ? `Timeline entries: ${normalized.timeline.length}` : null,
       next_action: merged.next_action,
       client_name: payload.clientName || null,
