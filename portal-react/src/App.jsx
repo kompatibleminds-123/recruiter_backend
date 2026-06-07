@@ -3241,6 +3241,15 @@ function normalizeLoadedSignatureValue(signatureHtml = "", signatureText = "") {
   };
 }
 
+function signatureHtmlForMail(signatureHtml = "", signatureText = "") {
+  const normalized = normalizeLoadedSignatureValue(signatureHtml, signatureText);
+  if (String(normalized.signatureHtml || "").trim()) {
+    return String(normalized.signatureHtml || "").trim();
+  }
+  const plainText = String(normalized.signatureText || "").trim();
+  return plainText ? escapeHtml(plainText).replace(/\n/g, "<br/>") : "";
+}
+
 function formatExcelMultilineCell(value) {
   const raw = String(value ?? "");
   if (!raw) return "";
@@ -17072,6 +17081,7 @@ function PortalApp({ token, onLogout }) {
     try {
       const result = await api("/company/email-settings", token);
       if (smtpSettingsDirtyRef.current) return;
+      const loadedSignature = normalizeLoadedSignatureValue(result?.signatureHtml || "", result?.signatureText || "");
       setSmtpSettings((current) => ({
         ...current,
         host: String(result?.host || "").trim(),
@@ -17079,8 +17089,7 @@ function PortalApp({ token, onLogout }) {
         secure: Boolean(result?.secure),
         user: String(result?.user || "").trim(),
         from: String(result?.from || "").trim(),
-        signatureText: String(result?.signatureText || "").trim(),
-        signatureHtml: String(result?.signatureHtml || "").trim(),
+        ...loadedSignature,
         signatureLinkLabel: String(result?.signatureLinkLabel || "").trim(),
         signatureLinkUrl: String(result?.signatureLinkUrl || "").trim(),
         signatureLinkLabel2: String(result?.signatureLinkLabel2 || "").trim(),
@@ -17249,6 +17258,7 @@ function PortalApp({ token, onLogout }) {
   async function refreshSmtpSettingsNow() {
     try {
       const result = await api("/company/email-settings", token);
+      const loadedSignature = normalizeLoadedSignatureValue(result?.signatureHtml || "", result?.signatureText || "");
       setSmtpSettings((current) => ({
         ...current,
         host: String(result?.host || "").trim(),
@@ -17256,8 +17266,7 @@ function PortalApp({ token, onLogout }) {
         secure: Boolean(result?.secure),
         user: String(result?.user || "").trim(),
         from: String(result?.from || "").trim(),
-        signatureText: String(result?.signatureText || "").trim(),
-        signatureHtml: String(result?.signatureHtml || "").trim(),
+        ...loadedSignature,
         signatureLinkLabel: String(result?.signatureLinkLabel || "").trim(),
         signatureLinkUrl: String(result?.signatureLinkUrl || "").trim(),
         signatureLinkLabel2: String(result?.signatureLinkLabel2 || "").trim(),
@@ -17318,8 +17327,10 @@ function PortalApp({ token, onLogout }) {
       companyName,
       roleLine
     };
-    const signatureText = String(smtpSettings.signatureText || "").trim()
+    const loadedSignature = normalizeLoadedSignatureValue(smtpSettings.signatureHtml || "", smtpSettings.signatureText || "");
+    const signatureText = String(loadedSignature.signatureText || "").trim()
       || fillClientShareTemplate(copySettings.clientShareSignatureText || DEFAULT_COPY_SETTINGS.clientShareSignatureText || "", signatureContext).trim();
+    const signatureHtml = signatureHtmlForMail(loadedSignature.signatureHtml || "", loadedSignature.signatureText || "");
     const signatureLinks = [
       { label: String(smtpSettings.signatureLinkLabel || copySettings.clientShareSignatureLinkLabel || "").trim(), url: String(smtpSettings.signatureLinkUrl || copySettings.clientShareSignatureLinkUrl || "").trim() },
       { label: String(smtpSettings.signatureLinkLabel2 || copySettings.clientShareSignatureLinkLabel2 || "").trim(), url: String(smtpSettings.signatureLinkUrl2 || copySettings.clientShareSignatureLinkUrl2 || "").trim() }
@@ -17337,7 +17348,7 @@ function PortalApp({ token, onLogout }) {
       jobId: suggestedJobId
       ,
       attachJdFile: true,
-      signatureHtml: String(smtpSettings.signatureHtml || smtpSettings.signatureText || "").trim(),
+      signatureHtml,
       signatureText,
       signatureLinks
     });
@@ -17367,14 +17378,15 @@ function PortalApp({ token, onLogout }) {
     try {
       const jobTitle = String((state.jobs || []).find((j) => String(j.id) === jobId)?.title || "Job Description").trim();
       const subject = String(jdEmailModal.subject || "").trim() || `JD: ${jobTitle}`;
+      const normalizedSignature = normalizeLoadedSignatureValue(jdEmailModal.signatureHtml || smtpSettings.signatureHtml || "", jdEmailModal.signatureText || smtpSettings.signatureText || "");
       await api("/company/jds/send-email", token, "POST", {
         jobId,
         to,
         cc,
         subject,
         introText: String(jdEmailModal.introText || "").trim(),
-        signatureHtml: String(jdEmailModal.signatureHtml || smtpSettings.signatureHtml || "").trim(),
-        signatureText: String(jdEmailModal.signatureText || "").trim(),
+        signatureHtml: signatureHtmlForMail(normalizedSignature.signatureHtml || "", normalizedSignature.signatureText || ""),
+        signatureText: String(normalizedSignature.signatureText || "").trim(),
         signatureLinks: Array.isArray(jdEmailModal.signatureLinks) ? jdEmailModal.signatureLinks : [],
         attachJdFile
       });

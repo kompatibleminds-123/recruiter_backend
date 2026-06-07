@@ -1134,7 +1134,7 @@ function buildJobShareEmail({ job, introText = "", senderName = "", signatureHtm
     <div class="block">${escapeHtml(item.value).replace(/\n/g, "<br/>")}</div>
   `.trim()).join("\n");
 
-  const signatureHtmlSafe = String(signatureHtml || "").trim();
+  const rawSignatureHtml = String(signatureHtml || "").trim();
   const signatureLinksSafe = Array.isArray(signatureLinks) ? signatureLinks : [];
   const signatureTextSafe = String(signatureText || "").trim();
   const signatureLinksHtml = signatureLinksSafe
@@ -1156,8 +1156,15 @@ function buildJobShareEmail({ job, introText = "", senderName = "", signatureHtm
       return `<div><a href="${escapeHtml(link.url)}" target="_blank" rel="noopener noreferrer">${anchorText}</a>${suffixText}</div>`;
     })
     .join("");
+  const signatureHtmlSafe = (() => {
+    if (!rawSignatureHtml) return "";
+    const looksLikeMarkup = /<\/?[a-z][\s\S]*>/i.test(rawSignatureHtml) || /&(?:lt|gt|amp|quot|#39);/i.test(rawSignatureHtml);
+    if (looksLikeMarkup) return rawSignatureHtml;
+    return `<div>${escapeHtml(rawSignatureHtml).replace(/\n/g, "<br/>")}</div>`;
+  })();
+  const signatureTextForMail = signatureTextSafe || (signatureHtmlSafe ? stripHtmlForText(signatureHtmlSafe) : "");
   const signatureHtmlFinal = signatureHtmlSafe || [
-    signatureTextSafe ? `<div>${escapeHtml(signatureTextSafe).replace(/\n/g, "<br/>")}</div>` : "",
+    signatureTextForMail ? `<div>${escapeHtml(signatureTextForMail).replace(/\n/g, "<br/>")}</div>` : "",
     signatureLinksHtml
   ].filter(Boolean).join("");
 
@@ -1188,7 +1195,7 @@ function buildJobShareEmail({ job, introText = "", senderName = "", signatureHtm
   `.trim();
 
   const signatureTextLines = [
-    signatureTextSafe || (signatureHtmlSafe ? stripHtmlForText(signatureHtmlSafe) : ""),
+    signatureTextForMail,
     ...(signatureHtmlSafe ? [] : (signatureLinksSafe || [])
       .map((link) => {
         const labelRaw = String(link?.label || "").trim();
