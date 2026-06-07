@@ -13981,7 +13981,7 @@ function PortalApp({ token, onLogout }) {
         };
       });
     };
-    for (const id of ids) {
+    const results = await Promise.allSettled(ids.map(async (id) => {
       await api("/company/applicants/assign", token, "POST", {
         id,
         assignedToUserId: recruiterId,
@@ -13993,13 +13993,18 @@ function PortalApp({ token, onLogout }) {
         jdTitle
       });
       applyLocalAssignPatch(id);
-    }
+    }));
     setAssignApplicantId("");
     setBulkAssignApplicantIds([]);
     setBulkAssignApplicantModalOpen(false);
-    await reloadApplicantsSlice();
-    void refreshWorkspaceSilently("post-applicant-assign");
-    setStatus("workspace", ids.length > 1 ? `${ids.length} applicants assigned.` : "Applicant assigned into recruiter workflow.", "ok");
+    const successCount = results.filter((entry) => entry.status === "fulfilled").length;
+    const failCount = Math.max(0, ids.length - successCount);
+    if (failCount > 0) {
+      setStatus("applicants", `${successCount}/${ids.length} applicants assigned. ${failCount} failed, retry once.`, "error");
+    } else {
+      setStatus("applicants", ids.length > 1 ? `${ids.length} applicants assigned.` : "Applicant assigned into recruiter workflow.", "ok");
+    }
+    return;
   }
 
   function loadApplicantIntoInterview(applicantId) {
