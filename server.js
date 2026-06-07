@@ -1103,7 +1103,7 @@ function richHtmlToReadableText(value = "") {
   return text;
 }
 
-function buildJobShareEmail({ job, introText = "", senderName = "", signatureText = "", signatureLinks = [] }) {
+function buildJobShareEmail({ job, introText = "", senderName = "", signatureHtml = "", signatureText = "", signatureLinks = [] }) {
   const title = String(job?.title || "").trim();
   const client = String(job?.clientName || "").trim();
   const location = String(job?.location || "").trim();
@@ -1134,6 +1134,7 @@ function buildJobShareEmail({ job, introText = "", senderName = "", signatureTex
     <div class="block">${escapeHtml(item.value).replace(/\n/g, "<br/>")}</div>
   `.trim()).join("\n");
 
+  const signatureHtmlSafe = String(signatureHtml || "").trim();
   const signatureLinksSafe = Array.isArray(signatureLinks) ? signatureLinks : [];
   const signatureTextSafe = String(signatureText || "").trim();
   const signatureLinksHtml = signatureLinksSafe
@@ -1155,7 +1156,7 @@ function buildJobShareEmail({ job, introText = "", senderName = "", signatureTex
       return `<div><a href="${escapeHtml(link.url)}" target="_blank" rel="noopener noreferrer">${anchorText}</a>${suffixText}</div>`;
     })
     .join("");
-  const signatureHtml = [
+  const signatureHtmlFinal = signatureHtmlSafe || [
     signatureTextSafe ? `<div>${escapeHtml(signatureTextSafe).replace(/\n/g, "<br/>")}</div>` : "",
     signatureLinksHtml
   ].filter(Boolean).join("");
@@ -1181,14 +1182,14 @@ function buildJobShareEmail({ job, introText = "", senderName = "", signatureTex
         <div class="muted">Shared from RecruitDesk${senderName ? ` by ${escapeHtml(senderName)}` : ""}</div>
         <hr/>
         ${htmlBody || "<div class='block'>No JD content found.</div>"}
-        ${signatureHtml ? `<div style="margin-top:22px;">${signatureHtml}</div>` : ""}
+        ${signatureHtmlFinal ? `<div style="margin-top:22px;">${signatureHtmlFinal}</div>` : ""}
       </body>
     </html>
   `.trim();
 
   const signatureTextLines = [
-    signatureTextSafe,
-    ...(signatureLinksSafe || [])
+    signatureTextSafe || (signatureHtmlSafe ? stripHtmlForText(signatureHtmlSafe) : ""),
+    ...(signatureHtmlSafe ? [] : (signatureLinksSafe || [])
       .map((link) => {
         const labelRaw = String(link?.label || "").trim();
         const parts = labelRaw.split("||").map((p) => String(p || "").trim()).filter(Boolean);
@@ -1198,7 +1199,7 @@ function buildJobShareEmail({ job, introText = "", senderName = "", signatureTex
         if (!url) return "";
         return suffix ? `${label || "Link"}: ${url} (${suffix})` : `${label || "Link"}: ${url}`;
       })
-      .filter(Boolean)
+      .filter(Boolean))
   ].filter(Boolean).join("\n");
   const text = [
     blocks.map((item) => `${item.label}:\n${item.value}`).join("\n\n"),

@@ -4587,6 +4587,12 @@ function RichTextEditor({ value, onChange, placeholder = "Write here...", minHei
         nextRange.selectNodeContents(strong);
         selection?.addRange(nextRange);
       }
+      try {
+        const currentSelection = window.getSelection?.();
+        if (currentSelection) {
+          currentSelection.removeAllRanges();
+        }
+      } catch {}
     } catch {}
     onChange(String(editorRef.current?.innerHTML || ""));
   };
@@ -8744,6 +8750,7 @@ function PortalApp({ token, onLogout }) {
     introText: "",
     jobId: "",
     attachJdFile: true,
+    signatureHtml: "",
     signatureText: "",
     signatureLinks: []
   });
@@ -17277,6 +17284,7 @@ function PortalApp({ token, onLogout }) {
       jobId: suggestedJobId
       ,
       attachJdFile: true,
+      signatureHtml: String(smtpSettings.signatureHtml || smtpSettings.signatureText || "").trim(),
       signatureText,
       signatureLinks
     });
@@ -17312,6 +17320,7 @@ function PortalApp({ token, onLogout }) {
         cc,
         subject,
         introText: String(jdEmailModal.introText || "").trim(),
+        signatureHtml: String(jdEmailModal.signatureHtml || smtpSettings.signatureHtml || "").trim(),
         signatureText: String(jdEmailModal.signatureText || "").trim(),
         signatureLinks: Array.isArray(jdEmailModal.signatureLinks) ? jdEmailModal.signatureLinks : [],
         attachJdFile
@@ -26260,7 +26269,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
         value={jdEmailModal}
         ccSuggestions={jdEmailCcSuggestions}
         onChange={(key, val) => setJdEmailModal((current) => ({ ...current, [key]: val }))}
-        onClose={() => { setJdEmailModal({ open: false, candidate: null, to: "", cc: String((jdEmailCcSuggestions || [])[0] || defaultJdEmailCc || "").trim(), subject: "", introText: "", jobId: "", attachJdFile: true, signatureText: "", signatureLinks: [] }); setJdEmailModalStatus({ message: "", kind: "" }); }}
+        onClose={() => { setJdEmailModal({ open: false, candidate: null, to: "", cc: String((jdEmailCcSuggestions || [])[0] || defaultJdEmailCc || "").trim(), subject: "", introText: "", jobId: "", attachJdFile: true, signatureHtml: "", signatureText: "", signatureLinks: [] }); setJdEmailModalStatus({ message: "", kind: "" }); }}
         onSend={() => void sendCandidateJdEmail()}
         busy={jdEmailBusy}
         status={jdEmailModalStatus.message}
