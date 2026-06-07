@@ -13455,6 +13455,39 @@ function PortalApp({ token, onLogout }) {
     setStatus("applicants", "Applicant removed.", "ok");
   }
 
+  async function bulkDeleteSelectedApplicants() {
+    const selectedIds = Array.from(new Set((bulkAssignApplicantIds || []).map((item) => String(item || "").trim()).filter(Boolean)));
+    if (!selectedIds.length) {
+      setStatus("applicants", "Select applicants first.", "error");
+      return;
+    }
+    if (!window.confirm(`Delete ${selectedIds.length} selected applicant(s)? This cannot be undone.`)) return;
+    let success = 0;
+    let failed = 0;
+    const failReasons = [];
+    for (const id of selectedIds) {
+      try {
+        await api(`/company/applicants?id=${encodeURIComponent(id)}`, token, "DELETE");
+        success += 1;
+      } catch (error) {
+        failed += 1;
+        if (failReasons.length < 5) failReasons.push(`${id.slice(0, 8)}: ${String(error?.message || error)}`);
+      }
+    }
+    setState((current) => ({
+      ...current,
+      applicants: Array.isArray(current.applicants) ? current.applicants.filter((item) => !selectedIds.includes(String(item?.id || "").trim())) : current.applicants,
+      candidates: Array.isArray(current.candidates) ? current.candidates.filter((item) => !selectedIds.includes(String(item?.id || "").trim())) : current.candidates,
+      databaseCandidates: Array.isArray(current.databaseCandidates) ? current.databaseCandidates.filter((item) => !selectedIds.includes(String(item?.id || "").trim())) : current.databaseCandidates,
+      applicantListItems: Array.isArray(current.applicantListItems) ? current.applicantListItems.filter((item) => !selectedIds.includes(String(item?.id || "").trim())) : current.applicantListItems
+    }));
+    setBulkAssignApplicantIds([]);
+    await reloadApplicantsSlice();
+    void refreshWorkspaceSilently("post-applicant-bulk-remove");
+    const msg = `Bulk delete done. Deleted: ${success} | Failed: ${failed}.`;
+    setStatus("applicants", failReasons.length ? `${msg} Reasons: ${failReasons.join(" || ")}` : msg, failed ? "error" : "ok");
+  }
+
   async function hideApplicant(applicantId) {
     if (!String(applicantId || "").trim()) {
       setStatus("applicants", "Cannot hide: missing applicant id.", "error");
@@ -21759,6 +21792,14 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                   <>
                     {bulkAssignApplicantIds.length ? (
                       <button
+                        className="captured-action-danger"
+                        onClick={() => void bulkDeleteSelectedApplicants()}
+                      >
+                        {`Delete selected (${bulkAssignApplicantIds.length})`}
+                      </button>
+                    ) : null}
+                    {bulkAssignApplicantIds.length ? (
+                      <button
                         onClick={() => {
                           if (!bulkAssignApplicantIds.length) return;
                           setAssignApplicantId("");
@@ -21913,6 +21954,11 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                             <span className="captured-note-contact-icon" aria-hidden="true">🕒</span>
                             <span className="captured-note-field-label">Assigned at</span>
                             <span className="captured-note-field-value">{item.assignedAt || item.assigned_at || "NA"}</span>
+                          </div>
+                          <div className="captured-note-contact-row captured-note-field">
+                            <span className="captured-note-contact-icon" aria-hidden="true">🗓</span>
+                            <span className="captured-note-field-label">Applied at</span>
+                            <span className="captured-note-field-value">{item.createdAt || item.created_at || "NA"}</span>
                           </div>
                         </div>
                       </div>
