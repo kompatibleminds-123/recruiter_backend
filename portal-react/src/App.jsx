@@ -1290,6 +1290,11 @@ function isApplicantHiddenForCard(item = {}, linkedCandidate = null) {
   );
 }
 
+function isInboundApplicantSource(value = "") {
+  const source = String(value || "").trim().toLowerCase();
+  return ["website_apply", "hosted_apply", "google_sheet", "website", "hosted"].includes(source);
+}
+
 function formatAppliedPlacardDateTime(value) {
   const raw = String(value || "").trim();
   if (!raw) return "NA";
@@ -1356,7 +1361,7 @@ function normalizeAppliedPlacardCompareText(value) {
 
 function shouldTreatApplicantRecruiterNoteAsCandidateRemarks(item = {}) {
   const source = String(item?.source || item?.sourcePlatform || "").trim().toLowerCase();
-  if (!["website_apply", "hosted_apply", "website", "hosted"].includes(source)) return false;
+  if (!isInboundApplicantSource(source)) return false;
   const recruiterNote = formatAppliedPlacardText(item?.recruiter_context_notes);
   if (!recruiterNote) return false;
   const explicitRemarks = [
@@ -20342,8 +20347,21 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
       setStatus("assessments", "Candidate id missing for this assessment (cannot move back safely).", "error");
       return;
     }
+    const existingCandidate = (state.candidates || []).find((item) => String(item?.id || "") === candidateId)
+      || (state.databaseCandidates || []).find((item) => String(item?.id || "") === candidateId)
+      || null;
+    const linkedCandidate = resolveAssessmentLinkedCandidate(safeAssessment) || existingCandidate;
+    const restoreToApplicants = isInboundApplicantSource(
+      linkedCandidate?.source
+      || safeAssessment?.source
+      || safeAssessment?.sourcePlatform
+      || safeAssessment?.payload?.source
+      || safeAssessment?.payload?.sourcePlatform
+      || ""
+    );
+    const destinationLabel = restoreToApplicants ? "Applied Candidates" : "Captured";
     const confirmed = typeof window === "undefined" || window.confirm(
-      "Move back to Captured will remove this assessment and keep the candidate as a captured note. Continue?"
+      `Move back to ${destinationLabel} will remove this assessment and keep the candidate in ${destinationLabel}. Continue?`
     );
     if (!confirmed) return;
     const lockKey = String(safeAssessment?.id || safeAssessment?.candidateId || "").trim();
@@ -20355,15 +20373,17 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
       assessmentStatusSaveLockRef.current.add(lockKey);
       setAssessmentActionBusyIds((current) => ({ ...current, [lockKey]: true }));
     }
-    setStatus("assessments", "Moving back to Captured...");
+    setStatus("assessments", `Moving back to ${destinationLabel}...`);
     const optimisticUpdatedAt = new Date().toISOString();
-    const currentActiveStates = Array.isArray(candidateFiltersApplied.activeStates) && candidateFiltersApplied.activeStates.length
+    const currentCapturedActiveStates = Array.isArray(candidateFiltersApplied.activeStates) && candidateFiltersApplied.activeStates.length
       ? candidateFiltersApplied.activeStates
       : ["Active"];
-    const shouldRemainVisible = currentActiveStates.includes("Active");
-    const existingCandidate = (state.candidates || []).find((item) => String(item?.id || "") === candidateId)
-      || (state.databaseCandidates || []).find((item) => String(item?.id || "") === candidateId)
-      || null;
+    const currentApplicantActiveStates = Array.isArray(applicantFiltersApplied.activeStates) && applicantFiltersApplied.activeStates.length
+      ? applicantFiltersApplied.activeStates
+      : ["Active"];
+    const shouldRemainVisible = restoreToApplicants
+      ? currentApplicantActiveStates.includes("Active")
+      : currentCapturedActiveStates.includes("Active");
     const restoredCandidatePreview = {
       ...(existingCandidate || {}),
       id: candidateId,
@@ -20375,6 +20395,19 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
       updated_at: optimisticUpdatedAt,
       updatedAt: optimisticUpdatedAt
     };
+    const restoredApplicantPreview = normalizeApplicantVisibleRow({
+      ...(linkedCandidate || {}),
+      ...(safeAssessment || {}),
+      ...(restoredCandidatePreview || {}),
+      candidateName: String(safeAssessment?.candidateName || linkedCandidate?.name || "").trim(),
+      currentCompany: String(safeAssessment?.currentCompany || linkedCandidate?.company || "").trim(),
+      currentDesignation: String(safeAssessment?.currentDesignation || safeAssessment?.jdTitle || linkedCandidate?.role || "").trim(),
+      totalExperience: String(safeAssessment?.totalExperience || linkedCandidate?.experience || "").trim(),
+      clientName: String(safeAssessment?.clientName || linkedCandidate?.client_name || "").trim(),
+      jdTitle: String(safeAssessment?.jdTitle || linkedCandidate?.jd_title || "").trim(),
+      sourcePlatform: String(linkedCandidate?.source || safeAssessment?.source || safeAssessment?.sourcePlatform || "").trim(),
+      source: String(linkedCandidate?.source || safeAssessment?.source || safeAssessment?.sourcePlatform || "").trim()
+    });
     const patchCandidateState = (items) => Array.isArray(items)
       ? items.map((item) => String(item?.id || "") === candidateId ? { ...item, ...restoredCandidatePreview } : item)
       : items;
@@ -20385,41 +20418,78 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
     const prevAssessmentListItems = Array.isArray(assessmentListItems) ? [...assessmentListItems] : assessmentListItems;
     const prevAssessmentListMeta = assessmentListMeta && typeof assessmentListMeta === "object" ? { ...assessmentListMeta } : assessmentListMeta;
     const prevAssessmentStats = assessmentStatsSnapshot && typeof assessmentStatsSnapshot === "object" ? { ...assessmentStatsSnapshot } : assessmentStatsSnapshot;
+    const prevApplicantListItems = Array.isArray(state.applicantListItems) ? [...state.applicantListItems] : state.applicantListItems;
+    const prevApplicantListMeta = applicantListMeta && typeof applicantListMeta === "object" ? { ...applicantListMeta } : applicantListMeta;
+    const prevApplicantStats = applicantStatsSnapshot && typeof applicantStatsSnapshot === "object" ? { ...applicantStatsSnapshot } : applicantStatsSnapshot;
     setState((current) => ({
       ...current,
       assessments: Array.isArray(current.assessments)
         ? current.assessments.filter((item) => String(item?.id || "") !== assessmentId)
         : current.assessments,
       candidates: patchCandidateState(current.candidates),
-      databaseCandidates: patchCandidateState(current.databaseCandidates)
+      databaseCandidates: patchCandidateState(current.databaseCandidates),
+      applicants: restoreToApplicants
+        ? upsertCandidatesById(current.applicants, [restoredApplicantPreview])
+        : current.applicants,
+      applicantListItems: restoreToApplicants
+        ? (shouldRemainVisible
+          ? upsertCandidatesById(current.applicantListItems, [restoredApplicantPreview])
+          : removeCandidatesById(current.applicantListItems, [candidateId]))
+        : current.applicantListItems
     }));
-    setCapturedListItems((current) => (shouldRemainVisible
-      ? upsertCandidatesById(current, [restoredCandidatePreview])
-      : (Array.isArray(current) ? current.filter((item) => String(item?.id || "") !== candidateId) : current)));
-    setCapturedOptionPool((current) => upsertCandidatesById(current, [restoredCandidatePreview]));
-    if (shouldRemainVisible) {
-      setCapturedListMeta((current) => {
-        const meta = current && typeof current === "object" ? current : {};
-        const nextTotal = Math.max(0, Number(meta.total || 0) + 1);
-        const limit = Math.max(1, Number(meta.limit || safeCapturedApiPageSize || 25));
-        const nextTotalPages = Math.max(1, Math.ceil(nextTotal / limit));
+    if (restoreToApplicants) {
+      if (shouldRemainVisible) {
+        setApplicantListMeta((current) => {
+          const meta = current && typeof current === "object" ? current : {};
+          const nextTotal = Math.max(0, Number(meta.total || 0) + 1);
+          const limit = Math.max(1, Number(meta.limit || safeApplicantApiPageSize || 25));
+          const nextTotalPages = Math.max(1, Math.ceil(nextTotal / limit));
+          return {
+            ...meta,
+            total: nextTotal,
+            totalPages: nextTotalPages,
+            page: Math.min(Math.max(1, Number(meta.page || applicantPage || 1)), nextTotalPages),
+            limit
+          };
+        });
+      }
+      setApplicantStatsSnapshot((current) => {
+        if (!current || typeof current !== "object") return current;
         return {
-          ...meta,
-          total: nextTotal,
-          totalPages: nextTotalPages,
-          page: Math.min(Math.max(1, Number(meta.page || capturedPage || 1)), nextTotalPages),
-          limit
+          ...current,
+          active: Math.max(0, Number(current.active || 0) + 1),
+          converted: Math.max(0, Number(current.converted || 0) - 1)
+        };
+      });
+    } else {
+      setCapturedListItems((current) => (shouldRemainVisible
+        ? upsertCandidatesById(current, [restoredCandidatePreview])
+        : (Array.isArray(current) ? current.filter((item) => String(item?.id || "") !== candidateId) : current)));
+      setCapturedOptionPool((current) => upsertCandidatesById(current, [restoredCandidatePreview]));
+      if (shouldRemainVisible) {
+        setCapturedListMeta((current) => {
+          const meta = current && typeof current === "object" ? current : {};
+          const nextTotal = Math.max(0, Number(meta.total || 0) + 1);
+          const limit = Math.max(1, Number(meta.limit || safeCapturedApiPageSize || 25));
+          const nextTotalPages = Math.max(1, Math.ceil(nextTotal / limit));
+          return {
+            ...meta,
+            total: nextTotal,
+            totalPages: nextTotalPages,
+            page: Math.min(Math.max(1, Number(meta.page || capturedPage || 1)), nextTotalPages),
+            limit
+          };
+        });
+      }
+      setCapturedStatsSnapshot((current) => {
+        if (!current || typeof current !== "object") return current;
+        return {
+          ...current,
+          active: Math.max(0, Number(current.active || 0) + 1),
+          converted: Math.max(0, Number(current.converted || 0) - 1)
         };
       });
     }
-    setCapturedStatsSnapshot((current) => {
-      if (!current || typeof current !== "object") return current;
-      return {
-        ...current,
-        active: Math.max(0, Number(current.active || 0) + 1),
-        converted: Math.max(0, Number(current.converted || 0) - 1)
-      };
-    });
     setAssessmentListItems((current) => Array.isArray(current)
       ? current.filter((item) => String(item?.id || "") !== assessmentId)
       : current);
@@ -20453,19 +20523,26 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
         assessment_status: "",
         hidden_from_captured: false
       }, { skipRefresh: true });
-      navigate("/captured-notes");
-      setStatus("captured", "Moved back to Captured.", "ok");
+      navigate(restoreToApplicants ? "/applicants" : "/captured-notes");
+      setStatus(restoreToApplicants ? "applicants" : "captured", `Moved back to ${destinationLabel}.`, "ok");
     } catch (error) {
-      setCapturedListItems(prevCapturedListItems);
-      setCapturedOptionPool(prevCapturedOptionPool);
-      setCapturedListMeta(prevCapturedListMeta);
-      setCapturedStatsSnapshot(prevCapturedStats);
+      if (restoreToApplicants) {
+        setApplicantListMeta(prevApplicantListMeta);
+        setApplicantStatsSnapshot(prevApplicantStats);
+      } else {
+        setCapturedListItems(prevCapturedListItems);
+        setCapturedOptionPool(prevCapturedOptionPool);
+        setCapturedListMeta(prevCapturedListMeta);
+        setCapturedStatsSnapshot(prevCapturedStats);
+      }
       setAssessmentListItems(prevAssessmentListItems);
       setAssessmentListMeta(prevAssessmentListMeta);
       setAssessmentStatsSnapshot(prevAssessmentStats);
       setState((current) => ({
         ...current,
         assessments: prevAssessmentListItems,
+        applicants: prevApplicantListItems,
+        applicantListItems: prevApplicantListItems,
         candidates: patchCandidateState(current.candidates),
         databaseCandidates: patchCandidateState(current.databaseCandidates)
       }));
@@ -23174,7 +23251,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                                     </>
                                   );
                                 })()}
-                                <button type="button" className="more-menu__item" disabled={Boolean(assessmentActionBusyIds[String(item.id || "")]|| assessmentActionBusyIds[String(item.candidateId || "")])} onClick={() => { closeAssessmentMoreMenu(); void moveAssessmentBackToCaptured(item); }}>Move back to captured</button>
+                                <button type="button" className="more-menu__item" disabled={Boolean(assessmentActionBusyIds[String(item.id || "")]|| assessmentActionBusyIds[String(item.candidateId || "")])} onClick={() => { closeAssessmentMoreMenu(); void moveAssessmentBackToCaptured(item); }}>{isInboundApplicantSource(resolveAssessmentLinkedCandidate(item)?.source || item?.source || item?.sourcePlatform || item?.payload?.source || item?.payload?.sourcePlatform || "") ? "Move back to applied" : "Move back to captured"}</button>
                                 <button type="button" className="more-menu__item" disabled={Boolean(assessmentActionBusyIds[String(item.id || "")]|| assessmentActionBusyIds[String(item.candidateId || "")])} onClick={() => { closeAssessmentMoreMenu(); void setAssessmentArchivedState(item, true); }}>Hide</button>
                                 <button type="button" className="more-menu__item more-menu__danger" disabled={Boolean(assessmentActionBusyIds[String(item.id || "")] || assessmentActionBusyIds[String(item.candidateId || "")])} onClick={() => { closeAssessmentMoreMenu(); void deleteAssessmentItem(item); }}>Delete</button>
                               </div>

@@ -3680,6 +3680,7 @@ async function listApplicantsForUser(user, options = {}) {
 
 async function getApplicantStatsForUser(user, options = {}) {
   const filters = normalizeApplicantFilterOptions(options.filters || { q: options.q });
+  const statsFilters = { ...filters, activeStates: [] };
   const q = String(filters.q || "").trim();
   const { on, url, key } = getSupabaseServiceConfig();
   const companyId = String(user?.companyId || "").trim();
@@ -3739,7 +3740,7 @@ async function getApplicantStatsForUser(user, options = {}) {
 
   if (on && companyId) {
     const rows = await fetchStatRows();
-    const pool = rows.filter((item) => applyApplicantFiltersLocal(item, filters, true));
+    const pool = rows.filter((item) => applyApplicantFiltersLocal(item, statsFilters, true));
     const converted = pool.filter((item) => (Boolean(item?.used_in_assessment) || Boolean(String(item?.assessment_id || item?.assessmentId || "").trim())) && item?.hidden_from_captured !== true).length;
     const inactive = pool.filter((item) => item?.hidden_from_captured === true).length;
     const total = pool.length;
@@ -3750,7 +3751,7 @@ async function getApplicantStatsForUser(user, options = {}) {
 
   // Local fallback.
   const fallbackRows = await listCandidatesForUser(user, { limit: 5000, q });
-  const pool = (Array.isArray(fallbackRows) ? fallbackRows : []).filter((item) => applyApplicantFiltersLocal(item, filters, true));
+  const pool = (Array.isArray(fallbackRows) ? fallbackRows : []).filter((item) => applyApplicantFiltersLocal(item, statsFilters, true));
   const converted = pool.filter((item) => (Boolean(item?.used_in_assessment) || Boolean(String(item?.assessment_id || item?.assessmentId || "").trim())) && !Boolean(item?.hidden_from_captured)).length;
   const inactive = pool.filter((item) => Boolean(item?.hidden_from_captured)).length;
   const total = pool.length;
