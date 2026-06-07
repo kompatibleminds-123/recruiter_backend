@@ -1275,6 +1275,24 @@ function normalizeApplicantVisibleRow(item = {}) {
   };
 }
 
+function resolveCandidateDisplayName(...sources) {
+  for (const source of sources.flatMap((value) => (value && typeof value === "object" ? [value] : []))) {
+    const candidateName = String(
+      source?.candidateName
+      || source?.name
+      || source?.candidate_name
+      || source?.candidate?.candidateName
+      || source?.candidate?.name
+      || source?.candidate?.candidate_name
+      || source?.fullName
+      || source?.full_name
+      || ""
+    ).trim();
+    if (candidateName) return candidateName;
+  }
+  return "Candidate";
+}
+
 function isApplicantHiddenForCard(item = {}, linkedCandidate = null) {
   const toBooleanLike = (value) => {
     if (typeof value === "boolean") return value;
@@ -12219,7 +12237,8 @@ function PortalApp({ token, onLogout }) {
       .map((item) => ({
         id: item.id,
         assessmentId: item.id,
-        name: item.candidateName || "",
+        name: resolveCandidateDisplayName(item),
+        candidateName: resolveCandidateDisplayName(item),
         role: item.currentDesignation || "",
         company: item.currentCompany || "",
         experience: item.totalExperience || "",
@@ -12626,7 +12645,7 @@ function PortalApp({ token, onLogout }) {
       const noticeDays = parseNoticePeriodToDays(item?.notice_period || item?.noticePeriod || "");
       const baseRow = {
         item: item || { assessmentId: linkedAssessment?.id, candidateId },
-        candidateName: item?.name || item?.candidateName || "Candidate",
+        candidateName: resolveCandidateDisplayName(item, linkedAssessment),
         role: linkedAssessment?.jdTitle || item?.role || item?.currentDesignation || item?.jd_title || item?.jdTitle || "",
         client: linkedAssessment?.clientName || item?.client_name || item?.clientName || "",
         recruiter: item?.assigned_to_name || item?.assignedToName || "",
@@ -12810,7 +12829,7 @@ function PortalApp({ token, onLogout }) {
         const candidate = (candidateId && candidateById.get(candidateId)) || null;
         const fallbackRow = {
           item: candidate || { id: candidateId || assessmentId, assessmentId, candidateId },
-          candidateName: candidate?.name || candidate?.candidateName || assessment?.candidateName || assessment?.payload?.candidateName || "Candidate",
+          candidateName: resolveCandidateDisplayName(candidate, assessment, assessment?.payload),
           role: assessment?.jdTitle || candidate?.role || candidate?.jd_title || candidate?.jdTitle || "",
           client: assessment?.clientName || candidate?.client_name || candidate?.clientName || "",
           recruiter: candidate?.assigned_to_name || candidate?.assignedToName || "",
