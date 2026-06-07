@@ -1229,6 +1229,18 @@ function normalizeApplicantLocationLabel(value) {
 function normalizeApplicantVisibleRow(item = {}) {
   if (!item || typeof item !== "object") return item;
   const candidateName = String(item.candidateName || item.name || item.candidate_name || "").trim();
+  const jdTitle = String(
+    item.jdTitle
+    || item.jd_title
+    || item.assignedJdTitle
+    || item.assigned_jd_title
+    || item.role
+    || item.position
+    || item.currentDesignation
+    || item.current_designation
+    || ""
+  ).trim();
+  const role = String(item.role || item.currentDesignation || item.current_designation || jdTitle || "").trim();
   const assignedToName = String(item.assignedToName || item.assigned_to_name || "").trim();
   const createdAt = String(item.createdAt || item.created_at || "").trim();
   const assignedAt = String(item.assignedAt || item.assigned_at || createdAt || "").trim();
@@ -1238,6 +1250,14 @@ function normalizeApplicantVisibleRow(item = {}) {
     candidateName,
     name: String(item.name || candidateName || "").trim(),
     candidate_name: String(item.candidate_name || candidateName || "").trim(),
+    jdTitle,
+    jd_title: String(item.jd_title || jdTitle || "").trim(),
+    assignedJdTitle: String(item.assignedJdTitle || item.assigned_jd_title || jdTitle || "").trim(),
+    assigned_jd_title: String(item.assigned_jd_title || item.assignedJdTitle || jdTitle || "").trim(),
+    role,
+    position: String(item.position || jdTitle || role || "").trim(),
+    currentDesignation: String(item.currentDesignation || item.current_designation || role || "").trim(),
+    current_designation: String(item.current_designation || item.currentDesignation || role || "").trim(),
     assignedToName,
     assigned_to_name: String(item.assigned_to_name || assignedToName || "").trim(),
     createdAt,
@@ -13787,7 +13807,7 @@ function PortalApp({ token, onLogout }) {
       reasonForChange: applicantDraft.reasonForChange || applicantView.reasonForChange || "",
       cautiousIndicators: applicantDraft.cautiousIndicators || "",
       clientName: applicantDraft.clientName || applicantView.clientName || applicantView.client_name || "",
-      jdTitle: applicantDraft.jdTitle || applicantView.jdTitle || applicantView.jd_title || "",
+      jdTitle: applicantDraft.jdTitle || applicantView.jdTitle || applicantView.assignedJdTitle || applicantView.assigned_jd_title || applicantView.jd_title || applicantView.role || "",
       pipelineStage: "Submitted",
       candidateStatus: applicantView.parseStatus || applicantView.parse_status || "Applied",
       followUpAt: toDateInputValue(applicantDraft.followUpAt || ""),
@@ -21915,7 +21935,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                         <div className="captured-note-title-row">
                           <h3>{item.candidateName || item.name || item.candidate_name || "Applicant"}</h3>
                         </div>
-                        <div className="captured-note-subtitle">{item.jdTitle || "Untitled role"}</div>
+                        <div className="captured-note-subtitle">{item.jdTitle || item.assignedJdTitle || item.assigned_jd_title || item.jd_title || item.role || item.position || "Untitled role"}</div>
                         <div className="captured-note-detail-list captured-note-profile-meta">
                           <div className="captured-note-contact-row captured-note-field">
                             <span className="captured-note-contact-icon" aria-hidden="true">🏢</span>
