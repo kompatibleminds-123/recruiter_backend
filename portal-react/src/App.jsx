@@ -20195,8 +20195,13 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
           ...current,
           applicantListItems: upsertCandidatesById(current.applicantListItems, nextRows)
         }));
-        setCapturedOptionPool((current) => upsertCandidatesById(current, nextRows));
-        setCapturedListItems((current) => upsertCandidatesById(current, nextRows));
+        if (nextVisible) {
+          setCapturedOptionPool((current) => upsertCandidatesById(current, nextRows));
+          setCapturedListItems((current) => upsertCandidatesById(current, nextRows));
+        } else {
+          setCapturedOptionPool((current) => removeCandidatesById(current, [safeCandidateId]));
+          setCapturedListItems((current) => removeCandidatesById(current, [safeCandidateId]));
+        }
       } else {
         setState((current) => ({
           ...current,
@@ -20513,6 +20518,10 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
           converted: Math.max(0, Number(current.converted || 0) - 1)
         };
       });
+    }
+    if (restoreToApplicants) {
+      setCapturedListItems((current) => removeCandidatesById(current, [candidateId]));
+      setCapturedOptionPool((current) => removeCandidatesById(current, [candidateId]));
     }
     setAssessmentListItems((current) => Array.isArray(current)
       ? current.filter((item) => String(item?.id || "") !== assessmentId)
