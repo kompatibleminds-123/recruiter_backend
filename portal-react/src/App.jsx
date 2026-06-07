@@ -1230,14 +1230,33 @@ function normalizeApplicantVisibleRow(item = {}) {
   if (!item || typeof item !== "object") return item;
   const candidateName = String(item.candidateName || item.name || item.candidate_name || "").trim();
   const assignedToName = String(item.assignedToName || item.assigned_to_name || "").trim();
+  const createdAt = String(item.createdAt || item.created_at || "").trim();
+  const assignedAt = String(item.assignedAt || item.assigned_at || createdAt || "").trim();
   return {
     ...item,
     candidateName,
     name: String(item.name || candidateName || "").trim(),
     candidate_name: String(item.candidate_name || candidateName || "").trim(),
     assignedToName,
-    assigned_to_name: String(item.assigned_to_name || assignedToName || "").trim()
+    assigned_to_name: String(item.assigned_to_name || assignedToName || "").trim(),
+    createdAt,
+    created_at: String(item.created_at || createdAt || "").trim(),
+    assignedAt,
+    assigned_at: String(item.assigned_at || assignedAt || "").trim()
   };
+}
+
+function formatAppliedPlacardDateTime(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return "NA";
+  const date = new Date(raw);
+  if (!Number.isFinite(date.getTime())) return raw;
+  const dateText = date.toLocaleDateString("en-GB");
+  const hours24 = date.getHours();
+  const hours12 = hours24 % 12 || 12;
+  const minutes = String(date.getMinutes()).padStart(2, "0");
+  const ampm = hours24 >= 12 ? "PM" : "AM";
+  return `${dateText} - ${hours12}.${minutes} ${ampm}`;
 }
 
 function parseMultiChipTokens(value) {
@@ -21792,14 +21811,6 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                   <>
                     {bulkAssignApplicantIds.length ? (
                       <button
-                        className="captured-action-danger"
-                        onClick={() => void bulkDeleteSelectedApplicants()}
-                      >
-                        {`Delete selected (${bulkAssignApplicantIds.length})`}
-                      </button>
-                    ) : null}
-                    {bulkAssignApplicantIds.length ? (
-                      <button
                         onClick={() => {
                           if (!bulkAssignApplicantIds.length) return;
                           setAssignApplicantId("");
@@ -21807,6 +21818,14 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                         }}
                       >
                         {`Assign selected (${bulkAssignApplicantIds.length})`}
+                      </button>
+                    ) : null}
+                    {bulkAssignApplicantIds.length ? (
+                      <button
+                        className="captured-action-danger"
+                        onClick={() => void bulkDeleteSelectedApplicants()}
+                      >
+                        {`Delete selected (${bulkAssignApplicantIds.length})`}
                       </button>
                     ) : null}
                   </>
@@ -21953,28 +21972,19 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                           <div className="captured-note-contact-row captured-note-field">
                             <span className="captured-note-contact-icon" aria-hidden="true">🕒</span>
                             <span className="captured-note-field-label">Assigned at</span>
-                            <span className="captured-note-field-value">{item.assignedAt || item.assigned_at || "NA"}</span>
+                            <span className="captured-note-field-value">{formatAppliedPlacardDateTime(item.assignedAt || item.assigned_at || item.createdAt || item.created_at)}</span>
                           </div>
                           <div className="captured-note-contact-row captured-note-field">
                             <span className="captured-note-contact-icon" aria-hidden="true">🗓</span>
                             <span className="captured-note-field-label">Applied at</span>
-                            <span className="captured-note-field-value">{item.createdAt || item.created_at || "NA"}</span>
+                            <span className="captured-note-field-value">{formatAppliedPlacardDateTime(item.createdAt || item.created_at || item.appliedAt || item.applied_at)}</span>
                           </div>
                         </div>
                       </div>
                     </div>
-                    {String(item.lastContactOutcome || item.last_contact_outcome || item.status || "").trim() || String(item.screeningAnswers || "").trim() ? (
+                    {String(item.lastContactOutcome || item.last_contact_outcome || item.status || "").trim() ? (
                       <div className="status-note" style={{ marginTop: 10, justifyContent: "flex-end", textAlign: "right" }}>
-                        {(() => {
-                          const statusText = String(getApplicantWorkflowOutcome(item, applicantCandidateMap.get(String(item.id)) || null) || "").trim();
-                          const remarksText = normalizeMojibakeSymbols(String(item.screeningAnswers || "").trim());
-                          return (
-                            <>
-                              <strong>{`Status: ${statusText || "NA"}`}</strong>
-                              {remarksText ? <span>{` | Remarks: ${remarksText}`}</span> : null}
-                            </>
-                          );
-                        })()}
+                        <strong>{`Status: ${String(getApplicantWorkflowOutcome(item, applicantCandidateMap.get(String(item.id)) || null) || "").trim() || "NA"}`}</strong>
                       </div>
                     ) : null}
                     <div className="button-row captured-note-actions">
