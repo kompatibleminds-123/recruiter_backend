@@ -13785,9 +13785,7 @@ function PortalApp({ token, onLogout }) {
       : items;
     setState((current) => ({
       ...current,
-      applicants: shouldRemainVisible
-        ? patchHiddenState(current.applicants, true)
-        : (Array.isArray(current.applicants) ? current.applicants.filter((item) => String(item?.id || "") !== String(applicantId)) : current.applicants),
+      applicants: patchHiddenState(current.applicants, true),
       candidates: patchHiddenState(current.candidates, true),
       databaseCandidates: patchHiddenState(current.databaseCandidates, true),
       applicantListItems: shouldRemainVisible
@@ -13874,9 +13872,7 @@ function PortalApp({ token, onLogout }) {
       : items;
     setState((current) => ({
       ...current,
-      applicants: shouldRemainVisible
-        ? patchHiddenState(current.applicants, false)
-        : (Array.isArray(current.applicants) ? current.applicants.filter((item) => String(item?.id || "") !== String(applicantId)) : current.applicants),
+      applicants: patchHiddenState(current.applicants, false),
       candidates: patchHiddenState(current.candidates, false),
       databaseCandidates: patchHiddenState(current.databaseCandidates, false),
       applicantListItems: shouldRemainVisible
@@ -20185,10 +20181,32 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
   async function applyCandidateLiveRowEvent({ eventType = "", candidateId = "", payloadCandidate = null }) {
     const safeCandidateId = String(candidateId || "").trim();
     if (!safeCandidateId) return;
+    const previousApplicantRow = (state.applicants || []).find((item) => String(item?.id || "") === safeCandidateId) || null;
     const rows = payloadCandidate && typeof payloadCandidate === "object"
       ? [payloadCandidate]
       : await api(`/candidates?id=${encodeURIComponent(safeCandidateId)}&scope=company&limit=1`, token);
-    const nextRows = Array.isArray(rows) ? rows.map((row) => normalizeApplicantVisibleRow(row)) : [];
+    const nextRows = Array.isArray(rows) ? rows.map((row) => normalizeApplicantVisibleRow({
+      ...(previousApplicantRow || {}),
+      ...(row || {}),
+      candidateName: String(row?.name || previousApplicantRow?.candidateName || previousApplicantRow?.name || row?.candidate_name || "").trim(),
+      currentCompany: String(row?.company || previousApplicantRow?.currentCompany || previousApplicantRow?.company || "").trim(),
+      currentDesignation: String(row?.role || row?.current_designation || previousApplicantRow?.currentDesignation || previousApplicantRow?.current_designation || "").trim(),
+      totalExperience: String(row?.experience || previousApplicantRow?.totalExperience || previousApplicantRow?.experience || "").trim(),
+      clientName: String(row?.client_name || previousApplicantRow?.clientName || previousApplicantRow?.client_name || "").trim(),
+      jdTitle: String(
+        row?.jd_title
+        || row?.assigned_jd_title
+        || previousApplicantRow?.jdTitle
+        || previousApplicantRow?.jd_title
+        || previousApplicantRow?.assigned_jd_title
+        || row?.role
+        || ""
+      ).trim(),
+      phone: String(row?.phone || previousApplicantRow?.phone || "").trim(),
+      email: String(row?.email || previousApplicantRow?.email || "").trim(),
+      location: String(row?.location || previousApplicantRow?.location || "").trim(),
+      source: String(row?.source || previousApplicantRow?.source || previousApplicantRow?.sourcePlatform || "").trim()
+    })) : [];
     const nextRow = nextRows && nextRows.length ? nextRows[0] : null;
     const previousRow = (state.candidates || []).find((item) => String(item?.id || "") === safeCandidateId) || null;
     const previousHidden = Boolean(previousRow?.hidden_from_captured);
