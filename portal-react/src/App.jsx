@@ -20301,6 +20301,13 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
     const previousHidden = Boolean(previousRow?.hidden_from_captured);
     const nextHidden = Boolean(nextRow?.hidden_from_captured);
     const hiddenChanged = previousHidden !== nextHidden;
+    const inboundApplicantSource = isInboundApplicantSource(
+      nextRow?.source
+      || nextRow?.sourcePlatform
+      || previousApplicantRow?.source
+      || previousApplicantRow?.sourcePlatform
+      || ""
+    );
     const nextApplicantVisible = nextRow
       ? isApplicantRowVisibleInCurrentView(nextRow, applicantFiltersApplied, state.user, nextRow, null)
       : false;
@@ -20328,8 +20335,18 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
     }));
 
     if (eventType === "candidate_attempt") {
-      setCapturedOptionPool((current) => replaceCandidatesById(current, nextRows));
-      setCapturedListItems((current) => replaceCandidatesById(current, nextRows));
+      if (inboundApplicantSource) {
+        setState((current) => ({
+          ...current,
+          applicants: sortApplicantsForList(upsertCandidatesById(current.applicants, nextRows), applicantSortBy),
+          applicantListItems: sortApplicantsForList(upsertCandidatesById(current.applicantListItems, nextRows), applicantSortBy)
+        }));
+        setCapturedOptionPool((current) => removeCandidatesById(current, [safeCandidateId]));
+        setCapturedListItems((current) => removeCandidatesById(current, [safeCandidateId]));
+      } else {
+        setCapturedOptionPool((current) => replaceCandidatesById(current, nextRows));
+        setCapturedListItems((current) => replaceCandidatesById(current, nextRows));
+      }
       return;
     }
 
@@ -20337,7 +20354,23 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
       const shouldKeepApplicantVisibleOnAssign = nextApplicantVisible || (
         String(state.user?.role || "").toLowerCase() === "admin" && previousApplicantVisible
       );
-      if (shouldKeepApplicantVisibleOnAssign) {
+      if (inboundApplicantSource) {
+        if (shouldKeepApplicantVisibleOnAssign) {
+          setState((current) => ({
+            ...current,
+            applicants: sortApplicantsForList(upsertCandidatesById(current.applicants, nextRows), applicantSortBy),
+            applicantListItems: sortApplicantsForList(upsertCandidatesById(current.applicantListItems, nextRows), applicantSortBy)
+          }));
+        } else {
+          setState((current) => ({
+            ...current,
+            applicants: removeCandidatesById(current.applicants, [safeCandidateId]),
+            applicantListItems: removeCandidatesById(current.applicantListItems, [safeCandidateId])
+          }));
+        }
+        setCapturedOptionPool((current) => removeCandidatesById(current, [safeCandidateId]));
+        setCapturedListItems((current) => removeCandidatesById(current, [safeCandidateId]));
+      } else if (shouldKeepApplicantVisibleOnAssign) {
         setState((current) => ({
           ...current,
           applicantListItems: upsertCandidatesById(current.applicantListItems, nextRows)
@@ -20356,7 +20389,23 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
     }
 
     if (eventType === "candidate_changed" && hiddenChanged) {
-      if (nextApplicantVisible) {
+      if (inboundApplicantSource) {
+        if (nextApplicantVisible) {
+          setState((current) => ({
+            ...current,
+            applicants: sortApplicantsForList(upsertCandidatesById(current.applicants, nextRows), applicantSortBy),
+            applicantListItems: sortApplicantsForList(upsertCandidatesById(current.applicantListItems, nextRows), applicantSortBy)
+          }));
+        } else {
+          setState((current) => ({
+            ...current,
+            applicants: removeCandidatesById(current.applicants, [safeCandidateId]),
+            applicantListItems: removeCandidatesById(current.applicantListItems, [safeCandidateId])
+          }));
+        }
+        setCapturedOptionPool((current) => removeCandidatesById(current, [safeCandidateId]));
+        setCapturedListItems((current) => removeCandidatesById(current, [safeCandidateId]));
+      } else if (nextApplicantVisible) {
         setState((current) => ({
           ...current,
           applicantListItems: upsertCandidatesById(current.applicantListItems, nextRows)
@@ -20376,6 +20425,25 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
         setCapturedOptionPool((current) => removeCandidatesById(current, [safeCandidateId]));
         setCapturedListItems((current) => removeCandidatesById(current, [safeCandidateId]));
       }
+      return;
+    }
+
+    if (inboundApplicantSource) {
+      if (nextApplicantVisible || (eventType === "candidate_changed" && previousApplicantVisible)) {
+        setState((current) => ({
+          ...current,
+          applicants: sortApplicantsForList(upsertCandidatesById(current.applicants, nextRows), applicantSortBy),
+          applicantListItems: sortApplicantsForList(upsertCandidatesById(current.applicantListItems, nextRows), applicantSortBy)
+        }));
+      } else {
+        setState((current) => ({
+          ...current,
+          applicants: removeCandidatesById(current.applicants, [safeCandidateId]),
+          applicantListItems: removeCandidatesById(current.applicantListItems, [safeCandidateId])
+        }));
+      }
+      setCapturedOptionPool((current) => removeCandidatesById(current, [safeCandidateId]));
+      setCapturedListItems((current) => removeCandidatesById(current, [safeCandidateId]));
       return;
     }
 
