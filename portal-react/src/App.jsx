@@ -10221,7 +10221,11 @@ function PortalApp({ token, onLogout }) {
 
   async function reloadApplicantStats(filters = applicantFiltersApplied) {
     if (!token) return;
-    const query = buildApplicantQueryParams(filters, 1, 1);
+    const statsFilters = {
+      ...(filters && typeof filters === "object" ? filters : {}),
+      activeStates: []
+    };
+    const query = buildApplicantQueryParams(statsFilters, 1, 1);
     if (applicantStatsRequestRef.current.inflightQuery === query) return;
     const seq = Number(applicantStatsRequestRef.current.seq || 0) + 1;
     applicantStatsRequestRef.current = { seq, inflightQuery: query };
@@ -11112,6 +11116,30 @@ function PortalApp({ token, onLogout }) {
     }, 400);
     return () => clearTimeout(timer);
   }, [location?.pathname, applicantFilters?.q]);
+
+  useEffect(() => {
+    if (String(location?.pathname || "").trim() !== "/captured-notes") return;
+    const nextQ = String(candidateFilters?.q || "").trim();
+    const timer = setTimeout(() => {
+      setCapturedPage(1);
+      setCandidateFiltersApplied((current) => (
+        String(current?.q || "").trim() === nextQ ? current : { ...current, q: nextQ }
+      ));
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [location?.pathname, candidateFilters?.q]);
+
+  useEffect(() => {
+    if (String(location?.pathname || "").trim() !== "/assessments") return;
+    const nextQ = String(assessmentFilters?.q || "").trim();
+    const timer = setTimeout(() => {
+      setAssessmentPage(1);
+      setAssessmentFiltersApplied((current) => (
+        String(current?.q || "").trim() === nextQ ? current : { ...current, q: nextQ }
+      ));
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [location?.pathname, assessmentFilters?.q]);
 
   useEffect(() => {
     if (!token) return undefined;
@@ -13045,7 +13073,8 @@ function PortalApp({ token, onLogout }) {
     const currentUserName = String(state.user?.name || "").trim();
     const isAdmin = String(state.user?.role || "").toLowerCase() === "admin";
 
-    // Keep stats aligned with the same filters as the visible list (clients/JD/owner/assignee/outcome/state/date/query).
+    // Keep stats aligned with the same filters as the visible list (clients/JD/owner/assignee/outcome/date/query),
+    // but do not let the Active/Inactive lane filter move the top counters.
     // We do not exclude converted rows here because we show both Active + Converted counts.
     const query = String(applicantFiltersApplied.q || "").trim().toLowerCase();
     const universe = filteredApplicants.filter((item) => {
@@ -13058,9 +13087,7 @@ function PortalApp({ token, onLogout }) {
       const outcomeValue = getApplicantWorkflowOutcome(item, linkedCandidate);
       const manuallyHidden = Boolean(item.hidden_from_captured || item.hiddenFromCaptured || linkedCandidate?.hidden_from_captured || linkedCandidate?.hiddenFromCaptured);
       const isConvertedApplicant = isApplicantConvertedToAssessment(item, linkedCandidate, linkedAssessment);
-      const activeValue = manuallyHidden ? "Inactive" : (isConvertedApplicant ? "Converted" : "Active");
       const createdDate = String(item.createdAt || item.created_at || "").slice(0, 10);
-      const nameHay = [item.candidateName, linkedCandidate?.name].join(" ").toLowerCase();
       const hay = [
         item.candidateName,
         linkedCandidate?.name,
@@ -13074,9 +13101,6 @@ function PortalApp({ token, onLogout }) {
         item.currentDesignation
       ].join(" ").toLowerCase();
       if (query && !hay.includes(query)) return false;
-      const searchNameMatch = Boolean(query && nameHay.includes(query));
-      if (!applicantFiltersApplied.activeStates.length && activeValue === "Inactive" && !searchNameMatch) return false;
-      if (applicantFiltersApplied.activeStates.length && !applicantFiltersApplied.activeStates.includes(activeValue)) return false;
       if (applicantFiltersApplied.dateFrom && createdDate && createdDate < applicantFiltersApplied.dateFrom) return false;
       if (applicantFiltersApplied.dateTo && createdDate && createdDate > applicantFiltersApplied.dateTo) return false;
       if (applicantFiltersApplied.clients.length && !applicantFiltersApplied.clients.includes(clientValue)) return false;

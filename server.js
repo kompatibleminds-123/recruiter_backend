@@ -5250,18 +5250,6 @@ async function unlinkAssessmentFromCompanyCandidates(companyId, assessmentId) {
   for (const candidate of linkedCandidates) {
     const candidateId = String(candidate?.id || "").trim();
     if (!candidateId) continue;
-    const source = String(candidate?.source || "").trim().toLowerCase();
-    const isAppliedSource = source === "website_apply" || source === "hosted_apply" || source === "google_sheet";
-    if (isAppliedSource) {
-      // Under 1:1, deleting an assessment converted from an applied note should delete the applied note too.
-      try {
-        await deleteCandidate(candidateId, { companyId: scopedCompanyId });
-        changedCandidates.push({ candidateId, deleted: true });
-      } catch {
-        // ignore
-      }
-      continue;
-    }
     const updatedCandidate = await patchCandidate(candidateId, {
       hidden_from_captured: false,
       used_in_assessment: false,
