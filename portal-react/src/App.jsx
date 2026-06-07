@@ -1228,6 +1228,12 @@ function normalizeApplicantLocationLabel(value) {
 
 function normalizeApplicantVisibleRow(item = {}) {
   if (!item || typeof item !== "object") return item;
+  const toBooleanLike = (value) => {
+    if (typeof value === "boolean") return value;
+    if (typeof value === "number") return value === 1;
+    const raw = String(value || "").trim().toLowerCase();
+    return raw === "true" || raw === "1" || raw === "yes";
+  };
   const candidateName = String(item.candidateName || item.name || item.candidate_name || "").trim();
   const jdTitle = String(
     item.jdTitle
@@ -1244,7 +1250,7 @@ function normalizeApplicantVisibleRow(item = {}) {
   const assignedToName = String(item.assignedToName || item.assigned_to_name || "").trim();
   const createdAt = String(item.createdAt || item.created_at || "").trim();
   const assignedAt = String(item.assignedAt || item.assigned_at || createdAt || "").trim();
-  const hiddenFromCaptured = Boolean(item.hidden_from_captured || item.hiddenFromCaptured);
+  const hiddenFromCaptured = toBooleanLike(item.hidden_from_captured) || toBooleanLike(item.hiddenFromCaptured);
   return {
     ...item,
     candidateName,
@@ -1267,6 +1273,21 @@ function normalizeApplicantVisibleRow(item = {}) {
     hidden_from_captured: hiddenFromCaptured,
     hiddenFromCaptured
   };
+}
+
+function isApplicantHiddenForCard(item = {}, linkedCandidate = null) {
+  const toBooleanLike = (value) => {
+    if (typeof value === "boolean") return value;
+    if (typeof value === "number") return value === 1;
+    const raw = String(value || "").trim().toLowerCase();
+    return raw === "true" || raw === "1" || raw === "yes";
+  };
+  return Boolean(
+    toBooleanLike(item?.hidden_from_captured)
+    || toBooleanLike(item?.hiddenFromCaptured)
+    || toBooleanLike(linkedCandidate?.hidden_from_captured)
+    || toBooleanLike(linkedCandidate?.hiddenFromCaptured)
+  );
 }
 
 function formatAppliedPlacardDateTime(value) {
@@ -22019,7 +22040,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                     ? <div className="empty-state">No applied candidates right now.</div>
                     : visibleApplicants.map((item) => {
                   const linkedCandidate = applicantCandidateMap.get(String(item.id)) || null;
-                  const applicantIsHidden = Boolean(item.hidden_from_captured || item.hiddenFromCaptured || linkedCandidate?.hidden_from_captured || linkedCandidate?.hiddenFromCaptured);
+                  const applicantIsHidden = isApplicantHiddenForCard(item, linkedCandidate);
                   return (
                   <article className={`item-card compact-card captured-note-card${applicantIsHidden ? " captured-note-card--inactive applied-note-card--inactive" : ""}`} key={item.id}>
                     {String(state.user?.role || "").toLowerCase() === "admin" ? (
