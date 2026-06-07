@@ -17069,7 +17069,7 @@ function PortalApp({ token, onLogout }) {
     try {
       const signatureHtml = String(smtpSettings.signatureHtml || "").trim();
       const signatureText = signatureHtml ? htmlToPlainText(signatureHtml) : String(smtpSettings.signatureText || "").trim();
-      await api("/company/email-settings", token, "POST", {
+      const result = await api("/company/email-settings", token, "POST", {
         settings: {
           host: smtpSettings.host,
           port: smtpSettings.port,
@@ -17086,9 +17086,25 @@ function PortalApp({ token, onLogout }) {
           signatureLinkUrl2: smtpSettings.signatureLinkUrl2
         }
       });
-      setSmtpSettings((c) => ({ ...c, pass: "", hasPassword: true }));
+      setSmtpSettings((c) => ({
+        ...c,
+        host: String(result?.host || c.host || "").trim(),
+        port: Number(result?.port || c.port || 587),
+        secure: Boolean(result?.secure ?? c.secure),
+        user: String(result?.user || c.user || "").trim(),
+        from: String(result?.from || c.from || "").trim(),
+        signatureText: String(result?.signatureText || signatureText || "").trim(),
+        signatureHtml: String(result?.signatureHtml || signatureHtml || "").trim(),
+        signatureLinkLabel: String(result?.signatureLinkLabel || c.signatureLinkLabel || "").trim(),
+        signatureLinkUrl: String(result?.signatureLinkUrl || c.signatureLinkUrl || "").trim(),
+        signatureLinkLabel2: String(result?.signatureLinkLabel2 || c.signatureLinkLabel2 || "").trim(),
+        signatureLinkUrl2: String(result?.signatureLinkUrl2 || c.signatureLinkUrl2 || "").trim(),
+        pass: "",
+        hasPassword: true
+      }));
       setSmtpSettingsKeepPass(true);
       smtpSettingsDirtyRef.current = false;
+      setSmtpSettingsLoaded(true);
       setStatus("settings", "Email settings saved.", "ok");
     } catch (error) {
       setStatus("settings", `Email settings failed: ${String(error?.message || error)}`, "error");
@@ -17101,7 +17117,7 @@ function PortalApp({ token, onLogout }) {
       const current = await api("/company/email-settings", token);
       const signatureHtml = String(smtpSettings.signatureHtml || "").trim();
       const signatureText = signatureHtml ? htmlToPlainText(signatureHtml) : String(smtpSettings.signatureText || "").trim();
-      await api("/company/email-settings", token, "POST", {
+      const result = await api("/company/email-settings", token, "POST", {
         settings: {
           host: String(current?.host || "").trim(),
           port: Number(current?.port || 587),
@@ -17118,6 +17134,13 @@ function PortalApp({ token, onLogout }) {
           signatureLinkUrl2: smtpSettings.signatureLinkUrl2
         }
       });
+      setSmtpSettings((c) => ({
+        ...c,
+        signatureText: String(result?.signatureText || signatureText || "").trim(),
+        signatureHtml: String(result?.signatureHtml || signatureHtml || "").trim()
+      }));
+      setSmtpSettingsLoaded(true);
+      smtpSettingsDirtyRef.current = false;
       setStatus("settings", "Signature saved.", "ok");
     } catch (error) {
       setStatus("settings", `Signature save failed: ${String(error?.message || error)}`, "error");
