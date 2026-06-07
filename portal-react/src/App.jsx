@@ -21378,13 +21378,15 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
   });
   // Pending applicants = Active applicants in Applied Candidates (not converted, not hidden),
   // scoped to the current user's visibility (filteredApplicants already applies this).
-  const pendingAssignments = filteredApplicants.filter((item) => {
-    const linkedCandidate = applicantCandidateMap.get(String(item.id)) || null;
-    const linkedAssessment = applicantAssessmentMap.get(String(item.id)) || null;
-    if (isApplicantConvertedToAssessment(item, linkedCandidate, linkedAssessment)) return false;
-    const manuallyHidden = Boolean(item.hidden_from_captured || linkedCandidate?.hidden_from_captured);
-    return !manuallyHidden;
-  }).length || Number(applicantStatsSnapshot?.active || 0);
+  const pendingAssignments = Number.isFinite(Number(applicantStatsSnapshot?.active))
+    ? Number(applicantStatsSnapshot?.active || 0)
+    : filteredApplicants.filter((item) => {
+        const linkedCandidate = applicantCandidateMap.get(String(item.id)) || null;
+        const linkedAssessment = applicantAssessmentMap.get(String(item.id)) || null;
+        if (isApplicantConvertedToAssessment(item, linkedCandidate, linkedAssessment)) return false;
+        const manuallyHidden = Boolean(item.hidden_from_captured || linkedCandidate?.hidden_from_captured);
+        return !manuallyHidden;
+      }).length;
   const pendingNotes = capturedStatsSnapshot && typeof capturedStatsSnapshot === "object"
     ? Number(capturedNotesStats.active || 0)
     : (state.candidates || []).filter((item) => {
