@@ -21432,9 +21432,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
 
       <main className="content">
         <header className="workspace-header">
-          <div>
-            <h1>{RECRUITER_PORTAL_LABEL}</h1>
-          </div>
+          <div />
           <div className="button-row tight">
             <button className="ghost-btn" onClick={() => void refreshWorkspaceNow()}>Refresh</button>
             {versionSyncState.mismatch ? (
@@ -22337,7 +22335,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
           } />
 
           <Route path="/applicants" element={
-            <Section kicker="Admin Inbox" title="Applied Candidates">
+            <Section kicker="Shared Workflow" title="Applied Candidates">
               {statuses.applicants ? <div className={`status ${statuses.applicantsKind || ""}`}>{statuses.applicants}</div> : null}
               <div className="form-grid three-col">
                 <label className="full"><span>Search</span><input placeholder="Search by candidate, phone, email, JD..." value={applicantFilters.q} onChange={(e) => setApplicantFilters((current) => ({ ...current, q: e.target.value }))} /></label>
