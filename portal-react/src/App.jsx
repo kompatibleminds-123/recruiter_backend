@@ -13999,12 +13999,12 @@ function PortalApp({ token, onLogout }) {
             }
             : item)
           : items;
+        const nextApplicants = sortApplicantsForList(applyPatch(current.applicants), applicantSortBy);
+        const nextApplicantListItems = sortApplicantsForList(applyPatch(current.applicantListItems), applicantSortBy);
         return {
           ...current,
-          applicants: applyPatch(current.applicants),
-          applicantListItems: applyPatch(current.applicantListItems),
-          candidates: applyPatch(current.candidates),
-          databaseCandidates: applyPatch(current.databaseCandidates)
+          applicants: nextApplicants,
+          applicantListItems: nextApplicantListItems
         };
       });
     };
@@ -21359,8 +21359,6 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
       <main className="content">
         <header className="workspace-header">
           <div>
-            <BrandLogo size="sm" />
-            <div className="section-kicker">{state.user?.companyName || "Company Workspace"}</div>
             <h1>{RECRUITER_PORTAL_LABEL}</h1>
           </div>
           <div className="button-row tight">

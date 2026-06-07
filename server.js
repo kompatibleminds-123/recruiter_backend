@@ -16795,11 +16795,6 @@ const server = http.createServer(async (req, res) => {
         jd_title: body.jd_title || body.jdTitle,
         client_name: body.client_name || body.clientName
       }, { companyId: actor.companyId });
-      emitCapturedStreamEvent(actor.companyId, "candidate_assigned", {
-        candidateId: candidateId || undefined,
-        candidate: result,
-        previousCandidate: previous
-      });
       emitApplicantStreamEvent(actor.companyId, "candidate_assigned", {
         candidateId: candidateId || undefined,
         candidate: result,
