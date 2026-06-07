@@ -20295,6 +20295,8 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
       ).trim(),
       createdAt: String(row?.createdAt || row?.created_at || previousApplicantRow?.createdAt || previousApplicantRow?.created_at || "").trim(),
       created_at: String(row?.created_at || row?.createdAt || previousApplicantRow?.created_at || previousApplicantRow?.createdAt || "").trim(),
+      updatedAt: String(row?.updatedAt || row?.updated_at || previousApplicantRow?.updatedAt || previousApplicantRow?.updated_at || "").trim(),
+      updated_at: String(row?.updated_at || row?.updatedAt || previousApplicantRow?.updated_at || previousApplicantRow?.updatedAt || "").trim(),
       phone: String(row?.phone || previousApplicantRow?.phone || "").trim(),
       email: String(row?.email || previousApplicantRow?.email || "").trim(),
       location: String(row?.location || previousApplicantRow?.location || "").trim(),
