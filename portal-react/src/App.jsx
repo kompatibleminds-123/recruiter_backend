@@ -23106,6 +23106,17 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                               <span className="captured-note-field-label">Source</span>
                               <span className="captured-note-field-value">{item.source || "NA"}</span>
                             </div>
+                            {isInboundApplicantSource(item.sourcePlatform || item.source || "") || item.applyAssignedToUserId || item.applyAssignedToName || item.applyAssignedVia || item.apply_assigned_to_user_id || item.apply_assigned_to_name || item.apply_assigned_via ? (
+                              <div className="captured-note-contact-row captured-note-field">
+                                <span className="captured-note-contact-icon" aria-hidden="true">✓</span>
+                                <span className="captured-note-field-label">Applied too</span>
+                                <span className="captured-note-field-value">
+                                  {String(item.applyAssignedVia || item.apply_assigned_via || "").trim() === "apply_link"
+                                    ? `Recruiter link${String(item.applyAssignedToName || item.apply_assigned_to_name || "").trim() ? `: ${String(item.applyAssignedToName || item.apply_assigned_to_name || "").trim()}` : ""}`
+                                    : "Yes"}
+                                </span>
+                              </div>
+                            ) : null}
                           </div>
                         </div>
                         <div className="captured-note-col captured-note-col--ownership">
@@ -24788,33 +24799,8 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                       onChange={(e) => setJobDraft((c) => ({ ...c, generatedBooleanHints: e.target.value }))}
                       placeholder={'Example: ("Sales" OR "Business Development") AND ("Fintech" OR "NBFC" OR "BFSI")'}
                     />
-                    {String(jobDraft.generatedBooleanHints || "").trim() ? (
-                      <span className="field-help">Admin has locked the Boolean. Generate button will create a suggestion below, but will not overwrite this final value.</span>
-                    ) : (
-                      <span className="field-help">Internal recruiter helper only. This does not show in JD share mail or public apply link.</span>
-                    )}
+                    <span className="field-help">Internal recruiter helper only. This does not show in JD share mail or public apply link.</span>
                   </label>
-                  <label className="full">
-                    <span>Generated Boolean suggestion</span>
-                    <textarea
-                      readOnly
-                      value={jobDraft.generatedBooleanSuggestion || ""}
-                      placeholder="Click Generate clean Boolean to create a suggestion without changing admin-approved Boolean."
-                    />
-                    <button
-                      type="button"
-                      className="tiny-link-btn"
-                      disabled={jobDraftReadOnly || jobActionBusy || !String(jobDraft.generatedBooleanSuggestion || "").trim()}
-                      onClick={() => setJobDraft((current) => ({ ...current, generatedBooleanHints: current.generatedBooleanSuggestion || "" }))}
-                    >
-                      Use suggestion as final
-                    </button>
-                  </label>
-                  <div className="button-row">
-                    <button type="button" className="ghost-btn" disabled={jobDraftReadOnly || jobActionBusy} onClick={generateBooleanHintsFromJd}>
-                      Generate clean Boolean
-                    </button>
-                  </div>
                   <label className="full"><span>Red flags</span><textarea disabled={jobDraftReadOnly || jobActionBusy} value={jobDraft.redFlags} onChange={(e) => setJobDraft((c) => ({ ...c, redFlags: e.target.value }))} /></label>
                   <label className="full"><span>Standard screening questions</span><textarea disabled={jobDraftReadOnly || jobActionBusy} value={jobDraft.standardQuestions} onChange={(e) => setJobDraft((c) => ({ ...c, standardQuestions: e.target.value }))} placeholder="Recruiter-only. These are used in Interview Panel and will not show on hosted apply link." /></label>
                 </div>

@@ -1103,7 +1103,7 @@ function richHtmlToReadableText(value = "") {
   return text;
 }
 
-function buildJobShareEmail({ job, introText = "", senderName = "", signatureHtml = "", signatureText = "", signatureLinks = [] }) {
+function buildJobShareEmail({ job, introText = "", senderName = "", signatureHtml = "", signatureText = "", signatureLinks = [], applyLink = "" }) {
   const title = String(job?.title || "").trim();
   const client = String(job?.clientName || "").trim();
   const location = String(job?.location || "").trim();
@@ -1114,7 +1114,7 @@ function buildJobShareEmail({ job, introText = "", senderName = "", signatureHtm
   const redFlags = String(job?.redFlags || "").trim();
   const recruiterNotes = String(job?.recruiterNotes || "").trim();
   const applyBase = String(process.env.PUBLIC_PORTAL_BASE_URL || "https://recruit.kompatibleminds.com").trim().replace(/\/+$/, "");
-  const applyLink = job?.id ? `${applyBase}/apply/${encodeURIComponent(String(job.id))}` : "";
+  const applyLinkFinal = String(applyLink || "").trim() || (job?.id ? `${applyBase}/apply/${encodeURIComponent(String(job.id))}` : "");
 
   const blocks = [
     introText ? { label: "Message", value: introText } : null,
@@ -1126,7 +1126,7 @@ function buildJobShareEmail({ job, introText = "", senderName = "", signatureHtm
     jd ? { label: "Job description", value: jd } : null,
     redFlags ? { label: "Red flags", value: redFlags } : null,
     recruiterNotes ? { label: "Notes", value: recruiterNotes } : null,
-    applyLink ? { label: "Apply link", value: applyLink } : null
+    applyLinkFinal ? { label: "Apply link", value: applyLinkFinal } : null
   ].filter(Boolean);
 
   const htmlBody = blocks.map((item) => `
@@ -1205,10 +1205,10 @@ function buildJobShareEmail({ job, introText = "", senderName = "", signatureHtm
     blocks.map((item) => `${item.label}:\n${item.value}`).join("\n\n"),
     signatureTextLines
   ].filter(Boolean).join("\n\n");
-  return { html, text, applyLink };
+  return { html, text, applyLink: applyLinkFinal };
 }
 
-async function buildJobShareDocxBuffer({ job, introText = "", senderName = "" }) {
+async function buildJobShareDocxBuffer({ job, introText = "", senderName = "", applyLink = "" }) {
   if (!docxLib) return null;
   const title = String(job?.title || "Job Description").trim();
   const client = String(job?.clientName || "").trim();
@@ -1220,7 +1220,7 @@ async function buildJobShareDocxBuffer({ job, introText = "", senderName = "" })
   const redFlags = String(job?.redFlags || "").trim();
   const recruiterNotes = String(job?.recruiterNotes || "").trim();
   const applyBase = String(process.env.PUBLIC_PORTAL_BASE_URL || "https://recruit.kompatibleminds.com").trim().replace(/\/+$/, "");
-  const applyLink = job?.id ? `${applyBase}/apply/${encodeURIComponent(String(job.id))}` : "";
+  const applyLinkFinal = String(applyLink || "").trim() || (job?.id ? `${applyBase}/apply/${encodeURIComponent(String(job.id))}` : "");
 
   const { Document, Packer, Paragraph, TextRun, HeadingLevel } = docxLib;
 
@@ -1233,7 +1233,7 @@ async function buildJobShareDocxBuffer({ job, introText = "", senderName = "" })
     jd ? { label: "Job description", value: jd } : null,
     redFlags ? { label: "Red flags", value: redFlags } : null,
     recruiterNotes ? { label: "Notes", value: recruiterNotes } : null,
-    applyLink ? { label: "Apply link", value: applyLink } : null
+    applyLinkFinal ? { label: "Apply link", value: applyLinkFinal } : null
   ].filter(Boolean);
 
   const children = [
@@ -3360,6 +3360,38 @@ function verifyRecruiterApplyLinkSignature({ companyId, jobId, recruiterId, secr
   }
 }
 
+async function resolveJobShareApplyLinkForActor(actor, job) {
+  const applyBase = String(process.env.PUBLIC_PORTAL_BASE_URL || "https://recruit.kompatibleminds.com").trim().replace(/\/+$/, "");
+  const jobId = String(job?.id || "").trim();
+  if (!jobId) return "";
+  const ownerRecruiterId = String(job?.ownerRecruiterId || job?.owner_recruiter_id || "").trim();
+  const actorId = String(actor?.id || "").trim();
+  const actorRole = String(actor?.role || "").trim().toLowerCase();
+  if (!actorId || actorRole === "admin" || (ownerRecruiterId && actorId === ownerRecruiterId)) {
+    return `${applyBase}/apply/${encodeURIComponent(jobId)}`;
+  }
+  const recruiterSeeds = Array.isArray(job?.assignedRecruiters) && job.assignedRecruiters.length
+    ? job.assignedRecruiters
+    : ownerRecruiterId
+      ? [{ id: ownerRecruiterId, name: job?.ownerRecruiterName || "", primary: true }]
+      : [];
+  const recruiterIds = recruiterSeeds.map((item) => String(item?.id || "").trim()).filter(Boolean);
+  if (!recruiterIds.includes(actorId)) {
+    return `${applyBase}/apply/${encodeURIComponent(jobId)}`;
+  }
+  const secretInfo = await getCompanyApplicantIntakeSecret(actor.companyId);
+  const secret = String(secretInfo?.applicantIntakeSecret || "").trim();
+  if (!secret) return `${applyBase}/apply/${encodeURIComponent(jobId)}`;
+  const sigFull = signRecruiterApplyLink({
+    companyId: actor.companyId,
+    jobId,
+    recruiterId: actorId,
+    secret
+  });
+  const sig = sigFull ? sigFull.slice(0, 12) : "";
+  return sig ? `${applyBase}/apply/${encodeURIComponent(jobId)}?r=${encodeURIComponent(actorId)}&s=${encodeURIComponent(sig)}` : `${applyBase}/apply/${encodeURIComponent(jobId)}`;
+}
+
 function sanitizeApplicantCandidate(candidate = {}) {
   const meta = decodeApplicantMetadata(candidate);
   const draftPayload = normalizeJsonObjectInput(candidate?.draft_payload || candidate?.draftPayload);
@@ -3398,6 +3430,12 @@ function sanitizeApplicantCandidate(candidate = {}) {
     assigned_by_user_id: String(candidate?.assigned_by_user_id || "").trim(),
     assignedAt: String(candidate?.assigned_at || "").trim(),
     assigned_at: String(candidate?.assigned_at || "").trim(),
+    applyAssignedToUserId: String(meta.applyAssignedToUserId || "").trim(),
+    apply_assigned_to_user_id: String(meta.applyAssignedToUserId || "").trim(),
+    applyAssignedToName: String(meta.applyAssignedToName || "").trim(),
+    apply_assigned_to_name: String(meta.applyAssignedToName || "").trim(),
+    applyAssignedVia: String(meta.applyAssignedVia || "").trim(),
+    apply_assigned_via: String(meta.applyAssignedVia || "").trim(),
     parseStatus: String(meta.parseStatus || "").trim(),
     lastContactOutcome: String(candidate?.last_contact_outcome || candidate?.lastContactOutcome || "").trim(),
     last_contact_outcome: String(candidate?.last_contact_outcome || candidate?.lastContactOutcome || "").trim(),
@@ -14182,13 +14220,15 @@ const server = http.createServer(async (req, res) => {
       const jobs = await listCompanyJobs(actor.companyId, actor.id);
       const job = (Array.isArray(jobs) ? jobs : []).find((item) => String(item?.id || "").trim() === jobId) || null;
       if (!job) throw new Error("JD not found.");
+      const applyLink = await resolveJobShareApplyLinkForActor(actor, job);
 
       const mail = buildJobShareEmail({
         job,
         introText,
         senderName: String(actor?.name || "").trim(),
         signatureText,
-        signatureLinks
+        signatureLinks,
+        applyLink
       });
       const finalSubject = subject || `JD: ${String(job?.title || "Job Description").trim()}`;
       const attachments = [];
@@ -14197,7 +14237,8 @@ const server = http.createServer(async (req, res) => {
         const docxBuffer = await buildJobShareDocxBuffer({
           job,
           introText,
-          senderName: String(actor?.name || "").trim()
+          senderName: String(actor?.name || "").trim(),
+          applyLink
         });
         if (!docxBuffer) throw new Error("DOCX generation failed. Please try again.");
         attachments.push({
