@@ -20320,7 +20320,10 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
     }
 
     if (eventType === "candidate_assigned") {
-      if (nextApplicantVisible) {
+      const shouldKeepApplicantVisibleOnAssign = nextApplicantVisible || (
+        String(state.user?.role || "").toLowerCase() === "admin" && previousApplicantVisible
+      );
+      if (shouldKeepApplicantVisibleOnAssign) {
         setState((current) => ({
           ...current,
           applicantListItems: upsertCandidatesById(current.applicantListItems, nextRows)
