@@ -8989,6 +8989,7 @@ function PortalApp({ token, onLogout }) {
     return `rd_candidate_smart_chip_summary_v1:${companyId}:${userId}`;
   }, [state.user?.companyId, state.user?.id]);
   const [candidateSmartChipSummary, setCandidateSmartChipSummary] = useState(null);
+  const isEmptySmartChipSnapshot = (snapshot = {}) => !Object.values(snapshot || {}).some((rows) => Array.isArray(rows) && rows.length > 0);
   useEffect(() => {
     if (typeof window === "undefined") return;
     if (!candidateSmartChipCacheKey) return;
@@ -9007,6 +9008,7 @@ function PortalApp({ token, onLogout }) {
         joined_candidates: Array.isArray(parsed.joined_candidates) ? parsed.joined_candidates : [],
         cv_shared: Array.isArray(parsed.cv_shared) ? parsed.cv_shared : []
       };
+      if (isEmptySmartChipSnapshot(normalized)) return;
       candidateSmartChipRowsStableRef.current = normalized;
     } catch {
       // Ignore cache parse issues and rebuild from live data.
@@ -13093,6 +13095,7 @@ function PortalApp({ token, onLogout }) {
       || (Array.isArray(candidateUniverse) && candidateUniverse.length > 0)
       || eventRows.length > 0;
     const saveSmartChipSnapshot = (snapshot) => {
+      if (isEmptySmartChipSnapshot(snapshot)) return;
       candidateSmartChipRowsStableRef.current = snapshot;
       if (!candidateSmartChipCacheKey || typeof window === "undefined") return;
       try {
@@ -17914,7 +17917,9 @@ function PortalApp({ token, onLogout }) {
 
   function downloadCandidateSmartChipRows(chipId) {
     const chip = SMART_SEARCH_QUICK_CHIPS.find((item) => item.id === chipId);
-    const rows = candidateSmartChipRows[chipId] || [];
+    const liveRows = candidateSmartChipRows[chipId] || [];
+    const cachedRows = candidateSmartChipRowsStableRef.current?.[chipId] || [];
+    const rows = liveRows.length > 0 ? liveRows : cachedRows;
     if (!rows.length) {
       setStatus("workspace", "No rows to download for this chip.", "error");
       return;
@@ -22444,17 +22449,10 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                     {SMART_SEARCH_QUICK_CHIPS
                       .filter((chip) => candidateQuickChipIds.includes(chip.id))
                       .map((chip) => {
-                        const rows = candidateSmartChipRows[chip.id] || [];
+                        const liveRows = candidateSmartChipRows[chip.id] || [];
                         const cachedRows = candidateSmartChipRowsStableRef.current?.[chip.id] || [];
-                        const summaryCount = Number(candidateSmartChipSummary?.[chip.id]);
-                        const liveCount = Number.isFinite(summaryCount) && summaryCount > 0
-                          ? summaryCount
-                          : rows.length > 0
-                            ? rows.length
-                            : cachedRows.length > 0
-                              ? cachedRows.length
-                              : null;
-                        const chipCount = liveCount ?? (candidateSmartChipDataReady ? 0 : "…");
+                        const rows = liveRows.length > 0 ? liveRows : cachedRows;
+                        const chipCount = rows.length;
                         return (
                           <article key={chip.id} className="item-card compact-card candidate-smart-section">
                             <div className="candidate-smart-head">
