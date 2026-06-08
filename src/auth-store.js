@@ -5164,17 +5164,62 @@ async function listAssessments({ actorUserId, companyId }) {
   if (!actorUserId || !companyId) throw new Error("actorUserId and companyId are required.");
   const actor = sanitizeUser(await getUserById(actorUserId, companyId)); if (!actor) throw new Error("Authenticated recruiter not found for this company.");
   if (!cfg().on) {
-    return (readStore().assessments || [])
-      .filter((i) => i.companyId === companyId && (actor.role === "admin" || String(i.recruiterId || i.recruiter_id || "").trim() === actor.id))
-      .sort((a, b) => String(b.generatedAt || b.createdAt || "").localeCompare(String(a.generatedAt || a.createdAt || "")))
-      .map(sanitizeAssessment);
+    return (readStore().assessments || []).filter((i) => i.companyId === companyId && (actor.role === "admin" || i.recruiterId === actor.id)).sort((a, b) => String(b.generatedAt || b.createdAt || "").localeCompare(String(a.generatedAt || a.createdAt || ""))).map(sanitizeAssessment);
   }
   await ensureSeeded();
   const rows = await sbSel("assessments", `select=*&company_id=eq.${enc(companyId)}&order=created_at.desc&limit=5000`);
   if (actor.role === "admin") return (rows || []).map(sanitizeAssessment);
-  return (rows || [])
-    .filter((i) => String(i?.recruiter_id || i?.recruiterId || "").trim() === actor.id)
-    .map(sanitizeAssessment);
+
+  // Team recruiters should also see admin-created assessments if the underlying candidate
+  // is visible to them (assigned-to or owned).
+  const visibleCandidates = await sbSel(
+    "candidates",
+    `select=id,email,phone&company_id=eq.${enc(companyId)}&or=(recruiter_id.eq.${enc(actor.id)},assigned_to_user_id.eq.${enc(actor.id)})&limit=5000`
+  ).catch(() => []);
+  const visibleCandidateIds = new Set((visibleCandidates || []).map((c) => String(c?.id || "").trim()).filter(Boolean));
+  const visibleEmails = new Set((visibleCandidates || []).map((c) => String(c?.email || "").trim().toLowerCase()).filter(Boolean));
+  const visiblePhones = new Set((visibleCandidates || []).map((c) => normalizeAssessmentPhone(c?.phone)).filter(Boolean));
+
+  const visibleAssessmentRows = (rows || [])
+    .filter((i) => {
+      if (String(i.recruiter_id || "") === actor.id) return true;
+      const payload = i?.payload && typeof i.payload === "object" ? i.payload : {};
+      const candidateId = String(i.candidate_id || payload.candidateId || payload.candidate_id || "").trim();
+      if (candidateId) return visibleCandidateIds.has(candidateId);
+
+      // Fallback: candidate_id missing (bad legacy rows). Match by identity if possible.
+      const email = String(i.email_id || payload.emailId || payload.email_id || "").trim().toLowerCase();
+      const phone = normalizeAssessmentPhone(i.phone_number || payload.phoneNumber || payload.phone_number || "");
+      if (email && visibleEmails.has(email)) return true;
+      if (phone && visiblePhones.has(phone)) return true;
+      return false;
+    });
+  const candidateIds = Array.from(new Set(visibleAssessmentRows.map((item) => String(item?.candidate_id || item?.candidateId || item?.payload?.candidateId || item?.payload?.candidate_id || "").trim()).filter(Boolean)));
+  const candidateMap = new Map();
+  if (candidateIds.length) {
+    const candidateRows = await sbSel(
+      "candidates",
+      `select=id,assigned_to_name,assigned_to_user_id&company_id=eq.${enc(companyId)}&id=in.(${candidateIds.map((id) => enc(id)).join(",")})&limit=5000`
+    ).catch(() => []);
+    (candidateRows || []).forEach((candidate) => {
+      const id = String(candidate?.id || "").trim();
+      if (!id) return;
+      candidateMap.set(id, candidate);
+    });
+  }
+  return visibleAssessmentRows.map((row) => {
+    const candidateId = String(row?.candidate_id || row?.candidateId || row?.payload?.candidateId || row?.payload?.candidate_id || "").trim();
+    const candidate = candidateId ? candidateMap.get(candidateId) : null;
+    const assignedToName = String(candidate?.assigned_to_name || "").trim();
+    const assignedToUserId = String(candidate?.assigned_to_user_id || "").trim();
+    return sanitizeAssessment({
+      ...row,
+      assigned_to_name: assignedToName || row?.assigned_to_name || row?.recruiter_name || "",
+      assignedToName: assignedToName || row?.assignedToName || row?.recruiter_name || "",
+      assigned_to_user_id: assignedToUserId || row?.assigned_to_user_id || row?.assignedToUserId || "",
+      assignedToUserId: assignedToUserId || row?.assignedToUserId || row?.assigned_to_user_id || ""
+    });
+  });
 }
 
 // Used by signed public share links. This intentionally bypasses recruiter scoping,

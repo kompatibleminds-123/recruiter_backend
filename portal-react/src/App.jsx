@@ -2658,20 +2658,6 @@ function sortApplicantsForList(items = [], sortBy = "created") {
   });
 }
 
-function sortAssessmentsForList(items = [], sortBy = "updated") {
-  const sortMode = String(sortBy || "updated").trim().toLowerCase();
-  const primaryKeys = sortMode === "created"
-    ? ["createdAt", "created_at", "generatedAt", "updatedAt", "updated_at"]
-    : ["updatedAt", "updated_at", "generatedAt", "createdAt", "created_at"];
-  return (Array.isArray(items) ? items : []).slice().sort((a, b) => {
-    const aTime = Date.parse(String(primaryKeys.map((key) => a?.[key]).find((value) => String(value || "").trim()) || ""));
-    const bTime = Date.parse(String(primaryKeys.map((key) => b?.[key]).find((value) => String(value || "").trim()) || ""));
-    const diff = (Number.isFinite(bTime) ? bTime : 0) - (Number.isFinite(aTime) ? aTime : 0);
-    if (diff) return diff;
-    return String(b?.id || "").localeCompare(String(a?.id || ""));
-  });
-}
-
 function isCapturedRowVisibleInCurrentView(row = {}, filters = {}, user = null) {
   if (!row) return false;
   const isAdmin = String(user?.role || "").toLowerCase() === "admin";
@@ -10811,7 +10797,7 @@ function PortalApp({ token, onLogout }) {
       setStatus("assessments", `Assessments refresh failed, keeping existing list: ${envelope.error}`, "error");
       return;
     }
-    const items = Array.isArray(envelope?.data?.items) ? sortAssessmentsForList(envelope.data.items, sortBy) : [];
+    const items = Array.isArray(envelope?.data?.items) ? envelope.data.items : [];
     setAssessmentListItems(items);
     setAssessmentOptionPool((current) => mergeAssessmentsByFreshness(current, items));
     setAssessmentListMeta({
@@ -16030,18 +16016,18 @@ function PortalApp({ token, onLogout }) {
               };
           })
           : current.candidates;
-        return { ...current, assessments: sortAssessmentsForList(nextAssessments, assessmentSortBy), candidates: nextCandidates };
+        return { ...current, assessments: nextAssessments, candidates: nextCandidates };
       });
       if (assessmentLandsInCurrentLane && savedAssessmentId) {
         setAssessmentListItems((current) => {
           const next = Array.isArray(current) ? current.filter((item) => String(item?.id || "").trim() !== savedAssessmentId) : [];
           next.unshift(savedAssessment);
-          return sortAssessmentsForList(next, assessmentSortBy);
+          return next;
         });
         setAssessmentOptionPool((current) => {
           const next = Array.isArray(current) ? current.filter((item) => String(item?.id || "").trim() !== savedAssessmentId) : [];
           next.unshift(savedAssessment);
-          return sortAssessmentsForList(next, assessmentSortBy);
+          return next;
         });
         setAssessmentListMeta((current) => {
           const meta = current && typeof current === "object" ? current : {};
@@ -20572,12 +20558,13 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
           linkedCandidate
         );
         if (existingIx >= 0) {
+          // Keep card position stable on updates; avoid jumping list to top.
           nextAssessments.splice(existingIx, 1, hydratedSaved);
         } else {
           nextAssessments.unshift(hydratedSaved);
         }
       }
-      return { ...current, assessments: sortAssessmentsForList(nextAssessments, assessmentSortBy) };
+      return { ...current, assessments: nextAssessments };
     });
   }
 
@@ -20617,10 +20604,10 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
       const next = [...current];
       if (existingIx < 0) {
         next.unshift(hydratedSaved);
-        return sortAssessmentsForList(next, assessmentSortBy);
+        return next;
       }
       next.splice(existingIx, 1, { ...next[existingIx], ...hydratedSaved });
-      return sortAssessmentsForList(next, assessmentSortBy);
+      return next;
     });
   }
 
