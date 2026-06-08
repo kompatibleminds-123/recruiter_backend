@@ -887,6 +887,8 @@ function sanitizeSharedExportPresetSettings(raw) {
     clientShareSignatureText: String(source.clientShareSignatureText || source.client_share_signature_text || "").trim(),
     clientShareSignatureLinkLabel: String(source.clientShareSignatureLinkLabel || source.client_share_signature_link_label || "").trim(),
     clientShareSignatureLinkUrl: String(source.clientShareSignatureLinkUrl || source.client_share_signature_link_url || "").trim(),
+    clientShareSignatureLinkLabel2: String(source.clientShareSignatureLinkLabel2 || source.client_share_signature_link_label2 || "").trim(),
+    clientShareSignatureLinkUrl2: String(source.clientShareSignatureLinkUrl2 || source.client_share_signature_link_url2 || "").trim(),
     customExportPresets: rawCustomPresets
       .map((item, index) => ({
         id: String(item?.id || `custom_preset_${index + 1}`).trim(),
