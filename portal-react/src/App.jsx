@@ -9102,84 +9102,8 @@ function PortalApp({ token, onLogout }) {
     }
   }, [candidateSmartChipSummaryCacheKey]);
   useEffect(() => {
-    if (!workspaceDataReady) return;
-    if (!candidateSmartChipSummaryCacheKey) return;
-    if (candidateSearchBusy) return;
-    if (!token) return;
-    const requestId = candidateSmartChipSummaryRequestRef.current + 1;
-    candidateSmartChipSummaryRequestRef.current = requestId;
-    const timer = setTimeout(() => {
-      const searchIds = candidateSearchMode === "search"
-        ? (Array.isArray(candidateSearchResults) ? candidateSearchResults : [])
-          .map((item) => String(item?.id || item?.candidateId || item?.assessmentId || item?.candidate_id || item?.assessment_id || "").trim())
-          .filter(Boolean)
-        : [];
-      void api("/company/database/quick-chip-summary", token, "POST", {
-        filters: {
-          ...candidateStructuredFilters,
-          dateFrom: candidateSmartDateFrom,
-          dateTo: candidateSmartDateTo
-        },
-        searchMode: candidateSearchMode,
-        searchIds
-      })
-        .then((result) => {
-          if (candidateSmartChipSummaryRequestRef.current !== requestId) return;
-          const snapshot =
-            result && typeof result === "object"
-              ? (result.summary && typeof result.summary === "object" ? result.summary : result)
-              : null;
-          if (!snapshot) return;
-          const normalized = {
-            interview_history: Number(snapshot.interview_history || snapshot.interviewHistory || 0),
-            aligned_interviews: Number(snapshot.aligned_interviews || snapshot.alignedInterviews || 0),
-            feedback_awaited: Number(snapshot.feedback_awaited || snapshot.feedbackAwaited || 0),
-            quick_joiners: Number(snapshot.quick_joiners || snapshot.quickJoiners || 0),
-            shared_today: Number(snapshot.shared_today || snapshot.sharedToday || 0),
-            shared_this_week: Number(snapshot.shared_this_week || snapshot.sharedThisWeek || 0),
-            joined_candidates: Number(snapshot.joined_candidates || snapshot.joinedCandidates || 0),
-            cv_shared: Number(snapshot.cv_shared || snapshot.cvShared || 0)
-          };
-          const summaryValues = Object.values(normalized);
-          const isAllZero = summaryValues.every((value) => Number(value) === 0);
-          const hasRealRows = Number(result?.total || 0) > 0;
-          const nextSummary = (isAllZero && hasRealRows && candidateSmartChipSummaryStableRef.current)
-            ? candidateSmartChipSummaryStableRef.current
-            : normalized;
-          candidateSmartChipSummaryStableRef.current = nextSummary;
-          setCandidateSmartChipSummary(nextSummary);
-          if (typeof window !== "undefined" && candidateSmartChipSummaryCacheKey) {
-            try {
-              if (!(isAllZero && hasRealRows && candidateSmartChipSummaryStableRef.current && candidateSmartChipSummaryStableRef.current !== normalized)) {
-                window.localStorage.setItem(candidateSmartChipSummaryCacheKey, JSON.stringify({
-                  summary: nextSummary,
-                  generatedAt: result?.generatedAt || new Date().toISOString()
-                }));
-              }
-            } catch {
-              // Ignore storage issues and keep the in-memory snapshot.
-            }
-          }
-        })
-        .catch((error) => {
-          if (candidateSmartChipSummaryRequestRef.current !== requestId) return;
-          if (!candidateSmartChipSummaryStableRef.current) {
-            console.warn("candidateSmartChipSummary failed", error);
-          }
-        });
-    }, 250);
-    return () => clearTimeout(timer);
-  }, [
-    workspaceDataReady,
-    candidateSmartChipSummaryCacheKey,
-    candidateSearchBusy,
-    candidateSearchMode,
-    candidateSearchResults,
-    candidateStructuredFilters,
-    candidateSmartDateFrom,
-    candidateSmartDateTo,
-    token
-  ]);
+    return;
+  }, []);
   const isKompatibleCompany = currentCompanyId === KOMPATIBLE_MINDS_COMPANY_ID;
   const defaultJdEmailCc = isKompatibleCompany ? DEFAULT_JD_EMAIL_CC : "";
   const currentPlanCode = String(effectiveLicense?.plan || "trial").trim().toLowerCase();
