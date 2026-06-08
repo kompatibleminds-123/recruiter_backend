@@ -3275,6 +3275,29 @@ function mergeLoadedMailSettings(current = {}, result = {}) {
   };
 }
 
+function isMailSignatureSnapshotEmpty(snapshot = {}) {
+  return !Boolean(
+    String(snapshot?.signatureHtml || "").trim()
+    || String(snapshot?.signatureText || "").trim()
+    || String(snapshot?.signatureLinkLabel || "").trim()
+    || String(snapshot?.signatureLinkUrl || "").trim()
+    || String(snapshot?.signatureLinkLabel2 || "").trim()
+    || String(snapshot?.signatureLinkUrl2 || "").trim()
+  );
+}
+
+function normalizeMailSignatureSnapshot(snapshot = {}) {
+  const normalized = normalizeLoadedSignatureValue(snapshot?.signatureHtml || "", snapshot?.signatureText || "");
+  return {
+    signatureHtml: String(normalized.signatureHtml || "").trim(),
+    signatureText: String(normalized.signatureText || "").trim(),
+    signatureLinkLabel: String(snapshot?.signatureLinkLabel || "").trim(),
+    signatureLinkUrl: String(snapshot?.signatureLinkUrl || "").trim(),
+    signatureLinkLabel2: String(snapshot?.signatureLinkLabel2 || "").trim(),
+    signatureLinkUrl2: String(snapshot?.signatureLinkUrl2 || "").trim()
+  };
+}
+
 function signatureLinksHtmlBlock(links = []) {
   return (Array.isArray(links) ? links : [])
     .map((link) => {
@@ -8831,6 +8854,50 @@ function PortalApp({ token, onLogout }) {
   const [mailProviderSearch, setMailProviderSearch] = useState("");
   const smtpSettingsDirtyRef = useRef(false);
   const markSmtpSettingsDirty = () => { smtpSettingsDirtyRef.current = true; };
+  const smtpSettingsSignatureCacheKey = useMemo(() => {
+    const companyId = String(state.user?.companyId || "").trim();
+    const userId = String(state.user?.id || "").trim();
+    if (!companyId || !userId) return "";
+    return `rd_mail_signature_cache_v1:${companyId}:${userId}`;
+  }, [state.user?.companyId, state.user?.id]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (!smtpSettingsSignatureCacheKey) return;
+    try {
+      const raw = window.localStorage.getItem(smtpSettingsSignatureCacheKey);
+      if (!raw) return;
+      const parsed = JSON.parse(raw);
+      const snapshot = parsed && typeof parsed === "object" ? parsed : {};
+      if (isMailSignatureSnapshotEmpty(snapshot)) return;
+      const normalized = normalizeMailSignatureSnapshot(snapshot);
+      setSmtpSettings((current) => {
+        const currentHasSignature = Boolean(String(current?.signatureHtml || "").trim() || String(current?.signatureText || "").trim());
+        if (currentHasSignature) return current;
+        return {
+          ...current,
+          ...normalized
+        };
+      });
+    } catch {
+      // Keep the editor resilient; server load can still overwrite the cache later.
+    }
+  }, [smtpSettingsSignatureCacheKey]);
+
+  const persistMailSignatureSnapshot = (snapshot = {}) => {
+    if (typeof window === "undefined") return;
+    if (!smtpSettingsSignatureCacheKey) return;
+    const normalized = normalizeMailSignatureSnapshot(snapshot);
+    if (isMailSignatureSnapshotEmpty(normalized)) return;
+    try {
+      window.localStorage.setItem(smtpSettingsSignatureCacheKey, JSON.stringify({
+        ...normalized,
+        updatedAt: new Date().toISOString()
+      }));
+    } catch {
+      // Ignore storage failures.
+    }
+  };
 
   const [jdEmailModal, setJdEmailModal] = useState({
     open: false,
@@ -10185,7 +10252,11 @@ function PortalApp({ token, onLogout }) {
     if (needsEmailSettings && smtpSettingsResult) {
       const isEditingMailSettings = location?.pathname === "/mail-settings";
       if (!isEditingMailSettings || !smtpSettingsDirtyRef.current) {
-        setSmtpSettings((current) => mergeLoadedMailSettings(current, smtpSettingsResult));
+        setSmtpSettings((current) => {
+          const next = mergeLoadedMailSettings(current, smtpSettingsResult);
+          persistMailSignatureSnapshot(next);
+          return next;
+        });
         setSmtpSettingsKeepPass(Boolean(smtpSettingsResult?.hasPassword));
         setSmtpSettingsLoaded(true);
       }
@@ -10364,7 +10435,11 @@ function PortalApp({ token, onLogout }) {
     const showStatus = options?.showStatus === true;
     const result = await api("/company/email-settings", token);
     if (!smtpSettingsDirtyRef.current) {
-      setSmtpSettings((current) => mergeLoadedMailSettings(current, result));
+      setSmtpSettings((current) => {
+        const next = mergeLoadedMailSettings(current, result);
+        persistMailSignatureSnapshot(next);
+        return next;
+      });
       setSmtpSettingsKeepPass(Boolean(result?.hasPassword));
       setSmtpSettingsLoaded(true);
     }
@@ -17264,7 +17339,11 @@ function PortalApp({ token, onLogout }) {
     try {
       const result = await api("/company/email-settings", token);
       if (smtpSettingsDirtyRef.current) return;
-      setSmtpSettings((current) => mergeLoadedMailSettings(current, result));
+      setSmtpSettings((current) => {
+        const next = mergeLoadedMailSettings(current, result);
+        persistMailSignatureSnapshot(next);
+        return next;
+      });
       setSmtpSettingsKeepPass(Boolean(result?.hasPassword));
     } catch (error) {
       // Settings are optional; show errors only when user tries to save.
@@ -17310,6 +17389,14 @@ function PortalApp({ token, onLogout }) {
         pass: "",
         hasPassword: true
       }));
+      persistMailSignatureSnapshot({
+        signatureHtml: result?.signatureHtml || signatureHtml || "",
+        signatureText: result?.signatureText || signatureText || "",
+        signatureLinkLabel: result?.signatureLinkLabel || smtpSettings.signatureLinkLabel || "",
+        signatureLinkUrl: result?.signatureLinkUrl || smtpSettings.signatureLinkUrl || "",
+        signatureLinkLabel2: result?.signatureLinkLabel2 || smtpSettings.signatureLinkLabel2 || "",
+        signatureLinkUrl2: result?.signatureLinkUrl2 || smtpSettings.signatureLinkUrl2 || ""
+      });
       setSmtpSettingsKeepPass(true);
       smtpSettingsDirtyRef.current = false;
       setSmtpSettingsLoaded(true);
@@ -17346,6 +17433,14 @@ function PortalApp({ token, onLogout }) {
         ...c,
         ...normalizeLoadedSignatureValue(result?.signatureHtml || signatureHtml || "", result?.signatureText || signatureText || "")
       }));
+      persistMailSignatureSnapshot({
+        signatureHtml: result?.signatureHtml || signatureHtml || "",
+        signatureText: result?.signatureText || signatureText || "",
+        signatureLinkLabel: result?.signatureLinkLabel || smtpSettings.signatureLinkLabel || "",
+        signatureLinkUrl: result?.signatureLinkUrl || smtpSettings.signatureLinkUrl || "",
+        signatureLinkLabel2: result?.signatureLinkLabel2 || smtpSettings.signatureLinkLabel2 || "",
+        signatureLinkUrl2: result?.signatureLinkUrl2 || smtpSettings.signatureLinkUrl2 || ""
+      });
       setSmtpSettingsLoaded(true);
       smtpSettingsDirtyRef.current = false;
       setStatus("settings", "Signature saved.", "ok");
@@ -17426,7 +17521,11 @@ function PortalApp({ token, onLogout }) {
   async function refreshSmtpSettingsNow() {
     try {
       const result = await api("/company/email-settings", token);
-      setSmtpSettings((current) => mergeLoadedMailSettings(current, result));
+      setSmtpSettings((current) => {
+        const next = mergeLoadedMailSettings(current, result);
+        persistMailSignatureSnapshot(next);
+        return next;
+      });
       setSmtpSettingsKeepPass(Boolean(result?.hasPassword));
       setSmtpSettingsLoaded(true);
       smtpSettingsDirtyRef.current = false;
