@@ -12598,6 +12598,7 @@ function PortalApp({ token, onLogout }) {
   useEffect(() => {
     setCandidatePage((current) => Math.min(Math.max(1, current), totalCandidatePages));
   }, [totalCandidatePages]);
+  const candidateSmartChipDataReady = Boolean(workspaceDataReady) && Boolean(databaseCandidatesHydratedRef.current) && !candidateSearchBusy;
   const candidateSmartChipRows = useMemo(() => {
     const emptyRows = {
       interview_history: [],
@@ -12610,7 +12611,6 @@ function PortalApp({ token, onLogout }) {
       cv_shared: []
     };
     try {
-    const smartChipDataReady = Boolean(workspaceDataReady) && Boolean(databaseCandidatesHydratedRef.current) && !candidateSearchBusy;
     const assessments = Array.isArray(state.assessments) ? state.assessments : [];
     const assessmentById = new Map(assessments.map((assessment) => [String(assessment?.id || "").trim(), assessment]));
     const assessmentByCandidateId = new Map();
@@ -13101,7 +13101,7 @@ function PortalApp({ token, onLogout }) {
         // Cache persistence is best-effort.
       }
     };
-    if (!smartChipDataReady) {
+    if (!candidateSmartChipDataReady) {
       return candidateSmartChipRowsStableRef.current || nextRows;
     }
     if (isAllEmpty && hasSmartChipSourceData && candidateSmartChipRowsStableRef.current) {
@@ -13116,7 +13116,7 @@ function PortalApp({ token, onLogout }) {
       console.error("candidateSmartChipRows failed", error);
       return candidateSmartChipRowsStableRef.current || emptyRows;
     }
-  }, [candidateUniverse, candidateSmartDateFrom, candidateSmartDateTo, state.assessments, state.candidates, state.assessmentEvents, candidateSmartChipCacheKey]);
+  }, [candidateUniverse, candidateSmartDateFrom, candidateSmartDateTo, state.assessments, state.candidates, state.assessmentEvents, candidateSmartChipCacheKey, candidateSmartChipDataReady]);
   const candidateHasSmartChipSelection = candidateAiQueryMode === "natural" && candidateQuickChipIds.length > 0;
 
   const capturedCandidateOptions = useMemo(() => {
@@ -22454,7 +22454,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                             : cachedRows.length > 0
                               ? cachedRows.length
                               : null;
-                        const chipCount = liveCount ?? (smartChipDataReady ? 0 : "…");
+                        const chipCount = liveCount ?? (candidateSmartChipDataReady ? 0 : "…");
                         return (
                           <article key={chip.id} className="item-card compact-card candidate-smart-section">
                             <div className="candidate-smart-head">
