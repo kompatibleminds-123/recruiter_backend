@@ -14499,6 +14499,7 @@ const server = http.createServer(async (req, res) => {
       const ccRaw = String(body.cc || "").trim();
       const subject = String(body.subject || "").trim();
       const introText = String(body.introText || "").trim();
+      const signatureHtml = String(body.signatureHtml || "").trim();
       const signatureText = String(body.signatureText || "").trim();
       const signatureLinks = Array.isArray(body.signatureLinks) ? body.signatureLinks : [];
       const attachJdFile = Boolean(body.attachJdFile);
@@ -14515,6 +14516,7 @@ const server = http.createServer(async (req, res) => {
         job,
         introText,
         senderName: String(actor?.name || "").trim(),
+        signatureHtml,
         signatureText,
         signatureLinks,
         applyLink

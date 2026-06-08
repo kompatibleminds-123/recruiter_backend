@@ -10448,11 +10448,11 @@ function PortalApp({ token, onLogout }) {
 
   useEffect(() => {
     if (!token) return;
-    if (!isSettingsAdmin) return;
     const activePath = String(location?.pathname || "").trim();
     const isAdminSettingsRoute = activePath.startsWith("/admin-settings");
     const isMailSettingsRoute = activePath === "/mail-settings";
     if (!isAdminSettingsRoute && !isMailSettingsRoute) return;
+    if (isAdminSettingsRoute && !isSettingsAdmin) return;
     let cancelled = false;
     void (async () => {
       try {
@@ -17679,7 +17679,16 @@ function PortalApp({ token, onLogout }) {
         introText: String(jdEmailModal.introText || "").trim(),
         signatureHtml: signatureHtmlForMail(normalizedSignature.signatureHtml || "", normalizedSignature.signatureText || ""),
         signatureText: String(normalizedSignature.signatureText || "").trim(),
-        signatureLinks: [],
+        signatureLinks: [
+          {
+            label: String(smtpSettings.signatureLinkLabel || copySettings.clientShareSignatureLinkLabel || "").trim(),
+            url: String(smtpSettings.signatureLinkUrl || copySettings.clientShareSignatureLinkUrl || "").trim()
+          },
+          {
+            label: String(smtpSettings.signatureLinkLabel2 || copySettings.clientShareSignatureLinkLabel2 || "").trim(),
+            url: String(smtpSettings.signatureLinkUrl2 || copySettings.clientShareSignatureLinkUrl2 || "").trim()
+          }
+        ].filter((link) => link.url),
         attachJdFile
       });
       if (currentCompanyId) {
