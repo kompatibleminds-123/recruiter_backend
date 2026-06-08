@@ -1163,9 +1163,10 @@ function buildJobShareEmail({ job, introText = "", senderName = "", signatureHtm
     return `<div>${escapeHtml(rawSignatureHtml).replace(/\n/g, "<br/>")}</div>`;
   })();
   const signatureTextForMail = signatureTextSafe || (signatureHtmlSafe ? stripHtmlForText(signatureHtmlSafe) : "");
-  const signatureHtmlFinal = signatureHtmlSafe || [
-    signatureTextForMail ? `<div>${escapeHtml(signatureTextForMail).replace(/\n/g, "<br/>")}</div>` : "",
-    signatureLinksHtml
+  const signatureBaseHtml = signatureHtmlSafe || (signatureTextForMail ? `<div>${escapeHtml(signatureTextForMail).replace(/\n/g, "<br/>")}</div>` : "");
+  const signatureHtmlFinal = [
+    signatureBaseHtml,
+    signatureLinksHtml ? `<div style="margin-top:6px;">${signatureLinksHtml}</div>` : ""
   ].filter(Boolean).join("");
 
   const html = `
@@ -1196,7 +1197,7 @@ function buildJobShareEmail({ job, introText = "", senderName = "", signatureHtm
 
   const signatureTextLines = [
     signatureTextForMail,
-    ...(signatureHtmlSafe ? [] : (signatureLinksSafe || [])
+    ...(signatureLinksSafe || [])
       .map((link) => {
         const labelRaw = String(link?.label || "").trim();
         const parts = labelRaw.split("||").map((p) => String(p || "").trim()).filter(Boolean);
@@ -1206,7 +1207,7 @@ function buildJobShareEmail({ job, introText = "", senderName = "", signatureHtm
         if (!url) return "";
         return suffix ? `${label || "Link"}: ${url} (${suffix})` : `${label || "Link"}: ${url}`;
       })
-      .filter(Boolean))
+      .filter(Boolean)
   ].filter(Boolean).join("\n");
   const text = [
     blocks.map((item) => `${item.label}:\n${item.value}`).join("\n\n"),

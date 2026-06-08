@@ -10450,17 +10450,13 @@ function PortalApp({ token, onLogout }) {
     if (!token) return;
     const activePath = String(location?.pathname || "").trim();
     const isAdminSettingsRoute = activePath.startsWith("/admin-settings");
-    const isMailSettingsRoute = activePath === "/mail-settings";
-    if (!isAdminSettingsRoute && !isMailSettingsRoute) return;
+    if (!isAdminSettingsRoute) return;
     if (isAdminSettingsRoute && !isSettingsAdmin) return;
     let cancelled = false;
     void (async () => {
       try {
         if (isAdminSettingsRoute) {
           await syncSharedSettingsFromServer({ showStatus: true });
-        }
-        if (isMailSettingsRoute) {
-          await syncMailSettingsFromServer({ showStatus: true });
         }
       } catch (error) {
         if (cancelled) return;
@@ -10471,6 +10467,43 @@ function PortalApp({ token, onLogout }) {
       cancelled = true;
     };
   }, [token, isSettingsAdmin, location?.pathname]);
+
+  useEffect(() => {
+    if (!token) return;
+    const activePath = String(location?.pathname || "").trim();
+    if (activePath !== "/mail-settings") return;
+    if (smtpSettingsDirtyRef.current) return;
+    const hasSignatureContent = Boolean(
+      String(smtpSettings.signatureHtml || "").trim()
+      || String(smtpSettings.signatureText || "").trim()
+      || String(smtpSettings.signatureLinkLabel || "").trim()
+      || String(smtpSettings.signatureLinkUrl || "").trim()
+      || String(smtpSettings.signatureLinkLabel2 || "").trim()
+      || String(smtpSettings.signatureLinkUrl2 || "").trim()
+    );
+    if (hasSignatureContent) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        await syncMailSettingsFromServer({ showStatus: false });
+      } catch (error) {
+        if (cancelled) return;
+        setStatus("settings", `Mail settings load failed: ${String(error?.message || error)}`, "error");
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    token,
+    location?.pathname,
+    smtpSettings.signatureHtml,
+    smtpSettings.signatureText,
+    smtpSettings.signatureLinkLabel,
+    smtpSettings.signatureLinkUrl,
+    smtpSettings.signatureLinkLabel2,
+    smtpSettings.signatureLinkUrl2
+  ]);
 
   async function refreshWorkspaceSilently(reason = "manual", options = {}) {
     if (!token) return;
@@ -18843,6 +18876,10 @@ function PortalApp({ token, onLogout }) {
         signature.signatureText ? escapeHtml(signature.signatureText).replace(/\n/g, "<br/>") : "",
         signatureLinksHtml
       ].filter(Boolean).join("<br/>");
+    const signatureHtmlFinal = [
+      signatureHtml,
+      signatureLinksHtml && !/<a\b/i.test(signatureHtml) ? `<div style="margin-top:6px;">${signatureLinksHtml}</div>` : ""
+    ].filter(Boolean).join("");
     return `
       <div style="font-family:Arial, sans-serif;color:#1f2a44;line-height:1.6;">
         <div>${introHtml}</div>
@@ -18856,7 +18893,7 @@ function PortalApp({ token, onLogout }) {
             ${tableRows}
           </tbody>
         </table>
-        ${signatureHtml ? `<div style="margin-top:18px;">${signatureHtml}</div>` : ""}
+        ${signatureHtmlFinal ? `<div style="margin-top:18px;">${signatureHtmlFinal}</div>` : ""}
       </div>
     `.trim();
   }
