@@ -22477,8 +22477,16 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                       .filter((chip) => candidateQuickChipIds.includes(chip.id))
                       .map((chip) => {
                         const rows = candidateSmartChipRows[chip.id] || [];
+                        const cachedRows = candidateSmartChipRowsStableRef.current?.[chip.id] || [];
                         const summaryCount = Number(candidateSmartChipSummary?.[chip.id]);
-                        const chipCount = Number.isFinite(summaryCount) && summaryCount > 0 ? summaryCount : rows.length;
+                        const liveCount = Number.isFinite(summaryCount) && summaryCount > 0
+                          ? summaryCount
+                          : rows.length > 0
+                            ? rows.length
+                            : cachedRows.length > 0
+                              ? cachedRows.length
+                              : null;
+                        const chipCount = liveCount ?? (smartChipDataReady ? 0 : "…");
                         return (
                           <article key={chip.id} className="item-card compact-card candidate-smart-section">
                             <div className="candidate-smart-head">
