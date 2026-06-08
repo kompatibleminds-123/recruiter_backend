@@ -10468,43 +10468,6 @@ function PortalApp({ token, onLogout }) {
     };
   }, [token, isSettingsAdmin, location?.pathname]);
 
-  useEffect(() => {
-    if (!token) return;
-    const activePath = String(location?.pathname || "").trim();
-    if (activePath !== "/mail-settings") return;
-    if (smtpSettingsDirtyRef.current) return;
-    const hasSignatureContent = Boolean(
-      String(smtpSettings.signatureHtml || "").trim()
-      || String(smtpSettings.signatureText || "").trim()
-      || String(smtpSettings.signatureLinkLabel || "").trim()
-      || String(smtpSettings.signatureLinkUrl || "").trim()
-      || String(smtpSettings.signatureLinkLabel2 || "").trim()
-      || String(smtpSettings.signatureLinkUrl2 || "").trim()
-    );
-    if (hasSignatureContent) return;
-    let cancelled = false;
-    void (async () => {
-      try {
-        await syncMailSettingsFromServer({ showStatus: false });
-      } catch (error) {
-        if (cancelled) return;
-        setStatus("settings", `Mail settings load failed: ${String(error?.message || error)}`, "error");
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [
-    token,
-    location?.pathname,
-    smtpSettings.signatureHtml,
-    smtpSettings.signatureText,
-    smtpSettings.signatureLinkLabel,
-    smtpSettings.signatureLinkUrl,
-    smtpSettings.signatureLinkLabel2,
-    smtpSettings.signatureLinkUrl2
-  ]);
-
   async function refreshWorkspaceSilently(reason = "manual", options = {}) {
     if (!token) return;
     // Emergency hard-stop: prevent silent global workspace refresh loops.
@@ -17367,7 +17330,6 @@ function PortalApp({ token, onLogout }) {
   }
 
   async function loadSmtpSettingsOnce() {
-    if (smtpSettingsLoaded) return;
     try {
       const result = await api("/company/email-settings", token);
       if (smtpSettingsDirtyRef.current) return;
