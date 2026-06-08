@@ -3248,6 +3248,33 @@ function signatureHtmlForMail(signatureHtml = "", signatureText = "") {
   return plainText ? escapeHtml(plainText).replace(/\n/g, "<br/>") : "";
 }
 
+function mergeLoadedMailSettings(current = {}, result = {}) {
+  const currentSignatureHtml = String(current?.signatureHtml || "").trim();
+  const currentSignatureText = String(current?.signatureText || "").trim();
+  const loadedSignature = normalizeLoadedSignatureValue(result?.signatureHtml || "", result?.signatureText || "");
+  const loadedSignatureHasContent = Boolean(String(loadedSignature.signatureHtml || "").trim() || String(loadedSignature.signatureText || "").trim());
+  const preserveCurrentSignature = !loadedSignatureHasContent && Boolean(currentSignatureHtml || currentSignatureText);
+  return {
+    host: String(result?.host || current?.host || "").trim(),
+    port: Number(result?.port || current?.port || 587),
+    secure: Boolean(result?.secure ?? current?.secure),
+    user: String(result?.user || current?.user || "").trim(),
+    from: String(result?.from || current?.from || "").trim(),
+    ...(preserveCurrentSignature
+      ? {
+          signatureHtml: currentSignatureHtml,
+          signatureText: currentSignatureText
+        }
+      : loadedSignature),
+    signatureLinkLabel: String(result?.signatureLinkLabel || current?.signatureLinkLabel || "").trim(),
+    signatureLinkUrl: String(result?.signatureLinkUrl || current?.signatureLinkUrl || "").trim(),
+    signatureLinkLabel2: String(result?.signatureLinkLabel2 || current?.signatureLinkLabel2 || "").trim(),
+    signatureLinkUrl2: String(result?.signatureLinkUrl2 || current?.signatureLinkUrl2 || "").trim(),
+    hasPassword: Boolean(result?.hasPassword ?? current?.hasPassword),
+    pass: ""
+  };
+}
+
 function signatureLinksHtmlBlock(links = []) {
   return (Array.isArray(links) ? links : [])
     .map((link) => {
@@ -10156,22 +10183,7 @@ function PortalApp({ token, onLogout }) {
     if (needsEmailSettings && smtpSettingsResult) {
       const isEditingMailSettings = location?.pathname === "/mail-settings";
       if (!isEditingMailSettings || !smtpSettingsDirtyRef.current) {
-        const loadedSignature = normalizeLoadedSignatureValue(smtpSettingsResult?.signatureHtml || "", smtpSettingsResult?.signatureText || "");
-        setSmtpSettings((current) => ({
-          ...current,
-          host: String(smtpSettingsResult?.host || "").trim(),
-          port: Number(smtpSettingsResult?.port || 587),
-          secure: Boolean(smtpSettingsResult?.secure),
-          user: String(smtpSettingsResult?.user || "").trim(),
-          from: String(smtpSettingsResult?.from || "").trim(),
-          hasPassword: Boolean(smtpSettingsResult?.hasPassword),
-          ...loadedSignature,
-          signatureLinkLabel: String(smtpSettingsResult?.signatureLinkLabel || "").trim(),
-          signatureLinkUrl: String(smtpSettingsResult?.signatureLinkUrl || "").trim(),
-          signatureLinkLabel2: String(smtpSettingsResult?.signatureLinkLabel2 || "").trim(),
-          signatureLinkUrl2: String(smtpSettingsResult?.signatureLinkUrl2 || "").trim(),
-          pass: ""
-        }));
+        setSmtpSettings((current) => mergeLoadedMailSettings(current, smtpSettingsResult));
         setSmtpSettingsKeepPass(Boolean(smtpSettingsResult?.hasPassword));
         setSmtpSettingsLoaded(true);
       }
@@ -10350,21 +10362,7 @@ function PortalApp({ token, onLogout }) {
     const showStatus = options?.showStatus === true;
     const result = await api("/company/email-settings", token);
     if (!smtpSettingsDirtyRef.current) {
-      setSmtpSettings((current) => ({
-        ...current,
-        host: String(result?.host || "").trim(),
-        port: Number(result?.port || 587),
-        secure: Boolean(result?.secure),
-        user: String(result?.user || "").trim(),
-        from: String(result?.from || "").trim(),
-        ...normalizeLoadedSignatureValue(result?.signatureHtml || "", result?.signatureText || ""),
-        signatureLinkLabel: String(result?.signatureLinkLabel || "").trim(),
-        signatureLinkUrl: String(result?.signatureLinkUrl || "").trim(),
-        signatureLinkLabel2: String(result?.signatureLinkLabel2 || "").trim(),
-        signatureLinkUrl2: String(result?.signatureLinkUrl2 || "").trim(),
-        hasPassword: Boolean(result?.hasPassword),
-        pass: ""
-      }));
+      setSmtpSettings((current) => mergeLoadedMailSettings(current, result));
       setSmtpSettingsKeepPass(Boolean(result?.hasPassword));
       setSmtpSettingsLoaded(true);
     }
@@ -17263,22 +17261,7 @@ function PortalApp({ token, onLogout }) {
     try {
       const result = await api("/company/email-settings", token);
       if (smtpSettingsDirtyRef.current) return;
-      const loadedSignature = normalizeLoadedSignatureValue(result?.signatureHtml || "", result?.signatureText || "");
-      setSmtpSettings((current) => ({
-        ...current,
-        host: String(result?.host || "").trim(),
-        port: Number(result?.port || 587),
-        secure: Boolean(result?.secure),
-        user: String(result?.user || "").trim(),
-        from: String(result?.from || "").trim(),
-        ...loadedSignature,
-        signatureLinkLabel: String(result?.signatureLinkLabel || "").trim(),
-        signatureLinkUrl: String(result?.signatureLinkUrl || "").trim(),
-        signatureLinkLabel2: String(result?.signatureLinkLabel2 || "").trim(),
-        signatureLinkUrl2: String(result?.signatureLinkUrl2 || "").trim(),
-        hasPassword: Boolean(result?.hasPassword),
-        pass: ""
-      }));
+      setSmtpSettings((current) => mergeLoadedMailSettings(current, result));
       setSmtpSettingsKeepPass(Boolean(result?.hasPassword));
     } catch (error) {
       // Settings are optional; show errors only when user tries to save.
@@ -17440,22 +17423,7 @@ function PortalApp({ token, onLogout }) {
   async function refreshSmtpSettingsNow() {
     try {
       const result = await api("/company/email-settings", token);
-      const loadedSignature = normalizeLoadedSignatureValue(result?.signatureHtml || "", result?.signatureText || "");
-      setSmtpSettings((current) => ({
-        ...current,
-        host: String(result?.host || "").trim(),
-        port: Number(result?.port || 587),
-        secure: Boolean(result?.secure),
-        user: String(result?.user || "").trim(),
-        from: String(result?.from || "").trim(),
-        ...loadedSignature,
-        signatureLinkLabel: String(result?.signatureLinkLabel || "").trim(),
-        signatureLinkUrl: String(result?.signatureLinkUrl || "").trim(),
-        signatureLinkLabel2: String(result?.signatureLinkLabel2 || "").trim(),
-        signatureLinkUrl2: String(result?.signatureLinkUrl2 || "").trim(),
-        hasPassword: Boolean(result?.hasPassword),
-        pass: ""
-      }));
+      setSmtpSettings((current) => mergeLoadedMailSettings(current, result));
       setSmtpSettingsKeepPass(Boolean(result?.hasPassword));
       setSmtpSettingsLoaded(true);
       smtpSettingsDirtyRef.current = false;
