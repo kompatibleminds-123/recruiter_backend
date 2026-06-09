@@ -12877,6 +12877,20 @@ function PortalApp({ token, onLogout }) {
           || ""
       ).trim();
       const noticeDays = parseNoticePeriodToDays(item?.notice_period || item?.noticePeriod || "");
+      const offerAmount = String(
+        linkedAssessment?.offerAmount
+        || linkedAssessment?.offerInHand
+        || item?.offerAmount
+        || item?.offerInHand
+        || ""
+      ).trim();
+      const dateOfJoining = String(
+        linkedAssessment?.dateOfJoining
+        || linkedAssessment?.offerDoj
+        || item?.dateOfJoining
+        || item?.offerDoj
+        || ""
+      ).trim();
       const baseRow = {
         item: item || { assessmentId: linkedAssessment?.id, candidateId },
         candidateName: resolveCandidateDisplayName(item, linkedAssessment),
@@ -12886,8 +12900,10 @@ function PortalApp({ token, onLogout }) {
         currentCtc: item?.current_ctc || item?.currentCtc || "",
         expectedCtc: item?.expected_ctc || item?.expectedCtc || "",
         notice: item?.notice_period || item?.noticePeriod || "",
+        offerAmount,
+        dateOfJoining,
         status: currentStatusLabel,
-        date: interviewAt || updatedAt || ""
+        date: dateOfJoining || interviewAt || updatedAt || ""
       };
       const activeAssessment = linkedAssessment && !isAssessmentArchived(linkedAssessment);
       if (interviewTrackEvents.length) {
@@ -13023,7 +13039,11 @@ function PortalApp({ token, onLogout }) {
         rowsByChip.shared_this_week.push({ ...baseRow, round: "Converted to assessment", date: convertedAt });
       }
       if (assessmentStatus === "joined" && inDateRange(updatedAt)) {
-        rowsByChip.joined_candidates.push({ ...baseRow, round: "Joined" });
+        rowsByChip.joined_candidates.push({
+          ...baseRow,
+          round: "Joined",
+          date: dateOfJoining || updatedAt || ""
+        });
       }
       if (activeAssessment && inDateRange(updatedAt)) {
         const statusLower = normalizeStatus(baseRow.status || assessmentStatus || "");
@@ -18000,18 +18020,33 @@ function PortalApp({ token, onLogout }) {
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, "-")
       .replace(/^-+|-+$/g, "");
-    const headers = ["Candidate", "Round / Status", "Date", "Client", "Role", "Current CTC", "Expected CTC", "Notice", "Recruiter"];
-    const bodyRows = rows.map((row) => ([
-      row.candidateName || "",
-      row.round || row.status || "",
-      row.date ? formatDateForCopy(row.date) : "",
-      row.client || "",
-      row.role || "",
-      row.currentCtc || "",
-      row.expectedCtc || "",
-      row.notice || "",
-      row.recruiter || ""
-    ]));
+    const isJoinedChip = chipId === "joined_candidates";
+    const headers = isJoinedChip
+      ? ["Candidate", "Round / Status", "Date of Joining", "Client", "Role", "Offer Amount", "Recruiter"]
+      : ["Candidate", "Round / Status", "Date", "Client", "Role", "Current CTC", "Expected CTC", "Notice", "Recruiter"];
+    const bodyRows = rows.map((row) => (
+      isJoinedChip
+        ? [
+            row.candidateName || "",
+            row.round || row.status || "",
+            row.date ? formatDateForCopy(row.date) : "",
+            row.client || "",
+            row.role || "",
+            row.offerAmount || row.offerInHand || "",
+            row.recruiter || ""
+          ]
+        : [
+            row.candidateName || "",
+            row.round || row.status || "",
+            row.date ? formatDateForCopy(row.date) : "",
+            row.client || "",
+            row.role || "",
+            row.currentCtc || "",
+            row.expectedCtc || "",
+            row.notice || "",
+            row.recruiter || ""
+          ]
+    ));
     const tableHeaders = headers.map((heading) => `<th style="border:1px solid #d8dee8;padding:10px 12px;background:#f6f8fb;text-align:left;font-size:13px;">${escapeHtml(heading)}</th>`).join("");
     const tableRows = bodyRows.map((cells) => `<tr>${cells.map((cell) => `<td style="border:1px solid #d8dee8;padding:8px 10px;font-size:12px;">${escapeHtml(cell)}</td>`).join("")}</tr>`).join("");
     const html = `<!doctype html><html><head><meta charset="utf-8"/></head><body><table style="border-collapse:collapse;width:100%;"><thead><tr>${tableHeaders}</tr></thead><tbody>${tableRows}</tbody></table></body></html>`;
@@ -22548,12 +22583,18 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                                     <tr>
                                       <th>Candidate</th>
                                       <th>Round / Status</th>
-                                      <th>Date</th>
+                                      <th>{chip.id === "joined_candidates" ? "Date of Joining" : "Date"}</th>
                                       <th>Client</th>
                                       <th>Role</th>
-                                      <th>Current CTC</th>
-                                      <th>Expected CTC</th>
-                                      <th>Notice</th>
+                                      {chip.id === "joined_candidates" ? (
+                                        <th>Offer Amount</th>
+                                      ) : (
+                                        <>
+                                          <th>Current CTC</th>
+                                          <th>Expected CTC</th>
+                                          <th>Notice</th>
+                                        </>
+                                      )}
                                       <th>Action</th>
                                     </tr>
                                   </thead>
@@ -22591,9 +22632,15 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                                         <td>{row.date ? formatDateForCopy(row.date) : "-"}</td>
                                         <td>{row.client || "-"}</td>
                                         <td>{row.role || "-"}</td>
-                                        <td>{row.currentCtc || "-"}</td>
-                                        <td>{row.expectedCtc || "-"}</td>
-                                        <td>{row.notice || "-"}</td>
+                                        {chip.id === "joined_candidates" ? (
+                                          <td>{row.offerAmount || row.offerInHand || "-"}</td>
+                                        ) : (
+                                          <>
+                                            <td>{row.currentCtc || "-"}</td>
+                                            <td>{row.expectedCtc || "-"}</td>
+                                            <td>{row.notice || "-"}</td>
+                                          </>
+                                        )}
                                         <td>
                                           <button
                                             className="ghost-btn"
