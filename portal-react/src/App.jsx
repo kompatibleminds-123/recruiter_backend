@@ -2321,12 +2321,13 @@ function inferAssessmentStatusAndSchedule(text, baseDate = new Date()) {
     return match ? `${match[1]} L` : "";
   };
 
+  const statusLower = String(candidateStatus || "").trim().toLowerCase();
   return {
     candidateStatus,
     atValue: parsedAt || defaultAt,
-    offerAmount: candidateStatus === "Offered" ? extractAmount() : "",
-    expectedDoj: candidateStatus === "Offered" ? (parsedAt || defaultAt) : "",
-    dateOfJoining: candidateStatus === "Joined" ? (parsedAt || defaultAt) : ""
+    offerAmount: (statusLower === "offered" || statusLower === "joined") ? extractAmount() : "",
+    expectedDoj: statusLower === "offered" ? (parsedAt || defaultAt) : "",
+    dateOfJoining: statusLower === "joined" ? (parsedAt || defaultAt) : ""
   };
 }
 
@@ -2341,7 +2342,10 @@ function buildAssessmentStatusNoteLine(statusValue, atValue = "", extra = {}) {
     return `${bits.join(" | ")}.`;
   }
   if (lowered === "joined") {
-    return atValue ? `Joined on ${formatAssessmentStatusCalendarNoteDate(atValue)}.` : "Joined.";
+    const bits = ["Joined"];
+    if (extra.offerAmount) bits.push(`Offer amount ${extra.offerAmount}`);
+    if (atValue) bits.push(`Joined on ${formatAssessmentStatusCalendarNoteDate(atValue)}`);
+    return `${bits.join(" | ")}.`;
   }
   return buildAssessmentStatusCalendarNote(status, atValue);
 }
@@ -5452,7 +5456,7 @@ function AssessmentStatusModal({ open, assessment, onClose, onSave }) {
             />
           </label>
         ) : null}
-        {normalizedStatus === "offered" ? (
+        {normalizedStatus === "offered" || normalizedStatus === "joined" ? (
           <label>
             <span>Offer amount</span>
             <input value={offerAmount} onChange={(e) => {
@@ -8727,6 +8731,7 @@ function PortalApp({ token, onLogout }) {
   });
   const [workspaceDataReady, setWorkspaceDataReady] = useState(false);
   const [assessmentsLiveDataReady, setAssessmentsLiveDataReady] = useState(false);
+  const dashboardAgendaSnapshotKeyRef = useRef("");
   // Prevent background refresh from clobbering in-flight actions (e.g. SMTP send).
   const suspendWorkspaceRefreshRef = useRef(false);
 	const loadWorkspaceRef = useRef(null);
@@ -12938,6 +12943,33 @@ function PortalApp({ token, onLogout }) {
         || item?.payload?.offer_amount
         || ""
       ).trim();
+      const currentCtc = String(
+        linkedAssessment?.currentCtc
+        || linkedAssessment?.current_ctc
+        || item?.currentCtc
+        || item?.current_ctc
+        || item?.payload?.currentCtc
+        || item?.payload?.current_ctc
+        || ""
+      ).trim();
+      const expectedCtc = String(
+        linkedAssessment?.expectedCtc
+        || linkedAssessment?.expected_ctc
+        || item?.expectedCtc
+        || item?.expected_ctc
+        || item?.payload?.expectedCtc
+        || item?.payload?.expected_ctc
+        || ""
+      ).trim();
+      const notice = String(
+        linkedAssessment?.noticePeriod
+        || linkedAssessment?.notice_period
+        || item?.noticePeriod
+        || item?.notice_period
+        || item?.payload?.noticePeriod
+        || item?.payload?.notice_period
+        || ""
+      ).trim();
       const dateOfJoining = String(
         linkedAssessment?.dateOfJoining
         || linkedAssessment?.offerDoj
@@ -12961,9 +12993,9 @@ function PortalApp({ token, onLogout }) {
         role: linkedAssessment?.jdTitle || item?.role || item?.currentDesignation || item?.jd_title || item?.jdTitle || "",
         client: linkedAssessment?.clientName || item?.client_name || item?.clientName || "",
         recruiter: item?.assigned_to_name || item?.assignedToName || "",
-        currentCtc: item?.current_ctc || item?.currentCtc || "",
-        expectedCtc: item?.expected_ctc || item?.expectedCtc || "",
-        notice: item?.notice_period || item?.noticePeriod || "",
+        currentCtc,
+        expectedCtc,
+        notice,
         offerAmount,
         dateOfJoining,
         status: currentStatusLabel,
@@ -13151,9 +13183,9 @@ function PortalApp({ token, onLogout }) {
           role: assessment?.jdTitle || candidate?.role || candidate?.jd_title || candidate?.jdTitle || "",
           client: assessment?.clientName || candidate?.client_name || candidate?.clientName || "",
           recruiter: candidate?.assigned_to_name || candidate?.assignedToName || "",
-          currentCtc: candidate?.current_ctc || candidate?.currentCtc || "",
-          expectedCtc: candidate?.expected_ctc || candidate?.expectedCtc || "",
-          notice: candidate?.notice_period || candidate?.noticePeriod || "",
+          currentCtc: assessment?.currentCtc || assessment?.current_ctc || candidate?.current_ctc || candidate?.currentCtc || "",
+          expectedCtc: assessment?.expectedCtc || assessment?.expected_ctc || candidate?.expected_ctc || candidate?.expectedCtc || "",
+          notice: assessment?.noticePeriod || assessment?.notice_period || candidate?.notice_period || candidate?.noticePeriod || "",
           status: normalizeAssessmentStatusLabel(assessment?.candidateStatus || assessment?.status || ""),
           round: "Converted to assessment",
           date: convertedAt
@@ -20433,7 +20465,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
       ),
       interviewAttempts: Array.isArray(assessment?.interviewAttempts) ? [...assessment.interviewAttempts] : [],
       statusHistory: Array.isArray(assessment?.statusHistory) ? [...assessment.statusHistory] : [],
-      offerAmount: isOffered ? String(payload?.offerAmount || inferred.offerAmount || "").trim() : (assessment?.offerAmount || ""),
+      offerAmount: (isOffered || isJoined) ? String(payload?.offerAmount || inferred.offerAmount || assessment?.offerAmount || "").trim() : (assessment?.offerAmount || ""),
       expectedDoj: isOffered ? atIso : (assessment?.expectedDoj || ""),
       dateOfJoining: isJoined ? atIso : (assessment?.dateOfJoining || ""),
       updatedAt: new Date().toISOString()
@@ -20447,7 +20479,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
       notes: readableNotes || "",
       inferText,
       manualRemarks,
-      offerAmount: isOffered ? String(payload?.offerAmount || inferred.offerAmount || "").trim() : "",
+      offerAmount: (isOffered || isJoined) ? String(payload?.offerAmount || inferred.offerAmount || assessment?.offerAmount || "").trim() : "",
       atLabel: buildAssessmentStatusNoteLine(nextStatus, atIso, { offerAmount: payload?.offerAmount })
     });
 
@@ -21854,12 +21886,35 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
     scheduledInterviewItems
   ]);
 
+  const liveDashboardAgendaSnapshotKey = useMemo(() => JSON.stringify({
+    agendaRange,
+    overdueFollowUpCount: overdueFollowUps.length,
+    pendingNotesCount: pendingNotes,
+    scheduledInterviewCount: todaysInterviews.length,
+    upcomingJoiningCount: upcomingJoinings.length,
+    pendingAssignmentCount: pendingAssignments,
+    overdueFollowUps: overdueFollowUps.slice(0, 5).map((item) => item?.key || item?.id || item?.candidateId || item?.assessmentId || ""),
+    scheduledFollowUpItems: scheduledFollowUpItems.map((item) => item?.key || item?.id || item?.candidateId || item?.assessmentId || ""),
+    scheduledInterviewItems: scheduledInterviewItems.map((item) => item?.key || item?.id || item?.candidateId || item?.assessmentId || "")
+  }), [
+    agendaRange,
+    overdueFollowUps,
+    pendingNotes,
+    todaysInterviews,
+    upcomingJoinings,
+    pendingAssignments,
+    scheduledFollowUpItems,
+    scheduledInterviewItems
+  ]);
+
   useEffect(() => {
     if (!assessmentsLiveDataReady) return;
-    const snapshot = { ...liveDashboardAgendaSnapshot, updatedAt: Date.now() };
+    if (dashboardAgendaSnapshotKeyRef.current === liveDashboardAgendaSnapshotKey) return;
+    dashboardAgendaSnapshotKeyRef.current = liveDashboardAgendaSnapshotKey;
+    const snapshot = { ...liveDashboardAgendaSnapshot, updatedAt: Date.now(), snapshotKey: liveDashboardAgendaSnapshotKey };
     setDashboardAgendaSnapshot(snapshot);
     writeDashboardAgendaSnapshot(snapshot);
-  }, [assessmentsLiveDataReady, liveDashboardAgendaSnapshot]);
+  }, [assessmentsLiveDataReady, liveDashboardAgendaSnapshot, liveDashboardAgendaSnapshotKey]);
 
   const dashboardAgendaSnapshotForDisplay = !assessmentsLiveDataReady && dashboardAgendaSnapshot && String(dashboardAgendaSnapshot.agendaRange || "") === String(agendaRange)
     ? dashboardAgendaSnapshot
