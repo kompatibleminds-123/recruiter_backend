@@ -4295,19 +4295,7 @@ async function buildAssessmentVisibilityQueryForUser(user) {
   const { on, url, key } = getSupabaseServiceConfig();
   if (!(on && companyId)) return null;
   if (actorIsAdmin) return null;
-
-  const visibleCandidates = await fetch(`${url}/rest/v1/candidates?select=id,email,phone&company_id=eq.${encodeURIComponent(companyId)}&or=(recruiter_id.eq.${encodeURIComponent(actorId)},assigned_to_user_id.eq.${encodeURIComponent(actorId)})&limit=5000`, {
-    headers: { apikey: key, Authorization: `Bearer ${key}` }
-  }).then(async (response) => (response.ok ? response.json() : [])).catch(() => []);
-
-  const visibleCandidateIds = Array.from(new Set((Array.isArray(visibleCandidates) ? visibleCandidates : []).map((candidate) => String(candidate?.id || "").trim()).filter(Boolean)));
-  const visibleEmails = Array.from(new Set((Array.isArray(visibleCandidates) ? visibleCandidates : []).map((candidate) => String(candidate?.email || "").trim().toLowerCase()).filter(Boolean)));
-  const visiblePhones = Array.from(new Set((Array.isArray(visibleCandidates) ? visibleCandidates : []).map((candidate) => String(candidate?.phone || "").replace(/\D/g, "").slice(-10)).filter(Boolean)));
-  const visibilityOrParts = [`recruiter_id.eq.${encodeURIComponent(actorId)}`];
-  if (visibleCandidateIds.length) visibilityOrParts.push(`candidate_id.in.(${visibleCandidateIds.map((id) => encodeURIComponent(id)).join(",")})`);
-  if (visibleEmails.length) visibilityOrParts.push(`email_id.in.(${visibleEmails.map((email) => encodeURIComponent(email)).join(",")})`);
-  if (visiblePhones.length) visibilityOrParts.push(`phone_number.in.(${visiblePhones.map((phone) => encodeURIComponent(phone)).join(",")})`);
-  return `or=(${visibilityOrParts.join(",")})`;
+  return `recruiter_id=eq.${encodeURIComponent(actorId)}`;
 }
 
 async function countAssessmentsForUser(user, options = {}) {
@@ -18062,6 +18050,7 @@ const server = http.createServer(async (req, res) => {
         emitAssessmentStreamEvent(clientUser.companyId, "assessment_saved", {
           assessmentId: String(saved.id || "").trim(),
           candidateId: String(saved.candidateId || assessment?.candidateId || assessment?.candidate_id || "").trim(),
+          recruiterId: String(saved.recruiterId || saved.recruiter_id || assessment?.recruiterId || assessment?.recruiter_id || "").trim(),
           assessment: saved
         });
       }
@@ -18137,6 +18126,7 @@ const server = http.createServer(async (req, res) => {
         emitAssessmentStreamEvent(clientUser.companyId, "assessment_saved", {
           assessmentId: String(saved.id || "").trim(),
           candidateId: String(saved.candidateId || assessment?.candidateId || assessment?.candidate_id || "").trim(),
+          recruiterId: String(saved.recruiterId || saved.recruiter_id || assessment?.recruiterId || assessment?.recruiter_id || actor.id || "").trim(),
           assessment: saved
         });
       }
@@ -18248,6 +18238,7 @@ const server = http.createServer(async (req, res) => {
         emitAssessmentStreamEvent(actor.companyId, "assessment_saved", {
           assessmentId: String(assessment.id || "").trim(),
           candidateId: incomingCandidateId,
+          recruiterId: String(assessment.recruiterId || assessment.recruiter_id || actor.id || "").trim(),
           assessment
         });
       }
@@ -18425,6 +18416,7 @@ const server = http.createServer(async (req, res) => {
         emitAssessmentStreamEvent(actor.companyId, "assessment_restored", {
           assessmentId: String(restored.id || "").trim(),
           candidateId,
+          recruiterId: String(restored.recruiterId || restored.recruiter_id || actor.id || "").trim(),
           assessment: restored
         });
       }
@@ -18480,6 +18472,7 @@ const server = http.createServer(async (req, res) => {
       emitAssessmentStreamEvent(actor.companyId, "assessment_deleted", {
         assessmentId,
         candidateId: String(existing?.candidateId || existing?.candidate_id || "").trim(),
+        recruiterId: String(existing?.recruiterId || existing?.recruiter_id || actor.id || "").trim(),
         assessment: existing || null
       });
       sendJson(res, 200, { ok: true, result });

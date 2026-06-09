@@ -3249,23 +3249,14 @@ function signatureHtmlForMail(signatureHtml = "", signatureText = "") {
 }
 
 function mergeLoadedMailSettings(current = {}, result = {}) {
-  const currentSignatureHtml = String(current?.signatureHtml || "").trim();
-  const currentSignatureText = String(current?.signatureText || "").trim();
   const loadedSignature = normalizeLoadedSignatureValue(result?.signatureHtml || "", result?.signatureText || "");
-  const loadedSignatureHasContent = Boolean(String(loadedSignature.signatureHtml || "").trim() || String(loadedSignature.signatureText || "").trim());
-  const preserveCurrentSignature = !loadedSignatureHasContent && Boolean(currentSignatureHtml || currentSignatureText);
   return {
     host: String(result?.host || current?.host || "").trim(),
     port: Number(result?.port || current?.port || 587),
     secure: Boolean(result?.secure ?? current?.secure),
     user: String(result?.user || current?.user || "").trim(),
     from: String(result?.from || current?.from || "").trim(),
-    ...(preserveCurrentSignature
-      ? {
-          signatureHtml: currentSignatureHtml,
-          signatureText: currentSignatureText
-        }
-      : loadedSignature),
+    ...loadedSignature,
     signatureLinkLabel: String(result?.signatureLinkLabel || current?.signatureLinkLabel || "").trim(),
     signatureLinkUrl: String(result?.signatureLinkUrl || current?.signatureLinkUrl || "").trim(),
     signatureLinkLabel2: String(result?.signatureLinkLabel2 || current?.signatureLinkLabel2 || "").trim(),
@@ -8866,18 +8857,8 @@ function PortalApp({ token, onLogout }) {
   const smtpSettingsDirtyRef = useRef(false);
   const markSmtpSettingsDirty = () => { smtpSettingsDirtyRef.current = true; };
   const resolveMailSignatureFallback = useCallback((nextSettings = {}) => {
-    const normalized = normalizeMailSignatureSnapshot(nextSettings);
-    if (!isMailSignatureSnapshotEmpty(normalized)) return normalized;
-    const fallback = buildAdminDefaultMailSignatureSnapshot(copySettings);
-    if (isMailSignatureSnapshotEmpty(fallback)) return normalized;
-    return fallback;
-  }, [
-    copySettings.clientShareSignatureText,
-    copySettings.clientShareSignatureLinkLabel,
-    copySettings.clientShareSignatureLinkUrl,
-    copySettings.clientShareSignatureLinkLabel2,
-    copySettings.clientShareSignatureLinkUrl2
-  ]);
+    return normalizeMailSignatureSnapshot(nextSettings);
+  }, []);
   const smtpSettingsSignatureCacheKey = useMemo(() => {
     const companyId = String(state.user?.companyId || "").trim();
     const userId = String(state.user?.id || "").trim();
@@ -9235,7 +9216,7 @@ function PortalApp({ token, onLogout }) {
         items: section.items.filter((item) => {
           const itemTo = String(item?.to || "");
           if ((itemTo === "/admin-settings" || itemTo === "/plan" || itemTo === "/login-settings" || itemTo === "/intake-settings" || itemTo === "/settings" || itemTo.startsWith("/admin/payroll")) && !isSettingsAdmin) return false;
-          if (!hasSaasUnlimitedAccess && (itemTo === "/client-share" || itemTo === "/intake-settings" || itemTo === "/mail-settings" || itemTo === "/applicants")) return false;
+          if (!hasSaasUnlimitedAccess && (itemTo === "/client-share" || itemTo === "/intake-settings" || itemTo === "/applicants")) return false;
           return true;
         })
       }))
@@ -9280,7 +9261,7 @@ function PortalApp({ token, onLogout }) {
 
   useEffect(() => {
     if (!accessFlagsReady) return;
-    const blockedPaths = new Set(["/client-share", "/intake-settings", "/candidates", "/mail-settings", "/reports", "/applicants"]);
+    const blockedPaths = new Set(["/client-share", "/intake-settings", "/candidates", "/reports", "/applicants"]);
     if (!hasSaasUnlimitedAccess && blockedPaths.has(String(location?.pathname || ""))) {
       navigate("/plan", { replace: true });
       setStatus("loginSettings", "This feature is available on Full Recruiter plan.", "error");
@@ -10026,7 +10007,12 @@ function PortalApp({ token, onLogout }) {
     // Candidate smart-search chips (Shared this week/today) need conversion timestamps,
     // which are best sourced from assessment events.
     const needsAssessmentEvents = includeEvents && (pathname === "/dashboard" || pathname === "/assessments" || pathname === "/candidates" || forceCore || forceAll);
-    const needsEmailSettings = includeEmailSettings && (pathname === "/mail-settings" || forceAll);
+    const needsEmailSettings = includeEmailSettings && (
+      pathname === "/mail-settings" ||
+      pathname === "/settings" ||
+      pathname === "/client-share" ||
+      forceAll
+    );
     const useLightCandidateFetch = pathname === "/assessments";
     const candidateFetchLimit = useLightCandidateFetch ? 50 : 5000;
     const candidateFetchPage = 1;
@@ -10762,6 +10748,19 @@ function PortalApp({ token, onLogout }) {
     setAssessmentStatsSnapshot(envelope?.data || null);
   }
 
+  const shouldAcceptAssessmentStreamEvent = useCallback((assessment = {}, recruiterId = "") => {
+    const isAdmin = String(state.user?.role || "").toLowerCase() === "admin";
+    if (isAdmin) return true;
+    const currentUserId = String(state.user?.id || "").trim();
+    const ownerId = String(
+      recruiterId
+      || assessment?.recruiterId
+      || assessment?.recruiter_id
+      || ""
+    ).trim();
+    return !ownerId || ownerId === currentUserId;
+  }, [state.user?.id, state.user?.role]);
+
   async function reloadAssessmentsSlice({ includeEvents = false } = {}) {
     if (!token) return;
     const seq = (assessmentsSliceLoadSeqRef.current || 0) + 1;
@@ -10865,7 +10864,9 @@ function PortalApp({ token, onLogout }) {
       const eventType = String(payload?.type || payload?.eventType || "").trim();
       const assessmentId = String(payload?.assessmentId || payload?.assessment_id || payload?.assessment?.id || "").trim();
       const candidateId = String(payload?.candidateId || payload?.candidate_id || payload?.assessment?.candidateId || payload?.assessment?.candidate_id || "").trim();
+      const recruiterId = String(payload?.recruiterId || payload?.recruiter_id || payload?.assessment?.recruiterId || payload?.assessment?.recruiter_id || "").trim();
       const assessment = payload?.assessment && typeof payload.assessment === "object" ? payload.assessment : null;
+      if (!shouldAcceptAssessmentStreamEvent(assessment || {}, recruiterId)) return;
       if (eventType === "assessment_deleted" && assessmentId) {
         setState((current) => ({
           ...current,
@@ -10894,7 +10895,7 @@ function PortalApp({ token, onLogout }) {
       try { source.removeEventListener("assessment", onAssessment); } catch {}
       try { source.close(); } catch {}
     };
-  }, [token, location?.pathname, assessmentPage, safeAssessmentApiPageSize, assessmentFiltersApplied, assessmentLane]);
+  }, [token, location?.pathname, assessmentPage, safeAssessmentApiPageSize, assessmentFiltersApplied, assessmentLane, shouldAcceptAssessmentStreamEvent]);
 
   useEffect(() => {
     if (!token) return undefined;
@@ -10915,7 +10916,9 @@ function PortalApp({ token, onLogout }) {
       const eventType = String(payload?.type || payload?.eventType || "").trim();
       const assessmentId = String(payload?.assessmentId || payload?.assessment_id || payload?.assessment?.id || "").trim();
       const candidateId = String(payload?.candidateId || payload?.candidate_id || payload?.assessment?.candidateId || payload?.assessment?.candidate_id || "").trim();
+      const recruiterId = String(payload?.recruiterId || payload?.recruiter_id || payload?.assessment?.recruiterId || payload?.assessment?.recruiter_id || "").trim();
       const assessment = payload?.assessment && typeof payload.assessment === "object" ? payload.assessment : null;
+      if (!shouldAcceptAssessmentStreamEvent(assessment || {}, recruiterId)) return;
       if (eventType === "assessment_deleted" && assessmentId) {
         setState((current) => ({
           ...current,
@@ -10946,7 +10949,7 @@ function PortalApp({ token, onLogout }) {
       try { source.removeEventListener("assessment", onAssessment); } catch {}
       try { source.close(); } catch {}
     };
-  }, [token, location?.pathname, assessmentFiltersApplied]);
+  }, [token, location?.pathname, assessmentFiltersApplied, shouldAcceptAssessmentStreamEvent]);
 
   useEffect(() => {
     if (!token) return undefined;
@@ -17506,28 +17509,17 @@ function PortalApp({ token, onLogout }) {
     const clientLabel = String(candidate?.client_name || candidate?.clientName || candidate?.client || "").trim();
     const roleLine = [roleLabel, clientLabel].filter(Boolean).join(" for ");
     const loadedSignature = normalizeLoadedSignatureValue(smtpSettings.signatureHtml || "", smtpSettings.signatureText || "");
-    const signatureContext = {
-      hrName: "",
-      clientLabel,
-      targetRole: roleLabel,
-      recruiterName,
-      recruiterEmail: recruiterUserEmail,
-      recruiterPhone: recruiterUserPhone,
-      companyName,
-      roleLine
-    };
     const recruiterSignatureText = String(loadedSignature.signatureText || "").trim();
-    const signatureText = recruiterSignatureText
-      || fillClientShareTemplate(copySettings.clientShareSignatureText || DEFAULT_COPY_SETTINGS.clientShareSignatureText || "", signatureContext).trim();
+    const signatureText = recruiterSignatureText;
     const signatureHtml = signatureHtmlForMail(loadedSignature.signatureHtml || "", loadedSignature.signatureText || "");
     const signatureLinks = [
       {
-        label: String(smtpSettings.signatureLinkLabel || copySettings.clientShareSignatureLinkLabel || "").trim(),
-        url: String(smtpSettings.signatureLinkUrl || copySettings.clientShareSignatureLinkUrl || "").trim()
+        label: String(smtpSettings.signatureLinkLabel || "").trim(),
+        url: String(smtpSettings.signatureLinkUrl || "").trim()
       },
       {
-        label: String(smtpSettings.signatureLinkLabel2 || copySettings.clientShareSignatureLinkLabel2 || "").trim(),
-        url: String(smtpSettings.signatureLinkUrl2 || copySettings.clientShareSignatureLinkUrl2 || "").trim()
+        label: String(smtpSettings.signatureLinkLabel2 || "").trim(),
+        url: String(smtpSettings.signatureLinkUrl2 || "").trim()
       }
     ].filter((link) => link.url);
     const signatureHtmlFromText = signatureText
@@ -17600,12 +17592,12 @@ function PortalApp({ token, onLogout }) {
         signatureText: String(normalizedSignature.signatureText || "").trim(),
         signatureLinks: [
           {
-            label: String(smtpSettings.signatureLinkLabel || copySettings.clientShareSignatureLinkLabel || "").trim(),
-            url: String(smtpSettings.signatureLinkUrl || copySettings.clientShareSignatureLinkUrl || "").trim()
+            label: String(smtpSettings.signatureLinkLabel || "").trim(),
+            url: String(smtpSettings.signatureLinkUrl || "").trim()
           },
           {
-            label: String(smtpSettings.signatureLinkLabel2 || copySettings.clientShareSignatureLinkLabel2 || "").trim(),
-            url: String(smtpSettings.signatureLinkUrl2 || copySettings.clientShareSignatureLinkUrl2 || "").trim()
+            label: String(smtpSettings.signatureLinkLabel2 || "").trim(),
+            url: String(smtpSettings.signatureLinkUrl2 || "").trim()
           }
         ].filter((link) => link.url),
         attachJdFile
@@ -18669,19 +18661,17 @@ function PortalApp({ token, onLogout }) {
   }
 
   function getClientShareSignature() {
-    const context = getClientShareContext();
     const perUserSignatureHtml = String(smtpSettings.signatureHtml || "").trim();
     const perUserSignatureText = String(smtpSettings.signatureText || "").trim();
-    const signatureText = perUserSignatureText
-      || fillClientShareTemplate(copySettings.clientShareSignatureText || DEFAULT_COPY_SETTINGS.clientShareSignatureText || "", context).trim();
+    const signatureText = perUserSignatureText;
     const links = [
       {
-        label: String(smtpSettings.signatureLinkLabel || copySettings.clientShareSignatureLinkLabel || "").trim(),
-        url: String(smtpSettings.signatureLinkUrl || copySettings.clientShareSignatureLinkUrl || "").trim()
+        label: String(smtpSettings.signatureLinkLabel || "").trim(),
+        url: String(smtpSettings.signatureLinkUrl || "").trim()
       },
       {
-        label: String(smtpSettings.signatureLinkLabel2 || copySettings.clientShareSignatureLinkLabel2 || "").trim(),
-        url: String(smtpSettings.signatureLinkUrl2 || copySettings.clientShareSignatureLinkUrl2 || "").trim()
+        label: String(smtpSettings.signatureLinkLabel2 || "").trim(),
+        url: String(smtpSettings.signatureLinkUrl2 || "").trim()
       }
     ].filter((link) => link.url);
     return { signatureText, signatureHtml: perUserSignatureHtml, links };
