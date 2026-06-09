@@ -10351,70 +10351,9 @@ function PortalApp({ token, onLogout }) {
 
   useEffect(() => {
     if (!token) return undefined;
-    const RESUME_HIDDEN_THRESHOLD_MS = 15 * 60 * 1000;
-    const RESUME_THROTTLE_MS = 15 * 60 * 1000;
-    const isDashboardWorkspacePath = () => {
-      const pathname = String(location?.pathname || "").trim();
-      return pathname === "/dashboard" || pathname === "/candidates";
-    };
-    const refreshOnResume = async () => {
-      if (!isDashboardWorkspacePath()) return;
-      if (workspaceRefreshInFlightRef.current) {
-        workspaceRefreshPendingRef.current = true;
-        return;
-      }
-      if (suspendWorkspaceRefreshRef.current) return;
-      const now = Date.now();
-      const hiddenAt = Number(lastWorkspaceHiddenAtRef.current || 0);
-      const hiddenDuration = hiddenAt > 0 ? now - hiddenAt : 0;
-      if (hiddenDuration < RESUME_HIDDEN_THRESHOLD_MS) return;
-      if (now - lastWorkspaceResumeRefreshAtRef.current < RESUME_THROTTLE_MS) return;
-      lastWorkspaceResumeRefreshAtRef.current = now;
-      workspaceRefreshInFlightRef.current = true;
-      lastWorkspaceRefreshAtRef.current = now;
-      setWorkspaceDataReady(false);
-      try {
-        const latestLoader = loadWorkspaceRef.current;
-        if (typeof latestLoader === "function") {
-          await latestLoader({
-            forceFiveTabsRefresh: false,
-            preloadAllTabs: false,
-            includeEvents: false,
-            includeClientUsers: false,
-            includeEmployeeUsers: false,
-            includeSharedPresets: false,
-            includeEmailSettings: false
-          });
-        }
-      } catch (error) {
-        setStatus("workspace", String(error?.message || error), "error");
-      } finally {
-        workspaceRefreshInFlightRef.current = false;
-        setWorkspaceDataReady(true);
-        if (workspaceRefreshPendingRef.current) {
-          workspaceRefreshPendingRef.current = false;
-          void refreshOnResume();
-        }
-      }
-    };
-    const onVisibilityChange = () => {
-      if (document.visibilityState === "hidden") {
-        lastWorkspaceHiddenAtRef.current = Date.now();
-        return;
-      }
-      if (document.visibilityState === "visible") {
-        void refreshOnResume();
-      }
-    };
-    const onFocus = () => {
-      void refreshOnResume();
-    };
-    window.addEventListener("focus", onFocus);
-    document.addEventListener("visibilitychange", onVisibilityChange);
-    return () => {
-      window.removeEventListener("focus", onFocus);
-      document.removeEventListener("visibilitychange", onVisibilityChange);
-    };
+    // Disabled for now: global focus/visibility refresh was triggering
+    // broad workspace reloads during normal assessment saves.
+    return undefined;
   }, [token, location?.pathname]);
 
   async function syncSharedSettingsFromServer(options = {}) {
