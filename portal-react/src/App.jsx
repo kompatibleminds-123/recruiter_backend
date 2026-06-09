@@ -16012,9 +16012,9 @@ function PortalApp({ token, onLogout }) {
       String(user?.id || "") === assignedRecruiterUserId
       || String(user?.name || "").trim() === assignedRecruiterName
     ) || null;
-    const assessmentOwnerName = String(assessmentOwnerUser?.name || assignedRecruiterName || state.user?.name || "").trim();
-    const assessmentOwnerEmail = String(assessmentOwnerUser?.email || state.user?.email || "").trim();
-    const assessmentOwnerId = String(assessmentOwnerUser?.id || state.user?.id || "").trim();
+    const assessmentOwnerName = String(assessmentOwnerUser?.name || assignedRecruiterName || "").trim();
+    const assessmentOwnerEmail = String(assessmentOwnerUser?.email || "").trim();
+    const assessmentOwnerId = String(assignedRecruiterUserId || assessmentOwnerUser?.id || "").trim();
     const candidateCvAnalysis = cvMeta?.cvAnalysisCache?.result
       ? buildInterviewCvAnalysis({
           currentCompany: candidate?.company || sourceApplicant?.currentCompany || "",
@@ -16192,21 +16192,20 @@ function PortalApp({ token, onLogout }) {
       || assessmentOwnerUser?.name
       || interviewCandidate?.assigned_to_name
       || interviewCandidate?.assignedToName
-      || state.user?.name
       || ""
     ).trim();
     const assessmentOwnerEmail = String(
       form.recruiter_email
       || form.recruiterEmail
       || assessmentOwnerUser?.email
-      || state.user?.email
       || ""
     ).trim();
     const assessmentOwnerId = String(
       form.recruiter_id
       || form.recruiterId
+      || interviewCandidate?.assigned_to_user_id
+      || interviewCandidate?.assignedToUserId
       || assessmentOwnerUser?.id
-      || state.user?.id
       || ""
     ).trim();
     const assessment = {

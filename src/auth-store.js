@@ -1716,28 +1716,25 @@ function assessmentRow(assessment, actor, companyId) {
   const recruiterName = String(
     a.recruiter_name
     || a.recruiterName
-    || actor?.name
     || ""
   ).trim();
   const recruiterEmail = String(
     a.recruiter_email
     || a.recruiterEmail
-    || actor?.email
     || ""
   ).trim();
   const recruiterId = String(
     a.recruiter_id
     || a.recruiterId
-    || actor?.id
     || ""
   ).trim();
   const next = {
     ...a,
     id,
     companyId,
-    recruiterId: recruiterId || actor.id,
-    recruiterName: recruiterName || actor.name,
-    recruiterEmail: recruiterEmail || actor.email,
+    recruiterId,
+    recruiterName,
+    recruiterEmail,
     generatedAt: a.generatedAt || now,
     updatedAt: preserveUpdatedAt && explicitUpdatedAt ? explicitUpdatedAt : now,
     shareBrandedCv: Boolean(a.shareBrandedCv ?? a.share_branded_cv ?? a.payload?.shareBrandedCv ?? a.payload?.share_branded_cv ?? false),
@@ -5350,29 +5347,26 @@ async function saveAssessment({ actorUserId, companyId, assessment }) {
     const recruiterName = String(
       assessment?.recruiter_name
       || assessment?.recruiterName
-      || actor.name
       || ""
     ).trim();
     const recruiterEmail = String(
       assessment?.recruiter_email
       || assessment?.recruiterEmail
-      || actor.email
       || ""
     ).trim();
     const recruiterId = String(
       assessment?.recruiter_id
       || assessment?.recruiterId
-      || actor.id
       || ""
     ).trim();
     const next = {
       ...assessment,
       id,
       companyId,
-      recruiterId: recruiterId || actor.id,
-      recruiterName: recruiterName || actor.name,
-      recruiter_name: recruiterName || actor.name,
-      recruiterEmail: recruiterEmail || actor.email,
+      recruiterId,
+      recruiterName,
+      recruiter_name: recruiterName,
+      recruiterEmail,
       generatedAt: assessment.generatedAt || now,
       updatedAt: now
     };
@@ -5450,6 +5444,42 @@ async function saveAssessment({ actorUserId, companyId, assessment }) {
   delete sanitizedForSave.expectedUpdatedAt;
   delete sanitizedForSave.expected_updated_at;
   const safeAssessmentForSave = preservedCreatedAt ? { ...sanitizedForSave, generatedAt: preservedCreatedAt } : sanitizedForSave;
+  const preservedRecruiterId = String(previous?.recruiter_id || previous?.recruiterId || "").trim();
+  const preservedRecruiterName = String(previous?.recruiter_name || previous?.recruiterName || "").trim();
+  const preservedRecruiterEmail = String(previous?.recruiter_email || previous?.recruiterEmail || "").trim();
+  const resolvedRecruiterId = String(
+    safeAssessmentForSave.recruiter_id
+    || safeAssessmentForSave.recruiterId
+    || preservedRecruiterId
+    || ""
+  ).trim();
+  let resolvedRecruiterName = String(
+    safeAssessmentForSave.recruiter_name
+    || safeAssessmentForSave.recruiterName
+    || preservedRecruiterName
+    || ""
+  ).trim();
+  let resolvedRecruiterEmail = String(
+    safeAssessmentForSave.recruiter_email
+    || safeAssessmentForSave.recruiterEmail
+    || preservedRecruiterEmail
+    || ""
+  ).trim();
+  if (resolvedRecruiterId) {
+    try {
+      const owner = await getUserById(resolvedRecruiterId, companyId);
+      if (owner) {
+        if (!resolvedRecruiterName) resolvedRecruiterName = String(owner.name || "").trim();
+        if (!resolvedRecruiterEmail) resolvedRecruiterEmail = String(owner.email || "").trim();
+      }
+    } catch (_) {}
+  }
+  safeAssessmentForSave.recruiter_id = resolvedRecruiterId;
+  safeAssessmentForSave.recruiterId = resolvedRecruiterId;
+  safeAssessmentForSave.recruiter_name = resolvedRecruiterName;
+  safeAssessmentForSave.recruiterName = resolvedRecruiterName;
+  safeAssessmentForSave.recruiter_email = resolvedRecruiterEmail;
+  safeAssessmentForSave.recruiterEmail = resolvedRecruiterEmail;
 
   const rows = await sbIns("assessments", [assessmentRow(safeAssessmentForSave, actor, companyId)], { conflict: "id", upsert: true });
   const saved = sanitizeAssessment(rows[0]);
