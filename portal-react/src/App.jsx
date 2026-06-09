@@ -10035,6 +10035,7 @@ function PortalApp({ token, onLogout }) {
       pathname === "/assessments" ||
       pathname === "/client-share" ||
       pathname === "/interview" ||
+      pathname === "/candidates" ||
       forceCore ||
       forceAll;
     // Candidate smart-search chips (Shared this week/today) need conversion timestamps,
@@ -12880,15 +12881,31 @@ function PortalApp({ token, onLogout }) {
       const offerAmount = String(
         linkedAssessment?.offerAmount
         || linkedAssessment?.offerInHand
+        || linkedAssessment?.offer_amount
+        || linkedAssessment?.offer_in_hand
         || item?.offerAmount
         || item?.offerInHand
+        || item?.offer_amount
+        || item?.offer_in_hand
+        || item?.payload?.offerAmount
+        || item?.payload?.offer_amount
         || ""
       ).trim();
       const dateOfJoining = String(
         linkedAssessment?.dateOfJoining
         || linkedAssessment?.offerDoj
+        || linkedAssessment?.date_of_joining
+        || linkedAssessment?.joiningDate
+        || linkedAssessment?.joining_date
         || item?.dateOfJoining
         || item?.offerDoj
+        || item?.date_of_joining
+        || item?.joiningDate
+        || item?.joining_date
+        || item?.payload?.dateOfJoining
+        || item?.payload?.date_of_joining
+        || item?.payload?.joiningDate
+        || item?.payload?.joining_date
         || ""
       ).trim();
       const baseRow = {
