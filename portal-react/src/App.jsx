@@ -6531,11 +6531,48 @@ function JourneyModal({ open, title = "Journey", text = "", onClose, onCopy }) {
 }
 
 const DASHBOARD_FILTER_STORAGE_KEY = "recruitdesk_portal_dashboard_filters_v1";
+const DASHBOARD_AGENDA_SNAPSHOT_STORAGE_KEY = "recruitdesk_portal_dashboard_agenda_snapshot_v1";
 const PORTAL_TAB_FIRST_OPEN_RUNTIME_STATE = globalThis.__recruitdeskPortalTabFirstOpenRuntimeState || (globalThis.__recruitdeskPortalTabFirstOpenRuntimeState = {
   captured: false,
   applicants: false,
   assessments: false
 });
+
+function readDashboardAgendaSnapshot() {
+  try {
+    const raw = window.localStorage.getItem(DASHBOARD_AGENDA_SNAPSHOT_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object") return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function writeDashboardAgendaSnapshot(snapshot) {
+  try {
+    if (!snapshot || typeof snapshot !== "object") {
+      window.localStorage.removeItem(DASHBOARD_AGENDA_SNAPSHOT_STORAGE_KEY);
+      return;
+    }
+    window.localStorage.setItem(DASHBOARD_AGENDA_SNAPSHOT_STORAGE_KEY, JSON.stringify(snapshot));
+  } catch {
+    // Ignore storage quota / private mode errors.
+  }
+}
+
+function compactDashboardAgendaItem(item = {}) {
+  return {
+    key: String(item?.key || item?.id || item?.assessmentId || item?.candidateId || "").trim(),
+    type: String(item?.type || "").trim(),
+    title: String(item?.title || "").trim(),
+    subtitle: String(item?.subtitle || "").trim(),
+    when: String(item?.when || "").trim(),
+    candidateId: String(item?.candidateId || item?.raw?.id || item?.raw?.candidateId || "").trim(),
+    assessmentId: String(item?.assessmentId || item?.raw?.id || item?.raw?.assessmentId || "").trim()
+  };
+}
 
 function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs = true }) {
   const location = useLocation();
@@ -7956,6 +7993,7 @@ function PortalApp({ token, onLogout }) {
   const [companyLicense, setCompanyLicense] = useState(null);
   const [billingOverview, setBillingOverview] = useState(null);
   const [billingPlans, setBillingPlans] = useState([]);
+  const [dashboardAgendaSnapshot, setDashboardAgendaSnapshot] = useState(() => readDashboardAgendaSnapshot());
   const [auditLogs, setAuditLogs] = useState([]);
   const [planUpgradeBusyCode, setPlanUpgradeBusyCode] = useState("");
   const [assignApplicantId, setAssignApplicantId] = useState("");
@@ -8688,6 +8726,7 @@ function PortalApp({ token, onLogout }) {
     assessments: ""
   });
   const [workspaceDataReady, setWorkspaceDataReady] = useState(false);
+  const [assessmentsLiveDataReady, setAssessmentsLiveDataReady] = useState(false);
   // Prevent background refresh from clobbering in-flight actions (e.g. SMTP send).
   const suspendWorkspaceRefreshRef = useRef(false);
 	const loadWorkspaceRef = useRef(null);
@@ -10055,6 +10094,9 @@ function PortalApp({ token, onLogout }) {
     // so fetch billing overview on all recruiter routes (plans list only needed on /plan).
     const needsBilling = true;
     // Backfills mutate production candidate rows; keep them admin-only and manual.
+    if (needsAssessments) {
+      setAssessmentsLiveDataReady(false);
+    }
     const dashboardKey = JSON.stringify({
       dateFrom: String(dashboardFilters?.dateFrom || ""),
       dateTo: String(dashboardFilters?.dateTo || ""),
@@ -10211,6 +10253,9 @@ function PortalApp({ token, onLogout }) {
       if (pathname === "/plan") {
         setBillingPlans(Array.isArray(billingPlansResult?.plans) ? billingPlansResult.plans : []);
       }
+    }
+    if (needsAssessments) {
+      setAssessmentsLiveDataReady(true);
     }
   }
 
@@ -10799,6 +10844,7 @@ function PortalApp({ token, onLogout }) {
     if (!token) return;
     const seq = (assessmentsSliceLoadSeqRef.current || 0) + 1;
     assessmentsSliceLoadSeqRef.current = seq;
+    setAssessmentsLiveDataReady(false);
     const [assessmentsResult, assessmentEventsResult] = await Promise.all([
       api("/company/assessments", token).catch(() => ({ assessments: [] })),
       includeEvents
@@ -10811,6 +10857,7 @@ function PortalApp({ token, onLogout }) {
       assessments: mergeAssessmentsByFreshness(current.assessments, assessmentsResult?.assessments || []),
       assessmentEvents: includeEvents ? (assessmentEventsResult?.result?.rows || current.assessmentEvents) : current.assessmentEvents
     }));
+    setAssessmentsLiveDataReady(true);
   }
 
   useEffect(() => {
@@ -21786,6 +21833,45 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
     }))
     .sort((a, b) => new Date(a.when) - new Date(b.when))
     .slice(0, 5);
+  const liveDashboardAgendaSnapshot = useMemo(() => ({
+    agendaRange,
+    overdueFollowUpCount: overdueFollowUps.length,
+    pendingNotesCount: pendingNotes,
+    scheduledInterviewCount: todaysInterviews.length,
+    upcomingJoiningCount: upcomingJoinings.length,
+    pendingAssignmentCount: pendingAssignments,
+    overdueFollowUps: overdueFollowUps.slice(0, 5).map(compactDashboardAgendaItem),
+    scheduledFollowUpItems: scheduledFollowUpItems.map(compactDashboardAgendaItem),
+    scheduledInterviewItems: scheduledInterviewItems.map(compactDashboardAgendaItem)
+  }), [
+    agendaRange,
+    overdueFollowUps,
+    pendingNotes,
+    todaysInterviews,
+    upcomingJoinings,
+    pendingAssignments,
+    scheduledFollowUpItems,
+    scheduledInterviewItems
+  ]);
+
+  useEffect(() => {
+    if (!assessmentsLiveDataReady) return;
+    const snapshot = { ...liveDashboardAgendaSnapshot, updatedAt: Date.now() };
+    setDashboardAgendaSnapshot(snapshot);
+    writeDashboardAgendaSnapshot(snapshot);
+  }, [assessmentsLiveDataReady, liveDashboardAgendaSnapshot]);
+
+  const dashboardAgendaSnapshotForDisplay = !assessmentsLiveDataReady && dashboardAgendaSnapshot && String(dashboardAgendaSnapshot.agendaRange || "") === String(agendaRange)
+    ? dashboardAgendaSnapshot
+    : null;
+  const displayOverdueFollowUps = dashboardAgendaSnapshotForDisplay ? Number(dashboardAgendaSnapshotForDisplay.overdueFollowUpCount || 0) : overdueFollowUps.length;
+  const displayPendingNotes = dashboardAgendaSnapshotForDisplay ? Number(dashboardAgendaSnapshotForDisplay.pendingNotesCount || 0) : pendingNotes;
+  const displayScheduledInterviewCount = dashboardAgendaSnapshotForDisplay ? Number(dashboardAgendaSnapshotForDisplay.scheduledInterviewCount || 0) : todaysInterviews.length;
+  const displayUpcomingJoiningCount = dashboardAgendaSnapshotForDisplay ? Number(dashboardAgendaSnapshotForDisplay.upcomingJoiningCount || 0) : upcomingJoinings.length;
+  const displayPendingAssignments = dashboardAgendaSnapshotForDisplay ? Number(dashboardAgendaSnapshotForDisplay.pendingAssignmentCount || 0) : pendingAssignments;
+  const displayOverdueFollowUpItems = dashboardAgendaSnapshotForDisplay ? (dashboardAgendaSnapshotForDisplay.overdueFollowUps || []) : overdueFollowUps.slice(0, 5);
+  const displayScheduledFollowUpItems = dashboardAgendaSnapshotForDisplay ? (dashboardAgendaSnapshotForDisplay.scheduledFollowUpItems || []) : scheduledFollowUpItems;
+  const displayScheduledInterviewItems = dashboardAgendaSnapshotForDisplay ? (dashboardAgendaSnapshotForDisplay.scheduledInterviewItems || []) : scheduledInterviewItems;
 
   return (
     <div className={`app-shell${sidebarCollapsed ? " app-shell--sidebar-collapsed" : ""}`}>
@@ -21852,7 +21938,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
               <Section kicker="Today" title="Today's Agenda">
                 <div className="agenda-header">
                   <p className="muted">
-                    {`${agendaRange === "today" ? "Today" : agendaRange === "tomorrow" ? "Tomorrow" : "Next 7 days"}: ${overdueFollowUps.length} overdue | ${todaysFollowUps.length} follow-up(s) | ${todaysInterviews.length} interview(s) | ${upcomingJoinings.length} joining(s)`}
+                    {`${agendaRange === "today" ? "Today" : agendaRange === "tomorrow" ? "Tomorrow" : "Next 7 days"}: ${displayOverdueFollowUps} overdue | ${todaysFollowUps.length} follow-up(s) | ${displayScheduledInterviewCount} interview(s) | ${displayUpcomingJoiningCount} joining(s)`}
                   </p>
                   <select value={agendaRange} onChange={(e) => setAgendaRange(e.target.value)}>
                     <option value="today">Today</option>
@@ -21863,94 +21949,99 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                 <div className="agenda-summary-grid">
                   <div className="metric-card compact-metric">
                     <div className="metric-label">Overdue follow-ups</div>
-                    <div className="metric-value">{overdueFollowUps.length}</div>
+                    <div className="metric-value">{displayOverdueFollowUps}</div>
                   </div>
                   <div className="metric-card compact-metric">
                     <div className="metric-label">Pending notes</div>
-                    <div className="metric-value">{pendingNotes}</div>
+                    <div className="metric-value">{displayPendingNotes}</div>
                   </div>
                   <div className="metric-card compact-metric">
                     <div className="metric-label">Scheduled interviews</div>
-                    <div className="metric-value">{todaysInterviews.length}</div>
+                    <div className="metric-value">{displayScheduledInterviewCount}</div>
                   </div>
                   <div className="metric-card compact-metric">
                     <div className="metric-label">Upcoming joinings</div>
-                    <div className="metric-value">{upcomingJoinings.length}</div>
+                    <div className="metric-value">{displayUpcomingJoiningCount}</div>
                   </div>
                   <div className="metric-card compact-metric">
                     <div className="metric-label">Pending applicants</div>
-                    <div className="metric-value">{pendingAssignments}</div>
+                    <div className="metric-value">{displayPendingAssignments}</div>
                   </div>
                 </div>
                 <div className="stack-list compact">
-                  {!!overdueFollowUps.length && (
+                  {!!displayOverdueFollowUpItems.length && (
                     <div className="agenda-block agenda-block--overdue">
                       <h3>Overdue follow-ups</h3>
                       <div className="stack-list compact">
-                        {overdueFollowUps.slice(0, 5).map((item) => (
-                          <article key={`overdue-${item.id}`} className="agenda-item">
+                        {displayOverdueFollowUpItems.map((item) => (
+                          <article key={`overdue-${item.key || item.id || item.candidateId || item.assessmentId}`} className="agenda-item">
                             <div>
-                              <span className="agenda-item__title">{item.name || "Candidate"}</span>
-                              <span className="agenda-item__subtitle">{item.jd_title || item.role || "Untitled role"}</span>
-                              <span className="agenda-item__time">{`Call follow-up | ${new Date(item.next_follow_up_at).toLocaleString()}`}</span>
+                              <span className="agenda-item__title">{item.title || item.name || "Candidate"}</span>
+                              <span className="agenda-item__subtitle">{item.subtitle || item.jdTitle || item.jd_title || "Untitled role"}</span>
+                              <span className="agenda-item__time">{item.when ? `Call follow-up | ${new Date(item.when).toLocaleString()}` : "Call follow-up"}</span>
                             </div>
                             <div className="button-row tight">
-                              <button onClick={() => void openAttempts(item.id)}>Update</button>
-                              <button className="ghost-btn" onClick={() => void completeAgendaFollowUp(item)}>Done</button>
+                              <button onClick={() => void openAttempts(String(item.candidateId || item.id || item.assessmentId || ""))}>Update</button>
+                              <button
+                                className="ghost-btn"
+                                onClick={() => void completeAgendaFollowUp(item.raw || { ...item, id: item.candidateId || item.id || item.assessmentId || "" })}
+                              >
+                                Done
+                              </button>
                             </div>
                           </article>
                         ))}
                       </div>
                     </div>
                   )}
-                  {!!(scheduledFollowUpItems.length || scheduledInterviewItems.length) && (
+                  {!!(displayScheduledFollowUpItems.length || displayScheduledInterviewItems.length) && (
                     <div className="agenda-block">
                       <h3>Scheduled follow-ups and interviews</h3>
                       <div className="agenda-split-grid">
                         <div className="agenda-subblock">
                           <h4>Follow-ups</h4>
                           <div className="stack-list compact">
-                        {scheduledFollowUpItems.map((item) => (
+                        {displayScheduledFollowUpItems.map((item) => (
                           <article key={item.key} className="agenda-item">
                             <div>
                               <span className="agenda-item__type">{item.type}</span>
                               <span className="agenda-item__title">{item.title}</span>
                               <span className="agenda-item__subtitle">{item.subtitle}</span>
-                              <span className="agenda-item__time">{new Date(item.when).toLocaleString()}</span>
+                              <span className="agenda-item__time">{item.when ? new Date(item.when).toLocaleString() : "-"}</span>
                             </div>
                             <div className="button-row tight">
-                              <button onClick={item.action}>Update</button>
-                              <button className="ghost-btn" onClick={() => void completeAgendaFollowUp(item.raw)}>Done</button>
+                              <button onClick={() => void openAttempts(String(item.candidateId || item.raw?.id || item.id || ""))}>Update</button>
+                              <button className="ghost-btn" onClick={() => void completeAgendaFollowUp(item.raw || item)}>Done</button>
                             </div>
                           </article>
                         ))}
-                        {!scheduledFollowUpItems.length ? <div className="empty-state compact-empty">No follow-ups in this range.</div> : null}
+                        {!displayScheduledFollowUpItems.length ? <div className="empty-state compact-empty">No follow-ups in this range.</div> : null}
                           </div>
                         </div>
                         <div className="agenda-subblock">
                           <h4>Interviews</h4>
                           <div className="stack-list compact">
-                        {scheduledInterviewItems.map((item) => (
+                        {displayScheduledInterviewItems.map((item) => (
                           <article key={item.key} className="agenda-item">
                             <div>
                               <span className="agenda-item__type">{item.type}</span>
                               <span className="agenda-item__title">{item.title}</span>
                               <span className="agenda-item__subtitle">{item.subtitle}</span>
-                              <span className="agenda-item__time">{new Date(item.when).toLocaleString()}</span>
+                              <span className="agenda-item__time">{item.when ? new Date(item.when).toLocaleString() : "-"}</span>
                             </div>
                             <div className="button-row tight">
-                              <button onClick={item.action}>Update</button>
+                              <button onClick={() => void setAssessmentStatusId(String(item.assessmentId || item.raw?.id || item.id || ""))}>Update</button>
                               <button
                                 className="ghost-btn"
-                                disabled={Boolean(agendaBusyIds[String(item.raw?.id || "")])}
-                                onClick={() => void completeAgendaInterview(item.raw)}
+                                disabled={Boolean(agendaBusyIds[String(item.raw?.id || item.assessmentId || item.id || "")])}
+                                onClick={() => void completeAgendaInterview(item.raw || { ...item, id: item.assessmentId || item.id || "" })}
                               >
-                                {agendaBusyIds[String(item.raw?.id || "")] ? "Saving..." : "Done"}
+                                {agendaBusyIds[String(item.raw?.id || item.assessmentId || item.id || "")] ? "Saving..." : "Done"}
                               </button>
                             </div>
                           </article>
                         ))}
-                        {!scheduledInterviewItems.length ? <div className="empty-state compact-empty">No interviews in this range.</div> : null}
+                        {!displayScheduledInterviewItems.length ? <div className="empty-state compact-empty">No interviews in this range.</div> : null}
                           </div>
                         </div>
                       </div>
