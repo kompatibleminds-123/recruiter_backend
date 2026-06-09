@@ -3249,14 +3249,22 @@ function signatureHtmlForMail(signatureHtml = "", signatureText = "") {
 }
 
 function mergeLoadedMailSettings(current = {}, result = {}) {
+  const currentSignatureHtml = String(current?.signatureHtml || "").trim();
+  const currentSignatureText = String(current?.signatureText || "").trim();
   const loadedSignature = normalizeLoadedSignatureValue(result?.signatureHtml || "", result?.signatureText || "");
+  const loadedSignatureHasContent = Boolean(String(loadedSignature.signatureHtml || "").trim() || String(loadedSignature.signatureText || "").trim());
   return {
     host: String(result?.host || current?.host || "").trim(),
     port: Number(result?.port || current?.port || 587),
     secure: Boolean(result?.secure ?? current?.secure),
     user: String(result?.user || current?.user || "").trim(),
     from: String(result?.from || current?.from || "").trim(),
-    ...loadedSignature,
+    ...(loadedSignatureHasContent
+      ? loadedSignature
+      : {
+          signatureHtml: currentSignatureHtml,
+          signatureText: currentSignatureText
+        }),
     signatureLinkLabel: String(result?.signatureLinkLabel || current?.signatureLinkLabel || "").trim(),
     signatureLinkUrl: String(result?.signatureLinkUrl || current?.signatureLinkUrl || "").trim(),
     signatureLinkLabel2: String(result?.signatureLinkLabel2 || current?.signatureLinkLabel2 || "").trim(),
@@ -8867,12 +8875,37 @@ function PortalApp({ token, onLogout }) {
   }, [state.user?.companyId, state.user?.id]);
 
   useEffect(() => {
-    // Signature state now comes directly from the server payload.
-    // We intentionally do not hydrate from local cache to avoid stale/blank overrides.
-  }, []);
+    if (typeof window === "undefined") return;
+    if (!smtpSettingsSignatureCacheKey) return;
+    try {
+      const raw = window.localStorage.getItem(smtpSettingsSignatureCacheKey);
+      if (!raw) return;
+      const parsed = JSON.parse(raw);
+      const normalized = normalizeMailSignatureSnapshot(parsed && typeof parsed === "object" ? parsed : {});
+      if (isMailSignatureSnapshotEmpty(normalized)) return;
+      setSmtpSettings((current) => {
+        const currentSnapshot = normalizeMailSignatureSnapshot(current);
+        if (!isMailSignatureSnapshotEmpty(currentSnapshot)) return current;
+        return {
+          ...current,
+          ...normalized
+        };
+      });
+    } catch {
+      // Cache is best-effort only.
+    }
+  }, [smtpSettingsSignatureCacheKey]);
 
   const persistMailSignatureSnapshot = (snapshot = {}) => {
-    void snapshot;
+    if (typeof window === "undefined") return;
+    if (!smtpSettingsSignatureCacheKey) return;
+    const normalized = normalizeMailSignatureSnapshot(snapshot);
+    if (isMailSignatureSnapshotEmpty(normalized)) return;
+    try {
+      window.localStorage.setItem(smtpSettingsSignatureCacheKey, JSON.stringify(normalized));
+    } catch {
+      // Cache is best-effort only.
+    }
   };
 
   const [jdEmailModal, setJdEmailModal] = useState({
