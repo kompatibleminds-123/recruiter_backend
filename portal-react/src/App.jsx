@@ -3206,6 +3206,11 @@ function htmlToPlainTextFallback(html) {
     .replace(/<br\s*\/?>/gi, "\n")
     .replace(/<\/p>\s*<p[^>]*>/gi, "\n")
     .replace(/<\/div>\s*<div[^>]*>/gi, "\n")
+    .replace(/<li[^>]*>/gi, "\n- ")
+    .replace(/<\/li>/gi, "")
+    .replace(/<\/(ul|ol)>/gi, "\n")
+    .replace(/<(ul|ol)[^>]*>/gi, "\n")
+    .replace(/<\/h[1-6]>\s*<h[1-6][^>]*>/gi, "\n")
     .replace(/<[^>]*>/g, " ")
     .replace(/\n{3,}/g, "\n\n")
     .replace(/[ \t]{2,}/g, " ")
@@ -12012,11 +12017,11 @@ function PortalApp({ token, onLogout }) {
     });
     return {
       clients: Array.from(clients).sort((a, b) => a.localeCompare(b)),
-      jds: getClientScopedActiveJobTitles(assessmentFilters.clients),
+      jds: activeJobTitlesForFilters.map((job) => job.title).sort((a, b) => a.localeCompare(b)),
       recruiters: Array.from(recruiters).sort((a, b) => a.localeCompare(b)),
       outcomes: DEFAULT_STATUS_OPTIONS
     };
-  }, [assessmentOptionPool, state.assessments, state.candidates, state.user, state.users, resolveCanonicalJdTitle, getClientScopedActiveJobTitles, assessmentFilters.clients]);
+  }, [assessmentOptionPool, state.assessments, state.candidates, state.user, state.users, resolveCanonicalJdTitle, activeJobTitlesForFilters]);
 
   const filteredAssessments = useMemo(() => {
     return Array.isArray(assessmentListItems) ? assessmentListItems : [];
@@ -13186,6 +13191,7 @@ function PortalApp({ token, onLogout }) {
           currentCtc: assessment?.currentCtc || assessment?.current_ctc || candidate?.current_ctc || candidate?.currentCtc || "",
           expectedCtc: assessment?.expectedCtc || assessment?.expected_ctc || candidate?.expected_ctc || candidate?.expectedCtc || "",
           notice: assessment?.noticePeriod || assessment?.notice_period || candidate?.notice_period || candidate?.noticePeriod || "",
+          offerAmount: assessment?.offerAmount || assessment?.offerInHand || assessment?.offer_amount || assessment?.offer_in_hand || candidate?.offer_in_hand || candidate?.offerInHand || "",
           status: normalizeAssessmentStatusLabel(assessment?.candidateStatus || assessment?.status || ""),
           round: "Converted to assessment",
           date: convertedAt
@@ -16914,12 +16920,13 @@ function PortalApp({ token, onLogout }) {
     const location = String(jobDraft.location || "").trim();
     const workMode = String(jobDraft.workMode || "").trim();
     const skills = String(jobDraft.mustHaveSkills || "").trim();
-    const jdText = String(jobDraft.jobDescription || "").trim();
+    const jdText = htmlToPlainTextFallback(jobDraft.jobDescription || "");
     const highlights = jdText
       .split(/\r?\n/)
       .map((line) => String(line || "").trim())
       .filter(Boolean)
-      .filter((line) => line.length >= 25)
+      .map((line) => line.replace(/^\-\s*/, "- "))
+      .filter((line) => line.length >= 18)
       .slice(0, 3);
     if (channel === "linkedin") {
       return [
@@ -22799,9 +22806,9 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                                           <td>{row.offerAmount || row.offerInHand || "-"}</td>
                                         ) : (
                                           <>
-                                            <td>{row.currentCtc || "-"}</td>
-                                            <td>{row.expectedCtc || "-"}</td>
-                                            <td>{row.notice || "-"}</td>
+                                            <td>{row.currentCtc || row.current_ctc || "-"}</td>
+                                            <td>{row.expectedCtc || row.expected_ctc || "-"}</td>
+                                            <td>{row.notice || row.notice_period || "-"}</td>
                                           </>
                                         )}
                                         <td>
@@ -23739,8 +23746,8 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                   label="JD / Role"
                   options={assessmentOptions.jds}
                   selected={assessmentFilters.jds}
-                  allowAll={assessmentFilters.clients.length > 0}
-                  emptySummary={assessmentFilters.clients.length ? "No active jobs" : "Choose client first"}
+                  allowAll
+                  emptySummary="All active jobs"
                   onToggle={(value) => setAssessmentFilters((current) => ({ ...current, jds: value === "__all__" ? [] : current.jds.includes(value) ? current.jds.filter((item) => item !== value) : [...current.jds, value] }))}
                 />
                 <MultiSelectDropdown label="Assigned to" options={assessmentOptions.recruiters} selected={assessmentFilters.recruiters} onToggle={(value) => setAssessmentFilters((current) => ({ ...current, recruiters: value === "__all__" ? [] : current.recruiters.includes(value) ? current.recruiters.filter((item) => item !== value) : [...current.recruiters, value] }))} />
