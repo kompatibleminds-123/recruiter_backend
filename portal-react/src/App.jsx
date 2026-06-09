@@ -10959,22 +10959,24 @@ function PortalApp({ token, onLogout }) {
       const assessment = payload?.assessment && typeof payload.assessment === "object" ? payload.assessment : null;
       if (!shouldAcceptAssessmentStreamEvent(assessment || {}, recruiterId)) return;
       if (eventType === "assessment_deleted" && assessmentId) {
-        setState((current) => ({
-          ...current,
-          assessments: (current.assessments || []).filter((item) => String(item?.id || "") !== assessmentId)
-        }));
-        patchVisibleAssessmentRow({ id: assessmentId }, "delete");
+        applyAssessmentChange({
+          type: "DELETE_ROW",
+          scope: "all",
+          assessmentId,
+          source: "SSE",
+          refreshStats: true
+        });
         return;
       }
       if (assessment && assessmentId) {
         const linkedCandidate = (state.candidates || []).find((item) => String(item?.id || "") === String(assessment?.candidateId || assessment?.candidate_id || candidateId || "").trim()) || null;
         const hydratedAssessment = hydrateAssessmentCvRefs(assessment, linkedCandidate);
-        const shouldShowInCurrentLane = Boolean(isAssessmentArchived(hydratedAssessment)) === (assessmentLane === "archived");
-        setState((current) => ({
-          ...current,
-          assessments: mergeAssessmentsByFreshness(current.assessments, [hydratedAssessment])
-        }));
-        patchVisibleAssessmentRow(hydratedAssessment, shouldShowInCurrentLane ? "upsert" : "delete");
+        applyAssessmentChange({
+          type: "SSE_ROW_UPDATED",
+          scope: "all",
+          assessment: hydratedAssessment,
+          source: "SSE"
+        });
       }
       if (eventType === "assessment_deleted" || eventType === "assessment_restored") {
         void reloadAssessmentStats(assessmentFiltersApplied).catch(() => {});
@@ -11011,23 +11013,25 @@ function PortalApp({ token, onLogout }) {
       const assessment = payload?.assessment && typeof payload.assessment === "object" ? payload.assessment : null;
       if (!shouldAcceptAssessmentStreamEvent(assessment || {}, recruiterId)) return;
       if (eventType === "assessment_deleted" && assessmentId) {
-        setState((current) => ({
-          ...current,
-          assessments: (current.assessments || []).filter((item) => String(item?.id || "") !== assessmentId)
-        }));
-        patchVisibleAssessmentRow({ id: assessmentId }, "delete");
+        applyAssessmentChange({
+          type: "DELETE_ROW",
+          scope: "all",
+          assessmentId,
+          source: "SSE",
+          refreshStats: true
+        });
         void reloadAssessmentStats(assessmentFiltersApplied).catch(() => {});
         return;
       }
       if (assessment && assessmentId) {
         const linkedCandidate = (state.candidates || []).find((item) => String(item?.id || "") === String(assessment?.candidateId || assessment?.candidate_id || candidateId || "").trim()) || null;
         const hydratedAssessment = hydrateAssessmentCvRefs(assessment, linkedCandidate);
-        const shouldShowInCurrentLane = Boolean(isAssessmentArchived(hydratedAssessment)) === (assessmentLane === "archived");
-        setState((current) => ({
-          ...current,
-          assessments: mergeAssessmentsByFreshness(current.assessments, [hydratedAssessment])
-        }));
-        patchVisibleAssessmentRow(hydratedAssessment, shouldShowInCurrentLane ? "upsert" : "delete");
+        applyAssessmentChange({
+          type: "SSE_ROW_UPDATED",
+          scope: "all",
+          assessment: hydratedAssessment,
+          source: "SSE"
+        });
         return;
       }
       if (eventType === "assessment_restored" && assessmentId) {
@@ -15829,7 +15833,12 @@ function PortalApp({ token, onLogout }) {
         try {
           const fresh = await api(`/company/assessments/by-id?assessmentId=${encodeURIComponent(requestedId)}`, token);
           if (fresh && typeof fresh === "object" && String(fresh.id || "").trim() === requestedId) {
-            upsertAssessmentInState(fresh);
+            applyAssessmentChange({
+              type: "UPSERT_ROW",
+              scope: "all",
+              assessment: fresh,
+              source: "API_RELOAD"
+            });
           }
         } catch {
           // Keep the instantly opened form; latest snapshot can be reloaded on save if needed.
@@ -16081,58 +16090,29 @@ function PortalApp({ token, onLogout }) {
       // Avoid blocking the UI on a full workspace reload (which can be slow with large datasets).
       // Optimistically update local state, then refresh in the background.
       setState((current) => {
-        const nextAssessments = Array.isArray(current.assessments) ? [...current.assessments] : [];
-        const savedId = savedAssessmentId;
-        if (savedId) {
-          const existingIx = nextAssessments.findIndex((a) => String(a?.id || "").trim() === savedId);
-          if (existingIx >= 0) nextAssessments.splice(existingIx, 1);
-          nextAssessments.unshift(savedAssessment);
-        }
         const nextCandidates = Array.isArray(current.candidates)
-          ? current.candidates.map((item) => {
+            ? current.candidates.map((item) => {
               if (String(item?.id || "") !== String(candidate?.id || "")) return item;
               return {
                 ...item,
-                assessment_id: savedId || item.assessment_id,
+                assessment_id: savedAssessmentId || item.assessment_id,
                 used_in_assessment: true
               };
           })
           : current.candidates;
-        return { ...current, assessments: nextAssessments, candidates: nextCandidates };
+        return { ...current, candidates: nextCandidates };
+      });
+      applyAssessmentChange({
+        type: "UPSERT_ROW",
+        scope: "all",
+        assessment: savedAssessment,
+        source: "MUTATION_SUCCESS",
+        listMetaDelta: assessmentLandsInCurrentLane && savedAssessmentId ? 1 : 0,
+        statsDelta: assessmentLandsInCurrentLane && savedAssessmentId
+          ? { today: 1, total: 1, active: 1 }
+          : null
       });
       if (assessmentLandsInCurrentLane && savedAssessmentId) {
-        setAssessmentListItems((current) => {
-          const next = Array.isArray(current) ? current.filter((item) => String(item?.id || "").trim() !== savedAssessmentId) : [];
-          next.unshift(savedAssessment);
-          return next;
-        });
-        setAssessmentOptionPool((current) => {
-          const next = Array.isArray(current) ? current.filter((item) => String(item?.id || "").trim() !== savedAssessmentId) : [];
-          next.unshift(savedAssessment);
-          return next;
-        });
-        setAssessmentListMeta((current) => {
-          const meta = current && typeof current === "object" ? current : {};
-          const nextTotal = Math.max(0, Number(meta.total || 0) + 1);
-          const limit = Math.max(1, Number(meta.limit || safeAssessmentApiPageSize || 25));
-          const nextTotalPages = Math.max(1, Math.ceil(nextTotal / limit));
-          return {
-            ...meta,
-            total: nextTotal,
-            totalPages: nextTotalPages,
-            page: 1,
-            limit
-          };
-        });
-        setAssessmentStatsSnapshot((current) => {
-          if (!current || typeof current !== "object") return current;
-          return {
-            ...current,
-            today: Math.max(0, Number(current.today || 0) + 1),
-            total: Math.max(0, Number(current.total || 0) + 1),
-            active: Math.max(0, Number(current.active || 0) + 1)
-          };
-        });
         setAssessmentPage(1);
       }
       if (capturedCandidateId) {
@@ -16278,9 +16258,12 @@ function PortalApp({ token, onLogout }) {
     try {
       const savedAssessment = await api("/company/assessments", token, "POST", { assessment });
       const hydratedAssessment = hydrateAssessmentCvRefs(savedAssessment || assessment, interviewCandidate);
-      upsertAssessmentInState(hydratedAssessment);
-      patchVisibleAssessmentRow(hydratedAssessment, "upsert");
-      setAssessmentOptionPool((current) => mergeAssessmentsByFreshness(current, [hydratedAssessment]));
+      applyAssessmentChange({
+        type: "UPSERT_ROW",
+        scope: "all",
+        assessment: hydratedAssessment,
+        source: "MUTATION_SUCCESS"
+      });
       if (savedAssessment?.id) {
         setInterviewMeta((current) => ({
           ...current,
@@ -19197,15 +19180,12 @@ function PortalApp({ token, onLogout }) {
       };
     };
     // Optimistic UI: reflect checkbox state immediately.
-    setState((stateCurrent) => ({
-      ...stateCurrent,
-      assessments: (stateCurrent.assessments || []).map((item) => (
-        String(item?.id || "").trim() === assessmentId
-          ? patchVisibleAssessmentShareState(item, nextShareBrandedCv)
-          : item
-      ))
-    }));
-    patchVisibleAssessmentRow(patchVisibleAssessmentShareState(current, nextShareBrandedCv), "upsert");
+    applyAssessmentChange({
+      type: "PATCH_ROW",
+      scope: "all",
+      assessment: patchVisibleAssessmentShareState(current, nextShareBrandedCv),
+      source: "LOCAL_PATCH"
+    });
     try {
       const next = {
         ...current,
@@ -19221,46 +19201,26 @@ function PortalApp({ token, onLogout }) {
       };
       const saved = await api("/company/assessments", token, "POST", { assessment: next });
       const savedId = String(saved?.id || assessmentId).trim();
-      setState((stateCurrent) => ({
-        ...stateCurrent,
-        assessments: (stateCurrent.assessments || []).map((item) => (
-          String(item?.id || "").trim() === savedId
-            ? patchVisibleAssessmentShareState(
-                {
-                  ...item,
-                  ...saved,
-                  shareBrandedCv: Boolean(saved?.shareBrandedCv ?? saved?.share_branded_cv ?? nextShareBrandedCv),
-                  share_branded_cv: Boolean(saved?.share_branded_cv ?? saved?.shareBrandedCv ?? nextShareBrandedCv),
-                  payload: {
-                    ...((item && item.payload && typeof item.payload === "object") ? item.payload : {}),
-                    ...((saved && saved.payload && typeof saved.payload === "object") ? saved.payload : {}),
-                    shareBrandedCv: Boolean(saved?.payload?.shareBrandedCv ?? saved?.shareBrandedCv ?? saved?.share_branded_cv ?? nextShareBrandedCv),
-                    share_branded_cv: Boolean(saved?.payload?.share_branded_cv ?? saved?.share_branded_cv ?? saved?.shareBrandedCv ?? nextShareBrandedCv)
-                  }
-                },
-                Boolean(saved?.payload?.shareBrandedCv ?? saved?.shareBrandedCv ?? saved?.share_branded_cv ?? nextShareBrandedCv)
-              )
-            : item
-        ))
-      }));
-      patchVisibleAssessmentRow(saved || {
-        ...current,
-        ...next,
-        shareBrandedCv: Boolean(saved?.shareBrandedCv ?? saved?.share_branded_cv ?? nextShareBrandedCv),
-        share_branded_cv: Boolean(saved?.share_branded_cv ?? saved?.shareBrandedCv ?? nextShareBrandedCv)
-      }, "upsert");
+      applyAssessmentChange({
+        type: "PATCH_ROW",
+        scope: "all",
+        assessment: saved || {
+          ...current,
+          ...next,
+          shareBrandedCv: Boolean(saved?.shareBrandedCv ?? saved?.share_branded_cv ?? nextShareBrandedCv),
+          share_branded_cv: Boolean(saved?.share_branded_cv ?? saved?.shareBrandedCv ?? nextShareBrandedCv)
+        },
+        source: "MUTATION_SUCCESS"
+      });
       setStatus("assessments", enabled ? "Share Branded CV enabled for this profile." : "Share Branded CV disabled for this profile.", "ok");
     } catch (error) {
       // Revert optimistic toggle on failure.
-      setState((stateCurrent) => ({
-        ...stateCurrent,
-        assessments: (stateCurrent.assessments || []).map((item) => (
-          String(item?.id || "").trim() === assessmentId
-            ? patchVisibleAssessmentShareState(item, !nextShareBrandedCv)
-            : item
-        ))
-      }));
-      patchVisibleAssessmentRow(patchVisibleAssessmentShareState(current, !nextShareBrandedCv), "upsert");
+      applyAssessmentChange({
+        type: "PATCH_ROW",
+        scope: "all",
+        assessment: patchVisibleAssessmentShareState(current, !nextShareBrandedCv),
+        source: "LOCAL_PATCH"
+      });
       setStatus("assessments", String(error?.message || error || "Could not update branded CV preference."), "error");
     }
   }
@@ -20562,7 +20522,12 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
     }
 
     // Optimistic UI first: reflect status immediately everywhere.
-    upsertAssessmentInState(nextAssessment);
+    applyAssessmentChange({
+      type: "STATUS_UPDATE",
+      scope: "all",
+      assessment: nextAssessment,
+      source: "LOCAL_PATCH"
+    });
     if (candidatePatch && linkedCandidateId) {
       const optimisticUpdatedAt = new Date().toISOString();
       setState((current) => {
@@ -20591,6 +20556,12 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
             generatedAt: assessment?.generatedAt || new Date().toISOString()
           }
         });
+        applyAssessmentChange({
+          type: "STATUS_UPDATE",
+          scope: "all",
+          assessment: nextAssessment,
+          source: "MUTATION_SUCCESS"
+        });
         if (linkedCandidateId && candidatePatch) {
           await api(`/company/candidates/${encodeURIComponent(linkedCandidateId)}`, token, "PATCH", {
             patch: {
@@ -20618,39 +20589,154 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
   async function deleteAssessmentItem(assessment) {
     if (!window.confirm(`Delete assessment for ${assessment?.candidateName || "candidate"}?`)) return;
     await api("/company/assessments", token, "DELETE", { assessmentId: assessment?.id });
-    setState((current) => ({
-      ...current,
-      assessments: Array.isArray(current.assessments)
-        ? current.assessments.filter((item) => String(item?.id || "") !== String(assessment?.id || ""))
-        : current.assessments
-    }));
+    applyAssessmentChange({
+      type: "DELETE_ROW",
+      scope: "all",
+      assessmentId: assessment?.id,
+      source: "MUTATION_SUCCESS",
+      refreshStats: true
+    });
     void refreshWorkspaceSilently("post-delete");
     setStatus("assessments", "Assessment deleted.", "ok");
   }
 
   function upsertAssessmentInState(saved) {
-    setState((current) => {
-      const nextAssessments = Array.isArray(current.assessments) ? [...current.assessments] : [];
-      const savedId = String(saved?.id || "").trim();
-      if (savedId) {
-        const existingIx = nextAssessments.findIndex((a) => String(a?.id || "").trim() === savedId);
-        const existingItem = existingIx >= 0 ? nextAssessments[existingIx] : null;
-        const linkedCandidate = resolveAssessmentLinkedCandidate(saved) || resolveAssessmentLinkedCandidate(existingItem) || null;
-        const hydratedSaved = hydrateAssessmentCvRefs(
-          existingItem && typeof existingItem === "object"
-            ? { ...existingItem, ...(saved && typeof saved === "object" ? saved : {}) }
-            : saved,
-          linkedCandidate
-        );
-        if (existingIx >= 0) {
-          // Keep card position stable on updates; avoid jumping list to top.
-          nextAssessments.splice(existingIx, 1, hydratedSaved);
-        } else {
-          nextAssessments.unshift(hydratedSaved);
-        }
-      }
-      return { ...current, assessments: nextAssessments };
+    applyAssessmentChange({
+      type: "UPSERT_ROW",
+      scope: "backing",
+      assessment: saved,
+      source: "MUTATION_SUCCESS"
     });
+  }
+
+  function applyAssessmentChange(change = {}) {
+    const type = String(change?.type || change?.action || "").trim().toUpperCase();
+    const scope = String(change?.scope || "visible").trim().toLowerCase() || "visible";
+    const assessment = change?.assessment && typeof change.assessment === "object" ? change.assessment : null;
+    const assessmentId = String(change?.assessmentId || assessment?.id || "").trim();
+    if (!assessmentId && type !== "RELOAD_SLICE") return;
+
+    if (typeof console !== "undefined" && typeof console.debug === "function") {
+      console.debug("[assessment-change]", {
+        source: String(change?.source || "LOCAL_PATCH").trim() || "LOCAL_PATCH",
+        type,
+        scope,
+        assessmentId
+      });
+    }
+
+    const linkedCandidate = assessment
+      ? resolveAssessmentLinkedCandidate(assessment)
+      : (change?.linkedCandidate && typeof change.linkedCandidate === "object" ? change.linkedCandidate : null);
+    const hydratedAssessment = assessment ? hydrateAssessmentCvRefs(assessment, linkedCandidate) : null;
+    const deleteMode = type === "DELETE_ROW" || String(change?.mode || change?.visibleMode || "").trim().toLowerCase() === "delete";
+    const shouldRefreshStats = Boolean(change?.refreshStats);
+    const listMetaDelta = Number(change?.listMetaDelta || 0);
+    const statsDelta = change?.statsDelta && typeof change.statsDelta === "object" ? change.statsDelta : null;
+
+    const upsertIntoList = (items = []) => {
+      const currentItems = Array.isArray(items) ? items : [];
+      if (!hydratedAssessment || !assessmentId) return currentItems;
+      const existingIx = currentItems.findIndex((item) => String(item?.id || "").trim() === assessmentId);
+      const existingItem = existingIx >= 0 ? currentItems[existingIx] : null;
+      const nextRow = hydrateAssessmentCvRefs(
+        existingItem && typeof existingItem === "object"
+          ? { ...existingItem, ...hydratedAssessment }
+          : hydratedAssessment,
+        linkedCandidate || resolveAssessmentLinkedCandidate(existingItem) || null
+      );
+      const nextItems = [...currentItems];
+      if (existingIx < 0) {
+        nextItems.unshift(nextRow);
+        return nextItems;
+      }
+      nextItems.splice(existingIx, 1, { ...nextItems[existingIx], ...nextRow });
+      return nextItems;
+    };
+
+    const removeFromList = (items = []) => (Array.isArray(items) ? items.filter((item) => String(item?.id || "").trim() !== assessmentId) : items);
+
+    if (scope === "backing" || scope === "all") {
+      if (type === "RELOAD_SLICE") {
+        const nextAssessments = Array.isArray(change?.items) ? change.items : [];
+        setState((current) => ({ ...current, assessments: mergeAssessmentsByFreshness(current.assessments, nextAssessments) }));
+      } else if (deleteMode) {
+        setState((current) => ({
+          ...current,
+          assessments: removeFromList(current.assessments)
+        }));
+      } else if (hydratedAssessment) {
+        setState((current) => ({
+          ...current,
+          assessments: mergeAssessmentsByFreshness(current.assessments, [hydratedAssessment])
+        }));
+      }
+    }
+
+    if (scope === "visible" || scope === "all") {
+      if (type === "RELOAD_SLICE") {
+        const nextItems = Array.isArray(change?.items) ? change.items : [];
+        setAssessmentListItems(nextItems);
+        if (nextItems.length) {
+          setAssessmentOptionPool((current) => mergeAssessmentsByFreshness(current, nextItems));
+        }
+        if (change?.meta && typeof change.meta === "object") {
+          setAssessmentListMeta((current) => ({
+            ...(current && typeof current === "object" ? current : {}),
+            ...change.meta
+          }));
+        }
+      } else if (deleteMode) {
+        setAssessmentListItems((current) => removeFromList(current));
+        setAssessmentOptionPool((current) => removeFromList(current));
+      } else if (hydratedAssessment) {
+        setAssessmentListItems((current) => upsertIntoList(current));
+        setAssessmentOptionPool((current) => mergeAssessmentsByFreshness(current, [hydratedAssessment]));
+      }
+    }
+
+    if (listMetaDelta && scope !== "backing") {
+      setAssessmentListMeta((current) => {
+        const currentMeta = current && typeof current === "object" ? current : {};
+        const previousTotal = Math.max(0, Number(currentMeta.total || 0));
+        const nextTotal = Math.max(0, previousTotal + listMetaDelta);
+        const limit = Math.max(1, Number(currentMeta.limit || safeAssessmentApiPageSize || 25));
+        const nextTotalPages = Math.max(1, Math.ceil(nextTotal / limit));
+        const nextPage = Math.min(Math.max(1, Number(currentMeta.page || assessmentPage || 1)), nextTotalPages);
+        return {
+          ...currentMeta,
+          total: nextTotal,
+          totalPages: nextTotalPages,
+          page: nextPage,
+          limit
+        };
+      });
+    }
+
+    if (statsDelta && scope !== "backing") {
+      setAssessmentStatsSnapshot((current) => {
+        if (!current || typeof current !== "object") return current;
+        const next = { ...current };
+        Object.entries(statsDelta).forEach(([key, delta]) => {
+          const numericDelta = Number(delta || 0);
+          if (!Number.isFinite(numericDelta) || !numericDelta) return;
+          next[key] = Math.max(0, Number(next[key] || 0) + numericDelta);
+        });
+        return next;
+      });
+    }
+
+    if (assessmentStatusId && assessmentId && String(assessmentStatusId || "").trim() === assessmentId) {
+      if (deleteMode) {
+        setAssessmentStatusItemSnapshot(null);
+      } else if (hydratedAssessment) {
+        setAssessmentStatusItemSnapshot(hydratedAssessment);
+      }
+    }
+
+    if (shouldRefreshStats && scope !== "backing") {
+      void reloadAssessmentStats(assessmentFiltersApplied).catch(() => {});
+    }
   }
 
   function hydrateAssessmentCvRefs(assessment = {}, linkedCandidate = null) {
@@ -20669,30 +20755,12 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
   }
 
   function patchVisibleAssessmentRow(saved, mode = "upsert") {
-    const savedId = String(saved?.id || "").trim();
-    if (!savedId) return;
-    if (mode === "delete") {
-      setAssessmentListItems((current) => (Array.isArray(current) ? current.filter((item) => String(item?.id || "").trim() !== savedId) : current));
-      return;
-    }
-    setAssessmentListItems((current) => {
-      if (!Array.isArray(current)) return current;
-      const existingIx = current.findIndex((item) => String(item?.id || "").trim() === savedId);
-      const existingItem = existingIx >= 0 ? current[existingIx] : null;
-      const linkedCandidate = resolveAssessmentLinkedCandidate(saved) || resolveAssessmentLinkedCandidate(existingItem) || null;
-      const hydratedSaved = hydrateAssessmentCvRefs(
-        existingItem && typeof existingItem === "object"
-          ? { ...existingItem, ...(saved && typeof saved === "object" ? saved : {}) }
-          : saved,
-        linkedCandidate
-      );
-      const next = [...current];
-      if (existingIx < 0) {
-        next.unshift(hydratedSaved);
-        return next;
-      }
-      next.splice(existingIx, 1, { ...next[existingIx], ...hydratedSaved });
-      return next;
+    applyAssessmentChange({
+      type: mode === "delete" ? "DELETE_ROW" : "PATCH_ROW",
+      scope: "visible",
+      assessment: saved,
+      visibleMode: mode,
+      source: "LOCAL_PATCH"
     });
   }
 
@@ -20992,37 +21060,27 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
       }
     };
     setStatus("assessments", archived ? "Archiving assessment..." : "Restoring assessment...");
-    upsertAssessmentInState(optimisticAssessment);
-    patchVisibleAssessmentRow(optimisticAssessment, laneMatchesNewState ? "upsert" : "delete");
-    setAssessmentListMeta((current) => {
-      const currentMeta = current && typeof current === "object" ? current : {};
-      const previousTotal = Math.max(0, Number(currentMeta.total || 0));
-      const nextTotal = Math.max(0, previousTotal + listDelta);
-      const limit = Math.max(1, Number(currentMeta.limit || safeAssessmentApiPageSize || 25));
-      const nextTotalPages = Math.max(1, Math.ceil(nextTotal / limit));
-      const nextPage = Math.min(Math.max(1, Number(currentMeta.page || assessmentPage || 1)), nextTotalPages);
-      return {
-        ...currentMeta,
-        total: nextTotal,
-        totalPages: nextTotalPages,
-        page: nextPage,
-        limit
-      };
-    });
-    setAssessmentStatsSnapshot((current) => {
-      if (!current || typeof current !== "object") return current;
-      const activeDelta = Boolean(archived) ? -1 : 1;
-      const archivedDelta = Boolean(archived) ? 1 : -1;
-      return {
-        ...current,
-        active: Math.max(0, Number(current.active || 0) + activeDelta),
-        archived: Math.max(0, Number(current.archived || 0) + archivedDelta)
-      };
+    applyAssessmentChange({
+      type: "ARCHIVE_ROW",
+      scope: "all",
+      assessment: optimisticAssessment,
+      visibleMode: laneMatchesNewState ? "upsert" : "delete",
+      listMetaDelta: listDelta,
+      statsDelta: {
+        active: Boolean(archived) ? -1 : 1,
+        archived: Boolean(archived) ? 1 : -1
+      },
+      source: "LOCAL_PATCH"
     });
     try {
       const saved = await api("/company/assessments", token, "POST", { assessment: next });
-      upsertAssessmentInState(saved);
-      patchVisibleAssessmentRow(saved, laneMatchesNewState ? "upsert" : "delete");
+      applyAssessmentChange({
+        type: "ARCHIVE_ROW",
+        scope: "all",
+        assessment: saved,
+        visibleMode: laneMatchesNewState ? "upsert" : "delete",
+        source: "MUTATION_SUCCESS"
+      });
       setStatus("assessments", archived ? "Assessment archived." : "Assessment restored.", "ok");
       void refreshWorkspaceSilently("manual");
       return saved;
@@ -21033,8 +21091,13 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
       if (!archived && /candidate not found or not allowed/i.test(message)) {
         try {
           const restored = await api("/company/assessments/restore", token, "POST", { assessmentId: safeAssessment.id });
-          upsertAssessmentInState(restored);
-          patchVisibleAssessmentRow(restored, Boolean(isAssessmentArchived(restored)) === (assessmentLane === "archived") ? "upsert" : "delete");
+          applyAssessmentChange({
+            type: "ARCHIVE_ROW",
+            scope: "all",
+            assessment: restored,
+            visibleMode: Boolean(isAssessmentArchived(restored)) === (assessmentLane === "archived") ? "upsert" : "delete",
+            source: "MUTATION_SUCCESS"
+          });
           setStatus("assessments", "Assessment restored.", "ok");
           void refreshWorkspaceSilently("post-restore");
           return restored;
@@ -21043,33 +21106,20 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
           return null;
         }
       }
-      upsertAssessmentInState(safeAssessment);
-      patchVisibleAssessmentRow(safeAssessment, wasArchived === (assessmentLane === "archived") ? "upsert" : "delete");
-      setAssessmentListMeta((current) => {
-        const currentMeta = current && typeof current === "object" ? current : {};
-        const previousTotal = Math.max(0, Number(currentMeta.total || 0));
-        const nextTotal = Math.max(0, previousTotal - listDelta);
-        const limit = Math.max(1, Number(currentMeta.limit || safeAssessmentApiPageSize || 25));
-        const nextTotalPages = Math.max(1, Math.ceil(nextTotal / limit));
-        const nextPage = Math.min(Math.max(1, Number(currentMeta.page || assessmentPage || 1)), nextTotalPages);
-        return {
-          ...currentMeta,
-          total: nextTotal,
-          totalPages: nextTotalPages,
-          page: nextPage,
-          limit
-        };
+      applyAssessmentChange({
+        type: "ARCHIVE_ROW",
+        scope: "all",
+        assessment: safeAssessment,
+        visibleMode: wasArchived === (assessmentLane === "archived") ? "upsert" : "delete",
+        listMetaDelta: -listDelta,
+        statsDelta: {
+          active: Boolean(archived) ? 1 : -1,
+          archived: Boolean(archived) ? -1 : 1
+        },
+        source: "LOCAL_PATCH"
       });
-      setAssessmentStatsSnapshot((current) => {
-        if (!current || typeof current !== "object") return current;
-        const activeDelta = Boolean(archived) ? 1 : -1;
-        const archivedDelta = Boolean(archived) ? -1 : 1;
-        return {
-          ...current,
-          active: Math.max(0, Number(current.active || 0) + activeDelta),
-          archived: Math.max(0, Number(current.archived || 0) + archivedDelta)
-        };
-      });
+      void reloadAssessmentSlice(assessmentPage, safeAssessmentApiPageSize, assessmentFiltersApplied, assessmentLane, assessmentSortBy).catch(() => {});
+      void reloadAssessmentStats(assessmentFiltersApplied).catch(() => {});
       setStatus("assessments", message, "error");
       return null;
     } finally {
@@ -21160,21 +21210,24 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
     const patchCandidateState = (items) => Array.isArray(items)
       ? items.map((item) => String(item?.id || "") === candidateId ? { ...item, ...restoredCandidatePreview } : item)
       : items;
-    const prevCapturedListItems = Array.isArray(capturedListItems) ? [...capturedListItems] : capturedListItems;
-    const prevCapturedOptionPool = Array.isArray(capturedOptionPool) ? [...capturedOptionPool] : capturedOptionPool;
-    const prevCapturedListMeta = capturedListMeta && typeof capturedListMeta === "object" ? { ...capturedListMeta } : capturedListMeta;
-    const prevCapturedStats = capturedStatsSnapshot && typeof capturedStatsSnapshot === "object" ? { ...capturedStatsSnapshot } : capturedStatsSnapshot;
-    const prevAssessmentListItems = Array.isArray(assessmentListItems) ? [...assessmentListItems] : assessmentListItems;
-    const prevAssessmentListMeta = assessmentListMeta && typeof assessmentListMeta === "object" ? { ...assessmentListMeta } : assessmentListMeta;
-    const prevAssessmentStats = assessmentStatsSnapshot && typeof assessmentStatsSnapshot === "object" ? { ...assessmentStatsSnapshot } : assessmentStatsSnapshot;
     const prevApplicantListItems = Array.isArray(state.applicantListItems) ? [...state.applicantListItems] : state.applicantListItems;
     const prevApplicantListMeta = applicantListMeta && typeof applicantListMeta === "object" ? { ...applicantListMeta } : applicantListMeta;
     const prevApplicantStats = applicantStatsSnapshot && typeof applicantStatsSnapshot === "object" ? { ...applicantStatsSnapshot } : applicantStatsSnapshot;
+    applyAssessmentChange({
+      type: "MOVE_BACK_TO_CAPTURED",
+      scope: "all",
+      assessmentId,
+      assessment: safeAssessment,
+      visibleMode: "delete",
+      listMetaDelta: -1,
+      statsDelta: {
+        active: -1,
+        total: -1
+      },
+      source: "LOCAL_PATCH"
+    });
     setState((current) => ({
       ...current,
-      assessments: Array.isArray(current.assessments)
-        ? current.assessments.filter((item) => String(item?.id || "") !== assessmentId)
-        : current.assessments,
       candidates: patchCandidateState(current.candidates),
       databaseCandidates: patchCandidateState(current.databaseCandidates),
       applicants: restoreToApplicants
@@ -21243,30 +21296,6 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
       setCapturedListItems((current) => removeCandidatesById(current, [candidateId]));
       setCapturedOptionPool((current) => removeCandidatesById(current, [candidateId]));
     }
-    setAssessmentListItems((current) => Array.isArray(current)
-      ? current.filter((item) => String(item?.id || "") !== assessmentId)
-      : current);
-    setAssessmentListMeta((current) => {
-      const meta = current && typeof current === "object" ? current : {};
-      const nextTotal = Math.max(0, Number(meta.total || 0) - 1);
-      const limit = Math.max(1, Number(meta.limit || safeAssessmentApiPageSize || 25));
-      const nextTotalPages = Math.max(1, Math.ceil(nextTotal / limit));
-      return {
-        ...meta,
-        total: nextTotal,
-        totalPages: nextTotalPages,
-        page: Math.min(Math.max(1, Number(meta.page || assessmentPage || 1)), nextTotalPages),
-        limit
-      };
-    });
-    setAssessmentStatsSnapshot((current) => {
-      if (!current || typeof current !== "object") return current;
-      return {
-        ...current,
-        active: Math.max(0, Number(current.active || 0) - 1),
-        total: Math.max(0, Number(current.total || 0) - 1)
-      };
-    });
     try {
       await api("/company/assessments", token, "DELETE", { assessmentId });
       // Clear the candidate link so it shows up in captured notes again.
@@ -21288,12 +21317,10 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
         setCapturedListMeta(prevCapturedListMeta);
         setCapturedStatsSnapshot(prevCapturedStats);
       }
-      setAssessmentListItems(prevAssessmentListItems);
-      setAssessmentListMeta(prevAssessmentListMeta);
-      setAssessmentStatsSnapshot(prevAssessmentStats);
+      void reloadAssessmentSlice(assessmentPage, safeAssessmentApiPageSize, assessmentFiltersApplied, assessmentLane, assessmentSortBy).catch(() => {});
+      void reloadAssessmentStats(assessmentFiltersApplied).catch(() => {});
       setState((current) => ({
         ...current,
-        assessments: prevAssessmentListItems,
         applicants: prevApplicantListItems,
         applicantListItems: prevApplicantListItems,
         candidates: patchCandidateState(current.candidates),
