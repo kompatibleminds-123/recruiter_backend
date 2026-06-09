@@ -16307,6 +16307,7 @@ function PortalApp({ token, onLogout }) {
           })
         });
         setStatus("interview", "Assessment saved and candidate details updated.", "ok");
+        void syncPostAssessmentMutation({ candidateId: interviewMeta.candidateId }).catch(() => {});
       } else {
         setStatus("interview", "Assessment saved.", "ok");
       }
@@ -16389,6 +16390,7 @@ function PortalApp({ token, onLogout }) {
 	              ? linkedAssessment.statusHistory
 	              : []
 	        } });
+	        void syncPostAssessmentMutation({ candidateId: interviewMeta.candidateId }).catch(() => {});
 	      }
 	      // Skip immediate workspace refresh to keep viewport stable after draft save.
 	      setStatus("interview", "Draft saved.", "ok");
@@ -20570,10 +20572,11 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
             }
           });
         }
+        void syncPostAssessmentMutation({ candidateId: linkedCandidateId }).catch(() => {});
         // Skip immediate workspace refresh to keep viewport stable after status update.
       } catch (error) {
         setStatus(statusTarget, `Status sync failed: ${String(error?.message || error)}`, "error");
-        void refreshWorkspaceSilently("post-status-sync-fail");
+        void syncPostAssessmentMutation({ candidateId: linkedCandidateId }).catch(() => {});
       }
     })();
     } finally {
@@ -20595,7 +20598,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
       source: "MUTATION_SUCCESS",
       refreshStats: true
     });
-    void refreshWorkspaceSilently("post-delete");
+    void syncPostAssessmentMutation({ candidateId: assessment?.candidateId }).catch(() => {});
     setStatus("assessments", "Assessment deleted.", "ok");
   }
 
@@ -20761,6 +20764,33 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
       visibleMode: mode,
       source: "LOCAL_PATCH"
     });
+  }
+
+  async function refreshCandidateRowById(candidateId) {
+    const safeCandidateId = String(candidateId || "").trim();
+    if (!token || !safeCandidateId) return null;
+    const rows = await api(`/candidates?id=${encodeURIComponent(safeCandidateId)}&scope=company&limit=1`, token).catch(() => []);
+    const nextRows = Array.isArray(rows) ? rows : [];
+    const nextRow = nextRows.length ? nextRows[0] : null;
+    if (!nextRow) return null;
+    setState((current) => ({
+      ...current,
+      candidates: upsertCandidatesById(current.candidates, nextRows),
+      databaseCandidates: upsertCandidatesById(current.databaseCandidates, nextRows)
+    }));
+    return nextRow;
+  }
+
+  async function syncPostAssessmentMutation({ candidateId = "", refreshCandidate = true } = {}) {
+    const safeCandidateId = String(candidateId || "").trim();
+    const tasks = [
+      reloadAssessmentSlice(assessmentPage, safeAssessmentApiPageSize, assessmentFiltersApplied, assessmentLane, assessmentSortBy),
+      reloadAssessmentStats(assessmentFiltersApplied)
+    ];
+    if (refreshCandidate && safeCandidateId) {
+      tasks.push(refreshCandidateRowById(safeCandidateId));
+    }
+    return Promise.all(tasks);
   }
 
   async function applyCandidateLiveRowEvent({ eventType = "", candidateId = "", payloadCandidate = null }) {
@@ -21081,7 +21111,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
         source: "MUTATION_SUCCESS"
       });
       setStatus("assessments", archived ? "Assessment archived." : "Assessment restored.", "ok");
-      void refreshWorkspaceSilently("manual");
+      void syncPostAssessmentMutation({ candidateId }).catch(() => {});
       return saved;
     } catch (error) {
       const message = String(error?.message || error);
@@ -21098,7 +21128,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
             source: "MUTATION_SUCCESS"
           });
           setStatus("assessments", "Assessment restored.", "ok");
-          void refreshWorkspaceSilently("post-restore");
+          void syncPostAssessmentMutation({ candidateId }).catch(() => {});
           return restored;
         } catch (restoreError) {
           setStatus("assessments", String(restoreError?.message || restoreError), "error");
