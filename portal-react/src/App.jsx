@@ -1239,6 +1239,8 @@ function normalizeApplicantVisibleRow(item = {}) {
   ).trim();
   const role = String(item.role || item.currentDesignation || item.current_designation || jdTitle || "").trim();
   const assignedToName = String(item.assignedToName || item.assigned_to_name || "").trim();
+  const linkedin = String(item.linkedin || item.linkedinUrl || item.linkedin_url || "").trim();
+  const relevantExperience = String(item.relevantExperience || item.relevant_experience || "").trim();
   const createdAt = String(item.createdAt || item.created_at || "").trim();
   const assignedAt = String(item.assignedAt || item.assigned_at || createdAt || "").trim();
   const hiddenFromCaptured = toBooleanLike(item.hidden_from_captured) || toBooleanLike(item.hiddenFromCaptured);
@@ -1257,6 +1259,11 @@ function normalizeApplicantVisibleRow(item = {}) {
     current_designation: String(item.current_designation || item.currentDesignation || role || "").trim(),
     assignedToName,
     assigned_to_name: String(item.assigned_to_name || assignedToName || "").trim(),
+    linkedin,
+    linkedinUrl: linkedin,
+    linkedin_url: linkedin,
+    relevantExperience,
+    relevant_experience: relevantExperience,
     createdAt,
     created_at: String(item.created_at || createdAt || "").trim(),
     assignedAt,
@@ -16032,6 +16039,7 @@ function PortalApp({ token, onLogout }) {
       id: `assessment-${Date.now()}`,
       candidateId: String(candidate?.id || ""),
       candidateName,
+      linkedin: candidateDraft.linkedin || candidate?.linkedin || candidate?.linkedinUrl || candidate?.linkedin_url || sourceApplicant?.linkedin || sourceApplicant?.linkedinUrl || sourceApplicant?.linkedin_url || applicantView?.linkedin || applicantView?.linkedinUrl || applicantView?.linkedin_url || "",
       phoneNumber: candidateDraft.phoneNumber || candidate?.phone || sourceApplicant?.phone || "",
       emailId: candidateDraft.emailId || candidate?.email || sourceApplicant?.email || "",
       location: candidateDraft.location || candidate?.location || sourceApplicant?.location || "",
@@ -16044,7 +16052,7 @@ function PortalApp({ token, onLogout }) {
       currentCompany: candidateDraft.currentCompany || candidate?.company || sourceApplicant?.currentCompany || "",
       currentDesignation: candidateDraft.currentDesignation || candidate?.role || sourceApplicant?.currentDesignation || "",
       totalExperience: candidateDraft.totalExperience || candidate?.experience || sourceApplicant?.totalExperience || "",
-      relevantExperience: candidateDraft.relevantExperience || "",
+      relevantExperience: candidateDraft.relevantExperience || candidate?.relevant_experience || candidate?.relevantExperience || sourceApplicant?.relevant_experience || sourceApplicant?.relevantExperience || applicantView?.relevant_experience || applicantView?.relevantExperience || "",
       highestEducation: candidateDraft.highestEducation || candidate?.highest_education || "",
       currentOrgTenure: candidateDraft.currentOrgTenure || candidate?.current_org_tenure || "",
       reasonForChange: candidateDraft.reasonForChange || candidate?.reason_of_change || "",
