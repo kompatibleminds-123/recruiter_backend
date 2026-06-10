@@ -14586,7 +14586,6 @@ function PortalApp({ token, onLogout }) {
   }
 
   async function patchCandidateQuiet(candidateId, patch, options = {}) {
-    const skipRefresh = options?.skipRefresh === true;
     const currentCandidate = (state.candidates || []).find((item) => String(item.id) === String(candidateId)) || {};
     const nextPatch = { ...patch };
     if (!Object.prototype.hasOwnProperty.call(nextPatch, "draft_payload")) {
@@ -14613,8 +14612,10 @@ function PortalApp({ token, onLogout }) {
       setCapturedListItems((current) => applyPatch(current));
       setCapturedOptionPool((current) => applyPatch(current));
     }
-    if (!skipRefresh) {
-      await reloadCandidatesSlice({ includeDatabase: location?.pathname === "/candidates" });
+    if (options?.refreshList === true) {
+      await reloadCandidatesSlice({
+        includeDatabase: location?.pathname === "/candidates"
+      });
     }
   }
 
