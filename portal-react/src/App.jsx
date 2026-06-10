@@ -20524,7 +20524,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
         // Skip immediate workspace refresh to keep viewport stable after status update.
       } catch (error) {
         setStatus(statusTarget, `Status sync failed: ${String(error?.message || error)}`, "error");
-        void syncPostAssessmentMutation({ candidateId: linkedCandidateId }).catch(() => {});
+        void refreshAssessmentFallback({ candidateId: linkedCandidateId }).catch(() => {});
       }
     })();
     } finally {
@@ -20729,16 +20729,34 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
     return nextRow;
   }
 
-  async function syncPostAssessmentMutation({ candidateId = "", refreshCandidate = true } = {}) {
+  async function syncPostAssessmentMutation({
+    candidateId = "",
+    refreshCandidate = true,
+    refreshList = false,
+    refreshStats = false
+  } = {}) {
     const safeCandidateId = String(candidateId || "").trim();
     const tasks = [
-      reloadAssessmentSlice(assessmentPage, safeAssessmentApiPageSize, assessmentFiltersApplied, assessmentLane, assessmentSortBy),
-      reloadAssessmentStats(assessmentFiltersApplied)
     ];
+    if (refreshList) {
+      tasks.push(reloadAssessmentSlice(assessmentPage, safeAssessmentApiPageSize, assessmentFiltersApplied, assessmentLane, assessmentSortBy));
+    }
+    if (refreshStats) {
+      tasks.push(reloadAssessmentStats(assessmentFiltersApplied));
+    }
     if (refreshCandidate && safeCandidateId) {
       tasks.push(refreshCandidateRowById(safeCandidateId));
     }
     return Promise.all(tasks);
+  }
+
+  async function refreshAssessmentFallback({ candidateId = "", refreshCandidate = true } = {}) {
+    return syncPostAssessmentMutation({
+      candidateId,
+      refreshCandidate,
+      refreshList: true,
+      refreshStats: true
+    });
   }
 
   async function applyCandidateLiveRowEvent({ eventType = "", candidateId = "", payloadCandidate = null }) {
@@ -21076,7 +21094,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
             source: "MUTATION_SUCCESS"
           });
           setStatus("assessments", "Assessment restored.", "ok");
-          void syncPostAssessmentMutation({ candidateId }).catch(() => {});
+          void refreshAssessmentFallback({ candidateId }).catch(() => {});
           return restored;
         } catch (restoreError) {
           setStatus("assessments", String(restoreError?.message || restoreError), "error");
