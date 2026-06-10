@@ -2754,16 +2754,29 @@ function resolveCandidateBucket(candidate = {}, eventType = "", context = {}) {
   return { bucket: "captured", isCanonical: true, appliedToo: false, reason: "default_captured" };
 }
 
-function applyCandidateChange(candidate = {}, resolved = {}, source = "MUTATION_SUCCESS") {
+function applyCandidateChange(candidate = {}, resolved = {}, source = "MUTATION_SUCCESS", context = {}) {
   const safeCandidate = candidate && typeof candidate === "object" ? normalizeApplicantVisibleRow(candidate) : {};
   const candidateId = String(safeCandidate?.id || safeCandidate?.candidateId || resolved?.candidateId || "").trim();
   if (!candidateId) return null;
+  const {
+    state: currentState = {},
+    setState: setCurrentState = null,
+    setCapturedOptionPool: setCurrentCapturedOptionPool = null,
+    setCapturedListItems: setCurrentCapturedListItems = null,
+    applicantFiltersApplied: currentApplicantFiltersApplied = {},
+    candidateFiltersApplied: currentCandidateFiltersApplied = {},
+    applicantSortBy: currentApplicantSortBy = "created",
+    capturedSortBy: currentCapturedSortBy = "created",
+    applicantUser = null,
+    user = null
+  } = context && typeof context === "object" ? context : {};
+  const currentApplicantUser = applicantUser || user || null;
   const nextResolved = resolved && typeof resolved === "object" ? resolved : resolveCandidateBucket(safeCandidate, source);
   const normalizedBucket = String(nextResolved?.bucket || "").trim().toLowerCase() || "captured";
   const isCapturedBucket = normalizedBucket === "captured";
   const isApplicantBucket = normalizedBucket === "applicants";
-  const isVisibleInCaptured = isCapturedBucket && isCapturedRowVisibleInCurrentView(safeCandidate, candidateFiltersApplied, state.user);
-  const isVisibleInApplicants = isApplicantBucket && isApplicantRowVisibleInCurrentView(safeCandidate, applicantFiltersApplied, state.user, safeCandidate, null);
+  const isVisibleInCaptured = isCapturedBucket && isCapturedRowVisibleInCurrentView(safeCandidate, currentCandidateFiltersApplied, currentApplicantUser);
+  const isVisibleInApplicants = isApplicantBucket && isApplicantRowVisibleInCurrentView(safeCandidate, currentApplicantFiltersApplied, currentApplicantUser, safeCandidate, null);
   const updatedAt = String(safeCandidate?.updated_at || safeCandidate?.updatedAt || new Date().toISOString()).trim() || new Date().toISOString();
   const patchRow = (item) => {
     if (!item || String(item?.id || "").trim() !== candidateId) return item;
@@ -2790,15 +2803,15 @@ function applyCandidateChange(candidate = {}, resolved = {}, source = "MUTATION_
       : removeCandidatesById(currentItems, [candidateId]);
     return keepVisible ? sortFn(nextItems) : nextItems;
   };
-  setState((current) => ({
+  if (typeof setCurrentState === "function") setCurrentState((current) => ({
     ...current,
     candidates: upsertCandidatesById(current.candidates, [patchRow(safeCandidate)]),
     databaseCandidates: upsertCandidatesById(current.databaseCandidates, [patchRow(safeCandidate)]),
-    applicants: patchVisibleList(current.applicants, isVisibleInApplicants, (items) => sortApplicantsForList(items, applicantSortBy)),
-    applicantListItems: patchVisibleList(current.applicantListItems, isVisibleInApplicants, (items) => sortApplicantsForList(items, applicantSortBy))
+    applicants: patchVisibleList(current.applicants, isVisibleInApplicants, (items) => sortApplicantsForList(items, currentApplicantSortBy)),
+    applicantListItems: patchVisibleList(current.applicantListItems, isVisibleInApplicants, (items) => sortApplicantsForList(items, currentApplicantSortBy))
   }));
-  setCapturedOptionPool((current) => patchVisibleList(current, isVisibleInCaptured, (items) => sortCapturedNotesForList(items, capturedSortBy)));
-  setCapturedListItems((current) => patchVisibleList(current, isVisibleInCaptured, (items) => sortCapturedNotesForList(items, capturedSortBy)));
+  if (typeof setCurrentCapturedOptionPool === "function") setCurrentCapturedOptionPool((current) => patchVisibleList(current, isVisibleInCaptured, (items) => sortCapturedNotesForList(items, currentCapturedSortBy)));
+  if (typeof setCurrentCapturedListItems === "function") setCurrentCapturedListItems((current) => patchVisibleList(current, isVisibleInCaptured, (items) => sortCapturedNotesForList(items, currentCapturedSortBy)));
   if (typeof console?.debug === "function") {
     console.debug("[candidate-application-resolution]", {
       candidateId,
@@ -2819,13 +2832,14 @@ async function syncPostCandidateMutation({
   candidateId = "",
   eventType = "candidate_changed",
   source = "MUTATION_SUCCESS",
-  refreshList = false
+  refreshList = false,
+  context = {}
 } = {}) {
   const safeCandidate = candidate && typeof candidate === "object" ? candidate : null;
   const safeCandidateId = String(candidateId || safeCandidate?.id || safeCandidate?.candidateId || "").trim();
   if (!safeCandidate && !safeCandidateId) return null;
   const resolved = resolveCandidateBucket(safeCandidate || { id: safeCandidateId }, eventType, { source });
-  applyCandidateChange(safeCandidate || { id: safeCandidateId }, resolved, source);
+  applyCandidateChange(safeCandidate || { id: safeCandidateId }, resolved, source, context);
   if (refreshList) {
     await reloadCandidatesSlice({
       includeDatabase: location?.pathname === "/candidates"
@@ -14757,6 +14771,18 @@ function PortalApp({ token, onLogout }) {
 
   async function patchCandidateQuiet(candidateId, patch, options = {}) {
     const currentCandidate = (state.candidates || []).find((item) => String(item.id) === String(candidateId)) || {};
+    const mutationContext = {
+      state,
+      setState,
+      setCapturedOptionPool,
+      setCapturedListItems,
+      applicantFiltersApplied,
+      candidateFiltersApplied,
+      applicantSortBy,
+      capturedSortBy,
+      applicantUser: state.user || null,
+      user: state.user || null
+    };
     const nextPatch = { ...patch };
     if (!Object.prototype.hasOwnProperty.call(nextPatch, "draft_payload")) {
       nextPatch.draft_payload = buildCandidateDraftPayloadPatch(currentCandidate, patch);
@@ -14777,7 +14803,8 @@ function PortalApp({ token, onLogout }) {
       candidateId,
       eventType: "candidate_changed",
       source: "MUTATION_SUCCESS",
-      refreshList: options?.refreshList === true
+      refreshList: options?.refreshList === true,
+      context: mutationContext
     });
     if (options?.refreshList === true) {
       return;
@@ -20933,6 +20960,18 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
   async function applyCandidateLiveRowEvent({ eventType = "", candidateId = "", payloadCandidate = null }) {
     const safeCandidateId = String(candidateId || "").trim();
     if (!safeCandidateId) return;
+    const mutationContext = {
+      state,
+      setState,
+      setCapturedOptionPool,
+      setCapturedListItems,
+      applicantFiltersApplied,
+      candidateFiltersApplied,
+      applicantSortBy,
+      capturedSortBy,
+      applicantUser: state.user || null,
+      user: state.user || null
+    };
     const rows = payloadCandidate && typeof payloadCandidate === "object"
       ? [payloadCandidate]
       : await api(`/candidates?id=${encodeURIComponent(safeCandidateId)}&scope=company&limit=1`, token);
@@ -21012,7 +21051,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
       previousRow,
       source: String(nextRow?.source || nextRow?.sourcePlatform || "").trim()
     });
-    applyCandidateChange(nextRow, resolved, `SSE:${eventType}`);
+    applyCandidateChange(nextRow, resolved, `SSE:${eventType}`, mutationContext);
     const previousHidden = Boolean(previousRow?.hidden_from_captured);
     const nextHidden = Boolean(nextRow?.hidden_from_captured);
     const previousUsed = Boolean(previousRow?.used_in_assessment);
@@ -21022,9 +21061,9 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
     const membershipChanged = previousHidden !== nextHidden || previousUsed !== nextUsed || previousAssessmentId !== nextAssessmentId;
     if (membershipChanged) {
       if (resolved.bucket === "applicants") {
-        void reloadApplicantStats(applicantFiltersApplied).catch(() => {});
+        void reloadApplicantStats(mutationContext.applicantFiltersApplied).catch(() => {});
       } else {
-        void reloadCapturedStats(candidateFiltersApplied).catch(() => {});
+        void reloadCapturedStats(mutationContext.candidateFiltersApplied).catch(() => {});
       }
     }
   }
