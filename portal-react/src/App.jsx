@@ -8308,6 +8308,15 @@ function PortalApp({ token, onLogout }) {
     recruiters: [],
     outcomes: []
   });
+  const safeApplicantFiltersApplied = typeof applicantFiltersApplied !== "undefined" && applicantFiltersApplied && typeof applicantFiltersApplied === "object"
+    ? applicantFiltersApplied
+    : {};
+  const safeCandidateFiltersApplied = typeof candidateFiltersApplied !== "undefined" && candidateFiltersApplied && typeof candidateFiltersApplied === "object"
+    ? candidateFiltersApplied
+    : {};
+  const safeAssessmentFiltersApplied = typeof assessmentFiltersApplied !== "undefined" && assessmentFiltersApplied && typeof assessmentFiltersApplied === "object"
+    ? assessmentFiltersApplied
+    : {};
   const [assessmentLane, setAssessmentLane] = useState("active"); // active | archived
   const [assessmentSortBy, setAssessmentSortBy] = useState("updated"); // updated | created
   const [assessmentPage, setAssessmentPage] = useState(1);
@@ -14817,8 +14826,8 @@ function PortalApp({ token, onLogout }) {
       return;
     }
     const optimisticUpdatedAt = new Date().toISOString();
-    const currentActiveStates = Array.isArray(candidateFiltersApplied.activeStates) && candidateFiltersApplied.activeStates.length
-      ? candidateFiltersApplied.activeStates
+    const currentActiveStates = Array.isArray(safeCandidateFiltersApplied.activeStates) && safeCandidateFiltersApplied.activeStates.length
+      ? safeCandidateFiltersApplied.activeStates
       : ["Active"];
     const shouldRemainVisible = currentActiveStates.includes("Inactive");
     const patchHiddenState = (items, hidden) => Array.isArray(items)
@@ -14900,8 +14909,8 @@ function PortalApp({ token, onLogout }) {
 
   async function restoreCapturedCandidate(candidateId) {
     const optimisticUpdatedAt = new Date().toISOString();
-    const currentActiveStates = Array.isArray(candidateFiltersApplied.activeStates) && candidateFiltersApplied.activeStates.length
-      ? candidateFiltersApplied.activeStates
+    const currentActiveStates = Array.isArray(safeCandidateFiltersApplied.activeStates) && safeCandidateFiltersApplied.activeStates.length
+      ? safeCandidateFiltersApplied.activeStates
       : ["Active"];
     const shouldRemainVisible = currentActiveStates.includes("Active");
     const patchHiddenState = (items, hidden) => Array.isArray(items)
@@ -15035,7 +15044,7 @@ function PortalApp({ token, onLogout }) {
     setCapturedOptionPool((current) => removeCandidatesById(current, [requestedId, deletedId]));
     setCapturedListItems((current) => removeCandidatesById(current, [requestedId, deletedId]));
     await reloadCandidatesSlice({ includeDatabase: location?.pathname === "/candidates" });
-    await reloadCapturedStats(candidateFiltersApplied).catch(() => null);
+    await reloadCapturedStats(safeCandidateFiltersApplied).catch(() => null);
     setStatus("captured", "Candidate deleted.", "ok");
   }
 
@@ -15072,7 +15081,7 @@ function PortalApp({ token, onLogout }) {
     setCapturedListItems((current) => removeCandidatesById(current, safeIds));
     setBulkAssignCandidateIds([]);
     await reloadCandidatesSlice({ includeDatabase: location?.pathname === "/candidates" });
-    await reloadCapturedStats(candidateFiltersApplied).catch(() => null);
+    await reloadCapturedStats(safeCandidateFiltersApplied).catch(() => null);
     const msg = `Bulk delete done. Deleted: ${success} | Failed: ${failed}.`;
     setStatus("captured", failReasons.length ? `${msg} Reasons: ${failReasons.join(" || ")}` : msg, failed ? "error" : "ok");
   }
