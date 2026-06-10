@@ -10556,7 +10556,6 @@ function PortalApp({ token, onLogout }) {
       setWorkspaceDataReady(true);
     }
     void loadDashboardSummary(dashboardFilters).catch(() => null);
-    void loadClientPortalSummary(clientPortalFilters).catch(() => null);
     void reloadCapturedStats(candidateFiltersApplied).catch(() => null);
     void reloadApplicantStats(applicantFiltersApplied).catch(() => null);
     void loadWorkspace({
