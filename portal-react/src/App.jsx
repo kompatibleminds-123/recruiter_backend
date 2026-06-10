@@ -2683,6 +2683,157 @@ function sortAssessmentsForList(items = [], sortBy = "updated") {
   });
 }
 
+function resolveCandidateBucket(candidate = {}, eventType = "", context = {}) {
+  const safeCandidate = candidate && typeof candidate === "object" ? candidate : {};
+  const sourceValue = String(safeCandidate?.source || context?.source || "").trim().toLowerCase();
+  const sourcePlatformValue = String(safeCandidate?.sourcePlatform || context?.sourcePlatform || "").trim().toLowerCase();
+  const explicitBucket = String(
+    safeCandidate?.resolvedBucket
+    || safeCandidate?.resolved_bucket
+    || safeCandidate?.bucket
+    || context?.resolvedBucket
+    || context?.bucket
+    || ""
+  ).trim().toLowerCase();
+  const isHidden = Boolean(
+    safeCandidate?.hidden_from_captured
+    || safeCandidate?.hiddenFromCaptured
+    || context?.hiddenFromCaptured
+  );
+  const isArchived = Boolean(
+    safeCandidate?.archived
+    || safeCandidate?.is_archived
+    || safeCandidate?.isArchived
+    || context?.archived
+  );
+  const appliedToo = Boolean(
+    safeCandidate?.applied_too
+    || safeCandidate?.appliedToo
+    || safeCandidate?.application_source
+    || safeCandidate?.applicationSource
+    || safeCandidate?.applyAssignedToUserId
+    || safeCandidate?.applyAssignedToName
+    || safeCandidate?.applyAssignedVia
+    || safeCandidate?.apply_assigned_to_user_id
+    || safeCandidate?.apply_assigned_to_name
+    || safeCandidate?.apply_assigned_via
+    || context?.appliedToo
+  );
+  if (isHidden) {
+    return { bucket: "hidden", isCanonical: false, appliedToo, reason: "hidden" };
+  }
+  if (isArchived) {
+    return { bucket: "archived", isCanonical: false, appliedToo, reason: "archived" };
+  }
+  if (explicitBucket) {
+    const normalizedBucket = explicitBucket === "applicant" ? "applicants" : explicitBucket;
+    return {
+      bucket: normalizedBucket,
+      isCanonical: true,
+      appliedToo,
+      reason: "explicit"
+    };
+  }
+  if (appliedToo) {
+    return { bucket: "captured", isCanonical: true, appliedToo: true, reason: "applied_too" };
+  }
+  const sourceInbound = isInboundApplicantSource(sourceValue);
+  const sourcePlatformInbound = isInboundApplicantSource(sourcePlatformValue);
+  if (sourceInbound && sourcePlatformInbound) {
+    return { bucket: "applicants", isCanonical: true, appliedToo: false, reason: "inbound_applicant" };
+  }
+  if (!sourceInbound && sourcePlatformInbound) {
+    return { bucket: "captured", isCanonical: true, appliedToo: true, reason: "captured_applied_too" };
+  }
+  if (sourceInbound) {
+    return { bucket: "applicants", isCanonical: true, appliedToo: false, reason: "inbound_applicant" };
+  }
+  if (String(eventType || "").trim() === "candidate_assigned" && sourcePlatformInbound) {
+    return { bucket: "captured", isCanonical: true, appliedToo: true, reason: "candidate_assigned_inbound" };
+  }
+  return { bucket: "captured", isCanonical: true, appliedToo: false, reason: "default_captured" };
+}
+
+function applyCandidateChange(candidate = {}, resolved = {}, source = "MUTATION_SUCCESS") {
+  const safeCandidate = candidate && typeof candidate === "object" ? normalizeApplicantVisibleRow(candidate) : {};
+  const candidateId = String(safeCandidate?.id || safeCandidate?.candidateId || resolved?.candidateId || "").trim();
+  if (!candidateId) return null;
+  const nextResolved = resolved && typeof resolved === "object" ? resolved : resolveCandidateBucket(safeCandidate, source);
+  const normalizedBucket = String(nextResolved?.bucket || "").trim().toLowerCase() || "captured";
+  const isCapturedBucket = normalizedBucket === "captured";
+  const isApplicantBucket = normalizedBucket === "applicants";
+  const isVisibleInCaptured = isCapturedBucket && isCapturedRowVisibleInCurrentView(safeCandidate, candidateFiltersApplied, state.user);
+  const isVisibleInApplicants = isApplicantBucket && isApplicantRowVisibleInCurrentView(safeCandidate, applicantFiltersApplied, state.user, safeCandidate, null);
+  const updatedAt = String(safeCandidate?.updated_at || safeCandidate?.updatedAt || new Date().toISOString()).trim() || new Date().toISOString();
+  const patchRow = (item) => {
+    if (!item || String(item?.id || "").trim() !== candidateId) return item;
+    const nextItem = {
+      ...item,
+      ...safeCandidate,
+      updated_at: updatedAt,
+      updatedAt
+    };
+    if (nextResolved?.appliedToo === true) {
+      nextItem.applied_too = true;
+      nextItem.appliedToo = true;
+    }
+    if (nextResolved?.bucket === "applicants") {
+      nextItem.sourcePlatform = String(nextItem.sourcePlatform || nextItem.source || "").trim();
+    }
+    nextItem.last_synced_source = String(source || "").trim();
+    return nextItem;
+  };
+  const patchVisibleList = (items, keepVisible, sortFn) => {
+    const currentItems = Array.isArray(items) ? items : [];
+    const nextItems = keepVisible
+      ? upsertCandidatesById(currentItems, [patchRow(safeCandidate)])
+      : removeCandidatesById(currentItems, [candidateId]);
+    return keepVisible ? sortFn(nextItems) : nextItems;
+  };
+  setState((current) => ({
+    ...current,
+    candidates: upsertCandidatesById(current.candidates, [patchRow(safeCandidate)]),
+    databaseCandidates: upsertCandidatesById(current.databaseCandidates, [patchRow(safeCandidate)]),
+    applicants: patchVisibleList(current.applicants, isVisibleInApplicants, (items) => sortApplicantsForList(items, applicantSortBy)),
+    applicantListItems: patchVisibleList(current.applicantListItems, isVisibleInApplicants, (items) => sortApplicantsForList(items, applicantSortBy))
+  }));
+  setCapturedOptionPool((current) => patchVisibleList(current, isVisibleInCaptured, (items) => sortCapturedNotesForList(items, capturedSortBy)));
+  setCapturedListItems((current) => patchVisibleList(current, isVisibleInCaptured, (items) => sortCapturedNotesForList(items, capturedSortBy)));
+  if (typeof console?.debug === "function") {
+    console.debug("[candidate-application-resolution]", {
+      candidateId,
+      resolvedBucket: normalizedBucket,
+      appliedToo: Boolean(nextResolved?.appliedToo),
+      applicationSource: String(safeCandidate?.application_source || safeCandidate?.applicationSource || safeCandidate?.sourcePlatform || safeCandidate?.source || "").trim(),
+      originalOwnerId: String(safeCandidate?.recruiter_id || safeCandidate?.assigned_to_user_id || safeCandidate?.assignedToUserId || "").trim(),
+      applicationAssignedToUserId: String(safeCandidate?.applyAssignedToUserId || safeCandidate?.apply_assigned_to_user_id || safeCandidate?.assigned_to_user_id || "").trim(),
+      insertedNewApplicant: isApplicantBucket,
+      updatedExistingCaptured: isCapturedBucket
+    });
+  }
+  return nextResolved;
+}
+
+async function syncPostCandidateMutation({
+  candidate = null,
+  candidateId = "",
+  eventType = "candidate_changed",
+  source = "MUTATION_SUCCESS",
+  refreshList = false
+} = {}) {
+  const safeCandidate = candidate && typeof candidate === "object" ? candidate : null;
+  const safeCandidateId = String(candidateId || safeCandidate?.id || safeCandidate?.candidateId || "").trim();
+  if (!safeCandidate && !safeCandidateId) return null;
+  const resolved = resolveCandidateBucket(safeCandidate || { id: safeCandidateId }, eventType, { source });
+  applyCandidateChange(safeCandidate || { id: safeCandidateId }, resolved, source);
+  if (refreshList) {
+    await reloadCandidatesSlice({
+      includeDatabase: location?.pathname === "/candidates"
+    });
+  }
+  return resolved;
+}
+
 function isCapturedRowVisibleInCurrentView(row = {}, filters = {}, user = null) {
   if (!row) return false;
   const isAdmin = String(user?.role || "").toLowerCase() === "admin";
@@ -14117,9 +14268,13 @@ function PortalApp({ token, onLogout }) {
         : current.candidates,
       databaseCandidates: Array.isArray(current.databaseCandidates)
         ? current.databaseCandidates.filter((item) => String(item?.id || "") !== String(applicantId))
-        : current.databaseCandidates
+        : current.databaseCandidates,
+      applicantListItems: Array.isArray(current.applicantListItems)
+        ? current.applicantListItems.filter((item) => String(item?.id || "") !== String(applicantId))
+        : current.applicantListItems
     }));
     await reloadApplicantsSlice();
+    await reloadApplicantStats(applicantFiltersApplied).catch(() => null);
     void refreshWorkspaceSilently("post-applicant-remove");
     setStatus("applicants", "Applicant removed.", "ok");
   }
@@ -14152,6 +14307,7 @@ function PortalApp({ token, onLogout }) {
     }));
     setBulkAssignApplicantIds([]);
     await reloadApplicantsSlice();
+    await reloadApplicantStats(applicantFiltersApplied).catch(() => null);
     void refreshWorkspaceSilently("post-applicant-bulk-remove");
     const msg = `Bulk delete done. Deleted: ${success} | Failed: ${failed}.`;
     setStatus("applicants", failReasons.length ? `${msg} Reasons: ${failReasons.join(" || ")}` : msg, failed ? "error" : "ok");
@@ -14611,25 +14767,20 @@ function PortalApp({ token, onLogout }) {
     }
     await api(`/company/candidates/${encodeURIComponent(candidateId)}`, token, "PATCH", { patch: nextPatch });
     const optimisticUpdatedAt = new Date().toISOString();
-    const isAppliedSource = isInboundApplicantSource(currentCandidate?.sourcePlatform || currentCandidate?.source || "");
-    const applyPatch = (items) => Array.isArray(items)
-      ? items.map((item) => String(item?.id || "") === String(candidateId) ? { ...item, ...nextPatch, updated_at: optimisticUpdatedAt, updatedAt: optimisticUpdatedAt } : item)
-      : items;
-    setState((current) => ({
-      ...current,
-      candidates: applyPatch(current.candidates),
-      databaseCandidates: applyPatch(current.databaseCandidates),
-      applicants: isAppliedSource ? sortApplicantsForList(applyPatch(current.applicants), applicantSortBy) : applyPatch(current.applicants),
-      applicantListItems: isAppliedSource ? sortApplicantsForList(applyPatch(current.applicantListItems), applicantSortBy) : applyPatch(current.applicantListItems)
-    }));
-    if (String(location?.pathname || "").trim() === "/captured-notes") {
-      setCapturedListItems((current) => applyPatch(current));
-      setCapturedOptionPool((current) => applyPatch(current));
-    }
+    await syncPostCandidateMutation({
+      candidate: {
+        ...currentCandidate,
+        ...nextPatch,
+        updated_at: optimisticUpdatedAt,
+        updatedAt: optimisticUpdatedAt
+      },
+      candidateId,
+      eventType: "candidate_changed",
+      source: "MUTATION_SUCCESS",
+      refreshList: options?.refreshList === true
+    });
     if (options?.refreshList === true) {
-      await reloadCandidatesSlice({
-        includeDatabase: location?.pathname === "/candidates"
-      });
+      return;
     }
   }
 
@@ -14854,7 +15005,10 @@ function PortalApp({ token, onLogout }) {
         })
         : current.databaseCandidates
     }));
+    setCapturedOptionPool((current) => removeCandidatesById(current, [requestedId, deletedId]));
+    setCapturedListItems((current) => removeCandidatesById(current, [requestedId, deletedId]));
     await reloadCandidatesSlice({ includeDatabase: location?.pathname === "/candidates" });
+    await reloadCapturedStats(candidateFiltersApplied).catch(() => null);
     setStatus("captured", "Candidate deleted.", "ok");
   }
 
@@ -14887,8 +15041,11 @@ function PortalApp({ token, onLogout }) {
       candidates: Array.isArray(current.candidates) ? current.candidates.filter((item) => !safeIds.includes(String(item?.id || "").trim())) : current.candidates,
       databaseCandidates: Array.isArray(current.databaseCandidates) ? current.databaseCandidates.filter((item) => !safeIds.includes(String(item?.id || "").trim())) : current.databaseCandidates
     }));
+    setCapturedOptionPool((current) => removeCandidatesById(current, safeIds));
+    setCapturedListItems((current) => removeCandidatesById(current, safeIds));
     setBulkAssignCandidateIds([]);
     await reloadCandidatesSlice({ includeDatabase: location?.pathname === "/candidates" });
+    await reloadCapturedStats(candidateFiltersApplied).catch(() => null);
     const msg = `Bulk delete done. Deleted: ${success} | Failed: ${failed}.`;
     setStatus("captured", failReasons.length ? `${msg} Reasons: ${failReasons.join(" || ")}` : msg, failed ? "error" : "ok");
   }
@@ -20776,106 +20933,69 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
   async function applyCandidateLiveRowEvent({ eventType = "", candidateId = "", payloadCandidate = null }) {
     const safeCandidateId = String(candidateId || "").trim();
     if (!safeCandidateId) return;
-    const previousApplicantRow = (state.applicants || []).find((item) => String(item?.id || "") === safeCandidateId) || null;
-    const previousApplicantVisible = Array.isArray(state.applicantListItems)
-      ? state.applicantListItems.some((item) => String(item?.id || "") === safeCandidateId)
-      : false;
     const rows = payloadCandidate && typeof payloadCandidate === "object"
       ? [payloadCandidate]
       : await api(`/candidates?id=${encodeURIComponent(safeCandidateId)}&scope=company&limit=1`, token);
     const nextRows = Array.isArray(rows) ? rows.map((row) => normalizeApplicantVisibleRow({
-      ...(previousApplicantRow || {}),
+      ...(state.applicants || []).find((item) => String(item?.id || "") === safeCandidateId) || {},
       ...(row || {}),
-      candidateName: String(row?.name || previousApplicantRow?.candidateName || previousApplicantRow?.name || row?.candidate_name || "").trim(),
-      currentCompany: String(row?.company || previousApplicantRow?.currentCompany || previousApplicantRow?.company || "").trim(),
-      currentDesignation: String(row?.role || row?.current_designation || previousApplicantRow?.currentDesignation || previousApplicantRow?.current_designation || "").trim(),
-      totalExperience: String(row?.experience || previousApplicantRow?.totalExperience || previousApplicantRow?.experience || "").trim(),
-      clientName: String(row?.client_name || previousApplicantRow?.clientName || previousApplicantRow?.client_name || "").trim(),
+      candidateName: String(row?.name || row?.candidateName || row?.candidate_name || "").trim(),
+      currentCompany: String(row?.company || row?.currentCompany || row?.current_company || "").trim(),
+      currentDesignation: String(row?.role || row?.current_designation || row?.currentDesignation || "").trim(),
+      totalExperience: String(row?.experience || row?.totalExperience || row?.total_experience || "").trim(),
+      clientName: String(row?.client_name || row?.clientName || "").trim(),
       jdTitle: String(
         row?.jd_title
         || row?.assigned_jd_title
-        || previousApplicantRow?.jdTitle
-        || previousApplicantRow?.jd_title
-        || previousApplicantRow?.assigned_jd_title
         || row?.role
         || ""
       ).trim(),
       assignedToName: String(
         row?.assignedToName
         || row?.assigned_to_name
-        || previousApplicantRow?.assignedToName
-        || previousApplicantRow?.assigned_to_name
         || ""
       ).trim(),
       assigned_to_name: String(
         row?.assigned_to_name
         || row?.assignedToName
-        || previousApplicantRow?.assigned_to_name
-        || previousApplicantRow?.assignedToName
         || ""
       ).trim(),
       assignedToUserId: String(
         row?.assignedToUserId
         || row?.assigned_to_user_id
-        || previousApplicantRow?.assignedToUserId
-        || previousApplicantRow?.assigned_to_user_id
         || ""
       ).trim(),
       assigned_to_user_id: String(
         row?.assigned_to_user_id
         || row?.assignedToUserId
-        || previousApplicantRow?.assigned_to_user_id
-        || previousApplicantRow?.assignedToUserId
         || ""
       ).trim(),
       assignedAt: String(
         row?.assignedAt
         || row?.assigned_at
-        || previousApplicantRow?.assignedAt
-        || previousApplicantRow?.assigned_at
         || row?.createdAt
         || row?.created_at
-        || previousApplicantRow?.createdAt
-        || previousApplicantRow?.created_at
         || ""
       ).trim(),
       assigned_at: String(
         row?.assigned_at
         || row?.assignedAt
-        || previousApplicantRow?.assigned_at
-        || previousApplicantRow?.assignedAt
         || row?.created_at
         || row?.createdAt
-        || previousApplicantRow?.created_at
-        || previousApplicantRow?.createdAt
         || ""
       ).trim(),
-      createdAt: String(row?.createdAt || row?.created_at || previousApplicantRow?.createdAt || previousApplicantRow?.created_at || "").trim(),
-      created_at: String(row?.created_at || row?.createdAt || previousApplicantRow?.created_at || previousApplicantRow?.createdAt || "").trim(),
-      updatedAt: String(row?.updatedAt || row?.updated_at || previousApplicantRow?.updatedAt || previousApplicantRow?.updated_at || "").trim(),
-      updated_at: String(row?.updated_at || row?.updatedAt || previousApplicantRow?.updated_at || previousApplicantRow?.updatedAt || "").trim(),
-      phone: String(row?.phone || previousApplicantRow?.phone || "").trim(),
-      email: String(row?.email || previousApplicantRow?.email || "").trim(),
-      location: String(row?.location || previousApplicantRow?.location || "").trim(),
-      source: String(row?.source || previousApplicantRow?.source || previousApplicantRow?.sourcePlatform || "").trim()
+      createdAt: String(row?.createdAt || row?.created_at || "").trim(),
+      created_at: String(row?.created_at || row?.createdAt || "").trim(),
+      updatedAt: String(row?.updatedAt || row?.updated_at || "").trim(),
+      updated_at: String(row?.updated_at || row?.updatedAt || "").trim(),
+      phone: String(row?.phone || row?.phoneNumber || "").trim(),
+      email: String(row?.email || row?.emailId || "").trim(),
+      location: String(row?.location || "").trim(),
+      source: String(row?.source || row?.sourcePlatform || "").trim(),
+      sourcePlatform: String(row?.sourcePlatform || row?.source || "").trim()
     })) : [];
     const nextRow = nextRows && nextRows.length ? nextRows[0] : null;
     const previousRow = (state.candidates || []).find((item) => String(item?.id || "") === safeCandidateId) || null;
-    const previousHidden = Boolean(previousRow?.hidden_from_captured);
-    const nextHidden = Boolean(nextRow?.hidden_from_captured);
-    const hiddenChanged = previousHidden !== nextHidden;
-    const inboundApplicantSource = isInboundApplicantSource(
-      nextRow?.source
-      || nextRow?.sourcePlatform
-      || previousApplicantRow?.source
-      || previousApplicantRow?.sourcePlatform
-      || ""
-    );
-    const nextApplicantVisible = nextRow
-      ? isApplicantRowVisibleInCurrentView(nextRow, applicantFiltersApplied, state.user, nextRow, null)
-      : false;
-    const nextVisible = nextRow ? isCapturedRowVisibleInCurrentView(nextRow, candidateFiltersApplied, state.user) : false;
-
     if (eventType === "candidate_deleted" || !nextRow) {
       setState((current) => ({
         ...current,
@@ -20888,142 +21008,24 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
       setCapturedListItems((current) => removeCandidatesById(current, [safeCandidateId]));
       return;
     }
-
-    setState((current) => ({
-      ...current,
-      candidates: upsertCandidatesById(current.candidates, nextRows),
-      databaseCandidates: upsertCandidatesById(current.databaseCandidates, nextRows),
-      applicants: upsertCandidatesById(current.applicants, nextRows),
-      applicantListItems: upsertCandidatesById(current.applicantListItems, nextRows)
-    }));
-
-    if (eventType === "candidate_attempt") {
-      if (inboundApplicantSource) {
-        setState((current) => ({
-          ...current,
-          applicants: sortApplicantsForList(upsertCandidatesById(current.applicants, nextRows), applicantSortBy),
-          applicantListItems: sortApplicantsForList(upsertCandidatesById(current.applicantListItems, nextRows), applicantSortBy)
-        }));
-        setCapturedOptionPool((current) => removeCandidatesById(current, [safeCandidateId]));
-        setCapturedListItems((current) => removeCandidatesById(current, [safeCandidateId]));
+    const resolved = resolveCandidateBucket(nextRow, eventType, {
+      previousRow,
+      source: String(nextRow?.source || nextRow?.sourcePlatform || "").trim()
+    });
+    applyCandidateChange(nextRow, resolved, `SSE:${eventType}`);
+    const previousHidden = Boolean(previousRow?.hidden_from_captured);
+    const nextHidden = Boolean(nextRow?.hidden_from_captured);
+    const previousUsed = Boolean(previousRow?.used_in_assessment);
+    const nextUsed = Boolean(nextRow?.used_in_assessment);
+    const previousAssessmentId = String(previousRow?.assessment_id || previousRow?.assessmentId || "").trim();
+    const nextAssessmentId = String(nextRow?.assessment_id || nextRow?.assessmentId || "").trim();
+    const membershipChanged = previousHidden !== nextHidden || previousUsed !== nextUsed || previousAssessmentId !== nextAssessmentId;
+    if (membershipChanged) {
+      if (resolved.bucket === "applicants") {
+        void reloadApplicantStats(applicantFiltersApplied).catch(() => {});
       } else {
-        setCapturedOptionPool((current) => replaceCandidatesById(current, nextRows));
-        setCapturedListItems((current) => replaceCandidatesById(current, nextRows));
+        void reloadCapturedStats(candidateFiltersApplied).catch(() => {});
       }
-      return;
-    }
-
-    if (eventType === "candidate_assigned") {
-      const shouldKeepApplicantVisibleOnAssign = nextApplicantVisible || (
-        String(state.user?.role || "").toLowerCase() === "admin" && previousApplicantVisible
-      );
-      if (inboundApplicantSource) {
-        if (shouldKeepApplicantVisibleOnAssign) {
-          setState((current) => ({
-            ...current,
-            applicants: sortApplicantsForList(upsertCandidatesById(current.applicants, nextRows), applicantSortBy),
-            applicantListItems: sortApplicantsForList(upsertCandidatesById(current.applicantListItems, nextRows), applicantSortBy)
-          }));
-        } else {
-          setState((current) => ({
-            ...current,
-            applicants: removeCandidatesById(current.applicants, [safeCandidateId]),
-            applicantListItems: removeCandidatesById(current.applicantListItems, [safeCandidateId])
-          }));
-        }
-        setCapturedOptionPool((current) => removeCandidatesById(current, [safeCandidateId]));
-        setCapturedListItems((current) => removeCandidatesById(current, [safeCandidateId]));
-      } else if (shouldKeepApplicantVisibleOnAssign) {
-        setState((current) => ({
-          ...current,
-          applicantListItems: upsertCandidatesById(current.applicantListItems, nextRows)
-        }));
-        setCapturedOptionPool((current) => upsertCandidatesById(current, nextRows));
-        setCapturedListItems((current) => upsertCandidatesById(current, nextRows));
-      } else {
-        setState((current) => ({
-          ...current,
-          applicantListItems: removeCandidatesById(current.applicantListItems, [safeCandidateId])
-        }));
-        setCapturedOptionPool((current) => removeCandidatesById(current, [safeCandidateId]));
-        setCapturedListItems((current) => removeCandidatesById(current, [safeCandidateId]));
-      }
-      return;
-    }
-
-    if (eventType === "candidate_changed" && hiddenChanged) {
-      if (inboundApplicantSource) {
-        if (nextApplicantVisible) {
-          setState((current) => ({
-            ...current,
-            applicants: sortApplicantsForList(upsertCandidatesById(current.applicants, nextRows), applicantSortBy),
-            applicantListItems: sortApplicantsForList(upsertCandidatesById(current.applicantListItems, nextRows), applicantSortBy)
-          }));
-        } else {
-          setState((current) => ({
-            ...current,
-            applicants: removeCandidatesById(current.applicants, [safeCandidateId]),
-            applicantListItems: removeCandidatesById(current.applicantListItems, [safeCandidateId])
-          }));
-        }
-        setCapturedOptionPool((current) => removeCandidatesById(current, [safeCandidateId]));
-        setCapturedListItems((current) => removeCandidatesById(current, [safeCandidateId]));
-      } else if (nextApplicantVisible) {
-        setState((current) => ({
-          ...current,
-          applicantListItems: upsertCandidatesById(current.applicantListItems, nextRows)
-        }));
-        if (nextVisible) {
-          setCapturedOptionPool((current) => upsertCandidatesById(current, nextRows));
-          setCapturedListItems((current) => upsertCandidatesById(current, nextRows));
-        } else {
-          setCapturedOptionPool((current) => removeCandidatesById(current, [safeCandidateId]));
-          setCapturedListItems((current) => removeCandidatesById(current, [safeCandidateId]));
-        }
-      } else {
-        setState((current) => ({
-          ...current,
-          applicantListItems: removeCandidatesById(current.applicantListItems, [safeCandidateId])
-        }));
-        setCapturedOptionPool((current) => removeCandidatesById(current, [safeCandidateId]));
-        setCapturedListItems((current) => removeCandidatesById(current, [safeCandidateId]));
-      }
-      return;
-    }
-
-    if (inboundApplicantSource) {
-      if (nextApplicantVisible || (eventType === "candidate_changed" && previousApplicantVisible)) {
-        setState((current) => ({
-          ...current,
-          applicants: sortApplicantsForList(upsertCandidatesById(current.applicants, nextRows), applicantSortBy),
-          applicantListItems: sortApplicantsForList(upsertCandidatesById(current.applicantListItems, nextRows), applicantSortBy)
-        }));
-      } else {
-        setState((current) => ({
-          ...current,
-          applicants: removeCandidatesById(current.applicants, [safeCandidateId]),
-          applicantListItems: removeCandidatesById(current.applicantListItems, [safeCandidateId])
-        }));
-      }
-      setCapturedOptionPool((current) => removeCandidatesById(current, [safeCandidateId]));
-      setCapturedListItems((current) => removeCandidatesById(current, [safeCandidateId]));
-      return;
-    }
-
-    if (nextApplicantVisible || (eventType === "candidate_changed" && previousApplicantVisible)) {
-      setState((current) => ({
-        ...current,
-        applicantListItems: upsertCandidatesById(current.applicantListItems, nextRows)
-      }));
-      setCapturedOptionPool((current) => replaceCandidatesById(current, nextRows));
-      setCapturedListItems((current) => replaceCandidatesById(current, nextRows));
-    } else {
-      setState((current) => ({
-        ...current,
-        applicantListItems: removeCandidatesById(current.applicantListItems, [safeCandidateId])
-      }));
-      setCapturedOptionPool((current) => removeCandidatesById(current, [safeCandidateId]));
-      setCapturedListItems((current) => removeCandidatesById(current, [safeCandidateId]));
     }
   }
 

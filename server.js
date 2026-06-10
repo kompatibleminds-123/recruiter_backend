@@ -5486,6 +5486,12 @@ async function ingestApplicantSubmission(body, req) {
   }
 
   const appliedSource = payload.sourcePlatform === "hosted_apply" ? "hosted_apply" : "website_apply";
+  const isApplyLinkSource = appliedSource === "website_apply" || appliedSource === "hosted_apply";
+  if (isApplyLinkSource) {
+    metadata.applyAssignedToUserId = String(defaultInboxOwner?.id || metadata.applyAssignedToUserId || "").trim();
+    metadata.applyAssignedToName = String(defaultInboxOwner?.name || metadata.applyAssignedToName || "").trim();
+    metadata.applyAssignedVia = "apply_link";
+  }
 
   // If the same candidate already exists (captured note), merge into that row and move it to Applied
   // instead of creating a duplicate candidate entry.
