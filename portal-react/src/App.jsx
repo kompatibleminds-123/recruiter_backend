@@ -2669,6 +2669,20 @@ function sortApplicantsForList(items = [], sortBy = "created") {
   });
 }
 
+function sortAssessmentsForList(items = [], sortBy = "updated") {
+  const sortMode = String(sortBy || "updated").trim().toLowerCase();
+  const primaryKeys = sortMode === "created"
+    ? ["createdAt", "created_at", "generatedAt", "updatedAt", "updated_at"]
+    : ["updatedAt", "updated_at", "createdAt", "created_at", "generatedAt"];
+  return (Array.isArray(items) ? items : []).slice().sort((a, b) => {
+    const aTime = Date.parse(String(primaryKeys.map((key) => a?.[key]).find((value) => String(value || "").trim()) || ""));
+    const bTime = Date.parse(String(primaryKeys.map((key) => b?.[key]).find((value) => String(value || "").trim()) || ""));
+    const diff = (Number.isFinite(bTime) ? bTime : 0) - (Number.isFinite(aTime) ? aTime : 0);
+    if (diff) return diff;
+    return String(b?.id || "").localeCompare(String(a?.id || ""));
+  });
+}
+
 function isCapturedRowVisibleInCurrentView(row = {}, filters = {}, user = null) {
   if (!row) return false;
   const isAdmin = String(user?.role || "").toLowerCase() === "admin";
@@ -20598,10 +20612,10 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
       const nextItems = [...currentItems];
       if (existingIx < 0) {
         nextItems.unshift(nextRow);
-        return nextItems;
+        return sortAssessmentsForList(nextItems, assessmentSortBy);
       }
       nextItems.splice(existingIx, 1, { ...nextItems[existingIx], ...nextRow });
-      return nextItems;
+      return sortAssessmentsForList(nextItems, assessmentSortBy);
     };
 
     const removeFromList = (items = []) => (Array.isArray(items) ? items.filter((item) => String(item?.id || "").trim() !== assessmentId) : items);
