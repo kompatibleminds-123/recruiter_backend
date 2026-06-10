@@ -6700,7 +6700,7 @@ function JdEmailModal({ open, jobs, value, ccSuggestions = [], onChange, onClose
   );
 }
 
-function JourneyModal({ open, title = "Journey", text = "", onClose, onCopy }) {
+function JourneyModal({ open, title = "Journey", text = "", loading = false, onClose, onCopy }) {
   if (!open) return null;
   return (
     <div className="overlay" onClick={onClose}>
@@ -6710,12 +6710,30 @@ function JourneyModal({ open, title = "Journey", text = "", onClose, onCopy }) {
             <h3>{title}</h3>
           </div>
         </div>
-        <textarea
-          className="journey-modal__text"
-          readOnly
-          value={text}
-          onFocus={(e) => e.currentTarget.select()}
-        />
+        {loading ? (
+          <div className="empty-state" style={{ minHeight: 180, display: "flex", alignItems: "center", justifyContent: "center", gap: 10 }}>
+            <span
+              aria-hidden="true"
+              style={{
+                width: 18,
+                height: 18,
+                borderRadius: "50%",
+                border: "2px solid rgba(59, 130, 246, 0.22)",
+                borderTopColor: "#2563eb",
+                animation: "assessmentSpin 0.8s linear infinite",
+                flex: "0 0 auto"
+              }}
+            />
+            <span>Loading journey...</span>
+          </div>
+        ) : (
+          <textarea
+            className="journey-modal__text"
+            readOnly
+            value={text}
+            onFocus={(e) => e.currentTarget.select()}
+          />
+        )}
         <div className="button-row">
           <button onClick={async () => { await onCopy?.(); }}>Copy</button>
           <button className="ghost-btn" onClick={onClose}>Close</button>
@@ -14144,6 +14162,36 @@ function PortalApp({ token, onLogout }) {
     }
 
     const pool = (state.databaseCandidates || []).length ? state.databaseCandidates : (state.candidates || []);
+    const fallbackCandidateRow = {
+      id: candidateId,
+      name: assessment?.candidateName || "Candidate",
+      phone: assessment?.phoneNumber || "",
+      email: assessment?.emailId || "",
+      company: assessment?.currentCompany || "",
+      role: assessment?.currentDesignation || "",
+      experience: assessment?.totalExperience || "",
+      location: assessment?.location || "",
+      current_ctc: assessment?.currentCtc || "",
+      expected_ctc: assessment?.expectedCtc || "",
+      notice_period: assessment?.noticePeriod || "",
+      linkedin: assessment?.linkedinUrl || "",
+      client_name: assessment?.clientName || "",
+      jd_title: assessment?.jdTitle || "",
+      applied_too: Boolean(assessment?.applied_too || assessment?.appliedToo),
+      source: String(assessment?.source || assessment?.sourcePlatform || "").trim(),
+      loading: true
+    };
+
+    setDatabaseProfileItem({
+      raw: {
+        candidate: {
+          ...fallbackCandidateRow,
+          ...(candidateRow || {})
+        },
+        assessment
+      }
+    });
+
     let candidateRow = pool.find((item) => String(item?.id || "").trim() === String(candidateId).trim()) || null;
     if (!candidateRow) {
       try {
@@ -14154,24 +14202,9 @@ function PortalApp({ token, onLogout }) {
       }
     }
 
-    // If still missing, show a lightweight modal using assessment fields (fallback).
+    // If still missing, keep the assessment fallback; otherwise swap in the richer candidate row.
     if (!candidateRow) {
-      candidateRow = {
-        id: candidateId,
-        name: assessment?.candidateName || "Candidate",
-        phone: assessment?.phoneNumber || "",
-        email: assessment?.emailId || "",
-        company: assessment?.currentCompany || "",
-        role: assessment?.currentDesignation || "",
-        experience: assessment?.totalExperience || "",
-        location: assessment?.location || "",
-        current_ctc: assessment?.currentCtc || "",
-        expected_ctc: assessment?.expectedCtc || "",
-        notice_period: assessment?.noticePeriod || "",
-        linkedin: assessment?.linkedinUrl || "",
-        client_name: assessment?.clientName || "",
-        jd_title: assessment?.jdTitle || ""
-      };
+      return;
     }
 
     setDatabaseProfileItem({
@@ -21534,21 +21567,30 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
       if (assessment?.candidateId && String(item.id) === String(assessment.candidateId)) return true;
       return String(item.name || "").trim().toLowerCase() === String(assessment?.candidateName || "").trim().toLowerCase();
     }) || null;
-    const contactAttempts = candidate?.id
-      ? await api(`/contact-attempts?candidate_id=${encodeURIComponent(candidate.id)}&limit=100`, token).catch(() => [])
-      : [];
-    const text = buildJourneyText(
-      assessment,
-      Array.isArray(contactAttempts) ? contactAttempts : [],
-      candidate
-    );
-    await copyText(text);
     setAssessmentJourneyModal({
       open: true,
       title: `${assessment?.candidateName || candidate?.name || "Candidate"} journey`,
-      text
+      text: "",
+      loading: true
     });
-    setStatus("assessments", "Journey copied.", "ok");
+    void (async () => {
+      const contactAttempts = candidate?.id
+        ? await api(`/contact-attempts?candidate_id=${encodeURIComponent(candidate.id)}&limit=100`, token).catch(() => [])
+        : [];
+      const text = buildJourneyText(
+        assessment,
+        Array.isArray(contactAttempts) ? contactAttempts : [],
+        candidate
+      );
+      setAssessmentJourneyModal({
+        open: true,
+        title: `${assessment?.candidateName || candidate?.name || "Candidate"} journey`,
+        text,
+        loading: false
+      });
+      await copyText(text);
+      setStatus("assessments", "Journey copied.", "ok");
+    })();
   }
 
   function isGarbageCvFieldValue(value = "") {
@@ -23617,6 +23659,20 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                         <div className="captured-note-col captured-note-col--profile">
                           <div className="captured-note-title-row">
                             <h3>{item.name || "Candidate"}</h3>
+                            {Boolean(item.applied_too || item.appliedToo || item.application_source || item.applicationSource) ? (
+                              <span
+                                className="captured-note-summary-badge"
+                                style={{
+                                  marginLeft: 8,
+                                  padding: "2px 8px",
+                                  fontSize: "11px",
+                                  lineHeight: 1.2,
+                                  borderRadius: 999
+                                }}
+                              >
+                                Applied too
+                              </span>
+                            ) : null}
                             {linkedinHref ? (
                               <a className="captured-note-linkedin" href={linkedinHref} target="_blank" rel="noopener noreferrer" aria-label="Open LinkedIn profile" title="Open LinkedIn profile">
                                 <span className="captured-note-linkedin-icon">in</span>
@@ -26883,6 +26939,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
         open={Boolean(assessmentJourneyModal.open)}
         title={assessmentJourneyModal.title}
         text={assessmentJourneyModal.text}
+        loading={Boolean(assessmentJourneyModal.loading)}
         onClose={() => setAssessmentJourneyModal({ open: false, title: "", text: "" })}
         onCopy={() => copyText(assessmentJourneyModal.text)}
       />
