@@ -6265,8 +6265,34 @@ function DrilldownModal({ open, title, items, onClose, onOpenCvOriginal, onOpenC
   );
 }
 
-function CandidateProfileModal({ open, candidate, onClose, onOpenCvOriginal, onOpenCvBranded, onReuse, onCopyShareLink }) {
-  if (!open || !candidate) return null;
+function CandidateProfileModal({ open, candidate, loading = false, onClose, onOpenCvOriginal, onOpenCvBranded, onReuse, onCopyShareLink }) {
+  if (!open) return null;
+  if (loading || !candidate) {
+    return (
+      <div className="overlay">
+        <div className="overlay-card overlay-card--wide" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 1200, width: "96vw" }}>
+          <div className="empty-state" style={{ minHeight: 320, display: "flex", alignItems: "center", justifyContent: "center", gap: 10 }}>
+            <span
+              aria-hidden="true"
+              style={{
+                width: 18,
+                height: 18,
+                borderRadius: "50%",
+                border: "2px solid rgba(59, 130, 246, 0.22)",
+                borderTopColor: "#2563eb",
+                animation: "assessmentSpin 0.8s linear infinite",
+                flex: "0 0 auto"
+              }}
+            />
+            <span>Loading</span>
+          </div>
+          <div className="button-row">
+            <button className="ghost-btn" onClick={onClose}>Close</button>
+          </div>
+        </div>
+      </div>
+    );
+  }
   const ctx = resolveCandidateContext(candidate);
   const baseCandidate = ctx.candidate || candidate;
   const linkedAssessment = ctx.assessment || null;
@@ -6368,7 +6394,7 @@ function CandidateProfileModal({ open, candidate, onClose, onOpenCvOriginal, onO
   ];
   return (
     <div className="overlay">
-      <div className="overlay-card overlay-card--wide" onClick={(e) => e.stopPropagation()}>
+      <div className="overlay-card overlay-card--wide" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 1200, width: "96vw" }}>
         <div className="candidate-sheet__head">
           <div>
             <h3>{modalTitle}</h3>
@@ -6704,7 +6730,7 @@ function JourneyModal({ open, title = "Journey", text = "", loading = false, onC
   if (!open) return null;
   return (
     <div className="overlay" onClick={onClose}>
-      <div className="overlay-card overlay-card--wide journey-modal" onClick={(e) => e.stopPropagation()}>
+      <div className="overlay-card overlay-card--wide journey-modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 980, width: "96vw" }}>
         <div className="overlay-header">
           <div>
             <h3>{title}</h3>
@@ -6732,6 +6758,7 @@ function JourneyModal({ open, title = "Journey", text = "", loading = false, onC
             readOnly
             value={text}
             onFocus={(e) => e.currentTarget.select()}
+            rows={14}
           />
         )}
         <div className="button-row">
@@ -6744,6 +6771,7 @@ function JourneyModal({ open, title = "Journey", text = "", loading = false, onC
 }
 
 const DASHBOARD_FILTER_STORAGE_KEY = "recruitdesk_portal_dashboard_filters_v1";
+const DASHBOARD_SNAPSHOT_STORAGE_KEY = "recruitdesk_portal_dashboard_snapshot_v1";
 const DASHBOARD_AGENDA_SNAPSHOT_STORAGE_KEY = "recruitdesk_portal_dashboard_agenda_snapshot_v1";
 const PORTAL_TAB_FIRST_OPEN_RUNTIME_STATE = globalThis.__recruitdeskPortalTabFirstOpenRuntimeState || (globalThis.__recruitdeskPortalTabFirstOpenRuntimeState = {
   captured: false,
@@ -6760,6 +6788,30 @@ function readDashboardAgendaSnapshot() {
     return parsed;
   } catch {
     return null;
+  }
+}
+
+function readDashboardSnapshot() {
+  try {
+    const raw = window.localStorage.getItem(DASHBOARD_SNAPSHOT_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object") return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function writeDashboardSnapshot(snapshot) {
+  try {
+    if (!snapshot || typeof snapshot !== "object") {
+      window.localStorage.removeItem(DASHBOARD_SNAPSHOT_STORAGE_KEY);
+      return;
+    }
+    window.localStorage.setItem(DASHBOARD_SNAPSHOT_STORAGE_KEY, JSON.stringify(snapshot));
+  } catch {
+    // Ignore storage quota / private mode errors.
   }
 }
 
@@ -8188,7 +8240,7 @@ function PortalApp({ token, onLogout }) {
   const navigate = useNavigate();
   const [state, setState] = useState({
     user: null,
-    dashboard: null,
+    dashboard: readDashboardSnapshot(),
     clientPortal: null,
     applicants: [],
     applicantListItems: [],
@@ -10241,6 +10293,9 @@ function PortalApp({ token, onLogout }) {
     if (filters.recruiterLabel) params.set("recruiterLabel", filters.recruiterLabel);
     const dashboardResult = await api(`/company/dashboard${params.toString() ? `?${params.toString()}` : ""}`, token);
     if (latestDashboardKeyRef.current !== key) return;
+    if (dashboardResult && typeof dashboardResult === "object") {
+      writeDashboardSnapshot(dashboardResult);
+    }
     setState((current) => ({ ...current, dashboard: dashboardResult || {} }));
   }
 
@@ -10490,13 +10545,7 @@ function PortalApp({ token, onLogout }) {
     setWorkspaceDataReady(false);
     databaseCandidatesHydratedRef.current = false;
     try {
-      const [userResult] = await Promise.all([
-        api("/auth/me", token).catch(() => ({ user: null })),
-        loadDashboardSummary(dashboardFilters).catch(() => null),
-        loadClientPortalSummary(clientPortalFilters).catch(() => null),
-        reloadCapturedStats(candidateFiltersApplied).catch(() => null),
-        reloadApplicantStats(applicantFiltersApplied).catch(() => null)
-      ]);
+      const userResult = await api("/auth/me", token).catch(() => ({ user: null }));
       if (userResult) {
         setState((current) => ({
           ...current,
@@ -10506,6 +10555,10 @@ function PortalApp({ token, onLogout }) {
     } finally {
       setWorkspaceDataReady(true);
     }
+    void loadDashboardSummary(dashboardFilters).catch(() => null);
+    void loadClientPortalSummary(clientPortalFilters).catch(() => null);
+    void reloadCapturedStats(candidateFiltersApplied).catch(() => null);
+    void reloadApplicantStats(applicantFiltersApplied).catch(() => null);
     void loadWorkspace({
       forceFiveTabsRefresh: false,
       preloadAllTabs: false,
@@ -14162,32 +14215,9 @@ function PortalApp({ token, onLogout }) {
     }
 
     const pool = (state.databaseCandidates || []).length ? state.databaseCandidates : (state.candidates || []);
-    const fallbackCandidateRow = {
-      id: candidateId,
-      name: assessment?.candidateName || "Candidate",
-      phone: assessment?.phoneNumber || "",
-      email: assessment?.emailId || "",
-      company: assessment?.currentCompany || "",
-      role: assessment?.currentDesignation || "",
-      experience: assessment?.totalExperience || "",
-      location: assessment?.location || "",
-      current_ctc: assessment?.currentCtc || "",
-      expected_ctc: assessment?.expectedCtc || "",
-      notice_period: assessment?.noticePeriod || "",
-      linkedin: assessment?.linkedinUrl || "",
-      client_name: assessment?.clientName || "",
-      jd_title: assessment?.jdTitle || "",
-      applied_too: Boolean(assessment?.applied_too || assessment?.appliedToo),
-      source: String(assessment?.source || assessment?.sourcePlatform || "").trim(),
-      loading: true
-    };
-
     setDatabaseProfileItem({
+      loading: true,
       raw: {
-        candidate: {
-          ...fallbackCandidateRow,
-          ...(candidateRow || {})
-        },
         assessment
       }
     });
@@ -14202,8 +14232,9 @@ function PortalApp({ token, onLogout }) {
       }
     }
 
-    // If still missing, keep the assessment fallback; otherwise swap in the richer candidate row.
     if (!candidateRow) {
+      setDatabaseProfileItem(null);
+      setStatus("assessments", "Linked candidate data is still loading or unavailable.", "error");
       return;
     }
 
@@ -26917,6 +26948,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
       <CandidateProfileModal
         open={Boolean(databaseProfileItem)}
         candidate={databaseProfileItem}
+        loading={Boolean(databaseProfileItem?.loading)}
         onClose={() => setDatabaseProfileItem(null)}
         onOpenCvOriginal={(candidate) => openDatabaseCandidateCv(candidate)}
         onOpenCvBranded={(candidate) => void openBrandedCandidateCv(candidate)}
