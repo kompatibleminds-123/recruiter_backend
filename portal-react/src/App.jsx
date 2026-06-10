@@ -21142,6 +21142,8 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
       });
       setStatus("assessments", archived ? "Assessment archived." : "Assessment restored.", "ok");
       void syncPostAssessmentMutation({ candidateId }).catch(() => {});
+      void reloadAssessmentSlice(assessmentPage, safeAssessmentApiPageSize, safeAssessmentFiltersApplied, assessmentLane, assessmentSortBy).catch(() => {});
+      void reloadAssessmentStats(safeAssessmentFiltersApplied).catch(() => {});
       return saved;
     } catch (error) {
       const message = String(error?.message || error);
@@ -21177,8 +21179,8 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
         },
         source: "LOCAL_PATCH"
       });
-      void reloadAssessmentSlice(assessmentPage, safeAssessmentApiPageSize, assessmentFiltersApplied, assessmentLane, assessmentSortBy).catch(() => {});
-      void reloadAssessmentStats(assessmentFiltersApplied).catch(() => {});
+      void reloadAssessmentSlice(assessmentPage, safeAssessmentApiPageSize, safeAssessmentFiltersApplied, assessmentLane, assessmentSortBy).catch(() => {});
+      void reloadAssessmentStats(safeAssessmentFiltersApplied).catch(() => {});
       setStatus("assessments", message, "error");
       return null;
     } finally {
