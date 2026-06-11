@@ -2673,12 +2673,19 @@ function sortApplicantsForList(items = [], sortBy = "created") {
 
 function sortAssessmentsForList(items = [], sortBy = "updated") {
   const sortMode = String(sortBy || "updated").trim().toLowerCase();
+  const getAssessmentConvertedAt = (assessment = {}) => String(
+    assessment?.generatedAt ||
+    assessment?.generated_at ||
+    assessment?.createdAt ||
+    assessment?.created_at ||
+    ""
+  ).trim();
   const primaryKeys = sortMode === "created"
-    ? ["createdAt", "created_at", "generatedAt"]
+    ? ["generatedAt", "generated_at", "createdAt", "created_at"]
     : ["updatedAt", "updated_at", "createdAt", "created_at", "generatedAt"];
   return (Array.isArray(items) ? items : []).slice().sort((a, b) => {
-    const aTime = Date.parse(String(primaryKeys.map((key) => a?.[key]).find((value) => String(value || "").trim()) || ""));
-    const bTime = Date.parse(String(primaryKeys.map((key) => b?.[key]).find((value) => String(value || "").trim()) || ""));
+    const aTime = Date.parse(sortMode === "created" ? getAssessmentConvertedAt(a) : String(primaryKeys.map((key) => a?.[key]).find((value) => String(value || "").trim()) || ""));
+    const bTime = Date.parse(sortMode === "created" ? getAssessmentConvertedAt(b) : String(primaryKeys.map((key) => b?.[key]).find((value) => String(value || "").trim()) || ""));
     const diff = (Number.isFinite(bTime) ? bTime : 0) - (Number.isFinite(aTime) ? aTime : 0);
     if (diff) return diff;
     if (sortMode === "created") return 0;
