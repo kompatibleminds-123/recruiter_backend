@@ -2645,12 +2645,13 @@ function sortCapturedNotesForList(items = [], sortBy = "created") {
   const sortMode = String(sortBy || "created").trim().toLowerCase();
   const primaryKeys = sortMode === "updated"
     ? ["updatedAt", "updated_at", "last_contact_at", "lastContactAt", "assigned_at", "assignedAt", "createdAt", "created_at"]
-    : ["createdAt", "created_at", "generatedAt", "updatedAt", "updated_at", "last_contact_at", "lastContactAt"];
+    : ["createdAt", "created_at", "generatedAt"];
   return (Array.isArray(items) ? items : []).slice().sort((a, b) => {
     const aTime = Date.parse(String(primaryKeys.map((key) => a?.[key]).find((value) => String(value || "").trim()) || ""));
     const bTime = Date.parse(String(primaryKeys.map((key) => b?.[key]).find((value) => String(value || "").trim()) || ""));
     const diff = (Number.isFinite(bTime) ? bTime : 0) - (Number.isFinite(aTime) ? aTime : 0);
     if (diff) return diff;
+    if (sortMode === "created") return 0;
     return String(b?.id || "").localeCompare(String(a?.id || ""));
   });
 }
@@ -2659,12 +2660,13 @@ function sortApplicantsForList(items = [], sortBy = "created") {
   const sortMode = String(sortBy || "created").trim().toLowerCase();
   const primaryKeys = sortMode === "updated"
     ? ["updatedAt", "updated_at", "assigned_at", "assignedAt", "last_contact_at", "lastContactAt", "createdAt", "created_at"]
-    : ["createdAt", "created_at", "appliedAt", "applied_at", "updatedAt", "updated_at", "assigned_at", "assignedAt"];
+    : ["createdAt", "created_at", "appliedAt", "applied_at"];
   return (Array.isArray(items) ? items : []).slice().sort((a, b) => {
     const aTime = Date.parse(String(primaryKeys.map((key) => a?.[key]).find((value) => String(value || "").trim()) || ""));
     const bTime = Date.parse(String(primaryKeys.map((key) => b?.[key]).find((value) => String(value || "").trim()) || ""));
     const diff = (Number.isFinite(bTime) ? bTime : 0) - (Number.isFinite(aTime) ? aTime : 0);
     if (diff) return diff;
+    if (sortMode === "created") return 0;
     return String(b?.id || "").localeCompare(String(a?.id || ""));
   });
 }
@@ -2672,13 +2674,14 @@ function sortApplicantsForList(items = [], sortBy = "created") {
 function sortAssessmentsForList(items = [], sortBy = "updated") {
   const sortMode = String(sortBy || "updated").trim().toLowerCase();
   const primaryKeys = sortMode === "created"
-    ? ["createdAt", "created_at", "generatedAt", "updatedAt", "updated_at"]
+    ? ["createdAt", "created_at", "generatedAt"]
     : ["updatedAt", "updated_at", "createdAt", "created_at", "generatedAt"];
   return (Array.isArray(items) ? items : []).slice().sort((a, b) => {
     const aTime = Date.parse(String(primaryKeys.map((key) => a?.[key]).find((value) => String(value || "").trim()) || ""));
     const bTime = Date.parse(String(primaryKeys.map((key) => b?.[key]).find((value) => String(value || "").trim()) || ""));
     const diff = (Number.isFinite(bTime) ? bTime : 0) - (Number.isFinite(aTime) ? aTime : 0);
     if (diff) return diff;
+    if (sortMode === "created") return 0;
     return String(b?.id || "").localeCompare(String(a?.id || ""));
   });
 }
