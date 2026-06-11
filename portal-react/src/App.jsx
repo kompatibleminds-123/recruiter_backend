@@ -10819,6 +10819,18 @@ function PortalApp({ token, onLogout }) {
     setApplicantStatsSnapshot(statsEnvelope?.data || null);
   }
 
+  async function refreshCandidateStatsAfterMutation(kind = "captured") {
+    const target = String(kind || "").trim().toLowerCase();
+    const tasks = [];
+    if (target === "captured" || target === "all") {
+      tasks.push(reloadCapturedStats(safeCandidateFiltersApplied).catch(() => null));
+    }
+    if (target === "applicants" || target === "all") {
+      tasks.push(reloadApplicantStats(applicantFiltersApplied).catch(() => null));
+    }
+    await Promise.all(tasks);
+  }
+
   function buildCapturedQueryParams(filters = candidateFiltersApplied, page = capturedPage, limit = safeCapturedApiPageSize, sortBy = capturedSortBy) {
     const params = new URLSearchParams();
     params.set("limit", String(Math.max(1, Number(limit || 25))));
@@ -14447,16 +14459,9 @@ function PortalApp({ token, onLogout }) {
         };
       });
     }
-    setApplicantStatsSnapshot((current) => {
-      if (!current || typeof current !== "object") return current;
-      return {
-        ...current,
-        active: Math.max(0, Number(current.active || 0) - 1),
-        inactive: Math.max(0, Number(current.inactive || 0) + 1)
-      };
-    });
     try {
       await api(`/company/candidates/${encodeURIComponent(applicantId)}`, token, "PATCH", { patch: { hidden_from_captured: true } });
+      await refreshCandidateStatsAfterMutation("applicants");
       setStatus("applicants", "Applicant hidden from active list.", "ok");
     } catch (error) {
       setState((current) => ({
@@ -14488,14 +14493,6 @@ function PortalApp({ token, onLogout }) {
           };
         });
       }
-      setApplicantStatsSnapshot((current) => {
-        if (!current || typeof current !== "object") return current;
-        return {
-          ...current,
-          active: Math.max(0, Number(current.active || 0) + 1),
-          inactive: Math.max(0, Number(current.inactive || 0) - 1)
-        };
-      });
       setStatus("applicants", String(error?.message || error), "error");
     }
   }
@@ -14534,16 +14531,9 @@ function PortalApp({ token, onLogout }) {
         };
       });
     }
-    setApplicantStatsSnapshot((current) => {
-      if (!current || typeof current !== "object") return current;
-      return {
-        ...current,
-        active: Math.max(0, Number(current.active || 0) + 1),
-        inactive: Math.max(0, Number(current.inactive || 0) - 1)
-      };
-    });
     try {
       await api(`/company/candidates/${encodeURIComponent(applicantId)}`, token, "PATCH", { patch: { hidden_from_captured: false } });
+      await refreshCandidateStatsAfterMutation("applicants");
       setStatus("applicants", "Applicant restored to active list.", "ok");
     } catch (error) {
       setState((current) => ({
@@ -14575,14 +14565,6 @@ function PortalApp({ token, onLogout }) {
           };
         });
       }
-      setApplicantStatsSnapshot((current) => {
-        if (!current || typeof current !== "object") return current;
-        return {
-          ...current,
-          active: Math.max(0, Number(current.active || 0) - 1),
-          inactive: Math.max(0, Number(current.inactive || 0) + 1)
-        };
-      });
       setStatus("applicants", String(error?.message || error), "error");
     }
   }
@@ -14931,16 +14913,9 @@ function PortalApp({ token, onLogout }) {
         };
       });
     }
-    setCapturedStatsSnapshot((current) => {
-      if (!current || typeof current !== "object") return current;
-      return {
-        ...current,
-        active: Math.max(0, Number(current.active || 0) - 1),
-        inactive: Math.max(0, Number(current.inactive || 0) + 1)
-      };
-    });
     try {
       await api(`/company/candidates/${encodeURIComponent(candidateId)}`, token, "PATCH", { patch: { hidden_from_captured: true } });
+      await refreshCandidateStatsAfterMutation("captured");
       setStatus("captured", "Candidate hidden from captured notes.", "ok");
     } catch (error) {
       setCapturedListItems((current) => (shouldRemainVisible
@@ -14968,14 +14943,6 @@ function PortalApp({ token, onLogout }) {
           };
         });
       }
-      setCapturedStatsSnapshot((current) => {
-        if (!current || typeof current !== "object") return current;
-        return {
-          ...current,
-          active: Math.max(0, Number(current.active || 0) + 1),
-          inactive: Math.max(0, Number(current.inactive || 0) - 1)
-        };
-      });
       setStatus("captured", String(error?.message || error), "error");
     }
   }
@@ -15014,16 +14981,9 @@ function PortalApp({ token, onLogout }) {
         };
       });
     }
-    setCapturedStatsSnapshot((current) => {
-      if (!current || typeof current !== "object") return current;
-      return {
-        ...current,
-        active: Math.max(0, Number(current.active || 0) + 1),
-        inactive: Math.max(0, Number(current.inactive || 0) - 1)
-      };
-    });
     try {
       await api(`/company/candidates/${encodeURIComponent(candidateId)}`, token, "PATCH", { patch: { hidden_from_captured: false } });
+      await refreshCandidateStatsAfterMutation("captured");
       setStatus("captured", "Candidate restored to active captured notes.", "ok");
     } catch (error) {
       setCapturedListItems((current) => (shouldRemainVisible
@@ -15051,14 +15011,6 @@ function PortalApp({ token, onLogout }) {
           };
         });
       }
-      setCapturedStatsSnapshot((current) => {
-        if (!current || typeof current !== "object") return current;
-        return {
-          ...current,
-          active: Math.max(0, Number(current.active || 0) - 1),
-          inactive: Math.max(0, Number(current.inactive || 0) + 1)
-        };
-      });
       setStatus("captured", String(error?.message || error), "error");
     }
   }
@@ -15403,7 +15355,7 @@ function PortalApp({ token, onLogout }) {
       assignedRecruiter
     });
     await api("/candidates", token, "POST", { candidate: payload });
-    await reloadCandidatesSlice({ includeDatabase: location?.pathname === "/candidates" });
+    await refreshCandidateStatsAfterMutation("captured");
     setNewDraftOpen(false);
     resetNewDraftForm();
     setStatus("captured", "Manual draft created.", "ok");
@@ -15538,6 +15490,7 @@ function PortalApp({ token, onLogout }) {
         }
       }
       await reloadCandidatesSlice({ includeDatabase: location?.pathname === "/candidates" });
+      await refreshCandidateStatsAfterMutation("captured");
       setStatus("captured", `Bulk CV import done. Success: ${success} | Failed: ${failed}.`, failed ? "error" : "ok");
     } finally {
       setNewDraftImportBusy(false);
@@ -15782,6 +15735,7 @@ function PortalApp({ token, onLogout }) {
       void (async () => {
         try {
           await reloadCandidatesSlice({ includeDatabase: location?.pathname === "/candidates" });
+          await refreshCandidateStatsAfterMutation("captured");
           void refreshWorkspaceSilently("post-sheet-bulk-import");
         } catch {
           // Non-blocking refresh; summary already shown.
