@@ -5659,14 +5659,31 @@ async function ingestApplicantSubmission(body, req) {
     metadata.applyAssignedVia = "apply_link";
   }
 
-  // If the same candidate already exists (captured note), merge into that row and move it to Applied
-  // instead of creating a duplicate candidate entry.
-  let duplicate = await findDuplicateCandidate(
-    { company_id: payload.companyId, phone: merged.phone, email: merged.email, linkedin: merged.linkedin },
-    { companyId: payload.companyId }
-  ).catch(() => null);
+  // Hosted/public apply must trust the submitted form identity first.
+  // CV-extracted identity is only a fallback when the form is missing that field.
+  const formIdentity = {
+    company_id: payload.companyId,
+    phone: String(payload.phone || "").trim(),
+    email: String(payload.email || "").trim(),
+    linkedin: String(payload.linkedinUrl || "").trim()
+  };
+  const fallbackIdentity = {
+    company_id: payload.companyId,
+    phone: formIdentity.phone || merged.phone,
+    email: formIdentity.email || merged.email,
+    linkedin: formIdentity.linkedin || merged.linkedin
+  };
+
+  let duplicate = await findDuplicateCandidate(formIdentity, { companyId: payload.companyId }).catch(() => null);
   if (!duplicate?.existing?.id) {
-    const linked = await findAssessmentLinkedCandidateByIdentity({ companyId: payload.companyId, phone: merged.phone, email: merged.email }).catch(() => null);
+    duplicate = await findDuplicateCandidate(fallbackIdentity, { companyId: payload.companyId }).catch(() => null);
+  }
+  if (!duplicate?.existing?.id) {
+    const linked = await findAssessmentLinkedCandidateByIdentity({
+      companyId: payload.companyId,
+      phone: formIdentity.phone || fallbackIdentity.phone,
+      email: formIdentity.email || fallbackIdentity.email
+    }).catch(() => null);
     if (linked?.id) {
       duplicate = { existing: linked, matchBy: ["assessment_identity"] };
     }
