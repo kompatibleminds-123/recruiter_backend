@@ -760,25 +760,19 @@ const EMPTY_CANDIDATE_STRUCTURED_FILTERS = {
 };
 
 const DASHBOARD_METRIC_COLUMNS = [
-  ["sourced", "Sourced"],
-  ["applied", "Applied"],
-  ["converted", "Shared"],
-  ["under_interview_process", "Under Interview"],
-  ["hold", "Hold"],
-  ["rejected", "Rejected"],
-  ["duplicate", "Duplicate"],
-  ["dropped", "Dropped"],
+  ["totalCandidates", "Total Candidates"],
+  ["sharedProfiles", "Shared Profiles"],
+  ["interviews", "Interviews"],
   ["shortlisted", "Shortlisted"],
   ["offered", "Offered"],
   ["joined", "Joined"]
 ];
 
 const DASHBOARD_METRIC_TILES = [
-  ["sourced", "Sourced"],
-  ["applied", "Applied"],
-  ["converted", "Shared"],
-  ["under_interview_process", "Under Interview"],
-  ["hold", "Hold"],
+  ["totalCandidates", "Total Candidates"],
+  ["sharedProfiles", "Shared Profiles"],
+  ["interviews", "Interviews"],
+  ["shortlisted", "Shortlisted"],
   ["offered", "Offered"],
   ["joined", "Joined"]
 ];
@@ -9012,6 +9006,7 @@ function PortalApp({ token, onLogout }) {
   const [workspaceDataReady, setWorkspaceDataReady] = useState(false);
   const [assessmentsLiveDataReady, setAssessmentsLiveDataReady] = useState(false);
   const dashboardAgendaSnapshotKeyRef = useRef("");
+  const dashboardAgendaLoadKeyRef = useRef("");
   // Prevent background refresh from clobbering in-flight actions (e.g. SMTP send).
   const suspendWorkspaceRefreshRef = useRef(false);
 	const loadWorkspaceRef = useRef(null);
@@ -10288,6 +10283,37 @@ function PortalApp({ token, onLogout }) {
       });
   }, [hostedJobId, token, state.user?.role]);
 
+  function updateDashboardState(nextPatch) {
+    setState((current) => ({
+      ...current,
+      dashboard: {
+        ...(current.dashboard && typeof current.dashboard === "object" ? current.dashboard : {}),
+        ...(nextPatch && typeof nextPatch === "object" ? nextPatch : {})
+      }
+    }));
+  }
+
+  async function loadDashboardAgenda(range = agendaRange) {
+    const key = JSON.stringify({
+      range: String(range || "today")
+    });
+    dashboardAgendaLoadKeyRef.current = key;
+    const params = new URLSearchParams();
+    params.set("range", String(range || "today"));
+    const agendaResult = await api(`/company/dashboard/agenda${params.toString() ? `?${params.toString()}` : ""}`, token);
+    if (dashboardAgendaLoadKeyRef.current !== key) return;
+    const agenda = agendaResult?.agenda && typeof agendaResult.agenda === "object" ? agendaResult.agenda : (agendaResult || {});
+    const mergedDashboard = {
+      ...(state.dashboard && typeof state.dashboard === "object" ? state.dashboard : {}),
+      agenda
+    };
+    writeDashboardSnapshot(mergedDashboard);
+    writeDashboardAgendaSnapshot(agenda);
+    setDashboardAgendaSnapshot(agenda);
+    updateDashboardState(mergedDashboard);
+    return agenda;
+  }
+
   async function loadDashboardSummary(filters = dashboardFilters) {
     const key = JSON.stringify({
       dateFrom: String(filters?.dateFrom || ""),
@@ -10301,12 +10327,18 @@ function PortalApp({ token, onLogout }) {
     if (filters.dateTo) params.set("dateTo", filters.dateTo);
     if (filters.clientLabel) params.set("clientLabel", filters.clientLabel);
     if (filters.recruiterLabel) params.set("recruiterLabel", filters.recruiterLabel);
-    const dashboardResult = await api(`/company/dashboard${params.toString() ? `?${params.toString()}` : ""}`, token);
+    const dashboardResult = await api(`/company/dashboard/funnel${params.toString() ? `?${params.toString()}` : ""}`, token);
     if (latestDashboardKeyRef.current !== key) return;
-    if (dashboardResult && typeof dashboardResult === "object") {
-      writeDashboardSnapshot(dashboardResult);
-    }
-    setState((current) => ({ ...current, dashboard: dashboardResult || {} }));
+    const funnel = dashboardResult?.funnel && typeof dashboardResult.funnel === "object" ? dashboardResult.funnel : (dashboardResult || {});
+    const mergedDashboard = {
+      ...(state.dashboard && typeof state.dashboard === "object" ? state.dashboard : {}),
+      summary: funnel,
+      availableClients: Array.isArray(funnel.availableClients) ? funnel.availableClients : [],
+      availableRecruiters: Array.isArray(funnel.availableRecruiters) ? funnel.availableRecruiters : []
+    };
+    writeDashboardSnapshot(mergedDashboard);
+    updateDashboardState(mergedDashboard);
+    return funnel;
   }
 
   async function loadClientPortalSummary(filters = clientPortalFilters) {
@@ -10341,22 +10373,25 @@ function PortalApp({ token, onLogout }) {
     const pathname = String(location?.pathname || "/dashboard").trim() || "/dashboard";
     const forceCore = Boolean(forceFiveTabsRefresh);
     const forceAll = Boolean(preloadAllTabs);
+    const isDashboardRoute = pathname === "/dashboard";
     const isMarketingRoute = pathname === "/marketing" || pathname === "/marketing-module";
     const shouldSkipCoreSummaries = Boolean(skipCoreSummaries);
-    const needsDashboard = !shouldSkipCoreSummaries && (pathname === "/dashboard" || forceCore || forceAll);
+    const needsDashboard = !shouldSkipCoreSummaries && (isDashboardRoute || forceCore || forceAll);
     const needsApplicants = forceCore || forceAll;
     const needsIntake = pathname === "/intake-settings" || pathname === "/jobs" || pathname === "/applicants" || forceAll;
     const needsJobs = forceAll || (!isMarketingRoute && pathname !== "/mail-settings" && pathname !== "/login-settings" && pathname !== "/plan");
     const needsUsers = forceAll || needsJobs || pathname === "/login-settings";
     const needsEmployeeUsers = includeEmployeeUsers && (forceAll || pathname === "/login-settings" || pathname.startsWith("/admin/payroll"));
     const needsCandidates =
+      !isDashboardRoute && (
       pathname === "/dashboard" ||
       pathname === "/captured-notes" ||
       pathname === "/interview" ||
       forceCore ||
-      forceAll;
-    const needsDatabaseCandidates = pathname === "/candidates" || forceCore || forceAll;
+      forceAll);
+    const needsDatabaseCandidates = !isDashboardRoute && (pathname === "/candidates" || forceCore || forceAll);
     const needsAssessments =
+      !isDashboardRoute && (
       pathname === "/dashboard" ||
       pathname === "/captured-notes" ||
       pathname === "/assessments" ||
@@ -10364,10 +10399,10 @@ function PortalApp({ token, onLogout }) {
       pathname === "/interview" ||
       pathname === "/candidates" ||
       forceCore ||
-      forceAll;
+      forceAll);
     // Candidate smart-search chips (Shared this week/today) need conversion timestamps,
     // which are best sourced from assessment events.
-    const needsAssessmentEvents = includeEvents && (pathname === "/dashboard" || pathname === "/assessments" || pathname === "/candidates" || forceCore || forceAll);
+    const needsAssessmentEvents = includeEvents && !isDashboardRoute && (pathname === "/dashboard" || pathname === "/assessments" || pathname === "/candidates" || forceCore || forceAll);
     const needsEmailSettings = includeEmailSettings && (
       pathname === "/mail-settings" ||
       pathname === "/settings" ||
@@ -10385,18 +10420,24 @@ function PortalApp({ token, onLogout }) {
     if (needsAssessments) {
       setAssessmentsLiveDataReady(false);
     }
-    const dashboardKey = JSON.stringify({
+    const dashboardFunnelKey = JSON.stringify({
       dateFrom: String(dashboardFilters?.dateFrom || ""),
       dateTo: String(dashboardFilters?.dateTo || ""),
       clientLabel: String(dashboardFilters?.clientLabel || ""),
       recruiterLabel: String(dashboardFilters?.recruiterLabel || "")
     });
-    latestDashboardKeyRef.current = dashboardKey;
-    const dashboardParams = new URLSearchParams();
-    if (dashboardFilters.dateFrom) dashboardParams.set("dateFrom", dashboardFilters.dateFrom);
-    if (dashboardFilters.dateTo) dashboardParams.set("dateTo", dashboardFilters.dateTo);
-    if (dashboardFilters.clientLabel) dashboardParams.set("clientLabel", dashboardFilters.clientLabel);
-    if (dashboardFilters.recruiterLabel) dashboardParams.set("recruiterLabel", dashboardFilters.recruiterLabel);
+    latestDashboardKeyRef.current = dashboardFunnelKey;
+    const dashboardFunnelParams = new URLSearchParams();
+    if (dashboardFilters.dateFrom) dashboardFunnelParams.set("dateFrom", dashboardFilters.dateFrom);
+    if (dashboardFilters.dateTo) dashboardFunnelParams.set("dateTo", dashboardFilters.dateTo);
+    if (dashboardFilters.clientLabel) dashboardFunnelParams.set("clientLabel", dashboardFilters.clientLabel);
+    if (dashboardFilters.recruiterLabel) dashboardFunnelParams.set("recruiterLabel", dashboardFilters.recruiterLabel);
+    const dashboardAgendaKey = JSON.stringify({
+      range: String(agendaRange || "today")
+    });
+    dashboardAgendaLoadKeyRef.current = dashboardAgendaKey;
+    const dashboardAgendaParams = new URLSearchParams();
+    dashboardAgendaParams.set("range", String(agendaRange || "today"));
 
     const clientPortalKey = JSON.stringify({
       dateFrom: String(clientPortalFilters?.dateFrom || ""),
@@ -10409,10 +10450,14 @@ function PortalApp({ token, onLogout }) {
     if (clientPortalFilters.dateTo) clientPortalParams.set("dateTo", clientPortalFilters.dateTo);
     if (clientPortalFilters.clientLabel) clientPortalParams.set("clientLabel", clientPortalFilters.clientLabel);
 
-    const [userResult, dashboardResult, clientPortalResult, applicantsResult, intakeResult, jobsResult, jobsManageResult, usersResult, clientUsersResult, employeeUsersResult, candidatesResult, databaseCandidatesResult, assessmentsResult, assessmentEventsResult, sharedPresetResult, smtpSettingsResult, licenseResult, billingOverviewResult, billingPlansResult] = await Promise.all([
+    const [userResult, dashboardAgendaResult, dashboardFunnelResult, clientPortalResult, applicantsResult, intakeResult, jobsResult, jobsManageResult, usersResult, clientUsersResult, employeeUsersResult, candidatesResult, databaseCandidatesResult, assessmentsResult, assessmentEventsResult, sharedPresetResult, smtpSettingsResult, licenseResult, billingOverviewResult, billingPlansResult] = await Promise.all([
       api("/auth/me", token),
       needsDashboard
-        ? api(`/company/dashboard${dashboardParams.toString() ? `?${dashboardParams.toString()}` : ""}`, token)
+        ? api(`/company/dashboard/agenda${dashboardAgendaParams.toString() ? `?${dashboardAgendaParams.toString()}` : ""}`, token)
+        : Promise.resolve(null),
+      needsDashboard
+        ? api(`/company/dashboard/funnel${dashboardFunnelParams.toString() ? `?${dashboardFunnelParams.toString()}` : ""}`, token)
+            .catch(() => ({ funnel: { overall: {}, byClient: [], byRecruiter: [], availableClients: [], availableRecruiters: [] } }))
         : Promise.resolve(null),
       needsDashboard
         ? api(`/company/client-portal${clientPortalParams.toString() ? `?${clientPortalParams.toString()}` : ""}`, token)
@@ -10450,10 +10495,27 @@ function PortalApp({ token, onLogout }) {
       pathname === "/plan" ? api("/company/billing/plans", token).catch(() => ({ plans: [] })) : Promise.resolve(null)
     ]);
     const nextDashboard = (current) => (
-      needsDashboard && latestDashboardKeyRef.current === dashboardKey
+      needsDashboard && latestDashboardKeyRef.current === dashboardFunnelKey
         ? (
-            dashboardResult && typeof dashboardResult === "object" && Object.keys(dashboardResult).length
-              ? dashboardResult
+            dashboardFunnelResult && typeof dashboardFunnelResult === "object" && Object.keys(dashboardFunnelResult).length
+              ? {
+                  ...(current.dashboard && typeof current.dashboard === "object" ? current.dashboard : {}),
+                  summary: dashboardFunnelResult?.funnel && typeof dashboardFunnelResult.funnel === "object" ? dashboardFunnelResult.funnel : dashboardFunnelResult,
+                  availableClients: Array.isArray((dashboardFunnelResult?.funnel || dashboardFunnelResult || {}).availableClients) ? (dashboardFunnelResult?.funnel || dashboardFunnelResult).availableClients : [],
+                  availableRecruiters: Array.isArray((dashboardFunnelResult?.funnel || dashboardFunnelResult || {}).availableRecruiters) ? (dashboardFunnelResult?.funnel || dashboardFunnelResult).availableRecruiters : []
+                }
+              : current.dashboard
+        )
+        : current.dashboard
+    );
+    const nextDashboardAgenda = (current) => (
+      needsDashboard && dashboardAgendaLoadKeyRef.current === dashboardAgendaKey
+        ? (
+            dashboardAgendaResult && typeof dashboardAgendaResult === "object" && Object.keys(dashboardAgendaResult).length
+              ? {
+                  ...(current.dashboard && typeof current.dashboard === "object" ? current.dashboard : {}),
+                  agenda: dashboardAgendaResult?.agenda && typeof dashboardAgendaResult.agenda === "object" ? dashboardAgendaResult.agenda : dashboardAgendaResult
+                }
               : current.dashboard
           )
         : current.dashboard
@@ -10475,7 +10537,7 @@ function PortalApp({ token, onLogout }) {
     setState((current) => ({
       ...current,
       user: userResult.user || userResult,
-      dashboard: nextDashboard(current),
+      dashboard: nextDashboardAgenda(nextDashboard(current)),
       clientPortal: nextClientPortal(current),
       applicants: needsApplicants
         ? (
@@ -10565,6 +10627,7 @@ function PortalApp({ token, onLogout }) {
     } finally {
       setWorkspaceDataReady(true);
     }
+    void loadDashboardAgenda(agendaRange).catch(() => null);
     void loadDashboardSummary(dashboardFilters).catch(() => null);
     void reloadCapturedStats(candidateFiltersApplied).catch(() => null);
     void reloadApplicantStats(applicantFiltersApplied).catch(() => null);
@@ -21812,61 +21875,101 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
   const jdScreeningQuestions = parseQuestionList(jobDraft.standardQuestions);
   const interviewSelectedJob = (state.jobs || []).find((job) => String(job.title || "").trim() === String(interviewForm.jdTitle || "").trim()) || null;
   const interviewScreeningQuestions = parseQuestionList(interviewSelectedJob?.standardQuestions || "");
-  const clientPositionRows = state.dashboard?.summary?.byClientPosition || [];
-  const recruiterPositionRows = state.dashboard?.summary?.byClientRecruiter || [];
-  const dashboardOverall = state.dashboard?.summary?.overall || {};
-  const dashboardClientGroups = state.dashboard?.summary?.byClient || [];
-  const dashboardRecruiterGroups = state.dashboard?.summary?.byOwnerRecruiter || [];
+  const dashboardSummary = state.dashboard?.summary || {};
+  const dashboardOverall = dashboardSummary?.overall || {};
+  const dashboardClientGroups = Array.isArray(dashboardSummary?.byClient) ? dashboardSummary.byClient : [];
+  const dashboardRecruiterGroups = Array.isArray(dashboardSummary?.byRecruiter)
+    ? dashboardSummary.byRecruiter
+    : (Array.isArray(dashboardSummary?.byOwnerRecruiter) ? dashboardSummary.byOwnerRecruiter : []);
+  const normalizeDashboardFunnelGroup = (group = {}) => {
+    const totalCandidates = Number(group?.totalCandidates || 0);
+    const sharedProfiles = Number(group?.sharedProfiles || 0);
+    const interviews = Number(group?.interviews || 0);
+    const shortlisted = Number(group?.shortlisted || 0);
+    const offers = Number(group?.offers || 0);
+    const joined = Number(group?.joined || 0);
+    const conversionPct = Number(group?.overallConversionPct ?? group?.conversionPct ?? (totalCandidates > 0 ? Math.round((sharedProfiles / totalCandidates) * 100) : 0));
+    return {
+      ...group,
+      label: String(group?.label || "Unassigned"),
+      totalCandidates,
+      sharedProfiles,
+      interviews,
+      shortlisted,
+      offers,
+      joined,
+      conversionPct,
+      metrics: {
+        totalCandidates,
+        sharedProfiles,
+        interviews,
+        shortlisted,
+        offers,
+        joined,
+        sourced: totalCandidates,
+        applied: 0,
+        converted: sharedProfiles,
+        under_interview_process: interviews,
+        shortlisted,
+        offered: offers,
+        joined
+      }
+    };
+  };
+  const dashboardClientGroupsDisplay = dashboardClientGroups.map(normalizeDashboardFunnelGroup);
+  const dashboardRecruiterGroupsDisplay = dashboardRecruiterGroups.map(normalizeDashboardFunnelGroup);
+  const clientPositionRows = dashboardSummary?.byClientPosition || state.clientPortal?.summary?.byClientPosition || [];
+  const recruiterPositionRows = dashboardSummary?.byRecruiterPosition || dashboardSummary?.byClientRecruiter || [];
   const hasDashboardData = Boolean(
     Object.keys(dashboardOverall || {}).length ||
-    dashboardClientGroups.length ||
-    dashboardRecruiterGroups.length
+    dashboardClientGroupsDisplay.length ||
+    dashboardRecruiterGroupsDisplay.length
   );
   const safePct = (num, den) => (den > 0 ? Math.round((num / den) * 100) : 0);
   const kpiCards = [
-    { key: "totalCandidates", label: "Total Candidates", value: Number(dashboardOverall.sourced || 0), icon: "TC" },
-    { key: "activeRecruiters", label: "Active Recruiters", value: dashboardRecruiterGroups.length, icon: "RC" },
-    { key: "sharedProfiles", label: "Shared Profiles", value: Number(dashboardOverall.converted || 0), icon: "SH" },
-    { key: "interviews", label: "Interviews", value: Number(dashboardOverall.under_interview_process || 0), icon: "IN" },
-    { key: "offers", label: "Offers", value: Number(dashboardOverall.offered || 0), icon: "OF" },
-    { key: "overallConversion", label: "Overall Conversion %", value: `${safePct(Number(dashboardOverall.converted || 0), Number(dashboardOverall.sourced || 0))}%`, icon: "CV" }
+    { key: "totalCandidates", label: "Total Candidates", value: Number(dashboardOverall.totalCandidates || 0), icon: "TC" },
+    { key: "activeRecruiters", label: "Active Recruiters", value: Number(dashboardOverall.activeRecruiters || dashboardRecruiterGroupsDisplay.length || 0), icon: "RC" },
+    { key: "sharedProfiles", label: "Shared Profiles", value: Number(dashboardOverall.sharedProfiles || 0), icon: "SH" },
+    { key: "interviews", label: "Interviews", value: Number(dashboardOverall.interviews || 0), icon: "IN" },
+    { key: "offers", label: "Offers", value: Number(dashboardOverall.offers || 0), icon: "OF" },
+    { key: "overallConversion", label: "Overall Conversion %", value: `${Number(dashboardOverall.overallConversionPct || 0)}%`, icon: "CV" }
   ];
-  const clientLeaderboardShared = [...dashboardClientGroups]
-    .sort((a, b) => Number(b?.metrics?.converted || 0) - Number(a?.metrics?.converted || 0))
+  const clientLeaderboardShared = [...dashboardClientGroupsDisplay]
+    .sort((a, b) => Number(b?.sharedProfiles || 0) - Number(a?.sharedProfiles || 0))
     .slice(0, 3);
-  const clientLeaderboardInterviews = [...dashboardClientGroups]
-    .sort((a, b) => Number(b?.metrics?.under_interview_process || 0) - Number(a?.metrics?.under_interview_process || 0))
+  const clientLeaderboardInterviews = [...dashboardClientGroupsDisplay]
+    .sort((a, b) => Number(b?.interviews || 0) - Number(a?.interviews || 0))
     .slice(0, 3);
-  const clientLeaderboardLowConversion = [...dashboardClientGroups]
+  const clientLeaderboardLowConversion = [...dashboardClientGroupsDisplay]
     .map((group) => ({
       ...group,
-      conversion: safePct(Number(group?.metrics?.converted || 0), Number(group?.metrics?.sourced || 0))
+      conversion: Number(group?.conversionPct || 0)
     }))
-    .filter((group) => Number(group?.metrics?.sourced || 0) > 0)
+    .filter((group) => Number(group?.totalCandidates || 0) > 0)
     .sort((a, b) => Number(a.conversion || 0) - Number(b.conversion || 0))
     .slice(0, 3);
-  const clientChartRows = [...dashboardClientGroups]
+  const clientChartRows = [...dashboardClientGroupsDisplay]
     .map((group) => ({
       label: String(group?.label || "Client"),
-      sourced: Number(group?.metrics?.sourced || 0),
-      shared: Number(group?.metrics?.converted || 0),
-      interviews: Number(group?.metrics?.under_interview_process || 0),
-      conversion: safePct(Number(group?.metrics?.converted || 0), Number(group?.metrics?.sourced || 0))
+      sourced: Number(group?.totalCandidates || 0),
+      shared: Number(group?.sharedProfiles || 0),
+      interviews: Number(group?.interviews || 0),
+      conversion: Number(group?.conversionPct || 0)
     }))
     .sort((a, b) => b.sourced - a.sourced)
     .slice(0, 8);
   const maxClientSourced = Math.max(1, ...clientChartRows.map((row) => row.sourced));
   const maxClientSharedForFunnel = Math.max(1, ...clientChartRows.map((row) => row.shared));
-  const recruiterLeaderboardShared = [...dashboardRecruiterGroups]
-    .sort((a, b) => Number(b?.metrics?.converted || 0) - Number(a?.metrics?.converted || 0))
+  const recruiterLeaderboardShared = [...dashboardRecruiterGroupsDisplay]
+    .sort((a, b) => Number(b?.sharedProfiles || 0) - Number(a?.sharedProfiles || 0))
     .slice(0, 5);
-  const recruiterInsights = [...dashboardRecruiterGroups].map((group) => {
-    const sourced = Number(group?.metrics?.sourced || 0);
-    const applied = Number(group?.metrics?.applied || 0);
-    const shared = Number(group?.metrics?.converted || 0);
-    const interviews = Number(group?.metrics?.under_interview_process || 0);
-    const shortlisted = Number(group?.metrics?.shortlisted || 0);
-    const offered = Number(group?.metrics?.offered || 0);
+  const recruiterInsights = [...dashboardRecruiterGroupsDisplay].map((group) => {
+    const sourced = Number(group?.totalCandidates || 0);
+    const shared = Number(group?.sharedProfiles || 0);
+    const interviews = Number(group?.interviews || 0);
+    const shortlisted = Number(group?.shortlisted || 0);
+    const offered = Number(group?.offers || 0);
+    const joined = Number(group?.joined || 0);
     const selfSourced = Number(group?.ownership?.selfSourced || 0);
     const assignedSourcing = Number(group?.ownership?.assignedSourcing || group?.ownership?.adminAssignedSourcing || 0);
     const adminAssignedSourcing = Number(group?.ownership?.adminAssignedSourcing || 0);
@@ -21888,11 +21991,11 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
     return {
       label: String(group?.label || "Recruiter"),
       sourced,
-      applied,
       shared,
       interviews,
       shortlisted,
       offered,
+      joined,
       selfSourced,
       assignedSourcing,
       directApplicants,
@@ -22058,17 +22161,25 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
     writeDashboardAgendaSnapshot(snapshot);
   }, [assessmentsLiveDataReady, liveDashboardAgendaSnapshot, liveDashboardAgendaSnapshotKey]);
 
-  const dashboardAgendaSnapshotForDisplay = !assessmentsLiveDataReady && dashboardAgendaSnapshot && String(dashboardAgendaSnapshot.agendaRange || "") === String(agendaRange)
-    ? dashboardAgendaSnapshot
+  const dashboardAgendaApiForDisplay = state.dashboard?.agenda && String(state.dashboard?.agenda?.range || state.dashboard?.agenda?.agendaRange || "") === String(agendaRange)
+    ? state.dashboard.agenda
     : null;
-  const displayOverdueFollowUps = dashboardAgendaSnapshotForDisplay ? Number(dashboardAgendaSnapshotForDisplay.overdueFollowUpCount || 0) : overdueFollowUps.length;
-  const displayPendingNotes = dashboardAgendaSnapshotForDisplay ? Number(dashboardAgendaSnapshotForDisplay.pendingNotesCount || 0) : pendingNotes;
-  const displayScheduledInterviewCount = dashboardAgendaSnapshotForDisplay ? Number(dashboardAgendaSnapshotForDisplay.scheduledInterviewCount || 0) : todaysInterviews.length;
-  const displayUpcomingJoiningCount = dashboardAgendaSnapshotForDisplay ? Number(dashboardAgendaSnapshotForDisplay.upcomingJoiningCount || 0) : upcomingJoinings.length;
-  const displayPendingAssignments = dashboardAgendaSnapshotForDisplay ? Number(dashboardAgendaSnapshotForDisplay.pendingAssignmentCount || 0) : pendingAssignments;
-  const displayOverdueFollowUpItems = dashboardAgendaSnapshotForDisplay ? (dashboardAgendaSnapshotForDisplay.overdueFollowUps || []) : overdueFollowUps.slice(0, 5);
-  const displayScheduledFollowUpItems = dashboardAgendaSnapshotForDisplay ? (dashboardAgendaSnapshotForDisplay.scheduledFollowUpItems || []) : scheduledFollowUpItems;
-  const displayScheduledInterviewItems = dashboardAgendaSnapshotForDisplay ? (dashboardAgendaSnapshotForDisplay.scheduledInterviewItems || []) : scheduledInterviewItems;
+  const dashboardAgendaSnapshotForDisplay = dashboardAgendaApiForDisplay || (!assessmentsLiveDataReady && dashboardAgendaSnapshot && String(dashboardAgendaSnapshot.agendaRange || "") === String(agendaRange)
+    ? dashboardAgendaSnapshot
+    : null);
+  const dashboardAgendaCounts = dashboardAgendaSnapshotForDisplay?.counts || {};
+  const dashboardAgendaLists = dashboardAgendaSnapshotForDisplay?.lists || {};
+  const displayOverdueFollowUps = Number(dashboardAgendaCounts.overdueFollowUps ?? dashboardAgendaSnapshotForDisplay?.overdueFollowUpCount ?? overdueFollowUps.length ?? 0);
+  const displayPendingNotes = Number(dashboardAgendaCounts.pendingNotes ?? dashboardAgendaSnapshotForDisplay?.pendingNotesCount ?? pendingNotes ?? 0);
+  const displayScheduledInterviewCount = Number(dashboardAgendaCounts.scheduledInterviews ?? dashboardAgendaSnapshotForDisplay?.scheduledInterviewCount ?? todaysInterviews.length ?? 0);
+  const displayUpcomingJoiningCount = Number(dashboardAgendaCounts.upcomingJoinings ?? dashboardAgendaSnapshotForDisplay?.upcomingJoiningCount ?? upcomingJoinings.length ?? 0);
+  const displayPendingAssignments = Number(dashboardAgendaCounts.pendingApplicants ?? dashboardAgendaSnapshotForDisplay?.pendingAssignmentCount ?? pendingAssignments ?? 0);
+  const displayInterviewFeedbackAwaitedCount = Number(dashboardAgendaCounts.interviewFeedbackAwaited ?? dashboardAgendaSnapshotForDisplay?.interviewFeedbackAwaitedCount ?? 0);
+  const displayOverdueFollowUpItems = dashboardAgendaLists.followUps || dashboardAgendaSnapshotForDisplay?.overdueFollowUps || overdueFollowUps.slice(0, 5);
+  const displayScheduledFollowUpItems = dashboardAgendaSnapshotForDisplay?.scheduledFollowUpItems || scheduledFollowUpItems;
+  const displayScheduledInterviewItems = dashboardAgendaLists.interviews || dashboardAgendaSnapshotForDisplay?.scheduledInterviewItems || scheduledInterviewItems;
+  const displayInterviewFeedbackAwaitedItems = dashboardAgendaLists.interviewFeedbackAwaited || dashboardAgendaSnapshotForDisplay?.interviewFeedbackAwaited || [];
+  const displayUpcomingJoiningItems = dashboardAgendaLists.joinings || upcomingJoinings.slice(0, 5);
 
   return (
     <div className={`app-shell${sidebarCollapsed ? " app-shell--sidebar-collapsed" : ""}`}>
@@ -22135,19 +22246,22 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
               <Section kicker="Today" title="Today's Agenda">
                 <div className="agenda-header">
                   <p className="muted">
-                    {`${agendaRange === "today" ? "Today" : agendaRange === "tomorrow" ? "Tomorrow" : "Next 7 days"}: ${displayOverdueFollowUps} overdue | ${todaysFollowUps.length} follow-up(s) | ${displayScheduledInterviewCount} interview(s) | ${displayUpcomingJoiningCount} joining(s)`}
+                    {`${agendaRange === "today" ? "Today" : agendaRange === "tomorrow" ? "Tomorrow" : "Next 7 days"}: ${displayPendingNotes} pending note(s) | ${displayScheduledInterviewCount} interview(s) | ${displayUpcomingJoiningCount} joining(s) | ${displayInterviewFeedbackAwaitedCount} feedback awaited`}
                   </p>
-                  <select value={agendaRange} onChange={(e) => setAgendaRange(e.target.value)}>
+                  <select
+                    value={agendaRange}
+                    onChange={(e) => {
+                      const nextRange = e.target.value;
+                      setAgendaRange(nextRange);
+                      void loadDashboardAgenda(nextRange).catch(() => null);
+                    }}
+                  >
                     <option value="today">Today</option>
                     <option value="tomorrow">Tomorrow</option>
-                    <option value="next_7_days">Next 7 days</option>
+                    <option value="next7days">Next 7 days</option>
                   </select>
                 </div>
                 <div className="agenda-summary-grid">
-                  <div className="metric-card compact-metric">
-                    <div className="metric-label">Overdue follow-ups</div>
-                    <div className="metric-value">{displayOverdueFollowUps}</div>
-                  </div>
                   <div className="metric-card compact-metric">
                     <div className="metric-label">Pending notes</div>
                     <div className="metric-value">{displayPendingNotes}</div>
@@ -22164,6 +22278,10 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                     <div className="metric-label">Pending applicants</div>
                     <div className="metric-value">{displayPendingAssignments}</div>
                   </div>
+                  <div className="metric-card compact-metric">
+                    <div className="metric-label">Interview feedback awaited</div>
+                    <div className="metric-value">{displayInterviewFeedbackAwaitedCount}</div>
+                  </div>
                 </div>
                 <div className="stack-list compact">
                   {!!displayOverdueFollowUpItems.length && (
@@ -22173,9 +22291,9 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                         {displayOverdueFollowUpItems.map((item) => (
                           <article key={`overdue-${item.key || item.id || item.candidateId || item.assessmentId}`} className="agenda-item">
                             <div>
-                              <span className="agenda-item__title">{item.title || item.name || "Candidate"}</span>
-                              <span className="agenda-item__subtitle">{item.subtitle || item.jdTitle || item.jd_title || "Untitled role"}</span>
-                              <span className="agenda-item__time">{item.when ? `Call follow-up | ${new Date(item.when).toLocaleString()}` : "Call follow-up"}</span>
+                              <span className="agenda-item__title">{item.title || item.candidateName || item.name || "Candidate"}</span>
+                              <span className="agenda-item__subtitle">{item.subtitle || item.role || item.jdTitle || item.jd_title || "Untitled role"}</span>
+                              <span className="agenda-item__time">{(item.when || item.at) ? `Call follow-up | ${new Date(item.when || item.at).toLocaleString()}` : "Call follow-up"}</span>
                             </div>
                             <div className="button-row tight">
                               <button onClick={() => void openAttempts(String(item.candidateId || item.id || item.assessmentId || ""))}>Update</button>
@@ -22199,12 +22317,12 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                           <h4>Follow-ups</h4>
                           <div className="stack-list compact">
                         {displayScheduledFollowUpItems.map((item) => (
-                          <article key={item.key} className="agenda-item">
+                          <article key={item.key || item.id || item.candidateId || item.assessmentId} className="agenda-item">
                             <div>
                               <span className="agenda-item__type">{item.type}</span>
-                              <span className="agenda-item__title">{item.title}</span>
-                              <span className="agenda-item__subtitle">{item.subtitle}</span>
-                              <span className="agenda-item__time">{item.when ? new Date(item.when).toLocaleString() : "-"}</span>
+                              <span className="agenda-item__title">{item.title || item.candidateName || "Candidate"}</span>
+                              <span className="agenda-item__subtitle">{item.subtitle || item.role || item.jdTitle || item.jd_title || "Untitled role"}</span>
+                              <span className="agenda-item__time">{(item.when || item.at) ? new Date(item.when || item.at).toLocaleString() : "-"}</span>
                             </div>
                             <div className="button-row tight">
                               <button onClick={() => void openAttempts(String(item.candidateId || item.raw?.id || item.id || ""))}>Update</button>
@@ -22219,12 +22337,12 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                           <h4>Interviews</h4>
                           <div className="stack-list compact">
                         {displayScheduledInterviewItems.map((item) => (
-                          <article key={item.key} className="agenda-item">
+                          <article key={item.key || item.id || item.candidateId || item.assessmentId} className="agenda-item">
                             <div>
                               <span className="agenda-item__type">{item.type}</span>
-                              <span className="agenda-item__title">{item.title}</span>
-                              <span className="agenda-item__subtitle">{item.subtitle}</span>
-                              <span className="agenda-item__time">{item.when ? new Date(item.when).toLocaleString() : "-"}</span>
+                              <span className="agenda-item__title">{item.title || item.candidateName || "Candidate"}</span>
+                              <span className="agenda-item__subtitle">{item.subtitle || item.role || item.jdTitle || item.jd_title || "Untitled role"}</span>
+                              <span className="agenda-item__time">{(item.when || item.at) ? new Date(item.when || item.at).toLocaleString() : "-"}</span>
                             </div>
                             <div className="button-row tight">
                               <button onClick={() => void setAssessmentStatusId(String(item.assessmentId || item.raw?.id || item.id || ""))}>Update</button>
@@ -22244,16 +22362,37 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                       </div>
                     </div>
                   )}
-                  {!!upcomingJoinings.length && (
+                  {!!displayInterviewFeedbackAwaitedItems.length && (
+                    <div className="agenda-block">
+                      <h3>Interview Feedback Awaited</h3>
+                      <div className="stack-list compact">
+                        {displayInterviewFeedbackAwaitedItems.map((item) => (
+                          <article key={`feedback-${item.key || item.id || item.candidateId || item.assessmentId}`} className="agenda-item">
+                            <div>
+                              <span className="agenda-item__type">{item.type || "Interview"}</span>
+                              <span className="agenda-item__title">{item.title || item.candidateName || "Candidate"}</span>
+                              <span className="agenda-item__subtitle">{item.subtitle || item.role || item.jdTitle || item.jd_title || "Untitled role"}</span>
+                              <span className="agenda-item__time">{(item.when || item.at) ? new Date(item.when || item.at).toLocaleString() : "-"}</span>
+                            </div>
+                            <div className="button-row tight">
+                              <button onClick={() => void setAssessmentStatusId(String(item.assessmentId || item.id || item.candidateId || ""))}>Update</button>
+                            </div>
+                          </article>
+                        ))}
+                        {!displayInterviewFeedbackAwaitedItems.length ? <div className="empty-state compact-empty">No feedback awaited items in this range.</div> : null}
+                      </div>
+                    </div>
+                  )}
+                  {!!displayUpcomingJoiningItems.length && (
                     <div className="agenda-block agenda-block--joining">
                       <h3>Upcoming joinings</h3>
                       <div className="stack-list compact">
-                        {upcomingJoinings.slice(0, 5).map((item) => (
+                        {displayUpcomingJoiningItems.slice(0, 5).map((item) => (
                           <article key={`joining-${item.id}`} className="agenda-item">
                             <div>
                               <span className="agenda-item__title">{item.candidateName || "Candidate"}</span>
-                              <span className="agenda-item__subtitle">{item.jdTitle || "Untitled role"}</span>
-                              <span className="agenda-item__time">{`Upcoming joining | ${new Date(item.followUpAt || item.interviewAt).toLocaleString()} | ${item.candidateStatus || "Offered"}`}</span>
+                              <span className="agenda-item__subtitle">{item.role || item.jdTitle || "Untitled role"}</span>
+                              <span className="agenda-item__time">{`Upcoming joining | ${new Date(item.at || item.followUpAt || item.interviewAt).toLocaleString()} | ${item.status || item.candidateStatus || "Offered"}`}</span>
                             </div>
                             <div className="button-row tight">
                               <button onClick={() => openSavedAssessment(item)}>Update</button>
@@ -22264,7 +22403,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                       </div>
                     </div>
                   )}
-                  {!overdueFollowUps.length && !scheduledFollowUpItems.length && !scheduledInterviewItems.length && !upcomingJoinings.length ? (
+                  {!displayOverdueFollowUpItems.length && !displayScheduledFollowUpItems.length && !displayScheduledInterviewItems.length && !displayUpcomingJoiningItems.length ? (
                     <div className="empty-state">No scheduled follow-ups, interviews, or joinings for this range yet.</div>
                   ) : null}
                 </div>
@@ -22314,7 +22453,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                         {clientLeaderboardShared.map((item) => (
                           <li key={`client-shared-${item.label}`}>
                             <span>{item.label}</span>
-                            <strong>{item?.metrics?.converted || 0}</strong>
+                            <strong>{item?.sharedProfiles || item?.metrics?.converted || 0}</strong>
                           </li>
                         ))}
                         {!clientLeaderboardShared.length ? <li><span>No data</span><strong>0</strong></li> : null}
@@ -22326,7 +22465,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                         {clientLeaderboardInterviews.map((item) => (
                           <li key={`client-int-${item.label}`}>
                             <span>{item.label}</span>
-                            <strong>{item?.metrics?.under_interview_process || 0}</strong>
+                            <strong>{item?.interviews || item?.metrics?.under_interview_process || 0}</strong>
                           </li>
                         ))}
                         {!clientLeaderboardInterviews.length ? <li><span>No data</span><strong>0</strong></li> : null}
@@ -22405,19 +22544,19 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                     </article>
                   </div>
                   <div className="stack-list">
-                    {!dashboardClientGroups.length ? <div className="empty-state">No client breakdown available.</div> : dashboardClientGroups.map((group) => (
+                    {!dashboardClientGroupsDisplay.length ? <div className="empty-state">No client breakdown available.</div> : dashboardClientGroupsDisplay.map((group) => (
                       <details className="dashboard-group" key={group.label}>
                         <summary className="dashboard-group__summary">
                           <div>
                             <h3>{group.label}</h3>
-                            <p className="muted">{`${group.metrics?.sourced || 0} sourced | ${group.metrics?.applied || 0} applied | ${group.metrics?.converted || 0} shared | ${group.metrics?.under_interview_process || 0} under interview | ${safePct(Number(group.metrics?.converted || 0), Number(group.metrics?.sourced || 0))}% conversion`}</p>
+                            <p className="muted">{`${Number(group.metrics?.totalCandidates || group.metrics?.sourced || 0)} total | ${Number(group.metrics?.sharedProfiles || group.metrics?.converted || 0)} shared | ${Number(group.metrics?.interviews || group.metrics?.under_interview_process || 0)} interviews | ${Number(group.metrics?.shortlisted || 0)} shortlisted | ${Number(group.metrics?.offers || group.metrics?.offered || 0)} offered | ${Number(group.metrics?.joined || 0)} joined`}</p>
                             <div className="reports-inline-badges">
-                              <span className="reports-inline-badge">Conversion {safePct(Number(group.metrics?.converted || 0), Number(group.metrics?.sourced || 0))}%</span>
-                              <span className="reports-inline-badge reports-inline-badge--alt">Interview Ratio {safePct(Number(group.metrics?.under_interview_process || 0), Number(group.metrics?.converted || 0))}%</span>
+                              <span className="reports-inline-badge">Conversion {safePct(Number(group.metrics?.sharedProfiles || group.metrics?.converted || 0), Number(group.metrics?.totalCandidates || group.metrics?.sourced || 0))}%</span>
+                              <span className="reports-inline-badge reports-inline-badge--alt">Interview Ratio {safePct(Number(group.metrics?.interviews || group.metrics?.under_interview_process || 0), Number(group.metrics?.sharedProfiles || group.metrics?.converted || 0))}%</span>
                             </div>
                             <div className="reports-inline-progress">
-                              <div className="reports-inline-progress__bar"><i style={{ width: `${safePct(Number(group.metrics?.converted || 0), Number(group.metrics?.sourced || 0))}%` }} /></div>
-                              <div className="reports-inline-progress__bar reports-inline-progress__bar--alt"><i style={{ width: `${safePct(Number(group.metrics?.under_interview_process || 0), Number(group.metrics?.converted || 0))}%` }} /></div>
+                              <div className="reports-inline-progress__bar"><i style={{ width: `${safePct(Number(group.metrics?.sharedProfiles || group.metrics?.converted || 0), Number(group.metrics?.totalCandidates || group.metrics?.sourced || 0))}%` }} /></div>
+                              <div className="reports-inline-progress__bar reports-inline-progress__bar--alt"><i style={{ width: `${safePct(Number(group.metrics?.interviews || group.metrics?.under_interview_process || 0), Number(group.metrics?.sharedProfiles || group.metrics?.converted || 0))}%` }} /></div>
                             </div>
                           </div>
                         </summary>
@@ -22438,7 +22577,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                             >
                               <span className="dashboard-position-chip__title">{row.positionLabel}</span>
                               <span className="dashboard-position-chip__meta">
-                              {`${row.metrics?.sourced || 0} sourced | ${row.metrics?.applied || 0} applied | ${row.metrics?.converted || 0} shared | ${row.metrics?.under_interview_process || 0} under interview`}
+                              {`${row.metrics?.totalCandidates ?? row.metrics?.sourced ?? 0} total | ${row.metrics?.sharedProfiles ?? row.metrics?.converted ?? 0} shared | ${row.metrics?.interviews ?? row.metrics?.under_interview_process ?? 0} interviews`}
                               </span>
                             </button>
                           ))}
@@ -22481,7 +22620,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                         {recruiterLeaderboardShared.map((item) => (
                           <li key={`recruiter-shared-${item.label}`}>
                             <span>{item.label}</span>
-                            <strong>{item?.metrics?.converted || 0}</strong>
+                            <strong>{item?.sharedProfiles || item?.metrics?.converted || 0}</strong>
                           </li>
                         ))}
                         {!recruiterLeaderboardShared.length ? <li><span>No data</span><strong>0</strong></li> : null}
@@ -22592,12 +22731,12 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                     </article>
                   </div>
                   <div className="stack-list">
-                    {!dashboardRecruiterGroups.length ? <div className="empty-state">No recruiter breakdown available.</div> : dashboardRecruiterGroups.map((group) => (
+                    {!dashboardRecruiterGroupsDisplay.length ? <div className="empty-state">No recruiter breakdown available.</div> : dashboardRecruiterGroupsDisplay.map((group) => (
                       <details className="dashboard-group" key={group.label}>
                         <summary className="dashboard-group__summary">
                           <div>
                             <h3>{group.label}</h3>
-                            <p className="muted">{`${group.metrics?.sourced || 0} sourced | ${group.metrics?.applied || 0} applied | ${group.metrics?.converted || 0} shared | ${group.metrics?.under_interview_process || 0} under interview | ${group.metrics?.shortlisted || 0} shortlisted | ${group.metrics?.offered || 0} offered`}</p>
+                            <p className="muted">{`${Number(group.metrics?.totalCandidates || group.metrics?.sourced || 0)} total | ${Number(group.metrics?.sharedProfiles || group.metrics?.converted || 0)} shared | ${Number(group.metrics?.interviews || group.metrics?.under_interview_process || 0)} interviews | ${Number(group.metrics?.shortlisted || 0)} shortlisted | ${Number(group.metrics?.offers || group.metrics?.offered || 0)} offered | ${Number(group.metrics?.joined || 0)} joined`}</p>
                             {(() => {
                               const insight = recruiterLeaderboardRanked.find((row) => String(row.label) === String(group.label));
                               return insight ? (
