@@ -16734,7 +16734,6 @@ const server = http.createServer(async (req, res) => {
       ).trim();
       if (!companyId) throw new Error("Dashboard agenda missing company context.");
       const range = String(requestUrl.searchParams.get("range") || "today").trim().toLowerCase() || "today";
-      const assessmentsSelect = "select=id,company_id,candidate_id,recruiter_id,recruiter_name,client_name,jd_title,candidate_status,status,assessment_status,created_at,updated_at,interviewAt,interview_at,offerDoj,offer_doj,followUpAt,follow_up_at,payload";
       const [pendingNotesStats, applicantsPage, followUpCandidates, assessments, assessmentEvents] = await Promise.all([
         getCapturedStatsForUser(user, { filters: { activeStates: ["Active"] } }),
         listApplicantsForUser(user, { limit: 1, page: 1, includeConverted: false, filters: { activeStates: ["Active"] } }),
@@ -16753,16 +16752,10 @@ const server = http.createServer(async (req, res) => {
           ].join("&")}`,
           { method: "GET" }
         ).catch(() => []),
-        supabaseTableFetch(
-          "assessments",
-          `?${[
-            assessmentsSelect,
-            `company_id=eq.${encodeURIComponent(companyId)}`,
-            "order=created_at.desc",
-            "limit=10000"
-          ].join("&")}`,
-          { method: "GET" }
-        ).catch(() => []),
+        listAssessments({
+          actorUserId: String(user?.id || "").trim(),
+          companyId
+        }).catch(() => []),
         supabaseTableFetch(
           "assessment_events",
           `?${[
@@ -16823,16 +16816,10 @@ const server = http.createServer(async (req, res) => {
           ].join("&")}`,
           { method: "GET" }
         ).catch(() => []),
-        supabaseTableFetch(
-          "assessments",
-          `?${[
-            "select=id,company_id,candidate_id,recruiter_id,recruiter_name,client_name,jd_title,candidate_status,status,assessment_status,created_at,updated_at,interviewAt,interview_at,offerDoj,offer_doj,payload",
-            `company_id=eq.${encodeURIComponent(companyId)}`,
-            "order=created_at.desc",
-            "limit=10000"
-          ].join("&")}`,
-          { method: "GET" }
-        ).catch(() => []),
+        listAssessments({
+          actorUserId: String(user?.id || "").trim(),
+          companyId
+        }).catch(() => []),
         supabaseTableFetch(
           "assessment_events",
           `?${[
