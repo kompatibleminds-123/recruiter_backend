@@ -8294,6 +8294,7 @@ function PortalApp({ token, onLogout }) {
   const [billingOverview, setBillingOverview] = useState(null);
   const [billingPlans, setBillingPlans] = useState([]);
   const [dashboardAgendaSnapshot, setDashboardAgendaSnapshot] = useState(() => readDashboardAgendaSnapshot());
+  const [dashboardAgendaLoading, setDashboardAgendaLoading] = useState(false);
   const [auditLogs, setAuditLogs] = useState([]);
   const [planUpgradeBusyCode, setPlanUpgradeBusyCode] = useState("");
   const [assignApplicantId, setAssignApplicantId] = useState("");
@@ -10329,26 +10330,33 @@ function PortalApp({ token, onLogout }) {
       range: String(range || "today")
     });
     dashboardAgendaLoadKeyRef.current = key;
+    setDashboardAgendaLoading(true);
     const params = new URLSearchParams();
     params.set("range", String(range || "today"));
-    const agendaResult = await api(`/company/dashboard/agenda${params.toString() ? `?${params.toString()}` : ""}`, token);
-    if (dashboardAgendaLoadKeyRef.current !== key) return;
-    const agendaPayload = agendaResult?.result && typeof agendaResult.result === "object" ? agendaResult.result : agendaResult;
-    const agenda = agendaPayload?.agenda && typeof agendaPayload.agenda === "object" ? agendaPayload.agenda : (agendaPayload || {});
-    writeDashboardAgendaSnapshot(agenda);
-    setDashboardAgendaSnapshot(agenda);
-    setState((current) => {
-      const nextDashboard = {
-        ...(current.dashboard && typeof current.dashboard === "object" ? current.dashboard : {}),
-        agenda
-      };
-      writeDashboardSnapshot(nextDashboard);
-      return {
-        ...current,
-        dashboard: nextDashboard
-      };
-    });
-    return agenda;
+    try {
+      const agendaResult = await api(`/company/dashboard/agenda${params.toString() ? `?${params.toString()}` : ""}`, token);
+      if (dashboardAgendaLoadKeyRef.current !== key) return null;
+      const agendaPayload = agendaResult?.result && typeof agendaResult.result === "object" ? agendaResult.result : agendaResult;
+      const agenda = agendaPayload?.agenda && typeof agendaPayload.agenda === "object" ? agendaPayload.agenda : (agendaPayload || {});
+      writeDashboardAgendaSnapshot(agenda);
+      setDashboardAgendaSnapshot(agenda);
+      setState((current) => {
+        const nextDashboard = {
+          ...(current.dashboard && typeof current.dashboard === "object" ? current.dashboard : {}),
+          agenda
+        };
+        writeDashboardSnapshot(nextDashboard);
+        return {
+          ...current,
+          dashboard: nextDashboard
+        };
+      });
+      return agenda;
+    } finally {
+      if (dashboardAgendaLoadKeyRef.current === key) {
+        setDashboardAgendaLoading(false);
+      }
+    }
   }
 
   async function loadDashboardSummary(filters = dashboardFilters) {
@@ -22291,18 +22299,26 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                   <p className="muted">
                     {`${agendaRange === "today" ? "Today" : agendaRange === "tomorrow" ? "Tomorrow" : "Next 7 days"}: ${displayPendingNotes} pending note(s) | ${displayScheduledInterviewCount} interview(s) | ${displayUpcomingJoiningCount} joining(s)`}
                   </p>
-                  <select
-                    value={agendaRange}
-                    onChange={(e) => {
-                      const nextRange = e.target.value;
-                      setAgendaRange(nextRange);
-                      void loadDashboardAgenda(nextRange).catch(() => null);
-                    }}
-                  >
-                    <option value="today">Today</option>
-                    <option value="tomorrow">Tomorrow</option>
-                    <option value="next7days">Next 7 days</option>
-                  </select>
+                  <div className="button-row tight" style={{ alignItems: "center" }}>
+                    {dashboardAgendaLoading ? (
+                      <span className="muted" style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+                        <span className="parse-progress-spinner" aria-hidden="true" />
+                        Updating...
+                      </span>
+                    ) : null}
+                    <select
+                      value={agendaRange}
+                      onChange={(e) => {
+                        const nextRange = e.target.value;
+                        setAgendaRange(nextRange);
+                        void loadDashboardAgenda(nextRange).catch(() => null);
+                      }}
+                    >
+                      <option value="today">Today</option>
+                      <option value="tomorrow">Tomorrow</option>
+                      <option value="next7days">Next 7 days</option>
+                    </select>
+                  </div>
                 </div>
                 <div className="agenda-summary-grid">
                   <div className="metric-card compact-metric">
