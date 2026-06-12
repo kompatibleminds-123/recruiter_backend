@@ -24225,6 +24225,12 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                           : /hold|awaited|pending/i.test(normalizedStatusText)
                             ? "warning"
                             : "info";
+                      const assessmentAppliedToo = Boolean(
+                        linkedCandidate?.applied_too
+                        || linkedCandidate?.appliedToo
+                        || linkedCandidate?.application_source
+                        || linkedCandidate?.applicationSource
+                      );
                       const convertedAt = item.generatedAt || item.createdAt || item.created_at || "";
                       const updatedAt = item.updatedAt || item.updated_at || "";
                       return (
@@ -24237,6 +24243,15 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                                   <a className="captured-note-linkedin assessment-placard__inline-linkedin" href={linkedinHref} target="_blank" rel="noopener noreferrer" aria-label="Open LinkedIn profile" title="Open LinkedIn profile">
                                     <span className="captured-note-linkedin-icon">in</span>
                                   </a>
+                                ) : null}
+                                {assessmentAppliedToo ? (
+                                  <span
+                                    className="captured-note-summary-badge"
+                                    title="This candidate also applied through a public or hosted link."
+                                    style={{ marginLeft: 10, verticalAlign: "middle" }}
+                                  >
+                                    Applied too
+                                  </span>
                                 ) : null}
                                 <span className="assessment-placard__title-sep">|</span>
                                 <span className="assessment-placard__role-title">{jdTitle}</span>

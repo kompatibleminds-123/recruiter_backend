@@ -5736,6 +5736,7 @@ async function ingestApplicantSubmission(body, req) {
     const nextSource = existingIsInbound
       ? appliedSource
       : (existingSource || (existingConverted ? "manual_draft" : appliedSource));
+    const preferLatestInboundValues = existingIsInbound;
 
       const patch = {
         source: nextSource,
@@ -5747,19 +5748,20 @@ async function ingestApplicantSubmission(body, req) {
         assigned_jd_id: matchedJob?.id || existing.assigned_jd_id || null,
         assigned_jd_title: matchedJob?.title || payload.jdTitle || existing.assigned_jd_title || null,
       recruiter_context_notes: String(existing.recruiter_context_notes || existing.recruiterContextNotes || "").trim() || null,
-        // Fill missing contact fields if they were empty in the captured record.
-        phone: existing.phone ? undefined : (merged.phone || undefined),
-        email: existing.email ? undefined : (merged.email || undefined),
-        linkedin: existing.linkedin ? undefined : (merged.linkedin || undefined),
-        location: existing.location ? undefined : (merged.location || undefined),
-      name: existing.name ? undefined : (merged.name || undefined),
-      company: existing.company ? undefined : (merged.company || undefined),
-      role: existing.role ? undefined : (merged.role || undefined),
-      experience: existing.experience ? undefined : (merged.experience || undefined),
-      highest_education: existing.highest_education ? undefined : (merged.highest_education || undefined),
-      current_ctc: existing.current_ctc ? undefined : (merged.current_ctc || undefined),
-      expected_ctc: existing.expected_ctc ? undefined : (merged.expected_ctc || undefined),
-      notice_period: existing.notice_period ? undefined : (merged.notice_period || undefined)
+        // For true inbound applicants, latest form submission should win.
+        // For captured/manual candidates, keep existing values and only fill gaps.
+        phone: preferLatestInboundValues ? (merged.phone || undefined) : (existing.phone ? undefined : (merged.phone || undefined)),
+        email: preferLatestInboundValues ? (merged.email || undefined) : (existing.email ? undefined : (merged.email || undefined)),
+        linkedin: preferLatestInboundValues ? (merged.linkedin || undefined) : (existing.linkedin ? undefined : (merged.linkedin || undefined)),
+        location: preferLatestInboundValues ? (merged.location || undefined) : (existing.location ? undefined : (merged.location || undefined)),
+      name: preferLatestInboundValues ? (merged.name || undefined) : (existing.name ? undefined : (merged.name || undefined)),
+      company: preferLatestInboundValues ? (merged.company || undefined) : (existing.company ? undefined : (merged.company || undefined)),
+      role: preferLatestInboundValues ? (merged.role || undefined) : (existing.role ? undefined : (merged.role || undefined)),
+      experience: preferLatestInboundValues ? (merged.experience || undefined) : (existing.experience ? undefined : (merged.experience || undefined)),
+      highest_education: preferLatestInboundValues ? (merged.highest_education || undefined) : (existing.highest_education ? undefined : (merged.highest_education || undefined)),
+      current_ctc: preferLatestInboundValues ? (merged.current_ctc || undefined) : (existing.current_ctc ? undefined : (merged.current_ctc || undefined)),
+      expected_ctc: preferLatestInboundValues ? (merged.expected_ctc || undefined) : (existing.expected_ctc ? undefined : (merged.expected_ctc || undefined)),
+      notice_period: preferLatestInboundValues ? (merged.notice_period || undefined) : (existing.notice_period ? undefined : (merged.notice_period || undefined))
     };
     Object.keys(patch).forEach((k) => patch[k] === undefined && delete patch[k]);
 
