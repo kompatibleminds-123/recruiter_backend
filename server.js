@@ -16726,7 +16726,13 @@ const server = http.createServer(async (req, res) => {
   if (req.method === "GET" && requestUrl.pathname === "/company/dashboard/agenda") {
     try {
       const user = await requireSessionUser(getBearerToken(req));
-      const companyId = String(user?.companyId || "").trim();
+      const companyId = String(
+        user?.companyId
+        || user?.company_id
+        || user?.company?.id
+        || ""
+      ).trim();
+      if (!companyId) throw new Error("Dashboard agenda missing company context.");
       const range = String(requestUrl.searchParams.get("range") || "today").trim().toLowerCase() || "today";
       const assessmentsSelect = "select=id,company_id,candidate_id,recruiter_id,recruiter_name,client_name,jd_title,candidate_status,status,assessment_status,created_at,updated_at,interviewAt,interview_at,offerDoj,offer_doj,followUpAt,follow_up_at,payload";
       const [pendingNotesStats, applicantsPage, followUpCandidates, assessments, assessmentEvents] = await Promise.all([
@@ -16795,7 +16801,13 @@ const server = http.createServer(async (req, res) => {
   if (req.method === "GET" && requestUrl.pathname === "/company/dashboard/funnel") {
     try {
       const user = await requireSessionUser(getBearerToken(req));
-      const companyId = String(user?.companyId || "").trim();
+      const companyId = String(
+        user?.companyId
+        || user?.company_id
+        || user?.company?.id
+        || ""
+      ).trim();
+      if (!companyId) throw new Error("Dashboard funnel missing company context.");
       const dateFrom = String(requestUrl.searchParams.get("dateFrom") || "").trim();
       const dateTo = String(requestUrl.searchParams.get("dateTo") || "").trim();
       const clientFilter = String(requestUrl.searchParams.get("clientLabel") || "").trim();
