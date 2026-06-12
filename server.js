@@ -6939,6 +6939,371 @@ function buildClientPortalAgenda(scopedUniverse = [], dateRange = {}) {
   };
 }
 
+function normalizeDashboardScopeLabel(value = "") {
+  return String(value || "").trim();
+}
+
+function getDashboardAgendaRangeBounds(range = "today") {
+  const now = new Date();
+  const todayStart = new Date(now);
+  todayStart.setHours(0, 0, 0, 0);
+  const tomorrowStart = new Date(todayStart);
+  tomorrowStart.setDate(tomorrowStart.getDate() + 1);
+  const dayAfterTomorrowStart = new Date(todayStart);
+  dayAfterTomorrowStart.setDate(dayAfterTomorrowStart.getDate() + 2);
+  const next7DaysStart = new Date(todayStart);
+  next7DaysStart.setDate(next7DaysStart.getDate() + 7);
+  const key = String(range || "today").trim().toLowerCase();
+  if (key === "tomorrow") {
+    return { from: tomorrowStart, to: dayAfterTomorrowStart };
+  }
+  if (key === "next7days") {
+    return { from: todayStart, to: next7DaysStart };
+  }
+  return { from: todayStart, to: tomorrowStart };
+}
+
+function getAssessmentHistoricalRankValue(value = "") {
+  const text = normalizeDashboardText(value);
+  if (!text) return 1;
+  if (/\b(joined|onboarded)\b/i.test(text)) return 5;
+  if (/\b(offered|offer released|offer accepted|offer)\b/i.test(text)) return 4;
+  if (/\b(shortlisted|shortlist)\b/i.test(text)) return 3;
+  if (/\b(screening call aligned|l1 aligned|l2 aligned|l3 aligned|hr discussion aligned|hr interview aligned|aligned for interview|interview scheduled|interview feedback awaited|feedback awaited)\b/i.test(text)) return 2;
+  return 1;
+}
+
+function getAssessmentHistoricalRank(assessment = {}, eventsByAssessmentId = new Map()) {
+  const assessmentId = String(assessment?.id || "").trim();
+  let highestRank = Math.max(
+    1,
+    getAssessmentHistoricalRankValue(
+      assessment?.candidateStatus
+      || assessment?.candidate_status
+      || assessment?.assessment_status
+      || assessment?.status
+      || ""
+    )
+  );
+  const events = assessmentId ? (eventsByAssessmentId.get(assessmentId) || []) : [];
+  for (const event of events) {
+    const eventText = [
+      event?.event_type,
+      event?.status,
+      event?.payload?.status,
+      event?.payload?.candidateStatus,
+      event?.payload?.candidate_status
+    ].filter(Boolean).join(" ");
+    highestRank = Math.max(highestRank, getAssessmentHistoricalRankValue(eventText));
+  }
+  return highestRank;
+}
+
+function createDashboardFunnelBucket() {
+  return {
+    totalCandidates: 0,
+    sharedProfiles: 0,
+    interviews: 0,
+    shortlisted: 0,
+    offers: 0,
+    joined: 0
+  };
+}
+
+function finalizeDashboardFunnelBucket(bucket = {}) {
+  const totalCandidates = Number(bucket.totalCandidates || 0);
+  const sharedProfiles = Number(bucket.sharedProfiles || 0);
+  const interviews = Number(bucket.interviews || 0);
+  const shortlisted = Number(bucket.shortlisted || 0);
+  const offers = Number(bucket.offers || 0);
+  const joined = Number(bucket.joined || 0);
+  return {
+    totalCandidates,
+    sharedProfiles,
+    interviews,
+    shortlisted,
+    offers,
+    joined,
+    sharedToInterviewPct: sharedProfiles > 0 ? Math.round((interviews / sharedProfiles) * 100) : 0,
+    interviewToShortlistPct: interviews > 0 ? Math.round((shortlisted / interviews) * 100) : 0,
+    shortlistToOfferPct: shortlisted > 0 ? Math.round((offers / shortlisted) * 100) : 0,
+    offerToJoinPct: offers > 0 ? Math.round((joined / offers) * 100) : 0,
+    overallConversionPct: totalCandidates > 0 ? Math.round((sharedProfiles / totalCandidates) * 100) : 0
+  };
+}
+
+function createDashboardAgendaItem(raw = {}, kind = "") {
+  return {
+    id: String(raw?.id || raw?.assessment_id || raw?.candidate_id || "").trim(),
+    candidateName: String(raw?.candidateName || raw?.candidate_name || raw?.name || "").trim(),
+    role: String(raw?.jdTitle || raw?.jd_title || raw?.role || raw?.position || "").trim(),
+    clientName: String(raw?.clientName || raw?.client_name || "").trim(),
+    status: String(raw?.status || raw?.candidateStatus || raw?.candidate_status || "").trim(),
+    at: String(raw?.at || raw?.interviewAt || raw?.offerDoj || raw?.next_follow_up_at || "").trim(),
+    kind
+  };
+}
+
+function isDashboardRowInActorScope(row = {}, user = {}, kind = "candidate") {
+  const actorIsAdmin = String(user?.role || "").trim().toLowerCase() === "admin";
+  if (actorIsAdmin) return true;
+  const actorId = String(user?.id || "").trim();
+  const actorName = String(user?.name || "").trim();
+  const recruiterId = String(row?.recruiter_id || row?.recruiterId || "").trim();
+  const recruiterName = String(row?.recruiter_name || row?.recruiterName || "").trim();
+  const assignedId = String(row?.assigned_to_user_id || row?.assignedToUserId || "").trim();
+  const assignedName = String(row?.assigned_to_name || row?.assignedToName || "").trim();
+  if (kind === "assessment") {
+    return (actorId && recruiterId === actorId) || (actorName && recruiterName === actorName);
+  }
+  return (
+    (actorId && (recruiterId === actorId || assignedId === actorId)) ||
+    (actorName && (recruiterName === actorName || assignedName === actorName))
+  );
+}
+
+function buildDashboardFunnelPayload({
+  user,
+  candidates = [],
+  assessments = [],
+  events = [],
+  users = [],
+  dateFrom = "",
+  dateTo = "",
+  clientFilter = "",
+  recruiterFilter = ""
+} = {}) {
+  const actorIsAdmin = String(user?.role || "").trim().toLowerCase() === "admin";
+  const actorName = String(user?.name || "").trim();
+  const candidateById = new Map();
+  const assessmentById = new Map();
+  const eventsByAssessmentId = new Map();
+  const overall = createDashboardFunnelBucket();
+  const byClient = new Map();
+  const byRecruiter = new Map();
+  const availableClients = new Set();
+  const availableRecruiters = new Set();
+  const visibleDateCheck = (value) => {
+    if (!dateFrom && !dateTo) return true;
+    return isDateWithinRange(value, dateFrom, dateTo);
+  };
+  const candidateScopeRows = (Array.isArray(candidates) ? candidates : [])
+    .filter((row) => isDashboardRowInActorScope(row, user, "candidate"))
+    .filter((row) => {
+      const source = String(row?.source || "").trim().toLowerCase();
+      return !["hosted_apply", "website_apply", "hosted", "website", "google_sheet", "google sheet"].includes(source);
+    })
+    .filter((row) => visibleDateCheck(row?.created_at || row?.createdAt || ""));
+  const assessmentScopeRows = (Array.isArray(assessments) ? assessments : [])
+    .filter((row) => isDashboardRowInActorScope(row, user, "assessment"))
+    .filter((row) => visibleDateCheck(row?.created_at || row?.createdAt || row?.updated_at || row?.updatedAt || ""));
+  for (const row of candidateScopeRows) {
+    const id = String(row?.id || "").trim();
+    if (id) candidateById.set(id, row);
+  }
+  for (const row of assessmentScopeRows) {
+    const id = String(row?.id || "").trim();
+    if (id) assessmentById.set(id, row);
+  }
+  for (const event of Array.isArray(events) ? events : []) {
+    const assessmentId = String(event?.assessment_id || event?.assessmentId || "").trim();
+    if (!assessmentId) continue;
+    const list = eventsByAssessmentId.get(assessmentId) || [];
+    list.push(event);
+    eventsByAssessmentId.set(assessmentId, list);
+  }
+
+  const getBucket = (map, label) => {
+    const key = String(label || "").trim() || "Unassigned";
+    if (!map.has(key)) map.set(key, createDashboardFunnelBucket());
+    return map.get(key);
+  };
+
+  const addCandidateRow = (candidate) => {
+    const assessment = (() => {
+      const assessmentId = String(candidate?.assessment_id || candidate?.assessmentId || "").trim();
+      return assessmentId ? (assessmentById.get(assessmentId) || null) : null;
+    })();
+    const clientLabel = normalizeDashboardScopeLabel(getClientLabel(candidate, assessment) || "Unassigned") || "Unassigned";
+    const recruiterLabel = normalizeDashboardScopeLabel(getOwnerRecruiterLabel(candidate, assessment) || "Unassigned") || "Unassigned";
+    if (clientFilter && clientLabel !== clientFilter) return;
+    if (recruiterFilter && recruiterLabel !== recruiterFilter) return;
+    overall.totalCandidates += 1;
+    getBucket(byClient, clientLabel).totalCandidates += 1;
+    getBucket(byRecruiter, recruiterLabel).totalCandidates += 1;
+    availableClients.add(clientLabel);
+    availableRecruiters.add(recruiterLabel);
+  };
+
+  const addAssessmentRow = (assessment) => {
+    const candidateId = String(
+      assessment?.candidate_id
+      || assessment?.candidateId
+      || assessment?.payload?.candidateId
+      || assessment?.payload?.candidate_id
+      || ""
+    ).trim();
+    const candidate = candidateId ? (candidateById.get(candidateId) || null) : null;
+    const clientLabel = normalizeDashboardScopeLabel(getClientLabel(candidate || {}, assessment || {}) || "Unassigned") || "Unassigned";
+    const recruiterLabel = normalizeDashboardScopeLabel(getOwnerRecruiterLabel(candidate || {}, assessment || {}) || "Unassigned") || "Unassigned";
+    if (clientFilter && clientLabel !== clientFilter) return;
+    if (recruiterFilter && recruiterLabel !== recruiterFilter) return;
+    const rank = getAssessmentHistoricalRank(assessment, eventsByAssessmentId);
+    overall.sharedProfiles += 1;
+    if (rank >= 2) overall.interviews += 1;
+    if (rank >= 3) overall.shortlisted += 1;
+    if (rank >= 4) overall.offers += 1;
+    if (rank >= 5) overall.joined += 1;
+    const clientBucket = getBucket(byClient, clientLabel);
+    clientBucket.sharedProfiles += 1;
+    if (rank >= 2) clientBucket.interviews += 1;
+    if (rank >= 3) clientBucket.shortlisted += 1;
+    if (rank >= 4) clientBucket.offers += 1;
+    if (rank >= 5) clientBucket.joined += 1;
+    const recruiterBucket = getBucket(byRecruiter, recruiterLabel);
+    recruiterBucket.sharedProfiles += 1;
+    if (rank >= 2) recruiterBucket.interviews += 1;
+    if (rank >= 3) recruiterBucket.shortlisted += 1;
+    if (rank >= 4) recruiterBucket.offers += 1;
+    if (rank >= 5) recruiterBucket.joined += 1;
+    availableClients.add(clientLabel);
+    availableRecruiters.add(recruiterLabel);
+  };
+
+  candidateScopeRows.forEach(addCandidateRow);
+  assessmentScopeRows.forEach(addAssessmentRow);
+
+  const recruiterCounts = actorIsAdmin
+    ? (Array.isArray(users) ? users.length : 0)
+    : 1;
+
+  const availableRecruiterList = actorIsAdmin
+    ? Array.from(availableRecruiters.size ? availableRecruiters : new Set((Array.isArray(users) ? users : []).map((item) => String(item?.name || "").trim()).filter(Boolean)))
+        .sort((a, b) => a.localeCompare(b))
+    : [actorName || "Unassigned"].filter(Boolean);
+
+  const availableClientList = Array.from(availableClients)
+    .filter(Boolean)
+    .sort((a, b) => a.localeCompare(b));
+
+  return {
+    filters: {
+      dateFrom: String(dateFrom || "").trim() || null,
+      dateTo: String(dateTo || "").trim() || null,
+      clientLabel: String(clientFilter || "").trim() || null,
+      recruiterLabel: String(recruiterFilter || "").trim() || null
+    },
+    overall: {
+      ...finalizeDashboardFunnelBucket(overall),
+      activeRecruiters: recruiterCounts
+    },
+    byClient: Array.from(byClient.entries())
+      .map(([label, metrics]) => ({ label, ...finalizeDashboardFunnelBucket(metrics) }))
+      .sort((a, b) => a.label.localeCompare(b.label)),
+    byRecruiter: Array.from(byRecruiter.entries())
+      .map(([label, metrics]) => ({ label, ...finalizeDashboardFunnelBucket(metrics) }))
+      .sort((a, b) => a.label.localeCompare(b.label)),
+    availableClients: availableClientList,
+    availableRecruiters: availableRecruiterList
+  };
+}
+
+function isDashboardAgendaInterviewStatus(value = "") {
+  return /\b(screening call aligned|l1 aligned|l2 aligned|l3 aligned|hr discussion aligned|hr interview aligned|aligned for interview|interview scheduled|feedback awaited|interview feedback awaited)\b/i.test(normalizeDashboardText(value));
+}
+
+function buildDashboardAgendaPayload({
+  user,
+  range = "today",
+  pendingNotesStats = null,
+  applicantsPage = null,
+  capturedFollowUps = [],
+  assessments = [],
+  events = []
+} = {}) {
+  const { from, to } = getDashboardAgendaRangeBounds(range);
+  const now = new Date();
+  const eventsByAssessmentId = new Map();
+  for (const event of Array.isArray(events) ? events : []) {
+    const assessmentId = String(event?.assessment_id || event?.assessmentId || "").trim();
+    if (!assessmentId) continue;
+    const list = eventsByAssessmentId.get(assessmentId) || [];
+    list.push(event);
+    eventsByAssessmentId.set(assessmentId, list);
+  }
+  const pendingNotes = Number(pendingNotesStats?.active || 0);
+  const pendingApplicants = Number(applicantsPage?.total || 0);
+  const overdueFollowUps = (Array.isArray(capturedFollowUps) ? capturedFollowUps : [])
+    .filter((item) => isDashboardRowInActorScope(item, user, "candidate"))
+    .filter((item) => {
+      const value = parseIsoDateValue(item?.next_follow_up_at || item?.nextFollowUpAt || "");
+      return Boolean(value && value < from);
+    })
+    .slice(0, 25)
+    .map((item) => createDashboardAgendaItem(item, "follow_up"));
+  const scheduledInterviews = [];
+  const upcomingJoinings = [];
+  const interviewFeedbackAwaited = [];
+  for (const assessment of Array.isArray(assessments) ? assessments : []) {
+    if (!isDashboardRowInActorScope(assessment, user, "assessment")) continue;
+    const candidateStatus = String(assessment?.candidateStatus || assessment?.candidate_status || assessment?.assessment_status || assessment?.status || "").trim();
+    const rank = getAssessmentHistoricalRank(assessment, eventsByAssessmentId);
+    const interviewAtRaw = assessment?.interviewAt || assessment?.interview_at || "";
+    const interviewAt = parseIsoDateValue(interviewAtRaw);
+    const joiningAtRaw = assessment?.offerDoj || assessment?.offer_doj || assessment?.dateOfJoining || assessment?.date_of_joining || assessment?.followUpAt || assessment?.follow_up_at || "";
+    const joiningAt = parseIsoDateValue(joiningAtRaw);
+    const base = createDashboardAgendaItem({
+      id: assessment?.id,
+      candidate_name: assessment?.candidateName || assessment?.candidate_name || "",
+      jd_title: assessment?.jdTitle || assessment?.jd_title || "",
+      client_name: assessment?.clientName || assessment?.client_name || "",
+      status: candidateStatus,
+      interviewAt: interviewAtRaw,
+      offerDoj: joiningAtRaw
+    }, "assessment");
+    if (rank >= 2 && interviewAt && interviewAt >= from && interviewAt < to) {
+      scheduledInterviews.push({
+        ...base,
+        at: interviewAtRaw,
+        kind: "interview"
+      });
+    }
+    if (rank >= 4 && joiningAt && joiningAt >= from && joiningAt < to && !/\bjoined\b/i.test(candidateStatus)) {
+      upcomingJoinings.push({
+        ...base,
+        at: joiningAtRaw,
+        kind: "joining"
+      });
+    }
+    if (rank === 2 && interviewAt && interviewAt < now) {
+      interviewFeedbackAwaited.push({
+        ...base,
+        at: interviewAtRaw,
+        kind: "feedback_awaited"
+      });
+    }
+  }
+  const byDate = (a, b) => String(a.at || "").localeCompare(String(b.at || ""));
+  return {
+    range: String(range || "today").trim().toLowerCase() || "today",
+    counts: {
+      overdueFollowUps: overdueFollowUps.length,
+      pendingNotes,
+      scheduledInterviews: scheduledInterviews.length,
+      upcomingJoinings: upcomingJoinings.length,
+      pendingApplicants,
+      interviewFeedbackAwaited: interviewFeedbackAwaited.length
+    },
+    lists: {
+      followUps: overdueFollowUps.sort(byDate),
+      interviews: scheduledInterviews.sort(byDate),
+      joinings: upcomingJoinings.sort(byDate),
+      pendingApplicants: Array.isArray(applicantsPage?.items) ? applicantsPage.items.slice(0, 10) : [],
+      interviewFeedbackAwaited: interviewFeedbackAwaited.sort(byDate)
+    }
+  };
+}
+
 function findBestCandidateByIdentity(candidates = [], criteria = {}) {
   const targetId = String(criteria.candidateId || "").trim();
   const targetEmail = String(criteria.email || "").trim().toLowerCase();
@@ -16128,6 +16493,151 @@ const server = http.createServer(async (req, res) => {
           ? formatProviderApiError(error)
           : formatSmtpError(error);
       sendJson(res, 400, { ok: false, error: message });
+    }
+    return;
+  }
+
+  if (req.method === "GET" && requestUrl.pathname === "/company/dashboard/agenda") {
+    try {
+      const user = await requireSessionUser(getBearerToken(req));
+      const companyId = String(user?.companyId || "").trim();
+      const range = String(requestUrl.searchParams.get("range") || "today").trim().toLowerCase() || "today";
+      const assessmentsSelect = "select=id,company_id,candidate_id,recruiter_id,recruiter_name,client_name,jd_title,candidate_status,status,assessment_status,created_at,updated_at,interviewAt,interview_at,offerDoj,offer_doj,followUpAt,follow_up_at,payload";
+      const [pendingNotesStats, applicantsPage, followUpCandidates, assessments, assessmentEvents] = await Promise.all([
+        getCapturedStatsForUser(user, { filters: { activeStates: ["Active"] } }),
+        listApplicantsForUser(user, { limit: 1, page: 1, includeConverted: false, filters: { activeStates: ["Active"] } }),
+        supabaseTableFetch(
+          "candidates",
+          [
+            "select=id,company_id,source,name,jd_title,role,client_name,recruiter_id,recruiter_name,assigned_to_name,assigned_to_user_id,next_follow_up_at,last_contact_outcome,hidden_from_captured,used_in_assessment,assessment_id,created_at",
+            `company_id=eq.${encodeURIComponent(companyId)}`,
+            "hidden_from_captured=not.is.true",
+            "used_in_assessment=not.is.true",
+            "assessment_id=is.null",
+            "next_follow_up_at=not.is.null",
+            `or=(last_contact_outcome.eq.${encodeURIComponent("call later")},last_contact_outcome.eq.${encodeURIComponent("call_later")})`,
+            "order=next_follow_up_at.asc",
+            "limit=50"
+          ].join("&"),
+          { method: "GET" }
+        ).catch(() => []),
+        supabaseTableFetch(
+          "assessments",
+          [
+            assessmentsSelect,
+            `company_id=eq.${encodeURIComponent(companyId)}`,
+            "order=created_at.desc",
+            "limit=10000"
+          ].join("&"),
+          { method: "GET" }
+        ).catch(() => []),
+        supabaseTableFetch(
+          "assessment_events",
+          [
+            "select=assessment_id,event_type,status,event_at,created_at,payload",
+            `company_id=eq.${encodeURIComponent(companyId)}`,
+            "order=event_at.desc,created_at.desc",
+            "limit=10000"
+          ].join("&"),
+          { method: "GET" }
+        ).catch(() => [])
+      ]);
+      const agenda = buildDashboardAgendaPayload({
+        user,
+        range,
+        pendingNotesStats,
+        applicantsPage,
+        capturedFollowUps: Array.isArray(followUpCandidates) ? followUpCandidates : [],
+        assessments: Array.isArray(assessments) ? assessments : [],
+        events: Array.isArray(assessmentEvents) ? assessmentEvents : []
+      });
+      sendJson(res, 200, {
+        ok: true,
+        result: {
+          role: user.role,
+          recruiterName: user.name,
+          companyName: user.companyName,
+          agenda
+        }
+      });
+    } catch (error) {
+      sendJson(res, 400, { ok: false, error: String(error.message || error) });
+    }
+    return;
+  }
+
+  if (req.method === "GET" && requestUrl.pathname === "/company/dashboard/funnel") {
+    try {
+      const user = await requireSessionUser(getBearerToken(req));
+      const companyId = String(user?.companyId || "").trim();
+      const dateFrom = String(requestUrl.searchParams.get("dateFrom") || "").trim();
+      const dateTo = String(requestUrl.searchParams.get("dateTo") || "").trim();
+      const clientFilter = String(requestUrl.searchParams.get("clientLabel") || "").trim();
+      const recruiterFilter = String(requestUrl.searchParams.get("recruiterLabel") || "").trim();
+      const [candidates, assessments, assessmentEvents, users] = await Promise.all([
+        supabaseTableFetch(
+          "candidates",
+          [
+            "select=id,company_id,source,name,jd_title,role,client_name,recruiter_id,recruiter_name,assigned_to_name,assigned_to_user_id,assessment_id,used_in_assessment,hidden_from_captured,created_at",
+            `company_id=eq.${encodeURIComponent(companyId)}`,
+            "order=created_at.desc",
+            "limit=10000"
+          ].join("&"),
+          { method: "GET" }
+        ).catch(() => []),
+        supabaseTableFetch(
+          "assessments",
+          [
+            "select=id,company_id,candidate_id,recruiter_id,recruiter_name,client_name,jd_title,candidate_status,status,assessment_status,created_at,updated_at,interviewAt,interview_at,offerDoj,offer_doj,payload",
+            `company_id=eq.${encodeURIComponent(companyId)}`,
+            "order=created_at.desc",
+            "limit=10000"
+          ].join("&"),
+          { method: "GET" }
+        ).catch(() => []),
+        supabaseTableFetch(
+          "assessment_events",
+          [
+            "select=assessment_id,event_type,status,event_at,created_at,payload",
+            `company_id=eq.${encodeURIComponent(companyId)}`,
+            "order=event_at.desc,created_at.desc",
+            "limit=10000"
+          ].join("&"),
+          { method: "GET" }
+        ).catch(() => []),
+        supabaseTableFetch(
+          "users",
+          [
+            "select=id,name,role,company_id",
+            `company_id=eq.${encodeURIComponent(companyId)}`,
+            "order=name.asc",
+            "limit=10000"
+          ].join("&"),
+          { method: "GET" }
+        ).catch(() => [])
+      ]);
+      const funnel = buildDashboardFunnelPayload({
+        user,
+        candidates: Array.isArray(candidates) ? candidates : [],
+        assessments: Array.isArray(assessments) ? assessments : [],
+        events: Array.isArray(assessmentEvents) ? assessmentEvents : [],
+        users: Array.isArray(users) ? users : [],
+        dateFrom,
+        dateTo,
+        clientFilter,
+        recruiterFilter
+      });
+      sendJson(res, 200, {
+        ok: true,
+        result: {
+          role: user.role,
+          recruiterName: user.name,
+          companyName: user.companyName,
+          funnel
+        }
+      });
+    } catch (error) {
+      sendJson(res, 400, { ok: false, error: String(error.message || error) });
     }
     return;
   }
