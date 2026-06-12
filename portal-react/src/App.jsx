@@ -10333,7 +10333,8 @@ function PortalApp({ token, onLogout }) {
     params.set("range", String(range || "today"));
     const agendaResult = await api(`/company/dashboard/agenda${params.toString() ? `?${params.toString()}` : ""}`, token);
     if (dashboardAgendaLoadKeyRef.current !== key) return;
-    const agenda = agendaResult?.agenda && typeof agendaResult.agenda === "object" ? agendaResult.agenda : (agendaResult || {});
+    const agendaPayload = agendaResult?.result && typeof agendaResult.result === "object" ? agendaResult.result : agendaResult;
+    const agenda = agendaPayload?.agenda && typeof agendaPayload.agenda === "object" ? agendaPayload.agenda : (agendaPayload || {});
     const mergedDashboard = {
       ...(state.dashboard && typeof state.dashboard === "object" ? state.dashboard : {}),
       agenda
@@ -10360,7 +10361,8 @@ function PortalApp({ token, onLogout }) {
     if (filters.recruiterLabel) params.set("recruiterLabel", filters.recruiterLabel);
     const dashboardResult = await api(`/company/dashboard/funnel${params.toString() ? `?${params.toString()}` : ""}`, token);
     if (latestDashboardKeyRef.current !== key) return;
-    const funnel = dashboardResult?.funnel && typeof dashboardResult.funnel === "object" ? dashboardResult.funnel : (dashboardResult || {});
+    const funnelPayload = dashboardResult?.result && typeof dashboardResult.result === "object" ? dashboardResult.result : dashboardResult;
+    const funnel = funnelPayload?.funnel && typeof funnelPayload.funnel === "object" ? funnelPayload.funnel : (funnelPayload || {});
     const mergedDashboard = {
       ...(state.dashboard && typeof state.dashboard === "object" ? state.dashboard : {}),
       summary: funnel,
@@ -10531,9 +10533,26 @@ function PortalApp({ token, onLogout }) {
             dashboardFunnelResult && typeof dashboardFunnelResult === "object" && Object.keys(dashboardFunnelResult).length
               ? {
                   ...(current.dashboard && typeof current.dashboard === "object" ? current.dashboard : {}),
-                  summary: dashboardFunnelResult?.funnel && typeof dashboardFunnelResult.funnel === "object" ? dashboardFunnelResult.funnel : dashboardFunnelResult,
-                  availableClients: Array.isArray((dashboardFunnelResult?.funnel || dashboardFunnelResult || {}).availableClients) ? (dashboardFunnelResult?.funnel || dashboardFunnelResult).availableClients : [],
-                  availableRecruiters: Array.isArray((dashboardFunnelResult?.funnel || dashboardFunnelResult || {}).availableRecruiters) ? (dashboardFunnelResult?.funnel || dashboardFunnelResult).availableRecruiters : []
+                  summary: (() => {
+                    const payload = dashboardFunnelResult?.result && typeof dashboardFunnelResult.result === "object"
+                      ? dashboardFunnelResult.result
+                      : dashboardFunnelResult;
+                    return payload?.funnel && typeof payload.funnel === "object" ? payload.funnel : payload;
+                  })(),
+                  availableClients: (() => {
+                    const payload = dashboardFunnelResult?.result && typeof dashboardFunnelResult.result === "object"
+                      ? dashboardFunnelResult.result
+                      : dashboardFunnelResult;
+                    const funnel = payload?.funnel && typeof payload.funnel === "object" ? payload.funnel : payload;
+                    return Array.isArray(funnel?.availableClients) ? funnel.availableClients : [];
+                  })(),
+                  availableRecruiters: (() => {
+                    const payload = dashboardFunnelResult?.result && typeof dashboardFunnelResult.result === "object"
+                      ? dashboardFunnelResult.result
+                      : dashboardFunnelResult;
+                    const funnel = payload?.funnel && typeof payload.funnel === "object" ? payload.funnel : payload;
+                    return Array.isArray(funnel?.availableRecruiters) ? funnel.availableRecruiters : [];
+                  })()
                 }
               : current.dashboard
         )
@@ -10545,7 +10564,12 @@ function PortalApp({ token, onLogout }) {
             dashboardAgendaResult && typeof dashboardAgendaResult === "object" && Object.keys(dashboardAgendaResult).length
               ? {
                   ...(current.dashboard && typeof current.dashboard === "object" ? current.dashboard : {}),
-                  agenda: dashboardAgendaResult?.agenda && typeof dashboardAgendaResult.agenda === "object" ? dashboardAgendaResult.agenda : dashboardAgendaResult
+                  agenda: (() => {
+                    const payload = dashboardAgendaResult?.result && typeof dashboardAgendaResult.result === "object"
+                      ? dashboardAgendaResult.result
+                      : dashboardAgendaResult;
+                    return payload?.agenda && typeof payload.agenda === "object" ? payload.agenda : payload;
+                  })()
                 }
               : current.dashboard
           )
