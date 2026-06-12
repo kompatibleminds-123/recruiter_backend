@@ -3287,23 +3287,191 @@ function summarizeApplicantNotes(payload = {}) {
 function mergeApplicantCandidateFields(parsed = {}, normalized = {}, payload = {}) {
   const timeline = Array.isArray(normalized?.timeline) ? normalized.timeline : Array.isArray(parsed?.timeline) ? parsed.timeline : [];
   return {
-    name: parsed?.candidateName || payload?.candidateName || payload?.name || "",
-    company: normalized?.currentCompany || payload?.currentCompany || payload?.company || "",
-    role: normalized?.currentDesignation || payload?.currentDesignation || payload?.role || payload?.jobTitle || "",
-    experience: normalized?.totalExperience || parsed?.totalExperience || payload?.totalExperience || payload?.experience || "",
+    name: payload?.candidateName || payload?.name || parsed?.candidateName || "",
+    company: payload?.currentCompany || payload?.company || normalized?.currentCompany || parsed?.currentCompany || "",
+    role: payload?.currentDesignation || payload?.role || payload?.jobTitle || normalized?.currentDesignation || parsed?.currentDesignation || "",
+    experience: payload?.totalExperience || payload?.experience || normalized?.totalExperience || parsed?.totalExperience || "",
     skills: Array.isArray(payload?.skills) ? payload.skills : [],
-    phone: normalized?.phoneNumber || payload?.phoneNumber || payload?.phone || "",
-    email: normalized?.emailId || payload?.emailId || payload?.email || "",
+    phone: payload?.phoneNumber || payload?.phone || normalized?.phoneNumber || parsed?.phoneNumber || "",
+    email: payload?.emailId || payload?.email || normalized?.emailId || parsed?.emailId || "",
     location: payload?.location || "",
-    highest_education: normalized?.highestEducation || payload?.highestEducation || "",
+    highest_education: payload?.highestEducation || normalized?.highestEducation || "",
     current_ctc: payload?.currentCtc || payload?.current_ctc || "",
     expected_ctc: payload?.expectedCtc || payload?.expected_ctc || "",
     notice_period: payload?.noticePeriod || payload?.notice_period || "",
     notes: summarizeApplicantNotes(payload),
     next_action: payload?.nextAction || "Review applicant",
-    linkedin: normalized?.linkedinUrl || payload?.linkedinUrl || payload?.linkedin || "",
+    linkedin: payload?.linkedinUrl || payload?.linkedin || normalized?.linkedinUrl || "",
     timeline
   };
+}
+
+function scheduleApplicantCvEnrichment({
+  companyId = "",
+  candidateId = "",
+  candidate = null,
+  payload = {},
+  storedFile = null,
+  matchedJob = null,
+  existingMeta = null
+} = {}) {
+  const safeCompanyId = String(companyId || "").trim();
+  const safeCandidateId = String(candidateId || candidate?.id || "").trim();
+  const uploadedFile = payload?.file && typeof payload.file === "object" ? payload.file : null;
+  if (!safeCompanyId || !safeCandidateId || !uploadedFile?.fileData) return;
+
+  setImmediate(async () => {
+    try {
+      const parsed = await parseCandidatePayload({
+        sourceType: "cv",
+        file: uploadedFile,
+        candidateName: payload?.candidateName || "",
+        totalExperience: payload?.totalExperience || ""
+      });
+
+      const apiKey = String(process.env.OPENAI_API_KEY || "").trim();
+      let normalized = null;
+      let parseStatus = "parsed";
+      if (apiKey && payload?.parseWithAi !== false) {
+        try {
+          normalized = await normalizeCandidateFileWithAi({
+            apiKey,
+            model: payload?.model,
+            uploadedFile,
+            sourceType: "cv",
+            filename: parsed?.filename,
+            fallbackFields: {
+              candidateName: parsed?.candidateName,
+              totalExperience: parsed?.totalExperience,
+              currentCompany: parsed?.currentCompany,
+              currentDesignation: parsed?.currentDesignation,
+              emailId: parsed?.emailId,
+              phoneNumber: parsed?.phoneNumber,
+              timeline: parsed?.timeline,
+              gaps: parsed?.gaps
+            }
+          });
+          parseStatus = "parsed_with_ai";
+        } catch (error) {
+          parseStatus = `parsed_fallback:${String(error?.message || error)}`;
+        }
+      }
+
+      const refreshed = (await listCandidates({
+        companyId: safeCompanyId,
+        id: safeCandidateId,
+        limit: 1
+      }))[0] || candidate || null;
+      const refreshedMeta = decodeApplicantMetadata(refreshed || {});
+      const cvResultForSearch =
+        normalized && typeof normalized === "object"
+          ? normalized
+          : parsed && typeof parsed === "object"
+            ? parsed
+            : null;
+      const inferredSearchTags = deriveInferredSearchTags({
+        cvResult: cvResultForSearch,
+        recruiterNotes: [
+          String(payload?.screeningAnswers || "").trim(),
+          screeningAnswersToSearchText(payload?.customFields || {})
+        ].filter(Boolean).join("\n"),
+        otherPointers: "",
+        tags: Array.isArray(refreshed?.skills) ? refreshed.skills : []
+      });
+      const nextMeta = {
+        ...(existingMeta && typeof existingMeta === "object" ? existingMeta : {}),
+        ...(refreshedMeta && typeof refreshedMeta === "object" ? refreshedMeta : {}),
+        parseStatus,
+        sourcePlatform: String(payload?.sourcePlatform || refreshedMeta?.sourcePlatform || "").trim(),
+        sourceLabel: String(payload?.sourceLabel || refreshedMeta?.sourceLabel || "").trim(),
+        jobId: String(payload?.jobId || refreshedMeta?.jobId || "").trim(),
+        jobPageUrl: String(payload?.jobPageUrl || refreshedMeta?.jobPageUrl || "").trim(),
+        screeningAnswers: String(payload?.screeningAnswers || refreshedMeta?.screeningAnswers || "").trim(),
+        customFields: payload?.customFields || refreshedMeta?.customFields || {},
+        applicantState: String(refreshedMeta?.applicantState || "new").trim() || "new",
+        fileProvider: storedFile?.provider || refreshedMeta?.fileProvider || "",
+        fileKey: storedFile?.key || refreshedMeta?.fileKey || "",
+        fileUrl: storedFile?.url || refreshedMeta?.fileUrl || "",
+        filename: storedFile?.filename || refreshedMeta?.filename || "",
+        mimeType: storedFile?.mimeType || refreshedMeta?.mimeType || "",
+        sizeBytes: storedFile?.sizeBytes || refreshedMeta?.sizeBytes || 0,
+        inferredSearchTags,
+        cvAnalysisCache: {
+          ...(refreshedMeta?.cvAnalysisCache && typeof refreshedMeta.cvAnalysisCache === "object" ? refreshedMeta.cvAnalysisCache : {}),
+          storedFile: storedFile ? {
+            provider: storedFile.provider || "",
+            key: storedFile.key || "",
+            url: storedFile.url || "",
+            filename: storedFile.filename || "",
+            mimeType: storedFile.mimeType || "",
+            sizeBytes: storedFile.sizeBytes || 0
+          } : (refreshedMeta?.cvAnalysisCache?.storedFile || null),
+          parsePending: false,
+          updatedAt: new Date().toISOString(),
+          result: cvResultForSearch || null
+        }
+      };
+      nextMeta.searchDocV1 = deriveCandidateSearchDocV1FromParts({
+        candidate: {
+          ...(refreshed || {}),
+          client_name: payload?.clientName || refreshed?.client_name || "",
+          jd_title: payload?.jdTitle || refreshed?.jd_title || "",
+          assigned_jd_title: matchedJob?.title || refreshed?.assigned_jd_title || payload?.jdTitle || "",
+          recruiter_context_notes: [
+            payload?.screeningAnswers || refreshed?.recruiter_context_notes || "",
+            screeningAnswersToSearchText(payload?.customFields || {})
+          ].filter(Boolean).join("\n")
+        },
+        meta: nextMeta,
+        draftPayload: refreshed?.draft_payload && typeof refreshed.draft_payload === "object" ? refreshed.draft_payload : {},
+        screeningAnswers: refreshed?.screening_answers && typeof refreshed.screening_answers === "object"
+          ? refreshed.screening_answers
+          : (payload?.customFields || {}),
+        cvResult: cvResultForSearch,
+        inferredSearchTags
+      });
+      nextMeta.searchDocUpdatedAt = new Date().toISOString();
+
+      await patchCandidate(safeCandidateId, {
+        raw_note: encodeApplicantMetadata(nextMeta)
+      }, { companyId: safeCompanyId });
+
+      try {
+        await upsertCandidateSearchDocV1({
+          companyId: safeCompanyId,
+          candidateId: safeCandidateId,
+          docV1: String(nextMeta.searchDocV1 || "").trim(),
+          cvTextFull: String(parsed?.rawText || "")
+        });
+      } catch (_) {}
+
+      emitCapturedStreamEvent(safeCompanyId, "candidate_changed", { candidateId: safeCandidateId });
+      emitApplicantStreamEvent(safeCompanyId, "candidate_changed", { candidateId: safeCandidateId });
+    } catch (error) {
+      console.warn("Applicant CV enrichment failed:", error?.message || error);
+      try {
+        const refreshed = (await listCandidates({ companyId: safeCompanyId, id: safeCandidateId, limit: 1 }))[0] || null;
+        const refreshedMeta = decodeApplicantMetadata(refreshed || {});
+        const nextMeta = {
+          ...(existingMeta && typeof existingMeta === "object" ? existingMeta : {}),
+          ...(refreshedMeta && typeof refreshedMeta === "object" ? refreshedMeta : {}),
+          cvAnalysisCache: {
+            ...(refreshedMeta?.cvAnalysisCache && typeof refreshedMeta.cvAnalysisCache === "object" ? refreshedMeta.cvAnalysisCache : {}),
+            parsePending: false,
+            parseError: String(error?.message || error || "Unknown background parse error."),
+            updatedAt: new Date().toISOString()
+          }
+        };
+        await patchCandidate(safeCandidateId, {
+          raw_note: encodeApplicantMetadata(nextMeta)
+        }, { companyId: safeCompanyId });
+        emitCapturedStreamEvent(safeCompanyId, "candidate_changed", { candidateId: safeCandidateId });
+        emitApplicantStreamEvent(safeCompanyId, "candidate_changed", { candidateId: safeCandidateId });
+      } catch (inner) {
+        console.warn("Could not persist applicant CV enrichment error:", inner?.message || inner);
+      }
+    }
+  });
 }
 
 function normalizeApplicantBody(body = {}) {
@@ -5397,42 +5565,9 @@ async function ingestApplicantSubmission(body, req) {
     storedFile = await storeUploadedFile(payload.file, {
       objectPrefix: `applicants/${payload.companyId}/${payload.jdTitle || payload.jobId || "general"}`
     });
-
-    parsed = await parseCandidatePayload({
-      sourceType: "cv",
-      file: payload.file,
-      candidateName: payload.candidateName,
-      totalExperience: payload.totalExperience
-    });
   }
-
-  const apiKey = String(process.env.OPENAI_API_KEY || "").trim();
-  let normalized = null;
-  let parseStatus = payload.file?.fileData ? "parsed" : "submitted_without_cv";
-  if (payload.file?.fileData && apiKey && payload.parseWithAi) {
-    try {
-      normalized = await normalizeCandidateFileWithAi({
-        apiKey,
-        model: payload.model,
-        uploadedFile: payload.file,
-        sourceType: "cv",
-        filename: parsed.filename,
-        fallbackFields: {
-          candidateName: parsed.candidateName,
-          totalExperience: parsed.totalExperience,
-          currentCompany: parsed.currentCompany,
-          currentDesignation: parsed.currentDesignation,
-          emailId: parsed.emailId,
-          phoneNumber: parsed.phoneNumber,
-          timeline: parsed.timeline,
-          gaps: parsed.gaps
-        }
-      });
-      parseStatus = "parsed_with_ai";
-    } catch (error) {
-      parseStatus = `parsed_fallback:${String(error?.message || error)}`;
-    }
-  }
+  const normalized = null;
+  const parseStatus = payload.file?.fileData ? "submitted_with_cv_pending" : "submitted_without_cv";
 
   const merged = mergeApplicantCandidateFields(parsed, normalized, payload);
   const metadata = {
@@ -5590,8 +5725,8 @@ async function ingestApplicantSubmission(body, req) {
         raw_note: encodeApplicantMetadata(nextMeta),
         client_name: payload.clientName || existing.client_name || null,
         jd_title: payload.jdTitle || existing.jd_title || null,
-      assigned_to_user_id: defaultInboxOwner?.id || existing.assigned_to_user_id || null,
-        assigned_to_name: defaultInboxOwner?.name || existing.assigned_to_name || null,
+        assigned_to_user_id: existing.assigned_to_user_id || null,
+        assigned_to_name: existing.assigned_to_name || null,
         assigned_jd_id: matchedJob?.id || existing.assigned_jd_id || null,
         assigned_jd_title: matchedJob?.title || payload.jdTitle || existing.assigned_jd_title || null,
       recruiter_context_notes: String(existing.recruiter_context_notes || existing.recruiterContextNotes || "").trim() || null,
@@ -5628,6 +5763,20 @@ async function ingestApplicantSubmission(body, req) {
       candidateId: String(updated?.id || existing?.id || "").trim() || undefined,
       candidate: updated
     });
+    if (payload.file?.fileData) {
+      scheduleApplicantCvEnrichment({
+        companyId: payload.companyId,
+        candidateId: String(updated?.id || existing?.id || "").trim(),
+        candidate: updated,
+        payload: {
+          ...payload,
+          jobId: matchedJob?.id || payload.jobId || ""
+        },
+        storedFile,
+        matchedJob,
+        existingMeta: nextMeta
+      });
+    }
     return sanitizeApplicantCandidate(updated);
   }
 
@@ -5716,6 +5865,20 @@ async function ingestApplicantSubmission(body, req) {
     candidateId: String(candidate?.id || "").trim() || undefined,
     candidate
   });
+  if (payload.file?.fileData) {
+    scheduleApplicantCvEnrichment({
+      companyId: payload.companyId,
+      candidateId: String(candidate?.id || "").trim(),
+      candidate,
+      payload: {
+        ...payload,
+        jobId: matchedJob?.id || payload.jobId || ""
+      },
+      storedFile,
+      matchedJob,
+      existingMeta: metadata
+    });
+  }
 
   return sanitizeApplicantCandidate(candidate);
 }
