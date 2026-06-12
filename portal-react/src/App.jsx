@@ -11405,10 +11405,18 @@ function PortalApp({ token, onLogout }) {
         ""
       ).trim();
       const payloadCandidate = payload?.candidate && typeof payload.candidate === "object" ? payload.candidate : null;
+      const refreshCapturedWorkspace = () => Promise.all([
+        reloadCapturedSlice(capturedPage, safeCapturedApiPageSize, candidateFiltersApplied, capturedSortBy),
+        reloadCapturedStats(candidateFiltersApplied)
+      ]);
       const queuePending = () => {
         capturedLiveSyncPendingRef.current = true;
         capturedLiveSyncPendingEventRef.current = { candidateId, eventType, candidate: payloadCandidate };
       };
+      if (eventType === "candidate_created" || eventType === "candidate_deleted" || !candidateId) {
+        void refreshCapturedWorkspace().catch(() => {});
+        return;
+      }
       if (capturedLiveSyncInFlightRef.current || isCapturedUserEditing) {
         queuePending();
         return;
@@ -11474,7 +11482,10 @@ function PortalApp({ token, onLogout }) {
       ).trim();
       const payloadCandidate = payload?.candidate && typeof payload.candidate === "object" ? payload.candidate : null;
       if (eventType === "candidate_created" || eventType === "candidate_deleted" || !candidateId) {
-        markPending(candidateId, eventType, payloadCandidate);
+        void Promise.all([
+          reloadCapturedSlice(capturedPage, safeCapturedApiPageSize, candidateFiltersApplied, capturedSortBy),
+          reloadCapturedStats(candidateFiltersApplied)
+        ]).catch(() => {});
         return;
       }
       if (eventType !== "candidate_changed" && eventType !== "candidate_attempt" && eventType !== "candidate_assigned") {

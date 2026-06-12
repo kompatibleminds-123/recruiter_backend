@@ -18731,11 +18731,21 @@ const server = http.createServer(async (req, res) => {
       }
       const duplicate = await findDuplicateCandidate(candidate, { companyId: actor.companyId });
       if (duplicate) {
+        const duplicateResult = duplicate.existing || null;
+        const duplicateCandidateId = String(duplicateResult?.id || "").trim() || undefined;
+        emitCapturedStreamEvent(actor.companyId, "candidate_changed", {
+          candidateId: duplicateCandidateId,
+          candidate: duplicateResult
+        });
+        emitApplicantStreamEvent(actor.companyId, "candidate_changed", {
+          candidateId: duplicateCandidateId,
+          candidate: duplicateResult
+        });
         sendJson(res, 200, {
           ok: true,
           duplicate: true,
           duplicateBy: duplicate.matchBy,
-          result: duplicate.existing
+          result: duplicateResult
         });
         return;
       }
