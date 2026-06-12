@@ -1213,6 +1213,7 @@ function normalizeApplicantLocationLabel(value) {
 
 function normalizeApplicantVisibleRow(item = {}) {
   if (!item || typeof item !== "object") return item;
+  const meta = decodePortalApplicantMetadata(item);
   const toBooleanLike = (value) => {
     if (typeof value === "boolean") return value;
     if (typeof value === "number") return value === 1;
@@ -1238,6 +1239,24 @@ function normalizeApplicantVisibleRow(item = {}) {
   const createdAt = String(item.createdAt || item.created_at || "").trim();
   const assignedAt = String(item.assignedAt || item.assigned_at || createdAt || "").trim();
   const hiddenFromCaptured = toBooleanLike(item.hidden_from_captured) || toBooleanLike(item.hiddenFromCaptured);
+  const appliedToo = Boolean(
+    toBooleanLike(item.applied_too)
+    || toBooleanLike(item.appliedToo)
+    || toBooleanLike(meta.applied_too)
+    || toBooleanLike(meta.appliedToo)
+    || String(item.application_source || item.applicationSource || meta.application_source || meta.applicationSource || meta.sourcePlatform || "").trim()
+    || String(meta.applyAssignedToUserId || "").trim()
+    || String(meta.applyAssignedToName || "").trim()
+    || String(meta.applyAssignedVia || "").trim()
+  );
+  const applicationSource = String(
+    item.application_source
+    || item.applicationSource
+    || meta.application_source
+    || meta.applicationSource
+    || ""
+  ).trim();
+  const sourcePlatform = String(item.sourcePlatform || meta.sourcePlatform || item.source || "").trim();
   return {
     ...item,
     candidateName,
@@ -1262,6 +1281,18 @@ function normalizeApplicantVisibleRow(item = {}) {
     created_at: String(item.created_at || createdAt || "").trim(),
     assignedAt,
     assigned_at: String(item.assigned_at || assignedAt || "").trim(),
+    sourcePlatform,
+    sourceLabel: String(item.sourceLabel || meta.sourceLabel || "").trim(),
+    applyAssignedToUserId: String(item.applyAssignedToUserId || item.apply_assigned_to_user_id || meta.applyAssignedToUserId || "").trim(),
+    apply_assigned_to_user_id: String(item.apply_assigned_to_user_id || item.applyAssignedToUserId || meta.applyAssignedToUserId || "").trim(),
+    applyAssignedToName: String(item.applyAssignedToName || item.apply_assigned_to_name || meta.applyAssignedToName || "").trim(),
+    apply_assigned_to_name: String(item.apply_assigned_to_name || item.applyAssignedToName || meta.applyAssignedToName || "").trim(),
+    applyAssignedVia: String(item.applyAssignedVia || item.apply_assigned_via || meta.applyAssignedVia || "").trim(),
+    apply_assigned_via: String(item.apply_assigned_via || item.applyAssignedVia || meta.applyAssignedVia || "").trim(),
+    appliedToo,
+    applied_too: appliedToo,
+    applicationSource,
+    application_source: applicationSource,
     hidden_from_captured: hiddenFromCaptured,
     hiddenFromCaptured
   };
