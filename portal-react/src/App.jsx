@@ -8294,6 +8294,20 @@ function PortalApp({ token, onLogout }) {
   const [billingOverview, setBillingOverview] = useState(null);
   const [billingPlans, setBillingPlans] = useState([]);
   const [dashboardAgendaSnapshot, setDashboardAgendaSnapshot] = useState(() => readDashboardAgendaSnapshot());
+  const [dashboardAgendaData, setDashboardAgendaData] = useState(() => {
+    const snapshot = readDashboardAgendaSnapshot();
+    if (snapshot && typeof snapshot === "object") return snapshot;
+    const dashboardSnapshot = readDashboardSnapshot();
+    return dashboardSnapshot?.agenda && typeof dashboardSnapshot.agenda === "object"
+      ? dashboardSnapshot.agenda
+      : {};
+  });
+  const [dashboardSummaryData, setDashboardSummaryData] = useState(() => {
+    const dashboardSnapshot = readDashboardSnapshot();
+    return dashboardSnapshot?.summary && typeof dashboardSnapshot.summary === "object"
+      ? dashboardSnapshot.summary
+      : {};
+  });
   const [dashboardAgendaLoading, setDashboardAgendaLoading] = useState(false);
   const [auditLogs, setAuditLogs] = useState([]);
   const [planUpgradeBusyCode, setPlanUpgradeBusyCode] = useState("");
@@ -10340,6 +10354,7 @@ function PortalApp({ token, onLogout }) {
       const agenda = agendaPayload?.agenda && typeof agendaPayload.agenda === "object" ? agendaPayload.agenda : (agendaPayload || {});
       writeDashboardAgendaSnapshot(agenda);
       setDashboardAgendaSnapshot(agenda);
+      setDashboardAgendaData(agenda);
       setState((current) => {
         const nextDashboard = {
           ...(current.dashboard && typeof current.dashboard === "object" ? current.dashboard : {}),
@@ -10376,6 +10391,7 @@ function PortalApp({ token, onLogout }) {
     if (latestDashboardKeyRef.current !== key) return;
     const funnelPayload = dashboardResult?.result && typeof dashboardResult.result === "object" ? dashboardResult.result : dashboardResult;
     const funnel = funnelPayload?.funnel && typeof funnelPayload.funnel === "object" ? funnelPayload.funnel : (funnelPayload || {});
+    setDashboardSummaryData(funnel);
     setState((current) => {
       const nextDashboard = {
         ...(current.dashboard && typeof current.dashboard === "object" ? current.dashboard : {}),
@@ -21926,7 +21942,9 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
   const jdScreeningQuestions = parseQuestionList(jobDraft.standardQuestions);
   const interviewSelectedJob = (state.jobs || []).find((job) => String(job.title || "").trim() === String(interviewForm.jdTitle || "").trim()) || null;
   const interviewScreeningQuestions = parseQuestionList(interviewSelectedJob?.standardQuestions || "");
-  const dashboardSummary = state.dashboard?.summary || {};
+  const dashboardSummary = (dashboardSummaryData && Object.keys(dashboardSummaryData).length
+    ? dashboardSummaryData
+    : (state.dashboard?.summary || {}));
   const dashboardOverall = dashboardSummary?.overall || {};
   const dashboardClientGroups = Array.isArray(dashboardSummary?.byClient) ? dashboardSummary.byClient : [];
   const dashboardRecruiterGroups = Array.isArray(dashboardSummary?.byRecruiter)
@@ -22204,17 +22222,14 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
   ]);
 
   useEffect(() => {
-    if (!assessmentsLiveDataReady) return;
-    if (dashboardAgendaSnapshotKeyRef.current === liveDashboardAgendaSnapshotKey) return;
-    dashboardAgendaSnapshotKeyRef.current = liveDashboardAgendaSnapshotKey;
-    const snapshot = { ...liveDashboardAgendaSnapshot, updatedAt: Date.now(), snapshotKey: liveDashboardAgendaSnapshotKey };
-    setDashboardAgendaSnapshot(snapshot);
-    writeDashboardAgendaSnapshot(snapshot);
+    return undefined;
   }, [assessmentsLiveDataReady, liveDashboardAgendaSnapshot, liveDashboardAgendaSnapshotKey]);
 
-  const dashboardAgendaApiForDisplay = state.dashboard?.agenda && String(state.dashboard?.agenda?.range || state.dashboard?.agenda?.agendaRange || "") === String(agendaRange)
-    ? state.dashboard.agenda
-    : null;
+  const dashboardAgendaApiForDisplay = dashboardAgendaData && String(dashboardAgendaData?.range || dashboardAgendaData?.agendaRange || "") === String(agendaRange)
+    ? dashboardAgendaData
+    : (state.dashboard?.agenda && String(state.dashboard?.agenda?.range || state.dashboard?.agenda?.agendaRange || "") === String(agendaRange)
+      ? state.dashboard.agenda
+      : null);
   const dashboardAgendaSnapshotForDisplay = dashboardAgendaApiForDisplay || (!assessmentsLiveDataReady && dashboardAgendaSnapshot && String(dashboardAgendaSnapshot.agendaRange || "") === String(agendaRange)
     ? dashboardAgendaSnapshot
     : null);
@@ -22225,11 +22240,9 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
   const displayScheduledInterviewCount = Number(dashboardAgendaCounts.scheduledInterviews ?? dashboardAgendaSnapshotForDisplay?.scheduledInterviewCount ?? todaysInterviews.length ?? 0);
   const displayUpcomingJoiningCount = Number(dashboardAgendaCounts.upcomingJoinings ?? dashboardAgendaSnapshotForDisplay?.upcomingJoiningCount ?? upcomingJoinings.length ?? 0);
   const displayPendingAssignments = Number(dashboardAgendaCounts.pendingApplicants ?? dashboardAgendaSnapshotForDisplay?.pendingAssignmentCount ?? pendingAssignments ?? 0);
-  const displayInterviewFeedbackAwaitedCount = Number(dashboardAgendaCounts.interviewFeedbackAwaited ?? dashboardAgendaSnapshotForDisplay?.interviewFeedbackAwaitedCount ?? 0);
   const displayOverdueFollowUpItems = dashboardAgendaLists.followUps || dashboardAgendaSnapshotForDisplay?.overdueFollowUps || overdueFollowUps.slice(0, 5);
   const displayScheduledFollowUpItems = dashboardAgendaSnapshotForDisplay?.scheduledFollowUpItems || scheduledFollowUpItems;
   const displayScheduledInterviewItems = dashboardAgendaLists.interviews || dashboardAgendaSnapshotForDisplay?.scheduledInterviewItems || scheduledInterviewItems;
-  const displayInterviewFeedbackAwaitedItems = dashboardAgendaLists.interviewFeedbackAwaited || dashboardAgendaSnapshotForDisplay?.interviewFeedbackAwaited || [];
   const displayUpcomingJoiningItems = dashboardAgendaLists.joinings || upcomingJoinings.slice(0, 5);
 
   return (

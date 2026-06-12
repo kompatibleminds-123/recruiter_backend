@@ -7448,7 +7448,6 @@ function buildDashboardAgendaPayload({
   events = []
 } = {}) {
   const { from, to } = getDashboardAgendaRangeBounds(range);
-  const now = new Date();
   const eventsByAssessmentId = new Map();
   for (const event of Array.isArray(events) ? events : []) {
     const assessmentId = String(event?.assessment_id || event?.assessmentId || "").trim();
@@ -7469,7 +7468,6 @@ function buildDashboardAgendaPayload({
     .map((item) => createDashboardAgendaItem(item, "follow_up"));
   const scheduledInterviews = [];
   const upcomingJoinings = [];
-  const interviewFeedbackAwaited = [];
   for (const assessment of Array.isArray(assessments) ? assessments : []) {
     if (!isDashboardRowInActorScope(assessment, user, "assessment")) continue;
     const candidateStatus = String(assessment?.candidateStatus || assessment?.candidate_status || assessment?.assessment_status || assessment?.status || "").trim();
@@ -7501,13 +7499,6 @@ function buildDashboardAgendaPayload({
         kind: "joining"
       });
     }
-    if (rank === 2 && interviewAt && interviewAt < now) {
-      interviewFeedbackAwaited.push({
-        ...base,
-        at: interviewAtRaw,
-        kind: "feedback_awaited"
-      });
-    }
   }
   const byDate = (a, b) => String(a.at || "").localeCompare(String(b.at || ""));
   return {
@@ -7518,14 +7509,14 @@ function buildDashboardAgendaPayload({
       scheduledInterviews: scheduledInterviews.length,
       upcomingJoinings: upcomingJoinings.length,
       pendingApplicants,
-      interviewFeedbackAwaited: interviewFeedbackAwaited.length
+      interviewFeedbackAwaited: 0
     },
     lists: {
       followUps: overdueFollowUps.sort(byDate),
       interviews: scheduledInterviews.sort(byDate),
       joinings: upcomingJoinings.sort(byDate),
       pendingApplicants: Array.isArray(applicantsPage?.items) ? applicantsPage.items.slice(0, 10) : [],
-      interviewFeedbackAwaited: interviewFeedbackAwaited.sort(byDate)
+      interviewFeedbackAwaited: []
     }
   };
 }
