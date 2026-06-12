@@ -5592,6 +5592,14 @@ async function ingestApplicantSubmission(body, req) {
         cvTextFull: String(parsed?.rawText || "")
       });
     } catch (_) {}
+    emitCapturedStreamEvent(payload.companyId, "candidate_changed", {
+      candidateId: String(updated?.id || existing?.id || "").trim() || undefined,
+      candidate: updated
+    });
+    emitApplicantStreamEvent(payload.companyId, "candidate_changed", {
+      candidateId: String(updated?.id || existing?.id || "").trim() || undefined,
+      candidate: updated
+    });
     return sanitizeApplicantCandidate(updated);
   }
 
@@ -5672,6 +5680,14 @@ async function ingestApplicantSubmission(body, req) {
       cvTextFull: String(parsed?.rawText || "")
     });
   } catch (_) {}
+  emitCapturedStreamEvent(payload.companyId, "candidate_created", {
+    candidateId: String(candidate?.id || "").trim() || undefined,
+    candidate
+  });
+  emitApplicantStreamEvent(payload.companyId, "candidate_created", {
+    candidateId: String(candidate?.id || "").trim() || undefined,
+    candidate
+  });
 
   return sanitizeApplicantCandidate(candidate);
 }
