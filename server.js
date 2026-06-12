@@ -7195,7 +7195,7 @@ function getAssessmentHistoricalRankValue(value = "") {
   if (/\b(joined|onboarded)\b/i.test(text)) return 5;
   if (/\b(offered|offer released|offer accepted|offer)\b/i.test(text)) return 4;
   if (/\b(shortlisted|shortlist)\b/i.test(text)) return 3;
-  if (/\b(screening call aligned|l1 aligned|l2 aligned|l3 aligned|hr discussion aligned|hr interview aligned|aligned for interview|interview scheduled|interview feedback awaited|feedback awaited)\b/i.test(text)) return 2;
+  if (/\b(screening call aligned|l1 aligned|l2 aligned|l3 aligned|hr discussion aligned|hr interview aligned|aligned for interview|interview scheduled|interview feedback awaited|interview reject)\b/i.test(text)) return 2;
   return 1;
 }
 
@@ -7435,7 +7435,7 @@ function buildDashboardFunnelPayload({
 }
 
 function isDashboardAgendaInterviewStatus(value = "") {
-  return /\b(screening call aligned|l1 aligned|l2 aligned|l3 aligned|hr discussion aligned|hr interview aligned|aligned for interview|interview scheduled|feedback awaited|interview feedback awaited)\b/i.test(normalizeDashboardText(value));
+  return /\b(screening call aligned|l1 aligned|l2 aligned|l3 aligned|hr discussion aligned|hr interview aligned|aligned for interview|interview scheduled|interview feedback awaited|interview reject|shortlisted|offered|joined)\b/i.test(normalizeDashboardText(value));
 }
 
 function buildDashboardAgendaPayload({
