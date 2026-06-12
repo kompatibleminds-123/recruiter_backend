@@ -3402,6 +3402,22 @@ async function resolveJobShareApplyLinkForActor(actor, job) {
 
 function sanitizeApplicantCandidate(candidate = {}) {
   const meta = decodeApplicantMetadata(candidate);
+  const applicationSource = String(
+    meta.applicationSource
+    || meta.application_source
+    || meta.sourcePlatform
+    || ""
+  ).trim();
+  const appliedToo = Boolean(
+    candidate?.applied_too
+    || candidate?.appliedToo
+    || meta.appliedToo
+    || meta.applied_too
+    || applicationSource
+    || meta.applyAssignedToUserId
+    || meta.applyAssignedToName
+    || meta.applyAssignedVia
+  );
   const draftPayload = normalizeJsonObjectInput(candidate?.draft_payload || candidate?.draftPayload);
   const normalizedCurrentOrgTenure = String(
     draftPayload?.currentOrgTenure
@@ -3438,6 +3454,10 @@ function sanitizeApplicantCandidate(candidate = {}) {
     assigned_by_user_id: String(candidate?.assigned_by_user_id || "").trim(),
     assignedAt: String(candidate?.assigned_at || "").trim(),
     assigned_at: String(candidate?.assigned_at || "").trim(),
+    appliedToo,
+    applied_too: appliedToo,
+    applicationSource,
+    application_source: applicationSource,
     applyAssignedToUserId: String(meta.applyAssignedToUserId || "").trim(),
     apply_assigned_to_user_id: String(meta.applyAssignedToUserId || "").trim(),
     applyAssignedToName: String(meta.applyAssignedToName || "").trim(),
@@ -4059,7 +4079,11 @@ async function listCapturedForUser(user, options = {}) {
       const totalPart = contentRange.split("/")[1] || "";
       total = Math.max(0, Number(totalPart || 0));
     }
-    return { items: Array.isArray(rows) ? rows : [], total, page, limit, totalPages: Math.max(1, Math.ceil(total / limit)) };
+    const items = (Array.isArray(rows) ? rows : []).map((row) => ({
+      ...(row || {}),
+      ...sanitizeApplicantCandidate(row)
+    }));
+    return { items, total, page, limit, totalPages: Math.max(1, Math.ceil(total / limit)) };
   }
 
   const fallbackRows = await listCandidatesForUser(user, { limit: 5000, q: filters.q });
@@ -5519,6 +5543,10 @@ async function ingestApplicantSubmission(body, req) {
     const nextMeta = {
       ...(existingMeta || {}),
       ...(metadata || {}),
+      appliedToo: true,
+      applied_too: true,
+      applicationSource: appliedSource,
+      application_source: appliedSource,
       originalSource: String(existingMeta?.originalSource || existing?.source || "").trim() || undefined,
       mergedFrom: "website_apply_duplicate",
       mergedAt: new Date().toISOString()
@@ -19398,11 +19426,17 @@ const server = http.createServer(async (req, res) => {
         id: String(requestUrl.searchParams.get("id") || "").trim(),
         scope: String(requestUrl.searchParams.get("scope") || "company").trim()
       };
-      const result = await listDatabaseCandidatesForUser(sessionUser, listOptions);
-      sendJson(res, 200, { ok: true, result });
-    } catch (error) {
-      sendJson(res, 400, { ok: false, error: String(error.message || error) });
-    }
+        const result = await listDatabaseCandidatesForUser(sessionUser, listOptions);
+        const normalizedResult = Array.isArray(result)
+          ? result.map((row) => ({
+            ...(row || {}),
+            ...sanitizeApplicantCandidate(row)
+          }))
+          : result;
+        sendJson(res, 200, { ok: true, result: normalizedResult });
+      } catch (error) {
+        sendJson(res, 400, { ok: false, error: String(error.message || error) });
+      }
     return;
   }
 
