@@ -16740,7 +16740,7 @@ const server = http.createServer(async (req, res) => {
         listApplicantsForUser(user, { limit: 1, page: 1, includeConverted: false, filters: { activeStates: ["Active"] } }),
         supabaseTableFetch(
           "candidates",
-          [
+          `?${[
             "select=id,company_id,source,name,jd_title,role,client_name,recruiter_id,recruiter_name,assigned_to_name,assigned_to_user_id,next_follow_up_at,last_contact_outcome,hidden_from_captured,used_in_assessment,assessment_id,created_at",
             `company_id=eq.${encodeURIComponent(companyId)}`,
             "hidden_from_captured=not.is.true",
@@ -16750,27 +16750,27 @@ const server = http.createServer(async (req, res) => {
             `or=(last_contact_outcome.eq.${encodeURIComponent("call later")},last_contact_outcome.eq.${encodeURIComponent("call_later")})`,
             "order=next_follow_up_at.asc",
             "limit=50"
-          ].join("&"),
+          ].join("&")}`,
           { method: "GET" }
         ).catch(() => []),
         supabaseTableFetch(
           "assessments",
-          [
+          `?${[
             assessmentsSelect,
             `company_id=eq.${encodeURIComponent(companyId)}`,
             "order=created_at.desc",
             "limit=10000"
-          ].join("&"),
+          ].join("&")}`,
           { method: "GET" }
         ).catch(() => []),
         supabaseTableFetch(
           "assessment_events",
-          [
+          `?${[
             "select=assessment_id,event_type,status,event_at,created_at,payload",
             `company_id=eq.${encodeURIComponent(companyId)}`,
             "order=event_at.desc,created_at.desc",
             "limit=10000"
-          ].join("&"),
+          ].join("&")}`,
           { method: "GET" }
         ).catch(() => [])
       ]);
@@ -16815,42 +16815,42 @@ const server = http.createServer(async (req, res) => {
       const [candidates, assessments, assessmentEvents, users] = await Promise.all([
         supabaseTableFetch(
           "candidates",
-          [
+          `?${[
             "select=id,company_id,source,name,jd_title,role,client_name,recruiter_id,recruiter_name,assigned_to_name,assigned_to_user_id,assessment_id,used_in_assessment,hidden_from_captured,created_at",
             `company_id=eq.${encodeURIComponent(companyId)}`,
             "order=created_at.desc",
             "limit=10000"
-          ].join("&"),
+          ].join("&")}`,
           { method: "GET" }
         ).catch(() => []),
         supabaseTableFetch(
           "assessments",
-          [
+          `?${[
             "select=id,company_id,candidate_id,recruiter_id,recruiter_name,client_name,jd_title,candidate_status,status,assessment_status,created_at,updated_at,interviewAt,interview_at,offerDoj,offer_doj,payload",
             `company_id=eq.${encodeURIComponent(companyId)}`,
             "order=created_at.desc",
             "limit=10000"
-          ].join("&"),
+          ].join("&")}`,
           { method: "GET" }
         ).catch(() => []),
         supabaseTableFetch(
           "assessment_events",
-          [
+          `?${[
             "select=assessment_id,event_type,status,event_at,created_at,payload",
             `company_id=eq.${encodeURIComponent(companyId)}`,
             "order=event_at.desc,created_at.desc",
             "limit=10000"
-          ].join("&"),
+          ].join("&")}`,
           { method: "GET" }
         ).catch(() => []),
         supabaseTableFetch(
           "users",
-          [
+          `?${[
             "select=id,name,role,company_id",
             `company_id=eq.${encodeURIComponent(companyId)}`,
             "order=name.asc",
             "limit=10000"
-          ].join("&"),
+          ].join("&")}`,
           { method: "GET" }
         ).catch(() => [])
       ]);
