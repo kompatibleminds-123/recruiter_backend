@@ -10335,14 +10335,19 @@ function PortalApp({ token, onLogout }) {
     if (dashboardAgendaLoadKeyRef.current !== key) return;
     const agendaPayload = agendaResult?.result && typeof agendaResult.result === "object" ? agendaResult.result : agendaResult;
     const agenda = agendaPayload?.agenda && typeof agendaPayload.agenda === "object" ? agendaPayload.agenda : (agendaPayload || {});
-    const mergedDashboard = {
-      ...(state.dashboard && typeof state.dashboard === "object" ? state.dashboard : {}),
-      agenda
-    };
-    writeDashboardSnapshot(mergedDashboard);
     writeDashboardAgendaSnapshot(agenda);
     setDashboardAgendaSnapshot(agenda);
-    updateDashboardState(mergedDashboard);
+    setState((current) => {
+      const nextDashboard = {
+        ...(current.dashboard && typeof current.dashboard === "object" ? current.dashboard : {}),
+        agenda
+      };
+      writeDashboardSnapshot(nextDashboard);
+      return {
+        ...current,
+        dashboard: nextDashboard
+      };
+    });
     return agenda;
   }
 
@@ -10363,14 +10368,19 @@ function PortalApp({ token, onLogout }) {
     if (latestDashboardKeyRef.current !== key) return;
     const funnelPayload = dashboardResult?.result && typeof dashboardResult.result === "object" ? dashboardResult.result : dashboardResult;
     const funnel = funnelPayload?.funnel && typeof funnelPayload.funnel === "object" ? funnelPayload.funnel : (funnelPayload || {});
-    const mergedDashboard = {
-      ...(state.dashboard && typeof state.dashboard === "object" ? state.dashboard : {}),
-      summary: funnel,
-      availableClients: Array.isArray(funnel.availableClients) ? funnel.availableClients : [],
-      availableRecruiters: Array.isArray(funnel.availableRecruiters) ? funnel.availableRecruiters : []
-    };
-    writeDashboardSnapshot(mergedDashboard);
-    updateDashboardState(mergedDashboard);
+    setState((current) => {
+      const nextDashboard = {
+        ...(current.dashboard && typeof current.dashboard === "object" ? current.dashboard : {}),
+        summary: funnel,
+        availableClients: Array.isArray(funnel.availableClients) ? funnel.availableClients : [],
+        availableRecruiters: Array.isArray(funnel.availableRecruiters) ? funnel.availableRecruiters : []
+      };
+      writeDashboardSnapshot(nextDashboard);
+      return {
+        ...current,
+        dashboard: nextDashboard
+      };
+    });
     return funnel;
   }
 
@@ -22279,7 +22289,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
               <Section kicker="Today" title="Today's Agenda">
                 <div className="agenda-header">
                   <p className="muted">
-                    {`${agendaRange === "today" ? "Today" : agendaRange === "tomorrow" ? "Tomorrow" : "Next 7 days"}: ${displayPendingNotes} pending note(s) | ${displayScheduledInterviewCount} interview(s) | ${displayUpcomingJoiningCount} joining(s) | ${displayInterviewFeedbackAwaitedCount} feedback awaited`}
+                    {`${agendaRange === "today" ? "Today" : agendaRange === "tomorrow" ? "Tomorrow" : "Next 7 days"}: ${displayPendingNotes} pending note(s) | ${displayScheduledInterviewCount} interview(s) | ${displayUpcomingJoiningCount} joining(s)`}
                   </p>
                   <select
                     value={agendaRange}
@@ -22310,10 +22320,6 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                   <div className="metric-card compact-metric">
                     <div className="metric-label">Pending applicants</div>
                     <div className="metric-value">{displayPendingAssignments}</div>
-                  </div>
-                  <div className="metric-card compact-metric">
-                    <div className="metric-label">Interview feedback awaited</div>
-                    <div className="metric-value">{displayInterviewFeedbackAwaitedCount}</div>
                   </div>
                 </div>
                 <div className="stack-list compact">
@@ -22392,27 +22398,6 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                         {!displayScheduledInterviewItems.length ? <div className="empty-state compact-empty">No interviews in this range.</div> : null}
                           </div>
                         </div>
-                      </div>
-                    </div>
-                  )}
-                  {!!displayInterviewFeedbackAwaitedItems.length && (
-                    <div className="agenda-block">
-                      <h3>Interview Feedback Awaited</h3>
-                      <div className="stack-list compact">
-                        {displayInterviewFeedbackAwaitedItems.map((item) => (
-                          <article key={`feedback-${item.key || item.id || item.candidateId || item.assessmentId}`} className="agenda-item">
-                            <div>
-                              <span className="agenda-item__type">{item.type || "Interview"}</span>
-                              <span className="agenda-item__title">{item.title || item.candidateName || "Candidate"}</span>
-                              <span className="agenda-item__subtitle">{item.subtitle || item.role || item.jdTitle || item.jd_title || "Untitled role"}</span>
-                              <span className="agenda-item__time">{(item.when || item.at) ? new Date(item.when || item.at).toLocaleString() : "-"}</span>
-                            </div>
-                            <div className="button-row tight">
-                              <button onClick={() => void setAssessmentStatusId(String(item.assessmentId || item.id || item.candidateId || ""))}>Update</button>
-                            </div>
-                          </article>
-                        ))}
-                        {!displayInterviewFeedbackAwaitedItems.length ? <div className="empty-state compact-empty">No feedback awaited items in this range.</div> : null}
                       </div>
                     </div>
                   )}

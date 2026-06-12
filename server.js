@@ -7317,7 +7317,7 @@ function buildDashboardFunnelPayload({
     .filter((row) => isDashboardRowInActorScope(row, user, "candidate"))
     .filter((row) => {
       const source = String(row?.source || "").trim().toLowerCase();
-      return !["hosted_apply", "website_apply", "hosted", "website", "google_sheet", "google sheet"].includes(source);
+      return !["hosted_apply", "website_apply", "hosted", "website"].includes(source);
     })
     .filter((row) => visibleDateCheck(row?.created_at || row?.createdAt || ""));
   const assessmentScopeRows = (Array.isArray(assessments) ? assessments : [])
