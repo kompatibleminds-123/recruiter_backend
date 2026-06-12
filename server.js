@@ -5305,6 +5305,24 @@ async function supabaseTableFetch(tableName, query = "", options = {}) {
   return parsed;
 }
 
+async function supabaseTableFetchAll(tableName, query = "", options = {}) {
+  const pageSizeRaw = Number(options?.pageSize || 1000);
+  const pageSize = Math.max(1, Math.min(1000, Number.isFinite(pageSizeRaw) ? Math.round(pageSizeRaw) : 1000));
+  const maxPagesRaw = Number(options?.maxPages || 100);
+  const maxPages = Math.max(1, Number.isFinite(maxPagesRaw) ? Math.round(maxPagesRaw) : 100);
+  const rows = [];
+  for (let pageIndex = 0; pageIndex < maxPages; pageIndex += 1) {
+    const offset = pageIndex * pageSize;
+    const separator = String(query || "").includes("?") ? "&" : "?";
+    const pageQuery = `${String(query || "")}${separator}offset=${offset}&limit=${pageSize}`;
+    const batch = await supabaseTableFetch(tableName, pageQuery, options);
+    if (!Array.isArray(batch) || !batch.length) break;
+    rows.push(...batch);
+    if (batch.length < pageSize) break;
+  }
+  return rows;
+}
+
 function normalizeApplicantPhoneForMatch(value) {
   const digits = String(value || "").replace(/\D/g, "");
   if (digits.length < 10) return "";
@@ -7297,7 +7315,8 @@ function buildDashboardFunnelPayload({
   dateFrom = "",
   dateTo = "",
   clientFilter = "",
-  recruiterFilter = ""
+  recruiterFilter = "",
+  overrideTotalCandidates = null
 } = {}) {
   const actorIsAdmin = String(user?.role || "").trim().toLowerCase() === "admin";
   const actorName = String(user?.name || "").trim();
@@ -7398,6 +7417,10 @@ function buildDashboardFunnelPayload({
 
   candidateScopeRows.forEach(addCandidateRow);
   assessmentScopeRows.forEach(addAssessmentRow);
+
+  if (Number.isFinite(Number(overrideTotalCandidates)) && !dateFrom && !dateTo && !clientFilter && !recruiterFilter) {
+    overall.totalCandidates = Number(overrideTotalCandidates || 0);
+  }
 
   const recruiterCounts = actorIsAdmin
     ? (Array.isArray(users) ? users.length : 0)
@@ -16796,30 +16819,28 @@ const server = http.createServer(async (req, res) => {
       const dateTo = String(requestUrl.searchParams.get("dateTo") || "").trim();
       const clientFilter = String(requestUrl.searchParams.get("clientLabel") || "").trim();
       const recruiterFilter = String(requestUrl.searchParams.get("recruiterLabel") || "").trim();
-      const [candidates, assessments, assessmentEvents, users] = await Promise.all([
-        supabaseTableFetch(
+      const [candidates, assessments, assessmentEvents, users, capturedStats] = await Promise.all([
+        supabaseTableFetchAll(
           "candidates",
           `?${[
             "select=id,company_id,source,name,jd_title,role,client_name,recruiter_id,recruiter_name,assigned_to_name,assigned_to_user_id,assessment_id,used_in_assessment,hidden_from_captured,created_at",
             `company_id=eq.${encodeURIComponent(companyId)}`,
-            "order=created_at.desc",
-            "limit=10000"
+            "order=created_at.desc"
           ].join("&")}`,
-          { method: "GET" }
+          { method: "GET", pageSize: 1000, maxPages: 50 }
         ).catch(() => []),
         listAssessments({
           actorUserId: String(user?.id || "").trim(),
           companyId
         }).catch(() => []),
-        supabaseTableFetch(
+        supabaseTableFetchAll(
           "assessment_events",
           `?${[
             "select=assessment_id,event_type,status,event_at,created_at,payload",
             `company_id=eq.${encodeURIComponent(companyId)}`,
-            "order=event_at.desc,created_at.desc",
-            "limit=10000"
+            "order=event_at.desc,created_at.desc"
           ].join("&")}`,
-          { method: "GET" }
+          { method: "GET", pageSize: 1000, maxPages: 50 }
         ).catch(() => []),
         supabaseTableFetch(
           "users",
@@ -16830,7 +16851,10 @@ const server = http.createServer(async (req, res) => {
             "limit=10000"
           ].join("&")}`,
           { method: "GET" }
-        ).catch(() => [])
+        ).catch(() => []),
+        (!dateFrom && !dateTo && !clientFilter && !recruiterFilter)
+          ? getCapturedStatsForUser(user, {}).catch(() => null)
+          : Promise.resolve(null)
       ]);
       const funnel = buildDashboardFunnelPayload({
         user,
@@ -16841,7 +16865,10 @@ const server = http.createServer(async (req, res) => {
         dateFrom,
         dateTo,
         clientFilter,
-        recruiterFilter
+        recruiterFilter,
+        overrideTotalCandidates: Number.isFinite(Number(capturedStats?.total))
+          ? Number(capturedStats.total || 0)
+          : null
       });
       sendJson(res, 200, {
         ok: true,
