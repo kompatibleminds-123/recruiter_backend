@@ -10527,54 +10527,32 @@ function PortalApp({ token, onLogout }) {
       needsBilling ? api("/company/billing/overview", token).catch(() => null) : Promise.resolve(null),
       pathname === "/plan" ? api("/company/billing/plans", token).catch(() => ({ plans: [] })) : Promise.resolve(null)
     ]);
-    const nextDashboard = (current) => (
-      needsDashboard && latestDashboardKeyRef.current === dashboardFunnelKey
-        ? (
-            dashboardFunnelResult && typeof dashboardFunnelResult === "object" && Object.keys(dashboardFunnelResult).length
-              ? {
-                  ...(current.dashboard && typeof current.dashboard === "object" ? current.dashboard : {}),
-                  summary: (() => {
-                    const payload = dashboardFunnelResult?.result && typeof dashboardFunnelResult.result === "object"
-                      ? dashboardFunnelResult.result
-                      : dashboardFunnelResult;
-                    return payload?.funnel && typeof payload.funnel === "object" ? payload.funnel : payload;
-                  })(),
-                  availableClients: (() => {
-                    const payload = dashboardFunnelResult?.result && typeof dashboardFunnelResult.result === "object"
-                      ? dashboardFunnelResult.result
-                      : dashboardFunnelResult;
-                    const funnel = payload?.funnel && typeof payload.funnel === "object" ? payload.funnel : payload;
-                    return Array.isArray(funnel?.availableClients) ? funnel.availableClients : [];
-                  })(),
-                  availableRecruiters: (() => {
-                    const payload = dashboardFunnelResult?.result && typeof dashboardFunnelResult.result === "object"
-                      ? dashboardFunnelResult.result
-                      : dashboardFunnelResult;
-                    const funnel = payload?.funnel && typeof payload.funnel === "object" ? payload.funnel : payload;
-                    return Array.isArray(funnel?.availableRecruiters) ? funnel.availableRecruiters : [];
-                  })()
-                }
-              : current.dashboard
-        )
-        : current.dashboard
-    );
-    const nextDashboardAgenda = (current) => (
-      needsDashboard && dashboardAgendaLoadKeyRef.current === dashboardAgendaKey
-        ? (
-            dashboardAgendaResult && typeof dashboardAgendaResult === "object" && Object.keys(dashboardAgendaResult).length
-              ? {
-                  ...(current.dashboard && typeof current.dashboard === "object" ? current.dashboard : {}),
-                  agenda: (() => {
-                    const payload = dashboardAgendaResult?.result && typeof dashboardAgendaResult.result === "object"
-                      ? dashboardAgendaResult.result
-                      : dashboardAgendaResult;
-                    return payload?.agenda && typeof payload.agenda === "object" ? payload.agenda : payload;
-                  })()
-                }
-              : current.dashboard
-          )
-        : current.dashboard
-    );
+    const buildNextDashboardState = (current) => {
+      const baseDashboard = current?.dashboard && typeof current.dashboard === "object" ? current.dashboard : {};
+      let nextDashboard = { ...baseDashboard };
+      if (needsDashboard && latestDashboardKeyRef.current === dashboardFunnelKey && dashboardFunnelResult && typeof dashboardFunnelResult === "object" && Object.keys(dashboardFunnelResult).length) {
+        const payload = dashboardFunnelResult?.result && typeof dashboardFunnelResult.result === "object"
+          ? dashboardFunnelResult.result
+          : dashboardFunnelResult;
+        const funnel = payload?.funnel && typeof payload.funnel === "object" ? payload.funnel : payload;
+        nextDashboard = {
+          ...nextDashboard,
+          summary: funnel,
+          availableClients: Array.isArray(funnel?.availableClients) ? funnel.availableClients : [],
+          availableRecruiters: Array.isArray(funnel?.availableRecruiters) ? funnel.availableRecruiters : []
+        };
+      }
+      if (needsDashboard && dashboardAgendaLoadKeyRef.current === dashboardAgendaKey && dashboardAgendaResult && typeof dashboardAgendaResult === "object" && Object.keys(dashboardAgendaResult).length) {
+        const payload = dashboardAgendaResult?.result && typeof dashboardAgendaResult.result === "object"
+          ? dashboardAgendaResult.result
+          : dashboardAgendaResult;
+        nextDashboard = {
+          ...nextDashboard,
+          agenda: payload?.agenda && typeof payload.agenda === "object" ? payload.agenda : payload
+        };
+      }
+      return nextDashboard;
+    };
     const nextClientPortal = (current) => (
       needsDashboard && latestClientPortalKeyRef.current === clientPortalKey
         ? (
@@ -10592,7 +10570,7 @@ function PortalApp({ token, onLogout }) {
     setState((current) => ({
       ...current,
       user: userResult.user || userResult,
-      dashboard: nextDashboardAgenda(nextDashboard(current)),
+      dashboard: buildNextDashboardState(current),
       clientPortal: nextClientPortal(current),
       applicants: needsApplicants
         ? (
