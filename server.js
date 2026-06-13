@@ -10193,6 +10193,7 @@ function itemMatchesDashboardMetric(item, metric, dateFrom = "", dateTo = "") {
   const isSharedAssessment = item?.sourceType === "captured_and_converted" && hasLinkedAssessment;
   const rawSource = String(item?.raw?.candidate?.source || item?.source || "").trim().toLowerCase();
   const isApplicantSource = rawSource === "website" || rawSource === "website_apply" || rawSource === "hosted_apply" || rawSource === "google_sheet";
+  const historicalRank = Math.max(1, Number(item?._dashboardHistoricalRank || 1));
   if (metric === "all") {
     if (!dateFrom && !dateTo) return true;
     return (
@@ -10200,24 +10201,24 @@ function itemMatchesDashboardMetric(item, metric, dateFrom = "", dateTo = "") {
       isDateWithinRange(item.sharedAt, dateFrom, dateTo)
     );
   }
-  if (metric === "sourced") {
-    return !isApplicantSource && isDateWithinRange(item.createdAt, dateFrom, dateTo);
+  if (metric === "totalCandidates" || metric === "sourced") {
+    return isDateWithinRange(item.createdAt, dateFrom, dateTo);
   }
   if (metric === "applied") {
     return isApplicantSource && isDateWithinRange(item.createdAt, dateFrom, dateTo);
   }
-  if (metric === "converted") {
+  if (metric === "sharedProfiles" || metric === "converted") {
     return isSharedAssessment && isDateWithinRange(item.sharedAt, dateFrom, dateTo);
   }
   if (!isSharedAssessment) return false;
   if (!isDateWithinRange(item.sharedAt, dateFrom, dateTo)) return false;
-  if (metric === "under_interview_process") return isInterviewAlignedStatus(item?.candidateStatus || item?.status || "");
+  if (metric === "interviews" || metric === "under_interview_process") return historicalRank >= 2;
   if (metric === "rejected") return bucket === "rejected";
   if (metric === "duplicate") return bucket === "duplicate";
   if (metric === "dropped") return bucket === "dropped";
-  if (metric === "shortlisted") return bucket === "shortlisted";
-  if (metric === "offered") return bucket === "offered";
-  if (metric === "joined") return bucket === "joined";
+  if (metric === "shortlisted") return historicalRank >= 3;
+  if (metric === "offered") return historicalRank >= 4;
+  if (metric === "joined") return historicalRank >= 5;
   return false;
 }
 
@@ -18557,21 +18558,50 @@ const server = http.createServer(async (req, res) => {
         recruiterLabel: String(requestUrl.searchParams.get("recruiterLabel") || "").trim(),
         positionLabel: String(requestUrl.searchParams.get("positionLabel") || "").trim()
       };
-      const [candidates, assessments, jobs] = await Promise.all([
+      const [candidates, assessments, jobs, assessmentEvents] = await Promise.all([
         listCandidatesForUser(user, { limit: 5000 }),
         listAssessments({ actorUserId: user.id, companyId: user.companyId }),
-        listCompanyJobs(user.companyId, user.id)
+        listCompanyJobs(user.companyId, user.id),
+        supabaseTableFetchAll(
+          "assessment_events",
+          `?select=assessment_id,event_type,status,payload&company_id=eq.${encodeURIComponent(user.companyId)}`,
+          { pageSize: 1000, maxPages: 50 }
+        ).catch(() => [])
       ]);
+      const assessmentById = new Map(
+        (Array.isArray(assessments) ? assessments : []).map((row) => [String(row?.id || "").trim(), row]).filter(([id]) => Boolean(id))
+      );
+      const eventsByAssessmentId = new Map();
+      for (const event of Array.isArray(assessmentEvents) ? assessmentEvents : []) {
+        const assessmentId = String(event?.assessment_id || event?.assessmentId || "").trim();
+        if (!assessmentId) continue;
+        const list = eventsByAssessmentId.get(assessmentId) || [];
+        list.push(event);
+        eventsByAssessmentId.set(assessmentId, list);
+      }
       const actorIsAdmin = String(user?.role || "").toLowerCase() === "admin";
       const actorName = String(user?.name || "").trim();
       const universe = buildCandidateSearchUniverse(candidates, assessments, jobs)
         .map((item) => {
-          if (!actorIsAdmin || !actorName) return item;
+          const linkedAssessment = (() => {
+            const direct = item?.raw?.assessment || item?.assessment || null;
+            if (direct && String(direct?.id || "").trim()) return direct;
+            const assessmentId = String(
+              item?.assessmentId
+              || item?.assessment_id
+              || item?.raw?.candidate?.assessment_id
+              || item?.raw?.candidate?.assessmentId
+              || ""
+            ).trim();
+            return assessmentId ? (assessmentById.get(assessmentId) || null) : null;
+          })();
+          const historicalRank = linkedAssessment ? getAssessmentHistoricalRank(linkedAssessment, eventsByAssessmentId) : 1;
+          if (!actorIsAdmin || !actorName) return { ...item, _dashboardHistoricalRank: historicalRank };
           const rawSource = String(item?.raw?.candidate?.source || item?.source || "").trim().toLowerCase();
           const isApplicant = rawSource === "website" || rawSource === "website_apply" || rawSource === "hosted_apply";
-          if (!isApplicant) return item;
-          if (String(item?.ownerRecruiter || "").trim() !== "Unassigned") return item;
-          return { ...item, ownerRecruiter: actorName };
+          if (!isApplicant) return { ...item, _dashboardHistoricalRank: historicalRank };
+          if (String(item?.ownerRecruiter || "").trim() !== "Unassigned") return { ...item, _dashboardHistoricalRank: historicalRank };
+          return { ...item, ownerRecruiter: actorName, _dashboardHistoricalRank: historicalRank };
         });
       const items = universe
         .filter((item) => item.sourceType !== "assessment_only")
