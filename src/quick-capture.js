@@ -741,20 +741,33 @@ async function listCandidatesForUser(user, options = 100) {
 }
 
 async function listDatabaseCandidatesForUser(user, options = 100) {
-  const { limit, q } = normalizeListOptions(options);
+  const { limit, page, offset, q } = normalizeListOptions(options);
   const id = String(options?.id || "").trim();
   const companyWide = options?.companyWide === true || options?.scope === "company";
+  const includeMeta = options?.includeMeta === true;
   const maxRows = limit;
   if (!user?.id) {
-    return listCandidates({ limit: maxRows, q, id, companyId: normalizeCompanyId(user?.companyId) });
+    const rows = await listCandidates({ limit: Math.max(maxRows, offset + maxRows), q, id, companyId: normalizeCompanyId(user?.companyId) });
+    const filtered = Array.isArray(rows) ? rows : [];
+    const total = filtered.length;
+    const items = filtered.slice(offset, offset + maxRows);
+    if (includeMeta) {
+      return {
+        items,
+        total,
+        page,
+        limit: maxRows,
+        totalPages: Math.max(1, Math.ceil(total / Math.max(1, maxRows)))
+      };
+    }
+    return items;
   }
 
   const companyId = normalizeCompanyId(user.companyId);
   const { url, serviceRoleKey } = getSupabaseConfig();
   if (url && serviceRoleKey) {
     const selectParam = buildCandidateSelectParam(DATABASE_CANDIDATE_SELECT_FIELDS);
-    const fetchLimit = id ? Math.max(maxRows, 50) : (q ? Math.max(maxRows, 2000) : maxRows);
-    const baseFilters = [selectParam, `company_id=eq.${encodeURIComponent(companyId)}`, "order=created_at.desc", `limit=${fetchLimit}`];
+    const baseFilters = [selectParam, `company_id=eq.${encodeURIComponent(companyId)}`, "order=created_at.desc"];
     if (id) {
       baseFilters.push(`id=eq.${encodeURIComponent(id)}`);
     }
@@ -764,7 +777,37 @@ async function listDatabaseCandidatesForUser(user, options = 100) {
       baseFilters.push(`or=(recruiter_id.eq.${recruiterId},assigned_to_user_id.eq.${recruiterId})`);
     }
 
-    const response = await fetch(`${url}/rest/v1/candidates?${baseFilters.join("&")}`, {
+    if (q) {
+      const escaped = q.replace(/[%*]/g, "").trim();
+      if (escaped) {
+        const like = `*${escaped.replace(/,/g, " ")}*`;
+        baseFilters.push(`or=(name.ilike.${encodeURIComponent(like)},email.ilike.${encodeURIComponent(like)},phone.ilike.${encodeURIComponent(like)},company.ilike.${encodeURIComponent(like)},role.ilike.${encodeURIComponent(like)},location.ilike.${encodeURIComponent(like)},client_name.ilike.${encodeURIComponent(like)},jd_title.ilike.${encodeURIComponent(like)})`);
+      }
+    }
+
+    const countFilters = baseFilters.filter((part) => !String(part || "").startsWith("select=") && !String(part || "").startsWith("order="));
+    const countResponse = await fetch(`${url}/rest/v1/candidates?select=id&${countFilters.join("&")}&limit=1`, {
+      headers: {
+        apikey: serviceRoleKey,
+        Authorization: `Bearer ${serviceRoleKey}`,
+        Prefer: "count=exact"
+      }
+    });
+
+    let total = 0;
+    if (countResponse.ok) {
+      const contentRange = String(countResponse.headers.get("content-range") || "");
+      const totalPart = contentRange.split("/")[1] || "";
+      total = Math.max(0, Number(totalPart || 0));
+    }
+
+    const pagedFilters = [
+      ...baseFilters,
+      `limit=${maxRows}`,
+      `offset=${offset}`
+    ];
+
+    const response = await fetch(`${url}/rest/v1/candidates?${pagedFilters.join("&")}`, {
       headers: {
         apikey: serviceRoleKey,
         Authorization: `Bearer ${serviceRoleKey}`
@@ -777,10 +820,36 @@ async function listDatabaseCandidatesForUser(user, options = 100) {
     }
 
     const rows = await response.json();
-    return rows.filter((item) => matchesCandidateId(item, id)).filter((item) => matchesCandidateSearch(item, q)).slice(0, maxRows);
+    const items = Array.isArray(rows) ? rows : [];
+    if (includeMeta) {
+      return {
+        items,
+        total,
+        page,
+        limit: maxRows,
+        totalPages: Math.max(1, Math.ceil(total / Math.max(1, maxRows)))
+      };
+    }
+    return items;
   }
 
-  return listCandidatesForUser(user, options);
+  const fallbackRows = await listCandidatesForUser(user, {
+    ...options,
+    limit: Math.max(maxRows, offset + maxRows)
+  });
+  const filtered = Array.isArray(fallbackRows) ? fallbackRows : [];
+  const total = filtered.length;
+  const items = filtered.slice(offset, offset + maxRows);
+  if (includeMeta) {
+    return {
+      items,
+      total,
+      page,
+      limit: maxRows,
+      totalPages: Math.max(1, Math.ceil(total / Math.max(1, maxRows)))
+    };
+  }
+  return items;
 }
 
 async function deleteCandidate(candidateId, options = {}) {

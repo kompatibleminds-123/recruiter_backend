@@ -8810,6 +8810,9 @@ function PortalApp({ token, onLogout }) {
   const [candidateSearchResults, setCandidateSearchResults] = useState([]);
   const [candidatePage, setCandidatePage] = useState(1);
   const [candidatePageSize, setCandidatePageSize] = useState(10);
+  const [databaseListItems, setDatabaseListItems] = useState([]);
+  const [databaseListMeta, setDatabaseListMeta] = useState({ total: 0, page: 1, limit: 10, totalPages: 1 });
+  const [databaseListLoading, setDatabaseListLoading] = useState(false);
   const [candidateStructuredFilters, setCandidateStructuredFilters] = useState(EMPTY_CANDIDATE_STRUCTURED_FILTERS); // applied
   const [candidateStructuredFiltersDraft, setCandidateStructuredFiltersDraft] = useState(EMPTY_CANDIDATE_STRUCTURED_FILTERS); // editable
   const [candidateSearchBusy, setCandidateSearchBusy] = useState(false);
@@ -8826,6 +8829,11 @@ function PortalApp({ token, onLogout }) {
   const candidateStructuredFiltersDirty = useMemo(() => (
     JSON.stringify(candidateStructuredFiltersDraft) !== JSON.stringify(candidateStructuredFilters)
   ), [candidateStructuredFiltersDraft, candidateStructuredFilters]);
+  const candidateStructuredFiltersActive = useMemo(() => (
+    Object.values(candidateStructuredFilters || {}).some((value) => (
+      Array.isArray(value) ? value.length > 0 : Boolean(String(value || "").trim())
+    ))
+  ), [candidateStructuredFilters]);
   const candidateNoticeBucketChipOptions = useMemo(() => (
     NOTICE_BUCKET_OPTIONS
       .filter((option) => option.value)
@@ -10798,6 +10806,7 @@ function PortalApp({ token, onLogout }) {
     const candidateFetchLimit = useLightCandidateFetch ? 50 : 5000;
     const candidateFetchPage = 1;
     const candidateFetchMetaSuffix = useLightCandidateFetch ? "&includeMeta=1" : "";
+    const databaseFetchLimit = Math.max(10, Math.min(50, Number(candidatePageSize || 10)));
     // Billing/access flags are used in sidebar gating across the app,
     // so fetch billing overview on all recruiter routes (plans list only needed on /plan).
     const needsBilling = true;
@@ -10849,7 +10858,7 @@ function PortalApp({ token, onLogout }) {
         ? api("/company/employees", token).catch(() => ({ employees: [] }))
         : Promise.resolve(null),
       needsCandidates ? api(`/candidates?limit=${candidateFetchLimit}&page=${candidateFetchPage}${candidateFetchMetaSuffix}`, token).catch(() => []) : Promise.resolve(null),
-      needsDatabaseCandidates ? api("/company/database-candidates?limit=5000", token).catch(() => []) : Promise.resolve(null),
+      needsDatabaseCandidates ? api(`/company/database-candidates?limit=${databaseFetchLimit}&page=1&includeMeta=1`, token).catch(() => ({ items: [], total: 0, page: 1, limit: databaseFetchLimit, totalPages: 1 })) : Promise.resolve(null),
       needsAssessments ? api("/company/assessments", token).catch(() => ({ assessments: [] })) : Promise.resolve(null),
       needsAssessmentEvents
         ? api("/company/assessment-events?limit=10000", token).catch(() => ({ result: { rows: [] } }))
@@ -10919,7 +10928,12 @@ function PortalApp({ token, onLogout }) {
         ? mergeCandidatesByFreshness(current.candidates, candidateRows)
         : current.candidates,
       databaseCandidates: needsDatabaseCandidates
-        ? mergeCandidatesByFreshness(current.databaseCandidates, Array.isArray(databaseCandidatesResult) ? databaseCandidatesResult : [])
+        ? mergeCandidatesByFreshness(
+            current.databaseCandidates,
+            Array.isArray(databaseCandidatesResult)
+              ? databaseCandidatesResult
+              : (Array.isArray(databaseCandidatesResult?.items) ? databaseCandidatesResult.items : [])
+          )
         : current.databaseCandidates,
       assessments: needsAssessments
         ? mergeAssessmentsByFreshness(current.assessments, assessmentsResult?.assessments || [])
@@ -10929,6 +10943,16 @@ function PortalApp({ token, onLogout }) {
     if (seq !== workspaceLoadSeqRef.current) return;
     if (needsDatabaseCandidates) {
       databaseCandidatesHydratedRef.current = true;
+      const nextDatabaseItems = Array.isArray(databaseCandidatesResult)
+        ? databaseCandidatesResult
+        : (Array.isArray(databaseCandidatesResult?.items) ? databaseCandidatesResult.items : []);
+      setDatabaseListItems(nextDatabaseItems);
+      setDatabaseListMeta({
+        total: Math.max(0, Number(databaseCandidatesResult?.total || nextDatabaseItems.length || 0)),
+        page: Math.max(1, Number(databaseCandidatesResult?.page || 1)),
+        limit: Math.max(1, Number(databaseCandidatesResult?.limit || databaseFetchLimit || 10)),
+        totalPages: Math.max(1, Number(databaseCandidatesResult?.totalPages || 1))
+      });
     }
     if (needsJobs) {
       setJobsCatalog(Array.isArray(jobsManageResult?.jobs) ? jobsManageResult.jobs : []);
@@ -11410,6 +11434,33 @@ function PortalApp({ token, onLogout }) {
         ? mergeCandidatesByFreshness(current.databaseCandidates, databaseRows)
         : current.databaseCandidates
     }));
+  }
+
+  async function reloadDatabaseListPage(page = candidatePage, limit = candidatePageSize) {
+    if (!token) return;
+    const safeLimit = [10, 25, 50].includes(Number(limit || 10)) ? Number(limit || 10) : 10;
+    const safePage = Math.max(1, Number(page || 1));
+    setDatabaseListLoading(true);
+    try {
+      const envelope = await api(`/company/database-candidates?limit=${safeLimit}&page=${safePage}&includeMeta=1`, token);
+      const payload = envelope?.result && typeof envelope.result === "object" ? envelope.result : envelope;
+      const items = Array.isArray(payload?.items) ? payload.items : [];
+      setDatabaseListItems(items);
+      setDatabaseListMeta({
+        total: Math.max(0, Number(payload?.total || 0)),
+        page: Math.max(1, Number(payload?.page || safePage)),
+        limit: Math.max(1, Number(payload?.limit || safeLimit)),
+        totalPages: Math.max(1, Number(payload?.totalPages || 1))
+      });
+      setState((current) => ({
+        ...current,
+        databaseCandidates: mergeCandidatesByFreshness(current.databaseCandidates, items)
+      }));
+    } catch (error) {
+      setStatus("workspace", `Database refresh failed: ${String(error?.message || error)}`, "error");
+    } finally {
+      setDatabaseListLoading(false);
+    }
   }
 
   function buildAssessmentQueryParams(filters = assessmentFiltersApplied, page = safeAssessmentApiPage, limit = safeAssessmentApiPageSize, lane = assessmentLane, sortBy = assessmentSortBy) {
@@ -13190,7 +13241,9 @@ function PortalApp({ token, onLogout }) {
     void loadCvLinks();
   }, [selectedAssessmentRows, token, clientShareCvLinkFingerprint]);
   const candidateUniverseAll = useMemo(() => {
-    const databaseRows = Array.isArray(state.databaseCandidates) && state.databaseCandidates.length ? state.databaseCandidates : (state.candidates || []);
+    const databaseRows = Array.isArray(databaseListItems) && databaseListItems.length
+      ? databaseListItems
+      : (Array.isArray(state.databaseCandidates) && state.databaseCandidates.length ? state.databaseCandidates : (state.candidates || []));
     const linkedAssessmentIds = new Set(databaseRows.map((item) => String(item.assessment_id || "").trim()).filter(Boolean));
     const candidateNames = new Set(databaseRows.map((item) => String(item.name || "").trim().toLowerCase()).filter(Boolean));
     const assessmentOnlyItems = (state.assessments || [])
@@ -13237,7 +13290,7 @@ function PortalApp({ token, onLogout }) {
       if (currentUserName && (assignedToName === currentUserName || recruiterName === currentUserName)) return true;
       return false;
     });
-  }, [state.assessments, state.candidates, state.databaseCandidates, state.user]);
+  }, [databaseListItems, state.assessments, state.candidates, state.databaseCandidates, state.user]);
   const candidateSearchOptions = useMemo(() => {
     const recruiters = new Set();
     const genders = new Set();
@@ -13354,12 +13407,20 @@ function PortalApp({ token, onLogout }) {
       return true;
     });
   }, [candidateBaseUniverse, candidateStructuredFilters, state.assessments]);
+  const databaseAllMode = candidateSearchMode === "all"
+    && !(candidateAiQueryMode === "natural" && candidateQuickChipIds.length > 0)
+    && !candidateStructuredFiltersActive;
   const pagedCandidates = useMemo(() => {
+    if (databaseAllMode) {
+      return candidateUniverse;
+    }
     const safePageSize = Math.max(10, Number(candidatePageSize || 10));
     const start = (candidatePage - 1) * safePageSize;
     return candidateUniverse.slice(start, start + safePageSize);
-  }, [candidateUniverse, candidatePage, candidatePageSize]);
-  const totalCandidatePages = Math.max(1, Math.ceil((candidateUniverse.length || 0) / Math.max(10, Number(candidatePageSize || 10))));
+  }, [databaseAllMode, candidateUniverse, candidatePage, candidatePageSize]);
+  const totalCandidatePages = databaseAllMode
+    ? Math.max(1, Number(databaseListMeta?.totalPages || 1))
+    : Math.max(1, Math.ceil((candidateUniverse.length || 0) / Math.max(10, Number(candidatePageSize || 10))));
   useEffect(() => {
     setCandidatePage((current) => Math.min(Math.max(1, current), totalCandidatePages));
   }, [totalCandidatePages]);
@@ -13948,6 +14009,23 @@ function PortalApp({ token, onLogout }) {
     }
   }, [candidateUniverse, candidateSmartDateFrom, candidateSmartDateTo, state.assessments, state.candidates, state.assessmentEvents, candidateSmartChipCacheKey, candidateSmartChipDataReady]);
   const candidateHasSmartChipSelection = candidateAiQueryMode === "natural" && candidateQuickChipIds.length > 0;
+
+  useEffect(() => {
+    if (!token) return;
+    if (String(location?.pathname || "").trim() !== "/candidates") return;
+    if (candidateSearchMode !== "all") return;
+    if (candidateHasSmartChipSelection) return;
+    if (candidateStructuredFiltersActive) return;
+    void reloadDatabaseListPage(candidatePage, candidatePageSize);
+  }, [token, location?.pathname, candidateSearchMode, candidateHasSmartChipSelection, candidateStructuredFiltersActive, candidatePage, candidatePageSize]);
+
+  useEffect(() => {
+    if (!token) return;
+    if (String(location?.pathname || "").trim() !== "/candidates") return;
+    if (!candidateHasSmartChipSelection && !candidateStructuredFiltersActive) return;
+    if (databaseCandidatesHydratedRef.current) return;
+    void reloadCandidatesSlice({ includeDatabase: true, limit: 5000, page: 1 });
+  }, [token, location?.pathname, candidateHasSmartChipSelection, candidateStructuredFiltersActive]);
 
   const capturedCandidateOptions = useMemo(() => {
     const meta = { clients: new Set(), sources: new Set(), outcomes: new Set(), assignedTo: new Set(), capturedBy: new Set() };
@@ -23592,6 +23670,16 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                 </div>
                 {!candidateHasSmartChipSelection ? (
                   <>
+                    {databaseAllMode ? (
+                      <div className="button-row tight" style={{ justifyContent: "space-between", alignItems: "center", gap: 10, marginBottom: 10 }}>
+                        <div className="muted">
+                          {Number(databaseListMeta?.total || 0)
+                            ? `Showing ${((candidatePage - 1) * Math.max(10, Number(candidatePageSize || 10))) + 1}-${Math.min(Number(databaseListMeta?.total || 0), ((candidatePage - 1) * Math.max(10, Number(candidatePageSize || 10))) + pagedCandidates.length)} of ${Number(databaseListMeta?.total || 0)}`
+                            : "Showing 0 of 0"}
+                        </div>
+                        {databaseListLoading ? <div className="muted">Loading database...</div> : null}
+                      </div>
+                    ) : null}
                     <div className="stack-list">
                       {!pagedCandidates.length ? <div className="empty-state">No candidates found for this view.</div> : pagedCandidates.map((item) => (
                         <article className="item-card compact-card" key={item.id || item.assessmentId}>
@@ -23625,18 +23713,19 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                         <select
                           value={candidatePageSize}
                           onChange={(e) => {
-                            setCandidatePageSize(Number(e.target.value || 10));
+                            const nextSize = Number(e.target.value || 10);
+                            setCandidatePageSize([10, 25, 50].includes(nextSize) ? nextSize : 10);
                             setCandidatePage(1);
                           }}
                         >
-                          {[10, 40, 80, 160, 320, 500].map((size) => (
+                          {[10, 25, 50].map((size) => (
                             <option key={`candidate-page-size-${size}`} value={size}>{size}</option>
                           ))}
                         </select>
                       </label>
-                      <button className="ghost-btn" disabled={candidatePage <= 1} onClick={() => setCandidatePage((page) => Math.max(1, page - 1))}>Previous</button>
+                      <button className="ghost-btn" disabled={candidatePage <= 1 || databaseListLoading} onClick={() => setCandidatePage((page) => Math.max(1, page - 1))}>Previous</button>
                       <div className="muted">Page {candidatePage} of {totalCandidatePages}</div>
-                      <button className="ghost-btn" disabled={candidatePage >= totalCandidatePages} onClick={() => setCandidatePage((page) => Math.min(totalCandidatePages, page + 1))}>Next</button>
+                      <button className="ghost-btn" disabled={candidatePage >= totalCandidatePages || databaseListLoading} onClick={() => setCandidatePage((page) => Math.min(totalCandidatePages, page + 1))}>Next</button>
                     </div>
                   </>
                 ) : null}

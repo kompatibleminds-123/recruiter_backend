@@ -19960,17 +19960,27 @@ const server = http.createServer(async (req, res) => {
       await requireSaasAccess(sessionUser, "database save and search");
       const listOptions = {
         limit: Number(requestUrl.searchParams.get("limit") || 100),
+        page: Number(requestUrl.searchParams.get("page") || 1),
         q: String(requestUrl.searchParams.get("q") || "").trim(),
         id: String(requestUrl.searchParams.get("id") || "").trim(),
-        scope: String(requestUrl.searchParams.get("scope") || "company").trim()
+        scope: String(requestUrl.searchParams.get("scope") || "company").trim(),
+        includeMeta: ["1", "true", "yes"].includes(String(requestUrl.searchParams.get("includeMeta") || "").trim().toLowerCase())
       };
         const result = await listDatabaseCandidatesForUser(sessionUser, listOptions);
         const normalizedResult = Array.isArray(result)
           ? result.map((row) => ({
-            ...(row || {}),
-            ...sanitizeApplicantCandidate(row)
-          }))
-          : result;
+              ...(row || {}),
+              ...sanitizeApplicantCandidate(row)
+            }))
+          : {
+              ...(result || {}),
+              items: Array.isArray(result?.items)
+                ? result.items.map((row) => ({
+                    ...(row || {}),
+                    ...sanitizeApplicantCandidate(row)
+                  }))
+                : []
+            };
         sendJson(res, 200, { ok: true, result: normalizedResult });
       } catch (error) {
         sendJson(res, 400, { ok: false, error: String(error.message || error) });
