@@ -475,6 +475,7 @@ const SMART_CHIP_INTERVIEW_ALIGNED_STATUSES = new Set([
   "l1 aligned",
   "l2 aligned",
   "l3 aligned",
+  "hr discussion aligned",
   "hr interview aligned"
 ]);
 const SMART_CHIP_INTERVIEW_TIMELINE_STATUSES = new Set([
@@ -482,6 +483,7 @@ const SMART_CHIP_INTERVIEW_TIMELINE_STATUSES = new Set([
   "l1 aligned",
   "l2 aligned",
   "l3 aligned",
+  "hr discussion aligned",
   "hr interview aligned",
   "interview feedback awaited",
   "interview reject",
@@ -6305,26 +6307,38 @@ function DrilldownModal({ open, title, items, onClose, onOpenCvOriginal, onOpenC
       const noticePeriod = String(linkedAssessment?.noticePeriod || linkedAssessment?.notice_period || item.noticePeriod || item.notice_period || linkedCandidate?.notice_period || linkedCandidate?.noticePeriod || "").trim();
       const offerAmount = String(linkedAssessment?.offerAmount || linkedAssessment?.offer_amount || linkedAssessment?.offerInHand || linkedAssessment?.offer_in_hand || item.offerAmount || item.offer_amount || item.offerInHand || item.offer_in_hand || linkedCandidate?.offer_in_hand || linkedCandidate?.offerInHand || "").trim();
       const dateOfJoining = String(
-        linkedAssessment?.dateOfJoining
+        linkedAssessment?.offerDoj
+        || linkedAssessment?.offer_doj
+        || linkedAssessment?.lwdOrDoj
+        || linkedAssessment?.lwd_or_doj
+        || linkedAssessment?.dateOfJoining
         || linkedAssessment?.date_of_joining
         || linkedAssessment?.joiningDate
         || linkedAssessment?.joining_date
-        || linkedAssessment?.offerDoj
-        || linkedAssessment?.offer_doj
         || linkedAssessment?.payload?.dateOfJoining
         || linkedAssessment?.payload?.date_of_joining
         || linkedAssessment?.payload?.joiningDate
         || linkedAssessment?.payload?.joining_date
+        || linkedAssessment?.payload?.offerDoj
+        || linkedAssessment?.payload?.offer_doj
+        || linkedAssessment?.payload?.lwdOrDoj
+        || linkedAssessment?.payload?.lwd_or_doj
         || item.dateOfJoining
         || item.date_of_joining
         || item.joiningDate
         || item.joining_date
         || item.offerDoj
         || item.offer_doj
+        || item.lwdOrDoj
+        || item.lwd_or_doj
         || item.payload?.dateOfJoining
         || item.payload?.date_of_joining
         || item.payload?.joiningDate
         || item.payload?.joining_date
+        || item.payload?.offerDoj
+        || item.payload?.offer_doj
+        || item.payload?.lwdOrDoj
+        || item.payload?.lwd_or_doj
         || linkedCandidate?.offer_doj
         || linkedCandidate?.offerDoj
         || linkedCandidate?.date_of_joining
@@ -6457,26 +6471,38 @@ function DrilldownModal({ open, title, items, onClose, onOpenCvOriginal, onOpenC
                         || ""
                       ).trim();
                       const dateOfJoining = String(
-                        linkedAssessment?.dateOfJoining
+                        linkedAssessment?.offerDoj
+                        || linkedAssessment?.offer_doj
+                        || linkedAssessment?.lwdOrDoj
+                        || linkedAssessment?.lwd_or_doj
+                        || linkedAssessment?.dateOfJoining
                         || linkedAssessment?.date_of_joining
                         || linkedAssessment?.joiningDate
                         || linkedAssessment?.joining_date
-                        || linkedAssessment?.offerDoj
-                        || linkedAssessment?.offer_doj
                         || linkedAssessment?.payload?.dateOfJoining
                         || linkedAssessment?.payload?.date_of_joining
                         || linkedAssessment?.payload?.joiningDate
                         || linkedAssessment?.payload?.joining_date
+                        || linkedAssessment?.payload?.offerDoj
+                        || linkedAssessment?.payload?.offer_doj
+                        || linkedAssessment?.payload?.lwdOrDoj
+                        || linkedAssessment?.payload?.lwd_or_doj
                         || item.dateOfJoining
                         || item.date_of_joining
                         || item.joiningDate
                         || item.joining_date
                         || item.offerDoj
                         || item.offer_doj
+                        || item.lwdOrDoj
+                        || item.lwd_or_doj
                         || item.payload?.dateOfJoining
                         || item.payload?.date_of_joining
                         || item.payload?.joiningDate
                         || item.payload?.joining_date
+                        || item.payload?.offerDoj
+                        || item.payload?.offer_doj
+                        || item.payload?.lwdOrDoj
+                        || item.payload?.lwd_or_doj
                         || linkedCandidate?.offer_doj
                         || linkedCandidate?.offerDoj
                         || linkedCandidate?.date_of_joining
@@ -13523,6 +13549,29 @@ function PortalApp({ token, onLogout }) {
       if (!Number.isFinite(ts)) return false;
       return ts >= weekStartTs && ts <= weekEndTs;
     };
+    const deriveInterviewAtFromStatusHistory = (assessment) => {
+      const history = Array.isArray(assessment?.statusHistory) ? assessment.statusHistory : [];
+      if (!history.length) return "";
+      const candidates = history.filter((entry) => {
+        const status = normalizeAssessmentStatusLabel(String(entry?.status || "")).toLowerCase();
+        if (!status) return false;
+        return SMART_CHIP_INTERVIEW_TIMELINE_STATUSES.has(status) || status === "feedback awaited";
+      });
+      if (!candidates.length) return "";
+      const best = candidates
+        .map((entry) => ({
+          entry,
+          ts: Math.max(
+            toTimestampSafe(entry?.statusAt || entry?.status_at || ""),
+            toTimestampSafe(entry?.at || ""),
+            toTimestampSafe(entry?.updatedAt || entry?.updated_at || "")
+          )
+        }))
+        .sort((a, b) => b.ts - a.ts)[0];
+      const picked = best?.entry || null;
+      if (!picked) return "";
+      return String(picked?.statusAt || picked?.status_at || picked?.at || picked?.updatedAt || picked?.updated_at || "").trim();
+    };
     const formatEventDate = (value) => {
       const ts = toTimestampSafe(value);
       if (!Number.isFinite(ts)) return "";
@@ -13605,6 +13654,7 @@ function PortalApp({ token, onLogout }) {
       const interviewAt = String(
         linkedAssessment?.interviewAt
           || linkedAssessment?.interview_at
+          || deriveInterviewAtFromStatusHistory(linkedAssessment)
           || ""
       ).trim();
       const updatedAt = String(
@@ -13724,18 +13774,27 @@ function PortalApp({ token, onLogout }) {
         || ""
       ).trim();
       const dateOfJoining = String(
-        linkedAssessment?.dateOfJoining
-        || linkedAssessment?.offerDoj
+        linkedAssessment?.offerDoj
+        || linkedAssessment?.lwdOrDoj
+        || linkedAssessment?.dateOfJoining
+        || linkedAssessment?.offer_doj
+        || linkedAssessment?.lwd_or_doj
         || linkedAssessment?.date_of_joining
         || linkedAssessment?.joiningDate
         || linkedAssessment?.joining_date
         || item?.dateOfJoining
         || item?.offerDoj
+        || item?.lwdOrDoj
         || item?.date_of_joining
+        || item?.lwd_or_doj
         || item?.joiningDate
         || item?.joining_date
         || item?.payload?.dateOfJoining
         || item?.payload?.date_of_joining
+        || item?.payload?.offerDoj
+        || item?.payload?.offer_doj
+        || item?.payload?.lwdOrDoj
+        || item?.payload?.lwd_or_doj
         || item?.payload?.joiningDate
         || item?.payload?.joining_date
         || ""
@@ -13781,9 +13840,10 @@ function PortalApp({ token, onLogout }) {
             ...baseRow,
             round: `${timeline} | Current: ${currentStatusLabel || "-"}`,
             date: String(
-              linkedAssessment?.interviewAt
+              latestTrackEvent?.effectiveAt
+              || deriveInterviewAtFromStatusHistory(linkedAssessment)
+              || linkedAssessment?.interviewAt
               || linkedAssessment?.interview_at
-              || latestTrackEvent?.effectiveAt
               || ""
             ).trim()
           });
@@ -13798,9 +13858,10 @@ function PortalApp({ token, onLogout }) {
         const previousAlignedEvent = sortedAlignedEvents.length > 1 ? sortedAlignedEvents[sortedAlignedEvents.length - 2] : null;
         if (latestAlignedEvent) {
           const interviewTimelineDate = String(
-            linkedAssessment?.interviewAt
+            latestAlignedEvent.at
+            || deriveInterviewAtFromStatusHistory(linkedAssessment)
+            || linkedAssessment?.interviewAt
             || linkedAssessment?.interview_at
-            || latestAlignedEvent.at
             || ""
           ).trim();
           if (!inDateRange(interviewTimelineDate || latestAlignedEvent.at)) return;
@@ -13819,12 +13880,13 @@ function PortalApp({ token, onLogout }) {
         activeAssessment &&
         (
           SMART_CHIP_INTERVIEW_ALIGNED_STATUSES.has(assessmentStatus)
-          || ["interview feedback awaited", "interview on hold", "shortlisted", "offered"].includes(String(assessmentStatus || "").trim().toLowerCase())
+          || ["interview feedback awaited", "interview on hold", "shortlisted", "offered", "joined"].includes(String(assessmentStatus || "").trim().toLowerCase())
         ) &&
         inDateRange(interviewAt || updatedAt)
       ) {
         const fallbackInterviewDate = String(
-          linkedAssessment?.interviewAt
+          deriveInterviewAtFromStatusHistory(linkedAssessment)
+          || linkedAssessment?.interviewAt
           || linkedAssessment?.interview_at
           || interviewAt
           || updatedAt
@@ -13878,8 +13940,12 @@ function PortalApp({ token, onLogout }) {
         });
       }
       const capturedIsActive = item ? (item?.hidden_from_captured !== true && item?.hiddenFromCaptured !== true) : true;
-      if (noticeDays != null && noticeDays <= 15 && capturedIsActive && activeAssessment && inDateRange(updatedAt)) {
-        rowsByChip.quick_joiners.push({ ...baseRow, round: formatAssessmentStatusDisplay(baseRow.status || assessmentStatus || "CV shared") });
+      if (noticeDays != null && noticeDays <= 15 && capturedIsActive && activeAssessment && inDateRange(dateOfJoining || updatedAt || interviewAt || convertedAt)) {
+        rowsByChip.quick_joiners.push({
+          ...baseRow,
+          round: formatAssessmentStatusDisplay(baseRow.status || assessmentStatus || "CV shared"),
+          date: dateOfJoining || updatedAt || interviewAt || convertedAt || ""
+        });
       }
       if (linkedAssessment && inToday(convertedAt) && inDateRange(convertedAt)) {
         rowsByChip.shared_today.push({ ...baseRow, round: "Converted to assessment", date: convertedAt });
@@ -13887,11 +13953,11 @@ function PortalApp({ token, onLogout }) {
       if (linkedAssessment && inThisWeek(convertedAt) && inDateRange(convertedAt)) {
         rowsByChip.shared_this_week.push({ ...baseRow, round: "Converted to assessment", date: convertedAt });
       }
-      if (assessmentStatus === "joined" && inDateRange(updatedAt)) {
+      if (assessmentStatus === "joined" && inDateRange(dateOfJoining || updatedAt || interviewAt || convertedAt)) {
         rowsByChip.joined_candidates.push({
           ...baseRow,
           round: "Joined",
-          date: dateOfJoining || updatedAt || ""
+          date: dateOfJoining || updatedAt || interviewAt || convertedAt || ""
         });
       }
       if (activeAssessment && inDateRange(updatedAt)) {
@@ -23731,7 +23797,13 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                                     <tr>
                                       <th>Candidate</th>
                                       <th>Round / Status</th>
-                                      <th>{chip.id === "joined_candidates" ? "Date of Joining" : "Date"}</th>
+                                      <th>{
+                                        chip.id === "joined_candidates"
+                                          ? "Date of Joining"
+                                          : (chip.id === "interview_history" || chip.id === "aligned_interviews")
+                                            ? "Last date of interview"
+                                            : "Date"
+                                      }</th>
                                       <th>Client</th>
                                       <th>Role</th>
                                       {chip.id === "joined_candidates" ? (

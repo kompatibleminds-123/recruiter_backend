@@ -4326,6 +4326,7 @@ const SMART_CHIP_INTERVIEW_ALIGNED_STATUSES = new Set([
   "l1 aligned",
   "l2 aligned",
   "l3 aligned",
+  "hr discussion aligned",
   "hr interview aligned"
 ]);
 
@@ -4334,6 +4335,7 @@ const SMART_CHIP_INTERVIEW_TIMELINE_STATUSES = new Set([
   "l1 aligned",
   "l2 aligned",
   "l3 aligned",
+  "hr discussion aligned",
   "hr interview aligned",
   "interview feedback awaited",
   "interview reject",
@@ -6057,14 +6059,74 @@ function parseExperienceToYears(value) {
 }
 
 function parseNoticePeriodToDays(value) {
-  const text = normalizeDashboardText(value);
-  if (!text) return null;
-  const dayMatch = text.match(/(\d+)\s*days?/);
+  const raw = String(value || "").trim().toLowerCase();
+  if (!raw) return null;
+  if (/immediate|immediately|serving notice|available now/.test(raw)) return 0;
+  if (/\b(lwd|doj)\b/.test(raw) && /\bnext week\b/.test(raw)) return 7;
+  const dayMatch = raw.match(/(\d+(?:\.\d+)?)\s*days?/);
   if (dayMatch) return Number(dayMatch[1]);
-  const monthMatch = text.match(/(\d+(?:\.\d+)?)\s*months?/);
+  const monthMatch = raw.match(/(\d+(?:\.\d+)?)\s*months?/);
   if (monthMatch) return Math.round(Number(monthMatch[1]) * 30);
-  if (text.includes("immediate")) return 0;
-  if (text.includes("serving")) return 30;
+  const monthMap = {
+    jan: 0, january: 0,
+    feb: 1, february: 1,
+    mar: 2, march: 2,
+    apr: 3, april: 3,
+    may: 4,
+    jun: 5, june: 5,
+    jul: 6, july: 6,
+    aug: 7, august: 7,
+    sep: 8, sept: 8, september: 8,
+    oct: 9, october: 9,
+    nov: 10, november: 10,
+    dec: 11, december: 11
+  };
+  const cleaned = raw
+    .replace(/\b(\d{1,2})(st|nd|rd|th)\b/g, "$1")
+    .replace(/\s+/g, " ")
+    .trim();
+  const now = new Date();
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  let targetDate = null;
+  const numericMatch = cleaned.match(/\b(\d{1,2})[\/\-](\d{1,2})(?:[\/\-](\d{2,4}))?\b/);
+  if (numericMatch) {
+    const day = Number(numericMatch[1]);
+    const month = Number(numericMatch[2]) - 1;
+    let year = numericMatch[3] ? Number(numericMatch[3]) : now.getFullYear();
+    if (year < 100) year += 2000;
+    if (day >= 1 && day <= 31 && month >= 0 && month <= 11) {
+      targetDate = new Date(year, month, day);
+    }
+  }
+  if (!targetDate) {
+    const dmyMatch = cleaned.match(/\b(\d{1,2})\s+([a-z]{3,9})(?:\s+(\d{4}))?\b/);
+    if (dmyMatch) {
+      const day = Number(dmyMatch[1]);
+      const month = monthMap[dmyMatch[2].toLowerCase()];
+      let year = dmyMatch[3] ? Number(dmyMatch[3]) : now.getFullYear();
+      if (day >= 1 && day <= 31 && Number.isInteger(month)) {
+        targetDate = new Date(year, month, day);
+      }
+    }
+  }
+  if (!targetDate) {
+    const mdyMatch = cleaned.match(/\b([a-z]{3,9})\s+(\d{1,2})(?:\s*,?\s*(\d{4}))?\b/);
+    if (mdyMatch) {
+      const month = monthMap[mdyMatch[1].toLowerCase()];
+      const day = Number(mdyMatch[2]);
+      let year = mdyMatch[3] ? Number(mdyMatch[3]) : now.getFullYear();
+      if (day >= 1 && day <= 31 && Number.isInteger(month)) {
+        targetDate = new Date(year, month, day);
+      }
+    }
+  }
+  if (targetDate && Number.isFinite(targetDate.getTime())) {
+    if (!/\b\d{4}\b/.test(cleaned) && targetDate.getTime() < startOfToday.getTime() - (2 * 24 * 60 * 60 * 1000)) {
+      targetDate = new Date(targetDate.getFullYear() + 1, targetDate.getMonth(), targetDate.getDate());
+    }
+    const dayDiff = Math.ceil((targetDate.getTime() - startOfToday.getTime()) / (24 * 60 * 60 * 1000));
+    return Math.max(0, dayDiff);
+  }
   return null;
 }
 
@@ -7288,16 +7350,20 @@ function buildDatabaseQuickChipRows({ universe = [], assessmentEvents = [], date
         || ""
       ).trim(),
       dateOfJoining: String(
-        assessment?.dateOfJoining
-        || assessment?.date_of_joining
-        || assessment?.offerDoj
+        assessment?.offerDoj
         || assessment?.offer_doj
+        || assessment?.lwdOrDoj
+        || assessment?.lwd_or_doj
+        || assessment?.dateOfJoining
+        || assessment?.date_of_joining
         || assessment?.payload?.dateOfJoining
         || assessment?.payload?.date_of_joining
         || assessment?.payload?.offerDoj
         || assessment?.payload?.offer_doj
-        || candidate?.lwd_or_doj
+        || assessment?.payload?.lwdOrDoj
+        || assessment?.payload?.lwd_or_doj
         || candidate?.lwdOrDoj
+        || candidate?.lwd_or_doj
         || ""
       ).trim(),
       status: normalizeAssessmentStatusLabel(assessment?.candidateStatus || assessment?.status || item?.candidateStatus || ""),
@@ -7355,11 +7421,12 @@ function buildDatabaseQuickChipRows({ universe = [], assessmentEvents = [], date
         rowsByChip.interview_history.push({
           ...baseRow,
           round: `${inRangeEvents.map((event) => `${formatDatabaseQuickChipTimelineLabel(event.status, event.effectiveAt)} on ${formatDatabaseQuickChipEventDate(event.effectiveAt)}`).join(" | ")} | Current: ${baseRow.status || "-"}`,
-          date: String(assessment?.interviewAt || assessment?.interview_at || latestTrackEvent?.effectiveAt || "").trim()
+          date: String(latestTrackEvent?.effectiveAt || assessment?.interviewAt || assessment?.interview_at || "").trim()
         });
       } else {
         const fallbackInterviewDate = String(
-          assessment?.interviewAt
+          deriveInterviewAtFromHistory(assessment)
+          || assessment?.interviewAt
           || assessment?.interview_at
           || updatedAt
           || convertedAt
@@ -7382,7 +7449,7 @@ function buildDatabaseQuickChipRows({ universe = [], assessmentEvents = [], date
       const latestAlignedEvent = sortedAlignedEvents[sortedAlignedEvents.length - 1] || null;
       const previousAlignedEvent = sortedAlignedEvents.length > 1 ? sortedAlignedEvents[sortedAlignedEvents.length - 2] : null;
       if (activeAssessment && latestAlignedEvent) {
-        const interviewTimelineDate = String(assessment?.interviewAt || assessment?.interview_at || latestAlignedEvent.at || "").trim();
+        const interviewTimelineDate = String(latestAlignedEvent.at || assessment?.interviewAt || assessment?.interview_at || "").trim();
         if (inDateRange(interviewTimelineDate || latestAlignedEvent.at)) {
           rowsByChip.aligned_interviews.push({
             ...baseRow,
@@ -7395,10 +7462,10 @@ function buildDatabaseQuickChipRows({ universe = [], assessmentEvents = [], date
       }
     } else if (
       activeAssessment &&
-      (SMART_CHIP_INTERVIEW_ALIGNED_STATUSES.has(assessmentStatus) || ["interview feedback awaited", "interview on hold", "shortlisted", "offered"].includes(assessmentStatus)) &&
+      (SMART_CHIP_INTERVIEW_ALIGNED_STATUSES.has(assessmentStatus) || ["interview feedback awaited", "interview on hold", "shortlisted", "offered", "joined"].includes(assessmentStatus)) &&
       inDateRange(interviewAt || updatedAt)
     ) {
-      const fallbackInterviewDate = String(assessment?.interviewAt || assessment?.interview_at || interviewAt || updatedAt || "").trim();
+      const fallbackInterviewDate = String(deriveInterviewAtFromHistory(assessment) || assessment?.interviewAt || assessment?.interview_at || interviewAt || updatedAt || "").trim();
       rowsByChip.aligned_interviews.push({
         ...baseRow,
         round: `${databaseQuickChipAlignedPhrase(normalizeDatabaseQuickChipAlignedLabel(assessmentStatus), fallbackInterviewDate)} on ${formatDatabaseQuickChipEventDate(fallbackInterviewDate)} | Current: ${baseRow.status || "-"}`,
@@ -7430,8 +7497,8 @@ function buildDatabaseQuickChipRows({ universe = [], assessmentEvents = [], date
     }
 
     const capturedIsActive = candidate ? (candidate?.hidden_from_captured !== true && candidate?.hiddenFromCaptured !== true) : true;
-    if (activeAssessment && noticeDays != null && noticeDays <= 15 && capturedIsActive && inDateRange(updatedAt || interviewAt || convertedAt)) {
-      rowsByChip.quick_joiners.push({ ...baseRow, round: baseRow.status || "CV shared", date: updatedAt || interviewAt || convertedAt });
+    if (activeAssessment && noticeDays != null && noticeDays <= 15 && capturedIsActive && inDateRange(baseRow.dateOfJoining || updatedAt || interviewAt || convertedAt)) {
+      rowsByChip.quick_joiners.push({ ...baseRow, round: baseRow.status || "CV shared", date: baseRow.dateOfJoining || updatedAt || interviewAt || convertedAt });
     }
     if (assessment && inToday(convertedAt) && inDateRange(convertedAt)) {
       rowsByChip.shared_today.push({ ...baseRow, round: "Converted to assessment", date: convertedAt });
@@ -8177,10 +8244,14 @@ function buildDashboardAgendaPayload({
       || assessment?.offer_doj
       || assessment?.dateOfJoining
       || assessment?.date_of_joining
+      || assessment?.lwdOrDoj
+      || assessment?.lwd_or_doj
       || assessment?.payload?.offerDoj
       || assessment?.payload?.offer_doj
       || assessment?.payload?.dateOfJoining
       || assessment?.payload?.date_of_joining
+      || assessment?.payload?.lwdOrDoj
+      || assessment?.payload?.lwd_or_doj
       || assessment?.followUpAt
       || assessment?.follow_up_at
       || "";
@@ -10337,11 +10408,9 @@ function deriveInterviewAtFromHistory(assessment) {
   const history = Array.isArray(assessment.statusHistory) ? assessment.statusHistory : [];
   if (!history.length) return "";
   const candidates = history.filter((entry) => {
-    const status = String(entry?.status || "").trim();
+    const status = normalizeAssessmentStatusLabel(String(entry?.status || "")).toLowerCase();
     if (!status) return false;
-    if (isInterviewAlignedStatus(status)) return true;
-    if (String(status).toLowerCase() === "feedback awaited") return true;
-    return false;
+    return SMART_CHIP_INTERVIEW_TIMELINE_STATUSES.has(status) || status === "feedback awaited";
   });
   if (!candidates.length) return "";
   const toTs = (value) => {
