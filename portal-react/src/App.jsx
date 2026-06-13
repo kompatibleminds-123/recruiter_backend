@@ -22011,13 +22011,20 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
     dashboardRecruiterGroupsDisplay.length
   );
   const safePct = (num, den) => (den > 0 ? Math.round((num / den) * 100) : 0);
-  const kpiCards = [
+  const primaryKpiCards = [
     { key: "totalCandidates", label: "Total Candidates", value: Number(dashboardOverall.totalCandidates || 0), icon: "TC" },
-    { key: "activeRecruiters", label: "Active Recruiters", value: Number(dashboardOverall.activeRecruiters || dashboardRecruiterGroupsDisplay.length || 0), icon: "RC" },
     { key: "sharedProfiles", label: "Shared Profiles", value: Number(dashboardOverall.sharedProfiles || 0), icon: "SH" },
     { key: "interviews", label: "Interviews", value: Number(dashboardOverall.interviews || 0), icon: "IN" },
+    { key: "shortlisted", label: "Shortlist", value: Number(dashboardOverall.shortlisted || 0), icon: "SL" },
     { key: "offers", label: "Offers", value: Number(dashboardOverall.offers || 0), icon: "OF" },
-    { key: "overallConversion", label: "Overall Conversion %", value: `${Number(dashboardOverall.overallConversionPct || 0)}%`, icon: "CV" }
+    { key: "joined", label: "Joinings", value: Number(dashboardOverall.joined || 0), icon: "JN" }
+  ];
+  const ratioKpiCards = [
+    { key: "cvSubmissionRate", label: "CV Submission Rate", value: `${safePct(Number(dashboardOverall.sharedProfiles || 0), Number(dashboardOverall.totalCandidates || 0))}%` },
+    { key: "interviewConversionRate", label: "Interview Conversion Ratio", value: `${safePct(Number(dashboardOverall.interviews || 0), Number(dashboardOverall.sharedProfiles || 0))}%` },
+    { key: "shortlistRate", label: "Shortlist Rate", value: `${safePct(Number(dashboardOverall.shortlisted || 0), Number(dashboardOverall.interviews || 0))}%` },
+    { key: "offerConversionRate", label: "Offer Conversion Rate", value: `${safePct(Number(dashboardOverall.offers || 0), Number(dashboardOverall.shortlisted || 0))}%` },
+    { key: "joiningRate", label: "Joining Rate", value: `${safePct(Number(dashboardOverall.joined || 0), Number(dashboardOverall.offers || 0))}%` }
   ];
   const clientLeaderboardShared = [...dashboardClientGroupsDisplay]
     .sort((a, b) => Number(b?.sharedProfiles || 0) - Number(a?.sharedProfiles || 0))
@@ -22487,15 +22494,29 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                     <div className="reports-skeleton-card" />
                     <div className="reports-skeleton-card" />
                     <div className="reports-skeleton-card" />
+                    <div className="reports-skeleton-card" />
+                    <div className="reports-skeleton-card" />
                   </div>
                 ) : null}
                 <div className="reports-kpi-grid">
-                  {kpiCards.map((item) => (
+                  {primaryKpiCards.map((item) => (
                     <article key={item.key} className="reports-kpi-card">
                       <div className="reports-kpi-card__top">
                         <span className="reports-kpi-card__icon">{item.icon}</span>
                         <span className="reports-kpi-card__trend">No trend data</span>
                       </div>
+                      <div className="reports-kpi-card__value">{item.value}</div>
+                      <div className="reports-kpi-card__label">{item.label}</div>
+                    </article>
+                  ))}
+                </div>
+                <div style={{ display: "flex", justifyContent: "center", flexWrap: "wrap", gap: "14px", marginTop: "14px" }}>
+                  {ratioKpiCards.map((item) => (
+                    <article
+                      key={item.key}
+                      className="reports-kpi-card"
+                      style={{ width: "min(220px, 100%)", minHeight: "unset", padding: "16px 18px" }}
+                    >
                       <div className="reports-kpi-card__value">{item.value}</div>
                       <div className="reports-kpi-card__label">{item.label}</div>
                     </article>
