@@ -22505,11 +22505,9 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                       style={{ textAlign: "left", cursor: "pointer" }}
                     >
                       <div className="reports-kpi-card__top">
-                        <span className="reports-kpi-card__icon">{item.icon}</span>
-                        <span className="reports-kpi-card__trend">No trend data</span>
+                        <span className="reports-kpi-card__icon" style={{ width: "auto", padding: "10px 14px", borderRadius: "999px" }}>{item.label}</span>
                       </div>
                       <div className="reports-kpi-card__value">{item.value}</div>
-                      <div className="reports-kpi-card__label">{item.label}</div>
                     </button>
                   ))}
                 </div>
