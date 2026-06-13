@@ -8816,6 +8816,8 @@ function PortalApp({ token, onLogout }) {
   const [candidateStructuredFilters, setCandidateStructuredFilters] = useState(EMPTY_CANDIDATE_STRUCTURED_FILTERS); // applied
   const [candidateStructuredFiltersDraft, setCandidateStructuredFiltersDraft] = useState(EMPTY_CANDIDATE_STRUCTURED_FILTERS); // editable
   const [candidateSearchBusy, setCandidateSearchBusy] = useState(false);
+  const [candidateSmartChipLoading, setCandidateSmartChipLoading] = useState(false);
+  const [candidateSmartChipRowsRemote, setCandidateSmartChipRowsRemote] = useState(null);
   const [candidateSearchingAs, setCandidateSearchingAs] = useState("");
   const [candidateSearchDebug, setCandidateSearchDebug] = useState(null);
   const [candidateParseFeedbackBusy, setCandidateParseFeedbackBusy] = useState(false);
@@ -14009,6 +14011,11 @@ function PortalApp({ token, onLogout }) {
     }
   }, [candidateUniverse, candidateSmartDateFrom, candidateSmartDateTo, state.assessments, state.candidates, state.assessmentEvents, candidateSmartChipCacheKey, candidateSmartChipDataReady]);
   const candidateHasSmartChipSelection = candidateAiQueryMode === "natural" && candidateQuickChipIds.length > 0;
+  const candidateSmartChipRowsEffective = useMemo(() => (
+    candidateSmartChipRowsRemote && typeof candidateSmartChipRowsRemote === "object"
+      ? candidateSmartChipRowsRemote
+      : candidateSmartChipRows
+  ), [candidateSmartChipRowsRemote, candidateSmartChipRows]);
 
   useEffect(() => {
     if (!token) return;
@@ -14022,10 +14029,97 @@ function PortalApp({ token, onLogout }) {
   useEffect(() => {
     if (!token) return;
     if (String(location?.pathname || "").trim() !== "/candidates") return;
-    if (!candidateHasSmartChipSelection && !candidateStructuredFiltersActive) return;
+    if (!candidateStructuredFiltersActive) return;
     if (databaseCandidatesHydratedRef.current) return;
     void reloadCandidatesSlice({ includeDatabase: true, limit: 5000, page: 1 });
-  }, [token, location?.pathname, candidateHasSmartChipSelection, candidateStructuredFiltersActive]);
+  }, [token, location?.pathname, candidateStructuredFiltersActive]);
+
+  useEffect(() => {
+    if (!token) return;
+    if (String(location?.pathname || "").trim() !== "/candidates") return;
+    if (!candidateHasSmartChipSelection) {
+      setCandidateSmartChipLoading(false);
+      setCandidateSmartChipRowsRemote(null);
+      return;
+    }
+    let cancelled = false;
+    const requestId = Date.now();
+    setCandidateSmartChipLoading(true);
+    const searchIds = Array.isArray(candidateSearchResults)
+      ? candidateSearchResults.flatMap((item) => [
+          item?.id,
+          item?.candidate_id,
+          item?.candidateId,
+          item?.assessment_id,
+          item?.assessmentId
+        ]).map((value) => String(value || "").trim()).filter(Boolean)
+      : [];
+    api("/company/database/quick-chip-rows", token, "POST", {
+      filters: candidateStructuredFilters,
+      searchMode: candidateSearchMode,
+      searchIds,
+      dateFrom: candidateSmartDateFrom,
+      dateTo: candidateSmartDateTo,
+      selectedChipIds: candidateQuickChipIds
+    }).then((result) => {
+      if (cancelled) return;
+      const rows = result?.rows && typeof result.rows === "object" ? result.rows : (result?.result?.rows && typeof result.result.rows === "object" ? result.result.rows : null);
+      if (!rows) {
+        setCandidateSmartChipRowsRemote(null);
+        return;
+      }
+      setCandidateSmartChipRowsRemote(rows);
+      candidateSmartChipRowsStableRef.current = rows;
+      if (candidateSmartChipCacheKey && typeof window !== "undefined") {
+        try {
+          window.localStorage.setItem(candidateSmartChipCacheKey, JSON.stringify(rows));
+        } catch {}
+      }
+      const summary = result?.summary && typeof result.summary === "object" ? result.summary : (result?.result?.summary && typeof result.result.summary === "object" ? result.result.summary : null);
+      if (summary) {
+        const normalizedSummary = {
+          interview_history: Number(summary.interview_history || summary.interviewHistory || 0),
+          aligned_interviews: Number(summary.aligned_interviews || summary.alignedInterviews || 0),
+          feedback_awaited: Number(summary.feedback_awaited || summary.feedbackAwaited || 0),
+          quick_joiners: Number(summary.quick_joiners || summary.quickJoiners || 0),
+          shared_today: Number(summary.shared_today || summary.sharedToday || 0),
+          shared_this_week: Number(summary.shared_this_week || summary.sharedThisWeek || 0),
+          joined_candidates: Number(summary.joined_candidates || summary.joinedCandidates || 0),
+          cv_shared: Number(summary.cv_shared || summary.cvShared || 0)
+        };
+        candidateSmartChipSummaryStableRef.current = normalizedSummary;
+        setCandidateSmartChipSummary(normalizedSummary);
+        if (candidateSmartChipSummaryCacheKey && typeof window !== "undefined") {
+          try {
+            window.localStorage.setItem(candidateSmartChipSummaryCacheKey, JSON.stringify(normalizedSummary));
+          } catch {}
+        }
+      }
+    }).catch((error) => {
+      if (cancelled) return;
+      console.error("candidateSmartChipRows remote failed", error);
+      setCandidateSmartChipRowsRemote(null);
+    }).finally(() => {
+      if (cancelled) return;
+      setCandidateSmartChipLoading(false);
+      candidateSmartChipSummaryRequestRef.current = requestId;
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    token,
+    location?.pathname,
+    candidateHasSmartChipSelection,
+    candidateStructuredFilters,
+    candidateSearchMode,
+    candidateSearchResults,
+    candidateSmartDateFrom,
+    candidateSmartDateTo,
+    candidateQuickChipIds,
+    candidateSmartChipCacheKey,
+    candidateSmartChipSummaryCacheKey
+  ]);
 
   const capturedCandidateOptions = useMemo(() => {
     const meta = { clients: new Set(), sources: new Set(), outcomes: new Set(), assignedTo: new Set(), capturedBy: new Set() };
@@ -18810,7 +18904,7 @@ function PortalApp({ token, onLogout }) {
 
   function downloadCandidateSmartChipRows(chipId) {
     const chip = SMART_SEARCH_QUICK_CHIPS.find((item) => item.id === chipId);
-    const liveRows = candidateSmartChipRows[chipId] || [];
+    const liveRows = candidateSmartChipRowsEffective[chipId] || [];
     const cachedRows = candidateSmartChipRowsStableRef.current?.[chipId] || [];
     const rows = liveRows.length > 0 ? liveRows : cachedRows;
     if (!rows.length) {
@@ -23456,6 +23550,9 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                 {candidateSearchBusy ? (
                   <div className="muted" style={{ marginTop: 6 }}>Searching candidates...</div>
                 ) : null}
+                {candidateSmartChipLoading ? (
+                  <div className="muted" style={{ marginTop: 6 }}>Loading quick chips...</div>
+                ) : null}
                 {candidateAiQueryMode === "natural" ? (
                   <div className="item-card compact-card candidate-keyword-builder">
                     <h3>Smart keyword builder</h3>
@@ -23552,7 +23649,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                     {SMART_SEARCH_QUICK_CHIPS
                       .filter((chip) => candidateQuickChipIds.includes(chip.id))
                       .map((chip) => {
-                        const liveRows = candidateSmartChipRows[chip.id] || [];
+                        const liveRows = candidateSmartChipRowsEffective[chip.id] || [];
                         const cachedRows = candidateSmartChipRowsStableRef.current?.[chip.id] || [];
                         const rows = liveRows.length > 0 ? liveRows : cachedRows;
                         const chipCount = rows.length;

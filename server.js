@@ -4321,6 +4321,33 @@ function normalizeAssessmentStatusLabel(status) {
   return value;
 }
 
+const SMART_CHIP_INTERVIEW_ALIGNED_STATUSES = new Set([
+  "screening call aligned",
+  "l1 aligned",
+  "l2 aligned",
+  "l3 aligned",
+  "hr interview aligned"
+]);
+
+const SMART_CHIP_INTERVIEW_TIMELINE_STATUSES = new Set([
+  "screening call aligned",
+  "l1 aligned",
+  "l2 aligned",
+  "l3 aligned",
+  "hr interview aligned",
+  "interview feedback awaited",
+  "interview reject",
+  "offered",
+  "joined",
+  "shortlisted",
+  "interview on hold"
+]);
+
+function isFeedbackAwaitedStatus(status) {
+  const lower = String(normalizeAssessmentStatusLabel(status) || "").trim().toLowerCase();
+  return lower === "feedback awaited" || lower === "cv feedback awaited" || lower === "interview feedback awaited";
+}
+
 function normalizeAssessmentFilterOptions(raw = {}) {
   const toList = (value) => {
     if (Array.isArray(value)) {
@@ -4466,6 +4493,29 @@ function sortAssessmentsForList(items = [], sortBy = "updated") {
 async function getAssessmentsUniverseForUser(user) {
   const rows = await listAssessments({ actorUserId: user.id, companyId: user.companyId }).catch(() => []);
   return hydrateAssessmentsWithCandidateAssignees(Array.isArray(rows) ? rows : [], user.companyId).catch(() => Array.isArray(rows) ? rows : []);
+}
+
+async function fetchCandidatesByIdsForCompany(companyId, candidateIds = []) {
+  const safeCompanyId = String(companyId || "").trim();
+  const ids = Array.from(new Set((Array.isArray(candidateIds) ? candidateIds : []).map((value) => String(value || "").trim()).filter(Boolean)));
+  const { on, url, key } = getSupabaseServiceConfig();
+  if (!(on && url && key && safeCompanyId && ids.length)) return [];
+  const out = [];
+  for (let index = 0; index < ids.length; index += 150) {
+    const chunk = ids.slice(index, index + 150);
+    if (!chunk.length) continue;
+    const query = [
+      "select=id,company_id,name,role,current_company,current_designation,total_experience,current_ctc,expected_ctc,notice_period,location,highest_education,client_name,jd_title,assigned_to_name,assigned_to_user_id,recruiter_name,recruiter_id,source,hidden_from_captured,last_contact_outcome,recruiter_context_notes,other_pointers,draft_payload,email_id,phone_number,gender",
+      `company_id=eq.${encodeURIComponent(safeCompanyId)}`,
+      `id=in.(${chunk.map((id) => encodeURIComponent(id)).join(",")})`,
+      `limit=${chunk.length}`
+    ].join("&");
+    const rows = await fetch(`${url}/rest/v1/candidates?${query}`, {
+      headers: { apikey: key, Authorization: `Bearer ${key}` }
+    }).then(async (response) => (response.ok ? response.json() : [])).catch(() => []);
+    if (Array.isArray(rows) && rows.length) out.push(...rows);
+  }
+  return out;
 }
 
 async function listAssessmentsForUser(user, options = {}) {
@@ -7062,6 +7112,326 @@ function buildDatabaseQuickChipSummary({ candidates = [], assessments = [], jobs
     }
   }
   return {
+    summary,
+    generatedAt: new Date().toISOString(),
+    total: universe.length
+  };
+}
+
+function createDatabaseQuickChipRowsBucket() {
+  return {
+    interview_history: [],
+    aligned_interviews: [],
+    feedback_awaited: [],
+    quick_joiners: [],
+    shared_today: [],
+    shared_this_week: [],
+    joined_candidates: [],
+    cv_shared: []
+  };
+}
+
+function formatDatabaseQuickChipEventDate(value) {
+  const ts = parseDateLike(value);
+  if (!Number.isFinite(ts)) return "";
+  try {
+    return new Date(ts).toLocaleString();
+  } catch {
+    return String(value || "");
+  }
+}
+
+function normalizeDatabaseQuickChipAlignedLabel(value) {
+  const label = normalizeAssessmentStatusLabel(value || "").trim();
+  return label || "Interview";
+}
+
+function databaseQuickChipAlignedPhrase(label, value) {
+  const base = String(label || "Interview").replace(/\s+aligned$/i, "").trim() || "Interview";
+  const ts = parseDateLike(value);
+  if (!Number.isFinite(ts)) return `${base} aligned`;
+  return ts < Date.now() ? `${base} was aligned` : `${base} aligned`;
+}
+
+function formatDatabaseQuickChipTimelineLabel(statusValue, atValue) {
+  const normalized = normalizeAssessmentStatusLabel(String(statusValue || "")).toLowerCase();
+  if (SMART_CHIP_INTERVIEW_ALIGNED_STATUSES.has(normalized)) {
+    return databaseQuickChipAlignedPhrase(normalizeDatabaseQuickChipAlignedLabel(statusValue), atValue);
+  }
+  return normalizeAssessmentStatusLabel(statusValue);
+}
+
+function buildDatabaseQuickChipRows({ universe = [], assessmentEvents = [], dateFrom = "", dateTo = "" } = {}) {
+  const rowsByChip = createDatabaseQuickChipRowsBucket();
+  const dateFromValue = String(dateFrom || "").trim();
+  const dateToValue = String(dateTo || "").trim();
+  const inDateRange = (value) => isDateWithinRange(value, dateFromValue, dateToValue);
+  const now = new Date();
+  const startOfTodayTs = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const endOfTodayTs = startOfTodayTs + (24 * 60 * 60 * 1000) - 1;
+  const dayOfWeek = now.getDay();
+  const weekStartTs = new Date(now.getFullYear(), now.getMonth(), now.getDate() - dayOfWeek).getTime();
+  const weekEndTs = weekStartTs + (7 * 24 * 60 * 60 * 1000) - 1;
+  const inToday = (value) => {
+    const ts = parseDateLike(value);
+    return Number.isFinite(ts) && ts >= startOfTodayTs && ts <= endOfTodayTs;
+  };
+  const inThisWeek = (value) => {
+    const ts = parseDateLike(value);
+    return Number.isFinite(ts) && ts >= weekStartTs && ts <= weekEndTs;
+  };
+  const assessmentSharedAtMap = new Map();
+  const assessmentEventsByAssessmentId = new Map();
+  (Array.isArray(assessmentEvents) ? assessmentEvents : []).forEach((event) => {
+    const assessmentId = String(event?.assessment_id || event?.assessmentId || "").trim();
+    if (!assessmentId) return;
+    const eventType = String(event?.event_type || event?.eventType || "").trim().toLowerCase();
+    const status = normalizeAssessmentStatusLabel(String(event?.status || "")).toLowerCase();
+    const payload = event?.payload && typeof event.payload === "object" ? event.payload : {};
+    const previousStatus = normalizeAssessmentStatusLabel(String(payload?.previousStatus || "")).toLowerCase();
+    const eventAt = String(event?.event_at || event?.eventAt || event?.created_at || event?.createdAt || "").trim();
+    const isInitialShareEvent =
+      eventType === "converted"
+      || (eventType === "status_updated" && !previousStatus && status === "cv shared");
+    if (isInitialShareEvent && eventAt) {
+      const existing = assessmentSharedAtMap.get(assessmentId);
+      if (!existing || parseDateLike(eventAt) < parseDateLike(existing)) {
+        assessmentSharedAtMap.set(assessmentId, eventAt);
+      }
+    }
+    if (eventAt && status) {
+      const list = assessmentEventsByAssessmentId.get(assessmentId) || [];
+      const payloadStatusAt = String(payload?.statusAt || payload?.status_at || "").trim();
+      list.push({ status, at: eventAt, statusAt: payloadStatusAt });
+      assessmentEventsByAssessmentId.set(assessmentId, list);
+    }
+  });
+
+  (Array.isArray(universe) ? universe : []).forEach((item) => {
+    const assessment = item?.raw?.assessment || null;
+    if (!assessment) return;
+    const candidate = item?.raw?.candidate || null;
+    const assessmentId = String(assessment?.id || item?.assessment_id || item?.assessmentId || "").trim();
+    const activeAssessment = Boolean(assessment && !isAssessmentArchived(assessment));
+    const assessmentStatus = normalizeAssessmentStatusLabel(
+      assessment?.candidateStatus
+      || assessment?.candidate_status
+      || assessment?.status
+      || item?.candidateStatus
+      || item?.status
+      || ""
+    ).toLowerCase();
+    const interviewAt = String(
+      assessment?.interviewAt
+      || assessment?.interview_at
+      || deriveInterviewAtFromHistory(assessment)
+      || item?.interviewAt
+      || ""
+    ).trim();
+    const updatedAt = String(
+      assessment?.updatedAt
+      || assessment?.updated_at
+      || assessment?.generatedAt
+      || assessment?.generated_at
+      || item?.sharedAt
+      || item?.createdAt
+      || item?.date
+      || ""
+    ).trim();
+    const convertedAt = String(
+      assessmentSharedAtMap.get(assessmentId)
+      || getCandidateConvertedAt(candidate || {}, assessment || {})
+      || item?.sharedAt
+      || assessment?.generatedAt
+      || assessment?.generated_at
+      || assessment?.createdAt
+      || assessment?.created_at
+      || ""
+    ).trim();
+    const noticeDays = parseNoticePeriodToDays(item?.noticePeriod || item?.notice_period || "");
+    const baseRow = {
+      item,
+      candidateName: resolveCandidateDisplayName(candidate || item, assessment),
+      role: assessment?.jdTitle || assessment?.jd_title || item?.role || item?.position || item?.jdTitle || "",
+      client: assessment?.clientName || assessment?.client_name || item?.client_name || item?.clientName || "",
+      recruiter: item?.assigned_to_name || item?.assignedToName || item?.recruiterName || assessment?.recruiter_name || "",
+      currentCtc: String(assessment?.currentCtc || assessment?.current_ctc || item?.currentCtc || item?.current_ctc || "").trim(),
+      expectedCtc: String(assessment?.expectedCtc || assessment?.expected_ctc || item?.expectedCtc || item?.expected_ctc || "").trim(),
+      notice: String(assessment?.noticePeriod || assessment?.notice_period || item?.noticePeriod || item?.notice_period || "").trim(),
+      offerAmount: String(assessment?.offerAmount || assessment?.offer_amount || assessment?.offerInHand || assessment?.offer_in_hand || "").trim(),
+      dateOfJoining: String(assessment?.dateOfJoining || assessment?.date_of_joining || assessment?.offerDoj || assessment?.offer_doj || "").trim(),
+      status: normalizeAssessmentStatusLabel(assessment?.candidateStatus || assessment?.status || item?.candidateStatus || ""),
+      date: ""
+    };
+
+    const statusHistory = Array.isArray(assessment?.statusHistory) ? assessment.statusHistory : [];
+    const alignedHistoryEvents = [];
+    const feedbackAwaitedHistoryEvents = [];
+    const interviewTrackEvents = [];
+    const pushInterviewTrackEvent = (statusValue, atValue, statusAtValue = "") => {
+      const statusKey = normalizeAssessmentStatusLabel(String(statusValue || "")).toLowerCase();
+      const atKey = String(atValue || "").trim();
+      const statusAtKey = String(statusAtValue || "").trim();
+      const effectiveAtKey = SMART_CHIP_INTERVIEW_ALIGNED_STATUSES.has(statusKey) && statusAtKey ? statusAtKey : atKey;
+      if (!statusKey || !atKey) return;
+      if (!SMART_CHIP_INTERVIEW_TIMELINE_STATUSES.has(statusKey)) return;
+      if (interviewTrackEvents.some((event) => event.status === statusKey && String(event.at || "") === atKey && String(event.effectiveAt || "") === effectiveAtKey)) return;
+      interviewTrackEvents.push({ status: statusKey, at: atKey, effectiveAt: effectiveAtKey });
+    };
+    statusHistory.forEach((entry) => {
+      if (!entry || typeof entry !== "object") return;
+      const at = String(entry?.at || "").trim();
+      const statusAt = String(entry?.statusAt || entry?.status_at || "").trim();
+      const label = normalizeAssessmentStatusLabel(String(entry?.status || "")).toLowerCase();
+      if (label && SMART_CHIP_INTERVIEW_ALIGNED_STATUSES.has(label) && at) alignedHistoryEvents.push({ status: label, at, statusAt });
+      if (isFeedbackAwaitedStatus(label) && at) feedbackAwaitedHistoryEvents.push({ status: label, at });
+      pushInterviewTrackEvent(label, at, statusAt);
+    });
+    (assessmentEventsByAssessmentId.get(assessmentId) || []).forEach((event) => {
+      pushInterviewTrackEvent(event?.status, event?.at, event?.statusAt);
+    });
+    if (SMART_CHIP_INTERVIEW_TIMELINE_STATUSES.has(assessmentStatus)) {
+      pushInterviewTrackEvent(assessmentStatus, updatedAt || interviewAt || convertedAt);
+    }
+
+    if (interviewTrackEvents.length) {
+      const sortedTrackEvents = [...interviewTrackEvents]
+        .filter((event) => event?.effectiveAt && Number.isFinite(parseDateLike(event.effectiveAt)))
+        .sort((a, b) => parseDateLike(a.effectiveAt) - parseDateLike(b.effectiveAt));
+      const latestAlignedByStatus = new Map();
+      sortedTrackEvents.forEach((event) => {
+        if (!SMART_CHIP_INTERVIEW_ALIGNED_STATUSES.has(String(event?.status || "").toLowerCase())) return;
+        latestAlignedByStatus.set(String(event.status).toLowerCase(), event);
+      });
+      const dedupedTrackEvents = sortedTrackEvents.filter((event) => {
+        const key = String(event?.status || "").toLowerCase();
+        if (!SMART_CHIP_INTERVIEW_ALIGNED_STATUSES.has(key)) return true;
+        return latestAlignedByStatus.get(key) === event;
+      });
+      const inRangeEvents = dedupedTrackEvents.filter((event) => inDateRange(event.effectiveAt));
+      if (activeAssessment && inRangeEvents.length) {
+        const latestTrackEvent = inRangeEvents[inRangeEvents.length - 1];
+        rowsByChip.interview_history.push({
+          ...baseRow,
+          round: `${inRangeEvents.map((event) => `${formatDatabaseQuickChipTimelineLabel(event.status, event.effectiveAt)} on ${formatDatabaseQuickChipEventDate(event.effectiveAt)}`).join(" | ")} | Current: ${baseRow.status || "-"}`,
+          date: String(assessment?.interviewAt || assessment?.interview_at || latestTrackEvent?.effectiveAt || "").trim()
+        });
+      }
+    }
+
+    if (alignedHistoryEvents.length) {
+      const sortedAlignedEvents = [...alignedHistoryEvents]
+        .filter((event) => event?.at && Number.isFinite(parseDateLike(event.at)))
+        .sort((a, b) => parseDateLike(a.at) - parseDateLike(b.at));
+      const latestAlignedEvent = sortedAlignedEvents[sortedAlignedEvents.length - 1] || null;
+      const previousAlignedEvent = sortedAlignedEvents.length > 1 ? sortedAlignedEvents[sortedAlignedEvents.length - 2] : null;
+      if (activeAssessment && latestAlignedEvent) {
+        const interviewTimelineDate = String(assessment?.interviewAt || assessment?.interview_at || latestAlignedEvent.at || "").trim();
+        if (inDateRange(interviewTimelineDate || latestAlignedEvent.at)) {
+          rowsByChip.aligned_interviews.push({
+            ...baseRow,
+            round: previousAlignedEvent
+              ? `${databaseQuickChipAlignedPhrase(normalizeDatabaseQuickChipAlignedLabel(previousAlignedEvent.status), previousAlignedEvent.at)} on ${formatDatabaseQuickChipEventDate(previousAlignedEvent.at)} | now ${databaseQuickChipAlignedPhrase(normalizeDatabaseQuickChipAlignedLabel(latestAlignedEvent.status), interviewTimelineDate)} on ${formatDatabaseQuickChipEventDate(interviewTimelineDate)} | Current: ${baseRow.status || "-"}`
+              : `${databaseQuickChipAlignedPhrase(normalizeDatabaseQuickChipAlignedLabel(latestAlignedEvent.status), interviewTimelineDate)} on ${formatDatabaseQuickChipEventDate(interviewTimelineDate)} | Current: ${baseRow.status || "-"}`,
+            date: interviewTimelineDate || latestAlignedEvent.at
+          });
+        }
+      }
+    } else if (
+      activeAssessment &&
+      (SMART_CHIP_INTERVIEW_ALIGNED_STATUSES.has(assessmentStatus) || ["interview feedback awaited", "interview on hold", "shortlisted", "offered"].includes(assessmentStatus)) &&
+      inDateRange(interviewAt || updatedAt)
+    ) {
+      const fallbackInterviewDate = String(assessment?.interviewAt || assessment?.interview_at || interviewAt || updatedAt || "").trim();
+      rowsByChip.aligned_interviews.push({
+        ...baseRow,
+        round: `${databaseQuickChipAlignedPhrase(normalizeDatabaseQuickChipAlignedLabel(assessmentStatus), fallbackInterviewDate)} on ${formatDatabaseQuickChipEventDate(fallbackInterviewDate)} | Current: ${baseRow.status || "-"}`,
+        date: fallbackInterviewDate
+      });
+    }
+
+    if (feedbackAwaitedHistoryEvents.length) {
+      const latestFeedbackEvent = [...feedbackAwaitedHistoryEvents]
+        .filter((event) => event?.at && Number.isFinite(parseDateLike(event.at)))
+        .sort((a, b) => parseDateLike(a.at) - parseDateLike(b.at))
+        .pop();
+      if (activeAssessment && latestFeedbackEvent) {
+        const feedbackTimelineDate = String(assessment?.interviewAt || assessment?.interview_at || latestFeedbackEvent.at || "").trim();
+        if (inDateRange(feedbackTimelineDate || latestFeedbackEvent.at)) {
+          rowsByChip.feedback_awaited.push({
+            ...baseRow,
+            round: `Feedback awaited on ${formatDatabaseQuickChipEventDate(feedbackTimelineDate || latestFeedbackEvent.at)} | Current: ${baseRow.status || "-"}`,
+            date: feedbackTimelineDate || latestFeedbackEvent.at
+          });
+        }
+      }
+    } else if (activeAssessment && isFeedbackAwaitedStatus(assessmentStatus) && inDateRange(interviewAt || updatedAt)) {
+      rowsByChip.feedback_awaited.push({
+        ...baseRow,
+        round: `Feedback awaited | Current: ${baseRow.status || "-"}`,
+        date: String(assessment?.interviewAt || assessment?.interview_at || interviewAt || updatedAt || "").trim()
+      });
+    }
+
+    const capturedIsActive = candidate ? (candidate?.hidden_from_captured !== true && candidate?.hiddenFromCaptured !== true) : true;
+    if (activeAssessment && noticeDays != null && noticeDays <= 15 && capturedIsActive && inDateRange(updatedAt || interviewAt || convertedAt)) {
+      rowsByChip.quick_joiners.push({ ...baseRow, round: baseRow.status || "CV shared", date: updatedAt || interviewAt || convertedAt });
+    }
+    if (assessment && inToday(convertedAt) && inDateRange(convertedAt)) {
+      rowsByChip.shared_today.push({ ...baseRow, round: "Converted to assessment", date: convertedAt });
+    }
+    if (assessment && inThisWeek(convertedAt) && inDateRange(convertedAt)) {
+      rowsByChip.shared_this_week.push({ ...baseRow, round: "Converted to assessment", date: convertedAt });
+    }
+    if (assessmentStatus === "joined" && inDateRange(baseRow.dateOfJoining || updatedAt || interviewAt || convertedAt)) {
+      rowsByChip.joined_candidates.push({ ...baseRow, round: "Joined", date: baseRow.dateOfJoining || updatedAt || convertedAt });
+    }
+    if (activeAssessment && inDateRange(updatedAt || interviewAt || convertedAt)) {
+      const statusLower = normalizeAssessmentStatusLabel(baseRow.status || assessmentStatus || "").toLowerCase();
+      const displayDate = statusLower === "cv shared" ? (convertedAt || updatedAt || "") : (interviewAt || updatedAt || convertedAt || "");
+      rowsByChip.cv_shared.push({ ...baseRow, round: baseRow.status || "Active", date: displayDate });
+    }
+  });
+
+  return rowsByChip;
+}
+
+async function buildDatabaseQuickChipDataForUser({ user, filters = {}, searchMode = "", searchIds = [], dateFrom = "", dateTo = "" } = {}) {
+  const normalizedFilters = normalizeDatabaseQuickChipFilters(filters);
+  const dateFromValue = String(dateFrom || normalizedFilters.dateFrom || "").trim();
+  const dateToValue = String(dateTo || normalizedFilters.dateTo || "").trim();
+  const assessments = await getAssessmentsUniverseForUser(user);
+  const candidateIds = Array.from(new Set((Array.isArray(assessments) ? assessments : []).map((assessment) => String(
+    assessment?.candidateId || assessment?.candidate_id || assessment?.payload?.candidateId || assessment?.payload?.candidate_id || ""
+  ).trim()).filter(Boolean)));
+  const [candidates, jobs, assessmentEvents] = await Promise.all([
+    fetchCandidatesByIdsForCompany(user.companyId, candidateIds),
+    listCompanyJobs(user.companyId, user.id),
+    listAssessmentEvents({ companyId: user.companyId, limit: 10000 })
+  ]);
+  const searchSet = new Set((Array.isArray(searchIds) ? searchIds : []).map((value) => String(value || "").trim()).filter(Boolean));
+  const universe = buildCandidateSearchUniverse(candidates, assessments, jobs).filter((item) => {
+    if (searchMode === "search" && searchSet.size) {
+      const ids = [
+        item?.id,
+        item?.raw?.candidate?.id,
+        item?.raw?.assessment?.id,
+        item?.candidateId,
+        item?.assessmentId
+      ].map((value) => String(value || "").trim()).filter(Boolean);
+      if (!ids.some((id) => searchSet.has(id))) return false;
+    }
+    return databaseSmartChipRowMatchesFrontendFilters(item, normalizedFilters, user);
+  });
+  const rows = buildDatabaseQuickChipRows({
+    universe,
+    assessmentEvents,
+    dateFrom: dateFromValue,
+    dateTo: dateToValue
+  });
+  const summary = Object.fromEntries(Object.entries(rows).map(([key, list]) => [key, Array.isArray(list) ? list.length : 0]));
+  return {
+    rows,
     summary,
     generatedAt: new Date().toISOString(),
     total: universe.length
@@ -17457,25 +17827,49 @@ const server = http.createServer(async (req, res) => {
       const searchIds = Array.isArray(body?.searchIds) ? body.searchIds : [];
       const dateFrom = String(body?.dateFrom || filters?.dateFrom || "").trim();
       const dateTo = String(body?.dateTo || filters?.dateTo || "").trim();
-      const [candidates, assessments, jobs] = await Promise.all([
-        listCandidatesForUser(user, { limit: 5000 }),
-        listAssessments({ actorUserId: user.id, companyId: user.companyId }),
-        listCompanyJobs(user.companyId, user.id)
-      ]);
-      const summary = buildDatabaseQuickChipSummary({
-        candidates,
-        assessments,
-        jobs,
+      const quickChipData = await buildDatabaseQuickChipDataForUser({
+        user,
         filters,
         searchMode,
         searchIds,
         dateFrom,
-        dateTo,
-        actor: user
+        dateTo
       });
       sendJson(res, 200, {
         ok: true,
-        result: summary
+        result: {
+          summary: quickChipData.summary,
+          generatedAt: quickChipData.generatedAt,
+          total: quickChipData.total
+        }
+      });
+    } catch (error) {
+      sendJson(res, 400, { ok: false, error: String(error.message || error) });
+    }
+    return;
+  }
+
+  if (req.method === "POST" && requestUrl.pathname === "/company/database/quick-chip-rows") {
+    try {
+      const user = await requireSessionUser(getBearerToken(req));
+      await requireSaasAccess(user, "database save and search");
+      const body = await readJsonBody(req);
+      const filters = body?.filters && typeof body.filters === "object" ? body.filters : {};
+      const searchMode = String(body?.searchMode || "all").trim().toLowerCase();
+      const searchIds = Array.isArray(body?.searchIds) ? body.searchIds : [];
+      const dateFrom = String(body?.dateFrom || filters?.dateFrom || "").trim();
+      const dateTo = String(body?.dateTo || filters?.dateTo || "").trim();
+      const quickChipData = await buildDatabaseQuickChipDataForUser({
+        user,
+        filters,
+        searchMode,
+        searchIds,
+        dateFrom,
+        dateTo
+      });
+      sendJson(res, 200, {
+        ok: true,
+        result: quickChipData
       });
     } catch (error) {
       sendJson(res, 400, { ok: false, error: String(error.message || error) });
