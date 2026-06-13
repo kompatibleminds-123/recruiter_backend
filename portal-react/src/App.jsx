@@ -10729,18 +10729,7 @@ function PortalApp({ token, onLogout }) {
     const dashboardAgendaParams = new URLSearchParams();
     dashboardAgendaParams.set("range", String(agendaRange || "today"));
 
-    const clientPortalKey = JSON.stringify({
-      dateFrom: String(clientPortalFilters?.dateFrom || ""),
-      dateTo: String(clientPortalFilters?.dateTo || ""),
-      clientLabel: String(clientPortalFilters?.clientLabel || "")
-    });
-    latestClientPortalKeyRef.current = clientPortalKey;
-    const clientPortalParams = new URLSearchParams();
-    if (clientPortalFilters.dateFrom) clientPortalParams.set("dateFrom", clientPortalFilters.dateFrom);
-    if (clientPortalFilters.dateTo) clientPortalParams.set("dateTo", clientPortalFilters.dateTo);
-    if (clientPortalFilters.clientLabel) clientPortalParams.set("clientLabel", clientPortalFilters.clientLabel);
-
-    const [userResult, dashboardAgendaResult, dashboardFunnelResult, clientPortalResult, applicantsResult, intakeResult, jobsResult, jobsManageResult, usersResult, clientUsersResult, employeeUsersResult, candidatesResult, databaseCandidatesResult, assessmentsResult, assessmentEventsResult, sharedPresetResult, smtpSettingsResult, licenseResult, billingOverviewResult, billingPlansResult] = await Promise.all([
+    const [userResult, dashboardAgendaResult, dashboardFunnelResult, applicantsResult, intakeResult, jobsResult, jobsManageResult, usersResult, clientUsersResult, employeeUsersResult, candidatesResult, databaseCandidatesResult, assessmentsResult, assessmentEventsResult, sharedPresetResult, smtpSettingsResult, licenseResult, billingOverviewResult, billingPlansResult] = await Promise.all([
       api("/auth/me", token),
       needsDashboard
         ? api(`/company/dashboard/agenda${dashboardAgendaParams.toString() ? `?${dashboardAgendaParams.toString()}` : ""}`, token)
@@ -10748,10 +10737,6 @@ function PortalApp({ token, onLogout }) {
       needsDashboard
         ? api(`/company/dashboard/funnel${dashboardFunnelParams.toString() ? `?${dashboardFunnelParams.toString()}` : ""}`, token)
             .catch(() => ({ funnel: { overall: {}, byClient: [], byRecruiter: [], availableClients: [], availableRecruiters: [] } }))
-        : Promise.resolve(null),
-      needsDashboard
-        ? api(`/company/client-portal${clientPortalParams.toString() ? `?${clientPortalParams.toString()}` : ""}`, token)
-            .catch(() => ({ summary: { byClient: [], byClientPosition: [] }, availableClients: [] }))
         : Promise.resolve(null),
       needsApplicants
         ? api(`/company/applicants/list?limit=${safeApplicantApiPageSize}&page=${safeApplicantApiPage}`, token)
@@ -10810,15 +10795,11 @@ function PortalApp({ token, onLogout }) {
       }
       return nextDashboard;
     };
-    const nextClientPortal = (current) => (
-      needsDashboard && latestClientPortalKeyRef.current === clientPortalKey
-        ? (
-            clientPortalResult && typeof clientPortalResult === "object" && Object.keys(clientPortalResult).length
-              ? clientPortalResult
-              : current.clientPortal
-          )
-        : current.clientPortal
-    );
+    // Legacy note:
+    // Recruiter dashboard no longer preloads /company/client-portal.
+    // Explicit client-portal loaders/drilldowns are still kept for safety until
+    // we fully remove the old fallback path.
+    const nextClientPortal = (current) => current.clientPortal;
 
     if (seq !== workspaceLoadSeqRef.current) return;
     const candidateRows = Array.isArray(candidatesResult)
@@ -22247,6 +22228,9 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
   };
   const dashboardClientGroupsDisplay = dashboardClientGroups.map(normalizeDashboardFunnelGroup);
   const dashboardRecruiterGroupsDisplay = dashboardRecruiterGroups.map(normalizeDashboardFunnelGroup);
+  // Legacy fallback kept intentionally for safety:
+  // prefer funnel-native byClientPosition; only fall back to clientPortal cache
+  // if older data exists in memory from explicit client-portal flows.
   const clientPositionRows = dashboardSummary?.byClientPosition || state.clientPortal?.summary?.byClientPosition || [];
   const recruiterPositionRows = dashboardSummary?.byRecruiterPosition || dashboardSummary?.byClientRecruiter || [];
   const hasDashboardData = Boolean(
