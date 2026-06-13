@@ -2245,11 +2245,30 @@ textarea { min-height: 92px; resize: vertical; }
   cursor: pointer;
   padding: 0;
 }
+.table-metric-btn--action {
+  border: 1px solid #cfe0ff;
+  background: linear-gradient(180deg, #ffffff 0%, #f5f9ff 100%);
+  color: #17407a;
+  border-radius: 14px;
+  padding: 0.55rem 0.8rem;
+  line-height: 1.1;
+  white-space: nowrap;
+}
 .table-metric-btn--label {
   text-align: left;
 }
 .table-metric-btn:hover {
   text-decoration: underline;
+}
+.table-metric-btn--action:hover {
+  text-decoration: none;
+  background: linear-gradient(180deg, #f8fbff 0%, #ecf4ff 100%);
+  border-color: #bdd2fb;
+}
+.drilldown-status-subline {
+  margin-top: 2px;
+  font-size: 0.74rem;
+  line-height: 1.25;
 }
 .dashboard-nested-list {
   margin-top: 0.9rem;

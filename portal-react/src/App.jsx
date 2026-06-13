@@ -6224,6 +6224,7 @@ function CvOpenActions({ onOpenOriginal, onOpenBranded, summaryLabel = "Open CV"
 
 function getDrilldownAssessmentContext(item) {
   const assessment = item?.raw?.assessment || item?.assessment || item || null;
+  const candidate = item?.raw?.candidate || item?.candidate || null;
   const currentStatus = normalizeAssessmentStatusLabel(
     assessment?.candidateStatus
     || assessment?.candidate_status
@@ -6257,6 +6258,8 @@ function getDrilldownAssessmentContext(item) {
   const interviewStatus = exactInterviewStatus || inferInterviewRoundLabel(previousStatus || currentStatus || "")
     || inferInterviewRoundLabel(currentStatus || "");
   return {
+    assessment,
+    candidate,
     currentStatus,
     interviewStatus,
     previousStatus: exactPreviousStatus || previousStatus
@@ -6289,6 +6292,7 @@ function DrilldownModal({ open, title, items, onClose, onOpenCvOriginal, onOpenC
   const pageStart = (currentPage - 1) * safePageSize;
   const visibleItems = (Array.isArray(items) ? items : []).slice(pageStart, pageStart + safePageSize);
   const allowStatusUpdate = DASHBOARD_DRILLDOWN_STATUS_ACTION_METRICS.has(String(drilldownMetric || "").trim());
+  const isJoinedMetric = String(drilldownMetric || "").trim() === "joined";
   return (
     <div className={containerClass} onClick={inline ? undefined : onClose}>
       <div className={cardClass} onClick={(e) => !inline && e.stopPropagation()}>
@@ -6309,9 +6313,18 @@ function DrilldownModal({ open, title, items, onClose, onOpenCvOriginal, onOpenC
                       <th>Current status</th>
                       <th>Client</th>
                       <th>Role</th>
-                      <th>Current CTC</th>
-                      <th>Expected CTC</th>
-                      <th>Notice</th>
+                      {isJoinedMetric ? (
+                        <>
+                          <th>Date of Joining</th>
+                          <th>Offer Amount</th>
+                        </>
+                      ) : (
+                        <>
+                          <th>Current CTC</th>
+                          <th>Expected CTC</th>
+                          <th>Notice</th>
+                        </>
+                      )}
                       <th>Action</th>
                     </tr>
                   </thead>
@@ -6326,6 +6339,59 @@ function DrilldownModal({ open, title, items, onClose, onOpenCvOriginal, onOpenC
                       );
                       const assessmentForAction = item.raw?.assessment || item.assessment || (item.assessmentId || item.sourceType === "assessment_only" ? item : null);
                       const assessmentContext = getDrilldownAssessmentContext(item);
+                      const linkedAssessment = assessmentContext.assessment || null;
+                      const linkedCandidate = assessmentContext.candidate || null;
+                      const currentCtc = String(
+                        linkedAssessment?.currentCtc
+                        || linkedAssessment?.current_ctc
+                        || item.currentCtc
+                        || item.current_ctc
+                        || linkedCandidate?.current_ctc
+                        || linkedCandidate?.currentCtc
+                        || ""
+                      ).trim();
+                      const expectedCtc = String(
+                        linkedAssessment?.expectedCtc
+                        || linkedAssessment?.expected_ctc
+                        || item.expectedCtc
+                        || item.expected_ctc
+                        || linkedCandidate?.expected_ctc
+                        || linkedCandidate?.expectedCtc
+                        || ""
+                      ).trim();
+                      const noticePeriod = String(
+                        linkedAssessment?.noticePeriod
+                        || linkedAssessment?.notice_period
+                        || item.noticePeriod
+                        || item.notice_period
+                        || linkedCandidate?.notice_period
+                        || linkedCandidate?.noticePeriod
+                        || ""
+                      ).trim();
+                      const offerAmount = String(
+                        linkedAssessment?.offerAmount
+                        || linkedAssessment?.offer_amount
+                        || linkedAssessment?.offerInHand
+                        || linkedAssessment?.offer_in_hand
+                        || item.offerAmount
+                        || item.offer_amount
+                        || item.offerInHand
+                        || item.offer_in_hand
+                        || linkedCandidate?.offer_in_hand
+                        || linkedCandidate?.offerInHand
+                        || ""
+                      ).trim();
+                      const dateOfJoining = String(
+                        linkedAssessment?.dateOfJoining
+                        || linkedAssessment?.offerDoj
+                        || linkedAssessment?.offer_doj
+                        || item.dateOfJoining
+                        || item.offerDoj
+                        || item.offer_doj
+                        || linkedCandidate?.lwd_or_doj
+                        || linkedCandidate?.lwdOrDoj
+                        || ""
+                      ).trim();
                       return (
                         <tr key={stableItemKey}>
                           <td>
@@ -6333,16 +6399,26 @@ function DrilldownModal({ open, title, items, onClose, onOpenCvOriginal, onOpenC
                           </td>
                           <td>
                             {assessmentContext.currentStatus || item.candidateStatus || "-"}
-                            {assessmentContext.interviewStatus ? <div className="muted">{assessmentContext.interviewStatus}</div> : null}
+                            {assessmentContext.interviewStatus ? <div className="muted drilldown-status-subline">{`Interview status: ${assessmentContext.interviewStatus}`}</div> : null}
+                            {assessmentContext.previousStatus ? <div className="muted drilldown-status-subline">{`Previous assessment status: ${assessmentContext.previousStatus}`}</div> : null}
                           </td>
                           <td>{item.clientName || "-"}</td>
                           <td>{item.position || item.jdTitle || item.role || "-"}</td>
-                          <td>{item.currentCtc || item.current_ctc || "-"}</td>
-                          <td>{item.expectedCtc || item.expected_ctc || "-"}</td>
-                          <td>{item.noticePeriod || item.notice_period || "-"}</td>
+                          {isJoinedMetric ? (
+                            <>
+                              <td>{dateOfJoining ? formatDateForCopy(dateOfJoining) : "-"}</td>
+                              <td>{offerAmount || "-"}</td>
+                            </>
+                          ) : (
+                            <>
+                              <td>{currentCtc || "-"}</td>
+                              <td>{expectedCtc || "-"}</td>
+                              <td>{noticePeriod || "-"}</td>
+                            </>
+                          )}
                           <td>
                             {allowStatusUpdate && assessmentForAction && onOpenStatus ? (
-                              <button className="table-metric-btn" onClick={() => onOpenStatus(assessmentForAction)}>Update status</button>
+                              <button className="table-metric-btn table-metric-btn--action" onClick={() => onOpenStatus(assessmentForAction)}>Update status</button>
                             ) : (
                               <span className="muted">-</span>
                             )}
