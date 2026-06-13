@@ -9329,8 +9329,13 @@ function PortalApp({ token, onLogout }) {
       return;
     }
     const localMatch = (Array.isArray(assessmentListItems) ? assessmentListItems : []).find((item) => String(item?.id || "").trim() === requestedId) || null;
+    const backingMatch = (Array.isArray(state.assessments) ? state.assessments : []).find((item) => String(item?.id || "").trim() === requestedId) || null;
     if (localMatch) {
       setAssessmentStatusItemSnapshot(localMatch);
+      return;
+    }
+    if (backingMatch) {
+      setAssessmentStatusItemSnapshot(backingMatch);
       return;
     }
     let cancelled = false;
@@ -9346,7 +9351,7 @@ function PortalApp({ token, onLogout }) {
     return () => {
       cancelled = true;
     };
-  }, [token, assessmentStatusId, assessmentListItems]);
+  }, [token, assessmentStatusId, assessmentListItems, state.assessments]);
 
   useEffect(() => {
     // Load per-recruiter SMTP/signature settings where mail content is composed.
@@ -12386,13 +12391,18 @@ function PortalApp({ token, onLogout }) {
       if (recruiterValue) recruiters.add(recruiterValue);
       if (outcomeValue) outcomes.add(outcomeValue);
     });
+    (Array.isArray(state.users) ? state.users : []).forEach((user) => {
+      const label = String(user?.name || "").trim();
+      if (label) recruiters.add(label);
+    });
+    const selectedClients = Array.isArray(assessmentFilters?.clients) ? assessmentFilters.clients : [];
     return {
       clients: Array.from(clients).sort((a, b) => a.localeCompare(b)),
-      jds: activeJobTitlesForFilters.map((job) => job.title).sort((a, b) => a.localeCompare(b)),
+      jds: getClientScopedActiveJobTitles(selectedClients),
       recruiters: Array.from(recruiters).sort((a, b) => a.localeCompare(b)),
       outcomes: DEFAULT_STATUS_OPTIONS
     };
-  }, [assessmentOptionPool, state.assessments, state.candidates, state.user, state.users, resolveCanonicalJdTitle, activeJobTitlesForFilters]);
+  }, [assessmentOptionPool, state.assessments, state.candidates, state.user, state.users, resolveCanonicalJdTitle, activeJobTitlesForFilters, getClientScopedActiveJobTitles, assessmentFilters]);
 
   const filteredAssessments = useMemo(() => {
     return Array.isArray(assessmentListItems) ? assessmentListItems : [];
@@ -20896,6 +20906,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
           });
         }
         void syncPostAssessmentMutation({ candidateId: linkedCandidateId }).catch(() => {});
+        void refreshDashboardAgendaAfterAssessmentChange().catch(() => {});
         // Skip immediate workspace refresh to keep viewport stable after status update.
       } catch (error) {
         setStatus(statusTarget, `Status sync failed: ${String(error?.message || error)}`, "error");
@@ -21611,6 +21622,11 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
       clearAgendaSchedule: true,
       statusTarget: "workspace"
     });
+  }
+
+  async function refreshDashboardAgendaAfterAssessmentChange() {
+    if (String(location?.pathname || "").trim() !== "/dashboard") return;
+    await loadDashboardAgenda(agendaRange);
   }
 
   function reuseAssessmentAsNew(assessment) {
@@ -24082,7 +24098,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                   options={assessmentOptions.jds}
                   selected={assessmentFilters.jds}
                   allowAll
-                  emptySummary="All active jobs"
+                  emptySummary={assessmentFilters.clients.length ? "No active jobs" : "Choose client first"}
                   onToggle={(value) => setAssessmentFilters((current) => ({ ...current, jds: value === "__all__" ? [] : current.jds.includes(value) ? current.jds.filter((item) => item !== value) : [...current.jds, value] }))}
                 />
                 <MultiSelectDropdown label="Assigned to" options={assessmentOptions.recruiters} selected={assessmentFilters.recruiters} onToggle={(value) => setAssessmentFilters((current) => ({ ...current, recruiters: value === "__all__" ? [] : current.recruiters.includes(value) ? current.recruiters.filter((item) => item !== value) : [...current.recruiters, value] }))} />
