@@ -23066,6 +23066,22 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                       )}
                     </article>
                     <article className="reports-chart-card" style={{ minHeight: "100%" }}>
+                      <h4>Recruiter Performance (Score)</h4>
+                      {!recruiterLeaderboardRanked.length ? <div className="empty-state compact-empty">No chart data.</div> : (
+                        <div className="reports-funnel-list">
+                          {recruiterLeaderboardRanked.map((row) => (
+                            <div key={`score-${row.label}`} className="reports-funnel-item">
+                              <div className="reports-funnel-item__head"><span>{row.label}</span><strong>{row.performanceScore}</strong></div>
+                              <div className="reports-funnel-track"><i style={{ width: `${Math.max(4, Math.round((row.performanceScore / maxRecruiterScore) * 100))}%` }} /></div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      <p className="muted reports-formula-note">
+                        Score = 20% CV submission rate + 30% interview ratio + 30% shortlist rate + 20% joining rate.
+                      </p>
+                    </article>
+                    <article className="reports-chart-card" style={{ minHeight: "100%" }}>
                       <h4>Recruiter Pipeline Funnel (Shared to Interview)</h4>
                       <p className="muted">Interview conversion ratio graph</p>
                       {!recruiterChartRows.length ? <div className="empty-state compact-empty">No funnel data.</div> : (
@@ -23108,50 +23124,6 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                                 />
                               </div>
                               <div className="reports-conversion-pill" style={{ marginTop: "8px" }}>{row.joiningPct}%</div>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </article>
-                  </div>
-                  <div className="reports-client-chart-grid">
-                    <article className="reports-chart-card" style={{ minHeight: "100%" }}>
-                      <h4>Recruiter Performance (Score)</h4>
-                      {!recruiterLeaderboardRanked.length ? <div className="empty-state compact-empty">No chart data.</div> : (
-                        <div className="reports-funnel-list">
-                          {recruiterLeaderboardRanked.map((row) => (
-                            <div key={`score-${row.label}`} className="reports-funnel-item">
-                              <div className="reports-funnel-item__head"><span>{row.label}</span><strong>{row.performanceScore}</strong></div>
-                              <div className="reports-funnel-track"><i style={{ width: `${Math.max(4, Math.round((row.performanceScore / maxRecruiterScore) * 100))}%` }} /></div>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                      <p className="muted reports-formula-note">
-                        Score = 20% CV submission rate + 30% interview ratio + 30% shortlist rate + 20% joining rate.
-                      </p>
-                    </article>
-                    <article className="reports-chart-card" style={{ minHeight: "100%" }}>
-                      <h4>Self Sourced vs Assigned</h4>
-                      {!recruiterLeaderboardRanked.length ? <div className="empty-state compact-empty">No ratio data.</div> : (
-                        <div className="reports-funnel-list">
-                          {recruiterLeaderboardRanked.map((row) => (
-                            <div key={`self-assigned-${row.label}`} className="reports-funnel-item">
-                              <div className="reports-funnel-item__head"><span>{row.label}</span><strong>{row.selfSourced}</strong></div>
-                              <div className="reports-stacked-track">
-                                <i
-                                  className="reports-stacked-track__base"
-                                  style={{ width: `${Math.max(4, Math.round((row.sourced / maxRecruiterSourced) * 100))}%` }}
-                                />
-                                <i
-                                  className="reports-stacked-track__fill"
-                                  style={{ width: `${row.sourced > 0 ? Math.max(2, Math.round((row.selfSourced / row.sourced) * Math.max(4, Math.round((row.sourced / maxRecruiterSourced) * 100)))) : 0}%` }}
-                                />
-                              </div>
-                              <div className="reports-conversion-pill" style={{ marginTop: "8px" }}>{row.selfSourcedPct}% self sourced</div>
-                              <p className="muted" style={{ margin: "6px 0 0", fontSize: "0.74rem" }}>
-                                {`Total - ${row.sourced}, Self - ${row.selfSourced}`}
-                              </p>
                             </div>
                           ))}
                         </div>
