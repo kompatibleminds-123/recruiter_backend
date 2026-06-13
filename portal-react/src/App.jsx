@@ -23026,6 +23026,22 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                   </div>
                   <div className="reports-client-chart-grid">
                     <article className="reports-chart-card" style={{ minHeight: "100%" }}>
+                      <h4>Recruiter Performance (Score)</h4>
+                      {!recruiterLeaderboardRanked.length ? <div className="empty-state compact-empty">No chart data.</div> : (
+                        <div className="reports-funnel-list">
+                          {recruiterLeaderboardRanked.map((row) => (
+                            <div key={`score-${row.label}`} className="reports-funnel-item">
+                              <div className="reports-funnel-item__head"><span>{row.label}</span><strong>{row.performanceScore}</strong></div>
+                              <div className="reports-funnel-track"><i style={{ width: `${Math.max(4, Math.round((row.performanceScore / maxRecruiterScore) * 100))}%` }} /></div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      <p className="muted reports-formula-note">
+                        Score = 20% CV submission rate + 30% interview ratio + 30% shortlist rate + 20% joining rate.
+                      </p>
+                    </article>
+                    <article className="reports-chart-card" style={{ minHeight: "100%" }}>
                       <h4>Recruiter-wise Sourced vs Shared</h4>
                       <p className="muted">CV submission ratio graph</p>
                       {!recruiterChartRows.length ? <div className="empty-state compact-empty">No chart data.</div> : (
@@ -23048,22 +23064,6 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                           ))}
                         </div>
                       )}
-                    </article>
-                    <article className="reports-chart-card" style={{ minHeight: "100%" }}>
-                      <h4>Recruiter Performance (Score)</h4>
-                      {!recruiterLeaderboardRanked.length ? <div className="empty-state compact-empty">No chart data.</div> : (
-                        <div className="reports-funnel-list">
-                          {recruiterLeaderboardRanked.map((row) => (
-                            <div key={`score-${row.label}`} className="reports-funnel-item">
-                              <div className="reports-funnel-item__head"><span>{row.label}</span><strong>{row.performanceScore}</strong></div>
-                              <div className="reports-funnel-track"><i style={{ width: `${Math.max(4, Math.round((row.performanceScore / maxRecruiterScore) * 100))}%` }} /></div>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                      <p className="muted reports-formula-note">
-                        Score = 20% CV submission rate + 30% interview ratio + 30% shortlist rate + 20% joining rate.
-                      </p>
                     </article>
                     <article className="reports-chart-card" style={{ minHeight: "100%" }}>
                       <h4>Recruiter Pipeline Funnel (Shared to Interview)</h4>
