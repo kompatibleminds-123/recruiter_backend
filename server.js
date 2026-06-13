@@ -7335,6 +7335,11 @@ function createDashboardFunnelBucket() {
   };
 }
 
+function isDashboardAppliedOnlySource(source = "") {
+  const value = String(source || "").trim().toLowerCase();
+  return ["hosted_apply", "website_apply", "hosted", "website", "google_sheet", "google sheet"].includes(value);
+}
+
 function finalizeDashboardFunnelBucket(bucket = {}) {
   const totalCandidates = Number(bucket.totalCandidates || 0);
   const sharedProfiles = Number(bucket.sharedProfiles || 0);
@@ -7396,8 +7401,7 @@ function buildDashboardFunnelPayload({
   dateFrom = "",
   dateTo = "",
   clientFilter = "",
-  recruiterFilter = "",
-  overrideTotalCandidates = null
+  recruiterFilter = ""
 } = {}) {
   const actorIsAdmin = String(user?.role || "").trim().toLowerCase() === "admin";
   const actorName = String(user?.name || "").trim();
@@ -7415,21 +7419,13 @@ function buildDashboardFunnelPayload({
     if (!dateFrom && !dateTo) return true;
     return isDateWithinRange(value, dateFrom, dateTo);
   };
-  const candidateScopeRows = (Array.isArray(candidates) ? candidates : [])
-    .filter((row) => isDashboardRowInActorScope(row, user, "candidate"))
-    .filter((row) => {
-      const source = String(row?.source || "").trim().toLowerCase();
-      return !["hosted_apply", "website_apply", "hosted", "website"].includes(source);
-    })
-    .filter((row) => visibleDateCheck(row?.created_at || row?.createdAt || ""));
-  const assessmentScopeRows = (Array.isArray(assessments) ? assessments : [])
-    .filter((row) => isDashboardRowInActorScope(row, user, "assessment"))
-    .filter((row) => visibleDateCheck(row?.created_at || row?.createdAt || row?.updated_at || row?.updatedAt || ""));
-  for (const row of candidateScopeRows) {
+  const allCandidateRows = Array.isArray(candidates) ? candidates : [];
+  const allAssessmentRows = Array.isArray(assessments) ? assessments : [];
+  for (const row of allCandidateRows) {
     const id = String(row?.id || "").trim();
     if (id) candidateById.set(id, row);
   }
-  for (const row of assessmentScopeRows) {
+  for (const row of allAssessmentRows) {
     const id = String(row?.id || "").trim();
     if (id) assessmentById.set(id, row);
   }
@@ -7476,16 +7472,53 @@ function buildDashboardFunnelPayload({
     return byRecruiterPosition.get(key);
   };
 
-  const addCandidateRow = (candidate) => {
-    const assessment = (() => {
+  const candidateScopeRows = allCandidateRows
+    .filter((row) => isDashboardRowInActorScope(row, user, "candidate"))
+    .filter((row) => !isDashboardAppliedOnlySource(row?.source))
+    .map((candidate) => {
       const assessmentId = String(candidate?.assessment_id || candidate?.assessmentId || "").trim();
-      return assessmentId ? (assessmentById.get(assessmentId) || null) : null;
-    })();
-    const clientLabel = normalizeDashboardScopeLabel(getClientLabel(candidate, assessment) || "Unassigned") || "Unassigned";
-    const recruiterLabel = normalizeDashboardScopeLabel(getOwnerRecruiterLabel(candidate, assessment) || "Unassigned") || "Unassigned";
-    const positionLabel = getDashboardPositionLabel(candidate, assessment);
-    if (clientFilter && clientLabel !== clientFilter) return;
-    if (recruiterFilter && recruiterLabel !== recruiterFilter) return;
+      const assessment = assessmentId ? (assessmentById.get(assessmentId) || null) : null;
+      const scope = getDashboardDrilldownScope(candidate || {}, assessment || {});
+      return {
+        candidate,
+        assessment,
+        scope,
+        createdAt: String(candidate?.created_at || candidate?.createdAt || "").trim()
+      };
+    })
+    .filter((entry) => visibleDateCheck(entry.createdAt))
+    .filter((entry) => (!clientFilter || entry.scope.clientLabel === clientFilter) && (!recruiterFilter || entry.scope.recruiterLabel === recruiterFilter));
+
+  const assessmentScopeRows = allAssessmentRows
+    .filter((row) => isDashboardRowInActorScope(row, user, "assessment"))
+    .map((assessment) => {
+      const candidateId = String(
+        assessment?.candidate_id
+        || assessment?.candidateId
+        || assessment?.payload?.candidateId
+        || assessment?.payload?.candidate_id
+        || ""
+      ).trim();
+      const candidate = candidateId ? (candidateById.get(candidateId) || null) : null;
+      const scope = getDashboardDrilldownScope(candidate || {}, assessment || {});
+      const rank = getAssessmentHistoricalRank(assessment, eventsByAssessmentId);
+      const convertedAt = String(getCandidateConvertedAt(candidate || {}, assessment || {}) || assessment?.created_at || assessment?.createdAt || "").trim();
+      return {
+        assessment,
+        candidate,
+        scope,
+        rank,
+        convertedAt
+      };
+    })
+    .filter((entry) => visibleDateCheck(entry.convertedAt))
+    .filter((entry) => (!clientFilter || entry.scope.clientLabel === clientFilter) && (!recruiterFilter || entry.scope.recruiterLabel === recruiterFilter));
+
+  const addCandidateRow = (entry = {}) => {
+    const { scope = {} } = entry || {};
+    const clientLabel = String(scope.clientLabel || "Unassigned").trim() || "Unassigned";
+    const recruiterLabel = String(scope.recruiterLabel || "Unassigned").trim() || "Unassigned";
+    const positionLabel = String(scope.positionLabel || "Unassigned").trim() || "Unassigned";
     overall.totalCandidates += 1;
     getBucket(byClient, clientLabel).totalCandidates += 1;
     getBucket(byRecruiter, recruiterLabel).totalCandidates += 1;
@@ -7495,7 +7528,11 @@ function buildDashboardFunnelPayload({
     availableRecruiters.add(recruiterLabel);
   };
 
-  const addAssessmentRow = (assessment) => {
+  const addAssessmentRow = (entry = {}) => {
+    const { assessment = {}, scope = {}, rank = 1 } = entry || {};
+    const clientLabel = String(scope.clientLabel || "Unassigned").trim() || "Unassigned";
+    const recruiterLabel = String(scope.recruiterLabel || "Unassigned").trim() || "Unassigned";
+    const positionLabel = String(scope.positionLabel || "Unassigned").trim() || "Unassigned";
     const candidateId = String(
       assessment?.candidate_id
       || assessment?.candidateId
@@ -7503,13 +7540,6 @@ function buildDashboardFunnelPayload({
       || assessment?.payload?.candidate_id
       || ""
     ).trim();
-    const candidate = candidateId ? (candidateById.get(candidateId) || null) : null;
-    const clientLabel = normalizeDashboardScopeLabel(getClientLabel(candidate || {}, assessment || {}) || "Unassigned") || "Unassigned";
-    const recruiterLabel = normalizeDashboardScopeLabel(getOwnerRecruiterLabel(candidate || {}, assessment || {}) || "Unassigned") || "Unassigned";
-    const positionLabel = getDashboardPositionLabel(candidate || {}, assessment || {});
-    if (clientFilter && clientLabel !== clientFilter) return;
-    if (recruiterFilter && recruiterLabel !== recruiterFilter) return;
-    const rank = getAssessmentHistoricalRank(assessment, eventsByAssessmentId);
     overall.sharedProfiles += 1;
     if (rank >= 2) overall.interviews += 1;
     if (rank >= 3) overall.shortlisted += 1;
@@ -7545,10 +7575,6 @@ function buildDashboardFunnelPayload({
 
   candidateScopeRows.forEach(addCandidateRow);
   assessmentScopeRows.forEach(addAssessmentRow);
-
-  if (Number.isFinite(Number(overrideTotalCandidates)) && !dateFrom && !dateTo && !clientFilter && !recruiterFilter) {
-    overall.totalCandidates = Number(overrideTotalCandidates || 0);
-  }
 
   const recruiterCounts = actorIsAdmin
     ? (Array.isArray(users) ? users.length : 0)
@@ -17038,7 +17064,7 @@ const server = http.createServer(async (req, res) => {
       const dateTo = String(requestUrl.searchParams.get("dateTo") || "").trim();
       const clientFilter = String(requestUrl.searchParams.get("clientLabel") || "").trim();
       const recruiterFilter = String(requestUrl.searchParams.get("recruiterLabel") || "").trim();
-      const [candidates, assessments, assessmentEvents, users, capturedStats] = await Promise.all([
+      const [candidates, assessments, assessmentEvents, users] = await Promise.all([
         supabaseTableFetchAll(
           "candidates",
           `?${[
@@ -17070,10 +17096,7 @@ const server = http.createServer(async (req, res) => {
             "limit=10000"
           ].join("&")}`,
           { method: "GET" }
-        ).catch(() => []),
-        (!dateFrom && !dateTo && !clientFilter && !recruiterFilter)
-          ? getCapturedStatsForUser(user, {}).catch(() => null)
-          : Promise.resolve(null)
+        ).catch(() => [])
       ]);
       const funnel = buildDashboardFunnelPayload({
         user,
@@ -17084,10 +17107,7 @@ const server = http.createServer(async (req, res) => {
         dateFrom,
         dateTo,
         clientFilter,
-        recruiterFilter,
-        overrideTotalCandidates: Number.isFinite(Number(capturedStats?.total))
-          ? Number(capturedStats.total || 0)
-          : null
+        recruiterFilter
       });
       sendJson(res, 200, {
         ok: true,
@@ -18800,6 +18820,17 @@ const server = http.createServer(async (req, res) => {
           { pageSize: 1000, maxPages: 50 }
         ).catch(() => [])
       ]);
+      const funnelContext = buildDashboardFunnelPayload({
+        user,
+        candidates: Array.isArray(candidates) ? candidates : [],
+        assessments: Array.isArray(assessments) ? assessments : [],
+        events: Array.isArray(assessmentEvents) ? assessmentEvents : [],
+        users: [],
+        dateFrom,
+        dateTo,
+        clientFilter,
+        recruiterFilter
+      });
       const assessmentById = new Map(
         (Array.isArray(assessments) ? assessments : []).map((row) => [String(row?.id || "").trim(), row]).filter(([id]) => Boolean(id))
       );
@@ -18814,23 +18845,8 @@ const server = http.createServer(async (req, res) => {
         list.push(event);
         eventsByAssessmentId.set(assessmentId, list);
       }
-      const visibleDateCheck = (value) => {
-        if (!dateFrom && !dateTo) return true;
-        return isDateWithinRange(value, dateFrom, dateTo);
-      };
-      const candidateScopeRows = (Array.isArray(candidates) ? candidates : [])
-        .filter((row) => isDashboardRowInActorScope(row, user, "candidate"))
-        .filter((row) => {
-          const source = String(row?.source || "").trim().toLowerCase();
-          return !["hosted_apply", "website_apply", "hosted", "website"].includes(source);
-        })
-        .filter((row) => visibleDateCheck(row?.created_at || row?.createdAt || ""));
-      const assessmentScopeRows = (Array.isArray(assessments) ? assessments : [])
-        .filter((row) => isDashboardRowInActorScope(row, user, "assessment"))
-        .filter((row) => visibleDateCheck(row?.created_at || row?.createdAt || row?.updated_at || row?.updatedAt || ""));
 
-      const matchesScope = (candidate = {}, assessment = {}) => {
-        const scope = getDashboardDrilldownScope(candidate, assessment);
+      const matchesScope = (scope = {}) => {
         if (clientFilter && scope.clientLabel !== clientFilter) return false;
         if (recruiterFilter && scope.recruiterLabel !== recruiterFilter) return false;
         if (!groupType || groupType === "all") return true;
@@ -18850,39 +18866,29 @@ const server = http.createServer(async (req, res) => {
 
       let items = [];
       if (metric === "totalCandidates" || metric === "sourced" || metric === "all") {
-        items = candidateScopeRows
-          .filter((candidate) => {
-            const assessmentId = String(candidate?.assessment_id || candidate?.assessmentId || "").trim();
-            const linkedAssessment = assessmentId ? (assessmentById.get(assessmentId) || null) : null;
-            return matchesScope(candidate, linkedAssessment || {});
-          })
+        items = (Array.isArray(candidates) ? candidates : [])
+          .filter((candidate) => isDashboardRowInActorScope(candidate, user, "candidate"))
+          .filter((candidate) => !isDashboardAppliedOnlySource(candidate?.source))
           .map((candidate) => {
             const assessmentId = String(candidate?.assessment_id || candidate?.assessmentId || "").trim();
             const linkedAssessment = assessmentId ? (assessmentById.get(assessmentId) || null) : null;
-            return createDashboardDrilldownCandidateItem(candidate, linkedAssessment);
+            return {
+              candidate,
+              linkedAssessment,
+              scope: getDashboardDrilldownScope(candidate || {}, linkedAssessment || {})
+            };
+          })
+          .filter((entry) => {
+            const createdAt = String(entry?.candidate?.created_at || entry?.candidate?.createdAt || "").trim();
+            return isDateWithinRange(createdAt, dateFrom, dateTo);
+          })
+          .filter((entry) => matchesScope(entry.scope))
+          .map((entry) => {
+            return createDashboardDrilldownCandidateItem(entry.candidate, entry.linkedAssessment);
           });
       } else {
-        items = assessmentScopeRows
-          .filter((assessment) => {
-            const candidateId = String(
-              assessment?.candidate_id
-              || assessment?.candidateId
-              || assessment?.payload?.candidateId
-              || assessment?.payload?.candidate_id
-              || ""
-            ).trim();
-            const candidate = candidateId ? (candidateById.get(candidateId) || null) : null;
-            return matchesScope(candidate || {}, assessment);
-          })
-          .filter((assessment) => {
-            const rank = getAssessmentHistoricalRank(assessment, eventsByAssessmentId);
-            if (metric === "sharedProfiles" || metric === "converted") return true;
-            if (metric === "interviews" || metric === "under_interview_process") return rank >= 2;
-            if (metric === "shortlisted") return rank >= 3;
-            if (metric === "offered") return rank >= 4;
-            if (metric === "joined") return rank >= 5;
-            return false;
-          })
+        items = (Array.isArray(assessments) ? assessments : [])
+          .filter((assessment) => isDashboardRowInActorScope(assessment, user, "assessment"))
           .map((assessment) => {
             const candidateId = String(
               assessment?.candidate_id
@@ -18894,7 +18900,23 @@ const server = http.createServer(async (req, res) => {
             const candidate = candidateId ? (candidateById.get(candidateId) || null) : null;
             const historicalRank = getAssessmentHistoricalRank(assessment, eventsByAssessmentId);
             const exactInterviewContext = getAssessmentExactInterviewContext(assessment, eventsByAssessmentId);
-            return createDashboardDrilldownAssessmentItem(assessment, candidate, exactInterviewContext, historicalRank);
+            const scope = getDashboardDrilldownScope(candidate || {}, assessment || {});
+            const convertedAt = String(getCandidateConvertedAt(candidate || {}, assessment || {}) || assessment?.created_at || assessment?.createdAt || "").trim();
+            return { assessment, candidate, historicalRank, exactInterviewContext, scope, convertedAt };
+          })
+          .filter((entry) => isDateWithinRange(entry.convertedAt, dateFrom, dateTo))
+          .filter((entry) => matchesScope(entry.scope))
+          .filter((entry) => {
+            const rank = entry.historicalRank;
+            if (metric === "sharedProfiles" || metric === "converted") return true;
+            if (metric === "interviews" || metric === "under_interview_process") return rank >= 2;
+            if (metric === "shortlisted") return rank >= 3;
+            if (metric === "offered") return rank >= 4;
+            if (metric === "joined") return rank >= 5;
+            return false;
+          })
+          .map((entry) => {
+            return createDashboardDrilldownAssessmentItem(entry.assessment, entry.candidate, entry.exactInterviewContext, entry.historicalRank);
           });
       }
       sendJson(res, 200, {
