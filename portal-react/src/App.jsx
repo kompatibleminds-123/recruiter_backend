@@ -6219,6 +6219,37 @@ function CvOpenActions({ onOpenOriginal, onOpenBranded, summaryLabel = "Open CV"
   );
 }
 
+function getDrilldownAssessmentContext(item) {
+  const assessment = item?.raw?.assessment || item?.assessment || item || null;
+  const currentStatus = normalizeAssessmentStatusLabel(
+    assessment?.candidateStatus
+    || assessment?.candidate_status
+    || assessment?.status
+    || item?.candidateStatus
+    || item?.status
+    || ""
+  );
+  const statusHistory = Array.isArray(assessment?.statusHistory) ? assessment.statusHistory : [];
+  const distinctHistory = statusHistory
+    .map((entry) => normalizeAssessmentStatusLabel(entry?.status || ""))
+    .filter(Boolean);
+  let previousStatus = "";
+  for (let index = distinctHistory.length - 1; index >= 0; index -= 1) {
+    const value = distinctHistory[index];
+    if (String(value).toLowerCase() !== String(currentStatus || "").toLowerCase()) {
+      previousStatus = value;
+      break;
+    }
+  }
+  const interviewStatus = inferInterviewRoundFromStatus(previousStatus || currentStatus || "")
+    || inferInterviewRoundFromStatus(currentStatus || "");
+  return {
+    currentStatus,
+    interviewStatus,
+    previousStatus
+  };
+}
+
 function DrilldownModal({ open, title, items, onClose, onOpenCvOriginal, onOpenCvBranded, onOpenDraft, onOpenAssessment, onOpenNotes, onOpenStatus, onAddFeedback, extraActions = null, inline = false, hideRoleClient = false, loading = false }) {
   if (!open) return null;
   const containerClass = inline ? "inline-drilldown" : "overlay";
@@ -6249,6 +6280,7 @@ function DrilldownModal({ open, title, items, onClose, onOpenCvOriginal, onOpenC
                 const profileTarget = assessmentForAction || item;
                 const candidateIdForAction = String(item.raw?.candidate?.id || (!assessmentForAction ? item.id : "") || "").trim();
                 const profileOnlyMode = Boolean(onAddFeedback && !onOpenDraft && !onOpenNotes && !onOpenStatus);
+                const assessmentContext = getDrilldownAssessmentContext(item);
                 return (
               <div className="item-card__top">
                 <div>
@@ -6259,7 +6291,12 @@ function DrilldownModal({ open, title, items, onClose, onOpenCvOriginal, onOpenC
                     item.ownerRecruiter ? `Recruiter: ${item.ownerRecruiter}` : "",
                     item.source ? `Source: ${item.source}` : ""
                   ].filter(Boolean).join(" | ")}</p>
-                  <div className="candidate-snippet">{[item.candidateStatus ? `Assessment status: ${item.candidateStatus}` : "", item.followUpAt ? `Follow-up: ${new Date(item.followUpAt).toLocaleString()}` : "", item.interviewAt ? `Interview: ${new Date(item.interviewAt).toLocaleString()}` : ""].filter(Boolean).join("\n")}</div>
+                  <div className="candidate-snippet">{[
+                    assessmentContext.currentStatus ? `Assessment status: ${assessmentContext.currentStatus}` : "",
+                    assessmentContext.interviewStatus ? `Interview status: ${assessmentContext.interviewStatus}` : "",
+                    assessmentContext.previousStatus ? `Previous assessment status: ${assessmentContext.previousStatus}` : "",
+                    item.interviewAt ? `Interview: ${new Date(item.interviewAt).toLocaleString()}` : ""
+                  ].filter(Boolean).join("\n")}</div>
                   {feedbackMeta.feedback ? (
                     <div className="feedback-preview">
                       <div className="feedback-preview__label">Client feedback</div>
@@ -8465,6 +8502,7 @@ function PortalApp({ token, onLogout }) {
   const safeAssessmentApiPageSize = [10, 25, 50].includes(Number(assessmentPageSize)) ? Number(assessmentPageSize) : 25;
   const safeAssessmentApiPage = Math.max(1, Number(assessmentPage || 1));
   const [agendaBusyIds, setAgendaBusyIds] = useState({});
+  const [agendaOpeningAssessmentIds, setAgendaOpeningAssessmentIds] = useState({});
   const [reportsTab, setReportsTab] = useState("client");
   const [reportsFilters, setReportsFilters] = useState({
     dateFrom: "",
@@ -21629,6 +21667,21 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
     await loadDashboardAgenda(agendaRange);
   }
 
+  function openAgendaAssessmentStatus(item) {
+    const assessmentId = String(item?.assessmentId || item?.raw?.id || item?.id || "").trim();
+    if (!assessmentId) return;
+    setAgendaOpeningAssessmentIds((current) => ({ ...current, [assessmentId]: true }));
+    setAssessmentStatusItemSnapshot(item?.raw || item || null);
+    setAssessmentStatusId(assessmentId);
+    setTimeout(() => {
+      setAgendaOpeningAssessmentIds((current) => {
+        const next = { ...current };
+        delete next[assessmentId];
+        return next;
+      });
+    }, 500);
+  }
+
   function reuseAssessmentAsNew(assessment) {
     setInterviewLatestLoading(false);
     setInterviewMeta({ candidateId: "", assessmentId: "" });
@@ -22433,7 +22486,12 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                               <span className="agenda-item__time">{(item.when || item.at) ? new Date(item.when || item.at).toLocaleString() : "-"}</span>
                             </div>
                             <div className="button-row tight">
-                              <button onClick={() => void setAssessmentStatusId(String(item.assessmentId || item.raw?.id || item.id || ""))}>Update</button>
+                              <button
+                                disabled={Boolean(agendaOpeningAssessmentIds[String(item.assessmentId || item.raw?.id || item.id || "")])}
+                                onClick={() => void openAgendaAssessmentStatus(item)}
+                              >
+                                {agendaOpeningAssessmentIds[String(item.assessmentId || item.raw?.id || item.id || "")] ? "Opening..." : "Update"}
+                              </button>
                               <button
                                 className="ghost-btn"
                                 disabled={Boolean(agendaBusyIds[String(item.raw?.id || item.assessmentId || item.id || "")])}
@@ -22462,7 +22520,12 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                               <span className="agenda-item__time">{`Upcoming joining | ${new Date(item.at || item.followUpAt || item.interviewAt).toLocaleString()} | ${item.status || item.candidateStatus || "Offered"}`}</span>
                             </div>
                             <div className="button-row tight">
-                              <button onClick={() => openSavedAssessment(item)}>Update</button>
+                              <button
+                                disabled={Boolean(agendaOpeningAssessmentIds[String(item.id || "")])}
+                                onClick={() => void openAgendaAssessmentStatus(item)}
+                              >
+                                {agendaOpeningAssessmentIds[String(item.id || "")] ? "Opening..." : "Update"}
+                              </button>
                               <button className="ghost-btn" onClick={() => void completeAgendaJoining(item)}>Mark complete</button>
                             </div>
                           </article>
@@ -22501,7 +22564,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                       key={item.key}
                       type="button"
                       className="reports-kpi-card"
-                      onClick={() => void openDashboardDrilldown({ title: item.label, metric: item.drillMetric, groupType: reportsTab === "recruiter" ? "recruiter" : "client" })}
+                      onClick={() => void openDashboardDrilldown({ title: item.label, metric: item.drillMetric, groupType: "all" })}
                       style={{ textAlign: "left", cursor: "pointer" }}
                     >
                       <div className="reports-kpi-card__top">
@@ -22574,10 +22637,10 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                       <h4>Client-wise Sourced vs Shared</h4>
                       <p className="muted">CV submission ratio graph</p>
                       {!clientChartRows.length ? <div className="empty-state compact-empty">No chart data.</div> : (
-                        <div className="reports-bar-list">
+                        <div className="reports-funnel-list">
                           {clientChartRows.map((row) => (
-                            <div key={`client-bars-${row.label}`} className="reports-bar-row">
-                              <span className="reports-bar-label">{row.label}</span>
+                            <div key={`client-bars-${row.label}`} className="reports-funnel-item">
+                              <div className="reports-funnel-item__head"><span>{row.label}</span><strong>{row.shared}</strong></div>
                               <div className="reports-stacked-track">
                                 <i
                                   className="reports-stacked-track__base"
@@ -22659,7 +22722,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                             </div>
                           </div>
                         </summary>
-                        <div className="metric-grid metric-grid--tight">
+                        <div className="metric-grid metric-grid--tight" style={{ marginTop: 12 }}>
                           {DASHBOARD_METRIC_TILES.map(([key, label]) => (
                             <button key={key} className="metric-card metric-card--button compact-metric" onClick={() => void openDashboardDrilldown({ title: `${group.label} | ${label}`, metric: key, groupType: "client", params: { clientLabel: group.label } })}>
                               <div className="metric-label">{label}</div>
