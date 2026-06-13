@@ -7067,7 +7067,16 @@ function buildDatabaseQuickChipSummary({ candidates = [], assessments = [], jobs
       || item?.sharedAt
       || ""
     ).trim();
-    const noticeDays = parseNoticePeriodToDays(item?.noticePeriod || item?.notice_period || "");
+    const noticeText = String(
+      assessment?.noticePeriod
+      || assessment?.notice_period
+      || item?.noticePeriod
+      || item?.notice_period
+      || candidate?.notice_period
+      || candidate?.noticePeriod
+      || ""
+    ).trim();
+    const noticeDays = parseNoticePeriodToDays(noticeText);
     const sourceValue = String(candidate?.source || item?.source || "").trim().toLowerCase();
     const capturedIsActive = candidate ? (candidate?.hidden_from_captured !== true && candidate?.hiddenFromCaptured !== true) : true;
 
@@ -7248,7 +7257,16 @@ function buildDatabaseQuickChipRows({ universe = [], assessmentEvents = [], date
       || assessment?.created_at
       || ""
     ).trim();
-    const noticeDays = parseNoticePeriodToDays(item?.noticePeriod || item?.notice_period || "");
+    const noticeText = String(
+      assessment?.noticePeriod
+      || assessment?.notice_period
+      || item?.noticePeriod
+      || item?.notice_period
+      || candidate?.notice_period
+      || candidate?.noticePeriod
+      || ""
+    ).trim();
+    const noticeDays = parseNoticePeriodToDays(noticeText);
     const baseRow = {
       item,
       candidateName: resolveCandidateDisplayName(candidate || item, assessment),
@@ -21072,6 +21090,7 @@ const server = http.createServer(async (req, res) => {
 server.listen(PORT, () => {
   console.log(`Recruiter backend listening on http://localhost:${PORT}`);
 });
+
 
 
 
