@@ -13418,7 +13418,7 @@ function PortalApp({ token, onLogout }) {
   const databaseServerQueryMode = !candidateHasSmartChipSelection && !databaseAllMode;
   const pagedCandidates = useMemo(() => {
     if (databaseAllMode) {
-      return candidateUniverse;
+      return Array.isArray(databaseListItems) ? databaseListItems : [];
     }
     if (databaseServerQueryMode) {
       return Array.isArray(databaseQueryItems) ? databaseQueryItems : [];
@@ -13426,7 +13426,7 @@ function PortalApp({ token, onLogout }) {
     const safePageSize = Math.max(10, Number(candidatePageSize || 10));
     const start = (candidatePage - 1) * safePageSize;
     return candidateUniverse.slice(start, start + safePageSize);
-  }, [databaseAllMode, databaseServerQueryMode, candidateUniverse, databaseQueryItems, candidatePage, candidatePageSize]);
+  }, [databaseAllMode, databaseServerQueryMode, databaseListItems, candidateUniverse, databaseQueryItems, candidatePage, candidatePageSize]);
   const totalCandidatePages = databaseAllMode
     ? Math.max(1, Number(databaseListMeta?.totalPages || 1))
     : databaseServerQueryMode
@@ -14020,11 +14020,14 @@ function PortalApp({ token, onLogout }) {
     }
   }, [candidateUniverse, candidateSmartDateFrom, candidateSmartDateTo, state.assessments, state.candidates, state.assessmentEvents, candidateSmartChipCacheKey, candidateSmartChipDataReady]);
   const candidateHasSmartChipSelection = candidateAiQueryMode === "natural" && candidateQuickChipIds.length > 0;
-  const candidateSmartChipRowsEffective = useMemo(() => (
-    candidateSmartChipRowsRemote && typeof candidateSmartChipRowsRemote === "object"
+  const candidateSmartChipRowsEffective = useMemo(() => {
+    const remoteRows = candidateSmartChipRowsRemote && typeof candidateSmartChipRowsRemote === "object"
       ? candidateSmartChipRowsRemote
-      : candidateSmartChipRows
-  ), [candidateSmartChipRowsRemote, candidateSmartChipRows]);
+      : null;
+    if (remoteRows && !isEmptySmartChipSnapshot(remoteRows)) return remoteRows;
+    if (!isEmptySmartChipSnapshot(candidateSmartChipRows)) return candidateSmartChipRows;
+    return candidateSmartChipRowsStableRef.current || candidateSmartChipRows;
+  }, [candidateSmartChipRowsRemote, candidateSmartChipRows]);
 
   useEffect(() => {
     if (!token) return;
