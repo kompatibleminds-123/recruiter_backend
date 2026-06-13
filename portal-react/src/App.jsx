@@ -8813,6 +8813,9 @@ function PortalApp({ token, onLogout }) {
   const [databaseListItems, setDatabaseListItems] = useState([]);
   const [databaseListMeta, setDatabaseListMeta] = useState({ total: 0, page: 1, limit: 10, totalPages: 1 });
   const [databaseListLoading, setDatabaseListLoading] = useState(false);
+  const [databaseQueryItems, setDatabaseQueryItems] = useState([]);
+  const [databaseQueryMeta, setDatabaseQueryMeta] = useState({ total: 0, page: 1, limit: 10, totalPages: 1 });
+  const [databaseQueryLoading, setDatabaseQueryLoading] = useState(false);
   const [candidateStructuredFilters, setCandidateStructuredFilters] = useState(EMPTY_CANDIDATE_STRUCTURED_FILTERS); // applied
   const [candidateStructuredFiltersDraft, setCandidateStructuredFiltersDraft] = useState(EMPTY_CANDIDATE_STRUCTURED_FILTERS); // editable
   const [candidateSearchBusy, setCandidateSearchBusy] = useState(false);
@@ -13412,17 +13415,23 @@ function PortalApp({ token, onLogout }) {
   const databaseAllMode = candidateSearchMode === "all"
     && !(candidateAiQueryMode === "natural" && candidateQuickChipIds.length > 0)
     && !candidateStructuredFiltersActive;
+  const databaseServerQueryMode = !candidateHasSmartChipSelection && !databaseAllMode;
   const pagedCandidates = useMemo(() => {
     if (databaseAllMode) {
       return candidateUniverse;
     }
+    if (databaseServerQueryMode) {
+      return Array.isArray(databaseQueryItems) ? databaseQueryItems : [];
+    }
     const safePageSize = Math.max(10, Number(candidatePageSize || 10));
     const start = (candidatePage - 1) * safePageSize;
     return candidateUniverse.slice(start, start + safePageSize);
-  }, [databaseAllMode, candidateUniverse, candidatePage, candidatePageSize]);
+  }, [databaseAllMode, databaseServerQueryMode, candidateUniverse, databaseQueryItems, candidatePage, candidatePageSize]);
   const totalCandidatePages = databaseAllMode
     ? Math.max(1, Number(databaseListMeta?.totalPages || 1))
-    : Math.max(1, Math.ceil((candidateUniverse.length || 0) / Math.max(10, Number(candidatePageSize || 10))));
+    : databaseServerQueryMode
+      ? Math.max(1, Number(databaseQueryMeta?.totalPages || 1))
+      : Math.max(1, Math.ceil((candidateUniverse.length || 0) / Math.max(10, Number(candidatePageSize || 10))));
   useEffect(() => {
     setCandidatePage((current) => Math.min(Math.max(1, current), totalCandidatePages));
   }, [totalCandidatePages]);
@@ -14029,10 +14038,52 @@ function PortalApp({ token, onLogout }) {
   useEffect(() => {
     if (!token) return;
     if (String(location?.pathname || "").trim() !== "/candidates") return;
-    if (!candidateStructuredFiltersActive) return;
-    if (databaseCandidatesHydratedRef.current) return;
-    void reloadCandidatesSlice({ includeDatabase: true, limit: 5000, page: 1 });
-  }, [token, location?.pathname, candidateStructuredFiltersActive]);
+    if (!databaseServerQueryMode) {
+      setDatabaseQueryLoading(false);
+      setDatabaseQueryItems([]);
+      setDatabaseQueryMeta({ total: 0, page: 1, limit: Math.max(10, Number(candidatePageSize || 10)), totalPages: 1 });
+      return;
+    }
+    let cancelled = false;
+    setDatabaseQueryLoading(true);
+    const searchIds = Array.isArray(candidateSearchResults)
+      ? candidateSearchResults.flatMap((item) => [
+          item?.id,
+          item?.candidate_id,
+          item?.candidateId,
+          item?.assessment_id,
+          item?.assessmentId
+        ]).map((value) => String(value || "").trim()).filter(Boolean)
+      : [];
+    api("/company/database/query", token, "POST", {
+      filters: candidateStructuredFilters,
+      searchMode: candidateSearchMode,
+      searchIds,
+      page: candidatePage,
+      limit: candidatePageSize
+    }).then((result) => {
+      if (cancelled) return;
+      const items = Array.isArray(result?.items) ? result.items : [];
+      setDatabaseQueryItems(items);
+      setDatabaseQueryMeta({
+        total: Number(result?.total || 0),
+        page: Number(result?.page || candidatePage || 1),
+        limit: Number(result?.limit || candidatePageSize || 10),
+        totalPages: Math.max(1, Number(result?.totalPages || 1))
+      });
+    }).catch((error) => {
+      if (cancelled) return;
+      console.error("database query failed", error);
+      setDatabaseQueryItems([]);
+      setDatabaseQueryMeta({ total: 0, page: 1, limit: Math.max(10, Number(candidatePageSize || 10)), totalPages: 1 });
+    }).finally(() => {
+      if (cancelled) return;
+      setDatabaseQueryLoading(false);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [token, location?.pathname, databaseServerQueryMode, candidateStructuredFilters, candidateSearchMode, candidateSearchResults, candidatePage, candidatePageSize]);
 
   useEffect(() => {
     if (!token) return;
@@ -23767,14 +23818,14 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                 </div>
                 {!candidateHasSmartChipSelection ? (
                   <>
-                    {databaseAllMode ? (
+                    {databaseAllMode || databaseServerQueryMode ? (
                       <div className="button-row tight" style={{ justifyContent: "space-between", alignItems: "center", gap: 10, marginBottom: 10 }}>
                         <div className="muted">
-                          {Number(databaseListMeta?.total || 0)
-                            ? `Showing ${((candidatePage - 1) * Math.max(10, Number(candidatePageSize || 10))) + 1}-${Math.min(Number(databaseListMeta?.total || 0), ((candidatePage - 1) * Math.max(10, Number(candidatePageSize || 10))) + pagedCandidates.length)} of ${Number(databaseListMeta?.total || 0)}`
+                          {Number((databaseAllMode ? databaseListMeta?.total : databaseQueryMeta?.total) || 0)
+                            ? `Showing ${((candidatePage - 1) * Math.max(10, Number(candidatePageSize || 10))) + 1}-${Math.min(Number((databaseAllMode ? databaseListMeta?.total : databaseQueryMeta?.total) || 0), ((candidatePage - 1) * Math.max(10, Number(candidatePageSize || 10))) + pagedCandidates.length)} of ${Number((databaseAllMode ? databaseListMeta?.total : databaseQueryMeta?.total) || 0)}`
                             : "Showing 0 of 0"}
                         </div>
-                        {databaseListLoading ? <div className="muted">Loading database...</div> : null}
+                        {(databaseAllMode ? databaseListLoading : databaseQueryLoading) ? <div className="muted">Loading database...</div> : null}
                       </div>
                     ) : null}
                     <div className="stack-list">
@@ -23820,9 +23871,9 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                           ))}
                         </select>
                       </label>
-                      <button className="ghost-btn" disabled={candidatePage <= 1 || databaseListLoading} onClick={() => setCandidatePage((page) => Math.max(1, page - 1))}>Previous</button>
+                      <button className="ghost-btn" disabled={candidatePage <= 1 || (databaseAllMode ? databaseListLoading : databaseQueryLoading)} onClick={() => setCandidatePage((page) => Math.max(1, page - 1))}>Previous</button>
                       <div className="muted">Page {candidatePage} of {totalCandidatePages}</div>
-                      <button className="ghost-btn" disabled={candidatePage >= totalCandidatePages || databaseListLoading} onClick={() => setCandidatePage((page) => Math.min(totalCandidatePages, page + 1))}>Next</button>
+                      <button className="ghost-btn" disabled={candidatePage >= totalCandidatePages || (databaseAllMode ? databaseListLoading : databaseQueryLoading)} onClick={() => setCandidatePage((page) => Math.min(totalCandidatePages, page + 1))}>Next</button>
                     </div>
                   </>
                 ) : null}

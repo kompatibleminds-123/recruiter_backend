@@ -7438,6 +7438,95 @@ async function buildDatabaseQuickChipDataForUser({ user, filters = {}, searchMod
   };
 }
 
+function sortDatabaseUniverseForList(items = []) {
+  return (Array.isArray(items) ? items : []).slice().sort((a, b) => {
+    const aTime = parseDateLike(
+      a?.updatedAt
+      || a?.updated_at
+      || a?.sharedAt
+      || a?.createdAt
+      || a?.created_at
+      || a?.date
+      || ""
+    );
+    const bTime = parseDateLike(
+      b?.updatedAt
+      || b?.updated_at
+      || b?.sharedAt
+      || b?.createdAt
+      || b?.created_at
+      || b?.date
+      || ""
+    );
+    const diff = (Number.isFinite(bTime) ? bTime : 0) - (Number.isFinite(aTime) ? aTime : 0);
+    if (diff) return diff;
+    return String(b?.id || b?.assessmentId || "").localeCompare(String(a?.id || a?.assessmentId || ""));
+  });
+}
+
+async function listAllDatabaseCandidatesForUser(user, { pageSize = 200 } = {}) {
+  const safePageSize = Math.max(10, Math.min(500, Number(pageSize || 200)));
+  const firstPage = await listDatabaseCandidatesForUser(user, {
+    limit: safePageSize,
+    page: 1,
+    includeMeta: true
+  });
+  const firstItems = Array.isArray(firstPage?.items) ? firstPage.items : [];
+  const totalPages = Math.max(1, Number(firstPage?.totalPages || 1));
+  if (totalPages <= 1) return firstItems;
+  const remainingPages = [];
+  for (let page = 2; page <= totalPages; page += 1) remainingPages.push(page);
+  const remainingResults = await Promise.all(
+    remainingPages.map((page) => listDatabaseCandidatesForUser(user, {
+      limit: safePageSize,
+      page
+    }).catch(() => []))
+  );
+  return [
+    ...firstItems,
+    ...remainingResults.flatMap((result) => (Array.isArray(result) ? result : []))
+  ];
+}
+
+async function buildDatabaseQueryPageForUser({ user, filters = {}, searchMode = "", searchIds = [], page = 1, limit = 10 } = {}) {
+  const normalizedFilters = normalizeDatabaseQuickChipFilters(filters);
+  const safePage = Math.max(1, Number(page || 1));
+  const safeLimit = Math.max(1, Math.min(50, Number(limit || 10)));
+  const safeOffset = (safePage - 1) * safeLimit;
+  const normalizedSearchMode = String(searchMode || "all").trim().toLowerCase();
+  const searchSet = new Set((Array.isArray(searchIds) ? searchIds : []).map((value) => String(value || "").trim()).filter(Boolean));
+  if (normalizedSearchMode === "search" && !searchSet.size) {
+    return { items: [], total: 0, page: safePage, limit: safeLimit, totalPages: 1 };
+  }
+  const [candidates, assessments, jobs] = await Promise.all([
+    listAllDatabaseCandidatesForUser(user),
+    getAssessmentsUniverseForUser(user),
+    listCompanyJobs(user.companyId, user.id)
+  ]);
+  const universe = buildCandidateSearchUniverse(candidates, assessments, jobs).filter((item) => {
+    if (normalizedSearchMode === "search" && searchSet.size) {
+      const ids = [
+        item?.id,
+        item?.raw?.candidate?.id,
+        item?.raw?.assessment?.id,
+        item?.candidateId,
+        item?.assessmentId
+      ].map((value) => String(value || "").trim()).filter(Boolean);
+      if (!ids.some((id) => searchSet.has(id))) return false;
+    }
+    return databaseSmartChipRowMatchesFrontendFilters(item, normalizedFilters, user);
+  });
+  const sorted = sortDatabaseUniverseForList(universe);
+  const total = sorted.length;
+  return {
+    items: sorted.slice(safeOffset, safeOffset + safeLimit),
+    total,
+    page: safePage,
+    limit: safeLimit,
+    totalPages: Math.max(1, Math.ceil(total / Math.max(1, safeLimit)))
+  };
+}
+
 function getClientPortalLifecycleBucket(item) {
   const status = normalizeDashboardText(item?.candidateStatus || item?.candidate_status || item?.status || "");
   const combined = `${status}`.trim();
@@ -17871,6 +17960,31 @@ const server = http.createServer(async (req, res) => {
         ok: true,
         result: quickChipData
       });
+    } catch (error) {
+      sendJson(res, 400, { ok: false, error: String(error.message || error) });
+    }
+    return;
+  }
+
+  if (req.method === "POST" && requestUrl.pathname === "/company/database/query") {
+    try {
+      const user = await requireSessionUser(getBearerToken(req));
+      await requireSaasAccess(user, "database save and search");
+      const body = await readJsonBody(req);
+      const filters = body?.filters && typeof body.filters === "object" ? body.filters : {};
+      const searchMode = String(body?.searchMode || "all").trim().toLowerCase();
+      const searchIds = Array.isArray(body?.searchIds) ? body.searchIds : [];
+      const page = Math.max(1, Number(body?.page || 1));
+      const limit = Math.max(1, Math.min(50, Number(body?.limit || 10)));
+      const result = await buildDatabaseQueryPageForUser({
+        user,
+        filters,
+        searchMode,
+        searchIds,
+        page,
+        limit
+      });
+      sendJson(res, 200, { ok: true, result });
     } catch (error) {
       sendJson(res, 400, { ok: false, error: String(error.message || error) });
     }
