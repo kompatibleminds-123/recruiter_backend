@@ -22199,9 +22199,11 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
   const jdScreeningQuestions = parseQuestionList(jobDraft.standardQuestions);
   const interviewSelectedJob = (state.jobs || []).find((job) => String(job.title || "").trim() === String(interviewForm.jdTitle || "").trim()) || null;
   const interviewScreeningQuestions = parseQuestionList(interviewSelectedJob?.standardQuestions || "");
-  const dashboardSummary = (dashboardSummaryData && Object.keys(dashboardSummaryData).length
-    ? dashboardSummaryData
-    : (state.dashboard?.summary || {}));
+  const dashboardSummary = (state.dashboard?.summary && Object.keys(state.dashboard.summary).length
+    ? state.dashboard.summary
+    : (dashboardSummaryData && Object.keys(dashboardSummaryData).length
+      ? dashboardSummaryData
+      : {}));
   const dashboardOverall = dashboardSummary?.overall || {};
   const dashboardClientGroups = Array.isArray(dashboardSummary?.byClient) ? dashboardSummary.byClient : [];
   const dashboardRecruiterGroups = Array.isArray(dashboardSummary?.byRecruiter)
@@ -22217,6 +22219,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
     const conversionPct = Number(group?.overallConversionPct ?? group?.conversionPct ?? (totalCandidates > 0 ? Math.round((sharedProfiles / totalCandidates) * 100) : 0));
     return {
       ...group,
+      ownership: group?.ownership && typeof group.ownership === "object" ? group.ownership : {},
       label: String(group?.label || "Unassigned"),
       totalCandidates,
       sharedProfiles,
@@ -22495,10 +22498,10 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
     return undefined;
   }, [assessmentsLiveDataReady, liveDashboardAgendaSnapshot, liveDashboardAgendaSnapshotKey]);
 
-  const dashboardAgendaApiForDisplay = dashboardAgendaData && String(dashboardAgendaData?.range || dashboardAgendaData?.agendaRange || "") === String(agendaRange)
-    ? dashboardAgendaData
-    : (state.dashboard?.agenda && String(state.dashboard?.agenda?.range || state.dashboard?.agenda?.agendaRange || "") === String(agendaRange)
-      ? state.dashboard.agenda
+  const dashboardAgendaApiForDisplay = state.dashboard?.agenda && String(state.dashboard?.agenda?.range || state.dashboard?.agenda?.agendaRange || "") === String(agendaRange)
+    ? state.dashboard.agenda
+    : (dashboardAgendaData && String(dashboardAgendaData?.range || dashboardAgendaData?.agendaRange || "") === String(agendaRange)
+      ? dashboardAgendaData
       : null);
   const dashboardAgendaSnapshotForDisplay = dashboardAgendaApiForDisplay || (!assessmentsLiveDataReady && dashboardAgendaSnapshot && String(dashboardAgendaSnapshot.agendaRange || "") === String(agendaRange)
     ? dashboardAgendaSnapshot
