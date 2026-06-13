@@ -7187,6 +7187,24 @@ function normalizeDashboardScopeLabel(value = "") {
   return String(value || "").trim();
 }
 
+function getDashboardPositionLabel(candidate = {}, assessment = {}) {
+  const payload = assessment?.payload && typeof assessment.payload === "object" ? assessment.payload : {};
+  return String(
+    candidate?.assigned_jd_title
+    || candidate?.assignedJdTitle
+    || candidate?.jd_title
+    || candidate?.jdTitle
+    || assessment?.jdTitle
+    || assessment?.jd_title
+    || payload?.jdTitle
+    || payload?.jd_title
+    || candidate?.role
+    || assessment?.currentDesignation
+    || assessment?.current_designation
+    || ""
+  ).trim() || "Unassigned";
+}
+
 function getDashboardAgendaRangeBounds(range = "today") {
   const now = new Date();
   const todayStart = new Date(now);
@@ -7429,21 +7447,6 @@ function buildDashboardFunnelPayload({
     return map.get(key);
   };
 
-  const getPositionLabelForFunnel = (candidate = {}, assessment = {}) => {
-    const payload = assessment?.payload && typeof assessment.payload === "object" ? assessment.payload : {};
-    return String(
-      candidate?.assigned_jd_title
-      || candidate?.assignedJdTitle
-      || candidate?.jd_title
-      || candidate?.jdTitle
-      || assessment?.jdTitle
-      || assessment?.jd_title
-      || payload?.jdTitle
-      || payload?.jd_title
-      || ""
-    ).trim() || "Unassigned";
-  };
-
   const getClientPositionBucket = (clientLabel, positionLabel) => {
     const key = `${String(clientLabel || "").trim() || "Unassigned"}|||${String(positionLabel || "").trim() || "Unassigned"}`;
     if (!byClientPosition.has(key)) {
@@ -7480,7 +7483,7 @@ function buildDashboardFunnelPayload({
     })();
     const clientLabel = normalizeDashboardScopeLabel(getClientLabel(candidate, assessment) || "Unassigned") || "Unassigned";
     const recruiterLabel = normalizeDashboardScopeLabel(getOwnerRecruiterLabel(candidate, assessment) || "Unassigned") || "Unassigned";
-    const positionLabel = getPositionLabelForFunnel(candidate, assessment);
+    const positionLabel = getDashboardPositionLabel(candidate, assessment);
     if (clientFilter && clientLabel !== clientFilter) return;
     if (recruiterFilter && recruiterLabel !== recruiterFilter) return;
     overall.totalCandidates += 1;
@@ -7503,7 +7506,7 @@ function buildDashboardFunnelPayload({
     const candidate = candidateId ? (candidateById.get(candidateId) || null) : null;
     const clientLabel = normalizeDashboardScopeLabel(getClientLabel(candidate || {}, assessment || {}) || "Unassigned") || "Unassigned";
     const recruiterLabel = normalizeDashboardScopeLabel(getOwnerRecruiterLabel(candidate || {}, assessment || {}) || "Unassigned") || "Unassigned";
-    const positionLabel = getPositionLabelForFunnel(candidate || {}, assessment || {});
+    const positionLabel = getDashboardPositionLabel(candidate || {}, assessment || {});
     if (clientFilter && clientLabel !== clientFilter) return;
     if (recruiterFilter && recruiterLabel !== recruiterFilter) return;
     const rank = getAssessmentHistoricalRank(assessment, eventsByAssessmentId);
@@ -10390,6 +10393,71 @@ function itemMatchesDashboardGroup(item, groupType, params = {}) {
     );
   }
   return false;
+}
+
+function getDashboardDrilldownScope(candidate = {}, assessment = {}) {
+  return {
+    clientLabel: normalizeDashboardScopeLabel(getClientLabel(candidate || {}, assessment || {}) || "Unassigned") || "Unassigned",
+    recruiterLabel: normalizeDashboardScopeLabel(getOwnerRecruiterLabel(candidate || {}, assessment || {}) || "Unassigned") || "Unassigned",
+    positionLabel: getDashboardPositionLabel(candidate || {}, assessment || {})
+  };
+}
+
+function createDashboardDrilldownCandidateItem(candidate = {}, assessment = null) {
+  return {
+    id: String(candidate?.id || assessment?.id || "").trim(),
+    candidateId: String(candidate?.id || "").trim(),
+    assessmentId: String(assessment?.id || candidate?.assessment_id || candidate?.assessmentId || "").trim(),
+    name: String(candidate?.name || assessment?.candidateName || "Candidate").trim(),
+    candidateName: String(candidate?.name || assessment?.candidateName || "Candidate").trim(),
+    position: getDashboardPositionLabel(candidate || {}, assessment || {}),
+    role: String(candidate?.role || assessment?.currentDesignation || assessment?.current_designation || "").trim(),
+    company: String(candidate?.company || assessment?.currentCompany || assessment?.current_company || "").trim(),
+    currentCompany: String(candidate?.company || assessment?.currentCompany || assessment?.current_company || "").trim(),
+    clientName: normalizeDashboardScopeLabel(getClientLabel(candidate || {}, assessment || {}) || "Unassigned") || "Unassigned",
+    ownerRecruiter: normalizeDashboardScopeLabel(getOwnerRecruiterLabel(candidate || {}, assessment || {}) || "Unassigned") || "Unassigned",
+    candidateStatus: String(assessment?.candidateStatus || assessment?.candidate_status || assessment?.assessment_status || assessment?.status || "").trim(),
+    interviewAt: normalizeDateOutput(assessment?.interviewAt || assessment?.interview_at || deriveInterviewAtFromHistory(assessment || {}) || ""),
+    sharedAt: normalizeDateOutput(getCandidateConvertedAt(candidate || {}, assessment || {})),
+    createdAt: normalizeDateOutput(getCandidateCreatedAt(candidate || {})),
+    source: String(candidate?.source || "").trim(),
+    sourceType: assessment ? "captured_and_converted" : "captured_note",
+    raw: {
+      candidate,
+      assessment: assessment || null,
+      metadata: null
+    }
+  };
+}
+
+function createDashboardDrilldownAssessmentItem(assessment = {}, candidate = null, exactInterviewContext = { interviewStatus: "", previousStatus: "" }, historicalRank = 1) {
+  return {
+    id: String(assessment?.id || "").trim(),
+    assessmentId: String(assessment?.id || "").trim(),
+    candidateId: String(assessment?.candidate_id || assessment?.candidateId || candidate?.id || "").trim(),
+    name: String(assessment?.candidateName || candidate?.name || "Candidate").trim(),
+    candidateName: String(assessment?.candidateName || candidate?.name || "Candidate").trim(),
+    position: getDashboardPositionLabel(candidate || {}, assessment || {}),
+    role: String(assessment?.currentDesignation || assessment?.current_designation || candidate?.role || "").trim(),
+    company: String(assessment?.currentCompany || assessment?.current_company || candidate?.company || "").trim(),
+    currentCompany: String(assessment?.currentCompany || assessment?.current_company || candidate?.company || "").trim(),
+    clientName: normalizeDashboardScopeLabel(getClientLabel(candidate || {}, assessment || {}) || "Unassigned") || "Unassigned",
+    ownerRecruiter: normalizeDashboardScopeLabel(getOwnerRecruiterLabel(candidate || {}, assessment || {}) || "Unassigned") || "Unassigned",
+    candidateStatus: String(assessment?.candidateStatus || assessment?.candidate_status || assessment?.assessment_status || assessment?.status || "").trim(),
+    interviewAt: normalizeDateOutput(assessment?.interviewAt || assessment?.interview_at || deriveInterviewAtFromHistory(assessment || {}) || ""),
+    sharedAt: normalizeDateOutput(getCandidateConvertedAt(candidate || {}, assessment || {})),
+    createdAt: normalizeDateOutput(assessment?.created_at || assessment?.createdAt || ""),
+    source: "assessment_only",
+    sourceType: "assessment_only",
+    _dashboardInterviewStatus: exactInterviewContext?.interviewStatus || "",
+    _dashboardPreviousStatus: exactInterviewContext?.previousStatus || "",
+    _dashboardHistoricalRank: historicalRank,
+    raw: {
+      candidate: candidate || null,
+      assessment,
+      metadata: null
+    }
+  };
 }
 
 function itemMatchesClientPortalMetric(item, metric, dateFrom = "", dateTo = "") {
@@ -18708,10 +18776,9 @@ const server = http.createServer(async (req, res) => {
         recruiterLabel: String(requestUrl.searchParams.get("recruiterLabel") || "").trim(),
         positionLabel: String(requestUrl.searchParams.get("positionLabel") || "").trim()
       };
-      const [candidates, assessments, jobs, assessmentEvents] = await Promise.all([
+      const [candidates, assessments, assessmentEvents] = await Promise.all([
         listCandidatesForUser(user, { limit: 5000 }),
         listAssessments({ actorUserId: user.id, companyId: user.companyId }),
-        listCompanyJobs(user.companyId, user.id),
         supabaseTableFetchAll(
           "assessment_events",
           `?select=assessment_id,event_type,status,payload,created_at&company_id=eq.${encodeURIComponent(user.companyId)}`,
@@ -18721,6 +18788,9 @@ const server = http.createServer(async (req, res) => {
       const assessmentById = new Map(
         (Array.isArray(assessments) ? assessments : []).map((row) => [String(row?.id || "").trim(), row]).filter(([id]) => Boolean(id))
       );
+      const candidateById = new Map(
+        (Array.isArray(candidates) ? candidates : []).map((row) => [String(row?.id || "").trim(), row]).filter(([id]) => Boolean(id))
+      );
       const eventsByAssessmentId = new Map();
       for (const event of Array.isArray(assessmentEvents) ? assessmentEvents : []) {
         const assessmentId = String(event?.assessment_id || event?.assessmentId || "").trim();
@@ -18729,37 +18799,89 @@ const server = http.createServer(async (req, res) => {
         list.push(event);
         eventsByAssessmentId.set(assessmentId, list);
       }
-      const actorIsAdmin = String(user?.role || "").toLowerCase() === "admin";
-      const actorName = String(user?.name || "").trim();
-      const universe = buildCandidateSearchUniverse(candidates, assessments, jobs)
-        .map((item) => {
-          const linkedAssessment = (() => {
-            const direct = item?.raw?.assessment || item?.assessment || null;
-            if (direct && String(direct?.id || "").trim()) return direct;
-            const assessmentId = String(
-              item?.assessmentId
-              || item?.assessment_id
-              || item?.raw?.candidate?.assessment_id
-              || item?.raw?.candidate?.assessmentId
+      const visibleDateCheck = (value) => {
+        if (!dateFrom && !dateTo) return true;
+        return isDateWithinRange(value, dateFrom, dateTo);
+      };
+      const candidateScopeRows = (Array.isArray(candidates) ? candidates : [])
+        .filter((row) => isDashboardRowInActorScope(row, user, "candidate"))
+        .filter((row) => {
+          const source = String(row?.source || "").trim().toLowerCase();
+          return !["hosted_apply", "website_apply", "hosted", "website"].includes(source);
+        })
+        .filter((row) => visibleDateCheck(row?.created_at || row?.createdAt || ""));
+      const assessmentScopeRows = (Array.isArray(assessments) ? assessments : [])
+        .filter((row) => isDashboardRowInActorScope(row, user, "assessment"))
+        .filter((row) => visibleDateCheck(row?.created_at || row?.createdAt || row?.updated_at || row?.updatedAt || ""));
+
+      const matchesScope = (candidate = {}, assessment = {}) => {
+        const scope = getDashboardDrilldownScope(candidate, assessment);
+        if (clientFilter && scope.clientLabel !== clientFilter) return false;
+        if (recruiterFilter && scope.recruiterLabel !== recruiterFilter) return false;
+        if (!groupType || groupType === "all") return true;
+        if (groupType === "ownerRecruiter" || groupType === "recruiter") return scope.recruiterLabel === String(params.recruiterLabel || "").trim();
+        if (groupType === "client") return scope.clientLabel === String(params.clientLabel || "").trim();
+        if (groupType === "clientPosition" || groupType === "position") {
+          return scope.clientLabel === String(params.clientLabel || "").trim()
+            && scope.positionLabel === String(params.positionLabel || "").trim();
+        }
+        if (groupType === "clientPositionOwner" || groupType === "recruiter_position") {
+          return scope.clientLabel === String(params.clientLabel || "").trim()
+            && scope.positionLabel === String(params.positionLabel || "").trim()
+            && scope.recruiterLabel === String(params.recruiterLabel || "").trim();
+        }
+        return true;
+      };
+
+      let items = [];
+      if (metric === "totalCandidates" || metric === "sourced" || metric === "all") {
+        items = candidateScopeRows
+          .filter((candidate) => {
+            const assessmentId = String(candidate?.assessment_id || candidate?.assessmentId || "").trim();
+            const linkedAssessment = assessmentId ? (assessmentById.get(assessmentId) || null) : null;
+            return matchesScope(candidate, linkedAssessment || {});
+          })
+          .map((candidate) => {
+            const assessmentId = String(candidate?.assessment_id || candidate?.assessmentId || "").trim();
+            const linkedAssessment = assessmentId ? (assessmentById.get(assessmentId) || null) : null;
+            return createDashboardDrilldownCandidateItem(candidate, linkedAssessment);
+          });
+      } else {
+        items = assessmentScopeRows
+          .filter((assessment) => {
+            const candidateId = String(
+              assessment?.candidate_id
+              || assessment?.candidateId
+              || assessment?.payload?.candidateId
+              || assessment?.payload?.candidate_id
               || ""
             ).trim();
-            return assessmentId ? (assessmentById.get(assessmentId) || null) : null;
-          })();
-          const historicalRank = linkedAssessment ? getAssessmentHistoricalRank(linkedAssessment, eventsByAssessmentId) : 1;
-          const exactInterviewContext = linkedAssessment ? getAssessmentExactInterviewContext(linkedAssessment, eventsByAssessmentId) : { interviewStatus: "", previousStatus: "" };
-          if (!actorIsAdmin || !actorName) return { ...item, _dashboardHistoricalRank: historicalRank, _dashboardInterviewStatus: exactInterviewContext.interviewStatus, _dashboardPreviousStatus: exactInterviewContext.previousStatus };
-          const rawSource = String(item?.raw?.candidate?.source || item?.source || "").trim().toLowerCase();
-          const isApplicant = rawSource === "website" || rawSource === "website_apply" || rawSource === "hosted_apply";
-          if (!isApplicant) return { ...item, _dashboardHistoricalRank: historicalRank, _dashboardInterviewStatus: exactInterviewContext.interviewStatus, _dashboardPreviousStatus: exactInterviewContext.previousStatus };
-          if (String(item?.ownerRecruiter || "").trim() !== "Unassigned") return { ...item, _dashboardHistoricalRank: historicalRank, _dashboardInterviewStatus: exactInterviewContext.interviewStatus, _dashboardPreviousStatus: exactInterviewContext.previousStatus };
-          return { ...item, ownerRecruiter: actorName, _dashboardHistoricalRank: historicalRank, _dashboardInterviewStatus: exactInterviewContext.interviewStatus, _dashboardPreviousStatus: exactInterviewContext.previousStatus };
-        });
-      const items = universe
-        .filter((item) => !clientFilter || String(item.clientName || "").trim() === clientFilter)
-        .filter((item) => !recruiterFilter || String(item.ownerRecruiter || "").trim() === recruiterFilter)
-        .filter((item) => itemMatchesDashboardGroup(item, groupType, params))
-        .filter((item) => itemMatchesDashboardMetric(item, metric, dateFrom, dateTo))
-        ;
+            const candidate = candidateId ? (candidateById.get(candidateId) || null) : null;
+            return matchesScope(candidate || {}, assessment);
+          })
+          .filter((assessment) => {
+            const rank = getAssessmentHistoricalRank(assessment, eventsByAssessmentId);
+            if (metric === "sharedProfiles" || metric === "converted") return true;
+            if (metric === "interviews" || metric === "under_interview_process") return rank >= 2;
+            if (metric === "shortlisted") return rank >= 3;
+            if (metric === "offered") return rank >= 4;
+            if (metric === "joined") return rank >= 5;
+            return false;
+          })
+          .map((assessment) => {
+            const candidateId = String(
+              assessment?.candidate_id
+              || assessment?.candidateId
+              || assessment?.payload?.candidateId
+              || assessment?.payload?.candidate_id
+              || ""
+            ).trim();
+            const candidate = candidateId ? (candidateById.get(candidateId) || null) : null;
+            const historicalRank = getAssessmentHistoricalRank(assessment, eventsByAssessmentId);
+            const exactInterviewContext = getAssessmentExactInterviewContext(assessment, eventsByAssessmentId);
+            return createDashboardDrilldownAssessmentItem(assessment, candidate, exactInterviewContext, historicalRank);
+          });
+      }
       sendJson(res, 200, {
         ok: true,
         result: {
