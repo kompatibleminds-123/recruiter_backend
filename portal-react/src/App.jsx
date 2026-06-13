@@ -22012,12 +22012,12 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
   );
   const safePct = (num, den) => (den > 0 ? Math.round((num / den) * 100) : 0);
   const primaryKpiCards = [
-    { key: "totalCandidates", label: "Total Candidates", value: Number(dashboardOverall.totalCandidates || 0), icon: "TC" },
-    { key: "sharedProfiles", label: "Shared Profiles", value: Number(dashboardOverall.sharedProfiles || 0), icon: "SH" },
-    { key: "interviews", label: "Interviews", value: Number(dashboardOverall.interviews || 0), icon: "IN" },
-    { key: "shortlisted", label: "Shortlist", value: Number(dashboardOverall.shortlisted || 0), icon: "SL" },
-    { key: "offers", label: "Offers", value: Number(dashboardOverall.offers || 0), icon: "OF" },
-    { key: "joined", label: "Joinings", value: Number(dashboardOverall.joined || 0), icon: "JN" }
+    { key: "totalCandidates", drillMetric: "totalCandidates", label: "Total Candidates", value: Number(dashboardOverall.totalCandidates || 0), icon: "TC" },
+    { key: "sharedProfiles", drillMetric: "sharedProfiles", label: "Shared Profiles", value: Number(dashboardOverall.sharedProfiles || 0), icon: "SH" },
+    { key: "interviews", drillMetric: "interviews", label: "Interviews", value: Number(dashboardOverall.interviews || 0), icon: "IN" },
+    { key: "shortlisted", drillMetric: "shortlisted", label: "Shortlist", value: Number(dashboardOverall.shortlisted || 0), icon: "SL" },
+    { key: "offers", drillMetric: "offered", label: "Offers", value: Number(dashboardOverall.offers || 0), icon: "OF" },
+    { key: "joined", drillMetric: "joined", label: "Joinings", value: Number(dashboardOverall.joined || 0), icon: "JN" }
   ];
   const ratioKpiCards = [
     { key: "cvSubmissionRate", label: "CV Submission Rate", value: `${safePct(Number(dashboardOverall.sharedProfiles || 0), Number(dashboardOverall.totalCandidates || 0))}%` },
@@ -22028,30 +22028,27 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
   ];
   const clientLeaderboardShared = [...dashboardClientGroupsDisplay]
     .sort((a, b) => Number(b?.sharedProfiles || 0) - Number(a?.sharedProfiles || 0))
-    .slice(0, 3);
+    ;
   const clientLeaderboardInterviews = [...dashboardClientGroupsDisplay]
     .sort((a, b) => Number(b?.interviews || 0) - Number(a?.interviews || 0))
-    .slice(0, 3);
-  const clientLeaderboardLowConversion = [...dashboardClientGroupsDisplay]
-    .map((group) => ({
-      ...group,
-      conversion: Number(group?.conversionPct || 0)
-    }))
-    .filter((group) => Number(group?.totalCandidates || 0) > 0)
-    .sort((a, b) => Number(a.conversion || 0) - Number(b.conversion || 0))
-    .slice(0, 3);
+    ;
+  const clientLeaderboardJoinings = [...dashboardClientGroupsDisplay]
+    .sort((a, b) => Number(b?.joined || 0) - Number(a?.joined || 0));
   const clientChartRows = [...dashboardClientGroupsDisplay]
     .map((group) => ({
       label: String(group?.label || "Client"),
       sourced: Number(group?.totalCandidates || 0),
       shared: Number(group?.sharedProfiles || 0),
       interviews: Number(group?.interviews || 0),
-      conversion: Number(group?.conversionPct || 0)
+      joined: Number(group?.joined || 0),
+      cvSubmissionRatio: safePct(Number(group?.sharedProfiles || 0), Number(group?.totalCandidates || 0)),
+      interviewConversionRatio: safePct(Number(group?.interviews || 0), Number(group?.sharedProfiles || 0)),
+      joiningConversionRatio: safePct(Number(group?.joined || 0), Number(group?.sharedProfiles || 0))
     }))
-    .sort((a, b) => b.sourced - a.sourced)
-    .slice(0, 8);
+    .sort((a, b) => b.sourced - a.sourced);
   const maxClientSourced = Math.max(1, ...clientChartRows.map((row) => row.sourced));
   const maxClientSharedForFunnel = Math.max(1, ...clientChartRows.map((row) => row.shared));
+  const maxClientJoinings = Math.max(1, ...clientChartRows.map((row) => row.joined));
   const recruiterLeaderboardShared = [...dashboardRecruiterGroupsDisplay]
     .sort((a, b) => Number(b?.sharedProfiles || 0) - Number(a?.sharedProfiles || 0))
     .slice(0, 5);
@@ -22500,14 +22497,20 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                 ) : null}
                 <div className="reports-kpi-grid">
                   {primaryKpiCards.map((item) => (
-                    <article key={item.key} className="reports-kpi-card">
+                    <button
+                      key={item.key}
+                      type="button"
+                      className="reports-kpi-card"
+                      onClick={() => void openDashboardDrilldown({ title: item.label, metric: item.drillMetric, groupType: reportsTab === "recruiter" ? "recruiter" : "client" })}
+                      style={{ textAlign: "left", cursor: "pointer" }}
+                    >
                       <div className="reports-kpi-card__top">
                         <span className="reports-kpi-card__icon">{item.icon}</span>
                         <span className="reports-kpi-card__trend">No trend data</span>
                       </div>
                       <div className="reports-kpi-card__value">{item.value}</div>
                       <div className="reports-kpi-card__label">{item.label}</div>
-                    </article>
+                    </button>
                   ))}
                 </div>
                 <div style={{ display: "flex", justifyContent: "center", flexWrap: "wrap", gap: "14px", marginTop: "14px" }}>
@@ -22532,7 +22535,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                 <Section kicker="Breakdown" title="Client Breakdown">
                   <div className="reports-leaderboard-strip">
                     <article className="reports-leaderboard-card">
-                      <h4>Top Clients by Shared</h4>
+                      <h4>All Clients by Shared</h4>
                       <ol>
                         {clientLeaderboardShared.map((item) => (
                           <li key={`client-shared-${item.label}`}>
@@ -22544,7 +22547,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                       </ol>
                     </article>
                     <article className="reports-leaderboard-card">
-                      <h4>Top Clients by Interviews</h4>
+                      <h4>All Clients by Interviews</h4>
                       <ol>
                         {clientLeaderboardInterviews.map((item) => (
                           <li key={`client-int-${item.label}`}>
@@ -22556,21 +22559,22 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                       </ol>
                     </article>
                     <article className="reports-leaderboard-card">
-                      <h4>Lowest Conversion (Improve)</h4>
+                      <h4>All Clients by Joinings</h4>
                       <ol>
-                        {clientLeaderboardLowConversion.map((item) => (
-                          <li key={`client-low-${item.label}`}>
+                        {clientLeaderboardJoinings.map((item) => (
+                          <li key={`client-join-${item.label}`}>
                             <span>{item.label}</span>
-                            <strong>{item.conversion}%</strong>
+                            <strong>{item?.joined || item?.metrics?.joined || 0}</strong>
                           </li>
                         ))}
-                        {!clientLeaderboardLowConversion.length ? <li><span>No data</span><strong>0%</strong></li> : null}
+                        {!clientLeaderboardJoinings.length ? <li><span>No data</span><strong>0</strong></li> : null}
                       </ol>
                     </article>
                   </div>
                   <div className="reports-client-chart-grid">
                     <article className="reports-chart-card">
                       <h4>Client-wise Sourced vs Shared</h4>
+                      <p className="muted">CV submission ratio graph</p>
                       {!clientChartRows.length ? <div className="empty-state compact-empty">No chart data.</div> : (
                         <div className="reports-bar-list">
                           {clientChartRows.map((row) => (
@@ -22593,6 +22597,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                     </article>
                     <article className="reports-chart-card">
                       <h4>Client Pipeline Funnel (Shared to Interview)</h4>
+                      <p className="muted">Interview conversion ratio graph</p>
                       {!clientChartRows.length ? <div className="empty-state compact-empty">No funnel data.</div> : (
                         <div className="reports-funnel-list">
                           {clientChartRows.map((row) => (
@@ -22614,13 +22619,24 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                       )}
                     </article>
                     <article className="reports-chart-card">
-                      <h4>Client Conversion Comparison</h4>
-                      {!clientChartRows.length ? <div className="empty-state compact-empty">No conversion data.</div> : (
-                        <div className="reports-conversion-list">
+                      <h4>Client Pipeline Funnel (Joining to Shared)</h4>
+                      <p className="muted">Join conversion rate</p>
+                      {!clientChartRows.length ? <div className="empty-state compact-empty">No joining data.</div> : (
+                        <div className="reports-funnel-list">
                           {clientChartRows.map((row) => (
-                            <div key={`client-conv-${row.label}`} className="reports-conversion-item">
-                              <span>{row.label}</span>
-                              <div className="reports-conversion-pill">{row.conversion}%</div>
+                            <div key={`client-joining-${row.label}`} className="reports-funnel-item">
+                              <div className="reports-funnel-item__head"><span>{row.label}</span><strong>{row.joined}</strong></div>
+                              <div className="reports-stacked-track">
+                                <i
+                                  className="reports-stacked-track__base"
+                                  style={{ width: `${Math.max(4, Math.round((row.shared / maxClientSharedForFunnel) * 100))}%` }}
+                                />
+                                <i
+                                  className="reports-stacked-track__fill"
+                                  style={{ width: `${row.shared > 0 ? Math.max(2, Math.round((row.joined / row.shared) * Math.max(4, Math.round((row.shared / maxClientSharedForFunnel) * 100)))) : 0}%` }}
+                                />
+                              </div>
+                              <div className="reports-conversion-pill" style={{ marginTop: "8px" }}>{row.joiningConversionRatio}%</div>
                             </div>
                           ))}
                         </div>
