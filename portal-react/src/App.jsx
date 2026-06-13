@@ -22300,7 +22300,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
     const conversionPct = safePct(shared, sourced);
     const interviewPct = safePct(interviews, shared);
     const shortlistPct = safePct(shortlisted, interviews);
-    const joiningPct = safePct(joined, offered);
+    const joiningPct = safePct(joined, shared);
     const selfAssignedPct = adminAssignedSourcing > 0
       ? safePct(selfSourced, Math.max(selfSourced, adminAssignedSourcing))
       : safePct(selfSourced, selfSourced + assignedSourcing);
