@@ -14814,6 +14814,7 @@ function PortalApp({ token, onLogout }) {
     try {
       await api(`/company/candidates/${encodeURIComponent(applicantId)}`, token, "PATCH", { patch: { hidden_from_captured: true } });
       await refreshCandidateStatsAfterMutation("applicants");
+      void refreshDashboardAfterAssessmentChange().catch(() => {});
       setStatus("applicants", "Applicant hidden from active list.", "ok");
     } catch (error) {
       setState((current) => ({
@@ -14886,6 +14887,7 @@ function PortalApp({ token, onLogout }) {
     try {
       await api(`/company/candidates/${encodeURIComponent(applicantId)}`, token, "PATCH", { patch: { hidden_from_captured: false } });
       await refreshCandidateStatsAfterMutation("applicants");
+      void refreshDashboardAfterAssessmentChange().catch(() => {});
       setStatus("applicants", "Applicant restored to active list.", "ok");
     } catch (error) {
       setState((current) => ({
@@ -15270,6 +15272,7 @@ function PortalApp({ token, onLogout }) {
     try {
       await api(`/company/candidates/${encodeURIComponent(candidateId)}`, token, "PATCH", { patch: { hidden_from_captured: true } });
       await refreshCandidateStatsAfterMutation("captured");
+      void refreshDashboardAfterAssessmentChange().catch(() => {});
       setStatus("captured", "Candidate hidden from captured notes.", "ok");
     } catch (error) {
       setCapturedListItems((current) => (shouldRemainVisible
@@ -15338,6 +15341,7 @@ function PortalApp({ token, onLogout }) {
     try {
       await api(`/company/candidates/${encodeURIComponent(candidateId)}`, token, "PATCH", { patch: { hidden_from_captured: false } });
       await refreshCandidateStatsAfterMutation("captured");
+      void refreshDashboardAfterAssessmentChange().catch(() => {});
       setStatus("captured", "Candidate restored to active captured notes.", "ok");
     } catch (error) {
       setCapturedListItems((current) => (shouldRemainVisible
@@ -16677,6 +16681,7 @@ function PortalApp({ token, onLogout }) {
         });
       }
       navigate("/assessments");
+      void refreshDashboardAfterAssessmentChange().catch(() => {});
       setStatus("assessments", `Converted ${candidateName || "candidate"} into assessment.`, "ok");
       // Skip immediate workspace refresh to keep viewport stable after conversion.
     } catch (error) {
@@ -16844,7 +16849,9 @@ function PortalApp({ token, onLogout }) {
         });
         setStatus("interview", "Assessment saved and candidate details updated.", "ok");
         void syncPostAssessmentMutation({ candidateId: interviewMeta.candidateId }).catch(() => {});
+        void refreshDashboardAfterAssessmentChange().catch(() => {});
       } else {
+        void refreshDashboardAfterAssessmentChange().catch(() => {});
         setStatus("interview", "Assessment saved.", "ok");
       }
     } catch (error) {
@@ -21136,6 +21143,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
       refreshStats: true
     });
     void syncPostAssessmentMutation({ candidateId: assessment?.candidateId }).catch(() => {});
+    void refreshDashboardAfterAssessmentChange().catch(() => {});
     setStatus("assessments", "Assessment deleted.", "ok");
   }
 
@@ -21524,6 +21532,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
       });
       setStatus("assessments", archived ? "Assessment archived." : "Assessment restored.", "ok");
       void syncPostAssessmentMutation({ candidateId }).catch(() => {});
+      void refreshDashboardAfterAssessmentChange().catch(() => {});
       void reloadAssessmentSlice(assessmentPage, safeAssessmentApiPageSize, safeAssessmentFiltersApplied, assessmentLane, assessmentSortBy).catch(() => {});
       void reloadAssessmentStats(safeAssessmentFiltersApplied).catch(() => {});
       return saved;
@@ -21543,6 +21552,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
           });
           setStatus("assessments", "Assessment restored.", "ok");
           void refreshAssessmentFallback({ candidateId }).catch(() => {});
+          void refreshDashboardAfterAssessmentChange().catch(() => {});
           return restored;
         } catch (restoreError) {
           setStatus("assessments", String(restoreError?.message || restoreError), "error");
@@ -21749,6 +21759,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
         hidden_from_captured: false
       }, { skipRefresh: true });
       navigate(restoreToApplicants ? "/applicants" : "/captured-notes");
+      void refreshDashboardAfterAssessmentChange().catch(() => {});
       setStatus(restoreToApplicants ? "applicants" : "captured", `Moved back to ${destinationLabel}.`, "ok");
     } catch (error) {
       if (restoreToApplicants) {
