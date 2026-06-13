@@ -7268,6 +7268,7 @@ function buildDatabaseQuickChipRows({ universe = [], assessmentEvents = [], date
     const alignedHistoryEvents = [];
     const feedbackAwaitedHistoryEvents = [];
     const interviewTrackEvents = [];
+    const historicalRank = getAssessmentHistoricalRank(assessment, assessmentEventsByAssessmentId);
     const pushInterviewTrackEvent = (statusValue, atValue, statusAtValue = "") => {
       const statusKey = normalizeAssessmentStatusLabel(String(statusValue || "")).toLowerCase();
       const atKey = String(atValue || "").trim();
@@ -7294,7 +7295,7 @@ function buildDatabaseQuickChipRows({ universe = [], assessmentEvents = [], date
       pushInterviewTrackEvent(assessmentStatus, updatedAt || interviewAt || convertedAt);
     }
 
-    if (interviewTrackEvents.length) {
+    if (historicalRank >= 2) {
       const sortedTrackEvents = [...interviewTrackEvents]
         .filter((event) => event?.effectiveAt && Number.isFinite(parseDateLike(event.effectiveAt)))
         .sort((a, b) => parseDateLike(a.effectiveAt) - parseDateLike(b.effectiveAt));
@@ -7309,13 +7310,28 @@ function buildDatabaseQuickChipRows({ universe = [], assessmentEvents = [], date
         return latestAlignedByStatus.get(key) === event;
       });
       const inRangeEvents = dedupedTrackEvents.filter((event) => inDateRange(event.effectiveAt));
-      if (activeAssessment && inRangeEvents.length) {
+      if (inRangeEvents.length) {
         const latestTrackEvent = inRangeEvents[inRangeEvents.length - 1];
         rowsByChip.interview_history.push({
           ...baseRow,
           round: `${inRangeEvents.map((event) => `${formatDatabaseQuickChipTimelineLabel(event.status, event.effectiveAt)} on ${formatDatabaseQuickChipEventDate(event.effectiveAt)}`).join(" | ")} | Current: ${baseRow.status || "-"}`,
           date: String(assessment?.interviewAt || assessment?.interview_at || latestTrackEvent?.effectiveAt || "").trim()
         });
+      } else {
+        const fallbackInterviewDate = String(
+          assessment?.interviewAt
+          || assessment?.interview_at
+          || updatedAt
+          || convertedAt
+          || ""
+        ).trim();
+        if (inDateRange(fallbackInterviewDate || updatedAt || convertedAt)) {
+          rowsByChip.interview_history.push({
+            ...baseRow,
+            round: `Current: ${baseRow.status || "-"}`,
+            date: fallbackInterviewDate
+          });
+        }
       }
     }
 
@@ -10930,6 +10946,42 @@ function createDashboardDrilldownAssessmentItem(assessment = {}, candidate = nul
     ownerRecruiter: normalizeDashboardScopeLabel(getOwnerRecruiterLabel(candidate || {}, assessment || {}) || "Unassigned") || "Unassigned",
     candidateStatus: String(assessment?.candidateStatus || assessment?.candidate_status || assessment?.assessment_status || assessment?.status || "").trim(),
     interviewAt: normalizeDateOutput(assessment?.interviewAt || assessment?.interview_at || deriveInterviewAtFromHistory(assessment || {}) || ""),
+    currentCtc: String(assessment?.currentCtc || assessment?.current_ctc || candidate?.current_ctc || candidate?.currentCtc || "").trim(),
+    expectedCtc: String(assessment?.expectedCtc || assessment?.expected_ctc || candidate?.expected_ctc || candidate?.expectedCtc || "").trim(),
+    noticePeriod: String(assessment?.noticePeriod || assessment?.notice_period || candidate?.notice_period || candidate?.noticePeriod || "").trim(),
+    offerAmount: String(
+      assessment?.offerAmount
+      || assessment?.offer_amount
+      || assessment?.offerInHand
+      || assessment?.offer_in_hand
+      || candidate?.offer_amount
+      || candidate?.offerAmount
+      || candidate?.offer_in_hand
+      || candidate?.offerInHand
+      || ""
+    ).trim(),
+    offerDoj: normalizeDateOutput(
+      assessment?.offerDoj
+      || assessment?.offer_doj
+      || assessment?.dateOfJoining
+      || assessment?.date_of_joining
+      || candidate?.offer_doj
+      || candidate?.offerDoj
+      || candidate?.date_of_joining
+      || candidate?.dateOfJoining
+      || ""
+    ),
+    dateOfJoining: normalizeDateOutput(
+      assessment?.dateOfJoining
+      || assessment?.date_of_joining
+      || assessment?.offerDoj
+      || assessment?.offer_doj
+      || candidate?.date_of_joining
+      || candidate?.dateOfJoining
+      || candidate?.offer_doj
+      || candidate?.offerDoj
+      || ""
+    ),
     sharedAt: normalizeDateOutput(getCandidateConvertedAt(candidate || {}, assessment || {})),
     createdAt: normalizeDateOutput(assessment?.created_at || assessment?.createdAt || ""),
     source: "assessment_only",
