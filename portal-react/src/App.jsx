@@ -6277,7 +6277,7 @@ function inferInterviewRoundLabel(value) {
   return "";
 }
 
-function DrilldownModal({ open, title, items, onClose, onOpenCvOriginal, onOpenCvBranded, onOpenDraft, onOpenAssessment, onOpenNotes, onOpenStatus, onAddFeedback, extraActions = null, inline = false, hideRoleClient = false, loading = false, drilldownMetric = "", pageSize = 25, renderAsTable = false }) {
+function DrilldownModal({ open, title, items, onClose, onOpenCvOriginal, onOpenCvBranded, onOpenDraft, onOpenAssessment, onOpenNotes, onOpenStatus, onAddFeedback, extraActions = null, inline = false, hideRoleClient = false, loading = false, drilldownMetric = "", pageSize = 25, renderAsTable = false, readOnly = false }) {
   if (!open) return null;
   const [page, setPage] = useState(1);
   useEffect(() => {
@@ -6325,7 +6325,7 @@ function DrilldownModal({ open, title, items, onClose, onOpenCvOriginal, onOpenC
                           <th>Notice</th>
                         </>
                       )}
-                      <th>Action</th>
+                      {!readOnly ? <th>Action</th> : null}
                     </tr>
                   </thead>
                   <tbody>
@@ -6416,13 +6416,15 @@ function DrilldownModal({ open, title, items, onClose, onOpenCvOriginal, onOpenC
                               <td>{noticePeriod || "-"}</td>
                             </>
                           )}
-                          <td>
-                            {allowStatusUpdate && assessmentForAction && onOpenStatus ? (
-                              <button className="table-metric-btn table-metric-btn--action" onClick={() => onOpenStatus(assessmentForAction)}>Update status</button>
-                            ) : (
-                              <span className="muted">-</span>
-                            )}
-                          </td>
+                          {!readOnly ? (
+                            <td>
+                              {allowStatusUpdate && assessmentForAction && onOpenStatus ? (
+                                <button className="table-metric-btn table-metric-btn--action" onClick={() => onOpenStatus(assessmentForAction)}>Update status</button>
+                              ) : (
+                                <span className="muted">-</span>
+                              )}
+                            </td>
+                          ) : null}
                         </tr>
                       );
                     })}
@@ -6492,10 +6494,10 @@ function DrilldownModal({ open, title, items, onClose, onOpenCvOriginal, onOpenC
                       />
                     ) : null}
                     {onOpenAssessment && (assessmentForAction || profileOnlyMode) ? <button onClick={() => onOpenAssessment(profileTarget)}>{profileOnlyMode ? "Open profile" : "Update Assessment"}</button> : null}
-                    {allowStatusUpdate && assessmentForAction && onOpenStatus ? <button onClick={() => onOpenStatus(assessmentForAction)}>Update status</button> : null}
+                    {!readOnly && allowStatusUpdate && assessmentForAction && onOpenStatus ? <button onClick={() => onOpenStatus(assessmentForAction)}>Update status</button> : null}
                     {onOpenNotes && candidateIdForAction ? <button onClick={() => onOpenNotes(candidateIdForAction)}>Update notes</button> : null}
                     {!assessmentForAction && !onOpenNotes && onOpenDraft && candidateIdForAction ? <button onClick={() => onOpenDraft(candidateIdForAction)}>Update details</button> : null}
-                    {!allowStatusUpdate && !assessmentForAction && onOpenStatus && candidateIdForAction ? null : (!assessmentForAction && onOpenStatus && candidateIdForAction ? <button onClick={() => onOpenStatus({ candidateId: candidateIdForAction, item })}>Update status</button> : null)}
+                    {readOnly ? null : (!allowStatusUpdate && !assessmentForAction && onOpenStatus && candidateIdForAction ? null : (!assessmentForAction && onOpenStatus && candidateIdForAction ? <button onClick={() => onOpenStatus({ candidateId: candidateIdForAction, item })}>Update status</button> : null))}
                     {onAddFeedback ? <button className="ghost-btn" onClick={() => onAddFeedback(item)}>{feedbackMeta.feedback ? "Add another feedback" : "Add feedback"}</button> : null}
                   </div>
                 </div>
@@ -22344,6 +22346,21 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
   const clientPortalPositionRows = (clientPortalSummary.byClientPosition || []).filter((row) => String(row.clientLabel || "") === String(clientPortalFilters.clientLabel || ""));
   const selectedClientPortalPosition = clientPortalPositionRows.find((row) => String(row.positionLabel || "") === String(clientPortalFilters.positionLabel || "")) || null;
   const clientPortalPositionOptions = clientPortalPositionRows.map((row) => row.positionLabel);
+  function closeDashboardInlineDrilldown() {
+    setDrilldownState({ open: false, title: "", items: [], request: null, loading: false });
+    try {
+      document.querySelectorAll(".dashboard-group[open]").forEach((node) => {
+        node.open = false;
+      });
+    } catch {
+      // ignore DOM collapse issues
+    }
+  }
+  function handleReportsTabChange(nextTab) {
+    if (String(nextTab || "") === String(reportsTab || "")) return;
+    closeDashboardInlineDrilldown();
+    setReportsTab(nextTab);
+  }
   const todayStart = new Date();
   todayStart.setHours(0, 0, 0, 0);
   const tomorrowStart = new Date(todayStart);
@@ -22785,8 +22802,8 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                   ))}
                 </div>
                 <div className="reports-view-tabs">
-                  <button className={reportsTab === "client" ? "active" : ""} onClick={() => setReportsTab("client")}>Client View</button>
-                  <button className={reportsTab === "recruiter" ? "active" : ""} onClick={() => setReportsTab("recruiter")}>Recruiter View</button>
+                  <button className={reportsTab === "client" ? "active" : ""} onClick={() => handleReportsTabChange("client")}>Client View</button>
+                  <button className={reportsTab === "recruiter" ? "active" : ""} onClick={() => handleReportsTabChange("recruiter")}>Recruiter View</button>
                 </div>
               </Section>
               <div className="dashboard-breakdown-stack">
@@ -23195,6 +23212,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                     loading={Boolean(drilldownState.loading)}
                     inline
                     hideRoleClient
+                    readOnly
                     renderAsTable
                     pageSize={25}
                     drilldownMetric={String(drilldownState.request?.metric || "")}
@@ -23204,14 +23222,6 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                     onOpenCvOriginal={(item) => openDatabaseCandidateCv(item?.raw?.candidate || item)}
                     onOpenCvBranded={(item) => void openBrandedCandidateCv(item?.raw?.candidate || item)}
                     onOpenNotes={(candidateId) => void openRecruiterNotes(candidateId)}
-                    onOpenStatus={(target) => {
-                      const assessmentId = String(target?.id || target?.assessmentId || "").trim();
-                      if (assessmentId) {
-                        setAssessmentStatusId(assessmentId);
-                        return;
-                      }
-                      if (target?.candidateId) void openAttempts(target.candidateId);
-                    }}
                   />
                 </div>
               ) : null}
