@@ -7243,6 +7243,69 @@ function getAssessmentHistoricalRank(assessment = {}, eventsByAssessmentId = new
   return highestRank;
 }
 
+function getAssessmentEventStatusTrail(assessment = {}, eventsByAssessmentId = new Map()) {
+  const assessmentId = String(assessment?.id || "").trim();
+  const events = assessmentId ? (eventsByAssessmentId.get(assessmentId) || []) : [];
+  const sortedEvents = [...events].sort((a, b) => {
+    const left = String(a?.created_at || a?.createdAt || a?.payload?.at || "").trim();
+    const right = String(b?.created_at || b?.createdAt || b?.payload?.at || "").trim();
+    return new Date(left || 0).getTime() - new Date(right || 0).getTime();
+  });
+  const trail = [];
+  for (const event of sortedEvents) {
+    const status = normalizeAssessmentStatusLabel(
+      event?.payload?.candidateStatus
+      || event?.payload?.candidate_status
+      || event?.status
+      || event?.payload?.status
+      || ""
+    );
+    if (!status) continue;
+    if (!trail.length || String(trail[trail.length - 1] || "").toLowerCase() !== String(status || "").toLowerCase()) {
+      trail.push(status);
+    }
+  }
+  const currentStatus = normalizeAssessmentStatusLabel(
+    assessment?.candidateStatus
+    || assessment?.candidate_status
+    || assessment?.assessment_status
+    || assessment?.status
+    || ""
+  );
+  if (currentStatus && (!trail.length || String(trail[trail.length - 1] || "").toLowerCase() !== String(currentStatus).toLowerCase())) {
+    trail.push(currentStatus);
+  }
+  return trail;
+}
+
+function getAssessmentExactInterviewContext(assessment = {}, eventsByAssessmentId = new Map()) {
+  const trail = getAssessmentEventStatusTrail(assessment, eventsByAssessmentId);
+  const isInterviewStage = (value = "") => /\b(screening call aligned|l1 aligned|l2 aligned|l3 aligned|hr discussion aligned|hr interview aligned|aligned for interview|interview scheduled|interview feedback awaited|interview reject)\b/i.test(String(value || "").trim());
+  let interviewStatus = "";
+  for (let index = trail.length - 1; index >= 0; index -= 1) {
+    if (isInterviewStage(trail[index])) {
+      interviewStatus = trail[index];
+      break;
+    }
+  }
+  const currentStatus = normalizeAssessmentStatusLabel(
+    assessment?.candidateStatus
+    || assessment?.candidate_status
+    || assessment?.assessment_status
+    || assessment?.status
+    || ""
+  );
+  let previousStatus = "";
+  for (let index = trail.length - 1; index >= 0; index -= 1) {
+    const candidate = trail[index];
+    if (!candidate) continue;
+    if (String(candidate).toLowerCase() === String(currentStatus || "").toLowerCase()) continue;
+    previousStatus = candidate;
+    break;
+  }
+  return { interviewStatus, previousStatus };
+}
+
 function createDashboardFunnelBucket() {
   return {
     totalCandidates: 0,
@@ -7326,6 +7389,8 @@ function buildDashboardFunnelPayload({
   const overall = createDashboardFunnelBucket();
   const byClient = new Map();
   const byRecruiter = new Map();
+  const byClientPosition = new Map();
+  const byRecruiterPosition = new Map();
   const availableClients = new Set();
   const availableRecruiters = new Set();
   const visibleDateCheck = (value) => {
@@ -7364,6 +7429,50 @@ function buildDashboardFunnelPayload({
     return map.get(key);
   };
 
+  const getPositionLabelForFunnel = (candidate = {}, assessment = {}) => {
+    const payload = assessment?.payload && typeof assessment.payload === "object" ? assessment.payload : {};
+    return String(
+      candidate?.assigned_jd_title
+      || candidate?.assignedJdTitle
+      || candidate?.jd_title
+      || candidate?.jdTitle
+      || assessment?.jdTitle
+      || assessment?.jd_title
+      || payload?.jdTitle
+      || payload?.jd_title
+      || ""
+    ).trim() || "Unassigned";
+  };
+
+  const getClientPositionBucket = (clientLabel, positionLabel) => {
+    const key = `${String(clientLabel || "").trim() || "Unassigned"}|||${String(positionLabel || "").trim() || "Unassigned"}`;
+    if (!byClientPosition.has(key)) {
+      byClientPosition.set(key, {
+        clientLabel: String(clientLabel || "").trim() || "Unassigned",
+        positionLabel: String(positionLabel || "").trim() || "Unassigned",
+        metrics: createDashboardFunnelBucket()
+      });
+    }
+    return byClientPosition.get(key);
+  };
+
+  const getRecruiterPositionBucket = (recruiterLabel, clientLabel, positionLabel) => {
+    const key = [
+      String(recruiterLabel || "").trim() || "Unassigned",
+      String(clientLabel || "").trim() || "Unassigned",
+      String(positionLabel || "").trim() || "Unassigned"
+    ].join("|||");
+    if (!byRecruiterPosition.has(key)) {
+      byRecruiterPosition.set(key, {
+        recruiterLabel: String(recruiterLabel || "").trim() || "Unassigned",
+        clientLabel: String(clientLabel || "").trim() || "Unassigned",
+        positionLabel: String(positionLabel || "").trim() || "Unassigned",
+        metrics: createDashboardFunnelBucket()
+      });
+    }
+    return byRecruiterPosition.get(key);
+  };
+
   const addCandidateRow = (candidate) => {
     const assessment = (() => {
       const assessmentId = String(candidate?.assessment_id || candidate?.assessmentId || "").trim();
@@ -7371,11 +7480,14 @@ function buildDashboardFunnelPayload({
     })();
     const clientLabel = normalizeDashboardScopeLabel(getClientLabel(candidate, assessment) || "Unassigned") || "Unassigned";
     const recruiterLabel = normalizeDashboardScopeLabel(getOwnerRecruiterLabel(candidate, assessment) || "Unassigned") || "Unassigned";
+    const positionLabel = getPositionLabelForFunnel(candidate, assessment);
     if (clientFilter && clientLabel !== clientFilter) return;
     if (recruiterFilter && recruiterLabel !== recruiterFilter) return;
     overall.totalCandidates += 1;
     getBucket(byClient, clientLabel).totalCandidates += 1;
     getBucket(byRecruiter, recruiterLabel).totalCandidates += 1;
+    getClientPositionBucket(clientLabel, positionLabel).metrics.totalCandidates += 1;
+    getRecruiterPositionBucket(recruiterLabel, clientLabel, positionLabel).metrics.totalCandidates += 1;
     availableClients.add(clientLabel);
     availableRecruiters.add(recruiterLabel);
   };
@@ -7391,6 +7503,7 @@ function buildDashboardFunnelPayload({
     const candidate = candidateId ? (candidateById.get(candidateId) || null) : null;
     const clientLabel = normalizeDashboardScopeLabel(getClientLabel(candidate || {}, assessment || {}) || "Unassigned") || "Unassigned";
     const recruiterLabel = normalizeDashboardScopeLabel(getOwnerRecruiterLabel(candidate || {}, assessment || {}) || "Unassigned") || "Unassigned";
+    const positionLabel = getPositionLabelForFunnel(candidate || {}, assessment || {});
     if (clientFilter && clientLabel !== clientFilter) return;
     if (recruiterFilter && recruiterLabel !== recruiterFilter) return;
     const rank = getAssessmentHistoricalRank(assessment, eventsByAssessmentId);
@@ -7411,6 +7524,18 @@ function buildDashboardFunnelPayload({
     if (rank >= 3) recruiterBucket.shortlisted += 1;
     if (rank >= 4) recruiterBucket.offers += 1;
     if (rank >= 5) recruiterBucket.joined += 1;
+    const clientPositionBucket = getClientPositionBucket(clientLabel, positionLabel).metrics;
+    clientPositionBucket.sharedProfiles += 1;
+    if (rank >= 2) clientPositionBucket.interviews += 1;
+    if (rank >= 3) clientPositionBucket.shortlisted += 1;
+    if (rank >= 4) clientPositionBucket.offers += 1;
+    if (rank >= 5) clientPositionBucket.joined += 1;
+    const recruiterPositionBucket = getRecruiterPositionBucket(recruiterLabel, clientLabel, positionLabel).metrics;
+    recruiterPositionBucket.sharedProfiles += 1;
+    if (rank >= 2) recruiterPositionBucket.interviews += 1;
+    if (rank >= 3) recruiterPositionBucket.shortlisted += 1;
+    if (rank >= 4) recruiterPositionBucket.offers += 1;
+    if (rank >= 5) recruiterPositionBucket.joined += 1;
     availableClients.add(clientLabel);
     availableRecruiters.add(recruiterLabel);
   };
@@ -7452,6 +7577,12 @@ function buildDashboardFunnelPayload({
     byRecruiter: Array.from(byRecruiter.entries())
       .map(([label, metrics]) => ({ label, ...finalizeDashboardFunnelBucket(metrics) }))
       .sort((a, b) => a.label.localeCompare(b.label)),
+    byClientPosition: Array.from(byClientPosition.values())
+      .map((row) => ({ ...row, metrics: finalizeDashboardFunnelBucket(row.metrics) }))
+      .sort((a, b) => `${a.clientLabel} ${a.positionLabel}`.localeCompare(`${b.clientLabel} ${b.positionLabel}`)),
+    byRecruiterPosition: Array.from(byRecruiterPosition.values())
+      .map((row) => ({ ...row, metrics: finalizeDashboardFunnelBucket(row.metrics) }))
+      .sort((a, b) => `${a.recruiterLabel} ${a.clientLabel} ${a.positionLabel}`.localeCompare(`${b.recruiterLabel} ${b.clientLabel} ${b.positionLabel}`)),
     availableClients: availableClientList,
     availableRecruiters: availableRecruiterList
   };
@@ -18564,7 +18695,7 @@ const server = http.createServer(async (req, res) => {
         listCompanyJobs(user.companyId, user.id),
         supabaseTableFetchAll(
           "assessment_events",
-          `?select=assessment_id,event_type,status,payload&company_id=eq.${encodeURIComponent(user.companyId)}`,
+          `?select=assessment_id,event_type,status,payload,created_at&company_id=eq.${encodeURIComponent(user.companyId)}`,
           { pageSize: 1000, maxPages: 50 }
         ).catch(() => [])
       ]);
@@ -18596,12 +18727,13 @@ const server = http.createServer(async (req, res) => {
             return assessmentId ? (assessmentById.get(assessmentId) || null) : null;
           })();
           const historicalRank = linkedAssessment ? getAssessmentHistoricalRank(linkedAssessment, eventsByAssessmentId) : 1;
-          if (!actorIsAdmin || !actorName) return { ...item, _dashboardHistoricalRank: historicalRank };
+          const exactInterviewContext = linkedAssessment ? getAssessmentExactInterviewContext(linkedAssessment, eventsByAssessmentId) : { interviewStatus: "", previousStatus: "" };
+          if (!actorIsAdmin || !actorName) return { ...item, _dashboardHistoricalRank: historicalRank, _dashboardInterviewStatus: exactInterviewContext.interviewStatus, _dashboardPreviousStatus: exactInterviewContext.previousStatus };
           const rawSource = String(item?.raw?.candidate?.source || item?.source || "").trim().toLowerCase();
           const isApplicant = rawSource === "website" || rawSource === "website_apply" || rawSource === "hosted_apply";
-          if (!isApplicant) return { ...item, _dashboardHistoricalRank: historicalRank };
-          if (String(item?.ownerRecruiter || "").trim() !== "Unassigned") return { ...item, _dashboardHistoricalRank: historicalRank };
-          return { ...item, ownerRecruiter: actorName, _dashboardHistoricalRank: historicalRank };
+          if (!isApplicant) return { ...item, _dashboardHistoricalRank: historicalRank, _dashboardInterviewStatus: exactInterviewContext.interviewStatus, _dashboardPreviousStatus: exactInterviewContext.previousStatus };
+          if (String(item?.ownerRecruiter || "").trim() !== "Unassigned") return { ...item, _dashboardHistoricalRank: historicalRank, _dashboardInterviewStatus: exactInterviewContext.interviewStatus, _dashboardPreviousStatus: exactInterviewContext.previousStatus };
+          return { ...item, ownerRecruiter: actorName, _dashboardHistoricalRank: historicalRank, _dashboardInterviewStatus: exactInterviewContext.interviewStatus, _dashboardPreviousStatus: exactInterviewContext.previousStatus };
         });
       const items = universe
         .filter((item) => item.sourceType !== "assessment_only")

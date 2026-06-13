@@ -6229,6 +6229,16 @@ function getDrilldownAssessmentContext(item) {
     || item?.status
     || ""
   );
+  const exactInterviewStatus = normalizeAssessmentStatusLabel(
+    item?._dashboardInterviewStatus
+    || item?.interviewStatus
+    || ""
+  );
+  const exactPreviousStatus = normalizeAssessmentStatusLabel(
+    item?._dashboardPreviousStatus
+    || item?.previousAssessmentStatus
+    || ""
+  );
   const statusHistory = Array.isArray(assessment?.statusHistory) ? assessment.statusHistory : [];
   const distinctHistory = statusHistory
     .map((entry) => normalizeAssessmentStatusLabel(entry?.status || ""))
@@ -6241,13 +6251,24 @@ function getDrilldownAssessmentContext(item) {
       break;
     }
   }
-  const interviewStatus = inferInterviewRoundFromStatus(previousStatus || currentStatus || "")
-    || inferInterviewRoundFromStatus(currentStatus || "");
+  const interviewStatus = exactInterviewStatus || inferInterviewRoundLabel(previousStatus || currentStatus || "")
+    || inferInterviewRoundLabel(currentStatus || "");
   return {
     currentStatus,
     interviewStatus,
-    previousStatus
+    previousStatus: exactPreviousStatus || previousStatus
   };
+}
+
+function inferInterviewRoundLabel(value) {
+  const raw = String(value || "").trim().toLowerCase();
+  if (!raw) return "";
+  if (raw.includes("screening call")) return "Screening";
+  if (/\bl1\b/.test(raw)) return "L1";
+  if (/\bl2\b/.test(raw)) return "L2";
+  if (/\bl3\b/.test(raw)) return "L3";
+  if (raw.includes("hr")) return "HR";
+  return "";
 }
 
 function DrilldownModal({ open, title, items, onClose, onOpenCvOriginal, onOpenCvBranded, onOpenDraft, onOpenAssessment, onOpenNotes, onOpenStatus, onAddFeedback, extraActions = null, inline = false, hideRoleClient = false, loading = false }) {
@@ -22103,8 +22124,11 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
   const maxClientSharedForFunnel = Math.max(1, ...clientChartRows.map((row) => row.shared));
   const maxClientJoinings = Math.max(1, ...clientChartRows.map((row) => row.joined));
   const recruiterLeaderboardShared = [...dashboardRecruiterGroupsDisplay]
-    .sort((a, b) => Number(b?.sharedProfiles || 0) - Number(a?.sharedProfiles || 0))
-    .slice(0, 5);
+    .sort((a, b) => Number(b?.sharedProfiles || 0) - Number(a?.sharedProfiles || 0));
+  const recruiterLeaderboardInterviews = [...dashboardRecruiterGroupsDisplay]
+    .sort((a, b) => Number(b?.interviews || 0) - Number(a?.interviews || 0));
+  const recruiterLeaderboardJoinings = [...dashboardRecruiterGroupsDisplay]
+    .sort((a, b) => Number(b?.joined || 0) - Number(a?.joined || 0));
   const recruiterInsights = [...dashboardRecruiterGroupsDisplay].map((group) => {
     const sourced = Number(group?.totalCandidates || 0);
     const shared = Number(group?.sharedProfiles || 0);
@@ -22119,16 +22143,18 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
     const assignedApplicants = Number(group?.ownership?.assignedApplicants || group?.ownership?.adminAssignedApplicants || 0);
     const conversionPct = safePct(shared, sourced);
     const interviewPct = safePct(interviews, shared);
+    const shortlistPct = safePct(shortlisted, interviews);
+    const joiningPct = safePct(joined, offered);
     const selfAssignedPct = adminAssignedSourcing > 0
       ? safePct(selfSourced, Math.max(selfSourced, adminAssignedSourcing))
       : safePct(selfSourced, selfSourced + assignedSourcing);
+    const selfSourcedPct = safePct(selfSourced, sourced);
     const directAssignedPct = safePct(directApplicants, directApplicants + assignedApplicants);
     const performanceScore = Math.max(0, Math.min(100, Math.round(
-      (conversionPct * 0.35) +
-      (interviewPct * 0.25) +
-      (safePct(offered, Math.max(1, interviews)) * 0.2) +
-      (safePct(shortlisted, Math.max(1, interviews)) * 0.1) +
-      (Math.min(shared, 100) * 0.1)
+      (conversionPct * 0.2) +
+      (interviewPct * 0.3) +
+      (shortlistPct * 0.3) +
+      (joiningPct * 0.2)
     )));
     return {
       label: String(group?.label || "Recruiter"),
@@ -22144,7 +22170,10 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
       assignedApplicants,
       conversionPct,
       interviewPct,
+      shortlistPct,
+      joiningPct,
       selfAssignedPct,
+      selfSourcedPct,
       directAssignedPct,
       performanceScore
     };
@@ -22152,6 +22181,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
   const recruiterLeaderboardRanked = [...recruiterInsights]
     .sort((a, b) => b.performanceScore - a.performanceScore)
     .map((row, idx) => ({ ...row, rank: idx + 1 }));
+  const recruiterChartRows = [...recruiterLeaderboardRanked].sort((a, b) => b.sourced - a.sourced);
   const maxRecruiterScore = Math.max(1, ...recruiterLeaderboardRanked.map((row) => row.performanceScore));
   const maxRecruiterSourced = Math.max(1, ...recruiterLeaderboardRanked.map((row) => row.sourced));
   const maxRecruiterShared = Math.max(1, ...recruiterLeaderboardRanked.map((row) => row.shared));
@@ -22777,7 +22807,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                 <Section kicker="Breakdown" title="Recruiter Breakdown">
                   <div className="reports-leaderboard-strip">
                     <article className="reports-leaderboard-card">
-                      <h4>Top Recruiters by Shared</h4>
+                      <h4>All Recruiters by Shared</h4>
                       <ol>
                         {recruiterLeaderboardShared.map((item) => (
                           <li key={`recruiter-shared-${item.label}`}>
@@ -22788,41 +22818,81 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                         {!recruiterLeaderboardShared.length ? <li><span>No data</span><strong>0</strong></li> : null}
                       </ol>
                     </article>
-                  </div>
-                  <div className="table-wrap">
-                    <table className="dashboard-table">
-                      <thead>
-                        <tr>
-                          <th>Rank</th>
-                          <th>Recruiter</th>
-                          <th>Sourced</th>
-                          <th>Applied</th>
-                          <th>Shared</th>
-                          <th>Interviews</th>
-                          <th>Offers</th>
-                          <th>Conversion %</th>
-                          <th>Score</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {recruiterLeaderboardRanked.map((row) => (
-                          <tr key={`leaderboard-${row.label}`}>
-                            <td>{row.rank}</td>
-                            <td>{row.label}</td>
-                            <td>{row.sourced}</td>
-                            <td>{row.applied}</td>
-                            <td>{row.shared}</td>
-                            <td>{row.interviews}</td>
-                            <td>{row.offered}</td>
-                            <td>{row.conversionPct}%</td>
-                            <td>{row.performanceScore}</td>
-                          </tr>
+                    <article className="reports-leaderboard-card">
+                      <h4>All Recruiters by Interviews</h4>
+                      <ol>
+                        {recruiterLeaderboardInterviews.map((item) => (
+                          <li key={`recruiter-int-${item.label}`}>
+                            <span>{item.label}</span>
+                            <strong>{item?.interviews || item?.metrics?.under_interview_process || 0}</strong>
+                          </li>
                         ))}
-                      </tbody>
-                    </table>
+                        {!recruiterLeaderboardInterviews.length ? <li><span>No data</span><strong>0</strong></li> : null}
+                      </ol>
+                    </article>
+                    <article className="reports-leaderboard-card">
+                      <h4>All Recruiters by Joinings</h4>
+                      <ol>
+                        {recruiterLeaderboardJoinings.map((item) => (
+                          <li key={`recruiter-join-${item.label}`}>
+                            <span>{item.label}</span>
+                            <strong>{item?.joined || item?.metrics?.joined || 0}</strong>
+                          </li>
+                        ))}
+                        {!recruiterLeaderboardJoinings.length ? <li><span>No data</span><strong>0</strong></li> : null}
+                      </ol>
+                    </article>
                   </div>
                   <div className="reports-client-chart-grid">
-                    <article className="reports-chart-card">
+                    <article className="reports-chart-card" style={{ minHeight: "100%" }}>
+                      <h4>Recruiter-wise Sourced vs Shared</h4>
+                      <p className="muted">CV submission ratio graph</p>
+                      {!recruiterChartRows.length ? <div className="empty-state compact-empty">No chart data.</div> : (
+                        <div className="reports-funnel-list">
+                          {recruiterChartRows.map((row) => (
+                            <div key={`recruiter-bars-${row.label}`} className="reports-funnel-item">
+                              <div className="reports-funnel-item__head"><span>{row.label}</span><strong>{row.shared}</strong></div>
+                              <div className="reports-stacked-track">
+                                <i
+                                  className="reports-stacked-track__base"
+                                  style={{ width: `${Math.max(4, Math.round((row.sourced / maxRecruiterSourced) * 100))}%` }}
+                                />
+                                <i
+                                  className="reports-stacked-track__fill"
+                                  style={{ width: `${row.sourced > 0 ? Math.max(2, Math.round((row.shared / row.sourced) * Math.max(4, Math.round((row.sourced / maxRecruiterSourced) * 100)))) : 0}%` }}
+                                />
+                              </div>
+                              <div className="reports-conversion-pill" style={{ marginTop: "8px" }}>{row.conversionPct}%</div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </article>
+                    <article className="reports-chart-card" style={{ minHeight: "100%" }}>
+                      <h4>Recruiter Pipeline Funnel (Shared to Interview)</h4>
+                      <p className="muted">Interview conversion ratio graph</p>
+                      {!recruiterChartRows.length ? <div className="empty-state compact-empty">No funnel data.</div> : (
+                        <div className="reports-funnel-list">
+                          {recruiterChartRows.map((row) => (
+                            <div key={`recruiter-funnel-${row.label}`} className="reports-funnel-item">
+                              <div className="reports-funnel-item__head"><span>{row.label}</span><strong>{row.interviews}</strong></div>
+                              <div className="reports-stacked-track">
+                                <i
+                                  className="reports-stacked-track__base"
+                                  style={{ width: `${Math.max(4, Math.round((row.shared / maxRecruiterShared) * 100))}%` }}
+                                />
+                                <i
+                                  className="reports-stacked-track__fill"
+                                  style={{ width: `${row.shared > 0 ? Math.max(2, Math.round((row.interviews / row.shared) * Math.max(4, Math.round((row.shared / maxRecruiterShared) * 100)))) : 0}%` }}
+                                />
+                              </div>
+                              <div className="reports-conversion-pill" style={{ marginTop: "8px" }}>{row.interviewPct}%</div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </article>
+                    <article className="reports-chart-card" style={{ minHeight: "100%" }}>
                       <h4>Recruiter Performance (Score)</h4>
                       {!recruiterLeaderboardRanked.length ? <div className="empty-state compact-empty">No chart data.</div> : (
                         <div className="reports-funnel-list">
@@ -22835,57 +22905,27 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                         </div>
                       )}
                       <p className="muted reports-formula-note">
-                        Score = 35% conversion + 25% interview ratio + 20% offer ratio + 10% shortlist ratio + 10% shared volume bonus (capped), range 0-100.
+                        Score = 20% CV submission rate + 30% interview ratio + 30% shortlist rate + 20% joining rate.
                       </p>
                     </article>
-                    <article className="reports-chart-card">
-                      <h4>Recruiter Conversion Funnel</h4>
-                      {!recruiterLeaderboardRanked.length ? <div className="empty-state compact-empty">No funnel data.</div> : (
-                        <div className="reports-bar-list">
+                    <article className="reports-chart-card" style={{ minHeight: "100%" }}>
+                      <h4>Self Sourced vs Assigned</h4>
+                      {!recruiterLeaderboardRanked.length ? <div className="empty-state compact-empty">No ratio data.</div> : (
+                        <div className="reports-funnel-list">
                           {recruiterLeaderboardRanked.map((row) => (
-                            <div key={`conv-funnel-${row.label}`} className="reports-bar-row">
-                              <span className="reports-bar-label">{row.label}</span>
+                            <div key={`self-assigned-${row.label}`} className="reports-funnel-item">
+                              <div className="reports-funnel-item__head"><span>{row.label}</span><strong>{row.selfSourced}</strong></div>
                               <div className="reports-stacked-track">
                                 <i
                                   className="reports-stacked-track__base"
                                   style={{ width: `${Math.max(4, Math.round((row.sourced / maxRecruiterSourced) * 100))}%` }}
                                 />
                                 <i
-                                  className="reports-stacked-track__mid"
-                                  style={{ width: `${row.sourced > 0 ? Math.max(2, Math.round((row.shared / row.sourced) * Math.max(4, Math.round((row.sourced / maxRecruiterSourced) * 100)))) : 0}%` }}
-                                />
-                                <i
                                   className="reports-stacked-track__fill"
-                                  style={{ width: `${row.sourced > 0 ? Math.max(2, Math.round((row.interviews / row.sourced) * Math.max(4, Math.round((row.sourced / maxRecruiterSourced) * 100)))) : 0}%` }}
+                                  style={{ width: `${row.sourced > 0 ? Math.max(2, Math.round((row.selfSourced / row.sourced) * Math.max(4, Math.round((row.sourced / maxRecruiterSourced) * 100)))) : 0}%` }}
                                 />
                               </div>
-                              <span className="reports-bar-meta">{`So:${row.sourced} | Sh:${row.shared} | I:${row.interviews}`}</span>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </article>
-                    <article className="reports-chart-card">
-                      <h4>Self Sourced vs Assigned</h4>
-                      {!recruiterLeaderboardRanked.length ? <div className="empty-state compact-empty">No ratio data.</div> : (
-                        <div className="reports-conversion-list">
-                          {recruiterLeaderboardRanked.map((row) => (
-                            <div key={`self-assigned-${row.label}`} className="reports-conversion-item">
-                              <span>{row.label}</span>
-                              <div className="reports-conversion-pill">{row.selfAssignedPct}% self</div>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </article>
-                    <article className="reports-chart-card">
-                      <h4>Shared to Interview Ratio</h4>
-                      {!recruiterLeaderboardRanked.length ? <div className="empty-state compact-empty">No ratio data.</div> : (
-                        <div className="reports-conversion-list">
-                          {recruiterLeaderboardRanked.map((row) => (
-                            <div key={`shared-int-${row.label}`} className="reports-conversion-item">
-                              <span>{row.label}</span>
-                              <div className="reports-conversion-pill">{row.interviewPct}%</div>
+                              <div className="reports-conversion-pill" style={{ marginTop: "8px" }}>{row.selfSourcedPct}% self sourced</div>
                             </div>
                           ))}
                         </div>
@@ -22899,45 +22939,16 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                           <div>
                             <h3>{group.label}</h3>
                             <p className="muted">{`${Number(group.metrics?.totalCandidates || group.metrics?.sourced || 0)} total | ${Number(group.metrics?.sharedProfiles || group.metrics?.converted || 0)} shared | ${Number(group.metrics?.interviews || group.metrics?.under_interview_process || 0)} interviews | ${Number(group.metrics?.shortlisted || 0)} shortlisted | ${Number(group.metrics?.offers || group.metrics?.offered || 0)} offered | ${Number(group.metrics?.joined || 0)} joined`}</p>
-                            {(() => {
-                              const insight = recruiterLeaderboardRanked.find((row) => String(row.label) === String(group.label));
-                              return insight ? (
-                                <>
-                                  <div className="reports-inline-badges">
-                                    <span className="reports-inline-badge">Rank #{insight.rank}</span>
-                                    <span className="reports-inline-badge">Score {insight.performanceScore}</span>
-                                    <span className="reports-inline-badge reports-inline-badge--alt">Conversion {insight.conversionPct}%</span>
-                                    <span className="reports-inline-badge reports-inline-badge--alt">Direct/Assigned {insight.directAssignedPct}%</span>
-                                  </div>
-                                  <div className="reports-inline-progress">
-                                    <div className="reports-inline-progress__bar"><i style={{ width: `${insight.performanceScore}%` }} /></div>
-                                    <div className="reports-inline-progress__bar reports-inline-progress__bar--alt"><i style={{ width: `${insight.interviewPct}%` }} /></div>
-                                  </div>
-                                </>
-                              ) : null;
-                            })()}
-                            {String(state.user?.role || "").toLowerCase() === "admin" && String(state.user?.name || "").trim() === String(group.label || "").trim() ? (
-                              <>
-                                <p className="muted">
-                                  {`Sourcing: ${group.ownership?.selfSourced || 0} self sourced | ${group.ownership?.adminAssignedSourcing || 0} assigned to team`}
-                                </p>
-                                <p className="muted">
-                                  {`Website apply: ${group.ownership?.websiteApply || 0} | Assigned to team: ${group.ownership?.adminAssignedApplicants || 0}`}
-                                </p>
-                              </>
-                            ) : (
-                              <>
-                                <p className="muted">
-                                  {`Sourcing: ${group.ownership?.assignedSourcing || 0} assigned | ${group.ownership?.selfSourced || 0} self sourced`}
-                                </p>
-                                <p className="muted">
-                                  {`Applicants: ${group.ownership?.assignedApplicants || 0} assigned | ${group.ownership?.directApplicants || 0} direct`}
-                                </p>
-                              </>
-                            )}
+                            <div className="reports-inline-badges" style={{ display: "flex", flexWrap: "wrap", gap: "10px", marginTop: "12px" }}>
+                              <span className="reports-inline-badge">CV Submission Rate {safePct(Number(group.metrics?.sharedProfiles || group.metrics?.converted || 0), Number(group.metrics?.totalCandidates || group.metrics?.sourced || 0))}%</span>
+                              <span className="reports-inline-badge reports-inline-badge--alt">Interview Conversion Ratio {safePct(Number(group.metrics?.interviews || group.metrics?.under_interview_process || 0), Number(group.metrics?.sharedProfiles || group.metrics?.converted || 0))}%</span>
+                              <span className="reports-inline-badge">Shortlist Rate {safePct(Number(group.metrics?.shortlisted || 0), Number(group.metrics?.interviews || group.metrics?.under_interview_process || 0))}%</span>
+                              <span className="reports-inline-badge reports-inline-badge--alt">Offer Conversion Rate {safePct(Number(group.metrics?.offers || group.metrics?.offered || 0), Number(group.metrics?.shortlisted || 0))}%</span>
+                              <span className="reports-inline-badge">Joining Rate {safePct(Number(group.metrics?.joined || 0), Number(group.metrics?.offers || group.metrics?.offered || 0))}%</span>
+                            </div>
                           </div>
                         </summary>
-                        <div className="metric-grid metric-grid--tight">
+                        <div className="metric-grid metric-grid--tight" style={{ marginTop: 12 }}>
                           {DASHBOARD_METRIC_TILES.map(([key, label]) => (
                             <button key={key} className="metric-card metric-card--button compact-metric" onClick={() => void openDashboardDrilldown({ title: `${group.label} | ${label}`, metric: key, groupType: "recruiter", params: { recruiterLabel: group.label } })}>
                               <div className="metric-label">{label}</div>
