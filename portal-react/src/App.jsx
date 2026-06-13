@@ -22648,13 +22648,12 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                           <div>
                             <h3>{group.label}</h3>
                             <p className="muted">{`${Number(group.metrics?.totalCandidates || group.metrics?.sourced || 0)} total | ${Number(group.metrics?.sharedProfiles || group.metrics?.converted || 0)} shared | ${Number(group.metrics?.interviews || group.metrics?.under_interview_process || 0)} interviews | ${Number(group.metrics?.shortlisted || 0)} shortlisted | ${Number(group.metrics?.offers || group.metrics?.offered || 0)} offered | ${Number(group.metrics?.joined || 0)} joined`}</p>
-                            <div className="reports-inline-badges">
-                              <span className="reports-inline-badge">Conversion {safePct(Number(group.metrics?.sharedProfiles || group.metrics?.converted || 0), Number(group.metrics?.totalCandidates || group.metrics?.sourced || 0))}%</span>
-                              <span className="reports-inline-badge reports-inline-badge--alt">Interview Ratio {safePct(Number(group.metrics?.interviews || group.metrics?.under_interview_process || 0), Number(group.metrics?.sharedProfiles || group.metrics?.converted || 0))}%</span>
-                            </div>
-                            <div className="reports-inline-progress">
-                              <div className="reports-inline-progress__bar"><i style={{ width: `${safePct(Number(group.metrics?.sharedProfiles || group.metrics?.converted || 0), Number(group.metrics?.totalCandidates || group.metrics?.sourced || 0))}%` }} /></div>
-                              <div className="reports-inline-progress__bar reports-inline-progress__bar--alt"><i style={{ width: `${safePct(Number(group.metrics?.interviews || group.metrics?.under_interview_process || 0), Number(group.metrics?.sharedProfiles || group.metrics?.converted || 0))}%` }} /></div>
+                            <div className="reports-inline-badges" style={{ display: "flex", flexWrap: "wrap", gap: "10px", marginTop: "12px" }}>
+                              <span className="reports-inline-badge">CV Submission Rate {safePct(Number(group.metrics?.sharedProfiles || group.metrics?.converted || 0), Number(group.metrics?.totalCandidates || group.metrics?.sourced || 0))}%</span>
+                              <span className="reports-inline-badge reports-inline-badge--alt">Interview Conversion Ratio {safePct(Number(group.metrics?.interviews || group.metrics?.under_interview_process || 0), Number(group.metrics?.sharedProfiles || group.metrics?.converted || 0))}%</span>
+                              <span className="reports-inline-badge">Shortlist Rate {safePct(Number(group.metrics?.shortlisted || 0), Number(group.metrics?.interviews || group.metrics?.under_interview_process || 0))}%</span>
+                              <span className="reports-inline-badge reports-inline-badge--alt">Offer Conversion Rate {safePct(Number(group.metrics?.offers || group.metrics?.offered || 0), Number(group.metrics?.shortlisted || 0))}%</span>
+                              <span className="reports-inline-badge">Joining Rate {safePct(Number(group.metrics?.joined || 0), Number(group.metrics?.offers || group.metrics?.offered || 0))}%</span>
                             </div>
                           </div>
                         </summary>
