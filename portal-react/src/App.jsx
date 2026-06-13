@@ -14108,13 +14108,15 @@ function PortalApp({ token, onLogout }) {
           item?.assessmentId
         ]).map((value) => String(value || "").trim()).filter(Boolean)
       : [];
+    const effectiveSearchMode = candidateSearchMode !== "all" && searchIds.length > 0
+      ? candidateSearchMode
+      : "all";
     api("/company/database/quick-chip-rows", token, "POST", {
       filters: candidateStructuredFilters,
-      searchMode: candidateSearchMode,
+      searchMode: effectiveSearchMode,
       searchIds,
       dateFrom: candidateSmartDateFrom,
-      dateTo: candidateSmartDateTo,
-      selectedChipIds: candidateQuickChipIds
+      dateTo: candidateSmartDateTo
     }).then((result) => {
       if (cancelled) return;
       const rows = result?.rows && typeof result.rows === "object" ? result.rows : (result?.result?.rows && typeof result.result.rows === "object" ? result.result.rows : null);
@@ -14170,7 +14172,6 @@ function PortalApp({ token, onLogout }) {
     candidateSearchResults,
     candidateSmartDateFrom,
     candidateSmartDateTo,
-    candidateQuickChipIds,
     candidateSmartChipCacheKey,
     candidateSmartChipSummaryCacheKey
   ]);
@@ -21296,6 +21297,8 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
       interviewAttempts: Array.isArray(assessment?.interviewAttempts) ? [...assessment.interviewAttempts] : [],
       statusHistory: Array.isArray(assessment?.statusHistory) ? [...assessment.statusHistory] : [],
       offerAmount: (isOffered || isJoined) ? String(payload?.offerAmount || inferred.offerAmount || assessment?.offerAmount || "").trim() : (assessment?.offerAmount || ""),
+      offerDoj: (isOffered || isJoined) ? atIso : (assessment?.offerDoj || assessment?.offer_doj || ""),
+      lwdOrDoj: (isOffered || isJoined) ? atIso : (assessment?.lwdOrDoj || assessment?.lwd_or_doj || assessment?.offerDoj || assessment?.offer_doj || ""),
       expectedDoj: isOffered ? atIso : (assessment?.expectedDoj || ""),
       dateOfJoining: isJoined ? atIso : (assessment?.dateOfJoining || ""),
       updatedAt: new Date().toISOString()

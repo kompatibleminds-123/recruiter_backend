@@ -7276,8 +7276,30 @@ function buildDatabaseQuickChipRows({ universe = [], assessmentEvents = [], date
       currentCtc: String(assessment?.currentCtc || assessment?.current_ctc || item?.currentCtc || item?.current_ctc || "").trim(),
       expectedCtc: String(assessment?.expectedCtc || assessment?.expected_ctc || item?.expectedCtc || item?.expected_ctc || "").trim(),
       notice: String(assessment?.noticePeriod || assessment?.notice_period || item?.noticePeriod || item?.notice_period || "").trim(),
-      offerAmount: String(assessment?.offerAmount || assessment?.offer_amount || assessment?.offerInHand || assessment?.offer_in_hand || "").trim(),
-      dateOfJoining: String(assessment?.dateOfJoining || assessment?.date_of_joining || assessment?.offerDoj || assessment?.offer_doj || "").trim(),
+      offerAmount: String(
+        assessment?.offerAmount
+        || assessment?.offer_amount
+        || assessment?.offerInHand
+        || assessment?.offer_in_hand
+        || assessment?.payload?.offerAmount
+        || assessment?.payload?.offer_amount
+        || assessment?.payload?.offerInHand
+        || assessment?.payload?.offer_in_hand
+        || ""
+      ).trim(),
+      dateOfJoining: String(
+        assessment?.dateOfJoining
+        || assessment?.date_of_joining
+        || assessment?.offerDoj
+        || assessment?.offer_doj
+        || assessment?.payload?.dateOfJoining
+        || assessment?.payload?.date_of_joining
+        || assessment?.payload?.offerDoj
+        || assessment?.payload?.offer_doj
+        || candidate?.lwd_or_doj
+        || candidate?.lwdOrDoj
+        || ""
+      ).trim(),
       status: normalizeAssessmentStatusLabel(assessment?.candidateStatus || assessment?.status || item?.candidateStatus || ""),
       date: ""
     };
@@ -7724,7 +7746,7 @@ function getAssessmentHistoricalRankValue(value = "") {
   if (/\b(joined|onboarded)\b/i.test(text)) return 5;
   if (/\b(offered|offer released|offer accepted|offer)\b/i.test(text)) return 4;
   if (/\b(shortlisted|shortlist)\b/i.test(text)) return 3;
-  if (/\b(screening call aligned|l1 aligned|l2 aligned|l3 aligned|hr discussion aligned|hr interview aligned|aligned for interview|interview scheduled|interview feedback awaited|interview reject)\b/i.test(text)) return 2;
+  if (/\b(screening call aligned|l1 aligned|l2 aligned|l3 aligned|hr discussion aligned|hr interview aligned|aligned for interview|interview scheduled|interview feedback awaited|interview reject|interview on hold)\b/i.test(text)) return 2;
   return 1;
 }
 
@@ -7791,7 +7813,7 @@ function getAssessmentEventStatusTrail(assessment = {}, eventsByAssessmentId = n
 
 function getAssessmentExactInterviewContext(assessment = {}, eventsByAssessmentId = new Map()) {
   const trail = getAssessmentEventStatusTrail(assessment, eventsByAssessmentId);
-  const isInterviewStage = (value = "") => /\b(screening call aligned|l1 aligned|l2 aligned|l3 aligned|hr discussion aligned|hr interview aligned|aligned for interview|interview scheduled|interview feedback awaited|interview reject)\b/i.test(String(value || "").trim());
+  const isInterviewStage = (value = "") => /\b(screening call aligned|l1 aligned|l2 aligned|l3 aligned|hr discussion aligned|hr interview aligned|aligned for interview|interview scheduled|interview feedback awaited|interview reject|interview on hold)\b/i.test(String(value || "").trim());
   let interviewStatus = "";
   for (let index = trail.length - 1; index >= 0; index -= 1) {
     if (isInterviewStage(trail[index])) {
@@ -8150,7 +8172,18 @@ function buildDashboardAgendaPayload({
     const rank = getAssessmentHistoricalRank(assessment, eventsByAssessmentId);
     const interviewAtRaw = assessment?.interviewAt || assessment?.interview_at || "";
     const interviewAt = parseIsoDateValue(interviewAtRaw);
-    const joiningAtRaw = assessment?.offerDoj || assessment?.offer_doj || assessment?.dateOfJoining || assessment?.date_of_joining || assessment?.followUpAt || assessment?.follow_up_at || "";
+    const joiningAtRaw =
+      assessment?.offerDoj
+      || assessment?.offer_doj
+      || assessment?.dateOfJoining
+      || assessment?.date_of_joining
+      || assessment?.payload?.offerDoj
+      || assessment?.payload?.offer_doj
+      || assessment?.payload?.dateOfJoining
+      || assessment?.payload?.date_of_joining
+      || assessment?.followUpAt
+      || assessment?.follow_up_at
+      || "";
     const joiningAt = parseIsoDateValue(joiningAtRaw);
     const base = createDashboardAgendaItem({
       id: assessment?.id,
@@ -10983,6 +11016,12 @@ function createDashboardDrilldownAssessmentItem(assessment = {}, candidate = nul
       || assessment?.offer_doj
       || assessment?.dateOfJoining
       || assessment?.date_of_joining
+      || assessment?.payload?.offerDoj
+      || assessment?.payload?.offer_doj
+      || assessment?.payload?.dateOfJoining
+      || assessment?.payload?.date_of_joining
+      || candidate?.lwd_or_doj
+      || candidate?.lwdOrDoj
       || candidate?.offer_doj
       || candidate?.offerDoj
       || candidate?.date_of_joining
@@ -10994,6 +11033,12 @@ function createDashboardDrilldownAssessmentItem(assessment = {}, candidate = nul
       || assessment?.date_of_joining
       || assessment?.offerDoj
       || assessment?.offer_doj
+      || assessment?.payload?.dateOfJoining
+      || assessment?.payload?.date_of_joining
+      || assessment?.payload?.offerDoj
+      || assessment?.payload?.offer_doj
+      || candidate?.lwd_or_doj
+      || candidate?.lwdOrDoj
       || candidate?.date_of_joining
       || candidate?.dateOfJoining
       || candidate?.offer_doj
