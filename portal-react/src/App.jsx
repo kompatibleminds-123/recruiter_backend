@@ -5605,7 +5605,16 @@ function AssessmentStatusModal({ open, assessment, onClose, onSave }) {
     setManualRemarks("");
     setOfferAmount(String(assessment.offerAmount || "").trim());
     setExpectedDoj(toDateInputValue(assessment.expectedDoj || assessment.followUpAt || ""));
-    setDateOfJoining(toDateInputValue(assessment.dateOfJoining || assessment.followUpAt || ""));
+    setDateOfJoining(toDateInputValue(
+      assessment.dateOfJoining
+      || assessment.offerDoj
+      || assessment.lwdOrDoj
+      || assessment.date_of_joining
+      || assessment.offer_doj
+      || assessment.lwd_or_doj
+      || assessment.followUpAt
+      || ""
+    ));
     setStatus("");
     setSaving(false);
     inferSyncModeRef.current = "programmatic";

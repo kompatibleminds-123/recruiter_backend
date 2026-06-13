@@ -7753,7 +7753,20 @@ function buildClientPortalAgenda(scopedUniverse = [], dateRange = {}) {
     if (isInterviewAlignedStatus(status) && isDateInClientAgendaWindow(interviewAt, dateRange)) {
       interviews.push({ ...base, kind: "interview", at: interviewAt });
     }
-    const joiningAt = normalizeDateOutput(assessment.offerDoj || item.offerDoj || assessment.followUpAt || item.followUpAt || "");
+    const joiningAt = normalizeDateOutput(
+      assessment.offerDoj
+      || assessment.offer_doj
+      || assessment.lwdOrDoj
+      || assessment.lwd_or_doj
+      || assessment.dateOfJoining
+      || assessment.date_of_joining
+      || item.offerDoj
+      || item.lwdOrDoj
+      || item.dateOfJoining
+      || assessment.followUpAt
+      || item.followUpAt
+      || ""
+    );
     if (normalizedStatus === "offered" && isDateInClientAgendaWindow(joiningAt, dateRange)) {
       joinings.push({ ...base, kind: "joining", at: joiningAt });
     }
@@ -11083,10 +11096,14 @@ function createDashboardDrilldownAssessmentItem(assessment = {}, candidate = nul
     offerDoj: normalizeDateOutput(
       assessment?.offerDoj
       || assessment?.offer_doj
+      || assessment?.lwdOrDoj
+      || assessment?.lwd_or_doj
       || assessment?.dateOfJoining
       || assessment?.date_of_joining
       || assessment?.payload?.offerDoj
       || assessment?.payload?.offer_doj
+      || assessment?.payload?.lwdOrDoj
+      || assessment?.payload?.lwd_or_doj
       || assessment?.payload?.dateOfJoining
       || assessment?.payload?.date_of_joining
       || candidate?.lwd_or_doj
@@ -11098,14 +11115,18 @@ function createDashboardDrilldownAssessmentItem(assessment = {}, candidate = nul
       || ""
     ),
     dateOfJoining: normalizeDateOutput(
-      assessment?.dateOfJoining
-      || assessment?.date_of_joining
-      || assessment?.offerDoj
+      assessment?.offerDoj
       || assessment?.offer_doj
+      || assessment?.lwdOrDoj
+      || assessment?.lwd_or_doj
+      || assessment?.dateOfJoining
+      || assessment?.date_of_joining
       || assessment?.payload?.dateOfJoining
       || assessment?.payload?.date_of_joining
       || assessment?.payload?.offerDoj
       || assessment?.payload?.offer_doj
+      || assessment?.payload?.lwdOrDoj
+      || assessment?.payload?.lwd_or_doj
       || candidate?.lwd_or_doj
       || candidate?.lwdOrDoj
       || candidate?.date_of_joining

@@ -1128,6 +1128,7 @@ function sanitizeAssessment(item) {
     interviewAt: item.interviewAt ?? item.interview_at ?? p.interviewAt ?? "",
     offerAmount: item.offerAmount ?? item.offer_amount ?? item.offerInHand ?? item.offer_in_hand ?? p.offerAmount ?? p.offer_amount ?? p.offerInHand ?? p.offer_in_hand ?? "",
     offerDoj: item.offerDoj ?? item.offer_doj ?? item.lwdOrDoj ?? item.lwd_or_doj ?? p.offerDoj ?? p.offer_doj ?? p.lwdOrDoj ?? p.lwd_or_doj ?? "",
+    dateOfJoining: item.dateOfJoining ?? item.date_of_joining ?? p.dateOfJoining ?? p.date_of_joining ?? item.offerDoj ?? item.offer_doj ?? p.offerDoj ?? p.offer_doj ?? item.lwdOrDoj ?? item.lwd_or_doj ?? p.lwdOrDoj ?? p.lwd_or_doj ?? "",
     clientFeedback: item.clientFeedback ?? item.client_feedback ?? p.clientFeedback ?? "",
     clientFeedbackStatus: item.clientFeedbackStatus ?? item.client_feedback_status ?? p.clientFeedbackStatus ?? "",
     clientFeedbackUpdatedAt: item.clientFeedbackUpdatedAt ?? item.client_feedback_updated_at ?? p.clientFeedbackUpdatedAt ?? "",
