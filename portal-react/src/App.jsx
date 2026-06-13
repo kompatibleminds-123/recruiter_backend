@@ -22570,7 +22570,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                     </article>
                   </div>
                   <div className="reports-client-chart-grid">
-                    <article className="reports-chart-card">
+                    <article className="reports-chart-card" style={{ minHeight: "100%" }}>
                       <h4>Client-wise Sourced vs Shared</h4>
                       <p className="muted">CV submission ratio graph</p>
                       {!clientChartRows.length ? <div className="empty-state compact-empty">No chart data.</div> : (
@@ -22588,12 +22588,13 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                                   style={{ width: `${row.sourced > 0 ? Math.max(2, Math.round((row.shared / row.sourced) * Math.max(4, Math.round((row.sourced / maxClientSourced) * 100)))) : 0}%` }}
                                 />
                               </div>
+                              <div className="reports-conversion-pill" style={{ marginTop: "8px" }}>{row.cvSubmissionRatio}%</div>
                             </div>
                           ))}
                         </div>
                       )}
                     </article>
-                    <article className="reports-chart-card">
+                    <article className="reports-chart-card" style={{ minHeight: "100%" }}>
                       <h4>Client Pipeline Funnel (Shared to Interview)</h4>
                       <p className="muted">Interview conversion ratio graph</p>
                       {!clientChartRows.length ? <div className="empty-state compact-empty">No funnel data.</div> : (
@@ -22611,12 +22612,13 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                                   style={{ width: `${row.shared > 0 ? Math.max(2, Math.round((row.interviews / row.shared) * Math.max(4, Math.round((row.shared / maxClientSharedForFunnel) * 100)))) : 0}%` }}
                                 />
                               </div>
+                              <div className="reports-conversion-pill" style={{ marginTop: "8px" }}>{row.interviewConversionRatio}%</div>
                             </div>
                           ))}
                         </div>
                       )}
                     </article>
-                    <article className="reports-chart-card">
+                    <article className="reports-chart-card" style={{ minHeight: "100%" }}>
                       <h4>Client Pipeline Funnel (Joining to Shared)</h4>
                       <p className="muted">Join conversion rate</p>
                       {!clientChartRows.length ? <div className="empty-state compact-empty">No joining data.</div> : (
