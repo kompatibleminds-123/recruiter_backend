@@ -18776,8 +18776,23 @@ const server = http.createServer(async (req, res) => {
         recruiterLabel: String(requestUrl.searchParams.get("recruiterLabel") || "").trim(),
         positionLabel: String(requestUrl.searchParams.get("positionLabel") || "").trim()
       };
+      const companyId = String(
+        user?.companyId
+        || user?.company_id
+        || user?.company?.id
+        || ""
+      ).trim();
+      if (!companyId) throw new Error("Dashboard drilldown missing company context.");
       const [candidates, assessments, assessmentEvents] = await Promise.all([
-        listCandidatesForUser(user, { limit: 5000 }),
+        supabaseTableFetchAll(
+          "candidates",
+          `?${[
+            "select=id,company_id,source,name,jd_title,role,client_name,recruiter_id,recruiter_name,assigned_to_name,assigned_to_user_id,assessment_id,used_in_assessment,hidden_from_captured,created_at,company,location,current_ctc,expected_ctc,notice_period",
+            `company_id=eq.${encodeURIComponent(companyId)}`,
+            "order=created_at.desc"
+          ].join("&")}`,
+          { method: "GET", pageSize: 1000, maxPages: 50 }
+        ).catch(() => []),
         listAssessments({ actorUserId: user.id, companyId: user.companyId }),
         supabaseTableFetchAll(
           "assessment_events",
