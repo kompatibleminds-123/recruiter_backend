@@ -777,6 +777,9 @@ const DASHBOARD_METRIC_TILES = [
   ["joined", "Joined"]
 ];
 
+const DASHBOARD_TOP_NON_CLICKABLE_METRICS = new Set(["totalCandidates", "sharedProfiles"]);
+const DASHBOARD_DRILLDOWN_STATUS_ACTION_METRICS = new Set(["sharedProfiles", "interviews", "shortlisted", "offered", "joined"]);
+
 const CLIENT_PORTAL_METRICS = [
   ["total_shared", "Total Shared"],
   ["in_interview_stage", "In Interview Stage"],
@@ -6271,10 +6274,21 @@ function inferInterviewRoundLabel(value) {
   return "";
 }
 
-function DrilldownModal({ open, title, items, onClose, onOpenCvOriginal, onOpenCvBranded, onOpenDraft, onOpenAssessment, onOpenNotes, onOpenStatus, onAddFeedback, extraActions = null, inline = false, hideRoleClient = false, loading = false }) {
+function DrilldownModal({ open, title, items, onClose, onOpenCvOriginal, onOpenCvBranded, onOpenDraft, onOpenAssessment, onOpenNotes, onOpenStatus, onAddFeedback, extraActions = null, inline = false, hideRoleClient = false, loading = false, drilldownMetric = "", pageSize = 25, renderAsTable = false }) {
   if (!open) return null;
+  const [page, setPage] = useState(1);
+  useEffect(() => {
+    setPage(1);
+  }, [open, title, drilldownMetric, items.length]);
   const containerClass = inline ? "inline-drilldown" : "overlay";
   const cardClass = inline ? "panel inline-drilldown__card" : "overlay-card overlay-card--wide";
+  const safePageSize = Math.max(1, Number(pageSize || 25));
+  const totalItems = Array.isArray(items) ? items.length : 0;
+  const totalPages = Math.max(1, Math.ceil(totalItems / safePageSize));
+  const currentPage = Math.min(page, totalPages);
+  const pageStart = (currentPage - 1) * safePageSize;
+  const visibleItems = (Array.isArray(items) ? items : []).slice(pageStart, pageStart + safePageSize);
+  const allowStatusUpdate = DASHBOARD_DRILLDOWN_STATUS_ACTION_METRICS.has(String(drilldownMetric || "").trim());
   return (
     <div className={containerClass} onClick={inline ? undefined : onClose}>
       <div className={cardClass} onClick={(e) => !inline && e.stopPropagation()}>
@@ -6282,10 +6296,78 @@ function DrilldownModal({ open, title, items, onClose, onOpenCvOriginal, onOpenC
           <h3>{title}</h3>
           {inline ? <button className="ghost-btn" onClick={onClose}>Collapse</button> : null}
         </div>
-        <p className="muted">{loading ? "Loading candidates..." : `${items.length} candidate(s)`}</p>
+        <p className="muted">{loading ? "Loading candidates..." : `${totalItems} candidate(s)`}</p>
         {extraActions ? <div className="drilldown-toolbar">{extraActions}</div> : null}
+        {renderAsTable ? (
+          <>
+            {loading ? <div className="empty-state">Loading candidates...</div> : (!totalItems ? <div className="empty-state">No matching candidates found.</div> : (
+              <div className="table-wrap">
+                <table className="dashboard-table">
+                  <thead>
+                    <tr>
+                      <th>Candidate</th>
+                      <th>Current status</th>
+                      <th>Client</th>
+                      <th>Role</th>
+                      <th>Current CTC</th>
+                      <th>Expected CTC</th>
+                      <th>Notice</th>
+                      <th>Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {visibleItems.map((item, index) => {
+                      const stableItemKey = String(
+                        item?.id ||
+                        item?.assessmentId ||
+                        item?.candidateId ||
+                        item?.raw?.candidate?.id ||
+                        `${item?.name || item?.candidateName || "candidate"}-${item?.phone || item?.email || index}`
+                      );
+                      const assessmentForAction = item.raw?.assessment || item.assessment || (item.assessmentId || item.sourceType === "assessment_only" ? item : null);
+                      const assessmentContext = getDrilldownAssessmentContext(item);
+                      return (
+                        <tr key={stableItemKey}>
+                          <td>
+                            <strong>{item.name || item.candidateName || "Candidate"}</strong>
+                          </td>
+                          <td>
+                            {assessmentContext.currentStatus || item.candidateStatus || "-"}
+                            {assessmentContext.interviewStatus ? <div className="muted">{assessmentContext.interviewStatus}</div> : null}
+                          </td>
+                          <td>{item.clientName || "-"}</td>
+                          <td>{item.position || item.jdTitle || item.role || "-"}</td>
+                          <td>{item.currentCtc || item.current_ctc || "-"}</td>
+                          <td>{item.expectedCtc || item.expected_ctc || "-"}</td>
+                          <td>{item.noticePeriod || item.notice_period || "-"}</td>
+                          <td>
+                            {allowStatusUpdate && assessmentForAction && onOpenStatus ? (
+                              <button className="table-metric-btn" onClick={() => onOpenStatus(assessmentForAction)}>Update status</button>
+                            ) : (
+                              <span className="muted">-</span>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            ))}
+            {!loading && totalItems > safePageSize ? (
+              <div className="button-row" style={{ justifyContent: "space-between", marginTop: 12 }}>
+                <span className="muted">{`Showing ${pageStart + 1}-${Math.min(pageStart + safePageSize, totalItems)} of ${totalItems}`}</span>
+                <div className="button-row tight">
+                  <button className="ghost-btn" disabled={currentPage <= 1} onClick={() => setPage((prev) => Math.max(1, prev - 1))}>Previous</button>
+                  <span className="muted">{`Page ${currentPage} of ${totalPages}`}</span>
+                  <button className="ghost-btn" disabled={currentPage >= totalPages} onClick={() => setPage((prev) => Math.min(totalPages, prev + 1))}>Next</button>
+                </div>
+              </div>
+            ) : null}
+          </>
+        ) : (
         <div className="stack-list compact">
-          {loading ? <div className="empty-state">Loading candidates...</div> : (!items.length ? <div className="empty-state">No matching candidates found.</div> : items.map((item, index) => {
+          {loading ? <div className="empty-state">Loading candidates...</div> : (!totalItems ? <div className="empty-state">No matching candidates found.</div> : visibleItems.map((item, index) => {
             const stableItemKey = String(
               item?.id ||
               item?.assessmentId ||
@@ -6334,10 +6416,10 @@ function DrilldownModal({ open, title, items, onClose, onOpenCvOriginal, onOpenC
                       />
                     ) : null}
                     {onOpenAssessment && (assessmentForAction || profileOnlyMode) ? <button onClick={() => onOpenAssessment(profileTarget)}>{profileOnlyMode ? "Open profile" : "Update Assessment"}</button> : null}
-                    {assessmentForAction && onOpenStatus ? <button onClick={() => onOpenStatus(assessmentForAction)}>Update status</button> : null}
+                    {allowStatusUpdate && assessmentForAction && onOpenStatus ? <button onClick={() => onOpenStatus(assessmentForAction)}>Update status</button> : null}
                     {onOpenNotes && candidateIdForAction ? <button onClick={() => onOpenNotes(candidateIdForAction)}>Update notes</button> : null}
                     {!assessmentForAction && !onOpenNotes && onOpenDraft && candidateIdForAction ? <button onClick={() => onOpenDraft(candidateIdForAction)}>Update details</button> : null}
-                    {!assessmentForAction && onOpenStatus && candidateIdForAction ? <button onClick={() => onOpenStatus({ candidateId: candidateIdForAction, item })}>Update status</button> : null}
+                    {!allowStatusUpdate && !assessmentForAction && onOpenStatus && candidateIdForAction ? null : (!assessmentForAction && onOpenStatus && candidateIdForAction ? <button onClick={() => onOpenStatus({ candidateId: candidateIdForAction, item })}>Update status</button> : null)}
                     {onAddFeedback ? <button className="ghost-btn" onClick={() => onAddFeedback(item)}>{feedbackMeta.feedback ? "Add another feedback" : "Add feedback"}</button> : null}
                   </div>
                 </div>
@@ -6348,6 +6430,7 @@ function DrilldownModal({ open, title, items, onClose, onOpenCvOriginal, onOpenC
           );
           }))}
         </div>
+        )}
         {inline ? null : (
           <div className="button-row">
             <button className="ghost-btn" onClick={onClose}>Close</button>
@@ -14976,6 +15059,7 @@ function PortalApp({ token, onLogout }) {
       } else {
         setStatus("captured", ids.length > 1 ? `${ids.length} drafts assigned to recruiter.` : "Draft assigned to recruiter.", "ok");
       }
+      void refreshDashboardAfterAssessmentChange().catch(() => {});
       // Keep reassignment visually stable; local optimistic patch already reflects latest values.
       // Background workspace refresh is intentionally skipped here to avoid full-list flicker.
       return;
@@ -15001,6 +15085,7 @@ function PortalApp({ token, onLogout }) {
     } else {
       setStatus("captured", ids.length > 1 ? `${ids.length} drafts assigned to recruiter.` : "Draft assigned to recruiter.", "ok");
     }
+    void refreshDashboardAfterAssessmentChange().catch(() => {});
     // Keep reassignment visually stable; local optimistic patch already reflects latest values.
     // Background workspace refresh is intentionally skipped here to avoid full-list flicker.
   }
@@ -20965,7 +21050,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
           });
         }
         void syncPostAssessmentMutation({ candidateId: linkedCandidateId }).catch(() => {});
-        void refreshDashboardAgendaAfterAssessmentChange().catch(() => {});
+        void refreshDashboardAfterAssessmentChange().catch(() => {});
         // Skip immediate workspace refresh to keep viewport stable after status update.
       } catch (error) {
         setStatus(statusTarget, `Status sync failed: ${String(error?.message || error)}`, "error");
@@ -21683,9 +21768,15 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
     });
   }
 
-  async function refreshDashboardAgendaAfterAssessmentChange() {
+  async function refreshDashboardAfterAssessmentChange() {
     if (String(location?.pathname || "").trim() !== "/dashboard") return;
-    await loadDashboardAgenda(agendaRange);
+    await Promise.all([
+      loadDashboardAgenda(agendaRange),
+      loadDashboardSummary(dashboardFilters)
+    ]);
+    if (drilldownState.open && drilldownState.request?.mode === "dashboard") {
+      await openDashboardDrilldown(drilldownState.request);
+    }
   }
 
   function openAgendaAssessmentStatus(item) {
@@ -22589,7 +22680,9 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                   </div>
                 ) : null}
                 <div className="reports-kpi-grid">
-                  {primaryKpiCards.map((item) => (
+                  {primaryKpiCards.map((item) => {
+                    const isClickable = !DASHBOARD_TOP_NON_CLICKABLE_METRICS.has(String(item.key || "").trim());
+                    return isClickable ? (
                     <button
                       key={item.key}
                       type="button"
@@ -22602,7 +22695,19 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                       </div>
                       <div className="reports-kpi-card__value">{item.value}</div>
                     </button>
-                  ))}
+                    ) : (
+                    <article
+                      key={item.key}
+                      className="reports-kpi-card"
+                      style={{ textAlign: "left" }}
+                    >
+                      <div className="reports-kpi-card__top">
+                        <span className="reports-kpi-card__icon" style={{ width: "auto", padding: "10px 14px", borderRadius: "999px" }}>{item.label}</span>
+                      </div>
+                      <div className="reports-kpi-card__value">{item.value}</div>
+                    </article>
+                    );
+                  })}
                 </div>
                 <div style={{ display: "flex", justifyContent: "center", flexWrap: "wrap", gap: "14px", marginTop: "14px" }}>
                   {ratioKpiCards.map((item) => (
@@ -22754,10 +22859,17 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                         </summary>
                         <div className="metric-grid metric-grid--tight" style={{ marginTop: 12 }}>
                           {DASHBOARD_METRIC_TILES.map(([key, label]) => (
-                            <button key={key} className="metric-card metric-card--button compact-metric" onClick={() => void openDashboardDrilldown({ title: `${group.label} | ${label}`, metric: key, groupType: "client", params: { clientLabel: group.label } })}>
-                              <div className="metric-label">{label}</div>
-                              <div className="metric-value">{group.metrics?.[key] || 0}</div>
-                            </button>
+                            key === "totalCandidates" ? (
+                              <button key={key} className="metric-card metric-card--button compact-metric" onClick={() => void openDashboardDrilldown({ title: `${group.label} | ${label}`, metric: key, groupType: "client", params: { clientLabel: group.label } })}>
+                                <div className="metric-label">{label}</div>
+                                <div className="metric-value">{group.metrics?.[key] || 0}</div>
+                              </button>
+                            ) : (
+                              <button key={key} className="metric-card metric-card--button compact-metric" onClick={() => void openDashboardDrilldown({ title: `${group.label} | ${label}`, metric: key, groupType: "client", params: { clientLabel: group.label } })}>
+                                <div className="metric-label">{label}</div>
+                                <div className="metric-value">{group.metrics?.[key] || 0}</div>
+                              </button>
+                            )
                           ))}
                         </div>
                         <div className="chip-row dashboard-position-chip-row">
@@ -22788,9 +22900,15 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                                   <td>{row.positionLabel}</td>
                                   {DASHBOARD_METRIC_COLUMNS.map(([key, label]) => (
                                     <td key={key}>
-                                      <button className="table-metric-btn" onClick={() => void openDashboardDrilldown({ title: `${group.label} | ${row.positionLabel} | ${label}`, metric: key, groupType: "position", params: { clientLabel: group.label, positionLabel: row.positionLabel } })}>
-                                        {row.metrics?.[key] || 0}
-                                      </button>
+                                      {key === "totalCandidates" ? (
+                                        <button className="table-metric-btn" onClick={() => void openDashboardDrilldown({ title: `${group.label} | ${row.positionLabel} | ${label}`, metric: key, groupType: "position", params: { clientLabel: group.label, positionLabel: row.positionLabel } })}>
+                                          {row.metrics?.[key] || 0}
+                                        </button>
+                                      ) : (
+                                        <button className="table-metric-btn" onClick={() => void openDashboardDrilldown({ title: `${group.label} | ${row.positionLabel} | ${label}`, metric: key, groupType: "position", params: { clientLabel: group.label, positionLabel: row.positionLabel } })}>
+                                          {row.metrics?.[key] || 0}
+                                        </button>
+                                      )}
                                     </td>
                                   ))}
                                 </tr>
@@ -23013,6 +23131,9 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                     loading={Boolean(drilldownState.loading)}
                     inline
                     hideRoleClient
+                    renderAsTable
+                    pageSize={25}
+                    drilldownMetric={String(drilldownState.request?.metric || "")}
                     title={drilldownState.title}
                     items={drilldownState.items}
                     onClose={() => setDrilldownState({ open: false, title: "", items: [], request: null, loading: false })}
