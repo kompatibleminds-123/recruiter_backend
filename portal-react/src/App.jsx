@@ -23011,6 +23011,32 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                       )}
                     </article>
                     <article className="reports-chart-card" style={{ minHeight: "100%" }}>
+                      <h4>Recruiter Pipeline Funnel (Joining to Shared)</h4>
+                      <p className="muted">Join conversion rate</p>
+                      {!recruiterChartRows.length ? <div className="empty-state compact-empty">No funnel data.</div> : (
+                        <div className="reports-funnel-list">
+                          {recruiterChartRows.map((row) => (
+                            <div key={`recruiter-joining-${row.label}`} className="reports-funnel-item">
+                              <div className="reports-funnel-item__head"><span>{row.label}</span><strong>{row.joined}</strong></div>
+                              <div className="reports-stacked-track">
+                                <i
+                                  className="reports-stacked-track__base"
+                                  style={{ width: `${Math.max(4, Math.round((row.shared / maxRecruiterShared) * 100))}%` }}
+                                />
+                                <i
+                                  className="reports-stacked-track__fill"
+                                  style={{ width: `${row.shared > 0 ? Math.max(2, Math.round((row.joined / row.shared) * Math.max(4, Math.round((row.shared / maxRecruiterShared) * 100)))) : 0}%` }}
+                                />
+                              </div>
+                              <div className="reports-conversion-pill" style={{ marginTop: "8px" }}>{row.joiningPct}%</div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </article>
+                  </div>
+                  <div className="reports-client-chart-grid">
+                    <article className="reports-chart-card" style={{ minHeight: "100%" }}>
                       <h4>Recruiter Performance (Score)</h4>
                       {!recruiterLeaderboardRanked.length ? <div className="empty-state compact-empty">No chart data.</div> : (
                         <div className="reports-funnel-list">
@@ -23044,6 +23070,9 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                                 />
                               </div>
                               <div className="reports-conversion-pill" style={{ marginTop: "8px" }}>{row.selfSourcedPct}% self sourced</div>
+                              <p className="muted" style={{ margin: "6px 0 0", fontSize: "0.74rem" }}>
+                                {`Total - ${row.sourced}, Self - ${row.selfSourced}`}
+                              </p>
                             </div>
                           ))}
                         </div>
