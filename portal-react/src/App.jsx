@@ -6255,13 +6255,10 @@ function getDrilldownAssessmentContext(item) {
       break;
     }
   }
-  const interviewStatus = exactInterviewStatus || inferInterviewRoundLabel(previousStatus || currentStatus || "")
-    || inferInterviewRoundLabel(currentStatus || "");
   return {
     assessment,
     candidate,
     currentStatus,
-    interviewStatus,
     previousStatus: exactPreviousStatus || previousStatus
   };
 }
@@ -6293,6 +6290,79 @@ function DrilldownModal({ open, title, items, onClose, onOpenCvOriginal, onOpenC
   const visibleItems = (Array.isArray(items) ? items : []).slice(pageStart, pageStart + safePageSize);
   const allowStatusUpdate = DASHBOARD_DRILLDOWN_STATUS_ACTION_METRICS.has(String(drilldownMetric || "").trim());
   const isJoinedMetric = String(drilldownMetric || "").trim() === "joined";
+  function downloadDrilldownExcel() {
+    const rows = Array.isArray(items) ? items : [];
+    if (!rows.length) return;
+    const headers = isJoinedMetric
+      ? ["Candidate", "Current status", "Previous assessment status", "Client", "Role", "Date of Joining", "Offer Amount"]
+      : ["Candidate", "Current status", "Previous assessment status", "Client", "Role", "Current CTC", "Expected CTC", "Notice"];
+    const bodyRows = rows.map((item, index) => {
+      const assessmentContext = getDrilldownAssessmentContext(item);
+      const linkedAssessment = assessmentContext.assessment || null;
+      const linkedCandidate = assessmentContext.candidate || null;
+      const currentCtc = String(linkedAssessment?.currentCtc || linkedAssessment?.current_ctc || item.currentCtc || item.current_ctc || linkedCandidate?.current_ctc || linkedCandidate?.currentCtc || "").trim();
+      const expectedCtc = String(linkedAssessment?.expectedCtc || linkedAssessment?.expected_ctc || item.expectedCtc || item.expected_ctc || linkedCandidate?.expected_ctc || linkedCandidate?.expectedCtc || "").trim();
+      const noticePeriod = String(linkedAssessment?.noticePeriod || linkedAssessment?.notice_period || item.noticePeriod || item.notice_period || linkedCandidate?.notice_period || linkedCandidate?.noticePeriod || "").trim();
+      const offerAmount = String(linkedAssessment?.offerAmount || linkedAssessment?.offer_amount || linkedAssessment?.offerInHand || linkedAssessment?.offer_in_hand || item.offerAmount || item.offer_amount || item.offerInHand || item.offer_in_hand || linkedCandidate?.offer_in_hand || linkedCandidate?.offerInHand || "").trim();
+      const dateOfJoining = String(
+        linkedAssessment?.dateOfJoining
+        || linkedAssessment?.date_of_joining
+        || linkedAssessment?.joiningDate
+        || linkedAssessment?.joining_date
+        || linkedAssessment?.offerDoj
+        || linkedAssessment?.offer_doj
+        || linkedAssessment?.payload?.dateOfJoining
+        || linkedAssessment?.payload?.date_of_joining
+        || linkedAssessment?.payload?.joiningDate
+        || linkedAssessment?.payload?.joining_date
+        || item.dateOfJoining
+        || item.date_of_joining
+        || item.joiningDate
+        || item.joining_date
+        || item.offerDoj
+        || item.offer_doj
+        || item.payload?.dateOfJoining
+        || item.payload?.date_of_joining
+        || item.payload?.joiningDate
+        || item.payload?.joining_date
+        || linkedCandidate?.offer_doj
+        || linkedCandidate?.offerDoj
+        || linkedCandidate?.date_of_joining
+        || linkedCandidate?.dateOfJoining
+        || linkedCandidate?.joining_date
+        || linkedCandidate?.joiningDate
+        || linkedCandidate?.lwd_or_doj
+        || linkedCandidate?.lwdOrDoj
+        || ""
+      ).trim();
+      const cells = isJoinedMetric
+        ? [
+            item.name || item.candidateName || `Candidate ${index + 1}`,
+            assessmentContext.currentStatus || item.candidateStatus || "",
+            assessmentContext.previousStatus || "",
+            item.clientName || "",
+            item.position || item.jdTitle || item.role || "",
+            dateOfJoining ? formatDateForCopy(dateOfJoining) : "",
+            offerAmount || ""
+          ]
+        : [
+            item.name || item.candidateName || `Candidate ${index + 1}`,
+            assessmentContext.currentStatus || item.candidateStatus || "",
+            assessmentContext.previousStatus || "",
+            item.clientName || "",
+            item.position || item.jdTitle || item.role || "",
+            currentCtc || "",
+            expectedCtc || "",
+            noticePeriod || ""
+          ];
+      return cells;
+    });
+    const safeLabel = String(title || "dashboard-drilldown").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+    const tableHeaders = headers.map((heading) => `<th style="border:1px solid #d8dee8;padding:10px 12px;background:#f6f8fb;text-align:left;font-size:13px;">${escapeHtml(heading)}</th>`).join("");
+    const tableRows = bodyRows.map((cells) => `<tr>${cells.map((cell) => `<td style="border:1px solid #d8dee8;padding:8px 10px;font-size:12px;">${escapeHtml(cell)}</td>`).join("")}</tr>`).join("");
+    const html = `<!doctype html><html><head><meta charset="utf-8"/></head><body><table style="border-collapse:collapse;width:100%;"><thead><tr>${tableHeaders}</tr></thead><tbody>${tableRows}</tbody></table></body></html>`;
+    downloadTextFile(`dashboard-${safeLabel || "drilldown"}-${new Date().toISOString().slice(0, 10)}.xls`, html, "application/vnd.ms-excel;charset=utf-8");
+  }
   return (
     <div className={containerClass} onClick={inline ? undefined : onClose}>
       <div className={cardClass} onClick={(e) => !inline && e.stopPropagation()}>
@@ -6301,7 +6371,12 @@ function DrilldownModal({ open, title, items, onClose, onOpenCvOriginal, onOpenC
           {inline ? <button className="ghost-btn" onClick={onClose}>Collapse</button> : null}
         </div>
         <p className="muted">{loading ? "Loading candidates..." : `${totalItems} candidate(s)`}</p>
-        {extraActions ? <div className="drilldown-toolbar">{extraActions}</div> : null}
+        {extraActions || totalItems ? (
+          <div className="drilldown-toolbar">
+            {extraActions}
+            {totalItems ? <button className="ghost-btn" onClick={downloadDrilldownExcel}>Download Excel</button> : null}
+          </div>
+        ) : null}
         {renderAsTable ? (
           <>
             {loading ? <div className="empty-state">Loading candidates...</div> : (!totalItems ? <div className="empty-state">No matching candidates found.</div> : (
@@ -6383,11 +6458,31 @@ function DrilldownModal({ open, title, items, onClose, onOpenCvOriginal, onOpenC
                       ).trim();
                       const dateOfJoining = String(
                         linkedAssessment?.dateOfJoining
+                        || linkedAssessment?.date_of_joining
+                        || linkedAssessment?.joiningDate
+                        || linkedAssessment?.joining_date
                         || linkedAssessment?.offerDoj
                         || linkedAssessment?.offer_doj
+                        || linkedAssessment?.payload?.dateOfJoining
+                        || linkedAssessment?.payload?.date_of_joining
+                        || linkedAssessment?.payload?.joiningDate
+                        || linkedAssessment?.payload?.joining_date
                         || item.dateOfJoining
+                        || item.date_of_joining
+                        || item.joiningDate
+                        || item.joining_date
                         || item.offerDoj
                         || item.offer_doj
+                        || item.payload?.dateOfJoining
+                        || item.payload?.date_of_joining
+                        || item.payload?.joiningDate
+                        || item.payload?.joining_date
+                        || linkedCandidate?.offer_doj
+                        || linkedCandidate?.offerDoj
+                        || linkedCandidate?.date_of_joining
+                        || linkedCandidate?.dateOfJoining
+                        || linkedCandidate?.joining_date
+                        || linkedCandidate?.joiningDate
                         || linkedCandidate?.lwd_or_doj
                         || linkedCandidate?.lwdOrDoj
                         || ""
@@ -6399,7 +6494,6 @@ function DrilldownModal({ open, title, items, onClose, onOpenCvOriginal, onOpenC
                           </td>
                           <td>
                             {assessmentContext.currentStatus || item.candidateStatus || "-"}
-                            {assessmentContext.interviewStatus ? <div className="muted drilldown-status-subline">{`Interview status: ${assessmentContext.interviewStatus}`}</div> : null}
                             {assessmentContext.previousStatus ? <div className="muted drilldown-status-subline">{`Previous assessment status: ${assessmentContext.previousStatus}`}</div> : null}
                           </td>
                           <td>{item.clientName || "-"}</td>
@@ -6474,7 +6568,6 @@ function DrilldownModal({ open, title, items, onClose, onOpenCvOriginal, onOpenC
                   ].filter(Boolean).join(" | ")}</p>
                   <div className="candidate-snippet">{[
                     assessmentContext.currentStatus ? `Assessment status: ${assessmentContext.currentStatus}` : "",
-                    assessmentContext.interviewStatus ? `Interview status: ${assessmentContext.interviewStatus}` : "",
                     assessmentContext.previousStatus ? `Previous assessment status: ${assessmentContext.previousStatus}` : "",
                     item.interviewAt ? `Interview: ${new Date(item.interviewAt).toLocaleString()}` : ""
                   ].filter(Boolean).join("\n")}</div>
