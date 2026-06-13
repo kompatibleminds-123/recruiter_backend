@@ -9889,7 +9889,19 @@ function buildCandidateSearchUniverse(candidates = [], assessments = [], jobs = 
           || cachedCvResult?.currentDesignation
           || ""
       ).trim(),
-      position: isUnmappedApplicant ? rawPosition : (resolvedJob?.title || getPositionLabel(candidate, linkedAssessment || {}, knownJdTitles)),
+      position: isUnmappedApplicant
+        ? rawPosition
+        : (
+          resolvedJob?.title
+          || getPositionLabel(candidate, linkedAssessment || {}, knownJdTitles)
+          || String(
+            candidate?.role
+            || linkedAssessment?.jdTitle
+            || linkedAssessment?.currentDesignation
+            || linkedAssessment?.current_designation
+            || ""
+          ).trim()
+        ),
       company: String(
         candidate?.company
           || linkedAssessment?.currentCompany
@@ -9974,7 +9986,14 @@ function buildCandidateSearchUniverse(candidates = [], assessments = [], jobs = 
       id: assessmentId,
       candidateName: String(assessment?.candidateName || "").trim(),
       role: String(assessment?.currentDesignation || assessment?.current_designation || "").trim(),
-      position: resolvedJob?.title || getPositionLabel({}, assessment, knownJdTitles),
+      position: resolvedJob?.title
+        || getPositionLabel({}, assessment, knownJdTitles)
+        || String(
+          assessment?.jdTitle
+          || assessment?.currentDesignation
+          || assessment?.current_designation
+          || ""
+        ).trim(),
       company: String(assessment?.currentCompany || assessment?.current_company || "").trim(),
       totalExperience: String(assessment?.totalExperience || assessment?.total_experience || "").trim(),
       location: String(assessment?.location || "").trim(),
@@ -10320,8 +10339,8 @@ function candidateMatchesNaturalFilter(item, filters, actor = null) {
 
 function itemMatchesDashboardMetric(item, metric, dateFrom = "", dateTo = "") {
   const bucket = getAssessmentLifecycleBucket(item);
-  const hasLinkedAssessment = Boolean(item?.raw?.assessment || item?.assessment || item?.assessmentId);
-  const isSharedAssessment = item?.sourceType === "captured_and_converted" && hasLinkedAssessment;
+  const hasLinkedAssessment = Boolean(item?.raw?.assessment || item?.assessment || item?.assessmentId || item?.sourceType === "assessment_only");
+  const isSharedAssessment = hasLinkedAssessment && (item?.sourceType === "captured_and_converted" || item?.sourceType === "assessment_only");
   const rawSource = String(item?.raw?.candidate?.source || item?.source || "").trim().toLowerCase();
   const isApplicantSource = rawSource === "website" || rawSource === "website_apply" || rawSource === "hosted_apply" || rawSource === "google_sheet";
   const historicalRank = Math.max(1, Number(item?._dashboardHistoricalRank || 1));
@@ -18736,12 +18755,11 @@ const server = http.createServer(async (req, res) => {
           return { ...item, ownerRecruiter: actorName, _dashboardHistoricalRank: historicalRank, _dashboardInterviewStatus: exactInterviewContext.interviewStatus, _dashboardPreviousStatus: exactInterviewContext.previousStatus };
         });
       const items = universe
-        .filter((item) => item.sourceType !== "assessment_only")
         .filter((item) => !clientFilter || String(item.clientName || "").trim() === clientFilter)
         .filter((item) => !recruiterFilter || String(item.ownerRecruiter || "").trim() === recruiterFilter)
         .filter((item) => itemMatchesDashboardGroup(item, groupType, params))
         .filter((item) => itemMatchesDashboardMetric(item, metric, dateFrom, dateTo))
-        .slice(0, 300);
+        ;
       sendJson(res, 200, {
         ok: true,
         result: {
