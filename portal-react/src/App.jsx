@@ -13412,8 +13412,9 @@ function PortalApp({ token, onLogout }) {
       return true;
     });
   }, [candidateBaseUniverse, candidateStructuredFilters, state.assessments]);
+  const candidateHasSmartChipSelection = candidateAiQueryMode === "natural" && candidateQuickChipIds.length > 0;
   const databaseAllMode = candidateSearchMode === "all"
-    && !(candidateAiQueryMode === "natural" && candidateQuickChipIds.length > 0)
+    && !candidateHasSmartChipSelection
     && !candidateStructuredFiltersActive;
   const databaseServerQueryMode = !candidateHasSmartChipSelection && !databaseAllMode;
   const pagedCandidates = useMemo(() => {
@@ -14019,7 +14020,6 @@ function PortalApp({ token, onLogout }) {
       return candidateSmartChipRowsStableRef.current || emptyRows;
     }
   }, [candidateUniverse, candidateSmartDateFrom, candidateSmartDateTo, state.assessments, state.candidates, state.assessmentEvents, candidateSmartChipCacheKey, candidateSmartChipDataReady]);
-  const candidateHasSmartChipSelection = candidateAiQueryMode === "natural" && candidateQuickChipIds.length > 0;
   const candidateSmartChipRowsEffective = useMemo(() => {
     const remoteRows = candidateSmartChipRowsRemote && typeof candidateSmartChipRowsRemote === "object"
       ? candidateSmartChipRowsRemote
