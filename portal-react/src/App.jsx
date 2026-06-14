@@ -3785,6 +3785,12 @@ function formatDateForCopy(value) {
   }
 }
 
+function formatDateOrRaw(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  return formatDateForCopy(raw) || raw;
+}
+
 function buildCombinedAssessmentInsightsForExportV2(item = {}) {
   const ctx = resolveCandidateContext(item);
   const qaLines = [];
@@ -6369,7 +6375,7 @@ function DrilldownModal({ open, title, items, onClose, onOpenCvOriginal, onOpenC
             assessmentContext.previousStatus || "",
             item.clientName || "",
             item.position || item.jdTitle || item.role || "",
-            dateOfJoining ? formatDateForCopy(dateOfJoining) : "",
+            dateOfJoining ? formatDateOrRaw(dateOfJoining) : "",
             offerAmount || ""
           ]
         : [
@@ -6539,7 +6545,7 @@ function DrilldownModal({ open, title, items, onClose, onOpenCvOriginal, onOpenC
                           <td>{item.position || item.jdTitle || item.role || "-"}</td>
                           {isJoinedMetric ? (
                             <>
-                              <td>{dateOfJoining ? formatDateForCopy(dateOfJoining) : "-"}</td>
+                              <td>{dateOfJoining ? formatDateOrRaw(dateOfJoining) : "-"}</td>
                               <td>{offerAmount || "-"}</td>
                             </>
                           ) : (
@@ -19087,7 +19093,7 @@ function PortalApp({ token, onLogout }) {
         ? [
             row.candidateName || "",
             row.round || row.status || "",
-            row.date ? formatDateForCopy(row.date) : "",
+            row.date ? formatDateOrRaw(row.date) : "",
             row.client || "",
             row.role || "",
             row.offerAmount || row.offerInHand || "",
@@ -23891,7 +23897,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                                             roundPreviewText
                                           )}
                                         </td>
-                                        <td>{row.date ? formatDateForCopy(row.date) : "-"}</td>
+                                        <td>{row.date ? formatDateOrRaw(row.date) : "-"}</td>
                                         <td>{row.client || "-"}</td>
                                         <td>{row.role || "-"}</td>
                                         {chip.id === "joined_candidates" ? (
