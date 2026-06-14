@@ -13810,6 +13810,12 @@ function PortalApp({ token, onLogout }) {
         || item?.payload?.lwd_or_doj
         || item?.payload?.joiningDate
         || item?.payload?.joining_date
+        || item?.raw?.candidate?.dateOfJoining
+        || item?.raw?.candidate?.date_of_joining
+        || item?.raw?.candidate?.offerDoj
+        || item?.raw?.candidate?.offer_doj
+        || item?.raw?.candidate?.lwdOrDoj
+        || item?.raw?.candidate?.lwd_or_doj
         || ""
       ).trim();
       const baseRow = {
@@ -14200,7 +14206,11 @@ function PortalApp({ token, onLogout }) {
       if (cancelled) return;
       const rows = result?.rows && typeof result.rows === "object" ? result.rows : (result?.result?.rows && typeof result.result.rows === "object" ? result.result.rows : null);
       if (!rows) {
-        setCandidateSmartChipRowsRemote(null);
+        if (candidateSmartChipRowsStableRef.current && !isEmptySmartChipSnapshot(candidateSmartChipRowsStableRef.current)) {
+          setCandidateSmartChipRowsRemote(candidateSmartChipRowsStableRef.current);
+        } else {
+          setCandidateSmartChipRowsRemote(null);
+        }
         return;
       }
       const incomingRowsAreEmpty = isEmptySmartChipSnapshot(rows);
@@ -14245,7 +14255,14 @@ function PortalApp({ token, onLogout }) {
     }).catch((error) => {
       if (cancelled) return;
       console.error("candidateSmartChipRows remote failed", error);
-      setCandidateSmartChipRowsRemote(null);
+      if (candidateSmartChipRowsStableRef.current && !isEmptySmartChipSnapshot(candidateSmartChipRowsStableRef.current)) {
+        setCandidateSmartChipRowsRemote(candidateSmartChipRowsStableRef.current);
+        if (candidateSmartChipSummaryStableRef.current) {
+          setCandidateSmartChipSummary(candidateSmartChipSummaryStableRef.current);
+        }
+      } else {
+        setCandidateSmartChipRowsRemote(null);
+      }
     }).finally(() => {
       if (cancelled) return;
       setCandidateSmartChipLoading(false);

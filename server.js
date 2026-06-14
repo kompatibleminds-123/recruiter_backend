@@ -7366,6 +7366,10 @@ function buildDatabaseQuickChipRows({ universe = [], assessmentEvents = [], date
         || assessment?.payload?.offer_doj
         || assessment?.payload?.lwdOrDoj
         || assessment?.payload?.lwd_or_doj
+        || candidate?.dateOfJoining
+        || candidate?.date_of_joining
+        || candidate?.offerDoj
+        || candidate?.offer_doj
         || candidate?.lwdOrDoj
         || candidate?.lwd_or_doj
         || ""
@@ -8269,6 +8273,12 @@ function buildDashboardAgendaPayload({
       || assessment?.payload?.date_of_joining
       || assessment?.payload?.lwdOrDoj
       || assessment?.payload?.lwd_or_doj
+      || candidate?.offerDoj
+      || candidate?.offer_doj
+      || candidate?.dateOfJoining
+      || candidate?.date_of_joining
+      || candidate?.lwdOrDoj
+      || candidate?.lwd_or_doj
       || assessment?.followUpAt
       || assessment?.follow_up_at
       || "";
