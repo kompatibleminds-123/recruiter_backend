@@ -6063,6 +6063,10 @@ function parseNoticePeriodToDays(value) {
   if (!raw) return null;
   if (/immediate|immediately|serving notice|available now/.test(raw)) return 0;
   if (/\b(lwd|doj)\b/.test(raw) && /\bnext week\b/.test(raw)) return 7;
+  const dayRangeMatch = raw.match(/(\d+(?:\.\d+)?)\s*[-–]\s*(\d+(?:\.\d+)?)\s*days?/);
+  if (dayRangeMatch) return Math.max(Number(dayRangeMatch[1]), Number(dayRangeMatch[2]));
+  const monthRangeMatch = raw.match(/(\d+(?:\.\d+)?)\s*[-–]\s*(\d+(?:\.\d+)?)\s*months?/);
+  if (monthRangeMatch) return Math.round(Math.max(Number(monthRangeMatch[1]), Number(monthRangeMatch[2])) * 30);
   const dayMatch = raw.match(/(\d+(?:\.\d+)?)\s*days?/);
   if (dayMatch) return Number(dayMatch[1]);
   const monthMatch = raw.match(/(\d+(?:\.\d+)?)\s*months?/);

@@ -1081,6 +1081,10 @@ function parseNoticePeriodToDays(value) {
   if (!raw) return null;
   if (/immediate|immediately|serving notice|available now/.test(raw)) return 0;
   if (/\b(lwd|doj)\b/.test(raw) && /\bnext week\b/.test(raw)) return 7;
+  const dayRangeMatch = raw.match(/(\d+(?:\.\d+)?)\s*[-–]\s*(\d+(?:\.\d+)?)\s*days?/);
+  if (dayRangeMatch) return Math.max(Number(dayRangeMatch[1]), Number(dayRangeMatch[2]));
+  const monthRangeMatch = raw.match(/(\d+(?:\.\d+)?)\s*[-–]\s*(\d+(?:\.\d+)?)\s*months?/);
+  if (monthRangeMatch) return Math.round(Math.max(Number(monthRangeMatch[1]), Number(monthRangeMatch[2])) * 30);
   const daysMatch = raw.match(/(\d+(?:\.\d+)?)\s*days?/);
   if (daysMatch) return Number(daysMatch[1]);
   const monthsMatch = raw.match(/(\d+(?:\.\d+)?)\s*months?/);
@@ -14199,12 +14203,17 @@ function PortalApp({ token, onLogout }) {
         setCandidateSmartChipRowsRemote(null);
         return;
       }
-      setCandidateSmartChipRowsRemote(rows);
-      candidateSmartChipRowsStableRef.current = rows;
-      if (candidateSmartChipCacheKey && typeof window !== "undefined") {
-        try {
-          window.localStorage.setItem(candidateSmartChipCacheKey, JSON.stringify(rows));
-        } catch {}
+      const incomingRowsAreEmpty = isEmptySmartChipSnapshot(rows);
+      if (incomingRowsAreEmpty && candidateSmartChipRowsStableRef.current && !isEmptySmartChipSnapshot(candidateSmartChipRowsStableRef.current)) {
+        setCandidateSmartChipRowsRemote(candidateSmartChipRowsStableRef.current);
+      } else {
+        setCandidateSmartChipRowsRemote(rows);
+        candidateSmartChipRowsStableRef.current = rows;
+        if (candidateSmartChipCacheKey && typeof window !== "undefined") {
+          try {
+            window.localStorage.setItem(candidateSmartChipCacheKey, JSON.stringify(rows));
+          } catch {}
+        }
       }
       const summary = result?.summary && typeof result.summary === "object" ? result.summary : (result?.result?.summary && typeof result.result.summary === "object" ? result.result.summary : null);
       if (summary) {
@@ -14218,12 +14227,19 @@ function PortalApp({ token, onLogout }) {
           joined_candidates: Number(summary.joined_candidates || summary.joinedCandidates || 0),
           cv_shared: Number(summary.cv_shared || summary.cvShared || 0)
         };
-        candidateSmartChipSummaryStableRef.current = normalizedSummary;
-        setCandidateSmartChipSummary(normalizedSummary);
-        if (candidateSmartChipSummaryCacheKey && typeof window !== "undefined") {
-          try {
-            window.localStorage.setItem(candidateSmartChipSummaryCacheKey, JSON.stringify(normalizedSummary));
-          } catch {}
+        const incomingSummaryIsEmpty = Object.values(normalizedSummary).every((value) => Number(value || 0) === 0);
+        const stableSummary = candidateSmartChipSummaryStableRef.current;
+        const stableSummaryHasData = stableSummary && Object.values(stableSummary).some((value) => Number(value || 0) > 0);
+        if (incomingSummaryIsEmpty && stableSummaryHasData && incomingRowsAreEmpty) {
+          setCandidateSmartChipSummary(stableSummary);
+        } else {
+          candidateSmartChipSummaryStableRef.current = normalizedSummary;
+          setCandidateSmartChipSummary(normalizedSummary);
+          if (candidateSmartChipSummaryCacheKey && typeof window !== "undefined") {
+            try {
+              window.localStorage.setItem(candidateSmartChipSummaryCacheKey, JSON.stringify(normalizedSummary));
+            } catch {}
+          }
         }
       }
     }).catch((error) => {
