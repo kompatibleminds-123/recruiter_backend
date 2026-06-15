@@ -13722,6 +13722,7 @@ function PortalApp({ token, onLogout }) {
     }
     let cancelled = false;
     const requestId = Date.now();
+    candidateSmartChipSummaryRequestRef.current = requestId;
     setCandidateSmartChipLoading(true);
     api("/company/database/quick-chip-rows", token, "POST", {
       filters: candidateSmartChipScopedFilters,
@@ -13730,7 +13731,7 @@ function PortalApp({ token, onLogout }) {
       dateFrom: candidateSmartDateFrom,
       dateTo: candidateSmartDateTo
     }).then((result) => {
-      if (cancelled) return;
+      if (cancelled || candidateSmartChipSummaryRequestRef.current !== requestId) return;
       const rows = result?.rows && typeof result.rows === "object" ? result.rows : (result?.result?.rows && typeof result.result.rows === "object" ? result.result.rows : null);
       if (!rows) {
         if (candidateSmartChipRowsStableRef.current && !isEmptySmartChipSnapshot(candidateSmartChipRowsStableRef.current)) {
@@ -13780,7 +13781,7 @@ function PortalApp({ token, onLogout }) {
         }
       }
     }).catch((error) => {
-      if (cancelled) return;
+      if (cancelled || candidateSmartChipSummaryRequestRef.current !== requestId) return;
       console.error("candidateSmartChipRows remote failed", error);
       if (candidateSmartChipRowsStableRef.current && !isEmptySmartChipSnapshot(candidateSmartChipRowsStableRef.current)) {
         setCandidateSmartChipRowsRemote(candidateSmartChipRowsStableRef.current);
@@ -13791,9 +13792,8 @@ function PortalApp({ token, onLogout }) {
         setCandidateSmartChipRowsRemote(null);
       }
     }).finally(() => {
-      if (cancelled) return;
+      if (cancelled || candidateSmartChipSummaryRequestRef.current !== requestId) return;
       setCandidateSmartChipLoading(false);
-      candidateSmartChipSummaryRequestRef.current = requestId;
     });
     return () => {
       cancelled = true;
