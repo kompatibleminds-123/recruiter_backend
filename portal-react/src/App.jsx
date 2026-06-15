@@ -1081,6 +1081,7 @@ function parseNoticePeriodToDays(value) {
   if (!raw) return null;
   if (/immediate|immediately|serving notice|available now/.test(raw)) return 0;
   if (/\b(lwd|doj)\b/.test(raw) && /\bnext week\b/.test(raw)) return 7;
+  if (/(less than|under|within)\s*15\s*days?/.test(raw) || /<=\s*15\s*days?/.test(raw)) return 15;
   const dayRangeMatch = raw.match(/(\d+(?:\.\d+)?)\s*[-–]\s*(\d+(?:\.\d+)?)\s*days?/);
   if (dayRangeMatch) return Math.max(Number(dayRangeMatch[1]), Number(dayRangeMatch[2]));
   const monthRangeMatch = raw.match(/(\d+(?:\.\d+)?)\s*[-–]\s*(\d+(?:\.\d+)?)\s*months?/);
@@ -3791,6 +3792,52 @@ function formatDateOrRaw(value) {
   return formatDateForCopy(raw) || raw;
 }
 
+function resolveDashboardDateOfJoiningValue(item = {}, linkedAssessment = null, linkedCandidate = null) {
+  return String(
+    item?.dateOfJoining
+    || item?.date_of_joining
+    || item?.joiningDate
+    || item?.joining_date
+    || linkedAssessment?.dateOfJoining
+    || linkedAssessment?.date_of_joining
+    || linkedAssessment?.joiningDate
+    || linkedAssessment?.joining_date
+    || linkedAssessment?.payload?.dateOfJoining
+    || linkedAssessment?.payload?.date_of_joining
+    || linkedAssessment?.payload?.joiningDate
+    || linkedAssessment?.payload?.joining_date
+    || linkedAssessment?.offerDoj
+    || linkedAssessment?.offer_doj
+    || linkedAssessment?.lwdOrDoj
+    || linkedAssessment?.lwd_or_doj
+    || linkedAssessment?.payload?.offerDoj
+    || linkedAssessment?.payload?.offer_doj
+    || linkedAssessment?.payload?.lwdOrDoj
+    || linkedAssessment?.payload?.lwd_or_doj
+    || item?.offerDoj
+    || item?.offer_doj
+    || item?.lwdOrDoj
+    || item?.lwd_or_doj
+    || item?.payload?.dateOfJoining
+    || item?.payload?.date_of_joining
+    || item?.payload?.joiningDate
+    || item?.payload?.joining_date
+    || item?.payload?.offerDoj
+    || item?.payload?.offer_doj
+    || item?.payload?.lwdOrDoj
+    || item?.payload?.lwd_or_doj
+    || linkedCandidate?.dateOfJoining
+    || linkedCandidate?.date_of_joining
+    || linkedCandidate?.joiningDate
+    || linkedCandidate?.joining_date
+    || linkedCandidate?.offerDoj
+    || linkedCandidate?.offer_doj
+    || linkedCandidate?.lwdOrDoj
+    || linkedCandidate?.lwd_or_doj
+    || ""
+  ).trim();
+}
+
 function buildCombinedAssessmentInsightsForExportV2(item = {}) {
   const ctx = resolveCandidateContext(item);
   const qaLines = [];
@@ -6325,49 +6372,7 @@ function DrilldownModal({ open, title, items, onClose, onOpenCvOriginal, onOpenC
       const expectedCtc = String(linkedAssessment?.expectedCtc || linkedAssessment?.expected_ctc || item.expectedCtc || item.expected_ctc || linkedCandidate?.expected_ctc || linkedCandidate?.expectedCtc || "").trim();
       const noticePeriod = String(linkedAssessment?.noticePeriod || linkedAssessment?.notice_period || item.noticePeriod || item.notice_period || linkedCandidate?.notice_period || linkedCandidate?.noticePeriod || "").trim();
       const offerAmount = String(linkedAssessment?.offerAmount || linkedAssessment?.offer_amount || linkedAssessment?.offerInHand || linkedAssessment?.offer_in_hand || item.offerAmount || item.offer_amount || item.offerInHand || item.offer_in_hand || linkedCandidate?.offer_in_hand || linkedCandidate?.offerInHand || "").trim();
-      const dateOfJoining = String(
-        linkedAssessment?.offerDoj
-        || linkedAssessment?.offer_doj
-        || linkedAssessment?.lwdOrDoj
-        || linkedAssessment?.lwd_or_doj
-        || linkedAssessment?.dateOfJoining
-        || linkedAssessment?.date_of_joining
-        || linkedAssessment?.joiningDate
-        || linkedAssessment?.joining_date
-        || linkedAssessment?.payload?.dateOfJoining
-        || linkedAssessment?.payload?.date_of_joining
-        || linkedAssessment?.payload?.joiningDate
-        || linkedAssessment?.payload?.joining_date
-        || linkedAssessment?.payload?.offerDoj
-        || linkedAssessment?.payload?.offer_doj
-        || linkedAssessment?.payload?.lwdOrDoj
-        || linkedAssessment?.payload?.lwd_or_doj
-        || item.dateOfJoining
-        || item.date_of_joining
-        || item.joiningDate
-        || item.joining_date
-        || item.offerDoj
-        || item.offer_doj
-        || item.lwdOrDoj
-        || item.lwd_or_doj
-        || item.payload?.dateOfJoining
-        || item.payload?.date_of_joining
-        || item.payload?.joiningDate
-        || item.payload?.joining_date
-        || item.payload?.offerDoj
-        || item.payload?.offer_doj
-        || item.payload?.lwdOrDoj
-        || item.payload?.lwd_or_doj
-        || linkedCandidate?.offer_doj
-        || linkedCandidate?.offerDoj
-        || linkedCandidate?.date_of_joining
-        || linkedCandidate?.dateOfJoining
-        || linkedCandidate?.joining_date
-        || linkedCandidate?.joiningDate
-        || linkedCandidate?.lwd_or_doj
-        || linkedCandidate?.lwdOrDoj
-        || ""
-      ).trim();
+      const dateOfJoining = resolveDashboardDateOfJoiningValue(item, linkedAssessment, linkedCandidate);
       const cells = isJoinedMetric
         ? [
             item.name || item.candidateName || `Candidate ${index + 1}`,
@@ -6489,49 +6494,7 @@ function DrilldownModal({ open, title, items, onClose, onOpenCvOriginal, onOpenC
                         || linkedCandidate?.offerInHand
                         || ""
                       ).trim();
-                      const dateOfJoining = String(
-                        linkedAssessment?.offerDoj
-                        || linkedAssessment?.offer_doj
-                        || linkedAssessment?.lwdOrDoj
-                        || linkedAssessment?.lwd_or_doj
-                        || linkedAssessment?.dateOfJoining
-                        || linkedAssessment?.date_of_joining
-                        || linkedAssessment?.joiningDate
-                        || linkedAssessment?.joining_date
-                        || linkedAssessment?.payload?.dateOfJoining
-                        || linkedAssessment?.payload?.date_of_joining
-                        || linkedAssessment?.payload?.joiningDate
-                        || linkedAssessment?.payload?.joining_date
-                        || linkedAssessment?.payload?.offerDoj
-                        || linkedAssessment?.payload?.offer_doj
-                        || linkedAssessment?.payload?.lwdOrDoj
-                        || linkedAssessment?.payload?.lwd_or_doj
-                        || item.dateOfJoining
-                        || item.date_of_joining
-                        || item.joiningDate
-                        || item.joining_date
-                        || item.offerDoj
-                        || item.offer_doj
-                        || item.lwdOrDoj
-                        || item.lwd_or_doj
-                        || item.payload?.dateOfJoining
-                        || item.payload?.date_of_joining
-                        || item.payload?.joiningDate
-                        || item.payload?.joining_date
-                        || item.payload?.offerDoj
-                        || item.payload?.offer_doj
-                        || item.payload?.lwdOrDoj
-                        || item.payload?.lwd_or_doj
-                        || linkedCandidate?.offer_doj
-                        || linkedCandidate?.offerDoj
-                        || linkedCandidate?.date_of_joining
-                        || linkedCandidate?.dateOfJoining
-                        || linkedCandidate?.joining_date
-                        || linkedCandidate?.joiningDate
-                        || linkedCandidate?.lwd_or_doj
-                        || linkedCandidate?.lwdOrDoj
-                        || ""
-                      ).trim();
+                      const dateOfJoining = resolveDashboardDateOfJoiningValue(item, linkedAssessment, linkedCandidate);
                       return (
                         <tr key={stableItemKey}>
                           <td>
@@ -13964,8 +13927,7 @@ function PortalApp({ token, onLogout }) {
           date: fallbackFeedbackDate
         });
       }
-      const capturedIsActive = item ? (item?.hidden_from_captured !== true && item?.hiddenFromCaptured !== true) : true;
-      if (noticeDays != null && noticeDays <= 15 && capturedIsActive && activeAssessment && inDateRange(dateOfJoining || updatedAt || interviewAt || convertedAt)) {
+      if (noticeDays != null && noticeDays <= 15 && activeAssessment && inDateRange(dateOfJoining || updatedAt || interviewAt || convertedAt)) {
         rowsByChip.quick_joiners.push({
           ...baseRow,
           round: formatAssessmentStatusDisplay(baseRow.status || assessmentStatus || "CV shared"),

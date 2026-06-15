@@ -6063,6 +6063,7 @@ function parseNoticePeriodToDays(value) {
   if (!raw) return null;
   if (/immediate|immediately|serving notice|available now/.test(raw)) return 0;
   if (/\b(lwd|doj)\b/.test(raw) && /\bnext week\b/.test(raw)) return 7;
+  if (/(less than|under|within)\s*15\s*days?/.test(raw) || /<=\s*15\s*days?/.test(raw)) return 15;
   const dayRangeMatch = raw.match(/(\d+(?:\.\d+)?)\s*[-–]\s*(\d+(?:\.\d+)?)\s*days?/);
   if (dayRangeMatch) return Math.max(Number(dayRangeMatch[1]), Number(dayRangeMatch[2]));
   const monthRangeMatch = raw.match(/(\d+(?:\.\d+)?)\s*[-–]\s*(\d+(?:\.\d+)?)\s*months?/);
@@ -6370,6 +6371,72 @@ function getCandidateConvertedAt(_candidate = {}, assessment = {}) {
 function normalizeDateOutput(value) {
   const parsed = parseIsoDateValue(value);
   return parsed ? parsed.toISOString() : "";
+}
+
+function extractEmbeddedDateOutput(value) {
+  const text = String(value || "").trim();
+  if (!text) return "";
+  const direct = parseIsoDateValue(text);
+  if (direct) return direct.toISOString();
+  const patterns = [
+    /\b\d{1,2}[\/-]\d{1,2}[\/-]\d{2,4}(?:,\s*|\s+)?\d{1,2}:\d{2}(?::\d{2})?(?:\s*[ap]m)?\b/i,
+    /\b\d{1,2}[\/-]\d{1,2}[\/-]\d{2,4}\b/i,
+    /\b[a-z]{3,9}\s+\d{1,2},\s+\d{4}(?:,\s*|\s+)\d{1,2}:\d{2}(?::\d{2})?(?:\s*[ap]m)?\b/i,
+    /\b[a-z]{3,9}\s+\d{1,2},\s+\d{4}\b/i,
+    /\b\d{1,2}\s+[a-z]{3,9}\s+\d{4}(?:,\s*|\s+)?\d{1,2}:\d{2}(?::\d{2})?(?:\s*[ap]m)?\b/i,
+    /\b\d{1,2}\s+[a-z]{3,9}\s+\d{4}\b/i
+  ];
+  for (const pattern of patterns) {
+    const match = text.match(pattern);
+    if (!match) continue;
+    const parsed = parseIsoDateValue(match[0]);
+    if (parsed) return parsed.toISOString();
+  }
+  return "";
+}
+
+function resolveAssessmentDateOfJoiningRaw(assessment = {}, candidate = {}) {
+  const history = Array.isArray(assessment?.statusHistory) ? [...assessment.statusHistory] : [];
+  for (let index = history.length - 1; index >= 0; index -= 1) {
+    const entry = history[index];
+    if (!entry || typeof entry !== "object") continue;
+    const status = normalizeAssessmentStatusLabel(String(entry?.status || "")).toLowerCase();
+    if (status !== "joined") continue;
+    const directValue = String(
+      entry?.statusAt
+      || entry?.status_at
+      || entry?.atValue
+      || entry?.at_value
+      || ""
+    ).trim();
+    if (directValue) return directValue;
+    const embeddedValue = extractEmbeddedDateOutput(
+      entry?.atLabel
+      || entry?.at_label
+      || entry?.inferText
+      || entry?.infer_text
+      || entry?.notes
+      || ""
+    );
+    if (embeddedValue) return embeddedValue;
+  }
+  return String(
+    assessment?.dateOfJoining
+    || assessment?.date_of_joining
+    || assessment?.payload?.dateOfJoining
+    || assessment?.payload?.date_of_joining
+    || assessment?.offerDoj
+    || assessment?.offer_doj
+    || assessment?.lwdOrDoj
+    || assessment?.lwd_or_doj
+    || candidate?.dateOfJoining
+    || candidate?.date_of_joining
+    || candidate?.offerDoj
+    || candidate?.offer_doj
+    || candidate?.lwdOrDoj
+    || candidate?.lwd_or_doj
+    || ""
+  ).trim();
 }
 
 function normalizeNullableTimestampInput(value) {
@@ -7136,15 +7203,10 @@ function buildDatabaseQuickChipSummary({ candidates = [], assessments = [], jobs
     const noticeText = String(
       assessment?.noticePeriod
       || assessment?.notice_period
-      || item?.noticePeriod
-      || item?.notice_period
-      || candidate?.notice_period
-      || candidate?.noticePeriod
       || ""
     ).trim();
     const noticeDays = parseNoticePeriodToDays(noticeText);
     const sourceValue = String(candidate?.source || item?.source || "").trim().toLowerCase();
-    const capturedIsActive = candidate ? (candidate?.hidden_from_captured !== true && candidate?.hiddenFromCaptured !== true) : true;
 
     if (
       activeAssessment &&
@@ -7170,7 +7232,14 @@ function buildDatabaseQuickChipSummary({ candidates = [], assessments = [], jobs
     if (activeAssessment && isFeedbackAwaitedStatus(assessmentStatus) && inDateRange(interviewAt || updatedAt)) {
       summary.feedback_awaited += 1;
     }
-    if (activeAssessment && noticeDays != null && noticeDays <= 15 && capturedIsActive && inDateRange(updatedAt || interviewAt || convertedAt)) {
+    const quickJoinerDate = String(
+      resolveAssessmentDateOfJoiningRaw(assessment, candidate)
+      || updatedAt
+      || interviewAt
+      || convertedAt
+      || ""
+    ).trim();
+    if (activeAssessment && noticeDays != null && noticeDays <= 15 && inDateRange(quickJoinerDate)) {
       summary.quick_joiners += 1;
     }
     if (assessment && inToday(convertedAt) && inDateRange(convertedAt)) {
@@ -7179,7 +7248,7 @@ function buildDatabaseQuickChipSummary({ candidates = [], assessments = [], jobs
     if (assessment && inThisWeek(convertedAt) && inDateRange(convertedAt)) {
       summary.shared_this_week += 1;
     }
-    if (assessmentStatus === "joined" && inDateRange(updatedAt || interviewAt || convertedAt)) {
+    if (assessmentStatus === "joined" && inDateRange(quickJoinerDate || updatedAt || interviewAt || convertedAt)) {
       summary.joined_candidates += 1;
     }
     if (activeAssessment && inDateRange(updatedAt || interviewAt || convertedAt)) {
@@ -7326,10 +7395,6 @@ function buildDatabaseQuickChipRows({ universe = [], assessmentEvents = [], date
     const noticeText = String(
       assessment?.noticePeriod
       || assessment?.notice_period
-      || item?.noticePeriod
-      || item?.notice_period
-      || candidate?.notice_period
-      || candidate?.noticePeriod
       || ""
     ).trim();
     const noticeDays = parseNoticePeriodToDays(noticeText);
@@ -7353,27 +7418,7 @@ function buildDatabaseQuickChipRows({ universe = [], assessmentEvents = [], date
         || assessment?.payload?.offer_in_hand
         || ""
       ).trim(),
-      dateOfJoining: String(
-        assessment?.offerDoj
-        || assessment?.offer_doj
-        || assessment?.lwdOrDoj
-        || assessment?.lwd_or_doj
-        || assessment?.dateOfJoining
-        || assessment?.date_of_joining
-        || assessment?.payload?.dateOfJoining
-        || assessment?.payload?.date_of_joining
-        || assessment?.payload?.offerDoj
-        || assessment?.payload?.offer_doj
-        || assessment?.payload?.lwdOrDoj
-        || assessment?.payload?.lwd_or_doj
-        || candidate?.dateOfJoining
-        || candidate?.date_of_joining
-        || candidate?.offerDoj
-        || candidate?.offer_doj
-        || candidate?.lwdOrDoj
-        || candidate?.lwd_or_doj
-        || ""
-      ).trim(),
+      dateOfJoining: String(resolveAssessmentDateOfJoiningRaw(assessment, candidate)).trim(),
       status: normalizeAssessmentStatusLabel(assessment?.candidateStatus || assessment?.status || item?.candidateStatus || ""),
       date: ""
     };
@@ -7504,8 +7549,7 @@ function buildDatabaseQuickChipRows({ universe = [], assessmentEvents = [], date
       });
     }
 
-    const capturedIsActive = candidate ? (candidate?.hidden_from_captured !== true && candidate?.hiddenFromCaptured !== true) : true;
-    if (activeAssessment && noticeDays != null && noticeDays <= 15 && capturedIsActive && inDateRange(baseRow.dateOfJoining || updatedAt || interviewAt || convertedAt)) {
+    if (activeAssessment && noticeDays != null && noticeDays <= 15 && inDateRange(baseRow.dateOfJoining || updatedAt || interviewAt || convertedAt)) {
       rowsByChip.quick_joiners.push({ ...baseRow, round: baseRow.status || "CV shared", date: baseRow.dateOfJoining || updatedAt || interviewAt || convertedAt });
     }
     if (assessment && inToday(convertedAt) && inDateRange(convertedAt)) {
@@ -11112,43 +11156,17 @@ function createDashboardDrilldownAssessmentItem(assessment = {}, candidate = nul
       || assessment?.offer_doj
       || assessment?.lwdOrDoj
       || assessment?.lwd_or_doj
-      || assessment?.dateOfJoining
-      || assessment?.date_of_joining
-      || assessment?.payload?.offerDoj
-      || assessment?.payload?.offer_doj
-      || assessment?.payload?.lwdOrDoj
-      || assessment?.payload?.lwd_or_doj
-      || assessment?.payload?.dateOfJoining
-      || assessment?.payload?.date_of_joining
-      || candidate?.lwd_or_doj
-      || candidate?.lwdOrDoj
-      || candidate?.offer_doj
-      || candidate?.offerDoj
-      || candidate?.date_of_joining
-      || candidate?.dateOfJoining
-      || ""
-    ),
-    dateOfJoining: normalizeDateOutput(
-      assessment?.offerDoj
-      || assessment?.offer_doj
-      || assessment?.lwdOrDoj
-      || assessment?.lwd_or_doj
-      || assessment?.dateOfJoining
-      || assessment?.date_of_joining
-      || assessment?.payload?.dateOfJoining
-      || assessment?.payload?.date_of_joining
       || assessment?.payload?.offerDoj
       || assessment?.payload?.offer_doj
       || assessment?.payload?.lwdOrDoj
       || assessment?.payload?.lwd_or_doj
       || candidate?.lwd_or_doj
       || candidate?.lwdOrDoj
-      || candidate?.date_of_joining
-      || candidate?.dateOfJoining
       || candidate?.offer_doj
       || candidate?.offerDoj
       || ""
     ),
+    dateOfJoining: normalizeDateOutput(resolveAssessmentDateOfJoiningRaw(assessment, candidate)),
     sharedAt: normalizeDateOutput(getCandidateConvertedAt(candidate || {}, assessment || {})),
     createdAt: normalizeDateOutput(assessment?.created_at || assessment?.createdAt || ""),
     source: "assessment_only",
