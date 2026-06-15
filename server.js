@@ -7484,7 +7484,7 @@ function buildDatabaseQuickChipRows({ universe = [], assessmentEvents = [], date
       pushInterviewTrackEvent(assessmentStatus, updatedAt || interviewAt || convertedAt);
     }
 
-    if (historicalRank >= 2) {
+    if (historicalRank >= 2 && inDateRange(convertedAt)) {
       const sortedTrackEvents = [...interviewTrackEvents]
         .filter((event) => event?.effectiveAt && Number.isFinite(parseDateLike(event.effectiveAt)))
         .sort((a, b) => parseDateLike(a.effectiveAt) - parseDateLike(b.effectiveAt));
@@ -7509,22 +7509,20 @@ function buildDatabaseQuickChipRows({ universe = [], assessmentEvents = [], date
         || convertedAt
         || ""
       ).trim();
-      if (inDateRange(latestInterviewDate || updatedAt || convertedAt)) {
-        const timelineText = dedupedTrackEvents.length
-          ? dedupedTrackEvents
-              .map((event) => `${formatDatabaseQuickChipTimelineLabel(event.status, event.effectiveAt)} on ${formatDatabaseQuickChipEventDate(event.effectiveAt)}`)
-              .join(" | ")
-          : "";
-        rowsByChip.interview_history.push({
-          ...baseRow,
-          round: timelineText
-            ? `${timelineText} | Current: ${baseRow.status || "-"}`
-            : exactInterviewContext?.previousStatus
-              ? `${exactInterviewContext.previousStatus} | Current: ${baseRow.status || "-"}`
-              : `Current: ${baseRow.status || "-"}`,
-          date: latestInterviewDate
-        });
-      }
+      const timelineText = dedupedTrackEvents.length
+        ? dedupedTrackEvents
+            .map((event) => `${formatDatabaseQuickChipTimelineLabel(event.status, event.effectiveAt)} on ${formatDatabaseQuickChipEventDate(event.effectiveAt)}`)
+            .join(" | ")
+        : "";
+      rowsByChip.interview_history.push({
+        ...baseRow,
+        round: timelineText
+          ? `${timelineText} | Current: ${baseRow.status || "-"}`
+          : exactInterviewContext?.previousStatus
+            ? `${exactInterviewContext.previousStatus} | Current: ${baseRow.status || "-"}`
+            : `Current: ${baseRow.status || "-"}`,
+        date: latestInterviewDate || convertedAt || updatedAt || ""
+      });
     }
 
     if (alignedHistoryEvents.length) {
