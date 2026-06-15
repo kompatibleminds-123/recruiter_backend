@@ -2728,6 +2728,92 @@ function sortAssessmentsForList(items = [], sortBy = "updated") {
   });
 }
 
+function applyAssessmentFiltersLocal(row = {}, filters = {}) {
+  const safeRow = row && typeof row === "object" ? row : {};
+  const safeFilters = filters && typeof filters === "object" ? filters : {};
+
+  const lane = String(safeFilters?.lane || "active").trim().toLowerCase();
+  const isArchived = Boolean(safeRow?.archived || safeRow?.is_archived || safeRow?.isArchived);
+  if (lane === "archived") {
+    if (!isArchived) return false;
+  } else if (isArchived) {
+    return false;
+  }
+
+  const q = String(safeFilters?.q || "").trim().toLowerCase();
+  if (q) {
+    const haystack = [
+      safeRow?.candidateName,
+      safeRow?.candidate_name,
+      safeRow?.jdTitle,
+      safeRow?.jd_title,
+      safeRow?.clientName,
+      safeRow?.client_name,
+      safeRow?.recruiterName,
+      safeRow?.recruiter_name,
+      safeRow?.status,
+      safeRow?.candidateStatus,
+      safeRow?.candidate_status
+    ]
+      .map((value) => String(value || "").trim().toLowerCase())
+      .filter(Boolean)
+      .join(" ");
+    if (!haystack.includes(q)) return false;
+  }
+
+  const dateFrom = String(safeFilters?.dateFrom || "").trim();
+  const dateTo = String(safeFilters?.dateTo || "").trim();
+  if (dateFrom || dateTo) {
+    const rowDateRaw = String(
+      safeRow?.updatedAt ||
+      safeRow?.updated_at ||
+      safeRow?.createdAt ||
+      safeRow?.created_at ||
+      safeRow?.generatedAt ||
+      safeRow?.generated_at ||
+      ""
+    ).trim();
+    const rowDate = rowDateRaw ? new Date(rowDateRaw) : null;
+    if (!rowDate || Number.isNaN(rowDate.getTime())) return false;
+    if (dateFrom) {
+      const from = new Date(`${dateFrom}T00:00:00`);
+      if (!Number.isNaN(from.getTime()) && rowDate < from) return false;
+    }
+    if (dateTo) {
+      const to = new Date(`${dateTo}T23:59:59.999`);
+      if (!Number.isNaN(to.getTime()) && rowDate > to) return false;
+    }
+  }
+
+  const clients = Array.isArray(safeFilters?.clients) ? safeFilters.clients : [];
+  if (clients.length) {
+    const clientValue = String(safeRow?.clientName || safeRow?.client_name || "").trim();
+    if (!clients.includes(clientValue)) return false;
+  }
+
+  const jds = Array.isArray(safeFilters?.jds) ? safeFilters.jds : [];
+  if (jds.length) {
+    const jdValue = String(safeRow?.jdTitle || safeRow?.jd_title || "").trim();
+    if (!jds.includes(jdValue)) return false;
+  }
+
+  const recruiters = Array.isArray(safeFilters?.recruiters) ? safeFilters.recruiters : [];
+  if (recruiters.length) {
+    const recruiterValue = String(safeRow?.recruiterName || safeRow?.recruiter_name || "").trim();
+    if (!recruiters.includes(recruiterValue)) return false;
+  }
+
+  const outcomes = Array.isArray(safeFilters?.outcomes) ? safeFilters.outcomes : [];
+  if (outcomes.length) {
+    const outcomeValue = normalizeAssessmentStatusLabel(
+      safeRow?.candidateStatus || safeRow?.candidate_status || safeRow?.status || ""
+    ) || "No outcome";
+    if (!outcomes.includes(outcomeValue)) return false;
+  }
+
+  return true;
+}
+
 function resolveCandidateBucket(candidate = {}, eventType = "", context = {}) {
   const safeCandidate = candidate && typeof candidate === "object" ? candidate : {};
   const sourceValue = String(safeCandidate?.source || context?.source || "").trim().toLowerCase();
