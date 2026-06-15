@@ -13344,6 +13344,38 @@ function PortalApp({ token, onLogout }) {
     if (candidateSearchMode === "all" || !String(candidateSearchQueryUsed || "").trim()) return candidateUniverseAll;
     return candidateSearchResults || [];
   }, [candidateSearchMode, candidateSearchResults, candidateSearchQueryUsed, candidateUniverseAll]);
+  const candidateSmartChipScopedFilters = useMemo(() => ({
+    client: String(candidateStructuredFilters?.client || "").trim(),
+    recruiter: String(candidateStructuredFilters?.recruiter || "").trim(),
+    assessmentStatus: String(candidateStructuredFilters?.assessmentStatus || "").trim()
+  }), [candidateStructuredFilters]);
+  const candidateSmartChipUniverse = useMemo(() => {
+    const assessmentById = new Map((state.assessments || []).map((item) => [String(item?.id || "").trim(), item]));
+    return candidateUniverseAll.filter((item) => {
+      const clientValue = String(item.client_name || item.clientName || "").trim().toLowerCase();
+      const recruiterValue = String(item.assigned_to_name || item.assignedToName || "").trim().toLowerCase();
+      const linkedAssessment = item?.raw?.assessment
+        || item?.assessment
+        || assessmentById.get(String(item.assessment_id || item.assessmentId || "").trim())
+        || null;
+      const assessmentStatusValue = String(
+        linkedAssessment?.candidateStatus
+          || linkedAssessment?.status
+          || item.candidateStatus
+          || item.workflowStatus
+          || item.assessment_status
+          || item.assessmentStatus
+          || ""
+      ).trim().toLowerCase();
+      const selectedClients = parseMultiChipTokens(candidateSmartChipScopedFilters.client).map((value) => value.toLowerCase());
+      if (selectedClients.length && !selectedClients.includes(clientValue)) return false;
+      const selectedRecruiters = parseMultiChipTokens(candidateSmartChipScopedFilters.recruiter).map((value) => value.toLowerCase());
+      if (selectedRecruiters.length && !selectedRecruiters.includes(recruiterValue)) return false;
+      const selectedAssessmentStatuses = parseMultiChipTokens(candidateSmartChipScopedFilters.assessmentStatus).map((value) => value.toLowerCase());
+      if (selectedAssessmentStatuses.length && !selectedAssessmentStatuses.includes(assessmentStatusValue)) return false;
+      return true;
+    });
+  }, [candidateUniverseAll, candidateSmartChipScopedFilters, state.assessments]);
   const candidateUniverse = useMemo(() => {
     const assessmentById = new Map((state.assessments || []).map((item) => [String(item?.id || "").trim(), item]));
     return candidateBaseUniverse.filter((item) => {
@@ -13497,7 +13529,7 @@ function PortalApp({ token, onLogout }) {
     const universeCandidateIds = new Set();
     const universeConvertedAtByAssessmentId = new Map();
     const universeConvertedAtByCandidateId = new Map();
-    (candidateUniverse || []).forEach((item) => {
+    (candidateSmartChipUniverse || []).forEach((item) => {
       const assessmentId = String(
         item?.assessment_id
         || item?.assessmentId
@@ -14039,7 +14071,7 @@ function PortalApp({ token, onLogout }) {
     const hasSmartChipSourceData =
       candidateRows.length > 0
       || assessments.length > 0
-      || (Array.isArray(candidateUniverse) && candidateUniverse.length > 0)
+      || (Array.isArray(candidateSmartChipUniverse) && candidateSmartChipUniverse.length > 0)
       || eventRows.length > 0;
     const saveSmartChipSnapshot = (snapshot) => {
       if (isEmptySmartChipSnapshot(snapshot)) return;
@@ -14066,7 +14098,7 @@ function PortalApp({ token, onLogout }) {
       console.error("candidateSmartChipRows failed", error);
       return candidateSmartChipRowsStableRef.current || emptyRows;
     }
-  }, [candidateUniverse, candidateSmartDateFrom, candidateSmartDateTo, state.assessments, state.candidates, state.assessmentEvents, candidateSmartChipCacheKey, candidateSmartChipDataReady]);
+  }, [candidateSmartChipUniverse, candidateSmartDateFrom, candidateSmartDateTo, state.assessments, state.candidates, state.assessmentEvents, candidateSmartChipCacheKey, candidateSmartChipDataReady]);
   const candidateSmartChipRowsEffective = useMemo(() => {
     const remoteRows = candidateSmartChipRowsRemote && typeof candidateSmartChipRowsRemote === "object"
       ? candidateSmartChipRowsRemote
@@ -14146,22 +14178,10 @@ function PortalApp({ token, onLogout }) {
     let cancelled = false;
     const requestId = Date.now();
     setCandidateSmartChipLoading(true);
-    const searchIds = Array.isArray(candidateSearchResults)
-      ? candidateSearchResults.flatMap((item) => [
-          item?.id,
-          item?.candidate_id,
-          item?.candidateId,
-          item?.assessment_id,
-          item?.assessmentId
-        ]).map((value) => String(value || "").trim()).filter(Boolean)
-      : [];
-    const effectiveSearchMode = candidateSearchMode !== "all" && searchIds.length > 0
-      ? candidateSearchMode
-      : "all";
     api("/company/database/quick-chip-rows", token, "POST", {
-      filters: candidateStructuredFilters,
-      searchMode: effectiveSearchMode,
-      searchIds,
+      filters: candidateSmartChipScopedFilters,
+      searchMode: "all",
+      searchIds: [],
       dateFrom: candidateSmartDateFrom,
       dateTo: candidateSmartDateTo
     }).then((result) => {
@@ -14237,9 +14257,7 @@ function PortalApp({ token, onLogout }) {
     token,
     location?.pathname,
     candidateHasSmartChipSelection,
-    candidateStructuredFilters,
-    candidateSearchMode,
-    candidateSearchResults,
+    candidateSmartChipScopedFilters,
     candidateSmartDateFrom,
     candidateSmartDateTo,
     candidateSmartChipCacheKey,
