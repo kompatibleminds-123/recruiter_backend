@@ -3793,6 +3793,23 @@ function formatDateOrRaw(value) {
 }
 
 function resolveDashboardDateOfJoiningValue(item = {}, linkedAssessment = null, linkedCandidate = null) {
+  const joinedHistory = Array.isArray(linkedAssessment?.statusHistory)
+    ? linkedAssessment.statusHistory
+    : (Array.isArray(item?.statusHistory) ? item.statusHistory : []);
+  for (let index = joinedHistory.length - 1; index >= 0; index -= 1) {
+    const entry = joinedHistory[index];
+    if (!entry || typeof entry !== "object") continue;
+    const status = normalizeAssessmentStatusLabel(String(entry?.status || "")).toLowerCase();
+    if (status !== "joined") continue;
+    const joinedAt = String(
+      entry?.statusAt
+      || entry?.status_at
+      || entry?.atValue
+      || entry?.at_value
+      || ""
+    ).trim();
+    if (joinedAt) return joinedAt;
+  }
   return String(
     item?.dateOfJoining
     || item?.date_of_joining
@@ -3806,14 +3823,6 @@ function resolveDashboardDateOfJoiningValue(item = {}, linkedAssessment = null, 
     || linkedAssessment?.payload?.date_of_joining
     || linkedAssessment?.payload?.joiningDate
     || linkedAssessment?.payload?.joining_date
-    || linkedAssessment?.offerDoj
-    || linkedAssessment?.offer_doj
-    || linkedAssessment?.lwdOrDoj
-    || linkedAssessment?.lwd_or_doj
-    || linkedAssessment?.payload?.offerDoj
-    || linkedAssessment?.payload?.offer_doj
-    || linkedAssessment?.payload?.lwdOrDoj
-    || linkedAssessment?.payload?.lwd_or_doj
     || item?.offerDoj
     || item?.offer_doj
     || item?.lwdOrDoj
@@ -3834,6 +3843,14 @@ function resolveDashboardDateOfJoiningValue(item = {}, linkedAssessment = null, 
     || linkedCandidate?.offer_doj
     || linkedCandidate?.lwdOrDoj
     || linkedCandidate?.lwd_or_doj
+    || linkedAssessment?.offerDoj
+    || linkedAssessment?.offer_doj
+    || linkedAssessment?.lwdOrDoj
+    || linkedAssessment?.lwd_or_doj
+    || linkedAssessment?.payload?.offerDoj
+    || linkedAssessment?.payload?.offer_doj
+    || linkedAssessment?.payload?.lwdOrDoj
+    || linkedAssessment?.payload?.lwd_or_doj
     || ""
   ).trim();
 }
@@ -9760,13 +9777,13 @@ function PortalApp({ token, onLogout }) {
     const companyId = String(state.user?.companyId || "").trim();
     const userId = String(state.user?.id || "").trim();
     if (!companyId || !userId) return "";
-    return `rd_candidate_smart_chip_cache_v1:${companyId}:${userId}`;
+    return `rd_candidate_smart_chip_cache_v2:${companyId}:${userId}`;
   }, [state.user?.companyId, state.user?.id]);
   const candidateSmartChipSummaryCacheKey = useMemo(() => {
     const companyId = String(state.user?.companyId || "").trim();
     const userId = String(state.user?.id || "").trim();
     if (!companyId || !userId) return "";
-    return `rd_candidate_smart_chip_summary_v1:${companyId}:${userId}`;
+    return `rd_candidate_smart_chip_summary_v2:${companyId}:${userId}`;
   }, [state.user?.companyId, state.user?.id]);
   const [candidateSmartChipSummary, setCandidateSmartChipSummary] = useState(null);
   const isEmptySmartChipSnapshot = (snapshot = {}) => !Object.values(snapshot || {}).some((rows) => Array.isArray(rows) && rows.length > 0);
@@ -13714,7 +13731,11 @@ function PortalApp({ token, onLogout }) {
           || linkedAssessment?.created_at
           || ""
       ).trim();
-      const noticeDays = parseNoticePeriodToDays(item?.notice_period || item?.noticePeriod || "");
+      const noticeDays = parseNoticePeriodToDays(
+        linkedAssessment?.noticePeriod
+        || linkedAssessment?.notice_period
+        || ""
+      );
       const offerAmount = String(
         linkedAssessment?.offerAmount
         || linkedAssessment?.offerInHand
@@ -13755,38 +13776,11 @@ function PortalApp({ token, onLogout }) {
         || item?.payload?.notice_period
         || ""
       ).trim();
-      const dateOfJoining = String(
-        linkedAssessment?.offerDoj
-        || linkedAssessment?.lwdOrDoj
-        || linkedAssessment?.dateOfJoining
-        || linkedAssessment?.offer_doj
-        || linkedAssessment?.lwd_or_doj
-        || linkedAssessment?.date_of_joining
-        || linkedAssessment?.joiningDate
-        || linkedAssessment?.joining_date
-        || item?.dateOfJoining
-        || item?.offerDoj
-        || item?.lwdOrDoj
-        || item?.date_of_joining
-        || item?.lwd_or_doj
-        || item?.joiningDate
-        || item?.joining_date
-        || item?.payload?.dateOfJoining
-        || item?.payload?.date_of_joining
-        || item?.payload?.offerDoj
-        || item?.payload?.offer_doj
-        || item?.payload?.lwdOrDoj
-        || item?.payload?.lwd_or_doj
-        || item?.payload?.joiningDate
-        || item?.payload?.joining_date
-        || item?.raw?.candidate?.dateOfJoining
-        || item?.raw?.candidate?.date_of_joining
-        || item?.raw?.candidate?.offerDoj
-        || item?.raw?.candidate?.offer_doj
-        || item?.raw?.candidate?.lwdOrDoj
-        || item?.raw?.candidate?.lwd_or_doj
-        || ""
-      ).trim();
+      const dateOfJoining = resolveDashboardDateOfJoiningValue(
+        item,
+        linkedAssessment,
+        item?.raw?.candidate || null
+      );
       const baseRow = {
         item: item || { assessmentId: linkedAssessment?.id, candidateId },
         candidateName: resolveCandidateDisplayName(item, linkedAssessment),
