@@ -21591,9 +21591,20 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
     const listMetaDelta = Number(change?.listMetaDelta || 0);
     const statsDelta = change?.statsDelta && typeof change.statsDelta === "object" ? change.statsDelta : null;
 
+    const matchesCurrentVisibleAssessmentView = (row) => {
+      if (!row || typeof row !== "object") return false;
+      return applyAssessmentFiltersLocal(row, {
+        ...(safeAssessmentFiltersApplied && typeof safeAssessmentFiltersApplied === "object" ? safeAssessmentFiltersApplied : {}),
+        lane: assessmentLane
+      });
+    };
+
     const upsertIntoList = (items = []) => {
       const currentItems = Array.isArray(items) ? items : [];
       if (!hydratedAssessment || !assessmentId) return currentItems;
+      if (!matchesCurrentVisibleAssessmentView(hydratedAssessment)) {
+        return removeFromList(currentItems);
+      }
       const existingIx = currentItems.findIndex((item) => String(item?.id || "").trim() === assessmentId);
       const existingItem = existingIx >= 0 ? currentItems[existingIx] : null;
       const nextRow = hydrateAssessmentCvRefs(
