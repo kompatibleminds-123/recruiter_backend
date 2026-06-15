@@ -7354,8 +7354,14 @@ function buildDatabaseQuickChipRows({ universe = [], assessmentEvents = [], date
     const assessmentId = String(event?.assessment_id || event?.assessmentId || "").trim();
     if (!assessmentId) return;
     const eventType = String(event?.event_type || event?.eventType || "").trim().toLowerCase();
-    const status = normalizeAssessmentStatusLabel(String(event?.status || "")).toLowerCase();
     const payload = event?.payload && typeof event.payload === "object" ? event.payload : {};
+    const status = normalizeAssessmentStatusLabel(String(
+      event?.status
+      || payload?.status
+      || payload?.candidateStatus
+      || payload?.candidate_status
+      || ""
+    )).toLowerCase();
     const previousStatus = normalizeAssessmentStatusLabel(String(payload?.previousStatus || "")).toLowerCase();
     const eventAt = String(event?.event_at || event?.eventAt || event?.created_at || event?.createdAt || "").trim();
     const isInitialShareEvent =
@@ -7492,6 +7498,7 @@ function buildDatabaseQuickChipRows({ universe = [], assessmentEvents = [], date
         if (!SMART_CHIP_INTERVIEW_ALIGNED_STATUSES.has(key)) return true;
         return latestAlignedByStatus.get(key) === event;
       });
+      const exactInterviewContext = getAssessmentExactInterviewContext(assessment, assessmentEventsByAssessmentId);
       const inRangeEvents = dedupedTrackEvents.filter((event) => inDateRange(event.effectiveAt));
       if (inRangeEvents.length) {
         const latestTrackEvent = inRangeEvents[inRangeEvents.length - 1];
@@ -7502,6 +7509,8 @@ function buildDatabaseQuickChipRows({ universe = [], assessmentEvents = [], date
         });
       } else {
         const fallbackInterviewDate = String(
+          sortedTrackEvents[sortedTrackEvents.length - 1]?.effectiveAt
+          || 
           deriveInterviewAtFromHistory(assessment)
           || assessment?.interviewAt
           || assessment?.interview_at
@@ -7512,7 +7521,9 @@ function buildDatabaseQuickChipRows({ universe = [], assessmentEvents = [], date
         if (inDateRange(fallbackInterviewDate || updatedAt || convertedAt)) {
           rowsByChip.interview_history.push({
             ...baseRow,
-            round: `Current: ${baseRow.status || "-"}`,
+            round: exactInterviewContext?.previousStatus
+              ? `${exactInterviewContext.previousStatus} | Current: ${baseRow.status || "-"}`
+              : `Current: ${baseRow.status || "-"}`,
             date: fallbackInterviewDate
           });
         }
