@@ -8304,25 +8304,7 @@ function buildDashboardAgendaPayload({
     const rank = getAssessmentHistoricalRank(assessment, eventsByAssessmentId);
     const interviewAtRaw = assessment?.interviewAt || assessment?.interview_at || "";
     const interviewAt = parseIsoDateValue(interviewAtRaw);
-    const joiningAtRaw =
-      assessment?.offerDoj
-      || assessment?.offer_doj
-      || assessment?.dateOfJoining
-      || assessment?.date_of_joining
-      || assessment?.lwdOrDoj
-      || assessment?.lwd_or_doj
-      || assessment?.payload?.offerDoj
-      || assessment?.payload?.offer_doj
-      || assessment?.payload?.dateOfJoining
-      || assessment?.payload?.date_of_joining
-      || assessment?.payload?.lwdOrDoj
-      || assessment?.payload?.lwd_or_doj
-      || candidate?.offerDoj
-      || candidate?.offer_doj
-      || candidate?.dateOfJoining
-      || candidate?.date_of_joining
-      || candidate?.lwdOrDoj
-      || candidate?.lwd_or_doj
+    const joiningAtRaw = String(resolveAssessmentDateOfJoiningRaw(assessment, {})).trim()
       || assessment?.followUpAt
       || assessment?.follow_up_at
       || "";
