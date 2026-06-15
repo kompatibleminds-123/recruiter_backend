@@ -2733,7 +2733,16 @@ function applyAssessmentFiltersLocal(row = {}, filters = {}) {
   const safeFilters = filters && typeof filters === "object" ? filters : {};
 
   const lane = String(safeFilters?.lane || "active").trim().toLowerCase();
-  const isArchived = Boolean(safeRow?.archived || safeRow?.is_archived || safeRow?.isArchived);
+  const isArchived = Boolean(
+    safeRow?.archived
+    || safeRow?.is_archived
+    || safeRow?.isArchived
+    || safeRow?.archived_flag
+    || safeRow?.payload?.archived
+    || safeRow?.payload?.isArchived
+    || safeRow?.payload?.archived_flag
+    || String(safeRow?.archivedAt || safeRow?.archived_at || safeRow?.payload?.archivedAt || safeRow?.payload?.archived_at || "").trim()
+  );
   if (lane === "archived") {
     if (!isArchived) return false;
   } else if (isArchived) {
@@ -9747,9 +9756,21 @@ function PortalApp({ token, onLogout }) {
 
   const isAssessmentArchived = (assessment) => {
     if (!assessment) return false;
-    const archivedFlag = assessment?.archived ?? assessment?.isArchived ?? assessment?.archived_flag;
+    const archivedFlag =
+      assessment?.archived
+      ?? assessment?.isArchived
+      ?? assessment?.archived_flag
+      ?? assessment?.payload?.archived
+      ?? assessment?.payload?.isArchived
+      ?? assessment?.payload?.archived_flag;
     if (archivedFlag === true) return true;
-    const archivedAt = String(assessment?.archivedAt || assessment?.archived_at || "").trim();
+    const archivedAt = String(
+      assessment?.archivedAt
+      || assessment?.archived_at
+      || assessment?.payload?.archivedAt
+      || assessment?.payload?.archived_at
+      || ""
+    ).trim();
     return Boolean(archivedAt);
   };
 

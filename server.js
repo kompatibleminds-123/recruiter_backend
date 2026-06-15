@@ -4373,9 +4373,21 @@ function normalizeAssessmentFilterOptions(raw = {}) {
 }
 
 function isAssessmentArchivedLocal(item = {}) {
-  const archivedFlag = item?.archived ?? item?.isArchived ?? item?.archived_flag;
+  const archivedFlag =
+    item?.archived
+    ?? item?.isArchived
+    ?? item?.archived_flag
+    ?? item?.payload?.archived
+    ?? item?.payload?.isArchived
+    ?? item?.payload?.archived_flag;
   if (archivedFlag === true) return true;
-  const archivedAt = String(item?.archivedAt || item?.archived_at || "").trim();
+  const archivedAt = String(
+    item?.archivedAt
+    || item?.archived_at
+    || item?.payload?.archivedAt
+    || item?.payload?.archived_at
+    || ""
+  ).trim();
   return Boolean(archivedAt);
 }
 
