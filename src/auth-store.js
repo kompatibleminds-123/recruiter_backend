@@ -1796,7 +1796,6 @@ function assessmentRow(assessment, actor, companyId) {
     interview_at: next.interviewAt || "",
     offer_amount: next.offerAmount || "",
     offer_doj: next.offerDoj || "",
-    lwd_or_doj: next.lwdOrDoj || next.offerDoj || "",
     status: next.status || next.candidateStatus || "",
     custom_pipeline_stages: next.customPipelineStages || "",
     custom_candidate_statuses: next.customCandidateStatuses || "",
