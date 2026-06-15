@@ -761,6 +761,12 @@ const EMPTY_CANDIDATE_STRUCTURED_FILTERS = {
   attemptOutcome: ""
 };
 
+const EMPTY_CANDIDATE_QUICK_CHIP_FILTERS = {
+  client: "",
+  recruiter: "",
+  role: ""
+};
+
 const DASHBOARD_METRIC_COLUMNS = [
   ["totalCandidates", "Total Candidates"],
   ["sharedProfiles", "Shared Profiles"],
@@ -8918,6 +8924,7 @@ function PortalApp({ token, onLogout }) {
   const [candidateQuickChipIds, setCandidateQuickChipIds] = useState([]);
   const [candidateSmartDateFrom, setCandidateSmartDateFrom] = useState("");
   const [candidateSmartDateTo, setCandidateSmartDateTo] = useState("");
+  const [candidateQuickChipFilters, setCandidateQuickChipFilters] = useState(EMPTY_CANDIDATE_QUICK_CHIP_FILTERS);
   const candidateSmartChipRowsStableRef = useRef(null);
   const candidateSmartChipSummaryStableRef = useRef(null);
   const candidateSmartChipSummaryRequestRef = useRef(0);
@@ -9884,14 +9891,26 @@ function PortalApp({ token, onLogout }) {
     const companyId = String(state.user?.companyId || "").trim();
     const userId = String(state.user?.id || "").trim();
     if (!companyId || !userId) return "";
-    return `rd_candidate_smart_chip_cache_v2:${companyId}:${userId}`;
-  }, [state.user?.companyId, state.user?.id]);
+    const filterKey = JSON.stringify({
+      chips: candidateQuickChipIds,
+      filters: candidateQuickChipFilters,
+      dateFrom: candidateSmartDateFrom,
+      dateTo: candidateSmartDateTo
+    });
+    return `rd_candidate_smart_chip_cache_v3:${companyId}:${userId}:${filterKey}`;
+  }, [state.user?.companyId, state.user?.id, candidateQuickChipIds, candidateQuickChipFilters, candidateSmartDateFrom, candidateSmartDateTo]);
   const candidateSmartChipSummaryCacheKey = useMemo(() => {
     const companyId = String(state.user?.companyId || "").trim();
     const userId = String(state.user?.id || "").trim();
     if (!companyId || !userId) return "";
-    return `rd_candidate_smart_chip_summary_v2:${companyId}:${userId}`;
-  }, [state.user?.companyId, state.user?.id]);
+    const filterKey = JSON.stringify({
+      chips: candidateQuickChipIds,
+      filters: candidateQuickChipFilters,
+      dateFrom: candidateSmartDateFrom,
+      dateTo: candidateSmartDateTo
+    });
+    return `rd_candidate_smart_chip_summary_v3:${companyId}:${userId}:${filterKey}`;
+  }, [state.user?.companyId, state.user?.id, candidateQuickChipIds, candidateQuickChipFilters, candidateSmartDateFrom, candidateSmartDateTo]);
   const [candidateSmartChipSummary, setCandidateSmartChipSummary] = useState(null);
   const isEmptySmartChipSnapshot = (snapshot = {}) => !Object.values(snapshot || {}).some((rows) => Array.isArray(rows) && rows.length > 0);
   useEffect(() => {
@@ -13447,39 +13466,54 @@ function PortalApp({ token, onLogout }) {
       genders: Array.from(genders).sort()
     };
   }, [candidateUniverseAll]);
+  const candidateQuickChipOptions = useMemo(() => {
+    const clientOptions = new Set();
+    const recruiterOptions = new Set();
+    const roleOptions = new Set();
+    const selectedClient = String(candidateQuickChipFilters?.client || "").trim().toLowerCase();
+    candidateUniverseAll.forEach((item) => {
+      if (!(item?.raw?.assessment || item?.assessment || item?.assessmentId || item?.assessment_id)) return;
+      const client = String(item?.client_name || item?.clientName || "").trim();
+      const recruiter = String(item?.assigned_to_name || item?.assignedToName || item?.recruiterName || "").trim();
+      const role = String(item?.role || item?.position || item?.jdTitle || "").trim();
+      if (client) clientOptions.add(client);
+      if (recruiter) recruiterOptions.add(recruiter);
+      if (role && (!selectedClient || client.toLowerCase() === selectedClient)) {
+        roleOptions.add(role);
+      }
+    });
+    return {
+      clients: Array.from(clientOptions).sort(),
+      recruiters: Array.from(recruiterOptions).sort(),
+      roles: Array.from(roleOptions).sort()
+    };
+  }, [candidateUniverseAll, candidateQuickChipFilters?.client]);
   const candidateBaseUniverse = useMemo(() => {
     if (candidateSearchMode === "all" || !String(candidateSearchQueryUsed || "").trim()) return candidateUniverseAll;
     return candidateSearchResults || [];
   }, [candidateSearchMode, candidateSearchResults, candidateSearchQueryUsed, candidateUniverseAll]);
   const candidateSmartChipScopedFilters = useMemo(() => ({
-    client: String(candidateStructuredFilters?.client || "").trim(),
-    recruiter: String(candidateStructuredFilters?.recruiter || "").trim(),
-    assessmentStatus: String(candidateStructuredFilters?.assessmentStatus || "").trim()
-  }), [candidateStructuredFilters]);
+    client: String(candidateQuickChipFilters?.client || "").trim(),
+    recruiter: String(candidateQuickChipFilters?.recruiter || "").trim(),
+    role: String(candidateQuickChipFilters?.role || "").trim()
+  }), [candidateQuickChipFilters]);
   const candidateSmartChipUniverse = useMemo(() => {
     const assessmentById = new Map((state.assessments || []).map((item) => [String(item?.id || "").trim(), item]));
     return candidateUniverseAll.filter((item) => {
       const clientValue = String(item.client_name || item.clientName || "").trim().toLowerCase();
       const recruiterValue = String(item.assigned_to_name || item.assignedToName || "").trim().toLowerCase();
+      const roleValue = String(item.role || item.position || item.jdTitle || "").trim().toLowerCase();
       const linkedAssessment = item?.raw?.assessment
         || item?.assessment
         || assessmentById.get(String(item.assessment_id || item.assessmentId || "").trim())
         || null;
-      const assessmentStatusValue = String(
-        linkedAssessment?.candidateStatus
-          || linkedAssessment?.status
-          || item.candidateStatus
-          || item.workflowStatus
-          || item.assessment_status
-          || item.assessmentStatus
-          || ""
-      ).trim().toLowerCase();
       const selectedClients = parseMultiChipTokens(candidateSmartChipScopedFilters.client).map((value) => value.toLowerCase());
       if (selectedClients.length && !selectedClients.includes(clientValue)) return false;
       const selectedRecruiters = parseMultiChipTokens(candidateSmartChipScopedFilters.recruiter).map((value) => value.toLowerCase());
       if (selectedRecruiters.length && !selectedRecruiters.includes(recruiterValue)) return false;
-      const selectedAssessmentStatuses = parseMultiChipTokens(candidateSmartChipScopedFilters.assessmentStatus).map((value) => value.toLowerCase());
-      if (selectedAssessmentStatuses.length && !selectedAssessmentStatuses.includes(assessmentStatusValue)) return false;
+      const selectedRoles = parseMultiChipTokens(candidateSmartChipScopedFilters.role).map((value) => value.toLowerCase());
+      if (selectedRoles.length && !selectedRoles.some((value) => value === roleValue || roleValue.includes(value))) return false;
+      if (!linkedAssessment) return false;
       return true;
     });
   }, [candidateUniverseAll, candidateSmartChipScopedFilters, state.assessments]);
@@ -13582,13 +13616,13 @@ function PortalApp({ token, onLogout }) {
     && !candidateStructuredFiltersActive;
   const databaseServerQueryMode = !candidateHasSmartChipSelection && !databaseAllMode;
   const pagedCandidates = useMemo(() => {
+    const safePageSize = Math.max(10, Number(candidatePageSize || 10));
     if (databaseAllMode) {
-      return Array.isArray(databaseListItems) ? databaseListItems : [];
+      return (Array.isArray(databaseListItems) ? databaseListItems : []).slice(0, safePageSize);
     }
     if (databaseServerQueryMode) {
-      return Array.isArray(databaseQueryItems) ? databaseQueryItems : [];
+      return (Array.isArray(databaseQueryItems) ? databaseQueryItems : []).slice(0, safePageSize);
     }
-    const safePageSize = Math.max(10, Number(candidatePageSize || 10));
     const start = (candidatePage - 1) * safePageSize;
     return candidateUniverse.slice(start, start + safePageSize);
   }, [databaseAllMode, databaseServerQueryMode, databaseListItems, candidateUniverse, databaseQueryItems, candidatePage, candidatePageSize]);
@@ -23801,6 +23835,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                       setCandidateQuickChipIds([]);
                       setCandidateSmartDateFrom("");
                       setCandidateSmartDateTo("");
+                      setCandidateQuickChipFilters(EMPTY_CANDIDATE_QUICK_CHIP_FILTERS);
                       setCandidateSearchResults([]);
                       setCandidateSearchMode("all");
                       setCandidatePage(1);
@@ -23873,6 +23908,48 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                         />
                       </label>
                     </div>
+                    <div className="form-grid four-col" style={{ marginTop: 8 }}>
+                      <label>
+                        <span>Chip client</span>
+                        <select
+                          value={candidateQuickChipFilters.client}
+                          onChange={(e) => setCandidateQuickChipFilters((current) => ({
+                            ...current,
+                            client: e.target.value,
+                            role: ""
+                          }))}
+                        >
+                          <option value="">All clients</option>
+                          {candidateQuickChipOptions.clients.map((client) => (
+                            <option key={`candidate-quick-chip-client-${client}`} value={client}>{client}</option>
+                          ))}
+                        </select>
+                      </label>
+                      <label>
+                        <span>Chip recruiter</span>
+                        <select
+                          value={candidateQuickChipFilters.recruiter}
+                          onChange={(e) => setCandidateQuickChipFilters((current) => ({ ...current, recruiter: e.target.value }))}
+                        >
+                          <option value="">All recruiters</option>
+                          {candidateQuickChipOptions.recruiters.map((recruiter) => (
+                            <option key={`candidate-quick-chip-recruiter-${recruiter}`} value={recruiter}>{recruiter}</option>
+                          ))}
+                        </select>
+                      </label>
+                      <label>
+                        <span>Chip JD / Role</span>
+                        <select
+                          value={candidateQuickChipFilters.role}
+                          onChange={(e) => setCandidateQuickChipFilters((current) => ({ ...current, role: e.target.value }))}
+                        >
+                          <option value="">{candidateQuickChipFilters.client ? "All client roles" : "Select client first"}</option>
+                          {candidateQuickChipOptions.roles.map((role) => (
+                            <option key={`candidate-quick-chip-role-${role}`} value={role}>{role}</option>
+                          ))}
+                        </select>
+                      </label>
+                    </div>
                   </div>
                 ) : null}
                 {candidateAiQueryMode === "natural" ? (
@@ -23892,6 +23969,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                       setCandidateQuickChipIds([]);
                       setCandidateSmartDateFrom("");
                       setCandidateSmartDateTo("");
+                      setCandidateQuickChipFilters(EMPTY_CANDIDATE_QUICK_CHIP_FILTERS);
                       setCandidateSearchResults([]);
                       setCandidateSearchMode("all");
                       setCandidatePage(1);

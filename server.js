@@ -7056,6 +7056,14 @@ function databaseSmartChipRowMatchesFrontendFilters(item, filters = {}) {
   const locationHay = String(item?.location || "").toLowerCase();
   const companyHay = String(item?.company || item?.currentCompany || "").toLowerCase();
   const educationHay = String(item?.highest_education || item?.highestEducation || "").toLowerCase();
+  const roleHay = [
+    item?.role || "",
+    item?.position || "",
+    item?.jdTitle || "",
+    item?.currentDesignation || "",
+    item?.raw?.assessment?.jdTitle || "",
+    item?.raw?.assessment?.jd_title || ""
+  ].join(" ").toLowerCase();
   const skillsHay = [
     item?.name || "",
     item?.candidateName || "",
@@ -7100,6 +7108,10 @@ function databaseSmartChipRowMatchesFrontendFilters(item, filters = {}) {
     } else if (!locationHay.includes(String(normalizedFilters.location).trim().toLowerCase())) {
       return false;
     }
+  }
+  if (normalizedFilters.role || normalizedFilters.targetLabel) {
+    const requiredRoles = parseMultiChipTokens(normalizedFilters.role || normalizedFilters.targetLabel).map((entry) => entry.toLowerCase());
+    if (requiredRoles.length && !requiredRoles.some((term) => roleHay.includes(term))) return false;
   }
   if (normalizedFilters.keySkills) {
     const requiredSkills = splitSearchKeywords(normalizedFilters.keySkills);
