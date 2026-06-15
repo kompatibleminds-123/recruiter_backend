@@ -7499,34 +7499,31 @@ function buildDatabaseQuickChipRows({ universe = [], assessmentEvents = [], date
         return latestAlignedByStatus.get(key) === event;
       });
       const exactInterviewContext = getAssessmentExactInterviewContext(assessment, assessmentEventsByAssessmentId);
-      const inRangeEvents = dedupedTrackEvents.filter((event) => inDateRange(event.effectiveAt));
-      if (inRangeEvents.length) {
-        const latestTrackEvent = inRangeEvents[inRangeEvents.length - 1];
+      const latestInterviewDate = String(
+        dedupedTrackEvents[dedupedTrackEvents.length - 1]?.effectiveAt
+        || dedupedTrackEvents[dedupedTrackEvents.length - 1]?.at
+        || deriveInterviewAtFromHistory(assessment)
+        || assessment?.interviewAt
+        || assessment?.interview_at
+        || updatedAt
+        || convertedAt
+        || ""
+      ).trim();
+      if (inDateRange(latestInterviewDate || updatedAt || convertedAt)) {
+        const timelineText = dedupedTrackEvents.length
+          ? dedupedTrackEvents
+              .map((event) => `${formatDatabaseQuickChipTimelineLabel(event.status, event.effectiveAt)} on ${formatDatabaseQuickChipEventDate(event.effectiveAt)}`)
+              .join(" | ")
+          : "";
         rowsByChip.interview_history.push({
           ...baseRow,
-          round: `${inRangeEvents.map((event) => `${formatDatabaseQuickChipTimelineLabel(event.status, event.effectiveAt)} on ${formatDatabaseQuickChipEventDate(event.effectiveAt)}`).join(" | ")} | Current: ${baseRow.status || "-"}`,
-          date: String(latestTrackEvent?.effectiveAt || assessment?.interviewAt || assessment?.interview_at || "").trim()
-        });
-      } else {
-        const fallbackInterviewDate = String(
-          sortedTrackEvents[sortedTrackEvents.length - 1]?.effectiveAt
-          || 
-          deriveInterviewAtFromHistory(assessment)
-          || assessment?.interviewAt
-          || assessment?.interview_at
-          || updatedAt
-          || convertedAt
-          || ""
-        ).trim();
-        if (inDateRange(fallbackInterviewDate || updatedAt || convertedAt)) {
-          rowsByChip.interview_history.push({
-            ...baseRow,
-            round: exactInterviewContext?.previousStatus
+          round: timelineText
+            ? `${timelineText} | Current: ${baseRow.status || "-"}`
+            : exactInterviewContext?.previousStatus
               ? `${exactInterviewContext.previousStatus} | Current: ${baseRow.status || "-"}`
               : `Current: ${baseRow.status || "-"}`,
-            date: fallbackInterviewDate
-          });
-        }
+          date: latestInterviewDate
+        });
       }
     }
 
