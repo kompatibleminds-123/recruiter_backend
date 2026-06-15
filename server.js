@@ -7601,6 +7601,97 @@ function buildDatabaseQuickChipRows({ universe = [], assessmentEvents = [], date
   return rowsByChip;
 }
 
+function buildDatabaseQuickChipInterviewHistoryRowsFromDashboardUniverse({
+  user,
+  universe = [],
+  assessments = [],
+  candidates = [],
+  assessmentEvents = [],
+  dateFrom = "",
+  dateTo = ""
+} = {}) {
+  const candidateById = new Map();
+  const eventsByAssessmentId = new Map();
+  const universeByAssessmentId = new Map();
+  for (const candidate of Array.isArray(candidates) ? candidates : []) {
+    const candidateId = String(candidate?.id || "").trim();
+    if (candidateId) candidateById.set(candidateId, candidate);
+  }
+  for (const event of Array.isArray(assessmentEvents) ? assessmentEvents : []) {
+    const assessmentId = String(event?.assessment_id || event?.assessmentId || "").trim();
+    if (!assessmentId) continue;
+    const list = eventsByAssessmentId.get(assessmentId) || [];
+    list.push(event);
+    eventsByAssessmentId.set(assessmentId, list);
+  }
+  const allowedAssessmentIds = new Set();
+  for (const item of Array.isArray(universe) ? universe : []) {
+    const assessmentId = String(
+      item?.raw?.assessment?.id
+      || item?.assessmentId
+      || item?.assessment_id
+      || ""
+    ).trim();
+    if (!assessmentId) continue;
+    allowedAssessmentIds.add(assessmentId);
+    universeByAssessmentId.set(assessmentId, item);
+  }
+  const rows = [];
+  for (const assessment of Array.isArray(assessments) ? assessments : []) {
+    const assessmentId = String(assessment?.id || "").trim();
+    if (!assessmentId || !allowedAssessmentIds.has(assessmentId)) continue;
+    if (!isDashboardRowInActorScope(assessment, user, "assessment")) continue;
+    const candidateId = String(
+      assessment?.candidate_id
+      || assessment?.candidateId
+      || assessment?.payload?.candidateId
+      || assessment?.payload?.candidate_id
+      || ""
+    ).trim();
+    const candidate = candidateId ? (candidateById.get(candidateId) || null) : null;
+    const historicalRank = getAssessmentHistoricalRank(assessment, eventsByAssessmentId);
+    if (historicalRank < 2) continue;
+    const convertedAt = String(
+      getCandidateConvertedAt(candidate || {}, assessment || {})
+      || assessment?.created_at
+      || assessment?.createdAt
+      || ""
+    ).trim();
+    if (!isDateWithinRange(convertedAt, dateFrom, dateTo)) continue;
+    const exactInterviewContext = getAssessmentExactInterviewContext(assessment, eventsByAssessmentId);
+    const dashboardItem = createDashboardDrilldownAssessmentItem(assessment, candidate, exactInterviewContext, historicalRank);
+    const universeItem = universeByAssessmentId.get(assessmentId) || {
+      id: dashboardItem.candidateId || dashboardItem.assessmentId,
+      assessmentId: dashboardItem.assessmentId,
+      assessment_id: dashboardItem.assessmentId,
+      raw: { candidate, assessment }
+    };
+    rows.push({
+      item: universeItem,
+      candidateName: dashboardItem.candidateName || dashboardItem.name || "Candidate",
+      role: dashboardItem.position || dashboardItem.role || "",
+      client: dashboardItem.clientName || "",
+      recruiter: dashboardItem.ownerRecruiter || "",
+      currentCtc: dashboardItem.currentCtc || "",
+      expectedCtc: dashboardItem.expectedCtc || "",
+      notice: dashboardItem.noticePeriod || "",
+      offerAmount: dashboardItem.offerAmount || "",
+      dateOfJoining: dashboardItem.dateOfJoining || "",
+      status: dashboardItem.candidateStatus || "",
+      round: exactInterviewContext?.previousStatus
+        ? `${exactInterviewContext.previousStatus} | Current: ${dashboardItem.candidateStatus || "-"}`
+        : `Current: ${dashboardItem.candidateStatus || "-"}`,
+      date: String(
+        dashboardItem.interviewAt
+        || convertedAt
+        || ""
+      ).trim()
+    });
+  }
+  rows.sort((a, b) => parseDateLike(b?.date || "") - parseDateLike(a?.date || ""));
+  return rows;
+}
+
 async function buildDatabaseQuickChipDataForUser({ user, filters = {}, searchMode = "", searchIds = [], dateFrom = "", dateTo = "" } = {}) {
   const normalizedFilters = normalizeDatabaseQuickChipFilters(filters);
   const dateFromValue = String(dateFrom || normalizedFilters.dateFrom || "").trim();
@@ -7630,6 +7721,15 @@ async function buildDatabaseQuickChipDataForUser({ user, filters = {}, searchMod
   });
   const rows = buildDatabaseQuickChipRows({
     universe,
+    assessmentEvents,
+    dateFrom: dateFromValue,
+    dateTo: dateToValue
+  });
+  rows.interview_history = buildDatabaseQuickChipInterviewHistoryRowsFromDashboardUniverse({
+    user,
+    universe,
+    assessments,
+    candidates,
     assessmentEvents,
     dateFrom: dateFromValue,
     dateTo: dateToValue
