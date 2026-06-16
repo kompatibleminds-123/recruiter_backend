@@ -21763,18 +21763,35 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
     setOpenAssessmentMoreId("");
   }
 
+  function resolveAgendaAssessmentForMutation(item) {
+    const assessmentId = String(item?.id || item?.assessmentId || item?.raw?.id || item?.raw?.assessmentId || "").trim();
+    const candidateId = String(item?.candidateId || item?.raw?.candidateId || "").trim();
+    const fullAssessment = assessmentId
+      ? (state.assessments || []).find((entry) => String(entry?.id || "").trim() === assessmentId)
+      : null;
+    if (fullAssessment) return fullAssessment;
+    return {
+      ...(item?.raw && typeof item.raw === "object" ? item.raw : {}),
+      ...(item && typeof item === "object" ? item : {}),
+      id: assessmentId || String(item?.id || "").trim(),
+      assessmentId: assessmentId || String(item?.assessmentId || "").trim(),
+      candidateId: candidateId || String(item?.raw?.candidateId || "").trim()
+    };
+  }
+
   async function completeAgendaInterview(assessment) {
-    const assessmentId = String(assessment?.id || "").trim();
+    const resolvedAssessment = resolveAgendaAssessmentForMutation(assessment);
+    const assessmentId = String(resolvedAssessment?.id || "").trim();
     if (!assessmentId) {
       setStatus("workspace", "Assessment id missing.", "error");
       return;
     }
     if (agendaBusyIds[assessmentId]) return;
-    const confirmed = typeof window === "undefined" || window.confirm(`Mark interview done for ${assessment?.candidateName || "this candidate"}?`);
+    const confirmed = typeof window === "undefined" || window.confirm(`Mark interview done for ${resolvedAssessment?.candidateName || "this candidate"}?`);
     if (!confirmed) return;
     setAgendaBusyIds((current) => ({ ...current, [assessmentId]: true }));
     try {
-      await saveAssessmentStatusUpdate(assessment, {
+      await saveAssessmentStatusUpdate(resolvedAssessment, {
         candidateStatus: "Interview feedback awaited",
         atValue: "",
         notes: "Interview completed from Today's Agenda."
@@ -21792,9 +21809,10 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
   }
 
   async function completeAgendaJoining(assessment) {
-    const confirmed = typeof window === "undefined" || window.confirm(`Mark joining complete for ${assessment?.candidateName || "this candidate"}?`);
+    const resolvedAssessment = resolveAgendaAssessmentForMutation(assessment);
+    const confirmed = typeof window === "undefined" || window.confirm(`Mark joining complete for ${resolvedAssessment?.candidateName || "this candidate"}?`);
     if (!confirmed) return;
-    await saveAssessmentStatusUpdate(assessment, {
+    await saveAssessmentStatusUpdate(resolvedAssessment, {
       candidateStatus: "Joined",
       atValue: "",
       notes: "Marked complete from Today's Agenda."
