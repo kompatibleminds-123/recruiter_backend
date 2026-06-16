@@ -10944,6 +10944,8 @@ function PortalApp({ token, onLogout }) {
     const needsApplicants = forceCore || forceAll;
     const needsIntake = pathname === "/intake-settings" || pathname === "/jobs" || pathname === "/applicants" || forceAll;
     const needsJobs = forceAll || (!isMarketingRoute && pathname !== "/mail-settings" && pathname !== "/login-settings" && pathname !== "/plan");
+    const needsFullJobsPayload = pathname === "/jobs" || pathname === "/shortcuts" || forceAll;
+    const jobsApiPath = needsFullJobsPayload ? "/company/jds" : "/company/jds?lightweight=1";
     const needsUsers = forceAll || needsJobs || pathname === "/login-settings";
     const needsEmployeeUsers = includeEmployeeUsers && (forceAll || pathname === "/login-settings" || pathname.startsWith("/admin/payroll"));
     const needsCandidates =
@@ -11019,7 +11021,7 @@ function PortalApp({ token, onLogout }) {
             .catch((error) => ({ ok: false, error: String(error?.message || error), data: null }))
         : Promise.resolve(null),
       needsIntake ? api("/company/applicant-intake-secret", token).catch(() => null) : Promise.resolve(null),
-      needsJobs ? api("/company/jds", token).catch(() => ({ jobs: [] })) : Promise.resolve(null),
+      needsJobs ? api(jobsApiPath, token).catch(() => ({ jobs: [] })) : Promise.resolve(null),
       needsUsers ? api("/company/users", token).catch(() => ({ users: [] })) : Promise.resolve(null),
       includeClientUsers
         ? api("/company/client-users", token).catch(() => ({ clientUsers: [] }))

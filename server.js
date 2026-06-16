@@ -16008,11 +16008,19 @@ const server = http.createServer(async (req, res) => {
       const user = await requireSessionUser(getBearerToken(req));
       const includeArchivedRaw = String(requestUrl.searchParams.get("includeArchived") || "").trim().toLowerCase();
       const includeArchived = includeArchivedRaw === "1" || includeArchivedRaw === "true" || includeArchivedRaw === "yes";
-      const jobs = await listCompanyJobs(user.companyId, user.id, { includeArchived });
-      const personalShortcuts = await getCompanyPersonalShortcuts({
-        companyId: user.companyId,
-        userId: user.id
-      }).catch(() => ({}));
+      const lightweightRaw = String(requestUrl.searchParams.get("lightweight") || "").trim().toLowerCase();
+      const lightweight = lightweightRaw === "1" || lightweightRaw === "true" || lightweightRaw === "yes";
+      const jobs = await listCompanyJobs(user.companyId, user.id, {
+        includeArchived,
+        viewerRole: user.role,
+        includeJobShortcuts: !lightweight
+      });
+      const personalShortcuts = lightweight
+        ? {}
+        : await getCompanyPersonalShortcuts({
+            companyId: user.companyId,
+            userId: user.id
+          }).catch(() => ({}));
       sendJson(res, 200, { ok: true, result: { jobs, personalShortcuts } });
     } catch (error) {
       sendJson(res, 401, { ok: false, error: String(error.message || error) });

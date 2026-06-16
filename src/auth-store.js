@@ -2697,11 +2697,17 @@ async function listCompanyUsers(companyId) {
 async function listCompanyJobs(companyId, recruiterId = "", options = {}) {
   const scopedRecruiterId = String(recruiterId || "").trim();
   const includeArchived = Boolean(options && options.includeArchived);
+  const includeJobShortcuts = options?.includeJobShortcuts !== false;
+  const viewerRole = String(options?.viewerRole || "").trim().toLowerCase();
   let scopedUser = null;
   let scopedIsAdmin = false;
   if (scopedRecruiterId) {
-    scopedUser = sanitizeUser(await getUserById(scopedRecruiterId, companyId));
-    scopedIsAdmin = String(scopedUser?.role || "").toLowerCase() === "admin";
+    if (viewerRole) {
+      scopedIsAdmin = viewerRole === "admin";
+    } else {
+      scopedUser = sanitizeUser(await getUserById(scopedRecruiterId, companyId));
+      scopedIsAdmin = String(scopedUser?.role || "").toLowerCase() === "admin";
+    }
   }
   const canRecruiterSeeJob = (job) => {
     if (!scopedRecruiterId) return true;
@@ -2724,7 +2730,9 @@ async function listCompanyJobs(companyId, recruiterId = "", options = {}) {
       .sort((a, b) => String(b.updatedAt || "").localeCompare(String(a.updatedAt || "")))
       .map(sanitizeJob)
       .filter((job) => canRecruiterSeeJob(job));
-    if (!scopedRecruiterId) return jobs;
+    if (!scopedRecruiterId || !includeJobShortcuts) {
+      return jobs.map((job) => ({ ...job, jdShortcuts: includeJobShortcuts ? String(job?.jdShortcuts || "") : "" }));
+    }
 
     store.jobShortcuts = Array.isArray(store.jobShortcuts) ? store.jobShortcuts : [];
     const shortcutsMap = new Map(
@@ -2750,7 +2758,9 @@ async function listCompanyJobs(companyId, recruiterId = "", options = {}) {
     .filter((row) => includeArchived || !isJobArchived(row))
     .map(sanitizeJob)
     .filter((job) => canRecruiterSeeJob(job));
-  if (!scopedRecruiterId) return jobs;
+  if (!scopedRecruiterId || !includeJobShortcuts) {
+    return jobs.map((job) => ({ ...job, jdShortcuts: includeJobShortcuts ? String(job?.jdShortcuts || "") : "" }));
+  }
 
   const shortcutRows = await sbSel(
     "company_job_shortcuts",
