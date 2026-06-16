@@ -7147,6 +7147,31 @@ function databaseSmartChipRowMatchesFrontendFilters(item, filters = {}) {
   return true;
 }
 
+function databaseQuickChipRowMatchesSharedFilters(item, filters = {}) {
+  const normalizedFilters = filters && typeof filters === "object" ? filters : {};
+  const clientValue = String(item?.client_name || item?.clientName || "").trim().toLowerCase();
+  const recruiterValue = String(item?.assigned_to_name || item?.assignedToName || item?.recruiterName || "").trim().toLowerCase();
+  const roleHay = [
+    item?.role || "",
+    item?.position || "",
+    item?.jdTitle || "",
+    item?.currentDesignation || "",
+    item?.raw?.assessment?.jdTitle || "",
+    item?.raw?.assessment?.jd_title || ""
+  ].join(" ").toLowerCase();
+
+  const selectedClients = parseMultiChipTokens(normalizedFilters.client).map((entry) => entry.toLowerCase());
+  if (selectedClients.length && !selectedClients.includes(clientValue)) return false;
+
+  const selectedRecruiters = parseMultiChipTokens(normalizedFilters.recruiter).map((entry) => entry.toLowerCase());
+  if (selectedRecruiters.length && !selectedRecruiters.includes(recruiterValue)) return false;
+
+  const requiredRoles = parseMultiChipTokens(normalizedFilters.targetLabel || normalizedFilters.role).map((entry) => entry.toLowerCase());
+  if (requiredRoles.length && !requiredRoles.some((term) => roleHay.includes(term))) return false;
+
+  return true;
+}
+
 function buildDatabaseQuickChipSummary({ candidates = [], assessments = [], jobs = [], filters = {}, searchMode = "", searchIds = [], dateFrom = "", dateTo = "", actor = null } = {}) {
   const summary = createDatabaseQuickChipSummaryBucket();
   const normalizedFilters = normalizeDatabaseQuickChipFilters(filters);
@@ -7171,7 +7196,7 @@ function buildDatabaseQuickChipSummary({ candidates = [], assessments = [], jobs
       ].map((value) => String(value || "").trim()).filter(Boolean);
       if (!ids.some((id) => searchSet.has(id))) return false;
     }
-    return databaseSmartChipRowMatchesFrontendFilters(item, normalizedFilters, actor);
+    return databaseQuickChipRowMatchesSharedFilters(item, normalizedFilters);
   });
   const inDateRange = (value) => isDateWithinRange(value, dateFromValue, dateToValue);
   const now = new Date();
@@ -7722,7 +7747,7 @@ async function buildDatabaseQuickChipDataForUser({ user, filters = {}, searchMod
       ].map((value) => String(value || "").trim()).filter(Boolean);
       if (!ids.some((id) => searchSet.has(id))) return false;
     }
-    return databaseSmartChipRowMatchesFrontendFilters(item, normalizedFilters, user);
+    return databaseQuickChipRowMatchesSharedFilters(item, normalizedFilters);
   });
   const rows = buildDatabaseQuickChipRows({
     universe,
