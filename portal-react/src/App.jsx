@@ -21775,7 +21775,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
     setAgendaBusyIds((current) => ({ ...current, [assessmentId]: true }));
     try {
       await saveAssessmentStatusUpdate(assessment, {
-        candidateStatus: "Feedback Awaited",
+        candidateStatus: "Interview feedback awaited",
         atValue: "",
         notes: "Interview completed from Today's Agenda."
       }, {
