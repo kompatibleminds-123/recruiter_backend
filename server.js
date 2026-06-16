@@ -7229,7 +7229,7 @@ function buildDatabaseQuickChipSummary({ candidates = [], assessments = [], jobs
   for (const item of universe) {
     const assessment = item?.raw?.assessment || null;
     const candidate = item?.raw?.candidate || null;
-    const activeAssessment = Boolean(assessment && !isAssessmentArchived(assessment));
+    const activeAssessment = Boolean(assessment && !isAssessmentArchivedLocal(assessment));
     const assessmentStatus = normalizeAssessmentStatusLabel(
       assessment?.candidateStatus
       || assessment?.candidate_status
@@ -7422,7 +7422,7 @@ function buildDatabaseQuickChipRows({ universe = [], assessmentEvents = [], date
     if (!assessment) return;
     const candidate = item?.raw?.candidate || null;
     const assessmentId = String(assessment?.id || item?.assessment_id || item?.assessmentId || "").trim();
-    const activeAssessment = Boolean(assessment && !isAssessmentArchived(assessment));
+    const activeAssessment = Boolean(assessment && !isAssessmentArchivedLocal(assessment));
     const assessmentStatus = normalizeAssessmentStatusLabel(
       assessment?.candidateStatus
       || assessment?.candidate_status
@@ -21428,6 +21428,7 @@ const server = http.createServer(async (req, res) => {
 server.listen(PORT, () => {
   console.log(`Recruiter backend listening on http://localhost:${PORT}`);
 });
+
 
 
 
