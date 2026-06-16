@@ -7172,9 +7172,19 @@ function databaseQuickChipRowMatchesSharedFilters(item, filters = {}) {
   return true;
 }
 
+function hasDatabaseQuickChipSharedFilters(filters = {}) {
+  const normalizedFilters = filters && typeof filters === "object" ? filters : {};
+  return Boolean(
+    String(normalizedFilters.client || "").trim() ||
+    String(normalizedFilters.recruiter || "").trim() ||
+    String(normalizedFilters.targetLabel || normalizedFilters.role || "").trim()
+  );
+}
+
 function buildDatabaseQuickChipSummary({ candidates = [], assessments = [], jobs = [], filters = {}, searchMode = "", searchIds = [], dateFrom = "", dateTo = "", actor = null } = {}) {
   const summary = createDatabaseQuickChipSummaryBucket();
   const normalizedFilters = normalizeDatabaseQuickChipFilters(filters);
+  const hasSharedFilters = hasDatabaseQuickChipSharedFilters(normalizedFilters);
   const dateFromValue = String(dateFrom || normalizedFilters.dateFrom || "").trim();
   const dateToValue = String(dateTo || normalizedFilters.dateTo || "").trim();
   const searchSet = new Set((Array.isArray(searchIds) ? searchIds : []).map((value) => String(value || "").trim()).filter(Boolean));
@@ -7196,6 +7206,7 @@ function buildDatabaseQuickChipSummary({ candidates = [], assessments = [], jobs
       ].map((value) => String(value || "").trim()).filter(Boolean);
       if (!ids.some((id) => searchSet.has(id))) return false;
     }
+    if (!hasSharedFilters) return true;
     return databaseQuickChipRowMatchesSharedFilters(item, normalizedFilters);
   });
   const inDateRange = (value) => isDateWithinRange(value, dateFromValue, dateToValue);
@@ -7719,6 +7730,7 @@ function buildDatabaseQuickChipInterviewHistoryRowsFromDashboardUniverse({
 
 async function buildDatabaseQuickChipDataForUser({ user, filters = {}, searchMode = "", searchIds = [], dateFrom = "", dateTo = "" } = {}) {
   const normalizedFilters = normalizeDatabaseQuickChipFilters(filters);
+  const hasSharedFilters = hasDatabaseQuickChipSharedFilters(normalizedFilters);
   const dateFromValue = String(dateFrom || normalizedFilters.dateFrom || "").trim();
   const dateToValue = String(dateTo || normalizedFilters.dateTo || "").trim();
   const assessments = await getAssessmentsUniverseForUser(user);
@@ -7747,6 +7759,7 @@ async function buildDatabaseQuickChipDataForUser({ user, filters = {}, searchMod
       ].map((value) => String(value || "").trim()).filter(Boolean);
       if (!ids.some((id) => searchSet.has(id))) return false;
     }
+    if (!hasSharedFilters) return true;
     return databaseQuickChipRowMatchesSharedFilters(item, normalizedFilters);
   });
   const rows = buildDatabaseQuickChipRows({
@@ -7777,6 +7790,7 @@ async function buildDatabaseQuickChipDataForUser({ user, filters = {}, searchMod
     assessmentEventsCount: Array.isArray(assessmentEvents) ? assessmentEvents.length : 0,
     sourceUniverseCount: Array.isArray(sourceUniverse) ? sourceUniverse.length : 0,
     universeCount: Array.isArray(universe) ? universe.length : 0,
+    hasSharedFilters,
     rowsCount: summary
   };
   return {
