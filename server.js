@@ -7735,9 +7735,23 @@ async function buildDatabaseQuickChipDataForUser({ user, filters = {}, searchMod
     dateTo: dateToValue
   });
   const summary = Object.fromEntries(Object.entries(rows).map(([key, list]) => [key, Array.isArray(list) ? list.length : 0]));
+  const debug = {
+    dateFrom: dateFromValue,
+    dateTo: dateToValue,
+    searchMode: String(searchMode || "").trim().toLowerCase() || "all",
+    searchIdsCount: searchSet.size,
+    assessmentsCount: Array.isArray(assessments) ? assessments.length : 0,
+    candidateIdsCount: candidateIds.length,
+    candidatesCount: Array.isArray(candidates) ? candidates.length : 0,
+    jobsCount: Array.isArray(jobs) ? jobs.length : 0,
+    assessmentEventsCount: Array.isArray(assessmentEvents) ? assessmentEvents.length : 0,
+    universeCount: Array.isArray(universe) ? universe.length : 0,
+    rowsCount: summary
+  };
   return {
     rows,
     summary,
+    debug,
     generatedAt: new Date().toISOString(),
     total: universe.length
   };
