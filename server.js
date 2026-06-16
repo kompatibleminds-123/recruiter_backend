@@ -6353,6 +6353,29 @@ function parseDateInput(value, endOfDay = false) {
   return Number.isFinite(date.getTime()) ? date : null;
 }
 
+function parseDateLike(value) {
+  const parsed = parseIsoDateValue(value);
+  return parsed ? parsed.getTime() : NaN;
+}
+
+function parseMultiChipTokens(value) {
+  return String(value || "")
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function bucketNoticeDays(days) {
+  if (days == null || !Number.isFinite(Number(days))) return "";
+  const value = Number(days);
+  if (value <= 0) return "immediate";
+  if (value <= 15) return "15_or_less";
+  if (value <= 30) return "15_30";
+  if (value <= 60) return "30_60";
+  if (value <= 90) return "60_90";
+  return "90_plus";
+}
+
 function isDateWithinRange(value, fromValue, toValue) {
   if (!fromValue && !toValue) return true;
   const date = parseIsoDateValue(value);
