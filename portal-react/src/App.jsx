@@ -9508,7 +9508,22 @@ function PortalApp({ token, onLogout }) {
   const [selectedJobId, setSelectedJobId] = useState("");
   const [jobListLane, setJobListLane] = useState("active");
   const [jobsCatalog, setJobsCatalog] = useState([]);
+  const archivedJobsLoadedRef = useRef(false);
+  const archivedJobsLoadingRef = useRef(false);
   const [jobShortcutKey, setJobShortcutKey] = useState("");
+  const mergeJobsCatalog = useCallback((currentCatalog = [], activeJobs = [], archivedJobs = []) => {
+    const merged = new Map();
+    [
+      ...(Array.isArray(activeJobs) ? activeJobs : []),
+      ...(Array.isArray(archivedJobs) ? archivedJobs : []),
+      ...(Array.isArray(currentCatalog) ? currentCatalog : []).filter((job) => Boolean(job?.isArchived))
+    ].forEach((job) => {
+      const id = String(job?.id || "").trim();
+      if (!id) return;
+      merged.set(id, job);
+    });
+    return Array.from(merged.values());
+  }, []);
   const isCapturedUserEditing = useMemo(() => (
     Boolean(
       newDraftOpen
@@ -10989,7 +11004,7 @@ function PortalApp({ token, onLogout }) {
     const dashboardAgendaParams = new URLSearchParams();
     dashboardAgendaParams.set("range", String(agendaRange || "today"));
 
-    const [userResult, dashboardAgendaResult, dashboardFunnelResult, applicantsResult, intakeResult, jobsResult, jobsManageResult, usersResult, clientUsersResult, employeeUsersResult, candidatesResult, databaseCandidatesResult, assessmentsResult, assessmentEventsResult, sharedPresetResult, smtpSettingsResult, licenseResult, billingOverviewResult, billingPlansResult] = await Promise.all([
+    const [userResult, dashboardAgendaResult, dashboardFunnelResult, applicantsResult, intakeResult, jobsResult, usersResult, clientUsersResult, employeeUsersResult, candidatesResult, databaseCandidatesResult, assessmentsResult, assessmentEventsResult, sharedPresetResult, smtpSettingsResult, licenseResult, billingOverviewResult, billingPlansResult] = await Promise.all([
       api("/auth/me", token),
       needsDashboard
         ? api(`/company/dashboard/agenda${dashboardAgendaParams.toString() ? `?${dashboardAgendaParams.toString()}` : ""}`, token)
@@ -11005,7 +11020,6 @@ function PortalApp({ token, onLogout }) {
         : Promise.resolve(null),
       needsIntake ? api("/company/applicant-intake-secret", token).catch(() => null) : Promise.resolve(null),
       needsJobs ? api("/company/jds", token).catch(() => ({ jobs: [] })) : Promise.resolve(null),
-      needsJobs ? api("/company/jds?includeArchived=1", token).catch(() => ({ jobs: [] })) : Promise.resolve(null),
       needsUsers ? api("/company/users", token).catch(() => ({ users: [] })) : Promise.resolve(null),
       includeClientUsers
         ? api("/company/client-users", token).catch(() => ({ clientUsers: [] }))
@@ -11111,7 +11125,8 @@ function PortalApp({ token, onLogout }) {
       });
     }
     if (needsJobs) {
-      setJobsCatalog(Array.isArray(jobsManageResult?.jobs) ? jobsManageResult.jobs : []);
+      archivedJobsLoadedRef.current = false;
+      setJobsCatalog((current) => mergeJobsCatalog(current, jobsResult?.jobs || [], []));
     }
     if (seq !== workspaceLoadSeqRef.current) return;
     if (includeClientUsers && clientUsersResult) {
@@ -11524,9 +11539,8 @@ function PortalApp({ token, onLogout }) {
 
   async function reloadJobsWorkspace() {
     if (!token) return;
-    const [jobsResult, jobsManageResult, usersResult, intakeResult] = await Promise.all([
+    const [jobsResult, usersResult, intakeResult] = await Promise.all([
       api("/company/jds", token).catch(() => ({ jobs: [] })),
-      api("/company/jds?includeArchived=1", token).catch(() => ({ jobs: [] })),
       api("/company/users", token).catch(() => ({ users: [] })),
       api("/company/applicant-intake-secret", token).catch(() => null)
     ]);
@@ -11536,8 +11550,26 @@ function PortalApp({ token, onLogout }) {
       users: usersResult?.users || [],
       intake: intakeResult || current.intake
     }));
-    setJobsCatalog(Array.isArray(jobsManageResult?.jobs) ? jobsManageResult.jobs : []);
+    setJobsCatalog((current) => mergeJobsCatalog(current, jobsResult?.jobs || [], []));
+    if (location?.pathname === "/jobs" || jobListLane === "archived" || archivedJobsLoadedRef.current) {
+      await loadArchivedJobsCatalogIfNeeded({ force: true });
+    }
   }
+
+  const loadArchivedJobsCatalogIfNeeded = useCallback(async (options = {}) => {
+    if (!token) return;
+    const force = Boolean(options?.force);
+    if (!force && archivedJobsLoadedRef.current) return;
+    if (archivedJobsLoadingRef.current) return;
+    archivedJobsLoadingRef.current = true;
+    try {
+      const archivedResult = await api("/company/jds?includeArchived=1", token).catch(() => ({ jobs: [] }));
+      archivedJobsLoadedRef.current = true;
+      setJobsCatalog((current) => mergeJobsCatalog(current, state.jobs || [], archivedResult?.jobs || []));
+    } finally {
+      archivedJobsLoadingRef.current = false;
+    }
+  }, [mergeJobsCatalog, state.jobs, token]);
 
   async function reloadLoginSettingsWorkspace() {
     if (!token) return;
@@ -11618,6 +11650,17 @@ function PortalApp({ token, onLogout }) {
       setDatabaseListLoading(false);
     }
   }
+
+  useEffect(() => {
+    const pathname = String(location?.pathname || "").trim();
+    if (pathname === "/jobs") {
+      void loadArchivedJobsCatalogIfNeeded();
+      return;
+    }
+    if (jobListLane === "archived") {
+      void loadArchivedJobsCatalogIfNeeded();
+    }
+  }, [jobListLane, loadArchivedJobsCatalogIfNeeded, location?.pathname]);
 
   function buildAssessmentQueryParams(filters = assessmentFiltersApplied, page = safeAssessmentApiPage, limit = safeAssessmentApiPageSize, lane = assessmentLane, sortBy = assessmentSortBy) {
     const params = new URLSearchParams();
