@@ -7466,7 +7466,15 @@ function buildDatabaseQuickChipRows({ universe = [], assessmentEvents = [], date
     const noticeDays = parseNoticePeriodToDays(noticeText);
     const baseRow = {
       item,
-      candidateName: resolveCandidateDisplayName(candidate || item, assessment),
+      candidateName: String(
+        candidate?.name
+        || assessment?.candidateName
+        || assessment?.candidate_name
+        || item?.candidateName
+        || item?.candidate_name
+        || item?.name
+        || "Candidate"
+      ).trim(),
       role: assessment?.jdTitle || assessment?.jd_title || item?.role || item?.position || item?.jdTitle || "",
       client: assessment?.clientName || assessment?.client_name || item?.client_name || item?.clientName || "",
       recruiter: item?.assigned_to_name || item?.assignedToName || item?.recruiterName || assessment?.recruiter_name || "",
