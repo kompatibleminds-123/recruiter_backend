@@ -7706,7 +7706,12 @@ async function buildDatabaseQuickChipDataForUser({ user, filters = {}, searchMod
     listAssessmentEvents({ companyId: user.companyId, limit: 10000 })
   ]);
   const searchSet = new Set((Array.isArray(searchIds) ? searchIds : []).map((value) => String(value || "").trim()).filter(Boolean));
-  const universe = buildCandidateSearchUniverse(candidates, assessments, jobs).filter((item) => {
+  const baseUniverse = buildCandidateSearchUniverse(candidates, assessments, jobs);
+  const fallbackAssessmentUniverse = (!baseUniverse.length && Array.isArray(assessments) && assessments.length)
+    ? buildCandidateSearchUniverse([], assessments, jobs)
+    : [];
+  const sourceUniverse = baseUniverse.length ? baseUniverse : fallbackAssessmentUniverse;
+  const universe = sourceUniverse.filter((item) => {
     if (searchMode === "search" && searchSet.size) {
       const ids = [
         item?.id,
@@ -7745,6 +7750,7 @@ async function buildDatabaseQuickChipDataForUser({ user, filters = {}, searchMod
     candidatesCount: Array.isArray(candidates) ? candidates.length : 0,
     jobsCount: Array.isArray(jobs) ? jobs.length : 0,
     assessmentEventsCount: Array.isArray(assessmentEvents) ? assessmentEvents.length : 0,
+    sourceUniverseCount: Array.isArray(sourceUniverse) ? sourceUniverse.length : 0,
     universeCount: Array.isArray(universe) ? universe.length : 0,
     rowsCount: summary
   };
