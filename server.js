@@ -5226,6 +5226,7 @@ async function processMarketingWorkerTickForActor(actor, options = {}) {
     `?select=*&company_id=eq.${companyId}&status=eq.active${buildMarketingOwnerFilter(actor, "sender_user_id")}&limit=50`
   );
   let sent = 0;
+  let failed = 0;
   for (const campaign of Array.isArray(campaigns) ? campaigns : []) {
     const campaignId = String(campaign?.id || "").trim();
     const senderUserId = String(campaign?.sender_user_id || "").trim();
@@ -5311,29 +5312,52 @@ async function processMarketingWorkerTickForActor(actor, options = {}) {
           // Ignore malformed template attachment, keep send resilient.
         }
       }
-      await sendJdEmailAsActor(senderActor, { to, subject, text, html, cc: "", attachments });
-      await supabaseTableFetch("marketing_campaign_prospects", `?id=eq.${encodeURIComponent(String(row.id || ""))}&select=*`, {
-        method: "PATCH",
-        body: { state: "sent", updated_at: toIsoNow(), last_sent_at: toIsoNow() },
-        prefer: "return=minimal"
-      });
-      await supabaseTableFetch("marketing_message_events", "?select=id", {
-        method: "POST",
-        body: {
-          id: crypto.randomUUID(),
-          company_id: actor.companyId,
-          campaign_id: campaignId,
-          prospect_id: prospect.id,
-          event_type: "sent",
-          event_at: toIsoNow(),
-          meta: { subject, auto: true }
-        },
-        prefer: "return=minimal"
-      });
-      sent += 1;
+      try {
+        await sendJdEmailAsActor(senderActor, { to, subject, text, html, cc: "", attachments });
+        await supabaseTableFetch("marketing_campaign_prospects", `?id=eq.${encodeURIComponent(String(row.id || ""))}&select=*`, {
+          method: "PATCH",
+          body: { state: "sent", updated_at: toIsoNow(), last_sent_at: toIsoNow() },
+          prefer: "return=minimal"
+        });
+        await supabaseTableFetch("marketing_message_events", "?select=id", {
+          method: "POST",
+          body: {
+            id: crypto.randomUUID(),
+            company_id: actor.companyId,
+            campaign_id: campaignId,
+            prospect_id: prospect.id,
+            event_type: "sent",
+            event_at: toIsoNow(),
+            meta: { subject, auto: true }
+          },
+          prefer: "return=minimal"
+        });
+        sent += 1;
+      } catch (error) {
+        failed += 1;
+        const errorMessage = String(error?.message || error || "Unknown marketing send error").trim();
+        await supabaseTableFetch("marketing_campaign_prospects", `?id=eq.${encodeURIComponent(String(row.id || ""))}&select=*`, {
+          method: "PATCH",
+          body: { state: "failed", updated_at: toIsoNow() },
+          prefer: "return=minimal"
+        }).catch(() => null);
+        await supabaseTableFetch("marketing_message_events", "?select=id", {
+          method: "POST",
+          body: {
+            id: crypto.randomUUID(),
+            company_id: actor.companyId,
+            campaign_id: campaignId,
+            prospect_id: prospect.id,
+            event_type: "failed",
+            event_at: toIsoNow(),
+            meta: { subject, auto: true, error: errorMessage, email: to }
+          },
+          prefer: "return=minimal"
+        }).catch(() => null);
+      }
     }
   }
-  return { sent };
+  return { sent, failed };
 }
 
 async function supabaseTableFetch(tableName, query = "", options = {}) {
@@ -13667,6 +13691,7 @@ const server = http.createServer(async (req, res) => {
       const companyIdFilter = String(requestUrl.searchParams.get("company_id") || "").trim();
       const batchPerCampaign = Math.max(1, Math.min(50, Number(requestUrl.searchParams.get("batch_per_campaign") || 1)));
       let totalSent = 0;
+      let totalFailed = 0;
       let companiesProcessed = 0;
 
       let campaigns = await supabaseTableFetch("marketing_campaigns", "?select=id,company_id,status&status=eq.active&limit=5000");
@@ -13698,10 +13723,11 @@ const server = http.createServer(async (req, res) => {
         if (!actor.id || !actor.companyId || !actor.email) continue;
         const result = await processMarketingWorkerTickForActor(actor, { batchPerCampaign });
         totalSent += Number(result?.sent || 0);
+        totalFailed += Number(result?.failed || 0);
         companiesProcessed += 1;
       }
 
-      sendJson(res, 200, { ok: true, result: { sent: totalSent, companiesProcessed, batchPerCampaign } });
+      sendJson(res, 200, { ok: true, result: { sent: totalSent, failed: totalFailed, companiesProcessed, batchPerCampaign } });
     } catch (error) {
       sendJson(res, 400, { ok: false, error: String(error?.message || error) });
     }
@@ -15147,15 +15173,19 @@ const server = http.createServer(async (req, res) => {
       const existingByEmail = new Map();
       if (emailKeys.length) {
         const companyId = encodeURIComponent(String(actor.companyId || "").trim());
-        const inClause = emailKeys.map((email) => `"${String(email || "").replace(/"/g, "")}"`).join(",");
-        const existingRows = await supabaseTableFetch(
-          "marketing_prospects",
-          `?select=id,name,email&company_id=eq.${companyId}&email=in.(${inClause})&limit=5000`
-        ).catch(() => []);
-        (Array.isArray(existingRows) ? existingRows : []).forEach((row) => {
-          const existingEmail = String(row?.email || "").trim().toLowerCase();
-          if (existingEmail) existingByEmail.set(existingEmail, row);
-        });
+        for (let index = 0; index < emailKeys.length; index += 150) {
+          const emailChunk = emailKeys.slice(index, index + 150);
+          if (!emailChunk.length) continue;
+          const inClause = emailChunk.map((email) => `"${String(email || "").replace(/"/g, "")}"`).join(",");
+          const existingRows = await supabaseTableFetch(
+            "marketing_prospects",
+            `?select=id,name,email&company_id=eq.${companyId}&email=in.(${inClause})&limit=${emailChunk.length}`
+          ).catch(() => []);
+          (Array.isArray(existingRows) ? existingRows : []).forEach((row) => {
+            const existingEmail = String(row?.email || "").trim().toLowerCase();
+            if (existingEmail) existingByEmail.set(existingEmail, row);
+          });
+        }
       }
       const existingEmailSet = new Set(Array.from(existingByEmail.keys()));
       const existingCount = emailKeys.filter((email) => existingEmailSet.has(email)).length;
@@ -15202,18 +15232,23 @@ const server = http.createServer(async (req, res) => {
         updated_at: now
       }));
 
-      const saved = payload.length
-        ? await supabaseTableFetch(
-          "marketing_prospects",
-          "?on_conflict=company_id,email&select=*",
-          {
-            method: "POST",
-            body: payload,
-            prefer: "resolution=merge-duplicates,return=representation"
-          }
-        )
-        : [];
-      const insertedRows = Array.isArray(saved) ? saved : [];
+      const insertedRows = [];
+      if (payload.length) {
+        for (let index = 0; index < payload.length; index += 100) {
+          const payloadChunk = payload.slice(index, index + 100);
+          if (!payloadChunk.length) continue;
+          const savedChunk = await supabaseTableFetch(
+            "marketing_prospects",
+            "?on_conflict=company_id,email&select=*",
+            {
+              method: "POST",
+              body: payloadChunk,
+              prefer: "resolution=merge-duplicates,return=representation"
+            }
+          );
+          if (Array.isArray(savedChunk) && savedChunk.length) insertedRows.push(...savedChunk);
+        }
+      }
       const inserted = insertedRows.length;
       const updated = existingCount;
 
@@ -15241,12 +15276,16 @@ const server = http.createServer(async (req, res) => {
             created_at: now,
             updated_at: now
           }));
-          const linked = await supabaseTableFetch("marketing_campaign_prospects", "?on_conflict=campaign_id,prospect_id&select=id", {
-            method: "POST",
-            body: links,
-            prefer: "resolution=merge-duplicates,return=representation"
-          }).catch(() => []);
-          campaignLinked = Array.isArray(linked) ? linked.length : 0;
+          for (let index = 0; index < links.length; index += 100) {
+            const linksChunk = links.slice(index, index + 100);
+            if (!linksChunk.length) continue;
+            const linked = await supabaseTableFetch("marketing_campaign_prospects", "?on_conflict=campaign_id,prospect_id&select=id", {
+              method: "POST",
+              body: linksChunk,
+              prefer: "resolution=merge-duplicates,return=representation"
+            }).catch(() => []);
+            campaignLinked += Array.isArray(linked) ? linked.length : 0;
+          }
         }
       }
       sendJson(res, 200, {
@@ -15956,7 +15995,8 @@ const server = http.createServer(async (req, res) => {
       const batchPerCampaign = Math.max(1, Math.min(50, Number(body?.batchPerCampaign || 1)));
       const result = await processMarketingWorkerTickForActor(actor, { batchPerCampaign });
       const sent = Number(result?.sent || 0);
-      sendJson(res, 200, { ok: true, result: { sent, batchPerCampaign } });
+      const failed = Number(result?.failed || 0);
+      sendJson(res, 200, { ok: true, result: { sent, failed, batchPerCampaign } });
     } catch (error) {
       sendJson(res, 400, { ok: false, error: String(error?.message || error) });
     }
