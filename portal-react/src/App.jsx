@@ -22237,12 +22237,12 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
   );
   const safePct = (num, den) => (den > 0 ? Math.round((num / den) * 100) : 0);
   const primaryKpiCards = [
-    { key: "totalCandidates", drillMetric: "totalCandidates", label: "Total Candidates", value: Number(dashboardOverall.totalCandidates || 0), icon: "TC" },
-    { key: "sharedProfiles", drillMetric: "sharedProfiles", label: "Shared Profiles", value: Number(dashboardOverall.sharedProfiles || 0), icon: "SH" },
-    { key: "interviews", drillMetric: "interviews", label: "Interviews", value: Number(dashboardOverall.interviews || 0), icon: "IN" },
-    { key: "shortlisted", drillMetric: "shortlisted", label: "Shortlist", value: Number(dashboardOverall.shortlisted || 0), icon: "SL" },
-    { key: "offers", drillMetric: "offered", label: "Offers", value: Number(dashboardOverall.offers || 0), icon: "OF" },
-    { key: "joined", drillMetric: "joined", label: "Joinings", value: Number(dashboardOverall.joined || 0), icon: "JN" }
+    { key: "totalCandidates", drillMetric: "totalCandidates", label: "Total Candidates", value: Number(dashboardOverall.totalCandidates || 0), icon: "👥" },
+    { key: "sharedProfiles", drillMetric: "sharedProfiles", label: "Shared Profiles", value: Number(dashboardOverall.sharedProfiles || 0), icon: "🔗" },
+    { key: "interviews", drillMetric: "interviews", label: "Interviews", value: Number(dashboardOverall.interviews || 0), icon: "🗓" },
+    { key: "shortlisted", drillMetric: "shortlisted", label: "Shortlist", value: Number(dashboardOverall.shortlisted || 0), icon: "⭐" },
+    { key: "offers", drillMetric: "offered", label: "Offers", value: Number(dashboardOverall.offers || 0), icon: "✉" },
+    { key: "joined", drillMetric: "joined", label: "Joinings", value: Number(dashboardOverall.joined || 0), icon: "✅" }
   ];
   const ratioKpiCards = [
     { key: "cvSubmissionRate", label: "CV Submission Rate", value: `${safePct(Number(dashboardOverall.sharedProfiles || 0), Number(dashboardOverall.totalCandidates || 0))}%` },
@@ -22534,6 +22534,12 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
   const displayScheduledFollowUpItems = dashboardAgendaSnapshotForDisplay?.scheduledFollowUpItems || scheduledFollowUpItems;
   const displayScheduledInterviewItems = dashboardAgendaLists.interviews || dashboardAgendaSnapshotForDisplay?.scheduledInterviewItems || scheduledInterviewItems;
   const displayUpcomingJoiningItems = dashboardAgendaLists.joinings || upcomingJoinings.slice(0, 5);
+  const agendaKpiCards = [
+    { key: "pendingNotes", label: "Pending Notes", value: displayPendingNotes, icon: "📝" },
+    { key: "scheduledInterviews", label: "Interviews Today", value: displayScheduledInterviewCount, icon: "📅" },
+    { key: "upcomingJoinings", label: "Joining This Week", value: displayUpcomingJoiningCount, icon: "🟢" },
+    { key: "pendingApplicants", label: "Pending Applicants", value: displayPendingAssignments, icon: "👤" }
+  ];
 
   return (
     <div className={`app-shell${sidebarCollapsed ? " app-shell--sidebar-collapsed" : ""}`}>
@@ -22629,22 +22635,15 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
 
                   <div className="dashboard-agenda-overview">
                     <div className="dashboard-agenda-cards">
-                      <div className="metric-card compact-metric">
-                        <div className="metric-label">Pending notes</div>
-                        <div className="metric-value">{displayPendingNotes}</div>
-                      </div>
-                      <div className="metric-card compact-metric">
-                        <div className="metric-label">Scheduled interviews</div>
-                        <div className="metric-value">{displayScheduledInterviewCount}</div>
-                      </div>
-                      <div className="metric-card compact-metric">
-                        <div className="metric-label">Upcoming joinings</div>
-                        <div className="metric-value">{displayUpcomingJoiningCount}</div>
-                      </div>
-                      <div className="metric-card compact-metric">
-                        <div className="metric-label">Pending applicants</div>
-                        <div className="metric-value">{displayPendingAssignments}</div>
-                      </div>
+                      {agendaKpiCards.map((card) => (
+                        <article key={card.key} className={`metric-card compact-metric dashboard-agenda-metric dashboard-agenda-metric--${card.key}`}>
+                          <div className="dashboard-agenda-metric__top">
+                            <span className="dashboard-agenda-metric__icon" aria-hidden="true">{card.icon}</span>
+                            <span className="metric-label" style={{ marginTop: 0 }}>{card.label}</span>
+                          </div>
+                          <div className="dashboard-agenda-metric__value">{card.value}</div>
+                        </article>
+                      ))}
                     </div>
                     <aside className="dashboard-agenda-spotlight">
                       <div className="dashboard-agenda-spotlight__head">
@@ -22813,7 +22812,10 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                     const isClickable = !DASHBOARD_TOP_NON_CLICKABLE_METRICS.has(String(item.key || "").trim());
                     const cardBody = (
                       <>
-                        <div className="dashboard-funnel-step__eyebrow">{item.label}</div>
+                        <div className="dashboard-funnel-step__header">
+                          <span className={`dashboard-funnel-step__icon dashboard-funnel-step__icon--${item.key}`} aria-hidden="true">{item.icon}</span>
+                          <div className="dashboard-funnel-step__eyebrow">{item.label}</div>
+                        </div>
                         <div className="dashboard-funnel-step__value">{item.value}</div>
                       </>
                     );
@@ -22841,8 +22843,8 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                   {ratioKpiCards.map((item) => (
                     <article
                       key={item.key}
-                      className="reports-kpi-card"
-                      style={{ width: "min(220px, 100%)", minHeight: "unset", padding: "16px 18px" }}
+                      className={`reports-kpi-card dashboard-ratio-card dashboard-ratio-card--${item.key}`}
+                      style={{ width: "min(220px, 100%)", minHeight: "unset", padding: "14px 16px" }}
                     >
                       <div className="reports-kpi-card__value">{item.value}</div>
                       <div className="reports-kpi-card__label">{item.label}</div>
