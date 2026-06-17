@@ -13649,7 +13649,7 @@ function PortalApp({ token, onLogout }) {
     const remoteRows = candidateSmartChipRowsRemote && typeof candidateSmartChipRowsRemote === "object"
       ? candidateSmartChipRowsRemote
       : null;
-    if (remoteRows && !isEmptySmartChipSnapshot(remoteRows)) return remoteRows;
+    if (remoteRows) return remoteRows;
     return candidateSmartChipRowsStableRef.current || candidateSmartChipRows;
   }, [candidateSmartChipRowsRemote, candidateSmartChipRows]);
 
@@ -13742,10 +13742,8 @@ function PortalApp({ token, onLogout }) {
         return;
       }
       const incomingRowsAreEmpty = isEmptySmartChipSnapshot(rows);
-      if (incomingRowsAreEmpty && candidateSmartChipRowsStableRef.current && !isEmptySmartChipSnapshot(candidateSmartChipRowsStableRef.current)) {
-        setCandidateSmartChipRowsRemote(candidateSmartChipRowsStableRef.current);
-      } else {
-        setCandidateSmartChipRowsRemote(rows);
+      setCandidateSmartChipRowsRemote(rows);
+      if (!incomingRowsAreEmpty) {
         candidateSmartChipRowsStableRef.current = rows;
         if (candidateSmartChipCacheKey && typeof window !== "undefined") {
           try {
@@ -13766,13 +13764,9 @@ function PortalApp({ token, onLogout }) {
           cv_shared: Number(summary.cv_shared || summary.cvShared || 0)
         };
         const incomingSummaryIsEmpty = Object.values(normalizedSummary).every((value) => Number(value || 0) === 0);
-        const stableSummary = candidateSmartChipSummaryStableRef.current;
-        const stableSummaryHasData = stableSummary && Object.values(stableSummary).some((value) => Number(value || 0) > 0);
-        if (incomingSummaryIsEmpty && stableSummaryHasData && incomingRowsAreEmpty) {
-          setCandidateSmartChipSummary(stableSummary);
-        } else {
+        setCandidateSmartChipSummary(normalizedSummary);
+        if (!incomingSummaryIsEmpty) {
           candidateSmartChipSummaryStableRef.current = normalizedSummary;
-          setCandidateSmartChipSummary(normalizedSummary);
           if (candidateSmartChipSummaryCacheKey && typeof window !== "undefined") {
             try {
               window.localStorage.setItem(candidateSmartChipSummaryCacheKey, JSON.stringify(normalizedSummary));
