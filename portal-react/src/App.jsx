@@ -22356,6 +22356,27 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
     closeDashboardInlineDrilldown();
     setReportsTab(nextTab);
   }
+  const dashboardCollapseContextKey = useMemo(() => JSON.stringify({
+    reportsTab: String(reportsTab || ""),
+    dateFrom: String(dashboardFilters?.dateFrom || ""),
+    dateTo: String(dashboardFilters?.dateTo || ""),
+    clientLabel: String(dashboardFilters?.clientLabel || ""),
+    recruiterLabel: String(dashboardFilters?.recruiterLabel || ""),
+    quickRange: String(dashboardFilters?.quickRange || "")
+  }), [
+    reportsTab,
+    dashboardFilters?.dateFrom,
+    dashboardFilters?.dateTo,
+    dashboardFilters?.clientLabel,
+    dashboardFilters?.recruiterLabel,
+    dashboardFilters?.quickRange
+  ]);
+  const previousDashboardCollapseContextKeyRef = useRef(dashboardCollapseContextKey);
+  useEffect(() => {
+    if (previousDashboardCollapseContextKeyRef.current === dashboardCollapseContextKey) return;
+    previousDashboardCollapseContextKeyRef.current = dashboardCollapseContextKey;
+    closeDashboardInlineDrilldown();
+  }, [dashboardCollapseContextKey]);
   const todayStart = new Date();
   todayStart.setHours(0, 0, 0, 0);
   const tomorrowStart = new Date(todayStart);
