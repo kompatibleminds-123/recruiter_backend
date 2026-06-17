@@ -22635,7 +22635,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                   </div>
 
                   <div className="dashboard-agenda-overview">
-                    <div className="dashboard-agenda-cards dashboard-agenda-cards--five">
+                    <div className="dashboard-agenda-cards">
                       {agendaKpiCards.map((card) => (
                         <article key={card.key} className={`metric-card compact-metric dashboard-agenda-metric dashboard-agenda-metric--${card.key}`}>
                           <div className="dashboard-agenda-metric__top">
@@ -22646,91 +22646,142 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                         </article>
                       ))}
                     </div>
+                    <aside className="dashboard-agenda-spotlight">
+                      <div className="dashboard-agenda-spotlight__head">
+                        <h3>Upcoming joinings</h3>
+                        <span>{displayUpcomingJoiningItems.length || 0}</span>
+                      </div>
+                      {displayUpcomingJoiningItems.length ? (
+                        <div className="stack-list compact">
+                          {displayUpcomingJoiningItems.slice(0, 3).map((item) => (
+                            <article key={`joining-spotlight-${item.id}`} className="agenda-item agenda-item--compact">
+                              <div>
+                                <span className="agenda-item__title">{item.candidateName || "Candidate"}</span>
+                                <span className="agenda-item__subtitle">{item.role || item.jdTitle || "Untitled role"}</span>
+                                <span className="agenda-item__time">{new Date(item.at || item.followUpAt || item.interviewAt).toLocaleString()}</span>
+                              </div>
+                              <div className="button-row tight">
+                                <button
+                                  disabled={Boolean(agendaOpeningAssessmentIds[String(item.id || "")])}
+                                  onClick={() => void openAgendaAssessmentStatus(item)}
+                                >
+                                  {agendaOpeningAssessmentIds[String(item.id || "")] ? "Opening..." : "Update"}
+                                </button>
+                              </div>
+                            </article>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="empty-state compact-empty">No joinings in this range yet.</div>
+                      )}
+                    </aside>
                   </div>
                 </div>
 
-                <div className="dashboard-agenda-panels">
-                  <div className="card agenda-panel-card">
-                    <div className="dashboard-agenda-panel-head">
-                      <h4>Scheduled follow-ups</h4>
-                      <span>{displayScheduledFollowUpItems.length + displayOverdueFollowUpItems.length}</span>
+                <div className="stack-list compact">
+                  {!!displayOverdueFollowUpItems.length && (
+                    <div className="agenda-block agenda-block--overdue">
+                      <h3>Overdue follow-ups</h3>
+                      <div className="stack-list compact">
+                        {displayOverdueFollowUpItems.map((item) => (
+                          <article key={`overdue-${item.key || item.id || item.candidateId || item.assessmentId}`} className="agenda-item">
+                            <div>
+                              <span className="agenda-item__title">{item.title || item.candidateName || item.name || "Candidate"}</span>
+                              <span className="agenda-item__subtitle">{item.subtitle || item.role || item.jdTitle || item.jd_title || "Untitled role"}</span>
+                              <span className="agenda-item__time">{(item.when || item.at) ? `Call follow-up | ${new Date(item.when || item.at).toLocaleString()}` : "Call follow-up"}</span>
+                            </div>
+                            <div className="button-row tight">
+                              <button onClick={() => void openAttempts(String(item.candidateId || item.id || item.assessmentId || ""))}>Update</button>
+                              <button
+                                className="ghost-btn"
+                                onClick={() => void completeAgendaFollowUp(item.raw || { ...item, id: item.candidateId || item.id || item.assessmentId || "" })}
+                              >
+                                Done
+                              </button>
+                            </div>
+                          </article>
+                        ))}
+                      </div>
                     </div>
-                    <div className="stack-list compact">
-                      {[...displayOverdueFollowUpItems, ...displayScheduledFollowUpItems].slice(0, 4).map((item) => (
-                        <article key={`followup-${item.key || item.id || item.candidateId || item.assessmentId}`} className="agenda-item agenda-item--compact">
-                          <div>
-                            <span className="agenda-item__title">{item.title || item.candidateName || item.name || "Candidate"}</span>
-                            <span className="agenda-item__subtitle">{item.subtitle || item.role || item.jdTitle || item.jd_title || "Untitled role"}</span>
-                            <span className="agenda-item__time">{(item.when || item.at) ? new Date(item.when || item.at).toLocaleString() : "Call follow-up"}</span>
+                  )}
+                  {!!(displayScheduledFollowUpItems.length || displayScheduledInterviewItems.length) && (
+                    <div className="agenda-block">
+                      <h3>Scheduled follow-ups and interviews</h3>
+                      <div className="agenda-split-grid">
+                        <div className="agenda-subblock">
+                          <h4>Follow-ups</h4>
+                          <div className="stack-list compact">
+                        {displayScheduledFollowUpItems.map((item) => (
+                          <article key={item.key || item.id || item.candidateId || item.assessmentId} className="agenda-item">
+                            <div>
+                              <span className="agenda-item__type">{item.type}</span>
+                              <span className="agenda-item__title">{item.title || item.candidateName || "Candidate"}</span>
+                              <span className="agenda-item__subtitle">{item.subtitle || item.role || item.jdTitle || item.jd_title || "Untitled role"}</span>
+                              <span className="agenda-item__time">{(item.when || item.at) ? new Date(item.when || item.at).toLocaleString() : "-"}</span>
+                            </div>
+                            <div className="button-row tight">
+                              <button onClick={() => void openAttempts(String(item.candidateId || item.raw?.id || item.id || ""))}>Update</button>
+                              <button className="ghost-btn" onClick={() => void completeAgendaFollowUp(item.raw || item)}>Done</button>
+                            </div>
+                          </article>
+                        ))}
+                        {!displayScheduledFollowUpItems.length ? <div className="empty-state compact-empty">No follow-ups in this range.</div> : null}
                           </div>
-                          <div className="button-row tight">
-                            <button onClick={() => void openAttempts(String(item.candidateId || item.raw?.id || item.id || ""))}>Update</button>
+                        </div>
+                        <div className="agenda-subblock">
+                          <h4>Interviews</h4>
+                          <div className="stack-list compact">
+                        {displayScheduledInterviewItems.map((item) => (
+                          <article key={item.key || item.id || item.candidateId || item.assessmentId} className="agenda-item">
+                            <div>
+                              <span className="agenda-item__type">{item.type}</span>
+                              <span className="agenda-item__title">{item.title || item.candidateName || "Candidate"}</span>
+                              <span className="agenda-item__subtitle">{item.subtitle || item.role || item.jdTitle || item.jd_title || "Untitled role"}</span>
+                              <span className="agenda-item__time">{(item.when || item.at) ? new Date(item.when || item.at).toLocaleString() : "-"}</span>
+                            </div>
+                            <div className="button-row tight">
+                              <button
+                                disabled={Boolean(agendaOpeningAssessmentIds[String(item.assessmentId || item.raw?.id || item.id || "")])}
+                                onClick={() => void openAgendaAssessmentStatus(item)}
+                              >
+                                {agendaOpeningAssessmentIds[String(item.assessmentId || item.raw?.id || item.id || "")] ? "Opening..." : "Update"}
+                              </button>
+                            </div>
+                          </article>
+                        ))}
+                        {!displayScheduledInterviewItems.length ? <div className="empty-state compact-empty">No interviews in this range.</div> : null}
                           </div>
-                        </article>
-                      ))}
-                      {!displayScheduledFollowUpItems.length && !displayOverdueFollowUpItems.length ? (
-                        <div className="empty-state compact-empty">No follow-ups in this range.</div>
-                      ) : null}
+                        </div>
+                      </div>
                     </div>
-                  </div>
-
-                  <div className="card agenda-panel-card">
-                    <div className="dashboard-agenda-panel-head">
-                      <h4>{agendaRange === "today" ? "Today's interviews" : agendaRange === "tomorrow" ? "Tomorrow's interviews" : "Upcoming interviews"}</h4>
-                      <span>{displayScheduledInterviewItems.length}</span>
+                  )}
+                  {!!displayUpcomingJoiningItems.length && (
+                    <div className="agenda-block agenda-block--joining">
+                      <h3>Upcoming joinings</h3>
+                      <div className="stack-list compact">
+                        {displayUpcomingJoiningItems.slice(0, 5).map((item) => (
+                          <article key={`joining-${item.id}`} className="agenda-item">
+                            <div>
+                              <span className="agenda-item__title">{item.candidateName || "Candidate"}</span>
+                              <span className="agenda-item__subtitle">{item.role || item.jdTitle || "Untitled role"}</span>
+                              <span className="agenda-item__time">{`Upcoming joining | ${new Date(item.at || item.followUpAt || item.interviewAt).toLocaleString()} | ${item.status || item.candidateStatus || "Offered"}`}</span>
+                            </div>
+                            <div className="button-row tight">
+                              <button
+                                disabled={Boolean(agendaOpeningAssessmentIds[String(item.id || "")])}
+                                onClick={() => void openAgendaAssessmentStatus(item)}
+                              >
+                                {agendaOpeningAssessmentIds[String(item.id || "")] ? "Opening..." : "Update"}
+                              </button>
+                            </div>
+                          </article>
+                        ))}
+                      </div>
                     </div>
-                    <div className="stack-list compact">
-                      {displayScheduledInterviewItems.slice(0, 4).map((item) => (
-                        <article key={`interview-${item.key || item.id || item.candidateId || item.assessmentId}`} className="agenda-item agenda-item--compact">
-                          <div>
-                            <span className="agenda-item__title">{item.title || item.candidateName || "Candidate"}</span>
-                            <span className="agenda-item__subtitle">{item.subtitle || item.role || item.jdTitle || item.jd_title || "Untitled role"}</span>
-                            <span className="agenda-item__time">{(item.when || item.at) ? new Date(item.when || item.at).toLocaleString() : "-"}</span>
-                          </div>
-                          <div className="button-row tight">
-                            <button
-                              disabled={Boolean(agendaOpeningAssessmentIds[String(item.assessmentId || item.raw?.id || item.id || "")])}
-                              onClick={() => void openAgendaAssessmentStatus(item)}
-                            >
-                              {agendaOpeningAssessmentIds[String(item.assessmentId || item.raw?.id || item.id || "")] ? "Opening..." : "Update"}
-                            </button>
-                          </div>
-                        </article>
-                      ))}
-                      {!displayScheduledInterviewItems.length ? (
-                        <div className="empty-state compact-empty">No interviews in this range.</div>
-                      ) : null}
-                    </div>
-                  </div>
-
-                  <div className="card agenda-panel-card">
-                    <div className="dashboard-agenda-panel-head">
-                      <h4>Upcoming joinings</h4>
-                      <span>{displayUpcomingJoiningItems.length}</span>
-                    </div>
-                    <div className="stack-list compact">
-                      {displayUpcomingJoiningItems.slice(0, 4).map((item) => (
-                        <article key={`joining-${item.id}`} className="agenda-item agenda-item--compact">
-                          <div>
-                            <span className="agenda-item__title">{item.candidateName || "Candidate"}</span>
-                            <span className="agenda-item__subtitle">{item.role || item.jdTitle || "Untitled role"}</span>
-                            <span className="agenda-item__time">{(item.at || item.followUpAt || item.interviewAt) ? new Date(item.at || item.followUpAt || item.interviewAt).toLocaleString() : (item.status || item.candidateStatus || "Joined")}</span>
-                          </div>
-                          <div className="button-row tight">
-                            <button
-                              disabled={Boolean(agendaOpeningAssessmentIds[String(item.id || "")])}
-                              onClick={() => void openAgendaAssessmentStatus(item)}
-                            >
-                              {agendaOpeningAssessmentIds[String(item.id || "")] ? "Opening..." : "Update"}
-                            </button>
-                          </div>
-                        </article>
-                      ))}
-                      {!displayUpcomingJoiningItems.length ? (
-                        <div className="empty-state compact-empty">No joinings in this range yet.</div>
-                      ) : null}
-                    </div>
-                  </div>
+                  )}
+                  {!displayOverdueFollowUpItems.length && !displayScheduledFollowUpItems.length && !displayScheduledInterviewItems.length && !displayUpcomingJoiningItems.length ? (
+                    <div className="empty-state">No scheduled follow-ups, interviews, or joinings for this range yet.</div>
+                  ) : null}
                 </div>
               </Section>
               <Section kicker="Performance" title="Recruitment Dashboard">
