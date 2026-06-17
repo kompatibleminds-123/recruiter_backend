@@ -22688,13 +22688,6 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                               >
                                 {agendaOpeningAssessmentIds[String(item.assessmentId || item.raw?.id || item.id || "")] ? "Opening..." : "Update"}
                               </button>
-                              <button
-                                className="ghost-btn"
-                                disabled={Boolean(agendaBusyIds[String(item.raw?.id || item.assessmentId || item.id || "")])}
-                                onClick={() => void completeAgendaInterview(item.raw || { ...item, id: item.assessmentId || item.id || "" })}
-                              >
-                                {agendaBusyIds[String(item.raw?.id || item.assessmentId || item.id || "")] ? "Saving..." : "Done"}
-                              </button>
                             </div>
                           </article>
                         ))}
@@ -22722,7 +22715,6 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                               >
                                 {agendaOpeningAssessmentIds[String(item.id || "")] ? "Opening..." : "Update"}
                               </button>
-                              <button className="ghost-btn" onClick={() => void completeAgendaJoining(item)}>Mark complete</button>
                             </div>
                           </article>
                         ))}
