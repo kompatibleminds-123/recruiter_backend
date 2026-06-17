@@ -22759,6 +22759,12 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                 ) : null}
                 <div className="dashboard-funnel-hero">
                   <div className="dashboard-funnel-visual" aria-label="Recruitment funnel">
+                    <div className="dashboard-funnel-visual__header">
+                      <div>
+                        <span className="dashboard-funnel-kicker">Recruitment Funnel</span>
+                        <h3>Overall hiring progression</h3>
+                      </div>
+                    </div>
                     {dashboardFunnelStages.map((stage, index) => {
                       const stageBody = (
                         <>
@@ -22773,8 +22779,8 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                         <div key={stage.key} className="dashboard-funnel-layer-wrap">
                           {index > 0 ? (
                             <div className="dashboard-funnel-rate">
-                              <span className="dashboard-funnel-rate__label">{stage.conversionLabel}</span>
-                              <strong className="dashboard-funnel-rate__value">{stage.conversionValue}</strong>
+                              <span className="dashboard-funnel-rate__value">{stage.conversionValue}</span>
+                              <strong className="dashboard-funnel-rate__label">{stage.conversionLabel}</strong>
                             </div>
                           ) : null}
                           {stage.isClickable ? (
@@ -22799,7 +22805,8 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                     })}
                   </div>
                   <aside className="dashboard-funnel-sidepanel">
-                    <h3>Funnel Summary</h3>
+                    <h3>Stage Summary</h3>
+                    <p className="dashboard-funnel-sidepanel__caption">Counts stay aligned with your current dashboard filters.</p>
                     <div className="dashboard-funnel-sidepanel__list">
                       {dashboardFunnelStages.map((stage) => (
                         <div key={`summary-${stage.key}`} className="dashboard-funnel-sidepanel__row">
